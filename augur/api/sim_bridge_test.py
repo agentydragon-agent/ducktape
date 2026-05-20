@@ -4,7 +4,18 @@ import polars as pl
 import pytest
 import pytest_bazel
 
-from augur.api.sim_bridge import UnsupportedSimBridgeScenarioError, simulate_translation, translate_scenario_set
+from augur.api.portfolio import (
+    PortfolioAccountConfig,
+    PortfolioConfig,
+    PublicSecurityPositionConfig,
+    PublicSecurityTaxLotConfig,
+)
+from augur.api.sim_bridge import (
+    UnsupportedSimBridgeScenarioError,
+    sample_and_simulate_translation,
+    simulate_translation,
+    translate_scenario_set,
+)
 from augur.core.scenario_set import ScenarioSet
 from augur.model.sim_market_series import SP500_SERIES_ID
 from augur.model.simple_market import SimpleMarketModel
@@ -88,6 +99,55 @@ def test_bridge_rejects_features_that_do_not_have_sim_semantics_yet() -> None:
 
     with pytest.raises(UnsupportedSimBridgeScenarioError, match="property_selection"):
         translate_scenario_set(scenario_set)
+
+
+def test_configured_portfolio_lots_replace_legacy_public_stock_asset() -> None:
+    scenario_set = ScenarioSet.model_validate(_scenario_set_body())
+    portfolio = PortfolioConfig(
+        accounts=(PortfolioAccountConfig(account_id="taxable_brokerage", owner_agent_id="owner"),),
+        public_securities=(
+            PublicSecurityPositionConfig(
+                position_id="sp500_position",
+                account_id="taxable_brokerage",
+                symbol="SP500",
+                security_kind="other",
+                value_series_id=SP500_SERIES_ID,
+                unit_value_usd=500.0,
+                lots=(
+                    PublicSecurityTaxLotConfig(
+                        lot_id="sp500_2024_05", holding_period_months_at_start=24, quantity=10.0, cost_basis_usd=3_000.0
+                    ),
+                    PublicSecurityTaxLotConfig(
+                        lot_id="sp500_2026_05", holding_period_months_at_start=0, quantity=5.0, cost_basis_usd=2_000.0
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    (translation,) = translate_scenario_set(scenario_set, configured_lots=portfolio.to_initial_lots())
+    sampled, result = sample_and_simulate_translation(
+        SimpleMarketModel(current_private_equity_price_usd=1.0),
+        translation,
+        market_request=scenario_set.market_request,
+        level_anchors=portfolio.level_anchors,
+    )
+
+    assert [lot.lot_id for lot in translation.scenario.initial_lots] == ["sp500_2024_05", "sp500_2026_05"]
+    assert translation.scenario.initial_lots[0].quantity == 10.0
+    assert translation.scenario.initial_lots[0].cost_basis_per_unit_usd == 300.0
+    assert sampled.level_matrix(SP500_SERIES_ID, rollout_count=3, horizon_months=3)[:, 0].tolist() == [
+        500.0,
+        500.0,
+        500.0,
+    ]
+    rollout0_lots = (
+        result.asset_lots.filter((pl.col("rollout_index") == 0) & (pl.col("month_index") == 0))
+        .sort("lot_id")
+        .select("lot_id", "remaining_quantity", "cost_basis_per_unit_usd")
+        .iter_rows()
+    )
+    assert list(rollout0_lots) == [("sp500_2024_05", 10.0, 300.0), ("sp500_2026_05", 5.0, 400.0)]
 
 
 if __name__ == "__main__":

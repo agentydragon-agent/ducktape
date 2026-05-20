@@ -7,9 +7,11 @@ features fail loudly so they can be ported deliberately.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 import numpy as np
+import polars as pl
 
 from augur.core.scenario_set import (
     AccountType as CoreAccountType,
@@ -23,7 +25,12 @@ from augur.core.scenario_set import (
     Scenario as CoreScenario,
     ScenarioSet,
 )
-from augur.model.sim_market_api import JointMarketModel, MarketSamplingRequest, SampledMarketBundle
+from augur.model.sim_market_api import (
+    MARKET_LEVELS_SCHEMA,
+    JointMarketModel,
+    MarketSamplingRequest,
+    SampledMarketBundle,
+)
 from augur.model.sim_market_series import SP500_SERIES_ID
 from augur.sim.market import materialize_sampled_market
 from augur.sim.run import SimulationRun
@@ -47,22 +54,27 @@ class SimScenarioTranslation:
     required_event_series: frozenset[str] = frozenset()
 
 
-def translate_scenario_set(scenario_set: ScenarioSet) -> tuple[SimScenarioTranslation, ...]:
+def translate_scenario_set(
+    scenario_set: ScenarioSet, *, configured_lots: tuple[InitialLot, ...] = ()
+) -> tuple[SimScenarioTranslation, ...]:
     """Translate enabled API scenarios into native sim scenarios."""
 
     return tuple(
-        translate_scenario(scenario, market_request=scenario_set.market_request)
+        translate_scenario(scenario, market_request=scenario_set.market_request, configured_lots=configured_lots)
         for scenario in scenario_set.scenarios
         if scenario.enabled
     )
 
 
-def translate_scenario(scenario: CoreScenario, *, market_request: MarketRequest) -> SimScenarioTranslation:
+def translate_scenario(
+    scenario: CoreScenario, *, market_request: MarketRequest, configured_lots: tuple[InitialLot, ...] = ()
+) -> SimScenarioTranslation:
     _reject_unsupported_features(scenario)
+    initial_lots = list(configured_lots) if configured_lots else _initial_lots(scenario)
     sim_scenario = Scenario(
-        agents=_agents(scenario),
+        agents=_agents(scenario, initial_lots=initial_lots),
         initial_cash=_initial_cash(scenario),
-        initial_lots=_initial_lots(scenario),
+        initial_lots=initial_lots,
         recurring_obligations=_monthly_spend_obligations(scenario),
         liquidity_policies=_liquidity_policies(scenario),
         horizon_months=market_request.horizon_months,
@@ -87,34 +99,130 @@ def required_level_series_for_scenario(scenario: Scenario) -> frozenset[str]:
 
 
 def sample_market_for_scenario(
-    market_model: JointMarketModel, translation: SimScenarioTranslation, *, market_request: MarketRequest
+    market_model: JointMarketModel,
+    translation: SimScenarioTranslation,
+    *,
+    market_request: MarketRequest,
+    level_anchors: Mapping[str, float] | None = None,
 ) -> SampledMarketBundle:
-    return market_model.sample(
-        MarketSamplingRequest(
+    sampled = market_model.sample(
+        _market_sampling_request(
             horizon_months=translation.scenario.horizon_months,
-            rollout_seeds=rollout_seeds_from_market_request(market_request),
+            market_request=market_request,
             required_level_series=translation.required_level_series,
             required_event_series=translation.required_event_series,
         )
     )
+    return anchor_sampled_market_levels(sampled, level_anchors or {})
 
 
 def simulate_translation(
-    market_model: JointMarketModel, translation: SimScenarioTranslation, *, market_request: MarketRequest
+    market_model: JointMarketModel,
+    translation: SimScenarioTranslation,
+    *,
+    market_request: MarketRequest,
+    level_anchors: Mapping[str, float] | None = None,
 ) -> SimulationRun:
-    _, run = sample_and_simulate_translation(market_model, translation, market_request=market_request)
+    _, run = sample_and_simulate_translation(
+        market_model, translation, market_request=market_request, level_anchors=level_anchors
+    )
     return run
 
 
 def sample_and_simulate_translation(
-    market_model: JointMarketModel, translation: SimScenarioTranslation, *, market_request: MarketRequest
+    market_model: JointMarketModel,
+    translation: SimScenarioTranslation,
+    *,
+    market_request: MarketRequest,
+    level_anchors: Mapping[str, float] | None = None,
 ) -> tuple[SampledMarketBundle, SimulationRun]:
-    sampled = sample_market_for_scenario(market_model, translation, market_request=market_request)
+    sampled = sample_market_for_scenario(
+        market_model, translation, market_request=market_request, level_anchors=level_anchors
+    )
     return (
         sampled,
         simulate_with_market(
             translation.scenario, rollout_count=market_request.rollout_count, market=materialize_sampled_market(sampled)
         ),
+    )
+
+
+def sample_market_for_translations(
+    market_model: JointMarketModel,
+    translations: tuple[SimScenarioTranslation, ...],
+    *,
+    market_request: MarketRequest,
+    level_anchors: Mapping[str, float] | None = None,
+) -> SampledMarketBundle:
+    sampled = market_model.sample(
+        _market_sampling_request(
+            horizon_months=market_request.horizon_months,
+            market_request=market_request,
+            required_level_series=frozenset(
+                series for translation in translations for series in translation.required_level_series
+            ),
+            required_event_series=frozenset(
+                series for translation in translations for series in translation.required_event_series
+            ),
+        )
+    )
+    return anchor_sampled_market_levels(sampled, level_anchors or {})
+
+
+def anchor_sampled_market_levels(
+    sampled: SampledMarketBundle, level_anchors: Mapping[str, float]
+) -> SampledMarketBundle:
+    anchors = {series_id: float(value) for series_id, value in level_anchors.items()}
+    if not anchors or sampled.levels.is_empty():
+        return sampled
+
+    sampled_series = set(sampled.levels.get_column("series_id").unique().to_list())
+    active_anchors = {series_id: value for series_id, value in anchors.items() if series_id in sampled_series}
+    if not active_anchors:
+        return SampledMarketBundle(
+            levels=sampled.levels, events=sampled.events, metadata={**sampled.metadata, "level_anchors": anchors}
+        )
+
+    anchor_frame = pl.DataFrame(
+        {"series_id": list(active_anchors), "_anchor_value": list(active_anchors.values())},
+        schema={"series_id": pl.Utf8(), "_anchor_value": pl.Float64()},
+    )
+    bases = (
+        sampled.levels.filter(pl.col("month_index") == 0)
+        .join(anchor_frame, on="series_id", how="inner")
+        .select("rollout_index", "series_id", "_anchor_value", pl.col("value").alias("_base_value"))
+    )
+    zero_bases = bases.filter(pl.col("_base_value") == 0.0)
+    if not zero_bases.is_empty():
+        series_ids = sorted(set(zero_bases.get_column("series_id").to_list()))
+        raise ValueError(f"sampled market level(s) have zero month-0 value and cannot be anchored: {series_ids}")
+
+    levels = (
+        sampled.levels.join(bases, on=["rollout_index", "series_id"], how="left")
+        .with_columns(
+            value=pl.when(pl.col("_anchor_value").is_not_null())
+            .then(pl.col("value") * pl.col("_anchor_value") / pl.col("_base_value"))
+            .otherwise(pl.col("value"))
+        )
+        .select(MARKET_LEVELS_SCHEMA.names())
+    )
+    return SampledMarketBundle(
+        levels=levels, events=sampled.events, metadata={**sampled.metadata, "level_anchors": anchors}
+    )
+
+
+def _market_sampling_request(
+    *,
+    horizon_months: int,
+    market_request: MarketRequest,
+    required_level_series: frozenset[str],
+    required_event_series: frozenset[str],
+) -> MarketSamplingRequest:
+    return MarketSamplingRequest(
+        horizon_months=horizon_months,
+        rollout_seeds=rollout_seeds_from_market_request(market_request),
+        required_level_series=required_level_series,
+        required_event_series=required_event_series,
     )
 
 
@@ -125,8 +233,9 @@ def rollout_seeds_from_market_request(market_request: MarketRequest) -> tuple[in
     )
 
 
-def _agents(scenario: CoreScenario) -> list[Agent]:
+def _agents(scenario: CoreScenario, *, initial_lots: list[InitialLot]) -> list[Agent]:
     agent_ids = {actor.actor_id for actor in scenario.actors}
+    agent_ids.update(lot.agent_id for lot in initial_lots)
     if scenario.policies:
         agent_ids.add(EXTERNAL_AGENT_ID)
     return [Agent(agent_id=agent_id) for agent_id in sorted(agent_ids)]

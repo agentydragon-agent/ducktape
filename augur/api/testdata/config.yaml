@@ -69,18 +69,18 @@ portfolio:
       account_id: taxable_brokerage
       label: SP500 Proxy
       lots:
-        - acquired_on: "2020-01-15"
-          cost_basis_usd: 60000.0
+        - cost_basis_usd: 60000.0
+          holding_period_months_at_start: 76
           lot_id: sp500_proxy_2020_01
           quantity: 150.0
-        - acquired_on: "2024-06-03"
-          cost_basis_usd: 50000.0
+        - cost_basis_usd: 50000.0
+          holding_period_months_at_start: 23
           lot_id: sp500_proxy_2024_06
           quantity: 150.0
       security_kind: etf
       symbol: VOO
       unit_value_usd: 500.0
-      value_series_id: voo
+      value_series_id: sp500
 property_source:
   properties_path: properties.json
 reserve_forward_months: 12

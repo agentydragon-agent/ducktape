@@ -122,24 +122,10 @@ Translator gaps to migrate next:
       Future translator slices should use it for outside rent, tenant rent,
       inflation-adjusted spend, and later recurring property costs instead of
       inventing special-case growth flags.
-- [ ] Define the as-of anchoring rule for every model-driven level series.
+- [ ] Define the month-0 anchoring rule for every model-driven level series.
       Public securities, home value, rent, crypto, private-equity marks, and
       inflation-indexed amounts should all say whether the configured value is
-      a month-0 level, an as-of-date level projected into month 0, or a fixed
-      contract value. The initial cutover can require the config as-of date to
-      equal simulation month 0.
-- [ ] Wire backend-configured public securities from `AugurConfig.portfolio`
-      into sim scenarios. The user-authored schema now has accounts,
-      positions, and per-lot acquisition date / quantity / cost basis; the
-      translator still needs to feed those lots into scenario construction
-      and teach the market model to start each `value_series_id` at the
-      configured `unit_value_usd`.
-- [ ] Replace request-local `GenericSp500StockPosition.value_usd` translation
-      with config-sourced initial lots. The translator should create
-      `InitialLot(quantity=units, cost_basis_per_unit_usd=cost_basis / units)`
-      and the model should produce a matching concrete asset price path that
-      starts at the configured price, so current value is derived as
-      `units * price[t=0]`.
+      a simulation month-0 level or a fixed contract value.
 - [ ] Keep legacy aggregate public-equity values only as UI/bootstrap
       compatibility. `sp500_proxy_portfolio_usd`, `wealthfront_sp500_usd`, and
       similar display totals may be computed from configured positions, but
@@ -152,22 +138,22 @@ Translator gaps to migrate next:
       indexed to modeled rent costs. The first translator slice may keep the
       current flat amount, but durable outside-rent behavior should consume an
       `augur/model` rent-cost series for the applicable rental market. The
-      config shape should be a current base rent on the scenario/config as-of
-      date plus a rent-cost model series key; sim then computes monthly rent as
-      `base_rent * rent_cost_series[t] / rent_cost_series[as_of]`. CPI or wage
+      config shape should be a month-0 base rent plus a rent-cost model series
+      key; sim then computes monthly rent as
+      `base_rent * rent_cost_series[t] / rent_cost_series[0]`. CPI or wage
       indexing can be model choices behind that series, not hard-coded sim
       behavior.
 - [ ] Translate property selection and catalog defaults into
       `ScheduledPropertyPurchase`: property id, location id, purchase price,
       buyer/seller bookkeeping agents, down payment, purchase closing cost, and
       ownership percentage.
-- [ ] For the first backend cutover, assert property purchase is always month 0. Future-month purchases need explicit semantics for whether the
-      purchase price is a fixed contract price or today's configured price
-      indexed by a home-value model path; defer that until a real product case
-      needs it.
+- [ ] For the first backend cutover, assert property purchase is always month 0.
+      Future-month purchases need explicit semantics for whether the purchase
+      price is a fixed contract price or a month-0 configured price indexed by a
+      home-value model path; defer that until a real product case needs it.
 - [ ] Drive owned-property value from modeled home-value series. A selected
       property should start from its configured/list purchase value at the
-      as-of/month-0 anchor, then mark to market by the applicable
+      month-0 anchor, then mark to market by the applicable
       `home_value:<location>` series. Future sale proceeds should use the same
       value path unless an explicit sale contract price exists.
 - [ ] Translate financing into `MortgageFinancing`: loan amount, rate, term,
@@ -181,9 +167,9 @@ Translator gaps to migrate next:
       These should become property cashflow policies or recurring
       income/obligation streams over sim state, not standalone core arrays.
       Tenant rent income should use the same rent-cost indexing contract as
-      outside rent: configured current rent on the as-of date plus a
-      property/rental-market rent-cost model series, with future tenant rent
-      scaled by `rent_cost_series[t] / rent_cost_series[as_of]`.
+      outside rent: configured month-0 rent plus a property/rental-market
+      rent-cost model series, with future tenant rent scaled by
+      `rent_cost_series[t] / rent_cost_series[0]`.
 - [ ] Keep rental lifecycle transitions out of the initial cutover. For now,
       assume the scenario's selected rental state applies for the whole horizon;
       later browser timeline work can lower rental start/stop controls into

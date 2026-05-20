@@ -150,7 +150,10 @@ def test_config_carries_tax_lot_accurate_portfolio_schema() -> None:
                     unit_value_usd=500.0,
                     lots=(
                         PublicSecurityTaxLotConfig(
-                            lot_id="voo_2024_05_12", acquired_on="2024-05-12", quantity=100, cost_basis_usd=30_000
+                            lot_id="voo_2024_05_12",
+                            holding_period_months_at_start=24,
+                            quantity=100,
+                            cost_basis_usd=30_000,
                         ),
                     ),
                 ),
@@ -160,8 +163,8 @@ def test_config_carries_tax_lot_accurate_portfolio_schema() -> None:
 
     reloaded = AugurConfig.model_validate_json(config.model_dump_json(exclude_computed_fields=True))
 
-    assert reloaded.portfolio.public_securities[0].lots[0].acquired_on.isoformat() == "2024-05-12"
-    assert reloaded.portfolio.to_initial_lots(snapshot_date=reloaded.snapshot.as_of_date)[0].purchase_month_index == -24
+    assert reloaded.portfolio.public_securities[0].lots[0].holding_period_months_at_start == 24
+    assert reloaded.portfolio.to_initial_lots()[0].purchase_month_index == -24
 
 
 def test_location_selection_accepts_location_strings() -> None:

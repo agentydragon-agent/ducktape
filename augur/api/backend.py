@@ -9,7 +9,7 @@ from typing import Any, Literal
 
 from augur.api.catalog import build_bootstrap_payload
 from augur.api.config import AugurConfig
-from augur.api.sim_bridge import rollout_seeds_from_market_request, translate_scenario_set
+from augur.api.sim_bridge import sample_market_for_translations, translate_scenario_set
 from augur.api.sim_response import scenario_set_response_from_sim_runs
 from augur.core.api import ScenarioEngine
 from augur.core.bootstrap import Property
@@ -18,7 +18,7 @@ from augur.core.scenario_engine import MONTHS_PER_YEAR
 from augur.core.scenario_set import Scenario, ScenarioSet, ScenarioSetRunResponse
 from augur.core.scenario_tax_defaults import scenario_with_location_tax_defaults
 from augur.core.schemas import ScenarioKnobs
-from augur.model.sim_market_api import JointMarketModel, MarketSamplingRequest
+from augur.model.sim_market_api import JointMarketModel
 from augur.sim.market import materialize_sampled_market
 from augur.sim.simulate import simulate_with_market
 
@@ -38,6 +38,7 @@ class AugurBackend:
     def __init__(self, *, augur_config: AugurConfig, runtime_config: AugurBackendRuntimeConfig) -> None:
         self.runtime_config = runtime_config
         self.market_bundle_provider = runtime_config.market_bundle_provider
+        self._portfolio = augur_config.portfolio
         self._bootstrap = build_bootstrap_payload(augur_config)
         self._property_by_id: dict[str, Property] = {
             property_.id: property_ for property_ in self._bootstrap.properties
@@ -71,18 +72,12 @@ class AugurBackend:
         market_model = self.runtime_config.market_model
         if market_model is None:
             raise ValueError("Augur sim backend requires a runtime market_model")
-        translations = translate_scenario_set(scenario_set)
-        sampled = market_model.sample(
-            MarketSamplingRequest(
-                horizon_months=scenario_set.market_request.horizon_months,
-                rollout_seeds=rollout_seeds_from_market_request(scenario_set.market_request),
-                required_level_series=frozenset(
-                    series for translation in translations for series in translation.required_level_series
-                ),
-                required_event_series=frozenset(
-                    series for translation in translations for series in translation.required_event_series
-                ),
-            )
+        translations = translate_scenario_set(scenario_set, configured_lots=self._portfolio.to_initial_lots())
+        sampled = sample_market_for_translations(
+            market_model,
+            translations,
+            market_request=scenario_set.market_request,
+            level_anchors=self._portfolio.level_anchors,
         )
         market = materialize_sampled_market(sampled)
         simulation_runs = {

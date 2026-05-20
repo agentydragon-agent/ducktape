@@ -150,6 +150,7 @@ py_test(
     name = "sim_bridge_test",
     srcs = ["sim_bridge_test.py"],
     deps = [
+        ":portfolio_py",
         ":sim_bridge_py",
         "//augur/core:scenario_set_py",
         "//augur/model:sim_market_series_py",

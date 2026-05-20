@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from datetime import date
-
 import pytest
 import pytest_bazel
 from pydantic import ValidationError
@@ -27,17 +25,20 @@ def test_public_security_tax_lots_expand_to_sim_initial_lots() -> None:
                 unit_value_usd=500.0,
                 lots=(
                     PublicSecurityTaxLotConfig(
-                        lot_id="voo_2024_05_20", acquired_on=date(2024, 5, 20), quantity=100.0, cost_basis_usd=30_000.0
+                        lot_id="voo_2024_05_20",
+                        holding_period_months_at_start=24,
+                        quantity=100.0,
+                        cost_basis_usd=30_000.0,
                     ),
                     PublicSecurityTaxLotConfig(
-                        lot_id="voo_2026_05_20", acquired_on=date(2026, 5, 20), quantity=20.0, cost_basis_usd=9_000.0
+                        lot_id="voo_2026_05_20", holding_period_months_at_start=0, quantity=20.0, cost_basis_usd=9_000.0
                     ),
                 ),
             ),
         ),
     )
 
-    lots = portfolio.to_initial_lots(snapshot_date=date(2026, 5, 20))
+    lots = portfolio.to_initial_lots()
 
     assert portfolio.public_securities[0].current_value_usd == 60_000.0
     assert portfolio.public_securities[0].total_cost_basis_usd == 39_000.0
@@ -64,7 +65,7 @@ def test_one_account_can_hold_multiple_public_security_positions() -> None:
                 unit_value_usd=500.0,
                 lots=(
                     PublicSecurityTaxLotConfig(
-                        lot_id="voo_lot", acquired_on=date(2024, 1, 15), quantity=10.0, cost_basis_usd=4_000.0
+                        lot_id="voo_lot", holding_period_months_at_start=28, quantity=10.0, cost_basis_usd=4_000.0
                     ),
                 ),
             ),
@@ -77,7 +78,7 @@ def test_one_account_can_hold_multiple_public_security_positions() -> None:
                 unit_value_usd=180.0,
                 lots=(
                     PublicSecurityTaxLotConfig(
-                        lot_id="goog_lot", acquired_on=date(2023, 6, 1), quantity=5.0, cost_basis_usd=500.0
+                        lot_id="goog_lot", holding_period_months_at_start=35, quantity=5.0, cost_basis_usd=500.0
                     ),
                 ),
             ),
@@ -101,7 +102,7 @@ def test_public_security_positions_must_reference_known_accounts() -> None:
                     unit_value_usd=500.0,
                     lots=(
                         PublicSecurityTaxLotConfig(
-                            lot_id="voo_lot", acquired_on=date(2024, 1, 15), quantity=10.0, cost_basis_usd=4_000.0
+                            lot_id="voo_lot", holding_period_months_at_start=28, quantity=10.0, cost_basis_usd=4_000.0
                         ),
                     ),
                 ),
@@ -124,7 +125,10 @@ def test_public_security_lot_ids_must_be_unique() -> None:
                     unit_value_usd=500.0,
                     lots=(
                         PublicSecurityTaxLotConfig(
-                            lot_id="duplicate_lot", acquired_on=date(2024, 1, 15), quantity=10.0, cost_basis_usd=4_000.0
+                            lot_id="duplicate_lot",
+                            holding_period_months_at_start=28,
+                            quantity=10.0,
+                            cost_basis_usd=4_000.0,
                         ),
                     ),
                 ),
@@ -137,7 +141,10 @@ def test_public_security_lot_ids_must_be_unique() -> None:
                     unit_value_usd=180.0,
                     lots=(
                         PublicSecurityTaxLotConfig(
-                            lot_id="duplicate_lot", acquired_on=date(2023, 6, 1), quantity=5.0, cost_basis_usd=500.0
+                            lot_id="duplicate_lot",
+                            holding_period_months_at_start=35,
+                            quantity=5.0,
+                            cost_basis_usd=500.0,
                         ),
                     ),
                 ),
@@ -145,28 +152,50 @@ def test_public_security_lot_ids_must_be_unique() -> None:
         )
 
 
-def test_future_lot_acquisition_date_is_rejected_during_sim_expansion() -> None:
-    portfolio = PortfolioConfig(
-        accounts=(PortfolioAccountConfig(account_id="taxable_brokerage", owner_agent_id="agent_a"),),
-        public_securities=(
-            PublicSecurityPositionConfig(
-                position_id="voo_position",
-                account_id="taxable_brokerage",
-                symbol="VOO",
-                security_kind="etf",
-                value_series_id="voo",
-                unit_value_usd=500.0,
-                lots=(
-                    PublicSecurityTaxLotConfig(
-                        lot_id="future_lot", acquired_on=date(2026, 5, 21), quantity=10.0, cost_basis_usd=4_000.0
+def test_public_security_positions_sharing_series_must_share_unit_value() -> None:
+    account = PortfolioAccountConfig(account_id="taxable_brokerage", owner_agent_id="agent_a")
+    with pytest.raises(ValidationError, match="must share unit_value_usd"):
+        PortfolioConfig(
+            accounts=(account,),
+            public_securities=(
+                PublicSecurityPositionConfig(
+                    position_id="sp500_a",
+                    account_id=account.account_id,
+                    symbol="SP500",
+                    security_kind="other",
+                    value_series_id="sp500",
+                    unit_value_usd=500.0,
+                    lots=(
+                        PublicSecurityTaxLotConfig(
+                            lot_id="sp500_a_lot",
+                            holding_period_months_at_start=28,
+                            quantity=10.0,
+                            cost_basis_usd=4_000.0,
+                        ),
+                    ),
+                ),
+                PublicSecurityPositionConfig(
+                    position_id="sp500_b",
+                    account_id=account.account_id,
+                    symbol="SP500",
+                    security_kind="other",
+                    value_series_id="sp500",
+                    unit_value_usd=600.0,
+                    lots=(
+                        PublicSecurityTaxLotConfig(
+                            lot_id="sp500_b_lot", holding_period_months_at_start=35, quantity=5.0, cost_basis_usd=500.0
+                        ),
                     ),
                 ),
             ),
-        ),
-    )
+        )
 
-    with pytest.raises(ValueError, match="after snapshot date"):
-        portfolio.to_initial_lots(snapshot_date=date(2026, 5, 20))
+
+def test_negative_holding_period_is_rejected() -> None:
+    with pytest.raises(ValidationError, match="greater than or equal to 0"):
+        PublicSecurityTaxLotConfig(
+            lot_id="future_lot", holding_period_months_at_start=-1, quantity=10.0, cost_basis_usd=4_000.0
+        )
 
 
 if __name__ == "__main__":

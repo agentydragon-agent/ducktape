@@ -89,6 +89,7 @@ def test_sim_backend_flag_runs_joint_model_and_materializes_graph_tables() -> No
 
     assert response.market_metadata is not None
     assert response.market_metadata["market_model_id"] == "simple_market_model"
+    assert response.market_metadata["source_metadata"]["level_anchors"] == {"sp500": 500.0}
     result = response.scenario_results[0]
     assert result.monthly_columns is not None
     assert result.monthly_columns.row_count == 12
