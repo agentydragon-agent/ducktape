@@ -130,15 +130,54 @@ py_library(
 )
 
 py_library(
+    name = "liquidity_py",
+    srcs = ["liquidity.py"],
+    deps = [
+        ":events_py",
+        ":frames_py",
+        ":market_py",
+        ":scenario_py",
+        ":state_py",
+        "@pypi//polars",
+    ],
+)
+
+py_library(
+    name = "obligations_py",
+    srcs = ["obligations.py"],
+    deps = [
+        ":events_py",
+        ":locations_py",
+        ":scenario_py",
+        ":state_py",
+        "@pypi//polars",
+    ],
+)
+
+py_library(
+    name = "settlement_py",
+    srcs = ["settlement.py"],
+    deps = [
+        ":events_py",
+        ":liquidity_py",
+        ":state_py",
+        "@pypi//polars",
+    ],
+)
+
+py_library(
     name = "step_py",
     srcs = ["step.py"],
     deps = [
         ":events_py",
         ":frames_py",
         ":jurisdictions_py",
+        ":liquidity_py",
         ":locations_py",
         ":market_py",
+        ":obligations_py",
         ":scenario_py",
+        ":settlement_py",
         ":state_py",
         ":tax_py",
         "@pypi//numpy",

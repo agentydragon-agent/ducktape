@@ -366,7 +366,8 @@ Long term:
 - If the internal tax code grows too much, consider an explicit annual
   liability provider interface. The provider should consume Augur's annual
   aggregates and return liability plus breakdown rows. It should not own
-  monthly events, property mechanics, funding chains, or rollout status.
+  monthly events, property mechanics, liquidity policies, settlement, or
+  rollout status.
 
 ## Decision Matrix
 

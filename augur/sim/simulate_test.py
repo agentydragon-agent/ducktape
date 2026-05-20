@@ -16,9 +16,9 @@ from augur.sim.market import DeterministicPath, GeometricBrownianPath, MarketBun
 from augur.sim.replay import assert_replay_invariant_holds
 from augur.sim.scenario import (
     Agent,
-    FloorTriggeredSalePolicy,
     InitialAccountBalance,
     InitialLot,
+    LiquidityPolicy,
     MortgageFinancing,
     PropertyTaxPolicy,
     RecurringObligation,
@@ -1226,11 +1226,7 @@ def test_e2e_pinned_tax_payments_force_asset_liquidation_and_settle_liability() 
                 prior_year_tax_usd=2_000.0,
             )
         ],
-        floor_triggered_sale_policies=[
-            FloorTriggeredSalePolicy(
-                agent_id="alice", account_id="checking", floor_usd=0.0, asset_preference_chain=["vti"]
-            )
-        ],
+        liquidity_policies=[LiquidityPolicy(agent_id="alice", account_id="checking", asset_preference_chain=["vti"])],
         horizon_months=13,
     )
 
@@ -1248,7 +1244,7 @@ def test_e2e_pinned_tax_payments_force_asset_liquidation_and_settle_liability() 
     ]
     assert result.events_log.tax_settlements.get_column("amount_usd").sum() == pytest.approx(4_016.0, abs=0.01)
 
-    policy_sales = result.events_log.lot_dispositions.filter(pl.col("cause_id").str.starts_with("floor_triggered"))
+    policy_sales = result.events_log.lot_dispositions.filter(pl.col("cause_id").str.starts_with("liquidity_sale"))
     assert policy_sales.sort("month_index").select("month_index", "units_sold", "proceeds_usd").to_dicts() == [
         {"month_index": 3, "units_sold": pytest.approx(5.0), "proceeds_usd": pytest.approx(500.0)},
         {"month_index": 5, "units_sold": pytest.approx(5.0), "proceeds_usd": pytest.approx(500.0)},
@@ -1377,11 +1373,10 @@ def test_year_end_tax_payment_debits_agent_cash() -> None:
 
 def test_tax_payment_can_trigger_rollout_failure_when_unfunded() -> None:
     """When the tax-payment true-up transfer exceeds the
-    agent's cash plus liquidatable assets, the floor-triggered
-    sale policy tries to cover, and the rollout-failure detector
-    fires when even that fails. The "mandatory obligation that
-    fails the scenario if unpaid" pattern works for any cash
-    outflow — taxes here, rent in other tests, later mortgages."""
+    agent's cash plus liquidity-policy sale proceeds, due-now
+    settlement fails the rollout. The "mandatory obligation that
+    fails the scenario if unpaid" pattern works for any cash outflow
+    — taxes here, rent in other tests, later mortgages."""
     scenario = Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="payroll"), Agent(agent_id="irs")],
         initial_cash=[
@@ -1420,11 +1415,10 @@ def test_tax_payment_can_trigger_rollout_failure_when_unfunded() -> None:
                 tax_authority_agent_id="irs",
             )
         ],
-        floor_triggered_sale_policies=[
-            FloorTriggeredSalePolicy(
+        liquidity_policies=[
+            LiquidityPolicy(
                 agent_id="alice",
                 account_id="checking",
-                floor_usd=0.0,
                 asset_preference_chain=[],  # no assets to sell
             )
         ],
@@ -1473,11 +1467,7 @@ def test_due_now_obligation_sells_assets_and_settles() -> None:
             )
         ],
         market=MarketBundle(paths=[DeterministicPath(asset_id="vti", prices_usd=[100.0, 100.0])]),
-        floor_triggered_sale_policies=[
-            FloorTriggeredSalePolicy(
-                agent_id="alice", account_id="checking", floor_usd=0.0, asset_preference_chain=["vti"]
-            )
-        ],
+        liquidity_policies=[LiquidityPolicy(agent_id="alice", account_id="checking", asset_preference_chain=["vti"])],
         horizon_months=1,
     )
 
@@ -1493,7 +1483,7 @@ def test_due_now_obligation_sells_assets_and_settles() -> None:
     assert settlement["attempted_funding_sources"] == "vti"
 
     funding_sale = result.events_log.lot_dispositions.row(0, named=True)
-    assert funding_sale["cause_id"] == "floor_triggered_sale_obligation_m0_vti"
+    assert funding_sale["cause_id"] == "liquidity_sale_m0_vti"
     assert funding_sale["units_sold"] == pytest.approx(4.0)
     assert funding_sale["proceeds_usd"] == pytest.approx(400.0)
 
@@ -1528,9 +1518,7 @@ def test_due_now_obligation_failure_aborts_payment() -> None:
                 amount_due_usd=500.0,
             )
         ],
-        floor_triggered_sale_policies=[
-            FloorTriggeredSalePolicy(agent_id="alice", account_id="checking", floor_usd=0.0, asset_preference_chain=[])
-        ],
+        liquidity_policies=[LiquidityPolicy(agent_id="alice", account_id="checking", asset_preference_chain=[])],
         horizon_months=1,
     )
 
@@ -1539,14 +1527,249 @@ def test_due_now_obligation_failure_aborts_payment() -> None:
     settlement = result.events_log.obligation_settlements.row(0, named=True)
     assert settlement["amount_due_usd"] == pytest.approx(500.0)
     assert settlement["amount_paid_usd"] == pytest.approx(0.0)
-    assert settlement["shortfall_usd"] == pytest.approx(400.0)
+    assert settlement["shortfall_usd"] == pytest.approx(500.0)
     assert result.events_log.transfers.is_empty()
 
     failure = result.events_log.rollout_failures.row(0, named=True)
     assert failure["obligation_id"] == "rent_due_m0"
     assert failure["obligation_type"] == "rent"
-    assert failure["shortfall_usd"] == pytest.approx(400.0)
+    assert failure["shortfall_usd"] == pytest.approx(500.0)
     assert result.rollout_status.row(0, named=True)["status"] == "failed_insufficient_cash"
+    assert_replay_invariant_holds(scenario, result, rollout_count=1)
+
+
+def test_policy_without_sale_orders_fails_hard_demand_even_with_assets() -> None:
+    """A liquidity policy owns sale decisions. If it emits no sale
+    orders, settlement will fail a hard demand even when sellable
+    assets are present."""
+    scenario = Scenario(
+        agents=[Agent(agent_id="alice"), Agent(agent_id="landlord")],
+        initial_cash=[
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="landlord", account_id="checking", balance_usd=0.0),
+        ],
+        initial_lots=[
+            InitialLot(
+                lot_id="alice_vti",
+                agent_id="alice",
+                asset_id="vti",
+                purchase_month_index=-24,
+                quantity=10.0,
+                cost_basis_per_unit_usd=50.0,
+            )
+        ],
+        scheduled_obligations=[
+            ScheduledObligation(
+                month=0,
+                obligation_id="rent_due",
+                obligation_type="rent",
+                agent_id="alice",
+                from_account_id="checking",
+                to_agent_id="landlord",
+                to_account_id="checking",
+                amount_due_usd=500.0,
+            )
+        ],
+        market=MarketBundle(paths=[DeterministicPath(asset_id="vti", prices_usd=[100.0, 100.0])]),
+        liquidity_policies=[LiquidityPolicy(agent_id="alice", account_id="checking", asset_preference_chain=[])],
+        horizon_months=1,
+    )
+
+    result = simulate(scenario, rollout_count=1)
+
+    assert result.events_log.lot_dispositions.is_empty()
+    settlement = result.events_log.obligation_settlements.row(0, named=True)
+    assert settlement["amount_paid_usd"] == pytest.approx(0.0)
+    assert settlement["shortfall_usd"] == pytest.approx(500.0)
+    assert result.events_log.rollout_failures.height == 1
+    assert_replay_invariant_holds(scenario, result, rollout_count=1)
+
+
+def test_cash_buffer_sale_evaluates_after_hard_demands() -> None:
+    """Buffer policy sees post-demand cash: cash 2500 minus a 1000
+    hard demand leaves 1500, below the 2000 trigger, so the policy
+    sells a fixed 5000 before settlement pays the demand."""
+    scenario = Scenario(
+        agents=[Agent(agent_id="alice"), Agent(agent_id="landlord")],
+        initial_cash=[
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=2500.0),
+            InitialAccountBalance(agent_id="landlord", account_id="checking", balance_usd=0.0),
+        ],
+        initial_lots=[
+            InitialLot(
+                lot_id="alice_vti",
+                agent_id="alice",
+                asset_id="vti",
+                purchase_month_index=-24,
+                quantity=100.0,
+                cost_basis_per_unit_usd=50.0,
+            )
+        ],
+        scheduled_obligations=[
+            ScheduledObligation(
+                month=0,
+                obligation_id="rent_due",
+                obligation_type="rent",
+                agent_id="alice",
+                from_account_id="checking",
+                to_agent_id="landlord",
+                to_account_id="checking",
+                amount_due_usd=1000.0,
+            )
+        ],
+        market=MarketBundle(paths=[DeterministicPath(asset_id="vti", prices_usd=[100.0, 100.0])]),
+        liquidity_policies=[
+            LiquidityPolicy(
+                agent_id="alice",
+                account_id="checking",
+                asset_preference_chain=["vti"],
+                cash_buffer_trigger_below_usd=2000.0,
+                cash_buffer_sale_usd=5000.0,
+            )
+        ],
+        horizon_months=1,
+    )
+
+    result = simulate(scenario, rollout_count=1)
+
+    sale = result.events_log.lot_dispositions.row(0, named=True)
+    assert sale["units_sold"] == pytest.approx(50.0)
+    assert sale["proceeds_usd"] == pytest.approx(5000.0)
+    alice_final = (
+        result.cash_balances.filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 1))
+        .get_column("balance_usd")
+        .item()
+    )
+    assert alice_final == pytest.approx(6500.0)
+    assert result.events_log.rollout_failures.is_empty()
+    assert_replay_invariant_holds(scenario, result, rollout_count=1)
+
+
+def test_cash_buffer_not_triggered_when_post_demand_cash_is_enough() -> None:
+    scenario = Scenario(
+        agents=[Agent(agent_id="alice"), Agent(agent_id="landlord")],
+        initial_cash=[
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=3500.0),
+            InitialAccountBalance(agent_id="landlord", account_id="checking", balance_usd=0.0),
+        ],
+        initial_lots=[
+            InitialLot(
+                lot_id="alice_vti",
+                agent_id="alice",
+                asset_id="vti",
+                purchase_month_index=-24,
+                quantity=100.0,
+                cost_basis_per_unit_usd=50.0,
+            )
+        ],
+        scheduled_obligations=[
+            ScheduledObligation(
+                month=0,
+                obligation_id="rent_due",
+                obligation_type="rent",
+                agent_id="alice",
+                from_account_id="checking",
+                to_agent_id="landlord",
+                to_account_id="checking",
+                amount_due_usd=1000.0,
+            )
+        ],
+        market=MarketBundle(paths=[DeterministicPath(asset_id="vti", prices_usd=[100.0, 100.0])]),
+        liquidity_policies=[
+            LiquidityPolicy(
+                agent_id="alice",
+                account_id="checking",
+                asset_preference_chain=["vti"],
+                cash_buffer_trigger_below_usd=2000.0,
+                cash_buffer_sale_usd=5000.0,
+            )
+        ],
+        horizon_months=1,
+    )
+
+    result = simulate(scenario, rollout_count=1)
+
+    assert result.events_log.lot_dispositions.is_empty()
+    alice_final = (
+        result.cash_balances.filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 1))
+        .get_column("balance_usd")
+        .item()
+    )
+    assert alice_final == pytest.approx(2500.0)
+    assert result.events_log.rollout_failures.is_empty()
+    assert_replay_invariant_holds(scenario, result, rollout_count=1)
+
+
+def test_unfilled_cash_buffer_sale_does_not_fail_without_hard_demand() -> None:
+    scenario = Scenario(
+        agents=[Agent(agent_id="alice")],
+        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=1000.0)],
+        liquidity_policies=[
+            LiquidityPolicy(
+                agent_id="alice",
+                account_id="checking",
+                asset_preference_chain=[],
+                cash_buffer_trigger_below_usd=2000.0,
+                cash_buffer_sale_usd=5000.0,
+            )
+        ],
+        horizon_months=1,
+    )
+
+    result = simulate(scenario, rollout_count=1)
+
+    assert result.events_log.lot_dispositions.is_empty()
+    assert result.events_log.rollout_failures.is_empty()
+    assert result.rollout_status.row(0, named=True)["status"] == "active"
+    assert_replay_invariant_holds(scenario, result, rollout_count=1)
+
+
+def test_same_account_hard_demands_settle_all_or_none() -> None:
+    scenario = Scenario(
+        agents=[Agent(agent_id="alice"), Agent(agent_id="landlord"), Agent(agent_id="utility")],
+        initial_cash=[
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=600.0),
+            InitialAccountBalance(agent_id="landlord", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="utility", account_id="checking", balance_usd=0.0),
+        ],
+        scheduled_obligations=[
+            ScheduledObligation(
+                month=0,
+                obligation_id="rent_due",
+                obligation_type="rent",
+                agent_id="alice",
+                from_account_id="checking",
+                to_agent_id="landlord",
+                to_account_id="checking",
+                amount_due_usd=500.0,
+            ),
+            ScheduledObligation(
+                month=0,
+                obligation_id="utility_due",
+                obligation_type="utility",
+                agent_id="alice",
+                from_account_id="checking",
+                to_agent_id="utility",
+                to_account_id="checking",
+                amount_due_usd=500.0,
+            ),
+        ],
+        horizon_months=1,
+    )
+
+    result = simulate(scenario, rollout_count=1)
+
+    settlements = result.events_log.obligation_settlements.sort("obligation_id")
+    assert settlements.select("obligation_id", "amount_paid_usd", "shortfall_usd").to_dicts() == [
+        {"obligation_id": "rent_due_m0", "amount_paid_usd": pytest.approx(0.0), "shortfall_usd": pytest.approx(500.0)},
+        {
+            "obligation_id": "utility_due_m0",
+            "amount_paid_usd": pytest.approx(0.0),
+            "shortfall_usd": pytest.approx(500.0),
+        },
+    ]
+    assert result.events_log.transfers.is_empty()
+    assert result.events_log.rollout_failures.height == 2
     assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
@@ -1670,14 +1893,13 @@ def test_real_estate_purchase_mortgage_and_property_tax_numerics() -> None:
     assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
-def test_floor_triggered_sale_covers_monthly_spend_deficit() -> None:
+def test_liquidity_policy_covers_monthly_spend_deficit() -> None:
     """L9 — Alice has $1k cash, a $5k/month spend, and 200 units of
-    VTI at $100/unit market price. The floor-triggered sale policy
-    has floor $0 + replenish buffer $0: any deficit triggers asset
-    sale. At month 0, cash falls to -$4k after spending; the policy
-    sells $4k of VTI (40 units) to bring cash back to $0. The lot
-    is large enough to cover all three months of spend, so cash
-    stays at the floor through end-of-horizon."""
+    VTI at $100/unit market price. The liquidity policy sees the
+    due-now rent demand, sells the amount cash cannot already cover,
+    and settlement pays the rent in full. At month 0 it sells $4k of
+    VTI (40 units). The lot is large enough to cover all three months
+    of spend, so cash stays at $0 through end-of-horizon."""
     scenario = Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="landlord")],
         initial_cash=[
@@ -1707,15 +1929,7 @@ def test_floor_triggered_sale_covers_monthly_spend_deficit() -> None:
             )
         ],
         market=MarketBundle(paths=[DeterministicPath(asset_id="vti", prices_usd=[100.0] * 4)]),
-        floor_triggered_sale_policies=[
-            FloorTriggeredSalePolicy(
-                agent_id="alice",
-                account_id="checking",
-                floor_usd=0.0,
-                replenish_buffer_usd=0.0,
-                asset_preference_chain=["vti"],
-            )
-        ],
+        liquidity_policies=[LiquidityPolicy(agent_id="alice", account_id="checking", asset_preference_chain=["vti"])],
         horizon_months=3,
     )
 
@@ -1738,8 +1952,8 @@ def test_floor_triggered_sale_covers_monthly_spend_deficit() -> None:
 
 
 def test_rollout_marked_failed_when_assets_exhausted() -> None:
-    """L11 — when the agent's preference chain is exhausted but
-    cash still negative, the engine marks the rollout failed."""
+    """L11 — when the liquidity policy cannot emit enough sale
+    proceeds for a hard demand, settlement marks the rollout failed."""
     scenario = Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="landlord")],
         initial_cash=[
@@ -1769,22 +1983,18 @@ def test_rollout_marked_failed_when_assets_exhausted() -> None:
             )
         ],
         market=MarketBundle(paths=[DeterministicPath(asset_id="vti", prices_usd=[100.0, 100.0])]),
-        floor_triggered_sale_policies=[
-            FloorTriggeredSalePolicy(
-                agent_id="alice", account_id="checking", floor_usd=0.0, asset_preference_chain=["vti"]
-            )
-        ],
+        liquidity_policies=[LiquidityPolicy(agent_id="alice", account_id="checking", asset_preference_chain=["vti"])],
         horizon_months=1,
     )
 
     result = simulate(scenario, rollout_count=1)
 
-    # Failure event fired at month 0: spend 1000, sold $500 of VTI,
-    # still -$500 left.
+    # Failure event fired at month 0: rent demand was $1000, but
+    # only $500 of VTI could be liquidated, so no rent payment fires.
     assert result.events_log.rollout_failures.height == 1
     failure = result.events_log.rollout_failures.row(0, named=True)
     assert failure["month_index"] == 0
-    assert failure["deficit_usd"] == pytest.approx(500.0, abs=1e-6)
+    assert failure["deficit_usd"] == pytest.approx(1000.0, abs=1e-6)
     assert failure["agent_id"] == "alice"
 
     status_row = result.rollout_status.row(0, named=True)

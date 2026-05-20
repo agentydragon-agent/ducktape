@@ -201,9 +201,8 @@ applies to a template, not to a name.
 - **Recurring obligation.** A fixed-amount fixed-cadence cash demand
   (HOA dues, insurance premium, special assessment, outside rent,
   monthly spend allowance, recurring transfer). Settles each due
-  month against the obligated agent's cash via the agent's
-  configured funding chain. One template, configured N times per
-  scenario.
+  month against the obligated agent's cash plus any liquidity-policy
+  sale proceeds. One template, configured N times per scenario.
 - **Income stream.** A recurring or scheduled cash inflow with a
   tax-classification label (W-2 ordinary, K-1 ordinary, rental
   income net of expenses, etc.). The cash arrives, the label feeds
@@ -235,17 +234,17 @@ Rules attached to templates (what runs over them, exactly once):
 - **Capital-gains classification** (long-term vs short-term) is one
   function consuming holding period across every capital-gains-
   eligible row. No per-asset-class duplicate.
-- **Obligation funding chain** (when an agent is short of cash to
-  settle a required obligation) is one function consuming the
-  agent's configured chain of capital-gains-eligible positions in
-  preference order. Sells happen against the same code path
-  regardless of whether the position is stock-like or crypto-like.
-  Current required obligations are due immediately in the month they
-  fire: the engine debits cash, liquidates configured assets as
-  needed, and fails the rollout if cash still cannot be brought
-  back to non-negative. Partial payments, grace periods,
-  delinquency balances, withholding, underpayment penalties, and
-  other obligation lifecycle refinements are future scope.
+- **Liquidity policy + mechanical settlement** (when an agent is
+  short of cash to settle a required obligation) is one policy pass
+  consuming the agent's configured chain of capital-gains-eligible
+  positions in preference order, followed by one settlement pass.
+  Sells happen against the same code path regardless of whether the
+  position is stock-like or crypto-like. Current required
+  obligations are due immediately in the month they fire: the policy
+  may emit sale dispositions, then settlement either pays the full
+  account-level demand or fails the rollout. Partial payments, grace
+  periods, delinquency balances, withholding, underpayment penalties,
+  and other obligation lifecycle refinements are future scope.
 - **Depreciation accrual** is one function consuming every
   depreciable-property-marked row's schedule + month. The engine
   doesn't have a separate "residential" and "rental" depreciation
@@ -764,23 +763,25 @@ depreciation-recapture treatment) feeds year tax per Layer 6.
 
 ### Layer 9: Agent policies
 
-#### S9.1 — Floor-triggered stock sale.
+#### S9.1 — Liquidity-policy stock sale.
 
-"If checking cash drops below \$100, sell \$1000 of SP500." The
-policy reads the agent's cash at the start of the month, evaluates
-the condition over the rollout dimension, and emits a sale decision
-in rollouts where the condition holds. The decision becomes a
-transaction; the transaction updates state. In rollouts where the
-agent has less than \$1000 of stock available, the simulator sells
-what it can and records the shortfall on the decision row.
+"If checking cash will be below \$100 after this month's hard cash
+demands, sell \$1000 of SP500." The policy reads current state plus
+the current month's hard due-now demands, evaluates over the rollout
+dimension, and emits sale dispositions in rollouts where the
+condition holds. The decision becomes a transaction; the transaction
+updates state. In rollouts where the agent has less than \$1000 of
+stock available, the simulator sells what it can. A missed buffer
+target is not a rollout failure unless a required obligation is
+still unfunded.
 
 #### S9.2 — Asset preference chain.
 
 "If short of cash, sell SP500 first; if SP500 exhausted, sell BTC;
 if both exhausted, sell private equity." The chain is per-agent
-configured order; the simulator walks the chain per-rollout per-month,
-applying as much as needed in priority order until the obligation
-is funded or the assets are exhausted.
+configured order; the liquidity policy walks the chain per-rollout
+per-month, applying as much as needed in priority order until the
+policy's sale target is filled or the assets are exhausted.
 
 #### S9.3 — Reinvest excess cash.
 
@@ -793,27 +794,28 @@ simulator's per-month order is documented and stable).
 
 The mortgage payment scenario (Layer 8) is not a policy in this
 sense — it's a contract-imposed obligation that fires unconditionally
-each month, settled before discretionary policies. The simulator
-distinguishes obligations (required) from policies (discretionary).
+each month. The policy may sell assets to fund it, but settlement
+is still all-or-none: if cash plus policy-emitted sale proceeds do
+not cover the full demand, the rollout fails.
 
 #### S9.5 — Combination: monthly spend + emergency sale.
 
 "\$3500/month spend on living expenses (debit checking). If checking
 drops below \$5000 after spending, sell \$10000 of SP500." The spend
 fires every month; the sale fires only in rollouts where the
-post-spend cash is below the floor. Different rollouts (different
-market paths affecting stock value) make different decisions.
+post-hard-demand cash is below the floor. Different rollouts
+(different market paths affecting stock value) make different
+decisions.
 
 #### S9.6 — Fixed monthly spend.
 
 The standalone case: Alice spends \$3500 every month on living
 expenses. One recurring-obligation instance with `cadence=monthly`
 and a fixed amount, classified as `spending` (not income; not
-deductible; non-tax-paying expense). Each month: cash drops by
-\$3500; if insufficient cash, the funding chain may sell assets to
-cover (same chain as any other obligation); if still short, the
-month's spend obligation is unfundable and a failure-event row is
-emitted.
+deductible; non-tax-paying expense). Each month: the obligation
+comes due, the liquidity policy may sell assets, and settlement
+either pays the full amount or emits failure rows. There is no
+partial payment or unpaid-balance carryforward in current scope.
 
 #### S9.7 — Variable monthly spend from an exogenous path.
 
@@ -825,7 +827,7 @@ path (this scenario) — the engine doesn't branch on the source; it
 just reads `amount_due[rollout, month]` and settles. Different
 rollouts diverge endogenously
 because higher-spend months drain cash faster and trigger
-floor-policy sales earlier.
+liquidity-policy sales earlier.
 
 This is the seam that lets a scenario model "Alice's spending is
 volatile" without an engine change. The same seam supports
@@ -962,7 +964,7 @@ computation alongside any other LTCG bucket entries.
 
 The HOA issues a \$20k special assessment at month 36. Recurring-
 obligation instance with cadence "one-off at month 36". Settles via
-Alice's configured funding chain the same way any obligation does.
+Alice's liquidity policy the same way any obligation does.
 
 ### Layer 13: Housing — rental, occupancy modes, multiple properties
 
@@ -1032,10 +1034,10 @@ The year-tax computation must:
 Alice owns a house she rents out (S13.1-S13.3 timeline) and
 simultaneously rents a place to live in. Monthly outside-rent is a
 recurring-obligation instance on Alice as tenant — settles from
-Alice's cash via the same funding chain as any other obligation. Not
-deductible for federal personal income tax (rent paid by a non-
-business individual isn't a deduction). The simulator records it on
-the transaction log and decrements cash; no tax effect.
+Alice's cash plus liquidity-policy sale proceeds like any other
+obligation. Not deductible for federal personal income tax (rent
+paid by a non-business individual isn't a deduction). The simulator
+records it on the transaction log and decrements cash; no tax effect.
 
 #### S13.5 — Multiple Bay Area properties at different locations.
 
@@ -1086,8 +1088,8 @@ month via a configured purchase event.
 Alice's position `"alice_private_equity"` is a capital-gains-eligible
 holding configured with a `sellability_mask` derived from a market-
 model "tender opportunity" path: false except at the specific months
-where a tender is offered to the rollout. A floor-triggered sale
-policy (S9.1-style) attempts to sell in month M:
+where a tender is offered to the rollout. A liquidity policy
+(S9.1-style) attempts to sell in month M:
 
 - If `sellability_mask[rollout, M]` is true, the sale fires.
 - If false, the sale falls through to the next funding source per
@@ -1244,7 +1246,7 @@ the design that's worth examining before shipping.
   (rollout, year), grouped over every agent the scenario marks as
   tax-paying. If the scenario configures two tax-paying agents,
   both get year-tax computations, both get quarterly + year-end
-  obligations, both settle from their own cash + funding chains —
+  obligations, both settle from their own cash + liquidity policies —
   with no engine-level changes. If achieving this requires more
   than scenario configuration, the design has a `primary_owner`
   hardcoded somewhere it shouldn't be.

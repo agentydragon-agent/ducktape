@@ -82,9 +82,9 @@ class ScheduledObligation(BaseModel):
     """A required due-now payment at one month.
 
     Unlike a raw transfer, an obligation is settled through the
-    funding chain: available cash is used first, configured asset
-    sales can fund shortfalls, and the rollout fails if the full
-    amount cannot be paid immediately.
+    liquidity-policy path: available cash plus policy-emitted sale
+    proceeds must cover the whole amount, and the rollout fails if
+    the full amount cannot be paid immediately.
     """
 
     month: int
@@ -152,27 +152,23 @@ class ScheduledAssetSale(BaseModel):
     price_per_unit_usd: float | None = None
 
 
-class FloorTriggeredSalePolicy(BaseModel):
-    """If the agent's cash account drops below `floor_usd`, sell
-    enough of the listed assets — in `asset_preference_chain` order
-    — to bring cash back up to `floor_usd + replenish_buffer_usd`.
-    The engine resolves "enough" per-rollout: it walks the preference
-    chain, sells the minimum quantity at the current market price
-    that covers the remaining deficit. If even draining every
-    preferred asset leaves a residual deficit, the rollout has run
-    out of disposable wealth — L11 marks it failed.
+class LiquidityPolicy(BaseModel):
+    """Asset-sale policy for one agent cash account.
 
-    Spike-1 limits: one policy per agent. Sale proceeds always land
-    on `account_id` (the same account whose balance is being
-    monitored). Market price comes from the scenario's MarketBundle
-    — direct prices on individual sales aren't supported here."""
+    Required obligations create cash demands, but the policy decides
+    whether and how to sell assets to fund them. If a policy emits no
+    sale orders, the settlement phase will fail any hard demand that
+    cash cannot already cover, even when the agent owns sellable
+    assets. Optional cash-buffer rules run after hard demands are
+    accounted for and never cause failure by themselves.
+    """
 
     agent_id: str
     account_id: str
-    floor_usd: float
-    replenish_buffer_usd: float = 0.0
     asset_preference_chain: list[str]
-    cause_id_prefix: str = "floor_triggered_sale"
+    cash_buffer_trigger_below_usd: float = 0.0
+    cash_buffer_sale_usd: float = 0.0
+    cause_id_prefix: str = "liquidity_sale"
 
 
 class TaxProfile(BaseModel):
@@ -275,5 +271,5 @@ class Scenario(BaseModel):
     property_tax_policies: list[PropertyTaxPolicy] = Field(default_factory=list)
     market: MarketBundle = Field(default_factory=MarketBundle)
     tax_profiles: list[TaxProfile] = Field(default_factory=list)
-    floor_triggered_sale_policies: list[FloorTriggeredSalePolicy] = Field(default_factory=list)
+    liquidity_policies: list[LiquidityPolicy] = Field(default_factory=list)
     horizon_months: PositiveInt

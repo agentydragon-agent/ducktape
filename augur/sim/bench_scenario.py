@@ -6,9 +6,9 @@ Alice, a single-filer SF resident, has:
     `income_category="ordinary"`).
   - Initial holdings in three positions: VTI, QQQ, BTC. Each is
     a pre-horizon lot at a configurable basis.
-  - A floor-triggered sale policy: if checking < $5k, top up to
-    $5k by liquidating VTI → QQQ → BTC in order at market
-    prices.
+  - A liquidity policy: required obligations sell assets as needed;
+    if checking is still below $5k afterward, sell another $5k by
+    liquidating VTI → QQQ → BTC in order at market prices.
   - A $5k/month recurring spend obligation (rent).
   - Federal + California tax profile with prior-year-tax
     estimated knob, single filer, standard deduction.
@@ -27,9 +27,9 @@ from __future__ import annotations
 from augur.sim.market import GeometricBrownianPath, MarketBundle
 from augur.sim.scenario import (
     Agent,
-    FloorTriggeredSalePolicy,
     InitialAccountBalance,
     InitialLot,
+    LiquidityPolicy,
     RecurringTransfer,
     Scenario,
     TaxProfile,
@@ -136,13 +136,13 @@ def build_bench_scenario(
                 prior_year_tax_usd=prior_year_tax_usd,
             )
         ],
-        floor_triggered_sale_policies=[
-            FloorTriggeredSalePolicy(
+        liquidity_policies=[
+            LiquidityPolicy(
                 agent_id="alice",
                 account_id="checking",
-                floor_usd=floor_usd,
-                replenish_buffer_usd=0.0,
                 asset_preference_chain=["vti", "qqq", "btc"],
+                cash_buffer_trigger_below_usd=floor_usd,
+                cash_buffer_sale_usd=floor_usd,
                 cause_id_prefix="alice_floor_sale",
             )
         ],

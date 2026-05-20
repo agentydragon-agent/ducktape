@@ -3,7 +3,8 @@
 End-to-end benchable scenario that exercises the parts that historically
 got tangled in the legacy engine — market-driven rollout divergence,
 the lot model + tax classification, federal + CA year-tax math with
-quarterly + year-end timing, the obligation funding chain. Validates
+quarterly + year-end timing, and due-now liquidity/settlement.
+Validates
 the event-log-canonical / polars-vectorized architecture at scale.
 
 See <REQUIREMENTS.md> for the full target spec and <DESIGN.md> for
@@ -18,11 +19,11 @@ Implemented and covered by pinned e2e numerics:
   harbor, and true-up.
 - Due-now obligations: configured one-off and recurring obligations,
   mortgage payments, property tax, and tax payments all settle from
-  cash first, then the configured funding chain, and fail the rollout
-  if still unfunded.
-- L9/L11 floor-triggered funding sales and sticky per-rollout
-  failure status. Same-month funding-chain coverage is not a failure;
-  failed rollouts do not recover in the current scope.
+  cash plus liquidity-policy sale proceeds, and fail the rollout if
+  still unfunded.
+- L9/L11 liquidity-policy sales and sticky per-rollout failure
+  status. Same-month liquidity coverage is not a failure; failed
+  rollouts do not recover in the current scope.
 - First L8/L12 slice: property purchase, mortgage origination,
   amortizing mortgage payment, property tax, and replay-invariant
   coverage.
@@ -51,15 +52,15 @@ Still not proven by spike-1 coverage:
 - **L7.1, 7.2, 7.4, 7.5** — federal + CA brackets, single filer,
   standard deduction, combined ordinary + capital. (Itemized
   deductions deferred — nothing to itemize against until L8 / L12.)
-- **L9.1, 9.2, 9.6** — floor-triggered sale, asset preference chain,
+- **L9.1, 9.2, 9.6** — liquidity sale, asset preference chain,
   fixed monthly spend.
 - **L10.1-10.3** — exogenous path consumption (per-rollout paths,
   agent decisions don't feed the market, agents share path within a
   rollout). Spike fixtures may materialize simple paths inside
   `sim`; production sampling belongs in `augur/model`. Sellability
   mask plumbed but no scenarios exercise it.
-- **L11.1, 11.2** — cash-negative failure flag, per-rollout failure
-  scope. (Recovery semantics deferred — failed rollouts stay failed
+- **L11.1, 11.2** — unfunded-obligation failure flag, per-rollout
+  failure scope. (Recovery semantics deferred — failed rollouts stay failed
   this spike.)
 
 ## Deferred to later spikes
@@ -84,7 +85,7 @@ One tax-paying agent (Alice, single filer, located `"san_francisco"`):
   deterministic / GBM fixture helpers inside `sim`; that is
   scaffolding only. Production path generation belongs in
   `augur/model`.
-- One floor-triggered sale policy: "if checking < \$5000, sell
+- One liquidity sale policy: "if checking < \$5000, sell
   \$20000 of vti, then qqq, then btc in order".
 - One \$5000/month recurring spend obligation.
 - Federal + CA year-tax computation with quarterly estimated
@@ -171,9 +172,9 @@ build later-commit infrastructure.
     Jun 15, Sep 15, Jan 15 of next year), safe-harbor with
     `prior_year_tax_usd` scenario knob, year-end true-up, tax-
     payment obligations.
-11. **L9 + L11 policies + failures** — floor-triggered sale, asset
-    preference chain, monthly-spend obligation, obligation funding
-    chain (sell to cover insufficient cash), failure-event
+11. **L9 + L11 policies + failures** — liquidity sale, asset
+    preference chain, monthly-spend obligation, hard-demand
+    liquidity, failure-event
     emission, sticky rollout-status flip.
 12. **Locations YAML loader** —
     `data/locations/san_francisco.yaml` (the only one for spike 1;

@@ -8,9 +8,9 @@ from augur.sim.market import DeterministicPath, MarketBundle
 from augur.sim.projections import project_simulation_run
 from augur.sim.scenario import (
     Agent,
-    FloorTriggeredSalePolicy,
     InitialAccountBalance,
     InitialLot,
+    LiquidityPolicy,
     MortgageFinancing,
     PropertyTaxPolicy,
     RecurringTransfer,
@@ -53,11 +53,7 @@ def test_projection_due_now_obligation_sells_assets_and_settles() -> None:
             )
         ],
         market=MarketBundle(paths=[DeterministicPath(asset_id="vti", prices_usd=[100.0, 100.0])]),
-        floor_triggered_sale_policies=[
-            FloorTriggeredSalePolicy(
-                agent_id="alice", account_id="checking", floor_usd=0.0, asset_preference_chain=["vti"]
-            )
-        ],
+        liquidity_policies=[LiquidityPolicy(agent_id="alice", account_id="checking", asset_preference_chain=["vti"])],
         horizon_months=1,
     )
 
@@ -81,7 +77,7 @@ def test_projection_due_now_obligation_sells_assets_and_settles() -> None:
     transaction_types = set(projection.transactions.get_column("transaction_type").to_list())
     assert {"asset_sale", "cash_transfer", "obligation_settlement"} <= transaction_types
     sale = projection.transactions.filter(pl.col("transaction_type") == "asset_sale").row(0, named=True)
-    assert sale["transaction_id"] == "floor_triggered_sale_obligation_m0_vti:alice_vti"
+    assert sale["transaction_id"] == "liquidity_sale_m0_vti:alice_vti"
     assert sale["amount_usd"] == pytest.approx(400.0)
     assert sale["quantity"] == pytest.approx(4.0)
 
@@ -109,9 +105,7 @@ def test_projection_due_now_obligation_failure_is_explicit() -> None:
                 amount_due_usd=500.0,
             )
         ],
-        floor_triggered_sale_policies=[
-            FloorTriggeredSalePolicy(agent_id="alice", account_id="checking", floor_usd=0.0, asset_preference_chain=[])
-        ],
+        liquidity_policies=[LiquidityPolicy(agent_id="alice", account_id="checking", asset_preference_chain=[])],
         horizon_months=1,
     )
 
@@ -120,7 +114,7 @@ def test_projection_due_now_obligation_failure_is_explicit() -> None:
     lifecycle = projection.obligation_lifecycle.row(0, named=True)
     assert lifecycle["status"] == "failed"
     assert lifecycle["amount_paid_usd"] == pytest.approx(0.0)
-    assert lifecycle["shortfall_usd"] == pytest.approx(400.0)
+    assert lifecycle["shortfall_usd"] == pytest.approx(500.0)
     assert set(projection.transactions.get_column("transaction_type").to_list()) == {"obligation_settlement"}
     assert projection.transactions.get_column("amount_usd").to_list() == [0.0]
 
@@ -128,7 +122,7 @@ def test_projection_due_now_obligation_failure_is_explicit() -> None:
     assert failure["failure_id"] == "rent_due_m0_failure"
     assert failure["obligation_id"] == "rent_due_m0"
     assert failure["obligation_type"] == "rent"
-    assert failure["shortfall_usd"] == pytest.approx(400.0)
+    assert failure["shortfall_usd"] == pytest.approx(500.0)
 
     summary = projection.rollout_summary.row(0, named=True)
     assert summary["status"] == "failed_insufficient_cash"

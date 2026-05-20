@@ -1,7 +1,7 @@
 """Smoke + DRY tests for the bench scenario.
 
 The bench scenario sums up everything spike 1 added: lots, market
-divergence, ordinary + capital-gains tax, floor-triggered sale,
+divergence, ordinary + capital-gains tax, liquidity-policy sale,
 rollout-failure detection. The tests below don't pin specific
 amounts (the fixture path source is stochastic); they verify the
 engine runs the configured scenario at scale without code changes.
@@ -66,9 +66,9 @@ def test_dry_add_fourth_position_is_config_only() -> None:
         update={
             "initial_lots": [*base.initial_lots, new_lot],
             "market": base.market.model_copy(update={"paths": [*base.market.paths, efv_path]}),
-            "floor_triggered_sale_policies": [
+            "liquidity_policies": [
                 p.model_copy(update={"asset_preference_chain": [*p.asset_preference_chain, "efv"]})
-                for p in base.floor_triggered_sale_policies
+                for p in base.liquidity_policies
             ],
         }
     )

@@ -198,10 +198,10 @@ MORTGAGE_PAYMENT_EVENT_SCHEMA = pl.Schema(
     }
 )
 
-# `RolloutFailure` flags a rollout as having run out of disposable
-# wealth — agent's cash is negative even after the floor-triggered
-# sale policy has done its best. Once flagged, the rollout stays
-# failed for the rest of the sim (L11.2).
+# `RolloutFailure` flags a rollout where a required due-now
+# obligation could not be paid in full after liquidity policy sale
+# decisions. Once flagged, the rollout stays failed for the rest of
+# the sim (L11.2).
 ROLLOUT_FAILURE_EVENT_SCHEMA = pl.Schema(
     {
         "rollout_index": pl.Int64(),

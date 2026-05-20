@@ -103,7 +103,7 @@ engine's "five overlapping representations" problem.
    capital-gains-eligible holding configured), their liabilities
    (mortgage origination events with terms), their properties
    (with location id, occupancy timeline, mortgage reference),
-   their policies (funding chain order, sale rules, spending),
+   their policies (liquidity-sale order, buffer rules, spending),
    their scheduled events (property purchases, sales, occupancy
    switches), and references to the exogenous paths they consume.
    Validated at construction time.
@@ -297,34 +297,28 @@ share state mutation.
      Apr 15 / Jun 15 / Sep 15 / Jan 15 markers; the January marker
      also emits the true-up and the liability-side settlement.
 
-2. **Settle required obligations.** Required obligations are
+2. **Emit liquidity policy decisions.** Required obligations are
    immediate due-now cash demands in the month they fire. The
-   current model does not carry partially-paid obligations across
-   months:
-   1. Debit the obligated agent's configured cash account and emit
-      the cash-side settlement event.
-   2. If the account is now negative, walk the agent's funding
-      chain. For each sale step, emit an asset-sale event
-      (consumes lots per the position's cost-basis method) until
-      cash is non-negative or the chain is exhausted.
-   3. If cash is still negative after the chain, emit a failure
-      event and mark the rollout failed for this month.
+   liquidity policy sees those demands plus current state and emits
+   any sale dispositions needed to fund them. This is the point where
+   hard-demand funding and discretionary cash-buffer sales meet:
+   buffer rules evaluate against the post-hard-demand cash view. If a
+   policy emits no sale orders, settlement will fail a demand that
+   cash cannot already cover, even if the agent owns sellable assets.
 
-   Settlement order within phase 2 is fixed per agent: tax →
-   mortgage → property carrying costs → outside rent → partner
-   contribution → monthly spend.
+3. **Settle required obligations.** Settlement is mechanical: cash
+   plus policy-emitted sale proceeds either covers every hard demand
+   for an account in full or pays none of them and emits failure rows.
+   The current model does not carry partially-paid obligations across
+   months and does not model delinquency balances, grace periods, or
+   underpayment penalties. Optional cash-buffer targets are not hard
+   demands and cannot fail a rollout by themselves.
 
-3. **Discretionary policies.** Each agent's configured policies
-   evaluate against the buffer's running view:
-   - Floor-triggered sale → emits asset-sale events for the
-     rollouts where the condition holds.
-   - Reinvest-excess → emits asset-purchase events.
-   - Other configured policies → emit appropriate events.
+4. **Other discretionary policies.** Reinvest-excess, optional buys,
+   and other non-obligation actions evaluate after hard-demand
+   liquidity/settlement once those policies exist.
 
-   Each policy also emits a policy-decision diagnostic row
-   (whether or not it fired) for the policy_decisions projection.
-
-4. **End-of-month accruals.** Emit non-cash state-changing
+5. **End-of-month accruals.** Emit non-cash state-changing
    events:
    - Depreciation accrual on every property in `rental`
      occupancy mode → emits a depreciation-accrual event
@@ -342,7 +336,7 @@ share state mutation.
      drops a category of "tick" events from the log and
      simplifies state.
 
-5. **Rollout-status check.** If any required obligation in this
+6. **Rollout-status check.** If any required obligation in this
    month went unfunded, the settlement phase emits a failure event
    and marks the rollout failed. Current scope has sticky failure:
    later-month inflows do not recover the rollout, and there is no
@@ -447,7 +441,7 @@ depreciation_usd` increases by `monthly_depreciation_amount`.
   of the property-purchase composite or as a standalone Transfer
   if origination is standalone.
 - **Failure event** — a required obligation went unfunded after
-  the funding chain ran. Row carries `(rollout, month,
+  liquidity policy sale decisions. Row carries `(rollout, month,
 obligation_id, obligation_type, amount_due, amount_paid,
 shortfall, attempted_funding_sources)`.
 - **Rollout-status change** — `rollout_status` flips from
@@ -605,8 +599,8 @@ projection time.
 
 Recovery from failed back to active is intentionally out of scope
 for the current simulator. A shortfall that is covered in the same
-month by the funding chain never becomes a failure; an unfunded
-required obligation fails the rollout.
+month by liquidity-policy sale proceeds never becomes a failure; an
+unfunded required obligation fails the rollout.
 
 ## File and module layout
 
@@ -652,9 +646,9 @@ augur/sim/
   rules_capital_gains_class.py     — short-term vs long-term
                                      classification (one function;
                                      consumes any LTCG-eligible row)
-  rules_funding_chain.py           — obligation funding chain
-                                     (one function; consumes any
-                                     unfunded obligation)
+  liquidity.py                     — policy sale decisions for hard
+                                     demands and cash buffers
+  settlement.py                    — all-or-none due-now settlement
   rules_year_tax.py                — per-jurisdiction year-tax
                                      computation (one function;
                                      parameterized by jurisdiction)
@@ -709,8 +703,8 @@ refactoring L1's transfer.
 8. **L8** — `liabilities` frame; `amortizing_loan` template;
    mortgage origination / payment / payoff transactions; Bank Bob
    as non-tax-paying agent.
-9. **L9** — agent policies (floor-triggered sale, asset
-   preference chain, reinvest, monthly spend, variable spend
+9. **L9** — agent policies (liquidity sale, asset preference
+   chain, reinvest, monthly spend, variable spend
    from market). The `policy_decisions_log`.
 10. **L10** — market-driven divergent rollouts from externally
     supplied paths; sellability masks (preparing for L14).

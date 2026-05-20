@@ -29,6 +29,10 @@ primary simulation backend for the Augur frontend/API.
 
 ## Refactor Follow-Ups
 
+- [ ] Revisit whether policy should emit all agent actions, including
+      obligation-payment transfers, or whether the current split
+      (policy emits sales; settlement emits required payments) is the
+      right domain boundary.
 - [ ] Consider whether `EventLog` should expose only catalog-keyed
       access (`log.frame(EVENT_FRAMES.transfers)`) or keep the current
       convenience properties (`log.transfers`, etc.). The catalog now
