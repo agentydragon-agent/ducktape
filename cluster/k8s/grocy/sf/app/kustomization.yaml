@@ -16,4 +16,12 @@ patches:
       metadata:
         name: grocy
       spec:
-        replicas: 0
+        replicas: 1
+        template:
+          spec:
+            nodeSelector:
+              topology.kubernetes.io/zone: hil-ovh
+            volumes:
+              - name: config
+                persistentVolumeClaim:
+                  claimName: grocy-config-ovh

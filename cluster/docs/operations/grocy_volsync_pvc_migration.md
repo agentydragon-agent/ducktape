@@ -1,7 +1,7 @@
 # Grocy VolSync PVC Migration
 
-Status: smoke-tested with disposable PVCs on 2026-05-20; Grocy SF final sync
-completed and destination verification staged.
+Status: smoke-tested with disposable PVCs on 2026-05-20; Grocy SF destination
+verified and cutover staged.
 
 This runbook moves Grocy application data from Hetzner local-path PVCs to OVH
 Kimsufi local-path PVCs using VolSync `rsyncTLS`.
@@ -47,6 +47,11 @@ Friction found while paving:
    ```sh
    php -r '$db=new PDO("sqlite:/config/data/grocy.db"); echo $db->query("PRAGMA integrity_check")->fetchColumn(), "\n";'
    ```
+
+6. Immediately after pushing a new cluster-wide revision, Flux dependencies may
+   briefly report stale `DependencyNotReady` statuses even though their own
+   dependencies have already recovered. Do not bypass Flux. Reconcile the stale
+   dependency, then reconcile the target again.
 
 ## Phase 0: Preconditions
 
