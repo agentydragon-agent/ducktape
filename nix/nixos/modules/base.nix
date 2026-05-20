@@ -140,6 +140,7 @@
       elfutils
       patchelf
       valgrind
+      heaptrack
 
       # Profiling / performance
       sysstat
