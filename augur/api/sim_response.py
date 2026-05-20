@@ -10,6 +10,9 @@ import polars as pl
 
 from augur.api.scenario_set import (
     ActorRole,
+    ExogenousPathIdentity,
+    ProjectionRun,
+    ProjectionTrajectoryIdentity,
     ReportMetric,
     RolloutStatus,
     RolloutStatusType,
@@ -20,6 +23,7 @@ from augur.api.scenario_set import (
     ScenarioSetRunResponse,
 )
 from augur.api.schemas import ColumnarTable
+from augur.model.provenance import stable_identity_digest
 from augur.model.series import PRIVATE_EQUITY_SERIES_PREFIX, SP500_SERIES_ID
 from augur.sim.run import SimulationRun
 
@@ -63,11 +67,37 @@ def scenario_set_response_from_sim_runs(
     sampled_market_metadata: Mapping[str, object] | None = None,
 ) -> ScenarioSetRunResponse:
     metadata = dict(sampled_market_metadata or {})
+    event_stream_ids = _market_event_stream_ids(metadata)
+    path_set_id = _path_set_id(
+        scenario_set=scenario_set,
+        simulation_runs=simulation_runs,
+        sampled_market_metadata=metadata,
+        event_stream_ids=event_stream_ids,
+    )
+    exogenous_paths = _exogenous_paths(
+        scenario_set=scenario_set,
+        path_set_id=path_set_id,
+        sampled_market_metadata=metadata,
+        event_stream_ids=event_stream_ids,
+    )
+    exogenous_path_by_rollout = {path.rollout_index: path for path in exogenous_paths}
+    scenario_input_ids = {scenario.scenario_id: _scenario_input_id(scenario) for scenario in scenario_set.scenarios}
     return ScenarioSetRunResponse(
         scenario_set_id=scenario_set.scenario_set_id,
         request=scenario_set,
         market_request=scenario_set.market_request,
         report_spec=scenario_set.report_spec,
+        projection_run=ProjectionRun(
+            projection_run_id=_projection_run_id(
+                scenario_set_id=scenario_set.scenario_set_id,
+                path_set_id=path_set_id,
+                scenario_input_ids=tuple(scenario_input_ids.values()),
+            ),
+            scenario_set_id=scenario_set.scenario_set_id,
+            path_set_id=path_set_id,
+            scenario_input_ids=tuple(scenario_input_ids.values()),
+        ),
+        exogenous_paths=exogenous_paths,
         market_metadata=_market_metadata(
             scenario_set=scenario_set, simulation_runs=simulation_runs, sampled_market_metadata=metadata
         ),
@@ -76,6 +106,9 @@ def scenario_set_response_from_sim_runs(
                 scenario,
                 simulation_runs.get(scenario.scenario_id),
                 include_monthly_columns=scenario_set.report_spec.include_monthly_columns,
+                path_set_id=path_set_id,
+                scenario_input_id=scenario_input_ids[scenario.scenario_id],
+                exogenous_path_by_rollout=exogenous_path_by_rollout,
             )
             for scenario in scenario_set.scenarios
         ),
@@ -103,6 +136,115 @@ def _market_metadata(
     }
 
 
+def _path_set_id(
+    *,
+    scenario_set: ScenarioSet,
+    simulation_runs: Mapping[str, SimulationRun],
+    sampled_market_metadata: Mapping[str, object],
+    event_stream_ids: tuple[str, ...],
+) -> str:
+    return "path_set:" + stable_identity_digest(
+        {
+            "market_request": scenario_set.market_request,
+            "market_metadata": sampled_market_metadata,
+            "level_series_ids": _level_series_ids(simulation_runs),
+            "event_stream_ids": event_stream_ids,
+        }
+    )
+
+
+def _scenario_input_id(scenario: Scenario) -> str:
+    return "scenario_input:" + stable_identity_digest({"scenario": scenario})
+
+
+def _policy_program_set_id(scenario: Scenario) -> str:
+    return "policy_program_set:" + stable_identity_digest(
+        {"scenario_id": scenario.scenario_id, "policies": scenario.policies}
+    )
+
+
+def _projection_run_id(*, scenario_set_id: str, path_set_id: str, scenario_input_ids: tuple[str, ...]) -> str:
+    return "projection_run:" + stable_identity_digest(
+        {"scenario_set_id": scenario_set_id, "path_set_id": path_set_id, "scenario_input_ids": scenario_input_ids}
+    )
+
+
+def _projection_trajectory_id(
+    *, scenario_id: str, rollout_index: int, path_set_id: str, scenario_input_id: str, policy_program_set_id: str
+) -> str:
+    return "projection_trajectory:" + stable_identity_digest(
+        {
+            "scenario_id": scenario_id,
+            "rollout_index": rollout_index,
+            "path_set_id": path_set_id,
+            "scenario_input_id": scenario_input_id,
+            "policy_program_set_id": policy_program_set_id,
+        }
+    )
+
+
+def _level_series_ids(simulation_runs: Mapping[str, SimulationRun]) -> tuple[str, ...]:
+    series_ids: set[str] = set()
+    for run in simulation_runs.values():
+        if run.market_prices.is_empty():
+            continue
+        series_ids.update(str(series_id) for series_id in run.market_prices.get_column("asset_id").unique().to_list())
+    return tuple(sorted(series_ids))
+
+
+def _market_event_stream_ids(sampled_market_metadata: Mapping[str, object]) -> tuple[str, ...]:
+    raw_ids = sampled_market_metadata.get("event_stream_ids", ())
+    if raw_ids is None:
+        return ()
+    if isinstance(raw_ids, str):
+        return (raw_ids,)
+    if not isinstance(raw_ids, tuple | list | set | frozenset):
+        return (str(raw_ids),)
+    return tuple(sorted(str(stream_id) for stream_id in raw_ids))
+
+
+def _exogenous_paths(
+    *,
+    scenario_set: ScenarioSet,
+    path_set_id: str,
+    sampled_market_metadata: Mapping[str, object],
+    event_stream_ids: tuple[str, ...],
+) -> tuple[ExogenousPathIdentity, ...]:
+    rollout_seeds = _rollout_seeds(scenario_set)
+    return tuple(
+        ExogenousPathIdentity(
+            rollout_index=rollout_index,
+            path_set_id=path_set_id,
+            exogenous_path_id=f"{path_set_id}:rollout:{rollout_index}",
+            market_model_id=str(
+                sampled_market_metadata.get("market_model_id", scenario_set.market_request.market_model_id)
+            ),
+            market_model_version_id=str(
+                sampled_market_metadata.get(
+                    "market_model_version_id", sampled_market_metadata.get("model_version_id", "unknown")
+                )
+            ),
+            scenario_generator_id=str(sampled_market_metadata.get("scenario_generator_id", "market_model_provider")),
+            scenario_generator_version_id=str(sampled_market_metadata.get("scenario_generator_version_id", "unknown")),
+            evidence_set_id=str(sampled_market_metadata.get("evidence_set_id", "unknown")),
+            calibration_artifact_id=str(sampled_market_metadata.get("calibration_artifact_id", "unknown")),
+            risk_factor_set_id=str(sampled_market_metadata.get("risk_factor_set_id", "market_factors:v1")),
+            seed=seed,
+            event_stream_ids=event_stream_ids,
+        )
+        for rollout_index, seed in enumerate(rollout_seeds)
+    )
+
+
+def _rollout_seeds(scenario_set: ScenarioSet) -> tuple[int, ...]:
+    return tuple(
+        int(child.generate_state(1, dtype=np.uint64)[0])
+        for child in np.random.SeedSequence(scenario_set.market_request.seed).spawn(
+            scenario_set.market_request.rollout_count
+        )
+    )
+
+
 def _nonempty_event_frame_names(run: SimulationRun) -> set[str]:
     return {
         name
@@ -124,7 +266,15 @@ def _nonempty_event_frame_names(run: SimulationRun) -> set[str]:
     }
 
 
-def _scenario_result(scenario: Scenario, run: SimulationRun | None, *, include_monthly_columns: bool) -> ScenarioResult:
+def _scenario_result(
+    scenario: Scenario,
+    run: SimulationRun | None,
+    *,
+    include_monthly_columns: bool,
+    path_set_id: str,
+    scenario_input_id: str,
+    exogenous_path_by_rollout: Mapping[int, ExogenousPathIdentity],
+) -> ScenarioResult:
     if run is None:
         return ScenarioResult(
             scenario_id=scenario.scenario_id, scenario_label=scenario.label, summary=_accepted_summary(scenario)
@@ -135,10 +285,47 @@ def _scenario_result(scenario: Scenario, run: SimulationRun | None, *, include_m
         scenario_id=scenario.scenario_id,
         scenario_label=scenario.label,
         summary=_accepted_summary(scenario),
+        projection_trajectories=_projection_trajectories(
+            scenario=scenario,
+            run=run,
+            path_set_id=path_set_id,
+            scenario_input_id=scenario_input_id,
+            exogenous_path_by_rollout=exogenous_path_by_rollout,
+        ),
         rollout_statuses=_rollout_statuses(run, monthly_frame),
         metric_fan_columns=_metric_fan_columns(monthly_frame),
         monthly_columns=monthly_columns if include_monthly_columns else None,
         terminal_columns=_terminal_columns(monthly_frame),
+    )
+
+
+def _projection_trajectories(
+    *,
+    scenario: Scenario,
+    run: SimulationRun,
+    path_set_id: str,
+    scenario_input_id: str,
+    exogenous_path_by_rollout: Mapping[int, ExogenousPathIdentity],
+) -> tuple[ProjectionTrajectoryIdentity, ...]:
+    policy_program_set_id = _policy_program_set_id(scenario)
+    rollout_indices = sorted(int(rollout_index) for rollout_index in run.rollout_status.get_column("rollout_index"))
+    return tuple(
+        ProjectionTrajectoryIdentity(
+            scenario_id=scenario.scenario_id,
+            rollout_index=rollout_index,
+            path_set_id=path_set_id,
+            exogenous_path_id=exogenous_path_by_rollout[rollout_index].exogenous_path_id,
+            scenario_input_id=scenario_input_id,
+            policy_program_set_id=policy_program_set_id,
+            projection_trajectory_id=_projection_trajectory_id(
+                scenario_id=scenario.scenario_id,
+                rollout_index=rollout_index,
+                path_set_id=path_set_id,
+                scenario_input_id=scenario_input_id,
+                policy_program_set_id=policy_program_set_id,
+            ),
+        )
+        for rollout_index in rollout_indices
     )
 
 

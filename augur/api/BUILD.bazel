@@ -260,6 +260,7 @@ py_library(
     srcs = ["sim_response.py"],
     deps = [
         ":scenario_set_py",
+        "//augur/model:provenance_py",
         "//augur/model:series_py",
         "//augur/sim:run",
         "@pypi//numpy",

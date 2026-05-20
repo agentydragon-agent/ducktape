@@ -72,7 +72,23 @@ def test_backend_runs_joint_model_and_materializes_graph_tables() -> None:
     assert response.market_metadata is not None
     assert response.market_metadata["market_model_id"] == "simple_market_model"
     assert response.market_metadata["source_metadata"]["level_anchors"] == {"sp500": 500.0}
+    assert response.projection_run is not None
+    assert response.projection_run.scenario_set_id == "sim_backend_cutover_smoke"
+    assert response.projection_run.path_set_id.startswith("path_set:")
+    assert len(response.projection_run.scenario_input_ids) == 1
+    assert [path.rollout_index for path in response.exogenous_paths] == [0, 1, 2]
+    assert {path.path_set_id for path in response.exogenous_paths} == {response.projection_run.path_set_id}
+    assert {path.market_model_id for path in response.exogenous_paths} == {"simple_market_model"}
+    assert len({path.exogenous_path_id for path in response.exogenous_paths}) == 3
     result = response.scenario_results[0]
+    assert len(result.projection_trajectories) == 3
+    assert {trajectory.scenario_id for trajectory in result.projection_trajectories} == {"sp500_spend"}
+    assert {trajectory.path_set_id for trajectory in result.projection_trajectories} == {
+        response.projection_run.path_set_id
+    }
+    assert {trajectory.scenario_input_id for trajectory in result.projection_trajectories} == {
+        response.projection_run.scenario_input_ids[0]
+    }
     assert result.monthly_columns is not None
     assert result.monthly_columns.row_count == 12
     assert result.terminal_columns is not None
@@ -84,7 +100,10 @@ def test_backend_runs_joint_model_and_materializes_graph_tables() -> None:
     assert [status.status for status in result.rollout_statuses] == [RolloutStatusType.ACTIVE] * 3
 
     payload = plain_json(response)
+    assert payload["projection_run"]["projection_run_id"].startswith("projection_run:")
+    assert len(payload["exogenous_paths"]) == 3
     scenario_payload = payload["scenario_results"][0]
+    assert len(scenario_payload["projection_trajectories"]) == 3
     assert scenario_payload["metric_fan_columns"]["net_worth_usd"]["row_count"] == 4
     assert scenario_payload["monthly_columns"]["row_count"] == 12
 
