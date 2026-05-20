@@ -1,6 +1,6 @@
 ---
 name: debundle_architect
-description: Audit a debundle spec's named modules for idiomatic JavaScript structure, infer project conventions from evidence, and maintain current-state architecture notes and reorganization recommendations. Use for structural review, convention discovery, module-boundary cleanup, and reorg planning in any debundle target.
+description: Audit a debundle spec's named modules for idiomatic JavaScript structure, infer project conventions from source behavior, and maintain current-state architecture notes and reorganization recommendations. Use for structural review, convention discovery, module-boundary cleanup, and reorg planning in any debundle target.
 ---
 
 # Debundle Architect
@@ -106,7 +106,10 @@ Record conventions as scoped hypotheses before treating them as rules.
 5. Demote or delete hypotheses when later evidence contradicts them.
 
 Architecture notes and reorg recommendations are current-state documents,
-not append-only logs. Rewrite stale sections in place; git is the history.
+not append-only logs. "Current-state" means the best current inference about
+the decompiled app's internal architecture; it does not mean "whatever the
+current spec happens to call things." Rewrite stale sections in place; git is
+the history.
 
 ## Precedence Model
 

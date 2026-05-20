@@ -46,7 +46,9 @@ Architects should promote understanding through this ladder:
 4. Durable convention: project-local docs updated so future agents and humans
    do not re-litigate it.
 
-Current-state notes should be rewritten in place. Git is the history.
+Current-state notes should be rewritten in place. "Current-state" means the
+best current inference about the decompiled app's internal architecture, not
+the current spec's names, paths, or module assignments. Git is the history.
 
 ## Directory Shape
 
