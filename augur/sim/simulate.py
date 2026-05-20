@@ -30,6 +30,8 @@ from augur.sim.events import (
     LOT_DISPOSITION_EVENT_SCHEMA,
     MORTGAGE_ORIGINATION_EVENT_SCHEMA,
     MORTGAGE_PAYMENT_EVENT_SCHEMA,
+    OBLIGATION_ACCRUAL_EVENT_SCHEMA,
+    OBLIGATION_SETTLEMENT_EVENT_SCHEMA,
     PROPERTY_PURCHASE_EVENT_SCHEMA,
     ROLLOUT_FAILURE_EVENT_SCHEMA,
     TAX_ACCRUAL_EVENT_SCHEMA,
@@ -82,7 +84,9 @@ def simulate(scenario: Scenario, *, rollout_count: int) -> SimulationRun:
             rollout_count=rollout_count,
         )
         state_t = apply_events(state_t, events_p1)
-        events_p2 = step_emit_policy_events(state=state_t, scenario=scenario, market=market, month=month)
+        events_p2 = step_emit_policy_events(
+            state=state_t, scenario=scenario, market=market, locations=locations, month=month
+        )
         state_t = apply_events(state_t, events_p2)
         cross_sections.append(state_t)
         events_by_month.append(_merge_event_logs(events_p1, events_p2))
@@ -334,6 +338,12 @@ def _merge_event_logs(a: EventLog, b: EventLog) -> EventLog:
         tax_accruals=concat_event_frames([a.tax_accruals, b.tax_accruals], TAX_ACCRUAL_EVENT_SCHEMA),
         tax_breakdowns=concat_event_frames([a.tax_breakdowns, b.tax_breakdowns], TAX_BREAKDOWN_EVENT_SCHEMA),
         tax_settlements=concat_event_frames([a.tax_settlements, b.tax_settlements], TAX_SETTLEMENT_EVENT_SCHEMA),
+        obligation_accruals=concat_event_frames(
+            [a.obligation_accruals, b.obligation_accruals], OBLIGATION_ACCRUAL_EVENT_SCHEMA
+        ),
+        obligation_settlements=concat_event_frames(
+            [a.obligation_settlements, b.obligation_settlements], OBLIGATION_SETTLEMENT_EVENT_SCHEMA
+        ),
         property_purchases=concat_event_frames(
             [a.property_purchases, b.property_purchases], PROPERTY_PURCHASE_EVENT_SCHEMA
         ),
@@ -358,6 +368,12 @@ def _concat_events(events_by_month: list[EventLog]) -> EventLog:
         tax_accruals=concat_event_frames((e.tax_accruals for e in events_by_month), TAX_ACCRUAL_EVENT_SCHEMA),
         tax_breakdowns=concat_event_frames((e.tax_breakdowns for e in events_by_month), TAX_BREAKDOWN_EVENT_SCHEMA),
         tax_settlements=concat_event_frames((e.tax_settlements for e in events_by_month), TAX_SETTLEMENT_EVENT_SCHEMA),
+        obligation_accruals=concat_event_frames(
+            (e.obligation_accruals for e in events_by_month), OBLIGATION_ACCRUAL_EVENT_SCHEMA
+        ),
+        obligation_settlements=concat_event_frames(
+            (e.obligation_settlements for e in events_by_month), OBLIGATION_SETTLEMENT_EVENT_SCHEMA
+        ),
         property_purchases=concat_event_frames(
             (e.property_purchases for e in events_by_month), PROPERTY_PURCHASE_EVENT_SCHEMA
         ),

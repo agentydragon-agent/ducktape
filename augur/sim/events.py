@@ -111,6 +111,33 @@ TAX_SETTLEMENT_EVENT_SCHEMA: dict[str, pl.DataType] = {
     "amount_usd": pl.Float64(),
 }
 
+OBLIGATION_ACCRUAL_EVENT_SCHEMA: dict[str, pl.DataType] = {
+    "rollout_index": pl.Int64(),
+    "month_index": pl.Int64(),
+    "cause_id": pl.Utf8(),
+    "obligation_id": pl.Utf8(),
+    "obligation_type": pl.Utf8(),
+    "agent_id": pl.Utf8(),
+    "from_account_id": pl.Utf8(),
+    "to_agent_id": pl.Utf8(),
+    "to_account_id": pl.Utf8(),
+    "amount_due_usd": pl.Float64(),
+}
+
+OBLIGATION_SETTLEMENT_EVENT_SCHEMA: dict[str, pl.DataType] = {
+    "rollout_index": pl.Int64(),
+    "month_index": pl.Int64(),
+    "cause_id": pl.Utf8(),
+    "obligation_id": pl.Utf8(),
+    "obligation_type": pl.Utf8(),
+    "agent_id": pl.Utf8(),
+    "from_account_id": pl.Utf8(),
+    "amount_due_usd": pl.Float64(),
+    "amount_paid_usd": pl.Float64(),
+    "shortfall_usd": pl.Float64(),
+    "attempted_funding_sources": pl.Utf8(),
+}
+
 PROPERTY_PURCHASE_EVENT_SCHEMA: dict[str, pl.DataType] = {
     "rollout_index": pl.Int64(),
     "month_index": pl.Int64(),
@@ -167,6 +194,12 @@ ROLLOUT_FAILURE_EVENT_SCHEMA: dict[str, pl.DataType] = {
     "cause_id": pl.Utf8(),
     "agent_id": pl.Utf8(),
     "deficit_usd": pl.Float64(),
+    "obligation_id": pl.Utf8(),
+    "obligation_type": pl.Utf8(),
+    "amount_due_usd": pl.Float64(),
+    "amount_paid_usd": pl.Float64(),
+    "shortfall_usd": pl.Float64(),
+    "attempted_funding_sources": pl.Utf8(),
 }
 
 # `LotDisposition` records the consumption of part (or all) of one
@@ -201,6 +234,8 @@ class EventLog:
     tax_accruals: pl.DataFrame
     tax_breakdowns: pl.DataFrame
     tax_settlements: pl.DataFrame
+    obligation_accruals: pl.DataFrame
+    obligation_settlements: pl.DataFrame
     property_purchases: pl.DataFrame
     mortgage_originations: pl.DataFrame
     mortgage_payments: pl.DataFrame
@@ -215,6 +250,8 @@ class EventLog:
             tax_accruals=pl.DataFrame(schema=TAX_ACCRUAL_EVENT_SCHEMA),
             tax_breakdowns=pl.DataFrame(schema=TAX_BREAKDOWN_EVENT_SCHEMA),
             tax_settlements=pl.DataFrame(schema=TAX_SETTLEMENT_EVENT_SCHEMA),
+            obligation_accruals=pl.DataFrame(schema=OBLIGATION_ACCRUAL_EVENT_SCHEMA),
+            obligation_settlements=pl.DataFrame(schema=OBLIGATION_SETTLEMENT_EVENT_SCHEMA),
             property_purchases=pl.DataFrame(schema=PROPERTY_PURCHASE_EVENT_SCHEMA),
             mortgage_originations=pl.DataFrame(schema=MORTGAGE_ORIGINATION_EVENT_SCHEMA),
             mortgage_payments=pl.DataFrame(schema=MORTGAGE_PAYMENT_EVENT_SCHEMA),

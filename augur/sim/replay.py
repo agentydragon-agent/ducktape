@@ -120,6 +120,8 @@ def _events_at_month(events_log: EventLog, month: int) -> EventLog:
         tax_accruals=_frame_at_month(events_log.tax_accruals, month),
         tax_breakdowns=_frame_at_month(events_log.tax_breakdowns, month),
         tax_settlements=_frame_at_month(events_log.tax_settlements, month),
+        obligation_accruals=_frame_at_month(events_log.obligation_accruals, month),
+        obligation_settlements=_frame_at_month(events_log.obligation_settlements, month),
         property_purchases=_frame_at_month(events_log.property_purchases, month),
         mortgage_originations=_frame_at_month(events_log.mortgage_originations, month),
         mortgage_payments=_frame_at_month(events_log.mortgage_payments, month),

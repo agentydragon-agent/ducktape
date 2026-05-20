@@ -78,6 +78,42 @@ class RecurringTransfer(BaseModel):
         return self.start_month <= month and (self.end_month is None or month <= self.end_month)
 
 
+class ScheduledObligation(BaseModel):
+    """A required due-now payment at one month.
+
+    Unlike a raw transfer, an obligation is settled through the
+    funding chain: available cash is used first, configured asset
+    sales can fund shortfalls, and the rollout fails if the full
+    amount cannot be paid immediately.
+    """
+
+    month: int
+    obligation_id: str
+    obligation_type: str
+    agent_id: str
+    from_account_id: str
+    to_agent_id: str
+    to_account_id: str
+    amount_due_usd: float
+
+
+class RecurringObligation(BaseModel):
+    """A required due-now payment that repeats in a month window."""
+
+    start_month: int
+    end_month: int | None = None
+    obligation_id: str
+    obligation_type: str
+    agent_id: str
+    from_account_id: str
+    to_agent_id: str
+    to_account_id: str
+    amount_due_usd: float
+
+    def is_active_at(self, month: int) -> bool:
+        return self.start_month <= month and (self.end_month is None or month <= self.end_month)
+
+
 class InitialLot(BaseModel):
     """A tax lot that exists at scenario start. Models pre-existing
     holdings: Alice already owns 100 units of VTI bought 24 months
@@ -232,6 +268,8 @@ class Scenario(BaseModel):
     initial_lots: list[InitialLot] = Field(default_factory=list)
     scheduled_transfers: list[ScheduledTransfer] = Field(default_factory=list)
     recurring_transfers: list[RecurringTransfer] = Field(default_factory=list)
+    scheduled_obligations: list[ScheduledObligation] = Field(default_factory=list)
+    recurring_obligations: list[RecurringObligation] = Field(default_factory=list)
     scheduled_asset_sales: list[ScheduledAssetSale] = Field(default_factory=list)
     scheduled_property_purchases: list[ScheduledPropertyPurchase] = Field(default_factory=list)
     property_tax_policies: list[PropertyTaxPolicy] = Field(default_factory=list)

@@ -21,9 +21,11 @@ from augur.sim.scenario import (
     InitialLot,
     MortgageFinancing,
     PropertyTaxPolicy,
+    RecurringObligation,
     RecurringTransfer,
     Scenario,
     ScheduledAssetSale,
+    ScheduledObligation,
     ScheduledPropertyPurchase,
     ScheduledTransfer,
     TaxProfile,
@@ -1439,6 +1441,115 @@ def test_tax_payment_can_trigger_rollout_failure_when_unfunded() -> None:
     assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
+def test_due_now_obligation_sells_assets_and_settles() -> None:
+    """A required obligation uses cash first, sells configured assets
+    for the remaining shortfall, then pays the counterparty in full."""
+    scenario = Scenario(
+        agents=[Agent(agent_id="alice"), Agent(agent_id="landlord")],
+        initial_cash=[
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=100.0),
+            InitialAccountBalance(agent_id="landlord", account_id="checking", balance_usd=0.0),
+        ],
+        initial_lots=[
+            InitialLot(
+                lot_id="alice_vti",
+                agent_id="alice",
+                asset_id="vti",
+                purchase_month_index=-24,
+                quantity=10.0,
+                cost_basis_per_unit_usd=50.0,
+            )
+        ],
+        scheduled_obligations=[
+            ScheduledObligation(
+                month=0,
+                obligation_id="rent_due",
+                obligation_type="rent",
+                agent_id="alice",
+                from_account_id="checking",
+                to_agent_id="landlord",
+                to_account_id="checking",
+                amount_due_usd=500.0,
+            )
+        ],
+        market=MarketBundle(paths=[DeterministicPath(asset_id="vti", prices_usd=[100.0, 100.0])]),
+        floor_triggered_sale_policies=[
+            FloorTriggeredSalePolicy(
+                agent_id="alice", account_id="checking", floor_usd=0.0, asset_preference_chain=["vti"]
+            )
+        ],
+        horizon_months=1,
+    )
+
+    result = simulate(scenario, rollout_count=1)
+
+    accrual = result.events_log.obligation_accruals.row(0, named=True)
+    assert accrual["obligation_id"] == "rent_due_m0"
+    assert accrual["amount_due_usd"] == pytest.approx(500.0)
+
+    settlement = result.events_log.obligation_settlements.row(0, named=True)
+    assert settlement["amount_paid_usd"] == pytest.approx(500.0)
+    assert settlement["shortfall_usd"] == pytest.approx(0.0)
+    assert settlement["attempted_funding_sources"] == "vti"
+
+    funding_sale = result.events_log.lot_dispositions.row(0, named=True)
+    assert funding_sale["cause_id"] == "floor_triggered_sale_obligation_m0_vti"
+    assert funding_sale["units_sold"] == pytest.approx(4.0)
+    assert funding_sale["proceeds_usd"] == pytest.approx(400.0)
+
+    final_cash = (
+        result.cash_balances.filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 1))
+        .get_column("balance_usd")
+        .item()
+    )
+    assert final_cash == pytest.approx(0.0)
+    assert result.events_log.rollout_failures.is_empty()
+    assert_replay_invariant_holds(scenario, result, rollout_count=1)
+
+
+def test_due_now_obligation_failure_aborts_payment() -> None:
+    """If cash plus configured funding sources cannot cover a required
+    obligation, no partial payment is made and the rollout fails."""
+    scenario = Scenario(
+        agents=[Agent(agent_id="alice"), Agent(agent_id="landlord")],
+        initial_cash=[
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=100.0),
+            InitialAccountBalance(agent_id="landlord", account_id="checking", balance_usd=0.0),
+        ],
+        scheduled_obligations=[
+            ScheduledObligation(
+                month=0,
+                obligation_id="rent_due",
+                obligation_type="rent",
+                agent_id="alice",
+                from_account_id="checking",
+                to_agent_id="landlord",
+                to_account_id="checking",
+                amount_due_usd=500.0,
+            )
+        ],
+        floor_triggered_sale_policies=[
+            FloorTriggeredSalePolicy(agent_id="alice", account_id="checking", floor_usd=0.0, asset_preference_chain=[])
+        ],
+        horizon_months=1,
+    )
+
+    result = simulate(scenario, rollout_count=1)
+
+    settlement = result.events_log.obligation_settlements.row(0, named=True)
+    assert settlement["amount_due_usd"] == pytest.approx(500.0)
+    assert settlement["amount_paid_usd"] == pytest.approx(0.0)
+    assert settlement["shortfall_usd"] == pytest.approx(400.0)
+    assert result.events_log.transfers.is_empty()
+
+    failure = result.events_log.rollout_failures.row(0, named=True)
+    assert failure["obligation_id"] == "rent_due_m0"
+    assert failure["obligation_type"] == "rent"
+    assert failure["shortfall_usd"] == pytest.approx(400.0)
+    assert result.rollout_status.row(0, named=True)["status"] == "failed_insufficient_cash"
+    assert_replay_invariant_holds(scenario, result, rollout_count=1)
+
+
 def test_explicit_sale_price_overrides_market() -> None:
     """If `ScheduledAssetSale.price_per_unit_usd` is set the engine
     uses that scalar; market is ignored for that sale. This is the
@@ -1583,15 +1694,16 @@ def test_floor_triggered_sale_covers_monthly_spend_deficit() -> None:
                 cost_basis_per_unit_usd=50.0,
             )
         ],
-        recurring_transfers=[
-            RecurringTransfer(
+        recurring_obligations=[
+            RecurringObligation(
                 start_month=0,
-                cause_id="alice_rent",
-                from_agent_id="alice",
+                obligation_id="alice_rent",
+                obligation_type="rent",
+                agent_id="alice",
                 from_account_id="checking",
                 to_agent_id="landlord",
                 to_account_id="checking",
-                amount_usd=5000.0,
+                amount_due_usd=5000.0,
             )
         ],
         market=MarketBundle(paths=[DeterministicPath(asset_id="vti", prices_usd=[100.0] * 4)]),
@@ -1644,15 +1756,16 @@ def test_rollout_marked_failed_when_assets_exhausted() -> None:
                 cost_basis_per_unit_usd=80.0,
             )
         ],
-        recurring_transfers=[
-            RecurringTransfer(
+        recurring_obligations=[
+            RecurringObligation(
                 start_month=0,
-                cause_id="alice_rent",
-                from_agent_id="alice",
+                obligation_id="alice_rent",
+                obligation_type="rent",
+                agent_id="alice",
                 from_account_id="checking",
                 to_agent_id="landlord",
                 to_account_id="checking",
-                amount_usd=1000.0,
+                amount_due_usd=1000.0,
             )
         ],
         market=MarketBundle(paths=[DeterministicPath(asset_id="vti", prices_usd=[100.0, 100.0])]),

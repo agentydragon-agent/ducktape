@@ -1,7 +1,7 @@
 """`step_emit_events` — pure function that reads state + scenario +
 month index and returns the events for that month.
 
-At spike 1 step 7 the step emits:
+At the current spike the step emits:
 
   - transfer events for scheduled + recurring transfers active at
     this month, optionally tagged with an `income_category`;
@@ -11,8 +11,9 @@ At spike 1 step 7 the step emits:
     in {11, 23, 35, ...}) — one per (taxed agent, jurisdiction),
     computed by bracket-walking end-of-year ordinary income minus
     the jurisdiction's standard deduction;
-  - estimated-tax payment transfers at quarterly markers, plus a
-    January true-up after the prior year-end accrual is known.
+  - due-now obligations for configured required payments, mortgage
+    payments, property tax, estimated-tax markers, and January
+    true-ups after prior year-end accruals are known.
 
 The step does not mutate `state`. The simulate loop calls
 `apply_events(state, step_result)` separately. apply_events
@@ -33,6 +34,8 @@ from augur.sim.events import (
     LOT_DISPOSITION_EVENT_SCHEMA,
     MORTGAGE_ORIGINATION_EVENT_SCHEMA,
     MORTGAGE_PAYMENT_EVENT_SCHEMA,
+    OBLIGATION_ACCRUAL_EVENT_SCHEMA,
+    OBLIGATION_SETTLEMENT_EVENT_SCHEMA,
     PROPERTY_PURCHASE_EVENT_SCHEMA,
     ROLLOUT_FAILURE_EVENT_SCHEMA,
     TAX_ACCRUAL_EVENT_SCHEMA,
@@ -48,9 +51,11 @@ from augur.sim.market import MarketContext
 from augur.sim.scenario import (
     FloorTriggeredSalePolicy,
     PropertyTaxPolicy,
+    RecurringObligation,
     RecurringTransfer,
     Scenario,
     ScheduledAssetSale,
+    ScheduledObligation,
     ScheduledPropertyPurchase,
     ScheduledTransfer,
     TaxProfile,
@@ -66,9 +71,20 @@ class _TaxYearEvents:
 
 
 @dataclass(frozen=True)
-class _TaxPaymentEvents:
-    transfers: pl.DataFrame
+class _TaxPaymentObligationEvents:
+    obligation_accruals: pl.DataFrame
     settlements: pl.DataFrame
+
+
+@dataclass(frozen=True)
+class _DueNowSettlementEvents:
+    obligation_accruals: pl.DataFrame
+    obligation_settlements: pl.DataFrame
+    transfers: pl.DataFrame
+    lot_dispositions: pl.DataFrame
+    mortgage_payments: pl.DataFrame
+    tax_settlements: pl.DataFrame
+    rollout_failures: pl.DataFrame
 
 
 def step_emit_scheduled_events(
@@ -82,17 +98,12 @@ def step_emit_scheduled_events(
     rollout_count: int,
 ) -> EventLog:
     """Phase 1 of the month step: scheduled / recurring transfers,
-    scheduled asset sales, year-end tax accruals, and estimated-tax
-    payment transfers. Pure: does not mutate `state`."""
+    scheduled asset sales, property purchases, mortgage originations,
+    and year-end tax accruals. Pure: does not mutate `state`."""
     transfers = _emit_transfers(scenario, month, rollout_count)
     property_purchases = _emit_property_purchases(scenario, month, rollout_count)
     mortgage_originations = _emit_mortgage_originations(scenario, month, rollout_count)
-    mortgage_payments = _emit_mortgage_payments(state, month)
     property_cash_transfers = _property_purchase_transfer_events(scenario, property_purchases)
-    mortgage_payment_transfers = _mortgage_payment_transfer_events(mortgage_payments)
-    property_tax_transfers = _emit_property_tax_transfers(
-        state=state, scenario=scenario, locations=locations, month=month
-    )
     dispositions = _emit_lot_dispositions(state, scenario, market, month)
     tax_year_events = _emit_year_end_tax_events(
         state=state,
@@ -102,49 +113,55 @@ def step_emit_scheduled_events(
         transfers=transfers,
         dispositions=dispositions,
     )
-    tax_payments = _emit_tax_payment_events(state=state, profiles=scenario.tax_profiles, month=month)
     return EventLog(
-        transfers=concat_event_frames(
-            [
-                transfers,
-                property_cash_transfers,
-                mortgage_payment_transfers,
-                property_tax_transfers,
-                tax_payments.transfers,
-            ],
-            TRANSFER_EVENT_SCHEMA,
-        ),
+        transfers=concat_event_frames([transfers, property_cash_transfers], TRANSFER_EVENT_SCHEMA),
         asset_purchases=pl.DataFrame(schema=ASSET_PURCHASE_EVENT_SCHEMA),
         lot_dispositions=dispositions,
         tax_accruals=tax_year_events.accruals,
         tax_breakdowns=tax_year_events.breakdowns,
-        tax_settlements=tax_payments.settlements,
+        tax_settlements=pl.DataFrame(schema=TAX_SETTLEMENT_EVENT_SCHEMA),
+        obligation_accruals=pl.DataFrame(schema=OBLIGATION_ACCRUAL_EVENT_SCHEMA),
+        obligation_settlements=pl.DataFrame(schema=OBLIGATION_SETTLEMENT_EVENT_SCHEMA),
         property_purchases=property_purchases,
         mortgage_originations=mortgage_originations,
-        mortgage_payments=mortgage_payments,
+        mortgage_payments=pl.DataFrame(schema=MORTGAGE_PAYMENT_EVENT_SCHEMA),
         rollout_failures=pl.DataFrame(schema=ROLLOUT_FAILURE_EVENT_SCHEMA),
     )
 
 
 def step_emit_policy_events(
-    *, state: StateCrossSection, scenario: Scenario, market: MarketContext, month: int
+    *, state: StateCrossSection, scenario: Scenario, market: MarketContext, locations: dict[str, Location], month: int
 ) -> EventLog:
-    """Phase 2 of the month step: discretionary policies +
-    failure detection. Runs on the post-phase-1 state so the floor
-    check sees cash after all scheduled events have applied."""
-    dispositions = _emit_floor_triggered_sales(state, scenario, market, month)
-    failures = _emit_rollout_failures(state, scenario, dispositions, market, month)
+    """Phase 2 of the month step: discretionary policies, due-now
+    obligation settlement, and failure detection. Runs on the
+    post-phase-1 state so the floor check sees cash after all
+    scheduled events have applied."""
+    floor_dispositions = _emit_floor_triggered_sales(state, scenario, market, month)
+    due_now = _emit_due_now_obligations_and_settlements(
+        state=state,
+        scenario=scenario,
+        market=market,
+        locations=locations,
+        base_dispositions=floor_dispositions,
+        month=month,
+    )
+    dispositions = concat_event_frames([floor_dispositions, due_now.lot_dispositions], LOT_DISPOSITION_EVENT_SCHEMA)
+    cash_failures = _emit_rollout_failures(
+        state=state, scenario=scenario, policy_dispositions=dispositions, transfers=due_now.transfers, month=month
+    )
     return EventLog(
-        transfers=pl.DataFrame(schema=TRANSFER_EVENT_SCHEMA),
+        transfers=due_now.transfers,
         asset_purchases=pl.DataFrame(schema=ASSET_PURCHASE_EVENT_SCHEMA),
         lot_dispositions=dispositions,
         tax_accruals=pl.DataFrame(schema=TAX_ACCRUAL_EVENT_SCHEMA),
         tax_breakdowns=pl.DataFrame(schema=TAX_BREAKDOWN_EVENT_SCHEMA),
-        tax_settlements=pl.DataFrame(schema=TAX_SETTLEMENT_EVENT_SCHEMA),
+        tax_settlements=due_now.tax_settlements,
+        obligation_accruals=due_now.obligation_accruals,
+        obligation_settlements=due_now.obligation_settlements,
         property_purchases=pl.DataFrame(schema=PROPERTY_PURCHASE_EVENT_SCHEMA),
         mortgage_originations=pl.DataFrame(schema=MORTGAGE_ORIGINATION_EVENT_SCHEMA),
-        mortgage_payments=pl.DataFrame(schema=MORTGAGE_PAYMENT_EVENT_SCHEMA),
-        rollout_failures=failures,
+        mortgage_payments=due_now.mortgage_payments,
+        rollout_failures=concat_event_frames([due_now.rollout_failures, cash_failures], ROLLOUT_FAILURE_EVENT_SCHEMA),
     )
 
 
@@ -290,7 +307,7 @@ def _property_purchase_transfer_events(scenario: Scenario, purchases: pl.DataFra
 
 
 def _emit_mortgage_payments(state: StateCrossSection, month: int) -> pl.DataFrame:
-    liabilities = state.liabilities.filter(pl.col("principal_usd") > 0)
+    liabilities = state.liabilities.filter((pl.col("principal_usd") > 0) & (pl.col("origination_month_index") < month))
     if liabilities.is_empty():
         return pl.DataFrame(schema=MORTGAGE_PAYMENT_EVENT_SCHEMA)
     monthly_interest = pl.col("principal_usd") * pl.col("annual_interest_rate") / 12.0
@@ -313,34 +330,37 @@ def _emit_mortgage_payments(state: StateCrossSection, month: int) -> pl.DataFram
     )
 
 
-def _mortgage_payment_transfer_events(mortgage_payments: pl.DataFrame) -> pl.DataFrame:
+def _mortgage_payment_obligations(mortgage_payments: pl.DataFrame) -> pl.DataFrame:
     if mortgage_payments.is_empty():
-        return pl.DataFrame(schema=TRANSFER_EVENT_SCHEMA)
+        return pl.DataFrame(schema=OBLIGATION_ACCRUAL_EVENT_SCHEMA)
     return mortgage_payments.with_columns(
-        pl.col("agent_id").alias("from_agent_id"),
+        pl.col("cause_id").alias("obligation_id"),
+        pl.lit("mortgage_payment", dtype=pl.Utf8()).alias("obligation_type"),
         pl.col("counterparty_agent_id").alias("to_agent_id"),
-        pl.col("total_payment_usd").alias("amount_usd"),
-        pl.lit(None, dtype=pl.Utf8()).alias("income_category"),
-    ).select(list(TRANSFER_EVENT_SCHEMA.keys()))
+        pl.col("total_payment_usd").alias("amount_due_usd"),
+    ).select(list(OBLIGATION_ACCRUAL_EVENT_SCHEMA.keys()))
 
 
-def _emit_property_tax_transfers(
+def _emit_property_tax_obligations(
     *, state: StateCrossSection, scenario: Scenario, locations: dict[str, Location], month: int
 ) -> pl.DataFrame:
     active = [policy for policy in scenario.property_tax_policies if policy.is_active_at(month)]
     if not active or state.property_state.is_empty():
-        return pl.DataFrame(schema=TRANSFER_EVENT_SCHEMA)
+        return pl.DataFrame(schema=OBLIGATION_ACCRUAL_EVENT_SCHEMA)
     return concat_event_frames(
-        [_property_tax_transfer_block(state, policy, locations, month) for policy in active], TRANSFER_EVENT_SCHEMA
+        [_property_tax_obligation_block(state, policy, locations, month) for policy in active],
+        OBLIGATION_ACCRUAL_EVENT_SCHEMA,
     )
 
 
-def _property_tax_transfer_block(
+def _property_tax_obligation_block(
     state: StateCrossSection, policy: PropertyTaxPolicy, locations: dict[str, Location], month: int
 ) -> pl.DataFrame:
-    property_rows = state.property_state.filter(pl.col("property_id") == policy.property_id)
+    property_rows = state.property_state.filter(
+        (pl.col("property_id") == policy.property_id) & (pl.col("purchase_month_index") < month)
+    )
     if property_rows.is_empty():
-        return pl.DataFrame(schema=TRANSFER_EVENT_SCHEMA)
+        return pl.DataFrame(schema=OBLIGATION_ACCRUAL_EVENT_SCHEMA)
     rate_rows = pl.DataFrame(
         {
             "location_id": list(locations),
@@ -361,12 +381,339 @@ def _property_tax_transfer_block(
     return taxed.with_columns(
         pl.lit(month, dtype=pl.Int64()).alias("month_index"),
         pl.lit(f"{policy.property_id}_property_tax_m{month}", dtype=pl.Utf8()).alias("cause_id"),
-        pl.lit(policy.owner_agent_id, dtype=pl.Utf8()).alias("from_agent_id"),
+        pl.lit(f"{policy.property_id}_property_tax_m{month}", dtype=pl.Utf8()).alias("obligation_id"),
+        pl.lit("property_tax", dtype=pl.Utf8()).alias("obligation_type"),
+        pl.lit(policy.owner_agent_id, dtype=pl.Utf8()).alias("agent_id"),
         pl.lit(policy.from_account_id, dtype=pl.Utf8()).alias("from_account_id"),
         pl.lit(policy.tax_authority_agent_id, dtype=pl.Utf8()).alias("to_agent_id"),
         pl.lit(policy.tax_authority_account_id, dtype=pl.Utf8()).alias("to_account_id"),
-        pl.lit(None, dtype=pl.Utf8()).alias("income_category"),
-    ).select(list(TRANSFER_EVENT_SCHEMA.keys()))
+        pl.col("amount_usd").alias("amount_due_usd"),
+    ).select(list(OBLIGATION_ACCRUAL_EVENT_SCHEMA.keys()))
+
+
+def _emit_configured_obligations(scenario: Scenario, month: int, rollouts: pl.DataFrame) -> pl.DataFrame:
+    active: list[ScheduledObligation | RecurringObligation] = [
+        obligation for obligation in scenario.scheduled_obligations if obligation.month == month
+    ]
+    active.extend(obligation for obligation in scenario.recurring_obligations if obligation.is_active_at(month))
+    if not active:
+        return pl.DataFrame(schema=OBLIGATION_ACCRUAL_EVENT_SCHEMA)
+    return concat_event_frames(
+        [_configured_obligation_block_per_rollout(obligation, rollouts, month) for obligation in active],
+        OBLIGATION_ACCRUAL_EVENT_SCHEMA,
+    )
+
+
+def _configured_obligation_block_per_rollout(
+    obligation: ScheduledObligation | RecurringObligation, rollouts: pl.DataFrame, month: int
+) -> pl.DataFrame:
+    return rollouts.with_columns(
+        pl.lit(month, dtype=pl.Int64()).alias("month_index"),
+        pl.lit(f"{obligation.obligation_id}_m{month}", dtype=pl.Utf8()).alias("cause_id"),
+        pl.lit(f"{obligation.obligation_id}_m{month}", dtype=pl.Utf8()).alias("obligation_id"),
+        pl.lit(obligation.obligation_type, dtype=pl.Utf8()).alias("obligation_type"),
+        pl.lit(obligation.agent_id, dtype=pl.Utf8()).alias("agent_id"),
+        pl.lit(obligation.from_account_id, dtype=pl.Utf8()).alias("from_account_id"),
+        pl.lit(obligation.to_agent_id, dtype=pl.Utf8()).alias("to_agent_id"),
+        pl.lit(obligation.to_account_id, dtype=pl.Utf8()).alias("to_account_id"),
+        pl.lit(obligation.amount_due_usd, dtype=pl.Float64()).alias("amount_due_usd"),
+    ).select(list(OBLIGATION_ACCRUAL_EVENT_SCHEMA.keys()))
+
+
+def _emit_due_now_obligations_and_settlements(
+    *,
+    state: StateCrossSection,
+    scenario: Scenario,
+    market: MarketContext,
+    locations: dict[str, Location],
+    base_dispositions: pl.DataFrame,
+    month: int,
+) -> _DueNowSettlementEvents:
+    active_rollouts = state.rollout_status.filter(pl.col("status") == "active").select("rollout_index")
+    mortgage_payments = _emit_mortgage_payments(state, month)
+    tax_payment_events = _emit_tax_payment_obligations(state=state, profiles=scenario.tax_profiles, month=month)
+    obligations = concat_event_frames(
+        [
+            _emit_configured_obligations(scenario, month, active_rollouts),
+            _mortgage_payment_obligations(mortgage_payments),
+            _emit_property_tax_obligations(state=state, scenario=scenario, locations=locations, month=month),
+            tax_payment_events.obligation_accruals,
+        ],
+        OBLIGATION_ACCRUAL_EVENT_SCHEMA,
+    )
+    settlement = _settle_due_now_obligations(
+        state=state,
+        scenario=scenario,
+        market=market,
+        obligations=obligations,
+        base_dispositions=base_dispositions,
+        month=month,
+    )
+    return _DueNowSettlementEvents(
+        obligation_accruals=settlement.obligation_accruals,
+        obligation_settlements=settlement.obligation_settlements,
+        transfers=settlement.transfers,
+        lot_dispositions=settlement.lot_dispositions,
+        mortgage_payments=_paid_mortgage_payment_events(mortgage_payments, settlement.obligation_settlements),
+        tax_settlements=_paid_tax_settlement_events(tax_payment_events.settlements, settlement.obligation_settlements),
+        rollout_failures=settlement.rollout_failures,
+    )
+
+
+def _settle_due_now_obligations(
+    *,
+    state: StateCrossSection,
+    scenario: Scenario,
+    market: MarketContext,
+    obligations: pl.DataFrame,
+    base_dispositions: pl.DataFrame,
+    month: int,
+) -> _DueNowSettlementEvents:
+    active_rollouts = state.rollout_status.filter(pl.col("status") == "active").select("rollout_index")
+    active_obligations = obligations.filter(pl.col("amount_due_usd") > 0).join(active_rollouts, on="rollout_index")
+    if active_obligations.is_empty():
+        return _empty_due_now_settlement_events(active_obligations)
+    due_by_account = _policy_funding_sources_for_obligations(
+        scenario, _obligation_due_by_account(state, active_obligations, base_dispositions)
+    )
+    funding_dispositions = _funding_dispositions_for_due_groups(
+        state=state,
+        scenario=scenario,
+        market=market,
+        due_by_account=due_by_account,
+        base_dispositions=base_dispositions,
+        month=month,
+    )
+    funding_proceeds = _disposition_proceeds_by_account(funding_dispositions).rename(
+        {"_proceeds_usd": "_funding_proceeds_usd"}
+    )
+    funded = (
+        due_by_account.join(funding_proceeds, on=["rollout_index", "agent_id", "from_account_id"], how="left")
+        .with_columns(
+            _available_after_funding_usd=pl.col("_available_before_funding_usd")
+            + pl.col("_funding_proceeds_usd").fill_null(0.0),
+            _account_shortfall_usd=pl.max_horizontal(
+                0.0,
+                pl.col("_total_due_usd")
+                - (pl.col("_available_before_funding_usd") + pl.col("_funding_proceeds_usd").fill_null(0.0)),
+            ),
+            _fully_paid=(
+                pl.col("_available_before_funding_usd") + pl.col("_funding_proceeds_usd").fill_null(0.0)
+                >= pl.col("_total_due_usd") - 1e-9
+            ),
+        )
+        .select(
+            "rollout_index",
+            "agent_id",
+            "from_account_id",
+            "_total_due_usd",
+            "_account_shortfall_usd",
+            "_fully_paid",
+            "_attempted_funding_sources",
+        )
+    )
+    joined = active_obligations.join(funded, on=["rollout_index", "agent_id", "from_account_id"], how="left")
+    settled = joined.with_columns(
+        amount_paid_usd=pl.when(pl.col("_fully_paid")).then(pl.col("amount_due_usd")).otherwise(0.0),
+        shortfall_usd=pl.when(pl.col("_fully_paid"))
+        .then(0.0)
+        .otherwise(pl.col("amount_due_usd") / pl.col("_total_due_usd") * pl.col("_account_shortfall_usd")),
+        attempted_funding_sources=pl.col("_attempted_funding_sources").fill_null(""),
+    )
+    return _DueNowSettlementEvents(
+        obligation_accruals=active_obligations,
+        obligation_settlements=settled.select(list(OBLIGATION_SETTLEMENT_EVENT_SCHEMA.keys())),
+        transfers=_obligation_payment_transfers(settled),
+        lot_dispositions=funding_dispositions,
+        mortgage_payments=pl.DataFrame(schema=MORTGAGE_PAYMENT_EVENT_SCHEMA),
+        tax_settlements=pl.DataFrame(schema=TAX_SETTLEMENT_EVENT_SCHEMA),
+        rollout_failures=_obligation_failure_events(settled, month),
+    )
+
+
+def _empty_due_now_settlement_events(obligations: pl.DataFrame) -> _DueNowSettlementEvents:
+    return _DueNowSettlementEvents(
+        obligation_accruals=obligations,
+        obligation_settlements=pl.DataFrame(schema=OBLIGATION_SETTLEMENT_EVENT_SCHEMA),
+        transfers=pl.DataFrame(schema=TRANSFER_EVENT_SCHEMA),
+        lot_dispositions=pl.DataFrame(schema=LOT_DISPOSITION_EVENT_SCHEMA),
+        mortgage_payments=pl.DataFrame(schema=MORTGAGE_PAYMENT_EVENT_SCHEMA),
+        tax_settlements=pl.DataFrame(schema=TAX_SETTLEMENT_EVENT_SCHEMA),
+        rollout_failures=pl.DataFrame(schema=ROLLOUT_FAILURE_EVENT_SCHEMA),
+    )
+
+
+def _obligation_due_by_account(
+    state: StateCrossSection, obligations: pl.DataFrame, base_dispositions: pl.DataFrame
+) -> pl.DataFrame:
+    due = obligations.group_by(["rollout_index", "agent_id", "from_account_id"]).agg(
+        pl.col("amount_due_usd").sum().alias("_total_due_usd")
+    )
+    cash = state.cash_balances.rename({"account_id": "from_account_id", "balance_usd": "_cash_balance_usd"}).select(
+        "rollout_index", "agent_id", "from_account_id", "_cash_balance_usd"
+    )
+    base_proceeds = _disposition_proceeds_by_account(base_dispositions).rename({"_proceeds_usd": "_base_proceeds_usd"})
+    return (
+        due.join(cash, on=["rollout_index", "agent_id", "from_account_id"], how="left")
+        .join(base_proceeds, on=["rollout_index", "agent_id", "from_account_id"], how="left")
+        .with_columns(
+            _available_before_funding_usd=pl.col("_cash_balance_usd").fill_null(0.0)
+            + pl.col("_base_proceeds_usd").fill_null(0.0)
+        )
+        .with_columns(
+            _funding_deficit_usd=pl.max_horizontal(
+                0.0, pl.col("_total_due_usd") - pl.col("_available_before_funding_usd")
+            )
+        )
+        .select(
+            "rollout_index",
+            "agent_id",
+            "from_account_id",
+            "_total_due_usd",
+            "_available_before_funding_usd",
+            "_funding_deficit_usd",
+        )
+    )
+
+
+def _disposition_proceeds_by_account(dispositions: pl.DataFrame) -> pl.DataFrame:
+    return (
+        dispositions.group_by(["rollout_index", "agent_id", "proceeds_account_id"])
+        .agg(pl.col("proceeds_usd").sum().alias("_proceeds_usd"))
+        .rename({"proceeds_account_id": "from_account_id"})
+    )
+
+
+def _funding_dispositions_for_due_groups(
+    *,
+    state: StateCrossSection,
+    scenario: Scenario,
+    market: MarketContext,
+    due_by_account: pl.DataFrame,
+    base_dispositions: pl.DataFrame,
+    month: int,
+) -> pl.DataFrame:
+    prices = market.prices_at(month)
+    funding_state = _state_after_lot_dispositions(state, base_dispositions)
+    blocks: list[pl.DataFrame] = []
+    for policy in scenario.floor_triggered_sale_policies:
+        deficit = due_by_account.filter(
+            (pl.col("agent_id") == policy.agent_id)
+            & (pl.col("from_account_id") == policy.account_id)
+            & (pl.col("_funding_deficit_usd") > 0)
+        ).select("rollout_index", pl.col("_funding_deficit_usd").alias("_remaining_deficit_usd"))
+        for slot_index, asset_id in enumerate(policy.asset_preference_chain):
+            if deficit.is_empty():
+                break
+            result = _consume_asset_for_policy(
+                state=funding_state,
+                policy=policy,
+                asset_id=asset_id,
+                slot_index=slot_index,
+                prices=prices,
+                deficit=deficit,
+                cause_id=f"{policy.cause_id_prefix}_obligation_m{month}_{asset_id}",
+                month=month,
+            )
+            if result.dispositions is not None and not result.dispositions.is_empty():
+                blocks.append(result.dispositions)
+            deficit = result.remaining_deficit
+    return concat_event_frames(blocks, LOT_DISPOSITION_EVENT_SCHEMA)
+
+
+def _state_after_lot_dispositions(state: StateCrossSection, dispositions: pl.DataFrame) -> StateCrossSection:
+    if dispositions.is_empty():
+        return state
+    deltas = dispositions.group_by(["rollout_index", "lot_id"]).agg(pl.col("units_sold").sum().alias("_units_sold"))
+    return StateCrossSection(
+        cash_balances=state.cash_balances,
+        asset_lots=state.asset_lots.join(deltas, on=["rollout_index", "lot_id"], how="left")
+        .with_columns(remaining_quantity=pl.col("remaining_quantity") - pl.col("_units_sold").fill_null(0.0))
+        .drop("_units_sold"),
+        ordinary_income_ytd=state.ordinary_income_ytd,
+        capital_gains_ytd=state.capital_gains_ytd,
+        tax_liabilities=state.tax_liabilities,
+        property_state=state.property_state,
+        property_stakes=state.property_stakes,
+        liabilities=state.liabilities,
+        rollout_status=state.rollout_status,
+    )
+
+
+def _policy_funding_sources_for_obligations(scenario: Scenario, due_by_account: pl.DataFrame) -> pl.DataFrame:
+    if due_by_account.is_empty():
+        return due_by_account.with_columns(pl.lit("", dtype=pl.Utf8()).alias("_attempted_funding_sources"))
+    policies = pl.DataFrame(
+        {
+            "agent_id": [policy.agent_id for policy in scenario.floor_triggered_sale_policies],
+            "from_account_id": [policy.account_id for policy in scenario.floor_triggered_sale_policies],
+            "_attempted_funding_sources": [
+                ",".join(policy.asset_preference_chain) for policy in scenario.floor_triggered_sale_policies
+            ],
+        },
+        schema={"agent_id": pl.Utf8(), "from_account_id": pl.Utf8(), "_attempted_funding_sources": pl.Utf8()},
+    )
+    if policies.is_empty():
+        return due_by_account.with_columns(pl.lit("", dtype=pl.Utf8()).alias("_attempted_funding_sources"))
+    return due_by_account.join(policies, on=["agent_id", "from_account_id"], how="left").with_columns(
+        _attempted_funding_sources=pl.col("_attempted_funding_sources").fill_null("")
+    )
+
+
+def _obligation_payment_transfers(settled: pl.DataFrame) -> pl.DataFrame:
+    return (
+        settled.filter(pl.col("amount_paid_usd") > 0)
+        .with_columns(
+            pl.col("agent_id").alias("from_agent_id"),
+            pl.col("amount_paid_usd").alias("amount_usd"),
+            pl.lit(None, dtype=pl.Utf8()).alias("income_category"),
+        )
+        .select(list(TRANSFER_EVENT_SCHEMA.keys()))
+    )
+
+
+def _obligation_failure_events(settled: pl.DataFrame, month: int) -> pl.DataFrame:
+    return (
+        settled.filter(pl.col("shortfall_usd") > 0)
+        .with_columns(
+            pl.lit(month, dtype=pl.Int64()).alias("month_index"),
+            pl.concat_str([pl.col("obligation_id"), pl.lit("_failure")]).alias("cause_id"),
+            pl.col("shortfall_usd").alias("deficit_usd"),
+        )
+        .select(list(ROLLOUT_FAILURE_EVENT_SCHEMA.keys()))
+    )
+
+
+def _paid_mortgage_payment_events(
+    mortgage_payments: pl.DataFrame, obligation_settlements: pl.DataFrame
+) -> pl.DataFrame:
+    if mortgage_payments.is_empty() or obligation_settlements.is_empty():
+        return pl.DataFrame(schema=MORTGAGE_PAYMENT_EVENT_SCHEMA)
+    paid = obligation_settlements.filter(
+        (pl.col("obligation_type") == "mortgage_payment") & (pl.col("shortfall_usd") == 0)
+    ).select("rollout_index", pl.col("obligation_id").alias("cause_id"))
+    return mortgage_payments.join(paid, on=["rollout_index", "cause_id"], how="inner").select(
+        list(MORTGAGE_PAYMENT_EVENT_SCHEMA.keys())
+    )
+
+
+def _paid_tax_settlement_events(settlements: pl.DataFrame, obligation_settlements: pl.DataFrame) -> pl.DataFrame:
+    if settlements.is_empty():
+        return pl.DataFrame(schema=TAX_SETTLEMENT_EVENT_SCHEMA)
+    failed_tax = (
+        obligation_settlements.filter(
+            pl.col("obligation_type").is_in(["estimated_tax", "tax_true_up"]) & (pl.col("shortfall_usd") > 0)
+        )
+        .select("rollout_index", "agent_id")
+        .unique()
+        .with_columns(pl.lit(True).alias("_failed_tax_payment"))
+    )
+    return (
+        settlements.join(failed_tax, on=["rollout_index", "agent_id"], how="left")
+        .filter(~pl.col("_failed_tax_payment").fill_null(False))
+        .drop("_failed_tax_payment")
+        .select(list(TAX_SETTLEMENT_EVENT_SCHEMA.keys()))
+    )
 
 
 def _emit_lot_dispositions(
@@ -592,15 +939,19 @@ def _consume_asset_for_policy(
 
 
 def _emit_rollout_failures(
-    state: StateCrossSection, scenario: Scenario, policy_dispositions: pl.DataFrame, market: MarketContext, month: int
+    *,
+    state: StateCrossSection,
+    scenario: Scenario,
+    policy_dispositions: pl.DataFrame,
+    transfers: pl.DataFrame,
+    month: int,
 ) -> pl.DataFrame:
     """Flag any active rollout whose monitored cash account is
-    still below 0 after the floor-triggered sales have fired. Cash
-    on the post-phase-1 state is in `state.cash_balances`; the
-    policy dispositions emitted this phase haven't been applied
-    yet, so we credit them in projection before checking the
-    floor."""
-    _ = market
+    still below 0 after the floor-triggered sales and due-now
+    transfers in this phase have fired. Cash on the post-phase-1
+    state is in `state.cash_balances`; this phase's dispositions
+    and transfers haven't been applied yet, so project them before
+    checking the floor."""
     if not scenario.floor_triggered_sale_policies:
         return pl.DataFrame(schema=ROLLOUT_FAILURE_EVENT_SCHEMA)
     active_rollouts = state.rollout_status.filter(pl.col("status") == "active").select("rollout_index")
@@ -613,13 +964,19 @@ def _emit_rollout_failures(
             .group_by("rollout_index")
             .agg(pl.col("proceeds_usd").sum().alias("_proceeds"))
         )
+        transfer_deltas = _transfer_delta_for_account(transfers, policy.agent_id, policy.account_id)
         pre_failure_cash = (
             state.cash_balances.filter(
                 (pl.col("agent_id") == policy.agent_id) & (pl.col("account_id") == policy.account_id)
             )
             .select("rollout_index", pl.col("balance_usd").alias("_balance"))
             .join(policy_proceeds, on="rollout_index", how="left")
-            .with_columns(_projected=pl.col("_balance") + pl.col("_proceeds").fill_null(0.0))
+            .join(transfer_deltas, on="rollout_index", how="left")
+            .with_columns(
+                _projected=pl.col("_balance")
+                + pl.col("_proceeds").fill_null(0.0)
+                + pl.col("_transfer_delta").fill_null(0.0)
+            )
             .join(active_rollouts, on="rollout_index", how="inner")
             .filter(pl.col("_projected") < 0)
         )
@@ -631,9 +988,33 @@ def _emit_rollout_failures(
                 pl.lit(f"{policy.cause_id_prefix}_failure_m{month}", dtype=pl.Utf8()).alias("cause_id"),
                 pl.lit(policy.agent_id, dtype=pl.Utf8()).alias("agent_id"),
                 deficit_usd=-pl.col("_projected"),
+                obligation_id=pl.lit(None, dtype=pl.Utf8()),
+                obligation_type=pl.lit(None, dtype=pl.Utf8()),
+                amount_due_usd=-pl.col("_projected"),
+                amount_paid_usd=pl.lit(0.0, dtype=pl.Float64()),
+                shortfall_usd=-pl.col("_projected"),
+                attempted_funding_sources=pl.lit(",".join(policy.asset_preference_chain), dtype=pl.Utf8()),
             ).select(list(ROLLOUT_FAILURE_EVENT_SCHEMA.keys()))
         )
     return concat_event_frames(blocks, ROLLOUT_FAILURE_EVENT_SCHEMA)
+
+
+def _transfer_delta_for_account(transfers: pl.DataFrame, agent_id: str, account_id: str) -> pl.DataFrame:
+    outgoing = (
+        transfers.filter((pl.col("from_agent_id") == agent_id) & (pl.col("from_account_id") == account_id))
+        .group_by("rollout_index")
+        .agg((-pl.col("amount_usd").sum()).alias("_outgoing"))
+    )
+    incoming = (
+        transfers.filter((pl.col("to_agent_id") == agent_id) & (pl.col("to_account_id") == account_id))
+        .group_by("rollout_index")
+        .agg(pl.col("amount_usd").sum().alias("_incoming"))
+    )
+    return (
+        outgoing.join(incoming, on="rollout_index", how="full", coalesce=True)
+        .with_columns(_transfer_delta=pl.col("_outgoing").fill_null(0.0) + pl.col("_incoming").fill_null(0.0))
+        .select("rollout_index", "_transfer_delta")
+    )
 
 
 def _is_year_end(month: int) -> bool:
@@ -642,17 +1023,20 @@ def _is_year_end(month: int) -> bool:
     return month % 12 == 11
 
 
-def _emit_tax_payment_events(*, state: StateCrossSection, profiles: list[TaxProfile], month: int) -> _TaxPaymentEvents:
-    """Emit estimated-tax cash transfers and liability settlements.
+def _emit_tax_payment_obligations(
+    *, state: StateCrossSection, profiles: list[TaxProfile], month: int
+) -> _TaxPaymentObligationEvents:
+    """Emit estimated-tax obligations and liability-settlement candidates.
 
     Q1/Q2/Q3 estimates are cash payments only: the tax liability for
     that tax year does not exist yet. The following January emits the
-    Q4/true-up cash transfers and a tax-settlement event that applies
-    the full year's paid tax against the already-accrued liability.
+    Q4/true-up obligations and a tax-settlement candidate that applies
+    the full year's paid tax against the already-accrued liability once
+    the due-now settlement succeeds.
     """
     if not profiles:
-        return _empty_tax_payment_events()
-    transfer_blocks: list[pl.DataFrame] = []
+        return _empty_tax_payment_obligation_events()
+    obligation_blocks: list[pl.DataFrame] = []
     settlement_blocks: list[pl.DataFrame] = []
     quarter = _estimated_tax_quarter(month)
     for profile in profiles:
@@ -664,12 +1048,13 @@ def _emit_tax_payment_events(*, state: StateCrossSection, profiles: list[TaxProf
                 pl.lit(amount, dtype=pl.Float64()).alias("amount_usd")
             )
             tax_year = month // 12
-            transfer_blocks.append(
-                _tax_payment_transfer_block(
+            obligation_blocks.append(
+                _tax_payment_obligation_block(
                     amounts=amounts,
                     profile=profile,
                     month=month,
                     cause_id=f"{profile.agent_id}_estimated_tax_q{quarter}_y{tax_year}",
+                    obligation_type="estimated_tax",
                 )
             )
         elif quarter == 4:
@@ -679,17 +1064,17 @@ def _emit_tax_payment_events(*, state: StateCrossSection, profiles: list[TaxProf
             final_events = _final_estimated_and_true_up_events(
                 state=state, profile=profile, month=month, tax_year=tax_year
             )
-            transfer_blocks.append(final_events.transfers)
+            obligation_blocks.append(final_events.obligation_accruals)
             settlement_blocks.append(final_events.settlements)
-    return _TaxPaymentEvents(
-        transfers=concat_event_frames(transfer_blocks, TRANSFER_EVENT_SCHEMA),
+    return _TaxPaymentObligationEvents(
+        obligation_accruals=concat_event_frames(obligation_blocks, OBLIGATION_ACCRUAL_EVENT_SCHEMA),
         settlements=concat_event_frames(settlement_blocks, TAX_SETTLEMENT_EVENT_SCHEMA),
     )
 
 
-def _empty_tax_payment_events() -> _TaxPaymentEvents:
-    return _TaxPaymentEvents(
-        transfers=pl.DataFrame(schema=TRANSFER_EVENT_SCHEMA),
+def _empty_tax_payment_obligation_events() -> _TaxPaymentObligationEvents:
+    return _TaxPaymentObligationEvents(
+        obligation_accruals=pl.DataFrame(schema=OBLIGATION_ACCRUAL_EVENT_SCHEMA),
         settlements=pl.DataFrame(schema=TAX_SETTLEMENT_EVENT_SCHEMA),
     )
 
@@ -713,7 +1098,7 @@ def _estimated_tax_quarter(month: int) -> int | None:
 
 def _final_estimated_and_true_up_events(
     *, state: StateCrossSection, profile: TaxProfile, month: int, tax_year: int
-) -> _TaxPaymentEvents:
+) -> _TaxPaymentObligationEvents:
     """Return Q4 estimated, true-up, and settlement events.
 
     `prior_year_tax_usd` is the aggregate safe-harbor target for
@@ -722,7 +1107,7 @@ def _final_estimated_and_true_up_events(
     outstanding jurisdiction rows for the same tax year."""
     actual = _actual_tax_by_rollout(state.tax_liabilities, profile=profile, tax_year=tax_year)
     if actual.is_empty():
-        return _empty_tax_payment_events()
+        return _empty_tax_payment_obligation_events()
     safe_harbor_total = pl.min_horizontal(
         pl.lit(profile.prior_year_tax_usd, dtype=pl.Float64()), pl.col("_actual_tax_usd")
     )
@@ -734,23 +1119,25 @@ def _final_estimated_and_true_up_events(
     q4 = payments.select("rollout_index", pl.col("_q4_amount_usd").alias("amount_usd"))
     true_up = payments.select("rollout_index", pl.col("_true_up_amount_usd").alias("amount_usd"))
     settlement = payments.select("rollout_index", pl.col("_actual_tax_usd").alias("amount_usd"))
-    return _TaxPaymentEvents(
-        transfers=concat_event_frames(
+    return _TaxPaymentObligationEvents(
+        obligation_accruals=concat_event_frames(
             [
-                _tax_payment_transfer_block(
+                _tax_payment_obligation_block(
                     amounts=q4,
                     profile=profile,
                     month=month,
                     cause_id=f"{profile.agent_id}_estimated_tax_q4_y{tax_year}",
+                    obligation_type="estimated_tax",
                 ),
-                _tax_payment_transfer_block(
+                _tax_payment_obligation_block(
                     amounts=true_up,
                     profile=profile,
                     month=month,
                     cause_id=f"{profile.agent_id}_tax_true_up_y{tax_year}",
+                    obligation_type="tax_true_up",
                 ),
             ],
-            TRANSFER_EVENT_SCHEMA,
+            OBLIGATION_ACCRUAL_EVENT_SCHEMA,
         ),
         settlements=_tax_settlement_block(
             amounts=settlement,
@@ -774,22 +1161,24 @@ def _actual_tax_by_rollout(tax_liabilities: pl.DataFrame, *, profile: TaxProfile
     )
 
 
-def _tax_payment_transfer_block(
-    *, amounts: pl.DataFrame, profile: TaxProfile, month: int, cause_id: str
+def _tax_payment_obligation_block(
+    *, amounts: pl.DataFrame, profile: TaxProfile, month: int, cause_id: str, obligation_type: str
 ) -> pl.DataFrame:
-    """Project per-rollout tax payment amounts into transfer rows."""
+    """Project per-rollout tax payment amounts into obligations."""
     return (
         amounts.filter(pl.col("amount_usd") > 0)
         .with_columns(
             pl.lit(month, dtype=pl.Int64()).alias("month_index"),
             pl.lit(cause_id, dtype=pl.Utf8()).alias("cause_id"),
-            pl.lit(profile.agent_id, dtype=pl.Utf8()).alias("from_agent_id"),
+            pl.lit(cause_id, dtype=pl.Utf8()).alias("obligation_id"),
+            pl.lit(obligation_type, dtype=pl.Utf8()).alias("obligation_type"),
+            pl.lit(profile.agent_id, dtype=pl.Utf8()).alias("agent_id"),
             pl.lit(profile.payment_account_id, dtype=pl.Utf8()).alias("from_account_id"),
             pl.lit(profile.tax_authority_agent_id, dtype=pl.Utf8()).alias("to_agent_id"),
             pl.lit(profile.tax_authority_account_id, dtype=pl.Utf8()).alias("to_account_id"),
-            pl.lit(None, dtype=pl.Utf8()).alias("income_category"),
+            pl.col("amount_usd").alias("amount_due_usd"),
         )
-        .select(list(TRANSFER_EVENT_SCHEMA.keys()))
+        .select(list(OBLIGATION_ACCRUAL_EVENT_SCHEMA.keys()))
     )
 
 
