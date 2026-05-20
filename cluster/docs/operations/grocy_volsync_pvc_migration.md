@@ -1,7 +1,7 @@
 # Grocy VolSync PVC Migration
 
-Status: smoke-tested with disposable PVCs on 2026-05-20; Grocy SF destination
-PVC prepared and final sync staged.
+Status: smoke-tested with disposable PVCs on 2026-05-20; Grocy SF final sync
+completed and destination verification staged.
 
 This runbook moves Grocy application data from Hetzner local-path PVCs to OVH
 Kimsufi local-path PVCs using VolSync `rsyncTLS`.
