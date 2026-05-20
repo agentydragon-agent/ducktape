@@ -1,0 +1,173 @@
+from __future__ import annotations
+
+from datetime import date
+
+import pytest
+import pytest_bazel
+from pydantic import ValidationError
+
+from augur.api.portfolio import (
+    PortfolioAccountConfig,
+    PortfolioConfig,
+    PublicSecurityPositionConfig,
+    PublicSecurityTaxLotConfig,
+)
+
+
+def test_public_security_tax_lots_expand_to_sim_initial_lots() -> None:
+    portfolio = PortfolioConfig(
+        accounts=(PortfolioAccountConfig(account_id="taxable_brokerage", owner_agent_id="agent_a", label="Taxable"),),
+        public_securities=(
+            PublicSecurityPositionConfig(
+                position_id="voo_position",
+                account_id="taxable_brokerage",
+                symbol="VOO",
+                security_kind="etf",
+                value_series_id="voo",
+                unit_value_usd=500.0,
+                lots=(
+                    PublicSecurityTaxLotConfig(
+                        lot_id="voo_2024_05_20", acquired_on=date(2024, 5, 20), quantity=100.0, cost_basis_usd=30_000.0
+                    ),
+                    PublicSecurityTaxLotConfig(
+                        lot_id="voo_2026_05_20", acquired_on=date(2026, 5, 20), quantity=20.0, cost_basis_usd=9_000.0
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    lots = portfolio.to_initial_lots(snapshot_date=date(2026, 5, 20))
+
+    assert portfolio.public_securities[0].current_value_usd == 60_000.0
+    assert portfolio.public_securities[0].total_cost_basis_usd == 39_000.0
+    assert portfolio.total_public_security_value_usd == 60_000.0
+    assert [(lot.lot_id, lot.agent_id, lot.asset_id, lot.purchase_month_index) for lot in lots] == [
+        ("voo_2024_05_20", "agent_a", "voo", -24),
+        ("voo_2026_05_20", "agent_a", "voo", 0),
+    ]
+    assert lots[0].quantity == 100.0
+    assert lots[0].cost_basis_per_unit_usd == 300.0
+    assert lots[1].cost_basis_per_unit_usd == 450.0
+
+
+def test_one_account_can_hold_multiple_public_security_positions() -> None:
+    portfolio = PortfolioConfig(
+        accounts=(PortfolioAccountConfig(account_id="taxable_brokerage", owner_agent_id="agent_a"),),
+        public_securities=(
+            PublicSecurityPositionConfig(
+                position_id="voo_position",
+                account_id="taxable_brokerage",
+                symbol="VOO",
+                security_kind="etf",
+                value_series_id="voo",
+                unit_value_usd=500.0,
+                lots=(
+                    PublicSecurityTaxLotConfig(
+                        lot_id="voo_lot", acquired_on=date(2024, 1, 15), quantity=10.0, cost_basis_usd=4_000.0
+                    ),
+                ),
+            ),
+            PublicSecurityPositionConfig(
+                position_id="goog_position",
+                account_id="taxable_brokerage",
+                symbol="GOOG",
+                security_kind="stock",
+                value_series_id="goog",
+                unit_value_usd=180.0,
+                lots=(
+                    PublicSecurityTaxLotConfig(
+                        lot_id="goog_lot", acquired_on=date(2023, 6, 1), quantity=5.0, cost_basis_usd=500.0
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    assert portfolio.total_public_security_value_usd == 5_900.0
+
+
+def test_public_security_positions_must_reference_known_accounts() -> None:
+    with pytest.raises(ValidationError, match="unknown account_id"):
+        PortfolioConfig(
+            accounts=(),
+            public_securities=(
+                PublicSecurityPositionConfig(
+                    position_id="voo_position",
+                    account_id="missing",
+                    symbol="VOO",
+                    security_kind="etf",
+                    value_series_id="voo",
+                    unit_value_usd=500.0,
+                    lots=(
+                        PublicSecurityTaxLotConfig(
+                            lot_id="voo_lot", acquired_on=date(2024, 1, 15), quantity=10.0, cost_basis_usd=4_000.0
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+
+def test_public_security_lot_ids_must_be_unique() -> None:
+    account = PortfolioAccountConfig(account_id="taxable_brokerage", owner_agent_id="agent_a")
+    with pytest.raises(ValidationError, match="unique lot_id"):
+        PortfolioConfig(
+            accounts=(account,),
+            public_securities=(
+                PublicSecurityPositionConfig(
+                    position_id="voo_position",
+                    account_id=account.account_id,
+                    symbol="VOO",
+                    security_kind="etf",
+                    value_series_id="voo",
+                    unit_value_usd=500.0,
+                    lots=(
+                        PublicSecurityTaxLotConfig(
+                            lot_id="duplicate_lot", acquired_on=date(2024, 1, 15), quantity=10.0, cost_basis_usd=4_000.0
+                        ),
+                    ),
+                ),
+                PublicSecurityPositionConfig(
+                    position_id="goog_position",
+                    account_id=account.account_id,
+                    symbol="GOOG",
+                    security_kind="stock",
+                    value_series_id="goog",
+                    unit_value_usd=180.0,
+                    lots=(
+                        PublicSecurityTaxLotConfig(
+                            lot_id="duplicate_lot", acquired_on=date(2023, 6, 1), quantity=5.0, cost_basis_usd=500.0
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+
+def test_future_lot_acquisition_date_is_rejected_during_sim_expansion() -> None:
+    portfolio = PortfolioConfig(
+        accounts=(PortfolioAccountConfig(account_id="taxable_brokerage", owner_agent_id="agent_a"),),
+        public_securities=(
+            PublicSecurityPositionConfig(
+                position_id="voo_position",
+                account_id="taxable_brokerage",
+                symbol="VOO",
+                security_kind="etf",
+                value_series_id="voo",
+                unit_value_usd=500.0,
+                lots=(
+                    PublicSecurityTaxLotConfig(
+                        lot_id="future_lot", acquired_on=date(2026, 5, 21), quantity=10.0, cost_basis_usd=4_000.0
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    with pytest.raises(ValueError, match="after snapshot date"):
+        portfolio.to_initial_lots(snapshot_date=date(2026, 5, 20))
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

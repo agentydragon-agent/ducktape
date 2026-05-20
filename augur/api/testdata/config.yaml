@@ -58,6 +58,29 @@ minimum_reserve_mode: projected_deficits
 personal_finance:
   minimum_liquid_reserve_usd: 10000.0
 pmms_survey_date: "2026-05-14"
+portfolio:
+  accounts:
+    - account_id: taxable_brokerage
+      account_type: taxable_brokerage
+      label: Taxable Brokerage
+      owner_agent_id: agent_a
+  public_securities:
+    - position_id: sp500_proxy
+      account_id: taxable_brokerage
+      label: SP500 Proxy
+      lots:
+        - acquired_on: "2020-01-15"
+          cost_basis_usd: 60000.0
+          lot_id: sp500_proxy_2020_01
+          quantity: 150.0
+        - acquired_on: "2024-06-03"
+          cost_basis_usd: 50000.0
+          lot_id: sp500_proxy_2024_06
+          quantity: 150.0
+      security_kind: etf
+      symbol: VOO
+      unit_value_usd: 500.0
+      value_series_id: voo
 property_source:
   properties_path: properties.json
 reserve_forward_months: 12

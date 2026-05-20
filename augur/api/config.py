@@ -23,6 +23,7 @@ from pathlib import Path
 import yaml
 from pydantic import Field, HttpUrl, NonNegativeFloat, NonNegativeInt, PositiveInt, model_validator
 
+from augur.api.portfolio import PortfolioConfig
 from augur.core.bootstrap import DefaultScenario
 from augur.core.finance import ConcentratedHoldingSnapshot, FinanceSnapshot
 from augur.core.local_regulation import LocalRegulation
@@ -37,6 +38,7 @@ __all__ = [
     "FinanceSnapshot",
     "LocationConfig",
     "PersonalFinanceConfig",
+    "PortfolioConfig",
     "PropertyAssetConfig",
     "PropertySourceConfig",
     "dump_augur_config_yaml",
@@ -142,6 +144,7 @@ class AugurConfig(ApiModel):
     personal_finance: PersonalFinanceConfig
     property_source: PropertySourceConfig
     snapshot: FinanceSnapshot
+    portfolio: PortfolioConfig = Field(default_factory=PortfolioConfig)
     locations: tuple[LocationConfig, ...] = ()
     location_selection: tuple[str, ...] | None = None
     minimum_reserve_mode: LiquidityReserveRuleType = LiquidityReserveRuleType.PROJECTED_DEFICITS

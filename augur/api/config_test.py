@@ -21,6 +21,12 @@ from augur.api.config import (
     dump_augur_config_yaml,
     load_augur_config,
 )
+from augur.api.portfolio import (
+    PortfolioAccountConfig,
+    PortfolioConfig,
+    PublicSecurityPositionConfig,
+    PublicSecurityTaxLotConfig,
+)
 from augur.core.local_regulation import LocalRegulation
 from augur.core.scenario_set import ActorRole, LiquidityReserveRuleType, TaxRegime
 from augur.model.market_provider_config import SimpleMarketProviderConfig
@@ -128,6 +134,34 @@ def test_finance_snapshot_holdings_round_trip_through_json() -> None:
     assert holding.fmv_usd_per_unit == 1.5
     assert holding.basis_per_unit_usd == 0
     assert holding.value_usd == 15
+
+
+def test_config_carries_tax_lot_accurate_portfolio_schema() -> None:
+    config = _minimal_config(
+        portfolio=PortfolioConfig(
+            accounts=(PortfolioAccountConfig(account_id="taxable_brokerage", owner_agent_id="alpha"),),
+            public_securities=(
+                PublicSecurityPositionConfig(
+                    position_id="voo_position",
+                    account_id="taxable_brokerage",
+                    symbol="VOO",
+                    security_kind="etf",
+                    value_series_id="voo",
+                    unit_value_usd=500.0,
+                    lots=(
+                        PublicSecurityTaxLotConfig(
+                            lot_id="voo_2024_05_12", acquired_on="2024-05-12", quantity=100, cost_basis_usd=30_000
+                        ),
+                    ),
+                ),
+            ),
+        )
+    )
+
+    reloaded = AugurConfig.model_validate_json(config.model_dump_json(exclude_computed_fields=True))
+
+    assert reloaded.portfolio.public_securities[0].lots[0].acquired_on.isoformat() == "2024-05-12"
+    assert reloaded.portfolio.to_initial_lots(snapshot_date=reloaded.snapshot.as_of_date)[0].purchase_month_index == -24
 
 
 def test_location_selection_accepts_location_strings() -> None:

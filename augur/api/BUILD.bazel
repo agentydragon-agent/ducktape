@@ -6,6 +6,7 @@ py_library(
     name = "config_py",
     srcs = ["config.py"],
     deps = [
+        ":portfolio_py",
         "//augur/core:bootstrap_py",
         "//augur/core:local_regulation_py",
         "//augur/core:scenario_set_py",
@@ -21,9 +22,30 @@ py_test(
     srcs = ["config_test.py"],
     deps = [
         ":config_py",
+        ":portfolio_py",
         "//augur/core:local_regulation_py",
         "//augur/core:scenario_set_py",
         "//augur/model:market_provider_config_py",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "portfolio_py",
+    srcs = ["portfolio.py"],
+    deps = [
+        "//augur/sim:scenario",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "portfolio_test",
+    srcs = ["portfolio_test.py"],
+    deps = [
+        ":portfolio_py",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

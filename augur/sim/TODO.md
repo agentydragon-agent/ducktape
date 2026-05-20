@@ -128,11 +128,12 @@ Translator gaps to migrate next:
       a month-0 level, an as-of-date level projected into month 0, or a fixed
       contract value. The initial cutover can require the config as-of date to
       equal simulation month 0.
-- [ ] Add backend-configured public securities to `AugurConfig` /
-      `FinanceSnapshot`: position id, account id, owner actor id, label,
-      symbol/security identity, market-model series mapping (for example
-      SP500-proxy dynamics), units, starting price, and cost basis. Opening
-      holdings are facts about the deployment snapshot, not scenario knobs.
+- [ ] Wire backend-configured public securities from `AugurConfig.portfolio`
+      into sim scenarios. The user-authored schema now has accounts,
+      positions, and per-lot acquisition date / quantity / cost basis; the
+      translator still needs to feed those lots into scenario construction
+      and teach the market model to start each `value_series_id` at the
+      configured `unit_value_usd`.
 - [ ] Replace request-local `GenericSp500StockPosition.value_usd` translation
       with config-sourced initial lots. The translator should create
       `InitialLot(quantity=units, cost_basis_per_unit_usd=cost_basis / units)`
