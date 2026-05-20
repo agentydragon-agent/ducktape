@@ -89,6 +89,9 @@ bazelisk run @ducktape//devinfra/js/debundle:debundle -- \
   peel explain --graph "$GRAPH" --modules "$MODULES" \
   --proposal-id auto_partition_0000 --limit 25
 
+# The selector can instead be --owner-id <owner> or --binding-id <binding>.
+# There is no --binding shorthand.
+
 # Source text for one object. Use --source-root when source_path is relative.
 bazelisk run @ducktape//devinfra/js/debundle:debundle -- \
   peel source-slice --graph "$GRAPH" --modules "$MODULES" \
@@ -103,7 +106,8 @@ bazelisk run @ducktape//devinfra/js/debundle:debundle -- \
   candidate queue.
 - `candidates` is the symbol-level candidate catalog.
 - `explain` is the graph walk primitive for owners, bindings, and
-  proposals.
+  proposals. Select exactly one object with `--owner-id`, `--binding-id`,
+  or `--proposal-id`.
 - `source-slice` is the source retrieval primitive for the same IDs.
 
 Prefer these commands over grepping generated output. The owner graph is

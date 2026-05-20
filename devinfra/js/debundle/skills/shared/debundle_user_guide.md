@@ -53,9 +53,14 @@ debundle peel plan-work --graph "$GRAPH" --modules "$MODULES" --limit 25
 debundle peel patch-status --graph "$GRAPH" --modules "$MODULES" --limit 50
 debundle peel candidates --graph "$GRAPH" --modules "$MODULES" --limit 100
 debundle peel explain --graph "$GRAPH" --modules "$MODULES" --proposal-id <id>
+debundle peel explain --graph "$GRAPH" --modules "$MODULES" --binding-id <binding>
+debundle peel explain --graph "$GRAPH" --modules "$MODULES" --owner-id <owner>
 debundle peel source-slice --graph "$GRAPH" --modules "$MODULES" \
   --proposal-id <id> --source-root "$SOURCE_ROOT" --context-lines 40
 ```
+
+`explain` and `source-slice` select exactly one object with `--proposal-id`,
+`--owner-id`, or `--binding-id`; there is no `--binding` shorthand.
 
 Interpretation:
 
