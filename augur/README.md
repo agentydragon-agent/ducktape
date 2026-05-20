@@ -53,7 +53,7 @@ property ID to a deployment-owned asset ID and either an explicit public
 For local public-fixture runs:
 
 ```bash
-bazelisk run //augur/api:server -- --config augur/api/testdata/config.yaml
+bazelisk run //augur:dev
 ```
 
 The public fixture config uses the lightweight `simple` market provider. Fitted
