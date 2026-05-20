@@ -7,7 +7,8 @@ use serde::Deserialize;
 
 use output_layout::DebundleOutputLayout;
 use spec::{
-    AnonymousStatement, ChunkAnalysisOptions, ChunkRenames, EmitBrowserHarnessConfig,
+    AnonymousStatement, BundledPartialSwapBundle, BundledPartialSwapMark,
+    BundledPartialSwapPackage, ChunkAnalysisOptions, ChunkRenames, EmitBrowserHarnessConfig,
     LoadJsChunksArgs, LogicalModule, MaterializeLogicalModulesConfig, Member, MemberEffect,
     MemberPurity, PartialSwapMark, PartialSwapPackage, PartialSwapSymbol, SwapMark,
     SwapVendorChunksConfig, TransformSpec, UnassignedMode, VendorLevel, VendorMark, VendorRole,
@@ -83,12 +84,17 @@ struct VendorMarkSource {
     subpath: Option<String>,
     #[serde(default)]
     wrapper_shape: Option<WrapperShape>,
-    /// `partial_swap`-only: per-package upstream coordinates.
+    /// `partial_swap` / `bundled_partial_swap`: per-package upstream
+    /// coordinates. Bundled swaps also require `bundle_export`.
     #[serde(default)]
-    packages: Option<BTreeMap<String, PartialSwapPackage>>,
-    /// `partial_swap`-only: per-chunk-export upstream-export mapping.
+    packages: Option<BTreeMap<String, VendorPackageSource>>,
+    /// `partial_swap` / `bundled_partial_swap`: per-chunk-export
+    /// upstream-export mapping.
     #[serde(default)]
     symbols: Option<BTreeMap<String, PartialSwapSymbol>>,
+    /// `bundled_partial_swap`-only: caller-supplied ESM bundle blob.
+    #[serde(default)]
+    bundle: Option<BundledPartialSwapBundle>,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
@@ -98,6 +104,18 @@ enum VendorLevelSource {
     BoundaryRename,
     Swap,
     PartialSwap,
+    BundledPartialSwap,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct VendorPackageSource {
+    version: String,
+    subpath: String,
+    #[serde(default)]
+    namespace: Option<String>,
+    #[serde(default)]
+    bundle_export: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -129,7 +147,10 @@ pub fn compile_spec_tree(options: &CompileSpecTreeOptions) -> Result<TransformSp
             input_root: input_root.clone(),
             js_list_path,
         },
-        vendor: vendor_map(read_yaml::<VendorMarksFile>(&options.vendor_marks_path)?.vendor_marks)?,
+        vendor: vendor_map(
+            read_yaml::<VendorMarksFile>(&options.vendor_marks_path)?.vendor_marks,
+            source_root,
+        )?,
         logical_modules: logical_modules_map(module_sources)?,
         chunk_renames: chunk_renames_map(&config.main_chunk_id, binding_patch_members),
         unassigned_mode: config.unassigned_mode,
@@ -220,7 +241,10 @@ fn is_trivial_binding_patch(member: &Member) -> bool {
         && matches!(member.effect, MemberEffect::Default)
 }
 
-fn vendor_map(sources: Vec<VendorMarkSource>) -> Result<BTreeMap<String, VendorMark>> {
+fn vendor_map(
+    sources: Vec<VendorMarkSource>,
+    source_root: Option<&Path>,
+) -> Result<BTreeMap<String, VendorMark>> {
     // Multiple vendor marks on the same `chunk_path` would silently clobber
     // each other in the resulting `BTreeMap`. The downstream stages
     // (`apply_partial_vendor_swaps`, `strip_swapped_vendor_exports`) only
@@ -235,7 +259,7 @@ fn vendor_map(sources: Vec<VendorMarkSource>) -> Result<BTreeMap<String, VendorM
         let chunk_path = source.chunk_path.clone();
         let identity = source.identity.clone();
         let role = source.role;
-        let level = source.into_vendor_level()?;
+        let level = source.into_vendor_level(source_root)?;
         if let Some(prior) = out.get(&chunk_path) {
             bail!(
                 "vendor_marks: duplicate chunk_path `{chunk_path}` (first entry: {}, second entry: {identity}). \
@@ -256,7 +280,7 @@ fn vendor_map(sources: Vec<VendorMarkSource>) -> Result<BTreeMap<String, VendorM
 }
 
 impl VendorMarkSource {
-    fn into_vendor_level(self) -> Result<VendorLevel> {
+    fn into_vendor_level(self, source_root: Option<&Path>) -> Result<VendorLevel> {
         match self.level {
             VendorLevelSource::Suppress => {
                 self.ensure_no_swap_payload()?;
@@ -308,7 +332,58 @@ impl VendorMarkSource {
                     }
                 }
                 Ok(VendorLevel::PartialSwap(PartialSwapMark {
-                    packages,
+                    packages: packages
+                        .into_iter()
+                        .map(|(name, package)| {
+                            Ok((name, package.into_partial_swap_package(&self.chunk_path)?))
+                        })
+                        .collect::<Result<_>>()?,
+                    symbols,
+                }))
+            }
+            VendorLevelSource::BundledPartialSwap => {
+                self.ensure_no_swap_payload()?;
+                let bundle = self.bundle.clone().with_context(|| {
+                    format!(
+                        "vendor mark {} (bundled_partial_swap) missing `bundle`",
+                        self.chunk_path
+                    )
+                })?;
+                let packages = self.packages.clone().with_context(|| {
+                    format!(
+                        "vendor mark {} (bundled_partial_swap) missing `packages`",
+                        self.chunk_path
+                    )
+                })?;
+                let symbols = self.symbols.clone().with_context(|| {
+                    format!(
+                        "vendor mark {} (bundled_partial_swap) missing `symbols`",
+                        self.chunk_path
+                    )
+                })?;
+                for (chunk_export, symbol) in &symbols {
+                    if !packages.contains_key(&symbol.package) {
+                        bail!(
+                            "vendor mark {} (bundled_partial_swap) symbol {} references unknown package `{}`",
+                            self.chunk_path,
+                            chunk_export,
+                            symbol.package
+                        );
+                    }
+                }
+                Ok(VendorLevel::BundledPartialSwap(BundledPartialSwapMark {
+                    bundle: BundledPartialSwapBundle {
+                        path: source_path(source_root, bundle.path),
+                    },
+                    packages: packages
+                        .into_iter()
+                        .map(|(name, package)| {
+                            Ok((
+                                name,
+                                package.into_bundled_partial_swap_package(&self.chunk_path)?,
+                            ))
+                        })
+                        .collect::<Result<_>>()?,
                     symbols,
                 }))
             }
@@ -330,13 +405,45 @@ impl VendorMarkSource {
     }
 
     fn ensure_no_partial_swap_payload(&self) -> Result<()> {
-        if self.packages.is_some() || self.symbols.is_some() {
+        if self.packages.is_some() || self.symbols.is_some() || self.bundle.is_some() {
             bail!(
-                "vendor mark {} has partial_swap-only fields (`packages`/`symbols`) but level is not partial_swap",
+                "vendor mark {} has partial-swap-only fields (`bundle`/`packages`/`symbols`) but level is not partial_swap or bundled_partial_swap",
                 self.chunk_path
             );
         }
         Ok(())
+    }
+}
+
+impl VendorPackageSource {
+    fn into_partial_swap_package(self, chunk_path: &str) -> Result<PartialSwapPackage> {
+        if self.bundle_export.is_some() {
+            bail!(
+                "vendor mark {chunk_path} (partial_swap) package has bundled_partial_swap-only field `bundle_export`"
+            );
+        }
+        Ok(PartialSwapPackage {
+            version: self.version,
+            subpath: self.subpath,
+            namespace: self.namespace,
+        })
+    }
+
+    fn into_bundled_partial_swap_package(
+        self,
+        chunk_path: &str,
+    ) -> Result<BundledPartialSwapPackage> {
+        let bundle_export = self.bundle_export.with_context(|| {
+            format!(
+                "vendor mark {chunk_path} (bundled_partial_swap) package missing `bundle_export`"
+            )
+        })?;
+        Ok(BundledPartialSwapPackage {
+            version: self.version,
+            subpath: self.subpath,
+            bundle_export,
+            namespace: self.namespace,
+        })
     }
 }
 

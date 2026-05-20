@@ -249,7 +249,7 @@ pub fn emit_js_module(parsed: &ParsedJsModule, header_lines: &[String]) -> Resul
         emitter.emit_module(&parsed.module)?;
     }
     let code = String::from_utf8(buf)?;
-    let code = code.trim_end_matches(|ch| ch == '\n' || ch == '\r');
+    let code = code.trim_end_matches(['\n', '\r']);
     let mut out = String::new();
     for line in header_lines {
         out.push_str(line);

@@ -249,6 +249,7 @@ pub enum VendorLevel {
     BoundaryRename,
     Swap(SwapMark),
     PartialSwap(PartialSwapMark),
+    BundledPartialSwap(BundledPartialSwapMark),
 }
 
 /// What [`TransformSpec::unassigned_mode`] means for a chunk's
@@ -359,6 +360,40 @@ pub struct PartialSwapSymbol {
     /// Forbidden for `kind: namespace` / `kind: default`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub upstream_export: Option<String>,
+}
+
+/// Per-symbol vendor swap backed by a caller-supplied ESM bundle.
+/// The input package may be CJS or otherwise browser-hostile; the
+/// debundler does not run a bundler itself. Instead, `bundle.path`
+/// names a prebuilt ESM blob whose named exports are projected into
+/// per-package facades under `vendors/generated`, and consumer imports
+/// are rewritten to those facades.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct BundledPartialSwapMark {
+    pub bundle: BundledPartialSwapBundle,
+    /// package_name -> upstream metadata and bundle projection.
+    pub packages: BTreeMap<String, BundledPartialSwapPackage>,
+    /// chunk_export_name -> which package + how to rewrite it.
+    pub symbols: BTreeMap<String, PartialSwapSymbol>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct BundledPartialSwapBundle {
+    pub path: PathBuf,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct BundledPartialSwapPackage {
+    pub version: String,
+    pub subpath: String,
+    /// Named export in [`BundledPartialSwapMark::bundle`] that is the
+    /// package object/default value for this package coordinate.
+    pub bundle_export: String,
+    /// Local identifier used for member/named rewrites that need a
+    /// stable imported object. Ignored for `kind: namespace` and
+    /// `kind: default`, which use the caller-side local binding.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub namespace: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, Default, Eq, PartialEq)]

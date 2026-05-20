@@ -6,7 +6,7 @@ use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
 
 use artifact::{ChunkBundle, JsFile, get_chunk_entry_path};
-use spec::{PartialSwapMark, VendorLevel, VendorMark};
+use spec::{PartialSwapSymbol, VendorLevel, VendorMark};
 
 pub struct StripSwappedVendorExportsResult {
     pub artifact: ChunkBundle,
@@ -44,8 +44,10 @@ pub fn strip_swapped_vendor_exports(
     let mut per_chunk = BTreeMap::new();
 
     for (chunk_path, mark) in vendor {
-        let VendorLevel::PartialSwap(partial) = &mark.level else {
-            continue;
+        let symbols = match &mark.level {
+            VendorLevel::PartialSwap(partial) => &partial.symbols,
+            VendorLevel::BundledPartialSwap(partial) => &partial.symbols,
+            _ => continue,
         };
 
         let chunk_name = chunk_id_from_chunk_path(chunk_path)?;
@@ -72,7 +74,7 @@ pub fn strip_swapped_vendor_exports(
             )
         })?;
 
-        let stats = strip_one_chunk(&mut ast.module, partial, chunk_path)?;
+        let stats = strip_one_chunk(&mut ast.module, symbols, chunk_path)?;
         per_chunk.insert(chunk_path.clone(), stats);
 
         js_chunk.insert_file(JsFile::from_ast_parts(parts, ast));
@@ -86,10 +88,10 @@ pub fn strip_swapped_vendor_exports(
 
 fn strip_one_chunk(
     module: &mut Module,
-    partial: &PartialSwapMark,
+    symbols: &BTreeMap<String, PartialSwapSymbol>,
     chunk_path: &str,
 ) -> Result<ChunkStripStats> {
-    let swapped: BTreeSet<String> = partial.symbols.keys().cloned().collect();
+    let swapped: BTreeSet<String> = symbols.keys().cloned().collect();
 
     let stripped_export_specifiers = strip_export_specifiers(module, &swapped, chunk_path)?;
     let post_strip_exports = collect_exported_names(module);
@@ -661,7 +663,7 @@ fn collect_exported_names(module: &Module) -> BTreeSet<String> {
 
 #[cfg(test)]
 mod tests {
-    use spec::{PartialSwapKind, PartialSwapPackage, PartialSwapSymbol};
+    use spec::{PartialSwapKind, PartialSwapSymbol};
     use swc_common::sync::Lrc;
     use swc_common::{FileName, SourceMap};
     use swc_ecma_ast::EsVersion;
@@ -700,7 +702,7 @@ mod tests {
         String::from_utf8(buf).expect("utf8")
     }
 
-    fn mk_partial(swapped: &[&str]) -> PartialSwapMark {
+    fn mk_symbols(swapped: &[&str]) -> BTreeMap<String, PartialSwapSymbol> {
         let mut symbols = BTreeMap::new();
         for s in swapped {
             symbols.insert(
@@ -712,22 +714,13 @@ mod tests {
                 },
             );
         }
-        let mut packages = BTreeMap::new();
-        packages.insert(
-            "pkg".to_string(),
-            PartialSwapPackage {
-                version: "1.0.0".to_string(),
-                subpath: "index.js".to_string(),
-                namespace: None,
-            },
-        );
-        PartialSwapMark { packages, symbols }
+        symbols
     }
 
     #[test]
     fn strips_named_export_specifier() {
         let mut module = parse("const a = 1;\nconst b = 2;\nexport { a as foo, b as bar };\n");
-        let stats = strip_one_chunk(&mut module, &mk_partial(&["foo"]), "chunk.js").unwrap();
+        let stats = strip_one_chunk(&mut module, &mk_symbols(&["foo"]), "chunk.js").unwrap();
         let emitted = emit(&module);
         assert!(!emitted.contains("foo"), "stripped name leaked:\n{emitted}");
         assert!(emitted.contains("bar"), "kept name missing:\n{emitted}");
@@ -737,7 +730,7 @@ mod tests {
     #[test]
     fn drops_inline_export_decl_and_dce_kills_pure_body() {
         let mut module = parse("export const e6 = () => true;\nexport const k = 7;\n");
-        strip_one_chunk(&mut module, &mk_partial(&["e6"]), "chunk.js").unwrap();
+        strip_one_chunk(&mut module, &mk_symbols(&["e6"]), "chunk.js").unwrap();
         let emitted = emit(&module);
         assert!(
             !emitted.contains("e6"),
@@ -754,7 +747,7 @@ mod tests {
         let mut module = parse(
             "class ZodObject {}\nconst object = ()=>new ZodObject();\nexport { object as o, ZodObject as Z };\n",
         );
-        strip_one_chunk(&mut module, &mk_partial(&["o"]), "chunk.js").unwrap();
+        strip_one_chunk(&mut module, &mk_symbols(&["o"]), "chunk.js").unwrap();
         let emitted = emit(&module);
         assert!(
             emitted.contains("class ZodObject"),
@@ -775,7 +768,7 @@ mod tests {
         let mut module = parse(
             "const carrier = {};\nObject.defineProperty(carrier, \"_zod\", { value: {} });\nexport const e6 = ()=>true;\n",
         );
-        strip_one_chunk(&mut module, &mk_partial(&["e6"]), "chunk.js").unwrap();
+        strip_one_chunk(&mut module, &mk_symbols(&["e6"]), "chunk.js").unwrap();
         let emitted = emit(&module);
         assert!(
             emitted.contains("Object.defineProperty"),
@@ -786,7 +779,7 @@ mod tests {
     #[test]
     fn bails_when_swapped_name_not_locally_exported() {
         let mut module = parse("export { stuff } from \"./peer.js\";\n");
-        let err = strip_one_chunk(&mut module, &mk_partial(&["stuff"]), "chunk.js")
+        let err = strip_one_chunk(&mut module, &mk_symbols(&["stuff"]), "chunk.js")
             .expect_err("should fail");
         assert!(
             err.to_string()

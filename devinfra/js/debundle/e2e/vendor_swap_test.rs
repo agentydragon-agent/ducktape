@@ -1035,10 +1035,13 @@ fn bundled_partial_swap_replaces_react_cjs_family_with_singleton_esm_facade() {
     let out_root = workspace_root.join("out");
     let wrapper_root = out_root.join("app").join("vendors").join("generated");
     let manifest_path = out_root.join("reports").join("vendor_swaps.json");
+    let bundle_root = root.path().join("external-bundles");
+    let bundle_path = bundle_root.join("react-family.esbuilt.js");
     let package_root = root.path().join("upstream").join(PACKAGE_NAME);
     fs::create_dir_all(&extracted_root).unwrap();
     fs::create_dir_all(&snapshot_root).unwrap();
     fs::create_dir_all(&out_root).unwrap();
+    fs::create_dir_all(&bundle_root).unwrap();
     fs::create_dir_all(&package_root).unwrap();
     fs::create_dir_all(snapshot_root.join("static")).unwrap();
 
@@ -1056,6 +1059,13 @@ fn bundled_partial_swap_replaces_react_cjs_family_with_singleton_esm_facade() {
     );
     let js_list_path = extracted_root.join("js-files.txt");
     write_text_file(&js_list_path, &format!("{MEGACHUNK_PATH}\n{CALLER_PATH}\n"));
+    write_text_file(
+        &bundle_path,
+        "const dispatcher = { current: \"package\" };\n\
+         const React = { dispatcher, useState: () => dispatcher.current };\n\
+         const jsxRuntime = { jsx: () => dispatcher.current };\n\
+         export { React, jsxRuntime };\n",
+    );
 
     write_text_file(
         &package_root.join("package.json"),
@@ -1087,14 +1097,17 @@ fn bundled_partial_swap_replaces_react_cjs_family_with_singleton_esm_facade() {
             MEGACHUNK_PATH: {
                 "level": "bundled_partial_swap",
                 "identity": "React CJS family bundled partial swap fixture",
+                "bundle": { "path": &bundle_path },
                 "packages": {
                     PACKAGE_NAME: {
                         "version": PACKAGE_VERSION,
                         "subpath": "index.js",
+                        "bundle_export": "React",
                     },
                     JSX_RUNTIME_NAME: {
                         "version": PACKAGE_VERSION,
                         "subpath": "jsx-runtime.js",
+                        "bundle_export": "jsxRuntime",
                     },
                 },
                 "symbols": {
@@ -1133,6 +1146,18 @@ fn bundled_partial_swap_replaces_react_cjs_family_with_singleton_esm_facade() {
     assert!(
         !caller.contains("from \"react\"") && !caller.contains("from \"react/jsx-runtime\""),
         "bundled partial swap must not leave browser-facing raw CJS package imports:\n{caller}",
+    );
+    assert!(
+        caller.contains("vendors/generated/static/megachunk/react.js")
+            && caller.contains("vendors/generated/static/megachunk/react_jsx-runtime.js"),
+        "caller should import generated ESM facades:\n{caller}",
+    );
+    assert!(wrapper_root.join("static/megachunk/bundle.js").exists());
+    assert!(wrapper_root.join("static/megachunk/react.js").exists());
+    assert!(
+        wrapper_root
+            .join("static/megachunk/react_jsx-runtime.js")
+            .exists()
     );
 
     let probe_path = out_root.join("__run_entry.mjs");

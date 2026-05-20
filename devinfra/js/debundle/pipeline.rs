@@ -20,9 +20,10 @@ use spec_tree::{CompileSpecTreeOptions, compile_spec_tree};
 use strip_swapped_vendor_exports::{ChunkStripStats, strip_swapped_vendor_exports};
 use validate_emitted_exports::validate_emitted_exports;
 use vendor::{
-    ApplyPartialVendorSwapsOptions, ChunkPartialSwapResolution, SwapVendorOptions,
-    VendorResolution, apply_partial_vendor_swaps, apply_vendor_annotations, rename_vendor_exports,
-    swap_vendor_chunks,
+    ApplyBundledPartialVendorSwapsOptions, ApplyPartialVendorSwapsOptions,
+    ChunkBundledPartialSwapResolution, ChunkPartialSwapResolution, SwapVendorOptions,
+    VendorResolution, apply_bundled_partial_vendor_swaps, apply_partial_vendor_swaps,
+    apply_vendor_annotations, rename_vendor_exports, swap_vendor_chunks,
 };
 use write_tree::{WriteTreeInput, write_js_tree};
 
@@ -181,6 +182,7 @@ pub enum PipelineStage {
     SwapVendorChunks,
     MaterializeLogicalModules,
     ApplyPartialVendorSwaps,
+    ApplyBundledPartialVendorSwaps,
     StripSwappedVendorExports,
     ValidateEmittedExports,
     WriteJsTree,
@@ -385,26 +387,59 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
     // materialize, the rewrite would erase the binding names that
     // `binding_patches` / `logical_modules` selectors still rely on at
     // materialize-time (e.g. `anonymous_statements: match: "ee({...})"`).
-    if !spec.vendor.is_empty()
-        && spec
-            .vendor
-            .values()
-            .any(|m| matches!(m.level, VendorLevel::PartialSwap(_)))
-    {
-        let partial_result =
-            run_step_with_result(&mut steps, PipelineStage::ApplyPartialVendorSwaps, || {
-                apply_partial_vendor_swaps(
-                    artifact,
-                    &spec.vendor,
-                    &artifact_indexes,
-                    ApplyPartialVendorSwapsOptions {
-                        package_roots: &cli.package_roots,
-                        packages_root: &cli.packages_root,
-                    },
-                )
-            })?;
-        artifact = partial_result.artifact;
-        vendor_swaps_report.partial = partial_result.manifest.resolutions;
+    let has_partial_swaps = spec
+        .vendor
+        .values()
+        .any(|m| matches!(m.level, VendorLevel::PartialSwap(_)));
+    let has_bundled_partial_swaps = spec
+        .vendor
+        .values()
+        .any(|m| matches!(m.level, VendorLevel::BundledPartialSwap(_)));
+    if !spec.vendor.is_empty() && (has_partial_swaps || has_bundled_partial_swaps) {
+        if has_partial_swaps {
+            let partial_result =
+                run_step_with_result(&mut steps, PipelineStage::ApplyPartialVendorSwaps, || {
+                    apply_partial_vendor_swaps(
+                        artifact,
+                        &spec.vendor,
+                        &artifact_indexes,
+                        ApplyPartialVendorSwapsOptions {
+                            package_roots: &cli.package_roots,
+                            packages_root: &cli.packages_root,
+                        },
+                    )
+                })?;
+            artifact = partial_result.artifact;
+            vendor_swaps_report.partial = partial_result.manifest.resolutions;
+        }
+
+        if has_bundled_partial_swaps {
+            let SwapVendorChunksConfig {
+                output_manifest_path,
+                output_wrapper_dir,
+                write,
+            } = spec.swap_vendor_chunks.clone();
+            let bundled_result = run_step_with_result(
+                &mut steps,
+                PipelineStage::ApplyBundledPartialVendorSwaps,
+                || {
+                    apply_bundled_partial_vendor_swaps(
+                        artifact,
+                        &spec.vendor,
+                        &artifact_indexes,
+                        ApplyBundledPartialVendorSwapsOptions {
+                            package_roots: &cli.package_roots,
+                            packages_root: &cli.packages_root,
+                            output_manifest_path,
+                            output_wrapper_dir,
+                            write,
+                        },
+                    )
+                },
+            )?;
+            artifact = bundled_result.artifact;
+            vendor_swaps_report.bundled_partial = bundled_result.manifest.resolutions;
+        }
 
         // The consumer side has been rewritten to import each swapped
         // symbol from upstream; drop the vendor chunk's residual
@@ -563,6 +598,8 @@ struct VendorSwapsReport {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     partial: BTreeMap<String, ChunkPartialSwapResolution>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    bundled_partial: BTreeMap<String, ChunkBundledPartialSwapResolution>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     strip_stats: BTreeMap<String, ChunkStripStats>,
 }
 
@@ -574,7 +611,11 @@ fn write_vendor_swaps_report(
     if !write {
         return Ok(());
     }
-    if report.full.is_empty() && report.partial.is_empty() && report.strip_stats.is_empty() {
+    if report.full.is_empty()
+        && report.partial.is_empty()
+        && report.bundled_partial.is_empty()
+        && report.strip_stats.is_empty()
+    {
         return Ok(());
     }
     let Some(path) = path else {
