@@ -16,9 +16,10 @@ current API / catalog config
   -> augur/api ProjectionRun/read models
 ```
 
-`augur/core` still contains shared API/config schemas and some legacy
-compatibility helpers, but it is no longer the production owner of market
-sampling, path evaluation, or response semantics.
+`augur/api` still contains compatibility request/response schemas while
+`augur/core` is reduced to shared model/provenance helpers. Core is no longer
+the production owner of market sampling, path evaluation, or response
+semantics.
 
 ## Replacement Checklist
 
@@ -79,7 +80,7 @@ sampling, path evaluation, or response semantics.
 
 ## API-to-Sim Translation Inventory
 
-This inventory tracks the current `augur.core.scenario_set.ScenarioSet`
+This inventory tracks the current `augur.api.scenario_set.ScenarioSet`
 compatibility translator, not the long-term native sim request schema. Keep the
 translator honest: unsupported current-API fields should fail loudly until they
 are translated or removed from the frontend path.

@@ -21,14 +21,14 @@ from augur.api.config import (
     dump_augur_config_yaml,
     load_augur_config,
 )
+from augur.api.local_regulation import LocalRegulation
 from augur.api.portfolio import (
     PortfolioAccountConfig,
     PortfolioConfig,
     PublicSecurityPositionConfig,
     PublicSecurityTaxLotConfig,
 )
-from augur.core.local_regulation import LocalRegulation
-from augur.core.scenario_set import ActorRole, LiquidityReserveRuleType, TaxRegime
+from augur.api.scenario_set import ActorRole, LiquidityReserveRuleType, TaxRegime
 from augur.model.market_provider_config import SimpleMarketProviderConfig
 
 

@@ -4,7 +4,7 @@ from enum import StrEnum
 
 from pydantic import Field, NonNegativeFloat, model_validator
 
-from augur.core.schemas import CoreModel, Percentage
+from augur.api.schemas import ApiModel, Percentage
 
 
 class TaxRegime(StrEnum):
@@ -24,7 +24,7 @@ class TaxRegime(StrEnum):
     PRIMARY_RESIDENCE_EXCLUSION = "primary_residence_exclusion"
 
 
-class LocalRegulation(CoreModel):
+class LocalRegulation(ApiModel):
     property_tax_regime: TaxRegime = Field(
         description="Primary property-tax regime to put on a selected property for this location."
     )
@@ -63,7 +63,7 @@ def tax_regimes_for_local_regulation(
 ) -> tuple[TaxRegime, ...]:
     """Combine a location's modeled tax-regime defaults with caller-derived
     owner-occupancy and rental signals. Pure regulation logic — no scenario
-    types — so this module stays a leaf in the augur/core dependency graph."""
+    types — so this module stays a leaf in the API dependency graph."""
     regimes = [
         *existing_tax_regimes,
         *local_regulation.default_tax_regimes,

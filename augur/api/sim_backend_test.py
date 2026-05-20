@@ -3,9 +3,9 @@ from __future__ import annotations
 import pytest_bazel
 
 from augur.api.backend import AugurBackend, AugurBackendRuntimeConfig
+from augur.api.casing import plain_json
 from augur.api.config import load_augur_config
-from augur.core.casing import plain_json
-from augur.core.scenario_set import RolloutStatusType
+from augur.api.scenario_set import RolloutStatusType
 from augur.model.simple_market import SimpleMarketModel
 from util.bazel.runfiles import get_required_path
 

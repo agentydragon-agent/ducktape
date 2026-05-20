@@ -42,7 +42,7 @@ This audit is grounded in the current Augur files:
   trajectory identity, and evidence/model boundary cleanup.
 - `augur/SPEC.md`: declares Augur as a probabilistic multi-agent economic
   simulator with scenarios, markets, policies, actions, and per-rollout state.
-- `augur/core/scenario_set.py`: defines `ScenarioSet`, `Scenario`,
+- `augur/api/scenario_set.py`: defines `ScenarioSet`, `Scenario`,
   `MarketRequest`, policies, actions, policy decisions, market observations,
   ledger entries, balance snapshots, accounting details, and result payloads.
 - `augur/model/market_api.py`: defines `SampledMarketBundle` with sampled

@@ -1,20 +1,20 @@
 """Glue between scenario shapes and per-location tax-regime defaults.
 
-`augur.core.local_regulation` owns the regulation data and pure-regulation
+`augur.api.local_regulation` owns the regulation data and pure-regulation
 logic (`tax_regimes_for_local_regulation` takes bool occupancy/rental signals).
-`augur.core.scenario_set` owns the scenario shape. This module is the only
+`augur.api.scenario_set` owns the scenario shape. This module is the only
 place that imports both — it converts scenario occupancy/rental enums into
 the bool signals the regulation API expects, and backfills the scenario's
 `property_selection` + `tax_regimes` from the location's modeled defaults.
 
-Keeping this glue out of either side keeps `augur/core` acyclic:
+Keeping this glue out of either side keeps `augur/api` acyclic:
 `local_regulation` ← `scenario_set` ← `scenario_tax_defaults`.
 """
 
 from __future__ import annotations
 
-from augur.core.local_regulation import LocalRegulation, tax_regimes_for_local_regulation
-from augur.core.scenario_set import OccupancyMode, RentalMode, Scenario
+from augur.api.local_regulation import LocalRegulation, tax_regimes_for_local_regulation
+from augur.api.scenario_set import OccupancyMode, RentalMode, Scenario
 
 
 def scenario_with_location_tax_defaults(scenario: Scenario, local_regulation: LocalRegulation) -> Scenario:

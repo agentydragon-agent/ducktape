@@ -13,7 +13,7 @@ from dataclasses import dataclass
 import numpy as np
 import polars as pl
 
-from augur.core.scenario_set import (
+from augur.api.scenario_set import (
     AccountType as CoreAccountType,
     ActorRole,
     AssetType as CoreAssetType,

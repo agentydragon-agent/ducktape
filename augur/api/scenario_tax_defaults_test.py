@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest_bazel
 
-from augur.core.local_regulation import LocalRegulation, TaxRegime
-from augur.core.scenario_set import (
+from augur.api.local_regulation import LocalRegulation, TaxRegime
+from augur.api.scenario_set import (
     Actor,
     ActorRole,
     NotRentedRentalPlan,
@@ -14,7 +14,7 @@ from augur.core.scenario_set import (
     Scenario,
     WholePropertyRentalPlan,
 )
-from augur.core.scenario_tax_defaults import scenario_with_location_tax_defaults
+from augur.api.scenario_tax_defaults import scenario_with_location_tax_defaults
 
 
 def _san_francisco_regulation() -> LocalRegulation:

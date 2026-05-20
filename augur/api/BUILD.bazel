@@ -11,14 +11,81 @@ py_library(
 )
 
 py_library(
+    name = "accounting_py",
+    srcs = ["accounting.py"],
+    deps = [
+        ":schemas_py",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "casing_py",
+    srcs = ["casing.py"],
+    deps = [
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "finance_py",
+    srcs = ["finance.py"],
+    deps = [
+        ":schemas_py",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "local_regulation_py",
+    srcs = ["local_regulation.py"],
+    deps = [
+        ":schemas_py",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "scenario_set_py",
+    srcs = ["scenario_set.py"],
+    deps = [
+        ":accounting_py",
+        ":local_regulation_py",
+        ":schemas_py",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "scenario_tax_defaults_py",
+    srcs = ["scenario_tax_defaults.py"],
+    deps = [
+        ":local_regulation_py",
+        ":scenario_set_py",
+    ],
+)
+
+py_library(
+    name = "bootstrap_py",
+    srcs = ["bootstrap.py"],
+    deps = [
+        ":finance_py",
+        ":local_regulation_py",
+        ":scenario_set_py",
+        ":schemas_py",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
     name = "config_py",
     srcs = ["config.py"],
     deps = [
+        ":bootstrap_py",
+        ":local_regulation_py",
         ":portfolio_py",
+        ":scenario_set_py",
         ":schemas_py",
-        "//augur/core:bootstrap_py",
-        "//augur/core:local_regulation_py",
-        "//augur/core:scenario_set_py",
         "//augur/model:market_provider_config_py",
         "@pypi//pydantic",
         "@pypi//pyyaml",
@@ -30,12 +97,46 @@ py_test(
     srcs = ["config_test.py"],
     deps = [
         ":config_py",
+        ":local_regulation_py",
         ":portfolio_py",
-        "//augur/core:local_regulation_py",
-        "//augur/core:scenario_set_py",
+        ":scenario_set_py",
         "//augur/model:market_provider_config_py",
         "@pypi//pydantic",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "local_regulation_test",
+    srcs = ["local_regulation_test.py"],
+    deps = [
+        ":local_regulation_py",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "scenario_set_test",
+    srcs = ["scenario_set_test.py"],
+    deps = [
+        ":local_regulation_py",
+        ":scenario_set_py",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "scenario_tax_defaults_test",
+    srcs = ["scenario_tax_defaults_test.py"],
+    deps = [
+        ":local_regulation_py",
+        ":scenario_set_py",
+        ":scenario_tax_defaults_py",
         "@pypi//pytest_bazel",
     ],
 )
@@ -64,11 +165,10 @@ py_library(
     name = "catalog_py",
     srcs = ["catalog.py"],
     deps = [
+        ":bootstrap_py",
         ":config_py",
-        "//augur/core:bootstrap_py",
-        "//augur/core:local_regulation_py",
-        "//augur/core:scenario_set_py",
-        "//augur/core:schemas_py",
+        ":local_regulation_py",
+        ":scenario_set_py",
         "@pypi//pyyaml",
         "@pypi//types_pyyaml",
     ],
@@ -81,8 +181,8 @@ py_test(
         ":backend_py",
         ":catalog_py",
         ":config_py",
-        "//augur/core:local_regulation_py",
-        "//augur/core:scenario_set_py",
+        ":local_regulation_py",
+        ":scenario_set_py",
         "//augur/model:market_provider_config_py",
         "//augur/model:testing_py",
         "@pypi//pytest",
@@ -94,13 +194,13 @@ py_library(
     name = "backend_py",
     srcs = ["backend.py"],
     deps = [
+        ":bootstrap_py",
         ":catalog_py",
         ":config_py",
+        ":scenario_set_py",
+        ":scenario_tax_defaults_py",
         ":sim_bridge_py",
         ":sim_response_py",
-        "//augur/core:bootstrap_py",
-        "//augur/core:scenario_set_py",
-        "//augur/core:scenario_tax_defaults_py",
         "//augur/model:market_api_py",
         "//augur/sim:market",
         "//augur/sim:simulate",
@@ -124,7 +224,7 @@ py_library(
     name = "http_app_py",
     srcs = ["http_app.py"],
     deps = [
-        "//augur/core:casing_py",
+        ":casing_py",
         "@pypi//fastapi",
         "@pypi//pydantic",
     ],
@@ -143,7 +243,7 @@ py_library(
     name = "sim_bridge_py",
     srcs = ["sim_bridge.py"],
     deps = [
-        "//augur/core:scenario_set_py",
+        ":scenario_set_py",
         "//augur/model:market_api_py",
         "//augur/model:series_py",
         "//augur/sim:market",
@@ -159,8 +259,7 @@ py_library(
     name = "sim_response_py",
     srcs = ["sim_response.py"],
     deps = [
-        "//augur/core:scenario_set_py",
-        "//augur/core:schemas_py",
+        ":scenario_set_py",
         "//augur/model:series_py",
         "//augur/sim:run",
         "@pypi//numpy",
@@ -173,8 +272,8 @@ py_test(
     srcs = ["sim_bridge_test.py"],
     deps = [
         ":portfolio_py",
+        ":scenario_set_py",
         ":sim_bridge_py",
-        "//augur/core:scenario_set_py",
         "//augur/model:series_py",
         "//augur/model:simple_market_py",
         "@pypi//polars",
@@ -192,9 +291,9 @@ py_test(
     ],
     deps = [
         ":backend_py",
+        ":casing_py",
         ":config_py",
-        "//augur/core:casing_py",
-        "//augur/core:scenario_set_py",
+        ":scenario_set_py",
         "//augur/model:simple_market_py",
         "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
@@ -222,9 +321,9 @@ py_library(
     name = "browser_state_py",
     srcs = ["browser_state.py"],
     deps = [
+        ":bootstrap_py",
+        ":scenario_set_py",
         ":schemas_py",
-        "//augur/core:bootstrap_py",
-        "//augur/core:scenario_set_py",
     ],
 )
 
@@ -232,9 +331,9 @@ py_library(
     name = "export_schema_py",
     srcs = ["export_schema.py"],
     deps = [
+        ":bootstrap_py",
         ":browser_state_py",
-        "//augur/core:bootstrap_py",
-        "//augur/core:scenario_set_py",
+        ":scenario_set_py",
         "@pypi//fastapi",
     ],
 )

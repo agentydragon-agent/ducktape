@@ -2,7 +2,7 @@
 
 These shapes are the source of truth for the UI-organized layout the React app
 maintains and round-trips through the URL. The wire-facing
-``augur.core.scenario_set.ScenarioSet`` is a *different* shape: flat lists of
+``augur.api.scenario_set.ScenarioSet`` is a *different* shape: flat lists of
 actors, events, and policies derived from this nested input by the frontend's
 ``scenarioSetInputToRequest`` mapper. Both shapes need a generated Zod schema;
 the wire shape's came along for free with the SSOT pipeline, this module
@@ -27,9 +27,9 @@ from enum import StrEnum
 
 from pydantic import ConfigDict
 
+from augur.api.bootstrap import OwnerResidenceModeId, RentalUsePolicyId
+from augur.api.scenario_set import FinancingMode, MarketRequest, ReportSpec
 from augur.api.schemas import ApiModel
-from augur.core.bootstrap import OwnerResidenceModeId, RentalUsePolicyId
-from augur.core.scenario_set import FinancingMode, MarketRequest, ReportSpec
 
 # ---------------------------------------------------------------------------
 # Browser scenario set input — strict shape. Every field present after

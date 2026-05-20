@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest_bazel
 
-from augur.core.local_regulation import LocalRegulation, TaxRegime, tax_regimes_for_local_regulation
+from augur.api.local_regulation import LocalRegulation, TaxRegime, tax_regimes_for_local_regulation
 
 
 def _san_francisco_regulation() -> LocalRegulation:

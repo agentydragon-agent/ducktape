@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -11,111 +11,6 @@ py_library(
 )
 
 py_library(
-    name = "casing_py",
-    srcs = ["casing.py"],
-    deps = [
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
-    name = "accounting_py",
-    srcs = ["accounting.py"],
-    deps = [
-        ":schemas_py",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
-    name = "scenario_set_py",
-    srcs = ["scenario_set.py"],
-    deps = [
-        ":accounting_py",
-        ":local_regulation_py",
-        ":provenance_py",
-        ":schemas_py",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
     name = "provenance_py",
     srcs = ["provenance.py"],
-    deps = [
-        ":schemas_py",
-    ],
-)
-
-py_library(
-    name = "local_regulation_py",
-    srcs = ["local_regulation.py"],
-    deps = [
-        ":schemas_py",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
-    name = "scenario_tax_defaults_py",
-    srcs = ["scenario_tax_defaults.py"],
-    deps = [
-        ":local_regulation_py",
-        ":scenario_set_py",
-    ],
-)
-
-py_library(
-    name = "finance_py",
-    srcs = ["finance.py"],
-    deps = [
-        ":schemas_py",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
-    name = "bootstrap_py",
-    srcs = ["bootstrap.py"],
-    deps = [
-        ":finance_py",
-        ":local_regulation_py",
-        ":scenario_set_py",
-        ":schemas_py",
-        "@pypi//pydantic",
-    ],
-)
-
-py_test(
-    name = "scenario_set_test",
-    srcs = ["scenario_set_test.py"],
-    deps = [
-        ":local_regulation_py",
-        ":scenario_set_py",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "local_regulation_test",
-    srcs = ["local_regulation_test.py"],
-    deps = [
-        ":local_regulation_py",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "scenario_tax_defaults_test",
-    srcs = ["scenario_tax_defaults_test.py"],
-    deps = [
-        ":local_regulation_py",
-        ":scenario_set_py",
-        ":scenario_tax_defaults_py",
-        "@pypi//pytest_bazel",
-    ],
 )

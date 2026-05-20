@@ -4,7 +4,7 @@ from enum import StrEnum
 
 from pydantic import Field, NonNegativeFloat, NonNegativeInt
 
-from augur.core.schemas import CoreModel
+from augur.api.schemas import ApiModel
 
 
 class LotAssetClass(StrEnum):
@@ -21,7 +21,7 @@ class LiabilityType(StrEnum):
     CREDIT_FACILITY = "credit_facility"
 
 
-class TaxLot(CoreModel):
+class TaxLot(ApiModel):
     lot_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_\-:.]*$")
     asset_class: LotAssetClass
     owner_actor_id: str
@@ -33,7 +33,7 @@ class TaxLot(CoreModel):
     acquisition_month_index: NonNegativeInt = 0
 
 
-class LotDisposition(CoreModel):
+class LotDisposition(ApiModel):
     lot_disposition_id: str
     journal_entry_id: str
     rollout_index: NonNegativeInt
@@ -52,7 +52,7 @@ class LotDisposition(CoreModel):
     projection_trajectory_id: str | None = None
 
 
-class LiabilityState(CoreModel):
+class LiabilityState(ApiModel):
     liability_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_\-:.]*$")
     liability_type: LiabilityType
     actor_id: str

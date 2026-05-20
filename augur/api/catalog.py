@@ -12,8 +12,7 @@ from urllib.parse import quote
 import yaml
 from pydantic import TypeAdapter
 
-from augur.api.config import AugurConfig, LocationConfig, PropertyAssetConfig
-from augur.core.bootstrap import (
+from augur.api.bootstrap import (
     AgentOption,
     BootstrapResponse,
     Location,
@@ -23,12 +22,13 @@ from augur.core.bootstrap import (
     RentalUsePolicyId,
     RentalUsePolicyOption,
 )
-from augur.core.scenario_set import ActorRole
-from augur.core.schemas import ScenarioKnobs
+from augur.api.config import AugurConfig, LocationConfig, PropertyAssetConfig
+from augur.api.scenario_set import ActorRole
+from augur.api.schemas import KnobsConfig
 
 PROPERTY_ROWS_ADAPTER = TypeAdapter(tuple[Property, ...])
 
-DEFAULT_KNOBS = ScenarioKnobs(
+DEFAULT_KNOBS = KnobsConfig(
     down_payment_pct=25,
     credit_score=776,
     custom_mortgage_rate=6.5,
@@ -109,7 +109,7 @@ def _apply_property_assets(config: AugurConfig, properties: tuple[Property, ...]
     )
 
 
-def _default_knobs_for_config(config: AugurConfig) -> ScenarioKnobs:
+def _default_knobs_for_config(config: AugurConfig) -> KnobsConfig:
     starting_portfolio_usd = config.starting_portfolio_usd or config.snapshot.sp500_proxy_portfolio_usd
     return DEFAULT_KNOBS.model_copy(update={"starting_portfolio_usd": starting_portfolio_usd})
 

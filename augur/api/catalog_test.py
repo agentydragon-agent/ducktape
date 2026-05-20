@@ -20,8 +20,8 @@ from augur.api.config import (
     PropertyAssetConfig,
     PropertySourceConfig,
 )
-from augur.core.local_regulation import LocalRegulation
-from augur.core.scenario_set import ActorRole, ScenarioSet, TaxRegime
+from augur.api.local_regulation import LocalRegulation
+from augur.api.scenario_set import ActorRole, ScenarioSet, TaxRegime
 from augur.model.market_provider_config import SimpleMarketProviderConfig
 from augur.model.testing import DeterministicMarketFixtureModel
 

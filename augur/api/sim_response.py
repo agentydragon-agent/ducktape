@@ -8,7 +8,7 @@ from typing import Any, cast
 import numpy as np
 import polars as pl
 
-from augur.core.scenario_set import (
+from augur.api.scenario_set import (
     ActorRole,
     ReportMetric,
     RolloutStatus,
@@ -19,7 +19,7 @@ from augur.core.scenario_set import (
     ScenarioSet,
     ScenarioSetRunResponse,
 )
-from augur.core.schemas import ColumnarTable
+from augur.api.schemas import ColumnarTable
 from augur.model.series import PRIVATE_EQUITY_SERIES_PREFIX, SP500_SERIES_ID
 from augur.sim.run import SimulationRun
 

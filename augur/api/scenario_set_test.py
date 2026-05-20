@@ -8,7 +8,7 @@ import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
-from augur.core.scenario_set import (
+from augur.api.scenario_set import (
     AccountType,
     Acquisition,
     ActorRole,

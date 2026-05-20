@@ -5,15 +5,6 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
-from augur.core.schemas import CoreModel
-
-
-class ProjectionRun(CoreModel):
-    projection_run_id: str
-    scenario_set_id: str
-    path_set_id: str
-    scenario_input_ids: tuple[str, ...]
-
 
 def stable_identity_digest(payload: Mapping[str, Any]) -> str:
     encoded = json.dumps(_json_stable(payload), sort_keys=True, separators=(",", ":")).encode()

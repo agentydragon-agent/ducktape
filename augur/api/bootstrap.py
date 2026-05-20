@@ -4,10 +4,10 @@ from enum import StrEnum
 
 from pydantic import Field
 
-from augur.core.finance import FinanceSnapshot
-from augur.core.local_regulation import LocalRegulation
-from augur.core.scenario_set import ActorRole, PropertyId
-from augur.core.schemas import CoreModel, ScenarioKnobs
+from augur.api.finance import FinanceSnapshot
+from augur.api.local_regulation import LocalRegulation
+from augur.api.scenario_set import ActorRole, PropertyId
+from augur.api.schemas import ApiModel, KnobsConfig
 
 
 class OwnerResidenceModeId(StrEnum):
@@ -22,7 +22,7 @@ class RentalUsePolicyId(StrEnum):
     RENT_WHOLE_PROPERTY = "rent_whole_property"
 
 
-class Option(CoreModel):
+class Option(ApiModel):
     id: str
     label: str
     description: str
@@ -36,18 +36,18 @@ class RentalUsePolicyOption(Option):
     id: RentalUsePolicyId
 
 
-class AgentOption(CoreModel):
+class AgentOption(ApiModel):
     actor_id: str
     label: str
     role: ActorRole
 
 
-class DefaultScenario(CoreModel):
+class DefaultScenario(ApiModel):
     property_id: PropertyId
     label: str | None = None
 
 
-class Location(CoreModel):
+class Location(ApiModel):
     id: str = Field(description="Stable relational location identity used by config, storage, and scenario joins.")
     label: str
     city: str
@@ -56,7 +56,7 @@ class Location(CoreModel):
     notes: tuple[str, ...] = ()
 
 
-class Property(CoreModel):
+class Property(ApiModel):
     """Persistence-shaped property row; join to `BootstrapResponse.locations` by `location_id`."""
 
     id: str = Field(description="Stable relational property identity used by selection, saved scenarios, and storage.")
@@ -80,7 +80,7 @@ class Property(CoreModel):
     flags: tuple[str, ...] = ()
 
 
-class BootstrapResponse(CoreModel):
+class BootstrapResponse(ApiModel):
     locations: list[Location]
     properties: list[Property]
     default_property_id: str
@@ -90,7 +90,7 @@ class BootstrapResponse(CoreModel):
     default_initial_checking_usd: float
     default_checking_floor_usd: float
     default_checking_sale_amount_usd: float
-    default_knobs: ScenarioKnobs
+    default_knobs: KnobsConfig
     default_rollout_samples: int
     default_scenarios: list[DefaultScenario]
     owner_residence_mode_options: list[OwnerResidenceModeOption]

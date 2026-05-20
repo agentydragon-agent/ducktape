@@ -9,7 +9,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from pydantic import ValidationError
 
-from augur.core.casing import plain_json
+from augur.api.casing import plain_json
 
 StaticPathResolver = Callable[[str], Path]
 PayloadProvider = Callable[[], Any]
