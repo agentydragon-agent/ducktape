@@ -1,7 +1,8 @@
 # Grocy VolSync PVC Migration
 
 Status: smoke-tested with disposable PVCs on 2026-05-20; Grocy SF migrated to
-OVH and verified. Grocy Vallejo destination prepared and final sync staged.
+OVH and verified. Grocy Vallejo destination received data and verification is
+staged.
 
 This runbook moves Grocy application data from Hetzner local-path PVCs to OVH
 Kimsufi local-path PVCs using VolSync `rsyncTLS`.
@@ -64,6 +65,11 @@ Friction found while paving:
    briefly report stale `DependencyNotReady` statuses even though their own
    dependencies have already recovered. Do not bypass Flux. Reconcile the stale
    dependency, then reconcile the target again.
+7. On Grocy Vallejo, the `ReplicationDestination` reported a successful receive
+   while the `ReplicationSource` retried and eventually failed once the
+   destination service had no active mover endpoint. Treat source success as the
+   clean path, but the real cutover gate is destination-side completion plus a
+   verifier Job against the destination PVC.
 
 ## Phase 0: Preconditions
 

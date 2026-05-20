@@ -4,6 +4,7 @@ namespace: grocy-vallejo
 resources:
   - ../../app-base
   - namespace.yaml
+  - volsync-verify-job.yaml
   - volsync-migration.yaml
 patches:
   - target:
