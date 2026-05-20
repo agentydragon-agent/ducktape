@@ -28,24 +28,21 @@ import numpy as np
 from pydantic import Field
 from statsmodels.tsa.vector_ar.vecm import VECM
 
-from augur.core.market_bundle import MarketBundleProvider
 from augur.core.provenance import stable_identity_digest
 from augur.core.schemas import ApiModel
 from augur.frames import concat_frames
-from augur.model.core_market_adapter import CoreMarketBundleProviderShim
 from augur.model.location_market_sources import LocationMarketSources, LocationMarketSourcesConfig
-from augur.model.markets._density import gaussian_logpdf, gaussian_logpdf_from_samples
-from augur.model.markets.scenarios import HistoricalSeries, Scenarios
-from augur.model.sim_market_api import (
+from augur.model.market_api import (
     MARKET_EVENTS_SCHEMA,
     MARKET_LEVELS_SCHEMA,
-    JointMarketModel,
     MarketSamplingRequest,
     SampledMarketBundle,
     market_events_frame,
     market_levels_frame,
 )
-from augur.model.sim_market_series import (
+from augur.model.markets._density import gaussian_logpdf, gaussian_logpdf_from_samples
+from augur.model.markets.scenarios import HistoricalSeries, Scenarios
+from augur.model.series import (
     CRYPTO_SERIES_PREFIX,
     HOME_VALUE_SERIES_PREFIX,
     INFLATION_SERIES_ID,
@@ -407,6 +404,7 @@ class VecmJointMarketModel:
                 "risk_factor_set_id": self.risk_factor_set_id,
                 "risk_factor_ids": self.risk_factor_ids,
                 "evidence_latest_observation_ids": self.evidence_latest_observation_ids,
+                "current_private_equity_price_usd": self.current_private_equity_price_usd,
                 "event_stream_ids": ("private_equity_sale_opportunity_event",),
                 "notes": ("sampled by VecmJointMarketModel",),
                 "market_provider_label": self.label,
@@ -508,13 +506,4 @@ class VecmMarketProviderConfig(ApiModel):
             current_private_equity_price_usd=current_private_equity_price_usd,
             location_market_sources=LocationMarketSources.from_config(self.location_market_sources),
             evidence_source_id=str(self.trained_blob),
-        )
-
-    def realize_core_provider(
-        self, *, model: JointMarketModel, current_private_equity_price_usd: float
-    ) -> MarketBundleProvider:
-        return CoreMarketBundleProviderShim(
-            model=model,
-            current_private_equity_price_usd=current_private_equity_price_usd,
-            mortgage_30y_rate_pct=self.current_mortgage30_rate_pct,
         )

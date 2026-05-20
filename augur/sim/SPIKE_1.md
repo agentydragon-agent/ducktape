@@ -125,9 +125,9 @@ log.filter(month ≤ M))`. Asserted in tests; opt-in
 - That mortgages, property purchases / sales, depreciation, §121,
   §1250 work — those require L8 + L12-13 templates, deferred to
   spike 2.
-- That the wire schema matches existing `ScenarioRunArrays` —
+- That the wire schema matches existing frontend graph tables —
   deferred. The new sim has its own `SimulationRun` output type
-  for now; the legacy-wire adapter is a separate concern.
+  for now; the compatibility adapter is a separate concern.
 - That the market-model seam is final — the spike fixtures prove
   path consumption, not production model ownership.
 - That partner-equity multi-stakeholder works — deferred.

@@ -15,9 +15,9 @@ import pytest_bazel
 import yaml
 from pydantic import TypeAdapter
 
-from augur.core.market_bundle import RequiredMarketKeys
-from augur.core.scenario_set import MarketRequest
+from augur.model.market_api import MarketSamplingRequest
 from augur.model.market_provider_config import MarketProviderConfig, SimpleMarketProviderConfig
+from augur.model.series import home_value_series_id, rent_series_id
 from augur.model.train.main import main as train_main
 from util.bazel.runfiles import get_required_path
 
@@ -55,22 +55,26 @@ def test_train_then_load_and_sample(model_label: str, tmp_path: Path) -> None:
     assert parsed.latest_observations  # non-empty; exact keys depend on the source-data schema
 
     model = parsed.realize_model(current_private_equity_price_usd=100.0)
-    provider = parsed.realize_core_provider(model=model, current_private_equity_price_usd=100.0)
-    locations = frozenset(parsed.location_market_sources.home_value)
-    bundle = provider.sample_market_bundle(
-        rollout_count=2,
-        horizon_months=12,
-        seed=7,
-        market_request=MarketRequest(market_model_id=model_label, rollout_count=2, horizon_months=12, seed=7),
-        required_keys=RequiredMarketKeys(location_ids=locations),
+    locations = sorted(parsed.location_market_sources.home_value)
+    required_level_series = frozenset(
+        {
+            series_id
+            for location in locations
+            for series_id in (home_value_series_id(location), rent_series_id(location))
+        }
+    )
+    sampled = model.sample(
+        MarketSamplingRequest(rollout_seeds=(7, 8), horizon_months=12, required_level_series=required_level_series)
     )
 
-    assert bundle.rollout_count == 2
-    assert bundle.horizon_months == 12
-    assert bundle.metadata.market_model_version_id.startswith("model_version:")
-    assert set(bundle.home_value_multipliers_by_location) == locations
-    assert set(bundle.rent_multipliers_by_location) == locations
-    assert bundle.metadata.current_private_equity_price_usd == 100.0
+    assert str(sampled.metadata["market_model_version_id"]).startswith("model_version:")
+    assert sampled.metadata["current_private_equity_price_usd"] == 100.0
+    assert {
+        row["series_id"] for row in sampled.levels.select("series_id").unique().iter_rows(named=True)
+    } == required_level_series
+    for location in locations:
+        assert sampled.level_matrix(home_value_series_id(location), rollout_count=2, horizon_months=12).shape == (2, 13)
+        assert sampled.level_matrix(rent_series_id(location), rollout_count=2, horizon_months=12).shape == (2, 13)
 
 
 if __name__ == "__main__":

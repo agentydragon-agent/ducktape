@@ -137,9 +137,9 @@ py_test(
     srcs = ["train_round_trip_test.py"],
     deps = [
         ":train_lib",
-        "//augur/core:market_bundle_py",
-        "//augur/core:scenario_set_py",
+        "//augur/model:market_api_py",
         "//augur/model:market_provider_config_py",
+        "//augur/model:series_py",
         "//util/bazel:runfiles",
         "@pypi//pydantic",
         "@pypi//pytest",

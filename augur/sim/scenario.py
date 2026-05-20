@@ -15,7 +15,7 @@ from typing import Annotated, Literal, Protocol
 import polars as pl
 from pydantic import BaseModel, Field, NonNegativeInt, PositiveInt
 
-from augur.model.sim_market import MarketBundle
+from augur.model.market import MarketBundle
 
 
 class Agent(BaseModel):

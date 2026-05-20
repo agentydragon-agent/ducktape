@@ -6,8 +6,8 @@ from collections.abc import Callable, Sequence
 
 import pytest
 
-from augur.model.sim_market import MarketBundle
-from augur.model.sim_market_deterministic import Deterministic
+from augur.model.deterministic import Deterministic
+from augur.model.market import MarketBundle
 
 DeterministicMarketBundleFactory = Callable[[Sequence[float]], MarketBundle]
 

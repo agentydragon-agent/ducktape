@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -96,66 +96,6 @@ py_library(
 )
 
 py_library(
-    name = "market_bundle_py",
-    srcs = ["market_bundle.py"],
-    deps = [
-        ":event_streams_py",
-        ":local_regulation_py",
-        ":provenance_py",
-        ":scenario_set_py",
-        ":schemas_py",
-        "@pypi//numpy",
-        "@pypi//polars",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
-    name = "market_bundle_test_support_py",
-    testonly = True,
-    srcs = ["market_bundle_test_support.py"],
-    deps = [
-        ":local_regulation_py",
-        ":market_bundle_py",
-        ":scenario_set_py",
-        "@pypi//numpy",
-    ],
-)
-
-py_library(
-    name = "property_tax_py",
-    srcs = ["property_tax.py"],
-    deps = [
-        ":local_regulation_py",
-        ":market_bundle_py",
-        "@pypi//numpy",
-    ],
-)
-
-py_library(
-    name = "property_depreciation_py",
-    srcs = ["property_depreciation.py"],
-    deps = [
-        ":market_bundle_py",
-        ":scenario_set_py",
-        "@pypi//numpy",
-    ],
-)
-
-py_library(
-    name = "property_sale_py",
-    srcs = ["property_sale.py"],
-    deps = [
-        ":local_regulation_py",
-        ":market_bundle_py",
-        ":property_depreciation_py",
-        ":scenario_set_py",
-        "@pypi//numpy",
-        "@pypi//polars",
-    ],
-)
-
-py_library(
     name = "annual_tax_py",
     srcs = ["annual_tax.py"],
     data = ["annual_tax_parameters.yaml"],
@@ -185,53 +125,6 @@ py_library(
         ":schemas_py",
         "@pypi//pydantic",
         "@pypi//pyyaml",
-    ],
-)
-
-py_library(
-    name = "scenario_engine_py",
-    srcs = ["scenario_engine.py"],
-    deps = [
-        ":accounting_tables_py",
-        ":annual_tax_py",
-        ":event_streams_py",
-        ":local_regulation_py",
-        ":market_bundle_py",
-        ":policy_runtime_py",
-        ":posting_schemas_py",
-        ":property_depreciation_py",
-        ":property_sale_py",
-        ":property_tax_py",
-        ":provenance_py",
-        ":scenario_set_py",
-        ":schemas_py",
-        "@pypi//numpy",
-        "@pypi//polars",
-    ],
-)
-
-py_library(
-    name = "event_streams_py",
-    srcs = ["event_streams.py"],
-    deps = [
-        ":scenario_set_py",
-        "@pypi//numpy",
-        "@pypi//polars",
-    ],
-)
-
-py_library(
-    name = "api_py",
-    srcs = ["api.py"],
-    deps = [
-        ":local_regulation_py",
-        ":market_bundle_py",
-        ":provenance_py",
-        ":scenario_engine_py",
-        ":scenario_set_py",
-        ":scenario_tax_defaults_py",
-        "//augur/model:market_provider_config_py",
-        "@pypi//numpy",
     ],
 )
 
@@ -303,38 +196,10 @@ py_test(
 )
 
 py_test(
-    name = "market_bundle_test",
-    srcs = ["market_bundle_test.py"],
-    deps = [
-        ":market_bundle_py",
-        ":scenario_set_py",
-        "//augur/model:market_provider_config_py",
-        "@pypi//numpy",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "property_tax_test",
-    srcs = ["property_tax_test.py"],
-    deps = [
-        ":local_regulation_py",
-        ":market_bundle_test_support_py",
-        ":property_tax_py",
-        "@pypi//numpy",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "local_regulation_test",
     srcs = ["local_regulation_test.py"],
     deps = [
         ":local_regulation_py",
-        ":market_bundle_test_support_py",
-        ":property_tax_py",
-        "@pypi//numpy",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -353,49 +218,10 @@ py_test(
 )
 
 py_test(
-    name = "property_depreciation_test",
-    srcs = ["property_depreciation_test.py"],
-    deps = [
-        ":market_bundle_test_support_py",
-        ":property_depreciation_py",
-        ":scenario_set_py",
-        "@pypi//numpy",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "property_sale_test",
-    srcs = ["property_sale_test.py"],
-    deps = [
-        ":local_regulation_py",
-        ":market_bundle_test_support_py",
-        ":property_sale_py",
-        ":scenario_set_py",
-        "@pypi//numpy",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "annual_tax_test",
     srcs = ["annual_tax_test.py"],
     deps = [
         ":annual_tax_py",
-        ":scenario_set_py",
-        "@pypi//numpy",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "scenario_engine_test",
-    srcs = ["scenario_engine_test.py"],
-    deps = [
-        ":api_py",
-        ":market_bundle_py",
-        ":scenario_engine_py",
         ":scenario_set_py",
         "@pypi//numpy",
         "@pypi//pytest",
@@ -424,38 +250,5 @@ py_test(
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_e2e",
-    srcs = ["test_e2e.py"],
-    data = ["testdata/portfolio.example.yaml"],
-    deps = [
-        ":api_py",
-        ":market_bundle_py",
-        ":market_bundle_test_support_py",
-        ":portfolio_py",
-        ":scenario_set_py",
-        "@pypi//numpy",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_binary(
-    name = "bench_augur_run",
-    testonly = True,
-    srcs = ["bench_augur_run.py"],
-    data = ["testdata/portfolio.example.yaml"],
-    deps = [
-        ":api_py",
-        ":local_regulation_py",
-        ":market_bundle_test_support_py",
-        ":portfolio_py",
-        ":scenario_engine_py",
-        ":scenario_set_py",
-        "@pypi//numpy",
-        "@pypi//polars",
     ],
 )

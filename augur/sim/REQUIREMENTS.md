@@ -1,12 +1,10 @@
 # Augur sim — requirements
 
-A clean-rewrite target for the Augur financial-futures simulator. The
-existing engine in `augur/core/scenario_engine.py` has accreted several
-overlapping representations of state and time; this document captures
-what the new implementation must be able to model, framed as
-natural-language scenarios free of API choices. The companion design
-work happens in `augur/sim/` alongside the code as it lands; nothing
-here commits to a function shape, a library, or a file layout.
+A clean-rewrite target for the Augur financial-futures simulator. This
+document captures what the implementation must be able to model, framed as
+natural-language scenarios free of API choices. The companion design work
+happens in `augur/sim/` alongside the code as it lands; nothing here commits to
+a function shape, a library, or a file layout.
 
 ## What the simulator is
 
@@ -253,11 +251,9 @@ Rules attached to templates (what runs over them, exactly once):
   doesn't have a separate "residential" and "rental" depreciation
   implementation — it has one, parameterized.
 
-Concretely on the existing engine's smell: the current
-`scenario_engine.py` has separate `sp500_*`, `crypto_*`, and
-`private_equity_*` matrices, separate sale-record lists per asset
-class, separate `_record_sp500_sale_*` / `_record_crypto_sale_*` /
-`_record_private_equity_sale_*` recorders, and separate
+Concretely on the old engine smell: the deleted core engine had separate
+`sp500_*`, `crypto_*`, and `private_equity_*` matrices, separate sale-record
+lists per asset class, separate recorders per asset class, and separate
 `generic_sp500_sale_tax_usd` / `crypto_sale_tax_usd` /
 `private_equity_sale_tax_usd` output columns. The new engine has
 **one** `asset_holding_frame` keyed by `(rollout, agent, asset_id)`

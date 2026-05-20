@@ -5,10 +5,11 @@
 Augur is closest to a dynamic household microsimulation and personal-finance
 projection engine: it samples exogenous market paths, then projects typed
 scenarios through deterministic actor policies, accounting applications, and
-result views. In financial-risk terms, `MarketRequest` plus `MarketBundle` is
-an economic scenario generator input/output, `ScenarioSet` is the portfolio of
-household scenario variants, `rollout_index` selects one sampled path, and the
-policy runtime is the pathwise deterministic projector.
+result views. In financial-risk terms, `MarketRequest` plus
+`SampledMarketBundle` is an economic scenario generator input/output,
+`ScenarioSet` is the portfolio of household scenario variants, `rollout_index`
+selects one sampled path, and the policy runtime is the pathwise deterministic
+projector.
 
 The important gaps the rest of this audit explores:
 
@@ -28,8 +29,8 @@ The important gaps the rest of this audit explores:
   validation is placeholder-level and evidence/calibration artifacts are not
   persisted reviewed records.
 - Calibration/evidence and projection boundaries should be explicit: evidence
-  feeds model fitting; fitted scenario generators feed `MarketBundle`; the core
-  projector should not know source-specific evidence.
+  feeds model fitting; fitted scenario generators feed `SampledMarketBundle`;
+  the sim projector should not know source-specific evidence.
 
 ## Local Architecture Grounding
 
@@ -44,20 +45,16 @@ This audit is grounded in the current Augur files:
 - `augur/core/scenario_set.py`: defines `ScenarioSet`, `Scenario`,
   `MarketRequest`, policies, actions, policy decisions, market observations,
   ledger entries, balance snapshots, accounting details, and result payloads.
-- `augur/core/market_bundle.py`: defines `MarketBundle` and
-  `MarketBundleMetadata` with sampled rollout/month arrays for inflation,
-  SP500, home/rent paths, mortgage rates, private-equity values, and
-  private-equity sale opportunities.
-- `augur/core/api.py`: exposes `simulate_set()`, `SimulationRun`,
-  `ScenarioRun`, and `RolloutDetail`, with path inspection helpers for series,
-  actions, decisions, observations, ledgers, snapshots, and accounting details.
+- `augur/model/market_api.py`: defines `SampledMarketBundle` with sampled
+  rollout/month external level and event series plus model provenance.
+- `augur/sim/`: deterministically evaluates typed scenarios over a sampled
+  bundle and emits state/event frames.
+- `augur/api/sim_response.py`: derives the current compatibility graph tables
+  from sim dataframes until final projection/read models replace them.
 - `augur/core/policy_runtime.py`: defines `ActorPolicyProgram`, instruction
   batches, application results, ledger batches, and partner-ownership accrual.
-- `augur/core/scenario_engine.py`: performs vectorized projection over a
-  `MarketBundle`, records row-level trace data, derives many arrays from ledger
-  and accounting details, and executes policies through ordered actor programs.
 - `augur/model/`: contains evidence loading, market model protocols,
-  historical series, simulated scenario arrays, and `MacroMarketBundleProvider`.
+  historical series, and sim-native joint market models.
 
 ## Prior-Art Catalog
 
@@ -76,9 +73,10 @@ Carlo architecture is relevant. The core pattern is clean separation of:
 - path pricing or pathwise deterministic evaluation;
 - sample accumulation and error/statistics reporting.
 
-Augur should copy the separation, not the instrument domain. `MarketBundle`
-should remain path generation output. The household policy/accounting projector
-should be deterministic conditional on a selected path bundle.
+Augur should copy the separation, not the instrument domain.
+`SampledMarketBundle` should remain path generation output. The household
+policy/accounting projector should be deterministic conditional on a selected
+path bundle.
 
 ### Open Source Risk Engine (ORE)
 
@@ -228,9 +226,10 @@ projection evaluates policies and accounting on those paths.
 Current Augur alignment:
 
 - `MarketRequest` requests model id, rollout count, horizon, and seed.
-- `MarketBundleProvider` samples a `MarketBundle`.
-- `simulate_set()` validates the `ScenarioSet`, samples or accepts a
-  `MarketBundle`, then runs each `Scenario` through `run_scenario_vectorized()`.
+- `JointMarketModel.sample()` samples a `SampledMarketBundle`.
+- The API translator validates the `ScenarioSet`, materializes sim scenarios,
+  samples or accepts a `SampledMarketBundle`, then runs each translated
+  scenario through `augur/sim`.
 
 Gap:
 
@@ -253,7 +252,7 @@ trajectory.
 
 Current Augur alignment:
 
-- `MarketBundleMetadata` carries market model id, seed, rollout count,
+- `SampledMarketBundle.metadata` carries market model id, seed, rollout count,
   horizon, event stream ids, notes, and source metadata.
 - `rollout_index` is used in actions, policy decisions, observations, ledger
   entries, balance snapshots, accounting details, monthly columns, and selected
@@ -293,12 +292,9 @@ Current Augur alignment:
 
 Gap:
 
-- `run_scenario_vectorized()` still runs `MonthlySpendPolicy`,
-  `PrivateEquitySalePolicy`, and `CheckingFloorSellPublicStockPolicy` by class
-  family, not by a single actor-ordered program.
-- The policy program has no policy-step id, priority, phase, or per-step input
-  trace.
-- Some policy types are schema-only.
+- Native sim policy execution still needs a complete policy-step id, priority,
+  phase, and per-step input trace model.
+- Some compatibility policy types are still schema-only.
 
 Recommended vocabulary:
 
@@ -353,8 +349,9 @@ Current Augur alignment:
 
 - `SimulationLedgerEntry`, `SimulationBalanceSnapshot`, and
   `SimulationAccountingDetail` exist.
-- Many `ScenarioRunArrays` fields are derived from ledger/accounting detail.
-- `augur/core/test_e2e.py` includes explicit reconciliation assertions.
+- Many compatibility response fields are derived from ledger/accounting detail.
+- Sim/API smoke tests need to keep explicit reconciliation assertions as native
+  accounting frames land.
 
 Gap:
 
@@ -408,7 +405,7 @@ parameters, code, and limitations produced it.
 
 Current Augur alignment:
 
-- `MarketBundleMetadata` has source metadata.
+- `SampledMarketBundle.metadata` has source metadata.
 - `ScenarioSetRunResponse` includes request, market request, report spec,
   market metadata, and warnings.
 - `augur/model/markets/data.py` separates evidence loading from historical
@@ -440,7 +437,7 @@ projection consumes paths.
 Current Augur alignment:
 
 - `augur/model/` owns evidence loading, market model protocols, fitting, and
-  `MacroMarketBundleProvider`.
+  sim-native joint market models.
 - `augur/plans/e2e_redesign.md` explicitly says source-data shapes belong in
   `augur/model`, not app state or the simulator contract.
 
@@ -457,7 +454,7 @@ Recommended vocabulary:
 - `CalibratedMarketModel`
 - `MarketModelFit`
 - `ScenarioGenerator`
-- `MarketBundle`
+- `SampledMarketBundle`
 
 ## Alignment Audit
 
@@ -465,7 +462,7 @@ Recommended vocabulary:
 
 - `rollout_index` is doing too much. It is a UI selector, array coordinate,
   paired-comparison key, and pseudo trajectory id.
-- `MarketBundleMetadata.event_stream_ids` names streams but not event instances,
+- `SampledMarketBundle.metadata` names streams but not event instances,
   event source versions, or opportunity ids.
 - `PrivateEquitySaleOpportunityObservation` has no stable opportunity id.
 - Policy execution is class-grouped. This conflicts with "ordered actor policy
@@ -512,7 +509,7 @@ Standardize these names before the next large redesign:
 | Fitting run                         | `CalibrationRun`             | Produces fitted parameters/artifacts.                                     |
 | Fitted generator                    | `CalibratedMarketModel`      | Model ready to simulate paths.                                            |
 | Scenario generation invocation      | `ScenarioGeneratorRun`       | Records seed, generator version, evidence id, calibration id, factor set. |
-| Sampled exogenous worlds            | `ExogenousPathSet`           | Current `MarketBundle` plus stronger identity/provenance.                 |
+| Sampled exogenous worlds            | `ExogenousPathSet`           | Current `SampledMarketBundle` plus stronger identity/provenance.          |
 | One sampled world                   | `ExogenousPathId`            | Stable identity for one path.                                             |
 | Factor path                         | `RiskFactorPath`             | SP500, CPI, home value, rent, mortgage rate, PE mark, etc.                |
 | Event/opportunity stream            | `OpportunityStream`          | Tender/IPO/acquisition/lockup/other exogenous opportunities.              |
@@ -574,7 +571,8 @@ Standardize these names before the next large redesign:
    - Keep the current model-card/version and validation-report fields, but back
      them with reviewed intended use, source data, calibration, limitations,
      validation status, and known non-goals.
-   - Attach durable artifact hashes or reviewed IDs to `MarketBundleMetadata`.
+   - Attach durable artifact hashes or reviewed IDs to `SampledMarketBundle`
+     metadata.
 
 ### Medium-Term Redesign
 
@@ -591,7 +589,7 @@ Standardize these names before the next large redesign:
 3. Introduce fitted market-model artifacts.
    - Persist evidence/calibration identity, factor set, fitted parameters, and
      validation metrics.
-   - Let `MacroMarketBundleProvider` report those artifacts, not just latest
+   - Let sim-native joint market models report those artifacts, not just latest
      observations.
 
 4. Make result helpers mode-specific.

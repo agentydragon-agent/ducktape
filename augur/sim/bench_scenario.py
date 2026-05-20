@@ -24,8 +24,8 @@ defaults above; tune via keyword args.
 
 from __future__ import annotations
 
-from augur.model.sim_market import MarketBundle
-from augur.model.sim_market_gbm import GeometricBrownian
+from augur.model.gbm import GeometricBrownian
+from augur.model.market import MarketBundle
 from augur.sim.scenario import (
     Agent,
     InitialAccountBalance,

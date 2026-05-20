@@ -1,4 +1,4 @@
-"""Shared API for market models consumed by `augur/sim`."""
+"""Shared API for market models consumed by the simulator."""
 
 from __future__ import annotations
 

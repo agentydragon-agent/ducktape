@@ -1,4 +1,4 @@
-"""Geometric Brownian scalar market models for `augur/sim`."""
+"""Geometric Brownian scalar market models."""
 
 from __future__ import annotations
 

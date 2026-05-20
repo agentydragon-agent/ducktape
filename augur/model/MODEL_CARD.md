@@ -5,7 +5,7 @@ Last updated: 2026-05-20.
 This is the minimal `ModelCard` for the current Augur market-model layer.
 The active trained `vecm` provider attaches typed model-card, model-version, evidence,
 calibration, scenario-generator, exogenous-path-set, validation-report, and
-known-limitation identity metadata to `MarketBundleMetadata`. Those identities
+known-limitation identity metadata to `SampledMarketBundle.metadata`. Those identities
 are stable for the same checked-in public evidence and model inputs, but
 evidence, calibration, and validation are still runtime-derived metadata rather
 than durable persisted artifacts.
@@ -15,9 +15,8 @@ than durable persisted artifacts.
 Current governed surface:
 
 - Active trained market model: `vecm`.
-- `VecmJointMarketModel`, which wraps a trained VECM blob, samples native
-  `SampledMarketBundle` levels/events, and is adapted to legacy core only by
-  `CoreMarketBundleProviderShim`.
+- `VecmJointMarketModel`, which wraps a trained VECM blob and samples native
+  `SampledMarketBundle` levels/events.
 - Simple stochastic providers are runtime placeholders. Deterministic flat
   market paths are test-only fixtures. Neither is a calibrated market model.
 
@@ -51,7 +50,7 @@ Do not use them as:
 The current boundary should remain:
 
 ```text
-Raw evidence -> evidence set -> calibration/fitting -> market bundle/provider -> projection
+Raw evidence -> evidence set -> calibration/fitting -> sampled market bundle -> projection
 ```
 
 Today that means:
@@ -66,19 +65,19 @@ Today that means:
   mortgage-rate evidence, and latest-observation metadata.
 - Calibration/fitting happens offline through `augur.model.train`; runtime
   config points at the persisted trained VECM blob.
-- Market-bundle generation happens when `VecmJointMarketModel` calls the fitted
+- Sampled-bundle generation happens when `VecmJointMarketModel` calls the fitted
   model's `simulate(...)` and emits native sampled levels/events.
-- Projection currently happens in core through `CoreMarketBundleProviderShim`;
-  core should not receive source-specific objects such as FRED, Yahoo, Zillow,
-  or Manifold shapes.
+- Projection happens in `augur/sim`; the simulator should not receive
+  source-specific objects such as FRED, Yahoo, Zillow, or Manifold shapes.
 
-Current persisted provenance is partial. `MarketBundleMetadata` carries model
-id, model-card id, model-version id, typed `EvidenceSet`, `CalibrationRun`,
-`CalibrationArtifact`, `ScenarioGeneratorRun`, `ExogenousPathSet`,
-`ValidationReport`, and `KnownLimitation` payloads, plus seed, rollout count,
-horizon, event stream ids, notes, provider label, and latest-observation ids.
-It does not yet persist evidence/calibration/validation artifacts outside the
-run payload, so these identities are not archival proof on their own.
+Current persisted provenance is partial. `SampledMarketBundle.metadata` carries
+model id, model-card id, model-version id, typed `EvidenceSet`,
+`CalibrationRun`, `CalibrationArtifact`, `ScenarioGeneratorRun`,
+`ExogenousPathSet`, `ValidationReport`, and `KnownLimitation` payloads, plus
+seed, rollout count, horizon, event stream ids, notes, provider label, and
+latest-observation ids. It does not yet persist evidence/calibration/validation
+artifacts outside the run payload, so these identities are not archival proof on
+their own.
 
 ## Current Evidence And Artifacts
 
@@ -96,7 +95,7 @@ Current calibration artifact, informally:
 - in-memory fitted parameters on one `MarketModel` instance;
 - per-factor market-path prior calibration stored in `MarketEvidence`;
 - a runtime-derived calibration run/artifact identity in
-  `MarketBundleMetadata`;
+  `SampledMarketBundle.metadata`;
 - no durable calibration bundle or persisted fitted-parameter artifact yet.
 
 Current generator run, informally:
@@ -105,8 +104,9 @@ Current generator run, informally:
 - model implementation and config from `VecmModel(VecmConfig(k_ar_diff=1, coint_rank=1))`;
 - `MarketRequest` horizon, rollout count, seed, and market model id;
 - model-card/version, evidence, calibration, scenario-generator,
-  validation-report, and known-limitation identity in `MarketBundleMetadata`;
-- provider-level source metadata embedded in `MarketBundleMetadata`.
+  validation-report, and known-limitation identity in
+  `SampledMarketBundle.metadata`;
+- provider-level source metadata embedded in `SampledMarketBundle.metadata`.
 
 ## Known Limitations
 
@@ -121,11 +121,10 @@ Current generator run, informally:
 - `rollout_index` is only an array coordinate. Reproducible path identity needs
   model version, evidence id, calibration id, generator settings, seed, path
   index, factor set, and event-stream identity.
-- Mortgage rates are current evidence adapted into bundle paths; the core shim
-  currently keeps them constant over the sampled horizon.
-- Private-equity marks and yearly tender opportunities are provider/runtime
-  bundle concerns in the current VECM wrapper, not fitted idiosyncratic
-  company models.
+- Mortgage rates are current evidence adapted into sampled paths; they are
+  currently kept constant over the sampled horizon.
+- Private-equity marks and yearly tender opportunities are current model/runtime
+  bundle concerns in the VECM wrapper, not fitted idiosyncratic company models.
 - Historical public market data is limited and location coverage is narrow.
   Zillow rows are trimmed to the currently configured cities.
 - Source refresh recency is not enforced by this document or by model metadata.

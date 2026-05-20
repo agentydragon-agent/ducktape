@@ -25,8 +25,8 @@ py_library(
     srcs = ["market.py"],
     deps = [
         "//augur:frames",
-        "//augur/model:sim_market_api_py",
-        "//augur/model:sim_market_py",
+        "//augur/model:market_api_py",
+        "//augur/model:market_py",
         "@pypi//polars",
     ],
 )
@@ -106,7 +106,7 @@ py_library(
     name = "scenario",
     srcs = ["scenario.py"],
     deps = [
-        "//augur/model:sim_market_py",
+        "//augur/model:market_py",
         "@pypi//polars",
         "@pypi//pydantic",
     ],
@@ -245,8 +245,8 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     deps = [
-        "//augur/model:sim_market_deterministic_py",
-        "//augur/model:sim_market_py",
+        "//augur/model:deterministic_py",
+        "//augur/model:market_py",
         "@pypi//pytest",
     ],
 )
@@ -260,8 +260,8 @@ py_test(
         ":replay",
         ":scenario",
         ":simulate",
-        "//augur/model:sim_market_gbm_py",
-        "//augur/model:sim_market_py",
+        "//augur/model:gbm_py",
+        "//augur/model:market_py",
         "@pypi//polars",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -287,8 +287,8 @@ py_library(
     srcs = ["bench_scenario.py"],
     deps = [
         ":scenario",
-        "//augur/model:sim_market_gbm_py",
-        "//augur/model:sim_market_py",
+        "//augur/model:gbm_py",
+        "//augur/model:market_py",
     ],
 )
 
@@ -309,8 +309,8 @@ py_test(
         ":bench_scenario",
         ":scenario",
         ":simulate",
-        "//augur/model:sim_market_deterministic_py",
-        "//augur/model:sim_market_py",
+        "//augur/model:deterministic_py",
+        "//augur/model:market_py",
         "@pypi//polars",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

@@ -1,6 +1,6 @@
 """Generic augur HTTP server. A deployment-side wrapper (e.g. gaffer's
 serve.py) provides the `AugurConfig`, bundle source, then calls
-`run_server(...)`. The market-bundle provider is selected by the
+`run_server(...)`. The sim-native market model is selected by the
 type-discriminated `AugurConfig.market_provider` config."""
 
 from __future__ import annotations
@@ -11,12 +11,11 @@ from pathlib import Path
 
 import uvicorn
 
-from augur.api.backend import AugurBackend, AugurBackendRuntimeConfig, BackendExecutionEngine
+from augur.api.backend import AugurBackend, AugurBackendRuntimeConfig
 from augur.api.config import AugurConfig
 from augur.core.backend import StaticPathResolver, create_augur_backend_app
-from augur.core.market_bundle import MarketBundleProvider
-from augur.model.market_provider_config import realize_core_market_provider, realize_market_model
-from augur.model.sim_market_api import JointMarketModel
+from augur.model.market_api import JointMarketModel
+from augur.model.market_provider_config import realize_market_model
 
 
 @dataclass(frozen=True)
@@ -38,11 +37,9 @@ BundleSource = StaticBundle | ApiOnly
 class AugurServerConfig:
     augur_config: AugurConfig
     market_model: JointMarketModel
-    market_bundle_provider: MarketBundleProvider
     default_rollout_samples: int
     max_rollout_samples: int
     bundle: BundleSource
-    execution_engine: BackendExecutionEngine = "core"
 
 
 def _current_private_equity_price_usd(augur_config: AugurConfig) -> float:
@@ -58,16 +55,6 @@ def _current_private_equity_price_usd(augur_config: AugurConfig) -> float:
 def _make_market_model(augur_config: AugurConfig, *, current_private_equity_price_usd: float) -> JointMarketModel:
     return realize_market_model(
         augur_config.market_provider, current_private_equity_price_usd=current_private_equity_price_usd
-    )
-
-
-def _make_core_market_provider(
-    augur_config: AugurConfig, *, market_model: JointMarketModel, current_private_equity_price_usd: float
-) -> MarketBundleProvider:
-    return realize_core_market_provider(
-        augur_config.market_provider,
-        model=market_model,
-        current_private_equity_price_usd=current_private_equity_price_usd,
     )
 
 
@@ -98,11 +85,9 @@ def create_app(config: AugurServerConfig):
     backend = AugurBackend(
         augur_config=config.augur_config,
         runtime_config=AugurBackendRuntimeConfig(
-            market_bundle_provider=config.market_bundle_provider,
             default_rollout_samples=config.default_rollout_samples,
             max_rollout_samples=config.max_rollout_samples,
             market_model=config.market_model,
-            execution_engine=config.execution_engine,
         ),
     )
     return create_augur_backend_app(
@@ -119,12 +104,6 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--port", type=int, default=8767)
     parser.add_argument(
         "--api-only", action="store_true", help="Serve only JSON API routes; static assets are external."
-    )
-    parser.add_argument(
-        "--backend-engine",
-        choices=("core", "sim"),
-        default="core",
-        help="Execution backend for /api/scenario_sets/run.",
     )
     parser.add_argument("--dist-dir", help="Override the prebuilt frontend bundle directory.")
     return parser
@@ -148,24 +127,19 @@ def run_server(*, augur_config: AugurConfig, bundle: BundleSource, argv: list[st
     Deployment-side entry points (e.g. gaffer's `serve.py`) pass in a
     `StaticBundle` (default) or `ApiOnly`; this module never references
     `_main/` directly. `--api-only` overrides the supplied bundle;
-    `--dist-dir` overrides the default `StaticBundle`. The market model is
+    `--dist-dir` overrides the default `StaticBundle`. The sim market model is
     selected by the type-discriminated `AugurConfig.market_provider` object
     loaded by the deployment."""
     parser = _build_arg_parser()
     args = parser.parse_args(argv)
     current_private_equity_price_usd = _current_private_equity_price_usd(augur_config)
     market_model = _make_market_model(augur_config, current_private_equity_price_usd=current_private_equity_price_usd)
-    market_bundle_provider = _make_core_market_provider(
-        augur_config, market_model=market_model, current_private_equity_price_usd=current_private_equity_price_usd
-    )
     server_config = AugurServerConfig(
         augur_config=augur_config,
         market_model=market_model,
-        market_bundle_provider=market_bundle_provider,
         default_rollout_samples=augur_config.default_rollout_samples,
         max_rollout_samples=augur_config.max_rollout_samples,
         bundle=_resolve_bundle(args, bundle, parser),
-        execution_engine=args.backend_engine,
     )
     app = create_app(server_config)
     print(f"serving Augur on http://{args.host}:{args.port}")

@@ -6,10 +6,10 @@ import numpy as np
 import pytest_bazel
 
 from augur.model.location_market_sources import LocationMarketSources
+from augur.model.market_api import MarketSamplingRequest
 from augur.model.markets.models.vecm import VecmConfig, VecmJointMarketModel, VecmModel
 from augur.model.markets.scenarios import HistoricalSeries
-from augur.model.sim_market_api import MarketSamplingRequest
-from augur.model.sim_market_series import (
+from augur.model.series import (
     INFLATION_SERIES_ID,
     SP500_SERIES_ID,
     home_value_series_id,

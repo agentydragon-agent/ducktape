@@ -12,8 +12,8 @@ import polars as pl
 import pytest
 import pytest_bazel
 
-from augur.model.sim_market import MarketBundle
-from augur.model.sim_market_gbm import GeometricBrownian
+from augur.model.gbm import GeometricBrownian
+from augur.model.market import MarketBundle
 from augur.sim.market import MARKET_PRICES_FRAME, MarketContext
 from augur.sim.replay import assert_replay_invariant_holds
 from augur.sim.scenario import (

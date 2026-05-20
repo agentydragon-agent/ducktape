@@ -434,8 +434,8 @@ class PartnerEquityAccrualPolicy(_PolicyBase):
 class MonthlySpendPolicy(_PolicyBase):
     """Agent spends a fixed amount each month from checking (e.g. living expenses).
 
-    When `inflation_adjusted` is true, the spend grows with the market
-    bundle's inflation multipliers."""
+    When `inflation_adjusted` is true, the spend should grow with the sampled
+    inflation series."""
 
     policy_type: Literal[PolicyType.MONTHLY_SPEND] = PolicyType.MONTHLY_SPEND
     monthly_spend_usd: NonNegativeFloat
@@ -881,8 +881,8 @@ class GenericSp500StockPosition(_AssetPositionBase):
 class CryptoAssetPosition(_AssetPositionBase):
     """A crypto holding modeled as a single fungible quantity (e.g. BTC, ETH).
 
-    Crypto value moves with `MarketBundle.crypto_value_multiplier(asset_symbol)`
-    (currently a placeholder array of ones — fitted crypto models are deferred).
+    Crypto value should move with a sampled `crypto:<symbol>` external series
+    (currently a placeholder path — fitted crypto models are deferred).
     Realized gain on sale is treated as ordinary income (federal + California)
     until a richer short/long-term cap-gains model lands; the choice is
     documented near the funding chain rather than in the schema.
@@ -904,7 +904,7 @@ class LiquidityRegimeType(StrEnum):
 class LiquidityEventOnly(ApiModel):
     """Default PE liquidity regime: sale only at sampled tender opportunities.
 
-    The market bundle's `private_equity_sale_opportunity_mask` plus the actor's
+    The sampled private-equity sale-opportunity event series plus the actor's
     `PrivateEquitySalePolicy` chain drives every sale under this regime.
     """
 
@@ -959,9 +959,10 @@ class PrivateEquityPosition(ApiModel):
     - When `value_usd` is set, it is the authoritative month-0 mark — e.g. a tender-offer
       or manual mark carried through from a `PortfolioStatement.PrivateEquityLot`.
     - When `value_usd` is absent, the month-0 mark is derived from
-      `units × MarketBundleMetadata.current_private_equity_price_usd`. Callers without
-      an independent mark (such as the browser UI, which stores units only) should leave
-      `value_usd` unset; the simulator owns the derivation.
+      `units × SampledMarketBundle.metadata["current_private_equity_price_usd"]`.
+      Callers without an independent mark (such as the browser UI, which stores
+      units only) should leave `value_usd` unset; the simulator owns the
+      derivation.
 
     `liquidity_regime` selects how the position can be sold. The default
     `LiquidityEventOnly()` preserves the original behavior (sale only at
@@ -980,11 +981,10 @@ class PrivateEquityPosition(ApiModel):
         default=None,
         description=(
             "Identifier of the underlying private-equity issuer (e.g. 'openai'). When set, "
-            "the simulator routes this position to the per-issuer multiplier and tender-mask "
-            "paths on `MarketBundle`. When unset, the position rides the position's "
-            "`asset_id` as its routing key. `simulate_set` collects every routing key in use "
-            "into `RequiredMarketKeys.pe_issuer_ids` and the provider must populate exactly "
-            "those entries on the bundle."
+            "the simulator routes this position to the per-issuer mark and tender-event "
+            "series. When unset, the position rides the position's `asset_id` as its "
+            "routing key. The API bridge collects every routing key in use into a "
+            "`MarketSamplingRequest` so the model can populate the required level/event series."
         ),
     )
     liquidity_regime: LiquidityRegime = Field(default_factory=LiquidityEventOnly)
@@ -992,13 +992,11 @@ class PrivateEquityPosition(ApiModel):
 
     @property
     def market_routing_key(self) -> str:
-        """Key used to look up per-issuer market paths on `MarketBundle`.
+        """Key used to look up per-issuer external series.
 
         Falls back to `asset_id` when `issuer_id` is unset so single-asset
         scenarios can omit the field. Multiple PE positions sharing one
-        `issuer_id` ride the same multiplier and tender-mask path. The bundle
-        must carry an entry for every routing key the scenario uses; missing
-        keys raise `MissingMarketFactorError`.
+        `issuer_id` ride the same mark and tender-event paths.
         """
         return self.issuer_id or self.asset_id
 
@@ -1072,11 +1070,11 @@ class ExogenousPathIdentity(ApiModel):
     exogenous_path_id: str
     market_model_id: str
     market_model_version_id: str = "unknown"
-    scenario_generator_id: str = "market_bundle_provider"
+    scenario_generator_id: str = "market_model_provider"
     scenario_generator_version_id: str = "unknown"
     evidence_set_id: str = "unknown"
     calibration_artifact_id: str = "unknown"
-    risk_factor_set_id: str = "core_market_factors:v1"
+    risk_factor_set_id: str = "market_factors:v1"
     seed: int
     event_stream_ids: tuple[str, ...] = ()
 

@@ -12,8 +12,8 @@ from __future__ import annotations
 import polars as pl
 import pytest_bazel
 
-from augur.model.sim_market import MarketBundle
-from augur.model.sim_market_deterministic import Deterministic
+from augur.model.deterministic import Deterministic
+from augur.model.market import MarketBundle
 from augur.sim.bench_scenario import build_bench_scenario
 from augur.sim.scenario import InitialLot
 from augur.sim.simulate import simulate

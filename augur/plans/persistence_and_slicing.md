@@ -34,13 +34,13 @@ RunCacheKey = (
     scenario_set_id,
     scenario_input_id,        # already content-derived (scenario_input_id())
     market_request_hash,      # rollout_count + horizon + seed + provider
-    market_bundle_id,         # for explicit-bundle paths
+    exogenous_path_set_id,    # for explicit sampled-bundle paths
     code_version_hash,        # so cache invalidates on engine refactors
 )
 ```
 
-The cache value is the in-memory `ScenarioRunArrays` (polars frames + tuple
-fields), stored either:
+The cache value is the in-memory `SimulationRun` plus derived `ProjectionRun`
+frames, stored either:
 
 - **In-process LRU** (simplest; sized to the container memory budget),
   invalidated on pod restart. Sufficient for "user changes one knob, hits

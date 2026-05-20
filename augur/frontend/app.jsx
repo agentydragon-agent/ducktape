@@ -41,20 +41,6 @@ const FINANCING_OPTIONS = [
   { id: "cash", label: "Cash" },
 ];
 
-const PRIVATE_EQUITY_SALE_POLICY_OPTIONS = [
-  {
-    id: "none",
-    label: "Do not sell",
-    description: "Tender opportunities do not trigger private-stock sales.",
-  },
-  {
-    id: "liquid_net_worth_floor",
-    label: "Sell at liquid-worth floor",
-    description: "When cash plus SP500 is below the floor and a tender exists, sell the configured amount into SP500.",
-  },
-];
-
-const PRIVATE_EQUITY_LIQUID_FLOOR_POLICY_ID = "liquid_net_worth_floor";
 const CHECKING_FLOOR_METRICS = new Set([
   "checkingFloorShortfallUsd",
   "finalCheckingFloorShortfallUsd",
@@ -339,6 +325,19 @@ function fanChartAxis(metricName, values) {
     range,
     ticks: FAN_CHART_TICK_FRACTIONS.map((tick) => min + range * (1 - tick)),
   };
+}
+
+function fanChartYearTicks(maxYear) {
+  const maxWholeYear = Math.max(1, Math.ceil(maxYear));
+  const step = Math.max(1, Math.ceil(maxWholeYear / 5));
+  const ticks = [];
+  for (let year = 0; year <= maxWholeYear; year += step) {
+    ticks.push(year);
+  }
+  if (ticks[ticks.length - 1] !== maxWholeYear) {
+    ticks.push(maxWholeYear);
+  }
+  return ticks;
 }
 
 function labelFromCamel(value) {
@@ -1235,7 +1234,6 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
   const privateEquityCurrentValueUsd = privateEquityValueUsdForUnits(bootstrap, initialBalanceSheet.privateEquityUnits);
   const privateEquityUnitPriceUsd = privateEquityCurrentUnitPriceUsd(bootstrap);
   const isCustomFinancing = financing.financingMode === "custom";
-  const usesPrivateEquityLiquidFloorPolicy = policies.privateEquitySalePolicy === PRIVATE_EQUITY_LIQUID_FLOOR_POLICY_ID;
   const locationsById = useMemo(
     () => new Map(bootstrap.locations.map((location) => [location.id, location])),
     [bootstrap]
@@ -1476,31 +1474,6 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
               onChange={(privateEquityUnits) => updateScenarioSection("initialBalanceSheet", { privateEquityUnits })}
             />
           </ControlGrid>
-          <OptionButtons
-            label={`${privateEquityLabel} tender policy`}
-            options={PRIVATE_EQUITY_SALE_POLICY_OPTIONS}
-            value={policies.privateEquitySalePolicy}
-            onChange={(privateEquitySalePolicy) => updateScenarioSection("policies", { privateEquitySalePolicy })}
-          />
-          {usesPrivateEquityLiquidFloorPolicy && (
-            <ControlGrid>
-              <MoneyField
-                label="Liquid worth floor"
-                value={policies.privateEquityLiquidNetWorthFloorUsd}
-                onChange={(privateEquityLiquidNetWorthFloorUsd) =>
-                  updateScenarioSection("policies", { privateEquityLiquidNetWorthFloorUsd })
-                }
-              />
-              <MoneyField
-                label="Tender sale amount"
-                min={1_000}
-                value={policies.privateEquityTenderSaleAmountUsd}
-                onChange={(privateEquityTenderSaleAmountUsd) =>
-                  updateScenarioSection("policies", { privateEquityTenderSaleAmountUsd })
-                }
-              />
-            </ControlGrid>
-          )}
         </div>
       </ControlSection>
     </section>
@@ -1575,6 +1548,7 @@ function MultiScenarioFanChart({ scenarioSetInput, result, selectedMetric, onSel
 
   const allRows = series.flatMap((item) => item.rows);
   const maxYear = Math.max(...allRows.map((row) => Number(row.year) || 0), 1);
+  const yearTicks = fanChartYearTicks(maxYear);
   const values = allRows.flatMap((row) => [row.p05, row.p50, row.p95]).filter(Number.isFinite);
   const yAxis = fanChartAxis(metricName, values);
   const width = 760;
@@ -1632,13 +1606,13 @@ function MultiScenarioFanChart({ scenarioSetInput, result, selectedMetric, onSel
               </g>
             );
           })}
-          {FAN_CHART_TICK_FRACTIONS.map((tick) => {
-            const xPos = left + tick * plotWidth;
+          {yearTicks.map((year) => {
+            const xPos = left + (year / maxYear) * plotWidth;
             return (
-              <g key={tick}>
+              <g key={year}>
                 <line x1={xPos} x2={xPos} y1={top} y2={top + plotHeight} stroke="var(--augur-chart-grid-subtle)" />
                 <text x={xPos} y={height - 15} textAnchor="middle" className="fill-slate-500 text-[11px]">
-                  {(tick * maxYear).toFixed(0)} yr
+                  {year} yr
                 </text>
               </g>
             );

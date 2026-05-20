@@ -7,17 +7,17 @@ from pydantic import Field
 
 from augur.core.schemas import ApiModel
 from augur.frames import concat_frames
-from augur.model.sim_market import IndependentMarketModels, ScalarMarketSpec, derive_stream_rollout_seeds
-from augur.model.sim_market_api import (
+from augur.model.deterministic import Constant
+from augur.model.gbm import GeometricBrownian
+from augur.model.market import IndependentMarketModels, ScalarMarketSpec, derive_stream_rollout_seeds
+from augur.model.market_api import (
     MARKET_EVENTS_SCHEMA,
     MARKET_LEVELS_SCHEMA,
     MarketSamplingRequest,
     SampledMarketBundle,
     market_events_frame,
 )
-from augur.model.sim_market_deterministic import Constant
-from augur.model.sim_market_gbm import GeometricBrownian
-from augur.model.sim_market_series import (
+from augur.model.series import (
     CRYPTO_SERIES_PREFIX,
     HOME_VALUE_SERIES_PREFIX,
     INFLATION_SERIES_ID,

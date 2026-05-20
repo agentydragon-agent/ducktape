@@ -17,7 +17,7 @@ from augur.api.sim_bridge import (
     translate_scenario_set,
 )
 from augur.core.scenario_set import ScenarioSet
-from augur.model.sim_market_series import SP500_SERIES_ID, private_equity_series_id
+from augur.model.series import SP500_SERIES_ID, private_equity_series_id
 from augur.model.simple_market import SimpleMarketModel
 
 

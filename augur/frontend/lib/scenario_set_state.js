@@ -3,7 +3,6 @@ import {
   zBrowserScenarioInputInput,
   zBrowserScenarioSetInputOverridesInput,
   zFinancingMode,
-  zPrivateEquitySalePolicyId,
 } from "./api/schema.zod.mjs";
 
 export const SCENARIO_COLORS = ["#2563eb", "#dc2626", "#059669", "#d97706", "#7c3aed", "#0891b2"];
@@ -23,7 +22,6 @@ const DEFAULT_REPORT_SPEC = {
 };
 
 const FINANCING_MODE_IDS = new Set(zFinancingMode.options);
-const PRIVATE_EQUITY_SALE_POLICY_IDS = new Set(zPrivateEquitySalePolicyId.options);
 const SCENARIO_INPUT_SECTIONS = new Set(Object.keys(zBrowserScenarioInputInput.shape).map(snakeToCamelKey));
 
 function finiteNumber(value, defaultValue) {
@@ -188,11 +186,9 @@ export function createScenarioInput(bootstrap, overrides = {}) {
         overrides.checkingSaleAmountUsd,
         bootstrap?.defaultCheckingSaleAmountUsd ?? 20_000
       ),
-      privateEquitySalePolicy: PRIVATE_EQUITY_SALE_POLICY_IDS.has(overrides.privateEquitySalePolicy)
-        ? overrides.privateEquitySalePolicy
-        : "none",
-      privateEquityLiquidNetWorthFloorUsd: finiteNumber(overrides.privateEquityLiquidNetWorthFloorUsd, 0),
-      privateEquityTenderSaleAmountUsd: positiveNumber(overrides.privateEquityTenderSaleAmountUsd, 50_000),
+      privateEquitySalePolicy: "none",
+      privateEquityLiquidNetWorthFloorUsd: 0,
+      privateEquityTenderSaleAmountUsd: 0,
     },
   };
 }
@@ -329,17 +325,9 @@ function normalizeScenarioInput(scenario, bootstrap, index, existingIds) {
     policies: {
       checkingFloorUsd: finiteNumber(policies.checkingFloorUsd, defaultPolicies.checkingFloorUsd),
       checkingSaleAmountUsd: positiveNumber(policies.checkingSaleAmountUsd, defaultPolicies.checkingSaleAmountUsd),
-      privateEquitySalePolicy: PRIVATE_EQUITY_SALE_POLICY_IDS.has(policies.privateEquitySalePolicy)
-        ? policies.privateEquitySalePolicy
-        : defaultPolicies.privateEquitySalePolicy,
-      privateEquityLiquidNetWorthFloorUsd: finiteNumber(
-        policies.privateEquityLiquidNetWorthFloorUsd,
-        defaultPolicies.privateEquityLiquidNetWorthFloorUsd
-      ),
-      privateEquityTenderSaleAmountUsd: positiveNumber(
-        policies.privateEquityTenderSaleAmountUsd,
-        defaultPolicies.privateEquityTenderSaleAmountUsd
-      ),
+      privateEquitySalePolicy: "none",
+      privateEquityLiquidNetWorthFloorUsd: 0,
+      privateEquityTenderSaleAmountUsd: 0,
     },
   };
 }
@@ -420,20 +408,6 @@ function scenarioPolicies(scenario, bootstrap) {
       saleAmountUsd: scenarioPolicyInputs.checkingSaleAmountUsd,
     });
   }
-  if (scenarioPolicyInputs.privateEquitySalePolicy === "liquid_net_worth_floor") {
-    policies.push({
-      policyId: "private_equity_liquid_floor_sale",
-      policyType: "private_equity_sale",
-      actorId: primary.actorId,
-      enabled: true,
-      proceedsDestination: "generic_sp500_stock",
-      saleRule: {
-        saleRuleType: "liquid_net_worth_floor",
-        minLiquidNetWorthUsd: scenarioPolicyInputs.privateEquityLiquidNetWorthFloorUsd,
-        saleAmountUsd: scenarioPolicyInputs.privateEquityTenderSaleAmountUsd,
-      },
-    });
-  }
   return policies;
 }
 
@@ -492,7 +466,7 @@ function scenarioBalanceSheet(scenario, bootstrap) {
   ];
   if (privateEquityUnits > 0) {
     // The browser stores units only; the backend derives value_usd from
-    // units × MarketBundleMetadata.current_private_equity_price_usd at simulation init.
+    // units × SampledMarketBundle metadata's current_private_equity_price_usd at simulation init.
     assets.push({
       assetId: "private_equity_private",
       assetType: "private_equity",

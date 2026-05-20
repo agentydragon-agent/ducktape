@@ -20,7 +20,7 @@ from augur.core.scenario_set import (
     ScenarioSetRunResponse,
 )
 from augur.core.schemas import ColumnarTable
-from augur.model.sim_market_series import PRIVATE_EQUITY_SERIES_PREFIX, SP500_SERIES_ID
+from augur.model.series import PRIVATE_EQUITY_SERIES_PREFIX, SP500_SERIES_ID
 from augur.sim.run import SimulationRun
 
 MONTHS_PER_YEAR = 12

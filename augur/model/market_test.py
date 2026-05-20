@@ -4,22 +4,22 @@ import polars as pl
 import pytest
 import pytest_bazel
 
-from augur.model.sim_market import IndependentMarketModels, MarketBundle, materialize_market_prices
-from augur.model.sim_market_api import (
+from augur.model.deterministic import Constant, Deterministic
+from augur.model.gbm import GeometricBrownian
+from augur.model.market import IndependentMarketModels, MarketBundle, materialize_market_prices
+from augur.model.market_api import (
     MARKET_EVENTS_SCHEMA,
     MARKET_LEVELS_SCHEMA,
     MARKET_PRICES_SCHEMA,
     MarketSamplingRequest,
 )
-from augur.model.sim_market_deterministic import Constant, Deterministic
-from augur.model.sim_market_gbm import GeometricBrownian
 from augur.model.testing import DeterministicMarketFixtureModel
 
 
 def test_scalar_models_are_owned_by_model_modules() -> None:
-    assert Deterministic.__module__ == "augur.model.sim_market_deterministic"
-    assert Constant.__module__ == "augur.model.sim_market_deterministic"
-    assert GeometricBrownian.__module__ == "augur.model.sim_market_gbm"
+    assert Deterministic.__module__ == "augur.model.deterministic"
+    assert Constant.__module__ == "augur.model.deterministic"
+    assert GeometricBrownian.__module__ == "augur.model.gbm"
 
 
 def test_sampling_request_requires_explicit_rollout_seeds() -> None:

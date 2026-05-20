@@ -1,4 +1,4 @@
-"""Deterministic scalar market models for `augur/sim`."""
+"""Deterministic scalar market models."""
 
 from __future__ import annotations
 

@@ -35,9 +35,9 @@ ledger/snapshot/accounting-detail rows.)
    for the current consumers.
 
    Files/functions: `PrivateEquitySaleOpportunityBatch` in
-   `augur/core/policy_runtime.py:77-83`, opportunity ID construction at lines
-   584-642, policy decisions in `augur/core/scenario_engine.py:622-629` and
-   `_record_private_equity_sale_decisions()` at lines 1269-1321.
+   `augur/core/policy_runtime.py:77-83`. The old core-engine decision emitters
+   have since been removed; carry this review forward only if equivalent
+   sim-native decision rows become noisy.
 
    Risk: opportunities are now exogenous observations, which matches the spec.
    But `PrivateEquitySaleDecision` rows are emitted for every rollout/month

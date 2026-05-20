@@ -214,6 +214,19 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
                     "label": "Location A",
                     "actors": [{"actor_id": "agent_a", "label": "Agent A", "role": "primary_owner"}],
                     "property_selection": {"property_id": "location_a_property"},
+                    "financing": {"financing_mode": "fixed_30", "down_payment_pct": 25, "mortgage_rate_pct": 6.5},
+                    "initial_balance_sheet": {
+                        "accounts": [
+                            {
+                                "account_id": "checking",
+                                "account_type": "checking",
+                                "owner_actor_id": "agent_a",
+                                "balance_usd": 350_000,
+                            }
+                        ],
+                        "assets": [],
+                        "liabilities": [],
+                    },
                     "policies": [],
                 }
             ],
@@ -223,7 +236,7 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
     assert result["scenario_id"] == "location_a"
     assert "status" not in result
     assert result["metric_fan_columns"]["net_worth_usd"]["row_count"] == 13
-    assert "private_equity_sale_opportunity_event" in scenario_run["market_metadata"]["event_stream_ids"]
+    assert {"mortgage_payments", "property_purchases"} <= set(scenario_run["market_metadata"]["event_stream_ids"])
 
     page_errors: list[str] = []
     console_errors: list[str] = []
@@ -309,9 +322,6 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
     page.get_by_label("Custom mortgage rate").fill("7.35")
     page.get_by_label("Vacancy", exact=True).fill("9")
     page.get_by_label(re.compile("Private .* units")).fill("1000")
-    page.get_by_role("radio", name=re.compile("Sell at liquid-worth floor")).click()
-    page.get_by_label("Liquid worth floor").fill("250000")
-    page.get_by_label("Tender sale amount").fill("50000")
 
     rich_state = _wait_for_url_state(
         page,
@@ -322,9 +332,7 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
                 and scenario["financing"]["financing_mode"] == "custom"
                 and scenario["occupancy_and_rental"]["vacancy_pct"] == 9
                 and scenario["initial_balance_sheet"]["private_equity_units"] == 1000
-                and scenario["policies"]["private_equity_sale_policy"] == "liquid_net_worth_floor"
-                and scenario["policies"]["private_equity_liquid_net_worth_floor_usd"] == 250000
-                and scenario["policies"]["private_equity_tender_sale_amount_usd"] == 50000
+                and scenario["policies"]["private_equity_sale_policy"] == "none"
                 for scenario in state["scenarios"]
             )
         ),
@@ -341,9 +349,9 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
     assert rich_scenario["financing"]["custom_mortgage_rate"] == 7.35
     assert rich_scenario["occupancy_and_rental"]["vacancy_pct"] == 9
     assert rich_scenario["initial_balance_sheet"]["private_equity_units"] == 1000
-    assert rich_scenario["policies"]["private_equity_sale_policy"] == "liquid_net_worth_floor"
-    assert rich_scenario["policies"]["private_equity_liquid_net_worth_floor_usd"] == 250000
-    assert rich_scenario["policies"]["private_equity_tender_sale_amount_usd"] == 50000
+    assert rich_scenario["policies"]["private_equity_sale_policy"] == "none"
+    assert rich_scenario["policies"]["private_equity_liquid_net_worth_floor_usd"] == 0
+    assert rich_scenario["policies"]["private_equity_tender_sale_amount_usd"] == 0
     assert "actors_and_ownership" not in rich_scenario
 
     assert page.get_by_text("Rai").count() == 0

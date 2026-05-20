@@ -9,7 +9,7 @@ The materialized bundle is a long-form polars frame keyed by
 `(rollout_index, month_index, asset_id)` with one column
 `price_per_unit_usd`. Subsequent step calls index into it by month.
 
-The joint market model specs are owned by `augur.model.sim_market`.
+The joint market model specs are owned by `augur.model.market`.
 """
 
 from __future__ import annotations
@@ -19,8 +19,8 @@ from dataclasses import dataclass
 import polars as pl
 
 from augur.frames import FrameSpec
-from augur.model.sim_market import MarketBundle, materialize_market_prices
-from augur.model.sim_market_api import MARKET_PRICES_SCHEMA, SampledMarketBundle, market_prices_from_levels
+from augur.model.market import MarketBundle, materialize_market_prices
+from augur.model.market_api import MARKET_PRICES_SCHEMA, SampledMarketBundle, market_prices_from_levels
 
 MARKET_PRICES_FRAME = FrameSpec("market_prices", MARKET_PRICES_SCHEMA)
 

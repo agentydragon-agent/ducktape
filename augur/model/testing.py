@@ -1,4 +1,4 @@
-"""Test-only sim-native market model fixtures."""
+"""Test-only market model fixtures."""
 
 from __future__ import annotations
 
@@ -7,17 +7,10 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from augur.core.market_bundle import MarketBundleProvider
 from augur.frames import concat_frames
-from augur.model.core_market_adapter import CoreMarketBundleProviderShim
-from augur.model.sim_market import IndependentMarketModels
-from augur.model.sim_market_api import (
-    MARKET_EVENTS_SCHEMA,
-    MarketSamplingRequest,
-    SampledMarketBundle,
-    market_events_frame,
-)
-from augur.model.sim_market_deterministic import Constant
+from augur.model.deterministic import Constant
+from augur.model.market import IndependentMarketModels
+from augur.model.market_api import MARKET_EVENTS_SCHEMA, MarketSamplingRequest, SampledMarketBundle, market_events_frame
 
 
 def _fixture_metadata() -> dict[str, object]:
@@ -28,7 +21,7 @@ def _fixture_metadata() -> dict[str, object]:
         "scenario_generator_version_id": "deterministic_market_fixture:v1",
         "evidence_set_id": "fixture:deterministic",
         "calibration_artifact_id": "fixture:deterministic",
-        "notes": ("deterministic sim-native market fixture",),
+        "notes": ("deterministic market fixture",),
     }
 
 
@@ -69,27 +62,3 @@ class DeterministicMarketFixtureModel:
             if 0 <= month <= request.horizon_months:
                 active[:, month] = True
         return active
-
-
-def deterministic_market_provider(
-    *,
-    current_private_equity_price_usd: float = 0.0,
-    default_level_value: float = 1.0,
-    level_values: Mapping[str, float] | None = None,
-    event_active_months: tuple[int, ...] = (12,),
-) -> MarketBundleProvider:
-    """Expose the deterministic sim fixture through the legacy core provider API."""
-
-    return CoreMarketBundleProviderShim(
-        model=DeterministicMarketFixtureModel(
-            default_level_value=default_level_value,
-            level_values={} if level_values is None else dict(level_values),
-            event_active_months=event_active_months,
-        ),
-        current_private_equity_price_usd=current_private_equity_price_usd,
-        scenario_generator_id="deterministic_market_fixture",
-        scenario_generator_version_id="deterministic_market_fixture:v1",
-        evidence_set_id="fixture:deterministic",
-        calibration_artifact_id="fixture:deterministic",
-        notes=("deterministic sim-native market fixture adapted to core MarketBundle",),
-    )

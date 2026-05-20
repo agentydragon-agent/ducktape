@@ -15,7 +15,9 @@ import polars as pl
 from pydantic import BaseModel, Field
 
 from augur.frames import concat_frames
-from augur.model.sim_market_api import (
+from augur.model.deterministic import Constant, Deterministic
+from augur.model.gbm import GeometricBrownian
+from augur.model.market_api import (
     MARKET_EVENTS_SCHEMA,
     MARKET_LEVELS_SCHEMA,
     JointMarketModel,
@@ -24,8 +26,6 @@ from augur.model.sim_market_api import (
     market_levels_frame,
     market_prices_from_levels,
 )
-from augur.model.sim_market_deterministic import Constant, Deterministic
-from augur.model.sim_market_gbm import GeometricBrownian
 
 ScalarMarketSpec = Annotated[Constant | Deterministic | GeometricBrownian, Field(discriminator="kind")]
 

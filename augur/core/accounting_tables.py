@@ -397,9 +397,9 @@ class _LiabilityInterner:
 class AccountingTrace:
     """Bundle of all accounting tables for a single scenario run.
 
-    `tax_lots`/`liabilities` still live as the existing `tuple[..., ...]`
-    Pydantic tuples on `ScenarioRunArrays`; they're kept here as
-    references so that `lot_idx` / `liability_idx` columns on the
+    `tax_lots`/`liabilities` may live as compact Pydantic tuples on
+    compatibility response models; they're kept here as references so that
+    `lot_idx` / `liability_idx` columns on the
     `postings` fact table can resolve back to a `TaxLot` / `LiabilityState`
     when materializing a `Posting` Pydantic model.
     """
@@ -1056,7 +1056,7 @@ class AccountingTraceBuilder:
         )
 
 
-# Helpers shared between builder and other engine modules ---------------------
+# Helpers shared between accounting builders and sim adapters -----------------
 
 
 def _normalized_posting_amounts(
@@ -1064,9 +1064,8 @@ def _normalized_posting_amounts(
 ) -> tuple[np.ndarray, list[tuple[PostingBatch, np.ndarray]]]:
     """Bring all per-posting amount arrays to a shared `(rollouts, months)` shape.
 
-    Mirrors the existing free function in `augur/core/scenario_engine.py`. Kept
-    here so the builder doesn't pull in scenario_engine; that file imports
-    this helper instead of defining it.
+    Shared accounting code expects per-rollout or per-rollout/month amounts.
+    This helper normalizes both shapes before journal entries are materialized.
     """
     month_values = np.asarray([month_index], dtype="int64") if isinstance(month_index, int) else month_index
     normalized: list[tuple[PostingBatch, np.ndarray]] = []

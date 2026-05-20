@@ -13,8 +13,8 @@ amount arrays / chart-account key bindings). The schema fixes the legs.
 
 The schemas are also the natural authoring surface for the future
 amount-derivation work: once each leg's amount is expressed as a named
-binding, replacing the binding with a reference to a `ScenarioRunArrays`
-column is a one-line schema edit.
+binding, replacing the binding with a reference to a named projection column is
+a one-line schema edit.
 """
 
 from __future__ import annotations
@@ -160,7 +160,7 @@ ASSET_SALE_PRIVATE_EQUITY_TO_PUBLIC_SECURITY = JournalEntrySchema(
 # `net_proceeds` so both stay non-negative. The caller supplies
 # `cash_in = np.maximum(0, net_proceeds)` and `cash_out = np.maximum(0,
 # -net_proceeds)`; future work can derive these from existing
-# `ScenarioRunArrays` columns.
+# named projection columns.
 
 PROPERTY_SALE = JournalEntrySchema(
     journal_entry_type=JournalEntryType.PROPERTY_SALE,

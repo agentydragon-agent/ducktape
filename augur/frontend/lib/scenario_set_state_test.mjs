@@ -210,9 +210,6 @@ test("scenario set request is canonical backend input after decamelizing", () =>
     },
     policies: {
       checkingFloorUsd: 10_000,
-      privateEquitySalePolicy: "liquid_net_worth_floor",
-      privateEquityLiquidNetWorthFloorUsd: 300_000,
-      privateEquityTenderSaleAmountUsd: 75_000,
     },
   });
   const request = scenarioSetInputToRequest(input, bootstrap);
@@ -234,20 +231,9 @@ test("scenario set request is canonical backend input after decamelizing", () =>
   assert.equal(firstScenario.policies[0].policy_type, "checking_floor_sell_public_stock");
   assert.equal(firstScenario.policies[0].floor_usd, 10_000);
   assert.equal(firstScenario.policies[0].sale_amount_usd, 20_000);
-  assert.deepEqual(
+  assert.equal(
     firstScenario.policies.find((policy) => policy.policy_type === "private_equity_sale"),
-    {
-      policy_id: "private_equity_liquid_floor_sale",
-      policy_type: "private_equity_sale",
-      actor_id: "alpha",
-      enabled: true,
-      proceeds_destination: "generic_sp500_stock",
-      sale_rule: {
-        sale_rule_type: "liquid_net_worth_floor",
-        min_liquid_net_worth_usd: 300_000,
-        sale_amount_usd: 75_000,
-      },
-    }
+    undefined
   );
   assert.equal(firstScenario.rental_plan.rental_mode, "rent_rooms_while_owner_lives_there");
   assert.equal(firstScenario.rental_plan.rooms_rented, 2);
@@ -273,7 +259,7 @@ test("scenario set request is canonical backend input after decamelizing", () =>
     undefined
   );
   // The browser stores units only; value_usd is omitted so the backend simulator
-  // derives the opening mark from units × MarketBundleMetadata.current_private_equity_price_usd.
+  // derives the opening mark from units × SampledMarketBundle metadata's current_private_equity_price_usd.
   assert.deepEqual(
     firstScenario.initial_balance_sheet.assets.find((asset) => asset.asset_type === "private_equity"),
     {
@@ -367,11 +353,6 @@ test("URL state round-trips rich scenario controls in camelCase", () => {
     initialBalanceSheet: {
       privateEquityUnits: 1_234,
     },
-    policies: {
-      privateEquitySalePolicy: "liquid_net_worth_floor",
-      privateEquityLiquidNetWorthFloorUsd: 250_000,
-      privateEquityTenderSaleAmountUsd: 60_000,
-    },
   });
 
   const decoded = decodeScenarioSetUrlState(encodeScenarioSetUrlState(input));
@@ -383,9 +364,9 @@ test("URL state round-trips rich scenario controls in camelCase", () => {
   assert.equal(decoded.scenarios[0].taxAccounting.closingCostBuyPct, 3.7);
   assert.equal(decoded.scenarios[0].occupancyAndRental.vacancyPct, 7);
   assert.equal(decoded.scenarios[0].initialBalanceSheet.privateEquityUnits, 1_234);
-  assert.equal(decoded.scenarios[0].policies.privateEquitySalePolicy, "liquid_net_worth_floor");
-  assert.equal(decoded.scenarios[0].policies.privateEquityLiquidNetWorthFloorUsd, 250_000);
-  assert.equal(decoded.scenarios[0].policies.privateEquityTenderSaleAmountUsd, 60_000);
+  assert.equal(decoded.scenarios[0].policies.privateEquitySalePolicy, "none");
+  assert.equal(decoded.scenarios[0].policies.privateEquityLiquidNetWorthFloorUsd, 0);
+  assert.equal(decoded.scenarios[0].policies.privateEquityTenderSaleAmountUsd, 0);
 });
 
 // Stale-field guard: if a future schema gets a new override field, the

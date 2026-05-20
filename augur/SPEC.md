@@ -133,9 +133,9 @@ For one rollout, given a `Scenario` and an exogenous trajectory bundle:
 
 A scenario-set run produces a typed `ScenarioSetRunResponse`:
 
-- `MarketBundleMetadata`: the exogenous trajectory bundle identity, model /
-  calibration provenance, seed, rollout count, horizon, event streams, and
-  source metadata.
+- `SampledMarketBundle.metadata`: the exogenous trajectory bundle identity,
+  model / calibration provenance, seed, rollout count, horizon, event streams,
+  and source metadata.
 - `ScenarioResult`: one result per scenario, each with accepted input summary,
   report tables, metric summaries, effects (sales), policy decisions, market
   observations, obligations + settlement results + funding decisions, accounting

@@ -171,17 +171,16 @@ For new `augur/sim` behavioral slices:
 bbr test //augur/sim:all
 ```
 
-While existing frontend/API paths still route through `augur/core`, keep the
-legacy e2e guardrail after each behavioral slice:
+Keep the backend/browser sim smoke guardrails after each behavioral slice:
 
 ```bash
-bbr test //augur/core:test_e2e
+bbr test //augur/api:sim_backend_test //augur/api:sim_server_test
 ```
 
 Before handing off a finished spiral:
 
 ```bash
-bbr test //augur/core:all
+bbr test //augur/...
 bbr build //augur/...
 ```
 

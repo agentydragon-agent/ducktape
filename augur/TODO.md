@@ -9,16 +9,16 @@ generic backlog rather than a second ordered roadmap.
 
 ## Next
 
-- [ ] **Finish switching the backend to `model -> sim -> api`.** Track the
-      concrete replacement gate in `augur/sim/TODO.md`. A `--backend-engine=sim`
-      path now translates the SP500/spend slice of the current API payload,
-      expands the scalar seed into explicit per-rollout seeds, samples a
-      shared `SampledMarketBundle`, evaluates with `augur/sim`, and derives
-      frontend graph tables from sim dataframes. Remaining cutover work is to
-      broaden the translator/materialized response beyond the initial
-      cash/SP500 smoke slice and then make sim the default production owner.
-      The next translator slice should move opening public securities into
-      backend YAML config as actual units, starting prices, and cost basis,
+- [ ] **Finish the sim-native API contract now that backend execution is
+      sim-only.** Track the concrete replacement work in `augur/sim/TODO.md`.
+      The production path now translates current API payloads, expands scalar
+      seeds into explicit per-rollout seeds, samples a shared
+      `SampledMarketBundle`, evaluates with `augur/sim`, and derives frontend
+      graph tables from sim dataframes. Remaining work is to broaden the
+      translator/materialized response beyond the current smoke slices and
+      replace the temporary compatibility response with native projection read
+      models. The next translator slice should move opening public securities
+      into backend YAML config as actual units, starting prices, and cost basis,
       with scenarios referencing those configured assets rather than carrying
       editable `value_usd` buckets. The migration inventory for current API
       fields lives in `augur/sim/TODO.md#api-to-sim-translation-inventory`.
@@ -94,57 +94,6 @@ generic backlog rather than a second ordered roadmap.
       derive from config, and unsupported scenario toggles can be removed or
       hidden while the sim cutover is narrowed.
 
-## Refactor D rollup (engine-internal polars migration)
-
-Every per-rollout-per-month dataclass-of-ndarrays in
-`augur/core/scenario_engine.py` and `augur/core/property_sale.py` now
-carries `numerics: pl.DataFrame` keyed by `(rollout_index, month_index)`
-plus a `column(name)` accessor — same shape as `ScenarioRunArrays.numerics`:
-
-- `PropertyCashFlowArrays` — 10 cols (commit `7219c3078`)
-- `PartnerEquityArrays` + `PartnerEquityAgreementArrays` — 15 cols each
-  (commit `f62191dcf`/`1a517c246`)
-- `Sp500SaleActionRecord` + `CryptoSaleActionRecord` — per-rollout 1D
-  frames (commit `7cca75068`)
-- `PropertyDispositionArrays` — 16 cols, collapsed `PropertySaleSettlementArrays`
-  into the same frame (commit `184466292`)
-
-What's left:
-
-- [ ] **Engine arithmetic becomes polars expressions on the canonical
-      frame.** The ~65 free-floating ndarrays in `run_scenario_vectorized`
-      that feed `metric_arrays` (`cash`, `generic_sp500_value`,
-      `liquid_net_worth = cash + generic_sp500_value + crypto_value`,
-      cumulative sums via `np.cumsum(..., axis=1)`, the per-metric
-      `*_from_accounting` reductions, etc.) get rewritten as
-      `with_columns(...)` / `cum_sum().over("rollout_index")` /
-      `group_by([...]).agg(...)` calls on a frame keyed by
-      `(rollout_index, month_index)`. The migrated intermediates
-      (PropertyCashFlow, PartnerEquity, PropertyDisposition) join in
-      directly, and the `metric_arrays` dict + `_build_numerics_frame`
-      seam disappears. Helpers to migrate: the ~30 functions that produce
-      per-metric ndarrays — `_accounting_*_amount_matrix`,
-      `_balance_snapshot_amount_matrix`, `_accounting_detail_amount_matrix`,
-      `mortgage_payment_arrays`, etc. Each individually is small (most
-      are 10-30 LOC mask-and-sum kernels that map directly to
-      `group_by + sum`); the count is what makes it work, not the depth.
-
-## Event-stream polars migration followups
-
-The event-stream root migration in `augur/plans/event_stream_polars_refactor.md`
-landed across commits `a2c3009` (failure_events POC), `d6a9fd7` (obligation
-lifecycle), `a3c0f5e` (funding_decisions), `87453e5` (lot_dispositions),
-`5aa202b` (market_observations), `65ad23a` (accounting_details), `0ac2bc7`
-(effects), `ec69dbc` (policy_decisions + `_with_trajectory_identity`
-teardown). Bench `simulate_set` dropped from 15.7 s → 3.4 s (-78%) at
-3 scenarios × 32 rollouts × 360 months.
-
-Followups still on the table:
-
-- [ ] **Engine arithmetic → polars expressions** (the remaining
-      `Refactor D` rollup item above). Independent track but reads
-      naturally on the polars-backed `ScenarioRunArrays`.
-
 ## Response wire surface
 
 - [ ] **Extend `ReportSpec` `include_*` gates to the smaller response
@@ -158,7 +107,8 @@ Followups still on the table:
       backend test (`test_scenario_set_response_serializes_discriminated_effects`)
       reads `market_observations` via the response and would need to opt in.
 - [ ] **Server-side result persistence + slicing.** Sketch in
-      `augur/plans/persistence_and_slicing.md`. Cache `ScenarioRunArrays`
+      `augur/plans/persistence_and_slicing.md`. Cache `SimulationRun` /
+      `ProjectionRun` data
       keyed by `(seed, scenario_input_id, market_request_hash)` (all already
       content-addressed); expose `/api/runs/<id>/monthly_columns`,
       `/api/runs/<id>/rollout/<i>/series/<metric>`, etc. so the frontend can
@@ -194,10 +144,8 @@ Followups still on the table:
       market nondeterminism, policy nondeterminism, and any future non-market
       random events so trajectory IDs do not conflate different sources of
       randomness.
-- [ ] Move production stochastic path generation behind an `augur/model`
-      trajectory-bundle boundary before wiring `augur/sim` into the product API.
-      `augur/sim.market.GeometricBrownianPath` is acceptable as spike/test/bench
-      scaffolding, but the durable simulator contract should consume
+- [ ] Keep production stochastic path generation behind the `augur/model`
+      trajectory-bundle boundary. The durable simulator contract should consume
       materialized exogenous paths plus provenance rather than fitting or
       sampling markets itself.
 - [ ] Rename exogenous-path terminology away from "market price" where it
@@ -206,10 +154,6 @@ Followups still on the table:
       read as external series / series values, while consumers interpret a
       series as unit value, rent index, inflation index, rate path, or event
       stream as appropriate.
-- [ ] Keep the core market-bundle shim one-way and temporary. New model work
-      should produce `SampledMarketBundle` levels/events first; adapting that
-      output to `augur.core.market_bundle.MarketBundle` is only for legacy
-      core execution while the backend still runs through core.
 - [ ] Decide whether negative cash is allowed only through explicit borrowing.
       If the model says an actor has overdraft, credit-line, margin, or other
       borrowing capacity, negative cash can be an accounting effect paired with
@@ -228,7 +172,6 @@ Followups still on the table:
       sale opportunities should not be split across fields/events that can
       contradict each other.
 - [ ] Reduce single-property/global assumptions. Scenario-level `property_selection`, `financing`, `rental_plan`, and `tax_profile` should eventually become initial positions, per-property settings, or per-actor/accounting inputs as the simulator grows.
-- [ ] Convert `ScenarioEngine` (in `augur/core/api.py`) from the current light shape — a small dataclass holding deployment-scoped deps plus a `simulate_set` method — into a fuller class so the 143 free helpers in `augur/core/scenario_engine.py` become methods sharing the engine's deps directly. The light shape was a deliberate step toward the larger refactor; track this as the follow-up.
 - [ ] Prefer Pydantic for serde and validation at API/config boundaries. Avoid
       custom `to_json_dict()`-style conversion helpers except at narrow
       compatibility seams.

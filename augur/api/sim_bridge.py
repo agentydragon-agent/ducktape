@@ -31,13 +31,8 @@ from augur.core.scenario_set import (
     Scenario as CoreScenario,
     ScenarioSet,
 )
-from augur.model.sim_market_api import (
-    MARKET_LEVELS_SCHEMA,
-    JointMarketModel,
-    MarketSamplingRequest,
-    SampledMarketBundle,
-)
-from augur.model.sim_market_series import SP500_SERIES_ID, private_equity_series_id
+from augur.model.market_api import MARKET_LEVELS_SCHEMA, JointMarketModel, MarketSamplingRequest, SampledMarketBundle
+from augur.model.series import SP500_SERIES_ID, private_equity_series_id
 from augur.sim.market import materialize_sampled_market
 from augur.sim.run import SimulationRun
 from augur.sim.scenario import (

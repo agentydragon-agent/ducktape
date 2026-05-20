@@ -41,13 +41,12 @@ back into typed backend objects.
 The intended production backend path is `augur/model -> augur/sim -> augur/api`:
 model providers sample exogenous levels/events with provenance, `augur/sim`
 deterministically evaluates typed scenarios over those paths, and `augur/api`
-serves compact projection/read models. The legacy `augur/core` path remains a
-temporary compatibility fallback until the sim path is covered and switched
-over. The first guarded backend path (`--backend-engine=sim`) now proves the
-SP500/spend slice can sample a shared sim-native market bundle, run
-`augur/sim`, and derive graphable response tables from sim dataframes; the next
-cutover work is broadening that slice and replacing the temporary legacy-table
-materializer with final read models.
+serves compact projection/read models. The backend now executes only this sim
+path. The current compatibility response proves browser-shaped smoke requests
+can sample a shared sim-native market bundle, run `augur/sim`, and derive
+graphable response tables from sim dataframes; the next cutover work is
+broadening that slice and replacing the temporary legacy-table materializer
+with final read models.
 
 Near-term translation order:
 
@@ -65,15 +64,15 @@ Near-term translation order:
   by the series ratio from that as-of value. Generalize this into a
   path-indexed amount contract for other recurring cashflows instead of adding
   one-off inflation/rent flags.
-- Add property purchase, mortgage origination, and property-tax translation
-  next, then run browser smoke coverage under `--backend-engine=sim`. Keep this
-  first property slice narrow: purchase is month 0, occupancy is forever when
-  selected, rental state does not transition mid-horizon, and any sale support
-  can be end-of-horizon only if needed for graphs. Property value should start
-  from the configured/list value and index by the modeled home-value series;
-  future-month purchase semantics are deferred. When native rental cashflows
-  land, tenant rent income for owned properties should use the same current-rent
-  plus modeled rent-cost series indexing contract as outside rent.
+- Continue the first property slice: month-0 purchase and mortgage origination
+  smoke through the sim-only backend, then add property tax. Keep this slice
+  narrow: purchase is month 0, occupancy is forever when selected, rental state
+  does not transition mid-horizon, and any sale support can be end-of-horizon
+  only if needed for graphs. Property value should start from the
+  configured/list value and index by the modeled home-value series; future-month
+  purchase semantics are deferred. When native rental cashflows land, tenant
+  rent income for owned properties should use the same current-rent plus modeled
+  rent-cost series indexing contract as outside rent.
 - Add crypto positions and liquidity preferences after the property smoke is
   graphable.
 - Add private equity, tender/public/acquisition regimes, and partner property
@@ -249,8 +248,8 @@ tender months is not a real distribution over PE outcomes.
 
 ### Gaps to close
 
-1. **PE valuation should be sampled.** Per-asset price paths keyed by holding
-   identity in `MarketBundle`, persisted via `MarketBundleMetadata`. The
+1. **PE valuation should be sampled.** Per-asset value paths keyed by holding
+   identity in `SampledMarketBundle`, persisted via its metadata. The
    model is **open design work** — the user's available evidence is sparse
    (5-10 historical OpenAI tenders), so the right fit is likely a joint
    model with SP500, inflation, and per-location housing (currently jointly
@@ -468,17 +467,17 @@ Work:
 
 ## Next Lanes (parallelism + sequencing)
 
-- **Backend switchover to `model -> sim -> api`** — the next integration
-  lane. Close the checklist in `augur/sim/TODO.md`: sim scenario translator,
-  required-market-series discovery, sim market consumption, sim/browser smoke
-  coverage, projection/read-model serialization, then make the sim path
-  default.
+- **Backend sim-native contract completion** — the next integration lane now
+  that backend execution is sim-only. Close the checklist in `augur/sim/TODO.md`:
+  broaden the sim scenario translator, complete required-market-series
+  discovery, expand sim market consumption, keep browser smoke coverage, and
+  replace compatibility tables with projection/read-model serialization.
 - **Priority 3 — sampled PE / sampled tender timing / sampled crypto +
   sampled mortgage rate** (open design work; see the priority section
   above). Joint fit with SP500 / inflation / per-location housing factors
-  on sparse evidence. Lives entirely in `augur/model/`, isolated from
-  `augur/core/scenario_engine.py`. **The biggest remaining variance
-  source the simulator silently ignores.**
+  on sparse evidence. Lives entirely in `augur/model/` and feeds
+  `augur/sim` through `SampledMarketBundle`. **The biggest remaining
+  variance source the simulator silently ignores.**
 - **Tax surface beyond sale tax** — qualified dividends, short-term gains,
   capital losses + carryforward, rental income tax, SALT/property-tax
   deductions, passive-loss release. Most valuable once Priority 3
@@ -535,7 +534,7 @@ Scope:
 
 Validation:
 
-- `nix develop --command bazelisk --output_user_root=/tmp/bazel-augur-pe-plan test //augur/core:test_e2e //augur/core:scenario_engine_test //augur/api:browser_shell_test --nocache_test_results --test_size_filters=small,medium,large`
+- `nix develop --command bazelisk --output_user_root=/tmp/bazel-augur-pe-plan test //augur/api:sim_backend_test //augur/api:sim_server_test //augur/api:browser_shell_test --nocache_test_results --test_size_filters=small,medium,large`
 
 ### Plan C: Unified Obligation/Funding Semantics (complete)
 
@@ -571,7 +570,7 @@ For each public framework slice:
 ```bash
 bbr test //augur/api:browser_shell_test
 bbr test //augur/frontend/lib:scenario_set_state_test
-bbr test //augur/core:test_e2e
+bbr test //augur/api:sim_server_test
 ```
 
 Before handing off a broader spiral:

@@ -588,7 +588,7 @@ provenance. `ProjectionRun` is a read model over that output; `augur/api`
 adapts it into the frontend response shape. During migration the API may
 expose a compatibility adapter for old consumers, but the durable seam
 should be the clean simulation-run/projection contract, not the old
-`ScenarioRunArrays` layout.
+compatibility-table layout.
 
 ## Failure modes
 
@@ -741,8 +741,8 @@ layer's scenarios + adds the necessary code.
   vectorized by construction (per the requirements doc) but
   benchmarking against the legacy engine is deferred to after
   L4 / L8 land.
-- **Wire compatibility with the existing `ScenarioRunArrays`
-  schema.** A compatibility shim can exist during migration, but
+- **Wire compatibility with existing frontend graph tables.** A compatibility
+  adapter can exist during migration, but
   the target is a better `model -> sim -> api` contract. Do not
   contort `sim` internals to match legacy response names.
 

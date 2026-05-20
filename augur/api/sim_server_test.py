@@ -1,4 +1,4 @@
-"""Smoke the generic Augur server with the sim backend enabled."""
+"""Smoke the generic Augur server's sim-only backend."""
 
 from __future__ import annotations
 
@@ -35,8 +35,6 @@ def augur_sim_server(tmp_path: Path) -> Iterator[str]:
             "--config",
             str(get_required_path("_main/augur/api/testdata/config.yaml")),
             "--api-only",
-            "--backend-engine",
-            "sim",
         ],
         env={
             **os.environ,
@@ -101,7 +99,7 @@ def _min(values: list[float | int]) -> float:
 
 
 def test_sim_backend_server_runs_browser_shaped_property_request(augur_sim_server: str) -> None:
-    """The shared server flag should run a realistic browser payload through sim.
+    """The shared server should run a realistic browser payload through sim.
 
     This intentionally uses broad ranges. The test is guarding integration shape
     and obviously-wrong all-zero columns, not freezing exact stochastic paths.

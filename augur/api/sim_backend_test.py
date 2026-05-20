@@ -1,40 +1,22 @@
 from __future__ import annotations
 
-from typing import NoReturn
-
 import pytest_bazel
 
 from augur.api.backend import AugurBackend, AugurBackendRuntimeConfig
 from augur.api.config import load_augur_config
 from augur.core.casing import plain_json
-from augur.core.market_bundle import RequiredMarketKeys
-from augur.core.scenario_set import MarketRequest, RolloutStatusType
+from augur.core.scenario_set import RolloutStatusType
 from augur.model.simple_market import SimpleMarketModel
 from util.bazel.runfiles import get_required_path
 
 
-class FailingCoreMarketProvider:
-    def sample_market_bundle(
-        self,
-        *,
-        rollout_count: int,
-        horizon_months: int,
-        seed: int,
-        market_request: MarketRequest,
-        required_keys: RequiredMarketKeys,
-    ) -> NoReturn:
-        raise AssertionError("sim backend should not call the core market provider")
-
-
-def test_sim_backend_flag_runs_joint_model_and_materializes_graph_tables() -> None:
+def test_backend_runs_joint_model_and_materializes_graph_tables() -> None:
     backend = AugurBackend(
         augur_config=load_augur_config(get_required_path("_main/augur/api/testdata/config.yaml")),
         runtime_config=AugurBackendRuntimeConfig(
-            market_bundle_provider=FailingCoreMarketProvider(),
             default_rollout_samples=3,
             max_rollout_samples=3,
             market_model=SimpleMarketModel(current_private_equity_price_usd=25.0),
-            execution_engine="sim",
         ),
     )
 
@@ -107,15 +89,13 @@ def test_sim_backend_flag_runs_joint_model_and_materializes_graph_tables() -> No
     assert scenario_payload["monthly_columns"]["row_count"] == 12
 
 
-def test_sim_backend_flag_accepts_catalog_defaulted_property_selection() -> None:
+def test_backend_accepts_catalog_defaulted_property_selection() -> None:
     backend = AugurBackend(
         augur_config=load_augur_config(get_required_path("_main/augur/api/testdata/config.yaml")),
         runtime_config=AugurBackendRuntimeConfig(
-            market_bundle_provider=FailingCoreMarketProvider(),
             default_rollout_samples=3,
             max_rollout_samples=3,
             market_model=SimpleMarketModel(current_private_equity_price_usd=25.0),
-            execution_engine="sim",
         ),
     )
 
