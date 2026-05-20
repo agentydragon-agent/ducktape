@@ -882,12 +882,15 @@ labels the failed ones. Reported metrics distinguish "across all
 rollouts" from "across surviving rollouts" where the distinction
 matters.
 
-#### S11.3 — Recovery from temporary shortfall.
+#### S11.3 — Funding-chain coverage is not failure.
 
 If a funding policy sells assets in month M to cover a shortfall and
 succeeds, the rollout does not enter failure — it continues
 normally. Failure is "obligation went unpaid"; sale-driven
-recovery is not failure.
+coverage is not failure. Once an obligation cannot be funded, the
+current scope treats that rollout as failed for the rest of the
+simulation; partial payments, cure periods, and status recovery are
+future scope.
 
 ### Layer 12: Housing — primary residence
 
@@ -1151,12 +1154,13 @@ tax_classification)`. Sales that consume two lots emit two rows;
 - **Failure-event log**: every unfunded required obligation emits a
   row carrying `(rollout, month, obligation_id, obligation_type,
 amount_due_usd, amount_paid_usd, shortfall_usd, attempted_funding_
-sources)`. The same agent can recover in a later month (see
-  S11.3) — failure-event rows do not retroactively delete; they
-  record the moment.
+sources)`. Failure-event rows do not retroactively delete; they
+  record the moment the rollout became invalid for surviving-rollout
+  metrics.
 - **Rollout status**: active vs failed, with failure month and the
   obligation that triggered the failure (joinable to the failure-
-  event log).
+  event log). Current scope is sticky failure: a failed rollout is
+  not recovered by later-month inflows.
 
 These outputs are projections of the state series and transaction log;
 they are not maintained alongside as separate state.
@@ -1289,14 +1293,13 @@ the design that's worth examining before shipping.
   routing](#asset-templates-and-rule-routing)); making it
   multi-row-per-property is the stretch.
 
-  If achieving this requires inventing a separate "partner
-  contribution" obligation pathway with its own state matrices and
-  its own settlement logic (which the legacy engine has), the
-  generic obligation + recurring-cash-transfer machinery isn't
-  generic enough — partner contributions should be a recurring
-  transfer between two agents, recorded against the partner's
-  stake row at the receiving agent, settled via the contributing
-  agent's funding chain like any other recurring obligation.
+  Partner-contribution modeling is shelved until the generic
+  property-stake model and tested sim backend are the integration
+  boundary. Do not preserve a bespoke "partner contribution"
+  pathway from the legacy frontend/backend just to match old UI
+  fields. If this later lands, it should compose from normal
+  inter-agent transfers or obligations plus property-stake rows,
+  not a parallel settlement subsystem.
 
   Lower priority than the multi-agent tax stretch above; landing
   this without it requires the partner stake but not the partner's

@@ -9,6 +9,34 @@ the event-log-canonical / polars-vectorized architecture at scale.
 See <REQUIREMENTS.md> for the full target spec and <DESIGN.md> for
 the structural plan.
 
+## Current implementation status
+
+Implemented and covered by pinned e2e numerics:
+
+- L1-L7 core cash, time, rollout, lots, market-path consumption,
+  federal/CA tax, tax breakdown rows, quarterly estimated tax, safe
+  harbor, and true-up.
+- Due-now obligations: configured one-off and recurring obligations,
+  mortgage payments, property tax, and tax payments all settle from
+  cash first, then the configured funding chain, and fail the rollout
+  if still unfunded.
+- L9/L11 floor-triggered funding sales and sticky per-rollout
+  failure status. Same-month funding-chain coverage is not a failure;
+  failed rollouts do not recover in the current scope.
+- First L8/L12 slice: property purchase, mortgage origination,
+  amortizing mortgage payment, property tax, and replay-invariant
+  coverage.
+
+Still not proven by spike-1 coverage:
+
+- Frontend/API output projection contract over the new `SimulationRun`
+  frames.
+- Full real-estate lifecycle: sale, mortgage payoff, occupancy,
+  depreciation, §121, §1250, itemized deductions/SALT/qualified
+  residence interest.
+- Production market-model ownership in `augur/model`; GBM helpers in
+  `sim` remain fixture/bench scaffolding.
+
 ## In scope (REQUIREMENTS layer coverage)
 
 - **L1-L3** — transfers, time, rollouts. The spine.
@@ -36,12 +64,13 @@ the structural plan.
 
 ## Deferred to later spikes
 
-L8 mortgages • L12-13 housing (purchase / sale / depreciation / §121
-/ §1250 / occupancy / multi-property) • L14 constrained sellability
-(mask wired but no scenarios) • partner-equity stretch • S9.7
-variable spend from market • HoH filing status • NIIT • itemized
-deductions • S11.3 failure recovery • multi-jurisdiction beyond
-federal + CA • multiple Bay Area locations beyond `san_francisco`.
+L8 mortgage payoff and non-purchase loan flows • full L12-13 housing
+(sale / depreciation / §121 / §1250 / occupancy / multi-property) •
+L14 constrained sellability (mask wired but no scenarios) • partner-
+equity stretch • S9.7 variable spend from market • HoH filing status
+• NIIT • itemized deductions • failure recovery / delinquency
+lifecycle • multi-jurisdiction beyond federal + CA • multiple Bay
+Area locations beyond `san_francisco`.
 
 ## Deliverable: benchable scenario
 
@@ -141,11 +170,11 @@ build later-commit infrastructure.
 10. **L6 quarterly + year-end timing** — quarterly markers (Apr 15,
     Jun 15, Sep 15, Jan 15 of next year), safe-harbor with
     `prior_year_tax_usd` scenario knob, year-end true-up, tax-
-    payment events.
+    payment obligations.
 11. **L9 + L11 policies + failures** — floor-triggered sale, asset
     preference chain, monthly-spend obligation, obligation funding
     chain (sell to cover insufficient cash), failure-event
-    emission, rollout-status flip.
+    emission, sticky rollout-status flip.
 12. **Locations YAML loader** —
     `data/locations/san_francisco.yaml` (the only one for spike 1;
     no property templates yet). Wired to agent's residence.

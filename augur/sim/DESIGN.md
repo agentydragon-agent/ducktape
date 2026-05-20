@@ -343,11 +343,10 @@ share state mutation.
      simplifies state.
 
 5. **Rollout-status check.** If any required obligation in this
-   month went unfunded (failure event emitted in phase 2), the
-   rollout-status-change event was already emitted there. This
-   phase exists for any cross-phase status reconciliation (e.g.,
-   if a previously-failed rollout completed a settlement this
-   month, emit a rollout-status-change reverting to `active`).
+   month went unfunded, the settlement phase emits a failure event
+   and marks the rollout failed. Current scope has sticky failure:
+   later-month inflows do not recover the rollout, and there is no
+   partial-payment or delinquency lifecycle state.
 
 The returned `events_for_month` is the union of all phase event
 buffers, in emission order. Each event row carries `(rollout,
@@ -452,8 +451,9 @@ depreciation_usd` increases by `monthly_depreciation_amount`.
 obligation_id, obligation_type, amount_due, amount_paid,
 shortfall, attempted_funding_sources)`.
 - **Rollout-status change** — `rollout_status` flips from
-  `active` to `failed` (or back). Event-sourced; the
-  `rollout_status` frame is the per-month materialization.
+  `active` to `failed`. Event-sourced; the `rollout_status` frame
+  is the per-month materialization. Recovery from failed back to
+  active is future scope, not part of the current contract.
 - **Policy decision (diagnostic)** — every policy evaluation
   for every rollout, including no-fires. Doesn't change
   event-sourced state directly (the asset-sale / asset-purchase
@@ -593,16 +593,17 @@ simulation-run contract, not the old `ScenarioRunArrays` layout.
 
 A rollout that fails on month M continues running for months >M;
 its `rollout_status[rollout=R].status` carries `"failed"` from
-month M onward (until recovery flips it back). Operations in
-phases 2-5 in subsequent months continue to apply over all
-rollouts — failed ones aren't structurally removed. Materialized
-outputs distinguish "across all rollouts" from "across rollouts
-active at month X" at projection time.
+month M onward. Operations in subsequent months may still
+materialize state and trajectory-derived values, but decision/event
+emission filters on active rollouts where required. Failed rollouts
+aren't structurally removed. Materialized outputs distinguish
+"across all rollouts" from "across rollouts active at month X" at
+projection time.
 
-A rollout that recovers (a later month's funding chain succeeds
-where a prior month's didn't) flips `status` back to `"active"`.
-The failure_events log retains the original failure row; the
-status frame tells the recovery story.
+Recovery from failed back to active is intentionally out of scope
+for the current simulator. A shortfall that is covered in the same
+month by the funding chain never becomes a failure; an unfunded
+required obligation fails the rollout.
 
 ## File and module layout
 
@@ -710,8 +711,7 @@ refactoring L1's transfer.
    from market). The `policy_decisions_log`.
 10. **L10** — market-driven divergent rollouts from externally
     supplied paths; sellability masks (preparing for L14).
-11. **L11** — `failure_events_log`; rollout status flips;
-    recovery semantics.
+11. **L11** — `failure_events_log`; sticky rollout-failure status.
 12. **L12** — `property_state` frame; `depreciable_real_property`
     template; property purchase / carrying costs / sale; §121
     exclusion; SALT cap interaction; qualified-residence interest
