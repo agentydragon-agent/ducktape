@@ -69,16 +69,18 @@ prizes against their own token balance.
 Canonical state is a small relational schema in Postgres (CNPG `study-casino-db`),
 shared-schema with rows scoped by `user_id`:
 
-| Table             | Purpose                                                                         |
-| ----------------- | ------------------------------------------------------------------------------- |
-| `balance`         | Singleton row (`id = 1`); credits, tokens. CHECK constraints enforce `≥ 0`.     |
-| `sessions`        | One row per completed study session. In-progress sessions are client-side only. |
-| `prizes`          | User-editable prize catalog.                                                    |
-| `prize_log`       | Append-only redemption log.                                                     |
-| `ledger_events`   | Append-only audit trail of every server action, keyed by `client_action_id`.    |
-| `game_events`     | Server-resolved slots/roulette/blackjack settlements.                           |
-| `state_snapshots` | JSON dumps before `/actions/import` / `/actions/reset`.                         |
-| `blackjack_hands` | In-flight hand state between deal and settlement.                               |
+| Table               | Purpose                                                                         |
+| ------------------- | ------------------------------------------------------------------------------- |
+| `balance`           | Singleton row (`id = 1`); credits, tokens. CHECK constraints enforce `≥ 0`.     |
+| `sessions`          | One row per completed study session. In-progress sessions are client-side only. |
+| `prizes`            | User-editable prize catalog.                                                    |
+| `prize_log`         | Append-only redemption log.                                                     |
+| `ledger_events`     | Append-only audit trail of every server action, keyed by `client_action_id`.    |
+| `game_events`       | Server-resolved slots/roulette/blackjack settlements.                           |
+| `rng_action_audits` | Deterministic RNG seed context per randomized server action.                    |
+| `rng_call_audits`   | Per-call RNG parameters/results for replaying randomized server actions.        |
+| `state_snapshots`   | JSON dumps before `/actions/import` / `/actions/reset`.                         |
+| `blackjack_hands`   | In-flight hand state between deal and settlement.                               |
 
 `GET /state` returns a JSON view of `balance` + `sessions` + `prizes` +
 `prize_log`. The frontend caches this and refetches on every successful
@@ -119,6 +121,11 @@ the mutation.
 Pre-cutover `ledger_events` rows with `source="legacy_client_sync"`
 similarly remain readable; both sets of literals are kept in `events.py`
 so historical rows still deserialize.
+
+Casino RNG is deterministic and audit-logged for new server-resolved actions.
+The DB stores seed material plus each random call's parameters and result; the
+versioned `STUDY_CASINO_RNG_SECRET` stays outside the DB and is needed to replay
+the HMAC-SHA256 stream.
 
 ## Validation
 

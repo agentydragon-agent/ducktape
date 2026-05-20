@@ -84,6 +84,13 @@ spec:
                 secretKeyRef:
                   name: study-casino-oidc
                   key: session_secret
+            - name: STUDY_CASINO_RNG_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: study-casino-oidc
+                  key: rng_secret
+            - name: STUDY_CASINO_RNG_KEY_ID
+              value: "study-casino-rng-v1"
           resources:
             requests:
               memory: "64Mi"

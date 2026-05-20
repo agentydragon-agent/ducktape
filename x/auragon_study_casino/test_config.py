@@ -40,5 +40,25 @@ def test_admin_users_env_unset(monkeypatch: pytest.MonkeyPatch) -> None:
     assert Settings().admin_users == frozenset()
 
 
+def test_rng_secret_required_when_oidc_is_enabled() -> None:
+    settings = Settings(
+        database_url=_DUMMY_URL,
+        oidc_issuer="https://auth.example.test/application/o/study-casino",
+        oidc_client_id="study-casino",
+        oidc_client_secret="client-secret",
+        session_secret="x" * 32,
+    )
+
+    with pytest.raises(ValueError, match="STUDY_CASINO_RNG_SECRET"):
+        settings.rng_secret_bytes()
+
+
+def test_rng_secret_dev_fallback_when_oidc_is_disabled() -> None:
+    settings = Settings(database_url=_DUMMY_URL)
+
+    assert settings.effective_rng_key_id() == "dev-insecure-fallback"
+    assert settings.rng_secret_bytes().startswith(b"insecure-dev-only")
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

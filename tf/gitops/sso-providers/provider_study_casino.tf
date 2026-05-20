@@ -12,6 +12,11 @@ resource "random_password" "study_casino_session_secret" {
   special = false # only alphanumeric — no quoting issues in env vars
 }
 
+resource "random_password" "study_casino_rng_secret" {
+  length  = 64
+  special = false # only alphanumeric — no quoting issues in env vars
+}
+
 resource "authentik_provider_oauth2" "study_casino" {
   name      = "study-casino"
   client_id = "study-casino"
@@ -80,5 +85,6 @@ resource "kubernetes_secret" "study_casino_oidc" {
   data = {
     oidc_client_secret = authentik_provider_oauth2.study_casino.client_secret
     session_secret     = random_password.study_casino_session_secret.result
+    rng_secret         = random_password.study_casino_rng_secret.result
   }
 }

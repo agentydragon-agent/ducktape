@@ -5,15 +5,15 @@ Every per-user table carries a `user_id` column; all reads are scoped
 an ephemeral testcontainer in tests) backs every user.
 
 Canonical state lives in `balance` (one row per user), `sessions`, `prizes`,
-and `prize_log`. The `ledger_events` and `game_events` audit logs are
-append-only and survive everything that mutates state. `state_snapshots`
-keeps a JSON dump before destructive imports/resets so a bad import is
-recoverable.
+and `prize_log`. The `ledger_events`, `game_events`, and `rng_*_audits`
+audit logs are append-only and survive everything that mutates state.
+`state_snapshots` keeps a JSON dump before destructive imports/resets so a
+bad import is recoverable.
 """
 
 from __future__ import annotations
 
-from sqlalchemy import BigInteger, CheckConstraint, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, CheckConstraint, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -145,6 +145,49 @@ class LedgerEventRow(Base):
     tokens_before: Mapped[int] = mapped_column(Integer, nullable=False)
     tokens_after: Mapped[int] = mapped_column(Integer, nullable=False)
     details_json: Mapped[str] = mapped_column(Text, nullable=False)
+    result_json: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class RngActionAuditRow(Base):
+    """One deterministic RNG seed context for a committed server action."""
+
+    __tablename__ = "rng_action_audits"
+    __table_args__ = (
+        UniqueConstraint("user_id", "client_action_id", name="rng_action_audits_user_client_action_id_unique"),
+        Index("idx_rng_action_audits_user_id", "user_id", "id"),
+        Index("idx_rng_action_audits_ledger_event_id", "ledger_event_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(_USER_ID, nullable=False)
+    client_action_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    ledger_event_id: Mapped[int] = mapped_column(ForeignKey("ledger_events.id"), nullable=False)
+    game_event_id: Mapped[int | None] = mapped_column(ForeignKey("game_events.id"), nullable=True)
+    server_at_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    rng_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    rng_key_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    seed_material_json: Mapped[str] = mapped_column(Text, nullable=False)
+    seed_digest_hex: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class RngCallAuditRow(Base):
+    """One recorded deterministic RNG call within a server action."""
+
+    __tablename__ = "rng_call_audits"
+    __table_args__ = (
+        UniqueConstraint("action_audit_id", "call_index", name="rng_call_audits_action_call_unique"),
+        Index("idx_rng_call_audits_action_id", "action_audit_id", "call_index"),
+        Index("idx_rng_call_audits_user_action", "user_id", "client_action_id", "call_index"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    action_audit_id: Mapped[int] = mapped_column(ForeignKey("rng_action_audits.id"), nullable=False)
+    user_id: Mapped[str] = mapped_column(_USER_ID, nullable=False)
+    client_action_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    call_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    purpose: Mapped[str] = mapped_column(String(128), nullable=False)
+    method: Mapped[str] = mapped_column(String(32), nullable=False)
+    parameters_json: Mapped[str] = mapped_column(Text, nullable=False)
     result_json: Mapped[str] = mapped_column(Text, nullable=False)
 
 

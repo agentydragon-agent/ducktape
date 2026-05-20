@@ -65,6 +65,18 @@ class Settings(BaseSettings):
             "manage prize catalogs for other users via `/admin/*`."
         ),
     )
+    rng_secret: str | None = Field(
+        default=None,
+        min_length=32,
+        description=(
+            "Secret key for deterministic casino RNG. Required when OIDC auth is enabled; "
+            "dev/test mode falls back to an insecure fixed key when unset."
+        ),
+    )
+    rng_key_id: str = Field(
+        default="study-casino-rng-v1",
+        description="Versioned identifier for the deterministic RNG secret used in audit rows.",
+    )
 
     # OIDC — all four must be set together to enable authentication.
     # When unset, the app accepts all requests as user "default" (dev/test mode).
@@ -92,3 +104,13 @@ class Settings(BaseSettings):
             session_secret=self.session_secret.encode(),
             public_url=self.public_url,
         )
+
+    def rng_secret_bytes(self) -> bytes:
+        if self.rng_secret is not None:
+            return self.rng_secret.encode()
+        if self.oidc_config() is not None:
+            raise ValueError("STUDY_CASINO_RNG_SECRET is required when OIDC authentication is enabled")
+        return b"insecure-dev-only-study-casino-deterministic-rng-secret"
+
+    def effective_rng_key_id(self) -> str:
+        return self.rng_key_id if self.rng_secret is not None else "dev-insecure-fallback"

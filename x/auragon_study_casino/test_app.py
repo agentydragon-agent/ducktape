@@ -2,14 +2,22 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
 import pytest_bazel
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine, select
+from sqlalchemy.orm import Session
 
 from x.auragon_study_casino.app import create_app
 from x.auragon_study_casino.config import Settings
+from x.auragon_study_casino.games import RNG_VERSION, draw_cards, make_shoe, spin_roulette
+from x.auragon_study_casino.models import BlackjackHandRow, RngActionAuditRow, RngCallAuditRow
+from x.auragon_study_casino.rng import AuditedRandom
+
+_TEST_RNG_SECRET = "test-auditable-rng-secret-with-enough-bytes"
 
 
 @pytest.fixture
@@ -41,6 +49,35 @@ def _grant_tokens(client: TestClient, n: int, action_prefix: str = "seed-tokens"
     _grant_credits(client, n, action_id=f"{action_prefix}-credits")
     r = client.post("/actions/convert", json={"client_action_id": f"{action_prefix}-convert", "amount": n})
     assert r.status_code == 200, r.text
+
+
+def _rng_audit_rows(db_url: str, client_action_id: str) -> tuple[RngActionAuditRow | None, list[RngCallAuditRow]]:
+    engine = create_engine(db_url)
+    with Session(engine) as s:
+        action = s.scalar(
+            select(RngActionAuditRow).where(
+                RngActionAuditRow.user_id == "default", RngActionAuditRow.client_action_id == client_action_id
+            )
+        )
+        calls = (
+            list(
+                s.scalars(
+                    select(RngCallAuditRow)
+                    .where(RngCallAuditRow.user_id == "default", RngCallAuditRow.client_action_id == client_action_id)
+                    .order_by(RngCallAuditRow.call_index)
+                ).all()
+            )
+            if action is not None
+            else []
+        )
+    engine.dispose()
+    return action, calls
+
+
+def _settings(tmp_path: Path, db_url: str, **kwargs: object) -> Settings:
+    return Settings(
+        database_url=db_url, frontend_dist_dir=tmp_path / "nonexistent_dist", rng_secret=_TEST_RNG_SECRET, **kwargs
+    )
 
 
 def test_healthz(client: TestClient) -> None:
@@ -212,10 +249,103 @@ def test_slots_spin_writes_game_event(client: TestClient) -> None:
     body = r.json()
     assert body["event"]["action_type"] == "casino.slots.spin"
     assert body["game_event"]["source"] == "server_resolved"
-    assert body["game_event"]["rng_version"] == "server-secrets-v1"
+    assert body["game_event"]["rng_version"] == RNG_VERSION
 
     state = client.get("/state").json()
     assert state["balance"]["credits"] == 4
+
+
+def test_roulette_spin_writes_replayable_rng_audit(tmp_path: Path, db_url: str) -> None:
+    client = TestClient(create_app(_settings(tmp_path, db_url, admin_users={"default"})))
+    _grant_credits(client, 5)
+
+    request = {"client_action_id": "roulette-audit", "wager_credits": 1, "bet_type": "red", "bet_number": None}
+    wager = 1
+    bet_type = "red"
+    bet_number: int | None = None
+    r = client.post("/casino/roulette/spin", json=request)
+    assert r.status_code == 200, r.text
+    result = r.json()["result"]
+
+    action, calls = _rng_audit_rows(db_url, "roulette-audit")
+    assert action is not None
+    assert action.rng_version == RNG_VERSION
+    assert action.rng_key_id == "study-casino-rng-v1"
+    assert json.loads(action.seed_material_json)["request_body"] == request
+    assert action.seed_digest_hex != _TEST_RNG_SECRET
+    assert len(calls) == 1
+    assert calls[0].purpose == "roulette.wheel_index"
+    assert json.loads(calls[0].result_json)["value"] == result["result_index"]
+
+    replay = AuditedRandom.from_seed_material_json(
+        secret=_TEST_RNG_SECRET.encode(),
+        rng_version=action.rng_version,
+        rng_key_id=action.rng_key_id,
+        seed_material_json=action.seed_material_json,
+    )
+    replayed = spin_roulette(wager, bet_type, bet_number, replay)
+    assert replayed.outcome["result_index"] == result["result_index"]
+    assert replayed.outcome["result_number"] == result["result_number"]
+
+
+def test_slots_rng_audit_records_weighted_draws_and_retry_is_idempotent(tmp_path: Path, db_url: str) -> None:
+    client = TestClient(create_app(_settings(tmp_path, db_url, admin_users={"default"})))
+    _grant_credits(client, 5)
+
+    request = {"client_action_id": "slots-audit", "wager_credits": 1}
+    first = client.post("/casino/slots/spin", json=request)
+    second = client.post("/casino/slots/spin", json=request)
+    assert first.status_code == 200, first.text
+    assert second.status_code == 200, second.text
+    assert second.json()["event"]["id"] == first.json()["event"]["id"]
+
+    action, calls = _rng_audit_rows(db_url, "slots-audit")
+    assert action is not None
+    assert len(calls) == 3
+    assert [call.purpose for call in calls] == ["slots.reel.0", "slots.reel.1", "slots.reel.2"]
+    assert [json.loads(call.result_json)["item_id"] for call in calls] == first.json()["result"]["symbols"]
+
+    rejected = client.post("/casino/slots/spin", json={"client_action_id": "slots-rejected", "wager_credits": 999})
+    assert rejected.status_code == 409
+    rejected_action, rejected_calls = _rng_audit_rows(db_url, "slots-rejected")
+    assert rejected_action is None
+    assert rejected_calls == []
+
+
+def test_blackjack_deal_rng_audit_replays_stored_shoe(tmp_path: Path, db_url: str) -> None:
+    client = TestClient(create_app(_settings(tmp_path, db_url, admin_users={"default"})))
+    _grant_credits(client, 5)
+
+    request = {"client_action_id": "bj-audit", "wager_credits": 1}
+    r = client.post("/casino/blackjack/deal", json=request)
+    assert r.status_code == 200, r.text
+    hand_id = r.json()["result"]["hand_id"]
+
+    action, calls = _rng_audit_rows(db_url, "bj-audit")
+    assert action is not None
+    assert len(calls) == 4 * 52 - 1
+    assert calls[0].method == "shuffle_swap"
+
+    replay = AuditedRandom.from_seed_material_json(
+        secret=_TEST_RNG_SECRET.encode(),
+        rng_version=action.rng_version,
+        rng_key_id=action.rng_key_id,
+        seed_material_json=action.seed_material_json,
+    )
+    shoe = make_shoe(replay)
+    p1, shoe = draw_cards(shoe, 1)
+    d1, shoe = draw_cards(shoe, 1)
+    p2, shoe = draw_cards(shoe, 1)
+    d2, shoe = draw_cards(shoe, 1)
+
+    engine = create_engine(db_url)
+    with Session(engine) as s:
+        row = s.get(BlackjackHandRow, ("default", hand_id))
+        assert row is not None
+        assert json.loads(row.shoe_json) == shoe
+        assert json.loads(row.player_json) == [*p1, *p2]
+        assert json.loads(row.dealer_json) == [*d1, *d2]
+    engine.dispose()
 
 
 def test_blackjack_deal_creates_hand(client: TestClient) -> None:

@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-import secrets
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any
 
-RNG_VERSION = "server-secrets-v1"
+from x.auragon_study_casino.rng import AuditedRandom
+
+RNG_VERSION = "server-hmac-sha256-v1"
 RULES_VERSION = "server-rules-v1"
 
 WHEEL = [
@@ -57,19 +58,11 @@ SLOT_SYMBOLS: list[dict[str, Any]] = [
     {"id": "spade", "glyph": "♠", "color": "#f5e8c7", "weight": 9, "payout": 5},
     {"id": "club", "glyph": "♣", "color": "#f5e8c7", "weight": 14, "payout": 3},
 ]
+SLOT_WEIGHTS = [int(symbol["weight"]) for symbol in SLOT_SYMBOLS]
 
 CARD_SUITS = ["♠", "♥", "♦", "♣"]
 CARD_RANKS = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"]
 BLACKJACK_DECKS = 4
-
-
-class RandomSource(Protocol):
-    def randbelow(self, upper: int) -> int: ...
-
-
-class SecretsRandom:
-    def randbelow(self, upper: int) -> int:
-        return secrets.randbelow(upper)
 
 
 @dataclass(frozen=True)
@@ -84,8 +77,11 @@ def num_color(n: int) -> str:
     return "red" if n in RED else "black"
 
 
-def spin_slots(wager: int, rng: RandomSource) -> GameSettlement:
-    picks = [_weighted_pick(SLOT_SYMBOLS, rng), _weighted_pick(SLOT_SYMBOLS, rng), _weighted_pick(SLOT_SYMBOLS, rng)]
+def spin_slots(wager: int, rng: AuditedRandom) -> GameSettlement:
+    picks = [
+        rng.weighted_choice(SLOT_SYMBOLS, weights=SLOT_WEIGHTS, purpose=f"slots.reel.{i}", item_id_key="id")
+        for i in range(3)
+    ]
     a, b, c = picks
     if a["id"] == b["id"] == c["id"]:
         payout = wager * int(a["payout"])
@@ -110,10 +106,10 @@ def spin_slots(wager: int, rng: RandomSource) -> GameSettlement:
     )
 
 
-def spin_roulette(wager: int, bet_type: str, bet_number: int | None, rng: RandomSource) -> GameSettlement:
+def spin_roulette(wager: int, bet_type: str, bet_number: int | None, rng: AuditedRandom) -> GameSettlement:
     if bet_type == "number" and bet_number is None:
         raise ValueError("number bets require bet_number")
-    picked_idx = rng.randbelow(len(WHEEL))
+    picked_idx = rng.randbelow(len(WHEEL), purpose="roulette.wheel_index", parameters={"wheel_size": len(WHEEL)})
     picked = WHEEL[picked_idx]
     won, mult = _roulette_win(picked, bet_type, bet_number)
     return GameSettlement(
@@ -130,11 +126,9 @@ def spin_roulette(wager: int, bet_type: str, bet_number: int | None, rng: Random
     )
 
 
-def make_shoe(rng: RandomSource, decks: int = BLACKJACK_DECKS) -> list[dict[str, str]]:
+def make_shoe(rng: AuditedRandom, decks: int = BLACKJACK_DECKS) -> list[dict[str, str]]:
     cards = [{"suit": s, "rank": r} for _ in range(decks) for s in CARD_SUITS for r in CARD_RANKS]
-    for i in range(len(cards) - 1, 0, -1):
-        j = rng.randbelow(i + 1)
-        cards[i], cards[j] = cards[j], cards[i]
+    rng.shuffle(cards, purpose="blackjack.shoe.shuffle", parameters={"decks": decks})
     return cards
 
 
@@ -249,16 +243,6 @@ def public_blackjack_state(
     }
 
 
-def _weighted_pick(items: list[dict], rng: RandomSource) -> dict:
-    total = sum(int(item["weight"]) for item in items)
-    r = rng.randbelow(total)
-    for item in items:
-        r -= int(item["weight"])
-        if r < 0:
-            return item
-    return items[-1]
-
-
 def theoretical_bucket_rtp() -> dict[tuple[str, str], tuple[float, float]]:
     """Closed-form (win_probability, rtp) per (game, bucket_key).
 
@@ -272,13 +256,14 @@ def theoretical_bucket_rtp() -> dict[tuple[str, str], tuple[float, float]]:
     # Roulette: bet against the 37-pocket wheel.
     n_pockets = len(WHEEL)
     for bet_type in ("red", "black", "odd", "even", "low", "high", "dozen1", "dozen2", "dozen3", "number"):
-        wins = sum(1 for num in WHEEL if _roulette_win(num, bet_type, num if bet_type == "number" else None)[0])
+        bet_number = 0 if bet_type == "number" else None
+        wins = sum(1 for num in WHEEL if _roulette_win(num, bet_type, bet_number)[0])
         # All winning multipliers are constant per bet_type — pull mult from any winning pocket.
         mult = next(
             (
-                _roulette_win(num, bet_type, num if bet_type == "number" else None)[1]
+                _roulette_win(num, bet_type, bet_number)[1]
                 for num in WHEEL
-                if _roulette_win(num, bet_type, num if bet_type == "number" else None)[0]
+                if _roulette_win(num, bet_type, bet_number)[0]
             ),
             0,
         )

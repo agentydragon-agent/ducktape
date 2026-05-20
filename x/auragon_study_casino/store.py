@@ -44,9 +44,12 @@ from x.auragon_study_casino.models import (
     LedgerEventRow,
     PrizeLogRow,
     PrizeRow,
+    RngActionAuditRow,
+    RngCallAuditRow,
     SessionRow,
     StateSnapshotRow,
 )
+from x.auragon_study_casino.rng import RngActionAudit
 from x.auragon_study_casino.state import BalanceRead, PrizeLogRead, PrizeRead, SessionRead, StateDump
 from x.auragon_study_casino.stats import (
     SERVER_RESOLVED_SINCE_DATE,
@@ -91,14 +94,16 @@ class ActionMutation:
     `result` is the typed payload that surfaces as `ActionResponse.result`
     on the wire. `game_event` is the typed payload that gets persisted to
     `game_events.outcome_json` and re-read as `GameEventRead` by the
-    casino-stats and audit-log endpoints. `details` stays loosely typed —
-    it's audit metadata persisted to `ledger_events.details_json` and not
-    part of the frontend's read surface.
+    casino-stats and audit-log endpoints. `rng_audit` is the deterministic
+    RNG trace, committed atomically with the ledger/game rows. `details`
+    stays loosely typed — it's audit metadata persisted to
+    `ledger_events.details_json` and not part of the frontend's read surface.
     """
 
     result: ActionResult
     details: dict[str, Any] | None = None
     game_event: GameEventMutation | None = None
+    rng_audit: RngActionAudit | None = None
     rng_version: str | None = None
     rules_version: str = RULES_VERSION
 
@@ -312,6 +317,16 @@ class SqlStore:
                 game_event_out = game_event_from_row(game_event_row)
             else:
                 game_event_out = None
+            if mutation.rng_audit is not None:
+                self._persist_rng_audit(
+                    s=s,
+                    username=username,
+                    client_action_id=client_action_id,
+                    server_at_ms=now_ms,
+                    ledger_event_id=event_row.id,
+                    game_event_id=game_event_row.id if game_event_row is not None else None,
+                    audit=mutation.rng_audit,
+                )
 
         return ServerActionResult(
             event=ledger_event_from_row(event_row), result=mutation.result, game_event=game_event_out
@@ -459,6 +474,45 @@ class SqlStore:
             rng_version=rng_version,
         )
 
+    def _persist_rng_audit(
+        self,
+        *,
+        s: Session,
+        username: str,
+        client_action_id: str,
+        server_at_ms: int,
+        ledger_event_id: int,
+        game_event_id: int | None,
+        audit: RngActionAudit,
+    ) -> None:
+        action_row = RngActionAuditRow(
+            user_id=username,
+            client_action_id=client_action_id,
+            ledger_event_id=ledger_event_id,
+            game_event_id=game_event_id,
+            server_at_ms=server_at_ms,
+            rng_version=audit.rng_version,
+            rng_key_id=audit.rng_key_id,
+            seed_material_json=audit.seed_material_json,
+            seed_digest_hex=audit.seed_digest_hex,
+        )
+        s.add(action_row)
+        s.flush()
+        s.refresh(action_row)
+        for call in audit.calls:
+            s.add(
+                RngCallAuditRow(
+                    action_audit_id=action_row.id,
+                    user_id=username,
+                    client_action_id=client_action_id,
+                    call_index=call.call_index,
+                    purpose=call.purpose,
+                    method=call.method,
+                    parameters_json=self._json(call.parameters),
+                    result_json=self._json(call.result),
+                )
+            )
+
     @staticmethod
     def _json(value: Any) -> str:
         return json.dumps(value, sort_keys=True, separators=(",", ":"))
@@ -489,6 +543,14 @@ _BLACKJACK_BUCKETS: list[tuple[str, str]] = [
 ]
 
 
+@dataclass(frozen=True)
+class _TheoreticalStats:
+    payout_rate: float | None
+    rtp: float | None
+    expected_returned: float | None = None
+    fair_win_lower_tail_probability: float | None = None
+
+
 def _roulette_bucket_key(outcome: GameOutcome) -> str | None:
     return outcome.bet_type if isinstance(outcome, RouletteOutcome) else None
 
@@ -516,8 +578,22 @@ def _aggregate_game(
             continue
         by_key[key].append(e)
 
-    buckets = [_bucket_stats(key, label, by_key[key], theoretical.get((game, key))) for key, label in bucket_defs]
-    total = _bucket_stats("__total__", "All wagers", game_events, None)
+    buckets = [
+        _bucket_stats(
+            key,
+            label,
+            by_key[key],
+            _theoretical_bucket(
+                theoretical.get((game, key)),
+                _fair_win_lower_tail_probability(by_key[key], bucket_key, theoretical) if game == "roulette" else None,
+            ),
+        )
+        for key, label in bucket_defs
+    ]
+    total_theoretical = (
+        _weighted_theoretical_for_actual_wagers(game_events, bucket_key, theoretical) if game == "roulette" else None
+    )
+    total = _bucket_stats("__total__", "All actual wagers", game_events, total_theoretical)
 
     # Timeline never crosses below the data-collection cutoff — defensive
     # against a backfilled `server_resolved` row whose `occurred_at_ms`
@@ -534,7 +610,7 @@ def _aggregate_game(
 
 
 def _bucket_stats(
-    key: str, label: str, events: list[GameEventRead], theoretical: tuple[float, float] | None
+    key: str, label: str, events: list[GameEventRead], theoretical: _TheoreticalStats | None
 ) -> WagerBucketStats:
     count = len(events)
     wins = sum(1 for e in events if e.payout_tokens > 0)
@@ -544,8 +620,17 @@ def _bucket_stats(
     payout_rate = (wins / count) if count > 0 else None
     rtp = (returned / wagered) if wagered > 0 else None
     ev = (net / wagered) if wagered > 0 else None
-    theor_p, theor_rtp = theoretical if theoretical is not None else (None, None)
+    theor_p = theoretical.payout_rate if theoretical is not None else None
+    theor_rtp = theoretical.rtp if theoretical is not None else None
     theor_ev = (theor_rtp - 1.0) if theor_rtp is not None else None
+    expected_returned = (
+        theoretical.expected_returned
+        if theoretical is not None and theoretical.expected_returned is not None
+        else wagered * theor_rtp
+        if theor_rtp is not None
+        else None
+    )
+    expected_net = (expected_returned - wagered) if expected_returned is not None else None
     return WagerBucketStats(
         key=key,
         label=label,
@@ -554,13 +639,90 @@ def _bucket_stats(
         wagered=wagered,
         returned=returned,
         net=net,
+        expected_returned=expected_returned,
+        expected_net=expected_net,
         payout_rate=payout_rate,
         rtp=rtp,
         ev_per_credit=ev,
         theoretical_payout_rate=theor_p,
         theoretical_rtp=theor_rtp,
         theoretical_ev_per_credit=theor_ev,
+        fair_win_lower_tail_probability=theoretical.fair_win_lower_tail_probability
+        if theoretical is not None
+        else None,
     )
+
+
+def _theoretical_bucket(
+    value: tuple[float, float] | None, fair_win_lower_tail_probability: float | None = None
+) -> _TheoreticalStats | None:
+    if value is None:
+        return None
+    payout_rate, rtp = value
+    return _TheoreticalStats(
+        payout_rate=payout_rate, rtp=rtp, fair_win_lower_tail_probability=fair_win_lower_tail_probability
+    )
+
+
+def _weighted_theoretical_for_actual_wagers(
+    events: list[GameEventRead],
+    bucket_key: Callable[[GameOutcome], str | None],
+    theoretical: dict[tuple[str, str], tuple[float, float]],
+) -> _TheoreticalStats | None:
+    if not events:
+        return None
+
+    expected_wins = 0.0
+    expected_returned = 0.0
+    wagered = 0
+    for event in events:
+        key = bucket_key(event.outcome)
+        if key is None:
+            return None
+        theor = theoretical.get((event.game, key))
+        if theor is None:
+            return None
+        payout_rate, rtp = theor
+        expected_wins += payout_rate
+        expected_returned += event.wager_credits * rtp
+        wagered += event.wager_credits
+
+    return _TheoreticalStats(
+        payout_rate=expected_wins / len(events),
+        rtp=(expected_returned / wagered) if wagered > 0 else None,
+        expected_returned=expected_returned,
+        fair_win_lower_tail_probability=_fair_win_lower_tail_probability(events, bucket_key, theoretical),
+    )
+
+
+def _fair_win_lower_tail_probability(
+    events: list[GameEventRead],
+    bucket_key: Callable[[GameOutcome], str | None],
+    theoretical: dict[tuple[str, str], tuple[float, float]],
+) -> float | None:
+    """P(fair game has <= observed wins), conditioned on actual wager types."""
+    if not events:
+        return None
+
+    distribution = {0: 1.0}
+    for event in events:
+        if event.game != "roulette" or not isinstance(event.outcome, RouletteOutcome):
+            return None
+        key = bucket_key(event.outcome)
+        if key is None:
+            return None
+        theor = theoretical.get((event.game, key))
+        if theor is None:
+            return None
+        payout_rate, _rtp = theor
+        next_distribution: dict[int, float] = {}
+        for wins, probability in distribution.items():
+            next_distribution[wins] = next_distribution.get(wins, 0.0) + probability * (1.0 - payout_rate)
+            next_distribution[wins + 1] = next_distribution.get(wins + 1, 0.0) + probability * payout_rate
+        distribution = next_distribution
+
+    observed_wins = sum(1 for event in events if event.payout_tokens > 0)
+    return sum(probability for wins, probability in distribution.items() if wins <= observed_wins)
 
 
 def _time_bucket_stats(date: str, events: list[GameEventRead]) -> TimeBucketStats:

@@ -96,7 +96,6 @@ from x.auragon_study_casino.events import (
 )
 from x.auragon_study_casino.games import (
     RNG_VERSION,
-    SecretsRandom,
     dealer_play,
     draw_cards,
     hand_value,
@@ -108,11 +107,13 @@ from x.auragon_study_casino.games import (
     spin_slots,
 )
 from x.auragon_study_casino.models import BalanceRow, BlackjackHandRow, PrizeLogRow, PrizeRow, SessionRow
+from x.auragon_study_casino.rng import ActionRngFactory, AuditedRandom
 from x.auragon_study_casino.state import AdminUsersResponse, HealthResponse, MeResponse, StateDump
 from x.auragon_study_casino.stats import CasinoStats
 from x.auragon_study_casino.store import ActionMutation, ActionRejectedError, SqlStore
 
 logger = logging.getLogger(__name__)
+_BLACKJACK_HAND_NAMESPACE = uuid.UUID("4d19699a-09bd-42e4-ae00-c5bc10d39683")
 
 
 class _WSManager:
@@ -174,7 +175,11 @@ def _get_user_hand(s: Session, username: str, hand_id: str) -> BlackjackHandRow 
     )
 
 
-def _mutate_blackjack_step(s: Session, username: str, hand_id: str, move: str, rng: SecretsRandom) -> ActionMutation:
+def _blackjack_hand_id(username: str, client_action_id: str) -> str:
+    return f"bj-{uuid.uuid5(_BLACKJACK_HAND_NAMESPACE, f'{username}:{client_action_id}')}"
+
+
+def _mutate_blackjack_step(s: Session, username: str, hand_id: str, move: str) -> ActionMutation:
     row = _get_user_hand(s, username, hand_id)
     if row is None or row.status != "playing":
         raise ActionRejectedError("blackjack_hand", "active blackjack hand not found")
@@ -243,12 +248,7 @@ def _mutate_blackjack_step(s: Session, username: str, hand_id: str, move: str, r
                 **settlement.outcome, initial_wager=row.wager_credits, doubled=current_wager > row.wager_credits
             ),
         )
-    return ActionMutation(
-        result=result,
-        details={"hand_id": hand_id, "move": move},
-        game_event=game_event,
-        rng_version=RNG_VERSION if move in {"hit", "double"} else None,
-    )
+    return ActionMutation(result=result, details={"hand_id": hand_id, "move": move}, game_event=game_event)
 
 
 def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
@@ -267,6 +267,9 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
         store = SqlStore(settings.database_url)
 
     oidc = settings.oidc_config()
+    rng_factory = ActionRngFactory(
+        secret=settings.rng_secret_bytes(), rng_version=RNG_VERSION, rng_key_id=settings.effective_rng_key_id()
+    )
     current_user_dep = make_current_user_dep(oidc.session_secret if oidc else None)
     admin_users = settings.admin_users
     ws_manager = _WSManager()
@@ -294,6 +297,21 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
 
     app = FastAPI(title="Study Casino", docs_url=None, redoc_url=None)
     app.state.current_user_dep = current_user_dep
+
+    def current_rng_factory() -> ActionRngFactory:
+        return rng_factory
+
+    app.state.rng_factory_dep = current_rng_factory
+
+    def action_rng(
+        *, rng_factory: ActionRngFactory, username: str, body: ActionRequest, action_type: str
+    ) -> AuditedRandom:
+        return rng_factory.for_action(
+            user_id=username,
+            client_action_id=body.client_action_id,
+            action_type=action_type,
+            request_body=body.model_dump(mode="json"),
+        )
 
     if oidc:
         app.include_router(
@@ -583,11 +601,16 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
         )
 
     @app.post("/casino/slots/spin")
-    async def slots_spin(body: SlotsSpinRequest, username: Annotated[str, Depends(current_user_dep)]) -> ActionResponse:
-        rng = SecretsRandom()
+    async def slots_spin(
+        body: SlotsSpinRequest,
+        username: Annotated[str, Depends(current_user_dep)],
+        rng_factory: Annotated[ActionRngFactory, Depends(current_rng_factory)],
+    ) -> ActionResponse:
+        action_type = "casino.slots.spin"
 
         def mutate(s: Session, _now_ms: int) -> ActionMutation:
             _require_credits(s, username, body.wager_credits)
+            rng = action_rng(rng_factory=rng_factory, username=username, body=body, action_type=action_type)
             settlement = spin_slots(body.wager_credits, rng)
             balance = _balance(s, username)
             balance.credits -= body.wager_credits
@@ -602,18 +625,22 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
                     outcome=SlotsOutcome(**settlement.outcome),
                 ),
                 rng_version=RNG_VERSION,
+                rng_audit=rng.audit(),
             )
 
-        return await commit_action(username=username, body=body, action_type="casino.slots.spin", mutator=mutate)
+        return await commit_action(username=username, body=body, action_type=action_type, mutator=mutate)
 
     @app.post("/casino/roulette/spin")
     async def roulette_spin(
-        body: RouletteSpinRequest, username: Annotated[str, Depends(current_user_dep)]
+        body: RouletteSpinRequest,
+        username: Annotated[str, Depends(current_user_dep)],
+        rng_factory: Annotated[ActionRngFactory, Depends(current_rng_factory)],
     ) -> ActionResponse:
-        rng = SecretsRandom()
+        action_type = "casino.roulette.spin"
 
         def mutate(s: Session, _now_ms: int) -> ActionMutation:
             _require_credits(s, username, body.wager_credits)
+            rng = action_rng(rng_factory=rng_factory, username=username, body=body, action_type=action_type)
             try:
                 settlement = spin_roulette(body.wager_credits, body.bet_type, body.bet_number, rng)
             except ValueError as e:
@@ -631,18 +658,22 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
                     outcome=RouletteOutcome(**settlement.outcome),
                 ),
                 rng_version=RNG_VERSION,
+                rng_audit=rng.audit(),
             )
 
-        return await commit_action(username=username, body=body, action_type="casino.roulette.spin", mutator=mutate)
+        return await commit_action(username=username, body=body, action_type=action_type, mutator=mutate)
 
     @app.post("/casino/blackjack/deal")
     async def blackjack_deal(
-        body: BlackjackDealRequest, username: Annotated[str, Depends(current_user_dep)]
+        body: BlackjackDealRequest,
+        username: Annotated[str, Depends(current_user_dep)],
+        rng_factory: Annotated[ActionRngFactory, Depends(current_rng_factory)],
     ) -> ActionResponse:
-        rng = SecretsRandom()
+        action_type = "blackjack.deal"
 
         def mutate(s: Session, now_ms: int) -> ActionMutation:
             _require_credits(s, username, body.wager_credits)
+            rng = action_rng(rng_factory=rng_factory, username=username, body=body, action_type=action_type)
             shoe = make_shoe(rng)
             p1, shoe = draw_cards(shoe, 1)
             d1, shoe = draw_cards(shoe, 1)
@@ -654,7 +685,7 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
             balance.credits -= body.wager_credits
             credits_after_wager = balance.credits
             tokens_before_settle = balance.tokens
-            hand_id = f"bj-{uuid.uuid4()}"
+            hand_id = _blackjack_hand_id(username, body.client_action_id)
             status = "playing"
             settlement = None
             if is_blackjack(player) or is_blackjack(dealer):
@@ -703,18 +734,17 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
                 details={"hand_id": hand_id, "wager_credits": body.wager_credits},
                 game_event=game_event,
                 rng_version=RNG_VERSION,
+                rng_audit=rng.audit(),
             )
 
-        return await commit_action(username=username, body=body, action_type="blackjack.deal", mutator=mutate)
+        return await commit_action(username=username, body=body, action_type=action_type, mutator=mutate)
 
     @app.post("/casino/blackjack/hit")
     async def blackjack_hit(
         body: BlackjackHandRequest, username: Annotated[str, Depends(current_user_dep)]
     ) -> ActionResponse:
-        rng = SecretsRandom()
-
         def mutate(s: Session, _now_ms: int) -> ActionMutation:
-            return _mutate_blackjack_step(s, username, body.hand_id, "hit", rng)
+            return _mutate_blackjack_step(s, username, body.hand_id, "hit")
 
         return await commit_action(username=username, body=body, action_type="blackjack.hit", mutator=mutate)
 
@@ -722,10 +752,8 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
     async def blackjack_stand(
         body: BlackjackHandRequest, username: Annotated[str, Depends(current_user_dep)]
     ) -> ActionResponse:
-        rng = SecretsRandom()
-
         def mutate(s: Session, _now_ms: int) -> ActionMutation:
-            return _mutate_blackjack_step(s, username, body.hand_id, "stand", rng)
+            return _mutate_blackjack_step(s, username, body.hand_id, "stand")
 
         return await commit_action(username=username, body=body, action_type="blackjack.stand", mutator=mutate)
 
@@ -733,10 +761,8 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
     async def blackjack_double(
         body: BlackjackHandRequest, username: Annotated[str, Depends(current_user_dep)]
     ) -> ActionResponse:
-        rng = SecretsRandom()
-
         def mutate(s: Session, _now_ms: int) -> ActionMutation:
-            return _mutate_blackjack_step(s, username, body.hand_id, "double", rng)
+            return _mutate_blackjack_step(s, username, body.hand_id, "double")
 
         return await commit_action(username=username, body=body, action_type="blackjack.double", mutator=mutate)
 

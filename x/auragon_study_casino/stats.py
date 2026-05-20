@@ -24,12 +24,15 @@ class WagerBucketStats(BaseModel):
     wagered: int
     returned: int
     net: int
+    expected_returned: float | None = None
+    expected_net: float | None = None
     payout_rate: float | None
     rtp: float | None
     ev_per_credit: float | None
     theoretical_payout_rate: float | None = None
     theoretical_rtp: float | None = None
     theoretical_ev_per_credit: float | None = None
+    fair_win_lower_tail_probability: float | None = None
 
 
 class TimeBucketStats(BaseModel):
