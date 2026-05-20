@@ -70,6 +70,11 @@ in
     expected = true;
   };
 
+  test_has_bazelisk_query_rule = {
+    expr = builtins.elem "prefix_rule(pattern=[\"bazelisk\",\"query\"], decision=\"allow\")" generated.rules;
+    expected = true;
+  };
+
   test_has_nix_rules = {
     expr = builtins.all (rule: builtins.elem rule generated.rules) expectedNixRules;
     expected = true;
