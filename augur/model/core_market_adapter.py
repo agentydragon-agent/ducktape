@@ -49,9 +49,8 @@ class CoreMarketBundleProviderShim:
     ) -> CoreMarketBundle:
         sampled = self.model.sample(
             MarketSamplingRequest(
-                rollout_count=rollout_count,
                 horizon_months=horizon_months,
-                seed=seed,
+                rollout_seeds=_rollout_seeds(seed=seed, rollout_count=rollout_count),
                 required_level_series=_required_level_series(required_keys),
                 required_event_series=_required_event_series(required_keys),
             )
@@ -147,6 +146,12 @@ def _required_level_series(required_keys: RequiredMarketKeys) -> frozenset[str]:
 
 def _required_event_series(required_keys: RequiredMarketKeys) -> frozenset[str]:
     return frozenset(private_equity_sale_event_id(issuer_id) for issuer_id in required_keys.pe_issuer_ids)
+
+
+def _rollout_seeds(*, seed: int, rollout_count: int) -> tuple[int, ...]:
+    return tuple(
+        int(child.generate_state(1, dtype=np.uint64)[0]) for child in np.random.SeedSequence(seed).spawn(rollout_count)
+    )
 
 
 def _level_multiplier(

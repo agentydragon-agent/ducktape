@@ -106,13 +106,13 @@ def build_bench_scenario(
         market=MarketBundle.independent(
             {
                 "vti": GeometricBrownian(
-                    initial_value=240.0, monthly_log_return_mu=0.0067, monthly_log_return_sigma=0.04, rng_seed=11
+                    initial_value=240.0, monthly_log_return_mu=0.0067, monthly_log_return_sigma=0.04
                 ),
                 "qqq": GeometricBrownian(
-                    initial_value=400.0, monthly_log_return_mu=0.008, monthly_log_return_sigma=0.05, rng_seed=22
+                    initial_value=400.0, monthly_log_return_mu=0.008, monthly_log_return_sigma=0.05
                 ),
                 "btc": GeometricBrownian(
-                    initial_value=60_000.0, monthly_log_return_mu=0.012, monthly_log_return_sigma=0.15, rng_seed=33
+                    initial_value=60_000.0, monthly_log_return_mu=0.012, monthly_log_return_sigma=0.15
                 ),
             }
         ),

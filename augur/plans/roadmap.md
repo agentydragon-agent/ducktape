@@ -1,6 +1,6 @@
 # Augur Unified Plan
 
-Last consolidated: 2026-05-16.
+Last consolidated: 2026-05-20.
 
 This plan consolidates the active Augur work from the public framework docs and
 the private deployment notes. It is the priority ordering. `augur/TODO.md`
@@ -15,6 +15,7 @@ and deployment-specific composition stay in the downstream private repo.
 - `augur/plans/prior_art_audit.md`: external architecture lessons for path
   identity, governance, policy projection, and accounting traces.
 - `augur/plans/cleanup_audit.md`: local stale-path audit and deletion sequence.
+- `augur/sim/TODO.md`: backend replacement checklist for the sim cutover.
 - `augur/TODO.md`: public generic backlog.
 - `gaffer-private/TODO.md`: private personal-finance modeling follow-ups.
 - `gaffer-private/x/augur/SPEC.md`: private deployment boundary and image
@@ -37,14 +38,20 @@ balance snapshots. The app may provide friendly controls, but it should not use
 a flat browser-side "scenario row" as the source of truth and then expand it
 back into typed backend objects.
 
+The intended production backend path is `augur/model -> augur/sim -> augur/api`:
+model providers sample exogenous levels/events with provenance, `augur/sim`
+deterministically evaluates typed scenarios over those paths, and `augur/api`
+serves compact projection/read models. The legacy `augur/core` path remains a
+parity baseline until the sim path is covered and switched over.
+
 ## Prior-Art Shape For Core Cleanup
 
 The prior-art audit points to a conservative target shape:
 
-- Market generation and household projection stay separate. `MarketRequest` plus
-  `MarketBundle` is the economic scenario generator boundary; the core
-  simulator is deterministic once it receives a scenario set and sampled
-  exogenous paths.
+- Market generation and household projection stay separate.
+  `MarketSamplingRequest` plus `SampledMarketBundle` is the durable economic
+  scenario-generator boundary; the simulator is deterministic once it receives
+  a typed scenario and sampled exogenous paths.
 - Trajectory identity includes scenario input, market model identity,
   evidence/calibration identity, generator implementation/version, seed, path
   index, and any non-market event streams. `rollout_index` remains a convenient
@@ -385,24 +392,41 @@ Work:
 
 ## Immediate Implementation Sequence
 
-1. Continue core model cleanup before broad UI polish: account-aware
-   obligations/funding, failure/default semantics, and ledger/accounting detail
-   as the source of truth for monthly report arrays.
-2. Persist and harden trajectory, path, cause, and model-governance identities
+1. Drive the backend switchover as an integration lane: translate the current
+   API/catalog payload into a typed sim scenario, discover required market
+   series from that sim scenario, expand any legacy scalar seed into explicit
+   per-rollout seeds, sample `augur/model`'s `SampledMarketBundle`, run
+   `augur/sim`, and serialize projection/read models through `augur/api`.
+2. Make runtime market providers sim-native: replace `simple`'s bespoke joint
+   sampler with an `IndependentMarketModels` factory, make `noop` emit the same
+   sampled levels/events shape, keep VECM on the native bundle API, and leave
+   unported exploratory models quarantined under `augur/model/x/`.
+3. Add a shadow/parity route that runs the legacy core path and the sim path
+   from the same model-owned sampled bundle where possible. Use this to compare
+   overlapping outputs before changing the default frontend/API route.
+4. Continue core model cleanup only where it reduces switchover risk:
+   account-aware obligations/funding, failure/default semantics, and
+   ledger/accounting detail as the source of truth for monthly report arrays.
+5. Persist and harden trajectory, path, cause, and model-governance identities
    so a selected rollout can be reproduced and audited from scenario input
    through market evidence and policy decisions.
-3. Keep expanding ordered actor policy programs through explicit decision and
+6. Keep expanding ordered actor policy programs through explicit decision and
    instruction traces, now that execution order is the runtime path.
-4. Move public generic data toward typed config resources: local
+7. Move public generic data toward typed config resources: local
    regulation/tax defaults, catalog rows, market config, and eventually a
    deployment-supplied portfolio/account YAML contract. Private values stay in
    downstream repos.
-5. Wire the generated Augur OpenAPI/browser schema target into browser state
+8. Wire the generated Augur OpenAPI/browser schema target into browser state
    normalization and request mapping, then split app/frontend/server packages
    after the core contracts and server cleanup settle.
 
 ## Next Lanes (parallelism + sequencing)
 
+- **Backend switchover to `model -> sim -> api`** — the next integration
+  lane. Close the checklist in `augur/sim/TODO.md`: sim scenario translator,
+  required-market-series discovery, sim-native runtime providers, shadow
+  parity route, projection/read-model serialization, browser smoke coverage,
+  then make the sim path default.
 - **Priority 3 — sampled PE / sampled tender timing / sampled crypto +
   sampled mortgage rate** (open design work; see the priority section
   above). Joint fit with SP500 / inflation / per-location housing factors

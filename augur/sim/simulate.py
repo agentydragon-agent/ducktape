@@ -51,7 +51,7 @@ def simulate(scenario: Scenario, *, rollout_count: int) -> SimulationRun:
         msg = f"rollout_count must be positive; got {rollout_count}"
         raise ValueError(msg)
     market = materialize_market(
-        scenario.market, rollout_count=rollout_count, horizon_months=int(scenario.horizon_months)
+        scenario.market, rollout_seeds=tuple(range(rollout_count)), horizon_months=int(scenario.horizon_months)
     )
     jurisdictions = _load_jurisdictions_for(scenario)
     locations = _load_locations_for(scenario)

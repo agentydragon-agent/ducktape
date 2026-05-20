@@ -121,9 +121,8 @@ class TestVecmModel:
 
         sampled = joint_model.sample(
             MarketSamplingRequest(
-                rollout_count=2,
                 horizon_months=12,
-                seed=7,
+                rollout_seeds=(7, 8),
                 required_level_series=frozenset(
                     {
                         SP500_SERIES_ID,

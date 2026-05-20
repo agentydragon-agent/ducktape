@@ -9,6 +9,22 @@ generic backlog rather than a second ordered roadmap.
 
 ## Next
 
+- [ ] **Switch the backend to `model -> sim -> api`.** Track the concrete
+      replacement gate in `augur/sim/TODO.md`. The production API run path
+      should translate the current catalog/API payload into a typed sim
+      scenario, expand the legacy scalar seed into explicit per-rollout seeds,
+      ask `augur/model` for a `SampledMarketBundle`, evaluate with
+      `augur/sim`, and serialize `ProjectionRun`/read models. Keep
+      `augur/core` as a shadow/parity baseline only until browser and fixture
+      coverage prove the sim path.
+- [ ] **Make every runtime market provider speak the sim market API natively.**
+      Runtime-selectable providers should implement `JointMarketModel.sample`
+      with explicit per-rollout seeds and return model-owned levels/events plus
+      provenance. `simple` and VECM already expose this shape behind the core
+      adapter; next steps are replacing `SimpleJointMarketModel` with an
+      `IndependentMarketModels` factory, making `noop` produce a sampled bundle
+      directly, and keeping `augur/model/x/legacy_market_models/` out of
+      production until each model is either ported or deleted.
 - [ ] **PE valuation should actually be sampled** (Priority 3 in
       `plans/roadmap.md`). The market provider holds private-equity marks
       flat at 1.0 for the entire horizon. The fit is **open design work**
@@ -154,6 +170,10 @@ Followups still on the table:
       scaffolding, but the durable simulator contract should consume
       materialized exogenous paths plus provenance rather than fitting or
       sampling markets itself.
+- [ ] Keep the core market-bundle shim one-way and temporary. New model work
+      should produce `SampledMarketBundle` levels/events first; adapting that
+      output to `augur.core.market_bundle.MarketBundle` is only for legacy
+      parity while the backend still runs through core.
 - [ ] Decide whether negative cash is allowed only through explicit borrowing.
       If the model says an actor has overdraft, credit-line, margin, or other
       borrowing capacity, negative cash can be an accounting effect paired with

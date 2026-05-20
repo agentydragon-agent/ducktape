@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from numbers import Integral
 from typing import Protocol
 
 import numpy as np
@@ -24,17 +25,27 @@ MARKET_PRICES_SCHEMA = pl.Schema(
 class MarketSamplingRequest:
     """Request metadata passed to a joint market model sample."""
 
-    rollout_count: int
     horizon_months: int
-    seed: int = 0
+    rollout_seeds: tuple[int, ...]
     required_level_series: frozenset[str] = frozenset()
     required_event_series: frozenset[str] = frozenset()
 
     def __post_init__(self) -> None:
-        if self.rollout_count < 0:
-            raise ValueError("rollout_count must be non-negative")
         if self.horizon_months < 0:
             raise ValueError("horizon_months must be non-negative")
+        seeds = tuple(self.rollout_seeds)
+        if not all(isinstance(seed, Integral) for seed in seeds):
+            raise TypeError("rollout_seeds must contain integers")
+        seeds = tuple(int(seed) for seed in seeds)
+        if any(seed < 0 for seed in seeds):
+            raise ValueError("rollout_seeds must be non-negative")
+        object.__setattr__(self, "rollout_seeds", seeds)
+
+    @property
+    def rollout_count(self) -> int:
+        """Number of paths requested, derived from the explicit seed vector."""
+
+        return len(self.rollout_seeds)
 
 
 @dataclass(frozen=True)
@@ -84,7 +95,7 @@ class SampledMarketBundle:
 class ScalarMarketModel(Protocol):
     """One market's marginal model, used inside independent compositions."""
 
-    def sample_levels(self, *, rollout_count: int, horizon_months: int) -> np.ndarray:
+    def sample_levels(self, *, rollout_seeds: tuple[int, ...], horizon_months: int) -> np.ndarray:
         """Return levels shaped `(rollout_count, horizon_months + 1)`."""
         ...
 

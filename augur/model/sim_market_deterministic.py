@@ -19,13 +19,13 @@ class Deterministic(BaseModel):
     kind: Literal["deterministic"] = "deterministic"
     levels: list[float]
 
-    def sample_levels(self, *, rollout_count: int, horizon_months: int) -> np.ndarray:
+    def sample_levels(self, *, rollout_seeds: tuple[int, ...], horizon_months: int) -> np.ndarray:
         expected = horizon_months + 1
         if len(self.levels) != expected:
             msg = f"Deterministic model has {len(self.levels)} levels; need {expected}"
             raise ValueError(msg)
         levels = np.asarray(self.levels, dtype=np.float64)
-        return np.tile(levels, (rollout_count, 1))
+        return np.tile(levels, (len(rollout_seeds), 1))
 
 
 class Constant(BaseModel):
@@ -34,5 +34,5 @@ class Constant(BaseModel):
     kind: Literal["constant"] = "constant"
     value: float
 
-    def sample_levels(self, *, rollout_count: int, horizon_months: int) -> np.ndarray:
-        return np.full((rollout_count, horizon_months + 1), self.value, dtype=np.float64)
+    def sample_levels(self, *, rollout_seeds: tuple[int, ...], horizon_months: int) -> np.ndarray:
+        return np.full((len(rollout_seeds), horizon_months + 1), self.value, dtype=np.float64)

@@ -738,14 +738,10 @@ def test_market_driven_sale_uses_deterministic_price_curve(deterministic_market_
 
 def test_gbm_market_diverges_across_rollouts_same_seed_is_reproducible() -> None:
     """L10.1 — GBM paths produce different per-rollout trajectories
-    (so sale proceeds differ across rollouts) but a fixed `rng_seed`
+    (so sale proceeds differ across rollouts) but a fixed rollout-seed vector
     reproduces the same prices across runs."""
     bundle = MarketBundle.independent(
-        {
-            "vti": GeometricBrownian(
-                initial_value=100.0, monthly_log_return_mu=0.005, monthly_log_return_sigma=0.05, rng_seed=42
-            )
-        }
+        {"vti": GeometricBrownian(initial_value=100.0, monthly_log_return_mu=0.005, monthly_log_return_sigma=0.05)}
     )
     scenario = Scenario(
         agents=[Agent(agent_id="alice")],

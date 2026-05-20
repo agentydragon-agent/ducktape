@@ -354,12 +354,19 @@ class VecmJointMarketModel:
         )
 
     def sample(self, request: MarketSamplingRequest) -> SampledMarketBundle:
-        scenarios = self.model.simulate(
-            n_paths=request.rollout_count, n_months=request.horizon_months, seed=request.seed
-        )
+        if request.rollout_count:
+            multipliers = np.concatenate(
+                [
+                    self.model.simulate(n_paths=1, n_months=request.horizon_months, seed=seed).multipliers
+                    for seed in request.rollout_seeds
+                ],
+                axis=0,
+            )
+        else:
+            multipliers = np.empty((0, request.horizon_months + 1, self.model.n_factors), dtype="float64")
+        factor_names = self.model.factor_names or tuple(f"f{i}" for i in range(self.model.n_factors))
         path_by_factor = {
-            factor_name: scenarios.multipliers[:, :, factor_index]
-            for factor_index, factor_name in enumerate(scenarios.factor_names)
+            factor_name: multipliers[:, :, factor_index] for factor_index, factor_name in enumerate(factor_names)
         }
         shape = (request.rollout_count, request.horizon_months + 1)
         private_equity_events = np.zeros(shape, dtype=np.bool_)

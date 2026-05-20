@@ -41,7 +41,7 @@ class MarketContext:
         )
 
 
-def materialize_market(bundle: MarketBundle, *, rollout_count: int, horizon_months: int) -> MarketContext:
+def materialize_market(bundle: MarketBundle, *, rollout_seeds: tuple[int, ...], horizon_months: int) -> MarketContext:
     """Realize every path spec into a long-form polars frame and
     bundle it as a `MarketContext`. The output covers months 0
     through `horizon_months` inclusive (so length `horizon_months
@@ -49,6 +49,6 @@ def materialize_market(bundle: MarketBundle, *, rollout_count: int, horizon_mont
     frame with the correct schema."""
     return MarketContext(
         prices=MARKET_PRICES_FRAME.normalize(
-            materialize_market_prices(bundle, rollout_count=rollout_count, horizon_months=horizon_months)
+            materialize_market_prices(bundle, rollout_seeds=rollout_seeds, horizon_months=horizon_months)
         )
     )

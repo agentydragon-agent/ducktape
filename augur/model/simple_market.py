@@ -52,48 +52,33 @@ class SimpleJointMarketModel(ApiModel):
     parameters: SimpleMarketModelConfig = Field(default_factory=SimpleMarketModelConfig)
 
     def sample(self, request: MarketSamplingRequest) -> SampledMarketBundle:
-        rng = np.random.default_rng(request.seed)
         horizon_months = request.horizon_months
         rollout_count = request.rollout_count
-        inflation = _lognormal_level_paths(
-            rng,
-            rollout_count=rollout_count,
-            horizon_months=horizon_months,
-            annual_return_pct=3.0,
-            annual_volatility_pct=1.5,
-        )
-        sp500 = _lognormal_level_paths(
-            rng,
-            rollout_count=rollout_count,
-            horizon_months=horizon_months,
-            annual_return_pct=7.0,
-            annual_volatility_pct=16.0,
-        )
-        private_equity_value = _lognormal_level_paths(
-            rng,
-            rollout_count=rollout_count,
-            horizon_months=horizon_months,
-            annual_return_pct=8.0,
-            annual_volatility_pct=35.0,
-        )
-        home_base = _lognormal_level_paths(
-            rng,
-            rollout_count=rollout_count,
-            horizon_months=horizon_months,
-            annual_return_pct=3.5,
-            annual_volatility_pct=8.0,
-        )
-        rent_base = _lognormal_level_paths(
-            rng,
-            rollout_count=rollout_count,
-            horizon_months=horizon_months,
-            annual_return_pct=3.0,
-            annual_volatility_pct=3.0,
-        )
+        inflation = np.empty((rollout_count, horizon_months + 1), dtype="float64")
+        sp500 = np.empty_like(inflation)
+        private_equity_value = np.empty_like(inflation)
+        home_base = np.empty_like(inflation)
+        rent_base = np.empty_like(inflation)
         private_equity_events = np.zeros((rollout_count, horizon_months + 1), dtype=np.bool_)
-        if horizon_months >= 12:
-            event_draws = rng.random((rollout_count, horizon_months))
-            private_equity_events[:, 1:] = event_draws < (1 / 72)
+        for rollout_index, seed in enumerate(request.rollout_seeds):
+            rng = np.random.default_rng(seed)
+            inflation[rollout_index] = _lognormal_level_path(
+                rng, horizon_months=horizon_months, annual_return_pct=3.0, annual_volatility_pct=1.5
+            )
+            sp500[rollout_index] = _lognormal_level_path(
+                rng, horizon_months=horizon_months, annual_return_pct=7.0, annual_volatility_pct=16.0
+            )
+            private_equity_value[rollout_index] = _lognormal_level_path(
+                rng, horizon_months=horizon_months, annual_return_pct=8.0, annual_volatility_pct=35.0
+            )
+            home_base[rollout_index] = _lognormal_level_path(
+                rng, horizon_months=horizon_months, annual_return_pct=3.5, annual_volatility_pct=8.0
+            )
+            rent_base[rollout_index] = _lognormal_level_path(
+                rng, horizon_months=horizon_months, annual_return_pct=3.0, annual_volatility_pct=3.0
+            )
+            if horizon_months >= 12:
+                private_equity_events[rollout_index, 1:] = rng.random(horizon_months) < (1 / 72)
 
         level_blocks = [
             market_levels_frame(
@@ -170,21 +155,16 @@ class SimpleJointMarketModel(ApiModel):
         raise ValueError(f"simple market model cannot sample event series {event_id!r}")
 
 
-def _lognormal_level_paths(
-    rng: np.random.Generator,
-    *,
-    rollout_count: int,
-    horizon_months: int,
-    annual_return_pct: float,
-    annual_volatility_pct: float,
+def _lognormal_level_path(
+    rng: np.random.Generator, *, horizon_months: int, annual_return_pct: float, annual_volatility_pct: float
 ) -> np.ndarray:
     monthly_sigma = annual_volatility_pct / 100 / np.sqrt(12)
     monthly_mu = annual_return_pct / 100 / 12 - 0.5 * monthly_sigma**2
-    log_returns = rng.normal(monthly_mu, monthly_sigma, size=(rollout_count, horizon_months))
-    paths = np.ones((rollout_count, horizon_months + 1), dtype="float64")
+    log_returns = rng.normal(monthly_mu, monthly_sigma, size=horizon_months)
+    path = np.ones(horizon_months + 1, dtype="float64")
     if horizon_months > 0:
-        paths[:, 1:] = np.exp(np.cumsum(log_returns, axis=1))
-    return paths
+        path[1:] = np.exp(np.cumsum(log_returns))
+    return path
 
 
 def _location_level_path(base: np.ndarray, *, annual_adjustment_pct: float) -> np.ndarray:
