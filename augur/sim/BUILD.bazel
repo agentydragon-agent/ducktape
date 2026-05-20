@@ -107,7 +107,18 @@ py_library(
     srcs = ["scenario.py"],
     deps = [
         "//augur/model:sim_market_py",
+        "@pypi//polars",
         "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "amounts",
+    srcs = ["amounts.py"],
+    deps = [
+        ":market",
+        ":scenario",
+        "@pypi//polars",
     ],
 )
 
@@ -138,8 +149,10 @@ py_library(
     name = "obligations",
     srcs = ["obligations.py"],
     deps = [
+        ":amounts",
         ":events",
         ":locations",
+        ":market",
         ":scenario",
         ":state",
         "@pypi//polars",
@@ -161,6 +174,7 @@ py_library(
     name = "step",
     srcs = ["step.py"],
     deps = [
+        ":amounts",
         ":events",
         ":jurisdictions",
         ":liquidity",

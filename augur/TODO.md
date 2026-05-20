@@ -69,11 +69,11 @@ generic backlog rather than a second ordered roadmap.
       rent should start from today's rent and scale by the modeled rent-cost
       series for the property's rental market, instead of staying flat or using
       hard-coded CPI/wage growth.
-- [ ] Add a shared path-indexed amount contract for model-driven cashflows:
-      base amount on the config/scenario as-of date plus a model series key,
-      with future amounts scaled by `series[t] / series[as_of]`. Use it for
-      rent, tenant rent, inflation-adjusted spend, and later recurring property
-      costs.
+- [ ] Wire the sim's shared path-indexed amount contract through backend/API
+      translation for model-driven cashflows. The sim primitive now supports
+      base amount plus model series key plus fixed reset period; the remaining
+      product work is using it from YAML/API config for outside rent, tenant
+      rent, inflation-adjusted spend, and later recurring property costs.
 - [ ] Drive owned-property mark-to-market values from configured purchase/list
       value plus modeled home-value series. For the first sim backend cutover,
       assert property purchase happens at month 0; defer future purchase-price
@@ -200,6 +200,12 @@ Followups still on the table:
       scaffolding, but the durable simulator contract should consume
       materialized exogenous paths plus provenance rather than fitting or
       sampling markets itself.
+- [ ] Rename exogenous-path terminology away from "market price" where it
+      covers non-price world-state series such as rent, CPI/inflation, rates,
+      home-value indexes, and boolean event paths. The generic boundary should
+      read as external series / series values, while consumers interpret a
+      series as unit value, rent index, inflation index, rate path, or event
+      stream as appropriate.
 - [ ] Keep the core market-bundle shim one-way and temporary. New model work
       should produce `SampledMarketBundle` levels/events first; adapting that
       output to `augur.core.market_bundle.MarketBundle` is only for legacy

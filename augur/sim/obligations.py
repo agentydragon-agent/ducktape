@@ -10,8 +10,10 @@ from dataclasses import dataclass
 
 import polars as pl
 
+from augur.sim.amounts import amount_by_rollout
 from augur.sim.events import EVENT_FRAMES
 from augur.sim.locations import Location
+from augur.sim.market import MarketContext
 from augur.sim.scenario import PropertyTaxPolicy, RecurringObligation, Scenario, ScheduledObligation, TaxProfile
 from augur.sim.state import StateCrossSection
 
@@ -32,14 +34,14 @@ class _TaxPaymentObligationEvents:
 
 
 def emit_due_now_obligations(
-    *, state: StateCrossSection, scenario: Scenario, locations: dict[str, Location], month: int
+    *, state: StateCrossSection, scenario: Scenario, market: MarketContext, locations: dict[str, Location], month: int
 ) -> DueNowObligations:
     active_rollouts = state.rollout_status.filter(pl.col("status") == "active").select("rollout_index")
     mortgage_payments = _emit_mortgage_payments(state, month)
     tax_payment_events = _emit_tax_payment_obligations(state=state, profiles=scenario.tax_profiles, month=month)
     obligations = EVENT_FRAMES.obligation_accruals.concat(
         [
-            _emit_configured_obligations(scenario, month, active_rollouts),
+            _emit_configured_obligations(scenario, market, month, active_rollouts),
             _mortgage_payment_obligations(mortgage_payments),
             _emit_property_tax_obligations(state=state, scenario=scenario, locations=locations, month=month),
             tax_payment_events.obligation_accruals,
@@ -136,7 +138,9 @@ def _property_tax_obligation_block(
     ).pipe(EVENT_FRAMES.obligation_accruals.normalize)
 
 
-def _emit_configured_obligations(scenario: Scenario, month: int, rollouts: pl.DataFrame) -> pl.DataFrame:
+def _emit_configured_obligations(
+    scenario: Scenario, market: MarketContext, month: int, rollouts: pl.DataFrame
+) -> pl.DataFrame:
     active: list[ScheduledObligation | RecurringObligation] = [
         obligation for obligation in scenario.scheduled_obligations if obligation.month == month
     ]
@@ -144,24 +148,30 @@ def _emit_configured_obligations(scenario: Scenario, month: int, rollouts: pl.Da
     if not active:
         return EVENT_FRAMES.obligation_accruals.empty()
     return EVENT_FRAMES.obligation_accruals.concat(
-        [_configured_obligation_block_per_rollout(obligation, rollouts, month) for obligation in active]
+        [_configured_obligation_block_per_rollout(obligation, market, rollouts, month) for obligation in active]
     )
 
 
 def _configured_obligation_block_per_rollout(
-    obligation: ScheduledObligation | RecurringObligation, rollouts: pl.DataFrame, month: int
+    obligation: ScheduledObligation | RecurringObligation, market: MarketContext, rollouts: pl.DataFrame, month: int
 ) -> pl.DataFrame:
-    return rollouts.with_columns(
-        pl.lit(month, dtype=pl.Int64()).alias("month_index"),
-        pl.lit(f"{obligation.obligation_id}_m{month}", dtype=pl.Utf8()).alias("cause_id"),
-        pl.lit(f"{obligation.obligation_id}_m{month}", dtype=pl.Utf8()).alias("obligation_id"),
-        pl.lit(obligation.obligation_type, dtype=pl.Utf8()).alias("obligation_type"),
-        pl.lit(obligation.agent_id, dtype=pl.Utf8()).alias("agent_id"),
-        pl.lit(obligation.from_account_id, dtype=pl.Utf8()).alias("from_account_id"),
-        pl.lit(obligation.to_agent_id, dtype=pl.Utf8()).alias("to_agent_id"),
-        pl.lit(obligation.to_account_id, dtype=pl.Utf8()).alias("to_account_id"),
-        pl.lit(obligation.amount_due_usd, dtype=pl.Float64()).alias("amount_due_usd"),
-    ).pipe(EVENT_FRAMES.obligation_accruals.normalize)
+    amounts = amount_by_rollout(
+        obligation.amount_due_usd, market=market, rollouts=rollouts, month=month, column_name="amount_due_usd"
+    )
+    return (
+        rollouts.join(amounts, on="rollout_index")
+        .with_columns(
+            pl.lit(month, dtype=pl.Int64()).alias("month_index"),
+            pl.lit(f"{obligation.obligation_id}_m{month}", dtype=pl.Utf8()).alias("cause_id"),
+            pl.lit(f"{obligation.obligation_id}_m{month}", dtype=pl.Utf8()).alias("obligation_id"),
+            pl.lit(obligation.obligation_type, dtype=pl.Utf8()).alias("obligation_type"),
+            pl.lit(obligation.agent_id, dtype=pl.Utf8()).alias("agent_id"),
+            pl.lit(obligation.from_account_id, dtype=pl.Utf8()).alias("from_account_id"),
+            pl.lit(obligation.to_agent_id, dtype=pl.Utf8()).alias("to_agent_id"),
+            pl.lit(obligation.to_account_id, dtype=pl.Utf8()).alias("to_account_id"),
+        )
+        .pipe(EVENT_FRAMES.obligation_accruals.normalize)
+    )
 
 
 def _emit_tax_payment_obligations(

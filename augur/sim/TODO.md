@@ -115,12 +115,13 @@ Already covered by the guarded sim backend smoke:
 
 Translator gaps to migrate next:
 
-- [ ] Add a first-class path-indexed amount shape for recurring sim cashflows.
-      The shared contract should be "amount is `$X` on the scenario/config
-      as-of date, then scales by `model_series[t] / model_series[as_of]`."
-      Outside rent, tenant rent, inflation-adjusted spend, and eventually
-      recurring property costs should use this shape instead of each inventing
-      a special-case growth flag.
+- [x] Add a first-class path-indexed amount shape for configured recurring sim
+      cashflows. `MarketIndexedAmount` now represents "amount is `$X` at base
+      month, then scales by `model_series[reset_month] / model_series[base]`"
+      and supports fixed-length reset periods such as annual rent resets.
+      Future translator slices should use it for outside rent, tenant rent,
+      inflation-adjusted spend, and later recurring property costs instead of
+      inventing special-case growth flags.
 - [ ] Define the as-of anchoring rule for every model-driven level series.
       Public securities, home value, rent, crypto, private-equity marks, and
       inflation-indexed amounts should all say whether the configured value is
@@ -225,6 +226,14 @@ Translator gaps to migrate next:
       value, owned-property rent, outside-rent cost, crypto prices,
       private-equity marks, private-equity opportunity/regime events, and
       mortgage/rate paths.
+- [ ] Rename the sim/model path terminology away from "market price" where the
+      value is not literally a traded unit price. Prefer a generic external
+      series vocabulary at the boundary: e.g. `MarketContext` →
+      `ExternalSeriesContext`, `market_prices` → `series_values`,
+      `price_per_unit_usd` → `value`, and `MarketIndexedAmount` →
+      `SeriesIndexedAmount`. Keep consumer-specific names precise
+      (`unit_value_series_id`, `index_series_id`, rate series, event series)
+      instead of forcing every external path through price/market language.
 - [ ] Keep backend/sim results nominal-dollar only for the cutover. Real-dollar
       or inflation-adjusted display should be a later postprocessing/read-model
       layer, not alternate simulator accounting.

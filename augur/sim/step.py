@@ -29,6 +29,7 @@ from dataclasses import dataclass
 import numpy as np
 import polars as pl
 
+from augur.sim.amounts import amount_by_rollout
 from augur.sim.events import EVENT_FRAMES, EventLog
 from augur.sim.jurisdictions import Jurisdiction
 from augur.sim.liquidity import plan_liquidity
@@ -67,7 +68,7 @@ def step_emit_scheduled_events(
     """Phase 1 of the month step: scheduled / recurring transfers,
     scheduled asset sales, property purchases, mortgage originations,
     and year-end tax accruals. Pure: does not mutate `state`."""
-    transfers = _emit_transfers(scenario, month, rollout_count)
+    transfers = _emit_transfers(scenario, market, month, rollout_count)
     property_purchases = _emit_property_purchases(scenario, month, rollout_count)
     mortgage_originations = _emit_mortgage_originations(scenario, month, rollout_count)
     property_cash_transfers = _property_purchase_transfer_events(scenario, property_purchases)
@@ -97,7 +98,7 @@ def step_emit_policy_events(
 ) -> EventLog:
     """Phase 2 of the month step: due-now demand accrual, liquidity
     policy sale decisions, and mechanical settlement."""
-    due_now = emit_due_now_obligations(state=state, scenario=scenario, locations=locations, month=month)
+    due_now = emit_due_now_obligations(state=state, scenario=scenario, market=market, locations=locations, month=month)
     liquidity_plan = plan_liquidity(
         state=state,
         policies=scenario.liquidity_policies,
@@ -127,7 +128,7 @@ def step_emit_policy_events(
     )
 
 
-def _emit_transfers(scenario: Scenario, month: int, rollout_count: int) -> pl.DataFrame:
+def _emit_transfers(scenario: Scenario, market: MarketContext, month: int, rollout_count: int) -> pl.DataFrame:
     """Emit Transfer event rows for every scheduled or recurring
     transfer active at this month. Scheduled transfers fire only at
     their configured month; recurring transfers fire every month in
@@ -138,27 +139,31 @@ def _emit_transfers(scenario: Scenario, month: int, rollout_count: int) -> pl.Da
     blocks: list[pl.DataFrame] = []
     if active:
         rollouts = pl.DataFrame({"rollout_index": list(range(rollout_count))}, schema={"rollout_index": pl.Int64()})
-        blocks = [_transfer_block_per_rollout(t, rollouts, month) for t in active]
+        blocks = [_transfer_block_per_rollout(t, market, rollouts, month) for t in active]
     return EVENT_FRAMES.transfers.concat(blocks)
 
 
 def _transfer_block_per_rollout(
-    t: ScheduledTransfer | RecurringTransfer, rollouts: pl.DataFrame, month: int
+    t: ScheduledTransfer | RecurringTransfer, market: MarketContext, rollouts: pl.DataFrame, month: int
 ) -> pl.DataFrame:
     """One row per rollout for one transfer config. The rollout
     dimension is expanded vectorized — no Python loop over rollouts.
     Handles both ScheduledTransfer (one-off at a specific month) and
     RecurringTransfer (firing at this active month) — same event
     schema, only the cadence config differs."""
-    return rollouts.with_columns(
-        pl.lit(month, dtype=pl.Int64()).alias("month_index"),
-        pl.lit(t.cause_id, dtype=pl.Utf8()).alias("cause_id"),
-        pl.lit(t.from_agent_id, dtype=pl.Utf8()).alias("from_agent_id"),
-        pl.lit(t.from_account_id, dtype=pl.Utf8()).alias("from_account_id"),
-        pl.lit(t.to_agent_id, dtype=pl.Utf8()).alias("to_agent_id"),
-        pl.lit(t.to_account_id, dtype=pl.Utf8()).alias("to_account_id"),
-        pl.lit(t.amount_usd, dtype=pl.Float64()).alias("amount_usd"),
-        pl.lit(t.income_category, dtype=pl.Utf8()).alias("income_category"),
+    amounts = amount_by_rollout(t.amount_usd, market=market, rollouts=rollouts, month=month, column_name="amount_usd")
+    return (
+        rollouts.join(amounts, on="rollout_index")
+        .with_columns(
+            pl.lit(month, dtype=pl.Int64()).alias("month_index"),
+            pl.lit(t.cause_id, dtype=pl.Utf8()).alias("cause_id"),
+            pl.lit(t.from_agent_id, dtype=pl.Utf8()).alias("from_agent_id"),
+            pl.lit(t.from_account_id, dtype=pl.Utf8()).alias("from_account_id"),
+            pl.lit(t.to_agent_id, dtype=pl.Utf8()).alias("to_agent_id"),
+            pl.lit(t.to_account_id, dtype=pl.Utf8()).alias("to_account_id"),
+            pl.lit(t.income_category, dtype=pl.Utf8()).alias("income_category"),
+        )
+        .pipe(EVENT_FRAMES.transfers.normalize)
     )
 
 

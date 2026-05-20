@@ -10,7 +10,10 @@ market-bundle reference, and tax profiles per agent.
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field, PositiveInt
+from typing import Annotated, Literal, Protocol
+
+import polars as pl
+from pydantic import BaseModel, Field, NonNegativeInt, PositiveInt
 
 from augur.model.sim_market import MarketBundle
 
@@ -30,10 +33,87 @@ class InitialAccountBalance(BaseModel):
     balance_usd: float
 
 
+class AmountMarketContext(Protocol):
+    def prices_at(self, month_index: int) -> pl.DataFrame: ...
+
+
+class FixedAmount(BaseModel):
+    """A scalar dollar amount that does not vary by rollout or month."""
+
+    kind: Literal["fixed"] = "fixed"
+    amount_usd: float
+
+    def amount_by_rollout(
+        self, *, market: AmountMarketContext, rollouts: pl.DataFrame, month: int, column_name: str
+    ) -> pl.DataFrame:
+        return rollouts.with_columns(pl.lit(self.amount_usd, dtype=pl.Float64()).alias(column_name))
+
+
+class MarketIndexedAmount(BaseModel):
+    """A dollar amount pegged to a sampled market level series.
+
+    The amount is `base_amount_usd` at `base_month_index`. For a
+    payment due in month `m`, the simulator first snaps to the current
+    adjustment period and then scales linearly by the model level ratio:
+
+    `base_amount_usd * series[reset_month] / series[base_month_index]`.
+
+    With `adjustment_period_months=12`, a rent obligation stays flat for
+    the first lease year, resets at month 12, stays flat through month 23,
+    and so on.
+    """
+
+    kind: Literal["market_indexed"] = "market_indexed"
+    base_amount_usd: float
+    series_id: str
+    base_month_index: NonNegativeInt = 0
+    adjustment_period_months: PositiveInt = 1
+
+    def amount_by_rollout(
+        self, *, market: AmountMarketContext, rollouts: pl.DataFrame, month: int, column_name: str
+    ) -> pl.DataFrame:
+        if month < self.base_month_index:
+            raise ValueError(
+                f"cannot evaluate market-indexed amount for month {month} before base month {self.base_month_index}"
+            )
+
+        reset_month = self._reset_month(month)
+        base = self._series_levels(market, month=self.base_month_index, column_name="_base_level")
+        reset = self._series_levels(market, month=reset_month, column_name="_reset_level")
+        evaluated = rollouts.join(base, on="rollout_index", how="left").join(reset, on="rollout_index", how="left")
+        if evaluated.filter(pl.col("_base_level").is_null() | pl.col("_reset_level").is_null()).height:
+            raise KeyError(
+                f"market series {self.series_id!r} must cover base month {self.base_month_index}, "
+                f"reset month {reset_month}, and every active rollout"
+            )
+        if evaluated.filter(pl.col("_base_level") == 0.0).height:
+            raise ValueError(f"market series {self.series_id!r} has zero base level at month {self.base_month_index}")
+        return evaluated.with_columns(
+            (pl.lit(self.base_amount_usd, dtype=pl.Float64()) * pl.col("_reset_level") / pl.col("_base_level")).alias(
+                column_name
+            )
+        ).select("rollout_index", column_name)
+
+    def _reset_month(self, month: int) -> int:
+        elapsed = month - self.base_month_index
+        return self.base_month_index + (elapsed // self.adjustment_period_months) * self.adjustment_period_months
+
+    def _series_levels(self, market: AmountMarketContext, *, month: int, column_name: str) -> pl.DataFrame:
+        return (
+            market.prices_at(month)
+            .filter(pl.col("asset_id") == self.series_id)
+            .select("rollout_index", pl.col("price_per_unit_usd").alias(column_name))
+        )
+
+
+type AmountSchedule = Annotated[FixedAmount | MarketIndexedAmount, Field(discriminator="kind")]
+type AmountSpec = float | AmountSchedule
+
+
 class ScheduledTransfer(BaseModel):
     """A cash transfer between two agents scheduled at a fixed
     month. Emitted by the engine as a Transfer event at that month;
-    the same amount applies to every rollout.
+    the amount may be fixed or derived from a market-indexed schedule.
 
     `income_category` tags the transfer for downstream tax
     classification. The canonical value at spike 1 is `"ordinary"`
@@ -47,16 +127,16 @@ class ScheduledTransfer(BaseModel):
     from_account_id: str
     to_agent_id: str
     to_account_id: str
-    amount_usd: float
+    amount_usd: AmountSpec
     income_category: str | None = None
 
 
 class RecurringTransfer(BaseModel):
     """A cash transfer that fires every month within a window. The
     canonical use is a recurring paycheck (income arriving monthly)
-    or recurring rent / utilities (a fixed monthly cost). The engine
-    emits one Transfer event per active month per rollout — the
-    same amount across rollouts at spike 1.
+    or recurring rent / utilities. The engine emits one Transfer
+    event per active month per rollout; market-indexed amounts may
+    vary by rollout and adjustment period.
 
     `start_month` is inclusive. `end_month` is inclusive when
     supplied; when `None`, the transfer fires through the scenario's
@@ -71,7 +151,7 @@ class RecurringTransfer(BaseModel):
     from_account_id: str
     to_agent_id: str
     to_account_id: str
-    amount_usd: float
+    amount_usd: AmountSpec
     income_category: str | None = None
 
     def is_active_at(self, month: int) -> bool:
@@ -94,7 +174,7 @@ class ScheduledObligation(BaseModel):
     from_account_id: str
     to_agent_id: str
     to_account_id: str
-    amount_due_usd: float
+    amount_due_usd: AmountSpec
 
 
 class RecurringObligation(BaseModel):
@@ -108,7 +188,7 @@ class RecurringObligation(BaseModel):
     from_account_id: str
     to_agent_id: str
     to_account_id: str
-    amount_due_usd: float
+    amount_due_usd: AmountSpec
 
     def is_active_at(self, month: int) -> bool:
         return self.start_month <= month and (self.end_month is None or month <= self.end_month)

@@ -14,12 +14,14 @@ import pytest_bazel
 
 from augur.model.sim_market import MarketBundle
 from augur.model.sim_market_gbm import GeometricBrownian
+from augur.sim.market import MARKET_PRICES_FRAME, MarketContext
 from augur.sim.replay import assert_replay_invariant_holds
 from augur.sim.scenario import (
     Agent,
     InitialAccountBalance,
     InitialLot,
     LiquidityPolicy,
+    MarketIndexedAmount,
     MortgageFinancing,
     PropertyTaxPolicy,
     RecurringObligation,
@@ -31,7 +33,26 @@ from augur.sim.scenario import (
     ScheduledTransfer,
     TaxProfile,
 )
-from augur.sim.simulate import simulate
+from augur.sim.simulate import simulate, simulate_with_market
+
+
+def _market_context_for_levels(series_id: str, levels_by_rollout: list[list[float]]) -> MarketContext:
+    return MarketContext(
+        prices=MARKET_PRICES_FRAME.normalize(
+            pl.DataFrame(
+                [
+                    {
+                        "rollout_index": rollout_index,
+                        "month_index": month_index,
+                        "asset_id": series_id,
+                        "price_per_unit_usd": level,
+                    }
+                    for rollout_index, levels in enumerate(levels_by_rollout)
+                    for month_index, level in enumerate(levels)
+                ]
+            )
+        )
+    )
 
 
 def _alice_bob_scenario() -> Scenario:
@@ -54,6 +75,41 @@ def _alice_bob_scenario() -> Scenario:
         ],
         horizon_months=1,
     )
+
+
+def test_market_indexed_amount_parses_from_scenario_data() -> None:
+    scenario = Scenario.model_validate(
+        {
+            "agents": [{"agent_id": "alice"}, {"agent_id": "landlord"}],
+            "initial_cash": [
+                {"agent_id": "alice", "account_id": "checking", "balance_usd": 10_000.0},
+                {"agent_id": "landlord", "account_id": "checking", "balance_usd": 0.0},
+            ],
+            "recurring_obligations": [
+                {
+                    "start_month": 0,
+                    "obligation_id": "outside_rent",
+                    "obligation_type": "outside_rent",
+                    "agent_id": "alice",
+                    "from_account_id": "checking",
+                    "to_agent_id": "landlord",
+                    "to_account_id": "checking",
+                    "amount_due_usd": {
+                        "kind": "market_indexed",
+                        "base_amount_usd": 1_000.0,
+                        "series_id": "rent:san_francisco_ca",
+                        "base_month_index": 0,
+                        "adjustment_period_months": 12,
+                    },
+                }
+            ],
+            "horizon_months": 13,
+        }
+    )
+
+    amount = scenario.recurring_obligations[0].amount_due_usd
+    assert isinstance(amount, MarketIndexedAmount)
+    assert amount.series_id == "rent:san_francisco_ca"
 
 
 def test_alice_gives_bob_five_dollars_one_rollout() -> None:
@@ -1485,6 +1541,94 @@ def test_due_now_obligation_sells_assets_and_settles(deterministic_market_bundle
     )
     assert final_cash == pytest.approx(0.0)
     assert result.events_log.rollout_failures.is_empty()
+    assert_replay_invariant_holds(scenario, result, rollout_count=1)
+
+
+def test_market_indexed_recurring_rent_obligation_resets_yearly_by_rollout() -> None:
+    """Alice pays rent to a landlord. The rent is fixed within each
+    lease year and resets annually using each rollout's rent-market path."""
+    rent_series_id = "rent:san_francisco_ca"
+    scenario = Scenario(
+        agents=[Agent(agent_id="alice"), Agent(agent_id="landlord")],
+        initial_cash=[
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=20_000.0),
+            InitialAccountBalance(agent_id="landlord", account_id="checking", balance_usd=0.0),
+        ],
+        recurring_obligations=[
+            RecurringObligation(
+                start_month=0,
+                obligation_id="outside_rent",
+                obligation_type="outside_rent",
+                agent_id="alice",
+                from_account_id="checking",
+                to_agent_id="landlord",
+                to_account_id="checking",
+                amount_due_usd=MarketIndexedAmount(
+                    base_amount_usd=1_000.0, series_id=rent_series_id, base_month_index=0, adjustment_period_months=12
+                ),
+            )
+        ],
+        horizon_months=13,
+    )
+    market = _market_context_for_levels(
+        rent_series_id, levels_by_rollout=[[100.0] * 12 + [110.0], [100.0] * 12 + [90.0]]
+    )
+
+    result = simulate_with_market(scenario, rollout_count=2, market=market)
+
+    accruals = result.events_log.obligation_accruals.sort(["rollout_index", "month_index"])
+    for rollout_index in (0, 1):
+        first_year = accruals.filter((pl.col("rollout_index") == rollout_index) & (pl.col("month_index") < 12))
+        assert first_year.get_column("amount_due_usd").to_list() == pytest.approx([1_000.0] * 12)
+
+    reset_amounts = (
+        accruals.filter(pl.col("month_index") == 12).sort("rollout_index").get_column("amount_due_usd").to_list()
+    )
+    assert reset_amounts == pytest.approx([1_100.0, 900.0])
+
+    final_cash = result.cash_balances.filter(pl.col("month_index") == 13).sort(["rollout_index", "agent_id"])
+    assert final_cash.get_column("balance_usd").to_list() == pytest.approx([6_900.0, 13_100.0, 7_100.0, 12_900.0])
+    assert result.events_log.rollout_failures.is_empty()
+    assert_replay_invariant_holds(scenario, result, rollout_count=2)
+
+
+def test_market_indexed_recurring_transfer_uses_same_amount_schedule() -> None:
+    """Tenant rent income uses the same path-indexed amount machinery
+    as due-now rent obligations."""
+    rent_series_id = "rent:san_francisco_ca"
+    scenario = Scenario(
+        agents=[Agent(agent_id="tenant"), Agent(agent_id="alice")],
+        initial_cash=[
+            InitialAccountBalance(agent_id="tenant", account_id="checking", balance_usd=20_000.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0),
+        ],
+        recurring_transfers=[
+            RecurringTransfer(
+                start_month=0,
+                cause_id="tenant_rent",
+                from_agent_id="tenant",
+                from_account_id="checking",
+                to_agent_id="alice",
+                to_account_id="checking",
+                amount_usd=MarketIndexedAmount(
+                    base_amount_usd=1_500.0, series_id=rent_series_id, base_month_index=0, adjustment_period_months=12
+                ),
+            )
+        ],
+        horizon_months=13,
+    )
+    market = _market_context_for_levels(rent_series_id, levels_by_rollout=[[200.0] * 12 + [240.0]])
+
+    result = simulate_with_market(scenario, rollout_count=1, market=market)
+
+    transfers = result.events_log.transfers.sort("month_index")
+    assert transfers.filter(pl.col("month_index") < 12).get_column("amount_usd").to_list() == pytest.approx(
+        [1_500.0] * 12
+    )
+    assert transfers.filter(pl.col("month_index") == 12).get_column("amount_usd").item() == pytest.approx(1_800.0)
+
+    final_cash = result.cash_balances.filter(pl.col("month_index") == 13).sort("agent_id")
+    assert final_cash.get_column("balance_usd").to_list() == pytest.approx([19_800.0, 200.0])
     assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
