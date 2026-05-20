@@ -30,6 +30,7 @@ patches:
       metadata:
         name: grocy-mcp-server
       spec:
+        replicas: 0
         template:
           spec:
             containers:
