@@ -32,3 +32,5 @@ spec:
       interval: 12h
   values:
     manageCRDs: true
+    nodeSelector:
+      topology.kubernetes.io/zone: hil-ovh
