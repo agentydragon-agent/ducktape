@@ -21,7 +21,7 @@ from types import MappingProxyType
 
 import polars as pl
 
-from augur.sim.frames import FrameSpec
+from augur.frames import FrameSpec
 
 TRANSFER_EVENT_SCHEMA = pl.Schema(
     {

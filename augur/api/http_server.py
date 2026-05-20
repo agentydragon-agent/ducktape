@@ -2,7 +2,7 @@
 serve.py) provides the `AugurConfig`, bundle source, then calls
 `run_server(...)`. The market-bundle provider is chosen at CLI time via
 `--market-provider <path>`, pointing at a YAML config whose type-discriminated
-content selects between noop / simple / vecm / ... providers."""
+content selects between noop / simple / vecm providers."""
 
 from __future__ import annotations
 

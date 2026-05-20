@@ -16,7 +16,7 @@ from dataclasses import dataclass
 
 import polars as pl
 
-from augur.sim.frames import FrameSpec
+from augur.frames import FrameSpec
 
 CASH_BALANCES_SCHEMA = pl.Schema(
     {"rollout_index": pl.Int64(), "agent_id": pl.Utf8(), "account_id": pl.Utf8(), "balance_usd": pl.Float64()}

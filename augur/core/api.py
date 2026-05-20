@@ -24,7 +24,6 @@ from augur.core.market_bundle import (
     MarketBundle,
     MarketBundleProvider,
     RequiredMarketKeys,
-    SimpleMarketBundleProvider,
     sample_market_bundle_for_request,
 )
 from augur.core.provenance import (
@@ -59,6 +58,7 @@ from augur.core.scenario_set import (
     ScenarioSetRunResponse,
 )
 from augur.core.scenario_tax_defaults import scenario_with_location_tax_defaults
+from augur.model.market_provider_config import SimpleMarketProviderConfig
 
 EffectT = TypeVar("EffectT")
 AccountingDetailT = TypeVar("AccountingDetailT")
@@ -426,6 +426,10 @@ class ScenarioSetRun:
         )
 
 
+def _default_market_provider() -> MarketBundleProvider:
+    return SimpleMarketProviderConfig().realize(current_private_equity_price_usd=0.0)
+
+
 @dataclass(frozen=True)
 class ScenarioEngine:
     """Entry point for simulating scenario sets, holding the deployment-scoped
@@ -437,7 +441,7 @@ class ScenarioEngine:
     fuller class so the simulator's runtime helpers can become methods.
     """
 
-    market_provider: MarketBundleProvider = field(default_factory=SimpleMarketBundleProvider)
+    market_provider: MarketBundleProvider = field(default_factory=_default_market_provider)
     local_regulation_by_id: Mapping[str, LocalRegulation] = field(default_factory=dict)
 
     def simulate_set(self, scenario_set: ScenarioSet, *, market_bundle: MarketBundle | None = None) -> ScenarioSetRun:
@@ -496,7 +500,7 @@ def simulate_set(
     if market_provider is not None and market_bundle is not None:
         raise ValueError("pass either market_provider or market_bundle, not both")
     engine = ScenarioEngine(
-        market_provider=market_provider or SimpleMarketBundleProvider(),
+        market_provider=market_provider or _default_market_provider(),
         local_regulation_by_id=local_regulation_by_id or {},
     )
     return engine.simulate_set(scenario_set, market_bundle=market_bundle)

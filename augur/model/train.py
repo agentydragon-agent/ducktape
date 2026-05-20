@@ -25,38 +25,22 @@ from pathlib import Path
 import yaml
 
 from augur.model.market_config import load_market_config
-from augur.model.market_provider_config import (
-    DccGjrGarchMarketProviderConfig,
-    StationaryBootstrapMarketProviderConfig,
-    Var1GaussianMarketProviderConfig,
-    VecmMarketProviderConfig,
-    WilkieCascadeMarketProviderConfig,
-)
+from augur.model.market_provider_config import VecmMarketProviderConfig
 from augur.model.markets.data import load_evidence
-from augur.model.markets.models.bootstrap import StationaryBootstrap
-from augur.model.markets.models.dcc_garch import DccGjrGarch
-from augur.model.markets.models.var import Var1Gaussian
-from augur.model.markets.models.vecm import VecmModel
-from augur.model.markets.models.wilkie import WilkieCascade
-from augur.model.markets.registry import BY_LABEL
+from augur.model.markets.models.vecm import VecmConfig, VecmModel
 
-_SUPPORTED_MODEL_LABELS = ("vecm", "var1_gaussian", "wilkie_cascade", "dcc_gjr_garch", "stationary_bootstrap")
+_SUPPORTED_MODEL_LABELS = ("vecm",)
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Train a macro market model offline.")
+    parser = argparse.ArgumentParser(description="Train an Augur market model offline.")
     parser.add_argument(
         "--market-config",
         required=True,
         type=Path,
         help="Path to MarketConfig JSON/YAML (typically augur/model/config/market_config.example.json).",
     )
-    parser.add_argument(
-        "--model",
-        required=True,
-        choices=_SUPPORTED_MODEL_LABELS,
-        help="Which market model to train (vecm, var1_gaussian, wilkie_cascade, dcc_gjr_garch, stationary_bootstrap).",
-    )
+    parser.add_argument("--model", required=True, choices=_SUPPORTED_MODEL_LABELS, help="Which market model to train.")
     parser.add_argument(
         "--out-provider-config",
         required=True,
@@ -81,62 +65,16 @@ def main(argv: list[str] | None = None) -> int:
     config = load_market_config(market_config_path)
     historical, evidence = load_evidence(config, market_config_path.parent)
 
-    spec = BY_LABEL[args.model]
-    model = spec.build()
+    model = VecmModel(VecmConfig(k_ar_diff=1, coint_rank=1))
     model.fit(historical)
 
-    provider_config: (
-        VecmMarketProviderConfig
-        | Var1GaussianMarketProviderConfig
-        | WilkieCascadeMarketProviderConfig
-        | DccGjrGarchMarketProviderConfig
-        | StationaryBootstrapMarketProviderConfig
+    provider_config = VecmMarketProviderConfig(
+        trained_blob=out_blob,
+        latest_observations=dict(evidence.latest_observations),
+        current_mortgage30_rate_pct=float(evidence.current_mortgage30_rate_pct),
+        location_market_sources=config.location_market_sources,
     )
-    if isinstance(model, VecmModel):
-        provider_config = VecmMarketProviderConfig(
-            trained_blob=out_blob,
-            latest_observations=dict(evidence.latest_observations),
-            current_mortgage30_rate_pct=float(evidence.current_mortgage30_rate_pct),
-            location_market_sources=config.location_market_sources,
-        )
-        model.save(provider_config)
-    elif isinstance(model, Var1Gaussian):
-        provider_config = Var1GaussianMarketProviderConfig(
-            trained_blob=out_blob,
-            latest_observations=dict(evidence.latest_observations),
-            current_mortgage30_rate_pct=float(evidence.current_mortgage30_rate_pct),
-            location_market_sources=config.location_market_sources,
-        )
-        model.save(provider_config)
-    elif isinstance(model, WilkieCascade):
-        provider_config = WilkieCascadeMarketProviderConfig(
-            trained_blob=out_blob,
-            latest_observations=dict(evidence.latest_observations),
-            current_mortgage30_rate_pct=float(evidence.current_mortgage30_rate_pct),
-            location_market_sources=config.location_market_sources,
-        )
-        model.save(provider_config)
-    elif isinstance(model, DccGjrGarch):
-        provider_config = DccGjrGarchMarketProviderConfig(
-            trained_blob=out_blob,
-            latest_observations=dict(evidence.latest_observations),
-            current_mortgage30_rate_pct=float(evidence.current_mortgage30_rate_pct),
-            location_market_sources=config.location_market_sources,
-        )
-        model.save(provider_config)
-    elif isinstance(model, StationaryBootstrap):
-        provider_config = StationaryBootstrapMarketProviderConfig(
-            trained_blob=out_blob,
-            latest_observations=dict(evidence.latest_observations),
-            current_mortgage30_rate_pct=float(evidence.current_mortgage30_rate_pct),
-            location_market_sources=config.location_market_sources,
-        )
-        model.save(provider_config)
-    else:
-        raise NotImplementedError(
-            f"--model={args.model!r} is registered but has no save/load yet; "
-            "migrate the model class then add a Descriptor variant in market_provider_config.py."
-        )
+    model.save(provider_config)
 
     out_provider_config.write_text(
         yaml.safe_dump(provider_config.model_dump(mode="json"), sort_keys=True, default_flow_style=False),

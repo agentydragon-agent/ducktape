@@ -51,16 +51,20 @@ primary simulation backend for the Augur frontend/API.
       depreciation, §121 exclusion, §1250 recapture, itemized deductions,
       SALT cap, and qualified-residence mortgage-interest deduction.
 - [ ] Move production stochastic market generation to `augur/model`.
-      Static/GBM fixture path specs and the production `simple` model now
-      live in `augur/model`; the remaining production gap is moving the
-      calibrated macro providers to emit the same sim-facing sampled
-      levels/events bundle shape.
+      Static/GBM fixture path specs, the production `simple` model, and the
+      representative calibrated VECM model now emit the model-owned sampled
+      levels/events bundle shape. Unported exploratory models were moved to
+      `x/augur/legacy_market_models/` for later porting or deletion.
 - [ ] Align every market-provider/model implementation with the
-      `augur/sim` consumption API. Simple now implements the
-      `JointMarketModel` contract and is shimmed for core; `noop`, VECM,
-      VAR, Wilkie, DCC/GARCH, bootstrap, and future calibrated joint models
-      still need to produce or adapt to the sampled levels/events bundle
-      before the backend switches away from core.
+      `augur/sim` consumption API. Simple and VECM now implement the
+      `JointMarketModel` contract and are shimmed for core; `noop` still needs
+      to produce or adapt to the sampled levels/events bundle before the
+      backend switches away from core.
+- [ ] Replace the VECM wrapper's ad hoc latest-observation lookup with a
+      typed evidence artifact/runtime state boundary. The model should receive
+      factor-keyed current levels and provenance metadata directly, not infer
+      `sp500`, home-value, rent, and inflation values from source-specific
+      `latest_observations` maps.
 - [ ] Add variable spending/obligation amounts sourced from exogenous
       model paths.
 - [ ] Exercise constrained sellability masks end to end.

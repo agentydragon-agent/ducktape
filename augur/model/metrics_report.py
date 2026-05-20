@@ -1,8 +1,8 @@
-"""Score every registered macro model on the same metric battery.
+"""Score the active trained market model on the same metric battery.
 
 Loads historical market-factor data, fits each model from
-`markets/registry.py`, runs held-out + rolling-origin + multi-step
-predictive log-density, writes a `summary.json`.
+the active model list, runs held-out + rolling-origin + multi-step predictive
+log-density, writes a `summary.json`.
 
 Use as a yardstick for "did the change to model X regress its score?"
 """
@@ -11,17 +11,30 @@ from __future__ import annotations
 
 import argparse
 import json
-from dataclasses import asdict
+from collections.abc import Callable
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
 from augur.model.markets.data import load_historical
+from augur.model.markets.market_model import MarketModel
 from augur.model.markets.metrics import (
     held_out_predictive_log_density,
     multi_step_predictive_log_density,
     rolling_origin_predictive_log_density,
 )
-from augur.model.markets.registry import REGISTRY
+from augur.model.markets.models.vecm import VecmConfig, VecmModel
+
+
+@dataclass(frozen=True)
+class ModelMetricSpec:
+    build: Callable[[], MarketModel]
+    rolling_origin_refit_every: int = 1
+
+
+_ACTIVE_MODEL_METRIC_SPECS: tuple[ModelMetricSpec, ...] = (
+    ModelMetricSpec(build=lambda: VecmModel(VecmConfig(k_ar_diff=1, coint_rank=1))),
+)
 
 
 def evaluate_all(
@@ -35,7 +48,7 @@ def evaluate_all(
     held_out_rows: list[dict[str, Any]] = []
     rolling_rows: list[dict[str, Any]] = []
     multi_step_rows: list[dict[str, Any]] = []
-    for spec in REGISTRY:
+    for spec in _ACTIVE_MODEL_METRIC_SPECS:
         held_out = held_out_predictive_log_density(spec.build(), historical, train_fraction=train_fraction)
         held_out_rows.append(asdict(held_out))
         rolling = rolling_origin_predictive_log_density(
@@ -61,7 +74,7 @@ def evaluate_all(
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Augur: score every registered macro model on the metric battery.")
+    parser = argparse.ArgumentParser(description="Augur: score the active trained market model on the metric battery.")
     parser.add_argument(
         "--config", type=Path, default=None, help="path to market_config.example.json (default: bundled)"
     )

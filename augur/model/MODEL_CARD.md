@@ -1,9 +1,9 @@
 # Augur Market Model Card And Provenance
 
-Last updated: 2026-05-15.
+Last updated: 2026-05-20.
 
 This is the minimal `ModelCard` for the current Augur market-model layer.
-`MacroMarketBundleProvider` attaches typed model-card, model-version, evidence,
+The active trained `vecm` provider attaches typed model-card, model-version, evidence,
 calibration, scenario-generator, exogenous-path-set, validation-report, and
 known-limitation identity metadata to `MarketBundleMetadata`. Those identities
 are stable for the same checked-in public evidence and model inputs, but
@@ -14,11 +14,10 @@ than durable persisted artifacts.
 
 Current governed surface:
 
-- Registered macro market models in `augur.model.markets.registry`:
-  `var1_gaussian`, `wilkie_cascade`, `vecm`, `dcc_gjr_garch`, and
-  `stationary_bootstrap`.
-- `MacroMarketBundleProvider`, which fits one registered model on public market
-  evidence and emits a `MarketBundle` for projection.
+- Active trained market model: `vecm`.
+- `VecmJointMarketModel`, which wraps a trained VECM blob, samples native
+  `SampledMarketBundle` levels/events, and is adapted to legacy core only by
+  `CoreMarketBundleProviderShim`.
 - Fixture providers such as flat/noop or simple stochastic providers are test
   and smoke-test aids. They are not calibrated market models.
 
@@ -64,13 +63,13 @@ Today that means:
   `HistoricalSeries` plus `MarketEvidence`. `MarketEvidence` carries aligned
   monthly log returns, marginal return evidence, calibrated path priors, current
   mortgage-rate evidence, and latest-observation metadata.
-- Calibration/fitting happens when `MacroMarketBundleProvider` calls
-  `market_model.fit(historical)`.
-- Market-bundle generation happens when the fitted model's `simulate(...)`
-  output is adapted into `MarketBundle` arrays plus `MarketBundleMetadata`.
-- Projection happens in core over the sampled `MarketBundle`; core should not
-  receive source-specific objects such as FRED, Yahoo, Zillow, or Manifold
-  shapes.
+- Calibration/fitting happens offline through `augur.model.train`; runtime
+  config points at the persisted trained VECM blob.
+- Market-bundle generation happens when `VecmJointMarketModel` calls the fitted
+  model's `simulate(...)` and emits native sampled levels/events.
+- Projection currently happens in core through `CoreMarketBundleProviderShim`;
+  core should not receive source-specific objects such as FRED, Yahoo, Zillow,
+  or Manifold shapes.
 
 Current persisted provenance is partial. `MarketBundleMetadata` carries model
 id, model-card id, model-version id, typed `EvidenceSet`, `CalibrationRun`,
@@ -101,8 +100,8 @@ Current calibration artifact, informally:
 
 Current generator run, informally:
 
-- registry model label;
-- model implementation and config from `MacroModelSpec`;
+- model label;
+- model implementation and config from `VecmModel(VecmConfig(k_ar_diff=1, coint_rank=1))`;
 - `MarketRequest` horizon, rollout count, seed, and market model id;
 - model-card/version, evidence, calibration, scenario-generator,
   validation-report, and known-limitation identity in `MarketBundleMetadata`;
@@ -121,10 +120,10 @@ Current generator run, informally:
 - `rollout_index` is only an array coordinate. Reproducible path identity needs
   model version, evidence id, calibration id, generator settings, seed, path
   index, factor set, and event-stream identity.
-- Mortgage rates are current evidence adapted into bundle paths; the macro
-  provider currently keeps them constant over the sampled horizon.
+- Mortgage rates are current evidence adapted into bundle paths; the core shim
+  currently keeps them constant over the sampled horizon.
 - Private-equity marks and yearly tender opportunities are provider/runtime
-  bundle concerns in the current generic provider, not fitted idiosyncratic
+  bundle concerns in the current VECM wrapper, not fitted idiosyncratic
   company models.
 - Historical public market data is limited and location coverage is narrow.
   Zillow rows are trimmed to the currently configured cities.
@@ -137,8 +136,8 @@ Current generator run, informally:
 ## Validation Gaps
 
 Current validation exists as model tests, provider shape tests, and the metric
-battery in `metrics_report.py`. The metric battery can compare registered models
-on held-out, rolling-origin, and multi-step predictive log-density.
+battery in `metrics_report.py`. The metric battery scores the active trained
+model on held-out, rolling-origin, and multi-step predictive log-density.
 
 Still missing:
 

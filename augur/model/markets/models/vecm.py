@@ -29,17 +29,49 @@ from pydantic import Field
 from statsmodels.tsa.vector_ar.vecm import VECM
 
 from augur.core.market_bundle import MarketBundleProvider
+from augur.core.provenance import stable_identity_digest
 from augur.core.schemas import ApiModel
+from augur.frames import concat_frames
+from augur.model.core_market_adapter import CoreMarketBundleProviderShim
 from augur.model.location_market_sources import LocationMarketSources, LocationMarketSourcesConfig
-from augur.model.macro_market_bundle_provider import MacroMarketBundleProvider
 from augur.model.markets._density import gaussian_logpdf, gaussian_logpdf_from_samples
 from augur.model.markets.scenarios import HistoricalSeries, Scenarios
+from augur.model.sim_market_api import (
+    MARKET_EVENTS_SCHEMA,
+    MARKET_LEVELS_SCHEMA,
+    MarketSamplingRequest,
+    SampledMarketBundle,
+    market_events_frame,
+    market_levels_frame,
+)
+from augur.model.sim_market_series import (
+    CRYPTO_SERIES_PREFIX,
+    HOME_VALUE_SERIES_PREFIX,
+    INFLATION_SERIES_ID,
+    PRIVATE_EQUITY_SALE_EVENT_PREFIX,
+    PRIVATE_EQUITY_SERIES_PREFIX,
+    RENT_SERIES_PREFIX,
+    SP500_SERIES_ID,
+    series_suffix,
+)
 
 # Constant inside the cointegration relation. Other deterministic options
 # ("co", "lo", "li", "n") change which constants/trends statsmodels populates
 # on the fit result; `fit()` below assumes "ci" when it copies parameters out.
 # Add another mode only after extending the parameter copy + `_predict_mean`.
 _DETERMINISTIC: Literal["ci"] = "ci"
+_TENDER_INTERVAL_MONTHS = 12
+_MODEL_CARD_ID = "augur-market-model-card:2026-05-15"
+_VALIDATION_REPORT_ID = "validation_report:augur-market-models:not_available:2026-05-15"
+_KNOWN_LIMITATION_IDS = (
+    "evidence-set-id-unversioned",
+    "calibration-artifact-id-unversioned",
+    "validation-report-not-decision-grade",
+    "constant-mortgage-rate-path",
+    "private-equity-marks-flat-fixture",
+    "private-equity-paths-all-share-placeholder",
+    "crypto-paths-all-share-placeholder",
+)
 
 
 @dataclass(frozen=True)
@@ -260,6 +292,193 @@ class VecmModel:
         )
 
 
+@dataclass(frozen=True)
+class VecmJointMarketModel:
+    """Native sampled-bundle wrapper around a fitted `VecmModel`."""
+
+    model: VecmModel
+    latest_observations: dict[str, Any]
+    current_private_equity_price_usd: float
+    location_market_sources: LocationMarketSources
+    label: str
+    risk_factor_ids: tuple[str, ...]
+    evidence_latest_observation_ids: tuple[str, ...]
+    risk_factor_set_id: str
+    market_model_version_id: str
+    evidence_set_id: str
+    calibration_artifact_id: str
+
+    @classmethod
+    def from_loaded_model(
+        cls,
+        model: VecmModel,
+        *,
+        latest_observations: dict[str, Any],
+        current_private_equity_price_usd: float,
+        location_market_sources: LocationMarketSources,
+        evidence_source_id: str,
+    ) -> VecmJointMarketModel:
+        factor_names = tuple(model.factor_names)
+        label = model.label
+        risk_factor_set_id = "risk_factor_set:" + stable_identity_digest({"factor_names": factor_names})
+        market_model_version_id = "model_version:" + stable_identity_digest(
+            {"label": label, "class": type(model).__qualname__}
+        )
+        evidence_set_id = "evidence_set:" + stable_identity_digest(
+            {
+                "evidence_source_id": evidence_source_id,
+                "factor_names": factor_names,
+                "latest_observations": dict(latest_observations),
+            }
+        )
+        calibration_artifact_id = "calibration_artifact:" + stable_identity_digest(
+            {
+                "market_model_id": label,
+                "market_model_version_id": market_model_version_id,
+                "evidence_set_id": evidence_set_id,
+                "risk_factor_set_id": risk_factor_set_id,
+            }
+        )
+        return cls(
+            model=model,
+            latest_observations=dict(latest_observations),
+            current_private_equity_price_usd=float(current_private_equity_price_usd),
+            location_market_sources=location_market_sources,
+            label=label,
+            risk_factor_ids=factor_names,
+            evidence_latest_observation_ids=tuple(sorted(str(key) for key in latest_observations)),
+            risk_factor_set_id=risk_factor_set_id,
+            market_model_version_id=market_model_version_id,
+            evidence_set_id=evidence_set_id,
+            calibration_artifact_id=calibration_artifact_id,
+        )
+
+    def sample(self, request: MarketSamplingRequest) -> SampledMarketBundle:
+        scenarios = self.model.simulate(
+            n_paths=request.rollout_count, n_months=request.horizon_months, seed=request.seed
+        )
+        path_by_factor = {
+            factor_name: scenarios.multipliers[:, :, factor_index]
+            for factor_index, factor_name in enumerate(scenarios.factor_names)
+        }
+        shape = (request.rollout_count, request.horizon_months + 1)
+        private_equity_events = np.zeros(shape, dtype=np.bool_)
+        private_equity_events[:, _TENDER_INTERVAL_MONTHS : request.horizon_months + 1 : _TENDER_INTERVAL_MONTHS] = True
+
+        level_blocks = [
+            market_levels_frame(
+                series_id,
+                self._level_series(series_id, path_by_factor=path_by_factor, shape=shape),
+                rollout_count=request.rollout_count,
+                horizon_months=request.horizon_months,
+            )
+            for series_id in sorted(request.required_level_series)
+        ]
+        event_blocks = [
+            market_events_frame(
+                event_id,
+                self._event_series(event_id, private_equity_events=private_equity_events),
+                rollout_count=request.rollout_count,
+                horizon_months=request.horizon_months,
+            )
+            for event_id in sorted(request.required_event_series)
+        ]
+        return SampledMarketBundle(
+            levels=concat_frames(level_blocks, MARKET_LEVELS_SCHEMA),
+            events=concat_frames(event_blocks, MARKET_EVENTS_SCHEMA),
+            metadata={
+                "model_card_id": _MODEL_CARD_ID,
+                "model_version_id": self.market_model_version_id,
+                "validation_report_id": _VALIDATION_REPORT_ID,
+                "known_limitation_ids": _KNOWN_LIMITATION_IDS,
+                "market_model_version_id": self.market_model_version_id,
+                "scenario_generator_id": "vecm_joint_market_model",
+                "scenario_generator_version_id": "vecm_joint_market_model:v1",
+                "evidence_set_id": self.evidence_set_id,
+                "calibration_artifact_id": self.calibration_artifact_id,
+                "risk_factor_set_id": self.risk_factor_set_id,
+                "risk_factor_ids": self.risk_factor_ids,
+                "evidence_latest_observation_ids": self.evidence_latest_observation_ids,
+                "event_stream_ids": ("private_equity_sale_opportunity_event",),
+                "notes": ("sampled by VecmJointMarketModel",),
+                "market_provider_label": self.label,
+            },
+        )
+
+    def _level_series(
+        self, series_id: str, *, path_by_factor: dict[str, np.ndarray], shape: tuple[int, int]
+    ) -> np.ndarray:
+        if series_id == INFLATION_SERIES_ID:
+            return self._factor_level(INFLATION_SERIES_ID, path_by_factor=path_by_factor)
+        if series_id == SP500_SERIES_ID:
+            return self._factor_level(SP500_SERIES_ID, path_by_factor=path_by_factor)
+        if location_id := series_suffix(series_id, HOME_VALUE_SERIES_PREFIX):
+            return self._factor_level(self._location_factor("home_value", location_id), path_by_factor=path_by_factor)
+        if location_id := series_suffix(series_id, RENT_SERIES_PREFIX):
+            return self._factor_level(self._location_factor("rent", location_id), path_by_factor=path_by_factor)
+        if series_suffix(series_id, PRIVATE_EQUITY_SERIES_PREFIX) is not None:
+            return np.full(shape, self.current_private_equity_price_usd or 1.0, dtype="float64")
+        if series_suffix(series_id, CRYPTO_SERIES_PREFIX) is not None:
+            return np.ones(shape, dtype="float64")
+        raise ValueError(f"VECM market model cannot sample level series {series_id!r}")
+
+    def _event_series(self, event_id: str, *, private_equity_events: np.ndarray) -> np.ndarray:
+        if series_suffix(event_id, PRIVATE_EQUITY_SALE_EVENT_PREFIX) is not None:
+            return private_equity_events
+        raise ValueError(f"VECM market model cannot sample event series {event_id!r}")
+
+    def _location_factor(self, kind: Literal["home_value", "rent"], location_id: str) -> str:
+        source_by_location = (
+            self.location_market_sources.home_value if kind == "home_value" else self.location_market_sources.rent
+        )
+        try:
+            return source_by_location[location_id]
+        except KeyError as error:
+            raise ValueError(f"location_market_sources.{kind} has no entry for {location_id!r}") from error
+
+    def _factor_level(self, factor_name: str, *, path_by_factor: dict[str, np.ndarray]) -> np.ndarray:
+        try:
+            multiplier = path_by_factor[factor_name]
+        except KeyError as error:
+            raise ValueError(f"VECM trained blob has no factor {factor_name!r}") from error
+        return self._latest_factor_value(factor_name) * multiplier
+
+    def _latest_factor_value(self, factor_name: str) -> float:
+        direct = self.latest_observations.get(factor_name)
+        if isinstance(direct, (int, float)):
+            return float(direct)
+
+        if factor_name == "sp500":
+            return self._latest_observation_value("spy_adjusted_close_latest", fallback_key="sp500_price_latest")
+        if factor_name == "rent":
+            return self._latest_observation_value("sf_rent_cpi_latest")
+        if factor_name == "inflation":
+            return self._latest_observation_value("cpi_latest")
+
+        for key in ("zillow_home_value_latest_by_factor", "case_shiller_home_value_latest_by_factor"):
+            by_factor = self.latest_observations.get(key)
+            if isinstance(by_factor, dict) and factor_name in by_factor:
+                return _observation_value(by_factor[factor_name], f"{key}[{factor_name!r}]")
+
+        raise ValueError(f"VECM config latest_observations has no usable latest value for factor {factor_name!r}")
+
+    def _latest_observation_value(self, key: str, *, fallback_key: str | None = None) -> float:
+        if key in self.latest_observations:
+            return _observation_value(self.latest_observations[key], key)
+        if fallback_key is not None and fallback_key in self.latest_observations:
+            return _observation_value(self.latest_observations[fallback_key], fallback_key)
+        expected = key if fallback_key is None else f"{key!r} or {fallback_key!r}"
+        raise ValueError(f"VECM config latest_observations has no {expected}")
+
+
+def _observation_value(observation: Any, key: str) -> float:
+    if isinstance(observation, (int, float)):
+        return float(observation)
+    if isinstance(observation, dict) and isinstance(observation.get("value"), (int, float)):
+        return float(observation["value"])
+    raise TypeError(f"VECM latest_observations {key} must be a number or object with numeric 'value'")
+
+
 class VecmMarketProviderConfig(ApiModel):
     """Pre-trained VECM provider config — points at the trained-state blob
     written by `bb run //augur/model:train`. The model is loaded at server
@@ -275,11 +494,14 @@ class VecmMarketProviderConfig(ApiModel):
 
     def realize(self, *, current_private_equity_price_usd: float) -> MarketBundleProvider:
         model = VecmModel.load(self)
-        return MacroMarketBundleProvider.from_loaded_model(
-            model,
-            latest_observations=self.latest_observations,
-            current_mortgage30_rate_pct=self.current_mortgage30_rate_pct,
+        return CoreMarketBundleProviderShim(
+            model=VecmJointMarketModel.from_loaded_model(
+                model,
+                latest_observations=self.latest_observations,
+                current_private_equity_price_usd=current_private_equity_price_usd,
+                location_market_sources=LocationMarketSources.from_config(self.location_market_sources),
+                evidence_source_id=str(self.trained_blob),
+            ),
             current_private_equity_price_usd=current_private_equity_price_usd,
-            location_market_sources=LocationMarketSources.from_config(self.location_market_sources),
-            evidence_source_id=str(self.trained_blob),
+            mortgage_30y_rate_pct=self.current_mortgage30_rate_pct,
         )

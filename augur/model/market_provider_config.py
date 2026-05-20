@@ -7,7 +7,7 @@ augur server reads `augur_config.market_provider` at startup and calls
 
 ```yaml
 market_provider:
-  # Pre-trained macro provider — load the trained blob at startup, no fitting.
+  # Pre-trained VECM provider — load the trained blob at startup, no fitting.
   type: vecm
   trained_blob: /etc/augur/trained_vecm.npz
   latest_observations: {sp500: 5500.0, ...}
@@ -44,11 +44,7 @@ from pydantic import Field
 from augur.core.market_bundle import FlatMarketBundleProvider, MarketBundleProvider
 from augur.core.schemas import ApiModel
 from augur.model.core_market_adapter import CoreMarketBundleProviderShim
-from augur.model.markets.models.bootstrap import StationaryBootstrapMarketProviderConfig
-from augur.model.markets.models.dcc_garch import DccGjrGarchMarketProviderConfig
-from augur.model.markets.models.var import Var1GaussianMarketProviderConfig
 from augur.model.markets.models.vecm import VecmMarketProviderConfig
-from augur.model.markets.models.wilkie import WilkieCascadeMarketProviderConfig
 from augur.model.simple_market import SimpleJointMarketModel, SimpleLocationModelParams, SimpleMarketModelConfig
 
 
@@ -84,12 +80,5 @@ class SimpleMarketProviderConfig(ApiModel):
 
 
 MarketProviderConfig = Annotated[
-    NoopMarketProviderConfig
-    | SimpleMarketProviderConfig
-    | VecmMarketProviderConfig
-    | Var1GaussianMarketProviderConfig
-    | WilkieCascadeMarketProviderConfig
-    | DccGjrGarchMarketProviderConfig
-    | StationaryBootstrapMarketProviderConfig,
-    Field(discriminator="type"),
+    NoopMarketProviderConfig | SimpleMarketProviderConfig | VecmMarketProviderConfig, Field(discriminator="type")
 ]

@@ -230,6 +230,7 @@ py_library(
         ":scenario_engine_py",
         ":scenario_set_py",
         ":scenario_tax_defaults_py",
+        "//augur/model:market_provider_config_py",
         "@pypi//numpy",
     ],
 )
@@ -307,6 +308,7 @@ py_test(
     deps = [
         ":market_bundle_py",
         ":scenario_set_py",
+        "//augur/model:market_provider_config_py",
         "@pypi//numpy",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

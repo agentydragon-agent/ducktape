@@ -18,9 +18,9 @@ from dataclasses import dataclass
 
 import polars as pl
 
+from augur.frames import FrameSpec
 from augur.model.sim_market import MarketBundle, materialize_market_prices
 from augur.model.sim_market_api import MARKET_PRICES_SCHEMA
-from augur.sim.frames import FrameSpec
 
 MARKET_PRICES_FRAME = FrameSpec("market_prices", MARKET_PRICES_SCHEMA)
 

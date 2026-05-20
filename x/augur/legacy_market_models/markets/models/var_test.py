@@ -6,8 +6,8 @@ import math
 
 import numpy as np
 import pytest_bazel
-
 from augur.model.markets.models.var import Var1Gaussian
+
 from augur.model.markets.scenarios import HistoricalSeries, historical_log_returns
 
 

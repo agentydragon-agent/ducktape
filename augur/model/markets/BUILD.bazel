@@ -50,19 +50,6 @@ py_library(
     ],
 )
 
-py_library(
-    name = "registry_py",
-    srcs = ["registry.py"],
-    deps = [
-        ":market_model_py",
-        "//augur/model/markets/models:bootstrap_py",
-        "//augur/model/markets/models:dcc_garch_py",
-        "//augur/model/markets/models:var_py",
-        "//augur/model/markets/models:vecm_py",
-        "//augur/model/markets/models:wilkie_py",
-    ],
-)
-
 py_test(
     name = "metrics_test",
     srcs = ["metrics_test.py"],

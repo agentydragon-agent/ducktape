@@ -13,6 +13,7 @@ from typing import Annotated, Literal
 import polars as pl
 from pydantic import BaseModel, Field
 
+from augur.frames import concat_frames
 from augur.model.sim_market_api import (
     MARKET_EVENTS_SCHEMA,
     MARKET_LEVELS_SCHEMA,
@@ -48,8 +49,7 @@ class IndependentMarketModels(BaseModel):
             for market_id, model in self.markets.items()
         ]
         return SampledMarketBundle(
-            levels=pl.concat([MARKET_LEVELS_SCHEMA.to_frame(), *blocks]).select(MARKET_LEVELS_SCHEMA.names()),
-            events=MARKET_EVENTS_SCHEMA.to_frame(),
+            levels=concat_frames(blocks, MARKET_LEVELS_SCHEMA), events=MARKET_EVENTS_SCHEMA.to_frame()
         )
 
 

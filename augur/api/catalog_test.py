@@ -21,9 +21,14 @@ from augur.api.config import (
     PropertySourceConfig,
 )
 from augur.core.local_regulation import LocalRegulation
-from augur.core.market_bundle import SimpleMarketBundleProvider
+from augur.core.market_bundle import MarketBundleProvider
 from augur.core.scenario_set import ActorRole, ScenarioSet, TaxRegime
-from augur.model.market_provider_config import NoopMarketProviderConfig
+from augur.model.market_provider_config import NoopMarketProviderConfig, SimpleMarketProviderConfig
+
+
+@pytest.fixture
+def simple_market_provider() -> MarketBundleProvider:
+    return SimpleMarketProviderConfig().realize(current_private_equity_price_usd=0.0)
 
 
 def _write_properties(path: Path) -> None:
@@ -217,13 +222,15 @@ def test_bootstrap_san_francisco_location_carries_modeled_tax_defaults(tmp_path:
     assert TaxRegime.SAN_FRANCISCO_TRANSFER_TAX in location.local_regulation.default_tax_regimes
 
 
-def test_backend_applies_location_tax_defaults_to_scenario(tmp_path: Path) -> None:
+def test_backend_applies_location_tax_defaults_to_scenario(
+    tmp_path: Path, simple_market_provider: MarketBundleProvider
+) -> None:
     properties_path = tmp_path / "properties.json"
     _write_builtin_properties(properties_path)
     backend = AugurBackend(
         augur_config=_config(properties_path),
         runtime_config=AugurBackendRuntimeConfig(
-            market_bundle_provider=SimpleMarketBundleProvider(), default_rollout_samples=8, max_rollout_samples=128
+            market_bundle_provider=simple_market_provider, default_rollout_samples=8, max_rollout_samples=128
         ),
     )
     request = {
@@ -251,13 +258,15 @@ def test_backend_applies_location_tax_defaults_to_scenario(tmp_path: Path) -> No
     assert TaxRegime.PRIMARY_RESIDENCE_EXCLUSION in scenario.tax_regimes
 
 
-def test_backend_rejects_scenario_property_location_mismatch(tmp_path: Path) -> None:
+def test_backend_rejects_scenario_property_location_mismatch(
+    tmp_path: Path, simple_market_provider: MarketBundleProvider
+) -> None:
     properties_path = tmp_path / "properties.json"
     _write_builtin_properties(properties_path)
     backend = AugurBackend(
         augur_config=_config(properties_path),
         runtime_config=AugurBackendRuntimeConfig(
-            market_bundle_provider=SimpleMarketBundleProvider(), default_rollout_samples=8, max_rollout_samples=128
+            market_bundle_provider=simple_market_provider, default_rollout_samples=8, max_rollout_samples=128
         ),
     )
     request = {

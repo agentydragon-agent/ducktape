@@ -8,18 +8,16 @@ from augur.core.scenario_set import MarketRequest
 from augur.model.core_market_adapter import CoreMarketBundleProviderShim
 from augur.model.market_provider_config import SimpleMarketProviderConfig
 from augur.model.sim_market_api import MarketSamplingRequest
-from augur.model.simple_market import (
+from augur.model.sim_market_series import (
     INFLATION_SERIES_ID,
     SP500_SERIES_ID,
-    SimpleJointMarketModel,
-    SimpleLocationModelParams,
-    SimpleMarketModelConfig,
     crypto_series_id,
     home_value_series_id,
     private_equity_sale_event_id,
     private_equity_series_id,
     rent_series_id,
 )
+from augur.model.simple_market import SimpleJointMarketModel, SimpleLocationModelParams, SimpleMarketModelConfig
 
 
 def test_simple_joint_model_samples_levels_and_events() -> None:

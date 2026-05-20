@@ -27,13 +27,13 @@ from pathlib import Path
 from typing import Any, Literal
 
 import numpy as np
+from augur.model.macro_market_bundle_provider import MacroMarketBundleProvider
+from augur.model.markets.models.var import _var1_horizon_density
 from pydantic import Field
 
 from augur.core.market_bundle import MarketBundleProvider
 from augur.core.schemas import ApiModel
 from augur.model.location_market_sources import LocationMarketSources, LocationMarketSourcesConfig
-from augur.model.macro_market_bundle_provider import MacroMarketBundleProvider
-from augur.model.markets.models.var import _var1_horizon_density
 from augur.model.markets.scenarios import HistoricalSeries, Scenarios, historical_log_returns
 
 

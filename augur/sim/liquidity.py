@@ -11,8 +11,8 @@ from dataclasses import dataclass
 
 import polars as pl
 
+from augur.frames import FrameSpec
 from augur.sim.events import EVENT_FRAMES
-from augur.sim.frames import FrameSpec
 from augur.sim.market import MarketContext
 from augur.sim.scenario import LiquidityPolicy
 from augur.sim.state import StateCrossSection

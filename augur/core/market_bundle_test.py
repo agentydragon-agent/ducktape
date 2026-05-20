@@ -8,28 +8,33 @@ from numpy.testing import assert_allclose
 from augur.core.market_bundle import (
     MarketBundle,
     MarketBundleMetadata,
+    MarketBundleProvider,
     MissingMarketFactorError,
     RequiredMarketKeys,
-    SimpleMarketBundleProvider,
 )
 from augur.core.scenario_set import MarketRequest
+from augur.model.market_provider_config import SimpleMarketProviderConfig
 
 
-def test_simple_market_bundle_shapes_and_reproducibility() -> None:
+@pytest.fixture
+def simple_provider() -> MarketBundleProvider:
+    return SimpleMarketProviderConfig().realize(current_private_equity_price_usd=0.0)
+
+
+def test_simple_market_bundle_shapes_and_reproducibility(simple_provider: MarketBundleProvider) -> None:
     request = MarketRequest(market_model_id="simple_test", rollout_count=4, horizon_months=18, seed=123)
-    provider = SimpleMarketBundleProvider()
     required = RequiredMarketKeys(
         location_ids=frozenset({"loc_a"}), pe_issuer_ids=frozenset({"issuer_a"}), crypto_symbols=frozenset({"btc"})
     )
 
-    first = provider.sample_market_bundle(
+    first = simple_provider.sample_market_bundle(
         rollout_count=request.rollout_count,
         horizon_months=request.horizon_months,
         seed=request.seed,
         market_request=request,
         required_keys=required,
     )
-    second = provider.sample_market_bundle(
+    second = simple_provider.sample_market_bundle(
         rollout_count=request.rollout_count,
         horizon_months=request.horizon_months,
         seed=request.seed,
@@ -51,9 +56,11 @@ def test_simple_market_bundle_shapes_and_reproducibility() -> None:
     assert first.metadata.exogenous_path_ids == second.metadata.exogenous_path_ids
 
 
-def test_simple_market_bundle_empty_required_keys_yields_empty_per_asset_dicts() -> None:
+def test_simple_market_bundle_empty_required_keys_yields_empty_per_asset_dicts(
+    simple_provider: MarketBundleProvider,
+) -> None:
     request = MarketRequest(market_model_id="simple_test", rollout_count=2, horizon_months=6, seed=0)
-    bundle = SimpleMarketBundleProvider().sample_market_bundle(
+    bundle = simple_provider.sample_market_bundle(
         rollout_count=request.rollout_count,
         horizon_months=request.horizon_months,
         seed=request.seed,
@@ -68,9 +75,9 @@ def test_simple_market_bundle_empty_required_keys_yields_empty_per_asset_dicts()
     assert bundle.crypto_value_multipliers_by_symbol == {}
 
 
-def test_market_bundle_missing_key_raises_missing_market_factor_error() -> None:
+def test_market_bundle_missing_key_raises_missing_market_factor_error(simple_provider: MarketBundleProvider) -> None:
     request = MarketRequest(market_model_id="simple_test", rollout_count=2, horizon_months=3, seed=0)
-    bundle = SimpleMarketBundleProvider().sample_market_bundle(
+    bundle = simple_provider.sample_market_bundle(
         rollout_count=request.rollout_count,
         horizon_months=request.horizon_months,
         seed=request.seed,

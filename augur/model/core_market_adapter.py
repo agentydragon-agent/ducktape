@@ -14,7 +14,7 @@ from augur.core.market_bundle import (
 )
 from augur.core.scenario_set import MarketRequest
 from augur.model.sim_market_api import JointMarketModel, MarketSamplingRequest, SampledMarketBundle
-from augur.model.simple_market import (
+from augur.model.sim_market_series import (
     INFLATION_SERIES_ID,
     SP500_SERIES_ID,
     crypto_series_id,
@@ -59,17 +59,28 @@ class CoreMarketBundleProviderShim:
         shape = (rollout_count, horizon_months + 1)
         metadata = MarketBundleMetadata(
             market_model_id=market_request.market_model_id,
-            scenario_generator_id=self.scenario_generator_id,
-            scenario_generator_version_id=self.scenario_generator_version_id,
-            evidence_set_id=self.evidence_set_id,
-            calibration_artifact_id=self.calibration_artifact_id,
-            risk_factor_ids=CORE_MARKET_RISK_FACTOR_IDS,
+            model_card_id=_optional_str_metadata(sampled, "model_card_id"),
+            model_version_id=_optional_str_metadata(sampled, "model_version_id"),
+            validation_report_id=_optional_str_metadata(sampled, "validation_report_id"),
+            known_limitation_ids=_tuple_str_metadata(sampled, "known_limitation_ids"),
+            market_model_version_id=_str_metadata(sampled, "market_model_version_id", "unknown"),
+            scenario_generator_id=_str_metadata(sampled, "scenario_generator_id", self.scenario_generator_id),
+            scenario_generator_version_id=_str_metadata(
+                sampled, "scenario_generator_version_id", self.scenario_generator_version_id
+            ),
+            evidence_set_id=_str_metadata(sampled, "evidence_set_id", self.evidence_set_id),
+            calibration_artifact_id=_str_metadata(sampled, "calibration_artifact_id", self.calibration_artifact_id),
+            risk_factor_set_id=_str_metadata(sampled, "risk_factor_set_id", "core_market_factors:v1"),
+            risk_factor_ids=_tuple_str_metadata(sampled, "risk_factor_ids", CORE_MARKET_RISK_FACTOR_IDS),
+            evidence_latest_observation_ids=_tuple_str_metadata(sampled, "evidence_latest_observation_ids"),
             current_private_equity_price_usd=self.current_private_equity_price_usd,
             seed=seed,
             rollout_count=rollout_count,
             horizon_months=horizon_months,
-            event_stream_ids=("private_equity_sale_opportunity_event",),
-            notes=self.notes,
+            event_stream_ids=_tuple_str_metadata(
+                sampled, "event_stream_ids", ("private_equity_sale_opportunity_event",)
+            ),
+            notes=_tuple_str_metadata(sampled, "notes", self.notes),
             source_metadata=dict(sampled.metadata),
         )
         return CoreMarketBundle(
@@ -146,3 +157,26 @@ def _level_multiplier(
     if np.any(initial <= 0):
         raise ValueError(f"sampled market level {series_id!r} must start positive to adapt to a core multiplier")
     return np.divide(levels, initial, out=np.ones_like(levels), where=initial > 0)
+
+
+def _str_metadata(sampled: SampledMarketBundle, key: str, default: str) -> str:
+    value = sampled.metadata.get(key, default)
+    if not isinstance(value, str):
+        raise TypeError(f"sampled market metadata {key!r} must be a string")
+    return value
+
+
+def _optional_str_metadata(sampled: SampledMarketBundle, key: str) -> str | None:
+    value = sampled.metadata.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise TypeError(f"sampled market metadata {key!r} must be a string or None")
+    return value
+
+
+def _tuple_str_metadata(sampled: SampledMarketBundle, key: str, default: tuple[str, ...] = ()) -> tuple[str, ...]:
+    value = sampled.metadata.get(key, default)
+    if not isinstance(value, tuple) or not all(isinstance(item, str) for item in value):
+        raise TypeError(f"sampled market metadata {key!r} must be a tuple[str, ...]")
+    return value

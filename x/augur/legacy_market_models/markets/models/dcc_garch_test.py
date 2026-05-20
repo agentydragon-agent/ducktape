@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import numpy as np
 import pytest_bazel
-
 from augur.model.markets.models.dcc_garch import DccGjrGarch
+
 from augur.model.markets.scenarios import HistoricalSeries
 
 

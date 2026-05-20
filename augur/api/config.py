@@ -153,7 +153,7 @@ class AugurConfig(ApiModel):
     bootstrap_default_scenarios: tuple[DefaultScenario, ...] = ()
     market_provider: MarketProviderConfig = Field(
         description=(
-            "Deployment's market-bundle provider choice (discriminated by `type`: noop / simple / vecm / ...). "
+            "Deployment's market-bundle provider choice (discriminated by `type`: noop / simple / vecm). "
             "Carries per-provider knobs and trained-asset paths; the server materializes this into a "
             "`MarketBundleProvider` at startup via `MarketProviderConfig.realize(...)`."
         )

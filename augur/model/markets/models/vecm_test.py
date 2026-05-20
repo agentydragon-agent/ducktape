@@ -5,14 +5,30 @@ from __future__ import annotations
 import numpy as np
 import pytest_bazel
 
-from augur.model.markets.models.vecm import VecmConfig, VecmModel
+from augur.model.location_market_sources import LocationMarketSources
+from augur.model.markets.models.vecm import VecmConfig, VecmJointMarketModel, VecmModel
 from augur.model.markets.scenarios import HistoricalSeries
+from augur.model.sim_market_api import MarketSamplingRequest
+from augur.model.sim_market_series import (
+    INFLATION_SERIES_ID,
+    SP500_SERIES_ID,
+    home_value_series_id,
+    private_equity_sale_event_id,
+    private_equity_series_id,
+    rent_series_id,
+)
 
 
 def _series_from_log_levels(log_levels: np.ndarray) -> HistoricalSeries:
     levels = np.exp(log_levels - log_levels[0])
     months = tuple(f"2000-{i:02d}" for i in range(levels.shape[0]))
     return HistoricalSeries(factor_names=tuple(f"f{i}" for i in range(levels.shape[1])), levels=levels, months=months)
+
+
+def _market_series_from_log_levels(log_levels: np.ndarray) -> HistoricalSeries:
+    levels = np.exp(log_levels - log_levels[0])
+    months = tuple(f"2000-{i:02d}" for i in range(levels.shape[0]))
+    return HistoricalSeries(factor_names=("sp500", "home", "rent", "inflation"), levels=levels, months=months)
 
 
 class TestVecmModel:
@@ -78,6 +94,61 @@ class TestVecmModel:
             assert h1 is not None
             # MC-Gaussian fit on 5000 samples should be within ~1 nat of closed form.
             assert abs(h1 - one_step) < 1.5, f"t={t}: closed={one_step}, h1={h1}"
+
+    def test_joint_market_model_samples_levels_and_events(self) -> None:
+        rng = np.random.default_rng(123)
+        base = np.cumsum(rng.normal(scale=0.01, size=240))
+        log_levels = np.column_stack(
+            [
+                base + rng.normal(scale=0.02, size=240),
+                base * 0.8 + rng.normal(scale=0.01, size=240),
+                base * 0.4 + rng.normal(scale=0.005, size=240),
+                base * 0.2 + rng.normal(scale=0.003, size=240),
+            ]
+        )
+        log_levels = np.concatenate([np.zeros((1, 4)), log_levels], axis=0)
+        model = VecmModel(VecmConfig(k_ar_diff=1, coint_rank=1))
+        model.fit(_market_series_from_log_levels(log_levels))
+        joint_model = VecmJointMarketModel.from_loaded_model(
+            model,
+            latest_observations={"sp500": 5500.0, "home": 1_000_000.0, "rent": 3000.0, "inflation": 320.0},
+            current_private_equity_price_usd=50.0,
+            location_market_sources=LocationMarketSources(
+                home_value={"san_francisco_ca": "home"}, rent={"san_francisco_ca": "rent"}
+            ),
+            evidence_source_id="test",
+        )
+
+        sampled = joint_model.sample(
+            MarketSamplingRequest(
+                rollout_count=2,
+                horizon_months=12,
+                seed=7,
+                required_level_series=frozenset(
+                    {
+                        SP500_SERIES_ID,
+                        INFLATION_SERIES_ID,
+                        home_value_series_id("san_francisco_ca"),
+                        rent_series_id("san_francisco_ca"),
+                        private_equity_series_id("openai"),
+                    }
+                ),
+                required_event_series=frozenset({private_equity_sale_event_id("openai")}),
+            )
+        )
+
+        assert sampled.level_matrix(SP500_SERIES_ID, rollout_count=2, horizon_months=12)[:, 0].tolist() == [
+            5500.0,
+            5500.0,
+        ]
+        assert sampled.level_matrix(home_value_series_id("san_francisco_ca"), rollout_count=2, horizon_months=12)[
+            :, 0
+        ].tolist() == [1_000_000.0, 1_000_000.0]
+        assert (
+            sampled.event_matrix(private_equity_sale_event_id("openai"), rollout_count=2, horizon_months=12).dtype
+            == np.bool_
+        )
+        assert sampled.metadata["scenario_generator_id"] == "vecm_joint_market_model"
 
 
 if __name__ == "__main__":

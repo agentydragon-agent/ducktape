@@ -14,12 +14,12 @@ from __future__ import annotations
 import numpy as np
 import pytest
 import pytest_bazel
+from augur.model.macro_market_bundle_provider import MacroMarketBundleProvider
 from numpy.testing import assert_allclose
 
 from augur.core.market_bundle import RequiredMarketKeys
 from augur.core.scenario_set import MarketRequest
 from augur.model.location_market_sources import LocationMarketSources
-from augur.model.macro_market_bundle_provider import MacroMarketBundleProvider
 from augur.model.markets.scenarios import HistoricalSeries, Scenarios
 
 _FACTOR_NAMES: tuple[str, ...] = ("sp500", "home", "vallejo_home", "rent", "inflation")

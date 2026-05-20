@@ -3,18 +3,10 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 package(default_visibility = ["//visibility:public"])
 
 py_library(
-    name = "frames",
-    srcs = ["frames.py"],
-    deps = [
-        "@pypi//polars",
-    ],
-)
-
-py_library(
     name = "state",
     srcs = ["state.py"],
     deps = [
-        ":frames",
+        "//augur:frames",
         "@pypi//polars",
     ],
 )
@@ -23,7 +15,7 @@ py_library(
     name = "events",
     srcs = ["events.py"],
     deps = [
-        ":frames",
+        "//augur:frames",
         "@pypi//polars",
     ],
 )
@@ -32,7 +24,7 @@ py_library(
     name = "market",
     srcs = ["market.py"],
     deps = [
-        ":frames",
+        "//augur:frames",
         "//augur/model:sim_market_py",
         "@pypi//polars",
     ],
@@ -133,10 +125,10 @@ py_library(
     srcs = ["liquidity.py"],
     deps = [
         ":events",
-        ":frames",
         ":market",
         ":scenario",
         ":state",
+        "//augur:frames",
         "@pypi//polars",
     ],
 )
@@ -169,7 +161,6 @@ py_library(
     srcs = ["step.py"],
     deps = [
         ":events",
-        ":frames",
         ":jurisdictions",
         ":liquidity",
         ":locations",
@@ -179,6 +170,7 @@ py_library(
         ":settlement",
         ":state",
         ":tax",
+        "//augur:frames",
         "@pypi//numpy",
         "@pypi//polars",
     ],
@@ -197,8 +189,8 @@ py_library(
     name = "projections",
     srcs = ["projections.py"],
     deps = [
-        ":frames",
         ":run",
+        "//augur:frames",
         "@pypi//polars",
     ],
 )

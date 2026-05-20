@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import numpy as np
-import polars as pl
 from pydantic import Field
 
 from augur.core.schemas import ApiModel
+from augur.frames import concat_frames
 from augur.model.sim_market_api import (
     MARKET_EVENTS_SCHEMA,
     MARKET_LEVELS_SCHEMA,
@@ -15,14 +15,16 @@ from augur.model.sim_market_api import (
     market_events_frame,
     market_levels_frame,
 )
-
-INFLATION_SERIES_ID = "inflation"
-SP500_SERIES_ID = "sp500"
-HOME_VALUE_SERIES_PREFIX = "home_value:"
-RENT_SERIES_PREFIX = "rent:"
-PRIVATE_EQUITY_SERIES_PREFIX = "private_equity:"
-CRYPTO_SERIES_PREFIX = "crypto:"
-PRIVATE_EQUITY_SALE_EVENT_PREFIX = "private_equity_sale_opportunity:"
+from augur.model.sim_market_series import (
+    CRYPTO_SERIES_PREFIX,
+    HOME_VALUE_SERIES_PREFIX,
+    INFLATION_SERIES_ID,
+    PRIVATE_EQUITY_SALE_EVENT_PREFIX,
+    PRIVATE_EQUITY_SERIES_PREFIX,
+    RENT_SERIES_PREFIX,
+    SP500_SERIES_ID,
+    series_suffix,
+)
 
 
 class SimpleLocationModelParams(ApiModel):
@@ -119,8 +121,8 @@ class SimpleJointMarketModel(ApiModel):
             for event_id in sorted(request.required_event_series)
         ]
         return SampledMarketBundle(
-            levels=pl.concat([MARKET_LEVELS_SCHEMA.to_frame(), *level_blocks]).select(MARKET_LEVELS_SCHEMA.names()),
-            events=pl.concat([MARKET_EVENTS_SCHEMA.to_frame(), *event_blocks]).select(MARKET_EVENTS_SCHEMA.names()),
+            levels=concat_frames(level_blocks, MARKET_LEVELS_SCHEMA),
+            events=concat_frames(event_blocks, MARKET_EVENTS_SCHEMA),
             metadata={
                 "market_model_id": "simple_joint_market_model",
                 "current_private_equity_price_usd": self.current_private_equity_price_usd,
@@ -141,57 +143,31 @@ class SimpleJointMarketModel(ApiModel):
             return inflation
         if series_id == SP500_SERIES_ID:
             return sp500
-        if location_id := _suffix(series_id, HOME_VALUE_SERIES_PREFIX):
+        if location_id := series_suffix(series_id, HOME_VALUE_SERIES_PREFIX):
             return _location_level_path(
                 home_base,
                 annual_adjustment_pct=self.parameters.location_params.get(
                     location_id, SimpleLocationModelParams()
                 ).home_value_annual_adjustment_pct,
             )
-        if location_id := _suffix(series_id, RENT_SERIES_PREFIX):
+        if location_id := series_suffix(series_id, RENT_SERIES_PREFIX):
             return _location_level_path(
                 rent_base,
                 annual_adjustment_pct=self.parameters.location_params.get(
                     location_id, SimpleLocationModelParams()
                 ).rent_annual_adjustment_pct,
             )
-        if _suffix(series_id, PRIVATE_EQUITY_SERIES_PREFIX) is not None:
+        if series_suffix(series_id, PRIVATE_EQUITY_SERIES_PREFIX) is not None:
             base_price = self.current_private_equity_price_usd or 1.0
             return base_price * private_equity_value
-        if _suffix(series_id, CRYPTO_SERIES_PREFIX) is not None:
+        if series_suffix(series_id, CRYPTO_SERIES_PREFIX) is not None:
             return np.ones_like(inflation)
         raise ValueError(f"simple market model cannot sample level series {series_id!r}")
 
     def _sample_event_series(self, event_id: str, *, private_equity_events: np.ndarray) -> np.ndarray:
-        if _suffix(event_id, PRIVATE_EQUITY_SALE_EVENT_PREFIX) is not None:
+        if series_suffix(event_id, PRIVATE_EQUITY_SALE_EVENT_PREFIX) is not None:
             return private_equity_events
         raise ValueError(f"simple market model cannot sample event series {event_id!r}")
-
-
-def home_value_series_id(location_id: str) -> str:
-    return f"{HOME_VALUE_SERIES_PREFIX}{location_id}"
-
-
-def rent_series_id(location_id: str) -> str:
-    return f"{RENT_SERIES_PREFIX}{location_id}"
-
-
-def private_equity_series_id(issuer_id: str) -> str:
-    return f"{PRIVATE_EQUITY_SERIES_PREFIX}{issuer_id}"
-
-
-def crypto_series_id(symbol: str) -> str:
-    return f"{CRYPTO_SERIES_PREFIX}{symbol}"
-
-
-def private_equity_sale_event_id(issuer_id: str) -> str:
-    return f"{PRIVATE_EQUITY_SALE_EVENT_PREFIX}{issuer_id}"
-
-
-def _suffix(value: str, prefix: str) -> str | None:
-    if not value.startswith(prefix):
-        return None
-    return value[len(prefix) :]
 
 
 def _lognormal_level_paths(

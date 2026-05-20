@@ -6,8 +6,8 @@ import math
 
 import numpy as np
 import pytest_bazel
-
 from augur.model.markets.models.wilkie import WilkieCascade
+
 from augur.model.markets.scenarios import HistoricalSeries, historical_log_returns
 
 

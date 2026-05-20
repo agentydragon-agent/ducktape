@@ -32,6 +32,11 @@ py_library(
 )
 
 py_library(
+    name = "sim_market_series_py",
+    srcs = ["sim_market_series.py"],
+)
+
+py_library(
     name = "sim_market_deterministic_py",
     srcs = ["sim_market_deterministic.py"],
     deps = [
@@ -56,7 +61,7 @@ py_library(
         ":sim_market_api_py",
         ":sim_market_deterministic_py",
         ":sim_market_gbm_py",
-        "@pypi//polars",
+        "//augur:frames",
         "@pypi//pydantic",
     ],
 )
@@ -66,9 +71,10 @@ py_library(
     srcs = ["simple_market.py"],
     deps = [
         ":sim_market_api_py",
+        ":sim_market_series_py",
+        "//augur:frames",
         "//augur/core:schemas_py",
         "@pypi//numpy",
-        "@pypi//polars",
         "@pypi//pydantic",
     ],
 )
@@ -78,7 +84,7 @@ py_library(
     srcs = ["core_market_adapter.py"],
     deps = [
         ":sim_market_api_py",
-        ":simple_market_py",
+        ":sim_market_series_py",
         "//augur/core:market_bundle_py",
         "//augur/core:scenario_set_py",
         "@pypi//numpy",
@@ -97,27 +103,15 @@ py_library(
     ],
 )
 
-py_library(
-    name = "macro_market_bundle_provider_py",
-    srcs = ["macro_market_bundle_provider.py"],
-    deps = [
-        ":location_market_sources_py",
-        "//augur/core:market_bundle_py",
-        "//augur/core:provenance_py",
-        "//augur/core:scenario_set_py",
-        "//augur/model/markets:market_model_py",
-        "@pypi//numpy",
-    ],
-)
-
 py_binary(
     name = "metrics_report",
     srcs = ["metrics_report.py"],
     data = ["//augur/model/config:market_config_files"],
     deps = [
         "//augur/model/markets:data_py",
+        "//augur/model/markets:market_model_py",
         "//augur/model/markets:metrics_py",
-        "//augur/model/markets:registry_py",
+        "//augur/model/markets/models:vecm_py",
     ],
 )
 
@@ -129,11 +123,7 @@ py_library(
         ":simple_market_py",
         "//augur/core:market_bundle_py",
         "//augur/core:schemas_py",
-        "//augur/model/markets/models:bootstrap_py",
-        "//augur/model/markets/models:dcc_garch_py",
-        "//augur/model/markets/models:var_py",
         "//augur/model/markets/models:vecm_py",
-        "//augur/model/markets/models:wilkie_py",
         "@pypi//pydantic",
     ],
 )
@@ -146,12 +136,7 @@ py_library(
         ":market_config_py",
         ":market_provider_config_py",
         "//augur/model/markets:data_py",
-        "//augur/model/markets:registry_py",
-        "//augur/model/markets/models:bootstrap_py",
-        "//augur/model/markets/models:dcc_garch_py",
-        "//augur/model/markets/models:var_py",
         "//augur/model/markets/models:vecm_py",
-        "//augur/model/markets/models:wilkie_py",
         "@pypi//pyyaml",
     ],
 )
@@ -192,21 +177,6 @@ py_test(
 )
 
 py_test(
-    name = "macro_market_bundle_provider_test",
-    srcs = ["macro_market_bundle_provider_test.py"],
-    deps = [
-        ":location_market_sources_py",
-        ":macro_market_bundle_provider_py",
-        "//augur/core:market_bundle_py",
-        "//augur/core:scenario_set_py",
-        "//augur/model/markets:scenarios_py",
-        "@pypi//numpy",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "sim_market_test",
     srcs = ["sim_market_test.py"],
     deps = [
@@ -214,6 +184,7 @@ py_test(
         ":sim_market_deterministic_py",
         ":sim_market_gbm_py",
         ":sim_market_py",
+        ":sim_market_series_py",
         "@pypi//polars",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -227,6 +198,7 @@ py_test(
         ":core_market_adapter_py",
         ":market_provider_config_py",
         ":sim_market_api_py",
+        ":sim_market_series_py",
         ":simple_market_py",
         "//augur/core:market_bundle_py",
         "//augur/core:scenario_set_py",

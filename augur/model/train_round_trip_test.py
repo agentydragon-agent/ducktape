@@ -1,7 +1,6 @@
-"""Round-trip test: train each macro model offline, write the provider config +
+"""Round-trip test: train the active VECM model offline, write the provider config +
 blob, re-load via Pydantic + `<Model>MarketProviderConfig.realize(...)`, and
-sample. Covers every macro model that's been migrated to the trained-asset
-flow — the parameterised label drives the trainer.
+sample.
 
 This is the public contract the augur server consumes at startup: read
 `AugurConfig.market_provider`, dispatch via the discriminated union, and
@@ -30,9 +29,7 @@ _ADAPTER: TypeAdapter[MarketProviderConfig] = TypeAdapter(MarketProviderConfig)
 _MARKET_CONFIG_RUNFILE = "_main/augur/model/config/market_config.example.json"
 
 
-@pytest.mark.parametrize(
-    "model_label", ["vecm", "var1_gaussian", "wilkie_cascade", "dcc_gjr_garch", "stationary_bootstrap"]
-)
+@pytest.mark.parametrize("model_label", ["vecm"])
 def test_train_then_load_and_sample(model_label: str, tmp_path: Path) -> None:
     out_manifest = tmp_path / "market_provider.yaml"
     out_blob = tmp_path / f"trained_{model_label}.npz"
@@ -54,9 +51,8 @@ def test_train_then_load_and_sample(model_label: str, tmp_path: Path) -> None:
     assert out_blob.exists()
 
     parsed = _ADAPTER.validate_python(yaml.safe_load(out_manifest.read_text(encoding="utf-8")))
-    # Trainer only emits the four macro configs (vecm / var1_gaussian / wilkie_cascade /
-    # dcc_gjr_garch / stationary_bootstrap); narrow to those so the per-macro fields
-    # are accessible without `match`/`isinstance` ladders.
+    # Trainer only emits the active trained provider config; narrow away fixture
+    # providers so the trained-provider fields are accessible below.
     assert not isinstance(parsed, (NoopMarketProviderConfig, SimpleMarketProviderConfig))
     assert parsed.type == model_label
     assert parsed.trained_blob == out_blob
