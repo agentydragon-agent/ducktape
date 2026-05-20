@@ -155,7 +155,7 @@ class AugurConfig(ApiModel):
         description=(
             "Deployment's market-bundle provider choice (discriminated by `type`: simple / vecm). "
             "Carries per-provider knobs and trained-asset paths; the server materializes this into a "
-            "`MarketBundleProvider` at startup via `MarketProviderConfig.realize(...)`."
+            "sim-native `JointMarketModel` at startup, then wraps it for the legacy core backend."
         )
     )
 

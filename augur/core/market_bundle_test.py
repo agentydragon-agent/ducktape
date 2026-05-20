@@ -13,12 +13,18 @@ from augur.core.market_bundle import (
     RequiredMarketKeys,
 )
 from augur.core.scenario_set import MarketRequest
-from augur.model.market_provider_config import SimpleMarketProviderConfig
+from augur.model.market_provider_config import (
+    SimpleMarketProviderConfig,
+    realize_core_market_provider,
+    realize_market_model,
+)
 
 
 @pytest.fixture
 def simple_provider() -> MarketBundleProvider:
-    return SimpleMarketProviderConfig().realize(current_private_equity_price_usd=0.0)
+    config = SimpleMarketProviderConfig()
+    market_model = realize_market_model(config, current_private_equity_price_usd=0.0)
+    return realize_core_market_provider(config, model=market_model, current_private_equity_price_usd=0.0)
 
 
 def test_simple_market_bundle_shapes_and_reproducibility(simple_provider: MarketBundleProvider) -> None:

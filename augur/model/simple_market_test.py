@@ -93,9 +93,11 @@ def test_core_adapter_normalizes_sim_levels_to_legacy_multipliers() -> None:
 
 
 def test_simple_provider_config_realizes_sim_native_model_behind_core_adapter() -> None:
-    provider = SimpleMarketProviderConfig(
+    config = SimpleMarketProviderConfig(
         location_params={"san_francisco_ca": SimpleLocationModelParams(rent_annual_adjustment_pct=2.0)}
-    ).realize(current_private_equity_price_usd=50.0)
+    )
+    model = config.realize_model(current_private_equity_price_usd=50.0)
+    provider = config.realize_core_provider(model=model, current_private_equity_price_usd=50.0)
 
     bundle = provider.sample_market_bundle(
         rollout_count=1,
@@ -107,6 +109,7 @@ def test_simple_provider_config_realizes_sim_native_model_behind_core_adapter() 
 
     assert bundle.metadata.scenario_generator_id == "sim_market_bundle_provider_shim"
     assert np.allclose(bundle.rent_multipliers("san_francisco_ca")[:, 0], 1.0)
+    assert isinstance(model, SimpleMarketModel)
 
 
 if __name__ == "__main__":

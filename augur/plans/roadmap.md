@@ -401,9 +401,9 @@ Work:
    native sampled-bundle API, keep deterministic flat paths as test-only sim
    fixtures, and leave unported exploratory models quarantined under
    `augur/model/x/`.
-3. Add a shadow/parity route that runs the legacy core path and the sim path
-   from the same model-owned sampled bundle where possible. Use this to compare
-   overlapping outputs before changing the default frontend/API route.
+3. Add an internal parity harness that runs the legacy core path and the sim
+   path from the same model-owned sampled bundle where possible. Use this to
+   compare overlapping outputs before changing the default frontend/API path.
 4. Continue core model cleanup only where it reduces switchover risk:
    account-aware obligations/funding, failure/default semantics, and
    ledger/accounting detail as the source of truth for monthly report arrays.
@@ -424,8 +424,8 @@ Work:
 
 - **Backend switchover to `model -> sim -> api`** — the next integration
   lane. Close the checklist in `augur/sim/TODO.md`: sim scenario translator,
-  required-market-series discovery, sim-native runtime providers, shadow
-  parity route, projection/read-model serialization, browser smoke coverage,
+  required-market-series discovery, sim-native runtime providers, internal
+  parity harness, projection/read-model serialization, browser smoke coverage,
   then make the sim path default.
 - **Priority 3 — sampled PE / sampled tender timing / sampled crypto +
   sampled mortgage rate** (open design work; see the priority section

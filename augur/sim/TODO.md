@@ -53,8 +53,8 @@ response semantics after cutover.
       an `AugurConfig`/catalog-to-sim scenario builder that remains
       compatible with `gaffer-private` deployment YAML.
 - [ ] Replace the current all-or-nothing backend switch with a staged
-      rollout: shadow endpoint, parity fixtures against overlapping legacy
-      outputs, browser smoke coverage, then frontend cutover.
+      rollout: internal parity harness against overlapping legacy outputs,
+      browser smoke coverage, then frontend cutover.
 - [ ] After cutover, keep the core adapter only for explicit legacy fixtures or
       remove it once no API, browser, or private deployment path depends on
       core-shaped market bundles.
@@ -64,8 +64,8 @@ response semantics after cutover.
 - [ ] Add API serialization, compact scenario metadata, and a frontend
       adapter over `ProjectionRun`. Prefer a clean `model -> sim -> api`
       contract over matching legacy `ScenarioRunArrays` names.
-- [ ] Add a backend shadow-run/parity harness that can run the current
-      `ScenarioSet` through both paths. Feed both paths from the same
+- [ ] Add a backend parity harness that can run the current `ScenarioSet`
+      through both paths. Feed both paths from the same
       model-owned sampled bundle wherever possible, so parity failures isolate
       simulator behavior rather than differences in market draws.
 - [ ] Preserve legacy scalar-seed behavior only at the API compatibility edge.

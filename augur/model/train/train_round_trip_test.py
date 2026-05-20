@@ -1,6 +1,6 @@
 """Round-trip test: train the active VECM model offline, write the provider config +
-blob, re-load via Pydantic + `<Model>MarketProviderConfig.realize(...)`, and
-sample.
+blob, re-load via Pydantic + `<Model>MarketProviderConfig.realize_model(...)`,
+and sample.
 
 This is the public contract the augur server consumes at startup: read
 `AugurConfig.market_provider`, dispatch via the discriminated union, and
@@ -54,7 +54,8 @@ def test_train_then_load_and_sample(model_label: str, tmp_path: Path) -> None:
     assert parsed.trained_blob == out_blob
     assert parsed.latest_observations  # non-empty; exact keys depend on the source-data schema
 
-    provider = parsed.realize(current_private_equity_price_usd=100.0)
+    model = parsed.realize_model(current_private_equity_price_usd=100.0)
+    provider = parsed.realize_core_provider(model=model, current_private_equity_price_usd=100.0)
     locations = frozenset(parsed.location_market_sources.home_value)
     bundle = provider.sample_market_bundle(
         rollout_count=2,

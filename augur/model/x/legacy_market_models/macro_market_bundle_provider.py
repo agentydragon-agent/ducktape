@@ -48,7 +48,7 @@ _KNOWN_LIMITATION_IDS = (
 class MacroMarketBundleProvider:
     """A bundle provider backed by a pre-loaded macro market model.
 
-    Constructed by each `MarketProviderConfig` subclass's `realize(...)` —
+    Historically constructed by each `MarketProviderConfig` subclass's `realize(...)` —
     the config carries the trained-state blob path, the deployment-side
     market-state snapshot (`latest_observations`, current mortgage rate),
     and the per-location factor mapping; `realize` loads the model and

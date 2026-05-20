@@ -3,7 +3,8 @@ embedded in `AugurConfig.market_provider`.
 
 A deployment supplies one of these per-type configs in its `config.yaml`. The
 augur server reads `augur_config.market_provider` at startup and calls
-`.realize(...)` to build the runtime `MarketBundleProvider`.
+`.realize_model(...)` to build the sim-native runtime market model. The
+legacy core backend adapts that model through `CoreMarketBundleProviderShim`.
 
 ```yaml
 market_provider:
@@ -26,8 +27,8 @@ market_provider:
 ```
 
 Each per-type config lives next to the model/provider it instantiates and
-exposes its own `.realize(...)` method. This module is just the discriminated
-union that ties them together for Pydantic's type dispatcher.
+exposes its own `.realize_model(...)` method. This module is just the
+discriminated union that ties them together for Pydantic's type dispatcher.
 """
 
 from __future__ import annotations
@@ -40,6 +41,7 @@ from augur.core.market_bundle import MarketBundleProvider
 from augur.core.schemas import ApiModel
 from augur.model.core_market_adapter import CoreMarketBundleProviderShim
 from augur.model.markets.models.vecm import VecmMarketProviderConfig
+from augur.model.sim_market_api import JointMarketModel
 from augur.model.simple_market import SimpleLocationModelParams, SimpleMarketModel, SimpleMarketModelConfig
 
 
@@ -55,14 +57,28 @@ class SimpleMarketProviderConfig(ApiModel):
     type: Literal["simple"] = "simple"
     location_params: dict[str, SimpleLocationModelParams] = Field(default_factory=dict)
 
-    def realize(self, *, current_private_equity_price_usd: float) -> MarketBundleProvider:
-        return CoreMarketBundleProviderShim(
-            model=SimpleMarketModel(
-                current_private_equity_price_usd=current_private_equity_price_usd,
-                parameters=SimpleMarketModelConfig(location_params=self.location_params),
-            ),
+    def realize_model(self, *, current_private_equity_price_usd: float) -> JointMarketModel:
+        return SimpleMarketModel(
             current_private_equity_price_usd=current_private_equity_price_usd,
+            parameters=SimpleMarketModelConfig(location_params=self.location_params),
+        )
+
+    def realize_core_provider(
+        self, *, model: JointMarketModel, current_private_equity_price_usd: float
+    ) -> MarketBundleProvider:
+        return CoreMarketBundleProviderShim(
+            model=model, current_private_equity_price_usd=current_private_equity_price_usd
         )
 
 
 MarketProviderConfig = Annotated[SimpleMarketProviderConfig | VecmMarketProviderConfig, Field(discriminator="type")]
+
+
+def realize_market_model(config: MarketProviderConfig, *, current_private_equity_price_usd: float) -> JointMarketModel:
+    return config.realize_model(current_private_equity_price_usd=current_private_equity_price_usd)
+
+
+def realize_core_market_provider(
+    config: MarketProviderConfig, *, model: JointMarketModel, current_private_equity_price_usd: float
+) -> MarketBundleProvider:
+    return config.realize_core_provider(model=model, current_private_equity_price_usd=current_private_equity_price_usd)

@@ -39,6 +39,7 @@ from augur.model.markets.scenarios import HistoricalSeries, Scenarios
 from augur.model.sim_market_api import (
     MARKET_EVENTS_SCHEMA,
     MARKET_LEVELS_SCHEMA,
+    JointMarketModel,
     MarketSamplingRequest,
     SampledMarketBundle,
     market_events_frame,
@@ -499,16 +500,21 @@ class VecmMarketProviderConfig(ApiModel):
     current_mortgage30_rate_pct: float
     location_market_sources: LocationMarketSourcesConfig
 
-    def realize(self, *, current_private_equity_price_usd: float) -> MarketBundleProvider:
+    def realize_model(self, *, current_private_equity_price_usd: float) -> VecmJointMarketModel:
         model = VecmModel.load(self)
+        return VecmJointMarketModel.from_loaded_model(
+            model,
+            latest_observations=self.latest_observations,
+            current_private_equity_price_usd=current_private_equity_price_usd,
+            location_market_sources=LocationMarketSources.from_config(self.location_market_sources),
+            evidence_source_id=str(self.trained_blob),
+        )
+
+    def realize_core_provider(
+        self, *, model: JointMarketModel, current_private_equity_price_usd: float
+    ) -> MarketBundleProvider:
         return CoreMarketBundleProviderShim(
-            model=VecmJointMarketModel.from_loaded_model(
-                model,
-                latest_observations=self.latest_observations,
-                current_private_equity_price_usd=current_private_equity_price_usd,
-                location_market_sources=LocationMarketSources.from_config(self.location_market_sources),
-                evidence_source_id=str(self.trained_blob),
-            ),
+            model=model,
             current_private_equity_price_usd=current_private_equity_price_usd,
             mortgage_30y_rate_pct=self.current_mortgage30_rate_pct,
         )

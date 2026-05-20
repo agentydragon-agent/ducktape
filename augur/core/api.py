@@ -58,7 +58,11 @@ from augur.core.scenario_set import (
     ScenarioSetRunResponse,
 )
 from augur.core.scenario_tax_defaults import scenario_with_location_tax_defaults
-from augur.model.market_provider_config import SimpleMarketProviderConfig
+from augur.model.market_provider_config import (
+    SimpleMarketProviderConfig,
+    realize_core_market_provider,
+    realize_market_model,
+)
 
 EffectT = TypeVar("EffectT")
 AccountingDetailT = TypeVar("AccountingDetailT")
@@ -427,7 +431,9 @@ class ScenarioSetRun:
 
 
 def _default_market_provider() -> MarketBundleProvider:
-    return SimpleMarketProviderConfig().realize(current_private_equity_price_usd=0.0)
+    config = SimpleMarketProviderConfig()
+    market_model = realize_market_model(config, current_private_equity_price_usd=0.0)
+    return realize_core_market_provider(config, model=market_model, current_private_equity_price_usd=0.0)
 
 
 @dataclass(frozen=True)
