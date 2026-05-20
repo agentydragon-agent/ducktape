@@ -16,8 +16,6 @@ from augur.api.config import AugurConfig, LocationConfig, PropertyAssetConfig
 from augur.core.bootstrap import (
     AgentOption,
     BootstrapResponse,
-    LiquidReservePolicyId,
-    LiquidReservePolicyOption,
     Location,
     OwnerResidenceModeId,
     OwnerResidenceModeOption,
@@ -56,20 +54,6 @@ DEFAULT_KNOBS = ScenarioKnobs(
     financing_mode="fixed_30",
     occupancy_type="investment",
 )
-
-
-LIQUID_RESERVE_POLICY_OPTIONS = [
-    LiquidReservePolicyOption(
-        id=LiquidReservePolicyId.NONE,
-        label="No automatic sales",
-        description="Property cash flows do not trigger portfolio sales in the shared projection.",
-    ),
-    LiquidReservePolicyOption(
-        id=LiquidReservePolicyId.CHECKING_FLOOR_SP500,
-        label="Sell SP500 at checking floor",
-        description="When checking falls below the floor, sell the configured amount from brokerage.",
-    ),
-]
 
 
 def _location_from_config(config: LocationConfig) -> Location:
@@ -224,7 +208,6 @@ def build_bootstrap_payload(config: AugurConfig) -> BootstrapResponse:
         default_owner_residence_mode=OwnerResidenceModeId.SELECTED_PROPERTY,
         default_owner_residence_property_id=properties[0].id,
         default_rental_use_policy=RentalUsePolicyId.NOT_RENTED,
-        default_liquid_reserve_policy=LiquidReservePolicyId.NONE,
         default_initial_checking_usd=config.snapshot.cash_usd,
         default_checking_floor_usd=10_000,
         default_checking_sale_amount_usd=20_000,
@@ -233,7 +216,6 @@ def build_bootstrap_payload(config: AugurConfig) -> BootstrapResponse:
         default_scenarios=list(config.bootstrap_default_scenarios),
         owner_residence_mode_options=_owner_residence_mode_options(primary),
         rental_use_policy_options=_rental_use_policy_options(primary),
-        liquid_reserve_policy_options=LIQUID_RESERVE_POLICY_OPTIONS,
         agents=[AgentOption(actor_id=agent.actor_id, label=agent.label, role=agent.role) for agent in config.agents],
         finance_snapshot=config.snapshot,
     )

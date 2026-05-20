@@ -23,10 +23,6 @@ primary simulation backend for the Augur frontend/API.
       introspection so model providers know which public markets, private
       equity paths, locations, currencies, and other exogenous series must
       be sampled.
-- [ ] Replace frontend/backend assumptions around legacy reserve-sale
-      policy fields with the sim liquidity-policy shape. Unsupported
-      legacy fields should be hidden or migrated before the sim path is
-      made primary.
 - [ ] Replace bespoke partner-equity contribution handling with the generic
       property-stake model once property stakes are covered by sim tests.
 - [ ] Replace ad hoc catalog/default expansion in the legacy backend with

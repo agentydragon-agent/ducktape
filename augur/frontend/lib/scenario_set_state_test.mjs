@@ -22,7 +22,6 @@ const bootstrap = {
   defaultPropertyId: "location_a_property",
   defaultOwnerResidenceMode: "selected_property",
   defaultRentalUsePolicy: "not_rented",
-  defaultLiquidReservePolicy: "none",
   defaultInitialCheckingUsd: 25_000,
   defaultCheckingFloorUsd: 10_000,
   defaultCheckingSaleAmountUsd: 20_000,
@@ -77,10 +76,6 @@ const bootstrap = {
     { id: "not_rented", label: "Not rented" },
     { id: "rent_rooms_while_owner_lives_there", label: "Rent rooms" },
     { id: "rent_whole_property", label: "Rent whole property" },
-  ],
-  liquidReservePolicyOptions: [
-    { id: "none", label: "None" },
-    { id: "checking_floor_sp500", label: "Sell SP500" },
   ],
   locations: [
     {
@@ -146,7 +141,6 @@ test("default input creates comparable generic location scenarios", () => {
   assert.equal(firstScenario.initialBalanceSheet.startingPortfolioUsd, 100_000);
   assert.equal(firstScenario.initialBalanceSheet.privateEquityUnits, 500);
   assert.equal(firstScenario.policies.checkingFloorUsd, 0);
-  assert.equal(firstScenario.policies.liquidReservePolicy, undefined);
   assert.equal(firstScenario.policies.privateEquitySalePolicy, "none");
   assert.equal(secondScenario.propertyAndLocation.propertyId, "location_b_property");
   assert.equal(input.marketRequest.seed, 0);
@@ -316,34 +310,6 @@ test("backend request mapper output is covered by generated schema", () => {
   assert.deepEqual(strippedKeys(backendRequest, zScenarioSetInput.parse(backendRequest)), []);
 });
 
-test("legacy reserve-policy selector migrates to numeric checking buffer", () => {
-  const legacyDisabled = createDefaultScenarioSetInput(bootstrap);
-  legacyDisabled.scenarios[0] = patchScenarioInputSection(legacyDisabled.scenarios[0], "policies", {
-    liquidReservePolicy: "none",
-    checkingFloorUsd: 10_000,
-  });
-
-  const normalizedDisabled = normalizeScenarioSetInput(legacyDisabled, bootstrap);
-  const disabledRequest = decamelizeObjectKeys(scenarioSetInputToRequest(normalizedDisabled, bootstrap));
-
-  assert.equal(normalizedDisabled.scenarios[0].policies.checkingFloorUsd, 0);
-  assert.equal(normalizedDisabled.scenarios[0].policies.liquidReservePolicy, undefined);
-  assert.deepEqual(disabledRequest.scenarios[0].policies, []);
-
-  const legacyEnabled = createDefaultScenarioSetInput(bootstrap);
-  legacyEnabled.scenarios[0] = patchScenarioInputSection(legacyEnabled.scenarios[0], "policies", {
-    liquidReservePolicy: "checking_floor_sp500",
-    checkingFloorUsd: 10_000,
-  });
-
-  const normalizedEnabled = normalizeScenarioSetInput(legacyEnabled, bootstrap);
-  const enabledRequest = decamelizeObjectKeys(scenarioSetInputToRequest(normalizedEnabled, bootstrap));
-
-  assert.equal(normalizedEnabled.scenarios[0].policies.checkingFloorUsd, 10_000);
-  assert.equal(normalizedEnabled.scenarios[0].policies.liquidReservePolicy, undefined);
-  assert.equal(enabledRequest.scenarios[0].policies[0].policy_type, "checking_floor_sell_public_stock");
-});
-
 test("request normalization only sends current report fields", () => {
   const input = createDefaultScenarioSetInput(bootstrap);
   input.reportSpec.includeMonthlyColumns = false;
@@ -371,6 +337,16 @@ test("URL state round-trips only input state", () => {
   assert.equal(decoded.scenarios[0].propertyAndLocation.propertyId, "location_a_property");
   assert.equal(decoded.scenarios[0].financing.customMortgageRate, undefined);
   assert.equal(decoded.scenarios[0].financing.customMortgageTermYears, undefined);
+});
+
+test("URL state rejects the previous reserve-policy state version", () => {
+  const payload = {
+    version: 5,
+    scenario_set_input: decamelizeObjectKeys(createDefaultScenarioSetInput(bootstrap)),
+  };
+  const encoded = Buffer.from(JSON.stringify(payload)).toString("base64url");
+
+  assert.throws(() => decodeScenarioSetUrlState(encoded), /Unsupported augur scenario URL state version: 5/);
 });
 
 test("URL state round-trips rich scenario controls in camelCase", () => {

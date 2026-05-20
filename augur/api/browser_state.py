@@ -27,7 +27,7 @@ from enum import StrEnum
 
 from pydantic import ConfigDict
 
-from augur.core.bootstrap import LiquidReservePolicyId, OwnerResidenceModeId, RentalUsePolicyId
+from augur.core.bootstrap import OwnerResidenceModeId, RentalUsePolicyId
 from augur.core.scenario_set import FinancingMode, MarketRequest, ReportSpec
 from augur.core.schemas import ApiModel
 
@@ -99,7 +99,6 @@ class PrivateEquitySalePolicyId(StrEnum):
 
 
 class BrowserPolicies(ApiModel):
-    liquid_reserve_policy: LiquidReservePolicyId
     checking_floor_usd: float
     checking_sale_amount_usd: float
     private_equity_sale_policy: PrivateEquitySalePolicyId
@@ -192,7 +191,6 @@ class BrowserInitialBalanceSheetOverrides(_Overrides):
 
 
 class BrowserPoliciesOverrides(_Overrides):
-    liquid_reserve_policy: LiquidReservePolicyId | None = None
     checking_floor_usd: float | None = None
     checking_sale_amount_usd: float | None = None
     private_equity_sale_policy: PrivateEquitySalePolicyId | None = None

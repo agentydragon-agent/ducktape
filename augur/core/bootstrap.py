@@ -22,11 +22,6 @@ class RentalUsePolicyId(StrEnum):
     RENT_WHOLE_PROPERTY = "rent_whole_property"
 
 
-class LiquidReservePolicyId(StrEnum):
-    NONE = "none"
-    CHECKING_FLOOR_SP500 = "checking_floor_sp500"
-
-
 class Option(ApiModel):
     id: str
     label: str
@@ -39,10 +34,6 @@ class OwnerResidenceModeOption(Option):
 
 class RentalUsePolicyOption(Option):
     id: RentalUsePolicyId
-
-
-class LiquidReservePolicyOption(Option):
-    id: LiquidReservePolicyId
 
 
 class AgentOption(ApiModel):
@@ -96,7 +87,6 @@ class BootstrapResponse(ApiModel):
     default_owner_residence_mode: OwnerResidenceModeId
     default_owner_residence_property_id: str | None = None
     default_rental_use_policy: RentalUsePolicyId
-    default_liquid_reserve_policy: LiquidReservePolicyId
     default_initial_checking_usd: float
     default_checking_floor_usd: float
     default_checking_sale_amount_usd: float
@@ -105,6 +95,5 @@ class BootstrapResponse(ApiModel):
     default_scenarios: list[DefaultScenario]
     owner_residence_mode_options: list[OwnerResidenceModeOption]
     rental_use_policy_options: list[RentalUsePolicyOption]
-    liquid_reserve_policy_options: list[LiquidReservePolicyOption]
     agents: list[AgentOption]
     finance_snapshot: FinanceSnapshot
