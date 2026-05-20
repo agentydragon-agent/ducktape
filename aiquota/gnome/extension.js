@@ -38,6 +38,14 @@ function errorMessage(error) {
   return error?.message ?? String(error);
 }
 
+function aiQuotaBinPath(extensionPath) {
+  const override = GLib.getenv("AI_QUOTA_BIN");
+  if (override) return override;
+  const sibling = `${extensionPath}/aiquota`;
+  if (GLib.file_test(sibling, GLib.FileTest.IS_EXECUTABLE)) return sibling;
+  return "aiquota";
+}
+
 function formatDuration(seconds) {
   if (seconds == null || !Number.isFinite(seconds)) return "?";
   const s = Math.max(0, Math.round(seconds));
@@ -209,6 +217,7 @@ const QuotaIndicator = GObject.registerClass(
       super._init(0.0, "AI Quota Tracker", false);
 
       this._iconsDir = `${extension.path}/icons`;
+      this._binPath = aiQuotaBinPath(extension.path);
       this._popupTickId = null;
 
       const fixturePath = GLib.getenv("AI_QUOTA_FIXTURE");
@@ -646,19 +655,24 @@ const QuotaIndicator = GObject.registerClass(
     }
 
     _refresh() {
-      const binPath = GLib.getenv("AI_QUOTA_BIN") || "aiquota";
       try {
-        const [ok, stdout, stderr, exitStatus] = GLib.spawn_command_line_sync(`${binPath} gnome-extension-json`);
+        const [ok, stdout, stderr, exitStatus] = GLib.spawn_sync(
+          null,
+          [this._binPath, "gnome-extension-json"],
+          null,
+          GLib.SpawnFlags.SEARCH_PATH,
+          null
+        );
         if (!ok || exitStatus !== 0) {
           const stderrText = stderr ? decodeBytes(stderr) : "";
-          console.warn(`[aiquota] ${binPath} exited ${exitStatus}: ${stderrText}`);
+          console.warn(`[aiquota] ${this._binPath} exited ${exitStatus}: ${stderrText}`);
           for (const p of this._providers) p.state.error = `aiquota exited ${exitStatus}`;
         } else {
           const data = JSON.parse(decodeBytes(stdout));
           this._loadSubprocessData(data);
         }
       } catch (e) {
-        console.error(`[aiquota] spawn ${binPath} threw: ${errorMessage(e)}`);
+        console.error(`[aiquota] spawn ${this._binPath} threw: ${errorMessage(e)}`);
         for (const p of this._providers) p.state.error = errorMessage(e);
       }
       this._renderPanel();

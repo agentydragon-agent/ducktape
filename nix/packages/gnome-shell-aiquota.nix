@@ -27,6 +27,7 @@ pkgs.python3Packages.buildPythonApplication {
     extDir="$out/share/gnome-shell/extensions/$uuid"
     mkdir -p "$extDir"
     unzip -o ${extensionZip} -d "$extDir"
+    ln -s ../../../../bin/aiquota "$extDir/aiquota"
   '';
 
   passthru.extensionUuid = "aiquota@allegedly.works";
