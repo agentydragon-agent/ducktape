@@ -38,10 +38,6 @@ response semantics after cutover.
       `augur/model` and consumed by `augur/sim`. The production `simple`
       provider config now samples a sim-native joint model and adapts it to
       the legacy core bundle; the backend still executes through core.
-- [ ] Make `noop` and any other runtime-selectable provider produce the same
-      `SampledMarketBundle` levels/events shape directly. The core bundle
-      adapter should be a legacy compatibility shim, not a requirement for a
-      provider to participate in production.
 - [ ] Replace core-side required-market-key discovery with sim scenario
       introspection so model providers know which public markets, private
       equity paths, locations, currencies, and other exogenous series must
@@ -99,9 +95,8 @@ response semantics after cutover.
       `augur/model/x/legacy_market_models/` for later porting or deletion.
 - [ ] Align every market-provider/model implementation with the
       `augur/sim` consumption API. Simple and VECM now implement the
-      `JointMarketModel` contract and are shimmed for core; `noop` still needs
-      to produce or adapt to the sampled levels/events bundle before the
-      backend switches away from core.
+      `JointMarketModel` contract and are shimmed for core. Deterministic flat
+      paths live as test-only sim fixtures rather than runtime providers.
 - [ ] Treat `augur/model/x/legacy_market_models/` as non-runtime code. Port
       only models selected by production or used as representative joint-model
       coverage; delete or keep the rest quarantined until a fresh design pass.

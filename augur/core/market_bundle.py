@@ -61,8 +61,8 @@ class MarketBundleMetadata(ApiModel):
         description=(
             "Per-unit USD mark for private equity at month 0. Used by the simulator to "
             "resolve `PrivateEquityPosition.value_usd` from `units` when the position omits "
-            "an explicit mark. Providers that drive PE valuation must set this; the flat/"
-            "noop fixtures use 0.0 and require positions to supply `value_usd` directly."
+            "an explicit mark. Providers that drive PE valuation must set this; deterministic "
+            "fixtures use 0.0 and require positions to supply `value_usd` directly."
         ),
     )
     source_metadata: dict[str, Any] = Field(default_factory=dict)
@@ -430,63 +430,3 @@ def sample_market_bundle_for_request(
         market_request=market_request,
         required_keys=required_keys,
     )
-
-
-@dataclass(frozen=True)
-class FlatMarketBundleProvider:
-    """Deterministic flat market provider for fixture-backed app/e2e runs."""
-
-    mortgage_30y_rate_pct: float = 6.5
-    private_equity_sale_opportunity_months: tuple[int, ...] = (12,)
-    current_private_equity_price_usd: float = 0.0
-
-    def sample_market_bundle(
-        self,
-        *,
-        rollout_count: int,
-        horizon_months: int,
-        seed: int,
-        market_request: MarketRequest,
-        required_keys: RequiredMarketKeys,
-    ) -> MarketBundle:
-        shape = (rollout_count, horizon_months + 1)
-        flat = np.ones(shape, dtype="float64")
-        mortgage_rate = np.full(shape, self.mortgage_30y_rate_pct, dtype="float64")
-        private_equity_events = np.zeros(shape, dtype=np.bool_)
-        for month in self.private_equity_sale_opportunity_months:
-            if 0 <= month <= horizon_months:
-                private_equity_events[:, month] = True
-        # The flat provider treats every location/issuer/symbol identically, so each
-        # required key gets the same flat array. No fallback for empty required-keys —
-        # if the scenario set declares no PE/crypto/location keys, the corresponding
-        # dict is legitimately empty.
-        home_by_location = dict.fromkeys(required_keys.location_ids, flat)
-        rent_by_location = dict.fromkeys(required_keys.location_ids, flat)
-        pe_value_by_issuer = dict.fromkeys(required_keys.pe_issuer_ids, flat)
-        pe_mask_by_issuer = dict.fromkeys(required_keys.pe_issuer_ids, private_equity_events)
-        crypto_by_symbol = dict.fromkeys(required_keys.crypto_symbols, flat)
-        return MarketBundle(
-            month_index=np.arange(horizon_months + 1, dtype="int64"),
-            inflation_multipliers=flat,
-            generic_sp500_multipliers=flat,
-            home_value_multipliers_by_location=home_by_location,
-            rent_multipliers_by_location=rent_by_location,
-            mortgage_30y_rate_pct=mortgage_rate,
-            private_equity_value_multipliers_by_issuer=pe_value_by_issuer,
-            private_equity_sale_opportunity_mask_by_issuer=pe_mask_by_issuer,
-            crypto_value_multipliers_by_symbol=crypto_by_symbol,
-            metadata=MarketBundleMetadata(
-                market_model_id=market_request.market_model_id,
-                scenario_generator_id="flat_market_bundle_provider",
-                scenario_generator_version_id="flat_market_bundle_provider:v1",
-                evidence_set_id="fixture:flat",
-                calibration_artifact_id="fixture:flat",
-                risk_factor_ids=CORE_MARKET_RISK_FACTOR_IDS,
-                current_private_equity_price_usd=self.current_private_equity_price_usd,
-                seed=seed,
-                rollout_count=rollout_count,
-                horizon_months=horizon_months,
-                event_stream_ids=("private_equity_sale_opportunity_event",),
-                notes=("deterministic flat provider for fixture-backed app/e2e runs",),
-            ),
-        )

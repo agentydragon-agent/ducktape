@@ -17,11 +17,7 @@ from pydantic import TypeAdapter
 
 from augur.core.market_bundle import RequiredMarketKeys
 from augur.core.scenario_set import MarketRequest
-from augur.model.market_provider_config import (
-    MarketProviderConfig,
-    NoopMarketProviderConfig,
-    SimpleMarketProviderConfig,
-)
+from augur.model.market_provider_config import MarketProviderConfig, SimpleMarketProviderConfig
 from augur.model.train.main import main as train_main
 from util.bazel.runfiles import get_required_path
 
@@ -53,7 +49,7 @@ def test_train_then_load_and_sample(model_label: str, tmp_path: Path) -> None:
     parsed = _ADAPTER.validate_python(yaml.safe_load(out_manifest.read_text(encoding="utf-8")))
     # Trainer only emits the active trained provider config; narrow away fixture
     # providers so the trained-provider fields are accessible below.
-    assert not isinstance(parsed, (NoopMarketProviderConfig, SimpleMarketProviderConfig))
+    assert not isinstance(parsed, SimpleMarketProviderConfig)
     assert parsed.type == model_label
     assert parsed.trained_blob == out_blob
     assert parsed.latest_observations  # non-empty; exact keys depend on the source-data schema

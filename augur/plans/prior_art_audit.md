@@ -625,7 +625,7 @@ Standardize these names before the next large redesign:
 
 ### Golden Projection Tests
 
-Keep deterministic flat/noop market fixtures and hand-computed tests. Expand
+Keep deterministic flat market fixtures and hand-computed tests. Expand
 them for:
 
 - property purchase and sale;

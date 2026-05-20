@@ -398,8 +398,8 @@ Work:
    per-rollout seeds, sample `augur/model`'s `SampledMarketBundle`, run
    `augur/sim`, and serialize projection/read models through `augur/api`.
 2. Make runtime market providers sim-native: keep `simple` and VECM on the
-   native sampled-bundle API, make `noop` emit the same sampled levels/events
-   shape, and leave unported exploratory models quarantined under
+   native sampled-bundle API, keep deterministic flat paths as test-only sim
+   fixtures, and leave unported exploratory models quarantined under
    `augur/model/x/`.
 3. Add a shadow/parity route that runs the legacy core path and the sim path
    from the same model-owned sampled bundle where possible. Use this to compare

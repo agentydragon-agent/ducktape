@@ -55,6 +55,7 @@ py_test(
         "//augur/core:market_bundle_py",
         "//augur/core:scenario_set_py",
         "//augur/model:market_provider_config_py",
+        "//augur/model:testing_py",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

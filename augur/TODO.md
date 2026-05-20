@@ -22,9 +22,9 @@ generic backlog rather than a second ordered roadmap.
       with explicit per-rollout seeds and return model-owned levels/events plus
       provenance. `simple` now composes `IndependentMarketModels` internally,
       and VECM already exposes the same sampled-bundle shape behind the core
-      adapter. Next steps are making `noop` produce a sampled bundle directly
-      and keeping `augur/model/x/legacy_market_models/` out of production until
-      each model is either ported or deleted.
+      adapter. Deterministic flat paths should remain test-only sim fixtures;
+      keep `augur/model/x/legacy_market_models/` out of production until each
+      model is either ported or deleted.
 - [ ] **PE valuation should actually be sampled** (Priority 3 in
       `plans/roadmap.md`). The market provider holds private-equity marks
       flat at 1.0 for the entire horizon. The fit is **open design work**

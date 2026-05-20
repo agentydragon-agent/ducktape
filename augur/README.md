@@ -53,11 +53,9 @@ property ID to a deployment-owned asset ID and either an explicit public
 For local public-fixture runs:
 
 ```bash
-bazelisk run //augur/api:server -- \
-  --config augur/api/testdata/config.yaml \
-  --provider noop
+bazelisk run //augur/api:server -- --config augur/api/testdata/config.yaml
 ```
 
-`--provider noop` uses deterministic flat market paths for browser and API
-smoke tests. Fitted macro models remain selectable with `--provider vecm`,
-`--provider var`, etc.
+The public fixture config uses the lightweight `simple` market provider. Fitted
+macro models are selected in `AugurConfig.market_provider` YAML, e.g. `type:
+vecm` with a trained blob path.

@@ -25,11 +25,6 @@ market_provider:
     san_francisco_ca: {home_value_annual_adjustment_pct: 0.3, rent_annual_adjustment_pct: 0.4}
 ```
 
-```yaml
-market_provider:
-  type: noop
-```
-
 Each per-type config lives next to the model/provider it instantiates and
 exposes its own `.realize(...)` method. This module is just the discriminated
 union that ties them together for Pydantic's type dispatcher.
@@ -41,20 +36,11 @@ from typing import Annotated, Literal
 
 from pydantic import Field
 
-from augur.core.market_bundle import FlatMarketBundleProvider, MarketBundleProvider
+from augur.core.market_bundle import MarketBundleProvider
 from augur.core.schemas import ApiModel
 from augur.model.core_market_adapter import CoreMarketBundleProviderShim
 from augur.model.markets.models.vecm import VecmMarketProviderConfig
 from augur.model.simple_market import SimpleLocationModelParams, SimpleMarketModel, SimpleMarketModelConfig
-
-
-class NoopMarketProviderConfig(ApiModel):
-    """Flat / deterministic provider for fixture-backed app + e2e runs."""
-
-    type: Literal["noop"] = "noop"
-
-    def realize(self, *, current_private_equity_price_usd: float) -> MarketBundleProvider:
-        return FlatMarketBundleProvider(current_private_equity_price_usd=current_private_equity_price_usd)
 
 
 class SimpleMarketProviderConfig(ApiModel):
@@ -79,6 +65,4 @@ class SimpleMarketProviderConfig(ApiModel):
         )
 
 
-MarketProviderConfig = Annotated[
-    NoopMarketProviderConfig | SimpleMarketProviderConfig | VecmMarketProviderConfig, Field(discriminator="type")
-]
+MarketProviderConfig = Annotated[SimpleMarketProviderConfig | VecmMarketProviderConfig, Field(discriminator="type")]

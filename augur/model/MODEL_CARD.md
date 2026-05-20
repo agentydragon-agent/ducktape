@@ -18,8 +18,8 @@ Current governed surface:
 - `VecmJointMarketModel`, which wraps a trained VECM blob, samples native
   `SampledMarketBundle` levels/events, and is adapted to legacy core only by
   `CoreMarketBundleProviderShim`.
-- Fixture providers such as flat/noop or simple stochastic providers are test
-  and smoke-test aids. They are not calibrated market models.
+- Simple stochastic providers are runtime placeholders. Deterministic flat
+  market paths are test-only fixtures. Neither is a calibrated market model.
 
 The models are intended to generate exogenous market paths for Augur household
 scenario projection. They are not intended to make standalone investment

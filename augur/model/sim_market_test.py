@@ -5,9 +5,15 @@ import pytest
 import pytest_bazel
 
 from augur.model.sim_market import IndependentMarketModels, MarketBundle, materialize_market_prices
-from augur.model.sim_market_api import MARKET_LEVELS_SCHEMA, MARKET_PRICES_SCHEMA, MarketSamplingRequest
+from augur.model.sim_market_api import (
+    MARKET_EVENTS_SCHEMA,
+    MARKET_LEVELS_SCHEMA,
+    MARKET_PRICES_SCHEMA,
+    MarketSamplingRequest,
+)
 from augur.model.sim_market_deterministic import Constant, Deterministic
 from augur.model.sim_market_gbm import GeometricBrownian
+from augur.model.testing import DeterministicMarketFixtureModel
 
 
 def test_scalar_models_are_owned_by_model_modules() -> None:
@@ -79,6 +85,34 @@ def test_deterministic_model_rejects_wrong_horizon_length() -> None:
 
     with pytest.raises(ValueError, match=r"need 3"):
         model.sample(MarketSamplingRequest(horizon_months=2, rollout_seeds=(1,)))
+
+
+def test_deterministic_fixture_samples_requested_constant_series_and_events() -> None:
+    model = DeterministicMarketFixtureModel(
+        default_level_value=1.0, level_values={"sp500": 2.0}, event_active_months=(1,)
+    )
+
+    sampled = model.sample(
+        MarketSamplingRequest(
+            horizon_months=2,
+            rollout_seeds=(101, 102),
+            required_level_series=frozenset({"inflation", "sp500"}),
+            required_event_series=frozenset({"private_equity_sale_opportunity:openai"}),
+        )
+    )
+
+    assert sampled.events.schema == MARKET_EVENTS_SCHEMA
+    assert sampled.level_matrix("inflation", rollout_count=2, horizon_months=2).tolist() == [
+        [1.0, 1.0, 1.0],
+        [1.0, 1.0, 1.0],
+    ]
+    assert sampled.level_matrix("sp500", rollout_count=2, horizon_months=2).tolist() == [
+        [2.0, 2.0, 2.0],
+        [2.0, 2.0, 2.0],
+    ]
+    assert sampled.event_matrix(
+        "private_equity_sale_opportunity:openai", rollout_count=2, horizon_months=2
+    ).tolist() == [[False, True, False], [False, True, False]]
 
 
 if __name__ == "__main__":
