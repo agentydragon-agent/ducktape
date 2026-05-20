@@ -41,19 +41,15 @@ from typing import Annotated, Literal
 
 from pydantic import Field
 
-from augur.core.market_bundle import (
-    FlatMarketBundleProvider,
-    MarketBundleProvider,
-    SimpleLocationModelParams,
-    SimpleMarketBundleProvider,
-    SimpleMarketModelConfig,
-)
+from augur.core.market_bundle import FlatMarketBundleProvider, MarketBundleProvider
 from augur.core.schemas import ApiModel
+from augur.model.core_market_adapter import CoreMarketBundleProviderShim
 from augur.model.markets.models.bootstrap import StationaryBootstrapMarketProviderConfig
 from augur.model.markets.models.dcc_garch import DccGjrGarchMarketProviderConfig
 from augur.model.markets.models.var import Var1GaussianMarketProviderConfig
 from augur.model.markets.models.vecm import VecmMarketProviderConfig
 from augur.model.markets.models.wilkie import WilkieCascadeMarketProviderConfig
+from augur.model.simple_market import SimpleJointMarketModel, SimpleLocationModelParams, SimpleMarketModelConfig
 
 
 class NoopMarketProviderConfig(ApiModel):
@@ -78,9 +74,12 @@ class SimpleMarketProviderConfig(ApiModel):
     location_params: dict[str, SimpleLocationModelParams] = Field(default_factory=dict)
 
     def realize(self, *, current_private_equity_price_usd: float) -> MarketBundleProvider:
-        return SimpleMarketBundleProvider(
+        return CoreMarketBundleProviderShim(
+            model=SimpleJointMarketModel(
+                current_private_equity_price_usd=current_private_equity_price_usd,
+                parameters=SimpleMarketModelConfig(location_params=self.location_params),
+            ),
             current_private_equity_price_usd=current_private_equity_price_usd,
-            model_config=SimpleMarketModelConfig(location_params=self.location_params),
         )
 
 

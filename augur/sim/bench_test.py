@@ -62,7 +62,7 @@ def test_dry_add_fourth_position_is_config_only() -> None:
         quantity=50.0,
         cost_basis_per_unit_usd=70.0,
     )
-    markets = {**base.market.model.markets, "efv": Deterministic(prices_usd=[100.0] * 25)}
+    markets = {**base.market.model.markets, "efv": Deterministic(levels=[100.0] * 25)}
     extended = base.model_copy(
         update={
             "initial_lots": [*base.initial_lots, new_lot],

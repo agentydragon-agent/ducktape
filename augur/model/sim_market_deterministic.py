@@ -9,30 +9,30 @@ from pydantic import BaseModel
 
 
 class Deterministic(BaseModel):
-    """A fixed per-month price curve.
+    """A fixed per-month level curve.
 
-    `prices_usd` runs from month 0 through `horizon_months`
+    `levels` runs from month 0 through `horizon_months`
     inclusive; sampling validates that its length matches the
     requested horizon.
     """
 
     kind: Literal["deterministic"] = "deterministic"
-    prices_usd: list[float]
+    levels: list[float]
 
-    def sample_prices(self, *, rollout_count: int, horizon_months: int) -> np.ndarray:
+    def sample_levels(self, *, rollout_count: int, horizon_months: int) -> np.ndarray:
         expected = horizon_months + 1
-        if len(self.prices_usd) != expected:
-            msg = f"Deterministic model has {len(self.prices_usd)} prices; need {expected}"
+        if len(self.levels) != expected:
+            msg = f"Deterministic model has {len(self.levels)} levels; need {expected}"
             raise ValueError(msg)
-        prices = np.asarray(self.prices_usd, dtype=np.float64)
-        return np.tile(prices, (rollout_count, 1))
+        levels = np.asarray(self.levels, dtype=np.float64)
+        return np.tile(levels, (rollout_count, 1))
 
 
 class Constant(BaseModel):
-    """A constant price shared across every rollout and month."""
+    """A constant level shared across every rollout and month."""
 
     kind: Literal["constant"] = "constant"
-    price_usd: float
+    value: float
 
-    def sample_prices(self, *, rollout_count: int, horizon_months: int) -> np.ndarray:
-        return np.full((rollout_count, horizon_months + 1), self.price_usd, dtype=np.float64)
+    def sample_levels(self, *, rollout_count: int, horizon_months: int) -> np.ndarray:
+        return np.full((rollout_count, horizon_months + 1), self.value, dtype=np.float64)

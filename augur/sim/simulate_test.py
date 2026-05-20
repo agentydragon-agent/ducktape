@@ -743,7 +743,7 @@ def test_gbm_market_diverges_across_rollouts_same_seed_is_reproducible() -> None
     bundle = MarketBundle.independent(
         {
             "vti": GeometricBrownian(
-                initial_price_usd=100.0, monthly_log_return_mu=0.005, monthly_log_return_sigma=0.05, rng_seed=42
+                initial_value=100.0, monthly_log_return_mu=0.005, monthly_log_return_sigma=0.05, rng_seed=42
             )
         }
     )

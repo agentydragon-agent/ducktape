@@ -18,7 +18,9 @@ primary simulation backend for the Augur frontend/API.
       legacy field names by default.
 - [ ] Replace production use of `augur.core.market_bundle.MarketBundle`
       in the Augur run path with model-owned exogenous bundles supplied by
-      `augur/model` and consumed by `augur/sim`.
+      `augur/model` and consumed by `augur/sim`. The production `simple`
+      provider config now samples a sim-native joint model and adapts it to
+      the legacy core bundle; the backend still executes through core.
 - [ ] Replace core-side required-market-key discovery with sim scenario
       introspection so model providers know which public markets, private
       equity paths, locations, currencies, and other exogenous series must
@@ -49,15 +51,16 @@ primary simulation backend for the Augur frontend/API.
       depreciation, §121 exclusion, §1250 recapture, itemized deductions,
       SALT cap, and qualified-residence mortgage-interest deduction.
 - [ ] Move production stochastic market generation to `augur/model`.
-      Static and GBM fixture path specs now live in `augur/model`; the
-      remaining production gap is wiring calibrated model providers to
-      emit the same sim-facing exogenous path bundle shape.
+      Static/GBM fixture path specs and the production `simple` model now
+      live in `augur/model`; the remaining production gap is moving the
+      calibrated macro providers to emit the same sim-facing sampled
+      levels/events bundle shape.
 - [ ] Align every market-provider/model implementation with the
-      `augur/sim` consumption API. `noop`, simple, VECM, VAR, Wilkie,
-      DCC/GARCH, bootstrap, and future calibrated joint models should
-      either implement the `JointMarketModel` contract directly or adapt
-      to the model-owned `MarketBundle` shape before the backend switches
-      away from core.
+      `augur/sim` consumption API. Simple now implements the
+      `JointMarketModel` contract and is shimmed for core; `noop`, VECM,
+      VAR, Wilkie, DCC/GARCH, bootstrap, and future calibrated joint models
+      still need to produce or adapt to the sampled levels/events bundle
+      before the backend switches away from core.
 - [ ] Add variable spending/obligation amounts sourced from exogenous
       model paths.
 - [ ] Exercise constrained sellability masks end to end.

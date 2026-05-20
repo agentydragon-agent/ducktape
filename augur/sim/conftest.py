@@ -14,7 +14,7 @@ DeterministicMarketBundleFactory = Callable[[Sequence[float]], MarketBundle]
 
 @pytest.fixture
 def deterministic_market_bundle() -> DeterministicMarketBundleFactory:
-    def build(prices_usd: Sequence[float], *, asset_id: str = "vti") -> MarketBundle:
-        return MarketBundle.independent({asset_id: Deterministic(prices_usd=list(prices_usd))})
+    def build(levels: Sequence[float], *, asset_id: str = "vti") -> MarketBundle:
+        return MarketBundle.independent({asset_id: Deterministic(levels=list(levels))})
 
     return build

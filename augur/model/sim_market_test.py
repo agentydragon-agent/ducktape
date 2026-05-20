@@ -5,7 +5,7 @@ import pytest
 import pytest_bazel
 
 from augur.model.sim_market import IndependentMarketModels, MarketBundle, materialize_market_prices
-from augur.model.sim_market_api import MARKET_PRICES_SCHEMA
+from augur.model.sim_market_api import MARKET_LEVELS_SCHEMA, MARKET_PRICES_SCHEMA, MarketSamplingRequest
 from augur.model.sim_market_deterministic import Constant, Deterministic
 from augur.model.sim_market_gbm import GeometricBrownian
 
@@ -16,19 +16,21 @@ def test_scalar_models_are_owned_by_model_modules() -> None:
     assert GeometricBrownian.__module__ == "augur.model.sim_market_gbm"
 
 
-def test_independent_model_materializes_deterministic_prices_for_each_rollout() -> None:
-    model = IndependentMarketModels(markets={"vti": Deterministic(prices_usd=[100.0, 110.0, 120.0])})
+def test_independent_model_samples_deterministic_levels_for_each_rollout() -> None:
+    model = IndependentMarketModels(markets={"vti": Deterministic(levels=[100.0, 110.0, 120.0])})
 
-    frame = model.materialize(rollout_count=2, horizon_months=2).sort(["rollout_index", "month_index"])
+    frame = model.sample(MarketSamplingRequest(rollout_count=2, horizon_months=2)).levels.sort(
+        ["rollout_index", "month_index"]
+    )
 
-    assert frame.schema == MARKET_PRICES_SCHEMA
+    assert frame.schema == MARKET_LEVELS_SCHEMA
     assert frame.to_dicts() == [
-        {"rollout_index": 0, "month_index": 0, "asset_id": "vti", "price_per_unit_usd": 100.0},
-        {"rollout_index": 0, "month_index": 1, "asset_id": "vti", "price_per_unit_usd": 110.0},
-        {"rollout_index": 0, "month_index": 2, "asset_id": "vti", "price_per_unit_usd": 120.0},
-        {"rollout_index": 1, "month_index": 0, "asset_id": "vti", "price_per_unit_usd": 100.0},
-        {"rollout_index": 1, "month_index": 1, "asset_id": "vti", "price_per_unit_usd": 110.0},
-        {"rollout_index": 1, "month_index": 2, "asset_id": "vti", "price_per_unit_usd": 120.0},
+        {"rollout_index": 0, "month_index": 0, "series_id": "vti", "value": 100.0},
+        {"rollout_index": 0, "month_index": 1, "series_id": "vti", "value": 110.0},
+        {"rollout_index": 0, "month_index": 2, "series_id": "vti", "value": 120.0},
+        {"rollout_index": 1, "month_index": 0, "series_id": "vti", "value": 100.0},
+        {"rollout_index": 1, "month_index": 1, "series_id": "vti", "value": 110.0},
+        {"rollout_index": 1, "month_index": 2, "series_id": "vti", "value": 120.0},
     ]
 
 
@@ -38,11 +40,11 @@ def test_bundle_api_unites_deterministic_constant_and_gbm_models() -> None:
             "model": {
                 "kind": "independent",
                 "markets": {
-                    "vti": {"kind": "deterministic", "prices_usd": [100.0, 100.0, 100.0]},
-                    "bnd": {"kind": "constant", "price_usd": 95.0},
+                    "vti": {"kind": "deterministic", "levels": [100.0, 100.0, 100.0]},
+                    "bnd": {"kind": "constant", "value": 95.0},
                     "qqq": {
                         "kind": "gbm",
-                        "initial_price_usd": 200.0,
+                        "initial_value": 200.0,
                         "monthly_log_return_mu": 0.01,
                         "monthly_log_return_sigma": 0.02,
                         "rng_seed": 11,
@@ -65,10 +67,10 @@ def test_bundle_api_unites_deterministic_constant_and_gbm_models() -> None:
 
 
 def test_deterministic_model_rejects_wrong_horizon_length() -> None:
-    model = IndependentMarketModels(markets={"vti": Deterministic(prices_usd=[100.0, 110.0])})
+    model = IndependentMarketModels(markets={"vti": Deterministic(levels=[100.0, 110.0])})
 
     with pytest.raises(ValueError, match=r"need 3"):
-        model.materialize(rollout_count=1, horizon_months=2)
+        model.sample(MarketSamplingRequest(rollout_count=1, horizon_months=2))
 
 
 if __name__ == "__main__":
