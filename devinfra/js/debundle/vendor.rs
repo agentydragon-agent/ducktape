@@ -2653,18 +2653,54 @@ fn resolve_materialized_output_import_target(
         normalize_module_path(&join_module_path(&[caller_output_dir.as_str(), source])).ok()?;
 
     let mut best: Option<(usize, ChunkId)> = None;
+    let mut ambiguous = false;
     for index in 0..chunk_table.len() {
         let chunk_id = ChunkId(index);
         let chunk_name = chunk_table.name(chunk_id);
-        let is_chunk_file = resolved_path == format!("{chunk_name}.js")
-            || resolved_path
-                .strip_prefix(chunk_name)
-                .is_some_and(|rest| rest.starts_with('/'));
-        if is_chunk_file && best.is_none_or(|(len, _)| chunk_name.len() > len) {
-            best = Some((chunk_name.len(), chunk_id));
+        let Some(match_len) = materialized_output_chunk_match_len(&resolved_path, chunk_name)
+        else {
+            continue;
+        };
+        match best {
+            None => {
+                best = Some((match_len, chunk_id));
+                ambiguous = false;
+            }
+            Some((best_len, _)) if match_len > best_len => {
+                best = Some((match_len, chunk_id));
+                ambiguous = false;
+            }
+            Some((best_len, best_chunk_id))
+                if match_len == best_len && best_chunk_id != chunk_id =>
+            {
+                ambiguous = true;
+            }
+            _ => {}
         }
     }
-    best.map(|(_, chunk_id)| chunk_id)
+    if ambiguous {
+        None
+    } else {
+        best.map(|(_, chunk_id)| chunk_id)
+    }
+}
+
+fn materialized_output_chunk_match_len(resolved_path: &str, chunk_name: &str) -> Option<usize> {
+    let mut best = path_targets_chunk_name(resolved_path, chunk_name).then_some(chunk_name.len());
+    if let Some((_, stripped)) = chunk_name.split_once('/')
+        && path_targets_chunk_name(resolved_path, stripped)
+        && best.is_none_or(|len| stripped.len() > len)
+    {
+        best = Some(stripped.len());
+    }
+    best
+}
+
+fn path_targets_chunk_name(resolved_path: &str, chunk_name: &str) -> bool {
+    resolved_path == format!("{chunk_name}.js")
+        || resolved_path
+            .strip_prefix(chunk_name)
+            .is_some_and(|rest| rest.starts_with('/'))
 }
 
 enum DeferredImport {
