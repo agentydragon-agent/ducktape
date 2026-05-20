@@ -143,14 +143,6 @@ Translator gaps to migrate next:
       `base_rent * rent_cost_series[t] / rent_cost_series[0]`. CPI or wage
       indexing can be model choices behind that series, not hard-coded sim
       behavior.
-- [ ] Translate property selection and catalog defaults into
-      `ScheduledPropertyPurchase`: property id, location id, purchase price,
-      buyer/seller bookkeeping agents, down payment, purchase closing cost, and
-      ownership percentage.
-- [ ] For the first backend cutover, assert property purchase is always month 0.
-      Future-month purchases need explicit semantics for whether the purchase
-      price is a fixed contract price or a month-0 configured price indexed by a
-      home-value model path; defer that until a real product case needs it.
 - [ ] Drive owned-property value from modeled home-value series. A selected
       property should start from its configured/list purchase value at the
       month-0 anchor, then mark to market by the applicable
@@ -200,6 +192,13 @@ Translator gaps to migrate next:
       selected, and sale may be modeled only as an end-of-horizon event if the
       response needs it. Mid-horizon purchases, moves, and rental start/stop are
       later sim-event work.
+- [ ] Decide the browser/backend ownership boundary for low-level sim programs.
+      Today the browser still emits some timeline-shaped event objects while
+      the backend also owns catalog defaults, financing math, counterparties,
+      payments, and sim lowering. Before adding richer lifecycle controls,
+      choose whether the browser sends high-level user intent only and the
+      backend expands it into low-level events/payments, or whether the browser
+      becomes responsible for constructing an explicit sim program.
 - [ ] Split economic counterparties into explicit agents/accounts. Landlord,
       tenant, lender, seller, tax authority, HOA, insurer, and other sinks
       should not all collapse into a generic `external` account once their

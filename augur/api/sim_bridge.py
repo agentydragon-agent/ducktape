@@ -15,13 +15,18 @@ import polars as pl
 
 from augur.core.scenario_set import (
     AccountType as CoreAccountType,
+    ActorRole,
     AssetType as CoreAssetType,
     CheckingFloorSellPublicStockPolicy as CoreCheckingFloorSellPublicStockPolicy,
     CryptoAssetPosition,
+    Event as CoreEvent,
+    FinancingMode,
     GenericSp500StockPosition,
     MarketRequest,
     MonthlySpendPolicy,
+    MortgageOriginationEvent,
     PrivateEquityPosition,
+    PropertyPurchaseEvent,
     Scenario as CoreScenario,
     ScenarioSet,
 )
@@ -34,12 +39,23 @@ from augur.model.sim_market_api import (
 from augur.model.sim_market_series import SP500_SERIES_ID
 from augur.sim.market import materialize_sampled_market
 from augur.sim.run import SimulationRun
-from augur.sim.scenario import Agent, InitialAccountBalance, InitialLot, LiquidityPolicy, RecurringObligation, Scenario
+from augur.sim.scenario import (
+    Agent,
+    InitialAccountBalance,
+    InitialLot,
+    LiquidityPolicy,
+    MortgageFinancing,
+    RecurringObligation,
+    Scenario,
+    ScheduledPropertyPurchase,
+)
 from augur.sim.simulate import simulate_with_market
 
 EXTERNAL_AGENT_ID = "external"
 EXTERNAL_ACCOUNT_ID = "checking"
 DEFAULT_ACCOUNT_ID = "checking"
+PROPERTY_SELLER_AGENT_ID = "property_seller"
+MORTGAGE_LENDER_AGENT_ID = "mortgage_lender"
 
 
 class UnsupportedSimBridgeScenarioError(ValueError):
@@ -71,10 +87,12 @@ def translate_scenario(
 ) -> SimScenarioTranslation:
     _reject_unsupported_features(scenario)
     initial_lots = list(configured_lots) if configured_lots else _initial_lots(scenario)
+    property_purchases = _property_purchases(scenario)
     sim_scenario = Scenario(
-        agents=_agents(scenario, initial_lots=initial_lots),
-        initial_cash=_initial_cash(scenario),
+        agents=_agents(scenario, initial_lots=initial_lots, property_purchases=property_purchases),
+        initial_cash=_initial_cash(scenario, property_purchases=property_purchases),
         initial_lots=initial_lots,
+        scheduled_property_purchases=property_purchases,
         recurring_obligations=_monthly_spend_obligations(scenario),
         liquidity_policies=_liquidity_policies(scenario),
         horizon_months=market_request.horizon_months,
@@ -233,21 +251,45 @@ def rollout_seeds_from_market_request(market_request: MarketRequest) -> tuple[in
     )
 
 
-def _agents(scenario: CoreScenario, *, initial_lots: list[InitialLot]) -> list[Agent]:
+def _agents(
+    scenario: CoreScenario, *, initial_lots: list[InitialLot], property_purchases: list[ScheduledPropertyPurchase]
+) -> list[Agent]:
     agent_ids = {actor.actor_id for actor in scenario.actors}
     agent_ids.update(lot.agent_id for lot in initial_lots)
+    agent_ids.update(purchase.seller_agent_id for purchase in property_purchases)
+    agent_ids.update(
+        purchase.mortgage.lender_agent_id for purchase in property_purchases if purchase.mortgage is not None
+    )
     if scenario.policies:
         agent_ids.add(EXTERNAL_AGENT_ID)
     return [Agent(agent_id=agent_id) for agent_id in sorted(agent_ids)]
 
 
-def _initial_cash(scenario: CoreScenario) -> list[InitialAccountBalance]:
-    return [
+def _initial_cash(
+    scenario: CoreScenario, *, property_purchases: list[ScheduledPropertyPurchase]
+) -> list[InitialAccountBalance]:
+    balances = [
         InitialAccountBalance(
             agent_id=account.owner_actor_id, account_id=account.account_id, balance_usd=account.balance_usd
         )
         for account in scenario.initial_balance_sheet.accounts
     ]
+    existing = {(balance.agent_id, balance.account_id) for balance in balances}
+    for agent_id, account_id in _counterparty_accounts(property_purchases):
+        if (agent_id, account_id) in existing:
+            continue
+        balances.append(InitialAccountBalance(agent_id=agent_id, account_id=account_id, balance_usd=0.0))
+        existing.add((agent_id, account_id))
+    return balances
+
+
+def _counterparty_accounts(property_purchases: list[ScheduledPropertyPurchase]) -> list[tuple[str, str]]:
+    accounts: list[tuple[str, str]] = []
+    for purchase in property_purchases:
+        accounts.append((purchase.seller_agent_id, purchase.seller_account_id))
+        if purchase.mortgage is not None:
+            accounts.append((purchase.mortgage.lender_agent_id, purchase.mortgage.lender_account_id))
+    return accounts
 
 
 def _initial_lots(scenario: CoreScenario) -> list[InitialLot]:
@@ -274,6 +316,100 @@ def _cost_basis_per_unit(asset: GenericSp500StockPosition) -> float:
     if asset.value_usd <= 0:
         return 0.0
     return (asset.cost_basis_usd if asset.cost_basis_usd is not None else asset.value_usd) / asset.value_usd
+
+
+def _property_purchases(scenario: CoreScenario) -> list[ScheduledPropertyPurchase]:
+    selection = scenario.property_selection
+    if selection.property_id is None:
+        return []
+    if selection.location_id is None:
+        raise UnsupportedSimBridgeScenarioError(
+            f"scenario {scenario.scenario_id!r} selects property {selection.property_id!r} without location_id"
+        )
+    if selection.purchase_price_usd is None:
+        raise UnsupportedSimBridgeScenarioError(
+            f"scenario {scenario.scenario_id!r} selects property {selection.property_id!r} without purchase_price_usd"
+        )
+
+    purchase_price_usd = float(selection.purchase_price_usd)
+    loan_principal_usd = _loan_principal_usd(scenario, purchase_price_usd=purchase_price_usd)
+    mortgage = _mortgage_financing(scenario, property_id=selection.property_id, principal_usd=loan_principal_usd)
+    return [
+        ScheduledPropertyPurchase(
+            month=0,
+            cause_id=f"{selection.property_id}_purchase",
+            property_id=selection.property_id,
+            location_id=selection.location_id,
+            buyer_agent_id=_primary_owner_actor_id(scenario),
+            buyer_account_id=DEFAULT_ACCOUNT_ID,
+            seller_agent_id=PROPERTY_SELLER_AGENT_ID,
+            seller_account_id=DEFAULT_ACCOUNT_ID,
+            purchase_price_usd=purchase_price_usd,
+            down_payment_usd=purchase_price_usd - loan_principal_usd,
+            buyer_closing_cost_usd=purchase_price_usd * float(scenario.transaction_costs.closing_cost_buy_pct) / 100.0,
+            ownership_pct=1.0,
+            mortgage=mortgage,
+        )
+    ]
+
+
+def _primary_owner_actor_id(scenario: CoreScenario) -> str:
+    primary_owner_ids = [actor.actor_id for actor in scenario.actors if actor.role is ActorRole.PRIMARY_OWNER]
+    if len(primary_owner_ids) != 1:
+        raise UnsupportedSimBridgeScenarioError(
+            f"scenario {scenario.scenario_id!r} must have exactly one primary_owner actor for sim translation"
+        )
+    return primary_owner_ids[0]
+
+
+def _loan_principal_usd(scenario: CoreScenario, *, purchase_price_usd: float) -> float:
+    financing = scenario.financing
+    if financing.financing_mode is FinancingMode.CASH:
+        if financing.loan_amount_usd not in (None, 0):
+            raise UnsupportedSimBridgeScenarioError("cash financing must not set loan_amount_usd")
+        return 0.0
+    if financing.loan_amount_usd is not None:
+        loan_principal_usd = float(financing.loan_amount_usd)
+    else:
+        if financing.down_payment_pct > 100:
+            raise UnsupportedSimBridgeScenarioError("down_payment_pct must be <= 100 for sim translation")
+        loan_principal_usd = purchase_price_usd * (1.0 - float(financing.down_payment_pct) / 100.0)
+    if loan_principal_usd > purchase_price_usd:
+        raise UnsupportedSimBridgeScenarioError("loan_amount_usd must not exceed purchase_price_usd")
+    return loan_principal_usd
+
+
+def _mortgage_financing(scenario: CoreScenario, *, property_id: str, principal_usd: float) -> MortgageFinancing | None:
+    if principal_usd <= 0:
+        return None
+    financing = scenario.financing
+    if financing.mortgage_rate_pct is None:
+        raise UnsupportedSimBridgeScenarioError(
+            f"scenario {scenario.scenario_id!r} needs mortgage_rate_pct for sim mortgage translation"
+        )
+    return MortgageFinancing(
+        liability_id=f"{property_id}_mortgage",
+        lender_agent_id=MORTGAGE_LENDER_AGENT_ID,
+        lender_account_id=DEFAULT_ACCOUNT_ID,
+        principal_usd=principal_usd,
+        annual_interest_rate=float(financing.mortgage_rate_pct) / 100.0,
+        term_months=_mortgage_term_months(scenario),
+    )
+
+
+def _mortgage_term_months(scenario: CoreScenario) -> int:
+    financing = scenario.financing
+    if financing.financing_mode is FinancingMode.FIXED_30:
+        return 30 * 12
+    if financing.financing_mode is FinancingMode.FIXED_15:
+        return 15 * 12
+    if financing.financing_mode is FinancingMode.CUSTOM:
+        if financing.mortgage_term_years is None:
+            raise UnsupportedSimBridgeScenarioError(
+                f"scenario {scenario.scenario_id!r} needs mortgage_term_years for custom sim mortgage translation"
+            )
+        return int(financing.mortgage_term_years) * 12
+    raise UnsupportedSimBridgeScenarioError(f"financing mode {financing.financing_mode} is not ported to augur/sim yet")
 
 
 def _monthly_spend_obligations(scenario: CoreScenario) -> list[RecurringObligation]:
@@ -324,10 +460,9 @@ def _asset_preference(asset_type: CoreAssetType) -> str:
 
 def _reject_unsupported_features(scenario: CoreScenario) -> None:
     unsupported: list[str] = []
-    if scenario.events:
-        unsupported.append("events")
-    if scenario.property_selection.property_id is not None:
-        unsupported.append("property_selection")
+    unsupported_events = _unsupported_events(scenario)
+    if unsupported_events:
+        unsupported.append(f"events ({', '.join(unsupported_events)})")
     if scenario.tax_profile.annual_ordinary_income_usd:
         unsupported.append("tax_profile.annual_ordinary_income_usd")
     if scenario.occupancy_plan.outside_rent_monthly_usd:
@@ -343,3 +478,32 @@ def _reject_unsupported_features(scenario: CoreScenario) -> None:
         raise UnsupportedSimBridgeScenarioError(
             f"scenario {scenario.scenario_id!r} uses unsupported sim bridge features: {', '.join(unsupported)}"
         )
+
+
+def _unsupported_events(scenario: CoreScenario) -> list[str]:
+    return [
+        str(event.event_type)
+        for event in scenario.events
+        if not _is_redundant_property_bootstrap_event(scenario, event)
+    ]
+
+
+def _is_redundant_property_bootstrap_event(scenario: CoreScenario, event: CoreEvent) -> bool:
+    selection = scenario.property_selection
+    if selection.property_id is None or selection.purchase_price_usd is None:
+        return False
+    if not isinstance(event, PropertyPurchaseEvent | MortgageOriginationEvent):
+        return False
+    if event.month_index != 0 or event.property_id != selection.property_id:
+        return False
+    primary_owner_id = _primary_owner_actor_id(scenario)
+    if event.actor_id is not None and event.actor_id != primary_owner_id:
+        return False
+    if isinstance(event, PropertyPurchaseEvent):
+        return _optional_amount_matches(event.amount_usd, float(selection.purchase_price_usd))
+    loan_principal_usd = _loan_principal_usd(scenario, purchase_price_usd=float(selection.purchase_price_usd))
+    return _optional_amount_matches(event.amount_usd, loan_principal_usd)
+
+
+def _optional_amount_matches(amount_usd: float | None, expected_usd: float) -> bool:
+    return amount_usd is None or bool(np.isclose(float(amount_usd), expected_usd, rtol=0.0, atol=0.01))

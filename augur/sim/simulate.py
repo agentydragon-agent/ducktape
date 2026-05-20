@@ -106,7 +106,14 @@ def _load_jurisdictions_for(scenario: Scenario) -> dict[str, Jurisdiction]:
 
 
 def _load_locations_for(scenario: Scenario) -> dict[str, Location]:
-    ids = {purchase.location_id for purchase in scenario.scheduled_property_purchases}
+    tax_policy_properties = {
+        policy.property_id for policy in scenario.property_tax_policies if policy.annual_tax_rate is None
+    }
+    ids = {
+        purchase.location_id
+        for purchase in scenario.scheduled_property_purchases
+        if purchase.property_id in tax_policy_properties
+    }
     return {location_id: load_location(location_id) for location_id in ids}
 
 
