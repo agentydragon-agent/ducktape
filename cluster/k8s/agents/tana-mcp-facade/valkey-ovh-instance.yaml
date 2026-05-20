@@ -6,8 +6,6 @@ metadata:
     description: Replacement OVH Valkey for Tana MCP facade OAuth state
 spec:
   clusterSize: 2
-  redisConfig:
-    additionalRedisConfig: mcp-valkey-ovh-replica-config
   kubernetesConfig:
     image: valkey/valkey:8-alpine
     imagePullPolicy: IfNotPresent

@@ -4,7 +4,6 @@ namespace: tana-mcp
 resources:
   - configmap.yaml
   - valkey-instance.yaml
-  - valkey-ovh-replica-config.yaml
   - valkey-ovh-instance.yaml
   - deployment.yaml
   - service.yaml

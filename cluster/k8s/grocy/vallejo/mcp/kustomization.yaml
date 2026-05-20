@@ -4,7 +4,6 @@ namespace: grocy-vallejo
 resources:
   - ../../mcp-base
   - valkey-instance.yaml
-  - valkey-ovh-replica-config.yaml
   - valkey-ovh-instance.yaml
   - server-httproute.yaml
 patches:
