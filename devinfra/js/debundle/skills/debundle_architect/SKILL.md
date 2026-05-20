@@ -116,6 +116,65 @@ When the audit finds repeated bad shapes, update `<conventions-docs>` or
 An architect pass that only proposes one-off moves, while leaving the
 underlying path convention ambiguous, is incomplete.
 
+## Audit Snippets
+
+Use these as starting points when the project adapter provides
+`<emitted-js-root>` and `<graph>`. They are not a replacement for reading the
+source bodies behind suspicious paths.
+
+```sh
+# Count files by top-level emitted root.
+find "$EMITTED_JS_ROOT" -type f |
+  sed "s#^$EMITTED_JS_ROOT/##" |
+  awk -F/ '{print $1}' |
+  sort | uniq -c | sort -nr
+
+# Find singleton directories. Inspect each before proposing a flatten.
+find "$EMITTED_JS_ROOT" -type d |
+  while read -r d; do
+    n=$(find "$d" -mindepth 1 -maxdepth 1 | wc -l)
+    [ "$n" -eq 1 ] && printf '%s\n' "$d"
+  done |
+  sed "s#^$EMITTED_JS_ROOT/##"
+
+# Find repeated directory/file leaves like foo/foo.js.
+find "$EMITTED_JS_ROOT" -type f |
+  sed "s#^$EMITTED_JS_ROOT/##" |
+  awk -F/ 'NF >= 2 {
+    leaf=$NF; sub(/\.js$/, "", leaf); parent=$(NF-1);
+    if (leaf == parent) print $0
+  }'
+
+# Count component-style leaves that may belong with a single owner.
+find "$EMITTED_JS_ROOT" -type f -name styles.js | wc -l
+
+# Show root-to-root dependency pressure from owner_graph.json.
+jq -r '
+  (.nodes | map({key:.id,value:.destination.target_file}) | from_entries) as $d |
+  reduce .edges[] as $e ({};
+    ($d[$e.source] // "<missing>") as $s |
+    ($d[$e.target] // "<missing>") as $t |
+    ($s|split("/")[0]) as $sr |
+    ($t|split("/")[0]) as $tr |
+    .["\($sr) -> \($tr)"] += 1
+  ) | to_entries | sort_by(.value) | reverse |
+  .[] | "\(.value)\t\(.key)"
+' "$GRAPH" | head -80
+
+# Show in-bucket clusters at two path segments.
+jq -r '
+  (.nodes | map({key:.id,value:.destination.target_file}) | from_entries) as $d |
+  reduce .edges[] as $e ({};
+    ($d[$e.source] // "<missing>") as $s |
+    ($d[$e.target] // "<missing>") as $t |
+    ($s|split("/")[0:2]|join("/")) as $sr |
+    ($t|split("/")[0:2]|join("/")) as $tr |
+    .["\($sr) -> \($tr)"] += 1
+  ) | to_entries | sort_by(.value) | reverse |
+  .[] | "\(.value)\t\(.key)"
+' "$GRAPH" | head -100
+```
+
 ## Convention Induction
 
 Record conventions as scoped hypotheses before treating them as rules.
