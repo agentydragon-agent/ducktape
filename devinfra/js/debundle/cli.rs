@@ -64,7 +64,6 @@ mod tests {
                 "pkg=/tmp/pkg",
                 "--packages-root",
                 "/tmp/packages",
-                "--force",
             ]);
             let cli = args.resolve().expect("resolve cli");
             assert_eq!(
@@ -78,7 +77,6 @@ mod tests {
                 Some(&PathBuf::from("/tmp/pkg"))
             );
             assert_eq!(cli.packages_root, Some(PathBuf::from("/tmp/packages")));
-            assert!(cli.force);
         });
     }
 
@@ -108,7 +106,6 @@ mod tests {
                     vendor_marks_path: PathBuf::from("vendor_marks.yaml"),
                     source_root: Some(PathBuf::from("/workspace")),
                     out_root: PathBuf::from("out"),
-                    force: false,
                 })
             );
         });

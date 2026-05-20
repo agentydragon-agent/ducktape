@@ -227,7 +227,7 @@ fn build_named_from_module_default_spec(args: BuildSpecArgs<'_>) -> Value {
             "output_wrapper_dir": args.wrapper_root,
             "write": true,
         },
-        "write_js_tree": { "force": true, "out_dir": args.out_root },
+        "write_js_tree": { "out_dir": args.out_root },
     })
 }
 
@@ -471,7 +471,7 @@ fn build_named_from_default_spec(args: BuildSpecArgs<'_>) -> Value {
             "output_wrapper_dir": args.wrapper_root,
             "write": true,
         },
-        "write_js_tree": { "force": true, "out_dir": args.out_root },
+        "write_js_tree": { "out_dir": args.out_root },
     })
 }
 
@@ -827,7 +827,7 @@ fn run_partial_swap_fixture(args: PartialSwapFixtureArgs<'_>) -> PartialSwapFixt
             "output_wrapper_dir": &wrapper_root,
             "write": true,
         },
-        "write_js_tree": { "force": true, "out_dir": &out_root },
+        "write_js_tree": { "out_dir": &out_root },
     });
     write_yaml_file(&spec_path, &spec);
 
@@ -1122,7 +1122,7 @@ fn bundled_partial_swap_replaces_react_cjs_family_with_singleton_esm_facade() {
             "output_wrapper_dir": &wrapper_root,
             "write": true,
         },
-        "write_js_tree": { "force": true, "out_dir": &out_root },
+        "write_js_tree": { "out_dir": &out_root },
     });
     write_yaml_file(&spec_path, &spec);
 
@@ -1297,7 +1297,7 @@ fn bundled_partial_swap_runtime_cannot_mix_swapped_client_with_residual_singleto
             "output_wrapper_dir": &wrapper_root,
             "write": true,
         },
-        "write_js_tree": { "force": true, "out_dir": &out_root },
+        "write_js_tree": { "out_dir": &out_root },
     });
     write_yaml_file(&spec_path, &spec);
 
@@ -1438,7 +1438,7 @@ fn bundled_partial_swap_rewrites_imports_created_by_logical_module_materializati
             "output_wrapper_dir": &wrapper_root,
             "write": true,
         },
-        "write_js_tree": { "force": true, "out_dir": &out_root },
+        "write_js_tree": { "out_dir": &out_root },
     });
     write_yaml_file(&spec_path, &spec);
 
@@ -1553,7 +1553,7 @@ fn run_partial_swap_kind_fixture(args: PartialSwapKindFixtureArgs<'_>) -> Partia
             "output_wrapper_dir": &wrapper_root,
             "write": true,
         },
-        "write_js_tree": { "force": true, "out_dir": &out_root },
+        "write_js_tree": { "out_dir": &out_root },
     });
     write_yaml_file(&spec_path, &spec);
 

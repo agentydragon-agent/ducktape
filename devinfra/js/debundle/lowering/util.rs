@@ -506,7 +506,7 @@ pub(super) fn write_chunk_report_json<T: Serialize>(
     Ok(())
 }
 
-pub(super) fn prepare_output_dir(out_dir: &Path, _force: bool) -> Result<()> {
+pub(super) fn prepare_output_dir(out_dir: &Path) -> Result<()> {
     if out_dir.exists() {
         if !out_dir.is_dir() {
             bail!(

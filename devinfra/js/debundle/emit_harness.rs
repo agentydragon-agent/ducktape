@@ -19,7 +19,6 @@ use rewrite_specifiers::runtime_js_href;
 
 pub struct EmitBrowserHarnessOptions {
     pub asset_summary_path: PathBuf,
-    pub force: bool,
     pub out_dir: PathBuf,
     pub snapshot_root: PathBuf,
 }

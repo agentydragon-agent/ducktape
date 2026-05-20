@@ -32,7 +32,6 @@ pub struct TransformCli {
     pub spec_source: TransformSpecSource,
     pub package_roots: HashMap<String, PathBuf>,
     pub packages_root: Option<PathBuf>,
-    pub force: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -71,9 +70,6 @@ pub struct TransformArgs {
     /// Root directory containing per-package sources (alternative to repeated --package-root).
     #[arg(long)]
     pub packages_root: Option<PathBuf>,
-    /// Replace existing output directories for stages that write output trees.
-    #[arg(long)]
-    pub force: bool,
 }
 
 impl TransformArgs {
@@ -92,7 +88,6 @@ impl TransformArgs {
             packages_root: self
                 .packages_root
                 .map(|dir| resolve_runfiles_path(dir, runfiles.as_ref())),
-            force: self.force,
         })
     }
 }
@@ -122,7 +117,6 @@ fn resolve_spec_source(
                     .clone()
                     .map(|path| resolve_runfiles_path(path, runfiles)),
                 out_root: resolve_runfiles_path(out_root, runfiles),
-                force: args.force,
             }))
         }
         (None, None) => {
@@ -352,11 +346,9 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
         let MaterializeLogicalModulesConfig {
             file,
             prune_other_chunks,
-            force,
             report_out_dir,
             target_dir,
         } = spec.materialize_logical_modules.clone();
-        let force = force || cli.force;
         let materialize_result =
             run_step_with_result(&mut steps, PipelineStage::MaterializeLogicalModules, || {
                 materialize_logical_modules(
@@ -369,7 +361,6 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
                         chunk_ids: materialise_chunk_ids,
                         file,
                         prune_other_chunks,
-                        force,
                         report_out_dir,
                         target_dir,
                     },
@@ -472,12 +463,10 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
 
     if let Some(cfg) = &spec.write_js_tree {
         let out_dir = cfg.out_dir.clone();
-        let force = cfg.force || cli.force;
         run_step(&mut steps, PipelineStage::WriteJsTree, || {
             write_js_tree(&WriteTreeInput {
                 artifact: &artifact,
                 out_dir: &out_dir,
-                force,
                 lowerings: &selected_lowerings,
                 counts: &counts,
                 chunk_records: &chunk_records,
@@ -488,10 +477,8 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
     }
 
     if let Some(cfg) = &spec.emit_browser_harness {
-        let force = cfg.force || cli.force;
         let opts = EmitBrowserHarnessOptions {
             asset_summary_path: cfg.asset_summary_path.clone(),
-            force,
             out_dir: cfg.out_dir.clone(),
             snapshot_root: cfg.snapshot_root.clone(),
         };
@@ -715,7 +702,6 @@ mod tests {
     #[derive(Serialize)]
     struct EmitBrowserHarnessFixture<'a> {
         asset_summary_path: &'a Path,
-        force: bool,
         out_dir: &'a Path,
         snapshot_root: &'a Path,
     }
@@ -789,7 +775,6 @@ mod tests {
                     },
                     emit_browser_harness: EmitBrowserHarnessFixture {
                         asset_summary_path: &asset_summary_path,
-                        force: true,
                         out_dir: &out,
                         snapshot_root: &snapshot,
                     },
@@ -800,7 +785,6 @@ mod tests {
                 spec_source: TransformSpecSource::Flat { path: spec_path },
                 package_roots: HashMap::new(),
                 packages_root: None,
-                force: false,
             })?;
 
             assert_eq!(summary.steps.len(), 3);
@@ -904,7 +888,7 @@ mod tests {
     }
 
     #[test]
-    fn cli_force_does_not_replace_non_empty_outputs() -> Result<()> {
+    fn non_empty_output_dirs_are_rejected() -> Result<()> {
         js_ast::with_swc_globals(|| {
             let temp = tempfile::tempdir()?;
             let root = temp.path();
@@ -945,13 +929,11 @@ mod tests {
             };
             spec.write_js_tree = Some(spec::WriteJsTreeConfig {
                 out_dir: js_out.clone(),
-                force: false,
             });
             spec.emit_browser_harness = Some(spec::EmitBrowserHarnessConfig {
                 asset_summary_path,
                 out_dir: harness_out.clone(),
                 snapshot_root: snapshot,
-                force: false,
             });
             let spec_path = root.join("transform-spec.yaml");
             fs::write(&spec_path, serde_yaml::to_string(&spec)?)?;
@@ -960,7 +942,6 @@ mod tests {
                 spec_source: TransformSpecSource::Flat { path: spec_path },
                 package_roots: HashMap::new(),
                 packages_root: None,
-                force: true,
             })
             .expect_err("non-empty output directories should be rejected, not replaced");
             assert!(

@@ -34,14 +34,13 @@ outputs so side files are local:
 Run the transform pipeline:
 
 ```bash
-debundle run --spec <transform-spec.yaml> --force
+debundle run --spec <transform-spec.yaml>
 
 debundle run \
   --tree-config <spec-config.yaml> \
   --tree-modules <modules-dir> \
   --tree-vendor-marks <vendor-marks.yaml> \
-  --out-root <out-dir> \
-  --force
+  --out-root <out-dir>
 ```
 
 ## Peel Queries

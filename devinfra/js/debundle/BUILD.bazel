@@ -554,6 +554,12 @@ rust_test(
     ],
 )
 
+label_flag(
+    name = "debundler",
+    build_setting_default = ":debundle",
+    visibility = ["//visibility:public"],
+)
+
 rust_binary(
     name = "debundle",
     srcs = ["main.rs"],

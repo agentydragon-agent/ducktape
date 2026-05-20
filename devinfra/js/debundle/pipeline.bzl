@@ -103,9 +103,6 @@ def _debundle_pipeline_plan(ctx, out_root):
             shell.quote(out_root),
         ]
 
-    if ctx.attr.force:
-        argv.append(shell.quote("--force"))
-
     for pkg_label, pkg_name in ctx.attr.package_roots.items():
         pkg_files = pkg_label[DefaultInfo].files.to_list()
         if not pkg_files:
@@ -210,11 +207,8 @@ _DEBUNDLE_PIPELINE_ATTRS = {
     "debundler": attr.label(
         executable = True,
         cfg = "exec",
-        mandatory = True,
+        default = Label("//devinfra/js/debundle:debundler"),
         doc = "Debundler binary; must support `run` with flat transform spec or tree-shaped spec args.",
-    ),
-    "force": attr.bool(
-        doc = "Pass --force through to debundle; output roots must still be absent or empty.",
     ),
     "input_data": attr.label_list(
         allow_files = True,

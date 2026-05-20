@@ -153,8 +153,6 @@ pub struct MaterializeLogicalModulesConfig {
     /// keep them.
     #[serde(default = "default_true")]
     pub prune_other_chunks: bool,
-    #[serde(default)]
-    pub force: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub report_out_dir: Option<PathBuf>,
@@ -168,7 +166,6 @@ impl Default for MaterializeLogicalModulesConfig {
         Self {
             file: None,
             prune_other_chunks: true,
-            force: false,
             report_out_dir: None,
             target_dir: String::new(),
         }
@@ -179,8 +176,6 @@ impl Default for MaterializeLogicalModulesConfig {
 #[serde(deny_unknown_fields)]
 pub struct WriteJsTreeConfig {
     pub out_dir: PathBuf,
-    #[serde(default)]
-    pub force: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -189,8 +184,6 @@ pub struct EmitBrowserHarnessConfig {
     pub asset_summary_path: PathBuf,
     pub out_dir: PathBuf,
     pub snapshot_root: PathBuf,
-    #[serde(default)]
-    pub force: bool,
 }
 
 /// Container for per-chunk in-place renames; see

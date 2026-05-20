@@ -16,7 +16,6 @@ use output_layout::DebundleOutputLayout;
 pub struct WriteTreeInput<'a> {
     pub artifact: &'a ChunkBundle,
     pub out_dir: &'a Path,
-    pub force: bool,
     pub lowerings: &'a [SelectedModuleLowering],
     pub counts: &'a ArtifactCounts,
     pub chunk_records: &'a [ArtifactChunkRecord],

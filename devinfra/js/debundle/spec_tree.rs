@@ -25,7 +25,6 @@ pub struct CompileSpecTreeOptions {
     pub vendor_marks_path: PathBuf,
     pub source_root: Option<PathBuf>,
     pub out_root: PathBuf,
-    pub force: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -163,7 +162,6 @@ pub fn compile_spec_tree(options: &CompileSpecTreeOptions) -> Result<TransformSp
         materialize_logical_modules: MaterializeLogicalModulesConfig {
             file: None,
             prune_other_chunks: false,
-            force: options.force,
             report_out_dir: Some(layout.report_tree_root.clone()),
             target_dir: String::new(),
         },
@@ -172,7 +170,6 @@ pub fn compile_spec_tree(options: &CompileSpecTreeOptions) -> Result<TransformSp
             asset_summary_path,
             out_dir: layout.output_root,
             snapshot_root: input_root,
-            force: options.force,
         }),
     })
 }
@@ -557,7 +554,6 @@ unassigned_mode:
             vendor_marks_path: vendor_marks,
             source_root: None,
             out_root: PathBuf::from("out/override"),
-            force: true,
         }
     }
 
@@ -585,8 +581,7 @@ unassigned_mode:
             Path::new("out/override/reports/vendor_swaps.json")
         );
         assert_eq!(spec.vendor["static/vendor.js"].identity, "example");
-        assert!(spec.materialize_logical_modules.force);
-        assert!(spec.emit_browser_harness.unwrap().force);
+        assert!(spec.emit_browser_harness.is_some());
     }
 
     #[test]

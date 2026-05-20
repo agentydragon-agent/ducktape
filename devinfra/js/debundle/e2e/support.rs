@@ -118,7 +118,6 @@ struct MaterializeLogicalModulesFixture<'a> {
 
 #[derive(Serialize)]
 struct WriteJsTreeFixture<'a> {
-    force: bool,
     out_dir: &'a Path,
 }
 
@@ -597,7 +596,6 @@ fn build_spec<'a>(opts: &FixtureOpts<'_>, setup: &'a FixtureSetup) -> TransformS
             target_dir: "modules",
         },
         write_js_tree: WriteJsTreeFixture {
-            force: true,
             out_dir: &setup.out_root,
         },
     }

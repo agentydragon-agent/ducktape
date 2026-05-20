@@ -176,7 +176,6 @@ pub struct MaterializeLogicalModulesOptions {
     pub chunk_ids: Vec<String>,
     pub file: Option<String>,
     pub prune_other_chunks: bool,
-    pub force: bool,
     pub report_out_dir: Option<PathBuf>,
     pub target_dir: String,
 }
@@ -204,7 +203,7 @@ pub fn materialize_logical_modules(
 
     let mut report_out_dir = None;
     if let Some(dir) = &options.report_out_dir {
-        prepare_output_dir(dir, options.force)?;
+        prepare_output_dir(dir)?;
         report_out_dir = Some(dir.clone());
     }
 

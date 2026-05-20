@@ -15,7 +15,7 @@ The command has two public surfaces:
 Run a flat spec:
 
 ```sh
-debundle run --spec transform-spec.yaml --force
+debundle run --spec transform-spec.yaml
 ```
 
 Run a tree-shaped authoring spec:
@@ -26,8 +26,7 @@ debundle run \
   --tree-modules spec/modules \
   --tree-vendor-marks spec/sources/vendor/vendor_marks.yaml \
   --tree-source-root . \
-  --out-root bazel-bin/example/debundle.out \
-  --force
+  --out-root bazel-bin/example/debundle.out
 ```
 
 Vendor-package source lookup can be supplied either as repeated explicit roots:
@@ -57,8 +56,6 @@ load("@ducktape//devinfra/js/debundle:pipeline.bzl", "debundle_pipeline")
 
 debundle_pipeline(
     name = "debundle",
-    debundler = "@ducktape//devinfra/js/debundle:debundle",
-    force = True,
     input_data = [
         "//path/to:bundle_inputs",
     ],
@@ -76,7 +73,14 @@ debundle_pipeline(
 The rule writes a tree artifact named `<target>.out` under `bazel-bin`. It
 declares the spec, input data, package roots, and debundler binary as Bazel
 inputs/tools, then runs the debundler from `BAZEL_BINDIR` so source-relative
-spec paths resolve the same way they do in ordinary builds.
+spec paths resolve the same way they do in ordinary builds. By default the rule
+uses `@ducktape//devinfra/js/debundle:debundle`; consumers can select a
+different binary at repo or command-line scope with:
+
+```sh
+bazel build //path/to:debundle \
+  --@ducktape//devinfra/js/debundle:debundler=@my_debundle_bin//file
+```
 
 ## Profiling Actions
 
@@ -93,7 +97,6 @@ load(
 
 debundle_pipeline_with_profiles(
     name = "debundle",
-    debundler = "@ducktape//devinfra/js/debundle:debundle",
     # Same attrs as debundle_pipeline.
 )
 ```
