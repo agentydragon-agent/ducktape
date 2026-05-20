@@ -1,8 +1,9 @@
 # Valkey Kimsufi Local-Storage Migration
 
-Status: paved through Phase 5 on `manifold-mcp/manifold-valkey`; Manifold is
-now on `local-path-ovh`.
-Last live inventory refresh: 2026-05-19.
+Status: paved through Phase 5 for all operator-managed MCP Valkeys; Manifold,
+Grocy SF MCP, Grocy Vallejo MCP, and Tana MCP facade are now on
+`local-path-ovh`.
+Last live inventory refresh: 2026-05-20.
 
 This note covers two related tasks:
 
@@ -17,15 +18,12 @@ included because local-path PVs are bound to a specific node and host path.
 
 ### `talos-vps-worker-0`
 
-| PV                                         | PVC                                                         | Pod                      | Purpose                                                                      | Notes                                                                                                                                              |
-| ------------------------------------------ | ----------------------------------------------------------- | ------------------------ | ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pvc-08d96ead-94e1-4610-a109-d91074d1c67b` | `grocy-sf/grocy-sf-valkey-grocy-sf-valkey-1`                | `grocy-sf-valkey-1`      | Grocy SF MCP OAuth/session state Valkey replica                              | Master is already `grocy-sf-valkey-0` on `talos-kimsufi-worker-0`; this is a removable old-site replica after replacement/scale-down cleanup.      |
-| `pvc-df39ef94-2de0-4946-9410-4187e57da00c` | `grocy-vallejo/grocy-vallejo-valkey-grocy-vallejo-valkey-1` | `grocy-vallejo-valkey-1` | Grocy Vallejo MCP OAuth/session state Valkey replica                         | Master is already `grocy-vallejo-valkey-0` on `talos-kimsufi-worker-0`; this is a removable old-site replica after replacement/scale-down cleanup. |
-| `pvc-b12db62a-efee-41c9-b158-70a30f766cdd` | `loki/storage-loki-0`                                       | `loki-0`                 | Loki single-binary local WAL/cache; chunks and indexes use SeaweedFS S3      | Helm values pin singleBinary persistence to `local-path-hetzner` and region `hil`. Needs a Loki-specific migration or accepted cache/WAL loss.     |
-| `pvc-87eb5e5d-f588-4b20-870d-946c6da4022b` | `monitoring/storage-mimir-compactor-0`                      | `mimir-compactor-0`      | Mimir compactor local working state/cache; long-term blocks use SeaweedFS S3 | StatefulSet with one replica and `local-path-hetzner`. Needs monitoring Helm value migration.                                                      |
-| `pvc-1e35cc4f-913d-4d75-99e3-4af241eba2b1` | `monitoring/storage-mimir-ingester-0`                       | `mimir-ingester-0`       | Mimir ingester local TSDB/WAL                                                | StatefulSet with one replica and `local-path-hetzner`; this is the riskiest monitoring PVC because it can contain recent samples before upload.    |
-| `pvc-e8d15fd7-de1d-4887-94ab-4123c77a2785` | `monitoring/storage-mimir-store-gateway-0`                  | `mimir-store-gateway-0`  | Mimir store-gateway cache/local state; blocks use SeaweedFS S3               | StatefulSet with one replica and `local-path-hetzner`. Needs monitoring Helm value migration.                                                      |
-| `pvc-64142566-782b-413f-8393-5862bc552d78` | `tana-mcp/mcp-valkey-mcp-valkey-1`                          | `mcp-valkey-1`           | Tana MCP facade OAuth/session state Valkey replica                           | Master is already `mcp-valkey-0` on `talos-kimsufi-worker-0`; this is a removable old-site replica after replacement/scale-down cleanup.           |
+| PV                                         | PVC                                        | Pod                     | Purpose                                                                      | Notes                                                                                                                                           |
+| ------------------------------------------ | ------------------------------------------ | ----------------------- | ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pvc-b12db62a-efee-41c9-b158-70a30f766cdd` | `loki/storage-loki-0`                      | `loki-0`                | Loki single-binary local WAL/cache; chunks and indexes use SeaweedFS S3      | Helm values pin singleBinary persistence to `local-path-hetzner` and region `hil`. Needs a Loki-specific migration or accepted cache/WAL loss.  |
+| `pvc-87eb5e5d-f588-4b20-870d-946c6da4022b` | `monitoring/storage-mimir-compactor-0`     | `mimir-compactor-0`     | Mimir compactor local working state/cache; long-term blocks use SeaweedFS S3 | StatefulSet with one replica and `local-path-hetzner`. Needs monitoring Helm value migration.                                                   |
+| `pvc-1e35cc4f-913d-4d75-99e3-4af241eba2b1` | `monitoring/storage-mimir-ingester-0`      | `mimir-ingester-0`      | Mimir ingester local TSDB/WAL                                                | StatefulSet with one replica and `local-path-hetzner`; this is the riskiest monitoring PVC because it can contain recent samples before upload. |
+| `pvc-e8d15fd7-de1d-4887-94ab-4123c77a2785` | `monitoring/storage-mimir-store-gateway-0` | `mimir-store-gateway-0` | Mimir store-gateway cache/local state; blocks use SeaweedFS S3               | StatefulSet with one replica and `local-path-hetzner`. Needs monitoring Helm value migration.                                                   |
 
 ### `talos-vps-worker-1`
 
@@ -279,6 +277,36 @@ Observed results:
 - Phase 5 removed the old `manifold-valkey` CR, StatefulSet, pods, PVCs, and
   PVs. The only remaining Manifold Valkey storage is the two
   `local-path-ovh` PVCs for `manifold-valkey-kimsufi`.
+
+## Batch Run Notes
+
+The remaining MCP Valkeys were migrated on 2026-05-20 using the same pattern:
+
+- Phase 1 OVH followers: `9f1697338`
+- Phase 2 app pause: `cde27fdaa`
+- Phase 3 replacement detach: `52c06710a`
+- Phase 4 app cutover and unpause: `701cc0997`
+- Phase 5 old Valkey retirement: `0ec70be48`
+
+Migrated CRs:
+
+- `grocy-sf/grocy-sf-valkey` -> `grocy-sf/grocy-sf-valkey-ovh`
+- `grocy-vallejo/grocy-vallejo-valkey` ->
+  `grocy-vallejo/grocy-vallejo-valkey-ovh`
+- `tana-mcp/mcp-valkey` -> `tana-mcp/mcp-valkey-ovh`
+
+Observed results:
+
+- All replacement pods landed on `talos-kimsufi-worker-0` and
+  `talos-kimsufi-worker-1` with `local-path-ovh` PVCs.
+- Removing `additionalRedisConfig` rolled the replacement StatefulSets and the
+  operator selected ordinal `0` as master, with ordinal `1` as replica.
+- The Grocy MCP services do not expose `/healthz`; `/mcp` returned the expected
+  unauthenticated `401`, and pod logs showed clean startup. Tana MCP facade
+  `/healthz` returned `200`.
+- Flux sometimes reported a stale `gateway` dependency gate; reconciling
+  `gateway` first cleared it, after which the MCP Kustomizations applied
+  normally.
 
 ### Phase 5: Retire Old Valkey
 
