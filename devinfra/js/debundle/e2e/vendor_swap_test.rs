@@ -2,7 +2,9 @@
 //! re-exports a synthetic upstream package, runs the swap pipeline, and
 //! asserts the generated wrapper.
 
-use debundle_e2e_support::{CommandResult, run_debundler, write_text_file, write_yaml_file};
+use debundle_e2e_support::{
+    CommandResult, assert_node_output, run_debundler, write_text_file, write_yaml_file,
+};
 use serde_json::{Value, json};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -1006,6 +1008,139 @@ fn partial_swap_named_kind_no_rewrite_when_local_already_matches() {
         caller.contains("observer(\"X\")"),
         "call sites unchanged:\n{caller}",
     );
+}
+
+#[test]
+fn bundled_partial_swap_replaces_react_cjs_family_with_singleton_esm_facade() {
+    // React-family swaps need more than plain partial-swap. The browser
+    // cannot load React's npm CJS entry directly as an importmapped ESM file,
+    // and React + jsx-runtime must share one module singleton. This fixture is
+    // the smallest contract for that shape: a namespace import for `react`, a
+    // namespace import for `react/jsx-runtime`, and a shared internal cell
+    // that proves both aliases came from one bundled package family rather
+    // than from a residual in-blob copy plus raw CJS.
+    // TODO: once the schema exists, keep this as an executable fixture. The
+    // Node probe below is the minimal gate; a browser importmap/load test would
+    // be the stronger proof for the live-proxy path.
+    const MEGACHUNK_PATH: &str = "static/megachunk.js";
+    const CALLER_PATH: &str = "static/app.js";
+    const PACKAGE_NAME: &str = "react";
+    const JSX_RUNTIME_NAME: &str = "react/jsx-runtime";
+    const PACKAGE_VERSION: &str = "18.3.1";
+
+    let root = TempDir::with_prefix("vendor-bundled-partial-swap-react-").expect("create tempdir");
+    let workspace_root = root.path().join("workspace");
+    let extracted_root = workspace_root.join("extracted");
+    let snapshot_root = workspace_root.join("snapshot");
+    let out_root = workspace_root.join("out");
+    let wrapper_root = out_root.join("app").join("vendors").join("generated");
+    let manifest_path = out_root.join("reports").join("vendor_swaps.json");
+    let package_root = root.path().join("upstream").join(PACKAGE_NAME);
+    fs::create_dir_all(&extracted_root).unwrap();
+    fs::create_dir_all(&snapshot_root).unwrap();
+    fs::create_dir_all(&out_root).unwrap();
+    fs::create_dir_all(&package_root).unwrap();
+    fs::create_dir_all(snapshot_root.join("static")).unwrap();
+
+    write_text_file(
+        &snapshot_root.join(MEGACHUNK_PATH),
+        "const dispatcher = { current: \"vendor\" };\n\
+         const React = { dispatcher, useState: () => dispatcher.current };\n\
+         const jsxRuntime = { jsx: () => dispatcher.current };\n\
+         export { React as a, jsxRuntime as j };\n",
+    );
+    write_text_file(
+        &snapshot_root.join(CALLER_PATH),
+        "import { a as React, j as jsxRuntime } from \"../megachunk/entry.js\";\n\
+         console.log(`${React.useState()}:${jsxRuntime.jsx()}`);\n",
+    );
+    let js_list_path = extracted_root.join("js-files.txt");
+    write_text_file(&js_list_path, &format!("{MEGACHUNK_PATH}\n{CALLER_PATH}\n"));
+
+    write_text_file(
+        &package_root.join("package.json"),
+        &format!(
+            "{}\n",
+            serde_json::to_string_pretty(&json!({
+                "name": PACKAGE_NAME,
+                "version": PACKAGE_VERSION,
+                "main": "index.js",
+            }))
+            .unwrap(),
+        ),
+    );
+    write_text_file(
+        &package_root.join("index.js"),
+        "const dispatcher = { current: \"package\" };\n\
+         exports.dispatcher = dispatcher;\n\
+         exports.useState = () => dispatcher.current;\n",
+    );
+    write_text_file(
+        &package_root.join("jsx-runtime.js"),
+        "const React = require(\"./index.js\");\n\
+         exports.jsx = () => React.dispatcher.current;\n",
+    );
+
+    let spec_path = root.path().join("transform_spec.yaml");
+    let spec = json!({
+        "vendor": {
+            MEGACHUNK_PATH: {
+                "level": "bundled_partial_swap",
+                "identity": "React CJS family bundled partial swap fixture",
+                "packages": {
+                    PACKAGE_NAME: {
+                        "version": PACKAGE_VERSION,
+                        "subpath": "index.js",
+                    },
+                    JSX_RUNTIME_NAME: {
+                        "version": PACKAGE_VERSION,
+                        "subpath": "jsx-runtime.js",
+                    },
+                },
+                "symbols": {
+                    "a": { "package": PACKAGE_NAME, "kind": "namespace" },
+                    "j": { "package": JSX_RUNTIME_NAME, "kind": "namespace" },
+                },
+            },
+        },
+        "inputs": { "input_root": &snapshot_root, "js_list_path": &js_list_path },
+        "swap_vendor_chunks": {
+            "output_manifest_path": &manifest_path,
+            "output_wrapper_dir": &wrapper_root,
+            "write": true,
+        },
+        "write_js_tree": { "force": true, "out_dir": &out_root },
+    });
+    write_yaml_file(&spec_path, &spec);
+
+    let result = run_debundler(
+        &spec_path,
+        &[
+            (PACKAGE_NAME, &package_root),
+            (JSX_RUNTIME_NAME, &package_root),
+        ],
+    );
+    assert!(
+        result.status.success(),
+        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
+        result.status.code(),
+        result.stdout,
+        result.stderr,
+    );
+
+    let caller_path = out_root.join("app/static/app").join("entry.js");
+    let caller = fs::read_to_string(&caller_path).expect("caller emitted");
+    assert!(
+        !caller.contains("from \"react\"") && !caller.contains("from \"react/jsx-runtime\""),
+        "bundled partial swap must not leave browser-facing raw CJS package imports:\n{caller}",
+    );
+
+    let probe_path = out_root.join("__run_entry.mjs");
+    write_text_file(
+        &probe_path,
+        "await import(\"./app/static/app/entry.js\");\n",
+    );
+    assert_node_output(&probe_path, "package:package\n", "");
 }
 
 struct PartialSwapKindFixtureArgs<'a> {
