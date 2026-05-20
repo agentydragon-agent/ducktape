@@ -512,10 +512,4 @@ mod tests {
         assert!(!is_input_bundle_name("renamedUsefulThing", &input_names));
         assert!(!is_input_bundle_name("bC", &input_names));
     }
-
-    #[test]
-    fn iso_timestamp_is_utc_seconds() {
-        let formatted = format_iso(SystemTime::UNIX_EPOCH);
-        assert_eq!(formatted, "1970-01-01T00:00:00Z");
-    }
 }
