@@ -2301,9 +2301,7 @@ fn rewrite_partial_swap_in_file(
         references,
         chunk_table,
         |target_chunk_name, imported_name_lookup, local_sym| {
-            let Some(chunk_mapping) = mappings.get(target_chunk_name) else {
-                return None;
-            };
+            let chunk_mapping = mappings.get(target_chunk_name)?;
             let target = chunk_mapping.symbols.get(imported_name_lookup)?;
             let package_coords = chunk_mapping.packages.get(&target.package)?;
             let mut imports = Vec::new();
@@ -2433,9 +2431,7 @@ fn rewrite_bundled_partial_swap_in_file(
         references,
         chunk_table,
         |target_chunk_name, imported_name_lookup, local_sym| {
-            let Some(chunk_mapping) = mappings.get(target_chunk_name) else {
-                return None;
-            };
+            let chunk_mapping = mappings.get(target_chunk_name)?;
             let target = chunk_mapping.symbols.get(imported_name_lookup)?;
             let package_coords = chunk_mapping.packages.get(&target.package)?;
             let import_source = bundled_facade_import_source(
@@ -2562,7 +2558,7 @@ where
             if let Some(imports) = rewrite_one(
                 &target_chunk_name,
                 &imported_name_lookup,
-                &named.local.sym.to_string(),
+                named.local.sym.as_ref(),
             ) {
                 decl_local_imports.extend(imports);
             } else {
