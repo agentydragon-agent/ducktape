@@ -10,10 +10,11 @@ use url::Url;
 
 use artifact::{
     ArtifactChunkRecord, ChunkBundle, ChunkDecompositionOutput, ChunkId, OutputMetrics,
-    chunk_id_for_js_path, manifest_relative_path, materialize_artifact_scripts,
-    module_path_from_path, normalize_module_path, path_from_module_path,
+    chunk_id_for_js_path, materialize_artifact_scripts, module_path_from_path,
+    normalize_module_path, path_from_module_path,
 };
 use identifier_rename_queue::{compute_identifier_rename_queue, write_queue};
+use output_layout::DebundleOutputLayout;
 use rewrite_specifiers::runtime_js_href;
 
 pub struct EmitBrowserHarnessOptions {
@@ -51,10 +52,10 @@ pub fn emit_browser_harness(
     chunk_records: &[ArtifactChunkRecord],
     decomposition_by_chunk: &HashMap<ChunkId, ChunkDecompositionOutput>,
 ) -> Result<()> {
-    let asset_summary: AssetSummary = serde_json::from_str(
-        &fs::read_to_string(&options.asset_summary_path)
-            .with_context(|| format!("reading {}", options.asset_summary_path.display()))?,
-    )?;
+    let asset_summary_raw = fs::read_to_string(&options.asset_summary_path)
+        .with_context(|| format!("reading {}", options.asset_summary_path.display()))?;
+    let asset_summary_value: serde_json::Value = serde_json::from_str(&asset_summary_raw)?;
+    let asset_summary: AssetSummary = serde_json::from_str(&asset_summary_raw)?;
     let html_path = asset_summary
         .entry_points
         .and_then(|entry_points| entry_points.html)
@@ -97,65 +98,65 @@ pub fn emit_browser_harness(
         }
     }
 
-    prepare_harness_output_dir(&options.out_dir, options.force)?;
-    let materialized =
-        materialize_artifact_scripts(artifact, &options.out_dir, decomposition_by_chunk)?;
-    let copied_assets = copy_snapshot_assets(&options.snapshot_root, &options.out_dir)?;
-    let bootstrap = build_bootstrap(artifact, &entry_scripts, &options.out_dir, &options.out_dir)?;
-    let index_html =
-        rewrite_index_html(artifact, &source_html, &options.out_dir, &options.out_dir)?;
+    let layout = DebundleOutputLayout::new(&options.out_dir);
+    let app_root = layout.app_root();
+    prepare_harness_output_dir(&layout)?;
+    let materialized = materialize_artifact_scripts(
+        artifact,
+        &app_root,
+        &layout.tree_root(),
+        decomposition_by_chunk,
+    )?;
+    let copied_assets = copy_snapshot_assets(&options.snapshot_root, &app_root)?;
+    let bootstrap = build_bootstrap(artifact, &entry_scripts, &app_root, &app_root)?;
+    let index_html = rewrite_index_html(artifact, &source_html, &app_root, &app_root)?;
 
-    fs::write(options.out_dir.join("index.html"), index_html)?;
-    fs::write(options.out_dir.join("bootstrap.js"), bootstrap)?;
+    fs::write(app_root.join("index.html"), index_html)?;
+    fs::write(app_root.join("bootstrap.js"), bootstrap)?;
     serde_json::to_writer_pretty(
-        &fs::File::create(options.out_dir.join("chunks.manifest.json"))?,
+        &fs::File::create(layout.chunks_report())?,
         &ChunksManifest {
             chunks: chunk_records,
         },
     )?;
-    // Make the harness tree self-contained: copy the upstream source HTML
-    // and asset-summary into the output dir so the live proxy (and any
-    // other consumer reading the manifest) only needs the manifest's own
-    // directory in its runfiles, not the unrelated `extracted/` and
-    // `snapshots/` input trees. The recursive snapshot copy above already
-    // brought in SOURCE.json and other static assets; the source HTML's
-    // pre-rewrite copy gets a stable `source.html` name (the snapshot's
-    // copy at `<html_path>` is overwritten by the rewritten index above
-    // when the two collide).
-    let source_html_in_tree = options.out_dir.join("source.html");
-    fs::write(&source_html_in_tree, &source_html)?;
-    let asset_summary_in_tree = options.out_dir.join("asset-summary.json");
-    copy_output_file(&options.asset_summary_path, &asset_summary_in_tree)?;
-    let manifest_path = options.out_dir.join("manifest.json");
-    let rel = |target: &Path| manifest_relative_path(&manifest_path, target);
-    // The identifier rename priority queue is a side output of every
-    // harness emit; write it now so its path can be recorded in the
-    // manifest.
     let queue = compute_identifier_rename_queue(artifact, decomposition_by_chunk)?;
-    let queue_path = write_queue(&options.out_dir, &queue)?;
-    let manifest = HarnessManifest {
-        source_html: rel(&source_html_in_tree),
-        asset_summary_path: rel(&asset_summary_in_tree),
-        chunks_manifest_path: rel(&options.out_dir.join("chunks.manifest.json")),
-        runtime_root: rel(&options.out_dir),
-        out_dir: rel(&options.out_dir),
+    write_queue(&layout.rename_queue_report(), &queue)?;
+    let runtime = HarnessRuntimeReport {
+        app_root: format!("../{}", output_layout::APP_DIR),
         copied_assets,
         entry_scripts,
         module_preloads: preload_entries
             .iter()
             .map(|entry| entry.path.clone())
             .collect(),
-        identifier_rename_queue: rel(&queue_path),
-        output_metrics: materialized.output_metrics,
         generated: HarnessGeneratedManifest {
-            bootstrap: rel(&options.out_dir.join("bootstrap.js")),
-            chunks_manifest: rel(&options.out_dir.join("chunks.manifest.json")),
-            index_html: rel(&options.out_dir.join("index.html")),
+            bootstrap: module_path_from_path(&PathBuf::from("bootstrap.js")),
+            index_html: module_path_from_path(&PathBuf::from("index.html")),
         },
     };
-    serde_json::to_writer_pretty(&fs::File::create(&manifest_path)?, &manifest)?;
+    serde_json::to_writer_pretty(&fs::File::create(layout.runtime_report())?, &runtime)?;
     serde_json::to_writer_pretty(
-        &fs::File::create(options.out_dir.join("package.json"))?,
+        &fs::File::create(layout.output_report())?,
+        &HarnessOutputReport {
+            output_metrics: materialized.output_metrics,
+        },
+    )?;
+    serde_json::to_writer_pretty(
+        &fs::File::create(layout.source_assets_report())?,
+        &SourceAssetsReport {
+            source_path: module_path_from_path(&options.asset_summary_path),
+            asset_summary: asset_summary_value,
+        },
+    )?;
+    serde_json::to_writer_pretty(
+        &fs::File::create(layout.provenance_report())?,
+        &ProvenanceReport {
+            source_html_path: module_path_from_path(&source_html_path),
+            source_html,
+        },
+    )?;
+    serde_json::to_writer_pretty(
+        &fs::File::create(app_root.join("package.json"))?,
         &PackageManifest {
             package_type: "module",
         },
@@ -175,27 +176,35 @@ struct PackageManifest {
 }
 
 #[derive(Serialize)]
-struct HarnessManifest {
-    source_html: String,
-    asset_summary_path: String,
-    chunks_manifest_path: String,
-    runtime_root: String,
-    out_dir: String,
+struct HarnessRuntimeReport {
+    app_root: String,
     copied_assets: Vec<String>,
     entry_scripts: Vec<String>,
     module_preloads: Vec<String>,
-    /// Path to the identifier rename priority queue JSON (always
-    /// emitted as a side output). Manifest-relative.
-    identifier_rename_queue: String,
-    output_metrics: OutputMetrics,
     generated: HarnessGeneratedManifest,
 }
 
 #[derive(Serialize)]
 struct HarnessGeneratedManifest {
     bootstrap: String,
-    chunks_manifest: String,
     index_html: String,
+}
+
+#[derive(Serialize)]
+struct HarnessOutputReport {
+    output_metrics: OutputMetrics,
+}
+
+#[derive(Serialize)]
+struct SourceAssetsReport {
+    source_path: String,
+    asset_summary: serde_json::Value,
+}
+
+#[derive(Serialize)]
+struct ProvenanceReport {
+    source_html_path: String,
+    source_html: String,
 }
 
 fn build_bootstrap(
@@ -448,40 +457,18 @@ fn normalize_url_path(url: &str) -> Result<String> {
     normalize_module_path(stripped)
 }
 
-fn prepare_harness_output_dir(out_dir: &Path, force: bool) -> Result<()> {
-    if out_dir.exists() {
-        if !out_dir.is_dir() {
+fn prepare_harness_output_dir(layout: &DebundleOutputLayout) -> Result<()> {
+    if layout.root().exists() {
+        if !layout.root().is_dir() {
             bail!(
                 "Output path exists and is not a directory: {}",
-                out_dir.display()
+                layout.root().display()
             );
-        }
-        let removable = fs::read_dir(out_dir)?
-            .filter_map(|entry| entry.ok())
-            .filter(|entry| {
-                let name = entry.file_name();
-                let name = name.to_string_lossy();
-                name != "analysis" && name != "vendors"
-            })
-            .collect::<Vec<_>>();
-        if !removable.is_empty() && !force {
-            bail!(
-                "Output directory is not empty: {}. Pass --force to replace it.",
-                out_dir.display()
-            );
-        }
-        if force {
-            for entry in removable {
-                let path = entry.path();
-                if path.is_dir() {
-                    fs::remove_dir_all(path)?;
-                } else {
-                    fs::remove_file(path)?;
-                }
-            }
         }
     }
-    fs::create_dir_all(out_dir)?;
+    let app_root = layout.app_root();
+    fs::create_dir_all(app_root)?;
+    fs::create_dir_all(layout.reports_root())?;
     Ok(())
 }
 

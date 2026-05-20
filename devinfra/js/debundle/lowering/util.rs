@@ -3,6 +3,8 @@
 //! disambiguation, and small I/O wrappers.
 
 use super::*;
+use std::fs;
+use std::io::BufWriter;
 
 /// True iff `s` is a valid JavaScript identifier — start char is
 /// `[A-Za-z_$]` and rest is `[A-Za-z0-9_$]`. Reserved words are not
@@ -497,15 +499,14 @@ pub(super) fn write_chunk_report_json<T: Serialize>(
         // Keep small human-first reports pretty; keep the graph jq-first.
         let mut output = BufWriter::new(fs::File::create(path)?);
         serde_json::to_writer(&mut output, value)?;
-        writeln!(output)?;
     } else {
         let body = serde_json::to_string_pretty(value)?;
-        fs::write(path, body + "\n")?;
+        fs::write(path, body)?;
     }
     Ok(())
 }
 
-pub(super) fn prepare_output_dir(out_dir: &Path, force: bool) -> Result<()> {
+pub(super) fn prepare_output_dir(out_dir: &Path, _force: bool) -> Result<()> {
     if out_dir.exists() {
         if !out_dir.is_dir() {
             bail!(
@@ -513,14 +514,11 @@ pub(super) fn prepare_output_dir(out_dir: &Path, force: bool) -> Result<()> {
                 out_dir.display()
             );
         }
-        if fs::read_dir(out_dir)?.next().is_some() && !force {
+        if fs::read_dir(out_dir)?.next().is_some() {
             bail!(
-                "Output directory is not empty: {}. Pass --force to replace it.",
+                "Output directory is not empty: {}. Remove it before running debundle.",
                 out_dir.display()
             );
-        }
-        if force {
-            fs::remove_dir_all(out_dir)?;
         }
     }
     fs::create_dir_all(out_dir)?;

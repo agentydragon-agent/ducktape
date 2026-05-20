@@ -1122,31 +1122,29 @@ SCC or an unimportable residual dependency. The tool may rank,
 summarize, or annotate those projections, but it does not silently
 assign bindings on behalf of the spec author.
 
-`FactorizationReport` remains the compact validation report. The detailed
-next-action data lives in `<reports>/<chunk_id>/owner_graph.json`,
-which is emitted on both success and rejection. Re-running the
-pipeline on an updated spec produces fresh graph and peelability
-reports.
+Each materialized chunk has reports under `reports/tree/<chunk_id>/`.
+`owner_graph.json` carries the detailed graph and peelability data; compact
+validation status is folded into `chunk.json`; `cycles.json` and
+`atomic_unit_conflicts.json` are emitted only for rejection cases.
 
-When an output emitter materializes executable JavaScript, its root
-`manifest.json` and each chunk `manifest.json` include `output_metrics`.
-These metrics are computed from the exact rendered JS written to disk:
-total bytes/lines/files, top-level entry bytes/lines/files, named
-logical-module bytes/lines/files, residual module bytes/lines/files,
-and the largest JS sinks. Peeling tools should use these manifest fields
-for progress reporting instead of rescanning output trees.
+When an output emitter materializes executable JavaScript, root reports live
+under `reports/` and per-file/per-directory reports are mirrored under
+`reports/tree/` next to the chunk reports. `reports/output.json` and
+`reports/tree/<chunk_id>/chunk.json` include `output_metrics` computed from the
+exact rendered JS written to disk: total bytes/lines/files, top-level entry
+bytes/lines/files, named-module bytes/lines/files, residual module
+bytes/lines/files, and the largest JS sinks. Peeling tools should use these
+fields for progress reporting instead of rescanning output trees.
 
-When logical modules are materialized, the output root also includes a
-`directory_manifests/` sidecar tree. `directory_manifests/index.json` lists
-one mirrored manifest for each emitted JS directory, stored at
-`directory_manifests/<emitted-dir>/manifest.json`. These manifests project the
-semantic owner/module dependency graph onto recursive emitted-directory
-boundaries. They report incoming/outgoing edge counts by dependency kind plus
-full symbol and file attribution maps. A symbol key has the form
+The mirrored `reports/tree/**/index.json` files project the semantic
+owner/module dependency graph onto recursive emitted-directory boundaries. They
+report incoming/outgoing edge counts by dependency kind plus full symbol and
+file attribution maps. A symbol key has the form
 `<target_file>#<export_or_binding_name>`; binding-less edges such as
-`sequenced` contribute to edge-kind and file counts but not symbol maps. Use
-these directory manifests to judge hierarchy encapsulation and leaky subtree
-boundaries; use the owner graph and source bodies for drill-down.
+`sequenced` contribute to edge-kind and file counts but not symbol maps. Uses
+within the same directory do not count against that directory boundary. Use
+these reports to judge hierarchy encapsulation and leaky subtree boundaries;
+use the owner graph and source bodies for drill-down.
 
 ### Workflow
 

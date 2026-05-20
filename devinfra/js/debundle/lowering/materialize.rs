@@ -9,18 +9,7 @@ use super::util::{
 };
 use super::*;
 use crate::time_phase;
-
-pub(super) fn aggregate_logical_timings(
-    reports: &[LogicalChunkReport],
-) -> BTreeMap<String, Duration> {
-    let mut timings = BTreeMap::<String, Duration>::new();
-    for report in reports {
-        for (name, duration) in &report.timings {
-            *timings.entry(format!("chunks.{name}")).or_default() += *duration;
-        }
-    }
-    timings
-}
+use output_layout::{ATOMIC_UNIT_CONFLICTS_REPORT, CYCLES_REPORT, OWNER_GRAPH_REPORT};
 
 pub(super) struct MaterializeLogicalChunkInputs<'a> {
     pub(super) artifact: &'a ChunkBundle,
@@ -43,7 +32,8 @@ pub(super) struct MaterializedLogicalChunk {
     pub(super) file_records: Vec<(String, FileRole)>,
     pub(super) applied: Vec<SelectedModuleLowering>,
     pub(super) directory_dependency_facts: Vec<DirectoryDependencyFact>,
-    pub(super) report: LogicalChunkReport,
+    pub(super) validation: ChunkValidationSummary,
+    pub(super) report: ChunkModulesReport,
 }
 
 pub(super) fn materialize_logical_chunk(
@@ -324,8 +314,8 @@ pub(super) fn materialize_logical_chunk(
         // plan so the residual sweep still has a home, and flip
         // its `explicit` flag so downstream consumers see it as
         // the residual destination (residual flag on the factorization
-        // module, OutputRole::ResidualModule in artifact metadata,
-        // residual_logical_modules count on the chunk report).
+        // module, OutputRole::ResidualModule in artifact metadata, and
+        // `residual: true` in modules.json).
         let owner_index = module_plans
             .iter()
             .position(|plan| plan.target_path == catchall_target);
@@ -591,14 +581,6 @@ pub(super) fn materialize_logical_chunk(
         factorization.validate()
     });
     if let Some(report_out_dir) = report_out_dir {
-        time_phase!(timings, "write_factorization_report", {
-            write_chunk_report_json(
-                report_out_dir,
-                chunk_id,
-                "factorization.json",
-                &factorization_report,
-            )
-        })?;
         let owner_graph_report = time_phase!(timings, "build_owner_graph_report", {
             factorization.owner_graph_report()
         });
@@ -606,20 +588,30 @@ pub(super) fn materialize_logical_chunk(
             write_chunk_report_json(
                 report_out_dir,
                 chunk_id,
-                "owner_graph.json",
+                OWNER_GRAPH_REPORT,
                 &owner_graph_report,
             )
         })?;
     }
 
     if !factorization_report.atomic_unit_conflicts.is_empty() {
+        if let Some(report_out_dir) = report_out_dir {
+            time_phase!(timings, "write_atomic_unit_conflicts_report", {
+                write_chunk_report_json(
+                    report_out_dir,
+                    chunk_id,
+                    ATOMIC_UNIT_CONFLICTS_REPORT,
+                    &factorization_report.atomic_unit_conflicts,
+                )
+            })?;
+        }
         let summary = render_atomic_unit_conflict_summary(
             &factorization_report.atomic_unit_conflicts,
             &|id| factorization.analysis.module_name(id),
         );
         let causes = render_atomic_unit_cause_guidance(&factorization_report.atomic_unit_conflicts);
         bail!(
-            "materialize_logical_modules: chunk {chunk_id} has {n} atomic-factor-unit conflict(s) — the spec assigns members of one atomic factor unit to different destination modules, forming a cycle in the module dep graph that the constraining-edge SCC analysis says is unrealizable. Atomic factor units come from FACTORIZE.md's `G_atomic` SCC over the owner graph; every member must co-locate. {causes}Resolve by reconciling each unit's claims into a single destination. Full evidence written to <reports>/{chunk_id}/factorization.json; owner graph written to <reports>/{chunk_id}/owner_graph.json. Summary:\n{summary}",
+            "materialize_logical_modules: chunk {chunk_id} has {n} atomic-factor-unit conflict(s) — the spec assigns members of one atomic factor unit to different destination modules, forming a cycle in the module dep graph that the constraining-edge SCC analysis says is unrealizable. Atomic factor units come from FACTORIZE.md's `G_atomic` SCC over the owner graph; every member must co-locate. {causes}Resolve by reconciling each unit's claims into a single destination. Full evidence written to reports/tree/{chunk_id}/atomic_unit_conflicts.json; owner graph written to reports/tree/{chunk_id}/owner_graph.json. Summary:\n{summary}",
             n = factorization_report.atomic_unit_conflicts.len(),
         );
     }
@@ -630,14 +622,14 @@ pub(super) fn materialize_logical_chunk(
                 write_chunk_report_json(
                     report_out_dir,
                     chunk_id,
-                    "cycles.json",
+                    CYCLES_REPORT,
                     &factorization_report.cycles,
                 )
             })?;
         }
         let summary = render_cycle_summary(&factorization_report.cycles);
         bail!(
-            "materialize_logical_modules: chunk {chunk_id} has {} cycle(s) in the imports + side-effect module dep graph; spec is unrealizable. Resolve by colocating cyclically-coupled bindings or moving the constraining owner endpoints. Full cycle evidence written to <reports>/{chunk_id}/cycles.json; owner graph written to <reports>/{chunk_id}/owner_graph.json. Summary:\n{summary}",
+            "materialize_logical_modules: chunk {chunk_id} has {} cycle(s) in the imports + side-effect module dep graph; spec is unrealizable. Resolve by colocating cyclically-coupled bindings or moving the constraining owner endpoints. Full cycle evidence written to reports/tree/{chunk_id}/cycles.json; owner graph written to reports/tree/{chunk_id}/owner_graph.json. Summary:\n{summary}",
             factorization_report.cycles.len(),
         );
     }
@@ -702,14 +694,15 @@ pub(super) fn materialize_logical_chunk(
     let directory_dependency_facts = time_phase!(timings, "build_directory_dependency_facts", {
         build_directory_dependency_facts(chunk_id, &factorization)
     });
+    let validation = ChunkValidationSummary {
+        status: "ok",
+        linker_order: factorization_report.linker_order.clone(),
+    };
     let timings = timings.into_durations(chunk_started.elapsed());
-    let report = LogicalChunkReport {
+    let report = ChunkModulesReport {
         chunk_id: chunk_id.to_string(),
-        counts: LogicalChunkCounts {
+        counts: ChunkModulesCounts {
             applied: applied.len(),
-            explicit_logical_modules: module_plans.iter().filter(|plan| plan.explicit).count(),
-            final_modules: module_plans.len(),
-            residual_logical_modules: module_plans.iter().filter(|plan| !plan.explicit).count(),
             selected_owners: binding_assignment.len(),
         },
         final_module_contents: final_modules,
@@ -732,6 +725,7 @@ pub(super) fn materialize_logical_chunk(
         file_records,
         applied,
         directory_dependency_facts,
+        validation,
         report,
     })
 }
@@ -858,6 +852,7 @@ pub(super) fn materialized_chunk_artifact(
         file_records,
         applied,
         directory_dependency_facts,
+        validation,
         report,
     } = chunk;
     let chunk_name = chunk_table.name(chunk_id).to_string();
@@ -869,7 +864,6 @@ pub(super) fn materialized_chunk_artifact(
         })
         .collect();
     let logical_modules = ChunkLogicalModulesSummary {
-        count: report.counts.final_modules,
         module_ids: report
             .final_module_contents
             .iter()
@@ -905,6 +899,7 @@ pub(super) fn materialized_chunk_artifact(
         logical_modules,
         selected_module_lowerings: applied,
         directory_dependency_facts,
+        validation,
     };
     (
         ChunkArtifact {

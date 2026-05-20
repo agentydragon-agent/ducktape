@@ -23,6 +23,7 @@ pub struct OwnerGraphReport {
     pub chunk_id: String,
     pub nodes: Vec<OwnerGraphNodeReport>,
     pub edges: Vec<OwnerGraphEdgeReport>,
+    #[serde(rename = "module_graph")]
     pub quotient: OwnerGraphQuotientReport,
     pub peelability: OwnerGraphPeelabilityReport,
     /// Algorithmic peel proposer output. Always populated by
@@ -32,7 +33,7 @@ pub struct OwnerGraphReport {
     /// `peelability::evaluate_peel_candidate`, so
     /// `cells[].landable_today == true` matches what
     /// `materialize_logical_modules` would actually accept.
-    #[serde(default)]
+    #[serde(default, rename = "peel_proposals")]
     pub factorize: FactorizeReport,
 }
 

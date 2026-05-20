@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 
+use output_layout::DebundleOutputLayout;
 use spec::{
     AnonymousStatement, ChunkAnalysisOptions, ChunkRenames, EmitBrowserHarnessConfig,
     LoadJsChunksArgs, LogicalModule, MaterializeLogicalModulesConfig, Member, MemberEffect,
@@ -142,14 +143,13 @@ pub fn compile_spec_tree(options: &CompileSpecTreeOptions) -> Result<TransformSp
             file: None,
             prune_other_chunks: false,
             force: options.force,
-            report_out_dir: Some(layout.reports_root.clone()),
-            report_summary_path: Some(layout.reports_root.join("summary.json")),
+            report_out_dir: Some(layout.report_tree_root.clone()),
             target_dir: String::new(),
         },
         write_js_tree: None,
         emit_browser_harness: Some(EmitBrowserHarnessConfig {
             asset_summary_path,
-            out_dir: layout.app_root,
+            out_dir: layout.output_root,
             snapshot_root: input_root,
             force: options.force,
         }),
@@ -175,19 +175,20 @@ fn read_yaml<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T> {
 
 #[derive(Debug, Clone)]
 struct OutputLayout {
-    app_root: PathBuf,
-    reports_root: PathBuf,
+    output_root: PathBuf,
+    report_tree_root: PathBuf,
     vendor_manifest_path: PathBuf,
     vendor_wrapper_root: PathBuf,
 }
 
 impl OutputLayout {
-    fn new(app_root: PathBuf) -> Self {
+    fn new(root: PathBuf) -> Self {
+        let debundle = DebundleOutputLayout::new(&root);
         Self {
-            reports_root: app_root.join("analysis/logical_modules"),
-            vendor_manifest_path: app_root.join("vendors/manifest.json"),
-            vendor_wrapper_root: app_root.join("vendors/generated"),
-            app_root,
+            output_root: debundle.root().to_path_buf(),
+            report_tree_root: debundle.tree_root(),
+            vendor_manifest_path: debundle.vendor_swaps_report(),
+            vendor_wrapper_root: debundle.app_root().join("vendors/generated"),
         }
     }
 }
@@ -474,7 +475,7 @@ unassigned_mode:
                 .output_manifest_path
                 .as_deref()
                 .unwrap(),
-            Path::new("out/override/vendors/manifest.json")
+            Path::new("out/override/reports/vendor_swaps.json")
         );
         assert_eq!(spec.vendor["static/vendor.js"].identity, "example");
         assert!(spec.materialize_logical_modules.force);

@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -17,11 +17,12 @@ use prepare_chunks::prepare_js_chunks;
 use rewrite_specifiers::rewrite_chunk_entry_specifiers;
 use spec::{MaterializeLogicalModulesConfig, SwapVendorChunksConfig, TransformSpec, VendorLevel};
 use spec_tree::{CompileSpecTreeOptions, compile_spec_tree};
-use strip_swapped_vendor_exports::strip_swapped_vendor_exports;
+use strip_swapped_vendor_exports::{ChunkStripStats, strip_swapped_vendor_exports};
 use validate_emitted_exports::validate_emitted_exports;
 use vendor::{
-    ApplyPartialVendorSwapsOptions, SwapVendorOptions, apply_partial_vendor_swaps,
-    apply_vendor_annotations, rename_vendor_exports, swap_vendor_chunks,
+    ApplyPartialVendorSwapsOptions, ChunkPartialSwapResolution, SwapVendorOptions,
+    VendorResolution, apply_partial_vendor_swaps, apply_vendor_annotations, rename_vendor_exports,
+    swap_vendor_chunks,
 };
 use write_tree::{WriteTreeInput, write_js_tree};
 
@@ -252,7 +253,10 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
     run_step(
         &mut preparation_steps,
         PipelineStage::ValidateTransformSpec,
-        || validate_transform_spec(&spec),
+        || {
+            validate_transform_spec(&spec)?;
+            preflight_output_roots(&spec)
+        },
     )?;
     let (artifact, _load_manifest) =
         run_step_with_result(&mut preparation_steps, PipelineStage::LoadJsChunks, || {
@@ -285,8 +289,9 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
         || rewrite_chunk_entry_specifiers(prepare_result.artifact, &artifact_indexes),
     )?;
     let mut artifact = rewrite_result.artifact;
-    let mut counts = prepare_result.counts;
+    let counts = prepare_result.counts;
     let mut chunk_records = prepare_result.chunk_records;
+    let mut vendor_swaps_report = VendorSwapsReport::default();
 
     // Vendor stages: each is internally filtered by `level`, so it's
     // safe to always invoke them when `vendor` carries any entries.
@@ -333,7 +338,7 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
                     )
                 })?;
             artifact = swap_result.artifact;
-            counts.chunks -= swap_result.removed_chunk_ids.len();
+            vendor_swaps_report.full = swap_result.manifest.resolutions;
             chunk_records.retain(|chunk| !swap_result.removed_chunk_ids.contains(&chunk.chunk_id));
         }
     }
@@ -347,7 +352,6 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
             prune_other_chunks,
             force,
             report_out_dir,
-            report_summary_path,
             target_dir,
         } = spec.materialize_logical_modules.clone();
         let force = force || cli.force;
@@ -365,7 +369,6 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
                         prune_other_chunks,
                         force,
                         report_out_dir,
-                        report_summary_path,
                         target_dir,
                     },
                 )
@@ -388,13 +391,6 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
             .values()
             .any(|m| matches!(m.level, VendorLevel::PartialSwap(_)))
     {
-        let partial_manifest_path = spec
-            .swap_vendor_chunks
-            .output_manifest_path
-            .as_ref()
-            .and_then(|path| path.parent().map(|parent| parent.to_path_buf()))
-            .map(|dir| dir.join("vendor_partial_swap_manifest.json"));
-        let write = spec.swap_vendor_chunks.write;
         let partial_result =
             run_step_with_result(&mut steps, PipelineStage::ApplyPartialVendorSwaps, || {
                 apply_partial_vendor_swaps(
@@ -404,12 +400,11 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
                     ApplyPartialVendorSwapsOptions {
                         package_roots: &cli.package_roots,
                         packages_root: &cli.packages_root,
-                        output_manifest_path: partial_manifest_path,
-                        write,
                     },
                 )
             })?;
         artifact = partial_result.artifact;
+        vendor_swaps_report.partial = partial_result.manifest.resolutions;
 
         // The consumer side has been rewritten to import each swapped
         // symbol from upstream; drop the vendor chunk's residual
@@ -420,7 +415,14 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
                 strip_swapped_vendor_exports(artifact, &spec.vendor)
             })?;
         artifact = strip_result.artifact;
+        vendor_swaps_report.strip_stats = strip_result.manifest.per_chunk;
     }
+
+    write_vendor_swaps_report(
+        spec.swap_vendor_chunks.write,
+        spec.swap_vendor_chunks.output_manifest_path.as_deref(),
+        &vendor_swaps_report,
+    )?;
 
     // Final emit-shape check: every JS file that came out of the
     // materialize / strip pipeline must have unique public export
@@ -554,6 +556,92 @@ fn validate_transform_spec(spec: &TransformSpec) -> Result<()> {
     Ok(())
 }
 
+#[derive(Debug, Default, Serialize)]
+struct VendorSwapsReport {
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    full: BTreeMap<String, VendorResolution>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    partial: BTreeMap<String, ChunkPartialSwapResolution>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    strip_stats: BTreeMap<String, ChunkStripStats>,
+}
+
+fn write_vendor_swaps_report(
+    write: bool,
+    path: Option<&Path>,
+    report: &VendorSwapsReport,
+) -> Result<()> {
+    if !write {
+        return Ok(());
+    }
+    if report.full.is_empty() && report.partial.is_empty() && report.strip_stats.is_empty() {
+        return Ok(());
+    }
+    let Some(path) = path else {
+        return Ok(());
+    };
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(path, serde_json::to_string_pretty(report)?)?;
+    Ok(())
+}
+
+fn preflight_output_roots(spec: &TransformSpec) -> Result<()> {
+    let mut roots = Vec::<PathBuf>::new();
+    if let Some(cfg) = &spec.write_js_tree {
+        roots.push(cfg.out_dir.clone());
+    }
+    if let Some(cfg) = &spec.emit_browser_harness {
+        roots.push(cfg.out_dir.clone());
+    }
+    if let Some(dir) = &spec.materialize_logical_modules.report_out_dir {
+        push_if_uncovered(&mut roots, dir.clone());
+    }
+    if spec.swap_vendor_chunks.write {
+        if let Some(path) = &spec.swap_vendor_chunks.output_manifest_path
+            && let Some(parent) = path.parent()
+        {
+            push_if_uncovered(&mut roots, parent.to_path_buf());
+        }
+        if let Some(dir) = &spec.swap_vendor_chunks.output_wrapper_dir {
+            push_if_uncovered(&mut roots, dir.clone());
+        }
+    }
+
+    roots.sort();
+    roots.dedup();
+    for root in roots {
+        if !root.exists() {
+            continue;
+        }
+        if !root.is_dir() {
+            bail!(
+                "Output path exists and is not a directory: {}",
+                root.display()
+            );
+        }
+        if fs::read_dir(&root)?.next().is_some() {
+            bail!(
+                "Output directory is not empty: {}. Remove it before running debundle.",
+                root.display()
+            );
+        }
+    }
+    Ok(())
+}
+
+fn push_if_uncovered(roots: &mut Vec<PathBuf>, path: PathBuf) {
+    if roots.iter().any(|root| path_is_within(&path, root)) {
+        return;
+    }
+    roots.push(path);
+}
+
+fn path_is_within(path: &Path, root: &Path) -> bool {
+    path == root || path.starts_with(root)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -683,91 +771,85 @@ mod tests {
             assert!(rendered_summary.contains("- rewrite_chunk_entry_specifiers"));
             assert!(rendered_summary.contains("- validate_emitted_exports"));
             assert!(rendered_summary.contains("- emit_browser_harness"));
-            assert!(out.join("bootstrap.js").exists());
-            assert!(out.join("manifest.json").exists());
-            let entry = fs::read_to_string(out.join("static/index-DuckMock/entry.js"))?;
+            assert!(out.join("app/bootstrap.js").exists());
+            assert!(out.join("reports/runtime.json").exists());
+            let entry = fs::read_to_string(out.join("app/static/index-DuckMock/entry.js"))?;
             assert!(entry.contains("../chunk-DuckMock/entry.js"));
-            let chunk_entry = fs::read_to_string(out.join("static/chunk-DuckMock/entry.js"))?;
+            let chunk_entry = fs::read_to_string(out.join("app/static/chunk-DuckMock/entry.js"))?;
             let total_bytes = entry.len() + chunk_entry.len();
             let total_lines = entry.lines().count() + chunk_entry.lines().count();
 
-            // The harness tree must be self-contained: every path the manifest
-            // records resolves to a file inside `out_dir`, with no leakage to
-            // the original `extracted/` or `snapshots/` input trees. Consumers
-            // (live proxy, downstream tools) may receive the manifest through
-            // runfiles where the original input trees aren't co-located.
-            let manifest: serde_json::Value =
-                serde_json::from_str(&fs::read_to_string(out.join("manifest.json"))?)?;
+            let output: serde_json::Value =
+                serde_json::from_str(&fs::read_to_string(out.join("reports/output.json"))?)?;
             assert_eq!(
-                manifest
+                output
                     .pointer("/output_metrics/total/files")
                     .and_then(serde_json::Value::as_u64),
                 Some(2),
             );
             assert_eq!(
-                manifest
+                output
                     .pointer("/output_metrics/total/bytes")
                     .and_then(serde_json::Value::as_u64),
                 Some(total_bytes as u64),
             );
             assert_eq!(
-                manifest
+                output
                     .pointer("/output_metrics/total/lines")
                     .and_then(serde_json::Value::as_u64),
                 Some(total_lines as u64),
             );
             assert_eq!(
-                manifest
+                output
                     .pointer("/output_metrics/top_level_entry/files")
                     .and_then(serde_json::Value::as_u64),
                 Some(2),
             );
             assert_eq!(
-                manifest
+                output
                     .pointer("/output_metrics/named_modules/files")
                     .and_then(serde_json::Value::as_u64),
                 Some(0),
             );
             assert_eq!(
-                manifest
+                output
                     .pointer("/output_metrics/largest_files_by_bytes/0/role")
                     .and_then(serde_json::Value::as_str),
                 Some("top_level_entry"),
             );
+            let runtime: serde_json::Value =
+                serde_json::from_str(&fs::read_to_string(out.join("reports/runtime.json"))?)?;
             assert!(
-                manifest.get("schema_version").is_none(),
-                "harness manifest should not carry a compatibility schema_version"
+                runtime.get("schema_version").is_none(),
+                "runtime report should not carry a compatibility schema_version"
             );
             assert!(
-                manifest.get("parse_plan").is_none(),
-                "harness manifest should no longer carry a parse_plan field"
+                runtime.get("parse_plan").is_none(),
+                "runtime report should not carry a parse_plan field"
             );
-            for field in [
-                "source_html",
-                "asset_summary_path",
-                "chunks_manifest_path",
-                "runtime_root",
-                "out_dir",
-            ] {
-                let value = manifest
-                    .get(field)
-                    .and_then(serde_json::Value::as_str)
-                    .unwrap_or_else(|| panic!("manifest is missing {field}"));
-                assert!(
-                    !value.starts_with('/') && !value.starts_with(".."),
-                    "manifest.{field} = {value:?} escapes the harness tree"
-                );
-                let resolved = out.join(value);
-                assert!(
-                    resolved.exists(),
-                    "manifest.{field} = {value:?} resolves to {resolved:?} which does not exist"
-                );
-            }
+            assert_eq!(
+                runtime.get("app_root").and_then(serde_json::Value::as_str),
+                Some("../app")
+            );
+            assert_eq!(
+                runtime
+                    .pointer("/generated/bootstrap")
+                    .and_then(serde_json::Value::as_str),
+                Some("bootstrap.js")
+            );
+            assert!(
+                out.join("reports/source_assets.json").exists(),
+                "source asset metadata should live under reports/"
+            );
+            assert!(
+                out.join("reports/provenance.json").exists(),
+                "source provenance should live under reports/"
+            );
             let chunks_manifest: serde_json::Value =
-                serde_json::from_str(&fs::read_to_string(out.join("chunks.manifest.json"))?)?;
+                serde_json::from_str(&fs::read_to_string(out.join("reports/chunks.json"))?)?;
             assert!(
                 chunks_manifest.get("schema_version").is_none(),
-                "chunks manifest should not carry a compatibility schema_version"
+                "chunks report should not carry a compatibility schema_version"
             );
             assert_eq!(
                 chunks_manifest
@@ -781,7 +863,7 @@ mod tests {
     }
 
     #[test]
-    fn cli_force_overrides_output_stage_force_flags() -> Result<()> {
+    fn cli_force_does_not_replace_non_empty_outputs() -> Result<()> {
         js_ast::with_swc_globals(|| {
             let temp = tempfile::tempdir()?;
             let root = temp.path();
@@ -833,29 +915,19 @@ mod tests {
             let spec_path = root.join("transform-spec.yaml");
             fs::write(&spec_path, serde_yaml::to_string(&spec)?)?;
 
-            let summary = run_transform_cli(&TransformCli {
+            let err = run_transform_cli(&TransformCli {
                 spec_source: TransformSpecSource::Flat { path: spec_path },
                 package_roots: HashMap::new(),
                 packages_root: None,
                 force: true,
-            })?;
-
+            })
+            .expect_err("non-empty output directories should be rejected, not replaced");
             assert!(
-                summary
-                    .steps
-                    .iter()
-                    .any(|step| matches!(step.stage, PipelineStage::WriteJsTree))
+                err.to_string().contains("Output directory is not empty"),
+                "unexpected error: {err:#}"
             );
-            assert!(
-                summary
-                    .steps
-                    .iter()
-                    .any(|step| matches!(step.stage, PipelineStage::EmitBrowserHarness))
-            );
-            assert!(!js_out.join("stale.txt").exists());
-            assert!(!harness_out.join("stale.txt").exists());
-            assert!(js_out.join("static/index/entry.js").exists());
-            assert!(harness_out.join("bootstrap.js").exists());
+            assert!(js_out.join("stale.txt").exists());
+            assert!(harness_out.join("stale.txt").exists());
             Ok(())
         })
     }

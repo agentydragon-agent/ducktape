@@ -95,7 +95,7 @@ fn assert_wrapper_named_from_module_default(fixture: &VendorSwapFixture) {
         serde_json::from_str(&fs::read_to_string(&fixture.manifest_path).expect("manifest exists"))
             .expect("manifest parses as JSON");
     let recorded = manifest
-        .get("resolutions")
+        .get("full")
         .and_then(|r| r.get(&fixture.chunk_path))
         .and_then(|r| r.get("generated_wrapper_path"))
         .and_then(Value::as_str)
@@ -129,22 +129,18 @@ fn run_named_from_module_default_fixture(upstream_source: &str) -> VendorSwapFix
 
     let root =
         TempDir::with_prefix("vendor-swap-named-from-module-default-").expect("create tempdir");
-    // Output paths the binary writes to are absolute (the new contract — no
-    // workspace lookup in the binary). The vendor manifest lives at
-    // `<root>/workspace/vendors/manifest.json`; wrappers go to its sibling
-    // `generated/<chunk_id>/<entry>`, so manifest-relative emission produces
-    // `generated/<chunk_id>/<entry>` strings.
+    // Output paths the binary writes to are absolute. Vendor reports live
+    // under `reports/`; generated wrappers are app assets.
     let workspace_root = root.path().join("workspace");
     let extracted_root = workspace_root.join("extracted");
     let snapshot_root = workspace_root.join("snapshot");
     let out_root = workspace_root.join("out");
-    let wrapper_root = workspace_root.join("vendors").join("generated");
-    let manifest_path = workspace_root.join("vendors").join("manifest.json");
+    let wrapper_root = out_root.join("app").join("vendors").join("generated");
+    let manifest_path = out_root.join("reports").join("vendor_swaps.json");
     let package_root = root.path().join("upstream");
     fs::create_dir_all(&extracted_root).unwrap();
     fs::create_dir_all(&snapshot_root).unwrap();
     fs::create_dir_all(&out_root).unwrap();
-    fs::create_dir_all(&wrapper_root).unwrap();
     fs::create_dir_all(&package_root).unwrap();
     fs::create_dir_all(snapshot_root.join(Path::new(CHUNK_PATH).parent().unwrap())).unwrap();
     fs::create_dir_all(package_root.join("dist")).unwrap();
@@ -401,13 +397,12 @@ fn run_named_from_default_fixture(args: NamedFromDefaultFixtureArgs<'_>) -> Vend
     let extracted_root = workspace_root.join("extracted");
     let snapshot_root = workspace_root.join("snapshot");
     let out_root = workspace_root.join("out");
-    let wrapper_root = workspace_root.join("vendors").join("generated");
-    let manifest_path = workspace_root.join("vendors").join("manifest.json");
+    let wrapper_root = out_root.join("app").join("vendors").join("generated");
+    let manifest_path = out_root.join("reports").join("vendor_swaps.json");
     let package_root = root.path().join("upstream");
     fs::create_dir_all(&extracted_root).unwrap();
     fs::create_dir_all(&snapshot_root).unwrap();
     fs::create_dir_all(&out_root).unwrap();
-    fs::create_dir_all(&wrapper_root).unwrap();
     fs::create_dir_all(&package_root).unwrap();
     fs::create_dir_all(snapshot_root.join(Path::new(CHUNK_PATH).parent().unwrap())).unwrap();
     fs::create_dir_all(package_root.join("dist")).unwrap();
@@ -560,7 +555,7 @@ fn partial_swap_keeps_megachunk_on_disk() {
     )
     .expect("partial manifest parses");
     let symbol_resolution = manifest
-        .get("resolutions")
+        .get("partial")
         .and_then(|r| r.get(&fixture.megachunk_chunk_path))
         .and_then(|r| r.get("symbols"))
         .and_then(|r| r.get("e6"))
@@ -753,13 +748,8 @@ struct PartialSwapFixture {
 }
 
 impl PartialSwapFixture {
-    /// Partial-swap resolutions are written to a sibling JSON file in
-    /// the same directory as the main vendor swap manifest.
     fn partial_manifest_path(&self) -> PathBuf {
-        self.manifest_path
-            .parent()
-            .expect("manifest path has a parent")
-            .join("vendor_partial_swap_manifest.json")
+        self.manifest_path.clone()
     }
 }
 
@@ -774,13 +764,12 @@ fn run_partial_swap_fixture(args: PartialSwapFixtureArgs<'_>) -> PartialSwapFixt
     let extracted_root = workspace_root.join("extracted");
     let snapshot_root = workspace_root.join("snapshot");
     let out_root = workspace_root.join("out");
-    let wrapper_root = workspace_root.join("vendors").join("generated");
-    let manifest_path = workspace_root.join("vendors").join("manifest.json");
+    let wrapper_root = out_root.join("app").join("vendors").join("generated");
+    let manifest_path = out_root.join("reports").join("vendor_swaps.json");
     let package_root = root.path().join("upstream").join(PACKAGE_NAME);
     fs::create_dir_all(&extracted_root).unwrap();
     fs::create_dir_all(&snapshot_root).unwrap();
     fs::create_dir_all(&out_root).unwrap();
-    fs::create_dir_all(&wrapper_root).unwrap();
     fs::create_dir_all(&package_root).unwrap();
     fs::create_dir_all(snapshot_root.join("static")).unwrap();
     fs::create_dir_all(package_root.join("lib")).unwrap();
@@ -842,8 +831,8 @@ fn run_partial_swap_fixture(args: PartialSwapFixtureArgs<'_>) -> PartialSwapFixt
 
     let result = run_debundler(&spec_path, &[(PACKAGE_NAME, &package_root)]);
 
-    let caller_emitted_path = out_root.join("static/app").join("entry.js");
-    let megachunk_emitted_path = out_root.join("static/megachunk").join("entry.js");
+    let caller_emitted_path = out_root.join("app/static/app").join("entry.js");
+    let megachunk_emitted_path = out_root.join("app/static/megachunk").join("entry.js");
 
     PartialSwapFixture {
         result,
@@ -1042,13 +1031,12 @@ fn run_partial_swap_kind_fixture(args: PartialSwapKindFixtureArgs<'_>) -> Partia
     let extracted_root = workspace_root.join("extracted");
     let snapshot_root = workspace_root.join("snapshot");
     let out_root = workspace_root.join("out");
-    let wrapper_root = workspace_root.join("vendors").join("generated");
-    let manifest_path = workspace_root.join("vendors").join("manifest.json");
+    let wrapper_root = out_root.join("app").join("vendors").join("generated");
+    let manifest_path = out_root.join("reports").join("vendor_swaps.json");
     let package_root = root.path().join("upstream").join(args.package_name);
     fs::create_dir_all(&extracted_root).unwrap();
     fs::create_dir_all(&snapshot_root).unwrap();
     fs::create_dir_all(&out_root).unwrap();
-    fs::create_dir_all(&wrapper_root).unwrap();
     fs::create_dir_all(&package_root).unwrap();
     fs::create_dir_all(snapshot_root.join("static")).unwrap();
     if let Some(parent) = Path::new(args.subpath).parent() {
@@ -1108,8 +1096,8 @@ fn run_partial_swap_kind_fixture(args: PartialSwapKindFixtureArgs<'_>) -> Partia
 
     let result = run_debundler(&spec_path, &[(args.package_name, &package_root)]);
 
-    let caller_emitted_path = out_root.join("static/app").join("entry.js");
-    let megachunk_emitted_path = out_root.join("static/megachunk").join("entry.js");
+    let caller_emitted_path = out_root.join("app/static/app").join("entry.js");
+    let megachunk_emitted_path = out_root.join("app/static/megachunk").join("entry.js");
 
     PartialSwapFixture {
         result,

@@ -61,7 +61,7 @@ Shell variables used throughout this skill:
 | `$SPEC_ROOT`         | Spec modules directory, e.g. `<project>/re/<surface>/spec/<version>/modules/` |
 | `$UPSTREAM_JS`       | Raw upstream bundle JS (fallback when emitted tree unavailable)               |
 
-The emitted JS tree under `$DEBUNDLE_OUT/static/<chunk-id>/` is the primary
+The emitted JS tree under `$DEBUNDLE_OUT/app/` is the primary
 reading surface: already-renamed companions show their descriptive names,
 making unrenamed symbols stand out. Fall back to the upstream raw JS only
 when the emitted tree is unavailable.
@@ -71,7 +71,7 @@ when the emitted tree is unavailable.
 ### From the rename queue (preferred)
 
 ```bash
-jq '.[:20]' "$DEBUNDLE_OUT/identifier-rename-queue.json"
+jq '.entries[:20]' "$DEBUNDLE_OUT/reports/rename_queue.json"
 ```
 
 Each entry ranks by reference surface. Work top-down for highest impact.

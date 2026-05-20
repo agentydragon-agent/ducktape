@@ -11,7 +11,7 @@ export function loadVendorResolutionManifest(manifestPath) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     throw new Error(`Vendor manifest must be a JSON object at ${manifestPath}`);
   }
-  return raw.resolutions ?? {};
+  return raw.full ?? {};
 }
 
 export function loadVendorRuntimeIndex({ manifestPath, packageRoots, packagesRoot }) {
@@ -95,7 +95,7 @@ export function loadPartialSwapRuntimeIndex({ manifestPath, packageRoots, packag
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     throw new Error(`Partial-swap manifest must be a JSON object at ${manifestPath}`);
   }
-  const resolutions = raw.resolutions ?? {};
+  const resolutions = raw.partial ?? {};
   for (const entry of Object.values(resolutions)) {
     for (const [packageName, packageEntry] of Object.entries(entry.packages ?? {})) {
       if (!packageEntry.subpath || !packageEntry.version) {

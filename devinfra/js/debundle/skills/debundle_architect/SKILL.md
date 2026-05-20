@@ -27,7 +27,7 @@ The project adapter must provide:
 - `<modules-dir>`: active `modules/**/*.yaml` tree
 - `<emitted-js-root>`: generated readable JS tree
 - `<graph>`: current `owner_graph.json`, when available
-- `<directory-manifests>`: emitted `directory_manifests/` sidecar tree, when
+- `<report-tree>`: emitted `reports/tree/` report tree, when
   available
 - `<conventions-docs>`: project-local docs such as `AGENTS.md`,
   taxonomy notes, or architecture guides
@@ -160,17 +160,16 @@ find "$EMITTED_JS_ROOT" -type f |
 find "$EMITTED_JS_ROOT" -type f -name styles.js | wc -l
 
 # Show directories with the most outgoing symbol pressure.
-jq -r '
-  .directories[].manifest
-' "$DIR_MANIFESTS/index.json" |
-  while read -r manifest; do
-    jq -r '[.directory, .out_symbol_count, .out_file_count, .out_edge_count] | @tsv' \
-      "$DIR_MANIFESTS/$manifest"
-  done | sort -k2,2nr | head -50
+find "$REPORT_TREE" -name index.json -print0 |
+  xargs -0 -n1 jq -r '
+    select(.path != "") |
+    [.path, (.outgoing.symbols | length), (.outgoing.files | length), .outgoing.edge_count] | @tsv
+  ' |
+  sort -k2,2nr | head -50
 
 # Show top attributed outgoing symbols for one suspicious directory.
-jq -r '.out_symbols | to_entries | sort_by(.value) | reverse[] |
-  "\(.value)\t\(.key)"' "$DIR_MANIFESTS/<emitted-dir>/manifest.json" | head -50
+jq -r '.outgoing.symbols | to_entries | sort_by(.value) | reverse[] |
+  "\(.value)\t\(.key)"' "$REPORT_TREE/<emitted-dir>/index.json" | head -50
 
 # Show root-to-root dependency pressure from owner_graph.json.
 jq -r '

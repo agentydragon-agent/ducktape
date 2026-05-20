@@ -1,5 +1,5 @@
 import { createReadStream, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { dirname, extname, isAbsolute, join, normalize, resolve } from "node:path";
+import { dirname, extname, join, normalize, resolve } from "node:path";
 import { createServer as createHttpsServer } from "node:https";
 import { Agent as HttpsAgent } from "node:https";
 
@@ -124,41 +124,32 @@ export function loadLiveProxyConfiguration(rawOptions) {
     stateDir: resolvePath(rawOptions.stateDir ?? defaultStateDir()),
   };
 
-  const appManifest = JSON.parse(readFileSync(options.appManifestPath, "utf8"));
-  const manifestContext = {
-    appManifest,
-    appManifestPath: options.appManifestPath,
-  };
-  const assetSummaryPath = resolveManifestReferencedPath(appManifest.asset_summary_path, manifestContext);
-  const assetSummary = JSON.parse(readFileSync(assetSummaryPath, "utf8"));
-  const sourceHtmlPath = resolveManifestReferencedPath(appManifest.source_html, manifestContext);
-  const sourceHtml = readFileSync(sourceHtmlPath, "utf8");
-  const targetUrl = new URL(
-    resolveAppBaseUrl({ appManifest, assetSummary, manifestContext }) ?? "https://example.test"
-  );
-  const uiVersion = appManifest.ui_version ?? assetSummary.uiVersion ?? "unknown";
+  const runtimeReport = JSON.parse(readFileSync(options.appManifestPath, "utf8"));
+  const reportsRoot = dirname(options.appManifestPath);
+  const outputReport = readOptionalJson(join(reportsRoot, "output.json"), {});
+  const sourceAssetsReport = readOptionalJson(join(reportsRoot, "source_assets.json"), {});
+  const provenanceReport = readOptionalJson(join(reportsRoot, "provenance.json"), {});
+  const assetSummary = sourceAssetsReport.asset_summary ?? {};
+  const sourceHtmlPath = provenanceReport.source_html_path
+    ? resolve(reportsRoot, provenanceReport.source_html_path)
+    : null;
+  const sourceHtml =
+    provenanceReport.source_html ??
+    (sourceHtmlPath && existsSync(sourceHtmlPath) ? readFileSync(sourceHtmlPath, "utf8") : "");
+  const targetUrl = new URL(resolveAppBaseUrl({ runtimeReport, assetSummary, reportsRoot }) ?? "https://example.test");
+  const uiVersion = runtimeReport.ui_version ?? assetSummary.uiVersion ?? "unknown";
   const internalPrefix = normalizeInternalPrefix(
     options.internalPrefix ?? `${targetUrl.pathname.replace(/\/$/, "")}/_debundle/live/${uiVersion}`
   );
-  const appRoot = resolveManifestReferencedPath(appManifest.out_dir, manifestContext);
+  const appRoot = resolve(reportsRoot, runtimeReport.app_root ?? "../app");
   const appAssetPrefix = `${internalPrefix}/app`;
-  const vendorManifestPath = appManifest.vendor_manifest_path
-    ? resolveManifestReferencedPath(appManifest.vendor_manifest_path, manifestContext)
-    : join(appRoot, "vendors", "manifest.json");
+  const vendorManifestPath = join(reportsRoot, "vendor_swaps.json");
   const vendorRuntimeIndex = loadVendorRuntimeIndex({
     manifestPath: vendorManifestPath,
     ...(options.packageRoots ? { packageRoots: options.packageRoots } : {}),
     ...(options.packagesRoot ? { packagesRoot: options.packagesRoot } : {}),
   });
-  // Partial-swap manifest sits in the same `vendors/` directory as the
-  // regular manifest; the pipeline writes it iff at least one chunk has
-  // `level: partial_swap`. When present it lets us serve the bare-
-  // specifier imports the partial-swap stage emitted (`from "mobx"` etc.)
-  // by mounting each package under `<appAssetPrefix>/_partial_swap/...`
-  // and injecting an `<script type="importmap">` into the served HTML.
-  const partialSwapManifestPath = appManifest.vendor_partial_swap_manifest_path
-    ? resolveManifestReferencedPath(appManifest.vendor_partial_swap_manifest_path, manifestContext)
-    : join(dirname(vendorManifestPath), "vendor_partial_swap_manifest.json");
+  const partialSwapManifestPath = vendorManifestPath;
   const partialSwapRuntimeIndex = loadPartialSwapRuntimeIndex({
     manifestPath: partialSwapManifestPath,
     ...(options.packageRoots ? { packageRoots: options.packageRoots } : {}),
@@ -171,13 +162,13 @@ export function loadLiveProxyConfiguration(rawOptions) {
 
   return {
     appAssetPrefix,
-    appManifest,
+    appManifest: runtimeReport,
     appManifestPath: options.appManifestPath,
     appRoot,
     assetHost: options.assetHost ?? DEFAULT_ASSET_HOST,
     assetPort: options.assetPort ?? DEFAULT_ASSET_PORT,
     assetSummary,
-    assetSummaryPath,
+    assetSummaryPath: sourceAssetsReport.source_path ? resolve(reportsRoot, sourceAssetsReport.source_path) : null,
     bootstrapUrl: `${appAssetPrefix}/bootstrap.js`,
     caDir: join(options.stateDir, "mitm-ca"),
     controlPaths: {
@@ -193,6 +184,7 @@ export function loadLiveProxyConfiguration(rawOptions) {
     }),
     internalPrefix,
     outRoot: appRoot,
+    outputReport,
     profileDir: join(options.stateDir, "browser-profile"),
     proxyHost: options.proxyHost ?? DEFAULT_PROXY_HOST,
     proxyPort: options.proxyPort ?? DEFAULT_PROXY_PORT,
@@ -209,26 +201,26 @@ export function loadLiveProxyConfiguration(rawOptions) {
   };
 }
 
-function resolveAppBaseUrl({ appManifest, assetSummary, manifestContext }) {
+function readOptionalJson(path, fallback) {
+  if (!existsSync(path)) {
+    return fallback;
+  }
+  return JSON.parse(readFileSync(path, "utf8"));
+}
+
+function resolveAppBaseUrl({ runtimeReport, assetSummary, reportsRoot }) {
   if (assetSummary.baseUrl) {
     return assetSummary.baseUrl;
   }
-  if (appManifest.baseUrl) {
-    return appManifest.baseUrl;
+  if (runtimeReport.baseUrl) {
+    return runtimeReport.baseUrl;
   }
-  const sourceMetadataPath = join(resolveManifestReferencedPath(appManifest.out_dir, manifestContext), "SOURCE.json");
+  const sourceMetadataPath = resolve(reportsRoot, "../app/SOURCE.json");
   if (!existsSync(sourceMetadataPath)) {
     return null;
   }
   const sourceMetadata = JSON.parse(readFileSync(sourceMetadataPath, "utf8"));
   return sourceMetadata.baseUrl ?? null;
-}
-
-function resolveManifestReferencedPath(value, { appManifestPath }) {
-  if (isAbsolute(value)) {
-    return resolvePath(value);
-  }
-  return resolve(dirname(appManifestPath), value);
 }
 
 function normalizeRelativePath(value) {

@@ -41,10 +41,8 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
-use std::time::SystemTime;
 
 use anyhow::Result;
-use chrono::{SecondsFormat, Utc};
 use serde::Serialize;
 use swc_ecma_ast::{
     BindingIdent, ClassDecl, ExportDecl, ExportDefaultDecl, ExportSpecifier, FnDecl, GetterProp,
@@ -55,12 +53,6 @@ use swc_ecma_visit::{Visit, VisitWith};
 
 use artifact::{ChunkBundle, ChunkDecompositionOutput, ChunkId};
 use js_ast::ParsedJsModule;
-
-/// The schema version of the emitted JSON. Bump whenever the on-disk
-/// shape changes; existing readers MUST validate this field before
-/// trying to decode entries.
-/// Suggested filename for the side-output JSON.
-pub const OUTPUT_FILENAME: &str = "identifier-rename-queue.json";
 
 /// One entry in the priority queue: a still-unrenamed top-level symbol
 /// ranked by how much reference surface it occupies.
@@ -88,8 +80,6 @@ pub struct RenameQueueEntry {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub struct IdentifierRenameQueue {
-    pub generated_at_iso: String,
-    pub total_unrenamed_symbols: usize,
     pub total_references: usize,
     pub entries: Vec<RenameQueueEntry>,
 }
@@ -100,16 +90,6 @@ pub struct IdentifierRenameQueue {
 pub fn compute_identifier_rename_queue(
     artifact: &ChunkBundle,
     decomposition_by_chunk: &HashMap<ChunkId, ChunkDecompositionOutput>,
-) -> Result<IdentifierRenameQueue> {
-    compute_with_clock(artifact, decomposition_by_chunk, SystemTime::now())
-}
-
-/// Same as [`compute_identifier_rename_queue`] but with an
-/// injected wall clock for deterministic testing.
-pub fn compute_with_clock(
-    artifact: &ChunkBundle,
-    decomposition_by_chunk: &HashMap<ChunkId, ChunkDecompositionOutput>,
-    now: SystemTime,
 ) -> Result<IdentifierRenameQueue> {
     // Per-chunk, per-file: walk the final AST to identify top-level
     // declarations whose names still match input-bundle names, then
@@ -248,8 +228,6 @@ pub fn compute_with_clock(
     let total_references = entries.iter().map(|entry| entry.ref_count).sum();
 
     Ok(IdentifierRenameQueue {
-        generated_at_iso: format_iso(now),
-        total_unrenamed_symbols: entries.len(),
         total_references,
         entries,
     })
@@ -287,15 +265,11 @@ fn is_input_bundle_name(name: &str, input_names: &HashSet<String>) -> bool {
     input_names.contains(name)
 }
 
-fn format_iso(now: SystemTime) -> String {
-    chrono::DateTime::<Utc>::from(now).to_rfc3339_opts(SecondsFormat::Secs, true)
-}
-
-/// Write the queue to `<dir>/identifier-rename-queue.json` and
+/// Write the queue to `path` and
 /// return the path written. Idempotent: caller is free to re-emit on
 /// every run.
-pub fn write_queue(dir: &Path, queue: &IdentifierRenameQueue) -> Result<std::path::PathBuf> {
-    let path = dir.join(OUTPUT_FILENAME);
+pub fn write_queue(path: &Path, queue: &IdentifierRenameQueue) -> Result<std::path::PathBuf> {
+    let path = path.to_path_buf();
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -309,7 +283,7 @@ pub fn write_queue(dir: &Path, queue: &IdentifierRenameQueue) -> Result<std::pat
 
 /// Top-level declaration site we tally references for. The fields here
 /// mirror [`RenameQueueEntry`]'s identity portion; ref/fanout counts are
-/// kept separately in `compute_with_clock` since this struct is used as
+/// kept separately in the queue computation since this struct is used as
 /// a per-walk record only.
 struct DeclSite {
     name: String,

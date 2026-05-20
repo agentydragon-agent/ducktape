@@ -214,7 +214,7 @@ _DEBUNDLE_PIPELINE_ATTRS = {
         doc = "Debundler binary; must support `run` with flat transform spec or tree-shaped spec args.",
     ),
     "force": attr.bool(
-        doc = "Pass --force to debundle so output-tree stages may replace existing directories.",
+        doc = "Pass --force through to debundle; output roots must still be absent or empty.",
     ),
     "input_data": attr.label_list(
         allow_files = True,

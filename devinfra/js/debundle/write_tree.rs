@@ -8,9 +8,10 @@ use serde::Serialize;
 use artifact::{
     ArtifactChunkRecord, ArtifactCounts, ArtifactManifest, ChunkBundle, ChunkDecompositionOutput,
     ChunkId, DecompositionMetrics, RootLogicalModulesSummary, SelectedModuleLowering,
-    manifest_relative_path, materialize_artifact_scripts,
+    materialize_artifact_scripts,
 };
 use identifier_rename_queue::{compute_identifier_rename_queue, write_queue};
+use output_layout::DebundleOutputLayout;
 
 pub struct WriteTreeInput<'a> {
     pub artifact: &'a ChunkBundle,
@@ -27,10 +28,15 @@ pub fn write_js_tree(input: &WriteTreeInput) -> Result<()> {
     if input.out_dir.as_os_str().is_empty() {
         bail!("write_js_tree requires out_dir");
     }
-    prepare_output_dir(input.out_dir, input.force)?;
+    let layout = DebundleOutputLayout::new(input.out_dir);
+    prepare_output_layout(&layout)?;
 
-    let materialized =
-        materialize_artifact_scripts(input.artifact, input.out_dir, input.decomposition_by_chunk)?;
+    let materialized = materialize_artifact_scripts(
+        input.artifact,
+        &layout.app_root(),
+        &layout.tree_root(),
+        input.decomposition_by_chunk,
+    )?;
 
     let decomposition_metrics = if input.lowerings.is_empty() {
         None
@@ -42,8 +48,7 @@ pub fn write_js_tree(input: &WriteTreeInput) -> Result<()> {
     };
 
     let queue = compute_identifier_rename_queue(input.artifact, input.decomposition_by_chunk)?;
-    let queue_path = write_queue(input.out_dir, &queue)?;
-    let manifest_path = input.out_dir.join("manifest.json");
+    write_queue(&layout.rename_queue_report(), &queue)?;
     let manifest = ArtifactManifest {
         counts: input.counts.clone(),
         chunks: input.chunk_records.to_vec(),
@@ -51,13 +56,18 @@ pub fn write_js_tree(input: &WriteTreeInput) -> Result<()> {
             module_count: input.module_count,
         },
         selected_module_lowerings: input.lowerings.to_vec(),
-        identifier_rename_queue: manifest_relative_path(&manifest_path, &queue_path),
         output_metrics: materialized.output_metrics,
         decomposition_metrics,
     };
-    serde_json::to_writer_pretty(&fs::File::create(&manifest_path)?, &manifest)?;
+    serde_json::to_writer_pretty(&fs::File::create(layout.output_report())?, &manifest)?;
     serde_json::to_writer_pretty(
-        &fs::File::create(input.out_dir.join("package.json"))?,
+        &fs::File::create(layout.chunks_report())?,
+        &ChunksReport {
+            chunks: input.chunk_records,
+        },
+    )?;
+    serde_json::to_writer_pretty(
+        &fs::File::create(layout.app_root().join("package.json"))?,
         &PackageManifest {
             module_type: "module",
         },
@@ -67,30 +77,28 @@ pub fn write_js_tree(input: &WriteTreeInput) -> Result<()> {
 }
 
 #[derive(Serialize)]
+struct ChunksReport<'a> {
+    chunks: &'a [ArtifactChunkRecord],
+}
+
+#[derive(Serialize)]
 struct PackageManifest {
     #[serde(rename = "type")]
     module_type: &'static str,
 }
 
-fn prepare_output_dir(out_dir: &Path, force: bool) -> Result<()> {
-    if out_dir.exists() {
-        let metadata = fs::metadata(out_dir)?;
+fn prepare_output_layout(layout: &DebundleOutputLayout) -> Result<()> {
+    if layout.root().exists() {
+        let metadata = fs::metadata(layout.root())?;
         if !metadata.is_dir() {
             bail!(
                 "Output path exists and is not a directory: {}",
-                out_dir.display()
+                layout.root().display()
             );
-        }
-        if fs::read_dir(out_dir)?.next().is_some() && !force {
-            bail!(
-                "Output directory is not empty: {}. Pass --force to replace it.",
-                out_dir.display()
-            );
-        }
-        if force {
-            fs::remove_dir_all(out_dir)?;
         }
     }
-    fs::create_dir_all(out_dir)?;
+    let app_root = layout.app_root();
+    fs::create_dir_all(app_root)?;
+    fs::create_dir_all(layout.reports_root())?;
     Ok(())
 }

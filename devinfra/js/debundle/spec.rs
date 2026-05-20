@@ -158,9 +158,6 @@ pub struct MaterializeLogicalModulesConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub report_out_dir: Option<PathBuf>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
-    pub report_summary_path: Option<PathBuf>,
     #[serde(skip_serializing_if = "String::is_empty")]
     #[serde(default)]
     pub target_dir: String,
@@ -173,7 +170,6 @@ impl Default for MaterializeLogicalModulesConfig {
             prune_other_chunks: true,
             force: false,
             report_out_dir: None,
-            report_summary_path: None,
             target_dir: String::new(),
         }
     }

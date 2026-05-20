@@ -74,12 +74,12 @@ for a namespace, route/package, public API, or pending family. A crowded
 directory is only a problem when source/graph neighborhoods show multiple
 concepts sharing one bucket.
 
-When available, use `directory_manifests/<emitted-dir>/manifest.json` as the
-first quantitative view of hierarchy health. Its incoming/outgoing symbol,
-file, and edge-kind attribution maps identify which boundary crossings make a
-directory leaky. Do not compare directories only by equal depth; evaluate each
-recursive directory boundary on its own incoming/outgoing pressure and then
-read the source behind the highest-attribution symbols.
+When available, use `reports/tree/<emitted-dir>/index.json` as the first
+quantitative view of hierarchy health. Its incoming/outgoing symbol, file, and
+edge-kind attribution maps identify which boundary crossings make a directory
+leaky. Do not compare directories only by equal depth; evaluate each recursive
+directory boundary on its own incoming/outgoing pressure and then read the
+source behind the highest-attribution symbols.
 
 Bad directory shapes include:
 

@@ -645,24 +645,6 @@ pub fn swap_vendor_chunks(
         .map(|chunk_path| chunk_id_from_chunk_path(chunk_path, "swap_vendor_chunks"))
         .collect::<Result<BTreeSet<_>>>()?;
 
-    if options.write
-        && let Some(output_manifest_path) = options.output_manifest_path
-    {
-        if let Some(parent) = output_manifest_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        #[derive(Serialize)]
-        struct OnDiskResolutionManifest<'a> {
-            resolutions: &'a BTreeMap<String, VendorResolution>,
-        }
-        fs::write(
-            output_manifest_path,
-            serde_json::to_string_pretty(&OnDiskResolutionManifest {
-                resolutions: &resolutions,
-            })? + "\n",
-        )?;
-    }
-
     let swapped = resolutions.len();
     Ok(SwapVendorChunksResult {
         artifact,
@@ -1464,8 +1446,6 @@ pub struct PartialSwapResolutionCounts {
 pub struct ApplyPartialVendorSwapsOptions<'a> {
     pub package_roots: &'a std::collections::HashMap<String, PathBuf>,
     pub packages_root: &'a Option<PathBuf>,
-    pub output_manifest_path: Option<PathBuf>,
-    pub write: bool,
 }
 
 /// Per-chunk in-memory mapping built once and shared across parallel
@@ -1766,24 +1746,6 @@ pub fn apply_partial_vendor_swaps(
             .with_context(|| format!("missing chunk index {}", result.caller_chunk_index))?
             .js
             .insert_file(JsFile::from_ast_parts(result.parts, result.ast));
-    }
-
-    if options.write
-        && let Some(output_manifest_path) = options.output_manifest_path.as_deref()
-    {
-        if let Some(parent) = output_manifest_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        #[derive(Serialize)]
-        struct OnDiskPartialManifest<'a> {
-            resolutions: &'a BTreeMap<String, ChunkPartialSwapResolution>,
-        }
-        fs::write(
-            output_manifest_path,
-            serde_json::to_string_pretty(&OnDiskPartialManifest {
-                resolutions: &resolutions,
-            })? + "\n",
-        )?;
     }
 
     let total_symbols: usize = resolutions

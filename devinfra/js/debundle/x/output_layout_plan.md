@@ -1,6 +1,8 @@
 # Provisional Debundle Output Layout Plan
 
-Status: provisional planning note. This is not the current output contract.
+Status: implementation note for the backward-incompatible output-layout
+cutover. The tree below is the current intended output contract; old path names
+appear only in the migration mapping and cleanup checklist.
 
 The current output tree mixes browser-loadable files, sidecar JSON outputs,
 planner/debug JSON outputs, generated vendor runtime files, and runtime metadata
@@ -211,10 +213,8 @@ static/**/*.js, and other copied non-JS runtime assets
 ## Naming Cleanup
 
 The implementation names should move with the file layout. In particular,
-`LogicalChunkReport` is misleading: it is not just "logical modules" and the
-word logical does not describe the emitted artifact clearly. Rename it toward
-the report's actual role, for example `ChunkModulesReport`, and keep its file
-name as `modules.json`.
+the per-chunk modules report is `ChunkModulesReport` and its file name is
+`modules.json`.
 
 Similarly, `FactorizationReport` is currently a validation result over the
 chosen module assignment rather than a broad factorization artifact. Rename it
@@ -717,7 +717,7 @@ the consuming Tana targets to the new contract.
 
 ### 6. Rename Report Structs
 
-- Rename `LogicalChunkReport` toward `ChunkModulesReport`.
+- Rename the old logical-module report type toward `ChunkModulesReport`.
 - Rename the broad `FactorizationReport` role toward a compact
   `ModuleAssignmentValidationSummary` embedded in `ChunkReport`.
 - Rename JSON-facing fields that leak implementation terms:

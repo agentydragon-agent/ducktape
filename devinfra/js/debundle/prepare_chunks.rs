@@ -298,7 +298,6 @@ fn canonical_parsed_file(chunk_id: &str, source_path: &str, parsed: ParsedJsModu
 
 fn build_prepare_output(manifests: &[ChunkAnalysis]) -> (ArtifactCounts, Vec<ArtifactChunkRecord>) {
     let counts = ArtifactCounts {
-        chunks: manifests.len(),
         kept_top_level_declaration_owners: manifests
             .iter()
             .map(|manifest| manifest.counts.kept_top_level_declaration_owners)

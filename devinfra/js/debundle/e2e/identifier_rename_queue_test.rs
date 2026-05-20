@@ -32,12 +32,8 @@ export { aH, bC, dE };
 
     let queue = read_queue(&fixture.out_root);
     assert!(
-        queue["generated_at_iso"]
-            .as_str()
-            .expect("generated_at_iso should be a string")
-            .ends_with('Z'),
-        "expected ISO timestamp ending in Z, got {:?}",
-        queue["generated_at_iso"]
+        queue.get("generated_at_iso").is_none(),
+        "rename queue should not include generated_at_iso"
     );
 
     let entries = queue["entries"]
@@ -90,9 +86,9 @@ export { aH, bC, dE };
     // total_references is the sum of the per-entry ref_count.
     let total_refs: u64 = ref_counts.iter().sum();
     assert_eq!(queue["total_references"].as_u64().unwrap(), total_refs);
-    assert_eq!(
-        queue["total_unrenamed_symbols"].as_u64().unwrap(),
-        entries.len() as u64
+    assert!(
+        queue.get("total_unrenamed_symbols").is_none(),
+        "rename queue should not duplicate entries.len()"
     );
 
     // The first entry should be `aH` — it has the highest reference
@@ -141,7 +137,7 @@ export { aH, bC };
 }
 
 #[test]
-fn manifest_records_queue_path() {
+fn rename_queue_lives_under_reports() {
     let fixture = run_fixture(FixtureOpts::new(
         r#"const xY = 1;
 console.log(xY);
@@ -149,18 +145,10 @@ export { xY };
 "#,
         vec![],
     ));
-    let manifest = read_manifest(&fixture.out_root);
-    let path = manifest["identifier_rename_queue"]
-        .as_str()
-        .expect("manifest must record identifier_rename_queue path");
-    assert!(
-        !path.starts_with('/') && !path.starts_with(".."),
-        "queue path must be manifest-relative, got {path}",
-    );
-    let resolved = fixture.out_root.join(path);
+    let resolved = output_root(&fixture.out_root).join("reports/rename_queue.json");
     assert!(
         resolved.exists(),
-        "queue path {path} resolves to {resolved:?} which does not exist",
+        "rename queue should exist at {resolved:?}",
     );
 }
 
@@ -194,19 +182,18 @@ export { aH, bC, dE };
 }
 
 fn read_queue(out_root: &std::path::Path) -> Value {
-    let path = out_root.join("identifier-rename-queue.json");
+    let path = output_root(out_root).join("reports/rename_queue.json");
     let raw = fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
     serde_json::from_str(&raw).expect("queue JSON must parse")
 }
 
-fn read_manifest(out_root: &std::path::Path) -> Value {
-    let path = out_root.join("manifest.json");
-    let raw = fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
-    serde_json::from_str(&raw).expect("manifest JSON must parse")
+fn output_root(app_root: &std::path::Path) -> &std::path::Path {
+    app_root
+        .parent()
+        .expect("app root should have an output root")
 }
 
-/// Just the `entries` field — `generated_at_iso` is wall-clock-derived
-/// and intentionally varies.
+/// Just the `entries` field.
 fn read_entries_payload(fixture: Fixture) -> Value {
     let queue = read_queue(&fixture.out_root);
     queue["entries"].clone()

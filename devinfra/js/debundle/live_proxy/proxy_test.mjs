@@ -19,10 +19,13 @@ function writeBaseLiveProxyFixture(
   const roots = createWebFixtureRoots(prefix);
   const { packagesRoot, root, sourceRoot } = roots;
   const appRoot = join(root, appRelativeOutDir);
+  const reportsRoot = join(root, "reports");
   const vendorsRoot = join(appRoot, "vendors");
   const assetSummaryPath = join(root, "asset-summary.json");
   const sourceHtmlPath = join(sourceRoot, "index.html");
-  const appManifestPath = join(appRoot, "manifest.json");
+  const appManifestPath = join(reportsRoot, "runtime.json");
+  const sourceAssetsReportPath = join(reportsRoot, "source_assets.json");
+  const provenanceReportPath = join(reportsRoot, "provenance.json");
 
   writeTextFile(
     sourceHtmlPath,
@@ -45,12 +48,17 @@ function writeBaseLiveProxyFixture(
   writeJsonFile(assetSummaryPath, { baseUrl: "https://example.test" });
   writeTextFile(join(appRoot, "bootstrap.js"), 'import "./static/index-Example/runtime.js";\n');
   writeTextFile(join(appRoot, "static", "index-Example", "runtime.js"), "console.log('runtime');\n");
+  writeJsonFile(sourceAssetsReportPath, {
+    source_path: assetSummaryPath,
+    asset_summary: { baseUrl: "https://example.test" },
+  });
+  writeJsonFile(provenanceReportPath, {
+    source_html_path: sourceHtmlPath,
+    source_html: readUtf8(sourceHtmlPath),
+  });
   writeJsonFile(appManifestPath, {
-    asset_summary_path: assetSummaryPath,
-    out_dir: appRoot,
-    source_html: sourceHtmlPath,
+    app_root: appRoot,
     ui_version: uiVersion,
-    ...(vendorManifestPath ? { vendor_manifest_path: vendorManifestPath } : {}),
   });
   if (sourceBaseUrl) {
     writeJsonFile(join(appRoot, "SOURCE.json"), {
@@ -64,8 +72,11 @@ function writeBaseLiveProxyFixture(
     appRoot,
     assetSummaryPath,
     packagesRoot,
+    reportsRoot,
     root,
+    sourceAssetsReportPath,
     sourceHtmlPath,
+    provenanceReportPath,
     vendorsRoot,
   };
 }
@@ -117,7 +128,10 @@ test("loadLiveProxyConfiguration falls back to SOURCE.json for the target base U
     sourceBaseUrl: "https://app.example.com",
     uiVersion: "source-fallback",
   });
-  writeJsonFile(fixture.assetSummaryPath, {});
+  writeJsonFile(fixture.sourceAssetsReportPath, {
+    source_path: fixture.assetSummaryPath,
+    asset_summary: {},
+  });
 
   const config = loadLiveProxyConfiguration({
     appManifestPath: fixture.appManifestPath,
@@ -139,15 +153,18 @@ test("loadLiveProxyConfiguration resolves manifest-dir-relative paths from an ab
     uiVersion: "runfiles",
   });
   writeJsonFile(fixture.assetSummaryPath, {});
-  // The pipeline emits paths relative to the manifest's own directory.
-  // appManifest sits at <root>/app/manifest.json; out_dir is the manifest's
-  // own dir, asset-summary.json is the parent dir, source_html is in the
-  // sibling source/ tree.
+  // The pipeline emits paths relative to the report's own directory.
   writeJsonFile(fixture.appManifestPath, {
-    asset_summary_path: "../asset-summary.json",
-    out_dir: ".",
-    source_html: "../source/index.html",
+    app_root: "../app",
     ui_version: "runfiles",
+  });
+  writeJsonFile(fixture.sourceAssetsReportPath, {
+    source_path: "../asset-summary.json",
+    asset_summary: {},
+  });
+  writeJsonFile(fixture.provenanceReportPath, {
+    source_html_path: "../source/index.html",
+    source_html: readUtf8(fixture.sourceHtmlPath),
   });
 
   const config = loadLiveProxyConfiguration({
@@ -279,7 +296,7 @@ test("mapLocalAssetPath serves bootstrap, live index, and service worker from th
 
 test("mapLocalAssetPath serves swapped vendor chunks from package roots and generated wrappers", () => {
   const fixture = writeBaseLiveProxyFixture("debundle-live-proxy-vendor-", { uiVersion: "vendor" });
-  const vendorManifestPath = join(fixture.vendorsRoot, "manifest.json");
+  const vendorManifestPath = join(fixture.reportsRoot, "vendor_swaps.json");
 
   writeTextFile(
     join(fixture.packagesRoot, "katex", "dist", "katex.mjs"),
@@ -295,8 +312,7 @@ test("mapLocalAssetPath serves swapped vendor chunks from package roots and gene
     "const data = { native: true };\nexport default data;\nexport const native = data.native;\n"
   );
   writeJsonFile(vendorManifestPath, {
-    ui_version: "vendor",
-    resolutions: {
+    full: {
       "static/katex-BZy9Y_85.js": {
         chunk_id: "static/katex-BZy9Y_85",
         chunk_path: "static/katex-BZy9Y_85.js",
@@ -313,20 +329,9 @@ test("mapLocalAssetPath serves swapped vendor chunks from package roots and gene
         version: "1.2.1",
         subpath: "sets/15/native.json",
         wrapper_shape: "named_from_json_default",
-        // Vendor manifest sits at <root>/vendors/manifest.json; the wrapper
-        // file is its sibling under generated/. With manifest-relative
-        // resolution the recorded path is rooted at the vendor manifest's
-        // own directory.
-        generated_wrapper_path: "generated/static/native-B5Vb9Oiz/runtime.js",
+        generated_wrapper_path: "../app/vendors/generated/static/native-B5Vb9Oiz/runtime.js",
       },
     },
-  });
-  writeJsonFile(fixture.appManifestPath, {
-    asset_summary_path: fixture.assetSummaryPath,
-    out_dir: fixture.appRoot,
-    source_html: fixture.sourceHtmlPath,
-    ui_version: "vendor",
-    vendor_manifest_path: vendorManifestPath,
   });
 
   const config = loadLiveProxyConfiguration({

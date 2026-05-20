@@ -273,7 +273,7 @@ pub struct RejectedFixture {
 
 pub fn run_fixture(opts: FixtureOpts<'_>) -> Fixture {
     let setup = setup_fixture(&opts);
-    let spec_path = setup.out_root.join("transform_spec.yaml");
+    let spec_path = setup.root.path().join("transform_spec.yaml");
     let spec = build_spec(&opts, &setup);
     write_yaml_file(&spec_path, &spec);
 
@@ -286,23 +286,22 @@ pub fn run_fixture(opts: FixtureOpts<'_>) -> Fixture {
         result.stderr,
     );
 
-    // Mirror `extra_files` into out_root after the transform runs, so
+    let app_root = setup.out_root.join("app");
+
+    // Mirror `extra_files` into app_root after the transform runs, so
     // re-imports emitted by the materializer can resolve through
-    // their relative paths under out_root. (write_js_tree wipes
-    // out_root with `force=true` before emitting; mirroring earlier
-    // would lose these files.)
+    // their relative paths under the runtime app tree.
     for (rel_path, content) in opts.extra_files {
-        write_text_file(&setup.out_root.join(rel_path), content);
+        write_text_file(&app_root.join(rel_path), content);
     }
 
-    let entry_path = setup
-        .out_root
+    let entry_path = app_root
         .join(opts.chunk_id.split('/').collect::<PathBuf>())
         .join("entry.js");
     Fixture {
         chunk_id: opts.chunk_id.to_string(),
         entry_path,
-        out_root: setup.out_root,
+        out_root: app_root,
         report_root: setup.report_root,
         snapshot_root: setup.snapshot_root,
         _root: setup.root,
@@ -353,7 +352,7 @@ pub fn expect_rejection_containing_all(opts: FixtureOpts<'_>, required_substring
 
 pub fn run_rejection_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {
     let setup = setup_fixture(&opts);
-    let spec_path = setup.out_root.join("transform_spec.yaml");
+    let spec_path = setup.root.path().join("transform_spec.yaml");
     let spec = build_spec(&opts, &setup);
     write_yaml_file(&spec_path, &spec);
 
@@ -504,11 +503,10 @@ fn setup_fixture(opts: &FixtureOpts<'_>) -> FixtureSetup {
     let root = TempDir::with_prefix(current_test_prefix()).expect("create tempdir");
     let extracted_root = root.path().join("extracted");
     let out_root = root.path().join("out");
-    let report_root = root.path().join("reports");
+    let report_root = out_root.join("reports").join("tree");
     let snapshot_root = root.path().join("snapshot");
     fs::create_dir_all(&extracted_root).unwrap();
     fs::create_dir_all(&out_root).unwrap();
-    fs::create_dir_all(&report_root).unwrap();
     fs::create_dir_all(&snapshot_root).unwrap();
 
     // Mark the snapshot tree as ESM so node loads emitted .js files as modules.

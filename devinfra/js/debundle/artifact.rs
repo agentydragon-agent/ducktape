@@ -10,6 +10,7 @@ use serde::Serialize;
 use analysis::DepKind;
 pub use analysis::{ChunkId, ChunkTable};
 use js_ast::{ParsedJsModule, emit_js_module};
+use output_layout::{CHUNK_REPORT, report_path_for_directory, report_path_for_file};
 
 pub const CANONICAL_CHUNK_ENTRY_FILE: &str = "entry.js";
 
@@ -210,7 +211,6 @@ pub struct ArtifactManifest {
     pub chunks: Vec<ArtifactChunkRecord>,
     pub logical_modules: RootLogicalModulesSummary,
     pub selected_module_lowerings: Vec<SelectedModuleLowering>,
-    pub identifier_rename_queue: String,
     pub output_metrics: OutputMetrics,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub decomposition_metrics: Option<DecompositionMetrics>,
@@ -218,7 +218,6 @@ pub struct ArtifactManifest {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ArtifactCounts {
-    pub chunks: usize,
     pub kept_top_level_declaration_owners: usize,
     pub top_level_side_effects: usize,
     pub export_aliases: usize,
@@ -232,7 +231,6 @@ pub struct RootLogicalModulesSummary {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ChunkLogicalModulesSummary {
-    pub count: usize,
     pub module_ids: Vec<String>,
     pub target_dir: String,
 }
@@ -275,6 +273,13 @@ pub struct ChunkDecompositionOutput {
     pub logical_modules: ChunkLogicalModulesSummary,
     pub selected_module_lowerings: Vec<SelectedModuleLowering>,
     pub directory_dependency_facts: Vec<DirectoryDependencyFact>,
+    pub validation: ChunkValidationSummary,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ChunkValidationSummary {
+    pub status: &'static str,
+    pub linker_order: Vec<String>,
 }
 
 /// One semantic owner-edge fact projected onto emitted module files.
@@ -287,7 +292,7 @@ pub struct DirectoryDependencyFact {
     pub symbol: Option<String>,
 }
 
-/// Per-chunk manifest serialized to `<chunk>/manifest.json` at write time.
+/// Per-chunk report serialized to `reports/tree/<chunk>/chunk.json` at write time.
 #[derive(Debug, Clone, Serialize)]
 pub struct ChunkManifest {
     pub chunk_id: String,
@@ -300,6 +305,7 @@ pub struct ChunkManifest {
     pub export_aliases: Vec<ExportAliasRecord>,
     pub unresolved_exports: Vec<ExportAliasRecord>,
     pub kept_top_level_declarations: Vec<KeptTopLevelDeclarationRecord>,
+    pub validation: ChunkValidationSummary,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub logical_modules: Option<ChunkLogicalModulesSummary>,
     pub selected_module_lowerings: Vec<SelectedModuleLowering>,
@@ -323,6 +329,13 @@ impl ChunkManifest {
             export_aliases: analysis.export_aliases.clone(),
             unresolved_exports: analysis.unresolved_exports.clone(),
             kept_top_level_declarations: analysis.kept_top_level_declarations.clone(),
+            validation: decomposition.map_or_else(
+                || ChunkValidationSummary {
+                    status: "not_materialized",
+                    linker_order: Vec::new(),
+                },
+                |d| d.validation.clone(),
+            ),
             logical_modules: decomposition.map(|d| d.logical_modules.clone()),
             selected_module_lowerings: decomposition
                 .map(|d| d.selected_module_lowerings.clone())
@@ -414,45 +427,54 @@ pub struct DecompositionMetrics {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct DirectoryManifestIndex {
-    pub directories: Vec<DirectoryManifestIndexEntry>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct DirectoryManifestIndexEntry {
-    pub directory: String,
-    pub manifest: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct DirectoryDependencyManifest {
-    pub directory: String,
-    pub module_count: usize,
-    pub defined_symbol_count: usize,
+    pub path: String,
+    pub directories: Vec<String>,
+    pub files: Vec<String>,
+    pub chunks: Vec<String>,
+    pub modules: Vec<String>,
+    pub defined_symbols: BTreeMap<String, usize>,
     pub loc: usize,
-    pub in_edge_count: usize,
-    pub out_edge_count: usize,
-    pub in_symbol_count: usize,
-    pub out_symbol_count: usize,
-    pub in_file_count: usize,
-    pub out_file_count: usize,
-    pub in_edge_count_by_kind: BTreeMap<String, usize>,
-    pub out_edge_count_by_kind: BTreeMap<String, usize>,
-    pub in_symbols: BTreeMap<String, usize>,
-    pub out_symbols: BTreeMap<String, usize>,
-    pub in_files: BTreeMap<String, usize>,
-    pub out_files: BTreeMap<String, usize>,
-    pub incoming_edges: Vec<DirectoryDependencyEdgeManifest>,
-    pub outgoing_edges: Vec<DirectoryDependencyEdgeManifest>,
+    pub incoming: DirectoryBoundarySummary,
+    pub outgoing: DirectoryBoundarySummary,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DirectoryBoundarySummary {
+    pub edge_count: usize,
+    pub edge_count_by_kind: BTreeMap<String, usize>,
+    pub symbols: BTreeMap<String, usize>,
+    pub files: BTreeMap<String, usize>,
+    pub edges: Vec<DirectoryDependencyEdgeManifest>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct FileDependencyManifest {
+    pub path: String,
+    pub role: OutputRole,
+    pub bytes: usize,
+    pub lines: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chunk_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub module_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub module_path: Option<String>,
+    pub incoming: FileBoundarySummary,
+    pub outgoing: FileBoundarySummary,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct FileBoundarySummary {
+    pub edge_count: usize,
+    pub edge_count_by_kind: BTreeMap<String, usize>,
+    pub symbols: BTreeMap<String, usize>,
+    pub files: BTreeMap<String, usize>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct DirectoryDependencyEdgeManifest {
     pub source_dir: String,
     pub target_dir: String,
-    pub edge_count: usize,
-    pub symbol_count: usize,
-    pub source_file_count: usize,
-    pub target_file_count: usize,
     pub edge_count_by_kind: BTreeMap<String, usize>,
     pub symbols: BTreeMap<String, usize>,
     pub source_files: BTreeMap<String, usize>,
@@ -1125,7 +1147,8 @@ pub struct MaterializedScripts {
 
 pub fn materialize_artifact_scripts(
     artifact: &ChunkBundle,
-    out_dir: &Path,
+    app_root: &Path,
+    report_tree_root: &Path,
     decomposition_by_chunk: &HashMap<ChunkId, ChunkDecompositionOutput>,
 ) -> Result<MaterializedScripts> {
     let selected_module_by_chunk_file = selected_module_by_chunk_file(decomposition_by_chunk);
@@ -1135,7 +1158,8 @@ pub fn materialize_artifact_scripts(
         .map(|chunk_id| {
             materialize_chunk_scripts(
                 artifact,
-                out_dir,
+                app_root,
+                report_tree_root,
                 &selected_module_by_chunk_file,
                 decomposition_by_chunk,
                 chunk_id,
@@ -1145,60 +1169,58 @@ pub fn materialize_artifact_scripts(
         .into_iter()
         .flatten()
         .collect();
-    if !decomposition_by_chunk.is_empty() {
-        write_directory_manifest_tree(out_dir, decomposition_by_chunk, &file_metrics)?;
-    }
+    write_tree_reports(report_tree_root, decomposition_by_chunk, &file_metrics)?;
     Ok(MaterializedScripts {
         output_metrics: OutputMetrics::from_file_metrics(file_metrics.clone()),
         file_metrics,
     })
 }
 
-fn write_directory_manifest_tree(
-    out_dir: &Path,
+fn write_tree_reports(
+    report_tree_root: &Path,
     decomposition_by_chunk: &HashMap<ChunkId, ChunkDecompositionOutput>,
     file_metrics: &[OutputFileMetric],
 ) -> Result<()> {
-    let manifests = build_directory_dependency_manifests(decomposition_by_chunk, file_metrics);
-    let root = out_dir.join("directory_manifests");
-    if root.exists() {
-        fs::remove_dir_all(&root)
-            .with_context(|| format!("remove stale directory manifest tree {}", root.display()))?;
+    fs::create_dir_all(report_tree_root)?;
+
+    let file_manifests = build_file_dependency_manifests(decomposition_by_chunk, file_metrics);
+    for manifest in file_manifests {
+        let path = report_path_for_file(report_tree_root, &manifest.path);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        serde_json::to_writer_pretty(&fs::File::create(path)?, &manifest)?;
     }
-    fs::create_dir_all(&root)?;
-    let index_path = root.join("index.json");
-    let mut index_entries = Vec::with_capacity(manifests.len());
+
+    let manifests = build_directory_dependency_manifests(decomposition_by_chunk, file_metrics);
     for manifest in manifests {
-        let manifest_path = root
-            .join(path_from_module_path(&manifest.directory))
-            .join("manifest.json");
+        let manifest_path = report_path_for_directory(report_tree_root, &manifest.path);
         if let Some(parent) = manifest_path.parent() {
             fs::create_dir_all(parent)?;
         }
-        index_entries.push(DirectoryManifestIndexEntry {
-            directory: manifest.directory.clone(),
-            manifest: manifest_relative_path(&index_path, &manifest_path),
-        });
         serde_json::to_writer_pretty(&fs::File::create(&manifest_path)?, &manifest)?;
     }
-    serde_json::to_writer_pretty(
-        &fs::File::create(index_path)?,
-        &DirectoryManifestIndex {
-            directories: index_entries,
-        },
-    )?;
     Ok(())
 }
 
 fn build_directory_dependency_manifests(
     decomposition_by_chunk: &HashMap<ChunkId, ChunkDecompositionOutput>,
     file_metrics: &[OutputFileMetric],
-) -> Vec<DirectoryDependencyManifest> {
+) -> Vec<DirectoryManifestIndex> {
     let loc_by_module_id: BTreeMap<&str, usize> = file_metrics
         .iter()
         .filter_map(|metric| Some((metric.module_id.as_deref()?, metric.lines)))
         .collect();
     let mut directories = BTreeMap::<String, DirectoryAccumulator>::new();
+
+    for metric in file_metrics {
+        for dir in directory_ancestors_for_file(&metric.file) {
+            directories
+                .entry(dir.clone())
+                .or_default()
+                .add_file(&dir, metric);
+        }
+    }
 
     for decomposition in decomposition_by_chunk.values() {
         for lowering in &decomposition.selected_module_lowerings {
@@ -1210,7 +1232,10 @@ fn build_directory_dependency_manifests(
             for dir in directory_ancestors_for_file(&file) {
                 let accumulator = directories.entry(dir).or_default();
                 accumulator.module_ids.insert(lowering.id.clone());
-                accumulator.defined_symbol_count += lowering.binding_names.len();
+                for binding_name in &lowering.binding_names {
+                    let symbol = format!("{file}#{binding_name}");
+                    *accumulator.defined_symbols.entry(symbol).or_default() += 1;
+                }
                 accumulator.loc += loc;
             }
         }
@@ -1259,38 +1284,86 @@ fn build_directory_dependency_manifests(
         .collect()
 }
 
+fn build_file_dependency_manifests(
+    decomposition_by_chunk: &HashMap<ChunkId, ChunkDecompositionOutput>,
+    file_metrics: &[OutputFileMetric],
+) -> Vec<FileDependencyManifest> {
+    let mut boundaries = BTreeMap::<String, FileAccumulator>::new();
+    for decomposition in decomposition_by_chunk.values() {
+        for fact in &decomposition.directory_dependency_facts {
+            if fact.source_file == fact.target_file {
+                continue;
+            }
+            boundaries
+                .entry(fact.source_file.clone())
+                .or_default()
+                .outgoing
+                .add_fact(&fact.target_file, fact.edge_kind, fact.symbol.as_deref());
+            boundaries
+                .entry(fact.target_file.clone())
+                .or_default()
+                .incoming
+                .add_fact(&fact.source_file, fact.edge_kind, fact.symbol.as_deref());
+        }
+    }
+    file_metrics
+        .iter()
+        .map(|metric| {
+            let boundary = boundaries.remove(&metric.file).unwrap_or_default();
+            FileDependencyManifest {
+                path: metric.file.clone(),
+                role: metric.role,
+                bytes: metric.bytes,
+                lines: metric.lines,
+                chunk_id: metric.file.split('/').next().map(str::to_string),
+                module_id: metric.module_id.clone(),
+                module_path: metric.module_path.clone(),
+                incoming: boundary.incoming.into_file_summary(),
+                outgoing: boundary.outgoing.into_file_summary(),
+            }
+        })
+        .collect()
+}
+
 #[derive(Default)]
 struct DirectoryAccumulator {
+    directories: BTreeSet<String>,
+    files: BTreeSet<String>,
+    chunk_ids: BTreeSet<String>,
     module_ids: BTreeSet<String>,
-    defined_symbol_count: usize,
+    defined_symbols: BTreeMap<String, usize>,
     loc: usize,
     incoming: DirectionalDirectoryAccumulator,
     outgoing: DirectionalDirectoryAccumulator,
 }
 
 impl DirectoryAccumulator {
-    fn into_manifest(self, directory: String) -> DirectoryDependencyManifest {
-        let incoming = self.incoming.into_summary();
-        let outgoing = self.outgoing.into_summary();
-        DirectoryDependencyManifest {
-            directory,
-            module_count: self.module_ids.len(),
-            defined_symbol_count: self.defined_symbol_count,
+    fn add_file(&mut self, directory: &str, metric: &OutputFileMetric) {
+        if let Some((child, is_directory)) = direct_child_path(directory, &metric.file) {
+            if is_directory {
+                self.directories.insert(child);
+            } else {
+                self.files.insert(child);
+            }
+        }
+        if let Some(chunk_id) = metric.file.split('/').next() {
+            self.chunk_ids.insert(chunk_id.to_string());
+        }
+    }
+
+    fn into_manifest(self, path: String) -> DirectoryManifestIndex {
+        let incoming = self.incoming.into_summary().into();
+        let outgoing = self.outgoing.into_summary().into();
+        DirectoryManifestIndex {
+            path,
+            directories: self.directories.into_iter().collect(),
+            files: self.files.into_iter().collect(),
+            chunks: self.chunk_ids.into_iter().collect(),
+            modules: self.module_ids.into_iter().collect(),
+            defined_symbols: self.defined_symbols,
             loc: self.loc,
-            in_edge_count: incoming.edge_count,
-            out_edge_count: outgoing.edge_count,
-            in_symbol_count: incoming.symbols.len(),
-            out_symbol_count: outgoing.symbols.len(),
-            in_file_count: incoming.external_files.len(),
-            out_file_count: outgoing.external_files.len(),
-            in_edge_count_by_kind: incoming.edge_count_by_kind,
-            out_edge_count_by_kind: outgoing.edge_count_by_kind,
-            in_symbols: incoming.symbols,
-            out_symbols: outgoing.symbols,
-            in_files: incoming.external_files,
-            out_files: outgoing.external_files,
-            incoming_edges: incoming.edges,
-            outgoing_edges: outgoing.edges,
+            incoming,
+            outgoing,
         }
     }
 }
@@ -1382,10 +1455,6 @@ impl DirectoryEdgeAccumulator {
         DirectoryDependencyEdgeManifest {
             source_dir: self.source_dir,
             target_dir: self.target_dir,
-            edge_count: self.edge_count,
-            symbol_count: self.symbols.len(),
-            source_file_count: self.source_files.len(),
-            target_file_count: self.target_files.len(),
             edge_count_by_kind: self.edge_count_by_kind,
             symbols: self.symbols,
             source_files: self.source_files,
@@ -1402,12 +1471,59 @@ struct DirectionalSummary {
     edges: Vec<DirectoryDependencyEdgeManifest>,
 }
 
+impl From<DirectionalSummary> for DirectoryBoundarySummary {
+    fn from(summary: DirectionalSummary) -> Self {
+        Self {
+            edge_count: summary.edge_count,
+            edge_count_by_kind: summary.edge_count_by_kind,
+            symbols: summary.symbols,
+            files: summary.external_files,
+            edges: summary.edges,
+        }
+    }
+}
+
+#[derive(Default)]
+struct FileAccumulator {
+    incoming: DirectionalFileAccumulator,
+    outgoing: DirectionalFileAccumulator,
+}
+
+#[derive(Default)]
+struct DirectionalFileAccumulator {
+    edge_count: usize,
+    edge_count_by_kind: BTreeMap<String, usize>,
+    symbols: BTreeMap<String, usize>,
+    files: BTreeMap<String, usize>,
+}
+
+impl DirectionalFileAccumulator {
+    fn add_fact(&mut self, external_file: &str, edge_kind: DepKind, symbol: Option<&str>) {
+        let kind = dep_kind_key(edge_kind);
+        self.edge_count += 1;
+        *self.edge_count_by_kind.entry(kind.to_string()).or_default() += 1;
+        if let Some(symbol) = symbol {
+            *self.symbols.entry(symbol.to_string()).or_default() += 1;
+        }
+        *self.files.entry(external_file.to_string()).or_default() += 1;
+    }
+
+    fn into_file_summary(self) -> FileBoundarySummary {
+        FileBoundarySummary {
+            edge_count: self.edge_count,
+            edge_count_by_kind: self.edge_count_by_kind,
+            symbols: self.symbols,
+            files: self.files,
+        }
+    }
+}
+
 fn directory_ancestors_for_file(file: &str) -> Vec<String> {
     let dir = module_path_dirname(file);
+    let mut ancestors = vec![String::new()];
     if dir.is_empty() {
-        return Vec::new();
+        return ancestors;
     }
-    let mut ancestors = Vec::new();
     let mut current = String::new();
     for part in dir.split('/').filter(|part| !part.is_empty()) {
         if current.is_empty() {
@@ -1422,11 +1538,22 @@ fn directory_ancestors_for_file(file: &str) -> Vec<String> {
 }
 
 fn path_is_in_directory(path: &str, directory: &str) -> bool {
-    !directory.is_empty()
-        && (path == directory
-            || path
-                .strip_prefix(directory)
-                .is_some_and(|rest| rest.starts_with('/')))
+    directory.is_empty()
+        || path == directory
+        || path
+            .strip_prefix(directory)
+            .is_some_and(|rest| rest.starts_with('/'))
+}
+
+fn direct_child_path(directory: &str, file: &str) -> Option<(String, bool)> {
+    let rest = if directory.is_empty() {
+        file
+    } else {
+        file.strip_prefix(directory)?.strip_prefix('/')?
+    };
+    let mut parts = rest.split('/');
+    let first = parts.next()?;
+    Some((first.to_string(), parts.next().is_some()))
 }
 
 fn dep_kind_key(kind: DepKind) -> &'static str {
@@ -1442,7 +1569,8 @@ fn dep_kind_key(kind: DepKind) -> &'static str {
 
 fn materialize_chunk_scripts(
     artifact: &ChunkBundle,
-    out_dir: &Path,
+    app_root: &Path,
+    report_tree_root: &Path,
     selected_module_by_chunk_file: &HashMap<(String, String), &SelectedModuleLowering>,
     decomposition_by_chunk: &HashMap<ChunkId, ChunkDecompositionOutput>,
     chunk_id: ChunkId,
@@ -1450,7 +1578,7 @@ fn materialize_chunk_scripts(
     let chunk_name = artifact.chunk_table.name(chunk_id).to_string();
     let chunk_artifact = artifact.chunk(chunk_id)?;
     let chunk = &chunk_artifact.js;
-    let chunk_out_dir = out_dir.join(path_from_module_path(&chunk_name));
+    let chunk_out_dir = app_root.join(path_from_module_path(&chunk_name));
     fs::create_dir_all(&chunk_out_dir)?;
     let metrics = list_chunk_file_paths(chunk)
         .into_iter()
@@ -1472,10 +1600,13 @@ fn materialize_chunk_scripts(
     let decomposition = decomposition_by_chunk.get(&chunk_id);
     let written =
         ChunkManifest::from_analysis(&chunk_artifact.analysis, decomposition, metrics_output);
-    serde_json::to_writer_pretty(
-        &fs::File::create(chunk_out_dir.join("manifest.json"))?,
-        &written,
-    )?;
+    let chunk_report_path = report_tree_root
+        .join(path_from_module_path(&chunk_name))
+        .join(CHUNK_REPORT);
+    if let Some(parent) = chunk_report_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    serde_json::to_writer_pretty(&fs::File::create(chunk_report_path)?, &written)?;
     Ok(metrics)
 }
 

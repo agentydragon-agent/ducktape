@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::{Context, Result, bail};
+use serde::Serialize;
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
 
@@ -12,12 +13,12 @@ pub struct StripSwappedVendorExportsResult {
     pub manifest: StripSwappedVendorExportsManifest,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct StripSwappedVendorExportsManifest {
     pub per_chunk: BTreeMap<String, ChunkStripStats>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ChunkStripStats {
     pub chunk_path: String,
     pub stripped_export_specifiers: usize,

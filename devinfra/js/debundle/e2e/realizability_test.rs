@@ -250,7 +250,7 @@ export { A, B };
     ));
     assert_entry_output(&fixture, "a-value b-value\n");
 
-    let manifest: serde_json::Value = read_json(&fixture.out_root.join("static/app/manifest.json"));
+    let manifest: serde_json::Value = read_json(&fixture.report_root.join("static/app/chunk.json"));
     let entry_path = fixture.out_root.join("static/app/entry.js");
     let named_path = fixture.out_root.join("static/app/modules/mod_a.js");
     let residual_path = fixture
@@ -341,7 +341,8 @@ export { A, B };
         residual.0,
     );
 
-    let root_manifest: serde_json::Value = read_json(&fixture.out_root.join("manifest.json"));
+    let output_root = fixture.out_root.parent().expect("app root has output root");
+    let root_manifest: serde_json::Value = read_json(&output_root.join("reports/output.json"));
     assert_size_metric(
         &root_manifest,
         &["output_metrics", "total"],
@@ -374,67 +375,56 @@ export { consume };
     ));
     assert_entry_output(&fixture, "v\n");
 
-    let index: serde_json::Value =
-        read_json(&fixture.out_root.join("directory_manifests/index.json"));
+    let index: serde_json::Value = read_json(&fixture.report_root.join("index.json"));
     let directories = index["directories"]
         .as_array()
         .expect("directory manifest index entries");
-    assert!(directories.iter().any(|entry| {
-        entry["directory"] == "static/app/modules/feature"
-            && entry["manifest"] == "static/app/modules/feature/manifest.json"
-    }));
+    assert!(directories.iter().any(|entry| entry == "static"));
 
     let feature: serde_json::Value = read_json(
         &fixture
-            .out_root
-            .join("directory_manifests/static/app/modules/feature/manifest.json"),
+            .report_root
+            .join("static/app/modules/feature/index.json"),
     );
-    assert_eq!(feature["directory"], "static/app/modules/feature");
-    assert_eq!(feature["out_edge_count"], 1);
-    assert_eq!(feature["out_symbol_count"], 1);
-    assert_eq!(feature["out_file_count"], 1);
+    assert_eq!(feature["path"], "static/app/modules/feature");
+    assert_eq!(feature["outgoing"]["edge_count"], 1);
     assert_eq!(
-        feature["out_symbols"]["static/app/modules/domain/value.js#Value"],
+        feature["outgoing"]["symbols"]["static/app/modules/domain/value.js#Value"],
         1,
     );
     assert_eq!(
-        feature["out_files"]["static/app/modules/domain/value.js"],
+        feature["outgoing"]["files"]["static/app/modules/domain/value.js"],
         1
     );
-    assert_eq!(feature["out_edge_count_by_kind"]["lazy_use"], 1);
+    assert_eq!(feature["outgoing"]["edge_count_by_kind"]["lazy_use"], 1);
     assert_eq!(
-        feature["outgoing_edges"][0]["target_dir"],
+        feature["outgoing"]["edges"][0]["target_dir"],
         "static/app/modules/domain",
     );
 
     let domain: serde_json::Value = read_json(
         &fixture
-            .out_root
-            .join("directory_manifests/static/app/modules/domain/manifest.json"),
+            .report_root
+            .join("static/app/modules/domain/index.json"),
     );
-    assert_eq!(domain["in_edge_count"], 2);
-    assert_eq!(domain["in_symbol_count"], 1);
-    assert_eq!(domain["in_file_count"], 2);
+    assert_eq!(domain["incoming"]["edge_count"], 2);
     assert_eq!(
-        domain["in_symbols"]["static/app/modules/domain/value.js#Value"],
+        domain["incoming"]["symbols"]["static/app/modules/domain/value.js#Value"],
         2,
     );
     assert_eq!(
-        domain["in_files"]["static/app/modules/feature/consumer.js"],
+        domain["incoming"]["files"]["static/app/modules/feature/consumer.js"],
         1
     );
     assert_eq!(
-        domain["in_files"]["static/app/modules/residual/unhandled.js"],
+        domain["incoming"]["files"]["static/app/modules/residual/unhandled.js"],
         1,
     );
 
-    let modules: serde_json::Value = read_json(
-        &fixture
-            .out_root
-            .join("directory_manifests/static/app/modules/manifest.json"),
-    );
-    assert_eq!(modules["in_edge_count"], 0);
-    assert_eq!(modules["out_edge_count"], 0);
+    let modules: serde_json::Value =
+        read_json(&fixture.report_root.join("static/app/modules/index.json"));
+    assert_eq!(modules["incoming"]["edge_count"], 0);
+    assert_eq!(modules["outgoing"]["edge_count"], 0);
 }
 
 #[test]
@@ -588,11 +578,11 @@ export { a1, a2, b1 };
     let graph: OwnerGraphReport =
         read_json(&rejected.report_root.join("static/app/owner_graph.json"));
     assert!(
-        rejected
+        !rejected
             .report_root
             .join("static/app/factorization.json")
             .exists(),
-        "schedule report should be written alongside owner graph",
+        "factorization.json is folded into chunk.json / failure reports",
     );
     assert!(
         rejected.report_root.join("static/app/cycles.json").exists(),

@@ -15,11 +15,11 @@ Use this with `debundle_plan_work`, which is the detailed command guide for
 Adapters should bind these names before invoking role skills:
 
 ```bash
-GRAPH=<debundle-output>/analysis/logical_modules/.../owner_graph.json
+GRAPH=<debundle-output>/reports/tree/<chunk-id>/owner_graph.json
 MODULES=<spec-root>/<version>/modules
-SOURCE_ROOT=<upstream-or-emitted-js-root>
+SOURCE_ROOT=<debundle-output>/app
 DEBUNDLE_OUT=<debundle-output-root>
-DIR_MANIFESTS=<debundle-output-root>/directory_manifests
+REPORT_TREE=<debundle-output-root>/reports/tree
 ```
 
 If remote execution or minimal output downloads are in use, request full
@@ -69,17 +69,20 @@ Interpretation:
 
 Typical debundle outputs include:
 
-- root and per-chunk manifests with progress metrics
-- `directory_manifests/index.json` plus mirrored
-  `directory_manifests/<emitted-dir>/manifest.json` files when logical modules
-  are materialized
-- `analysis/logical_modules/**/owner_graph.json`
-- `analysis/logical_modules/**/cycles.json` when the gate rejects
-- factorization/planner diagnostics when enabled
-- identifier rename queues when emitted by the pipeline
+- executable JS under `app/`
+- root reports under `reports/`, including `output.json`, `chunks.json`,
+  `runtime.json`, `source_assets.json`, `provenance.json`,
+  `rename_queue.json`, and `vendor_swaps.json` when those stages run
+- per-chunk reports under `reports/tree/<chunk-id>/`, including
+  `chunk.json`, `modules.json`, and `owner_graph.json`
+- `reports/tree/<chunk-id>/cycles.json` or
+  `reports/tree/<chunk-id>/atomic_unit_conflicts.json` only when validation
+  rejects
+- mirrored per-directory and per-file dependency reports under
+  `reports/tree/**/index.json` and `reports/tree/**/*.js.json`
 
 Use manifests for progress reporting rather than rescanning generated JS by
-hand. Use directory manifests for hierarchy-health evidence: incoming/outgoing
+hand. Use tree reports for hierarchy-health evidence: incoming/outgoing
 semantic dependency counts by kind, and full symbol/file attribution for the
 boundary crossings that make a directory leaky or well-encapsulated. Treat
 them as graph evidence to pair with source reading, not as a substitute for

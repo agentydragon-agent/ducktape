@@ -1,6 +1,4 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use std::fs;
-use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -21,12 +19,13 @@ use analysis::{
 use artifact::{
     ArtifactIndexes, ArtifactSourceImportResolver, ChunkAnalysis, ChunkArtifact, ChunkBundle,
     ChunkDecompositionOutput, ChunkFileRecord, ChunkId, ChunkLogicalModulesSummary, ChunkMetadata,
-    ChunkTable, DirectoryDependencyFact, FileMetadata, FileRole, JsChunk, JsFile, JsFileBody,
-    SelectedModuleLowering, get_chunk_entry_path, join_module_path, manifest_relative_path,
-    module_path_dirname, module_path_from_path, normalize_module_path,
-    normalize_relative_module_specifier, relative_module_path,
+    ChunkTable, ChunkValidationSummary, DirectoryDependencyFact, FileMetadata, FileRole, JsChunk,
+    JsFile, JsFileBody, SelectedModuleLowering, get_chunk_entry_path, join_module_path,
+    module_path_dirname, normalize_module_path, normalize_relative_module_specifier,
+    relative_module_path,
 };
 use js_ast::{ParsedJsModule, set_str_value, str_value};
+use output_layout::MODULES_REPORT;
 use spec::{
     BindingSourceKind, ChunkAnalysisOptions, ChunkRenames, LogicalModule, MemberEffect,
     MemberPurity, UnassignedMode,
@@ -69,8 +68,7 @@ use imports_runtime::{
 };
 use lower::{LowerChunkInputs, LoweredChunk, lower_chunk};
 use materialize::{
-    MaterializeLogicalChunkInputs, aggregate_logical_timings, apply_materialized_logical_chunks,
-    materialize_logical_chunk,
+    MaterializeLogicalChunkInputs, apply_materialized_logical_chunks, materialize_logical_chunk,
 };
 use naturalize::naturalize_module_body;
 use plan_references::{
@@ -128,35 +126,17 @@ impl PhaseTimings {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub struct LogicalModuleManifest {
-    pub chunks: Vec<LogicalChunkReport>,
-    pub counts: LogicalModuleCounts,
-    pub duration: Duration,
-    pub timings: BTreeMap<String, Duration>,
-    pub report_out_dir: Option<String>,
-}
-
 pub struct MaterializeLogicalModulesResult {
     pub artifact: ChunkBundle,
-    pub manifest: LogicalModuleManifest,
     pub selected_lowerings: Vec<SelectedModuleLowering>,
     pub module_count: usize,
     pub decomposition_by_chunk: HashMap<ChunkId, ChunkDecompositionOutput>,
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct LogicalModuleCounts {
-    pub applied: usize,
-    pub final_modules: usize,
-    pub explicit_logical_modules: usize,
-    pub residual_logical_modules: usize,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct LogicalChunkReport {
+pub struct ChunkModulesReport {
     pub chunk_id: String,
-    pub counts: LogicalChunkCounts,
+    pub counts: ChunkModulesCounts,
     pub final_module_contents: Vec<FinalModuleContent>,
     pub requested_logical_modules: Vec<RequestedLogicalModule>,
     /// `purity: pure` hints the analyzer inferred automatically.
@@ -168,11 +148,8 @@ pub struct LogicalChunkReport {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct LogicalChunkCounts {
+pub struct ChunkModulesCounts {
     pub applied: usize,
-    pub explicit_logical_modules: usize,
-    pub final_modules: usize,
-    pub residual_logical_modules: usize,
     pub selected_owners: usize,
 }
 
@@ -201,7 +178,6 @@ pub struct MaterializeLogicalModulesOptions {
     pub prune_other_chunks: bool,
     pub force: bool,
     pub report_out_dir: Option<PathBuf>,
-    pub report_summary_path: Option<PathBuf>,
     pub target_dir: String,
 }
 
@@ -216,7 +192,6 @@ pub fn materialize_logical_modules(
     if options.chunk_ids.is_empty() {
         bail!("materialize_logical_modules requires at least one chunk_id");
     }
-    let started = Instant::now();
     let target_dir = normalize_optional_relative_dir(&options.target_dir)?;
     let mut selected_chunk_ids = Vec::new();
     let mut seen = BTreeSet::new();
@@ -236,9 +211,7 @@ pub fn materialize_logical_modules(
     if options.prune_other_chunks {
         prune_artifact_to_chunk_ids(&mut artifact, &selected_chunk_ids);
     }
-    let index_started = Instant::now();
     let artifact_indexes = ArtifactIndexes::build(&artifact)?;
-    let index_duration = index_started.elapsed();
 
     let artifact_ref: &ChunkBundle = &artifact;
     // SWC's `swc_common::GLOBALS` is a `scoped_tls` thread-local, so the
@@ -275,7 +248,7 @@ pub fn materialize_logical_modules(
             write_chunk_report_json(
                 report_out_dir,
                 artifact.chunk_table.name(chunk_result.chunk_id),
-                "logical_modules.json",
+                MODULES_REPORT,
                 &chunk_result.report,
             )?;
         }
@@ -286,47 +259,9 @@ pub fn materialize_logical_modules(
     artifact = apply_result.artifact;
     let decomposition_by_chunk = apply_result.decomposition_by_chunk;
 
-    let module_count: usize = reports.iter().map(|r| r.counts.final_modules).sum();
-    let duration = started.elapsed();
-    let mut aggregate_timings = aggregate_logical_timings(&reports);
-    aggregate_timings.insert("build_artifact_indexes".to_string(), index_duration);
-    aggregate_timings.insert("total".to_string(), duration);
-    let manifest = LogicalModuleManifest {
-        counts: LogicalModuleCounts {
-            applied: applied.len(),
-            final_modules: reports
-                .iter()
-                .map(|report| report.counts.final_modules)
-                .sum(),
-            explicit_logical_modules: reports
-                .iter()
-                .map(|report| report.counts.explicit_logical_modules)
-                .sum(),
-            residual_logical_modules: reports
-                .iter()
-                .map(|report| report.counts.residual_logical_modules)
-                .sum(),
-        },
-        chunks: reports,
-        duration,
-        timings: aggregate_timings,
-        report_out_dir: report_out_dir.as_ref().map(|path| {
-            options.report_summary_path.as_ref().map_or_else(
-                || module_path_from_path(path),
-                |s| manifest_relative_path(s, path),
-            )
-        }),
-    };
-
-    if let Some(summary_path) = options.report_summary_path {
-        if let Some(parent) = summary_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        serde_json::to_writer_pretty(&fs::File::create(summary_path)?, &manifest)?;
-    }
+    let module_count: usize = reports.iter().map(|r| r.final_module_contents.len()).sum();
     Ok(MaterializeLogicalModulesResult {
         artifact,
-        manifest,
         selected_lowerings: applied,
         module_count,
         decomposition_by_chunk,
