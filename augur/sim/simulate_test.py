@@ -12,7 +12,8 @@ import polars as pl
 import pytest
 import pytest_bazel
 
-from augur.sim.market import DeterministicPath, GeometricBrownianPath, MarketBundle
+from augur.model.sim_market import MarketBundle
+from augur.model.sim_market_gbm import GeometricBrownian
 from augur.sim.replay import assert_replay_invariant_holds
 from augur.sim.scenario import (
     Agent,
@@ -688,10 +689,10 @@ def test_sales_of_two_different_assets_are_independent() -> None:
     )
 
 
-def test_market_driven_sale_uses_deterministic_price_curve() -> None:
+def test_market_driven_sale_uses_deterministic_price_curve(deterministic_market_bundle) -> None:
     """L5 — when a ScheduledAssetSale omits `price_per_unit_usd`,
     the engine reads the per-month price from the scenario's
-    MarketBundle. With a DeterministicPath the price is identical
+    MarketBundle. With a Deterministic model the price is identical
     across rollouts; the sale's proceeds reflect the configured
     month-N price."""
     horizon = 6
@@ -718,9 +719,7 @@ def test_market_driven_sale_uses_deterministic_price_curve() -> None:
                 proceeds_account_id="checking",
             )
         ],
-        market=MarketBundle(
-            paths=[DeterministicPath(asset_id="vti", prices_usd=[100.0, 110.0, 120.0, 130.0, 150.0, 160.0, 170.0])]
-        ),
+        market=deterministic_market_bundle([100.0, 110.0, 120.0, 130.0, 150.0, 160.0, 170.0]),
         horizon_months=horizon,
     )
 
@@ -741,16 +740,12 @@ def test_gbm_market_diverges_across_rollouts_same_seed_is_reproducible() -> None
     """L10.1 — GBM paths produce different per-rollout trajectories
     (so sale proceeds differ across rollouts) but a fixed `rng_seed`
     reproduces the same prices across runs."""
-    bundle = MarketBundle(
-        paths=[
-            GeometricBrownianPath(
-                asset_id="vti",
-                initial_price_usd=100.0,
-                monthly_log_return_mu=0.005,
-                monthly_log_return_sigma=0.05,
-                rng_seed=42,
+    bundle = MarketBundle.independent(
+        {
+            "vti": GeometricBrownian(
+                initial_price_usd=100.0, monthly_log_return_mu=0.005, monthly_log_return_sigma=0.05, rng_seed=42
             )
-        ]
+        }
     )
     scenario = Scenario(
         agents=[Agent(agent_id="alice")],
@@ -1167,7 +1162,7 @@ def test_e2e_pinned_multi_asset_ltcg_stcg_tax_breakdown_numerics() -> None:
     assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
-def test_e2e_pinned_tax_payments_force_asset_liquidation_and_settle_liability() -> None:
+def test_e2e_pinned_tax_payments_force_asset_liquidation_and_settle_liability(deterministic_market_bundle) -> None:
     """Pinned obligation e2e: taxes are due-now outflows.
 
     Alice earns $50k and spends every paycheck on rent, so estimated
@@ -1216,7 +1211,7 @@ def test_e2e_pinned_tax_payments_force_asset_liquidation_and_settle_liability() 
                 amount_usd=50_000.0 / 12.0,
             ),
         ],
-        market=MarketBundle(paths=[DeterministicPath(asset_id="vti", prices_usd=[100.0] * 14)]),
+        market=deterministic_market_bundle([100.0] * 14),
         tax_profiles=[
             TaxProfile(
                 agent_id="alice",
@@ -1435,7 +1430,7 @@ def test_tax_payment_can_trigger_rollout_failure_when_unfunded() -> None:
     assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
-def test_due_now_obligation_sells_assets_and_settles() -> None:
+def test_due_now_obligation_sells_assets_and_settles(deterministic_market_bundle) -> None:
     """A required obligation uses cash first, sells configured assets
     for the remaining shortfall, then pays the counterparty in full."""
     scenario = Scenario(
@@ -1466,7 +1461,7 @@ def test_due_now_obligation_sells_assets_and_settles() -> None:
                 amount_due_usd=500.0,
             )
         ],
-        market=MarketBundle(paths=[DeterministicPath(asset_id="vti", prices_usd=[100.0, 100.0])]),
+        market=deterministic_market_bundle([100.0, 100.0]),
         liquidity_policies=[LiquidityPolicy(agent_id="alice", account_id="checking", asset_preference_chain=["vti"])],
         horizon_months=1,
     )
@@ -1538,7 +1533,7 @@ def test_due_now_obligation_failure_aborts_payment() -> None:
     assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
-def test_policy_without_sale_orders_fails_hard_demand_even_with_assets() -> None:
+def test_policy_without_sale_orders_fails_hard_demand_even_with_assets(deterministic_market_bundle) -> None:
     """A liquidity policy owns sale decisions. If it emits no sale
     orders, settlement will fail a hard demand even when sellable
     assets are present."""
@@ -1570,7 +1565,7 @@ def test_policy_without_sale_orders_fails_hard_demand_even_with_assets() -> None
                 amount_due_usd=500.0,
             )
         ],
-        market=MarketBundle(paths=[DeterministicPath(asset_id="vti", prices_usd=[100.0, 100.0])]),
+        market=deterministic_market_bundle([100.0, 100.0]),
         liquidity_policies=[LiquidityPolicy(agent_id="alice", account_id="checking", asset_preference_chain=[])],
         horizon_months=1,
     )
@@ -1585,7 +1580,7 @@ def test_policy_without_sale_orders_fails_hard_demand_even_with_assets() -> None
     assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
-def test_cash_buffer_sale_evaluates_after_hard_demands() -> None:
+def test_cash_buffer_sale_evaluates_after_hard_demands(deterministic_market_bundle) -> None:
     """Buffer policy sees post-demand cash: cash 2500 minus a 1000
     hard demand leaves 1500, below the 2000 trigger, so the policy
     sells a fixed 5000 before settlement pays the demand."""
@@ -1617,7 +1612,7 @@ def test_cash_buffer_sale_evaluates_after_hard_demands() -> None:
                 amount_due_usd=1000.0,
             )
         ],
-        market=MarketBundle(paths=[DeterministicPath(asset_id="vti", prices_usd=[100.0, 100.0])]),
+        market=deterministic_market_bundle([100.0, 100.0]),
         liquidity_policies=[
             LiquidityPolicy(
                 agent_id="alice",
@@ -1645,7 +1640,7 @@ def test_cash_buffer_sale_evaluates_after_hard_demands() -> None:
     assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
-def test_cash_buffer_not_triggered_when_post_demand_cash_is_enough() -> None:
+def test_cash_buffer_not_triggered_when_post_demand_cash_is_enough(deterministic_market_bundle) -> None:
     scenario = Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="landlord")],
         initial_cash=[
@@ -1674,7 +1669,7 @@ def test_cash_buffer_not_triggered_when_post_demand_cash_is_enough() -> None:
                 amount_due_usd=1000.0,
             )
         ],
-        market=MarketBundle(paths=[DeterministicPath(asset_id="vti", prices_usd=[100.0, 100.0])]),
+        market=deterministic_market_bundle([100.0, 100.0]),
         liquidity_policies=[
             LiquidityPolicy(
                 agent_id="alice",
@@ -1773,7 +1768,7 @@ def test_same_account_hard_demands_settle_all_or_none() -> None:
     assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
-def test_explicit_sale_price_overrides_market() -> None:
+def test_explicit_sale_price_overrides_market(deterministic_market_bundle) -> None:
     """If `ScheduledAssetSale.price_per_unit_usd` is set the engine
     uses that scalar; market is ignored for that sale. This is the
     test-fixture path used in L4 tests; still valid in the
@@ -1802,7 +1797,7 @@ def test_explicit_sale_price_overrides_market() -> None:
                 proceeds_account_id="checking",
             )
         ],
-        market=MarketBundle(paths=[DeterministicPath(asset_id="vti", prices_usd=[10.0, 10.0, 10.0])]),
+        market=deterministic_market_bundle([10.0, 10.0, 10.0]),
         horizon_months=2,
     )
 
@@ -1893,7 +1888,7 @@ def test_real_estate_purchase_mortgage_and_property_tax_numerics() -> None:
     assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
-def test_liquidity_policy_covers_monthly_spend_deficit() -> None:
+def test_liquidity_policy_covers_monthly_spend_deficit(deterministic_market_bundle) -> None:
     """L9 — Alice has $1k cash, a $5k/month spend, and 200 units of
     VTI at $100/unit market price. The liquidity policy sees the
     due-now rent demand, sells the amount cash cannot already cover,
@@ -1928,7 +1923,7 @@ def test_liquidity_policy_covers_monthly_spend_deficit() -> None:
                 amount_due_usd=5000.0,
             )
         ],
-        market=MarketBundle(paths=[DeterministicPath(asset_id="vti", prices_usd=[100.0] * 4)]),
+        market=deterministic_market_bundle([100.0] * 4),
         liquidity_policies=[LiquidityPolicy(agent_id="alice", account_id="checking", asset_preference_chain=["vti"])],
         horizon_months=3,
     )
@@ -1951,7 +1946,7 @@ def test_liquidity_policy_covers_monthly_spend_deficit() -> None:
     assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
-def test_rollout_marked_failed_when_assets_exhausted() -> None:
+def test_rollout_marked_failed_when_assets_exhausted(deterministic_market_bundle) -> None:
     """L11 — when the liquidity policy cannot emit enough sale
     proceeds for a hard demand, settlement marks the rollout failed."""
     scenario = Scenario(
@@ -1982,7 +1977,7 @@ def test_rollout_marked_failed_when_assets_exhausted() -> None:
                 amount_due_usd=1000.0,
             )
         ],
-        market=MarketBundle(paths=[DeterministicPath(asset_id="vti", prices_usd=[100.0, 100.0])]),
+        market=deterministic_market_bundle([100.0, 100.0]),
         liquidity_policies=[LiquidityPolicy(agent_id="alice", account_id="checking", asset_preference_chain=["vti"])],
         horizon_months=1,
     )

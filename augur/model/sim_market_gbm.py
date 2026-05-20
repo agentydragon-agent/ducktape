@@ -1,0 +1,35 @@
+"""Geometric Brownian scalar market models for `augur/sim`."""
+
+from __future__ import annotations
+
+from typing import Literal
+
+import numpy as np
+from pydantic import BaseModel
+
+
+class GeometricBrownian(BaseModel):
+    """Fixture GBM-sampled price process for one market.
+
+    `initial_price_usd` is the month-0 price. Later months apply
+    `exp(N(mu, sigma))` to the previous month's price. Sampling uses
+    `numpy.random.default_rng(rng_seed)` so the same seed yields the
+    same paths across runs.
+    """
+
+    kind: Literal["gbm"] = "gbm"
+    initial_price_usd: float
+    monthly_log_return_mu: float = 0.0
+    monthly_log_return_sigma: float = 0.0
+    rng_seed: int = 0
+
+    def sample_prices(self, *, rollout_count: int, horizon_months: int) -> np.ndarray:
+        rng = np.random.default_rng(self.rng_seed)
+        log_returns = rng.normal(
+            loc=self.monthly_log_return_mu, scale=self.monthly_log_return_sigma, size=(rollout_count, horizon_months)
+        )
+        cumulative = np.cumsum(log_returns, axis=1)
+        prices = np.empty((rollout_count, horizon_months + 1), dtype=np.float64)
+        prices[:, 0] = self.initial_price_usd
+        prices[:, 1:] = self.initial_price_usd * np.exp(cumulative)
+        return prices

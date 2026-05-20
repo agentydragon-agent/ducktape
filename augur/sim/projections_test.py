@@ -4,7 +4,6 @@ import polars as pl
 import pytest
 import pytest_bazel
 
-from augur.sim.market import DeterministicPath, MarketBundle
 from augur.sim.projections import project_simulation_run
 from augur.sim.scenario import (
     Agent,
@@ -23,7 +22,7 @@ from augur.sim.scenario import (
 from augur.sim.simulate import simulate
 
 
-def test_projection_due_now_obligation_sells_assets_and_settles() -> None:
+def test_projection_due_now_obligation_sells_assets_and_settles(deterministic_market_bundle) -> None:
     scenario = Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="landlord")],
         initial_cash=[
@@ -52,7 +51,7 @@ def test_projection_due_now_obligation_sells_assets_and_settles() -> None:
                 amount_due_usd=500.0,
             )
         ],
-        market=MarketBundle(paths=[DeterministicPath(asset_id="vti", prices_usd=[100.0, 100.0])]),
+        market=deterministic_market_bundle([100.0, 100.0]),
         liquidity_policies=[LiquidityPolicy(agent_id="alice", account_id="checking", asset_preference_chain=["vti"])],
         horizon_months=1,
     )

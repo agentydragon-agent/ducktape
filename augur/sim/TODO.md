@@ -17,8 +17,8 @@ primary simulation backend for the Augur frontend/API.
       metadata plus distribution-first projections instead of preserving
       legacy field names by default.
 - [ ] Replace production use of `augur.core.market_bundle.MarketBundle`
-      in the Augur run path with exogenous path bundles supplied by
-      `augur/model` and materialized into `augur.sim.market.MarketBundle`.
+      in the Augur run path with model-owned exogenous bundles supplied by
+      `augur/model` and consumed by `augur/sim`.
 - [ ] Replace core-side required-market-key discovery with sim scenario
       introspection so model providers know which public markets, private
       equity paths, locations, currencies, and other exogenous series must
@@ -49,9 +49,15 @@ primary simulation backend for the Augur frontend/API.
       depreciation, §121 exclusion, §1250 recapture, itemized deductions,
       SALT cap, and qualified-residence mortgage-interest deduction.
 - [ ] Move production stochastic market generation to `augur/model`.
-      `GeometricBrownianPath` in `augur/sim/market.py` remains acceptable
-      as test/bench scaffolding until the model package supplies sampled
-      exogenous path bundles.
+      Static and GBM fixture path specs now live in `augur/model`; the
+      remaining production gap is wiring calibrated model providers to
+      emit the same sim-facing exogenous path bundle shape.
+- [ ] Align every market-provider/model implementation with the
+      `augur/sim` consumption API. `noop`, simple, VECM, VAR, Wilkie,
+      DCC/GARCH, bootstrap, and future calibrated joint models should
+      either implement the `JointMarketModel` contract directly or adapt
+      to the model-owned `MarketBundle` shape before the backend switches
+      away from core.
 - [ ] Add variable spending/obligation amounts sourced from exogenous
       model paths.
 - [ ] Exercise constrained sellability masks end to end.

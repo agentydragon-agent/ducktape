@@ -24,7 +24,8 @@ defaults above; tune via keyword args.
 
 from __future__ import annotations
 
-from augur.sim.market import GeometricBrownianPath, MarketBundle
+from augur.model.sim_market import MarketBundle
+from augur.model.sim_market_gbm import GeometricBrownian
 from augur.sim.scenario import (
     Agent,
     InitialAccountBalance,
@@ -102,30 +103,18 @@ def build_bench_scenario(
                 amount_usd=monthly_spend_usd,
             ),
         ],
-        market=MarketBundle(
-            paths=[
-                GeometricBrownianPath(
-                    asset_id="vti",
-                    initial_price_usd=240.0,
-                    monthly_log_return_mu=0.0067,
-                    monthly_log_return_sigma=0.04,
-                    rng_seed=11,
+        market=MarketBundle.independent(
+            {
+                "vti": GeometricBrownian(
+                    initial_price_usd=240.0, monthly_log_return_mu=0.0067, monthly_log_return_sigma=0.04, rng_seed=11
                 ),
-                GeometricBrownianPath(
-                    asset_id="qqq",
-                    initial_price_usd=400.0,
-                    monthly_log_return_mu=0.008,
-                    monthly_log_return_sigma=0.05,
-                    rng_seed=22,
+                "qqq": GeometricBrownian(
+                    initial_price_usd=400.0, monthly_log_return_mu=0.008, monthly_log_return_sigma=0.05, rng_seed=22
                 ),
-                GeometricBrownianPath(
-                    asset_id="btc",
-                    initial_price_usd=60_000.0,
-                    monthly_log_return_mu=0.012,
-                    monthly_log_return_sigma=0.15,
-                    rng_seed=33,
+                "btc": GeometricBrownian(
+                    initial_price_usd=60_000.0, monthly_log_return_mu=0.012, monthly_log_return_sigma=0.15, rng_seed=33
                 ),
-            ]
+            }
         ),
         tax_profiles=[
             TaxProfile(

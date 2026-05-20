@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field, PositiveInt
 
-from augur.sim.market import MarketBundle
+from augur.model.sim_market import MarketBundle
 
 
 class Agent(BaseModel):

@@ -12,8 +12,9 @@ from __future__ import annotations
 import polars as pl
 import pytest_bazel
 
+from augur.model.sim_market import MarketBundle
+from augur.model.sim_market_deterministic import Deterministic
 from augur.sim.bench_scenario import build_bench_scenario
-from augur.sim.market import DeterministicPath
 from augur.sim.scenario import InitialLot
 from augur.sim.simulate import simulate
 
@@ -47,7 +48,7 @@ def test_bench_scenario_runs_at_low_rollout_count() -> None:
 def test_dry_add_fourth_position_is_config_only() -> None:
     """Spike-1 DRY proof: adding a 4th capital-gains-eligible
     position to the scenario takes one new InitialLot record and
-    one new MarketPathSpec, zero engine code. The simulator
+    one new independent market entry, zero engine code. The simulator
     accepts the new asset_id ("efv") through the same code paths
     as VTI/QQQ/BTC. After running 10 rollouts at 24 months we see
     EFV as a tracked asset in lots and market-prices frames."""
@@ -61,11 +62,11 @@ def test_dry_add_fourth_position_is_config_only() -> None:
         quantity=50.0,
         cost_basis_per_unit_usd=70.0,
     )
-    efv_path = DeterministicPath(asset_id="efv", prices_usd=[100.0] * 25)
+    markets = {**base.market.model.markets, "efv": Deterministic(prices_usd=[100.0] * 25)}
     extended = base.model_copy(
         update={
             "initial_lots": [*base.initial_lots, new_lot],
-            "market": base.market.model_copy(update={"paths": [*base.market.paths, efv_path]}),
+            "market": MarketBundle.independent(markets),
             "liquidity_policies": [
                 p.model_copy(update={"asset_preference_chain": [*p.asset_preference_chain, "efv"]})
                 for p in base.liquidity_policies
