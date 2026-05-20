@@ -398,7 +398,7 @@ class DccGjrGarch:
 
 class DccGjrGarchMarketProviderConfig(ApiModel):
     """Pre-trained DCC-GJR-GARCH provider config — points at the trained-state
-    blob written by `bb run //augur/model:train`. The model is loaded at server
+    blob written by `bb run //augur/model/train:train`. The model is loaded at server
     startup; no fitting happens on the request path."""
 
     type: Literal["dcc_gjr_garch"] = "dcc_gjr_garch"

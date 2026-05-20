@@ -7,19 +7,18 @@ from typing import Any, cast
 import pytest
 import pytest_bazel
 
-from augur.model.market_config import load_market_config
-from augur.model.markets.data import load_evidence, load_fred_only_evidence
+from augur.model.train.data import load_evidence, load_fred_only_evidence
+from augur.model.train.market_config import load_market_config
 
-CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "market_config.example.json"
+CONFIG_PATH = Path(__file__).resolve().parent / "config" / "market_config.example.json"
 
 
 def _config_with_absolute_source_paths() -> dict[str, Any]:
     config = cast(dict[str, Any], json.loads(CONFIG_PATH.read_text(encoding="utf-8")))
     source = dict(config["source_data"])
-    source_dir = CONFIG_PATH.parent / "source"
     for key, value in source.items():
         if isinstance(value, str):
-            source[key] = str(source_dir / Path(value).name)
+            source[key] = str((CONFIG_PATH.parent / value).resolve())
     config["source_data"] = source
     return config
 

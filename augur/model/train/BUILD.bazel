@@ -1,0 +1,149 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "market_config_files",
+    srcs = [
+        "config/market_config.example.json",
+        "//augur/data/market:market_source_files",
+    ],
+)
+
+py_library(
+    name = "market_config_py",
+    srcs = ["market_config.py"],
+    deps = [
+        "//augur/core:schemas_py",
+        "//augur/model:location_market_sources_py",
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+        "@pypi//types_pyyaml",
+    ],
+)
+
+py_library(
+    name = "market_data_py",
+    srcs = ["market_data.py"],
+    deps = [
+        ":market_config_py",
+        "@pypi//numpy",
+        "@pypi//pandas",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+py_library(
+    name = "market_model_py",
+    srcs = ["market_model.py"],
+    deps = [
+        "//augur/model/markets:scenarios_py",
+    ],
+)
+
+py_library(
+    name = "metrics_py",
+    srcs = ["metrics.py"],
+    deps = [
+        ":market_model_py",
+        "//augur/model/markets:scenarios_py",
+    ],
+)
+
+py_library(
+    name = "data_py",
+    srcs = ["data.py"],
+    data = [":market_config_files"],
+    deps = [
+        ":market_config_py",
+        ":market_data_py",
+        "//augur/model:location_market_sources_py",
+        "//augur/model/markets:scenarios_py",
+        "@pypi//numpy",
+        "@pypi//pandas",
+    ],
+)
+
+py_binary(
+    name = "metrics_report",
+    srcs = ["metrics_report.py"],
+    data = [":market_config_files"],
+    deps = [
+        ":data_py",
+        ":market_model_py",
+        ":metrics_py",
+        "//augur/model/markets/models:vecm_py",
+    ],
+)
+
+py_library(
+    name = "train_lib",
+    srcs = ["main.py"],
+    data = [":market_config_files"],
+    deps = [
+        ":data_py",
+        ":market_config_py",
+        "//augur/model:market_provider_config_py",
+        "//augur/model/markets/models:vecm_py",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_binary(
+    name = "train",
+    main_module = "augur.model.train.main",
+    deps = [":train_lib"],
+)
+
+py_test(
+    name = "market_config_test",
+    srcs = ["market_config_test.py"],
+    data = [":market_config_files"],
+    deps = [
+        ":market_config_py",
+        "//augur/core:schemas_py",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "data_test",
+    srcs = ["data_test.py"],
+    data = [":market_config_files"],
+    deps = [
+        ":data_py",
+        ":market_config_py",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "metrics_test",
+    srcs = ["metrics_test.py"],
+    deps = [
+        ":market_model_py",
+        ":metrics_py",
+        "//augur/model/markets:scenarios_py",
+        "@pypi//numpy",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "train_round_trip_test",
+    size = "large",
+    srcs = ["train_round_trip_test.py"],
+    deps = [
+        ":train_lib",
+        "//augur/core:market_bundle_py",
+        "//augur/core:scenario_set_py",
+        "//augur/model:market_provider_config_py",
+        "//util/bazel:runfiles",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)

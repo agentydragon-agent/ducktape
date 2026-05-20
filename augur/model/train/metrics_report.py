@@ -16,14 +16,14 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from augur.model.markets.data import load_historical
-from augur.model.markets.market_model import MarketModel
-from augur.model.markets.metrics import (
+from augur.model.markets.models.vecm import VecmConfig, VecmModel
+from augur.model.train.data import load_historical
+from augur.model.train.market_model import MarketModel
+from augur.model.train.metrics import (
     held_out_predictive_log_density,
     multi_step_predictive_log_density,
     rolling_origin_predictive_log_density,
 )
-from augur.model.markets.models.vecm import VecmConfig, VecmModel
 
 
 @dataclass(frozen=True)

@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -15,61 +15,5 @@ py_library(
     srcs = ["_density.py"],
     deps = [
         "@pypi//numpy",
-    ],
-)
-
-py_library(
-    name = "market_model_py",
-    srcs = ["market_model.py"],
-    deps = [
-        ":scenarios_py",
-    ],
-)
-
-py_library(
-    name = "metrics_py",
-    srcs = ["metrics.py"],
-    deps = [
-        ":market_model_py",
-        ":scenarios_py",
-    ],
-)
-
-py_library(
-    name = "data_py",
-    srcs = ["data.py"],
-    data = ["//augur/model/config:market_config_files"],
-    deps = [
-        ":scenarios_py",
-        "//augur/core:schemas_py",
-        "//augur/model:location_market_sources_py",
-        "//augur/model:market_config_py",
-        "//augur/model:market_data_py",
-        "@pypi//numpy",
-        "@pypi//pandas",
-    ],
-)
-
-py_test(
-    name = "metrics_test",
-    srcs = ["metrics_test.py"],
-    deps = [
-        ":market_model_py",
-        ":metrics_py",
-        ":scenarios_py",
-        "@pypi//numpy",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "data_test",
-    srcs = ["data_test.py"],
-    data = ["//augur/model/config:market_config_files"],
-    deps = [
-        ":data_py",
-        "//augur/model:market_config_py",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

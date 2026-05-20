@@ -224,7 +224,7 @@ def _var1_horizon_density(
 
 class Var1GaussianMarketProviderConfig(ApiModel):
     """Pre-trained VAR(1) Gaussian provider config — points at the trained-state
-    blob written by `bb run //augur/model:train`. The model is loaded at server
+    blob written by `bb run //augur/model/train:train`. The model is loaded at server
     startup; no fitting happens on the request path."""
 
     type: Literal["var1_gaussian"] = "var1_gaussian"

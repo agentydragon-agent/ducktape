@@ -27,13 +27,14 @@ company-/person-specific modeling assumptions.
 
 ## Layout
 
-| Directory       | Purpose                                                                                                                                                       |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `core/`         | Engine, typed entity / asset / policy / action / event model, real-estate math, scenario serialization, location regulation registry.                         |
-| `model/`        | Market models (Wilkie, VAR, VECM, DCC-GARCH, bootstrap) + macro market-bundle provider + loaders for FRED/Yahoo/Zillow public-data CSVs.                      |
-| `model/config/` | Public market-source CSVs (FRED series, Yahoo SPY adjusted-close, Zillow ZHVI) and market model config templates. Acquisition recipes in `source/SOURCES.md`. |
-| `api/`          | `AugurConfig` schema, `AugurBackend`, HTTP server, catalog/bootstrap-payload assembly, OpenAPI schema export.                                                 |
-| `frontend/`     | React app + Tailwind bundle build, frontend helpers (casing conversion, columnar table marshaling, scenario-set state, backend client).                       |
+| Directory      | Purpose                                                                                                                                 |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `core/`        | Engine, typed entity / asset / policy / action / event model, real-estate math, scenario serialization, location regulation registry.   |
+| `model/`       | Runtime market-provider configs, sim-facing market model APIs, simple fixture provider, and the active VECM provider.                   |
+| `model/train/` | Offline market training, public-data loading, evaluation/metric tooling, and training config templates.                                 |
+| `data/market/` | Public market-source blobs (FRED series, Yahoo SPY adjusted-close, Zillow ZHVI). Acquisition recipes in `source/SOURCES.md`.            |
+| `api/`         | `AugurConfig` schema, `AugurBackend`, HTTP server, catalog/bootstrap-payload assembly, OpenAPI schema export.                           |
+| `frontend/`    | React app + Tailwind bundle build, frontend helpers (casing conversion, columnar table marshaling, scenario-set state, backend client). |
 
 ## Deployment integration
 

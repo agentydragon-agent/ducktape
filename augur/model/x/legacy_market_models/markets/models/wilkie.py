@@ -226,7 +226,7 @@ class WilkieCascade:
 
 class WilkieCascadeMarketProviderConfig(ApiModel):
     """Pre-trained Wilkie cascade provider config — points at the trained-state
-    blob written by `bb run //augur/model:train`. The model is loaded at server
+    blob written by `bb run //augur/model/train:train`. The model is loaded at server
     startup; no fitting happens on the request path."""
 
     type: Literal["wilkie_cascade"] = "wilkie_cascade"

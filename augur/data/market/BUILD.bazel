@@ -1,0 +1,12 @@
+package(default_visibility = ["//visibility:public"])
+
+# Public market source blobs used by offline training and evaluation. Refreshed
+# per the recipes in source/SOURCES.md.
+filegroup(
+    name = "market_source_files",
+    srcs = glob([
+        "source/**/*.csv",
+        "source/**/*.json",
+        "source/**/*.md",
+    ]),
+)

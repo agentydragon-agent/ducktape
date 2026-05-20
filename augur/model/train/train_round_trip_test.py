@@ -22,11 +22,11 @@ from augur.model.market_provider_config import (
     NoopMarketProviderConfig,
     SimpleMarketProviderConfig,
 )
-from augur.model.train import main as train_main
+from augur.model.train.main import main as train_main
 from util.bazel.runfiles import get_required_path
 
 _ADAPTER: TypeAdapter[MarketProviderConfig] = TypeAdapter(MarketProviderConfig)
-_MARKET_CONFIG_RUNFILE = "_main/augur/model/config/market_config.example.json"
+_MARKET_CONFIG_RUNFILE = "_main/augur/model/train/config/market_config.example.json"
 
 
 @pytest.mark.parametrize("model_label", ["vecm"])

@@ -56,9 +56,10 @@ Raw evidence -> evidence set -> calibration/fitting -> market bundle/provider ->
 
 Today that means:
 
-- Raw evidence is checked-in public source data under `augur/model/config/source`
-  and is documented in `SOURCES.md`. Current sources include FRED, Yahoo Finance
-  SPY adjusted-close data, and trimmed Zillow ZHVI city rows.
+- Raw evidence is checked-in public source data under `augur/data/market/source`
+  and is documented in `augur/data/market/source/SOURCES.md`. Current sources
+  include FRED, Yahoo Finance SPY adjusted-close data, and trimmed Zillow ZHVI
+  city rows.
 - Evidence loading happens in `load_evidence()`, which returns
   `HistoricalSeries` plus `MarketEvidence`. `MarketEvidence` carries aligned
   monthly log returns, marginal return evidence, calibrated path priors, current
@@ -136,8 +137,9 @@ Current generator run, informally:
 ## Validation Gaps
 
 Current validation exists as model tests, provider shape tests, and the metric
-battery in `metrics_report.py`. The metric battery scores the active trained
-model on held-out, rolling-origin, and multi-step predictive log-density.
+battery in `augur/model/train/metrics_report.py`. The metric battery scores
+the active trained model on held-out, rolling-origin, and multi-step predictive
+log-density.
 
 Still missing:
 

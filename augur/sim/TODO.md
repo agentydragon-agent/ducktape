@@ -54,7 +54,7 @@ primary simulation backend for the Augur frontend/API.
       Static/GBM fixture path specs, the production `simple` model, and the
       representative calibrated VECM model now emit the model-owned sampled
       levels/events bundle shape. Unported exploratory models were moved to
-      `x/augur/legacy_market_models/` for later porting or deletion.
+      `augur/model/x/legacy_market_models/` for later porting or deletion.
 - [ ] Align every market-provider/model implementation with the
       `augur/sim` consumption API. Simple and VECM now implement the
       `JointMarketModel` contract and are shimmed for core; `noop` still needs

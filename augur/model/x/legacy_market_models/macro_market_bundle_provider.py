@@ -25,7 +25,7 @@ from augur.core.market_bundle import MarketBundle, MarketBundleMetadata, Require
 from augur.core.provenance import stable_identity_digest
 from augur.core.scenario_set import MarketRequest
 from augur.model.location_market_sources import LocationMarketSources, build_location_market_maps
-from augur.model.markets.market_model import MarketModel
+from augur.model.train.market_model import MarketModel
 
 _TENDER_INTERVAL_MONTHS = 12
 _MODEL_CARD_ID = "augur-market-model-card:2026-05-15"
