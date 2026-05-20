@@ -25,22 +25,7 @@ from __future__ import annotations
 import polars as pl
 
 from augur.sim.apply import apply_events
-from augur.sim.events import (
-    ASSET_PURCHASE_EVENT_SCHEMA,
-    LOT_DISPOSITION_EVENT_SCHEMA,
-    MORTGAGE_ORIGINATION_EVENT_SCHEMA,
-    MORTGAGE_PAYMENT_EVENT_SCHEMA,
-    OBLIGATION_ACCRUAL_EVENT_SCHEMA,
-    OBLIGATION_SETTLEMENT_EVENT_SCHEMA,
-    PROPERTY_PURCHASE_EVENT_SCHEMA,
-    ROLLOUT_FAILURE_EVENT_SCHEMA,
-    TAX_ACCRUAL_EVENT_SCHEMA,
-    TAX_BREAKDOWN_EVENT_SCHEMA,
-    TAX_SETTLEMENT_EVENT_SCHEMA,
-    TRANSFER_EVENT_SCHEMA,
-    EventLog,
-    concat_event_frames,
-)
+from augur.sim.events import EventLog
 from augur.sim.jurisdictions import Jurisdiction, load_jurisdiction
 from augur.sim.locations import Location, load_location
 from augur.sim.market import materialize_market
@@ -89,7 +74,7 @@ def simulate(scenario: Scenario, *, rollout_count: int) -> SimulationRun:
         )
         state_t = apply_events(state_t, events_p2)
         cross_sections.append(state_t)
-        events_by_month.append(_merge_event_logs(events_p1, events_p2))
+        events_by_month.append(EventLog.concat([events_p1, events_p2]))
     return SimulationRun(
         cash_balances=_stack_cash_balances(cross_sections),
         asset_lots=_stack_asset_lots(cross_sections),
@@ -102,7 +87,7 @@ def simulate(scenario: Scenario, *, rollout_count: int) -> SimulationRun:
         rollout_status_history=_stack_rollout_status(cross_sections),
         rollout_status=cross_sections[-1].rollout_status,
         market_prices=market.prices,
-        events_log=_concat_events(events_by_month),
+        events_log=EventLog.concat(events_by_month),
     )
 
 
@@ -327,63 +312,3 @@ def _stack_rollout_status(cross_sections: list[StateCrossSection]) -> pl.DataFra
         for month, cs in enumerate(cross_sections)
     ]
     return pl.concat(blocks).select(["rollout_index", "month_index", "status", "failed_month"])
-
-
-def _merge_event_logs(a: EventLog, b: EventLog) -> EventLog:
-    """Concatenate two per-phase logs into one per-month log."""
-    return EventLog(
-        transfers=concat_event_frames([a.transfers, b.transfers], TRANSFER_EVENT_SCHEMA),
-        asset_purchases=concat_event_frames([a.asset_purchases, b.asset_purchases], ASSET_PURCHASE_EVENT_SCHEMA),
-        lot_dispositions=concat_event_frames([a.lot_dispositions, b.lot_dispositions], LOT_DISPOSITION_EVENT_SCHEMA),
-        tax_accruals=concat_event_frames([a.tax_accruals, b.tax_accruals], TAX_ACCRUAL_EVENT_SCHEMA),
-        tax_breakdowns=concat_event_frames([a.tax_breakdowns, b.tax_breakdowns], TAX_BREAKDOWN_EVENT_SCHEMA),
-        tax_settlements=concat_event_frames([a.tax_settlements, b.tax_settlements], TAX_SETTLEMENT_EVENT_SCHEMA),
-        obligation_accruals=concat_event_frames(
-            [a.obligation_accruals, b.obligation_accruals], OBLIGATION_ACCRUAL_EVENT_SCHEMA
-        ),
-        obligation_settlements=concat_event_frames(
-            [a.obligation_settlements, b.obligation_settlements], OBLIGATION_SETTLEMENT_EVENT_SCHEMA
-        ),
-        property_purchases=concat_event_frames(
-            [a.property_purchases, b.property_purchases], PROPERTY_PURCHASE_EVENT_SCHEMA
-        ),
-        mortgage_originations=concat_event_frames(
-            [a.mortgage_originations, b.mortgage_originations], MORTGAGE_ORIGINATION_EVENT_SCHEMA
-        ),
-        mortgage_payments=concat_event_frames(
-            [a.mortgage_payments, b.mortgage_payments], MORTGAGE_PAYMENT_EVENT_SCHEMA
-        ),
-        rollout_failures=concat_event_frames([a.rollout_failures, b.rollout_failures], ROLLOUT_FAILURE_EVENT_SCHEMA),
-    )
-
-
-def _concat_events(events_by_month: list[EventLog]) -> EventLog:
-    """Concatenate per-month event logs into one cumulative log."""
-    return EventLog(
-        transfers=concat_event_frames((e.transfers for e in events_by_month), TRANSFER_EVENT_SCHEMA),
-        asset_purchases=concat_event_frames((e.asset_purchases for e in events_by_month), ASSET_PURCHASE_EVENT_SCHEMA),
-        lot_dispositions=concat_event_frames(
-            (e.lot_dispositions for e in events_by_month), LOT_DISPOSITION_EVENT_SCHEMA
-        ),
-        tax_accruals=concat_event_frames((e.tax_accruals for e in events_by_month), TAX_ACCRUAL_EVENT_SCHEMA),
-        tax_breakdowns=concat_event_frames((e.tax_breakdowns for e in events_by_month), TAX_BREAKDOWN_EVENT_SCHEMA),
-        tax_settlements=concat_event_frames((e.tax_settlements for e in events_by_month), TAX_SETTLEMENT_EVENT_SCHEMA),
-        obligation_accruals=concat_event_frames(
-            (e.obligation_accruals for e in events_by_month), OBLIGATION_ACCRUAL_EVENT_SCHEMA
-        ),
-        obligation_settlements=concat_event_frames(
-            (e.obligation_settlements for e in events_by_month), OBLIGATION_SETTLEMENT_EVENT_SCHEMA
-        ),
-        property_purchases=concat_event_frames(
-            (e.property_purchases for e in events_by_month), PROPERTY_PURCHASE_EVENT_SCHEMA
-        ),
-        mortgage_originations=concat_event_frames(
-            (e.mortgage_originations for e in events_by_month), MORTGAGE_ORIGINATION_EVENT_SCHEMA
-        ),
-        mortgage_payments=concat_event_frames(
-            (e.mortgage_payments for e in events_by_month), MORTGAGE_PAYMENT_EVENT_SCHEMA
-        ),
-        rollout_failures=concat_event_frames(
-            (e.rollout_failures for e in events_by_month), ROLLOUT_FAILURE_EVENT_SCHEMA
-        ),
-    )

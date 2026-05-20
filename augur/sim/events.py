@@ -15,10 +15,12 @@ events, etc.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
 import polars as pl
+
+from augur.sim.frames import concat_frames
 
 TRANSFER_EVENT_SCHEMA: dict[str, pl.DataType] = {
     "rollout_index": pl.Int64(),
@@ -34,15 +36,6 @@ TRANSFER_EVENT_SCHEMA: dict[str, pl.DataType] = {
     # Null for non-income transfers (e.g. expense payments).
     "income_category": pl.Utf8(),
 }
-
-
-def concat_event_frames(frames: Iterable[pl.DataFrame], schema: dict[str, pl.DataType]) -> pl.DataFrame:
-    """Concatenate event frames while preserving the typed empty case.
-
-    Empty event streams are common. Prefixing a schema-only frame
-    makes the empty and non-empty cases use the same code path.
-    """
-    return pl.concat([pl.DataFrame(schema=schema), *frames]).select(list(schema.keys()))
 
 
 # `AssetPurchase` records the creation of a new tax lot — either an
@@ -224,6 +217,30 @@ LOT_DISPOSITION_EVENT_SCHEMA: dict[str, pl.DataType] = {
 
 
 @dataclass(frozen=True)
+class EventFrameSpec:
+    """One event-log frame and its schema."""
+
+    field_name: str
+    schema: dict[str, pl.DataType]
+
+
+EVENT_FRAME_SPECS: tuple[EventFrameSpec, ...] = (
+    EventFrameSpec("transfers", TRANSFER_EVENT_SCHEMA),
+    EventFrameSpec("asset_purchases", ASSET_PURCHASE_EVENT_SCHEMA),
+    EventFrameSpec("lot_dispositions", LOT_DISPOSITION_EVENT_SCHEMA),
+    EventFrameSpec("tax_accruals", TAX_ACCRUAL_EVENT_SCHEMA),
+    EventFrameSpec("tax_breakdowns", TAX_BREAKDOWN_EVENT_SCHEMA),
+    EventFrameSpec("tax_settlements", TAX_SETTLEMENT_EVENT_SCHEMA),
+    EventFrameSpec("obligation_accruals", OBLIGATION_ACCRUAL_EVENT_SCHEMA),
+    EventFrameSpec("obligation_settlements", OBLIGATION_SETTLEMENT_EVENT_SCHEMA),
+    EventFrameSpec("property_purchases", PROPERTY_PURCHASE_EVENT_SCHEMA),
+    EventFrameSpec("mortgage_originations", MORTGAGE_ORIGINATION_EVENT_SCHEMA),
+    EventFrameSpec("mortgage_payments", MORTGAGE_PAYMENT_EVENT_SCHEMA),
+    EventFrameSpec("rollout_failures", ROLLOUT_FAILURE_EVENT_SCHEMA),
+)
+
+
+@dataclass(frozen=True)
 class EventLog:
     """Per-step or per-simulation collection of events, one frame
     per event kind."""
@@ -243,17 +260,42 @@ class EventLog:
 
     @classmethod
     def empty(cls) -> EventLog:
+        return cls.from_frames({})
+
+    @classmethod
+    def from_frames(cls, frames: Mapping[str, pl.DataFrame]) -> EventLog:
+        by_name = {
+            spec.field_name: frames.get(spec.field_name, pl.DataFrame(schema=spec.schema)) for spec in EVENT_FRAME_SPECS
+        }
         return cls(
-            transfers=pl.DataFrame(schema=TRANSFER_EVENT_SCHEMA),
-            asset_purchases=pl.DataFrame(schema=ASSET_PURCHASE_EVENT_SCHEMA),
-            lot_dispositions=pl.DataFrame(schema=LOT_DISPOSITION_EVENT_SCHEMA),
-            tax_accruals=pl.DataFrame(schema=TAX_ACCRUAL_EVENT_SCHEMA),
-            tax_breakdowns=pl.DataFrame(schema=TAX_BREAKDOWN_EVENT_SCHEMA),
-            tax_settlements=pl.DataFrame(schema=TAX_SETTLEMENT_EVENT_SCHEMA),
-            obligation_accruals=pl.DataFrame(schema=OBLIGATION_ACCRUAL_EVENT_SCHEMA),
-            obligation_settlements=pl.DataFrame(schema=OBLIGATION_SETTLEMENT_EVENT_SCHEMA),
-            property_purchases=pl.DataFrame(schema=PROPERTY_PURCHASE_EVENT_SCHEMA),
-            mortgage_originations=pl.DataFrame(schema=MORTGAGE_ORIGINATION_EVENT_SCHEMA),
-            mortgage_payments=pl.DataFrame(schema=MORTGAGE_PAYMENT_EVENT_SCHEMA),
-            rollout_failures=pl.DataFrame(schema=ROLLOUT_FAILURE_EVENT_SCHEMA),
+            transfers=by_name["transfers"],
+            asset_purchases=by_name["asset_purchases"],
+            lot_dispositions=by_name["lot_dispositions"],
+            tax_accruals=by_name["tax_accruals"],
+            tax_breakdowns=by_name["tax_breakdowns"],
+            tax_settlements=by_name["tax_settlements"],
+            obligation_accruals=by_name["obligation_accruals"],
+            obligation_settlements=by_name["obligation_settlements"],
+            property_purchases=by_name["property_purchases"],
+            mortgage_originations=by_name["mortgage_originations"],
+            mortgage_payments=by_name["mortgage_payments"],
+            rollout_failures=by_name["rollout_failures"],
+        )
+
+    @classmethod
+    def concat(cls, logs: Iterable[EventLog]) -> EventLog:
+        logs_tuple = tuple(logs)
+        return cls.from_frames(
+            {
+                spec.field_name: concat_frames((getattr(log, spec.field_name) for log in logs_tuple), spec.schema)
+                for spec in EVENT_FRAME_SPECS
+            }
+        )
+
+    def at_month(self, month: int) -> EventLog:
+        return self.from_frames(
+            {
+                spec.field_name: getattr(self, spec.field_name).filter(pl.col("month_index") == month)
+                for spec in EVENT_FRAME_SPECS
+            }
         )

@@ -1131,9 +1131,11 @@ count + horizon months):
   (rollout, month, kind, parties, amounts, cause-id). Causes link
   back to the policy or obligation that produced the transaction.
 - **Per-rollout net worth time series**: derivable from the state
-  frames as cash + asset market value − liability principal, summed
-  over the agent's holdings. Exposed as a first-class output because
-  it's the primary chart consumer.
+  frames and exposed through projection rows. The current projection
+  separates cash, liquid asset market value, asset book value, property
+  book value, liability principal, liquid net worth, and book net worth.
+  Real-estate value is book/adjusted-basis value until exogenous
+  real-estate valuation paths exist.
 - **Per-year tax computation breakdown**: per (rollout, year, agent)
   the income totals, deduction amounts, bracket walks, LTCG bracket
   walks, NIIT calculation, federal/CA totals. Enough to audit any
@@ -1157,13 +1159,15 @@ amount_due_usd, amount_paid_usd, shortfall_usd, attempted_funding_
 sources)`. Failure-event rows do not retroactively delete; they
   record the moment the rollout became invalid for surviving-rollout
   metrics.
-- **Rollout status**: active vs failed, with failure month and the
-  obligation that triggered the failure (joinable to the failure-
-  event log). Current scope is sticky failure: a failed rollout is
-  not recovered by later-month inflows.
+- **Rollout status and summary**: active vs failed, with failure month
+  and the obligation that triggered the failure (joinable to the
+  failure-event log). Projection summaries also expose failure count,
+  first failure month, and final liquid/book net worth. Current scope
+  is sticky failure: a failed rollout is not recovered by later-month
+  inflows.
 
-These outputs are projections of the state series and transaction log;
-they are not maintained alongside as separate state.
+These outputs are projections of the state series and event log; they
+are not maintained alongside as separate state.
 
 ## Non-goals
 

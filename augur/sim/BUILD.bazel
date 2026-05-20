@@ -3,6 +3,14 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 package(default_visibility = ["//visibility:public"])
 
 py_library(
+    name = "frames_py",
+    srcs = ["frames.py"],
+    deps = [
+        "@pypi//polars",
+    ],
+)
+
+py_library(
     name = "state_py",
     srcs = ["state.py"],
     deps = [
@@ -14,6 +22,7 @@ py_library(
     name = "events_py",
     srcs = ["events.py"],
     deps = [
+        ":frames_py",
         "@pypi//polars",
     ],
 )
@@ -123,6 +132,7 @@ py_library(
     srcs = ["step.py"],
     deps = [
         ":events_py",
+        ":frames_py",
         ":jurisdictions_py",
         ":locations_py",
         ":market_py",
@@ -139,6 +149,16 @@ py_library(
     srcs = ["run.py"],
     deps = [
         ":events_py",
+        "@pypi//polars",
+    ],
+)
+
+py_library(
+    name = "projections_py",
+    srcs = ["projections.py"],
+    deps = [
+        ":frames_py",
+        ":run_py",
         "@pypi//polars",
     ],
 )
@@ -179,6 +199,20 @@ py_test(
     deps = [
         ":market_py",
         ":replay_py",
+        ":scenario_py",
+        ":simulate_py",
+        "@pypi//polars",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "projections_test",
+    srcs = ["projections_test.py"],
+    deps = [
+        ":market_py",
+        ":projections_py",
         ":scenario_py",
         ":simulate_py",
         "@pypi//polars",

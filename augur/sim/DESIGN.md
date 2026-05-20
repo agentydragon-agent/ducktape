@@ -571,23 +571,26 @@ At end of `simulate(...)`:
 - The per-month log rows (transactions, obligations, lot
   dispositions, failures, policy decisions, tax breakdowns) are
   concatenated into the long-form append-only log frames.
-- A small set of **projections** are computed on demand from the
-  state-over-time:
-  - Net-worth time series per `(rollout, agent)`: cash + sum of
-    asset market value − sum of liability principal.
-  - Total income tax per `(rollout, year)`: sum across agents
-    across applicable jurisdictions from the tax_year_breakdown
-    log.
-  - Realized vs unrealized capital gains per `(rollout, year)`:
-    realized from lot dispositions, unrealized from state-over-
-    time.
+- `ProjectionRun` read models are computed on demand from the
+  state-over-time and event-log frames:
+  - Net-worth time series per `(rollout, month, agent)`, split into
+    cash, liquid asset market value, asset book value, property book
+    value, liability principal, liquid net worth, and book net worth.
+    Property value is adjusted basis until `augur/model` supplies
+    market-valued real-estate paths.
+  - Account-balance rows for cash and liabilities.
+  - Transaction/audit rows from cash transfers, lot dispositions,
+    obligation settlements, and tax-liability settlements.
+  - Tax breakdown, obligation lifecycle, failure, and rollout-summary
+    rows for API/frontend validation.
 
 The returned `SimulationRun` wraps the state-over-time frames, log
-frames, projections, accepted scenario-set identity, and exogenous
-trajectory provenance. `augur/api` adapts that into the frontend
-response shape. During migration the API may expose a compatibility
-adapter for old consumers, but the durable seam should be the clean
-simulation-run contract, not the old `ScenarioRunArrays` layout.
+frames, accepted scenario-set identity, and exogenous trajectory
+provenance. `ProjectionRun` is a read model over that output; `augur/api`
+adapts it into the frontend response shape. During migration the API may
+expose a compatibility adapter for old consumers, but the durable seam
+should be the clean simulation-run/projection contract, not the old
+`ScenarioRunArrays` layout.
 
 ## Failure modes
 
@@ -660,8 +663,8 @@ augur/sim/
   simulate.py                      — the forward loop + outputs
                                      assembly
 
-  net_worth.py                     — net-worth projection from state
-  tax_breakdown.py                 — tax-year-breakdown projection
+  projections.py                   — API/frontend read models over
+                                     SimulationRun
 
   *_test.py                        — tests adjacent to each module
 ```

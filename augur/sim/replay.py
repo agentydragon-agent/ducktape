@@ -25,7 +25,6 @@ from __future__ import annotations
 import polars as pl
 
 from augur.sim.apply import apply_events
-from augur.sim.events import EventLog
 from augur.sim.run import SimulationRun
 from augur.sim.scenario import Scenario
 from augur.sim.simulate import _initial_state
@@ -45,7 +44,7 @@ def assert_replay_invariant_holds(scenario: Scenario, result: SimulationRun, *, 
         _check_month(result=result, replayed=replayed, month=month)
         if month == horizon:
             break
-        replayed = apply_events(replayed, _events_at_month(result.events_log, month))
+        replayed = apply_events(replayed, result.events_log.at_month(month))
 
 
 def _check_month(*, result: SimulationRun, replayed: StateCrossSection, month: int) -> None:
@@ -109,28 +108,6 @@ def _month_slice(frame: pl.DataFrame, month: int) -> pl.DataFrame:
     """One-month cross-section view of a per-month long-form
     frame, projected to the schema apply_events produces."""
     return frame.filter(pl.col("month_index") == month).drop("month_index")
-
-
-def _events_at_month(events_log: EventLog, month: int) -> EventLog:
-    """Filter each event-kind frame to one simulated month."""
-    return EventLog(
-        transfers=_frame_at_month(events_log.transfers, month),
-        asset_purchases=_frame_at_month(events_log.asset_purchases, month),
-        lot_dispositions=_frame_at_month(events_log.lot_dispositions, month),
-        tax_accruals=_frame_at_month(events_log.tax_accruals, month),
-        tax_breakdowns=_frame_at_month(events_log.tax_breakdowns, month),
-        tax_settlements=_frame_at_month(events_log.tax_settlements, month),
-        obligation_accruals=_frame_at_month(events_log.obligation_accruals, month),
-        obligation_settlements=_frame_at_month(events_log.obligation_settlements, month),
-        property_purchases=_frame_at_month(events_log.property_purchases, month),
-        mortgage_originations=_frame_at_month(events_log.mortgage_originations, month),
-        mortgage_payments=_frame_at_month(events_log.mortgage_payments, month),
-        rollout_failures=_frame_at_month(events_log.rollout_failures, month),
-    )
-
-
-def _frame_at_month(frame: pl.DataFrame, month: int) -> pl.DataFrame:
-    return frame.filter(pl.col("month_index") == month)
 
 
 # Round float columns before `.equals` so the invariant compares values
