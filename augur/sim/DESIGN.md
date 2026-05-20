@@ -312,7 +312,11 @@ share state mutation.
    The current model does not carry partially-paid obligations across
    months and does not model delinquency balances, grace periods, or
    underpayment penalties. Optional cash-buffer targets are not hard
-   demands and cannot fail a rollout by themselves.
+   demands and cannot fail a rollout by themselves. A plausible future
+   shape is to make policy own all agent behavior for the month,
+   including the checking-cash transfers that satisfy obligations; in
+   that model settlement would validate policy output instead of
+   emitting required-payment transfers itself.
 
 4. **Other discretionary policies.** Reinvest-excess, optional buys,
    and other non-obligation actions evaluate after hard-demand

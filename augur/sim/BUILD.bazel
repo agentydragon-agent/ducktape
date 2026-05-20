@@ -3,7 +3,7 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 package(default_visibility = ["//visibility:public"])
 
 py_library(
-    name = "frames_py",
+    name = "frames",
     srcs = ["frames.py"],
     deps = [
         "@pypi//polars",
@@ -11,28 +11,28 @@ py_library(
 )
 
 py_library(
-    name = "state_py",
+    name = "state",
     srcs = ["state.py"],
     deps = [
-        ":frames_py",
+        ":frames",
         "@pypi//polars",
     ],
 )
 
 py_library(
-    name = "events_py",
+    name = "events",
     srcs = ["events.py"],
     deps = [
-        ":frames_py",
+        ":frames",
         "@pypi//polars",
     ],
 )
 
 py_library(
-    name = "market_py",
+    name = "market",
     srcs = ["market.py"],
     deps = [
-        ":frames_py",
+        ":frames",
         "@pypi//numpy",
         "@pypi//polars",
         "@pypi//pydantic",
@@ -50,7 +50,7 @@ filegroup(
 )
 
 py_library(
-    name = "locations_py",
+    name = "locations",
     srcs = ["locations.py"],
     data = [":location_data"],
     deps = [
@@ -63,14 +63,14 @@ py_test(
     name = "locations_test",
     srcs = ["locations_test.py"],
     deps = [
-        ":locations_py",
+        ":locations",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
 
 py_library(
-    name = "jurisdictions_py",
+    name = "jurisdictions",
     srcs = ["jurisdictions.py"],
     data = [":jurisdiction_data"],
     deps = [
@@ -83,17 +83,17 @@ py_test(
     name = "jurisdictions_test",
     srcs = ["jurisdictions_test.py"],
     deps = [
-        ":jurisdictions_py",
+        ":jurisdictions",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
 
 py_library(
-    name = "tax_py",
+    name = "tax",
     srcs = ["tax.py"],
     deps = [
-        ":jurisdictions_py",
+        ":jurisdictions",
         "@pypi//numpy",
     ],
 )
@@ -102,8 +102,8 @@ py_test(
     name = "tax_test",
     srcs = ["tax_test.py"],
     deps = [
-        ":jurisdictions_py",
-        ":tax_py",
+        ":jurisdictions",
+        ":tax",
         "@pypi//numpy",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -111,125 +111,125 @@ py_test(
 )
 
 py_library(
-    name = "scenario_py",
+    name = "scenario",
     srcs = ["scenario.py"],
     deps = [
-        ":market_py",
+        ":market",
         "@pypi//pydantic",
     ],
 )
 
 py_library(
-    name = "apply_py",
+    name = "apply",
     srcs = ["apply.py"],
     deps = [
-        ":events_py",
-        ":state_py",
+        ":events",
+        ":state",
         "@pypi//polars",
     ],
 )
 
 py_library(
-    name = "liquidity_py",
+    name = "liquidity",
     srcs = ["liquidity.py"],
     deps = [
-        ":events_py",
-        ":frames_py",
-        ":market_py",
-        ":scenario_py",
-        ":state_py",
+        ":events",
+        ":frames",
+        ":market",
+        ":scenario",
+        ":state",
         "@pypi//polars",
     ],
 )
 
 py_library(
-    name = "obligations_py",
+    name = "obligations",
     srcs = ["obligations.py"],
     deps = [
-        ":events_py",
-        ":locations_py",
-        ":scenario_py",
-        ":state_py",
+        ":events",
+        ":locations",
+        ":scenario",
+        ":state",
         "@pypi//polars",
     ],
 )
 
 py_library(
-    name = "settlement_py",
+    name = "settlement",
     srcs = ["settlement.py"],
     deps = [
-        ":events_py",
-        ":liquidity_py",
-        ":state_py",
+        ":events",
+        ":liquidity",
+        ":state",
         "@pypi//polars",
     ],
 )
 
 py_library(
-    name = "step_py",
+    name = "step",
     srcs = ["step.py"],
     deps = [
-        ":events_py",
-        ":frames_py",
-        ":jurisdictions_py",
-        ":liquidity_py",
-        ":locations_py",
-        ":market_py",
-        ":obligations_py",
-        ":scenario_py",
-        ":settlement_py",
-        ":state_py",
-        ":tax_py",
+        ":events",
+        ":frames",
+        ":jurisdictions",
+        ":liquidity",
+        ":locations",
+        ":market",
+        ":obligations",
+        ":scenario",
+        ":settlement",
+        ":state",
+        ":tax",
         "@pypi//numpy",
         "@pypi//polars",
     ],
 )
 
 py_library(
-    name = "run_py",
+    name = "run",
     srcs = ["run.py"],
     deps = [
-        ":events_py",
+        ":events",
         "@pypi//polars",
     ],
 )
 
 py_library(
-    name = "projections_py",
+    name = "projections",
     srcs = ["projections.py"],
     deps = [
-        ":frames_py",
-        ":run_py",
+        ":frames",
+        ":run",
         "@pypi//polars",
     ],
 )
 
 py_library(
-    name = "simulate_py",
+    name = "simulate",
     srcs = ["simulate.py"],
     deps = [
-        ":apply_py",
-        ":events_py",
-        ":jurisdictions_py",
-        ":locations_py",
-        ":market_py",
-        ":run_py",
-        ":scenario_py",
-        ":state_py",
-        ":step_py",
+        ":apply",
+        ":events",
+        ":jurisdictions",
+        ":locations",
+        ":market",
+        ":run",
+        ":scenario",
+        ":state",
+        ":step",
         "@pypi//polars",
     ],
 )
 
 py_library(
-    name = "replay_py",
+    name = "replay",
     srcs = ["replay.py"],
     deps = [
-        ":apply_py",
-        ":run_py",
-        ":scenario_py",
-        ":simulate_py",
-        ":state_py",
+        ":apply",
+        ":run",
+        ":scenario",
+        ":simulate",
+        ":state",
         "@pypi//polars",
     ],
 )
@@ -238,10 +238,10 @@ py_test(
     name = "simulate_test",
     srcs = ["simulate_test.py"],
     deps = [
-        ":market_py",
-        ":replay_py",
-        ":scenario_py",
-        ":simulate_py",
+        ":market",
+        ":replay",
+        ":scenario",
+        ":simulate",
         "@pypi//polars",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -252,10 +252,10 @@ py_test(
     name = "projections_test",
     srcs = ["projections_test.py"],
     deps = [
-        ":market_py",
-        ":projections_py",
-        ":scenario_py",
-        ":simulate_py",
+        ":market",
+        ":projections",
+        ":scenario",
+        ":simulate",
         "@pypi//polars",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -263,11 +263,11 @@ py_test(
 )
 
 py_library(
-    name = "bench_scenario_py",
+    name = "bench_scenario",
     srcs = ["bench_scenario.py"],
     deps = [
-        ":market_py",
-        ":scenario_py",
+        ":market",
+        ":scenario",
     ],
 )
 
@@ -276,8 +276,8 @@ py_binary(
     srcs = ["bench.py"],
     main_module = "augur.sim.bench",
     deps = [
-        ":bench_scenario_py",
-        ":simulate_py",
+        ":bench_scenario",
+        ":simulate",
     ],
 )
 
@@ -285,10 +285,10 @@ py_test(
     name = "bench_test",
     srcs = ["bench_test.py"],
     deps = [
-        ":bench_scenario_py",
-        ":market_py",
-        ":scenario_py",
-        ":simulate_py",
+        ":bench_scenario",
+        ":market",
+        ":scenario",
+        ":simulate",
         "@pypi//polars",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

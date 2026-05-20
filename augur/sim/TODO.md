@@ -3,6 +3,39 @@
 Current tracker for gaps in `augur/sim` before treating it as the
 primary simulation backend for the Augur frontend/API.
 
+## Replacement Checklist
+
+- [ ] Replace the API backend's direct `augur.core.api.ScenarioEngine`
+      execution path with a `model -> sim -> api` path. Keep the legacy
+      path available as a shadow/parity baseline until the sim path has
+      browser and fixture coverage.
+- [ ] Replace the legacy `ScenarioSet` request boundary with either a
+      native sim request schema or an explicit translator from the current
+      browser/API payload into `augur.sim.scenario.Scenario`.
+- [ ] Replace legacy `ScenarioRunArrays` response shaping with serialized
+      `ProjectionRun` read models. The API should expose compact scenario
+      metadata plus distribution-first projections instead of preserving
+      legacy field names by default.
+- [ ] Replace production use of `augur.core.market_bundle.MarketBundle`
+      in the Augur run path with exogenous path bundles supplied by
+      `augur/model` and materialized into `augur.sim.market.MarketBundle`.
+- [ ] Replace core-side required-market-key discovery with sim scenario
+      introspection so model providers know which public markets, private
+      equity paths, locations, currencies, and other exogenous series must
+      be sampled.
+- [ ] Replace frontend/backend assumptions around legacy reserve-sale
+      policy fields with the sim liquidity-policy shape. Unsupported
+      legacy fields should be hidden or migrated before the sim path is
+      made primary.
+- [ ] Replace bespoke partner-equity contribution handling with the generic
+      property-stake model once property stakes are covered by sim tests.
+- [ ] Replace ad hoc catalog/default expansion in the legacy backend with
+      an `AugurConfig`/catalog-to-sim scenario builder that remains
+      compatible with `gaffer-private` deployment YAML.
+- [ ] Replace the current all-or-nothing backend switch with a staged
+      rollout: shadow endpoint, parity fixtures against overlapping legacy
+      outputs, browser smoke coverage, then frontend cutover.
+
 ## Frontend/API Integration Blockers
 
 - [ ] Add API serialization, compact scenario metadata, and a frontend
@@ -30,9 +63,12 @@ primary simulation backend for the Augur frontend/API.
 ## Refactor Follow-Ups
 
 - [ ] Revisit whether policy should emit all agent actions, including
-      obligation-payment transfers, or whether the current split
-      (policy emits sales; settlement emits required payments) is the
-      right domain boundary.
+      obligation-payment transfers. Potential future shape: hard
+      demands are inputs to the agent policy, the policy emits both
+      liquidation orders and checking-cash payment transfers, and
+      settlement only validates that every hard demand was satisfied.
+      Current split is narrower: policy emits sales; settlement emits
+      required payments.
 - [ ] Consider whether `EventLog` should expose only catalog-keyed
       access (`log.frame(EVENT_FRAMES.transfers)`) or keep the current
       convenience properties (`log.transfers`, etc.). The catalog now

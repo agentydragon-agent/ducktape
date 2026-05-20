@@ -90,11 +90,7 @@ FAN_STATE: dict[str, object] = {
                 "starting_portfolio_usd": 350000,
                 "private_equity_units": 2500,
             },
-            "policies": {
-                "liquid_reserve_policy": "checking_floor_sp500",
-                "checking_floor_usd": 100000,
-                "checking_sale_amount_usd": 50000,
-            },
+            "policies": {"checking_floor_usd": 100000, "checking_sale_amount_usd": 50000},
         },
         {
             "identity": {
@@ -122,7 +118,6 @@ FAN_STATE: dict[str, object] = {
                 "private_equity_units": 2500,
             },
             "policies": {
-                "liquid_reserve_policy": "checking_floor_sp500",
                 "checking_floor_usd": 100000,
                 "checking_sale_amount_usd": 50000,
                 "private_equity_sale_policy": "liquid_net_worth_floor",

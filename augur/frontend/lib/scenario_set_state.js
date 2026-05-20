@@ -22,6 +22,8 @@ const DEFAULT_REPORT_SPEC = {
   includeMonthlyColumns: true,
 };
 
+const LEGACY_CHECKING_FLOOR_POLICY_ID = "checking_floor_sp500";
+const LEGACY_NO_LIQUID_RESERVE_POLICY_ID = "none";
 const FINANCING_MODE_IDS = new Set(zFinancingMode.options);
 const PRIVATE_EQUITY_SALE_POLICY_IDS = new Set(zPrivateEquitySalePolicyId.options);
 const SCENARIO_INPUT_SECTIONS = new Set(Object.keys(zBrowserScenarioInputInput.shape).map(snakeToCamelKey));
@@ -65,6 +67,12 @@ function defaultPropertyId(bootstrap) {
 
 function defaultConcentratedHolding(bootstrap) {
   return bootstrap?.financeSnapshot?.concentratedHoldings?.[0] ?? null;
+}
+
+function defaultCheckingFloorUsd(bootstrap) {
+  return bootstrap?.defaultLiquidReservePolicy === LEGACY_CHECKING_FLOOR_POLICY_ID
+    ? finiteNumber(bootstrap?.defaultCheckingFloorUsd, 10_000)
+    : 0;
 }
 
 function holdingValueUsd(holding) {
@@ -183,11 +191,7 @@ export function createScenarioInput(bootstrap, overrides = {}) {
       privateEquityUnits,
     },
     policies: {
-      liquidReservePolicy:
-        overrides.liquidReservePolicy ??
-        bootstrap?.defaultLiquidReservePolicy ??
-        defaultOption(bootstrap?.liquidReservePolicyOptions, "none"),
-      checkingFloorUsd: finiteNumber(overrides.checkingFloorUsd, bootstrap?.defaultCheckingFloorUsd ?? 10_000),
+      checkingFloorUsd: finiteNumber(overrides.checkingFloorUsd, defaultCheckingFloorUsd(bootstrap)),
       checkingSaleAmountUsd: positiveNumber(
         overrides.checkingSaleAmountUsd,
         bootstrap?.defaultCheckingSaleAmountUsd ?? 20_000
@@ -228,7 +232,6 @@ function normalizeScenarioInput(scenario, bootstrap, index, existingIds) {
   const propertyIds = new Set((bootstrap?.properties ?? []).map((property) => property.id));
   const ownerResidenceModeIds = optionIds(bootstrap?.ownerResidenceModeOptions);
   const rentalUsePolicyIds = optionIds(bootstrap?.rentalUsePolicyOptions);
-  const liquidReservePolicyIds = optionIds(bootstrap?.liquidReservePolicyOptions);
   const defaultScenario = createScenarioInput(bootstrap, { index });
   const identity = scenarioSection(scenario, "identity");
   const propertyAndLocation = scenarioSection(scenario, "propertyAndLocation");
@@ -252,6 +255,14 @@ function normalizeScenarioInput(scenario, bootstrap, index, existingIds) {
     initialBalanceSheet.privateEquityUnits,
     defaultInitialBalanceSheet.privateEquityUnits
   );
+  const hasCheckingFloorUsd =
+    policies.checkingFloorUsd !== null && policies.checkingFloorUsd !== undefined && policies.checkingFloorUsd !== "";
+  let checkingFloorUsd = finiteNumber(policies.checkingFloorUsd, defaultPolicies.checkingFloorUsd);
+  if (policies.liquidReservePolicy === LEGACY_NO_LIQUID_RESERVE_POLICY_ID) {
+    checkingFloorUsd = 0;
+  } else if (policies.liquidReservePolicy === LEGACY_CHECKING_FLOOR_POLICY_ID && !hasCheckingFloorUsd) {
+    checkingFloorUsd = finiteNumber(bootstrap?.defaultCheckingFloorUsd, 10_000);
+  }
   const scenarioId =
     typeof identity.scenarioId === "string" && /^[a-z0-9][a-z0-9_-]*$/.test(identity.scenarioId)
       ? identity.scenarioId
@@ -332,10 +343,7 @@ function normalizeScenarioInput(scenario, bootstrap, index, existingIds) {
       privateEquityUnits,
     },
     policies: {
-      liquidReservePolicy: liquidReservePolicyIds.has(policies.liquidReservePolicy)
-        ? policies.liquidReservePolicy
-        : defaultPolicies.liquidReservePolicy,
-      checkingFloorUsd: finiteNumber(policies.checkingFloorUsd, defaultPolicies.checkingFloorUsd),
+      checkingFloorUsd,
       checkingSaleAmountUsd: positiveNumber(policies.checkingSaleAmountUsd, defaultPolicies.checkingSaleAmountUsd),
       privateEquitySalePolicy: PRIVATE_EQUITY_SALE_POLICY_IDS.has(policies.privateEquitySalePolicy)
         ? policies.privateEquitySalePolicy
@@ -418,7 +426,7 @@ function scenarioPolicies(scenario, bootstrap) {
   const { policies: scenarioPolicyInputs } = scenario;
   const { primary } = agentsByRole(bootstrap);
   const policies = [];
-  if (scenarioPolicyInputs.liquidReservePolicy === "checking_floor_sp500") {
+  if (finiteNumber(scenarioPolicyInputs.checkingFloorUsd, 0) > 0) {
     policies.push({
       policyId: "checking_floor",
       policyType: "checking_floor_sell_public_stock",

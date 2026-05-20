@@ -54,7 +54,6 @@ const PRIVATE_EQUITY_SALE_POLICY_OPTIONS = [
   },
 ];
 
-const CHECKING_FLOOR_POLICY_ID = "checking_floor_sp500";
 const PRIVATE_EQUITY_LIQUID_FLOOR_POLICY_ID = "liquid_net_worth_floor";
 const CHECKING_FLOOR_METRICS = new Set([
   "checkingFloorShortfallUsd",
@@ -154,7 +153,7 @@ function scenarioSectionPatch(scenarioSetInput, scenarioId, section, patch) {
 }
 
 function scenarioUsesCheckingFloorPolicy(scenario) {
-  return scenarioPolicies(scenario).liquidReservePolicy === CHECKING_FLOOR_POLICY_ID;
+  return Number(scenarioPolicies(scenario).checkingFloorUsd) > 0;
 }
 
 function scenarioSetUsesCheckingFloorPolicy(scenarioSetInput) {
@@ -1231,7 +1230,6 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
   const policies = scenarioPolicies(scenario);
   const primary = bootstrap?.agents?.find((a) => a.role === "primary_owner");
   const primaryLabel = primary?.label ?? "Owner";
-  const usesCheckingFloorPolicy = scenarioUsesCheckingFloorPolicy(scenario);
   const concentratedHolding = primaryConcentratedHolding(bootstrap);
   const privateEquityLabel = concentratedHolding?.label ?? "Private equity";
   const privateEquityCurrentValueUsd = privateEquityValueUsdForUnits(bootstrap, initialBalanceSheet.privateEquityUnits);
@@ -1442,28 +1440,18 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
       <ControlSection title="Portfolio and policies">
         <div className="grid gap-4">
           <PortfolioSnapshotPanel bootstrap={bootstrap} />
-          <OptionButtons
-            label="Reserve sales rule"
-            options={bootstrap.liquidReservePolicyOptions}
-            value={policies.liquidReservePolicy}
-            onChange={(liquidReservePolicy) => updateScenarioSection("policies", { liquidReservePolicy })}
-          />
           <ControlGrid>
-            {usesCheckingFloorPolicy && (
-              <>
-                <MoneyField
-                  label="Checking floor"
-                  value={policies.checkingFloorUsd}
-                  onChange={(checkingFloorUsd) => updateScenarioSection("policies", { checkingFloorUsd })}
-                />
-                <MoneyField
-                  label="Sale amount"
-                  min={1_000}
-                  value={policies.checkingSaleAmountUsd}
-                  onChange={(checkingSaleAmountUsd) => updateScenarioSection("policies", { checkingSaleAmountUsd })}
-                />
-              </>
-            )}
+            <MoneyField
+              label="Checking buffer"
+              value={policies.checkingFloorUsd}
+              onChange={(checkingFloorUsd) => updateScenarioSection("policies", { checkingFloorUsd })}
+            />
+            <MoneyField
+              label="Buffer sale amount"
+              min={1_000}
+              value={policies.checkingSaleAmountUsd}
+              onChange={(checkingSaleAmountUsd) => updateScenarioSection("policies", { checkingSaleAmountUsd })}
+            />
             <MoneyField
               label="Initial checking"
               value={initialBalanceSheet.initialCheckingUsd}

@@ -145,6 +145,8 @@ test("default input creates comparable generic location scenarios", () => {
   assert.equal(firstScenario.initialBalanceSheet.initialCheckingUsd, 25_000);
   assert.equal(firstScenario.initialBalanceSheet.startingPortfolioUsd, 100_000);
   assert.equal(firstScenario.initialBalanceSheet.privateEquityUnits, 500);
+  assert.equal(firstScenario.policies.checkingFloorUsd, 0);
+  assert.equal(firstScenario.policies.liquidReservePolicy, undefined);
   assert.equal(firstScenario.policies.privateEquitySalePolicy, "none");
   assert.equal(secondScenario.propertyAndLocation.propertyId, "location_b_property");
   assert.equal(input.marketRequest.seed, 0);
@@ -213,7 +215,7 @@ test("scenario set request is canonical backend input after decamelizing", () =>
       privateEquityUnits: 456,
     },
     policies: {
-      liquidReservePolicy: "checking_floor_sp500",
+      checkingFloorUsd: 10_000,
       privateEquitySalePolicy: "liquid_net_worth_floor",
       privateEquityLiquidNetWorthFloorUsd: 300_000,
       privateEquityTenderSaleAmountUsd: 75_000,
@@ -307,11 +309,39 @@ test("backend request mapper output is covered by generated schema", () => {
       roomsRentedWhileLiving: 1,
     },
     policies: {
-      liquidReservePolicy: "checking_floor_sp500",
+      checkingFloorUsd: 10_000,
     },
   });
   const backendRequest = decamelizeObjectKeys(scenarioSetInputToRequest(input, bootstrap));
   assert.deepEqual(strippedKeys(backendRequest, zScenarioSetInput.parse(backendRequest)), []);
+});
+
+test("legacy reserve-policy selector migrates to numeric checking buffer", () => {
+  const legacyDisabled = createDefaultScenarioSetInput(bootstrap);
+  legacyDisabled.scenarios[0] = patchScenarioInputSection(legacyDisabled.scenarios[0], "policies", {
+    liquidReservePolicy: "none",
+    checkingFloorUsd: 10_000,
+  });
+
+  const normalizedDisabled = normalizeScenarioSetInput(legacyDisabled, bootstrap);
+  const disabledRequest = decamelizeObjectKeys(scenarioSetInputToRequest(normalizedDisabled, bootstrap));
+
+  assert.equal(normalizedDisabled.scenarios[0].policies.checkingFloorUsd, 0);
+  assert.equal(normalizedDisabled.scenarios[0].policies.liquidReservePolicy, undefined);
+  assert.deepEqual(disabledRequest.scenarios[0].policies, []);
+
+  const legacyEnabled = createDefaultScenarioSetInput(bootstrap);
+  legacyEnabled.scenarios[0] = patchScenarioInputSection(legacyEnabled.scenarios[0], "policies", {
+    liquidReservePolicy: "checking_floor_sp500",
+    checkingFloorUsd: 10_000,
+  });
+
+  const normalizedEnabled = normalizeScenarioSetInput(legacyEnabled, bootstrap);
+  const enabledRequest = decamelizeObjectKeys(scenarioSetInputToRequest(normalizedEnabled, bootstrap));
+
+  assert.equal(normalizedEnabled.scenarios[0].policies.checkingFloorUsd, 10_000);
+  assert.equal(normalizedEnabled.scenarios[0].policies.liquidReservePolicy, undefined);
+  assert.equal(enabledRequest.scenarios[0].policies[0].policy_type, "checking_floor_sell_public_stock");
 });
 
 test("request normalization only sends current report fields", () => {

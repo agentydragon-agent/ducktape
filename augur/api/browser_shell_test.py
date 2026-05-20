@@ -295,7 +295,7 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
     assert page.evaluate("() => new URL(window.location.href).searchParams.get('rollout')") == "0"
     assert page.evaluate("() => new URL(window.location.href).searchParams.get('scenario')") == "scenario_1"
 
-    page.get_by_role("radio", name=re.compile("Sell SP500 at checking floor")).click()
+    page.get_by_label("Checking buffer").fill("100000")
     page.get_by_label("SP500-like portfolio").fill("200000")
     page.get_by_text("SP500 sales").first.wait_for(state="visible", timeout=30_000)
 

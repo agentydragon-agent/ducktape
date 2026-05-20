@@ -245,6 +245,9 @@ Rules attached to templates (what runs over them, exactly once):
   account-level demand or fails the rollout. Partial payments, grace
   periods, delinquency balances, withholding, underpayment penalties,
   and other obligation lifecycle refinements are future scope.
+  A future policy surface may make the agent policy emit the payment
+  transfers too, with settlement reduced to validating that every
+  hard demand was satisfied.
 - **Depreciation accrual** is one function consuming every
   depreciable-property-marked row's schedule + month. The engine
   doesn't have a separate "residential" and "rental" depreciation
