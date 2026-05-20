@@ -32,6 +32,25 @@ The project adapter must provide:
 Use `debundle_plan_work` for graph/source inspection. Route pure symbol
 naming work to `debundle_mint_names`.
 
+## Evidence Model
+
+Treat current module assignments, paths, and names as useful but fallible
+evidence. They may encode earlier architecture insight, but they may also be
+wrong, overly literal, stale, or shaped by what was easy to peel at the time.
+
+Use pulled-out modules primarily because they make the JavaScript easier to
+read and preserve prior architectural work. Do not assume that a module boundary
+is real just because it exists, or that a name is correct just because it was
+assigned. Re-ground important conclusions in implementation behavior, graph
+edges, call sites, source proximity, ownership patterns, and repeated internal
+structure.
+
+Do not infer the app organization from file paths or assigned names alone.
+Names and directories can be decorative or wrong. A tree can be arranged to
+look like a React app while the source bodies and dependency graph describe
+something else. In that case, report the mismatch and update the architecture
+notes toward the source/graph reality.
+
 ## Job
 
 Audit the named active modules and emitted JS for structure that does not
@@ -50,6 +69,7 @@ look like a natural JavaScript codebase:
 - parallel top-level or mid-level axes for the same concept family
 - repeated `foo/foo.js` or wrapper-shaped leaves that came from mechanical
   naming instead of a useful namespace
+- source bodies whose behavior contradicts their current path or name
 - extracted modules not reachable from the generated graph
 
 Prefer project-local conventions over generic instincts. When conventions
@@ -60,6 +80,12 @@ are missing or weak, infer them from repeated evidence.
 Every architect pass should look at both the spec tree and the emitted JS tree.
 Do not only review individual module boundaries; review the directory structure
 as a system.
+
+Cross-check directory findings against graph and source behavior. A singleton
+directory is not bad only because it has one child; it is bad when the source
+body and graph do not show a namespace/API/family boundary. A broad directory
+is not bad only because it has many children; it is bad when source behavior
+and graph neighborhoods show multiple concepts sharing one bucket.
 
 Check for:
 

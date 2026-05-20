@@ -3,6 +3,18 @@
 The goal is a generated tree that reads like a natural JavaScript codebase, not
 a mechanically split bundle.
 
+Current module boundaries, names, and paths are evidence, not ground truth.
+They may reflect previous architecture work, but they may also be confused,
+stale, or mechanically convenient. Infer architecture from decompiled source
+behavior: graph edges, call sites, source proximity, ownership patterns, and
+repeated internal structure. Use pulled-out modules as a readable lens over the
+JavaScript, not as proof that the current taxonomy is correct.
+
+Never accept a directory tree as architectural evidence by itself. If paths and
+names make code look like one kind of app, but source bodies and graph
+neighborhoods show another structure, prefer the source/graph evidence and
+record the mismatch.
+
 ## Seams
 
 A good module seam has at least one of:
@@ -55,6 +67,12 @@ the current spec's names, paths, or module assignments. Git is the history.
 The emitted tree is part of the recovered architecture. Architects are
 responsible for keeping its taxonomy coherent, not just for judging isolated
 module seams.
+
+Directory-shape findings must be grounded in source and graph behavior. A
+single-child directory is only a problem when there is no source/graph evidence
+for a namespace, route/package, public API, or pending family. A crowded
+directory is only a problem when source/graph neighborhoods show multiple
+concepts sharing one bucket.
 
 Bad directory shapes include:
 
