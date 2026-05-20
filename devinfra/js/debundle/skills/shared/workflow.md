@@ -25,7 +25,7 @@ Before starting a round, the project adapter should identify:
 
 - debundle target and graph-refresh command
 - modules directory, patch stream if any, emitted JS root, and source root
-- owner graph, root/chunk manifests, directory manifests, and cycle report
+- owner graph, root/chunk reports, directory reports, and cycle report
   locations
 - gate, regen, uniqueness-check, and smoke-test commands
 - project convention docs and taxonomy docs
@@ -36,7 +36,7 @@ Public skills must not encode private project names or fixed app taxonomies.
 
 ## Round Loop
 
-1. Refresh debundle outputs, root/chunk manifests, directory manifests, and
+1. Refresh debundle outputs, root/chunk reports, directory reports, and
    owner graph.
 2. Run `plan-work` and capture progress metrics.
 3. Ask intake for dispatchable seeds.
