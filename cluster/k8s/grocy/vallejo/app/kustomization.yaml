@@ -5,3 +5,14 @@ resources:
   - ../../app-base
   - namespace.yaml
   - volsync-migration.yaml
+patches:
+  - target:
+      kind: Deployment
+      name: grocy
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: grocy
+      spec:
+        replicas: 0

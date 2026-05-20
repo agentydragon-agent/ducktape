@@ -1,7 +1,7 @@
 # Grocy VolSync PVC Migration
 
 Status: smoke-tested with disposable PVCs on 2026-05-20; Grocy SF migrated to
-OVH and verified. Grocy Vallejo is still pending.
+OVH and verified. Grocy Vallejo destination prepared and final sync staged.
 
 This runbook moves Grocy application data from Hetzner local-path PVCs to OVH
 Kimsufi local-path PVCs using VolSync `rsyncTLS`.
