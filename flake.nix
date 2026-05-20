@@ -254,6 +254,9 @@
       ];
       # System libraries matching RBE worker image (devinfra/rbe_image/Dockerfile).
       systemLibs = import ./nix/packages/system-libs.nix { inherit pkgs; };
+      # Present after the first debundle release has been published and
+      # sync-pins has added the npins entry.
+      optionalDebundlePackages = lib.optional (ducktapePkgs ? debundle) ducktapePkgs.debundle;
       # Common dev tools shared by both Python and Rust hook implementations.
       devToolsCommon = [
         ducktapePkgs.bb
@@ -287,7 +290,8 @@
         pkgs.sops
         pkgs.ssh-to-age
         ducktapePkgs.kubernetes-mcp-server
-      ];
+      ]
+      ++ optionalDebundlePackages;
       # Python claude-hook.
       devToolPackages = devToolsCommon ++ [ ducktapePkgs.claude-hooks ];
       devToolPackagesRust = devToolsCommon ++ [ ducktapePkgs.claude-hook-rs ];

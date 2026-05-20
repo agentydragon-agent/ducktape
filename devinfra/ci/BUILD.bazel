@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 # === Base modules (no internal deps) ===
 
@@ -63,6 +63,12 @@ py_library(
     ],
 )
 
+py_library(
+    name = "release_metadata",
+    srcs = ["release_metadata.py"],
+    visibility = ["//:__subpackages__"],
+)
+
 # === Binaries ===
 
 py_binary(
@@ -75,4 +81,19 @@ py_binary(
     name = "check_release_bin",
     main_module = "devinfra.ci.check_release",
     deps = [":check_release"],
+)
+
+py_binary(
+    name = "release_metadata_bin",
+    main_module = "devinfra.ci.release_metadata",
+    deps = [":release_metadata"],
+)
+
+py_test(
+    name = "test_release_metadata",
+    srcs = ["test_release_metadata.py"],
+    deps = [
+        ":release_metadata",
+        "@pypi//pytest_bazel",
+    ],
 )

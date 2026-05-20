@@ -85,6 +85,35 @@ let
   # Combined CLI + GNOME Shell extension package.
   aiquota = pkgs.callPackage ./gnome-shell-aiquota.nix { inherit artifacts lib; };
 
+  mkBinaryArtifact =
+    {
+      pname,
+      src,
+      binaryName ? pname,
+      description,
+    }:
+    pkgs.stdenvNoCC.mkDerivation {
+      inherit pname src;
+      version = "latest";
+      dontUnpack = true;
+      installPhase = ''
+        install -Dm755 $src $out/bin/${binaryName}
+      '';
+      meta = {
+        inherit description;
+        homepage = "https://github.com/agentydragon/ducktape";
+        license = lib.licenses.agpl3Only;
+        mainProgram = binaryName;
+        platforms = [ "x86_64-linux" ];
+      };
+    };
+
+  debundle = mkBinaryArtifact {
+    pname = "debundle";
+    src = artifacts.debundle;
+    description = "JavaScript debundling CLI";
+  };
+
 in
 {
   inherit ducktape-util;
@@ -256,4 +285,7 @@ in
     mkdir -p $out/share/claude-hooks/skills
     tar xf ${artifacts.skills} -C $out/share/claude-hooks/skills
   '';
+}
+// lib.optionalAttrs (artifacts ? debundle) {
+  inherit debundle;
 }

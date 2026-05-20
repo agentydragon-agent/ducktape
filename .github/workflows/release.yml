@@ -69,6 +69,12 @@ jobs:
             target: //devinfra/buildbuddy_cli:bbapi
             bazel_output: bb-out/bazel-out/k8-fastbuild/bin/devinfra/buildbuddy_cli/bbapi_/bbapi
             tests: //devinfra/buildbuddy_cli/...
+          - pkg: debundle
+            target: //devinfra/js/debundle:debundle
+            bazel_output: bb-out/bazel-out/k8-fastbuild/bin/devinfra/js/debundle/debundle
+            tests: //devinfra/js/debundle/...
+            release_metadata: true
+            metadata_platform: linux-amd64
     steps:
       - uses: actions/checkout@v6
         with:
@@ -95,4 +101,6 @@ jobs:
           bazel_target: ${{ matrix.target }}
           bazel_output: ${{ matrix.bazel_output }}
           extra_outputs: ${{ matrix.extra_outputs || '' }}
+          release_metadata: ${{ matrix.release_metadata || 'false' }}
+          metadata_platform: ${{ matrix.metadata_platform || '' }}
           rbe_image: ${{ inputs.rbe_image }}

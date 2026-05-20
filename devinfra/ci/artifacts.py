@@ -64,6 +64,7 @@ ARTIFACTS = [
     Artifact(pkg="gterm-theme", filename="gterm_theme-0.1.0-py3-none-any.whl"),
     Artifact(pkg="skills", filename="all_skills_tar.tar"),
     Artifact(pkg="bbapi", filename="bbapi"),
+    Artifact(pkg="debundle", filename="debundle"),
 ]
 
 
