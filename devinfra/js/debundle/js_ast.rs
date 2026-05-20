@@ -249,13 +249,16 @@ pub fn emit_js_module(parsed: &ParsedJsModule, header_lines: &[String]) -> Resul
         emitter.emit_module(&parsed.module)?;
     }
     let code = String::from_utf8(buf)?;
+    let code = code.trim_end_matches(|ch| ch == '\n' || ch == '\r');
     let mut out = String::new();
     for line in header_lines {
         out.push_str(line);
         out.push('\n');
     }
-    out.push('\n');
-    out.push_str(&code);
+    if !header_lines.is_empty() && !code.is_empty() {
+        out.push('\n');
+    }
+    out.push_str(code);
     out.push('\n');
     Ok(out)
 }
@@ -331,6 +334,30 @@ mod tests {
             assert_eq!(line_range_for_span(&parsed, DUMMY_SP), None);
             assert_eq!(line_index.line_for_span(DUMMY_SP), None);
             assert_eq!(line_index.line_range_for_span(DUMMY_SP), None);
+        });
+    }
+
+    #[test]
+    fn emit_js_module_uses_one_terminal_newline() {
+        with_swc_globals(|| {
+            let parsed =
+                parse_js_module("test.js", "const value = 1;\nexport { value };\n").unwrap();
+            let source = emit_js_module(&parsed, &["// generated".to_string()]).unwrap();
+
+            assert_eq!(
+                source
+                    .as_bytes()
+                    .iter()
+                    .rev()
+                    .take_while(|&&byte| byte == b'\n')
+                    .count(),
+                1,
+                "emitted module must end with exactly one newline:\n{source:?}",
+            );
+            assert!(
+                source.starts_with("// generated\n\n"),
+                "header must stay separated from code by one blank line:\n{source}",
+            );
         });
     }
 }

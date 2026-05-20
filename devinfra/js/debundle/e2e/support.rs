@@ -443,6 +443,21 @@ pub fn assert_module_source(
     }
 }
 
+pub fn assert_file_ends_with_single_newline(out_root: &Path, module_path: &str) {
+    let code = fs::read_to_string(out_root.join(module_path))
+        .unwrap_or_else(|e| panic!("read {module_path}: {e}"));
+    let terminal_newlines = code
+        .as_bytes()
+        .iter()
+        .rev()
+        .take_while(|&&byte| byte == b'\n')
+        .count();
+    assert_eq!(
+        terminal_newlines, 1,
+        "{module_path} must end with exactly one newline:\n{code:?}",
+    );
+}
+
 pub fn assert_generated_module_script(out_root: &Path, source: &str, expected_stdout: &str) {
     let counter = GENERATED_MODULE_SCRIPT_COUNTER.fetch_add(1, Ordering::Relaxed);
     let assertion_path = out_root.join(format!("assert_generated_module_{counter}.mjs"));
