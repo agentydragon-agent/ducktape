@@ -14,112 +14,128 @@ import polars as pl
 from augur.sim.frames import concat_frames
 from augur.sim.run import SimulationRun
 
-NET_WORTH_SCHEMA: dict[str, pl.DataType] = {
-    "rollout_index": pl.Int64(),
-    "month_index": pl.Int64(),
-    "agent_id": pl.Utf8(),
-    "cash_usd": pl.Float64(),
-    "liquid_asset_value_usd": pl.Float64(),
-    "asset_book_value_usd": pl.Float64(),
-    "property_book_value_usd": pl.Float64(),
-    "liability_principal_usd": pl.Float64(),
-    "liquid_net_worth_usd": pl.Float64(),
-    "book_net_worth_usd": pl.Float64(),
-}
+NET_WORTH_SCHEMA = pl.Schema(
+    {
+        "rollout_index": pl.Int64(),
+        "month_index": pl.Int64(),
+        "agent_id": pl.Utf8(),
+        "cash_usd": pl.Float64(),
+        "liquid_asset_value_usd": pl.Float64(),
+        "asset_book_value_usd": pl.Float64(),
+        "property_book_value_usd": pl.Float64(),
+        "liability_principal_usd": pl.Float64(),
+        "liquid_net_worth_usd": pl.Float64(),
+        "book_net_worth_usd": pl.Float64(),
+    }
+)
 
-ACCOUNT_BALANCE_SCHEMA: dict[str, pl.DataType] = {
-    "rollout_index": pl.Int64(),
-    "month_index": pl.Int64(),
-    "agent_id": pl.Utf8(),
-    "account_id": pl.Utf8(),
-    "account_type": pl.Utf8(),
-    "balance_usd": pl.Float64(),
-}
+ACCOUNT_BALANCE_SCHEMA = pl.Schema(
+    {
+        "rollout_index": pl.Int64(),
+        "month_index": pl.Int64(),
+        "agent_id": pl.Utf8(),
+        "account_id": pl.Utf8(),
+        "account_type": pl.Utf8(),
+        "balance_usd": pl.Float64(),
+    }
+)
 
-TRANSACTION_SCHEMA: dict[str, pl.DataType] = {
-    "rollout_index": pl.Int64(),
-    "month_index": pl.Int64(),
-    "transaction_id": pl.Utf8(),
-    "transaction_type": pl.Utf8(),
-    "cause_id": pl.Utf8(),
-    "from_agent_id": pl.Utf8(),
-    "from_account_id": pl.Utf8(),
-    "to_agent_id": pl.Utf8(),
-    "to_account_id": pl.Utf8(),
-    "asset_id": pl.Utf8(),
-    "lot_id": pl.Utf8(),
-    "amount_usd": pl.Float64(),
-    "quantity": pl.Float64(),
-}
+TRANSACTION_SCHEMA = pl.Schema(
+    {
+        "rollout_index": pl.Int64(),
+        "month_index": pl.Int64(),
+        "transaction_id": pl.Utf8(),
+        "transaction_type": pl.Utf8(),
+        "cause_id": pl.Utf8(),
+        "from_agent_id": pl.Utf8(),
+        "from_account_id": pl.Utf8(),
+        "to_agent_id": pl.Utf8(),
+        "to_account_id": pl.Utf8(),
+        "asset_id": pl.Utf8(),
+        "lot_id": pl.Utf8(),
+        "amount_usd": pl.Float64(),
+        "quantity": pl.Float64(),
+    }
+)
 
-TAX_BREAKDOWN_PROJECTION_SCHEMA: dict[str, pl.DataType] = {
-    "rollout_index": pl.Int64(),
-    "month_index": pl.Int64(),
-    "cause_id": pl.Utf8(),
-    "agent_id": pl.Utf8(),
-    "jurisdiction_id": pl.Utf8(),
-    "tax_year": pl.Int64(),
-    "tax_year_end_month": pl.Int64(),
-    "ordinary_income_usd": pl.Float64(),
-    "ltcg_usd": pl.Float64(),
-    "stcg_usd": pl.Float64(),
-    "standard_deduction_usd": pl.Float64(),
-    "ordinary_taxable_usd": pl.Float64(),
-    "capital_gain_taxable_usd": pl.Float64(),
-    "ordinary_tax_usd": pl.Float64(),
-    "capital_gain_tax_usd": pl.Float64(),
-    "total_tax_usd": pl.Float64(),
-}
+TAX_BREAKDOWN_PROJECTION_SCHEMA = pl.Schema(
+    {
+        "rollout_index": pl.Int64(),
+        "month_index": pl.Int64(),
+        "cause_id": pl.Utf8(),
+        "agent_id": pl.Utf8(),
+        "jurisdiction_id": pl.Utf8(),
+        "tax_year": pl.Int64(),
+        "tax_year_end_month": pl.Int64(),
+        "ordinary_income_usd": pl.Float64(),
+        "ltcg_usd": pl.Float64(),
+        "stcg_usd": pl.Float64(),
+        "standard_deduction_usd": pl.Float64(),
+        "ordinary_taxable_usd": pl.Float64(),
+        "capital_gain_taxable_usd": pl.Float64(),
+        "ordinary_tax_usd": pl.Float64(),
+        "capital_gain_tax_usd": pl.Float64(),
+        "total_tax_usd": pl.Float64(),
+    }
+)
 
-OBLIGATION_LIFECYCLE_SCHEMA: dict[str, pl.DataType] = {
-    "rollout_index": pl.Int64(),
-    "month_index": pl.Int64(),
-    "obligation_id": pl.Utf8(),
-    "obligation_type": pl.Utf8(),
-    "agent_id": pl.Utf8(),
-    "from_account_id": pl.Utf8(),
-    "to_agent_id": pl.Utf8(),
-    "to_account_id": pl.Utf8(),
-    "amount_due_usd": pl.Float64(),
-    "amount_paid_usd": pl.Float64(),
-    "shortfall_usd": pl.Float64(),
-    "attempted_funding_sources": pl.Utf8(),
-    "status": pl.Utf8(),
-}
+OBLIGATION_LIFECYCLE_SCHEMA = pl.Schema(
+    {
+        "rollout_index": pl.Int64(),
+        "month_index": pl.Int64(),
+        "obligation_id": pl.Utf8(),
+        "obligation_type": pl.Utf8(),
+        "agent_id": pl.Utf8(),
+        "from_account_id": pl.Utf8(),
+        "to_agent_id": pl.Utf8(),
+        "to_account_id": pl.Utf8(),
+        "amount_due_usd": pl.Float64(),
+        "amount_paid_usd": pl.Float64(),
+        "shortfall_usd": pl.Float64(),
+        "attempted_funding_sources": pl.Utf8(),
+        "status": pl.Utf8(),
+    }
+)
 
-FAILURE_PROJECTION_SCHEMA: dict[str, pl.DataType] = {
-    "rollout_index": pl.Int64(),
-    "month_index": pl.Int64(),
-    "failure_id": pl.Utf8(),
-    "agent_id": pl.Utf8(),
-    "deficit_usd": pl.Float64(),
-    "obligation_id": pl.Utf8(),
-    "obligation_type": pl.Utf8(),
-    "shortfall_usd": pl.Float64(),
-    "attempted_funding_sources": pl.Utf8(),
-}
+FAILURE_PROJECTION_SCHEMA = pl.Schema(
+    {
+        "rollout_index": pl.Int64(),
+        "month_index": pl.Int64(),
+        "failure_id": pl.Utf8(),
+        "agent_id": pl.Utf8(),
+        "deficit_usd": pl.Float64(),
+        "obligation_id": pl.Utf8(),
+        "obligation_type": pl.Utf8(),
+        "shortfall_usd": pl.Float64(),
+        "attempted_funding_sources": pl.Utf8(),
+    }
+)
 
-ROLLOUT_SUMMARY_SCHEMA: dict[str, pl.DataType] = {
-    "rollout_index": pl.Int64(),
-    "status": pl.Utf8(),
-    "failed_month": pl.Int64(),
-    "failure_count": pl.Int64(),
-    "first_failure_month": pl.Int64(),
-    "final_month_index": pl.Int64(),
-    "final_liquid_net_worth_usd": pl.Float64(),
-    "final_book_net_worth_usd": pl.Float64(),
-}
+ROLLOUT_SUMMARY_SCHEMA = pl.Schema(
+    {
+        "rollout_index": pl.Int64(),
+        "status": pl.Utf8(),
+        "failed_month": pl.Int64(),
+        "failure_count": pl.Int64(),
+        "first_failure_month": pl.Int64(),
+        "final_month_index": pl.Int64(),
+        "final_liquid_net_worth_usd": pl.Float64(),
+        "final_book_net_worth_usd": pl.Float64(),
+    }
+)
 
-_NET_WORTH_COMPONENT_SCHEMA: dict[str, pl.DataType] = {
-    "rollout_index": pl.Int64(),
-    "month_index": pl.Int64(),
-    "agent_id": pl.Utf8(),
-    "cash_usd": pl.Float64(),
-    "liquid_asset_value_usd": pl.Float64(),
-    "asset_book_value_usd": pl.Float64(),
-    "property_book_value_usd": pl.Float64(),
-    "liability_principal_usd": pl.Float64(),
-}
+_NET_WORTH_COMPONENT_SCHEMA = pl.Schema(
+    {
+        "rollout_index": pl.Int64(),
+        "month_index": pl.Int64(),
+        "agent_id": pl.Utf8(),
+        "cash_usd": pl.Float64(),
+        "liquid_asset_value_usd": pl.Float64(),
+        "asset_book_value_usd": pl.Float64(),
+        "property_book_value_usd": pl.Float64(),
+        "liability_principal_usd": pl.Float64(),
+    }
+)
 
 
 @dataclass(frozen=True)

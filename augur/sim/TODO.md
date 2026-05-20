@@ -29,11 +29,11 @@ primary simulation backend for the Augur frontend/API.
 
 ## Refactor Follow-Ups
 
-- [ ] Rework `EventLog` frame construction so event schemas are not
-      duplicated between dataclass fields, registry entries, and helper
-      arguments. Prefer an explicit typed shape over dynamic `getattr`;
-      consider whether `EventLog.from_frames(...)` should take keyword
-      arguments instead of a mapping.
+- [ ] Consider whether `EventLog` should expose only catalog-keyed
+      access (`log.frame(EVENT_FRAMES.transfers)`) or keep the current
+      convenience properties (`log.transfers`, etc.). The catalog now
+      owns schema/normalization, but the property layer still repeats
+      event names for caller ergonomics.
 
 ## Explicitly Deferred
 

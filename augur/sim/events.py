@@ -17,25 +17,28 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+from types import MappingProxyType
 
 import polars as pl
 
-from augur.sim.frames import concat_frames
+from augur.sim.frames import FrameSpec
 
-TRANSFER_EVENT_SCHEMA: dict[str, pl.DataType] = {
-    "rollout_index": pl.Int64(),
-    "month_index": pl.Int64(),
-    "cause_id": pl.Utf8(),
-    "from_agent_id": pl.Utf8(),
-    "from_account_id": pl.Utf8(),
-    "to_agent_id": pl.Utf8(),
-    "to_account_id": pl.Utf8(),
-    "amount_usd": pl.Float64(),
-    # Tax classification: when set (e.g. "ordinary" for W-2 wages),
-    # apply_events increments the recipient's ordinary_income_ytd.
-    # Null for non-income transfers (e.g. expense payments).
-    "income_category": pl.Utf8(),
-}
+TRANSFER_EVENT_SCHEMA = pl.Schema(
+    {
+        "rollout_index": pl.Int64(),
+        "month_index": pl.Int64(),
+        "cause_id": pl.Utf8(),
+        "from_agent_id": pl.Utf8(),
+        "from_account_id": pl.Utf8(),
+        "to_agent_id": pl.Utf8(),
+        "to_account_id": pl.Utf8(),
+        "amount_usd": pl.Float64(),
+        # Tax classification: when set (e.g. "ordinary" for W-2 wages),
+        # apply_events increments the recipient's ordinary_income_ytd.
+        # Null for non-income transfers (e.g. expense payments).
+        "income_category": pl.Utf8(),
+    }
+)
 
 
 # `AssetPurchase` records the creation of a new tax lot — either an
@@ -45,155 +48,175 @@ TRANSFER_EVENT_SCHEMA: dict[str, pl.DataType] = {
 # debits cash. The lot the purchase creates is keyed by
 # `(rollout_index, lot_id)` and shows up as a new row in
 # `state.asset_lots` with `remaining_quantity = quantity`.
-ASSET_PURCHASE_EVENT_SCHEMA: dict[str, pl.DataType] = {
-    "rollout_index": pl.Int64(),
-    "month_index": pl.Int64(),
-    "cause_id": pl.Utf8(),
-    "agent_id": pl.Utf8(),
-    "asset_id": pl.Utf8(),
-    "lot_id": pl.Utf8(),
-    "quantity": pl.Float64(),
-    "cost_basis_per_unit_usd": pl.Float64(),
-}
+ASSET_PURCHASE_EVENT_SCHEMA = pl.Schema(
+    {
+        "rollout_index": pl.Int64(),
+        "month_index": pl.Int64(),
+        "cause_id": pl.Utf8(),
+        "agent_id": pl.Utf8(),
+        "asset_id": pl.Utf8(),
+        "lot_id": pl.Utf8(),
+        "quantity": pl.Float64(),
+        "cost_basis_per_unit_usd": pl.Float64(),
+    }
+)
 
 # `TaxAccrual` records a year-end tax computation: a single
 # year's ordinary income for one agent under one jurisdiction has
 # been bracket-walked, and the resulting tax `amount_usd` is now
 # owed. apply_events appends a row to `state.tax_liabilities` and
 # zeroes the agent's `ordinary_income_ytd` for the next year.
-TAX_ACCRUAL_EVENT_SCHEMA: dict[str, pl.DataType] = {
-    "rollout_index": pl.Int64(),
-    "month_index": pl.Int64(),
-    "cause_id": pl.Utf8(),
-    "agent_id": pl.Utf8(),
-    "jurisdiction_id": pl.Utf8(),
-    "tax_year_end_month": pl.Int64(),
-    "amount_usd": pl.Float64(),
-}
+TAX_ACCRUAL_EVENT_SCHEMA = pl.Schema(
+    {
+        "rollout_index": pl.Int64(),
+        "month_index": pl.Int64(),
+        "cause_id": pl.Utf8(),
+        "agent_id": pl.Utf8(),
+        "jurisdiction_id": pl.Utf8(),
+        "tax_year_end_month": pl.Int64(),
+        "amount_usd": pl.Float64(),
+    }
+)
 
 # `TaxBreakdown` records the inputs and component tax amounts behind
 # each year-end accrual. It is audit/output only; `apply_events` does
 # not mutate state from this frame.
-TAX_BREAKDOWN_EVENT_SCHEMA: dict[str, pl.DataType] = {
-    "rollout_index": pl.Int64(),
-    "month_index": pl.Int64(),
-    "cause_id": pl.Utf8(),
-    "agent_id": pl.Utf8(),
-    "jurisdiction_id": pl.Utf8(),
-    "tax_year_end_month": pl.Int64(),
-    "ordinary_income_usd": pl.Float64(),
-    "ltcg_usd": pl.Float64(),
-    "stcg_usd": pl.Float64(),
-    "standard_deduction_usd": pl.Float64(),
-    "ordinary_taxable_usd": pl.Float64(),
-    "capital_gain_taxable_usd": pl.Float64(),
-    "ordinary_tax_usd": pl.Float64(),
-    "capital_gain_tax_usd": pl.Float64(),
-    "total_tax_usd": pl.Float64(),
-}
+TAX_BREAKDOWN_EVENT_SCHEMA = pl.Schema(
+    {
+        "rollout_index": pl.Int64(),
+        "month_index": pl.Int64(),
+        "cause_id": pl.Utf8(),
+        "agent_id": pl.Utf8(),
+        "jurisdiction_id": pl.Utf8(),
+        "tax_year_end_month": pl.Int64(),
+        "ordinary_income_usd": pl.Float64(),
+        "ltcg_usd": pl.Float64(),
+        "stcg_usd": pl.Float64(),
+        "standard_deduction_usd": pl.Float64(),
+        "ordinary_taxable_usd": pl.Float64(),
+        "capital_gain_taxable_usd": pl.Float64(),
+        "ordinary_tax_usd": pl.Float64(),
+        "capital_gain_tax_usd": pl.Float64(),
+        "total_tax_usd": pl.Float64(),
+    }
+)
 
 # `TaxSettlement` applies paid tax dollars against already-accrued
 # liabilities for an agent and tax year. Cash still moves through
 # Transfer events; this frame is the liability-side settlement.
-TAX_SETTLEMENT_EVENT_SCHEMA: dict[str, pl.DataType] = {
-    "rollout_index": pl.Int64(),
-    "month_index": pl.Int64(),
-    "cause_id": pl.Utf8(),
-    "agent_id": pl.Utf8(),
-    "tax_year_end_month": pl.Int64(),
-    "amount_usd": pl.Float64(),
-}
+TAX_SETTLEMENT_EVENT_SCHEMA = pl.Schema(
+    {
+        "rollout_index": pl.Int64(),
+        "month_index": pl.Int64(),
+        "cause_id": pl.Utf8(),
+        "agent_id": pl.Utf8(),
+        "tax_year_end_month": pl.Int64(),
+        "amount_usd": pl.Float64(),
+    }
+)
 
-OBLIGATION_ACCRUAL_EVENT_SCHEMA: dict[str, pl.DataType] = {
-    "rollout_index": pl.Int64(),
-    "month_index": pl.Int64(),
-    "cause_id": pl.Utf8(),
-    "obligation_id": pl.Utf8(),
-    "obligation_type": pl.Utf8(),
-    "agent_id": pl.Utf8(),
-    "from_account_id": pl.Utf8(),
-    "to_agent_id": pl.Utf8(),
-    "to_account_id": pl.Utf8(),
-    "amount_due_usd": pl.Float64(),
-}
+OBLIGATION_ACCRUAL_EVENT_SCHEMA = pl.Schema(
+    {
+        "rollout_index": pl.Int64(),
+        "month_index": pl.Int64(),
+        "cause_id": pl.Utf8(),
+        "obligation_id": pl.Utf8(),
+        "obligation_type": pl.Utf8(),
+        "agent_id": pl.Utf8(),
+        "from_account_id": pl.Utf8(),
+        "to_agent_id": pl.Utf8(),
+        "to_account_id": pl.Utf8(),
+        "amount_due_usd": pl.Float64(),
+    }
+)
 
-OBLIGATION_SETTLEMENT_EVENT_SCHEMA: dict[str, pl.DataType] = {
-    "rollout_index": pl.Int64(),
-    "month_index": pl.Int64(),
-    "cause_id": pl.Utf8(),
-    "obligation_id": pl.Utf8(),
-    "obligation_type": pl.Utf8(),
-    "agent_id": pl.Utf8(),
-    "from_account_id": pl.Utf8(),
-    "amount_due_usd": pl.Float64(),
-    "amount_paid_usd": pl.Float64(),
-    "shortfall_usd": pl.Float64(),
-    "attempted_funding_sources": pl.Utf8(),
-}
+OBLIGATION_SETTLEMENT_EVENT_SCHEMA = pl.Schema(
+    {
+        "rollout_index": pl.Int64(),
+        "month_index": pl.Int64(),
+        "cause_id": pl.Utf8(),
+        "obligation_id": pl.Utf8(),
+        "obligation_type": pl.Utf8(),
+        "agent_id": pl.Utf8(),
+        "from_account_id": pl.Utf8(),
+        "amount_due_usd": pl.Float64(),
+        "amount_paid_usd": pl.Float64(),
+        "shortfall_usd": pl.Float64(),
+        "attempted_funding_sources": pl.Utf8(),
+    }
+)
 
-PROPERTY_PURCHASE_EVENT_SCHEMA: dict[str, pl.DataType] = {
-    "rollout_index": pl.Int64(),
-    "month_index": pl.Int64(),
-    "cause_id": pl.Utf8(),
-    "property_id": pl.Utf8(),
-    "location_id": pl.Utf8(),
-    "buyer_agent_id": pl.Utf8(),
-    "purchase_price_usd": pl.Float64(),
-    "closing_cost_usd": pl.Float64(),
-    "adjusted_basis_usd": pl.Float64(),
-    "ownership_pct": pl.Float64(),
-    "stake_contribution_usd": pl.Float64(),
-    "equity_ledger_usd": pl.Float64(),
-}
+PROPERTY_PURCHASE_EVENT_SCHEMA = pl.Schema(
+    {
+        "rollout_index": pl.Int64(),
+        "month_index": pl.Int64(),
+        "cause_id": pl.Utf8(),
+        "property_id": pl.Utf8(),
+        "location_id": pl.Utf8(),
+        "buyer_agent_id": pl.Utf8(),
+        "purchase_price_usd": pl.Float64(),
+        "closing_cost_usd": pl.Float64(),
+        "adjusted_basis_usd": pl.Float64(),
+        "ownership_pct": pl.Float64(),
+        "stake_contribution_usd": pl.Float64(),
+        "equity_ledger_usd": pl.Float64(),
+    }
+)
 
-MORTGAGE_ORIGINATION_EVENT_SCHEMA: dict[str, pl.DataType] = {
-    "rollout_index": pl.Int64(),
-    "month_index": pl.Int64(),
-    "cause_id": pl.Utf8(),
-    "liability_id": pl.Utf8(),
-    "agent_id": pl.Utf8(),
-    "payment_account_id": pl.Utf8(),
-    "counterparty_agent_id": pl.Utf8(),
-    "counterparty_account_id": pl.Utf8(),
-    "property_id": pl.Utf8(),
-    "principal_usd": pl.Float64(),
-    "annual_interest_rate": pl.Float64(),
-    "term_months": pl.Int64(),
-    "monthly_payment_usd": pl.Float64(),
-}
+MORTGAGE_ORIGINATION_EVENT_SCHEMA = pl.Schema(
+    {
+        "rollout_index": pl.Int64(),
+        "month_index": pl.Int64(),
+        "cause_id": pl.Utf8(),
+        "liability_id": pl.Utf8(),
+        "agent_id": pl.Utf8(),
+        "payment_account_id": pl.Utf8(),
+        "counterparty_agent_id": pl.Utf8(),
+        "counterparty_account_id": pl.Utf8(),
+        "property_id": pl.Utf8(),
+        "principal_usd": pl.Float64(),
+        "annual_interest_rate": pl.Float64(),
+        "term_months": pl.Int64(),
+        "monthly_payment_usd": pl.Float64(),
+    }
+)
 
-MORTGAGE_PAYMENT_EVENT_SCHEMA: dict[str, pl.DataType] = {
-    "rollout_index": pl.Int64(),
-    "month_index": pl.Int64(),
-    "cause_id": pl.Utf8(),
-    "liability_id": pl.Utf8(),
-    "agent_id": pl.Utf8(),
-    "counterparty_agent_id": pl.Utf8(),
-    "property_id": pl.Utf8(),
-    "from_account_id": pl.Utf8(),
-    "to_account_id": pl.Utf8(),
-    "interest_usd": pl.Float64(),
-    "principal_usd": pl.Float64(),
-    "total_payment_usd": pl.Float64(),
-}
+MORTGAGE_PAYMENT_EVENT_SCHEMA = pl.Schema(
+    {
+        "rollout_index": pl.Int64(),
+        "month_index": pl.Int64(),
+        "cause_id": pl.Utf8(),
+        "liability_id": pl.Utf8(),
+        "agent_id": pl.Utf8(),
+        "counterparty_agent_id": pl.Utf8(),
+        "property_id": pl.Utf8(),
+        "from_account_id": pl.Utf8(),
+        "to_account_id": pl.Utf8(),
+        "interest_usd": pl.Float64(),
+        "principal_usd": pl.Float64(),
+        "total_payment_usd": pl.Float64(),
+    }
+)
 
 # `RolloutFailure` flags a rollout as having run out of disposable
 # wealth — agent's cash is negative even after the floor-triggered
 # sale policy has done its best. Once flagged, the rollout stays
 # failed for the rest of the sim (L11.2).
-ROLLOUT_FAILURE_EVENT_SCHEMA: dict[str, pl.DataType] = {
-    "rollout_index": pl.Int64(),
-    "month_index": pl.Int64(),
-    "cause_id": pl.Utf8(),
-    "agent_id": pl.Utf8(),
-    "deficit_usd": pl.Float64(),
-    "obligation_id": pl.Utf8(),
-    "obligation_type": pl.Utf8(),
-    "amount_due_usd": pl.Float64(),
-    "amount_paid_usd": pl.Float64(),
-    "shortfall_usd": pl.Float64(),
-    "attempted_funding_sources": pl.Utf8(),
-}
+ROLLOUT_FAILURE_EVENT_SCHEMA = pl.Schema(
+    {
+        "rollout_index": pl.Int64(),
+        "month_index": pl.Int64(),
+        "cause_id": pl.Utf8(),
+        "agent_id": pl.Utf8(),
+        "deficit_usd": pl.Float64(),
+        "obligation_id": pl.Utf8(),
+        "obligation_type": pl.Utf8(),
+        "amount_due_usd": pl.Float64(),
+        "amount_paid_usd": pl.Float64(),
+        "shortfall_usd": pl.Float64(),
+        "attempted_funding_sources": pl.Utf8(),
+    }
+)
 
 # `LotDisposition` records the consumption of part (or all) of one
 # lot by one logical sale. A single AssetSale "sell N units of vti"
@@ -201,43 +224,73 @@ ROLLOUT_FAILURE_EVENT_SCHEMA: dict[str, pl.DataType] = {
 # `cause_id` groups all dispositions of the same sale for downstream
 # tax classification. Holding period for LTCG/STCG is
 # `month_index - purchase_month_index`.
-LOT_DISPOSITION_EVENT_SCHEMA: dict[str, pl.DataType] = {
-    "rollout_index": pl.Int64(),
-    "month_index": pl.Int64(),
-    "cause_id": pl.Utf8(),
-    "agent_id": pl.Utf8(),
-    "asset_id": pl.Utf8(),
-    "lot_id": pl.Utf8(),
-    "purchase_month_index": pl.Int64(),
-    "units_sold": pl.Float64(),
-    "cost_basis_consumed_usd": pl.Float64(),
-    "proceeds_usd": pl.Float64(),
-    "proceeds_account_id": pl.Utf8(),
-}
+LOT_DISPOSITION_EVENT_SCHEMA = pl.Schema(
+    {
+        "rollout_index": pl.Int64(),
+        "month_index": pl.Int64(),
+        "cause_id": pl.Utf8(),
+        "agent_id": pl.Utf8(),
+        "asset_id": pl.Utf8(),
+        "lot_id": pl.Utf8(),
+        "purchase_month_index": pl.Int64(),
+        "units_sold": pl.Float64(),
+        "cost_basis_consumed_usd": pl.Float64(),
+        "proceeds_usd": pl.Float64(),
+        "proceeds_account_id": pl.Utf8(),
+    }
+)
 
 
 @dataclass(frozen=True)
-class EventFrameSpec:
-    """One event-log frame and its schema."""
+class EventFrameCatalog:
+    """Schemas for every frame carried by `EventLog`."""
 
-    field_name: str
-    schema: dict[str, pl.DataType]
+    transfers: FrameSpec
+    asset_purchases: FrameSpec
+    lot_dispositions: FrameSpec
+    tax_accruals: FrameSpec
+    tax_breakdowns: FrameSpec
+    tax_settlements: FrameSpec
+    obligation_accruals: FrameSpec
+    obligation_settlements: FrameSpec
+    property_purchases: FrameSpec
+    mortgage_originations: FrameSpec
+    mortgage_payments: FrameSpec
+    rollout_failures: FrameSpec
+
+    def ordered(self) -> tuple[FrameSpec, ...]:
+        return (
+            self.transfers,
+            self.asset_purchases,
+            self.lot_dispositions,
+            self.tax_accruals,
+            self.tax_breakdowns,
+            self.tax_settlements,
+            self.obligation_accruals,
+            self.obligation_settlements,
+            self.property_purchases,
+            self.mortgage_originations,
+            self.mortgage_payments,
+            self.rollout_failures,
+        )
 
 
-EVENT_FRAME_SPECS: tuple[EventFrameSpec, ...] = (
-    EventFrameSpec("transfers", TRANSFER_EVENT_SCHEMA),
-    EventFrameSpec("asset_purchases", ASSET_PURCHASE_EVENT_SCHEMA),
-    EventFrameSpec("lot_dispositions", LOT_DISPOSITION_EVENT_SCHEMA),
-    EventFrameSpec("tax_accruals", TAX_ACCRUAL_EVENT_SCHEMA),
-    EventFrameSpec("tax_breakdowns", TAX_BREAKDOWN_EVENT_SCHEMA),
-    EventFrameSpec("tax_settlements", TAX_SETTLEMENT_EVENT_SCHEMA),
-    EventFrameSpec("obligation_accruals", OBLIGATION_ACCRUAL_EVENT_SCHEMA),
-    EventFrameSpec("obligation_settlements", OBLIGATION_SETTLEMENT_EVENT_SCHEMA),
-    EventFrameSpec("property_purchases", PROPERTY_PURCHASE_EVENT_SCHEMA),
-    EventFrameSpec("mortgage_originations", MORTGAGE_ORIGINATION_EVENT_SCHEMA),
-    EventFrameSpec("mortgage_payments", MORTGAGE_PAYMENT_EVENT_SCHEMA),
-    EventFrameSpec("rollout_failures", ROLLOUT_FAILURE_EVENT_SCHEMA),
+EVENT_FRAMES = EventFrameCatalog(
+    transfers=FrameSpec("transfers", TRANSFER_EVENT_SCHEMA),
+    asset_purchases=FrameSpec("asset_purchases", ASSET_PURCHASE_EVENT_SCHEMA),
+    lot_dispositions=FrameSpec("lot_dispositions", LOT_DISPOSITION_EVENT_SCHEMA),
+    tax_accruals=FrameSpec("tax_accruals", TAX_ACCRUAL_EVENT_SCHEMA),
+    tax_breakdowns=FrameSpec("tax_breakdowns", TAX_BREAKDOWN_EVENT_SCHEMA),
+    tax_settlements=FrameSpec("tax_settlements", TAX_SETTLEMENT_EVENT_SCHEMA),
+    obligation_accruals=FrameSpec("obligation_accruals", OBLIGATION_ACCRUAL_EVENT_SCHEMA),
+    obligation_settlements=FrameSpec("obligation_settlements", OBLIGATION_SETTLEMENT_EVENT_SCHEMA),
+    property_purchases=FrameSpec("property_purchases", PROPERTY_PURCHASE_EVENT_SCHEMA),
+    mortgage_originations=FrameSpec("mortgage_originations", MORTGAGE_ORIGINATION_EVENT_SCHEMA),
+    mortgage_payments=FrameSpec("mortgage_payments", MORTGAGE_PAYMENT_EVENT_SCHEMA),
+    rollout_failures=FrameSpec("rollout_failures", ROLLOUT_FAILURE_EVENT_SCHEMA),
 )
+
+EVENT_FRAME_SPECS = EVENT_FRAMES.ordered()
 
 
 @dataclass(frozen=True)
@@ -245,18 +298,7 @@ class EventLog:
     """Per-step or per-simulation collection of events, one frame
     per event kind."""
 
-    transfers: pl.DataFrame
-    asset_purchases: pl.DataFrame
-    lot_dispositions: pl.DataFrame
-    tax_accruals: pl.DataFrame
-    tax_breakdowns: pl.DataFrame
-    tax_settlements: pl.DataFrame
-    obligation_accruals: pl.DataFrame
-    obligation_settlements: pl.DataFrame
-    property_purchases: pl.DataFrame
-    mortgage_originations: pl.DataFrame
-    mortgage_payments: pl.DataFrame
-    rollout_failures: pl.DataFrame
+    _frames: Mapping[str, pl.DataFrame]
 
     @classmethod
     def empty(cls) -> EventLog:
@@ -264,38 +306,76 @@ class EventLog:
 
     @classmethod
     def from_frames(cls, frames: Mapping[str, pl.DataFrame]) -> EventLog:
+        unknown = set(frames) - {spec.name for spec in EVENT_FRAME_SPECS}
+        if unknown:
+            unknown_list = ", ".join(sorted(unknown))
+            msg = f"Unknown event frame(s): {unknown_list}"
+            raise ValueError(msg)
         by_name = {
-            spec.field_name: frames.get(spec.field_name, pl.DataFrame(schema=spec.schema)) for spec in EVENT_FRAME_SPECS
+            spec.name: spec.normalize(frames[spec.name]) if spec.name in frames else spec.empty()
+            for spec in EVENT_FRAME_SPECS
         }
-        return cls(
-            transfers=by_name["transfers"],
-            asset_purchases=by_name["asset_purchases"],
-            lot_dispositions=by_name["lot_dispositions"],
-            tax_accruals=by_name["tax_accruals"],
-            tax_breakdowns=by_name["tax_breakdowns"],
-            tax_settlements=by_name["tax_settlements"],
-            obligation_accruals=by_name["obligation_accruals"],
-            obligation_settlements=by_name["obligation_settlements"],
-            property_purchases=by_name["property_purchases"],
-            mortgage_originations=by_name["mortgage_originations"],
-            mortgage_payments=by_name["mortgage_payments"],
-            rollout_failures=by_name["rollout_failures"],
-        )
+        return cls(MappingProxyType(by_name))
 
     @classmethod
     def concat(cls, logs: Iterable[EventLog]) -> EventLog:
         logs_tuple = tuple(logs)
         return cls.from_frames(
-            {
-                spec.field_name: concat_frames((getattr(log, spec.field_name) for log in logs_tuple), spec.schema)
-                for spec in EVENT_FRAME_SPECS
-            }
+            {spec.name: spec.concat(log.frame(spec) for log in logs_tuple) for spec in EVENT_FRAME_SPECS}
         )
 
     def at_month(self, month: int) -> EventLog:
         return self.from_frames(
-            {
-                spec.field_name: getattr(self, spec.field_name).filter(pl.col("month_index") == month)
-                for spec in EVENT_FRAME_SPECS
-            }
+            {spec.name: self.frame(spec).filter(pl.col("month_index") == month) for spec in EVENT_FRAME_SPECS}
         )
+
+    def frame(self, spec: FrameSpec) -> pl.DataFrame:
+        return self._frames[spec.name]
+
+    @property
+    def transfers(self) -> pl.DataFrame:
+        return self.frame(EVENT_FRAMES.transfers)
+
+    @property
+    def asset_purchases(self) -> pl.DataFrame:
+        return self.frame(EVENT_FRAMES.asset_purchases)
+
+    @property
+    def lot_dispositions(self) -> pl.DataFrame:
+        return self.frame(EVENT_FRAMES.lot_dispositions)
+
+    @property
+    def tax_accruals(self) -> pl.DataFrame:
+        return self.frame(EVENT_FRAMES.tax_accruals)
+
+    @property
+    def tax_breakdowns(self) -> pl.DataFrame:
+        return self.frame(EVENT_FRAMES.tax_breakdowns)
+
+    @property
+    def tax_settlements(self) -> pl.DataFrame:
+        return self.frame(EVENT_FRAMES.tax_settlements)
+
+    @property
+    def obligation_accruals(self) -> pl.DataFrame:
+        return self.frame(EVENT_FRAMES.obligation_accruals)
+
+    @property
+    def obligation_settlements(self) -> pl.DataFrame:
+        return self.frame(EVENT_FRAMES.obligation_settlements)
+
+    @property
+    def property_purchases(self) -> pl.DataFrame:
+        return self.frame(EVENT_FRAMES.property_purchases)
+
+    @property
+    def mortgage_originations(self) -> pl.DataFrame:
+        return self.frame(EVENT_FRAMES.mortgage_originations)
+
+    @property
+    def mortgage_payments(self) -> pl.DataFrame:
+        return self.frame(EVENT_FRAMES.mortgage_payments)
+
+    @property
+    def rollout_failures(self) -> pl.DataFrame:
+        return self.frame(EVENT_FRAMES.rollout_failures)
