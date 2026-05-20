@@ -91,12 +91,13 @@ body and graph do not show a namespace/API/family boundary. A broad directory
 is not bad only because it has many children; it is bad when source behavior
 and graph neighborhoods show multiple concepts sharing one bucket.
 
-When `<directory-manifests>` exists, consult it before proposing hierarchy
-changes. Use its incoming/outgoing symbol, file, and edge-kind attribution to
-find leaky directory boundaries, over-broad buckets, misplaced subtrees, and
-singleton wrappers that do not carry their own API boundary. Directory
-manifests are quantitative evidence; still read the source bodies and owner
-graph behind the highest-attribution symbols before writing recommendations.
+When `<report-tree>` includes directory reports, consult them before proposing
+hierarchy changes. Use their incoming/outgoing symbol, file, and edge-kind
+attribution to find leaky directory boundaries, over-broad buckets, misplaced
+subtrees, and singleton wrappers that do not carry their own API boundary.
+Directory reports are quantitative evidence; still read the source bodies and
+owner graph behind the highest-attribution symbols before writing
+recommendations.
 
 Check for:
 
