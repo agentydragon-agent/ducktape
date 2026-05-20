@@ -15,33 +15,19 @@ import pytest_bazel
 import yaml
 from pydantic import TypeAdapter
 
+from augur.fit.main import main as train_main
 from augur.model.market_api import MarketSamplingRequest
 from augur.model.market_provider_config import MarketProviderConfig, SimpleMarketProviderConfig
 from augur.model.series import home_value_series_id, rent_series_id
-from augur.model.train.main import main as train_main
-from util.bazel.runfiles import get_required_path
 
 _ADAPTER: TypeAdapter[MarketProviderConfig] = TypeAdapter(MarketProviderConfig)
-_MARKET_CONFIG_RUNFILE = "_main/augur/model/train/config/market_config.example.json"
 
 
 @pytest.mark.parametrize("model_label", ["vecm"])
 def test_train_then_load_and_sample(model_label: str, tmp_path: Path) -> None:
     out_manifest = tmp_path / "market_provider.yaml"
     out_blob = tmp_path / f"trained_{model_label}.npz"
-
-    train_main(
-        [
-            "--market-config",
-            str(get_required_path(_MARKET_CONFIG_RUNFILE)),
-            "--model",
-            model_label,
-            "--out-provider-config",
-            str(out_manifest),
-            "--out-blob",
-            str(out_blob),
-        ]
-    )
+    train_main(["--model", model_label, "--out-provider-config", str(out_manifest), "--out-blob", str(out_blob)])
 
     assert out_manifest.exists()
     assert out_blob.exists()

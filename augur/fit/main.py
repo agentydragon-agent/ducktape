@@ -10,7 +10,7 @@ runtime.
 
 Usage:
 
-    bb run //augur/model/train:train -- \\
+    bb run //augur/fit:train -- \\
         --market-config augur/model/train/config/market_config.example.json \\
         --model vecm \\
         --out-provider-config /path/to/market_provider.yaml \\
@@ -24,22 +24,16 @@ from pathlib import Path
 
 import yaml
 
+from augur.fit.data import DEFAULT_CONFIG_PATH, load_evidence
+from augur.fit.market_config import load_market_config
 from augur.model.market_provider_config import VecmMarketProviderConfig
 from augur.model.markets.models.vecm import VecmConfig, VecmModel
-from augur.model.train.data import load_evidence
-from augur.model.train.market_config import load_market_config
 
 _SUPPORTED_MODEL_LABELS = ("vecm",)
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Train an Augur market model offline.")
-    parser.add_argument(
-        "--market-config",
-        required=True,
-        type=Path,
-        help="Path to MarketConfig JSON/YAML (typically augur/model/train/config/market_config.example.json).",
-    )
     parser.add_argument("--model", required=True, choices=_SUPPORTED_MODEL_LABELS, help="Which market model to train.")
     parser.add_argument(
         "--out-provider-config",
@@ -58,7 +52,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = _build_arg_parser().parse_args(argv)
-    market_config_path = args.market_config.resolve()
+    market_config_path = DEFAULT_CONFIG_PATH.resolve()
     out_provider_config = args.out_provider_config.resolve()
     out_blob = args.out_blob.resolve()
 
