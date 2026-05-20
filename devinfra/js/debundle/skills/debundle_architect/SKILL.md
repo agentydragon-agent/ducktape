@@ -61,6 +61,10 @@ Audit the named active modules and emitted JS for structure that does not
 look like a natural JavaScript codebase:
 
 - modules that are too tiny to represent real seams
+- tiny modules that are only imported by one meaningful consumer and look like
+  implementation details of that consumer
+- modules named after one callable or implementation step instead of a
+  coherent architecture concept
 - modules that glue unrelated subsystems together
 - helpers/config/constants separated from their only meaningful owner
 - directory levels that exist only to contain one item, unless they are a
@@ -84,6 +88,26 @@ are missing or weak, infer them from repeated evidence.
 Every architect pass should look at both the spec tree and the emitted JS tree.
 Do not only review individual module boundaries; review the directory structure
 as a system.
+
+Every architect pass should read the complete active module-name list. Do not
+substitute a canned prefix list for that review. Read the path segments, leaf
+names, export names, and importer neighborhoods, then decide whether each name
+describes a durable concept or only the operation performed by one helper
+function.
+
+Also review tiny modules and one-consumer modules. A small file is not wrong by
+itself, and one consumer is not enough to prove ownership. The suspicious shape
+is a tiny helper/config/style/function module whose only meaningful caller is an
+adjacent component, command, service, parser, or state module. In that case,
+recommend merging or co-peeling the helper with the owner unless layer
+ownership argues against it.
+
+Treat one-callable modules as a recurring antipattern when the module name is
+just the callable name and the callable is not itself the architecture boundary.
+Keep a one-callable module standalone when it is a stable public API, a shared
+domain primitive, or has multiple real consumers. Otherwise crawl one layer
+higher to find the component/service/state/parser that owns the behavior, and
+propose a merge or co-peel with that owner.
 
 Cross-check directory findings against graph and source behavior. A singleton
 directory is not bad only because it has one child; it is bad when the source
@@ -159,6 +183,28 @@ find "$EMITTED_JS_ROOT" -type f |
 
 # Count component-style leaves that may belong with a single owner.
 find "$EMITTED_JS_ROOT" -type f -name styles.js | wc -l
+
+# List all module names. Read this complete list before writing architecture
+# recommendations about naming, tiny modules, or one-callable leaves.
+find "$EMITTED_JS_ROOT" -type f -name '*.js' |
+  sed "s#^$EMITTED_JS_ROOT/##; s#\.js$##" |
+  sort
+
+# Group module leaves by basename to spot repeated mechanical names.
+find "$EMITTED_JS_ROOT" -type f -name '*.js' |
+  sed "s#^$EMITTED_JS_ROOT/##; s#\.js$##" |
+  awk -F/ '{leaf=$NF; count[leaf]++; paths[leaf]=paths[leaf] "\n  " $0}
+    END {for (leaf in count) if (count[leaf] > 1) print count[leaf], leaf paths[leaf]}' |
+  sort -nr
+
+# Find tiny modules. Intersect this with import/call-site evidence before
+# recommending merges.
+find "$EMITTED_JS_ROOT" -type f -name '*.js' |
+  while read -r f; do
+    lines=$(wc -l < "$f")
+    [ "$lines" -le 25 ] && printf '%s\t%s\n' "$lines" "${f#$EMITTED_JS_ROOT/}"
+  done |
+  sort -n | head -100
 
 # Show directories with the most outgoing symbol pressure.
 find "$REPORT_TREE" -name index.json -print0 |
