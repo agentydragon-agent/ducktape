@@ -17,11 +17,11 @@ from augur.model.sim_market_series import (
     private_equity_series_id,
     rent_series_id,
 )
-from augur.model.simple_market import SimpleJointMarketModel, SimpleLocationModelParams, SimpleMarketModelConfig
+from augur.model.simple_market import SimpleLocationModelParams, SimpleMarketModel, SimpleMarketModelConfig
 
 
-def test_simple_joint_model_samples_levels_and_events() -> None:
-    model = SimpleJointMarketModel(
+def test_simple_model_samples_levels_and_events() -> None:
+    model = SimpleMarketModel(
         current_private_equity_price_usd=50.0,
         parameters=SimpleMarketModelConfig(
             location_params={"san_francisco_ca": SimpleLocationModelParams(home_value_annual_adjustment_pct=12.0)}
@@ -65,7 +65,7 @@ def test_simple_joint_model_samples_levels_and_events() -> None:
 
 def test_core_adapter_normalizes_sim_levels_to_legacy_multipliers() -> None:
     provider = CoreMarketBundleProviderShim(
-        model=SimpleJointMarketModel(current_private_equity_price_usd=50.0), current_private_equity_price_usd=50.0
+        model=SimpleMarketModel(current_private_equity_price_usd=50.0), current_private_equity_price_usd=50.0
     )
 
     bundle = provider.sample_market_bundle(
@@ -89,7 +89,7 @@ def test_core_adapter_normalizes_sim_levels_to_legacy_multipliers() -> None:
     assert np.allclose(bundle.mortgage_30y_rate_pct, 6.5)
     assert bundle.private_equity_sale_opportunity_mask_for("openai").dtype == np.bool_
     assert bundle.metadata.current_private_equity_price_usd == 50.0
-    assert bundle.metadata.source_metadata["market_model_id"] == "simple_joint_market_model"
+    assert bundle.metadata.source_metadata["market_model_id"] == "simple_market_model"
 
 
 def test_simple_provider_config_realizes_sim_native_model_behind_core_adapter() -> None:

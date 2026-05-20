@@ -44,7 +44,7 @@ class IndependentMarketModels(BaseModel):
             market_levels_frame(
                 market_id,
                 model.sample_levels(
-                    rollout_seeds=_derive_rollout_seeds(request.rollout_seeds, stream_id=market_id),
+                    rollout_seeds=derive_stream_rollout_seeds(request.rollout_seeds, stream_id=market_id),
                     horizon_months=request.horizon_months,
                 ),
                 rollout_count=request.rollout_count,
@@ -96,7 +96,9 @@ def materialize_market_prices(
     return market_prices_from_levels(bundle.sample(rollout_seeds=rollout_seeds, horizon_months=horizon_months))
 
 
-def _derive_rollout_seeds(rollout_seeds: tuple[int, ...], *, stream_id: str) -> tuple[int, ...]:
+def derive_stream_rollout_seeds(rollout_seeds: tuple[int, ...], *, stream_id: str) -> tuple[int, ...]:
+    """Derive stable per-rollout substream seeds from a model stream id."""
+
     return tuple(
         int.from_bytes(hashlib.blake2b(f"{seed}:{stream_id}".encode(), digest_size=16).digest(), "big")
         for seed in rollout_seeds

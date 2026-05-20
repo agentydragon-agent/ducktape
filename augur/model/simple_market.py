@@ -7,14 +7,16 @@ from pydantic import Field
 
 from augur.core.schemas import ApiModel
 from augur.frames import concat_frames
+from augur.model.sim_market import IndependentMarketModels, ScalarMarketSpec, derive_stream_rollout_seeds
 from augur.model.sim_market_api import (
     MARKET_EVENTS_SCHEMA,
     MARKET_LEVELS_SCHEMA,
     MarketSamplingRequest,
     SampledMarketBundle,
     market_events_frame,
-    market_levels_frame,
 )
+from augur.model.sim_market_deterministic import Constant
+from augur.model.sim_market_gbm import GeometricBrownian
 from augur.model.sim_market_series import (
     CRYPTO_SERIES_PREFIX,
     HOME_VALUE_SERIES_PREFIX,
@@ -28,149 +30,105 @@ from augur.model.sim_market_series import (
 
 
 class SimpleLocationModelParams(ApiModel):
-    """Per-location annual adjustment layered on top of the simple base paths.
-
-    The simple model first samples one home-value path and one rent path, then
-    adjusts each requested location by `(1 + adj/100)^(months/12)`. Zero means
-    the location rides the unadjusted base path.
-    """
+    """Per-location annual adjustment layered on top of simple GBM paths."""
 
     home_value_annual_adjustment_pct: float = 0.0
     rent_annual_adjustment_pct: float = 0.0
 
 
 class SimpleMarketModelConfig(ApiModel):
-    """Deployment-supplied parameters for `SimpleJointMarketModel`."""
+    """Deployment-supplied parameters for `SimpleMarketModel`."""
 
     location_params: dict[str, SimpleLocationModelParams] = Field(default_factory=dict)
 
 
-class SimpleJointMarketModel(ApiModel):
-    """Small stochastic joint model used until calibrated models plug in."""
+class SimpleMarketModel(ApiModel):
+    """Small sim-native stochastic model used until calibrated models plug in."""
 
     current_private_equity_price_usd: float = Field(default=0.0, ge=0.0)
     parameters: SimpleMarketModelConfig = Field(default_factory=SimpleMarketModelConfig)
 
     def sample(self, request: MarketSamplingRequest) -> SampledMarketBundle:
-        horizon_months = request.horizon_months
-        rollout_count = request.rollout_count
-        inflation = np.empty((rollout_count, horizon_months + 1), dtype="float64")
-        sp500 = np.empty_like(inflation)
-        private_equity_value = np.empty_like(inflation)
-        home_base = np.empty_like(inflation)
-        rent_base = np.empty_like(inflation)
-        private_equity_events = np.zeros((rollout_count, horizon_months + 1), dtype=np.bool_)
-        for rollout_index, seed in enumerate(request.rollout_seeds):
-            rng = np.random.default_rng(seed)
-            inflation[rollout_index] = _lognormal_level_path(
-                rng, horizon_months=horizon_months, annual_return_pct=3.0, annual_volatility_pct=1.5
-            )
-            sp500[rollout_index] = _lognormal_level_path(
-                rng, horizon_months=horizon_months, annual_return_pct=7.0, annual_volatility_pct=16.0
-            )
-            private_equity_value[rollout_index] = _lognormal_level_path(
-                rng, horizon_months=horizon_months, annual_return_pct=8.0, annual_volatility_pct=35.0
-            )
-            home_base[rollout_index] = _lognormal_level_path(
-                rng, horizon_months=horizon_months, annual_return_pct=3.5, annual_volatility_pct=8.0
-            )
-            rent_base[rollout_index] = _lognormal_level_path(
-                rng, horizon_months=horizon_months, annual_return_pct=3.0, annual_volatility_pct=3.0
-            )
-            if horizon_months >= 12:
-                private_equity_events[rollout_index, 1:] = rng.random(horizon_months) < (1 / 72)
-
-        level_blocks = [
-            market_levels_frame(
-                series_id,
-                self._sample_level_series(
-                    series_id,
-                    inflation=inflation,
-                    sp500=sp500,
-                    private_equity_value=private_equity_value,
-                    home_base=home_base,
-                    rent_base=rent_base,
-                ),
-                rollout_count=rollout_count,
-                horizon_months=horizon_months,
-            )
-            for series_id in sorted(request.required_level_series)
-        ]
+        levels = (
+            IndependentMarketModels(markets=self._level_models(request.required_level_series)).sample(request).levels
+        )
         event_blocks = [
             market_events_frame(
                 event_id,
-                self._sample_event_series(event_id, private_equity_events=private_equity_events),
-                rollout_count=rollout_count,
-                horizon_months=horizon_months,
+                self._sample_event_series(event_id, request),
+                rollout_count=request.rollout_count,
+                horizon_months=request.horizon_months,
             )
             for event_id in sorted(request.required_event_series)
         ]
         return SampledMarketBundle(
-            levels=concat_frames(level_blocks, MARKET_LEVELS_SCHEMA),
+            levels=concat_frames([levels], MARKET_LEVELS_SCHEMA),
             events=concat_frames(event_blocks, MARKET_EVENTS_SCHEMA),
             metadata={
-                "market_model_id": "simple_joint_market_model",
+                "market_model_id": "simple_market_model",
                 "current_private_equity_price_usd": self.current_private_equity_price_usd,
             },
         )
 
-    def _sample_level_series(
-        self,
-        series_id: str,
-        *,
-        inflation: np.ndarray,
-        sp500: np.ndarray,
-        private_equity_value: np.ndarray,
-        home_base: np.ndarray,
-        rent_base: np.ndarray,
-    ) -> np.ndarray:
+    def _level_models(self, series_ids: frozenset[str]) -> dict[str, ScalarMarketSpec]:
+        return {series_id: self._level_model(series_id) for series_id in sorted(series_ids)}
+
+    def _level_model(self, series_id: str) -> ScalarMarketSpec:
         if series_id == INFLATION_SERIES_ID:
-            return inflation
+            return _simple_gbm_level(annual_return_pct=3.0, annual_volatility_pct=1.5)
         if series_id == SP500_SERIES_ID:
-            return sp500
+            return _simple_gbm_level(annual_return_pct=7.0, annual_volatility_pct=16.0)
         if location_id := series_suffix(series_id, HOME_VALUE_SERIES_PREFIX):
-            return _location_level_path(
-                home_base,
-                annual_adjustment_pct=self.parameters.location_params.get(
-                    location_id, SimpleLocationModelParams()
-                ).home_value_annual_adjustment_pct,
+            params = self.parameters.location_params.get(location_id, SimpleLocationModelParams())
+            return _simple_gbm_level(
+                annual_return_pct=3.5,
+                annual_volatility_pct=8.0,
+                annual_adjustment_pct=params.home_value_annual_adjustment_pct,
             )
         if location_id := series_suffix(series_id, RENT_SERIES_PREFIX):
-            return _location_level_path(
-                rent_base,
-                annual_adjustment_pct=self.parameters.location_params.get(
-                    location_id, SimpleLocationModelParams()
-                ).rent_annual_adjustment_pct,
+            params = self.parameters.location_params.get(location_id, SimpleLocationModelParams())
+            return _simple_gbm_level(
+                annual_return_pct=3.0,
+                annual_volatility_pct=3.0,
+                annual_adjustment_pct=params.rent_annual_adjustment_pct,
             )
         if series_suffix(series_id, PRIVATE_EQUITY_SERIES_PREFIX) is not None:
-            base_price = self.current_private_equity_price_usd or 1.0
-            return base_price * private_equity_value
+            return _simple_gbm_level(
+                initial_value=self.current_private_equity_price_usd or 1.0,
+                annual_return_pct=8.0,
+                annual_volatility_pct=35.0,
+            )
         if series_suffix(series_id, CRYPTO_SERIES_PREFIX) is not None:
-            return np.ones_like(inflation)
+            return Constant(value=1.0)
         raise ValueError(f"simple market model cannot sample level series {series_id!r}")
 
-    def _sample_event_series(self, event_id: str, *, private_equity_events: np.ndarray) -> np.ndarray:
+    def _sample_event_series(self, event_id: str, request: MarketSamplingRequest) -> np.ndarray:
         if series_suffix(event_id, PRIVATE_EQUITY_SALE_EVENT_PREFIX) is not None:
-            return private_equity_events
+            return _private_equity_sale_events(
+                rollout_seeds=derive_stream_rollout_seeds(request.rollout_seeds, stream_id=event_id),
+                horizon_months=request.horizon_months,
+            )
         raise ValueError(f"simple market model cannot sample event series {event_id!r}")
 
 
-def _lognormal_level_path(
-    rng: np.random.Generator, *, horizon_months: int, annual_return_pct: float, annual_volatility_pct: float
-) -> np.ndarray:
+def _simple_gbm_level(
+    *,
+    annual_return_pct: float,
+    annual_volatility_pct: float,
+    initial_value: float = 1.0,
+    annual_adjustment_pct: float = 0.0,
+) -> GeometricBrownian:
     monthly_sigma = annual_volatility_pct / 100 / np.sqrt(12)
-    monthly_mu = annual_return_pct / 100 / 12 - 0.5 * monthly_sigma**2
-    log_returns = rng.normal(monthly_mu, monthly_sigma, size=horizon_months)
-    path = np.ones(horizon_months + 1, dtype="float64")
-    if horizon_months > 0:
-        path[1:] = np.exp(np.cumsum(log_returns))
-    return path
+    monthly_mu = annual_return_pct / 100 / 12 - 0.5 * monthly_sigma**2 + np.log1p(annual_adjustment_pct / 100) / 12
+    return GeometricBrownian(
+        initial_value=initial_value, monthly_log_return_mu=monthly_mu, monthly_log_return_sigma=monthly_sigma
+    )
 
 
-def _location_level_path(base: np.ndarray, *, annual_adjustment_pct: float) -> np.ndarray:
-    if annual_adjustment_pct == 0.0:
-        return base
-    horizon_months = base.shape[1] - 1
-    months = np.arange(horizon_months + 1, dtype="float64")
-    adjustment = (1 + annual_adjustment_pct / 100) ** (months / 12)
-    return base * adjustment[None, :]
+def _private_equity_sale_events(*, rollout_seeds: tuple[int, ...], horizon_months: int) -> np.ndarray:
+    events = np.zeros((len(rollout_seeds), horizon_months + 1), dtype=np.bool_)
+    if horizon_months < 12:
+        return events
+    for rollout_index, seed in enumerate(rollout_seeds):
+        events[rollout_index, 1:] = np.random.default_rng(seed).random(horizon_months) < (1 / 72)
+    return events

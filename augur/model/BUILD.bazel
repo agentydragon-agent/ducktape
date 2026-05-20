@@ -60,6 +60,9 @@ py_library(
     srcs = ["simple_market.py"],
     deps = [
         ":sim_market_api_py",
+        ":sim_market_deterministic_py",
+        ":sim_market_gbm_py",
+        ":sim_market_py",
         ":sim_market_series_py",
         "//augur:frames",
         "//augur/core:schemas_py",

@@ -38,12 +38,6 @@ response semantics after cutover.
       `augur/model` and consumed by `augur/sim`. The production `simple`
       provider config now samples a sim-native joint model and adapts it to
       the legacy core bundle; the backend still executes through core.
-- [ ] Replace `SimpleJointMarketModel`'s bespoke bundle sampler with a generic
-      independent composition once the scalar-model API can accept seeded
-      requests and emit requested series. The target shape is a factory that
-      builds `IndependentMarketModels` from per-series models: GBM/deterministic
-      levels for inflation, SP500, home values, rent, private-equity marks, and
-      crypto, plus a separate simple event model for PE sale opportunities.
 - [ ] Make `noop` and any other runtime-selectable provider produce the same
       `SampledMarketBundle` levels/events shape directly. The core bundle
       adapter should be a legacy compatibility shim, not a requirement for a

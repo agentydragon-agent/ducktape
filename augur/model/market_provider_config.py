@@ -45,7 +45,7 @@ from augur.core.market_bundle import FlatMarketBundleProvider, MarketBundleProvi
 from augur.core.schemas import ApiModel
 from augur.model.core_market_adapter import CoreMarketBundleProviderShim
 from augur.model.markets.models.vecm import VecmMarketProviderConfig
-from augur.model.simple_market import SimpleJointMarketModel, SimpleLocationModelParams, SimpleMarketModelConfig
+from augur.model.simple_market import SimpleLocationModelParams, SimpleMarketModel, SimpleMarketModelConfig
 
 
 class NoopMarketProviderConfig(ApiModel):
@@ -71,7 +71,7 @@ class SimpleMarketProviderConfig(ApiModel):
 
     def realize(self, *, current_private_equity_price_usd: float) -> MarketBundleProvider:
         return CoreMarketBundleProviderShim(
-            model=SimpleJointMarketModel(
+            model=SimpleMarketModel(
                 current_private_equity_price_usd=current_private_equity_price_usd,
                 parameters=SimpleMarketModelConfig(location_params=self.location_params),
             ),

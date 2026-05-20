@@ -20,11 +20,11 @@ generic backlog rather than a second ordered roadmap.
 - [ ] **Make every runtime market provider speak the sim market API natively.**
       Runtime-selectable providers should implement `JointMarketModel.sample`
       with explicit per-rollout seeds and return model-owned levels/events plus
-      provenance. `simple` and VECM already expose this shape behind the core
-      adapter; next steps are replacing `SimpleJointMarketModel` with an
-      `IndependentMarketModels` factory, making `noop` produce a sampled bundle
-      directly, and keeping `augur/model/x/legacy_market_models/` out of
-      production until each model is either ported or deleted.
+      provenance. `simple` now composes `IndependentMarketModels` internally,
+      and VECM already exposes the same sampled-bundle shape behind the core
+      adapter. Next steps are making `noop` produce a sampled bundle directly
+      and keeping `augur/model/x/legacy_market_models/` out of production until
+      each model is either ported or deleted.
 - [ ] **PE valuation should actually be sampled** (Priority 3 in
       `plans/roadmap.md`). The market provider holds private-equity marks
       flat at 1.0 for the entire horizon. The fit is **open design work**
