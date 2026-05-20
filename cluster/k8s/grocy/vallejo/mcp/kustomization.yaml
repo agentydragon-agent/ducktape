@@ -3,7 +3,6 @@ kind: Kustomization
 namespace: grocy-vallejo
 resources:
   - ../../mcp-base
-  - valkey-instance.yaml
   - valkey-ovh-instance.yaml
   - server-httproute.yaml
 patches:
