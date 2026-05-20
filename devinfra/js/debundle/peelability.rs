@@ -27,12 +27,10 @@ pub(crate) struct PeelabilityContext<'a> {
     /// candidates.
     atomic_units: Vec<AtomicUnit>,
     /// Single shared implementation of the validity predicate
-    /// (DESIGN.md "Realizability primitive"). `evaluate_peel_candidate`
-    /// pushes the candidate's hypothetical move onto this index, reads
-    /// the verdict, then undoes — using the same primitive the
-    /// validator runs against the actual partition. `RefCell` for
-    /// interior mutability so call sites that thread `&context` don't
-    /// need to be re-plumbed for `&mut`.
+    /// (DESIGN.md "Realizability primitive"). Candidate evaluation
+    /// applies and rolls back a fresh-destination move against this
+    /// index, using the same quotient facts the validator runs against
+    /// the actual partition.
     realizability: RefCell<RealizabilityIndex<'a>>,
     /// Sentinel `ModuleId` reserved for the candidate's hypothetical
     /// destination. Picked above any logical-module index that
@@ -338,14 +336,13 @@ impl<'a> PeelabilityContext<'a> {
         let atomic_units = compute_atomic_units(&factorization.analysis.owner_graph);
 
         // The realizability primitive is the single shared
-        // implementation of clause 3 (and clause 2). The candidate
-        // evaluator pushes a hypothetical destination move onto this
-        // index and reads the verdict — the same verdict the
-        // validator would produce for the post-peel partition.
-        let realizability = RealizabilityIndex::from_partition(
+        // implementation of clause 3 (and clause 2). Candidate
+        // evaluation mutates a rollbackable quotient only for the
+        // lexical scope of the hypothetical fresh-destination move.
+        let realizability = RefCell::new(RealizabilityIndex::from_partition(
             &factorization.analysis.owner_graph,
             factorization.partition.clone(),
-        );
+        ));
 
         // Reserve a module-id one past every index currently in use,
         // so the candidate's hypothetical destination is a fresh node
@@ -374,7 +371,7 @@ impl<'a> PeelabilityContext<'a> {
             owner_edges,
             owner_out_edges,
             atomic_units,
-            realizability: RefCell::new(realizability),
+            realizability,
             fresh_destination,
         }
     }
@@ -654,10 +651,10 @@ fn sorted_owner_pair(left: OwnerId, right: OwnerId) -> (OwnerId, OwnerId) {
 /// Classify a candidate peel — its yes/no, plus the owner-edge
 /// evidence consumers need for diagnostics. The verdict comes from
 /// the realizability primitive (DESIGN.md "Realizability primitive"
-/// and "Residual peel candidates"): push the hypothetical
-/// `MoveOwners` delta onto the shared index, read the verdict, undo.
-/// The same primitive backs the validator, so a `PeelableNow` here is
-/// a `PeelableNow` at the gate.
+/// and "Residual peel candidates"): apply the candidate's quotient
+/// move to the rollbackable index, read the localized verdict, and
+/// undo before returning. The same primitive backs the validator, so
+/// a `PeelableNow` here is a `PeelableNow` at the gate.
 pub(crate) fn evaluate_peel_candidate(
     factorization: &ChunkFactorization,
     context: &PeelabilityContext<'_>,
@@ -712,41 +709,31 @@ pub(crate) fn evaluate_peel_candidate(
         };
     }
 
-    // Push the hypothetical move, read the verdict against the
-    // post-peel partition, undo. This is the same predicate the
-    // validator runs — so a candidate classified `PeelableNow` here
-    // does not get rejected by the gate at materialization.
     let fresh = context.fresh_destination;
     let verdict = context.realizability.borrow_mut().scoped(
         PartitionDelta::MoveOwners {
             owners: owner_ids.to_vec(),
             to: fresh,
         },
-        |idx| idx.verdict(),
+        |index| index.verdict_touching(fresh),
     );
 
-    // Only SCCs that include the candidate's hypothetical destination
-    // are caused by *this* peel. Other unrealizable SCCs in the
-    // post-peel quotient are pre-existing problems unrelated to the
-    // candidate (DESIGN.md: "intentionally ignores unrelated
-    // pre-existing bad SCCs"). Same for cross-rebinds — only flag
-    // those that cross the candidate's destination.
+    // The localized verdict only returns SCCs and rebinds involving
+    // the candidate's hypothetical destination. Other unrealizable
+    // SCCs in the post-peel quotient are pre-existing problems
+    // unrelated to the candidate (DESIGN.md: "intentionally ignores
+    // unrelated pre-existing bad SCCs").
     let mut constraining_owner_edge_indices = BTreeSet::<usize>::new();
     let mut touches_candidate = false;
     for scc in &verdict.unrealizable_sccs {
-        if !scc.modules.contains(&fresh) {
-            continue;
-        }
         touches_candidate = true;
         for owner_edge_id in &scc.constraining_owner_edges {
             constraining_owner_edge_indices.insert(owner_edge_id.0);
         }
     }
     for rebind in &verdict.cross_rebinds {
-        if rebind.from == fresh || rebind.to == fresh {
-            touches_candidate = true;
-            constraining_owner_edge_indices.insert(rebind.owner_edge.0);
-        }
+        touches_candidate = true;
+        constraining_owner_edge_indices.insert(rebind.owner_edge.0);
     }
 
     let status = if touches_candidate {

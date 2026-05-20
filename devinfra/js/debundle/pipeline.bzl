@@ -61,7 +61,7 @@ def _debundle_pipeline_profile_impl(ctx):
             "no-remote": "1",
             "no-sandbox": "1",
         },
-        progress_message = "Profiling debundle pipeline for %{label} with {}".format(ctx.attr.profile),
+        progress_message = "Profiling debundle pipeline for %{{label}} with {}".format(ctx.attr.profile),
         mnemonic = "DebundlePipelineProfile",
         use_default_shell_env = True,
     )

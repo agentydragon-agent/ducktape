@@ -27,6 +27,7 @@ mod purity;
 mod realizability;
 mod report_schema;
 mod reports;
+mod rollback_graph;
 mod validation;
 
 pub use atomic_units::{

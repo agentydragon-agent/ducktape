@@ -2,8 +2,8 @@
 //! `LogicalRequest` to pre-split body ordinals in the runtime
 //! module. Match equality ignores both `Span` and `SyntaxContext`
 //! because needle and runtime are parsed in different `resolver`
-//! passes; the `SyntaxContextStripper` `VisitMut` clears every
-//! `ctxt` field on both sides before `eq_ignore_span`.
+//! passes; SWC's `SyntaxContext::within_ignored_ctxt` makes
+//! `eq_ignore_span` compare the source-level identifier shape.
 
 use super::*;
 
@@ -44,25 +44,29 @@ pub(super) fn resolve_anonymous_statement_ordinals(
                 parsed_items.len(),
             ),
         };
-        // `eq_ignore_span` on `Ident` compares `(sym, ctxt)`, so we
-        // must strip `SyntaxContext` from both sides before comparing:
-        // `needle` was freshly parsed (gets one set of resolver marks)
-        // while `runtime_module` was parsed in a different pass (got
-        // different marks for the same source-level identifier).
-        let needle_normalized = clear_syntax_contexts(needle);
-        let matches: Vec<usize> = runtime_module
-            .body
-            .iter()
-            .enumerate()
-            .filter_map(|(ordinal, item)| {
-                let item_normalized = clear_syntax_contexts(item);
-                if needle_normalized.eq_ignore_span(&item_normalized) {
-                    Some(ordinal)
-                } else {
-                    None
-                }
-            })
-            .collect();
+        // `eq_ignore_span` on `Ident` normally compares `(sym, ctxt)`.
+        // `needle` and `runtime_module` were parsed in different resolver
+        // passes, so compare inside SWC's ignored-context scope instead of
+        // cloning and syntax-context-stripping every candidate item.
+        //
+        // TODO(perf): if this remains material after the context-clone fix,
+        // index top-level runtime statements by a context-insensitive
+        // structural fingerprint and run exact equality only within matching
+        // buckets. The current scan is still O(matches * top-level items).
+        let matches: Vec<usize> = SyntaxContext::within_ignored_ctxt(|| {
+            runtime_module
+                .body
+                .iter()
+                .enumerate()
+                .filter_map(|(ordinal, item)| {
+                    if needle.eq_ignore_span(item) {
+                        Some(ordinal)
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        });
         match matches.as_slice() {
             [single] => resolved.push(*single),
             [] => bail!(
@@ -81,81 +85,4 @@ pub(super) fn resolve_anonymous_statement_ordinals(
         }
     }
     Ok(resolved)
-}
-
-/// Walks an AST node and resets every `SyntaxContext` to
-/// `SyntaxContext::empty()`. Used to compare AST nodes that were
-/// parsed in different `resolver` passes — each pass mints fresh
-/// marks, so two structurally-identical bindings have different
-/// `(sym, ctxt)` pairs and `eq_ignore_span` (which compares ctxt)
-/// would otherwise reject the match. Covers every node that carries
-/// a `ctxt` field in swc_ecma_ast.
-struct SyntaxContextStripper;
-
-impl VisitMut for SyntaxContextStripper {
-    fn visit_mut_ident(&mut self, ident: &mut Ident) {
-        ident.visit_mut_children_with(self);
-        ident.ctxt = SyntaxContext::empty();
-    }
-
-    fn visit_mut_function(&mut self, node: &mut Function) {
-        node.visit_mut_children_with(self);
-        node.ctxt = SyntaxContext::empty();
-    }
-
-    fn visit_mut_class(&mut self, node: &mut Class) {
-        node.visit_mut_children_with(self);
-        node.ctxt = SyntaxContext::empty();
-    }
-
-    fn visit_mut_private_prop(&mut self, node: &mut PrivateProp) {
-        node.visit_mut_children_with(self);
-        node.ctxt = SyntaxContext::empty();
-    }
-
-    fn visit_mut_constructor(&mut self, node: &mut Constructor) {
-        node.visit_mut_children_with(self);
-        node.ctxt = SyntaxContext::empty();
-    }
-
-    fn visit_mut_block_stmt(&mut self, node: &mut BlockStmt) {
-        node.visit_mut_children_with(self);
-        node.ctxt = SyntaxContext::empty();
-    }
-
-    fn visit_mut_var_decl(&mut self, node: &mut VarDecl) {
-        node.visit_mut_children_with(self);
-        node.ctxt = SyntaxContext::empty();
-    }
-
-    fn visit_mut_call_expr(&mut self, node: &mut CallExpr) {
-        node.visit_mut_children_with(self);
-        node.ctxt = SyntaxContext::empty();
-    }
-
-    fn visit_mut_new_expr(&mut self, node: &mut NewExpr) {
-        node.visit_mut_children_with(self);
-        node.ctxt = SyntaxContext::empty();
-    }
-
-    fn visit_mut_arrow_expr(&mut self, node: &mut ArrowExpr) {
-        node.visit_mut_children_with(self);
-        node.ctxt = SyntaxContext::empty();
-    }
-
-    fn visit_mut_tagged_tpl(&mut self, node: &mut TaggedTpl) {
-        node.visit_mut_children_with(self);
-        node.ctxt = SyntaxContext::empty();
-    }
-
-    fn visit_mut_opt_call(&mut self, node: &mut OptCall) {
-        node.visit_mut_children_with(self);
-        node.ctxt = SyntaxContext::empty();
-    }
-}
-
-fn clear_syntax_contexts(item: &ModuleItem) -> ModuleItem {
-    let mut cloned = item.clone();
-    cloned.visit_mut_with(&mut SyntaxContextStripper);
-    cloned
 }

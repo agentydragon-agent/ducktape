@@ -233,6 +233,7 @@ rust_library(
         "realizability.rs",
         "report_schema.rs",
         "reports.rs",
+        "rollback_graph.rs",
         "validation.rs",
     ],
     crate_root = "lib.rs",

@@ -20,16 +20,17 @@
 //!   start path. `O(N + M)` per call.
 //! - `RealizabilityIndex`: a stateful index that owns a working
 //!   `Partition` and supports `push`/`undo` of `PartitionDelta`s.
-//!   `verdict()` reads the current state. The transactional API is
-//!   the production shape: the proposer wraps each candidate in a
-//!   scoped push/verdict/undo; factorize walks the index forward as
-//!   the frontier grows and undoes on failed repair branches.
+//!   `verdict()` reads the current state. Candidate evaluation uses a
+//!   scoped push/read/undo against the index; a non-mutating overlay
+//!   query is kept as a tested future optimization path. Factorize
+//!   walks the index forward as the frontier grows and undoes on
+//!   failed repair branches.
 //!
-//! Step 1a (this file) backs the transactional API by snapshotting
-//! the partition on push and restoring it on undo, then recomputing
-//! the verdict from scratch. Behaviour-correct, not yet fast. Step
-//! 1b (separate change) replaces the backing with incremental
-//! Pearce-Kelly SCC maintenance behind the same API.
+//! The transactional API is backed by a rollbackable quotient index:
+//! owner-graph edges are fixed, so `push`/`undo` only updates quotient
+//! edge buckets incident to moved owners. Full verdicts run SCC over
+//! the maintained quotient; candidate verdicts use localized
+//! reachability around the hypothetical destination.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -37,13 +38,14 @@ use petgraph::algo::tarjan_scc;
 use petgraph::graphmap::DiGraphMap;
 
 use crate::OwnerId;
-use crate::graph::{OwnerEdgeId, OwnerGraph};
+use crate::graph::{OwnerEdge, OwnerEdgeId, OwnerGraph};
 use crate::ids::ModuleId;
 use crate::partition::Partition;
+use crate::rollback_graph::{GraphMark, RollbackDiGraph};
 
 /// Multi-module SCC of the constraining-edge subgraph of the
 /// quotient. The presence of any such SCC violates clause 3.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct UnrealizableScc {
     /// Modules participating in the cycle.
     pub modules: BTreeSet<ModuleId>,
@@ -57,7 +59,7 @@ pub struct UnrealizableScc {
 /// Cross-destination rebinding write. ESM imports are read-only in the
 /// importing module, so any such edge violates clause 2. One entry per
 /// owner-edge.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct CrossRebindEdge {
     pub from: ModuleId,
     pub to: ModuleId,
@@ -66,7 +68,7 @@ pub struct CrossRebindEdge {
 
 /// Verdict on a (current or hypothetical) destination assignment.
 /// Empty verdict ↔ realizable per clauses 2 and 3.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Eq, PartialEq)]
 pub struct RealizabilityVerdict {
     pub unrealizable_sccs: Vec<UnrealizableScc>,
     pub cross_rebinds: Vec<CrossRebindEdge>,
@@ -265,29 +267,725 @@ pub struct DeltaHandle(usize);
 #[derive(Debug, Clone)]
 struct JournalEntry {
     prior_assignments: Vec<(OwnerId, ModuleId)>,
+    impacted_edges: Vec<OwnerEdgeId>,
+    i_graph_mark: GraphMark,
+    constraining_graph_mark: GraphMark,
+}
+
+#[derive(Debug, Clone, Default)]
+struct ConstrainingBucket {
+    non_sequenced: BTreeSet<OwnerEdgeId>,
+    sequenced: BTreeSet<OwnerEdgeId>,
+}
+
+impl ConstrainingBucket {
+    fn is_empty(&self) -> bool {
+        self.non_sequenced.is_empty() && self.sequenced.is_empty()
+    }
+
+    fn insert_edge(&mut self, edge_id: OwnerEdgeId, sequenced: bool) {
+        if sequenced {
+            self.sequenced.insert(edge_id);
+        } else {
+            self.non_sequenced.insert(edge_id);
+        }
+    }
+
+    fn remove_edge(&mut self, edge_id: OwnerEdgeId, sequenced: bool) {
+        if sequenced {
+            self.sequenced.remove(&edge_id);
+        } else {
+            self.non_sequenced.remove(&edge_id);
+        }
+    }
+
+    fn extend_from(&mut self, other: &Self) {
+        self.non_sequenced
+            .extend(other.non_sequenced.iter().copied());
+        self.sequenced.extend(other.sequenced.iter().copied());
+    }
+
+    fn remove_from(&mut self, other: &Self) {
+        for edge_id in &other.non_sequenced {
+            self.non_sequenced.remove(edge_id);
+        }
+        for edge_id in &other.sequenced {
+            self.sequenced.remove(edge_id);
+        }
+    }
+
+    fn evidence_edges(&self) -> Vec<OwnerEdgeId> {
+        let mut edges: Vec<OwnerEdgeId> = self.non_sequenced.iter().copied().collect();
+        if let Some(first_sequenced) = self.sequenced.first() {
+            edges.push(*first_sequenced);
+        }
+        edges.sort();
+        edges
+    }
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+struct EdgeContribution {
+    from: ModuleId,
+    to: ModuleId,
+    owner_edge: OwnerEdgeId,
+    kind: EdgeContributionKind,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+enum EdgeContributionKind {
+    Rebind,
+    Import { constraining: bool, sequenced: bool },
+}
+
+#[derive(Debug, Clone, Default)]
+struct QuotientOverlay {
+    i_delta: BTreeMap<(ModuleId, ModuleId), isize>,
+    constraining_delta: BTreeMap<(ModuleId, ModuleId), isize>,
+    constraining_added: BTreeMap<(ModuleId, ModuleId), ConstrainingBucket>,
+    constraining_removed: BTreeMap<(ModuleId, ModuleId), ConstrainingBucket>,
+    cross_rebind_added: BTreeMap<OwnerEdgeId, CrossRebindEdge>,
+    cross_rebind_removed: BTreeSet<OwnerEdgeId>,
+}
+
+impl QuotientOverlay {
+    fn add_contribution(&mut self, contribution: EdgeContribution) {
+        match contribution.kind {
+            EdgeContributionKind::Rebind => {
+                self.cross_rebind_added.insert(
+                    contribution.owner_edge,
+                    CrossRebindEdge {
+                        from: contribution.from,
+                        to: contribution.to,
+                        owner_edge: contribution.owner_edge,
+                    },
+                );
+            }
+            EdgeContributionKind::Import {
+                constraining,
+                sequenced,
+            } => {
+                increment_delta(&mut self.i_delta, contribution.from, contribution.to, 1);
+                if constraining {
+                    increment_delta(
+                        &mut self.constraining_delta,
+                        contribution.from,
+                        contribution.to,
+                        1,
+                    );
+                    self.constraining_added
+                        .entry((contribution.from, contribution.to))
+                        .or_default()
+                        .insert_edge(contribution.owner_edge, sequenced);
+                }
+            }
+        }
+    }
+
+    fn remove_contribution(&mut self, contribution: EdgeContribution) {
+        match contribution.kind {
+            EdgeContributionKind::Rebind => {
+                self.cross_rebind_removed.insert(contribution.owner_edge);
+            }
+            EdgeContributionKind::Import {
+                constraining,
+                sequenced,
+            } => {
+                increment_delta(&mut self.i_delta, contribution.from, contribution.to, -1);
+                if constraining {
+                    increment_delta(
+                        &mut self.constraining_delta,
+                        contribution.from,
+                        contribution.to,
+                        -1,
+                    );
+                    self.constraining_removed
+                        .entry((contribution.from, contribution.to))
+                        .or_default()
+                        .insert_edge(contribution.owner_edge, sequenced);
+                }
+            }
+        }
+    }
+}
+
+fn increment_delta(
+    deltas: &mut BTreeMap<(ModuleId, ModuleId), isize>,
+    from: ModuleId,
+    to: ModuleId,
+    delta: isize,
+) {
+    let key = (from, to);
+    let next = deltas.get(&key).copied().unwrap_or(0) + delta;
+    if next == 0 {
+        deltas.remove(&key);
+    } else {
+        deltas.insert(key, next);
+    }
+}
+
+fn edge_contribution(edge: &OwnerEdge, from: ModuleId, to: ModuleId) -> Option<EdgeContribution> {
+    if from == to {
+        return None;
+    }
+
+    let kind = if edge.reason.is_rebind() {
+        EdgeContributionKind::Rebind
+    } else {
+        EdgeContributionKind::Import {
+            constraining: edge.reason.constrains_init_order(),
+            sequenced: edge.reason.is_sequenced(),
+        }
+    };
+
+    Some(EdgeContribution {
+        from,
+        to,
+        owner_edge: edge.id,
+        kind,
+    })
+}
+
+struct OverlayGraphView<'a> {
+    base: &'a RollbackDiGraph<ModuleId>,
+    delta: &'a BTreeMap<(ModuleId, ModuleId), isize>,
+    added_out: BTreeMap<ModuleId, BTreeSet<ModuleId>>,
+    added_in: BTreeMap<ModuleId, BTreeSet<ModuleId>>,
+}
+
+impl<'a> OverlayGraphView<'a> {
+    fn new(
+        base: &'a RollbackDiGraph<ModuleId>,
+        delta: &'a BTreeMap<(ModuleId, ModuleId), isize>,
+    ) -> Self {
+        let mut added_out = BTreeMap::<ModuleId, BTreeSet<ModuleId>>::new();
+        let mut added_in = BTreeMap::<ModuleId, BTreeSet<ModuleId>>::new();
+        for (&(from, to), &count) in delta {
+            if count <= 0 {
+                continue;
+            }
+            added_out.entry(from).or_default().insert(to);
+            added_in.entry(to).or_default().insert(from);
+        }
+        Self {
+            base,
+            delta,
+            added_out,
+            added_in,
+        }
+    }
+
+    fn scc_containing(&self, node: ModuleId) -> BTreeSet<ModuleId> {
+        if !self.has_neighbor(node, WalkDirection::Forward)
+            || !self.has_neighbor(node, WalkDirection::Reverse)
+        {
+            return BTreeSet::from([node]);
+        }
+        let forward = self.reachable_from(node, WalkDirection::Forward);
+        let reverse = self.reachable_from(node, WalkDirection::Reverse);
+        forward.intersection(&reverse).copied().collect()
+    }
+
+    fn reachable_from(&self, start: ModuleId, direction: WalkDirection) -> BTreeSet<ModuleId> {
+        let mut seen = BTreeSet::new();
+        let mut stack = vec![start];
+        while let Some(node) = stack.pop() {
+            if !seen.insert(node) {
+                continue;
+            }
+            for neighbor in self.neighbors(node, direction).into_iter().rev() {
+                if !seen.contains(&neighbor) {
+                    stack.push(neighbor);
+                }
+            }
+        }
+        seen
+    }
+
+    fn neighbors(&self, node: ModuleId, direction: WalkDirection) -> Vec<ModuleId> {
+        let mut neighbors: BTreeSet<ModuleId> = match direction {
+            WalkDirection::Forward => self
+                .base
+                .successors(node)
+                .into_iter()
+                .filter(|&to| self.effective_count(node, to) > 0)
+                .collect(),
+            WalkDirection::Reverse => self
+                .base
+                .predecessors(node)
+                .into_iter()
+                .filter(|&from| self.effective_count(from, node) > 0)
+                .collect(),
+        };
+
+        let overlay_neighbors = match direction {
+            WalkDirection::Forward => self.added_out.get(&node),
+            WalkDirection::Reverse => self.added_in.get(&node),
+        };
+        if let Some(overlay_neighbors) = overlay_neighbors {
+            for &neighbor in overlay_neighbors {
+                let (from, to) = match direction {
+                    WalkDirection::Forward => (node, neighbor),
+                    WalkDirection::Reverse => (neighbor, node),
+                };
+                if self.effective_count(from, to) > 0 {
+                    neighbors.insert(neighbor);
+                }
+            }
+        }
+
+        neighbors.into_iter().collect()
+    }
+
+    fn has_neighbor(&self, node: ModuleId, direction: WalkDirection) -> bool {
+        let base_neighbors = match direction {
+            WalkDirection::Forward => self.base.successors(node),
+            WalkDirection::Reverse => self.base.predecessors(node),
+        };
+        for neighbor in base_neighbors {
+            let (from, to) = match direction {
+                WalkDirection::Forward => (node, neighbor),
+                WalkDirection::Reverse => (neighbor, node),
+            };
+            if self.effective_count(from, to) > 0 {
+                return true;
+            }
+        }
+
+        let overlay_neighbors = match direction {
+            WalkDirection::Forward => self.added_out.get(&node),
+            WalkDirection::Reverse => self.added_in.get(&node),
+        };
+        if let Some(overlay_neighbors) = overlay_neighbors {
+            for &neighbor in overlay_neighbors {
+                let (from, to) = match direction {
+                    WalkDirection::Forward => (node, neighbor),
+                    WalkDirection::Reverse => (neighbor, node),
+                };
+                if self.effective_count(from, to) > 0 {
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
+
+    fn effective_count(&self, from: ModuleId, to: ModuleId) -> isize {
+        self.base.edge_count(from, to) as isize + self.delta.get(&(from, to)).copied().unwrap_or(0)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum WalkDirection {
+    Forward,
+    Reverse,
+}
+
+#[derive(Debug, Clone)]
+struct IncrementalQuotient {
+    i_graph: RollbackDiGraph<ModuleId>,
+    constraining_graph: RollbackDiGraph<ModuleId>,
+    constraining_buckets: BTreeMap<(ModuleId, ModuleId), ConstrainingBucket>,
+    cross_rebinds: BTreeMap<OwnerEdgeId, CrossRebindEdge>,
+}
+
+impl IncrementalQuotient {
+    fn new(owner_graph: &OwnerGraph, partition: &Partition) -> Self {
+        let mut quotient = Self {
+            i_graph: RollbackDiGraph::new(),
+            constraining_graph: RollbackDiGraph::new(),
+            constraining_buckets: BTreeMap::new(),
+            cross_rebinds: BTreeMap::new(),
+        };
+        for edge in &owner_graph.edges {
+            quotient.add_current_edge(edge, partition, true);
+        }
+        quotient
+    }
+
+    fn marks(&self) -> (GraphMark, GraphMark) {
+        (self.i_graph.mark(), self.constraining_graph.mark())
+    }
+
+    fn rollback_graphs(&mut self, i_mark: GraphMark, constraining_mark: GraphMark) {
+        self.i_graph.rollback_to(i_mark);
+        self.constraining_graph.rollback_to(constraining_mark);
+    }
+
+    fn add_current_edge(
+        &mut self,
+        edge: &crate::graph::OwnerEdge,
+        partition: &Partition,
+        update_graphs: bool,
+    ) {
+        let from = partition.of(edge.from);
+        let to = partition.of(edge.to);
+        if from == to {
+            return;
+        }
+        if edge.reason.is_rebind() {
+            self.cross_rebinds.insert(
+                edge.id,
+                CrossRebindEdge {
+                    from,
+                    to,
+                    owner_edge: edge.id,
+                },
+            );
+            return;
+        }
+
+        if update_graphs {
+            self.i_graph.increment_edge(from, to);
+        }
+        if !edge.reason.constrains_init_order() {
+            return;
+        }
+        if update_graphs {
+            self.constraining_graph.increment_edge(from, to);
+        }
+        let bucket = self.constraining_buckets.entry((from, to)).or_default();
+        bucket.insert_edge(edge.id, edge.reason.is_sequenced());
+    }
+
+    fn remove_current_edge(
+        &mut self,
+        edge: &crate::graph::OwnerEdge,
+        partition: &Partition,
+        update_graphs: bool,
+    ) {
+        let from = partition.of(edge.from);
+        let to = partition.of(edge.to);
+        if from == to {
+            return;
+        }
+        if edge.reason.is_rebind() {
+            self.cross_rebinds.remove(&edge.id);
+            return;
+        }
+
+        if update_graphs {
+            self.i_graph.decrement_edge(from, to);
+        }
+        if !edge.reason.constrains_init_order() {
+            return;
+        }
+        if update_graphs {
+            self.constraining_graph.decrement_edge(from, to);
+        }
+        let pair = (from, to);
+        let mut remove_bucket = false;
+        if let Some(bucket) = self.constraining_buckets.get_mut(&pair) {
+            bucket.remove_edge(edge.id, edge.reason.is_sequenced());
+            remove_bucket = bucket.is_empty();
+        }
+        if remove_bucket {
+            self.constraining_buckets.remove(&pair);
+        }
+    }
+
+    fn verdict(&self, residual: ModuleId) -> RealizabilityVerdict {
+        let mut verdict = RealizabilityVerdict {
+            unrealizable_sccs: Vec::new(),
+            cross_rebinds: self.cross_rebinds.values().cloned().collect(),
+        };
+        let mut reported = BTreeSet::<BTreeSet<ModuleId>>::new();
+
+        for modules in self.constraining_graph.all_sccs() {
+            if modules.len() < 2 {
+                continue;
+            }
+            let constraining_owner_edges = self.constraining_edges_inside(&modules);
+            reported.insert(modules.clone());
+            verdict.unrealizable_sccs.push(UnrealizableScc {
+                modules,
+                constraining_owner_edges,
+            });
+        }
+
+        for modules in self.i_graph.all_sccs() {
+            if modules.len() < 2 || !modules.contains(&residual) {
+                continue;
+            }
+            let constraining_owner_edges =
+                self.constraining_edges_targeting_residual(&modules, residual);
+            if constraining_owner_edges.is_empty() || reported.contains(&modules) {
+                continue;
+            }
+            verdict.unrealizable_sccs.push(UnrealizableScc {
+                modules,
+                constraining_owner_edges,
+            });
+        }
+
+        verdict
+    }
+
+    fn verdict_touching(&self, module: ModuleId, residual: ModuleId) -> RealizabilityVerdict {
+        let mut verdict = RealizabilityVerdict {
+            unrealizable_sccs: Vec::new(),
+            cross_rebinds: self.cross_rebinds_touching(module),
+        };
+        let mut reported = BTreeSet::<BTreeSet<ModuleId>>::new();
+
+        let constraining_modules = self.constraining_graph.scc_containing(module);
+        if constraining_modules.len() >= 2 {
+            let constraining_owner_edges = self.constraining_edges_inside(&constraining_modules);
+            reported.insert(constraining_modules.clone());
+            verdict.unrealizable_sccs.push(UnrealizableScc {
+                modules: constraining_modules,
+                constraining_owner_edges,
+            });
+        }
+
+        let i_modules = self.i_graph.scc_containing(module);
+        if i_modules.len() >= 2 && i_modules.contains(&residual) && !reported.contains(&i_modules) {
+            let constraining_owner_edges =
+                self.constraining_edges_targeting_residual(&i_modules, residual);
+            if !constraining_owner_edges.is_empty() {
+                verdict.unrealizable_sccs.push(UnrealizableScc {
+                    modules: i_modules,
+                    constraining_owner_edges,
+                });
+            }
+        }
+
+        verdict
+    }
+
+    fn verdict_with_overlay_touching(
+        &self,
+        module: ModuleId,
+        residual: ModuleId,
+        overlay: &QuotientOverlay,
+    ) -> RealizabilityVerdict {
+        let mut verdict = RealizabilityVerdict {
+            unrealizable_sccs: Vec::new(),
+            cross_rebinds: self.cross_rebinds_touching_with_overlay(module, overlay),
+        };
+        let mut reported = BTreeSet::<BTreeSet<ModuleId>>::new();
+
+        let constraining_graph =
+            OverlayGraphView::new(&self.constraining_graph, &overlay.constraining_delta);
+        let constraining_modules = constraining_graph.scc_containing(module);
+        if constraining_modules.len() >= 2 {
+            let constraining_owner_edges =
+                self.constraining_edges_inside_with_overlay(&constraining_modules, overlay);
+            reported.insert(constraining_modules.clone());
+            verdict.unrealizable_sccs.push(UnrealizableScc {
+                modules: constraining_modules,
+                constraining_owner_edges,
+            });
+        }
+
+        let i_graph = OverlayGraphView::new(&self.i_graph, &overlay.i_delta);
+        let i_modules = i_graph.scc_containing(module);
+        if i_modules.len() >= 2 && i_modules.contains(&residual) && !reported.contains(&i_modules) {
+            let constraining_owner_edges = self
+                .constraining_edges_targeting_residual_with_overlay(&i_modules, residual, overlay);
+            if !constraining_owner_edges.is_empty() {
+                verdict.unrealizable_sccs.push(UnrealizableScc {
+                    modules: i_modules,
+                    constraining_owner_edges,
+                });
+            }
+        }
+
+        verdict
+    }
+
+    fn overlay_for_move(
+        &self,
+        owner_graph: &OwnerGraph,
+        partition: &Partition,
+        owners: &[OwnerId],
+        to: ModuleId,
+    ) -> QuotientOverlay {
+        let owners: BTreeSet<OwnerId> = owners.iter().copied().collect();
+        let impacted_owners: Vec<OwnerId> = owners.iter().copied().collect();
+        let impacted_edges = impacted_owner_edges(owner_graph, &impacted_owners);
+        let mut overlay = QuotientOverlay::default();
+        for edge_id in impacted_edges {
+            let edge = &owner_graph.edges[edge_id.0];
+            let current = edge_contribution(edge, partition.of(edge.from), partition.of(edge.to));
+            let next_from = if owners.contains(&edge.from) {
+                to
+            } else {
+                partition.of(edge.from)
+            };
+            let next_to = if owners.contains(&edge.to) {
+                to
+            } else {
+                partition.of(edge.to)
+            };
+            let next = edge_contribution(edge, next_from, next_to);
+            if current == next {
+                continue;
+            }
+            if let Some(contribution) = current {
+                overlay.remove_contribution(contribution);
+            }
+            if let Some(contribution) = next {
+                overlay.add_contribution(contribution);
+            }
+        }
+        overlay
+    }
+
+    fn cross_rebinds_touching_with_overlay(
+        &self,
+        module: ModuleId,
+        overlay: &QuotientOverlay,
+    ) -> Vec<CrossRebindEdge> {
+        let mut rebinds: Vec<CrossRebindEdge> = self
+            .cross_rebinds
+            .iter()
+            .filter(|(edge_id, rebind)| {
+                !overlay.cross_rebind_removed.contains(edge_id)
+                    && (rebind.from == module || rebind.to == module)
+            })
+            .map(|(_, rebind)| rebind.clone())
+            .collect();
+        rebinds.extend(
+            overlay
+                .cross_rebind_added
+                .values()
+                .filter(|rebind| rebind.from == module || rebind.to == module)
+                .cloned(),
+        );
+        rebinds.sort_by_key(|rebind| rebind.owner_edge);
+        rebinds
+    }
+
+    fn cross_rebinds_touching(&self, module: ModuleId) -> Vec<CrossRebindEdge> {
+        let mut rebinds: Vec<CrossRebindEdge> = self
+            .cross_rebinds
+            .values()
+            .filter(|rebind| rebind.from == module || rebind.to == module)
+            .cloned()
+            .collect();
+        rebinds.sort_by_key(|rebind| rebind.owner_edge);
+        rebinds
+    }
+
+    fn constraining_edges_inside(&self, modules: &BTreeSet<ModuleId>) -> Vec<OwnerEdgeId> {
+        let mut edges = Vec::new();
+        for ((from, to), bucket) in &self.constraining_buckets {
+            if modules.contains(from) && modules.contains(to) {
+                edges.extend(bucket.evidence_edges());
+            }
+        }
+        edges.sort();
+        edges
+    }
+
+    fn constraining_edges_inside_with_overlay(
+        &self,
+        modules: &BTreeSet<ModuleId>,
+        overlay: &QuotientOverlay,
+    ) -> Vec<OwnerEdgeId> {
+        let mut edges = Vec::new();
+        for pair in self.constraining_pairs_with_overlay(overlay) {
+            if modules.contains(&pair.0) && modules.contains(&pair.1) {
+                edges.extend(
+                    self.constraining_bucket_with_overlay(pair, overlay)
+                        .evidence_edges(),
+                );
+            }
+        }
+        edges.sort();
+        edges
+    }
+
+    fn constraining_edges_targeting_residual(
+        &self,
+        modules: &BTreeSet<ModuleId>,
+        residual: ModuleId,
+    ) -> Vec<OwnerEdgeId> {
+        let mut edges = Vec::new();
+        for ((from, to), bucket) in &self.constraining_buckets {
+            if *to == residual && modules.contains(from) {
+                edges.extend(bucket.evidence_edges());
+            }
+        }
+        edges.sort();
+        edges
+    }
+
+    fn constraining_edges_targeting_residual_with_overlay(
+        &self,
+        modules: &BTreeSet<ModuleId>,
+        residual: ModuleId,
+        overlay: &QuotientOverlay,
+    ) -> Vec<OwnerEdgeId> {
+        let mut edges = Vec::new();
+        for pair in self.constraining_pairs_with_overlay(overlay) {
+            let (from, to) = pair;
+            if to == residual && modules.contains(&from) {
+                edges.extend(
+                    self.constraining_bucket_with_overlay(pair, overlay)
+                        .evidence_edges(),
+                );
+            }
+        }
+        edges.sort();
+        edges
+    }
+
+    fn constraining_pairs_with_overlay(
+        &self,
+        overlay: &QuotientOverlay,
+    ) -> BTreeSet<(ModuleId, ModuleId)> {
+        let mut pairs: BTreeSet<(ModuleId, ModuleId)> =
+            self.constraining_buckets.keys().copied().collect();
+        pairs.extend(overlay.constraining_added.keys().copied());
+        pairs.extend(overlay.constraining_removed.keys().copied());
+        pairs
+    }
+
+    fn constraining_bucket_with_overlay(
+        &self,
+        pair: (ModuleId, ModuleId),
+        overlay: &QuotientOverlay,
+    ) -> ConstrainingBucket {
+        let mut bucket = self
+            .constraining_buckets
+            .get(&pair)
+            .cloned()
+            .unwrap_or_default();
+        if let Some(removed) = overlay.constraining_removed.get(&pair) {
+            bucket.remove_from(removed);
+        }
+        if let Some(added) = overlay.constraining_added.get(&pair) {
+            bucket.extend_from(added);
+        }
+        bucket
+    }
 }
 
 /// Mutable index over a working partition. The single shared
 /// implementation of the three-clause predicate, exposed in the
 /// transactional shape DESIGN.md "Realizability primitive" prescribes.
 ///
-/// Backing (step 1a): each `push` snapshots the prior assignments of
-/// the touched owners; `undo` restores them. `verdict()` recomputes
-/// from scratch via [`check_realizability`]. Correct but not yet
-/// fast. Step 1b will swap the backing for incremental
-/// Pearce-Kelly SCC maintenance behind the same API; no caller code
-/// has to change.
+/// Each `push` snapshots the prior assignments of the touched owners,
+/// updates only quotient edge buckets incident to those owners, and
+/// records enough graph state for LIFO undo. `verdict()` reads the
+/// maintained quotient graph instead of rebuilding it from owner edges.
 pub struct RealizabilityIndex<'g> {
     owner_graph: &'g OwnerGraph,
     partition: Partition,
+    quotient: IncrementalQuotient,
     journal: Vec<JournalEntry>,
 }
 
 impl<'g> RealizabilityIndex<'g> {
     pub fn from_partition(owner_graph: &'g OwnerGraph, partition: Partition) -> Self {
+        let quotient = IncrementalQuotient::new(owner_graph, &partition);
         Self {
             owner_graph,
             partition,
+            quotient,
             journal: Vec::new(),
         }
     }
@@ -310,6 +1008,19 @@ impl<'g> RealizabilityIndex<'g> {
     pub fn push(&mut self, delta: PartitionDelta) -> DeltaHandle {
         let entry = match delta {
             PartitionDelta::MoveOwners { owners, to } => {
+                let owners: Vec<OwnerId> = owners
+                    .into_iter()
+                    .collect::<BTreeSet<_>>()
+                    .into_iter()
+                    .collect();
+                let impacted_edges = impacted_owner_edges(self.owner_graph, &owners);
+                let (i_graph_mark, constraining_graph_mark) = self.quotient.marks();
+                for edge_id in &impacted_edges {
+                    let edge = &self.owner_graph.edges[edge_id.0];
+                    self.quotient
+                        .remove_current_edge(edge, &self.partition, true);
+                }
+
                 let mut prior = Vec::with_capacity(owners.len());
                 for owner in owners {
                     let was = self.partition.of(owner);
@@ -318,8 +1029,15 @@ impl<'g> RealizabilityIndex<'g> {
                     }
                     prior.push((owner, was));
                 }
+                for edge_id in &impacted_edges {
+                    let edge = &self.owner_graph.edges[edge_id.0];
+                    self.quotient.add_current_edge(edge, &self.partition, true);
+                }
                 JournalEntry {
                     prior_assignments: prior,
+                    impacted_edges,
+                    i_graph_mark,
+                    constraining_graph_mark,
                 }
             }
         };
@@ -343,9 +1061,20 @@ impl<'g> RealizabilityIndex<'g> {
             .journal
             .pop()
             .expect("journal must be non-empty for undo");
+        for edge_id in &entry.impacted_edges {
+            let edge = &self.owner_graph.edges[edge_id.0];
+            self.quotient
+                .remove_current_edge(edge, &self.partition, false);
+        }
         for (owner, prior) in entry.prior_assignments {
             self.partition.set(owner, prior);
         }
+        for edge_id in &entry.impacted_edges {
+            let edge = &self.owner_graph.edges[edge_id.0];
+            self.quotient.add_current_edge(edge, &self.partition, false);
+        }
+        self.quotient
+            .rollback_graphs(entry.i_graph_mark, entry.constraining_graph_mark);
     }
 
     /// Apply `delta`, run `f` against the index in its post-push
@@ -361,12 +1090,46 @@ impl<'g> RealizabilityIndex<'g> {
         result
     }
 
-    /// Verdict against the current working partition. Step 1a backing
-    /// recomputes from scratch; step 1b will read incrementally
-    /// maintained state instead.
+    /// Verdict against the current working partition. Reads the
+    /// incrementally maintained quotient graph and evidence buckets.
     pub fn verdict(&self) -> RealizabilityVerdict {
-        check_realizability(self.owner_graph, &self.partition)
+        self.quotient.verdict(self.partition.residual())
     }
+
+    /// Verdict filtered to SCCs and cross-rebinds touching `module`.
+    /// Candidate evaluation uses this for the fresh hypothetical
+    /// destination: unrelated pre-existing bad SCCs are intentionally
+    /// ignored, matching the previous full-verdict-then-filter logic.
+    pub fn verdict_touching(&self, module: ModuleId) -> RealizabilityVerdict {
+        self.quotient
+            .verdict_touching(module, self.partition.residual())
+    }
+
+    /// Verdict for a hypothetical owner move, filtered to the target
+    /// module, without mutating the working partition. This is the
+    /// candidate-evaluation fast path: it builds a small quotient
+    /// overlay for the moved owners' incident edges and runs directed
+    /// reachability against the effective graph.
+    pub fn verdict_after_moving_owners_touching(
+        &self,
+        owners: &[OwnerId],
+        to: ModuleId,
+    ) -> RealizabilityVerdict {
+        let overlay = self
+            .quotient
+            .overlay_for_move(self.owner_graph, &self.partition, owners, to);
+        self.quotient
+            .verdict_with_overlay_touching(to, self.partition.residual(), &overlay)
+    }
+}
+
+fn impacted_owner_edges(owner_graph: &OwnerGraph, owners: &[OwnerId]) -> Vec<OwnerEdgeId> {
+    let mut impacted = BTreeSet::<OwnerEdgeId>::new();
+    for owner in owners {
+        impacted.extend(owner_graph.out_edges_of(*owner).iter().copied());
+        impacted.extend(owner_graph.in_edges_of(*owner).iter().copied());
+    }
+    impacted.into_iter().collect()
 }
 
 #[cfg(test)]
@@ -525,6 +1288,107 @@ mod tests {
         }
     }
 
+    #[test]
+    fn duplicate_owner_ids_are_journaled_once() {
+        let source = "const a = 1; const b = a + 1;";
+        let owner_graph = parse_and_build(source);
+        let baseline = Partition::new(&owner_graph, module_id(0));
+        let mut index = RealizabilityIndex::from_partition(&owner_graph, baseline.clone());
+
+        let handle = index.push(PartitionDelta::MoveOwners {
+            owners: vec![OwnerId(1), OwnerId(1)],
+            to: module_id(1),
+        });
+        assert_eq!(index.partition().of(OwnerId(1)), module_id(1));
+
+        index.undo(handle);
+        assert_eq!(index.partition().of(OwnerId(1)), baseline.of(OwnerId(1)));
+        assert_eq!(
+            normalize_verdict(index.verdict()),
+            normalize_verdict(check_realizability(&owner_graph, &baseline)),
+        );
+    }
+
+    #[test]
+    fn move_overlay_matches_scoped_verdict_touching() {
+        let source = "const a = b + 1; const b = a + 1;";
+        let owner_graph = parse_and_build(source);
+        let baseline = Partition::new(&owner_graph, module_id(0));
+        let mut index = RealizabilityIndex::from_partition(&owner_graph, baseline.clone());
+        let before = normalize_verdict(index.verdict());
+
+        let overlay = index.verdict_after_moving_owners_touching(&[OwnerId(1)], module_id(1));
+        let scoped = index.scoped(
+            PartitionDelta::MoveOwners {
+                owners: vec![OwnerId(1)],
+                to: module_id(1),
+            },
+            |idx| idx.verdict_touching(module_id(1)),
+        );
+
+        assert_eq!(normalize_verdict(overlay), normalize_verdict(scoped));
+        assert_eq!(
+            normalize_verdict(index.verdict()),
+            before,
+            "overlay query must not mutate the working partition",
+        );
+        assert_eq!(index.partition().of(OwnerId(1)), baseline.of(OwnerId(1)));
+    }
+
+    #[test]
+    fn move_overlay_reports_cross_rebinds_like_scoped_verdict() {
+        let source = "let a = 0; function b() { a = 1; }";
+        let owner_graph = parse_and_build(source);
+        let baseline = Partition::new(&owner_graph, module_id(0));
+        let mut index = RealizabilityIndex::from_partition(&owner_graph, baseline);
+
+        let overlay = index.verdict_after_moving_owners_touching(&[OwnerId(1)], module_id(1));
+        let scoped = index.scoped(
+            PartitionDelta::MoveOwners {
+                owners: vec![OwnerId(1)],
+                to: module_id(1),
+            },
+            |idx| idx.verdict_touching(module_id(1)),
+        );
+
+        assert_eq!(
+            normalize_verdict(overlay.clone()),
+            normalize_verdict(scoped)
+        );
+        assert!(overlay.unrealizable_sccs.is_empty());
+        assert_eq!(overlay.cross_rebinds.len(), 1);
+    }
+
+    #[test]
+    fn move_overlay_masks_removed_current_edges() {
+        let source = "const a = b + 1; const b = c + 1; const c = 1;";
+        let owner_graph = parse_and_build(source);
+        let mut baseline = Partition::new(&owner_graph, module_id(0));
+        baseline.set(OwnerId(0), module_id(1));
+        baseline.set(OwnerId(1), module_id(2));
+        baseline.set(OwnerId(2), module_id(3));
+        let mut explicit = baseline.clone();
+        explicit.set(OwnerId(1), module_id(4));
+        let mut index = RealizabilityIndex::from_partition(&owner_graph, baseline);
+
+        let overlay = index.verdict_after_moving_owners_touching(&[OwnerId(1)], module_id(4));
+        let scoped = index.scoped(
+            PartitionDelta::MoveOwners {
+                owners: vec![OwnerId(1)],
+                to: module_id(4),
+            },
+            |idx| idx.verdict_touching(module_id(4)),
+        );
+        let pure =
+            filter_verdict_touching(&check_realizability(&owner_graph, &explicit), module_id(4));
+
+        assert_eq!(
+            normalize_verdict(overlay.clone()),
+            normalize_verdict(scoped)
+        );
+        assert_eq!(normalize_verdict(overlay), normalize_verdict(pure));
+    }
+
     /// `scoped` runs the closure with the delta applied and undoes on
     /// return — even when the closure returns a value.
     #[test]
@@ -550,5 +1414,164 @@ mod tests {
         // After scoped: state restored exactly.
         assert!(index.verdict().is_realizable());
         assert_eq!(index.partition().of(OwnerId(1)), module_id(0));
+    }
+
+    #[test]
+    fn incremental_index_matches_pure_verdict_through_nested_push_undo() {
+        let source = "const a = b + 1; const b = a + 1; function c() { return a; }";
+        let owner_graph = parse_and_build(source);
+
+        let baseline = Partition::new(&owner_graph, module_id(0));
+        let mut explicit = baseline.clone();
+        let mut index = RealizabilityIndex::from_partition(&owner_graph, baseline.clone());
+
+        assert_eq!(
+            normalize_verdict(index.verdict()),
+            normalize_verdict(check_realizability(&owner_graph, &explicit)),
+        );
+
+        let first = index.push(PartitionDelta::MoveOwners {
+            owners: vec![OwnerId(1)],
+            to: module_id(1),
+        });
+        explicit.set(OwnerId(1), module_id(1));
+        assert_eq!(
+            normalize_verdict(index.verdict()),
+            normalize_verdict(check_realizability(&owner_graph, &explicit)),
+        );
+
+        let second = index.push(PartitionDelta::MoveOwners {
+            owners: vec![OwnerId(2)],
+            to: module_id(2),
+        });
+        explicit.set(OwnerId(2), module_id(2));
+        assert_eq!(
+            normalize_verdict(index.verdict()),
+            normalize_verdict(check_realizability(&owner_graph, &explicit)),
+        );
+
+        index.undo(second);
+        explicit.set(OwnerId(2), module_id(0));
+        assert_eq!(
+            normalize_verdict(index.verdict()),
+            normalize_verdict(check_realizability(&owner_graph, &explicit)),
+        );
+
+        index.undo(first);
+        explicit.set(OwnerId(1), module_id(0));
+        assert_eq!(
+            normalize_verdict(index.verdict()),
+            normalize_verdict(check_realizability(&owner_graph, &explicit)),
+        );
+        for owner in 0..owner_graph.nodes.len() {
+            assert_eq!(
+                index.partition().of(OwnerId(owner)),
+                baseline.of(OwnerId(owner))
+            );
+        }
+    }
+
+    #[test]
+    fn verdict_touching_matches_full_verdict_filtered_to_module() {
+        let source = "const a = b + 1; const b = a + 1; const c = 1;";
+        let owner_graph = parse_and_build(source);
+        let baseline = Partition::new(&owner_graph, module_id(0));
+        let mut index = RealizabilityIndex::from_partition(&owner_graph, baseline);
+        index.push(PartitionDelta::MoveOwners {
+            owners: vec![OwnerId(1)],
+            to: module_id(1),
+        });
+        index.push(PartitionDelta::MoveOwners {
+            owners: vec![OwnerId(2)],
+            to: module_id(2),
+        });
+
+        let full = index.verdict();
+        assert_eq!(
+            normalize_verdict(index.verdict_touching(module_id(1))),
+            normalize_verdict(filter_verdict_touching(&full, module_id(1))),
+        );
+        assert_eq!(
+            normalize_verdict(index.verdict_touching(module_id(2))),
+            normalize_verdict(filter_verdict_touching(&full, module_id(2))),
+            "unrelated module should not inherit the a/b SCC",
+        );
+    }
+
+    #[test]
+    fn incremental_index_reports_cross_rebinds_without_scc_edges() {
+        let source = "let a = 0; function b() { a = 1; }";
+        let owner_graph = parse_and_build(source);
+        let baseline = Partition::new(&owner_graph, module_id(0));
+        let mut explicit = baseline.clone();
+        let mut index = RealizabilityIndex::from_partition(&owner_graph, baseline);
+
+        index.push(PartitionDelta::MoveOwners {
+            owners: vec![OwnerId(1)],
+            to: module_id(1),
+        });
+        explicit.set(OwnerId(1), module_id(1));
+
+        let verdict = index.verdict();
+        assert_eq!(
+            normalize_verdict(verdict.clone()),
+            normalize_verdict(check_realizability(&owner_graph, &explicit)),
+        );
+        assert!(
+            verdict.unrealizable_sccs.is_empty(),
+            "rebinds are direct violations, not SCC edges: {verdict:#?}",
+        );
+        assert_eq!(verdict.cross_rebinds.len(), 1);
+        assert_eq!(
+            normalize_verdict(index.verdict_touching(module_id(1))),
+            normalize_verdict(verdict),
+        );
+    }
+
+    type NormalizedVerdict = (
+        BTreeSet<(Vec<ModuleId>, Vec<usize>)>,
+        BTreeSet<(ModuleId, ModuleId, usize)>,
+    );
+
+    fn normalize_verdict(verdict: RealizabilityVerdict) -> NormalizedVerdict {
+        let sccs = verdict
+            .unrealizable_sccs
+            .into_iter()
+            .map(|scc| {
+                let modules: Vec<ModuleId> = scc.modules.into_iter().collect();
+                let edges: Vec<usize> = scc
+                    .constraining_owner_edges
+                    .into_iter()
+                    .map(|edge| edge.0)
+                    .collect();
+                (modules, edges)
+            })
+            .collect();
+        let rebinds = verdict
+            .cross_rebinds
+            .into_iter()
+            .map(|rebind| (rebind.from, rebind.to, rebind.owner_edge.0))
+            .collect();
+        (sccs, rebinds)
+    }
+
+    fn filter_verdict_touching(
+        verdict: &RealizabilityVerdict,
+        module: ModuleId,
+    ) -> RealizabilityVerdict {
+        RealizabilityVerdict {
+            unrealizable_sccs: verdict
+                .unrealizable_sccs
+                .iter()
+                .filter(|scc| scc.modules.contains(&module))
+                .cloned()
+                .collect(),
+            cross_rebinds: verdict
+                .cross_rebinds
+                .iter()
+                .filter(|rebind| rebind.from == module || rebind.to == module)
+                .cloned()
+                .collect(),
+        }
     }
 }

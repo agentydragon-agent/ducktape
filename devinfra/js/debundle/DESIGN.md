@@ -414,12 +414,12 @@ Three callers consume it:
    verdict decides acceptance or rejection. This is the load-bearing call —
    if it rejects, materialization stops.
 2. **The peelability proposer.** For each candidate peel, the proposer
-   constructs the hypothetical partition that would result from the peel
-   (the candidate's owners reassigned to a fresh destination), asks the
-   primitive, and projects the verdict into the candidate's status. A
-   `peelable_now` candidate is one whose hypothetical partition produces an
-   empty verdict; any other verdict shape decodes to a specific blocker
-   reason.
+   applies the quotient delta that would result from the peel (the
+   candidate's owners reassigned to a fresh destination) to the rollbackable
+   index, reads the localized verdict, undoes the delta, and projects the
+   verdict into the candidate's status. A `peelable_now` candidate is one
+   whose hypothetical partition produces an empty verdict; any other verdict
+   shape decodes to a specific blocker reason.
 3. **The factorize closure loop.** Each frontier-grow step certifies the
    resulting hypothetical partition via the primitive. If the verdict names
    an exact owner-level repair (a private read that needs its provider, an
@@ -435,25 +435,32 @@ re-certify after every frontier step, so the primitive is exposed as a
 pure function:
 
 - Callers push partition deltas (move owners, create destinations) onto the
-  index. Each push updates the quotient adjacency and the constraining-edge
-  SCC structure incrementally, only for components touched by the delta's
-  incident edges. The verdict is always against the index's current state.
+  index. Each push updates quotient edge buckets and graph adjacency only for
+  owner edges incident to moved owners. The verdict is always against the
+  index's current state.
 - Each push records its inverse on a journal. Callers undo deltas in LIFO
-  order to back out of a hypothetical or failed exploration. The proposer
-  uses a scoped guard for per-candidate isolation; factorize uses explicit
-  push/undo to walk closure repair branches.
+  order to back out of a hypothetical or failed exploration. Factorize uses
+  explicit push/undo to walk closure repair branches.
+- Candidate peel checks use the same push/read/undo API as other
+  hypothetical questions, but read only SCCs and rebinds touching the fresh
+  destination. A new directed edge `u -> v` can create a cycle exactly when
+  `v` reaches `u`; the index answers that against the maintained quotient
+  without rebuilding owner-graph state.
 - The validator does no undo: it pushes the actual partition once and reads
   the verdict.
 
 The pure-function form `check_realizability(owner_graph, partition)` is the
 correctness reference; the incremental, undoable form is the production
-implementation. A differential test asserts the two agree on random
+implementation. Differential tests assert the two agree across nested
 push/undo sequences.
 
 This is "the iterative graph that callers update and undo updates on":
-the quotient and its SCC structure are built once per chunk, then walked
-forward by deltas (toward a hypothesis or a commit) and backward by undos
-(when backing out). It is not torn down and rebuilt per question.
+the quotient is built once per chunk, then walked forward by deltas
+(toward a hypothesis or a commit) and backward by undos (when backing
+out). Candidate checks use localized reachability around the affected
+destination after a scoped delta push; full validation can still run Tarjan
+over the maintained quotient. The owner graph and quotient buckets are not
+torn down and rebuilt per question.
 
 ### Invariant: no bespoke parallel walks
 
@@ -1234,10 +1241,11 @@ Let `R` be any destination marked residual (the `ResidualEntry` catch-all
 or a generated residual logical module), and let `o ∈ V` be an owner currently assigned to `R` with
 declared symbols `decl(o)`. To test whether `o` is peelable now:
 
-1. Push a hypothetical delta on the realizability index: create a fresh
-   destination `P_o` and reassign the owners of `decl(o)` to it. All
-   other owner destinations are unchanged.
-2. Read the verdict from the index.
+1. Build the hypothetical quotient delta: create a fresh destination `P_o`
+   and reassign the owners of `decl(o)` to it inside a scoped index push.
+   All other owner destinations are unchanged.
+2. Read the verdict from the index, filtered to SCCs and rebinds touching
+   `P_o`.
 3. Decode the verdict into a `PeelCandidateStatus`:
    - Empty verdict → `peelable_now`.
    - Verdict carries `unrealizable_sccs` touching `P_o` → `blocked_cycle`.
@@ -1245,8 +1253,7 @@ declared symbols `decl(o)`. To test whether `o` is peelable now:
      module edges that form the cycle.
    - Verdict carries non-importable reads from `P_o` into private
      residual neighbors → `blocked_residual_dependency`.
-4. Undo the delta. The index is restored to the pre-push partition state
-   for the next candidate.
+4. Undo the scoped push, restoring the index's working partition.
 
 The same primitive that the validator uses on the actual partition
 answers the proposer's question on a hypothetical one. There is no
@@ -1663,18 +1670,22 @@ O(N + M + B)
   + O(P log P)
 ```
 
-with `O(S * (Q + E_Q))` as the conservative bound if every frontier
-falls back to a full quotient certification pass. The implementation
-must avoid the naive shape `O(S * K * (N + M))`, where every growth step
+with `O(S * (Q + E_Q))` as the conservative bound if every frontier falls
+back to a full quotient certification pass. The implementation must
+avoid the naive shape `O(S * K * (N + M))`, where every growth step
 reruns whole-graph analysis. If production graphs make full quotient
-certification too common, the fix is incremental component invalidation
-or narrower exact-repair indexing, not weakening proposal soundness.
+certification too common, the fix is incremental component invalidation,
+a denser quotient reachability representation, or narrower exact-repair
+indexing, not weakening proposal soundness.
 
-Implementation status: this section is the target contract. The
-current code has the raw materials (`atomic_units`,
-`evaluate_peel_candidate`, owner-edge provenance, and CLI-side
-proposal status), but `factorize` should be audited against this
-contract before large-factor output is treated as authoritative.
+Implementation status: the realizability index now maintains rollbackable
+quotient edge buckets and validates candidate deltas with scoped push/read/undo
+over localized SCC reachability. A tested non-mutating overlay predicate exists
+as a future optimization path, but local profiling found the current
+ordered-map overlay slower than the rollback path. Dense module indexes or
+reusable visited buffers are the next likely optimization if this remains
+material. `factorize` should continue to be audited against this contract
+before large-factor output is treated as authoritative.
 
 ### Graph operations for peel tooling
 
@@ -2180,11 +2191,13 @@ philosophy.
   top-level statement**. The resolver feeds it through the same
   parser the chunk used (`js_ast::parse_js_module_ast`); the
   parsed module's body must have length 1.
-- Comparison is `EqIgnoreSpan` over `ModuleItem`. Whitespace and
-  comments differences are ignored; identifier names and string
-  literals are not. Identifier names match the chunk's
-  pre-readability-rename form (the same form binding selectors
-  use as `selector.binding.name`).
+- Comparison is `EqIgnoreSpan` over `ModuleItem`, evaluated inside
+  SWC's `SyntaxContext::within_ignored_ctxt` scope because selector
+  source and runtime chunks are parsed in separate resolver passes.
+  Whitespace, comments, spans, and syntax-context marks are ignored;
+  identifier names and string literals are not. Identifier names match
+  the chunk's pre-readability-rename form (the same form binding
+  selectors use as `selector.binding.name`).
 - Each anonymous statement may belong to at most one logical
   module. A duplicate claim across two modules is a spec error;
   the validator names both modules and the offending statement
