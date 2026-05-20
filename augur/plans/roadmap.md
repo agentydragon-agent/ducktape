@@ -397,26 +397,22 @@ Work:
    series from that sim scenario, expand any legacy scalar seed into explicit
    per-rollout seeds, sample `augur/model`'s `SampledMarketBundle`, run
    `augur/sim`, and serialize projection/read models through `augur/api`.
-2. Make runtime market providers sim-native: keep `simple` and VECM on the
-   native sampled-bundle API, keep deterministic flat paths as test-only sim
-   fixtures, and leave unported exploratory models quarantined under
-   `augur/model/x/`.
-3. Add an internal parity harness that runs the legacy core path and the sim
+2. Add an internal parity harness that runs the legacy core path and the sim
    path from the same model-owned sampled bundle where possible. Use this to
    compare overlapping outputs before changing the default frontend/API path.
-4. Continue core model cleanup only where it reduces switchover risk:
+3. Continue core model cleanup only where it reduces switchover risk:
    account-aware obligations/funding, failure/default semantics, and
    ledger/accounting detail as the source of truth for monthly report arrays.
-5. Persist and harden trajectory, path, cause, and model-governance identities
+4. Persist and harden trajectory, path, cause, and model-governance identities
    so a selected rollout can be reproduced and audited from scenario input
    through market evidence and policy decisions.
-6. Keep expanding ordered actor policy programs through explicit decision and
+5. Keep expanding ordered actor policy programs through explicit decision and
    instruction traces, now that execution order is the runtime path.
-7. Move public generic data toward typed config resources: local
+6. Move public generic data toward typed config resources: local
    regulation/tax defaults, catalog rows, market config, and eventually a
    deployment-supplied portfolio/account YAML contract. Private values stay in
    downstream repos.
-8. Wire the generated Augur OpenAPI/browser schema target into browser state
+7. Wire the generated Augur OpenAPI/browser schema target into browser state
    normalization and request mapping, then split app/frontend/server packages
    after the core contracts and server cleanup settle.
 
@@ -424,9 +420,9 @@ Work:
 
 - **Backend switchover to `model -> sim -> api`** — the next integration
   lane. Close the checklist in `augur/sim/TODO.md`: sim scenario translator,
-  required-market-series discovery, sim-native runtime providers, internal
-  parity harness, projection/read-model serialization, browser smoke coverage,
-  then make the sim path default.
+  required-market-series discovery, sim market consumption, internal parity
+  harness, projection/read-model serialization, browser smoke coverage, then
+  make the sim path default.
 - **Priority 3 — sampled PE / sampled tender timing / sampled crypto +
   sampled mortgage rate** (open design work; see the priority section
   above). Joint fit with SP500 / inflation / per-location housing factors

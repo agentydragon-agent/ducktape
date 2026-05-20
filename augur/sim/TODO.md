@@ -24,7 +24,7 @@ response semantics after cutover.
 
 - [ ] Replace the API backend's direct `augur.core.api.ScenarioEngine`
       execution path with a `model -> sim -> api` path. Keep the legacy
-      path available as a shadow/parity baseline until the sim path has
+      path available as an internal parity baseline until the sim path has
       browser and fixture coverage.
 - [ ] Replace the legacy `ScenarioSet` request boundary with either a
       native sim request schema or an explicit translator from the current
@@ -35,9 +35,10 @@ response semantics after cutover.
       legacy field names by default.
 - [ ] Replace production use of `augur.core.market_bundle.MarketBundle`
       in the Augur run path with model-owned exogenous bundles supplied by
-      `augur/model` and consumed by `augur/sim`. The production `simple`
-      provider config now samples a sim-native joint model and adapts it to
-      the legacy core bundle; the backend still executes through core.
+      `augur/model` and consumed by `augur/sim`. Deployment market config now
+      materializes a sim-native `JointMarketModel` and wraps it only for the
+      legacy core backend; the remaining work is to pass its
+      `SampledMarketBundle` directly into `augur/sim`.
 - [ ] Replace core-side required-market-key discovery with sim scenario
       introspection so model providers know which public markets, private
       equity paths, locations, currencies, and other exogenous series must
@@ -88,15 +89,6 @@ response semantics after cutover.
       mortgage payoff, sale proceeds split, occupancy changes,
       depreciation, §121 exclusion, §1250 recapture, itemized deductions,
       SALT cap, and qualified-residence mortgage-interest deduction.
-- [ ] Move production stochastic market generation to `augur/model`.
-      Static/GBM fixture path specs, the production `simple` model, and the
-      representative calibrated VECM model now emit the model-owned sampled
-      levels/events bundle shape. Unported exploratory models were moved to
-      `augur/model/x/legacy_market_models/` for later porting or deletion.
-- [ ] Align every market-provider/model implementation with the
-      `augur/sim` consumption API. Simple and VECM now implement the
-      `JointMarketModel` contract and are shimmed for core. Deterministic flat
-      paths live as test-only sim fixtures rather than runtime providers.
 - [ ] Treat `augur/model/x/legacy_market_models/` as non-runtime code. Port
       only models selected by production or used as representative joint-model
       coverage; delete or keep the rest quarantined until a fresh design pass.
