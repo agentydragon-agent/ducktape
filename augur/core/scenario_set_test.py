@@ -177,16 +177,41 @@ def test_scenario_set_rejects_unsupported_initial_asset_variants(asset_type: str
         ScenarioSet.model_validate(body)
 
 
-def test_private_equity_position_requires_units_or_value_usd() -> None:
-    """The schema must reject a PE position that supplies neither `units` nor
-    `value_usd`. The simulator needs at least one to derive the opening mark
-    (units × market price, or an explicit statement mark)."""
+def test_private_equity_position_requires_units() -> None:
+    """The schema must reject a PE position without units.
+
+    A statement mark may override month-0 value, but units are still the
+    canonical quantity for sales, acquisitions, and native sim lots.
+    """
     body = _scenario_set_body("sf_house")
     body["scenarios"][0]["initial_balance_sheet"]["assets"] = [
-        {"asset_id": "private_equity", "asset_type": "private_equity", "owner_actor_id": "owner", "cost_basis_usd": 0}
+        {
+            "asset_id": "private_equity",
+            "asset_type": "private_equity",
+            "owner_actor_id": "owner",
+            "value_usd": 100_000,
+            "cost_basis_usd": 0,
+        }
     ]
 
-    with pytest.raises(ValidationError, match="must set units or value_usd"):
+    with pytest.raises(ValidationError, match="Field required"):
+        ScenarioSet.model_validate(body)
+
+
+@pytest.mark.parametrize("units", [0, -1])
+def test_private_equity_position_rejects_nonpositive_units(units: float) -> None:
+    body = _scenario_set_body("sf_house")
+    body["scenarios"][0]["initial_balance_sheet"]["assets"] = [
+        {
+            "asset_id": "private_equity",
+            "asset_type": "private_equity",
+            "owner_actor_id": "owner",
+            "units": units,
+            "cost_basis_usd": 0,
+        }
+    ]
+
+    with pytest.raises(ValidationError, match="greater than 0"):
         ScenarioSet.model_validate(body)
 
 
@@ -269,25 +294,6 @@ def test_private_equity_liquidity_regime_parses_public_market_and_acquisition_va
     assert isinstance(pe_acquired.liquidity_regime, Acquisition)
     assert pe_acquired.liquidity_regime.event_month == 9
     assert pe_acquired.liquidity_regime.cash_per_unit_usd == 750
-
-
-def test_private_equity_position_with_acquisition_regime_requires_units() -> None:
-    """An `Acquisition` regime needs `units` to compute proceeds. Schema must
-    reject a PE position with `value_usd` only when the regime is `acquisition`."""
-    body = _scenario_set_body("sf_house")
-    body["scenarios"][0]["initial_balance_sheet"]["assets"] = [
-        {
-            "asset_id": "pe_acquired",
-            "asset_type": "private_equity",
-            "owner_actor_id": "owner",
-            "value_usd": 100_000,
-            "cost_basis_usd": 0,
-            "liquidity_regime": {"regime_type": "acquisition", "event_month": 6, "cash_per_unit_usd": 500},
-        }
-    ]
-
-    with pytest.raises(ValidationError, match="Acquisition regime"):
-        ScenarioSet.model_validate(body)
 
 
 @pytest.mark.parametrize("liability_type", ["mortgage", "tax_liability", "actor_equity_claim"])

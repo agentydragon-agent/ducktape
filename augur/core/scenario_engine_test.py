@@ -177,7 +177,7 @@ def _scenario_body(
     crypto_asset_symbol: str = "BTC",
     private_equity_usd: float | None = 50_000,
     private_equity_basis_usd: float | None = None,
-    private_equity_units: float | None = None,
+    private_equity_units: float = 1_000,
     property_selection: dict | None = None,
     financing: dict | None = None,
     occupancy_plan: dict | None = None,

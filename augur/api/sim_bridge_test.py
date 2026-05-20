@@ -17,7 +17,7 @@ from augur.api.sim_bridge import (
     translate_scenario_set,
 )
 from augur.core.scenario_set import ScenarioSet
-from augur.model.sim_market_series import SP500_SERIES_ID
+from augur.model.sim_market_series import SP500_SERIES_ID, private_equity_series_id
 from augur.model.simple_market import SimpleMarketModel
 
 
@@ -103,6 +103,24 @@ def test_bridge_rejects_features_that_do_not_have_sim_semantics_yet() -> None:
         translate_scenario_set(scenario_set)
 
 
+def test_bridge_rejects_private_equity_explicit_marks_until_series_anchoring_exists() -> None:
+    body = _scenario_set_body()
+    body["scenarios"][0]["initial_balance_sheet"]["assets"].append(
+        {
+            "asset_id": "private_equity_private",
+            "asset_type": "private_equity",
+            "owner_actor_id": "owner",
+            "units": 1_000.0,
+            "value_usd": 100_000.0,
+            "cost_basis_usd": 5_000.0,
+        }
+    )
+    scenario_set = ScenarioSet.model_validate(body)
+
+    with pytest.raises(UnsupportedSimBridgeScenarioError, match="private-equity explicit value marks"):
+        translate_scenario_set(scenario_set)
+
+
 def test_property_selection_translates_to_month_zero_purchase_and_mortgage() -> None:
     body = _scenario_set_body()
     body["scenarios"][0]["property_selection"] = {
@@ -174,8 +192,19 @@ def test_property_selection_translates_to_month_zero_purchase_and_mortgage() -> 
     assert final_liability["principal_usd"] < 400_000.0
 
 
-def test_configured_portfolio_lots_replace_legacy_public_stock_asset() -> None:
-    scenario_set = ScenarioSet.model_validate(_scenario_set_body())
+def test_configured_portfolio_lots_replace_legacy_public_stock_asset_but_keep_private_equity() -> None:
+    body = _scenario_set_body()
+    body["scenarios"][0]["initial_balance_sheet"]["assets"].append(
+        {
+            "asset_id": "private_equity_private",
+            "asset_type": "private_equity",
+            "owner_actor_id": "owner",
+            "units": 1_000.0,
+            "cost_basis_usd": 5_000.0,
+            "issuer_id": "openai",
+        }
+    )
+    scenario_set = ScenarioSet.model_validate(body)
     portfolio = PortfolioConfig(
         accounts=(PortfolioAccountConfig(account_id="taxable_brokerage", owner_agent_id="owner"),),
         public_securities=(
@@ -206,9 +235,17 @@ def test_configured_portfolio_lots_replace_legacy_public_stock_asset() -> None:
         level_anchors=portfolio.level_anchors,
     )
 
-    assert [lot.lot_id for lot in translation.scenario.initial_lots] == ["sp500_2024_05", "sp500_2026_05"]
+    assert [lot.lot_id for lot in translation.scenario.initial_lots] == [
+        "sp500_2024_05",
+        "sp500_2026_05",
+        "private_equity_private_lot",
+    ]
     assert translation.scenario.initial_lots[0].quantity == 10.0
     assert translation.scenario.initial_lots[0].cost_basis_per_unit_usd == 300.0
+    assert translation.scenario.initial_lots[2].asset_id == private_equity_series_id("openai")
+    assert translation.scenario.initial_lots[2].quantity == 1_000.0
+    assert translation.scenario.initial_lots[2].cost_basis_per_unit_usd == 5.0
+    assert translation.required_level_series == frozenset({SP500_SERIES_ID, private_equity_series_id("openai")})
     assert sampled.level_matrix(SP500_SERIES_ID, rollout_count=3, horizon_months=3)[:, 0].tolist() == [
         500.0,
         500.0,
@@ -220,7 +257,11 @@ def test_configured_portfolio_lots_replace_legacy_public_stock_asset() -> None:
         .select("lot_id", "remaining_quantity", "cost_basis_per_unit_usd")
         .iter_rows()
     )
-    assert list(rollout0_lots) == [("sp500_2024_05", 10.0, 300.0), ("sp500_2026_05", 5.0, 400.0)]
+    assert list(rollout0_lots) == [
+        ("private_equity_private_lot", 1_000.0, 5.0),
+        ("sp500_2024_05", 10.0, 300.0),
+        ("sp500_2026_05", 5.0, 400.0),
+    ]
 
 
 if __name__ == "__main__":

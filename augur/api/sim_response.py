@@ -20,7 +20,7 @@ from augur.core.scenario_set import (
     ScenarioSetRunResponse,
 )
 from augur.core.schemas import ColumnarTable
-from augur.model.sim_market_series import SP500_SERIES_ID
+from augur.model.sim_market_series import PRIVATE_EQUITY_SERIES_PREFIX, SP500_SERIES_ID
 from augur.sim.run import SimulationRun
 
 MONTHS_PER_YEAR = 12
@@ -153,6 +153,7 @@ def _monthly_metric_frame(scenario: Scenario, run: SimulationRun) -> pl.DataFram
     grid = _rollout_month_grid(run)
     cash = _sum_cash(run, agent_id=report_agent_id)
     sp500_value = _sp500_value(run, agent_id=report_agent_id)
+    private_equity_value = _private_equity_value(run, agent_id=report_agent_id)
     sp500_sales = _sp500_sales(run, agent_id=report_agent_id)
     shortfalls = _shortfalls(run, agent_id=report_agent_id)
     monthly_spend = _monthly_spend(run, agent_id=report_agent_id)
@@ -162,6 +163,7 @@ def _monthly_metric_frame(scenario: Scenario, run: SimulationRun) -> pl.DataFram
     frame = (
         grid.join(cash, on=["rollout_index", "month_index"], how="left")
         .join(sp500_value, on=["rollout_index", "month_index"], how="left")
+        .join(private_equity_value, on=["rollout_index", "month_index"], how="left")
         .join(sp500_sales, on=["rollout_index", "month_index"], how="left")
         .join(shortfalls, on=["rollout_index", "month_index"], how="left")
         .join(monthly_spend, on=["rollout_index", "month_index"], how="left")
@@ -179,6 +181,7 @@ def _monthly_metric_frame(scenario: Scenario, run: SimulationRun) -> pl.DataFram
             liquid_net_worth_usd=pl.col("cash_usd") + pl.col("generic_sp500_value_usd"),
             net_worth_usd=pl.col("cash_usd")
             + pl.col("generic_sp500_value_usd")
+            + pl.col("private_equity_value_usd")
             + pl.col("property_value_usd")
             - pl.col("mortgage_balance_usd"),
         )
@@ -259,6 +262,24 @@ def _sp500_value(run: SimulationRun, *, agent_id: str) -> pl.DataFrame:
     )
 
 
+def _private_equity_value(run: SimulationRun, *, agent_id: str) -> pl.DataFrame:
+    lots = run.asset_lots.filter(
+        (pl.col("agent_id") == agent_id) & pl.col("asset_id").str.starts_with(PRIVATE_EQUITY_SERIES_PREFIX)
+    )
+    if lots.is_empty():
+        return _empty_metric("private_equity_value_usd")
+    return (
+        lots.join(run.market_prices, on=["rollout_index", "month_index", "asset_id"], how="left")
+        .with_columns(
+            (pl.col("remaining_quantity") * pl.col("price_per_unit_usd").fill_null(0.0)).alias(
+                "private_equity_value_usd"
+            )
+        )
+        .group_by("rollout_index", "month_index")
+        .agg(pl.col("private_equity_value_usd").sum())
+    )
+
+
 def _sp500_sales(run: SimulationRun, *, agent_id: str) -> pl.DataFrame:
     dispositions = run.events_log.lot_dispositions.filter(
         (pl.col("agent_id") == agent_id) & (pl.col("asset_id") == SP500_SERIES_ID)
@@ -304,9 +325,21 @@ def _property_position(run: SimulationRun, *, agent_id: str) -> pl.DataFrame:
     property_value = (
         run.property_stakes.filter(pl.col("agent_id") == agent_id)
         .join(run.property_state, on=["rollout_index", "month_index", "property_id"], how="inner")
+        .join(
+            run.events_log.property_purchases.select(
+                "rollout_index",
+                "property_id",
+                pl.col("month_index").alias("purchase_month_index"),
+                "purchase_price_usd",
+            ),
+            on=["rollout_index", "property_id", "purchase_month_index"],
+            how="left",
+        )
         .group_by("rollout_index", "month_index")
         .agg(
-            (pl.col("adjusted_basis_usd") * pl.col("ownership_pct")).sum().alias("property_value_usd"),
+            (pl.col("purchase_price_usd").fill_null(pl.col("adjusted_basis_usd")) * pl.col("ownership_pct"))
+            .sum()
+            .alias("property_value_usd"),
             pl.col("equity_ledger_usd").sum().alias("owner_equity_ledger_usd"),
         )
     )

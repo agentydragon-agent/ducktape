@@ -5782,8 +5782,7 @@ def _private_equity_position_value_usd(asset: PrivateEquityPosition, *, current_
     """Resolve a PE position's opening mark.
 
     Honors an explicit `value_usd` (statement mark or manual override) when set;
-    otherwise derives `units × current_unit_price_usd`. A position with neither field
-    is rejected by `PrivateEquityPosition`'s validator before reaching the engine.
+    otherwise derives `units × current_unit_price_usd`.
     """
     if asset.value_usd is not None:
         return float(asset.value_usd)
@@ -5793,7 +5792,7 @@ def _private_equity_position_value_usd(asset: PrivateEquityPosition, *, current_
             "MarketBundleMetadata.current_private_equity_price_usd is 0; either supply "
             "value_usd or use a market provider that publishes a PE unit price."
         )
-    return float(asset.units or 0.0) * current_unit_price_usd
+    return float(asset.units) * current_unit_price_usd
 
 
 def _initial_private_equity_value_usd(scenario: Scenario, *, current_unit_price_usd: float) -> float:

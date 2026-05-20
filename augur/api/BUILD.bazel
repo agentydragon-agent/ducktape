@@ -180,6 +180,23 @@ py_test(
     ],
 )
 
+py_test(
+    name = "sim_server_test",
+    srcs = ["sim_server_test.py"],
+    data = [
+        ":public_fixture_config",
+        ":public_fixture_properties",
+        ":server",
+    ],
+    deps = [
+        "//util:net",
+        "//util/bazel:runfiles",
+        "//util/testing:undeclared_outputs",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_library(
     name = "browser_state_py",
     srcs = ["browser_state.py"],

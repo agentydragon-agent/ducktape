@@ -60,7 +60,7 @@ class MarketBundleMetadata(ApiModel):
         ge=0.0,
         description=(
             "Per-unit USD mark for private equity at month 0. Used by the simulator to "
-            "resolve `PrivateEquityPosition.value_usd` from `units` when the position omits "
+            "derive `PrivateEquityPosition.value_usd` from `units` when the position omits "
             "an explicit mark. Providers that drive PE valuation must set this; deterministic "
             "fixtures use 0.0 and require positions to supply `value_usd` directly."
         ),

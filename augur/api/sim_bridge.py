@@ -26,6 +26,7 @@ from augur.core.scenario_set import (
     MonthlySpendPolicy,
     MortgageOriginationEvent,
     PrivateEquityPosition,
+    PrivateEquitySalePolicy,
     PropertyPurchaseEvent,
     Scenario as CoreScenario,
     ScenarioSet,
@@ -36,7 +37,7 @@ from augur.model.sim_market_api import (
     MarketSamplingRequest,
     SampledMarketBundle,
 )
-from augur.model.sim_market_series import SP500_SERIES_ID
+from augur.model.sim_market_series import SP500_SERIES_ID, private_equity_series_id
 from augur.sim.market import materialize_sampled_market
 from augur.sim.run import SimulationRun
 from augur.sim.scenario import (
@@ -86,7 +87,7 @@ def translate_scenario(
     scenario: CoreScenario, *, market_request: MarketRequest, configured_lots: tuple[InitialLot, ...] = ()
 ) -> SimScenarioTranslation:
     _reject_unsupported_features(scenario)
-    initial_lots = list(configured_lots) if configured_lots else _initial_lots(scenario)
+    initial_lots = [*configured_lots, *_initial_lots(scenario, include_public_positions=not configured_lots)]
     property_purchases = _property_purchases(scenario)
     sim_scenario = Scenario(
         agents=_agents(scenario, initial_lots=initial_lots, property_purchases=property_purchases),
@@ -292,23 +293,33 @@ def _counterparty_accounts(property_purchases: list[ScheduledPropertyPurchase]) 
     return accounts
 
 
-def _initial_lots(scenario: CoreScenario) -> list[InitialLot]:
+def _initial_lots(scenario: CoreScenario, *, include_public_positions: bool = True) -> list[InitialLot]:
     lots: list[InitialLot] = []
     for asset in scenario.initial_balance_sheet.assets:
-        if not isinstance(asset, GenericSp500StockPosition):
-            continue
-        if asset.value_usd <= 0:
-            continue
-        lots.append(
-            InitialLot(
-                lot_id=f"{asset.asset_id}_lot",
-                agent_id=asset.owner_actor_id,
-                asset_id=SP500_SERIES_ID,
-                purchase_month_index=0,
-                quantity=asset.value_usd,
-                cost_basis_per_unit_usd=_cost_basis_per_unit(asset),
+        if isinstance(asset, GenericSp500StockPosition):
+            if not include_public_positions or asset.value_usd <= 0:
+                continue
+            lots.append(
+                InitialLot(
+                    lot_id=f"{asset.asset_id}_lot",
+                    agent_id=asset.owner_actor_id,
+                    asset_id=SP500_SERIES_ID,
+                    purchase_month_index=0,
+                    quantity=asset.value_usd,
+                    cost_basis_per_unit_usd=_cost_basis_per_unit(asset),
+                )
             )
-        )
+        elif isinstance(asset, PrivateEquityPosition):
+            lots.append(
+                InitialLot(
+                    lot_id=f"{asset.asset_id}_lot",
+                    agent_id=asset.owner_actor_id,
+                    asset_id=private_equity_series_id(asset.market_routing_key),
+                    purchase_month_index=0,
+                    quantity=float(asset.units),
+                    cost_basis_per_unit_usd=_private_equity_cost_basis_per_unit(asset),
+                )
+            )
     return lots
 
 
@@ -316,6 +327,10 @@ def _cost_basis_per_unit(asset: GenericSp500StockPosition) -> float:
     if asset.value_usd <= 0:
         return 0.0
     return (asset.cost_basis_usd if asset.cost_basis_usd is not None else asset.value_usd) / asset.value_usd
+
+
+def _private_equity_cost_basis_per_unit(asset: PrivateEquityPosition) -> float:
+    return float(asset.cost_basis_usd or 0.0) / float(asset.units)
 
 
 def _property_purchases(scenario: CoreScenario) -> list[ScheduledPropertyPurchase]:
@@ -469,11 +484,15 @@ def _reject_unsupported_features(scenario: CoreScenario) -> None:
         unsupported.append("occupancy_plan.outside_rent_monthly_usd")
     if any(account.account_type is not CoreAccountType.CHECKING for account in scenario.initial_balance_sheet.accounts):
         unsupported.append("non-checking accounts")
+    if any(isinstance(asset, CryptoAssetPosition) for asset in scenario.initial_balance_sheet.assets):
+        unsupported.append("crypto positions")
     if any(
-        isinstance(asset, CryptoAssetPosition | PrivateEquityPosition)
+        isinstance(asset, PrivateEquityPosition) and asset.value_usd is not None
         for asset in scenario.initial_balance_sheet.assets
     ):
-        unsupported.append("crypto/private-equity positions")
+        unsupported.append("private-equity explicit value marks")
+    if any(isinstance(policy, PrivateEquitySalePolicy) for policy in scenario.policies):
+        unsupported.append("private-equity sale policies")
     if unsupported:
         raise UnsupportedSimBridgeScenarioError(
             f"scenario {scenario.scenario_id!r} uses unsupported sim bridge features: {', '.join(unsupported)}"

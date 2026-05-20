@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import Field, NonNegativeFloat, model_validator
+from pydantic import Field, NonNegativeFloat, PositiveFloat, model_validator
 
 from augur.core.scenario_set import (
     AccountBalance,
@@ -138,7 +138,7 @@ class PrivateEquityLot(ApiModel):
     label: str | None = None
     liquidity: PrivateEquityLiquidity = PrivateEquityLiquidity.TENDER_ONLY
     mark_value_usd: NonNegativeFloat
-    units: NonNegativeFloat | None = None
+    units: PositiveFloat
     cost_basis: CostBasis | None = None
     tender_windows: tuple[PrivateEquityTenderWindow, ...] = ()
     custody: CustodyMetadata
@@ -269,7 +269,7 @@ def _scenario_private_equity_lot(lot: PrivateEquityLot, account: PortfolioAccoun
         asset_id=lot.lot_id,
         owner_actor_id=account.owner_actor_id,
         value_usd=float(lot.mark_value_usd),
-        units=float(lot.units) if lot.units is not None else None,
+        units=float(lot.units),
         cost_basis_usd=float(lot.cost_basis.amount_usd) if lot.cost_basis is not None else None,
         issuer_id=lot.issuer_id,
         provenance=_position_provenance(lot.valuation, lot.custody),

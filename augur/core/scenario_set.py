@@ -954,7 +954,7 @@ LiquidityRegime = Annotated[LiquidityEventOnly | PublicMarket | Acquisition, Fie
 class PrivateEquityPosition(ApiModel):
     """An opening private-equity position.
 
-    Either `units` or `value_usd` must be supplied (often both):
+    `units` is required and positive. `value_usd` is optional:
 
     - When `value_usd` is set, it is the authoritative month-0 mark — e.g. a tender-offer
       or manual mark carried through from a `PortfolioStatement.PrivateEquityLot`.
@@ -973,7 +973,7 @@ class PrivateEquityPosition(ApiModel):
     asset_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
     owner_actor_id: str
     asset_type: Literal[AssetType.PRIVATE_EQUITY] = AssetType.PRIVATE_EQUITY
-    units: NonNegativeFloat | None = None
+    units: PositiveFloat
     value_usd: NonNegativeFloat | None = None
     cost_basis_usd: float | None = None
     issuer_id: str | None = Field(
@@ -1001,20 +1001,6 @@ class PrivateEquityPosition(ApiModel):
         keys raise `MissingMarketFactorError`.
         """
         return self.issuer_id or self.asset_id
-
-    @model_validator(mode="after")
-    def _require_units_or_value(self) -> PrivateEquityPosition:
-        if self.units is None and self.value_usd is None:
-            raise ValueError(
-                f"PrivateEquityPosition {self.asset_id!r} must set units or value_usd "
-                "(or both); the simulator needs one to derive the opening mark."
-            )
-        if isinstance(self.liquidity_regime, Acquisition) and self.units is None:
-            raise ValueError(
-                f"PrivateEquityPosition {self.asset_id!r} uses Acquisition regime but "
-                "has no units; the forced conversion needs units to compute proceeds."
-            )
-        return self
 
 
 AssetPosition = Annotated[

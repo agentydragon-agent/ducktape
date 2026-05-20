@@ -112,6 +112,11 @@ Already covered by the guarded sim backend smoke:
 - [x] Required level series are inferred from translated initial lots,
       scheduled asset sales, and liquidity-policy asset chains, then unioned
       across scenarios before sampling one shared market bundle.
+- [x] Request-local private-equity holdings with positive units, basis, and
+      issuer routing become valuation-only `InitialLot` rows when the browser
+      leaves `value_usd` unset. This keeps the browser-shaped concentrated
+      holding payload working while explicit mark anchoring and sale/tender
+      behavior are still deliberately unsupported.
 
 Translator gaps to migrate next:
 
@@ -172,9 +177,9 @@ Translator gaps to migrate next:
 - [ ] Translate crypto positions into sim asset lots with per-symbol market
       series IDs, basis, quantity/value handling, and liquidity-policy
       preferences.
-- [ ] Translate private-equity positions into native sim state: units/value,
-      basis, issuer routing, liquidity regime, tender/public-market/acquisition
-      constraints, and event stream requirements.
+- [ ] Finish private-equity native sim semantics: explicit mark anchoring,
+      liquidity regime, tender/public-market/acquisition constraints, and
+      event stream requirements.
 - [ ] Translate `PrivateEquitySalePolicy` after private-equity state and tender
       events are native to sim.
 - [ ] Translate `CheckingFloorSellPublicStockPolicy.sale_asset_preference`
