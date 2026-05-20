@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: grocy-config-ovh
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path-ovh
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: volsync.backube/v1alpha1
+kind: ReplicationDestination
+metadata:
+  name: grocy-config-ovh-migration
+spec:
+  trigger:
+    manual: prep-20260520
+  rsyncTLS:
+    destinationPVC: grocy-config-ovh
+    copyMethod: Direct
+    serviceType: ClusterIP
+    moverSecurityContext:
+      runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 1000
+      seccompProfile:
+        type: RuntimeDefault

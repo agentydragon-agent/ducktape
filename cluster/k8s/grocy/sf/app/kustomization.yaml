@@ -4,3 +4,4 @@ namespace: grocy-sf
 resources:
   - ../../app-base
   - namespace.yaml
+  - volsync-migration.yaml
