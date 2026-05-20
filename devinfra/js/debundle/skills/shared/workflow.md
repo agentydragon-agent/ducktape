@@ -11,8 +11,9 @@ verification gates.
 - Intake: converts planner output into named seed clusters for workers.
 - Lane worker: applies one scoped spec edit or reorg task in an isolated
   worktree.
-- Architect: audits named modules, infers conventions, and writes current-state
-  architecture notes and reorg recommendations.
+- Architect: audits named modules and emitted tree shape, infers and maintains
+  path/taxonomy conventions, and writes current-state architecture notes and
+  reorg recommendations.
 - Integrator: lands worker branches through a validated merge train.
 - Planner/namer skills: `debundle_plan_work` handles `debundle peel`
   graph/source queries; `debundle_mint_names` handles naming-only edits.

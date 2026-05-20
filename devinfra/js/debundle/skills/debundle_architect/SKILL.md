@@ -6,6 +6,9 @@ description: Audit a debundle spec's named modules for idiomatic JavaScript stru
 # Debundle Architect
 
 Use this role for structural review of an in-progress debundle spec. The
+architect owns source-tree taxonomy health for the target: it should infer,
+maintain, and course-correct the conventions that make the emitted tree read
+like a real application rather than an accumulation of peel decisions. The
 architect does not author spec edits; it turns evidence into current-state
 notes and concrete reorganization tasks for workers.
 
@@ -37,20 +40,63 @@ look like a natural JavaScript codebase:
 - modules that are too tiny to represent real seams
 - modules that glue unrelated subsystems together
 - helpers/config/constants separated from their only meaningful owner
+- directory levels that exist only to contain one item, unless they are a
+  justified namespace or stable public boundary
+- directories with too many unrelated siblings, indicating a missing
+  subdivision or an over-broad bucket
 - layer-direction violations under the project's architecture
 - inconsistent naming/path conventions inside a directory or subsystem
 - duplicated concept families spread across arbitrary homes
+- parallel top-level or mid-level axes for the same concept family
+- repeated `foo/foo.js` or wrapper-shaped leaves that came from mechanical
+  naming instead of a useful namespace
 - extracted modules not reachable from the generated graph
 
 Prefer project-local conventions over generic instincts. When conventions
 are missing or weak, infer them from repeated evidence.
+
+## Tree Shape Audit
+
+Every architect pass should look at both the spec tree and the emitted JS tree.
+Do not only review individual module boundaries; review the directory structure
+as a system.
+
+Check for:
+
+- singleton directories: directories with exactly one child or exactly one
+  source file
+- overloaded directories: directories whose sibling count is high enough that
+  a reader cannot infer the grouping rule
+- inconsistent depth: similar modules represented at different depths without
+  a reason
+- duplicated axes: the same product concept split across roots such as
+  `domain`, `feature`, `app`, `shared`, or project-specific equivalents
+- generic buckets: paths such as `utils`, `helpers`, `core`, `common`,
+  `runtime`, or `misc` that are not backed by a documented local convention
+- mechanical wrappers: redundant directory/file pairs or wrapper directories
+  that merely repeat a module name
+
+Singleton directories are not automatically wrong. They can be correct when
+they are a stable namespace, a public API boundary, a route/package boundary,
+or the first landed member of an evident family. The architect should record
+that reason. Without a reason, propose flattening or merging the path.
+
+Overloaded directories are also not automatically wrong. They can be correct
+for a small, coherent subsystem with a flat public surface. Without a clear
+cohesion rule, propose a subdivision convention.
+
+When the audit finds repeated bad shapes, update `<conventions-docs>` or
+`<architecture-notes>` with the convention that future peels should follow.
+An architect pass that only proposes one-off moves, while leaving the
+underlying path convention ambiguous, is incomplete.
 
 ## Convention Induction
 
 Record conventions as scoped hypotheses before treating them as rules.
 
 1. Gather evidence from graph edges, source proximity, naming families,
-   import direction, call sites, and existing well-shaped modules.
+   import direction, call sites, directory fan-in/fan-out, sibling naming, and
+   existing well-shaped modules.
 2. Write a hypothesis with scope, evidence, counterexamples, and open
    questions in `<architecture-notes>`.
 3. Promote to `<module-reorg>` only when the change is concrete enough for
@@ -89,6 +135,7 @@ consumer relationship does not make authorization policy presentation-owned.
 
 - observations
 - tentative conventions
+- source-tree taxonomy rules and exceptions
 - suspected layer boundaries
 - names of subsystems that need more evidence
 - questions for intake or lane workers
@@ -105,6 +152,8 @@ consumer relationship does not make authorization policy presentation-owned.
 **Evidence**:
 
 - ...
+- directory-shape evidence when relevant, such as singleton paths,
+  overloaded sibling counts, or duplicated concept roots
 
 **Proposed change**:
 

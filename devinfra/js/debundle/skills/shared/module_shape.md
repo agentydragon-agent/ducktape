@@ -48,6 +48,29 @@ Architects should promote understanding through this ladder:
 
 Current-state notes should be rewritten in place. Git is the history.
 
+## Directory Shape
+
+The emitted tree is part of the recovered architecture. Architects are
+responsible for keeping its taxonomy coherent, not just for judging isolated
+module seams.
+
+Bad directory shapes include:
+
+- too few items: a directory that contains exactly one child, unless it marks a
+  stable namespace, route/package boundary, public API boundary, or clearly
+  pending family
+- too many items: a broad bucket whose sibling list no longer communicates a
+  grouping rule
+- inconsistent depth: sibling concepts represented with different path depth
+  without a project-local reason
+- duplicate axes: one concept family spread across competing roots or layers
+- mechanical wrappers: `foo/foo.js`-style paths or wrapper directories that
+  repeat a name without adding navigational meaning
+
+These are convention problems, not only cleanup chores. When a pattern recurs,
+the architect should document the target convention and propose worker-ready
+reorg tasks that steer future peels toward it.
+
 ## Anti-Patterns
 
 - grab-bag paths like `utils`, `misc`, `core`, or `helpers` without a project
@@ -55,6 +78,12 @@ Current-state notes should be rewritten in place. Git is the history.
 - standalone primitive constants with one consumer
 - style/config/data fragments orphaned from the only code that gives them
   meaning
+- singleton directory wrappers with no namespace, API, route, or pending-family
+  justification
+- overloaded directories whose contents span multiple concepts without a
+  documented subdivision rule
+- parallel homes for the same concept family, such as a domain root, feature
+  root, and top-level subject root all owning indistinguishable modules
 - preserving chunker accidents as if they were source architecture
 - moving lower-layer semantics into a presenter just because the presenter is
   currently the only caller
