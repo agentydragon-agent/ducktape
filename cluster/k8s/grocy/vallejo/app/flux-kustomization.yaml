@@ -18,3 +18,4 @@ spec:
     - name: cert-manager-issuer-config
     - name: cert-manager-environment
     - name: authentik
+    - name: volsync

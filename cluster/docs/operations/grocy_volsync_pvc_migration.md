@@ -1,7 +1,7 @@
 # Grocy VolSync PVC Migration
 
-Status: smoke-tested with disposable PVCs on 2026-05-20; Grocy SF destination
-verified and cutover staged.
+Status: smoke-tested with disposable PVCs on 2026-05-20; Grocy SF migrated to
+OVH and verified. Grocy Vallejo is still pending.
 
 This runbook moves Grocy application data from Hetzner local-path PVCs to OVH
 Kimsufi local-path PVCs using VolSync `rsyncTLS`.
@@ -12,6 +12,18 @@ The two target PVCs are:
 | ------------- | ---------------------------- | -------------------- | -------------------------------- | ------------------- |
 | Grocy SF      | `grocy-sf/grocy-config`      | `local-path-hetzner` | `grocy-sf/grocy-config-ovh`      | `local-path-ovh`    |
 | Grocy Vallejo | `grocy-vallejo/grocy-config` | `local-path-hetzner` | `grocy-vallejo/grocy-config-ovh` | `local-path-ovh`    |
+
+Live paved result for Grocy SF:
+
+- destination prep commit: `f49359fd3`
+- pause and final sync commit: `85150b0fd`
+- verification Job commit: `4d9e4546e`
+- cutover commit: `f426f5727`
+- final sync trigger: `final-20260520`
+- VolSync source result: successful, 24.935819103s
+- verification Job output: `ok`
+- post-cutover pod: `grocy-66b6c66cd7-tpzhz` on `talos-kimsufi-worker-1`
+- post-cutover app check: `/login` returned HTTP 200 inside the pod
 
 ## Smoke-Test Findings
 

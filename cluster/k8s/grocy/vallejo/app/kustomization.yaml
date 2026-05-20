@@ -4,3 +4,4 @@ namespace: grocy-vallejo
 resources:
   - ../../app-base
   - namespace.yaml
+  - volsync-migration.yaml
