@@ -13,7 +13,7 @@ import uvicorn
 
 from augur.api.backend import AugurBackend, AugurBackendRuntimeConfig
 from augur.api.config import AugurConfig
-from augur.core.backend import StaticPathResolver, create_augur_backend_app
+from augur.api.http_app import StaticPathResolver, create_augur_backend_app
 from augur.model.market_api import JointMarketModel
 from augur.model.market_provider_config import realize_market_model
 

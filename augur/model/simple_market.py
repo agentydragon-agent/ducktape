@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 from pydantic import Field
 
-from augur.core.schemas import ApiModel
+from augur.core.schemas import CoreModel
 from augur.frames import concat_frames
 from augur.model.deterministic import Constant
 from augur.model.gbm import GeometricBrownian
@@ -29,20 +29,20 @@ from augur.model.series import (
 )
 
 
-class SimpleLocationModelParams(ApiModel):
+class SimpleLocationModelParams(CoreModel):
     """Per-location annual adjustment layered on top of simple GBM paths."""
 
     home_value_annual_adjustment_pct: float = 0.0
     rent_annual_adjustment_pct: float = 0.0
 
 
-class SimpleMarketModelConfig(ApiModel):
+class SimpleMarketModelConfig(CoreModel):
     """Deployment-supplied parameters for `SimpleMarketModel`."""
 
     location_params: dict[str, SimpleLocationModelParams] = Field(default_factory=dict)
 
 
-class SimpleMarketModel(ApiModel):
+class SimpleMarketModel(CoreModel):
     """Small sim-native stochastic model used until calibrated models plug in."""
 
     current_private_equity_price_usd: float = Field(default=0.0, ge=0.0)

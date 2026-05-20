@@ -24,11 +24,11 @@ import yaml
 from pydantic import Field, HttpUrl, NonNegativeFloat, NonNegativeInt, PositiveInt, model_validator
 
 from augur.api.portfolio import PortfolioConfig
+from augur.api.schemas import ApiModel
 from augur.core.bootstrap import DefaultScenario
 from augur.core.finance import ConcentratedHoldingSnapshot, FinanceSnapshot
 from augur.core.local_regulation import LocalRegulation
 from augur.core.scenario_set import ActorRole, LiquidityReserveRuleType
-from augur.core.schemas import ApiModel
 from augur.model.market_provider_config import MarketProviderConfig
 
 __all__ = [

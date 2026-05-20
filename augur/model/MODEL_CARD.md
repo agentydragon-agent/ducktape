@@ -71,13 +71,11 @@ Today that means:
   source-specific objects such as FRED, Yahoo, Zillow, or Manifold shapes.
 
 Current persisted provenance is partial. `SampledMarketBundle.metadata` carries
-model id, model-card id, model-version id, typed `EvidenceSet`,
-`CalibrationRun`, `CalibrationArtifact`, `ScenarioGeneratorRun`,
-`ExogenousPathSet`, `ValidationReport`, and `KnownLimitation` payloads, plus
-seed, rollout count, horizon, event stream ids, notes, provider label, and
-latest-observation ids. It does not yet persist evidence/calibration/validation
-artifacts outside the run payload, so these identities are not archival proof on
-their own.
+model-card, model-version, validation-report, known-limitation, evidence-set,
+calibration-artifact, risk-factor-set, scenario-generator, event-stream,
+provider-label, and latest-observation ids. It does not yet persist typed
+evidence/calibration/validation artifacts outside the run payload, so these
+identities are not archival proof on their own.
 
 ## Current Evidence And Artifacts
 
@@ -130,7 +128,7 @@ Current generator run, informally:
 - Source refresh recency is not enforced by this document or by model metadata.
 - Market models do not model agent feedback, strategic behavior, market impact,
   tax-law changes, credit availability, or general equilibrium dynamics.
-- Validation status is attached as a placeholder `ValidationReport`, not a
+- Validation status is attached as a placeholder validation-report id, not a
   decision-grade report artifact.
 
 ## Validation Gaps

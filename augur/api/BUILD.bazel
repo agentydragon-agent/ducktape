@@ -3,14 +3,22 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 package(default_visibility = ["//visibility:public"])
 
 py_library(
+    name = "schemas_py",
+    srcs = ["schemas.py"],
+    deps = [
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
     name = "config_py",
     srcs = ["config.py"],
     deps = [
         ":portfolio_py",
+        ":schemas_py",
         "//augur/core:bootstrap_py",
         "//augur/core:local_regulation_py",
         "//augur/core:scenario_set_py",
-        "//augur/core:schemas_py",
         "//augur/model:market_provider_config_py",
         "@pypi//pydantic",
         "@pypi//pyyaml",
@@ -105,10 +113,29 @@ py_library(
     deps = [
         ":backend_py",
         ":config_py",
-        "//augur/core:backend_py",
+        ":http_app_py",
         "//augur/model:market_api_py",
         "//augur/model:market_provider_config_py",
         "@pypi//uvicorn",
+    ],
+)
+
+py_library(
+    name = "http_app_py",
+    srcs = ["http_app.py"],
+    deps = [
+        "//augur/core:casing_py",
+        "@pypi//fastapi",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "http_app_test",
+    srcs = ["http_app_test.py"],
+    deps = [
+        ":http_app_py",
+        "@pypi//pytest_bazel",
     ],
 )
 
@@ -195,9 +222,9 @@ py_library(
     name = "browser_state_py",
     srcs = ["browser_state.py"],
     deps = [
+        ":schemas_py",
         "//augur/core:bootstrap_py",
         "//augur/core:scenario_set_py",
-        "//augur/core:schemas_py",
     ],
 )
 

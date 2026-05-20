@@ -144,7 +144,9 @@ def _scenario_result(scenario: Scenario, run: SimulationRun | None, *, include_m
 
 def _accepted_summary(scenario: Scenario) -> ScenarioAcceptedSummary:
     return ScenarioAcceptedSummary(
-        enabled=scenario.enabled, property_id=scenario.property_selection.property_id, location_id=scenario.location_id
+        enabled=scenario.enabled,
+        property_id=scenario.property_selection.property_id,
+        location_id=scenario.property_selection.location_id,
     )
 
 

@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from pydantic import Field, NonNegativeFloat, NonNegativeInt, computed_field
 
-from augur.core.schemas import ApiModel
+from augur.core.schemas import CoreModel
 
 
-class ConcentratedHoldingSnapshot(ApiModel):
+class ConcentratedHoldingSnapshot(CoreModel):
     holding_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
     label: str
     units: NonNegativeInt
@@ -19,7 +19,7 @@ class ConcentratedHoldingSnapshot(ApiModel):
         return self.units * self.fmv_usd_per_unit
 
 
-class FinanceSnapshot(ApiModel):
+class FinanceSnapshot(CoreModel):
     """Initial balance snapshot surfaced to the UI and used for scenario defaults."""
 
     as_of_date: str

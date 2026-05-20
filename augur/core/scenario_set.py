@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections import Counter
 from enum import StrEnum
 from typing import Annotated, Any, Literal
 
@@ -9,7 +8,7 @@ from pydantic import Field, NonNegativeFloat, NonNegativeInt, PositiveFloat, Pos
 from augur.core.accounting import LiabilityState, LotDisposition, TaxLot
 from augur.core.local_regulation import LocalRegulation, TaxRegime
 from augur.core.provenance import ProjectionRun
-from augur.core.schemas import ApiModel, ColumnarTable, Percentage
+from augur.core.schemas import ColumnarTable, CoreModel, Percentage
 
 
 class EventType(StrEnum):
@@ -266,13 +265,13 @@ class FinancingMode(StrEnum):
     CUSTOM = "custom"
 
 
-class Actor(ApiModel):
+class Actor(CoreModel):
     actor_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
     label: str
     role: ActorRole
 
 
-class _EventBase(ApiModel):
+class _EventBase(CoreModel):
     event_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
     month_index: NonNegativeInt
     actor_id: str | None = None
@@ -345,7 +344,7 @@ Event = Annotated[
 ]
 
 
-class _PolicyBase(ApiModel):
+class _PolicyBase(CoreModel):
     policy_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
     actor_id: str
     enabled: bool = True
@@ -390,14 +389,14 @@ class CheckingFloorSellPublicStockPolicy(_PolicyBase):
         return self
 
 
-class FixedAmountPrivateEquitySaleRule(ApiModel):
+class FixedAmountPrivateEquitySaleRule(CoreModel):
     sale_rule_type: Literal[PrivateEquitySaleRuleType.FIXED_AMOUNT_ON_OPPORTUNITY] = (
         PrivateEquitySaleRuleType.FIXED_AMOUNT_ON_OPPORTUNITY
     )
     amount_usd: PositiveFloat
 
 
-class LiquidNetWorthFloorPrivateEquitySaleRule(ApiModel):
+class LiquidNetWorthFloorPrivateEquitySaleRule(CoreModel):
     sale_rule_type: Literal[PrivateEquitySaleRuleType.LIQUID_NET_WORTH_FLOOR] = (
         PrivateEquitySaleRuleType.LIQUID_NET_WORTH_FLOOR
     )
@@ -448,7 +447,7 @@ Policy = Annotated[
 ]
 
 
-class _TraceBase(ApiModel):
+class _TraceBase(CoreModel):
     rollout_index: NonNegativeInt
     month_index: NonNegativeInt
     path_set_id: str | None = None
@@ -717,7 +716,7 @@ class FailureEvent(_TraceBase):
     unpaid_amount_usd: float
 
 
-class ReportSpec(ApiModel):
+class ReportSpec(CoreModel):
     percentiles: tuple[float, ...] = (5, 25, 50, 75, 95)
     include_monthly_columns: bool = True
     # Per-rollout-per-month event streams; off by default because they're not
@@ -737,7 +736,7 @@ class ReportSpec(ApiModel):
         return self
 
 
-class TaxProfile(ApiModel):
+class TaxProfile(CoreModel):
     filing_status: TaxFilingStatus = TaxFilingStatus.SINGLE
     annual_ordinary_income_usd: NonNegativeFloat = 0
     federal_standard_deduction_usd: NonNegativeFloat | None = None
@@ -752,18 +751,18 @@ class TaxProfile(ApiModel):
     prior_year_tax_usd: NonNegativeFloat | None = None
 
 
-class TransactionCosts(ApiModel):
+class TransactionCosts(CoreModel):
     closing_cost_buy_pct: Percentage = 2.5
     closing_cost_sell_pct: Percentage = 6.5
 
 
-class PropertyAssumptions(ApiModel):
+class PropertyAssumptions(CoreModel):
     insurance_annual_usd: NonNegativeFloat = 1800
     maintenance_pct: Percentage = 1
     depreciable_basis_pct: Percentage = 80
 
 
-class PropertySelection(ApiModel):
+class PropertySelection(CoreModel):
     property_id: PropertyId | None = None
     location_id: str | None = None
     purchase_price_usd: NonNegativeFloat | None = None
@@ -771,7 +770,7 @@ class PropertySelection(ApiModel):
     local_regulation: LocalRegulation | None = None
 
 
-class Financing(ApiModel):
+class Financing(CoreModel):
     financing_mode: FinancingMode = FinancingMode.FIXED_30
     down_payment_pct: NonNegativeFloat = 25
     mortgage_rate_pct: NonNegativeFloat | None = None
@@ -780,7 +779,7 @@ class Financing(ApiModel):
     loan_amount_usd: NonNegativeFloat | None = None
 
 
-class OccupancyPlan(ApiModel):
+class OccupancyPlan(CoreModel):
     occupancy_mode: OccupancyMode = OccupancyMode.OWNER_LIVES_IN_PROPERTY
     owner_residence_property_id: PropertyId | None = None
     start_month: NonNegativeInt = 0
@@ -807,7 +806,7 @@ class OccupancyPlan(ApiModel):
         return self
 
 
-class _RentalPlanBase(ApiModel):
+class _RentalPlanBase(CoreModel):
     start_month: NonNegativeInt | None = None
     end_month: NonNegativeInt | None = None
     monthly_rent_usd: NonNegativeFloat | None = None
@@ -852,13 +851,13 @@ RentalPlan = Annotated[
 ]
 
 
-class PositionProvenance(ApiModel):
+class PositionProvenance(CoreModel):
     source_id: str | None = None
     snapshot_id: str | None = None
     as_of: str | None = None
 
 
-class AccountBalance(ApiModel):
+class AccountBalance(CoreModel):
     account_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
     account_type: AccountType
     owner_actor_id: str
@@ -866,7 +865,7 @@ class AccountBalance(ApiModel):
     provenance: PositionProvenance = Field(default_factory=PositionProvenance)
 
 
-class _AssetPositionBase(ApiModel):
+class _AssetPositionBase(CoreModel):
     asset_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
     owner_actor_id: str
     value_usd: float
@@ -901,7 +900,7 @@ class LiquidityRegimeType(StrEnum):
     ACQUISITION = "acquisition"
 
 
-class LiquidityEventOnly(ApiModel):
+class LiquidityEventOnly(CoreModel):
     """Default PE liquidity regime: sale only at sampled tender opportunities.
 
     The sampled private-equity sale-opportunity event series plus the actor's
@@ -911,7 +910,7 @@ class LiquidityEventOnly(ApiModel):
     regime_type: Literal[LiquidityRegimeType.LIQUIDITY_EVENT_ONLY] = LiquidityRegimeType.LIQUIDITY_EVENT_ONLY
 
 
-class PublicMarket(ApiModel):
+class PublicMarket(CoreModel):
     """PE position that trades on a public market: freely sellable every month.
 
     When `lockup_end_month` is set, sale is forbidden for months
@@ -931,7 +930,7 @@ class PublicMarket(ApiModel):
     lockup_end_month: NonNegativeInt | None = None
 
 
-class Acquisition(ApiModel):
+class Acquisition(CoreModel):
     """PE position that converts at a fixed price on a scheduled month.
 
     A forced conversion: at `event_month`, the entire remaining position is
@@ -949,7 +948,7 @@ class Acquisition(ApiModel):
 LiquidityRegime = Annotated[LiquidityEventOnly | PublicMarket | Acquisition, Field(discriminator="regime_type")]
 
 
-class PrivateEquityPosition(ApiModel):
+class PrivateEquityPosition(CoreModel):
     """An opening private-equity position.
 
     `units` is required and positive. `value_usd` is optional:
@@ -1004,20 +1003,20 @@ AssetPosition = Annotated[
 ]
 
 
-class InitialBalanceSheet(ApiModel):
+class InitialBalanceSheet(CoreModel):
     accounts: tuple[AccountBalance, ...] = ()
     assets: tuple[AssetPosition, ...] = ()
     liabilities: tuple[Any, ...] = Field(default=(), max_length=0)
 
 
-class MarketRequest(ApiModel):
+class MarketRequest(CoreModel):
     market_model_id: str = "current_market_model"
     rollout_count: PositiveInt = 128
     horizon_months: PositiveInt = 360
     seed: int
 
 
-class Scenario(ApiModel):
+class Scenario(CoreModel):
     scenario_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
     label: str
     enabled: bool = True
@@ -1035,12 +1034,8 @@ class Scenario(ApiModel):
     initial_balance_sheet: InitialBalanceSheet = Field(default_factory=InitialBalanceSheet)
     tax_regimes: tuple[TaxRegime, ...] = ()
 
-    @property
-    def location_id(self) -> str | None:
-        return self.property_selection.location_id
 
-
-class ScenarioSet(ApiModel):
+class ScenarioSet(CoreModel):
     scenario_set_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
     title: str
     market_request: MarketRequest
@@ -1056,13 +1051,13 @@ class ScenarioSet(ApiModel):
         return self
 
 
-class ScenarioAcceptedSummary(ApiModel):
+class ScenarioAcceptedSummary(CoreModel):
     enabled: bool
     property_id: PropertyId | None = None
     location_id: str | None = None
 
 
-class ExogenousPathIdentity(ApiModel):
+class ExogenousPathIdentity(CoreModel):
     rollout_index: NonNegativeInt
     path_set_id: str
     exogenous_path_id: str
@@ -1077,7 +1072,7 @@ class ExogenousPathIdentity(ApiModel):
     event_stream_ids: tuple[str, ...] = ()
 
 
-class ProjectionTrajectoryIdentity(ApiModel):
+class ProjectionTrajectoryIdentity(CoreModel):
     scenario_id: str
     rollout_index: NonNegativeInt
     path_set_id: str
@@ -1087,7 +1082,7 @@ class ProjectionTrajectoryIdentity(ApiModel):
     projection_trajectory_id: str
 
 
-class RolloutStatus(ApiModel):
+class RolloutStatus(CoreModel):
     rollout_index: NonNegativeInt
     status: RolloutStatusType
     min_cash_usd: float
@@ -1097,26 +1092,7 @@ class RolloutStatus(ApiModel):
     unpaid_obligation_usd: NonNegativeFloat = 0.0
 
 
-class RolloutStatusSummary(ApiModel):
-    total_rollout_count: NonNegativeInt = 0
-    counts_by_status: dict[RolloutStatusType, NonNegativeInt] = Field(default_factory=dict)
-
-    @classmethod
-    def from_statuses(cls, statuses: tuple[RolloutStatus, ...]) -> RolloutStatusSummary:
-        status_counts = Counter(status.status for status in statuses)
-        counts = (
-            {
-                status: status_counts[status]
-                for status in RolloutStatusType
-                if status is not RolloutStatusType.FAILED or status_counts[status] > 0
-            }
-            if statuses
-            else {}
-        )
-        return cls(total_rollout_count=len(statuses), counts_by_status=counts)
-
-
-class ScenarioResult(ApiModel):
+class ScenarioResult(CoreModel):
     scenario_id: str
     scenario_label: str
     summary: ScenarioAcceptedSummary
@@ -1139,7 +1115,7 @@ class ScenarioResult(ApiModel):
     warnings: tuple[str, ...] = ()
 
 
-class ScenarioSetRunResponse(ApiModel):
+class ScenarioSetRunResponse(CoreModel):
     scenario_set_id: str
     request: ScenarioSet
     market_request: MarketRequest

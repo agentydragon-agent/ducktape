@@ -7,7 +7,7 @@ from pydantic import Field
 from augur.core.finance import FinanceSnapshot
 from augur.core.local_regulation import LocalRegulation
 from augur.core.scenario_set import ActorRole, PropertyId
-from augur.core.schemas import ApiModel, ScenarioKnobs
+from augur.core.schemas import CoreModel, ScenarioKnobs
 
 
 class OwnerResidenceModeId(StrEnum):
@@ -22,7 +22,7 @@ class RentalUsePolicyId(StrEnum):
     RENT_WHOLE_PROPERTY = "rent_whole_property"
 
 
-class Option(ApiModel):
+class Option(CoreModel):
     id: str
     label: str
     description: str
@@ -36,18 +36,18 @@ class RentalUsePolicyOption(Option):
     id: RentalUsePolicyId
 
 
-class AgentOption(ApiModel):
+class AgentOption(CoreModel):
     actor_id: str
     label: str
     role: ActorRole
 
 
-class DefaultScenario(ApiModel):
+class DefaultScenario(CoreModel):
     property_id: PropertyId
     label: str | None = None
 
 
-class Location(ApiModel):
+class Location(CoreModel):
     id: str = Field(description="Stable relational location identity used by config, storage, and scenario joins.")
     label: str
     city: str
@@ -56,7 +56,7 @@ class Location(ApiModel):
     notes: tuple[str, ...] = ()
 
 
-class Property(ApiModel):
+class Property(CoreModel):
     """Persistence-shaped property row; join to `BootstrapResponse.locations` by `location_id`."""
 
     id: str = Field(description="Stable relational property identity used by selection, saved scenarios, and storage.")
@@ -80,7 +80,7 @@ class Property(ApiModel):
     flags: tuple[str, ...] = ()
 
 
-class BootstrapResponse(ApiModel):
+class BootstrapResponse(CoreModel):
     locations: list[Location]
     properties: list[Property]
     default_property_id: str

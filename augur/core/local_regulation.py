@@ -4,7 +4,7 @@ from enum import StrEnum
 
 from pydantic import Field, NonNegativeFloat, model_validator
 
-from augur.core.schemas import ApiModel, Percentage
+from augur.core.schemas import CoreModel, Percentage
 
 
 class TaxRegime(StrEnum):
@@ -24,7 +24,7 @@ class TaxRegime(StrEnum):
     PRIMARY_RESIDENCE_EXCLUSION = "primary_residence_exclusion"
 
 
-class LocalRegulation(ApiModel):
+class LocalRegulation(CoreModel):
     property_tax_regime: TaxRegime = Field(
         description="Primary property-tax regime to put on a selected property for this location."
     )

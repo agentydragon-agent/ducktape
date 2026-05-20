@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest_bazel
 
-from augur.core.backend import create_augur_backend_app
+from augur.api.http_app import create_augur_backend_app
 
 
 class _Request:

@@ -27,9 +27,9 @@ from enum import StrEnum
 
 from pydantic import ConfigDict
 
+from augur.api.schemas import ApiModel
 from augur.core.bootstrap import OwnerResidenceModeId, RentalUsePolicyId
 from augur.core.scenario_set import FinancingMode, MarketRequest, ReportSpec
-from augur.core.schemas import ApiModel
 
 # ---------------------------------------------------------------------------
 # Browser scenario set input — strict shape. Every field present after
