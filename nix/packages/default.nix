@@ -95,6 +95,8 @@ let
     pkgs.stdenvNoCC.mkDerivation {
       inherit pname src;
       version = "latest";
+      nativeBuildInputs = [ pkgs.autoPatchelfHook ];
+      buildInputs = [ pkgs.stdenv.cc.cc.lib ];
       dontUnpack = true;
       installPhase = ''
         install -Dm755 $src $out/bin/${binaryName}
