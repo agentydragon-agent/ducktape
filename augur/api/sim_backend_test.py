@@ -150,6 +150,15 @@ def test_sim_backend_flag_accepts_catalog_defaulted_property_selection() -> None
     result = response.scenario_results[0]
     assert result.summary.property_id == "location_a_property"
     assert result.summary.location_id == "location_a"
+    assert result.monthly_columns is not None
+    columns = result.monthly_columns.columns
+    assert max(columns["property_value_usd"]) == 922_500.0
+    assert max(columns["mortgage_balance_usd"]) == 720_000.0
+    assert sum(columns["purchase_closing_cost_usd"]) == 67_500.0
+    assert sum(columns["mortgage_payment_usd"]) > 0
+    assert sum(columns["mortgage_interest_usd"]) > 0
+    assert sum(columns["mortgage_principal_usd"]) > 0
+    assert max(columns["home_equity_usd"]) > 200_000.0
     assert result.terminal_columns is not None
     assert result.terminal_columns.row_count == 3
 

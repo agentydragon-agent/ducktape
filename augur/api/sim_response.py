@@ -9,6 +9,7 @@ import numpy as np
 import polars as pl
 
 from augur.core.scenario_set import (
+    ActorRole,
     ReportMetric,
     RolloutStatus,
     RolloutStatusType,
@@ -148,18 +149,25 @@ def _accepted_summary(scenario: Scenario) -> ScenarioAcceptedSummary:
 
 
 def _monthly_metric_frame(scenario: Scenario, run: SimulationRun) -> pl.DataFrame:
+    report_agent_id = _report_agent_id(scenario)
     grid = _rollout_month_grid(run)
-    cash = _sum_cash(run)
-    sp500_value = _sp500_value(run)
-    sp500_sales = _sp500_sales(run)
-    shortfalls = _shortfalls(run)
-    monthly_spend = _monthly_spend(run)
+    cash = _sum_cash(run, agent_id=report_agent_id)
+    sp500_value = _sp500_value(run, agent_id=report_agent_id)
+    sp500_sales = _sp500_sales(run, agent_id=report_agent_id)
+    shortfalls = _shortfalls(run, agent_id=report_agent_id)
+    monthly_spend = _monthly_spend(run, agent_id=report_agent_id)
+    property_position = _property_position(run, agent_id=report_agent_id)
+    mortgage_payments = _mortgage_payments(run, agent_id=report_agent_id)
+    purchase_closing_costs = _purchase_closing_costs(run, agent_id=report_agent_id)
     frame = (
         grid.join(cash, on=["rollout_index", "month_index"], how="left")
         .join(sp500_value, on=["rollout_index", "month_index"], how="left")
         .join(sp500_sales, on=["rollout_index", "month_index"], how="left")
         .join(shortfalls, on=["rollout_index", "month_index"], how="left")
         .join(monthly_spend, on=["rollout_index", "month_index"], how="left")
+        .join(property_position, on=["rollout_index", "month_index"], how="left")
+        .join(mortgage_payments, on=["rollout_index", "month_index"], how="left")
+        .join(purchase_closing_costs, on=["rollout_index", "month_index"], how="left")
         .fill_null(0.0)
         .with_columns(
             pl.lit(scenario.scenario_id).alias("scenario_id"),
@@ -169,7 +177,10 @@ def _monthly_metric_frame(scenario: Scenario, run: SimulationRun) -> pl.DataFram
         )
         .with_columns(
             liquid_net_worth_usd=pl.col("cash_usd") + pl.col("generic_sp500_value_usd"),
-            net_worth_usd=pl.col("cash_usd") + pl.col("generic_sp500_value_usd"),
+            net_worth_usd=pl.col("cash_usd")
+            + pl.col("generic_sp500_value_usd")
+            + pl.col("property_value_usd")
+            - pl.col("mortgage_balance_usd"),
         )
     )
     for metric in ReportMetric:
@@ -182,6 +193,13 @@ def _monthly_metric_frame(scenario: Scenario, run: SimulationRun) -> pl.DataFram
         pl.col("month_index").cast(pl.Int64),
         *(metric.value for metric in ReportMetric if metric is not ReportMetric.MONTH_INDEX),
     )
+
+
+def _report_agent_id(scenario: Scenario) -> str:
+    primary_owner_ids = [actor.actor_id for actor in scenario.actors if actor.role is ActorRole.PRIMARY_OWNER]
+    if len(primary_owner_ids) == 1:
+        return primary_owner_ids[0]
+    return scenario.actors[0].actor_id
 
 
 def _rollout_month_grid(run: SimulationRun) -> pl.DataFrame:
@@ -200,9 +218,14 @@ def _max_month_index(run: SimulationRun) -> int:
     frames = (
         run.cash_balances,
         run.asset_lots,
+        run.property_state,
+        run.property_stakes,
+        run.liabilities,
         run.rollout_status_history,
         run.market_prices,
         run.events_log.lot_dispositions,
+        run.events_log.property_purchases,
+        run.events_log.mortgage_payments,
         run.events_log.obligation_settlements,
         run.events_log.rollout_failures,
     )
@@ -210,14 +233,18 @@ def _max_month_index(run: SimulationRun) -> int:
     return max(values) if values else 0
 
 
-def _sum_cash(run: SimulationRun) -> pl.DataFrame:
+def _sum_cash(run: SimulationRun, *, agent_id: str) -> pl.DataFrame:
     if run.cash_balances.is_empty():
         return _empty_metric("cash_usd")
-    return run.cash_balances.group_by("rollout_index", "month_index").agg(pl.col("balance_usd").sum().alias("cash_usd"))
+    return (
+        run.cash_balances.filter(pl.col("agent_id") == agent_id)
+        .group_by("rollout_index", "month_index")
+        .agg(pl.col("balance_usd").sum().alias("cash_usd"))
+    )
 
 
-def _sp500_value(run: SimulationRun) -> pl.DataFrame:
-    lots = run.asset_lots.filter(pl.col("asset_id") == SP500_SERIES_ID)
+def _sp500_value(run: SimulationRun, *, agent_id: str) -> pl.DataFrame:
+    lots = run.asset_lots.filter((pl.col("agent_id") == agent_id) & (pl.col("asset_id") == SP500_SERIES_ID))
     if lots.is_empty():
         return _empty_metric("generic_sp500_value_usd")
     return (
@@ -232,8 +259,10 @@ def _sp500_value(run: SimulationRun) -> pl.DataFrame:
     )
 
 
-def _sp500_sales(run: SimulationRun) -> pl.DataFrame:
-    dispositions = run.events_log.lot_dispositions.filter(pl.col("asset_id") == SP500_SERIES_ID)
+def _sp500_sales(run: SimulationRun, *, agent_id: str) -> pl.DataFrame:
+    dispositions = run.events_log.lot_dispositions.filter(
+        (pl.col("agent_id") == agent_id) & (pl.col("asset_id") == SP500_SERIES_ID)
+    )
     if dispositions.is_empty():
         return _empty_metrics("generic_sp500_sale_usd", "generic_sp500_sale_basis_usd")
     return dispositions.group_by("rollout_index", "month_index").agg(
@@ -242,20 +271,80 @@ def _sp500_sales(run: SimulationRun) -> pl.DataFrame:
     )
 
 
-def _shortfalls(run: SimulationRun) -> pl.DataFrame:
+def _shortfalls(run: SimulationRun, *, agent_id: str) -> pl.DataFrame:
     if run.events_log.rollout_failures.is_empty():
         return _empty_metric("checking_floor_shortfall_usd")
-    return run.events_log.rollout_failures.group_by("rollout_index", "month_index").agg(
-        pl.col("shortfall_usd").sum().alias("checking_floor_shortfall_usd")
+    return (
+        run.events_log.rollout_failures.filter(pl.col("agent_id") == agent_id)
+        .group_by("rollout_index", "month_index")
+        .agg(pl.col("shortfall_usd").sum().alias("checking_floor_shortfall_usd"))
     )
 
 
-def _monthly_spend(run: SimulationRun) -> pl.DataFrame:
-    settlements = run.events_log.obligation_settlements.filter(pl.col("obligation_type") == "monthly_spend")
+def _monthly_spend(run: SimulationRun, *, agent_id: str) -> pl.DataFrame:
+    settlements = run.events_log.obligation_settlements.filter(
+        (pl.col("agent_id") == agent_id) & (pl.col("obligation_type") == "monthly_spend")
+    )
     if settlements.is_empty():
         return _empty_metric("monthly_spend_usd")
     return settlements.group_by("rollout_index", "month_index").agg(
         pl.col("amount_paid_usd").sum().alias("monthly_spend_usd")
+    )
+
+
+def _property_position(run: SimulationRun, *, agent_id: str) -> pl.DataFrame:
+    if run.property_state.is_empty() or run.property_stakes.is_empty():
+        return _empty_metrics(
+            "property_value_usd",
+            "mortgage_balance_usd",
+            "home_equity_usd",
+            "owner_home_equity_claim_usd",
+            "owner_equity_ledger_usd",
+        )
+    property_value = (
+        run.property_stakes.filter(pl.col("agent_id") == agent_id)
+        .join(run.property_state, on=["rollout_index", "month_index", "property_id"], how="inner")
+        .group_by("rollout_index", "month_index")
+        .agg(
+            (pl.col("adjusted_basis_usd") * pl.col("ownership_pct")).sum().alias("property_value_usd"),
+            pl.col("equity_ledger_usd").sum().alias("owner_equity_ledger_usd"),
+        )
+    )
+    if run.liabilities.is_empty():
+        mortgage_balance = _empty_metric("mortgage_balance_usd")
+    else:
+        mortgage_balance = (
+            run.liabilities.filter(pl.col("agent_id") == agent_id)
+            .group_by("rollout_index", "month_index")
+            .agg(pl.col("principal_usd").sum().alias("mortgage_balance_usd"))
+        )
+    return (
+        property_value.join(mortgage_balance, on=["rollout_index", "month_index"], how="left")
+        .with_columns(pl.col("mortgage_balance_usd").fill_null(0.0))
+        .with_columns(
+            home_equity_usd=pl.col("property_value_usd") - pl.col("mortgage_balance_usd"),
+            owner_home_equity_claim_usd=pl.col("property_value_usd") - pl.col("mortgage_balance_usd"),
+        )
+    )
+
+
+def _mortgage_payments(run: SimulationRun, *, agent_id: str) -> pl.DataFrame:
+    payments = run.events_log.mortgage_payments.filter(pl.col("agent_id") == agent_id)
+    if payments.is_empty():
+        return _empty_metrics("mortgage_interest_usd", "mortgage_principal_usd", "mortgage_payment_usd")
+    return payments.group_by("rollout_index", "month_index").agg(
+        pl.col("interest_usd").sum().alias("mortgage_interest_usd"),
+        pl.col("principal_usd").sum().alias("mortgage_principal_usd"),
+        pl.col("total_payment_usd").sum().alias("mortgage_payment_usd"),
+    )
+
+
+def _purchase_closing_costs(run: SimulationRun, *, agent_id: str) -> pl.DataFrame:
+    purchases = run.events_log.property_purchases.filter(pl.col("buyer_agent_id") == agent_id)
+    if purchases.is_empty():
+        return _empty_metric("purchase_closing_cost_usd")
+    return purchases.group_by("rollout_index", "month_index").agg(
+        pl.col("closing_cost_usd").sum().alias("purchase_closing_cost_usd")
     )
 
 
