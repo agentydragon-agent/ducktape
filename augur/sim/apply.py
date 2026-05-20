@@ -25,10 +25,11 @@ import polars as pl
 
 from augur.sim.events import EventLog
 from augur.sim.state import (
-    ASSET_LOT_SCHEMA,
-    LIABILITY_SCHEMA,
-    PROPERTY_STAKE_SCHEMA,
-    PROPERTY_STATE_SCHEMA,
+    ASSET_LOT_FRAME,
+    LIABILITY_FRAME,
+    PROPERTY_STAKE_FRAME,
+    PROPERTY_STATE_FRAME,
+    TAX_LIABILITIES_FRAME,
     StateCrossSection,
 )
 
@@ -129,7 +130,7 @@ def _apply_asset_purchases(asset_lots: pl.DataFrame, purchases: pl.DataFrame) ->
         pl.col("month_index").alias("purchase_month_index"),
         pl.col("cost_basis_per_unit_usd"),
         pl.col("quantity").alias("remaining_quantity"),
-    ).select(list(ASSET_LOT_SCHEMA.keys()))
+    ).pipe(ASSET_LOT_FRAME.normalize)
     return pl.concat([asset_lots, new_lots])
 
 
@@ -173,7 +174,7 @@ def _apply_tax_accruals_to_liabilities(tax_liabilities: pl.DataFrame, tax_accrua
         pl.col("jurisdiction_id"),
         pl.col("tax_year_end_month"),
         pl.col("amount_usd").alias("amount_owed_usd"),
-    )
+    ).pipe(TAX_LIABILITIES_FRAME.normalize)
     return pl.concat([tax_liabilities, new_rows])
 
 
@@ -185,7 +186,7 @@ def _apply_property_purchases_to_state(property_state: pl.DataFrame, purchases: 
         pl.col("location_id"),
         pl.col("month_index").alias("purchase_month_index"),
         pl.col("adjusted_basis_usd"),
-    ).select(list(PROPERTY_STATE_SCHEMA.keys()))
+    ).pipe(PROPERTY_STATE_FRAME.normalize)
     return pl.concat([property_state, new_rows])
 
 
@@ -198,7 +199,7 @@ def _apply_property_purchases_to_stakes(property_stakes: pl.DataFrame, purchases
         pl.col("ownership_pct"),
         pl.col("stake_contribution_usd").alias("contribution_used_usd"),
         pl.col("equity_ledger_usd"),
-    ).select(list(PROPERTY_STAKE_SCHEMA.keys()))
+    ).pipe(PROPERTY_STAKE_FRAME.normalize)
     return pl.concat([property_stakes, new_rows])
 
 
@@ -219,7 +220,7 @@ def _apply_mortgage_originations(liabilities: pl.DataFrame, originations: pl.Dat
         pl.col("monthly_payment_usd"),
         pl.lit(0.0, dtype=pl.Float64()).alias("interest_paid_ytd_usd"),
         pl.lit(0.0, dtype=pl.Float64()).alias("principal_paid_ytd_usd"),
-    ).select(list(LIABILITY_SCHEMA.keys()))
+    ).pipe(LIABILITY_FRAME.normalize)
     return pl.concat([liabilities, new_rows])
 
 

@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 import polars as pl
 
-from augur.sim.frames import concat_frames
+from augur.sim.frames import FrameSpec
 from augur.sim.run import SimulationRun
 
 NET_WORTH_SCHEMA = pl.Schema(
@@ -137,6 +137,30 @@ _NET_WORTH_COMPONENT_SCHEMA = pl.Schema(
     }
 )
 
+NET_WORTH_FRAME = FrameSpec("net_worth", NET_WORTH_SCHEMA)
+ACCOUNT_BALANCE_FRAME = FrameSpec("account_balances", ACCOUNT_BALANCE_SCHEMA)
+TRANSACTION_FRAME = FrameSpec("transactions", TRANSACTION_SCHEMA)
+TAX_BREAKDOWN_PROJECTION_FRAME = FrameSpec("tax_breakdowns", TAX_BREAKDOWN_PROJECTION_SCHEMA)
+OBLIGATION_LIFECYCLE_FRAME = FrameSpec("obligation_lifecycle", OBLIGATION_LIFECYCLE_SCHEMA)
+FAILURE_PROJECTION_FRAME = FrameSpec("failures", FAILURE_PROJECTION_SCHEMA)
+ROLLOUT_SUMMARY_FRAME = FrameSpec("rollout_summary", ROLLOUT_SUMMARY_SCHEMA)
+_NET_WORTH_COMPONENT_FRAME = FrameSpec("_net_worth_components", _NET_WORTH_COMPONENT_SCHEMA)
+_FINAL_NET_WORTH_FRAME = FrameSpec(
+    "_final_net_worth",
+    pl.Schema(
+        {
+            "rollout_index": pl.Int64(),
+            "final_month_index": pl.Int64(),
+            "final_liquid_net_worth_usd": pl.Float64(),
+            "final_book_net_worth_usd": pl.Float64(),
+        }
+    ),
+)
+_FAILURE_COUNTS_FRAME = FrameSpec(
+    "_failure_counts",
+    pl.Schema({"rollout_index": pl.Int64(), "failure_count": pl.Int64(), "first_failure_month": pl.Int64()}),
+)
+
 
 @dataclass(frozen=True)
 class ProjectionRun:
@@ -203,17 +227,16 @@ def project_net_worth(run: SimulationRun) -> pl.DataFrame:
     projection can expose market-value real-estate net worth.
     """
 
-    components = concat_frames(
+    components = _NET_WORTH_COMPONENT_FRAME.concat(
         [
             _cash_net_worth_components(run),
             _asset_net_worth_components(run),
             _property_net_worth_components(run),
             _liability_net_worth_components(run),
-        ],
-        _NET_WORTH_COMPONENT_SCHEMA,
+        ]
     )
     if components.is_empty():
-        return pl.DataFrame(schema=NET_WORTH_SCHEMA)
+        return NET_WORTH_FRAME.empty()
     metric_names = [
         "cash_usd",
         "liquid_asset_value_usd",
@@ -232,7 +255,7 @@ def project_net_worth(run: SimulationRun) -> pl.DataFrame:
             - pl.col("liability_principal_usd"),
         )
         .sort(["rollout_index", "month_index", "agent_id"])
-        .select(list(NET_WORTH_SCHEMA.keys()))
+        .pipe(NET_WORTH_FRAME.normalize)
     )
 
 
@@ -255,7 +278,7 @@ def project_account_balances(run: SimulationRun) -> pl.DataFrame:
         pl.lit("liability", dtype=pl.Utf8()).alias("account_type"),
         (-pl.col("principal_usd")).alias("balance_usd"),
     )
-    return concat_frames([cash, liabilities], ACCOUNT_BALANCE_SCHEMA).sort(
+    return ACCOUNT_BALANCE_FRAME.concat([cash, liabilities]).sort(
         ["rollout_index", "month_index", "agent_id", "account_type", "account_id"]
     )
 
@@ -263,23 +286,22 @@ def project_account_balances(run: SimulationRun) -> pl.DataFrame:
 def project_transactions(run: SimulationRun) -> pl.DataFrame:
     """Transaction/audit rows projected from event frames."""
 
-    return concat_frames(
+    return TRANSACTION_FRAME.concat(
         [
             _transfer_transactions(run),
             _lot_disposition_transactions(run),
             _obligation_settlement_transactions(run),
             _tax_settlement_transactions(run),
-        ],
-        TRANSACTION_SCHEMA,
+        ]
     ).sort(["rollout_index", "month_index", "transaction_type", "transaction_id"])
 
 
 def project_tax_breakdowns(run: SimulationRun) -> pl.DataFrame:
     if run.events_log.tax_breakdowns.is_empty():
-        return pl.DataFrame(schema=TAX_BREAKDOWN_PROJECTION_SCHEMA)
+        return TAX_BREAKDOWN_PROJECTION_FRAME.empty()
     return (
         run.events_log.tax_breakdowns.with_columns(tax_year=pl.col("tax_year_end_month") // 12)
-        .select(list(TAX_BREAKDOWN_PROJECTION_SCHEMA.keys()))
+        .pipe(TAX_BREAKDOWN_PROJECTION_FRAME.normalize)
         .sort(["rollout_index", "tax_year", "agent_id", "jurisdiction_id"])
     )
 
@@ -287,7 +309,7 @@ def project_tax_breakdowns(run: SimulationRun) -> pl.DataFrame:
 def project_obligation_lifecycle(run: SimulationRun) -> pl.DataFrame:
     accruals = run.events_log.obligation_accruals
     if accruals.is_empty():
-        return pl.DataFrame(schema=OBLIGATION_LIFECYCLE_SCHEMA)
+        return OBLIGATION_LIFECYCLE_FRAME.empty()
     settlements = run.events_log.obligation_settlements.select(
         "rollout_index", "obligation_id", "amount_paid_usd", "shortfall_usd", "attempted_funding_sources"
     )
@@ -308,7 +330,7 @@ def project_obligation_lifecycle(run: SimulationRun) -> pl.DataFrame:
             .then(pl.lit("partial"))
             .otherwise(pl.lit("failed"))
         )
-        .select(list(OBLIGATION_LIFECYCLE_SCHEMA.keys()))
+        .pipe(OBLIGATION_LIFECYCLE_FRAME.normalize)
         .sort(["rollout_index", "month_index", "obligation_id"])
     )
 
@@ -316,10 +338,10 @@ def project_obligation_lifecycle(run: SimulationRun) -> pl.DataFrame:
 def project_failures(run: SimulationRun) -> pl.DataFrame:
     failures = run.events_log.rollout_failures
     if failures.is_empty():
-        return pl.DataFrame(schema=FAILURE_PROJECTION_SCHEMA)
+        return FAILURE_PROJECTION_FRAME.empty()
     return (
         failures.with_columns(pl.col("cause_id").alias("failure_id"))
-        .select(list(FAILURE_PROJECTION_SCHEMA.keys()))
+        .pipe(FAILURE_PROJECTION_FRAME.normalize)
         .sort(["rollout_index", "month_index", "failure_id"])
     )
 
@@ -336,7 +358,7 @@ def project_rollout_summary(run: SimulationRun, *, net_worth: pl.DataFrame, fail
             final_liquid_net_worth_usd=pl.col("final_liquid_net_worth_usd").fill_null(0.0),
             final_book_net_worth_usd=pl.col("final_book_net_worth_usd").fill_null(0.0),
         )
-        .select(list(ROLLOUT_SUMMARY_SCHEMA.keys()))
+        .pipe(ROLLOUT_SUMMARY_FRAME.normalize)
         .sort("rollout_index")
     )
 
@@ -356,7 +378,7 @@ def _cash_net_worth_components(run: SimulationRun) -> pl.DataFrame:
 
 def _asset_net_worth_components(run: SimulationRun) -> pl.DataFrame:
     if run.asset_lots.is_empty():
-        return pl.DataFrame(schema=_NET_WORTH_COMPONENT_SCHEMA)
+        return _NET_WORTH_COMPONENT_FRAME.empty()
     priced = run.asset_lots.join(run.market_prices, on=["rollout_index", "month_index", "asset_id"], how="left")
     return priced.select(
         "rollout_index",
@@ -372,7 +394,7 @@ def _asset_net_worth_components(run: SimulationRun) -> pl.DataFrame:
 
 def _property_net_worth_components(run: SimulationRun) -> pl.DataFrame:
     if run.property_state.is_empty() or run.property_stakes.is_empty():
-        return pl.DataFrame(schema=_NET_WORTH_COMPONENT_SCHEMA)
+        return _NET_WORTH_COMPONENT_FRAME.empty()
     owned_property = run.property_stakes.join(
         run.property_state, on=["rollout_index", "month_index", "property_id"], how="inner"
     )
@@ -390,7 +412,7 @@ def _property_net_worth_components(run: SimulationRun) -> pl.DataFrame:
 
 def _liability_net_worth_components(run: SimulationRun) -> pl.DataFrame:
     if run.liabilities.is_empty():
-        return pl.DataFrame(schema=_NET_WORTH_COMPONENT_SCHEMA)
+        return _NET_WORTH_COMPONENT_FRAME.empty()
     return run.liabilities.select(
         "rollout_index",
         "month_index",
@@ -406,7 +428,7 @@ def _liability_net_worth_components(run: SimulationRun) -> pl.DataFrame:
 def _transfer_transactions(run: SimulationRun) -> pl.DataFrame:
     transfers = run.events_log.transfers
     if transfers.is_empty():
-        return pl.DataFrame(schema=TRANSACTION_SCHEMA)
+        return TRANSACTION_FRAME.empty()
     return transfers.select(
         "rollout_index",
         "month_index",
@@ -427,7 +449,7 @@ def _transfer_transactions(run: SimulationRun) -> pl.DataFrame:
 def _lot_disposition_transactions(run: SimulationRun) -> pl.DataFrame:
     dispositions = run.events_log.lot_dispositions
     if dispositions.is_empty():
-        return pl.DataFrame(schema=TRANSACTION_SCHEMA)
+        return TRANSACTION_FRAME.empty()
     return dispositions.select(
         "rollout_index",
         "month_index",
@@ -448,7 +470,7 @@ def _lot_disposition_transactions(run: SimulationRun) -> pl.DataFrame:
 def _obligation_settlement_transactions(run: SimulationRun) -> pl.DataFrame:
     settlements = run.events_log.obligation_settlements
     if settlements.is_empty():
-        return pl.DataFrame(schema=TRANSACTION_SCHEMA)
+        return TRANSACTION_FRAME.empty()
     destinations = run.events_log.obligation_accruals.select(
         "rollout_index", "obligation_id", "to_agent_id", "to_account_id"
     )
@@ -472,7 +494,7 @@ def _obligation_settlement_transactions(run: SimulationRun) -> pl.DataFrame:
 def _tax_settlement_transactions(run: SimulationRun) -> pl.DataFrame:
     settlements = run.events_log.tax_settlements
     if settlements.is_empty():
-        return pl.DataFrame(schema=TRANSACTION_SCHEMA)
+        return TRANSACTION_FRAME.empty()
     return settlements.select(
         "rollout_index",
         "month_index",
@@ -492,14 +514,7 @@ def _tax_settlement_transactions(run: SimulationRun) -> pl.DataFrame:
 
 def _final_net_worth_by_rollout(net_worth: pl.DataFrame) -> pl.DataFrame:
     if net_worth.is_empty():
-        return pl.DataFrame(
-            schema={
-                "rollout_index": pl.Int64(),
-                "final_month_index": pl.Int64(),
-                "final_liquid_net_worth_usd": pl.Float64(),
-                "final_book_net_worth_usd": pl.Float64(),
-            }
-        )
+        return _FINAL_NET_WORTH_FRAME.empty()
     by_month = net_worth.group_by(["rollout_index", "month_index"]).agg(
         pl.col("liquid_net_worth_usd").sum().alias("final_liquid_net_worth_usd"),
         pl.col("book_net_worth_usd").sum().alias("final_book_net_worth_usd"),
@@ -508,15 +523,13 @@ def _final_net_worth_by_rollout(net_worth: pl.DataFrame) -> pl.DataFrame:
     return (
         final_months.join(by_month, on=["rollout_index", "month_index"], how="left")
         .rename({"month_index": "final_month_index"})
-        .select(["rollout_index", "final_month_index", "final_liquid_net_worth_usd", "final_book_net_worth_usd"])
+        .pipe(_FINAL_NET_WORTH_FRAME.normalize)
     )
 
 
 def _failure_counts_by_rollout(failures: pl.DataFrame) -> pl.DataFrame:
     if failures.is_empty():
-        return pl.DataFrame(
-            schema={"rollout_index": pl.Int64(), "failure_count": pl.Int64(), "first_failure_month": pl.Int64()}
-        )
+        return _FAILURE_COUNTS_FRAME.empty()
     return failures.group_by("rollout_index").agg(
         pl.len().alias("failure_count"), pl.col("month_index").min().alias("first_failure_month")
     )

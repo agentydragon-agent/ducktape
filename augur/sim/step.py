@@ -29,21 +29,7 @@ from dataclasses import dataclass
 import numpy as np
 import polars as pl
 
-from augur.sim.events import (
-    LOT_DISPOSITION_EVENT_SCHEMA,
-    MORTGAGE_ORIGINATION_EVENT_SCHEMA,
-    MORTGAGE_PAYMENT_EVENT_SCHEMA,
-    OBLIGATION_ACCRUAL_EVENT_SCHEMA,
-    OBLIGATION_SETTLEMENT_EVENT_SCHEMA,
-    PROPERTY_PURCHASE_EVENT_SCHEMA,
-    ROLLOUT_FAILURE_EVENT_SCHEMA,
-    TAX_ACCRUAL_EVENT_SCHEMA,
-    TAX_BREAKDOWN_EVENT_SCHEMA,
-    TAX_SETTLEMENT_EVENT_SCHEMA,
-    TRANSFER_EVENT_SCHEMA,
-    EventLog,
-)
-from augur.sim.frames import concat_frames
+from augur.sim.events import EVENT_FRAMES, EventLog
 from augur.sim.jurisdictions import Jurisdiction
 from augur.sim.locations import Location
 from augur.sim.market import MarketContext
@@ -114,7 +100,7 @@ def step_emit_scheduled_events(
     )
     return EventLog.from_frames(
         {
-            "transfers": concat_frames([transfers, property_cash_transfers], TRANSFER_EVENT_SCHEMA),
+            "transfers": EVENT_FRAMES.transfers.concat([transfers, property_cash_transfers]),
             "lot_dispositions": dispositions,
             "tax_accruals": tax_year_events.accruals,
             "tax_breakdowns": tax_year_events.breakdowns,
@@ -140,7 +126,7 @@ def step_emit_policy_events(
         base_dispositions=floor_dispositions,
         month=month,
     )
-    dispositions = concat_frames([floor_dispositions, due_now.lot_dispositions], LOT_DISPOSITION_EVENT_SCHEMA)
+    dispositions = EVENT_FRAMES.lot_dispositions.concat([floor_dispositions, due_now.lot_dispositions])
     cash_failures = _emit_rollout_failures(
         state=state, scenario=scenario, policy_dispositions=dispositions, transfers=due_now.transfers, month=month
     )
@@ -152,7 +138,7 @@ def step_emit_policy_events(
             "obligation_accruals": due_now.obligation_accruals,
             "obligation_settlements": due_now.obligation_settlements,
             "mortgage_payments": due_now.mortgage_payments,
-            "rollout_failures": concat_frames([due_now.rollout_failures, cash_failures], ROLLOUT_FAILURE_EVENT_SCHEMA),
+            "rollout_failures": EVENT_FRAMES.rollout_failures.concat([due_now.rollout_failures, cash_failures]),
         }
     )
 
@@ -169,7 +155,7 @@ def _emit_transfers(scenario: Scenario, month: int, rollout_count: int) -> pl.Da
     if active:
         rollouts = pl.DataFrame({"rollout_index": list(range(rollout_count))}, schema={"rollout_index": pl.Int64()})
         blocks = [_transfer_block_per_rollout(t, rollouts, month) for t in active]
-    return concat_frames(blocks, TRANSFER_EVENT_SCHEMA)
+    return EVENT_FRAMES.transfers.concat(blocks)
 
 
 def _transfer_block_per_rollout(
@@ -195,11 +181,10 @@ def _transfer_block_per_rollout(
 def _emit_property_purchases(scenario: Scenario, month: int, rollout_count: int) -> pl.DataFrame:
     purchases = [purchase for purchase in scenario.scheduled_property_purchases if purchase.month == month]
     if not purchases:
-        return pl.DataFrame(schema=PROPERTY_PURCHASE_EVENT_SCHEMA)
+        return EVENT_FRAMES.property_purchases.empty()
     rollouts = pl.DataFrame({"rollout_index": list(range(rollout_count))}, schema={"rollout_index": pl.Int64()})
-    return concat_frames(
-        [_property_purchase_block_per_rollout(purchase, rollouts, month) for purchase in purchases],
-        PROPERTY_PURCHASE_EVENT_SCHEMA,
+    return EVENT_FRAMES.property_purchases.concat(
+        [_property_purchase_block_per_rollout(purchase, rollouts, month) for purchase in purchases]
     )
 
 
@@ -223,7 +208,7 @@ def _property_purchase_block_per_rollout(
             "stake_contribution_usd"
         ),
         pl.lit(purchase.purchase_price_usd - mortgage_principal, dtype=pl.Float64()).alias("equity_ledger_usd"),
-    ).select(list(PROPERTY_PURCHASE_EVENT_SCHEMA.keys()))
+    ).pipe(EVENT_FRAMES.property_purchases.normalize)
 
 
 def _emit_mortgage_originations(scenario: Scenario, month: int, rollout_count: int) -> pl.DataFrame:
@@ -233,11 +218,10 @@ def _emit_mortgage_originations(scenario: Scenario, month: int, rollout_count: i
         if purchase.month == month and purchase.mortgage is not None
     ]
     if not purchases:
-        return pl.DataFrame(schema=MORTGAGE_ORIGINATION_EVENT_SCHEMA)
+        return EVENT_FRAMES.mortgage_originations.empty()
     rollouts = pl.DataFrame({"rollout_index": list(range(rollout_count))}, schema={"rollout_index": pl.Int64()})
-    return concat_frames(
-        [_mortgage_origination_block_per_rollout(purchase, rollouts, month) for purchase in purchases],
-        MORTGAGE_ORIGINATION_EVENT_SCHEMA,
+    return EVENT_FRAMES.mortgage_originations.concat(
+        [_mortgage_origination_block_per_rollout(purchase, rollouts, month) for purchase in purchases]
     )
 
 
@@ -263,7 +247,7 @@ def _mortgage_origination_block_per_rollout(
             _mortgage_monthly_payment_usd(mortgage.principal_usd, mortgage.annual_interest_rate, mortgage.term_months),
             dtype=pl.Float64(),
         ).alias("monthly_payment_usd"),
-    ).select(list(MORTGAGE_ORIGINATION_EVENT_SCHEMA.keys()))
+    ).pipe(EVENT_FRAMES.mortgage_originations.normalize)
 
 
 def _mortgage_monthly_payment_usd(principal_usd: float, annual_interest_rate: float, term_months: int) -> float:
@@ -275,7 +259,7 @@ def _mortgage_monthly_payment_usd(principal_usd: float, annual_interest_rate: fl
 
 def _property_purchase_transfer_events(scenario: Scenario, purchases: pl.DataFrame) -> pl.DataFrame:
     if purchases.is_empty():
-        return pl.DataFrame(schema=TRANSFER_EVENT_SCHEMA)
+        return EVENT_FRAMES.transfers.empty()
     blocks = []
     for purchase in scenario.scheduled_property_purchases:
         purchase_rows = purchases.filter(pl.col("cause_id") == purchase.cause_id)
@@ -293,15 +277,15 @@ def _property_purchase_transfer_events(scenario: Scenario, purchases: pl.DataFra
                 pl.lit(purchase.seller_account_id, dtype=pl.Utf8()).alias("to_account_id"),
                 pl.lit(amount, dtype=pl.Float64()).alias("amount_usd"),
                 pl.lit(None, dtype=pl.Utf8()).alias("income_category"),
-            ).select(list(TRANSFER_EVENT_SCHEMA.keys()))
+            ).pipe(EVENT_FRAMES.transfers.normalize)
         )
-    return concat_frames(blocks, TRANSFER_EVENT_SCHEMA)
+    return EVENT_FRAMES.transfers.concat(blocks)
 
 
 def _emit_mortgage_payments(state: StateCrossSection, month: int) -> pl.DataFrame:
     liabilities = state.liabilities.filter((pl.col("principal_usd") > 0) & (pl.col("origination_month_index") < month))
     if liabilities.is_empty():
-        return pl.DataFrame(schema=MORTGAGE_PAYMENT_EVENT_SCHEMA)
+        return EVENT_FRAMES.mortgage_payments.empty()
     monthly_interest = pl.col("principal_usd") * pl.col("annual_interest_rate") / 12.0
     total_payment = pl.min_horizontal(pl.col("monthly_payment_usd"), pl.col("principal_usd") + monthly_interest)
     return (
@@ -318,19 +302,19 @@ def _emit_mortgage_payments(state: StateCrossSection, month: int) -> pl.DataFram
             pl.col("_principal_usd").alias("principal_usd"),
             pl.col("_total_payment_usd").alias("total_payment_usd"),
         )
-        .select(list(MORTGAGE_PAYMENT_EVENT_SCHEMA.keys()))
+        .pipe(EVENT_FRAMES.mortgage_payments.normalize)
     )
 
 
 def _mortgage_payment_obligations(mortgage_payments: pl.DataFrame) -> pl.DataFrame:
     if mortgage_payments.is_empty():
-        return pl.DataFrame(schema=OBLIGATION_ACCRUAL_EVENT_SCHEMA)
+        return EVENT_FRAMES.obligation_accruals.empty()
     return mortgage_payments.with_columns(
         pl.col("cause_id").alias("obligation_id"),
         pl.lit("mortgage_payment", dtype=pl.Utf8()).alias("obligation_type"),
         pl.col("counterparty_agent_id").alias("to_agent_id"),
         pl.col("total_payment_usd").alias("amount_due_usd"),
-    ).select(list(OBLIGATION_ACCRUAL_EVENT_SCHEMA.keys()))
+    ).pipe(EVENT_FRAMES.obligation_accruals.normalize)
 
 
 def _emit_property_tax_obligations(
@@ -338,10 +322,9 @@ def _emit_property_tax_obligations(
 ) -> pl.DataFrame:
     active = [policy for policy in scenario.property_tax_policies if policy.is_active_at(month)]
     if not active or state.property_state.is_empty():
-        return pl.DataFrame(schema=OBLIGATION_ACCRUAL_EVENT_SCHEMA)
-    return concat_frames(
-        [_property_tax_obligation_block(state, policy, locations, month) for policy in active],
-        OBLIGATION_ACCRUAL_EVENT_SCHEMA,
+        return EVENT_FRAMES.obligation_accruals.empty()
+    return EVENT_FRAMES.obligation_accruals.concat(
+        [_property_tax_obligation_block(state, policy, locations, month) for policy in active]
     )
 
 
@@ -352,7 +335,7 @@ def _property_tax_obligation_block(
         (pl.col("property_id") == policy.property_id) & (pl.col("purchase_month_index") < month)
     )
     if property_rows.is_empty():
-        return pl.DataFrame(schema=OBLIGATION_ACCRUAL_EVENT_SCHEMA)
+        return EVENT_FRAMES.obligation_accruals.empty()
     rate_rows = pl.DataFrame(
         {
             "location_id": list(locations),
@@ -380,7 +363,7 @@ def _property_tax_obligation_block(
         pl.lit(policy.tax_authority_agent_id, dtype=pl.Utf8()).alias("to_agent_id"),
         pl.lit(policy.tax_authority_account_id, dtype=pl.Utf8()).alias("to_account_id"),
         pl.col("amount_usd").alias("amount_due_usd"),
-    ).select(list(OBLIGATION_ACCRUAL_EVENT_SCHEMA.keys()))
+    ).pipe(EVENT_FRAMES.obligation_accruals.normalize)
 
 
 def _emit_configured_obligations(scenario: Scenario, month: int, rollouts: pl.DataFrame) -> pl.DataFrame:
@@ -389,10 +372,9 @@ def _emit_configured_obligations(scenario: Scenario, month: int, rollouts: pl.Da
     ]
     active.extend(obligation for obligation in scenario.recurring_obligations if obligation.is_active_at(month))
     if not active:
-        return pl.DataFrame(schema=OBLIGATION_ACCRUAL_EVENT_SCHEMA)
-    return concat_frames(
-        [_configured_obligation_block_per_rollout(obligation, rollouts, month) for obligation in active],
-        OBLIGATION_ACCRUAL_EVENT_SCHEMA,
+        return EVENT_FRAMES.obligation_accruals.empty()
+    return EVENT_FRAMES.obligation_accruals.concat(
+        [_configured_obligation_block_per_rollout(obligation, rollouts, month) for obligation in active]
     )
 
 
@@ -409,7 +391,7 @@ def _configured_obligation_block_per_rollout(
         pl.lit(obligation.to_agent_id, dtype=pl.Utf8()).alias("to_agent_id"),
         pl.lit(obligation.to_account_id, dtype=pl.Utf8()).alias("to_account_id"),
         pl.lit(obligation.amount_due_usd, dtype=pl.Float64()).alias("amount_due_usd"),
-    ).select(list(OBLIGATION_ACCRUAL_EVENT_SCHEMA.keys()))
+    ).pipe(EVENT_FRAMES.obligation_accruals.normalize)
 
 
 def _emit_due_now_obligations_and_settlements(
@@ -424,14 +406,13 @@ def _emit_due_now_obligations_and_settlements(
     active_rollouts = state.rollout_status.filter(pl.col("status") == "active").select("rollout_index")
     mortgage_payments = _emit_mortgage_payments(state, month)
     tax_payment_events = _emit_tax_payment_obligations(state=state, profiles=scenario.tax_profiles, month=month)
-    obligations = concat_frames(
+    obligations = EVENT_FRAMES.obligation_accruals.concat(
         [
             _emit_configured_obligations(scenario, month, active_rollouts),
             _mortgage_payment_obligations(mortgage_payments),
             _emit_property_tax_obligations(state=state, scenario=scenario, locations=locations, month=month),
             tax_payment_events.obligation_accruals,
-        ],
-        OBLIGATION_ACCRUAL_EVENT_SCHEMA,
+        ]
     )
     settlement = _settle_due_now_obligations(
         state=state,
@@ -514,11 +495,11 @@ def _settle_due_now_obligations(
     )
     return _DueNowSettlementEvents(
         obligation_accruals=active_obligations,
-        obligation_settlements=settled.select(list(OBLIGATION_SETTLEMENT_EVENT_SCHEMA.keys())),
+        obligation_settlements=settled.pipe(EVENT_FRAMES.obligation_settlements.normalize),
         transfers=_obligation_payment_transfers(settled),
         lot_dispositions=funding_dispositions,
-        mortgage_payments=pl.DataFrame(schema=MORTGAGE_PAYMENT_EVENT_SCHEMA),
-        tax_settlements=pl.DataFrame(schema=TAX_SETTLEMENT_EVENT_SCHEMA),
+        mortgage_payments=EVENT_FRAMES.mortgage_payments.empty(),
+        tax_settlements=EVENT_FRAMES.tax_settlements.empty(),
         rollout_failures=_obligation_failure_events(settled, month),
     )
 
@@ -526,12 +507,12 @@ def _settle_due_now_obligations(
 def _empty_due_now_settlement_events(obligations: pl.DataFrame) -> _DueNowSettlementEvents:
     return _DueNowSettlementEvents(
         obligation_accruals=obligations,
-        obligation_settlements=pl.DataFrame(schema=OBLIGATION_SETTLEMENT_EVENT_SCHEMA),
-        transfers=pl.DataFrame(schema=TRANSFER_EVENT_SCHEMA),
-        lot_dispositions=pl.DataFrame(schema=LOT_DISPOSITION_EVENT_SCHEMA),
-        mortgage_payments=pl.DataFrame(schema=MORTGAGE_PAYMENT_EVENT_SCHEMA),
-        tax_settlements=pl.DataFrame(schema=TAX_SETTLEMENT_EVENT_SCHEMA),
-        rollout_failures=pl.DataFrame(schema=ROLLOUT_FAILURE_EVENT_SCHEMA),
+        obligation_settlements=EVENT_FRAMES.obligation_settlements.empty(),
+        transfers=EVENT_FRAMES.transfers.empty(),
+        lot_dispositions=EVENT_FRAMES.lot_dispositions.empty(),
+        mortgage_payments=EVENT_FRAMES.mortgage_payments.empty(),
+        tax_settlements=EVENT_FRAMES.tax_settlements.empty(),
+        rollout_failures=EVENT_FRAMES.rollout_failures.empty(),
     )
 
 
@@ -610,7 +591,7 @@ def _funding_dispositions_for_due_groups(
             if result.dispositions is not None and not result.dispositions.is_empty():
                 blocks.append(result.dispositions)
             deficit = result.remaining_deficit
-    return concat_frames(blocks, LOT_DISPOSITION_EVENT_SCHEMA)
+    return EVENT_FRAMES.lot_dispositions.concat(blocks)
 
 
 def _state_after_lot_dispositions(state: StateCrossSection, dispositions: pl.DataFrame) -> StateCrossSection:
@@ -660,7 +641,7 @@ def _obligation_payment_transfers(settled: pl.DataFrame) -> pl.DataFrame:
             pl.col("amount_paid_usd").alias("amount_usd"),
             pl.lit(None, dtype=pl.Utf8()).alias("income_category"),
         )
-        .select(list(TRANSFER_EVENT_SCHEMA.keys()))
+        .pipe(EVENT_FRAMES.transfers.normalize)
     )
 
 
@@ -672,7 +653,7 @@ def _obligation_failure_events(settled: pl.DataFrame, month: int) -> pl.DataFram
             pl.concat_str([pl.col("obligation_id"), pl.lit("_failure")]).alias("cause_id"),
             pl.col("shortfall_usd").alias("deficit_usd"),
         )
-        .select(list(ROLLOUT_FAILURE_EVENT_SCHEMA.keys()))
+        .pipe(EVENT_FRAMES.rollout_failures.normalize)
     )
 
 
@@ -680,18 +661,18 @@ def _paid_mortgage_payment_events(
     mortgage_payments: pl.DataFrame, obligation_settlements: pl.DataFrame
 ) -> pl.DataFrame:
     if mortgage_payments.is_empty() or obligation_settlements.is_empty():
-        return pl.DataFrame(schema=MORTGAGE_PAYMENT_EVENT_SCHEMA)
+        return EVENT_FRAMES.mortgage_payments.empty()
     paid = obligation_settlements.filter(
         (pl.col("obligation_type") == "mortgage_payment") & (pl.col("shortfall_usd") == 0)
     ).select("rollout_index", pl.col("obligation_id").alias("cause_id"))
-    return mortgage_payments.join(paid, on=["rollout_index", "cause_id"], how="inner").select(
-        list(MORTGAGE_PAYMENT_EVENT_SCHEMA.keys())
+    return EVENT_FRAMES.mortgage_payments.normalize(
+        mortgage_payments.join(paid, on=["rollout_index", "cause_id"], how="inner")
     )
 
 
 def _paid_tax_settlement_events(settlements: pl.DataFrame, obligation_settlements: pl.DataFrame) -> pl.DataFrame:
     if settlements.is_empty():
-        return pl.DataFrame(schema=TAX_SETTLEMENT_EVENT_SCHEMA)
+        return EVENT_FRAMES.tax_settlements.empty()
     failed_tax = (
         obligation_settlements.filter(
             pl.col("obligation_type").is_in(["estimated_tax", "tax_true_up"]) & (pl.col("shortfall_usd") > 0)
@@ -704,7 +685,7 @@ def _paid_tax_settlement_events(settlements: pl.DataFrame, obligation_settlement
         settlements.join(failed_tax, on=["rollout_index", "agent_id"], how="left")
         .filter(~pl.col("_failed_tax_payment").fill_null(False))
         .drop("_failed_tax_payment")
-        .select(list(TAX_SETTLEMENT_EVENT_SCHEMA.keys()))
+        .pipe(EVENT_FRAMES.tax_settlements.normalize)
     )
 
 
@@ -722,10 +703,10 @@ def _emit_lot_dispositions(
     per-month curve."""
     sales = [s for s in scenario.scheduled_asset_sales if s.month == month]
     if not sales:
-        return pl.DataFrame(schema=LOT_DISPOSITION_EVENT_SCHEMA)
+        return EVENT_FRAMES.lot_dispositions.empty()
     prices_at_month = market.prices_at(month)
     blocks = [_fifo_dispositions_for_sale(state, sale, prices_at_month, month) for sale in sales]
-    return concat_frames(blocks, LOT_DISPOSITION_EVENT_SCHEMA)
+    return EVENT_FRAMES.lot_dispositions.concat(blocks)
 
 
 def _fifo_dispositions_for_sale(
@@ -750,7 +731,7 @@ def _fifo_dispositions_for_sale(
         & (pl.col("remaining_quantity") > 0)
     )
     if candidates.is_empty():
-        return pl.DataFrame(schema=LOT_DISPOSITION_EVENT_SCHEMA)
+        return EVENT_FRAMES.lot_dispositions.empty()
     priced = _attach_unit_price(candidates, sale, prices_at_month)
     ordered = priced.sort(["rollout_index", "purchase_month_index", "lot_id"])
     with_cum = ordered.with_columns(
@@ -766,7 +747,7 @@ def _fifo_dispositions_for_sale(
     )
     consumed = sized.filter(pl.col("_units_from_lot") > 0)
     if consumed.is_empty():
-        return pl.DataFrame(schema=LOT_DISPOSITION_EVENT_SCHEMA)
+        return EVENT_FRAMES.lot_dispositions.empty()
     return consumed.with_columns(
         pl.lit(month, dtype=pl.Int64()).alias("month_index"),
         pl.lit(sale.cause_id, dtype=pl.Utf8()).alias("cause_id"),
@@ -774,7 +755,7 @@ def _fifo_dispositions_for_sale(
         (pl.col("_units_from_lot") * pl.col("cost_basis_per_unit_usd")).alias("cost_basis_consumed_usd"),
         (pl.col("_units_from_lot") * pl.col("_unit_price")).alias("proceeds_usd"),
         pl.lit(sale.proceeds_account_id, dtype=pl.Utf8()).alias("proceeds_account_id"),
-    ).select(list(LOT_DISPOSITION_EVENT_SCHEMA.keys()))
+    ).pipe(EVENT_FRAMES.lot_dispositions.normalize)
 
 
 def _attach_unit_price(lots: pl.DataFrame, sale: ScheduledAssetSale, prices_at_month: pl.DataFrame) -> pl.DataFrame:
@@ -799,13 +780,13 @@ def _emit_floor_triggered_sales(
     over rollouts; Python-loops only over asset slots (typically
     3-5 entries)."""
     if not scenario.floor_triggered_sale_policies:
-        return pl.DataFrame(schema=LOT_DISPOSITION_EVENT_SCHEMA)
+        return EVENT_FRAMES.lot_dispositions.empty()
     prices = market.prices_at(month)
     active_rollouts = state.rollout_status.filter(pl.col("status") == "active").select("rollout_index")
     blocks: list[pl.DataFrame] = []
     for policy in scenario.floor_triggered_sale_policies:
         blocks.extend(_dispositions_for_policy(state, policy, prices, active_rollouts, month))
-    return concat_frames(blocks, LOT_DISPOSITION_EVENT_SCHEMA)
+    return EVENT_FRAMES.lot_dispositions.concat(blocks)
 
 
 def _dispositions_for_policy(
@@ -916,7 +897,7 @@ def _consume_asset_for_policy(
         (pl.col("_units_from_lot") * pl.col("cost_basis_per_unit_usd")).alias("cost_basis_consumed_usd"),
         pl.col("_dollars_from_lot").alias("proceeds_usd"),
         pl.lit(policy.account_id, dtype=pl.Utf8()).alias("proceeds_account_id"),
-    ).select(list(LOT_DISPOSITION_EVENT_SCHEMA.keys()))
+    ).pipe(EVENT_FRAMES.lot_dispositions.normalize)
     _ = slot_index  # reserved for future use (e.g. partial-fill accounting)
     realized_per_rollout = consumed.group_by("rollout_index").agg(
         pl.col("_dollars_from_lot").sum().alias("_realized_usd")
@@ -945,7 +926,7 @@ def _emit_rollout_failures(
     and transfers haven't been applied yet, so project them before
     checking the floor."""
     if not scenario.floor_triggered_sale_policies:
-        return pl.DataFrame(schema=ROLLOUT_FAILURE_EVENT_SCHEMA)
+        return EVENT_FRAMES.rollout_failures.empty()
     active_rollouts = state.rollout_status.filter(pl.col("status") == "active").select("rollout_index")
     blocks: list[pl.DataFrame] = []
     for policy in scenario.floor_triggered_sale_policies:
@@ -986,9 +967,9 @@ def _emit_rollout_failures(
                 amount_paid_usd=pl.lit(0.0, dtype=pl.Float64()),
                 shortfall_usd=-pl.col("_projected"),
                 attempted_funding_sources=pl.lit(",".join(policy.asset_preference_chain), dtype=pl.Utf8()),
-            ).select(list(ROLLOUT_FAILURE_EVENT_SCHEMA.keys()))
+            ).pipe(EVENT_FRAMES.rollout_failures.normalize)
         )
-    return concat_frames(blocks, ROLLOUT_FAILURE_EVENT_SCHEMA)
+    return EVENT_FRAMES.rollout_failures.concat(blocks)
 
 
 def _transfer_delta_for_account(transfers: pl.DataFrame, agent_id: str, account_id: str) -> pl.DataFrame:
@@ -1059,15 +1040,14 @@ def _emit_tax_payment_obligations(
             obligation_blocks.append(final_events.obligation_accruals)
             settlement_blocks.append(final_events.settlements)
     return _TaxPaymentObligationEvents(
-        obligation_accruals=concat_frames(obligation_blocks, OBLIGATION_ACCRUAL_EVENT_SCHEMA),
-        settlements=concat_frames(settlement_blocks, TAX_SETTLEMENT_EVENT_SCHEMA),
+        obligation_accruals=EVENT_FRAMES.obligation_accruals.concat(obligation_blocks),
+        settlements=EVENT_FRAMES.tax_settlements.concat(settlement_blocks),
     )
 
 
 def _empty_tax_payment_obligation_events() -> _TaxPaymentObligationEvents:
     return _TaxPaymentObligationEvents(
-        obligation_accruals=pl.DataFrame(schema=OBLIGATION_ACCRUAL_EVENT_SCHEMA),
-        settlements=pl.DataFrame(schema=TAX_SETTLEMENT_EVENT_SCHEMA),
+        obligation_accruals=EVENT_FRAMES.obligation_accruals.empty(), settlements=EVENT_FRAMES.tax_settlements.empty()
     )
 
 
@@ -1112,7 +1092,7 @@ def _final_estimated_and_true_up_events(
     true_up = payments.select("rollout_index", pl.col("_true_up_amount_usd").alias("amount_usd"))
     settlement = payments.select("rollout_index", pl.col("_actual_tax_usd").alias("amount_usd"))
     return _TaxPaymentObligationEvents(
-        obligation_accruals=concat_frames(
+        obligation_accruals=EVENT_FRAMES.obligation_accruals.concat(
             [
                 _tax_payment_obligation_block(
                     amounts=q4,
@@ -1128,8 +1108,7 @@ def _final_estimated_and_true_up_events(
                     cause_id=f"{profile.agent_id}_tax_true_up_y{tax_year}",
                     obligation_type="tax_true_up",
                 ),
-            ],
-            OBLIGATION_ACCRUAL_EVENT_SCHEMA,
+            ]
         ),
         settlements=_tax_settlement_block(
             amounts=settlement,
@@ -1170,7 +1149,7 @@ def _tax_payment_obligation_block(
             pl.lit(profile.tax_authority_account_id, dtype=pl.Utf8()).alias("to_account_id"),
             pl.col("amount_usd").alias("amount_due_usd"),
         )
-        .select(list(OBLIGATION_ACCRUAL_EVENT_SCHEMA.keys()))
+        .pipe(EVENT_FRAMES.obligation_accruals.normalize)
     )
 
 
@@ -1187,7 +1166,7 @@ def _tax_settlement_block(
             pl.lit(profile.agent_id, dtype=pl.Utf8()).alias("agent_id"),
             pl.lit(tax_year_end_month, dtype=pl.Int64()).alias("tax_year_end_month"),
         )
-        .select(list(TAX_SETTLEMENT_EVENT_SCHEMA.keys()))
+        .pipe(EVENT_FRAMES.tax_settlements.normalize)
     )
 
 
@@ -1218,16 +1197,13 @@ def _emit_year_end_tax_events(
     accrual_blocks = [event.accruals for event in events]
     breakdown_blocks = [event.breakdowns for event in events]
     return _TaxYearEvents(
-        accruals=concat_frames(accrual_blocks, TAX_ACCRUAL_EVENT_SCHEMA),
-        breakdowns=concat_frames(breakdown_blocks, TAX_BREAKDOWN_EVENT_SCHEMA),
+        accruals=EVENT_FRAMES.tax_accruals.concat(accrual_blocks),
+        breakdowns=EVENT_FRAMES.tax_breakdowns.concat(breakdown_blocks),
     )
 
 
 def _empty_tax_year_events() -> _TaxYearEvents:
-    return _TaxYearEvents(
-        accruals=pl.DataFrame(schema=TAX_ACCRUAL_EVENT_SCHEMA),
-        breakdowns=pl.DataFrame(schema=TAX_BREAKDOWN_EVENT_SCHEMA),
-    )
+    return _TaxYearEvents(accruals=EVENT_FRAMES.tax_accruals.empty(), breakdowns=EVENT_FRAMES.tax_breakdowns.empty())
 
 
 def _compute_end_of_year_taxable_components(
@@ -1328,7 +1304,7 @@ def _tax_events_for_profile(
                     "tax_year_end_month": np.full_like(rollout_idx, month),
                     "amount_usd": tax,
                 },
-                schema=TAX_ACCRUAL_EVENT_SCHEMA,
+                schema=EVENT_FRAMES.tax_accruals.schema,
             )
         )
         breakdown_blocks.append(
@@ -1350,10 +1326,10 @@ def _tax_events_for_profile(
                     "capital_gain_tax_usd": capital_gain_tax,
                     "total_tax_usd": tax,
                 },
-                schema=TAX_BREAKDOWN_EVENT_SCHEMA,
+                schema=EVENT_FRAMES.tax_breakdowns.schema,
             )
         )
     return _TaxYearEvents(
-        accruals=concat_frames(accrual_blocks, TAX_ACCRUAL_EVENT_SCHEMA),
-        breakdowns=concat_frames(breakdown_blocks, TAX_BREAKDOWN_EVENT_SCHEMA),
+        accruals=EVENT_FRAMES.tax_accruals.concat(accrual_blocks),
+        breakdowns=EVENT_FRAMES.tax_breakdowns.concat(breakdown_blocks),
     )

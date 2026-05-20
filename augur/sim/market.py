@@ -32,12 +32,12 @@ import numpy as np
 import polars as pl
 from pydantic import BaseModel, Field
 
-MARKET_PRICES_SCHEMA: dict[str, pl.DataType] = {
-    "rollout_index": pl.Int64(),
-    "month_index": pl.Int64(),
-    "asset_id": pl.Utf8(),
-    "price_per_unit_usd": pl.Float64(),
-}
+from augur.sim.frames import FrameSpec
+
+MARKET_PRICES_SCHEMA = pl.Schema(
+    {"rollout_index": pl.Int64(), "month_index": pl.Int64(), "asset_id": pl.Utf8(), "price_per_unit_usd": pl.Float64()}
+)
+MARKET_PRICES_FRAME = FrameSpec("market_prices", MARKET_PRICES_SCHEMA)
 
 
 class DeterministicPath(BaseModel):
@@ -100,9 +100,9 @@ def materialize_market(bundle: MarketBundle, *, rollout_count: int, horizon_mont
     + 1` per (rollout, asset)). An empty bundle yields an empty
     frame with the correct schema."""
     if not bundle.paths:
-        return MarketContext(prices=pl.DataFrame(schema=MARKET_PRICES_SCHEMA))
+        return MarketContext(prices=MARKET_PRICES_FRAME.empty())
     blocks = [_materialize_path(p, rollout_count=rollout_count, horizon_months=horizon_months) for p in bundle.paths]
-    return MarketContext(prices=pl.concat(blocks).select(list(MARKET_PRICES_SCHEMA.keys())))
+    return MarketContext(prices=MARKET_PRICES_FRAME.concat(blocks))
 
 
 def _materialize_path(path: MarketPathSpec, *, rollout_count: int, horizon_months: int) -> pl.DataFrame:
@@ -124,7 +124,7 @@ def _materialize_deterministic(path: DeterministicPath, *, rollout_count: int, h
         schema={"month_index": pl.Int64(), "price_per_unit_usd": pl.Float64()},
     ).with_columns(pl.lit(path.asset_id, dtype=pl.Utf8()).alias("asset_id"))
     rollouts = pl.DataFrame({"rollout_index": list(range(rollout_count))}, schema={"rollout_index": pl.Int64()})
-    return rollouts.join(months, how="cross").select(list(MARKET_PRICES_SCHEMA.keys()))
+    return MARKET_PRICES_FRAME.normalize(rollouts.join(months, how="cross"))
 
 
 def _materialize_gbm(path: GeometricBrownianPath, *, rollout_count: int, horizon_months: int) -> pl.DataFrame:
@@ -144,12 +144,14 @@ def _materialize_gbm(path: GeometricBrownianPath, *, rollout_count: int, horizon
     rollout_idx = np.repeat(np.arange(rollout_count, dtype=np.int64), horizon_months + 1)
     month_idx = np.tile(np.arange(horizon_months + 1, dtype=np.int64), rollout_count)
     flat_prices = prices.reshape(-1)
-    return pl.DataFrame(
-        {
-            "rollout_index": rollout_idx,
-            "month_index": month_idx,
-            "asset_id": [path.asset_id] * (rollout_count * (horizon_months + 1)),
-            "price_per_unit_usd": flat_prices,
-        },
-        schema=MARKET_PRICES_SCHEMA,
+    return MARKET_PRICES_FRAME.normalize(
+        pl.DataFrame(
+            {
+                "rollout_index": rollout_idx,
+                "month_index": month_idx,
+                "asset_id": [path.asset_id] * (rollout_count * (horizon_months + 1)),
+                "price_per_unit_usd": flat_prices,
+            },
+            schema=MARKET_PRICES_SCHEMA,
+        )
     )

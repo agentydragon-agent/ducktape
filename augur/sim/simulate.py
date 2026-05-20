@@ -32,15 +32,15 @@ from augur.sim.market import materialize_market
 from augur.sim.run import SimulationRun
 from augur.sim.scenario import Scenario
 from augur.sim.state import (
-    ASSET_LOT_SCHEMA,
-    CAPITAL_GAINS_YTD_SCHEMA,
-    CASH_BALANCES_SCHEMA,
-    LIABILITY_SCHEMA,
-    ORDINARY_INCOME_YTD_SCHEMA,
-    PROPERTY_STAKE_SCHEMA,
-    PROPERTY_STATE_SCHEMA,
-    ROLLOUT_STATUS_SCHEMA,
-    TAX_LIABILITIES_SCHEMA,
+    ASSET_LOT_FRAME,
+    CAPITAL_GAINS_YTD_FRAME,
+    CASH_BALANCES_FRAME,
+    LIABILITY_FRAME,
+    ORDINARY_INCOME_YTD_FRAME,
+    PROPERTY_STAKE_FRAME,
+    PROPERTY_STATE_FRAME,
+    ROLLOUT_STATUS_FRAME,
+    TAX_LIABILITIES_FRAME,
     StateCrossSection,
 )
 from augur.sim.step import step_emit_policy_events, step_emit_scheduled_events
@@ -114,11 +114,11 @@ def _initial_state(scenario: Scenario, rollout_count: int) -> StateCrossSection:
     cash = _initial_cash(scenario, rollouts)
     asset_lots = _initial_asset_lots(scenario, rollouts)
     ordinary_income_ytd = _initial_ordinary_income_ytd(scenario, rollouts)
-    capital_gains_ytd = pl.DataFrame(schema=CAPITAL_GAINS_YTD_SCHEMA)
-    tax_liabilities = pl.DataFrame(schema=TAX_LIABILITIES_SCHEMA)
-    property_state = pl.DataFrame(schema=PROPERTY_STATE_SCHEMA)
-    property_stakes = pl.DataFrame(schema=PROPERTY_STAKE_SCHEMA)
-    liabilities = pl.DataFrame(schema=LIABILITY_SCHEMA)
+    capital_gains_ytd = CAPITAL_GAINS_YTD_FRAME.empty()
+    tax_liabilities = TAX_LIABILITIES_FRAME.empty()
+    property_state = PROPERTY_STATE_FRAME.empty()
+    property_stakes = PROPERTY_STAKE_FRAME.empty()
+    liabilities = LIABILITY_FRAME.empty()
     rollout_status = _initial_rollout_status(rollouts)
     return StateCrossSection(
         cash_balances=cash,
@@ -135,14 +135,14 @@ def _initial_state(scenario: Scenario, rollout_count: int) -> StateCrossSection:
 
 def _initial_rollout_status(rollouts: pl.DataFrame) -> pl.DataFrame:
     """One row per rollout, status = "active", failed_month = null."""
-    return rollouts.with_columns(
-        status=pl.lit("active", dtype=pl.Utf8()), failed_month=pl.lit(None, dtype=pl.Int64())
-    ).select(list(ROLLOUT_STATUS_SCHEMA.keys()))
+    return ROLLOUT_STATUS_FRAME.normalize(
+        rollouts.with_columns(status=pl.lit("active", dtype=pl.Utf8()), failed_month=pl.lit(None, dtype=pl.Int64()))
+    )
 
 
 def _initial_cash(scenario: Scenario, rollouts: pl.DataFrame) -> pl.DataFrame:
     if not scenario.initial_cash:
-        return pl.DataFrame(schema=CASH_BALANCES_SCHEMA)
+        return CASH_BALANCES_FRAME.empty()
     entries = pl.DataFrame(
         {
             "agent_id": [e.agent_id for e in scenario.initial_cash],
@@ -151,12 +151,12 @@ def _initial_cash(scenario: Scenario, rollouts: pl.DataFrame) -> pl.DataFrame:
         },
         schema={"agent_id": pl.Utf8(), "account_id": pl.Utf8(), "balance_usd": pl.Float64()},
     )
-    return rollouts.join(entries, how="cross").select(list(CASH_BALANCES_SCHEMA.keys()))
+    return CASH_BALANCES_FRAME.normalize(rollouts.join(entries, how="cross"))
 
 
 def _initial_asset_lots(scenario: Scenario, rollouts: pl.DataFrame) -> pl.DataFrame:
     if not scenario.initial_lots:
-        return pl.DataFrame(schema=ASSET_LOT_SCHEMA)
+        return ASSET_LOT_FRAME.empty()
     entries = pl.DataFrame(
         {
             "lot_id": [lot.lot_id for lot in scenario.initial_lots],
@@ -175,7 +175,7 @@ def _initial_asset_lots(scenario: Scenario, rollouts: pl.DataFrame) -> pl.DataFr
             "remaining_quantity": pl.Float64(),
         },
     )
-    return rollouts.join(entries, how="cross").select(list(ASSET_LOT_SCHEMA.keys()))
+    return ASSET_LOT_FRAME.normalize(rollouts.join(entries, how="cross"))
 
 
 def _initial_ordinary_income_ytd(scenario: Scenario, rollouts: pl.DataFrame) -> pl.DataFrame:
@@ -183,7 +183,7 @@ def _initial_ordinary_income_ytd(scenario: Scenario, rollouts: pl.DataFrame) -> 
     without a tax profile aren't tracked here — there's no use
     case for accumulating income on a non-taxed account."""
     if not scenario.tax_profiles:
-        return pl.DataFrame(schema=ORDINARY_INCOME_YTD_SCHEMA)
+        return ORDINARY_INCOME_YTD_FRAME.empty()
     profile_rows = pl.DataFrame(
         {
             "agent_id": [p.agent_id for p in scenario.tax_profiles],
@@ -191,7 +191,7 @@ def _initial_ordinary_income_ytd(scenario: Scenario, rollouts: pl.DataFrame) -> 
         },
         schema={"agent_id": pl.Utf8(), "ordinary_income_usd": pl.Float64()},
     )
-    return rollouts.join(profile_rows, how="cross").select(list(ORDINARY_INCOME_YTD_SCHEMA.keys()))
+    return ORDINARY_INCOME_YTD_FRAME.normalize(rollouts.join(profile_rows, how="cross"))
 
 
 def _stack_cash_balances(cross_sections: list[StateCrossSection]) -> pl.DataFrame:
