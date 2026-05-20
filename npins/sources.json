@@ -47,6 +47,10 @@
     "aiquota": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-11302b6d9184/aiquota-0.1.0-py3-none-any.whl",
       "sha256": "ETArbZGE6lfrxaTuJlzlHe7OSaXfh3K/1/nA0S86yf0="
+    },
+    "debundle": {
+      "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-f0700037a660/debundle",
+      "sha256": "8HAAN6ZgCF2fwi2B2DSXgj1t80jsNVFRBHC29TD+JNo="
     }
   }
 }
