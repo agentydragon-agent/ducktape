@@ -998,6 +998,9 @@ fn vendor_prune_call_local_effect_target(
     if let Some(target) = local_namespace_iife_target(call) {
         return Some(target);
     }
+    if let Some(target) = vendor_prune_inline_namespace_iife_target(call, local_effect_context) {
+        return Some(target);
+    }
     if let Some(target) = local_commonjs_module_iife_target(call, local_effect_context) {
         return Some(target);
     }
@@ -1005,6 +1008,33 @@ fn vendor_prune_call_local_effect_target(
         return Some(target);
     }
     vendor_prune_direct_call_local_effect_target(call, local_effect_context)
+}
+
+fn vendor_prune_inline_namespace_iife_target(
+    call: &CallExpr,
+    local_effect_context: &LocalEffectContext,
+) -> Option<Id> {
+    if call.args.len() != 1 || call.args[0].spread.is_some() {
+        return None;
+    }
+    let target = local_namespace_iife_arg_target(&call.args[0].expr)?;
+    if !local_effect_context
+        .vendor_prune_declared_bindings
+        .contains(&target)
+    {
+        return None;
+    }
+    let Callee::Expr(callee) = &call.callee else {
+        return None;
+    };
+    let Expr::Fn(function) = strip_parens(callee) else {
+        return None;
+    };
+    if function.function.params.len() == 1 {
+        Some(target)
+    } else {
+        None
+    }
 }
 
 fn vendor_prune_direct_call_local_effect_target(

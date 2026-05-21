@@ -564,6 +564,36 @@ Object.entries(methods).forEach(function (entry) {
     }
 
     #[test]
+    fn vendor_prune_policy_records_complex_namespace_iife_local_effects() {
+        let module = parse(
+            r#"var scheduler = {};
+(function (target) {
+  function push(queue, value) {
+    queue.push(value);
+  }
+  var tasks = [];
+  if (typeof performance == "object") {
+    target.unstable_now = function () {
+      return performance.now();
+    };
+  }
+  target.unstable_scheduleCallback = function (task) {
+    push(tasks, task);
+  };
+})(scheduler);"#,
+        );
+        let hints = AnalysisHints {
+            local_effect_policy: LocalEffectPolicy::VendorPrune,
+            ..AnalysisHints::default()
+        };
+        let facts = analyze_facts_with_hints(&module, &hints);
+        assert_eq!(
+            facts[1].local_effects,
+            BTreeSet::from([test_id("scheduler")])
+        );
+    }
+
+    #[test]
     fn vendor_prune_policy_records_local_binding_writes() {
         let module = parse("let assigned;\nconst source = { value: 1 };\nassigned = source.value;");
         let hints = AnalysisHints {
