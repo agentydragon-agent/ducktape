@@ -1,0 +1,128 @@
+"""Profile one product metric-fan request through the Augur API backend."""
+
+from __future__ import annotations
+
+import argparse
+import cProfile
+import pstats
+import signal
+import time
+from collections.abc import Iterator
+from contextlib import contextmanager
+from pathlib import Path
+from types import FrameType
+from typing import get_args
+
+from augur.api.backend import Backend, BackendRuntimeConfig
+from augur.api.config import Config, load_augur_config
+from augur.model.simple_exogenous import SimpleExogenousModel, SimpleExogenousModelConfig
+from augur.product.projection import MetricFanRequest, MetricName, ScenarioKey
+from util.bazel.runfiles import get_required_path
+
+DEFAULT_CONFIG_RUNFILE = "_main/augur/api/testdata/config.yaml"
+DEFAULT_HORIZON_MONTHS = 100
+DEFAULT_ROLLOUT_COUNT = 50
+DEFAULT_MONTHLY_SPEND_USD = 7000.0
+DEFAULT_PROFILE_OUTPUT = Path("/tmp/augur_metric_fan.prof")
+DEFAULT_PERCENTILES = (1.0, 5.0, 25.0, 50.0, 75.0, 95.0, 99.0)
+
+
+class ProfileTimeoutError(TimeoutError):
+    pass
+
+
+def main() -> int:
+    args = _arg_parser().parse_args()
+    config = load_augur_config(_config_path(args.config))
+    backend = Backend(
+        augur_config=config, runtime_config=BackendRuntimeConfig(exogenous_model=_profile_exogenous_model(config))
+    )
+    request = MetricFanRequest(
+        scenario=ScenarioKey(
+            exogenous_model_id="current_exogenous_model",
+            horizon_months=args.horizon_months,
+            monthly_spend_usd=args.monthly_spend_usd,
+            spend_index=args.spend_index,
+        ),
+        rollout_seeds=tuple(range(args.rollout_count)),
+        metric=args.metric,
+        percentiles=tuple(args.percentiles),
+    )
+
+    profiler = cProfile.Profile()
+    start = time.perf_counter()
+    try:
+        with _time_bound(args.max_seconds):
+            response = profiler.runcall(backend.product_metric_fan, request)
+    except ProfileTimeoutError as exc:
+        elapsed = time.perf_counter() - start
+        args.profile_output.parent.mkdir(parents=True, exist_ok=True)
+        profiler.dump_stats(args.profile_output)
+        raise SystemExit(f"{exc}; partial profile written to {args.profile_output}; wall_clock_sec={elapsed:.3f}")
+    elapsed = time.perf_counter() - start
+
+    args.profile_output.parent.mkdir(parents=True, exist_ok=True)
+    profiler.dump_stats(args.profile_output)
+
+    print(f"wall_clock_sec: {elapsed:.3f}")
+    print(f"profile_output: {args.profile_output}")
+    print(f"horizon_months: {args.horizon_months}")
+    print(f"rollout_count: {args.rollout_count}")
+    print(f"metric: {args.metric}")
+    print(f"percentiles: {','.join(str(percentile) for percentile in args.percentiles)}")
+    print(f"monthly_metric_fan_rows: {response.monthly_metric_fan.row_count}")
+    print(f"terminal_metric_percentile_rows: {response.terminal_metric_percentiles.row_count}")
+    print(f"rollout_summary_count: {len(response.rollout_summaries)}")
+    print(f"failed_count: {response.failed_count}")
+    pstats.Stats(profiler).strip_dirs().sort_stats(pstats.SortKey.CUMULATIVE).print_stats(args.top)
+    return 0
+
+
+def _arg_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Profile one Augur product metric-fan request.")
+    parser.add_argument(
+        "--config", help=f"Path to Augur config YAML. Defaults to Bazel runfile {DEFAULT_CONFIG_RUNFILE}."
+    )
+    parser.add_argument("--horizon-months", type=int, default=DEFAULT_HORIZON_MONTHS)
+    parser.add_argument("--rollout-count", type=int, default=DEFAULT_ROLLOUT_COUNT)
+    parser.add_argument("--monthly-spend-usd", type=float, default=DEFAULT_MONTHLY_SPEND_USD)
+    parser.add_argument("--spend-index", choices=["none", "inflation"], default="inflation")
+    parser.add_argument("--metric", choices=get_args(MetricName), default="liquid_net_worth_usd")
+    parser.add_argument("--percentiles", type=float, nargs="+", default=list(DEFAULT_PERCENTILES))
+    parser.add_argument("--profile-output", type=Path, default=DEFAULT_PROFILE_OUTPUT)
+    parser.add_argument("--max-seconds", type=float, default=60.0)
+    parser.add_argument("--top", type=int, default=40, help="Number of cumulative cProfile rows to print.")
+    return parser
+
+
+def _config_path(config: str | None) -> Path:
+    return Path(config) if config is not None else get_required_path(DEFAULT_CONFIG_RUNFILE)
+
+
+def _profile_exogenous_model(config: Config) -> SimpleExogenousModel:
+    provider = config.exogenous_provider
+    if provider.type != "simple":
+        raise ValueError(f"profile_metric_fan currently profiles the public simple provider; got {provider.type!r}")
+    return SimpleExogenousModel(parameters=SimpleExogenousModelConfig(location_params=provider.location_params))
+
+
+@contextmanager
+def _time_bound(max_seconds: float) -> Iterator[None]:
+    if max_seconds <= 0:
+        raise ValueError("--max-seconds must be positive")
+    previous_handler = signal.getsignal(signal.SIGALRM)
+    signal.signal(signal.SIGALRM, _timeout)
+    signal.setitimer(signal.ITIMER_REAL, max_seconds)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0.0)
+        signal.signal(signal.SIGALRM, previous_handler)
+
+
+def _timeout(_signum: int, _frame: FrameType | None) -> None:
+    raise ProfileTimeoutError("profile metric-fan request exceeded --max-seconds")
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

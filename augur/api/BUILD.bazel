@@ -337,6 +337,23 @@ py_binary(
     deps = [":server_lib"],
 )
 
+py_binary(
+    name = "profile_metric_fan",
+    srcs = ["profile_metric_fan.py"],
+    data = [
+        ":public_fixture_config",
+        ":public_fixture_properties",
+    ],
+    main_module = "augur.api.profile_metric_fan",
+    deps = [
+        ":backend_py",
+        ":config_py",
+        "//augur/model:simple_exogenous_py",
+        "//augur/product:projection_py",
+        "//util/bazel:runfiles",
+    ],
+)
+
 aspect_py_binary(
     name = "server_image_binary",
     srcs = ["server.py"],
