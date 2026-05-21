@@ -154,13 +154,13 @@ pub(super) fn plan_module_reference_needs<'a>(
     let mut needs = ModuleReferenceNeeds::default();
     for body_id in &body_facts.referenced_idents {
         // body_id is the hygiene-aware (sym, ctxt) of one referenced ident.
-        // Spec-derived lookup tables (factorization.{owner_of, logical_module},
-        // declaration_by_name, binding_assignment, entry_exports_by_original_local,
-        // LogicalModule.rename_map) are still String-keyed by sym; convert at
-        // each call. `runtime_imports.imports` IS Id-keyed.
+        // Some spec-derived lookup tables are still String-keyed by sym
+        // (`declaration_by_name`, `binding_assignment`,
+        // `entry_exports_by_original_local`), while owner lookup and
+        // `runtime_imports.imports` are Id/Atom-keyed.
         let name_str = body_id.0.as_ref();
         if let Some(ModuleId(LogicalModuleIndex(provider_index))) =
-            factorization.analysis.owner_of(name_str)
+            factorization.analysis.owner_of(&body_id.0)
         {
             // provider.rename_map is now Id-keyed; reconstruct the
             // provider's Id from the body ident's sym + ctxt. Within

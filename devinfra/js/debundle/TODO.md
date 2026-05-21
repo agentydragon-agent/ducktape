@@ -121,6 +121,40 @@ per-candidate hot-loop wins (binding caches, `BTreeMap → HashMap`,
 typed edge IDs, IR cleanup) have landed; reprofile before
 picking the next item. Remaining priorities, ordered by leverage:
 
+The 2026-05-20 source-built large-web-corpus profile moved the
+current remaining plan:
+
+1. **Gate expensive owner graph detail for ordinary `debundle run`.**
+   In the logical-materialization substage,
+   `build_owner_graph_report` took 8.97 s / 15.36 s. CPU samples
+   put `ChunkFactorization::owner_graph_report` at 47.75% children,
+   with `build_factorize_report` at 32.10%. Ordinary runs should be
+   able to emit the lightweight graph/report data they need without
+   always computing full peelability/factorize cells; keep the full
+   detail for `debundle peel` / planning runs.
+
+2. **Use the overlay realizability fast path for peel candidates.**
+   Candidate evaluation currently uses the rollbacking push/scope
+   path even though `RealizabilityIndex` has
+   `verdict_after_moving_owners_touching`, which avoids mutating the
+   maintained quotient. Switching peelability/factorize callers to
+   the overlay path should cut repeated SCC/reachability churn.
+
+3. **Reduce repeated graph reachability allocation.** If item 2 is
+   still hot, replace repeated `BTreeSet`-based
+   `scc_containing -> reachable_from` work with dense module-index
+   bitsets or cached reachability for the current quotient.
+
+4. **Keep harness emission out of the critical path when possible.**
+   `emit_browser_harness` was the largest wall-clock stage
+   (18.78 s / 35.15 s), but not the largest CPU hotspot. The output
+   tree was about 98 MiB across 4,991 files, with reports larger than
+   app output. Split browser-harness generation from non-browser
+   runs where practical, parallelize script/report writes, and avoid
+   recopying unchanged non-JS assets.
+
+Older profile follow-ups that still apply:
+
 1. **Compact / stream `owner_graph.json` writes.**
    `write_owner_graph_report` was 6.55 s. The JSON tree gets fully
    allocated before serialization;
