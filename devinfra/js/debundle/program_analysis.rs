@@ -10,8 +10,8 @@ use artifact::{
     TopLevelDeclarationKind,
 };
 use binding_targets::{
-    TargetAccessRecorder, binding_names, member_root_sym, record_assign_target,
-    record_member_target, record_pat_write, record_update_target,
+    TargetAccessRecorder, binding_names, member_root_sym, module_export_name,
+    record_assign_target, record_member_target, record_pat_write, record_update_target,
 };
 use js_ast::{ParsedJsModule, SourceLineIndex, str_value};
 
@@ -280,10 +280,6 @@ fn describe_import(line_index: &SourceLineIndex, decl: &ImportDecl, index: usize
             })
             .collect(),
     }
-}
-
-fn module_export_name(name: &ModuleExportName) -> String {
-    name.atom().to_string()
 }
 
 fn export_default_decl_name(decl: &ExportDefaultDecl) -> Option<String> {

@@ -3,6 +3,8 @@
 //! introduce destructure siblings, etc. `ChunkAstAnalysis` is the
 //! input to `materialize_logical_chunk`s spec-driven plan resolution.
 
+use binding_targets::{binding_name_strings, binding_names as bt_binding_names, declaration_ids as bt_declaration_ids, declaration_name_strings};
+
 use super::*;
 
 #[derive(Debug, Clone)]
@@ -115,7 +117,7 @@ pub(super) fn record_destructure_sibling_groups(
         return;
     };
     for declarator in &var.decls {
-        let names = binding_names(&declarator.name);
+        let names = binding_name_strings(&declarator.name);
         if names.len() < 2 {
             continue;
         }
@@ -192,70 +194,17 @@ pub(super) fn top_level_declaration_ids(item: &ModuleItem) -> Vec<Id> {
 }
 
 pub(super) fn declaration_names(decl: &Decl) -> Vec<String> {
-    match decl {
-        Decl::Fn(function) => vec![function.ident.sym.to_string()],
-        Decl::Class(class) => vec![class.ident.sym.to_string()],
-        Decl::Var(var) => var
-            .decls
-            .iter()
-            .flat_map(|decl| binding_names(&decl.name))
-            .collect(),
-        _ => Vec::new(),
-    }
+    declaration_name_strings(decl)
 }
 
 pub(super) fn declaration_ids(decl: &Decl) -> Vec<Id> {
-    match decl {
-        Decl::Fn(function) => vec![function.ident.to_id()],
-        Decl::Class(class) => vec![class.ident.to_id()],
-        Decl::Var(var) => var
-            .decls
-            .iter()
-            .flat_map(|decl| binding_ids(&decl.name))
-            .collect(),
-        _ => Vec::new(),
-    }
+    bt_declaration_ids(decl)
 }
 
 pub(super) fn binding_names(pattern: &Pat) -> Vec<String> {
-    match pattern {
-        Pat::Ident(ident) => vec![ident.id.sym.to_string()],
-        Pat::Rest(rest) => binding_names(&rest.arg),
-        Pat::Assign(assign) => binding_names(&assign.left),
-        Pat::Array(array) => array
-            .elems
-            .iter()
-            .flatten()
-            .flat_map(binding_names)
-            .collect(),
-        Pat::Object(object) => object
-            .props
-            .iter()
-            .flat_map(|prop| match prop {
-                ObjectPatProp::KeyValue(key_value) => binding_names(&key_value.value),
-                ObjectPatProp::Assign(assign) => vec![assign.key.id.sym.to_string()],
-                ObjectPatProp::Rest(rest) => binding_names(&rest.arg),
-            })
-            .collect(),
-        _ => Vec::new(),
-    }
+    binding_name_strings(pattern)
 }
 
 pub(super) fn binding_ids(pattern: &Pat) -> Vec<Id> {
-    match pattern {
-        Pat::Ident(ident) => vec![ident.id.to_id()],
-        Pat::Rest(rest) => binding_ids(&rest.arg),
-        Pat::Assign(assign) => binding_ids(&assign.left),
-        Pat::Array(array) => array.elems.iter().flatten().flat_map(binding_ids).collect(),
-        Pat::Object(object) => object
-            .props
-            .iter()
-            .flat_map(|prop| match prop {
-                ObjectPatProp::KeyValue(key_value) => binding_ids(&key_value.value),
-                ObjectPatProp::Assign(assign) => vec![assign.key.to_id()],
-                ObjectPatProp::Rest(rest) => binding_ids(&rest.arg),
-            })
-            .collect(),
-        _ => Vec::new(),
-    }
+    bt_binding_names(pattern).collect()
 }

@@ -24,6 +24,38 @@ pub fn binding_names(pattern: &Pat) -> impl Iterator<Item = Id> + '_ {
     find_pat_ids::<Pat, Id>(pattern).into_iter()
 }
 
+/// String-only counterpart of [`binding_names`]. Returns the `.sym`
+/// of every binding identifier the pattern declares, discarding
+/// `SyntaxContext`. Use when callers compare against literal names
+/// (spec YAML, diagnostics) rather than hygiene-preserving binding
+/// cells.
+pub fn binding_name_strings(pattern: &Pat) -> Vec<String> {
+    binding_names(pattern).map(|(atom, _)| atom.to_string()).collect()
+}
+
+/// Collect all `Id`s bound by a declaration. Covers `Fn`, `Class`,
+/// and `Var` (including destructuring patterns); other `Decl`
+/// variants produce an empty vec.
+pub fn declaration_ids(decl: &Decl) -> Vec<Id> {
+    match decl {
+        Decl::Fn(f) => vec![f.ident.to_id()],
+        Decl::Class(c) => vec![c.ident.to_id()],
+        Decl::Var(v) => v.decls.iter().flat_map(|d| binding_names(&d.name)).collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// String-only counterpart of [`declaration_ids`].
+pub fn declaration_name_strings(decl: &Decl) -> Vec<String> {
+    declaration_ids(decl).iter().map(|(atom, _)| atom.to_string()).collect()
+}
+
+/// Extract the string value of a [`ModuleExportName`] (either an
+/// `Ident.atom` or a `Str.value`).
+pub fn module_export_name(name: &ModuleExportName) -> String {
+    name.atom().to_string()
+}
+
 pub fn record_assign_target(target: &AssignTarget, recorder: &mut impl TargetAccessRecorder) {
     match target {
         AssignTarget::Simple(simple) => record_simple_assign_target(simple, recorder),

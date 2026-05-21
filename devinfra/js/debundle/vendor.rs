@@ -11,6 +11,7 @@ use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
 use analysis::local_namespace_iife_target;
+use binding_targets::{binding_name_strings, declaration_name_strings, module_export_name};
 use artifact::{
     ArtifactIndexes, ChunkBundle, ChunkId, ChunkTable, JsFile, JsFileAstParts,
     get_chunk_entry_path, join_module_path, list_chunk_file_paths, manifest_relative_path,
@@ -953,7 +954,7 @@ fn collect_exported_names(module: &Module, include_default: bool) -> BTreeSet<St
                 }
             }
             ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => {
-                for name in declared_names(&export_decl.decl) {
+                for name in declaration_name_strings(&export_decl.decl) {
                     names.insert(name);
                 }
             }
@@ -974,43 +975,6 @@ fn collect_exported_names(module: &Module, include_default: bool) -> BTreeSet<St
         }
     }
     names
-}
-
-fn declared_names(decl: &Decl) -> Vec<String> {
-    match decl {
-        Decl::Fn(function) => vec![function.ident.sym.to_string()],
-        Decl::Class(class) => vec![class.ident.sym.to_string()],
-        Decl::Var(var) => var
-            .decls
-            .iter()
-            .flat_map(|decl| binding_names(&decl.name))
-            .collect(),
-        _ => Vec::new(),
-    }
-}
-
-fn binding_names(pattern: &Pat) -> Vec<String> {
-    match pattern {
-        Pat::Ident(ident) => vec![ident.id.sym.to_string()],
-        Pat::Rest(rest) => binding_names(&rest.arg),
-        Pat::Assign(assign) => binding_names(&assign.left),
-        Pat::Array(array) => array
-            .elems
-            .iter()
-            .flatten()
-            .flat_map(binding_names)
-            .collect(),
-        Pat::Object(object) => object
-            .props
-            .iter()
-            .flat_map(|prop| match prop {
-                ObjectPatProp::KeyValue(key_value) => binding_names(&key_value.value),
-                ObjectPatProp::Assign(assign) => vec![assign.key.id.sym.to_string()],
-                ObjectPatProp::Rest(rest) => binding_names(&rest.arg),
-            })
-            .collect(),
-        _ => Vec::new(),
-    }
 }
 
 fn collect_default_export_object_keys(
@@ -1489,10 +1453,6 @@ fn const_init_with_expr(alias: &str, init: Expr) -> ModuleItem {
             definite: false,
         }],
     }))))
-}
-
-fn module_export_name(name: &ModuleExportName) -> String {
-    name.atom().to_string()
 }
 
 // === partial vendor swap =================================================

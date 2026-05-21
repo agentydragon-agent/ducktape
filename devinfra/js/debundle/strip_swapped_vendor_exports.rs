@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use analysis::{AnalysisHints, LocalEffectPolicy, StatementFacts, analyze_chunk};
 use anyhow::{Context, Result, bail};
-use binding_targets::binding_names;
+use binding_targets::{binding_name_strings, declaration_ids, declaration_name_strings, module_export_name};
 use serde::Serialize;
 use swc_common::sync::Lrc;
 use swc_common::{DUMMY_SP, SourceMap};
@@ -351,31 +351,11 @@ fn synthetic_id(local: &str) -> Id {
 }
 
 fn export_decl_declared_names(decl: &Decl) -> Vec<String> {
-    match decl {
-        Decl::Fn(f) => vec![f.ident.sym.to_string()],
-        Decl::Class(c) => vec![c.ident.sym.to_string()],
-        Decl::Var(v) => {
-            let mut out = Vec::new();
-            for d in &v.decls {
-                collect_pat_names(&d.name, &mut out);
-            }
-            out
-        }
-        _ => Vec::new(),
-    }
+    declaration_name_strings(decl)
 }
 
 fn export_decl_declared_ids(decl: &Decl) -> BTreeSet<Id> {
-    match decl {
-        Decl::Fn(f) => BTreeSet::from([f.ident.to_id()]),
-        Decl::Class(c) => BTreeSet::from([c.ident.to_id()]),
-        Decl::Var(v) => v
-            .decls
-            .iter()
-            .flat_map(|d| binding_names(&d.name))
-            .collect(),
-        _ => BTreeSet::new(),
-    }
+    declaration_ids(decl).into_iter().collect()
 }
 
 fn split_top_level_var_decls(module: &mut Module) {
@@ -1076,29 +1056,6 @@ fn id_name(id: &Id) -> String {
     id.0.to_string()
 }
 
-fn collect_pat_names(pat: &Pat, out: &mut Vec<String>) {
-    match pat {
-        Pat::Ident(b) => out.push(b.id.sym.to_string()),
-        Pat::Array(arr) => {
-            for elem in arr.elems.iter().flatten() {
-                collect_pat_names(elem, out);
-            }
-        }
-        Pat::Object(obj) => {
-            for prop in &obj.props {
-                match prop {
-                    ObjectPatProp::KeyValue(kv) => collect_pat_names(&kv.value, out),
-                    ObjectPatProp::Assign(a) => out.push(a.key.sym.to_string()),
-                    ObjectPatProp::Rest(r) => collect_pat_names(&r.arg, out),
-                }
-            }
-        }
-        Pat::Rest(r) => collect_pat_names(&r.arg, out),
-        Pat::Assign(a) => collect_pat_names(&a.left, out),
-        _ => {}
-    }
-}
-
 fn is_shareable_intrinsic_alias_var(var: &VarDecl) -> bool {
     !var.decls.is_empty()
         && var.decls.iter().all(|decl| {
@@ -1174,10 +1131,6 @@ fn matches_global_intrinsic(name: &str) -> bool {
     )
 }
 
-fn module_export_name(name: &ModuleExportName) -> String {
-    name.atom().to_string()
-}
-
 /// Subset of [`collect_exported_names`] in `vendor.rs`: returns the
 /// post-mutation export surface of `module`. Local re-exports
 /// (`export { x as y }`), `export const x = …`, `export function`,
@@ -1200,9 +1153,7 @@ fn collect_exported_names(module: &Module) -> BTreeSet<String> {
                     }
                     Decl::Var(v) => {
                         for d in &v.decls {
-                            let mut names = Vec::new();
-                            collect_pat_names(&d.name, &mut names);
-                            out.extend(names);
+                            out.extend(binding_name_strings(&d.name));
                         }
                     }
                     _ => {}

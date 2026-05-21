@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use binding_targets::{
-    TargetAccessRecorder, binding_names, record_assign_target, record_pat_write,
+    TargetAccessRecorder, binding_names, declaration_ids, record_assign_target, record_pat_write,
     record_update_target, strip_parens,
 };
 use serde::{Deserialize, Serialize};
@@ -1724,16 +1724,7 @@ fn collect_declared_names(item: &ModuleItem) -> BTreeSet<Id> {
 }
 
 fn declaration_names(decl: &Decl) -> BTreeSet<Id> {
-    match decl {
-        Decl::Var(var) => var
-            .decls
-            .iter()
-            .flat_map(|declarator| binding_names(&declarator.name))
-            .collect(),
-        Decl::Fn(fn_decl) => BTreeSet::from([fn_decl.ident.to_id()]),
-        Decl::Class(class_decl) => BTreeSet::from([class_decl.ident.to_id()]),
-        _ => BTreeSet::new(),
-    }
+    declaration_ids(decl).into_iter().collect()
 }
 
 /// Shared trait for visitors that track lazy nesting depth and the

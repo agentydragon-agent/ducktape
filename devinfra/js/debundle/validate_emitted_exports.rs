@@ -38,6 +38,7 @@
 use std::collections::BTreeMap;
 
 use anyhow::{Result, bail};
+use binding_targets::{declaration_name_strings, module_export_name};
 use swc_common::Spanned;
 use swc_ecma_ast::*;
 
@@ -182,8 +183,8 @@ fn record_decl(
                         let public = n
                             .exported
                             .as_ref()
-                            .map(module_export_atom)
-                            .unwrap_or_else(|| module_export_atom(&n.orig));
+                            .map(module_export_name)
+                            .unwrap_or_else(|| module_export_name(&n.orig));
                         sites.entry(public).or_default().push(ExportSite {
                             line,
                             shape: "named",
@@ -191,7 +192,7 @@ fn record_decl(
                     }
                     ExportSpecifier::Namespace(ns) => {
                         sites
-                            .entry(module_export_atom(&ns.name))
+                            .entry(module_export_name(&ns.name))
                             .or_default()
                             .push(ExportSite {
                                 line,
@@ -220,45 +221,7 @@ fn record_decl(
 }
 
 fn exported_decl_names(decl: &Decl) -> Vec<String> {
-    let mut out = Vec::new();
-    match decl {
-        Decl::Fn(f) => out.push(f.ident.sym.to_string()),
-        Decl::Class(c) => out.push(c.ident.sym.to_string()),
-        Decl::Var(v) => {
-            for d in &v.decls {
-                collect_pat_names(&d.name, &mut out);
-            }
-        }
-        _ => {}
-    }
-    out
-}
-
-fn collect_pat_names(pat: &Pat, out: &mut Vec<String>) {
-    match pat {
-        Pat::Ident(b) => out.push(b.id.sym.to_string()),
-        Pat::Array(arr) => {
-            for elem in arr.elems.iter().flatten() {
-                collect_pat_names(elem, out);
-            }
-        }
-        Pat::Object(obj) => {
-            for prop in &obj.props {
-                match prop {
-                    ObjectPatProp::KeyValue(kv) => collect_pat_names(&kv.value, out),
-                    ObjectPatProp::Assign(a) => out.push(a.key.sym.to_string()),
-                    ObjectPatProp::Rest(r) => collect_pat_names(&r.arg, out),
-                }
-            }
-        }
-        Pat::Rest(r) => collect_pat_names(&r.arg, out),
-        Pat::Assign(a) => collect_pat_names(&a.left, out),
-        _ => {}
-    }
-}
-
-fn module_export_atom(name: &ModuleExportName) -> String {
-    name.atom().to_string()
+    declaration_name_strings(decl)
 }
 
 #[cfg(test)]

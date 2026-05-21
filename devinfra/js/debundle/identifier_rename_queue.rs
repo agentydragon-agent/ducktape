@@ -43,11 +43,12 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use anyhow::Result;
+use binding_targets::{binding_name_strings, declaration_name_strings};
 use serde::Serialize;
 use swc_ecma_ast::{
-    BindingIdent, ClassDecl, ExportDecl, ExportDefaultDecl, ExportSpecifier, FnDecl, GetterProp,
-    Ident, MemberExpr, MemberProp, ModuleDecl, ModuleExportName, ModuleItem, NamedExport, Pat,
-    Prop, PropName, SetterProp, Stmt, VarDeclarator,
+    BindingIdent, ExportDecl, ExportDefaultDecl, ExportSpecifier, GetterProp,
+    Ident, MemberExpr, MemberProp, ModuleDecl, ModuleExportName, ModuleItem, NamedExport,
+    Prop, PropName, SetterProp, Stmt,
 };
 use swc_ecma_visit::{Visit, VisitWith};
 
@@ -361,35 +362,7 @@ fn top_level_binding_names(item: &ModuleItem) -> Vec<String> {
 }
 
 fn decl_names(decl: &swc_ecma_ast::Decl) -> Vec<String> {
-    match decl {
-        swc_ecma_ast::Decl::Fn(FnDecl { ident, .. }) => vec![ident.sym.to_string()],
-        swc_ecma_ast::Decl::Class(ClassDecl { ident, .. }) => vec![ident.sym.to_string()],
-        swc_ecma_ast::Decl::Var(var) => var
-            .decls
-            .iter()
-            .flat_map(|VarDeclarator { name, .. }| pat_names(name))
-            .collect(),
-        _ => Vec::new(),
-    }
-}
-
-fn pat_names(pat: &Pat) -> Vec<String> {
-    match pat {
-        Pat::Ident(BindingIdent { id, .. }) => vec![id.sym.to_string()],
-        Pat::Rest(rest) => pat_names(&rest.arg),
-        Pat::Assign(assign) => pat_names(&assign.left),
-        Pat::Array(array) => array.elems.iter().flatten().flat_map(pat_names).collect(),
-        Pat::Object(object) => object
-            .props
-            .iter()
-            .flat_map(|prop| match prop {
-                swc_ecma_ast::ObjectPatProp::KeyValue(kv) => pat_names(&kv.value),
-                swc_ecma_ast::ObjectPatProp::Assign(assign) => vec![assign.key.id.sym.to_string()],
-                swc_ecma_ast::ObjectPatProp::Rest(rest) => pat_names(&rest.arg),
-            })
-            .collect(),
-        _ => Vec::new(),
-    }
+    declaration_name_strings(decl)
 }
 
 /// Visitor that counts references to identifiers in `of_interest`.
