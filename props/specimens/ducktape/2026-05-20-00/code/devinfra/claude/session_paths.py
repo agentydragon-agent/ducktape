@@ -1,0 +1,146 @@
+"""Session-scoped path computations.
+
+All paths derived from a session_id live here. This is a plain dataclass
+(not pydantic-settings) — it computes paths, not config.
+"""
+
+from dataclasses import dataclass
+from pathlib import Path
+
+from platformdirs import user_cache_dir, user_config_dir
+
+
+def default_cache_dir() -> Path:
+    """Resolve the claude-hooks cache directory (respects XDG_CACHE_HOME)."""
+    return Path(user_cache_dir(appname="claude-hooks"))
+
+
+def _short_session_dir(session_id: str) -> Path:
+    """Short session-scoped dir under /tmp for Unix sockets (108-byte AF_UNIX limit)."""
+    return Path("/tmp/claude-hd") / session_id
+
+
+def hook_daemon_sock(session_id: str) -> Path:
+    """UDS path for the hook daemon, derived from session_id alone."""
+    return _short_session_dir(session_id) / "d.sock"
+
+
+@dataclass(frozen=True)
+class SessionPaths:
+    """All session-scoped paths, derived from session_id + resolved home/cache roots."""
+
+    session_id: str
+    home: Path
+    xdg_cache_home: Path
+
+    @classmethod
+    def from_env(cls, session_id: str, env: dict[str, str]) -> "SessionPaths":
+        """Construct from an environment dict, resolving home/cache eagerly."""
+        home = Path(env["HOME"]) if "HOME" in env else Path.home()
+        xdg_cache_home = Path(
+            env["XDG_CACHE_HOME"] if "XDG_CACHE_HOME" in env else user_cache_dir(appname="claude-hooks")
+        )
+        return cls(session_id=session_id, home=home, xdg_cache_home=xdg_cache_home)
+
+    @property
+    def session_dir(self) -> Path:
+        return self.home / ".claude" / "session-env" / self.session_id
+
+    @property
+    def cache_dir(self) -> Path:
+        """Base cache directory for claude-hooks (auto-created)."""
+        d = self.xdg_cache_home
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+
+    @property
+    def config_dir(self) -> Path:
+        """Base config directory for claude-hooks (auto-created)."""
+        return Path(user_config_dir(appname="claude-hooks", ensure_exists=True))
+
+    @property
+    def supervisor_dir(self) -> Path:
+        return self.session_dir / "supervisor"
+
+    @property
+    def supervisor_pidfile(self) -> Path:
+        return self.supervisor_dir / "supervisord.pid"
+
+    @property
+    def _short_dir(self) -> Path:
+        """Short session-scoped dir under /tmp for Unix sockets (108-byte AF_UNIX limit)."""
+        return _short_session_dir(self.session_id)
+
+    @property
+    def bazel_bes_proxy_sock(self) -> Path:
+        """UDS socket for the BES interceptor (--bes_backend=unix:...)."""
+        return self._short_dir / "bazel-bes-proxy.sock"
+
+    @property
+    def wrapper_dir(self) -> Path:
+        """Wrapper directory (added to PATH)."""
+        return self.session_dir / "bin"
+
+    @property
+    def wrapper_path(self) -> Path:
+        """Wrapper script path."""
+        return self.wrapper_dir / "bazelisk"
+
+    @property
+    def docker_dir(self) -> Path:
+        return self.session_dir / "docker"
+
+    @property
+    def container_storage_dir(self) -> Path:
+        """Tmpfs-backed storage root for the active container runtime."""
+        return self.session_dir / "container-storage"
+
+    @property
+    def sandbox_writable_dir(self) -> Path:
+        """Directory writable from within Claude Code's sandbox.
+
+        Claude Code's Bash tool sandbox makes ~/.claude/session-env/ read-only,
+        so runtime writes (e.g. bazel-wrapper log) must go to /tmp/claude/.
+        """
+        return Path("/tmp/claude") / self.session_id
+
+    @property
+    def bazelrc(self) -> Path:
+        """Per-session bazelrc file (rendered by session start hook)."""
+        return self.session_dir / "bazelrc"
+
+    @property
+    def bazel_cache_dir(self) -> Path:
+        """Bazel cache directory (tmpfs-backed, via startup --output_user_root)."""
+        return self.session_dir / "bazel-cache"
+
+    @property
+    def hook_daemon_dir(self) -> Path:
+        """Runtime directory for hook daemon (socket, pidfile, logs)."""
+        return self.session_dir / "hook-daemon"
+
+    @property
+    def hook_daemon_log(self) -> Path:
+        return self.hook_daemon_dir / "daemon.log"
+
+    @property
+    def hook_daemon_sock(self) -> Path:
+        """UDS path for the hook daemon.
+
+        The parent directory is created by ensure_dirs(), not on every access.
+        """
+        return self._short_dir / "d.sock"
+
+    def ensure_dirs(self) -> None:
+        """Create all directories that must exist before use (socket dir, session dir, etc.)."""
+        self.hook_daemon_sock.parent.mkdir(parents=True, exist_ok=True)
+
+    @property
+    def hook_daemon_pidfile(self) -> Path:
+        """PID file for the hook daemon process."""
+        return self.hook_daemon_dir / "daemon.pid"
+
+    @property
+    def hook_daemon_env_file(self) -> Path:
+        """Persisted session env (written by daemon on each request)."""
+        return self.hook_daemon_dir / "session_env.json"

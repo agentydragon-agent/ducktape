@@ -1,0 +1,152 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_library(
+    name = "functions",
+    srcs = ["functions.py"],
+)
+
+py_library(
+    name = "result_types",
+    srcs = ["result_types.py"],
+    deps = [
+        "//skills/info_gathering/evals:harness",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "prompts",
+    srcs = ["prompts.py"],
+    data = [
+        "first_user_message.txt",
+        "//skills/info_gathering:SKILL.md",
+    ],
+    deps = [
+        ":functions",
+        "//skills/eval_infra:eval_prompt",
+        "//skills/info_gathering/evals/twenty_questions:prompts",
+        "//util/bazel:runfiles",
+    ],
+)
+
+py_library(
+    name = "scoring",
+    srcs = ["scoring.py"],
+    deps = [
+        ":functions",
+        ":result_types",
+        "@pypi//aiodocker",
+    ],
+)
+
+py_library(
+    name = "function_learning",
+    srcs = ["function_learning.py"],
+    deps = [
+        ":functions",
+        ":prompts",
+        ":result_types",
+        ":scoring",
+        "//skills/eval_infra:af_chat_client",
+        "//skills/eval_infra:eval_sandbox",
+        "//skills/eval_infra:skill_staging",
+        "//skills/eval_infra:termination",
+        "//skills/eval_infra:transcript",
+        "//skills/eval_infra/empty_skill:empty_skill_skill_spec",
+        "//skills/info_gathering:info_gathering_skill_spec",
+        "//skills/info_gathering/evals/twenty_questions/x/shared:output",
+        # agent_framework's __init__.py references openai/anthropic stubs.
+        "@pypi//agent_framework_anthropic",
+        "@pypi//agent_framework_claude",
+        "@pypi//agent_framework_core",
+        "@pypi//agent_framework_openai",
+        "@pypi//aiodocker",
+        "@pypi//pydantic",
+    ],
+)
+
+py_binary(
+    name = "function_learning_bin",
+    main_module = "skills.info_gathering.evals.function_learning.function_learning",
+    deps = [":function_learning"],
+)
+
+py_library(
+    name = "run_all_evals_lib",
+    srcs = ["run_all_evals.py"],
+    deps = [
+        ":function_learning",
+        "//skills/eval_infra:af_chat_client",
+        "//skills/eval_infra:eval_sandbox",
+        "//skills/eval_infra:skill_staging",
+        "@pypi//agent_framework_anthropic",
+        "@pypi//agent_framework_claude",
+        "@pypi//agent_framework_core",
+        "@pypi//agent_framework_openai",
+        "@pypi//aiodocker",
+        "@pypi//anyio",
+        "@pypi//pydantic",
+    ],
+)
+
+py_binary(
+    name = "run_all_evals",
+    main_module = "skills.info_gathering.evals.function_learning.run_all_evals",
+    deps = [":run_all_evals_lib"],
+)
+
+py_library(
+    name = "analyze_lib",
+    srcs = ["analyze.py"],
+    deps = [
+        ":run_all_evals_lib",
+        "@pypi//pandas",
+        "@pypi//pandas_stubs",
+    ],
+)
+
+py_binary(
+    name = "analyze",
+    main_module = "skills.info_gathering.evals.function_learning.analyze",
+    deps = [":analyze_lib"],
+)
+
+py_test(
+    name = "test_functions",
+    srcs = ["test_functions.py"],
+    deps = [
+        ":functions",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_function_learning",
+    srcs = [
+        "conftest.py",
+        "test_function_learning.py",
+    ],
+    data = ["//third_party/containers:python_3_13_slim"],
+    requires_docker = True,
+    deps = [
+        ":function_learning",
+        ":functions",
+        ":result_types",
+        "//skills/eval_infra:eval_sandbox",
+        "//skills/eval_infra:skill_staging",
+        "//skills/eval_infra/empty_skill:empty_skill_skill_spec",
+        "//skills/info_gathering/evals:replay_client",
+        "//third_party/containers:rlocations",
+        "//util:oci",
+        # agent_framework's __init__.py references openai/anthropic stubs.
+        "@pypi//agent_framework_anthropic",
+        "@pypi//agent_framework_claude",
+        "@pypi//agent_framework_core",
+        "@pypi//agent_framework_openai",
+        "@pypi//aiodocker",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)

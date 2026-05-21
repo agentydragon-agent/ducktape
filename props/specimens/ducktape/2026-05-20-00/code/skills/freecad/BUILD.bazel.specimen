@@ -1,0 +1,105 @@
+load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//skills:defs.bzl", "skill_mapping", "skill_package")
+
+skill_package(
+    name = "freecad",
+    contents = [
+        skill_mapping(
+            srcs = [
+                "SKILL.md",
+                "debug/qt_shutdown_segfault.md",
+                "gotchas.md",
+                "interactive.md",
+                "partdesign.md",
+                "sketcher.md",
+                "techdraw.md",
+            ],
+            preserve_paths = True,
+        ),
+        skill_mapping(
+            srcs = [
+                "//skills/freecad/examples:export_page.py",
+                "//skills/freecad/examples:freecad_helpers.py",
+                "//skills/freecad/examples:render_debug_edges.py",
+                "//skills/freecad/examples:render_debug_faces.py",
+                "//skills/freecad/examples:render_dxf.py",
+                "//skills/freecad/examples:render_fcstd.py",
+                "//skills/freecad/examples:render_multi_angle.py",
+                "//skills/freecad/examples:verify_fcstd_load.py",
+            ],
+            prefix = "examples",
+        ),
+        skill_mapping(
+            srcs = [
+                "//skills/freecad/examples/bearing_block:build.py",
+                "//skills/freecad/examples/bearing_block:build_techdraw.py",
+            ],
+            prefix = "examples/bearing_block",
+        ),
+        skill_mapping(
+            srcs = ["//skills/freecad/examples/bracket:parametric_sketch.py"],
+            prefix = "examples/bracket",
+        ),
+        skill_mapping(
+            srcs = ["//skills/freecad/examples/compound:build.py"],
+            prefix = "examples/compound",
+        ),
+        skill_mapping(
+            srcs = ["//skills/freecad/examples/cube_with_hole:build.py"],
+            prefix = "examples/cube_with_hole",
+        ),
+    ],
+)
+
+# FreeCAD conda binaries for subprocess-based tests.
+# Referenced directly in data deps (not via filegroup) to preserve runfiles
+# from the conda environment — filegroup only propagates DefaultInfo.files.
+
+filegroup(
+    name = "freecad_mcp_addon",
+    testonly = True,
+    srcs = ["@freecad_mcp//:addon"],
+)
+
+oci_layout_rloc(
+    name = "freecad_test",
+    testonly = True,
+    image = "@freecad_test_linux_amd64",
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    data = [
+        "//skills/freecad/conda:freecadcmd",
+    ],
+    visibility = ["//skills/freecad:__subpackages__"],
+    deps = [
+        "//util:oci",
+        "//util/bazel:runfiles",
+        "//util/bazel:subprocess",
+        "//util/testing:container_logs",
+        "//util/testing:otel_tracing",
+        "@pypi//opentelemetry_api",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_interactive",
+    size = "medium",
+    srcs = ["test_interactive.py"],
+    data = [
+        ":freecad_mcp_addon",
+        "//skills/freecad/conda:freecadcmd",
+    ],
+    deps = [
+        ":conftest",
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

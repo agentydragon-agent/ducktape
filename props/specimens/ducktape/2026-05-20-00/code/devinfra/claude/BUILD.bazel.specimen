@@ -1,0 +1,134 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+# === Base modules (no internal deps) ===
+
+py_library(
+    name = "shell",
+    srcs = ["shell.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "errors",
+    srcs = ["errors.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "streaming",
+    srcs = ["streaming.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "debug",
+    srcs = ["debug.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "managed_files",
+    srcs = ["managed_files.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "session_paths",
+    srcs = ["session_paths.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//platformdirs",
+    ],
+)
+
+py_library(
+    name = "settings",
+    srcs = ["settings.py"],
+    data = [
+        "config/bazelrc.mako",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//platformdirs",
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
+    ],
+)
+
+# === Modules with internal deps ===
+
+py_library(
+    name = "env_file",
+    srcs = ["env_file.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":managed_files",
+        ":settings",
+        "//util/bazel:subprocess",
+    ],
+)
+
+# Packaging targets are in the root //:wheel (merged ducktape wheel).
+# See /BUILD.bazel for ducktape_pkg and wheel targets.
+
+# === Tests ===
+
+py_library(
+    name = "conftest",
+    srcs = ["conftest.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":session_paths",
+        ":settings",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_envrc_propagation",
+    srcs = ["test_envrc_propagation.py"],
+    deps = [
+        ":conftest",
+        ":env_file",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_session_start_input",
+    srcs = ["test_session_start_input.py"],
+    deps = [
+        ":conftest",
+        "//devinfra/claude/claude_api/hooks:common",
+        "//devinfra/claude/claude_api/hooks:session_start",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# === Transcript permission scanner ===
+
+py_library(
+    name = "readonly_commands",
+    srcs = ["readonly_commands.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "scan_transcript_permissions_lib",
+    srcs = ["scan_transcript_permissions.py"],
+    imports = ["../.."],
+    deps = [
+        ":readonly_commands",
+    ],
+)
+
+py_binary(
+    name = "scan_transcript_permissions",
+    main_module = "devinfra.claude.scan_transcript_permissions",
+    deps = [":scan_transcript_permissions_lib"],
+)
+
+# === Linting ===

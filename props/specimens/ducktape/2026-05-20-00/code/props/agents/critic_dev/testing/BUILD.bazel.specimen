@@ -1,0 +1,26 @@
+"""Shared test fixtures for critic_dev agents (optimizer, improvement)."""
+
+load("//devinfra/python:defs.bzl", "py_library")
+
+py_library(
+    name = "mocks",
+    testonly = True,
+    srcs = ["mocks.py"],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//agent_core/testing:responses",
+        "//mcp_infra/exec:matchers",
+        "//openai_utils:model",
+        "//props/agents/critic_dev:loop",
+        "//props/core:eval_api_models",
+        "//props/testing",
+        "@pypi//pyhamcrest",
+    ],
+)
+
+py_library(
+    name = "orchestration_fixtures",
+    testonly = True,
+    srcs = ["orchestration_fixtures.py"],
+    visibility = ["//props:__subpackages__"],
+)

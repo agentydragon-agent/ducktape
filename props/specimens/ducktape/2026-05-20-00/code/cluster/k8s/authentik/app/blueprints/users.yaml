@@ -1,0 +1,51 @@
+version: 1
+metadata:
+  name: SSO - Default authentication customizations
+  labels:
+    blueprints.goauthentik.io/description: >
+      Patches two built-in Authentik stages so every app using
+      default-authentication-flow (which is all of them) gets the
+      "Sign in with Google" button and doesn't require MFA for users
+      who haven't enrolled.
+
+# The custom-authentication-flow that this directory used to define
+# (together with a no-MFA binding set and a brand flow_authentication
+# override) was removed in 2026-04. The simpler equivalent: use
+# Authentik's built-in default-authentication-flow for everything, and
+# patch its two relevant stages below.
+#
+# Both entries are upserts on Authentik-owned built-ins: they patch only
+# the relevant fields and leave the other fields alone, which is exactly
+# what the blueprint `state: present` semantic provides. TF can't express
+# that cleanly without taking full ownership of every field — fragile
+# across Authentik upgrades that tweak built-in defaults.
+
+entries:
+  # Google as a source on the identification stage. The source itself is
+  # provisioned in tf/gitops/sso-providers/source_google.tf, and `!Find`
+  # resolves the referenced Authentik object by slug at blueprint-apply
+  # time. The Flux dep chain actually runs `sso-providers-tf` AFTER
+  # `authentik` (see cluster/k8s/authentik/sso-providers-tf/
+  # flux-kustomization.yaml), so on a cold bootstrap this blueprint's
+  # first apply can fail to resolve the source; Authentik's blueprint
+  # reconciler retries, and the next pass after TF creates the source
+  # succeeds. Keep this reference's slug aligned with the TF resource.
+  - model: authentik_stages_identification.identificationstage
+    state: present
+    identifiers:
+      name: default-authentication-identification
+    attrs:
+      sources:
+        - !Find [authentik_sources_oauth.oauthsource, [slug, google]]
+      show_source_labels: false
+
+  # MFA validation stage: skip if the user has nothing enrolled, rather
+  # than denying login. Lets users without MFA proceed while still
+  # enforcing MFA for users who have it configured. Opt-in re-enablement
+  # once someone's registered a TOTP/WebAuthn device.
+  - model: authentik_stages_authenticator_validate.authenticatorvalidatestage
+    state: present
+    identifiers:
+      name: default-authentication-mfa-validation
+    attrs:
+      not_configured_action: skip

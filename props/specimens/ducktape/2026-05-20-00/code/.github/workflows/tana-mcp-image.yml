@@ -1,0 +1,32 @@
+# Build and push the Tana MCP Desktop image to GHCR.
+name: Tana MCP Image
+
+on:
+  push:
+    branches: [main, devel]
+    paths: ["tana/mcp_server/**"]
+  workflow_dispatch:
+  workflow_call:
+
+concurrency:
+  group: tana-mcp-image-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-push:
+    name: Build and Push
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: ./.github/actions/ghcr-build-push
+        with:
+          image: ghcr.io/${{ github.repository_owner }}/tana-desktop
+          context: tana/mcp_server
+          cache_from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/tana-desktop:buildcache
+          cache_to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/tana-desktop:buildcache,mode=max

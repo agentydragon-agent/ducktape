@@ -1,0 +1,23 @@
+{
+  // Linting scope is controlled by the pre-commit hook config
+  // (.pre-commit-config.yaml `files:` regex limits which staged files reach
+  // this tool, and pre-commit passes those paths as positional args). No
+  // "globs" field here on purpose — a duplicate scope would cause the hook to
+  // re-lint all matched files in the tree on every commit instead of just the
+  // changed ones.
+  //
+  // For an ad-hoc full sweep, invoke directly with the paths:
+  //   markdownlint-cli2 'cluster/**/*.md' 'website/**/*.md'
+  "ignores": [
+    // Vendored terraform providers
+    "**/.terraform/**"
+  ],
+  // Base rule configuration
+  "config": {
+    // Extend Prettier config to disable formatting-related rules (including MD013 line-length)
+    "extends": "markdownlint/style/prettier",
+    // AGENTS.md and CLAUDE.md start with @-transclusion, not a heading
+    "MD041": false
+  }
+  // Note: website/ has its own .markdownlint-cli2.jsonc with relaxed rules for blog posts
+}

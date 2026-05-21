@@ -1,0 +1,43 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(default_visibility = ["//devinfra/claude:__subpackages__"])
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = ["@pypi//pytest"],
+)
+
+py_library(
+    name = "shell_helpers",
+    testonly = True,
+    srcs = ["shell_helpers.py"],
+)
+
+py_library(
+    name = "container_e2e",
+    testonly = True,
+    srcs = ["container_e2e.py"],
+    deps = [
+        "//util:oci",
+        "//util/bazel:runfiles",
+        "//util/testing:undeclared_outputs",
+        "@pypi//docker",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "fixtures",
+    testonly = True,
+    srcs = ["fixtures.py"],
+    deps = [
+        "//devinfra/claude:session_paths",
+        "//devinfra/claude:settings",
+        "//devinfra/claude/supervisor:client",
+        "//util:net",
+        "//util/testing:undeclared_outputs",
+        "@pypi//pytest",
+    ],
+)

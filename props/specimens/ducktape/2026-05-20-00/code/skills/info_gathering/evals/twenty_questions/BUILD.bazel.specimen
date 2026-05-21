@@ -1,0 +1,82 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+exports_files([
+    "first_user_message.txt",
+    "scratch_system_note.txt",
+    "sim.txt",
+])
+
+py_library(
+    name = "result_types",
+    srcs = ["result_types.py"],
+    visibility = ["//skills/info_gathering/evals/twenty_questions:__subpackages__"],
+    deps = [
+        "//skills/info_gathering/evals:harness",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "prompts",
+    srcs = ["prompts.py"],
+    data = [
+        "first_user_message.txt",
+        "scratch_system_note.txt",
+        "sim.txt",
+    ],
+    visibility = ["//skills/info_gathering/evals:__subpackages__"],
+    deps = [
+        "//skills/eval_infra:eval_prompt",
+        "//util/bazel:runfiles",
+    ],
+)
+
+py_library(
+    name = "twenty_questions",
+    srcs = ["twenty_questions.py"],
+    deps = [
+        ":prompts",
+        ":result_types",
+        "//agent_core:agent",
+        "//agent_core:direct_provider",
+        "//agent_core:events",
+        "//agent_core:handler",
+        "//agent_core:loop_control",
+        "//agent_core:tool_provider",
+        "//openai_utils:model",
+        "//skills/info_gathering/evals:docker_scratch",
+        "//skills/info_gathering/evals:harness",
+        "@pypi//pydantic",
+    ],
+)
+
+py_binary(
+    name = "twenty_questions_bin",
+    data = [
+        "//third_party/containers:debian_slim",
+    ],
+    main_module = "skills.info_gathering.evals.twenty_questions.twenty_questions",
+    deps = [":twenty_questions"],
+)
+
+py_library(
+    name = "conftest",
+    srcs = ["conftest.py"],
+    deps = ["@pypi//pytest"],
+)
+
+py_test(
+    name = "test_twenty_questions",
+    srcs = [
+        "conftest.py",
+        "test_twenty_questions.py",
+    ],
+    deps = [
+        ":twenty_questions",
+        "//agent_core:direct_provider",
+        "//openai_utils:model",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)

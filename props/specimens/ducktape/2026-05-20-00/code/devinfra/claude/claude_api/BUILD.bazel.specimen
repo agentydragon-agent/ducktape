@@ -1,0 +1,68 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "tool_input_models",
+    srcs = ["tool_input_models.py"],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_test(
+    name = "test_tool_input_models",
+    srcs = ["test_tool_input_models.py"],
+    deps = [
+        ":tool_input_models",
+        "//devinfra/claude:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "statusline",
+    srcs = ["statusline.py"],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "credentials",
+    srcs = ["credentials.py"],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "profile",
+    srcs = ["profile.py"],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "usage",
+    srcs = ["usage.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//httpx",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_schema_equivalence",
+    srcs = ["test_schema_equivalence.py"],
+    data = [
+        "//devinfra/claude/claude_api/hooks/schemas/2.1.105:hook_schemas",
+    ],
+    deps = [
+        "//devinfra/claude:conftest",
+        "//devinfra/claude/claude_api/hooks:output",
+        "//util:json_schema",
+        "//util/bazel:runfiles",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

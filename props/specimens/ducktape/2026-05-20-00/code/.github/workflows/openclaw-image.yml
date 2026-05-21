@@ -1,0 +1,42 @@
+# Build and push the OpenClaw+matrix container image to GHCR.
+# Derives from upstream openclaw with the matrix channel plugin pre-installed.
+name: OpenClaw Image
+
+on:
+  push:
+    branches: [main, devel]
+    paths:
+      - "openclaw/**"
+      - "airlock/openclaw/**"
+      - ".github/workflows/openclaw-image.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: openclaw-image-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-push:
+    name: Build and Push
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Build airlock plugin tar
+        run: bazel build //airlock/openclaw:plugin_tar
+
+      - name: Stage plugin tar for Docker
+        run: cp bazel-bin/airlock/openclaw/plugin_tar.tar openclaw/airlock-plugin.tar
+
+      - uses: ./.github/actions/ghcr-build-push
+        with:
+          image: ghcr.io/${{ github.repository_owner }}/openclaw-matrix
+          context: .
+          file: openclaw/Dockerfile
+          cache_from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/openclaw-matrix:buildcache
+          cache_to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/openclaw-matrix:buildcache,mode=max

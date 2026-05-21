@@ -1,0 +1,74 @@
+# Ansible-lint reusable workflow
+#
+# Full ansible validation with dependencies
+name: Ansible-lint
+
+on:
+  push:
+    branches: [main, devel]
+    paths:
+      - "ansible/**"
+      - ".github/workflows/ansible-lint.yml"
+  pull_request:
+    paths:
+      - "ansible/**"
+      - ".github/workflows/ansible-lint.yml"
+  workflow_dispatch:
+
+jobs:
+  ansible-lint-full:
+    name: Ansible-lint (full, all playbooks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      # Only cache roles - collections are bundled in ansible package
+      - name: Restore Ansible Galaxy roles cache
+        id: cache-ansible-restore
+        uses: actions/cache/restore@v5
+        with:
+          path: ~/.ansible/roles
+          key: ansible-roles-${{ runner.os }}-${{ hashFiles('ansible/requirements.yaml') }}
+          restore-keys: ansible-roles-${{ runner.os }}-
+
+      # Use full 'ansible' package for bundled collections (avoids Galaxy API for collections).
+      # Galaxy has known reliability issues - see pre-commit.yml for details.
+      - name: Install ansible and ansible-lint
+        run: pip install "ansible>=10" ansible-lint
+
+      # Only fetch roles from Galaxy - collections are bundled in ansible package
+      - name: Install Ansible Galaxy roles
+        run: |
+          cd ansible
+          ansible-galaxy role install -r requirements.yaml
+
+      - name: Run ansible-lint (thorough mode)
+        run: .github/scripts/run-ansible-lint.sh
+
+      - name: Generate ansible-lint summary
+        if: always()
+        run: |
+          echo "### Ansible-lint Results (Full Mode)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Mode**: Full validation with dependencies" >> $GITHUB_STEP_SUMMARY
+          echo "**Flags**: No NODEPS, no --offline (complete checking)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "✅ All playbooks passed ansible-lint" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Ansible-lint found issues" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Save Ansible Galaxy roles cache
+        if: always() && steps.cache-ansible-restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: ~/.ansible/roles
+          key: ${{ steps.cache-ansible-restore.outputs.cache-primary-key }}

@@ -1,0 +1,50 @@
+name: "Copilot Setup Steps"
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+  pull_request:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+
+jobs:
+  # The job MUST be called `copilot-setup-steps` or it will not be picked up by Copilot.
+  copilot-setup-steps:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - uses: ./.github/actions/setup-nix-devtools
+
+      - uses: ./.github/actions/setup-ci-secrets
+        with:
+          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
+
+      - uses: ./.github/actions/setup-bazel
+        with:
+          buildbuddy_api_key: ${{ env.BUILDBUDDY_API_KEY }}
+
+      - name: Install pre-commit git hooks
+        run: |
+          pre-commit install
+          pre-commit install --hook-type commit-msg
+
+      - name: Verify environment
+        run: |
+          echo "=== Environment Setup Complete ==="
+          echo "bazelisk: $(bazelisk version 2>&1 | head -1)"
+          echo "bb: $(which bb)"
+          echo "pre-commit: $(pre-commit --version)"
+          echo "ruff: $(ruff version)"
+          echo "tofu: $(tofu --version | head -1)"
+          echo "tflint: $(tflint --version)"
+          echo "gh: $(gh --version | head -1)"
+          echo "kubectl: $(kubectl version --client -o yaml | head -3)"
+          echo "BUILDBUDDY_API_KEY set: $([ -n "${BUILDBUDDY_API_KEY:-}" ] && echo yes || echo no)"

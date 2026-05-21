@@ -1,0 +1,49 @@
+# ActivityWatch with Nebula mesh sidecar.
+# Ingress: kube-apiserver (health probes), sandbox namespaces (readonly proxy).
+# Egress: DNS, Nebula lighthouses/relays (UDP 4242).
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: activitywatch
+  namespace: activitywatch
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: activitywatch
+  ingress:
+    - fromEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "5600"
+              protocol: TCP
+    # Read-only proxy for sandbox namespaces (nginx on 5601).
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: openclaw-sandbox
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: claude-sandbox
+      toPorts:
+        - ports:
+            - port: "5601"
+              protocol: TCP
+  egress:
+    # DNS
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    # Nebula lighthouses/relays (UDP 4242)
+    - toEntities:
+        - world
+        - cluster
+      toPorts:
+        - ports:
+            - port: "4242"
+              protocol: UDP

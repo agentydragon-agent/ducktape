@@ -1,0 +1,8 @@
+# Noop configs — the per-session bazelrc activates these, so the workspace
+# must define them. In the real repo these live in the root .bazelrc.
+common:quiet --curses=no
+common:quiet --show_progress_rate_limit=30
+common:ai_agent --config=quiet
+# rbe: activated by buildbuddy.bazelrc when BUILDBUDDY_API_KEY is present.
+# Noop here (test workspace doesn't use remote execution).
+common:rbe --curses=no

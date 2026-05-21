@@ -1,0 +1,84 @@
+"""Critic developer agent (improve mode) - container image.
+
+Build targets:
+    bazel run //props/agents/critic_dev/improve:load  -- Load into local Docker
+    bazel run //props/agents/critic_dev/improve:push  -- Push to local registry (localhost:8000)
+"""
+
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
+load("//devinfra/python:defs.bzl", "py_test")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env", "py_python3_symlink")
+
+# Container-specific binary using aspect_rules_py (py_image_layer requires it).
+aspect_py_binary(
+    name = "improve",
+    main = "//props/agents/critic_dev:main.py",
+    visibility = ["//visibility:public"],
+    deps = ["//props/agents/critic_dev:main"],
+)
+
+py_image_layer(
+    name = "layers",
+    binary = ":improve",
+    visibility = ["//props:__subpackages__"],
+)
+
+py_python3_symlink(
+    name = "python3_symlink",
+    binary_name = "improve",
+)
+
+py_test(
+    name = "test_e2e",
+    size = "medium",
+    srcs = ["test_e2e.py"],
+    data = [
+        ":image",
+        "//props/agents/critic:image",
+    ],
+    requires_docker = True,
+    deps = [
+        "//agent_core/testing:responses",
+        "//mcp_infra/exec:matchers",
+        "//props:conftest",
+        "//props/agents/critic_dev/testing:mocks",
+        "//props/db:database",
+        "//props/db:examples",
+        "//props/db:models",
+        "//props/testing",
+        "//props/testing:constants",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+oci_image(
+    name = "image",
+    base = "@debian_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("improve"),
+    env = py_image_env(binary_name = "improve"),
+    labels = {"org.opencontainers.image.title": "critic-dev-improve"},
+    tars = [
+        ":layers",
+        ":python3_symlink",
+        "//props:crane_tar",
+    ],
+    visibility = ["//visibility:public"],
+    workdir = "/workspace",
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["critic_dev_improve:latest"],
+    visibility = ["//visibility:public"],
+)
+
+oci_push(
+    name = "push",
+    image = ":image",
+    remote_tags = ["latest"],
+    repository = "localhost:8000/critic_dev_improve",
+)

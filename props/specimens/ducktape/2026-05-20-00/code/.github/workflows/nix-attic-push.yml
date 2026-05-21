@@ -1,0 +1,63 @@
+# Build all Nix flake outputs and push closures to Attic binary cache.
+#
+# Runs on every push to devel. attic push deduplicates — unchanged outputs
+# are a cheap no-op (evaluate flake + check store paths against server).
+name: Nix Attic push
+
+on:
+  push:
+    branches: [main, devel]
+  workflow_dispatch:
+
+jobs:
+  nix-attic-push:
+    name: Build & push to Attic
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v6
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+          extra_nix_config: |
+            experimental-features = nix-command flakes fetch-closure
+            netrc-file = /home/runner/.config/nix/netrc
+            extra-trusted-public-keys = main:cy5xhwCNq/T7R55I9TaLv0z6SM6EipXvdFhqrbxC7nc= gaffer:Z8sM2kptUUDGk4ARVD/YkcpzWdMgmZX7nVLV5joK7r8=
+
+      - name: Install Attic client
+        run: nix profile install nixpkgs#attic-client
+
+      - uses: ./.github/actions/setup-ci-secrets
+        with:
+          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
+
+      - name: Configure Attic cache
+        run: attic login ducktape https://cache.allegedly.works "$ATTIC_TOKEN"
+
+      - name: Write Nix netrc for cache.allegedly.works
+        # builtins.fetchClosure (used by nix/packages/gaffer.nix to substitute
+        # private drivefs/drivectl closures from cache.allegedly.works/gaffer)
+        # uses Nix's own HTTP layer — not attic — so it needs the JWT in a
+        # netrc file that nix.conf points at via netrc-file. The path matches
+        # the value passed to install-nix-action above.
+        run: |
+          mkdir -p /home/runner/.config/nix
+          umask 077
+          printf 'machine cache.allegedly.works password %s\n' "$ATTIC_TOKEN" \
+            > /home/runner/.config/nix/netrc
+
+      - name: Build and push all flake outputs
+        run: devinfra/ci/nix_attic_build_and_push.sh
+
+      - name: Generate summary
+        if: always()
+        run: |
+          echo "### Nix Attic Push" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "All flake outputs built and pushed to cache" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Some outputs failed to build" >> $GITHUB_STEP_SUMMARY
+          fi

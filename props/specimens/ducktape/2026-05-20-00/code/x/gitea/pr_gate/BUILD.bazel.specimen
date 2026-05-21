@@ -1,0 +1,20 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+py_library(
+    name = "policy_common",
+    srcs = ["policy_common.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "policy_server_fastapi",
+    srcs = ["policy_server_fastapi.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":policy_common",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//prometheus_client",
+        "@pypi//structlog",
+    ],
+)

@@ -1,0 +1,36 @@
+# Ignore pnpm internal directories that contain BUILD.bazel files
+# These are created when using hoist=false but should not be processed by Bazel
+node_modules/.pnpm
+bazel-js-skeletons
+
+# Python virtualenvs - contain installed package sources that confuse Gazelle
+# Note: .bazelignore patterns are root-relative only (no ** glob support)
+.venv
+venv
+
+# Claude Code agent worktrees
+.claude/worktrees
+
+# Development environment caches
+# Root level
+.devenv
+.direnv
+.uv-cache
+.pre-commit-cache
+.cache
+# Nested (.bazelignore doesn't support ** globs, so list explicitly)
+cluster/.direnv
+wt/.direnv
+props/.direnv
+
+# Debug investigations - no BUILD files
+debug
+
+# Legacy k8s cluster configs - deps not in main requirements
+x/k8s_old
+
+# Trilium Notes extensions - deps not in main requirements
+trilium
+
+# Nix build results
+result

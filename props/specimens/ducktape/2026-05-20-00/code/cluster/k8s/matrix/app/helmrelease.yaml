@@ -1,0 +1,148 @@
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: ananace-charts
+  namespace: matrix
+spec:
+  interval: 24h
+  url: https://ananace.gitlab.io/charts
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: matrix-synapse
+  namespace: matrix
+spec:
+  interval: 15m
+  install:
+    remediation:
+      retries: 3
+  chart:
+    spec:
+      chart: matrix-synapse
+      version: "3.12.22"
+      sourceRef:
+        kind: HelmRepository
+        name: ananace-charts
+        namespace: matrix
+  valuesFrom:
+    # OIDC provider configuration from SOPS-managed secret
+    - kind: Secret
+      name: matrix-oidc-config
+      valuesKey: values.yaml
+    # Macaroon secret key (SOPS, k8s/matrix/secrets/synapse-macaroon-secret.sops.yaml)
+    - kind: Secret
+      name: synapse-macaroon-secret
+      valuesKey: macaroon_secret_key
+      targetPath: config.macaroonSecretKey
+    # Registration shared secret (SOPS)
+    - kind: Secret
+      name: synapse-registration-secret
+      valuesKey: registration_shared_secret
+      targetPath: config.registrationSharedSecret
+  values:
+    # Synapse image configuration
+    image:
+      repository: matrixdotorg/synapse
+      tag: v1.147.0
+      pullPolicy: IfNotPresent
+
+    # Server name - this is the domain used in Matrix user IDs (@user:allegedly.works)
+    serverName: allegedly.works
+
+    # Public server name - the hostname where Synapse is publicly accessible.
+    # The chart derives public_baseurl as https://<publicServerName>.
+    publicServerName: matrix.allegedly.works
+
+    # Pin to Proxmox nodes
+    nodeSelector:
+      topology.kubernetes.io/region: proxmox
+
+    # Resources
+    resources:
+      limits:
+        cpu: 1000m
+        memory: 2Gi
+      requests:
+        cpu: 200m
+        memory: 512Mi
+
+    # Persistence for media store
+    # TODO: consider migrating to SeaweedFS S3 via synapse-s3-storage-provider
+    persistence:
+      enabled: true
+      storageClass: "local-path-proxmox"
+      size: 20Gi
+      accessMode: ReadWriteOnce
+
+    # Deployment strategy - use Recreate for RWO PVC compatibility
+    # RollingUpdate causes stuck deployments when previous pod holds PVC lock
+    synapse:
+      strategy:
+        type: Recreate
+      # Reloader: auto-restart pods when secrets change
+      annotations:
+        reloader.stakater.com/auto: "true"
+
+    # Synapse configuration
+    config:
+      enableRegistration: false
+      reportStats: false
+      # macaroonSecretKey and registrationSharedSecret injected via valuesFrom
+
+    # extraConfig with oidc_providers is injected via valuesFrom from
+    # matrix-oidc-config secret (SOPS-managed)
+
+    # Signing key from SOPS (disable chart auto-generation)
+    signingkey:
+      job:
+        enabled: false
+      existingSecret: synapse-signing-key
+      existingSecretKey: signing.key
+
+    # Service configuration
+    service:
+      type: ClusterIP
+      port: 8008
+      federation:
+        enabled: true
+        port: 8448
+
+    # PostgreSQL via external CNPG cluster (matrix-db)
+    postgresql:
+      enabled: false
+    externalPostgresql:
+      host: matrix-db-rw
+      port: 5432
+      username: synapse
+      database: synapse
+      existingSecret: matrix-db-app
+      existingSecretPasswordKey: password
+
+    # Redis (required by chart even for single-instance setup)
+    redis:
+      enabled: true
+      auth:
+        enabled: true
+        existingSecret: synapse-redis-password
+        existingSecretPasswordKey: redis-password
+      master:
+        persistence:
+          enabled: false
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 128Mi
+
+    # Synapse workers (disabled for now, can be enabled for scaling)
+    workers:
+      default:
+        enabled: false
+
+    # Service account
+    serviceAccount:
+      create: true

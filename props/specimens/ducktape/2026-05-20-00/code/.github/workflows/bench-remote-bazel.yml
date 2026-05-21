@@ -1,0 +1,38 @@
+name: Remote Bazel Benchmark
+
+on:
+  workflow_dispatch:
+
+env:
+  GIT_REPO_DEFAULT_BRANCH: devel
+
+jobs:
+  bench:
+    name: Benchmark (bb remote)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup-nix-devtools
+        with:
+          package: citools
+
+      - uses: ./.github/actions/setup-ci-secrets
+        with:
+          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
+
+      - name: Create local ref for default branch
+        run: git branch "$GIT_REPO_DEFAULT_BRANCH" "origin/$GIT_REPO_DEFAULT_BRANCH"
+
+      - name: Build
+        uses: ./.github/actions/bb-remote
+        with:
+          args: build --keep_going //...
+
+      - name: Test
+        uses: ./.github/actions/bb-remote
+        with:
+          args: test --keep_going //...

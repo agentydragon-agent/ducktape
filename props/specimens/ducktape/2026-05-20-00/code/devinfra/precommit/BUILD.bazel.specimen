@@ -1,0 +1,116 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "filename_conventions",
+    srcs = ["filename_conventions.py"],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pygit2"],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//pygit2",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_filename_conventions",
+    srcs = ["test_filename_conventions.py"],
+    deps = [
+        ":conftest",
+        ":filename_conventions",
+        "@pypi//pygit2",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "frozen_specimens",
+    srcs = ["frozen_specimens.py"],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pygit2"],
+)
+
+py_library(
+    name = "commit_tag",
+    srcs = ["commit_tag.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//third_party/googleapis:api_annotations_py_proto",
+        "//third_party/googleapis:api_http_py_proto",
+        "//third_party/googleapis:longrunning_operations_py_proto",
+        "//third_party/googleapis:rpc_status_py_proto",
+        "@buildbuddy_protos//:acl_py_proto",
+        "@buildbuddy_protos//:action_cache_py_proto",
+        "@buildbuddy_protos//:api_v1_common_py_proto",
+        "@buildbuddy_protos//:build_event_stream_py_proto",
+        "@buildbuddy_protos//:cache_py_proto",
+        "@buildbuddy_protos//:capability_py_proto",
+        "@buildbuddy_protos//:command_line_py_proto",
+        "@buildbuddy_protos//:context_py_proto",
+        "@buildbuddy_protos//:failure_details_py_proto",
+        "@buildbuddy_protos//:invocation_policy_py_proto",
+        "@buildbuddy_protos//:invocation_py_proto",
+        "@buildbuddy_protos//:invocation_status_py_proto",
+        "@buildbuddy_protos//:option_filters_py_proto",
+        "@buildbuddy_protos//:package_load_metrics_py_proto",
+        "@buildbuddy_protos//:remote_execution_py_proto",
+        "@buildbuddy_protos//:resource_py_proto",
+        "@buildbuddy_protos//:scheduler_py_proto",
+        "@buildbuddy_protos//:semver_py_proto",
+        "@buildbuddy_protos//:stat_filter_py_proto",
+        "@buildbuddy_protos//:strategy_policy_py_proto",
+        "@buildbuddy_protos//:target_py_proto",
+        "@buildbuddy_protos//:trace_py_proto",
+        "@buildbuddy_protos//:user_id_py_proto",
+        "@pypi//httpx",
+        "@pypi//protobuf",
+        "@pypi//tenacity",
+    ],
+)
+
+py_test(
+    name = "test_commit_tag",
+    srcs = ["test_commit_tag.py"],
+    legacy_create_init = 0,
+    deps = [
+        ":commit_tag",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_git_hook",
+    srcs = ["test_git_hook.py"],
+    legacy_create_init = 0,
+    deps = [
+        ":git_hook",
+        "@pypi//pygit2",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "git_hook",
+    srcs = ["git_hook.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":commit_tag",
+        ":filename_conventions",
+        ":frozen_specimens",
+        "//cluster/validation:validate_all",
+        "//devinfra:pytest_main",
+        "//devinfra/precommit/enforce_bazel_tests",
+        "//util:otel",
+        "@pypi//opentelemetry_api",
+        "@pypi//opentelemetry_sdk",
+        "@pypi//pygit2",
+    ],
+)

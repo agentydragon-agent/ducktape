@@ -1,0 +1,11 @@
+vm_image: ghcr.io/agentydragon/firecracker-vm-pod:latest
+base_rootfs_pvc: firecracker-base-rootfs
+node_selector:
+  kubernetes.io/hostname: wyrm2
+port: 8080
+storage:
+  block_storage_class: lvm-proxmox-ssd-block
+  fs_storage_class: lvm-proxmox-ssd
+  rootfs_size: 10Gi
+  work_size: 10Gi
+  snapshot_size: 8Gi

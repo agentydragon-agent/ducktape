@@ -1,0 +1,50 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+py_library(
+    name = "litellm_tool_provider",
+    srcs = ["litellm_tool_provider.py"],
+    visibility = ["//skills/info_gathering/evals:__subpackages__"],
+    deps = [
+        "//agent_core:tool_provider",
+        "@pypi//litellm",
+    ],
+)
+
+py_library(
+    name = "harness",
+    srcs = ["harness.py"],
+    visibility = ["//skills/info_gathering/evals:__subpackages__"],
+    deps = [
+        "//agent_core:events",
+        "//openai_utils:model",
+        "//openai_utils:retry",
+        "//util/bazel:runfiles",
+        "@pypi//openai",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "replay_client",
+    srcs = ["replay_client.py"],
+    visibility = ["//skills/info_gathering/evals:__subpackages__"],
+    deps = [
+        "@pypi//agent_framework_anthropic",
+        "@pypi//agent_framework_claude",
+        "@pypi//agent_framework_core",
+        "@pypi//agent_framework_openai",
+    ],
+)
+
+py_library(
+    name = "docker_scratch",
+    srcs = ["docker_scratch.py"],
+    visibility = ["//skills/info_gathering/evals:__subpackages__"],
+    deps = [
+        "//agent_core:mcp_provider",
+        "//skills/eval_infra:docker_exec",
+        "//third_party/containers:rlocations",
+        "//util:oci",
+        "@pypi//fastmcp",
+    ],
+)

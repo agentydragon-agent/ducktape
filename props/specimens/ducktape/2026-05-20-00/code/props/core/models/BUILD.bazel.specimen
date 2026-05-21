@@ -1,0 +1,29 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+py_library(
+    name = "examples",
+    srcs = ["examples.py"],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//openai_utils:pydantic_strict_mode",
+        "//props/core:ids",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "types",
+    srcs = ["types.py"],
+    visibility = ["//props:__subpackages__"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "true_positive",
+    srcs = ["true_positive.py"],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        ":types",
+        "@pypi//pydantic",
+    ],
+)

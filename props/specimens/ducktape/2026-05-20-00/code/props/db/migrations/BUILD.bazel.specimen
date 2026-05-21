@@ -1,0 +1,45 @@
+"""Alembic database migrations."""
+
+# gazelle:exclude env.py
+# gazelle:exclude script.py.mako
+# gazelle:exclude versions
+
+# Removed py_test load - using defs.bzl version
+load("//devinfra/python:defs.bzl", "py_test")
+
+filegroup(
+    name = "migrations",
+    srcs = [
+        "README",
+        "env.py",
+        "script.py.mako",
+    ] + glob(["versions/*.py"]),
+    visibility = ["//props:__subpackages__"],
+)
+
+py_test(
+    name = "test_migration_sequence",
+    srcs = ["test_migration_sequence.py"],
+    data = [":migrations"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_materialize_examples",
+    size = "medium",
+    srcs = ["test_materialize_examples.py"],
+    data = [":migrations"],
+    requires_docker = True,
+    deps = [
+        "//props:conftest",
+        "//props/db:config",
+        "//props/db:conftest",
+        "//util/testing:postgres",
+        "@pypi//alembic",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)

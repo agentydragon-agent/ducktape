@@ -1,0 +1,11 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ollama-api-consumer
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames:
+      - litellm-master-key
+      - ollama-bearer-token
+    verbs: ["get"]

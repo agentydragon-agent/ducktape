@@ -1,0 +1,51 @@
+"""Props test infrastructure package."""
+
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(default_testonly = True)
+
+py_library(
+    name = "testing",
+    srcs = ["mocks.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//agent_core/testing:responses",
+        "//agent_core/testing/mcp:responses",
+        "//mcp_infra/exec:models",
+        "//mcp_infra/exec:subprocess",
+        "//openai_utils:model",
+    ],
+)
+
+py_library(
+    name = "constants",
+    srcs = ["constants.py"],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//props/core/models:examples",
+    ],
+)
+
+py_library(
+    name = "assertions",
+    srcs = ["assertions.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//props/agents/grader:drift_handler",
+        "//props/db:database",
+    ],
+)
+
+py_library(
+    name = "fake_openai_server",
+    srcs = ["fake_openai_server.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":constants",
+        "//openai_utils:model",
+        "@pypi//fastapi",
+        "@pypi//openai",
+        "@pypi//pydantic",
+        "@pypi//uvicorn",
+    ],
+)

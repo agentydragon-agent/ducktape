@@ -1,0 +1,15 @@
+"""Shared test fixtures for critic agent."""
+
+load("//devinfra/python:defs.bzl", "py_library")
+
+py_library(
+    name = "mocks",
+    testonly = True,
+    srcs = ["mocks.py"],
+    visibility = ["//props:__subpackages__"],
+    deps = [
+        "//openai_utils:model",
+        "//props/agents/critic:main",
+        "//props/testing",
+    ],
+)
