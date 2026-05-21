@@ -82,6 +82,7 @@ source /home/user/ducktape/devinfra/secrets/web_env.sh
 mkdir -p ~/.config/bazel
 cat > ~/.config/bazel/buildbuddy.bazelrc <<EOF
 common --remote_header=x-buildbuddy-api-key=${BUILDBUDDY_API_KEY}
+build --shell_executable=/bin/bash
 build --config=rbe
 EOF
 ```

@@ -65,6 +65,18 @@ widely-imported file (e.g., a root `conftest.py` or a core library module) to in
 many targets, then compare `bb remote test //... --config=rbe` vs `bb remote test //...`
 (no RBE). Check wall-clock time, action count, and cache hit rate.
 
+## Port Bazel shim behavior to the Rust hook
+
+The Python hook daemon's Bazel/Bazelisk shims translate HTTP proxy environment
+variables into Bazel JVM proxy args so grpc-java can reach BuildBuddy through
+Claude's local proxy. The Rust hook is the newer implementation, but that shim
+behavior has not been ported yet.
+
+Current blocker: inside Claude's filesystem sandbox the shim cannot talk to the
+hook daemon UDS, so the shim path can only error and pass through. Port the
+proxy/Bazel behavior once the Rust hook has a sandbox-visible control channel or
+the shim behavior no longer depends on the UDS.
+
 ## Hook Daemon Lifecycle Management
 
 **Problem**: The hook daemon client (`hook_daemon/client.py`) manually manages daemon lifecycle: pidfile read/write, process liveness checks, stale socket cleanup, fork+wait. This is ~50 lines of somewhat fiddly code.

@@ -13,15 +13,15 @@
   ...
 }:
 {
-  # Install NixOS-specific Bazel flags to /etc/bazel.bazelrc.
+  # Install NixOS-specific local Bazel flags to /etc/bazel.bazelrc.
   # System-level bazelrc is read regardless of $HOME, so it works even when
   # Claude Code's sandbox overrides HOME.
   environment.etc."bazel.bazelrc".source = ./system.bazelrc;
 
   # envfs: FUSE mount at /bin and /usr/bin resolving binaries from PATH.
   # Bazel hardcodes /bin/bash for `bazel run` and run_shell() actions.
-  # --shell_executable can't fix this: setting it to a Nix store path breaks
-  # remote-executed actions on RBE (workers don't have /nix/store paths).
+  # RBE-safe --shell_executable=/bin/bash lives in the user BuildBuddy bazelrc,
+  # not here; this system module only makes /bin/bash exist locally.
   services.envfs.enable = true;
 
   # nix-ld: provides /lib64/ld-linux-x86-64.so.2 stub so dynamically-linked

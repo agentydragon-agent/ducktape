@@ -187,6 +187,7 @@ fn write_buildbuddy_bazelrc(session_dir: &Path, api_key: &str) -> Option<PathBuf
         "# BuildBuddy authentication (auto-generated per session)\n\
          # Static configuration is in .bazelrc under build:rbe\n\
          common --remote_header=x-buildbuddy-api-key={api_key}\n\
+         build --shell_executable=/bin/bash\n\
          \n\
          # Enable RBE (platforms, exec properties in .bazelrc + BUILD.bazel platform)\n\
          build --config=rbe\n"
@@ -248,8 +249,8 @@ fn write_session_bazelrc(
     lines.push("test --test_tag_filters=-live_openai_api".into());
 
     // BuildBuddy remote cache: write per-session buildbuddy.bazelrc with the
-    // API key and build --config=rbe, then try-import it. The Python
-    // implementation (buildbuddy.py) writes this file; we mirror that here.
+    // API key, RBE-safe shell path, and build --config=rbe, then try-import it.
+    // The Python implementation (buildbuddy.py) writes this file; we mirror that here.
     if let Some(api_key) = env_overlay.get("BUILDBUDDY_API_KEY") {
         if let Some(bb_bazelrc) = write_buildbuddy_bazelrc(session_dir, api_key) {
             lines.push(format!("try-import {}", bb_bazelrc.display()));
@@ -1256,6 +1257,10 @@ mod tests {
         assert!(
             bb_content.contains("build --config=rbe"),
             "RBE config must be enabled: {bb_content}"
+        );
+        assert!(
+            bb_content.contains("build --shell_executable=/bin/bash"),
+            "RBE shell path must be normalized: {bb_content}"
         );
         assert!(
             session_rc.contains(&format!("try-import {}", bb_bazelrc.display())),

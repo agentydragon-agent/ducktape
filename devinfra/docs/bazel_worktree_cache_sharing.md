@@ -252,6 +252,38 @@ For Codex specifically, remember that the current Nix-generated Bazel
 `decision="allow"` rules mean matching Bazel commands are trusted and may bypass
 the shell sandbox.
 
+### Empty Repo Sanity Check
+
+Observed on `rugged` after the cache change: a Codex-run `bazelisk build` in an
+otherwise empty repo, using latest Bazel 8 and with rc-file/RBE config disabled,
+can build a simple `genrule`. That is a useful baseline: local genrule execution
+works under Codex and Bazel 8 when Ducktape's user/workspace rc layers are out of
+the picture.
+
+If a normal `bazelisk build` unexpectedly picks up `--config=rbe`, check for a
+stale user-level BuildBuddy import first, not the NixOS system Bazel rc:
+
+```text
+~/.bazelrc
+  try-import ~/.config/bazel/buildbuddy.bazelrc
+
+~/.config/bazel/buildbuddy.bazelrc
+  build --config=rbe
+```
+
+Current generated `~/.config/bazel/buildbuddy.bazelrc` should contain the
+BuildBuddy API header plus `build --shell_executable=/bin/bash`, but it should
+not select Ducktape's repo-local `--config=rbe`. The shell override belongs with
+the user BuildBuddy/RBE environment: on NixOS it prevents Bazel from generating
+helper scripts with `/nix/store/.../bash` shebangs that do not exist on RBE
+workers.
+
+On `rugged`, `/etc/bazel.bazelrc` contributes NixOS-local PATH and nix-ld flags
+such as `--host_action_env` and `--repo_env`; it does not enable RBE.
+Ducktape's workspace `.bazelrc` defines what `build:rbe` means, but repo-aware
+entrypoints such as `bbr`, CI, Codex Cloud, and Claude session startup should be
+what select it.
+
 ### Disk Cache Effect Probe
 
 This probe verifies the configured `--disk_cache` is saving action work between

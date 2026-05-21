@@ -474,7 +474,6 @@ in
   home.file.".bazelrc".text = ''
     common --show_progress_rate_limit=0.05
     common --progress_in_terminal_title
-    build --platforms //:linux_x64
 
     # Optional BuildBuddy / remote cache config (file not in git)
     try-import ${config.home.homeDirectory}/.config/bazel/buildbuddy.bazelrc

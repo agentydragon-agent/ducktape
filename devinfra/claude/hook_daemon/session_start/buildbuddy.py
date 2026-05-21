@@ -29,6 +29,7 @@ def setup_buildbuddy(*, api_key: str, session_dir: Path) -> BuildbuddyConfigured
         "# BuildBuddy authentication (auto-generated per session)\n"
         "# Static configuration is in .bazelrc under build:rbe\n"
         f"common --remote_header=x-buildbuddy-api-key={api_key}\n"
+        "build --shell_executable=/bin/bash\n"
         "\n"
         "# Enable RBE (platforms, exec properties in .bazelrc + BUILD.bazel platform)\n"
         "build --config=rbe\n"

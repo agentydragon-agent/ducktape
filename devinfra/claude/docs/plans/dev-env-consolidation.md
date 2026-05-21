@@ -78,7 +78,7 @@ let
   secrets = [
     { sopsFile = "secrets/buildbuddy.yaml"; key = "buildbuddy_api_key";
       target = ".config/bazel/buildbuddy.bazelrc";
-      template = "common --remote_header=x-buildbuddy-api-key=__VALUE__\nbuild --config=rbe"; }
+      template = "common --remote_header=x-buildbuddy-api-key=__VALUE__\nbuild --shell_executable=/bin/bash"; }
     { sopsFile = "secrets/github-pat-agentydragon-agent.yaml"; key = "github_token";
       envVar = "GITHUB_TOKEN"; }
     # ...
