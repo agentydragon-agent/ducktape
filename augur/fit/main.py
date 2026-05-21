@@ -11,7 +11,7 @@ runtime.
 Usage:
 
     bb run //augur/fit:train -- \\
-        --evidence-config augur/model/train/config/exogenous_evidence.example.json \\
+        --evidence-config augur/fit/config/exogenous_evidence.example.json \\
         --model vecm \\
         --out-provider-config /path/to/exogenous_provider.yaml \\
         --out-blob /path/to/trained_vecm.npz

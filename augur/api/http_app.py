@@ -10,13 +10,19 @@ from pydantic import ValidationError
 
 from augur.api.casing import plain_json
 from augur.api.scenario_set import ScenarioSet
+from augur.product.projection import ProjectionRequest
 
 PayloadProvider = Callable[[], Any]
 ScenarioSetHandler = Callable[[ScenarioSet], Any]
+ProductProjectionHandler = Callable[[ProjectionRequest], Any]
 
 
 def create_augur_backend_app(
-    *, title: str, bootstrap: PayloadProvider, scenario_set_run: ScenarioSetHandler | None = None
+    *,
+    title: str,
+    bootstrap: PayloadProvider,
+    product_projection_run: ProductProjectionHandler,
+    scenario_set_run: ScenarioSetHandler | None = None,
 ) -> FastAPI:
     app = FastAPI(title=title)
     no_store = {"cache-control": "no-store"}
@@ -41,6 +47,10 @@ def create_augur_backend_app(
         @app.post("/api/scenario_sets/run")
         def run_scenario_set(scenario_set: ScenarioSet) -> JSONResponse:
             return payload(scenario_set_run(scenario_set))
+
+    @app.post("/api/product/projections/run")
+    def run_product_projection(request: ProjectionRequest) -> JSONResponse:
+        return payload(product_projection_run(request))
 
     @app.api_route("/api/{full_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
     def unknown_api(full_path: str) -> JSONResponse:

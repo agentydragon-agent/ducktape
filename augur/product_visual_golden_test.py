@@ -20,17 +20,19 @@ from __future__ import annotations
 
 import os
 import shutil
-import threading
+import subprocess
+import time
+import urllib.error
+import urllib.request
 from collections.abc import Iterator
-from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
-from urllib.parse import unquote, urlparse
+from typing import TYPE_CHECKING
 
 import pytest
 import pytest_bazel
 
 from util.bazel.runfiles import get_required_path
+from util.net import pick_free_port
 from util.testing.frontend_visual import (
     deterministic_browser_context,
     deterministic_style,
@@ -50,42 +52,55 @@ FROZEN_NOW_MS = 1_779_768_000_000  # 2026-05-15T12:00:00Z.
 PRODUCT_GOLDEN_NAME = "product_cash_runway"
 
 
-class _ProductBundleHandler(SimpleHTTPRequestHandler):
-    def __init__(self, *args: Any, directory: str, **kwargs: Any) -> None:
-        super().__init__(*args, directory=directory, **kwargs)
-
-    def do_GET(self) -> None:
-        url_path = unquote(urlparse(self.path).path)
-        rel_path = Path(url_path.lstrip("/"))
-        if (
-            url_path == "/"
-            or rel_path.is_absolute()
-            or ".." in rel_path.parts
-            or not (Path(self.directory) / rel_path).exists()
-        ):
-            self.path = "/index.html"
-        super().do_GET()
-
-    def log_message(self, format: str, *args: object) -> None:
-        return
-
-
 @pytest.fixture(scope="module")
-def product_static_server() -> Iterator[str]:
-    dist_dir = get_required_path("_main/augur/frontend/dist/index.html").parent
-
-    def handler(*args: Any, **kwargs: Any) -> _ProductBundleHandler:
-        return _ProductBundleHandler(*args, directory=str(dist_dir), **kwargs)
-
-    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
+def augur_server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
+    tmp_path = tmp_path_factory.mktemp("augur-product-visual-server")
+    out = undeclared_outputs_dir()
+    server_log = (out / "augur-product-visual-server.log").open("w")
+    port = pick_free_port("127.0.0.1")
+    server = subprocess.Popen(
+        [
+            str(get_required_path("_main/augur/dev")),
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(port),
+            "--config",
+            str(get_required_path("_main/augur/api/testdata/config.yaml")),
+        ],
+        env={
+            **os.environ,
+            "HOME": str(tmp_path / "home"),
+            "MPLCONFIGDIR": str(tmp_path / "matplotlib"),
+            "PYTHONUNBUFFERED": "1",
+            "XDG_CACHE_HOME": str(tmp_path / "cache"),
+        },
+        stdout=server_log,
+        stderr=server_log,
+    )
+    origin = f"http://127.0.0.1:{port}"
     try:
-        yield f"http://127.0.0.1:{server.server_port}"
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            if server.poll() is not None:
+                raise RuntimeError(f"Augur server exited early with code {server.returncode}; see {server_log.name}")
+            try:
+                with urllib.request.urlopen(f"{origin}/healthz", timeout=1) as response:
+                    if response.status == 200 and response.read().decode() == "ok\n":
+                        break
+            except (OSError, urllib.error.URLError):
+                time.sleep(0.25)
+        else:
+            raise RuntimeError(f"Augur server did not start within 30s; see {server_log.name}")
+        yield origin
     finally:
-        server.shutdown()
-        thread.join(timeout=10)
-        server.server_close()
+        server.terminate()
+        try:
+            server.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            server.kill()
+            server.wait(timeout=10)
+        server_log.close()
 
 
 @pytest.fixture
@@ -113,10 +128,29 @@ def page(browser: Browser) -> Iterator[Page]:
 def _wait_for_product_page(page: Page) -> None:
     page.add_style_tag(content=deterministic_style())
     page.locator("[data-augur-surface='product']").wait_for(state="visible", timeout=30_000)
-    page.locator("[data-product-empty-state='cash-runway']").wait_for(state="visible", timeout=30_000)
+    page.locator("[data-product-fan-chart='netWorthUsd']").wait_for(state="visible", timeout=30_000)
     page.get_by_role("heading", name="Augur", exact=True).wait_for(state="visible", timeout=30_000)
     page.get_by_text("Product projection").first.wait_for(state="visible", timeout=30_000)
-    page.get_by_role("heading", name="Cash runway").first.wait_for(state="visible", timeout=30_000)
+    page.get_by_role("heading", name="Cash projection fan").first.wait_for(state="visible", timeout=30_000)
+    page.get_by_label("Metric to plot").wait_for(state="visible", timeout=30_000)
+    page.wait_for_function(
+        """
+        () => {
+          const chart = document.querySelector("[data-product-fan-chart='netWorthUsd'] svg[role='img']");
+          if (!chart) return false;
+          const heights = Array.from(chart.querySelectorAll("polygon")).map((polygon) => {
+            const points = (polygon.getAttribute("points") || "")
+              .trim()
+              .split(/\\s+/)
+              .map((point) => Number(point.split(",")[1]))
+              .filter(Number.isFinite);
+            return points.length ? Math.max(...points) - Math.min(...points) : 0;
+          });
+          return Math.max(0, ...heights) >= 80;
+        }
+        """,
+        timeout=30_000,
+    )
     assert page.get_by_text("Terminal scenario comparison").count() == 0
     assert page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth + 1")
     page.evaluate("() => document.fonts.ready.then(() => true)")
@@ -132,10 +166,10 @@ def _render_product_page(page: Page, origin: str, out_dir: Path, suffix: str) ->
     return actual_path
 
 
-def test_product_frontend_visual_golden(page: Page, product_static_server: str, tmp_path: Path) -> None:
+def test_product_frontend_visual_golden(page: Page, augur_server: str, tmp_path: Path) -> None:
     undeclared_dir = undeclared_outputs_dir()
-    first_path = _render_product_page(page, product_static_server, tmp_path, "first")
-    second_path = _render_product_page(page, product_static_server, tmp_path, "second")
+    first_path = _render_product_page(page, augur_server, tmp_path, "first")
+    second_path = _render_product_page(page, augur_server, tmp_path, "second")
     if first_path.read_bytes() != second_path.read_bytes():
         shutil.copy(first_path, undeclared_dir / f"{PRODUCT_GOLDEN_NAME}.first.png")
         shutil.copy(second_path, undeclared_dir / f"{PRODUCT_GOLDEN_NAME}.second.png")

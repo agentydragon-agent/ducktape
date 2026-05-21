@@ -84,7 +84,10 @@ py_library(
     testonly = True,
     srcs = ["frontend_visual.py"],
     visibility = ["//visibility:public"],
-    deps = ["//util/bazel:runfiles"],
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//playwright",
+    ],
 )
 
 py_test(

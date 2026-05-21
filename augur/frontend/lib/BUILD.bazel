@@ -19,6 +19,26 @@ js_library(
 )
 
 js_library(
+    name = "chart",
+    srcs = ["chart.js"],
+    deps = [":format"],
+)
+
+js_library(
+    name = "controls",
+    srcs = ["controls.jsx"],
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/react",
+    ],
+)
+
+js_library(
+    name = "format",
+    srcs = ["format.js"],
+)
+
+js_library(
     name = "backend_client",
     srcs = ["backend_client.js"],
 )

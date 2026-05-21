@@ -199,5 +199,30 @@ def test_backend_server_runs_browser_shaped_property_request(server_url: str) ->
     assert 480_000 <= _max(columns["net_worth_usd"]) <= 650_000
 
 
+def test_backend_server_runs_product_cash_spend_projection(server_url: str) -> None:
+    projection = _post_json(
+        server_url,
+        "/api/product/projections/run",
+        {"horizon_months": 3, "rollout_seeds": [7, 8], "monthly_spend_usd": 1000.0, "spend_index": "none"},
+    )
+
+    assert projection["exogenous_model_id"] == "simple_exogenous_model"
+    assert projection["horizon_months"] == 3
+    assert [rollout["seed"] for rollout in projection["rollouts"]] == [7, 8]
+    for rollout in projection["rollouts"]:
+        assert rollout["failed"] is False
+        assert rollout["monthly_metrics"]["row_count"] == 4
+        columns = rollout["monthly_metrics"]["columns"]
+        assert columns["month_index"] == [0, 1, 2, 3]
+        assert columns["cash_usd"] == [50_000.0, 49_000.0, 48_000.0, 47_000.0]
+        assert columns["drawdown_usd"] == [0.0, 1_000.0, 2_000.0, 3_000.0]
+        assert rollout["terminal_metrics"] == {
+            "cash_usd": 47_000.0,
+            "net_worth_usd": 47_000.0,
+            "drawdown_usd": 3_000.0,
+            "shortfall_usd": 0.0,
+        }
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

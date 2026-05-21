@@ -10,3 +10,21 @@ py_library(
         "@pypi//pydantic",
     ],
 )
+
+py_library(
+    name = "projection_service_py",
+    srcs = ["projection_service.py"],
+    deps = [
+        ":projection_py",
+        "//augur/api:config_py",
+        "//augur/api:scenario_set_py",
+        "//augur/api:schemas_py",
+        "//augur/model:exogenous_py",
+        "//augur/model:series_py",
+        "//augur/sim:external_series",
+        "//augur/sim:run",
+        "//augur/sim:scenario",
+        "//augur/sim:simulate",
+        "@pypi//polars",
+    ],
+)

@@ -10,7 +10,7 @@ from pydantic import ValidationError
 
 from augur.fit.evidence_config import load_evidence_config, parse_evidence_config
 
-CONFIG_PATH = Path(__file__).resolve().parents[1] / "model" / "train" / "config" / "exogenous_evidence.example.json"
+CONFIG_PATH = Path(__file__).resolve().parent / "config" / "exogenous_evidence.example.json"
 EXPECTED_TOP_LEVEL_KEYS = frozenset({"source_data", "location_series_sources"})
 EXPECTED_SOURCE_DATA_KEYS = frozenset(
     {

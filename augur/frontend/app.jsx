@@ -8,7 +8,6 @@ import {
   Group,
   MantineProvider,
   NativeSelect,
-  NumberInput,
   Radio,
   Stack,
   Table,
@@ -19,6 +18,8 @@ import {
 } from "@mantine/core";
 
 import { rowsFromCamelColumnar } from "./lib/columnar.js";
+import { MoneyField, NumberField } from "./lib/controls.jsx";
+import { fmtInteger, fmtNumber, fmtPct, fmtUsd } from "./lib/format.js";
 import {
   SCENARIO_COLORS,
   createDefaultScenarioSetInput,
@@ -35,6 +36,14 @@ import {
 import { fetchAugurBootstrap, runScenarioSet } from "./client.js";
 import ProductProjectionAppShell from "./product_app.jsx";
 import { AugurShellHeader, surfaceFromPathname } from "./shell.jsx";
+import {
+  fanChartAxis,
+  fanChartYearTicks,
+  fmtAxisMetricValue,
+  fmtMetricValue,
+  metricDisplayName,
+  metricIsCurrency,
+} from "./lib/chart.js";
 
 const FINANCING_OPTIONS = [
   { id: "fixed_30", label: "30-year fixed" },
@@ -50,7 +59,6 @@ const CHECKING_FLOOR_METRICS = new Set([
   "genericSp500SaleUsd",
 ]);
 const CONTROL_GRID_CLASS = "grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,11rem),1fr))] gap-3";
-const FAN_CHART_TICK_FRACTIONS = [0, 0.25, 0.5, 0.75, 1];
 const RESULT_VIEW_MODES = new Set(["distribution", "trajectory"]);
 const RESULT_PANEL_KINDS = new Set(["distribution", "trajectory", "accounting_detail"]);
 const ROLLOUT_STATUS_ACTIVE = "active";
@@ -227,129 +235,6 @@ function trajectoryResultView(scenarioResult, selectedRolloutIndex) {
 
 function accountingDetailResultView(scenarioResult, selectedRolloutIndex) {
   return selectedRolloutResultView(scenarioResult, selectedRolloutIndex, "accounting_detail");
-}
-
-function fmtUsd(value) {
-  if (!Number.isFinite(value)) return "n/a";
-  return value.toLocaleString("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0,
-  });
-}
-
-function fmtPct(value) {
-  if (!Number.isFinite(value)) return "n/a";
-  return `${(value * 100).toFixed(1)}%`;
-}
-
-function fmtNumber(value) {
-  if (!Number.isFinite(value)) return "n/a";
-  return value.toLocaleString("en-US", { maximumFractionDigits: 0 });
-}
-
-function fmtInteger(value) {
-  if (!Number.isFinite(value)) return "n/a";
-  return value.toLocaleString("en-US", { maximumFractionDigits: 0 });
-}
-
-function metricIsCurrency(metricName) {
-  return metricName?.endsWith("Usd") || metricName?.includes("Value") || metricName?.includes("CashFlow");
-}
-
-function fmtMetricValue(metricName, value) {
-  if (metricName?.endsWith("Pct")) {
-    return fmtPct(value);
-  }
-  if (metricIsCurrency(metricName)) {
-    return fmtUsd(value);
-  }
-  return fmtNumber(value);
-}
-
-function fmtAxisMetricValue(metricName, value) {
-  if (!metricIsCurrency(metricName)) {
-    return fmtMetricValue(metricName, value);
-  }
-  if (!Number.isFinite(value)) return "n/a";
-  return value.toLocaleString("en-US", {
-    style: "currency",
-    currency: "USD",
-    notation: "compact",
-    maximumFractionDigits: Math.abs(value) >= 1_000_000 ? 2 : 1,
-  });
-}
-
-function niceCurrencyTickStep(rawStep) {
-  if (!Number.isFinite(rawStep) || rawStep <= 0) return 1;
-  const magnitude = 10 ** Math.floor(Math.log10(rawStep));
-  const normalized = rawStep / magnitude;
-  const niceNormalized = [1, 2, 2.5, 5, 10].find((candidate) => normalized <= candidate) ?? 10;
-  return Math.max(1, niceNormalized * magnitude);
-}
-
-function currencyFanChartAxis(values, targetTickCount = 5) {
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const span = max - min;
-  const step = niceCurrencyTickStep(span === 0 ? Math.max(Math.abs(max), 1) / 2 : span / (targetTickCount - 1));
-  let axisMin = Math.floor(min / step) * step;
-  let axisMax = Math.ceil(max / step) * step;
-  if (axisMin === axisMax) {
-    axisMin -= step * 2;
-    axisMax += step * 2;
-  }
-  const ticks = [];
-  for (let value = axisMax, guard = 0; value >= axisMin - step / 2 && guard < 12; value -= step, guard += 1) {
-    ticks.push(Math.round(value / step) * step);
-  }
-  return { min: axisMin, max: axisMax, range: axisMax - axisMin, ticks };
-}
-
-function fanChartAxis(metricName, values) {
-  if (values.length === 0) {
-    return {
-      min: 0,
-      max: 1,
-      range: 1,
-      ticks: FAN_CHART_TICK_FRACTIONS.map((tick) => 1 - tick),
-    };
-  }
-  if (metricIsCurrency(metricName)) {
-    return currencyFanChartAxis(values);
-  }
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const range = max === min ? 1 : max - min;
-  return {
-    min,
-    max: min + range,
-    range,
-    ticks: FAN_CHART_TICK_FRACTIONS.map((tick) => min + range * (1 - tick)),
-  };
-}
-
-function fanChartYearTicks(maxYear) {
-  const maxWholeYear = Math.max(1, Math.ceil(maxYear));
-  const step = Math.max(1, Math.ceil(maxWholeYear / 5));
-  const ticks = [];
-  for (let year = 0; year <= maxWholeYear; year += step) {
-    ticks.push(year);
-  }
-  if (ticks[ticks.length - 1] !== maxWholeYear) {
-    ticks.push(maxWholeYear);
-  }
-  return ticks;
-}
-
-function labelFromCamel(value) {
-  if (!value) return "";
-  const withSpaces = value
-    .replace(/Usd$/u, "")
-    .replace(/Pct$/u, " pct")
-    .replace(/([a-z0-9])([A-Z])/gu, "$1 $2")
-    .replace(/\bSp500\b/gu, "SP500");
-  return withSpaces.charAt(0).toUpperCase() + withSpaces.slice(1);
 }
 
 function rowsFromTable(table) {
@@ -552,42 +437,6 @@ function OptionButtons({ label, options, value, onChange }) {
 
 function ControlGrid({ children, className = "" }) {
   return <div className={`${CONTROL_GRID_CLASS} ${className}`}>{children}</div>;
-}
-
-function numberFieldSectionWidth(section) {
-  if (!section) return undefined;
-  return Math.max(34, String(section).length * 8 + 24);
-}
-
-function NumberField({ label, value, onChange, min = 0, step = 1000, prefix = null, suffix = null }) {
-  const formattedPrefix = prefix ? String(prefix).trim() : undefined;
-  const formattedSuffix = suffix ? String(suffix).trim() : undefined;
-  return (
-    <NumberInput
-      label={label}
-      aria-label={label}
-      min={min}
-      step={step}
-      value={value ?? ""}
-      hideControls
-      leftSection={formattedPrefix ? <Text className="augur-number-section">{formattedPrefix}</Text> : undefined}
-      leftSectionPointerEvents="none"
-      leftSectionWidth={numberFieldSectionWidth(formattedPrefix)}
-      rightSection={formattedSuffix ? <Text className="augur-number-section">{formattedSuffix}</Text> : undefined}
-      rightSectionPointerEvents="none"
-      rightSectionWidth={numberFieldSectionWidth(formattedSuffix)}
-      thousandSeparator=","
-      classNames={{ label: "augur-field-label mb-2 block", input: "augur-tabular" }}
-      onChange={(nextValue) => {
-        const number = typeof nextValue === "number" ? nextValue : Number(nextValue);
-        onChange(Number.isFinite(number) ? number : null);
-      }}
-    />
-  );
-}
-
-function MoneyField(props) {
-  return <NumberField prefix="$" {...props} />;
 }
 
 function ReadOnlyMetricField({ label, value, detail = null }) {
@@ -1578,12 +1427,12 @@ function MultiScenarioFanChart({ scenarioSetInput, result, selectedMetric, onSel
     <ResultPanel
       kind="distribution"
       title="Scenario probability fans"
-      subtitle={labelFromCamel(metricName)}
+      subtitle={metricDisplayName(metricName)}
       actions={
         <NativeSelect
           aria-label="Fan metric"
           value={metricName}
-          data={metricOptions.map((option) => ({ value: option, label: labelFromCamel(option) }))}
+          data={metricOptions.map((option) => ({ value: option, label: metricDisplayName(option) }))}
           className="min-w-[14rem]"
           onChange={(event) => onSelectedMetricChange(event.target.value)}
         />
@@ -1592,7 +1441,7 @@ function MultiScenarioFanChart({ scenarioSetInput, result, selectedMetric, onSel
       <div className="overflow-x-auto p-4">
         <svg
           role="img"
-          aria-label={`Scenario comparison ${labelFromCamel(metricName)} probability fan chart`}
+          aria-label={`Scenario comparison ${metricDisplayName(metricName)} probability fan chart`}
           viewBox={`0 0 ${width} ${height}`}
           className="min-w-[42rem] w-full"
         >

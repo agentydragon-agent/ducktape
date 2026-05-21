@@ -202,6 +202,8 @@ py_library(
         ":scenario_set_py",
         ":scenario_tax_defaults_py",
         "//augur/model:exogenous_py",
+        "//augur/product:projection_py",
+        "//augur/product:projection_service_py",
         "//augur/sim:external_series",
         "//augur/sim:simulate",
     ],
@@ -213,6 +215,7 @@ py_library(
     deps = [
         ":casing_py",
         ":scenario_set_py",
+        "//augur/product:projection_py",
         "@pypi//fastapi",
         "@pypi//pydantic",
     ],
@@ -224,6 +227,7 @@ py_test(
     deps = [
         ":http_app_py",
         ":scenario_set_py",
+        "//augur/product:projection_py",
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//pytest_bazel",

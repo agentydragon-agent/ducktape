@@ -98,18 +98,22 @@ py_test(
     size = "large",
     srcs = ["product_visual_golden_test.py"],
     data = [
-        "//augur/frontend:bundle_base",
+        ":dev",
+        "//augur/api:public_fixture_config",
+        "//augur/api:public_fixture_properties",
         "//augur/frontend:visual_golden_snapshots",
         "//util/testing/frontend_visual:fonts",
         "//util/testing/frontend_visual:fonts_conf",
         "@playwright_browsers//:chromium-headless-shell",
     ],
     env = {
+        "AUGUR_BUNDLE_INDEX_RUNFILE": "_main/augur/frontend/dist/index.html",
         "CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
         "FONTCONFIG_FILE": "$(rootpath //util/testing/frontend_visual:fonts_conf)",
         "FREETYPE_PROPERTIES": "cff:no-stem-darkening=1",
     },
     deps = [
+        "//util:net",
         "//util:playwright",
         "//util/bazel:runfiles",
         "//util/testing:frontend_visual",

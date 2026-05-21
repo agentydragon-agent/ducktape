@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from augur.api.http_app import create_augur_backend_app
 from augur.api.scenario_set import ScenarioSet
+from augur.product.projection import ProjectionRequest
 
 
 def _scenario_set_body() -> dict:
@@ -22,6 +23,26 @@ def _scenario_set_body() -> dict:
     }
 
 
+def _product_projection_run(request: ProjectionRequest) -> dict:
+    return {
+        "exogenous_model_id": request.exogenous_model_id,
+        "horizon_months": request.horizon_months,
+        "rollouts": [
+            {
+                "seed": int(request.rollout_seeds[0]),
+                "failed": False,
+                "monthly_metrics": {"row_count": 1, "columns": {"month_index": [0], "cash_usd": [50000.0]}},
+                "terminal_metrics": {
+                    "cash_usd": 50000.0,
+                    "net_worth_usd": 50000.0,
+                    "drawdown_usd": 0.0,
+                    "shortfall_usd": 0.0,
+                },
+            }
+        ],
+    }
+
+
 def test_scenario_set_route_is_registered_and_invokes_handler() -> None:
     seen_scenario_set: ScenarioSet | None = None
 
@@ -33,7 +54,12 @@ def test_scenario_set_route_is_registered_and_invokes_handler() -> None:
             "scenario_results": [{"scenario_id": scenario_set.scenarios[0].scenario_id}],
         }
 
-    app = create_augur_backend_app(title="test", bootstrap=lambda: {"ok": True}, scenario_set_run=scenario_set_run)
+    app = create_augur_backend_app(
+        title="test",
+        bootstrap=lambda: {"ok": True},
+        product_projection_run=_product_projection_run,
+        scenario_set_run=scenario_set_run,
+    )
     assert not any(getattr(route, "path", None) == "/api/projection/run" for route in app.routes)
     response = TestClient(app).post("/api/scenario_sets/run", json=_scenario_set_body())
 
@@ -54,7 +80,12 @@ def test_scenario_set_route_validates_request_with_pydantic() -> None:
         called = True
         return {"scenario_set_id": scenario_set.scenario_set_id, "scenario_results": []}
 
-    app = create_augur_backend_app(title="test", bootstrap=lambda: {"ok": True}, scenario_set_run=scenario_set_run)
+    app = create_augur_backend_app(
+        title="test",
+        bootstrap=lambda: {"ok": True},
+        product_projection_run=_product_projection_run,
+        scenario_set_run=scenario_set_run,
+    )
     response = TestClient(app).post("/api/scenario_sets/run", json={"scenario_set_id": "missing_required_fields"})
 
     assert response.status_code == 422

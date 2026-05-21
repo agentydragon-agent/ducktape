@@ -15,6 +15,8 @@ from augur.api.response import scenario_set_response_from_runs
 from augur.api.scenario_set import Scenario, ScenarioSet, ScenarioSetRunResponse
 from augur.api.scenario_tax_defaults import scenario_with_location_tax_defaults
 from augur.model.exogenous import ExogenousPathModel
+from augur.product.projection import ProjectionRequest, ProjectionResponse
+from augur.product.projection_service import run_product_projection
 from augur.sim.external_series import materialize_sampled_exogenous
 from augur.sim.simulate import simulate_with_external_series
 
@@ -29,6 +31,7 @@ class BackendRuntimeConfig:
 class Backend:
     def __init__(self, *, augur_config: Config, runtime_config: BackendRuntimeConfig) -> None:
         self.runtime_config = runtime_config
+        self._augur_config = augur_config
         self._portfolio = augur_config.portfolio
         self._bootstrap = build_bootstrap_payload(augur_config)
         self._property_by_id: dict[str, Property] = {
@@ -54,6 +57,15 @@ class Backend:
         self._validate_scenario_set_property_references(scenario_set)
         scenario_set = self._scenario_set_with_catalog_defaults(scenario_set)
         return self._run_scenario_set(scenario_set)
+
+    def run_product_projection(self, request: ProjectionRequest) -> ProjectionResponse:
+        if request.rollout_count > self.runtime_config.max_rollout_samples:
+            raise ValueError(
+                f"rollout count {request.rollout_count} exceeds max {self.runtime_config.max_rollout_samples}"
+            )
+        return run_product_projection(
+            request, augur_config=self._augur_config, exogenous_model=self.runtime_config.exogenous_model
+        )
 
     def _run_scenario_set(self, scenario_set: ScenarioSet) -> ScenarioSetRunResponse:
         exogenous_model = self.runtime_config.exogenous_model

@@ -5,7 +5,7 @@ from __future__ import annotations
 import base64
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from util.bazel.runfiles import get_required_path
 
@@ -72,7 +72,11 @@ def frozen_clock_script(now_ms: int) -> str:
 
 
 def deterministic_browser_context(
-    browser: Browser, *, viewport: ViewportSize, frozen_now_ms: int, color_scheme: str = "light"
+    browser: Browser,
+    *,
+    viewport: ViewportSize,
+    frozen_now_ms: int,
+    color_scheme: Literal["dark", "light", "no-preference", "null"] = "light",
 ) -> BrowserContext:
     context = browser.new_context(
         viewport=viewport,

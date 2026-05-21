@@ -10,7 +10,7 @@ import pytest_bazel
 from augur.fit.data import load_evidence, load_fred_only_evidence
 from augur.fit.evidence_config import load_evidence_config
 
-CONFIG_PATH = Path(__file__).resolve().parents[1] / "model" / "train" / "config" / "exogenous_evidence.example.json"
+CONFIG_PATH = Path(__file__).resolve().parent / "config" / "exogenous_evidence.example.json"
 
 
 def _config_with_absolute_source_paths() -> dict[str, Any]:

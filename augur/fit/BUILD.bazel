@@ -6,7 +6,7 @@ filegroup(
     name = "evidence_config_files",
     srcs = [
         "//augur/data:evidence_source_files",
-        "//augur/model/train/config:exogenous_evidence_config",
+        "//augur/fit/config:exogenous_evidence_config",
     ],
 )
 

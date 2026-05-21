@@ -27,14 +27,14 @@ company-/person-specific modeling assumptions.
 
 ## Layout
 
-| Directory      | Purpose                                                                                                                                 |
-| -------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `model/`       | Runtime exogenous-provider configs, sim-facing exogenous model APIs, simple fixture provider, and the active VECM provider.             |
-| `model/train/` | Offline exogenous-model training config templates.                                                                                      |
-| `data/`        | Public exogenous evidence blobs (FRED series, Yahoo SPY adjusted-close, Zillow ZHVI). Acquisition recipes in `SOURCES.md`.              |
-| `api/`         | `Config` schema, wire request/response shapes, `Backend`, HTTP server, catalog/bootstrap assembly, OpenAPI schema export.               |
-| `sim/`         | Deterministic trajectory evaluation over typed scenarios and sampled external-series bundles.                                           |
-| `frontend/`    | React app + Tailwind bundle build, frontend helpers (casing conversion, columnar table marshaling, scenario-set state, backend client). |
+| Directory   | Purpose                                                                                                                                 |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `model/`    | Runtime exogenous-provider configs, sim-facing exogenous model APIs, simple fixture provider, and the active VECM provider.             |
+| `fit/`      | Offline exogenous-model fitting entry points and config templates.                                                                      |
+| `data/`     | Public exogenous evidence blobs (FRED series, Yahoo SPY adjusted-close, Zillow ZHVI). Acquisition recipes in `SOURCES.md`.              |
+| `api/`      | `Config` schema, wire request/response shapes, `Backend`, HTTP server, catalog/bootstrap assembly, OpenAPI schema export.               |
+| `sim/`      | Deterministic trajectory evaluation over typed scenarios and sampled external-series bundles.                                           |
+| `frontend/` | React app + Tailwind bundle build, frontend helpers (casing conversion, columnar table marshaling, scenario-set state, backend client). |
 
 ## Deployment integration
 

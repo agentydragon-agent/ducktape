@@ -1,0 +1,47 @@
+import { NumberInput, Text } from "@mantine/core";
+
+function numberFieldSectionWidth(section) {
+  if (!section) return undefined;
+  return Math.max(34, String(section).length * 8 + 24);
+}
+
+export function NumberField({
+  label,
+  value,
+  onChange,
+  min = 0,
+  max = undefined,
+  step = 1000,
+  prefix = null,
+  suffix = null,
+}) {
+  const formattedPrefix = prefix ? String(prefix).trim() : undefined;
+  const formattedSuffix = suffix ? String(suffix).trim() : undefined;
+  return (
+    <NumberInput
+      label={label}
+      aria-label={label}
+      min={min}
+      max={max}
+      step={step}
+      value={value ?? ""}
+      hideControls
+      leftSection={formattedPrefix ? <Text className="augur-number-section">{formattedPrefix}</Text> : undefined}
+      leftSectionPointerEvents="none"
+      leftSectionWidth={numberFieldSectionWidth(formattedPrefix)}
+      rightSection={formattedSuffix ? <Text className="augur-number-section">{formattedSuffix}</Text> : undefined}
+      rightSectionPointerEvents="none"
+      rightSectionWidth={numberFieldSectionWidth(formattedSuffix)}
+      thousandSeparator=","
+      classNames={{ label: "augur-field-label mb-2 block", input: "augur-tabular" }}
+      onChange={(nextValue) => {
+        const number = typeof nextValue === "number" ? nextValue : Number(nextValue);
+        onChange(Number.isFinite(number) ? number : null);
+      }}
+    />
+  );
+}
+
+export function MoneyField(props) {
+  return <NumberField prefix="$" {...props} />;
+}

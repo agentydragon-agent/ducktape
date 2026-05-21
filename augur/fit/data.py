@@ -29,9 +29,7 @@ from augur.fit.evidence_data import (
 from augur.model.location_series_sources import LocationSeriesSources
 from augur.model.path_models.scenarios import HistoricalSeries
 
-DEFAULT_CONFIG_PATH = (
-    Path(__file__).resolve().parents[1] / "model" / "train" / "config" / "exogenous_evidence.example.json"
-)
+DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent / "config" / "exogenous_evidence.example.json"
 
 
 def load_evidence(

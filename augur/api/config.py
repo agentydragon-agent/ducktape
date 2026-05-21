@@ -138,7 +138,7 @@ class Config(ApiModel):
     starting_portfolio_usd: NonNegativeFloat = 0.0
     pmms_survey_date: date | None = None
     default_rollout_samples: PositiveInt = 128
-    max_rollout_samples: PositiveInt = 2048
+    max_rollout_samples: PositiveInt = 1_000_000
     bootstrap_default_scenarios: tuple[DefaultScenario, ...] = ()
     exogenous_provider: ExogenousProviderConfig = Field(
         description=(

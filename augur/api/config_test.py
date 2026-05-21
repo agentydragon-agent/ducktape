@@ -66,6 +66,7 @@ def test_minimal_config_validates_with_defaults() -> None:
     assert config.minimum_reserve_mode is LiquidityReserveRuleType.PROJECTED_DEFICITS
     assert config.reserve_forward_months == 12
     assert config.default_rollout_samples == 128
+    assert config.max_rollout_samples == 1_000_000
 
 
 def test_property_source_declares_stable_public_asset_urls() -> None:
