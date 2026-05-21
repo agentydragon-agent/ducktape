@@ -751,7 +751,7 @@ fn build_directory_dependency_facts(
             format!(
                 "{}#{}",
                 target_file,
-                factorization.analysis.export_name_for(&id.0)
+                factorization.analysis.export_name_for(id)
             )
         });
         facts.push(DirectoryDependencyFact {

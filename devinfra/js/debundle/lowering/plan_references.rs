@@ -157,10 +157,10 @@ pub(super) fn plan_module_reference_needs<'a>(
         // Some spec-derived lookup tables are still String-keyed by sym
         // (`declaration_by_name`, `binding_assignment`,
         // `entry_exports_by_original_local`), while owner lookup and
-        // `runtime_imports.imports` are Id/Atom-keyed.
+        // `runtime_imports.imports` are Id-keyed.
         let name_str = body_id.0.as_ref();
         if let Some(ModuleId(LogicalModuleIndex(provider_index))) =
-            factorization.analysis.owner_of(&body_id.0)
+            factorization.analysis.owner_of(body_id)
         {
             // provider.rename_map is now Id-keyed; reconstruct the
             // provider's Id from the body ident's sym + ctxt. Within

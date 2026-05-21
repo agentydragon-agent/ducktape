@@ -80,7 +80,7 @@ where
         .into_iter()
         .map(|id| BindingReport {
             binding: id.0.clone(),
-            export_name: factorization.analysis.export_name_for(&id.0),
+            export_name: factorization.analysis.export_name_for(id),
         })
         .collect()
 }

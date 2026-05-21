@@ -40,12 +40,16 @@ pub struct ChunkAnalysis {
     pub chunk_renames: HashMap<Id, Atom>,
     pub owner_graph: OwnerGraph,
     owner_report_ids_by_binding: HashMap<Id, Vec<String>>,
-    /// Sym-only `binding → exported name` map. Bindings absent from
-    /// this map export under their own name.
-    export_name_by_sym: HashMap<Atom, Atom>,
-    /// Sym-only `binding → owning logical module` map for Owned
-    /// bindings. Imported/global names are absent.
-    owner_by_sym: HashMap<Atom, ModuleId>,
+    binding_lookup_by_id: HashMap<Id, BindingLookupInfo>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct BindingLookupInfo {
+    /// Exported name when it differs from the local binding name.
+    export_name: Option<Atom>,
+    /// Owning logical module for `Owned` bindings. Imported/global names
+    /// are absent.
+    owner: Option<ModuleId>,
 }
 
 impl ChunkAnalysis {
@@ -61,9 +65,8 @@ impl ChunkAnalysis {
         chunk_renames: HashMap<Id, Atom>,
     ) -> Self {
         let owner_report_ids_by_binding = build_owner_report_ids_by_binding(&owner_graph);
-        let export_name_by_sym =
-            build_export_name_by_sym(&bindings, &chunk_renames, &logical_modules);
-        let owner_by_sym = build_owner_by_sym(&bindings);
+        let binding_lookup_by_id =
+            build_binding_lookup_by_id(&bindings, &chunk_renames, &logical_modules);
         Self {
             chunk_id,
             facts,
@@ -72,25 +75,18 @@ impl ChunkAnalysis {
             chunk_renames,
             owner_graph,
             owner_report_ids_by_binding,
-            export_name_by_sym,
-            owner_by_sym,
+            binding_lookup_by_id,
         }
     }
 
     /// Pre-computed export name for a chunk binding, falling back
     /// to the binding's own name. Hot-path replacement for the
-    /// previous `bindings` / `chunk_renames` / `rename_map` walk in
-    /// peelability report generation.
-    ///
-    /// Looks up by `sym`-only since the report generators pass bare
-    /// atoms (no ctxt available at the call site). Within a chunk's
-    /// top-level scope, syms are unique by construction, so the
-    /// first sym match is unambiguous.
-    pub fn export_name_for(&self, binding: &Atom) -> Atom {
-        self.export_name_by_sym
+    /// previous `bindings` / `chunk_renames` / `rename_map` walk.
+    pub fn export_name_for(&self, binding: &Id) -> Atom {
+        self.binding_lookup_by_id
             .get(binding)
-            .cloned()
-            .unwrap_or_else(|| binding.clone())
+            .and_then(|info| info.export_name.clone())
+            .unwrap_or_else(|| binding.0.clone())
     }
 
     /// Render `id` to a human-readable label (used in cycle reports).
@@ -102,15 +98,13 @@ impl ChunkAnalysis {
             .unwrap_or_else(|| format!("<module#{idx}>"))
     }
 
-    /// Which logical module owns a binding (by local name), if any.
+    /// Which logical module owns a binding, if any.
     /// Returns `None` for names that aren't `Owned` in this analysis
     /// (e.g. globals, imported bindings, names not in the spec).
-    ///
-    /// Looks up by `sym`-only since most callers don't carry hygiene
-    /// context. Top-level binding syms are unique within a chunk, so
-    /// a direct sym lookup is unambiguous.
-    pub fn owner_of(&self, name: &Atom) -> Option<ModuleId> {
-        self.owner_by_sym.get(name).copied()
+    pub fn owner_of(&self, binding: &Id) -> Option<ModuleId> {
+        self.binding_lookup_by_id
+            .get(binding)
+            .and_then(|info| info.owner)
     }
 
     /// Lookup a logical module by index.
@@ -154,22 +148,27 @@ fn build_owner_report_ids_by_binding(owner_graph: &OwnerGraph) -> HashMap<Id, Ve
         .collect()
 }
 
-/// Pre-compute every chunk binding's exported-name resolution so
-/// peelability reporting (`reports::binding_reports`) becomes a
-/// single hash lookup per binding instead of walking three maps.
-/// Resolution rule:
-/// - `Owned { Logical(idx) }` → `logical_modules[idx].rename_map[name]`
+/// Pre-compute per-binding lookup data so reporting and reference
+/// planning avoid repeated walks over `bindings`, `chunk_renames`, and
+/// logical-module rename maps.
+///
+/// Export-name resolution rule:
+/// - `Owned { Logical(idx) }` -> `logical_modules[idx].rename_map[id]`
 ///   if present, else the binding's own name.
-/// - Everything else → `chunk_renames[name]` if present, else the
+/// - Everything else -> `chunk_renames[id]` if present, else the
 ///   binding's own name.
-fn build_export_name_by_sym(
+fn build_binding_lookup_by_id(
     bindings: &HashMap<Id, BindingKind>,
     chunk_renames: &HashMap<Id, Atom>,
     logical_modules: &[LogicalModule],
-) -> HashMap<Atom, Atom> {
+) -> HashMap<Id, BindingLookupInfo> {
     let mut out = HashMap::with_capacity(bindings.len() + chunk_renames.len());
     for (id, kind) in bindings {
-        let export = match kind {
+        let owner = match kind {
+            BindingKind::Owned { owner } => Some(*owner),
+            BindingKind::Imported { .. } => None,
+        };
+        let export_name = match kind {
             BindingKind::Owned {
                 owner: ModuleId(LogicalModuleIndex(idx)),
             } => logical_modules
@@ -182,8 +181,9 @@ fn build_export_name_by_sym(
                 .cloned()
                 .unwrap_or_else(|| id.0.clone()),
         };
-        if export != id.0 {
-            out.insert(id.0.clone(), export);
+        let export_name = (export_name != id.0).then_some(export_name);
+        if owner.is_some() || export_name.is_some() {
+            out.insert(id.clone(), BindingLookupInfo { export_name, owner });
         }
     }
     // Cover bindings that only show up in `chunk_renames` (no
@@ -192,17 +192,7 @@ fn build_export_name_by_sym(
     // analysis).
     for (id, export) in chunk_renames {
         if !bindings.contains_key(id) && export != &id.0 {
-            out.insert(id.0.clone(), export.clone());
-        }
-    }
-    out
-}
-
-fn build_owner_by_sym(bindings: &HashMap<Id, BindingKind>) -> HashMap<Atom, ModuleId> {
-    let mut out = HashMap::with_capacity(bindings.len());
-    for (id, kind) in bindings {
-        if let BindingKind::Owned { owner } = kind {
-            out.insert(id.0.clone(), *owner);
+            out.entry(id.clone()).or_default().export_name = Some(export.clone());
         }
     }
     out
