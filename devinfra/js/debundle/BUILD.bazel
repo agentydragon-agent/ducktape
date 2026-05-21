@@ -137,6 +137,7 @@ rust_library(
     crate_root = "strip_swapped_vendor_exports.rs",
     edition = "2024",
     deps = [
+        ":analysis",
         ":artifact",
         ":binding_targets",
         ":spec",
@@ -223,13 +224,11 @@ rust_library(
         "chunk_analysis.rs",
         "chunk_factorization.rs",
         "factor_assembly.rs",
-        "factorize.rs",
         "facts.rs",
         "graph.rs",
         "ids.rs",
         "lib.rs",
         "partition.rs",
-        "peelability.rs",
         "purity.rs",
         "realizability.rs",
         "report_schema.rs",
@@ -262,30 +261,6 @@ rust_test(
 )
 
 rust_library(
-    name = "peel_horizon",
-    srcs = ["peel_horizon.rs"],
-    crate_root = "peel_horizon.rs",
-    edition = "2024",
-    deps = [
-        ":analysis",
-        ":spec",
-        ":spec_modules",
-        ":spec_tree",
-        "@crates//:anyhow",
-        "@crates//:serde",
-        "@crates//:serde_json",
-        "@crates//:serde_yaml",
-    ],
-)
-
-rust_test(
-    name = "peel_horizon_test",
-    crate = ":peel_horizon",
-    edition = "2024",
-    deps = ["@crates//:tempfile"],
-)
-
-rust_library(
     name = "spec_modules",
     srcs = ["spec_modules.rs"],
     crate_root = "spec_modules.rs",
@@ -306,64 +281,23 @@ rust_test(
 )
 
 rust_library(
-    name = "peel_factorize",
-    srcs = ["peel_factorize.rs"],
-    crate_root = "peel_factorize.rs",
-    edition = "2024",
-    deps = [
-        ":analysis",
-        ":spec",
-        ":spec_modules",
-        "@crates//:anyhow",
-        "@crates//:serde",
-        "@crates//:serde_json",
-        "@crates//:swc_atoms",
-    ],
-)
-
-rust_test(
-    name = "peel_factorize_test",
-    crate = ":peel_factorize",
-    edition = "2024",
-)
-
-rust_library(
-    name = "peel_inventory",
-    srcs = ["peel_inventory.rs"],
-    crate_root = "peel_inventory.rs",
-    edition = "2024",
-    deps = [
-        ":analysis",
-        ":spec",
-        ":spec_modules",
-        "@crates//:anyhow",
-        "@crates//:serde",
-        "@crates//:serde_json",
-    ],
-)
-
-rust_test(
-    name = "peel_inventory_test",
-    crate = ":peel_inventory",
-    edition = "2024",
-    deps = ["@crates//:tempfile"],
-)
-
-rust_library(
     name = "peel",
-    srcs = ["peel.rs"],
-    crate_root = "peel.rs",
+    srcs = [
+        "peel/factorize.rs",
+        "peel/mod.rs",
+        "peel/plan.rs",
+    ],
+    crate_root = "peel/mod.rs",
     edition = "2024",
     deps = [
         ":analysis",
-        ":peel_factorize",
-        ":peel_horizon",
-        ":peel_inventory",
+        ":spec",
         ":spec_modules",
         "@crates//:anyhow",
         "@crates//:clap",
         "@crates//:serde",
         "@crates//:serde_json",
+        "@crates//:swc_atoms",
         "@crates//:swc_common",
     ],
 )
@@ -516,7 +450,6 @@ rust_library(
         ":write_tree",
         "@crates//:anyhow",
         "@crates//:clap",
-        "@crates//:humantime",
         "@crates//:serde",
         "@crates//:serde_json",
         "@crates//:serde_yaml",

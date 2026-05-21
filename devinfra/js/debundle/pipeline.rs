@@ -1,12 +1,11 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 use clap::Args as ClapArgs;
 use runfiles::{Runfiles, rlocation};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use artifact::ArtifactIndexes;
 use artifact::load_js_chunks;
@@ -148,50 +147,6 @@ fn parse_package_root_kv(value: &str) -> Result<(String, PathBuf), String> {
     ))
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub struct TransformRunSummary {
-    pub duration: Duration,
-    pub spec_path: String,
-    pub preparation_steps: Vec<TransformStepSummary>,
-    pub steps: Vec<TransformStepSummary>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct TransformStepSummary {
-    pub stage: PipelineStage,
-    pub duration: Duration,
-}
-
-#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PipelineStage {
-    LoadTransformSpec,
-    ValidateTransformSpec,
-    LoadJsChunks,
-    PrepareJsChunks,
-    BuildArtifactIndexes,
-    RewriteChunkEntrySpecifiers,
-    ApplyVendorAnnotations,
-    RenameVendorExports,
-    SwapVendorChunks,
-    MaterializeLogicalModules,
-    ApplyPartialVendorSwaps,
-    ApplyBundledPartialVendorSwaps,
-    StripSwappedVendorExports,
-    ValidateEmittedExports,
-    WriteJsTree,
-    EmitBrowserHarness,
-}
-
-impl PipelineStage {
-    fn report_name(self) -> String {
-        match serde_json::to_value(self).expect("PipelineStage serializes as a string") {
-            serde_json::Value::String(name) => name,
-            _ => unreachable!("PipelineStage unit enum should serialize as a string"),
-        }
-    }
-}
-
 /// Resolve a path through Bazel runfiles when present, otherwise pass through.
 ///
 /// Lets the binary work as a standalone CLI (filesystem paths) and as a
@@ -214,50 +169,12 @@ fn resolve_runfiles_path(path: PathBuf, runfiles: Option<&Runfiles>) -> PathBuf 
         .unwrap_or(path)
 }
 
-pub fn render_transform_summary(summary: &TransformRunSummary) -> String {
-    let mut out = format!(
-        "Ran {} transform steps from {} in {}\n",
-        summary.steps.len(),
-        summary.spec_path,
-        humantime::format_duration(summary.duration)
-    );
-    for step in &summary.preparation_steps {
-        out.push_str(&format!(
-            "- {} ({})\n",
-            step.stage.report_name(),
-            humantime::format_duration(step.duration),
-        ));
-    }
-    for step in &summary.steps {
-        out.push_str(&format!(
-            "- {} ({})\n",
-            step.stage.report_name(),
-            humantime::format_duration(step.duration),
-        ));
-    }
-    out
-}
-
-pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
-    let started = Instant::now();
-    let mut preparation_steps = Vec::new();
-    let spec = run_step_with_result(
-        &mut preparation_steps,
-        PipelineStage::LoadTransformSpec,
-        || load_transform_spec_source(&cli.spec_source),
-    )?;
-    run_step(
-        &mut preparation_steps,
-        PipelineStage::ValidateTransformSpec,
-        || {
-            validate_transform_spec(&spec)?;
-            preflight_output_roots(&spec)
-        },
-    )?;
+pub fn run_transform_cli(cli: &TransformCli) -> Result<()> {
+    let spec = load_transform_spec_source(&cli.spec_source)?;
+    validate_transform_spec(&spec)?;
+    preflight_output_roots(&spec)?;
     let (artifact, _load_manifest) =
-        run_step_with_result(&mut preparation_steps, PipelineStage::LoadJsChunks, || {
-            load_js_chunks(&spec.inputs.input_root, &spec.inputs.js_list_path)
-        })?;
+        load_js_chunks(&spec.inputs.input_root, &spec.inputs.js_list_path)?;
     let materialise_chunk_ids: Vec<String> = spec
         .logical_modules
         .keys()
@@ -267,23 +184,11 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect();
-    let prepare_result = run_step_with_result(
-        &mut preparation_steps,
-        PipelineStage::PrepareJsChunks,
-        || prepare_js_chunks(&spec, artifact),
-    )?;
-    let artifact_indexes = run_step_with_result(
-        &mut preparation_steps,
-        PipelineStage::BuildArtifactIndexes,
-        || ArtifactIndexes::build(&prepare_result.artifact),
-    )?;
-    let mut steps = Vec::new();
+    let prepare_result = prepare_js_chunks(&spec, artifact)?;
+    let artifact_indexes = ArtifactIndexes::build(&prepare_result.artifact)?;
 
-    let rewrite_result = run_step_with_result(
-        &mut steps,
-        PipelineStage::RewriteChunkEntrySpecifiers,
-        || rewrite_chunk_entry_specifiers(prepare_result.artifact, &artifact_indexes),
-    )?;
+    let rewrite_result =
+        rewrite_chunk_entry_specifiers(prepare_result.artifact, &artifact_indexes)?;
     let mut artifact = rewrite_result.artifact;
     let counts = prepare_result.counts;
     let mut chunk_records = prepare_result.chunk_records;
@@ -294,18 +199,13 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
     // `apply` runs unconditionally; `rename` and `swap` short-circuit
     // to no-ops when no entry has the right level.
     if !spec.vendor.is_empty() {
-        run_step(&mut steps, PipelineStage::ApplyVendorAnnotations, || {
-            apply_vendor_annotations(&artifact, &spec.vendor).map(|_| ())
-        })?;
+        apply_vendor_annotations(&artifact, &spec.vendor)?;
         if spec
             .vendor
             .values()
             .any(|m| matches!(m.level, VendorLevel::BoundaryRename | VendorLevel::Swap(_)))
         {
-            let rename_result =
-                run_step_with_result(&mut steps, PipelineStage::RenameVendorExports, || {
-                    rename_vendor_exports(artifact, &spec.vendor, &artifact_indexes)
-                })?;
+            let rename_result = rename_vendor_exports(artifact, &spec.vendor, &artifact_indexes)?;
             artifact = rename_result.artifact;
         }
         if spec
@@ -318,21 +218,18 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
                 output_wrapper_dir,
                 write,
             } = spec.swap_vendor_chunks.clone();
-            let swap_result =
-                run_step_with_result(&mut steps, PipelineStage::SwapVendorChunks, || {
-                    swap_vendor_chunks(
-                        artifact,
-                        &spec.vendor,
-                        &artifact_indexes,
-                        SwapVendorOptions {
-                            package_roots: &cli.package_roots,
-                            packages_root: &cli.packages_root,
-                            output_manifest_path,
-                            output_wrapper_dir,
-                            write,
-                        },
-                    )
-                })?;
+            let swap_result = swap_vendor_chunks(
+                artifact,
+                &spec.vendor,
+                &artifact_indexes,
+                SwapVendorOptions {
+                    package_roots: &cli.package_roots,
+                    packages_root: &cli.packages_root,
+                    output_manifest_path,
+                    output_wrapper_dir,
+                    write,
+                },
+            )?;
             artifact = swap_result.artifact;
             vendor_swaps_report.full = swap_result.manifest.resolutions;
             chunk_records.retain(|chunk| !swap_result.removed_chunk_ids.contains(&chunk.chunk_id));
@@ -349,23 +246,20 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
             report_out_dir,
             target_dir,
         } = spec.materialize_logical_modules.clone();
-        let materialize_result =
-            run_step_with_result(&mut steps, PipelineStage::MaterializeLogicalModules, || {
-                materialize_logical_modules(
-                    artifact,
-                    &spec.logical_modules,
-                    &spec.chunk_renames,
-                    &spec.unassigned_mode,
-                    &spec.chunk_analysis_options,
-                    MaterializeLogicalModulesOptions {
-                        chunk_ids: materialise_chunk_ids,
-                        file,
-                        prune_other_chunks,
-                        report_out_dir,
-                        target_dir,
-                    },
-                )
-            })?;
+        let materialize_result = materialize_logical_modules(
+            artifact,
+            &spec.logical_modules,
+            &spec.chunk_renames,
+            &spec.unassigned_mode,
+            &spec.chunk_analysis_options,
+            MaterializeLogicalModulesOptions {
+                chunk_ids: materialise_chunk_ids,
+                file,
+                prune_other_chunks,
+                report_out_dir,
+                target_dir,
+            },
+        )?;
         artifact = materialize_result.artifact;
         module_count = materialize_result.module_count;
         selected_lowerings = materialize_result.selected_lowerings;
@@ -388,18 +282,15 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
         .any(|m| matches!(m.level, VendorLevel::BundledPartialSwap(_)));
     if !spec.vendor.is_empty() && (has_partial_swaps || has_bundled_partial_swaps) {
         if has_partial_swaps {
-            let partial_result =
-                run_step_with_result(&mut steps, PipelineStage::ApplyPartialVendorSwaps, || {
-                    apply_partial_vendor_swaps(
-                        artifact,
-                        &spec.vendor,
-                        &artifact_indexes,
-                        ApplyPartialVendorSwapsOptions {
-                            package_roots: &cli.package_roots,
-                            packages_root: &cli.packages_root,
-                        },
-                    )
-                })?;
+            let partial_result = apply_partial_vendor_swaps(
+                artifact,
+                &spec.vendor,
+                &artifact_indexes,
+                ApplyPartialVendorSwapsOptions {
+                    package_roots: &cli.package_roots,
+                    packages_root: &cli.packages_root,
+                },
+            )?;
             artifact = partial_result.artifact;
             vendor_swaps_report.partial = partial_result.manifest.resolutions;
         }
@@ -410,22 +301,16 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
                 output_wrapper_dir,
                 write,
             } = spec.swap_vendor_chunks.clone();
-            let bundled_result = run_step_with_result(
-                &mut steps,
-                PipelineStage::ApplyBundledPartialVendorSwaps,
-                || {
-                    apply_bundled_partial_vendor_swaps(
-                        artifact,
-                        &spec.vendor,
-                        &artifact_indexes,
-                        ApplyBundledPartialVendorSwapsOptions {
-                            package_roots: &cli.package_roots,
-                            packages_root: &cli.packages_root,
-                            output_manifest_path,
-                            output_wrapper_dir,
-                            write,
-                        },
-                    )
+            let bundled_result = apply_bundled_partial_vendor_swaps(
+                artifact,
+                &spec.vendor,
+                &artifact_indexes,
+                ApplyBundledPartialVendorSwapsOptions {
+                    package_roots: &cli.package_roots,
+                    packages_root: &cli.packages_root,
+                    output_manifest_path,
+                    output_wrapper_dir,
+                    write,
                 },
             )?;
             artifact = bundled_result.artifact;
@@ -436,10 +321,7 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
         // symbol from upstream; drop the vendor chunk's residual
         // `export { … }` entries and any top-level bindings that are
         // unreachable once those exports are gone.
-        let strip_result =
-            run_step_with_result(&mut steps, PipelineStage::StripSwappedVendorExports, || {
-                strip_swapped_vendor_exports(artifact, &spec.vendor)
-            })?;
+        let strip_result = strip_swapped_vendor_exports(artifact, &spec.vendor)?;
         artifact = strip_result.artifact;
         vendor_swaps_report.strip_stats = strip_result.manifest.per_chunk;
     }
@@ -457,22 +339,17 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
     // pageerror) into an immediate build-time error pointing at the
     // exact file, name, and source lines. Runs unconditionally so
     // pipelines without vendor swaps still benefit.
-    run_step(&mut steps, PipelineStage::ValidateEmittedExports, || {
-        validate_emitted_exports(&artifact)
-    })?;
+    validate_emitted_exports(&artifact)?;
 
     if let Some(cfg) = &spec.write_js_tree {
-        let out_dir = cfg.out_dir.clone();
-        run_step(&mut steps, PipelineStage::WriteJsTree, || {
-            write_js_tree(&WriteTreeInput {
-                artifact: &artifact,
-                out_dir: &out_dir,
-                lowerings: &selected_lowerings,
-                counts: &counts,
-                chunk_records: &chunk_records,
-                module_count,
-                decomposition_by_chunk: &decomposition_by_chunk,
-            })
+        write_js_tree(&WriteTreeInput {
+            artifact: &artifact,
+            out_dir: &cfg.out_dir,
+            lowerings: &selected_lowerings,
+            counts: &counts,
+            chunk_records: &chunk_records,
+            module_count,
+            decomposition_by_chunk: &decomposition_by_chunk,
         })?;
     }
 
@@ -482,18 +359,10 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<TransformRunSummary> {
             out_dir: cfg.out_dir.clone(),
             snapshot_root: cfg.snapshot_root.clone(),
         };
-        run_step(&mut steps, PipelineStage::EmitBrowserHarness, || {
-            emit_browser_harness(&artifact, &opts, &chunk_records, &decomposition_by_chunk)?;
-            Ok(())
-        })?;
+        emit_browser_harness(&artifact, &opts, &chunk_records, &decomposition_by_chunk)?;
     }
 
-    Ok(TransformRunSummary {
-        duration: started.elapsed(),
-        spec_path: spec_source_description(&cli.spec_source),
-        preparation_steps,
-        steps,
-    })
+    Ok(())
 }
 
 fn load_transform_spec_source(source: &TransformSpecSource) -> Result<TransformSpec> {
@@ -501,41 +370,6 @@ fn load_transform_spec_source(source: &TransformSpecSource) -> Result<TransformS
         TransformSpecSource::Flat { path } => load_flat_transform_spec(path),
         TransformSpecSource::Tree(options) => compile_spec_tree(options),
     }
-}
-
-fn spec_source_description(source: &TransformSpecSource) -> String {
-    match source {
-        TransformSpecSource::Flat { path } => path.display().to_string(),
-        TransformSpecSource::Tree(options) => options.config_path.display().to_string(),
-    }
-}
-
-fn run_step(
-    steps: &mut Vec<TransformStepSummary>,
-    stage: PipelineStage,
-    body: impl FnOnce() -> Result<()>,
-) -> Result<()> {
-    let started = Instant::now();
-    body()?;
-    steps.push(TransformStepSummary {
-        stage,
-        duration: started.elapsed(),
-    });
-    Ok(())
-}
-
-fn run_step_with_result<T>(
-    steps: &mut Vec<TransformStepSummary>,
-    stage: PipelineStage,
-    body: impl FnOnce() -> Result<T>,
-) -> Result<T> {
-    let started = Instant::now();
-    let value = body()?;
-    steps.push(TransformStepSummary {
-        stage,
-        duration: started.elapsed(),
-    });
-    Ok(value)
 }
 
 fn load_flat_transform_spec(spec_path: &Path) -> Result<TransformSpec> {
@@ -787,15 +621,6 @@ mod tests {
                 packages_root: None,
             })?;
 
-            assert_eq!(summary.steps.len(), 3);
-            assert_eq!(summary.preparation_steps.len(), 5);
-            let rendered_summary = render_transform_summary(&summary);
-            assert!(rendered_summary.contains("- load_transform_spec"));
-            assert!(rendered_summary.contains("- prepare_js_chunks"));
-            assert!(rendered_summary.contains("- build_artifact_indexes"));
-            assert!(rendered_summary.contains("- rewrite_chunk_entry_specifiers"));
-            assert!(rendered_summary.contains("- validate_emitted_exports"));
-            assert!(rendered_summary.contains("- emit_browser_harness"));
             assert!(out.join("app/bootstrap.js").exists());
             assert!(out.join("reports/runtime.json").exists());
             let entry = fs::read_to_string(out.join("app/static/index-DuckMock/entry.js"))?;

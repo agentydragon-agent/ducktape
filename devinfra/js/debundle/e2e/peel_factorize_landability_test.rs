@@ -1,10 +1,10 @@
-//! End-to-end pinning of the factorize report's correctness against
+//! End-to-end pinning of the peel factorizer's correctness against
 //! the materializer's actual gates.
 //!
-//! The certifying factorizer (`analysis::factorize`) emits only
-//! owner sets that already pass the SSOT `evaluate_peel_candidate`
-//! predicate. Blocked or size-capped frontier states are diagnostics,
-//! not proposals.
+//! `debundle run` emits stable owner and atomic-DAG facts. The peel
+//! factorizer computes heuristic module proposals from that emitted
+//! graph on demand. Blocked or size-capped frontier states are
+//! diagnostics, not proposals.
 //!
 //! Paired fixtures:
 //!
@@ -26,7 +26,7 @@
 
 use analysis::OwnerGraphReport;
 use debundle_e2e_support::*;
-use peel_factorize::factorize;
+use peel::factorize::factorize;
 use serde::de::DeserializeOwned;
 use serde_json::json;
 use std::collections::BTreeMap;
@@ -41,15 +41,7 @@ fn read_json<T: DeserializeOwned>(path: &Path) -> T {
     .unwrap_or_else(|err| panic!("parse JSON report {}: {err}", path.display()))
 }
 
-fn cell_has_bindings(cell: &analysis::FactorizeCell, bindings: &[&str]) -> bool {
-    bindings.iter().all(|binding| {
-        cell.binding_ids
-            .iter()
-            .any(|atom| atom.as_ref() == *binding)
-    })
-}
-
-fn proposal_has_bindings(proposal: &peel_factorize::FactorizeProposal, bindings: &[&str]) -> bool {
+fn proposal_has_bindings(proposal: &peel::factorize::FactorizeProposal, bindings: &[&str]) -> bool {
     bindings
         .iter()
         .all(|binding| proposal.binding_ids.contains(&(*binding).to_string()))
@@ -97,25 +89,21 @@ export { anchor, consumer };
     let fixture = run_fixture(opts);
     let graph: OwnerGraphReport =
         read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    let report = factorize(&graph, &BTreeMap::new(), 10_000);
 
     assert!(
-        graph
-            .factorize
-            .cells
+        report
+            .proposals
             .iter()
-            .all(|cell| cell.landable_today
-                && cell.status == analysis::PeelCandidateStatus::PeelableNow),
-        "factorize cells must be certified-only: {:#?}",
-        graph.factorize,
+            .all(|proposal| proposal.landable_today
+                && proposal.status == analysis::PeelCandidateStatus::PeelableNow),
+        "factorize proposals must be certified-only: {report:#?}",
     );
     assert!(
-        graph
-            .factorize
-            .cells
-            .iter()
-            .any(|cell| cell.binding_ids == vec!["consumer".to_string()] && cell.landable_today),
-        "lazy consumer should be peelable on its own: {:#?}",
-        graph.factorize,
+        report.proposals.iter().any(|proposal| proposal.binding_ids
+            == vec!["consumer".to_string()]
+            && proposal.landable_today),
+        "lazy consumer should be peelable on its own: {report:#?}",
     );
 }
 
@@ -136,16 +124,6 @@ export { anchor, consumer_a, consumer_b };
     let fixture = run_fixture(opts);
     let graph: OwnerGraphReport =
         read_json(&fixture.report_root.join("static/app/owner_graph.json"));
-
-    assert!(
-        graph.factorize.cells.iter().any(|cell| cell_has_bindings(
-            cell,
-            &["shared", "consumer_a", "consumer_b"]
-        ) && cell.landable_today),
-        "shared prerequisite should be emitted as one certified factor: {:#?}",
-        graph.factorize,
-    );
-
     let report = factorize(&graph, &BTreeMap::new(), 10_000);
     assert!(
         report
@@ -175,24 +153,22 @@ export { anchor, dep, consumer };
     let fixture = run_fixture(opts);
     let graph: OwnerGraphReport =
         read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    let report = factorize(&graph, &BTreeMap::new(), 10_000);
 
     assert!(
-        graph.factorize.cells.iter().any(|cell| {
-            cell.binding_ids == vec!["consumer".to_string()]
-                && cell.landable_today
-                && cell.status == analysis::PeelCandidateStatus::PeelableNow
+        report.proposals.iter().any(|proposal| {
+            proposal.binding_ids == vec!["consumer".to_string()]
+                && proposal.landable_today
+                && proposal.status == analysis::PeelCandidateStatus::PeelableNow
         }),
-        "entry-exported lazy provider should not be forced into consumer's proposal: {:#?}",
-        graph.factorize,
+        "entry-exported lazy provider should not be forced into consumer's proposal: {report:#?}",
     );
     assert!(
-        !graph
-            .factorize
-            .cells
+        !report
+            .proposals
             .iter()
-            .any(|cell| cell_has_bindings(cell, &["dep", "consumer"])),
-        "importable lazy edge should not create a must-colocate factor: {:#?}",
-        graph.factorize,
+            .any(|proposal| proposal_has_bindings(proposal, &["dep", "consumer"])),
+        "importable lazy edge should not create a must-colocate factor: {report:#?}",
     );
 }
 
@@ -213,15 +189,15 @@ export { anchor, A, B, C };
     let fixture = run_fixture(opts);
     let graph: OwnerGraphReport =
         read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    let report = factorize(&graph, &BTreeMap::new(), 10_000);
 
     assert!(
-        graph
-            .factorize
-            .cells
+        report
+            .proposals
             .iter()
-            .any(|cell| cell_has_bindings(cell, &["A", "B", "C"]) && cell.landable_today),
-        "true constraining SCC should be emitted as the full certified closure: {:#?}",
-        graph.factorize,
+            .any(|proposal| proposal_has_bindings(proposal, &["A", "B", "C"])
+                && proposal.landable_today),
+        "true constraining SCC should be emitted as the full certified closure: {report:#?}",
     );
 }
 
@@ -240,24 +216,22 @@ export { A, C };
     let fixture = run_fixture(opts);
     let graph: OwnerGraphReport =
         read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    let report = factorize(&graph, &BTreeMap::new(), 10_000);
 
     assert!(
-        graph.factorize.cells.iter().any(|cell| {
-            cell.binding_ids == vec!["C".to_string()]
-                && cell.extends_module_id.is_none()
-                && cell.landable_today
+        report.proposals.iter().any(|proposal| {
+            proposal.binding_ids == vec!["C".to_string()]
+                && proposal.extends_module_id.is_none()
+                && proposal.landable_today
         }),
-        "residual C can import active A; sequenced+eager evidence should not force extension: {:#?}",
-        graph.factorize,
+        "residual C can import active A; sequenced+eager evidence should not force extension: {report:#?}",
     );
     assert!(
-        !graph
-            .factorize
-            .cells
+        !report
+            .proposals
             .iter()
-            .any(|cell| cell.extends_module_id.as_deref() == Some("logical:0")),
-        "active module extension would recreate the old sequenced over-merge: {:#?}",
-        graph.factorize,
+            .any(|proposal| proposal.extends_module_id.as_deref() == Some("logical:0")),
+        "active module extension would recreate the old sequenced over-merge: {report:#?}",
     );
 }
 
@@ -460,33 +434,6 @@ export { anchor, impure, pureBrand };
     let fixture = run_fixture(opts);
     let graph: OwnerGraphReport =
         read_json(&fixture.report_root.join("static/app/owner_graph.json"));
-
-    let brand_cell = graph
-        .factorize
-        .cells
-        .iter()
-        .find(|cell| cell.binding_ids == vec!["pureBrand".to_string()])
-        .expect("pureBrand should be emitted as its own certified factorize cell");
-    assert!(
-        brand_cell.landable_today
-            && brand_cell.owner_ids.len() == 1
-            && brand_cell.anonymous_statement_owner_ids.is_empty(),
-        "pureBrand should split away as a singleton owner: {brand_cell:#?}",
-    );
-    assert!(
-        !graph.factorize.cells.iter().any(|cell| {
-            cell.binding_ids
-                .iter()
-                .any(|atom| atom.as_ref() == "pureBrand")
-                && cell
-                    .binding_ids
-                    .iter()
-                    .any(|atom| atom.as_ref() == "impure")
-        }),
-        "impure sibling must not poison pureBrand's factorize cell: {:#?}",
-        graph.factorize,
-    );
-
     let report = factorize(&graph, &BTreeMap::new(), 10_000);
     assert!(
         report.proposals.iter().any(|proposal| {
@@ -496,6 +443,13 @@ export { anchor, impure, pureBrand };
                 && proposal.landable_today
         }),
         "CLI factorizer should preserve the analyzer's singleton pureBrand proposal: {report:#?}",
+    );
+    assert!(
+        !report.proposals.iter().any(|proposal| {
+            proposal.binding_ids.contains(&"pureBrand".to_string())
+                && proposal.binding_ids.contains(&"impure".to_string())
+        }),
+        "impure sibling must not poison pureBrand's factorize proposal: {report:#?}",
     );
 
     let promoted = run_fixture(FixtureOpts::new(
@@ -529,27 +483,15 @@ export { anchor, mutable, peer };
     let fixture = run_fixture(opts);
     let graph: OwnerGraphReport =
         read_json(&fixture.report_root.join("static/app/owner_graph.json"));
-
-    assert!(
-        graph.factorize.cells.iter().any(|cell| {
-            cell.binding_ids == vec!["mutable".to_string()]
-                && !cell.anonymous_statement_owner_ids.is_empty()
-                && cell.landable_today
-        }),
-        "mutable can only be proposed together with its rebinding statement: {:#?}",
-        graph.factorize,
-    );
-    assert!(
-        !graph.factorize.cells.iter().any(|cell| {
-            cell.binding_ids == vec!["mutable".to_string()]
-                && cell.anonymous_statement_owner_ids.is_empty()
-                && cell.landable_today
-        }),
-        "factorizer must not advertise a binding-only mutable peel: {:#?}",
-        graph.factorize,
-    );
-
     let report = factorize(&graph, &BTreeMap::new(), 10_000);
+    assert!(
+        report.proposals.iter().any(|proposal| {
+            proposal.binding_ids == vec!["mutable".to_string()]
+                && !proposal.anonymous_statement_owner_ids.is_empty()
+                && proposal.landable_today
+        }),
+        "mutable can only be proposed together with its rebinding statement: {report:#?}",
+    );
     assert!(
         !report.proposals.iter().any(|proposal| {
             proposal.binding_ids == vec!["mutable".to_string()]
@@ -575,11 +517,10 @@ export { anchor, mutable, peer };
 
 #[test]
 fn annotated_decorate_helper_breaks_class_plus_decorator_from_side_effect_chain() {
-    // Tana-shaped case: the class itself is small and peelable only
-    // with its post-class decorator application. The unrelated
-    // source-order side effects before/after the decorator should
-    // not force a mega-closure once the TypeScript decorate helper is
-    // annotated as a target-local effect.
+    // Minified TypeScript-decorator shape: the class itself is small and
+    // peelable only with its post-class decorator application. The unrelated
+    // source-order side effects before/after the decorator should not force a
+    // mega-closure once the helper is annotated as a target-local effect.
     let chunk_source = r#"const anchor = "anchor";
 console.log("boot");
 function Ro(decorators, target, key, flags) {
@@ -610,24 +551,23 @@ export { anchor, SearchPopoverState };
     let fixture = run_fixture(opts);
     let graph: OwnerGraphReport =
         read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    let report = factorize(&graph, &BTreeMap::new(), 10_000);
 
     assert!(
-        graph.factorize.cells.iter().any(|cell| {
-            cell.binding_ids == vec!["SearchPopoverState".to_string()]
-                && cell.anonymous_statement_owner_ids.len() == 1
-                && cell.size_members == 2
-                && cell.landable_today
+        report.proposals.iter().any(|proposal| {
+            proposal.binding_ids == vec!["SearchPopoverState".to_string()]
+                && proposal.anonymous_statement_owner_ids.len() == 1
+                && proposal.owner_ids.len() == 2
+                && proposal.landable_today
         }),
-        "decorated class should be proposed with exactly its decorator statement, not the unrelated side-effect chain: {:#?}",
-        graph.factorize,
+        "decorated class should be proposed with exactly its decorator statement, not the unrelated side-effect chain: {report:#?}",
     );
     assert!(
-        !graph.factorize.cells.iter().any(|cell| {
-            cell.binding_ids == vec!["SearchPopoverState".to_string()]
-                && cell.anonymous_statement_owner_ids.is_empty()
+        !report.proposals.iter().any(|proposal| {
+            proposal.binding_ids == vec!["SearchPopoverState".to_string()]
+                && proposal.anonymous_statement_owner_ids.is_empty()
         }),
-        "class-only proposal would split the target-local decorator effect: {:#?}",
-        graph.factorize,
+        "class-only proposal would split the target-local decorator effect: {report:#?}",
     );
 
     let promoted_opts = FixtureOpts::new(

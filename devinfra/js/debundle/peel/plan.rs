@@ -4,24 +4,20 @@
 //! stable JSON operations over the owner graph and spec tree instead of
 //! human-oriented "views".
 
-use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use super::factorize::{FactorizeDiagnosticReport, FactorizeProposal, PeelFactorizeOptions};
+use super::factorize::{PeelFactorizeReport, analyze_peel_factorize};
 use anyhow::{Context, Result, bail};
 use clap::{Args as ClapArgs, Subcommand};
-use peel_factorize::{FactorizeDiagnosticReport, FactorizeProposal, PeelFactorizeOptions};
-use peel_factorize::{PeelFactorizeReport, analyze_peel_factorize};
-use peel_horizon::{PeelHorizonOptions, PeelHorizonReport, analyze_peel_horizon};
-use peel_inventory::{PeelInventoryOptions, PeelInventoryRecord, build_inventory};
 use serde::Serialize;
 
 use analysis::{
-    BindingReport, EvaluatedPeelCandidateReport, OwnerGraphEdgeReport, OwnerGraphNodeReport,
-    OwnerGraphPeelSetReport, OwnerGraphReport, QuotientEdgeReport, ResidualOwnerPeelHorizonReport,
-    SourceLocation,
+    AtomicUnitEdgeReport, AtomicUnitReport, BindingReport, OwnerGraphEdgeReport,
+    OwnerGraphNodeReport, OwnerGraphReport, QuotientEdgeReport, SourceLocation,
 };
 use spec_modules::{
     collect_module_files, default_binding_patches_path, load_binding_patch_members,
@@ -36,20 +32,22 @@ pub struct PeelArgs {
 
 #[derive(Debug, Subcommand)]
 enum PeelCommand {
-    /// Emit certified module-assignment proposals and diagnostics.
+    /// Emit module-assignment proposals and diagnostics derived from the atomic DAG.
     #[command(name = "plan-work")]
     PlanWork(PlanWorkArgs),
-    /// List peelable binding candidates from the current graph/spec.
-    #[command(name = "candidates")]
-    ListCandidates(ListCandidatesArgs),
-    /// Report binding-patch coverage against current peelability.
-    #[command(name = "patch-status")]
-    PatchStatus(PatchStatusArgs),
-    /// Explain one owner, binding, or proposal with graph/spec context.
+    /// List atomic units from the emitted graph.
+    Units(UnitsArgs),
+    /// Report binding/module patch coverage against atomic units.
+    #[command(name = "patch-plan")]
+    PatchPlan(PatchPlanArgs),
+    /// Explain one owner, binding, proposal, unit, or diagnostic with graph/spec context.
     Explain(ExplainArgs),
-    /// Print source text for one owner, binding, or proposal.
+    /// Print source text for one owner, binding, proposal, unit, or diagnostic.
     #[command(name = "source-slice")]
     SourceSlice(SourceSliceArgs),
+    /// Summarize current atomic graph and recommendation counts.
+    #[command(name = "graph-summary")]
+    GraphSummary(GraphSummaryArgs),
 }
 
 #[derive(Debug, Clone, ClapArgs)]
@@ -78,38 +76,48 @@ struct PlanWorkArgs {
 }
 
 #[derive(Debug, Clone, ClapArgs)]
-struct ListCandidatesArgs {
+struct UnitsArgs {
     #[command(flatten)]
     common: CommonArgs,
 
-    /// Maximum number of candidates to emit. Zero means unlimited.
+    /// Maximum number of units to emit. Zero means unlimited.
     #[arg(long, default_value_t = 0)]
     limit: usize,
 
-    /// Filter to candidates with at least one renamed export.
+    /// Filter to units containing at least one residual owner.
+    #[arg(long = "residual-only")]
+    residual_only: bool,
+
+    /// Filter to units with at least one renamed export.
     #[arg(long = "readable-only")]
     readable_only: bool,
 
-    /// Also group emitted candidates by `proposed_dir`.
+    /// Also group emitted units by current destination.
     #[arg(long = "by-destination")]
     by_destination: bool,
 }
 
 #[derive(Debug, Clone, ClapArgs)]
-struct PatchStatusArgs {
+struct PatchPlanArgs {
     #[command(flatten)]
     common: CommonArgs,
 
-    /// Near-missing companion threshold.
-    #[arg(long = "near-missing", default_value_t = 2)]
-    near_missing: usize,
-
-    /// Max companion bindings to include per near-miss row.
-    #[arg(long = "max-companions", default_value_t = 16)]
-    max_companions: usize,
-
-    /// Maximum number of rows to keep in each report section. Zero means unlimited.
+    /// Maximum number of rows to keep. Zero means unlimited.
     #[arg(long, default_value_t = 0)]
+    limit: usize,
+}
+
+#[derive(Debug, Clone, ClapArgs)]
+struct GraphSummaryArgs {
+    #[command(flatten)]
+    common: CommonArgs,
+
+    /// Hard line ceiling per emitted proposal.
+    #[arg(long = "size-cap-lines", default_value_t = 10_000)]
+    size_cap_lines: usize,
+
+    /// Maximum number of largest residual units to emit. Zero means unlimited.
+    #[arg(long, default_value_t = 10)]
     limit: usize,
 }
 
@@ -164,12 +172,30 @@ struct SelectionArgs {
     /// Select a factorizer proposal by `proposed_module_id`.
     #[arg(long = "proposal-id")]
     proposal_id: Option<String>,
+
+    /// Select one atomic unit id from `owner_graph.json`.
+    #[arg(long = "unit-id")]
+    unit_id: Option<String>,
+
+    /// Select one factorizer diagnostic by `diagnostic_id`.
+    #[arg(long = "diagnostic-id")]
+    diagnostic_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 struct QueryReport {
-    kind: &'static str,
+    kind: QueryKind,
     value: String,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum QueryKind {
+    Owner,
+    Binding,
+    Proposal,
+    Unit,
+    Diagnostic,
 }
 
 #[derive(Debug, Clone)]
@@ -177,19 +203,21 @@ enum SelectionKind {
     Owner(String),
     Binding(String),
     Proposal(String),
+    Unit(String),
+    Diagnostic(String),
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-struct ListCandidatesReport {
-    candidates: Vec<PeelInventoryRecord>,
+struct UnitsReport {
+    units: Vec<AtomicUnitReport>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    groups: Vec<CandidateGroup>,
+    groups: Vec<UnitGroup>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-struct CandidateGroup {
-    proposed_dir: String,
-    candidates: Vec<PeelInventoryRecord>,
+struct UnitGroup {
+    destination: String,
+    unit_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -210,14 +238,75 @@ struct ExplainReport {
     binding_homes: Vec<BindingHomeReport>,
     incoming_edges: Vec<OwnerGraphEdgeReport>,
     outgoing_edges: Vec<OwnerGraphEdgeReport>,
+    atomic_units: Vec<AtomicUnitReport>,
+    incoming_atomic_edges: Vec<AtomicUnitEdgeReport>,
+    outgoing_atomic_edges: Vec<AtomicUnitEdgeReport>,
     quotient_edges: Vec<QuotientEdgeReport>,
-    peel_sets: Vec<OwnerGraphPeelSetReport>,
-    evaluated_owner_sets: Vec<EvaluatedPeelCandidateReport>,
-    residual_horizon: Vec<ResidualOwnerPeelHorizonReport>,
     factorize_proposals: Vec<FactorizeProposal>,
     factorize_diagnostics: Vec<FactorizeDiagnosticReport>,
     #[serde(skip_serializing_if = "Option::is_none")]
     limits: Option<LimitReport>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+struct PatchPlanReport {
+    rows: Vec<PatchPlanRow>,
+    summary: PatchPlanSummary,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    limits: Option<LimitReport>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+struct PatchPlanSummary {
+    total_patch_sets: usize,
+    complete_patch_sets: usize,
+    split_patch_sets: usize,
+    unknown_binding_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+struct PatchPlanRow {
+    path: String,
+    file: String,
+    status: PatchPlanStatus,
+    requested_binding_ids: Vec<String>,
+    unknown_binding_ids: Vec<String>,
+    unit_ids: Vec<String>,
+    complete_unit_ids: Vec<String>,
+    split_unit_ids: Vec<String>,
+    missing_binding_ids: Vec<String>,
+    missing_owner_ids: Vec<String>,
+    missing_anonymous_owner_ids: Vec<String>,
+    matching_proposal_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "snake_case")]
+enum PatchPlanStatus {
+    CompleteUnits,
+    SplitUnits,
+    UnknownBindings,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+struct GraphSummaryReport {
+    owner_count: usize,
+    owner_edge_count: usize,
+    atomic_unit_count: usize,
+    residual_atomic_unit_count: usize,
+    atomic_edge_count: usize,
+    module_count: usize,
+    module_edge_count: usize,
+    proposal_count: usize,
+    diagnostic_count: usize,
+    largest_residual_units: Vec<UnitSummary>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+struct UnitSummary {
+    unit_id: String,
+    size_lines_estimate: usize,
+    members: Vec<BindingReport>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -237,8 +326,15 @@ struct LimitSectionReport {
 struct BindingHomeReport {
     binding: String,
     name: String,
-    source_kind: &'static str,
+    source_kind: BindingHomeSourceKind,
     path: String,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "snake_case")]
+enum BindingHomeSourceKind {
+    Module,
+    BindingPatch,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -264,17 +360,20 @@ pub fn run_peel(args: PeelArgs) -> Result<()> {
         PeelCommand::PlanWork(args) => {
             print_json(&run_plan_work_report(&args)?).context("writing plan-work JSON")
         }
-        PeelCommand::ListCandidates(args) => {
-            print_json(&run_list_candidates_report(&args)?).context("writing candidates JSON")
+        PeelCommand::Units(args) => {
+            print_json(&run_units_report(&args)?).context("writing units JSON")
         }
-        PeelCommand::PatchStatus(args) => {
-            print_json(&run_patch_status_report(&args)?).context("writing patch-status JSON")
+        PeelCommand::PatchPlan(args) => {
+            print_json(&run_patch_plan_report(&args)?).context("writing patch-plan JSON")
         }
         PeelCommand::Explain(args) => {
             print_json(&run_explain_report(&args)?).context("writing explain JSON")
         }
         PeelCommand::SourceSlice(args) => {
             print_json(&run_source_slice_report(&args)?).context("writing source-slice JSON")
+        }
+        PeelCommand::GraphSummary(args) => {
+            print_json(&run_graph_summary_report(&args)?).context("writing graph-summary JSON")
         }
     }
 }
@@ -312,35 +411,120 @@ fn run_plan_work_report(args: &PlanWorkArgs) -> Result<PlanWorkReport> {
     })
 }
 
-fn run_list_candidates_report(args: &ListCandidatesArgs) -> Result<ListCandidatesReport> {
-    let mut candidates = build_inventory(&PeelInventoryOptions {
-        owner_graph_path: args.common.owner_graph_path.clone(),
-        modules_root: args.common.modules_root.clone(),
-    })?;
-    if args.readable_only {
-        candidates.retain(|record| record.has_readable);
+fn run_units_report(args: &UnitsArgs) -> Result<UnitsReport> {
+    let graph = load_graph(&args.common.owner_graph_path)?;
+    let mut units = graph.atomic_graph.nodes.clone();
+    if args.residual_only {
+        units.retain(|unit| {
+            unit.destinations
+                .iter()
+                .any(|destination| destination.residual)
+        });
     }
-    sort_candidates(&mut candidates);
-    apply_limit(&mut candidates, args.limit);
+    if args.readable_only {
+        units.retain(|unit| {
+            unit.members
+                .iter()
+                .any(|member| member.binding != member.export_name)
+        });
+    }
+    units.sort_by_key(|unit| {
+        (
+            unit.source_line_range
+                .map(|range| range[0])
+                .unwrap_or(usize::MAX),
+            unit.id.clone(),
+        )
+    });
+    apply_limit(&mut units, args.limit);
     let groups = if args.by_destination {
-        group_candidates_by_destination(&candidates)
+        group_units_by_destination(&units)
     } else {
         Vec::new()
     };
-    Ok(ListCandidatesReport { candidates, groups })
+    Ok(UnitsReport { units, groups })
 }
 
-fn run_patch_status_report(args: &PatchStatusArgs) -> Result<PeelHorizonReport> {
-    let mut report = analyze_peel_horizon(&PeelHorizonOptions {
+fn run_patch_plan_report(args: &PatchPlanArgs) -> Result<PatchPlanReport> {
+    let graph = load_graph(&args.common.owner_graph_path)?;
+    let factorize = analyze_peel_factorize(&PeelFactorizeOptions {
         owner_graph_path: args.common.owner_graph_path.clone(),
         modules_root: args.common.modules_root.clone(),
-        near_missing: args.near_missing,
-        max_companions: args.max_companions,
+        size_cap_lines: 10_000,
     })?;
-    apply_limit(&mut report.full, args.limit);
-    apply_limit(&mut report.with_companions, args.limit);
-    apply_limit(&mut report.near, args.limit);
-    Ok(report)
+    let mut rows = patch_plan_rows(&graph, &args.common.modules_root, &factorize)?;
+    rows.sort_by_key(|row| (row.status, row.path.clone()));
+    let summary = PatchPlanSummary {
+        total_patch_sets: rows.len(),
+        complete_patch_sets: rows
+            .iter()
+            .filter(|row| row.status == PatchPlanStatus::CompleteUnits)
+            .count(),
+        split_patch_sets: rows
+            .iter()
+            .filter(|row| row.status == PatchPlanStatus::SplitUnits)
+            .count(),
+        unknown_binding_count: rows.iter().map(|row| row.unknown_binding_ids.len()).sum(),
+    };
+    let mut sections = BTreeMap::new();
+    apply_limit_with_metadata(&mut rows, args.limit, &mut sections, "rows");
+    Ok(PatchPlanReport {
+        rows,
+        summary,
+        limits: limit_report(args.limit, sections),
+    })
+}
+
+fn run_graph_summary_report(args: &GraphSummaryArgs) -> Result<GraphSummaryReport> {
+    let graph = load_graph(&args.common.owner_graph_path)?;
+    let factorize = analyze_peel_factorize(&PeelFactorizeOptions {
+        owner_graph_path: args.common.owner_graph_path.clone(),
+        modules_root: args.common.modules_root.clone(),
+        size_cap_lines: args.size_cap_lines,
+    })?;
+    let mut largest_residual_units: Vec<UnitSummary> = graph
+        .atomic_graph
+        .nodes
+        .iter()
+        .filter(|unit| {
+            unit.destinations
+                .iter()
+                .any(|destination| destination.residual)
+        })
+        .map(|unit| UnitSummary {
+            unit_id: unit.id.clone(),
+            size_lines_estimate: unit.size_lines_estimate,
+            members: unit.members.clone(),
+        })
+        .collect();
+    largest_residual_units.sort_by_key(|unit| {
+        (
+            std::cmp::Reverse(unit.size_lines_estimate),
+            unit.unit_id.clone(),
+        )
+    });
+    apply_limit(&mut largest_residual_units, args.limit);
+    Ok(GraphSummaryReport {
+        owner_count: graph.nodes.len(),
+        owner_edge_count: graph.edges.len(),
+        atomic_unit_count: graph.atomic_graph.nodes.len(),
+        residual_atomic_unit_count: graph
+            .atomic_graph
+            .nodes
+            .iter()
+            .filter(|unit| {
+                unit.destinations
+                    .iter()
+                    .any(|destination| destination.residual)
+            })
+            .count(),
+        atomic_edge_count: graph.atomic_graph.edges.len(),
+        module_count: graph.quotient.nodes.len(),
+        module_edge_count: graph.quotient.edges.len(),
+        proposal_count: factorize.proposals.len(),
+        diagnostic_count: factorize.diagnostics.len(),
+        largest_residual_units,
+    })
 }
 
 fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
@@ -375,6 +559,28 @@ fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
         .cloned()
         .collect();
     let mut neighbor_owners = owners_for_ids(&graph, &neighbor_ids);
+    let selected_unit_ids = atomic_unit_ids_for_owner_set(&graph, &owner_set);
+    let mut atomic_units = graph
+        .atomic_graph
+        .nodes
+        .iter()
+        .filter(|unit| selected_unit_ids.contains(&unit.id))
+        .cloned()
+        .collect();
+    let mut incoming_atomic_edges: Vec<AtomicUnitEdgeReport> = graph
+        .atomic_graph
+        .edges
+        .iter()
+        .filter(|edge| selected_unit_ids.contains(&edge.target))
+        .cloned()
+        .collect();
+    let mut outgoing_atomic_edges: Vec<AtomicUnitEdgeReport> = graph
+        .atomic_graph
+        .edges
+        .iter()
+        .filter(|edge| selected_unit_ids.contains(&edge.source))
+        .cloned()
+        .collect();
 
     let mut bindings: Vec<BindingReport> = owners
         .iter()
@@ -400,28 +606,6 @@ fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
             selected_destinations.contains(&edge.source)
                 || selected_destinations.contains(&edge.target)
         })
-        .cloned()
-        .collect();
-
-    let mut peel_sets = graph
-        .peelability
-        .minimal_peel_sets
-        .iter()
-        .filter(|set| overlaps(&set.owner_ids, &owner_set))
-        .cloned()
-        .collect();
-    let mut evaluated_owner_sets = graph
-        .peelability
-        .evaluated_owner_sets
-        .iter()
-        .filter(|set| overlaps(&set.owner_ids, &owner_set))
-        .cloned()
-        .collect();
-    let mut residual_horizon = graph
-        .peelability
-        .residual_owner_horizon
-        .iter()
-        .filter(|owner| owner_set.contains(&owner.owner_id))
         .cloned()
         .collect();
 
@@ -475,24 +659,24 @@ fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
         &mut sections,
         "outgoing_edges",
     );
+    apply_limit_with_metadata(&mut atomic_units, args.limit, &mut sections, "atomic_units");
+    apply_limit_with_metadata(
+        &mut incoming_atomic_edges,
+        args.limit,
+        &mut sections,
+        "incoming_atomic_edges",
+    );
+    apply_limit_with_metadata(
+        &mut outgoing_atomic_edges,
+        args.limit,
+        &mut sections,
+        "outgoing_atomic_edges",
+    );
     apply_limit_with_metadata(
         &mut quotient_edges,
         args.limit,
         &mut sections,
         "quotient_edges",
-    );
-    apply_limit_with_metadata(&mut peel_sets, args.limit, &mut sections, "peel_sets");
-    apply_limit_with_metadata(
-        &mut evaluated_owner_sets,
-        args.limit,
-        &mut sections,
-        "evaluated_owner_sets",
-    );
-    apply_limit_with_metadata(
-        &mut residual_horizon,
-        args.limit,
-        &mut sections,
-        "residual_horizon",
     );
     apply_limit_with_metadata(
         &mut factorize_proposals,
@@ -516,10 +700,10 @@ fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
         binding_homes,
         incoming_edges,
         outgoing_edges,
+        atomic_units,
+        incoming_atomic_edges,
+        outgoing_atomic_edges,
         quotient_edges,
-        peel_sets,
-        evaluated_owner_sets,
-        residual_horizon,
         factorize_proposals,
         factorize_diagnostics,
         limits: limit_report(args.limit, sections),
@@ -573,17 +757,6 @@ fn load_graph(path: &Path) -> Result<OwnerGraphReport> {
     .with_context(|| format!("parsing {}", path.display()))
 }
 
-fn sort_candidates(candidates: &mut [PeelInventoryRecord]) {
-    candidates.sort_by_key(|record| {
-        (
-            record.owner_count,
-            Reverse(record.has_readable),
-            record.proposed_dir.clone(),
-            record.candidate_id.clone(),
-        )
-    });
-}
-
 fn apply_limit<T>(records: &mut Vec<T>, limit: usize) {
     if limit > 0 {
         records.truncate(limit);
@@ -627,25 +800,27 @@ fn sort_factorize_diagnostics(diagnostics: &mut [FactorizeDiagnosticReport]) {
                 .source_line_range
                 .map(|range| range[0])
                 .unwrap_or(usize::MAX),
-            diagnostic.size_members,
+            diagnostic.owner_ids.len(),
             diagnostic.diagnostic_id.clone(),
         )
     });
 }
 
-fn group_candidates_by_destination(candidates: &[PeelInventoryRecord]) -> Vec<CandidateGroup> {
-    let mut groups: BTreeMap<String, Vec<PeelInventoryRecord>> = BTreeMap::new();
-    for candidate in candidates {
-        groups
-            .entry(candidate.proposed_dir.clone())
-            .or_default()
-            .push(candidate.clone());
+fn group_units_by_destination(units: &[AtomicUnitReport]) -> Vec<UnitGroup> {
+    let mut groups: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for unit in units {
+        for destination in &unit.destinations {
+            groups
+                .entry(destination.label.clone())
+                .or_default()
+                .push(unit.id.clone());
+        }
     }
     groups
         .into_iter()
-        .map(|(proposed_dir, candidates)| CandidateGroup {
-            proposed_dir,
-            candidates,
+        .map(|(destination, unit_ids)| UnitGroup {
+            destination,
+            unit_ids,
         })
         .collect()
 }
@@ -662,8 +837,201 @@ fn owners_for_ids(
         .collect()
 }
 
+fn atomic_unit_ids_for_owner_set(
+    graph: &OwnerGraphReport,
+    owner_ids: &BTreeSet<String>,
+) -> BTreeSet<String> {
+    graph
+        .atomic_graph
+        .nodes
+        .iter()
+        .filter(|unit| unit.owner_ids.iter().any(|owner| owner_ids.contains(owner)))
+        .map(|unit| unit.id.clone())
+        .collect()
+}
+
 fn overlaps(owner_ids: &[String], selected: &BTreeSet<String>) -> bool {
     owner_ids.iter().any(|owner_id| selected.contains(owner_id))
+}
+
+fn patch_plan_rows(
+    graph: &OwnerGraphReport,
+    modules_root: &Path,
+    factorize: &PeelFactorizeReport,
+) -> Result<Vec<PatchPlanRow>> {
+    let binding_to_owner = binding_to_owner(graph);
+    let unit_by_owner = unit_by_owner(graph);
+    let unit_by_id: BTreeMap<String, &AtomicUnitReport> = graph
+        .atomic_graph
+        .nodes
+        .iter()
+        .map(|unit| (unit.id.clone(), unit))
+        .collect();
+    load_patch_sets(modules_root)?
+        .into_iter()
+        .map(|patch_set| {
+            let mut requested_binding_ids: Vec<String> =
+                patch_set.bindings.iter().cloned().collect();
+            requested_binding_ids.sort();
+
+            let mut requested_owner_ids = BTreeSet::<String>::new();
+            let mut unknown_binding_ids = Vec::<String>::new();
+            for binding in &requested_binding_ids {
+                if let Some(owner_id) = binding_to_owner.get(binding) {
+                    requested_owner_ids.insert(owner_id.clone());
+                } else {
+                    unknown_binding_ids.push(binding.clone());
+                }
+            }
+
+            let mut unit_ids: BTreeSet<String> = BTreeSet::new();
+            for owner_id in &requested_owner_ids {
+                if let Some(unit_id) = unit_by_owner.get(owner_id) {
+                    unit_ids.insert(unit_id.clone());
+                }
+            }
+
+            let mut complete_unit_ids = Vec::<String>::new();
+            let mut split_unit_ids = Vec::<String>::new();
+            let mut missing_binding_ids = BTreeSet::<String>::new();
+            let mut missing_owner_ids = BTreeSet::<String>::new();
+            let mut missing_anonymous_owner_ids = BTreeSet::<String>::new();
+            for unit_id in &unit_ids {
+                let Some(unit) = unit_by_id.get(unit_id) else {
+                    continue;
+                };
+                let unit_bindings: BTreeSet<String> =
+                    unit.members.iter().map(|m| m.binding.to_string()).collect();
+                let unit_owners: BTreeSet<String> = unit.owner_ids.iter().cloned().collect();
+                let bindings_complete = unit_bindings
+                    .iter()
+                    .all(|binding| patch_set.bindings.contains(binding));
+                let owners_complete = unit_owners
+                    .iter()
+                    .all(|owner_id| requested_owner_ids.contains(owner_id));
+                if bindings_complete && owners_complete {
+                    complete_unit_ids.push(unit_id.clone());
+                } else {
+                    split_unit_ids.push(unit_id.clone());
+                    missing_binding_ids.extend(
+                        unit_bindings
+                            .into_iter()
+                            .filter(|binding| !patch_set.bindings.contains(binding)),
+                    );
+                    missing_owner_ids.extend(
+                        unit_owners
+                            .into_iter()
+                            .filter(|owner_id| !requested_owner_ids.contains(owner_id)),
+                    );
+                    missing_anonymous_owner_ids.extend(
+                        unit.anonymous_statement_owner_ids
+                            .iter()
+                            .filter(|owner_id| !requested_owner_ids.contains(*owner_id))
+                            .cloned(),
+                    );
+                }
+            }
+            let status = if !split_unit_ids.is_empty() {
+                PatchPlanStatus::SplitUnits
+            } else if !unknown_binding_ids.is_empty() {
+                PatchPlanStatus::UnknownBindings
+            } else {
+                PatchPlanStatus::CompleteUnits
+            };
+            let matching_proposal_ids = matching_proposal_ids(factorize, &requested_owner_ids);
+            Ok(PatchPlanRow {
+                path: patch_set.path,
+                file: patch_set.file.display().to_string(),
+                status,
+                requested_binding_ids,
+                unknown_binding_ids,
+                unit_ids: unit_ids.into_iter().collect(),
+                complete_unit_ids,
+                split_unit_ids,
+                missing_binding_ids: missing_binding_ids.into_iter().collect(),
+                missing_owner_ids: missing_owner_ids.into_iter().collect(),
+                missing_anonymous_owner_ids: missing_anonymous_owner_ids.into_iter().collect(),
+                matching_proposal_ids,
+            })
+        })
+        .collect()
+}
+
+#[derive(Debug, Clone)]
+struct PatchSet {
+    path: String,
+    file: PathBuf,
+    bindings: BTreeSet<String>,
+}
+
+fn load_patch_sets(modules_root: &Path) -> Result<Vec<PatchSet>> {
+    let mut sets = Vec::<PatchSet>::new();
+    let binding_patches_path = default_binding_patches_path(modules_root);
+    let patch_bindings: BTreeSet<String> = load_binding_patch_members(modules_root)?
+        .into_iter()
+        .map(|member| member.selector.binding.name)
+        .collect();
+    if !patch_bindings.is_empty() {
+        sets.push(PatchSet {
+            path: "binding_patches".to_string(),
+            file: binding_patches_path,
+            bindings: patch_bindings,
+        });
+    }
+    for file in collect_module_files(modules_root)? {
+        let bindings = read_module_file(&file)?
+            .members
+            .into_iter()
+            .map(|member| member.selector.binding.name)
+            .collect::<BTreeSet<_>>();
+        if bindings.is_empty() {
+            continue;
+        }
+        sets.push(PatchSet {
+            path: module_path_from_file(&file, modules_root),
+            file,
+            bindings,
+        });
+    }
+    Ok(sets)
+}
+
+fn binding_to_owner(graph: &OwnerGraphReport) -> BTreeMap<String, String> {
+    let mut out = BTreeMap::new();
+    for node in &graph.nodes {
+        for binding in &node.declared_bindings {
+            out.insert(binding.binding.to_string(), node.id.clone());
+        }
+    }
+    out
+}
+
+fn unit_by_owner(graph: &OwnerGraphReport) -> BTreeMap<String, String> {
+    let mut out = BTreeMap::new();
+    for unit in &graph.atomic_graph.nodes {
+        for owner_id in &unit.owner_ids {
+            out.insert(owner_id.clone(), unit.id.clone());
+        }
+    }
+    out
+}
+
+fn matching_proposal_ids(
+    factorize: &PeelFactorizeReport,
+    requested_owner_ids: &BTreeSet<String>,
+) -> Vec<String> {
+    if requested_owner_ids.is_empty() {
+        return Vec::new();
+    }
+    factorize
+        .proposals
+        .iter()
+        .filter(|proposal| {
+            let proposal_owners: BTreeSet<String> = proposal.owner_ids.iter().cloned().collect();
+            requested_owner_ids.is_subset(&proposal_owners)
+        })
+        .map(|proposal| proposal.proposed_module_id.clone())
+        .collect()
 }
 
 impl SelectionArgs {
@@ -672,13 +1040,15 @@ impl SelectionArgs {
             self.owner_id.as_ref(),
             self.binding_id.as_ref(),
             self.proposal_id.as_ref(),
+            self.unit_id.as_ref(),
+            self.diagnostic_id.as_ref(),
         ]
         .into_iter()
         .filter(|value| value.is_some())
         .count();
         if selected != 1 {
             bail!(
-                "select exactly one of --owner-id, --binding-id, or --proposal-id (got {selected})"
+                "select exactly one of --owner-id, --binding-id, --proposal-id, --unit-id, or --diagnostic-id (got {selected})"
             );
         }
         if let Some(owner_id) = &self.owner_id {
@@ -687,6 +1057,10 @@ impl SelectionArgs {
             Ok(SelectionKind::Binding(binding_id.clone()))
         } else if let Some(proposal_id) = &self.proposal_id {
             Ok(SelectionKind::Proposal(proposal_id.clone()))
+        } else if let Some(unit_id) = &self.unit_id {
+            Ok(SelectionKind::Unit(unit_id.clone()))
+        } else if let Some(diagnostic_id) = &self.diagnostic_id {
+            Ok(SelectionKind::Diagnostic(diagnostic_id.clone()))
         } else {
             unreachable!("selected count already validated")
         }
@@ -696,15 +1070,23 @@ impl SelectionArgs {
 fn query_report(selection: &SelectionKind) -> QueryReport {
     match selection {
         SelectionKind::Owner(value) => QueryReport {
-            kind: "owner_id",
+            kind: QueryKind::Owner,
             value: value.clone(),
         },
         SelectionKind::Binding(value) => QueryReport {
-            kind: "binding_id",
+            kind: QueryKind::Binding,
             value: value.clone(),
         },
         SelectionKind::Proposal(value) => QueryReport {
-            kind: "proposal_id",
+            kind: QueryKind::Proposal,
+            value: value.clone(),
+        },
+        SelectionKind::Unit(value) => QueryReport {
+            kind: QueryKind::Unit,
+            value: value.clone(),
+        },
+        SelectionKind::Diagnostic(value) => QueryReport {
+            kind: QueryKind::Diagnostic,
             value: value.clone(),
         },
     }
@@ -747,6 +1129,26 @@ fn resolve_owner_ids(
                 .map(|proposal| proposal.owner_ids.clone())
                 .unwrap_or_default()
         }
+        SelectionKind::Unit(unit_id) => graph
+            .atomic_graph
+            .nodes
+            .iter()
+            .find(|unit| unit.id == *unit_id)
+            .map(|unit| unit.owner_ids.clone())
+            .unwrap_or_default(),
+        SelectionKind::Diagnostic(diagnostic_id) => {
+            let factorize = analyze_peel_factorize(&PeelFactorizeOptions {
+                owner_graph_path: common.owner_graph_path.clone(),
+                modules_root: common.modules_root.clone(),
+                size_cap_lines,
+            })?;
+            factorize
+                .diagnostics
+                .iter()
+                .find(|diagnostic| diagnostic.diagnostic_id == *diagnostic_id)
+                .map(|diagnostic| diagnostic.owner_ids.clone())
+                .unwrap_or_default()
+        }
     };
     owner_ids.sort();
     owner_ids.dedup();
@@ -769,7 +1171,7 @@ fn binding_homes(
                 homes.insert(BindingHomeReport {
                     binding,
                     name: member.name.unwrap_or_default(),
-                    source_kind: "module",
+                    source_kind: BindingHomeSourceKind::Module,
                     path: module_path.clone(),
                 });
             }
@@ -782,7 +1184,7 @@ fn binding_homes(
             homes.insert(BindingHomeReport {
                 binding,
                 name: member.name.unwrap_or_default(),
-                source_kind: "binding_patch",
+                source_kind: BindingHomeSourceKind::BindingPatch,
                 path: patches_path.display().to_string(),
             });
         }
@@ -896,11 +1298,9 @@ mod tests {
     use std::path::Path;
 
     use analysis::{
-        DepKind, FactorizeCell, FactorizeDiagnostic, FactorizeDiagnosticReason, FactorizeReport,
-        ModuleReportRef, OwnerGraphEdgeReport, OwnerGraphNodeReport, OwnerGraphPeelSetReport,
-        OwnerGraphPeelabilityReport, OwnerGraphQuotientReport, OwnerGraphReport,
-        PeelCandidateStatus, Purity, QuotientSccReport, SourceLocation, StatementKind,
-        StatementOrdinal,
+        AtomicGraphReport, AtomicUnitEdgeReport, AtomicUnitReport, DepKind, ModuleReportRef,
+        OwnerGraphEdgeReport, OwnerGraphNodeReport, OwnerGraphQuotientReport, OwnerGraphReport,
+        Purity, QuotientSccReport, SourceLocation, StatementKind, StatementOrdinal,
     };
     use tempfile::TempDir;
 
@@ -926,7 +1326,7 @@ mod tests {
             label: label.to_string(),
             residual,
             index: None,
-            target_file: None,
+            target_file: (!residual).then(|| label.to_string()),
         }
     }
 
@@ -946,13 +1346,58 @@ mod tests {
         }
     }
 
+    fn atomic_unit(id: &str, owners: &[&OwnerGraphNodeReport]) -> AtomicUnitReport {
+        let mut owner_ids = Vec::new();
+        let mut members = Vec::new();
+        let mut destinations = BTreeMap::<String, ModuleReportRef>::new();
+        let mut start_line = usize::MAX;
+        let mut end_line = 0usize;
+        let mut size_lines_estimate = 0usize;
+        for owner in owners {
+            owner_ids.push(owner.id.clone());
+            members.extend(owner.declared_bindings.clone());
+            destinations.insert(owner.destination.id.clone(), owner.destination.clone());
+            if let Some(location) = &owner.source_location {
+                start_line = start_line.min(location.start_line);
+                end_line = end_line.max(location.end_line);
+                size_lines_estimate += location.end_line + 1 - location.start_line;
+            }
+        }
+        AtomicUnitReport {
+            id: id.to_string(),
+            owner_ids,
+            members,
+            anonymous_statement_owner_ids: Vec::new(),
+            destinations: destinations.into_values().collect(),
+            causes: Vec::new(),
+            size_lines_estimate,
+            source_line_range: Some([start_line, end_line]),
+            ordinal_span: 0,
+        }
+    }
+
+    fn atomic_edge(
+        id: &str,
+        source: &str,
+        target: &str,
+        owner_edge_id: &str,
+    ) -> AtomicUnitEdgeReport {
+        AtomicUnitEdgeReport {
+            id: id.to_string(),
+            source: source.to_string(),
+            target: target.to_string(),
+            edge_kinds: vec![DepKind::EagerUse],
+            owner_edge_ids: vec![owner_edge_id.to_string()],
+            constrains_init_order: true,
+        }
+    }
+
     fn graph_fixture() -> OwnerGraphReport {
+        let zz = owner("owner:0", 1, "ZZ", "PaymentError");
+        let aa = owner("owner:1", 2, "aa", "aa");
         OwnerGraphReport {
             chunk_id: "static/index".to_string(),
-            nodes: vec![
-                owner("owner:0", 1, "ZZ", "PaymentError"),
-                owner("owner:1", 2, "aa", "aa"),
-            ],
+            nodes: vec![zz.clone(), aa.clone()],
             edges: vec![OwnerGraphEdgeReport {
                 id: "edge:0".to_string(),
                 source: "owner:1".to_string(),
@@ -967,63 +1412,18 @@ mod tests {
                 edges: Vec::new(),
                 sccs: Vec::<QuotientSccReport>::new(),
             },
-            peelability: OwnerGraphPeelabilityReport {
-                residual_destinations: Vec::new(),
-                minimal_peel_sets: vec![OwnerGraphPeelSetReport {
-                    candidate_id: "peel_candidate:owner:0".to_string(),
-                    owner_ids: vec!["owner:0".to_string()],
-                    members: vec![member("ZZ", "PaymentError")],
-                }],
-                residual_owner_horizon: Vec::new(),
-                evaluated_owner_sets: Vec::new(),
+            atomic_graph: AtomicGraphReport {
+                nodes: vec![
+                    atomic_unit("atomic:0", &[&zz]),
+                    atomic_unit("atomic:1", &[&aa]),
+                ],
+                edges: vec![atomic_edge(
+                    "atomic_edge:0",
+                    "atomic:1",
+                    "atomic:0",
+                    "edge:0",
+                )],
             },
-            factorize: FactorizeReport {
-                size_cap_lines: 10_000,
-                residual_owner_count: 2,
-                cells: vec![FactorizeCell {
-                    proposed_module_id: "factor_0000".to_string(),
-                    owner_ids: vec!["owner:0".to_string()],
-                    binding_ids: vec!["ZZ".into()],
-                    anonymous_statement_owner_ids: Vec::new(),
-                    size_lines_estimate: 1,
-                    size_members: 1,
-                    source_line_range: Some([2, 2]),
-                    ordinal_span: 1,
-                    status: PeelCandidateStatus::PeelableNow,
-                    landable_today: true,
-                    cycle_blocker_owner_ids: Vec::new(),
-                    active_modules_referenced: Vec::new(),
-                    extends_module_id: None,
-                    extension_owner_ids: Vec::new(),
-                }],
-                diagnostics: Vec::new(),
-            },
-        }
-    }
-
-    fn diagnostic(
-        id: &str,
-        owner_ids: &[&str],
-        reason: FactorizeDiagnosticReason,
-        line: usize,
-        size_members: usize,
-    ) -> FactorizeDiagnostic {
-        FactorizeDiagnostic {
-            diagnostic_id: id.to_string(),
-            owner_ids: owner_ids
-                .iter()
-                .map(|owner_id| (*owner_id).to_string())
-                .collect(),
-            binding_ids: Vec::new(),
-            size_lines_estimate: 1,
-            size_members,
-            source_line_range: Some([line, line]),
-            ordinal_span: 0,
-            status: PeelCandidateStatus::BlockedCycle,
-            reason,
-            cycle_blocker_owner_ids: Vec::new(),
-            active_modules_referenced: Vec::new(),
-            extends_module_id: None,
         }
     }
 
@@ -1056,48 +1456,7 @@ mod tests {
 
     #[test]
     fn plan_work_limit_keeps_sorted_prefix_and_reports_totals() {
-        let mut graph = graph_fixture();
-        graph.factorize.cells.push(FactorizeCell {
-            proposed_module_id: "factor_0001".to_string(),
-            owner_ids: vec!["owner:1".to_string()],
-            binding_ids: vec!["aa".into()],
-            anonymous_statement_owner_ids: Vec::new(),
-            size_lines_estimate: 1,
-            size_members: 1,
-            source_line_range: Some([3, 3]),
-            ordinal_span: 1,
-            status: PeelCandidateStatus::PeelableNow,
-            landable_today: true,
-            cycle_blocker_owner_ids: Vec::new(),
-            active_modules_referenced: Vec::new(),
-            extends_module_id: None,
-            extension_owner_ids: Vec::new(),
-        });
-        graph.factorize.diagnostics = vec![
-            diagnostic(
-                "diagnostic:no_exact_repair",
-                &["owner:0"],
-                FactorizeDiagnosticReason::NoExactRepair,
-                1,
-                1,
-            ),
-            diagnostic(
-                "diagnostic:late_size_cap",
-                &["owner:0"],
-                FactorizeDiagnosticReason::ExceedsSizeCap,
-                9,
-                1,
-            ),
-            diagnostic(
-                "diagnostic:early_size_cap",
-                &["owner:0"],
-                FactorizeDiagnosticReason::ExceedsSizeCap,
-                4,
-                1,
-            ),
-        ];
-
-        let (_temp, common) = fixture_with_graph(graph);
+        let (_temp, common) = fixture();
         let report = run_plan_work_report(&PlanWorkArgs {
             common,
             size_cap_lines: 10_000,
@@ -1106,35 +1465,41 @@ mod tests {
         .unwrap();
 
         assert_eq!(report.report.proposals.len(), 1);
-        assert_eq!(report.report.proposals[0].owner_ids, vec!["owner:0"]);
-        assert_eq!(report.report.diagnostics.len(), 1);
-        assert_eq!(
-            report.report.diagnostics[0].diagnostic_id,
-            "diagnostic:early_size_cap"
-        );
+        assert!(report.report.proposals[0].landable_today);
         let limits = report.limits.unwrap();
         assert_eq!(limits.limit, 1);
-        assert_eq!(limits.sections["proposals"].total, 2);
+        assert_eq!(limits.sections["proposals"].total, 1);
         assert_eq!(limits.sections["proposals"].emitted, 1);
-        assert!(limits.sections["proposals"].truncated);
-        assert_eq!(limits.sections["diagnostics"].total, 3);
-        assert_eq!(limits.sections["diagnostics"].emitted, 1);
-        assert!(limits.sections["diagnostics"].truncated);
+        assert!(!limits.sections["proposals"].truncated);
     }
 
     #[test]
-    fn list_candidates_emits_candidates_and_groups() {
+    fn units_emits_units_and_groups() {
         let (_temp, common) = fixture();
-        let report = run_list_candidates_report(&ListCandidatesArgs {
+        let report = run_units_report(&UnitsArgs {
             common,
             limit: 0,
+            residual_only: true,
             readable_only: true,
             by_destination: true,
         })
         .unwrap();
-        assert_eq!(report.candidates.len(), 1);
-        assert_eq!(report.candidates[0].members[0].0, "ZZ");
+        assert_eq!(report.units.len(), 1);
+        assert_eq!(report.units[0].members[0].binding, "ZZ");
         assert_eq!(report.groups.len(), 1);
+    }
+
+    #[test]
+    fn patch_plan_reports_split_atomic_units() {
+        let (_temp, common) = fixture();
+        let report = run_patch_plan_report(&PatchPlanArgs { common, limit: 0 }).unwrap();
+        let row = report
+            .rows
+            .iter()
+            .find(|row| row.path == "binding_patches")
+            .expect("binding patch row");
+        assert_eq!(row.status, PatchPlanStatus::CompleteUnits);
+        assert_eq!(row.complete_unit_ids, vec!["atomic:0".to_string()]);
     }
 
     #[test]
@@ -1146,6 +1511,8 @@ mod tests {
                 owner_id: None,
                 binding_id: Some("ZZ".to_string()),
                 proposal_id: None,
+                unit_id: None,
+                diagnostic_id: None,
             },
             size_cap_lines: 10_000,
             limit: 0,
@@ -1154,7 +1521,11 @@ mod tests {
         assert_eq!(report.owner_ids, vec!["owner:0"]);
         assert_eq!(report.incoming_edges.len(), 1);
         assert_eq!(report.neighbor_owners[0].id, "owner:1");
-        assert_eq!(report.binding_homes[0].source_kind, "binding_patch");
+        assert_eq!(
+            report.binding_homes[0].source_kind,
+            BindingHomeSourceKind::BindingPatch
+        );
+        assert_eq!(report.atomic_units[0].id, "atomic:0");
         assert_eq!(
             report.factorize_proposals[0].proposed_module_id,
             "auto_partition_0000"
@@ -1192,6 +1563,8 @@ mod tests {
                 owner_id: None,
                 binding_id: Some("ZZ".to_string()),
                 proposal_id: None,
+                unit_id: None,
+                diagnostic_id: None,
             },
             size_cap_lines: 10_000,
             limit: 1,
@@ -1220,6 +1593,8 @@ mod tests {
                 owner_id: Some("owner:0".to_string()),
                 binding_id: None,
                 proposal_id: None,
+                unit_id: None,
+                diagnostic_id: None,
             },
             size_cap_lines: 10_000,
             context_lines: 1,

@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use peel::{PeelArgs, run_peel};
-use pipeline::{TransformArgs, render_transform_summary, run_transform_cli};
+use pipeline::{TransformArgs, run_transform_cli};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -27,8 +27,7 @@ pub fn run_debundle_cli(args: DebundleArgs) -> Result<()> {
     match args.command {
         DebundleCommand::Run(args) => {
             let cli = args.resolve()?;
-            let summary = run_transform_cli(&cli)?;
-            print!("{}", render_transform_summary(&summary));
+            run_transform_cli(&cli)?;
             Ok(())
         }
         DebundleCommand::Peel(args) => run_peel(args).context("running peel query"),
@@ -112,11 +111,11 @@ mod tests {
     }
 
     #[test]
-    fn parse_peel_candidates_command() {
+    fn parse_peel_units_command() {
         let parsed = DebundleArgs::try_parse_from([
             "debundle",
             "peel",
-            "candidates",
+            "units",
             "--graph",
             "owner_graph.json",
             "--modules",
