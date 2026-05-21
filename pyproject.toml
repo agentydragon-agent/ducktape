@@ -135,6 +135,7 @@ dependencies = [
     "beautifulsoup4>=4.14.3",
 
     # tana
+    "mitmproxy>=12.2,<13",
     "playwright>=1.45",
 
     # ducktape-llm-common

@@ -56,9 +56,6 @@ importers:
       highlight.js:
         specifier: ^11.11.1
         version: 11.11.1
-      http-mitm-proxy:
-        specifier: 1.1.0
-        version: 1.1.0
       json-formatter-js:
         specifier: ^2.5.1
         version: 2.5.23
@@ -77,9 +74,6 @@ importers:
       marked-highlight:
         specifier: ^2.1.1
         version: 2.2.4(marked@12.0.2)
-      node-forge:
-        specifier: 1.4.0
-        version: 1.4.0
       openapi-fetch:
         specifier: ^0.15.0
         version: 0.15.2
@@ -4014,11 +4008,6 @@ packages:
     resolution: {integrity: sha512-4FbRdAX+bSdmo4AUFuS0WNiPz8NgFt+r8ThgNWmlrjQjt1Q7ZR9+zTlce2859x4KSXrwIsaeTqDoKQmtP8pLmQ==}
     engines: {node: '>= 0.8'}
 
-  http-mitm-proxy@1.1.0:
-    resolution: {integrity: sha512-GyjWXiukopLzp6Yg4Dk1M+6Yfp5c/rPtqXDGaRopeJH1bd9F6k2cyJrB98kKmJaMU2P7kA5LLHbtuFc8HcNvrA==}
-    engines: {node: '>=16'}
-    hasBin: true
-
   http-proxy-agent@7.0.2:
     resolution: {integrity: sha512-T1gkAiYYDWYx3V5Bmyu7HcfcvL7mUrTWiM6yOfa3PIphViJ/gFPbvidQ+veqSOHci/PxBcDabeUNCzpOODJZig==}
     engines: {node: '>= 14'}
@@ -4687,11 +4676,6 @@ packages:
     resolution: {integrity: sha512-FP+p8RB8OWpF3YZBCrP5gtADmtXApB5AMLn+vdyA+PyxCjrCs00mjyUozssO33cwDeT3wNGdLxJ5M//YqtHAJw==}
     hasBin: true
 
-  mkdirp@1.0.4:
-    resolution: {integrity: sha512-vVqVZQyf3WLx2Shd0qJ9xuvqgAyKPLAiqITEtqW0oIUjzo3PePDd6fW9iFz30ef7Ysp/oiWqbhszeGWW2T6Gzw==}
-    engines: {node: '>=10'}
-    hasBin: true
-
   mri@1.2.0:
     resolution: {integrity: sha512-tzzskb3bG8LvYGFF/mDTpq3jpI6Q9wc3LEmBaghu+DdCssd1FakN7Bc0hVNmEyGq1bq3RgfkCb3cmQLpNPOroA==}
     engines: {node: '>=4'}
@@ -4763,10 +4747,6 @@ packages:
   node-fetch@3.3.2:
     resolution: {integrity: sha512-dRB78srN/l6gqWulah9SrxeYnxeddIG30+GOqK/9OlLVyLg3HPnr6SqOWTWOXKRwC2eGYCkZ59NNuSgvSrpgOA==}
     engines: {node: ^12.20.0 || ^14.13.1 || >=16.0.0}
-
-  node-forge@1.4.0:
-    resolution: {integrity: sha512-LarFH0+6VfriEhqMMcLX2F7SwSXeWwnEAJEsYm5QKWchiVYVvJyV9v7UDvUv+w5HO23ZpQTXDv/GxdDdMyOuoQ==}
-    engines: {node: '>= 6.13.0'}
 
   node-readable-to-web-readable-stream@0.4.2:
     resolution: {integrity: sha512-/cMZNI34v//jUTrI+UIo4ieHAB5EZRY/+7OmXZgBxaWBMcW2tGdceIw06RFxWxrKZ5Jp3sI2i5TsRo+CBhtVLQ==}
@@ -5441,10 +5421,6 @@ packages:
 
   secure-compare@3.0.1:
     resolution: {integrity: sha512-AckIIV90rPDcBcglUwXPF3kg0P0qmPsPXAj6BBEENQE1p5yA1xfmDJzfi1Tappj37Pv2mVbKpL3Z1T+Nn7k1Qw==}
-
-  semaphore@1.1.0:
-    resolution: {integrity: sha512-O4OZEaNtkMd/K0i6js9SL+gqy0ZCBMgUvlSqHKi4IBdjhe7wB8pwztUk1BbZ1fmrvpwFrPbHzqd2w5pTcJH6LA==}
-    engines: {node: '>=0.8.0'}
 
   semver@6.3.1:
     resolution: {integrity: sha512-BR7VvDCVHO+q2xBEWskxS6DJE1qRnb7DxzUrogb71CWoSficBxYsiAGd+Kl0mmq/MprG9yArRkyrQxTO6XjMzA==}
@@ -10616,21 +10592,6 @@ snapshots:
       statuses: 2.0.2
       toidentifier: 1.0.1
 
-  http-mitm-proxy@1.1.0:
-    dependencies:
-      async: 3.2.6
-      debug: 4.4.3(supports-color@10.2.2)
-      mkdirp: 1.0.4
-      node-forge: 1.4.0
-      semaphore: 1.1.0
-      uuid: 9.0.1
-      ws: 8.20.0
-      yargs: 17.7.2
-    transitivePeerDependencies:
-      - bufferutil
-      - supports-color
-      - utf-8-validate
-
   http-proxy-agent@7.0.2:
     dependencies:
       agent-base: 7.1.4
@@ -11281,8 +11242,6 @@ snapshots:
     dependencies:
       minimist: 1.2.8
 
-  mkdirp@1.0.4: {}
-
   mri@1.2.0: {}
 
   ms@2.0.0: {}
@@ -11340,8 +11299,6 @@ snapshots:
       data-uri-to-buffer: 4.0.1
       fetch-blob: 3.2.0
       formdata-polyfill: 4.0.10
-
-  node-forge@1.4.0: {}
 
   node-readable-to-web-readable-stream@0.4.2:
     optional: true
@@ -12190,8 +12147,6 @@ snapshots:
   sdp-transform@3.0.0: {}
 
   secure-compare@3.0.1: {}
-
-  semaphore@1.1.0: {}
 
   semver@6.3.1: {}
 

@@ -292,27 +292,12 @@ Most tests don't need it. Split into two list comprehensions: one with standard 
 
 ---
 
-## JS Live Proxy
+## Live Proxy
 
-### `normalizeRelativePath` duplicated (proxy.mjs:226 and vendor_runtime.mjs:263)
-
-Slightly different implementations: proxy.mjs splits on `[\\/]`, vendor_runtime.mjs splits on `?` first. Duplication is a bug risk if behavior needs to change.
-
-### `assertPathWithinRoot` duplicated (vendor_runtime.mjs:334 and package_tree.mjs:76)
-
-Identical implementations. Share one copy.
-
-### `loadLiveProxyConfiguration` (proxy.mjs:118–202) — 84-line god function
-
-Reads 4+ JSON files, resolves paths, builds config, loads vendor runtime indices, constructs HTML, returns ~30-field object. Extract JSON loading and path resolution.
-
-### Inline JS blobs in proxy.mjs
-
-`liveProxyPreludeScript` (lines 567–625) and `noopServiceWorkerSource` (627–638) are embedded JS strings that can't be linted or tested independently. Extract to `.js` files loaded at startup.
-
-### `parser_options.mjs` — `writeTextFile`/`writeJsonFile` overlap with `io.mjs`
-
-General file-writing utilities split across two files. Consolidate.
+The old JS live proxy findings were resolved by replacing the Node
+implementation with Python modules split by concern: config/HTML/asset mapping,
+vendor package resolution, mitmproxy response serving, and browser smoke
+diagnostics.
 
 ---
 
