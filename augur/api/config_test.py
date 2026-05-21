@@ -11,9 +11,7 @@ from pydantic import ValidationError
 
 from augur.api.config import (
     AgentDefinition,
-    ConcentratedHoldingSnapshot,
     Config,
-    FinanceSnapshot,
     LocationConfig,
     PersonalFinanceConfig,
     PropertyAssetConfig,
@@ -21,6 +19,7 @@ from augur.api.config import (
     dump_augur_config_yaml,
     load_augur_config,
 )
+from augur.api.finance import ConcentratedHoldingSnapshot, FinanceSnapshot
 from augur.api.local_regulation import LocalRegulation
 from augur.api.portfolio import (
     PortfolioAccountConfig,
