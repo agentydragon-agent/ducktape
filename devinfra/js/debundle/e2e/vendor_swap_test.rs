@@ -1487,6 +1487,135 @@ fn bundled_partial_swap_rewrites_imports_created_by_logical_module_materializati
     assert_node_output(&probe_path, "package:ok\n", "");
 }
 
+#[test]
+fn bundled_partial_swap_rewrites_non_exported_local_helper_in_vendor_chunk() {
+    // Zod's public surface can be swapped while a residual app schema in the
+    // same vendor chunk still calls an internal zod helper that Vite did not
+    // export. The `local` override is the spec-level escape hatch for that
+    // case: rewrite every residual call to the generated facade and then let
+    // the strip pass remove the original helper.
+    const VENDOR_PATH: &str = "static/vendor.js";
+    const APP_PATH: &str = "static/app.js";
+    const PACKAGE_NAME: &str = "zod";
+    const PACKAGE_VERSION: &str = "4.1.12";
+
+    let root =
+        TempDir::with_prefix("vendor-bundled-partial-swap-local-helper-").expect("create tempdir");
+    let workspace_root = root.path().join("workspace");
+    let extracted_root = workspace_root.join("extracted");
+    let snapshot_root = workspace_root.join("snapshot");
+    let out_root = workspace_root.join("out");
+    let wrapper_root = out_root.join("app").join("vendors").join("generated");
+    let manifest_path = out_root.join("reports").join("vendor_swaps.json");
+    let bundle_root = root.path().join("external-bundles");
+    let bundle_path = bundle_root.join("zod.esbuilt.js");
+    let package_root = root.path().join("upstream").join(PACKAGE_NAME);
+    fs::create_dir_all(&extracted_root).unwrap();
+    fs::create_dir_all(&snapshot_root).unwrap();
+    fs::create_dir_all(&out_root).unwrap();
+    fs::create_dir_all(&bundle_root).unwrap();
+    fs::create_dir_all(&package_root).unwrap();
+    fs::create_dir_all(snapshot_root.join("static")).unwrap();
+
+    write_text_file(
+        &snapshot_root.join(VENDOR_PATH),
+        "function nY(Ctor) { return `vendor:${Ctor.name}`; }\n\
+         const schema = nY(URL);\n\
+         export { schema as keep };\n",
+    );
+    write_text_file(
+        &snapshot_root.join(APP_PATH),
+        "import { keep } from \"../vendor/entry.js\";\n\
+         console.log(keep);\n",
+    );
+    let js_list_path = extracted_root.join("js-files.txt");
+    write_text_file(&js_list_path, &format!("{VENDOR_PATH}\n{APP_PATH}\n"));
+    write_text_file(
+        &bundle_path,
+        "const Zod = { instanceof: Ctor => `package:${Ctor.name}` };\n\
+         export { Zod };\n",
+    );
+
+    write_text_file(
+        &package_root.join("package.json"),
+        &format!(
+            "{}\n",
+            serde_json::to_string_pretty(&json!({
+                "name": PACKAGE_NAME,
+                "version": PACKAGE_VERSION,
+                "main": "index.js",
+            }))
+            .unwrap(),
+        ),
+    );
+    write_text_file(
+        &package_root.join("index.js"),
+        "const inst = Ctor => `package:${Ctor.name}`;\nexport { inst as instanceof };\n",
+    );
+
+    let spec_path = root.path().join("transform_spec.yaml");
+    let spec = json!({
+        "vendor": {
+            VENDOR_PATH: {
+                "level": "bundled_partial_swap",
+                "identity": "local helper bundled partial swap fixture",
+                "bundle": { "path": &bundle_path },
+                "packages": {
+                    PACKAGE_NAME: {
+                        "version": PACKAGE_VERSION,
+                        "subpath": "index.js",
+                        "bundle_export": "Zod",
+                        "namespace": "Zod",
+                    },
+                },
+                "symbols": {
+                    "zodInstanceof": {
+                        "package": PACKAGE_NAME,
+                        "kind": "named",
+                        "upstream_export": "instanceof",
+                        "local": "nY",
+                    },
+                },
+            },
+        },
+        "inputs": { "input_root": &snapshot_root, "js_list_path": &js_list_path },
+        "swap_vendor_chunks": {
+            "output_manifest_path": &manifest_path,
+            "output_wrapper_dir": &wrapper_root,
+            "write": true,
+        },
+        "write_js_tree": { "out_dir": &out_root },
+    });
+    write_yaml_file(&spec_path, &spec);
+
+    let result = run_debundler(&spec_path, &[(PACKAGE_NAME, &package_root)]);
+    assert!(
+        result.status.success(),
+        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
+        result.status.code(),
+        result.stdout,
+        result.stderr,
+    );
+
+    let vendor = fs::read_to_string(out_root.join("app/static/vendor/entry.js"))
+        .expect("vendor chunk emitted");
+    assert!(
+        !vendor.contains("function nY"),
+        "original local helper should be removed from residual vendor chunk:\n{vendor}",
+    );
+    assert!(
+        vendor.contains(".instanceof(URL)"),
+        "residual schema should call the bundled facade:\n{vendor}",
+    );
+
+    let probe_path = out_root.join("__run_local_helper.mjs");
+    write_text_file(
+        &probe_path,
+        "await import(\"./app/static/app/entry.js\");\n",
+    );
+    assert_node_output(&probe_path, "package:URL\n", "");
+}
+
 struct PartialSwapKindFixtureArgs<'a> {
     /// "namespace", "default", or "named"
     kind: &'a str,

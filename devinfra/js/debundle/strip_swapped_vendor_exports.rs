@@ -247,7 +247,7 @@ fn strip_export_specifiers(
                         let Some(symbol) = symbols.get(&exported) else {
                             unreachable!("swapped names are derived from symbols");
                         };
-                        let local = match &named_spec.orig {
+                        let export_local = match &named_spec.orig {
                             ModuleExportName::Ident(ident) => ident.to_id(),
                             ModuleExportName::Str(orig) => {
                                 bail!(
@@ -260,7 +260,10 @@ fn strip_export_specifiers(
                             exported,
                             StrippedExport {
                                 package: symbol.package.clone(),
-                                locals: BTreeSet::from([local]),
+                                locals: BTreeSet::from([stripped_symbol_local(
+                                    symbol,
+                                    export_local,
+                                )]),
                             },
                         );
                     } else {
@@ -290,7 +293,11 @@ fn strip_export_specifiers(
                             n.clone(),
                             StrippedExport {
                                 package: symbol.package.clone(),
-                                locals: export_decl_declared_ids(&export_decl.decl),
+                                locals: symbol
+                                    .local
+                                    .as_ref()
+                                    .map(|local| BTreeSet::from([synthetic_id(local)]))
+                                    .unwrap_or_else(|| export_decl_declared_ids(&export_decl.decl)),
                             },
                         );
                     }
@@ -305,6 +312,22 @@ fn strip_export_specifiers(
     module.body = new_body;
 
     let found_names = found.keys().cloned().collect::<BTreeSet<_>>();
+    for missing_local in swapped.difference(&found_names) {
+        let Some(symbol) = symbols.get(missing_local) else {
+            unreachable!("swapped names are derived from symbols");
+        };
+        if let Some(local) = &symbol.local {
+            found.insert(
+                missing_local.clone(),
+                StrippedExport {
+                    package: symbol.package.clone(),
+                    locals: BTreeSet::from([synthetic_id(local)]),
+                },
+            );
+        }
+    }
+
+    let found_names = found.keys().cloned().collect::<BTreeSet<_>>();
     let missing: Vec<String> = swapped.difference(&found_names).cloned().collect();
     if !missing.is_empty() {
         bail!(
@@ -313,6 +336,18 @@ fn strip_export_specifiers(
         );
     }
     Ok(found)
+}
+
+fn stripped_symbol_local(symbol: &PartialSwapSymbol, export_local: Id) -> Id {
+    symbol
+        .local
+        .as_ref()
+        .map(|local| synthetic_id(local))
+        .unwrap_or(export_local)
+}
+
+fn synthetic_id(local: &str) -> Id {
+    Ident::new_no_ctxt(local.into(), DUMMY_SP).to_id()
 }
 
 fn export_decl_declared_names(decl: &Decl) -> Vec<String> {
@@ -443,15 +478,12 @@ fn sweep_unreachable_top_level(
     }
 
     let mut swapped_reachability = vec![BTreeSet::new(); analyses.len()];
+    let mut swapped_root_items = BTreeSet::new();
     let mut queue: Vec<(usize, String)> = Vec::new();
     for (alias, stripped_export) in stripped {
         for local in &stripped_export.locals {
-            let Some(&decl_idx) = declarer.get(local) else {
-                bail!(
-                    "strip_swapped_vendor_exports vendor entry {chunk_path}: swapped export {alias} maps to local `{}` but that binding has no top-level declaration",
-                    id_name(local),
-                );
-            };
+            let decl_idx = resolve_declared_local(local, &declarer, chunk_path, alias)?;
+            swapped_root_items.insert(decl_idx);
             if swapped_reachability[decl_idx].insert(stripped_export.package.clone()) {
                 queue.push((decl_idx, stripped_export.package.clone()));
             }
@@ -506,7 +538,10 @@ fn sweep_unreachable_top_level(
     }
 
     for (i, packages) in swapped_reachability.iter().enumerate() {
-        if live[i] && packages.len() == 1 && !shareable_items[i] {
+        if live[i]
+            && packages.len() == 1
+            && (!shareable_items[i] || swapped_root_items.contains(&i))
+        {
             let declared = analyses[i]
                 .declared
                 .iter()
@@ -640,6 +675,32 @@ fn dependency_items(
     dependency_edges(analysis, declarer, mutation_items_by_target)
         .into_keys()
         .collect()
+}
+
+fn resolve_declared_local(
+    local: &Id,
+    declarer: &BTreeMap<Id, usize>,
+    chunk_path: &str,
+    alias: &str,
+) -> Result<usize> {
+    if let Some(&decl_idx) = declarer.get(local) {
+        return Ok(decl_idx);
+    }
+
+    let local_name = id_name(local);
+    let matches = declarer
+        .iter()
+        .filter_map(|(declared, &idx)| (id_name(declared) == local_name).then_some(idx))
+        .collect::<BTreeSet<_>>();
+    match matches.len() {
+        1 => Ok(*matches.iter().next().expect("one match")),
+        0 => bail!(
+            "strip_swapped_vendor_exports vendor entry {chunk_path}: swapped export {alias} maps to local `{local_name}` but that binding has no top-level declaration",
+        ),
+        _ => bail!(
+            "strip_swapped_vendor_exports vendor entry {chunk_path}: swapped export {alias} maps to local `{local_name}` but that name has multiple top-level declarations",
+        ),
+    }
 }
 
 fn dependency_edges(
@@ -1112,6 +1173,7 @@ mod tests {
                     package: "pkg".to_string(),
                     kind: PartialSwapKind::Named,
                     upstream_export: Some((*s).to_string()),
+                    local: None,
                 },
             );
         }
@@ -1127,6 +1189,7 @@ mod tests {
                     package: (*package).to_string(),
                     kind: PartialSwapKind::Named,
                     upstream_export: Some((*name).to_string()),
+                    local: None,
                 },
             );
         }
@@ -1176,6 +1239,62 @@ mod tests {
         assert!(
             err.to_string().contains("residual path:"),
             "split-brain diagnostic should include liveness provenance: {err}",
+        );
+    }
+
+    #[test]
+    fn drops_non_exported_local_swap_after_self_rewrite() {
+        let mut module = parse(
+            "function nY(t) { return `vendor:${t.name}`; }\nconst schema = Zod.instanceof(URL);\nexport { schema };\n",
+        );
+        let symbols = BTreeMap::from([(
+            "zodInstanceof".to_string(),
+            PartialSwapSymbol {
+                package: "zod".to_string(),
+                kind: PartialSwapKind::Named,
+                upstream_export: Some("instanceof".to_string()),
+                local: Some("nY".to_string()),
+            },
+        )]);
+
+        strip_one_chunk(&mut module, &symbols, "chunk.js").unwrap();
+
+        let emitted = emit(&module);
+        assert!(
+            !emitted.contains("function nY"),
+            "chunk-local swapped helper should be DCE'd:\n{emitted}",
+        );
+        assert!(
+            emitted.contains("schema"),
+            "residual schema export should remain:\n{emitted}",
+        );
+    }
+
+    #[test]
+    fn local_swap_split_brain_reports_unrewritten_residual_call() {
+        let mut module = parse(
+            "function nY(t) { return `vendor:${t.name}`; }\nconst schema = nY(URL);\nexport { schema };\n",
+        );
+        let symbols = BTreeMap::from([(
+            "zodInstanceof".to_string(),
+            PartialSwapSymbol {
+                package: "zod".to_string(),
+                kind: PartialSwapKind::Named,
+                upstream_export: Some("instanceof".to_string()),
+                local: Some("nY".to_string()),
+            },
+        )]);
+
+        let err = strip_one_chunk(&mut module, &symbols, "chunk.js")
+            .expect_err("unrewritten local call should be split-brain");
+
+        assert!(
+            err.to_string().contains("split-brain vendor swap"),
+            "wrong error: {err}",
+        );
+        assert!(
+            err.to_string().contains("reads [nY]"),
+            "diagnostic should show the residual read of the local helper: {err}",
         );
     }
 

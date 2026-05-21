@@ -353,6 +353,16 @@ pub struct PartialSwapSymbol {
     /// Forbidden for `kind: namespace` / `kind: default`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub upstream_export: Option<String>,
+    /// Optional chunk-local binding that implements this swapped symbol.
+    ///
+    /// Normally the debundler discovers the implementation binding from
+    /// the chunk's `export { local as <symbol-key> }` specifier. Some
+    /// bundled vendors also have reachable internal helpers that are not
+    /// exported by the chunk but still need to be replaced when residual
+    /// in-chunk code calls them. In that case, set `local` to the
+    /// top-level binding name to rewrite/strip.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local: Option<String>,
 }
 
 /// Per-symbol vendor swap backed by a caller-supplied ESM bundle.

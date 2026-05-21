@@ -1542,6 +1542,8 @@ pub struct PartialSwapSymbolResolution {
     pub kind: PartialSwapKind,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub upstream_export: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub local: Option<String>,
     pub references_rewritten: usize,
 }
 
@@ -1624,8 +1626,11 @@ struct ChunkPartialSwapMapping {
 struct PartialSwapSymbolTarget {
     package: String,
     kind: PartialSwapKind,
-    /// Only Some(_) when `kind == Member`.
+    /// Only Some(_) when `kind == Member` or `kind == Named`.
     upstream_export: Option<String>,
+    /// Optional implementation binding inside the target chunk. Used
+    /// when a swapped vendor helper is chunk-local rather than exported.
+    local: Option<String>,
 }
 
 type BundledPartialSwapMappings = BTreeMap<String, ChunkBundledPartialSwapMapping>;
@@ -1686,8 +1691,8 @@ pub fn apply_partial_vendor_swaps(
         // Validate every declared chunk_export exists as an actual export
         // on the chunk; otherwise the per-symbol rewrite would silently
         // miss the binding.
-        for chunk_export in partial.symbols.keys() {
-            if !chunk_exports.contains(chunk_export) {
+        for (chunk_export, symbol) in &partial.symbols {
+            if !chunk_exports.contains(chunk_export) && symbol.local.is_none() {
                 bail!(
                     "apply_partial_vendor_swaps vendor entry {chunk_path}: chunk {chunk_name} does not export `{chunk_export}` (known exports: [{}])",
                     chunk_exports.iter().cloned().collect::<Vec<_>>().join(",")
@@ -1710,6 +1715,12 @@ pub fn apply_partial_vendor_swaps(
                 ),
                 _ => {}
             }
+            validate_optional_local_symbol(
+                symbol.local.as_deref(),
+                "apply_partial_vendor_swaps",
+                chunk_path,
+                chunk_export,
+            )?;
         }
 
         // Per-package validation: installed version + upstream subpath
@@ -1812,6 +1823,7 @@ pub fn apply_partial_vendor_swaps(
                     package: symbol.package.clone(),
                     kind: symbol.kind,
                     upstream_export: symbol.upstream_export.clone(),
+                    local: symbol.local.clone(),
                     references_rewritten: 0,
                 },
             );
@@ -1821,6 +1833,7 @@ pub fn apply_partial_vendor_swaps(
                     package: symbol.package.clone(),
                     kind: symbol.kind,
                     upstream_export: symbol.upstream_export.clone(),
+                    local: symbol.local.clone(),
                 },
             );
         }
@@ -1981,8 +1994,8 @@ pub fn apply_bundled_partial_vendor_swaps(
             })?;
         let chunk_exports = collect_exported_names(&entry_ast.module, false);
 
-        for chunk_export in bundled.symbols.keys() {
-            if !chunk_exports.contains(chunk_export) {
+        for (chunk_export, symbol) in &bundled.symbols {
+            if !chunk_exports.contains(chunk_export) && symbol.local.is_none() {
                 bail!(
                     "apply_bundled_partial_vendor_swaps vendor entry {chunk_path}: chunk {chunk_name} does not export `{chunk_export}` (known exports: [{}])",
                     chunk_exports.iter().cloned().collect::<Vec<_>>().join(",")
@@ -2008,6 +2021,12 @@ pub fn apply_bundled_partial_vendor_swaps(
                 ),
                 _ => {}
             }
+            validate_optional_local_symbol(
+                symbol.local.as_deref(),
+                "apply_bundled_partial_vendor_swaps",
+                chunk_path,
+                chunk_export,
+            )?;
         }
 
         let bundle_code = fs::read_to_string(&bundled.bundle.path)
@@ -2126,6 +2145,7 @@ pub fn apply_bundled_partial_vendor_swaps(
                     package: symbol.package.clone(),
                     kind: symbol.kind,
                     upstream_export: symbol.upstream_export.clone(),
+                    local: symbol.local.clone(),
                     references_rewritten: 0,
                 },
             );
@@ -2135,6 +2155,7 @@ pub fn apply_bundled_partial_vendor_swaps(
                     package: symbol.package.clone(),
                     kind: symbol.kind,
                     upstream_export: symbol.upstream_export.clone(),
+                    local: symbol.local.clone(),
                 },
             );
         }
@@ -2654,7 +2675,11 @@ fn seed_bundled_partial_swap_self_rewrites(
     let exported_locals = collect_local_idents_by_export_name(module);
     let mut used_idents = module_used_idents(module);
     for (chunk_export, target) in &chunk_mapping.symbols {
-        let Some(local_sym) = exported_locals.get(chunk_export) else {
+        let local_sym = target
+            .local
+            .as_ref()
+            .or_else(|| exported_locals.get(chunk_export));
+        let Some(local_sym) = local_sym else {
             continue;
         };
         let Some(package_coords) = chunk_mapping.packages.get(&target.package) else {
@@ -3005,6 +3030,23 @@ fn is_valid_identifier(name: &str) -> bool {
         return false;
     }
     chars.all(|ch| ch == '_' || ch == '$' || ch.is_ascii_alphanumeric())
+}
+
+fn validate_optional_local_symbol(
+    local: Option<&str>,
+    stage: &str,
+    chunk_path: &str,
+    chunk_export: &str,
+) -> Result<()> {
+    let Some(local) = local else {
+        return Ok(());
+    };
+    if !is_valid_identifier(local) {
+        bail!(
+            "{stage} vendor entry {chunk_path}: symbol `{chunk_export}` local `{local}` is not a valid JS identifier",
+        );
+    }
+    Ok(())
 }
 
 #[cfg(test)]

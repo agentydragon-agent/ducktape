@@ -9,7 +9,7 @@ skill_package(
         ),
         skill_mapping(
             srcs = [
-                "//devinfra/js/debundle/skills/shared:debundle_user_guide.md",
+                "//devinfra/js/debundle:guide.md",
                 "//devinfra/js/debundle/skills/shared:module_shape.md",
                 "//devinfra/js/debundle/skills/shared:workflow.md",
             ],
