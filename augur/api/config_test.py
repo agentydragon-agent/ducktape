@@ -81,38 +81,32 @@ def test_sampling_config_is_required() -> None:
 def test_property_source_declares_stable_public_asset_urls() -> None:
     source = PropertySourceConfig(
         properties_path="/tmp/properties.json",
-        asset_base_url="https://assets.example.com/augur/property-images",
         property_assets=(
-            PropertyAssetConfig(property_id="location_a_property", asset_id="location_a_hero"),
             PropertyAssetConfig(
-                property_id="location_b_property",
-                asset_id="location_b_hero",
-                image_url="https://cdn.example.com/augur/location-b-hero.jpg",
+                property_id="location_a_property", image_url="https://cdn.example.com/augur/location-a-hero.jpg"
+            ),
+            PropertyAssetConfig(
+                property_id="location_b_property", image_url="https://cdn.example.com/augur/location-b-hero.jpg"
             ),
         ),
     )
 
-    assert str(source.asset_base_url).rstrip("/") == "https://assets.example.com/augur/property-images"
-    assert source.property_assets[0].asset_id == "location_a_hero"
+    assert str(source.property_assets[0].image_url) == "https://cdn.example.com/augur/location-a-hero.jpg"
     assert str(source.property_assets[1].image_url) == "https://cdn.example.com/augur/location-b-hero.jpg"
 
 
-def test_property_asset_without_url_requires_asset_base_url() -> None:
-    with pytest.raises(ValidationError, match="asset_base_url"):
-        PropertySourceConfig(
-            properties_path="/tmp/properties.json",
-            property_assets=(PropertyAssetConfig(property_id="location_a_property", asset_id="location_a_hero"),),
-        )
+def test_property_asset_requires_image_url() -> None:
+    with pytest.raises(ValidationError, match="image_url"):
+        PropertyAssetConfig.model_validate({"property_id": "location_a_property"})
 
 
-def test_property_asset_ids_must_be_unique() -> None:
-    with pytest.raises(ValidationError, match="duplicate property asset ids"):
+def test_property_asset_property_ids_must_be_unique() -> None:
+    with pytest.raises(ValidationError, match="duplicate property asset property_ids"):
         PropertySourceConfig(
             properties_path="/tmp/properties.json",
-            asset_base_url="https://assets.example.com/augur/property-images",
             property_assets=(
-                PropertyAssetConfig(property_id="location_a_property", asset_id="shared_hero"),
-                PropertyAssetConfig(property_id="location_b_property", asset_id="shared_hero"),
+                PropertyAssetConfig(property_id="location_a_property", image_url="https://cdn.example.com/a.jpg"),
+                PropertyAssetConfig(property_id="location_a_property", image_url="https://cdn.example.com/b.jpg"),
             ),
         )
 
@@ -275,9 +269,11 @@ def test_relative_property_source_paths_anchor_against_yaml_dir(tmp_path) -> Non
                 property_source=PropertySourceConfig(
                     properties_path=Path("properties.json"),
                     asset_dir=Path("assets"),
-                    asset_base_url="https://assets.example.com/augur/property-images",
                     property_assets=(
-                        PropertyAssetConfig(property_id="location_a_property", asset_id="location_a_hero"),
+                        PropertyAssetConfig(
+                            property_id="location_a_property",
+                            image_url="https://cdn.example.com/augur/location-a-hero.jpg",
+                        ),
                     ),
                 )
             )
@@ -290,7 +286,8 @@ def test_relative_property_source_paths_anchor_against_yaml_dir(tmp_path) -> Non
     assert reloaded.property_source.properties_path == (tmp_path / "properties.json").resolve()
     assert reloaded.property_source.asset_dir == (tmp_path / "assets").resolve()
     assert (
-        str(reloaded.property_source.asset_base_url).rstrip("/") == "https://assets.example.com/augur/property-images"
+        str(reloaded.property_source.property_assets[0].image_url)
+        == "https://cdn.example.com/augur/location-a-hero.jpg"
     )
 
 

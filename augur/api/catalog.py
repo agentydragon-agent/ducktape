@@ -7,7 +7,6 @@ so the same generic code serves any deployment's agents."""
 from __future__ import annotations
 
 from collections import Counter
-from urllib.parse import quote
 
 import yaml
 from pydantic import TypeAdapter
@@ -82,13 +81,8 @@ def _validate_property_location(property_: Property, *, location_by_id: dict[str
         raise ValueError(f"property {property_.id!r} references unknown location {property_.location_id!r}")
 
 
-def _public_image_url(asset: PropertyAssetConfig, *, config: Config) -> str:
-    if asset.image_url is not None:
-        return str(asset.image_url)
-    asset_base_url = config.property_source.asset_base_url
-    if asset_base_url is None:
-        raise ValueError(f"property asset {asset.asset_id!r} has no image_url or asset_base_url")
-    return f"{str(asset_base_url).rstrip('/')}/{quote(asset.asset_id, safe='')}"
+def _public_image_url(asset: PropertyAssetConfig) -> str:
+    return str(asset.image_url)
 
 
 def _apply_property_assets(config: Config, properties: tuple[Property, ...]) -> tuple[Property, ...]:
@@ -103,7 +97,7 @@ def _apply_property_assets(config: Config, properties: tuple[Property, ...]) -> 
     if unknown_property_ids:
         raise ValueError(f"property_assets reference unknown property ids: {unknown_property_ids}")
 
-    image_url_by_property_id = {asset.property_id: _public_image_url(asset, config=config) for asset in property_assets}
+    image_url_by_property_id = {asset.property_id: _public_image_url(asset) for asset in property_assets}
     return tuple(
         property_.model_copy(update={"image_url": image_url_by_property_id.get(property_.id, property_.image_url)})
         for property_ in properties

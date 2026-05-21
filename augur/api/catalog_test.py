@@ -161,15 +161,12 @@ def _config(
     properties_path: Path,
     *,
     location_selection: tuple[str, ...] | None = None,
-    asset_base_url: str | None = None,
     property_assets: tuple[PropertyAssetConfig, ...] = (),
 ) -> Config:
     return Config(
         agents=(AgentDefinition(actor_id="agent_a", label="Agent A", role=ActorRole.PRIMARY_OWNER),),
         personal_finance=PersonalFinanceConfig(minimum_liquid_reserve_usd=0),
-        property_source=PropertySourceConfig(
-            properties_path=properties_path, asset_base_url=asset_base_url, property_assets=property_assets
-        ),
+        property_source=PropertySourceConfig(properties_path=properties_path, property_assets=property_assets),
         snapshot=FinanceSnapshot(
             as_of_date="2026-05-14",
             cash_usd=12_345,
@@ -288,21 +285,24 @@ def test_backend_rejects_scenario_property_location_mismatch(
         backend.run_scenario_set_for_request_body(request)
 
 
-def test_bootstrap_applies_public_property_asset_base_url(tmp_path: Path) -> None:
+def test_bootstrap_applies_public_property_asset_urls(tmp_path: Path) -> None:
     properties_path = tmp_path / "properties.json"
     _write_properties(properties_path)
 
     bootstrap = build_bootstrap_payload(
         _config(
             properties_path,
-            asset_base_url="https://assets.example.com/augur/property-images",
-            property_assets=(PropertyAssetConfig(property_id="location_a_property", asset_id="location_a_hero"),),
+            property_assets=(
+                PropertyAssetConfig(
+                    property_id="location_a_property", image_url="https://cdn.example.com/augur/location-a-hero.jpg"
+                ),
+            ),
         )
     )
 
     assert (
         _property_by_id(bootstrap, "location_a_property").image_url
-        == "https://assets.example.com/augur/property-images/location_a_hero"
+        == "https://cdn.example.com/augur/location-a-hero.jpg"
     )
     assert _property_by_id(bootstrap, "location_b_property").image_url is None
 
@@ -316,9 +316,7 @@ def test_bootstrap_allows_explicit_public_property_asset_url(tmp_path: Path) -> 
             properties_path,
             property_assets=(
                 PropertyAssetConfig(
-                    property_id="location_b_property",
-                    asset_id="location_b_hero",
-                    image_url="https://cdn.example.com/augur/location-b-hero.jpg",
+                    property_id="location_b_property", image_url="https://cdn.example.com/augur/location-b-hero.jpg"
                 ),
             ),
         )
@@ -399,9 +397,10 @@ def test_bootstrap_rejects_asset_for_unknown_property(tmp_path: Path) -> None:
         build_bootstrap_payload(
             _config(
                 properties_path,
-                asset_base_url="https://assets.example.com/augur/property-images",
                 property_assets=(
-                    PropertyAssetConfig(property_id="missing_property", asset_id="missing_property_hero"),
+                    PropertyAssetConfig(
+                        property_id="missing_property", image_url="https://cdn.example.com/augur/missing-hero.jpg"
+                    ),
                 ),
             )
         )

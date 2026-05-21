@@ -83,6 +83,11 @@ portfolio:
       value_series_id: sp500
 property_source:
   properties_path: properties.json
+  property_assets:
+    - property_id: location_a_property
+      image_url: https://placehold.co/800x600?text=Location+A
+    - property_id: location_b_property
+      image_url: https://placehold.co/800x600?text=Location+B
 reserve_forward_months: 12
 snapshot:
   as_of_date: "2026-05-14"

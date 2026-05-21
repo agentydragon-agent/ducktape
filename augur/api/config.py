@@ -58,15 +58,10 @@ class PersonalFinanceConfig(ApiModel):
 
 
 class PropertyAssetConfig(ApiModel):
-    """Deployment-owned public image address for one property.
-
-    `asset_id` is a stable identity, not a local file path. Deployments may map
-    it to any storage backend; the generic app only needs the resulting URL.
-    """
+    """Deployment-owned public image URL for one property."""
 
     property_id: str = Field(min_length=1)
-    asset_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
-    image_url: HttpUrl | None = None
+    image_url: HttpUrl
 
 
 class PropertySourceConfig(ApiModel):
@@ -74,13 +69,11 @@ class PropertySourceConfig(ApiModel):
 
     `asset_dir` is reserved for deployment-side composers that need local files.
     The generic app does not serve it. Frontend-visible images come from
-    `property_assets`: either an explicit `image_url` per asset, or
-    `asset_base_url/{asset_id}` when `image_url` is omitted.
+    `property_assets`, each carrying an absolute image URL.
     """
 
     properties_path: Path
     asset_dir: Path | None = None
-    asset_base_url: HttpUrl | None = None
     property_assets: tuple[PropertyAssetConfig, ...] = ()
 
     @model_validator(mode="after")
@@ -88,16 +81,6 @@ class PropertySourceConfig(ApiModel):
         duplicate_property_ids = _duplicates(asset.property_id for asset in self.property_assets)
         if duplicate_property_ids:
             raise ValueError(f"duplicate property asset property_ids: {duplicate_property_ids}")
-
-        duplicate_asset_ids = _duplicates(asset.asset_id for asset in self.property_assets)
-        if duplicate_asset_ids:
-            raise ValueError(f"duplicate property asset ids: {duplicate_asset_ids}")
-
-        assets_missing_url = [asset.asset_id for asset in self.property_assets if asset.image_url is None]
-        if assets_missing_url and self.asset_base_url is None:
-            raise ValueError(
-                f"property_assets without image_url require property_source.asset_base_url: {assets_missing_url}"
-            )
         return self
 
 
