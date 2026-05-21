@@ -246,29 +246,37 @@ let
   ]
   ++ cfg.extraAllowedReadDirs;
 
-  # Helper to generate WebFetch domain permissions
-  mkWebFetchDomainPerms = domains: map (domain: "WebFetch(domain:${domain})") domains;
-
-  # Domains where WebFetch is always allowed
-  allowedWebFetchDomains = [
-    "pypi.org"
-    "docs.python.org"
-    "json.schemastore.org"
-    "www.schemastore.org"
-    "code.claude.com" # Claude Code documentation
-    "app.buildbuddy.io" # BuildBuddy remote build UI
-    "remote.buildbuddy.io" # BuildBuddy remote execution/cache
-    "bcr.bazel.build" # Bazel Central Registry
-    "github.com"
-    "raw.githubusercontent.com"
-    "release-assets.githubusercontent.com"
-    "files.pythonhosted.org" # PyPI wheels
-    "docs.siderolabs.com" # Talos/Omni docs
-    "index.crates.io"
-    "static.crates.io"
-    "go.dev"
-  ]
-  ++ cfg.extraAllowedWebFetchDomains;
+  # WebFetch domain allowlist — commented out because domain-specific WebFetch rules
+  # trigger sandbox --unshare-net, which breaks Bazel's TCP loopback gRPC. See the
+  # WebFetch comment in permissions.allow for full explanation.
+  # mkWebFetchDomainPerms = domains: map (domain: "WebFetch(domain:${domain})") domains;
+  #
+  # allowedWebFetchDomains = [
+  #   "pypi.org"
+  #   "docs.python.org"
+  #   "code.claude.com"
+  #   "files.pythonhosted.org" # PyPI wheels
+  #   "docs.siderolabs.com" # Talos/Omni docs
+  #   "go.dev"
+  #
+  #   "json.schemastore.org"
+  #   "www.schemastore.org"
+  #
+  #   "github.com"
+  #   "raw.githubusercontent.com"
+  #   "release-assets.githubusercontent.com"
+  #
+  #   "app.buildbuddy.io" # BuildBuddy remote build UI
+  #   "remote.buildbuddy.io" # BuildBuddy remote execution/cache
+  #
+  #   "index.crates.io"
+  #   "static.crates.io"
+  #
+  #   "bcr.bazel.build"
+  #   "docs.bazel.build"
+  #   "bazel.build"
+  # ]
+  # ++ cfg.extraAllowedWebFetchDomains;
 
   # Extra working directories (full read/write access, extends beyond CWD)
   # /code contains all git repos organized by host (github.com, gitlab.com, etc.)
@@ -496,11 +504,21 @@ in
           "MultiEdit"
           "Search"
           "Task"
+          # Bare "WebFetch" allows all domains without restriction. Domain-specific
+          # WebFetch rules (e.g. WebFetch(domain:github.com)) are deliberately omitted:
+          # the sandbox adapter extracts domain filters into allowedDomains, which
+          # triggers --unshare-net in bubblewrap, blocking TCP loopback. Bazel's
+          # client-server protocol is gRPC over TCP loopback (port in
+          # <output_base>/server/command_port), so --unshare-net breaks all Bazel
+          # commands inside the sandbox. With no domain-specific rules, allowedDomains
+          # stays empty, --unshare-net is not applied, and loopback works — letting
+          # sandboxed commands reach the Bazel server. Tradeoff: no outbound domain
+          # filtering (sandbox has full network access).
           "WebFetch"
           "WebSearch"
         ]
         ++ allowedCommandPerms
-        ++ mkWebFetchDomainPerms allowedWebFetchDomains
+        # ++ mkWebFetchDomainPerms allowedWebFetchDomains
         ++ mkReadPerms alwaysAllowedReadDirs
         ++ inspectionPerms.permissions;
         deny = [ ];
