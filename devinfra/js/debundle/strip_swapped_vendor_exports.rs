@@ -440,7 +440,7 @@ fn sweep_unreachable_top_level(
     }
 
     for (i, packages) in swapped_reachability.iter().enumerate() {
-        if live[i] && !packages.is_empty() && !analyses[i].shareable_helper {
+        if live[i] && packages.len() == 1 && !analyses[i].shareable_helper {
             let declared = analyses[i]
                 .declared
                 .iter()
@@ -1081,6 +1081,21 @@ mod tests {
         symbols
     }
 
+    fn mk_symbols_with_packages(swapped: &[(&str, &str)]) -> BTreeMap<String, PartialSwapSymbol> {
+        let mut symbols = BTreeMap::new();
+        for (name, package) in swapped {
+            symbols.insert(
+                (*name).to_string(),
+                PartialSwapSymbol {
+                    package: (*package).to_string(),
+                    kind: PartialSwapKind::Named,
+                    upstream_export: Some((*name).to_string()),
+                },
+            );
+        }
+        symbols
+    }
+
     #[test]
     fn strips_named_export_specifier() {
         let mut module = parse("const a = 1;\nconst b = 2;\nexport { a as foo, b as bar };\n");
@@ -1137,6 +1152,28 @@ mod tests {
         assert!(
             !emitted.contains("oldImpl"),
             "swapped old implementation should be removed:\n{emitted}",
+        );
+    }
+
+    #[test]
+    fn allows_multi_package_shared_dependency_cell() {
+        let mut module = parse(
+            "const shared = {};\nconst oldA = () => shared;\nconst oldB = () => shared;\nconst keep = () => shared;\nexport { oldA as swappedA, oldB as swappedB, keep };\n",
+        );
+        strip_one_chunk(
+            &mut module,
+            &mk_symbols_with_packages(&[("swappedA", "pkg-a"), ("swappedB", "pkg-b")]),
+            "chunk.js",
+        )
+        .unwrap();
+        let emitted = emit(&module);
+        assert!(
+            emitted.contains("shared"),
+            "residual export should keep shared dependency cell:\n{emitted}",
+        );
+        assert!(
+            !emitted.contains("oldA") && !emitted.contains("oldB"),
+            "swapped package roots should be removed:\n{emitted}",
         );
     }
 
