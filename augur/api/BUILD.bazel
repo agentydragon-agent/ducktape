@@ -1,4 +1,7 @@
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -332,6 +335,57 @@ py_binary(
     name = "server",
     main_module = "augur.api.server",
     deps = [":server_lib"],
+)
+
+aspect_py_binary(
+    name = "server_image_binary",
+    srcs = ["server.py"],
+    main = "server.py",
+    deps = [
+        ":server_lib",
+        "@pypi//fastapi",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_image_layer(
+    name = "server_image_layers",
+    binary = ":server_image_binary",
+)
+
+oci_image(
+    name = "image",
+    base = "@debian_slim_linux_amd64",
+    cmd = [
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8080",
+        "--api-only",
+    ],
+    entrypoint = py_image_entrypoint("server_image_binary"),
+    env = py_image_env(
+        binary_name = "server_image_binary",
+        extra_env = {
+            "HOME": "/tmp",
+            "MPLCONFIGDIR": "/tmp/matplotlib",
+            "PYTHONSAFEPATH": "1",
+            "RULES_PYTHON_EXTRACT_ROOT": "/tmp/rules_python",
+            "XDG_CACHE_HOME": "/tmp/cache",
+        },
+    ),
+    exposed_ports = ["8080/tcp"],
+    labels = {
+        "org.opencontainers.image.source": "https://github.com/agentydragon/ducktape",
+        "org.opencontainers.image.title": "augur",
+    },
+    tars = [":server_image_layers"],
+)
+
+oci_load(
+    name = "image_load",
+    image = ":image",
+    repo_tags = ["augur:dev"],
 )
 
 py_library(
