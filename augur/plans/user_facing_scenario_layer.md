@@ -102,8 +102,9 @@ language endpoint while the current low-level `ScenarioSet` route remains as a
 compatibility/debug path:
 
 ```
-POST /api/product/projections/run  # product-facing request/response
-POST /api/scenario_sets/run        # low-level compatibility route for now
+POST /api/product/projections/metric_fan  # compact product distribution view
+POST /api/product/projections/rollout     # one full product rollout detail
+POST /api/scenario_sets/run               # low-level compatibility route for now
 ```
 
 Each spiral should add one product concept end-to-end:
@@ -121,15 +122,16 @@ where we define a full product protocol before any of it is exercised.
 ## Parallel Product Frontend Strategy
 
 Build a parallel frontend surface at the same time as the product endpoint:
-a separate page, tab, or dev-only panel that speaks `ProjectionRequest` and
-renders `ProjectionResponse`. The existing browser flow can remain on the
-low-level route until the product flow covers enough behavior to replace it.
+a separate page, tab, or dev-only panel that speaks `ScenarioKey` plus view
+requests. The existing browser flow can remain on the low-level route until the
+product flow covers enough behavior to replace it.
 
 The product frontend should be intentionally thin:
 
 - expose only product-owned knobs
 - use generated product wire types
-- call `/api/product/projections/run`
+- call `/api/product/projections/metric_fan` for aggregate charts
+- call `/api/product/projections/rollout` only for single-rollout detail
 - render the product read model, not simulator internals
 - link to trace/detail views only when debugging needs them
 
@@ -148,10 +150,10 @@ simulation, product response model, and tests.
 
 Current status: Stage 0 and the first Stage 1 cash-runway slice are implemented
 in the current tree. The `/product` frontend calls
-`/api/product/projections/run` through generated Zod types, the backend composes
-one cash-spend request into `augur/sim`, and the product page renders a
-selectable metric fan from per-rollout product outputs. The existing
-`ScenarioSet` route and frontend remain the compatibility/debug path.
+cache-backed product routes through generated Zod types, the backend composes a
+cash-spend `ScenarioKey` into `augur/sim`, and the product page renders a
+selectable server-side metric fan without downloading every rollout table. The
+existing `ScenarioSet` route and frontend remain the compatibility/debug path.
 
 ### Stage 0: Product Sandbox
 
@@ -159,7 +161,7 @@ Create the parallel product page/tab/dev panel.
 
 The frontend can:
 
-- call `/api/product/projections/run`
+- call the product metric-fan route
 - use generated product wire types
 - show request/response debug panels
 - render an empty or placeholder chart shell
@@ -290,20 +292,25 @@ healthy.
 
 ## Current Stage 1 Wire Shape
 
-The first product endpoint is intentionally narrower than the eventual product
-scenario protocol. It runs one cash-spend projection per request, with explicit
-fields for exogenous model id, horizon months, rollout seeds, monthly spend, and
-spend index. The frontend can issue multiple requests if it wants to compare
-cases.
+The first product protocol is intentionally narrower than the eventual product
+scenario protocol. `ScenarioKey` contains the deterministic product scenario
+parts: exogenous model id, horizon months, monthly spend, and spend index.
+Metric-fan and rollout-detail requests add the seed set or single seed.
 
-The response returns the sampled exogenous model id, horizon, diagnostics, and a
-list of per-rollout outputs. Each rollout carries its seed, failed/pass status,
-monthly metric table, and terminal metrics for cash, net worth, drawdown,
-shortfall, and optional failure month.
+The metric-fan response returns sampled exogenous model id, diagnostics, failed
+rollout count, a requested-percentile monthly metric table, and requested
+terminal percentiles. It does not echo request fields like horizon months and
+does not include per-rollout monthly tables. The rollout-detail response returns
+one full rollout table for a requested seed.
 
 This shape deliberately omits request IDs, labels, scenario IDs, selected
 rollout state, colors, disabled scenarios, public securities, and gains. Those
 are either frontend state, later product concepts, or not yet supported.
+
+The server owns an in-memory bounded LRU cache keyed by `(ScenarioKey, seed)`.
+Requests are deterministic without public run IDs: if a rollout is missing from
+cache, the server transparently samples and simulates it from the scenario key
+and seed.
 
 Deployment/config owns rollout defaults and limits. The bootstrap payload
 publishes `default_rollout_samples`, `max_rollout_samples`, and
@@ -328,7 +335,7 @@ type should make that explicit.
 
 The product translator takes:
 
-- `ProjectionRequest`
+- `ScenarioKey`
 - private `Config`
 - property/location catalog
 - portfolio/opening-position config
@@ -466,14 +473,15 @@ Completed:
 
 - Defined the first product request/response Pydantic types in `augur/product`
   and exported them through the schema/Zod pipeline.
-- Added `/api/product/projections/run` for a single Spiral 1 cash-spend
-  projection with explicit rollout seeds.
+- Added cache-backed product metric-fan and rollout-detail routes for Spiral 1
+  cash-spend projections with explicit rollout seeds.
 - Composed the product request into a low-level sim scenario using configured
   primary cash and recurring spend, including the supported path-indexed
   inflation spend shape.
 - Added a parallel `/product` frontend surface in the shared shell. It calls the
-  product route through the shared client, validates request/response payloads
-  with generated Zod types, and renders a selectable metric fan.
+  product routes through the shared client, validates request/response payloads
+  with generated Zod types, and renders a selectable metric fan without
+  downloading full rollout tables.
 - Added focused coverage through the product route and browser golden:
   `//augur/api:server_test` and `//augur:product_visual_golden_test`.
 
@@ -490,7 +498,8 @@ Remaining:
 4. Grow the product protocol through the spiral roadmap, next with liquid
    portfolio runway.
 5. Move the main frontend request construction from low-level `ScenarioSet` to
-   `ProjectionRequest` once house-purchase parity is good enough.
+   product `ScenarioKey` plus view requests once house-purchase parity is good
+   enough.
 6. Move response materialization/read-model code into the product layer. Keep
    `SimulationRun` as the source, but stop exposing simulator-shaped details by
    default.

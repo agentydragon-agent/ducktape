@@ -10,18 +10,20 @@ from pydantic import ValidationError
 
 from augur.api.casing import plain_json
 from augur.api.scenario_set import ScenarioSet
-from augur.product.projection import ProjectionRequest
+from augur.product.projection import MetricFanRequest, RolloutRequest
 
 PayloadProvider = Callable[[], Any]
 ScenarioSetHandler = Callable[[ScenarioSet], Any]
-ProductProjectionHandler = Callable[[ProjectionRequest], Any]
+MetricFanHandler = Callable[[MetricFanRequest], Any]
+RolloutHandler = Callable[[RolloutRequest], Any]
 
 
 def create_augur_backend_app(
     *,
     title: str,
     bootstrap: PayloadProvider,
-    product_projection_run: ProductProjectionHandler,
+    product_metric_fan: MetricFanHandler,
+    product_rollout: RolloutHandler,
     scenario_set_run: ScenarioSetHandler | None = None,
 ) -> FastAPI:
     app = FastAPI(title=title)
@@ -48,9 +50,13 @@ def create_augur_backend_app(
         def run_scenario_set(scenario_set: ScenarioSet) -> JSONResponse:
             return payload(scenario_set_run(scenario_set))
 
-    @app.post("/api/product/projections/run")
-    def run_product_projection(request: ProjectionRequest) -> JSONResponse:
-        return payload(product_projection_run(request))
+    @app.post("/api/product/projections/metric_fan")
+    def product_projection_metric_fan(request: MetricFanRequest) -> JSONResponse:
+        return payload(product_metric_fan(request))
+
+    @app.post("/api/product/projections/rollout")
+    def product_projection_rollout(request: RolloutRequest) -> JSONResponse:
+        return payload(product_rollout(request))
 
     @app.api_route("/api/{full_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
     def unknown_api(full_path: str) -> JSONResponse:

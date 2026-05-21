@@ -15,8 +15,8 @@ from augur.api.response import scenario_set_response_from_runs
 from augur.api.scenario_set import Scenario, ScenarioSet, ScenarioSetRunResponse
 from augur.api.scenario_tax_defaults import scenario_with_location_tax_defaults
 from augur.model.exogenous import ExogenousPathModel
-from augur.product.projection import ProjectionRequest, ProjectionResponse
-from augur.product.projection_service import run_product_projection
+from augur.product.projection import MetricFanRequest, MetricFanResponse, RolloutRequest, RolloutResponse
+from augur.product.projection_service import ProductProjectionService
 from augur.sim.external_series import materialize_sampled_exogenous
 from augur.sim.simulate import simulate_with_external_series
 
@@ -38,6 +38,9 @@ class Backend:
         self._location_by_id = {location.id: location for location in self._bootstrap.locations}
         self.default_knobs = self._bootstrap.default_knobs
         self.default_property_id = self._bootstrap.default_property_id
+        self._product_projection_service = ProductProjectionService(
+            augur_config=augur_config, exogenous_model=runtime_config.exogenous_model
+        )
 
     def bootstrap_payload(self):
         return self._bootstrap
@@ -50,14 +53,15 @@ class Backend:
         scenario_set = self._scenario_set_with_catalog_defaults(scenario_set)
         return self._run_scenario_set(scenario_set)
 
-    def run_product_projection(self, request: ProjectionRequest) -> ProjectionResponse:
+    def product_metric_fan(self, request: MetricFanRequest) -> MetricFanResponse:
         if request.rollout_count > self._augur_config.max_rollout_samples:
             raise ValueError(
                 f"rollout count {request.rollout_count} exceeds max {self._augur_config.max_rollout_samples}"
             )
-        return run_product_projection(
-            request, augur_config=self._augur_config, exogenous_model=self.runtime_config.exogenous_model
-        )
+        return self._product_projection_service.metric_fan(request)
+
+    def product_rollout(self, request: RolloutRequest) -> RolloutResponse:
+        return self._product_projection_service.rollout(request)
 
     def _run_scenario_set(self, scenario_set: ScenarioSet) -> ScenarioSetRunResponse:
         exogenous_model = self.runtime_config.exogenous_model

@@ -59,9 +59,9 @@ evaluation, or response semantics.
 
 - [ ] Add API serialization, compact scenario metadata, and a frontend
       adapter over `ProjectionRun`. Prefer a clean `model -> sim -> api`
-      contract over matching legacy compatibility-table names. The first native
-      product route now covers the cash-spend runway directly; this item remains
-      for broader scenario/read-model replacement.
+      contract over matching legacy compatibility-table names. Keep this scoped
+      to the broader scenario/read-model replacement rather than the lightweight
+      product-route cache.
 - [ ] Expand the backend sim smoke harness beyond the current smoke slices.
       The harness proves current `ScenarioSet` requests can translate into sim,
       sample model-owned bundles, complete `augur/sim`, and return graphable

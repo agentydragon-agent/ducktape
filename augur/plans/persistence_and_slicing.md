@@ -29,6 +29,12 @@ remaining frictions:
 
 Stateless-snowglobe-style cache, keyed by content.
 
+Current product-route foothold: the cash-runway product API already uses an
+in-process bounded LRU keyed by `(ScenarioKey, seed)`, with separate metric-fan
+and rollout-detail operations. That is intentionally not a durable run cache and
+does not introduce run IDs; it proves the payload-slicing shape for product
+views while keeping missing rollouts deterministic by seed.
+
 ```
 RunCacheKey = (
     scenario_set_id,

@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Button, NativeSelect } from "@mantine/core";
 
-import { fetchAugurBootstrap, runProductProjection } from "./client.js";
-import { fanChartAxis, fanChartYearTicks, fmtAxisMetricValue, percentile } from "./lib/chart.js";
+import { fetchAugurBootstrap, fetchProductMetricFan } from "./client.js";
+import { fanChartAxis, fanChartYearTicks, fmtAxisMetricValue } from "./lib/chart.js";
 import { rowsFromCamelColumnar } from "./lib/columnar.js";
 import { NumberField } from "./lib/controls.jsx";
 import { fmtNumber, fmtUsd } from "./lib/format.js";
@@ -16,11 +16,13 @@ const DEFAULT_PRODUCT_INPUT_BASE = {
   spendIndex: "inflation",
 };
 
+const FAN_PERCENTILES = [5, 25, 50, 75, 95];
+
 const METRIC_OPTIONS = [
-  { value: "netWorthUsd", label: "Net worth" },
-  { value: "cashUsd", label: "Cash balance" },
-  { value: "drawdownUsd", label: "Cash drawdown" },
-  { value: "shortfallUsd", label: "Cash shortfall" },
+  { value: "net_worth_usd", chartValue: "netWorthUsd", label: "Net worth" },
+  { value: "cash_usd", chartValue: "cashUsd", label: "Cash balance" },
+  { value: "drawdown_usd", chartValue: "drawdownUsd", label: "Cash drawdown" },
+  { value: "shortfall_usd", chartValue: "shortfallUsd", label: "Cash shortfall" },
 ];
 
 const METRIC_BY_VALUE = new Map(METRIC_OPTIONS.map((metric) => [metric.value, metric]));
@@ -39,50 +41,73 @@ function productInputDefaults(bootstrap) {
   };
 }
 
-function productRequest(input, bootstrap) {
-  const rolloutCount = clampInteger(input.rolloutCount, 1, bootstrap.maxRolloutSamples);
-  const firstSeed = clampInteger(input.firstSeed, 0, 2 ** 31 - 1);
+function productScenario(input, bootstrap) {
   return {
     exogenousModelId: "current_exogenous_model",
     horizonMonths: clampInteger(input.horizonMonths, 1, bootstrap.maxHorizonMonths),
-    rolloutSeeds: Array.from({ length: rolloutCount }, (_, index) => firstSeed + index),
     monthlySpendUsd: Math.max(1, Number(input.monthlySpendUsd) || 1),
     spendIndex: input.spendIndex === "none" ? "none" : "inflation",
   };
 }
 
-function metricFanRows(result, metricValue) {
+function productRolloutSeeds(input, bootstrap) {
+  const rolloutCount = clampInteger(input.rolloutCount, 1, bootstrap.maxRolloutSamples);
+  const firstSeed = clampInteger(input.firstSeed, 0, 2 ** 31 - 1);
+  return Array.from({ length: rolloutCount }, (_, index) => firstSeed + index);
+}
+
+function productMetricFanRequest(input, bootstrap, metric) {
+  return {
+    scenario: productScenario(input, bootstrap),
+    rolloutSeeds: productRolloutSeeds(input, bootstrap),
+    metric: metric.value,
+    percentiles: FAN_PERCENTILES,
+  };
+}
+
+function metricFanRows(result) {
+  if (!result?.monthlyMetricFan) return [];
   const byMonth = new Map();
-  for (const rollout of result?.rollouts ?? []) {
-    for (const row of rowsFromCamelColumnar(rollout.monthlyMetrics)) {
-      const monthIndex = Number(row.monthIndex);
-      const metricUsd = Number(row[metricValue]);
-      if (!Number.isFinite(monthIndex) || !Number.isFinite(metricUsd)) continue;
-      if (!byMonth.has(monthIndex)) byMonth.set(monthIndex, []);
-      byMonth.get(monthIndex).push(metricUsd);
-    }
+  for (const row of rowsFromCamelColumnar(result?.monthlyMetricFan)) {
+    const monthIndex = Number(row.monthIndex);
+    const percentile = Number(row.percentile);
+    const metricValue = Number(row.value);
+    if (!Number.isFinite(monthIndex) || !Number.isFinite(percentile) || !Number.isFinite(metricValue)) continue;
+    if (!byMonth.has(monthIndex)) byMonth.set(monthIndex, new Map());
+    byMonth.get(monthIndex).set(percentile, metricValue);
   }
   return [...byMonth.entries()]
     .sort(([left], [right]) => left - right)
-    .map(([monthIndex, values]) => {
-      const sorted = values.slice().sort((left, right) => left - right);
-      return {
-        monthIndex,
-        year: monthIndex / 12,
-        p05: percentile(sorted, 5),
-        p25: percentile(sorted, 25),
-        p50: percentile(sorted, 50),
-        p75: percentile(sorted, 75),
-        p95: percentile(sorted, 95),
-      };
-    });
+    .map(([monthIndex, values]) => ({
+      monthIndex,
+      year: monthIndex / 12,
+      values,
+    }));
 }
 
-function MetricFanChart({ rows, metric }) {
+function terminalPercentileValue(result, percentile) {
+  if (!result?.terminalMetricPercentiles) return null;
+  for (const row of rowsFromCamelColumnar(result?.terminalMetricPercentiles)) {
+    if (Number(row.percentile) === percentile) {
+      return Number(row.value);
+    }
+  }
+  return null;
+}
+
+function MetricFanChart({ rows, metric, percentiles }) {
   if (rows.length === 0) return null;
+  const sortedPercentiles = percentiles.slice().sort((left, right) => left - right);
+  const outerLow = sortedPercentiles[0];
+  const outerHigh = sortedPercentiles[sortedPercentiles.length - 1];
+  const innerLow = sortedPercentiles[Math.min(1, sortedPercentiles.length - 1)];
+  const innerHigh = sortedPercentiles[Math.max(0, sortedPercentiles.length - 2)];
+  const median = sortedPercentiles.includes(50) ? 50 : sortedPercentiles[Math.floor(sortedPercentiles.length / 2)];
   const maxYear = Math.max(...rows.map((row) => row.year), 1);
-  const values = rows.flatMap((row) => [row.p05, row.p25, row.p50, row.p75, row.p95]).filter(Number.isFinite);
-  const yAxis = fanChartAxis(metric.value, values);
+  const values = rows
+    .flatMap((row) => sortedPercentiles.map((percentile) => row.values.get(percentile)))
+    .filter(Number.isFinite);
+  const yAxis = fanChartAxis(metric.chartValue, values);
   const width = 760;
   const height = 300;
   const left = 82;
@@ -93,19 +118,20 @@ function MetricFanChart({ rows, metric }) {
   const plotHeight = height - top - bottom;
   const x = (row) => left + (row.year / maxYear) * plotWidth;
   const y = (value) => top + (1 - (value - yAxis.min) / yAxis.range) * plotHeight;
-  const line = (key) => rows.map((row) => `${x(row)},${y(row[key])}`).join(" ");
-  const band = (upperKey, lowerKey) => {
-    const upper = rows.map((row) => `${x(row)},${y(row[upperKey])}`).join(" ");
+  const valueAt = (row, percentile) => row.values.get(percentile);
+  const line = (percentile) => rows.map((row) => `${x(row)},${y(valueAt(row, percentile))}`).join(" ");
+  const band = (upperPercentile, lowerPercentile) => {
+    const upper = rows.map((row) => `${x(row)},${y(valueAt(row, upperPercentile))}`).join(" ");
     const lower = rows
       .slice()
       .reverse()
-      .map((row) => `${x(row)},${y(row[lowerKey])}`)
+      .map((row) => `${x(row)},${y(valueAt(row, lowerPercentile))}`)
       .join(" ");
     return `${upper} ${lower}`;
   };
 
   return (
-    <div className="overflow-x-auto p-4" data-product-fan-chart={metric.value}>
+    <div className="overflow-x-auto p-4" data-product-fan-chart={metric.chartValue}>
       <svg
         role="img"
         aria-label={`${metric.label} probability fan chart`}
@@ -119,7 +145,7 @@ function MetricFanChart({ rows, metric }) {
             <g key={value}>
               <line x1={left} x2={left + plotWidth} y1={yPos} y2={yPos} stroke="var(--augur-chart-grid)" />
               <text x={left - 8} y={yPos + 4} textAnchor="end" className="fill-slate-500 text-[11px] augur-tabular">
-                {fmtAxisMetricValue(metric.value, value)}
+                {fmtAxisMetricValue(metric.chartValue, value)}
               </text>
             </g>
           );
@@ -135,11 +161,11 @@ function MetricFanChart({ rows, metric }) {
             </g>
           );
         })}
-        <polygon points={band("p95", "p05")} fill="#2563eb" opacity="0.14" />
-        <polygon points={band("p75", "p25")} fill="#2563eb" opacity="0.22" />
-        <polyline points={line("p50")} fill="none" stroke="#1d4ed8" strokeWidth="2.75" />
-        <polyline points={line("p05")} fill="none" stroke="#1d4ed8" strokeWidth="1" opacity="0.45" />
-        <polyline points={line("p95")} fill="none" stroke="#1d4ed8" strokeWidth="1" opacity="0.45" />
+        <polygon points={band(outerHigh, outerLow)} fill="#2563eb" opacity="0.14" />
+        <polygon points={band(innerHigh, innerLow)} fill="#2563eb" opacity="0.22" />
+        <polyline points={line(median)} fill="none" stroke="#1d4ed8" strokeWidth="2.75" />
+        <polyline points={line(outerLow)} fill="none" stroke="#1d4ed8" strokeWidth="1" opacity="0.45" />
+        <polyline points={line(outerHigh)} fill="none" stroke="#1d4ed8" strokeWidth="1" opacity="0.45" />
       </svg>
     </div>
   );
@@ -165,20 +191,24 @@ function ProductProjectionLoading({ error }) {
 
 function ProductProjectionWorkspace({ bootstrap }) {
   const [input, setInput] = useState(() => productInputDefaults(bootstrap));
-  const [selectedMetricValue, setSelectedMetricValue] = useState("netWorthUsd");
+  const [selectedMetricValue, setSelectedMetricValue] = useState("net_worth_usd");
   const [result, setResult] = useState(null);
   const [runError, setRunError] = useState(null);
-  const request = useMemo(() => productRequest(input, bootstrap), [input, bootstrap]);
   const selectedMetric = METRIC_BY_VALUE.get(selectedMetricValue) ?? METRIC_OPTIONS[0];
-  const fanRows = useMemo(() => metricFanRows(result, selectedMetric.value), [result, selectedMetric]);
-  const failedCount = (result?.rollouts ?? []).filter((rollout) => rollout.failed).length;
-  const terminalP50 = fanRows.at(-1)?.p50 ?? null;
+  const request = useMemo(
+    () => productMetricFanRequest(input, bootstrap, selectedMetric),
+    [input, bootstrap, selectedMetric]
+  );
+  const fanRows = useMemo(() => metricFanRows(result), [result]);
+  const failedCount = result?.failedCount ?? null;
+  const terminalP50 = terminalPercentileValue(result, 50);
   const updateInput = (patch) => setInput((previous) => ({ ...previous, ...patch }));
 
   useEffect(() => {
     const controller = new AbortController();
+    setResult(null);
     const handle = setTimeout(() => {
-      runProductProjection(request, { signal: controller.signal })
+      fetchProductMetricFan(request, { signal: controller.signal })
         .then((payload) => {
           setResult(payload);
           setRunError(null);
@@ -284,13 +314,13 @@ function ProductProjectionWorkspace({ bootstrap }) {
               <div className="augur-card p-4">
                 <div className="augur-eyebrow">Failed rollouts</div>
                 <div className="mt-2 text-2xl font-semibold augur-tabular">
-                  {fmtNumber(failedCount)} / {fmtNumber(result?.rollouts?.length ?? request.rolloutSeeds.length)}
+                  {fmtNumber(failedCount)} / {fmtNumber(request.rolloutSeeds.length)}
                 </div>
               </div>
               <div className="augur-card p-4">
                 <div className="augur-eyebrow">Exogenous model</div>
                 <div className="mt-2 text-sm font-semibold augur-tabular">
-                  {result?.exogenousModelId ?? request.exogenousModelId}
+                  {result?.exogenousModelId ?? request.scenario.exogenousModelId}
                 </div>
               </div>
             </div>
@@ -311,7 +341,7 @@ function ProductProjectionWorkspace({ bootstrap }) {
                 />
               </div>
               {fanRows.length > 0 ? (
-                <MetricFanChart rows={fanRows} metric={selectedMetric} />
+                <MetricFanChart rows={fanRows} metric={selectedMetric} percentiles={request.percentiles} />
               ) : (
                 <div className="flex min-h-[22rem] items-center justify-center text-sm augur-muted">Running...</div>
               )}

@@ -126,14 +126,13 @@ generic backlog rather than a second ordered roadmap.
       backend test (`test_scenario_set_response_serializes_discriminated_effects`)
       reads `market_observations` via the response and would need to opt in.
 - [ ] **Server-side result persistence + slicing.** Sketch in
-      `augur/plans/persistence_and_slicing.md`. Cache `SimulationRun` /
-      `ProjectionRun` data
-      keyed by `(seed, scenario_input_id, sampling_request_hash)` (all already
-      content-addressed); expose `/api/runs/<id>/monthly_columns`,
+      `augur/plans/persistence_and_slicing.md`. Build the durable
+      scenario-set/run slicing layer beyond the lightweight product-route
+      rollout cache: cache `SimulationRun` / `ProjectionRun` data keyed by
+      content-addressed scenario and sampling inputs; expose
+      `/api/runs/<id>/monthly_columns`,
       `/api/runs/<id>/rollout/<i>/series/<metric>`, etc. so the frontend can
-      fetch slices on demand instead of getting everything every time. This
-      makes "I changed one knob, re-simulate" essentially free and lets the
-      debug streams ship without rebuilding the whole response on each call.
+      fetch slices on demand instead of getting everything every time.
 
 ## Step 7 Scope
 

@@ -2,8 +2,10 @@ import { camelizeObjectKeys, decamelizeObjectKeys } from "./lib/casing.js";
 import { getJson, postJson } from "./lib/backend_client.js";
 import {
   zBootstrapResponse,
-  zProjectionRequest,
-  zProjectionResponse,
+  zMetricFanRequest,
+  zMetricFanResponse,
+  zRolloutRequest,
+  zRolloutResponse,
   zScenarioSetInput,
   zScenarioSetRunResponse,
 } from "./lib/api/schema.zod.mjs";
@@ -17,7 +19,16 @@ export async function runScenarioSet(scenarioSet, { signal } = {}) {
   return camelizeObjectKeys(zScenarioSetRunResponse.parse(await postJson("/api/scenario_sets/run", request, signal)));
 }
 
-export async function runProductProjection(projectionRequest, { signal } = {}) {
-  const request = zProjectionRequest.parse(decamelizeObjectKeys(projectionRequest));
-  return camelizeObjectKeys(zProjectionResponse.parse(await postJson("/api/product/projections/run", request, signal)));
+export async function fetchProductMetricFan(metricFanRequest, { signal } = {}) {
+  const request = zMetricFanRequest.parse(decamelizeObjectKeys(metricFanRequest));
+  return camelizeObjectKeys(
+    zMetricFanResponse.parse(await postJson("/api/product/projections/metric_fan", request, signal))
+  );
+}
+
+export async function fetchProductRollout(rolloutRequest, { signal } = {}) {
+  const request = zRolloutRequest.parse(decamelizeObjectKeys(rolloutRequest));
+  return camelizeObjectKeys(
+    zRolloutResponse.parse(await postJson("/api/product/projections/rollout", request, signal))
+  );
 }

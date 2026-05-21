@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -26,5 +26,20 @@ py_library(
         "//augur/sim:scenario",
         "//augur/sim:simulate",
         "@pypi//polars",
+    ],
+)
+
+py_test(
+    name = "projection_service_test",
+    srcs = ["projection_service_test.py"],
+    data = ["//augur/api:public_fixture_config"],
+    deps = [
+        ":projection_py",
+        ":projection_service_py",
+        "//augur/api:config_py",
+        "//augur/model:exogenous_py",
+        "//augur/model:simple_exogenous_py",
+        "//util/bazel:runfiles",
+        "@pypi//pytest_bazel",
     ],
 )

@@ -199,35 +199,66 @@ def test_backend_server_runs_browser_shaped_property_request(server_url: str) ->
     assert 480_000 <= _max(columns["net_worth_usd"]) <= 650_000
 
 
-def test_backend_server_runs_product_cash_spend_projection(server_url: str) -> None:
-    projection = _post_json(
+def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollout_detail(server_url: str) -> None:
+    scenario = {
+        "exogenous_model_id": "current_exogenous_model",
+        "horizon_months": 3,
+        "monthly_spend_usd": 1000.0,
+        "spend_index": "none",
+    }
+    fan = _post_json(
         server_url,
-        "/api/product/projections/run",
-        {
-            "exogenous_model_id": "current_exogenous_model",
-            "horizon_months": 3,
-            "rollout_seeds": [7, 8],
-            "monthly_spend_usd": 1000.0,
-            "spend_index": "none",
-        },
+        "/api/product/projections/metric_fan",
+        {"scenario": scenario, "rollout_seeds": [7, 8], "metric": "cash_usd", "percentiles": [0, 50, 100]},
     )
 
-    assert projection["exogenous_model_id"] == "simple_exogenous_model"
-    assert projection["horizon_months"] == 3
-    assert [rollout["seed"] for rollout in projection["rollouts"]] == [7, 8]
-    for rollout in projection["rollouts"]:
-        assert rollout["failed"] is False
-        assert rollout["monthly_metrics"]["row_count"] == 4
-        columns = rollout["monthly_metrics"]["columns"]
-        assert columns["month_index"] == [0, 1, 2, 3]
-        assert columns["cash_usd"] == [50_000.0, 49_000.0, 48_000.0, 47_000.0]
-        assert columns["drawdown_usd"] == [0.0, 1_000.0, 2_000.0, 3_000.0]
-        assert rollout["terminal_metrics"] == {
-            "cash_usd": 47_000.0,
-            "net_worth_usd": 47_000.0,
-            "drawdown_usd": 3_000.0,
-            "shortfall_usd": 0.0,
-        }
+    assert fan["exogenous_model_id"] == "simple_exogenous_model"
+    assert "horizon_months" not in fan
+    assert fan["metric"] == "cash_usd"
+    assert fan["failed_count"] == 0
+    assert "rollouts" not in fan
+    assert fan["monthly_metric_fan"] == {
+        "row_count": 12,
+        "columns": {
+            "month_index": [0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3],
+            "percentile": [0.0, 50.0, 100.0] * 4,
+            "value": [
+                50_000.0,
+                50_000.0,
+                50_000.0,
+                49_000.0,
+                49_000.0,
+                49_000.0,
+                48_000.0,
+                48_000.0,
+                48_000.0,
+                47_000.0,
+                47_000.0,
+                47_000.0,
+            ],
+        },
+    }
+    assert fan["terminal_metric_percentiles"] == {
+        "row_count": 3,
+        "columns": {"percentile": [0.0, 50.0, 100.0], "value": [47_000.0, 47_000.0, 47_000.0]},
+    }
+
+    detail = _post_json(server_url, "/api/product/projections/rollout", {"scenario": scenario, "seed": 7})
+
+    assert detail["exogenous_model_id"] == "simple_exogenous_model"
+    assert "horizon_months" not in detail
+    assert detail["rollout"]["seed"] == 7
+    assert detail["rollout"]["failed"] is False
+    assert detail["rollout"]["monthly_metrics"]["row_count"] == 4
+    columns = detail["rollout"]["monthly_metrics"]["columns"]
+    assert columns["month_index"] == [0, 1, 2, 3]
+    assert columns["cash_usd"] == [50_000.0, 49_000.0, 48_000.0, 47_000.0]
+    assert detail["rollout"]["terminal_metrics"] == {
+        "cash_usd": 47_000.0,
+        "net_worth_usd": 47_000.0,
+        "drawdown_usd": 3_000.0,
+        "shortfall_usd": 0.0,
+    }
 
 
 if __name__ == "__main__":

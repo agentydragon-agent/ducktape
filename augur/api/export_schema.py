@@ -10,7 +10,7 @@ from fastapi.responses import PlainTextResponse
 from augur.api.bootstrap import BootstrapResponse
 from augur.api.browser_state import BrowserScenarioSetInput, BrowserScenarioSetInputOverrides
 from augur.api.scenario_set import ScenarioSet, ScenarioSetRunResponse
-from augur.product.projection import ProjectionRequest, ProjectionResponse
+from augur.product.projection import MetricFanRequest, MetricFanResponse, RolloutRequest, RolloutResponse
 
 
 def create_schema_app() -> FastAPI:
@@ -24,8 +24,12 @@ def create_schema_app() -> FastAPI:
     def run_scenario_set(scenario_set: ScenarioSet) -> ScenarioSetRunResponse:
         raise RuntimeError("schema-only route")
 
-    @app.post("/api/product/projections/run", response_model=ProjectionResponse)
-    def run_product_projection(request: ProjectionRequest) -> ProjectionResponse:
+    @app.post("/api/product/projections/metric_fan", response_model=MetricFanResponse)
+    def product_projection_metric_fan(request: MetricFanRequest) -> MetricFanResponse:
+        raise RuntimeError("schema-only route")
+
+    @app.post("/api/product/projections/rollout", response_model=RolloutResponse)
+    def product_projection_rollout(request: RolloutRequest) -> RolloutResponse:
         raise RuntimeError("schema-only route")
 
     # Browser-internal nested state shape. Not a real server endpoint; declared

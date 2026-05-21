@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 
 from augur.api.http_app import create_augur_backend_app
 from augur.api.scenario_set import ScenarioSet
-from augur.product.projection import ProjectionRequest
+from augur.product.projection import MetricFanRequest, RolloutRequest
 
 
 def _scenario_set_body() -> dict:
@@ -23,23 +23,30 @@ def _scenario_set_body() -> dict:
     }
 
 
-def _product_projection_run(request: ProjectionRequest) -> dict:
+def _metric_fan(request: MetricFanRequest) -> dict:
     return {
-        "exogenous_model_id": request.exogenous_model_id,
-        "horizon_months": request.horizon_months,
-        "rollouts": [
-            {
-                "seed": int(request.rollout_seeds[0]),
-                "failed": False,
-                "monthly_metrics": {"row_count": 1, "columns": {"month_index": [0], "cash_usd": [50000.0]}},
-                "terminal_metrics": {
-                    "cash_usd": 50000.0,
-                    "net_worth_usd": 50000.0,
-                    "drawdown_usd": 0.0,
-                    "shortfall_usd": 0.0,
-                },
-            }
-        ],
+        "exogenous_model_id": request.scenario.exogenous_model_id,
+        "metric": request.metric,
+        "monthly_metric_fan": {"row_count": 1, "columns": {"month_index": [0], "percentile": [50.0], "value": [1.0]}},
+        "terminal_metric_percentiles": {"row_count": 1, "columns": {"percentile": [50.0], "value": [1.0]}},
+        "failed_count": 0,
+    }
+
+
+def _rollout(request: RolloutRequest) -> dict:
+    return {
+        "exogenous_model_id": request.scenario.exogenous_model_id,
+        "rollout": {
+            "seed": int(request.seed),
+            "failed": False,
+            "monthly_metrics": {"row_count": 1, "columns": {"month_index": [0], "cash_usd": [50000.0]}},
+            "terminal_metrics": {
+                "cash_usd": 50000.0,
+                "net_worth_usd": 50000.0,
+                "drawdown_usd": 0.0,
+                "shortfall_usd": 0.0,
+            },
+        },
     }
 
 
@@ -57,7 +64,8 @@ def test_scenario_set_route_is_registered_and_invokes_handler() -> None:
     app = create_augur_backend_app(
         title="test",
         bootstrap=lambda: {"ok": True},
-        product_projection_run=_product_projection_run,
+        product_metric_fan=_metric_fan,
+        product_rollout=_rollout,
         scenario_set_run=scenario_set_run,
     )
     assert not any(getattr(route, "path", None) == "/api/projection/run" for route in app.routes)
@@ -83,7 +91,8 @@ def test_scenario_set_route_validates_request_with_pydantic() -> None:
     app = create_augur_backend_app(
         title="test",
         bootstrap=lambda: {"ok": True},
-        product_projection_run=_product_projection_run,
+        product_metric_fan=_metric_fan,
+        product_rollout=_rollout,
         scenario_set_run=scenario_set_run,
     )
     response = TestClient(app).post("/api/scenario_sets/run", json={"scenario_set_id": "missing_required_fields"})
