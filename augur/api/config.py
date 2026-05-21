@@ -2,7 +2,7 @@
 
 The generic augur framework knows nothing about specific users, holdings,
 or property shortlists. It loads everything user-specific from a single
-validated `Config` at startup. Concretely: `http_server.py` reads
+validated `Config` at startup. Concretely: `augur.api.server` reads
 the path from `AUGUR_CONFIG_PATH` (default `/etc/augur/config.yaml`),
 parses + validates via Pydantic, and threads the result through the
 backend and frontend bootstrap payload.

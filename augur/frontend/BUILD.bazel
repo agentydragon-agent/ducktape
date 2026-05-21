@@ -2,7 +2,6 @@ load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("@aspect_rules_js//js:defs.bzl", "js_library", "js_run_binary")
 load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@npm_ducktape//:@tailwindcss/cli/package_json.bzl", tailwindcss_bin = "bin")
-load("//devinfra/python:defs.bzl", "py_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -127,35 +126,4 @@ filegroup(
         ["__screenshots__/*.png"],
         allow_empty = True,
     ),
-)
-
-py_test(
-    name = "visual_golden_test",
-    size = "large",
-    srcs = ["visual_golden_test.py"],
-    data = [
-        ":visual_golden_snapshots",
-        "//augur/api:public_fixture_config",
-        "//augur/api:public_fixture_properties",
-        "//augur/api:server",
-        "//util/testing/frontend_visual:fonts",
-        "//util/testing/frontend_visual:fonts_conf",
-        "@playwright_browsers//:chromium-headless-shell",
-    ],
-    env = {
-        "AUGUR_BUNDLE_INDEX_RUNFILE": "_main/augur/frontend/dist/index.html",
-        "CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
-        "FONTCONFIG_FILE": "$(rootpath //util/testing/frontend_visual:fonts_conf)",
-        "FREETYPE_PROPERTIES": "cff:no-stem-darkening=1",
-    },
-    deps = [
-        "//util:net",
-        "//util:playwright",
-        "//util/bazel:runfiles",
-        "//util/testing:png_diff",
-        "//util/testing:undeclared_outputs",
-        "@pypi//playwright",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
 )

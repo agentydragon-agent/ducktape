@@ -62,7 +62,7 @@ def augur_server(tmp_path: Path) -> Iterator[str]:
     port = pick_free_port("127.0.0.1")
     server = subprocess.Popen(
         [
-            str(get_required_path("_main/augur/api/server")),
+            str(get_required_path("_main/augur/dev")),
             "--host",
             "127.0.0.1",
             "--port",

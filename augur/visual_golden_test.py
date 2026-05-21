@@ -2,7 +2,7 @@
 
 Update flow for intentional frontend changes:
 
-    nix develop --command bazelisk test //augur/frontend:visual_golden_test \
+    nix develop --command bazelisk test //augur:visual_golden_test \
         --test_env=UPDATE_GOLDEN=1 \
         --remote_upload_local_results=false --nocache_test_results
 
@@ -204,7 +204,7 @@ def augur_server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
     port = pick_free_port("127.0.0.1")
     server = subprocess.Popen(
         [
-            str(get_required_path("_main/augur/api/server")),
+            str(get_required_path("_main/augur/dev")),
             "--host",
             "127.0.0.1",
             "--port",

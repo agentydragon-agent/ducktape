@@ -38,11 +38,11 @@ company-/person-specific modeling assumptions.
 
 ## Deployment integration
 
-A user-side composer (e.g. gaffer-private's `serve.py`) builds a `Config`
-from its private values, then either passes it directly to `run_server()` or
-materializes it as YAML at `$AUGUR_CONFIG_PATH` for a ConfigMap-mounted
-deployment. The framework's only contract with the deployment is the
-`Config` Pydantic shape (see <api/config.py>).
+The production server is API-only: `//augur/api:server` reads a `Config`
+from `--config`, `$AUGUR_CONFIG_PATH`, or `/etc/augur/config.yaml`, then serves
+the `/api/*` routes and `/healthz`. Downstream deployments should serve the
+React bundle and private property assets separately, e.g. from an nginx
+sidecar.
 
 Property media stays outside the generic frontend bundle. Deployments publish
 images through their own static host or CDN, then declare stable
@@ -50,7 +50,7 @@ images through their own static host or CDN, then declare stable
 property ID to a deployment-owned asset ID and either an explicit public
 `image_url` or the shared `property_source.asset_base_url/{asset_id}` URL.
 
-For local public-fixture runs:
+For local public-fixture development, use the combined dev-only wrapper:
 
 ```bash
 bazelisk run //augur:dev

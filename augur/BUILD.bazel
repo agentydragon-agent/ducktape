@@ -1,6 +1,17 @@
-load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "dev_server_lib",
+    srcs = ["dev_server.py"],
+    deps = [
+        "//augur/api:config_py",
+        "//augur/api:server_lib",
+        "//util/bazel:runfiles",
+        "@pypi//fastapi",
+    ],
+)
 
 py_binary(
     name = "dev",
@@ -13,8 +24,33 @@ py_binary(
         "AUGUR_BUNDLE_INDEX_RUNFILE": "_main/augur/frontend/dist/index.html",
         "AUGUR_CONFIG_PATH": "$(location //augur/api:public_fixture_config)",
     },
-    main_module = "augur.api.server",
-    deps = ["//augur/api:server_lib"],
+    main_module = "augur.dev_server",
+    deps = [":dev_server_lib"],
+)
+
+py_test(
+    name = "browser_shell_test",
+    size = "large",
+    srcs = ["browser_shell_test.py"],
+    data = [
+        ":dev",
+        "//augur/api:public_fixture_config",
+        "//augur/api:public_fixture_properties",
+        "@playwright_browsers//:chromium-headless-shell",
+    ],
+    env = {
+        "AUGUR_BUNDLE_INDEX_RUNFILE": "_main/augur/frontend/dist/index.html",
+        "CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
+    },
+    deps = [
+        "//util:net",
+        "//util:playwright",
+        "//util/bazel:runfiles",
+        "//util/testing:undeclared_outputs",
+        "@pypi//playwright",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )
 
 py_library(
@@ -22,5 +58,36 @@ py_library(
     srcs = ["frames.py"],
     deps = [
         "@pypi//polars",
+    ],
+)
+
+py_test(
+    name = "visual_golden_test",
+    size = "large",
+    srcs = ["visual_golden_test.py"],
+    data = [
+        ":dev",
+        "//augur/api:public_fixture_config",
+        "//augur/api:public_fixture_properties",
+        "//augur/frontend:visual_golden_snapshots",
+        "//util/testing/frontend_visual:fonts",
+        "//util/testing/frontend_visual:fonts_conf",
+        "@playwright_browsers//:chromium-headless-shell",
+    ],
+    env = {
+        "AUGUR_BUNDLE_INDEX_RUNFILE": "_main/augur/frontend/dist/index.html",
+        "CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
+        "FONTCONFIG_FILE": "$(rootpath //util/testing/frontend_visual:fonts_conf)",
+        "FREETYPE_PROPERTIES": "cff:no-stem-darkening=1",
+    },
+    deps = [
+        "//util:net",
+        "//util:playwright",
+        "//util/bazel:runfiles",
+        "//util/testing:png_diff",
+        "//util/testing:undeclared_outputs",
+        "@pypi//playwright",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

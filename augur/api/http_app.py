@@ -1,27 +1,21 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import ValidationError
 
 from augur.api.casing import plain_json
 
-StaticPathResolver = Callable[[str], Path]
 PayloadProvider = Callable[[], Any]
 RequestPayloadHandler = Callable[[dict[str, Any]], Any]
 
 
 def create_augur_backend_app(
-    *,
-    title: str,
-    static_path: StaticPathResolver | None = None,
-    bootstrap: PayloadProvider,
-    scenario_set_run: RequestPayloadHandler | None = None,
+    *, title: str, bootstrap: PayloadProvider, scenario_set_run: RequestPayloadHandler | None = None
 ) -> FastAPI:
     app = FastAPI(title=title)
     no_store = {"cache-control": "no-store"}
@@ -60,14 +54,5 @@ def create_augur_backend_app(
     @app.get("/healthz")
     def healthz() -> PlainTextResponse:
         return PlainTextResponse("ok\n", headers=no_store)
-
-    if static_path is not None:
-
-        @app.get("/{full_path:path}")
-        def static_bundle(full_path: str) -> FileResponse:
-            path = static_path(full_path)
-            if not path.exists():
-                raise HTTPException(status_code=404, detail="static bundle not found")
-            return FileResponse(path, headers=no_store)
 
     return app

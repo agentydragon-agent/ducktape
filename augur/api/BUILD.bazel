@@ -208,19 +208,6 @@ py_library(
 )
 
 py_library(
-    name = "http_server_py",
-    srcs = ["http_server.py"],
-    deps = [
-        ":backend_py",
-        ":config_py",
-        ":http_app_py",
-        "//augur/model:market_api_py",
-        "//augur/model:market_provider_config_py",
-        "@pypi//uvicorn",
-    ],
-)
-
-py_library(
     name = "http_app_py",
     srcs = ["http_app.py"],
     deps = [
@@ -319,6 +306,26 @@ py_test(
 )
 
 py_library(
+    name = "server_lib",
+    srcs = ["server.py"],
+    deps = [
+        ":backend_py",
+        ":config_py",
+        ":http_app_py",
+        "//augur/model:market_api_py",
+        "//augur/model:market_provider_config_py",
+        "@pypi//fastapi",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_binary(
+    name = "server",
+    main_module = "augur.api.server",
+    deps = [":server_lib"],
+)
+
+py_library(
     name = "browser_state_py",
     srcs = ["browser_state.py"],
     deps = [
@@ -345,26 +352,6 @@ py_binary(
     deps = [":export_schema_py"],
 )
 
-py_library(
-    name = "server_lib",
-    srcs = ["server.py"],
-    imports = ["../.."],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":config_py",
-        ":http_server_py",
-        "//util/bazel:runfiles",
-    ],
-)
-
-py_binary(
-    name = "server",
-    data = ["//augur/frontend:bundle_base"],
-    env = {"AUGUR_BUNDLE_INDEX_RUNFILE": "_main/augur/frontend/dist/index.html"},
-    main_module = "augur.api.server",
-    deps = [":server_lib"],
-)
-
 filegroup(
     name = "public_fixture_config",
     srcs = ["testdata/config.yaml"],
@@ -373,29 +360,4 @@ filegroup(
 filegroup(
     name = "public_fixture_properties",
     srcs = ["testdata/properties.json"],
-)
-
-py_test(
-    name = "browser_shell_test",
-    size = "large",
-    srcs = ["browser_shell_test.py"],
-    data = [
-        ":public_fixture_config",
-        ":public_fixture_properties",
-        ":server",
-        "@playwright_browsers//:chromium-headless-shell",
-    ],
-    env = {
-        "AUGUR_BUNDLE_INDEX_RUNFILE": "_main/augur/frontend/dist/index.html",
-        "CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
-    },
-    deps = [
-        "//util:net",
-        "//util:playwright",
-        "//util/bazel:runfiles",
-        "//util/testing:undeclared_outputs",
-        "@pypi//playwright",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
 )
