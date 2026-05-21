@@ -11,7 +11,7 @@ routes work between specialist roles and owns project-adapter details.
 Read bundled references as needed:
 
 - `references/workflow.md` for the shared multi-agent workflow
-- `references/debundle_user_guide.md` for common CLI evidence surfaces
+- `references/guide.md` for common CLI evidence surfaces
 - `references/module_shape.md` for when to route to architect or lane workers
 
 ## Adapter Contract
@@ -69,7 +69,8 @@ IDs. Maintain:
 - Environment failure: find one working command, then broadcast it.
 - Stale graph: refresh evidence before reassigning blame.
 - Gate failure: read structured cycle/report output before bisection.
-- Cross-lane companion: expand one lane or redispatch as a coordinated task.
+- Split atomic unit: expand one lane to cover the whole unit or redispatch as
+  a coordinated task.
 - Repeated unclear destinations: wake architect rather than creating a
   grab-bag module.
 

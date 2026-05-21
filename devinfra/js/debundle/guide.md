@@ -49,9 +49,11 @@ Use `debundle peel` for graph/source evidence:
 
 ```bash
 debundle peel plan-work --graph "$GRAPH" --modules "$MODULES" --limit 25
-debundle peel patch-status --graph "$GRAPH" --modules "$MODULES" --limit 50
-debundle peel candidates --graph "$GRAPH" --modules "$MODULES" --limit 100
+debundle peel patch-plan --graph "$GRAPH" --modules "$MODULES" --limit 50
+debundle peel units --graph "$GRAPH" --modules "$MODULES" --readable-only --limit 100
+debundle peel graph-summary --graph "$GRAPH" --modules "$MODULES" --limit 25
 debundle peel explain --graph "$GRAPH" --modules "$MODULES" --proposal-id <id>
+debundle peel explain --graph "$GRAPH" --modules "$MODULES" --unit-id <id>
 debundle peel explain --graph "$GRAPH" --modules "$MODULES" --binding-id <binding>
 debundle peel explain --graph "$GRAPH" --modules "$MODULES" --owner-id <owner>
 debundle peel source-slice --graph "$GRAPH" --modules "$MODULES" \
@@ -59,13 +61,16 @@ debundle peel source-slice --graph "$GRAPH" --modules "$MODULES" \
 ```
 
 `explain` and `source-slice` select exactly one object with `--proposal-id`,
-`--owner-id`, or `--binding-id`; there is no `--binding` shorthand.
+`--unit-id`, `--diagnostic-id`, `--owner-id`, or `--binding-id`; there is no
+`--binding` shorthand.
 
 Interpretation:
 
 - `plan-work` is the bulk module-assignment proposal queue.
-- `patch-status` describes non-emitting patch-stream assignability.
-- `candidates` is a symbol-level catalog.
+- `patch-plan` describes whether current module YAML and binding-patch sets
+  cover whole atomic units, split units, or unknown bindings.
+- `units` is the atomic-DAG unit catalog.
+- `graph-summary` is the aggregate DAG/proposal overview.
 - `explain` is the graph/spec drill-down.
 - `source-slice` is the source-reading primitive for planner objects.
 

@@ -1,6 +1,6 @@
 ---
 name: debundle_lane_worker
-description: Apply one scoped debundle peel or reorganization assignment in a worktree. Use for confirming graph peelability, reading binding context, choosing honest module boundaries, editing debundle YAML, running the adapter-provided gate and regen commands, and committing one reviewable worker branch.
+description: Apply one scoped debundle peel or reorganization assignment in a worktree. Use for confirming atomic-DAG unit coverage, reading binding context, choosing honest module boundaries, editing debundle YAML, running the adapter-provided gate and regen commands, and committing one reviewable worker branch.
 ---
 
 # Debundle Lane Worker
@@ -12,7 +12,7 @@ the architect.
 Read bundled references as needed:
 
 - `references/workflow.md` for role boundaries and failure routing
-- `references/debundle_user_guide.md` for graph/source/gate evidence conventions
+- `references/guide.md` for graph/source/gate evidence conventions
 - `references/module_shape.md` for seam and layer-ownership heuristics
 
 ## Inputs
@@ -58,9 +58,9 @@ Do not co-locate solely by consumer count when that would violate layer
 ownership. Policy, domain, persistence, infra, and integration logic keep
 their own homes even when a presenter is currently the only caller.
 
-You may expand the batch when the assigned peel would create a worse module
-shape without a companion. You may also skip assigned items when their natural
-owner is not peelable yet.
+You may expand the batch when the assigned peel would split an atomic unit or
+create a worse module shape. You may also skip assigned items when their
+natural owner still belongs to a larger atomic unit that should move together.
 
 ## Failure Handling
 
@@ -81,5 +81,5 @@ Keep the report short:
 - branch and commit hash
 - gate and regen result
 - destinations changed and bindings moved
-- skipped candidates and why
+- skipped proposals or units and why
 - architecture or intake follow-ups discovered

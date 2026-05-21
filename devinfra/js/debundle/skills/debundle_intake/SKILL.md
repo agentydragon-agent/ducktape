@@ -11,7 +11,7 @@ translates certified structural proposals into work packets for lane workers.
 Read bundled references as needed:
 
 - `references/workflow.md` for handoffs and scratch-state conventions
-- `references/debundle_user_guide.md` for common graph/source query surfaces
+- `references/guide.md` for common graph/source query surfaces
 - `references/module_shape.md` for destination and cohesion heuristics
 
 ## Inputs
@@ -65,8 +65,7 @@ Write `<scratch>/seeds.json`:
       "minifiedBinding": "readableName"
     },
     "notes": "Why this appears to be one module.",
-    "confidence": "high",
-    "size_members": 5
+    "confidence": "high"
   }
 ]
 ```

@@ -11,7 +11,7 @@ base branch.
 Read bundled references as needed:
 
 - `references/workflow.md` for orchestration and failure routing
-- `references/debundle_user_guide.md` for gate/regen evidence conventions
+- `references/guide.md` for gate/regen evidence conventions
 
 ## Inputs
 
