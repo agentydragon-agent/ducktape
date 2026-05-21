@@ -235,6 +235,9 @@ def _handle_bazel_shim(report: ShimExecRequest, session: Session) -> ShimBlocked
     """
     argv = list(report.argv)
     argv.insert(1, f"--bazelrc={session.paths.bazelrc}")
+    # Claude's Linux sandbox exposes its filtered network path through HTTP(S)
+    # proxy env vars. Bazel's RBE/BES clients use grpc-java, which ignores those
+    # env vars but does honor Java proxyHost/proxyPort system properties.
     argv[2:2] = _bazel_proxy_args_from_env(report.env)
     return ShimExecve(argv=argv)
 
