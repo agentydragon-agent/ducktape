@@ -53,30 +53,21 @@ Split into topic-aligned modules: `tests/facts.rs`, `tests/purity.rs`, `tests/pl
 
 The crate already uses `swc_ecma_utils::find_pat_ids` via `binding_targets::binding_names()`. Two of the above reimpls produce `Vec<String>` instead of `Vec<Id>` — add a `binding_name_strings()` wrapper and eliminate all custom walkers.
 
-### Declaration name extraction (2+ implementations)
+### Declaration name extraction (2+ implementations) — **Done** (`0dc93325e`)
 
-- `lowering/chunk_ast.rs:194–205` — `declaration_names`
-- `strip_swapped_vendor_exports.rs:353–366` — `export_decl_declared_names`
+Consolidated into `binding_targets::declaration_ids` and `binding_targets::declaration_name_strings`. `chunk_ast.rs` has thin wrappers for `pub(super)` re-export.
 
-Identical structure, same purpose. Consolidate.
+### `module_export_name` (triplicated) — **Done** (`0dc93325e`)
 
-### `module_export_name` (triplicated)
+Consolidated into `binding_targets::module_export_name`. Also found and replaced `module_export_atom` in `validate_emitted_exports.rs`.
 
-Implemented independently in `vendor.rs`, `program_analysis.rs`, and `identifier_rename_queue.rs`. Single shared function.
+### Import-decl construction (3 sites) — **Done** (`f576e543c`)
 
-### Import-decl construction (3 sites)
+`util.rs:import_decl_for_plan` and `imports_cross.rs:phantom_side_effect_imports` now delegate to the existing `imports_runtime.rs:import_decl_module_item`. Only one `ImportDecl` construction site remains.
 
-All construct `ImportDecl { span: DUMMY_SP, type_only: false, with: None, phase: ImportPhase::Evaluation, .. }`:
+### Visitor method duplication (`lowering/visitors.rs`) — **Done** (`f576e543c`)
 
-- `lowering/util.rs:import_decl_for_plan`
-- `lowering/imports_runtime.rs:import_decl_module_item`
-- `lowering/imports_cross.rs:phantom_side_effect_imports`
-
-A shared builder or factory function would centralize the boilerplate.
-
-### Visitor method duplication (`lowering/visitors.rs`)
-
-`IdentifierRenamer` and `RenameAndShorthandNaturalizer` share **6 identical** `VisitMut` method implementations: `visit_mut_ident`, `visit_mut_import_named_specifier`, `visit_mut_prop_name`, `visit_mut_member_prop`, `visit_mut_named_export`, `visit_mut_export_named_specifier`. The only difference is `RenameAndShorthandNaturalizer` adds `visit_mut_object_pat` and `visit_mut_object_lit`. Extract shared logic — either a base trait, a macro, or delegation.
+Extracted the 6 shared `VisitMut` methods into `impl_rename_visit_mut!()` macro. `RenameAndShorthandNaturalizer` uses the macro and adds its 2 extra methods.
 
 ### `read_json<T>` in e2e tests (6 copies)
 
@@ -90,9 +81,9 @@ Copy-pasted into `realizability_test.rs`, `at_init_s_chain_dataflow_test.rs`, `o
 
 `lowering/util.rs:is_valid_js_identifier` (line 15) and `is_identifier_like` (line 87) check the same `[A-Za-z_$]` first char, `[A-Za-z0-9_$]` rest pattern. The only difference is empty-string handling. Merge.
 
-### Test fixture builders in peel/ (2 copies)
+### Test fixture builders in peel/ (2 copies) — **Partially done** (`f576e543c`)
 
-`peel/plan.rs` tests and `peel/factorize.rs` tests duplicate identical helpers: `owner()`, `member()`, `module_ref()`, `atomic_unit()`, `atomic_edge()`, `graph_fixture()`, `fixture_with_graph()`. Extract to `peel/test_utils.rs`.
+Extracted `binding()`, `member()`, `module_ref()` to `peel/test_utils.rs`. The `owner()`, `atomic_unit()`, `atomic_edge()`, `graph_fixture()` helpers have different signatures/semantics between the two test modules and remain local.
 
 ### Line-range accumulation (3 copies)
 
@@ -395,7 +386,7 @@ No longer a standalone crate — absorbed into `swc_ecma_minifier` as `pub(crate
 
 1. **Split `vendor.rs`** into `vendor/{manifests,ast_helpers,rename,full_swap,partial_swap,bundled_partial_swap}.rs`. Addresses the worst god module and much of the duplication in one change.
 
-2. **Unify all `collect_pat_names`/`binding_names`/`pat_names` reimplementations** to use `swc_ecma_utils::find_pat_ids` via a shared `binding_name_strings()` wrapper. Eliminates ~200 lines of duplicated AST walking.
+2. ~~**Unify all `collect_pat_names`/`binding_names`/`pat_names` reimplementations** to use `swc_ecma_utils::find_pat_ids` via a shared `binding_name_strings()` wrapper. Eliminates ~200 lines of duplicated AST walking.~~ **Done** (`0dc93325e`): added `binding_name_strings`, `declaration_ids`, `declaration_name_strings`, `module_export_name` to `binding_targets.rs`; removed 6 reimplementations across `chunk_ast`, `vendor`, `strip_swapped_vendor_exports`, `identifier_rename_queue`, `validate_emitted_exports`, `facts`, `program_analysis`. Net -185 lines.
 
 3. **Split `analysis_tests.rs`** into 6–8 topic-aligned test modules. Largest test file at 4095 lines.
 
