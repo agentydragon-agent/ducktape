@@ -188,6 +188,8 @@ def _config(
             ),
         ),
         starting_portfolio_usd=100_000,
+        default_rollout_samples=8,
+        max_rollout_samples=128,
         locations=_fixture_locations(),
         location_selection=location_selection,
         exogenous_provider=SimpleExogenousProviderConfig(),
@@ -228,9 +230,7 @@ def test_backend_applies_location_tax_defaults_to_scenario(
     _write_builtin_properties(properties_path)
     backend = Backend(
         augur_config=_config(properties_path),
-        runtime_config=BackendRuntimeConfig(
-            default_rollout_samples=8, max_rollout_samples=128, exogenous_model=deterministic_exogenous_model
-        ),
+        runtime_config=BackendRuntimeConfig(exogenous_model=deterministic_exogenous_model),
     )
     request = {
         "scenario_set_id": "tax_defaults",
@@ -264,9 +264,7 @@ def test_backend_rejects_scenario_property_location_mismatch(
     _write_builtin_properties(properties_path)
     backend = Backend(
         augur_config=_config(properties_path),
-        runtime_config=BackendRuntimeConfig(
-            default_rollout_samples=8, max_rollout_samples=128, exogenous_model=deterministic_exogenous_model
-        ),
+        runtime_config=BackendRuntimeConfig(exogenous_model=deterministic_exogenous_model),
     )
     request = {
         "scenario_set_id": "mismatch",
@@ -348,6 +346,9 @@ def test_bootstrap_carries_configured_finance_snapshot_and_defaults(tmp_path: Pa
     bootstrap = build_bootstrap_payload(_config(properties_path))
 
     assert bootstrap.default_initial_checking_usd == 12_345
+    assert bootstrap.default_rollout_samples == 8
+    assert bootstrap.max_rollout_samples == 128
+    assert bootstrap.max_horizon_months == 1200
     assert bootstrap.default_knobs.starting_portfolio_usd == 100_000
     assert bootstrap.finance_snapshot.cash_usd == 12_345
     assert bootstrap.finance_snapshot.wealthfront_sp500_usd == 61_000

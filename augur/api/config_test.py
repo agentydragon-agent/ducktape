@@ -39,6 +39,8 @@ def _minimal_config(**overrides: object) -> Config:
         "personal_finance": PersonalFinanceConfig(),
         "property_source": PropertySourceConfig(properties_path="/tmp/properties.json"),
         "snapshot": FinanceSnapshot(as_of_date="2026-05-12"),
+        "default_rollout_samples": 128,
+        "max_rollout_samples": 1_000_000,
         "exogenous_provider": SimpleExogenousProviderConfig(),
     }
     defaults.update(overrides)
@@ -58,7 +60,7 @@ def _fixture_regulation() -> LocalRegulation:
     )
 
 
-def test_minimal_config_validates_with_defaults() -> None:
+def test_minimal_config_validates_with_explicit_sampling_config() -> None:
     config = _minimal_config()
 
     assert config.agents[0].actor_id == "alpha"
@@ -67,6 +69,13 @@ def test_minimal_config_validates_with_defaults() -> None:
     assert config.reserve_forward_months == 12
     assert config.default_rollout_samples == 128
     assert config.max_rollout_samples == 1_000_000
+
+
+def test_sampling_config_is_required() -> None:
+    with pytest.raises(ValidationError, match="default_rollout_samples"):
+        _minimal_config(default_rollout_samples=None)
+    with pytest.raises(ValidationError, match="max_rollout_samples"):
+        _minimal_config(max_rollout_samples=None)
 
 
 def test_property_source_declares_stable_public_asset_urls() -> None:
@@ -198,6 +207,8 @@ def test_at_least_one_agent_required() -> None:
             personal_finance=PersonalFinanceConfig(),
             property_source=PropertySourceConfig(properties_path="/tmp/x.json"),
             snapshot=FinanceSnapshot(as_of_date="2026-05-12"),
+            default_rollout_samples=128,
+            max_rollout_samples=1_000_000,
             exogenous_provider=SimpleExogenousProviderConfig(),
         )
 

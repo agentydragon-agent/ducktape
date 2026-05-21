@@ -20,8 +20,6 @@ from augur.model.exogenous_provider_config import realize_exogenous_model
 class ApiServerConfig:
     augur_config: Config
     exogenous_model: ExogenousPathModel
-    default_rollout_samples: int
-    max_rollout_samples: int
 
 
 def _current_private_equity_price_usd(augur_config: Config) -> float:
@@ -41,12 +39,7 @@ def _make_exogenous_model(augur_config: Config, *, current_private_equity_price_
 
 def create_app(config: ApiServerConfig) -> FastAPI:
     backend = Backend(
-        augur_config=config.augur_config,
-        runtime_config=BackendRuntimeConfig(
-            default_rollout_samples=config.default_rollout_samples,
-            max_rollout_samples=config.max_rollout_samples,
-            exogenous_model=config.exogenous_model,
-        ),
+        augur_config=config.augur_config, runtime_config=BackendRuntimeConfig(exogenous_model=config.exogenous_model)
     )
     return create_augur_backend_app(
         title="Augur scenario API",
@@ -61,12 +54,7 @@ def create_app_from_augur_config(augur_config: Config) -> FastAPI:
     exogenous_model = _make_exogenous_model(
         augur_config, current_private_equity_price_usd=current_private_equity_price_usd
     )
-    server_config = ApiServerConfig(
-        augur_config=augur_config,
-        exogenous_model=exogenous_model,
-        default_rollout_samples=augur_config.default_rollout_samples,
-        max_rollout_samples=augur_config.max_rollout_samples,
-    )
+    server_config = ApiServerConfig(augur_config=augur_config, exogenous_model=exogenous_model)
     return create_app(server_config)
 
 

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Button, NativeSelect } from "@mantine/core";
 
+import { fetchAugurBootstrap } from "./client.js";
 import { postJson } from "./lib/backend_client.js";
 import { camelizeObjectKeys, decamelizeObjectKeys } from "./lib/casing.js";
 import { fanChartAxis, fanChartYearTicks, fmtAxisMetricValue, percentile } from "./lib/chart.js";
@@ -9,9 +10,7 @@ import { NumberField } from "./lib/controls.jsx";
 import { fmtNumber, fmtUsd } from "./lib/format.js";
 import { AugurShellHeader } from "./shell.jsx";
 
-const MAX_HORIZON_MONTHS = 100 * 12;
-
-const DEFAULT_PRODUCT_INPUT = {
+const DEFAULT_PRODUCT_INPUT_BASE = {
   horizonMonths: 48,
   rolloutCount: 32,
   firstSeed: 1301,
@@ -34,12 +33,20 @@ function clampInteger(value, min, max) {
   return Math.min(max, Math.max(min, number));
 }
 
-function productRequest(input) {
-  const rolloutCount = clampInteger(input.rolloutCount, 1, 128);
+function productInputDefaults(bootstrap) {
+  return {
+    ...DEFAULT_PRODUCT_INPUT_BASE,
+    horizonMonths: clampInteger(DEFAULT_PRODUCT_INPUT_BASE.horizonMonths, 1, bootstrap.maxHorizonMonths),
+    rolloutCount: clampInteger(DEFAULT_PRODUCT_INPUT_BASE.rolloutCount, 1, bootstrap.maxRolloutSamples),
+  };
+}
+
+function productRequest(input, bootstrap) {
+  const rolloutCount = clampInteger(input.rolloutCount, 1, bootstrap.maxRolloutSamples);
   const firstSeed = clampInteger(input.firstSeed, 0, 2 ** 31 - 1);
   return {
     exogenousModelId: "current_exogenous_model",
-    horizonMonths: clampInteger(input.horizonMonths, 1, MAX_HORIZON_MONTHS),
+    horizonMonths: clampInteger(input.horizonMonths, 1, bootstrap.maxHorizonMonths),
     rolloutSeeds: Array.from({ length: rolloutCount }, (_, index) => firstSeed + index),
     monthlySpendUsd: Math.max(1, Number(input.monthlySpendUsd) || 1),
     spendIndex: input.spendIndex === "none" ? "none" : "inflation",
@@ -144,12 +151,30 @@ function MetricFanChart({ rows, metric }) {
   );
 }
 
-function ProductProjectionAppShell() {
-  const [input, setInput] = useState(DEFAULT_PRODUCT_INPUT);
+function ProductProjectionLoading({ error }) {
+  return (
+    <div
+      data-augur-surface="product"
+      className="min-h-screen bg-slate-100 text-slate-800 dark:bg-slate-950 dark:text-slate-100"
+    >
+      <AugurShellHeader activeSurface="product" rightSlot={<span className="whitespace-nowrap">Product API</span>} />
+      <main className="px-4 py-6 sm:px-6 lg:px-8">
+        {error ? (
+          <div className="augur-note-danger max-w-lg p-4 text-sm">Augur bootstrap failed: {error}</div>
+        ) : (
+          <div className="augur-card max-w-lg p-4 text-sm augur-muted">Loading...</div>
+        )}
+      </main>
+    </div>
+  );
+}
+
+function ProductProjectionWorkspace({ bootstrap }) {
+  const [input, setInput] = useState(() => productInputDefaults(bootstrap));
   const [selectedMetricValue, setSelectedMetricValue] = useState("netWorthUsd");
   const [result, setResult] = useState(null);
   const [runError, setRunError] = useState(null);
-  const request = useMemo(() => productRequest(input), [input]);
+  const request = useMemo(() => productRequest(input, bootstrap), [input, bootstrap]);
   const selectedMetric = METRIC_BY_VALUE.get(selectedMetricValue) ?? METRIC_OPTIONS[0];
   const fanRows = useMemo(() => metricFanRows(result, selectedMetric.value), [result, selectedMetric]);
   const failedCount = (result?.rollouts ?? []).filter((rollout) => rollout.failed).length;
@@ -216,7 +241,7 @@ function ProductProjectionAppShell() {
                   label="Horizon"
                   value={input.horizonMonths}
                   min={1}
-                  max={MAX_HORIZON_MONTHS}
+                  max={bootstrap.maxHorizonMonths}
                   step={12}
                   suffix="mo"
                   onChange={(horizonMonths) => updateInput({ horizonMonths })}
@@ -225,7 +250,7 @@ function ProductProjectionAppShell() {
                   label="Rollouts"
                   value={input.rolloutCount}
                   min={1}
-                  max={128}
+                  max={bootstrap.maxRolloutSamples}
                   step={1}
                   onChange={(rolloutCount) => updateInput({ rolloutCount })}
                 />
@@ -242,7 +267,7 @@ function ProductProjectionAppShell() {
                   step={1}
                   onChange={(firstSeed) => updateInput({ firstSeed })}
                 />
-                <Button variant="light" onClick={() => setInput({ ...DEFAULT_PRODUCT_INPUT })}>
+                <Button variant="light" onClick={() => setInput(productInputDefaults(bootstrap))}>
                   Reset
                 </Button>
               </div>
@@ -302,6 +327,30 @@ function ProductProjectionAppShell() {
       </main>
     </div>
   );
+}
+
+function ProductProjectionAppShell() {
+  const [bootstrap, setBootstrap] = useState(null);
+  const [bootstrapError, setBootstrapError] = useState(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchAugurBootstrap({ signal: controller.signal })
+      .then((payload) => {
+        setBootstrap(payload);
+        setBootstrapError(null);
+      })
+      .catch((error) => {
+        if (error?.name === "AbortError") return;
+        setBootstrap(null);
+        setBootstrapError(error?.message || String(error));
+      });
+    return () => controller.abort();
+  }, []);
+
+  if (!bootstrap) return <ProductProjectionLoading error={bootstrapError} />;
+
+  return <ProductProjectionWorkspace bootstrap={bootstrap} />;
 }
 
 export default ProductProjectionAppShell;

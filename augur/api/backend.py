@@ -23,8 +23,6 @@ from augur.sim.simulate import simulate_with_external_series
 
 @dataclass(frozen=True)
 class BackendRuntimeConfig:
-    default_rollout_samples: int
-    max_rollout_samples: int
     exogenous_model: ExogenousPathModel
 
 
@@ -42,13 +40,7 @@ class Backend:
         self.default_property_id = self._bootstrap.default_property_id
 
     def bootstrap_payload(self):
-        return self._bootstrap.model_copy(
-            update={
-                "default_property_id": self.default_property_id,
-                "default_knobs": self.default_knobs,
-                "default_rollout_samples": self.runtime_config.default_rollout_samples,
-            }
-        )
+        return self._bootstrap
 
     def run_scenario_set_for_request_body(self, body: dict[str, Any]) -> ScenarioSetRunResponse:
         return self.run_scenario_set(ScenarioSet.model_validate(body))
@@ -59,9 +51,9 @@ class Backend:
         return self._run_scenario_set(scenario_set)
 
     def run_product_projection(self, request: ProjectionRequest) -> ProjectionResponse:
-        if request.rollout_count > self.runtime_config.max_rollout_samples:
+        if request.rollout_count > self._augur_config.max_rollout_samples:
             raise ValueError(
-                f"rollout count {request.rollout_count} exceeds max {self.runtime_config.max_rollout_samples}"
+                f"rollout count {request.rollout_count} exceeds max {self._augur_config.max_rollout_samples}"
             )
         return run_product_projection(
             request, augur_config=self._augur_config, exogenous_model=self.runtime_config.exogenous_model

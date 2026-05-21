@@ -169,6 +169,7 @@ py_library(
         ":config_py",
         ":local_regulation_py",
         ":scenario_set_py",
+        "//augur/product:projection_py",
         "@pypi//pyyaml",
         "@pypi//types_pyyaml",
     ],

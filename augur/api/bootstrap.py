@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-from pydantic import Field
+from pydantic import Field, PositiveInt
 
 from augur.api.finance import FinanceSnapshot
 from augur.api.local_regulation import LocalRegulation
@@ -91,7 +91,9 @@ class BootstrapResponse(ApiModel):
     default_checking_floor_usd: float
     default_checking_sale_amount_usd: float
     default_knobs: KnobsConfig
-    default_rollout_samples: int
+    default_rollout_samples: PositiveInt
+    max_rollout_samples: PositiveInt
+    max_horizon_months: PositiveInt
     default_scenarios: list[DefaultScenario]
     owner_residence_mode_options: list[OwnerResidenceModeOption]
     rental_use_policy_options: list[RentalUsePolicyOption]

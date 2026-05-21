@@ -25,6 +25,7 @@ from augur.api.bootstrap import (
 from augur.api.config import Config, LocationConfig, PropertyAssetConfig
 from augur.api.scenario_set import ActorRole
 from augur.api.schemas import KnobsConfig
+from augur.product.projection import MAX_HORIZON_MONTHS
 
 PROPERTY_ROWS_ADAPTER = TypeAdapter(tuple[Property, ...])
 
@@ -208,6 +209,8 @@ def build_bootstrap_payload(config: Config) -> BootstrapResponse:
         default_checking_sale_amount_usd=20_000,
         default_knobs=_default_knobs_for_config(config),
         default_rollout_samples=config.default_rollout_samples,
+        max_rollout_samples=config.max_rollout_samples,
+        max_horizon_months=MAX_HORIZON_MONTHS,
         default_scenarios=list(config.bootstrap_default_scenarios),
         owner_residence_mode_options=_owner_residence_mode_options(primary),
         rental_use_policy_options=_rental_use_policy_options(primary),

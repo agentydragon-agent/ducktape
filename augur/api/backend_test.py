@@ -14,9 +14,7 @@ def test_backend_runs_joint_model_and_materializes_graph_tables() -> None:
     backend = Backend(
         augur_config=load_augur_config(get_required_path("_main/augur/api/testdata/config.yaml")),
         runtime_config=BackendRuntimeConfig(
-            default_rollout_samples=3,
-            max_rollout_samples=3,
-            exogenous_model=SimpleExogenousModel(current_private_equity_price_usd=25.0),
+            exogenous_model=SimpleExogenousModel(current_private_equity_price_usd=25.0)
         ),
     )
 
@@ -112,9 +110,7 @@ def test_backend_accepts_catalog_defaulted_property_selection() -> None:
     backend = Backend(
         augur_config=load_augur_config(get_required_path("_main/augur/api/testdata/config.yaml")),
         runtime_config=BackendRuntimeConfig(
-            default_rollout_samples=3,
-            max_rollout_samples=3,
-            exogenous_model=SimpleExogenousModel(current_private_equity_price_usd=25.0),
+            exogenous_model=SimpleExogenousModel(current_private_equity_price_usd=25.0)
         ),
     )
 

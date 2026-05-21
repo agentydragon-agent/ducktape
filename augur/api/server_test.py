@@ -203,7 +203,13 @@ def test_backend_server_runs_product_cash_spend_projection(server_url: str) -> N
     projection = _post_json(
         server_url,
         "/api/product/projections/run",
-        {"horizon_months": 3, "rollout_seeds": [7, 8], "monthly_spend_usd": 1000.0, "spend_index": "none"},
+        {
+            "exogenous_model_id": "current_exogenous_model",
+            "horizon_months": 3,
+            "rollout_seeds": [7, 8],
+            "monthly_spend_usd": 1000.0,
+            "spend_index": "none",
+        },
     )
 
     assert projection["exogenous_model_id"] == "simple_exogenous_model"

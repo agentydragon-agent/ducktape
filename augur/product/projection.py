@@ -13,11 +13,11 @@ MAX_HORIZON_MONTHS = 100 * 12
 
 
 class ProjectionRequest(ApiModel):
-    exogenous_model_id: str = "current_exogenous_model"
+    exogenous_model_id: str
     horizon_months: PositiveInt = Field(le=MAX_HORIZON_MONTHS)
     rollout_seeds: tuple[NonNegativeInt, ...] = Field(min_length=1)
     monthly_spend_usd: PositiveFloat
-    spend_index: SpendIndex = "inflation"
+    spend_index: SpendIndex
 
     @property
     def rollout_count(self) -> int:
