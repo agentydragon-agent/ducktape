@@ -6,6 +6,13 @@
   ducktapePackages,
   ...
 }:
+let
+  bazelCacheRoot = "${config.xdg.cacheHome}/bazel";
+  bazelOutputUserRoot = "${bazelCacheRoot}/_bazel_${config.home.username}";
+  bazelRepoContentsCache = "${bazelOutputUserRoot}/cache/repo-contents";
+  bazelDiskCache = "${bazelOutputUserRoot}/cache/disk";
+  bazeliskCache = "${config.xdg.cacheHome}/bazelisk";
+in
 {
   imports = [
     ../home.nix
@@ -28,6 +35,30 @@
       sopsFile = ../../../secrets/home/rugged/zai.yaml;
       key = "zai_api_key";
     };
+  };
+
+  # Rugged-only Bazel cache sharing across local worktrees.
+  # See devinfra/docs/bazel_worktree_cache_sharing.md for rationale and probes.
+  #
+  # Bazel already defaults output_base, output_user_root, and repository_cache to
+  # the shared ~/.cache/bazel/_bazel_$USER tree on this host. This only enables
+  # caches that are not already enabled by default, while preserving shared
+  # .bazelrc customizations from ../home.nix.
+  home.file.".bazelrc".text = lib.mkAfter ''
+    common --repo_contents_cache=${bazelRepoContentsCache}
+
+    build --disk_cache=${bazelDiskCache}
+    build --experimental_disk_cache_gc_max_size=200G
+    build --experimental_disk_cache_gc_max_age=14d
+  '';
+
+  home.activation.ruggedBazelCacheDirs = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    mkdir -p '${bazelRepoContentsCache}' '${bazelDiskCache}' '${bazeliskCache}'
+  '';
+
+  programs.claude-code.settings = {
+    env.BAZELISK_HOME = bazeliskCache;
+    sandbox.filesystem.allowWrite = lib.mkAfter [ bazeliskCache ];
   };
 
   # SSH keys for wyrm and vps, decrypted from SOPS binary at activation time.

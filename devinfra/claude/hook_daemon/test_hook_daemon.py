@@ -196,6 +196,40 @@ class TestShimExec:
         assert "build" in result.argv
         assert "//..." in result.argv
 
+    async def test_bazelisk_injects_http_proxy_jvm_args(self, client: AsyncClient, tmp_path: Path) -> None:
+        """Bazel commands route grpc-java through HTTP_PROXY when present."""
+        env = {
+            "HOME": str(tmp_path),
+            "PATH": "/usr/bin",
+            "DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR": str(tmp_path / "session"),
+            "HTTP_PROXY": "http://localhost:3128",
+            "HTTPS_PROXY": "http://localhost:3128",
+        }
+
+        result = await self._post_shim(client, _shim_request("bazelisk", ["bazelisk", "build", "//..."], env))
+
+        assert isinstance(result, ShimExecve)
+        assert "--host_jvm_args=-Dhttps.proxyHost=localhost" in result.argv
+        assert "--host_jvm_args=-Dhttps.proxyPort=3128" in result.argv
+        assert "--host_jvm_args=-Dhttp.proxyHost=localhost" in result.argv
+        assert "--host_jvm_args=-Dhttp.proxyPort=3128" in result.argv
+
+    async def test_bazelisk_does_not_inject_proxy_args_without_http_proxy(
+        self, client: AsyncClient, tmp_path: Path
+    ) -> None:
+        """Bazel commands are unchanged when no HTTP proxy env is present."""
+        env = {
+            "HOME": str(tmp_path),
+            "PATH": "/usr/bin",
+            "DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR": str(tmp_path / "session"),
+        }
+
+        result = await self._post_shim(client, _shim_request("bazelisk", ["bazelisk", "build", "//..."], env))
+
+        assert isinstance(result, ShimExecve)
+        assert not any(arg.startswith("--host_jvm_args=-Dhttps.proxy") for arg in result.argv)
+        assert not any(arg.startswith("--host_jvm_args=-Dhttp.proxy") for arg in result.argv)
+
     async def test_unknown_shim_passthrough(self, client: AsyncClient) -> None:
         """Unknown shim names pass argv through unchanged."""
         argv = ["something", "--flag", "arg"]

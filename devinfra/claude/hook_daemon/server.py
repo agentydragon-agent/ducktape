@@ -18,6 +18,7 @@ import traceback
 from collections.abc import Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
+from urllib.parse import unquote, urlparse
 
 import anyio
 from fastapi import FastAPI, Request
@@ -189,6 +190,42 @@ def _handle_git_shim(report: ShimExecRequest, session: Session) -> ShimBlocked |
     return ShimExecve(argv=report.argv)
 
 
+def _bazel_host_jvm_args(properties: dict[str, str | int]) -> list[str]:
+    return [f"--host_jvm_args=-D{key}={value}" for key, value in properties.items()]
+
+
+def _java_proxy_properties(host: str, port: int, username: str | None, password: str | None) -> dict[str, str | int]:
+    values: dict[str, str | int] = {"proxyHost": host, "proxyPort": port}
+    if username:
+        values["proxyUser"] = username
+    if password:
+        values["proxyPassword"] = password
+
+    return {f"{scheme}.{key}": value for scheme in ("https", "http") for key, value in values.items()}
+
+
+def _bazel_proxy_args_from_env(env: dict[str, str]) -> list[str]:
+    """Translate HTTP proxy env into Bazel JVM proxy startup args.
+
+    grpc-java does not read HTTP_PROXY/GRPC_PROXY env vars, but its default
+    ProxyDetector uses Java's proxyHost/proxyPort system properties.
+    """
+    proxy_url = env.get("HTTP_PROXY") or env.get("http_proxy") or env.get("HTTPS_PROXY") or env.get("https_proxy")
+    if not proxy_url:
+        return []
+
+    parsed = urlparse(proxy_url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return []
+
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    host = parsed.hostname
+    username = unquote(parsed.username) if parsed.username else None
+    password = unquote(parsed.password) if parsed.password else None
+
+    return _bazel_host_jvm_args(_java_proxy_properties(host, port, username, password))
+
+
 def _handle_bazel_shim(report: ShimExecRequest, session: Session) -> ShimBlocked | ShimExecve:
     """Inject --bazelrc pointing to the session bazelrc.
 
@@ -198,6 +235,7 @@ def _handle_bazel_shim(report: ShimExecRequest, session: Session) -> ShimBlocked
     """
     argv = list(report.argv)
     argv.insert(1, f"--bazelrc={session.paths.bazelrc}")
+    argv[2:2] = _bazel_proxy_args_from_env(report.env)
     return ShimExecve(argv=argv)
 
 

@@ -45,42 +45,34 @@ Use one cache root per user:
 ~/.cache/bazelisk/
 ```
 
-On `wyrm2`, `~/.cache/bazel` is already a 150G SSD mount for output bases, and
+On `rugged`, the whole `~/.cache/bazel` tree is on the same btrfs filesystem.
+On `wyrm2`, `~/.cache/bazel` is a 150G SSD mount for output bases, and
 `~/.cache/bazel/_bazel_agentydragon/cache/repos` is a nested 100G HDD mount for
-repository cache. Keep `--experimental_repository_cache_hardlinks` disabled
-there: hardlinks only work when repository cache and output bases are on the
+repository cache. Keep `--experimental_repository_cache_hardlinks` disabled on
+`wyrm2`: hardlinks only work when repository cache and output bases are on the
 same filesystem.
 
 ## Bazelrc Proposal
 
-Put the local sharing flags in Home Manager's generated `~/.bazelrc`, before the
-optional BuildBuddy import:
+The first implementation is rugged-only. Bazel already defaults
+`--output_user_root`, per-worktree `--output_base`, and `--repository_cache` into
+the shared `~/.cache/bazel/_bazel_$USER` tree there, so only enable caches that
+are not already on by default:
 
 ```nix
 let
   bazelCacheRoot = "${config.xdg.cacheHome}/bazel";
   bazelOutputUserRoot = "${bazelCacheRoot}/_bazel_${config.home.username}";
-  bazelRepoCache = "${bazelOutputUserRoot}/cache/repos";
   bazelRepoContentsCache = "${bazelOutputUserRoot}/cache/repo-contents";
   bazelDiskCache = "${bazelOutputUserRoot}/cache/disk";
 in
 {
-  home.file.".bazelrc".text = ''
-    startup --output_user_root=${bazelOutputUserRoot}
-    startup --max_idle_secs=28800
-
-    common --show_progress_rate_limit=0.05
-    common --progress_in_terminal_title
-    common --repository_cache=${bazelRepoCache}
+  home.file.".bazelrc".text = lib.mkAfter ''
     common --repo_contents_cache=${bazelRepoContentsCache}
 
-    build --platforms //:linux_x64
     build --disk_cache=${bazelDiskCache}
     build --experimental_disk_cache_gc_max_size=200G
     build --experimental_disk_cache_gc_max_age=14d
-
-    # Optional BuildBuddy / remote cache config (file not in git)
-    try-import ${config.home.homeDirectory}/.config/bazel/buildbuddy.bazelrc
   '';
 }
 ```
@@ -98,12 +90,8 @@ memory. It still does not share analysis across worktrees.
 Create the cache directories declaratively:
 
 ```nix
-home.activation.bazelCacheDirs = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-  mkdir -p \
-    '${bazelRepoCache}' \
-    '${bazelRepoContentsCache}' \
-    '${bazelDiskCache}' \
-    '${config.xdg.cacheHome}/bazelisk'
+home.activation.ruggedBazelCacheDirs = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+  mkdir -p '${bazelRepoContentsCache}' '${bazelDiskCache}'
 '';
 ```
 
@@ -144,12 +132,44 @@ Avoid glob patterns in `sandbox.filesystem.allowWrite` on Linux. The restored
 sandbox runtime strips or filters write globs before building bubblewrap mounts;
 use concrete cache directories.
 
-Known caveat: Claude's Linux sandbox isolates networking and provides host access
-through proxies. Bazel repository downloads can use HTTP proxy configuration, but
-Bazel's BES/RBE gRPC path has historically failed under that sandbox because the
-Java gRPC client does not use Claude's proxy setup. If RBE/BES reliability matters
-more than sandboxing for a specific invocation, use the explicit unsandboxed
-escape hatch for that invocation.
+The rugged Nix config appends the Bazelisk cache directory to Claude's sandbox
+writes and sets `BAZELISK_HOME`:
+
+```nix
+programs.claude-code.settings = {
+  env.BAZELISK_HOME = "${config.xdg.cacheHome}/bazelisk";
+  sandbox.filesystem.allowWrite = lib.mkAfter [ "${config.xdg.cacheHome}/bazelisk" ];
+};
+```
+
+Claude network sandboxing is not controlled by a clean "filesystem sandbox only"
+toggle. In the restored source, the Linux runtime enables `bwrap --unshare-net`
+whenever `network.allowedDomains` is present. Claude Code's adapter builds that
+domain list from explicit sandbox settings and from `WebFetch(domain:...)`
+permission rules. Our config intentionally emits those WebFetch domain rules, so
+removing network sandboxing globally would also change WebFetch permission
+behavior unless we patch Claude.
+
+Instead, Bazel can run through Claude's proxy. Claude's Linux sandbox exposes an
+HTTP CONNECT proxy via `HTTP_PROXY=http://localhost:3128` and a SOCKS proxy via
+`ALL_PROXY=socks5h://localhost:1080`. Bazel's repository downloader honors the
+normal HTTP proxy environment, but Bazel's RBE/BES gRPC channels are grpc-java
+Netty channels. They do not read `GRPC_PROXY`; grpc-java's default proxy detector
+uses Java system properties such as `https.proxyHost` and `https.proxyPort`.
+
+The Ducktape Claude hook daemon therefore makes the Bazel shim translate
+`HTTP_PROXY`/`http_proxy`/`HTTPS_PROXY`/`https_proxy` into Bazel startup args:
+
+```text
+--host_jvm_args=-Dhttps.proxyHost=<host>
+--host_jvm_args=-Dhttps.proxyPort=<port>
+--host_jvm_args=-Dhttp.proxyHost=<host>
+--host_jvm_args=-Dhttp.proxyPort=<port>
+```
+
+That keeps the normal Claude sandbox path usable for Bazel gRPC without needing
+Bazel's `--remote_proxy` or `--bes_proxy`. Those Bazel flags only accept
+`unix:/path/to/socket` and are not HTTP/SOCKS proxy settings.
 
 ## Codex Local Sandbox
 
@@ -232,6 +252,35 @@ For Codex specifically, remember that the current Nix-generated Bazel
 `decision="allow"` rules mean matching Bazel commands are trusted and may bypass
 the shell sandbox.
 
+### Disk Cache Effect Probe
+
+This probe verifies the configured `--disk_cache` is saving action work between
+separate output bases. It creates two temporary git worktrees, adds the same
+untracked `genrule` package to both, builds it in the first worktree to populate
+the disk cache, then builds it in the second worktree. The second build starts
+from a different output base, so a `disk cache hit` proves the shared disk cache
+is doing work.
+
+Run the script with the active user Bazel config:
+
+```bash
+devinfra/debug/bazel_disk_cache_probe.sh
+```
+
+Expected result: the second build reports one `disk cache hit` and completes
+without sleeping for the action. If the second build executes the genrule again,
+check that `~/.bazelrc` contains the rugged `--disk_cache=.../cache/disk` line
+and that the sandbox/user has write access to that directory.
+
+The script disables remote execution/cache and BES for the probe target, uses
+different temporary `--output_user_root` values for the two worktrees, and writes
+a unique synthetic input each time so the first build should populate the cache
+and the second build should be the first possible hit. It also passes
+`--shell_executable="$(command -v bash)"` so the synthetic genrule works on
+NixOS without `/bin/bash`, and embeds absolute `sleep`/`sha256sum` paths so the
+action does not depend on Bazel's stripped action `PATH`. Pass `--keep` to leave
+the temporary worktrees, output roots, and logs under `/tmp` for inspection.
+
 ## Source Basis
 
 Claude Code local source checked:
@@ -243,8 +292,13 @@ Claude Code local source checked:
   - `convertToSandboxRuntimeConfig` resolves `~`, absolute paths, and
     settings-file-relative paths.
 - `/home/agentydragon/code/claude-code-sourcemap/restored-src/node_modules/@anthropic-ai/sandbox-runtime/dist/sandbox/sandbox-manager.js`
-  - Linux/WSL write globs are stripped/filtered because bubblewrap needs
-    concrete mount paths.
+  - network restrictions are enabled whenever `network.allowedDomains` is
+    defined, and Linux/WSL write globs are stripped/filtered because bubblewrap
+    needs concrete mount paths.
+- `/home/agentydragon/code/claude-code-sourcemap/restored-src/node_modules/@anthropic-ai/sandbox-runtime/dist/sandbox/linux-sandbox-utils.js`
+  - Linux network sandboxing uses `bwrap --unshare-net`; when proxy sockets are
+    available, sandbox commands get `HTTP_PROXY=http://localhost:3128`,
+    `ALL_PROXY=socks5h://localhost:1080`, and `GRPC_PROXY`/`grpc_proxy`.
 
 OpenAI Codex source checked at
 `/home/agentydragon/code/codex`, commit
@@ -264,3 +318,18 @@ OpenAI Codex source checked at
 - `codex-rs/core/src/exec_policy.rs`
   - explicit `decision="allow"` exec-policy matches can set
     `bypass_sandbox = true` for the command.
+
+Bazel and grpc-java source checked:
+
+- `/home/agentydragon/code/bazel`, commit
+  `10efaccb1d885a37ece9b9e32e3f99bc7c513368`
+  - `RemoteOptions --remote_proxy` and `BuildEventServiceOptions --bes_proxy`
+    only support Unix domain sockets.
+  - `GoogleAuthUtils.newNettyChannelBuilder` rejects non-`unix:` proxy values.
+- `/home/agentydragon/code/grpc-java`, commit
+  `cc0d1a810b58095bc835acaad703a758f3e0040b`
+  - the default `ProxyDetectorImpl` uses Java's `ProxySelector`; its own
+    validation comment configures proxies with
+    `-Dhttps.proxyHost=... -Dhttps.proxyPort=...`.
+  - Netty transport handles `HttpConnectProxiedSocketAddress` by installing an
+    HTTP CONNECT proxy negotiator.
