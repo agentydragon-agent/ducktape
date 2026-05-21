@@ -227,9 +227,8 @@ Translator gaps to migrate next:
 
 Suggested migration order:
 
-- [ ] First: backend-configured public securities with units/price/basis,
-      concrete sim lots/price paths for those securities, tax profile/ordinary
-      income, outside rent, and the current SP500 spend smoke response shape.
+- [ ] First: tax profile/ordinary income, outside rent, and the current SP500
+      spend smoke response shape.
 - [ ] Second: property purchase, mortgage origination, property tax, and
       browser smoke on the backend.
 - [ ] Third: crypto positions and liquidity preferences.

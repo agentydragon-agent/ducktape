@@ -148,12 +148,13 @@ milestone should add one coherent UI capability and the smallest backend slice
 needed to support it: product request type, validation, composition,
 simulation, product response model, and tests.
 
-Current status: Stage 0 and the first Stage 1 cash-runway slice are implemented
-in the current tree. The `/product` frontend calls
-cache-backed product routes through generated Zod types, the backend composes a
-cash-spend `ScenarioKey` into `augur/sim`, and the product page renders a
-selectable server-side metric fan without downloading every rollout table. The
-existing `ScenarioSet` route and frontend remain the compatibility/debug path.
+Current status: Stage 0, Stage 1, and the passive mark-to-market part of Stage 2
+are implemented in the current tree. The `/product` frontend calls cache-backed
+product routes through generated Zod types, the backend composes a cash-spend
+`ScenarioKey` plus configured public-security lots into `augur/sim`, and the
+product page renders a selectable server-side metric fan without downloading
+every rollout table. The existing `ScenarioSet` route and frontend remain the
+compatibility/debug path.
 
 ### Stage 0: Product Sandbox
 
@@ -199,7 +200,8 @@ The frontend can:
 
 This stage proves that the product UI can stay simple while config supplies the
 opening portfolio, tax lots, security-series mapping, and default funding
-policy.
+policy. The passive opening-lot/price-path portion is implemented; buffer,
+liquidation, realized gains, and tax behavior remain.
 
 ### Stage 3: Simple Scenario Comparison
 
@@ -304,8 +306,9 @@ does not include per-rollout monthly tables. The rollout-detail response returns
 one full rollout table for a requested seed.
 
 This shape deliberately omits request IDs, labels, scenario IDs, selected
-rollout state, colors, disabled scenarios, public securities, and gains. Those
-are either frontend state, later product concepts, or not yet supported.
+rollout state, colors, disabled scenarios, user-selected public securities, and
+gains. Those are either frontend state, config-owned facts, later product
+concepts, or not yet supported.
 
 The server owns an in-memory bounded LRU cache keyed by `(ScenarioKey, seed)`.
 Requests are deterministic without public run IDs: if a rollout is missing from
@@ -484,6 +487,9 @@ Completed:
   downloading full rollout tables.
 - Added focused coverage through the product route and browser golden:
   `//augur/api:server_test` and `//augur:product_visual_golden_test`.
+- Added passive configured public-security lots to the product projection
+  translator, including anchored sampled price paths and product metrics for
+  public-security value and liquid net worth.
 
 Remaining:
 
@@ -495,8 +501,8 @@ Remaining:
    requests. For the house slice, prove the current browser-shaped request and
    new product request produce equivalent low-level sim scenarios and matching
    comparison metrics.
-4. Grow the product protocol through the spiral roadmap, next with liquid
-   portfolio runway.
+4. Finish Stage 2 liquid portfolio behavior: minimum cash buffer, taxable-sale
+   policy, realized gains/taxes, and shortfall summaries.
 5. Move the main frontend request construction from low-level `ScenarioSet` to
    product `ScenarioKey` plus view requests once house-purchase parity is good
    enough.

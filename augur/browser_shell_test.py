@@ -389,6 +389,8 @@ def test_product_frontend_shell_can_jump_to_scenario_set_shell(page: Page, augur
     page.get_by_role("heading", name="Cash projection fan").first.wait_for(state="visible", timeout=15_000)
     page.get_by_label("Metric to plot").select_option("cash_usd")
     page.locator("[data-product-fan-chart='cashUsd']").wait_for(state="visible", timeout=30_000)
+    page.get_by_label("Metric to plot").select_option("public_security_value_usd")
+    page.locator("[data-product-fan-chart='publicSecurityValueUsd']").wait_for(state="visible", timeout=30_000)
 
     page.get_by_role("link", name="Scenario set").click()
     page.locator("[data-augur-surface='scenario-set']").wait_for(state="visible", timeout=15_000)

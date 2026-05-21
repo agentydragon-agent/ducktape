@@ -6,6 +6,7 @@ import pytest_bazel
 
 from augur.api.config import load_augur_config
 from augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle
+from augur.model.series import SP500_SERIES_ID
 from augur.model.simple_exogenous import SimpleExogenousModel
 from augur.product.projection import MetricFanRequest, RolloutRequest, ScenarioKey
 from augur.product.projection_service import ProductProjectionCache, ProductProjectionService
@@ -45,6 +46,7 @@ def test_metric_fan_and_rollout_detail_share_cached_sim_rollouts() -> None:
     )
 
     assert [request.rollout_seeds for request in model.sample_requests] == [(7, 8)]
+    assert model.sample_requests[0].required_level_series == frozenset({SP500_SERIES_ID})
     assert fan.exogenous_model_id == "simple_exogenous_model"
     assert fan.metric == "cash_usd"
     assert fan.failed_count == 0
@@ -73,6 +75,15 @@ def test_metric_fan_and_rollout_detail_share_cached_sim_rollouts() -> None:
     assert detail.exogenous_model_id == "simple_exogenous_model"
     assert detail.rollout.seed == 7
     assert detail.rollout.monthly_metrics.columns["cash_usd"] == [50_000.0, 49_000.0, 48_000.0, 47_000.0]
+    assert detail.rollout.monthly_metrics.columns["public_security_value_usd"][0] == 150_000.0
+    assert detail.rollout.monthly_metrics.columns["liquid_net_worth_usd"][0] == 200_000.0
+    assert detail.rollout.monthly_metrics.columns["net_worth_usd"][0] == 200_000.0
+
+    public_security_fan = service.metric_fan(
+        MetricFanRequest(scenario=scenario, rollout_seeds=(7, 8), metric="public_security_value_usd", percentiles=(50,))
+    )
+
+    assert public_security_fan.monthly_metric_fan.columns["value"][0] == 150_000.0
 
     fan_with_one_new_seed = service.metric_fan(
         MetricFanRequest(scenario=scenario, rollout_seeds=(7, 8, 9), metric="cash_usd", percentiles=(50,))

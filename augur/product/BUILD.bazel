@@ -22,6 +22,7 @@ py_library(
         "//augur/model:exogenous_py",
         "//augur/model:series_py",
         "//augur/sim:external_series",
+        "//augur/sim:projections",
         "//augur/sim:run",
         "//augur/sim:scenario",
         "//augur/sim:simulate",

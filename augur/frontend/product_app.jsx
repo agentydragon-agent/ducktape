@@ -20,6 +20,8 @@ const FAN_PERCENTILES = [5, 25, 50, 75, 95];
 
 const METRIC_OPTIONS = [
   { value: "net_worth_usd", chartValue: "netWorthUsd", label: "Net worth" },
+  { value: "public_security_value_usd", chartValue: "publicSecurityValueUsd", label: "Public security value" },
+  { value: "liquid_net_worth_usd", chartValue: "liquidNetWorthUsd", label: "Liquid net worth" },
   { value: "cash_usd", chartValue: "cashUsd", label: "Cash balance" },
   { value: "drawdown_usd", chartValue: "drawdownUsd", label: "Cash drawdown" },
   { value: "shortfall_usd", chartValue: "shortfallUsd", label: "Cash shortfall" },

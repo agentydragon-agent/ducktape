@@ -142,6 +142,48 @@ def series_values_from_bundle(bundle: SampledExogenousBundle) -> pl.DataFrame:
     return bundle.levels.select(SERIES_VALUES_SCHEMA.names())
 
 
+def anchor_sampled_series_levels(
+    sampled: SampledExogenousBundle, level_anchors: Mapping[str, float]
+) -> SampledExogenousBundle:
+    anchors = {series_id: float(value) for series_id, value in level_anchors.items()}
+    if not anchors or sampled.levels.is_empty():
+        return sampled
+
+    sampled_series = set(sampled.levels.get_column("series_id").unique().to_list())
+    active_anchors = {series_id: value for series_id, value in anchors.items() if series_id in sampled_series}
+    if not active_anchors:
+        return SampledExogenousBundle(
+            levels=sampled.levels, events=sampled.events, metadata={**sampled.metadata, "level_anchors": anchors}
+        )
+
+    anchor_frame = pl.DataFrame(
+        {"series_id": list(active_anchors), "_anchor_value": list(active_anchors.values())},
+        schema={"series_id": pl.Utf8(), "_anchor_value": pl.Float64()},
+    )
+    bases = (
+        sampled.levels.filter(pl.col("month_index") == 0)
+        .join(anchor_frame, on="series_id", how="inner")
+        .select("rollout_index", "series_id", "_anchor_value", pl.col("value").alias("_base_value"))
+    )
+    zero_bases = bases.filter(pl.col("_base_value") == 0.0)
+    if not zero_bases.is_empty():
+        series_ids = sorted(set(zero_bases.get_column("series_id").to_list()))
+        raise ValueError(f"sampled series level(s) have zero month-0 value and cannot be anchored: {series_ids}")
+
+    levels = (
+        sampled.levels.join(bases, on=["rollout_index", "series_id"], how="left")
+        .with_columns(
+            value=pl.when(pl.col("_anchor_value").is_not_null())
+            .then(pl.col("value") * pl.col("_anchor_value") / pl.col("_base_value"))
+            .otherwise(pl.col("value"))
+        )
+        .select(SERIES_LEVELS_SCHEMA.names())
+    )
+    return SampledExogenousBundle(
+        levels=levels, events=sampled.events, metadata={**sampled.metadata, "level_anchors": anchors}
+    )
+
+
 def _long_indices(*, rollout_count: int, horizon_months: int) -> tuple[np.ndarray, np.ndarray]:
     return (
         np.repeat(np.arange(rollout_count, dtype=np.int64), horizon_months + 1),

@@ -243,6 +243,18 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
         "columns": {"percentile": [0.0, 50.0, 100.0], "value": [47_000.0, 47_000.0, 47_000.0]},
     }
 
+    public_security_fan = _post_json(
+        server_url,
+        "/api/product/projections/metric_fan",
+        {"scenario": scenario, "rollout_seeds": [7, 8], "metric": "public_security_value_usd", "percentiles": [50]},
+    )
+
+    assert public_security_fan["metric"] == "public_security_value_usd"
+    assert public_security_fan["monthly_metric_fan"]["row_count"] == 4
+    assert public_security_fan["monthly_metric_fan"]["columns"]["month_index"] == [0, 1, 2, 3]
+    assert public_security_fan["monthly_metric_fan"]["columns"]["percentile"] == [50.0] * 4
+    assert public_security_fan["monthly_metric_fan"]["columns"]["value"][0] == 150_000.0
+
     detail = _post_json(server_url, "/api/product/projections/rollout", {"scenario": scenario, "seed": 7})
 
     assert detail["exogenous_model_id"] == "simple_exogenous_model"
@@ -253,12 +265,18 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
     columns = detail["rollout"]["monthly_metrics"]["columns"]
     assert columns["month_index"] == [0, 1, 2, 3]
     assert columns["cash_usd"] == [50_000.0, 49_000.0, 48_000.0, 47_000.0]
-    assert detail["rollout"]["terminal_metrics"] == {
-        "cash_usd": 47_000.0,
-        "net_worth_usd": 47_000.0,
-        "drawdown_usd": 3_000.0,
-        "shortfall_usd": 0.0,
-    }
+    assert columns["public_security_value_usd"][0] == 150_000.0
+    assert columns["liquid_net_worth_usd"][0] == 200_000.0
+    assert columns["net_worth_usd"][0] == 200_000.0
+    terminal = detail["rollout"]["terminal_metrics"]
+    assert terminal["cash_usd"] == 47_000.0
+    assert terminal["public_security_value_usd"] > 0
+    assert terminal["liquid_net_worth_usd"] == pytest.approx(
+        terminal["cash_usd"] + terminal["public_security_value_usd"]
+    )
+    assert terminal["net_worth_usd"] == pytest.approx(terminal["liquid_net_worth_usd"])
+    assert terminal["drawdown_usd"] == 3_000.0
+    assert terminal["shortfall_usd"] == 0.0
 
 
 if __name__ == "__main__":

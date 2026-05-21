@@ -17,11 +17,8 @@ generic backlog rather than a second ordered roadmap.
       graph tables from sim dataframes. Remaining work is to broaden the
       translator/materialized response beyond the current smoke slices and
       replace the temporary compatibility response with native projection read
-      models. The next translator slice should move opening public securities
-      into backend YAML config as actual units, starting prices, and cost basis,
-      with scenarios referencing those configured assets rather than carrying
-      editable `value_usd` buckets. The migration inventory for current API
-      fields lives in `augur/sim/TODO.md#api-to-sim-translation-inventory`.
+      models. The migration inventory for current API fields lives in
+      `augur/sim/TODO.md#api-to-sim-translation-inventory`.
 - [ ] **PE valuation should actually be sampled** (Priority 3 in
       `plans/roadmap.md`). The exogenous provider holds private-equity marks
       flat at 1.0 for the entire horizon. The fit is **open design work**

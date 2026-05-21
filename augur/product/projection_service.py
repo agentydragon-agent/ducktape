@@ -10,7 +10,7 @@ import polars as pl
 from augur.api.config import Config
 from augur.api.scenario_set import ActorRole
 from augur.api.schemas import ColumnarTable
-from augur.model.exogenous import ExogenousPathModel, ExogenousSamplingRequest
+from augur.model.exogenous import ExogenousPathModel, ExogenousSamplingRequest, anchor_sampled_series_levels
 from augur.model.series import INFLATION_SERIES_ID
 from augur.product.projection import (
     MetricFanRequest,
@@ -23,8 +23,16 @@ from augur.product.projection import (
     TerminalMetrics,
 )
 from augur.sim.external_series import materialize_sampled_exogenous
+from augur.sim.projections import project_net_worth
 from augur.sim.run import SimulationRun
-from augur.sim.scenario import Agent, InitialAccountBalance, RecurringObligation, Scenario, SeriesIndexedAmount
+from augur.sim.scenario import (
+    Agent,
+    InitialAccountBalance,
+    InitialLot,
+    RecurringObligation,
+    Scenario,
+    SeriesIndexedAmount,
+)
 from augur.sim.simulate import simulate_with_external_series
 
 _PRIMARY_ACCOUNT_ID = "checking"
@@ -113,9 +121,9 @@ class ProductProjectionService:
     def _simulate_missing_rollouts(
         self, scenario_key: ScenarioKey, seeds: tuple[int, ...]
     ) -> tuple[tuple[int, CachedRollout], ...]:
-        required_level_series = (
-            frozenset({INFLATION_SERIES_ID}) if scenario_key.spend_index == "inflation" else frozenset()
-        )
+        primary_agent_id = _primary_agent_id(self._augur_config)
+        initial_lots = _configured_portfolio_lots(self._augur_config, primary_agent_id=primary_agent_id)
+        required_level_series = _required_level_series_for_product_scenario(scenario_key, initial_lots=initial_lots)
         sampled = self._exogenous_model.sample(
             ExogenousSamplingRequest(
                 horizon_months=int(scenario_key.horizon_months),
@@ -123,7 +131,10 @@ class ProductProjectionService:
                 required_level_series=required_level_series,
             )
         )
-        scenario = _scenario_from_key(scenario_key, augur_config=self._augur_config)
+        sampled = anchor_sampled_series_levels(sampled, self._augur_config.portfolio.level_anchors)
+        scenario = _scenario_from_key(
+            scenario_key, augur_config=self._augur_config, primary_agent_id=primary_agent_id, initial_lots=initial_lots
+        )
         run = simulate_with_external_series(
             scenario, rollout_count=len(seeds), external_series=materialize_sampled_exogenous(sampled)
         )
@@ -135,7 +146,11 @@ class ProductProjectionService:
                 CachedRollout(
                     exogenous_model_id=exogenous_model_id,
                     output=_rollout_output(
-                        run, rollout_index=rollout_index, seed=seed, initial_cash_usd=initial_cash_usd
+                        run,
+                        rollout_index=rollout_index,
+                        seed=seed,
+                        primary_agent_id=primary_agent_id,
+                        initial_cash_usd=initial_cash_usd,
                     ),
                 ),
             )
@@ -143,8 +158,9 @@ class ProductProjectionService:
         )
 
 
-def _scenario_from_key(scenario_key: ScenarioKey, *, augur_config: Config) -> Scenario:
-    primary_agent_id = _primary_agent_id(augur_config)
+def _scenario_from_key(
+    scenario_key: ScenarioKey, *, augur_config: Config, primary_agent_id: str, initial_lots: tuple[InitialLot, ...]
+) -> Scenario:
     amount_due_usd: float | SeriesIndexedAmount
     if scenario_key.spend_index == "inflation":
         amount_due_usd = SeriesIndexedAmount(
@@ -159,6 +175,7 @@ def _scenario_from_key(scenario_key: ScenarioKey, *, augur_config: Config) -> Sc
 
     return Scenario(
         agents=[Agent(agent_id=primary_agent_id), Agent(agent_id=_SPEND_SINK_AGENT_ID)],
+        initial_lots=list(initial_lots),
         initial_cash=[
             InitialAccountBalance(
                 agent_id=primary_agent_id,
@@ -191,8 +208,32 @@ def _primary_agent_id(augur_config: Config) -> str:
     return primary_agents[0]
 
 
-def _rollout_output(run: SimulationRun, *, rollout_index: int, seed: int, initial_cash_usd: float) -> RolloutOutput:
-    monthly = _monthly_metrics(run, rollout_index=rollout_index, initial_cash_usd=initial_cash_usd)
+def _configured_portfolio_lots(augur_config: Config, *, primary_agent_id: str) -> tuple[InitialLot, ...]:
+    lots = augur_config.portfolio.to_initial_lots()
+    unsupported_owner_ids = sorted({lot.agent_id for lot in lots if lot.agent_id != primary_agent_id})
+    if unsupported_owner_ids:
+        raise ValueError(
+            "product portfolio projection only supports public-security lots owned by the primary agent; "
+            f"got owner agent ids {unsupported_owner_ids}"
+        )
+    return lots
+
+
+def _required_level_series_for_product_scenario(
+    scenario_key: ScenarioKey, *, initial_lots: tuple[InitialLot, ...]
+) -> frozenset[str]:
+    series_ids = {lot.asset_id for lot in initial_lots}
+    if scenario_key.spend_index == "inflation":
+        series_ids.add(INFLATION_SERIES_ID)
+    return frozenset(series_ids)
+
+
+def _rollout_output(
+    run: SimulationRun, *, rollout_index: int, seed: int, primary_agent_id: str, initial_cash_usd: float
+) -> RolloutOutput:
+    monthly = _monthly_metrics(
+        run, rollout_index=rollout_index, primary_agent_id=primary_agent_id, initial_cash_usd=initial_cash_usd
+    )
     terminal = _terminal_metrics(run, monthly, rollout_index=rollout_index)
     return RolloutOutput(
         seed=seed,
@@ -202,28 +243,41 @@ def _rollout_output(run: SimulationRun, *, rollout_index: int, seed: int, initia
     )
 
 
-def _monthly_metrics(run: SimulationRun, *, rollout_index: int, initial_cash_usd: float) -> pl.DataFrame:
-    cash = (
-        run.cash_balances.filter(
-            (pl.col("rollout_index") == rollout_index)
-            & (pl.col("agent_id") != _SPEND_SINK_AGENT_ID)
-            & (pl.col("account_id") == _PRIMARY_ACCOUNT_ID)
+def _monthly_metrics(
+    run: SimulationRun, *, rollout_index: int, primary_agent_id: str, initial_cash_usd: float
+) -> pl.DataFrame:
+    net_worth = (
+        project_net_worth(run)
+        .filter((pl.col("rollout_index") == rollout_index) & (pl.col("agent_id") == primary_agent_id))
+        .select(
+            "month_index",
+            "cash_usd",
+            pl.col("liquid_asset_value_usd").alias("public_security_value_usd"),
+            "liquid_net_worth_usd",
         )
-        .group_by("month_index")
-        .agg(pl.col("balance_usd").sum().alias("cash_usd"))
         .sort("month_index")
     )
+    if net_worth.is_empty():
+        raise ValueError(f"rollout {rollout_index} produced no net-worth metrics for agent {primary_agent_id!r}")
     shortfall = _monthly_shortfalls(run, rollout_index=rollout_index)
     return (
-        cash.join(shortfall, on="month_index", how="left")
+        net_worth.join(shortfall, on="month_index", how="left")
         .with_columns(
             pl.col("shortfall_usd").fill_null(0.0),
-            pl.col("cash_usd").alias("net_worth_usd"),
+            pl.col("liquid_net_worth_usd").alias("net_worth_usd"),
             pl.max_horizontal(0.0, pl.lit(initial_cash_usd, dtype=pl.Float64()) - pl.col("cash_usd")).alias(
                 "drawdown_usd"
             ),
         )
-        .select("month_index", "cash_usd", "net_worth_usd", "drawdown_usd", "shortfall_usd")
+        .select(
+            "month_index",
+            "cash_usd",
+            "public_security_value_usd",
+            "liquid_net_worth_usd",
+            "net_worth_usd",
+            "drawdown_usd",
+            "shortfall_usd",
+        )
     )
 
 
@@ -249,6 +303,8 @@ def _terminal_metrics(run: SimulationRun, monthly: pl.DataFrame, *, rollout_inde
     failed_month_index = _failed_month_index(run, rollout_index=rollout_index)
     return TerminalMetrics(
         cash_usd=float(row["cash_usd"]),
+        public_security_value_usd=float(row["public_security_value_usd"]),
+        liquid_net_worth_usd=float(row["liquid_net_worth_usd"]),
         net_worth_usd=float(row["net_worth_usd"]),
         drawdown_usd=float(row["drawdown_usd"]),
         shortfall_usd=_total_shortfall(monthly),
@@ -324,6 +380,10 @@ def _terminal_metric_value(terminal: TerminalMetrics, metric: MetricName) -> flo
     match metric:
         case "cash_usd":
             return terminal.cash_usd
+        case "public_security_value_usd":
+            return terminal.public_security_value_usd
+        case "liquid_net_worth_usd":
+            return terminal.liquid_net_worth_usd
         case "net_worth_usd":
             return terminal.net_worth_usd
         case "drawdown_usd":

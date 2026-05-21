@@ -42,6 +42,8 @@ def _rollout(request: RolloutRequest) -> dict:
             "monthly_metrics": {"row_count": 1, "columns": {"month_index": [0], "cash_usd": [50000.0]}},
             "terminal_metrics": {
                 "cash_usd": 50000.0,
+                "public_security_value_usd": 0.0,
+                "liquid_net_worth_usd": 50000.0,
                 "net_worth_usd": 50000.0,
                 "drawdown_usd": 0.0,
                 "shortfall_usd": 0.0,

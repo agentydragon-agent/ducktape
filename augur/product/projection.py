@@ -9,7 +9,9 @@ from pydantic import Field, NonNegativeFloat, NonNegativeInt, PositiveFloat, Pos
 from augur.api.schemas import ApiModel, ColumnarTable, Percentage
 
 SpendIndex = Literal["none", "inflation"]
-MetricName = Literal["cash_usd", "net_worth_usd", "drawdown_usd", "shortfall_usd"]
+MetricName = Literal[
+    "cash_usd", "public_security_value_usd", "liquid_net_worth_usd", "net_worth_usd", "drawdown_usd", "shortfall_usd"
+]
 MAX_HORIZON_MONTHS = 100 * 12
 
 
@@ -38,6 +40,8 @@ class RolloutRequest(ApiModel):
 
 class TerminalMetrics(ApiModel):
     cash_usd: float
+    public_security_value_usd: NonNegativeFloat
+    liquid_net_worth_usd: float
     net_worth_usd: float
     drawdown_usd: NonNegativeFloat
     shortfall_usd: NonNegativeFloat

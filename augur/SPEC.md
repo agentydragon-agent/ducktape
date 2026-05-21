@@ -23,11 +23,13 @@ shapes.
 
 The current product-language API surface is intentionally narrow. A
 `ScenarioKey` describes one cash-spend scenario without randomness, and product
-view requests add explicit rollout seeds. The metric-fan route returns compact
-requested percentiles; the rollout route returns one full per-seed table. Missing
-rollouts are transparently sampled and simulated into an in-memory server cache.
-Product concepts that are not present in that request type are not supported by
-the product endpoint yet.
+view requests add explicit rollout seeds. The product route also includes
+deployment-configured public-security lots as passive mark-to-market holdings;
+those holdings are config facts, not frontend knobs. The metric-fan route
+returns compact requested percentiles; the rollout route returns one full
+per-seed table. Missing rollouts are transparently sampled and simulated into an
+in-memory server cache. Product concepts that are neither in the request type
+nor deployment config are not supported by the product endpoint yet.
 
 ## Model
 
