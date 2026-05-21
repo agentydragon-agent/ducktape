@@ -21,6 +21,12 @@ Compatibility adapters may exist during migration, but the durable contract is
 the `model -> sim -> api -> frontend` boundary rather than the legacy wire
 shapes.
 
+The current product-language API surface is intentionally narrow:
+`/api/product/projections/run` accepts one cash-spend projection with explicit
+rollout seeds, composes it into `augur/sim`, and returns per-rollout monthly and
+terminal metrics for the product frontend. Product concepts that are not present
+in that request type are not supported by the product endpoint yet.
+
 ## Model
 
 ### Entities

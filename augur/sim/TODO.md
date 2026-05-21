@@ -59,7 +59,9 @@ evaluation, or response semantics.
 
 - [ ] Add API serialization, compact scenario metadata, and a frontend
       adapter over `ProjectionRun`. Prefer a clean `model -> sim -> api`
-      contract over matching legacy compatibility-table names.
+      contract over matching legacy compatibility-table names. The first native
+      product route now covers the cash-spend runway directly; this item remains
+      for broader scenario/read-model replacement.
 - [ ] Expand the backend sim smoke harness beyond the current smoke slices.
       The harness proves current `ScenarioSet` requests can translate into sim,
       sample model-owned bundles, complete `augur/sim`, and return graphable
@@ -112,9 +114,9 @@ Translator gaps to migrate next:
       cashflows. `SeriesIndexedAmount` now represents "amount is `$X` at base
       month, then scales by `model_series[reset_month] / model_series[base]`"
       and supports fixed-length reset periods such as annual rent resets.
-      Future translator slices should use it for outside rent, tenant rent,
-      inflation-adjusted spend, and later recurring property costs instead of
-      inventing special-case growth flags.
+      The product cash-spend route uses it for inflation-indexed spend. Future
+      translator slices should use it for outside rent, tenant rent, and later
+      recurring property costs instead of inventing special-case growth flags.
 - [ ] Define the month-0 anchoring rule for every model-driven level series.
       Public securities, home value, rent, crypto, private-equity marks, and
       inflation-indexed amounts should all say whether the configured value is

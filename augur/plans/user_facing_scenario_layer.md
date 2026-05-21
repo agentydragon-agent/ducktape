@@ -146,6 +146,13 @@ milestone should add one coherent UI capability and the smallest backend slice
 needed to support it: product request type, validation, composition,
 simulation, product response model, and tests.
 
+Current status: Stage 0 and the first Stage 1 cash-runway slice are implemented
+in the current tree. The `/product` frontend calls
+`/api/product/projections/run` through generated Zod types, the backend composes
+one cash-spend request into `augur/sim`, and the product page renders a
+selectable metric fan from per-rollout product outputs. The existing
+`ScenarioSet` route and frontend remain the compatibility/debug path.
+
 ### Stage 0: Product Sandbox
 
 Create the parallel product page/tab/dev panel.
@@ -455,39 +462,53 @@ modeled and the simulator supports the required liquidity regime.
 
 ## Migration Plan
 
-1. Define the product request/response Pydantic types without changing the
-   existing low-level endpoint. Add schema-export and Zod generation coverage.
-2. Add a new parallel endpoint that accepts `ProjectionRequest` and implement
-   only Spiral 1.
-3. Add product composer tests for Spiral 1 against public fixture config.
-4. Add response/read-model tests for the cash/net-worth distribution view.
-5. Add a parallel frontend page/tab/dev panel that calls the product route for
-   Spiral 1 and renders only the product response model.
-6. Keep the current `ScenarioSet` route and current frontend flow as the
+Completed:
+
+- Defined the first product request/response Pydantic types in `augur/product`
+  and exported them through the schema/Zod pipeline.
+- Added `/api/product/projections/run` for a single Spiral 1 cash-spend
+  projection with explicit rollout seeds.
+- Composed the product request into a low-level sim scenario using configured
+  primary cash and recurring spend, including the supported path-indexed
+  inflation spend shape.
+- Added a parallel `/product` frontend surface in the shared shell. It calls the
+  product route through the shared client, validates request/response payloads
+  with generated Zod types, and renders a selectable metric fan.
+- Added focused coverage through the product route and browser golden:
+  `//augur/api:server_test` and `//augur:product_visual_golden_test`.
+
+Remaining:
+
+1. Add more direct product composer/read-model unit tests around rejection cases
+   and edge cases that the e2e route test does not isolate.
+2. Keep the current `ScenarioSet` route and current frontend flow as the
    compatibility/debug path while the product flow grows.
-7. Add equivalence tests as later spirals overlap existing browser-shaped
+3. Add equivalence tests as later spirals overlap existing browser-shaped
    requests. For the house slice, prove the current browser-shaped request and
    new product request produce equivalent low-level sim scenarios and matching
    comparison metrics.
-8. Grow the product protocol through the spiral roadmap.
-9. Move the main frontend request construction from low-level `ScenarioSet` to
+4. Grow the product protocol through the spiral roadmap, next with liquid
+   portfolio runway.
+5. Move the main frontend request construction from low-level `ScenarioSet` to
    `ProjectionRequest` once house-purchase parity is good enough.
-10. Move response materialization/read-model code into the product layer. Keep
-    `SimulationRun` as the source, but stop exposing simulator-shaped details by
-    default.
-11. Remove low-level API fields from the frontend wire once no caller depends on
-    them. Keep old URLs invalid if the cleanup requires it.
+6. Move response materialization/read-model code into the product layer. Keep
+   `SimulationRun` as the source, but stop exposing simulator-shaped details by
+   default.
+7. Remove low-level API fields from the frontend wire once no caller depends on
+   them. Keep old URLs invalid if the cleanup requires it.
 
 ## Initial Test Targets
 
 - Product model unit tests for request validation and rejected unsupported
   combinations.
-- Composer tests against public fixture config/catalog, starting with the flat
-  cash-spend projection request.
+- Composer/read-model tests against public fixture config/catalog, starting with
+  the flat cash-spend projection request.
 - Equivalence tests against the current `//augur:browser_shell_test` scenario
   slice once a spiral overlaps it.
-- Browser/API smoke test on the parallel product frontend route.
-- Visual goldens only after the response shape or visible metrics change.
+- Browser/API smoke test on the parallel product frontend route. The current
+  route-level cash-spend e2e is in `//augur/api:server_test`.
+- Visual goldens for visible product frontend changes. The current product
+  golden is `//augur:product_visual_golden_test`.
 
 ## Open Questions
 
