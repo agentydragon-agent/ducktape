@@ -1305,29 +1305,13 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
+    use super::super::test_utils;
 
     fn write(path: &Path, body: &str) {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).unwrap();
         }
         fs::write(path, body).unwrap();
-    }
-
-    fn member(binding: &str, export_name: &str) -> BindingReport {
-        BindingReport {
-            binding: binding.into(),
-            export_name: export_name.into(),
-        }
-    }
-
-    fn module_ref(label: &str, residual: bool) -> ModuleReportRef {
-        ModuleReportRef {
-            id: label.to_string(),
-            label: label.to_string(),
-            residual,
-            index: None,
-            target_file: (!residual).then(|| label.to_string()),
-        }
     }
 
     fn owner(id: &str, ordinal: usize, binding: &str, export_name: &str) -> OwnerGraphNodeReport {
@@ -1339,10 +1323,10 @@ mod tests {
                 start_line: ordinal + 1,
                 end_line: ordinal + 1,
             }),
-            declared_bindings: vec![member(binding, export_name)],
+            declared_bindings: vec![test_utils::member(binding, export_name)],
             statement_kind: StatementKind::VarDecl,
             purity: Purity::Pure,
-            destination: module_ref("residual", true),
+            destination: test_utils::module_ref("residual", true),
         }
     }
 

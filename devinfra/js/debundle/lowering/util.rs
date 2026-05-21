@@ -429,35 +429,25 @@ pub(super) fn import_decl_for_plan(
     bindings: &BTreeMap<String, String>,
 ) -> ModuleItem {
     let source = relative_source(entry_file, target_file);
-    ModuleItem::ModuleDecl(ModuleDecl::Import(ImportDecl {
-        span: DUMMY_SP,
-        specifiers: bindings
-            .iter()
-            .map(|(local, exported)| {
-                ImportSpecifier::Named(ImportNamedSpecifier {
-                    span: DUMMY_SP,
-                    local: Ident::new_no_ctxt(local.clone().into(), DUMMY_SP),
-                    imported: if local == exported {
-                        None
-                    } else {
-                        Some(ModuleExportName::Ident(Ident::new_no_ctxt(
-                            exported.clone().into(),
-                            DUMMY_SP,
-                        )))
-                    },
-                    is_type_only: false,
-                })
+    let specifiers: Vec<ImportSpecifier> = bindings
+        .iter()
+        .map(|(local, exported)| {
+            ImportSpecifier::Named(ImportNamedSpecifier {
+                span: DUMMY_SP,
+                local: Ident::new_no_ctxt(local.clone().into(), DUMMY_SP),
+                imported: if local == exported {
+                    None
+                } else {
+                    Some(ModuleExportName::Ident(Ident::new_no_ctxt(
+                        exported.clone().into(),
+                        DUMMY_SP,
+                    )))
+                },
+                is_type_only: false,
             })
-            .collect(),
-        src: Box::new(Str {
-            span: DUMMY_SP,
-            value: source.into(),
-            raw: None,
-        }),
-        type_only: false,
-        with: None,
-        phase: ImportPhase::Evaluation,
-    }))
+        })
+        .collect();
+    import_decl_module_item(specifiers, &source)
 }
 
 pub(super) fn relative_source(from_file: &str, target_file: &str) -> String {

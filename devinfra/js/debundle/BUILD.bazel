@@ -291,6 +291,7 @@ rust_library(
         "peel/factorize.rs",
         "peel/mod.rs",
         "peel/plan.rs",
+        "peel/test_utils.rs",
     ],
     crate_root = "peel/mod.rs",
     edition = "2024",

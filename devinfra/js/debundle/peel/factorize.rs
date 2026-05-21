@@ -836,27 +836,12 @@ mod tests {
     use swc_atoms::Atom;
 
     use analysis::{
-        AtomicGraphReport, AtomicUnitEdgeReport, AtomicUnitReport, BindingReport, DepKind,
+        AtomicGraphReport, AtomicUnitEdgeReport, AtomicUnitReport, DepKind,
         ModuleReportRef, OwnerGraphEdgeReport, OwnerGraphNodeReport, OwnerGraphQuotientReport,
         OwnerGraphReport, Purity, SourceLocation, StatementKind, StatementOrdinal,
     };
 
-    fn binding(name: &str) -> BindingReport {
-        BindingReport {
-            binding: name.into(),
-            export_name: name.into(),
-        }
-    }
-
-    fn module_ref(id: &str, residual: bool) -> ModuleReportRef {
-        ModuleReportRef {
-            id: id.to_string(),
-            label: id.to_string(),
-            residual,
-            index: None,
-            target_file: (!residual).then(|| id.to_string()),
-        }
-    }
+    use super::super::test_utils;
 
     fn owner(
         id: &str,
@@ -869,7 +854,7 @@ mod tests {
             ordinal_value,
             bindings,
             lines,
-            module_ref("logical:residual", true),
+            test_utils::module_ref("logical:residual", true),
         )
     }
 
@@ -885,7 +870,7 @@ mod tests {
             ordinal_value,
             bindings,
             lines,
-            module_ref(module_path, false),
+            test_utils::module_ref(module_path, false),
         )
     }
 
@@ -904,7 +889,7 @@ mod tests {
                 start_line: ordinal_value * 100,
                 end_line: ordinal_value * 100 + lines.saturating_sub(1),
             }),
-            declared_bindings: bindings.iter().map(|b| binding(b)).collect(),
+            declared_bindings: bindings.iter().map(|b| test_utils::binding(b)).collect(),
             statement_kind: StatementKind::VarDecl,
             purity: Purity::Pure,
             destination,

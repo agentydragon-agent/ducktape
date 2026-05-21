@@ -76,18 +76,7 @@ pub(super) fn phantom_side_effect_imports(
                 .analysis
                 .logical_module(LogicalModuleIndex(provider_index))?;
             let source = super::util::relative_source(from_file, &provider.target_file);
-            Some(ModuleItem::ModuleDecl(ModuleDecl::Import(ImportDecl {
-                span: DUMMY_SP,
-                specifiers: Vec::new(),
-                src: Box::new(Str {
-                    span: DUMMY_SP,
-                    value: source.into(),
-                    raw: None,
-                }),
-                type_only: false,
-                with: None,
-                phase: ImportPhase::Evaluation,
-            })))
+            Some(import_decl_module_item(Vec::new(), &source))
         })
         .collect()
 }

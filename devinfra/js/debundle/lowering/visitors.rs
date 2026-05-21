@@ -8,59 +8,62 @@
 
 use super::*;
 
+/// Generates the 6 shared `VisitMut` methods that apply a string-keyed
+/// rename map to identifiers, import specifiers, computed property/member
+/// keys, and named exports. Used by both `IdentifierRenamer` (rename-only)
+/// and `RenameAndShorthandNaturalizer` (rename + shorthand collapse).
+macro_rules! impl_rename_visit_mut {
+    () => {
+        fn visit_mut_ident(&mut self, ident: &mut Ident) {
+            if let Some(to) = self.renames.get(ident.sym.as_ref()) {
+                ident.sym = to.clone().into();
+            }
+        }
+
+        fn visit_mut_import_named_specifier(&mut self, spec: &mut ImportNamedSpecifier) {
+            let original_local = spec.local.sym.clone();
+            let Some(to) = self.renames.get(original_local.as_ref()) else {
+                return;
+            };
+            if spec.imported.is_none() {
+                spec.imported = Some(ModuleExportName::Ident(Ident::new_no_ctxt(
+                    original_local,
+                    DUMMY_SP,
+                )));
+            }
+            spec.local.sym = to.clone().into();
+        }
+
+        fn visit_mut_prop_name(&mut self, prop_name: &mut PropName) {
+            if let PropName::Computed(computed) = prop_name {
+                computed.visit_mut_children_with(self);
+            }
+        }
+
+        fn visit_mut_member_prop(&mut self, member_prop: &mut MemberProp) {
+            if let MemberProp::Computed(computed) = member_prop {
+                computed.visit_mut_children_with(self);
+            }
+        }
+
+        fn visit_mut_named_export(&mut self, named: &mut NamedExport) {
+            if named.src.is_none() {
+                named.specifiers.visit_mut_with(self);
+            }
+        }
+
+        fn visit_mut_export_named_specifier(&mut self, spec: &mut ExportNamedSpecifier) {
+            spec.orig.visit_mut_with(self);
+        }
+    };
+}
+
 pub(super) struct IdentifierRenamer<'a> {
     pub(super) renames: &'a BTreeMap<String, String>,
 }
 
 impl VisitMut for IdentifierRenamer<'_> {
-    fn visit_mut_ident(&mut self, ident: &mut Ident) {
-        if let Some(to) = self.renames.get(ident.sym.as_ref()) {
-            ident.sym = to.clone().into();
-        }
-    }
-
-    fn visit_mut_import_named_specifier(&mut self, spec: &mut ImportNamedSpecifier) {
-        let original_local = spec.local.sym.clone();
-        let Some(to) = self.renames.get(original_local.as_ref()) else {
-            return;
-        };
-        if spec.imported.is_none() {
-            spec.imported = Some(ModuleExportName::Ident(Ident::new_no_ctxt(
-                original_local,
-                DUMMY_SP,
-            )));
-        }
-        spec.local.sym = to.clone().into();
-    }
-
-    fn visit_mut_prop_name(&mut self, prop_name: &mut PropName) {
-        if let PropName::Computed(computed) = prop_name {
-            computed.visit_mut_children_with(self);
-        }
-    }
-
-    fn visit_mut_member_prop(&mut self, member_prop: &mut MemberProp) {
-        if let MemberProp::Computed(computed) = member_prop {
-            computed.visit_mut_children_with(self);
-        }
-    }
-
-    fn visit_mut_named_export(&mut self, named: &mut NamedExport) {
-        // Re-export specifiers' orig field (`export { x } from "./mod"`) is
-        // the imported name in the source module, not a local binding here,
-        // so don't touch it. Without `from`, orig is a local binding —
-        // recurse into specifiers so visit_mut_export_named_specifier can
-        // narrow which fields to rewrite.
-        if named.src.is_none() {
-            named.specifiers.visit_mut_with(self);
-        }
-    }
-
-    fn visit_mut_export_named_specifier(&mut self, spec: &mut ExportNamedSpecifier) {
-        // The `exported` field is a public-API name, not a local binding,
-        // so it must not be rewritten when a colliding local is renamed.
-        spec.orig.visit_mut_with(self);
-    }
+    impl_rename_visit_mut!();
 }
 
 pub(super) struct RenameAndShorthandNaturalizer<'a> {
@@ -68,47 +71,7 @@ pub(super) struct RenameAndShorthandNaturalizer<'a> {
 }
 
 impl VisitMut for RenameAndShorthandNaturalizer<'_> {
-    fn visit_mut_ident(&mut self, ident: &mut Ident) {
-        if let Some(to) = self.renames.get(ident.sym.as_ref()) {
-            ident.sym = to.clone().into();
-        }
-    }
-
-    fn visit_mut_import_named_specifier(&mut self, spec: &mut ImportNamedSpecifier) {
-        let original_local = spec.local.sym.clone();
-        let Some(to) = self.renames.get(original_local.as_ref()) else {
-            return;
-        };
-        if spec.imported.is_none() {
-            spec.imported = Some(ModuleExportName::Ident(Ident::new_no_ctxt(
-                original_local,
-                DUMMY_SP,
-            )));
-        }
-        spec.local.sym = to.clone().into();
-    }
-
-    fn visit_mut_prop_name(&mut self, prop_name: &mut PropName) {
-        if let PropName::Computed(computed) = prop_name {
-            computed.visit_mut_children_with(self);
-        }
-    }
-
-    fn visit_mut_member_prop(&mut self, member_prop: &mut MemberProp) {
-        if let MemberProp::Computed(computed) = member_prop {
-            computed.visit_mut_children_with(self);
-        }
-    }
-
-    fn visit_mut_named_export(&mut self, named: &mut NamedExport) {
-        if named.src.is_none() {
-            named.specifiers.visit_mut_with(self);
-        }
-    }
-
-    fn visit_mut_export_named_specifier(&mut self, spec: &mut ExportNamedSpecifier) {
-        spec.orig.visit_mut_with(self);
-    }
+    impl_rename_visit_mut!();
 
     fn visit_mut_object_pat(&mut self, object: &mut ObjectPat) {
         object.visit_mut_children_with(self);
