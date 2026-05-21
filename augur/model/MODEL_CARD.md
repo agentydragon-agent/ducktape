@@ -3,12 +3,11 @@
 Last updated: 2026-05-20.
 
 This is the minimal `ModelCard` for the current Augur exogenous-model layer.
-The active trained `vecm` provider attaches typed model-card, model-version, evidence,
-calibration, scenario-generator, exogenous-path-set, validation-report, and
-known-limitation identity metadata to `SampledExogenousBundle.metadata`. Those identities
-are stable for the same checked-in public evidence and model inputs, but
-evidence, calibration, and validation are still runtime-derived metadata rather
-than durable persisted artifacts.
+The active trained `vecm` provider attaches typed model-version, evidence,
+calibration, scenario-generator, and exogenous-path-set identity metadata to
+`SampledExogenousBundle.metadata`. Those identities are stable for the same
+checked-in public evidence and model inputs, but evidence and calibration are
+still runtime-derived metadata rather than durable persisted artifacts.
 
 ## Scope
 
@@ -55,8 +54,8 @@ Raw evidence -> evidence set -> calibration/fitting -> sampled exogenous bundle 
 
 Today that means:
 
-- Raw evidence is checked-in public source data under `augur/data/market/source`
-  and is documented in `augur/data/market/source/SOURCES.md`. Current sources
+- Raw evidence is checked-in public source data under `augur/data`
+  and is documented in `augur/data/SOURCES.md`. Current sources
   include FRED, Yahoo Finance SPY adjusted-close data, and trimmed Zillow ZHVI
   city rows.
 - Evidence loading happens in `load_evidence()`, which returns
@@ -71,11 +70,10 @@ Today that means:
   source-specific objects such as FRED, Yahoo, Zillow, or Manifold shapes.
 
 Current persisted provenance is partial. `SampledExogenousBundle.metadata` carries
-model-card, model-version, validation-report, known-limitation, evidence-set,
-calibration-artifact, risk-factor-set, scenario-generator, event-stream,
-provider-label, and latest-observation ids. It does not yet persist typed
-evidence/calibration/validation artifacts outside the run payload, so these
-identities are not archival proof on their own.
+model-version, evidence-set, calibration-artifact, scenario-generator,
+event-stream, and provider-label ids. It does not yet persist typed
+evidence/calibration artifacts outside the run payload, so these identities are
+not archival proof on their own.
 
 ## Current Evidence And Artifacts
 
@@ -101,14 +99,11 @@ Current generator run, informally:
 - model label;
 - model implementation and config from `VecmModel(VecmConfig(k_ar_diff=1, coint_rank=1))`;
 - `SamplingRequest` horizon, rollout count, seed, and exogenous model id;
-- model-card/version, evidence, calibration, scenario-generator,
-  validation-report, and known-limitation identity in
+- model-version, evidence, calibration, and scenario-generator identity in
   `SampledExogenousBundle.metadata`;
-- provider-level source metadata embedded in `SampledExogenousBundle.metadata`.
+- provider-level label metadata embedded in `SampledExogenousBundle.metadata`.
 
 ## Known Limitations
-
-`KnownLimitation` entries for the current model layer:
 
 - Evidence-set identity is runtime-derived from the loaded public market
   evidence metadata. It is stable for the same checked-in inputs, but there is
@@ -128,8 +123,6 @@ Current generator run, informally:
 - Source refresh recency is not enforced by this document or by model metadata.
 - Exogenous models do not model agent feedback, strategic behavior, market impact,
   tax-law changes, credit availability, or general equilibrium dynamics.
-- Validation status is attached as a placeholder validation-report id, not a
-  decision-grade report artifact.
 
 ## Validation Gaps
 
@@ -141,8 +134,7 @@ log-density.
 Still missing:
 
 - a durable `ValidationReport` artifact with score summary, report date,
-  validation window, and acceptance criteria instead of the current
-  `not_available` placeholder;
+  validation window, and acceptance criteria;
 - documented stress scenarios and sensitivity checks;
 - broader tests proving output provenance changes when persisted evidence,
   calibration, model implementation, or generator settings change;
@@ -163,7 +155,6 @@ Use these names for future governance and provenance work:
 | `EvidenceSetId`         | Stable id for the cleaned/aligned evidence used for fitting.               |
 | `CalibrationArtifactId` | Stable id for fitted parameters and calibration metadata.                  |
 | `RunProvenance`         | Result-level model, data, calibration, generator, seed, code, and path id. |
-| `KnownLimitation`       | Typed limitation or warning carried with the result.                       |
 
 Related runtime vocabulary direction:
 

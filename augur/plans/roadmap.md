@@ -108,9 +108,8 @@ The prior-art audit points to a conservative target shape:
   cause IDs are the source of truth. Monthly arrays are chart/report views over
   that state, not a parallel semantic model.
 - Model governance is part of the model output. Sampled bundles now carry first
-  typed model/evidence/calibration/generator/path identities and model-card or
-  validation-report pointers; the next cleanup is to persist real artifacts and
-  validation results behind those IDs.
+  typed model/evidence/calibration/generator/path identities; the next cleanup
+  is to persist real artifacts and validation results behind those IDs.
 
 ## Priority 1: Type Result Views And Accounting Detail
 

@@ -59,17 +59,6 @@ from augur.model.series import (
 # Add another mode only after extending the parameter copy + `_predict_mean`.
 _DETERMINISTIC: Literal["ci"] = "ci"
 _TENDER_INTERVAL_MONTHS = 12
-_MODEL_CARD_ID = "augur-exogenous-model-card:2026-05-15"
-_VALIDATION_REPORT_ID = "validation_report:augur-exogenous-models:not_available:2026-05-15"
-_KNOWN_LIMITATION_IDS = (
-    "evidence-set-id-unversioned",
-    "calibration-artifact-id-unversioned",
-    "validation-report-not-decision-grade",
-    "constant-mortgage-rate-path",
-    "private-equity-marks-flat-fixture",
-    "private-equity-paths-all-share-placeholder",
-    "crypto-paths-all-share-placeholder",
-)
 
 
 @dataclass(frozen=True)
@@ -384,10 +373,7 @@ class VecmExogenousPathModel:
             levels=concat_frames(level_blocks, SERIES_LEVELS_SCHEMA),
             events=concat_frames(event_blocks, SERIES_EVENTS_SCHEMA),
             metadata={
-                "model_card_id": _MODEL_CARD_ID,
                 "model_version_id": self.exogenous_model_version_id,
-                "validation_report_id": _VALIDATION_REPORT_ID,
-                "known_limitation_ids": _KNOWN_LIMITATION_IDS,
                 "exogenous_model_id": self.label,
                 "exogenous_model_version_id": self.exogenous_model_version_id,
                 "scenario_generator_id": "vecm_exogenous_path_model",

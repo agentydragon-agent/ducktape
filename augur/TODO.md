@@ -106,14 +106,11 @@ generic backlog rather than a second ordered roadmap.
 ## Response wire surface
 
 - [ ] **Prune the remaining decorative provenance/graph response scaffolding.**
-      The `source_metadata` passthrough, URL payload version wrapper, and
-      VECM risk-factor IDs have been removed. Remaining cleanup candidates are:
-      model-card / validation-report / known-limitation / notes metadata until
-      backed by real artifacts; runtime-derived `model_version`,
-      `exogenous_model_version_id`, `scenario_generator_*`, `evidence_set_id`,
-      and `calibration_artifact_id` IDs until they refer to persisted records;
-      metadata-provided `event_stream_ids` where actual event frames can be the
-      source of truth; `path_set_id` / `exogenous_path_id` /
+      Remaining cleanup candidates are: notes metadata; runtime-derived
+      `model_version`, `exogenous_model_version_id`, `scenario_generator_*`,
+      `evidence_set_id`, and `calibration_artifact_id` IDs until they refer to
+      persisted records; metadata-provided `event_stream_ids` where actual event
+      frames can be the source of truth; `path_set_id` / `exogenous_path_id` /
       `projection_run_id` / `projection_trajectory_id` graph identities unless
       server-side persistence and slicing need them; and unused
       `ExogenousObservation` response models if they remain unmaterialized.
@@ -195,10 +192,9 @@ generic backlog rather than a second ordered roadmap.
       Pydantic-parsed at load time, and avoid stale simulation knobs already
       owned by `SamplingRequest`.
 - [ ] Persist and harden model-governance artifacts for exogenous providers. The
-      runtime now attaches typed model card, evidence, calibration, scenario
-      generator, path-set, and validation-report identities; the next step is
-      durable evidence/calibration artifacts, real validation reports, and
-      reviewed limitations rather than placeholder IDs.
+      runtime now attaches typed evidence, calibration, scenario-generator,
+      and path-set identities; the next step is durable evidence/calibration
+      artifacts and real validation reports rather than placeholder IDs.
 - [ ] Move evidence/model-fetching shapes out of simulator APIs when touched.
       The simulator should consume calibrated trajectory/provider inputs, not
       source-specific evidence objects.

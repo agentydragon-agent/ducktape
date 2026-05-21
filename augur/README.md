@@ -31,7 +31,7 @@ company-/person-specific modeling assumptions.
 | -------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | `model/`       | Runtime exogenous-provider configs, sim-facing exogenous model APIs, simple fixture provider, and the active VECM provider.             |
 | `model/train/` | Offline exogenous-model training config templates.                                                                                      |
-| `data/market/` | Public market-source blobs (FRED series, Yahoo SPY adjusted-close, Zillow ZHVI). Acquisition recipes in `source/SOURCES.md`.            |
+| `data/`        | Public exogenous evidence blobs (FRED series, Yahoo SPY adjusted-close, Zillow ZHVI). Acquisition recipes in `SOURCES.md`.              |
 | `api/`         | `Config` schema, wire request/response shapes, `Backend`, HTTP server, catalog/bootstrap assembly, OpenAPI schema export.               |
 | `sim/`         | Deterministic trajectory evaluation over typed scenarios and sampled external-series bundles.                                           |
 | `frontend/`    | React app + Tailwind bundle build, frontend helpers (casing conversion, columnar table marshaling, scenario-set state, backend client). |

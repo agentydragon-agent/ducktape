@@ -414,8 +414,7 @@ Current Augur alignment:
 
 Gap:
 
-- No model inventory or model card exists.
-- No validation report identity is attached to a exogenous model.
+- No model inventory exists.
 - No evidence/calibration artifact hash is required.
 - Warnings are generic strings rather than typed limitations.
 
@@ -423,12 +422,10 @@ Recommended vocabulary:
 
 - `ModelSpec`
 - `ModelVersion`
-- `ModelCard`
 - `ValidationReport`
 - `EvidenceSetId`
 - `CalibrationArtifactId`
 - `RunProvenance`
-- `KnownLimitation`
 
 ### 8. Keep Calibration And Evidence Separate From Runtime Inputs
 
@@ -569,9 +566,8 @@ Standardize these names before the next large redesign:
      rows.
 
 6. Replace placeholder governance with reviewed artifacts.
-   - Keep the current model-card/version and validation-report fields, but back
-     them with reviewed intended use, source data, calibration, limitations,
-     validation status, and known non-goals.
+   - Keep the current model-version fields, but back them with reviewed source
+     data, calibration, validation status, and known non-goals.
    - Attach durable artifact hashes or reviewed IDs to `SampledExogenousBundle`
      metadata.
 

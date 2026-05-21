@@ -1,6 +1,6 @@
-# Public market-data sources
+# Public exogenous evidence sources
 
-Snapshots of publicly available market data that augur's exogenous models fit
+Snapshots of publicly available exogenous data that augur's models fit
 against. None of this is private; every series is reproducible by following
 the steps below. Two files have been trimmed from their upstream form to
 keep the checked-in size manageable; the trim is also documented per file.
