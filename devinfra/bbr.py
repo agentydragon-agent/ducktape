@@ -205,11 +205,7 @@ def _print_post_run_summary() -> None:
         return
     if not inv_id:
         return
-    print(f"bbr: invocation {inv_id}", file=sys.stderr)
-    print(f"bbr:   targets:  bbapi target {inv_id}", file=sys.stderr)
-    print(f"bbr:   logs:     bbapi target log {inv_id} <target>", file=sys.stderr)
-    print(f"bbr:   artifacts: bbapi artifact {inv_id}", file=sys.stderr)
-    print(f"bbr:   details:  bbapi invocation {inv_id}", file=sys.stderr)
+    print(f'bbr: invocation {inv_id}  (bbapi {{target,"target log",artifact,invocation}} {inv_id})', file=sys.stderr)
 
 
 _HELP = """\

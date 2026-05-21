@@ -1,0 +1,6 @@
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "exogenous_evidence_config",
+    srcs = ["exogenous_evidence.example.json"],
+)

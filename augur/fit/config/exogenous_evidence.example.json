@@ -1,0 +1,32 @@
+{
+  "source_data": {
+    "fred_sp500_csv": "../../data/fred_sp500.csv",
+    "yahoo_spy_adjusted_json": "../../data/yahoo_spy_chart_adjusted.json",
+    "fred_cpi_us_csv": "../../data/fred_cpi_us.csv",
+    "fred_sf_rent_cpi_csv": "../../data/fred_sf_rent_cpi.csv",
+    "fred_sfxrsa_csv": "../../data/fred_sfxrsa.csv",
+    "fred_fhfa_sf_oakland_berkeley_csv": "../../data/fred_fhfa_sf_oakland_berkeley.csv",
+    "fred_mortgage30_csv": "../../data/fred_mortgage30.csv",
+    "zillow_city_zhvi_csv": "../../data/zillow_city_zhvi_uc_sfrcondo_tier_0.33_0.67_sm_sa_month.csv",
+    "zillow_home_value_regions": {
+      "home": {
+        "region_name": "San Francisco"
+      },
+      "vallejo_home": {
+        "region_name": "Vallejo"
+      }
+    },
+    "minimum_aligned_months": 36
+  },
+  "location_series_sources": {
+    "home_value": {
+      "san_francisco_ca": "home",
+      "vallejo_ca": "vallejo_home"
+    },
+    "rent": {
+      "san_francisco_ca": "rent",
+      "vallejo_ca": "rent",
+      "mare_island_vallejo_ca": "rent"
+    }
+  }
+}
