@@ -325,16 +325,6 @@ test("URL state round-trips only input state", () => {
   assert.equal(decoded.scenarios[0].financing.customMortgageTermYears, undefined);
 });
 
-test("URL state rejects the previous reserve-policy state version", () => {
-  const payload = {
-    version: 5,
-    scenario_set_input: decamelizeObjectKeys(createDefaultScenarioSetInput(bootstrap)),
-  };
-  const encoded = Buffer.from(JSON.stringify(payload)).toString("base64url");
-
-  assert.throws(() => decodeScenarioSetUrlState(encoded), /Unsupported augur scenario URL state version: 5/);
-});
-
 test("URL state round-trips rich scenario controls in camelCase", () => {
   const input = normalizeScenarioSetInput(createDefaultScenarioSetInput(bootstrap), bootstrap);
   input.scenarios[0] = patchScenarioSections(input.scenarios[0], {

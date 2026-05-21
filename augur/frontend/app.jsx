@@ -1721,49 +1721,26 @@ function ScenarioComparisonPanel({ scenarioSetInput, result, propertiesById }) {
 function SamplingMetadataPanel({ result }) {
   const metadata = result?.samplingMetadata;
   if (!metadata) return null;
-  const sourceEntries = Object.entries(metadata.sourceMetadata ?? {});
-  const metadataValue = (value) => (typeof value === "object" ? JSON.stringify(value) : String(value));
   return (
     <RunContextDisclosurePanel
       context="exogenous-metadata"
       title="Exogenous model metadata"
       summary={metadata.exogenousModelId ?? null}
     >
-      <div className="grid gap-4 p-4 lg:grid-cols-2">
-        <div className="min-w-0">
-          <div className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
-            Event stream IDs
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {(metadata.eventStreamIds ?? []).map((eventStreamId) => (
-              <span
-                key={eventStreamId}
-                className="rounded border border-slate-200 px-2 py-1 text-xs mono dark:border-slate-700"
-              >
-                {eventStreamId}
-              </span>
-            ))}
-            {(metadata.eventStreamIds ?? []).length === 0 && <span className="text-sm augur-muted">none</span>}
-          </div>
+      <div className="p-4">
+        <div className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+          Event stream IDs
         </div>
-        <div className="min-w-0">
-          <div className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
-            Source metadata
-          </div>
-          {sourceEntries.length > 0 ? (
-            <dl className="grid gap-2">
-              {sourceEntries.map(([key, value]) => (
-                <div key={key} className="min-w-0 rounded-md border border-slate-200 p-2 dark:border-slate-700">
-                  <dt className="text-xs font-semibold uppercase tracking-wide augur-muted">{labelFromCamel(key)}</dt>
-                  <dd className="mt-1 max-h-20 overflow-auto break-all text-xs mono augur-strong">
-                    {metadataValue(value)}
-                  </dd>
-                </div>
-              ))}
-            </dl>
-          ) : (
-            <div className="text-sm augur-muted">none</div>
-          )}
+        <div className="flex flex-wrap gap-2">
+          {(metadata.eventStreamIds ?? []).map((eventStreamId) => (
+            <span
+              key={eventStreamId}
+              className="rounded border border-slate-200 px-2 py-1 text-xs mono dark:border-slate-700"
+            >
+              {eventStreamId}
+            </span>
+          ))}
+          {(metadata.eventStreamIds ?? []).length === 0 && <span className="text-sm augur-muted">none</span>}
         </div>
       </div>
     </RunContextDisclosurePanel>

@@ -132,7 +132,6 @@ def _sampling_metadata(
         "rollout_count": scenario_set.sampling_request.rollout_count,
         "horizon_months": scenario_set.sampling_request.horizon_months,
         "event_stream_ids": event_stream_ids,
-        "source_metadata": dict(sampled_exogenous_metadata),
     }
 
 
@@ -232,7 +231,6 @@ def _exogenous_paths(
             ),
             evidence_set_id=str(sampled_exogenous_metadata.get("evidence_set_id", "unknown")),
             calibration_artifact_id=str(sampled_exogenous_metadata.get("calibration_artifact_id", "unknown")),
-            risk_factor_set_id=str(sampled_exogenous_metadata.get("risk_factor_set_id", "exogenous_factors:v1")),
             seed=seed,
             event_stream_ids=event_stream_ids,
         )

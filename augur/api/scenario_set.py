@@ -1066,7 +1066,6 @@ class ExogenousPathIdentity(ApiModel):
     scenario_generator_version_id: str = "unknown"
     evidence_set_id: str = "unknown"
     calibration_artifact_id: str = "unknown"
-    risk_factor_set_id: str = "exogenous_factors:v1"
     seed: int
     event_stream_ids: tuple[str, ...] = ()
 

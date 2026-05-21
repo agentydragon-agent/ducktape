@@ -180,8 +180,6 @@ def test_backend_server_runs_browser_shaped_property_request(server_url: str) ->
     )
 
     assert scenario_run["sampling_metadata"]["exogenous_model_id"] == "simple_exogenous_model"
-    assert scenario_run["sampling_metadata"]["source_metadata"]["current_private_equity_price_usd"] == 25.0
-
     [result] = scenario_run["scenario_results"]
     assert result["scenario_id"] == "location_a_purchase"
     assert result["summary"] == {"enabled": True, "property_id": "location_a_property", "location_id": "location_a"}

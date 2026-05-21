@@ -15,10 +15,6 @@ the *normalized* layout the React app operates on after merging URL state
 with bootstrap defaults; the ``…Overrides`` mirror (every field optional)
 describes the sparse-overrides payload the URL actually stores, which lets
 ``decodeScenarioSetUrlState`` validate URL state at the Zod boundary.
-
-URL state version (``URL_STATE_VERSION`` in ``scenario_set_state.js``) is the
-contract version for the encoded form. Bumping any field here is a wire-state
-break and demands a version bump.
 """
 
 from __future__ import annotations

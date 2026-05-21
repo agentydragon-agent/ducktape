@@ -71,7 +71,6 @@ def test_backend_runs_joint_model_and_materializes_graph_tables() -> None:
 
     assert response.sampling_metadata is not None
     assert response.sampling_metadata["exogenous_model_id"] == "simple_exogenous_model"
-    assert response.sampling_metadata["source_metadata"]["level_anchors"] == {"sp500": 500.0}
     assert response.projection_run is not None
     assert response.projection_run.scenario_set_id == "backend_smoke"
     assert response.projection_run.path_set_id.startswith("path_set:")

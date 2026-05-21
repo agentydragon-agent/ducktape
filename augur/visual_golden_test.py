@@ -61,8 +61,7 @@ class VisualCase:
 
 
 def _encode_visual_state(scenario_set_input: dict[str, object]) -> str:
-    payload = {"version": 7, "scenario_set_input": scenario_set_input}
-    payload_json = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()
+    payload_json = json.dumps(scenario_set_input, separators=(",", ":"), sort_keys=True).encode()
     return base64.urlsafe_b64encode(payload_json).decode().rstrip("=")
 
 

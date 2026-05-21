@@ -7,8 +7,6 @@ import {
 
 export const SCENARIO_COLORS = ["#2563eb", "#dc2626", "#059669", "#d97706", "#7c3aed", "#0891b2"];
 
-const URL_STATE_VERSION = 7;
-
 const DEFAULT_SAMPLING_REQUEST = {
   exogenousModelId: "current_exogenous_model",
   rolloutCount: 128,
@@ -627,20 +625,14 @@ function base64UrlToBytes(value) {
 }
 
 export function encodeScenarioSetUrlState(input, schema = zBrowserScenarioSetInputOverridesInput) {
-  const payload = {
-    version: URL_STATE_VERSION,
-    scenario_set_input: projectScenarioSetForUrlState(input, schema),
-  };
+  const payload = projectScenarioSetForUrlState(input, schema);
   return bytesToBase64Url(new TextEncoder().encode(JSON.stringify(payload)));
 }
 
 export function decodeScenarioSetUrlState(value, schema = zBrowserScenarioSetInputOverridesInput) {
   if (!value) return null;
   const payload = JSON.parse(new TextDecoder().decode(base64UrlToBytes(value)));
-  if (payload?.version !== URL_STATE_VERSION) {
-    throw new Error(`Unsupported augur scenario URL state version: ${payload?.version ?? "<missing>"}`);
-  }
-  return camelizeObjectKeys(schema.parse(payload.scenario_set_input));
+  return camelizeObjectKeys(schema.parse(payload));
 }
 
 export function scenarioSetInputFromUrlSearch(search) {

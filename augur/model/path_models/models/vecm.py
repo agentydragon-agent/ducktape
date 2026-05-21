@@ -299,9 +299,6 @@ class VecmExogenousPathModel:
     current_private_equity_price_usd: float
     location_series_sources: LocationSeriesSources
     label: str
-    risk_factor_ids: tuple[str, ...]
-    evidence_latest_observation_ids: tuple[str, ...]
-    risk_factor_set_id: str
     exogenous_model_version_id: str
     evidence_set_id: str
     calibration_artifact_id: str
@@ -318,7 +315,6 @@ class VecmExogenousPathModel:
     ) -> VecmExogenousPathModel:
         factor_names = tuple(model.factor_names)
         label = model.label
-        risk_factor_set_id = "risk_factor_set:" + stable_identity_digest({"factor_names": factor_names})
         exogenous_model_version_id = "model_version:" + stable_identity_digest(
             {"label": label, "class": type(model).__qualname__}
         )
@@ -334,7 +330,6 @@ class VecmExogenousPathModel:
                 "exogenous_model_id": label,
                 "exogenous_model_version_id": exogenous_model_version_id,
                 "evidence_set_id": evidence_set_id,
-                "risk_factor_set_id": risk_factor_set_id,
             }
         )
         return cls(
@@ -343,9 +338,6 @@ class VecmExogenousPathModel:
             current_private_equity_price_usd=float(current_private_equity_price_usd),
             location_series_sources=location_series_sources,
             label=label,
-            risk_factor_ids=factor_names,
-            evidence_latest_observation_ids=tuple(sorted(str(key) for key in latest_observations)),
-            risk_factor_set_id=risk_factor_set_id,
             exogenous_model_version_id=exogenous_model_version_id,
             evidence_set_id=evidence_set_id,
             calibration_artifact_id=calibration_artifact_id,
@@ -402,9 +394,6 @@ class VecmExogenousPathModel:
                 "scenario_generator_version_id": "vecm_exogenous_path_model:v1",
                 "evidence_set_id": self.evidence_set_id,
                 "calibration_artifact_id": self.calibration_artifact_id,
-                "risk_factor_set_id": self.risk_factor_set_id,
-                "risk_factor_ids": self.risk_factor_ids,
-                "evidence_latest_observation_ids": self.evidence_latest_observation_ids,
                 "current_private_equity_price_usd": self.current_private_equity_price_usd,
                 "event_stream_ids": ("private_equity_sale_opportunity_event",),
                 "notes": ("sampled by VecmExogenousPathModel",),

@@ -105,6 +105,18 @@ generic backlog rather than a second ordered roadmap.
 
 ## Response wire surface
 
+- [ ] **Prune the remaining decorative provenance/graph response scaffolding.**
+      The `source_metadata` passthrough, URL payload version wrapper, and
+      VECM risk-factor IDs have been removed. Remaining cleanup candidates are:
+      model-card / validation-report / known-limitation / notes metadata until
+      backed by real artifacts; runtime-derived `model_version`,
+      `exogenous_model_version_id`, `scenario_generator_*`, `evidence_set_id`,
+      and `calibration_artifact_id` IDs until they refer to persisted records;
+      metadata-provided `event_stream_ids` where actual event frames can be the
+      source of truth; `path_set_id` / `exogenous_path_id` /
+      `projection_run_id` / `projection_trajectory_id` graph identities unless
+      server-side persistence and slicing need them; and unused
+      `ExogenousObservation` response models if they remain unmaterialized.
 - [ ] **Extend `ReportSpec` `include_*` gates to the smaller response
       fields**. `include_funding_decisions` / `include_obligations` /
       `include_settlement_results` / `include_failure_events` shipped
