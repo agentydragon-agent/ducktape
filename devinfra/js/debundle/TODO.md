@@ -109,8 +109,8 @@ Still to do:
 - Full lowering matrix: binding placement reports, attached side-effects,
   staged-shell edge cases beyond the focused fixture.
 - Owner-fragment modeling parity for nested declarations and re-exports.
-- Keep new analysis tooling on the existing owner-graph and peelability side
-  outputs; do not add parallel selected-owner cache formats.
+- Keep new analysis tooling on the existing owner graph and embedded atomic
+  DAG side outputs; do not add parallel selected-owner cache formats.
 
 ## Materialize-stage hot-loop optimizations
 
@@ -124,28 +124,18 @@ picking the next item. Remaining priorities, ordered by leverage:
 The 2026-05-20 source-built large-web-corpus profile moved the
 current remaining plan:
 
-1. **Gate expensive owner graph detail for ordinary `debundle run`.**
-   In the logical-materialization substage,
-   `build_owner_graph_report` took 8.97 s / 15.36 s. CPU samples
-   put `ChunkFactorization::owner_graph_report` at 47.75% children,
-   with `build_factorize_report` at 32.10%. Ordinary runs should be
-   able to emit the lightweight graph/report data they need without
-   always computing full peelability/factorize cells; keep the full
-   detail for `debundle peel` / planning runs.
+1. **Use the overlay realizability fast path where hypothetical moves remain.**
+   Candidate-style evaluation should use `RealizabilityIndex`'
+   `verdict_after_moving_owners_touching` where possible instead of the
+   rollbacking push/scope path. This avoids mutating the maintained quotient
+   during repeated what-if checks.
 
-2. **Use the overlay realizability fast path for peel candidates.**
-   Candidate evaluation currently uses the rollbacking push/scope
-   path even though `RealizabilityIndex` has
-   `verdict_after_moving_owners_touching`, which avoids mutating the
-   maintained quotient. Switching peelability/factorize callers to
-   the overlay path should cut repeated SCC/reachability churn.
-
-3. **Reduce repeated graph reachability allocation.** If item 2 is
+2. **Reduce repeated graph reachability allocation.** If item 1 is
    still hot, replace repeated `BTreeSet`-based
    `scc_containing -> reachable_from` work with dense module-index
    bitsets or cached reachability for the current quotient.
 
-4. **Keep harness emission out of the critical path when possible.**
+3. **Keep harness emission out of the critical path when possible.**
    `emit_browser_harness` was the largest wall-clock stage
    (18.78 s / 35.15 s), but not the largest CPU hotspot. The output
    tree was about 98 MiB across 4,991 files, with reports larger than
@@ -174,9 +164,9 @@ Older profile follow-ups that still apply:
 Tighten before the next large peel loop:
 
 - Keep stage telemetry complete (index build/rebuild, fused AST analysis,
-  purity, owner-graph construction, quotient construction, validation,
-  peelability/report generation, lowering, output writing) — useful
-  durations should land in the emitted reports.
+  purity, owner-graph construction, atomic-DAG construction, quotient
+  construction, validation, lowering, output writing) — useful durations
+  should land in the emitted reports.
 - Move repeated timing helpers into one shared Rust module once a second
   pass needs them outside the current local macro sites.
 - Add focused regression coverage for `ArtifactIndexes` rebuild boundaries
@@ -187,6 +177,19 @@ Tighten before the next large peel loop:
 - Consider changing per-chunk `file_records` from an ordered vector of
   `(file, role)` pairs into a typed map if the output consumers do not
   depend on order. Keep the manifest easy to diff and easy to read.
+
+## Factorize / atomic-DAG docs drift
+
+Resolve these after the atomic-DAG report migration settles:
+
+- **`FACTORIZE.md` still needs a full pass.** The current source of truth is
+  the emitted `OwnerGraphReport.atomic_graph` plus `debundle peel plan-work`
+  proposals derived from that DAG. Audit the doc for older language that
+  implies ordinary `debundle run` emits heuristic peel recommendations.
+- **"Factorize" remains overloaded.** Broadly, factorization/assembly
+  produces the authoritative owner partition, while `peel/factorize.rs`
+  produces advisory planner proposals from the serialized atomic DAG. Keep
+  docs explicit about which one they mean.
 
 ## Analysis semantics breadth
 

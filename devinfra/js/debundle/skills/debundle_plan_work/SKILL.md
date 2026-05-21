@@ -1,6 +1,6 @@
 ---
 name: debundle_plan_work
-description: Plan and inspect generic JS debundle spec work using `debundle peel`. Use when an agent needs to turn owner_graph.json plus a modules tree into dispatchable module extraction work, query binding-patch status, inspect graph/source context, or decide what debundle spec edits should be made. Generic to any debundle target.
+description: Plan and inspect generic JS debundle spec work using `debundle peel`. Use when an agent needs to turn owner_graph.json plus a modules tree into dispatchable module extraction work, query atomic-DAG and patch-plan status, inspect graph/source context, or decide what debundle spec edits should be made. Generic to any debundle target.
 ---
 
 # Debundle Plan Work
@@ -14,9 +14,9 @@ spec edits; this skill does not mutate YAML itself.
 Find the debundle output and spec modules directory for the target:
 
 ```bash
-GRAPH=<debundle-output>/owner_graph.json
+GRAPH=<debundle-output>/reports/tree/<chunk-id>/owner_graph.json
 MODULES=<spec-root>/modules
-SOURCE_ROOT=<upstream-js-root>
+SOURCE_ROOT=<debundle-output>/app
 ```
 
 Build or run the debundle CLI. In a consuming Bazel repo, use the external
@@ -40,57 +40,60 @@ bazelisk --output_base=/tmp/debundle-cli-bazel \
 
 ## Planning Loop
 
-1. Run `plan-work --limit 25` first. Treat `proposals[]` with
-   `landable_today: true` as the primary dispatch surface. Each proposal
-   has owner IDs, binding IDs, line span, active-module references, and
-   residual-cell references. Limited output preserves planner order:
-   residual-edge topo-depth, then source start line.
+1. Run `graph-summary --limit 25` first when orientation is needed. It
+   reports owner, atomic-unit, atomic-edge, proposal, and diagnostic counts
+   plus the largest residual atomic units.
 
-2. For binding-patch cleanup, run `patch-status`. Use `full[]` for patch
-   sets that are currently assignable as a unit, `with_companions[]` when
-   companion bindings must move together, and `near[]` for blocked patch
-   sets worth investigating. An empty `patch-status` report only means no
-   current binding-patch set matches those sections; it does not mean
-   there are no peelable candidates.
+2. Run `plan-work --limit 25` for dispatchable work. Treat `proposals[]`
+   with `landable_today: true` as the primary module-assignment surface.
+   Each proposal has owner IDs, binding IDs, line span, active-module
+   references, and residual-cell references. Limited output preserves
+   planner order: residual-edge topo-depth, then source start line.
 
-3. For symbol-level candidates, run `candidates`. Use
-   `--readable-only` when you want already-named bindings, and
-   `--by-destination` when grouping by the heuristic destination helps.
-   This is the best command for inspecting readable names that came from
-   sidecar binding patches.
+3. For current YAML coverage, run `patch-plan`. Rows describe whether a
+   module or binding-patch set covers complete atomic units, splits atomic
+   units, or mentions unknown bindings. Split-unit rows are not directly
+   landable; inspect the unit and adjust the module boundary.
 
-4. Before assigning a proposal, run `explain` on its proposal, owner, or
-   binding ID. Check graph neighbors, current spec homes, peelability
-   rows, and factorizer diagnostics.
+4. For atomic-DAG inspection, run `units`. Use `--residual-only` for
+   remaining work, `--readable-only` when you want named bindings, and
+   `--by-destination` when grouping by current destination helps.
 
-5. Read source with `source-slice` when deciding final module names,
+5. Before assigning a proposal, run `explain` on its proposal, unit, owner,
+   binding, or diagnostic ID. Check graph neighbors, current spec homes,
+   atomic-unit closure, and factorizer diagnostics.
+
+6. Read source with `source-slice` when deciding final module names,
    architecture, or whether a proposal should be split further by hand.
 
 ## Commands
 
 ```bash
-# Certified module-assignment proposals and diagnostics.
+# Aggregate graph/proposal overview.
+bazelisk run @ducktape//devinfra/js/debundle:debundle -- \
+  peel graph-summary --graph "$GRAPH" --modules "$MODULES" --limit 25
+
+# Module-assignment proposals and diagnostics derived from the atomic DAG.
 bazelisk run @ducktape//devinfra/js/debundle:debundle -- \
   peel plan-work --graph "$GRAPH" --modules "$MODULES" \
   --size-cap-lines 10000 --limit 25
 
-# Binding-patch coverage and near misses.
+# Current YAML coverage against atomic units.
 bazelisk run @ducktape//devinfra/js/debundle:debundle -- \
-  peel patch-status --graph "$GRAPH" --modules "$MODULES" \
-  --near-missing 2 --max-companions 16 --limit 50
+  peel patch-plan --graph "$GRAPH" --modules "$MODULES" --limit 50
 
-# Candidate catalog.
+# Atomic unit catalog.
 bazelisk run @ducktape//devinfra/js/debundle:debundle -- \
-  peel candidates --graph "$GRAPH" --modules "$MODULES" \
-  --readable-only --by-destination --limit 100
+  peel units --graph "$GRAPH" --modules "$MODULES" \
+  --residual-only --readable-only --by-destination --limit 100
 
 # Graph/spec explanation for one object.
 bazelisk run @ducktape//devinfra/js/debundle:debundle -- \
   peel explain --graph "$GRAPH" --modules "$MODULES" \
   --proposal-id auto_partition_0000 --limit 25
 
-# The selector can instead be --owner-id <owner> or --binding-id <binding>.
-# There is no --binding shorthand.
+# The selector can instead be --unit-id <unit>, --diagnostic-id <diagnostic>,
+# --owner-id <owner>, or --binding-id <binding>. There is no --binding shorthand.
 
 # Source text for one object. Use --source-root when source_path is relative.
 bazelisk run @ducktape//devinfra/js/debundle:debundle -- \
@@ -102,14 +105,16 @@ bazelisk run @ducktape//devinfra/js/debundle:debundle -- \
 ## Reading Results
 
 - `plan-work` is the module-assignment proposal query.
-- `patch-status` is the binding-patch coverage query, not the global
-  candidate queue.
-- `candidates` is the symbol-level candidate catalog.
-- `explain` is the graph walk primitive for owners, bindings, and
-  proposals. Select exactly one object with `--owner-id`, `--binding-id`,
-  or `--proposal-id`.
+- `patch-plan` is the current YAML coverage query against atomic units.
+- `units` is the atomic-DAG catalog.
+- `graph-summary` is the quick aggregate overview.
+- `explain` is the graph walk primitive for owners, bindings, units,
+  diagnostics, and proposals. Select exactly one object with `--owner-id`,
+  `--binding-id`, `--unit-id`, `--diagnostic-id`, or `--proposal-id`.
 - `source-slice` is the source retrieval primitive for the same IDs.
 
 Prefer these commands over grepping generated output. The owner graph is
-the source of truth for cycle gates, residual dependencies, and whether a
-candidate is actually assignable.
+the source of truth for cycle gates and residual dependencies; the embedded
+atomic DAG is the source of truth for indivisible peel units. The proposal
+queue is a heuristic projection from that DAG, not a serialized fact from
+`debundle run`.

@@ -25,16 +25,7 @@ pub struct OwnerGraphReport {
     pub edges: Vec<OwnerGraphEdgeReport>,
     #[serde(rename = "module_graph")]
     pub quotient: OwnerGraphQuotientReport,
-    pub peelability: OwnerGraphPeelabilityReport,
-    /// Algorithmic peel proposer output. Always populated by
-    /// `ChunkFactorization::owner_graph_report`; empty `cells` when there
-    /// are no residual owners. Each cell carries a verdict from
-    /// the SSOT predicate in
-    /// `peelability::evaluate_peel_candidate`, so
-    /// `cells[].landable_today == true` matches what
-    /// `materialize_logical_modules` would actually accept.
-    #[serde(default, rename = "peel_proposals")]
-    pub factorize: FactorizeReport,
+    pub atomic_graph: AtomicGraphReport,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -92,69 +83,36 @@ pub struct QuotientSccReport {
     pub constraining_module_edge_ids: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OwnerGraphPeelabilityReport {
-    pub residual_destinations: Vec<ModuleReportRef>,
-    pub minimal_peel_sets: Vec<OwnerGraphPeelSetReport>,
-    pub residual_owner_horizon: Vec<ResidualOwnerPeelHorizonReport>,
-    /// Every peel candidate the analyzer evaluated, with its
-    /// terminal status. `minimal_peel_sets[]` is the subset where
-    /// `status == peelable_now`; this list also surfaces blocked
-    /// candidates so downstream tooling (peel inventory, lane
-    /// dispatchers) can see WHY a candidate was rejected.
-    #[serde(default)]
-    pub evaluated_owner_sets: Vec<EvaluatedPeelCandidateReport>,
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AtomicGraphReport {
+    pub nodes: Vec<AtomicUnitReport>,
+    pub edges: Vec<AtomicUnitEdgeReport>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EvaluatedPeelCandidateReport {
-    pub candidate_id: String,
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AtomicUnitReport {
+    pub id: String,
     pub owner_ids: Vec<String>,
     pub members: Vec<BindingReport>,
-    pub status: PeelCandidateStatus,
-    /// Owner-edge ids that close the cycle for `BlockedCycle`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub cycle_blockers: Vec<String>,
-    /// Owner ids whose residual dependency forces `BlockedResidualDependency`.
+    pub anonymous_statement_owner_ids: Vec<String>,
+    pub destinations: Vec<ModuleReportRef>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub residual_dependency_blockers: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ResidualOwnerPeelHorizonReport {
-    pub owner_id: String,
-    pub statement_ordinal: StatementOrdinal,
+    pub causes: Vec<DepKind>,
+    pub size_lines_estimate: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub source_location: Option<SourceLocation>,
-    pub statement_kind: StatementKind,
-    pub purity: Purity,
-    pub current_destination: ModuleReportRef,
-    pub members: Vec<BindingReport>,
-    pub status: ResidualOwnerPeelStatus,
-    pub peel_set_ids: Vec<String>,
-    pub companion_options: Vec<ResidualOwnerCompanionOptionReport>,
+    pub source_line_range: Option<[usize; 2]>,
+    pub ordinal_span: usize,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ResidualOwnerPeelStatus {
-    Direct,
-    WithCompanions,
-    Blocked,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ResidualOwnerCompanionOptionReport {
-    pub peel_set_id: String,
-    pub companion_owner_ids: Vec<String>,
-    pub companion_members: Vec<BindingReport>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OwnerGraphPeelSetReport {
-    pub candidate_id: String,
-    pub owner_ids: Vec<String>,
-    pub members: Vec<BindingReport>,
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AtomicUnitEdgeReport {
+    pub id: String,
+    pub source: String,
+    pub target: String,
+    pub edge_kinds: Vec<DepKind>,
+    pub owner_edge_ids: Vec<String>,
+    pub constrains_init_order: bool,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
@@ -163,87 +121,6 @@ pub enum PeelCandidateStatus {
     PeelableNow,
     BlockedCycle,
     BlockedResidualDependency,
-}
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct FactorizeOptions {
-    /// Hard ceiling (in summed source-line counts) per emitted
-    /// factorizer proposal. Frontiers exceeding the cap become
-    /// diagnostics instead of proposals.
-    pub size_cap_lines: usize,
-}
-
-impl Default for FactorizeOptions {
-    fn default() -> Self {
-        Self {
-            size_cap_lines: 10_000,
-        }
-    }
-}
-
-/// Side-channel output of `crate::factorize::build_factorize_report`,
-/// embedded in [`OwnerGraphReport::factorize`]. Carries proposed
-/// module partitions over the residual owner surface. `cells`
-/// contains certified proposals only; `diagnostics` contains
-/// internal frontier states that were not valid module assignments.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
-pub struct FactorizeReport {
-    pub size_cap_lines: usize,
-    pub residual_owner_count: usize,
-    #[serde(default)]
-    pub cells: Vec<FactorizeCell>,
-    /// Internal frontier states that could not be certified as
-    /// proposals. These are diagnostics, not module assignments the
-    /// author can land as-is.
-    #[serde(default)]
-    pub diagnostics: Vec<FactorizeDiagnostic>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct FactorizeCell {
-    pub proposed_module_id: String,
-    pub owner_ids: Vec<String>,
-    pub binding_ids: Vec<Atom>,
-    /// Owner ids in this cell whose `declared_bindings` is empty
-    /// (anonymous side-effect statements). Lane workers materialize
-    /// these via `anonymous_statements:` entries quoting the
-    /// statement source verbatim.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub anonymous_statement_owner_ids: Vec<String>,
-    pub size_lines_estimate: usize,
-    pub size_members: usize,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub source_line_range: Option<[usize; 2]>,
-    pub ordinal_span: usize,
-    /// Verdict from `peelability::evaluate_peel_candidate`
-    /// applied to the cell's final owner set. Certified proposals
-    /// should be `PeelableNow`.
-    pub status: PeelCandidateStatus,
-    /// `true` iff `status == PeelableNow`. Mirrors the materializer's
-    /// accept-this-spec predicate; a `true` cell can be promoted to
-    /// an active `.yaml` right now.
-    pub landable_today: bool,
-    /// Should be empty for certified proposals. Kept for report
-    /// compatibility.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub cycle_blocker_owner_ids: Vec<String>,
-    /// Active-module ids (as in [`ModuleReportRef::id`]) the cell's
-    /// outgoing constraining edges target. Safe references — entry
-    /// auto-exports those bindings. Informational.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub active_modules_referenced: Vec<String>,
-    /// Set when this cell is an **extension proposal**: an existing
-    /// YAML-claimed module's id (as in [`ModuleReportRef::id`]) that
-    /// the certified proposal would extend.
-    /// `None` for fresh-module proposals (where the cell contains
-    /// only loose / residual owners).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub extends_module_id: Option<String>,
-    /// Loose owner ids (residual today) that this proposal would
-    /// move into the existing module identified by
-    /// `extends_module_id`. Empty for fresh-module proposals (where
-    /// every owner in `owner_ids` is part of the proposal itself).
-    pub extension_owner_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -255,30 +132,10 @@ pub enum FactorizeDiagnosticReason {
     RepeatedFrontier,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct FactorizeDiagnostic {
-    pub diagnostic_id: String,
-    pub owner_ids: Vec<String>,
-    pub binding_ids: Vec<Atom>,
-    pub size_lines_estimate: usize,
-    pub size_members: usize,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub source_line_range: Option<[usize; 2]>,
-    pub ordinal_span: usize,
-    pub status: PeelCandidateStatus,
-    pub reason: FactorizeDiagnosticReason,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub cycle_blocker_owner_ids: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub active_modules_referenced: Vec<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub extends_module_id: Option<String>,
-}
-
 /// Conventional JSON-key value for the residual catch-all module
-/// across the report schema and downstream consumers (factorizer,
-/// peel inventory). Kept as an SSOT constant so consumers that key
-/// off "the residual module" by id can still pattern-match — but the
+/// across the report schema and downstream consumers. Kept as an SSOT
+/// constant so consumers that key off "the residual module" by id can
+/// still pattern-match — but the
 /// debundler itself stopped using it as a discriminator: residual is
 /// just a `ModuleReportRef` whose `residual: bool` flag is `true`,
 /// and the synthesized module's id is `module_key(ModuleId)` (e.g.
@@ -292,7 +149,7 @@ pub const RESIDUAL_ENTRY_MODULE_ID: &str = "residual";
 /// helpers that need a fallback label.
 pub const RESIDUAL_ENTRY_LABEL: &str = "<residual_entry>";
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ModuleReportRef {
     pub id: String,
     pub label: String,

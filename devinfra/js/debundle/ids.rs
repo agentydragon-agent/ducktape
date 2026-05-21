@@ -143,9 +143,8 @@ pub struct LogicalModule {
     pub id: String,
     /// Chunk-relative path the module emits to (e.g. `"runtime/foo.js"`).
     pub target_file: String,
-    /// True for the generated residual catch-all module. Peelability
-    /// diagnostics use this to identify the remaining unpeeled owner
-    /// set.
+    /// True for the generated residual catch-all module. Reports use this to
+    /// identify the remaining unpeeled owner set without relying on labels.
     pub residual: bool,
     /// Local-name → exported-name map for the bindings this module
     /// owns. Empty when the module re-exports only imported

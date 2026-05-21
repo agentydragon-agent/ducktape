@@ -4,7 +4,7 @@ use std::sync::Arc;
 use petgraph::algo::{tarjan_scc, toposort};
 use petgraph::graphmap::DiGraphMap;
 
-use crate::atomic_units::{OwnerGraphAndUnits, compute_owner_graph_and_units};
+use crate::atomic_units::{AtomicUnit, OwnerGraphAndUnits, compute_owner_graph_and_units};
 use crate::chunk_analysis::ChunkAnalysis;
 use crate::factor_assembly::{AtomicUnitConflict, assemble_partition};
 use crate::graph::build_module_quotient;
@@ -23,7 +23,7 @@ use crate::{
 /// caches downstream consumers consult on the hot path.
 ///
 /// Holds a reference to the [`ChunkAnalysis`] it was factorized
-/// from (`analysis`); peelability and downstream emit code reach
+/// from (`analysis`); report emission and downstream emit code reach
 /// inputs (`bindings`, `logical_modules`, etc.) through
 /// `factorization.analysis.X`.
 #[derive(Debug, Clone)]
@@ -31,8 +31,13 @@ pub struct ChunkFactorization {
     pub analysis: Arc<ChunkAnalysis>,
     /// Module assignment per owner — the spec's partition of the
     /// owner graph. Stored separately from the IR so the IR stays
-    /// immutable across hypothetical refinements during peelability.
+    /// immutable across validation/report construction.
     pub partition: Partition,
+    /// Atomic owner units computed from the owner graph's
+    /// constraining-edge SCCs. Stored so report emission and
+    /// downstream diagnostics reuse the same unit partition that
+    /// factor assembly validated.
+    pub atomic_units: Vec<AtomicUnit>,
     /// Atomic-factor-unit splits the spec demands but the
     /// constraining-edge SCC analysis forbids — populated by
     /// `factor_assembly` when YAML claims split an atomic unit across
@@ -137,6 +142,7 @@ impl ChunkFactorization {
         Self {
             analysis,
             partition,
+            atomic_units,
             assembly_conflicts,
             dep_graph,
             linker_order,
@@ -188,24 +194,8 @@ impl ChunkFactorization {
     /// High-fidelity node-link view of the fine owner graph plus
     /// its current module quotient. Written as
     /// `<chunk_id>/owner_graph.json` for downstream peel tooling.
-    /// Always includes the factorizer report computed with
-    /// [`crate::FactorizeOptions::default`]; downstream CLIs read
-    /// the precomputed cells from disk rather than reproducing the
-    /// algorithm against the serialized owner graph.
     pub fn owner_graph_report(&self) -> OwnerGraphReport {
-        self.owner_graph_report_with_factorize_options(&crate::FactorizeOptions::default())
-    }
-
-    /// Like [`Self::owner_graph_report`] but with caller-chosen
-    /// `FactorizeOptions` (e.g. to widen `size_cap_lines` for an
-    /// exploratory pipeline run).
-    pub fn owner_graph_report_with_factorize_options(
-        &self,
-        factorize_options: &crate::FactorizeOptions,
-    ) -> OwnerGraphReport {
-        let mut report = build_owner_graph_report(self);
-        report.factorize = crate::build_factorize_report(self, factorize_options);
-        report
+        build_owner_graph_report(self)
     }
 }
 

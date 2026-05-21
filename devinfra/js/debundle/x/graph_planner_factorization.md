@@ -21,16 +21,17 @@ debundle peel plan-work \
 
 Related read-only queries:
 
-- `debundle peel candidates`
-- `debundle peel patch-status`
+- `debundle peel units`
+- `debundle peel patch-plan`
+- `debundle peel graph-summary`
 - `debundle peel explain`
 - `debundle peel source-slice`
 
 `plan-work` is the ordered dispatch surface for authoring work. It
-reads the owner graph and the current spec module tree, emits bounded
-proposal records, and leaves final names and paths to human or agent
-review. Older per-symbol queues and corpus-specific scratch notes are
-orientation only; the live graph decides what is actually peelable.
+reads the emitted owner graph plus embedded atomic DAG and the current spec
+module tree, emits bounded proposal records, and leaves final names and paths
+to human or agent review. Older per-symbol queues and corpus-specific scratch
+notes are orientation only; the live graph decides what is actually peelable.
 
 ## Graph Vocabulary
 
@@ -50,10 +51,10 @@ proposal is landable when moving its owner set into a module preserves
 that quotient DAG and every referenced external binding can be emitted
 as an import from an exporting module.
 
-Strongly connected components of the constraining-edge graph are
-atomic for module splitting unless the analysis can refine the edge
-kind. The condensation graph is therefore the natural substrate for
-planner proposals.
+Strongly connected components of the constraining-edge graph are atomic for
+module splitting unless the analysis can refine the edge kind. `debundle run`
+emits the resulting atomic-unit condensation graph as `atomic_graph`; planner
+recommendations are a `debundle peel` projection over that DAG.
 
 ## What The Current Planner Covers
 

@@ -4,11 +4,11 @@ use petgraph::algo::tarjan_scc;
 use swc_ecma_ast::Id;
 
 use crate::graph::OwnerEdge;
-use crate::peelability::build_peelability_report;
 use crate::{
-    BindingReport, ChunkFactorization, DepKind, LogicalModuleIndex, ModuleId, ModuleReportRef,
-    OwnerGraphEdgeReport, OwnerGraphNodeReport, OwnerGraphQuotientReport, OwnerGraphReport,
-    OwnerId, QuotientEdgeReport, QuotientSccReport,
+    AtomicGraphReport, AtomicUnitEdgeReport, AtomicUnitReport, BindingReport, ChunkFactorization,
+    DepKind, LogicalModuleIndex, ModuleId, ModuleReportRef, OwnerGraphEdgeReport,
+    OwnerGraphNodeReport, OwnerGraphQuotientReport, OwnerGraphReport, OwnerId, QuotientEdgeReport,
+    QuotientSccReport,
 };
 
 #[derive(Debug, Clone, Default)]
@@ -17,12 +17,18 @@ struct QuotientEdgeAccumulator {
     constrains_init_order: bool,
 }
 
+#[derive(Debug, Clone, Default)]
+struct AtomicEdgeAccumulator {
+    kinds: BTreeSet<DepKind>,
+    owner_edge_ids: BTreeSet<String>,
+    constrains_init_order: bool,
+}
+
 pub(crate) fn build_owner_graph_report(factorization: &ChunkFactorization) -> OwnerGraphReport {
     let owner_edges = &factorization.analysis.owner_graph.edges;
     let quotient_edges = build_quotient_edge_reports(factorization, owner_edges);
     let quotient_nodes = build_quotient_node_reports(factorization);
     let quotient_sccs = build_quotient_scc_reports(factorization, &quotient_edges);
-    let peelability = build_peelability_report(factorization, owner_edges, &quotient_edges);
     let nodes = factorization
         .analysis
         .owner_graph
@@ -49,6 +55,7 @@ pub(crate) fn build_owner_graph_report(factorization: &ChunkFactorization) -> Ow
             constrains_init_order: edge.reason.constrains_init_order(),
         })
         .collect();
+    let atomic_graph = build_atomic_graph_report(factorization, owner_edges);
     OwnerGraphReport {
         chunk_id: factorization.analysis.chunk_id.clone(),
         nodes,
@@ -58,14 +65,7 @@ pub(crate) fn build_owner_graph_report(factorization: &ChunkFactorization) -> Ow
             edges: quotient_edges,
             sccs: quotient_sccs,
         },
-        peelability,
-        // Filled in by
-        // `ChunkFactorization::owner_graph_report_with_factorize_options`
-        // after this function returns. The default value is the
-        // empty report (no cells); the factorization unconditionally
-        // overwrites it with the real factorize verdict so JSON
-        // consumers always see a populated `factorize` block.
-        factorize: crate::FactorizeReport::default(),
+        atomic_graph,
     }
 }
 
@@ -134,6 +134,106 @@ pub(crate) fn build_quotient_edge_reports(
             constrains_init_order: entry.constrains_init_order,
         })
         .collect()
+}
+
+fn build_atomic_graph_report(
+    factorization: &ChunkFactorization,
+    owner_edges: &[OwnerEdge],
+) -> AtomicGraphReport {
+    let mut units = factorization.atomic_units.clone();
+    units.sort_by_key(|unit| unit.members.iter().copied().min().map(|owner| owner.0));
+    let mut unit_by_owner = BTreeMap::<OwnerId, usize>::new();
+    for (unit_idx, unit) in units.iter().enumerate() {
+        for owner in &unit.members {
+            unit_by_owner.insert(*owner, unit_idx);
+        }
+    }
+
+    let nodes = units
+        .iter()
+        .enumerate()
+        .map(|(idx, unit)| {
+            let mut owner_ids = Vec::new();
+            let mut members = Vec::new();
+            let mut anonymous_statement_owner_ids = Vec::new();
+            let mut destinations_by_id = BTreeMap::<String, ModuleReportRef>::new();
+            let mut causes: Vec<DepKind> = unit.causes.iter().copied().collect();
+            let mut start_line = usize::MAX;
+            let mut end_line = 0usize;
+            let mut have_location = false;
+            let mut size_lines_estimate = 0usize;
+            let mut min_ordinal = usize::MAX;
+            let mut max_ordinal = 0usize;
+            for owner_id in &unit.members {
+                owner_ids.push(owner_key(*owner_id));
+                if let Some(node) = factorization.analysis.owner_graph.node(*owner_id) {
+                    if node.declared.is_empty() {
+                        anonymous_statement_owner_ids.push(owner_key(*owner_id));
+                    }
+                    members.extend(binding_reports(factorization, node.declared.iter()));
+                    if let Some(location) = &node.source_location {
+                        have_location = true;
+                        start_line = start_line.min(location.start_line);
+                        end_line = end_line.max(location.end_line);
+                        size_lines_estimate += location.end_line + 1 - location.start_line;
+                    }
+                    min_ordinal = min_ordinal.min(node.statement_ordinal.0);
+                    max_ordinal = max_ordinal.max(node.statement_ordinal.0);
+                    let destination =
+                        module_report_ref(factorization, factorization.partition.of(*owner_id));
+                    destinations_by_id.insert(destination.id.clone(), destination);
+                }
+            }
+            members.sort();
+            members.dedup();
+            causes.sort();
+            anonymous_statement_owner_ids.sort();
+            AtomicUnitReport {
+                id: atomic_unit_key(idx),
+                owner_ids,
+                members,
+                anonymous_statement_owner_ids,
+                destinations: destinations_by_id.into_values().collect(),
+                causes,
+                size_lines_estimate,
+                source_line_range: have_location.then_some([start_line, end_line]),
+                ordinal_span: max_ordinal.saturating_sub(min_ordinal),
+            }
+        })
+        .collect();
+
+    let mut accum = BTreeMap::<(usize, usize), AtomicEdgeAccumulator>::new();
+    for edge in owner_edges {
+        if edge.reason.kind == DepKind::LazyUse {
+            continue;
+        }
+        let (Some(&from_unit), Some(&to_unit)) =
+            (unit_by_owner.get(&edge.from), unit_by_owner.get(&edge.to))
+        else {
+            continue;
+        };
+        if from_unit == to_unit {
+            continue;
+        }
+        let entry = accum.entry((from_unit, to_unit)).or_default();
+        entry.kinds.insert(edge.reason.kind);
+        entry.owner_edge_ids.insert(edge.id.report_key());
+        entry.constrains_init_order |= edge.reason.constrains_init_order();
+    }
+    let edges = accum
+        .into_iter()
+        .enumerate()
+        .map(|(idx, ((from, to), entry))| AtomicUnitEdgeReport {
+            id: format!("atomic_edge:{idx}"),
+            source: atomic_unit_key(from),
+            target: atomic_unit_key(to),
+            edge_kinds: entry.kinds.into_iter().collect(),
+            owner_edge_ids: entry.owner_edge_ids.into_iter().collect(),
+            constrains_init_order: entry.constrains_init_order,
+        })
+        .collect();
+
+    AtomicGraphReport { nodes, edges }
 }
 
 fn build_quotient_scc_reports(
@@ -210,7 +310,7 @@ fn quotient_edge_indices_by_source(
 
 /// True iff `id` refers to a logical module whose `residual` flag is
 /// set — the chunk's catch-all destination synthesized before
-/// `ChunkFactorization::build`. Used by peelability and the destination
+/// `ChunkFactorization::build`. Used by the destination
 /// projection in reports to gate residual-only predicates without
 /// string-matching module ids or labels.
 pub(crate) fn is_residual_destination(factorization: &ChunkFactorization, id: ModuleId) -> bool {
@@ -229,6 +329,10 @@ pub(crate) fn owner_key(id: OwnerId) -> String {
 pub(crate) fn module_key(id: ModuleId) -> String {
     let LogicalModuleIndex(idx) = id.0;
     format!("logical:{idx}")
+}
+
+pub(crate) fn atomic_unit_key(idx: usize) -> String {
+    format!("atomic:{idx}")
 }
 
 pub(crate) fn module_id_from_key(key: &str) -> Option<ModuleId> {

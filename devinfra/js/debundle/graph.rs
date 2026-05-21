@@ -782,7 +782,7 @@ fn promote_at_init_calls(
 
 /// Quotient the owner graph by `partition` to build the module
 /// dependency graph consumed by validation and emit. The single
-/// public construction path; peelability and reports both go through
+/// public construction path; validation and reports both go through
 /// this for any non-hypothetical quotient.
 pub fn build_module_quotient(owner_graph: &OwnerGraph, partition: &Partition) -> ModuleQuotient {
     let mut graph = ModuleQuotient(DiGraphMap::new());
@@ -806,9 +806,9 @@ pub fn build_module_quotient(owner_graph: &OwnerGraph, partition: &Partition) ->
 /// representation stored the report-shape spelling
 /// (`format!("owner_edge:{idx}")`) on every entry; that spelling is
 /// `O(n_edges)` strings allocated per chunk and
-/// `O(n_blockers × n_candidates)` clones inside the peelability hot
-/// loop. Carry the typed index instead and let the report layer do
-/// the formatting at its single serialization boundary via
+/// repeated clones in graph-report hot paths. Carry the typed index
+/// instead and let the report layer do the formatting at its single
+/// serialization boundary via
 /// [`OwnerEdgeId::report_key`].
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct OwnerEdgeId(pub usize);

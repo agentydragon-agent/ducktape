@@ -143,7 +143,9 @@ rust_library(
         ":spec",
         "@crates//:anyhow",
         "@crates//:serde",
+        "@crates//:swc_common",
         "@crates//:swc_ecma_ast",
+        "@crates//:swc_ecma_codegen",
         "@crates//:swc_ecma_visit",
     ],
 )
@@ -453,7 +455,6 @@ rust_library(
         "@crates//:serde",
         "@crates//:serde_json",
         "@crates//:serde_yaml",
-        "@rules_rust//tools/runfiles",
     ],
 )
 

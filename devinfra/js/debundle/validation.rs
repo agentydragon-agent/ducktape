@@ -141,15 +141,11 @@ fn cut_pairs_count(cut: &[CycleEdge]) -> usize {
 /// non-trivial cycle (size > 1 OR a self-loop). Trivial single-node
 /// non-self-loop SCCs are dropped.
 ///
-/// Validator + proposer + primitive now share one verdict:
-/// [`crate::realizability::check_realizability`] gates this whole
-/// function (early return when its verdict is empty), and the
-/// proposer (`evaluate_peel_candidate` in `peelability.rs`) calls
-/// the same primitive for advisory peel classification. The
-/// historical asymmetry between a "strict" validator and a "relaxed"
-/// primitive is gone: the primitive's tightened clause-3 rule
-/// rejects both the symmetric-constraining-cycle case (any
-/// multi-module SCC in the constraining subgraph) and the
+/// [`crate::realizability::check_realizability`] gates this whole function
+/// (early return when its verdict is empty). The historical asymmetry between
+/// a "strict" validator and a "relaxed" primitive is gone: the primitive's
+/// tightened clause-3 rule rejects both the symmetric-constraining-cycle case
+/// (any multi-module SCC in the constraining subgraph) and the
 /// residual-in-cycle case (any multi-module SCC in `I` containing
 /// residual with a constraining edge whose target is residual), and
 /// `lower_chunk` realizes Lemma 2's source-import-order steering for

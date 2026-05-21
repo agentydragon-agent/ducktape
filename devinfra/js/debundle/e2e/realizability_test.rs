@@ -7,7 +7,7 @@
 //! match, or rejection with cycle evidence naming the implicated
 //! modules.
 
-use analysis::{BindingReport, DepKind, OwnerGraphReport, ResidualOwnerPeelStatus};
+use analysis::{BindingReport, DepKind, OwnerGraphReport};
 use debundle_e2e_support::*;
 use serde::de::DeserializeOwned;
 use serde_json::json;
@@ -26,13 +26,6 @@ fn binding_names(members: &[BindingReport]) -> Vec<String> {
         .iter()
         .map(|member| member.binding.to_string())
         .collect()
-}
-
-fn binding_report(binding: &str, export_name: &str) -> BindingReport {
-    BindingReport {
-        binding: binding.into(),
-        export_name: export_name.into(),
-    }
 }
 
 fn file_size(path: &Path) -> (usize, usize) {
@@ -229,12 +222,136 @@ export { A, B, readA, readB };
         "lazy-only quotient SCC should be reported as realizable: {graph:#?}",
     );
     assert!(
-        graph.peelability.residual_owner_horizon.is_empty(),
-        "fixture has no declared residual binding to peel: {graph:#?}",
+        graph.atomic_graph.nodes.iter().any(|unit| {
+            unit.owner_ids
+                .iter()
+                .all(|owner_id| graph.nodes.iter().any(|node| node.id == *owner_id))
+        }),
+        "atomic graph should reference owner graph nodes by id: {graph:#?}",
     );
     assert!(
-        graph.peelability.minimal_peel_sets.is_empty(),
-        "fixture has no residual peel set: {graph:#?}",
+        graph
+            .atomic_graph
+            .edges
+            .iter()
+            .all(|edge| edge.constrains_init_order),
+        "atomic graph should contain only constraining DAG edges: {graph:#?}",
+    );
+    assert!(
+        graph.atomic_graph.edges.iter().all(|edge| {
+            edge.owner_edge_ids.iter().all(|owner_edge_id| {
+                graph
+                    .edges
+                    .iter()
+                    .any(|owner_edge| owner_edge.id == *owner_edge_id)
+            })
+        }),
+        "atomic graph edges should reference owner graph edges by id: {graph:#?}",
+    );
+}
+
+#[test]
+fn owner_graph_report_identifies_pair_only_residual_atomic_unit() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"var A = B || "fallback";
+var B = A + "-b";
+const Existing = B + "-existing";
+console.log(A, B, Existing);
+export { A, B, Existing };
+"#,
+        vec![logical_module("mod_existing", &[Member::new("Existing")])],
+    ));
+    assert_entry_output(&fixture, "fallback fallback-b fallback-b-existing\n");
+
+    let graph: OwnerGraphReport =
+        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    assert!(
+        graph.atomic_graph.nodes.iter().any(|unit| {
+            unit.owner_ids.len() == 2
+                && binding_names(&unit.members) == vec!["A".to_string(), "B".to_string()]
+                && unit
+                    .destinations
+                    .iter()
+                    .any(|destination| destination.residual)
+        }),
+        "atomic graph should collapse the residual A/B eager cycle into one unit: {graph:#?}",
+    );
+}
+
+#[test]
+fn owner_graph_report_leaves_lazy_only_residual_dependency_as_separate_units() {
+    let mut opts = FixtureOpts::new(
+        r#"function Leaf() { return Dep; }
+const Dep = "dep";
+const Existing = "existing";
+console.log(Existing);
+export { Leaf, Dep, Existing };
+"#,
+        vec![logical_module("existing", &[Member::new("Existing")])],
+    );
+    opts.chunk_renames = Some(json!({
+        "id": "chunk_renames__static_app",
+        "members": [
+            { "name": "ReadableLeaf", "selector": { "binding": { "name": "Leaf" } } },
+            { "name": "ReadableDep", "selector": { "binding": { "name": "Dep" } } }
+        ],
+    }));
+    opts.unassigned_mode = unassigned_mode_inline();
+    let fixture = run_fixture(opts);
+    assert_entry_output(&fixture, "existing\n");
+
+    let graph: OwnerGraphReport =
+        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    assert!(
+        graph.atomic_graph.nodes.iter().any(|unit| {
+            unit.owner_ids.len() == 1
+                && unit.members
+                    == vec![BindingReport {
+                        binding: "Leaf".into(),
+                        export_name: "ReadableLeaf".into(),
+                    }]
+        }),
+        "Leaf's lazy-only residual read should not merge it into Dep's atomic unit: {graph:#?}",
+    );
+    assert!(
+        graph.atomic_graph.edges.iter().all(|edge| {
+            !edge.owner_edge_ids.iter().any(|owner_edge_id| {
+                graph.edges.iter().any(|owner_edge| {
+                    owner_edge.id == *owner_edge_id && owner_edge.binding.as_deref() == Some("Dep")
+                })
+            })
+        }),
+        "non-constraining lazy residual read should not appear in the atomic DAG: {graph:#?}",
+    );
+}
+
+#[test]
+fn owner_graph_report_collapses_residual_written_binding_with_assigner() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"let a = 0;
+function b() {
+  a = 1;
+}
+const existing = "existing";
+console.log(existing);
+export { a, b, existing };
+"#,
+        vec![logical_module("existing", &[Member::new("existing")])],
+    ));
+    assert_entry_output(&fixture, "existing\n");
+
+    let graph: OwnerGraphReport =
+        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
+    assert!(
+        graph.atomic_graph.nodes.iter().any(|unit| {
+            unit.owner_ids.len() == 2
+                && binding_names(&unit.members) == vec!["a".to_string(), "b".to_string()]
+                && unit
+                    .destinations
+                    .iter()
+                    .any(|destination| destination.residual)
+        }),
+        "written residual binding a should share an atomic unit with assigner b: {graph:#?}",
     );
 }
 
@@ -425,130 +542,6 @@ export { consume };
         read_json(&fixture.report_root.join("static/app/modules/index.json"));
     assert_eq!(modules["incoming"]["edge_count"], 0);
     assert_eq!(modules["outgoing"]["edge_count"], 0);
-}
-
-#[test]
-fn owner_graph_report_identifies_pair_only_residual_peel_in_emitted_js_fixture() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"var A = B || "fallback";
-var B = A + "-b";
-const Existing = B + "-existing";
-console.log(A, B, Existing);
-export { A, B, Existing };
-"#,
-        vec![logical_module("mod_existing", &[Member::new("Existing")])],
-    ));
-    assert_entry_output(&fixture, "fallback fallback-b fallback-b-existing\n");
-
-    let graph: OwnerGraphReport =
-        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
-    let peelability = &graph.peelability;
-    for binding in ["A", "B"] {
-        assert!(
-            peelability.residual_owner_horizon.iter().any(|owner| {
-                binding_names(&owner.members) == vec![binding.to_string()]
-                    && owner.status == ResidualOwnerPeelStatus::WithCompanions
-                    && owner.current_destination.residual
-                    && owner.source_location.is_some()
-            }),
-            "{binding} should be classified as peelable only with companions: {graph:#?}",
-        );
-    }
-    assert!(
-        peelability.minimal_peel_sets.iter().any(|closure| {
-            binding_names(&closure.members) == vec!["A".to_string(), "B".to_string()]
-                && closure.owner_ids.len() == 2
-        }),
-        "pair-only peelability should be summarized in minimal_peel_sets: {graph:#?}",
-    );
-}
-
-#[test]
-fn owner_graph_report_allows_lazy_only_residual_dependency_peel_candidate() {
-    let mut opts = FixtureOpts::new(
-        r#"function Leaf() { return Dep; }
-const Dep = "dep";
-const Existing = "existing";
-console.log(Existing);
-export { Leaf, Dep, Existing };
-"#,
-        vec![logical_module("existing", &[Member::new("Existing")])],
-    );
-    opts.chunk_renames = Some(json!({
-        "id": "chunk_renames__static_app",
-        "members": [
-            { "name": "ReadableLeaf", "selector": { "binding": { "name": "Leaf" } } },
-            { "name": "ReadableDep", "selector": { "binding": { "name": "Dep" } } }
-        ],
-    }));
-    opts.unassigned_mode = unassigned_mode_inline();
-    let fixture = run_fixture(opts);
-    assert_entry_output(&fixture, "existing\n");
-
-    let graph: OwnerGraphReport =
-        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
-    let peelability = &graph.peelability;
-    assert!(
-        peelability.residual_owner_horizon.iter().any(|owner| {
-            owner.members == vec![binding_report("Leaf", "ReadableLeaf")]
-                && owner.status == ResidualOwnerPeelStatus::Direct
-                && owner.current_destination.residual
-                && owner.statement_ordinal.0 == 0
-        }),
-        "Leaf's only cross-edge to residual is a lazy read, so it should be Direct-peelable: {graph:#?}",
-    );
-    assert!(
-        peelability.minimal_peel_sets.iter().any(|closure| {
-            closure.owner_ids.len() == 1
-                && closure.members == vec![binding_report("Leaf", "ReadableLeaf")]
-        }),
-        "singleton {{Leaf}} should be in minimal_peel_sets: {graph:#?}",
-    );
-}
-
-#[test]
-fn owner_graph_report_does_not_offer_singleton_peel_for_residual_written_binding() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"let a = 0;
-function b() {
-  a = 1;
-}
-const existing = "existing";
-console.log(existing);
-export { a, b, existing };
-"#,
-        vec![logical_module("existing", &[Member::new("existing")])],
-    ));
-    assert_entry_output(&fixture, "existing\n");
-
-    let graph: OwnerGraphReport =
-        read_json(&fixture.report_root.join("static/app/owner_graph.json"));
-    let peelability = &graph.peelability;
-    assert!(
-        peelability.residual_owner_horizon.iter().any(|owner| {
-            binding_names(&owner.members) == vec!["a".to_string()]
-                && owner.status == ResidualOwnerPeelStatus::WithCompanions
-                && owner
-                    .companion_options
-                    .iter()
-                    .any(|option| binding_names(&option.companion_members) == vec!["b".to_string()])
-        }),
-        "a must require its residual assigner b as a companion peel: {graph:#?}",
-    );
-    assert!(
-        !peelability.minimal_peel_sets.iter().any(|candidate| {
-            candidate.owner_ids.len() == 1
-                && binding_names(&candidate.members) == vec!["a".to_string()]
-        }),
-        "peelability must not propose extracting only written binding a: {graph:#?}",
-    );
-    assert!(
-        peelability.minimal_peel_sets.iter().any(|candidate| {
-            candidate.owner_ids.len() == 2
-                && binding_names(&candidate.members) == vec!["a".to_string(), "b".to_string()]
-        }),
-        "a+b should be the minimal safe peel set: {graph:#?}",
-    );
 }
 
 #[test]

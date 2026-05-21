@@ -43,6 +43,7 @@ mod tests {
                 name.to_string(),
                 KnownEffect::TypescriptDecorateHelper,
             )]),
+            local_effect_policy: LocalEffectPolicy::KnownEffectsOnly,
         }
     }
 
@@ -407,6 +408,207 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
                 "dynamic decorate helper shape should retain conservative side-effect purity: {source}"
             );
         }
+    }
+
+    #[test]
+    fn vendor_prune_policy_records_static_object_local_effects() {
+        let module = parse("const EMPTY = {}; Object.freeze(EMPTY);");
+        let default_facts = analyze_facts(&module);
+        assert!(default_facts[1].local_effects.is_empty());
+
+        let hints = AnalysisHints {
+            local_effect_policy: LocalEffectPolicy::VendorPrune,
+            ..AnalysisHints::default()
+        };
+        let vendor_facts = analyze_facts_with_hints(&module, &hints);
+        assert_eq!(
+            vendor_facts[1].local_effects,
+            BTreeSet::from([test_id("EMPTY")])
+        );
+        assert!(vendor_facts[1].purity.is_pure());
+    }
+
+    #[test]
+    fn vendor_prune_policy_records_intrinsic_alias_local_effects() {
+        let module = parse(
+            r#"const assign = Object.assign;
+function target() {}
+assign(target, { deep: true });"#,
+        );
+        let default_facts = analyze_facts(&module);
+        assert!(default_facts[2].local_effects.is_empty());
+
+        let hints = AnalysisHints {
+            local_effect_policy: LocalEffectPolicy::VendorPrune,
+            ..AnalysisHints::default()
+        };
+        let vendor_facts = analyze_facts_with_hints(&module, &hints);
+        assert_eq!(
+            vendor_facts[2].local_effects,
+            BTreeSet::from([test_id("target")])
+        );
+        assert!(vendor_facts[2].purity.is_pure());
+    }
+
+    #[test]
+    fn vendor_prune_policy_records_var_init_local_effects() {
+        let module = parse(
+            "function Base() {}\nfunction Derived() {}\nvar proto = (Derived.prototype = new Base());",
+        );
+        let default_facts = analyze_facts(&module);
+        assert!(default_facts[2].local_effects.is_empty());
+
+        let hints = AnalysisHints {
+            local_effect_policy: LocalEffectPolicy::VendorPrune,
+            ..AnalysisHints::default()
+        };
+        let vendor_facts = analyze_facts_with_hints(&module, &hints);
+        assert_eq!(
+            vendor_facts[2].local_effects,
+            BTreeSet::from([test_id("Derived")])
+        );
+        assert!(vendor_facts[2].purity.is_pure());
+    }
+
+    #[test]
+    fn vendor_prune_policy_records_object_iteration_local_effects() {
+        let module = parse(
+            r#"const define = Object.defineProperty;
+var methods = {
+  clear: function () { return this.splice(0); },
+  replace: function (items) { return this.splice(0, this.length, items); }
+};
+function ObservableArray() {}
+Object.entries(methods).forEach(function (entry) {
+  var key = entry[0], value = entry[1];
+  key !== "concat" && define(ObservableArray.prototype, key, value);
+});"#,
+        );
+        let default_facts = analyze_facts(&module);
+        assert!(default_facts[3].local_effects.is_empty());
+
+        let hints = AnalysisHints {
+            local_effect_policy: LocalEffectPolicy::VendorPrune,
+            ..AnalysisHints::default()
+        };
+        let vendor_facts = analyze_facts_with_hints(&module, &hints);
+        assert_eq!(
+            vendor_facts[3].local_effects,
+            BTreeSet::from([test_id("ObservableArray")])
+        );
+        assert!(vendor_facts[3].purity.is_pure());
+    }
+
+    #[test]
+    fn vendor_prune_policy_records_target_first_wrapper_local_effects() {
+        let module = parse(
+            r#"function define(target, key, value) {
+  Object.defineProperty(target, key, { configurable: true, value });
+}
+var methods = {
+  clear: function () { return this.splice(0); },
+};
+function ObservableArray() {}
+Object.entries(methods).forEach(function (entry) {
+  var key = entry[0], value = entry[1];
+  key !== "concat" && define(ObservableArray.prototype, key, value);
+});"#,
+        );
+        let hints = AnalysisHints {
+            local_effect_policy: LocalEffectPolicy::VendorPrune,
+            ..AnalysisHints::default()
+        };
+        let facts = analyze_facts_with_hints(&module, &hints);
+        assert_eq!(
+            facts[3].local_effects,
+            BTreeSet::from([test_id("ObservableArray")])
+        );
+        assert!(facts[3].purity.is_pure());
+    }
+
+    #[test]
+    fn vendor_prune_policy_keeps_unknown_object_iteration_effects_hard() {
+        let module = parse(
+            r#"var methods = { clear: function () {} };
+Object.entries(methods).forEach(function (entry) {
+  sideEffect(entry);
+});"#,
+        );
+        let hints = AnalysisHints {
+            local_effect_policy: LocalEffectPolicy::VendorPrune,
+            ..AnalysisHints::default()
+        };
+        let facts = analyze_facts_with_hints(&module, &hints);
+        assert!(facts[1].local_effects.is_empty());
+        assert!(!facts[1].purity.is_pure());
+    }
+
+    #[test]
+    fn vendor_prune_policy_records_namespace_iife_local_effects() {
+        let module = parse(
+            r#"var ns = {};
+(function (target) {
+  target.reject = wrap("reject");
+  function resolve() {}
+  target.resolve = resolve;
+})(ns || (ns = {}));"#,
+        );
+        let hints = AnalysisHints {
+            local_effect_policy: LocalEffectPolicy::VendorPrune,
+            ..AnalysisHints::default()
+        };
+        let facts = analyze_facts_with_hints(&module, &hints);
+        assert_eq!(facts[1].local_effects, BTreeSet::from([test_id("ns")]));
+        assert!(facts[1].purity.is_pure());
+        assert!(facts[1].lazy_reads.contains(&test_id("wrap")));
+    }
+
+    #[test]
+    fn vendor_prune_policy_records_local_binding_writes() {
+        let module = parse("let assigned;\nconst source = { value: 1 };\nassigned = source.value;");
+        let hints = AnalysisHints {
+            local_effect_policy: LocalEffectPolicy::VendorPrune,
+            ..AnalysisHints::default()
+        };
+        let facts = analyze_facts_with_hints(&module, &hints);
+        assert_eq!(
+            facts[2].local_effects,
+            BTreeSet::from([test_id("assigned")])
+        );
+        assert!(facts[2].purity.is_pure());
+    }
+
+    #[test]
+    fn vendor_prune_policy_ignores_undeclared_binding_writes() {
+        let module = parse("const source = { value: 1 };\nexternal = source.value;");
+        let hints = AnalysisHints {
+            local_effect_policy: LocalEffectPolicy::VendorPrune,
+            ..AnalysisHints::default()
+        };
+        let facts = analyze_facts_with_hints(&module, &hints);
+        assert!(facts[1].local_effects.is_empty());
+        assert!(!facts[1].purity.is_pure());
+    }
+
+    #[test]
+    fn vendor_prune_policy_records_commonjs_module_iife_local_effects() {
+        let module = parse(
+            r#"var module = { exports: {} };
+(function (target) {
+  (function () {
+    var has = {}.hasOwnProperty;
+    function clsx() {}
+    target.exports ? ((clsx.default = clsx), (target.exports = clsx)) : (window.classNames = clsx);
+  })();
+})(module);"#,
+        );
+        let hints = AnalysisHints {
+            local_effect_policy: LocalEffectPolicy::VendorPrune,
+            ..AnalysisHints::default()
+        };
+        let facts = analyze_facts_with_hints(&module, &hints);
+        assert_eq!(facts[1].local_effects, BTreeSet::from([test_id("module")]));
+        assert!(facts[1].purity.is_pure());
     }
 
     fn logical(idx: usize) -> ModuleId {
@@ -834,7 +1036,7 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
     }
 
     #[test]
-    fn peelability_reports_symbols_currently_peelable_from_residual() {
+    fn owner_graph_report_emits_atomic_graph_not_heuristic_peel_fields() {
         let factorization = factorization_with_residual_module(
             "const Leaf = 1; const ResidualUse = Leaf + 1; const Existing = ResidualUse + 1;",
             &["Leaf", "ResidualUse"],
@@ -842,67 +1044,44 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         );
 
         let report = factorization.owner_graph_report();
-        assert_eq!(report.peelability.residual_destinations.len(), 1);
-        assert_eq!(
-            report.peelability.residual_destinations[0].label,
-            "residual"
-        );
-        let leaf_horizon = report
-            .peelability
-            .residual_owner_horizon
-            .iter()
-            .find(|owner| member_bindings(&owner.members) == vec!["Leaf".to_string()])
-            .expect("Leaf horizon should be reported");
-        assert_eq!(leaf_horizon.status, ResidualOwnerPeelStatus::Direct);
-        assert_eq!(leaf_horizon.peel_set_ids.len(), 1);
-        assert!(leaf_horizon.companion_options.is_empty());
-        assert_eq!(leaf_horizon.statement_ordinal, StatementOrdinal(0));
-        assert_eq!(leaf_horizon.statement_kind, StatementKind::VarDecl);
-        assert_eq!(leaf_horizon.current_destination.label, "residual");
+        assert_eq!(report.atomic_graph.nodes.len(), 3);
         assert!(
             report
-                .peelability
-                .minimal_peel_sets
+                .atomic_graph
+                .nodes
                 .iter()
                 .any(
-                    |set| member_bindings(&set.members) == vec!["Leaf".to_string()]
-                        && set.owner_ids.len() == 1
+                    |unit| member_bindings(&unit.members) == vec!["Leaf".to_string()]
+                        && unit
+                            .destinations
+                            .iter()
+                            .any(|destination| destination.residual)
                 ),
-            "Leaf should appear as a singleton peel set: {:#?}",
-            report.peelability,
+            "Leaf should appear as a residual atomic unit: {:#?}",
+            report.atomic_graph,
         );
+        let json = serde_json::to_string(&report).expect("serialize OwnerGraphReport");
+        assert!(json.contains(r#""atomic_graph""#));
+        assert!(!json.contains(r#""peelability""#));
+        assert!(!json.contains(r#""peel_proposals""#));
     }
 
     #[test]
-    fn peelability_allows_symbol_with_lazy_only_residual_dependency() {
+    fn atomic_graph_excludes_lazy_use_edges() {
         let factorization =
             factorization_for("function Leaf() { return Dep; } const Dep = 1;", &[]);
 
         let report = factorization.owner_graph_report();
-        let leaf_horizon = report
-            .peelability
-            .residual_owner_horizon
-            .iter()
-            .find(|owner| member_bindings(&owner.members) == vec!["Leaf".to_string()])
-            .expect("Leaf horizon should be reported");
-        assert_eq!(leaf_horizon.status, ResidualOwnerPeelStatus::Direct);
+        assert_eq!(report.atomic_graph.nodes.len(), 2);
         assert!(
-            leaf_horizon.companion_options.is_empty(),
-            "Leaf needs no companion when its residual edge is lazy-only: {:#?}",
-            report.peelability,
-        );
-        assert!(
-            report.peelability.minimal_peel_sets.iter().any(|closure| {
-                member_bindings(&closure.members) == vec!["Leaf".to_string()]
-                    && closure.owner_ids.len() == 1
-            }),
-            "Leaf should be peelable as a singleton when only lazy-reading residual Dep: {:#?}",
-            report.peelability,
+            report.atomic_graph.edges.is_empty(),
+            "lazy-only function body reads should not create atomic DAG edges: {:#?}",
+            report.atomic_graph,
         );
     }
 
     #[test]
-    fn peelability_blocks_residual_symbol_that_would_create_constraining_scc() {
+    fn atomic_graph_collapses_constraining_eager_cycle() {
         let factorization = factorization_with_residual_module(
             "const A = B + 1; const B = A + 1;",
             &["A", "B"],
@@ -910,66 +1089,31 @@ Ro([Z], C.prototype, dynamicKey, 2);"#,
         );
 
         let report = factorization.owner_graph_report();
-        let a_horizon = report
-            .peelability
-            .residual_owner_horizon
+        let cycle_unit = report
+            .atomic_graph
+            .nodes
             .iter()
-            .find(|owner| member_bindings(&owner.members) == vec!["A".to_string()])
-            .expect("A horizon should be reported");
-        assert_eq!(a_horizon.status, ResidualOwnerPeelStatus::WithCompanions);
-        assert!(
-            a_horizon.companion_options.iter().any(|option| {
-                member_bindings(&option.companion_members) == vec!["B".to_string()]
-            }),
-            "A should point at B as a required companion: {:#?}",
-            report.peelability,
-        );
-        assert!(
-            report
-                .peelability
-                .minimal_peel_sets
-                .iter()
-                .any(|closure| member_bindings(&closure.members)
-                    == vec!["A".to_string(), "B".to_string()]),
-            "pair closure summary should include A+B: {:#?}",
-            report.peelability,
-        );
+            .find(|unit| member_bindings(&unit.members) == vec!["A".to_string(), "B".to_string()])
+            .expect("A/B eager cycle should be one atomic unit");
+        assert_eq!(cycle_unit.owner_ids.len(), 2);
+        assert!(cycle_unit.causes.contains(&DepKind::EagerUse));
     }
 
     #[test]
-    fn peelability_does_not_overclaim_pair_when_three_owner_cycle_remains() {
+    fn atomic_graph_preserves_direction_between_atomic_units() {
         let factorization = factorization_with_residual_module(
-            "const A = B + 1; const B = C + 1; const C = A + 1;",
-            &["A", "B", "C"],
+            "const Leaf = 1; const ResidualUse = Leaf + 1;",
+            &["Leaf", "ResidualUse"],
             &[],
         );
 
         let report = factorization.owner_graph_report();
-        // The three-owner closure {A,B,C} is the only legitimate peel:
-        // moving any strict subset leaves a back-pointer to the source
-        // destination. No pair-peel is overclaimed.
-        for horizon in &report.peelability.residual_owner_horizon {
-            for companion in &horizon.companion_options {
-                assert_eq!(
-                    companion.companion_owner_ids.len(),
-                    2,
-                    "only the full three-owner closure should be reported, \
-                     not any two-owner pair: {horizon:#?}",
-                );
-            }
-        }
-        assert!(
-            report
-                .peelability
-                .residual_owner_horizon
-                .iter()
-                .all(
-                    |owner| owner.status == ResidualOwnerPeelStatus::WithCompanions
-                        || owner.status == ResidualOwnerPeelStatus::Blocked
-                ),
-            "three-owner at-init cycle should not expose direct peels: {:#?}",
-            report.peelability,
-        );
+        assert_eq!(report.atomic_graph.nodes.len(), 2);
+        assert_eq!(report.atomic_graph.edges.len(), 1);
+        let edge = &report.atomic_graph.edges[0];
+        assert_ne!(edge.source, edge.target);
+        assert_eq!(edge.edge_kinds, vec![DepKind::EagerUse]);
+        assert!(edge.constrains_init_order);
     }
 
     // --- Purity classifier ---------------------------------------------------
@@ -3808,10 +3952,9 @@ mutable = mutable + 1;"#,
         // across {mod_0, <residual_entry>} — unrealizable. The spec
         // author needs to either also assign B (or leave both
         // unassigned), or remove the constraining edge that fused
-        // them in the first place. The factorize proposals layer
-        // (`crate::factorize`) may suggest "extend mod_0 to include
-        // B" as an advisory edit, but factor_assembly refuses to
-        // silently move B for the user.
+        // them in the first place. `debundle peel patch-plan` may
+        // flag the split unit as an advisory edit, but factor_assembly
+        // refuses to silently move B for the user.
         let factorization =
             factorization_for("const A = B + 1; const B = A + 1;", &[("A", logical(0))]);
         let report = factorization.validate();
@@ -3904,198 +4047,6 @@ mutable = mutable + 1;"#,
                 ("C".to_string(), "mod_0".to_string()),
             ],
         );
-    }
-
-    /// Supernode-aware factorize: a YAML-claimed module `mod_0`
-    /// (with owners `A`, `B`) plus one unclaimed `C` that sits in the
-    /// same EagerUse cycle as `A` should produce a single proposal
-    /// cell — an extension of `mod_0` that absorbs `C`. The closure
-    /// graph collapses owners(A), owners(B) into `Supernode(mod_0)`
-    /// (internal edges between them disappear); `Loose(C)` joins the
-    /// supernode's SCC via the bidirectional EagerUse cycle
-    /// `A↔C`. The cell's `extends_module_id` resolves to mod_0's
-    /// `module_key`, and `extension_owner_ids` carries C's owner.
-    #[test]
-    fn factorize_proposes_extension_for_module_with_unclaimed_cycle_member() {
-        let factorization = factorization_for(
-            "const B = 1; const A = C + 1; const C = A + 1;",
-            &[("A", logical(0)), ("B", logical(0))],
-        );
-        let report = factorization.owner_graph_report().factorize;
-        let extensions: Vec<&FactorizeCell> = report
-            .cells
-            .iter()
-            .filter(|cell| cell.extends_module_id.is_some())
-            .collect();
-        assert_eq!(
-            extensions.len(),
-            1,
-            "expected exactly one extension proposal, got {:#?}",
-            report.cells,
-        );
-        let cell = extensions[0];
-        assert_eq!(
-            cell.extends_module_id.as_deref(),
-            Some("logical:0"),
-            "extension should target mod_0's stable module key",
-        );
-        // C's owner is statement_ordinal 2 ⇒ OwnerId(2) ⇒ "owner:2".
-        assert_eq!(
-            cell.extension_owner_ids,
-            vec!["owner:2".to_string()],
-            "only C should be the loose extension owner",
-        );
-        // Cell binding ids include the new C plus the supernode's
-        // existing A. (B's owner is in the supernode but doesn't
-        // sit in the same SCC; it survives as a stable supernode-
-        // only cell and gets skipped.)
-        let bindings: BTreeSet<String> = cell.binding_ids.iter().map(|a| a.to_string()).collect();
-        assert!(
-            bindings.contains("A") && bindings.contains("C"),
-            "extension cell should expose A (from supernode) and C (the addition): {bindings:?}",
-        );
-    }
-
-    /// Supernode-aware factorize: two unclaimed owners that
-    /// form a Sequenced + reverse-EagerUse SCC should land in one
-    /// fresh-module proposal cell. The closure graph's Sequenced
-    /// rule emits `earlier → later` (inversion of the owner-graph's
-    /// `later → earlier` Sequenced edge); the reverse EagerUse from
-    /// the later statement reading the earlier statement's binding
-    /// emits `later → earlier`. The two directions form an SCC.
-    #[test]
-    fn factorize_emits_fresh_module_proposal_for_sequenced_plus_eager_scc() {
-        // stmt 0: `const X = init();` — impure (call), declares X.
-        // stmt 1: `const Y = step(X);` — impure (call), declares Y,
-        //                                reads X eagerly.
-        // Owner graph edges:
-        //   * EagerUse owner(Y) → owner(X) on binding X
-        //   * Sequenced owner(Y) → owner(X) (later stmt depends on
-        //     earlier side-effect having run)
-        // Closure projection (both owners are loose, no supernode):
-        //   * EagerUse `from→to`           → Loose(Y) → Loose(X)
-        //   * Sequenced `to→from` (inverted) → Loose(X) → Loose(Y)
-        // ⇒ single SCC, fresh-module proposal.
-        let factorization = factorization_for("const X = init(); const Y = step(X);", &[]);
-        let report = factorization.owner_graph_report().factorize;
-        let fresh: Vec<&FactorizeCell> = report
-            .cells
-            .iter()
-            .filter(|cell| cell.extends_module_id.is_none())
-            .collect();
-        assert_eq!(
-            fresh.len(),
-            1,
-            "expected one fresh-module cell for the {{X, Y}} SCC, got {:#?}",
-            report.cells,
-        );
-        let cell = fresh[0];
-        assert!(
-            cell.extension_owner_ids.is_empty(),
-            "fresh-module proposals carry no extension owners: {cell:#?}",
-        );
-        assert!(
-            cell.proposed_module_id.starts_with("auto_partition_"),
-            "fresh-module cells keep the auto_partition_NNNN id shape: {}",
-            cell.proposed_module_id,
-        );
-        let bindings: BTreeSet<String> = cell.binding_ids.iter().map(|a| a.to_string()).collect();
-        let expected: BTreeSet<String> = ["X".to_string(), "Y".to_string()].into_iter().collect();
-        assert_eq!(
-            bindings, expected,
-            "fresh-module cell members should be exactly {{X, Y}}: {bindings:?}",
-        );
-    }
-
-    #[test]
-    fn factorize_reports_size_cap_closure_as_diagnostic_not_partial_proposal() {
-        // Eager at-init reads (`const consumer = dep_a + dep_b`)
-        // form a real constraining-edge closure: peeling `consumer`
-        // alone leaves dep_a and dep_b in residual, which would
-        // create an unrealizable quotient. The factorizer's closure
-        // expansion pulls dep_a + dep_b in; with `size_cap_lines: 1`
-        // the closure exceeds the cap and must go to diagnostics
-        // rather than emitting a singleton proposal for `consumer`
-        // alone (which would be an invalid spec).
-        //
-        // (The previous shape used `function consumer() { ... }`,
-        // but lazy reads no longer force closures since the
-        // emit-resolvability redesign — entry auto-exports the
-        // residual bindings, so the function consumer is
-        // independently peelable.)
-        let factorization = factorization_for(
-            r#"const dep_a = "left";
-const dep_b = "right";
-const consumer = dep_a + dep_b;"#,
-            &[],
-        );
-        let report = factorization
-            .owner_graph_report_with_factorize_options(&FactorizeOptions { size_cap_lines: 1 });
-
-        assert!(
-            report
-                .factorize
-                .diagnostics
-                .iter()
-                .any(
-                    |diagnostic| diagnostic.reason == FactorizeDiagnosticReason::ExceedsSizeCap
-                        && diagnostic
-                            .binding_ids
-                            .iter()
-                            .any(|binding| binding == "consumer")
-                ),
-            "size-cap exact closure should be diagnostic-only: {:#?}",
-            report.factorize,
-        );
-        assert!(
-            !report
-                .factorize
-                .cells
-                .iter()
-                .any(|cell| cell.binding_ids == vec!["consumer".to_string()]),
-            "factorize must not emit a partial singleton proposal for a size-capped closure: {:#?}",
-            report.factorize,
-        );
-    }
-
-    /// Different residual frontier starts can converge on the same closure
-    /// during blocker-driven growth. The report should contain one row per
-    /// (reason, closure) equivalence class — not one row per starting unit
-    /// — so each diagnostic's `(reason, sorted owner_ids)` must be unique.
-    /// The same invariant covers the `close_frontier` early-bail when a
-    /// seed is wholly inside a previously diagnosed oversize closure: that
-    /// path's only observable effect is "no second row for that closure."
-    #[test]
-    fn factorize_emits_each_diagnostic_closure_once() {
-        // Several consumers each pull in the same shared deps, so multiple
-        // frontier starts grow into closures that overlap heavily. Whether
-        // any pair coincides exactly depends on the residual + active-module
-        // landscape — the assertion is the invariant, not a fixed count.
-        //
-        // Eager reads here (same reason as
-        // `factorize_reports_size_cap_closure_as_diagnostic_not_partial_proposal`);
-        // lazy reads no longer force closure growth post-emit-
-        // resolvability redesign.
-        let factorization = factorization_for(
-            r#"const dep_a = "left";
-const dep_b = "right";
-const consumer_one = dep_a + dep_b;
-const consumer_two = dep_a + dep_b;
-const consumer_three = dep_a + dep_b;"#,
-            &[],
-        );
-        let report = factorization
-            .owner_graph_report_with_factorize_options(&FactorizeOptions { size_cap_lines: 1 });
-
-        let mut seen: BTreeSet<(FactorizeDiagnosticReason, Vec<String>)> = BTreeSet::new();
-        for diagnostic in &report.factorize.diagnostics {
-            let mut owners = diagnostic.owner_ids.clone();
-            owners.sort();
-            assert!(
-                seen.insert((diagnostic.reason, owners)),
-                "factorize emitted duplicate diagnostic for closure: {diagnostic:#?}",
-            );
-        }
     }
 
     #[test]

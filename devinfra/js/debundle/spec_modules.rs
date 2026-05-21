@@ -1,7 +1,6 @@
 //! Shared helpers for walking a debundle spec's authoring files.
 //!
-//! The main debundler (`spec_tree`) and the analysis CLIs
-//! (`peel_horizon`, and forthcoming siblings) all need to:
+//! The main debundler (`spec_tree`) and the peel-planning CLI all need to:
 //!
 //! * Enumerate emitted-module `*.yaml` files under a spec's
 //!   `modules/` root.

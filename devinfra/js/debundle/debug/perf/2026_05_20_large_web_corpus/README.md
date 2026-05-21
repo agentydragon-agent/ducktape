@@ -76,8 +76,8 @@ Top CPU stacks:
 | libc write path (`__GI___libc_write`)                                   |    4.42% |
 | `lowering::materialize::build_directory_dependency_facts`               |    2.40% |
 
-The CPU profile says the main CPU bottleneck is still owner-graph and
-peelability report generation inside logical-module materialization. Browser
+The CPU profile says the main CPU bottleneck is still owner-graph and atomic
+graph report generation inside logical-module materialization. Browser
 harness emission is the largest wall-clock stage in the direct timing, but it
 does not dominate sampled CPU as strongly; part of that stage appears to be
 write-heavy output work.
@@ -127,7 +127,7 @@ materialization.
    `owner_graph_report` accounts for 47.75% children in the core CPU samples,
    with `build_owner_graph_report` at 15.65%. This keeps the earlier direction:
    separate the graph data needed for ordinary `debundle run` from expensive
-   peelability/factorization report details where possible, or cache/reuse the
+   planner/factorization report details where possible, or cache/reuse the
    realizability state used while producing those report sections.
 
 3. Retained heap is mostly parser/AST state, not the graph report itself.

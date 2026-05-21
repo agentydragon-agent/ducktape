@@ -6,7 +6,7 @@
 //! `DepKind` causes from the unit) so the materializer can reject
 //! before emit. This pass deliberately does *not* extend a single-
 //! member claim to cover the rest of its unit — that promotion is
-//! the factorize-proposal layer's job (see [`crate::factorize`]).
+//! an authoring decision surfaced by `debundle peel patch-plan`.
 //! See `FACTORIZE.md`.
 
 use std::collections::{HashMap, HashSet};

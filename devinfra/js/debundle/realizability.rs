@@ -1,8 +1,7 @@
 //! Single source of truth for the three-clause validity predicate
-//! (DESIGN.md "Valid peels and atomic modules"). The validator, the
-//! peelability proposer, and the factorize closure all reach the
-//! verdict through this module — see "Realizability primitive" in
-//! `DESIGN.md`.
+//! (DESIGN.md "Valid peels and atomic modules"). The validator and any
+//! hypothetical-move planner checks reach the verdict through this module —
+//! see "Realizability primitive" in `DESIGN.md`.
 //!
 //! Scope: clauses 2 (no cross-destination rebinding writes) and 3
 //! (no multi-module SCC in the constraining-edge subgraph of the
@@ -20,11 +19,9 @@
 //!   start path. `O(N + M)` per call.
 //! - `RealizabilityIndex`: a stateful index that owns a working
 //!   `Partition` and supports `push`/`undo` of `PartitionDelta`s.
-//!   `verdict()` reads the current state. Candidate evaluation uses a
-//!   scoped push/read/undo against the index; a non-mutating overlay
-//!   query is kept as a tested future optimization path. Factorize
-//!   walks the index forward as the frontier grows and undoes on
-//!   failed repair branches.
+//!   `verdict()` reads the current state. A non-mutating overlay query is
+//!   kept as a tested future optimization path for planner checks that need
+//!   hypothetical owner moves.
 //!
 //! The transactional API is backed by a rollbackable quotient index:
 //! owner-graph edges are fixed, so `push`/`undo` only updates quotient
@@ -242,10 +239,9 @@ pub fn check_realizability(
     verdict
 }
 
-/// A reversible mutation of a `Partition`. The factorize closure and
-/// the peelability proposer construct deltas to describe hypothetical
-/// or actual destination assignments; the index applies and reverts
-/// them.
+/// A reversible mutation of a `Partition`. Planner checks can construct
+/// deltas to describe hypothetical or actual destination assignments; the
+/// index applies and reverts them.
 #[derive(Debug, Clone)]
 pub enum PartitionDelta {
     /// Reassign every owner in `owners` to `to`. Owners not in the

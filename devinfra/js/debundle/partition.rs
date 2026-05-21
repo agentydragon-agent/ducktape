@@ -12,11 +12,9 @@ use crate::{ModuleId, OwnerGraph, OwnerId};
 /// `default_destination` — typically the chunk's synthesized residual
 /// module).
 ///
-/// The partition is the spec's primary input to the realizability gate,
-/// the quotient construction, and the peelability search. It's stored
-/// separately from the IR so the IR can stay immutable across
-/// hypothetical refinements (peelability evaluates many candidate
-/// partitions per chunk).
+/// The partition is the spec's primary input to the realizability gate and
+/// the quotient construction. It's stored separately from the IR so the IR can
+/// stay immutable while validation and reports derive graph views.
 #[derive(Debug, Clone)]
 pub struct Partition {
     of: Vec<ModuleId>,

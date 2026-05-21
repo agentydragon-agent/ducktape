@@ -1561,6 +1561,7 @@ pub struct ApplyPartialVendorSwapsOptions<'a> {
 pub struct ApplyBundledPartialVendorSwapsResult {
     pub artifact: ChunkBundle,
     pub manifest: BundledPartialSwapResolutionManifest,
+    pub self_rewrite_import_locals_by_chunk_path: BTreeMap<String, BTreeSet<Id>>,
 }
 
 #[derive(Debug, Clone)]
@@ -2170,6 +2171,7 @@ pub fn apply_bundled_partial_vendor_swaps(
                     references_rewritten: 0,
                 },
             },
+            self_rewrite_import_locals_by_chunk_path: BTreeMap::new(),
         });
     }
 
@@ -2219,8 +2221,18 @@ pub fn apply_bundled_partial_vendor_swaps(
     });
 
     let mut total_references = 0usize;
+    let mut self_rewrite_import_locals_by_chunk_path: BTreeMap<String, BTreeSet<Id>> =
+        BTreeMap::new();
     for result in results {
-        for ((chunk_name, chunk_export), count) in &result.references_by_symbol {
+        let PartialSwapFileResult {
+            caller_chunk_index,
+            caller_chunk_id,
+            parts,
+            ast,
+            references_by_symbol,
+            self_rewrite_import_locals,
+        } = result;
+        for ((chunk_name, chunk_export), count) in &references_by_symbol {
             let mapping = mappings_ref
                 .get(chunk_name)
                 .expect("symbol rewritten against a chunk that wasn't in the mappings");
@@ -2231,12 +2243,21 @@ pub fn apply_bundled_partial_vendor_swaps(
             }
             total_references += count;
         }
+        if !self_rewrite_import_locals.is_empty() {
+            let caller_chunk_name = chunk_table.name(caller_chunk_id);
+            if let Some(mapping) = mappings_ref.get(caller_chunk_name) {
+                self_rewrite_import_locals_by_chunk_path
+                    .entry(mapping.chunk_path.clone())
+                    .or_default()
+                    .extend(self_rewrite_import_locals);
+            }
+        }
         artifact
             .chunks
-            .get_mut(result.caller_chunk_index)
-            .with_context(|| format!("missing chunk index {}", result.caller_chunk_index))?
+            .get_mut(caller_chunk_index)
+            .with_context(|| format!("missing chunk index {}", caller_chunk_index))?
             .js
-            .insert_file(JsFile::from_ast_parts(result.parts, result.ast));
+            .insert_file(JsFile::from_ast_parts(parts, ast));
     }
 
     let total_symbols: usize = resolutions
@@ -2253,6 +2274,7 @@ pub fn apply_bundled_partial_vendor_swaps(
                 references_rewritten: total_references,
             },
         },
+        self_rewrite_import_locals_by_chunk_path,
     })
 }
 
@@ -2266,11 +2288,13 @@ struct PartialSwapFileJob {
 
 struct PartialSwapFileResult {
     caller_chunk_index: usize,
+    caller_chunk_id: ChunkId,
     parts: JsFileAstParts,
     ast: ParsedJsModule,
     /// (chunk_name, chunk_export) -> count of rewritten references in
     /// this file.
     references_by_symbol: BTreeMap<(String, String), usize>,
+    self_rewrite_import_locals: BTreeSet<Id>,
 }
 
 fn rewrite_partial_swap_in_file(
@@ -2393,9 +2417,11 @@ fn rewrite_partial_swap_in_file(
 
     PartialSwapFileResult {
         caller_chunk_index: job.caller_chunk_index,
+        caller_chunk_id: job.caller_chunk_id,
         parts: job.parts,
         ast: job.ast,
         references_by_symbol,
+        self_rewrite_import_locals: BTreeSet::new(),
     }
 }
 
@@ -2411,6 +2437,7 @@ fn rewrite_bundled_partial_swap_in_file(
     let mut emitted_default_namespace_for: BTreeSet<String> = BTreeSet::new();
     let mut references_by_symbol: BTreeMap<(String, String), usize> = BTreeMap::new();
     let mut prelude_imports: Vec<DeferredImport> = Vec::new();
+    let mut self_rewrite_import_locals: BTreeSet<Id> = BTreeSet::new();
     seed_bundled_partial_swap_self_rewrites(
         module,
         mappings.get(chunk_table.name(job.caller_chunk_id)),
@@ -2421,6 +2448,7 @@ fn rewrite_bundled_partial_swap_in_file(
             bindings: &mut bindings,
             prelude_imports: &mut prelude_imports,
             references_by_symbol: &mut references_by_symbol,
+            self_rewrite_import_locals: &mut self_rewrite_import_locals,
         },
     );
 
@@ -2499,9 +2527,11 @@ fn rewrite_bundled_partial_swap_in_file(
 
     PartialSwapFileResult {
         caller_chunk_index: job.caller_chunk_index,
+        caller_chunk_id: job.caller_chunk_id,
         parts: job.parts,
         ast: job.ast,
         references_by_symbol,
+        self_rewrite_import_locals,
     }
 }
 
@@ -2607,6 +2637,7 @@ struct SelfRewriteOutputs<'a> {
     bindings: &'a mut BTreeMap<String, IdentRewriteTarget>,
     prelude_imports: &'a mut Vec<DeferredImport>,
     references_by_symbol: &'a mut BTreeMap<(String, String), usize>,
+    self_rewrite_import_locals: &'a mut BTreeSet<Id>,
 }
 
 fn seed_bundled_partial_swap_self_rewrites(
@@ -2667,6 +2698,9 @@ fn seed_bundled_partial_swap_self_rewrites(
                     .or_insert(0) += 1;
             }
         }
+        outputs
+            .self_rewrite_import_locals
+            .insert(Ident::new_no_ctxt(local.clone().into(), DUMMY_SP).to_id());
         outputs.prelude_imports.push(DeferredImport::Default {
             source: import_source,
             local,

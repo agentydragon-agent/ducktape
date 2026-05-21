@@ -4,7 +4,6 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use clap::Args as ClapArgs;
-use runfiles::{Runfiles, rlocation};
 use serde::Serialize;
 
 use artifact::ArtifactIndexes;
@@ -16,7 +15,9 @@ use prepare_chunks::prepare_js_chunks;
 use rewrite_specifiers::rewrite_chunk_entry_specifiers;
 use spec::{MaterializeLogicalModulesConfig, SwapVendorChunksConfig, TransformSpec, VendorLevel};
 use spec_tree::{CompileSpecTreeOptions, compile_spec_tree};
-use strip_swapped_vendor_exports::{ChunkStripStats, strip_swapped_vendor_exports};
+use strip_swapped_vendor_exports::{
+    ChunkStripStats, StripSwappedVendorExportsOptions, strip_swapped_vendor_exports_with_options,
+};
 use validate_emitted_exports::validate_emitted_exports;
 use vendor::{
     ApplyBundledPartialVendorSwapsOptions, ApplyPartialVendorSwapsOptions,
@@ -40,9 +41,6 @@ pub enum TransformSpecSource {
 }
 
 /// Command-line arguments for the debundle transform pipeline.
-///
-/// Use [`TransformArgs::resolve`] to obtain a [`TransformCli`] with paths
-/// resolved against Bazel runfiles when running as a `bazel run` target.
 #[derive(ClapArgs, Debug)]
 pub struct TransformArgs {
     /// Path to a flat transform spec YAML.
@@ -72,50 +70,34 @@ pub struct TransformArgs {
 }
 
 impl TransformArgs {
-    /// Resolve all path arguments against Bazel runfiles (when present) and
-    /// collapse `--package-root` pairs into a `HashMap`.
+    /// Collapse `--package-root` pairs into a `HashMap` and validate spec source.
     pub fn resolve(self) -> Result<TransformCli> {
-        let runfiles = Runfiles::create().ok();
-        let spec_source = resolve_spec_source(&self, runfiles.as_ref())?;
+        let spec_source = resolve_spec_source(&self)?;
         Ok(TransformCli {
             spec_source,
-            package_roots: self
-                .package_roots
-                .into_iter()
-                .map(|(name, dir)| (name, resolve_runfiles_path(dir, runfiles.as_ref())))
-                .collect(),
-            packages_root: self
-                .packages_root
-                .map(|dir| resolve_runfiles_path(dir, runfiles.as_ref())),
+            package_roots: self.package_roots.into_iter().collect(),
+            packages_root: self.packages_root,
         })
     }
 }
 
-fn resolve_spec_source(
-    args: &TransformArgs,
-    runfiles: Option<&Runfiles>,
-) -> Result<TransformSpecSource> {
+fn resolve_spec_source(args: &TransformArgs) -> Result<TransformSpecSource> {
     match (&args.spec, &args.tree_config) {
         (Some(_), Some(_)) => {
             bail!("pass either --spec or --tree-config, not both");
         }
-        (Some(path), None) => Ok(TransformSpecSource::Flat {
-            path: resolve_runfiles_path(path.clone(), runfiles),
-        }),
+        (Some(path), None) => Ok(TransformSpecSource::Flat { path: path.clone() }),
         (None, Some(config_path)) => {
             let modules_root = required_tree_arg("--tree-modules", &args.tree_modules)?;
             let vendor_marks_path =
                 required_tree_arg("--tree-vendor-marks", &args.tree_vendor_marks)?;
             let out_root = required_tree_arg("--out-root", &args.out_root)?;
             Ok(TransformSpecSource::Tree(CompileSpecTreeOptions {
-                config_path: resolve_runfiles_path(config_path.clone(), runfiles),
-                modules_root: resolve_runfiles_path(modules_root, runfiles),
-                vendor_marks_path: resolve_runfiles_path(vendor_marks_path, runfiles),
-                source_root: args
-                    .tree_source_root
-                    .clone()
-                    .map(|path| resolve_runfiles_path(path, runfiles)),
-                out_root: resolve_runfiles_path(out_root, runfiles),
+                config_path: config_path.clone(),
+                modules_root,
+                vendor_marks_path,
+                source_root: args.tree_source_root.clone(),
+                out_root,
             }))
         }
         (None, None) => {
@@ -145,28 +127,6 @@ fn parse_package_root_kv(value: &str) -> Result<(String, PathBuf), String> {
         value[..separator].to_string(),
         PathBuf::from(&value[separator + 1..]),
     ))
-}
-
-/// Resolve a path through Bazel runfiles when present, otherwise pass through.
-///
-/// Lets the binary work as a standalone CLI (filesystem paths) and as a
-/// Bazel-run target (runfiles-relative paths produced by `$(rlocationpath ...)`)
-/// without a launcher wrapper. A path is treated as runfiles-relative only
-/// when it actually resolves to a file inside the runfiles tree; otherwise
-/// it's left for the caller's filesystem semantics.
-fn resolve_runfiles_path(path: PathBuf, runfiles: Option<&Runfiles>) -> PathBuf {
-    if path.is_absolute() {
-        return path;
-    }
-    let Some(runfiles) = runfiles else {
-        return path;
-    };
-    let Some(s) = path.to_str() else {
-        return path;
-    };
-    rlocation!(runfiles, s)
-        .filter(|resolved| resolved.exists())
-        .unwrap_or(path)
 }
 
 pub fn run_transform_cli(cli: &TransformCli) -> Result<()> {
@@ -281,6 +241,7 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<()> {
         .values()
         .any(|m| matches!(m.level, VendorLevel::BundledPartialSwap(_)));
     if !spec.vendor.is_empty() && (has_partial_swaps || has_bundled_partial_swaps) {
+        let mut replacement_import_locals_by_chunk_path = BTreeMap::new();
         if has_partial_swaps {
             let partial_result = apply_partial_vendor_swaps(
                 artifact,
@@ -314,6 +275,8 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<()> {
                 },
             )?;
             artifact = bundled_result.artifact;
+            replacement_import_locals_by_chunk_path =
+                bundled_result.self_rewrite_import_locals_by_chunk_path;
             vendor_swaps_report.bundled_partial = bundled_result.manifest.resolutions;
         }
 
@@ -321,7 +284,13 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<()> {
         // symbol from upstream; drop the vendor chunk's residual
         // `export { … }` entries and any top-level bindings that are
         // unreachable once those exports are gone.
-        let strip_result = strip_swapped_vendor_exports(artifact, &spec.vendor)?;
+        let strip_result = strip_swapped_vendor_exports_with_options(
+            artifact,
+            &spec.vendor,
+            StripSwappedVendorExportsOptions {
+                replacement_import_locals_by_chunk_path,
+            },
+        )?;
         artifact = strip_result.artifact;
         vendor_swaps_report.strip_stats = strip_result.manifest.per_chunk;
     }
@@ -615,7 +584,7 @@ mod tests {
                 })?,
             )?;
 
-            let summary = run_transform_cli(&TransformCli {
+            run_transform_cli(&TransformCli {
                 spec_source: TransformSpecSource::Flat { path: spec_path },
                 package_roots: HashMap::new(),
                 packages_root: None,

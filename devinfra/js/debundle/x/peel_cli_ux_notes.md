@@ -21,12 +21,12 @@ Useful follow-ups:
 `debundle peel explain --owner-id ...` should have a compact mode focused on:
 
 - selected owner identity and source span
-- direct horizon status
+- atomic-unit membership
 - matching `plan-work` proposal, if any
 - immediate constraining neighbors
 - exact reason the owner is not landable today
 
-Large companion-candidate structures should be opt-in when the caller is
+Large proposal/diagnostic structures should be opt-in when the caller is
 debugging the planner itself.
 
 ## Source Roots
@@ -35,12 +35,12 @@ debugging the planner itself.
 layout. Runbooks and skills should make that target-specific root explicit
 instead of assuming repository root or working directory.
 
-## Patch Status Naming
+## Patch Plan Naming
 
-`patch-status` is useful for intersecting binding-patch composition with graph
-peelability. It is not the only way to discover readable peel candidates:
-`candidates --readable-only` and `plan-work` may show graph-valid work even
-when no whole patch section is ready.
+`patch-plan` is useful for intersecting existing module YAML and binding-patch
+composition with atomic-unit coverage. It is not the only way to discover
+readable work: `units --readable-only` and `plan-work` may show graph-valid
+work even when no whole patch section is ready.
 
-Docs and skill text should avoid implying that an empty `patch-status` means
+Docs and skill text should avoid implying that an empty `patch-plan` means
 there is no landable work.

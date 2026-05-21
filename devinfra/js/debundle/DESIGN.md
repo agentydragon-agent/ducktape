@@ -408,29 +408,20 @@ The verdict surfaces unrealizable SCCs, cross-destination rebinds, and
 non-importable reads with owner-edge provenance. An empty verdict means the
 partition is realizable per "Valid peels and atomic modules" below.
 
-Three callers consume it:
+Two caller families consume it:
 
 1. **The validator (the gate).** Given the spec's actual partition, the
    verdict decides acceptance or rejection. This is the load-bearing call —
    if it rejects, materialization stops.
-2. **The peelability proposer.** For each candidate peel, the proposer
-   applies the quotient delta that would result from the peel (the
-   candidate's owners reassigned to a fresh destination) to the rollbackable
-   index, reads the localized verdict, undoes the delta, and projects the
-   verdict into the candidate's status. A `peelable_now` candidate is one
-   whose hypothetical partition produces an empty verdict; any other verdict
-   shape decodes to a specific blocker reason.
-3. **The factorize closure loop.** Each frontier-grow step certifies the
-   resulting hypothetical partition via the primitive. If the verdict names
-   an exact owner-level repair (a private read that needs its provider, an
-   atomic-unit split, a cycle that needs a small cut), the loop grows the
-   frontier and re-certifies. Proposals are emitted only on empty verdicts.
+2. **Planner checks.** Read-only tools may ask hypothetical "what if these
+   owners moved?" questions against the same primitive. Advisory planning is
+   now driven primarily by the emitted atomic DAG; ordinary `debundle run`
+   does not serialize heuristic proposal projections.
 
 ### Iterative, undo-aware shape
 
 Asking the primitive from scratch per query is `O(N + M)`. A chunk's
-proposer evaluates thousands of candidates and a factorize closure can
-re-certify after every frontier step, so the primitive is exposed as a
+planner checks can ask many hypothetical questions, so the primitive is exposed as a
 **stateful, transactional index over a working partition** rather than a
 pure function:
 
@@ -466,7 +457,7 @@ torn down and rebuilt per question.
 
 No production code should answer the validity question by walking the
 owner graph or the quotient with its own algorithm. Bespoke per-question
-walks are how the proposer/gate divergence repaired in this design first
+walks are how planner/gate divergence repaired in this design first
 appeared: two algorithms drift; one shared implementation cannot. If a new
 caller needs a verdict over a hypothetical partition, the answer is to
 push a delta and read the index — not to spin up a parallel walk over
@@ -486,8 +477,8 @@ crosses a module boundary).
 
 The promotion runs once in `build_owner_graph` and is
 partition-independent: intra-module promoted edges are dropped by the
-quotient automatically, so the same promoted owner graph drives the
-proposer's hypothetical partitions and the validator's actual one.
+quotient automatically, so the same promoted owner graph drives
+hypothetical planner partitions and the validator's actual one.
 
 **Algorithm.** For each top-level chunk statement S with `at_init_calls`
 non-empty, walk the chunk call graph (among chunk-declared functions)
@@ -581,11 +572,10 @@ Because Lemma 2 is implemented (`ChunkFactorization::source_import_position`,
 consumed by `lowering::lower_chunk` when sorting entry's import list)
 and the residual-in-cycle carve-out is enforced by the gate, the
 validator (`validate_factorization` in
-`devinfra/js/debundle/validation.rs`) and the proposer
-(`evaluate_peel_candidate` in `devinfra/js/debundle/peelability.rs`)
-share the realizability primitive's verdict — a `peelable_now` from
-the proposer is a peel the gate will accept and the bundle will
-execute correctly at runtime.
+`devinfra/js/debundle/validation.rs`) and read-only planner checks share
+the realizability primitive's verdict — a `peelable_now` proposal is a
+peel the gate will accept and the bundle will execute correctly at
+runtime.
 
 ## The realizability theorem
 
@@ -1065,7 +1055,7 @@ derive I, R, S
 validate: realizability gate over I ∪ S
   ↓        ↓ no                       (sidecar)
   ↓        ↓                  owner-level diagnostics, cycle cuts,
-  ↓        ↓                  peelability projections
+  ↓        ↓                  atomic-unit conflict reports
 emit (source-order)
   ↓ no
 reject with cycle evidence
@@ -1114,25 +1104,25 @@ has its `owner` named in the spec or defaults to
 `ModuleId::ResidualEntry`. Empty-`declared` (anonymous) statements
 default to `ResidualEntry` unless explicitly claimed by a logical
 module's `anonymous_statements` shape selector. There is no
-implicit pulling: when a peelability proposal's closure includes
-anonymous companions, the spec author copies their source into
+implicit pulling: when an atomic unit or planner proposal includes
+anonymous statements, the spec author copies their source into
 `anonymous_statements` (one entry per claimed statement); the
-materializer never silently co-moves an anon statement.
+materializer never silently co-moves an anonymous statement.
 
 The owner graph is the explicit replacement for hidden closure. It
 records the fine-grained "this owner uses that owner" relation before
 any module-level quotienting. Diagnostics are projections of that
 graph: validation cycles explain why the current explicit assignment
-is not realizable, and peelability explains which residual owners can
-move to a new destination without introducing a new invalid quotient
-SCC or an unimportable residual dependency. The tool may rank,
-summarize, or annotate those projections, but it does not silently
-assign bindings on behalf of the spec author.
+is not realizable, `atomic_graph` records which owner sets are
+indivisible, and `debundle peel` can rank or annotate DAG-derived
+proposals. None of those projections silently assign bindings on
+behalf of the spec author.
 
 Each materialized chunk has reports under `reports/tree/<chunk_id>/`.
-`owner_graph.json` carries the detailed graph and peelability data; compact
-validation status is folded into `chunk.json`; `cycles.json` and
-`atomic_unit_conflicts.json` are emitted only for rejection cases.
+`owner_graph.json` carries the detailed owner graph, current module quotient,
+and embedded atomic DAG. Compact validation status is folded into
+`chunk.json`; `cycles.json` and `atomic_unit_conflicts.json` are emitted only
+for rejection cases.
 
 When an output emitter materializes executable JavaScript, root reports live
 under `reports/` and per-file/per-directory reports are mirrored under
@@ -1158,12 +1148,12 @@ use the owner graph and source bodies for drill-down.
 1. Spec author writes / edits a spec — possibly partial.
 2. Pipeline runs the validator. The report flags:
    - **Cycles** in the explicit-only assignment, if any.
-   - **Peelability projections** for residual owners and minimal
-     companion sets in `owner_graph.json`.
-3. Spec author resolves: first fix any validation cycles; then peel
-   owner sets from `peelability.minimal_peel_sets[]`, copying their
-   bindings into new explicit spec modules and assigning good public
-   names.
+   - **Atomic-unit conflicts** when the spec splits an indivisible unit.
+   - **Atomic DAG facts** in `owner_graph.json` for planning the next peel.
+3. Spec author resolves: first fix any validation cycles or atomic-unit
+   conflicts; then use `debundle peel plan-work`, `units`, `patch-plan`,
+   `explain`, and `source-slice` to choose explicit owner sets for new spec
+   modules with good public names.
 4. Re-run validator. Iterate until validation is green and the
    residual contains only intentionally generated or low-value noise.
 
@@ -1171,187 +1161,68 @@ The spec is now fully explicit. The validator is a one-shot
 predicate: "given this spec, is the bundle realizable?" — no
 implicit transformation in the middle.
 
-## Peelability diagnostics
+## Atomic DAG Planner Data
 
 The same owner graph drives the next-spec workflow. A pipeline that
-only reports whether the current spec passed forces spec authors
-into speculative edit/build/test loops. The owner-graph side output
-therefore includes peelability projections for residual owner sets.
-V1 computes candidate owner sets with three statuses:
+only reports whether the current spec passed forces spec authors into
+speculative edit/build/test loops. `debundle run` therefore emits the
+atomic-unit DAG in `owner_graph.json`, and `debundle peel` computes
+advisory proposal views from that stable graph.
 
-- **`peelable_now`** — assigning this owner set to a new logical
-  destination leaves the quotient graph realizable and all imports
-  resolvable.
-- **`blocked_cycle`** — the quotient graph would contain an
-  unrealizable SCC. The report includes the owner-level cut before
-  grouping it into module-level cycle evidence.
-- **`blocked_residual_dependency`** — a moved owner would still
-  read a binding that remains private to the residual entry. The
-  report includes the owner edges and read bindings that cross that
-  unimportable cut.
+`debundle peel plan-work` computes proposal owner sets with three statuses:
 
-Direct peels and "only with companions" peels are one unified
-hypergraph. Each peelable owner set is a hyperedge over owner
-vertices. A direct peel is a peelable set with one owner. A
-companion peel is a residual owner whose minimal peelable set has
-more than one owner. The side output exposes both the set list and
-a per-residual-owner incidence view, so downstream tools do not
-have to infer companion relationships from unrelated candidate rows.
+- **`peelable_now`** — this closed atomic-DAG owner set is currently usable
+  as an authoring proposal.
+- **`blocked_cycle`** — the proposal conflicts with active module ownership
+  or would otherwise create an invalid assignment.
+- **`blocked_residual_dependency`** — the proposal exceeds the configured
+  cap or leaves a required residual dependency outside the closed set.
 
-This is deliberately a projection of the owner graph, not a separate
-heuristic system. Tooling may rank candidates by size reduction,
-name quality, or path, but the validity status comes from the same
-quotient + realizability check as normal materialization.
+The important invariant is that the proposal queue is a projection over
+`atomic_graph`, not a separate fact emitted by the transform pipeline.
+Ordinary `debundle run` emits owner facts, module quotient facts, and the
+atomic DAG; `debundle peel` ranks and groups those facts for authoring
+workflows.
 
-The report exposes the graph data needed to make that decision
-without re-running emitted JS:
+### Residual Proposal Closures
 
-- the owner vertices and their stable report ids, statement
-  ordinals, source locations, declared member bindings with
-  readable export names, current destinations, and proposed
-  destinations;
-- the owner edges, with binding/read-kind/side-effect-order
-  provenance and statement ordinals;
-- candidate assignments with status, readable member lists,
-  residual-dependency blockers, and quotient-cycle cut evidence.
+The current planner answers the operational question: "which residual
+atomic units can move together next?"
 
-Downstream peel skills should read it before editing YAML: promote
-`peelability.minimal_peel_sets[]` first. For an individual symbol,
-read `peelability.residual_owner_horizon[]`: `status: "direct"`
-means its singleton set is peelable, `status: "with_companions"`
-means one of its `companion_options[]` must move with it, and
-`status: "blocked"` means no currently computed peel set covers
-that owner. Detailed rejected candidate traces are intentionally not
-serialized; the report keeps the actionable peel hypergraph compact
-enough for large chunks.
+It starts from residual atomic units, follows outgoing constraining
+atomic-DAG edges to other residual units, coalesces overlapping closures,
+and emits the closed owner set as a proposal when it fits under the
+configured size cap. Oversized or conflicting closures become diagnostics.
+Lazy owner edges remain in the owner graph but do not close proposals unless
+they are represented by a constraining atomic edge.
 
-### Residual peel candidates
-
-> Detailed factorize algorithm — including how existing modules
-> participate as supernodes in the proposal graph — is documented in
-> the dedicated <FACTORIZE.md>. The summary below covers the
-> single-owner / two-owner peel candidate primitive that the
-> peelability projection emits.
-
-The first implemented candidate family answers the immediate
-operational question: "which symbols can currently peel out of the
-residual catch-all?"
-
-Let `R` be any destination marked residual (the `ResidualEntry` catch-all
-or a generated residual logical module), and let `o ∈ V` be an owner currently assigned to `R` with
-declared symbols `decl(o)`. To test whether `o` is peelable now:
-
-1. Build the hypothetical quotient delta: create a fresh destination `P_o`
-   and reassign the owners of `decl(o)` to it inside a scoped index push.
-   All other owner destinations are unchanged.
-2. Read the verdict from the index, filtered to SCCs and rebinds touching
-   `P_o`.
-3. Decode the verdict into a `PeelCandidateStatus`:
-   - Empty verdict → `peelable_now`.
-   - Verdict carries `unrealizable_sccs` touching `P_o` → `blocked_cycle`.
-     The owner-edge provenance on the SCC names the exact constraining
-     module edges that form the cycle.
-   - Verdict carries non-importable reads from `P_o` into private
-     residual neighbors → `blocked_residual_dependency`.
-4. Undo the scoped push, restoring the index's working partition.
-
-The same primitive that the validator uses on the actual partition
-answers the proposer's question on a hypothetical one. There is no
-parallel walk over `module_pair_totals` or a synthetic-node BFS — the
-proposer and the gate cannot disagree because they share an
-implementation.
-
-Restricting to the constraining-edge subgraph is load-bearing and is
-already part of the primitive's verdict: a mixed cycle whose constraining
-edges form a DAG — e.g. `residual → P_o` eager-use plus `P_o → residual`
-lazy-use, the canonical "pure top-level helper consumed by many
-same-residual eager users" shape — is realizable. ESM resolves it by
-evaluating the lazy/hoisted side first, so the eager side never observes
-a TDZ. This is the same `G_atomic` definition `compute_atomic_units` uses
-for factorization; one definition, one implementation.
-
-The verdict's `unrealizable_sccs` inherently ignore unrelated pre-existing
-bad SCCs that do not touch `P_o`: the projection from verdict to
-candidate status filters to SCCs incident to the candidate's destination.
-When the current build is green, this is equivalent to checking the whole
-candidate quotient. When the build is red, the proposer still identifies
-residual symbols whose peel is locally safe and therefore useful for
-reducing the residual or breaking a larger cycle without adding a new
-one.
-
-V1 also computes bounded two-owner closures. It does not scan every
-pair in the residual. Instead, for each cycle-blocked singleton
-candidate, it keeps internal constraining owner-edge evidence and
-seeds pairs from residual owners that are direct endpoints of those
-constraining edges. Each seeded pair is tested by the same
-fresh-destination quotient operation above. Only pairs whose
-candidate SCC is realizable are reported as a peel set with
-`owner_ids.len() == 2` / `status: "peelable_now"`. This
-captures the common "A and B can move, but only together" case
-while keeping the report tied to actual cycle evidence instead of
-speculative all-pairs search.
-
-V1 also enumerates **atomic-unit candidates**: every multi-owner SCC
-of the constraining-edge subgraph `G_atomic` (see <atomic*units.rs>)
-whose members all live in the same residual destination is emitted as
-a candidate of the same shape. The atomic unit is the analyzer's
-already-computed "must move together" set — `compute_atomic_units`
-runs Tarjan over the same constraining-edge relation the validator
-uses, so a partial-unit peel is unrealizable by construction.
-Emitting the full unit asks "can the \_entire* atomic unit move as one
-module?", which is the only realizable peel shape for any single
-unit-member. The candidate is tested by the same
-fresh-destination quotient as singletons/pairs; it shows up as
-`peelable_now` iff the unit's outgoing constraining edges into
-residual non-members form a DAG (i.e. the unit, as one module,
-doesn't close a cross-destination constraining cycle). Without this
-candidate family, large atomic units — a class plus N decorator
-applications, or a multi-owner constraining SCC — would never appear
-on the horizon, even when the whole unit is structurally peelable.
-
-Unit-membership candidates whose members aggregate to an empty
-`declared` set (e.g. a cluster of anonymous side-effect statements
-with no class binding) are skipped: there is nothing to land in the
-report's `members[]` and the peel has no exported surface. Size-1
-units are already covered by the singleton family, so the atomic-unit
-family adds candidates only for size ≥ 2.
-
-The report writes this as:
-
-- `peelability.residual_destinations[]`
-- `peelability.minimal_peel_sets[]`, the currently computed
-  minimal peelable owner-set hyperedges
-- `peelability.residual_owner_horizon[]`, one row per residual
-  owner with `status`, `peel_set_ids`, and any
-  `companion_options[]`
+This makes larger peel sets unambiguous: a proposal is "minimal" only with
+respect to the current closure heuristic. The authoritative graph fact is
+the atomic DAG; agents should use `units`, `explain`, and `source-slice` to
+decide whether the recommendation is a good module shape.
 
 ### Detailed graph side output
 
 The transform also writes a detailed graph side output, separate from
-the compact validation error. This is the data source for analysis
+compact validation errors. This is the data source for analysis
 scripts, notebooks, and repo-specific peel skills. It is emitted on
-both success and validation rejection, because the most useful peel
-data often exists precisely when the current assignment is not yet
-realizable.
+both success and validation rejection, because useful graph data often
+exists precisely when the current assignment is not yet realizable.
 
 The detailed output is machine-readable, typed, and debundler-owned.
 For each chunk it includes:
 
 - run metadata: chunk id and source paths;
 - owner vertices: report id, statement ordinal, source location,
-  declared bindings as `members[]`-shaped `{binding, export_name}`
-  records, owner kind, side-effect classification, and current
-  destination;
+  declared bindings as `{binding, export_name}` records, owner kind,
+  side-effect classification, and current destination;
 - owner edges: `source`, `target`, edge kind, optional binding,
   statement ordinal, and whether the edge constrains realizability;
 - quotient projections for the current assignment: module nodes,
   aggregated edge kinds, SCC membership, and SCC realizability
   status;
-- residual peelability projections:
-  `minimal_peel_sets` and `residual_owner_horizon`.
-  These projections carry the same `{binding, export_name}` member
-  records used by spec authoring, so downstream tools do not need to
-  reparse repo-specific module YAML just to recover readable names.
+- `atomic_graph`: atomic unit nodes, atomic DAG edges, source spans, current
+  destinations, constraining owner-edge provenance, and unit causes.
 
 New fields can add source spans, input/spec hashes, direct importability
 classifications, and closure suggestions without changing the underlying
@@ -1407,9 +1278,9 @@ A destination assignment is **valid** iff:
    eager side.
 
 This three-clause predicate is what the "Realizability primitive" section
-above defines as the single shared implementation. The validator, the
-peelability proposer, and the factorize closure all consume the same
-primitive — none of them re-implement the predicate.
+above defines as the single shared implementation. The validator and
+planner checks all consume the same primitive — none of them re-implement
+the predicate.
 
 A peel is just a proposed destination assignment for an owner set.
 The peel is valid exactly when the resulting assignment is valid by
@@ -1455,7 +1326,7 @@ structure used to compute that proof.
 The validity predicate above leaves one degree of freedom: which
 residual entry bindings are surfaced as ESM exports of entry. The
 materializer (`materialize_logical_modules`) owns that decision and
-makes it **per emit pass**, not as a static property the proposer
+makes it **per emit pass**, not as a static property the planner
 must predict.
 
 Concretely: when a moved module body references a top-level
@@ -1469,14 +1340,14 @@ didn't already export.
 
 This decoupling is load-bearing for two reasons:
 
-1. **The proposer never models the emit policy.** Asking the
-   peelability proposer to predict "will the materializer accept
-   this peel after its export-growth pass?" forces a duplicate
-   implementation of the export logic on the proposer side and
+1. **The planner never models the emit policy.** Asking the planner
+   to predict "will the materializer accept this peel after its
+   export-growth pass?" forces a duplicate implementation of the export
+   logic on the planner side and
    creates an SSOT drift hazard the moment the emit policy
-   evolves. Keeping the proposer concerned with the
+   evolves. Keeping the planner concerned with the
    importability/cycle/rebind predicates _only_ means a peel that
-   passes the proposer's check is always materializable.
+   passes the planner's check is always materializable.
 2. **There is no "binding is private to entry" spec contract.** Any
    top-level entry declaration is implicitly exportable when a
    peeled module needs to read it. Spec authors who want a binding
@@ -1547,8 +1418,8 @@ ranking or display.
      frontier item reads, including lazy reads, unless the export
      policy makes those bindings importable.
 3. Certify the resulting hypothetical assignment via the realizability
-   primitive (above). Same primitive the validator and the peelability
-   proposer use; no parallel walk.
+   primitive (above). Same primitive the validator and planner checks
+   use; no parallel walk.
 4. If the verdict reports a blocker with an exact owner-level repair,
    push the repair onto the realizability index and re-read the verdict:
    - private residual read -> add the binding's provider owner;
@@ -1622,7 +1493,7 @@ It also explains why local-effect annotations belong in the shared
 analysis layer, not in factorize-specific code. Once the analyzer
 turns a recognized decorator helper call into a target-local owner
 edge, the materializer rejects a handwritten split of class and
-decorator statement, peelability reports the exact companion set, and
+decorator statement, the atomic DAG records the required unit, and
 factorize can grow the frontier through the same atomic-unit repair
 path. No consumer gets to reinterpret `effect:` independently.
 
@@ -1712,8 +1583,8 @@ and only then projected to modules:
 
 These operations are pure graph transforms over immutable analysis
 data. That property matters operationally: two tools reading the same
-owner graph and destination assignments should produce the same
-peelability status without building emitted JS.
+owner graph and destination assignments should produce the same proposal
+status without building emitted JS.
 
 ### Pipeline trajectory
 
@@ -1736,10 +1607,9 @@ The direction of travel is to collapse the stage structure. Each stage
 becomes a function over the analyzer's typed state, the JS-tree
 intermediate snapshots between stages are dropped, and the pipeline
 becomes the composition of those functions. The unification of the
-gate, the peelability proposer, and the factorize closure on the
-realizability primitive is a precondition for this collapse: it removes
-the parallel walks and the proposer-internal caches that made the stage
-boundaries necessary as state-passing seams.
+gate and planner checks on the realizability primitive is a precondition
+for this collapse: it removes the parallel walks and planner-internal
+caches that made the stage boundaries necessary as state-passing seams.
 
 The e2e tests in `devinfra/js/debundle/e2e/` pin observable chunk →
 emitted-JS behavior. They are the safety net that makes this collapse
@@ -2149,7 +2019,7 @@ When a decorator application matches an annotated
 `effect: typescript_decorate_helper`, the owner graph records it as a
 target-local effect on the class/prototype binding. That makes the
 anonymous statement a required companion of the class owner for
-materialization, peelability, and factorize. The author still
+materialization and factorize. The author still
 materializes it with `anonymous_statements:` because it has no binding
 name, but factorize's proposal already includes the anonymous owner id
 and will not propose the class alone.
@@ -2374,9 +2244,9 @@ Within `materialize_logical_modules`, the substages are:
    The quotient graph
    collapses owners by destination, aggregates edge reasons, and
    validates the resulting `I ∪ S`.
-7. **Diagnostics projections** — cycle evidence and peelability
-   reports are projections of the same owner graph + quotient, not
-   separate heuristic analyses.
+7. **Diagnostics projections** — cycle evidence, atomic-unit conflicts,
+   and atomic graph reports are projections of the same owner graph +
+   quotient, not separate heuristic analyses.
 8. **Cycle resolution gate** — if the validator finds an
    unrealizable cycle, the pipeline aborts with the cycle
    evidence.
@@ -2952,11 +2822,10 @@ Primary:
 - <validation.rs> — realizability checks.
 - <chunk_analysis.rs> — `ChunkAnalysis` (inputs + IR + input-derived caches).
 - <chunk_factorization.rs> — `ChunkFactorization` construction and linker-order reasoning.
-- <peelability.rs> — residual peelability horizon.
 - <atomic_units.rs> — owner-level hard colocation units.
 - <factor_assembly.rs> — spec claims projected onto atomic units.
-- <factorize.rs> and <peel_factorize.rs> — advisory factorization
-  proposal construction and reporting.
+- <peel/factorize.rs> — advisory factorization proposal construction
+  and reporting.
 - <lowering/> — main splitting transform (`mod.rs` plus per-concern
   sibling files: `chunk_ast.rs`, `lower.rs`, `materialize.rs`,
   `plans.rs`, `naturalize.rs`, `imports_cross.rs`,

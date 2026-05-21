@@ -154,9 +154,11 @@ Generated owner graphs can be queried with `debundle peel`:
 
 ```sh
 debundle peel plan-work --graph "$GRAPH" --modules "$MODULES" --limit 25
-debundle peel patch-status --graph "$GRAPH" --modules "$MODULES" --limit 50
-debundle peel candidates --graph "$GRAPH" --modules "$MODULES" --limit 100
+debundle peel patch-plan --graph "$GRAPH" --modules "$MODULES" --limit 50
+debundle peel units --graph "$GRAPH" --modules "$MODULES" --readable-only --limit 100
+debundle peel graph-summary --graph "$GRAPH" --modules "$MODULES" --limit 25
 debundle peel explain --graph "$GRAPH" --modules "$MODULES" --proposal-id <id>
+debundle peel explain --graph "$GRAPH" --modules "$MODULES" --unit-id <id>
 debundle peel explain --graph "$GRAPH" --modules "$MODULES" --binding-id <binding>
 debundle peel explain --graph "$GRAPH" --modules "$MODULES" --owner-id <owner>
 debundle peel source-slice --graph "$GRAPH" --modules "$MODULES" \
@@ -164,13 +166,14 @@ debundle peel source-slice --graph "$GRAPH" --modules "$MODULES" \
 ```
 
 `explain` and `source-slice` select exactly one object with `--proposal-id`,
-`--owner-id`, or `--binding-id`; there is no `--binding` shorthand.
+`--unit-id`, `--diagnostic-id`, `--owner-id`, or `--binding-id`; there is no
+`--binding` shorthand.
 
 Typical adapter bindings:
 
 ```sh
-GRAPH=<debundle-output>/analysis/logical_modules/.../owner_graph.json
+GRAPH=<debundle-output>/reports/tree/<chunk-id>/owner_graph.json
 MODULES=<spec-root>/modules
-SOURCE_ROOT=<upstream-or-emitted-js-root>
+SOURCE_ROOT=<debundle-output>/app
 DEBUNDLE_OUT=<debundle-output-root>
 ```

@@ -59,7 +59,8 @@ exception: they operate deliberately on the shared integration branch.
 - Environment failure: find one working command and broadcast it.
 - Stale graph: refresh evidence before reassigning blame.
 - Gate failure: read structured cycle/report output before bisection.
-- Cross-lane companion: expand one lane or redispatch as coordinated work.
+- Split atomic unit: expand one lane to cover the whole unit or redispatch as
+  coordinated work.
 - Unclear destination: route to architect instead of creating a grab-bag.
 - Broad source understanding needed: route to intake instead of overloading a
   lane worker.

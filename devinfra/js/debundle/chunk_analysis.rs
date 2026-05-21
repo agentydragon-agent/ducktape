@@ -125,9 +125,9 @@ impl ChunkAnalysis {
     }
 }
 
-/// Reverse-index `owner_graph.nodes[].declared` so peelability /
-/// factorize reports can resolve a binding `Id` → owners-that-declare-it
-/// in a single hash lookup. Most bindings come from exactly one owner;
+/// Reverse-index `owner_graph.nodes[].declared` so graph and planner reports
+/// can resolve a binding `Id` → owners-that-declare-it in a single hash
+/// lookup. Most bindings come from exactly one owner;
 /// the `Vec<String>` shape accommodates the rare cases where the same
 /// hygiene-identity ends up on multiple owners (anonymous statements
 /// that share a synthetic owner).

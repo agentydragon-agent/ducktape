@@ -1,12 +1,14 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use analysis::{AnalysisHints, LocalEffectPolicy, StatementFacts, analyze_chunk};
 use anyhow::{Context, Result, bail};
-use binding_targets::{
-    TargetAccessRecorder, binding_names, record_assign_target, record_update_target,
-};
+use binding_targets::binding_names;
 use serde::Serialize;
+use swc_common::sync::Lrc;
+use swc_common::{DUMMY_SP, SourceMap};
 use swc_ecma_ast::*;
-use swc_ecma_visit::{Visit, VisitWith};
+use swc_ecma_codegen::text_writer::JsWriter;
+use swc_ecma_codegen::{Config, Emitter};
 
 use artifact::{ChunkBundle, JsFile, get_chunk_entry_path};
 use spec::{PartialSwapSymbol, VendorLevel, VendorMark};
@@ -14,6 +16,11 @@ use spec::{PartialSwapSymbol, VendorLevel, VendorMark};
 pub struct StripSwappedVendorExportsResult {
     pub artifact: ChunkBundle,
     pub manifest: StripSwappedVendorExportsManifest,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct StripSwappedVendorExportsOptions {
+    pub replacement_import_locals_by_chunk_path: BTreeMap<String, BTreeSet<Id>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -40,8 +47,20 @@ pub struct ChunkStripStats {
 /// are dead weight. Without this pass the on-disk vendor blob stays
 /// byte-identical to pre-swap.
 pub fn strip_swapped_vendor_exports(
+    artifact: ChunkBundle,
+    vendor: &BTreeMap<String, VendorMark>,
+) -> Result<StripSwappedVendorExportsResult> {
+    strip_swapped_vendor_exports_with_options(
+        artifact,
+        vendor,
+        StripSwappedVendorExportsOptions::default(),
+    )
+}
+
+pub fn strip_swapped_vendor_exports_with_options(
     mut artifact: ChunkBundle,
     vendor: &BTreeMap<String, VendorMark>,
+    options: StripSwappedVendorExportsOptions,
 ) -> Result<StripSwappedVendorExportsResult> {
     let chunk_table = artifact.chunk_table.clone();
     let mut per_chunk = BTreeMap::new();
@@ -77,7 +96,17 @@ pub fn strip_swapped_vendor_exports(
             )
         })?;
 
-        let stats = strip_one_chunk(&mut ast.module, symbols, chunk_path)?;
+        let replacement_import_locals = options
+            .replacement_import_locals_by_chunk_path
+            .get(chunk_path)
+            .cloned()
+            .unwrap_or_default();
+        let stats = strip_one_chunk_with_replacement_imports(
+            &mut ast.module,
+            symbols,
+            chunk_path,
+            &replacement_import_locals,
+        )?;
         per_chunk.insert(chunk_path.clone(), stats);
 
         js_chunk.insert_file(JsFile::from_ast_parts(parts, ast));
@@ -89,10 +118,20 @@ pub fn strip_swapped_vendor_exports(
     })
 }
 
+#[cfg(test)]
 fn strip_one_chunk(
     module: &mut Module,
     symbols: &BTreeMap<String, PartialSwapSymbol>,
     chunk_path: &str,
+) -> Result<ChunkStripStats> {
+    strip_one_chunk_with_replacement_imports(module, symbols, chunk_path, &BTreeSet::new())
+}
+
+fn strip_one_chunk_with_replacement_imports(
+    module: &mut Module,
+    symbols: &BTreeMap<String, PartialSwapSymbol>,
+    chunk_path: &str,
+    replacement_import_locals: &BTreeSet<Id>,
 ) -> Result<ChunkStripStats> {
     let swapped: BTreeSet<String> = symbols.keys().cloned().collect();
 
@@ -102,7 +141,13 @@ fn strip_one_chunk(
     let post_strip_exports = collect_exported_names(module);
 
     let dropped_total_before = module.body.len();
-    sweep_unreachable_top_level(module, &post_strip_exports, &stripped, chunk_path)?;
+    sweep_unreachable_top_level(
+        module,
+        &post_strip_exports,
+        &stripped,
+        chunk_path,
+        replacement_import_locals,
+    )?;
     let retained = module.body.len();
     let dropped = dropped_total_before - retained;
 
@@ -365,8 +410,9 @@ fn sweep_unreachable_top_level(
     live_exports: &BTreeSet<String>,
     stripped: &BTreeMap<String, StrippedExport>,
     chunk_path: &str,
+    replacement_import_locals: &BTreeSet<Id>,
 ) -> Result<()> {
-    let analyses: Vec<ItemAnalysis> = module.body.iter().map(classify_item).collect();
+    let analyses = analyze_prune_items(module, chunk_path)?;
 
     // Binding id -> index that declares it. If two items declare the
     // same binding (legal for `var`), prefer the last declaration; later
@@ -377,6 +423,12 @@ fn sweep_unreachable_top_level(
             declarer.insert(id.clone(), i);
         }
     }
+    let shareable_items = compute_shareable_items(
+        &analyses,
+        &module.body,
+        &declarer,
+        replacement_import_locals,
+    );
 
     let mut mutation_items_by_target: BTreeMap<Id, Vec<usize>> = BTreeMap::new();
     for (i, an) in analyses.iter().enumerate() {
@@ -415,32 +467,46 @@ fn sweep_unreachable_top_level(
     }
 
     let mut live = vec![false; analyses.len()];
+    let mut live_reasons = vec![None; analyses.len()];
     for (i, an) in analyses.iter().enumerate() {
-        let residual_export = an
+        let residual_exports = an
             .export_aliases
             .iter()
-            .any(|alias| live_exports.contains(alias));
+            .filter(|alias| live_exports.contains(*alias))
+            .cloned()
+            .collect::<Vec<_>>();
+        let residual_export = !residual_exports.is_empty();
         let hard_side_effect = (an.side_effect == SideEffectKind::Hard
             || (an.side_effect == SideEffectKind::LocalMutation
-                && an.local_effects.iter().any(|id| !declarer.contains_key(id))))
+                && an.local_effects.iter().any(|id| {
+                    !declarer.contains_key(id) && !replacement_import_locals.contains(id)
+                })))
             && swapped_reachability[i].is_empty();
-        if residual_export || hard_side_effect {
+        if residual_export {
             live[i] = true;
+            live_reasons[i] = Some(LiveReason::ResidualExport(residual_exports));
+        } else if hard_side_effect {
+            live[i] = true;
+            live_reasons[i] = Some(LiveReason::HardSideEffect);
         }
     }
 
     let mut queue: Vec<usize> = (0..analyses.len()).filter(|&i| live[i]).collect();
     while let Some(i) = queue.pop() {
-        for dep_idx in dependency_items(&analyses[i], &declarer, &mutation_items_by_target) {
+        for (dep_idx, via) in dependency_edges(&analyses[i], &declarer, &mutation_items_by_target) {
             if !live[dep_idx] {
                 live[dep_idx] = true;
+                live_reasons[dep_idx] = Some(LiveReason::Dependency {
+                    from: i,
+                    via: via.into_iter().map(|id| id_name(&id)).collect(),
+                });
                 queue.push(dep_idx);
             }
         }
     }
 
     for (i, packages) in swapped_reachability.iter().enumerate() {
-        if live[i] && packages.len() == 1 && !analyses[i].shareable_helper {
+        if live[i] && packages.len() == 1 && !shareable_items[i] {
             let declared = analyses[i]
                 .declared
                 .iter()
@@ -454,8 +520,9 @@ fn sweep_unreachable_top_level(
                 .collect::<Vec<_>>()
                 .join(",");
             let packages = packages.iter().cloned().collect::<Vec<_>>().join(",");
+            let residual_path = format_live_trace(i, &analyses, &module.body, &live_reasons);
             bail!(
-                "strip_swapped_vendor_exports vendor entry {chunk_path}: split-brain vendor swap: top-level item {i} remains reachable from the residual chunk while also belonging to swapped package(s) [{packages}] (declared=[{declared}], exports=[{exports}])",
+                "strip_swapped_vendor_exports vendor entry {chunk_path}: split-brain vendor swap: top-level item {i} remains reachable from the residual chunk while also belonging to swapped package(s) [{packages}] (declared=[{declared}], exports=[{exports}]); residual path: {residual_path}",
             );
         }
     }
@@ -493,23 +560,214 @@ fn sweep_unreachable_top_level(
     Ok(())
 }
 
+fn compute_shareable_items(
+    analyses: &[ItemAnalysis],
+    items: &[ModuleItem],
+    declarer: &BTreeMap<Id, usize>,
+    replacement_import_locals: &BTreeSet<Id>,
+) -> Vec<bool> {
+    let mut shareable = analyses
+        .iter()
+        .map(|analysis| analysis.shareable_helper)
+        .collect::<Vec<_>>();
+
+    loop {
+        let mut changed = false;
+        for (i, analysis) in analyses.iter().enumerate() {
+            if shareable[i] {
+                continue;
+            }
+            if replacement_facade_shareable(
+                &items[i],
+                analysis,
+                declarer,
+                replacement_import_locals,
+                &shareable,
+            ) {
+                shareable[i] = true;
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+
+    shareable
+}
+
+fn replacement_facade_shareable(
+    item: &ModuleItem,
+    analysis: &ItemAnalysis,
+    declarer: &BTreeMap<Id, usize>,
+    replacement_import_locals: &BTreeSet<Id>,
+    shareable: &[bool],
+) -> bool {
+    if replacement_import_locals.is_empty()
+        || !item_is_var_decl(item)
+        || !analysis
+            .reads
+            .iter()
+            .any(|id| replacement_import_locals.contains(id))
+    {
+        return false;
+    }
+    analysis.reads.iter().all(|id| {
+        replacement_import_locals.contains(id)
+            || matches_global_intrinsic(id.0.as_ref())
+            || declarer
+                .get(id)
+                .is_some_and(|idx| shareable.get(*idx).copied().unwrap_or(false))
+    })
+}
+
+fn item_is_var_decl(item: &ModuleItem) -> bool {
+    matches!(
+        item,
+        ModuleItem::Stmt(Stmt::Decl(Decl::Var(_)))
+            | ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
+                decl: Decl::Var(_),
+                ..
+            }))
+    )
+}
+
 fn dependency_items(
     analysis: &ItemAnalysis,
     declarer: &BTreeMap<Id, usize>,
     mutation_items_by_target: &BTreeMap<Id, Vec<usize>>,
 ) -> BTreeSet<usize> {
-    let mut out = BTreeSet::new();
+    dependency_edges(analysis, declarer, mutation_items_by_target)
+        .into_keys()
+        .collect()
+}
+
+fn dependency_edges(
+    analysis: &ItemAnalysis,
+    declarer: &BTreeMap<Id, usize>,
+    mutation_items_by_target: &BTreeMap<Id, Vec<usize>>,
+) -> BTreeMap<usize, BTreeSet<Id>> {
+    let mut out = BTreeMap::<usize, BTreeSet<Id>>::new();
     for id in analysis.reads.iter().chain(analysis.local_effects.iter()) {
         if let Some(&decl_idx) = declarer.get(id) {
-            out.insert(decl_idx);
+            out.entry(decl_idx).or_default().insert(id.clone());
         }
     }
     for id in &analysis.declared {
         if let Some(mutation_items) = mutation_items_by_target.get(id) {
-            out.extend(mutation_items.iter().copied());
+            for mutation_item in mutation_items {
+                out.entry(*mutation_item).or_default().insert(id.clone());
+            }
         }
     }
     out
+}
+
+#[derive(Debug, Clone)]
+enum LiveReason {
+    ResidualExport(Vec<String>),
+    HardSideEffect,
+    Dependency { from: usize, via: Vec<String> },
+}
+
+fn format_live_trace(
+    start: usize,
+    analyses: &[ItemAnalysis],
+    items: &[ModuleItem],
+    live_reasons: &[Option<LiveReason>],
+) -> String {
+    let mut node = start;
+    let mut seen = BTreeSet::new();
+    let mut trace = Vec::new();
+
+    loop {
+        if !seen.insert(node) {
+            trace.push(format!("cycle at item {node}"));
+            break;
+        }
+
+        trace.push(format_item_summary(node, &analyses[node], &items[node]));
+        match live_reasons.get(node).and_then(|reason| reason.as_ref()) {
+            Some(LiveReason::ResidualExport(aliases)) => {
+                trace.push(format!("residual export [{}]", aliases.join(",")));
+                break;
+            }
+            Some(LiveReason::HardSideEffect) => {
+                trace.push("retained side effect".to_string());
+                break;
+            }
+            Some(LiveReason::Dependency { from, via }) => {
+                trace.push(format!("reads [{}]", via.join(",")));
+                node = *from;
+            }
+            None => {
+                trace.push("unknown liveness root".to_string());
+                break;
+            }
+        }
+    }
+
+    trace.reverse();
+    trace.join(" -> ")
+}
+
+fn format_item_summary(i: usize, analysis: &ItemAnalysis, item: &ModuleItem) -> String {
+    let declared = analysis
+        .declared
+        .iter()
+        .map(id_name)
+        .collect::<Vec<_>>()
+        .join(",");
+    let exports = analysis
+        .export_aliases
+        .iter()
+        .cloned()
+        .collect::<Vec<_>>()
+        .join(",");
+    let local_effects = analysis
+        .local_effects
+        .iter()
+        .map(id_name)
+        .collect::<Vec<_>>()
+        .join(",");
+    let snippet = module_item_snippet(item);
+    format!(
+        "item {i} declared=[{declared}] exports=[{exports}] side_effect={:?} local_effects=[{local_effects}] snippet=`{snippet}`",
+        analysis.side_effect,
+    )
+}
+
+fn module_item_snippet(item: &ModuleItem) -> String {
+    let module = Module {
+        span: DUMMY_SP,
+        body: vec![item.clone()],
+        shebang: None,
+    };
+    let cm: Lrc<SourceMap> = Default::default();
+    let mut buf = Vec::new();
+    let emitted = {
+        let writer = JsWriter::new(cm.clone(), "\n", &mut buf, None);
+        let mut emitter = Emitter {
+            cfg: Config::default(),
+            cm,
+            comments: None,
+            wr: writer,
+        };
+        emitter.emit_module(&module)
+    };
+    if emitted.is_err() {
+        return "<emit failed>".to_string();
+    }
+    let mut snippet = String::from_utf8_lossy(&buf)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    const MAX_LEN: usize = 240;
+    if snippet.len() > MAX_LEN {
+        snippet.truncate(MAX_LEN);
+        snippet.push_str("...");
+    }
+    snippet
 }
 
 struct ItemAnalysis {
@@ -528,290 +786,96 @@ enum SideEffectKind {
     Hard,
 }
 
-fn classify_item(item: &ModuleItem) -> ItemAnalysis {
+fn analyze_prune_items(module: &Module, chunk_path: &str) -> Result<Vec<ItemAnalysis>> {
+    let hints = AnalysisHints {
+        local_effect_policy: LocalEffectPolicy::VendorPrune,
+        ..AnalysisHints::default()
+    };
+    let facts = analyze_chunk(module, &hints, None, |_| None).facts;
+    if facts.len() != module.body.len() {
+        bail!(
+            "strip_swapped_vendor_exports vendor entry {chunk_path}: analysis produced {} top-level facts for {} module items",
+            facts.len(),
+            module.body.len(),
+        );
+    }
+
+    Ok(module
+        .body
+        .iter()
+        .zip(facts.iter())
+        .map(|(item, fact)| item_analysis_from_fact(item, fact))
+        .collect())
+}
+
+fn item_analysis_from_fact(item: &ModuleItem, fact: &StatementFacts) -> ItemAnalysis {
+    let mut reads = fact.eager_reads.clone();
+    reads.extend(fact.lazy_reads.iter().cloned());
+    reads.extend(fact.eager_rebinds.iter().cloned());
+    reads.extend(fact.lazy_rebinds.iter().cloned());
+    reads.extend(fact.at_init_calls.iter().cloned());
+    reads.extend(fact.body_calls.iter().cloned());
+    for id in &fact.declared {
+        reads.remove(id);
+    }
+
+    let side_effect = if module_linkage_item(item) || !fact.purity.is_pure() {
+        SideEffectKind::Hard
+    } else if !fact.local_effects.is_empty() {
+        SideEffectKind::LocalMutation
+    } else {
+        SideEffectKind::None
+    };
+
+    ItemAnalysis {
+        declared: fact.declared.clone(),
+        reads,
+        local_effects: fact.local_effects.clone(),
+        export_aliases: export_aliases_for_item(item),
+        side_effect,
+        shareable_helper: item_is_shareable_helper(item),
+    }
+}
+
+fn module_linkage_item(item: &ModuleItem) -> bool {
+    matches!(
+        item,
+        ModuleItem::ModuleDecl(ModuleDecl::Import(_))
+            | ModuleItem::ModuleDecl(ModuleDecl::ExportAll(_))
+            | ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(NamedExport { src: Some(_), .. }))
+    )
+}
+
+fn export_aliases_for_item(item: &ModuleItem) -> BTreeSet<String> {
     match item {
-        ModuleItem::Stmt(Stmt::Decl(decl)) => classify_decl(decl),
-        ModuleItem::Stmt(Stmt::Expr(expr_stmt)) => classify_expr_stmt(&expr_stmt.expr),
         ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => {
-            let mut analysis = classify_decl(&export_decl.decl);
-            analysis
-                .export_aliases
-                .extend(export_decl_declared_names(&export_decl.decl));
-            analysis
+            export_decl_declared_names(&export_decl.decl)
+                .into_iter()
+                .collect()
         }
         ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)) if named.src.is_none() => {
-            let mut reads = BTreeSet::new();
-            let mut export_aliases = BTreeSet::new();
-            for spec in &named.specifiers {
-                if let ExportSpecifier::Named(named_spec) = spec {
-                    export_aliases.insert(
-                        named_spec
-                            .exported
-                            .as_ref()
-                            .map(module_export_name)
-                            .unwrap_or_else(|| module_export_name(&named_spec.orig)),
-                    );
-                    if let ModuleExportName::Ident(ident) = &named_spec.orig {
-                        reads.insert(ident.to_id());
-                    }
-                }
-            }
-            ItemAnalysis {
-                declared: BTreeSet::new(),
-                reads,
-                local_effects: BTreeSet::new(),
-                export_aliases,
-                side_effect: SideEffectKind::None,
-                shareable_helper: false,
-            }
+            export_aliases_from_named(named)
         }
-        ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultDecl(export_default)) => {
-            let mut reads = BTreeSet::new();
-            collect_refs(export_default, &mut reads);
-            ItemAnalysis {
-                declared: BTreeSet::new(),
-                reads,
-                local_effects: BTreeSet::new(),
-                export_aliases: BTreeSet::from(["default".to_string()]),
-                side_effect: SideEffectKind::None,
-                shareable_helper: false,
-            }
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultDecl(_))
+        | ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultExpr(_)) => {
+            BTreeSet::from(["default".to_string()])
         }
-        ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultExpr(export_default)) => {
-            let mut reads = BTreeSet::new();
-            collect_refs(&*export_default.expr, &mut reads);
-            // `export default <expr>` evaluates expr at module init;
-            // if expr is impure (e.g. `export default sideEffect()`)
-            // we must keep it. For a pure expr (`export default X`),
-            // the expression itself is inert — the export is the
-            // anchor of the read chain.
-            ItemAnalysis {
-                declared: BTreeSet::new(),
-                reads,
-                local_effects: BTreeSet::new(),
-                export_aliases: BTreeSet::from(["default".to_string()]),
-                side_effect: if is_pure_expr(&export_default.expr) {
-                    SideEffectKind::None
-                } else {
-                    SideEffectKind::Hard
-                },
-                shareable_helper: false,
-            }
-        }
-        ModuleItem::ModuleDecl(ModuleDecl::Import(_)) => ItemAnalysis {
-            declared: BTreeSet::new(),
-            reads: BTreeSet::new(),
-            local_effects: BTreeSet::new(),
-            export_aliases: BTreeSet::new(),
-            side_effect: SideEffectKind::Hard,
-            shareable_helper: false,
-        },
-        ModuleItem::ModuleDecl(ModuleDecl::ExportAll(_)) => ItemAnalysis {
-            declared: BTreeSet::new(),
-            reads: BTreeSet::new(),
-            local_effects: BTreeSet::new(),
-            export_aliases: BTreeSet::new(),
-            side_effect: SideEffectKind::Hard,
-            shareable_helper: false,
-        },
-        ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)) => {
-            let mut reads = BTreeSet::new();
-            collect_refs(named, &mut reads);
-            ItemAnalysis {
-                declared: BTreeSet::new(),
-                reads,
-                local_effects: BTreeSet::new(),
-                export_aliases: export_aliases_from_named(named),
-                side_effect: SideEffectKind::Hard,
-                shareable_helper: false,
-            }
-        }
-        ModuleItem::ModuleDecl(_) => {
-            let mut reads = BTreeSet::new();
-            collect_refs(item, &mut reads);
-            ItemAnalysis {
-                declared: BTreeSet::new(),
-                reads,
-                local_effects: BTreeSet::new(),
-                export_aliases: BTreeSet::new(),
-                side_effect: SideEffectKind::Hard,
-                shareable_helper: false,
-            }
-        }
-        ModuleItem::Stmt(_) => {
-            let mut reads = BTreeSet::new();
-            collect_refs(item, &mut reads);
-            ItemAnalysis {
-                declared: BTreeSet::new(),
-                reads,
-                local_effects: BTreeSet::new(),
-                export_aliases: BTreeSet::new(),
-                side_effect: SideEffectKind::Hard,
-                shareable_helper: false,
-            }
-        }
-    }
-}
-
-fn classify_decl(decl: &Decl) -> ItemAnalysis {
-    let mut reads = BTreeSet::new();
-    match decl {
-        Decl::Fn(fn_decl) => {
-            let declared = BTreeSet::from([fn_decl.ident.to_id()]);
-            collect_refs(&fn_decl.function, &mut reads);
-            reads.remove(&fn_decl.ident.to_id());
-            ItemAnalysis {
-                declared,
-                reads,
-                local_effects: BTreeSet::new(),
-                export_aliases: BTreeSet::new(),
-                side_effect: SideEffectKind::None,
-                shareable_helper: true,
-            }
-        }
-        Decl::Class(class_decl) => {
-            let declared = BTreeSet::from([class_decl.ident.to_id()]);
-            collect_refs(&class_decl.class, &mut reads);
-            reads.remove(&class_decl.ident.to_id());
-            ItemAnalysis {
-                declared,
-                reads,
-                local_effects: BTreeSet::new(),
-                export_aliases: BTreeSet::new(),
-                side_effect: SideEffectKind::None,
-                shareable_helper: false,
-            }
-        }
-        Decl::Var(var) => {
-            let mut declared = BTreeSet::new();
-            let mut has_side_effect_init = false;
-            for d in &var.decls {
-                declared.extend(binding_names(&d.name));
-                if let Some(init) = &d.init {
-                    if !is_pure_expr(init) {
-                        has_side_effect_init = true;
-                    }
-                    collect_refs(&**init, &mut reads);
-                }
-            }
-            for id in &declared {
-                reads.remove(id);
-            }
-            ItemAnalysis {
-                declared,
-                reads,
-                local_effects: BTreeSet::new(),
-                export_aliases: BTreeSet::new(),
-                side_effect: if has_side_effect_init {
-                    SideEffectKind::Hard
-                } else {
-                    SideEffectKind::None
-                },
-                shareable_helper: false,
-            }
-        }
-        Decl::Using(_)
-        | Decl::TsInterface(_)
-        | Decl::TsTypeAlias(_)
-        | Decl::TsEnum(_)
-        | Decl::TsModule(_) => {
-            collect_refs(decl, &mut reads);
-            ItemAnalysis {
-                declared: BTreeSet::new(),
-                reads,
-                local_effects: BTreeSet::new(),
-                export_aliases: BTreeSet::new(),
-                side_effect: SideEffectKind::Hard,
-                shareable_helper: false,
-            }
-        }
-    }
-}
-
-fn classify_expr_stmt(expr: &Expr) -> ItemAnalysis {
-    let mut reads = BTreeSet::new();
-    collect_refs(expr, &mut reads);
-    let local_effects = local_mutation_targets(expr);
-    ItemAnalysis {
-        declared: BTreeSet::new(),
-        reads,
-        local_effects: local_effects.clone(),
-        export_aliases: BTreeSet::new(),
-        side_effect: if local_effects.is_empty() {
-            SideEffectKind::Hard
-        } else {
-            SideEffectKind::LocalMutation
-        },
-        shareable_helper: false,
-    }
-}
-
-fn local_mutation_targets(expr: &Expr) -> BTreeSet<Id> {
-    match expr {
-        Expr::Assign(assign) => {
-            let mut recorder = LocalEffectRecorder::default();
-            record_assign_target(&assign.left, &mut recorder);
-            recorder.member_writes
-        }
-        Expr::Update(update) => {
-            let mut recorder = LocalEffectRecorder::default();
-            record_update_target(&update.arg, &mut recorder);
-            recorder.member_writes
-        }
-        Expr::Call(call) => local_mutation_call_target(call).into_iter().collect(),
-        Expr::Seq(seq) => seq
-            .exprs
-            .iter()
-            .flat_map(|expr| local_mutation_targets(expr))
-            .collect(),
-        Expr::Paren(paren) => local_mutation_targets(&paren.expr),
         _ => BTreeSet::new(),
     }
 }
 
-#[derive(Default)]
-struct LocalEffectRecorder {
-    member_writes: BTreeSet<Id>,
-}
-
-impl TargetAccessRecorder for LocalEffectRecorder {
-    fn record_binding_write(&mut self, _id: &Id) {}
-
-    fn record_member_write(&mut self, id: &Id) {
-        self.member_writes.insert(id.clone());
-    }
-}
-
-fn local_mutation_call_target(call: &CallExpr) -> Option<Id> {
-    let Callee::Expr(callee) = &call.callee else {
-        return None;
-    };
-    let Expr::Member(member) = &**callee else {
-        return None;
-    };
-    let Expr::Ident(object) = &*member.obj else {
-        return None;
-    };
-    if object.sym.as_ref() != "Object" {
-        return None;
-    }
-    let method = static_member_name(&member.prop)?;
-    if !matches!(
-        method.as_str(),
-        "defineProperty" | "defineProperties" | "assign"
-    ) {
-        return None;
-    }
-    let first_arg = call.args.first()?;
-    local_member_owner(&first_arg.expr)
-}
-
-fn local_member_owner(expr: &Expr) -> Option<Id> {
-    match expr {
-        Expr::Ident(ident) => Some(ident.to_id()),
-        Expr::Member(member) => local_member_owner(&member.obj),
-        Expr::Paren(paren) => local_member_owner(&paren.expr),
-        _ => None,
+fn item_is_shareable_helper(item: &ModuleItem) -> bool {
+    match item {
+        ModuleItem::Stmt(Stmt::Decl(Decl::Fn(_)))
+        | ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
+            decl: Decl::Fn(_), ..
+        })) => true,
+        ModuleItem::Stmt(Stmt::Decl(Decl::Var(var)))
+        | ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
+            decl: Decl::Var(var),
+            ..
+        })) => is_shareable_intrinsic_alias_var(var),
+        _ => false,
     }
 }
 
@@ -870,106 +934,79 @@ fn collect_pat_names(pat: &Pat, out: &mut Vec<String>) {
     }
 }
 
-/// Pure-init shapes safe to DCE. The point isn't to be exhaustive — it
-/// is to admit the common cases that account for the vast majority of
-/// vendor-blob declarations (literals, function/arrow/class expressions,
-/// object/array literals composed of pure parts, simple member access
-/// off a pure receiver). Anything else (calls, `new`, template tags,
-/// spreads, computed members on side-effecting bases) is treated as a
-/// side-effect anchor and kept.
-fn is_pure_expr(expr: &Expr) -> bool {
+fn is_shareable_intrinsic_alias_var(var: &VarDecl) -> bool {
+    !var.decls.is_empty()
+        && var.decls.iter().all(|decl| {
+            matches!(&decl.name, Pat::Ident(_))
+                && decl
+                    .init
+                    .as_deref()
+                    .is_some_and(is_shareable_intrinsic_alias_expr)
+        })
+}
+
+fn is_shareable_intrinsic_alias_expr(expr: &Expr) -> bool {
     match expr {
-        Expr::Lit(_)
-        | Expr::Ident(_)
-        | Expr::This(_)
-        | Expr::Fn(_)
-        | Expr::Arrow(_)
-        | Expr::Class(_)
-        | Expr::Tpl(_)
-        | Expr::PrivateName(_) => true,
-        Expr::Paren(p) => is_pure_expr(&p.expr),
-        Expr::Unary(u) => matches!(u.op, UnaryOp::Void | UnaryOp::TypeOf) || is_pure_expr(&u.arg),
-        Expr::Array(arr) => arr
-            .elems
-            .iter()
-            .flatten()
-            .all(|elem| elem.spread.is_none() && is_pure_expr(&elem.expr)),
-        Expr::Object(obj) => obj.props.iter().all(|prop| match prop {
-            PropOrSpread::Spread(_) => false,
-            PropOrSpread::Prop(p) => is_pure_prop(p),
-        }),
-        Expr::Member(m) => is_pure_expr(&m.obj),
-        Expr::OptChain(opt) => match &*opt.base {
-            OptChainBase::Member(m) => is_pure_expr(&m.obj),
-            OptChainBase::Call(_) => false,
-        },
-        Expr::Cond(c) => is_pure_expr(&c.test) && is_pure_expr(&c.cons) && is_pure_expr(&c.alt),
-        Expr::Bin(b) => is_pure_expr(&b.left) && is_pure_expr(&b.right),
-        Expr::Seq(s) => s.exprs.iter().all(|e| is_pure_expr(e)),
+        Expr::Paren(paren) => is_shareable_intrinsic_alias_expr(&paren.expr),
+        Expr::Ident(ident) => matches_global_intrinsic(ident.sym.as_ref()),
+        Expr::Member(member) => {
+            !member.prop.is_computed()
+                && is_shareable_intrinsic_alias_expr(&member.obj)
+                && static_member_name(&member.prop).is_some()
+        }
         _ => false,
     }
 }
 
-fn is_pure_prop(prop: &Prop) -> bool {
-    match prop {
-        Prop::Shorthand(_) => true,
-        Prop::KeyValue(kv) => is_pure_expr(&kv.value),
-        Prop::Method(_) | Prop::Getter(_) | Prop::Setter(_) => true,
-        Prop::Assign(a) => is_pure_expr(&a.value),
-    }
-}
-
-/// Walk any AST node and collect referenced binding identities. This
-/// intentionally ignores binding positions and static property keys:
-/// reachability follows actual local cells, not printed names.
-fn collect_refs<T>(node: &T, out: &mut BTreeSet<Id>)
-where
-    for<'a> T: VisitWith<RefCollector<'a>>,
-{
-    let mut visitor = RefCollector { out };
-    node.visit_with(&mut visitor);
-}
-
-struct RefCollector<'a> {
-    out: &'a mut BTreeSet<Id>,
-}
-
-impl Visit for RefCollector<'_> {
-    fn visit_ident(&mut self, ident: &Ident) {
-        self.out.insert(ident.to_id());
-    }
-
-    fn visit_binding_ident(&mut self, _ident: &BindingIdent) {}
-
-    fn visit_import_decl(&mut self, _import: &ImportDecl) {}
-
-    fn visit_var_declarator(&mut self, decl: &VarDeclarator) {
-        if let Some(init) = &decl.init {
-            init.visit_with(self);
-        }
-    }
-
-    fn visit_member_prop(&mut self, prop: &MemberProp) {
-        // `obj.x` — `x` is not a free variable reference. Only recurse
-        // into computed `obj[x]`.
-        if let MemberProp::Computed(c) = prop {
-            c.expr.visit_with(self);
-        }
-    }
-
-    fn visit_prop_name(&mut self, name: &PropName) {
-        // Object literal keys: `{ x: 1 }` — `x` is a property key, not
-        // a reference. Computed `{ [k]: 1 }` still reads `k`.
-        if let PropName::Computed(c) = name {
-            c.expr.visit_with(self);
-        }
-    }
-
-    fn visit_prop(&mut self, prop: &Prop) {
-        // `{ x }` shorthand reads `x` as an identifier; default Visit
-        // already handles that via `Prop::Shorthand(Ident)`.
-        prop.visit_children_with(self);
-    }
+fn matches_global_intrinsic(name: &str) -> bool {
+    matches!(
+        name,
+        "AggregateError"
+            | "Array"
+            | "ArrayBuffer"
+            | "Atomics"
+            | "BigInt"
+            | "BigInt64Array"
+            | "BigUint64Array"
+            | "Boolean"
+            | "DataView"
+            | "Date"
+            | "Error"
+            | "EvalError"
+            | "FinalizationRegistry"
+            | "Float32Array"
+            | "Float64Array"
+            | "Function"
+            | "Int8Array"
+            | "Int16Array"
+            | "Int32Array"
+            | "Intl"
+            | "JSON"
+            | "Map"
+            | "Math"
+            | "Number"
+            | "Object"
+            | "Promise"
+            | "Proxy"
+            | "RangeError"
+            | "ReferenceError"
+            | "Reflect"
+            | "RegExp"
+            | "Set"
+            | "SharedArrayBuffer"
+            | "String"
+            | "Symbol"
+            | "SyntaxError"
+            | "TypeError"
+            | "URIError"
+            | "Uint8Array"
+            | "Uint8ClampedArray"
+            | "Uint16Array"
+            | "Uint32Array"
+            | "WeakMap"
+            | "WeakRef"
+            | "WeakSet"
+    )
 }
 
 fn module_export_name(name: &ModuleExportName) -> String {
@@ -1029,7 +1066,7 @@ fn collect_exported_names(module: &Module) -> BTreeSet<String> {
 mod tests {
     use spec::{PartialSwapKind, PartialSwapSymbol};
     use swc_common::sync::Lrc;
-    use swc_common::{FileName, SourceMap};
+    use swc_common::{DUMMY_SP, FileName, SourceMap};
     use swc_ecma_ast::EsVersion;
     use swc_ecma_codegen::text_writer::JsWriter;
     use swc_ecma_codegen::{Config, Emitter};
@@ -1096,6 +1133,10 @@ mod tests {
         symbols
     }
 
+    fn id(name: &str) -> Id {
+        Ident::new_no_ctxt(name.into(), DUMMY_SP).to_id()
+    }
+
     #[test]
     fn strips_named_export_specifier() {
         let mut module = parse("const a = 1;\nconst b = 2;\nexport { a as foo, b as bar };\n");
@@ -1132,6 +1173,10 @@ mod tests {
             err.to_string().contains("split-brain vendor swap"),
             "wrong error: {err}",
         );
+        assert!(
+            err.to_string().contains("residual path:"),
+            "split-brain diagnostic should include liveness provenance: {err}",
+        );
     }
 
     #[test]
@@ -1148,6 +1193,23 @@ mod tests {
         assert!(
             emitted.contains("keep"),
             "residual export should remain:\n{emitted}",
+        );
+        assert!(
+            !emitted.contains("oldImpl"),
+            "swapped old implementation should be removed:\n{emitted}",
+        );
+    }
+
+    #[test]
+    fn allows_shared_intrinsic_alias_helper() {
+        let mut module = parse(
+            "const assign = Object.assign;\nconst oldImpl = () => assign({}, { old: true });\nconst keep = () => assign({}, { keep: true });\nexport { oldImpl as swapped, keep };\n",
+        );
+        strip_one_chunk(&mut module, &mk_symbols(&["swapped"]), "chunk.js").unwrap();
+        let emitted = emit(&module);
+        assert!(
+            emitted.contains("Object.assign"),
+            "residual export should keep intrinsic alias:\n{emitted}",
         );
         assert!(
             !emitted.contains("oldImpl"),
@@ -1206,6 +1268,182 @@ mod tests {
     }
 
     #[test]
+    fn drops_local_object_freeze_in_swapped_island() {
+        let mut module = parse(
+            "const EMPTY = {};\nObject.freeze(EMPTY);\nconst make = () => EMPTY;\nexport { make as swapped };\n",
+        );
+        strip_one_chunk(&mut module, &mk_symbols(&["swapped"]), "chunk.js").unwrap();
+        let emitted = emit(&module);
+        assert!(
+            !emitted.contains("EMPTY") && !emitted.contains("freeze"),
+            "local freeze should be dropped with its target:\n{emitted}",
+        );
+    }
+
+    #[test]
+    fn drops_intrinsic_assign_mutation_in_swapped_island() {
+        let mut module = parse(
+            "const tag = \"computed\";\nconst decorator = make(tag);\nconst computed = () => decorator;\nObject.assign(computed, decorator);\ncomputed.struct = wrap(decorator);\nexport { computed as swapped };\n",
+        );
+        strip_one_chunk(&mut module, &mk_symbols(&["swapped"]), "chunk.js").unwrap();
+        let emitted = emit(&module);
+        assert!(
+            !emitted.contains("computed")
+                && !emitted.contains("decorator")
+                && !emitted.contains("Object.assign"),
+            "intrinsic local mutations should be dropped with the swapped target:\n{emitted}",
+        );
+    }
+
+    #[test]
+    fn drops_var_init_prototype_mutation_in_swapped_island() {
+        let mut module = parse(
+            "function Base() {}\nfunction Derived() {}\nvar proto = (Derived.prototype = new Base());\nconst make = () => Derived;\nexport { make as swapped };\n",
+        );
+        strip_one_chunk(&mut module, &mk_symbols(&["swapped"]), "chunk.js").unwrap();
+        let emitted = emit(&module);
+        assert!(
+            !emitted.contains("Derived")
+                && !emitted.contains("prototype")
+                && !emitted.contains("Base"),
+            "prototype inheritance initializer should be dropped with the swapped target:\n{emitted}",
+        );
+    }
+
+    #[test]
+    fn drops_local_binding_write_in_swapped_island() {
+        let mut module = parse(
+            "let assigned;\nconst source = { value: 1 };\nassigned = source.value;\nconst make = () => assigned;\nexport { make as swapped };\n",
+        );
+        strip_one_chunk(&mut module, &mk_symbols(&["swapped"]), "chunk.js").unwrap();
+        let emitted = emit(&module);
+        assert!(
+            !emitted.contains("assigned") && !emitted.contains("source"),
+            "local binding assignment should be dropped with the swapped island:\n{emitted}",
+        );
+    }
+
+    #[test]
+    fn drops_commonjs_module_iife_in_swapped_island() {
+        let mut module = parse(
+            "var module = { exports: {} };\n(function (target) { (function () { var has = {}.hasOwnProperty; function clsx() {} target.exports ? ((clsx.default = clsx), (target.exports = clsx)) : (window.classNames = clsx); })(); })(module);\nvar clsx = module.exports;\nconst make = () => clsx;\nexport { make as swapped };\n",
+        );
+        strip_one_chunk(&mut module, &mk_symbols(&["swapped"]), "chunk.js").unwrap();
+        let emitted = emit(&module);
+        assert!(
+            !emitted.contains("module")
+                && !emitted.contains("clsx")
+                && !emitted.contains("classNames"),
+            "CommonJS module wrapper should be dropped with the swapped island:\n{emitted}",
+        );
+    }
+
+    #[test]
+    fn drops_object_iteration_prototype_mutation_in_swapped_island() {
+        let mut module = parse(
+            "const define = Object.defineProperty;\nvar methods = { clear: function () { return this.splice(0); } };\nfunction ObservableArray() {}\nObject.entries(methods).forEach(function (entry) { var key = entry[0], value = entry[1]; key !== \"concat\" && define(ObservableArray.prototype, key, value); });\nconst make = () => ObservableArray;\nexport { make as swapped };\n",
+        );
+        strip_one_chunk(&mut module, &mk_symbols(&["swapped"]), "chunk.js").unwrap();
+        let emitted = emit(&module);
+        assert!(
+            !emitted.contains("ObservableArray")
+                && !emitted.contains("Object.entries")
+                && !emitted.contains("methods"),
+            "object-iteration prototype mutation should be dropped with the swapped target:\n{emitted}",
+        );
+    }
+
+    #[test]
+    fn drops_object_iteration_wrapper_prototype_mutation_in_swapped_island() {
+        let mut module = parse(
+            "function define(target, key, value) { Object.defineProperty(target, key, { configurable: true, value }); }\nvar methods = { clear: function () { return this.splice(0); } };\nfunction ObservableArray() {}\nObject.entries(methods).forEach(function (entry) { var key = entry[0], value = entry[1]; key !== \"concat\" && define(ObservableArray.prototype, key, value); });\nconst make = () => ObservableArray;\nexport { make as swapped };\n",
+        );
+        strip_one_chunk(&mut module, &mk_symbols(&["swapped"]), "chunk.js").unwrap();
+        let emitted = emit(&module);
+        assert!(
+            !emitted.contains("ObservableArray")
+                && !emitted.contains("Object.entries")
+                && !emitted.contains("methods"),
+            "object-iteration wrapper mutation should be dropped with the swapped target:\n{emitted}",
+        );
+    }
+
+    #[test]
+    fn drops_mutation_targeting_swapped_import_rewrite() {
+        let mut module = parse(
+            "import __debundle_bps_swapped from \"./vendor/swapped.js\";\nconst tag = \"computed\";\nconst decorator = makeDecorator(tag);\nfunction swapped() { return decorator; }\nObject.assign(__debundle_bps_swapped, decorator);\nexport { swapped };\n",
+        );
+        let replacement_import_locals = BTreeSet::from([id("__debundle_bps_swapped")]);
+        strip_one_chunk_with_replacement_imports(
+            &mut module,
+            &mk_symbols(&["swapped"]),
+            "chunk.js",
+            &replacement_import_locals,
+        )
+        .unwrap();
+        let emitted = emit(&module);
+        assert!(
+            !emitted.contains("makeDecorator")
+                && !emitted.contains("Object.assign")
+                && !emitted.contains("tag"),
+            "mutation of the imported swapped facade should not keep the old implementation:\n{emitted}",
+        );
+    }
+
+    #[test]
+    fn allows_residual_use_of_replacement_facade() {
+        let mut module = parse(
+            "import __debundle_bps_react_default from \"./vendor/react.js\";\nimport __debundle_bps_react_ns from \"./vendor/react.js\";\nfunction merge(ns, extras) { return ns; }\nconst ReactFacade = merge({ __proto__: null, default: __debundle_bps_react_default }, [__debundle_bps_react_ns]);\nconst oldImpl = () => ReactFacade;\nconst residualHook = ReactFacade.useInsertionEffect ? ReactFacade.useInsertionEffect : false;\nexport { oldImpl as swapped, residualHook };\n",
+        );
+        let replacement_import_locals = BTreeSet::from([
+            id("__debundle_bps_react_default"),
+            id("__debundle_bps_react_ns"),
+        ]);
+        strip_one_chunk_with_replacement_imports(
+            &mut module,
+            &mk_symbols(&["swapped"]),
+            "chunk.js",
+            &replacement_import_locals,
+        )
+        .unwrap();
+        let emitted = emit(&module);
+        assert!(
+            emitted.contains("ReactFacade") && emitted.contains("residualHook"),
+            "residual use of replacement facade should remain:\n{emitted}",
+        );
+        assert!(
+            !emitted.contains("oldImpl"),
+            "swapped original facade user should be removed:\n{emitted}",
+        );
+    }
+
+    #[test]
+    fn drops_local_namespace_iife_in_swapped_island() {
+        let mut module = parse(
+            "var ns = {};\n(function (target) { target.reject = wrap(\"reject\"); function resolve() {} target.resolve = wrap(resolve); })(ns || (ns = {}));\nconst make = () => ns;\nexport { make as swapped };\n",
+        );
+        strip_one_chunk(&mut module, &mk_symbols(&["swapped"]), "chunk.js").unwrap();
+        let emitted = emit(&module);
+        assert!(
+            !emitted.contains("reject") && !emitted.contains("resolve") && !emitted.contains("ns"),
+            "local namespace augmentation should be dropped with its target:\n{emitted}",
+        );
+    }
+
+    #[test]
+    fn retains_local_namespace_iife_for_residual_export() {
+        let mut module = parse(
+            "var ns = {};\n(function (target) { target.reject = wrap(\"reject\"); function resolve() {} target.resolve = wrap(resolve); })(ns || (ns = {}));\nexport { ns as keep };\n",
+        );
+        strip_one_chunk(&mut module, &mk_symbols(&[]), "chunk.js").unwrap();
+        let emitted = emit(&module);
+        assert!(
+            emitted.contains("reject") && emitted.contains("resolve"),
+            "residual namespace export should keep augmentation:\n{emitted}",
+        );
+    }
+
+    #[test]
     fn bails_when_swapped_name_not_locally_exported() {
         let mut module = parse("export { stuff } from \"./peer.js\";\n");
         let err = strip_one_chunk(&mut module, &mk_symbols(&["stuff"]), "chunk.js")
@@ -1220,7 +1458,8 @@ mod tests {
     #[test]
     fn call_init_classifies_as_side_effect() {
         let module = parse("const a = sideEffect();\n");
-        let an = classify_item(&module.body[0]);
+        let analyses = analyze_prune_items(&module, "chunk.js").unwrap();
+        let an = &analyses[0];
         assert!(
             an.side_effect == SideEffectKind::Hard,
             "call init should be a side-effect anchor"
@@ -1235,7 +1474,8 @@ mod tests {
     #[test]
     fn pure_object_literal_init_is_not_side_effect() {
         let module = parse("const a = { x: 1 };\n");
-        let an = classify_item(&module.body[0]);
+        let analyses = analyze_prune_items(&module, "chunk.js").unwrap();
+        let an = &analyses[0];
         assert!(
             an.side_effect == SideEffectKind::None,
             "object literal init should be a pure decl",
