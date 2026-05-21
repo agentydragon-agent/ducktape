@@ -20,7 +20,7 @@
 #   - network-heavy bg commands   (apt-get, pre-commit install, fork remote)
 #   - context_template            (keep output minimal for test assertions)
 #
-# The real web profile is at devinfra/claude/hook_daemon/profiles/web/profile.yaml.
+# The real web profile is at devinfra/claude/claude_hook/profiles/web/profile.yaml.
 
 startup_env_script: devinfra/secrets/web_env.sh
 

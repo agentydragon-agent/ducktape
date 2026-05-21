@@ -541,29 +541,6 @@ pub struct PostToolUseSpecificOutput {
 }
 
 // ---------------------------------------------------------------------------
-// Shim exec RPC (/shim-exec endpoint) — snake_case on the wire
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct ShimExecRequest {
-    pub shim: String,
-    pub session_id: String,
-    pub cwd: PathBuf,
-    pub argv: Vec<String>,
-    pub pid: u32,
-    pub env: HashMap<String, String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(tag = "kind")]
-pub enum ShimResponse {
-    #[serde(rename = "blocked")]
-    Blocked { message: String },
-    #[serde(rename = "execve")]
-    Execve { argv: Vec<String> },
-}
-
-// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -701,44 +678,6 @@ mod tests {
         let resp = HookResponse { output: None };
         let json = serde_json::to_string(&resp).unwrap();
         assert_eq!(json, "{}");
-    }
-
-    #[test]
-    fn serialize_shim_response_blocked() {
-        let resp = ShimResponse::Blocked {
-            message: "nope".into(),
-        };
-        let json = serde_json::to_string(&resp).unwrap();
-        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
-        assert_eq!(v["kind"], "blocked");
-        assert_eq!(v["message"], "nope");
-    }
-
-    #[test]
-    fn serialize_shim_response_execve() {
-        let resp = ShimResponse::Execve {
-            argv: vec!["git".into(), "status".into()],
-        };
-        let json = serde_json::to_string(&resp).unwrap();
-        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
-        assert_eq!(v["kind"], "execve");
-        assert_eq!(v["argv"], serde_json::json!(["git", "status"]));
-    }
-
-    #[test]
-    fn deserialize_shim_exec_request() {
-        let json = r#"{
-            "shim": "bazelisk",
-            "session_id": "test-789",
-            "cwd": "/project",
-            "argv": ["bazelisk", "build", "//..."],
-            "pid": 12345,
-            "env": {"PATH": "/usr/bin"}
-        }"#;
-        let req: ShimExecRequest = serde_json::from_str(json).unwrap();
-        assert_eq!(req.shim, "bazelisk");
-        assert_eq!(req.pid, 12345);
-        assert_eq!(req.argv.len(), 3);
     }
 
     #[test]

@@ -1,5 +1,24 @@
 # Stuck `claude-hook shim` diagnostic
 
+## Resolution
+
+The shim path no longer calls the hook daemon over UDS. PATH wrappers still
+execute `claude-hook shim <name> "$@"`, but the Rust shim runtime now resolves
+the real binary, applies the git safety policy, injects Bazel's session bazelrc,
+and translates HTTP(S) proxy env vars into Bazel JVM proxy properties locally.
+
+This keeps regular hook dispatch on its daemon UDS while removing the blind
+shim-to-daemon `/shim-exec` path from tool execution. That old path was fragile
+because Claude Code's sandboxing can block or restrict AF_UNIX sockets, and a
+simple `bazel`, `bb`, `bbr`, or `git` invocation should not depend on a daemon
+control socket being reachable from inside the tool sandbox.
+
+The related Bazel sandbox symptom was
+`UNAVAILABLE: Unable to resolve host remote.buildbuddy.io` when running through
+Claude's Bash sandbox. A clean empty-repo Bazel 8 genrule worked when rc files
+and `--config=rbe` were ignored, so this pointed away from Bazel itself and
+toward the shim/sandbox/proxy boundary.
+
 Symptoms and evidence observed during a Claude Code web session on 2026-05-18
 that prevented bazel/bbr commands from completing for ~16 minutes at a time.
 Multiple separate incidents in one session. Filed for forensic follow-up and

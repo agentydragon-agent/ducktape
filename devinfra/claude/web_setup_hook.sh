@@ -1,7 +1,7 @@
 #!/bin/bash
 # web_setup_hook.sh — Claude Code Setup hook entry point.
 #
-# Runs web_setup.sh on web sessions to ensure the claude-hooks wheel is fresh
+# Runs web_setup.sh on web sessions to ensure devtools are fresh
 # before SessionStart fires. This closes the "stale wheel on resume-cached
 # sessions" gap: the init_script (web_setup.sh) that normally re-installs
 # devtools is NOT sent by Anthropic's backend for resume-cached sessions, so
@@ -10,11 +10,9 @@
 #
 # Unlike the init_script invocation of web_setup.sh (which runs BEFORE claude
 # and does not see user-UI env vars), this Setup hook fires as a subprocess of
-# `claude` and inherits the full user-UI env — including
-# DUCKTAPE_CLAUDE_HOOK_IMPL, which selects Python or Rust claude-hook. Set
-# DUCKTAPE_CLAUDE_HOOK_IMPL=rust in the Claude Code web UI to switch impls
-# without branching or modifying settings.json. web_setup.sh reads the var,
-# removes the stale devtools profile, and reinstalls the selected flake output.
+# `claude` and inherits the full user-UI env. `claude-hook` is Rust-only now;
+# web_setup.sh still logs any stale DUCKTAPE_CLAUDE_HOOK_IMPL value but always
+# installs the Rust hook implementation.
 #
 # No-ops on CLI sessions (CLAUDE_CODE_REMOTE unset) — web_setup.sh is
 # web-only (Nix flake install, git remote, etc.) and must not run on NixOS.

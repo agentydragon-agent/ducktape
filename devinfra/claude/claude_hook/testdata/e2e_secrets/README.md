@@ -1,8 +1,8 @@
 # E2E Test Secrets Fixture
 
 Test-only SOPS-encrypted secret files + age key used by the container E2E
-test at <../../session_start/container_e2e/test_container_e2e.py>. The
-test profile itself lives next to the test as `test_profile.yaml`.
+test at <../../container_e2e/test_container_e2e.py>. The test profile itself
+lives next to the test as `test_profile.yaml`.
 
 ## What's Here
 

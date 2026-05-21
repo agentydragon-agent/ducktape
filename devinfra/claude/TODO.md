@@ -1,5 +1,65 @@
 # claude_hooks TODO
 
+## Decide whether the `bb` shim should inject the session bazelrc
+
+The Rust `bazel`/`bazelisk` shims inject `--bazelrc=<session>/bazelrc` so
+local Bazel gets the session truststore, BuildBuddy API key rc import, proxy
+settings, and cache settings. The `bb` shim still passes through unchanged.
+
+This may be wrong for direct local `bb build` / `bb test`, because `bb` runs a
+local Bazel server and otherwise drops startup directives from implicit rc
+files. It is not a trivial copy of the Bazel shim behavior because `bb` also
+has `bb remote`/`bbr` modes and its own option parsing. Before changing it,
+verify exactly where `--bazelrc=<session>` is accepted for local `bb`, remote
+`bb`, and `bbr`, and make sure remote invocations do not get surprising local
+session-only behavior.
+
+## Rust parity follow-ups from the retired Python daemon
+
+The Python daemon under `devinfra/claude/hook_daemon/` has been deleted. While
+reading it before deletion, these behaviors looked potentially worth porting to
+the Rust implementation later. Treat each item as a product decision, not an
+automatic compatibility requirement.
+
+- **Richer profile schema**: Python parsed `otel`, `bazel_bes_proxy`,
+  `bes_nudge_remote_execution`, `setup_docker`, and `setup_tmpfs`. Rust ignores
+  unknown fields today; promote any field we still want into
+  `claude_hook/config.rs` with a test.
+- **OpenTelemetry tracing**: Python wrote local JSONL spans and could export
+  hook spans to OTLP with the profile `otel` endpoint and
+  `DUCKTAPE_OTEL_BEARER_TOKEN`. Rust currently logs locally only.
+- **BuildBuddy BES interceptor**: Python could proxy Bazel's BES stream over a
+  UDS, forward it to BuildBuddy, and nudge the agent when a local Bazel run
+  forgot remote execution. Rust only writes regular BuildBuddy bazelrc files.
+- **Docker/supervisor setup**: Python could start or reuse a local Docker daemon,
+  clean stale `/var/run/docker.pid`, set `DOCKER_HOST`, and surface Docker
+  status in the session banner. Rust has no container-runtime setup path.
+- **Tmpfs setup**: Python could mount tmpfs-backed session storage and add
+  `startup --output_user_root=<session>/bazel-cache`. Rust only sizes Bazel's
+  JVM heap based on detected gVisor/Firecracker signals.
+- **Connectivity and platform diagnostics**: Python collected hostname, kernel,
+  root filesystem type, PID 1 command line, Nix/nixpkgs availability, and a
+  BuildBuddy reachability probe; Rust only has the minimal filesystem/container
+  detection needed for Bazel JVM heap sizing.
+- **Session context rendering**: Python rendered Mako templates with warnings,
+  errors, startup-env output, Docker status, connectivity state, and profile
+  `context_template`. Rust currently emits a fixed text banner and parses but
+  does not render `context_template`.
+- **Richer env file**: Python exported `SESSION_BAZELRC`,
+  `DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR`, `DUCKTAPE_CLAUDE_HOOKS_SUPERVISOR_PORT`,
+  `DUCKTAPE_SESSION_START_HOOK_TS`, `BBR_BAZELRC`, Docker env, and adjusted
+  `NO_PROXY`/`no_proxy`. Rust exports only the startup env overlay,
+  `env_exports`, and final shim `PATH` prepend.
+- **WorktreeCreate handling**: Python handled `WorktreeCreate` by creating a git
+  worktree and returning `worktreePath`. Rust models the hook but currently
+  treats it as a noop.
+- **Request environment persistence**: Python wrote the caller environment to
+  `session_env.json` on every request for debugging. Rust does not persist the
+  raw request env.
+- **Structured error reporting**: Python's FastAPI middleware logged full
+  unhandled exception tracebacks as JSON 500 responses. Rust currently reports
+  most daemon failures through stderr logs and `{}` fallback from the client.
+
 ## Statusline: deduplicate usage display with GNOME extension
 
 The statusline's subscription quota display (`7d:8%`) duplicates a GNOME
@@ -65,36 +125,14 @@ widely-imported file (e.g., a root `conftest.py` or a core library module) to in
 many targets, then compare `bb remote test //... --config=rbe` vs `bb remote test //...`
 (no RBE). Check wall-clock time, action count, and cache hit rate.
 
-## Port Bazel shim behavior to the Rust hook
-
-The Python hook daemon's Bazel/Bazelisk shims translate HTTP proxy environment
-variables into Bazel JVM proxy args so grpc-java can reach BuildBuddy through
-Claude's local proxy. The Rust hook is the newer implementation, but that shim
-behavior has not been ported yet.
-
-Current blocker: inside Claude's filesystem sandbox the shim cannot talk to the
-hook daemon UDS, so the shim path can only error and pass through. Port the
-proxy/Bazel behavior once the Rust hook has a sandbox-visible control channel or
-the shim behavior no longer depends on the UDS.
-
-## Hook Daemon Lifecycle Management
-
-**Problem**: The hook daemon client (`hook_daemon/client.py`) manually manages daemon lifecycle: pidfile read/write, process liveness checks, stale socket cleanup, fork+wait. This is ~50 lines of somewhat fiddly code.
-
-**Potential solutions**:
-
-- [`python-daemon`](https://pypi.org/project/python-daemon/) — handles server-side daemonization (double-fork, PID file, signal handling). Doesn't help with the client-side "ensure running" logic.
-- [`zdaemon`](https://pypi.org/project/zdaemon/) — Zope-era daemon controller with start/stop/restart/status and PID management. Closest fit but adds a Zope dependency.
-- **Move under supervisord** — adding the hook daemon under supervisor would eliminate the pidfile/fork logic entirely (client calls `supervisorctl start hook-daemon` if socket is dead). Trades custom lifecycle code for coupling to supervisor availability.
-
 ## Integration Test: Session Start Hook via Nix devShell
 
-**Problem**: The container E2E test (`container_e2e/test_container_e2e.py`)
-exercises the hook daemon inside a Docker container with `uv tool install`,
-but does not exercise the Nix-packaged `claude-hooks` derivation. Missing
-Nix-level dependencies (like `grpcio`) cause the daemon to crash with
-`ModuleNotFoundError` at startup — only discovered when a real CLI session
-starts.
+**Problem**: The container E2E test
+(`claude_hook/container_e2e/test_container_e2e.py`) exercises the Rust hook
+daemon inside a Docker container, but does not exercise the Nix-packaged
+devtools profile exactly as a live CLI session sees it. Missing Nix-level
+runtime dependencies or packaging drift can still be discovered only when a
+real CLI session starts.
 
 **Solution**: Add an integration test that runs the exact session start hook
 shim as configured in `.claude/settings.json` (i.e., invokes `claude-hook` the

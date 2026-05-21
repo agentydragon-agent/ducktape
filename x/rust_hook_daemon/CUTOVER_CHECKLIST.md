@@ -1,12 +1,12 @@
-# Rust Hook Daemon — Cutover Readiness Checklist
+# Rust Hook Daemon — Historical Cutover Checklist
 
-Before flipping the default to `rust`, validate on a live Claude Code web
-session with `DUCKTAPE_CLAUDE_HOOK_IMPL=rust` set in the web UI env vars.
+The default has been cut over to the Rust `claude-hook` binary and the Python
+daemon has been deleted. Keep this as the live-session validation checklist.
 
 ## Must pass (blocks cutover)
 
 - [ ] Session starts without errors (no 500, no daemon timeout)
-- [ ] `claude-hook --version` shows Rust binary (not Python wheel)
+- [ ] `claude-hook --version` shows the Rust binary
 - [ ] `/web_selfcheck` skill passes all SPEC acceptance tests
 - [ ] `env -0` under session env shows decrypted secrets
       (`BUILDBUDDY_API_KEY`, `GITHUB_TOKEN`, `DUCKTAPE_CI_READ_GITHUB_TOKEN`)
@@ -31,10 +31,6 @@ session with `DUCKTAPE_CLAUDE_HOOK_IMPL=rust` set in the web UI env vars.
 
 ## How to run the live test
 
-1. In Claude Code web UI → Settings → Environment Variables:
-   set `DUCKTAPE_CLAUDE_HOOK_IMPL=rust`
-2. Open a new session on `devel` (after this PR merges)
-3. Setup hook fires → `web_setup.sh` reads the env var → installs
-   `#claude-hooks-rs` flake output → Rust `claude-hook` on PATH
-4. Walk the checklist above
-5. Unset `DUCKTAPE_CLAUDE_HOOK_IMPL` to revert to Python
+1. Open a new session on `devel` after the change lands.
+2. Confirm Setup installed devtools and Rust `claude-hook` is on PATH.
+3. Walk the checklist above.

@@ -1,6 +1,6 @@
 """Discriminated union of all Claude Code hook inputs.
 
-Parsed once in hook_dispatch.py, then isinstance/match dispatches to the
+Parsed once by the hook entrypoint, then isinstance/match dispatches to the
 appropriate handler. Uses hook_event_name as the Pydantic discriminator.
 """
 

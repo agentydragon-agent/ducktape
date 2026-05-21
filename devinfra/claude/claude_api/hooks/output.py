@@ -76,3 +76,9 @@ class HookOutput(CamelModel):
         if self.stop_reason is not None and self.continue_:
             raise ValueError("stop_reason requires continue=false")
         return self
+
+
+class HookResponse(CamelModel):
+    """Internal daemon response envelope returned by the Rust `/hook` RPC."""
+
+    output: HookOutput | None = Field(default=None, description="Typed hook output. None for noops.")

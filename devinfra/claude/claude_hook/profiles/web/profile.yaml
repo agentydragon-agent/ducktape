@@ -25,7 +25,7 @@ background_commands:
     timeout: 30
     after_env: true
   - name: authentik api banner
-    command: bash "$CLAUDE_PROJECT_DIR/devinfra/claude/hook_daemon/authentik_banner.sh"
+    command: bash "$CLAUDE_PROJECT_DIR/devinfra/claude/claude_hook/authentik_banner.sh"
     timeout: 10
     after_env: true
   - name: nix nixpkgs check
@@ -122,4 +122,4 @@ background_commands:
       wait "${bazelisk_pid}"
     timeout: 300
     after_env: true
-context_template: devinfra/claude/hook_daemon/profiles/web/context.mako
+context_template: devinfra/claude/claude_hook/profiles/web/context.mako

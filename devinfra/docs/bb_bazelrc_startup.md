@@ -52,18 +52,19 @@ writes a session bazelrc with:
 startup --host_jvm_args=-Djavax.net.ssl.trustStore=/etc/ssl/certs/java/cacerts
 ```
 
-The `bazel`/`bazelisk` shims at `<session_dir>/bin/{bazel,bazelisk}` ask the
-daemon (`/shim-exec`) to inject `--bazelrc=<session-rc>` into argv, and Bazel
-honors it. So direct `bazelisk build //…` works.
+The `bazel`/`bazelisk` shims at `<session_dir>/bin/{bazel,bazelisk}` are
+self-contained Rust wrappers. They inject `--bazelrc=<session-rc>` into argv
+before execing the real binary, and Bazel honors it. So direct
+`bazelisk build //...` works.
 
-`bb`/`bbr` shims hit a different `/shim-exec` branch that does **not** inject
-`--bazelrc`. bb then runs bazel with `--no*_rc`, bazel uses the embedded JDK's
-cacerts, and any bzlmod fetch from bcr.bazel.build fails with
-`PKIX path building failed` as soon as it routes through the TLS-inspection
-proxy (i.e., in Anthropic Claude Code sessions).
-
-See <../claude/claude_hook/main.rs> function `shim_exec_decision` line ~508 —
-the bazel/bazelisk branch injects, the bb/bbr fall-through doesn't.
+`bb`/`bbr` shims currently pass through to the real binaries. `bb` then runs
+bazel with `--no*_rc`, bazel uses the embedded JDK's cacerts, and any bzlmod
+fetch from bcr.bazel.build can fail with `PKIX path building failed` as soon as
+it routes through the TLS-inspection proxy (i.e., in Anthropic Claude Code
+sessions). Prefer `bazelisk` for local runs that need the session bazelrc, and
+`bbr` for remote BuildBuddy execution. See
+<../claude/TODO.md#decide-whether-the-bb-shim-should-inject-the-session-bazelrc>
+for the follow-up on making local `bb` runs inherit the session bazelrc.
 
 ### Anything else that relies on startup options from a bazelrc
 
@@ -80,29 +81,17 @@ Claude sessions:
 
 ```bash
 bb --bazelrc="$HOME/.claude/session-env/$(
-  ps aux | grep hook_daemon | grep -v grep |
+  ps aux | grep 'claude-hook daemon' | grep -v grep |
   grep -oP '(?<=--sock /tmp/claude-hd/)[^/]+'
 )/bazelrc" build //target
 ```
 
-**Or fix the shim once** — extend the `bazelisk | bazel` match in
-`devinfra/claude/claude_hook/main.rs` (`shim_exec_decision`) to also match
-`bb` and `bbr`:
-
-```rust
-"bazelisk" | "bazel" | "bb" | "bbr" => {
-    let mut argv = req.argv;
-    if bazelrc_path.exists() {
-        argv.insert(1, format!("--bazelrc={}", bazelrc_path.display()));
-    }
-    resolve_execve(&req.shim, argv, shim_dir, &req.env)
-}
-```
-
-`bb` accepts `--bazelrc=<path>` as a startup flag (empirically verified).
-`bbr` is `bb remote` under the hood and accepts the same flag; it just never
-needs it today because `bb remote` bypasses all local rc handling anyway
-(see <bb_remote_internals.md>).
+The shims currently do not inject the session bazelrc into `bb`/`bbr`.
+`bb` accepts `--bazelrc=<path>` as a startup flag (empirically verified), but
+`bbr` is `bb remote` under the hood and does not need the local Claude session
+truststore because work happens on BuildBuddy runners (see
+<bb_remote_internals.md>). The open design question is how to inject the
+session bazelrc for local `bb` without surprising remote-mode invocations.
 
 ## Why `bb` does this at all
 
@@ -122,7 +111,7 @@ Minimal repro, outside a Claude session:
 # Put something observable in workspace .bazelrc:
 echo 'startup --host_jvm_args=-Dclaude.canary=yes' >> /home/user/ducktape/.bazelrc
 
-# Run through direct bazelisk (shim injection path):
+# Run through direct bazelisk:
 bazelisk info server_pid
 ps -o args= -p $(bazelisk info server_pid) | grep -c claude.canary   # 1
 

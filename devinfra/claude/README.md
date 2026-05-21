@@ -16,20 +16,17 @@ inspection CA is already in the system CA bundle
 (`/etc/ssl/certs/ca-certificates.crt`) — so curl, Bazel, pip, npm, kubectl,
 git, etc. all work out of the box. We don't try to distinguish whether that
 works via a transparent network-layer MITM proxy or direct egress; as far
-as the hook daemon is concerned, outbound HTTPS to known hosts reaches
+as the Rust hook daemon is concerned, outbound HTTPS to known hosts reaches
 them, end of story.
 
-The SessionStart hook runs a quick probe (`session_start/connectivity.py`)
-against `remote.buildbuddy.io` and emits a WARNING in the session banner
-if the probe fails. If that warning starts appearing on new sessions,
-outbound reachability broke — most likely the container generation
-changed back to requiring explicit proxy env vars (see the
-[historical note](#historical-explicit-egress-proxy) below).
+The retired Python daemon used to run a quick BuildBuddy reachability probe
+and surface failures in the session banner. The Rust hook does not currently
+implement that probe; restoring it is tracked in <TODO.md>.
 
 ## Specification
 
-See <hook_daemon/SPEC.md> for the high-level, user-facing specification of
-what the hook daemon guarantees to every Claude Code session (on CLI and on
+See <claude_hook/SPEC.md> for the high-level, user-facing specification of
+what the Rust hook daemon guarantees to every Claude Code session (on CLI and on
 web). Read that first if you want to know **what** the daemon does for the
 agent — this README covers **how** those behaviors are implemented.
 
@@ -41,22 +38,27 @@ agent — this README covers **how** those behaviors are implemented.
 
 The hook runs at the start of each Claude Code web session and:
 
-### Connectivity Probe (via `session_start/connectivity.py`)
+### Connectivity Probe
 
-Verifies direct internet reachability to BuildBuddy. Emits a WARNING to
-the session banner on failure.
+Not currently implemented in Rust. See <TODO.md> for the Python parity
+follow-up.
 
-### PATH Shims (via `hook_daemon/shim_install.py`)
+### PATH Shims (self-contained Rust runtime)
 
 7. Bazelisk binary provided by Nix devShell (on PATH)
-8. Installs PATH shims at `<session_dir>/bin/{bazelisk,git,bazel,bb,bbr}` — two-line
+8. Installs PATH shims at `<session_dir>/bin/{bazelisk,bazel,bb,bbr}` — small
    shell scripts that `exec claude-hook shim <name>` (PATH-resolved at invocation
-   time), which reports to the hook daemon via `/shim-exec` RPC before exec'ing the
-   real binary. The daemon handles proxy credential refresh, `--bazelrc` injection
-   (bazelisk), and configurable git safety checks (blocking `git add -A`,
-   `git stash`, `git commit --amend` — controlled by `git_shim` in profile config,
-   enabled in CLI mode, disabled in web mode). `bazel`, `bb`, `bbr` shims are
-   currently no-op passthrough.
+   time). The Rust shim runtime resolves the real binary outside the shim dir
+   and never calls back into the session-start daemon.
+
+   `bazel` and `bazelisk` inject the session bazelrc and translate any inherited
+   `HTTP_PROXY` / `HTTPS_PROXY` value into Java proxy JVM properties so Bazel's
+   grpc-java clients can reach BuildBuddy through Claude's proxy. `bb` and `bbr`
+   are real-binary resolution wrappers only.
+
+   The `git` shim is installed only when the active profile enables at least one
+   `git_shim` safety flag. Its per-flag policy can block `git add -A` / `git add .`,
+   `git stash`, or `git commit --amend`.
 
    Because `claude-hook` is resolved via PATH at exec time (not baked as a store
    path at install time), `nix profile install` / `home-manager switch` takes
@@ -151,24 +153,22 @@ See `settings.py` for the full configuration schema.
 
 ## Files
 
-All session-scoped files live under `<session_dir>` = `~/.claude/session-env/<session_id>/`.
+Agent shell files live under `<session_dir>` = `~/.claude/session-env/<session_id>/`.
 
-Supervisor files (in `<session_dir>/supervisor/`, used for container runtime only):
+Historical Python container-runtime files (in `<session_dir>/supervisor/`):
 
 - `supervisord.conf` - Supervisor main configuration
 - `supervisord.{log,pid}` - Supervisor daemon state
 
-Note: Supervisor listens on TCP `127.0.0.1:19001` (no Unix socket file).
+Note: the Rust daemon does not currently set up supervisor or Docker.
 
-Hook daemon files (in `<session_dir>/hook-daemon/`):
+Rust hook daemon files (in `/tmp/claude-hd/<session_id>/`):
 
-- `daemon.sock` - UDS for hook RPC
+- `d.sock` - UDS for hook RPC
 - `daemon.pid` - Daemon pidfile
 - `daemon.log` - Daemon and session start logs
-
-Global (non-session-scoped) files in `~/.cache/claude-hooks/`:
-
-- `bazelisk` - Bazelisk binary
+- `daemon.err.log` - Daemon stderr
+- `startup_failure.json` - client startup backoff marker
 
 ## Known Limitations
 
@@ -217,7 +217,7 @@ These must be configured as env vars in the Claude Code web UI so they are injec
 
 | Variable                        | Description                                                                  |
 | ------------------------------- | ---------------------------------------------------------------------------- |
-| `DUCKTAPE_CLAUDE_HOOKS_PROFILE` | Path to the profile: `devinfra/claude/hook_daemon/profiles/web/profile.yaml` |
+| `DUCKTAPE_CLAUDE_HOOKS_PROFILE` | Path to the profile: `devinfra/claude/claude_hook/profiles/web/profile.yaml` |
 | `SOPS_AGE_KEY`                  | Age private key for SOPS decryption (format: `AGE-SECRET-KEY-1...`)          |
 
 `DUCKTAPE_CLAUDE_HOOKS_PROFILE` is needed so Claude Code injects the profile path into all hook subprocesses.
@@ -231,7 +231,7 @@ bash ducktape/devinfra/claude/web_setup.sh
 
 This runs <web_setup.sh> which installs:
 
-1. Nix + devtools (`claude-hooks` wheel, `bbapi`, `gh`, `sops`, skills)
+1. Nix + devtools (`claude-hook` Rust binary, Python statusline, `bbapi`, `gh`, `sops`, skills)
 2. `github-no-proxy` git remote + `buildbuddy.remote-bazel-remote-name` for bbr
 3. Skills symlinked into `~/.claude/skills/` (preserves Anthropic defaults)
 

@@ -1,10 +1,5 @@
 """Container E2E test: background task output delivered via REPL hook systemMessage.
 
-Parameterized over two implementations:
-
-  - ``python``: install the ``claude_hooks`` Python wheel.
-  - ``rust``: copy the ``claude-hook`` Rust binary into ``/usr/local/bin``.
-
 Scenario: a background command writes lines in two phases, gated by a
 sentinel file. The test verifies that:
 
@@ -29,14 +24,6 @@ _SESSION_ID = "mailbox-e2e-test"
 _ENV_FILE = f"/root/.claude/session-env/{_SESSION_ID}/sessionstart-hook-0.sh"
 _CONTAINER_NAME = "ducktape-mailbox-e2e"
 
-_IMPLS = {"python": container_e2e.E2EContainer.install_python, "rust": container_e2e.E2EContainer.install_rust}
-
-
-@pytest.fixture(params=list(_IMPLS.keys()))
-def impl(request: pytest.FixtureRequest) -> str:
-    param: str = request.param
-    return param
-
 
 @pytest.fixture
 def staged_project(tmp_path: Path) -> Path:
@@ -49,14 +36,14 @@ def staged_project(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def container(impl: str, staged_project: Path, e2e_image: str) -> Iterator[container_e2e.E2EContainer]:
+def container(staged_project: Path, e2e_image: str) -> Iterator[container_e2e.E2EContainer]:
     env = {
         "CLAUDE_PROJECT_DIR": "/project",
         "CLAUDE_ENV_FILE": _ENV_FILE,
         "DUCKTAPE_CLAUDE_HOOKS_PROFILE": "mailbox_test_profile.yaml",
     }
     with container_e2e.run_e2e_container(
-        e2e_image, f"{_CONTAINER_NAME}-{impl}", env, staged_project, f"mailbox-e2e-{impl}", _SESSION_ID
+        e2e_image, _CONTAINER_NAME, env, staged_project, "mailbox-e2e-rust", _SESSION_ID
     ) as c:
         yield c
 
@@ -91,9 +78,9 @@ def repl_hook(request: pytest.FixtureRequest) -> dict[str, object]:
     return {"PreToolUse": _PRE_TOOL_USE, "PostToolUse": _POST_TOOL_USE}[request.param]
 
 
-def test_mailbox_delivery(impl: str, container: container_e2e.E2EContainer, repl_hook: dict[str, object]) -> None:
+def test_mailbox_delivery(container: container_e2e.E2EContainer, repl_hook: dict[str, object]) -> None:
     """Background task output is delivered once via REPL hook systemMessage, then drained."""
-    _IMPLS[impl](container)
+    container.install_rust()
     container.send_hook(_SESSION_START)
 
     # The bg script prints output_X, sleeps 0.5s (giving the daemon's async
@@ -103,20 +90,20 @@ def test_mailbox_delivery(impl: str, container: container_e2e.E2EContainer, repl
 
     out1 = container.send_hook(repl_hook)
     msg1 = out1.get("systemMessage", "")
-    assert "output_X" in msg1, f"[{impl}] expected output_X, got: {msg1!r}"
+    assert "output_X" in msg1, f"expected output_X, got: {msg1!r}"
 
     # Drain is destructive: second hook must not re-deliver output_X.
     out2 = container.send_hook(repl_hook)
     msg2 = out2.get("systemMessage") or ""
-    assert "output_X" not in msg2, f"[{impl}] output_X re-delivered: {msg2!r}"
+    assert "output_X" not in msg2, f"output_X re-delivered: {msg2!r}"
 
     container.exec(["touch", "/tmp/signal"])
     container.poll_file("/tmp/task_done")
 
     out3 = container.send_hook(repl_hook)
     msg3 = out3.get("systemMessage", "")
-    assert "output_Y" in msg3, f"[{impl}] expected output_Y, got: {msg3!r}"
-    assert "output_X" not in msg3, f"[{impl}] output_X re-appeared in phase-2 message: {msg3!r}"
+    assert "output_Y" in msg3, f"expected output_Y, got: {msg3!r}"
+    assert "output_X" not in msg3, f"output_X re-appeared in phase-2 message: {msg3!r}"
 
 
 if __name__ == "__main__":

@@ -252,8 +252,8 @@ claude-hook --version
 # The npins URL contains the content-addressed release tag (12-hex hash prefix)
 jq -r '.pins["claude-hooks"].url' npins/sources.json
 
-# Check the daemon error log for Mako/pydantic complaints
-tail -100 ~/.claude/session-env/*/hook-daemon/daemon.err.log
+# Check the daemon error log for profile/schema complaints
+tail -100 /tmp/claude-hd/*/daemon.err.log
 ```
 
 **Lessons**:

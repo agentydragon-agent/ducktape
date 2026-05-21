@@ -5,11 +5,11 @@
 The BuildBuddy API key is decrypted and templated into a bazelrc in **three
 independent implementations**:
 
-| Consumer                                                                       | Decryption                                          | Templating                                           | Key source                                         |
-| ------------------------------------------------------------------------------ | --------------------------------------------------- | ---------------------------------------------------- | -------------------------------------------------- |
-| home-manager (`nix/home/modules/buildbuddy.nix`)                               | sops-nix `sops.secrets`                             | sops-nix `sops.templates` (placeholder substitution) | `~/.ssh/id_ed25519` (age via SSH)                  |
-| Session start hook (`devinfra/claude/hook_daemon/session_start/buildbuddy.py`) | `_common.sh` → `sops -d` via `SOPS_AGE_KEY` env var | Python f-string in `setup_buildbuddy()`              | `SOPS_AGE_KEY` env var (set in Claude Code web UI) |
-| CI / setup script (`devinfra/setup_buildbuddy.sh`)                             | `_common.sh` → `sops -d`                            | bash heredoc                                         | `SOPS_AGE_KEY` from GHA secret                     |
+| Consumer                                                        | Decryption                                                         | Templating                                           | Key source                                         |
+| --------------------------------------------------------------- | ------------------------------------------------------------------ | ---------------------------------------------------- | -------------------------------------------------- |
+| home-manager (`nix/home/modules/buildbuddy.nix`)                | sops-nix `sops.secrets`                                            | sops-nix `sops.templates` (placeholder substitution) | `~/.ssh/id_ed25519` (age via SSH)                  |
+| Rust session start hook (`devinfra/claude/claude_hook/main.rs`) | `web_env.sh` → `_common.sh` → `sops -d` via `SOPS_AGE_KEY` env var | Rust `write_buildbuddy_bazelrc()`                    | `SOPS_AGE_KEY` env var (set in Claude Code web UI) |
+| CI / setup script (`devinfra/setup_buildbuddy.sh`)              | `_common.sh` → `sops -d`                                           | bash heredoc                                         | `SOPS_AGE_KEY` from GHA secret                     |
 
 All three produce the same output:
 

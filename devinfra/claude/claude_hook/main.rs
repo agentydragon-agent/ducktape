@@ -17,7 +17,7 @@ use hyper::body::Bytes;
 use hyper_util::rt::TokioIo;
 use protocol::{
     AnyHookInput, AnyHookSpecificOutput, HookOutput, HookRequest, HookResponse,
-    SessionStartSpecificOutput, ShimExecRequest, ShimResponse,
+    SessionStartSpecificOutput,
 };
 use serde::Deserialize;
 use tokio::net::{UnixListener, UnixStream};
@@ -49,7 +49,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// PATH shim runtime: report to daemon, resolve real binary, exec.
+    /// PATH shim runtime: apply local shim policy, resolve real binary, exec.
     Shim {
         name: String,
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -250,7 +250,7 @@ fn write_session_bazelrc(
 
     // BuildBuddy remote cache: write per-session buildbuddy.bazelrc with the
     // API key, RBE-safe shell path, and build --config=rbe, then try-import it.
-    // The Python implementation (buildbuddy.py) writes this file; we mirror that here.
+    // Keep this private: it contains the BuildBuddy API key.
     if let Some(api_key) = env_overlay.get("BUILDBUDDY_API_KEY") {
         if let Some(bb_bazelrc) = write_buildbuddy_bazelrc(session_dir, api_key) {
             lines.push(format!("try-import {}", bb_bazelrc.display()));
@@ -338,7 +338,7 @@ fn handle_session_start(
     let session_dir = home_session_dir(&session.session_id);
     let shims_dir = session_dir.join("bin");
 
-    if let Err(e) = install_all_shims(&shims_dir, &session.session_id) {
+    if let Err(e) = install_all_shims(&shims_dir, &session.session_id, &state.profile.git_shim) {
         eprintln!("SessionStart: install_all_shims failed: {e}");
     }
 
@@ -443,98 +443,6 @@ async fn handle_hook(
     Json(HookResponse { output })
 }
 
-fn resolve_binary_from_env(
-    binary: &str,
-    shim_dir: &Path,
-    env: &HashMap<String, String>,
-) -> Option<PathBuf> {
-    let path = env.get("PATH")?;
-    let shim_canon = shim_dir.canonicalize().ok();
-    for dir in path.split(':') {
-        if dir.is_empty() {
-            continue;
-        }
-        let dir_path = Path::new(dir);
-        if let (Some(a), Ok(b)) = (shim_canon.as_ref(), dir_path.canonicalize()) {
-            if a == &b {
-                continue;
-            }
-        }
-        let candidate = dir_path.join(binary);
-        if candidate.is_file() {
-            if let Ok(m) = std::fs::metadata(&candidate) {
-                if m.permissions().mode() & 0o111 != 0 {
-                    return Some(candidate);
-                }
-            }
-        }
-    }
-    None
-}
-
-async fn handle_shim_exec(
-    State(state): State<Arc<AppState>>,
-    Json(req): Json<ShimExecRequest>,
-) -> Json<ShimResponse> {
-    state.touch();
-    let _session = state.get_or_create_session(&req.session_id);
-    let session_dir = home_session_dir(&req.session_id);
-    let shim_dir = session_dir.join("bin");
-    let bazelrc_path = session_dir.join("bazelrc");
-    Json(shim_exec_decision(
-        req,
-        &state.profile,
-        &shim_dir,
-        &bazelrc_path,
-    ))
-}
-
-/// Pure decision logic for `/shim-exec`: given a request, profile, and session
-/// paths, return the `ShimResponse` the daemon should send back. No axum/hyper
-/// types, no state mutation, no env lookups — testable in isolation.
-///
-/// Takes `req` by value so `argv` can be moved into `resolve_execve` without
-/// allocation. Only the `bazelisk`/`bazel` branch needs to clone, and only to
-/// inject `--bazelrc`.
-fn shim_exec_decision(
-    req: ShimExecRequest,
-    profile: &ProfileConfig,
-    shim_dir: &Path,
-    bazelrc_path: &Path,
-) -> ShimResponse {
-    match req.shim.as_str() {
-        "git" => match git_shim::evaluate(&req.argv, &profile.git_shim) {
-            Ok(()) => resolve_execve(&req.shim, req.argv, shim_dir, &req.env),
-            Err(message) => ShimResponse::Blocked { message },
-        },
-        "bazelisk" | "bazel" => {
-            let mut argv = req.argv;
-            if bazelrc_path.exists() {
-                argv.insert(1, format!("--bazelrc={}", bazelrc_path.display()));
-            }
-            resolve_execve(&req.shim, argv, shim_dir, &req.env)
-        }
-        _ => resolve_execve(&req.shim, req.argv, shim_dir, &req.env),
-    }
-}
-
-fn resolve_execve(
-    shim: &str,
-    mut argv: Vec<String>,
-    shim_dir: &Path,
-    env: &HashMap<String, String>,
-) -> ShimResponse {
-    match resolve_binary_from_env(shim, shim_dir, env) {
-        Some(real) => {
-            argv[0] = real.to_string_lossy().into_owned();
-            ShimResponse::Execve { argv }
-        }
-        None => ShimResponse::Blocked {
-            message: format!("{shim}: command not found (not on PATH outside shim directory)"),
-        },
-    }
-}
-
 async fn handle_health() -> &'static str {
     r#"{"status":"ok"}"#
 }
@@ -609,7 +517,6 @@ async fn run_daemon(sock: PathBuf, daemon_dir: PathBuf, ready_fd: Option<i32>) {
 
     let app = Router::new()
         .route("/hook", post(handle_hook))
-        .route("/shim-exec", post(handle_shim_exec))
         .route("/health", get(handle_health))
         .route("/mailbox", post(handle_mailbox))
         .with_state(state.clone());
@@ -967,247 +874,7 @@ async fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_util::{PathFixture, make_request};
-    use claude_hook_config::GitShimConfig;
-
-    // --------- C.1: resolve_binary_from_env ---------
-
-    /// Harness for "PATH = shim:real, some dirs may contain a `git` stub" —
-    /// assert whether the resolver returns `real/git` or `None`.
-    fn assert_resolve_on_shim_real(shim_has: bool, real_has: bool, expect_real: bool) {
-        let f = PathFixture::new();
-        let shim = f.mkdir("shim");
-        let real = f.mkdir("real");
-        if shim_has {
-            f.with_exec(&shim, "git");
-        }
-        if real_has {
-            f.with_exec(&real, "git");
-        }
-        let env = f.env_with_path(&[&shim, &real]);
-        let got = resolve_binary_from_env("git", &shim, &env);
-        assert_eq!(got, expect_real.then(|| real.join("git")));
-    }
-
-    #[test]
-    fn resolve_only_in_real() {
-        assert_resolve_on_shim_real(false, true, true);
-    }
-
-    #[test]
-    fn resolve_in_both_prefers_real() {
-        // Shim-dir hits must always be skipped even when first on PATH.
-        assert_resolve_on_shim_real(true, true, true);
-    }
-
-    #[test]
-    fn resolve_only_in_shim() {
-        assert_resolve_on_shim_real(true, false, false);
-    }
-
-    #[test]
-    fn resolve_in_neither() {
-        assert_resolve_on_shim_real(false, false, false);
-    }
-
-    #[test]
-    fn resolve_handles_canonicalized_paths() {
-        // PATH references shim via a symlink; resolver gets the real shim dir.
-        // Both canonicalize to the same inode, so the symlinked entry is skipped.
-        let f = PathFixture::new();
-        let shim_real = f.mkdir("shim_real");
-        let shim_link = f.root.join("shim_link");
-        std::os::unix::fs::symlink(&shim_real, &shim_link).unwrap();
-        let real = f.mkdir("real");
-        f.with_exec(&shim_real, "git");
-        f.with_exec(&real, "git");
-        let env = f.env_with_path(&[&shim_link, &real]);
-        assert_eq!(
-            resolve_binary_from_env("git", &shim_real, &env),
-            Some(real.join("git")),
-        );
-    }
-
-    #[test]
-    fn resolve_skips_non_executable_file() {
-        let f = PathFixture::new();
-        let shim = f.mkdir("shim");
-        let stub = f.mkdir("stub");
-        let real = f.mkdir("real");
-        f.with_nonexec(&stub, "git");
-        f.with_exec(&real, "git");
-        let env = f.env_with_path(&[&shim, &stub, &real]);
-        assert_eq!(
-            resolve_binary_from_env("git", &shim, &env),
-            Some(real.join("git")),
-        );
-    }
-
-    #[test]
-    fn resolve_ignores_empty_path_segment() {
-        // PATH with empty segment between colons: shim::real.
-        let f = PathFixture::new();
-        let shim = f.mkdir("shim");
-        let real = f.mkdir("real");
-        f.with_exec(&real, "git");
-        let path_env = format!("{}::{}", shim.display(), real.display());
-        let env = HashMap::from([("PATH".to_string(), path_env)]);
-        assert_eq!(
-            resolve_binary_from_env("git", &shim, &env),
-            Some(real.join("git")),
-        );
-    }
-
-    #[test]
-    fn resolve_returns_none_without_path_env() {
-        let f = PathFixture::new();
-        let shim = f.mkdir("shim");
-        assert_eq!(resolve_binary_from_env("git", &shim, &HashMap::new()), None);
-    }
-
-    // --------- C.2: shim_exec_decision ---------
-
-    fn all_blocks_profile() -> ProfileConfig {
-        ProfileConfig {
-            git_shim: GitShimConfig {
-                block_add_all: true,
-                block_stash: true,
-                block_amend: true,
-            },
-            ..Default::default()
-        }
-    }
-
-    /// Harness: run `shim_exec_decision` with a `real/` dir containing `shim`
-    /// and return the response so the test can match on it.
-    fn decide_with_real(
-        shim: &str,
-        argv: &[&str],
-        profile: &ProfileConfig,
-        bazelrc_exists: bool,
-    ) -> (ShimResponse, PathBuf) {
-        let f = PathFixture::new();
-        let shim_dir = f.mkdir("bin");
-        let real = f.mkdir("real");
-        f.with_exec(&real, shim);
-        let bazelrc = f.root.join("bazelrc");
-        if bazelrc_exists {
-            std::fs::write(&bazelrc, "# test\n").unwrap();
-        }
-        let req = make_request(shim, argv, &PathFixture::join_path(&[&real]));
-        let resp = shim_exec_decision(req, profile, &shim_dir, &bazelrc);
-        (resp, real)
-    }
-
-    fn assert_git_block(argv: &[&str], msg_substring: &str) {
-        // Git blocks short-circuit before PATH resolution; the real/ dir is
-        // there to prove the shim_exec_decision path doesn't accidentally
-        // hit it.
-        let (resp, _real) = decide_with_real("git", argv, &all_blocks_profile(), false);
-        match resp {
-            ShimResponse::Blocked { message } => assert!(
-                message.contains(msg_substring),
-                "missing {msg_substring:?} in: {message}"
-            ),
-            other => panic!("expected Blocked, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn git_block_add_dash_a() {
-        assert_git_block(&["git", "add", "-A"], "git add -A");
-    }
-    #[test]
-    fn git_block_add_dot() {
-        assert_git_block(&["git", "add", "."], "git add .");
-    }
-    #[test]
-    fn git_block_add_all() {
-        assert_git_block(&["git", "add", "--all"], "git add --all");
-    }
-    #[test]
-    fn git_block_stash() {
-        assert_git_block(&["git", "stash"], "git stash");
-    }
-    #[test]
-    fn git_block_commit_amend() {
-        assert_git_block(&["git", "commit", "--amend"], "git commit --amend");
-    }
-
-    fn assert_passthrough(shim: &str, argv: &[&str], expected_suffix: &[&str]) {
-        let (resp, real) = decide_with_real(shim, argv, &all_blocks_profile(), false);
-        match resp {
-            ShimResponse::Execve { argv } => {
-                assert_eq!(argv[0], real.join(shim).display().to_string());
-                let suffix: Vec<String> = argv.into_iter().skip(1).collect();
-                assert_eq!(suffix, expected_suffix);
-            }
-            other => panic!("expected Execve, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn passthrough_git_status() {
-        assert_passthrough("git", &["git", "status"], &["status"]);
-    }
-    #[test]
-    fn passthrough_bb_info() {
-        assert_passthrough("bb", &["bb", "info"], &["info"]);
-    }
-
-    #[test]
-    fn shim_exec_blocks_when_binary_only_in_shim_dir() {
-        let f = PathFixture::new();
-        let shim_dir = f.mkdir("bin");
-        // PATH has only shim_dir → resolver excludes it → None → Blocked.
-        let req = make_request("git", &["git", "status"], &shim_dir.display().to_string());
-        match shim_exec_decision(
-            req,
-            &ProfileConfig::default(),
-            &shim_dir,
-            &f.root.join("bazelrc"),
-        ) {
-            ShimResponse::Blocked { message } => assert!(
-                message.contains("command not found"),
-                "got message: {message}"
-            ),
-            other => panic!("expected Blocked, got {other:?}"),
-        }
-    }
-
-    fn assert_bazelisk_injection(bazelrc_exists: bool) {
-        let (resp, real) = decide_with_real(
-            "bazelisk",
-            &["bazelisk", "build", "//..."],
-            &ProfileConfig::default(),
-            bazelrc_exists,
-        );
-        match resp {
-            ShimResponse::Execve { argv } => {
-                assert_eq!(argv[0], real.join("bazelisk").display().to_string());
-                // bazelrc path is derived inside the harness; scan argv[1] for it.
-                if bazelrc_exists {
-                    assert!(
-                        argv[1].starts_with("--bazelrc="),
-                        "expected --bazelrc= injection, got argv: {argv:?}"
-                    );
-                    assert_eq!(&argv[2..], &["build".to_string(), "//...".into()]);
-                } else {
-                    assert_eq!(&argv[1..], &["build".to_string(), "//...".into()]);
-                }
-            }
-            other => panic!("expected Execve, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn bazelisk_injects_bazelrc_when_present() {
-        assert_bazelisk_injection(true);
-    }
-    #[test]
-    fn bazelisk_skips_bazelrc_when_missing() {
-        assert_bazelisk_injection(false);
-    }
+    use crate::test_util::PathFixture;
 
     // --------- C.3: write_session_bazelrc / write_buildbuddy_bazelrc ---------
 

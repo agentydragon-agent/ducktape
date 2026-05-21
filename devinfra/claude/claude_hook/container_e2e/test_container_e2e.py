@@ -1,14 +1,8 @@
 """Container E2E test for the hook daemon's session-start flow.
 
-Parameterized over two implementations:
-
-  - ``python``: install the ``claude_hooks`` Python wheel (the current prod
-    path).
-  - ``rust``: copy the ``claude-hook`` Rust binary into ``/usr/local/bin``.
-
-Both use the same container image, the same staged `/project` (real
-`web_env.sh`, real SOPS fixtures, test profile, etc.), and the same
-assertion set. Both implementations must pass the full contract.
+Installs the Rust ``claude-hook`` binary into the same container image used by
+web sessions, with the same staged `/project` (real `web_env.sh`, real SOPS
+fixtures, test profile, etc.).
 
 Exercises the real secret-decryption + kubeconfig path end-to-end.
 """
@@ -27,8 +21,8 @@ from util.bazel.runfiles import get_required_path
 
 # Runfiles paths — full rlocation (passed directly to get_required_path).
 _TEST_WORKSPACE_MODULE = "_main/devinfra/claude/testdata/test_workspace/MODULE.bazel"
-_TEST_PROFILE = "_main/devinfra/claude/hook_daemon/session_start/container_e2e/test_profile.yaml"
-_SECRETS_DIR_MARKER = "_main/devinfra/claude/hook_daemon/testdata/e2e_secrets/test_age.key"
+_TEST_PROFILE = "_main/devinfra/claude/claude_hook/container_e2e/test_profile.yaml"
+_SECRETS_DIR_MARKER = "_main/devinfra/claude/claude_hook/testdata/e2e_secrets/test_age.key"
 
 # Repo-relative paths for files staged into the test project tree.
 # get_required_path() receives "_main/" + path; dest is project / path.
@@ -57,7 +51,7 @@ def _exec_under_env(
 
 
 # ---------------------------------------------------------------------------
-# Parameterization: python (wheel install) vs rust (binary copy)
+# Hook implementation under test
 # ---------------------------------------------------------------------------
 
 
@@ -68,7 +62,7 @@ def _install_rust(c: container_e2e.E2EContainer) -> None:
     c.exec(["pip", "install", "--break-system-packages", "pyyaml"])
 
 
-_IMPLS = {"python": container_e2e.E2EContainer.install_python, "rust": _install_rust}
+_IMPLS = {"rust": _install_rust}
 
 
 @pytest.fixture(params=list(_IMPLS.keys()))

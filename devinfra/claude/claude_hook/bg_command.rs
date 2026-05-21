@@ -1,5 +1,5 @@
 //! Background command execution — ports
-//! `devinfra/claude/hook_daemon/session_start/handler.py::_launch_background_command`.
+//! the retired Python session-start handler's background-command path.
 //!
 //! Each bg command spawns a `bash -c` subprocess with:
 //!

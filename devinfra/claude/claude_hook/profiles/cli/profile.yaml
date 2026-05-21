@@ -26,7 +26,7 @@ env_exports: |
   if command -v direnv >/dev/null 2>&1; then eval "$(direnv export bash 2>/dev/null)"; fi
 background_commands:
   - name: authentik api banner
-    command: bash "$CLAUDE_PROJECT_DIR/devinfra/claude/hook_daemon/authentik_banner.sh"
+    command: bash "$CLAUDE_PROJECT_DIR/devinfra/claude/claude_hook/authentik_banner.sh"
     timeout: 10
     after_env: true
   - name: bazelisk warmup (query //...)
@@ -38,4 +38,4 @@ background_commands:
       wait "${bazelisk_pid}"
     timeout: 300
     after_env: true
-context_template: devinfra/claude/hook_daemon/profiles/cli/context.mako
+context_template: devinfra/claude/claude_hook/profiles/cli/context.mako

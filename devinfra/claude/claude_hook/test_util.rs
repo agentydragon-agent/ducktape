@@ -1,16 +1,14 @@
 //! Shared test helpers for the claude_hook binary crate.
 //!
-//! Both `main.rs::tests` and `shim_runtime.rs::tests` exercise the same
-//! shim RPC types and need similar tempdir/PATH scaffolding. The helpers
-//! live here so each test module imports them instead of rolling its own.
+//! Both `main.rs::tests` and `shim_runtime.rs::tests` need similar
+//! tempdir/PATH scaffolding. The helpers live here so each test module imports
+//! them instead of rolling its own.
 
 #![cfg(test)]
 
 use std::collections::HashMap;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-
-use protocol::ShimExecRequest;
 
 /// Tempdir with convenience methods for creating PATH-like layouts.
 ///
@@ -63,19 +61,5 @@ impl PathFixture {
             .map(|p| p.display().to_string())
             .collect::<Vec<_>>()
             .join(":")
-    }
-}
-
-/// Build a `ShimExecRequest` with test defaults, overriding shim/argv/PATH.
-pub(crate) fn make_request(shim: &str, argv: &[&str], path_env: &str) -> ShimExecRequest {
-    let mut env = HashMap::new();
-    env.insert("PATH".into(), path_env.into());
-    ShimExecRequest {
-        shim: shim.into(),
-        session_id: "test-session".into(),
-        cwd: PathBuf::from("/tmp"),
-        argv: argv.iter().map(|s| (*s).to_string()).collect(),
-        pid: 1234,
-        env,
     }
 }

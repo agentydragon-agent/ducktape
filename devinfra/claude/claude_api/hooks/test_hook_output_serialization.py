@@ -11,12 +11,11 @@ from typing import Any
 import pytest
 import pytest_bazel
 
-from devinfra.claude.claude_api.hooks.output import HookOutput
+from devinfra.claude.claude_api.hooks.output import HookOutput, HookResponse
 from devinfra.claude.claude_api.hooks.post_tool_use import PostToolUseHookSpecificOutput
 from devinfra.claude.claude_api.hooks.pre_tool_use import PermissionDecision, PreToolUseHookSpecificOutput
 from devinfra.claude.claude_api.hooks.session_start import SessionStartHookSpecificOutput
 from devinfra.claude.claude_api.hooks.worktree_create import WorktreeCreateHookSpecificOutput
-from devinfra.claude.hook_daemon.models import HookResponse
 
 
 def _roundtrip(output: HookOutput) -> dict[str, Any]:

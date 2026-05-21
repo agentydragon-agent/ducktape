@@ -1,6 +1,6 @@
 //! Client-side daemon lifecycle management.
 //!
-//! Ports `devinfra/claude/hook_daemon/client.py::_ensure_daemon`. Provides:
+//! Ported from the retired Python daemon client's `ensure_daemon` path. Provides:
 //!
 //!   - **Pidfile flock probe** — non-blocking `flock(LOCK_EX|LOCK_NB)` to
 //!     detect whether a daemon process holds the pidfile lock (PID-reuse safe).
@@ -125,8 +125,8 @@ pub fn kill_daemon_by_pidfile(pidfile: &Path) {
 // Circuit breaker
 // ---------------------------------------------------------------------------
 
-/// Schema diverges from the Python impl's `StartupFailure`
-/// (`client.py`): Python writes `last_failure` as an ISO-8601 string.
+/// Schema diverges from the retired Python impl's `StartupFailure`: Python
+/// wrote `last_failure` as an ISO-8601 string.
 /// `read_startup_failure` tolerates the mismatch by removing the file,
 /// so cross-impl reads degrade to "no breaker state" rather than crashing.
 #[derive(Serialize, Deserialize)]

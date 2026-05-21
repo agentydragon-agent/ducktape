@@ -274,7 +274,6 @@ py_test(
         ":session_start",
         ":worktree_create",
         "//devinfra/claude:conftest",
-        "//devinfra/claude/hook_daemon:models",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

@@ -71,7 +71,10 @@ rust_library(
     crate_name = "claude_hook_shim_install",
     edition = "2024",
     visibility = ["//visibility:public"],
-    deps = ["@crates//:shlex"],
+    deps = [
+        ":config",
+        "@crates//:shlex",
+    ],
 )
 
 rust_test(
@@ -112,6 +115,7 @@ rust_binary(
         "@crates//:tempfile",
         "@crates//:tokio",
         "@crates//:tower",
+        "@crates//:url",
     ],
 )
 
@@ -137,7 +141,7 @@ py_test(
     data = [
         "mailbox_test_profile.yaml",
         ":claude_hook",
-        "//devinfra/claude/hook_daemon/session_start/container_e2e:e2e_container",
+        "//devinfra/claude/claude_hook/container_e2e:e2e_container",
     ],
     requires_docker = True,
     tags = [

@@ -133,10 +133,10 @@ After resume creates session `3a1f5b5a`, the new proxy socket is at:
 
 The Bazel server still tries the old path → connection refused.
 
-The bazelisk shim compounds this: it calls `/shim-exec` via RPC to the
-daemon matching `DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR`. After resume, the
-env points to the new session, so the shim talks to the new daemon —
-the daemon injects `--bazelrc=<new-session-bazelrc>` into the exec argv.
+The bazelisk shim compounds this: it injects
+`--bazelrc=<new-session-bazelrc>` based on the current session id. After
+resume, the env points to the new session, so the self-contained shim uses the
+new session bazelrc.
 Since the bazelrc has a different `--remote_proxy` path, Bazel detects
 a startup option change and **kills the existing server** to restart
 with the new bazelrc. This loses the warm Skyframe cache (45-min cold
@@ -202,17 +202,9 @@ canonical field definitions.
 
 ## Trace Data Location
 
-Full hook payloads (including `tool_name`, `tool_input`, `tool_use_id`,
-and the complete caller environment) are stored in OTEL traces at:
-
-```
-~/.claude/session-env/<session_id>/hook-daemon/traces.jsonl
-```
-
-Each line is a JSON span with `attributes["hook.input"]` containing the
-full `HookRequest` (hook payload + caller env) and
-`attributes["hook.output"]` containing the response. Written by
-`server.py:handle_hook()` via `span.set_attribute()`.
+The retired Python daemon wrote full hook payloads to local JSONL/OTEL spans.
+The Rust daemon does not currently implement hook-payload tracing; restoring
+OpenTelemetry export is tracked in <../TODO.md>.
 
 ## Subagent Hook Behavior
 

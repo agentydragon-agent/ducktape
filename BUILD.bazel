@@ -177,8 +177,8 @@ py_wheel(
 )
 
 # Git hooks wheel — ducktape-* console scripts, precommit runners, cluster validation.
-# Installed in both Python and Rust devtools so the ducktape-* git hooks are always
-# available regardless of whether the Python or Rust claude-hook daemon is in use.
+# Installed in devtools so the ducktape-* git hooks are available alongside
+# the Rust claude-hook binary.
 py_package(
     name = "ducktape_git_hooks_pkg",
     packages = [
@@ -188,8 +188,8 @@ py_package(
         "devinfra.precommit.enforce_bazel_tests",
         # Generated proto packages.
         # google.api + proto: reachable via //devinfra/precommit:git_hook (commit_tag deps).
-        # google.devtools.build.v1: needed by the daemon BES interceptor at runtime
-        #   (claude-hooks depends on ducktape-git-hooks for proto access).
+        # google.devtools.build.v1: imported transitively by BuildBuddy
+        # invocation protos used by the commit tag verifier.
         # google.rpc + google.longrunning: imported by proto/cache_pb2.py and
         #   proto/remote_execution_pb2.py respectively; must be bundled, not external deps.
         "google.api",
@@ -239,22 +239,17 @@ py_wheel(
     deps = [":ducktape_git_hooks_pkg"],
 )
 
-# Claude hooks wheel — Claude Code session daemon and statusline.
-# Runtime proto access (for BES interceptor) is provided by ducktape-git-hooks.
+# Claude hooks wheel — Python statusline only. Active hook dispatch is the Rust
+# `claude-hook` binary packaged separately by Nix.
 py_package(
     name = "claude_hooks_pkg",
     packages = [
         "devinfra.claude",
         "devinfra.claude.claude_api",
         "devinfra.claude.claude_api.hooks",
-        "devinfra.claude.hook_daemon",
-        "devinfra.claude.hook_daemon.session_start",
-        "devinfra.claude.supervisor",
+        "devinfra.claude.statusline",
     ],
     deps = [
-        "//devinfra/claude/hook_daemon:hook_dispatch_lib",
-        "//devinfra/claude/hook_daemon:main_lib",
-        "//devinfra/claude/hook_daemon:shim_lib",
         "//devinfra/claude/statusline:statusline_lib",
     ],
 )
@@ -264,7 +259,6 @@ py_wheel(
     distribution = "claude_hooks",
     entry_points = {
         "console_scripts": [
-            "claude-hook = devinfra.claude.hook_daemon.hook_dispatch:main",
             "claude-statusline = devinfra.claude.statusline.statusline:main",
         ],
     },
@@ -273,33 +267,11 @@ py_wheel(
     # (claude-hooks). The Nix derivation provides these at runtime on NixOS/devShell.
     # When adding a dependency, update BOTH places.
     #
-    # `grpcio` + `protobuf` are required for the BES interceptor; proto Python files
-    # (google.*, proto.*) come from the ducktape-git-hooks dep at runtime.
     requires = [
-        "anyio",
-        "fastapi>=0.115.0",
-        "filelock",
-        "grpcio",
         "httpx",
-        "mako>=1.3",
-        "opentelemetry-api",
-        "opentelemetry-exporter-otlp-proto-http",
-        "opentelemetry-sdk",
         "platformdirs",
-        "protobuf>=6.33",
-        "psutil",
         "pydantic>=2.0",
-        "pydantic-settings",
-        "pyrage>=1.0.0",
-        "pyyaml",
-        "requests",
         "rich",
-        "structlog",
-        "supervisor",
-        "tenacity",
-        "uvicorn>=0.30.0",
-        "ducktape-util",
-        "ducktape-git-hooks",
     ],
     version = "0.1.0",
     visibility = ["//visibility:public"],

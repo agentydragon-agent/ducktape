@@ -10,7 +10,7 @@ Linux by default. macOS-only components (Seatbelt, Sandboxer) are explicitly doc
 
 If you see certificate errors, `bazel: command not found`, `Unable to resolve host
 remote.buildbuddy.io`, or other signs that session setup failed: **stop and recover before
-doing any other work.** Follow <devinfra/claude/hook_daemon/docs/session_start_recovery.md> completely.
+doing any other work.** Follow <devinfra/claude/claude_hook/docs/session_start_recovery.md> completely.
 Do not bypass proxy/certificate errors with `--noverify`, `SSL_VERIFY=false`, or similar.
 The root cause is always a broken session start hook — notify the user if recovery fails.
 
@@ -262,7 +262,7 @@ sops -d secrets/shared/kubeconfig.yaml
 `<subproject>/SPEC.md`: high-level, user-facing specification of what a
 component guarantees to its users. An outside observer should be able to read
 SPEC.md to understand what behaviors they can rely on, without having to read
-the implementation. Example: <devinfra/claude/hook_daemon/SPEC.md> describes
+the implementation. Example: <devinfra/claude/claude_hook/SPEC.md> describes
 what the Claude Code hook daemon provides to every session, and the
 `/web_selfcheck` skill runs the acceptance tests derived from it.
 

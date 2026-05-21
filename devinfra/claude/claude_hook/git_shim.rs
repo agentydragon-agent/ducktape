@@ -1,8 +1,8 @@
 //! Git shim block logic — ports `server.py::_handle_git_shim`.
 //!
 //! Given the original argv and the git shim config, decide whether to
-//! pass through (`Ok(argv)`) or block (`Err(message)`). Callers propagate
-//! `Err` into a `ShimResponse::Blocked`.
+//! pass through (`Ok(())`) or block (`Err(message)`). The Rust PATH shim
+//! turns blocked decisions into stderr plus a non-zero exit.
 
 use claude_hook_config::GitShimConfig;
 

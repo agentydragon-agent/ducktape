@@ -1,4 +1,4 @@
 """Test-only utilities for locating runfiles."""
 
-# Runfiles paths for binaries
-HOOK_DISPATCH = "_main/devinfra/claude/hook_daemon/hook_dispatch"
+# Runfiles paths for binaries.
+CLAUDE_HOOK = "_main/devinfra/claude/claude_hook/claude_hook"

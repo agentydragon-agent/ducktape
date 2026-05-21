@@ -9,19 +9,6 @@ exports_files([
     "trixie_e2e.lock.json",
 ])
 
-# Wheels baked into the container image at /wheel/ so the test can
-# `pip install --find-links /wheel/` without bind-mounting from runfiles.
-pkg_tar(
-    name = "e2e_wheels",
-    testonly = True,
-    srcs = [
-        "//:claude_hooks_wheel",
-        "//:ducktape_git_hooks_wheel",
-        "//util:wheel",
-    ],
-    package_dir = "/wheel",
-)
-
 # Bazelisk + sops baked into /tools/ (on PATH). Neither is in Debian main,
 # so we fetch them as static binaries via http_file.
 pkg_tar(
@@ -49,7 +36,6 @@ oci_image(
     },
     tars = [
         "@trixie_e2e//:flat",
-        ":e2e_wheels",
         ":e2e_tools",
     ],
 )
@@ -76,7 +62,7 @@ py_test(
         "test_profile.yaml",
         ":e2e_container",
         "//devinfra/claude/claude_hook",
-        "//devinfra/claude/hook_daemon/testdata/e2e_secrets:e2e_secrets_files",
+        "//devinfra/claude/claude_hook/testdata/e2e_secrets:e2e_secrets_files",
         "//devinfra/claude/testdata/test_workspace:workspace_files",
         "//devinfra/k8s:kubeconfig.py",
         "//devinfra/secrets:_common.sh",

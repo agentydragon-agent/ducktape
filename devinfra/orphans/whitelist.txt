@@ -45,8 +45,8 @@ LICENSE*
 *.sh
 
 # Profile YAML and Mako templates
-devinfra/claude/hook_daemon/profiles/**/*.yaml
-devinfra/claude/hook_daemon/profiles/**/*.mako
+devinfra/claude/claude_hook/profiles/**/*.yaml
+devinfra/claude/claude_hook/profiles/**/*.mako
 
 # Nginx configs
 *.conf

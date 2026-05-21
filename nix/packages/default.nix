@@ -117,7 +117,7 @@ let
   };
 
 in
-{
+rec {
   inherit ducktape-util;
   inherit ducktape-git-hooks;
   inherit aiquota;
@@ -170,50 +170,29 @@ in
 
   claude-hooks = mkWheel {
     pname = "claude-hooks";
-    description = "Claude Code session hooks (statusline, session-start)";
-    mainProgram = "claude-hook";
+    description = "Python Claude Code statusline";
+    mainProgram = "claude-statusline";
     # SYNC: This list must match `requires` in //:claude_hooks_wheel (BUILD.bazel).
     # The wheel declares pip-level deps; this list provides Nix-level equivalents.
     # When adding a dependency, update BOTH places.
     #
-    # `grpcio` + `protobuf` are required for the BES interceptor; the generated
-    # proto Python files (google.*, proto.*) come from ducktape-git-hooks at runtime.
-    propagatedBuildInputs =
-      with pkgs.python3Packages;
-      [
-        anyio
-        fastapi
-        filelock
-        grpcio
-        httpx
-        mako
-        opentelemetry-api
-        opentelemetry-exporter-otlp-proto-http
-        opentelemetry-sdk
-        platformdirs
-        protobuf
-        psutil
-        pydantic
-        pydantic-settings
-        pyyaml
-        requests
-        rich
-        structlog
-        supervisor
-        tenacity
-        uvicorn
-      ]
-      ++ [
-        ducktape-util
-        ducktape-git-hooks
-        pyrage
-      ];
+    propagatedBuildInputs = with pkgs.python3Packages; [
+      httpx
+      platformdirs
+      pydantic
+      rich
+    ];
   };
 
+  # Expose only the Python statusline command. Active Claude hook dispatch is the
+  # Rust binary below, so this avoids putting the legacy Python `claude-hook` on PATH.
+  claude-statusline = pkgs.runCommand "claude-statusline" { } ''
+    mkdir -p $out/bin
+    ln -s ${claude-hooks}/bin/claude-statusline $out/bin/claude-statusline
+  '';
+
   # Rust claude-hook binary — static, no runtime deps.
-  # Provides the same `claude-hook` binary name as the Python wheel so it's a
-  # drop-in replacement. Installed into a separate flake output (#claude-hooks-rs)
-  # and selected via `web_setup.sh --impl=rust`.
+  # Provides the active `claude-hook` binary used for hook dispatch and shims.
   claude-hook-rs = pkgs.stdenvNoCC.mkDerivation {
     pname = "claude-hook-rs";
     version = "latest";

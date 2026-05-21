@@ -1,4 +1,4 @@
-"""Shared helpers for container E2E tests (python wheel vs rust binary)."""
+"""Shared helpers for Rust claude-hook container E2E tests."""
 
 import contextlib
 import io
@@ -19,11 +19,8 @@ from util.bazel.runfiles import get_required_path
 from util.oci import OciImage, load_oci_image
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
-WHEEL_DIR = "/wheel"
 _RUST_BINARY_RLOC = "_main/devinfra/claude/claude_hook/claude_hook"
-E2E_IMAGE = OciImage(
-    "_main/devinfra/claude/hook_daemon/session_start/container_e2e/e2e_container.rloc", "e2e-container:pinned"
-)
+E2E_IMAGE = OciImage("_main/devinfra/claude/claude_hook/container_e2e/e2e_container.rloc", "e2e-container:pinned")
 
 
 @dataclass
@@ -62,21 +59,6 @@ class E2EContainer:
         buf.seek(0)
         self._container.put_archive(str(dest.parent), buf)
 
-    def install_python(self) -> None:
-        self.exec(
-            [
-                "pip",
-                "install",
-                "-q",
-                "--break-system-packages",
-                "--find-links",
-                WHEEL_DIR,
-                f"{WHEEL_DIR}/ducktape_util-0.1.0-py3-none-any.whl",
-                f"{WHEEL_DIR}/ducktape_git_hooks-0.1.0-py3-none-any.whl",
-                f"{WHEEL_DIR}/claude_hooks-0.1.0-py3-none-any.whl",
-            ]
-        )
-
     def install_rust(self) -> None:
         rust_binary = get_required_path(_RUST_BINARY_RLOC)
         self.cp(str(rust_binary), "/usr/local/bin/claude-hook")
@@ -108,7 +90,7 @@ class E2EContainer:
             self._container.logs(stdout=False, stderr=True).decode(errors="replace"),
         )
         session_dir = f"/root/.claude/session-env/{self._session_id}"
-        for log_file in ["hook-daemon/daemon.log", "hook-daemon/daemon.err.log", *self._extra_session_files]:
+        for log_file in self._extra_session_files:
             rc, content, _ = self.exec(["cat", f"{session_dir}/{log_file}"], check=False)
             if rc == 0:
                 _save_output(self._log_prefix, log_file.replace("/", "-"), content.decode(errors="replace"))

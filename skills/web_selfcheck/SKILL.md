@@ -12,8 +12,8 @@ description: >
 
 # Session Selfcheck
 
-This skill is the **runnable acceptance test** for the hook daemon
-specification at <../../devinfra/claude/hook_daemon/SPEC.md>.
+This skill is the **runnable acceptance test** for the Rust hook daemon
+specification at <../../devinfra/claude/claude_hook/SPEC.md>.
 
 ## How to use this skill
 
@@ -62,23 +62,23 @@ approval:
 When diagnosing a broken session, these are the log files worth reading, in
 order of "most likely to contain the smoking gun":
 
-| Path                                                           | What's in it                                                                                                                                                                      |
-| -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `~/.claude/session-env/<sid>/hook-daemon/daemon.err.log`       | **Unhandled exceptions / tracebacks from hook handlers** — check first.                                                                                                           |
-| `~/.claude/session-env/<sid>/hook-daemon/daemon.log`           | Structured daemon log: session start output, per-hook request logs.                                                                                                               |
-| `~/.claude/session-env/<sid>/hook-daemon/startup_failure.json` | Written when the `claude-hook` client could not reach/start the daemon. Distinguishes "dispatcher timed out waiting for socket" from "daemon crashed after accepting connection". |
-| `~/.claude/session-env/<sid>/sessionstart-hook-0.sh`           | The env file the daemon wrote. Presence with the `CANARY` marker = SessionStart got far enough to write it.                                                                       |
-| `~/.claude/session-env/<sid>/supervisor/supervisord.log`       | Supervisor daemon log (only populated when the container-runtime profile is in use).                                                                                              |
-| `/tmp/web-setup.log`                                           | `web_setup.sh` output from the most recent run. First line has `web_setup.sh commit: <sha>` — use it to detect stale setup scripts.                                               |
+| Path                                                     | What's in it                                                                                                                                                                      |
+| -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/tmp/claude-hd/<sid>/daemon.err.log`                    | **Unhandled hook daemon errors** — check first.                                                                                                                                   |
+| `/tmp/claude-hd/<sid>/daemon.log`                        | Daemon stdout: startup and per-hook diagnostics.                                                                                                                                  |
+| `/tmp/claude-hd/<sid>/startup_failure.json`              | Written when the `claude-hook` client could not reach/start the daemon. Distinguishes "dispatcher timed out waiting for socket" from "daemon crashed after accepting connection". |
+| `~/.claude/session-env/<sid>/sessionstart-hook-0.sh`     | The env file the daemon wrote. Presence means SessionStart got far enough to write the agent shell environment.                                                                   |
+| `~/.claude/session-env/<sid>/supervisor/supervisord.log` | Supervisor daemon log (only populated when the container-runtime profile is in use).                                                                                              |
+| `/tmp/web-setup.log`                                     | `web_setup.sh` output from the most recent run. First line has `web_setup.sh commit: <sha>` — use it to detect stale setup scripts.                                               |
 
 `<sid>` can be resolved with:
 
 ```bash
-LIVE=$(ps aux | grep hook_daemon | grep -v grep | grep -oP '(?<=--sock /tmp/claude-hd/)[^/]+')
+LIVE=$(ps aux | grep 'claude-hook daemon' | grep -v grep | grep -oP '(?<=--sock /tmp/claude-hd/)[^/]+')
 echo "$LIVE"
 ```
 
-or from `$DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR` (the basename).
+or from `$CLAUDE_ENV_FILE` (the basename of its parent directory).
 
 Agent discipline: when a check below fails, dump the relevant log section
 verbatim into the report's "Issues & remediation" block. Do not paraphrase
@@ -129,19 +129,19 @@ Pass: exit 0 with no `Unable to resolve host`, `certificate`,
 **C4 — bazelisk shim is active and invocations are session-tagged.**
 
 ```bash
-ls -l "$(command -v bazelisk)"  # must point into $DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR/bin
-grep -E 'build_metadata|TAGS' "$DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR/bbr.bazelrc" 2>/dev/null
+LIVE=$(basename "$(dirname "$CLAUDE_ENV_FILE")")
+SESSION_DIR="$HOME/.claude/session-env/$LIVE"
+ls -l "$(command -v bazelisk)"  # must point into $SESSION_DIR/bin
+grep -E 'build_metadata|TAGS' "$SESSION_DIR/bbr.bazelrc" 2>/dev/null
 ```
 
 Pass: bazelisk resolves inside the session dir, and bbr.bazelrc contains
 `session:<id>` metadata.
 
-**C5 — PostToolUse pre-commit auto-apply works.**
+**C5 — bbr imports the generated session metadata.**
 
-Hard to automate without actually exercising Edit/Write. Report this as
-"manually verified" if you have just edited a file in this session and
-observed `ruff-format` apply, or as "NOT TESTED" otherwise. Do not fake
-this check.
+Covered by the `bbr.bazelrc` metadata check above and by checking the
+BuildBuddy invocation tags after a real `bbr` invocation.
 
 **C6 — throwaway-commit pre-commit end-to-end.**
 
@@ -166,7 +166,8 @@ Pass: exit 0.
 **C7 — hook daemon logs present, no unhandled exceptions.**
 
 ```bash
-LOG="$DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR/hook-daemon/daemon.log"
+LIVE=$(basename "$(dirname "$CLAUDE_ENV_FILE")")
+LOG="/tmp/claude-hd/$LIVE/daemon.log"
 [ -f "$LOG" ] && grep -cE 'ERROR|Traceback|Exception' "$LOG" || echo MISSING
 ```
 
@@ -359,7 +360,7 @@ git -C /home/user/ducktape log --oneline -5 -- devinfra/claude/ npins/sources.js
 # (b) Installed wheel vs pin
 claude-hook --version  # git= shows the commit the installed wheel was built from
 # Check daemon.err.log for template/schema crashes that indicate drift
-tail -50 ~/.claude/session-env/*/hook-daemon/daemon.err.log 2>/dev/null
+tail -50 /tmp/claude-hd/*/daemon.err.log 2>/dev/null
 ```
 
 If (a) the pin is behind HEAD, diff the installed Nix store package

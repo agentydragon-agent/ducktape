@@ -3,7 +3,7 @@
 #
 # Installs:
 #   1. Nix (Determinate Systems installer, designed for non-interactive/CI use)
-#   2. devtools — claude-hooks, bbapi, gh, skills; from flake via attic binary cache
+#   2. devtools — Rust claude-hook, statusline, bbapi, gh, skills; from flake via attic binary cache
 #   3. git remote + bbr config for BuildBuddy remote execution
 #   4. skills — symlinked per-skill into ~/.claude/skills/ (preserves Anthropic defaults)
 #
@@ -22,17 +22,14 @@
 # (useful for debugging sessions where you can't read the log directly).
 #
 # Usage (Claude Code web UI setup command):
-#   bash ducktape/devinfra/claude/web_setup.sh [--impl=<python|rust>]
+#   bash ducktape/devinfra/claude/web_setup.sh
 #
-# --impl selects the claude-hook implementation:
-#   python (default) — Python wheel (#devtools flake output)
-#   rust             — Rust static binary (#devtools-rust flake output)
+# Historical --impl=<python|rust> arguments are accepted for compatibility, but
+# active sessions always install the Rust claude-hook implementation.
 #
 # CLEANUP(2026-04-19): this script runs TWICE per session — once as the
 # init script (no user-UI env vars, always installs python default) and
-# once via the Setup hook (web_setup_hook.sh, has UI env vars, may swap
-# to rust). The first run is wasted when the user wants rust — the
-# profile install gets overwritten seconds later. Once the Setup hook
+# once via the Setup hook (web_setup_hook.sh, has UI env vars). Once the Setup hook
 # is confirmed to fire reliably across all session modes (new / resume
 # / resume-cached / setup-only — see devinfra/claude/README.md) and is
 # sufficient on its own, make the init-script path a no-op (or drop it
@@ -53,19 +50,16 @@ warn() {
   log "WARNING: $*" >&2
 }
 
-# Hook implementation: python (default) or rust.
-HOOK_IMPL="${DUCKTAPE_CLAUDE_HOOK_IMPL:-python}"
+# Hook implementation is Rust-only. Keep parsing the old selector so stale web
+# UI env vars or setup args do not break session startup.
+HOOK_IMPL="rust"
 for arg in "$@"; do
-  case "$arg" in --impl=*) HOOK_IMPL="${arg#--impl=}" ;; esac
+  case "$arg" in --impl=*) warn "Ignoring deprecated $arg; claude-hook is Rust-only" ;; esac
 done
-case "$HOOK_IMPL" in
-  python) DEVTOOLS_OUTPUT="devtools" ;;
-  rust) DEVTOOLS_OUTPUT="devtools-rust" ;;
-  *)
-    warn "Unknown --impl=$HOOK_IMPL (expected python or rust)"
-    DEVTOOLS_OUTPUT="devtools"
-    ;;
-esac
+if [ -n "${DUCKTAPE_CLAUDE_HOOK_IMPL:-}" ] && [ "${DUCKTAPE_CLAUDE_HOOK_IMPL:-}" != "rust" ]; then
+  warn "Ignoring deprecated DUCKTAPE_CLAUDE_HOOK_IMPL=$DUCKTAPE_CLAUDE_HOOK_IMPL; claude-hook is Rust-only"
+fi
+DEVTOOLS_OUTPUT="devtools"
 
 FLAKE="path:$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SETUP_COMMIT=$(git -C "${FLAKE#path:}" rev-parse HEAD 2>/dev/null || echo 'unknown')
@@ -117,8 +111,8 @@ ls -la
 # explicit remove, the installed devtools derivation freezes at whatever pin
 # was current on container first-boot, even though `npins/sources.json` in
 # the working tree has moved forward. The downstream symptom is agent sessions
-# running a stale `claude-hooks` wheel against fresh profile YAML / Mako
-# templates, which crashes SessionStart as soon as the schema churns. Remove
+# running a stale devtools profile against fresh profile YAML / hook behavior,
+# which crashes SessionStart as soon as the schema churns. Remove
 # first so `install` re-evaluates `.#devtools` against the current flake.
 #
 # See <devinfra/claude/docs/web-setup-debug.md> ("Pin drift on persistent rootfs").

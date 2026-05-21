@@ -5,11 +5,11 @@ configure overlapping tooling independently.
 
 ## Contexts
 
-| Context                                   | Activation mechanism                        | Where defined                                |
-| ----------------------------------------- | ------------------------------------------- | -------------------------------------------- |
-| **Local dev machine** (agentydragon, gpd) | `home-manager switch`                       | `nix/home/`                                  |
-| **Claude Code Web**                       | Session-start hook → `CLAUDE_ENV_FILE`      | `devinfra/claude/hook_daemon/session_start/` |
-| **Claude Code CLI** (local)               | home-manager + session-start hook (lighter) | Both                                         |
+| Context                                   | Activation mechanism                        | Where defined                  |
+| ----------------------------------------- | ------------------------------------------- | ------------------------------ |
+| **Local dev machine** (agentydragon, gpd) | `home-manager switch`                       | `nix/home/`                    |
+| **Claude Code Web**                       | Rust session-start hook → `CLAUDE_ENV_FILE` | `devinfra/claude/claude_hook/` |
+| **Claude Code CLI** (local)               | home-manager + session-start hook (lighter) | Both                           |
 
 ## Resolved: tool lists
 
