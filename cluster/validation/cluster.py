@@ -18,7 +18,7 @@ _K8S_SUBPATH = Path("cluster/k8s")
 # Files with this attribute set are skipped from resource parsing and orphan
 # detection. Source of truth is `.gitattributes` at the repo root, so new
 # exclusions land atomically with the file they exclude — no ducktape-git-hooks
-# wheel rebuild + npins repin + `nix profile install` cycle required.
+# wheel rebuild + artifact-pins repin + `nix profile install` cycle required.
 # Mirrors the `rules-lint-ignored` / `filename-conventions-ignored` pattern
 # already used by devinfra/precommit/git_hook.py.
 _MANIFEST_IGNORED_ATTR = "cluster-manifest-ignored"

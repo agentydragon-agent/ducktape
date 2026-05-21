@@ -52,7 +52,7 @@ Planned changes:
 - Add `Artifact(pkg="debundle", filename="debundle")` in
   `devinfra/ci/artifacts.py`.
 - Add a Ducktape Nix package that installs the `debundle` binary from
-  `npins/sources.json` once the release has been published and `sync-pins` has
+  `nix/artifact-pins.json` once the release has been published and `sync-pins` has
   added the pin.
 - Add the package to Ducktape's devshell conditionally, so `nix develop` keeps
   working before the first `debundle` release pin exists and automatically gains
@@ -226,7 +226,7 @@ Longer-term decoupling options:
 
 - [ ] Ducktape release matrix publishes `debundle`.
 - [ ] Ducktape release metadata records source commit and binary hash.
-- [ ] Ducktape `npins/sources.json` is automatically updated with the released
+- [ ] Ducktape `nix/artifact-pins.json` is automatically updated with the released
       `debundle` binary.
 - [ ] Ducktape's devshell has the pinned binary on `$PATH` after the first
       `debundle` artifact pin lands.

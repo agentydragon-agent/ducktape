@@ -1,4 +1,4 @@
-# Ducktape packages — built from CI-released artifacts (npins/sources.json).
+# Ducktape packages — built from CI-released artifacts (nix/artifact-pins.json).
 {
   lib,
   pkgs,
@@ -13,7 +13,7 @@ let
       cp ${input} $out
     '';
 
-  # All ducktape wheels follow the same pattern: pname maps to an npins
+  # All ducktape wheels follow the same pattern: pname maps to an artifact-pin
   # artifact, wheel filename is <pname_underscored>-0.1.0-py3-none-any.whl.
   mkWheel =
     {

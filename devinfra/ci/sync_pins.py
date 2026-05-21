@@ -2,10 +2,10 @@
 # requires-python = ">=3.12"
 # dependencies = ["PyGithub>=1.77", "pydantic>=2.0", "httpx>=0.27", "more-itertools>=10.0"]
 # ///
-"""Sync npins/sources.json with the latest GitHub Release for each package.
+"""Sync nix/artifact-pins.json with the latest GitHub Release for each package.
 
 For each pinned package, finds the latest release tag, compares the URL
-against the current pin, and updates npins/sources.json if the pin is stale.
+against the current pin, and updates nix/artifact-pins.json if the pin is stale.
 
 Expects: GH_TOKEN env var.
 """

@@ -1,5 +1,5 @@
 name: Sync artifact pins
-# Periodically sync npins/sources.json with the latest GitHub Releases.
+# Periodically sync nix/artifact-pins.json with the latest GitHub Releases.
 # Replaces per-commit dispatch from bb_release.py — one commit per cycle
 # regardless of how many releases landed since the last sync.
 #
@@ -46,7 +46,7 @@ jobs:
         run: |
           git config user.name "${APP_SLUG}[bot]"
           git config user.email "${APP_USER_ID}+${APP_SLUG}[bot]@users.noreply.github.com"
-          git add npins/sources.json
+          git add nix/artifact-pins.json
           if git diff --cached --quiet; then
             echo "No pin changes"
             exit 0

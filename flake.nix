@@ -65,11 +65,11 @@
         config.allowUnfree = true;
       };
 
-      # CI-released artifact pins (npins/sources.json), updated by release.yml.
+      # CI-released artifact pins (nix/artifact-pins.json), updated by sync-pins.yml.
       # All entries are plain fetchurl; sha256 is SHA-256 SRI of the downloaded file.
       artifacts =
         let
-          data = builtins.fromJSON (builtins.readFile ./npins/sources.json);
+          data = builtins.fromJSON (builtins.readFile ./nix/artifact-pins.json);
         in
         builtins.mapAttrs (
           _: spec:
@@ -255,7 +255,7 @@
       # System libraries matching RBE worker image (devinfra/rbe_image/Dockerfile).
       systemLibs = import ./nix/packages/system-libs.nix { inherit pkgs; };
       # Present after the first debundle release has been published and
-      # sync-pins has added the npins entry.
+      # sync-pins has added the artifact-pins entry.
       optionalDebundlePackages = lib.optional (ducktapePkgs ? debundle) ducktapePkgs.debundle;
       # Common dev tools shared by both Python and Rust hook implementations.
       devToolsCommon = [

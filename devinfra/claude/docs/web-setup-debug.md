@@ -64,7 +64,7 @@ With `max-jobs=0`, Nix can't build anything locally — not even a trivial
 ### 3. Attic cache race with CI pin bumps — CONFIRMED
 
 After we push `devtools` to attic, CI's release workflow creates a new
-commit bumping `npins/sources.json` artifact pins. The web container evaluates
+commit bumping `nix/artifact-pins.json` artifact pins. The web container evaluates
 `github:agentydragon/ducktape` (latest commit), which is now the CI commit
 with different pins → different `claude-hooks` derivation → different
 `symlinkJoin` hash → cache miss.
@@ -221,7 +221,7 @@ curl -fsSL https://raw.githubusercontent.com/agentydragon/ducktape/680d78946bf72
 with `'Undefined' object has no attribute 'kubeconfig_path'`. Alternatively:
 profile YAML fields silently no-op (e.g., `startup_env_script` ignored, secrets
 never decrypted). Container has been up for 2+ days; the install commit of
-`claude-hooks` is behind the current `npins/sources.json` pin.
+`claude-hooks` is behind the current `nix/artifact-pins.json` pin.
 
 **Root cause**: `nix profile install "${FLAKE}#devtools"` is a no-op when the
 attrpath is already in the profile — it matches by attrpath, not by evaluated
@@ -249,8 +249,8 @@ cache when the pin hasn't actually moved.
 ```bash
 # Compare installed vs pinned — check the git commit the installed wheel was built from
 claude-hook --version
-# The npins URL contains the content-addressed release tag (12-hex hash prefix)
-jq -r '.pins["claude-hooks"].url' npins/sources.json
+# The pin URL contains the content-addressed release tag (12-hex hash prefix)
+jq -r '.pins["claude-hooks"].url' nix/artifact-pins.json
 
 # Check the daemon error log for profile/schema complaints
 tail -100 /tmp/claude-hd/*/daemon.err.log

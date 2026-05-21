@@ -75,7 +75,7 @@ RUN sed -i 's/^Components: main$/Components: main universe/' /etc/apt/sources.li
 # skips inputs only used by outputs we don't request (gaffer-private
 # is only used by homeConfigurations/nixosConfigurations, not devtools).
 COPY flake.nix flake.lock /tmp/flake/
-COPY npins /tmp/flake/npins
+COPY nix/artifact-pins.json /tmp/flake/nix/artifact-pins.json
 COPY nix/packages /tmp/flake/nix/packages
 # nix/packages/gaffer.nix reads ../gaffer-pins.json at eval time, so it
 # has to be in the build context too. Added when the gaffer namespace

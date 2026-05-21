@@ -10,7 +10,7 @@ to run Bazel on RBE. `bbr` is a console script entry point in the `claude-hooks`
 wheel. The `claude-hooks` wheel is built and released by CI (`.github/workflows/release.yml`).
 
 ```
-CI needs bbr → bbr comes from claude-hooks wheel (npins) → wheel is released by CI using bbr
+CI needs bbr → bbr comes from claude-hooks wheel (artifact-pins) → wheel is released by CI using bbr
 ```
 
 **Triggered 2026-04-10**: The `bbr` entry point was added to `claude-hooks` in
@@ -19,7 +19,7 @@ from commit `4563071` (before `bbr` existed). All CI jobs failed with
 `bbr: command not found`.
 
 **Recovery**: Build the wheel manually with `bb remote build //:claude_hooks_wheel`,
-create a GitHub release with `gh release create`, update `npins/sources.json`.
+create a GitHub release with `gh release create`, update `nix/artifact-pins.json`.
 
 **Prevention**: When adding new entry points to wheels that CI itself depends on,
 manually release the updated wheel before merging, or ensure CI has a fallback
@@ -41,6 +41,6 @@ Local builds fail; RBE builds may use cached results and appear fine.
 - **Manual bootstrap escape hatch**: Keep `bb remote` available as a direct
   alternative to `bbr` — it's the same underlying command without the wrapper
   logic. CI could fall back to `bb remote` if `bbr` is missing.
-- **Pin awareness**: When `npins/sources.json` points to a wheel, CI gets
+- **Pin awareness**: When `nix/artifact-pins.json` points to a wheel, CI gets
   exactly that version. New entry points don't exist until a new release is
   pinned.

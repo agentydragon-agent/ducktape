@@ -73,7 +73,7 @@ cat "$HOME/.claude/session-env/$LIVE/bazelrc"
 
 # Check installed claude-hooks vs the pin — git= shows the commit the wheel was built from
 claude-hook --version
-jq -r '.pins["claude-hooks"].url' npins/sources.json
+jq -r '.pins["claude-hooks"].url' nix/artifact-pins.json
 ```
 
 If the version shows `git=dev` (unstamped) or an old commit, the installed

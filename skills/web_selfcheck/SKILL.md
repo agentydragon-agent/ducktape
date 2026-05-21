@@ -333,13 +333,13 @@ HEAD_COMMIT=$(git -C /home/user/ducktape rev-parse HEAD)
 A stale installed daemon is often the root cause of session hook failures.
 There are **two** independent kinds of staleness to check:
 
-**(a) Pin in `npins/sources.json` is behind HEAD** — sync-pins.yml didn't
+**(a) Pin in `nix/artifact-pins.json` is behind HEAD** — sync-pins.yml didn't
 run recently, or release.yml is failing. The repo itself is out of date.
 
 **(b) Installed wheel is behind the pin** — on Firecracker web sessions
 with a persistent rootfs, `nix profile install` is a no-op when devtools
 is already installed, so the on-disk wheel can freeze at first-boot even
-though `npins/sources.json` has moved forward. This is the class of
+though `nix/artifact-pins.json` has moved forward. This is the class of
 failure described in <../../devinfra/claude/docs/web-setup-debug.md>
 "Pin drift on persistent rootfs". Typical symptom: SessionStart crashes
 with `'Undefined' object has no attribute '<field>'` in `daemon.err.log`,
@@ -347,15 +347,15 @@ or silently missing env vars because a new `profile.yaml` field was
 dropped by Pydantic.
 
 ```bash
-# (a) Pin in npins vs HEAD
+# (a) Pin in artifact-pins vs HEAD
 python3 -c "
 import json, re
-pins = json.load(open('/home/user/ducktape/npins/sources.json'))['pins']
+pins = json.load(open('/home/user/ducktape/nix/artifact-pins.json'))['pins']
 url = pins.get('claude-hooks', {}).get('url', '')
 m = re.search(r'claude-hooks-([0-9a-f]+)', url)
 print('pinned:', m.group(1) if m else 'unknown')
 "
-git -C /home/user/ducktape log --oneline -5 -- devinfra/claude/ npins/sources.json
+git -C /home/user/ducktape log --oneline -5 -- devinfra/claude/ nix/artifact-pins.json
 
 # (b) Installed wheel vs pin
 claude-hook --version  # git= shows the commit the installed wheel was built from

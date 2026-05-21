@@ -13,7 +13,7 @@ from util.bazel.workspace import get_build_workspace_directory
 
 
 def sources_path() -> Path:
-    return get_build_workspace_directory() / "npins" / "sources.json"
+    return get_build_workspace_directory() / "nix" / "artifact-pins.json"
 
 
 class Pin(BaseModel):
@@ -37,13 +37,13 @@ def is_tag_for_pkg(tag: str, pkg: str) -> bool:
 
 
 class Artifact(BaseModel, frozen=True):
-    pkg: str = Field(description="npins package name (sources.json key)")
+    pkg: str = Field(description="artifact pin name (artifact-pins.json key)")
     filename: str = Field(description="Artifact filename attached to the GitHub release")
     tag_pkg: str | None = Field(
         default=None,
         description=(
             "Release tag prefix (e.g. 'aiquota' matches 'aiquota-<sha>' tags). "
-            "Defaults to `pkg`. Use when multiple npins pins share a single release tag."
+            "Defaults to `pkg`. Use when multiple artifact pins share a single release tag."
         ),
     )
 

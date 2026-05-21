@@ -131,11 +131,11 @@ workflows that direct-push to the default branch need to migrate from
 `GITHUB_TOKEN` to App-minted installation tokens. In-place TODOs already
 mark each:
 
-| Workflow                                   | Cadence       | What it pushes                  |
-| ------------------------------------------ | ------------- | ------------------------------- |
-| `sync-pins.yml`                            | every 30m     | `npins/sources.json` updates    |
-| `nix-flake-update.yml`                     | manual        | `flake.lock` updates            |
-| `container-images.yml` (`pin-digests` job) | on image push | `cluster/**` image digest bumps |
+| Workflow                                   | Cadence       | What it pushes                   |
+| ------------------------------------------ | ------------- | -------------------------------- |
+| `sync-pins.yml`                            | every 30m     | `nix/artifact-pins.json` updates |
+| `nix-flake-update.yml`                     | manual        | `flake.lock` updates             |
+| `container-images.yml` (`pin-digests` job) | on image push | `cluster/**` image digest bumps  |
 
 The migration pattern per workflow:
 

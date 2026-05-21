@@ -41,8 +41,8 @@ ls /home/user/ducktape/.github/workflows/
 # Read devinfra/ci/artifacts.py to understand what gets released
 cat /home/user/ducktape/devinfra/ci/artifacts.py 2>/dev/null | head -80
 
-# Read npins/sources.json to see what's pinned
-cat /home/user/ducktape/npins/sources.json
+# Read nix/artifact-pins.json to see what's pinned
+cat /home/user/ducktape/nix/artifact-pins.json
 
 # Read devinfra/image_pins.json for Dockerfile-based image pinning
 cat /home/user/ducktape/devinfra/image_pins.json 2>/dev/null
@@ -89,7 +89,7 @@ For any workflow whose **most recent run** is not `success`:
 
 ### 2b. Release Artifact Staleness
 
-For each entry in `npins/sources.json`, the URL encodes the pinned commit:
+For each entry in `nix/artifact-pins.json`, the URL encodes the pinned commit:
 ducktape-produced pins follow the pattern
 `.../releases/download/<artifact>-<sha7>/<filename>`. Extract that sha7,
 count how many commits `origin/devel` is ahead of it, and report the age of

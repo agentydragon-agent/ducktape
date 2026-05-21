@@ -22,7 +22,7 @@ is tracked in `devinfra/claude/TODO.md`.
 
 - `release.yml` builds `//devinfra/claude/claude_hook:claude_hook` and
   publishes it to GitHub Releases with tag `claude-hook-rs-<12hex>`.
-- `sync-pins.yml` auto-updates `npins/sources.json` every 30 minutes.
+- `sync-pins.yml` auto-updates `nix/artifact-pins.json` every 30 minutes.
 - `nix/packages/default.nix` exposes `claude-hook-rs`, a static binary
   derivation installed as `$out/bin/claude-hook`.
 - The `#devtools` flake output includes the Rust `claude-hook-rs` binary and

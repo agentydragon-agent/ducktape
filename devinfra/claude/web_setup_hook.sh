@@ -5,7 +5,7 @@
 # before SessionStart fires. This closes the "stale wheel on resume-cached
 # sessions" gap: the init_script (web_setup.sh) that normally re-installs
 # devtools is NOT sent by Anthropic's backend for resume-cached sessions, so
-# without this hook the installed wheel can lag behind npins/sources.json by
+# without this hook the installed wheel can lag behind nix/artifact-pins.json by
 # many hours (however long the Firecracker VM stays alive between new sessions).
 #
 # Unlike the init_script invocation of web_setup.sh (which runs BEFORE claude

@@ -109,7 +109,7 @@ ls -la
 # verified in <devinfra/claude/web_env/re/environment_manager/src/internal/envtype/anthropic/anthropic.go>
 # Initialize(), Step 3 at line ~361 is not gated on session mode). Without an
 # explicit remove, the installed devtools derivation freezes at whatever pin
-# was current on container first-boot, even though `npins/sources.json` in
+# was current on container first-boot, even though `nix/artifact-pins.json` in
 # the working tree has moved forward. The downstream symptom is agent sessions
 # running a stale devtools profile against fresh profile YAML / hook behavior,
 # which crashes SessionStart as soon as the schema churns. Remove
