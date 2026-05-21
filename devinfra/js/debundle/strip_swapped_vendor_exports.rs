@@ -490,13 +490,19 @@ fn sweep_unreachable_top_level(
         }
     }
 
-    while let Some((i, package)) = queue.pop() {
-        for dep_idx in dependency_items(&analyses[i], &declarer, &mutation_items_by_target) {
-            if swapped_reachability[dep_idx].insert(package.clone()) {
-                queue.push((dep_idx, package.clone()));
-            }
-        }
-    }
+    propagate_swapped_dependency_reachability(
+        &mut swapped_reachability,
+        &mut queue,
+        &analyses,
+        &declarer,
+        &mutation_items_by_target,
+    );
+    absorb_swapped_dependent_items(
+        &mut swapped_reachability,
+        &analyses,
+        &declarer,
+        &mutation_items_by_target,
+    );
 
     let mut live = vec![false; analyses.len()];
     let mut live_reasons = vec![None; analyses.len()];
@@ -675,6 +681,71 @@ fn dependency_items(
     dependency_edges(analysis, declarer, mutation_items_by_target)
         .into_keys()
         .collect()
+}
+
+fn propagate_swapped_dependency_reachability(
+    swapped_reachability: &mut [BTreeSet<String>],
+    queue: &mut Vec<(usize, String)>,
+    analyses: &[ItemAnalysis],
+    declarer: &BTreeMap<Id, usize>,
+    mutation_items_by_target: &BTreeMap<Id, Vec<usize>>,
+) {
+    while let Some((i, package)) = queue.pop() {
+        for dep_idx in dependency_items(&analyses[i], declarer, mutation_items_by_target) {
+            if swapped_reachability[dep_idx].insert(package.clone()) {
+                queue.push((dep_idx, package.clone()));
+            }
+        }
+    }
+}
+
+fn absorb_swapped_dependent_items(
+    swapped_reachability: &mut [BTreeSet<String>],
+    analyses: &[ItemAnalysis],
+    declarer: &BTreeMap<Id, usize>,
+    mutation_items_by_target: &BTreeMap<Id, Vec<usize>>,
+) {
+    loop {
+        let mut queue = Vec::new();
+        for (i, analysis) in analyses.iter().enumerate() {
+            if !swapped_reachability[i].is_empty() {
+                continue;
+            }
+            if analysis.side_effect != SideEffectKind::Hard || !analysis.declared.is_empty() {
+                continue;
+            }
+            let mut packages = BTreeSet::new();
+            let mut saw_declared_dependency = false;
+            let mut missing_package_dependency = false;
+            for dep_idx in dependency_items(analysis, declarer, mutation_items_by_target) {
+                saw_declared_dependency = true;
+                if swapped_reachability[dep_idx].is_empty() {
+                    missing_package_dependency = true;
+                    break;
+                }
+                packages.extend(swapped_reachability[dep_idx].iter().cloned());
+            }
+            if saw_declared_dependency && !missing_package_dependency && packages.len() == 1 {
+                let package = packages
+                    .iter()
+                    .next()
+                    .expect("one package after len check")
+                    .clone();
+                swapped_reachability[i].insert(package.clone());
+                queue.push((i, package));
+            }
+        }
+        if queue.is_empty() {
+            break;
+        }
+        propagate_swapped_dependency_reachability(
+            swapped_reachability,
+            &mut queue,
+            analyses,
+            declarer,
+            mutation_items_by_target,
+        );
+    }
 }
 
 fn resolve_declared_local(
@@ -1366,6 +1437,27 @@ mod tests {
         assert!(
             emitted.contains("console.log"),
             "side-effect should be retained:\n{emitted}",
+        );
+    }
+
+    #[test]
+    fn drops_side_effect_dependent_on_single_swapped_package_island() {
+        let mut module = parse(
+            "const internals = {};\n\
+             const oldImpl = () => internals;\n\
+             if (globalThis.__HOOK__) globalThis.__HOOK__.inject({ internals });\n\
+             export { oldImpl as swapped };\n\
+             export const keep = 1;\n",
+        );
+        strip_one_chunk(&mut module, &mk_symbols(&["swapped"]), "chunk.js").unwrap();
+        let emitted = emit(&module);
+        assert!(
+            !emitted.contains("__HOOK__"),
+            "hard side effect that only touches the swapped island should be dropped:\n{emitted}",
+        );
+        assert!(
+            emitted.contains("export const keep"),
+            "residual export should remain:\n{emitted}",
         );
     }
 
