@@ -138,6 +138,7 @@ rust_library(
     edition = "2024",
     deps = [
         ":artifact",
+        ":binding_targets",
         ":spec",
         "@crates//:anyhow",
         "@crates//:serde",

@@ -642,11 +642,10 @@ fn partial_swap_strips_implementation_when_unreferenced() {
 }
 
 #[test]
-fn partial_swap_keeps_implementation_when_cross_referenced() {
+fn partial_swap_rejects_split_brain_residual_reachability() {
     // `object` (swapped) references `ZodObject`; `ZodObject` is still
-    // exported. The export-strip drops `object`'s export; DCE finds
-    // `ZodObject` reachable through its own export and keeps it; the
-    // dead `object` declaration goes away.
+    // exported. Keeping it would leave a residual copy of the old
+    // package implementation reachable next to the replacement import.
     let fixture = run_partial_swap_fixture(PartialSwapFixtureArgs {
         chunk_source: "class ZodObject {}\nconst object = () => new ZodObject();\nexport { object, ZodObject };\n",
         caller_source: "import { object as zodObject, ZodObject as Z } from \"../megachunk/entry.js\";\nexport function go() { return zodObject() instanceof Z; }\n",
@@ -656,33 +655,22 @@ fn partial_swap_keeps_implementation_when_cross_referenced() {
     });
 
     assert!(
-        fixture.result.status.success(),
-        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
-        fixture.result.status.code(),
-        fixture.result.stdout,
+        !fixture.result.status.success(),
+        "debundler should reject split-brain partial swap",
+    );
+    assert!(
+        fixture.result.stderr.contains("split-brain vendor swap"),
+        "expected split-brain diagnostic in stderr:\n{}",
         fixture.result.stderr,
-    );
-    let emitted = fs::read_to_string(&fixture.megachunk_emitted_path).expect("megachunk emitted");
-    assert!(
-        emitted.contains("class ZodObject"),
-        "still-exported `ZodObject` definition should remain:\n{emitted}",
-    );
-    assert!(
-        emitted.contains("ZodObject"),
-        "still-exported `ZodObject` should be in the export surface:\n{emitted}",
-    );
-    assert!(
-        !emitted.contains("const object"),
-        "dead `object` body should be DCE'd:\n{emitted}",
     );
 }
 
 #[test]
 fn partial_swap_keeps_side_effect_init() {
-    // Top-level side effect (`Object.defineProperty(...)`) must stay
+    // Top-level hard side effects must stay
     // even when its only "reference" is a swapped binding.
     let fixture = run_partial_swap_fixture(PartialSwapFixtureArgs {
-        chunk_source: "const carrier = {};\nObject.defineProperty(carrier, \"_zod\", { value: {} });\nexport const e6 = () => true;\n",
+        chunk_source: "console.log(\"keep side effect\");\nexport const e6 = () => true;\n",
         caller_source: "import { e6 as zodBoolean } from \"../megachunk/entry.js\";\nexport function go() { return zodBoolean(); }\n",
         upstream_source: "export const boolean = () => true;\n",
         symbols: vec![("e6", "zod", "boolean")],
@@ -698,12 +686,40 @@ fn partial_swap_keeps_side_effect_init() {
     );
     let emitted = fs::read_to_string(&fixture.megachunk_emitted_path).expect("megachunk emitted");
     assert!(
-        emitted.contains("Object.defineProperty"),
+        emitted.contains("console.log"),
         "side-effect statement should be retained:\n{emitted}",
     );
     assert!(
         !emitted.contains(" e6 "),
         "swapped `e6` definition should still be DCE'd:\n{emitted}",
+    );
+}
+
+#[test]
+fn partial_swap_drops_original_package_island_with_local_mutations() {
+    let fixture = run_partial_swap_fixture(PartialSwapFixtureArgs {
+        chunk_source: "class ZodBoolean {}\nZodBoolean.displayName = \"ZodBoolean\";\nconst e6 = () => new ZodBoolean();\nexport { e6 };\n",
+        caller_source: "import { e6 as zodBoolean } from \"../megachunk/entry.js\";\nexport function go() { return zodBoolean(); }\n",
+        upstream_source: "export const boolean = () => true;\n",
+        symbols: vec![("e6", "zod", "boolean")],
+        upstream_version: "3.23.8",
+    });
+
+    assert!(
+        fixture.result.status.success(),
+        "debundler exited {:?}\nstdout:\n{}\nstderr:\n{}",
+        fixture.result.status.code(),
+        fixture.result.stdout,
+        fixture.result.stderr,
+    );
+    let emitted = fs::read_to_string(&fixture.megachunk_emitted_path).expect("megachunk emitted");
+    assert!(
+        !emitted.contains("ZodBoolean"),
+        "old package class should be removed from the residual chunk:\n{emitted}",
+    );
+    assert!(
+        !emitted.contains("displayName"),
+        "local metadata write should be removed with the old package class:\n{emitted}",
     );
 }
 

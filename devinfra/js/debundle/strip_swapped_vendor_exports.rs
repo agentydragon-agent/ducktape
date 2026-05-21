@@ -1,6 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::{Context, Result, bail};
+use binding_targets::{
+    TargetAccessRecorder, binding_names, record_assign_target, record_update_target,
+};
 use serde::Serialize;
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
@@ -93,11 +96,13 @@ fn strip_one_chunk(
 ) -> Result<ChunkStripStats> {
     let swapped: BTreeSet<String> = symbols.keys().cloned().collect();
 
-    let stripped_export_specifiers = strip_export_specifiers(module, &swapped, chunk_path)?;
+    split_top_level_var_decls(module);
+    let stripped = strip_export_specifiers(module, symbols, chunk_path)?;
+    let stripped_export_specifiers = stripped.len();
     let post_strip_exports = collect_exported_names(module);
 
     let dropped_total_before = module.body.len();
-    sweep_unreachable_top_level(module, &post_strip_exports, chunk_path)?;
+    sweep_unreachable_top_level(module, &post_strip_exports, &stripped, chunk_path)?;
     let retained = module.body.len();
     let dropped = dropped_total_before - retained;
 
@@ -136,6 +141,12 @@ fn strip_one_chunk(
     })
 }
 
+#[derive(Debug, Clone)]
+struct StrippedExport {
+    package: String,
+    locals: BTreeSet<Id>,
+}
+
 fn chunk_id_from_chunk_path(chunk_path: &str) -> Result<String> {
     if chunk_path.is_empty() {
         bail!("strip_swapped_vendor_exports: empty chunk path");
@@ -162,11 +173,11 @@ fn chunk_id_from_chunk_path(chunk_path: &str) -> Result<String> {
 /// a chunk-local binding.
 fn strip_export_specifiers(
     module: &mut Module,
-    swapped: &BTreeSet<String>,
+    symbols: &BTreeMap<String, PartialSwapSymbol>,
     chunk_path: &str,
-) -> Result<usize> {
-    let mut found: BTreeSet<String> = BTreeSet::new();
-    let mut stripped = 0usize;
+) -> Result<BTreeMap<String, StrippedExport>> {
+    let swapped: BTreeSet<String> = symbols.keys().cloned().collect();
+    let mut found: BTreeMap<String, StrippedExport> = BTreeMap::new();
     let mut new_body = Vec::with_capacity(module.body.len());
 
     for item in std::mem::take(&mut module.body) {
@@ -188,8 +199,25 @@ fn strip_export_specifiers(
                         .map(module_export_name)
                         .unwrap_or_else(|| module_export_name(&named_spec.orig));
                     if swapped.contains(&exported) {
-                        found.insert(exported);
-                        stripped += 1;
+                        let Some(symbol) = symbols.get(&exported) else {
+                            unreachable!("swapped names are derived from symbols");
+                        };
+                        let local = match &named_spec.orig {
+                            ModuleExportName::Ident(ident) => ident.to_id(),
+                            ModuleExportName::Str(orig) => {
+                                bail!(
+                                    "strip_swapped_vendor_exports vendor entry {chunk_path}: swapped export {exported} uses string-literal local name {:?}, which cannot be mapped to a chunk binding",
+                                    orig.value,
+                                );
+                            }
+                        };
+                        found.insert(
+                            exported,
+                            StrippedExport {
+                                package: symbol.package.clone(),
+                                locals: BTreeSet::from([local]),
+                            },
+                        );
                     } else {
                         kept.push(spec);
                     }
@@ -210,8 +238,16 @@ fn strip_export_specifiers(
                 // `export const a = …, b = …`).
                 if !inline_names.is_empty() && inline_names.iter().all(|n| swapped.contains(n)) {
                     for n in &inline_names {
-                        found.insert(n.clone());
-                        stripped += 1;
+                        let Some(symbol) = symbols.get(n) else {
+                            unreachable!("inline names were checked against symbols");
+                        };
+                        found.insert(
+                            n.clone(),
+                            StrippedExport {
+                                package: symbol.package.clone(),
+                                locals: export_decl_declared_ids(&export_decl.decl),
+                            },
+                        );
                     }
                     new_body.push(ModuleItem::Stmt(Stmt::Decl(export_decl.decl)));
                 } else {
@@ -223,14 +259,15 @@ fn strip_export_specifiers(
     }
     module.body = new_body;
 
-    let missing: Vec<String> = swapped.difference(&found).cloned().collect();
+    let found_names = found.keys().cloned().collect::<BTreeSet<_>>();
+    let missing: Vec<String> = swapped.difference(&found_names).cloned().collect();
     if !missing.is_empty() {
         bail!(
             "strip_swapped_vendor_exports vendor entry {chunk_path}: swapped symbols not found in any chunk-local export: [{}]",
             missing.join(","),
         );
     }
-    Ok(stripped)
+    Ok(found)
 }
 
 fn export_decl_declared_names(decl: &Decl) -> Vec<String> {
@@ -246,6 +283,60 @@ fn export_decl_declared_names(decl: &Decl) -> Vec<String> {
         }
         _ => Vec::new(),
     }
+}
+
+fn export_decl_declared_ids(decl: &Decl) -> BTreeSet<Id> {
+    match decl {
+        Decl::Fn(f) => BTreeSet::from([f.ident.to_id()]),
+        Decl::Class(c) => BTreeSet::from([c.ident.to_id()]),
+        Decl::Var(v) => v
+            .decls
+            .iter()
+            .flat_map(|d| binding_names(&d.name))
+            .collect(),
+        _ => BTreeSet::new(),
+    }
+}
+
+fn split_top_level_var_decls(module: &mut Module) {
+    let mut out = Vec::with_capacity(module.body.len());
+    for item in std::mem::take(&mut module.body) {
+        match item {
+            ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) if var.decls.len() > 1 => {
+                for decl in var.decls {
+                    out.push(ModuleItem::Stmt(Stmt::Decl(Decl::Var(Box::new(VarDecl {
+                        span: var.span,
+                        ctxt: var.ctxt,
+                        kind: var.kind,
+                        declare: var.declare,
+                        decls: vec![decl],
+                    })))));
+                }
+            }
+            ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => match export_decl.decl {
+                Decl::Var(var) if var.decls.len() > 1 => {
+                    for decl in var.decls {
+                        out.push(ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
+                            span: export_decl.span,
+                            decl: Decl::Var(Box::new(VarDecl {
+                                span: var.span,
+                                ctxt: var.ctxt,
+                                kind: var.kind,
+                                declare: var.declare,
+                                decls: vec![decl],
+                            })),
+                        })));
+                    }
+                }
+                decl => out.push(ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
+                    span: export_decl.span,
+                    decl,
+                }))),
+            },
+            other => out.push(other),
+        }
+    }
+    module.body = out;
 }
 
 /// Conservative top-level dead-code sweep. Each `module.body[i]` is
@@ -272,37 +363,100 @@ fn export_decl_declared_names(decl: &Decl) -> Vec<String> {
 fn sweep_unreachable_top_level(
     module: &mut Module,
     live_exports: &BTreeSet<String>,
+    stripped: &BTreeMap<String, StrippedExport>,
     chunk_path: &str,
 ) -> Result<()> {
     let analyses: Vec<ItemAnalysis> = module.body.iter().map(classify_item).collect();
 
-    // BindingName -> index that declares it. If two items declare the
-    // same name (legal for `var`), prefer the last declaration; later
+    // Binding id -> index that declares it. If two items declare the
+    // same binding (legal for `var`), prefer the last declaration; later
     // writes shadow earlier ones for reachability purposes.
-    let mut declarer: BTreeMap<&str, usize> = BTreeMap::new();
+    let mut declarer: BTreeMap<Id, usize> = BTreeMap::new();
     for (i, an) in analyses.iter().enumerate() {
-        for name in &an.declared {
-            declarer.insert(name.as_str(), i);
+        for id in &an.declared {
+            declarer.insert(id.clone(), i);
+        }
+    }
+
+    let mut mutation_items_by_target: BTreeMap<Id, Vec<usize>> = BTreeMap::new();
+    for (i, an) in analyses.iter().enumerate() {
+        for id in &an.local_effects {
+            if declarer.contains_key(id) {
+                mutation_items_by_target
+                    .entry(id.clone())
+                    .or_default()
+                    .push(i);
+            }
+        }
+    }
+
+    let mut swapped_reachability = vec![BTreeSet::new(); analyses.len()];
+    let mut queue: Vec<(usize, String)> = Vec::new();
+    for (alias, stripped_export) in stripped {
+        for local in &stripped_export.locals {
+            let Some(&decl_idx) = declarer.get(local) else {
+                bail!(
+                    "strip_swapped_vendor_exports vendor entry {chunk_path}: swapped export {alias} maps to local `{}` but that binding has no top-level declaration",
+                    id_name(local),
+                );
+            };
+            if swapped_reachability[decl_idx].insert(stripped_export.package.clone()) {
+                queue.push((decl_idx, stripped_export.package.clone()));
+            }
+        }
+    }
+
+    while let Some((i, package)) = queue.pop() {
+        for dep_idx in dependency_items(&analyses[i], &declarer, &mutation_items_by_target) {
+            if swapped_reachability[dep_idx].insert(package.clone()) {
+                queue.push((dep_idx, package.clone()));
+            }
         }
     }
 
     let mut live = vec![false; analyses.len()];
     for (i, an) in analyses.iter().enumerate() {
-        if an.is_side_effect || an.declared.iter().any(|n| live_exports.contains(n)) {
+        let residual_export = an
+            .export_aliases
+            .iter()
+            .any(|alias| live_exports.contains(alias));
+        let hard_side_effect = (an.side_effect == SideEffectKind::Hard
+            || (an.side_effect == SideEffectKind::LocalMutation
+                && an.local_effects.iter().any(|id| !declarer.contains_key(id))))
+            && swapped_reachability[i].is_empty();
+        if residual_export || hard_side_effect {
             live[i] = true;
         }
     }
 
     let mut queue: Vec<usize> = (0..analyses.len()).filter(|&i| live[i]).collect();
     while let Some(i) = queue.pop() {
-        for name in &analyses[i].reads {
-            let Some(&decl_idx) = declarer.get(name.as_str()) else {
-                continue;
-            };
-            if !live[decl_idx] {
-                live[decl_idx] = true;
-                queue.push(decl_idx);
+        for dep_idx in dependency_items(&analyses[i], &declarer, &mutation_items_by_target) {
+            if !live[dep_idx] {
+                live[dep_idx] = true;
+                queue.push(dep_idx);
             }
+        }
+    }
+
+    for (i, packages) in swapped_reachability.iter().enumerate() {
+        if live[i] && !packages.is_empty() {
+            let declared = analyses[i]
+                .declared
+                .iter()
+                .map(id_name)
+                .collect::<Vec<_>>()
+                .join(",");
+            let exports = analyses[i]
+                .export_aliases
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(",");
+            let packages = packages.iter().cloned().collect::<Vec<_>>().join(",");
+            bail!(
+                "strip_swapped_vendor_exports vendor entry {chunk_path}: split-brain vendor swap: top-level item {i} remains reachable from the residual chunk while also belonging to swapped package(s) [{packages}] (declared=[{declared}], exports=[{exports}])",
+            );
         }
     }
 
@@ -313,12 +467,17 @@ fn sweep_unreachable_top_level(
         if !is_live {
             continue;
         }
-        for name in &analyses[i].reads {
-            if let Some(&decl_idx) = declarer.get(name.as_str())
+        for id in analyses[i]
+            .reads
+            .iter()
+            .chain(analyses[i].local_effects.iter())
+        {
+            if let Some(&decl_idx) = declarer.get(id)
                 && !live[decl_idx]
             {
                 bail!(
-                    "strip_swapped_vendor_exports vendor entry {chunk_path}: live item {i} reads `{name}` declared by dropped item {decl_idx}",
+                    "strip_swapped_vendor_exports vendor entry {chunk_path}: live item {i} reads `{}` declared by dropped item {decl_idx}",
+                    id_name(id),
                 );
             }
         }
@@ -334,100 +493,152 @@ fn sweep_unreachable_top_level(
     Ok(())
 }
 
+fn dependency_items(
+    analysis: &ItemAnalysis,
+    declarer: &BTreeMap<Id, usize>,
+    mutation_items_by_target: &BTreeMap<Id, Vec<usize>>,
+) -> BTreeSet<usize> {
+    let mut out = BTreeSet::new();
+    for id in analysis.reads.iter().chain(analysis.local_effects.iter()) {
+        if let Some(&decl_idx) = declarer.get(id) {
+            out.insert(decl_idx);
+        }
+    }
+    for id in &analysis.declared {
+        if let Some(mutation_items) = mutation_items_by_target.get(id) {
+            out.extend(mutation_items.iter().copied());
+        }
+    }
+    out
+}
+
 struct ItemAnalysis {
-    declared: Vec<String>,
-    reads: BTreeSet<String>,
-    is_side_effect: bool,
+    declared: BTreeSet<Id>,
+    reads: BTreeSet<Id>,
+    local_effects: BTreeSet<Id>,
+    export_aliases: BTreeSet<String>,
+    side_effect: SideEffectKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SideEffectKind {
+    None,
+    LocalMutation,
+    Hard,
 }
 
 fn classify_item(item: &ModuleItem) -> ItemAnalysis {
     match item {
         ModuleItem::Stmt(Stmt::Decl(decl)) => classify_decl(decl),
+        ModuleItem::Stmt(Stmt::Expr(expr_stmt)) => classify_expr_stmt(&expr_stmt.expr),
         ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => {
-            classify_decl(&export_decl.decl)
+            let mut analysis = classify_decl(&export_decl.decl);
+            analysis
+                .export_aliases
+                .extend(export_decl_declared_names(&export_decl.decl));
+            analysis
         }
         ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)) if named.src.is_none() => {
-            // `export { a, b as c };` — declares nothing locally;
-            // reads `a` and `b`. Liveness pulled in through the
-            // export-root seed (the export names appear in
-            // `live_exports`), and that, in turn, keeps the bindings
-            // they reference live via the fixpoint.
             let mut reads = BTreeSet::new();
+            let mut export_aliases = BTreeSet::new();
             for spec in &named.specifiers {
-                if let ExportSpecifier::Named(named_spec) = spec
-                    && let ModuleExportName::Ident(ident) = &named_spec.orig
-                {
-                    reads.insert(ident.sym.to_string());
+                if let ExportSpecifier::Named(named_spec) = spec {
+                    export_aliases.insert(
+                        named_spec
+                            .exported
+                            .as_ref()
+                            .map(module_export_name)
+                            .unwrap_or_else(|| module_export_name(&named_spec.orig)),
+                    );
+                    if let ModuleExportName::Ident(ident) = &named_spec.orig {
+                        reads.insert(ident.to_id());
+                    }
                 }
             }
-            // Marked side-effect so we never drop a residual export
-            // block (even if its names somehow aren't in
-            // `live_exports` — defensive against a mismatch).
             ItemAnalysis {
-                declared: Vec::new(),
+                declared: BTreeSet::new(),
                 reads,
-                is_side_effect: true,
+                local_effects: BTreeSet::new(),
+                export_aliases,
+                side_effect: SideEffectKind::None,
             }
         }
         ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultDecl(export_default)) => {
             let mut reads = BTreeSet::new();
-            collect_idents(export_default, &mut reads);
+            collect_refs(export_default, &mut reads);
             ItemAnalysis {
-                declared: vec!["default".to_string()],
+                declared: BTreeSet::new(),
                 reads,
-                is_side_effect: false,
+                local_effects: BTreeSet::new(),
+                export_aliases: BTreeSet::from(["default".to_string()]),
+                side_effect: SideEffectKind::None,
             }
         }
         ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultExpr(export_default)) => {
             let mut reads = BTreeSet::new();
-            collect_idents(&*export_default.expr, &mut reads);
+            collect_refs(&*export_default.expr, &mut reads);
             // `export default <expr>` evaluates expr at module init;
             // if expr is impure (e.g. `export default sideEffect()`)
             // we must keep it. For a pure expr (`export default X`),
             // the expression itself is inert — the export is the
             // anchor of the read chain.
-            let is_side_effect = !is_pure_expr(&export_default.expr);
             ItemAnalysis {
-                declared: vec!["default".to_string()],
+                declared: BTreeSet::new(),
                 reads,
-                is_side_effect,
+                local_effects: BTreeSet::new(),
+                export_aliases: BTreeSet::from(["default".to_string()]),
+                side_effect: if is_pure_expr(&export_default.expr) {
+                    SideEffectKind::None
+                } else {
+                    SideEffectKind::Hard
+                },
             }
         }
-        ModuleItem::ModuleDecl(ModuleDecl::Import(import)) => {
-            let mut reads = BTreeSet::new();
-            collect_idents(import, &mut reads);
-            ItemAnalysis {
-                declared: Vec::new(),
-                reads,
-                is_side_effect: true,
-            }
-        }
+        ModuleItem::ModuleDecl(ModuleDecl::Import(_)) => ItemAnalysis {
+            declared: BTreeSet::new(),
+            reads: BTreeSet::new(),
+            local_effects: BTreeSet::new(),
+            export_aliases: BTreeSet::new(),
+            side_effect: SideEffectKind::Hard,
+        },
         ModuleItem::ModuleDecl(ModuleDecl::ExportAll(_)) => ItemAnalysis {
-            declared: Vec::new(),
+            declared: BTreeSet::new(),
             reads: BTreeSet::new(),
-            is_side_effect: true,
+            local_effects: BTreeSet::new(),
+            export_aliases: BTreeSet::new(),
+            side_effect: SideEffectKind::Hard,
         },
-        ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(_)) => ItemAnalysis {
-            declared: Vec::new(),
-            reads: BTreeSet::new(),
-            is_side_effect: true,
-        },
+        ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)) => {
+            let mut reads = BTreeSet::new();
+            collect_refs(named, &mut reads);
+            ItemAnalysis {
+                declared: BTreeSet::new(),
+                reads,
+                local_effects: BTreeSet::new(),
+                export_aliases: export_aliases_from_named(named),
+                side_effect: SideEffectKind::Hard,
+            }
+        }
         ModuleItem::ModuleDecl(_) => {
             let mut reads = BTreeSet::new();
-            collect_idents(item, &mut reads);
+            collect_refs(item, &mut reads);
             ItemAnalysis {
-                declared: Vec::new(),
+                declared: BTreeSet::new(),
                 reads,
-                is_side_effect: true,
+                local_effects: BTreeSet::new(),
+                export_aliases: BTreeSet::new(),
+                side_effect: SideEffectKind::Hard,
             }
         }
         ModuleItem::Stmt(_) => {
             let mut reads = BTreeSet::new();
-            collect_idents(item, &mut reads);
+            collect_refs(item, &mut reads);
             ItemAnalysis {
-                declared: Vec::new(),
+                declared: BTreeSet::new(),
                 reads,
-                is_side_effect: true,
+                local_effects: BTreeSet::new(),
+                export_aliases: BTreeSet::new(),
+                side_effect: SideEffectKind::Hard,
             }
         }
     }
@@ -437,44 +648,54 @@ fn classify_decl(decl: &Decl) -> ItemAnalysis {
     let mut reads = BTreeSet::new();
     match decl {
         Decl::Fn(fn_decl) => {
-            let declared = vec![fn_decl.ident.sym.to_string()];
-            collect_idents(&fn_decl.function, &mut reads);
-            reads.remove(fn_decl.ident.sym.as_ref());
+            let declared = BTreeSet::from([fn_decl.ident.to_id()]);
+            collect_refs(&fn_decl.function, &mut reads);
+            reads.remove(&fn_decl.ident.to_id());
             ItemAnalysis {
                 declared,
                 reads,
-                is_side_effect: false,
+                local_effects: BTreeSet::new(),
+                export_aliases: BTreeSet::new(),
+                side_effect: SideEffectKind::None,
             }
         }
         Decl::Class(class_decl) => {
-            let declared = vec![class_decl.ident.sym.to_string()];
-            collect_idents(&class_decl.class, &mut reads);
-            reads.remove(class_decl.ident.sym.as_ref());
+            let declared = BTreeSet::from([class_decl.ident.to_id()]);
+            collect_refs(&class_decl.class, &mut reads);
+            reads.remove(&class_decl.ident.to_id());
             ItemAnalysis {
                 declared,
                 reads,
-                is_side_effect: false,
+                local_effects: BTreeSet::new(),
+                export_aliases: BTreeSet::new(),
+                side_effect: SideEffectKind::None,
             }
         }
         Decl::Var(var) => {
-            let mut declared = Vec::new();
+            let mut declared = BTreeSet::new();
             let mut has_side_effect_init = false;
             for d in &var.decls {
-                collect_pat_names(&d.name, &mut declared);
+                declared.extend(binding_names(&d.name));
                 if let Some(init) = &d.init {
                     if !is_pure_expr(init) {
                         has_side_effect_init = true;
                     }
-                    collect_idents(&**init, &mut reads);
+                    collect_refs(&**init, &mut reads);
                 }
             }
-            for name in &declared {
-                reads.remove(name.as_str());
+            for id in &declared {
+                reads.remove(id);
             }
             ItemAnalysis {
                 declared,
                 reads,
-                is_side_effect: has_side_effect_init,
+                local_effects: BTreeSet::new(),
+                export_aliases: BTreeSet::new(),
+                side_effect: if has_side_effect_init {
+                    SideEffectKind::Hard
+                } else {
+                    SideEffectKind::None
+                },
             }
         }
         Decl::Using(_)
@@ -482,14 +703,134 @@ fn classify_decl(decl: &Decl) -> ItemAnalysis {
         | Decl::TsTypeAlias(_)
         | Decl::TsEnum(_)
         | Decl::TsModule(_) => {
-            collect_idents(decl, &mut reads);
+            collect_refs(decl, &mut reads);
             ItemAnalysis {
-                declared: Vec::new(),
+                declared: BTreeSet::new(),
                 reads,
-                is_side_effect: true,
+                local_effects: BTreeSet::new(),
+                export_aliases: BTreeSet::new(),
+                side_effect: SideEffectKind::Hard,
             }
         }
     }
+}
+
+fn classify_expr_stmt(expr: &Expr) -> ItemAnalysis {
+    let mut reads = BTreeSet::new();
+    collect_refs(expr, &mut reads);
+    let local_effects = local_mutation_targets(expr);
+    ItemAnalysis {
+        declared: BTreeSet::new(),
+        reads,
+        local_effects: local_effects.clone(),
+        export_aliases: BTreeSet::new(),
+        side_effect: if local_effects.is_empty() {
+            SideEffectKind::Hard
+        } else {
+            SideEffectKind::LocalMutation
+        },
+    }
+}
+
+fn local_mutation_targets(expr: &Expr) -> BTreeSet<Id> {
+    match expr {
+        Expr::Assign(assign) => {
+            let mut recorder = LocalEffectRecorder::default();
+            record_assign_target(&assign.left, &mut recorder);
+            recorder.member_writes
+        }
+        Expr::Update(update) => {
+            let mut recorder = LocalEffectRecorder::default();
+            record_update_target(&update.arg, &mut recorder);
+            recorder.member_writes
+        }
+        Expr::Call(call) => local_mutation_call_target(call).into_iter().collect(),
+        Expr::Seq(seq) => seq
+            .exprs
+            .iter()
+            .flat_map(|expr| local_mutation_targets(expr))
+            .collect(),
+        Expr::Paren(paren) => local_mutation_targets(&paren.expr),
+        _ => BTreeSet::new(),
+    }
+}
+
+#[derive(Default)]
+struct LocalEffectRecorder {
+    member_writes: BTreeSet<Id>,
+}
+
+impl TargetAccessRecorder for LocalEffectRecorder {
+    fn record_binding_write(&mut self, _id: &Id) {}
+
+    fn record_member_write(&mut self, id: &Id) {
+        self.member_writes.insert(id.clone());
+    }
+}
+
+fn local_mutation_call_target(call: &CallExpr) -> Option<Id> {
+    let Callee::Expr(callee) = &call.callee else {
+        return None;
+    };
+    let Expr::Member(member) = &**callee else {
+        return None;
+    };
+    let Expr::Ident(object) = &*member.obj else {
+        return None;
+    };
+    if object.sym.as_ref() != "Object" {
+        return None;
+    }
+    let method = static_member_name(&member.prop)?;
+    if !matches!(
+        method.as_str(),
+        "defineProperty" | "defineProperties" | "assign"
+    ) {
+        return None;
+    }
+    let first_arg = call.args.first()?;
+    local_member_owner(&first_arg.expr)
+}
+
+fn local_member_owner(expr: &Expr) -> Option<Id> {
+    match expr {
+        Expr::Ident(ident) => Some(ident.to_id()),
+        Expr::Member(member) => local_member_owner(&member.obj),
+        Expr::Paren(paren) => local_member_owner(&paren.expr),
+        _ => None,
+    }
+}
+
+fn static_member_name(prop: &MemberProp) -> Option<String> {
+    match prop {
+        MemberProp::Ident(ident) => Some(ident.sym.to_string()),
+        MemberProp::PrivateName(name) => Some(name.name.to_string()),
+        MemberProp::Computed(computed) => match &*computed.expr {
+            Expr::Lit(Lit::Str(value)) => Some(value.value.to_string_lossy().into_owned()),
+            _ => None,
+        },
+    }
+}
+
+fn export_aliases_from_named(named: &NamedExport) -> BTreeSet<String> {
+    named
+        .specifiers
+        .iter()
+        .filter_map(|spec| match spec {
+            ExportSpecifier::Named(named_spec) => Some(
+                named_spec
+                    .exported
+                    .as_ref()
+                    .map(module_export_name)
+                    .unwrap_or_else(|| module_export_name(&named_spec.orig)),
+            ),
+            _ => None,
+        })
+        .collect()
+}
+
+fn id_name(id: &Id) -> String {
+    id.0.to_string()
 }
 
 fn collect_pat_names(pat: &Pat, out: &mut Vec<String>) {
@@ -564,25 +905,34 @@ fn is_pure_prop(prop: &Prop) -> bool {
     }
 }
 
-/// Walk any AST node and collect every `Ident` symbol that appears.
-/// Over-approximation: returns names regardless of whether they refer
-/// to a chunk-local top-level binding or a lexical local. For DCE
-/// reachability that's safe (we err on the side of keeping things).
-fn collect_idents<T>(node: &T, out: &mut BTreeSet<String>)
+/// Walk any AST node and collect referenced binding identities. This
+/// intentionally ignores binding positions and static property keys:
+/// reachability follows actual local cells, not printed names.
+fn collect_refs<T>(node: &T, out: &mut BTreeSet<Id>)
 where
-    for<'a> T: VisitWith<IdentCollector<'a>>,
+    for<'a> T: VisitWith<RefCollector<'a>>,
 {
-    let mut visitor = IdentCollector { out };
+    let mut visitor = RefCollector { out };
     node.visit_with(&mut visitor);
 }
 
-struct IdentCollector<'a> {
-    out: &'a mut BTreeSet<String>,
+struct RefCollector<'a> {
+    out: &'a mut BTreeSet<Id>,
 }
 
-impl Visit for IdentCollector<'_> {
+impl Visit for RefCollector<'_> {
     fn visit_ident(&mut self, ident: &Ident) {
-        self.out.insert(ident.sym.to_string());
+        self.out.insert(ident.to_id());
+    }
+
+    fn visit_binding_ident(&mut self, _ident: &BindingIdent) {}
+
+    fn visit_import_decl(&mut self, _import: &ImportDecl) {}
+
+    fn visit_var_declarator(&mut self, decl: &VarDeclarator) {
+        if let Some(init) = &decl.init {
+            init.visit_with(self);
+        }
     }
 
     fn visit_member_prop(&mut self, prop: &MemberProp) {
@@ -743,36 +1093,43 @@ mod tests {
     }
 
     #[test]
-    fn keeps_implementation_when_cross_referenced() {
+    fn bails_when_swapped_implementation_is_residually_reachable() {
         let mut module = parse(
             "class ZodObject {}\nconst object = ()=>new ZodObject();\nexport { object as o, ZodObject as Z };\n",
         );
-        strip_one_chunk(&mut module, &mk_symbols(&["o"]), "chunk.js").unwrap();
-        let emitted = emit(&module);
+        let err = strip_one_chunk(&mut module, &mk_symbols(&["o"]), "chunk.js")
+            .expect_err("split-brain residual reachability should fail");
         assert!(
-            emitted.contains("class ZodObject"),
-            "live cross-ref should keep ZodObject:\n{emitted}",
-        );
-        assert!(
-            !emitted.contains("const object"),
-            "dead `object` body should be removed:\n{emitted}",
-        );
-        assert!(
-            emitted.contains("ZodObject as Z"),
-            "residual export of ZodObject should remain:\n{emitted}",
+            err.to_string().contains("split-brain vendor swap"),
+            "wrong error: {err}",
         );
     }
 
     #[test]
     fn retains_side_effect_init_among_swapped() {
-        let mut module = parse(
-            "const carrier = {};\nObject.defineProperty(carrier, \"_zod\", { value: {} });\nexport const e6 = ()=>true;\n",
-        );
+        let mut module = parse("console.log(\"keep\");\nexport const e6 = ()=>true;\n");
         strip_one_chunk(&mut module, &mk_symbols(&["e6"]), "chunk.js").unwrap();
         let emitted = emit(&module);
         assert!(
-            emitted.contains("Object.defineProperty"),
+            emitted.contains("console.log"),
             "side-effect should be retained:\n{emitted}",
+        );
+    }
+
+    #[test]
+    fn drops_local_member_writes_in_swapped_island() {
+        let mut module = parse(
+            "class Widget {}\nWidget.displayName = \"Widget\";\nconst make = () => Widget;\nexport { make as swapped };\n",
+        );
+        strip_one_chunk(&mut module, &mk_symbols(&["swapped"]), "chunk.js").unwrap();
+        let emitted = emit(&module);
+        assert!(
+            !emitted.contains("Widget"),
+            "swapped implementation island should be removed:\n{emitted}",
+        );
+        assert!(
+            !emitted.contains("displayName"),
+            "local class metadata write should be removed with the class:\n{emitted}",
         );
     }
 
@@ -793,11 +1150,14 @@ mod tests {
         let module = parse("const a = sideEffect();\n");
         let an = classify_item(&module.body[0]);
         assert!(
-            an.is_side_effect,
+            an.side_effect == SideEffectKind::Hard,
             "call init should be a side-effect anchor"
         );
-        assert_eq!(an.declared, vec!["a".to_string()]);
-        assert!(an.reads.contains("sideEffect"));
+        assert_eq!(
+            an.declared.iter().map(id_name).collect::<Vec<_>>(),
+            vec!["a".to_string()]
+        );
+        assert!(an.reads.iter().any(|id| id_name(id) == "sideEffect"));
     }
 
     #[test]
@@ -805,7 +1165,7 @@ mod tests {
         let module = parse("const a = { x: 1 };\n");
         let an = classify_item(&module.body[0]);
         assert!(
-            !an.is_side_effect,
+            an.side_effect == SideEffectKind::None,
             "object literal init should be a pure decl",
         );
     }
