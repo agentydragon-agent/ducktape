@@ -182,9 +182,6 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "$GITHUB_TOKEN" \
-            | crane auth login ghcr.io -u x-access-token --password-stdin
-
           LOCAL_DIGEST=$(cat "$DIGEST_FILE")
 
           # Newest devel-* tag = the one Flux ImagePolicy currently picks
