@@ -5,7 +5,7 @@ handlers are registered with their real request/response models without
 needing a live database. `app.openapi()` only inspects route signatures —
 handler bodies (which would touch the store) are never invoked here.
 
-The output JSON feeds `//x/auragon_study_casino/frontend/lib:schema_zod`,
+The output JSON feeds `//x/study_casino/frontend/lib:schema_zod`,
 which runs `@hey-api/openapi-ts --plugins zod` to produce
 `lib/api/schema.zod.mjs` for the frontend's fetch-boundary validators.
 """
@@ -15,10 +15,10 @@ from __future__ import annotations
 import json
 from typing import Any, cast
 
-from x.auragon_study_casino.app import create_app
-from x.auragon_study_casino.config import Settings
-from x.auragon_study_casino.state import WsStateChangedMessage
-from x.auragon_study_casino.store import SqlStore
+from x.study_casino.app import create_app
+from x.study_casino.config import Settings
+from x.study_casino.state import WsStateChangedMessage
+from x.study_casino.store import SqlStore
 
 
 class _StubStore:

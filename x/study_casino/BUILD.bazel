@@ -138,15 +138,15 @@ py_library(
 
 py_binary(
     name = "export_schema_bin",
-    main_module = "x.auragon_study_casino.export_schema",
+    main_module = "x.study_casino.export_schema",
     visibility = ["//visibility:public"],
     deps = [":export_schema_lib"],
 )
 
 py_binary(
     name = "server",
-    data = ["//x/auragon_study_casino/frontend:bundle"],
-    main_module = "x.auragon_study_casino.app",
+    data = ["//x/study_casino/frontend:bundle"],
+    main_module = "x.study_casino.app",
     visibility = ["//visibility:public"],
     deps = [":app"],
 )
@@ -240,7 +240,7 @@ py_test(
 
 aspect_py_binary(
     name = "server_bin",
-    data = ["//x/auragon_study_casino/frontend:bundle"],
+    data = ["//x/study_casino/frontend:bundle"],
     main = "app.py",
     deps = [":app"],
 )

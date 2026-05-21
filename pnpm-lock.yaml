@@ -409,7 +409,9 @@ importers:
         specifier: ^2.1.1
         version: 2.1.9(@types/node@24.12.2)(jsdom@25.0.1)(lightningcss@1.32.0)
 
-  x/auragon_study_casino/frontend:
+  x/rspcache/admin_ui: {}
+
+  x/study_casino/frontend:
     dependencies:
       react:
         specifier: ^18.3.1
@@ -427,8 +429,6 @@ importers:
       vite:
         specifier: ^6.3.5
         version: 6.4.2(@types/node@24.12.2)(jiti@2.6.1)(lightningcss@1.32.0)(yaml@2.8.3)
-
-  x/rspcache/admin_ui: {}
 
 packages:
 

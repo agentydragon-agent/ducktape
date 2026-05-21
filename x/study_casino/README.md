@@ -1,4 +1,4 @@
-# auragon_study_casino
+# study_casino
 
 Single-user habit-tracking "casino" — study for a session, earn credits,
 gamble those credits in the casino for tokens, then spend tokens on
@@ -140,19 +140,19 @@ structured detail (e.g., `rule="insufficient_credits"`).
 ## Build
 
 ```bash
-bbr test //x/auragon_study_casino/...  //x/auragon_study_casino/tests/...
-bbr build //x/auragon_study_casino:image
+bbr test //x/study_casino/...  //x/study_casino/tests/...
+bbr build //x/study_casino:image
 ```
 
 Local dev:
 
 ```bash
 # Iterate on the frontend with Vite's HMR dev server:
-cd x/auragon_study_casino/frontend && pnpm exec vite
+cd x/study_casino/frontend && pnpm exec vite
 
 # Or build the production bundle once (matches what Bazel produces):
-cd x/auragon_study_casino/frontend && pnpm exec vite build
+cd x/study_casino/frontend && pnpm exec vite build
 
 # Run the backend against the local dist:
-bb run --remote_executor="" //x/auragon_study_casino:server
+bb run --remote_executor="" //x/study_casino:server
 ```

@@ -3,8 +3,8 @@
 // a screenshot, and pixel-diffs against
 // tests/baselines/main_page-chromium-linux.png.
 //
-// Run:    bazel test //x/auragon_study_casino/frontend:visual_main_page
-// Update: bazel run  //x/auragon_study_casino/frontend:visual_main_page -- --update
+// Run:    bazel test //x/study_casino/frontend:visual_main_page
+// Update: bazel run  //x/study_casino/frontend:visual_main_page -- --update
 
 import { main } from "../../../../util/testing/frontend_visual/visual-test-lib.mjs";
 

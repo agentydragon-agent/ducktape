@@ -11,11 +11,11 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
-from x.auragon_study_casino.app import create_app
-from x.auragon_study_casino.config import Settings
-from x.auragon_study_casino.games import RNG_VERSION, draw_cards, make_shoe, spin_roulette
-from x.auragon_study_casino.models import BlackjackHandRow, RngActionAuditRow, RngCallAuditRow
-from x.auragon_study_casino.rng import AuditedRandom
+from x.study_casino.app import create_app
+from x.study_casino.config import Settings
+from x.study_casino.games import RNG_VERSION, draw_cards, make_shoe, spin_roulette
+from x.study_casino.models import BlackjackHandRow, RngActionAuditRow, RngCallAuditRow
+from x.study_casino.rng import AuditedRandom
 
 _TEST_RNG_SECRET = "test-auditable-rng-secret-with-enough-bytes"
 

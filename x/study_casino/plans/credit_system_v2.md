@@ -395,7 +395,7 @@ When on break:
 
 ## Constants Module
 
-`x/auragon_study_casino/credit_constants.py`:
+`x/study_casino/credit_constants.py`:
 
 ```python
 from decimal import Decimal

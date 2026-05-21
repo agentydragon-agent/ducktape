@@ -1,21 +1,21 @@
 """Full-page visual goldens for each casino view + each game.
 
 Run produces a PNG per (view, viewport) case and compares against the checked-in
-baseline under `x/auragon_study_casino/frontend/__screenshots__/`.
+baseline under `x/study_casino/frontend/__screenshots__/`.
 
 Update flow for intentional frontend changes:
 
     bbr test --test_env=UPDATE_GOLDEN=1 --nocache_test_results \\
-      //x/auragon_study_casino/tests:visual_golden_test
+      //x/study_casino/tests:visual_golden_test
 
 Then download the produced PNGs from the test's undeclared outputs and copy
-them into `x/auragon_study_casino/frontend/__screenshots__/`. Using the
+them into `x/study_casino/frontend/__screenshots__/`. Using the
 invocation id printed by bbr:
 
     INV="<invocation-id>"
     for f in $(bbapi artifact "$INV" --list | grep '\\.png$'); do
       bbapi artifact "$INV" "test.outputs/$f" \\
-        > x/auragon_study_casino/frontend/__screenshots__/"$f"
+        > x/study_casino/frontend/__screenshots__/"$f"
     done
 """
 
@@ -46,8 +46,8 @@ from util.net import pick_free_port
 from util.oci import load_oci_image
 from util.testing.png_diff import assert_png_matches_golden
 from util.testing.undeclared_outputs import undeclared_outputs_dir
-from x.auragon_study_casino.app import create_app
-from x.auragon_study_casino.config import Settings
+from x.study_casino.app import create_app
+from x.study_casino.config import Settings
 
 pytest_plugins = ("util.playwright",)
 
@@ -151,7 +151,7 @@ def casino_server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
         db_url = f"postgresql+psycopg://postgres:postgres@{host}:{port}/casino"
 
         tmp_path = tmp_path_factory.mktemp("casino-visual-server")
-        frontend_dist = get_required_path("_main/x/auragon_study_casino/frontend/dist/index.html").parent
+        frontend_dist = get_required_path("_main/x/study_casino/frontend/dist/index.html").parent
 
         # The visual goldens want a non-empty UI for prizes/stats. Seed a few
         # sessions and a token balance via the server's own action endpoints
@@ -313,13 +313,13 @@ def test_casino_visual_golden(browser: Browser, casino_server: str, tmp_path: Pa
         return
 
     try:
-        expected_path = get_required_path(f"_main/x/auragon_study_casino/frontend/__screenshots__/{out_name}")
+        expected_path = get_required_path(f"_main/x/study_casino/frontend/__screenshots__/{out_name}")
     except RuntimeError:
         shutil.copy(first_path, undeclared_dir / out_name)
         raise AssertionError(
             f"No casino visual golden checked in for {out_name}. Re-run with UPDATE_GOLDEN=1 "
             f"and copy the produced PNG from undeclared outputs into "
-            f"x/auragon_study_casino/frontend/__screenshots__/."
+            f"x/study_casino/frontend/__screenshots__/."
         ) from None
 
     assert_png_matches_golden(

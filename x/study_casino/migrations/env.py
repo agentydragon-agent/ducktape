@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from alembic import context
 
-from x.auragon_study_casino.models import Base
+from x.study_casino.models import Base
 
 
 def run_migrations() -> None:

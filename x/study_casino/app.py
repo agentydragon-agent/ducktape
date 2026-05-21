@@ -54,7 +54,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from x.auragon_study_casino.actions import (
+from x.study_casino.actions import (
     ActionRequest,
     ActionResponse,
     AddPastSessionRequest,
@@ -84,9 +84,9 @@ from x.auragon_study_casino.actions import (
     SlotsActionResult,
     SlotsSpinRequest,
 )
-from x.auragon_study_casino.auth import create_oidc_router, decode_session_token, make_current_user_dep
-from x.auragon_study_casino.config import Settings
-from x.auragon_study_casino.events import (
+from x.study_casino.auth import create_oidc_router, decode_session_token, make_current_user_dep
+from x.study_casino.config import Settings
+from x.study_casino.events import (
     BlackjackOutcome,
     GameEventMutation,
     GameEventRead,
@@ -94,7 +94,7 @@ from x.auragon_study_casino.events import (
     RouletteOutcome,
     SlotsOutcome,
 )
-from x.auragon_study_casino.games import (
+from x.study_casino.games import (
     RNG_VERSION,
     dealer_play,
     draw_cards,
@@ -106,11 +106,11 @@ from x.auragon_study_casino.games import (
     spin_roulette,
     spin_slots,
 )
-from x.auragon_study_casino.models import BalanceRow, BlackjackHandRow, PrizeLogRow, PrizeRow, SessionRow
-from x.auragon_study_casino.rng import ActionRngFactory, AuditedRandom
-from x.auragon_study_casino.state import AdminUsersResponse, HealthResponse, MeResponse, StateDump
-from x.auragon_study_casino.stats import CasinoStats
-from x.auragon_study_casino.store import ActionMutation, ActionRejectedError, SqlStore
+from x.study_casino.models import BalanceRow, BlackjackHandRow, PrizeLogRow, PrizeRow, SessionRow
+from x.study_casino.rng import ActionRngFactory, AuditedRandom
+from x.study_casino.state import AdminUsersResponse, HealthResponse, MeResponse, StateDump
+from x.study_casino.stats import CasinoStats
+from x.study_casino.store import ActionMutation, ActionRejectedError, SqlStore
 
 logger = logging.getLogger(__name__)
 _BLACKJACK_HAND_NAMESPACE = uuid.UUID("4d19699a-09bd-42e4-ae00-c5bc10d39683")

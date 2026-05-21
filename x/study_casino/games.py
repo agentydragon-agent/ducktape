@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from x.auragon_study_casino.rng import AuditedRandom
+from x.study_casino.rng import AuditedRandom
 
 RNG_VERSION = "server-hmac-sha256-v1"
 RULES_VERSION = "server-rules-v1"

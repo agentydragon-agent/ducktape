@@ -9,10 +9,10 @@ import pytest_bazel
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
-from x.auragon_study_casino.actions import ConvertResult, ImportData, ImportPrize, ImportResult, ResetResult
-from x.auragon_study_casino.models import BalanceRow, GameEventRow, StateSnapshotRow
-from x.auragon_study_casino.state import BalanceRead
-from x.auragon_study_casino.store import ActionMutation, ActionRejectedError, ServerActionResult, SqlStore
+from x.study_casino.actions import ConvertResult, ImportData, ImportPrize, ImportResult, ResetResult
+from x.study_casino.models import BalanceRow, GameEventRow, StateSnapshotRow
+from x.study_casino.state import BalanceRead
+from x.study_casino.store import ActionMutation, ActionRejectedError, ServerActionResult, SqlStore
 
 
 @pytest.fixture

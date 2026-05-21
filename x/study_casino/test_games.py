@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest_bazel
 
-from x.auragon_study_casino.games import settle_blackjack, theoretical_bucket_rtp
+from x.study_casino.games import settle_blackjack, theoretical_bucket_rtp
 
 
 def _card(rank: str, suit: str = "♠") -> dict[str, str]:

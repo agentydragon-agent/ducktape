@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest_bazel
 
-from x.auragon_study_casino.games import BLACKJACK_DECKS, RNG_VERSION, make_shoe, spin_roulette, spin_slots
-from x.auragon_study_casino.rng import ActionRngFactory, AuditedRandom
+from x.study_casino.games import BLACKJACK_DECKS, RNG_VERSION, make_shoe, spin_roulette, spin_slots
+from x.study_casino.rng import ActionRngFactory, AuditedRandom
 
 _SECRET = b"test-auditable-rng-secret-with-enough-bytes"
 

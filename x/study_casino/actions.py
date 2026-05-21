@@ -13,7 +13,7 @@ from typing import Literal
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
-from x.auragon_study_casino.events import Card, GameEventRead, LedgerEventRead, RouletteOutcome, SlotsOutcome
+from x.study_casino.events import Card, GameEventRead, LedgerEventRead, RouletteOutcome, SlotsOutcome
 
 _ACTION_ID_PATTERN = r"^[a-zA-Z0-9._:@-]+$"
 

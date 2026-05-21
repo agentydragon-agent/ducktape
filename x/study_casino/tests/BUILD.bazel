@@ -8,7 +8,7 @@ py_test(
         "test_e2e_browser.py",
     ],
     data = [
-        "//x/auragon_study_casino/frontend:bundle",
+        "//x/study_casino/frontend:bundle",
         "@playwright_browsers//:chromium-headless-shell",
     ],
     env = {
@@ -19,9 +19,9 @@ py_test(
         "//util:net",
         "//util:playwright",
         "//util/bazel:runfiles",
-        "//x/auragon_study_casino:app",
-        "//x/auragon_study_casino:config",
-        "//x/auragon_study_casino:conftest",
+        "//x/study_casino:app",
+        "//x/study_casino:config",
+        "//x/study_casino:conftest",
         "@pypi//playwright",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -36,8 +36,8 @@ py_test(
     data = [
         "//third_party/containers:postgres_18",
         "//third_party/containers:ryuk",
-        "//x/auragon_study_casino/frontend:bundle",
-        "//x/auragon_study_casino/frontend:visual_golden_snapshots",
+        "//x/study_casino/frontend:bundle",
+        "//x/study_casino/frontend:visual_golden_snapshots",
         "@playwright_browsers//:chromium-headless-shell",
     ],
     env = {
@@ -52,8 +52,8 @@ py_test(
         "//util/bazel:runfiles",
         "//util/testing:png_diff",
         "//util/testing:undeclared_outputs",
-        "//x/auragon_study_casino:app",
-        "//x/auragon_study_casino:config",
+        "//x/study_casino:app",
+        "//x/study_casino:config",
         "@pypi//playwright",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

@@ -25,8 +25,8 @@ from sqlalchemy import create_engine, delete, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from x.auragon_study_casino.actions import ActionResult, ImportData
-from x.auragon_study_casino.events import (
+from x.study_casino.actions import ActionResult, ImportData
+from x.study_casino.events import (
     BlackjackOutcome,
     GameEventMutation,
     GameEventRead,
@@ -37,8 +37,8 @@ from x.auragon_study_casino.events import (
     game_event_from_row,
     ledger_event_from_row,
 )
-from x.auragon_study_casino.games import RULES_VERSION, theoretical_bucket_rtp
-from x.auragon_study_casino.models import (
+from x.study_casino.games import RULES_VERSION, theoretical_bucket_rtp
+from x.study_casino.models import (
     BalanceRow,
     GameEventRow,
     LedgerEventRow,
@@ -49,9 +49,9 @@ from x.auragon_study_casino.models import (
     SessionRow,
     StateSnapshotRow,
 )
-from x.auragon_study_casino.rng import RngActionAudit
-from x.auragon_study_casino.state import BalanceRead, PrizeLogRead, PrizeRead, SessionRead, StateDump
-from x.auragon_study_casino.stats import (
+from x.study_casino.rng import RngActionAudit
+from x.study_casino.state import BalanceRead, PrizeLogRead, PrizeRead, SessionRead, StateDump
+from x.study_casino.stats import (
     SERVER_RESOLVED_SINCE_DATE,
     BlackjackOutcomeFreq,
     BlackjackSlice,

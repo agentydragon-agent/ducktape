@@ -4,7 +4,7 @@ These mirror the JSON shapes the frontend consumes from
 `GET /state`, `/me`, `/admin/users`, and `/healthz`. Keeping them as
 Pydantic models — instead of `dict[str, Any]` — lets FastAPI emit
 real `components.schemas` entries in its OpenAPI doc, which the
-frontend codegen (`//x/auragon_study_casino/frontend/lib:schema_zod`)
+frontend codegen (`//x/study_casino/frontend/lib:schema_zod`)
 turns into Zod schemas for runtime parsing at the fetch boundary.
 
 State-mutating action requests/responses live in `actions.py`;

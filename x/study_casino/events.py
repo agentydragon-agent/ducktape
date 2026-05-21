@@ -13,7 +13,7 @@ from typing import Any, Literal, cast
 
 from pydantic import BaseModel, ConfigDict
 
-from x.auragon_study_casino.models import GameEventRow, LedgerEventRow
+from x.study_casino.models import GameEventRow, LedgerEventRow
 
 
 class Card(BaseModel):

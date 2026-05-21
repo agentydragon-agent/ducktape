@@ -8,7 +8,7 @@
 //
 // Wire surface is typed: every fetch boundary `.parse()`s the JSON body
 // through a Zod schema generated from the backend's FastAPI OpenAPI doc —
-// see `//x/auragon_study_casino/frontend/lib:schema_zod`. Schema drift
+// see `//x/study_casino/frontend/lib:schema_zod`. Schema drift
 // surfaces as a `ZodError` at the parse site, not as a downstream undefined
 // in a JSX component.
 //

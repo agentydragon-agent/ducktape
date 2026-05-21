@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 import pytest_bazel
 
-from x.auragon_study_casino.config import Settings
+from x.study_casino.config import Settings
 
 _DUMMY_URL = "postgresql+psycopg://u:p@host/db"
 

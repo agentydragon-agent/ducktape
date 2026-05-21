@@ -24,8 +24,8 @@ import uvicorn
 
 from util.bazel.runfiles import get_required_path
 from util.net import pick_free_port
-from x.auragon_study_casino.app import create_app
-from x.auragon_study_casino.config import Settings
+from x.study_casino.app import create_app
+from x.study_casino.config import Settings
 
 if TYPE_CHECKING:
     from playwright.sync_api import Browser, Page, Playwright, Route
@@ -63,7 +63,7 @@ def page(browser: Browser) -> Iterator[Page]:
 
 @pytest.fixture
 def casino_server(db_url: str) -> Iterator[str]:
-    frontend_dist = get_required_path("_main/x/auragon_study_casino/frontend/dist/index.html").parent
+    frontend_dist = get_required_path("_main/x/study_casino/frontend/dist/index.html").parent
     settings = Settings(database_url=db_url, frontend_dist_dir=frontend_dist)
     app = create_app(settings)
     port = pick_free_port("127.0.0.1")
