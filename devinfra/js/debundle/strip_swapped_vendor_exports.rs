@@ -2,13 +2,16 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use analysis::{AnalysisHints, LocalEffectPolicy, StatementFacts, analyze_chunk};
 use anyhow::{Context, Result, bail};
-use binding_targets::{binding_name_strings, declaration_ids, declaration_name_strings, module_export_name};
+use binding_targets::{
+    binding_name_strings, declaration_ids, declaration_name_strings, module_export_name,
+};
 use serde::Serialize;
 use swc_common::sync::Lrc;
 use swc_common::{DUMMY_SP, SourceMap};
 use swc_ecma_ast::*;
 use swc_ecma_codegen::text_writer::JsWriter;
 use swc_ecma_codegen::{Config, Emitter};
+use swc_ecma_visit::{Visit, VisitWith};
 
 use artifact::{ChunkBundle, JsFile, get_chunk_entry_path};
 use spec::{PartialSwapSymbol, VendorLevel, VendorMark};
@@ -489,6 +492,7 @@ fn sweep_unreachable_top_level(
         &declarer,
         &mutation_items_by_target,
         &residual_export_closure,
+        &shareable_items,
     );
 
     let mut live = vec![false; analyses.len()];
@@ -598,6 +602,9 @@ fn compute_shareable_items(
         .iter()
         .map(|analysis| analysis.shareable_helper)
         .collect::<Vec<_>>();
+    for i in vite_preload_dependency_items(analyses, items, declarer) {
+        shareable[i] = true;
+    }
 
     loop {
         let mut changed = false;
@@ -622,6 +629,31 @@ fn compute_shareable_items(
     }
 
     shareable
+}
+
+fn vite_preload_dependency_items(
+    analyses: &[ItemAnalysis],
+    items: &[ModuleItem],
+    declarer: &BTreeMap<Id, usize>,
+) -> BTreeSet<usize> {
+    let mut out = BTreeSet::new();
+    for (i, item) in items.iter().enumerate() {
+        if !item_is_vite_preload_helper(item) {
+            continue;
+        }
+        for id in analyses[i]
+            .reads
+            .iter()
+            .chain(analyses[i].local_effects.iter())
+        {
+            if let Some(&dep_idx) = declarer.get(id)
+                && item_is_vite_preload_dependency_cell(&items[dep_idx])
+            {
+                out.insert(dep_idx);
+            }
+        }
+    }
+    out
 }
 
 fn replacement_facade_shareable(
@@ -692,6 +724,7 @@ fn absorb_swapped_dependent_items(
     declarer: &BTreeMap<Id, usize>,
     mutation_items_by_target: &BTreeMap<Id, Vec<usize>>,
     residual_export_closure: &BTreeSet<usize>,
+    shareable_items: &[bool],
 ) {
     loop {
         let mut queue = Vec::new();
@@ -704,7 +737,9 @@ fn absorb_swapped_dependent_items(
             let mut blocked_by_residual_dependency = false;
             for dep_idx in dependency_items(analysis, declarer, mutation_items_by_target) {
                 saw_declared_dependency = true;
-                if residual_export_closure.contains(&dep_idx) {
+                if residual_export_closure.contains(&dep_idx)
+                    && !shareable_items.get(dep_idx).copied().unwrap_or(false)
+                {
                     blocked_by_residual_dependency = true;
                     break;
                 }
@@ -1019,8 +1054,80 @@ fn item_is_shareable_helper(item: &ModuleItem) -> bool {
         | ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
             decl: Decl::Var(var),
             ..
-        })) => is_shareable_intrinsic_alias_var(var),
+        })) => {
+            is_shareable_literal_var(var)
+                || is_shareable_function_var(var)
+                || is_shareable_intrinsic_alias_var(var)
+                || is_shareable_vite_map_deps_var(var)
+                || is_shareable_global_object_fallback_var(var)
+        }
         _ => false,
+    }
+}
+
+fn item_is_vite_preload_dependency_cell(item: &ModuleItem) -> bool {
+    let Some(var) = item_var_decl(item) else {
+        return false;
+    };
+    is_shareable_literal_var(var) || is_shareable_function_var(var) || is_empty_object_var(var)
+}
+
+fn item_is_vite_preload_helper(item: &ModuleItem) -> bool {
+    let Some(var) = item_var_decl(item) else {
+        return false;
+    };
+    let [decl] = var.decls.as_slice() else {
+        return false;
+    };
+    let Some(init) = decl.init.as_deref() else {
+        return false;
+    };
+    let Some(body) = function_like_body(init) else {
+        return false;
+    };
+    let mut probe = VitePreloadProbe::default();
+    body.visit_with(&mut probe);
+    probe.promise_all_settled && probe.document_create_element && probe.window_dispatch_event
+}
+
+fn item_var_decl(item: &ModuleItem) -> Option<&VarDecl> {
+    match item {
+        ModuleItem::Stmt(Stmt::Decl(Decl::Var(var)))
+        | ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
+            decl: Decl::Var(var),
+            ..
+        })) => Some(var),
+        _ => None,
+    }
+}
+
+fn function_like_body(expr: &Expr) -> Option<&BlockStmt> {
+    match expr {
+        Expr::Fn(function) => function.function.body.as_ref(),
+        Expr::Arrow(arrow) => match arrow.body.as_ref() {
+            BlockStmtOrExpr::BlockStmt(body) => Some(body),
+            BlockStmtOrExpr::Expr(_) => None,
+        },
+        _ => None,
+    }
+}
+
+#[derive(Default)]
+struct VitePreloadProbe {
+    promise_all_settled: bool,
+    document_create_element: bool,
+    window_dispatch_event: bool,
+}
+
+impl Visit for VitePreloadProbe {
+    fn visit_call_expr(&mut self, call: &CallExpr) {
+        if let Callee::Expr(callee) = &call.callee {
+            self.promise_all_settled |= is_static_member_call(callee, "Promise", "allSettled");
+            self.document_create_element |=
+                is_static_member_call(callee, "document", "createElement");
+            self.window_dispatch_event |= is_static_member_call(callee, "window", "dispatchEvent");
+        }
+        call.visit_children_with(self);
     }
 }
 
@@ -1067,6 +1174,47 @@ fn is_shareable_intrinsic_alias_var(var: &VarDecl) -> bool {
         })
 }
 
+fn is_shareable_literal_var(var: &VarDecl) -> bool {
+    !var.decls.is_empty()
+        && var.decls.iter().all(|decl| {
+            matches!(&decl.name, Pat::Ident(_))
+                && decl.init.as_deref().is_some_and(is_primitive_literal_expr)
+        })
+}
+
+fn is_shareable_function_var(var: &VarDecl) -> bool {
+    !var.decls.is_empty()
+        && var.decls.iter().all(|decl| {
+            matches!(&decl.name, Pat::Ident(_))
+                && matches!(
+                    decl.init.as_deref(),
+                    Some(Expr::Fn(_)) | Some(Expr::Arrow(_))
+                )
+        })
+}
+
+fn is_empty_object_var(var: &VarDecl) -> bool {
+    !var.decls.is_empty() && var.decls.iter().all(|decl| {
+        matches!(&decl.name, Pat::Ident(_))
+            && matches!(decl.init.as_deref(), Some(Expr::Object(object)) if object.props.is_empty())
+    })
+}
+
+fn is_primitive_literal_expr(expr: &Expr) -> bool {
+    match expr {
+        Expr::Paren(paren) => is_primitive_literal_expr(&paren.expr),
+        Expr::Lit(
+            Lit::Str(_)
+            | Lit::Num(_)
+            | Lit::Bool(_)
+            | Lit::Null(_)
+            | Lit::BigInt(_)
+            | Lit::Regex(_),
+        ) => true,
+        _ => false,
+    }
+}
+
 fn is_shareable_intrinsic_alias_expr(expr: &Expr) -> bool {
     match expr {
         Expr::Paren(paren) => is_shareable_intrinsic_alias_expr(&paren.expr),
@@ -1077,6 +1225,161 @@ fn is_shareable_intrinsic_alias_expr(expr: &Expr) -> bool {
                 && static_member_name(&member.prop).is_some()
         }
         _ => false,
+    }
+}
+
+fn is_shareable_vite_map_deps_var(var: &VarDecl) -> bool {
+    let [decl] = var.decls.as_slice() else {
+        return false;
+    };
+    let Pat::Ident(declared) = &decl.name else {
+        return false;
+    };
+    let Some(Expr::Arrow(arrow)) = decl.init.as_deref() else {
+        return false;
+    };
+    let Some(input_param) = arrow
+        .params
+        .first()
+        .and_then(pat_ident_name)
+        .map(str::to_owned)
+    else {
+        return false;
+    };
+    if !arrow_has_default_to_ident(arrow, declared.id.sym.as_ref()) {
+        return false;
+    }
+    let Some((cache_param, callback_param)) = vite_map_deps_body_access(arrow, &input_param) else {
+        return false;
+    };
+    arrow.params.iter().any(|param| {
+        pat_ident_name(param)
+            .is_some_and(|param_name| param_name == cache_param && param_name != callback_param)
+    })
+}
+
+fn is_shareable_global_object_fallback_var(var: &VarDecl) -> bool {
+    !var.decls.is_empty()
+        && var.decls.iter().all(|decl| {
+            matches!(&decl.name, Pat::Ident(_))
+                && decl
+                    .init
+                    .as_deref()
+                    .is_some_and(is_global_object_fallback_expr)
+        })
+}
+
+fn is_global_object_fallback_expr(expr: &Expr) -> bool {
+    match expr {
+        Expr::Paren(paren) => is_global_object_fallback_expr(&paren.expr),
+        Expr::Object(object) => object.props.is_empty(),
+        Expr::Cond(cond) => {
+            let Some(global_name) = defined_global_typeof_test(&cond.test) else {
+                return false;
+            };
+            matches!(
+                cond.cons.as_ref(),
+                Expr::Ident(ident) if ident.sym.as_ref() == global_name
+            ) && is_global_object_fallback_expr(&cond.alt)
+        }
+        _ => false,
+    }
+}
+
+fn defined_global_typeof_test(expr: &Expr) -> Option<&str> {
+    let Expr::Bin(bin) = expr else {
+        return None;
+    };
+    let Expr::Unary(unary) = bin.left.as_ref() else {
+        return None;
+    };
+    if unary.op != UnaryOp::TypeOf {
+        return None;
+    }
+    let Expr::Ident(ident) = unary.arg.as_ref() else {
+        return None;
+    };
+    let name = ident.sym.as_ref();
+    if !matches!(name, "globalThis" | "window" | "global" | "self") {
+        return None;
+    }
+    let Expr::Lit(Lit::Str(value)) = bin.right.as_ref() else {
+        return None;
+    };
+    let literal = value.value.as_str();
+    let is_defined_check = matches!(bin.op, BinaryOp::Lt | BinaryOp::NotEq | BinaryOp::NotEqEq)
+        && matches!(literal, Some("u" | "undefined"));
+    is_defined_check.then_some(name)
+}
+
+fn arrow_has_default_to_ident(arrow: &ArrowExpr, name: &str) -> bool {
+    arrow.params.iter().any(|param| {
+        let Pat::Assign(assign) = param else {
+            return false;
+        };
+        matches!(
+            assign.right.as_ref(),
+            Expr::Ident(ident) if ident.sym.as_ref() == name
+        )
+    })
+}
+
+fn vite_map_deps_body_access(arrow: &ArrowExpr, input_param: &str) -> Option<(String, String)> {
+    let BlockStmtOrExpr::Expr(body) = arrow.body.as_ref() else {
+        return None;
+    };
+    let Expr::Call(call) = body.as_ref() else {
+        return None;
+    };
+    let Callee::Expr(callee) = &call.callee else {
+        return None;
+    };
+    if !is_static_member_call(callee, input_param, "map") || call.args.len() != 1 {
+        return None;
+    }
+    let Expr::Arrow(callback) = call.args.first()?.expr.as_ref() else {
+        return None;
+    };
+    let [callback_param] = callback.params.as_slice() else {
+        return None;
+    };
+    let callback_param = pat_ident_name(callback_param)?.to_owned();
+    let BlockStmtOrExpr::Expr(callback_body) = callback.body.as_ref() else {
+        return None;
+    };
+    let Expr::Member(member) = callback_body.as_ref() else {
+        return None;
+    };
+    let Expr::Ident(cache_param) = member.obj.as_ref() else {
+        return None;
+    };
+    let MemberProp::Computed(computed) = &member.prop else {
+        return None;
+    };
+    if !matches!(
+        computed.expr.as_ref(),
+        Expr::Ident(index) if index.sym.as_ref() == callback_param
+    ) {
+        return None;
+    }
+    Some((cache_param.sym.to_string(), callback_param))
+}
+
+fn is_static_member_call(expr: &Expr, obj_name: &str, prop_name: &str) -> bool {
+    let Expr::Member(member) = expr else {
+        return false;
+    };
+    matches!(
+        member.obj.as_ref(),
+        Expr::Ident(obj) if obj.sym.as_ref() == obj_name
+    ) && static_member_name(&member.prop).as_deref() == Some(prop_name)
+}
+
+fn pat_ident_name(pat: &Pat) -> Option<&str> {
+    match pat {
+        Pat::Ident(ident) => Some(ident.id.sym.as_ref()),
+        Pat::Assign(assign) => pat_ident_name(&assign.left),
+        _ => None,
     }
 }
 
@@ -1375,6 +1678,23 @@ mod tests {
     }
 
     #[test]
+    fn allows_shared_pure_function_expression_helper() {
+        let mut module = parse(
+            "const helper = function(x) { return x; };\nconst oldImpl = () => helper(\"old\");\nconst keep = () => helper(\"keep\");\nexport { oldImpl as swapped, keep };\n",
+        );
+        strip_one_chunk(&mut module, &mk_symbols(&["swapped"]), "chunk.js").unwrap();
+        let emitted = emit(&module);
+        assert!(
+            emitted.contains("function"),
+            "residual export should keep shared function-expression helper:\n{emitted}",
+        );
+        assert!(
+            !emitted.contains("oldImpl"),
+            "swapped old implementation should be removed:\n{emitted}",
+        );
+    }
+
+    #[test]
     fn allows_shared_intrinsic_alias_helper() {
         let mut module = parse(
             "const assign = Object.assign;\nconst oldImpl = () => assign({}, { old: true });\nconst keep = () => assign({}, { keep: true });\nexport { oldImpl as swapped, keep };\n",
@@ -1384,6 +1704,79 @@ mod tests {
         assert!(
             emitted.contains("Object.assign"),
             "residual export should keep intrinsic alias:\n{emitted}",
+        );
+        assert!(
+            !emitted.contains("oldImpl"),
+            "swapped old implementation should be removed:\n{emitted}",
+        );
+    }
+
+    #[test]
+    fn allows_shared_primitive_literal_helper() {
+        let mut module = parse(
+            "const preloadRel = \"modulepreload\";\nconst oldImpl = () => preloadRel;\nconst keep = () => preloadRel;\nexport { oldImpl as swapped, keep };\n",
+        );
+        strip_one_chunk(&mut module, &mk_symbols(&["swapped"]), "chunk.js").unwrap();
+        let emitted = emit(&module);
+        assert!(
+            emitted.contains("modulepreload"),
+            "residual export should keep the inert shared literal:\n{emitted}",
+        );
+        assert!(
+            !emitted.contains("oldImpl"),
+            "swapped old implementation should be removed:\n{emitted}",
+        );
+    }
+
+    #[test]
+    fn allows_shared_vite_dependency_map_helper() {
+        let mut module = parse(
+            "const mapDeps = (i, m = mapDeps, d = m.f || (m.f = [\"a.js\", \"b.js\"])) => i.map((i) => d[i]);\n\
+             const oldImpl = () => mapDeps([0]);\n\
+             const keep = () => mapDeps([1]);\n\
+             export { oldImpl as swapped, keep };\n",
+        );
+        strip_one_chunk(&mut module, &mk_symbols(&["swapped"]), "chunk.js").unwrap();
+        let emitted = emit(&module);
+        assert!(
+            emitted.contains("mapDeps"),
+            "residual export should keep the shared runtime helper:\n{emitted}",
+        );
+        assert!(
+            !emitted.contains("oldImpl"),
+            "swapped old implementation should be removed:\n{emitted}",
+        );
+    }
+
+    #[test]
+    fn allows_shared_vite_preload_helper_cluster() {
+        let mut module = parse(
+            "const rel = \"modulepreload\";\n\
+             const base = function(path) { return \"/\" + path; };\n\
+             const seen = {};\n\
+             const preload = function(load, deps) {\n\
+                 let promise = Promise.resolve();\n\
+                 if (deps && deps.length > 0) {\n\
+                     promise = Promise.allSettled(deps.map((dep) => {\n\
+                         dep = base(dep);\n\
+                         if (dep in seen) return;\n\
+                         seen[dep] = true;\n\
+                         const link = document.createElement(\"link\");\n\
+                         link.rel = rel;\n\
+                     }));\n\
+                 }\n\
+                 function onError(error) { window.dispatchEvent(error); throw error; }\n\
+                 return promise.then(() => load().catch(onError));\n\
+             };\n\
+             const oldImpl = () => preload(() => Promise.resolve(\"old\"), [\"old.js\"]);\n\
+             const keep = () => preload(() => Promise.resolve(\"keep\"), [\"keep.js\"]);\n\
+             export { oldImpl as swapped, keep };\n",
+        );
+        strip_one_chunk(&mut module, &mk_symbols(&["swapped"]), "chunk.js").unwrap();
+        let emitted = emit(&module);
+        assert!(
+            emitted.contains("modulepreload") && emitted.contains("seen"),
+            "residual export should keep the shared Vite preload helper cluster:\n{emitted}",
         );
         assert!(
             !emitted.contains("oldImpl"),
@@ -1555,6 +1948,30 @@ mod tests {
                 && !emitted.contains("clsx")
                 && !emitted.contains("classNames"),
             "CommonJS module wrapper should be dropped with the swapped island:\n{emitted}",
+        );
+    }
+
+    #[test]
+    fn drops_commonjs_iife_with_shared_global_fallback_dependency() {
+        let mut module = parse(
+            "var root = typeof globalThis < \"u\" ? globalThis : typeof window < \"u\" ? window : typeof global < \"u\" ? global : typeof self < \"u\" ? self : {};\n\
+             var module = { exports: {} };\n\
+             (function (target) { (function (global, factory) { target.exports = factory(); })(root, function () { function dayjs() {} return dayjs; }); })(module);\n\
+             var dayjs = module.exports;\n\
+             const keep = root;\n\
+             export { dayjs as swapped, keep };\n",
+        );
+        strip_one_chunk(&mut module, &mk_symbols(&["swapped"]), "chunk.js").unwrap();
+        let emitted = emit(&module);
+        assert!(
+            emitted.contains("globalThis") && emitted.contains("keep"),
+            "residual global fallback helper should remain:\n{emitted}",
+        );
+        assert!(
+            !emitted.contains("dayjs")
+                && !emitted.contains("factory")
+                && !emitted.contains("module"),
+            "CommonJS wrapper should be dropped even when it reads the shared global fallback:\n{emitted}",
         );
     }
 

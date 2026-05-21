@@ -31,9 +31,11 @@ class DebundleLiveProxyAddon:
         return cls(LiveProxyOptions.from_json_dict(json.loads(raw)))
 
     def request(self, flow: http.HTTPFlow) -> None:
-        host = normalize_host(flow.request.host or header_get(dict(flow.request.headers), "host") or "")
+        headers = dict(flow.request.headers)
+        host = normalize_host(flow.request.host or header_get(headers, "host") or "")
         if host != normalize_host(self.config.target_host):
             return
+        headers.setdefault("host", host)
 
         request_path = urlsplit(flow.request.path or "/").path
         if request_path == "/sw.js":
@@ -42,7 +44,7 @@ class DebundleLiveProxyAddon:
         if request_path.startswith(f"{self.config.internal_prefix}/"):
             self._serve_local_mapping(flow, flow.request.path)
             return
-        if is_target_document_request(flow.request.method, dict(flow.request.headers), self.config):
+        if is_target_document_request(flow.request.method, headers, self.config):
             self._serve_local_mapping(flow, self.config.control_paths["live_index"])
             return
 

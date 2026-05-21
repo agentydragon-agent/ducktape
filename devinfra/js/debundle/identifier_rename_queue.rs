@@ -43,12 +43,12 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use anyhow::Result;
-use binding_targets::{binding_name_strings, declaration_name_strings};
+use binding_targets::declaration_name_strings;
 use serde::Serialize;
 use swc_ecma_ast::{
-    BindingIdent, ExportDecl, ExportDefaultDecl, ExportSpecifier, GetterProp,
-    Ident, MemberExpr, MemberProp, ModuleDecl, ModuleExportName, ModuleItem, NamedExport,
-    Prop, PropName, SetterProp, Stmt,
+    BindingIdent, ExportDecl, ExportDefaultDecl, ExportSpecifier, GetterProp, Ident, MemberExpr,
+    MemberProp, ModuleDecl, ModuleExportName, ModuleItem, NamedExport, Prop, PropName, SetterProp,
+    Stmt,
 };
 use swc_ecma_visit::{Visit, VisitWith};
 

@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from devinfra.js.debundle.live_proxy.addon import DebundleLiveProxyAddon
 from devinfra.js.debundle.live_proxy.core import (
     LocalAssetMapping,
     is_target_document_request,
@@ -157,6 +158,28 @@ class LiveProxyCoreTest(unittest.TestCase):
         assert not is_target_document_request(
             "GET", {"accept": "application/json", "host": "api.example.test", "sec-fetch-dest": "empty"}, config
         )
+
+    def test_addon_rewrites_document_when_host_header_is_absent(self) -> None:
+        fixture = write_base_fixture()
+        addon = DebundleLiveProxyAddon(
+            {
+                "app_manifest_path": str(fixture.app_manifest_path),
+                "proxy_host": "127.0.0.1",
+                "proxy_port": 9806,
+                "state_dir": str(fixture.root / "state"),
+            }
+        )
+
+        flow = FakeFlow(
+            host="example.test",
+            method="GET",
+            path="/",
+            headers={"accept": "text/html,application/xhtml+xml", "sec-fetch-dest": "document"},
+        )
+        addon.request(flow)
+
+        assert flow.response is not None
+        assert b"js-debundle-live-proxy" in flow.response.content
 
     def test_map_local_assets(self) -> None:
         fixture = write_base_fixture()
@@ -312,6 +335,20 @@ class Fixture:
         self.source_assets_report_path = source_assets_report_path
         self.source_html_path = source_html_path
         self.vendors_root = vendors_root
+
+
+class FakeRequest:
+    def __init__(self, *, host: str, method: str, path: str, headers: dict[str, str]) -> None:
+        self.host = host
+        self.method = method
+        self.path = path
+        self.headers = headers
+
+
+class FakeFlow:
+    def __init__(self, *, host: str, method: str, path: str, headers: dict[str, str]) -> None:
+        self.request = FakeRequest(host=host, method=method, path=path, headers=headers)
+        self.response = None
 
 
 def write_base_fixture(

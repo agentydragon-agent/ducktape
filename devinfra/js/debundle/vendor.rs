@@ -11,12 +11,12 @@ use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
 use analysis::local_namespace_iife_target;
-use binding_targets::{binding_name_strings, declaration_name_strings, module_export_name};
 use artifact::{
     ArtifactIndexes, ChunkBundle, ChunkId, ChunkTable, JsFile, JsFileAstParts,
     get_chunk_entry_path, join_module_path, list_chunk_file_paths, manifest_relative_path,
     module_path_dirname, normalize_module_path, path_from_module_path, relative_module_specifier,
 };
+use binding_targets::{declaration_name_strings, module_export_name};
 use js_ast::{ParsedJsModule, emit_js_module, parse_js_module, str_value};
 use spec::{
     BundledPartialSwapMark, BundledPartialSwapPackage, PartialSwapKind, PartialSwapMark,

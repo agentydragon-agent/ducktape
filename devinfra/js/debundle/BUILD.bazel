@@ -79,6 +79,7 @@ rust_library(
     edition = "2024",
     deps = [
         ":artifact",
+        ":binding_targets",
         ":js_ast",
         "@crates//:anyhow",
         "@crates//:rayon",
@@ -115,6 +116,7 @@ rust_library(
     deps = [
         ":analysis",
         ":artifact",
+        ":binding_targets",
         ":js_ast",
         ":spec",
         "@crates//:anyhow",
@@ -131,7 +133,10 @@ rust_test(
     name = "vendor_test",
     crate = ":vendor",
     edition = "2024",
-    deps = ["@crates//:rayon"],
+    deps = [
+        ":binding_targets",
+        "@crates//:rayon",
+    ],
 )
 
 rust_library(
@@ -171,6 +176,7 @@ rust_library(
     edition = "2024",
     deps = [
         ":artifact",
+        ":binding_targets",
         ":js_ast",
         "@crates//:anyhow",
         "@crates//:swc_common",
@@ -182,6 +188,7 @@ rust_test(
     name = "validate_emitted_exports_test",
     crate = ":validate_emitted_exports",
     edition = "2024",
+    deps = [":binding_targets"],
 )
 
 rust_library(
@@ -363,6 +370,7 @@ rust_library(
     deps = [
         ":analysis",
         ":artifact",
+        ":binding_targets",
         ":js_ast",
         ":output_layout",
         ":spec",
@@ -419,6 +427,7 @@ rust_library(
     edition = "2024",
     deps = [
         ":artifact",
+        ":binding_targets",
         ":js_ast",
         "@crates//:anyhow",
         "@crates//:serde",
@@ -432,6 +441,7 @@ rust_test(
     name = "identifier_rename_queue_test",
     crate = ":identifier_rename_queue",
     edition = "2024",
+    deps = [":binding_targets"],
 )
 
 rust_library(
