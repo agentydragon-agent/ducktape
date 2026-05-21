@@ -16,7 +16,7 @@ to catch here.
 ## Package Boundaries
 
 `augur/sim` is the durable pathwise evaluator, not the owner of the
-market model and not the owner of API presentation. The intended
+exogenous path model and not the owner of API presentation. The intended
 runtime seam is:
 
 ```
@@ -207,7 +207,7 @@ for month in range(horizon_months):
     # happens inside step(); state_t is read-only.
     events_t = step_emit_events(
         state=state_t,
-        market=market.at(month),
+        external_series=market.at(month),
         jurisdictions=jurisdiction_set,
         scenario=scenario,
         month=month,

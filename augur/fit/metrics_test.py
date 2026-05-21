@@ -19,7 +19,7 @@ from augur.fit.metrics import (
     multi_step_predictive_log_density,
     rolling_origin_predictive_log_density,
 )
-from augur.model.markets.scenarios import HistoricalSeries, Scenarios, historical_log_returns
+from augur.model.path_models.scenarios import HistoricalSeries, Scenarios, historical_log_returns
 
 
 def _gaussian_log_density(x: np.ndarray, mu: np.ndarray, sigma: np.ndarray) -> float:

@@ -5,8 +5,8 @@
 Augur is closest to a dynamic household microsimulation and personal-finance
 projection engine: it samples exogenous market paths, then projects typed
 scenarios through deterministic actor policies, accounting applications, and
-result views. In financial-risk terms, `MarketRequest` plus
-`SampledMarketBundle` is an economic scenario generator input/output,
+result views. In financial-risk terms, `SamplingRequest` plus
+`SampledExogenousBundle` is an economic scenario generator input/output,
 `ScenarioSet` is the portfolio of household scenario variants, `rollout_index`
 selects one sampled path, and the policy runtime is the pathwise deterministic
 projector.
@@ -29,7 +29,7 @@ The important gaps the rest of this audit explores:
   validation is placeholder-level and evidence/calibration artifacts are not
   persisted reviewed records.
 - Calibration/evidence and projection boundaries should be explicit: evidence
-  feeds model fitting; fitted scenario generators feed `SampledMarketBundle`;
+  feeds model fitting; fitted scenario generators feed `SampledExogenousBundle`;
   the sim projector should not know source-specific evidence.
 
 ## Local Architecture Grounding
@@ -43,9 +43,9 @@ This audit is grounded in the current Augur files:
 - `augur/SPEC.md`: declares Augur as a probabilistic multi-agent economic
   simulator with scenarios, markets, policies, actions, and per-rollout state.
 - `augur/api/scenario_set.py`: defines `ScenarioSet`, `Scenario`,
-  `MarketRequest`, policies, actions, policy decisions, market observations,
+  `SamplingRequest`, policies, actions, policy decisions, exogenous observations,
   ledger entries, balance snapshots, accounting details, and result payloads.
-- `augur/model/market_api.py`: defines `SampledMarketBundle` with sampled
+- `augur/model/exogenous.py`: defines `SampledExogenousBundle` with sampled
   rollout/month external level and event series plus model provenance.
 - `augur/sim/`: deterministically evaluates typed scenarios over a sampled
   bundle and emits state/event frames.
@@ -54,8 +54,8 @@ This audit is grounded in the current Augur files:
 - Deleted legacy `augur/core/policy_runtime.py`: previously defined
   `ActorPolicyProgram`, instruction batches, application results, ledger
   batches, and partner-ownership accrual.
-- `augur/model/`: contains evidence loading, market model protocols,
-  historical series, and sim-native joint market models.
+- `augur/model/`: contains evidence loading, exogenous model protocols,
+  historical series, and sim-native joint exogenous models.
 
 ## Prior-Art Catalog
 
@@ -75,7 +75,7 @@ Carlo architecture is relevant. The core pattern is clean separation of:
 - sample accumulation and error/statistics reporting.
 
 Augur should copy the separation, not the instrument domain.
-`SampledMarketBundle` should remain path generation output. The household
+`SampledExogenousBundle` should remain path generation output. The household
 policy/accounting projector should be deterministic conditional on a selected
 path bundle.
 
@@ -226,10 +226,10 @@ projection evaluates policies and accounting on those paths.
 
 Current Augur alignment:
 
-- `MarketRequest` requests model id, rollout count, horizon, and seed.
-- `JointMarketModel.sample()` samples a `SampledMarketBundle`.
+- `SamplingRequest` requests model id, rollout count, horizon, and seed.
+- `ExogenousPathModel.sample()` samples a `SampledExogenousBundle`.
 - The API translator validates the `ScenarioSet`, materializes sim scenarios,
-  samples or accepts a `SampledMarketBundle`, then runs each translated
+  samples or accepts a `SampledExogenousBundle`, then runs each translated
   scenario through `augur/sim`.
 
 Gap:
@@ -253,7 +253,7 @@ trajectory.
 
 Current Augur alignment:
 
-- `SampledMarketBundle.metadata` carries market model id, seed, rollout count,
+- `SampledExogenousBundle.metadata` carries exogenous model id, seed, rollout count,
   horizon, event stream ids, notes, and source metadata.
 - `rollout_index` is used in actions, policy decisions, observations, ledger
   entries, balance snapshots, accounting details, monthly columns, and selected
@@ -313,7 +313,7 @@ decisions; accounting appliers validate and produce actions/postings.
 
 Current Augur alignment:
 
-- `MarketPathObservation` and `PrivateEquitySaleOpportunityObservation` are
+- `ExogenousPathObservation` and `PrivateEquitySaleOpportunityObservation` are
   separate from policy decisions.
 - `PrivateEquitySaleDecision`, `SellPrivateEquityAction`, and
   private-equity sale ledger rows are distinct.
@@ -330,7 +330,7 @@ Gap:
 
 Recommended vocabulary:
 
-- `MarketObservation`
+- `ExogenousObservation`
 - `ScheduledEvent`
 - `Opportunity`
 - `PolicyDecision`
@@ -406,7 +406,7 @@ parameters, code, and limitations produced it.
 
 Current Augur alignment:
 
-- `SampledMarketBundle.metadata` has source metadata.
+- `SampledExogenousBundle.metadata` has source metadata.
 - `ScenarioSetRunResponse` includes request, market request, report spec,
   market metadata, and warnings.
 - `augur/model/markets/data.py` separates evidence loading from historical
@@ -415,7 +415,7 @@ Current Augur alignment:
 Gap:
 
 - No model inventory or model card exists.
-- No validation report identity is attached to a market model.
+- No validation report identity is attached to a exogenous model.
 - No evidence/calibration artifact hash is required.
 - Warnings are generic strings rather than typed limitations.
 
@@ -437,8 +437,8 @@ projection consumes paths.
 
 Current Augur alignment:
 
-- `augur/model/` owns evidence loading, market model protocols, fitting, and
-  sim-native joint market models.
+- `augur/model/` owns evidence loading, exogenous model protocols, fitting, and
+  sim-native joint exogenous models.
 - `augur/plans/e2e_redesign.md` explicitly says source-data shapes belong in
   `augur/model`, not app state or the simulator contract.
 
@@ -452,10 +452,10 @@ Recommended vocabulary:
 
 - `RawEvidence`
 - `EvidenceSet`
-- `CalibratedMarketModel`
-- `MarketModelFit`
+- `CalibratedPredictiveSeriesModel`
+- `PredictiveSeriesModelFit`
 - `ScenarioGenerator`
-- `SampledMarketBundle`
+- `SampledExogenousBundle`
 
 ## Alignment Audit
 
@@ -463,7 +463,7 @@ Recommended vocabulary:
 
 - `rollout_index` is doing too much. It is a UI selector, array coordinate,
   paired-comparison key, and pseudo trajectory id.
-- `SampledMarketBundle.metadata` names streams but not event instances,
+- `SampledExogenousBundle.metadata` names streams but not event instances,
   event source versions, or opportunity ids.
 - `PrivateEquitySaleOpportunityObservation` has no stable opportunity id.
 - Policy execution is class-grouped. This conflicts with "ordered actor policy
@@ -503,34 +503,34 @@ Recommended vocabulary:
 
 Standardize these names before the next large redesign:
 
-| Concept                             | Proposed name                | Purpose                                                                   |
-| ----------------------------------- | ---------------------------- | ------------------------------------------------------------------------- |
-| Raw observations                    | `RawEvidence`                | Source-specific data before alignment or cleaning.                        |
-| Aligned model input                 | `EvidenceSet`                | Versioned, cleaned data used for fitting.                                 |
-| Fitting run                         | `CalibrationRun`             | Produces fitted parameters/artifacts.                                     |
-| Fitted generator                    | `CalibratedMarketModel`      | Model ready to simulate paths.                                            |
-| Scenario generation invocation      | `ScenarioGeneratorRun`       | Records seed, generator version, evidence id, calibration id, factor set. |
-| Sampled exogenous worlds            | `ExogenousPathSet`           | Current `SampledMarketBundle` plus stronger identity/provenance.          |
-| One sampled world                   | `ExogenousPathId`            | Stable identity for one path.                                             |
-| Factor path                         | `RiskFactorPath`             | SP500, CPI, home value, rent, mortgage rate, PE mark, etc.                |
-| Event/opportunity stream            | `OpportunityStream`          | Tender/IPO/acquisition/lockup/other exogenous opportunities.              |
-| Deterministic projection invocation | `ProjectionRun`              | Scenario set plus exogenous path set plus code/model versions.            |
-| Per-scenario path result            | `ProjectionTrajectoryId`     | Scenario id plus exogenous path id plus policy version.                   |
-| Runtime state                       | `RolloutState`               | Accounts, assets, liabilities, lots, tax state, ownership ledgers.        |
-| Rollout health                      | `RolloutStatus`              | Active/failed/defaulted/terminated state.                                 |
-| Actor rules                         | `PolicyProgram`              | Ordered policy sequence for one actor.                                    |
-| One rule                            | `PolicyStep`                 | Executable policy node with order and phase.                              |
-| Decision trace                      | `PolicyExecutionTrace`       | Inputs, decision, instructions, rejects, applied actions.                 |
-| Intended mutation                   | `Instruction`                | Policy output before validation/application.                              |
-| Realized mutation                   | `Action`                     | Applied operation after validation.                                       |
-| Accounting truth                    | `JournalEntry` and `Posting` | Balanced economic record.                                                 |
-| Point-in-time truth                 | `BalanceSnapshot`            | State value at a month.                                                   |
-| Explanatory detail                  | `AccountingDetail`           | Basis/gain/tax/depreciation calculation detail.                           |
-| Result mode                         | `DistributionResult`         | Percentiles/fans over many trajectories.                                  |
-| Result mode                         | `TrajectoryResult`           | One selected trajectory with trace rows.                                  |
-| Result mode                         | `AccountingTrace`            | Journal, postings, lots, liabilities, reconciliation.                     |
-| Governance                          | `ModelCard`                  | Intended use, assumptions, limitations, validation.                       |
-| Governance                          | `ValidationReport`           | Backtests, invariants, sensitivity/stress results.                        |
+| Concept                             | Proposed name                     | Purpose                                                                   |
+| ----------------------------------- | --------------------------------- | ------------------------------------------------------------------------- |
+| Raw observations                    | `RawEvidence`                     | Source-specific data before alignment or cleaning.                        |
+| Aligned model input                 | `EvidenceSet`                     | Versioned, cleaned data used for fitting.                                 |
+| Fitting run                         | `CalibrationRun`                  | Produces fitted parameters/artifacts.                                     |
+| Fitted generator                    | `CalibratedPredictiveSeriesModel` | Model ready to simulate paths.                                            |
+| Scenario generation invocation      | `ScenarioGeneratorRun`            | Records seed, generator version, evidence id, calibration id, factor set. |
+| Sampled exogenous worlds            | `ExogenousPathSet`                | Current `SampledExogenousBundle` plus stronger identity/provenance.       |
+| One sampled world                   | `ExogenousPathId`                 | Stable identity for one path.                                             |
+| Factor path                         | `RiskFactorPath`                  | SP500, CPI, home value, rent, mortgage rate, PE mark, etc.                |
+| Event/opportunity stream            | `OpportunityStream`               | Tender/IPO/acquisition/lockup/other exogenous opportunities.              |
+| Deterministic projection invocation | `ProjectionRun`                   | Scenario set plus exogenous path set plus code/model versions.            |
+| Per-scenario path result            | `ProjectionTrajectoryId`          | Scenario id plus exogenous path id plus policy version.                   |
+| Runtime state                       | `RolloutState`                    | Accounts, assets, liabilities, lots, tax state, ownership ledgers.        |
+| Rollout health                      | `RolloutStatus`                   | Active/failed/defaulted/terminated state.                                 |
+| Actor rules                         | `PolicyProgram`                   | Ordered policy sequence for one actor.                                    |
+| One rule                            | `PolicyStep`                      | Executable policy node with order and phase.                              |
+| Decision trace                      | `PolicyExecutionTrace`            | Inputs, decision, instructions, rejects, applied actions.                 |
+| Intended mutation                   | `Instruction`                     | Policy output before validation/application.                              |
+| Realized mutation                   | `Action`                          | Applied operation after validation.                                       |
+| Accounting truth                    | `JournalEntry` and `Posting`      | Balanced economic record.                                                 |
+| Point-in-time truth                 | `BalanceSnapshot`                 | State value at a month.                                                   |
+| Explanatory detail                  | `AccountingDetail`                | Basis/gain/tax/depreciation calculation detail.                           |
+| Result mode                         | `DistributionResult`              | Percentiles/fans over many trajectories.                                  |
+| Result mode                         | `TrajectoryResult`                | One selected trajectory with trace rows.                                  |
+| Result mode                         | `AccountingTrace`                 | Journal, postings, lots, liabilities, reconciliation.                     |
+| Governance                          | `ModelCard`                       | Intended use, assumptions, limitations, validation.                       |
+| Governance                          | `ValidationReport`                | Backtests, invariants, sensitivity/stress results.                        |
 
 ## Prioritized Recommendations
 
@@ -547,7 +547,7 @@ Standardize these names before the next large redesign:
 2. Persist explicit trajectory/path provenance.
    - Keep `rollout_index`, `PathSetId`, `ExogenousPathId`, and
      `ProjectionTrajectoryId` as the public identity vocabulary.
-   - Back those IDs with persisted market model, generator version, evidence,
+   - Back those IDs with persisted exogenous model, generator version, evidence,
      calibration, seed, path index, risk-factor set, event-stream, and code
      version artifacts where available.
 
@@ -572,7 +572,7 @@ Standardize these names before the next large redesign:
    - Keep the current model-card/version and validation-report fields, but back
      them with reviewed intended use, source data, calibration, limitations,
      validation status, and known non-goals.
-   - Attach durable artifact hashes or reviewed IDs to `SampledMarketBundle`
+   - Attach durable artifact hashes or reviewed IDs to `SampledExogenousBundle`
      metadata.
 
 ### Medium-Term Redesign
@@ -587,10 +587,10 @@ Standardize these names before the next large redesign:
    - Keep approximations explicit, versioned, and testable.
    - Separate rules from deployment-specific location/property data.
 
-3. Introduce fitted market-model artifacts.
+3. Introduce fitted exogenous-model artifacts.
    - Persist evidence/calibration identity, factor set, fitted parameters, and
      validation metrics.
-   - Let sim-native joint market models report those artifacts, not just latest
+   - Let sim-native joint exogenous models report those artifacts, not just latest
      observations.
 
 4. Make result helpers mode-specific.

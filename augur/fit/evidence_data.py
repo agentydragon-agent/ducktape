@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 from python.runfiles import runfiles
 
-from augur.fit.market_config import SourceDataConfig
+from augur.fit.evidence_config import SourceDataConfig
 
 _RUNFILES_PREFIX = "runfiles:"
 
@@ -39,7 +39,7 @@ def resolve_path(path: str | Path, base_dir: str | Path) -> Path:
 
 BASE_HOME_VALUE_FACTOR = "home"
 MONTHS_PER_YEAR = 12
-DATA_DERIVED_MARKET_PATH_PRIOR_SUFFIXES = ("_monthly_log_mu", "_monthly_log_mu_sigma", "_monthly_log_vol_sigma")
+DATA_DERIVED_SERIES_PATH_PRIOR_SUFFIXES = ("_monthly_log_mu", "_monthly_log_mu_sigma", "_monthly_log_vol_sigma")
 MIN_MONTHLY_LOG_MU_SIGMA = 0.005 / MONTHS_PER_YEAR
 MIN_MONTHLY_LOG_VOL_SIGMA = 0.01 / math.sqrt(MONTHS_PER_YEAR)
 
@@ -51,7 +51,7 @@ class PeriodReturns:
 
 
 @dataclass(frozen=True)
-class FactorMarketCalibration:
+class FactorSeriesCalibration:
     monthly_log_mu: float
     monthly_log_mu_sigma: float
     monthly_log_vol_sigma: float
@@ -60,25 +60,25 @@ class FactorMarketCalibration:
 
 
 @dataclass(frozen=True)
-class MarketEvidence:
+class ExogenousEvidence:
     factor_names: tuple[str, ...]
     monthly_log_returns: np.ndarray
     monthly_return_months: tuple[str, ...]
     marginal_returns: dict[str, PeriodReturns]
-    market_path_calibration: dict[str, FactorMarketCalibration]
-    calibrated_market_path_priors: dict[str, float]
+    series_path_calibration: dict[str, FactorSeriesCalibration]
+    calibrated_series_path_priors: dict[str, float]
     current_mortgage30_rate_pct: float
     latest_observations: dict[str, Any]
 
 
-def calibrate_market_path_priors(
+def calibrate_series_path_priors(
     factor_names: tuple[str, ...], marginal_returns: dict[str, PeriodReturns]
-) -> tuple[dict[str, FactorMarketCalibration], dict[str, float]]:
-    calibration: dict[str, FactorMarketCalibration] = {}
+) -> tuple[dict[str, FactorSeriesCalibration], dict[str, float]]:
+    calibration: dict[str, FactorSeriesCalibration] = {}
     priors: dict[str, float] = {}
     for factor_name in factor_names:
         if factor_name not in marginal_returns:
-            raise ValueError(f"missing marginal returns for market factor {factor_name!r}")
+            raise ValueError(f"missing marginal returns for exogenous factor {factor_name!r}")
         returns = marginal_returns[factor_name]
         log_returns = np.asarray(returns.log_returns, dtype="float64")
         duration_months = np.asarray(returns.duration_months, dtype="float64")
@@ -102,7 +102,7 @@ def calibrate_market_path_priors(
             monthly_log_vol_sigma / math.sqrt(max(observed_months, 1e-9)), MIN_MONTHLY_LOG_MU_SIGMA
         )
 
-        calibration[factor_name] = FactorMarketCalibration(
+        calibration[factor_name] = FactorSeriesCalibration(
             monthly_log_mu=monthly_log_mu,
             monthly_log_mu_sigma=monthly_log_mu_sigma,
             monthly_log_vol_sigma=monthly_log_vol_sigma,
@@ -239,7 +239,7 @@ def _return_frame_summary(frame: pd.DataFrame, *, source: str, used_as_marginal_
     }
 
 
-def load_market_evidence(source_config: SourceDataConfig, base_dir: str | Path) -> MarketEvidence:
+def load_exogenous_evidence(source_config: SourceDataConfig, base_dir: str | Path) -> ExogenousEvidence:
     sp500_price = _monthly_last(_read_fred_series(resolve_path(source_config.fred_sp500_csv, base_dir), "SP500"))
     sp500_total_return = _monthly_last(
         _read_yahoo_spy_adjusted_close(resolve_path(source_config.yahoo_spy_adjusted_json, base_dir))
@@ -258,7 +258,7 @@ def load_market_evidence(source_config: SourceDataConfig, base_dir: str | Path) 
         for factor_name, (region_name, state) in home_value_region_config.items()
     }
     home_factor_names = tuple(home_values)
-    market_factors = ("sp500", *home_factor_names, "rent", "inflation")
+    factor_names = ("sp500", *home_factor_names, "rent", "inflation")
     aligned = pd.concat(
         {
             "sp500": _monthly_unit_returns(sp500_total_return),
@@ -270,7 +270,7 @@ def load_market_evidence(source_config: SourceDataConfig, base_dir: str | Path) 
         join="inner",
     ).dropna()
     if len(aligned) < source_config.minimum_aligned_months:
-        raise ValueError(f"only {len(aligned)} aligned market months were available")
+        raise ValueError(f"only {len(aligned)} aligned exogenous months were available")
 
     sp500_returns = _period_return_frame(sp500_total_return)
     home_value_returns = {factor_name: _period_return_frame(series) for factor_name, series in home_values.items()}
@@ -284,7 +284,7 @@ def load_market_evidence(source_config: SourceDataConfig, base_dir: str | Path) 
         "rent": _returns([rent_returns]),
         "inflation": _returns([cpi_returns]),
     }
-    market_path_calibration, calibrated_market_path_priors = calibrate_market_path_priors(market_factors, marginal)
+    series_path_calibration, calibrated_series_path_priors = calibrate_series_path_priors(factor_names, marginal)
 
     latest_observations = {
         "sp500_price_latest": {
@@ -346,7 +346,7 @@ def load_market_evidence(source_config: SourceDataConfig, base_dir: str | Path) 
                 fhfa_returns, source=source_config.fred_fhfa_sf_oakland_berkeley_csv, used_as_marginal_evidence=False
             ),
         },
-        "market_path_prior_calibration": {
+        "series_path_prior_calibration": {
             name: {
                 "monthly_log_mu": point.monthly_log_mu,
                 "monthly_log_mu_sigma": point.monthly_log_mu_sigma,
@@ -354,17 +354,17 @@ def load_market_evidence(source_config: SourceDataConfig, base_dir: str | Path) 
                 "observed_months": point.observed_months,
                 "observation_count": point.observation_count,
             }
-            for name, point in market_path_calibration.items()
+            for name, point in series_path_calibration.items()
         },
     }
 
-    return MarketEvidence(
-        factor_names=market_factors,
-        monthly_log_returns=aligned.loc[:, list(market_factors)].to_numpy(dtype="float64"),
+    return ExogenousEvidence(
+        factor_names=factor_names,
+        monthly_log_returns=aligned.loc[:, list(factor_names)].to_numpy(dtype="float64"),
         monthly_return_months=tuple(str(period) for period in aligned.index),
         marginal_returns=marginal,
-        market_path_calibration=market_path_calibration,
-        calibrated_market_path_priors=calibrated_market_path_priors,
+        series_path_calibration=series_path_calibration,
+        calibrated_series_path_priors=calibrated_series_path_priors,
         current_mortgage30_rate_pct=float(mortgage30.iloc[-1]),
         latest_observations=latest_observations,
     )

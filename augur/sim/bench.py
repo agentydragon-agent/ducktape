@@ -32,7 +32,7 @@ def main() -> None:
     print(f"wall_clock_sec: {elapsed:.3f}")
     print(f"cash_balances_rows: {result.cash_balances.height}")
     print(f"asset_lots_rows: {result.asset_lots.height}")
-    print(f"market_prices_rows: {result.market_prices.height}")
+    print(f"series_values_rows: {result.series_values.height}")
     print(f"transfers: {result.events_log.transfers.height}")
     print(f"lot_dispositions: {result.events_log.lot_dispositions.height}")
     print(f"tax_accruals: {result.events_log.tax_accruals.height}")

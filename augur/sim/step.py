@@ -31,10 +31,10 @@ import polars as pl
 
 from augur.sim.amounts import amount_by_rollout
 from augur.sim.events import EVENT_FRAMES, EventLog
+from augur.sim.external_series import ExternalSeriesContext
 from augur.sim.jurisdictions import Jurisdiction
 from augur.sim.liquidity import plan_liquidity
 from augur.sim.locations import Location
-from augur.sim.market import MarketContext
 from augur.sim.obligations import emit_due_now_obligations
 from augur.sim.scenario import (
     RecurringTransfer,
@@ -59,7 +59,7 @@ def step_emit_scheduled_events(
     *,
     state: StateCrossSection,
     scenario: Scenario,
-    market: MarketContext,
+    external_series: ExternalSeriesContext,
     jurisdictions: dict[str, Jurisdiction],
     locations: dict[str, Location],
     month: int,
@@ -68,11 +68,11 @@ def step_emit_scheduled_events(
     """Phase 1 of the month step: scheduled / recurring transfers,
     scheduled asset sales, property purchases, mortgage originations,
     and year-end tax accruals. Pure: does not mutate `state`."""
-    transfers = _emit_transfers(scenario, market, month, rollout_count)
+    transfers = _emit_transfers(scenario, external_series, month, rollout_count)
     property_purchases = _emit_property_purchases(scenario, month, rollout_count)
     mortgage_originations = _emit_mortgage_originations(scenario, month, rollout_count)
     property_cash_transfers = _property_purchase_transfer_events(scenario, property_purchases)
-    dispositions = _emit_lot_dispositions(state, scenario, market, month)
+    dispositions = _emit_lot_dispositions(state, scenario, external_series, month)
     tax_year_events = _emit_year_end_tax_events(
         state=state,
         scenario=scenario,
@@ -94,16 +94,23 @@ def step_emit_scheduled_events(
 
 
 def step_emit_policy_events(
-    *, state: StateCrossSection, scenario: Scenario, market: MarketContext, locations: dict[str, Location], month: int
+    *,
+    state: StateCrossSection,
+    scenario: Scenario,
+    external_series: ExternalSeriesContext,
+    locations: dict[str, Location],
+    month: int,
 ) -> EventLog:
     """Phase 2 of the month step: due-now demand accrual, liquidity
     policy sale decisions, and mechanical settlement."""
-    due_now = emit_due_now_obligations(state=state, scenario=scenario, market=market, locations=locations, month=month)
+    due_now = emit_due_now_obligations(
+        state=state, scenario=scenario, external_series=external_series, locations=locations, month=month
+    )
     liquidity_plan = plan_liquidity(
         state=state,
         policies=scenario.liquidity_policies,
         hard_demands=due_now.obligation_accruals,
-        market=market,
+        external_series=external_series,
         month=month,
     )
     settlement = settle_due_now_demands(
@@ -128,7 +135,9 @@ def step_emit_policy_events(
     )
 
 
-def _emit_transfers(scenario: Scenario, market: MarketContext, month: int, rollout_count: int) -> pl.DataFrame:
+def _emit_transfers(
+    scenario: Scenario, external_series: ExternalSeriesContext, month: int, rollout_count: int
+) -> pl.DataFrame:
     """Emit Transfer event rows for every scheduled or recurring
     transfer active at this month. Scheduled transfers fire only at
     their configured month; recurring transfers fire every month in
@@ -139,19 +148,21 @@ def _emit_transfers(scenario: Scenario, market: MarketContext, month: int, rollo
     blocks: list[pl.DataFrame] = []
     if active:
         rollouts = pl.DataFrame({"rollout_index": list(range(rollout_count))}, schema={"rollout_index": pl.Int64()})
-        blocks = [_transfer_block_per_rollout(t, market, rollouts, month) for t in active]
+        blocks = [_transfer_block_per_rollout(t, external_series, rollouts, month) for t in active]
     return EVENT_FRAMES.transfers.concat(blocks)
 
 
 def _transfer_block_per_rollout(
-    t: ScheduledTransfer | RecurringTransfer, market: MarketContext, rollouts: pl.DataFrame, month: int
+    t: ScheduledTransfer | RecurringTransfer, external_series: ExternalSeriesContext, rollouts: pl.DataFrame, month: int
 ) -> pl.DataFrame:
     """One row per rollout for one transfer config. The rollout
     dimension is expanded vectorized — no Python loop over rollouts.
     Handles both ScheduledTransfer (one-off at a specific month) and
     RecurringTransfer (firing at this active month) — same event
     schema, only the cadence config differs."""
-    amounts = amount_by_rollout(t.amount_usd, market=market, rollouts=rollouts, month=month, column_name="amount_usd")
+    amounts = amount_by_rollout(
+        t.amount_usd, external_series=external_series, rollouts=rollouts, month=month, column_name="amount_usd"
+    )
     return (
         rollouts.join(amounts, on="rollout_index")
         .with_columns(
@@ -272,7 +283,7 @@ def _property_purchase_transfer_events(scenario: Scenario, purchases: pl.DataFra
 
 
 def _emit_lot_dispositions(
-    state: StateCrossSection, scenario: Scenario, market: MarketContext, month: int
+    state: StateCrossSection, scenario: Scenario, external_series: ExternalSeriesContext, month: int
 ) -> pl.DataFrame:
     """Emit `LotDisposition` rows for every scheduled asset sale at
     this month. Each sale is FIFO-resolved against the agent's
@@ -286,13 +297,13 @@ def _emit_lot_dispositions(
     sales = [s for s in scenario.scheduled_asset_sales if s.month == month]
     if not sales:
         return EVENT_FRAMES.lot_dispositions.empty()
-    prices_at_month = market.prices_at(month)
-    blocks = [_fifo_dispositions_for_sale(state, sale, prices_at_month, month) for sale in sales]
+    series_at_month = external_series.series_at(month)
+    blocks = [_fifo_dispositions_for_sale(state, sale, series_at_month, month) for sale in sales]
     return EVENT_FRAMES.lot_dispositions.concat(blocks)
 
 
 def _fifo_dispositions_for_sale(
-    state: StateCrossSection, sale: ScheduledAssetSale, prices_at_month: pl.DataFrame, month: int
+    state: StateCrossSection, sale: ScheduledAssetSale, series_at_month: pl.DataFrame, month: int
 ) -> pl.DataFrame:
     """Vectorized FIFO consumption of one sale across all rollouts.
 
@@ -304,9 +315,8 @@ def _fifo_dispositions_for_sale(
     consumed lot per rollout.
 
     Pricing: if `sale.price_per_unit_usd` is set it's used as a
-    scalar; otherwise `prices_at_month` is joined by
-    `(rollout_index, asset_id)` so each rollout gets its own
-    market-derived price."""
+    scalar; otherwise `series_at_month` is filtered by the sale's asset id
+    as an external series id so each rollout gets its own sampled price."""
     candidates = state.asset_lots.filter(
         (pl.col("agent_id") == sale.agent_id)
         & (pl.col("asset_id") == sale.asset_id)
@@ -314,7 +324,7 @@ def _fifo_dispositions_for_sale(
     )
     if candidates.is_empty():
         return EVENT_FRAMES.lot_dispositions.empty()
-    priced = _attach_unit_price(candidates, sale, prices_at_month)
+    priced = _attach_unit_price(candidates, sale, series_at_month)
     ordered = priced.sort(["rollout_index", "purchase_month_index", "lot_id"])
     with_cum = ordered.with_columns(
         _prev_cum_remaining=(
@@ -340,16 +350,14 @@ def _fifo_dispositions_for_sale(
     ).pipe(EVENT_FRAMES.lot_dispositions.normalize)
 
 
-def _attach_unit_price(lots: pl.DataFrame, sale: ScheduledAssetSale, prices_at_month: pl.DataFrame) -> pl.DataFrame:
+def _attach_unit_price(lots: pl.DataFrame, sale: ScheduledAssetSale, series_at_month: pl.DataFrame) -> pl.DataFrame:
     """Add a `_unit_price` column to the candidate lots. Scalar
     price (configured on the sale) is broadcast across rollouts;
-    market-derived price is joined per `(rollout_index, asset_id)`."""
+    sampled price is joined per rollout."""
     if sale.price_per_unit_usd is not None:
         return lots.with_columns(pl.lit(sale.price_per_unit_usd, dtype=pl.Float64()).alias("_unit_price"))
-    prices_for_asset = prices_at_month.filter(pl.col("asset_id") == sale.asset_id).rename(
-        {"price_per_unit_usd": "_unit_price"}
-    )
-    return lots.join(prices_for_asset.select("rollout_index", "_unit_price"), on="rollout_index", how="left")
+    values_for_asset = series_at_month.filter(pl.col("series_id") == sale.asset_id).rename({"value": "_unit_price"})
+    return lots.join(values_for_asset.select("rollout_index", "_unit_price"), on="rollout_index", how="left")
 
 
 def _is_year_end(month: int) -> bool:

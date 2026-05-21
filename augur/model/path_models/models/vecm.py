@@ -5,7 +5,7 @@
 where x_t is the F-vector of log-levels and `coint_rank` is the assumed
 rank of the cointegration relationship. Equivalent to a VAR(p) on
 log-levels with a long-run pull toward the cointegrating relationships
-β' x + μ = 0; for the configured market factors this is what binds rent
+β' x + μ = 0; for the configured factors this is what binds rent
 and CPI to a shared trend rather than letting them drift apart over 30
 years.
 
@@ -29,17 +29,17 @@ from pydantic import Field
 from statsmodels.tsa.vector_ar.vecm import VECM
 
 from augur.frames import concat_frames
-from augur.model.location_market_sources import LocationMarketSources, LocationMarketSourcesConfig
-from augur.model.market_api import (
-    MARKET_EVENTS_SCHEMA,
-    MARKET_LEVELS_SCHEMA,
-    MarketSamplingRequest,
-    SampledMarketBundle,
-    market_events_frame,
-    market_levels_frame,
+from augur.model.exogenous import (
+    SERIES_EVENTS_SCHEMA,
+    SERIES_LEVELS_SCHEMA,
+    ExogenousSamplingRequest,
+    SampledExogenousBundle,
+    series_events_frame,
+    series_levels_frame,
 )
-from augur.model.markets._density import gaussian_logpdf, gaussian_logpdf_from_samples
-from augur.model.markets.scenarios import HistoricalSeries, Scenarios
+from augur.model.location_series_sources import LocationSeriesSources, LocationSeriesSourcesConfig
+from augur.model.path_models._density import gaussian_logpdf, gaussian_logpdf_from_samples
+from augur.model.path_models.scenarios import HistoricalSeries, Scenarios
 from augur.model.provenance import stable_identity_digest
 from augur.model.schemas import FrozenModel
 from augur.model.series import (
@@ -59,8 +59,8 @@ from augur.model.series import (
 # Add another mode only after extending the parameter copy + `_predict_mean`.
 _DETERMINISTIC: Literal["ci"] = "ci"
 _TENDER_INTERVAL_MONTHS = 12
-_MODEL_CARD_ID = "augur-market-model-card:2026-05-15"
-_VALIDATION_REPORT_ID = "validation_report:augur-market-models:not_available:2026-05-15"
+_MODEL_CARD_ID = "augur-exogenous-model-card:2026-05-15"
+_VALIDATION_REPORT_ID = "validation_report:augur-exogenous-models:not_available:2026-05-15"
 _KNOWN_LIMITATION_IDS = (
     "evidence-set-id-unversioned",
     "calibration-artifact-id-unversioned",
@@ -221,7 +221,7 @@ class VecmModel:
 
         return np.asarray(mean)
 
-    def save(self, descriptor: VecmMarketProviderConfig) -> None:
+    def save(self, descriptor: VecmExogenousProviderConfig) -> None:
         """Persist post-fit state to the `.npz` archive named by the
         descriptor's `trained_blob` so the runtime can skip re-fitting at
         startup. Symmetric to `VecmModel.load(descriptor)`."""
@@ -241,7 +241,7 @@ class VecmModel:
         )
 
     @staticmethod
-    def load(descriptor: VecmMarketProviderConfig) -> VecmModel:
+    def load(descriptor: VecmExogenousProviderConfig) -> VecmModel:
         with np.load(descriptor.trained_blob, allow_pickle=True) as data:
             config = VecmConfig(k_ar_diff=int(data["k_ar_diff"]), coint_rank=int(data["coint_rank"]))
             factor_names = tuple(str(name) for name in data["factor_names"])
@@ -291,18 +291,18 @@ class VecmModel:
 
 
 @dataclass(frozen=True)
-class VecmJointMarketModel:
+class VecmExogenousPathModel:
     """Native sampled-bundle wrapper around a fitted `VecmModel`."""
 
     model: VecmModel
     latest_observations: dict[str, Any]
     current_private_equity_price_usd: float
-    location_market_sources: LocationMarketSources
+    location_series_sources: LocationSeriesSources
     label: str
     risk_factor_ids: tuple[str, ...]
     evidence_latest_observation_ids: tuple[str, ...]
     risk_factor_set_id: str
-    market_model_version_id: str
+    exogenous_model_version_id: str
     evidence_set_id: str
     calibration_artifact_id: str
 
@@ -313,13 +313,13 @@ class VecmJointMarketModel:
         *,
         latest_observations: dict[str, Any],
         current_private_equity_price_usd: float,
-        location_market_sources: LocationMarketSources,
+        location_series_sources: LocationSeriesSources,
         evidence_source_id: str,
-    ) -> VecmJointMarketModel:
+    ) -> VecmExogenousPathModel:
         factor_names = tuple(model.factor_names)
         label = model.label
         risk_factor_set_id = "risk_factor_set:" + stable_identity_digest({"factor_names": factor_names})
-        market_model_version_id = "model_version:" + stable_identity_digest(
+        exogenous_model_version_id = "model_version:" + stable_identity_digest(
             {"label": label, "class": type(model).__qualname__}
         )
         evidence_set_id = "evidence_set:" + stable_identity_digest(
@@ -331,8 +331,8 @@ class VecmJointMarketModel:
         )
         calibration_artifact_id = "calibration_artifact:" + stable_identity_digest(
             {
-                "market_model_id": label,
-                "market_model_version_id": market_model_version_id,
+                "exogenous_model_id": label,
+                "exogenous_model_version_id": exogenous_model_version_id,
                 "evidence_set_id": evidence_set_id,
                 "risk_factor_set_id": risk_factor_set_id,
             }
@@ -341,17 +341,17 @@ class VecmJointMarketModel:
             model=model,
             latest_observations=dict(latest_observations),
             current_private_equity_price_usd=float(current_private_equity_price_usd),
-            location_market_sources=location_market_sources,
+            location_series_sources=location_series_sources,
             label=label,
             risk_factor_ids=factor_names,
             evidence_latest_observation_ids=tuple(sorted(str(key) for key in latest_observations)),
             risk_factor_set_id=risk_factor_set_id,
-            market_model_version_id=market_model_version_id,
+            exogenous_model_version_id=exogenous_model_version_id,
             evidence_set_id=evidence_set_id,
             calibration_artifact_id=calibration_artifact_id,
         )
 
-    def sample(self, request: MarketSamplingRequest) -> SampledMarketBundle:
+    def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
         if request.rollout_count:
             multipliers = np.concatenate(
                 [
@@ -371,7 +371,7 @@ class VecmJointMarketModel:
         private_equity_events[:, _TENDER_INTERVAL_MONTHS : request.horizon_months + 1 : _TENDER_INTERVAL_MONTHS] = True
 
         level_blocks = [
-            market_levels_frame(
+            series_levels_frame(
                 series_id,
                 self._level_series(series_id, path_by_factor=path_by_factor, shape=shape),
                 rollout_count=request.rollout_count,
@@ -380,7 +380,7 @@ class VecmJointMarketModel:
             for series_id in sorted(request.required_level_series)
         ]
         event_blocks = [
-            market_events_frame(
+            series_events_frame(
                 event_id,
                 self._event_series(event_id, private_equity_events=private_equity_events),
                 rollout_count=request.rollout_count,
@@ -388,17 +388,18 @@ class VecmJointMarketModel:
             )
             for event_id in sorted(request.required_event_series)
         ]
-        return SampledMarketBundle(
-            levels=concat_frames(level_blocks, MARKET_LEVELS_SCHEMA),
-            events=concat_frames(event_blocks, MARKET_EVENTS_SCHEMA),
+        return SampledExogenousBundle(
+            levels=concat_frames(level_blocks, SERIES_LEVELS_SCHEMA),
+            events=concat_frames(event_blocks, SERIES_EVENTS_SCHEMA),
             metadata={
                 "model_card_id": _MODEL_CARD_ID,
-                "model_version_id": self.market_model_version_id,
+                "model_version_id": self.exogenous_model_version_id,
                 "validation_report_id": _VALIDATION_REPORT_ID,
                 "known_limitation_ids": _KNOWN_LIMITATION_IDS,
-                "market_model_version_id": self.market_model_version_id,
-                "scenario_generator_id": "vecm_joint_market_model",
-                "scenario_generator_version_id": "vecm_joint_market_model:v1",
+                "exogenous_model_id": self.label,
+                "exogenous_model_version_id": self.exogenous_model_version_id,
+                "scenario_generator_id": "vecm_exogenous_path_model",
+                "scenario_generator_version_id": "vecm_exogenous_path_model:v1",
                 "evidence_set_id": self.evidence_set_id,
                 "calibration_artifact_id": self.calibration_artifact_id,
                 "risk_factor_set_id": self.risk_factor_set_id,
@@ -406,8 +407,8 @@ class VecmJointMarketModel:
                 "evidence_latest_observation_ids": self.evidence_latest_observation_ids,
                 "current_private_equity_price_usd": self.current_private_equity_price_usd,
                 "event_stream_ids": ("private_equity_sale_opportunity_event",),
-                "notes": ("sampled by VecmJointMarketModel",),
-                "market_provider_label": self.label,
+                "notes": ("sampled by VecmExogenousPathModel",),
+                "exogenous_provider_label": self.label,
             },
         )
 
@@ -426,21 +427,21 @@ class VecmJointMarketModel:
             return np.full(shape, self.current_private_equity_price_usd or 1.0, dtype="float64")
         if series_suffix(series_id, CRYPTO_SERIES_PREFIX) is not None:
             return np.ones(shape, dtype="float64")
-        raise ValueError(f"VECM market model cannot sample level series {series_id!r}")
+        raise ValueError(f"VECM exogenous model cannot sample level series {series_id!r}")
 
     def _event_series(self, event_id: str, *, private_equity_events: np.ndarray) -> np.ndarray:
         if series_suffix(event_id, PRIVATE_EQUITY_SALE_EVENT_PREFIX) is not None:
             return private_equity_events
-        raise ValueError(f"VECM market model cannot sample event series {event_id!r}")
+        raise ValueError(f"VECM exogenous model cannot sample event series {event_id!r}")
 
     def _location_factor(self, kind: Literal["home_value", "rent"], location_id: str) -> str:
         source_by_location = (
-            self.location_market_sources.home_value if kind == "home_value" else self.location_market_sources.rent
+            self.location_series_sources.home_value if kind == "home_value" else self.location_series_sources.rent
         )
         try:
             return source_by_location[location_id]
         except KeyError as error:
-            raise ValueError(f"location_market_sources.{kind} has no entry for {location_id!r}") from error
+            raise ValueError(f"location_series_sources.{kind} has no entry for {location_id!r}") from error
 
     def _factor_level(self, factor_name: str, *, path_by_factor: dict[str, np.ndarray]) -> np.ndarray:
         try:
@@ -485,7 +486,7 @@ def _observation_value(observation: Any, key: str) -> float:
     raise TypeError(f"VECM latest_observations {key} must be a number or object with numeric 'value'")
 
 
-class VecmMarketProviderConfig(FrozenModel):
+class VecmExogenousProviderConfig(FrozenModel):
     """Pre-trained VECM provider config — points at the trained-state blob
     written by `bb run //augur/fit:train`. The model is loaded at server
     startup; no fitting happens on the request path."""
@@ -493,17 +494,17 @@ class VecmMarketProviderConfig(FrozenModel):
     type: Literal["vecm"] = "vecm"
     trained_blob: Path = Field(description="Absolute path to the .npz produced by VecmModel.save(descriptor).")
     latest_observations: dict[str, Any] = Field(
-        description="Latest observed market state at the start of the simulation horizon (factor → value)."
+        description="Latest observed series state at the start of the simulation horizon (factor → value)."
     )
     current_mortgage30_rate_pct: float
-    location_market_sources: LocationMarketSourcesConfig
+    location_series_sources: LocationSeriesSourcesConfig
 
-    def realize_model(self, *, current_private_equity_price_usd: float) -> VecmJointMarketModel:
+    def realize_model(self, *, current_private_equity_price_usd: float) -> VecmExogenousPathModel:
         model = VecmModel.load(self)
-        return VecmJointMarketModel.from_loaded_model(
+        return VecmExogenousPathModel.from_loaded_model(
             model,
             latest_observations=self.latest_observations,
             current_private_equity_price_usd=current_private_equity_price_usd,
-            location_market_sources=LocationMarketSources.from_config(self.location_market_sources),
+            location_series_sources=LocationSeriesSources.from_config(self.location_series_sources),
             evidence_source_id=str(self.trained_blob),
         )

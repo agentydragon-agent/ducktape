@@ -22,7 +22,7 @@ from augur.sim.scenario import (
 from augur.sim.simulate import simulate
 
 
-def test_projection_due_now_obligation_sells_assets_and_settles(deterministic_market_bundle) -> None:
+def test_projection_due_now_obligation_sells_assets_and_settles(deterministic_series_bundle) -> None:
     scenario = Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="landlord")],
         initial_cash=[
@@ -51,7 +51,7 @@ def test_projection_due_now_obligation_sells_assets_and_settles(deterministic_ma
                 amount_due_usd=500.0,
             )
         ],
-        market=deterministic_market_bundle([100.0, 100.0]),
+        external_series=deterministic_series_bundle([100.0, 100.0]),
         liquidity_policies=[LiquidityPolicy(agent_id="alice", account_id="checking", asset_preference_chain=["vti"])],
         horizon_months=1,
     )

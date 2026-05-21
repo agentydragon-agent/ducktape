@@ -6,7 +6,7 @@ from augur.api.backend import Backend, BackendRuntimeConfig
 from augur.api.casing import plain_json
 from augur.api.config import load_augur_config
 from augur.api.scenario_set import RolloutStatusType
-from augur.model.simple_market import SimpleMarketModel
+from augur.model.simple_exogenous import SimpleExogenousModel
 from util.bazel.runfiles import get_required_path
 
 
@@ -16,7 +16,7 @@ def test_backend_runs_joint_model_and_materializes_graph_tables() -> None:
         runtime_config=BackendRuntimeConfig(
             default_rollout_samples=3,
             max_rollout_samples=3,
-            market_model=SimpleMarketModel(current_private_equity_price_usd=25.0),
+            exogenous_model=SimpleExogenousModel(current_private_equity_price_usd=25.0),
         ),
     )
 
@@ -24,7 +24,7 @@ def test_backend_runs_joint_model_and_materializes_graph_tables() -> None:
         {
             "scenario_set_id": "backend_smoke",
             "title": "Backend smoke",
-            "market_request": {"market_model_id": "simple", "rollout_count": 3, "horizon_months": 3, "seed": 11},
+            "sampling_request": {"exogenous_model_id": "simple", "rollout_count": 3, "horizon_months": 3, "seed": 11},
             "scenarios": [
                 {
                     "scenario_id": "sp500_spend",
@@ -69,16 +69,16 @@ def test_backend_runs_joint_model_and_materializes_graph_tables() -> None:
         }
     )
 
-    assert response.market_metadata is not None
-    assert response.market_metadata["market_model_id"] == "simple_market_model"
-    assert response.market_metadata["source_metadata"]["level_anchors"] == {"sp500": 500.0}
+    assert response.sampling_metadata is not None
+    assert response.sampling_metadata["exogenous_model_id"] == "simple_exogenous_model"
+    assert response.sampling_metadata["source_metadata"]["level_anchors"] == {"sp500": 500.0}
     assert response.projection_run is not None
     assert response.projection_run.scenario_set_id == "backend_smoke"
     assert response.projection_run.path_set_id.startswith("path_set:")
     assert len(response.projection_run.scenario_input_ids) == 1
     assert [path.rollout_index for path in response.exogenous_paths] == [0, 1, 2]
     assert {path.path_set_id for path in response.exogenous_paths} == {response.projection_run.path_set_id}
-    assert {path.market_model_id for path in response.exogenous_paths} == {"simple_market_model"}
+    assert {path.exogenous_model_id for path in response.exogenous_paths} == {"simple_exogenous_model"}
     assert len({path.exogenous_path_id for path in response.exogenous_paths}) == 3
     assert all(0 <= path.seed <= 2**32 - 1 for path in response.exogenous_paths)
     result = response.scenario_results[0]
@@ -115,7 +115,7 @@ def test_backend_accepts_catalog_defaulted_property_selection() -> None:
         runtime_config=BackendRuntimeConfig(
             default_rollout_samples=3,
             max_rollout_samples=3,
-            market_model=SimpleMarketModel(current_private_equity_price_usd=25.0),
+            exogenous_model=SimpleExogenousModel(current_private_equity_price_usd=25.0),
         ),
     )
 
@@ -123,7 +123,7 @@ def test_backend_accepts_catalog_defaulted_property_selection() -> None:
         {
             "scenario_set_id": "backend_property_smoke",
             "title": "Backend property smoke",
-            "market_request": {"market_model_id": "simple", "rollout_count": 3, "horizon_months": 3, "seed": 11},
+            "sampling_request": {"exogenous_model_id": "simple", "rollout_count": 3, "horizon_months": 3, "seed": 11},
             "scenarios": [
                 {
                     "scenario_id": "buy_catalog_property",

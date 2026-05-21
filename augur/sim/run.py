@@ -30,5 +30,5 @@ class SimulationRun:
     liabilities: pl.DataFrame
     rollout_status_history: pl.DataFrame
     rollout_status: pl.DataFrame
-    market_prices: pl.DataFrame
+    series_values: pl.DataFrame
     events_log: EventLog

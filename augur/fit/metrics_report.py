@@ -1,6 +1,6 @@
-"""Score the active trained market model on the same metric battery.
+"""Score the active trained exogenous model on the same metric battery.
 
-Loads historical market-factor data, fits each model from
+Loads historical exogenous-factor data, fits each model from
 the active model list, runs held-out + rolling-origin + multi-step predictive
 log-density, writes a `summary.json`.
 
@@ -17,18 +17,18 @@ from pathlib import Path
 from typing import Any
 
 from augur.fit.data import load_historical
-from augur.fit.market_model import MarketModel
+from augur.fit.exogenous_model import PredictiveSeriesModel
 from augur.fit.metrics import (
     held_out_predictive_log_density,
     multi_step_predictive_log_density,
     rolling_origin_predictive_log_density,
 )
-from augur.model.markets.models.vecm import VecmConfig, VecmModel
+from augur.model.path_models.models.vecm import VecmConfig, VecmModel
 
 
 @dataclass(frozen=True)
 class ModelMetricSpec:
-    build: Callable[[], MarketModel]
+    build: Callable[[], PredictiveSeriesModel]
     rolling_origin_refit_every: int = 1
 
 
@@ -74,9 +74,11 @@ def evaluate_all(
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Augur: score the active trained market model on the metric battery.")
+    parser = argparse.ArgumentParser(
+        description="Augur: score the active trained exogenous model on the metric battery."
+    )
     parser.add_argument(
-        "--config", type=Path, default=None, help="path to market_config.example.json (default: bundled)"
+        "--config", type=Path, default=None, help="path to exogenous_evidence.example.json (default: bundled)"
     )
     parser.add_argument("--train-fraction", type=float, default=0.8)
     parser.add_argument("--rolling-min-train", type=int, default=60)

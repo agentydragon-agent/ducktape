@@ -75,8 +75,8 @@ class PrivateEquitySaleDecisionReason(StrEnum):
     SALE_REQUESTED = "sale_requested"
 
 
-class MarketObservationType(StrEnum):
-    MARKET_PATH = "market_path"
+class ExogenousObservationType(StrEnum):
+    EXOGENOUS_PATH = "exogenous_path"
     PRIVATE_EQUITY_SALE_OPPORTUNITY = "private_equity_sale_opportunity"
 
 
@@ -409,7 +409,7 @@ PrivateEquitySaleRule = Annotated[
 
 
 class PrivateEquitySalePolicy(_PolicyBase):
-    """Sell private equity when market sale opportunities satisfy the policy rule."""
+    """Sell private equity when exogenous sale opportunities satisfy the policy rule."""
 
     policy_type: Literal[PolicyType.PRIVATE_EQUITY_SALE] = PolicyType.PRIVATE_EQUITY_SALE
     proceeds_destination: PrivateEquitySaleProceedsDestination = PrivateEquitySaleProceedsDestination.CASH
@@ -589,12 +589,12 @@ PolicyDecision = Annotated[
 ]
 
 
-class _MarketObservationBase(_TraceBase):
+class _ExogenousObservationBase(_TraceBase):
     pass
 
 
-class MarketPathObservation(_MarketObservationBase):
-    observation_type: Literal[MarketObservationType.MARKET_PATH] = MarketObservationType.MARKET_PATH
+class ExogenousPathObservation(_ExogenousObservationBase):
+    observation_type: Literal[ExogenousObservationType.EXOGENOUS_PATH] = ExogenousObservationType.EXOGENOUS_PATH
     location_id: str | None = None
     inflation_multiplier: float
     sp500_multiplier: float
@@ -605,9 +605,9 @@ class MarketPathObservation(_MarketObservationBase):
     private_equity_sale_opportunity_event: bool
 
 
-class PrivateEquitySaleOpportunityObservation(_MarketObservationBase):
-    observation_type: Literal[MarketObservationType.PRIVATE_EQUITY_SALE_OPPORTUNITY] = (
-        MarketObservationType.PRIVATE_EQUITY_SALE_OPPORTUNITY
+class PrivateEquitySaleOpportunityObservation(_ExogenousObservationBase):
+    observation_type: Literal[ExogenousObservationType.PRIVATE_EQUITY_SALE_OPPORTUNITY] = (
+        ExogenousObservationType.PRIVATE_EQUITY_SALE_OPPORTUNITY
     )
     source_asset_id: str = Field(description="Private-equity holding that produced this tender opportunity.")
     opportunity_id: str
@@ -616,8 +616,8 @@ class PrivateEquitySaleOpportunityObservation(_MarketObservationBase):
     private_equity_value_before_sale_usd: float
 
 
-MarketObservation = Annotated[
-    MarketPathObservation | PrivateEquitySaleOpportunityObservation, Field(discriminator="observation_type")
+ExogenousObservation = Annotated[
+    ExogenousPathObservation | PrivateEquitySaleOpportunityObservation, Field(discriminator="observation_type")
 ]
 
 
@@ -955,7 +955,7 @@ class PrivateEquityPosition(ApiModel):
     - When `value_usd` is set, it is the authoritative month-0 mark — e.g. a tender-offer
       or manual mark carried through from deployment config.
     - When `value_usd` is absent, the month-0 mark is derived from
-      `units × SampledMarketBundle.metadata["current_private_equity_price_usd"]`.
+      `units × SampledExogenousBundle.metadata["current_private_equity_price_usd"]`.
       Callers without an independent mark (such as the browser UI, which stores
       units only) should leave `value_usd` unset; the simulator owns the
       derivation.
@@ -980,14 +980,14 @@ class PrivateEquityPosition(ApiModel):
             "the simulator routes this position to the per-issuer mark and tender-event "
             "series. When unset, the position rides the position's `asset_id` as its "
             "routing key. The API bridge collects every routing key in use into a "
-            "`MarketSamplingRequest` so the model can populate the required level/event series."
+            "`ExogenousSamplingRequest` so the model can populate the required level/event series."
         ),
     )
     liquidity_regime: LiquidityRegime = Field(default_factory=LiquidityEventOnly)
     provenance: PositionProvenance = Field(default_factory=PositionProvenance)
 
     @property
-    def market_routing_key(self) -> str:
+    def series_routing_key(self) -> str:
         """Key used to look up per-issuer external series.
 
         Falls back to `asset_id` when `issuer_id` is unset so single-asset
@@ -1008,8 +1008,8 @@ class InitialBalanceSheet(ApiModel):
     liabilities: tuple[Any, ...] = Field(default=(), max_length=0)
 
 
-class MarketRequest(ApiModel):
-    market_model_id: str = "current_market_model"
+class SamplingRequest(ApiModel):
+    exogenous_model_id: str = "current_exogenous_model"
     rollout_count: PositiveInt = 128
     horizon_months: PositiveInt = 360
     seed: int
@@ -1037,7 +1037,7 @@ class Scenario(ApiModel):
 class ScenarioSet(ApiModel):
     scenario_set_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
     title: str
-    market_request: MarketRequest
+    sampling_request: SamplingRequest
     report_spec: ReportSpec = Field(default_factory=ReportSpec)
     scenarios: tuple[Scenario, ...] = Field(min_length=1)
 
@@ -1060,13 +1060,13 @@ class ExogenousPathIdentity(ApiModel):
     rollout_index: NonNegativeInt
     path_set_id: str
     exogenous_path_id: str
-    market_model_id: str
-    market_model_version_id: str = "unknown"
-    scenario_generator_id: str = "market_model_provider"
+    exogenous_model_id: str
+    exogenous_model_version_id: str = "unknown"
+    scenario_generator_id: str = "exogenous_model_provider"
     scenario_generator_version_id: str = "unknown"
     evidence_set_id: str = "unknown"
     calibration_artifact_id: str = "unknown"
-    risk_factor_set_id: str = "market_factors:v1"
+    risk_factor_set_id: str = "exogenous_factors:v1"
     seed: int
     event_stream_ids: tuple[str, ...] = ()
 
@@ -1109,7 +1109,7 @@ class ScenarioResult(ApiModel):
     terminal_columns: ColumnarTable | None = None
     effects: tuple[Effect, ...] = ()
     policy_decisions: tuple[PolicyDecision, ...] = ()
-    market_observations: tuple[MarketObservation, ...] = ()
+    exogenous_observations: tuple[ExogenousObservation, ...] = ()
     tax_lots: tuple[TaxLot, ...] = ()
     lot_dispositions: tuple[LotDisposition, ...] = ()
     liabilities: tuple[LiabilityState, ...] = ()
@@ -1124,9 +1124,9 @@ class ScenarioResult(ApiModel):
 class ScenarioSetRunResponse(ApiModel):
     scenario_set_id: str
     request: ScenarioSet
-    market_request: MarketRequest
+    sampling_request: SamplingRequest
     report_spec: ReportSpec
-    market_metadata: dict[str, Any] | None = None
+    sampling_metadata: dict[str, Any] | None = None
     projection_run: ProjectionRun | None = None
     exogenous_paths: tuple[ExogenousPathIdentity, ...] = ()
     scenario_results: tuple[ScenarioResult, ...]

@@ -1,4 +1,4 @@
-"""Test-only market model fixtures."""
+"""Test-only exogenous path model fixtures."""
 
 from __future__ import annotations
 
@@ -9,40 +9,45 @@ import numpy as np
 
 from augur.frames import concat_frames
 from augur.model.deterministic import Constant
-from augur.model.market import IndependentMarketModels
-from augur.model.market_api import MARKET_EVENTS_SCHEMA, MarketSamplingRequest, SampledMarketBundle, market_events_frame
+from augur.model.exogenous import (
+    SERIES_EVENTS_SCHEMA,
+    ExogenousSamplingRequest,
+    SampledExogenousBundle,
+    series_events_frame,
+)
+from augur.model.series_model import IndependentSeriesModels
 
 
 def _fixture_metadata() -> dict[str, object]:
     return {
-        "market_model_id": "deterministic_market_fixture",
-        "market_model_version_id": "deterministic_market_fixture:v1",
-        "scenario_generator_id": "deterministic_market_fixture",
-        "scenario_generator_version_id": "deterministic_market_fixture:v1",
+        "exogenous_model_id": "deterministic_series_fixture",
+        "exogenous_model_version_id": "deterministic_series_fixture:v1",
+        "scenario_generator_id": "deterministic_series_fixture",
+        "scenario_generator_version_id": "deterministic_series_fixture:v1",
         "evidence_set_id": "fixture:deterministic",
         "calibration_artifact_id": "fixture:deterministic",
-        "notes": ("deterministic market fixture",),
+        "notes": ("deterministic series fixture",),
     }
 
 
 @dataclass(frozen=True)
-class DeterministicMarketFixtureModel:
-    """Joint model fixture composed from constant scalar market models."""
+class DeterministicSeriesFixtureModel:
+    """Joint model fixture composed from constant scalar series models."""
 
     default_level_value: float = 1.0
     level_values: Mapping[str, float] = field(default_factory=dict)
     event_active_months: tuple[int, ...] = (12,)
     metadata: Mapping[str, object] = field(default_factory=_fixture_metadata)
 
-    def sample(self, request: MarketSamplingRequest) -> SampledMarketBundle:
-        level_models = IndependentMarketModels(
-            markets={
+    def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
+        level_models = IndependentSeriesModels(
+            series={
                 series_id: Constant(value=self.level_values.get(series_id, self.default_level_value))
                 for series_id in sorted(request.required_level_series)
             }
         )
         event_blocks = [
-            market_events_frame(
+            series_events_frame(
                 event_id,
                 self._event_mask(request),
                 rollout_count=request.rollout_count,
@@ -50,13 +55,13 @@ class DeterministicMarketFixtureModel:
             )
             for event_id in sorted(request.required_event_series)
         ]
-        return SampledMarketBundle(
+        return SampledExogenousBundle(
             levels=level_models.sample(request).levels,
-            events=concat_frames(event_blocks, MARKET_EVENTS_SCHEMA),
+            events=concat_frames(event_blocks, SERIES_EVENTS_SCHEMA),
             metadata=dict(self.metadata),
         )
 
-    def _event_mask(self, request: MarketSamplingRequest) -> np.ndarray:
+    def _event_mask(self, request: ExogenousSamplingRequest) -> np.ndarray:
         active = np.zeros((request.rollout_count, request.horizon_months + 1), dtype=np.bool_)
         for month in self.event_active_months:
             if 0 <= month <= request.horizon_months:

@@ -1,12 +1,12 @@
 # augur
 
 Probabilistic simulator of a multi-agent economic system. Given a
-**scenario** — a bundle of agents, assets, liabilities, markets, and
+**scenario** — a bundle of agents, assets, liabilities, external series, and
 policies — augur produces a distribution over trajectories of state by
 sampling many rollouts.
 
 This package contains the generic framework: typed entity model, vectorized
-engine, real-estate / ownership / private-equity / tax math, market models,
+engine, real-estate / ownership / private-equity / tax math, exogenous models,
 FastAPI scaffolding, and React shell. User-side configuration (specific
 properties, holdings, agent identities, fitted models, deployment) is
 composed in downstream user repos via the `Config` schema in
@@ -17,7 +17,7 @@ See <SPEC.md> for the entity taxonomy + per-rollout evaluation loop.
 ## Planning boundary
 
 Public, generic Augur work is tracked in this repo: simulator contracts,
-policy/runtime/schema shape, tax/accounting behavior, market-provider
+policy/runtime/schema shape, tax/accounting behavior, exogenous-provider
 interfaces, public app framework, and generic catalog/storage contracts for
 properties, locations, and property assets.
 
@@ -29,11 +29,11 @@ company-/person-specific modeling assumptions.
 
 | Directory      | Purpose                                                                                                                                 |
 | -------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `model/`       | Runtime market-provider configs, sim-facing market model APIs, simple fixture provider, and the active VECM provider.                   |
-| `model/train/` | Offline market training, public-data loading, evaluation/metric tooling, and training config templates.                                 |
+| `model/`       | Runtime exogenous-provider configs, sim-facing exogenous model APIs, simple fixture provider, and the active VECM provider.             |
+| `model/train/` | Offline exogenous-model training config templates.                                                                                      |
 | `data/market/` | Public market-source blobs (FRED series, Yahoo SPY adjusted-close, Zillow ZHVI). Acquisition recipes in `source/SOURCES.md`.            |
 | `api/`         | `Config` schema, wire request/response shapes, `Backend`, HTTP server, catalog/bootstrap assembly, OpenAPI schema export.               |
-| `sim/`         | Deterministic trajectory evaluation over typed scenarios and sampled exogenous market/state bundles.                                    |
+| `sim/`         | Deterministic trajectory evaluation over typed scenarios and sampled external-series bundles.                                           |
 | `frontend/`    | React app + Tailwind bundle build, frontend helpers (casing conversion, columnar table marshaling, scenario-set state, backend client). |
 
 ## Deployment integration
@@ -56,6 +56,6 @@ For local public-fixture development, use the combined dev-only wrapper:
 bazelisk run //augur:dev
 ```
 
-The public fixture config uses the lightweight `simple` market provider. Fitted
-macro models are selected in `Config.market_provider` YAML, e.g. `type:
+The public fixture config uses the lightweight `simple` exogenous provider. Fitted
+macro models are selected in `Config.exogenous_provider` YAML, e.g. `type:
 vecm` with a trained blob path.

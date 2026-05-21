@@ -143,7 +143,7 @@ test("default input creates comparable generic location scenarios", () => {
   assert.equal(firstScenario.policies.checkingFloorUsd, 0);
   assert.equal(firstScenario.policies.privateEquitySalePolicy, "none");
   assert.equal(secondScenario.propertyAndLocation.propertyId, "location_b_property");
-  assert.equal(input.marketRequest.seed, 0);
+  assert.equal(input.samplingRequest.seed, 0);
   assert.equal(input.reportSpec.includeMonthlyColumns, true);
 });
 
@@ -259,7 +259,7 @@ test("scenario set request is canonical backend input after decamelizing", () =>
     undefined
   );
   // The browser stores units only; value_usd is omitted so the backend simulator
-  // derives the opening mark from units × SampledMarketBundle metadata's current_private_equity_price_usd.
+  // derives the opening mark from units × SampledExogenousBundle metadata's current_private_equity_price_usd.
   assert.deepEqual(
     firstScenario.initial_balance_sheet.assets.find((asset) => asset.asset_type === "private_equity"),
     {
@@ -303,7 +303,7 @@ test("request normalization only sends current report fields", () => {
   const request = scenarioSetInputToRequest(input, bootstrap);
   const backendRequest = decamelizeObjectKeys(request);
 
-  assert.equal("shared_market_paths" in backendRequest.market_request, false);
+  assert.equal("shared_exogenous_paths" in backendRequest.sampling_request, false);
   assert.deepEqual(Object.keys(backendRequest.report_spec).sort(), ["include_monthly_columns", "percentiles"]);
   assert.equal(backendRequest.report_spec.include_monthly_columns, false);
 });
@@ -405,9 +405,9 @@ test("URL state preserves fields added to the Zod overrides schema", () => {
 test("URL state normalizes missing trajectory seed to deterministic default", () => {
   const input = createDefaultScenarioSetInput(bootstrap);
   const decoded = decodeScenarioSetUrlState(encodeScenarioSetUrlState(input));
-  decoded.marketRequest.seed = null;
+  decoded.samplingRequest.seed = null;
 
   const normalized = normalizeScenarioSetInput(decoded, bootstrap);
 
-  assert.equal(normalized.marketRequest.seed, 0);
+  assert.equal(normalized.samplingRequest.seed, 0);
 });

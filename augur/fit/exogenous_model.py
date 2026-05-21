@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from augur.model.markets.scenarios import HistoricalSeries, Scenarios
+from augur.model.path_models.scenarios import HistoricalSeries, Scenarios
 
 
-class MarketModel(Protocol):
+class PredictiveSeriesModel(Protocol):
     """Model-neutral interface every candidate joint-time-series model implements.
 
     Phase A only exercises the likelihood path. `fit` and `simulate` are kept

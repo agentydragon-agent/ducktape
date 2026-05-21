@@ -1,9 +1,9 @@
 """Round-trip test: train the active VECM model offline, write the provider config +
-blob, re-load via Pydantic + `<Model>MarketProviderConfig.realize_model(...)`,
+blob, re-load via Pydantic + `<Model>ExogenousProviderConfig.realize_model(...)`,
 and sample.
 
 This is the public contract the augur server consumes at startup: read
-`Config.market_provider`, dispatch via the discriminated union, and
+`Config.exogenous_provider`, dispatch via the discriminated union, and
 sample without re-fitting from source CSVs."""
 
 from __future__ import annotations
@@ -16,16 +16,16 @@ import yaml
 from pydantic import TypeAdapter
 
 from augur.fit.main import main as train_main
-from augur.model.market_api import MarketSamplingRequest
-from augur.model.market_provider_config import MarketProviderConfig, SimpleMarketProviderConfig
+from augur.model.exogenous import ExogenousSamplingRequest
+from augur.model.exogenous_provider_config import ExogenousProviderConfig, SimpleExogenousProviderConfig
 from augur.model.series import home_value_series_id, rent_series_id
 
-_ADAPTER: TypeAdapter[MarketProviderConfig] = TypeAdapter(MarketProviderConfig)
+_ADAPTER: TypeAdapter[ExogenousProviderConfig] = TypeAdapter(ExogenousProviderConfig)
 
 
 @pytest.mark.parametrize("model_label", ["vecm"])
 def test_train_then_load_and_sample(model_label: str, tmp_path: Path) -> None:
-    out_manifest = tmp_path / "market_provider.yaml"
+    out_manifest = tmp_path / "exogenous_provider.yaml"
     out_blob = tmp_path / f"trained_{model_label}.npz"
     train_main(["--model", model_label, "--out-provider-config", str(out_manifest), "--out-blob", str(out_blob)])
 
@@ -35,13 +35,13 @@ def test_train_then_load_and_sample(model_label: str, tmp_path: Path) -> None:
     parsed = _ADAPTER.validate_python(yaml.safe_load(out_manifest.read_text(encoding="utf-8")))
     # Trainer only emits the active trained provider config; narrow away fixture
     # providers so the trained-provider fields are accessible below.
-    assert not isinstance(parsed, SimpleMarketProviderConfig)
+    assert not isinstance(parsed, SimpleExogenousProviderConfig)
     assert parsed.type == model_label
     assert parsed.trained_blob == out_blob
     assert parsed.latest_observations  # non-empty; exact keys depend on the source-data schema
 
     model = parsed.realize_model(current_private_equity_price_usd=100.0)
-    locations = sorted(parsed.location_market_sources.home_value)
+    locations = sorted(parsed.location_series_sources.home_value)
     required_level_series = frozenset(
         {
             series_id
@@ -50,10 +50,10 @@ def test_train_then_load_and_sample(model_label: str, tmp_path: Path) -> None:
         }
     )
     sampled = model.sample(
-        MarketSamplingRequest(rollout_seeds=(7, 8), horizon_months=12, required_level_series=required_level_series)
+        ExogenousSamplingRequest(rollout_seeds=(7, 8), horizon_months=12, required_level_series=required_level_series)
     )
 
-    assert str(sampled.metadata["market_model_version_id"]).startswith("model_version:")
+    assert str(sampled.metadata["exogenous_model_version_id"]).startswith("model_version:")
     assert sampled.metadata["current_private_equity_price_usd"] == 100.0
     assert {
         row["series_id"] for row in sampled.levels.select("series_id").unique().iter_rows(named=True)

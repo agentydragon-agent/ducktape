@@ -28,7 +28,7 @@ from enum import StrEnum
 from pydantic import ConfigDict
 
 from augur.api.bootstrap import OwnerResidenceModeId, RentalUsePolicyId
-from augur.api.scenario_set import FinancingMode, MarketRequest, ReportSpec
+from augur.api.scenario_set import FinancingMode, ReportSpec, SamplingRequest
 from augur.api.schemas import ApiModel
 
 # ---------------------------------------------------------------------------
@@ -120,7 +120,7 @@ class BrowserScenarioInput(ApiModel):
 
 class BrowserScenarioSetInput(ApiModel):
     title: str
-    market_request: MarketRequest
+    sampling_request: SamplingRequest
     report_spec: ReportSpec
     scenarios: tuple[BrowserScenarioInput, ...]
 
@@ -212,6 +212,6 @@ class BrowserScenarioInputOverrides(_Overrides):
 
 class BrowserScenarioSetInputOverrides(_Overrides):
     title: str | None = None
-    market_request: MarketRequest | None = None
+    sampling_request: SamplingRequest | None = None
     report_spec: ReportSpec | None = None
     scenarios: tuple[BrowserScenarioInputOverrides, ...] | None = None

@@ -10,12 +10,10 @@ Then copy the produced PNGs from the test's undeclared outputs into
 `augur/frontend/__screenshots__/` and rerun this test without `UPDATE_GOLDEN`.
 With BuildBuddy/RBE, use the invocation id printed by Bazel:
 
-    bbapi artifact "$INV" test.outputs/distribution_default.png \
-        > augur/frontend/__screenshots__/distribution_default.png
-    bbapi artifact "$INV" test.outputs/distribution_fan.png \
-        > augur/frontend/__screenshots__/distribution_fan.png
-    bbapi artifact "$INV" test.outputs/trajectory_scenario_2_rollout_3.png \
-        > augur/frontend/__screenshots__/trajectory_scenario_2_rollout_3.png
+    for f in distribution_default distribution_fan trajectory_scenario_2_rollout_3; do
+        bbapi artifact "$INV" "test.outputs/$f.png" \
+            > "augur/frontend/__screenshots__/$f.png"
+    done
 """
 
 from __future__ import annotations
@@ -39,6 +37,11 @@ import pytest_bazel
 
 from util.bazel.runfiles import get_required_path
 from util.net import pick_free_port
+from util.testing.frontend_visual import (
+    deterministic_browser_context,
+    deterministic_style,
+    launch_deterministic_browser,
+)
 from util.testing.png_diff import assert_png_matches_golden
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -58,7 +61,7 @@ class VisualCase:
 
 
 def _encode_visual_state(scenario_set_input: dict[str, object]) -> str:
-    payload = {"version": 6, "scenario_set_input": scenario_set_input}
+    payload = {"version": 7, "scenario_set_input": scenario_set_input}
     payload_json = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()
     return base64.urlsafe_b64encode(payload_json).decode().rstrip("=")
 
@@ -72,7 +75,7 @@ def _visual_path(path: str, scenario_set_input: dict[str, object], *, scenario: 
 
 FAN_STATE: dict[str, object] = {
     "title": "Augur distribution fan fixture",
-    "market_request": {"market_model_id": "visual_fan", "rollout_count": 32, "horizon_months": 36, "seed": 23},
+    "sampling_request": {"exogenous_model_id": "visual_fan", "rollout_count": 32, "horizon_months": 36, "seed": 23},
     "report_spec": {"percentiles": [5, 25, 50, 75, 95], "include_monthly_columns": True},
     "scenarios": [
         {
@@ -152,44 +155,10 @@ VISUAL_CASES = (
 SCREENSHOT_VIEWPORT: ViewportSize = {"width": 1280, "height": 1000}
 FROZEN_NOW_MS = 1_779_768_000_000  # 2026-05-15T12:00:00Z.
 
-DETERMINISTIC_BROWSER_ARGS = [
-    "--no-sandbox",
-    "--disable-setuid-sandbox",
-    "--disable-dev-shm-usage",
-    "--disable-gpu",
-    "--font-render-hinting=none",
-    "--disable-font-subpixel-positioning",
-    "--disable-lcd-text",
-    "--force-color-profile=srgb",
-    "--disable-accelerated-2d-canvas",
-    "--disable-gpu-compositing",
-    "--disable-software-rasterizer",
-    "--disable-skia-runtime-opts",
-    "--disable-partial-raster",
-    "--disable-backing-store-limit",
-    "--use-gl=swiftshader",
-    "--force-device-scale-factor=1",
-    "--disable-features=CalculateNativeWinOcclusion,VizDisplayCompositor",
-    "--disable-accelerated-video-decode",
-    "--disable-canvas-aa",
-    "--disable-2d-canvas-clip-aa",
-    "--disable-webgl",
-    "--disable-webgl2",
-    "--blink-settings=imageAnimationPolicy=noAnimation",
-    "--disable-smooth-scrolling",
-    "--disable-threaded-animation",
-    "--disable-threaded-scrolling",
-    "--disable-checker-imaging",
-]
-
 
 @pytest.fixture
 def browser(playwright_sync: Playwright) -> Iterator[Browser]:
-    chromium_root = os.environ.get("CHROMIUM_HEADLESS_SHELL", "")
-    executable = str(Path(chromium_root) / "chrome-linux" / "headless_shell") if chromium_root else None
-    browser = playwright_sync.chromium.launch(
-        headless=True, executable_path=executable, args=DETERMINISTIC_BROWSER_ARGS
-    )
+    browser = launch_deterministic_browser(playwright_sync)
     try:
         yield browser
     finally:
@@ -249,33 +218,7 @@ def augur_server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
 
 @pytest.fixture
 def page(browser: Browser) -> Iterator[Page]:
-    context = browser.new_context(
-        viewport=SCREENSHOT_VIEWPORT,
-        device_scale_factor=1,
-        color_scheme="light",
-        reduced_motion="reduce",
-        locale="en-US",
-        timezone_id="UTC",
-    )
-    frozen_clock_script = """
-        ((nowMs) => {
-          const OriginalDate = Date;
-          class FrozenDate extends OriginalDate {
-            constructor(...args) {
-              if (args.length === 0) {
-                super(nowMs);
-              } else {
-                super(...args);
-              }
-            }
-            static now() {
-              return nowMs;
-            }
-          }
-          globalThis.Date = FrozenDate;
-        })(__FROZEN_NOW_MS__);
-        """
-    context.add_init_script(frozen_clock_script.replace("__FROZEN_NOW_MS__", str(FROZEN_NOW_MS)))
+    context = deterministic_browser_context(browser, viewport=SCREENSHOT_VIEWPORT, frozen_now_ms=FROZEN_NOW_MS)
     page = context.new_page()
     try:
         yield page
@@ -286,43 +229,11 @@ def page(browser: Browser) -> Iterator[Page]:
             context.close()
 
 
-def _deterministic_style() -> str:
-    font_bytes = get_required_path("_main/util/testing/frontend_visual/fonts/Inter.woff2").read_bytes()
-    font_base64 = base64.b64encode(font_bytes).decode()
-    return f"""
-    @font-face {{
-      font-family: "Inter";
-      src: url("data:font/woff2;base64,{font_base64}") format("woff2");
-      font-weight: 100 900;
-      font-display: block;
-    }}
-    :root,
-    body,
-    * {{
-      caret-color: transparent !important;
-      font-family: "Inter", sans-serif !important;
-      -webkit-font-smoothing: none !important;
-      -moz-osx-font-smoothing: unset !important;
-      font-smooth: never !important;
-      text-rendering: geometricPrecision !important;
-    }}
-    *,
-    *::before,
-    *::after {{
-      animation-duration: 0s !important;
-      animation-delay: 0s !important;
-      transition-duration: 0s !important;
-      transition-delay: 0s !important;
-      scroll-behavior: auto !important;
-    }}
-    """
-
-
 def _wait_for_augur_page(page: Page, case: VisualCase) -> None:
-    page.add_style_tag(content=_deterministic_style())
+    page.add_style_tag(content=deterministic_style())
     page.get_by_role("heading", name="Augur", exact=True).wait_for(state="visible", timeout=30_000)
     try:
-        page.get_by_text(case.visible_text).wait_for(state="visible", timeout=30_000)
+        page.get_by_text(case.visible_text).first.wait_for(state="visible", timeout=30_000)
     except Exception as error:
         raise AssertionError(
             f"{case.name} did not render expected text {case.visible_text!r}.\n"

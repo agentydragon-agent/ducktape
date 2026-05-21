@@ -109,7 +109,7 @@ def test_backend_server_runs_browser_shaped_property_request(server_url: str) ->
         {
             "scenario_set_id": "server_smoke",
             "title": "Server smoke",
-            "market_request": {"rollout_count": 4, "horizon_months": 12, "seed": 11},
+            "sampling_request": {"rollout_count": 4, "horizon_months": 12, "seed": 11},
             "report_spec": {"percentiles": [5, 25, 50, 75, 95], "include_monthly_columns": True},
             "scenarios": [
                 {
@@ -179,8 +179,8 @@ def test_backend_server_runs_browser_shaped_property_request(server_url: str) ->
         },
     )
 
-    assert scenario_run["market_metadata"]["market_model_id"] == "simple_market_model"
-    assert scenario_run["market_metadata"]["source_metadata"]["current_private_equity_price_usd"] == 25.0
+    assert scenario_run["sampling_metadata"]["exogenous_model_id"] == "simple_exogenous_model"
+    assert scenario_run["sampling_metadata"]["source_metadata"]["current_private_equity_price_usd"] == 25.0
 
     [result] = scenario_run["scenario_results"]
     assert result["scenario_id"] == "location_a_purchase"

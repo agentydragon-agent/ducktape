@@ -16,8 +16,8 @@ py_library(
 )
 
 py_library(
-    name = "location_market_sources_py",
-    srcs = ["location_market_sources.py"],
+    name = "location_series_sources_py",
+    srcs = ["location_series_sources.py"],
     deps = [
         ":schemas_py",
         "@pypi//pydantic",
@@ -25,8 +25,8 @@ py_library(
 )
 
 py_library(
-    name = "market_api_py",
-    srcs = ["market_api.py"],
+    name = "exogenous_py",
+    srcs = ["exogenous.py"],
     deps = [
         "@pypi//numpy",
         "@pypi//polars",
@@ -57,12 +57,12 @@ py_library(
 )
 
 py_library(
-    name = "market_py",
-    srcs = ["market.py"],
+    name = "series_model_py",
+    srcs = ["series_model.py"],
     deps = [
         ":deterministic_py",
+        ":exogenous_py",
         ":gbm_py",
-        ":market_api_py",
         "//augur:frames",
         "@pypi//polars",
         "@pypi//pydantic",
@@ -70,14 +70,14 @@ py_library(
 )
 
 py_library(
-    name = "simple_market_py",
-    srcs = ["simple_market.py"],
+    name = "simple_exogenous_py",
+    srcs = ["simple_exogenous.py"],
     deps = [
         ":deterministic_py",
+        ":exogenous_py",
         ":gbm_py",
-        ":market_api_py",
-        ":market_py",
         ":schemas_py",
+        ":series_model_py",
         ":series_py",
         "//augur:frames",
         "@pypi//numpy",
@@ -86,12 +86,12 @@ py_library(
 )
 
 py_library(
-    name = "market_provider_config_py",
-    srcs = ["market_provider_config.py"],
+    name = "exogenous_provider_config_py",
+    srcs = ["exogenous_provider_config.py"],
     deps = [
         ":schemas_py",
-        ":simple_market_py",
-        "//augur/model/markets/models:vecm_py",
+        ":simple_exogenous_py",
+        "//augur/model/path_models/models:vecm_py",
         "@pypi//pydantic",
     ],
 )
@@ -102,21 +102,21 @@ py_library(
     srcs = ["testing.py"],
     deps = [
         ":deterministic_py",
-        ":market_api_py",
-        ":market_py",
+        ":exogenous_py",
+        ":series_model_py",
         "//augur:frames",
         "@pypi//numpy",
     ],
 )
 
 py_test(
-    name = "market_test",
-    srcs = ["market_test.py"],
+    name = "series_model_test",
+    srcs = ["series_model_test.py"],
     deps = [
         ":deterministic_py",
+        ":exogenous_py",
         ":gbm_py",
-        ":market_api_py",
-        ":market_py",
+        ":series_model_py",
         ":series_py",
         ":testing_py",
         "@pypi//polars",
@@ -126,13 +126,13 @@ py_test(
 )
 
 py_test(
-    name = "simple_market_test",
-    srcs = ["simple_market_test.py"],
+    name = "simple_exogenous_test",
+    srcs = ["simple_exogenous_test.py"],
     deps = [
-        ":market_api_py",
-        ":market_provider_config_py",
+        ":exogenous_provider_config_py",
+        ":exogenous_py",
         ":series_py",
-        ":simple_market_py",
+        ":simple_exogenous_py",
         "@pypi//numpy",
         "@pypi//pytest_bazel",
     ],

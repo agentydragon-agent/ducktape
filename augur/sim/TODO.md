@@ -9,16 +9,16 @@ The replacement is done when the production API path is:
 
 ```text
 current API / catalog config
-  -> typed sim scenario + market sampling request with explicit rollout seeds
-  -> augur/model JointMarketModel.sample(...)
-  -> SampledMarketBundle levels/events
+  -> typed sim scenario + exogenous sampling request with explicit rollout seeds
+  -> augur/model ExogenousPathModel.sample(...)
+  -> SampledExogenousBundle levels/events
   -> augur/sim deterministic evaluation
   -> augur/api ProjectionRun/read models
 ```
 
 `augur/api` still contains compatibility request/response schemas while
-`augur/model` owns market-provider schemas and provenance helpers. The deleted
-`augur/core` tree is no longer the production owner of market sampling, path
+`augur/model` owns exogenous-provider schemas and provenance helpers. The deleted
+`augur/core` tree is no longer the production owner of exogenous sampling, path
 evaluation, or response semantics.
 
 ## Replacement Checklist
@@ -36,17 +36,17 @@ evaluation, or response semantics.
       `SimulationRun` dataframes so existing frontend graphs can smoke; the
       durable API should expose compact scenario metadata plus
       distribution-first projections instead of preserving legacy field names.
-- [ ] Replace core-side required-market-key discovery with full sim scenario
+- [ ] Replace core-side required-series discovery with full sim scenario
       introspection so model providers know which public markets, private
       equity paths, locations, currencies, and other exogenous series must
       be sampled. The initial sim backend path already unions required level
-      series across translated scenarios before sampling one shared market
+      series across translated scenarios before sampling one shared exogenous
       bundle.
-- [ ] Add the sim-side market consumption adapter: sampled levels/events should
+- [ ] Add the sim-side external-series consumption adapter: sampled levels/events should
       drive mark-to-market asset values, rent/home-value paths, private-equity
       marks, private-equity sale opportunities, mortgage/rate paths when they
       exist, and any future exogenous streams. `augur/sim` must not sample
-      production market paths internally.
+      production exogenous paths internally.
 - [ ] Replace bespoke partner-equity contribution handling with the generic
       property-stake model once property stakes are covered by sim tests.
 - [ ] Replace ad hoc catalog/default expansion in the backend compatibility
@@ -96,10 +96,10 @@ Already covered by the sim backend smoke:
 - [x] SP500-only `CheckingFloorSellPublicStockPolicy` becomes a
       `LiquidityPolicy`.
 - [x] Scalar API seed plus rollout count expands into explicit rollout seeds
-      for `MarketSamplingRequest`.
+      for `ExogenousSamplingRequest`.
 - [x] Required level series are inferred from translated initial lots,
       scheduled asset sales, and liquidity-policy asset chains, then unioned
-      across scenarios before sampling one shared market bundle.
+      across scenarios before sampling one shared exogenous bundle.
 - [x] Request-local private-equity holdings with positive units, basis, and
       issuer routing become valuation-only `InitialLot` rows when the browser
       leaves `value_usd` unset. This keeps the browser-shaped concentrated
@@ -109,7 +109,7 @@ Already covered by the sim backend smoke:
 Translator gaps to migrate next:
 
 - [x] Add a first-class path-indexed amount shape for configured recurring sim
-      cashflows. `MarketIndexedAmount` now represents "amount is `$X` at base
+      cashflows. `SeriesIndexedAmount` now represents "amount is `$X` at base
       month, then scales by `model_series[reset_month] / model_series[base]`"
       and supports fixed-length reset periods such as annual rent resets.
       Future translator slices should use it for outside rent, tenant rent,
@@ -143,7 +143,7 @@ Translator gaps to migrate next:
       value path unless an explicit sale contract price exists.
 - [ ] Translate financing into `MortgageFinancing`: loan amount, rate, term,
       lender agent/account, payment account, and liability id. Mortgage-rate
-      sampling remains a market-model/sim capability follow-up.
+      sampling remains an exogenous-model/sim capability follow-up.
 - [ ] Translate property tax policy from local regulation and property
       selection. Maintenance, insurance, HOA, rental income, depreciation, and
       sale costs need either native sim policies/events or explicit deferral.
@@ -207,18 +207,10 @@ Translator gaps to migrate next:
       bookkeeping counterparty accounts. Escrow can stay out of scope unless a
       real workflow needs it; most account types can initially be metadata plus
       routing, not bespoke settlement logic.
-- [ ] Expand required-market-series introspection to cover inflation, home
+- [ ] Expand required-series introspection to cover inflation, home
       value, owned-property rent, outside-rent cost, crypto prices,
       private-equity marks, private-equity opportunity/regime events, and
       mortgage/rate paths.
-- [ ] Rename the sim/model path terminology away from "market price" where the
-      value is not literally a traded unit price. Prefer a generic external
-      series vocabulary at the boundary: e.g. `MarketContext` →
-      `ExternalSeriesContext`, `market_prices` → `series_values`,
-      `price_per_unit_usd` → `value`, and `MarketIndexedAmount` →
-      `SeriesIndexedAmount`. Keep consumer-specific names precise
-      (`unit_value_series_id`, `index_series_id`, rate series, event series)
-      instead of forcing every external path through price/market language.
 - [ ] Keep backend/sim results nominal-dollar only for the cutover. Real-dollar
       or inflation-adjusted display should be a later postprocessing/read-model
       layer, not alternate simulator accounting.

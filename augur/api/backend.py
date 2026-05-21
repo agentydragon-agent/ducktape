@@ -8,22 +8,22 @@ from dataclasses import dataclass
 from typing import Any
 
 from augur.api.bootstrap import Property
-from augur.api.bridge import sample_market_for_translations, translate_scenario_set
+from augur.api.bridge import sample_exogenous_for_translations, translate_scenario_set
 from augur.api.catalog import build_bootstrap_payload
 from augur.api.config import Config
 from augur.api.response import scenario_set_response_from_runs
 from augur.api.scenario_set import Scenario, ScenarioSet, ScenarioSetRunResponse
 from augur.api.scenario_tax_defaults import scenario_with_location_tax_defaults
-from augur.model.market_api import JointMarketModel
-from augur.sim.market import materialize_sampled_market
-from augur.sim.simulate import simulate_with_market
+from augur.model.exogenous import ExogenousPathModel
+from augur.sim.external_series import materialize_sampled_exogenous
+from augur.sim.simulate import simulate_with_external_series
 
 
 @dataclass(frozen=True)
 class BackendRuntimeConfig:
     default_rollout_samples: int
     max_rollout_samples: int
-    market_model: JointMarketModel
+    exogenous_model: ExogenousPathModel
 
 
 class Backend:
@@ -56,23 +56,25 @@ class Backend:
         return self._run_scenario_set(scenario_set)
 
     def _run_scenario_set(self, scenario_set: ScenarioSet) -> ScenarioSetRunResponse:
-        market_model = self.runtime_config.market_model
+        exogenous_model = self.runtime_config.exogenous_model
         translations = translate_scenario_set(scenario_set, configured_lots=self._portfolio.to_initial_lots())
-        sampled = sample_market_for_translations(
-            market_model,
+        sampled = sample_exogenous_for_translations(
+            exogenous_model,
             translations,
-            market_request=scenario_set.market_request,
+            sampling_request=scenario_set.sampling_request,
             level_anchors=self._portfolio.level_anchors,
         )
-        market = materialize_sampled_market(sampled)
+        external_series = materialize_sampled_exogenous(sampled)
         simulation_runs = {
-            translation.scenario_id: simulate_with_market(
-                translation.scenario, rollout_count=scenario_set.market_request.rollout_count, market=market
+            translation.scenario_id: simulate_with_external_series(
+                translation.scenario,
+                rollout_count=scenario_set.sampling_request.rollout_count,
+                external_series=external_series,
             )
             for translation in translations
         }
         return scenario_set_response_from_runs(
-            scenario_set=scenario_set, simulation_runs=simulation_runs, sampled_market_metadata=sampled.metadata
+            scenario_set=scenario_set, simulation_runs=simulation_runs, sampled_exogenous_metadata=sampled.metadata
         )
 
     def _validate_scenario_set_property_references(self, scenario_set: ScenarioSet) -> None:

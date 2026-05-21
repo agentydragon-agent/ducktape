@@ -12,14 +12,14 @@ from fastapi import FastAPI
 from augur.api.backend import Backend, BackendRuntimeConfig
 from augur.api.config import Config, load_augur_config, resolve_augur_config_path
 from augur.api.http_app import create_augur_backend_app
-from augur.model.market_api import JointMarketModel
-from augur.model.market_provider_config import realize_market_model
+from augur.model.exogenous import ExogenousPathModel
+from augur.model.exogenous_provider_config import realize_exogenous_model
 
 
 @dataclass(frozen=True)
 class ApiServerConfig:
     augur_config: Config
-    market_model: JointMarketModel
+    exogenous_model: ExogenousPathModel
     default_rollout_samples: int
     max_rollout_samples: int
 
@@ -33,9 +33,9 @@ def _current_private_equity_price_usd(augur_config: Config) -> float:
     return float(holdings[0].fmv_usd_per_unit)
 
 
-def _make_market_model(augur_config: Config, *, current_private_equity_price_usd: float) -> JointMarketModel:
-    return realize_market_model(
-        augur_config.market_provider, current_private_equity_price_usd=current_private_equity_price_usd
+def _make_exogenous_model(augur_config: Config, *, current_private_equity_price_usd: float) -> ExogenousPathModel:
+    return realize_exogenous_model(
+        augur_config.exogenous_provider, current_private_equity_price_usd=current_private_equity_price_usd
     )
 
 
@@ -45,7 +45,7 @@ def create_app(config: ApiServerConfig) -> FastAPI:
         runtime_config=BackendRuntimeConfig(
             default_rollout_samples=config.default_rollout_samples,
             max_rollout_samples=config.max_rollout_samples,
-            market_model=config.market_model,
+            exogenous_model=config.exogenous_model,
         ),
     )
     return create_augur_backend_app(
@@ -55,10 +55,12 @@ def create_app(config: ApiServerConfig) -> FastAPI:
 
 def create_app_from_augur_config(augur_config: Config) -> FastAPI:
     current_private_equity_price_usd = _current_private_equity_price_usd(augur_config)
-    market_model = _make_market_model(augur_config, current_private_equity_price_usd=current_private_equity_price_usd)
+    exogenous_model = _make_exogenous_model(
+        augur_config, current_private_equity_price_usd=current_private_equity_price_usd
+    )
     server_config = ApiServerConfig(
         augur_config=augur_config,
-        market_model=market_model,
+        exogenous_model=exogenous_model,
         default_rollout_samples=augur_config.default_rollout_samples,
         max_rollout_samples=augur_config.max_rollout_samples,
     )
@@ -97,7 +99,7 @@ def _run_server_with_args(*, augur_config: Config, args: argparse.Namespace) -> 
 
 def run_app(*, app: FastAPI, augur_config: Config, host: str, port: int) -> int:
     print(f"serving Augur API on http://{host}:{port}")
-    print(f"market provider: {augur_config.market_provider.type}")
+    print(f"exogenous provider: {augur_config.exogenous_provider.type}")
     uvicorn.run(app, host=host, port=port)
     return 0
 

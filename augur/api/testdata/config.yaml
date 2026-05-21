@@ -49,7 +49,7 @@ locations:
 location_selection:
   - location_a
   - location_b
-market_provider:
+exogenous_provider:
   # Public fixture uses the simple stochastic provider — visual_golden_test
   # renders distribution fans (needs non-flat samples), and browser_shell_test
   # only checks API surface so doesn't care about the specific values.

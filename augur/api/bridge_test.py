@@ -18,14 +18,14 @@ from augur.api.portfolio import (
 )
 from augur.api.scenario_set import ScenarioSet
 from augur.model.series import SP500_SERIES_ID, private_equity_series_id
-from augur.model.simple_market import SimpleMarketModel
+from augur.model.simple_exogenous import SimpleExogenousModel
 
 
 def _scenario_set_body() -> dict:
     return {
         "scenario_set_id": "bridge_fixture",
         "title": "Bridge fixture",
-        "market_request": {"market_model_id": "simple", "rollout_count": 3, "horizon_months": 3, "seed": 11},
+        "sampling_request": {"exogenous_model_id": "simple", "rollout_count": 3, "horizon_months": 3, "seed": 11},
         "scenarios": [
             {
                 "scenario_id": "sp500_spend",
@@ -83,10 +83,12 @@ def test_translate_current_api_shape_to_runtime_and_run_with_model_sample() -> N
     assert translation.scenario.initial_lots[0].cost_basis_per_unit_usd == 0.7
 
     result = simulate_translation(
-        SimpleMarketModel(current_private_equity_price_usd=1.0), translation, market_request=scenario_set.market_request
+        SimpleExogenousModel(current_private_equity_price_usd=1.0),
+        translation,
+        sampling_request=scenario_set.sampling_request,
     )
 
-    assert result.market_prices.filter(pl.col("asset_id") == SP500_SERIES_ID).height == 12
+    assert result.series_values.filter(pl.col("series_id") == SP500_SERIES_ID).height == 12
     assert result.events_log.obligation_settlements.height == 9
     assert result.events_log.lot_dispositions.height > 0
     assert result.rollout_status.get_column("status").to_list() == ["active", "active", "active"]
@@ -296,7 +298,9 @@ def test_property_selection_translates_to_month_zero_purchase_and_mortgage() -> 
     assert [(policy.property_id, policy.annual_tax_rate) for policy in translation.scenario.property_tax_policies] == []
 
     result = simulate_translation(
-        SimpleMarketModel(current_private_equity_price_usd=1.0), translation, market_request=scenario_set.market_request
+        SimpleExogenousModel(current_private_equity_price_usd=1.0),
+        translation,
+        sampling_request=scenario_set.sampling_request,
     )
 
     final_property = result.property_state.filter(pl.col("month_index") == 3).row(0, named=True)
@@ -407,9 +411,9 @@ def test_configured_portfolio_lots_replace_legacy_public_stock_asset_but_keep_pr
 
     (translation,) = translate_scenario_set(scenario_set, configured_lots=portfolio.to_initial_lots())
     sampled, result = sample_and_simulate_translation(
-        SimpleMarketModel(current_private_equity_price_usd=1.0),
+        SimpleExogenousModel(current_private_equity_price_usd=1.0),
         translation,
-        market_request=scenario_set.market_request,
+        sampling_request=scenario_set.sampling_request,
         level_anchors=portfolio.level_anchors,
     )
 

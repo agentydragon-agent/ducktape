@@ -153,7 +153,7 @@ build later-commit infrastructure.
 5. **L4 lots part B** — multi-lot scenarios (S4.4-S4.6): mixed
    holding periods, sale crossing two lots, per-lot LTCG/STCG
    classification.
-6. **L5 + L10 exogenous path consumption** — `MarketBundle`
+6. **L5 + L10 exogenous path consumption** — `SeriesModelBundle`
    interface, per-rollout per-month price paths, asset market
    values flowing as trajectory-derived state attributes,
    sellability_mask plumbing (no scenarios exercise non-default mask

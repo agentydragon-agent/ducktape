@@ -13,8 +13,8 @@ import statistics
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from augur.fit.market_model import MarketModel
-from augur.model.markets.scenarios import HistoricalSeries
+from augur.fit.exogenous_model import PredictiveSeriesModel
+from augur.model.path_models.scenarios import HistoricalSeries
 
 
 def _summarise_scores(scores: list[float]) -> tuple[float, float, float]:
@@ -72,7 +72,7 @@ HeldOutLogDensity = ScoredHeldOutLogDensity | UnscoredHeldOutLogDensity
 
 
 def held_out_predictive_log_density(
-    model: MarketModel, historical: HistoricalSeries, *, train_fraction: float = 0.8
+    model: PredictiveSeriesModel, historical: HistoricalSeries, *, train_fraction: float = 0.8
 ) -> HeldOutLogDensity:
     """Fit `model` on the first `train_fraction` of months, then sum
     `log_predictive_density` over the held-out months.
@@ -176,13 +176,17 @@ RollingOriginLogDensity = ScoredRollingOriginLogDensity | UnscoredRollingOriginL
 
 
 def rolling_origin_predictive_log_density(
-    model_factory: Callable[[], MarketModel], historical: HistoricalSeries, *, min_train: int = 60, refit_every: int = 1
+    model_factory: Callable[[], PredictiveSeriesModel],
+    historical: HistoricalSeries,
+    *,
+    min_train: int = 60,
+    refit_every: int = 1,
 ) -> RollingOriginLogDensity:
     """Refit at each origin `t ∈ [min_train, n_steps)` (every `refit_every`
     steps to control cost on slow-fitting models like DCC-GARCH) and score
     the one-step-ahead predictive density at `t`.
 
-    `model_factory()` must return a fresh `MarketModel` instance — fits are
+    `model_factory()` must return a fresh `PredictiveSeriesModel` instance — fits are
     independent and state must reset.
     """
     if min_train < 2:
@@ -195,7 +199,7 @@ def rolling_origin_predictive_log_density(
 
     label_holder = model_factory().label
 
-    fit_cache: MarketModel | None = None
+    fit_cache: PredictiveSeriesModel | None = None
     fit_origin: int | None = None  # last origin at which fit_cache was refit
     log_densities: list[float] = []
     per_factor_totals: dict[str, float] = dict.fromkeys(historical.factor_names, 0.0)
@@ -297,7 +301,7 @@ class MultiStepLogDensity:
 
 
 def multi_step_predictive_log_density(
-    model: MarketModel,
+    model: PredictiveSeriesModel,
     historical: HistoricalSeries,
     *,
     horizons: tuple[int, ...] = (1, 6, 12),

@@ -1,6 +1,6 @@
 # Public market-data sources
 
-Snapshots of publicly available market data that augur's market models fit
+Snapshots of publicly available market data that augur's exogenous models fit
 against. None of this is private; every series is reproducible by following
 the steps below. Two files have been trimmed from their upstream form to
 keep the checked-in size manageable; the trim is also documented per file.
@@ -49,7 +49,7 @@ curl -sS 'https://query2.finance.yahoo.com/v8/finance/chart/SPY?range=max&interv
 **Trimmed**. The upstream response carries six daily series under
 `chart.result[0].indicators.quote[0]` (open/high/low/close/volume + redundant
 adjclose) plus the OHLC/volume bundle, market-meta blocks, and trading-hours
-windows. The loader (`augur/model/market_data.py::_read_yahoo_spy_adjusted_close`)
+windows. The loader (`augur/fit/evidence_data.py::_read_yahoo_spy_adjusted_close`)
 only reads `chart.result[0].timestamp` and
 `chart.result[0].indicators.adjclose[0].adjclose`. The checked-in file
 preserves only those two arrays plus a minimal `meta.symbol` /
@@ -91,7 +91,7 @@ https://files.zillowstatic.com/research/public_csvs/zhvi/City_zhvi_uc_sfrcondo_t
 
 **Trimmed**. The upstream file is the full nationwide CSV with ~21,000 city
 rows × ~25 years of monthly columns (~88 MB). The loader
-(`augur/model/market_data.py::_read_zillow_city_zhvi`) filters by
+(`augur/fit/evidence_data.py::_zillow_city_series`) filters by
 `RegionType == "city" && State == "CA" && RegionName ∈ {San Francisco,
 Vallejo}`. The checked-in file preserves only those two rows plus the header.
 Size: ~88 MB upstream → ~15 KB trimmed.
@@ -118,7 +118,7 @@ When refreshing one or more series:
 1. Re-download from the source.
 2. Apply the trim (Yahoo, Zillow) if applicable.
 3. Replace the file in place. Don't rename — paths are referenced from
-   `augur/model/train/config/market_config.example.json` and equivalents.
+   `augur/model/train/config/exogenous_evidence.example.json` and equivalents.
 4. Re-fit downstream models that depend on the changed series:
    the active trained VECM provider, plus any downstream trained blobs stored
    outside this package.

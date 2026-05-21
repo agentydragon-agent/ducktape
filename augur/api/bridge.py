@@ -24,7 +24,6 @@ from augur.api.scenario_set import (
     FinancingMode,
     GenericSp500StockPosition,
     LiquidityEventOnly,
-    MarketRequest,
     MonthlySpendPolicy,
     MortgageOriginationEvent,
     NotRentedRentalPlan,
@@ -35,14 +34,20 @@ from augur.api.scenario_set import (
     PrivateEquitySalePolicy,
     PropertyAssumptions,
     PropertyPurchaseEvent,
+    SamplingRequest,
     Scenario as CoreScenario,
     ScenarioSet,
     TaxProfile,
     TransactionCosts,
 )
-from augur.model.market_api import MARKET_LEVELS_SCHEMA, JointMarketModel, MarketSamplingRequest, SampledMarketBundle
+from augur.model.exogenous import (
+    SERIES_LEVELS_SCHEMA,
+    ExogenousPathModel,
+    ExogenousSamplingRequest,
+    SampledExogenousBundle,
+)
 from augur.model.series import SP500_SERIES_ID, private_equity_series_id
-from augur.sim.market import materialize_sampled_market
+from augur.sim.external_series import materialize_sampled_exogenous
 from augur.sim.run import SimulationRun
 from augur.sim.scenario import (
     Agent,
@@ -56,7 +61,7 @@ from augur.sim.scenario import (
     ScheduledPropertyPurchase,
     TaxProfile as SimTaxProfile,
 )
-from augur.sim.simulate import simulate_with_market
+from augur.sim.simulate import simulate_with_external_series
 
 EXTERNAL_AGENT_ID = "external"
 EXTERNAL_ACCOUNT_ID = "checking"
@@ -85,16 +90,16 @@ def translate_scenario_set(
     """Translate enabled API scenarios into runtime scenarios."""
 
     return tuple(
-        translate_scenario(scenario, market_request=scenario_set.market_request, configured_lots=configured_lots)
+        translate_scenario(scenario, sampling_request=scenario_set.sampling_request, configured_lots=configured_lots)
         for scenario in scenario_set.scenarios
         if scenario.enabled
     )
 
 
 def translate_scenario(
-    scenario: CoreScenario, *, market_request: MarketRequest, configured_lots: tuple[InitialLot, ...] = ()
+    scenario: CoreScenario, *, sampling_request: SamplingRequest, configured_lots: tuple[InitialLot, ...] = ()
 ) -> ScenarioTranslation:
-    _reject_unsupported_features(scenario, market_request=market_request)
+    _reject_unsupported_features(scenario, sampling_request=sampling_request)
     initial_lots = [*configured_lots, *_initial_lots(scenario, include_public_positions=not configured_lots)]
     property_purchases = _property_purchases(scenario)
     translated_scenario = Scenario(
@@ -106,7 +111,7 @@ def translate_scenario(
         property_tax_policies=_property_tax_policies(scenario),
         tax_profiles=_tax_profiles(scenario),
         liquidity_policies=_liquidity_policies(scenario),
-        horizon_months=market_request.horizon_months,
+        horizon_months=sampling_request.horizon_months,
     )
     return ScenarioTranslation(
         scenario_id=scenario.scenario_id,
@@ -116,7 +121,7 @@ def translate_scenario(
 
 
 def required_level_series_for_scenario(scenario: Scenario) -> frozenset[str]:
-    """Market level series needed to execute this scenario."""
+    """External level series needed to execute this scenario."""
 
     return frozenset(
         [
@@ -127,66 +132,67 @@ def required_level_series_for_scenario(scenario: Scenario) -> frozenset[str]:
     )
 
 
-def sample_market_for_scenario(
-    market_model: JointMarketModel,
+def sample_exogenous_for_scenario(
+    exogenous_model: ExogenousPathModel,
     translation: ScenarioTranslation,
     *,
-    market_request: MarketRequest,
+    sampling_request: SamplingRequest,
     level_anchors: Mapping[str, float] | None = None,
-) -> SampledMarketBundle:
-    sampled = market_model.sample(
-        _market_sampling_request(
+) -> SampledExogenousBundle:
+    sampled = exogenous_model.sample(
+        _exogenous_sampling_request(
             horizon_months=translation.scenario.horizon_months,
-            market_request=market_request,
+            sampling_request=sampling_request,
             required_level_series=translation.required_level_series,
             required_event_series=translation.required_event_series,
         )
     )
-    return anchor_sampled_market_levels(sampled, level_anchors or {})
+    return anchor_sampled_series_levels(sampled, level_anchors or {})
 
 
 def simulate_translation(
-    market_model: JointMarketModel,
+    exogenous_model: ExogenousPathModel,
     translation: ScenarioTranslation,
     *,
-    market_request: MarketRequest,
+    sampling_request: SamplingRequest,
     level_anchors: Mapping[str, float] | None = None,
 ) -> SimulationRun:
     _, run = sample_and_simulate_translation(
-        market_model, translation, market_request=market_request, level_anchors=level_anchors
+        exogenous_model, translation, sampling_request=sampling_request, level_anchors=level_anchors
     )
     return run
 
 
 def sample_and_simulate_translation(
-    market_model: JointMarketModel,
+    exogenous_model: ExogenousPathModel,
     translation: ScenarioTranslation,
     *,
-    market_request: MarketRequest,
+    sampling_request: SamplingRequest,
     level_anchors: Mapping[str, float] | None = None,
-) -> tuple[SampledMarketBundle, SimulationRun]:
-    sampled = sample_market_for_scenario(
-        market_model, translation, market_request=market_request, level_anchors=level_anchors
+) -> tuple[SampledExogenousBundle, SimulationRun]:
+    sampled = sample_exogenous_for_scenario(
+        exogenous_model, translation, sampling_request=sampling_request, level_anchors=level_anchors
     )
+    external_series = materialize_sampled_exogenous(sampled)
     return (
         sampled,
-        simulate_with_market(
-            translation.scenario, rollout_count=market_request.rollout_count, market=materialize_sampled_market(sampled)
+        simulate_with_external_series(
+            translation.scenario, rollout_count=sampling_request.rollout_count, external_series=external_series
         ),
     )
 
 
-def sample_market_for_translations(
-    market_model: JointMarketModel,
+def sample_exogenous_for_translations(
+    exogenous_model: ExogenousPathModel,
     translations: tuple[ScenarioTranslation, ...],
     *,
-    market_request: MarketRequest,
+    sampling_request: SamplingRequest,
     level_anchors: Mapping[str, float] | None = None,
-) -> SampledMarketBundle:
-    sampled = market_model.sample(
-        _market_sampling_request(
-            horizon_months=market_request.horizon_months,
-            market_request=market_request,
+) -> SampledExogenousBundle:
+    sampled = exogenous_model.sample(
+        _exogenous_sampling_request(
+            horizon_months=sampling_request.horizon_months,
+            sampling_request=sampling_request,
             required_level_series=frozenset(
                 series for translation in translations for series in translation.required_level_series
             ),
@@ -195,12 +201,12 @@ def sample_market_for_translations(
             ),
         )
     )
-    return anchor_sampled_market_levels(sampled, level_anchors or {})
+    return anchor_sampled_series_levels(sampled, level_anchors or {})
 
 
-def anchor_sampled_market_levels(
-    sampled: SampledMarketBundle, level_anchors: Mapping[str, float]
-) -> SampledMarketBundle:
+def anchor_sampled_series_levels(
+    sampled: SampledExogenousBundle, level_anchors: Mapping[str, float]
+) -> SampledExogenousBundle:
     anchors = {series_id: float(value) for series_id, value in level_anchors.items()}
     if not anchors or sampled.levels.is_empty():
         return sampled
@@ -208,7 +214,7 @@ def anchor_sampled_market_levels(
     sampled_series = set(sampled.levels.get_column("series_id").unique().to_list())
     active_anchors = {series_id: value for series_id, value in anchors.items() if series_id in sampled_series}
     if not active_anchors:
-        return SampledMarketBundle(
+        return SampledExogenousBundle(
             levels=sampled.levels, events=sampled.events, metadata={**sampled.metadata, "level_anchors": anchors}
         )
 
@@ -224,7 +230,7 @@ def anchor_sampled_market_levels(
     zero_bases = bases.filter(pl.col("_base_value") == 0.0)
     if not zero_bases.is_empty():
         series_ids = sorted(set(zero_bases.get_column("series_id").to_list()))
-        raise ValueError(f"sampled market level(s) have zero month-0 value and cannot be anchored: {series_ids}")
+        raise ValueError(f"sampled series level(s) have zero month-0 value and cannot be anchored: {series_ids}")
 
     levels = (
         sampled.levels.join(bases, on=["rollout_index", "series_id"], how="left")
@@ -233,32 +239,32 @@ def anchor_sampled_market_levels(
             .then(pl.col("value") * pl.col("_anchor_value") / pl.col("_base_value"))
             .otherwise(pl.col("value"))
         )
-        .select(MARKET_LEVELS_SCHEMA.names())
+        .select(SERIES_LEVELS_SCHEMA.names())
     )
-    return SampledMarketBundle(
+    return SampledExogenousBundle(
         levels=levels, events=sampled.events, metadata={**sampled.metadata, "level_anchors": anchors}
     )
 
 
-def _market_sampling_request(
+def _exogenous_sampling_request(
     *,
     horizon_months: int,
-    market_request: MarketRequest,
+    sampling_request: SamplingRequest,
     required_level_series: frozenset[str],
     required_event_series: frozenset[str],
-) -> MarketSamplingRequest:
-    return MarketSamplingRequest(
+) -> ExogenousSamplingRequest:
+    return ExogenousSamplingRequest(
         horizon_months=horizon_months,
-        rollout_seeds=rollout_seeds_from_market_request(market_request),
+        rollout_seeds=rollout_seeds_from_sampling_request(sampling_request),
         required_level_series=required_level_series,
         required_event_series=required_event_series,
     )
 
 
-def rollout_seeds_from_market_request(market_request: MarketRequest) -> tuple[int, ...]:
+def rollout_seeds_from_sampling_request(sampling_request: SamplingRequest) -> tuple[int, ...]:
     return tuple(
         int(child.generate_state(1, dtype=np.uint32)[0])
-        for child in np.random.SeedSequence(market_request.seed).spawn(market_request.rollout_count)
+        for child in np.random.SeedSequence(sampling_request.seed).spawn(sampling_request.rollout_count)
     )
 
 
@@ -328,7 +334,7 @@ def _initial_lots(scenario: CoreScenario, *, include_public_positions: bool = Tr
                 InitialLot(
                     lot_id=f"{asset.asset_id}_lot",
                     agent_id=asset.owner_actor_id,
-                    asset_id=private_equity_series_id(asset.market_routing_key),
+                    asset_id=private_equity_series_id(asset.series_routing_key),
                     purchase_month_index=0,
                     quantity=float(asset.units),
                     cost_basis_per_unit_usd=_private_equity_cost_basis_per_unit(asset),
@@ -614,7 +620,7 @@ def _enabled_policies(scenario: CoreScenario) -> tuple[CorePolicy, ...]:
     return tuple(policy for policy in scenario.policies if policy.enabled)
 
 
-def _reject_unsupported_features(scenario: CoreScenario, *, market_request: MarketRequest) -> None:
+def _reject_unsupported_features(scenario: CoreScenario, *, sampling_request: SamplingRequest) -> None:
     unsupported: list[str] = []
     enabled_policies = _enabled_policies(scenario)
     unsupported_events = _unsupported_events(scenario)
@@ -627,9 +633,9 @@ def _reject_unsupported_features(scenario: CoreScenario, *, market_request: Mark
         unsupported.append("tax_profile")
     if _unsupported_financing(scenario):
         unsupported.append("financing")
-    if _unsupported_occupancy_plan(scenario, market_request=market_request):
+    if _unsupported_occupancy_plan(scenario, sampling_request=sampling_request):
         unsupported.append("occupancy_plan")
-    if _unsupported_rental_plan(scenario, market_request=market_request):
+    if _unsupported_rental_plan(scenario, sampling_request=sampling_request):
         unsupported.append("rental_plan")
     if _unsupported_property_assumptions(scenario):
         unsupported.append("property_assumptions")
@@ -702,25 +708,25 @@ def _unsupported_financing(scenario: CoreScenario) -> bool:
     return financing.financing_mode is FinancingMode.FIXED_15 and financing.mortgage_term_years not in (None, 15)
 
 
-def _unsupported_occupancy_plan(scenario: CoreScenario, *, market_request: MarketRequest) -> bool:
+def _unsupported_occupancy_plan(scenario: CoreScenario, *, sampling_request: SamplingRequest) -> bool:
     plan = scenario.occupancy_plan
     if plan.occupancy_mode is not OccupancyMode.OWNER_LIVES_IN_PROPERTY:
         return True
     if plan.start_month != 0:
         return True
-    if plan.end_month is not None and plan.end_month < market_request.horizon_months:
+    if plan.end_month is not None and plan.end_month < sampling_request.horizon_months:
         return True
     if plan.outside_rent_monthly_usd:
         return True
     return plan.owner_residence_property_id not in (None, scenario.property_selection.property_id)
 
 
-def _unsupported_rental_plan(scenario: CoreScenario, *, market_request: MarketRequest) -> bool:
+def _unsupported_rental_plan(scenario: CoreScenario, *, sampling_request: SamplingRequest) -> bool:
     plan = scenario.rental_plan
     if isinstance(plan, NotRentedRentalPlan):
         return False
     return _month_window_intersects_horizon(
-        start_month=plan.start_month, end_month=plan.end_month, horizon_months=market_request.horizon_months
+        start_month=plan.start_month, end_month=plan.end_month, horizon_months=sampling_request.horizon_months
     )
 
 

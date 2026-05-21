@@ -379,13 +379,18 @@ def _cash_net_worth_components(run: SimulationRun) -> pl.DataFrame:
 def _asset_net_worth_components(run: SimulationRun) -> pl.DataFrame:
     if run.asset_lots.is_empty():
         return _NET_WORTH_COMPONENT_FRAME.empty()
-    priced = run.asset_lots.join(run.market_prices, on=["rollout_index", "month_index", "asset_id"], how="left")
+    priced = run.asset_lots.join(
+        run.series_values,
+        left_on=["rollout_index", "month_index", "asset_id"],
+        right_on=["rollout_index", "month_index", "series_id"],
+        how="left",
+    )
     return priced.select(
         "rollout_index",
         "month_index",
         "agent_id",
         pl.lit(0.0, dtype=pl.Float64()).alias("cash_usd"),
-        (pl.col("remaining_quantity") * pl.col("price_per_unit_usd").fill_null(0.0)).alias("liquid_asset_value_usd"),
+        (pl.col("remaining_quantity") * pl.col("value").fill_null(0.0)).alias("liquid_asset_value_usd"),
         (pl.col("remaining_quantity") * pl.col("cost_basis_per_unit_usd")).alias("asset_book_value_usd"),
         pl.lit(0.0, dtype=pl.Float64()).alias("property_book_value_usd"),
         pl.lit(0.0, dtype=pl.Float64()).alias("liability_principal_usd"),

@@ -11,7 +11,7 @@ def _scenario_set_body() -> dict:
     return {
         "scenario_set_id": "route_test",
         "title": "Route test",
-        "market_request": {"rollout_count": 1, "horizon_months": 1, "seed": 1},
+        "sampling_request": {"rollout_count": 1, "horizon_months": 1, "seed": 1},
         "scenarios": [
             {
                 "scenario_id": "sf_house",

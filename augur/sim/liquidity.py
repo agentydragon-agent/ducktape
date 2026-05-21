@@ -13,7 +13,7 @@ import polars as pl
 
 from augur.frames import FrameSpec
 from augur.sim.events import EVENT_FRAMES
-from augur.sim.market import MarketContext
+from augur.sim.external_series import ExternalSeriesContext
 from augur.sim.scenario import LiquidityPolicy
 from augur.sim.state import StateCrossSection
 
@@ -51,7 +51,7 @@ def plan_liquidity(
     state: StateCrossSection,
     policies: list[LiquidityPolicy],
     hard_demands: pl.DataFrame,
-    market: MarketContext,
+    external_series: ExternalSeriesContext,
     month: int,
 ) -> LiquidityPlan:
     """Emit liquidity-sale dispositions for active rollouts.
@@ -76,7 +76,7 @@ def plan_liquidity(
         )
 
     demand_by_account = _hard_demand_by_account(hard_demands)
-    prices = market.prices_at(month)
+    series_values = external_series.series_at(month)
     disposition_blocks: list[pl.DataFrame] = []
     attempt_blocks: list[pl.DataFrame] = []
     planning_state = state
@@ -90,7 +90,7 @@ def plan_liquidity(
         if targets.filter(pl.col("_remaining_deficit_usd") > 0).is_empty():
             continue
         policy_dispositions = _dispositions_for_policy(
-            state=planning_state, policy=policy, prices=prices, targets=targets, month=month
+            state=planning_state, policy=policy, series_values=series_values, targets=targets, month=month
         )
         if not policy_dispositions.is_empty():
             disposition_blocks.append(policy_dispositions)
@@ -181,7 +181,7 @@ def _attempts_for_policy(policy: LiquidityPolicy, targets: pl.DataFrame) -> pl.D
 
 
 def _dispositions_for_policy(
-    *, state: StateCrossSection, policy: LiquidityPolicy, prices: pl.DataFrame, targets: pl.DataFrame, month: int
+    *, state: StateCrossSection, policy: LiquidityPolicy, series_values: pl.DataFrame, targets: pl.DataFrame, month: int
 ) -> pl.DataFrame:
     deficit = (
         targets.filter(pl.col("_remaining_deficit_usd") > 0)
@@ -198,7 +198,7 @@ def _dispositions_for_policy(
             state=state,
             policy=policy,
             asset_id=asset_id,
-            prices=prices,
+            series_values=series_values,
             deficit=deficit,
             cause_id=f"{policy.cause_id_prefix}_m{month}_{asset_id}",
             month=month,
@@ -214,13 +214,13 @@ def _consume_asset_for_policy(
     state: StateCrossSection,
     policy: LiquidityPolicy,
     asset_id: str,
-    prices: pl.DataFrame,
+    series_values: pl.DataFrame,
     deficit: pl.DataFrame,
     cause_id: str,
     month: int,
 ) -> _PolicyAssetResult:
-    asset_price = prices.filter(pl.col("asset_id") == asset_id).select(
-        "rollout_index", pl.col("price_per_unit_usd").alias("_unit_price")
+    asset_price = series_values.filter(pl.col("series_id") == asset_id).select(
+        "rollout_index", pl.col("value").alias("_unit_price")
     )
     lots = (
         state.asset_lots.filter(

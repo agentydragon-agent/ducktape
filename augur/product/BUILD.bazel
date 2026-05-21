@@ -1,0 +1,12 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "projection_py",
+    srcs = ["projection.py"],
+    deps = [
+        "//augur/api:schemas_py",
+        "@pypi//pydantic",
+    ],
+)

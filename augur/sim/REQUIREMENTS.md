@@ -54,14 +54,14 @@ These are non-negotiable shapes. Every scenario below assumes them.
 - **State is carried, not rebuilt.** The working state at month T+1 is
   produced from the state at T plus this month's transactions. It is
   not re-derived from scratch from independent sources each iteration.
-- **Simulation and market generation are separate.** The simulator is
+- **Simulation and exogenous path generation are separate.** The simulator is
   a deterministic path evaluator: given a scenario set and an
   exogenous trajectory bundle, it applies policies/accounting/tax
   forward over those paths. Evidence ingestion, model fitting,
-  calibration, stochastic sampling, and market-model provenance live
+  calibration, stochastic sampling, and exogenous-model provenance live
   outside `augur/sim` — normally in `augur/model`. `sim` may keep
   deterministic or toy stochastic path helpers for tests and benches,
-  but production market modeling does not live here.
+  but production exogenous modeling does not live here.
 - **Vectorized across rollouts.** Every operation — reads, decisions,
   state updates — is a bulk operation over all rollouts at once. There
   is no Python loop over rollouts anywhere in the per-month step;

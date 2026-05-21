@@ -1,4 +1,4 @@
-"""Sim-native simple market model for deployment placeholders."""
+"""Sim-native simple exogenous path model for deployment placeholders."""
 
 from __future__ import annotations
 
@@ -7,15 +7,14 @@ from pydantic import Field
 
 from augur.frames import concat_frames
 from augur.model.deterministic import Constant
-from augur.model.gbm import GeometricBrownian
-from augur.model.market import IndependentMarketModels, ScalarMarketSpec, derive_stream_rollout_seeds
-from augur.model.market_api import (
-    MARKET_EVENTS_SCHEMA,
-    MARKET_LEVELS_SCHEMA,
-    MarketSamplingRequest,
-    SampledMarketBundle,
-    market_events_frame,
+from augur.model.exogenous import (
+    SERIES_EVENTS_SCHEMA,
+    SERIES_LEVELS_SCHEMA,
+    ExogenousSamplingRequest,
+    SampledExogenousBundle,
+    series_events_frame,
 )
+from augur.model.gbm import GeometricBrownian
 from augur.model.schemas import FrozenModel
 from augur.model.series import (
     CRYPTO_SERIES_PREFIX,
@@ -27,6 +26,7 @@ from augur.model.series import (
     SP500_SERIES_ID,
     series_suffix,
 )
+from augur.model.series_model import IndependentSeriesModels, ScalarSeriesSpec, derive_stream_rollout_seeds
 
 
 class SimpleLocationModelParams(FrozenModel):
@@ -36,24 +36,24 @@ class SimpleLocationModelParams(FrozenModel):
     rent_annual_adjustment_pct: float = 0.0
 
 
-class SimpleMarketModelConfig(FrozenModel):
-    """Deployment-supplied parameters for `SimpleMarketModel`."""
+class SimpleExogenousModelConfig(FrozenModel):
+    """Deployment-supplied parameters for `SimpleExogenousModel`."""
 
     location_params: dict[str, SimpleLocationModelParams] = Field(default_factory=dict)
 
 
-class SimpleMarketModel(FrozenModel):
+class SimpleExogenousModel(FrozenModel):
     """Small sim-native stochastic model used until calibrated models plug in."""
 
     current_private_equity_price_usd: float = Field(default=0.0, ge=0.0)
-    parameters: SimpleMarketModelConfig = Field(default_factory=SimpleMarketModelConfig)
+    parameters: SimpleExogenousModelConfig = Field(default_factory=SimpleExogenousModelConfig)
 
-    def sample(self, request: MarketSamplingRequest) -> SampledMarketBundle:
+    def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
         levels = (
-            IndependentMarketModels(markets=self._level_models(request.required_level_series)).sample(request).levels
+            IndependentSeriesModels(series=self._level_models(request.required_level_series)).sample(request).levels
         )
         event_blocks = [
-            market_events_frame(
+            series_events_frame(
                 event_id,
                 self._sample_event_series(event_id, request),
                 rollout_count=request.rollout_count,
@@ -61,19 +61,19 @@ class SimpleMarketModel(FrozenModel):
             )
             for event_id in sorted(request.required_event_series)
         ]
-        return SampledMarketBundle(
-            levels=concat_frames([levels], MARKET_LEVELS_SCHEMA),
-            events=concat_frames(event_blocks, MARKET_EVENTS_SCHEMA),
+        return SampledExogenousBundle(
+            levels=concat_frames([levels], SERIES_LEVELS_SCHEMA),
+            events=concat_frames(event_blocks, SERIES_EVENTS_SCHEMA),
             metadata={
-                "market_model_id": "simple_market_model",
+                "exogenous_model_id": "simple_exogenous_model",
                 "current_private_equity_price_usd": self.current_private_equity_price_usd,
             },
         )
 
-    def _level_models(self, series_ids: frozenset[str]) -> dict[str, ScalarMarketSpec]:
+    def _level_models(self, series_ids: frozenset[str]) -> dict[str, ScalarSeriesSpec]:
         return {series_id: self._level_model(series_id) for series_id in sorted(series_ids)}
 
-    def _level_model(self, series_id: str) -> ScalarMarketSpec:
+    def _level_model(self, series_id: str) -> ScalarSeriesSpec:
         if series_id == INFLATION_SERIES_ID:
             return _simple_gbm_level(annual_return_pct=3.0, annual_volatility_pct=1.5)
         if series_id == SP500_SERIES_ID:
@@ -100,15 +100,15 @@ class SimpleMarketModel(FrozenModel):
             )
         if series_suffix(series_id, CRYPTO_SERIES_PREFIX) is not None:
             return Constant(value=1.0)
-        raise ValueError(f"simple market model cannot sample level series {series_id!r}")
+        raise ValueError(f"simple exogenous model cannot sample level series {series_id!r}")
 
-    def _sample_event_series(self, event_id: str, request: MarketSamplingRequest) -> np.ndarray:
+    def _sample_event_series(self, event_id: str, request: ExogenousSamplingRequest) -> np.ndarray:
         if series_suffix(event_id, PRIVATE_EQUITY_SALE_EVENT_PREFIX) is not None:
             return _private_equity_sale_events(
                 rollout_seeds=derive_stream_rollout_seeds(request.rollout_seeds, stream_id=event_id),
                 horizon_months=request.horizon_months,
             )
-        raise ValueError(f"simple market model cannot sample event series {event_id!r}")
+        raise ValueError(f"simple exogenous model cannot sample event series {event_id!r}")
 
 
 def _simple_gbm_level(

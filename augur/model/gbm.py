@@ -1,4 +1,4 @@
-"""Geometric Brownian scalar market models."""
+"""Geometric Brownian scalar exogenous models."""
 
 from __future__ import annotations
 
@@ -9,12 +9,12 @@ from pydantic import BaseModel
 
 
 class GeometricBrownian(BaseModel):
-    """Fixture GBM-sampled level process for one market.
+    """Fixture GBM-sampled level process for one external series.
 
     `initial_value` is the month-0 level. Later months apply
     `exp(N(mu, sigma))` to the previous month's level. Sampling uses
     Each rollout uses its corresponding explicit request seed, so path
-    identity is supplied by `MarketSamplingRequest` rather than model config.
+    identity is supplied by `ExogenousSamplingRequest` rather than model config.
     """
 
     kind: Literal["gbm"] = "gbm"

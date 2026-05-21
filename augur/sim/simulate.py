@@ -7,7 +7,7 @@ state-over-time long-form frames + the event log.
 The loop carries `state_t` (the polars cross-section, no
 month_index column) forward. Each iteration:
 
-  events_t = step_emit_events(state_t, scenario, market,
+  events_t = step_emit_events(state_t, scenario, external_series,
                               jurisdictions, month, rollout_count)
   state_t = apply_events(state_t, events_t)
 
@@ -26,9 +26,9 @@ import polars as pl
 
 from augur.sim.apply import apply_events
 from augur.sim.events import EventLog
+from augur.sim.external_series import ExternalSeriesContext, materialize_external_series
 from augur.sim.jurisdictions import Jurisdiction, load_jurisdiction
 from augur.sim.locations import Location, load_location
-from augur.sim.market import MarketContext, materialize_market
 from augur.sim.run import SimulationRun
 from augur.sim.scenario import Scenario
 from augur.sim.state import (
@@ -50,13 +50,15 @@ def simulate(scenario: Scenario, *, rollout_count: int) -> SimulationRun:
     if rollout_count <= 0:
         msg = f"rollout_count must be positive; got {rollout_count}"
         raise ValueError(msg)
-    market = materialize_market(
-        scenario.market, rollout_seeds=tuple(range(rollout_count)), horizon_months=int(scenario.horizon_months)
+    external_series = materialize_external_series(
+        scenario.external_series, rollout_seeds=tuple(range(rollout_count)), horizon_months=int(scenario.horizon_months)
     )
-    return simulate_with_market(scenario, rollout_count=rollout_count, market=market)
+    return simulate_with_external_series(scenario, rollout_count=rollout_count, external_series=external_series)
 
 
-def simulate_with_market(scenario: Scenario, *, rollout_count: int, market: MarketContext) -> SimulationRun:
+def simulate_with_external_series(
+    scenario: Scenario, *, rollout_count: int, external_series: ExternalSeriesContext
+) -> SimulationRun:
     if rollout_count <= 0:
         msg = f"rollout_count must be positive; got {rollout_count}"
         raise ValueError(msg)
@@ -69,7 +71,7 @@ def simulate_with_market(scenario: Scenario, *, rollout_count: int, market: Mark
         events_p1 = step_emit_scheduled_events(
             state=state_t,
             scenario=scenario,
-            market=market,
+            external_series=external_series,
             jurisdictions=jurisdictions,
             locations=locations,
             month=month,
@@ -77,7 +79,7 @@ def simulate_with_market(scenario: Scenario, *, rollout_count: int, market: Mark
         )
         state_t = apply_events(state_t, events_p1)
         events_p2 = step_emit_policy_events(
-            state=state_t, scenario=scenario, market=market, locations=locations, month=month
+            state=state_t, scenario=scenario, external_series=external_series, locations=locations, month=month
         )
         state_t = apply_events(state_t, events_p2)
         cross_sections.append(state_t)
@@ -93,7 +95,7 @@ def simulate_with_market(scenario: Scenario, *, rollout_count: int, market: Mark
         liabilities=_stack_liabilities(cross_sections),
         rollout_status_history=_stack_rollout_status(cross_sections),
         rollout_status=cross_sections[-1].rollout_status,
-        market_prices=market.prices,
+        series_values=external_series.series_values,
         events_log=EventLog.concat(events_by_month),
     )
 

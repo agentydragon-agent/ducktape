@@ -1,4 +1,4 @@
-"""Shared external-series identifiers for sampled market bundles."""
+"""Shared external-series identifiers for sampled exogenous bundles."""
 
 from __future__ import annotations
 

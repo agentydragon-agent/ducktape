@@ -13,15 +13,14 @@ import pytest
 import pytest_bazel
 
 from augur.model.gbm import GeometricBrownian
-from augur.model.market import MarketBundle
-from augur.sim.market import MARKET_PRICES_FRAME, MarketContext
+from augur.model.series_model import SeriesModelBundle
+from augur.sim.external_series import EXTERNAL_SERIES_VALUES_FRAME, ExternalSeriesContext
 from augur.sim.replay import assert_replay_invariant_holds
 from augur.sim.scenario import (
     Agent,
     InitialAccountBalance,
     InitialLot,
     LiquidityPolicy,
-    MarketIndexedAmount,
     MortgageFinancing,
     PropertyTaxPolicy,
     RecurringObligation,
@@ -31,22 +30,18 @@ from augur.sim.scenario import (
     ScheduledObligation,
     ScheduledPropertyPurchase,
     ScheduledTransfer,
+    SeriesIndexedAmount,
     TaxProfile,
 )
-from augur.sim.simulate import simulate, simulate_with_market
+from augur.sim.simulate import simulate, simulate_with_external_series
 
 
-def _market_context_for_levels(series_id: str, levels_by_rollout: list[list[float]]) -> MarketContext:
-    return MarketContext(
-        prices=MARKET_PRICES_FRAME.normalize(
+def _external_series_context_for_levels(series_id: str, levels_by_rollout: list[list[float]]) -> ExternalSeriesContext:
+    return ExternalSeriesContext(
+        series_values=EXTERNAL_SERIES_VALUES_FRAME.normalize(
             pl.DataFrame(
                 [
-                    {
-                        "rollout_index": rollout_index,
-                        "month_index": month_index,
-                        "asset_id": series_id,
-                        "price_per_unit_usd": level,
-                    }
+                    {"rollout_index": rollout_index, "month_index": month_index, "series_id": series_id, "value": level}
                     for rollout_index, levels in enumerate(levels_by_rollout)
                     for month_index, level in enumerate(levels)
                 ]
@@ -77,7 +72,7 @@ def _alice_bob_scenario() -> Scenario:
     )
 
 
-def test_market_indexed_amount_parses_from_scenario_data() -> None:
+def test_series_indexed_amount_parses_from_scenario_data() -> None:
     scenario = Scenario.model_validate(
         {
             "agents": [{"agent_id": "alice"}, {"agent_id": "landlord"}],
@@ -95,7 +90,7 @@ def test_market_indexed_amount_parses_from_scenario_data() -> None:
                     "to_agent_id": "landlord",
                     "to_account_id": "checking",
                     "amount_due_usd": {
-                        "kind": "market_indexed",
+                        "kind": "series_indexed",
                         "base_amount_usd": 1_000.0,
                         "series_id": "rent:san_francisco_ca",
                         "base_month_index": 0,
@@ -108,7 +103,7 @@ def test_market_indexed_amount_parses_from_scenario_data() -> None:
     )
 
     amount = scenario.recurring_obligations[0].amount_due_usd
-    assert isinstance(amount, MarketIndexedAmount)
+    assert isinstance(amount, SeriesIndexedAmount)
     assert amount.series_id == "rent:san_francisco_ca"
 
 
@@ -261,7 +256,7 @@ def test_recurring_transfer_bounded_by_end_month() -> None:
 
 def test_one_thousand_rollouts_identical_when_inputs_are() -> None:
     """L3: scale the rollout dimension to 1000. With deterministic
-    inputs (no market path, same scenario), every rollout produces
+    inputs (no external path variation, same scenario), every rollout produces
     the same trajectory. Exercises the polars cross-join expansion
     of the rollout column at scale; asserts the engine has no
     Python loop over rollouts (otherwise this would be too slow)."""
@@ -745,10 +740,10 @@ def test_sales_of_two_different_assets_are_independent() -> None:
     )
 
 
-def test_market_driven_sale_uses_deterministic_price_curve(deterministic_market_bundle) -> None:
+def test_series_driven_sale_uses_deterministic_price_curve(deterministic_series_bundle) -> None:
     """L5 — when a ScheduledAssetSale omits `price_per_unit_usd`,
     the engine reads the per-month price from the scenario's
-    MarketBundle. With a Deterministic model the price is identical
+    SeriesModelBundle. With a Deterministic model the price is identical
     across rollouts; the sale's proceeds reflect the configured
     month-N price."""
     horizon = 6
@@ -768,14 +763,14 @@ def test_market_driven_sale_uses_deterministic_price_curve(deterministic_market_
         scheduled_asset_sales=[
             ScheduledAssetSale(
                 month=4,
-                cause_id="market_sale",
+                cause_id="sampled_sale",
                 agent_id="alice",
                 asset_id="vti",
                 quantity=4.0,
                 proceeds_account_id="checking",
             )
         ],
-        market=deterministic_market_bundle([100.0, 110.0, 120.0, 130.0, 150.0, 160.0, 170.0]),
+        external_series=deterministic_series_bundle([100.0, 110.0, 120.0, 130.0, 150.0, 160.0, 170.0]),
         horizon_months=horizon,
     )
 
@@ -787,16 +782,16 @@ def test_market_driven_sale_uses_deterministic_price_curve(deterministic_market_
     assert disp["units_sold"] == 4.0
     assert disp["proceeds_usd"] == 600.0
 
-    # Market prices on the run match the configured path.
-    vti = result.market_prices.filter(pl.col("asset_id") == "vti").sort("month_index")
-    assert vti.get_column("price_per_unit_usd").to_list() == [100.0, 110.0, 120.0, 130.0, 150.0, 160.0, 170.0]
+    # External series values on the run match the configured path.
+    vti = result.series_values.filter(pl.col("series_id") == "vti").sort("month_index")
+    assert vti.get_column("value").to_list() == [100.0, 110.0, 120.0, 130.0, 150.0, 160.0, 170.0]
 
 
-def test_gbm_market_diverges_across_rollouts_same_seed_is_reproducible() -> None:
+def test_gbm_series_diverges_across_rollouts_same_seed_is_reproducible() -> None:
     """L10.1 — GBM paths produce different per-rollout trajectories
     (so sale proceeds differ across rollouts) but a fixed rollout-seed vector
-    reproduces the same prices across runs."""
-    bundle = MarketBundle.independent(
+    reproduces the same values across runs."""
+    bundle = SeriesModelBundle.independent(
         {"vti": GeometricBrownian(initial_value=100.0, monthly_log_return_mu=0.005, monthly_log_return_sigma=0.05)}
     )
     scenario = Scenario(
@@ -815,23 +810,23 @@ def test_gbm_market_diverges_across_rollouts_same_seed_is_reproducible() -> None
         scheduled_asset_sales=[
             ScheduledAssetSale(
                 month=3,
-                cause_id="market_sale",
+                cause_id="sampled_sale",
                 agent_id="alice",
                 asset_id="vti",
                 quantity=5.0,
                 proceeds_account_id="checking",
             )
         ],
-        market=bundle,
+        external_series=bundle,
         horizon_months=6,
     )
 
     result_a = simulate(scenario, rollout_count=200)
     result_b = simulate(scenario, rollout_count=200)
 
-    # Reproducibility: same seed → same prices across two runs.
-    assert result_a.market_prices.sort(["rollout_index", "month_index"]).equals(
-        result_b.market_prices.sort(["rollout_index", "month_index"])
+    # Reproducibility: same seed -> same values across two runs.
+    assert result_a.series_values.sort(["rollout_index", "month_index"]).equals(
+        result_b.series_values.sort(["rollout_index", "month_index"])
     )
 
     # Divergence: distinct per-rollout proceeds — far more than one
@@ -1214,7 +1209,7 @@ def test_e2e_pinned_multi_asset_ltcg_stcg_tax_breakdown_numerics() -> None:
     assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
-def test_e2e_pinned_tax_payments_force_asset_liquidation_and_settle_liability(deterministic_market_bundle) -> None:
+def test_e2e_pinned_tax_payments_force_asset_liquidation_and_settle_liability(deterministic_series_bundle) -> None:
     """Pinned obligation e2e: taxes are due-now outflows.
 
     Alice earns $50k and spends every paycheck on rent, so estimated
@@ -1263,7 +1258,7 @@ def test_e2e_pinned_tax_payments_force_asset_liquidation_and_settle_liability(de
                 amount_usd=50_000.0 / 12.0,
             ),
         ],
-        market=deterministic_market_bundle([100.0] * 14),
+        external_series=deterministic_series_bundle([100.0] * 14),
         tax_profiles=[
             TaxProfile(
                 agent_id="alice",
@@ -1482,7 +1477,7 @@ def test_tax_payment_can_trigger_rollout_failure_when_unfunded() -> None:
     assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
-def test_due_now_obligation_sells_assets_and_settles(deterministic_market_bundle) -> None:
+def test_due_now_obligation_sells_assets_and_settles(deterministic_series_bundle) -> None:
     """A required obligation uses cash first, sells configured assets
     for the remaining shortfall, then pays the counterparty in full."""
     scenario = Scenario(
@@ -1513,7 +1508,7 @@ def test_due_now_obligation_sells_assets_and_settles(deterministic_market_bundle
                 amount_due_usd=500.0,
             )
         ],
-        market=deterministic_market_bundle([100.0, 100.0]),
+        external_series=deterministic_series_bundle([100.0, 100.0]),
         liquidity_policies=[LiquidityPolicy(agent_id="alice", account_id="checking", asset_preference_chain=["vti"])],
         horizon_months=1,
     )
@@ -1544,9 +1539,9 @@ def test_due_now_obligation_sells_assets_and_settles(deterministic_market_bundle
     assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
-def test_market_indexed_recurring_rent_obligation_resets_yearly_by_rollout() -> None:
+def test_series_indexed_recurring_rent_obligation_resets_yearly_by_rollout() -> None:
     """Alice pays rent to a landlord. The rent is fixed within each
-    lease year and resets annually using each rollout's rent-market path."""
+    lease year and resets annually using each rollout's rent series path."""
     rent_series_id = "rent:san_francisco_ca"
     scenario = Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="landlord")],
@@ -1563,18 +1558,18 @@ def test_market_indexed_recurring_rent_obligation_resets_yearly_by_rollout() -> 
                 from_account_id="checking",
                 to_agent_id="landlord",
                 to_account_id="checking",
-                amount_due_usd=MarketIndexedAmount(
+                amount_due_usd=SeriesIndexedAmount(
                     base_amount_usd=1_000.0, series_id=rent_series_id, base_month_index=0, adjustment_period_months=12
                 ),
             )
         ],
         horizon_months=13,
     )
-    market = _market_context_for_levels(
+    external_series = _external_series_context_for_levels(
         rent_series_id, levels_by_rollout=[[100.0] * 12 + [110.0], [100.0] * 12 + [90.0]]
     )
 
-    result = simulate_with_market(scenario, rollout_count=2, market=market)
+    result = simulate_with_external_series(scenario, rollout_count=2, external_series=external_series)
 
     accruals = result.events_log.obligation_accruals.sort(["rollout_index", "month_index"])
     for rollout_index in (0, 1):
@@ -1592,7 +1587,7 @@ def test_market_indexed_recurring_rent_obligation_resets_yearly_by_rollout() -> 
     assert_replay_invariant_holds(scenario, result, rollout_count=2)
 
 
-def test_market_indexed_recurring_transfer_uses_same_amount_schedule() -> None:
+def test_series_indexed_recurring_transfer_uses_same_amount_schedule() -> None:
     """Tenant rent income uses the same path-indexed amount machinery
     as due-now rent obligations."""
     rent_series_id = "rent:san_francisco_ca"
@@ -1610,16 +1605,16 @@ def test_market_indexed_recurring_transfer_uses_same_amount_schedule() -> None:
                 from_account_id="checking",
                 to_agent_id="alice",
                 to_account_id="checking",
-                amount_usd=MarketIndexedAmount(
+                amount_usd=SeriesIndexedAmount(
                     base_amount_usd=1_500.0, series_id=rent_series_id, base_month_index=0, adjustment_period_months=12
                 ),
             )
         ],
         horizon_months=13,
     )
-    market = _market_context_for_levels(rent_series_id, levels_by_rollout=[[200.0] * 12 + [240.0]])
+    external_series = _external_series_context_for_levels(rent_series_id, levels_by_rollout=[[200.0] * 12 + [240.0]])
 
-    result = simulate_with_market(scenario, rollout_count=1, market=market)
+    result = simulate_with_external_series(scenario, rollout_count=1, external_series=external_series)
 
     transfers = result.events_log.transfers.sort("month_index")
     assert transfers.filter(pl.col("month_index") < 12).get_column("amount_usd").to_list() == pytest.approx(
@@ -1673,7 +1668,7 @@ def test_due_now_obligation_failure_aborts_payment() -> None:
     assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
-def test_policy_without_sale_orders_fails_hard_demand_even_with_assets(deterministic_market_bundle) -> None:
+def test_policy_without_sale_orders_fails_hard_demand_even_with_assets(deterministic_series_bundle) -> None:
     """A liquidity policy owns sale decisions. If it emits no sale
     orders, settlement will fail a hard demand even when sellable
     assets are present."""
@@ -1705,7 +1700,7 @@ def test_policy_without_sale_orders_fails_hard_demand_even_with_assets(determini
                 amount_due_usd=500.0,
             )
         ],
-        market=deterministic_market_bundle([100.0, 100.0]),
+        external_series=deterministic_series_bundle([100.0, 100.0]),
         liquidity_policies=[LiquidityPolicy(agent_id="alice", account_id="checking", asset_preference_chain=[])],
         horizon_months=1,
     )
@@ -1720,7 +1715,7 @@ def test_policy_without_sale_orders_fails_hard_demand_even_with_assets(determini
     assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
-def test_cash_buffer_sale_evaluates_after_hard_demands(deterministic_market_bundle) -> None:
+def test_cash_buffer_sale_evaluates_after_hard_demands(deterministic_series_bundle) -> None:
     """Buffer policy sees post-demand cash: cash 2500 minus a 1000
     hard demand leaves 1500, below the 2000 trigger, so the policy
     sells a fixed 5000 before settlement pays the demand."""
@@ -1752,7 +1747,7 @@ def test_cash_buffer_sale_evaluates_after_hard_demands(deterministic_market_bund
                 amount_due_usd=1000.0,
             )
         ],
-        market=deterministic_market_bundle([100.0, 100.0]),
+        external_series=deterministic_series_bundle([100.0, 100.0]),
         liquidity_policies=[
             LiquidityPolicy(
                 agent_id="alice",
@@ -1780,7 +1775,7 @@ def test_cash_buffer_sale_evaluates_after_hard_demands(deterministic_market_bund
     assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
-def test_cash_buffer_not_triggered_when_post_demand_cash_is_enough(deterministic_market_bundle) -> None:
+def test_cash_buffer_not_triggered_when_post_demand_cash_is_enough(deterministic_series_bundle) -> None:
     scenario = Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="landlord")],
         initial_cash=[
@@ -1809,7 +1804,7 @@ def test_cash_buffer_not_triggered_when_post_demand_cash_is_enough(deterministic
                 amount_due_usd=1000.0,
             )
         ],
-        market=deterministic_market_bundle([100.0, 100.0]),
+        external_series=deterministic_series_bundle([100.0, 100.0]),
         liquidity_policies=[
             LiquidityPolicy(
                 agent_id="alice",
@@ -1908,11 +1903,11 @@ def test_same_account_hard_demands_settle_all_or_none() -> None:
     assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
-def test_explicit_sale_price_overrides_market(deterministic_market_bundle) -> None:
+def test_explicit_sale_price_overrides_sampled_series(deterministic_series_bundle) -> None:
     """If `ScheduledAssetSale.price_per_unit_usd` is set the engine
-    uses that scalar; market is ignored for that sale. This is the
+    uses that scalar; sampled series is ignored for that sale. This is the
     test-fixture path used in L4 tests; still valid in the
-    market-aware engine."""
+    external-series-aware engine."""
     scenario = Scenario(
         agents=[Agent(agent_id="alice")],
         initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0)],
@@ -1937,7 +1932,7 @@ def test_explicit_sale_price_overrides_market(deterministic_market_bundle) -> No
                 proceeds_account_id="checking",
             )
         ],
-        market=deterministic_market_bundle([10.0, 10.0, 10.0]),
+        external_series=deterministic_series_bundle([10.0, 10.0, 10.0]),
         horizon_months=2,
     )
 
@@ -2028,9 +2023,9 @@ def test_real_estate_purchase_mortgage_and_property_tax_numerics() -> None:
     assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
-def test_liquidity_policy_covers_monthly_spend_deficit(deterministic_market_bundle) -> None:
+def test_liquidity_policy_covers_monthly_spend_deficit(deterministic_series_bundle) -> None:
     """L9 — Alice has $1k cash, a $5k/month spend, and 200 units of
-    VTI at $100/unit market price. The liquidity policy sees the
+    VTI at $100/unit sampled price. The liquidity policy sees the
     due-now rent demand, sells the amount cash cannot already cover,
     and settlement pays the rent in full. At month 0 it sells $4k of
     VTI (40 units). The lot is large enough to cover all three months
@@ -2063,7 +2058,7 @@ def test_liquidity_policy_covers_monthly_spend_deficit(deterministic_market_bund
                 amount_due_usd=5000.0,
             )
         ],
-        market=deterministic_market_bundle([100.0] * 4),
+        external_series=deterministic_series_bundle([100.0] * 4),
         liquidity_policies=[LiquidityPolicy(agent_id="alice", account_id="checking", asset_preference_chain=["vti"])],
         horizon_months=3,
     )
@@ -2086,7 +2081,7 @@ def test_liquidity_policy_covers_monthly_spend_deficit(deterministic_market_bund
     assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
-def test_rollout_marked_failed_when_assets_exhausted(deterministic_market_bundle) -> None:
+def test_rollout_marked_failed_when_assets_exhausted(deterministic_series_bundle) -> None:
     """L11 — when the liquidity policy cannot emit enough sale
     proceeds for a hard demand, settlement marks the rollout failed."""
     scenario = Scenario(
@@ -2117,7 +2112,7 @@ def test_rollout_marked_failed_when_assets_exhausted(deterministic_market_bundle
                 amount_due_usd=1000.0,
             )
         ],
-        market=deterministic_market_bundle([100.0, 100.0]),
+        external_series=deterministic_series_bundle([100.0, 100.0]),
         liquidity_policies=[LiquidityPolicy(agent_id="alice", account_id="checking", asset_preference_chain=["vti"])],
         horizon_months=1,
     )

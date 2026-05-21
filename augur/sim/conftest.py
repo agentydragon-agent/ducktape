@@ -7,14 +7,14 @@ from collections.abc import Callable, Sequence
 import pytest
 
 from augur.model.deterministic import Deterministic
-from augur.model.market import MarketBundle
+from augur.model.series_model import SeriesModelBundle
 
-DeterministicMarketBundleFactory = Callable[[Sequence[float]], MarketBundle]
+DeterministicSeriesModelBundleFactory = Callable[[Sequence[float]], SeriesModelBundle]
 
 
 @pytest.fixture
-def deterministic_market_bundle() -> DeterministicMarketBundleFactory:
-    def build(levels: Sequence[float], *, asset_id: str = "vti") -> MarketBundle:
-        return MarketBundle.independent({asset_id: Deterministic(levels=list(levels))})
+def deterministic_series_bundle() -> DeterministicSeriesModelBundleFactory:
+    def build(levels: Sequence[float], *, asset_id: str = "vti") -> SeriesModelBundle:
+        return SeriesModelBundle.independent({asset_id: Deterministic(levels=list(levels))})
 
     return build

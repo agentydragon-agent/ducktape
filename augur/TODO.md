@@ -13,7 +13,7 @@ generic backlog rather than a second ordered roadmap.
       runtime-backed.** Track the concrete replacement work in `augur/sim/TODO.md`.
       The production path now translates current API payloads, expands scalar
       seeds into explicit per-rollout seeds, samples a shared
-      `SampledMarketBundle`, evaluates with `augur/sim`, and derives frontend
+      `SampledExogenousBundle`, evaluates with `augur/sim`, and derives frontend
       graph tables from sim dataframes. Remaining work is to broaden the
       translator/materialized response beyond the current smoke slices and
       replace the temporary compatibility response with native projection read
@@ -23,15 +23,15 @@ generic backlog rather than a second ordered roadmap.
       editable `value_usd` buckets. The migration inventory for current API
       fields lives in `augur/sim/TODO.md#api-to-sim-translation-inventory`.
 - [ ] **PE valuation should actually be sampled** (Priority 3 in
-      `plans/roadmap.md`). The market provider holds private-equity marks
+      `plans/roadmap.md`). The exogenous provider holds private-equity marks
       flat at 1.0 for the entire horizon. The fit is **open design work**
       — available evidence is sparse (e.g. ~5-10 historical OpenAI
       tenders), so the natural shape is a model fit **jointly** with
       SP500, inflation, and the per-location housing factors that the
-      macro provider already estimates (VECM/VAR/Wilkie/etc.), rather
+      exogenous provider already estimates (VECM/VAR/Wilkie/etc.), rather
       than an independent process per PE asset.
 - [ ] **Tender timing should be sampled**, fitted jointly with the PE
-      price model on the same sparse evidence. Today the market provider
+      price model on the same sparse evidence. Today the exogenous provider
       emits tender opportunities at deterministic month indices (every 12
       months from t=0, identical across rollouts and PE assets). The
       explicit `PrivateEquityLot.tender_windows` path lands deterministic
@@ -42,14 +42,14 @@ generic backlog rather than a second ordered roadmap.
       replacing the `np.ones(...)` placeholder `crypto_value_multipliers`
       array with a sampled per-asset path so crypto contributes real
       variance.
-- [ ] **Mortgage rate should be sampled.** The macro provider holds the
+- [ ] **Mortgage rate should be sampled.** The exogenous provider holds the
       30y rate flat at today's value over the entire horizon. Refinance
-      and variable-rate scenarios unreachable until the joint market
+      and variable-rate scenarios unreachable until the joint exogenous
       model produces a sampled mortgage-rate path.
 - [ ] **`RegimeChange` mid-rollout events.** The `LiquidityRegime` shape
       already supports `LiquidityEventOnly → PublicMarket` transitions
-      (e.g. IPO), but no runtime hook flips the regime today. Markets
-      should be able to sample a regime change at a future month.
+      (e.g. IPO), but no runtime hook flips the regime today. Exogenous
+      models should be able to sample a regime change at a future month.
 - [ ] Make the generic Augur OCI image public-safe: no private Python
       config, property records, or media in image layers; deployments
       supply private config and assets through mounted runtime inputs.
@@ -93,14 +93,14 @@ generic backlog rather than a second ordered roadmap.
       other facts that are not product knobs. Bootstrap/UI defaults should
       derive from config, and unsupported scenario toggles can be removed or
       hidden while the sim cutover is narrowed.
-- [ ] Consider whether the deleted legacy market models should be revived as
+- [ ] Consider whether the deleted legacy exogenous models should be revived as
       runtime-native `augur/model` implementations where they are actually useful:
       `var` as a lighter joint macro baseline, `dcc_garch` for time-varying
       liquid-market/crypto volatility and correlations, `wilkie` for
       actuarial long-horizon inflation/equity/rate scenarios, and `bootstrap`
       for empirical stress/history resampling. Do not revive the old
       `macro_market_bundle_provider` shape directly; mine it only for data
-      loading/config ideas after the native `SampledMarketBundle` API is the
+      loading/config ideas after the native `SampledExogenousBundle` API is the
       target.
 
 ## Response wire surface
@@ -118,7 +118,7 @@ generic backlog rather than a second ordered roadmap.
 - [ ] **Server-side result persistence + slicing.** Sketch in
       `augur/plans/persistence_and_slicing.md`. Cache `SimulationRun` /
       `ProjectionRun` data
-      keyed by `(seed, scenario_input_id, market_request_hash)` (all already
+      keyed by `(seed, scenario_input_id, sampling_request_hash)` (all already
       content-addressed); expose `/api/runs/<id>/monthly_columns`,
       `/api/runs/<id>/rollout/<i>/series/<metric>`, etc. so the frontend can
       fetch slices on demand instead of getting everything every time. This
@@ -150,19 +150,13 @@ generic backlog rather than a second ordered roadmap.
 - [ ] Separate rollout stochastic inputs in the API/data model. Today a rollout
       is effectively a sampled exogenous trajectory plus deterministic policy.
       Make that explicit, and consider separate structures/identifiers for
-      market nondeterminism, policy nondeterminism, and any future non-market
-      random events so trajectory IDs do not conflate different sources of
+      exogenous-path nondeterminism, policy nondeterminism, and any future
+      non-policy random events so trajectory IDs do not conflate different sources of
       randomness.
 - [ ] Keep production stochastic path generation behind the `augur/model`
       trajectory-bundle boundary. The durable simulator contract should consume
       materialized exogenous paths plus provenance rather than fitting or
-      sampling markets itself.
-- [ ] Rename exogenous-path terminology away from "market price" where it
-      covers non-price world-state series such as rent, CPI/inflation, rates,
-      home-value indexes, and boolean event paths. The generic boundary should
-      read as external series / series values, while consumers interpret a
-      series as unit value, rent index, inflation index, rate path, or event
-      stream as appropriate.
+      sampling exogenous paths itself.
 - [ ] Decide whether negative cash is allowed only through explicit borrowing.
       If the model says an actor has overdraft, credit-line, margin, or other
       borrowing capacity, negative cash can be an accounting effect paired with
@@ -184,11 +178,11 @@ generic backlog rather than a second ordered roadmap.
 - [ ] Prefer Pydantic for serde and validation at API/config boundaries. Avoid
       custom `to_json_dict()`-style conversion helpers except at narrow
       compatibility seams.
-- [ ] Keep the macro market config file boundary pinned by contract tests. New
-      fields should update `augur/model/market_config_test.py`, remain
+- [ ] Keep the exogenous evidence config file boundary pinned by contract tests. New
+      fields should update `augur/fit/evidence_config_test.py`, remain
       Pydantic-parsed at load time, and avoid stale simulation knobs already
-      owned by `MarketRequest`.
-- [ ] Persist and harden model-governance artifacts for market providers. The
+      owned by `SamplingRequest`.
+- [ ] Persist and harden model-governance artifacts for exogenous providers. The
       runtime now attaches typed model card, evidence, calibration, scenario
       generator, path-set, and validation-report identities; the next step is
       durable evidence/calibration artifacts, real validation reports, and

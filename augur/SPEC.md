@@ -1,7 +1,7 @@
 # Augur — Specification
 
 Augur is a probabilistic simulator of a multi-agent economic system. Given a
-**scenario** — a bundle of agents, assets, liabilities, markets, and policies —
+**scenario** — a bundle of agents, assets, liabilities, external series, and policies —
 it produces a distribution over trajectories of state (net worth, cash,
 ownership shares, taxes, liquidity events, …) by sampling many rollouts.
 
@@ -11,9 +11,9 @@ records what an outside observer can rely on.
 
 ## Architecture Boundary
 
-Augur separates market generation from path evaluation. `augur/model` owns
+Augur separates exogenous path generation from path evaluation. `augur/model` owns
 evidence ingestion, calibration, fitted-model identity, stochastic sampling,
-and market-model provenance. `augur/sim` evaluates scenario sets over already
+and exogenous-model provenance. `augur/sim` evaluates scenario sets over already
 materialized exogenous trajectories. `augur/api` adapts product requests into
 model + simulation inputs and shapes responses for the frontend.
 
@@ -25,24 +25,24 @@ shapes.
 
 ### Entities
 
-| Entity        | What it is                                                                                                                                                                                                    | Examples                                                                                                                             |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `Agent`       | An economic actor with state (cash, holdings, liabilities, ownership shares) and a set of policies.                                                                                                           | a primary owner, a lender, a tenant                                                                                                  |
-| `Asset`       | Something an agent owns that has value. Discriminated subtype determines valuation and liquidity model.                                                                                                       | a `LiquidSecurity` tracking SP500, a `PrivateEquity` holding, a `RealEstate` property                                                |
-| `Liability`   | A debt an agent owes, with an amortization schedule.                                                                                                                                                          | a mortgage on a property                                                                                                             |
-| `Market`      | An exogenous trajectory source generated outside the simulator and consumed as per-rollout paths.                                                                                                             | SP500 total return, local home-price paths, local rent paths, CPI, mortgage rate, per-`PrivateEquity` price + liquidity-event stream |
-| `Policy`      | A typed rule attached to an agent: `(state, market, time) → list[Instruction]`. Composable; an agent can hold any number.                                                                                     | liquidity-reserve maintenance, max-concentration rebalancing, mortgage payment, rental management                                    |
-| `Instruction` | A policy-emitted intent (e.g. "sell N units of asset X"). Validated and applied by the engine into an `Effect`.                                                                                               | `SellInstruction`, `BorrowInstruction`                                                                                               |
-| `Effect`      | A realized state mutation after validation. The trace records effects, not the raw instructions.                                                                                                              | `SellSp500Effect`, `SellCryptoEffect`, `SellPrivateEquityEffect`, `SettlePropertySaleEffect`                                         |
-| `Obligation`  | A first-class cash demand on an actor (tax, mortgage, property tax, HOA, insurance, maintenance, outside rent, special assessment, estimated tax). Settled via the funding-policy chain or fails the rollout. | annual tax due at year-end, monthly property tax                                                                                     |
-| `Scenario`    | A bundle: agents + assets + liabilities + initial state + policies + which markets to sample from + horizon.                                                                                                  | "primary buys property X and rents rooms while living there"                                                                         |
+| Entity           | What it is                                                                                                                                                                                                    | Examples                                                                                                                             |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `Agent`          | An economic actor with state (cash, holdings, liabilities, ownership shares) and a set of policies.                                                                                                           | a primary owner, a lender, a tenant                                                                                                  |
+| `Asset`          | Something an agent owns that has value. Discriminated subtype determines valuation and liquidity model.                                                                                                       | a `LiquidSecurity` tracking SP500, a `PrivateEquity` holding, a `RealEstate` property                                                |
+| `Liability`      | A debt an agent owes, with an amortization schedule.                                                                                                                                                          | a mortgage on a property                                                                                                             |
+| `ExternalSeries` | An exogenous trajectory source generated outside the simulator and consumed as per-rollout paths.                                                                                                             | SP500 total return, local home-price paths, local rent paths, CPI, mortgage rate, per-`PrivateEquity` price + liquidity-event stream |
+| `Policy`         | A typed rule attached to an agent: `(state, external_series, time) → list[Instruction]`. Composable; an agent can hold any number.                                                                            | liquidity-reserve maintenance, max-concentration rebalancing, mortgage payment, rental management                                    |
+| `Instruction`    | A policy-emitted intent (e.g. "sell N units of asset X"). Validated and applied by the engine into an `Effect`.                                                                                               | `SellInstruction`, `BorrowInstruction`                                                                                               |
+| `Effect`         | A realized state mutation after validation. The trace records effects, not the raw instructions.                                                                                                              | `SellSp500Effect`, `SellCryptoEffect`, `SellPrivateEquityEffect`, `SettlePropertySaleEffect`                                         |
+| `Obligation`     | A first-class cash demand on an actor (tax, mortgage, property tax, HOA, insurance, maintenance, outside rent, special assessment, estimated tax). Settled via the funding-policy chain or fails the rollout. | annual tax due at year-end, monthly property tax                                                                                     |
+| `Scenario`       | A bundle: agents + assets + liabilities + initial state + policies + required external series + horizon.                                                                                                      | "primary buys property X and rents rooms while living there"                                                                         |
 
 ### Asset subtypes
 
 | Subtype          | Valuation                                                                                                         | Liquidity                                                                                 |
 | ---------------- | ----------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
 | `Cash`           | Face value.                                                                                                       | Always liquid.                                                                            |
-| `LiquidSecurity` | Tracks a market-provided multiplier (e.g. SP500 total-return proxy).                                              | Always sellable.                                                                          |
+| `LiquidSecurity` | Tracks an external-series multiplier (e.g. SP500 total-return proxy).                                             | Always sellable.                                                                          |
 | `RealEstate`     | Tracks location-bound home-value and rent paths; has property tax / insurance / HOA / maintenance / depreciation. | Sellable on demand; sale incurs closing costs, capital-gains tax, depreciation recapture. |
 | `PrivateEquity`  | Tracks an idiosyncratic per-asset price path supplied by the exogenous trajectory bundle.                         | Determined by a `LiquidityRegime` variant attached to the asset. See below.               |
 
@@ -66,12 +66,12 @@ fixed for the whole horizon by `PrivateEquityPosition.liquidity_regime`.
 
 Policies are first-class typed objects. The current policy vocabulary:
 
-| Policy                    | Inputs                                                     | Action(s) emitted                                                                      |
-| ------------------------- | ---------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `PrivateEquitySalePolicy` | Sale-rule configuration for PE sale opportunities.         | Sell `PrivateEquity` when an automatic rule intersects with a market sale opportunity. |
-| `MortgagePaymentPolicy`   | Mortgage liability, payer agent, cash source.              | `PayLiability` from owner cash flow.                                                   |
-| `RentalUsePolicy`         | Property, mode (occupied / rented / partial), tenant pool. | `OccupyProperty` / `RentProperty`.                                                     |
-| `OccupancyDecisionPolicy` | Property, move-out month, alternative housing config.      | Transitions occupation phase; potentially triggers `RentProperty`.                     |
+| Policy                    | Inputs                                                     | Action(s) emitted                                                                          |
+| ------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `PrivateEquitySalePolicy` | Sale-rule configuration for PE sale opportunities.         | Sell `PrivateEquity` when an automatic rule intersects with an exogenous sale opportunity. |
+| `MortgagePaymentPolicy`   | Mortgage liability, payer agent, cash source.              | `PayLiability` from owner cash flow.                                                       |
+| `RentalUsePolicy`         | Property, mode (occupied / rented / partial), tenant pool. | `OccupyProperty` / `RentProperty`.                                                         |
+| `OccupancyDecisionPolicy` | Property, move-out month, alternative housing config.      | Transitions occupation phase; potentially triggers `RentProperty`.                         |
 
 Policies do not encode actor identities in their type names — actor IDs are
 data in scenario configuration, not type-system distinctions.
@@ -119,7 +119,7 @@ For one rollout, given a `Scenario` and an exogenous trajectory bundle:
 3. For each month `t` in `[0, horizon_months]`:
    a. Apply scheduled events for the month (regime changes, lockup expiry,
    liquidity events open).
-   b. Mark-to-market: update asset values using market paths.
+   b. Mark-to-market: update asset values using external series.
    c. Accrue: rent income, expenses, depreciation, mortgage interest,
    property tax, insurance.
    d. Each agent's policies produce actions in deterministic order.
@@ -133,11 +133,11 @@ For one rollout, given a `Scenario` and an exogenous trajectory bundle:
 
 A scenario-set run produces a typed `ScenarioSetRunResponse`:
 
-- `SampledMarketBundle.metadata`: the exogenous trajectory bundle identity,
+- `SampledExogenousBundle.metadata`: the exogenous trajectory bundle identity,
   model / calibration provenance, seed, rollout count, horizon, event streams,
   and source metadata.
 - `ScenarioResult`: one result per scenario, each with accepted input summary,
-  report tables, metric summaries, effects (sales), policy decisions, market
+  report tables, metric summaries, effects (sales), policy decisions, exogenous
   observations, obligations + settlement results + funding decisions, accounting
   details, ledger entries, and balance snapshots.
 - `ReportTable`: columnar per-month arrays for fan charts, sample paths, and
@@ -149,7 +149,7 @@ A scenario-set run produces a typed `ScenarioSetRunResponse`:
 - It is not a tax compliance engine. Tax computations are approximations
   parameterized at the scenario level (marginal rates, cap-gains rates,
   depreciation rules). They are not authoritative.
-- It is not a real-time pricing engine. Market paths are exogenous trajectories
+- It is not a real-time pricing engine. Exogenous paths are trajectories
   generated outside the simulator; intra-month dynamics are not modeled.
 - It is not a portfolio optimizer. Policies are user-specified rules; augur
   reports their consequences, not what optimal policies would be.

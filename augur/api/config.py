@@ -29,7 +29,7 @@ from augur.api.local_regulation import LocalRegulation
 from augur.api.portfolio import PortfolioConfig
 from augur.api.scenario_set import ActorRole, LiquidityReserveRuleType
 from augur.api.schemas import ApiModel
-from augur.model.market_provider_config import MarketProviderConfig
+from augur.model.exogenous_provider_config import ExogenousProviderConfig
 
 AUGUR_CONFIG_PATH_ENV_VAR = "AUGUR_CONFIG_PATH"
 DEFAULT_AUGUR_CONFIG_PATH = Path("/etc/augur/config.yaml")
@@ -140,11 +140,11 @@ class Config(ApiModel):
     default_rollout_samples: PositiveInt = 128
     max_rollout_samples: PositiveInt = 2048
     bootstrap_default_scenarios: tuple[DefaultScenario, ...] = ()
-    market_provider: MarketProviderConfig = Field(
+    exogenous_provider: ExogenousProviderConfig = Field(
         description=(
-            "Deployment's market-bundle provider choice (discriminated by `type`: simple / vecm). "
+            "Deployment's exogenous-bundle provider choice (discriminated by `type`: simple / vecm). "
             "Carries per-provider knobs and trained-asset paths; the server materializes this into a "
-            "runtime `JointMarketModel` at startup."
+            "runtime `ExogenousPathModel` at startup."
         )
     )
 

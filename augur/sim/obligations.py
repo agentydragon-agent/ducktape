@@ -12,8 +12,8 @@ import polars as pl
 
 from augur.sim.amounts import amount_by_rollout
 from augur.sim.events import EVENT_FRAMES
+from augur.sim.external_series import ExternalSeriesContext
 from augur.sim.locations import Location
-from augur.sim.market import MarketContext
 from augur.sim.scenario import PropertyTaxPolicy, RecurringObligation, Scenario, ScheduledObligation, TaxProfile
 from augur.sim.state import StateCrossSection
 
@@ -34,14 +34,19 @@ class _TaxPaymentObligationEvents:
 
 
 def emit_due_now_obligations(
-    *, state: StateCrossSection, scenario: Scenario, market: MarketContext, locations: dict[str, Location], month: int
+    *,
+    state: StateCrossSection,
+    scenario: Scenario,
+    external_series: ExternalSeriesContext,
+    locations: dict[str, Location],
+    month: int,
 ) -> DueNowObligations:
     active_rollouts = state.rollout_status.filter(pl.col("status") == "active").select("rollout_index")
     mortgage_payments = _emit_mortgage_payments(state, month)
     tax_payment_events = _emit_tax_payment_obligations(state=state, profiles=scenario.tax_profiles, month=month)
     obligations = EVENT_FRAMES.obligation_accruals.concat(
         [
-            _emit_configured_obligations(scenario, market, month, active_rollouts),
+            _emit_configured_obligations(scenario, external_series, month, active_rollouts),
             _mortgage_payment_obligations(mortgage_payments),
             _emit_property_tax_obligations(state=state, scenario=scenario, locations=locations, month=month),
             tax_payment_events.obligation_accruals,
@@ -139,7 +144,7 @@ def _property_tax_obligation_block(
 
 
 def _emit_configured_obligations(
-    scenario: Scenario, market: MarketContext, month: int, rollouts: pl.DataFrame
+    scenario: Scenario, external_series: ExternalSeriesContext, month: int, rollouts: pl.DataFrame
 ) -> pl.DataFrame:
     active: list[ScheduledObligation | RecurringObligation] = [
         obligation for obligation in scenario.scheduled_obligations if obligation.month == month
@@ -148,15 +153,25 @@ def _emit_configured_obligations(
     if not active:
         return EVENT_FRAMES.obligation_accruals.empty()
     return EVENT_FRAMES.obligation_accruals.concat(
-        [_configured_obligation_block_per_rollout(obligation, market, rollouts, month) for obligation in active]
+        [
+            _configured_obligation_block_per_rollout(obligation, external_series, rollouts, month)
+            for obligation in active
+        ]
     )
 
 
 def _configured_obligation_block_per_rollout(
-    obligation: ScheduledObligation | RecurringObligation, market: MarketContext, rollouts: pl.DataFrame, month: int
+    obligation: ScheduledObligation | RecurringObligation,
+    external_series: ExternalSeriesContext,
+    rollouts: pl.DataFrame,
+    month: int,
 ) -> pl.DataFrame:
     amounts = amount_by_rollout(
-        obligation.amount_due_usd, market=market, rollouts=rollouts, month=month, column_name="amount_due_usd"
+        obligation.amount_due_usd,
+        external_series=external_series,
+        rollouts=rollouts,
+        month=month,
+        column_name="amount_due_usd",
     )
     return (
         rollouts.join(amounts, on="rollout_index")

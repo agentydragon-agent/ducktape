@@ -28,7 +28,7 @@ from augur.api.portfolio import (
     PublicSecurityTaxLotConfig,
 )
 from augur.api.scenario_set import ActorRole, LiquidityReserveRuleType, TaxRegime
-from augur.model.market_provider_config import SimpleMarketProviderConfig
+from augur.model.exogenous_provider_config import SimpleExogenousProviderConfig
 
 
 def _minimal_config(**overrides: object) -> Config:
@@ -39,7 +39,7 @@ def _minimal_config(**overrides: object) -> Config:
         "personal_finance": PersonalFinanceConfig(),
         "property_source": PropertySourceConfig(properties_path="/tmp/properties.json"),
         "snapshot": FinanceSnapshot(as_of_date="2026-05-12"),
-        "market_provider": SimpleMarketProviderConfig(),
+        "exogenous_provider": SimpleExogenousProviderConfig(),
     }
     defaults.update(overrides)
     return Config(**defaults)
@@ -197,7 +197,7 @@ def test_at_least_one_agent_required() -> None:
             personal_finance=PersonalFinanceConfig(),
             property_source=PropertySourceConfig(properties_path="/tmp/x.json"),
             snapshot=FinanceSnapshot(as_of_date="2026-05-12"),
-            market_provider=SimpleMarketProviderConfig(),
+            exogenous_provider=SimpleExogenousProviderConfig(),
         )
 
 

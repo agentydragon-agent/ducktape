@@ -64,20 +64,20 @@ def scenario_set_response_from_runs(
     *,
     scenario_set: ScenarioSet,
     simulation_runs: Mapping[str, SimulationRun],
-    sampled_market_metadata: Mapping[str, object] | None = None,
+    sampled_exogenous_metadata: Mapping[str, object] | None = None,
 ) -> ScenarioSetRunResponse:
-    metadata = dict(sampled_market_metadata or {})
-    event_stream_ids = _market_event_stream_ids(metadata)
+    metadata = dict(sampled_exogenous_metadata or {})
+    event_stream_ids = _exogenous_event_stream_ids(metadata)
     path_set_id = _path_set_id(
         scenario_set=scenario_set,
         simulation_runs=simulation_runs,
-        sampled_market_metadata=metadata,
+        sampled_exogenous_metadata=metadata,
         event_stream_ids=event_stream_ids,
     )
     exogenous_paths = _exogenous_paths(
         scenario_set=scenario_set,
         path_set_id=path_set_id,
-        sampled_market_metadata=metadata,
+        sampled_exogenous_metadata=metadata,
         event_stream_ids=event_stream_ids,
     )
     exogenous_path_by_rollout = {path.rollout_index: path for path in exogenous_paths}
@@ -85,7 +85,7 @@ def scenario_set_response_from_runs(
     return ScenarioSetRunResponse(
         scenario_set_id=scenario_set.scenario_set_id,
         request=scenario_set,
-        market_request=scenario_set.market_request,
+        sampling_request=scenario_set.sampling_request,
         report_spec=scenario_set.report_spec,
         projection_run=ProjectionRun(
             projection_run_id=_projection_run_id(
@@ -98,8 +98,8 @@ def scenario_set_response_from_runs(
             scenario_input_ids=tuple(scenario_input_ids.values()),
         ),
         exogenous_paths=exogenous_paths,
-        market_metadata=_market_metadata(
-            scenario_set=scenario_set, simulation_runs=simulation_runs, sampled_market_metadata=metadata
+        sampling_metadata=_sampling_metadata(
+            scenario_set=scenario_set, simulation_runs=simulation_runs, sampled_exogenous_metadata=metadata
         ),
         scenario_results=tuple(
             _scenario_result(
@@ -115,24 +115,24 @@ def scenario_set_response_from_runs(
     )
 
 
-def _market_metadata(
+def _sampling_metadata(
     *,
     scenario_set: ScenarioSet,
     simulation_runs: Mapping[str, SimulationRun],
-    sampled_market_metadata: Mapping[str, object],
+    sampled_exogenous_metadata: Mapping[str, object],
 ) -> dict[str, Any]:
     event_stream_ids = sorted(
         {frame_name for run in simulation_runs.values() for frame_name in _nonempty_event_frame_names(run)}
     )
     return {
-        "market_model_id": str(
-            sampled_market_metadata.get("market_model_id", scenario_set.market_request.market_model_id)
+        "exogenous_model_id": str(
+            sampled_exogenous_metadata.get("exogenous_model_id", scenario_set.sampling_request.exogenous_model_id)
         ),
-        "seed": scenario_set.market_request.seed,
-        "rollout_count": scenario_set.market_request.rollout_count,
-        "horizon_months": scenario_set.market_request.horizon_months,
+        "seed": scenario_set.sampling_request.seed,
+        "rollout_count": scenario_set.sampling_request.rollout_count,
+        "horizon_months": scenario_set.sampling_request.horizon_months,
         "event_stream_ids": event_stream_ids,
-        "source_metadata": dict(sampled_market_metadata),
+        "source_metadata": dict(sampled_exogenous_metadata),
     }
 
 
@@ -140,13 +140,13 @@ def _path_set_id(
     *,
     scenario_set: ScenarioSet,
     simulation_runs: Mapping[str, SimulationRun],
-    sampled_market_metadata: Mapping[str, object],
+    sampled_exogenous_metadata: Mapping[str, object],
     event_stream_ids: tuple[str, ...],
 ) -> str:
     return "path_set:" + stable_identity_digest(
         {
-            "market_request": scenario_set.market_request,
-            "market_metadata": sampled_market_metadata,
+            "sampling_request": scenario_set.sampling_request,
+            "sampling_metadata": sampled_exogenous_metadata,
             "level_series_ids": _level_series_ids(simulation_runs),
             "event_stream_ids": event_stream_ids,
         }
@@ -186,14 +186,14 @@ def _projection_trajectory_id(
 def _level_series_ids(simulation_runs: Mapping[str, SimulationRun]) -> tuple[str, ...]:
     series_ids: set[str] = set()
     for run in simulation_runs.values():
-        if run.market_prices.is_empty():
+        if run.series_values.is_empty():
             continue
-        series_ids.update(str(series_id) for series_id in run.market_prices.get_column("asset_id").unique().to_list())
+        series_ids.update(str(series_id) for series_id in run.series_values.get_column("series_id").unique().to_list())
     return tuple(sorted(series_ids))
 
 
-def _market_event_stream_ids(sampled_market_metadata: Mapping[str, object]) -> tuple[str, ...]:
-    raw_ids = sampled_market_metadata.get("event_stream_ids", ())
+def _exogenous_event_stream_ids(sampled_exogenous_metadata: Mapping[str, object]) -> tuple[str, ...]:
+    raw_ids = sampled_exogenous_metadata.get("event_stream_ids", ())
     if raw_ids is None:
         return ()
     if isinstance(raw_ids, str):
@@ -207,7 +207,7 @@ def _exogenous_paths(
     *,
     scenario_set: ScenarioSet,
     path_set_id: str,
-    sampled_market_metadata: Mapping[str, object],
+    sampled_exogenous_metadata: Mapping[str, object],
     event_stream_ids: tuple[str, ...],
 ) -> tuple[ExogenousPathIdentity, ...]:
     rollout_seeds = _rollout_seeds(scenario_set)
@@ -216,19 +216,23 @@ def _exogenous_paths(
             rollout_index=rollout_index,
             path_set_id=path_set_id,
             exogenous_path_id=f"{path_set_id}:rollout:{rollout_index}",
-            market_model_id=str(
-                sampled_market_metadata.get("market_model_id", scenario_set.market_request.market_model_id)
+            exogenous_model_id=str(
+                sampled_exogenous_metadata.get("exogenous_model_id", scenario_set.sampling_request.exogenous_model_id)
             ),
-            market_model_version_id=str(
-                sampled_market_metadata.get(
-                    "market_model_version_id", sampled_market_metadata.get("model_version_id", "unknown")
+            exogenous_model_version_id=str(
+                sampled_exogenous_metadata.get(
+                    "exogenous_model_version_id", sampled_exogenous_metadata.get("model_version_id", "unknown")
                 )
             ),
-            scenario_generator_id=str(sampled_market_metadata.get("scenario_generator_id", "market_model_provider")),
-            scenario_generator_version_id=str(sampled_market_metadata.get("scenario_generator_version_id", "unknown")),
-            evidence_set_id=str(sampled_market_metadata.get("evidence_set_id", "unknown")),
-            calibration_artifact_id=str(sampled_market_metadata.get("calibration_artifact_id", "unknown")),
-            risk_factor_set_id=str(sampled_market_metadata.get("risk_factor_set_id", "market_factors:v1")),
+            scenario_generator_id=str(
+                sampled_exogenous_metadata.get("scenario_generator_id", "exogenous_model_provider")
+            ),
+            scenario_generator_version_id=str(
+                sampled_exogenous_metadata.get("scenario_generator_version_id", "unknown")
+            ),
+            evidence_set_id=str(sampled_exogenous_metadata.get("evidence_set_id", "unknown")),
+            calibration_artifact_id=str(sampled_exogenous_metadata.get("calibration_artifact_id", "unknown")),
+            risk_factor_set_id=str(sampled_exogenous_metadata.get("risk_factor_set_id", "exogenous_factors:v1")),
             seed=seed,
             event_stream_ids=event_stream_ids,
         )
@@ -239,8 +243,8 @@ def _exogenous_paths(
 def _rollout_seeds(scenario_set: ScenarioSet) -> tuple[int, ...]:
     return tuple(
         int(child.generate_state(1, dtype=np.uint32)[0])
-        for child in np.random.SeedSequence(scenario_set.market_request.seed).spawn(
-            scenario_set.market_request.rollout_count
+        for child in np.random.SeedSequence(scenario_set.sampling_request.seed).spawn(
+            scenario_set.sampling_request.rollout_count
         )
     )
 
@@ -426,7 +430,7 @@ def _max_month_index(run: SimulationRun) -> int:
         run.property_stakes,
         run.liabilities,
         run.rollout_status_history,
-        run.market_prices,
+        run.series_values,
         run.events_log.lot_dispositions,
         run.events_log.property_purchases,
         run.events_log.mortgage_payments,
@@ -452,12 +456,13 @@ def _sp500_value(run: SimulationRun, *, agent_id: str) -> pl.DataFrame:
     if lots.is_empty():
         return _empty_metric("generic_sp500_value_usd")
     return (
-        lots.join(run.market_prices, on=["rollout_index", "month_index", "asset_id"], how="left")
-        .with_columns(
-            (pl.col("remaining_quantity") * pl.col("price_per_unit_usd").fill_null(0.0)).alias(
-                "generic_sp500_value_usd"
-            )
+        lots.join(
+            run.series_values,
+            left_on=["rollout_index", "month_index", "asset_id"],
+            right_on=["rollout_index", "month_index", "series_id"],
+            how="left",
         )
+        .with_columns((pl.col("remaining_quantity") * pl.col("value").fill_null(0.0)).alias("generic_sp500_value_usd"))
         .group_by("rollout_index", "month_index")
         .agg(pl.col("generic_sp500_value_usd").sum())
     )
@@ -470,12 +475,13 @@ def _private_equity_value(run: SimulationRun, *, agent_id: str) -> pl.DataFrame:
     if lots.is_empty():
         return _empty_metric("private_equity_value_usd")
     return (
-        lots.join(run.market_prices, on=["rollout_index", "month_index", "asset_id"], how="left")
-        .with_columns(
-            (pl.col("remaining_quantity") * pl.col("price_per_unit_usd").fill_null(0.0)).alias(
-                "private_equity_value_usd"
-            )
+        lots.join(
+            run.series_values,
+            left_on=["rollout_index", "month_index", "asset_id"],
+            right_on=["rollout_index", "month_index", "series_id"],
+            how="left",
         )
+        .with_columns((pl.col("remaining_quantity") * pl.col("value").fill_null(0.0)).alias("private_equity_value_usd"))
         .group_by("rollout_index", "month_index")
         .agg(pl.col("private_equity_value_usd").sum())
     )

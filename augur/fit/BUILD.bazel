@@ -3,17 +3,18 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 package(default_visibility = ["//visibility:public"])
 
 filegroup(
-    name = "market_config_files",
+    name = "evidence_config_files",
     srcs = [
         "//augur/data/market:market_source_files",
+        "//augur/model/train/config:exogenous_evidence_config",
     ],
 )
 
 py_library(
-    name = "market_config_py",
-    srcs = ["market_config.py"],
+    name = "evidence_config_py",
+    srcs = ["evidence_config.py"],
     deps = [
-        "//augur/model:location_market_sources_py",
+        "//augur/model:location_series_sources_py",
         "//augur/model:schemas_py",
         "@pypi//pydantic",
         "@pypi//pyyaml",
@@ -22,10 +23,10 @@ py_library(
 )
 
 py_library(
-    name = "market_data_py",
-    srcs = ["market_data.py"],
+    name = "evidence_data_py",
+    srcs = ["evidence_data.py"],
     deps = [
-        ":market_config_py",
+        ":evidence_config_py",
         "@pypi//numpy",
         "@pypi//pandas",
         "@rules_python//python/runfiles",
@@ -33,10 +34,10 @@ py_library(
 )
 
 py_library(
-    name = "market_model_py",
-    srcs = ["market_model.py"],
+    name = "exogenous_model_py",
+    srcs = ["exogenous_model.py"],
     deps = [
-        "//augur/model/markets:scenarios_py",
+        "//augur/model/path_models:scenarios_py",
     ],
 )
 
@@ -44,20 +45,20 @@ py_library(
     name = "metrics_py",
     srcs = ["metrics.py"],
     deps = [
-        ":market_model_py",
-        "//augur/model/markets:scenarios_py",
+        ":exogenous_model_py",
+        "//augur/model/path_models:scenarios_py",
     ],
 )
 
 py_library(
     name = "data_py",
     srcs = ["data.py"],
-    data = [":market_config_files"],
+    data = [":evidence_config_files"],
     deps = [
-        ":market_config_py",
-        ":market_data_py",
-        "//augur/model:location_market_sources_py",
-        "//augur/model/markets:scenarios_py",
+        ":evidence_config_py",
+        ":evidence_data_py",
+        "//augur/model:location_series_sources_py",
+        "//augur/model/path_models:scenarios_py",
         "@pypi//numpy",
         "@pypi//pandas",
     ],
@@ -66,24 +67,24 @@ py_library(
 py_binary(
     name = "metrics_report",
     srcs = ["metrics_report.py"],
-    data = [":market_config_files"],
+    data = [":evidence_config_files"],
     deps = [
         ":data_py",
-        ":market_model_py",
+        ":exogenous_model_py",
         ":metrics_py",
-        "//augur/model/markets/models:vecm_py",
+        "//augur/model/path_models/models:vecm_py",
     ],
 )
 
 py_library(
     name = "train_lib",
     srcs = ["main.py"],
-    data = [":market_config_files"],
+    data = [":evidence_config_files"],
     deps = [
         ":data_py",
-        ":market_config_py",
-        "//augur/model:market_provider_config_py",
-        "//augur/model/markets/models:vecm_py",
+        ":evidence_config_py",
+        "//augur/model:exogenous_provider_config_py",
+        "//augur/model/path_models/models:vecm_py",
         "@pypi//pyyaml",
     ],
 )
@@ -95,11 +96,11 @@ py_binary(
 )
 
 py_test(
-    name = "market_config_test",
-    srcs = ["market_config_test.py"],
-    data = [":market_config_files"],
+    name = "evidence_config_test",
+    srcs = ["evidence_config_test.py"],
+    data = [":evidence_config_files"],
     deps = [
-        ":market_config_py",
+        ":evidence_config_py",
         "//augur/model:schemas_py",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -109,10 +110,10 @@ py_test(
 py_test(
     name = "data_test",
     srcs = ["data_test.py"],
-    data = [":market_config_files"],
+    data = [":evidence_config_files"],
     deps = [
         ":data_py",
-        ":market_config_py",
+        ":evidence_config_py",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -122,9 +123,9 @@ py_test(
     name = "metrics_test",
     srcs = ["metrics_test.py"],
     deps = [
-        ":market_model_py",
+        ":exogenous_model_py",
         ":metrics_py",
-        "//augur/model/markets:scenarios_py",
+        "//augur/model/path_models:scenarios_py",
         "@pypi//numpy",
         "@pypi//pytest_bazel",
     ],
@@ -136,8 +137,8 @@ py_test(
     srcs = ["train_round_trip_test.py"],
     deps = [
         ":train_lib",
-        "//augur/model:market_api_py",
-        "//augur/model:market_provider_config_py",
+        "//augur/model:exogenous_provider_config_py",
+        "//augur/model:exogenous_py",
         "//augur/model:series_py",
         "@pypi//pydantic",
         "@pypi//pytest",

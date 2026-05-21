@@ -27,7 +27,7 @@ and deployment-specific composition stay in the downstream private repo.
 
 ## North Star
 
-Augur simulates a `ScenarioSet` across sampled market paths and returns a
+Augur simulates a `ScenarioSet` across sampled exogenous paths and returns a
 distribution over trajectories. A selected rollout is an inspection aid, not a
 separate deterministic product. The UI, app state, and result APIs should make
 that distinction impossible to miss.
@@ -52,7 +52,7 @@ Near-term translation order:
 
 - Fix current smoke-slice correctness first by moving opening public
   securities into backend YAML config as actual positions: position id, account,
-  owner, symbol/security identity, market-model series mapping, units, starting
+  owner, symbol/security identity, exogenous-model series mapping, units, starting
   price, and cost basis. The sim translator should create concrete initial lots
   and derive current value from `units * price[t=0]`, not interpret a scenario
   `value_usd` as quantity.
@@ -93,13 +93,13 @@ Near-term translation order:
 
 The prior-art audit points to a conservative target shape:
 
-- Market generation and household projection stay separate.
-  `MarketSamplingRequest` plus `SampledMarketBundle` is the durable economic
+- Exogenous path generation and household projection stay separate.
+  `ExogenousSamplingRequest` plus `SampledExogenousBundle` is the durable economic
   scenario-generator boundary; the simulator is deterministic once it receives
   a typed scenario and sampled exogenous paths.
-- Trajectory identity includes scenario input, market model identity,
+- Trajectory identity includes scenario input, exogenous model identity,
   evidence/calibration identity, generator implementation/version, seed, path
-  index, and any non-market event streams. `rollout_index` remains a convenient
+  index, and any non-exogenous event streams. `rollout_index` remains a convenient
   selector, not a reproducibility key by itself.
 - Actor policy programs are ordered programs. Policy steps emit decisions and
   instructions; accounting/runtime code validates and applies effects. New
@@ -107,7 +107,7 @@ The prior-art audit points to a conservative target shape:
 - Ledgers, balance snapshots, accounting detail, lots, liabilities, and typed
   cause IDs are the source of truth. Monthly arrays are chart/report views over
   that state, not a parallel semantic model.
-- Model governance is part of the model output. Market bundles now carry first
+- Model governance is part of the model output. Sampled bundles now carry first
   typed model/evidence/calibration/generator/path identities and model-card or
   validation-report pointers; the next cleanup is to persist real artifacts and
   validation results behind those IDs.
@@ -138,11 +138,11 @@ Implementation notes:
   in `data-result-panel-kind`; view-level headers provide the visible
   distribution/trajectory context so child trajectory panels do not need
   repetitive chips.
-- Trajectory URLs are reproducible only when the encoded market request has a
+- Trajectory URLs are reproducible only when the encoded sampling request has a
   deterministic seed. The locator is effectively scenario-set input plus
-  market model/version plus seed plus `scenario_id` plus `rollout_index`; seed
+  exogenous model/version plus seed plus `scenario_id` plus `rollout_index`; seed
   and rollout alone are not enough.
-- The same `rollout_index` should identify the same exogenous market path
+- The same `rollout_index` should identify the same exogenous path
   across scenarios in a scenario-set run so trajectory comparison is meaningful.
 - Keep report/view knobs honest: `include_monthly_columns` is currently real;
   do not add report selectors or response-shaping fields unless the backend and
@@ -195,7 +195,7 @@ Target browser state:
 - `occupancy_and_rental`: residence and rental-use plan.
 - `tax_accounting`: tax rates, filing assumptions, basis assumptions, timing
   assumptions, and approximation disclaimers.
-- `market_model`: selected market model, rollout count, horizon, seed, and
+- `sampling`: selected exogenous model, rollout count, horizon, seed, and
   shared-path behavior.
 - `policies`: ordered actor policy programs.
 
@@ -249,7 +249,7 @@ tender months is not a real distribution over PE outcomes.
 ### Gaps to close
 
 1. **PE valuation should be sampled.** Per-asset value paths keyed by holding
-   identity in `SampledMarketBundle`, persisted via its metadata. The
+   identity in `SampledExogenousBundle`, persisted via its metadata. The
    model is **open design work** — the user's available evidence is sparse
    (5-10 historical OpenAI tenders), so the right fit is likely a joint
    model with SP500, inflation, and per-location housing (currently jointly
@@ -300,7 +300,7 @@ stays cash + public liquid securities — never tender-eligible PE marks.
 
 ### Policy / sale machinery (unchanged from prior framing)
 
-- Market/model layer emits private-equity sale opportunities: tender,
+- Exogenous/model layer emits private-equity sale opportunities: tender,
   acquisition, IPO/regime change, lockup expiry, public-market availability.
 - Policy layer decides participation: never sell, sell fixed fraction, sell
   fixed units, sell enough to reach concentration/liquid-reserve target, or
@@ -386,7 +386,7 @@ Remaining work:
   no opportunity" produces no row).
 - Make result inspection typed and local: distribution helpers, trajectory
   helpers, ledger/detail helpers, and compatibility aliases only where needed.
-- Keep market paths and exogenous opportunities as observations, not policy
+- Keep exogenous paths and opportunities as observations, not policy
   decisions.
 
 Acceptance criteria:
@@ -440,7 +440,7 @@ Work:
 1. Drive the backend switchover as an integration lane: translate the current
    API/catalog payload into a typed sim scenario, discover required market
    series from that sim scenario, expand any legacy scalar seed into explicit
-   per-rollout seeds, sample `augur/model`'s `SampledMarketBundle`, run
+   per-rollout seeds, sample `augur/model`'s `SampledExogenousBundle`, run
    `augur/sim`, and serialize projection/read models through `augur/api`.
 2. Expand sim smoke coverage for API-shaped requests: translate current
    request/catalog objects, sample model-owned bundles, run `augur/sim`, and
@@ -454,7 +454,7 @@ Work:
    ledger/accounting detail as the source of truth for monthly report arrays.
 5. Persist and harden trajectory, path, cause, and model-governance identities
    so a selected rollout can be reproduced and audited from scenario input
-   through market evidence and policy decisions.
+   through exogenous evidence and policy decisions.
 6. Keep expanding ordered actor policy programs through explicit decision and
    instruction traces, now that execution order is the runtime path.
 7. Move public generic data toward typed config resources: local
@@ -476,7 +476,7 @@ Work:
   sampled mortgage rate** (open design work; see the priority section
   above). Joint fit with SP500 / inflation / per-location housing factors
   on sparse evidence. Lives entirely in `augur/model/` and feeds
-  `augur/sim` through `SampledMarketBundle`. **The biggest remaining
+  `augur/sim` through `SampledExogenousBundle`. **The biggest remaining
   variance source the simulator silently ignores.**
 - **Tax surface beyond sale tax** — qualified dividends, short-term gains,
   capital losses + carryforward, rental income tax, SALT/property-tax
@@ -555,12 +555,12 @@ deliberately scoped out of Plan C and tracked in `TODO.md`:
   currently `required=True`; flipping any to discretionary (deferral
   rather than failure) is a future PR.
 
-### Plan D: Keep Market Configuration Typed At The Boundary (guardrail)
+### Plan D: Keep Evidence Configuration Typed At The Boundary (guardrail)
 
-Keep the macro market config Pydantic-parsed at load time, with
-`market_config_test` as the review point when adding new source-data
+Keep the exogenous evidence config Pydantic-parsed at load time, with
+`evidence_config_test` as the review point when adding new source-data
 fields or deployment-supplied config. Reject stale simulation knobs at
-the file boundary — `MarketRequest` owns rollout count, horizon, and
+the file boundary — `SamplingRequest` owns rollout count, horizon, and
 seed; the market config should not keep a second inert copy.
 
 ## Verification Loop

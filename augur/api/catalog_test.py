@@ -12,23 +12,22 @@ from augur.api.backend import Backend, BackendRuntimeConfig
 from augur.api.catalog import build_bootstrap_payload
 from augur.api.config import (
     AgentDefinition,
-    ConcentratedHoldingSnapshot,
     Config,
-    FinanceSnapshot,
     LocationConfig,
     PersonalFinanceConfig,
     PropertyAssetConfig,
     PropertySourceConfig,
 )
+from augur.api.finance import ConcentratedHoldingSnapshot, FinanceSnapshot
 from augur.api.local_regulation import LocalRegulation
 from augur.api.scenario_set import ActorRole, ScenarioSet, TaxRegime
-from augur.model.market_provider_config import SimpleMarketProviderConfig
-from augur.model.testing import DeterministicMarketFixtureModel
+from augur.model.exogenous_provider_config import SimpleExogenousProviderConfig
+from augur.model.testing import DeterministicSeriesFixtureModel
 
 
 @pytest.fixture
-def deterministic_market_model() -> DeterministicMarketFixtureModel:
-    return DeterministicMarketFixtureModel()
+def deterministic_exogenous_model() -> DeterministicSeriesFixtureModel:
+    return DeterministicSeriesFixtureModel()
 
 
 def _write_properties(path: Path) -> None:
@@ -191,7 +190,7 @@ def _config(
         starting_portfolio_usd=100_000,
         locations=_fixture_locations(),
         location_selection=location_selection,
-        market_provider=SimpleMarketProviderConfig(),
+        exogenous_provider=SimpleExogenousProviderConfig(),
     )
 
 
@@ -223,20 +222,20 @@ def test_bootstrap_san_francisco_location_carries_modeled_tax_defaults(tmp_path:
 
 
 def test_backend_applies_location_tax_defaults_to_scenario(
-    tmp_path: Path, deterministic_market_model: DeterministicMarketFixtureModel
+    tmp_path: Path, deterministic_exogenous_model: DeterministicSeriesFixtureModel
 ) -> None:
     properties_path = tmp_path / "properties.json"
     _write_builtin_properties(properties_path)
     backend = Backend(
         augur_config=_config(properties_path),
         runtime_config=BackendRuntimeConfig(
-            default_rollout_samples=8, max_rollout_samples=128, market_model=deterministic_market_model
+            default_rollout_samples=8, max_rollout_samples=128, exogenous_model=deterministic_exogenous_model
         ),
     )
     request = {
         "scenario_set_id": "tax_defaults",
         "title": "Tax defaults",
-        "market_request": {"rollout_count": 1, "horizon_months": 1, "seed": 1},
+        "sampling_request": {"rollout_count": 1, "horizon_months": 1, "seed": 1},
         "scenarios": [
             {
                 "scenario_id": "sf_property",
@@ -259,20 +258,20 @@ def test_backend_applies_location_tax_defaults_to_scenario(
 
 
 def test_backend_rejects_scenario_property_location_mismatch(
-    tmp_path: Path, deterministic_market_model: DeterministicMarketFixtureModel
+    tmp_path: Path, deterministic_exogenous_model: DeterministicSeriesFixtureModel
 ) -> None:
     properties_path = tmp_path / "properties.json"
     _write_builtin_properties(properties_path)
     backend = Backend(
         augur_config=_config(properties_path),
         runtime_config=BackendRuntimeConfig(
-            default_rollout_samples=8, max_rollout_samples=128, market_model=deterministic_market_model
+            default_rollout_samples=8, max_rollout_samples=128, exogenous_model=deterministic_exogenous_model
         ),
     )
     request = {
         "scenario_set_id": "mismatch",
         "title": "Property/location mismatch",
-        "market_request": {"rollout_count": 1, "horizon_months": 1, "seed": 1},
+        "sampling_request": {"rollout_count": 1, "horizon_months": 1, "seed": 1},
         "scenarios": [
             {
                 "scenario_id": "sf_with_wrong_location",

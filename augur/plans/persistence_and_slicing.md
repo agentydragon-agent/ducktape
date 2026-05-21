@@ -33,7 +33,7 @@ Stateless-snowglobe-style cache, keyed by content.
 RunCacheKey = (
     scenario_set_id,
     scenario_input_id,        # already content-derived (scenario_input_id())
-    market_request_hash,      # rollout_count + horizon + seed + provider
+    sampling_request_hash,      # rollout_count + horizon + seed + provider
     exogenous_path_set_id,    # for explicit sampled-bundle paths
     code_version_hash,        # so cache invalidates on engine refactors
 )

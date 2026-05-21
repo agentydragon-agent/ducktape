@@ -1,11 +1,11 @@
-# Augur Market Model Card And Provenance
+# Augur Exogenous Model Card And Provenance
 
 Last updated: 2026-05-20.
 
-This is the minimal `ModelCard` for the current Augur market-model layer.
+This is the minimal `ModelCard` for the current Augur exogenous-model layer.
 The active trained `vecm` provider attaches typed model-card, model-version, evidence,
 calibration, scenario-generator, exogenous-path-set, validation-report, and
-known-limitation identity metadata to `SampledMarketBundle.metadata`. Those identities
+known-limitation identity metadata to `SampledExogenousBundle.metadata`. Those identities
 are stable for the same checked-in public evidence and model inputs, but
 evidence, calibration, and validation are still runtime-derived metadata rather
 than durable persisted artifacts.
@@ -14,24 +14,24 @@ than durable persisted artifacts.
 
 Current governed surface:
 
-- Active trained market model: `vecm`.
-- `VecmJointMarketModel`, which wraps a trained VECM blob and samples native
-  `SampledMarketBundle` levels/events.
+- Active trained exogenous model: `vecm`.
+- `VecmExogenousPathModel`, which wraps a trained VECM blob and samples native
+  `SampledExogenousBundle` levels/events.
 - Simple stochastic providers are runtime placeholders. Deterministic flat
-  market paths are test-only fixtures. Neither is a calibrated market model.
+  exogenous paths are test-only fixtures. Neither is a calibrated exogenous model.
 
-The models are intended to generate exogenous market paths for Augur household
+The models are intended to generate exogenous paths for Augur household
 scenario projection. They are not intended to make standalone investment
 recommendations, price securities, optimize portfolios, or certify tax,
 mortgage, or legal outcomes.
 
 ## Intended Use
 
-Use the current market models to:
+Use the current exogenous models to:
 
 - sample distributions of SP500 total-return proxy, home-value, rent, CPI, and
   mortgage-rate paths for personal economic scenarios;
-- compare scenario variants over shared sampled market paths;
+- compare scenario variants over shared sampled exogenous paths;
 - inspect one sampled rollout as a trajectory detail view inside a broader
   distribution;
 - exercise model-comparison diagnostics such as held-out, rolling-origin, and
@@ -39,7 +39,7 @@ Use the current market models to:
 
 Do not use them as:
 
-- a deterministic forecast of any market factor;
+- a deterministic forecast of any exogenous factor;
 - a source of authoritative financial, tax, or legal advice;
 - a compliance-grade valuation or risk engine;
 - a guarantee that liquidity, borrowing, tax timing, or default behavior is
@@ -50,7 +50,7 @@ Do not use them as:
 The current boundary should remain:
 
 ```text
-Raw evidence -> evidence set -> calibration/fitting -> sampled market bundle -> projection
+Raw evidence -> evidence set -> calibration/fitting -> sampled exogenous bundle -> projection
 ```
 
 Today that means:
@@ -60,17 +60,17 @@ Today that means:
   include FRED, Yahoo Finance SPY adjusted-close data, and trimmed Zillow ZHVI
   city rows.
 - Evidence loading happens in `load_evidence()`, which returns
-  `HistoricalSeries` plus `MarketEvidence`. `MarketEvidence` carries aligned
+  `HistoricalSeries` plus `ExogenousEvidence`. `ExogenousEvidence` carries aligned
   monthly log returns, marginal return evidence, calibrated path priors, current
   mortgage-rate evidence, and latest-observation metadata.
 - Calibration/fitting happens offline through `augur.fit`; runtime
   config points at the persisted trained VECM blob.
-- Sampled-bundle generation happens when `VecmJointMarketModel` calls the fitted
+- Sampled-bundle generation happens when `VecmExogenousPathModel` calls the fitted
   model's `simulate(...)` and emits native sampled levels/events.
 - Projection happens in `augur/sim`; the simulator should not receive
   source-specific objects such as FRED, Yahoo, Zillow, or Manifold shapes.
 
-Current persisted provenance is partial. `SampledMarketBundle.metadata` carries
+Current persisted provenance is partial. `SampledExogenousBundle.metadata` carries
 model-card, model-version, validation-report, known-limitation, evidence-set,
 calibration-artifact, risk-factor-set, scenario-generator, event-stream,
 provider-label, and latest-observation ids. It does not yet persist typed
@@ -86,25 +86,25 @@ Current evidence set, informally:
   rent CPI, and headline CPI;
 - supporting latest observations for FRED SP500 price, FRED mortgage 30-year
   rate, Case-Shiller SF, FHFA SF-Oakland-Berkeley, and other source series;
-- data-derived market-path priors for each factor.
+- data-derived exogenous-path priors for each factor.
 
 Current calibration artifact, informally:
 
-- in-memory fitted parameters on one `MarketModel` instance;
-- per-factor market-path prior calibration stored in `MarketEvidence`;
+- in-memory fitted parameters on one `VecmModel` instance;
+- per-factor exogenous-path prior calibration stored in `ExogenousEvidence`;
 - a runtime-derived calibration run/artifact identity in
-  `SampledMarketBundle.metadata`;
+  `SampledExogenousBundle.metadata`;
 - no durable calibration bundle or persisted fitted-parameter artifact yet.
 
 Current generator run, informally:
 
 - model label;
 - model implementation and config from `VecmModel(VecmConfig(k_ar_diff=1, coint_rank=1))`;
-- `MarketRequest` horizon, rollout count, seed, and market model id;
+- `SamplingRequest` horizon, rollout count, seed, and exogenous model id;
 - model-card/version, evidence, calibration, scenario-generator,
   validation-report, and known-limitation identity in
-  `SampledMarketBundle.metadata`;
-- provider-level source metadata embedded in `SampledMarketBundle.metadata`.
+  `SampledExogenousBundle.metadata`;
+- provider-level source metadata embedded in `SampledExogenousBundle.metadata`.
 
 ## Known Limitations
 
@@ -126,7 +126,7 @@ Current generator run, informally:
 - Historical public market data is limited and location coverage is narrow.
   Zillow rows are trimmed to the currently configured cities.
 - Source refresh recency is not enforced by this document or by model metadata.
-- Market models do not model agent feedback, strategic behavior, market impact,
+- Exogenous models do not model agent feedback, strategic behavior, market impact,
   tax-law changes, credit availability, or general equilibrium dynamics.
 - Validation status is attached as a placeholder validation-report id, not a
   decision-grade report artifact.
@@ -134,7 +134,7 @@ Current generator run, informally:
 ## Validation Gaps
 
 Current validation exists as model tests, provider shape tests, and the metric
-battery in `augur/model/train/metrics_report.py`. The metric battery scores
+battery in `augur/fit/metrics_report.py`. The metric battery scores
 the active trained model on held-out, rolling-origin, and multi-step predictive
 log-density.
 
@@ -147,7 +147,7 @@ Still missing:
 - broader tests proving output provenance changes when persisted evidence,
   calibration, model implementation, or generator settings change;
 - calibration-data coverage and recency checks enforced at runtime;
-- household-outcome validation that connects market-model differences to
+- household-outcome validation that connects exogenous-model differences to
   projection-level differences;
 - typed limitations or warnings attached to every result instead of only
   generic strings and notes.

@@ -141,7 +141,7 @@ def _decode_url_state(page: Page) -> dict[str, Any] | None:
         return None
     padded_state = state + "=" * (-len(state) % 4)
     payload = json.loads(urlsafe_b64decode(padded_state.encode()).decode())
-    assert payload["version"] == 6
+    assert payload["version"] == 7
     return cast(dict[str, Any], payload["scenario_set_input"])
 
 
@@ -178,13 +178,13 @@ def _assert_financing_tax_context_boundary(page: Page) -> None:
     _assert_context_panel_boundary(page, "[data-scenario-context-panel='financing-tax']")
 
 
-def _assert_market_metadata_context_boundary(page: Page) -> None:
-    _assert_context_panel_boundary(page, "[data-run-context-panel='market-metadata']")
+def _assert_sampling_metadata_context_boundary(page: Page) -> None:
+    _assert_context_panel_boundary(page, "[data-run-context-panel='exogenous-metadata']")
 
 
 def _wait_for_successful_run(page: Page, *, scenario_requests: list[dict[str, Any]]) -> None:
     try:
-        page.get_by_text("Market model metadata").wait_for(state="visible", timeout=30_000)
+        page.get_by_text("Exogenous model metadata").wait_for(state="visible", timeout=30_000)
     except Exception as error:
         run_error = page.get_by_text("Scenario-set run failed").first
         run_error_text = run_error.inner_text(timeout=1_000) if run_error.count() else "<none>"
@@ -221,7 +221,7 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
         {
             "scenario_set_id": "public_browser_contract",
             "title": "Public browser contract",
-            "market_request": {"rollout_count": 4, "horizon_months": 12, "seed": 11},
+            "sampling_request": {"rollout_count": 4, "horizon_months": 12, "seed": 11},
             "scenarios": [
                 {
                     "scenario_id": "location_a",
@@ -250,7 +250,7 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
     assert result["scenario_id"] == "location_a"
     assert "status" not in result
     assert result["metric_fan_columns"]["net_worth_usd"]["row_count"] == 13
-    assert {"mortgage_payments", "property_purchases"} <= set(scenario_run["market_metadata"]["event_stream_ids"])
+    assert {"mortgage_payments", "property_purchases"} <= set(scenario_run["sampling_metadata"]["event_stream_ids"])
 
     page_errors: list[str] = []
     console_errors: list[str] = []
@@ -296,10 +296,10 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
     assert page.locator("[data-result-panel-kind='trajectory']").count() == 0
     assert page.locator("[data-result-panel-kind='accounting_detail']").count() == 0
     _wait_for_successful_run(page, scenario_requests=scenario_requests)
-    _assert_market_metadata_context_boundary(page)
+    _assert_sampling_metadata_context_boundary(page)
     _assert_scenario_contract_context_boundary(page)
     page.get_by_text("Event stream IDs").wait_for(state="hidden", timeout=30_000)
-    page.get_by_text("Market model metadata").click()
+    page.get_by_text("Exogenous model metadata").click()
     page.get_by_text("Event stream IDs").wait_for(state="visible", timeout=30_000)
     page.get_by_text("Location A baseline").first.wait_for(state="visible", timeout=30_000)
     page.get_by_text("Location B baseline").first.wait_for(state="visible", timeout=30_000)
@@ -317,7 +317,7 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
     assert page.locator("[data-result-panel-kind='distribution']").count() == 0
     _assert_property_location_context_boundary(page)
     _assert_financing_tax_context_boundary(page)
-    _assert_market_metadata_context_boundary(page)
+    _assert_sampling_metadata_context_boundary(page)
     _assert_scenario_contract_context_boundary(page)
     assert page.evaluate("() => new URL(window.location.href).searchParams.get('rollout')") == "0"
     assert page.evaluate("() => new URL(window.location.href).searchParams.get('scenario')") == "scenario_1"
@@ -381,6 +381,23 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
     assert bad_responses == []
     assert page_errors == []
     assert console_errors == []
+
+
+def test_product_frontend_shell_can_jump_to_scenario_set_shell(page: Page, augur_server: str) -> None:
+    page.goto(f"{augur_server}/product", wait_until="domcontentloaded")
+    page.locator("[data-augur-surface='product']").wait_for(state="visible", timeout=15_000)
+    page.get_by_text("Product projection").first.wait_for(state="visible", timeout=15_000)
+    page.get_by_role("heading", name="Cash runway").first.wait_for(state="visible", timeout=15_000)
+    assert page.locator("[data-product-empty-state='cash-runway']").count() == 1
+
+    page.get_by_role("link", name="Scenario set").click()
+    page.locator("[data-augur-surface='scenario-set']").wait_for(state="visible", timeout=15_000)
+    page.wait_for_function("() => window.location.pathname === '/distribution'")
+    page.get_by_text("Financial futures explorer").wait_for(state="visible", timeout=15_000)
+
+    page.get_by_role("link", name="Product").click()
+    page.locator("[data-augur-surface='product']").wait_for(state="visible", timeout=15_000)
+    page.wait_for_function("() => window.location.pathname === '/product'")
 
 
 if __name__ == "__main__":

@@ -8,9 +8,9 @@ import pytest
 import pytest_bazel
 
 from augur.fit.data import load_evidence, load_fred_only_evidence
-from augur.fit.market_config import load_market_config
+from augur.fit.evidence_config import load_evidence_config
 
-CONFIG_PATH = Path(__file__).resolve().parent / "config" / "market_config.example.json"
+CONFIG_PATH = Path(__file__).resolve().parents[1] / "model" / "train" / "config" / "exogenous_evidence.example.json"
 
 
 def _config_with_absolute_source_paths() -> dict[str, Any]:
@@ -23,21 +23,21 @@ def _config_with_absolute_source_paths() -> dict[str, Any]:
     return config
 
 
-def test_configured_market_source_errors_raise_by_default(tmp_path: Path) -> None:
+def test_configured_evidence_source_errors_raise_by_default(tmp_path: Path) -> None:
     config = _config_with_absolute_source_paths()
     malformed_yahoo = tmp_path / "malformed_yahoo_spy_chart_adjusted.json"
     malformed_yahoo.write_text("{not json", encoding="utf-8")
     config["source_data"]["yahoo_spy_adjusted_json"] = str(malformed_yahoo)
 
-    config_path = tmp_path / "market_config.json"
+    config_path = tmp_path / "exogenous_evidence.json"
     config_path.write_text(json.dumps(config), encoding="utf-8")
 
     with pytest.raises(json.JSONDecodeError):
-        load_evidence(load_market_config(config_path), config_path.parent)
+        load_evidence(load_evidence_config(config_path), config_path.parent)
 
 
 def test_explicit_fred_only_evidence_is_synthesized_and_labeled() -> None:
-    historical, evidence = load_fred_only_evidence(load_market_config(CONFIG_PATH), CONFIG_PATH.parent)
+    historical, evidence = load_fred_only_evidence(load_evidence_config(CONFIG_PATH), CONFIG_PATH.parent)
 
     assert historical.factor_names == evidence.factor_names
     assert evidence.monthly_log_returns.shape[0] == len(evidence.monthly_return_months)

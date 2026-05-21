@@ -17,7 +17,6 @@ from augur.api.scenario_set import (
     FixedAmountPrivateEquitySaleRule,
     LiquidityEventOnly,
     LiquidNetWorthFloorPrivateEquitySaleRule,
-    MarketRequest,
     OccupancyMode,
     PolicyType,
     PrivateEquityPosition,
@@ -25,6 +24,7 @@ from augur.api.scenario_set import (
     PrivateEquitySaleProceedsDestination,
     PublicMarket,
     RentalMode,
+    SamplingRequest,
     ScenarioAcceptedSummary,
     ScenarioResult,
     ScenarioSet,
@@ -38,8 +38,8 @@ def _scenario_set_body(*scenario_ids: str) -> dict[str, Any]:
     return {
         "scenario_set_id": "compare_sf_and_vallejo",
         "title": "Compare SF and Vallejo",
-        "market_request": {
-            "market_model_id": "current_market_model",
+        "sampling_request": {
+            "exogenous_model_id": "current_exogenous_model",
             "rollout_count": 32,
             "horizon_months": 120,
             "seed": 7,
@@ -330,13 +330,13 @@ def test_scenario_set_accepts_typed_scenario_economic_assumptions() -> None:
     assert scenario.property_assumptions.insurance_annual_usd == 1800
 
 
-def test_market_request_requires_seed() -> None:
-    market_request = MarketRequest(seed=7)
+def test_sampling_request_requires_seed() -> None:
+    sampling_request = SamplingRequest(seed=7)
 
-    assert market_request.seed == 7
+    assert sampling_request.seed == 7
 
     with pytest.raises(ValidationError, match="seed"):
-        MarketRequest.model_validate({})
+        SamplingRequest.model_validate({})
 
 
 def test_policy_config_uses_discriminated_rules_and_enums() -> None:

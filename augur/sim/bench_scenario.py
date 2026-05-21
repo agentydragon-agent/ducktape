@@ -8,13 +8,13 @@ Alice, a single-filer SF resident, has:
     a pre-horizon lot at a configurable basis.
   - A liquidity policy: required obligations sell assets as needed;
     if checking is still below $5k afterward, sell another $5k by
-    liquidating VTI → QQQ → BTC in order at market prices.
+    liquidating VTI -> QQQ -> BTC in order at sampled prices.
   - A $5k/month recurring spend obligation (rent).
   - Federal + California tax profile with prior-year-tax
     estimated knob, single filer, standard deduction.
 
 The spike fixture materializes each asset as a GBM path with its own
-seed, so the 1000 rollouts diverge by market path. Production market
+seed, so the 1000 rollouts diverge by exogenous path. Production path
 generation belongs outside `sim`; this bench only needs a stable
 trajectory source. Horizon = 60 months (5 years).
 
@@ -25,7 +25,7 @@ defaults above; tune via keyword args.
 from __future__ import annotations
 
 from augur.model.gbm import GeometricBrownian
-from augur.model.market import MarketBundle
+from augur.model.series_model import SeriesModelBundle
 from augur.sim.scenario import (
     Agent,
     InitialAccountBalance,
@@ -103,7 +103,7 @@ def build_bench_scenario(
                 amount_usd=monthly_spend_usd,
             ),
         ],
-        market=MarketBundle.independent(
+        external_series=SeriesModelBundle.independent(
             {
                 "vti": GeometricBrownian(
                     initial_value=240.0, monthly_log_return_mu=0.0067, monthly_log_return_sigma=0.04

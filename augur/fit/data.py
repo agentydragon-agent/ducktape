@@ -1,7 +1,7 @@
-"""Load aligned monthly log-returns for the market factors.
+"""Load aligned monthly log-returns for the exogenous factors.
 
-`load_evidence(...)` returns a typed `(HistoricalSeries, MarketEvidence)`
-tuple from parsed `MarketConfig` plus configured Yahoo-SPY, Zillow, and
+`load_evidence(...)` returns a typed `(HistoricalSeries, ExogenousEvidence)`
+tuple from parsed `EvidenceConfig` plus configured Yahoo-SPY, Zillow, and
 FRED source data. Config/source-data errors propagate by default. Callers
 that intentionally want lower-fidelity FRED-only synthesised evidence
 must opt in with `fred_only=True` or `load_fred_only_evidence(...)`.
@@ -18,45 +18,47 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from augur.fit.market_config import MarketConfig, load_market_config
-from augur.fit.market_data import (
-    MarketEvidence,
+from augur.fit.evidence_config import EvidenceConfig, load_evidence_config
+from augur.fit.evidence_data import (
+    ExogenousEvidence,
     PeriodReturns,
-    calibrate_market_path_priors,
-    load_market_evidence,
+    calibrate_series_path_priors,
+    load_exogenous_evidence,
     resolve_path,
 )
-from augur.model.location_market_sources import LocationMarketSources
-from augur.model.markets.scenarios import HistoricalSeries
+from augur.model.location_series_sources import LocationSeriesSources
+from augur.model.path_models.scenarios import HistoricalSeries
 
-DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent / "config" / "market_config.example.json"
+DEFAULT_CONFIG_PATH = (
+    Path(__file__).resolve().parents[1] / "model" / "train" / "config" / "exogenous_evidence.example.json"
+)
 
 
 def load_evidence(
-    config: MarketConfig, base_dir: Path, *, fred_only: bool = False
-) -> tuple[HistoricalSeries, MarketEvidence]:
-    """Load the full `MarketEvidence` and a derived `HistoricalSeries`.
+    config: EvidenceConfig, base_dir: Path, *, fred_only: bool = False
+) -> tuple[HistoricalSeries, ExogenousEvidence]:
+    """Load the full `ExogenousEvidence` and a derived `HistoricalSeries`.
 
-    The default path loads the configured Yahoo+Zillow+FRED market
+    The default path loads the configured Yahoo+Zillow+FRED exogenous
     evidence and lets malformed config or unreadable source data raise.
     `fred_only=True` is an explicit lower-fidelity fixture/degraded mode;
     its evidence metadata is labelled as synthesized.
     """
     if fred_only:
         return _evidence_fred_only(config, base_dir)
-    evidence = load_market_evidence(config.source_data, base_dir)
+    evidence = load_exogenous_evidence(config.source_data, base_dir)
     return _historical_from_evidence(evidence), evidence
 
 
 def load_evidence_from_path(
     config_path: Path | None = None, *, fred_only: bool = False
-) -> tuple[HistoricalSeries, MarketEvidence]:
+) -> tuple[HistoricalSeries, ExogenousEvidence]:
     path = (config_path or DEFAULT_CONFIG_PATH).resolve()
-    return load_evidence(load_market_config(path), path.parent, fred_only=fred_only)
+    return load_evidence(load_evidence_config(path), path.parent, fred_only=fred_only)
 
 
-def load_fred_only_evidence(config: MarketConfig, base_dir: Path) -> tuple[HistoricalSeries, MarketEvidence]:
-    """Load explicitly selected FRED-only synthesized market evidence."""
+def load_fred_only_evidence(config: EvidenceConfig, base_dir: Path) -> tuple[HistoricalSeries, ExogenousEvidence]:
+    """Load explicitly selected FRED-only synthesized exogenous evidence."""
     return load_evidence(config, base_dir, fred_only=True)
 
 
@@ -88,21 +90,21 @@ def _monthly_last(series: pd.Series) -> pd.Series:
     return out[out > 0]
 
 
-def _historical_from_evidence(evidence: MarketEvidence) -> HistoricalSeries:
+def _historical_from_evidence(evidence: ExogenousEvidence) -> HistoricalSeries:
     return _historical_from_log_returns(
         evidence.factor_names, evidence.monthly_log_returns, evidence.monthly_return_months
     )
 
 
-def _evidence_fred_only(config: MarketConfig, base_dir: Path) -> tuple[HistoricalSeries, MarketEvidence]:
+def _evidence_fred_only(config: EvidenceConfig, base_dir: Path) -> tuple[HistoricalSeries, ExogenousEvidence]:
     """Read only FRED CSVs (no Yahoo, no Zillow) and synthesise a
-    `MarketEvidence` matching the production loader's shape with what we
+    `ExogenousEvidence` matching the production loader's shape with what we
     can construct: SP500 from FRED price-level (no dividends), Case-Shiller
     SF for housing, FRED rent CPI, FRED US CPI, FRED 30-year mortgage."""
     source = config.source_data
-    market_sources = LocationMarketSources.from_config(config.location_market_sources)
-    home_factor_names = tuple(dict.fromkeys(market_sources.home_value.values()))
-    market_factors = ("sp500", *home_factor_names, "rent", "inflation")
+    series_sources = LocationSeriesSources.from_config(config.location_series_sources)
+    home_factor_names = tuple(dict.fromkeys(series_sources.home_value.values()))
+    factor_names = ("sp500", *home_factor_names, "rent", "inflation")
     sp500_path = resolve_path(source.fred_sp500_csv, base_dir)
     home_path = resolve_path(source.fred_sfxrsa_csv, base_dir)
     rent_path = resolve_path(source.fred_sf_rent_cpi_csv, base_dir)
@@ -121,16 +123,16 @@ def _evidence_fred_only(config: MarketConfig, base_dir: Path) -> tuple[Historica
     if len(aligned) < 36:
         raise ValueError(f"only {len(aligned)} aligned months across the FRED-only synthesized series")
 
-    monthly_log_returns = np.diff(np.log(aligned.loc[:, list(market_factors)].to_numpy(dtype="float64")), axis=0)
+    monthly_log_returns = np.diff(np.log(aligned.loc[:, list(factor_names)].to_numpy(dtype="float64")), axis=0)
     return_months = tuple(str(period) for period in aligned.index[1:])
-    historical = _historical_from_log_returns(market_factors, monthly_log_returns, return_months)
+    historical = _historical_from_log_returns(factor_names, monthly_log_returns, return_months)
 
     durations = np.ones_like(monthly_log_returns[:, 0])
     marginal = {
         name: PeriodReturns(log_returns=monthly_log_returns[:, idx], duration_months=durations)
-        for idx, name in enumerate(market_factors)
+        for idx, name in enumerate(factor_names)
     }
-    market_path_calibration, calibrated_market_path_priors = calibrate_market_path_priors(market_factors, marginal)
+    series_path_calibration, calibrated_series_path_priors = calibrate_series_path_priors(factor_names, marginal)
     latest_observations: dict[str, Any] = {
         "sp500_price_latest": {
             "date": str(sp500.index[-1]),
@@ -163,13 +165,13 @@ def _evidence_fred_only(config: MarketConfig, base_dir: Path) -> tuple[Historica
             "description": "FRED-only synthesized evidence explicitly selected; Yahoo SPY and Zillow ZHVI were not loaded.",
         },
     }
-    evidence = MarketEvidence(
-        factor_names=market_factors,
+    evidence = ExogenousEvidence(
+        factor_names=factor_names,
         monthly_log_returns=monthly_log_returns,
         monthly_return_months=return_months,
         marginal_returns=marginal,
-        market_path_calibration=market_path_calibration,
-        calibrated_market_path_priors=calibrated_market_path_priors,
+        series_path_calibration=series_path_calibration,
+        calibrated_series_path_priors=calibrated_series_path_priors,
         current_mortgage30_rate_pct=float(mortgage.iloc[-1]),
         latest_observations=latest_observations,
     )

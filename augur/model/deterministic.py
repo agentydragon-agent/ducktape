@@ -1,4 +1,4 @@
-"""Deterministic scalar market models."""
+"""Deterministic scalar exogenous models."""
 
 from __future__ import annotations
 

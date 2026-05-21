@@ -84,6 +84,35 @@ py_test(
         "//util:net",
         "//util:playwright",
         "//util/bazel:runfiles",
+        "//util/testing:frontend_visual",
+        "//util/testing:png_diff",
+        "//util/testing:undeclared_outputs",
+        "@pypi//playwright",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "product_visual_golden_test",
+    size = "large",
+    srcs = ["product_visual_golden_test.py"],
+    data = [
+        "//augur/frontend:bundle_base",
+        "//augur/frontend:visual_golden_snapshots",
+        "//util/testing/frontend_visual:fonts",
+        "//util/testing/frontend_visual:fonts_conf",
+        "@playwright_browsers//:chromium-headless-shell",
+    ],
+    env = {
+        "CHROMIUM_HEADLESS_SHELL": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
+        "FONTCONFIG_FILE": "$(rootpath //util/testing/frontend_visual:fonts_conf)",
+        "FREETYPE_PROPERTIES": "cff:no-stem-darkening=1",
+    },
+    deps = [
+        "//util:playwright",
+        "//util/bazel:runfiles",
+        "//util/testing:frontend_visual",
         "//util/testing:png_diff",
         "//util/testing:undeclared_outputs",
         "@pypi//playwright",

@@ -1,4 +1,4 @@
-"""Shared API for market models consumed by the simulator."""
+"""Shared API for exogenous path models consumed by the simulator."""
 
 from __future__ import annotations
 
@@ -10,20 +10,20 @@ from typing import Protocol
 import numpy as np
 import polars as pl
 
-MARKET_LEVELS_SCHEMA = pl.Schema(
+SERIES_LEVELS_SCHEMA = pl.Schema(
     {"rollout_index": pl.Int64(), "month_index": pl.Int64(), "series_id": pl.Utf8(), "value": pl.Float64()}
 )
-MARKET_EVENTS_SCHEMA = pl.Schema(
+SERIES_EVENTS_SCHEMA = pl.Schema(
     {"rollout_index": pl.Int64(), "month_index": pl.Int64(), "event_id": pl.Utf8(), "active": pl.Boolean()}
 )
-MARKET_PRICES_SCHEMA = pl.Schema(
-    {"rollout_index": pl.Int64(), "month_index": pl.Int64(), "asset_id": pl.Utf8(), "price_per_unit_usd": pl.Float64()}
+SERIES_VALUES_SCHEMA = pl.Schema(
+    {"rollout_index": pl.Int64(), "month_index": pl.Int64(), "series_id": pl.Utf8(), "value": pl.Float64()}
 )
 
 
 @dataclass(frozen=True)
-class MarketSamplingRequest:
-    """Request metadata passed to a joint market model sample."""
+class ExogenousSamplingRequest:
+    """Request metadata passed to an exogenous path model sample."""
 
     horizon_months: int
     rollout_seeds: tuple[int, ...]
@@ -49,8 +49,8 @@ class MarketSamplingRequest:
 
 
 @dataclass(frozen=True)
-class SampledMarketBundle:
-    """Polars-native joint sample of market levels and market events.
+class SampledExogenousBundle:
+    """Polars-native joint sample of exogenous levels and events.
 
     `levels` carries valued series such as asset prices, CPI index levels,
     rent levels, and home-value levels. `events` carries boolean exogenous
@@ -58,12 +58,12 @@ class SampledMarketBundle:
     """
 
     levels: pl.DataFrame
-    events: pl.DataFrame = field(default_factory=lambda: MARKET_EVENTS_SCHEMA.to_frame())
+    events: pl.DataFrame = field(default_factory=lambda: SERIES_EVENTS_SCHEMA.to_frame())
     metadata: Mapping[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        _require_schema(self.levels, MARKET_LEVELS_SCHEMA, frame_name="levels")
-        _require_schema(self.events, MARKET_EVENTS_SCHEMA, frame_name="events")
+        _require_schema(self.levels, SERIES_LEVELS_SCHEMA, frame_name="levels")
+        _require_schema(self.events, SERIES_EVENTS_SCHEMA, frame_name="events")
 
     def level_matrix(self, series_id: str, *, rollout_count: int, horizon_months: int) -> np.ndarray:
         """Return one level series as a `(rollout, month)` matrix."""
@@ -92,18 +92,18 @@ class SampledMarketBundle:
         )
 
 
-class JointMarketModel(Protocol):
-    """Joint market model API consumed by the simulator."""
+class ExogenousPathModel(Protocol):
+    """Joint exogenous path model API consumed by the simulator."""
 
-    def sample(self, request: MarketSamplingRequest) -> SampledMarketBundle:
-        """Return all modeled markets as a sampled levels/events bundle."""
+    def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
+        """Return all modeled external drivers as a sampled levels/events bundle."""
         ...
 
 
-def market_levels_frame(series_id: str, levels: np.ndarray, *, rollout_count: int, horizon_months: int) -> pl.DataFrame:
+def series_levels_frame(series_id: str, levels: np.ndarray, *, rollout_count: int, horizon_months: int) -> pl.DataFrame:
     expected_shape = (rollout_count, horizon_months + 1)
     if levels.shape != expected_shape:
-        raise ValueError(f"market {series_id!r} produced levels with shape {levels.shape}; expected {expected_shape}")
+        raise ValueError(f"series {series_id!r} produced levels with shape {levels.shape}; expected {expected_shape}")
 
     rollout_idx, month_idx = _long_indices(rollout_count=rollout_count, horizon_months=horizon_months)
     return pl.DataFrame(
@@ -113,15 +113,15 @@ def market_levels_frame(series_id: str, levels: np.ndarray, *, rollout_count: in
             "series_id": [series_id] * (rollout_count * (horizon_months + 1)),
             "value": levels.reshape(-1),
         },
-        schema=MARKET_LEVELS_SCHEMA,
+        schema=SERIES_LEVELS_SCHEMA,
     )
 
 
-def market_events_frame(event_id: str, active: np.ndarray, *, rollout_count: int, horizon_months: int) -> pl.DataFrame:
+def series_events_frame(event_id: str, active: np.ndarray, *, rollout_count: int, horizon_months: int) -> pl.DataFrame:
     expected_shape = (rollout_count, horizon_months + 1)
     if active.shape != expected_shape:
         raise ValueError(
-            f"market event {event_id!r} produced mask with shape {active.shape}; expected {expected_shape}"
+            f"event series {event_id!r} produced mask with shape {active.shape}; expected {expected_shape}"
         )
 
     rollout_idx, month_idx = _long_indices(rollout_count=rollout_count, horizon_months=horizon_months)
@@ -132,16 +132,14 @@ def market_events_frame(event_id: str, active: np.ndarray, *, rollout_count: int
             "event_id": [event_id] * (rollout_count * (horizon_months + 1)),
             "active": active.reshape(-1),
         },
-        schema=MARKET_EVENTS_SCHEMA,
+        schema=SERIES_EVENTS_SCHEMA,
     )
 
 
-def market_prices_from_levels(bundle: SampledMarketBundle) -> pl.DataFrame:
-    """Compatibility projection for the current `augur/sim` price frame."""
+def series_values_from_bundle(bundle: SampledExogenousBundle) -> pl.DataFrame:
+    """Materialize sampled level paths into the sim's external-series frame."""
 
-    return bundle.levels.rename({"series_id": "asset_id", "value": "price_per_unit_usd"}).select(
-        MARKET_PRICES_SCHEMA.names()
-    )
+    return bundle.levels.select(SERIES_VALUES_SCHEMA.names())
 
 
 def _long_indices(*, rollout_count: int, horizon_months: int) -> tuple[np.ndarray, np.ndarray]:
@@ -168,16 +166,16 @@ def _matrix_from_long_frame(
 ) -> np.ndarray:
     selected = frame.filter(pl.col(id_column) == id_value).sort(["rollout_index", "month_index"])
     if selected.is_empty():
-        raise KeyError(f"missing sampled market series {id_value!r}")
+        raise KeyError(f"missing sampled series {id_value!r}")
 
     expected_rows = rollout_count * (horizon_months + 1)
     if selected.height != expected_rows:
-        raise ValueError(f"sampled market series {id_value!r} has {selected.height} rows; expected {expected_rows}")
+        raise ValueError(f"sampled series {id_value!r} has {selected.height} rows; expected {expected_rows}")
 
     expected_rollouts, expected_months = _long_indices(rollout_count=rollout_count, horizon_months=horizon_months)
     actual_rollouts = selected.get_column("rollout_index").to_numpy()
     actual_months = selected.get_column("month_index").to_numpy()
     if not np.array_equal(actual_rollouts, expected_rollouts) or not np.array_equal(actual_months, expected_months):
-        raise ValueError(f"sampled market series {id_value!r} does not cover every rollout/month exactly once")
+        raise ValueError(f"sampled series {id_value!r} does not cover every rollout/month exactly once")
 
     return selected.get_column(value_column).to_numpy().astype(dtype).reshape((rollout_count, horizon_months + 1))

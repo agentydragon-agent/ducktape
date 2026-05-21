@@ -7,10 +7,10 @@ import {
 
 export const SCENARIO_COLORS = ["#2563eb", "#dc2626", "#059669", "#d97706", "#7c3aed", "#0891b2"];
 
-const URL_STATE_VERSION = 6;
+const URL_STATE_VERSION = 7;
 
-const DEFAULT_MARKET_REQUEST = {
-  marketModelId: "current_market_model",
+const DEFAULT_SAMPLING_REQUEST = {
+  exogenousModelId: "current_exogenous_model",
   rolloutCount: 128,
   horizonMonths: 360,
   seed: 0,
@@ -207,9 +207,9 @@ export function createDefaultScenarioSetInput(bootstrap) {
   );
   return {
     title: "Augur futures comparison",
-    marketRequest: {
-      ...DEFAULT_MARKET_REQUEST,
-      rolloutCount: bootstrap?.defaultRolloutSamples ?? DEFAULT_MARKET_REQUEST.rolloutCount,
+    samplingRequest: {
+      ...DEFAULT_SAMPLING_REQUEST,
+      rolloutCount: bootstrap?.defaultRolloutSamples ?? DEFAULT_SAMPLING_REQUEST.rolloutCount,
     },
     reportSpec: DEFAULT_REPORT_SPEC,
     scenarios,
@@ -343,12 +343,12 @@ export function normalizeScenarioSetInput(input, bootstrap) {
   const horizonMonths = Math.max(1, ...scenarios.map((scenario) => Math.ceil(scenario.timeline.holdYears * 12)));
   return {
     title: typeof input?.title === "string" && input.title.trim() ? input.title.trim() : defaultInput.title,
-    marketRequest: {
-      ...defaultInput.marketRequest,
-      ...(input?.marketRequest && typeof input.marketRequest === "object" ? input.marketRequest : {}),
+    samplingRequest: {
+      ...defaultInput.samplingRequest,
+      ...(input?.samplingRequest && typeof input.samplingRequest === "object" ? input.samplingRequest : {}),
       horizonMonths,
-      rolloutCount: positiveNumber(input?.marketRequest?.rolloutCount, defaultInput.marketRequest.rolloutCount),
-      seed: nullableInteger(input?.marketRequest?.seed, defaultInput.marketRequest.seed),
+      rolloutCount: positiveNumber(input?.samplingRequest?.rolloutCount, defaultInput.samplingRequest.rolloutCount),
+      seed: nullableInteger(input?.samplingRequest?.seed, defaultInput.samplingRequest.seed),
     },
     reportSpec: normalizeReportSpec(input?.reportSpec),
     scenarios,
@@ -466,7 +466,7 @@ function scenarioBalanceSheet(scenario, bootstrap) {
   ];
   if (privateEquityUnits > 0) {
     // The browser stores units only; the backend derives value_usd from
-    // units × SampledMarketBundle metadata's current_private_equity_price_usd at simulation init.
+    // units × SampledExogenousBundle metadata's current_private_equity_price_usd at simulation init.
     assets.push({
       assetId: "private_equity_private",
       assetType: "private_equity",
@@ -556,7 +556,7 @@ export function scenarioSetInputToRequest(input, bootstrap) {
   return {
     scenarioSetId: "augur_futures_explorer",
     title: normalized.title,
-    marketRequest: normalized.marketRequest,
+    samplingRequest: normalized.samplingRequest,
     reportSpec: normalized.reportSpec,
     scenarios: normalized.scenarios.map((scenario) => scenarioToBackendScenario(scenario, bootstrap)),
   };
@@ -596,7 +596,7 @@ function dropInapplicableScenarioFields(scenario) {
 function projectScenarioSetForUrlState(input, schema = zBrowserScenarioSetInputOverridesInput) {
   const camelDraft = {
     title: input.title,
-    marketRequest: input.marketRequest,
+    samplingRequest: input.samplingRequest,
     reportSpec: normalizeReportSpec(input.reportSpec),
     scenarios: (input.scenarios ?? []).map(dropInapplicableScenarioFields),
   };

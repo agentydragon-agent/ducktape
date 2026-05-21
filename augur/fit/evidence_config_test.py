@@ -8,10 +8,10 @@ import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
-from augur.fit.market_config import load_market_config, parse_market_config
+from augur.fit.evidence_config import load_evidence_config, parse_evidence_config
 
-CONFIG_PATH = Path(__file__).resolve().parent / "config" / "market_config.example.json"
-EXPECTED_TOP_LEVEL_KEYS = frozenset({"source_data", "location_market_sources"})
+CONFIG_PATH = Path(__file__).resolve().parents[1] / "model" / "train" / "config" / "exogenous_evidence.example.json"
+EXPECTED_TOP_LEVEL_KEYS = frozenset({"source_data", "location_series_sources"})
 EXPECTED_SOURCE_DATA_KEYS = frozenset(
     {
         "fred_sp500_csv",
@@ -26,26 +26,26 @@ EXPECTED_SOURCE_DATA_KEYS = frozenset(
         "minimum_aligned_months",
     }
 )
-EXPECTED_LOCATION_MARKET_SOURCE_KEYS = frozenset({"home_value", "rent"})
+EXPECTED_LOCATION_SERIES_SOURCE_KEYS = frozenset({"home_value", "rent"})
 
 
 def _config_payload() -> dict[str, Any]:
     return cast(dict[str, Any], json.loads(CONFIG_PATH.read_text(encoding="utf-8")))
 
 
-def test_example_market_config_is_the_public_file_boundary_contract() -> None:
+def test_example_evidence_config_is_the_public_file_boundary_contract() -> None:
     payload = _config_payload()
-    config = parse_market_config(payload)
+    config = parse_evidence_config(payload)
 
     assert set(payload) == EXPECTED_TOP_LEVEL_KEYS
     assert set(payload["source_data"]) == EXPECTED_SOURCE_DATA_KEYS
-    assert set(payload["location_market_sources"]) == EXPECTED_LOCATION_MARKET_SOURCE_KEYS
+    assert set(payload["location_series_sources"]) == EXPECTED_LOCATION_SERIES_SOURCE_KEYS
     assert sorted(config.source_data.zillow_home_value_regions) == ["home", "vallejo_home"]
-    assert config.location_market_sources.home_value["san_francisco_ca"] == "home"
-    assert config.location_market_sources.rent["mare_island_vallejo_ca"] == "rent"
+    assert config.location_series_sources.home_value["san_francisco_ca"] == "home"
+    assert config.location_series_sources.rent["mare_island_vallejo_ca"] == "rent"
 
 
-def test_load_market_config_rejects_stale_runtime_knobs(tmp_path: Path) -> None:
+def test_load_evidence_config_rejects_stale_runtime_knobs(tmp_path: Path) -> None:
     payload = _config_payload()
     payload.update(
         {
@@ -54,30 +54,30 @@ def test_load_market_config_rejects_stale_runtime_knobs(tmp_path: Path) -> None:
             "horizon_months": 360,
             "runtime_sampler_label": "stale",
             "sampler": "stale",
-            "market_provider_label": "stale",
+            "exogenous_provider_label": "stale",
         }
     )
-    config_path = tmp_path / "market_config.json"
+    config_path = tmp_path / "exogenous_evidence.json"
     config_path.write_text(json.dumps(payload), encoding="utf-8")
 
     with pytest.raises(ValidationError, match=r"seed|rollout_count|horizon_months|runtime_sampler_label"):
-        load_market_config(config_path)
+        load_evidence_config(config_path)
 
 
 def test_home_value_location_sources_must_reference_configured_factors() -> None:
     payload = _config_payload()
-    payload["location_market_sources"]["home_value"]["unknown_ca"] = "missing_home_factor"
+    payload["location_series_sources"]["home_value"]["unknown_ca"] = "missing_home_factor"
 
-    with pytest.raises(ValidationError, match=r"location_market_sources\.home_value"):
-        parse_market_config(payload)
+    with pytest.raises(ValidationError, match=r"location_series_sources\.home_value"):
+        parse_evidence_config(payload)
 
 
 def test_rent_location_sources_must_reference_configured_factors() -> None:
     payload = _config_payload()
-    payload["location_market_sources"]["rent"]["unknown_ca"] = "missing_rent_factor"
+    payload["location_series_sources"]["rent"]["unknown_ca"] = "missing_rent_factor"
 
-    with pytest.raises(ValidationError, match=r"location_market_sources\.rent"):
-        parse_market_config(payload)
+    with pytest.raises(ValidationError, match=r"location_series_sources\.rent"):
+        parse_evidence_config(payload)
 
 
 if __name__ == "__main__":

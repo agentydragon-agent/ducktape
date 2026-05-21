@@ -33,6 +33,8 @@ import {
   uniqueScenarioId,
 } from "./lib/scenario_set_state.js";
 import { fetchAugurBootstrap, runScenarioSet } from "./client.js";
+import ProductProjectionAppShell from "./product_app.jsx";
+import { AugurShellHeader, surfaceFromPathname } from "./shell.jsx";
 
 const FINANCING_OPTIONS = [
   { id: "fixed_30", label: "30-year fixed" },
@@ -1517,7 +1519,7 @@ function ResultViewTabs({ viewMode, onViewModeChange }) {
 
 function ResultModeHeader({ viewMode, scenarioSetRequest, selection, selectedRolloutIndex }) {
   const isTrajectory = viewMode === "trajectory";
-  const seed = scenarioSetRequest.marketRequest.seed;
+  const seed = scenarioSetRequest.samplingRequest.seed;
   const kind = isTrajectory ? "trajectory" : "distribution";
   const rolloutStatus = isTrajectory ? rolloutStatusForIndex(selection.scenarioResult, selectedRolloutIndex) : null;
   return (
@@ -1716,16 +1718,16 @@ function ScenarioComparisonPanel({ scenarioSetInput, result, propertiesById }) {
   );
 }
 
-function MarketMetadataPanel({ result }) {
-  const metadata = result?.marketMetadata;
+function SamplingMetadataPanel({ result }) {
+  const metadata = result?.samplingMetadata;
   if (!metadata) return null;
   const sourceEntries = Object.entries(metadata.sourceMetadata ?? {});
   const metadataValue = (value) => (typeof value === "object" ? JSON.stringify(value) : String(value));
   return (
     <RunContextDisclosurePanel
-      context="market-metadata"
-      title="Market model metadata"
-      summary={metadata.marketModelId ?? null}
+      context="exogenous-metadata"
+      title="Exogenous model metadata"
+      summary={metadata.exogenousModelId ?? null}
     >
       <div className="grid gap-4 p-4 lg:grid-cols-2">
         <div className="min-w-0">
@@ -2034,7 +2036,7 @@ function TrajectoryResults({
   );
 }
 
-function AugurAppShell() {
+function ScenarioSetAppShell() {
   const [bootstrap, setBootstrap] = useState(null);
   const [bootstrapError, setBootstrapError] = useState(null);
   const [urlStateError, setUrlStateError] = useState(null);
@@ -2180,20 +2182,14 @@ function AugurAppShell() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-800 dark:bg-slate-950 dark:text-slate-100">
-      <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur dark:border-slate-800 dark:bg-slate-950/95 sm:px-6 lg:px-8">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h1 className="text-base font-semibold text-slate-950 dark:text-slate-50">Augur</h1>
-            <div className="text-xs uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
-              Financial futures explorer
-            </div>
-          </div>
-          <div className="flex min-w-[min(100%,24rem)] flex-1 flex-wrap items-center justify-end gap-3 text-xs augur-muted sm:flex-none">
-            <span>{fmtNumber(scenarioSetRequest.marketRequest.horizonMonths)} month horizon</span>
-          </div>
-        </div>
-      </header>
+    <div
+      data-augur-surface="scenario-set"
+      className="min-h-screen bg-slate-100 text-slate-800 dark:bg-slate-950 dark:text-slate-100"
+    >
+      <AugurShellHeader
+        activeSurface="scenario_set"
+        rightSlot={<span>{fmtNumber(scenarioSetRequest.samplingRequest.horizonMonths)} month horizon</span>}
+      />
 
       <main className="px-4 py-6 sm:px-6 lg:px-8">
         {urlStateError && (
@@ -2249,7 +2245,7 @@ function AugurAppShell() {
             )}
             <PropertyLocationPanel selection={selectedContext} />
             <ScenarioFinancingTaxPanel selection={selectedContext} />
-            <MarketMetadataPanel result={result} />
+            <SamplingMetadataPanel result={result} />
             <ScenarioAcceptedPanel selection={selectedContext} />
             <ResultModeHeader
               viewMode={viewMode}
@@ -2283,10 +2279,25 @@ function AugurAppShell() {
   );
 }
 
+function AugurSurfaceRouter() {
+  const [surface, setSurface] = useState(() =>
+    typeof window === "undefined" ? "scenario_set" : surfaceFromPathname(window.location.pathname)
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const syncFromLocation = () => setSurface(surfaceFromPathname(window.location.pathname));
+    window.addEventListener("popstate", syncFromLocation);
+    return () => window.removeEventListener("popstate", syncFromLocation);
+  }, []);
+
+  return surface === "product" ? <ProductProjectionAppShell /> : <ScenarioSetAppShell />;
+}
+
 export default function AugurApp() {
   return (
     <MantineProvider defaultColorScheme="auto">
-      <AugurAppShell />
+      <AugurSurfaceRouter />
     </MantineProvider>
   );
 }
