@@ -217,6 +217,12 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
     assert fan["metric"] == "cash_usd"
     assert fan["failed_count"] == 0
     assert "rollouts" not in fan
+    assert [
+        (summary["seed"], summary["failed"], summary["sort_rank"], summary["rank_percentile"])
+        for summary in fan["rollout_summaries"]
+    ] == [(7, False, 0, 25.0), (8, False, 1, 75.0)]
+    assert [summary["terminal_metrics"]["cash_usd"] for summary in fan["rollout_summaries"]] == [47_000.0, 47_000.0]
+    assert all("monthly_metrics" not in summary for summary in fan["rollout_summaries"])
     assert fan["monthly_metric_fan"] == {
         "row_count": 12,
         "columns": {

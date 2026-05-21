@@ -50,6 +50,10 @@ def test_metric_fan_and_rollout_detail_share_cached_sim_rollouts() -> None:
     assert fan.exogenous_model_id == "simple_exogenous_model"
     assert fan.metric == "cash_usd"
     assert fan.failed_count == 0
+    assert [summary.seed for summary in fan.rollout_summaries] == [7, 8]
+    assert [summary.sort_rank for summary in fan.rollout_summaries] == [0, 1]
+    assert [summary.rank_percentile for summary in fan.rollout_summaries] == [25.0, 75.0]
+    assert [summary.terminal_metrics.cash_usd for summary in fan.rollout_summaries] == [47_000.0, 47_000.0]
     assert fan.monthly_metric_fan.row_count == 12
     assert fan.monthly_metric_fan.columns["month_index"] == [0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3]
     assert fan.monthly_metric_fan.columns["percentile"] == [0.0, 50.0, 100.0] * 4

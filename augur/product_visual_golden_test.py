@@ -156,11 +156,18 @@ def _wait_for_product_page(page: Page) -> None:
     page.evaluate("() => document.fonts.ready.then(() => true)")
 
 
+def _select_first_rollout(page: Page) -> None:
+    page.locator("[data-product-rollout-sliver]").first.click()
+    page.locator("[data-product-selected-rollout-line]").wait_for(state="visible", timeout=30_000)
+    page.locator(r"text=/Seed \d+ - failed m\d+/").wait_for(state="visible", timeout=30_000)
+
+
 def _render_product_page(page: Page, origin: str, out_dir: Path, suffix: str) -> Path:
     page.goto(f"{origin}/product", wait_until="networkidle", timeout=60_000)
     _wait_for_product_page(page)
     page.goto(page.url, wait_until="networkidle", timeout=60_000)
     _wait_for_product_page(page)
+    _select_first_rollout(page)
     actual_path = out_dir / f"{PRODUCT_GOLDEN_NAME}.{suffix}.png"
     page.screenshot(path=str(actual_path), full_page=True, animations="disabled", caret="hide", scale="css")
     return actual_path

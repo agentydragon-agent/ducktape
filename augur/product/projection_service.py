@@ -19,6 +19,7 @@ from augur.product.projection import (
     RolloutOutput,
     RolloutRequest,
     RolloutResponse,
+    RolloutSummary,
     ScenarioKey,
     TerminalMetrics,
 )
@@ -91,6 +92,7 @@ class ProductProjectionService:
             terminal_metric_percentiles=_terminal_metric_percentiles(
                 rollouts, metric=request.metric, percentiles=tuple(float(pct) for pct in request.percentiles)
             ),
+            rollout_summaries=_rollout_summaries(rollouts),
             failed_count=sum(1 for rollout in rollouts if rollout.output.failed),
         )
 
@@ -390,6 +392,27 @@ def _terminal_metric_value(terminal: TerminalMetrics, metric: MetricName) -> flo
             return terminal.drawdown_usd
         case "shortfall_usd":
             return terminal.shortfall_usd
+
+
+def _rollout_summaries(rollouts: tuple[CachedRollout, ...]) -> tuple[RolloutSummary, ...]:
+    sorted_rollouts = sorted(rollouts, key=_rollout_sort_key)
+    count = len(sorted_rollouts)
+    return tuple(
+        RolloutSummary(
+            seed=rollout.output.seed,
+            failed=rollout.output.failed,
+            terminal_metrics=rollout.output.terminal_metrics,
+            sort_rank=rank,
+            rank_percentile=((rank + 0.5) / count * 100) if count else 50.0,
+        )
+        for rank, rollout in enumerate(sorted_rollouts)
+    )
+
+
+def _rollout_sort_key(rollout: CachedRollout) -> tuple[bool, int, float, int]:
+    terminal = rollout.output.terminal_metrics
+    failed_month = terminal.failed_month_index if terminal.failed_month_index is not None else 10**9
+    return (not rollout.output.failed, failed_month, terminal.net_worth_usd, rollout.output.seed)
 
 
 def _metric_fan_schema() -> dict[str, pl.DataType]:

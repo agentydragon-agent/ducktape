@@ -55,11 +55,20 @@ class RolloutOutput(ApiModel):
     terminal_metrics: TerminalMetrics
 
 
+class RolloutSummary(ApiModel):
+    seed: NonNegativeInt
+    failed: bool
+    terminal_metrics: TerminalMetrics
+    sort_rank: NonNegativeInt
+    rank_percentile: Percentage
+
+
 class MetricFanResponse(ApiModel):
     exogenous_model_id: str
     metric: MetricName
     monthly_metric_fan: ColumnarTable
     terminal_metric_percentiles: ColumnarTable
+    rollout_summaries: tuple[RolloutSummary, ...]
     failed_count: NonNegativeInt
     diagnostics: tuple[str, ...] = ()
 

@@ -152,9 +152,12 @@ Current status: Stage 0, Stage 1, and the passive mark-to-market part of Stage 2
 are implemented in the current tree. The `/product` frontend calls cache-backed
 product routes through generated Zod types, the backend composes a cash-spend
 `ScenarioKey` plus configured public-security lots into `augur/sim`, and the
-product page renders a selectable server-side metric fan without downloading
-every rollout table. The existing `ScenarioSet` route and frontend remain the
-compatibility/debug path.
+product page renders a server-side metric fan with compact rollout summaries.
+The metric-fan response does not include every rollout's monthly table; selecting
+a ranked rollout sliver calls `/api/product/projections/rollout` on demand,
+overlays that rollout on the graph, and shows its terminal metrics beside the
+distribution percentiles. The existing `ScenarioSet` route and frontend remain
+the compatibility/debug path.
 
 ### Stage 0: Product Sandbox
 
@@ -300,10 +303,11 @@ parts: exogenous model id, horizon months, monthly spend, and spend index.
 Metric-fan and rollout-detail requests add the seed set or single seed.
 
 The metric-fan response returns sampled exogenous model id, diagnostics, failed
-rollout count, a requested-percentile monthly metric table, and requested
-terminal percentiles. It does not echo request fields like horizon months and
-does not include per-rollout monthly tables. The rollout-detail response returns
-one full rollout table for a requested seed.
+rollout count, a requested-percentile monthly metric table, requested terminal
+percentiles, and compact rollout summaries with seed, failure state, terminal
+metrics, and rank. It does not echo request fields like horizon months and does
+not include per-rollout monthly tables. The rollout-detail response returns one
+full rollout table for a requested seed.
 
 This shape deliberately omits request IDs, labels, scenario IDs, selected
 rollout state, colors, disabled scenarios, user-selected public securities, and
@@ -483,8 +487,10 @@ Completed:
   inflation spend shape.
 - Added a parallel `/product` frontend surface in the shared shell. It calls the
   product routes through the shared client, validates request/response payloads
-  with generated Zod types, and renders a selectable metric fan without
-  downloading full rollout tables.
+  with generated Zod types, and renders a metric fan plus ranked rollout slivers.
+  Selecting a sliver fetches that rollout's detail on demand, overlays it on the
+  chart, and shows terminal metrics beside the distribution percentiles without
+  downloading full rollout tables in the aggregate metric-fan response.
 - Added focused coverage through the product route and browser golden:
   `//augur/api:server_test` and `//augur:product_visual_golden_test`.
 - Added passive configured public-security lots to the product projection
@@ -530,8 +536,8 @@ Remaining:
 - Should this layer be named `augur/product`, `augur/app`, or
   `augur/usecases`? `product` currently communicates the boundary best.
 - How much of financing belongs in catalog/model assumptions versus user input?
-- Should selected-trajectory detail be returned with the main run or fetched by
-  a follow-up endpoint once persisted product runs exist?
+- Once persisted product runs exist, should selected-trajectory detail keep the
+  product route's follow-up fetch shape or move behind run-handle slice URLs?
 - Should private config define one canonical primary actor or a named household
   template that the product request references?
 - How should saved user scenarios be versioned as the product request type

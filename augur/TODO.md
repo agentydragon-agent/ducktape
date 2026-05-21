@@ -130,11 +130,6 @@ generic backlog rather than a second ordered roadmap.
       `/api/runs/<id>/monthly_columns`,
       `/api/runs/<id>/rollout/<i>/series/<metric>`, etc. so the frontend can
       fetch slices on demand instead of getting everything every time.
-- [ ] **Wire product rollout detail into the frontend.** The product API has a
-      single-seed rollout-detail route so the browser can request full monthly
-      tables only for a selected seed. Add the UI interaction for selecting or
-      inspecting one rollout, call `/api/product/projections/rollout` on demand,
-      and keep aggregate fan views on the compact metric-fan endpoint.
 
 ## Step 7 Scope
 
@@ -292,4 +287,4 @@ generic backlog rather than a second ordered roadmap.
       columns expandable in place, similar to hidden columns in a spreadsheet:
       e.g. `House costs total` expands in place into tax, insurance, HOA, and
       maintenance subcolumns under the same table header.
-- [ ] Refresh `augur/SPEC.md` once policy execution, sale taxes, and one-rollout detail have stabilized.
+- [ ] Refresh `augur/SPEC.md` once policy execution and sale taxes have stabilized.
