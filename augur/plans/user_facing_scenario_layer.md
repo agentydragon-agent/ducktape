@@ -63,7 +63,9 @@ These are the intentionally small knobs the frontend should submit.
   where supported.
 - Down payment or loan amount policy, if the UI exposes it.
 - Occupancy/rental mode only after that mode has native translator + sim support.
-- Explicit scenario label, color, enabled flag, and comparison metadata.
+- Optional saved-scenario label/comparison metadata once the product API owns
+  persisted comparisons. Color, enabled flags, and selected trajectory remain
+  frontend state.
 - Report request knobs: percentiles, monthly-table inclusion, selected view, and
   trajectory/detail options.
 
@@ -100,7 +102,7 @@ language endpoint while the current low-level `ScenarioSet` route remains as a
 compatibility/debug path:
 
 ```
-POST /api/projections/run          # product-facing request/response
+POST /api/product/projections/run  # product-facing request/response
 POST /api/scenario_sets/run        # low-level compatibility route for now
 ```
 
@@ -127,7 +129,7 @@ The product frontend should be intentionally thin:
 
 - expose only product-owned knobs
 - use generated product wire types
-- call `/api/projections/run`
+- call `/api/product/projections/run`
 - render the product read model, not simulator internals
 - link to trace/detail views only when debugging needs them
 
@@ -150,7 +152,7 @@ Create the parallel product page/tab/dev panel.
 
 The frontend can:
 
-- call `/api/projections/run`
+- call `/api/product/projections/run`
 - use generated product wire types
 - show request/response debug panels
 - render an empty or placeholder chart shell
@@ -170,9 +172,9 @@ The frontend can:
 - set horizon, rollout count, and seed
 - run the projection and view cash/net-worth percentile bands
 
-This stage proves `CashSpendCase`, product composition into a low-level
-spending scenario, loud rejection for unsupported inflation behavior, and the
-first product read model.
+This stage proves product composition into a low-level spending scenario, loud
+rejection for unsupported choices, and the first product read model. The request
+shape stays flat until a named case union is needed.
 
 ### Stage 2: Liquid Portfolio Runway
 
@@ -279,69 +281,37 @@ The frontend can:
 This stage should come after the simpler public-asset and housing flows are
 healthy.
 
-## Proposed Request Shape
+## Current Stage 1 Wire Shape
 
-Names are provisional; the important part is the ownership split.
+The first product endpoint is intentionally narrower than the eventual product
+scenario protocol. It runs one cash-spend projection per request, with explicit
+fields for exogenous model id, horizon months, rollout seeds, monthly spend, and
+spend index. The frontend can issue multiple requests if it wants to compare
+cases.
 
-```py
-class ProjectionRequest(ApiModel):
-    request_id: str
-    title: str
-    sampling: SamplingRunRequest
-    report: ProductReportSpec = ProductReportSpec()
-    scenarios: tuple[UserScenario, ...]
+The response returns the sampled exogenous model id, horizon, diagnostics, and a
+list of per-rollout outputs. Each rollout carries its seed, failed/pass status,
+monthly metric table, and terminal metrics for cash, net worth, drawdown,
+shortfall, and optional failure month.
 
+This shape deliberately omits request IDs, labels, scenario IDs, selected
+rollout state, colors, disabled scenarios, public securities, and gains. Those
+are either frontend state, later product concepts, or not yet supported.
 
-class SamplingRunRequest(ApiModel):
-    exogenous_model_id: str = "current_exogenous_model"
-    rollout_count: int
-    horizon_months: int
-    seed: int
+Deployment/config owns rollout defaults and limits. The bootstrap payload
+publishes `default_rollout_samples`, `max_rollout_samples`, and
+`max_horizon_months`; request fields remain explicit.
 
+## Later Product Scenario Shape
 
-class UserScenario(ApiModel):
-    scenario_id: str
-    label: str
-    enabled: bool = True
-    color: str | None = None
-    case: ScenarioCase
+Once Stage 1 is healthy, the product protocol can grow back toward named
+scenario cases. Names are still provisional; the important part is the ownership
+split.
 
-
-ScenarioCase = Annotated[
-    CashSpendCase | HousePurchaseCase | HoldCurrentPortfolioCase | SellPropertyCase,
-    Field(discriminator="case_type"),
-]
-
-
-class CashSpendCase(ApiModel):
-    case_type: Literal["cash_spend"] = "cash_spend"
-    monthly_spend_usd: float
-    spend_index: Literal["none", "inflation"] = "inflation"
-    initial_cash_source: Literal["config_default"] = "config_default"
-
-
-class HousePurchaseCase(ApiModel):
-    case_type: Literal["house_purchase"] = "house_purchase"
-    property_id: str
-    purchase_month: int = 0
-    financing: FinancingChoice
-    occupancy: OccupancyChoice = OccupancyChoice(mode="owner_occupied")
-```
-
-`FinancingChoice` should be a small product union:
-
-```py
-FinancingChoice = Annotated[
-    CashPurchase | FixedRateMortgage | CustomMortgage,
-    Field(discriminator="financing_type"),
-]
-
-class FixedRateMortgage(ApiModel):
-    financing_type: Literal["fixed_rate_mortgage"] = "fixed_rate_mortgage"
-    term_years: Literal[15, 30]
-    down_payment_pct: float
-    rate_pct: float | None = None  # None means catalog/model default.
-```
+Financing should eventually be a small product union, likely covering cash
+purchase, fixed-rate mortgage, and custom mortgage. Fixed-rate mortgage should
+carry term, down payment policy, and possibly an explicit rate when the rate is
+not supplied by catalog/model assumptions.
 
 Open question: whether `rate_pct` belongs in the user request or a catalog/model
 assumption. For initial local development it can stay user-settable, but the
@@ -359,13 +329,15 @@ The product translator takes:
 
 and returns:
 
-- one low-level `augur.sim.scenario.Scenario` per enabled user scenario
+- one low-level `augur.sim.scenario.Scenario` for the current Stage 1 request
 - required external level/event series
 - `ExogenousSamplingRequest`
-- a mapping from user scenario id to composed low-level scenario identity
 - structured acceptance/rejection diagnostics
 
-Composition is where product defaults become explicit sim objects:
+Composition is where product/config/catalog facts become explicit sim objects.
+In Stage 1, config supplies the primary actor and initial cash account, and the
+request creates one recurring cash-spend obligation. Later house and portfolio
+flows should follow the same boundary:
 
 - User selects `property_id`.
 - Catalog supplies price, HOA, location, rent estimate, local regulation.
@@ -381,35 +353,20 @@ The translator must not silently drop a user-owned field. A field is either:
 - rejected with a structured diagnostic, or
 - not present in the product request type yet.
 
-## Proposed Response Shape
+## Later Response Shape
 
 The frontend should not need full simulator ledgers for normal comparison views.
-The response should be a product/read model derived from `SimulationRun`.
-
-```py
-class ProjectionResponse(ApiModel):
-    request_id: str
-    projection_run_id: str
-    sampling_metadata: SamplingMetadataView
-    scenarios: tuple[ScenarioRunView, ...]
-    warnings: tuple[str, ...] = ()
-
-
-class ScenarioRunView(ApiModel):
-    scenario_id: str
-    label: str
-    accepted: AcceptedScenarioSummary
-    rollout_health: RolloutHealthSummary
-    distribution: DistributionView
-    trajectory: TrajectoryView | None = None
-    diagnostics: tuple[ScenarioDiagnostic, ...] = ()
-```
+The current Stage 1 response is rollout-oriented and compact. A richer
+multi-scenario response can be introduced once the product protocol actually
+supports scenario comparison. That later shape should carry sampling metadata,
+warnings, per-scenario accepted summaries, rollout health, compact distribution
+views, optional trajectory/detail views, and diagnostics.
 
 Distribution views should stay compact:
 
 - terminal metric table
 - metric fan tables by scenario and metric
-- percentile bands requested by `ProductReportSpec`
+- percentile bands requested by whatever report/view controls exist then
 - scenario comparison summaries
 
 Trajectory/detail views should be opt-in:
@@ -437,10 +394,11 @@ tax lots, property ledgers, or stock sales.
 
 Product request:
 
-- one `CashSpendCase`
+- one cash-spend projection per request
 - `monthly_spend_usd`
 - `spend_index = "inflation" | "none"`
-- sampling request with rollout count, horizon, seed
+- `horizon_months`
+- explicit `rollout_seeds`
 
 Composition:
 
@@ -524,8 +482,8 @@ modeled and the simulator supports the required liquidity regime.
 
 - Product model unit tests for request validation and rejected unsupported
   combinations.
-- Composer tests against public fixture config/catalog, starting with
-  `CashSpendCase`.
+- Composer tests against public fixture config/catalog, starting with the flat
+  cash-spend projection request.
 - Equivalence tests against the current `//augur:browser_shell_test` scenario
   slice once a spiral overlaps it.
 - Browser/API smoke test on the parallel product frontend route.
@@ -537,8 +495,7 @@ modeled and the simulator supports the required liquidity regime.
   `augur/usecases`? `product` currently communicates the boundary best.
 - How much of financing belongs in catalog/model assumptions versus user input?
 - Should selected-trajectory detail be returned with the main run or fetched by
-  a follow-up endpoint keyed by `projection_run_id`, `scenario_id`, and
-  `rollout_index`?
+  a follow-up endpoint once persisted product runs exist?
 - Should private config define one canonical primary actor or a named household
   template that the product request references?
 - How should saved user scenarios be versioned as the product request type

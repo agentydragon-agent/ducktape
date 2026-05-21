@@ -1,9 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Button, NativeSelect } from "@mantine/core";
 
-import { fetchAugurBootstrap } from "./client.js";
-import { postJson } from "./lib/backend_client.js";
-import { camelizeObjectKeys, decamelizeObjectKeys } from "./lib/casing.js";
+import { fetchAugurBootstrap, runProductProjection } from "./client.js";
 import { fanChartAxis, fanChartYearTicks, fmtAxisMetricValue, percentile } from "./lib/chart.js";
 import { rowsFromCamelColumnar } from "./lib/columnar.js";
 import { NumberField } from "./lib/controls.jsx";
@@ -51,10 +49,6 @@ function productRequest(input, bootstrap) {
     monthlySpendUsd: Math.max(1, Number(input.monthlySpendUsd) || 1),
     spendIndex: input.spendIndex === "none" ? "none" : "inflation",
   };
-}
-
-async function runProductProjection(request, { signal } = {}) {
-  return camelizeObjectKeys(await postJson("/api/product/projections/run", decamelizeObjectKeys(request), signal));
 }
 
 function metricFanRows(result, metricValue) {

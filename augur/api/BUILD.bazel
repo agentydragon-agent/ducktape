@@ -351,6 +351,7 @@ py_library(
         ":bootstrap_py",
         ":browser_state_py",
         ":scenario_set_py",
+        "//augur/product:projection_py",
         "@pypi//fastapi",
     ],
 )
