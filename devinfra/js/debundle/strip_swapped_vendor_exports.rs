@@ -497,11 +497,18 @@ fn sweep_unreachable_top_level(
         &declarer,
         &mutation_items_by_target,
     );
+    let residual_export_closure = residual_export_dependency_closure(
+        &analyses,
+        live_exports,
+        &declarer,
+        &mutation_items_by_target,
+    );
     absorb_swapped_dependent_items(
         &mut swapped_reachability,
         &analyses,
         &declarer,
         &mutation_items_by_target,
+        &residual_export_closure,
     );
 
     let mut live = vec![false; analyses.len()];
@@ -704,14 +711,12 @@ fn absorb_swapped_dependent_items(
     analyses: &[ItemAnalysis],
     declarer: &BTreeMap<Id, usize>,
     mutation_items_by_target: &BTreeMap<Id, Vec<usize>>,
+    residual_export_closure: &BTreeSet<usize>,
 ) {
     loop {
         let mut queue = Vec::new();
         for (i, analysis) in analyses.iter().enumerate() {
-            if !swapped_reachability[i].is_empty() {
-                continue;
-            }
-            if analysis.side_effect != SideEffectKind::Hard || !analysis.declared.is_empty() {
+            if !swapped_reachability[i].is_empty() || residual_export_closure.contains(&i) {
                 continue;
             }
             let mut packages = BTreeSet::new();
@@ -746,6 +751,34 @@ fn absorb_swapped_dependent_items(
             mutation_items_by_target,
         );
     }
+}
+
+fn residual_export_dependency_closure(
+    analyses: &[ItemAnalysis],
+    live_exports: &BTreeSet<String>,
+    declarer: &BTreeMap<Id, usize>,
+    mutation_items_by_target: &BTreeMap<Id, Vec<usize>>,
+) -> BTreeSet<usize> {
+    let mut out = BTreeSet::new();
+    let mut queue = Vec::new();
+    for (i, analysis) in analyses.iter().enumerate() {
+        if analysis
+            .export_aliases
+            .iter()
+            .any(|alias| live_exports.contains(alias))
+            && out.insert(i)
+        {
+            queue.push(i);
+        }
+    }
+    while let Some(i) = queue.pop() {
+        for dep_idx in dependency_items(&analyses[i], declarer, mutation_items_by_target) {
+            if out.insert(dep_idx) {
+                queue.push(dep_idx);
+            }
+        }
+    }
+    out
 }
 
 fn resolve_declared_local(
