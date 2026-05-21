@@ -61,7 +61,8 @@ let
   };
   inherit (ducktapePackages)
     ducktape
-    claude-hooks
+    claude-hook-rs
+    claude-statusline
     gterm-theme
     bbapi
     ;
@@ -554,7 +555,8 @@ in
 
       # Custom packages from ducktape repo
       ducktape # git-commit-ai, difftree, gmail-archiver
-      claude-hooks # Claude Code hooks/statusline
+      claude-hook-rs # Claude Code hooks/shims
+      claude-statusline # Claude Code statusline
       bbapi # BuildBuddy API CLI
       gterm-theme # GNOME Terminal theme follower
       ducktapePackages.tana # Knowledge graph / note-taking

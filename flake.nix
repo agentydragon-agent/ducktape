@@ -292,9 +292,15 @@
         ducktapePkgs.kubernetes-mcp-server
       ]
       ++ optionalDebundlePackages;
-      # Python claude-hook.
-      devToolPackages = devToolsCommon ++ [ ducktapePkgs.claude-hooks ];
-      devToolPackagesRust = devToolsCommon ++ [ ducktapePkgs.claude-hook-rs ];
+      # Rust claude-hook is the active hook/shim implementation. The statusline
+      # remains Python, exposed through a package that does not put the legacy
+      # Python `claude-hook` on PATH.
+      devToolPackages = devToolsCommon ++ [
+        ducktapePkgs.claude-hook-rs
+        ducktapePkgs.claude-statusline
+      ];
+      # Compatibility alias for older setup scripts selecting #devtools-rust.
+      devToolPackagesRust = devToolPackages;
     in
     {
       # Development shell — enter via `nix develop` or direnv (`use flake`).
@@ -317,12 +323,12 @@
             ];
           };
           # Installable package for `nix profile install .#devtools` (used by web_setup.sh).
-          # Default: Python claude-hook. Use #devtools-rust for the Rust binary.
+          # Default: Rust claude-hook plus Python statusline.
           devtools = pkgs.symlinkJoin {
             name = "ducktape-devtools";
             paths = devToolPackages ++ localOnlyPackages;
           };
-          # Rust claude-hook variant (selected via `web_setup.sh --impl=rust`).
+          # Compatibility alias for old `web_setup.sh --impl=rust` installs.
           devtools-rust = pkgs.symlinkJoin {
             name = "ducktape-devtools-rust";
             paths = devToolPackagesRust ++ localOnlyPackages;
