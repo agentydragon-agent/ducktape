@@ -721,16 +721,16 @@ fn absorb_swapped_dependent_items(
             }
             let mut packages = BTreeSet::new();
             let mut saw_declared_dependency = false;
-            let mut missing_package_dependency = false;
+            let mut blocked_by_residual_dependency = false;
             for dep_idx in dependency_items(analysis, declarer, mutation_items_by_target) {
                 saw_declared_dependency = true;
-                if swapped_reachability[dep_idx].is_empty() {
-                    missing_package_dependency = true;
+                if residual_export_closure.contains(&dep_idx) {
+                    blocked_by_residual_dependency = true;
                     break;
                 }
                 packages.extend(swapped_reachability[dep_idx].iter().cloned());
             }
-            if saw_declared_dependency && !missing_package_dependency && packages.len() == 1 {
+            if saw_declared_dependency && !blocked_by_residual_dependency && packages.len() == 1 {
                 let package = packages
                     .iter()
                     .next()
@@ -1487,6 +1487,31 @@ mod tests {
         assert!(
             !emitted.contains("__HOOK__"),
             "hard side effect that only touches the swapped island should be dropped:\n{emitted}",
+        );
+        assert!(
+            emitted.contains("export const keep"),
+            "residual export should remain:\n{emitted}",
+        );
+    }
+
+    #[test]
+    fn drops_private_side_effect_chain_for_single_swapped_package_island() {
+        let mut module = parse(
+            "const table = {};\n\
+             const internals = {};\n\
+             function register(name) { table[name] = internals; }\n\
+             for (var i = 0; i < 2; i++) register(String(i));\n\
+             const oldImpl = () => internals;\n\
+             export { oldImpl as swapped };\n\
+             export const keep = 1;\n",
+        );
+        strip_one_chunk(&mut module, &mk_symbols(&["swapped"]), "chunk.js").unwrap();
+        let emitted = emit(&module);
+        assert!(
+            !emitted.contains("register")
+                && !emitted.contains("table")
+                && !emitted.contains("internals"),
+            "private registration chain should be dropped with the swapped island:\n{emitted}",
         );
         assert!(
             emitted.contains("export const keep"),
