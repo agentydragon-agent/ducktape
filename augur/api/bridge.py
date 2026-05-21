@@ -13,6 +13,7 @@ from dataclasses import dataclass
 import numpy as np
 import polars as pl
 
+from augur.api.local_regulation import TaxRegime
 from augur.api.scenario_set import (
     AccountType as CoreAccountType,
     ActorRole,
@@ -22,14 +23,22 @@ from augur.api.scenario_set import (
     Event as CoreEvent,
     FinancingMode,
     GenericSp500StockPosition,
+    LiquidityEventOnly,
     MarketRequest,
     MonthlySpendPolicy,
     MortgageOriginationEvent,
+    NotRentedRentalPlan,
+    OccupancyMode,
+    PartnerEquityAccrualPolicy,
+    Policy as CorePolicy,
     PrivateEquityPosition,
     PrivateEquitySalePolicy,
+    PropertyAssumptions,
     PropertyPurchaseEvent,
     Scenario as CoreScenario,
     ScenarioSet,
+    TaxProfile,
+    TransactionCosts,
 )
 from augur.model.market_api import MARKET_LEVELS_SCHEMA, JointMarketModel, MarketSamplingRequest, SampledMarketBundle
 from augur.model.series import SP500_SERIES_ID, private_equity_series_id
@@ -41,9 +50,11 @@ from augur.sim.scenario import (
     InitialLot,
     LiquidityPolicy,
     MortgageFinancing,
+    PropertyTaxPolicy,
     RecurringObligation,
     Scenario,
     ScheduledPropertyPurchase,
+    TaxProfile as SimTaxProfile,
 )
 from augur.sim.simulate import simulate_with_market
 
@@ -52,6 +63,8 @@ EXTERNAL_ACCOUNT_ID = "checking"
 DEFAULT_ACCOUNT_ID = "checking"
 PROPERTY_SELLER_AGENT_ID = "property_seller"
 MORTGAGE_LENDER_AGENT_ID = "mortgage_lender"
+PROPERTY_TAX_AUTHORITY_AGENT_ID = "property_tax_authority"
+TAX_AUTHORITY_AGENT_ID = "tax_authority"
 
 
 class UnsupportedBridgeScenarioError(ValueError):
@@ -81,7 +94,7 @@ def translate_scenario_set(
 def translate_scenario(
     scenario: CoreScenario, *, market_request: MarketRequest, configured_lots: tuple[InitialLot, ...] = ()
 ) -> ScenarioTranslation:
-    _reject_unsupported_features(scenario)
+    _reject_unsupported_features(scenario, market_request=market_request)
     initial_lots = [*configured_lots, *_initial_lots(scenario, include_public_positions=not configured_lots)]
     property_purchases = _property_purchases(scenario)
     translated_scenario = Scenario(
@@ -89,7 +102,9 @@ def translate_scenario(
         initial_cash=_initial_cash(scenario, property_purchases=property_purchases),
         initial_lots=initial_lots,
         scheduled_property_purchases=property_purchases,
-        recurring_obligations=_monthly_spend_obligations(scenario),
+        recurring_obligations=_recurring_obligations(scenario),
+        property_tax_policies=_property_tax_policies(scenario),
+        tax_profiles=_tax_profiles(scenario),
         liquidity_policies=_liquidity_policies(scenario),
         horizon_months=market_request.horizon_months,
     )
@@ -242,7 +257,7 @@ def _market_sampling_request(
 
 def rollout_seeds_from_market_request(market_request: MarketRequest) -> tuple[int, ...]:
     return tuple(
-        int(child.generate_state(1, dtype=np.uint64)[0])
+        int(child.generate_state(1, dtype=np.uint32)[0])
         for child in np.random.SeedSequence(market_request.seed).spawn(market_request.rollout_count)
     )
 
@@ -256,8 +271,12 @@ def _agents(
     agent_ids.update(
         purchase.mortgage.lender_agent_id for purchase in property_purchases if purchase.mortgage is not None
     )
-    if scenario.policies:
+    if any(obligation.amount_due_usd for obligation in _recurring_obligations(scenario)):
         agent_ids.add(EXTERNAL_AGENT_ID)
+    if _property_tax_policies(scenario):
+        agent_ids.add(PROPERTY_TAX_AUTHORITY_AGENT_ID)
+    if _tax_profiles(scenario):
+        agent_ids.add(TAX_AUTHORITY_AGENT_ID)
     return [Agent(agent_id=agent_id) for agent_id in sorted(agent_ids)]
 
 
@@ -422,9 +441,13 @@ def _mortgage_term_months(scenario: CoreScenario) -> int:
     raise UnsupportedBridgeScenarioError(f"financing mode {financing.financing_mode} is not ported to augur/sim yet")
 
 
+def _recurring_obligations(scenario: CoreScenario) -> list[RecurringObligation]:
+    return [*_monthly_spend_obligations(scenario), *_property_carrying_obligations(scenario)]
+
+
 def _monthly_spend_obligations(scenario: CoreScenario) -> list[RecurringObligation]:
     obligations: list[RecurringObligation] = []
-    for policy in scenario.policies:
+    for policy in _enabled_policies(scenario):
         if not isinstance(policy, MonthlySpendPolicy) or policy.monthly_spend_usd <= 0:
             continue
         if policy.inflation_adjusted:
@@ -444,9 +467,128 @@ def _monthly_spend_obligations(scenario: CoreScenario) -> list[RecurringObligati
     return obligations
 
 
+def _property_carrying_obligations(scenario: CoreScenario) -> list[RecurringObligation]:
+    selection = scenario.property_selection
+    if selection.property_id is None or selection.purchase_price_usd is None:
+        return []
+    owner = _primary_owner_actor_id(scenario)
+    property_id = selection.property_id
+    obligations: list[RecurringObligation] = []
+    hoa_monthly_usd = _hoa_monthly_usd(scenario)
+    if hoa_monthly_usd > 0:
+        obligations.append(
+            _property_carrying_obligation(
+                property_id=property_id, obligation_type="hoa_dues", agent_id=owner, amount_due_usd=hoa_monthly_usd
+            )
+        )
+    insurance_monthly_usd = float(scenario.property_assumptions.insurance_annual_usd) / 12.0
+    if insurance_monthly_usd > 0:
+        obligations.append(
+            _property_carrying_obligation(
+                property_id=property_id,
+                obligation_type="insurance_premium",
+                agent_id=owner,
+                amount_due_usd=insurance_monthly_usd,
+            )
+        )
+    maintenance_monthly_usd = (
+        float(selection.purchase_price_usd) * float(scenario.property_assumptions.maintenance_pct) / 100.0 / 12.0
+    )
+    if maintenance_monthly_usd > 0:
+        obligations.append(
+            _property_carrying_obligation(
+                property_id=property_id,
+                obligation_type="maintenance",
+                agent_id=owner,
+                amount_due_usd=maintenance_monthly_usd,
+            )
+        )
+    local_regulation = selection.local_regulation
+    if local_regulation is not None and local_regulation.special_assessment_annual_usd > 0:
+        obligations.append(
+            _property_carrying_obligation(
+                property_id=property_id,
+                obligation_type="special_assessment",
+                agent_id=owner,
+                amount_due_usd=float(local_regulation.special_assessment_annual_usd) / 12.0,
+            )
+        )
+    return obligations
+
+
+def _property_carrying_obligation(
+    *, property_id: str, obligation_type: str, agent_id: str, amount_due_usd: float
+) -> RecurringObligation:
+    return RecurringObligation(
+        start_month=1,
+        obligation_id=f"{property_id}_{obligation_type}",
+        obligation_type=obligation_type,
+        agent_id=agent_id,
+        from_account_id=DEFAULT_ACCOUNT_ID,
+        to_agent_id=EXTERNAL_AGENT_ID,
+        to_account_id=EXTERNAL_ACCOUNT_ID,
+        amount_due_usd=amount_due_usd,
+    )
+
+
+def _hoa_monthly_usd(scenario: CoreScenario) -> float:
+    selection = scenario.property_selection
+    if selection.property_id is None:
+        return 0.0
+    amounts = [
+        float(event.hoa_monthly_usd)
+        for event in scenario.events
+        if isinstance(event, PropertyPurchaseEvent)
+        and event.property_id == selection.property_id
+        and event.month_index == 0
+        and event.hoa_monthly_usd is not None
+    ]
+    return max(amounts, default=0.0)
+
+
+def _property_tax_policies(scenario: CoreScenario) -> list[PropertyTaxPolicy]:
+    selection = scenario.property_selection
+    local_regulation = selection.local_regulation
+    if selection.property_id is None or local_regulation is None or local_regulation.property_tax_annual_pct <= 0:
+        return []
+    return [
+        PropertyTaxPolicy(
+            property_id=selection.property_id,
+            owner_agent_id=_primary_owner_actor_id(scenario),
+            tax_authority_agent_id=PROPERTY_TAX_AUTHORITY_AGENT_ID,
+            annual_tax_rate=float(local_regulation.property_tax_annual_pct) / 100.0,
+        )
+    ]
+
+
+def _tax_profiles(scenario: CoreScenario) -> list[SimTaxProfile]:
+    jurisdiction_ids = _tax_jurisdiction_ids(scenario)
+    if not jurisdiction_ids:
+        return []
+    return [
+        SimTaxProfile(
+            agent_id=_primary_owner_actor_id(scenario),
+            filing_status=str(scenario.tax_profile.filing_status),
+            jurisdiction_ids=jurisdiction_ids,
+            tax_authority_agent_id=TAX_AUTHORITY_AGENT_ID,
+            prior_year_tax_usd=float(scenario.tax_profile.prior_year_tax_usd or 0.0),
+        )
+    ]
+
+
+def _tax_jurisdiction_ids(scenario: CoreScenario) -> list[str]:
+    jurisdiction_ids: list[str] = []
+    for regime in scenario.tax_regimes:
+        if regime is TaxRegime.FEDERAL_CAPITAL_GAINS:
+            jurisdiction_ids.append("federal_us")
+        elif regime is TaxRegime.CALIFORNIA_INCOME_TAX:
+            jurisdiction_ids.append("california")
+    return list(dict.fromkeys(jurisdiction_ids))
+
+
 def _liquidity_policies(scenario: CoreScenario) -> list[LiquidityPolicy]:
     policies: list[LiquidityPolicy] = []
-    for policy in scenario.policies:
+    for policy in _enabled_policies(scenario):
         if not isinstance(policy, CoreCheckingFloorSellPublicStockPolicy):
             continue
         policies.append(
@@ -468,15 +610,31 @@ def _asset_preference(asset_type: CoreAssetType) -> str:
     raise UnsupportedBridgeScenarioError(f"liquidity preference {asset_type} is not ported to augur/sim yet")
 
 
-def _reject_unsupported_features(scenario: CoreScenario) -> None:
+def _enabled_policies(scenario: CoreScenario) -> tuple[CorePolicy, ...]:
+    return tuple(policy for policy in scenario.policies if policy.enabled)
+
+
+def _reject_unsupported_features(scenario: CoreScenario, *, market_request: MarketRequest) -> None:
     unsupported: list[str] = []
+    enabled_policies = _enabled_policies(scenario)
     unsupported_events = _unsupported_events(scenario)
     if unsupported_events:
         unsupported.append(f"events ({', '.join(unsupported_events)})")
-    if scenario.tax_profile.annual_ordinary_income_usd:
-        unsupported.append("tax_profile.annual_ordinary_income_usd")
-    if scenario.occupancy_plan.outside_rent_monthly_usd:
-        unsupported.append("occupancy_plan.outside_rent_monthly_usd")
+    unsupported_tax_regimes = _unsupported_tax_regimes(scenario)
+    if unsupported_tax_regimes:
+        unsupported.append(f"tax_regimes ({', '.join(unsupported_tax_regimes)})")
+    if _unsupported_tax_profile(scenario):
+        unsupported.append("tax_profile")
+    if _unsupported_financing(scenario):
+        unsupported.append("financing")
+    if _unsupported_occupancy_plan(scenario, market_request=market_request):
+        unsupported.append("occupancy_plan")
+    if _unsupported_rental_plan(scenario, market_request=market_request):
+        unsupported.append("rental_plan")
+    if _unsupported_property_assumptions(scenario):
+        unsupported.append("property_assumptions")
+    if _unsupported_transaction_costs(scenario):
+        unsupported.append("transaction_costs.closing_cost_sell_pct")
     if any(account.account_type is not CoreAccountType.CHECKING for account in scenario.initial_balance_sheet.accounts):
         unsupported.append("non-checking accounts")
     if any(isinstance(asset, CryptoAssetPosition) for asset in scenario.initial_balance_sheet.assets):
@@ -486,12 +644,117 @@ def _reject_unsupported_features(scenario: CoreScenario) -> None:
         for asset in scenario.initial_balance_sheet.assets
     ):
         unsupported.append("private-equity explicit value marks")
-    if any(isinstance(policy, PrivateEquitySalePolicy) for policy in scenario.policies):
+    if any(
+        isinstance(asset, PrivateEquityPosition) and not isinstance(asset.liquidity_regime, LiquidityEventOnly)
+        for asset in scenario.initial_balance_sheet.assets
+    ):
+        unsupported.append("private-equity liquidity regimes")
+    if any(isinstance(policy, PrivateEquitySalePolicy) for policy in enabled_policies):
         unsupported.append("private-equity sale policies")
+    if any(isinstance(policy, PartnerEquityAccrualPolicy) for policy in enabled_policies):
+        unsupported.append("partner-equity accrual policies")
+    unsupported_liquidity_preferences = _unsupported_liquidity_preferences(enabled_policies)
+    if unsupported_liquidity_preferences:
+        unsupported.append(f"liquidity preferences ({', '.join(unsupported_liquidity_preferences)})")
     if unsupported:
         raise UnsupportedBridgeScenarioError(
             f"scenario {scenario.scenario_id!r} uses unsupported sim bridge features: {', '.join(unsupported)}"
         )
+
+
+def _unsupported_tax_profile(scenario: CoreScenario) -> bool:
+    profile = scenario.tax_profile
+    default_profile = TaxProfile()
+    if profile.annual_ordinary_income_usd != default_profile.annual_ordinary_income_usd:
+        return True
+    if profile.federal_standard_deduction_usd is not None or profile.california_standard_deduction_usd is not None:
+        return True
+    has_runtime_tax_fields = (
+        profile.filing_status != default_profile.filing_status or profile.prior_year_tax_usd is not None
+    )
+    return has_runtime_tax_fields and not _tax_jurisdiction_ids(scenario)
+
+
+def _unsupported_tax_regimes(scenario: CoreScenario) -> list[str]:
+    supported = {
+        TaxRegime.CALIFORNIA_PROP13,
+        TaxRegime.CALIFORNIA_OWNER_OCCUPIED,
+        TaxRegime.CALIFORNIA_INVESTMENT_PROPERTY,
+        TaxRegime.SAN_FRANCISCO_SECURED_PROPERTY_TAX,
+        TaxRegime.SAN_FRANCISCO_TRANSFER_TAX,
+        TaxRegime.VALLEJO_PROPERTY_TAX,
+        TaxRegime.MARE_ISLAND_SPECIAL_ASSESSMENTS,
+        TaxRegime.CALIFORNIA_TRANSFER_TAX,
+        TaxRegime.FEDERAL_MORTGAGE_INTEREST,
+        TaxRegime.FEDERAL_CAPITAL_GAINS,
+        TaxRegime.CALIFORNIA_INCOME_TAX,
+        TaxRegime.PRIMARY_RESIDENCE_EXCLUSION,
+    }
+    return sorted(str(regime) for regime in scenario.tax_regimes if regime not in supported)
+
+
+def _unsupported_financing(scenario: CoreScenario) -> bool:
+    financing = scenario.financing
+    if financing.credit_score is not None:
+        return True
+    if financing.financing_mode is FinancingMode.FIXED_30 and financing.mortgage_term_years not in (None, 30):
+        return True
+    return financing.financing_mode is FinancingMode.FIXED_15 and financing.mortgage_term_years not in (None, 15)
+
+
+def _unsupported_occupancy_plan(scenario: CoreScenario, *, market_request: MarketRequest) -> bool:
+    plan = scenario.occupancy_plan
+    if plan.occupancy_mode is not OccupancyMode.OWNER_LIVES_IN_PROPERTY:
+        return True
+    if plan.start_month != 0:
+        return True
+    if plan.end_month is not None and plan.end_month < market_request.horizon_months:
+        return True
+    if plan.outside_rent_monthly_usd:
+        return True
+    return plan.owner_residence_property_id not in (None, scenario.property_selection.property_id)
+
+
+def _unsupported_rental_plan(scenario: CoreScenario, *, market_request: MarketRequest) -> bool:
+    plan = scenario.rental_plan
+    if isinstance(plan, NotRentedRentalPlan):
+        return False
+    return _month_window_intersects_horizon(
+        start_month=plan.start_month, end_month=plan.end_month, horizon_months=market_request.horizon_months
+    )
+
+
+def _month_window_intersects_horizon(*, start_month: int | None, end_month: int | None, horizon_months: int) -> bool:
+    effective_start = start_month or 0
+    effective_end = horizon_months - 1 if end_month is None else end_month
+    return effective_start < horizon_months and effective_end >= 0
+
+
+def _unsupported_property_assumptions(scenario: CoreScenario) -> bool:
+    return (
+        scenario.property_selection.property_id is not None
+        and scenario.property_assumptions.depreciable_basis_pct != PropertyAssumptions().depreciable_basis_pct
+    )
+
+
+def _unsupported_transaction_costs(scenario: CoreScenario) -> bool:
+    return (
+        scenario.property_selection.property_id is not None
+        and scenario.transaction_costs.closing_cost_sell_pct != TransactionCosts().closing_cost_sell_pct
+    )
+
+
+def _unsupported_liquidity_preferences(policies: tuple[CorePolicy, ...]) -> list[str]:
+    unsupported: set[str] = set()
+    for policy in policies:
+        if not isinstance(policy, CoreCheckingFloorSellPublicStockPolicy):
+            continue
+        unsupported.update(
+            str(asset_type)
+            for asset_type in policy.sale_asset_preference
+            if asset_type is not CoreAssetType.GENERIC_SP500_STOCK
+        )
+    return sorted(unsupported)
 
 
 def _unsupported_events(scenario: CoreScenario) -> list[str]:

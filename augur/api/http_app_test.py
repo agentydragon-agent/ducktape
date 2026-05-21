@@ -1,45 +1,64 @@
 from __future__ import annotations
 
-import asyncio
-import json
-from typing import Any
-
 import pytest_bazel
+from fastapi.testclient import TestClient
 
 from augur.api.http_app import create_augur_backend_app
+from augur.api.scenario_set import ScenarioSet
 
 
-class _Request:
-    def __init__(self, body: dict[str, Any]) -> None:
-        self.body = body
-
-    async def json(self) -> dict[str, Any]:
-        return self.body
+def _scenario_set_body() -> dict:
+    return {
+        "scenario_set_id": "route_test",
+        "title": "Route test",
+        "market_request": {"rollout_count": 1, "horizon_months": 1, "seed": 1},
+        "scenarios": [
+            {
+                "scenario_id": "sf_house",
+                "label": "SF house",
+                "actors": [{"actor_id": "owner", "label": "Owner", "role": "primary_owner"}],
+            }
+        ],
+    }
 
 
 def test_scenario_set_route_is_registered_and_invokes_handler() -> None:
-    seen_body: dict[str, Any] | None = None
+    seen_scenario_set: ScenarioSet | None = None
 
-    def scenario_set_run(body: dict[str, Any]) -> dict[str, Any]:
-        nonlocal seen_body
-        seen_body = body
+    def scenario_set_run(scenario_set: ScenarioSet) -> dict:
+        nonlocal seen_scenario_set
+        seen_scenario_set = scenario_set
         return {
-            "scenario_set_id": body["scenario_set_id"],
-            "scenario_results": [{"scenario_id": body["scenarios"][0]["scenario_id"]}],
+            "scenario_set_id": scenario_set.scenario_set_id,
+            "scenario_results": [{"scenario_id": scenario_set.scenarios[0].scenario_id}],
         }
 
     app = create_augur_backend_app(title="test", bootstrap=lambda: {"ok": True}, scenario_set_run=scenario_set_run)
     assert not any(getattr(route, "path", None) == "/api/projection/run" for route in app.routes)
-    route = next(route for route in app.routes if getattr(route, "path", None) == "/api/scenario_sets/run")
-    response = asyncio.run(
-        route.endpoint(_Request({"scenario_set_id": "route_test", "scenarios": [{"scenario_id": "sf_house"}]}))
-    )
+    response = TestClient(app).post("/api/scenario_sets/run", json=_scenario_set_body())
 
-    assert seen_body == {"scenario_set_id": "route_test", "scenarios": [{"scenario_id": "sf_house"}]}
     assert response.status_code == 200
-    payload = json.loads(response.body)
+    assert seen_scenario_set is not None
+    assert seen_scenario_set.scenario_set_id == "route_test"
+    assert seen_scenario_set.scenarios[0].scenario_id == "sf_house"
+    payload = response.json()
     assert payload["scenario_set_id"] == "route_test"
     assert payload["scenario_results"][0]["scenario_id"] == "sf_house"
+
+
+def test_scenario_set_route_validates_request_with_pydantic() -> None:
+    called = False
+
+    def scenario_set_run(scenario_set: ScenarioSet) -> dict:
+        nonlocal called
+        called = True
+        return {"scenario_set_id": scenario_set.scenario_set_id, "scenario_results": []}
+
+    app = create_augur_backend_app(title="test", bootstrap=lambda: {"ok": True}, scenario_set_run=scenario_set_run)
+    response = TestClient(app).post("/api/scenario_sets/run", json={"scenario_set_id": "missing_required_fields"})
+
+    assert response.status_code == 422
+    assert not called
 
 
 if __name__ == "__main__":

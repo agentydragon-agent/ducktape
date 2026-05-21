@@ -84,7 +84,7 @@ FAN_STATE: dict[str, object] = {
             },
             "property_and_location": {"property_id": "location_a_property"},
             "timeline": {"hold_years": 3},
-            "financing": {"financing_mode": "fixed_30", "down_payment_pct": 25, "credit_score": 776},
+            "financing": {"financing_mode": "fixed_30", "down_payment_pct": 25},
             "initial_balance_sheet": {
                 "initial_checking_usd": 75000,
                 "starting_portfolio_usd": 350000,
@@ -101,7 +101,7 @@ FAN_STATE: dict[str, object] = {
             },
             "property_and_location": {"property_id": "location_b_property"},
             "timeline": {"hold_years": 3},
-            "financing": {"financing_mode": "fixed_30", "down_payment_pct": 20, "credit_score": 776},
+            "financing": {"financing_mode": "fixed_30", "down_payment_pct": 20},
             "occupancy_and_rental": {
                 "owner_residence_mode": "selected_property",
                 "rental_use_policy": "not_rented",
@@ -321,7 +321,13 @@ def _deterministic_style() -> str:
 def _wait_for_augur_page(page: Page, case: VisualCase) -> None:
     page.add_style_tag(content=_deterministic_style())
     page.get_by_role("heading", name="Augur", exact=True).wait_for(state="visible", timeout=30_000)
-    page.get_by_text(case.visible_text).wait_for(state="visible", timeout=30_000)
+    try:
+        page.get_by_text(case.visible_text).wait_for(state="visible", timeout=30_000)
+    except Exception as error:
+        raise AssertionError(
+            f"{case.name} did not render expected text {case.visible_text!r}.\n"
+            f"Body text: {page.evaluate('() => document.body.innerText')}"
+        ) from error
     page.wait_for_function(
         "() => new URL(window.location.href).searchParams.has('state') "
         "&& !document.body.innerText.includes('Running...')"

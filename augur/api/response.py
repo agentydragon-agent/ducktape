@@ -238,7 +238,7 @@ def _exogenous_paths(
 
 def _rollout_seeds(scenario_set: ScenarioSet) -> tuple[int, ...]:
     return tuple(
-        int(child.generate_state(1, dtype=np.uint64)[0])
+        int(child.generate_state(1, dtype=np.uint32)[0])
         for child in np.random.SeedSequence(scenario_set.market_request.seed).spawn(
             scenario_set.market_request.rollout_count
         )
@@ -349,6 +349,7 @@ def _monthly_metric_frame(scenario: Scenario, run: SimulationRun) -> pl.DataFram
     property_position = _property_position(run, agent_id=report_agent_id)
     mortgage_payments = _mortgage_payments(run, agent_id=report_agent_id)
     purchase_closing_costs = _purchase_closing_costs(run, agent_id=report_agent_id)
+    property_carrying_costs = _property_carrying_costs(run, agent_id=report_agent_id)
     frame = (
         grid.join(cash, on=["rollout_index", "month_index"], how="left")
         .join(sp500_value, on=["rollout_index", "month_index"], how="left")
@@ -359,12 +360,16 @@ def _monthly_metric_frame(scenario: Scenario, run: SimulationRun) -> pl.DataFram
         .join(property_position, on=["rollout_index", "month_index"], how="left")
         .join(mortgage_payments, on=["rollout_index", "month_index"], how="left")
         .join(purchase_closing_costs, on=["rollout_index", "month_index"], how="left")
+        .join(property_carrying_costs, on=["rollout_index", "month_index"], how="left")
         .fill_null(0.0)
         .with_columns(
             pl.lit(scenario.scenario_id).alias("scenario_id"),
             pl.lit(scenario.label).alias("scenario_label"),
             generic_sp500_sale_gain_usd=pl.col("generic_sp500_sale_usd") - pl.col("generic_sp500_sale_basis_usd"),
             generic_sp500_sale_tax_usd=pl.lit(0.0),
+            property_carrying_cost_usd=pl.sum_horizontal(
+                "property_tax_usd", "hoa_usd", "insurance_usd", "maintenance_usd"
+            ),
         )
         .with_columns(
             liquid_net_worth_usd=pl.col("cash_usd") + pl.col("generic_sp500_value_usd"),
@@ -376,14 +381,21 @@ def _monthly_metric_frame(scenario: Scenario, run: SimulationRun) -> pl.DataFram
         )
     )
     for metric in ReportMetric:
-        if metric is not ReportMetric.MONTH_INDEX and metric.value not in frame.columns:
-            frame = frame.with_columns(pl.lit(0.0).alias(metric.value))
+        if metric is not ReportMetric.MONTH_INDEX and metric not in frame.columns:
+            frame = frame.with_columns(pl.lit(0.0).alias(metric))
+    frame = frame.with_columns(
+        net_property_cash_flow_usd=pl.col("rental_income_usd")
+        - pl.col("rental_management_fee_usd")
+        - pl.col("rental_leasing_fee_usd")
+        - pl.col("property_carrying_cost_usd")
+        - pl.col("mortgage_payment_usd")
+    )
     return frame.select(
         "scenario_id",
         "scenario_label",
         pl.col("rollout_index").cast(pl.Int64),
         pl.col("month_index").cast(pl.Int64),
-        *(metric.value for metric in ReportMetric if metric is not ReportMetric.MONTH_INDEX),
+        *(metric for metric in ReportMetric if metric is not ReportMetric.MONTH_INDEX),
     )
 
 
@@ -570,6 +582,36 @@ def _purchase_closing_costs(run: SimulationRun, *, agent_id: str) -> pl.DataFram
     )
 
 
+def _property_carrying_costs(run: SimulationRun, *, agent_id: str) -> pl.DataFrame:
+    settlements = run.events_log.obligation_settlements.filter(pl.col("agent_id") == agent_id)
+    if settlements.is_empty():
+        return _empty_metrics("property_tax_usd", "hoa_usd", "insurance_usd", "maintenance_usd")
+    metrics = (
+        settlements.with_columns(
+            _metric=pl.col("obligation_type").replace_strict(
+                {
+                    "property_tax": "property_tax_usd",
+                    "hoa_dues": "hoa_usd",
+                    "insurance_premium": "insurance_usd",
+                    "maintenance": "maintenance_usd",
+                    "special_assessment": "hoa_usd",
+                },
+                default=None,
+            )
+        )
+        .filter(pl.col("_metric").is_not_null())
+        .group_by("rollout_index", "month_index", "_metric")
+        .agg(pl.col("amount_paid_usd").sum())
+        .pivot(index=["rollout_index", "month_index"], on="_metric", values="amount_paid_usd")
+    )
+    for name in ("property_tax_usd", "hoa_usd", "insurance_usd", "maintenance_usd"):
+        if name not in metrics.columns:
+            metrics = metrics.with_columns(pl.lit(0.0).alias(name))
+    return metrics.select(
+        "rollout_index", "month_index", "property_tax_usd", "hoa_usd", "insurance_usd", "maintenance_usd"
+    )
+
+
 def _empty_metric(name: str) -> pl.DataFrame:
     return _empty_metrics(name)
 
@@ -606,7 +648,7 @@ def _fan_columns(monthly_frame: pl.DataFrame, metric: str) -> ColumnarTable:
 
 
 def _terminal_columns(monthly_frame: pl.DataFrame) -> ColumnarTable:
-    metric_names = tuple(metric.value for metric in ReportMetric if metric is not ReportMetric.MONTH_INDEX)
+    metric_names = tuple(metric for metric in ReportMetric if metric is not ReportMetric.MONTH_INDEX)
     terminal_metric_columns = [f"final_{metric}" for metric in metric_names] + [
         f"total_{metric}" for metric in metric_names
     ]

@@ -3,19 +3,20 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import ValidationError
 
 from augur.api.casing import plain_json
+from augur.api.scenario_set import ScenarioSet
 
 PayloadProvider = Callable[[], Any]
-RequestPayloadHandler = Callable[[dict[str, Any]], Any]
+ScenarioSetHandler = Callable[[ScenarioSet], Any]
 
 
 def create_augur_backend_app(
-    *, title: str, bootstrap: PayloadProvider, scenario_set_run: RequestPayloadHandler | None = None
+    *, title: str, bootstrap: PayloadProvider, scenario_set_run: ScenarioSetHandler | None = None
 ) -> FastAPI:
     app = FastAPI(title=title)
     no_store = {"cache-control": "no-store"}
@@ -25,11 +26,6 @@ def create_augur_backend_app(
 
     def payload(value: Any) -> JSONResponse:
         return JSONResponse(content=plain_json(value), headers=no_store)
-
-    def request_body(value: Any) -> dict[str, Any]:
-        if not isinstance(value, dict):
-            raise ValueError("request body must be a JSON object")
-        return value
 
     app.add_exception_handler(RequestValidationError, lambda request, exc: error(422, exc.errors()))
     app.add_exception_handler(ValidationError, lambda request, exc: error(422, exc.errors()))
@@ -43,9 +39,8 @@ def create_augur_backend_app(
     if scenario_set_run is not None:
 
         @app.post("/api/scenario_sets/run")
-        async def run_scenario_set(request: Request) -> JSONResponse:
-            body = await request.json()
-            return payload(scenario_set_run(request_body(body)))
+        def run_scenario_set(scenario_set: ScenarioSet) -> JSONResponse:
+            return payload(scenario_set_run(scenario_set))
 
     @app.api_route("/api/{full_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
     def unknown_api(full_path: str) -> JSONResponse:

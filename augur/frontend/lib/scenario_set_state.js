@@ -145,7 +145,7 @@ export function createScenarioInput(bootstrap, overrides = {}) {
         overrides.customMortgageTermYears,
         defaultKnobs.customMortgageTermYears ?? 30
       ),
-      creditScore: nullableNumber(overrides.creditScore, defaultKnobs.creditScore ?? null),
+      creditScore: nullableNumber(overrides.creditScore, null),
     },
     occupancyAndRental: {
       ownerResidenceMode:
@@ -512,7 +512,7 @@ function scenarioToBackendScenario(scenario, bootstrap) {
       financingMode: financing.financingMode,
       downPaymentPct: financing.downPaymentPct,
       mortgageRatePct: financing.customMortgageRate,
-      mortgageTermYears: financing.customMortgageTermYears,
+      mortgageTermYears: financing.financingMode === "custom" ? financing.customMortgageTermYears : null,
       creditScore: financing.creditScore,
     },
     occupancyPlan: {

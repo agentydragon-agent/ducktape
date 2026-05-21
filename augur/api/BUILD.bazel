@@ -212,6 +212,7 @@ py_library(
     srcs = ["http_app.py"],
     deps = [
         ":casing_py",
+        ":scenario_set_py",
         "@pypi//fastapi",
         "@pypi//pydantic",
     ],
@@ -222,6 +223,9 @@ py_test(
     srcs = ["http_app_test.py"],
     deps = [
         ":http_app_py",
+        ":scenario_set_py",
+        "@pypi//fastapi",
+        "@pypi//httpx",
         "@pypi//pytest_bazel",
     ],
 )

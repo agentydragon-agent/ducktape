@@ -48,7 +48,9 @@ class Backend:
         )
 
     def run_scenario_set_for_request_body(self, body: dict[str, Any]) -> ScenarioSetRunResponse:
-        scenario_set = ScenarioSet.model_validate(body)
+        return self.run_scenario_set(ScenarioSet.model_validate(body))
+
+    def run_scenario_set(self, scenario_set: ScenarioSet) -> ScenarioSetRunResponse:
         self._validate_scenario_set_property_references(scenario_set)
         scenario_set = self._scenario_set_with_catalog_defaults(scenario_set)
         return self._run_scenario_set(scenario_set)

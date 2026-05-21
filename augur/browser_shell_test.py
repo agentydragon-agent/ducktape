@@ -182,6 +182,20 @@ def _assert_market_metadata_context_boundary(page: Page) -> None:
     _assert_context_panel_boundary(page, "[data-run-context-panel='market-metadata']")
 
 
+def _wait_for_successful_run(page: Page, *, scenario_requests: list[dict[str, Any]]) -> None:
+    try:
+        page.get_by_text("Market model metadata").wait_for(state="visible", timeout=30_000)
+    except Exception as error:
+        run_error = page.get_by_text("Scenario-set run failed").first
+        run_error_text = run_error.inner_text(timeout=1_000) if run_error.count() else "<none>"
+        raise AssertionError(
+            "Augur browser did not render a successful scenario-set run.\n"
+            f"Run error: {run_error_text}\n"
+            f"Body text: {page.evaluate('() => document.body.innerText')}\n"
+            f"Scenario requests: {json.dumps(scenario_requests, indent=2)}"
+        ) from error
+
+
 def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server: str) -> None:
     _assert_missing(augur_server, "/api/cases")
     _assert_missing(augur_server, "/api/run", method="POST")
@@ -281,7 +295,7 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
     assert page.locator("[data-result-panel-kind='distribution']").count() >= 2
     assert page.locator("[data-result-panel-kind='trajectory']").count() == 0
     assert page.locator("[data-result-panel-kind='accounting_detail']").count() == 0
-    page.get_by_text("Market model metadata").wait_for(state="visible", timeout=30_000)
+    _wait_for_successful_run(page, scenario_requests=scenario_requests)
     _assert_market_metadata_context_boundary(page)
     _assert_scenario_contract_context_boundary(page)
     page.get_by_text("Event stream IDs").wait_for(state="hidden", timeout=30_000)

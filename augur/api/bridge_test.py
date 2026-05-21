@@ -103,6 +103,121 @@ def test_bridge_rejects_features_that_do_not_have_sim_semantics_yet() -> None:
         translate_scenario_set(scenario_set)
 
 
+def test_bridge_rejects_enabled_policy_types_that_are_not_translated() -> None:
+    body = _scenario_set_body()
+    body["scenarios"][0]["policies"].append(
+        {
+            "policy_id": "partner_accrual",
+            "policy_type": "partner_equity_accrual",
+            "actor_id": "owner",
+            "base_monthly_payment_usd": 1_000.0,
+        }
+    )
+    scenario_set = ScenarioSet.model_validate(body)
+
+    with pytest.raises(UnsupportedBridgeScenarioError, match="partner-equity accrual policies"):
+        translate_scenario_set(scenario_set)
+
+
+def test_bridge_respects_disabled_policies() -> None:
+    body = _scenario_set_body()
+    for policy in body["scenarios"][0]["policies"]:
+        policy["enabled"] = False
+    scenario_set = ScenarioSet.model_validate(body)
+
+    (translation,) = translate_scenario_set(scenario_set)
+
+    assert [agent.agent_id for agent in translation.scenario.agents] == ["owner"]
+    assert translation.scenario.recurring_obligations == []
+    assert translation.scenario.liquidity_policies == []
+
+
+def test_bridge_rejects_active_occupancy_and_rental_semantics_that_are_not_translated() -> None:
+    body = _scenario_set_body()
+    body["scenarios"][0]["occupancy_plan"] = {"occupancy_mode": "owner_rents_elsewhere"}
+    body["scenarios"][0]["rental_plan"] = {"rental_mode": "rent_whole_property", "monthly_rent_usd": 3_000.0}
+    scenario_set = ScenarioSet.model_validate(body)
+
+    with pytest.raises(UnsupportedBridgeScenarioError, match=r"occupancy_plan.*rental_plan"):
+        translate_scenario_set(scenario_set)
+
+
+def test_bridge_allows_dormant_not_rented_knobs() -> None:
+    body = _scenario_set_body()
+    body["scenarios"][0]["rental_plan"] = {
+        "rental_mode": "not_rented",
+        "vacancy_pct": 8,
+        "management_fee_pct": 8,
+        "leasing_fee_pct": 1,
+    }
+    scenario_set = ScenarioSet.model_validate(body)
+
+    (translation,) = translate_scenario_set(scenario_set)
+
+    assert translation.scenario.scheduled_property_purchases == []
+
+
+def test_bridge_rejects_active_tax_and_property_assumption_knobs_that_are_not_translated() -> None:
+    body = _scenario_set_body()
+    body["scenarios"][0]["property_selection"] = {
+        "property_id": "sf_home",
+        "location_id": "san_francisco",
+        "purchase_price_usd": 500_000.0,
+    }
+    body["scenarios"][0]["tax_profile"] = {"annual_ordinary_income_usd": 50_000.0}
+    body["scenarios"][0]["property_assumptions"] = {"depreciable_basis_pct": 75.0}
+    body["scenarios"][0]["transaction_costs"] = {"closing_cost_buy_pct": 2.5, "closing_cost_sell_pct": 5.0}
+    scenario_set = ScenarioSet.model_validate(body)
+
+    with pytest.raises(
+        UnsupportedBridgeScenarioError,
+        match=r"tax_profile.*property_assumptions.*transaction_costs\.closing_cost_sell_pct",
+    ):
+        translate_scenario_set(scenario_set)
+
+
+def test_bridge_rejects_tax_fields_that_would_be_ignored_by_sim() -> None:
+    body = _scenario_set_body()
+    body["scenarios"][0]["tax_profile"] = {"filing_status": "married_filing_jointly"}
+    scenario_set = ScenarioSet.model_validate(body)
+
+    with pytest.raises(UnsupportedBridgeScenarioError, match="tax_profile"):
+        translate_scenario_set(scenario_set)
+
+    body = _scenario_set_body()
+    body["scenarios"][0]["tax_regimes"] = ["rental_depreciation"]
+    scenario_set = ScenarioSet.model_validate(body)
+
+    with pytest.raises(UnsupportedBridgeScenarioError, match=r"tax_regimes .*rental_depreciation"):
+        translate_scenario_set(scenario_set)
+
+
+def test_bridge_rejects_financing_knobs_that_are_not_translated() -> None:
+    body = _scenario_set_body()
+    body["scenarios"][0]["financing"] = {"credit_score": 776}
+    scenario_set = ScenarioSet.model_validate(body)
+
+    with pytest.raises(UnsupportedBridgeScenarioError, match="financing"):
+        translate_scenario_set(scenario_set)
+
+
+def test_bridge_rejects_private_equity_liquidity_regimes_that_are_not_translated() -> None:
+    body = _scenario_set_body()
+    body["scenarios"][0]["initial_balance_sheet"]["assets"].append(
+        {
+            "asset_id": "private_equity_public",
+            "asset_type": "private_equity",
+            "owner_actor_id": "owner",
+            "units": 1_000.0,
+            "liquidity_regime": {"regime_type": "public_market"},
+        }
+    )
+    scenario_set = ScenarioSet.model_validate(body)
+
+    with pytest.raises(UnsupportedBridgeScenarioError, match="private-equity liquidity regimes"):
+        translate_scenario_set(scenario_set)
+
+
 def test_bridge_rejects_private_equity_explicit_marks_until_series_anchoring_exists() -> None:
     body = _scenario_set_body()
     body["scenarios"][0]["initial_balance_sheet"]["assets"].append(
@@ -130,7 +245,7 @@ def test_property_selection_translates_to_month_zero_purchase_and_mortgage() -> 
     }
     body["scenarios"][0]["initial_balance_sheet"]["accounts"][0]["balance_usd"] = 200_000.0
     body["scenarios"][0]["financing"] = {"financing_mode": "fixed_30", "down_payment_pct": 20, "mortgage_rate_pct": 6.0}
-    body["scenarios"][0]["transaction_costs"] = {"closing_cost_buy_pct": 2.0, "closing_cost_sell_pct": 0.0}
+    body["scenarios"][0]["transaction_costs"] = {"closing_cost_buy_pct": 2.0, "closing_cost_sell_pct": 6.5}
     body["scenarios"][0]["events"] = [
         {
             "event_id": "purchase",
@@ -178,6 +293,7 @@ def test_property_selection_translates_to_month_zero_purchase_and_mortgage() -> 
     assert purchase.mortgage.principal_usd == 400_000.0
     assert purchase.mortgage.annual_interest_rate == 0.06
     assert purchase.mortgage.term_months == 360
+    assert [(policy.property_id, policy.annual_tax_rate) for policy in translation.scenario.property_tax_policies] == []
 
     result = simulate_translation(
         SimpleMarketModel(current_private_equity_price_usd=1.0), translation, market_request=scenario_set.market_request
@@ -190,6 +306,68 @@ def test_property_selection_translates_to_month_zero_purchase_and_mortgage() -> 
     final_liability = result.liabilities.filter(pl.col("month_index") == 3).row(0, named=True)
     assert final_liability["liability_id"] == "sf_home_mortgage"
     assert final_liability["principal_usd"] < 400_000.0
+
+
+def test_property_tax_and_carrying_costs_translate_to_runtime_obligations() -> None:
+    body = _scenario_set_body()
+    body["scenarios"][0]["property_selection"] = {
+        "property_id": "sf_home",
+        "location_id": "san_francisco",
+        "purchase_price_usd": 600_000.0,
+        "local_regulation": {
+            "property_tax_regime": "california_prop13",
+            "default_tax_regimes": ["california_prop13", "federal_capital_gains", "california_income_tax"],
+            "property_tax_annual_pct": 1.2,
+            "special_assessment_annual_usd": 1_200.0,
+            "notes": "test",
+        },
+    }
+    body["scenarios"][0]["tax_regimes"] = [
+        "california_prop13",
+        "california_owner_occupied",
+        "california_transfer_tax",
+        "federal_mortgage_interest",
+        "federal_capital_gains",
+        "california_income_tax",
+        "primary_residence_exclusion",
+    ]
+    body["scenarios"][0]["tax_profile"] = {"filing_status": "married_filing_jointly", "prior_year_tax_usd": 4_000.0}
+    body["scenarios"][0]["initial_balance_sheet"]["accounts"][0]["balance_usd"] = 300_000.0
+    body["scenarios"][0]["financing"] = {"financing_mode": "fixed_30", "down_payment_pct": 25, "mortgage_rate_pct": 6.0}
+    body["scenarios"][0]["property_assumptions"] = {"insurance_annual_usd": 2_400.0, "maintenance_pct": 1.5}
+    body["scenarios"][0]["events"] = [
+        {
+            "event_id": "purchase",
+            "event_type": "property_purchase",
+            "month_index": 0,
+            "actor_id": "owner",
+            "property_id": "sf_home",
+            "amount_usd": 600_000.0,
+            "hoa_monthly_usd": 250.0,
+        }
+    ]
+    scenario_set = ScenarioSet.model_validate(body)
+
+    (translation,) = translate_scenario_set(scenario_set)
+
+    assert [(policy.property_id, policy.annual_tax_rate) for policy in translation.scenario.property_tax_policies] == [
+        ("sf_home", 0.012)
+    ]
+    assert [
+        (profile.filing_status, profile.jurisdiction_ids, profile.tax_authority_agent_id, profile.prior_year_tax_usd)
+        for profile in translation.scenario.tax_profiles
+    ] == [("married_filing_jointly", ["federal_us", "california"], "tax_authority", 4_000.0)]
+    carrying = {
+        obligation.obligation_type: obligation.amount_due_usd
+        for obligation in translation.scenario.recurring_obligations
+        if obligation.obligation_type != "monthly_spend"
+    }
+    assert carrying == {
+        "hoa_dues": 250.0,
+        "insurance_premium": 200.0,
+        "maintenance": 750.0,
+        "special_assessment": 100.0,
+    }
 
 
 def test_configured_portfolio_lots_replace_legacy_public_stock_asset_but_keep_private_equity() -> None:

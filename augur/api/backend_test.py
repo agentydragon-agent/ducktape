@@ -80,6 +80,7 @@ def test_backend_runs_joint_model_and_materializes_graph_tables() -> None:
     assert {path.path_set_id for path in response.exogenous_paths} == {response.projection_run.path_set_id}
     assert {path.market_model_id for path in response.exogenous_paths} == {"simple_market_model"}
     assert len({path.exogenous_path_id for path in response.exogenous_paths}) == 3
+    assert all(0 <= path.seed <= 2**32 - 1 for path in response.exogenous_paths)
     result = response.scenario_results[0]
     assert len(result.projection_trajectories) == 3
     assert {trajectory.scenario_id for trajectory in result.projection_trajectories} == {"sp500_spend"}
