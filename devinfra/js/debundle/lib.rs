@@ -41,6 +41,7 @@ pub use factor_assembly::{
 pub use facts::{
     AnalysisHints, ChunkFactAnalysis, EffectCell, KnownEffect, LocalEffectPolicy,
     StatementEffectSummary, StatementFacts, StatementKind, analyze_chunk, find_top_level_await,
+    local_namespace_iife_target,
 };
 pub use graph::{
     DepKind, EdgeMetadata, EdgeReason, ModuleQuotient, OwnerGraph, OwnerGraphOptions, OwnerId,

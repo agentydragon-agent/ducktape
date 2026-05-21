@@ -1219,7 +1219,7 @@ fn single_local_effect_target(targets: BTreeSet<Id>) -> Option<Id> {
     }
 }
 
-fn local_namespace_iife_target(call: &CallExpr) -> Option<Id> {
+pub fn local_namespace_iife_target(call: &CallExpr) -> Option<Id> {
     if call.args.len() != 1 || call.args[0].spread.is_some() {
         return None;
     }

@@ -10,6 +10,7 @@ use swc_common::{DUMMY_SP, GLOBALS, SyntaxContext};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
+use analysis::local_namespace_iife_target;
 use artifact::{
     ArtifactIndexes, ChunkBundle, ChunkId, ChunkTable, JsFile, JsFileAstParts,
     get_chunk_entry_path, join_module_path, list_chunk_file_paths, manifest_relative_path,
@@ -2276,7 +2277,7 @@ pub fn apply_bundled_partial_vendor_swaps(
         artifact
             .chunks
             .get_mut(caller_chunk_index)
-            .with_context(|| format!("missing chunk index {}", caller_chunk_index))?
+            .with_context(|| format!("missing chunk index {caller_chunk_index}"))?
             .js
             .insert_file(JsFile::from_ast_parts(parts, ast));
     }
@@ -2910,6 +2911,29 @@ struct PartialSwapIdentRewriter<'a> {
 }
 
 impl VisitMut for PartialSwapIdentRewriter<'_> {
+    fn visit_mut_call_expr(&mut self, call: &mut CallExpr) {
+        if local_namespace_iife_target(call)
+            .is_some_and(|target| self.bindings.contains_key(target.0.as_ref()))
+        {
+            // Preserve TS namespace/enum initializer arguments such as
+            // `Sa || (Sa = {})`. The strip pass recognizes that shape as
+            // a local mutation island and can then drop the old vendor
+            // implementation. Rewriting the read side first would turn it
+            // into `<facade>.Enum || (Sa = {})`, making it look like a hard
+            // residual side effect and potentially mutating the replacement
+            // facade.
+            if let Callee::Expr(callee) = &mut call.callee {
+                callee.visit_mut_with(self);
+            }
+            for arg in call.args.iter_mut().skip(1) {
+                arg.visit_mut_with(self);
+            }
+            return;
+        }
+
+        call.visit_mut_children_with(self);
+    }
+
     fn visit_mut_expr(&mut self, expr: &mut Expr) {
         // Recurse first so nested matches (e.g., the obj of a member
         // expression, the callee of a call) are rewritten before we
@@ -3142,6 +3166,43 @@ export { b as beta };
             assert_eq!(
                 named_imports(&artifact, "vendor-a", "entry.js", "../vendor-b/entry.js"),
                 vec![("beta".to_string(), "b".to_string())]
+            );
+        });
+    }
+
+    #[test]
+    fn partial_swap_rewriter_preserves_namespace_iife_initializer_target() {
+        js_ast::with_swc_globals(|| {
+            let mut parsed = parse_js_module(
+                "vendor.js",
+                "var Sa;\n\
+                 (function(t) { t[(t.NONE = 0)] = \"NONE\"; })(Sa || (Sa = {}));\n\
+                 const direct = Sa.NONE;\n",
+            )
+            .unwrap();
+            let bindings = BTreeMap::from([(
+                "Sa".to_string(),
+                IdentRewriteTarget::Member {
+                    namespace: "__debundle_bps_l3".to_string(),
+                    upstream_export: "DiagLogLevel".to_string(),
+                    chunk_name: "static/vendor".to_string(),
+                    chunk_export: "l3".to_string(),
+                },
+            )]);
+            let mut references_by_symbol = BTreeMap::new();
+            parsed.module.visit_mut_with(&mut PartialSwapIdentRewriter {
+                bindings: &bindings,
+                references_by_symbol: &mut references_by_symbol,
+            });
+
+            let emitted = emit_js_module(&parsed, &[]).unwrap();
+            assert!(
+                emitted.contains("Sa || (Sa = {})"),
+                "namespace IIFE target should stay recognizable for DCE:\n{emitted}",
+            );
+            assert!(
+                emitted.contains("__debundle_bps_l3.DiagLogLevel.NONE"),
+                "ordinary references should still be rewritten:\n{emitted}",
             );
         });
     }

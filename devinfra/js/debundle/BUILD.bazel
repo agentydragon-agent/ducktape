@@ -113,6 +113,7 @@ rust_library(
     crate_root = "vendor.rs",
     edition = "2024",
     deps = [
+        ":analysis",
         ":artifact",
         ":js_ast",
         ":spec",
