@@ -7,16 +7,6 @@ their own trackers.
 Priority ordering lives in `plans/roadmap.md`. Keep this file as the public
 generic backlog rather than a second ordered roadmap.
 
-## Recently Completed
-
-- [x] Product-language cash runway slice. `augur/product` now defines the first
-      `ProjectionRequest` / `ProjectionResponse` wire contract,
-      `/api/product/projections/run` runs one cash-spend projection with explicit
-      rollout seeds through `augur/sim`, and `/product` renders selectable
-      cash/net-worth/drawdown/shortfall fans through generated Zod-validated
-      client calls. Focused coverage lives in `//augur/api:server_test` and
-      `//augur:product_visual_golden_test`.
-
 ## Next
 
 - [ ] **Finish the projection API contract now that backend execution is
