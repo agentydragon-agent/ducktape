@@ -13,8 +13,8 @@
       "sha256": "h+Egd/T9GBCp8utErSiz4DC8egPAf5oalyz1+fsHGN4="
     },
     "claude-hooks": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hooks-63160da7ec48/claude_hooks-0.1.0-py3-none-any.whl",
-      "sha256": "FQvmYUjk5F5kVEVqr5KlDQKyrQqgb/siMMi6CM8+hI8="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hooks-745438a78f3f/claude_hooks-0.1.0-py3-none-any.whl",
+      "sha256": "dFQ4p48/UUs72Pf9xswSbhRKcHrN8eZK1sGUQWDULzM="
     },
     "ducktape-git-hooks": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-git-hooks-745a61b7ba4b/ducktape_git_hooks-0.1.0-py3-none-any.whl",
@@ -33,12 +33,12 @@
       "sha256": "nZmSwtodI8AoCJKSmoy/KaCkds+23SdSw9Hy/PS4tZY="
     },
     "skills": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skills-2020d5e07da4/all_skills_tar.tar",
-      "sha256": "ICDV4H2kuD/PkwDhbdqPbIp9q4hZm7m9jadO20GGC0I="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skills-1a9d261acafb/all_skills_tar.tar",
+      "sha256": "Gp0mGsr7x7PZf6wxlMvD28yPHLkfaLFATcK2FGkvoMQ="
     },
     "claude-hook-rs": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hook-rs-3d97dc62b6c3/claude_hook",
-      "sha256": "PZfcYrbDzv5g0bXn/an2QudoKmsFlfuMFh5ggiHxvUQ="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hook-rs-3b36081f92b5/claude_hook",
+      "sha256": "OzYIH5K1bl6cfZJjiuv8l5O/EjxusgMAc1J85UZyN5I="
     },
     "aiquota-extension": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-11302b6d9184/aiquota.zip",
@@ -49,8 +49,8 @@
       "sha256": "ETArbZGE6lfrxaTuJlzlHe7OSaXfh3K/1/nA0S86yf0="
     },
     "debundle": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-97de536a0656/debundle",
-      "sha256": "l95TagZWL/LcwVRw+1eu/bG26wSrx+tlRyQ4s+WI71U="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-46db13da6a98/debundle",
+      "sha256": "RtsT2mqYn9yilv9NzYLTg5PG3FJWM2IEZvH7BIev+mU="
     }
   }
 }
