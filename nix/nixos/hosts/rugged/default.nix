@@ -94,7 +94,7 @@ in
 
   # High-volume IIO debugging is useful only during an active auto-rotate
   # investigation. Leaving it enabled during normal use flooded journald and
-  # caused periodic desktop stalls. See debug/rugged/periodic_stalls.md.
+  # caused periodic desktop stalls. See debug/rugged/stalls/report.md.
   ducktape.iioDebug.enable = false;
 
   # Add Plasma as a parallel Wayland session for tablet/OSK testing while

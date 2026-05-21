@@ -46,6 +46,11 @@ function aiQuotaBinPath(extensionPath) {
   return "aiquota";
 }
 
+function executablePath(path) {
+  if (path.includes("/")) return path;
+  return GLib.find_program_in_path(path) ?? path;
+}
+
 function formatDuration(seconds) {
   if (seconds == null || !Number.isFinite(seconds)) return "?";
   const s = Math.max(0, Math.round(seconds));
@@ -218,7 +223,11 @@ const QuotaIndicator = GObject.registerClass(
 
       this._iconsDir = `${extension.path}/icons`;
       this._binPath = aiQuotaBinPath(extension.path);
+      this._execPath = executablePath(this._binPath);
       this._popupTickId = null;
+      this._refreshInFlight = false;
+      this._refreshProc = null;
+      this._destroyed = false;
 
       const fixturePath = GLib.getenv("AI_QUOTA_FIXTURE");
       if (fixturePath) {
@@ -655,31 +664,58 @@ const QuotaIndicator = GObject.registerClass(
     }
 
     _refresh() {
+      if (this._refreshInFlight) return;
+      this._refreshInFlight = true;
+
+      let proc;
       try {
-        const [ok, stdout, stderr, exitStatus] = GLib.spawn_sync(
-          null,
-          [this._binPath, "gnome-extension-json"],
-          null,
-          GLib.SpawnFlags.SEARCH_PATH,
-          null
+        proc = Gio.Subprocess.new(
+          [this._execPath, "gnome-extension-json"],
+          Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE
         );
-        if (!ok || exitStatus !== 0) {
-          const stderrText = stderr ? decodeBytes(stderr) : "";
-          console.warn(`[aiquota] ${this._binPath} exited ${exitStatus}: ${stderrText}`);
-          for (const p of this._providers) p.state.error = `aiquota exited ${exitStatus}`;
-        } else {
-          const data = JSON.parse(decodeBytes(stdout));
-          this._loadSubprocessData(data);
-        }
       } catch (e) {
+        this._refreshInFlight = false;
         console.error(`[aiquota] spawn ${this._binPath} threw: ${errorMessage(e)}`);
         for (const p of this._providers) p.state.error = errorMessage(e);
+        this._renderPanel();
+        this._renderPopup();
+        return;
       }
-      this._renderPanel();
-      this._renderPopup();
+
+      this._refreshProc = proc;
+      proc.communicate_utf8_async(null, null, (_proc, res) => {
+        this._refreshInFlight = false;
+        if (this._refreshProc === proc) this._refreshProc = null;
+        if (this._destroyed) return;
+
+        try {
+          const [, stdout, stderr] = proc.communicate_utf8_finish(res);
+          const exitStatus = proc.get_if_exited() ? proc.get_exit_status() : "signal";
+          if (!proc.get_successful()) {
+            const stderrText = stderr ?? "";
+            console.warn(`[aiquota] ${this._binPath} exited ${exitStatus}: ${stderrText}`);
+            for (const p of this._providers) p.state.error = `aiquota exited ${exitStatus}`;
+          } else {
+            const data = JSON.parse(stdout);
+            this._loadSubprocessData(data);
+          }
+        } catch (e) {
+          console.error(`[aiquota] refresh ${this._binPath} failed: ${errorMessage(e)}`);
+          for (const p of this._providers) p.state.error = errorMessage(e);
+        }
+
+        this._renderPanel();
+        this._renderPopup();
+      });
     }
 
     destroy() {
+      this._destroyed = true;
+      if (this._refreshProc) {
+        this._refreshProc.force_exit();
+        this._refreshProc = null;
+      }
+      this._refreshInFlight = false;
       this._unexportTestInterface();
       this._stopPopupTick();
       if (this._menuOpenId) {
