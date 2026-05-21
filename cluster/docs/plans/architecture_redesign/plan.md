@@ -40,6 +40,8 @@ workloads that need public IP / always-on.
 | Worker (x2) | CPX31 | 4 shared | 8 GB | 160 GB | 24.99     |
 | **Total**   |       | 16       | 32GB | 640 GB | **99.96** |
 
+See <cost_comparison.md> for provider pricing analysis.
+
 #### VPS CP Load (2026-04-01 snapshot)
 
 | Node | CPU actual | MEM actual    | MEM req | MEM lim |
@@ -49,20 +51,6 @@ workloads that need public IP / always-on.
 
 **Memory is the bottleneck**, not CPU. Gap is etcd, kube-apiserver, and
 Longhorn sidecars (many pods with no resource requests).
-
-### Hetzner HIL Availability (checked 2026-04-01)
-
-CPX31/41/51 no longer available at HIL for new provisioning. Existing
-nodes are grandfathered. In-place resize via `hcloud` provider is
-possible (`keep_disk = true`, brief downtime per node).
-
-| Server    | vCPU | RAM   | Type            | EUR/mo | Available |
-| --------- | ---- | ----- | --------------- | ------ | --------- |
-| CPX11     | 2    | 2 GB  | Shared (AMD)    | 4.49   | Yes       |
-| CPX21     | 3    | 4 GB  | Shared (AMD)    | 8.99   | Yes       |
-| CPX31     | 4    | 8 GB  | Shared (AMD)    | 15.99  | **No**    |
-| **CCX13** | 2    | 8 GB  | Dedicated (AMD) | 12.99  | Yes       |
-| CCX23     | 4    | 16 GB | Dedicated (AMD) | 25.99  | Yes       |
 
 ## Placement Decisions
 
