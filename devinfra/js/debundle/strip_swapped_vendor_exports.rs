@@ -440,7 +440,7 @@ fn sweep_unreachable_top_level(
     }
 
     for (i, packages) in swapped_reachability.iter().enumerate() {
-        if live[i] && !packages.is_empty() {
+        if live[i] && !packages.is_empty() && !analyses[i].shareable_helper {
             let declared = analyses[i]
                 .declared
                 .iter()
@@ -518,6 +518,7 @@ struct ItemAnalysis {
     local_effects: BTreeSet<Id>,
     export_aliases: BTreeSet<String>,
     side_effect: SideEffectKind,
+    shareable_helper: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -561,6 +562,7 @@ fn classify_item(item: &ModuleItem) -> ItemAnalysis {
                 local_effects: BTreeSet::new(),
                 export_aliases,
                 side_effect: SideEffectKind::None,
+                shareable_helper: false,
             }
         }
         ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultDecl(export_default)) => {
@@ -572,6 +574,7 @@ fn classify_item(item: &ModuleItem) -> ItemAnalysis {
                 local_effects: BTreeSet::new(),
                 export_aliases: BTreeSet::from(["default".to_string()]),
                 side_effect: SideEffectKind::None,
+                shareable_helper: false,
             }
         }
         ModuleItem::ModuleDecl(ModuleDecl::ExportDefaultExpr(export_default)) => {
@@ -592,6 +595,7 @@ fn classify_item(item: &ModuleItem) -> ItemAnalysis {
                 } else {
                     SideEffectKind::Hard
                 },
+                shareable_helper: false,
             }
         }
         ModuleItem::ModuleDecl(ModuleDecl::Import(_)) => ItemAnalysis {
@@ -600,6 +604,7 @@ fn classify_item(item: &ModuleItem) -> ItemAnalysis {
             local_effects: BTreeSet::new(),
             export_aliases: BTreeSet::new(),
             side_effect: SideEffectKind::Hard,
+            shareable_helper: false,
         },
         ModuleItem::ModuleDecl(ModuleDecl::ExportAll(_)) => ItemAnalysis {
             declared: BTreeSet::new(),
@@ -607,6 +612,7 @@ fn classify_item(item: &ModuleItem) -> ItemAnalysis {
             local_effects: BTreeSet::new(),
             export_aliases: BTreeSet::new(),
             side_effect: SideEffectKind::Hard,
+            shareable_helper: false,
         },
         ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)) => {
             let mut reads = BTreeSet::new();
@@ -617,6 +623,7 @@ fn classify_item(item: &ModuleItem) -> ItemAnalysis {
                 local_effects: BTreeSet::new(),
                 export_aliases: export_aliases_from_named(named),
                 side_effect: SideEffectKind::Hard,
+                shareable_helper: false,
             }
         }
         ModuleItem::ModuleDecl(_) => {
@@ -628,6 +635,7 @@ fn classify_item(item: &ModuleItem) -> ItemAnalysis {
                 local_effects: BTreeSet::new(),
                 export_aliases: BTreeSet::new(),
                 side_effect: SideEffectKind::Hard,
+                shareable_helper: false,
             }
         }
         ModuleItem::Stmt(_) => {
@@ -639,6 +647,7 @@ fn classify_item(item: &ModuleItem) -> ItemAnalysis {
                 local_effects: BTreeSet::new(),
                 export_aliases: BTreeSet::new(),
                 side_effect: SideEffectKind::Hard,
+                shareable_helper: false,
             }
         }
     }
@@ -657,6 +666,7 @@ fn classify_decl(decl: &Decl) -> ItemAnalysis {
                 local_effects: BTreeSet::new(),
                 export_aliases: BTreeSet::new(),
                 side_effect: SideEffectKind::None,
+                shareable_helper: true,
             }
         }
         Decl::Class(class_decl) => {
@@ -669,6 +679,7 @@ fn classify_decl(decl: &Decl) -> ItemAnalysis {
                 local_effects: BTreeSet::new(),
                 export_aliases: BTreeSet::new(),
                 side_effect: SideEffectKind::None,
+                shareable_helper: false,
             }
         }
         Decl::Var(var) => {
@@ -696,6 +707,7 @@ fn classify_decl(decl: &Decl) -> ItemAnalysis {
                 } else {
                     SideEffectKind::None
                 },
+                shareable_helper: false,
             }
         }
         Decl::Using(_)
@@ -710,6 +722,7 @@ fn classify_decl(decl: &Decl) -> ItemAnalysis {
                 local_effects: BTreeSet::new(),
                 export_aliases: BTreeSet::new(),
                 side_effect: SideEffectKind::Hard,
+                shareable_helper: false,
             }
         }
     }
@@ -729,6 +742,7 @@ fn classify_expr_stmt(expr: &Expr) -> ItemAnalysis {
         } else {
             SideEffectKind::LocalMutation
         },
+        shareable_helper: false,
     }
 }
 
@@ -1102,6 +1116,27 @@ mod tests {
         assert!(
             err.to_string().contains("split-brain vendor swap"),
             "wrong error: {err}",
+        );
+    }
+
+    #[test]
+    fn allows_shared_pure_function_helper() {
+        let mut module = parse(
+            "function helper(x) { return x; }\nconst oldImpl = () => helper(\"old\");\nconst keep = () => helper(\"keep\");\nexport { oldImpl as swapped, keep };\n",
+        );
+        strip_one_chunk(&mut module, &mk_symbols(&["swapped"]), "chunk.js").unwrap();
+        let emitted = emit(&module);
+        assert!(
+            emitted.contains("function helper"),
+            "residual export should keep shared helper:\n{emitted}",
+        );
+        assert!(
+            emitted.contains("keep"),
+            "residual export should remain:\n{emitted}",
+        );
+        assert!(
+            !emitted.contains("oldImpl"),
+            "swapped old implementation should be removed:\n{emitted}",
         );
     }
 
