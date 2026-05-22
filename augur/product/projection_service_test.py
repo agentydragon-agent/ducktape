@@ -97,5 +97,35 @@ def test_metric_fan_and_rollout_detail_share_cached_sim_rollouts() -> None:
     assert fan_with_one_new_seed.monthly_metric_fan.columns["percentile"] == [50.0] * 4
 
 
+def test_failed_rollout_metrics_freeze_at_zero_after_failure() -> None:
+    model = CountingExogenousModel()
+    service = _service(model)
+    scenario = ScenarioKey(
+        exogenous_model_id="current_exogenous_model", horizon_months=3, monthly_spend_usd=100_000.0, spend_index="none"
+    )
+
+    fan = service.metric_fan(
+        MetricFanRequest(scenario=scenario, rollout_seeds=(7,), metric="net_worth_usd", percentiles=(50,))
+    )
+
+    assert fan.failed_count == 1
+    assert fan.monthly_metric_fan.columns["month_index"] == [0, 1, 2, 3]
+    assert fan.monthly_metric_fan.columns["value"] == [200_000.0, 0.0, 0.0, 0.0]
+    [summary] = fan.rollout_summaries
+    assert summary.failed is True
+    assert summary.terminal_metrics.failed_month_index == 0
+    assert summary.terminal_metrics.cash_usd == 0.0
+    assert summary.terminal_metrics.public_security_value_usd == 0.0
+    assert summary.terminal_metrics.net_worth_usd == 0.0
+    assert summary.terminal_metrics.shortfall_usd == 100_000.0
+
+    detail = service.rollout(RolloutRequest(scenario=scenario, seed=7))
+
+    assert detail.rollout.failed is True
+    assert detail.rollout.monthly_metrics.columns["cash_usd"] == [50_000.0, 0.0, 0.0, 0.0]
+    assert detail.rollout.monthly_metrics.columns["public_security_value_usd"] == [150_000.0, 0.0, 0.0, 0.0]
+    assert detail.rollout.monthly_metrics.columns["net_worth_usd"] == [200_000.0, 0.0, 0.0, 0.0]
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

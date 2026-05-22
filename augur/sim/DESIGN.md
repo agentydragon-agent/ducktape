@@ -343,7 +343,8 @@ share state mutation.
 6. **Rollout-status check.** If any required obligation in this
    month went unfunded, the settlement phase emits a failure event
    and marks the rollout failed. Current scope has sticky failure:
-   later-month inflows do not recover the rollout, and there is no
+   later-month inflows do not recover the rollout, value-bearing
+   state snapshots remain zero after failure, and there is no
    partial-payment or delinquency lifecycle state.
 
 The returned `events_for_month` is the union of all phase event
@@ -592,14 +593,14 @@ compatibility-table layout.
 
 ## Failure modes
 
-A rollout that fails on month M continues running for months >M;
+A rollout that fails on month M remains materialized for months >M;
 its `rollout_status[rollout=R].status` carries `"failed"` from
-month M onward. Operations in subsequent months may still
-materialize state and trajectory-derived values, but decision/event
-emission filters on active rollouts where required. Failed rollouts
-aren't structurally removed. Materialized outputs distinguish
-"across all rollouts" from "across rollouts active at month X" at
-projection time.
+month M onward. State-backed balances, holdings, liabilities, and
+net-worth metrics are frozen at zero after the failure boundary.
+Decision/event emission filters on active rollouts where required, and
+failed rollouts aren't structurally removed. Materialized outputs
+distinguish "across all rollouts" from "across rollouts active at month X"
+at projection time.
 
 Recovery from failed back to active is intentionally out of scope
 for the current simulator. A shortfall that is covered in the same

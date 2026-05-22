@@ -60,16 +60,56 @@ def apply_events(state: StateCrossSection, events: EventLog) -> StateCrossSectio
     capital_gains_ytd = _reset_capital_gains_for_taxed_agents(capital_gains_ytd, events.tax_accruals)
     rollout_status = _apply_rollout_failures(state.rollout_status, events.rollout_failures)
 
+    return _zero_failed_rollout_state(
+        StateCrossSection(
+            cash_balances=cash_balances,
+            asset_lots=asset_lots,
+            ordinary_income_ytd=ordinary_income_ytd,
+            capital_gains_ytd=capital_gains_ytd,
+            tax_liabilities=tax_liabilities,
+            property_state=property_state,
+            property_stakes=property_stakes,
+            liabilities=liabilities,
+            rollout_status=rollout_status,
+        )
+    )
+
+
+def _zero_failed_rollout_state(state: StateCrossSection) -> StateCrossSection:
+    failed_rollouts = state.rollout_status.filter(pl.col("status") != "active").select("rollout_index").unique()
+    if failed_rollouts.is_empty():
+        return state
     return StateCrossSection(
-        cash_balances=cash_balances,
-        asset_lots=asset_lots,
-        ordinary_income_ytd=ordinary_income_ytd,
-        capital_gains_ytd=capital_gains_ytd,
-        tax_liabilities=tax_liabilities,
-        property_state=property_state,
-        property_stakes=property_stakes,
-        liabilities=liabilities,
-        rollout_status=rollout_status,
+        cash_balances=_zero_failed_columns(state.cash_balances, failed_rollouts, ("balance_usd",)),
+        asset_lots=_zero_failed_columns(state.asset_lots, failed_rollouts, ("remaining_quantity",)),
+        ordinary_income_ytd=_zero_failed_columns(state.ordinary_income_ytd, failed_rollouts, ("ordinary_income_usd",)),
+        capital_gains_ytd=_zero_failed_columns(state.capital_gains_ytd, failed_rollouts, ("gain_usd",)),
+        tax_liabilities=_zero_failed_columns(state.tax_liabilities, failed_rollouts, ("amount_owed_usd",)),
+        property_state=_zero_failed_columns(state.property_state, failed_rollouts, ("adjusted_basis_usd",)),
+        property_stakes=_zero_failed_columns(
+            state.property_stakes, failed_rollouts, ("ownership_pct", "contribution_used_usd", "equity_ledger_usd")
+        ),
+        liabilities=_zero_failed_columns(
+            state.liabilities,
+            failed_rollouts,
+            ("principal_usd", "monthly_payment_usd", "interest_paid_ytd_usd", "principal_paid_ytd_usd"),
+        ),
+        rollout_status=state.rollout_status,
+    )
+
+
+def _zero_failed_columns(frame: pl.DataFrame, failed_rollouts: pl.DataFrame, columns: tuple[str, ...]) -> pl.DataFrame:
+    if frame.is_empty():
+        return frame
+    return (
+        frame.join(failed_rollouts.with_columns(pl.lit(True).alias("_failed_rollout")), on="rollout_index", how="left")
+        .with_columns(
+            [
+                pl.when(pl.col("_failed_rollout").fill_null(False)).then(0.0).otherwise(pl.col(column)).alias(column)
+                for column in columns
+            ]
+        )
+        .drop("_failed_rollout")
     )
 
 

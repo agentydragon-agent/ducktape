@@ -18,6 +18,7 @@ const DEFAULT_PRODUCT_INPUT_BASE = {
 
 const FAN_PERCENTILES = [5, 25, 50, 75, 95];
 const SELECTED_ROLLOUT_COLOR = "#0f766e";
+const FAILED_ROLLOUT_COLOR = "#ef4444";
 
 const METRIC_OPTIONS = [
   { value: "net_worth_usd", chartValue: "netWorthUsd", label: "Net worth" },
@@ -156,7 +157,7 @@ function selectedRolloutMetricRows(detail, metric) {
     .filter((row) => Number.isFinite(row.monthIndex) && Number.isFinite(row.value));
 }
 
-function MetricFanChart({ rows, metric, percentiles, selectedRows, selectedSeed }) {
+function MetricFanChart({ rows, metric, percentiles, selectedRows, selectedSeed, selectedFailed }) {
   if (rows.length === 0) return null;
   const sortedPercentiles = percentiles.slice().sort((left, right) => left - right);
   const outerLow = sortedPercentiles[0];
@@ -183,6 +184,7 @@ function MetricFanChart({ rows, metric, percentiles, selectedRows, selectedSeed 
   const valueAt = (row, percentile) => row.values.get(percentile);
   const line = (percentile) => rows.map((row) => `${x(row)},${y(valueAt(row, percentile))}`).join(" ");
   const selectedLine = selectedRows.map((row) => `${x(row)},${y(row.value)}`).join(" ");
+  const selectedColor = selectedFailed ? FAILED_ROLLOUT_COLOR : SELECTED_ROLLOUT_COLOR;
   const band = (upperPercentile, lowerPercentile) => {
     const upper = rows.map((row) => `${x(row)},${y(valueAt(row, upperPercentile))}`).join(" ");
     const lower = rows
@@ -234,7 +236,7 @@ function MetricFanChart({ rows, metric, percentiles, selectedRows, selectedSeed 
             <polyline
               points={selectedLine}
               fill="none"
-              stroke={SELECTED_ROLLOUT_COLOR}
+              stroke={selectedColor}
               strokeLinecap="round"
               strokeLinejoin="round"
               strokeWidth="3"
@@ -244,7 +246,7 @@ function MetricFanChart({ rows, metric, percentiles, selectedRows, selectedSeed 
               cx={x(selectedRows[selectedRows.length - 1])}
               cy={y(selectedRows[selectedRows.length - 1].value)}
               r="4"
-              fill={SELECTED_ROLLOUT_COLOR}
+              fill={selectedColor}
               stroke="white"
               strokeWidth="1.5"
             />
@@ -304,12 +306,7 @@ function RolloutSliverStrip({ summaries, selectedSeed, loadingSeed, onSelect }) 
                 }}
                 title={titleParts.join(" - ")}
               >
-                {summary.failed && (
-                  <span
-                    className="absolute inset-x-0 top-0 h-[3px] bg-slate-700 dark:bg-slate-200"
-                    aria-hidden="true"
-                  />
-                )}
+                {summary.failed && <span className="absolute inset-x-0 top-0 h-[3px] bg-red-500" aria-hidden="true" />}
                 {isLoading && (
                   <span
                     className="absolute inset-x-[35%] bottom-1 h-[3px] rounded-full bg-teal-500"
@@ -607,6 +604,7 @@ function ProductProjectionWorkspace({ bootstrap }) {
                   percentiles={request.percentiles}
                   selectedRows={selectedRows}
                   selectedSeed={selectedSeed}
+                  selectedFailed={selectedSummary?.failed ?? false}
                 />
               ) : (
                 <div className="flex min-h-[22rem] items-center justify-center text-sm augur-muted">Running...</div>

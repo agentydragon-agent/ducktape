@@ -61,7 +61,7 @@ Still not proven by spike-1 coverage:
   mask plumbed but no scenarios exercise it.
 - **L11.1, 11.2** — unfunded-obligation failure flag, per-rollout
   failure scope. (Recovery semantics deferred — failed rollouts stay failed
-  this spike.)
+  and state-backed value metrics freeze at zero this spike.)
 
 ## Deferred to later spikes
 

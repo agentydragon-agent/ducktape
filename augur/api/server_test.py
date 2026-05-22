@@ -285,5 +285,40 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
     assert terminal["shortfall_usd"] == 0.0
 
 
+def test_backend_server_zeroes_failed_product_rollout_metrics(server_url: str) -> None:
+    scenario = {
+        "exogenous_model_id": "current_exogenous_model",
+        "horizon_months": 3,
+        "monthly_spend_usd": 100_000.0,
+        "spend_index": "none",
+    }
+    fan = _post_json(
+        server_url,
+        "/api/product/projections/metric_fan",
+        {"scenario": scenario, "rollout_seeds": [7], "metric": "net_worth_usd", "percentiles": [50]},
+    )
+
+    assert fan["failed_count"] == 1
+    assert fan["monthly_metric_fan"]["columns"]["month_index"] == [0, 1, 2, 3]
+    assert fan["monthly_metric_fan"]["columns"]["value"] == [200_000.0, 0.0, 0.0, 0.0]
+    [summary] = fan["rollout_summaries"]
+    assert summary["failed"] is True
+    assert summary["terminal_metrics"]["failed_month_index"] == 0
+    assert summary["terminal_metrics"]["cash_usd"] == 0.0
+    assert summary["terminal_metrics"]["public_security_value_usd"] == 0.0
+    assert summary["terminal_metrics"]["net_worth_usd"] == 0.0
+    assert summary["terminal_metrics"]["shortfall_usd"] == 100_000.0
+
+    detail = _post_json(server_url, "/api/product/projections/rollout", {"scenario": scenario, "seed": 7})
+
+    assert detail["rollout"]["failed"] is True
+    assert detail["rollout"]["terminal_metrics"]["net_worth_usd"] == 0.0
+    columns = detail["rollout"]["monthly_metrics"]["columns"]
+    assert columns["month_index"] == [0, 1, 2, 3]
+    assert columns["cash_usd"] == [50_000.0, 0.0, 0.0, 0.0]
+    assert columns["public_security_value_usd"] == [150_000.0, 0.0, 0.0, 0.0]
+    assert columns["net_worth_usd"] == [200_000.0, 0.0, 0.0, 0.0]
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

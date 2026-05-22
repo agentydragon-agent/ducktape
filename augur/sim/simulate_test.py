@@ -2130,6 +2130,11 @@ def test_rollout_marked_failed_when_assets_exhausted(deterministic_series_bundle
     status_row = result.rollout_status.row(0, named=True)
     assert status_row["status"] == "failed_insufficient_cash"
     assert status_row["failed_month"] == 0
+
+    failed_cash = result.cash_balances.filter((pl.col("rollout_index") == 0) & (pl.col("month_index") >= 1))
+    assert failed_cash.get_column("balance_usd").to_list() == [0.0, 0.0]
+    failed_lots = result.asset_lots.filter((pl.col("rollout_index") == 0) & (pl.col("month_index") >= 1))
+    assert failed_lots.get_column("remaining_quantity").to_list() == [0.0]
     assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 

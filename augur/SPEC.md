@@ -96,8 +96,10 @@ Current required obligations are due immediately in the month they fire. The
 engine debits the configured cash account, uses the agent's configured
 liquidation policy to sell assets if the cash account goes negative, and marks
 the rollout failed if the account cannot be brought back to non-negative cash.
-It does not model partial payments, grace periods, delinquency balances, or
-underpayment penalties.
+After failure, state-backed value metrics for that rollout are frozen at zero
+for the rest of the simulation; the failed status and first failure month remain
+machine-readable. It does not model partial payments, grace periods,
+delinquency balances, recovery/cure, or underpayment penalties.
 
 ### Effect types
 

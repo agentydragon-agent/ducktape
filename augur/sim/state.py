@@ -56,9 +56,10 @@ CAPITAL_GAINS_YTD_SCHEMA = pl.Schema(
 
 # Per-rollout terminal status. "active" is the only running state;
 # `"failed_insufficient_cash"` is set once and not cleared (L11.2:
-# failed rollouts stay failed). One row per rollout regardless of
-# how many agents are in the scenario — the failure is a property
-# of the rollout, not of an agent.
+# failed rollouts stay failed, and value-bearing state snapshots are
+# zeroed after failure). One row per rollout regardless of how many
+# agents are in the scenario — the failure is a property of the rollout,
+# not of an agent.
 ROLLOUT_STATUS_SCHEMA = pl.Schema({"rollout_index": pl.Int64(), "status": pl.Utf8(), "failed_month": pl.Int64()})
 
 # An asset lot is a tax-relevant unit-of-acquisition: a quantity of

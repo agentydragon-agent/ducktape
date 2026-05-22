@@ -878,10 +878,11 @@ obligation attempt and shortfall.
 #### S11.2 — Rollout failure is per-rollout, not scenario-wide.
 
 In a 100-rollout scenario where 12 rollouts fail at various months
-and 88 stay solvent, the simulator continues all 100 rollouts and
-labels the failed ones. Reported metrics distinguish "across all
-rollouts" from "across surviving rollouts" where the distinction
-matters.
+and 88 stay solvent, the simulator keeps all 100 rollouts materialized
+and labels the failed ones. State-backed value metrics for a failed
+rollout are zero after the failure boundary. Reported metrics
+distinguish "across all rollouts" from "across surviving rollouts"
+where the distinction matters.
 
 #### S11.3 — Funding-chain coverage is not failure.
 
@@ -890,8 +891,9 @@ succeeds, the rollout does not enter failure — it continues
 normally. Failure is "obligation went unpaid"; sale-driven
 coverage is not failure. Once an obligation cannot be funded, the
 current scope treats that rollout as failed for the rest of the
-simulation; partial payments, cure periods, and status recovery are
-future scope.
+simulation, with state-backed value metrics frozen at zero after
+failure; partial payments, cure periods, and status recovery are future
+scope.
 
 ### Layer 12: Housing — primary residence
 
@@ -1165,7 +1167,7 @@ sources)`. Failure-event rows do not retroactively delete; they
   failure-event log). Projection summaries also expose failure count,
   first failure month, and final liquid/book net worth. Current scope
   is sticky failure: a failed rollout is not recovered by later-month
-  inflows.
+  inflows, and state-backed value metrics remain zero after failure.
 
 These outputs are projections of the state series and event log; they
 are not maintained alongside as separate state.
