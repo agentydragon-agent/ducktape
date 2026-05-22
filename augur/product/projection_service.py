@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from dataclasses import dataclass
+from typing import cast
 
 import numpy as np
 import polars as pl
@@ -678,7 +679,8 @@ def _metric_matrix(rollouts: tuple[CachedRollout, ...], *, metric: MetricName) -
 
 
 def _percentile(values: np.ndarray, percentiles: tuple[float, ...], *, axis: int) -> np.ndarray:
-    return np.percentile(values, np.asarray(percentiles, dtype=np.float64), axis=axis, method="linear")
+    result = np.percentile(values, np.asarray(percentiles, dtype=np.float64), axis=axis, method="linear")
+    return cast(np.ndarray, result)
 
 
 def _terminal_metric_value(terminal: TerminalMetrics, metric: MetricName) -> float:

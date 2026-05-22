@@ -126,7 +126,7 @@ struct VendorSwapFixture {
 struct VendorTestWorkspace {
     root: TempDir,
     snapshot_root: PathBuf,
-    extracted_root: PathBuf,
+    _extracted_root: PathBuf,
     out_root: PathBuf,
     wrapper_root: PathBuf,
     manifest_path: PathBuf,
@@ -149,7 +149,7 @@ impl VendorTestWorkspace {
         Self {
             root,
             snapshot_root,
-            extracted_root,
+            _extracted_root: extracted_root,
             out_root,
             wrapper_root,
             manifest_path,

@@ -22,7 +22,7 @@ use js_ast::{ParsedJsModule, emit_js_module, parse_js_module, str_value};
 pub use manifests::*;
 use spec::{
     BundledPartialSwapMark, BundledPartialSwapPackage, PartialSwapKind, PartialSwapMark,
-    PartialSwapPackage, SwapMark, VendorLevel, VendorMark, VendorRole, WrapperShape,
+    PartialSwapPackage, SwapMark, VendorLevel, VendorMark, WrapperShape,
 };
 
 pub fn apply_vendor_annotations(
@@ -2829,6 +2829,7 @@ mod tests {
     use artifact::{
         ChunkAnalysis, ChunkArtifact, ChunkMetadata, FileMetadata, FileRole, JsChunk, JsFile,
     };
+    use spec::VendorRole;
 
     #[test]
     fn rename_vendor_exports_rewrites_multiple_vendor_targets_in_one_call() {

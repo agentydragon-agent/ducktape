@@ -5,7 +5,7 @@ use serde::Serialize;
 use swc_ecma_ast::Id;
 
 use artifact::ChunkBundle;
-use spec::{PartialSwapKind, WrapperShape, VendorRole};
+use spec::{PartialSwapKind, VendorRole, WrapperShape};
 
 #[derive(Debug, Clone)]
 pub struct VendorAnnotationsManifest {

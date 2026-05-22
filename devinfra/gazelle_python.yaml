@@ -30,6 +30,7 @@ manifest:
     aiohttp_client_cache: aiohttp_client_cache
     aiohttp_socks: aiohttp_socks
     aioitertools: aioitertools
+    aioquic: aioquic
     aiosignal: aiosignal
     aiosqlite: aiosqlite
     alembic: alembic
@@ -59,8 +60,10 @@ manifest:
     bcrypt: bcrypt
     beartype: beartype
     bleach: bleach
+    blinker: blinker
     boto3: boto3
     botocore: botocore
+    brotli: brotli
     bs4: beautifulsoup4
     build: build
     cachetools: cachetools
@@ -122,6 +125,7 @@ manifest:
     fastmcp: fastmcp
     fastuuid: fastuuid
     filelock: filelock
+    flask: flask
     flatbuffers: flatbuffers
     flexcache: flexcache
     flexparser: flexparser
@@ -280,6 +284,7 @@ manifest:
     jupyter_ydoc: jupyter_ydoc
     jupyterlab_pygments: jupyterlab_pygments
     jwt: pyjwt
+    kaitaistruct: kaitaistruct
     key_value: py_key_value_aio
     keyring: keyring
     keysymdef: keysymdef
@@ -316,6 +321,7 @@ manifest:
     langgraph_sdk: langgraph_sdk
     langsmith: langsmith
     lark: lark
+    ldap3: ldap3
     librt.base64: librt
     librt.internal: librt
     librt.strings: librt
@@ -339,6 +345,9 @@ manifest:
     mdurl: mdurl
     mirakuru: mirakuru
     mistune: mistune
+    mitmproxy: mitmproxy
+    mitmproxy_linux: mitmproxy_linux
+    mitmproxy_rs: mitmproxy_rs
     mizani: mizani
     mmh3: mmh3
     more_itertools: more_itertools
@@ -346,6 +355,7 @@ manifest:
     mpl_toolkits.axisartist: matplotlib
     mpl_toolkits.mplot3d: matplotlib
     mpmath: mpmath
+    msgpack: msgpack
     multidict: multidict
     multipart: python_multipart
     mypy: mypy
@@ -430,6 +440,7 @@ manifest:
     psycopg2: psycopg2_binary
     psycopg_binary: psycopg_binary
     ptyprocess: ptyprocess
+    publicsuffix2: publicsuffix2
     punq: punq
     pure_eval: pure_eval
     pwdlib: pwdlib
@@ -450,6 +461,7 @@ manifest:
     pygit2: pygit2
     pygments: pygments
     pylab: matplotlib
+    pylsqpack: pylsqpack
     pyparsing: pyparsing
     pypdf: pypdf
     pypdfium2: pypdfium2
@@ -491,6 +503,7 @@ manifest:
     rich_rst: rich_rst
     rpds: rpds_py
     rsa: rsa
+    ruamel.yaml: ruamel_yaml
     ruff: ruff
     s3fs: s3fs
     s3transfer: s3transfer
@@ -498,6 +511,7 @@ manifest:
     secretstorage: secretstorage
     semver: semver
     send2trash: send2trash
+    service_identity: service_identity
     setuptools: setuptools
     shellingham: shellingham
     shortuuid: shortuuid
@@ -505,6 +519,7 @@ manifest:
     six: six
     slugify: python_slugify
     sniffio: sniffio
+    sortedcontainers: sortedcontainers
     soupsieve: soupsieve
     splitwise: splitwise
     sqlalchemy: sqlalchemy
@@ -520,7 +535,7 @@ manifest:
     sympy: sympy
     syrupy: syrupy
     tabulate: tabulate
-    takethetime: takethetime
+    takethetime: TakeTheTime
     tenacity: tenacity
     terminado: terminado
     testcontainers.arangodb: testcontainers
@@ -600,6 +615,7 @@ manifest:
     uritemplate: uritemplate
     url_normalize: url_normalize
     urllib3: urllib3
+    urwid: urwid
     uuid_utils: uuid_utils
     uv: uv
     uvicorn: uvicorn
@@ -613,7 +629,9 @@ manifest:
     webencodings: webencodings
     websocket: websocket_client
     websockets: websockets
+    werkzeug: werkzeug
     wrapt: wrapt
+    wsproto: wsproto
     xdist: pytest_xdist
     xxhash: xxhash
     yaml: pyyaml
@@ -624,4 +642,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 99da4370f3cfe4f678a6aa0c2b9b789080bbef51869d01a87b1b07455e81141d
+integrity: d247d1dad3abf944de573385fc8d166e1e804cff48174c1e96c24e113b7ebf98

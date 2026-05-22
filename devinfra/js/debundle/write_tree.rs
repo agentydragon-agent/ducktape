@@ -64,12 +64,18 @@ pub fn write_js_tree(input: &WriteTreeInput) -> Result<()> {
         decomposition_metrics,
     };
     write_json(layout.output_report(), &manifest)?;
-    write_json(layout.chunks_report(), &ChunksReport {
-        chunks: input.chunk_records,
-    })?;
-    write_json(layout.app_root().join("package.json"), &PackageManifest {
-        module_type: "module",
-    })?;
+    write_json(
+        layout.chunks_report(),
+        &ChunksReport {
+            chunks: input.chunk_records,
+        },
+    )?;
+    write_json(
+        layout.app_root().join("package.json"),
+        &PackageManifest {
+            module_type: "module",
+        },
+    )?;
 
     Ok(())
 }
