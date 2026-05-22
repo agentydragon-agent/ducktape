@@ -13,7 +13,7 @@ use emit_harness::{EmitBrowserHarnessOptions, emit_browser_harness};
 use lowering::{MaterializeLogicalModulesOptions, materialize_logical_modules};
 use prepare_chunks::prepare_js_chunks;
 use rewrite_specifiers::rewrite_chunk_entry_specifiers;
-use spec::{MaterializeLogicalModulesConfig, SwapVendorChunksConfig, TransformSpec, VendorLevel};
+use spec::{MaterializeLogicalModulesConfig, TransformSpec, VendorLevel};
 use spec_tree::{CompileSpecTreeOptions, compile_spec_tree};
 use strip_swapped_vendor_exports::{
     ChunkStripStats, StripSwappedVendorExportsOptions, strip_swapped_vendor_exports_with_options,
@@ -173,11 +173,7 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<()> {
             .values()
             .any(|m| matches!(m.level, VendorLevel::Swap(_)))
         {
-            let SwapVendorChunksConfig {
-                output_manifest_path,
-                output_wrapper_dir,
-                write,
-            } = spec.swap_vendor_chunks.clone();
+            let swap_cfg = &spec.swap_vendor_chunks;
             let swap_result = swap_vendor_chunks(
                 artifact,
                 &spec.vendor,
@@ -185,9 +181,9 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<()> {
                 SwapVendorOptions {
                     package_roots: &cli.package_roots,
                     packages_root: &cli.packages_root,
-                    output_manifest_path,
-                    output_wrapper_dir,
-                    write,
+                    output_manifest_path: swap_cfg.output_manifest_path.clone(),
+                    output_wrapper_dir: swap_cfg.output_wrapper_dir.clone(),
+                    write: swap_cfg.write,
                 },
             )?;
             artifact = swap_result.artifact;
@@ -257,11 +253,7 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<()> {
         }
 
         if has_bundled_partial_swaps {
-            let SwapVendorChunksConfig {
-                output_manifest_path,
-                output_wrapper_dir,
-                write,
-            } = spec.swap_vendor_chunks.clone();
+            let swap_cfg = &spec.swap_vendor_chunks;
             let bundled_result = apply_bundled_partial_vendor_swaps(
                 artifact,
                 &spec.vendor,
@@ -269,9 +261,9 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<()> {
                 ApplyBundledPartialVendorSwapsOptions {
                     package_roots: &cli.package_roots,
                     packages_root: &cli.packages_root,
-                    output_manifest_path,
-                    output_wrapper_dir,
-                    write,
+                    output_manifest_path: swap_cfg.output_manifest_path.clone(),
+                    output_wrapper_dir: swap_cfg.output_wrapper_dir.clone(),
+                    write: swap_cfg.write,
                 },
             )?;
             artifact = bundled_result.artifact;
@@ -477,6 +469,7 @@ fn path_is_within(path: &Path, root: &Path) -> bool {
 mod tests {
     use super::*;
     use artifact::parse_js_list;
+    use spec::SwapVendorChunksConfig;
     use std::collections::BTreeMap;
 
     #[derive(Serialize)]

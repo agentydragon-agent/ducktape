@@ -6,7 +6,7 @@
 //! `naturalize_module_body` is the public entry; everything else is a
 //! contributor of rename intents that get merged via `drop_target_collisions`.
 
-use super::util::is_identifier_like;
+use super::util::is_valid_js_identifier;
 use super::*;
 
 pub(super) fn naturalize_module_body(
@@ -21,7 +21,7 @@ pub(super) fn naturalize_module_body(
     let mut sorted_bindings: Vec<(&String, &String)> = plan.bindings.iter().collect();
     sorted_bindings.sort_by(|a, b| a.0.cmp(b.0));
     for (local, exported) in sorted_bindings {
-        if local != exported && is_identifier_like(exported) {
+        if local != exported && is_valid_js_identifier(exported) {
             renames.insert(local.clone(), exported.clone());
         }
     }
@@ -83,35 +83,29 @@ pub(super) fn collect_naturalization_renames_from_item(
     renames: &mut BTreeMap<String, String>,
 ) {
     match item {
-        ModuleItem::Stmt(Stmt::Decl(Decl::Fn(function))) => {
+        ModuleItem::Stmt(Stmt::Decl(decl)) => collect_from_decl(decl, renames),
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => {
+            collect_from_decl(&export_decl.decl, renames);
+        }
+        _ => {}
+    }
+}
+
+fn collect_from_decl(decl: &Decl, renames: &mut BTreeMap<String, String>) {
+    match decl {
+        Decl::Fn(function) => {
             collect_naturalization_renames_from_function(&function.function, renames);
         }
-        ModuleItem::Stmt(Stmt::Decl(Decl::Class(class))) => {
+        Decl::Class(class) => {
             collect_naturalization_renames_from_class(&class.class, renames);
         }
-        ModuleItem::Stmt(Stmt::Decl(Decl::Var(var))) => {
+        Decl::Var(var) => {
             for declarator in &var.decls {
                 if let Some(init) = declarator.init.as_ref() {
                     collect_naturalization_renames_from_expr(init, renames);
                 }
             }
         }
-        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => match &export_decl.decl {
-            Decl::Fn(function) => {
-                collect_naturalization_renames_from_function(&function.function, renames);
-            }
-            Decl::Class(class) => {
-                collect_naturalization_renames_from_class(&class.class, renames);
-            }
-            Decl::Var(var) => {
-                for declarator in &var.decls {
-                    if let Some(init) = declarator.init.as_ref() {
-                        collect_naturalization_renames_from_expr(init, renames);
-                    }
-                }
-            }
-            _ => {}
-        },
         _ => {}
     }
 }
@@ -186,7 +180,7 @@ pub(super) fn collect_naturalization_renames_from_pattern(
                         {
                             let from = value.id.sym.to_string();
                             let to = key.sym.to_string();
-                            if from != to && is_identifier_like(&to) {
+                            if from != to && is_valid_js_identifier(&to) {
                                 renames.insert(from, to);
                             }
                         }
@@ -227,7 +221,7 @@ pub(super) fn collect_return_object_alias_renames(
                         {
                             let from = value.sym.to_string();
                             let to = key.sym.to_string();
-                            if from != to && is_identifier_like(&to) {
+                            if from != to && is_valid_js_identifier(&to) {
                                 renames.insert(from, to);
                             }
                         }
@@ -261,7 +255,7 @@ pub(super) fn collect_constructor_assignment_renames(
         return;
     };
     let from = value.sym.to_string();
-    if param_names.contains(&from) && from != target_name && is_identifier_like(&target_name) {
+    if param_names.contains(&from) && from != target_name && is_valid_js_identifier(&target_name) {
         renames.insert(from, target_name);
     }
 }
@@ -276,7 +270,7 @@ pub(super) fn this_property_name(target: &AssignTarget) -> Option<String> {
     match &member.prop {
         MemberProp::Ident(ident) => Some(ident.sym.to_string()),
         MemberProp::Computed(computed) => match &*computed.expr {
-            Expr::Lit(Lit::Str(value)) if is_identifier_like(&str_value(value)) => {
+            Expr::Lit(Lit::Str(value)) if is_valid_js_identifier(&str_value(value)) => {
                 Some(str_value(value))
             }
             _ => None,

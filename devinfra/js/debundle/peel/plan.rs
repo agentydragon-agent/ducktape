@@ -1304,8 +1304,8 @@ mod tests {
     };
     use tempfile::TempDir;
 
-    use super::*;
     use super::super::test_utils;
+    use super::*;
 
     fn write(path: &Path, body: &str) {
         if let Some(parent) = path.parent() {

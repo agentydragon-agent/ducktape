@@ -71,7 +71,7 @@ impl ChunkFactorization {
     /// should call [`Self::build_with`] instead.
     pub fn build(
         chunk_id: String,
-        facts: Vec<StatementFactsInput>,
+        facts: Vec<crate::StatementFacts>,
         bindings: HashMap<swc_ecma_ast::Id, crate::BindingKind>,
         logical_modules: Vec<LogicalModule>,
         chunk_renames: HashMap<swc_ecma_ast::Id, swc_atoms::Atom>,
@@ -95,7 +95,7 @@ impl ChunkFactorization {
     /// factorization doesn't redo the work.
     pub fn build_with(
         chunk_id: String,
-        facts: Vec<StatementFactsInput>,
+        facts: Vec<crate::StatementFacts>,
         precomputed: OwnerGraphAndUnits,
         bindings: HashMap<swc_ecma_ast::Id, crate::BindingKind>,
         logical_modules: Vec<LogicalModule>,
@@ -198,8 +198,6 @@ impl ChunkFactorization {
         build_owner_graph_report(self)
     }
 }
-
-type StatementFactsInput = crate::StatementFacts;
 
 /// Topological linearization of the dep graph, dependency-first.
 /// Empty if the graph has cycles (`tarjan_scc` plus the validator

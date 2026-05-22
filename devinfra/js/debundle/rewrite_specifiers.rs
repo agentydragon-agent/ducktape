@@ -158,15 +158,9 @@ pub fn runtime_js_href(
 }
 
 fn should_rewrite_file(file: &JsFile) -> bool {
-    if !file.is_ast() {
-        return false;
-    }
-    let is_lowered_module = file.metadata.role == FileRole::Module
-        && file.metadata.generated_by_selected_module_lowering;
-    if is_lowered_module {
-        return false;
-    }
-    true
+    file.is_ast()
+        && !(file.metadata.role == FileRole::Module
+            && file.metadata.generated_by_selected_module_lowering)
 }
 
 /// Returns true when the parsed module contains any specifier that

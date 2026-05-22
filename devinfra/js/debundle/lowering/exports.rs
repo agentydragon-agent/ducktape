@@ -51,20 +51,9 @@ pub(super) fn reject_duplicate_export_names(
     id: &str,
     members: &[MemberRequest],
 ) -> Result<()> {
-    let mut seen = BTreeSet::new();
-    let mut duplicates = BTreeSet::new();
-    for member in members {
-        if !seen.insert(member.export_name.clone()) {
-            duplicates.insert(member.export_name.clone());
-        }
-    }
-    if !duplicates.is_empty() {
-        bail!(
-            "{operation} {id} has duplicate exported logical names: {}",
-            duplicates.into_iter().collect::<Vec<_>>().join(", ")
-        );
-    }
-    Ok(())
+    reject_duplicate_field(operation, id, "exported logical names", members, |m| {
+        &m.export_name
+    })
 }
 
 pub(super) fn reject_duplicate_member_bindings(
@@ -72,16 +61,27 @@ pub(super) fn reject_duplicate_member_bindings(
     id: &str,
     members: &[MemberRequest],
 ) -> Result<()> {
+    reject_duplicate_field(operation, id, "source bindings", members, |m| &m.binding)
+}
+
+fn reject_duplicate_field(
+    operation: &str,
+    id: &str,
+    label: &str,
+    members: &[MemberRequest],
+    extract: impl Fn(&MemberRequest) -> &str,
+) -> Result<()> {
     let mut seen = BTreeSet::new();
     let mut duplicates = BTreeSet::new();
     for member in members {
-        if !seen.insert(member.binding.clone()) {
-            duplicates.insert(member.binding.clone());
+        let value = extract(member);
+        if !seen.insert(value.to_string()) {
+            duplicates.insert(value.to_string());
         }
     }
     if !duplicates.is_empty() {
         bail!(
-            "{operation} {id} has duplicate source bindings: {}",
+            "{operation} {id} has duplicate {label}: {}",
             duplicates.into_iter().collect::<Vec<_>>().join(", ")
         );
     }
@@ -215,22 +215,9 @@ pub(super) fn auto_grown_residual_exports(
                 .get(&name)
                 .cloned()
                 .unwrap_or_else(|| name.clone());
-            let public_name = mint_unique_public_name(&name, &mut taken_public_names);
+            let public_name =
+                util::mint_unique_name(&name, |n| taken_public_names.insert(n.to_string()));
             (final_local, public_name)
         })
         .collect()
-}
-
-fn mint_unique_public_name(base: &str, taken: &mut HashSet<String>) -> String {
-    if taken.insert(base.to_string()) {
-        return base.to_string();
-    }
-    let mut suffix = 1usize;
-    loop {
-        let candidate = format!("{base}${suffix}");
-        if taken.insert(candidate.clone()) {
-            return candidate;
-        }
-        suffix += 1;
-    }
 }

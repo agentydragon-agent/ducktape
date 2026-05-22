@@ -735,15 +735,11 @@ fn diagnostic_counts(diagnostics: &[FactorizeDiagnosticReport]) -> BTreeMap<Stri
 
 fn size_distributions(proposals: &[FactorizeProposal]) -> FactorizeSizeDistributions {
     FactorizeSizeDistributions {
-        by_members: bucket_counts(
-            proposals,
-            |proposal| proposal.owner_ids.len(),
-            member_bucket,
-        ),
+        by_members: bucket_counts(proposals, |proposal| proposal.owner_ids.len(), size_bucket),
         by_lines: bucket_counts(
             proposals,
             |proposal| proposal.size_lines_estimate,
-            line_bucket,
+            size_bucket,
         ),
     }
 }
@@ -779,24 +775,7 @@ fn bucket_counts(
         .collect()
 }
 
-fn member_bucket(value: usize) -> &'static str {
-    match value {
-        0 => "0",
-        1 => "1",
-        2 => "2",
-        3..=5 => "3-5",
-        6..=10 => "6-10",
-        11..=20 => "11-20",
-        21..=50 => "21-50",
-        51..=100 => "51-100",
-        101..=250 => "101-250",
-        251..=500 => "251-500",
-        501..=1000 => "501-1000",
-        _ => ">1000",
-    }
-}
-
-fn line_bucket(value: usize) -> &'static str {
+fn size_bucket(value: usize) -> &'static str {
     match value {
         0 => "0",
         1 => "1",
@@ -836,9 +815,9 @@ mod tests {
     use swc_atoms::Atom;
 
     use analysis::{
-        AtomicGraphReport, AtomicUnitEdgeReport, AtomicUnitReport, DepKind,
-        ModuleReportRef, OwnerGraphEdgeReport, OwnerGraphNodeReport, OwnerGraphQuotientReport,
-        OwnerGraphReport, Purity, SourceLocation, StatementKind, StatementOrdinal,
+        AtomicGraphReport, AtomicUnitEdgeReport, AtomicUnitReport, DepKind, ModuleReportRef,
+        OwnerGraphEdgeReport, OwnerGraphNodeReport, OwnerGraphQuotientReport, OwnerGraphReport,
+        Purity, SourceLocation, StatementKind, StatementOrdinal,
     };
 
     use super::super::test_utils;

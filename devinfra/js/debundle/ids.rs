@@ -5,18 +5,6 @@ use swc_atoms::Atom;
 use swc_common::{Mark, SyntaxContext};
 use swc_ecma_ast::Id;
 
-// `swc_ecma_ast::Id = (Atom, SyntaxContext)` is the canonical
-// hygiene-preserving binding identity. The analysis stores `Id`s
-// directly; reports drop `SyntaxContext` at the JSON boundary by
-// serializing only the `Atom` (so wire shape stays a bare string).
-//
-// Previously this module defined `pub type BindingName = String` plus
-// a per-chunk `BindingTable` interner that mapped strings to
-// `BindingId(usize)`. Both are gone: swc's `Atom` is globally
-// interned (equality is pointer comparison), and analysis cells in
-// `graph.rs` now key by `Id` directly via `HashMap<Id, _>` instead
-// of dense-vec storage indexed by `BindingId.0`.
-
 /// Construct the hygiene-aware `Id` for a chunk-top-level binding.
 /// SWC's `resolver` pass assigns `ctxt = SyntaxContext::empty().apply_mark(top_level_mark)`
 /// to every top-level binding in a parsed `Module`. Spec-derived

@@ -30,7 +30,9 @@ pub fn binding_names(pattern: &Pat) -> impl Iterator<Item = Id> + '_ {
 /// (spec YAML, diagnostics) rather than hygiene-preserving binding
 /// cells.
 pub fn binding_name_strings(pattern: &Pat) -> Vec<String> {
-    binding_names(pattern).map(|(atom, _)| atom.to_string()).collect()
+    binding_names(pattern)
+        .map(|(atom, _)| atom.to_string())
+        .collect()
 }
 
 /// Collect all `Id`s bound by a declaration. Covers `Fn`, `Class`,
@@ -40,14 +42,21 @@ pub fn declaration_ids(decl: &Decl) -> Vec<Id> {
     match decl {
         Decl::Fn(f) => vec![f.ident.to_id()],
         Decl::Class(c) => vec![c.ident.to_id()],
-        Decl::Var(v) => v.decls.iter().flat_map(|d| binding_names(&d.name)).collect(),
+        Decl::Var(v) => v
+            .decls
+            .iter()
+            .flat_map(|d| binding_names(&d.name))
+            .collect(),
         _ => Vec::new(),
     }
 }
 
 /// String-only counterpart of [`declaration_ids`].
 pub fn declaration_name_strings(decl: &Decl) -> Vec<String> {
-    declaration_ids(decl).iter().map(|(atom, _)| atom.to_string()).collect()
+    declaration_ids(decl)
+        .iter()
+        .map(|(atom, _)| atom.to_string())
+        .collect()
 }
 
 /// Extract the string value of a [`ModuleExportName`] (either an

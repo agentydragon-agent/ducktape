@@ -10,8 +10,8 @@ use artifact::{
     TopLevelDeclarationKind,
 };
 use binding_targets::{
-    TargetAccessRecorder, binding_names, member_root_sym, module_export_name,
-    record_assign_target, record_member_target, record_pat_write, record_update_target,
+    TargetAccessRecorder, binding_names, member_root_sym, module_export_name, record_assign_target,
+    record_member_target, record_pat_write, record_update_target,
 };
 use js_ast::{ParsedJsModule, SourceLineIndex, str_value};
 

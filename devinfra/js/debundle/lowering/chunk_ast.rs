@@ -3,7 +3,10 @@
 //! introduce destructure siblings, etc. `ChunkAstAnalysis` is the
 //! input to `materialize_logical_chunk`s spec-driven plan resolution.
 
-use binding_targets::{binding_name_strings, binding_names as bt_binding_names, declaration_ids as bt_declaration_ids, declaration_name_strings};
+use binding_targets::{
+    binding_name_strings, binding_names as bt_binding_names, declaration_ids as bt_declaration_ids,
+    declaration_name_strings,
+};
 
 use super::*;
 

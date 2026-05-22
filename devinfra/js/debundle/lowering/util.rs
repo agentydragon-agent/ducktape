@@ -74,27 +74,6 @@ pub(super) fn body_index_for_statement_ordinal(
     None
 }
 
-/// `unassigned_mode == MiniFactors`: for each atomic factor
-/// unit whose members are entirely unclaimed by the YAML spec (i.e.
-/// either currently sitting in the residual catch-all or never
-/// assigned to any plan), synthesize a stand-alone [`ModulePlan`]
-/// containing exactly those members. Bindings and anonymous
-/// statements that were temporarily routed through the residual
-/// plan are moved into the synthesized plan; the residual plan then
-/// only holds whatever truly couldn't be peeled (typically nothing
-/// for clean chunks).
-///
-pub(super) fn is_identifier_like(name: &str) -> bool {
-    let mut chars = name.chars();
-    let Some(first) = chars.next() else {
-        return false;
-    };
-    if !(first == '_' || first == '$' || first.is_ascii_alphabetic()) {
-        return false;
-    }
-    chars.all(|ch| ch == '_' || ch == '$' || ch.is_ascii_alphanumeric())
-}
-
 pub(super) fn target_file_for_request(target_dir: &str, target_path: &str) -> Result<String> {
     let normalized = normalize_module_path(target_path)?;
     let with_ext = if normalized.ends_with(".js") {
@@ -340,12 +319,7 @@ pub(super) fn disambiguate_import_locals(
             } else {
                 original.as_str()
             };
-            let actual = if occupied.contains(preferred) {
-                mint_fresh_local_name(preferred, occupied)
-            } else {
-                preferred.to_string()
-            };
-            occupied.insert(actual.clone());
+            let actual = mint_unique_name(preferred, |n| occupied.insert(n.to_string()));
             if actual != *original {
                 renames.insert(original.clone(), actual.clone());
             }
@@ -372,12 +346,7 @@ pub(super) fn disambiguate_residual_entry_import_locals(
         .iter()
         .map(|(original, entry_export)| {
             let preferred = entry_export.local_name.as_str();
-            let actual = if occupied.contains(preferred) {
-                mint_fresh_local_name(preferred, occupied)
-            } else {
-                preferred.to_string()
-            };
-            occupied.insert(actual.clone());
+            let actual = mint_unique_name(preferred, |n| occupied.insert(n.to_string()));
             if actual != *original {
                 renames.insert(original.clone(), actual.clone());
             }
@@ -412,11 +381,14 @@ pub(super) fn preserve_export_specifier_names(
     }
 }
 
-pub(super) fn mint_fresh_local_name(base: &str, occupied: &BTreeSet<String>) -> String {
+pub(super) fn mint_unique_name(base: &str, mut try_claim: impl FnMut(&str) -> bool) -> String {
+    if try_claim(base) {
+        return base.to_string();
+    }
     let mut suffix = 1usize;
     loop {
         let candidate = format!("{base}${suffix}");
-        if !occupied.contains(&candidate) {
+        if try_claim(&candidate) {
             return candidate;
         }
         suffix += 1;
