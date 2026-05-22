@@ -53,6 +53,7 @@ def test_projection_due_now_obligation_sells_assets_and_settles(deterministic_se
         ],
         external_series=deterministic_series_bundle([100.0, 100.0]),
         liquidity_policies=[LiquidityPolicy(agent_id="alice", account_id="checking", asset_preference_chain=["vti"])],
+        tax_profiles=[],
         horizon_months=1,
     )
 
@@ -105,6 +106,7 @@ def test_projection_due_now_obligation_failure_is_explicit() -> None:
             )
         ],
         liquidity_policies=[LiquidityPolicy(agent_id="alice", account_id="checking", asset_preference_chain=[])],
+        tax_profiles=[],
         horizon_months=1,
     )
 
@@ -280,6 +282,7 @@ def test_projection_real_estate_book_net_worth_and_liability_balance() -> None:
                 annual_tax_rate=0.012,
             )
         ],
+        tax_profiles=[],
         horizon_months=2,
     )
 
@@ -310,6 +313,7 @@ def test_projection_trajectory_filters_one_rollout() -> None:
     scenario = Scenario(
         agents=[Agent(agent_id="alice")],
         initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=10.0)],
+        tax_profiles=[],
         horizon_months=1,
     )
 

@@ -25,6 +25,8 @@ const FAILED_ROLLOUT_COLOR = "#ef4444";
 const ROLLOUT_EVENT_COLORS = {
   public_security_sale: "#0f766e",
   monthly_expense: "#64748b",
+  tax_accrual: "#b45309",
+  tax_payment: "#7c3aed",
   failure: "#dc2626",
 };
 
@@ -198,7 +200,9 @@ function eventGroupsByMonth(events) {
 }
 
 function eventMarkerYOffset(event) {
+  if (event?.kind === "tax_accrual") return -14;
   if (event?.kind === "public_security_sale") return -6;
+  if (event?.kind === "tax_payment") return 8;
   if (event?.kind === "failure") return 7;
   return 0;
 }
@@ -216,6 +220,21 @@ function eventDetailText(event) {
     return `${fmtNumber(Number(event.units))} units; basis ${fmtUsd(Number(event.costBasisUsd))}`;
   }
   if (event?.kind === "monthly_expense") {
+    const shortfall = Number(event.shortfallUsd);
+    return shortfall > 0
+      ? `due ${fmtUsd(Number(event.amountDueUsd))}; shortfall ${fmtUsd(shortfall)}`
+      : `due ${fmtUsd(Number(event.amountDueUsd))}`;
+  }
+  if (event?.kind === "tax_accrual") {
+    const capitalGainTax = Number(event.capitalGainTaxUsd);
+    const gain = Number(event.ltcgUsd) + Number(event.stcgUsd);
+    return [
+      `ordinary tax ${fmtUsd(Number(event.ordinaryTaxUsd))}`,
+      `gain tax ${fmtUsd(capitalGainTax)}`,
+      `gains ${fmtUsd(gain)}`,
+    ].join("; ");
+  }
+  if (event?.kind === "tax_payment") {
     const shortfall = Number(event.shortfallUsd);
     return shortfall > 0
       ? `due ${fmtUsd(Number(event.amountDueUsd))}; shortfall ${fmtUsd(shortfall)}`
@@ -927,6 +946,19 @@ function ProductProjectionWorkspace({ bootstrap }) {
               </div>
             </div>
             <ProductPortfolioPanel portfolio={portfolio} error={portfolioError} />
+            <div className="augur-card p-4">
+              <div className="augur-eyebrow">Taxes</div>
+              <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <div className="augur-field-label mb-1">Jurisdictions</div>
+                  <div className="font-semibold augur-strong">Federal + California</div>
+                </div>
+                <div>
+                  <div className="augur-field-label mb-1">Filing</div>
+                  <div className="font-semibold augur-strong">Single</div>
+                </div>
+              </div>
+            </div>
             <div className="augur-card p-4">
               <div className="augur-eyebrow">Funding</div>
               <div className="mt-4 grid gap-3">

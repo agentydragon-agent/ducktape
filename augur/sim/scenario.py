@@ -350,6 +350,7 @@ class Scenario(BaseModel):
     scheduled_property_purchases: list[ScheduledPropertyPurchase] = Field(default_factory=list)
     property_tax_policies: list[PropertyTaxPolicy] = Field(default_factory=list)
     external_series: SeriesModelBundle = Field(default_factory=SeriesModelBundle)
-    tax_profiles: list[TaxProfile] = Field(default_factory=list)
+    # Required so callers explicitly choose either taxed agents or an intentional no-tax scenario.
+    tax_profiles: list[TaxProfile]
     liquidity_policies: list[LiquidityPolicy] = Field(default_factory=list)
     horizon_months: PositiveInt

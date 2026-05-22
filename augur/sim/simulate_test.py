@@ -11,6 +11,7 @@ from __future__ import annotations
 import polars as pl
 import pytest
 import pytest_bazel
+from pydantic import ValidationError
 
 from augur.model.gbm import GeometricBrownian
 from augur.model.series_model import SeriesModelBundle
@@ -68,6 +69,7 @@ def _alice_bob_scenario() -> Scenario:
                 amount_usd=5.0,
             )
         ],
+        tax_profiles=[],
         horizon_months=1,
     )
 
@@ -98,6 +100,7 @@ def test_series_indexed_amount_parses_from_scenario_data() -> None:
                     },
                 }
             ],
+            "tax_profiles": [],
             "horizon_months": 13,
         }
     )
@@ -105,6 +108,17 @@ def test_series_indexed_amount_parses_from_scenario_data() -> None:
     amount = scenario.recurring_obligations[0].amount_due_usd
     assert isinstance(amount, SeriesIndexedAmount)
     assert amount.series_id == "rent:san_francisco_ca"
+
+
+def test_scenario_requires_explicit_tax_profiles() -> None:
+    with pytest.raises(ValidationError, match="tax_profiles"):
+        Scenario.model_validate(
+            {
+                "agents": [{"agent_id": "alice"}],
+                "initial_cash": [{"agent_id": "alice", "account_id": "checking", "balance_usd": 100.0}],
+                "horizon_months": 1,
+            }
+        )
 
 
 def test_alice_gives_bob_five_dollars_one_rollout() -> None:
@@ -152,6 +166,7 @@ def test_no_scheduled_transfers_leaves_balances_unchanged() -> None:
     scenario = Scenario(
         agents=[Agent(agent_id="alice")],
         initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=100.0)],
+        tax_profiles=[],
         horizon_months=5,
     )
 
@@ -190,6 +205,7 @@ def test_recurring_paycheck_accrues_monthly() -> None:
                 amount_usd=3000.0,
             )
         ],
+        tax_profiles=[],
         horizon_months=12,
     )
 
@@ -238,6 +254,7 @@ def test_recurring_transfer_bounded_by_end_month() -> None:
                 amount_usd=100.0,
             )
         ],
+        tax_profiles=[],
         horizon_months=10,
     )
 
@@ -277,6 +294,7 @@ def test_one_thousand_rollouts_identical_when_inputs_are() -> None:
                 amount_usd=2000.0,
             )
         ],
+        tax_profiles=[],
         horizon_months=24,
     )
     rollout_count = 1000
@@ -335,6 +353,7 @@ def test_combined_one_off_and_recurring() -> None:
                 amount_usd=5000.0,
             )
         ],
+        tax_profiles=[],
         horizon_months=10,
     )
 
@@ -384,6 +403,7 @@ def test_initial_lot_partial_sale_consumes_units_credits_proceeds() -> None:
                 proceeds_account_id="checking",
             )
         ],
+        tax_profiles=[],
         horizon_months=6,
     )
 
@@ -450,6 +470,7 @@ def test_initial_lot_full_sale_zeros_remaining_quantity() -> None:
                 proceeds_account_id="checking",
             )
         ],
+        tax_profiles=[],
         horizon_months=3,
     )
 
@@ -493,6 +514,7 @@ def test_asset_sale_scales_across_rollouts() -> None:
                 proceeds_account_id="checking",
             )
         ],
+        tax_profiles=[],
         horizon_months=2,
     )
     rollout_count = 100
@@ -533,6 +555,7 @@ def test_lot_disposition_replay_invariant() -> None:
                 proceeds_account_id="checking",
             )
         ],
+        tax_profiles=[],
         horizon_months=2,
     )
     rollout_count = 3
@@ -578,6 +601,7 @@ def test_fifo_sale_crossing_two_lots() -> None:
                 proceeds_account_id="checking",
             )
         ],
+        tax_profiles=[],
         horizon_months=10,
     )
 
@@ -656,6 +680,7 @@ def test_fifo_holding_period_classification_per_disposition() -> None:
                 proceeds_account_id="checking",
             )
         ],
+        tax_profiles=[],
         horizon_months=7,
     )
 
@@ -721,6 +746,7 @@ def test_sales_of_two_different_assets_are_independent() -> None:
                 proceeds_account_id="checking",
             ),
         ],
+        tax_profiles=[],
         horizon_months=6,
     )
 
@@ -771,6 +797,7 @@ def test_series_driven_sale_uses_deterministic_price_curve(deterministic_series_
             )
         ],
         external_series=deterministic_series_bundle([100.0, 110.0, 120.0, 130.0, 150.0, 160.0, 170.0]),
+        tax_profiles=[],
         horizon_months=horizon,
     )
 
@@ -818,6 +845,7 @@ def test_gbm_series_diverges_across_rollouts_same_seed_is_reproducible() -> None
             )
         ],
         external_series=bundle,
+        tax_profiles=[],
         horizon_months=6,
     )
 
@@ -1312,9 +1340,8 @@ def test_e2e_pinned_tax_payments_force_asset_liquidation_and_settle_liability(de
     assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
-def test_no_tax_profile_means_no_year_end_accrual() -> None:
-    """If no agent has a tax profile, the year-end accrual emits
-    nothing — confirms the engine doesn't tax non-taxed agents."""
+def test_explicit_empty_tax_profiles_means_no_year_end_accrual() -> None:
+    """An explicit no-tax scenario emits no year-end accruals."""
     scenario = Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="payroll")],
         initial_cash=[
@@ -1333,6 +1360,7 @@ def test_no_tax_profile_means_no_year_end_accrual() -> None:
                 income_category="ordinary",
             )
         ],
+        tax_profiles=[],
         horizon_months=12,
     )
 
@@ -1510,6 +1538,7 @@ def test_due_now_obligation_sells_assets_and_settles(deterministic_series_bundle
         ],
         external_series=deterministic_series_bundle([100.0, 100.0]),
         liquidity_policies=[LiquidityPolicy(agent_id="alice", account_id="checking", asset_preference_chain=["vti"])],
+        tax_profiles=[],
         horizon_months=1,
     )
 
@@ -1563,6 +1592,7 @@ def test_series_indexed_recurring_rent_obligation_resets_yearly_by_rollout() -> 
                 ),
             )
         ],
+        tax_profiles=[],
         horizon_months=13,
     )
     external_series = _external_series_context_for_levels(
@@ -1610,6 +1640,7 @@ def test_series_indexed_recurring_transfer_uses_same_amount_schedule() -> None:
                 ),
             )
         ],
+        tax_profiles=[],
         horizon_months=13,
     )
     external_series = _external_series_context_for_levels(rent_series_id, levels_by_rollout=[[200.0] * 12 + [240.0]])
@@ -1649,6 +1680,7 @@ def test_due_now_obligation_failure_aborts_payment() -> None:
             )
         ],
         liquidity_policies=[LiquidityPolicy(agent_id="alice", account_id="checking", asset_preference_chain=[])],
+        tax_profiles=[],
         horizon_months=1,
     )
 
@@ -1702,6 +1734,7 @@ def test_policy_without_sale_orders_fails_hard_demand_even_with_assets(determini
         ],
         external_series=deterministic_series_bundle([100.0, 100.0]),
         liquidity_policies=[LiquidityPolicy(agent_id="alice", account_id="checking", asset_preference_chain=[])],
+        tax_profiles=[],
         horizon_months=1,
     )
 
@@ -1757,6 +1790,7 @@ def test_cash_buffer_sale_evaluates_after_hard_demands(deterministic_series_bund
                 cash_buffer_sale_usd=5000.0,
             )
         ],
+        tax_profiles=[],
         horizon_months=1,
     )
 
@@ -1814,6 +1848,7 @@ def test_cash_buffer_not_triggered_when_post_demand_cash_is_enough(deterministic
                 cash_buffer_sale_usd=5000.0,
             )
         ],
+        tax_profiles=[],
         horizon_months=1,
     )
 
@@ -1843,6 +1878,7 @@ def test_unfilled_cash_buffer_sale_does_not_fail_without_hard_demand() -> None:
                 cash_buffer_sale_usd=5000.0,
             )
         ],
+        tax_profiles=[],
         horizon_months=1,
     )
 
@@ -1884,6 +1920,7 @@ def test_same_account_hard_demands_settle_all_or_none() -> None:
                 amount_due_usd=500.0,
             ),
         ],
+        tax_profiles=[],
         horizon_months=1,
     )
 
@@ -1933,6 +1970,7 @@ def test_explicit_sale_price_overrides_sampled_series(deterministic_series_bundl
             )
         ],
         external_series=deterministic_series_bundle([10.0, 10.0, 10.0]),
+        tax_profiles=[],
         horizon_months=2,
     )
 
@@ -1987,6 +2025,7 @@ def test_real_estate_purchase_mortgage_and_property_tax_numerics() -> None:
                 annual_tax_rate=0.012,
             )
         ],
+        tax_profiles=[],
         horizon_months=2,
     )
 
@@ -2060,6 +2099,7 @@ def test_liquidity_policy_covers_monthly_spend_deficit(deterministic_series_bund
         ],
         external_series=deterministic_series_bundle([100.0] * 4),
         liquidity_policies=[LiquidityPolicy(agent_id="alice", account_id="checking", asset_preference_chain=["vti"])],
+        tax_profiles=[],
         horizon_months=3,
     )
 
@@ -2114,6 +2154,7 @@ def test_rollout_marked_failed_when_assets_exhausted(deterministic_series_bundle
         ],
         external_series=deterministic_series_bundle([100.0, 100.0]),
         liquidity_policies=[LiquidityPolicy(agent_id="alice", account_id="checking", asset_preference_chain=["vti"])],
+        tax_profiles=[],
         horizon_months=1,
     )
 

@@ -263,6 +263,7 @@ py_test(
         "//augur/model:gbm_py",
         "//augur/model:series_model_py",
         "@pypi//polars",
+        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

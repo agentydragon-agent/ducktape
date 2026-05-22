@@ -203,7 +203,7 @@ def test_backend_server_runs_browser_shaped_property_request(server_url: str) ->
     assert 20_000 <= _sum(columns["mortgage_principal_usd"]) <= 55_000
     assert 10_000 <= _min(columns["private_equity_value_usd"]) <= 30_000
     assert 20_000 <= _max(columns["private_equity_value_usd"]) <= 45_000
-    assert 480_000 <= _max(columns["net_worth_usd"]) <= 650_000
+    assert 1_100_000 <= _max(columns["net_worth_usd"]) <= 1_350_000
 
 
 def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollout_detail(server_url: str) -> None:
@@ -228,7 +228,7 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
         (summary["seed"], summary["failed"], summary["sort_rank"], summary["rank_percentile"])
         for summary in fan["rollout_summaries"]
     ] == [(7, False, 0, 25.0), (8, False, 1, 75.0)]
-    assert [summary["terminal_metrics"]["cash_usd"] for summary in fan["rollout_summaries"]] == [47_000.0, 47_000.0]
+    assert [summary["terminal_metrics"]["cash_usd"] for summary in fan["rollout_summaries"]] == [247_000.0, 247_000.0]
     assert all("monthly_metrics" not in summary for summary in fan["rollout_summaries"])
     assert fan["monthly_metric_fan"] == {
         "row_count": 12,
@@ -236,24 +236,24 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
             "month_index": [0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3],
             "percentile": [0.0, 50.0, 100.0] * 4,
             "value": [
-                50_000.0,
-                50_000.0,
-                50_000.0,
-                49_000.0,
-                49_000.0,
-                49_000.0,
-                48_000.0,
-                48_000.0,
-                48_000.0,
-                47_000.0,
-                47_000.0,
-                47_000.0,
+                250_000.0,
+                250_000.0,
+                250_000.0,
+                249_000.0,
+                249_000.0,
+                249_000.0,
+                248_000.0,
+                248_000.0,
+                248_000.0,
+                247_000.0,
+                247_000.0,
+                247_000.0,
             ],
         },
     }
     assert fan["terminal_metric_percentiles"] == {
         "row_count": 3,
-        "columns": {"percentile": [0.0, 50.0, 100.0], "value": [47_000.0, 47_000.0, 47_000.0]},
+        "columns": {"percentile": [0.0, 50.0, 100.0], "value": [247_000.0, 247_000.0, 247_000.0]},
     }
 
     public_security_fan = _post_json(
@@ -266,7 +266,7 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
     assert public_security_fan["monthly_metric_fan"]["row_count"] == 4
     assert public_security_fan["monthly_metric_fan"]["columns"]["month_index"] == [0, 1, 2, 3]
     assert public_security_fan["monthly_metric_fan"]["columns"]["percentile"] == [50.0] * 4
-    assert public_security_fan["monthly_metric_fan"]["columns"]["value"][0] == 150_000.0
+    assert public_security_fan["monthly_metric_fan"]["columns"]["value"][0] == 750_000.0
 
     detail = _post_json(server_url, "/api/product/projections/rollout", {"scenario": scenario, "seed": 7})
 
@@ -277,10 +277,10 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
     assert detail["rollout"]["monthly_metrics"]["row_count"] == 4
     columns = detail["rollout"]["monthly_metrics"]["columns"]
     assert columns["month_index"] == [0, 1, 2, 3]
-    assert columns["cash_usd"] == [50_000.0, 49_000.0, 48_000.0, 47_000.0]
-    assert columns["public_security_value_usd"][0] == 150_000.0
-    assert columns["liquid_net_worth_usd"][0] == 200_000.0
-    assert columns["net_worth_usd"][0] == 200_000.0
+    assert columns["cash_usd"] == [250_000.0, 249_000.0, 248_000.0, 247_000.0]
+    assert columns["public_security_value_usd"][0] == 750_000.0
+    assert columns["liquid_net_worth_usd"][0] == 1_000_000.0
+    assert columns["net_worth_usd"][0] == 1_000_000.0
     assert set(columns) == {
         "month_index",
         "cash_usd",
@@ -290,7 +290,7 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
         "shortfall_usd",
     }
     terminal = detail["rollout"]["terminal_metrics"]
-    assert terminal["cash_usd"] == 47_000.0
+    assert terminal["cash_usd"] == 247_000.0
     assert terminal["public_security_value_usd"] > 0
     assert terminal["liquid_net_worth_usd"] == pytest.approx(
         terminal["cash_usd"] + terminal["public_security_value_usd"]
@@ -310,9 +310,9 @@ def test_backend_server_product_portfolio_returns_configured_public_securities(s
     portfolio = _get_json(server_url, "/api/product/portfolio")
 
     assert portfolio["as_of_date"] == "2026-05-14"
-    assert portfolio["cash_usd"] == 50_000.0
-    assert portfolio["total_public_security_value_usd"] == 150_000.0
-    assert portfolio["total_public_security_cost_basis_usd"] == 110_000.0
+    assert portfolio["cash_usd"] == 250_000.0
+    assert portfolio["total_public_security_value_usd"] == 750_000.0
+    assert portfolio["total_public_security_cost_basis_usd"] == 550_000.0
     [position] = portfolio["public_securities"]
     assert position["account_label"] == "Taxable Brokerage"
     assert position["label"] == "SP500 Proxy"
@@ -320,8 +320,8 @@ def test_backend_server_product_portfolio_returns_configured_public_securities(s
     assert position["security_kind"] == "etf"
     assert position["value_series_id"] == "sp500"
     assert position["unit_value_usd"] == 500.0
-    assert position["quantity"] == 300.0
-    assert position["current_value_usd"] == 150_000.0
+    assert position["quantity"] == 1_500.0
+    assert position["current_value_usd"] == 750_000.0
     assert [lot["lot_id"] for lot in position["lots"]] == ["sp500_proxy_2020_01", "sp500_proxy_2024_06"]
 
 
@@ -329,7 +329,7 @@ def test_backend_server_zeroes_failed_product_rollout_metrics(server_url: str) -
     scenario = {
         "exogenous_model_id": "current_exogenous_model",
         "horizon_months": 3,
-        "monthly_spend_usd": 100_000.0,
+        "monthly_spend_usd": 300_000.0,
         "spend_index": "none",
         "funding_policy": {"cash_buffer_trigger_below_usd": 0.0, "cash_buffer_sale_usd": 0.0, "sell_order": []},
     }
@@ -341,14 +341,14 @@ def test_backend_server_zeroes_failed_product_rollout_metrics(server_url: str) -
 
     assert fan["failed_count"] == 1
     assert fan["monthly_metric_fan"]["columns"]["month_index"] == [0, 1, 2, 3]
-    assert fan["monthly_metric_fan"]["columns"]["value"] == [200_000.0, 0.0, 0.0, 0.0]
+    assert fan["monthly_metric_fan"]["columns"]["value"] == [1_000_000.0, 0.0, 0.0, 0.0]
     [summary] = fan["rollout_summaries"]
     assert summary["failed"] is True
     assert summary["terminal_metrics"]["failed_month_index"] == 0
     assert summary["terminal_metrics"]["cash_usd"] == 0.0
     assert summary["terminal_metrics"]["public_security_value_usd"] == 0.0
     assert summary["terminal_metrics"]["net_worth_usd"] == 0.0
-    assert summary["terminal_metrics"]["shortfall_usd"] == 100_000.0
+    assert summary["terminal_metrics"]["shortfall_usd"] == 300_000.0
 
     detail = _post_json(server_url, "/api/product/projections/rollout", {"scenario": scenario, "seed": 7})
 
@@ -356,16 +356,16 @@ def test_backend_server_zeroes_failed_product_rollout_metrics(server_url: str) -
     assert detail["rollout"]["terminal_metrics"]["net_worth_usd"] == 0.0
     columns = detail["rollout"]["monthly_metrics"]["columns"]
     assert columns["month_index"] == [0, 1, 2, 3]
-    assert columns["cash_usd"] == [50_000.0, 0.0, 0.0, 0.0]
-    assert columns["public_security_value_usd"] == [150_000.0, 0.0, 0.0, 0.0]
-    assert columns["net_worth_usd"] == [200_000.0, 0.0, 0.0, 0.0]
+    assert columns["cash_usd"] == [250_000.0, 0.0, 0.0, 0.0]
+    assert columns["public_security_value_usd"] == [750_000.0, 0.0, 0.0, 0.0]
+    assert columns["net_worth_usd"] == [1_000_000.0, 0.0, 0.0, 0.0]
 
 
 def test_backend_server_product_default_funding_sells_public_security_for_required_spend(server_url: str) -> None:
     scenario = {
         "exogenous_model_id": "current_exogenous_model",
         "horizon_months": 1,
-        "monthly_spend_usd": 100_000.0,
+        "monthly_spend_usd": 300_000.0,
         "spend_index": "none",
     }
 
@@ -373,9 +373,9 @@ def test_backend_server_product_default_funding_sells_public_security_for_requir
 
     assert detail["rollout"]["failed"] is False
     columns = detail["rollout"]["monthly_metrics"]["columns"]
-    assert columns["cash_usd"] == [50_000.0, 0.0]
-    assert columns["public_security_value_usd"][0] == 150_000.0
-    assert 0.0 < columns["public_security_value_usd"][1] < 150_000.0
+    assert columns["cash_usd"] == [250_000.0, 0.0]
+    assert columns["public_security_value_usd"][0] == 750_000.0
+    assert 0.0 < columns["public_security_value_usd"][1] < 750_000.0
     terminal = detail["rollout"]["terminal_metrics"]
     assert terminal["cash_usd"] == 0.0
     assert terminal["shortfall_usd"] == 0.0
@@ -396,11 +396,11 @@ def test_backend_server_product_default_funding_sells_public_security_for_requir
     assert expense == {
         "month_index": 0,
         "label": "Paid monthly expenses",
-        "amount_usd": 100_000.0,
+        "amount_usd": 300_000.0,
         "detail": "Required monthly spend",
         "kind": "monthly_expense",
-        "amount_due_usd": 100_000.0,
-        "amount_paid_usd": 100_000.0,
+        "amount_due_usd": 300_000.0,
+        "amount_paid_usd": 300_000.0,
         "shortfall_usd": 0.0,
     }
 
@@ -412,7 +412,7 @@ def test_backend_server_product_cash_buffer_uses_trigger_and_fixed_sale_amount(s
         "monthly_spend_usd": 1_000.0,
         "spend_index": "none",
         "funding_policy": {
-            "cash_buffer_trigger_below_usd": 60_000.0,
+            "cash_buffer_trigger_below_usd": 260_000.0,
             "cash_buffer_sale_usd": 20_000.0,
             "sell_order": ["public_securities"],
         },
@@ -422,8 +422,8 @@ def test_backend_server_product_cash_buffer_uses_trigger_and_fixed_sale_amount(s
 
     assert detail["rollout"]["failed"] is False
     columns = detail["rollout"]["monthly_metrics"]["columns"]
-    assert columns["cash_usd"] == [50_000.0, 69_000.0]
-    assert detail["rollout"]["terminal_metrics"]["cash_usd"] == 69_000.0
+    assert columns["cash_usd"] == [250_000.0, 269_000.0]
+    assert detail["rollout"]["terminal_metrics"]["cash_usd"] == 269_000.0
     assert detail["rollout"]["terminal_metrics"]["shortfall_usd"] == 0.0
 
 

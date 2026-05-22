@@ -77,6 +77,26 @@ class MonthlyExpenseEvent(_RolloutEventBase):
     shortfall_usd: NonNegativeFloat
 
 
+class TaxAccrualEvent(_RolloutEventBase):
+    kind: Literal["tax_accrual"] = "tax_accrual"
+    jurisdiction_id: str
+    tax_year_end_month: NonNegativeInt
+    ordinary_income_usd: float
+    ltcg_usd: float
+    stcg_usd: float
+    ordinary_tax_usd: NonNegativeFloat
+    capital_gain_tax_usd: NonNegativeFloat
+    total_tax_usd: NonNegativeFloat
+
+
+class TaxPaymentEvent(_RolloutEventBase):
+    kind: Literal["tax_payment"] = "tax_payment"
+    obligation_type: str
+    amount_due_usd: NonNegativeFloat
+    amount_paid_usd: NonNegativeFloat
+    shortfall_usd: NonNegativeFloat
+
+
 class RolloutFailureEvent(_RolloutEventBase):
     kind: Literal["failure"] = "failure"
     amount_due_usd: NonNegativeFloat
@@ -85,7 +105,8 @@ class RolloutFailureEvent(_RolloutEventBase):
 
 
 type RolloutEvent = Annotated[
-    PublicSecuritySaleEvent | MonthlyExpenseEvent | RolloutFailureEvent, Field(discriminator="kind")
+    PublicSecuritySaleEvent | MonthlyExpenseEvent | TaxAccrualEvent | TaxPaymentEvent | RolloutFailureEvent,
+    Field(discriminator="kind"),
 ]
 
 

@@ -26,6 +26,8 @@ from augur.product.projection import (
     RolloutResponse,
     RolloutSummary,
     ScenarioKey,
+    TaxAccrualEvent,
+    TaxPaymentEvent,
     TerminalMetrics,
 )
 from augur.sim.external_series import materialize_sampled_exogenous
@@ -39,6 +41,7 @@ from augur.sim.scenario import (
     RecurringObligation,
     Scenario,
     SeriesIndexedAmount,
+    TaxProfile,
 )
 from augur.sim.simulate import simulate_with_external_series
 
@@ -46,6 +49,8 @@ _PRIMARY_ACCOUNT_ID = "checking"
 _SPEND_SINK_AGENT_ID = "spend_sink"
 _SPEND_SINK_ACCOUNT_ID = "checking"
 _SPEND_OBLIGATION_ID = "monthly_spend"
+_TAX_AUTHORITY_AGENT_ID = "tax_authority"
+_TAX_AUTHORITY_ACCOUNT_ID = "checking"
 DEFAULT_CACHE_MAX_ROLLOUTS = 25_000
 
 
@@ -181,7 +186,11 @@ def _scenario_from_key(
         raise ValueError(f"unsupported spend_index: {scenario_key.spend_index!r}")
 
     return Scenario(
-        agents=[Agent(agent_id=primary_agent_id), Agent(agent_id=_SPEND_SINK_AGENT_ID)],
+        agents=[
+            Agent(agent_id=primary_agent_id),
+            Agent(agent_id=_SPEND_SINK_AGENT_ID),
+            Agent(agent_id=_TAX_AUTHORITY_AGENT_ID),
+        ],
         initial_lots=list(initial_lots),
         initial_cash=[
             InitialAccountBalance(
@@ -190,6 +199,9 @@ def _scenario_from_key(
                 balance_usd=float(augur_config.snapshot.cash_usd),
             ),
             InitialAccountBalance(agent_id=_SPEND_SINK_AGENT_ID, account_id=_SPEND_SINK_ACCOUNT_ID, balance_usd=0.0),
+            InitialAccountBalance(
+                agent_id=_TAX_AUTHORITY_AGENT_ID, account_id=_TAX_AUTHORITY_ACCOUNT_ID, balance_usd=0.0
+            ),
         ],
         recurring_obligations=[
             RecurringObligation(
@@ -202,6 +214,16 @@ def _scenario_from_key(
                 to_agent_id=_SPEND_SINK_AGENT_ID,
                 to_account_id=_SPEND_SINK_ACCOUNT_ID,
                 amount_due_usd=amount_due_usd,
+            )
+        ],
+        tax_profiles=[
+            TaxProfile(
+                agent_id=primary_agent_id,
+                filing_status="single",
+                jurisdiction_ids=["federal_us", "california"],
+                tax_authority_agent_id=_TAX_AUTHORITY_AGENT_ID,
+                payment_account_id=_PRIMARY_ACCOUNT_ID,
+                tax_authority_account_id=_TAX_AUTHORITY_ACCOUNT_ID,
             )
         ],
         liquidity_policies=_liquidity_policies_from_funding_policy(
@@ -357,10 +379,12 @@ def _rollout_events(
         *_public_security_sale_events(
             run, rollout_index=rollout_index, primary_agent_id=primary_agent_id, asset_label_by_id=asset_label_by_id
         ),
+        *_tax_accrual_events(run, rollout_index=rollout_index, primary_agent_id=primary_agent_id),
+        *_tax_payment_events(run, rollout_index=rollout_index, primary_agent_id=primary_agent_id),
         *_monthly_expense_events(run, rollout_index=rollout_index, primary_agent_id=primary_agent_id),
         *_failure_events(run, rollout_index=rollout_index, primary_agent_id=primary_agent_id),
     ]
-    priority = {"public_security_sale": 0, "monthly_expense": 1, "failure": 2}
+    priority = {"public_security_sale": 0, "tax_accrual": 1, "tax_payment": 2, "monthly_expense": 3, "failure": 4}
     return tuple(sorted(events, key=lambda event: (event.month_index, priority[event.kind], event.label)))
 
 
@@ -419,6 +443,104 @@ def _monthly_expense_events(
         )
         for row in expense_rows.iter_rows(named=True)
     )
+
+
+def _tax_accrual_events(run: SimulationRun, *, rollout_index: int, primary_agent_id: str) -> tuple[RolloutEvent, ...]:
+    accruals = run.events_log.tax_accruals
+    if accruals.is_empty():
+        return ()
+    accrual_rows = accruals.filter(
+        (pl.col("rollout_index") == rollout_index) & (pl.col("agent_id") == primary_agent_id)
+    )
+    if accrual_rows.is_empty():
+        return ()
+    keys = ["rollout_index", "month_index", "cause_id", "agent_id", "jurisdiction_id", "tax_year_end_month"]
+    breakdown_columns = [
+        *keys,
+        "ordinary_income_usd",
+        "ltcg_usd",
+        "stcg_usd",
+        "ordinary_tax_usd",
+        "capital_gain_tax_usd",
+        "total_tax_usd",
+    ]
+    breakdowns = run.events_log.tax_breakdowns
+    if not breakdowns.is_empty():
+        accrual_rows = accrual_rows.join(breakdowns.select(breakdown_columns), on=keys, how="left")
+    else:
+        accrual_rows = accrual_rows.with_columns(
+            ordinary_income_usd=pl.lit(0.0),
+            ltcg_usd=pl.lit(0.0),
+            stcg_usd=pl.lit(0.0),
+            ordinary_tax_usd=pl.col("amount_usd"),
+            capital_gain_tax_usd=pl.lit(0.0),
+            total_tax_usd=pl.col("amount_usd"),
+        )
+    accrual_rows = accrual_rows.with_columns(
+        ordinary_income_usd=pl.col("ordinary_income_usd").fill_null(0.0),
+        ltcg_usd=pl.col("ltcg_usd").fill_null(0.0),
+        stcg_usd=pl.col("stcg_usd").fill_null(0.0),
+        ordinary_tax_usd=pl.col("ordinary_tax_usd").fill_null(pl.col("amount_usd")),
+        capital_gain_tax_usd=pl.col("capital_gain_tax_usd").fill_null(0.0),
+        total_tax_usd=pl.col("total_tax_usd").fill_null(pl.col("amount_usd")),
+    ).sort("month_index", "jurisdiction_id")
+    return tuple(
+        TaxAccrualEvent(
+            month_index=int(row["month_index"]),
+            label=f"Accrued {_tax_jurisdiction_label(str(row['jurisdiction_id']))} tax",
+            amount_usd=float(row["amount_usd"]),
+            detail="Year-end tax liability",
+            jurisdiction_id=str(row["jurisdiction_id"]),
+            tax_year_end_month=int(row["tax_year_end_month"]),
+            ordinary_income_usd=float(row["ordinary_income_usd"]),
+            ltcg_usd=float(row["ltcg_usd"]),
+            stcg_usd=float(row["stcg_usd"]),
+            ordinary_tax_usd=float(row["ordinary_tax_usd"]),
+            capital_gain_tax_usd=float(row["capital_gain_tax_usd"]),
+            total_tax_usd=float(row["total_tax_usd"]),
+        )
+        for row in accrual_rows.iter_rows(named=True)
+    )
+
+
+def _tax_payment_events(run: SimulationRun, *, rollout_index: int, primary_agent_id: str) -> tuple[RolloutEvent, ...]:
+    settlements = run.events_log.obligation_settlements
+    if settlements.is_empty():
+        return ()
+    tax_payment_rows = settlements.filter(
+        (pl.col("rollout_index") == rollout_index)
+        & (pl.col("agent_id") == primary_agent_id)
+        & pl.col("obligation_type").is_in(["estimated_tax", "tax_true_up"])
+    ).sort("month_index", "obligation_id")
+    return tuple(
+        TaxPaymentEvent(
+            month_index=int(row["month_index"]),
+            label=_tax_payment_label(str(row["obligation_type"]), shortfall_usd=float(row["shortfall_usd"])),
+            amount_usd=float(row["amount_paid_usd"]),
+            detail="Required tax payment",
+            obligation_type=str(row["obligation_type"]),
+            amount_due_usd=float(row["amount_due_usd"]),
+            amount_paid_usd=float(row["amount_paid_usd"]),
+            shortfall_usd=float(row["shortfall_usd"]),
+        )
+        for row in tax_payment_rows.iter_rows(named=True)
+    )
+
+
+def _tax_jurisdiction_label(jurisdiction_id: str) -> str:
+    if jurisdiction_id == "federal_us":
+        return "federal"
+    if jurisdiction_id == "california":
+        return "California"
+    return jurisdiction_id.replace("_", " ")
+
+
+def _tax_payment_label(obligation_type: str, *, shortfall_usd: float) -> str:
+    if obligation_type == "estimated_tax":
+        return "Estimated tax shortfall" if shortfall_usd > 0 else "Paid estimated taxes"
+    if obligation_type == "tax_true_up":
+        return "Tax true-up shortfall" if shortfall_usd > 0 else "Paid tax true-up"
+    return "Tax payment shortfall" if shortfall_usd > 0 else "Paid taxes"
 
 
 def _failure_events(run: SimulationRun, *, rollout_index: int, primary_agent_id: str) -> tuple[RolloutEvent, ...]:
