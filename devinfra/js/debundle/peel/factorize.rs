@@ -23,7 +23,7 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use serde::Serialize;
 
-use analysis::{FactorizeDiagnosticReason, OwnerGraphReport, PeelCandidateStatus};
+use analysis::{FactorizeDiagnosticReason, LineRange, OwnerGraphReport, PeelCandidateStatus};
 use spec_modules::load_active_claims;
 
 #[derive(Debug, Clone)]
@@ -618,9 +618,7 @@ fn build_proposal(
     let mut owner_ids: Vec<String> = Vec::with_capacity(cell.owners.len());
     let mut anonymous_owner_ids: Vec<String> = Vec::new();
     let mut binding_ids: BTreeSet<String> = BTreeSet::new();
-    let mut start_line = usize::MAX;
-    let mut end_line = 0usize;
-    let mut have_loc = false;
+    let mut line_range = LineRange::new();
     let mut max_ordinal = 0usize;
     let mut min_ordinal = usize::MAX;
     for &owner_idx in &cell.owners {
@@ -633,9 +631,7 @@ fn build_proposal(
             binding_ids.insert(binding.binding.to_string());
         }
         if let Some(loc) = &node.source_location {
-            have_loc = true;
-            start_line = start_line.min(loc.start_line);
-            end_line = end_line.max(loc.end_line);
+            line_range.expand(loc);
         }
         min_ordinal = min_ordinal.min(node.statement_ordinal.0);
         max_ordinal = max_ordinal.max(node.statement_ordinal.0);
@@ -694,11 +690,7 @@ fn build_proposal(
         binding_ids: binding_ids.into_iter().collect(),
         anonymous_statement_owner_ids: anonymous_owner_ids,
         size_lines_estimate: cell.lines,
-        source_line_range: if have_loc {
-            Some([start_line, end_line])
-        } else {
-            None
-        },
+        source_line_range: line_range.into_array(),
         ordinal_span: max_ordinal.saturating_sub(min_ordinal),
         internal_edges: internal,
         edges_to_other_residual_cells: to_residual,
@@ -908,10 +900,7 @@ mod tests {
         let mut owner_ids = Vec::new();
         let mut members = Vec::new();
         let mut destinations = BTreeMap::<String, ModuleReportRef>::new();
-        let mut start_line = usize::MAX;
-        let mut end_line = 0usize;
-        let mut have_location = false;
-        let mut size_lines_estimate = 0usize;
+        let mut line_range = LineRange::new();
         let mut min_ordinal = usize::MAX;
         let mut max_ordinal = 0usize;
         for owner in owners {
@@ -919,10 +908,7 @@ mod tests {
             members.extend(owner.declared_bindings.clone());
             destinations.insert(owner.destination.id.clone(), owner.destination.clone());
             if let Some(location) = &owner.source_location {
-                have_location = true;
-                start_line = start_line.min(location.start_line);
-                end_line = end_line.max(location.end_line);
-                size_lines_estimate += location.end_line + 1 - location.start_line;
+                line_range.expand(location);
             }
             min_ordinal = min_ordinal.min(owner.statement_ordinal.0);
             max_ordinal = max_ordinal.max(owner.statement_ordinal.0);
@@ -934,8 +920,8 @@ mod tests {
             anonymous_statement_owner_ids: Vec::new(),
             destinations: destinations.into_values().collect(),
             causes: Vec::new(),
-            size_lines_estimate,
-            source_line_range: have_location.then_some([start_line, end_line]),
+            size_lines_estimate: line_range.size_estimate(),
+            source_line_range: line_range.into_array(),
             ordinal_span: max_ordinal.saturating_sub(min_ordinal),
         }
     }

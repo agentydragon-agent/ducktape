@@ -1161,10 +1161,7 @@ fn source_spans(owners: &[OwnerGraphNodeReport]) -> Result<BTreeMap<String, Sour
         };
         spans
             .entry(location.source_path.clone())
-            .and_modify(|span| {
-                span.start_line = span.start_line.min(location.start_line);
-                span.end_line = span.end_line.max(location.end_line);
-            })
+            .and_modify(|span| span.expand_to(location))
             .or_insert_with(|| location.clone());
     }
     if spans.is_empty() {

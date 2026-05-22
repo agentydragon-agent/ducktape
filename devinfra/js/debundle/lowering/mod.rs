@@ -36,15 +36,19 @@ mod body_facts;
 mod chunk_ast;
 mod chunk_renames;
 mod exports;
+mod import_emit;
 mod imports_cross;
 mod imports_runtime;
+mod io;
 mod lower;
 mod materialize;
 mod naturalize;
+mod ordinal;
 mod plan_references;
 mod plans;
 mod rewrite_runtime;
 mod runtime_imports;
+mod scope_names;
 mod util;
 mod visitors;
 
@@ -66,6 +70,7 @@ use imports_cross::{
 use imports_runtime::{
     import_decl_module_item, resolve_imported_binding, source_chunk_imports_for_moved_body,
 };
+use io::{prepare_output_dir, prune_artifact_to_chunk_ids, write_chunk_report_json};
 use lower::{LowerChunkInputs, LoweredChunk, lower_chunk};
 use materialize::{
     MaterializeLogicalChunkInputs, apply_materialized_logical_chunks, materialize_logical_chunk,
@@ -84,10 +89,7 @@ use runtime_imports::{
     RuntimeImportFacts, RuntimeImportInfo, RuntimeImportKind, imported_binding_named_specifier,
     record_runtime_imports, runtime_reimport_specifier,
 };
-use util::{
-    normalize_optional_relative_dir, prepare_output_dir, prune_artifact_to_chunk_ids,
-    write_chunk_report_json,
-};
+use util::normalize_optional_relative_dir;
 use visitors::{IdentifierRenamer, RenameAndShorthandNaturalizer, ShorthandNaturalizer};
 
 macro_rules! time_phase {

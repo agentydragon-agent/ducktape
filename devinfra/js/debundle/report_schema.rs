@@ -11,6 +11,50 @@ pub struct SourceLocation {
     pub end_line: usize,
 }
 
+impl SourceLocation {
+    /// Expand this location's line range to include `other`.
+    pub fn expand_to(&mut self, other: &SourceLocation) {
+        self.start_line = self.start_line.min(other.start_line);
+        self.end_line = self.end_line.max(other.end_line);
+    }
+}
+
+/// Accumulates the minimum start-line and maximum end-line across a
+/// collection of `SourceLocation`s. Used to compute the
+/// `source_line_range` field of `AtomicUnitReport` and similar.
+pub struct LineRange {
+    start: usize,
+    end: usize,
+    size_estimate: usize,
+    found: bool,
+}
+
+impl LineRange {
+    pub fn new() -> Self {
+        Self {
+            start: usize::MAX,
+            end: 0,
+            size_estimate: 0,
+            found: false,
+        }
+    }
+
+    pub fn expand(&mut self, location: &SourceLocation) {
+        self.found = true;
+        self.start = self.start.min(location.start_line);
+        self.end = self.end.max(location.end_line);
+        self.size_estimate += location.end_line + 1 - location.start_line;
+    }
+
+    pub fn size_estimate(&self) -> usize {
+        self.size_estimate
+    }
+
+    pub fn into_array(self) -> Option<[usize; 2]> {
+        self.found.then_some([self.start, self.end])
+    }
+}
+
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct BindingReport {
     pub binding: Atom,

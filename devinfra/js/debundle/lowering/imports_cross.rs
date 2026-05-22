@@ -1,8 +1,8 @@
 //! Emit cross-module + residual-entry imports for a moved module body.
-//! Both call `disambiguate_*_import_locals` (util.rs) to mint fresh
+//! Both call `disambiguate_*_import_locals` (import_emit.rs) to mint fresh
 //! locals when names collide with already-occupied bindings.
 
-use super::util::{
+use super::import_emit::{
     disambiguate_import_locals, disambiguate_residual_entry_import_locals, import_decl_for_plan,
 };
 use super::*;
@@ -75,7 +75,7 @@ pub(super) fn phantom_side_effect_imports(
             let provider = factorization
                 .analysis
                 .logical_module(LogicalModuleIndex(provider_index))?;
-            let source = super::util::relative_source(from_file, &provider.target_file);
+            let source = super::import_emit::relative_source(from_file, &provider.target_file);
             Some(import_decl_module_item(Vec::new(), &source))
         })
         .collect()

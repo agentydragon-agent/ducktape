@@ -4,6 +4,7 @@ use petgraph::algo::tarjan_scc;
 use swc_ecma_ast::Id;
 
 use crate::graph::OwnerEdge;
+use crate::report_schema::LineRange;
 use crate::{
     AtomicGraphReport, AtomicUnitEdgeReport, AtomicUnitReport, BindingReport, ChunkFactorization,
     DepKind, LogicalModuleIndex, ModuleId, ModuleReportRef, OwnerGraphEdgeReport,
@@ -158,10 +159,7 @@ fn build_atomic_graph_report(
             let mut anonymous_statement_owner_ids = Vec::new();
             let mut destinations_by_id = BTreeMap::<String, ModuleReportRef>::new();
             let mut causes: Vec<DepKind> = unit.causes.iter().copied().collect();
-            let mut start_line = usize::MAX;
-            let mut end_line = 0usize;
-            let mut have_location = false;
-            let mut size_lines_estimate = 0usize;
+            let mut line_range = LineRange::new();
             let mut min_ordinal = usize::MAX;
             let mut max_ordinal = 0usize;
             for owner_id in &unit.members {
@@ -172,10 +170,7 @@ fn build_atomic_graph_report(
                     }
                     members.extend(binding_reports(factorization, node.declared.iter()));
                     if let Some(location) = &node.source_location {
-                        have_location = true;
-                        start_line = start_line.min(location.start_line);
-                        end_line = end_line.max(location.end_line);
-                        size_lines_estimate += location.end_line + 1 - location.start_line;
+                        line_range.expand(location);
                     }
                     min_ordinal = min_ordinal.min(node.statement_ordinal.0);
                     max_ordinal = max_ordinal.max(node.statement_ordinal.0);
@@ -195,8 +190,8 @@ fn build_atomic_graph_report(
                 anonymous_statement_owner_ids,
                 destinations: destinations_by_id.into_values().collect(),
                 causes,
-                size_lines_estimate,
-                source_line_range: have_location.then_some([start_line, end_line]),
+                size_lines_estimate: line_range.size_estimate(),
+                source_line_range: line_range.into_array(),
                 ordinal_span: max_ordinal.saturating_sub(min_ordinal),
             }
         })

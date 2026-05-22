@@ -3,10 +3,9 @@
 //! files/applied/report are spliced into the artifact by
 //! `apply_materialized_logical_chunks`.
 
-use super::util::{
-    render_atomic_unit_cause_guidance, statement_ordinal_for_body_index, target_file_for_request,
-    write_chunk_report_json,
-};
+use super::io::write_chunk_report_json;
+use super::ordinal::statement_ordinal_for_body_index;
+use super::util::{render_atomic_unit_cause_guidance, target_file_for_request};
 use super::*;
 use crate::time_phase;
 use output_layout::{ATOMIC_UNIT_CONFLICTS_REPORT, CYCLES_REPORT, OWNER_GRAPH_REPORT};

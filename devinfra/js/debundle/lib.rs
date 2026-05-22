@@ -62,9 +62,10 @@ pub use realizability::{
 };
 pub use report_schema::{
     AtomicGraphReport, AtomicUnitEdgeReport, AtomicUnitReport, BindingReport,
-    FactorizeDiagnosticReason, ModuleReportRef, OwnerGraphEdgeReport, OwnerGraphNodeReport,
-    OwnerGraphQuotientReport, OwnerGraphReport, PeelCandidateStatus, QuotientEdgeReport,
-    QuotientSccReport, RESIDUAL_ENTRY_LABEL, RESIDUAL_ENTRY_MODULE_ID, SourceLocation,
+    FactorizeDiagnosticReason, LineRange, ModuleReportRef, OwnerGraphEdgeReport,
+    OwnerGraphNodeReport, OwnerGraphQuotientReport, OwnerGraphReport, PeelCandidateStatus,
+    QuotientEdgeReport, QuotientSccReport, RESIDUAL_ENTRY_LABEL, RESIDUAL_ENTRY_MODULE_ID,
+    SourceLocation,
 };
 pub use validation::{
     CycleEdge, CycleReport, FactorizationReport, render_atomic_unit_conflict_summary,

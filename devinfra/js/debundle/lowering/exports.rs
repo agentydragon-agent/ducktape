@@ -216,7 +216,7 @@ pub(super) fn auto_grown_residual_exports(
                 .cloned()
                 .unwrap_or_else(|| name.clone());
             let public_name =
-                util::mint_unique_name(&name, |n| taken_public_names.insert(n.to_string()));
+                import_emit::mint_unique_name(&name, |n| taken_public_names.insert(n.to_string()));
             (final_local, public_name)
         })
         .collect()

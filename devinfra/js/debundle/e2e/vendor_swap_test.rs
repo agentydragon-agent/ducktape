@@ -123,112 +123,149 @@ struct VendorSwapFixture {
     _root: TempDir,
 }
 
+struct VendorTestWorkspace {
+    root: TempDir,
+    snapshot_root: PathBuf,
+    extracted_root: PathBuf,
+    out_root: PathBuf,
+    wrapper_root: PathBuf,
+    manifest_path: PathBuf,
+    js_list_path: PathBuf,
+}
+
+impl VendorTestWorkspace {
+    fn new(prefix: &str) -> Self {
+        let root = TempDir::with_prefix(prefix).expect("create tempdir");
+        let workspace_root = root.path().join("workspace");
+        let snapshot_root = workspace_root.join("snapshot");
+        let extracted_root = workspace_root.join("extracted");
+        let out_root = workspace_root.join("out");
+        let wrapper_root = out_root.join("app").join("vendors").join("generated");
+        let manifest_path = out_root.join("reports").join("vendor_swaps.json");
+        let js_list_path = extracted_root.join("js-files.txt");
+        fs::create_dir_all(&extracted_root).unwrap();
+        fs::create_dir_all(&snapshot_root).unwrap();
+        fs::create_dir_all(&out_root).unwrap();
+        Self {
+            root,
+            snapshot_root,
+            extracted_root,
+            out_root,
+            wrapper_root,
+            manifest_path,
+            js_list_path,
+        }
+    }
+
+    fn write_chunk(&self, chunk_path: &str, source: &str) {
+        let full_path = self.snapshot_root.join(chunk_path);
+        if let Some(parent) = full_path.parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
+        write_text_file(&full_path, source);
+    }
+
+    fn write_js_list(&self, entries: &str) {
+        write_text_file(&self.js_list_path, entries);
+    }
+
+    fn write_upstream_package(
+        &self,
+        rel_path: &str,
+        package_name: &str,
+        version: &str,
+        subpath: &str,
+        source: &str,
+    ) -> PathBuf {
+        let package_root = self.root.path().join(rel_path);
+        fs::create_dir_all(&package_root).unwrap();
+        if let Some(parent) = Path::new(subpath).parent() {
+            fs::create_dir_all(package_root.join(parent)).unwrap();
+        }
+        write_text_file(
+            &package_root.join("package.json"),
+            &format!(
+                "{}\n",
+                serde_json::to_string_pretty(&json!({
+                    "name": package_name,
+                    "version": version,
+                }))
+                .unwrap(),
+            ),
+        );
+        write_text_file(&package_root.join(subpath), source);
+        package_root
+    }
+
+    fn wrapper_path_for_chunk(&self, chunk_path: &str) -> PathBuf {
+        let chunk_id = chunk_path.strip_suffix(".js").unwrap_or(chunk_path);
+        self.wrapper_root.join(chunk_id).join("entry.js")
+    }
+}
+
 fn run_named_from_module_default_fixture(upstream_source: &str) -> VendorSwapFixture {
+    run_full_swap_fixture(FullSwapFixtureArgs {
+        temp_prefix: "vendor-swap-named-from-module-default-",
+        chunk_source: "export { x as default };\nconst x = 0;\n",
+        wrapper_shape: "named_from_module_default",
+        upstream_source,
+    })
+}
+
+struct FullSwapFixtureArgs<'a> {
+    temp_prefix: &'a str,
+    chunk_source: &'a str,
+    wrapper_shape: &'a str,
+    upstream_source: &'a str,
+}
+
+fn run_full_swap_fixture(args: FullSwapFixtureArgs<'_>) -> VendorSwapFixture {
     const PACKAGE_NAME: &str = "lib";
     const PACKAGE_VERSION: &str = "1.0.0";
     const SUBPATH: &str = "dist/index.mjs";
     const CHUNK_PATH: &str = "static/lib-X.js";
 
-    let root =
-        TempDir::with_prefix("vendor-swap-named-from-module-default-").expect("create tempdir");
-    // Output paths the binary writes to are absolute. Vendor reports live
-    // under `reports/`; generated wrappers are app assets.
-    let workspace_root = root.path().join("workspace");
-    let extracted_root = workspace_root.join("extracted");
-    let snapshot_root = workspace_root.join("snapshot");
-    let out_root = workspace_root.join("out");
-    let wrapper_root = out_root.join("app").join("vendors").join("generated");
-    let manifest_path = out_root.join("reports").join("vendor_swaps.json");
-    let package_root = root.path().join("upstream");
-    fs::create_dir_all(&extracted_root).unwrap();
-    fs::create_dir_all(&snapshot_root).unwrap();
-    fs::create_dir_all(&out_root).unwrap();
-    fs::create_dir_all(&package_root).unwrap();
-    fs::create_dir_all(snapshot_root.join(Path::new(CHUNK_PATH).parent().unwrap())).unwrap();
-    fs::create_dir_all(package_root.join("dist")).unwrap();
-
-    write_text_file(
-        &snapshot_root.join(CHUNK_PATH),
-        "export { x as default };\nconst x = 0;\n",
+    let ws = VendorTestWorkspace::new(args.temp_prefix);
+    ws.write_chunk(CHUNK_PATH, args.chunk_source);
+    ws.write_js_list(&format!("{CHUNK_PATH}\n"));
+    let package_root = ws.write_upstream_package(
+        "upstream",
+        PACKAGE_NAME,
+        PACKAGE_VERSION,
+        SUBPATH,
+        args.upstream_source,
     );
-    let js_list_path = extracted_root.join("js-files.txt");
-    write_text_file(&js_list_path, &format!("{CHUNK_PATH}\n"));
 
-    write_text_file(
-        &package_root.join("package.json"),
-        &format!(
-            "{}\n",
-            serde_json::to_string_pretty(&json!({
-                "name": PACKAGE_NAME,
+    let spec_path = ws.root.path().join("transform_spec.yaml");
+    let spec = json!({
+        "vendor": {
+            CHUNK_PATH: {
+                "level": "swap",
+                "identity": format!("{PACKAGE_NAME}/{SUBPATH}"),
+                "package": PACKAGE_NAME,
                 "version": PACKAGE_VERSION,
-            }))
-            .unwrap(),
-        ),
-    );
-    write_text_file(&package_root.join(SUBPATH), upstream_source);
-
-    let spec_path = root.path().join("transform_spec.yaml");
-    let spec = build_named_from_module_default_spec(BuildSpecArgs {
-        chunk_path: CHUNK_PATH,
-        js_list_path: &js_list_path,
-        snapshot_root: &snapshot_root,
-        out_root: &out_root,
-        manifest_path: &manifest_path,
-        wrapper_root: &wrapper_root,
-        package_name: PACKAGE_NAME,
-        package_version: PACKAGE_VERSION,
-        subpath: SUBPATH,
+                "subpath": SUBPATH,
+                "wrapper_shape": args.wrapper_shape,
+            },
+        },
+        "inputs": { "input_root": &ws.snapshot_root, "js_list_path": &ws.js_list_path },
+        "swap_vendor_chunks": {
+            "output_manifest_path": &ws.manifest_path,
+            "output_wrapper_dir": &ws.wrapper_root,
+            "write": true,
+        },
+        "write_js_tree": { "out_dir": &ws.out_root },
     });
     write_yaml_file(&spec_path, &spec);
 
     let result = run_debundler(&spec_path, &[(PACKAGE_NAME, &package_root)]);
-
-    // Wrapper layout: <output_wrapper_dir>/<chunk_id>/<entry_file>. chunk_id
-    // is the chunk path with the trailing `.js` stripped; the normalized
-    // chunk's entry file is always `entry.js`.
-    let chunk_id = CHUNK_PATH.strip_suffix(".js").unwrap_or(CHUNK_PATH);
-    let wrapper_path = wrapper_root.join(chunk_id).join("entry.js");
     VendorSwapFixture {
         result,
         chunk_path: CHUNK_PATH.to_string(),
-        wrapper_path,
-        manifest_path,
-        _root: root,
+        wrapper_path: ws.wrapper_path_for_chunk(CHUNK_PATH),
+        manifest_path: ws.manifest_path.clone(),
+        _root: ws.root,
     }
-}
-
-struct BuildSpecArgs<'a> {
-    chunk_path: &'a str,
-    js_list_path: &'a Path,
-    snapshot_root: &'a Path,
-    out_root: &'a Path,
-    manifest_path: &'a Path,
-    wrapper_root: &'a Path,
-    package_name: &'a str,
-    package_version: &'a str,
-    subpath: &'a str,
-}
-
-fn build_named_from_module_default_spec(args: BuildSpecArgs<'_>) -> Value {
-    json!({
-        "vendor": {
-            args.chunk_path: {
-                "level": "swap",
-                "identity": format!("{}/{}", args.package_name, args.subpath),
-                "package": args.package_name,
-                "version": args.package_version,
-                "subpath": args.subpath,
-                "wrapper_shape": "named_from_module_default",
-            },
-        },
-        "inputs": { "input_root": args.snapshot_root, "js_list_path": args.js_list_path },
-        "swap_vendor_chunks": {
-            "output_manifest_path": args.manifest_path,
-            "output_wrapper_dir": args.wrapper_root,
-            "write": true,
-        },
-        "write_js_tree": { "out_dir": args.out_root },
-    })
 }
 
 #[test]
@@ -389,89 +426,11 @@ struct NamedFromDefaultFixtureArgs<'a> {
 }
 
 fn run_named_from_default_fixture(args: NamedFromDefaultFixtureArgs<'_>) -> VendorSwapFixture {
-    const PACKAGE_NAME: &str = "lib";
-    const PACKAGE_VERSION: &str = "1.0.0";
-    const SUBPATH: &str = "dist/index.mjs";
-    const CHUNK_PATH: &str = "static/lib-X.js";
-
-    let root = TempDir::with_prefix("vendor-swap-named-from-default-").expect("create tempdir");
-    let workspace_root = root.path().join("workspace");
-    let extracted_root = workspace_root.join("extracted");
-    let snapshot_root = workspace_root.join("snapshot");
-    let out_root = workspace_root.join("out");
-    let wrapper_root = out_root.join("app").join("vendors").join("generated");
-    let manifest_path = out_root.join("reports").join("vendor_swaps.json");
-    let package_root = root.path().join("upstream");
-    fs::create_dir_all(&extracted_root).unwrap();
-    fs::create_dir_all(&snapshot_root).unwrap();
-    fs::create_dir_all(&out_root).unwrap();
-    fs::create_dir_all(&package_root).unwrap();
-    fs::create_dir_all(snapshot_root.join(Path::new(CHUNK_PATH).parent().unwrap())).unwrap();
-    fs::create_dir_all(package_root.join("dist")).unwrap();
-
-    write_text_file(&snapshot_root.join(CHUNK_PATH), args.chunk_source);
-    let js_list_path = extracted_root.join("js-files.txt");
-    write_text_file(&js_list_path, &format!("{CHUNK_PATH}\n"));
-
-    write_text_file(
-        &package_root.join("package.json"),
-        &format!(
-            "{}\n",
-            serde_json::to_string_pretty(&json!({
-                "name": PACKAGE_NAME,
-                "version": PACKAGE_VERSION,
-            }))
-            .unwrap(),
-        ),
-    );
-    write_text_file(&package_root.join(SUBPATH), args.upstream_source);
-
-    let spec_path = root.path().join("transform_spec.yaml");
-    let spec = build_named_from_default_spec(BuildSpecArgs {
-        chunk_path: CHUNK_PATH,
-        js_list_path: &js_list_path,
-        snapshot_root: &snapshot_root,
-        out_root: &out_root,
-        manifest_path: &manifest_path,
-        wrapper_root: &wrapper_root,
-        package_name: PACKAGE_NAME,
-        package_version: PACKAGE_VERSION,
-        subpath: SUBPATH,
-    });
-    write_yaml_file(&spec_path, &spec);
-
-    let result = run_debundler(&spec_path, &[(PACKAGE_NAME, &package_root)]);
-
-    let chunk_id = CHUNK_PATH.strip_suffix(".js").unwrap_or(CHUNK_PATH);
-    let wrapper_path = wrapper_root.join(chunk_id).join("entry.js");
-    VendorSwapFixture {
-        result,
-        chunk_path: CHUNK_PATH.to_string(),
-        wrapper_path,
-        manifest_path,
-        _root: root,
-    }
-}
-
-fn build_named_from_default_spec(args: BuildSpecArgs<'_>) -> Value {
-    json!({
-        "vendor": {
-            args.chunk_path: {
-                "level": "swap",
-                "identity": format!("{}/{}", args.package_name, args.subpath),
-                "package": args.package_name,
-                "version": args.package_version,
-                "subpath": args.subpath,
-                "wrapper_shape": "named_from_default",
-            },
-        },
-        "inputs": { "input_root": args.snapshot_root, "js_list_path": args.js_list_path },
-        "swap_vendor_chunks": {
-            "output_manifest_path": args.manifest_path,
-            "output_wrapper_dir": args.wrapper_root,
-            "write": true,
-        },
-        "write_js_tree": { "out_dir": args.out_root },
+    run_full_swap_fixture(FullSwapFixtureArgs {
+        temp_prefix: "vendor-swap-named-from-default-",
+        chunk_source: args.chunk_source,
+        wrapper_shape: "named_from_default",
+        upstream_source: args.upstream_source,
     })
 }
 
@@ -777,41 +736,20 @@ fn run_partial_swap_fixture(args: PartialSwapFixtureArgs<'_>) -> PartialSwapFixt
     const MEGACHUNK_PATH: &str = "static/megachunk.js";
     const CALLER_PATH: &str = "static/app.js";
 
-    let root = TempDir::with_prefix("vendor-partial-swap-").expect("create tempdir");
-    let workspace_root = root.path().join("workspace");
-    let extracted_root = workspace_root.join("extracted");
-    let snapshot_root = workspace_root.join("snapshot");
-    let out_root = workspace_root.join("out");
-    let wrapper_root = out_root.join("app").join("vendors").join("generated");
-    let manifest_path = out_root.join("reports").join("vendor_swaps.json");
-    let package_root = root.path().join("upstream").join(PACKAGE_NAME);
-    fs::create_dir_all(&extracted_root).unwrap();
-    fs::create_dir_all(&snapshot_root).unwrap();
-    fs::create_dir_all(&out_root).unwrap();
-    fs::create_dir_all(&package_root).unwrap();
-    fs::create_dir_all(snapshot_root.join("static")).unwrap();
-    fs::create_dir_all(package_root.join("lib")).unwrap();
-
-    write_text_file(&snapshot_root.join(MEGACHUNK_PATH), args.chunk_source);
-    write_text_file(&snapshot_root.join(CALLER_PATH), args.caller_source);
-    let js_list_path = extracted_root.join("js-files.txt");
-    write_text_file(&js_list_path, &format!("{MEGACHUNK_PATH}\n{CALLER_PATH}\n"));
-
+    let ws = VendorTestWorkspace::new("vendor-partial-swap-");
+    ws.write_chunk(MEGACHUNK_PATH, args.chunk_source);
+    ws.write_chunk(CALLER_PATH, args.caller_source);
+    ws.write_js_list(&format!("{MEGACHUNK_PATH}\n{CALLER_PATH}\n"));
     // Pin the on-disk upstream to 3.23.8 regardless of what the spec
     // requests — the version-mismatch test relies on this so the spec
     // can declare a different version and trigger the strict check.
-    write_text_file(
-        &package_root.join("package.json"),
-        &format!(
-            "{}\n",
-            serde_json::to_string_pretty(&json!({
-                "name": PACKAGE_NAME,
-                "version": "3.23.8",
-            }))
-            .unwrap(),
-        ),
+    let package_root = ws.write_upstream_package(
+        &format!("upstream/{PACKAGE_NAME}"),
+        PACKAGE_NAME,
+        "3.23.8",
+        SUBPATH,
+        args.upstream_source,
     );
-    write_text_file(&package_root.join(SUBPATH), args.upstream_source);
 
     let mut symbols_json = serde_json::Map::new();
     for (chunk_export, package, upstream_export) in &args.symbols {
@@ -821,7 +759,7 @@ fn run_partial_swap_fixture(args: PartialSwapFixtureArgs<'_>) -> PartialSwapFixt
         );
     }
 
-    let spec_path = root.path().join("transform_spec.yaml");
+    let spec_path = ws.root.path().join("transform_spec.yaml");
     let spec = json!({
         "vendor": {
             MEGACHUNK_PATH: {
@@ -837,28 +775,28 @@ fn run_partial_swap_fixture(args: PartialSwapFixtureArgs<'_>) -> PartialSwapFixt
                 "symbols": Value::Object(symbols_json),
             },
         },
-        "inputs": { "input_root": &snapshot_root, "js_list_path": &js_list_path },
+        "inputs": { "input_root": &ws.snapshot_root, "js_list_path": &ws.js_list_path },
         "swap_vendor_chunks": {
-            "output_manifest_path": &manifest_path,
-            "output_wrapper_dir": &wrapper_root,
+            "output_manifest_path": &ws.manifest_path,
+            "output_wrapper_dir": &ws.wrapper_root,
             "write": true,
         },
-        "write_js_tree": { "out_dir": &out_root },
+        "write_js_tree": { "out_dir": &ws.out_root },
     });
     write_yaml_file(&spec_path, &spec);
 
     let result = run_debundler(&spec_path, &[(PACKAGE_NAME, &package_root)]);
 
-    let caller_emitted_path = out_root.join("app/static/app").join("entry.js");
-    let megachunk_emitted_path = out_root.join("app/static/megachunk").join("entry.js");
+    let caller_emitted_path = ws.out_root.join("app/static/app").join("entry.js");
+    let megachunk_emitted_path = ws.out_root.join("app/static/megachunk").join("entry.js");
 
     PartialSwapFixture {
         result,
         megachunk_chunk_path: MEGACHUNK_PATH.to_string(),
         caller_emitted_path,
         megachunk_emitted_path,
-        manifest_path,
-        _root: root,
+        manifest_path: ws.manifest_path.clone(),
+        _root: ws.root,
     }
 }
 
@@ -1634,40 +1572,17 @@ fn run_partial_swap_kind_fixture(args: PartialSwapKindFixtureArgs<'_>) -> Partia
     const MEGACHUNK_PATH: &str = "static/megachunk.js";
     const CALLER_PATH: &str = "static/app.js";
 
-    let root = TempDir::with_prefix("vendor-partial-swap-kind-").expect("create tempdir");
-    let workspace_root = root.path().join("workspace");
-    let extracted_root = workspace_root.join("extracted");
-    let snapshot_root = workspace_root.join("snapshot");
-    let out_root = workspace_root.join("out");
-    let wrapper_root = out_root.join("app").join("vendors").join("generated");
-    let manifest_path = out_root.join("reports").join("vendor_swaps.json");
-    let package_root = root.path().join("upstream").join(args.package_name);
-    fs::create_dir_all(&extracted_root).unwrap();
-    fs::create_dir_all(&snapshot_root).unwrap();
-    fs::create_dir_all(&out_root).unwrap();
-    fs::create_dir_all(&package_root).unwrap();
-    fs::create_dir_all(snapshot_root.join("static")).unwrap();
-    if let Some(parent) = Path::new(args.subpath).parent() {
-        fs::create_dir_all(package_root.join(parent)).unwrap();
-    }
-
-    write_text_file(&snapshot_root.join(MEGACHUNK_PATH), args.chunk_source);
-    write_text_file(&snapshot_root.join(CALLER_PATH), args.caller_source);
-    let js_list_path = extracted_root.join("js-files.txt");
-    write_text_file(&js_list_path, &format!("{MEGACHUNK_PATH}\n{CALLER_PATH}\n"));
-
-    write_text_file(
-        &package_root.join("package.json"),
-        &format!(
-            "{}\n",
-            serde_json::to_string_pretty(&json!({
-                "name": args.package_name,
-                "version": args.package_version,
-            }))
-            .unwrap(),
-        ),
+    let ws = VendorTestWorkspace::new("vendor-partial-swap-kind-");
+    ws.write_chunk(MEGACHUNK_PATH, args.chunk_source);
+    ws.write_chunk(CALLER_PATH, args.caller_source);
+    ws.write_js_list(&format!("{MEGACHUNK_PATH}\n{CALLER_PATH}\n"));
+    let package_root = ws.write_upstream_package(
+        &format!("upstream/{}", args.package_name),
+        args.package_name,
+        args.package_version,
+        args.subpath,
+        args.upstream_source,
     );
-    write_text_file(&package_root.join(args.subpath), args.upstream_source);
 
     let mut symbol_obj = serde_json::Map::new();
     symbol_obj.insert("package".to_string(), Value::from(args.package_name));
@@ -1675,7 +1590,7 @@ fn run_partial_swap_kind_fixture(args: PartialSwapKindFixtureArgs<'_>) -> Partia
     if let Some(upstream_export) = args.upstream_export {
         symbol_obj.insert("upstream_export".to_string(), Value::from(upstream_export));
     }
-    let spec_path = root.path().join("transform_spec.yaml");
+    let spec_path = ws.root.path().join("transform_spec.yaml");
     let spec = json!({
         "vendor": {
             MEGACHUNK_PATH: {
@@ -1692,27 +1607,27 @@ fn run_partial_swap_kind_fixture(args: PartialSwapKindFixtureArgs<'_>) -> Partia
                 },
             },
         },
-        "inputs": { "input_root": &snapshot_root, "js_list_path": &js_list_path },
+        "inputs": { "input_root": &ws.snapshot_root, "js_list_path": &ws.js_list_path },
         "swap_vendor_chunks": {
-            "output_manifest_path": &manifest_path,
-            "output_wrapper_dir": &wrapper_root,
+            "output_manifest_path": &ws.manifest_path,
+            "output_wrapper_dir": &ws.wrapper_root,
             "write": true,
         },
-        "write_js_tree": { "out_dir": &out_root },
+        "write_js_tree": { "out_dir": &ws.out_root },
     });
     write_yaml_file(&spec_path, &spec);
 
     let result = run_debundler(&spec_path, &[(args.package_name, &package_root)]);
 
-    let caller_emitted_path = out_root.join("app/static/app").join("entry.js");
-    let megachunk_emitted_path = out_root.join("app/static/megachunk").join("entry.js");
+    let caller_emitted_path = ws.out_root.join("app/static/app").join("entry.js");
+    let megachunk_emitted_path = ws.out_root.join("app/static/megachunk").join("entry.js");
 
     PartialSwapFixture {
         result,
         megachunk_chunk_path: MEGACHUNK_PATH.to_string(),
         caller_emitted_path,
         megachunk_emitted_path,
-        manifest_path,
-        _root: root,
+        manifest_path: ws.manifest_path.clone(),
+        _root: ws.root,
     }
 }

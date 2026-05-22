@@ -4,11 +4,12 @@
 //! level orchestration that wraps this lives in mod.rs's
 //! `materialize_logical_chunk`.
 
-use super::util::{
-    collect_local_binding_names, collect_occupied_local_names, disambiguate_import_locals,
-    import_decl_for_plan, is_valid_js_identifier, preserve_export_specifier_names, relative_source,
-    remaining_item_after_selection,
+use super::import_emit::{
+    disambiguate_import_locals, import_decl_for_plan, preserve_export_specifier_names,
+    relative_source,
 };
+use super::scope_names::{collect_local_binding_names, collect_occupied_local_names};
+use super::util::{is_valid_js_identifier, remaining_item_after_selection};
 use super::*;
 use crate::time_phase;
 

@@ -2,7 +2,8 @@
 //! convert spec entries into `LogicalRequest`s and synthesize
 //! mini-factor plans for unclaimed atomic units.
 
-use super::util::{body_index_for_statement_ordinal, target_file_for_request};
+use super::ordinal::body_index_for_statement_ordinal;
+use super::util::target_file_for_request;
 use super::*;
 
 #[derive(Debug, Clone)]
