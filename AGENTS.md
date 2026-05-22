@@ -58,6 +58,8 @@ DCR workaround, and the whole OAuth-dance saga, see
 
 Run `bb`, `bazel`, `terraform`/`tofu`, `kubectl`, `systemctl`, `ss`, `ip`, `curl`, and other network/system commands **outside the sandbox** (`dangerouslyDisableSandbox: true`). The sandbox blocks their network calls (including localhost, e.g., `kubectl` to haproxy on `localhost:7445`).
 
+**Bazel commands must always use `dangerouslyDisableSandbox: true`.** The global WebFetch domain allowlist triggers `--unshare-net`, which blocks Bazel's gRPC loopback. See `docs/claude_code_sandbox.md` for details.
+
 ## Bazel Commands
 
 Use `bbr` for build, test, and query. Use `bb` directly only for `run`
@@ -249,13 +251,18 @@ sops -d secrets/shared/kubeconfig.yaml
 
 ## Conventions
 
+### TODO Tracking
+
+`<subproject>/TODO.md`: persistent TODO tracking. TODOs local to a specific code location are fine as inline comments; cross-cutting or project-level TODOs belong in `TODO.md`.
+Once a TODO is fully completed, remove it from TODO.md.
+
 ### Debug Notes
 
-`<subproject>/debug/<topic>.md`: for persistent investigation notes (RCAs, debug logs). Examples: `debug/spice_lag/README.md`, `debug/wyrm-oom/INVESTIGATION.md`. The `cluster/` subproject uses `cluster/docs/lessons_learned/` instead.
+`<subproject>/debug/<topic>.md`: persistent investigation notes (RCAs, debug logs). Examples: `debug/spice_lag/README.md`, `debug/wyrm-oom/INVESTIGATION.md`. The `cluster/` subproject uses `cluster/docs/lessons_learned/` instead.
 
 ### Plans
 
-`plans/`: for future work or work in progress. Once a plan is fully completed, remove it from `plans/` (delete, or squash into short tombstone/summary elsewhere).
+`<subproject>/plans/`: future work or work in progress. Once a plan is fully completed, delete it or squash into short tombstone/summary outside `plans/`.
 
 ### SPEC.md — High-level component specifications
 
@@ -276,10 +283,6 @@ outside observer would not notice. "Credentials are refreshed regularly by
 the backend service" belongs in SPEC.md; "credentials live in
 `<session_dir>/creds.json` and rotate every 300s via RPC to
 `rotate.example.com`" does not — that belongs in README.md or in the code.
-
-### TODO Tracking
-
-Subprojects use `TODO.md` for persistent TODO tracking. TODOs local to a specific code location are fine as inline comments; cross-cutting or project-level TODOs belong in `TODO.md`.
 
 ## Testing
 
