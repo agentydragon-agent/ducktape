@@ -87,46 +87,14 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
     };
     let mut timings = PhaseTimings::default();
     let selected_ordinals = time_phase!(timings, "compute_selected_ordinals", {
-        let mut selected_ordinals = BTreeSet::new();
-        for decl in declarations {
-            if decl
-                .ids
-                .iter()
-                .any(|id| binding_assignment.contains_key(id))
-            {
-                selected_ordinals.insert(decl.ordinal);
-            }
-        }
-        for ordinal in anonymous_ordinal_assignment.keys() {
-            selected_ordinals.insert(*ordinal);
-        }
-        selected_ordinals
+        compute_selected_ordinals(declarations, binding_assignment, anonymous_ordinal_assignment)
     });
 
     let mut selected_by_module = vec![Vec::<ModuleItem>::new(); module_plans.len()];
     let mut selected_exports_by_module =
         vec![Option::<BTreeMap<String, String>>::None; module_plans.len()];
     time_phase!(timings, "plan_selected_exports", {
-        for (module_index, plan) in module_plans.iter().enumerate() {
-            if plan.bindings.is_empty() {
-                continue;
-            }
-            // Drop bindings that don't exist anywhere (no entry in
-            // `binding_assignment`). Without this, a stale spec entry
-            // for a binding that is not a top-level decl in the chunk
-            // would emit `export { <renamed> }` with no backing decl
-            // and Node bails at module load with `SyntaxError: Export
-            // '<renamed>' is not defined in module`.
-            let exports: BTreeMap<String, String> = plan
-                .bindings
-                .iter()
-                .filter(|(name, _)| is_module_owned(name))
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect();
-            if !exports.is_empty() {
-                selected_exports_by_module[module_index] = Some(exports);
-            }
-        }
+        plan_selected_exports(module_plans, &is_module_owned, &mut selected_exports_by_module);
     });
 
     let mut entry_body = Vec::new();
@@ -137,22 +105,14 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         .take_while(|item| matches!(item, ModuleItem::ModuleDecl(ModuleDecl::Import(_))))
         .count();
     time_phase!(timings, "split_entry_body", {
-        for (ordinal, item) in runtime_ast.module.body.iter().enumerate() {
-            if !selected_ordinals.contains(&ordinal) {
-                entry_body.push(item.clone());
-                continue;
-            }
-            // Anonymous-statement members route the entire item to
-            // the claiming module's body — no per-binding splitting.
-            if let Some(module_index) = anonymous_ordinal_assignment.get(&ordinal).copied() {
-                selected_by_module[module_index].push(item.clone());
-                continue;
-            }
-            let mut remaining =
-                remaining_item_after_selection(item, binding_assignment, &mut selected_by_module)?;
-            entry_body.append(&mut remaining);
-        }
-        Ok::<_, anyhow::Error>(())
+        split_entry_body(
+            &runtime_ast.module.body,
+            &selected_ordinals,
+            anonymous_ordinal_assignment,
+            binding_assignment,
+            &mut entry_body,
+            &mut selected_by_module,
+        )
     })?;
     // Two passes: build entry imports in plan order (so the
     // first plan to claim a binding wins disambiguation), then
@@ -586,72 +546,19 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
             }
         });
         time_phase!(timings, "module.build_output_records", {
-            // Materialize `plan.bindings` (a HashMap) in sorted order so
-            // `binding_names`, `exported_names`, the header comment, and
-            // the resolved `owner_ids` all share the same canonical
-            // sequence regardless of hash seed.
-            let mut sorted_plan_bindings: Vec<(&String, &String)> = plan.bindings.iter().collect();
-            sorted_plan_bindings.sort_by(|a, b| a.0.cmp(b.0));
-            let binding_names: Vec<String> = sorted_plan_bindings
-                .iter()
-                .map(|(k, _)| (*k).clone())
-                .collect();
-            let exported_names: Vec<String> = sorted_plan_bindings
-                .iter()
-                .map(|(_, v)| (*v).clone())
-                .collect();
-            let binding_ids: Vec<Id> = binding_names
-                .iter()
-                .map(|name| top_level_id(name, chunk_top_level_mark))
-                .collect();
-            let owner_ids = factorization
-                .analysis
-                .owner_report_ids_for_bindings(binding_ids.iter());
-            let header = vec![
-                LOWERING_FILE_PRAGMA.to_string(),
-                LOWERING_GENERATOR_HEADER.to_string(),
-                format!(
-                    "// Selected-module lowered region; original owner ids: {}.",
-                    owner_ids.join(", ")
-                ),
-                format!(
-                    "// Selected-module lowered region; source bindings: {}.",
-                    binding_names.join(", ")
-                ),
-            ];
-            files.push(JsFile {
-                path: plan.target_file.clone(),
-                body: JsFileBody::Ast(ParsedJsModule {
-                    cm: runtime_ast.cm.clone(),
-                    module: Module {
-                        span: DUMMY_SP,
-                        body,
-                        shebang: None,
-                    },
-                    unresolved_mark: runtime_ast.unresolved_mark,
-                    top_level_mark: runtime_ast.top_level_mark,
-                }),
-                header_lines: header,
-                metadata: FileMetadata {
-                    chunk_id: chunk_id.to_string(),
-                    chunk_file: plan.target_file.clone(),
-                    role: FileRole::Module,
-                    source_path: source_path.to_string(),
-                    generated_by_selected_module_lowering: true,
-                },
-            });
-            file_records.push((plan.target_file.clone(), FileRole::Module));
-            applied.push(SelectedModuleLowering {
-                binding_names,
-                chunk_id: chunk_id.to_string(),
-                exported_names,
-                file: entry_file.to_string(),
-                id: plan.id.clone(),
-                owner_ids,
-                residual: !plan.explicit,
-                target_file: plan.target_file.clone(),
-                target_path: plan.target_path.clone(),
-            });
+            let (file, record, lowering) = build_module_output(
+                plan,
+                body,
+                factorization,
+                runtime_ast,
+                chunk_top_level_mark,
+                chunk_id,
+                entry_file,
+                source_path,
+            );
+            files.push(file);
+            file_records.push(record);
+            applied.push(lowering);
         });
     }
 
@@ -661,4 +568,145 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         applied,
         timings,
     })
+}
+
+fn compute_selected_ordinals(
+    declarations: &[TopLevelDecl],
+    binding_assignment: &HashMap<Id, usize>,
+    anonymous_ordinal_assignment: &BTreeMap<usize, usize>,
+) -> BTreeSet<usize> {
+    let mut selected_ordinals = BTreeSet::new();
+    for decl in declarations {
+        if decl
+            .bindings
+            .iter()
+            .any(|(_, id)| binding_assignment.contains_key(id))
+        {
+            selected_ordinals.insert(decl.ordinal);
+        }
+    }
+    for ordinal in anonymous_ordinal_assignment.keys() {
+        selected_ordinals.insert(*ordinal);
+    }
+    selected_ordinals
+}
+
+fn plan_selected_exports(
+    module_plans: &[ModulePlan],
+    is_module_owned: &impl Fn(&str) -> bool,
+    selected_exports_by_module: &mut [Option<BTreeMap<String, String>>],
+) {
+    for (module_index, plan) in module_plans.iter().enumerate() {
+        if plan.bindings.is_empty() {
+            continue;
+        }
+        let exports: BTreeMap<String, String> = plan
+            .bindings
+            .iter()
+            .filter(|(name, _)| is_module_owned(name))
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        if !exports.is_empty() {
+            selected_exports_by_module[module_index] = Some(exports);
+        }
+    }
+}
+
+fn split_entry_body(
+    body: &[ModuleItem],
+    selected_ordinals: &BTreeSet<usize>,
+    anonymous_ordinal_assignment: &BTreeMap<usize, usize>,
+    binding_assignment: &HashMap<Id, usize>,
+    entry_body: &mut Vec<ModuleItem>,
+    selected_by_module: &mut [Vec<ModuleItem>],
+) -> Result<()> {
+    for (ordinal, item) in body.iter().enumerate() {
+        if !selected_ordinals.contains(&ordinal) {
+            entry_body.push(item.clone());
+            continue;
+        }
+        if let Some(module_index) = anonymous_ordinal_assignment.get(&ordinal).copied() {
+            selected_by_module[module_index].push(item.clone());
+            continue;
+        }
+        let mut remaining =
+            remaining_item_after_selection(item, binding_assignment, selected_by_module)?;
+        entry_body.append(&mut remaining);
+    }
+    Ok(())
+}
+
+fn build_module_output(
+    plan: &ModulePlan,
+    body: Vec<ModuleItem>,
+    factorization: &ChunkFactorization,
+    runtime_ast: &ParsedJsModule,
+    chunk_top_level_mark: swc_common::Mark,
+    chunk_id: &str,
+    entry_file: &str,
+    source_path: &str,
+) -> (JsFile, (String, FileRole), SelectedModuleLowering) {
+    let mut sorted_plan_bindings: Vec<(&String, &String)> = plan.bindings.iter().collect();
+    sorted_plan_bindings.sort_by(|a, b| a.0.cmp(b.0));
+    let binding_names: Vec<String> = sorted_plan_bindings
+        .iter()
+        .map(|(k, _)| (*k).clone())
+        .collect();
+    let exported_names: Vec<String> = sorted_plan_bindings
+        .iter()
+        .map(|(_, v)| (*v).clone())
+        .collect();
+    let binding_ids: Vec<Id> = binding_names
+        .iter()
+        .map(|name| top_level_id(name, chunk_top_level_mark))
+        .collect();
+    let owner_ids = factorization
+        .analysis
+        .owner_report_ids_for_bindings(binding_ids.iter());
+    let header = vec![
+        LOWERING_FILE_PRAGMA.to_string(),
+        LOWERING_GENERATOR_HEADER.to_string(),
+        format!(
+            "// Selected-module lowered region; original owner ids: {}.",
+            owner_ids.join(", ")
+        ),
+        format!(
+            "// Selected-module lowered region; source bindings: {}.",
+            binding_names.join(", ")
+        ),
+    ];
+    let file = JsFile {
+        path: plan.target_file.clone(),
+        body: JsFileBody::Ast(ParsedJsModule {
+            cm: runtime_ast.cm.clone(),
+            module: Module {
+                span: DUMMY_SP,
+                body,
+                shebang: None,
+            },
+            unresolved_mark: runtime_ast.unresolved_mark,
+            top_level_mark: runtime_ast.top_level_mark,
+        }),
+        header_lines: header,
+        metadata: FileMetadata {
+            chunk_id: chunk_id.to_string(),
+            chunk_file: plan.target_file.clone(),
+            role: FileRole::Module,
+            source_path: source_path.to_string(),
+            generated_by_selected_module_lowering: true,
+        },
+    };
+    let record = (plan.target_file.clone(), FileRole::Module);
+    let lowering = SelectedModuleLowering {
+        binding_names,
+        chunk_id: chunk_id.to_string(),
+        exported_names,
+        file: entry_file.to_string(),
+        id: plan.id.clone(),
+        owner_ids,
+        residual: !plan.explicit,
+        target_file: plan.target_file.clone(),
+        target_path: plan.target_path.clone(),
+    };
+    (file, record, lowering)
 }

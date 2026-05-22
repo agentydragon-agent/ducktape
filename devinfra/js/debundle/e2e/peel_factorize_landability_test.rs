@@ -27,19 +27,8 @@
 use analysis::OwnerGraphReport;
 use debundle_e2e_support::*;
 use peel::factorize::factorize;
-use serde::de::DeserializeOwned;
 use serde_json::json;
 use std::collections::BTreeMap;
-use std::fs;
-use std::path::Path;
-
-fn read_json<T: DeserializeOwned>(path: &Path) -> T {
-    serde_json::from_str(
-        &fs::read_to_string(path)
-            .unwrap_or_else(|err| panic!("read JSON report {}: {err}", path.display())),
-    )
-    .unwrap_or_else(|err| panic!("parse JSON report {}: {err}", path.display()))
-}
 
 fn proposal_has_bindings(proposal: &peel::factorize::FactorizeProposal, bindings: &[&str]) -> bool {
     bindings

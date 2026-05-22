@@ -13,8 +13,7 @@ use super::*;
 #[derive(Debug, Clone)]
 pub(super) struct TopLevelDecl {
     pub(super) ordinal: usize,
-    pub(super) names: Vec<String>,
-    pub(super) ids: Vec<Id>,
+    pub(super) bindings: Vec<(String, Id)>,
     pub(super) exported: bool,
 }
 
@@ -66,17 +65,17 @@ pub(super) fn analyze_chunk_ast(module: &Module) -> ChunkAstAnalysis {
         let (names, exported) = top_level_declaration_names(item);
         let ids = top_level_declaration_ids(item);
         if !names.is_empty() {
+            let bindings: Vec<(String, Id)> = names.into_iter().zip(ids).collect();
             if exported {
-                pre_existing_entry_exports.extend(ids.iter().cloned());
+                pre_existing_entry_exports.extend(bindings.iter().map(|(_, id)| id.clone()));
                 // `export const foo = …` / `export function foo()` /
                 // `export class Foo {}` — the declared name is also
                 // the public name.
-                pre_existing_public_export_names.extend(names.iter().cloned());
+                pre_existing_public_export_names.extend(bindings.iter().map(|(name, _)| name.clone()));
             }
             declarations.push(TopLevelDecl {
                 ordinal,
-                names,
-                ids,
+                bindings,
                 exported,
             });
         }
@@ -90,7 +89,7 @@ pub(super) fn analyze_chunk_ast(module: &Module) -> ChunkAstAnalysis {
     }
     let declaration_by_name = declarations
         .iter()
-        .flat_map(|decl| decl.ids.iter().map(|id| (id.clone(), decl.ordinal)))
+        .flat_map(|decl| decl.bindings.iter().map(|(_, id)| (id.clone(), decl.ordinal)))
         .collect::<HashMap<_, _>>();
     ChunkAstAnalysis {
         runtime_import_facts: RuntimeImportFacts { imports },

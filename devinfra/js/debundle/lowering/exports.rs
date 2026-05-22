@@ -125,7 +125,7 @@ pub(super) fn entry_exports_for_moved_bindings(
 ) -> Vec<ModuleItem> {
     let mut exports = BTreeMap::<String, String>::new();
     for decl in declarations.iter().filter(|decl| decl.exported) {
-        for (name, id) in decl.names.iter().zip(&decl.ids) {
+        for (name, id) in &decl.bindings {
             if binding_assignment.contains_key(id) {
                 let final_local = entry_renames
                     .get(name)

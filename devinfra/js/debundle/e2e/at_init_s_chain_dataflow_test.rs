@@ -85,8 +85,6 @@
 
 use analysis::{DepKind, OwnerGraphReport};
 use debundle_e2e_support::*;
-use serde::de::DeserializeOwned;
-use std::{fs, path::Path};
 
 /// Build a `FixtureOpts` with the dataflow-aware S-chain emission
 /// enabled. Every test in this file opts in — the assertions are
@@ -94,14 +92,6 @@ use std::{fs, path::Path};
 /// chunk's `dataflow_aware_s_chain` flag is `true`.
 fn dataflow_opts<'a>(source: &'a str, logical_modules: Vec<LogicalModuleEntry>) -> FixtureOpts<'a> {
     FixtureOpts::new(source, logical_modules).with_dataflow_aware_s_chain()
-}
-
-fn read_json<T: DeserializeOwned>(path: &Path) -> T {
-    serde_json::from_str(
-        &fs::read_to_string(path)
-            .unwrap_or_else(|err| panic!("read JSON report {}: {err}", path.display())),
-    )
-    .unwrap_or_else(|err| panic!("parse JSON report {}: {err}", path.display()))
 }
 
 fn owner_for_binding<'a>(graph: &'a OwnerGraphReport, binding: &str) -> &'a str {

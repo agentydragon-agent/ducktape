@@ -283,7 +283,7 @@ pub(super) fn materialize_logical_chunk(
         let residual_module_id = ModuleId(LogicalModuleIndex(residual_index));
         let mut residual_bindings = HashMap::<String, String>::new();
         for decl in &declarations {
-            for (name, id) in decl.names.iter().zip(&decl.ids) {
+            for (name, id) in &decl.bindings {
                 if !binding_assignment.contains_key(id) {
                     binding_assignment.insert(id.clone(), residual_index);
                     residual_bindings.insert(name.clone(), name.clone());
@@ -324,7 +324,7 @@ pub(super) fn materialize_logical_chunk(
             let owner_plan = &mut module_plans[owner_index];
             owner_plan.explicit = false;
             for decl in &declarations {
-                for (name, id) in decl.names.iter().zip(&decl.ids) {
+                for (name, id) in &decl.bindings {
                     if !binding_assignment.contains_key(id) {
                         binding_assignment.insert(id.clone(), owner_index);
                         owner_plan
