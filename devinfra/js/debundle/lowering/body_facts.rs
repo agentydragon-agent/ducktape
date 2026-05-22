@@ -27,13 +27,13 @@ pub(super) struct RefCollector {
     /// `Id = (sym, ctxt)` distinguishes same-named bindings declared in
     /// different scopes (a function parameter `x` vs. a module-level `x`).
     pub(super) ids: HashSet<Id>,
-    /// Shadowing tracked by `sym` — kept for backwards-compatible behavior
-    /// with the pre-hygiene collector. With hygiene-correct contexts the
-    /// shadowed-by-sym filter is mostly redundant (the inner-scope ident
-    /// has its own `ctxt`, distinct from any outer reference), but the
-    /// filter preserves the exact set of `referenced_idents` produced
-    /// before the `Id` migration so downstream comparisons (e.g. against
-    /// String-keyed `declaration_by_name` via `sym`) don't drift.
+    /// Sym-based shadow filter. When a function parameter shadows an outer
+    /// name, the inner `Ident` already has a distinct `ctxt` from the
+    /// outer binding, so the `ids` set wouldn't match the outer `Id` anyway.
+    /// However, downstream code still compares collected ids against
+    /// String-keyed tables (e.g. `declaration_by_name`) via sym-only
+    /// matching, so suppressing the inner-scope reference here prevents
+    /// false "this sym is referenced" hits when only the inner scope uses it.
     shadowed_scopes: Vec<BTreeSet<String>>,
 }
 

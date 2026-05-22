@@ -490,7 +490,6 @@ pub(super) fn materialize_logical_chunk(
                 )
             })?;
         }
-        let chunk_top_level_mark = runtime_ast.top_level_mark;
         let mut logical_modules: Vec<FactorizationLogicalModule> =
             time_phase!(timings, "project_factorization_modules", {
                 module_plans

@@ -82,6 +82,9 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         pre_existing_entry_exports,
         pre_existing_public_export_names,
     } = inputs;
+    let is_module_owned = |name: &str| -> bool {
+        binding_assignment.contains_key(&top_level_id(name, chunk_top_level_mark))
+    };
     let mut timings = PhaseTimings::default();
     let selected_ordinals = time_phase!(timings, "compute_selected_ordinals", {
         let mut selected_ordinals = BTreeSet::new();
@@ -117,9 +120,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
             let exports: BTreeMap<String, String> = plan
                 .bindings
                 .iter()
-                .filter(|(name, _)| {
-                    binding_assignment.contains_key(&top_level_id(name, chunk_top_level_mark))
-                })
+                .filter(|(name, _)| is_module_owned(name))
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect();
             if !exports.is_empty() {
@@ -181,7 +182,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
     // identifier) bail rather than producing invalid JS silently.
     let mut renamed_away = BTreeSet::<String>::new();
     for binding in chunk_renames.keys() {
-        if binding_assignment.contains_key(&top_level_id(binding, chunk_top_level_mark)) {
+        if is_module_owned(binding) {
             continue;
         }
         renamed_away.insert(binding.clone());
@@ -198,7 +199,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
     sorted_renames.sort_by(|a, b| a.0.cmp(b.0));
     let mut errors = Vec::<String>::new();
     for (binding, export_name) in sorted_renames {
-        if binding_assignment.contains_key(&top_level_id(binding, chunk_top_level_mark)) {
+        if is_module_owned(binding) {
             continue;
         }
         if !is_valid_js_identifier(export_name) {
@@ -249,9 +250,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         let live_bindings: BTreeMap<String, String> = plan
             .bindings
             .iter()
-            .filter(|(name, _)| {
-                binding_assignment.contains_key(&top_level_id(name, chunk_top_level_mark))
-            })
+            .filter(|(name, _)| is_module_owned(name))
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
         if live_bindings.is_empty() {
@@ -397,9 +396,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
     // chunk_renames; the per-module renamer is then a no-op.
     let cross_module_chunk_renames: BTreeMap<String, String> = chunk_renames
         .iter()
-        .filter(|(binding, _)| {
-            !binding_assignment.contains_key(&top_level_id(binding, chunk_top_level_mark))
-        })
+        .filter(|(binding, _)| !is_module_owned(binding))
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
 

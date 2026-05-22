@@ -227,21 +227,37 @@ pub(super) fn plan_module_reference_needs<'a>(
         }
     }
 
-    // Phantom side-effect providers (Lemma 2's emit-side fix):
-    //
-    // Walk this module's owners' outgoing constraining edges in the
-    // owner graph. Any target module not already in
-    // `cross_module_imports_by_provider` (and not residual) needs a
-    // side-effect-only ESM import so the linker visits it as a
-    // dependency. Without this, at-init promotion records the
-    // constraint at the ducktape level but ESM doesn't see it (the
-    // actual `import` for the read target lives in the residual
-    // function decl's home, not in this module), so DFS might evaluate
-    // this module's body before the provider's.
-    //
-    // Skip residual: it's entry, the root of every chunk's import
-    // tree. Adding a side-effect import of entry from a peeled module
-    // is redundant — entry is always reachable.
+    collect_phantom_side_effect_providers(
+        module_index,
+        factorization,
+        &needs.cross_module_imports_by_provider,
+        &mut needs.phantom_side_effect_providers,
+    );
+
+    needs
+}
+
+/// Phantom side-effect providers (Lemma 2's emit-side fix):
+///
+/// Walk this module's owners' outgoing constraining edges in the
+/// owner graph. Any target module not already in
+/// `cross_module_imports_by_provider` (and not residual) needs a
+/// side-effect-only ESM import so the linker visits it as a
+/// dependency. Without this, at-init promotion records the
+/// constraint at the ducktape level but ESM doesn't see it (the
+/// actual `import` for the read target lives in the residual
+/// function decl's home, not in this module), so DFS might evaluate
+/// this module's body before the provider's.
+///
+/// Skip residual: it's entry, the root of every chunk's import
+/// tree. Adding a side-effect import of entry from a peeled module
+/// is redundant — entry is always reachable.
+fn collect_phantom_side_effect_providers(
+    module_index: usize,
+    factorization: &ChunkFactorization,
+    cross_module_imports_by_provider: &BTreeMap<usize, BTreeMap<String, String>>,
+    phantom_side_effect_providers: &mut BTreeSet<usize>,
+) {
     let module_id = ModuleId(LogicalModuleIndex(module_index));
     let residual = factorization.partition.residual();
     let owner_graph = &factorization.analysis.owner_graph;
@@ -259,15 +275,10 @@ pub(super) fn plan_module_reference_needs<'a>(
                 continue;
             }
             let ModuleId(LogicalModuleIndex(target_index)) = target_module;
-            if needs
-                .cross_module_imports_by_provider
-                .contains_key(&target_index)
-            {
+            if cross_module_imports_by_provider.contains_key(&target_index) {
                 continue;
             }
-            needs.phantom_side_effect_providers.insert(target_index);
+            phantom_side_effect_providers.insert(target_index);
         }
     }
-
-    needs
 }
