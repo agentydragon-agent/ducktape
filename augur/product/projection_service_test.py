@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 import pytest
 import pytest_bazel
 
+import augur.product.projection_service as projection_service_module
 from augur.api.config import load_augur_config
 from augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle
 from augur.model.series import SP500_SERIES_ID
@@ -102,6 +103,40 @@ def test_metric_fan_and_rollout_detail_share_cached_sim_rollouts() -> None:
 
     assert [request.rollout_seeds for request in model.sample_requests] == [(7, 8), (9,)]
     assert fan_with_one_new_seed.monthly_metric_fan.columns["percentile"] == [50.0] * 4
+
+
+def test_metric_fan_projects_monthly_metrics_once_per_missing_batch(monkeypatch: pytest.MonkeyPatch) -> None:
+    model = CountingExogenousModel()
+    service = _service(model)
+    scenario = _scenario_key()
+    original_project_net_worth = projection_service_module.project_net_worth
+    calls = 0
+
+    def counted_project_net_worth(run):
+        nonlocal calls
+        calls += 1
+        return original_project_net_worth(run)
+
+    monkeypatch.setattr(projection_service_module, "project_net_worth", counted_project_net_worth)
+
+    service.metric_fan(
+        MetricFanRequest(scenario=scenario, rollout_seeds=(7, 8, 9, 10), metric="cash_usd", percentiles=(50,))
+    )
+
+    assert calls == 1
+
+
+def test_metric_fan_does_not_materialize_rollout_events(monkeypatch: pytest.MonkeyPatch) -> None:
+    model = CountingExogenousModel()
+    service = _service(model)
+    scenario = _scenario_key()
+
+    def fail_rollout_events(*_args, **_kwargs):
+        raise AssertionError("metric fan should not build selected-rollout event detail")
+
+    monkeypatch.setattr(projection_service_module, "_rollout_events", fail_rollout_events)
+
+    service.metric_fan(MetricFanRequest(scenario=scenario, rollout_seeds=(7, 8), metric="cash_usd", percentiles=(50,)))
 
 
 def test_failed_rollout_metrics_freeze_at_zero_after_failure() -> None:

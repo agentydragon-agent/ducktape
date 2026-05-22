@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import OrderedDict
 from dataclasses import dataclass
 
+import numpy as np
 import polars as pl
 
 from augur.api.config import Config
@@ -54,10 +55,37 @@ _TAX_AUTHORITY_ACCOUNT_ID = "checking"
 DEFAULT_CACHE_MAX_ROLLOUTS = 25_000
 
 
-@dataclass(frozen=True)
+@dataclass
 class CachedRollout:
     exogenous_model_id: str
-    output: RolloutOutput
+    seed: int
+    run: SimulationRun
+    rollout_index: int
+    primary_agent_id: str
+    asset_label_by_id: dict[str, str]
+    monthly_metrics: pl.DataFrame
+    terminal_metrics: TerminalMetrics
+    events: tuple[RolloutEvent, ...] | None = None
+
+    @property
+    def failed(self) -> bool:
+        return self.terminal_metrics.failed_month_index is not None
+
+    def to_output(self) -> RolloutOutput:
+        if self.events is None:
+            self.events = _rollout_events(
+                self.run,
+                rollout_index=self.rollout_index,
+                primary_agent_id=self.primary_agent_id,
+                asset_label_by_id=self.asset_label_by_id,
+            )
+        return RolloutOutput(
+            seed=self.seed,
+            failed=self.failed,
+            monthly_metrics=_columnar(self.monthly_metrics),
+            terminal_metrics=self.terminal_metrics,
+            events=self.events,
+        )
 
 
 class ProductProjectionCache:
@@ -104,12 +132,12 @@ class ProductProjectionService:
                 rollouts, metric=request.metric, percentiles=tuple(float(pct) for pct in request.percentiles)
             ),
             rollout_summaries=_rollout_summaries(rollouts),
-            failed_count=sum(1 for rollout in rollouts if rollout.output.failed),
+            failed_count=sum(1 for rollout in rollouts if rollout.failed),
         )
 
     def rollout(self, request: RolloutRequest) -> RolloutResponse:
         [rollout] = self._rollouts_for_seeds(request.scenario, (int(request.seed),))
-        return RolloutResponse(exogenous_model_id=rollout.exogenous_model_id, rollout=rollout.output)
+        return RolloutResponse(exogenous_model_id=rollout.exogenous_model_id, rollout=rollout.to_output())
 
     def _rollouts_for_seeds(self, scenario: ScenarioKey, seeds: tuple[int, ...]) -> tuple[CachedRollout, ...]:
         if scenario.exogenous_model_id != "current_exogenous_model":
@@ -152,22 +180,32 @@ class ProductProjectionService:
             scenario, rollout_count=len(seeds), external_series=materialize_sampled_exogenous(sampled)
         )
         exogenous_model_id = str(sampled.metadata.get("exogenous_model_id") or scenario_key.exogenous_model_id)
-        return tuple(
-            (
-                seed,
-                CachedRollout(
-                    exogenous_model_id=exogenous_model_id,
-                    output=_rollout_output(
-                        run,
-                        rollout_index=rollout_index,
+        monthly_by_rollout = _monthly_metrics_by_rollout(run, primary_agent_id=primary_agent_id)
+        failed_months = _failed_month_indices_by_rollout(run)
+        asset_label_by_id = _public_asset_label_by_series_id(self._augur_config)
+        rollouts: list[tuple[int, CachedRollout]] = []
+        for rollout_index, seed in enumerate(seeds):
+            monthly = _required_monthly_metrics(monthly_by_rollout, rollout_index=rollout_index)
+            rollouts.append(
+                (
+                    seed,
+                    CachedRollout(
+                        exogenous_model_id=exogenous_model_id,
                         seed=seed,
+                        run=run,
+                        rollout_index=rollout_index,
                         primary_agent_id=primary_agent_id,
-                        asset_label_by_id=_public_asset_label_by_series_id(self._augur_config),
+                        asset_label_by_id=asset_label_by_id,
+                        monthly_metrics=monthly,
+                        terminal_metrics=_terminal_metrics(
+                            monthly,
+                            rollout_index=rollout_index,
+                            failed_month_index=_required_failed_month(failed_months, rollout_index=rollout_index),
+                        ),
                     ),
-                ),
+                )
             )
-            for rollout_index, seed in enumerate(seeds)
-        )
+        return tuple(rollouts)
 
 
 def _scenario_from_key(
@@ -297,41 +335,34 @@ def _required_level_series_for_product_scenario(
     return frozenset(series_ids)
 
 
-def _rollout_output(
-    run: SimulationRun, *, rollout_index: int, seed: int, primary_agent_id: str, asset_label_by_id: dict[str, str]
-) -> RolloutOutput:
-    monthly = _monthly_metrics(run, rollout_index=rollout_index, primary_agent_id=primary_agent_id)
-    terminal = _terminal_metrics(run, monthly, rollout_index=rollout_index)
-    return RolloutOutput(
-        seed=seed,
-        failed=terminal.failed_month_index is not None,
-        monthly_metrics=_columnar(monthly),
-        terminal_metrics=terminal,
-        events=_rollout_events(
-            run, rollout_index=rollout_index, primary_agent_id=primary_agent_id, asset_label_by_id=asset_label_by_id
-        ),
-    )
+def _required_monthly_metrics(monthly_by_rollout: dict[int, pl.DataFrame], *, rollout_index: int) -> pl.DataFrame:
+    monthly = monthly_by_rollout.get(rollout_index)
+    if monthly is None:
+        raise ValueError(f"rollout {rollout_index} produced no monthly metrics")
+    return monthly
 
 
-def _monthly_metrics(run: SimulationRun, *, rollout_index: int, primary_agent_id: str) -> pl.DataFrame:
+def _monthly_metrics_by_rollout(run: SimulationRun, *, primary_agent_id: str) -> dict[int, pl.DataFrame]:
     net_worth = (
         project_net_worth(run)
-        .filter((pl.col("rollout_index") == rollout_index) & (pl.col("agent_id") == primary_agent_id))
+        .filter(pl.col("agent_id") == primary_agent_id)
         .select(
+            "rollout_index",
             "month_index",
             "cash_usd",
             pl.col("liquid_asset_value_usd").alias("public_security_value_usd"),
             "liquid_net_worth_usd",
         )
-        .sort("month_index")
+        .sort("rollout_index", "month_index")
     )
     if net_worth.is_empty():
-        raise ValueError(f"rollout {rollout_index} produced no net-worth metrics for agent {primary_agent_id!r}")
-    shortfall = _monthly_shortfalls(run, rollout_index=rollout_index)
-    return (
-        net_worth.join(shortfall, on="month_index", how="left")
+        raise ValueError(f"simulation produced no net-worth metrics for agent {primary_agent_id!r}")
+    shortfall = _monthly_shortfalls_by_rollout(run)
+    monthly = (
+        net_worth.join(shortfall, on=["rollout_index", "month_index"], how="left")
         .with_columns(pl.col("shortfall_usd").fill_null(0.0), pl.col("liquid_net_worth_usd").alias("net_worth_usd"))
         .select(
+            "rollout_index",
             "month_index",
             "cash_usd",
             "public_security_value_usd",
@@ -339,29 +370,34 @@ def _monthly_metrics(run: SimulationRun, *, rollout_index: int, primary_agent_id
             "net_worth_usd",
             "shortfall_usd",
         )
+        .sort("rollout_index", "month_index")
     )
+    return {
+        int(partition["rollout_index"][0]): partition.drop("rollout_index")
+        for partition in monthly.partition_by("rollout_index", maintain_order=True)
+    }
 
 
-def _monthly_shortfalls(run: SimulationRun, *, rollout_index: int) -> pl.DataFrame:
+def _monthly_shortfalls_by_rollout(run: SimulationRun) -> pl.DataFrame:
     settlements = run.events_log.obligation_settlements
     if settlements.is_empty():
         return pl.DataFrame(
-            {"month_index": [], "shortfall_usd": []}, schema={"month_index": pl.Int64(), "shortfall_usd": pl.Float64()}
+            {"rollout_index": [], "month_index": [], "shortfall_usd": []},
+            schema={"rollout_index": pl.Int64(), "month_index": pl.Int64(), "shortfall_usd": pl.Float64()},
         )
     return (
-        settlements.filter((pl.col("rollout_index") == rollout_index) & (pl.col("shortfall_usd") > 0))
+        settlements.filter(pl.col("shortfall_usd") > 0)
         .with_columns((pl.col("month_index") + 1).alias("month_index"))
-        .group_by("month_index")
+        .group_by(["rollout_index", "month_index"])
         .agg(pl.col("shortfall_usd").sum())
-        .sort("month_index")
+        .sort("rollout_index", "month_index")
     )
 
 
-def _terminal_metrics(run: SimulationRun, monthly: pl.DataFrame, *, rollout_index: int) -> TerminalMetrics:
+def _terminal_metrics(monthly: pl.DataFrame, *, rollout_index: int, failed_month_index: int | None) -> TerminalMetrics:
     if monthly.is_empty():
         raise ValueError(f"rollout {rollout_index} produced no monthly metrics")
     row = monthly.tail(1).row(0, named=True)
-    failed_month_index = _failed_month_index(run, rollout_index=rollout_index)
     return TerminalMetrics(
         cash_usd=float(row["cash_usd"]),
         public_security_value_usd=float(row["public_security_value_usd"]),
@@ -564,12 +600,19 @@ def _failure_events(run: SimulationRun, *, rollout_index: int, primary_agent_id:
     )
 
 
-def _failed_month_index(run: SimulationRun, *, rollout_index: int) -> int | None:
-    status = run.rollout_status.filter(pl.col("rollout_index") == rollout_index)
-    if status.is_empty():
+def _failed_month_indices_by_rollout(run: SimulationRun) -> dict[int, int | None]:
+    if run.rollout_status.is_empty():
+        return {}
+    return {
+        int(row["rollout_index"]): None if row["failed_month"] is None else int(row["failed_month"])
+        for row in run.rollout_status.iter_rows(named=True)
+    }
+
+
+def _required_failed_month(failed_months: dict[int, int | None], *, rollout_index: int) -> int | None:
+    if rollout_index not in failed_months:
         raise ValueError(f"missing rollout status for rollout {rollout_index}")
-    failed_month = status.row(0, named=True)["failed_month"]
-    return None if failed_month is None else int(failed_month)
+    return failed_months[rollout_index]
 
 
 def _total_shortfall(monthly: pl.DataFrame) -> float:
@@ -589,43 +632,53 @@ def _exogenous_model_id(rollouts: tuple[CachedRollout, ...], *, fallback: str) -
 def _monthly_metric_fan(
     rollouts: tuple[CachedRollout, ...], *, metric: MetricName, percentiles: tuple[float, ...]
 ) -> ColumnarTable:
-    rows = []
-    for rollout in rollouts:
-        columns = rollout.output.monthly_metrics.columns
-        month_indices = columns["month_index"]
-        metric_values = columns[metric]
-        for month_index, value in zip(month_indices, metric_values, strict=True):
-            rows.append({"month_index": int(month_index), "value": float(value)})
-    if not rows:
+    matrix = _metric_matrix(rollouts, metric=metric)
+    if matrix is None:
         return _columnar(pl.DataFrame([], schema=_metric_fan_schema()))
-    frame = pl.DataFrame(rows, schema={"month_index": pl.Int64(), "value": pl.Float64()})
-    summaries = []
-    for percentile in percentiles:
-        quantile = percentile / 100
-        summaries.append(
-            frame.group_by("month_index")
-            .agg(pl.col("value").quantile(quantile, interpolation="linear").alias("value"))
-            .with_columns(pl.lit(percentile).alias("percentile"))
-            .select("month_index", "percentile", "value")
-        )
-    return _columnar(pl.concat(summaries).sort("month_index", "percentile"))
+    month_indices, values = matrix
+    percentile_values = _percentile(values, percentiles, axis=0)
+    percentile_array = np.asarray(percentiles, dtype=np.float64)
+    return ColumnarTable(
+        row_count=int(month_indices.size * percentile_array.size),
+        columns={
+            "month_index": np.repeat(month_indices, percentile_array.size).tolist(),
+            "percentile": np.tile(percentile_array, month_indices.size).tolist(),
+            "value": percentile_values.T.reshape(-1).tolist(),
+        },
+    )
 
 
 def _terminal_metric_percentiles(
     rollouts: tuple[CachedRollout, ...], *, metric: MetricName, percentiles: tuple[float, ...]
 ) -> ColumnarTable:
-    values = [_terminal_metric_value(rollout.output.terminal_metrics, metric) for rollout in rollouts]
-    if not values:
+    values = np.asarray(
+        [_terminal_metric_value(rollout.terminal_metrics, metric) for rollout in rollouts], dtype=np.float64
+    )
+    if values.size == 0:
         return _columnar(pl.DataFrame([], schema=_terminal_percentiles_schema()))
-    frame = pl.DataFrame({"value": values}, schema={"value": pl.Float64()})
-    rows = [
-        {
-            "percentile": percentile,
-            "value": frame.select(pl.col("value").quantile(percentile / 100, interpolation="linear")).item(),
-        }
-        for percentile in percentiles
-    ]
-    return _columnar(pl.DataFrame(rows, schema=_terminal_percentiles_schema()))
+    percentile_array = np.asarray(percentiles, dtype=np.float64)
+    percentile_values = _percentile(values, percentiles, axis=0)
+    return ColumnarTable(
+        row_count=int(percentile_array.size),
+        columns={"percentile": percentile_array.tolist(), "value": percentile_values.tolist()},
+    )
+
+
+def _metric_matrix(rollouts: tuple[CachedRollout, ...], *, metric: MetricName) -> tuple[np.ndarray, np.ndarray] | None:
+    if not rollouts:
+        return None
+    month_indices = rollouts[0].monthly_metrics["month_index"].to_numpy().astype(np.int64, copy=False)
+    values = np.empty((len(rollouts), month_indices.size), dtype=np.float64)
+    for rollout_index, rollout in enumerate(rollouts):
+        rollout_months = rollout.monthly_metrics["month_index"].to_numpy().astype(np.int64, copy=False)
+        if rollout_months.shape != month_indices.shape or not np.array_equal(rollout_months, month_indices):
+            raise ValueError("metric fan rollouts have inconsistent month indices")
+        values[rollout_index] = rollout.monthly_metrics[metric].to_numpy().astype(np.float64, copy=False)
+    return month_indices, values
+
+
+def _percentile(values: np.ndarray, percentiles: tuple[float, ...], *, axis: int) -> np.ndarray:
+    return np.percentile(values, np.asarray(percentiles, dtype=np.float64), axis=axis, method="linear")
 
 
 def _terminal_metric_value(terminal: TerminalMetrics, metric: MetricName) -> float:
@@ -647,9 +700,9 @@ def _rollout_summaries(rollouts: tuple[CachedRollout, ...]) -> tuple[RolloutSumm
     count = len(sorted_rollouts)
     return tuple(
         RolloutSummary(
-            seed=rollout.output.seed,
-            failed=rollout.output.failed,
-            terminal_metrics=rollout.output.terminal_metrics,
+            seed=rollout.seed,
+            failed=rollout.failed,
+            terminal_metrics=rollout.terminal_metrics,
             sort_rank=rank,
             rank_percentile=((rank + 0.5) / count * 100) if count else 50.0,
         )
@@ -658,9 +711,9 @@ def _rollout_summaries(rollouts: tuple[CachedRollout, ...]) -> tuple[RolloutSumm
 
 
 def _rollout_sort_key(rollout: CachedRollout) -> tuple[bool, int, float, int]:
-    terminal = rollout.output.terminal_metrics
+    terminal = rollout.terminal_metrics
     failed_month = terminal.failed_month_index if terminal.failed_month_index is not None else 10**9
-    return (not rollout.output.failed, failed_month, terminal.net_worth_usd, rollout.output.seed)
+    return (not rollout.failed, failed_month, terminal.net_worth_usd, rollout.seed)
 
 
 def _metric_fan_schema() -> dict[str, pl.DataType]:

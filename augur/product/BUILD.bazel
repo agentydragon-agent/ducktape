@@ -26,6 +26,7 @@ py_library(
         "//augur/sim:run",
         "//augur/sim:scenario",
         "//augur/sim:simulate",
+        "@pypi//numpy",
         "@pypi//polars",
     ],
 )
