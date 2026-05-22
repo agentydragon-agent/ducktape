@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 
 use analysis::{AnalysisHints, LocalEffectPolicy, StatementFacts, analyze_chunk};
 use anyhow::{Context, Result, bail};
@@ -269,7 +270,7 @@ fn strip_export_specifiers(
                 new_body.push(ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)));
             }
             ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => {
-                let inline_names = export_decl_declared_names(&export_decl.decl);
+                let inline_names = declaration_name_strings(&export_decl.decl);
                 // For an `ExportDecl`, every declared name is exported
                 // under that same name. Drop the `export` prefix only
                 // if *all* names declared by the statement are swapped;
@@ -340,10 +341,6 @@ fn stripped_symbol_local(symbol: &PartialSwapSymbol, export_local: Id) -> Id {
 
 fn synthetic_id(local: &str) -> Id {
     Ident::new_no_ctxt(local.into(), DUMMY_SP).to_id()
-}
-
-fn export_decl_declared_names(decl: &Decl) -> Vec<String> {
-    declaration_name_strings(decl)
 }
 
 fn export_decl_declared_ids(decl: &Decl) -> BTreeSet<Id> {
@@ -839,6 +836,18 @@ enum LiveReason {
     Dependency { from: usize, via: Vec<String> },
 }
 
+impl fmt::Display for LiveReason {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            LiveReason::ResidualExport(aliases) => {
+                write!(f, "residual export [{}]", aliases.join(","))
+            }
+            LiveReason::HardSideEffect => write!(f, "retained side effect"),
+            LiveReason::Dependency { from: _, via } => write!(f, "reads [{}]", via.join(",")),
+        }
+    }
+}
+
 fn format_live_trace(
     start: usize,
     analyses: &[ItemAnalysis],
@@ -857,16 +866,12 @@ fn format_live_trace(
 
         trace.push(format_item_summary(node, &analyses[node], &items[node]));
         match live_reasons.get(node).and_then(|reason| reason.as_ref()) {
-            Some(LiveReason::ResidualExport(aliases)) => {
-                trace.push(format!("residual export [{}]", aliases.join(",")));
+            Some(reason @ (LiveReason::ResidualExport(_) | LiveReason::HardSideEffect)) => {
+                trace.push(reason.to_string());
                 break;
             }
-            Some(LiveReason::HardSideEffect) => {
-                trace.push("retained side effect".to_string());
-                break;
-            }
-            Some(LiveReason::Dependency { from, via }) => {
-                trace.push(format!("reads [{}]", via.join(",")));
+            Some(LiveReason::Dependency { from, via: _ }) => {
+                trace.push(live_reasons[node].as_ref().unwrap().to_string());
                 node = *from;
             }
             None => {
@@ -1018,7 +1023,7 @@ fn module_linkage_item(item: &ModuleItem) -> bool {
 fn export_aliases_for_item(item: &ModuleItem) -> BTreeSet<String> {
     match item {
         ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => {
-            export_decl_declared_names(&export_decl.decl)
+            declaration_name_strings(&export_decl.decl)
                 .into_iter()
                 .collect()
         }
