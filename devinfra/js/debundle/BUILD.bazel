@@ -194,6 +194,7 @@ rust_test(
 rust_library(
     name = "emit_harness",
     srcs = ["emit_harness.rs"],
+    compile_data = ["harness_monitor.html"],
     crate_root = "emit_harness.rs",
     edition = "2024",
     deps = [

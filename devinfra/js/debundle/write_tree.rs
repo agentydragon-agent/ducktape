@@ -5,6 +5,11 @@ use std::path::Path;
 use anyhow::{Result, bail};
 use serde::Serialize;
 
+fn write_json(path: impl AsRef<Path>, data: &impl Serialize) -> Result<()> {
+    serde_json::to_writer_pretty(&fs::File::create(path.as_ref())?, data)?;
+    Ok(())
+}
+
 use artifact::{
     ArtifactChunkRecord, ArtifactCounts, ArtifactManifest, ChunkBundle, ChunkDecompositionOutput,
     ChunkId, DecompositionMetrics, RootLogicalModulesSummary, SelectedModuleLowering,
@@ -58,19 +63,13 @@ pub fn write_js_tree(input: &WriteTreeInput) -> Result<()> {
         output_metrics: materialized.output_metrics,
         decomposition_metrics,
     };
-    serde_json::to_writer_pretty(&fs::File::create(layout.output_report())?, &manifest)?;
-    serde_json::to_writer_pretty(
-        &fs::File::create(layout.chunks_report())?,
-        &ChunksReport {
-            chunks: input.chunk_records,
-        },
-    )?;
-    serde_json::to_writer_pretty(
-        &fs::File::create(layout.app_root().join("package.json"))?,
-        &PackageManifest {
-            module_type: "module",
-        },
-    )?;
+    write_json(layout.output_report(), &manifest)?;
+    write_json(layout.chunks_report(), &ChunksReport {
+        chunks: input.chunk_records,
+    })?;
+    write_json(layout.app_root().join("package.json"), &PackageManifest {
+        module_type: "module",
+    })?;
 
     Ok(())
 }

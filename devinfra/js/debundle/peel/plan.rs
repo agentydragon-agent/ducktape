@@ -207,6 +207,25 @@ enum SelectionKind {
     Diagnostic(String),
 }
 
+impl SelectionKind {
+    fn value(&self) -> &str {
+        match self {
+            Self::Owner(v) | Self::Binding(v) | Self::Proposal(v) | Self::Unit(v)
+            | Self::Diagnostic(v) => v,
+        }
+    }
+
+    fn query_kind(&self) -> QueryKind {
+        match self {
+            Self::Owner(_) => QueryKind::Owner,
+            Self::Binding(_) => QueryKind::Binding,
+            Self::Proposal(_) => QueryKind::Proposal,
+            Self::Unit(_) => QueryKind::Unit,
+            Self::Diagnostic(_) => QueryKind::Diagnostic,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 struct UnitsReport {
     units: Vec<AtomicUnitReport>,
@@ -527,6 +546,14 @@ fn run_graph_summary_report(args: &GraphSummaryArgs) -> Result<GraphSummaryRepor
     })
 }
 
+macro_rules! apply_limits {
+    ($limit:expr, $sections:expr, $(($vec:expr, $name:expr)),+ $(,)?) => {
+        $(
+            apply_limit_with_metadata(&mut $vec, $limit, &mut $sections, $name);
+        )+
+    };
+}
+
 fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
     let graph = load_graph(&args.common.owner_graph_path)?;
     let selection = args.selection.selection_kind()?;
@@ -627,68 +654,20 @@ fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
     let mut limited_owner_ids = owner_ids;
 
     let mut sections = BTreeMap::new();
-    apply_limit_with_metadata(
-        &mut limited_owner_ids,
-        args.limit,
-        &mut sections,
-        "owner_ids",
-    );
-    apply_limit_with_metadata(&mut owners, args.limit, &mut sections, "owners");
-    apply_limit_with_metadata(
-        &mut neighbor_owners,
-        args.limit,
-        &mut sections,
-        "neighbor_owners",
-    );
-    apply_limit_with_metadata(&mut bindings, args.limit, &mut sections, "bindings");
-    apply_limit_with_metadata(
-        &mut binding_homes,
-        args.limit,
-        &mut sections,
-        "binding_homes",
-    );
-    apply_limit_with_metadata(
-        &mut incoming_edges,
-        args.limit,
-        &mut sections,
-        "incoming_edges",
-    );
-    apply_limit_with_metadata(
-        &mut outgoing_edges,
-        args.limit,
-        &mut sections,
-        "outgoing_edges",
-    );
-    apply_limit_with_metadata(&mut atomic_units, args.limit, &mut sections, "atomic_units");
-    apply_limit_with_metadata(
-        &mut incoming_atomic_edges,
-        args.limit,
-        &mut sections,
-        "incoming_atomic_edges",
-    );
-    apply_limit_with_metadata(
-        &mut outgoing_atomic_edges,
-        args.limit,
-        &mut sections,
-        "outgoing_atomic_edges",
-    );
-    apply_limit_with_metadata(
-        &mut quotient_edges,
-        args.limit,
-        &mut sections,
-        "quotient_edges",
-    );
-    apply_limit_with_metadata(
-        &mut factorize_proposals,
-        args.limit,
-        &mut sections,
-        "factorize_proposals",
-    );
-    apply_limit_with_metadata(
-        &mut factorize_diagnostics,
-        args.limit,
-        &mut sections,
-        "factorize_diagnostics",
+    apply_limits!(args.limit, sections,
+        (limited_owner_ids, "owner_ids"),
+        (owners, "owners"),
+        (neighbor_owners, "neighbor_owners"),
+        (bindings, "bindings"),
+        (binding_homes, "binding_homes"),
+        (incoming_edges, "incoming_edges"),
+        (outgoing_edges, "outgoing_edges"),
+        (atomic_units, "atomic_units"),
+        (incoming_atomic_edges, "incoming_atomic_edges"),
+        (outgoing_atomic_edges, "outgoing_atomic_edges"),
+        (quotient_edges, "quotient_edges"),
+        (factorize_proposals, "factorize_proposals"),
+        (factorize_diagnostics, "factorize_diagnostics"),
     );
 
     Ok(ExplainReport {
@@ -1068,27 +1047,9 @@ impl SelectionArgs {
 }
 
 fn query_report(selection: &SelectionKind) -> QueryReport {
-    match selection {
-        SelectionKind::Owner(value) => QueryReport {
-            kind: QueryKind::Owner,
-            value: value.clone(),
-        },
-        SelectionKind::Binding(value) => QueryReport {
-            kind: QueryKind::Binding,
-            value: value.clone(),
-        },
-        SelectionKind::Proposal(value) => QueryReport {
-            kind: QueryKind::Proposal,
-            value: value.clone(),
-        },
-        SelectionKind::Unit(value) => QueryReport {
-            kind: QueryKind::Unit,
-            value: value.clone(),
-        },
-        SelectionKind::Diagnostic(value) => QueryReport {
-            kind: QueryKind::Diagnostic,
-            value: value.clone(),
-        },
+    QueryReport {
+        kind: selection.query_kind(),
+        value: selection.value().to_string(),
     }
 }
 

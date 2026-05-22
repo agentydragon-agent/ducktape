@@ -112,12 +112,9 @@ pub fn emit_browser_harness(
 
     fs::write(app_root.join("index.html"), index_html)?;
     fs::write(app_root.join("bootstrap.js"), bootstrap)?;
-    serde_json::to_writer_pretty(
-        &fs::File::create(layout.chunks_report())?,
-        &ChunksManifest {
-            chunks: chunk_records,
-        },
-    )?;
+    write_json(&layout.chunks_report(), &ChunksManifest {
+        chunks: chunk_records,
+    })?;
     let queue = compute_identifier_rename_queue(artifact, decomposition_by_chunk)?;
     write_queue(&layout.rename_queue_report(), &queue)?;
     let runtime = HarnessRuntimeReport {
@@ -133,33 +130,21 @@ pub fn emit_browser_harness(
             index_html: module_path_from_path(&PathBuf::from("index.html")),
         },
     };
-    serde_json::to_writer_pretty(&fs::File::create(layout.runtime_report())?, &runtime)?;
-    serde_json::to_writer_pretty(
-        &fs::File::create(layout.output_report())?,
-        &HarnessOutputReport {
-            output_metrics: materialized.output_metrics,
-        },
-    )?;
-    serde_json::to_writer_pretty(
-        &fs::File::create(layout.source_assets_report())?,
-        &SourceAssetsReport {
-            source_path: module_path_from_path(&options.asset_summary_path),
-            asset_summary: asset_summary_value,
-        },
-    )?;
-    serde_json::to_writer_pretty(
-        &fs::File::create(layout.provenance_report())?,
-        &ProvenanceReport {
-            source_html_path: module_path_from_path(&source_html_path),
-            source_html,
-        },
-    )?;
-    serde_json::to_writer_pretty(
-        &fs::File::create(app_root.join("package.json"))?,
-        &PackageManifest {
-            package_type: "module",
-        },
-    )?;
+    write_json(layout.runtime_report(), &runtime)?;
+    write_json(layout.output_report(), &HarnessOutputReport {
+        output_metrics: materialized.output_metrics,
+    })?;
+    write_json(layout.source_assets_report(), &SourceAssetsReport {
+        source_path: module_path_from_path(&options.asset_summary_path),
+        asset_summary: asset_summary_value,
+    })?;
+    write_json(layout.provenance_report(), &ProvenanceReport {
+        source_html_path: module_path_from_path(&source_html_path),
+        source_html,
+    })?;
+    write_json(&app_root.join("package.json"), &PackageManifest {
+        package_type: "module",
+    })?;
     Ok(())
 }
 
@@ -514,6 +499,11 @@ fn copy_output_file(source: &Path, target: &Path) -> Result<()> {
     Ok(())
 }
 
+fn write_json(path: impl AsRef<Path>, data: &impl Serialize) -> Result<()> {
+    serde_json::to_writer_pretty(&fs::File::create(path.as_ref())?, data)?;
+    Ok(())
+}
+
 #[cfg(unix)]
 fn make_owner_writable(path: &Path) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
@@ -534,62 +524,7 @@ fn make_owner_writable(path: &Path) -> Result<()> {
 }
 
 fn harness_monitor_script() -> &'static str {
-    r#"<script>
-      globalThis.__debundleHarness = { errors: [] };
-      (() => {
-        const state = globalThis.__debundleHarness;
-        const render = (message) => {
-          const body = document.body;
-          if (!body) {
-            return;
-          }
-          let node = document.getElementById("debundle-harness-error");
-          if (!node) {
-            node = document.createElement("pre");
-            node.id = "debundle-harness-error";
-            node.style.cssText = "position:fixed;inset:0;z-index:2147483647;margin:0;padding:16px;white-space:pre-wrap;background:#2b0000;color:#ffd8d8;font:13px/1.4 monospace;";
-            body.appendChild(node);
-          }
-          node.textContent = message;
-        };
-        const messageFor = (kind, value) => {
-          if (value && value.stack) {
-            return value.stack;
-          }
-          if (value && typeof value === "object") {
-            try {
-              return JSON.stringify(value);
-            } catch {
-              return String(value);
-            }
-          }
-          return String(value ?? kind);
-        };
-        const record = (kind, value, visible) => {
-          const message = messageFor(kind, value);
-          state.errors.push({ kind, message });
-          document.documentElement.dataset.debundleHarnessLastEvent = message;
-          if (kind === "error") {
-            document.documentElement.dataset.debundleHarnessError = message;
-          }
-          if (visible) {
-            if (document.readyState === "loading") {
-              addEventListener("DOMContentLoaded", () => render(message), { once: true });
-            } else {
-              render(message);
-            }
-          }
-        };
-        addEventListener("error", (event) => record("error", event.error ?? event.message, true));
-        addEventListener("unhandledrejection", (event) => record("unhandledrejection", event.reason, false));
-        addEventListener("DOMContentLoaded", () => {
-          document.documentElement.dataset.debundleHarnessDomContentLoaded = "true";
-        });
-        addEventListener("load", () => {
-          document.documentElement.dataset.debundleHarnessLoaded = "true";
-        });
-      })();
-    </script>"#
+    include_str!("harness_monitor.html")
 }
 
 #[cfg(test)]

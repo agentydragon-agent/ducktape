@@ -90,10 +90,6 @@ use util::{
 };
 use visitors::{IdentifierRenamer, RenameAndShorthandNaturalizer, ShorthandNaturalizer};
 
-const LOWERING_FILE_PRAGMA: &str =
-    "// @ducktape-generated kind=lowerer-helper stage=selected_module_lowering ignore=detectors";
-const LOWERING_GENERATOR_HEADER: &str = "// @ducktape-generator selected_module_lowering";
-
 macro_rules! time_phase {
     ($timings:expr, $name:expr, $body:block) => {{
         let phase_started = std::time::Instant::now();

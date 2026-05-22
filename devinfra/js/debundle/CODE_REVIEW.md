@@ -38,49 +38,6 @@ Split into topic-aligned modules: `tests/facts.rs`, `tests/purity.rs`, `tests/pl
 
 ## P1 — Major Duplication
 
-### Pattern binding name extraction (3+ implementations)
-
-`binding_names` / `pat_names` / `collect_pat_names` / `top_level_binding_names` / `binding_ids` — all walk SWC `Pat` variants to extract names.
-
-| Location                               | Function                   | Returns                     |
-| -------------------------------------- | -------------------------- | --------------------------- |
-| `lowering/chunk_ast.rs:220`            | `binding_names`            | `Vec<String>`               |
-| `lowering/chunk_ast.rs:244`            | `binding_ids`              | `Vec<Id>`                   |
-| `strip_swapped_vendor_exports.rs:1079` | `collect_pat_names`        | `Vec<String>` via out-param |
-| `vendor.rs` (~992)                     | `binding_names`            | `Vec<String>`               |
-| `identifier_rename_queue.rs`           | `pat_names`                | `Vec<String>`               |
-| `validate_emitted_exports.rs:237`      | inline `collect_pat_names` | `Vec<String>`               |
-
-The crate already uses `swc_ecma_utils::find_pat_ids` via `binding_targets::binding_names()`. Two of the above reimpls produce `Vec<String>` instead of `Vec<Id>` — add a `binding_name_strings()` wrapper and eliminate all custom walkers.
-
-### Declaration name extraction (2+ implementations) — **Done** (`0dc93325e`)
-
-Consolidated into `binding_targets::declaration_ids` and `binding_targets::declaration_name_strings`. `chunk_ast.rs` has thin wrappers for `pub(super)` re-export.
-
-### `module_export_name` (triplicated) — **Done** (`0dc93325e`)
-
-Consolidated into `binding_targets::module_export_name`. Also found and replaced `module_export_atom` in `validate_emitted_exports.rs`.
-
-### Import-decl construction (3 sites) — **Done** (`f576e543c`)
-
-`util.rs:import_decl_for_plan` and `imports_cross.rs:phantom_side_effect_imports` now delegate to the existing `imports_runtime.rs:import_decl_module_item`. Only one `ImportDecl` construction site remains.
-
-### Visitor method duplication (`lowering/visitors.rs`) — **Done** (`f576e543c`)
-
-Extracted the 6 shared `VisitMut` methods into `impl_rename_visit_mut!()` macro. `RenameAndShorthandNaturalizer` uses the macro and adds its 2 extra methods.
-
-### `read_json<T>` in e2e tests (6 copies)
-
-Copy-pasted into `realizability_test.rs`, `at_init_s_chain_dataflow_test.rs`, `owner_graph_purity_reason_test.rs`, `at_init_promotion_fndecl_direct_read_test.rs`, `peel_factorize_landability_test.rs`, and `purity_test.rs`. Move to `support.rs`.
-
-### Suffix-minting logic (2 implementations)
-
-`exports.rs:mint_unique_public_name` and `util.rs:mint_fresh_local_name` both implement suffix-appending name uniquification with slightly different collision-check semantics. Share a core function.
-
-### Identifier validation (2 near-identical functions)
-
-`lowering/util.rs:is_valid_js_identifier` (line 15) and `is_identifier_like` (line 87) check the same `[A-Za-z_$]` first char, `[A-Za-z0-9_$]` rest pattern. The only difference is empty-string handling. Merge.
-
 ### Test fixture builders in peel/ (2 copies) — **Partially done** (`f576e543c`)
 
 Extracted `binding()`, `member()`, `module_ref()` to `peel/test_utils.rs`. The `owner()`, `atomic_unit()`, `atomic_edge()`, `graph_fixture()` helpers have different signatures/semantics between the two test modules and remain local.
@@ -99,15 +56,15 @@ Extracted `binding()`, `member()`, `module_ref()` to `peel/test_utils.rs`. The `
 
 ### `lowering/util.rs` is a grab-bag module
 
-Violates STYLE.md "No grab-bag modules" rule. Contains identifier validation, ordinal arithmetic, var-decl splitting, scope name collection, import disambiguation, import-decl construction, I/O helpers, and error rendering. Split into `lowering/identifiers.rs`, `lowering/scope_names.rs`, `lowering/import_emit.rs`, `lowering/ordinal.rs`, `lowering/io.rs`.
+Violates STYLE.md "No grab-bag modules" rule. Contains ordinal arithmetic, var-decl splitting, scope name collection, import disambiguation, import-decl construction, I/O helpers, and error rendering. Split into `lowering/scope_names.rs`, `lowering/import_emit.rs`, `lowering/ordinal.rs`, `lowering/io.rs`.
 
 ### `lowering/materialize.rs` (1026 lines) mixes 4 concerns
 
 Orchestration/plan resolution (lines 39–342), factorization wiring (344–579), rebind folding (914–1026), and artifact assembly (787–912) are unrelated. Extract `fold_rebind_atomic_units` into its own file and factor out the `analysis_hints` collection (lines 359–405 — two near-identical loops for `explicit_requests` and `chunk_renames`).
 
-### `lower/lower.rs` — 600-line monolithic function
+### `lower/lower.rs` — monolithic function (partially extracted)
 
-`lower_chunk` is a single function performing 8 sequential phases, each gated by `time_phase!`. Extract into named phase functions, each with a smaller input struct. The `LowerChunkInputs` parameter struct has 15–20 fields — a code smell confirming the function does too much.
+`lower_chunk` had 8 sequential phases inline. Four have been extracted into named functions (`compute_selected_ordinals`, `plan_selected_exports`, `split_entry_body`, `build_module_output`). Remaining inline phases (naturalization, disambiguation, import planning, the per-module loop) could be further extracted, though each requires substantial captured state from `LowerChunkInputs` (15–20 fields).
 
 ### `lowering/mod.rs` — 45-line import block
 
@@ -128,26 +85,6 @@ Consequence of wildcard `use super::*` in every sub-module. A more targeted impo
 ### `output_layout.rs` — 12 identical accessor methods
 
 Each returns `self.root.join(CONSTANT)`. Replace with a data-driven approach: `report_path(name: &str) -> PathBuf` plus constants, or a const array + index.
-
-### `chunk_ast.rs:TopLevelDecl` — parallel vectors smell
-
-Carries `names: Vec<String>` and `ids: Vec<Id>` which are always parallel vectors of the same length. A `Vec<(String, Id)>` or a small struct would make the invariant explicit and prevent misalignment.
-
-### `exports.rs` — duplicate rejection functions
-
-`reject_duplicate_export_names` and `reject_duplicate_member_bindings` are structurally identical (iterate members, collect seen names, report duplicates). Only differ in which field they check. A single generic function parameterized by the extraction closure.
-
-### `naturalize.rs:81–117` — duplicated `Decl::Var` handling
-
-The `Decl::Var` handling is identical in both the `Stmt::Decl` arm (line 92) and the `ExportDecl` arm (line 106). Extract a helper.
-
-### `lowering/util.rs:77–86` — copy-pasted doc comment
-
-The doc comment for `is_identifier_like` was copy-pasted from an unrelated function (references `MiniFactors` mode and plan synthesis). Fix it.
-
-### `ids.rs:8–18` — historical changelog comment
-
-17-line comment about the historical `BindingName` / `BindingTable` removal. Per STYLE.md, historical comments should be deleted.
 
 ---
 
@@ -203,46 +140,6 @@ Unclear what the three strings mean. A named struct or comment would help.
 
 ---
 
-## P4 — Rust Idioms & Minor Issues
-
-### `should_rewrite_file` (rewrite_specifiers.rs:160)
-
-Uses early returns for boolean: `if !X { return false; } if Y { return false; } true`. More idiomatic as a single expression.
-
-### Unnecessary type alias (`chunk_factorization.rs:202`)
-
-`type StatementFactsInput = crate::StatementFacts` adds indirection without value. Use the concrete type directly.
-
-### `plan_references.rs:230–270` — phantom side-effect block bolted on
-
-Conceptually independent concern at the end of `plan_module_reference_needs`. Extract to a separate function.
-
-### `member_bucket` / `line_bucket` (`factorize.rs:782–814`)
-
-Identical functions with identical match arms. Collapse to one `size_bucket`.
-
-### `SwapVendorChunksConfig` destructuring (`pipeline.rs:176` and `260`)
-
-Repeated verbatim. Extract a local variable.
-
-### `lower.rs:398–404` vs `183–188` — duplicated filter
-
-`!binding_assignment.contains_key(&top_level_id(binding, chunk_top_level_mark))` appears three times. The `top_level_id(binding, chunk_top_level_mark)` pattern appears ~30 times across the codebase — could be a method on a context struct carrying the mark.
-
-### `body_facts.rs:33–36` — "mostly redundant" shadowing
-
-Comment says sym-based shadowing is "mostly redundant" with hygiene-correct contexts and exists only for backwards compatibility. Either commit to hygiene and remove, or document the concrete invariant that requires it.
-
-### `pipeline.rs` vendor block (135 lines)
-
-The vendor-swap section in `run_transform_cli` (lines 161–296) should be extracted into `run_vendor_stages`.
-
-### Redundant `chunk_top_level_mark` shadowing (`materialize.rs:493`)
-
-Rebinds a variable already in scope from line 88. The second binding shadows the first unnecessarily.
-
----
-
 ## P5 — Test-Specific Issues
 
 ### Cycle-forcing fixture pattern (~20 repetitions across 4 files)
@@ -295,15 +192,6 @@ diagnostics.
 ## SWC Ecosystem — Reuse Opportunities
 
 Currently pinned: `swc_common` 21.0.1, `swc_ecma_ast` 23.0.0, `swc_ecma_codegen` 26.0.1, `swc_ecma_parser` 39.0.2, `swc_ecma_utils` 29.1.1 (only `find_pat_ids` used), `swc_ecma_transforms_base` (resolver only), `swc_ecma_visit` 23.0.0, `swc_atoms` 9.0.0. SWC source cloned at `~/code/swc` for reference.
-
-### Immediately actionable
-
-| What                                                                                    | Where                                                                                                           | SWC Equivalent                                                                                                                                             | Effort                                                                                                |
-| --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `collect_pat_names` / `pat_names` / `binding_names` (4 custom String-returning walkers) | `strip_swapped_vendor_exports.rs:1079`, `validate_emitted_exports.rs:237`, `vendor.rs:~992`, `chunk_ast.rs:220` | `find_pat_ids` + `.map(\|id\| id.0.to_string())` or `for_each_binding_ident` (allocation-free callback version) — at pinned 29.1.1                         | Medium — add `binding_name_strings()` wrapper in `binding_targets`                                    |
-| `declared_names` / `declaration_names` / `declaration_ids` (4 copies)                   | `vendor.rs:979`, `chunk_ast.rs:194,207`, `facts.rs:1726`                                                        | `collect_decls` (returns `FxHashSet<Id>`) + `find_pat_ids` — at pinned 29.1.1                                                                              | Medium — consolidate into one backed by `collect_decls`                                               |
-| Identifier validation (3 near-identical ASCII checks)                                   | `vendor.rs:3048`, `lowering/util.rs:15,87`                                                                      | `is_valid_ident` from `swc_ecma_utils:1700` (full ES grammar + reserved word rejection) or `Ident::is_valid_start`/`is_valid_continue` for char-level only | Low — SWC's is stricter (rejects reserved words, accepts Unicode); local code deliberately skips this |
-| `export_decl_declared_names`                                                            | `strip_swapped_vendor_exports.rs:353`                                                                           | Use consolidated `declaration_names` from `chunk_ast.rs`                                                                                                   | Low                                                                                                   |
 
 ### `swc_ecma_utils` underutilized
 
@@ -364,32 +252,29 @@ No longer a standalone crate — absorbed into `swc_ecma_minifier` as `pub(crate
 | `strip_parens`                              | None at pinned 29.1.1                                                      | Comment in source confirms: "swc's pinned swc_ecma_utils doesn't ship a stable equivalent"                                      |
 | `SourceLineIndex`                           | `SourceMap::lookup_char_pos` available at 21.0.1                           | Local version is a legitimate perf optimization (pre-computed binary search); could simplify to direct calls if perf acceptable |
 | `member_root_id`/`member_root_sym`          | None                                                                       | No SWC utility for extracting root of member expression chains                                                                  |
-| Export name collection                      | None                                                                       | No public SWC utility; consolidate the two local copies instead                                                                 |
 | Import declaration construction             | `ExprFactory` trait (partial) — individual node construction only          | Debundle-specific relative-path logic has no SWC equivalent; keep but consolidate 3 copies                                      |
 
 ---
 
 ## Summary Statistics
 
-| Category                         | Count                                                                                   |
-| -------------------------------- | --------------------------------------------------------------------------------------- |
-| God modules (P0)                 | 4 files totaling ~12K lines                                                             |
-| Major duplication sites (P1)     | 11 patterns across ~30+ call sites                                                      |
-| Structural issues (P2)           | 13 findings                                                                             |
-| Encapsulation / type design (P3) | 13 findings                                                                             |
-| Rust idioms / minor (P4)         | 9 findings                                                                              |
-| Test-specific (P5)               | 9 findings                                                                              |
-| JS live proxy                    | 5 findings                                                                              |
-| SWC reuse opportunities          | 4 actionable, 1 potential DCE replacement, 8 underutilized utils, 9 not-worth-replacing |
+| Category                         | Count                              |
+| -------------------------------- | ---------------------------------- |
+| God modules (P0)                 | 4 files totaling ~12K lines        |
+| Major duplication sites (P1)     | 3 patterns remaining               |
+| Structural issues (P2)           | 8 findings                         |
+| Encapsulation / type design (P3) | 13 findings                        |
+| Test-specific (P5)               | 9 findings                         |
+| SWC reuse opportunities          | 8 underutilized utils, 1 DCE candidate |
 
 ## Top 5 Highest-Impact Actions
 
 1. **Split `vendor.rs`** into `vendor/{manifests,ast_helpers,rename,full_swap,partial_swap,bundled_partial_swap}.rs`. Addresses the worst god module and much of the duplication in one change.
 
-2. ~~**Unify all `collect_pat_names`/`binding_names`/`pat_names` reimplementations** to use `swc_ecma_utils::find_pat_ids` via a shared `binding_name_strings()` wrapper. Eliminates ~200 lines of duplicated AST walking.~~ **Done** (`0dc93325e`): added `binding_name_strings`, `declaration_ids`, `declaration_name_strings`, `module_export_name` to `binding_targets.rs`; removed 6 reimplementations across `chunk_ast`, `vendor`, `strip_swapped_vendor_exports`, `identifier_rename_queue`, `validate_emitted_exports`, `facts`, `program_analysis`. Net -185 lines.
+2. **Split `analysis_tests.rs`** into 6–8 topic-aligned test modules. Largest test file at 4095 lines.
 
-3. **Split `analysis_tests.rs`** into 6–8 topic-aligned test modules. Largest test file at 4095 lines.
+3. **Extract vendor-prune from `facts.rs`** into `facts/vendor_prune.rs`. Separates a 1000-line self-contained concern from general fact collection.
 
-4. **Extract vendor-prune from `facts.rs`** into `facts/vendor_prune.rs`. Separates a 1000-line self-contained concern from general fact collection.
+4. **Extract `write_json` helper** from `emit_harness.rs` (7 copies) and `write_tree.rs` (3 copies). Use `include_str!` for the embedded JS monitor script.
 
-5. **Consolidate the 6 copies of `read_json<T>`** into `support.rs` and extract the cycle-forcing fixture pattern (~20 repetitions across 4 files) into a shared helper. Eliminates ~300 lines of test boilerplate.
+5. **Split `lowering/util.rs`** grab-bag into focused modules (`scope_names.rs`, `import_emit.rs`, `ordinal.rs`, `io.rs`).

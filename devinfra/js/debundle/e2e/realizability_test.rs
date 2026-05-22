@@ -7,6 +7,9 @@
 //! match, or rejection with cycle evidence naming the implicated
 //! modules.
 
+use std::fs;
+use std::path::Path;
+
 use analysis::{BindingReport, DepKind, OwnerGraphReport};
 use debundle_e2e_support::*;
 use serde_json::json;

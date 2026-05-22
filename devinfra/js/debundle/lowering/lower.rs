@@ -12,6 +12,10 @@ use super::util::{
 use super::*;
 use crate::time_phase;
 
+const LOWERING_FILE_PRAGMA: &str =
+    "// @ducktape-generated kind=lowerer-helper stage=selected_module_lowering ignore=detectors";
+const LOWERING_GENERATOR_HEADER: &str = "// @ducktape-generator selected_module_lowering";
+
 pub(super) struct LoweredChunk {
     pub(super) files: Vec<JsFile>,
     pub(super) file_records: Vec<(String, FileRole)>,
