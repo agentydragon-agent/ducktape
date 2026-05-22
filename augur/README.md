@@ -59,3 +59,21 @@ bazelisk run //augur:dev
 The public fixture config uses the lightweight `simple` exogenous provider. Fitted
 macro models are selected in `Config.exogenous_provider` YAML, e.g. `type:
 vecm` with a trained blob path.
+
+## Profiling
+
+Use `//augur/api:profile_metric_fan` for a focused backend profile of one
+product API metric-fan request:
+
+```bash
+bazelisk run --config=nolint //augur/api:profile_metric_fan
+```
+
+The default request runs 50 rollouts over 100 months through
+`Backend.product_metric_fan`, using the public fixture config, configured
+public-security portfolio lots, inflation-indexed spend, and the simple
+exogenous provider. It writes cProfile data to `/tmp/augur_metric_fan.prof`
+and prints the top cumulative functions. The target is guarded by
+`--max-seconds=60`; retune request size with `--rollout-count`,
+`--horizon-months`, `--metric`, and `--percentiles` when profiling a different
+shape.
