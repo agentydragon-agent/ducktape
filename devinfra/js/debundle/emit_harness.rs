@@ -112,9 +112,12 @@ pub fn emit_browser_harness(
 
     fs::write(app_root.join("index.html"), index_html)?;
     fs::write(app_root.join("bootstrap.js"), bootstrap)?;
-    write_json(&layout.chunks_report(), &ChunksManifest {
-        chunks: chunk_records,
-    })?;
+    write_json(
+        layout.chunks_report(),
+        &ChunksManifest {
+            chunks: chunk_records,
+        },
+    )?;
     let queue = compute_identifier_rename_queue(artifact, decomposition_by_chunk)?;
     write_queue(&layout.rename_queue_report(), &queue)?;
     let runtime = HarnessRuntimeReport {
@@ -131,20 +134,32 @@ pub fn emit_browser_harness(
         },
     };
     write_json(layout.runtime_report(), &runtime)?;
-    write_json(layout.output_report(), &HarnessOutputReport {
-        output_metrics: materialized.output_metrics,
-    })?;
-    write_json(layout.source_assets_report(), &SourceAssetsReport {
-        source_path: module_path_from_path(&options.asset_summary_path),
-        asset_summary: asset_summary_value,
-    })?;
-    write_json(layout.provenance_report(), &ProvenanceReport {
-        source_html_path: module_path_from_path(&source_html_path),
-        source_html,
-    })?;
-    write_json(&app_root.join("package.json"), &PackageManifest {
-        package_type: "module",
-    })?;
+    write_json(
+        layout.output_report(),
+        &HarnessOutputReport {
+            output_metrics: materialized.output_metrics,
+        },
+    )?;
+    write_json(
+        layout.source_assets_report(),
+        &SourceAssetsReport {
+            source_path: module_path_from_path(&options.asset_summary_path),
+            asset_summary: asset_summary_value,
+        },
+    )?;
+    write_json(
+        layout.provenance_report(),
+        &ProvenanceReport {
+            source_html_path: module_path_from_path(&source_html_path),
+            source_html,
+        },
+    )?;
+    write_json(
+        app_root.join("package.json"),
+        &PackageManifest {
+            package_type: "module",
+        },
+    )?;
     Ok(())
 }
 

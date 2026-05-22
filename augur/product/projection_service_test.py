@@ -10,7 +10,15 @@ from augur.api.config import load_augur_config
 from augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle
 from augur.model.series import SP500_SERIES_ID
 from augur.model.simple_exogenous import SimpleExogenousModel
-from augur.product.projection import FundingPolicy, MetricFanRequest, RolloutRequest, ScenarioKey
+from augur.product.projection import (
+    FundingPolicy,
+    MetricFanRequest,
+    MonthlyExpenseEvent,
+    PublicSecuritySaleEvent,
+    RolloutFailureEvent,
+    RolloutRequest,
+    ScenarioKey,
+)
 from augur.product.projection_service import ProductProjectionCache, ProductProjectionService
 from util.bazel.runfiles import get_required_path
 
@@ -173,6 +181,8 @@ def test_failed_rollout_metrics_freeze_at_zero_after_failure() -> None:
     assert detail.rollout.monthly_metrics.columns["net_worth_usd"] == [1_000_000.0, 0.0, 0.0, 0.0]
     assert [event.kind for event in detail.rollout.events] == ["monthly_expense", "failure"]
     expense, failure = detail.rollout.events
+    assert isinstance(expense, MonthlyExpenseEvent)
+    assert isinstance(failure, RolloutFailureEvent)
     assert expense.amount_paid_usd == 0.0
     assert expense.shortfall_usd == 300_000.0
     assert failure.shortfall_usd == 300_000.0
@@ -197,6 +207,8 @@ def test_default_funding_policy_sells_public_securities_for_required_spend() -> 
     assert detail.rollout.terminal_metrics.net_worth_usd == pytest.approx(columns["public_security_value_usd"][1])
     assert [event.kind for event in detail.rollout.events] == ["public_security_sale", "monthly_expense"]
     sale, expense = detail.rollout.events
+    assert isinstance(sale, PublicSecuritySaleEvent)
+    assert isinstance(expense, MonthlyExpenseEvent)
     assert sale.label == "Sold SP500 Proxy (VOO)"
     assert sale.proceeds_usd == pytest.approx(50_000.0)
     assert sale.units == pytest.approx(100.0)
@@ -224,6 +236,8 @@ def test_product_cash_buffer_uses_sim_trigger_and_fixed_sale_amount() -> None:
     assert detail.rollout.terminal_metrics.shortfall_usd == 0.0
     assert [event.kind for event in detail.rollout.events] == ["public_security_sale", "monthly_expense"]
     sale, expense = detail.rollout.events
+    assert isinstance(sale, PublicSecuritySaleEvent)
+    assert isinstance(expense, MonthlyExpenseEvent)
     assert sale.proceeds_usd == pytest.approx(20_000.0)
     assert expense.amount_paid_usd == 1_000.0
 

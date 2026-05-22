@@ -210,7 +210,10 @@ enum SelectionKind {
 impl SelectionKind {
     fn value(&self) -> &str {
         match self {
-            Self::Owner(v) | Self::Binding(v) | Self::Proposal(v) | Self::Unit(v)
+            Self::Owner(v)
+            | Self::Binding(v)
+            | Self::Proposal(v)
+            | Self::Unit(v)
             | Self::Diagnostic(v) => v,
         }
     }
@@ -654,7 +657,9 @@ fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
     let mut limited_owner_ids = owner_ids;
 
     let mut sections = BTreeMap::new();
-    apply_limits!(args.limit, sections,
+    apply_limits!(
+        args.limit,
+        sections,
         (limited_owner_ids, "owner_ids"),
         (owners, "owners"),
         (neighbor_owners, "neighbor_owners"),

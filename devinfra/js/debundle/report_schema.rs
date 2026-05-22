@@ -29,6 +29,12 @@ pub struct LineRange {
     found: bool,
 }
 
+impl Default for LineRange {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl LineRange {
     pub fn new() -> Self {
         Self {
