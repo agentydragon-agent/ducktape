@@ -797,14 +797,14 @@ fn resolve_declared_local(
         .iter()
         .filter_map(|(declared, &idx)| (id_name(declared) == local_name).then_some(idx))
         .collect::<BTreeSet<_>>();
+    let prefix = format!(
+        "strip_swapped_vendor_exports vendor entry {chunk_path}: \
+         swapped export {alias} maps to local `{local_name}`"
+    );
     match matches.len() {
         1 => Ok(*matches.iter().next().expect("one match")),
-        0 => bail!(
-            "strip_swapped_vendor_exports vendor entry {chunk_path}: swapped export {alias} maps to local `{local_name}` but that binding has no top-level declaration",
-        ),
-        _ => bail!(
-            "strip_swapped_vendor_exports vendor entry {chunk_path}: swapped export {alias} maps to local `{local_name}` but that name has multiple top-level declarations",
-        ),
+        0 => bail!("{prefix} but that binding has no top-level declaration"),
+        _ => bail!("{prefix} but that name has multiple top-level declarations"),
     }
 }
 
