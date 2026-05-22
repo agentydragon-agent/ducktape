@@ -16,15 +16,13 @@ use prepare_chunks::prepare_js_chunks;
 use rewrite_specifiers::rewrite_chunk_entry_specifiers;
 use spec::{MaterializeLogicalModulesConfig, TransformSpec, VendorLevel};
 use spec_tree::{CompileSpecTreeOptions, compile_spec_tree};
-use strip_swapped_vendor_exports::{
-    ChunkStripStats, StripSwappedVendorExportsOptions, strip_swapped_vendor_exports_with_options,
-};
 use validate_emitted_exports::validate_emitted_exports;
 use vendor::{
     ApplyBundledPartialVendorSwapsOptions, ApplyPartialVendorSwapsOptions,
-    ChunkBundledPartialSwapResolution, ChunkPartialSwapResolution, SwapVendorOptions,
-    VendorResolution, apply_bundled_partial_vendor_swaps, apply_partial_vendor_swaps,
-    apply_vendor_annotations, rename_vendor_exports, swap_vendor_chunks,
+    ChunkBundledPartialSwapResolution, ChunkPartialSwapResolution, ChunkStripStats,
+    StripSwappedVendorExportsOptions, SwapVendorOptions, VendorResolution,
+    apply_bundled_partial_vendor_swaps, apply_partial_vendor_swaps, apply_vendor_annotations,
+    rename_vendor_exports, strip_swapped_vendor_exports_with_options, swap_vendor_chunks,
 };
 use write_tree::{WriteTreeInput, write_js_tree};
 

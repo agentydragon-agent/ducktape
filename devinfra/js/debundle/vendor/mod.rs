@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail};
 use rayon::prelude::*;
 mod manifests;
+mod strip;
 
 use serde_json::Value;
 use swc_common::{DUMMY_SP, GLOBALS, SyntaxContext};
@@ -23,6 +24,9 @@ pub use manifests::*;
 use spec::{
     BundledPartialSwapMark, BundledPartialSwapPackage, PartialSwapKind, PartialSwapMark,
     PartialSwapPackage, SwapMark, VendorLevel, VendorMark, WrapperShape,
+};
+pub use strip::{
+    ChunkStripStats, StripSwappedVendorExportsOptions, strip_swapped_vendor_exports_with_options,
 };
 
 pub fn apply_vendor_annotations(

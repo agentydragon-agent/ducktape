@@ -49,17 +49,6 @@ pub struct ChunkStripStats {
 /// so the chunk's residual `export { … }` entries for those names
 /// are dead weight. Without this pass the on-disk vendor blob stays
 /// byte-identical to pre-swap.
-pub fn strip_swapped_vendor_exports(
-    artifact: ChunkBundle,
-    vendor: &BTreeMap<String, VendorMark>,
-) -> Result<StripSwappedVendorExportsResult> {
-    strip_swapped_vendor_exports_with_options(
-        artifact,
-        vendor,
-        StripSwappedVendorExportsOptions::default(),
-    )
-}
-
 pub fn strip_swapped_vendor_exports_with_options(
     mut artifact: ChunkBundle,
     vendor: &BTreeMap<String, VendorMark>,

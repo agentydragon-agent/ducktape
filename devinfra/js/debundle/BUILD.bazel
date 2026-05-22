@@ -113,6 +113,7 @@ rust_library(
     srcs = [
         "vendor/manifests.rs",
         "vendor/mod.rs",
+        "vendor/strip.rs",
     ],
     crate_root = "vendor/mod.rs",
     edition = "2024",
@@ -128,6 +129,7 @@ rust_library(
         "@crates//:serde_json",
         "@crates//:swc_common",
         "@crates//:swc_ecma_ast",
+        "@crates//:swc_ecma_codegen",
         "@crates//:swc_ecma_visit",
     ],
 )
@@ -139,33 +141,6 @@ rust_test(
     deps = [
         ":binding_targets",
         "@crates//:rayon",
-    ],
-)
-
-rust_library(
-    name = "strip_swapped_vendor_exports",
-    srcs = ["strip_swapped_vendor_exports.rs"],
-    crate_root = "strip_swapped_vendor_exports.rs",
-    edition = "2024",
-    deps = [
-        ":analysis",
-        ":artifact",
-        ":binding_targets",
-        ":spec",
-        "@crates//:anyhow",
-        "@crates//:serde",
-        "@crates//:swc_common",
-        "@crates//:swc_ecma_ast",
-        "@crates//:swc_ecma_codegen",
-        "@crates//:swc_ecma_visit",
-    ],
-)
-
-rust_test(
-    name = "strip_swapped_vendor_exports_test",
-    crate = ":strip_swapped_vendor_exports",
-    edition = "2024",
-    deps = [
         "@crates//:swc_common",
         "@crates//:swc_ecma_codegen",
         "@crates//:swc_ecma_parser",
@@ -468,7 +443,6 @@ rust_library(
         ":rewrite_specifiers",
         ":spec",
         ":spec_tree",
-        ":strip_swapped_vendor_exports",
         ":validate_emitted_exports",
         ":vendor",
         ":write_tree",
