@@ -44,6 +44,7 @@ def create_app(config: ApiServerConfig) -> FastAPI:
     return create_augur_backend_app(
         title="Augur scenario API",
         bootstrap=backend.bootstrap_payload,
+        product_portfolio=backend.product_portfolio,
         product_metric_fan=backend.product_metric_fan,
         product_rollout=backend.product_rollout,
         scenario_set_run=backend.run_scenario_set,

@@ -30,6 +30,28 @@ py_library(
     ],
 )
 
+py_library(
+    name = "portfolio_py",
+    srcs = ["portfolio.py"],
+    deps = [
+        "//augur/api:finance_py",
+        "//augur/api:portfolio_py",
+        "//augur/api:schemas_py",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "portfolio_test",
+    srcs = ["portfolio_test.py"],
+    deps = [
+        ":portfolio_py",
+        "//augur/api:finance_py",
+        "//augur/api:portfolio_py",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_test(
     name = "projection_service_test",
     srcs = ["projection_service_test.py"],

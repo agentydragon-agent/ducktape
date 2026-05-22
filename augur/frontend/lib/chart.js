@@ -4,7 +4,6 @@ const FAN_CHART_TICK_FRACTIONS = [0, 0.25, 0.5, 0.75, 1];
 const METRIC_DISPLAY_NAMES = {
   cashUsd: "Cash",
   checkingFloorShortfallUsd: "Checking-floor shortfall",
-  drawdownUsd: "Cash drawdown",
   finalCheckingFloorShortfallUsd: "Final checking-floor shortfall",
   finalGenericSp500ValueUsd: "Final SP500 value",
   finalMortgageBalanceUsd: "Final mortgage balance",

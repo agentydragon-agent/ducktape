@@ -4,6 +4,7 @@ import {
   zBootstrapResponse,
   zMetricFanRequest,
   zMetricFanResponse,
+  zProductPortfolioResponse,
   zRolloutRequest,
   zRolloutResponse,
   zScenarioSetInput,
@@ -17,6 +18,10 @@ export async function fetchAugurBootstrap({ signal } = {}) {
 export async function runScenarioSet(scenarioSet, { signal } = {}) {
   const request = zScenarioSetInput.parse(decamelizeObjectKeys(scenarioSet));
   return camelizeObjectKeys(zScenarioSetRunResponse.parse(await postJson("/api/scenario_sets/run", request, signal)));
+}
+
+export async function fetchProductPortfolio({ signal } = {}) {
+  return camelizeObjectKeys(zProductPortfolioResponse.parse(await getJson("/api/product/portfolio", signal)));
 }
 
 export async function fetchProductMetricFan(metricFanRequest, { signal } = {}) {

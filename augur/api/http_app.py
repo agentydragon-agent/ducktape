@@ -10,10 +10,12 @@ from pydantic import ValidationError
 
 from augur.api.casing import plain_json
 from augur.api.scenario_set import ScenarioSet
+from augur.product.portfolio import ProductPortfolioResponse
 from augur.product.projection import MetricFanRequest, RolloutRequest
 
 PayloadProvider = Callable[[], Any]
 ScenarioSetHandler = Callable[[ScenarioSet], Any]
+ProductPortfolioHandler = Callable[[], ProductPortfolioResponse]
 MetricFanHandler = Callable[[MetricFanRequest], Any]
 RolloutHandler = Callable[[RolloutRequest], Any]
 
@@ -22,6 +24,7 @@ def create_augur_backend_app(
     *,
     title: str,
     bootstrap: PayloadProvider,
+    product_portfolio: ProductPortfolioHandler,
     product_metric_fan: MetricFanHandler,
     product_rollout: RolloutHandler,
     scenario_set_run: ScenarioSetHandler | None = None,
@@ -43,6 +46,10 @@ def create_augur_backend_app(
     @app.get("/api/bootstrap")
     def bootstrap_house() -> JSONResponse:
         return payload(bootstrap())
+
+    @app.get("/api/product/portfolio")
+    def product_portfolio_snapshot() -> JSONResponse:
+        return payload(product_portfolio())
 
     if scenario_set_run is not None:
 

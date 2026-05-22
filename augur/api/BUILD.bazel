@@ -206,6 +206,7 @@ py_library(
         ":scenario_set_py",
         ":scenario_tax_defaults_py",
         "//augur/model:exogenous_py",
+        "//augur/product:portfolio_py",
         "//augur/product:projection_py",
         "//augur/product:projection_service_py",
         "//augur/sim:external_series",
@@ -219,6 +220,7 @@ py_library(
     deps = [
         ":casing_py",
         ":scenario_set_py",
+        "//augur/product:portfolio_py",
         "//augur/product:projection_py",
         "@pypi//fastapi",
         "@pypi//pydantic",
@@ -422,6 +424,7 @@ py_library(
         ":bootstrap_py",
         ":browser_state_py",
         ":scenario_set_py",
+        "//augur/product:portfolio_py",
         "//augur/product:projection_py",
         "@pypi//fastapi",
     ],

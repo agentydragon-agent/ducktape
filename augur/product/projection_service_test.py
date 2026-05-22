@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+import pytest
 import pytest_bazel
 
 from augur.api.config import load_augur_config
 from augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle
 from augur.model.series import SP500_SERIES_ID
 from augur.model.simple_exogenous import SimpleExogenousModel
-from augur.product.projection import MetricFanRequest, RolloutRequest, ScenarioKey
+from augur.product.projection import FundingPolicy, MetricFanRequest, RolloutRequest, ScenarioKey
 from augur.product.projection_service import ProductProjectionCache, ProductProjectionService
 from util.bazel.runfiles import get_required_path
 
@@ -82,6 +83,12 @@ def test_metric_fan_and_rollout_detail_share_cached_sim_rollouts() -> None:
     assert detail.rollout.monthly_metrics.columns["public_security_value_usd"][0] == 150_000.0
     assert detail.rollout.monthly_metrics.columns["liquid_net_worth_usd"][0] == 200_000.0
     assert detail.rollout.monthly_metrics.columns["net_worth_usd"][0] == 200_000.0
+    assert [event.kind for event in detail.rollout.events] == ["monthly_expense"] * 3
+    assert [event.amount_paid_usd for event in detail.rollout.events if event.kind == "monthly_expense"] == [
+        1_000.0,
+        1_000.0,
+        1_000.0,
+    ]
 
     public_security_fan = service.metric_fan(
         MetricFanRequest(scenario=scenario, rollout_seeds=(7, 8), metric="public_security_value_usd", percentiles=(50,))
@@ -101,7 +108,11 @@ def test_failed_rollout_metrics_freeze_at_zero_after_failure() -> None:
     model = CountingExogenousModel()
     service = _service(model)
     scenario = ScenarioKey(
-        exogenous_model_id="current_exogenous_model", horizon_months=3, monthly_spend_usd=100_000.0, spend_index="none"
+        exogenous_model_id="current_exogenous_model",
+        horizon_months=3,
+        monthly_spend_usd=100_000.0,
+        spend_index="none",
+        funding_policy=FundingPolicy(sell_order=()),
     )
 
     fan = service.metric_fan(
@@ -125,6 +136,61 @@ def test_failed_rollout_metrics_freeze_at_zero_after_failure() -> None:
     assert detail.rollout.monthly_metrics.columns["cash_usd"] == [50_000.0, 0.0, 0.0, 0.0]
     assert detail.rollout.monthly_metrics.columns["public_security_value_usd"] == [150_000.0, 0.0, 0.0, 0.0]
     assert detail.rollout.monthly_metrics.columns["net_worth_usd"] == [200_000.0, 0.0, 0.0, 0.0]
+    assert [event.kind for event in detail.rollout.events] == ["monthly_expense", "failure"]
+    expense, failure = detail.rollout.events
+    assert expense.amount_paid_usd == 0.0
+    assert expense.shortfall_usd == 100_000.0
+    assert failure.shortfall_usd == 100_000.0
+
+
+def test_default_funding_policy_sells_public_securities_for_required_spend() -> None:
+    model = CountingExogenousModel()
+    service = _service(model)
+    scenario = ScenarioKey(
+        exogenous_model_id="current_exogenous_model", horizon_months=1, monthly_spend_usd=100_000.0, spend_index="none"
+    )
+
+    detail = service.rollout(RolloutRequest(scenario=scenario, seed=7))
+
+    assert detail.rollout.failed is False
+    columns = detail.rollout.monthly_metrics.columns
+    assert columns["cash_usd"] == [50_000.0, 0.0]
+    assert columns["public_security_value_usd"][0] == 150_000.0
+    assert 0.0 < columns["public_security_value_usd"][1] < 150_000.0
+    assert detail.rollout.terminal_metrics.cash_usd == 0.0
+    assert detail.rollout.terminal_metrics.shortfall_usd == 0.0
+    assert detail.rollout.terminal_metrics.net_worth_usd == pytest.approx(columns["public_security_value_usd"][1])
+    assert [event.kind for event in detail.rollout.events] == ["public_security_sale", "monthly_expense"]
+    sale, expense = detail.rollout.events
+    assert sale.label == "Sold SP500 Proxy (VOO)"
+    assert sale.proceeds_usd == pytest.approx(50_000.0)
+    assert sale.units == pytest.approx(100.0)
+    assert expense.amount_due_usd == 100_000.0
+    assert expense.amount_paid_usd == 100_000.0
+    assert expense.shortfall_usd == 0.0
+
+
+def test_product_cash_buffer_uses_sim_trigger_and_fixed_sale_amount() -> None:
+    model = CountingExogenousModel()
+    service = _service(model)
+    scenario = ScenarioKey(
+        exogenous_model_id="current_exogenous_model",
+        horizon_months=1,
+        monthly_spend_usd=1_000.0,
+        spend_index="none",
+        funding_policy=FundingPolicy(cash_buffer_trigger_below_usd=60_000.0, cash_buffer_sale_usd=20_000.0),
+    )
+
+    detail = service.rollout(RolloutRequest(scenario=scenario, seed=7))
+
+    assert detail.rollout.failed is False
+    assert detail.rollout.monthly_metrics.columns["cash_usd"] == [50_000.0, 69_000.0]
+    assert detail.rollout.terminal_metrics.cash_usd == 69_000.0
+    assert detail.rollout.terminal_metrics.shortfall_usd == 0.0
+    assert [event.kind for event in detail.rollout.events] == ["public_security_sale", "monthly_expense"]
+    sale, expense = detail.rollout.events
+    assert sale.proceeds_usd == pytest.approx(20_000.0)
+    assert expense.amount_paid_usd == 1_000.0
 
 
 if __name__ == "__main__":

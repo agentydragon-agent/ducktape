@@ -10,6 +10,7 @@ from fastapi.responses import PlainTextResponse
 from augur.api.bootstrap import BootstrapResponse
 from augur.api.browser_state import BrowserScenarioSetInput, BrowserScenarioSetInputOverrides
 from augur.api.scenario_set import ScenarioSet, ScenarioSetRunResponse
+from augur.product.portfolio import ProductPortfolioResponse
 from augur.product.projection import MetricFanRequest, MetricFanResponse, RolloutRequest, RolloutResponse
 
 
@@ -18,6 +19,10 @@ def create_schema_app() -> FastAPI:
 
     @app.get("/api/bootstrap", response_model=BootstrapResponse)
     def bootstrap() -> BootstrapResponse:
+        raise RuntimeError("schema-only route")
+
+    @app.get("/api/product/portfolio", response_model=ProductPortfolioResponse)
+    def product_portfolio() -> ProductPortfolioResponse:
         raise RuntimeError("schema-only route")
 
     @app.post("/api/scenario_sets/run", response_model=ScenarioSetRunResponse)

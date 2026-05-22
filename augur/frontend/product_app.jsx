@@ -1,7 +1,7 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { Button, NativeSelect } from "@mantine/core";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Button, Checkbox, NativeSelect } from "@mantine/core";
 
-import { fetchAugurBootstrap, fetchProductMetricFan, fetchProductRollout } from "./client.js";
+import { fetchAugurBootstrap, fetchProductMetricFan, fetchProductPortfolio, fetchProductRollout } from "./client.js";
 import { fanChartAxis, fanChartYearTicks, fmtAxisMetricValue } from "./lib/chart.js";
 import { rowsFromCamelColumnar } from "./lib/columnar.js";
 import { NumberField } from "./lib/controls.jsx";
@@ -14,18 +14,25 @@ const DEFAULT_PRODUCT_INPUT_BASE = {
   firstSeed: 1301,
   monthlySpendUsd: 1400,
   spendIndex: "inflation",
+  sellPublicSecurities: true,
+  cashBufferTriggerBelowUsd: 0,
+  cashBufferSaleUsd: 0,
 };
 
 const FAN_PERCENTILES = [5, 25, 50, 75, 95];
 const SELECTED_ROLLOUT_COLOR = "#0f766e";
 const FAILED_ROLLOUT_COLOR = "#ef4444";
+const ROLLOUT_EVENT_COLORS = {
+  public_security_sale: "#0f766e",
+  monthly_expense: "#64748b",
+  failure: "#dc2626",
+};
 
 const METRIC_OPTIONS = [
   { value: "net_worth_usd", chartValue: "netWorthUsd", label: "Net worth" },
   { value: "public_security_value_usd", chartValue: "publicSecurityValueUsd", label: "Public security value" },
   { value: "liquid_net_worth_usd", chartValue: "liquidNetWorthUsd", label: "Liquid net worth" },
   { value: "cash_usd", chartValue: "cashUsd", label: "Cash balance" },
-  { value: "drawdown_usd", chartValue: "drawdownUsd", label: "Cash drawdown" },
   { value: "shortfall_usd", chartValue: "shortfallUsd", label: "Cash shortfall" },
 ];
 
@@ -46,11 +53,17 @@ function productInputDefaults(bootstrap) {
 }
 
 function productScenario(input, bootstrap) {
+  const sellPublicSecurities = Boolean(input.sellPublicSecurities);
   return {
     exogenousModelId: "current_exogenous_model",
     horizonMonths: clampInteger(input.horizonMonths, 1, bootstrap.maxHorizonMonths),
     monthlySpendUsd: Math.max(1, Number(input.monthlySpendUsd) || 1),
     spendIndex: input.spendIndex === "none" ? "none" : "inflation",
+    fundingPolicy: {
+      cashBufferTriggerBelowUsd: sellPublicSecurities ? Math.max(0, Number(input.cashBufferTriggerBelowUsd) || 0) : 0,
+      cashBufferSaleUsd: sellPublicSecurities ? Math.max(0, Number(input.cashBufferSaleUsd) || 0) : 0,
+      sellOrder: sellPublicSecurities ? ["public_securities"] : [],
+    },
   };
 }
 
@@ -157,7 +170,80 @@ function selectedRolloutMetricRows(detail, metric) {
     .filter((row) => Number.isFinite(row.monthIndex) && Number.isFinite(row.value));
 }
 
-function MetricFanChart({ rows, metric, percentiles, selectedRows, selectedSeed, selectedFailed }) {
+function selectedRolloutEvents(detail) {
+  return Array.isArray(detail?.rollout?.events) ? detail.rollout.events : [];
+}
+
+function eventMonthIndex(event) {
+  const monthIndex = Number(event?.monthIndex);
+  return Number.isFinite(monthIndex) ? monthIndex : null;
+}
+
+function eventStateMonthIndex(event) {
+  const monthIndex = eventMonthIndex(event);
+  return monthIndex == null ? null : monthIndex + 1;
+}
+
+function eventGroupsByMonth(events) {
+  const groups = new Map();
+  for (const event of events) {
+    const monthIndex = eventMonthIndex(event);
+    if (monthIndex == null) continue;
+    if (!groups.has(monthIndex)) groups.set(monthIndex, []);
+    groups.get(monthIndex).push(event);
+  }
+  return [...groups.entries()]
+    .sort(([left], [right]) => left - right)
+    .map(([monthIndex, monthEvents]) => ({ monthIndex, events: monthEvents }));
+}
+
+function eventMarkerYOffset(event) {
+  if (event?.kind === "public_security_sale") return -6;
+  if (event?.kind === "failure") return 7;
+  return 0;
+}
+
+function eventColor(event) {
+  return ROLLOUT_EVENT_COLORS[event?.kind] ?? "#64748b";
+}
+
+function eventAmount(event) {
+  return Number(event?.amountUsd);
+}
+
+function eventDetailText(event) {
+  if (event?.kind === "public_security_sale") {
+    return `${fmtNumber(Number(event.units))} units; basis ${fmtUsd(Number(event.costBasisUsd))}`;
+  }
+  if (event?.kind === "monthly_expense") {
+    const shortfall = Number(event.shortfallUsd);
+    return shortfall > 0
+      ? `due ${fmtUsd(Number(event.amountDueUsd))}; shortfall ${fmtUsd(shortfall)}`
+      : `due ${fmtUsd(Number(event.amountDueUsd))}`;
+  }
+  if (event?.kind === "failure") {
+    return `shortfall ${fmtUsd(Number(event.shortfallUsd))}`;
+  }
+  return "";
+}
+
+function eventTitle(event) {
+  return `Month ${eventStateMonthIndex(event) ?? "n/a"}: ${event?.label ?? "Event"} ${fmtUsd(eventAmount(event))}`;
+}
+
+function MetricFanChart({
+  rows,
+  metric,
+  percentiles,
+  selectedRows,
+  selectedEvents,
+  selectedSeed,
+  selectedFailed,
+  selectedEventMonthIndex,
+  hoveredEventMonthIndex,
+  onSelectEventMonth,
+  onHoverEventMonth,
+}) {
   if (rows.length === 0) return null;
   const sortedPercentiles = percentiles.slice().sort((left, right) => left - right);
   const outerLow = sortedPercentiles[0];
@@ -185,6 +271,16 @@ function MetricFanChart({ rows, metric, percentiles, selectedRows, selectedSeed,
   const line = (percentile) => rows.map((row) => `${x(row)},${y(valueAt(row, percentile))}`).join(" ");
   const selectedLine = selectedRows.map((row) => `${x(row)},${y(row.value)}`).join(" ");
   const selectedColor = selectedFailed ? FAILED_ROLLOUT_COLOR : SELECTED_ROLLOUT_COLOR;
+  const selectedRowByMonth = new Map(selectedRows.map((row) => [row.monthIndex, row]));
+  const eventMarkers = selectedEvents
+    .map((event, index) => {
+      const monthIndex = eventMonthIndex(event);
+      if (monthIndex == null) return null;
+      const row = selectedRowByMonth.get(monthIndex);
+      if (!row) return null;
+      return { event, index, monthIndex, row, color: eventColor(event) };
+    })
+    .filter(Boolean);
   const band = (upperPercentile, lowerPercentile) => {
     const upper = rows.map((row) => `${x(row)},${y(valueAt(row, upperPercentile))}`).join(" ");
     const lower = rows
@@ -252,6 +348,72 @@ function MetricFanChart({ rows, metric, percentiles, selectedRows, selectedSeed,
             />
           </>
         )}
+        {eventMarkers.map(({ event, index, monthIndex, row, color }) => {
+          const isSelected = selectedEventMonthIndex === monthIndex;
+          const isHovered = hoveredEventMonthIndex === monthIndex;
+          const isActive = isSelected || isHovered;
+          const markerX = x(row);
+          const markerY = Math.max(top + 6, Math.min(top + plotHeight - 6, y(row.value) + eventMarkerYOffset(event)));
+          const baseRadius = event.kind === "monthly_expense" ? 2.5 : 4.5;
+          const radius = isActive ? baseRadius + 2.2 : baseRadius;
+          return (
+            <g
+              key={`${event.kind}-${event.monthIndex}-${index}`}
+              role="button"
+              tabIndex={0}
+              aria-label={eventTitle(event)}
+              data-product-rollout-event-marker={event.kind}
+              data-product-rollout-event-marker-month={monthIndex}
+              data-product-rollout-event-marker-selected={isSelected ? "true" : "false"}
+              data-product-rollout-event-marker-hovered={isHovered ? "true" : "false"}
+              onClick={() => onSelectEventMonth?.(monthIndex)}
+              onKeyDown={(keyboardEvent) => {
+                if (keyboardEvent.key !== "Enter" && keyboardEvent.key !== " ") return;
+                keyboardEvent.preventDefault();
+                onSelectEventMonth?.(monthIndex);
+              }}
+              onMouseEnter={() => onHoverEventMonth?.(monthIndex)}
+              onMouseLeave={() => onHoverEventMonth?.(null)}
+              onFocus={() => onHoverEventMonth?.(monthIndex)}
+              onBlur={() => onHoverEventMonth?.(null)}
+              style={{ cursor: "pointer" }}
+            >
+              {event.kind !== "monthly_expense" && (
+                <line
+                  x1={markerX}
+                  x2={markerX}
+                  y1={top}
+                  y2={top + plotHeight}
+                  stroke={color}
+                  opacity={isActive ? 0.34 : 0.16}
+                  strokeWidth={isActive ? 1.6 : 1}
+                />
+              )}
+              {isActive && (
+                <circle
+                  cx={markerX}
+                  cy={markerY}
+                  r={radius + 3}
+                  fill="none"
+                  stroke={isSelected ? SELECTED_ROLLOUT_COLOR : "#0891b2"}
+                  strokeWidth="2"
+                  opacity="0.72"
+                />
+              )}
+              <circle
+                cx={markerX}
+                cy={markerY}
+                r={radius}
+                fill={color}
+                opacity={isActive || event.kind !== "monthly_expense" ? 0.98 : 0.78}
+                stroke="white"
+                strokeWidth={isActive ? 2 : 1.25}
+              >
+                <title>{eventTitle(event)}</title>
+              </circle>
+            </g>
+          );
+        })}
       </svg>
     </div>
   );
@@ -379,6 +541,211 @@ function TerminalMetricTable({ summaries, selectedSummary }) {
   );
 }
 
+function SelectedRolloutEventsPanel({
+  events,
+  selectedSummary,
+  loading,
+  selectedEventMonthIndex,
+  hoveredEventMonthIndex,
+  onSelectEventMonth,
+  onHoverEventMonth,
+}) {
+  const groups = useMemo(() => eventGroupsByMonth(events), [events]);
+  const groupRefs = useRef(new Map());
+
+  useEffect(() => {
+    if (selectedEventMonthIndex == null) return;
+    groupRefs.current.get(selectedEventMonthIndex)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [selectedEventMonthIndex, groups]);
+
+  if (!selectedSummary) return null;
+
+  const selectMonthFromKeyboard = (keyboardEvent, monthIndex) => {
+    if (keyboardEvent.key !== "Enter" && keyboardEvent.key !== " ") return;
+    keyboardEvent.preventDefault();
+    onSelectEventMonth?.(monthIndex);
+  };
+
+  return (
+    <div className="border-t border-slate-200 dark:border-slate-700">
+      <div className="flex flex-col gap-1 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div className="augur-eyebrow">Selected rollout events</div>
+          <div className="mt-1 text-xs augur-muted">Seed {selectedSummary.seed}</div>
+        </div>
+        <div className="text-xs font-semibold augur-tabular augur-muted">
+          {loading ? "Loading events" : `${fmtNumber(groups.length)} months / ${fmtNumber(events.length)} events`}
+        </div>
+      </div>
+      {loading ? (
+        <div className="px-4 pb-4 text-sm augur-muted">Loading...</div>
+      ) : events.length === 0 ? (
+        <div className="px-4 pb-4 text-sm augur-muted">No events</div>
+      ) : (
+        <div className="max-h-[18rem] overflow-auto border-t border-slate-200 dark:border-slate-700">
+          <table className="min-w-full text-sm">
+            <thead className="sticky top-0 bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500 dark:bg-slate-900 dark:text-slate-400">
+              <tr>
+                <th className="px-4 py-2 font-semibold">Month</th>
+                <th className="px-3 py-2 font-semibold">Event</th>
+                <th className="px-3 py-2 text-right font-semibold">Amount</th>
+                <th className="px-4 py-2 font-semibold">Detail</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+              {groups.map((group) => {
+                const isSelected = selectedEventMonthIndex === group.monthIndex;
+                const isHovered = hoveredEventMonthIndex === group.monthIndex;
+                const headerClassName = isSelected
+                  ? "cursor-pointer bg-teal-50 text-teal-900 outline-none dark:bg-teal-950/40 dark:text-teal-100"
+                  : isHovered
+                    ? "cursor-pointer bg-cyan-50 text-slate-900 outline-none dark:bg-slate-800 dark:text-slate-100"
+                    : "cursor-pointer bg-slate-50 text-slate-700 outline-none hover:bg-slate-100 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800";
+                const rowClassName = isSelected
+                  ? "cursor-pointer bg-teal-50/60 dark:bg-teal-950/20"
+                  : isHovered
+                    ? "cursor-pointer bg-cyan-50/60 dark:bg-slate-800/70"
+                    : "cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/70";
+                return (
+                  <React.Fragment key={group.monthIndex}>
+                    <tr
+                      ref={(node) => {
+                        if (node) {
+                          groupRefs.current.set(group.monthIndex, node);
+                        } else {
+                          groupRefs.current.delete(group.monthIndex);
+                        }
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      className={headerClassName}
+                      data-product-rollout-event-month={group.monthIndex}
+                      data-product-rollout-event-month-selected={isSelected ? "true" : "false"}
+                      data-product-rollout-event-month-hovered={isHovered ? "true" : "false"}
+                      onClick={() => onSelectEventMonth?.(group.monthIndex)}
+                      onKeyDown={(keyboardEvent) => selectMonthFromKeyboard(keyboardEvent, group.monthIndex)}
+                      onMouseEnter={() => onHoverEventMonth?.(group.monthIndex)}
+                      onMouseLeave={() => onHoverEventMonth?.(null)}
+                      onFocus={() => onHoverEventMonth?.(group.monthIndex)}
+                      onBlur={() => onHoverEventMonth?.(null)}
+                    >
+                      <td className="whitespace-nowrap px-4 py-2 font-semibold augur-tabular">
+                        {group.monthIndex + 1}
+                      </td>
+                      <td className="px-3 py-2 font-semibold" colSpan={3}>
+                        <div className="flex min-w-0 items-center justify-between gap-3">
+                          <span>Month {group.monthIndex + 1}</span>
+                          <span className="shrink-0 text-[11px] uppercase tracking-wide augur-muted">
+                            {fmtNumber(group.events.length)} events
+                          </span>
+                        </div>
+                      </td>
+                    </tr>
+                    {group.events.map((event, index) => (
+                      <tr
+                        key={`${event.kind}-${event.monthIndex}-${index}`}
+                        role="button"
+                        tabIndex={0}
+                        className={rowClassName}
+                        onClick={() => onSelectEventMonth?.(group.monthIndex)}
+                        onKeyDown={(keyboardEvent) => selectMonthFromKeyboard(keyboardEvent, group.monthIndex)}
+                        onMouseEnter={() => onHoverEventMonth?.(group.monthIndex)}
+                        onMouseLeave={() => onHoverEventMonth?.(null)}
+                        onFocus={() => onHoverEventMonth?.(group.monthIndex)}
+                        onBlur={() => onHoverEventMonth?.(null)}
+                      >
+                        <td className="whitespace-nowrap px-4 py-2 augur-tabular">{eventStateMonthIndex(event)}</td>
+                        <td className="px-3 py-2">
+                          <div className="flex min-w-0 items-center gap-2">
+                            <span
+                              className="h-2.5 w-2.5 shrink-0 rounded-full"
+                              style={{ backgroundColor: eventColor(event) }}
+                              aria-hidden="true"
+                            />
+                            <span className="min-w-0 truncate font-semibold augur-strong">{event.label}</span>
+                          </div>
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-2 text-right font-semibold augur-tabular">
+                          {fmtUsd(eventAmount(event))}
+                        </td>
+                        <td className="min-w-[12rem] px-4 py-2 text-xs augur-muted">{eventDetailText(event)}</td>
+                      </tr>
+                    ))}
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProductPortfolioPanel({ portfolio, error }) {
+  const publicSecurities = portfolio?.publicSecurities ?? [];
+  return (
+    <div className="augur-card p-4">
+      <div className="augur-eyebrow">Initial portfolio</div>
+      {error ? (
+        <div className="mt-3 augur-note-danger text-sm">Portfolio failed to load: {error}</div>
+      ) : (
+        <div className="mt-4 space-y-3">
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div>
+              <div className="augur-field-label mb-1">Cash</div>
+              <div className="font-semibold augur-tabular">{fmtUsd(Number(portfolio?.cashUsd))}</div>
+            </div>
+            <div>
+              <div className="augur-field-label mb-1">Public securities</div>
+              <div className="font-semibold augur-tabular">
+                {fmtUsd(Number(portfolio?.totalPublicSecurityValueUsd))}
+              </div>
+            </div>
+          </div>
+          {publicSecurities.length === 0 ? (
+            <div className="text-sm augur-muted">No public securities</div>
+          ) : (
+            <div className="divide-y divide-slate-200 rounded-md border border-slate-200 dark:divide-slate-700 dark:border-slate-700">
+              {publicSecurities.map((position) => (
+                <div key={position.positionId} className="p-3">
+                  <div className="flex min-w-0 items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-semibold augur-strong">
+                        {position.label || position.symbol}
+                      </div>
+                      <div className="mt-1 text-xs augur-muted">
+                        {position.symbol} · {position.accountLabel || position.accountId}
+                      </div>
+                    </div>
+                    <div className="shrink-0 text-right text-sm font-semibold augur-tabular">
+                      {fmtUsd(Number(position.currentValueUsd))}
+                    </div>
+                  </div>
+                  <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+                    <div>
+                      <div className="augur-muted">Units</div>
+                      <div className="font-semibold augur-tabular">{fmtNumber(Number(position.quantity))}</div>
+                    </div>
+                    <div>
+                      <div className="augur-muted">Unit value</div>
+                      <div className="font-semibold augur-tabular">{fmtUsd(Number(position.unitValueUsd))}</div>
+                    </div>
+                    <div>
+                      <div className="augur-muted">Basis</div>
+                      <div className="font-semibold augur-tabular">{fmtUsd(Number(position.totalCostBasisUsd))}</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ProductProjectionLoading({ error }) {
   return (
     <div
@@ -402,9 +769,13 @@ function ProductProjectionWorkspace({ bootstrap }) {
   const [selectedMetricValue, setSelectedMetricValue] = useState("net_worth_usd");
   const [result, setResult] = useState(null);
   const [runError, setRunError] = useState(null);
+  const [portfolio, setPortfolio] = useState(null);
+  const [portfolioError, setPortfolioError] = useState(null);
   const [selectedSeed, setSelectedSeed] = useState(null);
   const [rolloutDetails, setRolloutDetails] = useState(() => new Map());
   const [rolloutError, setRolloutError] = useState(null);
+  const [selectedEventMonthIndex, setSelectedEventMonthIndex] = useState(null);
+  const [hoveredEventMonthIndex, setHoveredEventMonthIndex] = useState(null);
   const selectedMetric = METRIC_BY_VALUE.get(selectedMetricValue) ?? METRIC_OPTIONS[0];
   const request = useMemo(
     () => productMetricFanRequest(input, bootstrap, selectedMetric),
@@ -423,10 +794,29 @@ function ProductProjectionWorkspace({ bootstrap }) {
     () => selectedRolloutMetricRows(selectedDetail, selectedMetric),
     [selectedDetail, selectedMetric]
   );
+  const selectedEvents = useMemo(() => selectedRolloutEvents(selectedDetail), [selectedDetail]);
   const failedCount = result?.failedCount ?? null;
   const terminalP50 = terminalPercentileValue(result, 50);
   const updateInput = (patch) => setInput((previous) => ({ ...previous, ...patch }));
+  const toggleSelectedEventMonthIndex = (monthIndex) => {
+    setSelectedEventMonthIndex((previous) => (previous === monthIndex ? null : monthIndex));
+  };
   const selectedRolloutLoading = selectedSeed != null && result != null && !selectedDetail && !rolloutError;
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchProductPortfolio({ signal: controller.signal })
+      .then((payload) => {
+        setPortfolio(payload);
+        setPortfolioError(null);
+      })
+      .catch((error) => {
+        if (error?.name === "AbortError") return;
+        setPortfolio(null);
+        setPortfolioError(error?.message || String(error));
+      });
+    return () => controller.abort();
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -455,6 +845,11 @@ function ProductProjectionWorkspace({ bootstrap }) {
       setSelectedSeed(null);
     }
   }, [result, selectedSeed]);
+
+  useEffect(() => {
+    setSelectedEventMonthIndex(null);
+    setHoveredEventMonthIndex(null);
+  }, [selectedDetailKey]);
 
   useEffect(() => {
     if (selectedSeed == null || result == null || selectedDetailKey == null) return;
@@ -491,7 +886,7 @@ function ProductProjectionWorkspace({ bootstrap }) {
           <aside className="min-w-0 space-y-5">
             <div className="augur-card p-4">
               <div className="augur-eyebrow">Scenario</div>
-              <h2 className="display mt-2 text-xl augur-heading">Cash drawdown</h2>
+              <h2 className="display mt-2 text-xl augur-heading">Cash projection</h2>
               <div className="mt-5 grid gap-3">
                 <NumberField
                   label="Monthly spend"
@@ -529,6 +924,38 @@ function ProductProjectionWorkspace({ bootstrap }) {
                   step={1}
                   onChange={(rolloutCount) => updateInput({ rolloutCount })}
                 />
+              </div>
+            </div>
+            <ProductPortfolioPanel portfolio={portfolio} error={portfolioError} />
+            <div className="augur-card p-4">
+              <div className="augur-eyebrow">Funding</div>
+              <div className="mt-4 grid gap-3">
+                <Checkbox
+                  label="Sell public securities"
+                  checked={Boolean(input.sellPublicSecurities)}
+                  classNames={{ label: "text-sm font-semibold augur-strong" }}
+                  onChange={(event) => updateInput({ sellPublicSecurities: event.currentTarget.checked })}
+                />
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+                  <NumberField
+                    label="Trigger below"
+                    value={input.cashBufferTriggerBelowUsd}
+                    min={0}
+                    step={1000}
+                    prefix="$"
+                    disabled={!input.sellPublicSecurities}
+                    onChange={(cashBufferTriggerBelowUsd) => updateInput({ cashBufferTriggerBelowUsd })}
+                  />
+                  <NumberField
+                    label="Sell amount"
+                    value={input.cashBufferSaleUsd}
+                    min={0}
+                    step={1000}
+                    prefix="$"
+                    disabled={!input.sellPublicSecurities}
+                    onChange={(cashBufferSaleUsd) => updateInput({ cashBufferSaleUsd })}
+                  />
+                </div>
               </div>
             </div>
             <div className="augur-card p-4">
@@ -603,8 +1030,13 @@ function ProductProjectionWorkspace({ bootstrap }) {
                   metric={selectedMetric}
                   percentiles={request.percentiles}
                   selectedRows={selectedRows}
+                  selectedEvents={selectedEvents}
                   selectedSeed={selectedSeed}
                   selectedFailed={selectedSummary?.failed ?? false}
+                  selectedEventMonthIndex={selectedEventMonthIndex}
+                  hoveredEventMonthIndex={hoveredEventMonthIndex}
+                  onSelectEventMonth={toggleSelectedEventMonthIndex}
+                  onHoverEventMonth={setHoveredEventMonthIndex}
                 />
               ) : (
                 <div className="flex min-h-[22rem] items-center justify-center text-sm augur-muted">Running...</div>
@@ -614,6 +1046,15 @@ function ProductProjectionWorkspace({ bootstrap }) {
                   <div className="augur-note-danger">Selected rollout failed to load: {rolloutError}</div>
                 </div>
               )}
+              <SelectedRolloutEventsPanel
+                events={selectedEvents}
+                selectedSummary={selectedSummary}
+                loading={selectedRolloutLoading}
+                selectedEventMonthIndex={selectedEventMonthIndex}
+                hoveredEventMonthIndex={hoveredEventMonthIndex}
+                onSelectEventMonth={toggleSelectedEventMonthIndex}
+                onHoverEventMonth={setHoveredEventMonthIndex}
+              />
               <TerminalMetricTable summaries={rolloutSummaries} selectedSummary={selectedSummary} />
             </section>
           </div>

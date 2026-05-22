@@ -45,7 +45,6 @@ def _rollout(request: RolloutRequest) -> dict:
                 "public_security_value_usd": 0.0,
                 "liquid_net_worth_usd": 50000.0,
                 "net_worth_usd": 50000.0,
-                "drawdown_usd": 0.0,
                 "shortfall_usd": 0.0,
             },
         },
@@ -66,6 +65,7 @@ def test_scenario_set_route_is_registered_and_invokes_handler() -> None:
     app = create_augur_backend_app(
         title="test",
         bootstrap=lambda: {"ok": True},
+        product_portfolio=lambda: {"public_securities": []},
         product_metric_fan=_metric_fan,
         product_rollout=_rollout,
         scenario_set_run=scenario_set_run,
@@ -82,6 +82,44 @@ def test_scenario_set_route_is_registered_and_invokes_handler() -> None:
     assert payload["scenario_results"][0]["scenario_id"] == "sf_house"
 
 
+def test_product_portfolio_route_is_registered_and_invokes_handler() -> None:
+    app = create_augur_backend_app(
+        title="test",
+        bootstrap=lambda: {"ok": True},
+        product_portfolio=lambda: {
+            "as_of_date": "2026-05-14",
+            "cash_usd": 50_000.0,
+            "public_securities": [
+                {
+                    "position_id": "sp500_proxy",
+                    "account_id": "taxable_brokerage",
+                    "account_label": "Taxable Brokerage",
+                    "label": "SP500 Proxy",
+                    "symbol": "VOO",
+                    "security_kind": "etf",
+                    "value_series_id": "sp500",
+                    "unit_value_usd": 500.0,
+                    "quantity": 300.0,
+                    "current_value_usd": 150_000.0,
+                    "total_cost_basis_usd": 110_000.0,
+                    "lots": [],
+                }
+            ],
+            "total_public_security_value_usd": 150_000.0,
+            "total_public_security_cost_basis_usd": 110_000.0,
+        },
+        product_metric_fan=_metric_fan,
+        product_rollout=_rollout,
+    )
+
+    response = TestClient(app).get("/api/product/portfolio")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["cash_usd"] == 50_000.0
+    assert payload["public_securities"][0]["symbol"] == "VOO"
+
+
 def test_scenario_set_route_validates_request_with_pydantic() -> None:
     called = False
 
@@ -93,6 +131,7 @@ def test_scenario_set_route_validates_request_with_pydantic() -> None:
     app = create_augur_backend_app(
         title="test",
         bootstrap=lambda: {"ok": True},
+        product_portfolio=lambda: {"public_securities": []},
         product_metric_fan=_metric_fan,
         product_rollout=_rollout,
         scenario_set_run=scenario_set_run,

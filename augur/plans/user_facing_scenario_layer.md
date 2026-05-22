@@ -155,9 +155,11 @@ product routes through generated Zod types, the backend composes a cash-spend
 product page renders a server-side metric fan with compact rollout summaries.
 The metric-fan response does not include every rollout's monthly table; selecting
 a ranked rollout sliver calls `/api/product/projections/rollout` on demand,
-overlays that rollout on the graph, and shows its terminal metrics beside the
-distribution percentiles. The existing `ScenarioSet` route and frontend remain
-the compatibility/debug path.
+overlays that rollout on the graph, shows product event markers and an event
+table, and shows its terminal metrics beside the distribution percentiles.
+Initial public-security positions are exposed through the read-only
+`/api/product/portfolio` route. The existing `ScenarioSet` route and frontend
+remain the compatibility/debug path.
 
 ### Stage 0: Product Sandbox
 
@@ -197,14 +199,15 @@ The frontend can:
 
 - keep the Stage 1 spend controls
 - set or view a minimum cash buffer
-- enable supported taxable-sale behavior when it exists
+- enable supported public-security sale behavior
 - view liquid net worth, holdings value, sales, realized gains/taxes if
   supported, and shortfall probability
 
 This stage proves that the product UI can stay simple while config supplies the
 opening portfolio, tax lots, security-series mapping, and default funding
-policy. The passive opening-lot/price-path portion is implemented; buffer,
-liquidation, realized gains, and tax behavior remain.
+policy. The passive opening-lot/price-path portion and the first sale-order /
+cash-buffer controls are implemented; realized gains, tax behavior, and richer
+shortfall summaries remain.
 
 ### Stage 3: Simple Scenario Comparison
 
@@ -299,19 +302,25 @@ healthy.
 
 The first product protocol is intentionally narrower than the eventual product
 scenario protocol. `ScenarioKey` contains the deterministic product scenario
-parts: exogenous model id, horizon months, monthly spend, and spend index.
-Metric-fan and rollout-detail requests add the seed set or single seed.
+parts: exogenous model id, horizon months, monthly spend, spend index, and the
+funding policy. The funding policy is intentionally still small: an ordered
+sell bucket list plus the simulator's cash-buffer trigger and fixed sale
+amount. Metric-fan and rollout-detail requests add the seed set or single seed.
 
 The metric-fan response returns sampled exogenous model id, diagnostics, failed
 rollout count, a requested-percentile monthly metric table, requested terminal
 percentiles, and compact rollout summaries with seed, failure state, terminal
 metrics, and rank. It does not echo request fields like horizon months and does
 not include per-rollout monthly tables. The rollout-detail response returns one
-full rollout table for a requested seed.
+full rollout table plus a discriminated union of selected-rollout product events
+for a requested seed. Current event variants are public-security sales, monthly
+expense settlements, and rollout failures. The product portfolio route returns
+configured opening cash and public-security positions with lots; it is a
+read-only product surface, not part of scenario identity.
 
 This shape deliberately omits request IDs, labels, scenario IDs, selected
-rollout state, colors, disabled scenarios, user-selected public securities, and
-gains. Those are either frontend state, config-owned facts, later product
+rollout state, colors, disabled scenarios, user-selected individual securities,
+and gains. Those are either frontend state, config-owned facts, later product
 concepts, or not yet supported.
 
 The server owns an in-memory bounded LRU cache keyed by `(ScenarioKey, seed)`.
@@ -436,10 +445,10 @@ Response:
 
 ### Spiral 2: Cash Plus Liquid Portfolio
 
-Add configured public-security lots and checking-floor liquidation.
+Add configured public-security lots and product funding-policy liquidation.
 
 - config supplies public lots, basis, and external series mapping
-- product case can keep the same spend knobs
+- product case can keep the same spend knobs and expose sell-order / cash-buffer knobs
 - response adds liquid net worth, public security value, sales, and shortfalls
 
 ### Spiral 3: Catalog Property Purchase
@@ -496,6 +505,15 @@ Completed:
 - Added passive configured public-security lots to the product projection
   translator, including anchored sampled price paths and product metrics for
   public-security value and liquid net worth.
+- Added product funding policy controls and request fields. The product
+  translator now maps `sell_order=["public_securities"]` plus the simulator's
+  cash-buffer trigger/fixed-sale knobs into low-level liquidity policies.
+- Added `/api/product/portfolio` for read-only configured opening cash and
+  public-security positions, and rendered those positions in the product
+  frontend sidebar.
+- Added selected-rollout event rows to `/api/product/projections/rollout`,
+  using a discriminated union keyed by `kind`, and rendered those events as
+  graph markers plus a table in the product frontend.
 
 Remaining:
 
@@ -507,8 +525,8 @@ Remaining:
    requests. For the house slice, prove the current browser-shaped request and
    new product request produce equivalent low-level sim scenarios and matching
    comparison metrics.
-4. Finish Stage 2 liquid portfolio behavior: minimum cash buffer, taxable-sale
-   policy, realized gains/taxes, and shortfall summaries.
+4. Finish Stage 2 liquid portfolio behavior: taxable-sale policy, realized
+   gains/taxes, and shortfall summaries.
 5. Move the main frontend request construction from low-level `ScenarioSet` to
    product `ScenarioKey` plus view requests once house-purchase parity is good
    enough.

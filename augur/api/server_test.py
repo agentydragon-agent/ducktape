@@ -84,6 +84,13 @@ def _post_json(origin: str, path: str, payload: dict[str, Any]) -> dict[str, Any
         return cast(dict[str, Any], json.loads(response.read().decode()))
 
 
+def _get_json(origin: str, path: str) -> dict[str, Any]:
+    with urllib.request.urlopen(f"{origin}{path}", timeout=15) as response:
+        assert response.status == 200
+        assert "application/json" in response.headers["content-type"]
+        return cast(dict[str, Any], json.loads(response.read().decode()))
+
+
 def _sum(values: list[float | int]) -> float:
     return float(sum(values))
 
@@ -274,6 +281,14 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
     assert columns["public_security_value_usd"][0] == 150_000.0
     assert columns["liquid_net_worth_usd"][0] == 200_000.0
     assert columns["net_worth_usd"][0] == 200_000.0
+    assert set(columns) == {
+        "month_index",
+        "cash_usd",
+        "public_security_value_usd",
+        "liquid_net_worth_usd",
+        "net_worth_usd",
+        "shortfall_usd",
+    }
     terminal = detail["rollout"]["terminal_metrics"]
     assert terminal["cash_usd"] == 47_000.0
     assert terminal["public_security_value_usd"] > 0
@@ -281,8 +296,33 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
         terminal["cash_usd"] + terminal["public_security_value_usd"]
     )
     assert terminal["net_worth_usd"] == pytest.approx(terminal["liquid_net_worth_usd"])
-    assert terminal["drawdown_usd"] == 3_000.0
+    assert set(terminal) == {
+        "cash_usd",
+        "public_security_value_usd",
+        "liquid_net_worth_usd",
+        "net_worth_usd",
+        "shortfall_usd",
+    }
     assert terminal["shortfall_usd"] == 0.0
+
+
+def test_backend_server_product_portfolio_returns_configured_public_securities(server_url: str) -> None:
+    portfolio = _get_json(server_url, "/api/product/portfolio")
+
+    assert portfolio["as_of_date"] == "2026-05-14"
+    assert portfolio["cash_usd"] == 50_000.0
+    assert portfolio["total_public_security_value_usd"] == 150_000.0
+    assert portfolio["total_public_security_cost_basis_usd"] == 110_000.0
+    [position] = portfolio["public_securities"]
+    assert position["account_label"] == "Taxable Brokerage"
+    assert position["label"] == "SP500 Proxy"
+    assert position["symbol"] == "VOO"
+    assert position["security_kind"] == "etf"
+    assert position["value_series_id"] == "sp500"
+    assert position["unit_value_usd"] == 500.0
+    assert position["quantity"] == 300.0
+    assert position["current_value_usd"] == 150_000.0
+    assert [lot["lot_id"] for lot in position["lots"]] == ["sp500_proxy_2020_01", "sp500_proxy_2024_06"]
 
 
 def test_backend_server_zeroes_failed_product_rollout_metrics(server_url: str) -> None:
@@ -291,6 +331,7 @@ def test_backend_server_zeroes_failed_product_rollout_metrics(server_url: str) -
         "horizon_months": 3,
         "monthly_spend_usd": 100_000.0,
         "spend_index": "none",
+        "funding_policy": {"cash_buffer_trigger_below_usd": 0.0, "cash_buffer_sale_usd": 0.0, "sell_order": []},
     }
     fan = _post_json(
         server_url,
@@ -318,6 +359,72 @@ def test_backend_server_zeroes_failed_product_rollout_metrics(server_url: str) -
     assert columns["cash_usd"] == [50_000.0, 0.0, 0.0, 0.0]
     assert columns["public_security_value_usd"] == [150_000.0, 0.0, 0.0, 0.0]
     assert columns["net_worth_usd"] == [200_000.0, 0.0, 0.0, 0.0]
+
+
+def test_backend_server_product_default_funding_sells_public_security_for_required_spend(server_url: str) -> None:
+    scenario = {
+        "exogenous_model_id": "current_exogenous_model",
+        "horizon_months": 1,
+        "monthly_spend_usd": 100_000.0,
+        "spend_index": "none",
+    }
+
+    detail = _post_json(server_url, "/api/product/projections/rollout", {"scenario": scenario, "seed": 7})
+
+    assert detail["rollout"]["failed"] is False
+    columns = detail["rollout"]["monthly_metrics"]["columns"]
+    assert columns["cash_usd"] == [50_000.0, 0.0]
+    assert columns["public_security_value_usd"][0] == 150_000.0
+    assert 0.0 < columns["public_security_value_usd"][1] < 150_000.0
+    terminal = detail["rollout"]["terminal_metrics"]
+    assert terminal["cash_usd"] == 0.0
+    assert terminal["shortfall_usd"] == 0.0
+    assert terminal["net_worth_usd"] == pytest.approx(columns["public_security_value_usd"][1])
+    sale, expense = detail["rollout"]["events"]
+    assert sale == {
+        "month_index": 0,
+        "label": "Sold SP500 Proxy (VOO)",
+        "amount_usd": 50_000.0,
+        "detail": "Public-security sale",
+        "kind": "public_security_sale",
+        "asset_id": "sp500",
+        "asset_label": "SP500 Proxy (VOO)",
+        "units": 100.0,
+        "proceeds_usd": 50_000.0,
+        "cost_basis_usd": 40_000.0,
+    }
+    assert expense == {
+        "month_index": 0,
+        "label": "Paid monthly expenses",
+        "amount_usd": 100_000.0,
+        "detail": "Required monthly spend",
+        "kind": "monthly_expense",
+        "amount_due_usd": 100_000.0,
+        "amount_paid_usd": 100_000.0,
+        "shortfall_usd": 0.0,
+    }
+
+
+def test_backend_server_product_cash_buffer_uses_trigger_and_fixed_sale_amount(server_url: str) -> None:
+    scenario = {
+        "exogenous_model_id": "current_exogenous_model",
+        "horizon_months": 1,
+        "monthly_spend_usd": 1_000.0,
+        "spend_index": "none",
+        "funding_policy": {
+            "cash_buffer_trigger_below_usd": 60_000.0,
+            "cash_buffer_sale_usd": 20_000.0,
+            "sell_order": ["public_securities"],
+        },
+    }
+
+    detail = _post_json(server_url, "/api/product/projections/rollout", {"scenario": scenario, "seed": 7})
+
+    assert detail["rollout"]["failed"] is False
+    columns = detail["rollout"]["monthly_metrics"]["columns"]
+    assert columns["cash_usd"] == [50_000.0, 69_000.0]
+    assert detail["rollout"]["terminal_metrics"]["cash_usd"] == 69_000.0
+    assert detail["rollout"]["terminal_metrics"]["shortfall_usd"] == 0.0
 
 
 if __name__ == "__main__":

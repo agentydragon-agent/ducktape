@@ -13,9 +13,14 @@ from augur.api.schemas import ColumnarTable
 from augur.model.exogenous import ExogenousPathModel, ExogenousSamplingRequest, anchor_sampled_series_levels
 from augur.model.series import INFLATION_SERIES_ID
 from augur.product.projection import (
+    FundingPolicy,
     MetricFanRequest,
     MetricFanResponse,
     MetricName,
+    MonthlyExpenseEvent,
+    PublicSecuritySaleEvent,
+    RolloutEvent,
+    RolloutFailureEvent,
     RolloutOutput,
     RolloutRequest,
     RolloutResponse,
@@ -30,6 +35,7 @@ from augur.sim.scenario import (
     Agent,
     InitialAccountBalance,
     InitialLot,
+    LiquidityPolicy,
     RecurringObligation,
     Scenario,
     SeriesIndexedAmount,
@@ -140,7 +146,6 @@ class ProductProjectionService:
         run = simulate_with_external_series(
             scenario, rollout_count=len(seeds), external_series=materialize_sampled_exogenous(sampled)
         )
-        initial_cash_usd = float(self._augur_config.snapshot.cash_usd)
         exogenous_model_id = str(sampled.metadata.get("exogenous_model_id") or scenario_key.exogenous_model_id)
         return tuple(
             (
@@ -152,7 +157,7 @@ class ProductProjectionService:
                         rollout_index=rollout_index,
                         seed=seed,
                         primary_agent_id=primary_agent_id,
-                        initial_cash_usd=initial_cash_usd,
+                        asset_label_by_id=_public_asset_label_by_series_id(self._augur_config),
                     ),
                 ),
             )
@@ -199,6 +204,9 @@ def _scenario_from_key(
                 amount_due_usd=amount_due_usd,
             )
         ],
+        liquidity_policies=_liquidity_policies_from_funding_policy(
+            scenario_key.funding_policy, primary_agent_id=primary_agent_id, initial_lots=initial_lots
+        ),
         horizon_months=int(scenario_key.horizon_months),
     )
 
@@ -221,6 +229,43 @@ def _configured_portfolio_lots(augur_config: Config, *, primary_agent_id: str) -
     return lots
 
 
+def _public_asset_label_by_series_id(augur_config: Config) -> dict[str, str]:
+    return {
+        position.value_series_id: f"{position.label or position.symbol} ({position.symbol})"
+        for position in augur_config.portfolio.public_securities
+    }
+
+
+def _liquidity_policies_from_funding_policy(
+    funding_policy: FundingPolicy, *, primary_agent_id: str, initial_lots: tuple[InitialLot, ...]
+) -> list[LiquidityPolicy]:
+    asset_preference_chain = _asset_preference_chain_from_sell_order(funding_policy, initial_lots=initial_lots)
+    if not asset_preference_chain:
+        return []
+    return [
+        LiquidityPolicy(
+            agent_id=primary_agent_id,
+            account_id=_PRIMARY_ACCOUNT_ID,
+            asset_preference_chain=asset_preference_chain,
+            cash_buffer_trigger_below_usd=float(funding_policy.cash_buffer_trigger_below_usd),
+            cash_buffer_sale_usd=float(funding_policy.cash_buffer_sale_usd),
+            cause_id_prefix="product_funding_sale",
+        )
+    ]
+
+
+def _asset_preference_chain_from_sell_order(
+    funding_policy: FundingPolicy, *, initial_lots: tuple[InitialLot, ...]
+) -> list[str]:
+    asset_ids: list[str] = []
+    for bucket in funding_policy.sell_order:
+        if bucket == "public_securities":
+            asset_ids.extend(lot.asset_id for lot in initial_lots)
+        else:
+            raise ValueError(f"unsupported sell_order bucket: {bucket!r}")
+    return list(dict.fromkeys(asset_ids))
+
+
 def _required_level_series_for_product_scenario(
     scenario_key: ScenarioKey, *, initial_lots: tuple[InitialLot, ...]
 ) -> frozenset[str]:
@@ -231,23 +276,22 @@ def _required_level_series_for_product_scenario(
 
 
 def _rollout_output(
-    run: SimulationRun, *, rollout_index: int, seed: int, primary_agent_id: str, initial_cash_usd: float
+    run: SimulationRun, *, rollout_index: int, seed: int, primary_agent_id: str, asset_label_by_id: dict[str, str]
 ) -> RolloutOutput:
-    monthly = _monthly_metrics(
-        run, rollout_index=rollout_index, primary_agent_id=primary_agent_id, initial_cash_usd=initial_cash_usd
-    )
+    monthly = _monthly_metrics(run, rollout_index=rollout_index, primary_agent_id=primary_agent_id)
     terminal = _terminal_metrics(run, monthly, rollout_index=rollout_index)
     return RolloutOutput(
         seed=seed,
         failed=terminal.failed_month_index is not None,
         monthly_metrics=_columnar(monthly),
         terminal_metrics=terminal,
+        events=_rollout_events(
+            run, rollout_index=rollout_index, primary_agent_id=primary_agent_id, asset_label_by_id=asset_label_by_id
+        ),
     )
 
 
-def _monthly_metrics(
-    run: SimulationRun, *, rollout_index: int, primary_agent_id: str, initial_cash_usd: float
-) -> pl.DataFrame:
+def _monthly_metrics(run: SimulationRun, *, rollout_index: int, primary_agent_id: str) -> pl.DataFrame:
     net_worth = (
         project_net_worth(run)
         .filter((pl.col("rollout_index") == rollout_index) & (pl.col("agent_id") == primary_agent_id))
@@ -264,20 +308,13 @@ def _monthly_metrics(
     shortfall = _monthly_shortfalls(run, rollout_index=rollout_index)
     return (
         net_worth.join(shortfall, on="month_index", how="left")
-        .with_columns(
-            pl.col("shortfall_usd").fill_null(0.0),
-            pl.col("liquid_net_worth_usd").alias("net_worth_usd"),
-            pl.max_horizontal(0.0, pl.lit(initial_cash_usd, dtype=pl.Float64()) - pl.col("cash_usd")).alias(
-                "drawdown_usd"
-            ),
-        )
+        .with_columns(pl.col("shortfall_usd").fill_null(0.0), pl.col("liquid_net_worth_usd").alias("net_worth_usd"))
         .select(
             "month_index",
             "cash_usd",
             "public_security_value_usd",
             "liquid_net_worth_usd",
             "net_worth_usd",
-            "drawdown_usd",
             "shortfall_usd",
         )
     )
@@ -308,9 +345,100 @@ def _terminal_metrics(run: SimulationRun, monthly: pl.DataFrame, *, rollout_inde
         public_security_value_usd=float(row["public_security_value_usd"]),
         liquid_net_worth_usd=float(row["liquid_net_worth_usd"]),
         net_worth_usd=float(row["net_worth_usd"]),
-        drawdown_usd=float(row["drawdown_usd"]),
         shortfall_usd=_total_shortfall(monthly),
         failed_month_index=failed_month_index,
+    )
+
+
+def _rollout_events(
+    run: SimulationRun, *, rollout_index: int, primary_agent_id: str, asset_label_by_id: dict[str, str]
+) -> tuple[RolloutEvent, ...]:
+    events = [
+        *_public_security_sale_events(
+            run, rollout_index=rollout_index, primary_agent_id=primary_agent_id, asset_label_by_id=asset_label_by_id
+        ),
+        *_monthly_expense_events(run, rollout_index=rollout_index, primary_agent_id=primary_agent_id),
+        *_failure_events(run, rollout_index=rollout_index, primary_agent_id=primary_agent_id),
+    ]
+    priority = {"public_security_sale": 0, "monthly_expense": 1, "failure": 2}
+    return tuple(sorted(events, key=lambda event: (event.month_index, priority[event.kind], event.label)))
+
+
+def _public_security_sale_events(
+    run: SimulationRun, *, rollout_index: int, primary_agent_id: str, asset_label_by_id: dict[str, str]
+) -> tuple[RolloutEvent, ...]:
+    dispositions = run.events_log.lot_dispositions
+    if dispositions.is_empty():
+        return ()
+    sale_rows = (
+        dispositions.filter((pl.col("rollout_index") == rollout_index) & (pl.col("agent_id") == primary_agent_id))
+        .group_by(["month_index", "asset_id"])
+        .agg(
+            pl.col("units_sold").sum(),
+            pl.col("proceeds_usd").sum(),
+            pl.col("cost_basis_consumed_usd").sum().alias("cost_basis_usd"),
+        )
+        .sort("month_index", "asset_id")
+    )
+    return tuple(
+        PublicSecuritySaleEvent(
+            month_index=int(row["month_index"]),
+            label=f"Sold {asset_label_by_id.get(str(row['asset_id']), str(row['asset_id']))}",
+            amount_usd=float(row["proceeds_usd"]),
+            detail="Public-security sale",
+            asset_id=str(row["asset_id"]),
+            asset_label=asset_label_by_id.get(str(row["asset_id"])),
+            units=float(row["units_sold"]),
+            proceeds_usd=float(row["proceeds_usd"]),
+            cost_basis_usd=float(row["cost_basis_usd"]),
+        )
+        for row in sale_rows.iter_rows(named=True)
+    )
+
+
+def _monthly_expense_events(
+    run: SimulationRun, *, rollout_index: int, primary_agent_id: str
+) -> tuple[RolloutEvent, ...]:
+    settlements = run.events_log.obligation_settlements
+    if settlements.is_empty():
+        return ()
+    expense_rows = settlements.filter(
+        (pl.col("rollout_index") == rollout_index)
+        & (pl.col("agent_id") == primary_agent_id)
+        & (pl.col("obligation_type") == "cash_spend")
+    ).sort("month_index", "obligation_id")
+    return tuple(
+        MonthlyExpenseEvent(
+            month_index=int(row["month_index"]),
+            label="Paid monthly expenses" if float(row["shortfall_usd"]) == 0.0 else "Monthly expenses shortfall",
+            amount_usd=float(row["amount_paid_usd"]),
+            detail="Required monthly spend",
+            amount_due_usd=float(row["amount_due_usd"]),
+            amount_paid_usd=float(row["amount_paid_usd"]),
+            shortfall_usd=float(row["shortfall_usd"]),
+        )
+        for row in expense_rows.iter_rows(named=True)
+    )
+
+
+def _failure_events(run: SimulationRun, *, rollout_index: int, primary_agent_id: str) -> tuple[RolloutEvent, ...]:
+    failures = run.events_log.rollout_failures
+    if failures.is_empty():
+        return ()
+    failure_rows = failures.filter(
+        (pl.col("rollout_index") == rollout_index) & (pl.col("agent_id") == primary_agent_id)
+    )
+    return tuple(
+        RolloutFailureEvent(
+            month_index=int(row["month_index"]),
+            label="Rollout failed",
+            amount_usd=float(row["shortfall_usd"]),
+            detail="Required obligation could not be paid in full",
+            amount_due_usd=float(row["amount_due_usd"]),
+            amount_paid_usd=float(row["amount_paid_usd"]),
+            shortfall_usd=float(row["shortfall_usd"]),
+        )
+        for row in failure_rows.iter_rows(named=True)
     )
 
 
@@ -388,8 +516,6 @@ def _terminal_metric_value(terminal: TerminalMetrics, metric: MetricName) -> flo
             return terminal.liquid_net_worth_usd
         case "net_worth_usd":
             return terminal.net_worth_usd
-        case "drawdown_usd":
-            return terminal.drawdown_usd
         case "shortfall_usd":
             return terminal.shortfall_usd
 

@@ -159,7 +159,42 @@ def _wait_for_product_page(page: Page) -> None:
 def _select_first_rollout(page: Page) -> None:
     page.locator("[data-product-rollout-sliver]").first.click()
     page.locator("[data-product-selected-rollout-line]").wait_for(state="visible", timeout=30_000)
-    page.locator(r"text=/Seed \d+ - failed m\d+/").wait_for(state="visible", timeout=30_000)
+    page.locator("[data-product-rollout-event-marker]").first.wait_for(state="visible", timeout=30_000)
+    page.get_by_text("Selected rollout events").wait_for(state="visible", timeout=30_000)
+    page.locator(r"text=/Seed \d+ - (completed|failed m\d+)/").wait_for(state="visible", timeout=30_000)
+    marker = page.locator("[data-product-rollout-event-marker]").last
+    marker_month = marker.get_attribute("data-product-rollout-event-marker-month")
+    assert marker_month is not None
+    marker.click()
+    page.locator(
+        f"[data-product-rollout-event-month='{marker_month}'][data-product-rollout-event-month-selected='true']"
+    ).wait_for(state="visible", timeout=30_000)
+    marker.click()
+    page.locator(
+        f"[data-product-rollout-event-month='{marker_month}'][data-product-rollout-event-month-selected='false']"
+    ).wait_for(state="visible", timeout=30_000)
+    page.locator(
+        f"[data-product-rollout-event-marker-month='{marker_month}'][data-product-rollout-event-marker-selected='false']"
+    ).first.wait_for(state="visible", timeout=30_000)
+
+    table_group = page.locator("[data-product-rollout-event-month]").first
+    table_month = table_group.get_attribute("data-product-rollout-event-month")
+    assert table_month is not None
+    table_group.click()
+    page.locator(
+        f"[data-product-rollout-event-marker-month='{table_month}'][data-product-rollout-event-marker-selected='true']"
+    ).first.wait_for(state="visible", timeout=30_000)
+    table_group.click()
+    page.locator(
+        f"[data-product-rollout-event-month='{table_month}'][data-product-rollout-event-month-selected='false']"
+    ).wait_for(state="visible", timeout=30_000)
+    page.locator(
+        f"[data-product-rollout-event-marker-month='{table_month}'][data-product-rollout-event-marker-selected='false']"
+    ).first.wait_for(state="visible", timeout=30_000)
+    table_group.click()
+    page.locator(
+        f"[data-product-rollout-event-marker-month='{table_month}'][data-product-rollout-event-marker-selected='true']"
+    ).first.wait_for(state="visible", timeout=30_000)
 
 
 def _render_product_page(page: Page, origin: str, out_dir: Path, suffix: str) -> Path:

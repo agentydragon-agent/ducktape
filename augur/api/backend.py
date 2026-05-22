@@ -15,6 +15,7 @@ from augur.api.response import scenario_set_response_from_runs
 from augur.api.scenario_set import Scenario, ScenarioSet, ScenarioSetRunResponse
 from augur.api.scenario_tax_defaults import scenario_with_location_tax_defaults
 from augur.model.exogenous import ExogenousPathModel
+from augur.product.portfolio import ProductPortfolioResponse, product_portfolio_response
 from augur.product.projection import MetricFanRequest, MetricFanResponse, RolloutRequest, RolloutResponse
 from augur.product.projection_service import ProductProjectionService
 from augur.sim.external_series import materialize_sampled_exogenous
@@ -44,6 +45,9 @@ class Backend:
 
     def bootstrap_payload(self):
         return self._bootstrap
+
+    def product_portfolio(self) -> ProductPortfolioResponse:
+        return product_portfolio_response(snapshot=self._augur_config.snapshot, portfolio=self._portfolio)
 
     def run_scenario_set_for_request_body(self, body: dict[str, Any]) -> ScenarioSetRunResponse:
         return self.run_scenario_set(ScenarioSet.model_validate(body))

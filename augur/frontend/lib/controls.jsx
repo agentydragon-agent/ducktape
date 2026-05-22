@@ -14,6 +14,7 @@ export function NumberField({
   step = 1000,
   prefix = null,
   suffix = null,
+  ...inputProps
 }) {
   const formattedPrefix = prefix ? String(prefix).trim() : undefined;
   const formattedSuffix = suffix ? String(suffix).trim() : undefined;
@@ -34,6 +35,7 @@ export function NumberField({
       rightSectionWidth={numberFieldSectionWidth(formattedSuffix)}
       thousandSeparator=","
       classNames={{ label: "augur-field-label mb-2 block", input: "augur-tabular" }}
+      {...inputProps}
       onChange={(nextValue) => {
         const number = typeof nextValue === "number" ? nextValue : Number(nextValue);
         onChange(Number.isFinite(number) ? number : null);
