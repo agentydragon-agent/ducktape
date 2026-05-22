@@ -87,14 +87,22 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
     };
     let mut timings = PhaseTimings::default();
     let selected_ordinals = time_phase!(timings, "compute_selected_ordinals", {
-        compute_selected_ordinals(declarations, binding_assignment, anonymous_ordinal_assignment)
+        compute_selected_ordinals(
+            declarations,
+            binding_assignment,
+            anonymous_ordinal_assignment,
+        )
     });
 
     let mut selected_by_module = vec![Vec::<ModuleItem>::new(); module_plans.len()];
     let mut selected_exports_by_module =
         vec![Option::<BTreeMap<String, String>>::None; module_plans.len()];
     time_phase!(timings, "plan_selected_exports", {
-        plan_selected_exports(module_plans, &is_module_owned, &mut selected_exports_by_module);
+        plan_selected_exports(
+            module_plans,
+            &is_module_owned,
+            &mut selected_exports_by_module,
+        );
     });
 
     let mut entry_body = Vec::new();
@@ -546,16 +554,15 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
             }
         });
         time_phase!(timings, "module.build_output_records", {
-            let (file, record, lowering) = build_module_output(
-                plan,
-                body,
+            let output_context = ModuleOutputContext {
                 factorization,
                 runtime_ast,
                 chunk_top_level_mark,
                 chunk_id,
                 entry_file,
                 source_path,
-            );
+            };
+            let (file, record, lowering) = build_module_output(plan, body, &output_context);
             files.push(file);
             file_records.push(record);
             applied.push(lowering);
@@ -636,15 +643,19 @@ fn split_entry_body(
     Ok(())
 }
 
+struct ModuleOutputContext<'a> {
+    factorization: &'a ChunkFactorization,
+    runtime_ast: &'a ParsedJsModule,
+    chunk_top_level_mark: swc_common::Mark,
+    chunk_id: &'a str,
+    entry_file: &'a str,
+    source_path: &'a str,
+}
+
 fn build_module_output(
     plan: &ModulePlan,
     body: Vec<ModuleItem>,
-    factorization: &ChunkFactorization,
-    runtime_ast: &ParsedJsModule,
-    chunk_top_level_mark: swc_common::Mark,
-    chunk_id: &str,
-    entry_file: &str,
-    source_path: &str,
+    context: &ModuleOutputContext<'_>,
 ) -> (JsFile, (String, FileRole), SelectedModuleLowering) {
     let mut sorted_plan_bindings: Vec<(&String, &String)> = plan.bindings.iter().collect();
     sorted_plan_bindings.sort_by(|a, b| a.0.cmp(b.0));
@@ -658,9 +669,10 @@ fn build_module_output(
         .collect();
     let binding_ids: Vec<Id> = binding_names
         .iter()
-        .map(|name| top_level_id(name, chunk_top_level_mark))
+        .map(|name| top_level_id(name, context.chunk_top_level_mark))
         .collect();
-    let owner_ids = factorization
+    let owner_ids = context
+        .factorization
         .analysis
         .owner_report_ids_for_bindings(binding_ids.iter());
     let header = vec![
@@ -678,30 +690,30 @@ fn build_module_output(
     let file = JsFile {
         path: plan.target_file.clone(),
         body: JsFileBody::Ast(ParsedJsModule {
-            cm: runtime_ast.cm.clone(),
+            cm: context.runtime_ast.cm.clone(),
             module: Module {
                 span: DUMMY_SP,
                 body,
                 shebang: None,
             },
-            unresolved_mark: runtime_ast.unresolved_mark,
-            top_level_mark: runtime_ast.top_level_mark,
+            unresolved_mark: context.runtime_ast.unresolved_mark,
+            top_level_mark: context.runtime_ast.top_level_mark,
         }),
         header_lines: header,
         metadata: FileMetadata {
-            chunk_id: chunk_id.to_string(),
+            chunk_id: context.chunk_id.to_string(),
             chunk_file: plan.target_file.clone(),
             role: FileRole::Module,
-            source_path: source_path.to_string(),
+            source_path: context.source_path.to_string(),
             generated_by_selected_module_lowering: true,
         },
     };
     let record = (plan.target_file.clone(), FileRole::Module);
     let lowering = SelectedModuleLowering {
         binding_names,
-        chunk_id: chunk_id.to_string(),
+        chunk_id: context.chunk_id.to_string(),
         exported_names,
-        file: entry_file.to_string(),
+        file: context.entry_file.to_string(),
         id: plan.id.clone(),
         owner_ids,
         residual: !plan.explicit,

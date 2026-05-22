@@ -9,6 +9,7 @@ from argparse import ArgumentParser
 from dataclasses import dataclass, field
 from html import escape as html_escape
 from pathlib import Path
+from typing import Any, NoReturn, cast
 from urllib.parse import unquote, urlsplit, urlunsplit
 
 from devinfra.js.debundle.live_proxy.vendor_runtime import (
@@ -279,26 +280,28 @@ def load_live_proxy_configuration(raw_options: LiveProxyOptions | dict) -> LiveP
     )
 
 
-def read_json(path: Path) -> dict:
-    return json.loads(path.read_text(encoding="utf-8"))
+def read_json(path: Path) -> dict[str, Any]:
+    return cast(dict[str, Any], json.loads(path.read_text(encoding="utf-8")))
 
 
-def read_optional_json(path: Path, fallback: dict) -> dict:
+def read_optional_json(path: Path, fallback: dict[str, Any]) -> dict[str, Any]:
     if not path.exists():
         return fallback
     return read_json(path)
 
 
-def resolve_app_base_url(*, runtime_report: dict, asset_summary: dict, reports_root: Path) -> str | None:
+def resolve_app_base_url(
+    *, runtime_report: dict[str, Any], asset_summary: dict[str, Any], reports_root: Path
+) -> str | None:
     if asset_summary.get("baseUrl"):
-        return asset_summary["baseUrl"]
+        return cast(str, asset_summary["baseUrl"])
     if runtime_report.get("baseUrl"):
-        return runtime_report["baseUrl"]
+        return cast(str, runtime_report["baseUrl"])
     source_metadata_path = (reports_root / "../app/SOURCE.json").resolve()
     if not source_metadata_path.exists():
         return None
     source_metadata = read_json(source_metadata_path)
-    return source_metadata.get("baseUrl")
+    return cast(str | None, source_metadata.get("baseUrl"))
 
 
 def normalize_target_url(value: str) -> str:
@@ -593,5 +596,5 @@ def escape_html_attr(value: str) -> str:
 
 
 class NonExitingArgumentParser(ArgumentParser):
-    def error(self, message: str) -> None:
+    def error(self, message: str) -> NoReturn:
         raise RuntimeError(message)

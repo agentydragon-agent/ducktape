@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+from typing import Any, cast
 
 
 def default_packages_root() -> Path:
@@ -28,7 +29,7 @@ def read_installed_package_metadata(
     metadata_path = resolved_package_root / "package.json"
     if not metadata_path.exists():
         raise RuntimeError(f"Package metadata missing for {package_name}: {metadata_path}")
-    return json.loads(metadata_path.read_text(encoding="utf-8"))
+    return cast(dict[str, Any], json.loads(metadata_path.read_text(encoding="utf-8")))
 
 
 def resolve_package_root(

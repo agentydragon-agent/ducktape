@@ -71,7 +71,8 @@ pub(super) fn analyze_chunk_ast(module: &Module) -> ChunkAstAnalysis {
                 // `export const foo = …` / `export function foo()` /
                 // `export class Foo {}` — the declared name is also
                 // the public name.
-                pre_existing_public_export_names.extend(bindings.iter().map(|(name, _)| name.clone()));
+                pre_existing_public_export_names
+                    .extend(bindings.iter().map(|(name, _)| name.clone()));
             }
             declarations.push(TopLevelDecl {
                 ordinal,
@@ -89,7 +90,11 @@ pub(super) fn analyze_chunk_ast(module: &Module) -> ChunkAstAnalysis {
     }
     let declaration_by_name = declarations
         .iter()
-        .flat_map(|decl| decl.bindings.iter().map(|(_, id)| (id.clone(), decl.ordinal)))
+        .flat_map(|decl| {
+            decl.bindings
+                .iter()
+                .map(|(_, id)| (id.clone(), decl.ordinal))
+        })
         .collect::<HashMap<_, _>>();
     ChunkAstAnalysis {
         runtime_import_facts: RuntimeImportFacts { imports },

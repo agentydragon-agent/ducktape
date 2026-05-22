@@ -155,12 +155,7 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<()> {
     let mut chunk_records = prepare_result.chunk_records;
     let mut vendor_report = VendorSwapsReport::default();
 
-    let full_swap_result = run_full_vendor_swaps(
-        artifact,
-        &artifact_indexes,
-        &spec,
-        cli,
-    )?;
+    let full_swap_result = run_full_vendor_swaps(artifact, &artifact_indexes, &spec, cli)?;
     artifact = full_swap_result.artifact;
     vendor_report.full = full_swap_result.full_swap_resolutions;
     chunk_records.retain(|chunk| !full_swap_result.removed_chunk_ids.contains(&chunk.chunk_id));
@@ -195,12 +190,7 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<()> {
         decomposition_by_chunk = materialize_result.decomposition_by_chunk;
     }
 
-    let partial_result = run_partial_vendor_swaps(
-        artifact,
-        &artifact_indexes,
-        &spec,
-        cli,
-    )?;
+    let partial_result = run_partial_vendor_swaps(artifact, &artifact_indexes, &spec, cli)?;
     artifact = partial_result.artifact;
     vendor_report.partial = partial_result.partial_swap_resolutions;
     vendor_report.bundled_partial = partial_result.bundled_partial_swap_resolutions;
