@@ -310,3 +310,4 @@ resources:
   - seaweedfs/operator/flux-kustomization.yaml
   - seaweedfs/cluster/flux-kustomization.yaml
   - seaweedfs/monitoring/flux-kustomization.yaml
+  - seaweedfs-csi/flux-kustomization.yaml
