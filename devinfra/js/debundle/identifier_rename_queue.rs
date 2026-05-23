@@ -52,7 +52,7 @@ use swc_ecma_ast::{
 };
 use swc_ecma_visit::{Visit, VisitWith};
 
-use artifact::{ChunkBundle, ChunkDecompositionOutput, ChunkId};
+use artifact::{ChunkBundle, ChunkDecompositionOutput, ChunkId, write_json};
 use js_ast::ParsedJsModule;
 
 /// One entry in the priority queue: a still-unrenamed top-level symbol
@@ -274,7 +274,7 @@ pub fn write_queue(path: &Path, queue: &IdentifierRenameQueue) -> Result<std::pa
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    serde_json::to_writer_pretty(&std::fs::File::create(&path)?, queue)?;
+    write_json(&path, queue)?;
     Ok(path)
 }
 

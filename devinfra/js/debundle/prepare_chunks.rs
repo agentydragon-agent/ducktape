@@ -45,23 +45,23 @@ pub struct ParsedJsFilesCounts {
 
 pub fn prepare_js_chunks(
     spec: &TransformSpec,
-    mut loaded: LoadedJsChunks,
+    loaded: LoadedJsChunks,
 ) -> Result<PrepareJsChunksResult> {
-    // Move chunk_table out of loaded; it will be placed on the artifact.
-    let chunk_table = std::mem::take(&mut loaded.chunk_table);
+    let LoadedJsChunks {
+        chunks,
+        chunk_table,
+    } = loaded;
 
     // Collect (ChunkId, name) pairs preserving load order.
-    let ordered_ids: Vec<(ChunkId, String)> = loaded
-        .chunk_order
+    let ordered_ids: Vec<(ChunkId, String)> = chunks
         .iter()
-        .map(|id| (*id, chunk_table.name(*id).to_string()))
+        .enumerate()
+        .map(|(i, _)| (ChunkId(i), chunk_table.name(ChunkId(i)).to_string()))
         .collect();
     let jobs = ordered_ids
         .iter()
-        .map(|(chunk_id, chunk_name)| {
-            let mut chunk = loaded.take_chunk(*chunk_id).with_context(|| {
-                format!("prepare_js_chunks missing ordered chunk: {chunk_name}")
-            })?;
+        .zip(chunks.into_iter())
+        .map(|((chunk_id, chunk_name), mut chunk)| {
             let entry_file = chunk.entry_file.clone();
             let entry_artifact_file = chunk.remove_file(&entry_file).with_context(|| {
                 format!(

@@ -68,7 +68,6 @@ rust_library(
         ":output_layout",
         "@crates//:anyhow",
         "@crates//:serde",
-        "@crates//:serde_json",
     ],
 )
 

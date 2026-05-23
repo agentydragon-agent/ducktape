@@ -14,10 +14,13 @@ use output_layout::{CHUNK_REPORT, report_path_for_directory, report_path_for_fil
 
 pub const CANONICAL_CHUNK_ENTRY_FILE: &str = "entry.js";
 
-#[derive(Default)]
+pub fn write_json(path: impl AsRef<Path>, data: &impl Serialize) -> Result<()> {
+    serde_json::to_writer_pretty(&fs::File::create(path.as_ref())?, data)?;
+    Ok(())
+}
+
 pub struct LoadedJsChunks {
-    pub chunk_order: Vec<ChunkId>,
-    pub chunks: Vec<Option<JsChunk>>,
+    pub chunks: Vec<JsChunk>,
     pub chunk_table: ChunkTable,
 }
 
@@ -720,31 +723,6 @@ pub enum TopLevelDeclarationKind {
     Variable,
 }
 
-impl LoadedJsChunks {
-    pub fn list_chunk_ids(&self) -> Vec<String> {
-        if self.chunk_order.is_empty() {
-            self.chunks
-                .iter()
-                .enumerate()
-                .filter_map(|(i, chunk)| {
-                    chunk
-                        .as_ref()
-                        .map(|_| self.chunk_table.name(ChunkId(i)).to_string())
-                })
-                .collect()
-        } else {
-            self.chunk_order
-                .iter()
-                .map(|id| self.chunk_table.name(*id).to_string())
-                .collect()
-        }
-    }
-
-    pub fn take_chunk(&mut self, chunk_id: ChunkId) -> Option<JsChunk> {
-        self.chunks.get_mut(chunk_id.0).and_then(|slot| slot.take())
-    }
-}
-
 impl ChunkBundle {
     pub fn list_chunk_ids(&self) -> Vec<ChunkId> {
         self.chunks.iter().map(|chunk| chunk.chunk_id).collect()
@@ -1079,7 +1057,8 @@ pub fn load_js_chunks(
         &fs::read_to_string(js_list_path)
             .with_context(|| format!("reading {}", js_list_path.display()))?,
     )?;
-    let mut chunks = LoadedJsChunks::default();
+    let mut chunk_table = ChunkTable::default();
+    let mut chunks = Vec::new();
     for source_path in &js_files {
         let absolute_path = input_root.join(source_path);
         let entry_file = Path::new(source_path)
@@ -1088,7 +1067,7 @@ pub fn load_js_chunks(
             .context("source path missing file name")?
             .to_string();
         let chunk_name = chunk_id_for_js_path(source_path)?;
-        let chunk_id = chunks.chunk_table.intern(chunk_name.clone());
+        chunk_table.intern(chunk_name.clone());
         let content = fs::read_to_string(&absolute_path)
             .with_context(|| format!("reading {}", absolute_path.display()))?;
         let files = vec![JsFile {
@@ -1103,12 +1082,7 @@ pub fn load_js_chunks(
                 generated_by_selected_module_lowering: false,
             },
         }];
-        chunks.chunk_order.push(chunk_id);
-        // Extend the vec to fit the new chunk id.
-        while chunks.chunks.len() <= chunk_id.0 {
-            chunks.chunks.push(None);
-        }
-        chunks.chunks[chunk_id.0] = Some(JsChunk {
+        chunks.push(JsChunk {
             entry_file,
             files,
             metadata: ChunkMetadata {
@@ -1116,6 +1090,10 @@ pub fn load_js_chunks(
             },
         });
     }
+    let chunks = LoadedJsChunks {
+        chunks,
+        chunk_table,
+    };
     let manifest = LoadedJsChunksManifest {
         counts: LoadedCounts {
             chunks: js_files.len(),
@@ -1189,7 +1167,7 @@ fn write_tree_reports(
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
-        serde_json::to_writer_pretty(&fs::File::create(path)?, &manifest)?;
+        write_json(path, &manifest)?;
     }
 
     let manifests = build_directory_dependency_manifests(decomposition_by_chunk, file_metrics);
@@ -1198,7 +1176,7 @@ fn write_tree_reports(
         if let Some(parent) = manifest_path.parent() {
             fs::create_dir_all(parent)?;
         }
-        serde_json::to_writer_pretty(&fs::File::create(&manifest_path)?, &manifest)?;
+        write_json(&manifest_path, &manifest)?;
     }
     Ok(())
 }
@@ -1607,7 +1585,7 @@ fn materialize_chunk_scripts(
     if let Some(parent) = chunk_report_path.parent() {
         fs::create_dir_all(parent)?;
     }
-    serde_json::to_writer_pretty(&fs::File::create(chunk_report_path)?, &written)?;
+    write_json(chunk_report_path, &written)?;
     Ok(metrics)
 }
 

@@ -6,13 +6,11 @@ Full-package review of `devinfra/js/debundle/` (~47K lines). Findings prioritize
 
 ## P0 — God Modules
 
-### `vendor.rs` (3297 lines, 6 concerns) — **Partially done**
+### `vendor/mod.rs` (3052 lines) — **Partially done**
 
 Manifest types extracted to `vendor/manifests.rs`. Strip logic extracted to `vendor/strip.rs`. Remaining work:
 
-- AST helpers (`export_default_ident`, `export_const_member`, `make_namespace_import`, `make_default_import`, `make_named_import`) duplicate patterns from `js_ast.rs` and the lowering subsystem. Extract to a shared `ast_helpers.rs`.
 - `apply_partial_vendor_swaps` and `apply_bundled_partial_vendor_swaps` are near-identical dispatchers (build job vec, rayon `into_par_iter`, collect results, aggregate counts, write manifest). Unify with a generic helper or trait-based dispatch.
-- `build_named_from_module_default_spec` and `build_named_from_default_spec` differ in exactly one key (`wrapper_shape`). Single function parameterized by the shape.
 
 ### `purity.rs` (2671 lines, 5 concerns)
 
@@ -29,7 +27,7 @@ Tests 8+ distinct subsystems in one file: fact analysis, decorate helpers, cycle
 
 Split into topic-aligned modules: `tests/facts.rs`, `tests/purity.rs`, `tests/plain_data.rs`, `tests/cycles.rs`, `tests/atomic_units.rs`, `tests/statement_splitting.rs`.
 
-### `facts.rs` (2228 lines, 3 concerns)
+### `facts.rs` (2219 lines, 3 concerns)
 
 ~1000 lines of vendor-prune-specific local effect analysis (lines 533–1583) embedded in general statement-fact collection. The `vendor_prune_*` functions are a self-contained concern. Extract to `facts/vendor_prune.rs` or behind a feature flag. The vendor-prune analysis should accept `StatementFacts` as input rather than being embedded in the collection pass.
 
@@ -45,9 +43,9 @@ Extracted `binding()`, `member()`, `module_ref()` to `peel/test_utils.rs`. The `
 
 Deduplicated into a shared helper.
 
-### Vendor swap test workspace setup (4 copies)
+### Vendor swap test workspace setup — **Partially done**
 
-`vendor_swap_test.rs` has four near-identical fixture constructors (`run_named_from_module_default_fixture`, `run_named_from_default_fixture`, `run_partial_swap_fixture`, `run_partial_swap_kind_fixture`) that all create TempDir, workspace/extracted/snapshot/out/wrapper directories, write snapshot files, write package.json, write spec YAML, run debundler. Extract a `VendorSwapWorkspace` builder.
+`VendorTestWorkspace` builder extracted but only adopted by 2 of 4 fixture constructors (`run_partial_swap_fixture`, `run_partial_swap_kind_fixture`). `run_named_from_module_default_fixture` and `run_named_from_default_fixture` still construct workspaces inline.
 
 ---
 
@@ -65,23 +63,15 @@ Orchestration/plan resolution (lines 39–342), factorization wiring (344–579)
 
 `lower_chunk` had 8 sequential phases inline. Four have been extracted into named functions (`compute_selected_ordinals`, `plan_selected_exports`, `split_entry_body`, `build_module_output`). Remaining inline phases (naturalization, disambiguation, import planning, the per-module loop) could be further extracted, though each requires substantial captured state from `LowerChunkInputs` (15–20 fields).
 
-### `lowering/mod.rs` — 45-line import block
+### `lowering/mod.rs` — 266-line import block
 
-Consequence of wildcard `use super::*` in every sub-module. A more targeted import strategy would reduce this. `LOWERING_FILE_PRAGMA` and `LOWERING_GENERATOR_HEADER` are used only in `lower.rs` — move them there.
-
-### `peel/plan.rs:run_explain_report` — 181 lines
-
-63 lines (630–692) are near-identical `apply_limit_with_metadata` calls. A helper that takes a list of `(section_name, &mut Vec<T>)` pairs and applies limits in bulk would collapse to ~10 lines. `query_report` and `resolve_owner_ids` each do a 5-way match on `SelectionKind` — a `SelectionKind::query_kind()` method would eliminate the duplication.
+Consequence of wildcard `use super::*` in every sub-module. A more targeted import strategy would reduce this.
 
 ### `emit_harness.rs` — repeated JSON-write pattern
 
-`serde_json::to_writer_pretty(&fs::File::create(path)?, &data)?` appears 7 times (lines 115–162). Extract `fn write_json(path: &Path, data: &impl Serialize) -> Result<()>`. Same pattern in `write_tree.rs` (3 occurrences).
+`serde_json::to_writer_pretty` calls scattered across emit_harness.rs, write_tree.rs, artifact.rs, identifier_rename_queue.rs, pipeline.rs. Extract a shared `write_json` helper.
 
-### `emit_harness.rs:536–593` — 57-line embedded JS string
-
-`harness_monitor_script` is an inline JS blob that can't be linted or tested independently. Use `include_str!("harness_monitor.js")` and keep the JS in a separate file.
-
-### `output_layout.rs` — 12 identical accessor methods
+### `output_layout.rs` — 10 identical accessor methods
 
 Each returns `self.root.join(CONSTANT)`. Replace with a data-driven approach: `report_path(name: &str) -> PathBuf` plus constants, or a const array + index.
 
@@ -327,19 +317,19 @@ No longer a standalone crate — absorbed into `swc_ecma_minifier` as `pub(crate
 | -------------------------------- | -------------------------------------- |
 | God modules (P0)                 | 4 files totaling ~12K lines            |
 | Major duplication sites (P1)     | 3 patterns remaining                   |
-| Structural issues (P2)           | 8 findings                             |
+| Structural issues (P2)           | 4 findings                             |
 | Encapsulation / type design (P3) | 13 findings                            |
 | Test-specific (P5)               | 9 findings                             |
 | SWC reuse opportunities          | 8 underutilized utils, 1 DCE candidate |
 
 ## Top 5 Highest-Impact Actions
 
-1. **Continue splitting `vendor.rs`** — manifests and strip extracted; remaining: AST helpers, unify partial-swap dispatchers, parameterize `build_named_from_*` by shape.
+1. **Continue splitting `vendor/mod.rs`** — manifests and strip extracted; remaining: unify partial-swap dispatchers into generic helper.
 
 2. **Split `analysis_tests.rs`** into 6–8 topic-aligned test modules. Largest test file at 4095 lines.
 
 3. **Extract vendor-prune from `facts.rs`** into `facts/vendor_prune.rs`. Separates a 1000-line self-contained concern from general fact collection.
 
-4. **Extract `write_json` helper** from `emit_harness.rs` (7 copies) and `write_tree.rs` (3 copies). Use `include_str!` for the embedded JS monitor script.
+4. **Extract `write_json` helper** from emit_harness.rs and write_tree.rs (2 identical copies), deduplicate direct `serde_json::to_writer_pretty` calls in artifact.rs, identifier_rename_queue.rs, pipeline.rs.
 
-5. ~~**Split `lowering/util.rs`**~~ — **Done** (`0cbe93546`). Split into `scope_names.rs`, `import_emit.rs`, `ordinal.rs`, `io.rs`.
+5. **Split `lowering/materialize.rs`** — extract `fold_rebind_atomic_units` and deduplicate the `analysis_hints` collection loops.

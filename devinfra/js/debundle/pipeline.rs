@@ -9,6 +9,7 @@ use serde::Serialize;
 use artifact::ArtifactIndexes;
 use artifact::ChunkBundle;
 use artifact::load_js_chunks;
+use artifact::write_json;
 use artifact::{ChunkDecompositionOutput, ChunkId};
 use emit_harness::{EmitBrowserHarnessOptions, emit_browser_harness};
 use lowering::{MaterializeLogicalModulesOptions, materialize_logical_modules};
@@ -451,7 +452,7 @@ fn write_vendor_swaps_report(
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    fs::write(path, serde_json::to_string_pretty(report)?)?;
+    write_json(path, report)?;
     Ok(())
 }
 

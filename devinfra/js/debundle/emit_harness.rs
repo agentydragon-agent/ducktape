@@ -11,7 +11,7 @@ use url::Url;
 use artifact::{
     ArtifactChunkRecord, ChunkBundle, ChunkDecompositionOutput, ChunkId, OutputMetrics,
     chunk_id_for_js_path, materialize_artifact_scripts, module_path_from_path,
-    normalize_module_path, path_from_module_path,
+    normalize_module_path, path_from_module_path, write_json,
 };
 use identifier_rename_queue::{compute_identifier_rename_queue, write_queue};
 use output_layout::DebundleOutputLayout;
@@ -511,11 +511,6 @@ fn copy_snapshot_assets_recursive(
 fn copy_output_file(source: &Path, target: &Path) -> Result<()> {
     fs::copy(source, target)?;
     make_owner_writable(target)?;
-    Ok(())
-}
-
-fn write_json(path: impl AsRef<Path>, data: &impl Serialize) -> Result<()> {
-    serde_json::to_writer_pretty(&fs::File::create(path.as_ref())?, data)?;
     Ok(())
 }
 

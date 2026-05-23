@@ -5,15 +5,10 @@ use std::path::Path;
 use anyhow::{Result, bail};
 use serde::Serialize;
 
-fn write_json(path: impl AsRef<Path>, data: &impl Serialize) -> Result<()> {
-    serde_json::to_writer_pretty(&fs::File::create(path.as_ref())?, data)?;
-    Ok(())
-}
-
 use artifact::{
     ArtifactChunkRecord, ArtifactCounts, ArtifactManifest, ChunkBundle, ChunkDecompositionOutput,
     ChunkId, DecompositionMetrics, RootLogicalModulesSummary, SelectedModuleLowering,
-    materialize_artifact_scripts,
+    materialize_artifact_scripts, write_json,
 };
 use identifier_rename_queue::{compute_identifier_rename_queue, write_queue};
 use output_layout::DebundleOutputLayout;
