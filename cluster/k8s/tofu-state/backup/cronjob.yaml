@@ -35,7 +35,7 @@ spec:
                   ls -t /backup/tofu-state-*.sql | tail -n +31 | xargs rm -f 2>/dev/null || true
               env:
                 - name: DB_HOST
-                  value: tofu-state-db-rw.tofu-state.svc
+                  value: tofu-state-db-ovh-rw.tofu-state.svc
                 - name: DB_NAME
                   value: tfstate
                 - name: DB_USER

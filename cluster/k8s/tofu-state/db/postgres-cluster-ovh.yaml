@@ -3,8 +3,6 @@ kind: Cluster
 metadata:
   name: tofu-state-db-ovh
   namespace: tofu-state
-  annotations:
-    description: "Streaming replica of tofu-state-db; will be promoted to replace the Hetzner-pinned primary."
 spec:
   instances: 2
   imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
@@ -25,27 +23,3 @@ spec:
 
   monitoring:
     enablePodMonitor: true
-
-  replica:
-    enabled: true
-    source: tofu-state-db
-
-  bootstrap:
-    pg_basebackup:
-      source: tofu-state-db
-
-  externalClusters:
-    - name: tofu-state-db
-      connectionParameters:
-        host: tofu-state-db-rw.tofu-state.svc.cluster.local
-        user: streaming_replica
-        dbname: postgres
-      sslKey:
-        name: tofu-state-db-replication
-        key: tls.key
-      sslCert:
-        name: tofu-state-db-replication
-        key: tls.crt
-      sslRootCert:
-        name: tofu-state-db-ca
-        key: ca.crt

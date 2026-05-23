@@ -63,21 +63,21 @@ pinned DBs or vice versa. This prevents cross-site write latency.
 
 ## Current Compliance
 
-| Cluster       | Profile        | Compliant | Notes |
-| ------------- | -------------- | --------- | ----- |
-| airlock-db    | OVH-HA         | Yes       |       |
-| authentik-db  | VPS-HA         | Yes       |       |
-| powerdns-db   | VPS-HA         | Yes       |       |
-| tofu-state-db | VPS-HA         | Yes       |       |
-| atuin-db      | Proxmox-single | Yes       |       |
-| langfuse-db   | Proxmox-single | Yes       |       |
-| inventree-db  | Proxmox-single | Yes       |       |
-| harbor-db     | Proxmox-single | Yes       |       |
-| gitea-db      | Proxmox-single | Yes       |       |
-| props-db      | Proxmox-single | Yes       |       |
-| matrix-db     | Proxmox-single | Yes       |       |
-| tandoor-db    | Proxmox-single | Yes       |       |
-| attic-db      | OVH-HA         | Yes       |       |
+| Cluster           | Profile        | Compliant | Notes                                                   |
+| ----------------- | -------------- | --------- | ------------------------------------------------------- |
+| airlock-db        | OVH-HA         | Yes       |                                                         |
+| authentik-db-ovh  | OVH-HA         | Yes       | Replaces former authentik-db (VPS-HA, decommissioned).  |
+| grafana-db-ovh    | OVH-HA         | Yes       | Replaces former grafana-db (VPS-HA, decommissioned).    |
+| tofu-state-db-ovh | OVH-HA         | Yes       | Replaces former tofu-state-db (VPS-HA, decommissioned). |
+| atuin-db          | Proxmox-single | Yes       |                                                         |
+| langfuse-db       | Proxmox-single | Yes       |                                                         |
+| inventree-db      | Proxmox-single | Yes       |                                                         |
+| harbor-db         | Proxmox-single | Yes       |                                                         |
+| gitea-db          | Proxmox-single | Yes       |                                                         |
+| props-db          | Proxmox-single | Yes       |                                                         |
+| matrix-db         | Proxmox-single | Yes       |                                                         |
+| tandoor-db        | Proxmox-single | Yes       |                                                         |
+| attic-db          | OVH-HA         | Yes       |                                                         |
 
 ## TODO
 
