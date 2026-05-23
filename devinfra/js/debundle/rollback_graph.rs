@@ -99,15 +99,17 @@ where
     pub(crate) fn successors(&self, node: N) -> impl Iterator<Item = N> + '_ {
         self.out_edges
             .get(&node)
+            .map(|edges| edges.iter().copied())
             .into_iter()
-            .flat_map(|edges| edges.iter().copied())
+            .flatten()
     }
 
     pub(crate) fn predecessors(&self, node: N) -> impl Iterator<Item = N> + '_ {
         self.in_edges
             .get(&node)
+            .map(|edges| edges.iter().copied())
             .into_iter()
-            .flat_map(|edges| edges.iter().copied())
+            .flatten()
     }
 
     pub(crate) fn scc_containing(&self, node: N) -> BTreeSet<N> {
