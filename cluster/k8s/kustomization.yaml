@@ -226,6 +226,7 @@ resources:
   - gatus/namespace/flux-kustomization.yaml
   - gatus/agent-rbac/flux-kustomization.yaml
   - gatus/sso-tf/flux-kustomization.yaml
+  - gatus/db/flux-kustomization.yaml
   - gatus/app/flux-kustomization.yaml
   - gatus/servicemonitor/flux-kustomization.yaml
 

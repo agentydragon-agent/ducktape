@@ -1,5 +1,3 @@
-# TODO: Consider consolidating the many per-app PostgreSQL instances
-# in the cluster into a shared instance, and using postgres backend.
 security:
   oidc:
     issuer-url: https://auth.allegedly.works/application/o/gatus/
@@ -9,8 +7,8 @@ security:
     scopes: [openid]
 
 storage:
-  type: sqlite
-  path: /data/gatus.db
+  type: postgres
+  path: ${GATUS_DB_URI}
 
 endpoints:
   # ── core ─────────────────────────────────────────────────────────────

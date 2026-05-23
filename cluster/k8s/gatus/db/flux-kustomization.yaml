@@ -1,25 +1,23 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: gatus
+  name: gatus-db
   namespace: flux-system
 spec:
   retryInterval: 1m
   interval: 10m
-  timeout: 10m
+  timeout: 5m
   sourceRef:
     kind: GitRepository
     name: flux-system
-  path: ./cluster/k8s/gatus/app
+  path: ./cluster/k8s/gatus/db
   prune: true
   wait: true
   healthChecks:
-    - apiVersion: helm.toolkit.fluxcd.io/v2
-      kind: HelmRelease
-      name: gatus
+    - apiVersion: postgresql.cnpg.io/v1
+      kind: Cluster
+      name: gatus-db
       namespace: gatus
   dependsOn:
     - name: gatus-namespace
-    - name: gatus-db
-    - name: gatus-sso-tf
-    - name: gateway
+    - name: cnpg

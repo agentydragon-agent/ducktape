@@ -61,6 +61,7 @@ pinned DBs or vice versa. This prevents cross-site write latency.
 | ----------------- | -------------- | --------- |
 | airlock-db        | OVH-HA         | Yes       |
 | authentik-db-ovh  | OVH-HA         | Yes       |
+| gatus-db          | OVH-HA         | Yes       |
 | grafana-db-ovh    | OVH-HA         | Yes       |
 | tofu-state-db-ovh | OVH-HA         | Yes       |
 | attic-db          | OVH-HA         | Yes       |
