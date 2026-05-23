@@ -2354,3 +2354,9 @@ pub(crate) fn class_has_static_observable(
 
 #[cfg(test)]
 mod classifier_tests;
+
+#[cfg(test)]
+mod graph_purity_tests;
+
+#[cfg(test)]
+mod redundant_hints_tests;
