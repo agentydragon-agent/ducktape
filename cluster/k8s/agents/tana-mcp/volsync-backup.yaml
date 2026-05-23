@@ -1,0 +1,81 @@
+# Periodic backup of tana-mcp-config-ovh into a SeaweedFS-backed PVC.
+#
+# Direction: OVH local-path (primary, hot) → seaweedfs-ovh (cold, replicated
+# across two kimsufi nodes by SeaweedFS itself). SeaweedFS is the wrong
+# backend for the live Tana profile (see seaweedfs_csi_bench.md) but it's
+# fine as a backup sink — bulk writes, no fsync-per-update.
+#
+# copyMethod: Direct because no VolumeSnapshotClass is installed in the
+# cluster. The local-path source PVC is RWO but the rsync mover pod and
+# the live tana-mcp pod can both bind-mount the same host path (local
+# volume type), so the backup runs while Tana is active. Backups may
+# catch torn SQLite writes occasionally — acceptable because Tana
+# already mirrors its data to the upstream Tana cloud; this is
+# belt-and-suspenders.
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: tana-mcp-config-backup
+  namespace: tana-mcp
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: seaweedfs-ovh
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: volsync.backube/v1alpha1
+kind: ReplicationDestination
+metadata:
+  name: tana-mcp-config-backup
+  namespace: tana-mcp
+spec:
+  rsyncTLS:
+    destinationPVC: tana-mcp-config-backup
+    copyMethod: Direct
+    serviceType: ClusterIP
+    moverSecurityContext:
+      runAsUser: 1001
+      runAsGroup: 1001
+      fsGroup: 1001
+      seccompProfile:
+        type: RuntimeDefault
+    moverAffinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - key: topology.kubernetes.io/zone
+                  operator: In
+                  values: ["hil-ovh"]
+---
+apiVersion: volsync.backube/v1alpha1
+kind: ReplicationSource
+metadata:
+  name: tana-mcp-config-backup
+  namespace: tana-mcp
+spec:
+  sourcePVC: tana-mcp-config-ovh
+  trigger:
+    schedule: "17 */6 * * *" # every 6 hours, off-the-hour
+  rsyncTLS:
+    copyMethod: Direct
+    keySecret: volsync-rsync-tls-tana-mcp-config-backup
+    address: volsync-rsync-tls-dst-tana-mcp-config-backup.tana-mcp.svc
+    port: 8000
+    moverSecurityContext:
+      runAsUser: 1001
+      runAsGroup: 1001
+      fsGroup: 1001
+      seccompProfile:
+        type: RuntimeDefault
+    moverAffinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+            - matchExpressions:
+                - key: topology.kubernetes.io/zone
+                  operator: In
+                  values: ["hil-ovh"]
