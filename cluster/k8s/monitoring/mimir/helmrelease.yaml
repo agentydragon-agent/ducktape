@@ -140,9 +140,11 @@ spec:
 
     compactor:
       replicas: 1
+      # Compactor's local disk is scratch for compaction passes; a lost
+      # in-progress compaction just re-runs next cycle. No reason to back
+      # it with a real PVC.
       persistentVolume:
-        storageClass: local-path-hetzner
-        size: 10Gi
+        enabled: false
       resources:
         requests:
           cpu: 50m
@@ -152,9 +154,12 @@ spec:
 
     store_gateway:
       replicas: 1
+      # Store-gateway's local disk is just bucket-index cache; rebuilt
+      # from S3 on cold start (a few minutes of warm-up). Run on emptyDir.
       persistentVolume:
-        storageClass: local-path-hetzner
-        size: 10Gi
+        enabled: false
+        emptyDir:
+          sizeLimit: 10Gi
       resources:
         requests:
           cpu: 50m
