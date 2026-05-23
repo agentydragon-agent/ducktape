@@ -7,6 +7,10 @@ use swc_ecma_ast::Id;
 use artifact::ChunkBundle;
 use spec::{PartialSwapKind, VendorRole, WrapperShape};
 
+pub(crate) trait PartialSwapResolutionSymbols {
+    fn symbols_mut(&mut self) -> &mut BTreeMap<String, PartialSwapSymbolResolution>;
+}
+
 #[derive(Debug, Clone)]
 pub struct VendorAnnotationsManifest {
     pub counts: VendorAnnotationCounts,
@@ -135,6 +139,12 @@ pub struct ChunkPartialSwapResolution {
     pub symbols: BTreeMap<String, PartialSwapSymbolResolution>,
 }
 
+impl PartialSwapResolutionSymbols for ChunkPartialSwapResolution {
+    fn symbols_mut(&mut self) -> &mut BTreeMap<String, PartialSwapSymbolResolution> {
+        &mut self.symbols
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct PartialSwapPackageResolution {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -186,6 +196,12 @@ pub struct ChunkBundledPartialSwapResolution {
     pub bundle: BundledPartialSwapBundleResolution,
     pub packages: BTreeMap<String, BundledPartialSwapPackageResolution>,
     pub symbols: BTreeMap<String, PartialSwapSymbolResolution>,
+}
+
+impl PartialSwapResolutionSymbols for ChunkBundledPartialSwapResolution {
+    fn symbols_mut(&mut self) -> &mut BTreeMap<String, PartialSwapSymbolResolution> {
+        &mut self.symbols
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]

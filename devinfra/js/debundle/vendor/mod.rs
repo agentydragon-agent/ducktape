@@ -1398,10 +1398,127 @@ struct ChunkBundledPartialSwapMapping {
     symbols: BTreeMap<String, PartialSwapSymbolTarget>,
 }
 
+trait PartialSwapMappingEntry {
+    fn chunk_path(&self) -> &str;
+}
+
+impl PartialSwapMappingEntry for ChunkPartialSwapMapping {
+    fn chunk_path(&self) -> &str {
+        &self.chunk_path
+    }
+}
+
+impl PartialSwapMappingEntry for ChunkBundledPartialSwapMapping {
+    fn chunk_path(&self) -> &str {
+        &self.chunk_path
+    }
+}
+
 #[derive(Debug, Clone)]
 struct BundledPartialSwapPackageTarget {
     namespace: Option<String>,
     facade_app_path: String,
+}
+
+struct PartialSwapDispatchOutcome {
+    total_references: usize,
+    self_rewrite_locals_by_caller: Vec<(ChunkId, BTreeSet<Id>)>,
+}
+
+/// Collect AST files from all chunks into parallel jobs, dispatch per-file
+/// rewrites via rayon, reassemble results into the artifact, and update
+/// per-symbol reference counts in resolutions.
+fn dispatch_partial_swap_jobs<M, R, F>(
+    artifact: &mut ChunkBundle,
+    chunk_table: &ChunkTable,
+    mappings: &BTreeMap<String, M>,
+    references: &ArtifactIndexes,
+    resolutions: &mut BTreeMap<String, R>,
+    rewrite_fn: F,
+) -> Result<PartialSwapDispatchOutcome>
+where
+    M: PartialSwapMappingEntry + Sync,
+    R: PartialSwapResolutionSymbols,
+    F: Fn(
+            PartialSwapFileJob,
+            &ArtifactIndexes,
+            &BTreeMap<String, M>,
+            &ChunkTable,
+        ) -> PartialSwapFileResult
+        + Sync,
+{
+    let mut jobs = Vec::new();
+    for (caller_chunk_index, chunk_artifact) in artifact.chunks.iter_mut().enumerate() {
+        let caller_chunk_id = chunk_artifact.chunk_id;
+        let caller_chunk_name = chunk_table.name(caller_chunk_id).to_string();
+        for file_path in list_chunk_file_paths(&chunk_artifact.js) {
+            let has_ast = chunk_artifact
+                .js
+                .get_file(&file_path)
+                .and_then(|file| file.ast())
+                .is_some();
+            if !has_ast {
+                continue;
+            }
+            let (parts, ast) = chunk_artifact
+                .js
+                .remove_file(&file_path)
+                .and_then(|file| file.into_ast_parts())
+                .with_context(|| format!("missing AST for {caller_chunk_name}/{file_path}"))?;
+            jobs.push(PartialSwapFileJob {
+                caller_chunk_index,
+                caller_chunk_id,
+                file_path,
+                parts,
+                ast,
+            });
+        }
+    }
+
+    let chunk_table_ref = chunk_table;
+    let mappings_ref = mappings;
+    let results: Vec<PartialSwapFileResult> = GLOBALS.with(|globals| {
+        jobs.into_par_iter()
+            .map(|job| {
+                GLOBALS.set(globals, || {
+                    rewrite_fn(job, references, mappings_ref, chunk_table_ref)
+                })
+            })
+            .collect()
+    });
+
+    let mut total_references = 0usize;
+    let mut self_rewrite_import_locals = Vec::new();
+    for result in results {
+        for ((chunk_name, chunk_export), count) in &result.references_by_symbol {
+            let mapping = mappings_ref
+                .get(chunk_name)
+                .expect("symbol rewritten against a chunk that wasn't in the mappings");
+            if let Some(resolution) = resolutions.get_mut(mapping.chunk_path())
+                && let Some(symbol_resolution) = resolution.symbols_mut().get_mut(chunk_export)
+            {
+                symbol_resolution.references_rewritten += count;
+            }
+            total_references += count;
+        }
+        if !result.self_rewrite_import_locals.is_empty() {
+            self_rewrite_import_locals.push((
+                result.caller_chunk_id,
+                result.self_rewrite_import_locals.clone(),
+            ));
+        }
+        artifact
+            .chunks
+            .get_mut(result.caller_chunk_index)
+            .with_context(|| format!("missing chunk index {}", result.caller_chunk_index))?
+            .js
+            .insert_file(JsFile::from_ast_parts(result.parts, result.ast));
+    }
+
+    Ok(PartialSwapDispatchOutcome {
+        total_references,
+        self_rewrite_locals_by_caller: self_rewrite_import_locals,
+    })
 }
 
 pub fn apply_partial_vendor_swaps(
@@ -1627,68 +1744,14 @@ pub fn apply_partial_vendor_swaps(
         });
     }
 
-    let mut jobs = Vec::new();
-    for (caller_chunk_index, chunk_artifact) in artifact.chunks.iter_mut().enumerate() {
-        let caller_chunk_id = chunk_artifact.chunk_id;
-        let caller_chunk_name = chunk_table.name(caller_chunk_id).to_string();
-        for file_path in list_chunk_file_paths(&chunk_artifact.js) {
-            let has_ast = chunk_artifact
-                .js
-                .get_file(&file_path)
-                .and_then(|file| file.ast())
-                .is_some();
-            if !has_ast {
-                continue;
-            }
-            let (parts, ast) = chunk_artifact
-                .js
-                .remove_file(&file_path)
-                .and_then(|file| file.into_ast_parts())
-                .with_context(|| format!("missing AST for {caller_chunk_name}/{file_path}"))?;
-            jobs.push(PartialSwapFileJob {
-                caller_chunk_index,
-                caller_chunk_id,
-                file_path,
-                parts,
-                ast,
-            });
-        }
-    }
-
-    let chunk_table_ref = &chunk_table;
-    let mappings_ref = &mappings;
-    // Rayon workers don't inherit `GLOBALS`; re-set per worker so any
-    // `Mark::new()` / `Id` use stays in the caller's arena.
-    let results: Vec<PartialSwapFileResult> = GLOBALS.with(|globals| {
-        jobs.into_par_iter()
-            .map(|job| {
-                GLOBALS.set(globals, || {
-                    rewrite_partial_swap_in_file(job, references, mappings_ref, chunk_table_ref)
-                })
-            })
-            .collect()
-    });
-
-    let mut total_references = 0usize;
-    for result in results {
-        for ((chunk_name, chunk_export), count) in &result.references_by_symbol {
-            let mapping = mappings_ref
-                .get(chunk_name)
-                .expect("symbol rewritten against a chunk that wasn't in the mappings");
-            if let Some(resolution) = resolutions.get_mut(&mapping.chunk_path)
-                && let Some(symbol_resolution) = resolution.symbols.get_mut(chunk_export)
-            {
-                symbol_resolution.references_rewritten += count;
-            }
-            total_references += count;
-        }
-        artifact
-            .chunks
-            .get_mut(result.caller_chunk_index)
-            .with_context(|| format!("missing chunk index {}", result.caller_chunk_index))?
-            .js
-            .insert_file(JsFile::from_ast_parts(result.parts, result.ast));
-    }
+    let outcome = dispatch_partial_swap_jobs(
+        &mut artifact,
+        &chunk_table,
+        &mappings,
+        references,
+        &mut resolutions,
+        rewrite_partial_swap_in_file,
+    )?;
 
     let total_symbols: usize = resolutions
         .values()
@@ -1701,7 +1764,7 @@ pub fn apply_partial_vendor_swaps(
             counts: PartialSwapResolutionCounts {
                 chunks: ops.len(),
                 symbols: total_symbols,
-                references_rewritten: total_references,
+                references_rewritten: outcome.total_references,
             },
         },
     })
@@ -1951,89 +2014,25 @@ pub fn apply_bundled_partial_vendor_swaps(
         });
     }
 
-    let mut jobs = Vec::new();
-    for (caller_chunk_index, chunk_artifact) in artifact.chunks.iter_mut().enumerate() {
-        let caller_chunk_id = chunk_artifact.chunk_id;
-        let caller_chunk_name = chunk_table.name(caller_chunk_id).to_string();
-        for file_path in list_chunk_file_paths(&chunk_artifact.js) {
-            let has_ast = chunk_artifact
-                .js
-                .get_file(&file_path)
-                .and_then(|file| file.ast())
-                .is_some();
-            if !has_ast {
-                continue;
-            }
-            let (parts, ast) = chunk_artifact
-                .js
-                .remove_file(&file_path)
-                .and_then(|file| file.into_ast_parts())
-                .with_context(|| format!("missing AST for {caller_chunk_name}/{file_path}"))?;
-            jobs.push(PartialSwapFileJob {
-                caller_chunk_index,
-                caller_chunk_id,
-                file_path,
-                parts,
-                ast,
-            });
-        }
-    }
+    let outcome = dispatch_partial_swap_jobs(
+        &mut artifact,
+        &chunk_table,
+        &mappings,
+        references,
+        &mut resolutions,
+        rewrite_bundled_partial_swap_in_file,
+    )?;
 
-    let chunk_table_ref = &chunk_table;
-    let mappings_ref = &mappings;
-    let results: Vec<PartialSwapFileResult> = GLOBALS.with(|globals| {
-        jobs.into_par_iter()
-            .map(|job| {
-                GLOBALS.set(globals, || {
-                    rewrite_bundled_partial_swap_in_file(
-                        job,
-                        references,
-                        mappings_ref,
-                        chunk_table_ref,
-                    )
-                })
-            })
-            .collect()
-    });
-
-    let mut total_references = 0usize;
     let mut self_rewrite_import_locals_by_chunk_path: BTreeMap<String, BTreeSet<Id>> =
         BTreeMap::new();
-    for result in results {
-        let PartialSwapFileResult {
-            caller_chunk_index,
-            caller_chunk_id,
-            parts,
-            ast,
-            references_by_symbol,
-            self_rewrite_import_locals,
-        } = result;
-        for ((chunk_name, chunk_export), count) in &references_by_symbol {
-            let mapping = mappings_ref
-                .get(chunk_name)
-                .expect("symbol rewritten against a chunk that wasn't in the mappings");
-            if let Some(resolution) = resolutions.get_mut(&mapping.chunk_path)
-                && let Some(symbol_resolution) = resolution.symbols.get_mut(chunk_export)
-            {
-                symbol_resolution.references_rewritten += count;
-            }
-            total_references += count;
+    for (caller_chunk_id, locals) in &outcome.self_rewrite_locals_by_caller {
+        let caller_chunk_name = chunk_table.name(*caller_chunk_id);
+        if let Some(mapping) = mappings.get(caller_chunk_name) {
+            self_rewrite_import_locals_by_chunk_path
+                .entry(mapping.chunk_path.clone())
+                .or_default()
+                .extend(locals.clone());
         }
-        if !self_rewrite_import_locals.is_empty() {
-            let caller_chunk_name = chunk_table.name(caller_chunk_id);
-            if let Some(mapping) = mappings_ref.get(caller_chunk_name) {
-                self_rewrite_import_locals_by_chunk_path
-                    .entry(mapping.chunk_path.clone())
-                    .or_default()
-                    .extend(self_rewrite_import_locals);
-            }
-        }
-        artifact
-            .chunks
-            .get_mut(caller_chunk_index)
-            .with_context(|| format!("missing chunk index {caller_chunk_index}"))?
-            .js
-            .insert_file(JsFile::from_ast_parts(parts, ast));
     }
 
     let total_symbols: usize = resolutions
@@ -2047,7 +2046,7 @@ pub fn apply_bundled_partial_vendor_swaps(
             counts: PartialSwapResolutionCounts {
                 chunks: ops.len(),
                 symbols: total_symbols,
-                references_rewritten: total_references,
+                references_rewritten: outcome.total_references,
             },
         },
         self_rewrite_import_locals_by_chunk_path,
