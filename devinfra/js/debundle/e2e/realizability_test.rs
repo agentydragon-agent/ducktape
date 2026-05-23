@@ -100,18 +100,25 @@ export { A, B, C, D };
 // --- I cycles via lazy back-edges ----------------------------------------
 
 #[test]
-fn mixed_cycle_with_lazy_back_edge_is_realizable() {
+fn mixed_cycle_with_lazy_back_edge_is_realizable_when_residual_imports_scc() {
     // mod_a imports B from mod_b (readB body's lazy read); mod_b
     // imports A from mod_a (B's eager initializer). The imports
-    // graph `I` has a 2-cycle {mod_a, mod_b}, but the
-    // constraining-edge subgraph (drops LazyUse) is acyclic — only
-    // mod_b → mod_a constrains init order. The relaxed clause-3
-    // rule (DESIGN.md "Realizability primitive") accepts: per
-    // Lemma 2, the materializer's `source_import_position` puts
-    // mod_b (the cycle dependent) FIRST in entry's source, so the
-    // ESM linker's DFS unwinds the cycle through mod_a (the
-    // dependency) and post-DFS evaluation lands mod_a first. B's
-    // at-init read of A sees A defined.
+    // graph `I` has a 2-cycle {mod_a, mod_b}; the constraining-
+    // edge subgraph (drops LazyUse) is acyclic — only
+    // mod_b → mod_a constrains init order.
+    //
+    // Residual reads `readB()` and re-exports A, B, readB, so
+    // residual has direct I-edges into both SCC members. The
+    // materializer's `source_import_position` reversal at
+    // residual orders entry's imports as `[mod_b, mod_a]`; ESM
+    // DFS enters mod_b → recurses into mod_a (eager) → mod_a's
+    // lazy back-edge hits mod_b on the link stack (no-op) → mod_a
+    // body evaluates with no TDZ → mod_b body sees A
+    // initialized. Lemma 2 rescues. The companion
+    // `mediator_reaches_asymmetric_cycle_test` exercises the
+    // shape Lemma 2 cannot rescue (non-residual mediator into
+    // SCC), and `runtime_tdz_on_imported_class_test` pins the
+    // residual-in-cycle rejection.
     let fixture = run_fixture(FixtureOpts::new(
         r#"const A = "a-value";
 function readB() { return B; }

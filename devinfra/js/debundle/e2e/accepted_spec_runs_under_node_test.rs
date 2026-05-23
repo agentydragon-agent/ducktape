@@ -166,64 +166,29 @@ export { T, bootstrap, init };
 
 #[test]
 fn early_entry_importer_does_not_pull_scc_in_wrong_order() {
-    // ★ RED test: minimal reproduction of the Tana
-    // `tanaLogger` TDZ.
+    // Mediator-heavy I-SCC `{mod_logger, mod_middle, mod_init}`
+    // with one constraining edge `mod_init → mod_logger` (via
+    // at-init promotion of `readT()` → `T`).
     //
-    // Setup mirrors the production failure (gaffer-private's
-    // `static/index-DI2GynTv` chunk):
+    // Why Lemma 2 rescues this even though `mod_early` and
+    // `mod_middle` both reach into the SCC: residual has
+    // I-edges to every SCC member (the export list re-exports
+    // T/init/middleHelper, and console.log(init) is at-init).
+    // The materializer's `source_import_position` thus puts the
+    // SCC's dependent (mod_init) first in entry's import list.
+    // ESM DFS visits the SCC from residual FIRST, with
+    // mod_init's eager import unwinding through mod_logger
+    // before mod_middle's lazy back-edge reaches mod_init on
+    // the link stack (cycle no-op). By the time mod_early or
+    // any other mediator's body runs, the SCC has already
+    // finished evaluating — their imports of SCC members are
+    // no-ops.
     //
-    //   - `mod_logger` declares a `let T = …` with at-init
-    //     value. Other modules read T via their imports.
-    //   - `mod_cycle_back` imports `mod_init` (creates a
-    //     non-constraining lazy back-edge — the analogue of
-    //     `app/offline_mode/state` importing init_state for
-    //     `getOfflineModeState`).
-    //   - `mod_logger` imports `mod_cycle_back` (analogue of
-    //     `tana_logger` importing `app/offline_mode/state` for
-    //     `offlineModeState` used lazily in a method body).
-    //   - `mod_init` imports `mod_logger` for T (constraining
-    //     eager_use). It also has a top-level anonymous statement
-    //     that calls a function decl (in residual / entry) that
-    //     reads T transitively. This mirrors init_state's
-    //     bootstrap try/catch calling `gR` which calls
-    //     `startBootProgressTracking` which reads `tanaLogger`.
-    //   - `mod_early` is what `entry` imports FIRST (before
-    //     entry's other imports reach mod_init/mod_logger/etc).
-    //     mod_early imports `mod_logger` so DFS recurses into
-    //     `mod_logger` via mod_early's chain — bringing
-    //     `mod_logger` into "evaluating" state via a path that
-    //     bypasses Lemma 2's planned ordering.
-    //
-    // Ducktape's at-init promotion sees `mod_init → mod_logger
-    // (eager_use T)` as a constraining edge and accepts the
-    // spec (no constraining SCC, no Rule 2 violation).
-    // But at runtime, ESM's DFS enters `mod_logger` via
-    // mod_early before `mod_init` is visited. The cycle
-    // `mod_logger → mod_cycle_back → mod_init → mod_logger`
-    // means `mod_init.body` runs while `mod_logger.body` is
-    // mid-evaluation. The init reads T → TDZ.
-    //
-    // After the fix, ducktape should either reject this shape
-    // OR emit the right import structure so ESM DFS visits
-    // `mod_logger` before `mod_init.body` runs.
-    // The 4-module cycle shape (matches /tmp/esm_cycle_test repro
-    // that reproduces the Tana TDZ exactly).
-    //
-    // The source has cross-references that, after peeling, yield:
-    //   - mod_early imports T from mod_logger
-    //   - mod_logger references `middleHelper` (lazy) → imports mod_middle
-    //   - mod_middle references `initData` (lazy) → imports mod_init
-    //   - mod_init reads T at-init via `const init = readT()` where
-    //     readT is a residual function → mod_init imports entry
-    //
-    // ESM DFS from entry:
-    //   entry → mod_early (line 1) → mod_logger →
-    //     mod_logger.body needs to run.
-    //     mod_logger imports mod_middle.
-    //     DFS → mod_middle → DFS into mod_init.
-    //     mod_init has `const init = readT()` at top. readT in entry
-    //     (hoisted). init = T. But mod_logger.body hasn't run yet!
-    //     T is in TDZ → ReferenceError.
+    // Empirically the emitted JS does run cleanly under Node;
+    // the pre-145984d83 docstring's claim that mod_init's body
+    // TDZs was a mis-attribution (mod_logger evaluates before
+    // mod_init under Lemma 2's import order). The precise gate
+    // accepts.
     let mut opts = FixtureOpts::new(
         r#"const T = "ready";
 function readT() { return T; }

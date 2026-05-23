@@ -106,9 +106,10 @@ pub fn check_realizability(
     //     `LocalEffect`) edges, deduped sequenced-per-pair. The
     //     evidence carrier — SCCs here are *the* clause-3 violation.
     //   - `i_adj`: every cross-module edge in the I-graph, including
-    //     `LazyUse`. SCCs here catch the asymmetric-cycle shape
-    //     `(at-init forward, lazy back)` whose constraining-only
-    //     subgraph is acyclic but whose ESM evaluation still TDZs.
+    //     `LazyUse`. SCCs here are candidates for the asymmetric-
+    //     cycle TDZ shape `(at-init forward, lazy back)`; the
+    //     simulator below decides whether Lemma 2's source-import
+    //     reversal actually rescues evaluation.
     //
     // Sequenced edges are deduped per (from, to) — multiple sequenced
     // reasons between the same module pair represent the same
@@ -157,28 +158,10 @@ pub fn check_realizability(
         return verdict;
     }
 
-    // Run Tarjan twice:
-    //   1. Over the constraining-edge subgraph — the historical
-    //      relaxed clause-3 rule. Catches **mutual** constraining
-    //      cycles (both sides eager-read each other; no source order
-    //      can satisfy both).
-    //   2. Over the full I-graph (constraining + lazy), then filter
-    //      to SCCs that **contain the residual module and a
-    //      constraining edge whose target IS residual**. Catches the
-    //      `(at-init forward, lazy back)` shape where one cycle
-    //      member at-init reads from residual while residual lazily
-    //      re-imports from the member. ESM's DFS starts at the
-    //      chunk's runtime entry (= residual), so residual evaluates
-    //      LAST in post-order — every other cycle member runs first
-    //      and reads residual's class/const/let bindings in TDZ.
-    //
-    //      Asymmetric I-cycles where the constraining edge target
-    //      is a non-residual module DO satisfy Lemma 2: the
-    //      materializer's `source_import_position` puts the cycle
-    //      dependent first in residual's import list, ESM DFS unwinds
-    //      via the dependency, eval order respects the constraint.
-    //      Those stay realizable.
-    let residual = partition.residual();
+    // Pass 1: Tarjan over the constraining-edge subgraph — the
+    // historical relaxed clause-3 rule. Catches **mutual**
+    // constraining cycles (both sides eager-read each other; no
+    // source order can satisfy both).
     let mut con_graph: DiGraphMap<ModuleId, ()> = DiGraphMap::new();
     for &(from, to) in constraining_adj.keys() {
         con_graph.add_edge(from, to, ());
@@ -203,40 +186,339 @@ pub fn check_realizability(
         });
     }
 
+    // Pass 2: Tarjan over the full I-graph (constraining + lazy).
+    // Multi-module I-SCCs containing constraining edges are the
+    // asymmetric `(at-init forward, lazy back)` candidates. Lemma 2
+    // (`ChunkFactorization::source_import_position`) reverses
+    // entry's import order within each I-SCC so DFS lands on the
+    // dependent first and unwinds through the dependency; the
+    // simulator below checks whether that reversal actually
+    // rescues evaluation given the spec's full import topology.
     let mut i_graph: DiGraphMap<ModuleId, ()> = DiGraphMap::new();
     for &(from, to) in i_adj.keys() {
         i_graph.add_edge(from, to, ());
     }
-    for scc in tarjan_scc(&i_graph) {
-        if scc.len() < 2 {
-            continue;
-        }
-        let modules: BTreeSet<ModuleId> = scc.iter().copied().collect();
-        if !modules.contains(&residual) {
-            continue;
-        }
-        // Collect only the constraining edges into residual within
-        // this SCC. If any exist, the cycle's TDZ shape is real.
-        let mut owner_edges: Vec<OwnerEdgeId> = Vec::new();
-        for ((from, to), edges) in &constraining_adj {
-            if *to == residual && modules.contains(from) {
-                owner_edges.extend_from_slice(edges);
+
+    let i_sccs = tarjan_scc(&i_graph);
+    let candidate_sccs: Vec<BTreeSet<ModuleId>> = i_sccs
+        .into_iter()
+        .filter_map(|scc| {
+            if scc.len() < 2 {
+                return None;
             }
+            let modules: BTreeSet<ModuleId> = scc.into_iter().collect();
+            if reported.contains(&modules) {
+                return None;
+            }
+            // Skip SCCs that carry no constraining edge between
+            // members — pure-lazy I-cycles never TDZ regardless of
+            // entry's import order.
+            let has_constraining = constraining_adj
+                .keys()
+                .any(|(from, to)| modules.contains(from) && modules.contains(to));
+            if !has_constraining {
+                return None;
+            }
+            Some(modules)
+        })
+        .collect();
+
+    if !candidate_sccs.is_empty() {
+        let mut i_successors: BTreeMap<ModuleId, BTreeSet<ModuleId>> = BTreeMap::new();
+        for &(from, to) in i_adj.keys() {
+            i_successors.entry(from).or_default().insert(to);
         }
-        if owner_edges.is_empty() {
-            continue;
+        let constraining_pairs: BTreeSet<(ModuleId, ModuleId)> =
+            constraining_adj.keys().copied().collect();
+        let simulation =
+            EsmEvaluationSimulator::build(i_successors, &constraining_pairs, partition.residual());
+        for modules in candidate_sccs {
+            let tdz_pairs: Vec<(ModuleId, ModuleId)> = simulation
+                .tdz_pairs(&modules, &constraining_pairs)
+                .collect();
+            if tdz_pairs.is_empty() {
+                continue;
+            }
+            // Surface only the constraining edges the simulator
+            // actually flagged as TDZ at runtime — that's the
+            // "surgical set" spec authors can cut to break the
+            // cycle, distinct from the full constraining-evidence
+            // listing the cycle report emits.
+            let mut owner_edges: Vec<OwnerEdgeId> = Vec::new();
+            for (from, to) in &tdz_pairs {
+                if let Some(edges) = constraining_adj.get(&(*from, *to)) {
+                    owner_edges.extend_from_slice(edges);
+                }
+            }
+            owner_edges.sort();
+            verdict.unrealizable_sccs.push(UnrealizableScc {
+                modules,
+                constraining_owner_edges: owner_edges,
+            });
         }
-        if reported.contains(&modules) {
-            continue;
-        }
-        owner_edges.sort();
-        verdict.unrealizable_sccs.push(UnrealizableScc {
-            modules,
-            constraining_owner_edges: owner_edges,
-        });
     }
 
     verdict
+}
+
+/// Simulator for ECMA-262 Phase-2 module evaluation order, used to
+/// decide whether Lemma 2's source-import reversal actually rescues
+/// a candidate asymmetric I-SCC at runtime.
+///
+/// The simulator models the **same** import-ordering decisions
+/// the materializer makes:
+///   - residual's imports are sorted by `source_import_position`
+///     (the Lemma 2 algorithm — reverse-within-SCC of the
+///     constraining linker order). See
+///     `ChunkFactorization::source_import_position` and
+///     `lowering::lower_chunk`.
+///   - every other module's imports are sorted by `linker_position`
+///     (dependency-first toposort of the constraining-edge
+///     subgraph). See `ChunkFactorization::linker_position` and
+///     `lowering::imports_cross::cross_module_imports_for_plan`.
+///
+/// It then walks DFS from residual, records the post-order
+/// evaluation index per module, and verifies every cross-module
+/// constraining edge `(M, X)` evaluates the target `X` before the
+/// source `M`. Equivalent to asking whether the emitted ESM bundle
+/// would actually execute without TDZ on the constraining edges in
+/// the candidate SCC.
+struct EsmEvaluationSimulator {
+    /// Post-order index per module after DFS from residual. Lower
+    /// index = earlier post-order = body evaluates earlier. Modules
+    /// unreachable from residual are absent — ESM doesn't load them,
+    /// so the simulator skips constraining-edge checks involving
+    /// them.
+    post_order: BTreeMap<ModuleId, usize>,
+}
+
+impl EsmEvaluationSimulator {
+    fn build(
+        i_successors: BTreeMap<ModuleId, BTreeSet<ModuleId>>,
+        constraining_pairs: &BTreeSet<(ModuleId, ModuleId)>,
+        residual: ModuleId,
+    ) -> Self {
+        let mut nodes: BTreeSet<ModuleId> = BTreeSet::new();
+        nodes.insert(residual);
+        for (node, succs) in &i_successors {
+            nodes.insert(*node);
+            nodes.extend(succs.iter().copied());
+        }
+        for &(from, to) in constraining_pairs {
+            nodes.insert(from);
+            nodes.insert(to);
+        }
+
+        let linker_position = compute_linker_position(constraining_pairs);
+        let i_pairs: BTreeSet<(ModuleId, ModuleId)> = i_successors
+            .iter()
+            .flat_map(|(from, succs)| succs.iter().map(move |to| (*from, *to)))
+            .collect();
+        let source_import_position =
+            compute_source_import_position(&i_pairs, &nodes, &linker_position);
+        let post_order = simulate_esm_post_order(
+            residual,
+            &i_successors,
+            &linker_position,
+            &source_import_position,
+        );
+
+        Self { post_order }
+    }
+
+    /// Yields the `(from, to)` constraining pairs inside `modules`
+    /// whose simulator-derived post-order has `to` evaluating at or
+    /// after `from` — i.e. the at-init read of `to`'s binding from
+    /// `from`'s body would TDZ. Returns the surgical TDZ subset
+    /// callers use for diagnostics; an empty iterator means Lemma 2
+    /// rescues the SCC.
+    ///
+    /// Endpoints unreachable from residual are skipped — ESM never
+    /// loads them, so they can't fire a TDZ at runtime.
+    fn tdz_pairs<'a>(
+        &'a self,
+        modules: &'a BTreeSet<ModuleId>,
+        constraining_pairs: &'a BTreeSet<(ModuleId, ModuleId)>,
+    ) -> impl Iterator<Item = (ModuleId, ModuleId)> + 'a {
+        constraining_pairs
+            .iter()
+            .copied()
+            .filter(move |&(from, to)| {
+                if !modules.contains(&from) || !modules.contains(&to) {
+                    return false;
+                }
+                let (Some(from_idx), Some(to_idx)) =
+                    (self.post_order.get(&from), self.post_order.get(&to))
+                else {
+                    return false;
+                };
+                to_idx >= from_idx
+            })
+    }
+}
+
+/// Toposort of the constraining-edge subgraph, deepest dependency
+/// first. Mirrors `chunk_factorization::compute_linker_order` so
+/// the simulator's `linker_position` matches the materializer's.
+///
+/// Modules with no constraining edge are omitted (matches the
+/// production helper, which only considers constraining-graph
+/// members).
+fn compute_linker_position(
+    constraining_pairs: &BTreeSet<(ModuleId, ModuleId)>,
+) -> BTreeMap<ModuleId, usize> {
+    use petgraph::algo::toposort;
+    let mut graph: DiGraphMap<ModuleId, ()> = DiGraphMap::new();
+    for &(from, to) in constraining_pairs {
+        graph.add_node(from);
+        graph.add_node(to);
+        graph.add_edge(from, to, ());
+    }
+    match toposort(&graph, None) {
+        Ok(order) => order
+            .into_iter()
+            .rev()
+            .enumerate()
+            .map(|(idx, id)| (id, idx))
+            .collect(),
+        Err(_) => BTreeMap::new(),
+    }
+}
+
+/// `source_import_position` per Lemma 2: sort modules by
+/// `(SCC dep rank ASC, intra-SCC linker_position DESC)`. SCCs are
+/// over the full I-graph; SCC dep rank = min linker_position of
+/// SCC members. Mirrors `chunk_factorization::compute_source_import_order`.
+fn compute_source_import_position(
+    i_pairs: &BTreeSet<(ModuleId, ModuleId)>,
+    nodes: &BTreeSet<ModuleId>,
+    linker_position: &BTreeMap<ModuleId, usize>,
+) -> BTreeMap<ModuleId, usize> {
+    let mut graph: DiGraphMap<ModuleId, ()> = DiGraphMap::new();
+    for &node in nodes {
+        graph.add_node(node);
+    }
+    for &(from, to) in i_pairs {
+        graph.add_edge(from, to, ());
+    }
+    let sccs = tarjan_scc(&graph);
+    let mut scc_of: BTreeMap<ModuleId, usize> = BTreeMap::new();
+    let mut scc_rank: Vec<usize> = Vec::with_capacity(sccs.len());
+    for (idx, scc) in sccs.iter().enumerate() {
+        let min_pos = scc
+            .iter()
+            .filter_map(|m| linker_position.get(m).copied())
+            .min()
+            .unwrap_or(usize::MAX);
+        scc_rank.push(min_pos);
+        for m in scc {
+            scc_of.insert(*m, idx);
+        }
+    }
+    let mut sorted: Vec<ModuleId> = nodes.iter().copied().collect();
+    sorted.sort_by(|a, b| {
+        let a_rank = scc_of
+            .get(a)
+            .and_then(|i| scc_rank.get(*i).copied())
+            .unwrap_or(usize::MAX);
+        let b_rank = scc_of
+            .get(b)
+            .and_then(|i| scc_rank.get(*i).copied())
+            .unwrap_or(usize::MAX);
+        let a_pos = linker_position.get(a).copied();
+        let b_pos = linker_position.get(b).copied();
+        a_rank.cmp(&b_rank).then_with(|| match (a_pos, b_pos) {
+            // Within an SCC, DESC by linker_position so the
+            // dependent (highest linker_position = evaluates last)
+            // comes first in source. None goes after Some, matching
+            // `chunk_factorization::compute_source_import_order`.
+            (Some(a), Some(b)) => b.cmp(&a),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => std::cmp::Ordering::Equal,
+        })
+    });
+    sorted
+        .into_iter()
+        .enumerate()
+        .map(|(idx, id)| (id, idx))
+        .collect()
+}
+
+/// Simulate ECMA-262 Phase-2 DFS from `residual`. Returns a
+/// `post_order` map: lower index = earlier post-order = body
+/// evaluates earlier. Modules unreachable from `residual` are
+/// absent.
+///
+/// Import ordering per visitor:
+///   - At `residual`: `source_import_position` (Lemma 2-aware).
+///   - Elsewhere: `linker_position` ascending (dependency-first;
+///     mirrors `lowering::imports_cross::cross_module_imports_for_plan`).
+/// Modules without a `linker_position` slot fall back to
+/// `usize::MAX` — i.e. evaluated last among that module's imports —
+/// matching the materializer's `unwrap_or(usize::MAX)`.
+fn simulate_esm_post_order(
+    residual: ModuleId,
+    i_successors: &BTreeMap<ModuleId, BTreeSet<ModuleId>>,
+    linker_position: &BTreeMap<ModuleId, usize>,
+    source_import_position: &BTreeMap<ModuleId, usize>,
+) -> BTreeMap<ModuleId, usize> {
+    enum Frame {
+        Enter(ModuleId),
+        Finish(ModuleId),
+    }
+
+    let mut on_stack: BTreeSet<ModuleId> = BTreeSet::new();
+    let mut visited: BTreeSet<ModuleId> = BTreeSet::new();
+    let mut post_order: BTreeMap<ModuleId, usize> = BTreeMap::new();
+    let mut next_post_index: usize = 0;
+    let mut work: Vec<Frame> = vec![Frame::Enter(residual)];
+
+    let sorted_successors = |node: ModuleId| -> Vec<ModuleId> {
+        let Some(succs) = i_successors.get(&node) else {
+            return Vec::new();
+        };
+        let mut succs: Vec<ModuleId> = succs.iter().copied().collect();
+        if node == residual {
+            succs.sort_by_key(|m| source_import_position.get(m).copied().unwrap_or(usize::MAX));
+        } else {
+            succs.sort_by_key(|m| linker_position.get(m).copied().unwrap_or(usize::MAX));
+        }
+        succs
+    };
+
+    while let Some(frame) = work.pop() {
+        match frame {
+            Frame::Enter(node) => {
+                if visited.contains(&node) {
+                    continue;
+                }
+                if on_stack.contains(&node) {
+                    // Cycle no-op: ESM doesn't re-enter a module
+                    // already on the link-DFS stack.
+                    continue;
+                }
+                on_stack.insert(node);
+                work.push(Frame::Finish(node));
+                // Push successors in REVERSE source order so the
+                // first source-order successor is popped (DFS'd
+                // into) first.
+                let succs = sorted_successors(node);
+                for succ in succs.into_iter().rev() {
+                    work.push(Frame::Enter(succ));
+                }
+            }
+            Frame::Finish(node) => {
+                on_stack.remove(&node);
+                if visited.insert(node) {
+                    post_order.insert(node, next_post_index);
+                    next_post_index += 1;
+                }
+            }
+        }
+    }
+
+    post_order
 }
 
 /// A reversible mutation of a `Partition`. Planner checks can construct
@@ -582,6 +864,12 @@ struct IncrementalQuotient {
     constraining_graph: RollbackDiGraph<ModuleId>,
     constraining_buckets: BTreeMap<(ModuleId, ModuleId), ConstrainingBucket>,
     cross_rebinds: BTreeMap<OwnerEdgeId, CrossRebindEdge>,
+    /// Chunk's residual module — the ESM DFS root. The Lemma 2
+    /// simulator that decides candidate asymmetric I-SCCs needs to
+    /// know which module gets the source_import_position reversal
+    /// (residual) vs which use plain linker_position
+    /// (every other module).
+    residual: ModuleId,
 }
 
 impl IncrementalQuotient {
@@ -591,6 +879,7 @@ impl IncrementalQuotient {
             constraining_graph: RollbackDiGraph::new(),
             constraining_buckets: BTreeMap::new(),
             cross_rebinds: BTreeMap::new(),
+            residual: partition.residual(),
         };
         for edge in &owner_graph.edges {
             quotient.add_current_edge(edge, partition, true);
@@ -679,7 +968,7 @@ impl IncrementalQuotient {
         }
     }
 
-    fn verdict(&self, residual: ModuleId) -> RealizabilityVerdict {
+    fn verdict(&self) -> RealizabilityVerdict {
         let mut verdict = RealizabilityVerdict {
             unrealizable_sccs: Vec::new(),
             cross_rebinds: self.cross_rebinds.values().cloned().collect(),
@@ -698,25 +987,40 @@ impl IncrementalQuotient {
             });
         }
 
+        let mut candidates: Vec<BTreeSet<ModuleId>> = Vec::new();
         for modules in self.i_graph.all_sccs() {
-            if modules.len() < 2 || !modules.contains(&residual) {
+            if modules.len() < 2 || reported.contains(&modules) {
                 continue;
             }
-            let constraining_owner_edges =
-                self.constraining_edges_targeting_residual(&modules, residual);
-            if constraining_owner_edges.is_empty() || reported.contains(&modules) {
+            let constraining_owner_edges = self.constraining_edges_inside(&modules);
+            if constraining_owner_edges.is_empty() {
                 continue;
             }
-            verdict.unrealizable_sccs.push(UnrealizableScc {
-                modules,
-                constraining_owner_edges,
-            });
+            candidates.push(modules);
+        }
+        if !candidates.is_empty() {
+            let simulation = self.build_simulator(None);
+            let constraining_pairs: BTreeSet<(ModuleId, ModuleId)> =
+                self.constraining_buckets.keys().copied().collect();
+            for modules in candidates {
+                let tdz_pairs: Vec<(ModuleId, ModuleId)> = simulation
+                    .tdz_pairs(&modules, &constraining_pairs)
+                    .collect();
+                if tdz_pairs.is_empty() {
+                    continue;
+                }
+                let constraining_owner_edges = self.tdz_constraining_edges(&tdz_pairs, None);
+                verdict.unrealizable_sccs.push(UnrealizableScc {
+                    modules,
+                    constraining_owner_edges,
+                });
+            }
         }
 
         verdict
     }
 
-    fn verdict_touching(&self, module: ModuleId, residual: ModuleId) -> RealizabilityVerdict {
+    fn verdict_touching(&self, module: ModuleId) -> RealizabilityVerdict {
         let mut verdict = RealizabilityVerdict {
             unrealizable_sccs: Vec::new(),
             cross_rebinds: self.cross_rebinds_touching(module),
@@ -734,14 +1038,25 @@ impl IncrementalQuotient {
         }
 
         let i_modules = self.i_graph.scc_containing(module);
-        if i_modules.len() >= 2 && i_modules.contains(&residual) && !reported.contains(&i_modules) {
-            let constraining_owner_edges =
-                self.constraining_edges_targeting_residual(&i_modules, residual);
-            if !constraining_owner_edges.is_empty() {
-                verdict.unrealizable_sccs.push(UnrealizableScc {
-                    modules: i_modules,
-                    constraining_owner_edges,
-                });
+        if i_modules.len() >= 2 && !reported.contains(&i_modules) {
+            let any_constraining = self
+                .constraining_buckets
+                .keys()
+                .any(|(from, to)| i_modules.contains(from) && i_modules.contains(to));
+            if any_constraining {
+                let simulation = self.build_simulator(None);
+                let constraining_pairs: BTreeSet<(ModuleId, ModuleId)> =
+                    self.constraining_buckets.keys().copied().collect();
+                let tdz_pairs: Vec<(ModuleId, ModuleId)> = simulation
+                    .tdz_pairs(&i_modules, &constraining_pairs)
+                    .collect();
+                if !tdz_pairs.is_empty() {
+                    let constraining_owner_edges = self.tdz_constraining_edges(&tdz_pairs, None);
+                    verdict.unrealizable_sccs.push(UnrealizableScc {
+                        modules: i_modules,
+                        constraining_owner_edges,
+                    });
+                }
             }
         }
 
@@ -751,7 +1066,6 @@ impl IncrementalQuotient {
     fn verdict_with_overlay_touching(
         &self,
         module: ModuleId,
-        residual: ModuleId,
         overlay: &QuotientOverlay,
     ) -> RealizabilityVerdict {
         let mut verdict = RealizabilityVerdict {
@@ -773,20 +1087,114 @@ impl IncrementalQuotient {
             });
         }
 
-        let i_graph = OverlayGraphView::new(&self.i_graph, &overlay.i_delta);
-        let i_modules = i_graph.scc_containing(module);
-        if i_modules.len() >= 2 && i_modules.contains(&residual) && !reported.contains(&i_modules) {
-            let constraining_owner_edges = self
-                .constraining_edges_targeting_residual_with_overlay(&i_modules, residual, overlay);
-            if !constraining_owner_edges.is_empty() {
-                verdict.unrealizable_sccs.push(UnrealizableScc {
-                    modules: i_modules,
-                    constraining_owner_edges,
-                });
+        let i_graph_view = OverlayGraphView::new(&self.i_graph, &overlay.i_delta);
+        let i_modules = i_graph_view.scc_containing(module);
+        if i_modules.len() >= 2 && !reported.contains(&i_modules) {
+            let constraining_pairs = self.constraining_pairs_with_overlay(overlay);
+            let any_inside_scc = constraining_pairs.iter().any(|(from, to)| {
+                i_modules.contains(from)
+                    && i_modules.contains(to)
+                    && !self
+                        .constraining_bucket_with_overlay((*from, *to), overlay)
+                        .is_empty()
+            });
+            if any_inside_scc {
+                let simulation = self.build_simulator(Some(overlay));
+                let effective_pairs: BTreeSet<(ModuleId, ModuleId)> = constraining_pairs
+                    .into_iter()
+                    .filter(|pair| {
+                        !self
+                            .constraining_bucket_with_overlay(*pair, overlay)
+                            .is_empty()
+                    })
+                    .collect();
+                let tdz_pairs: Vec<(ModuleId, ModuleId)> =
+                    simulation.tdz_pairs(&i_modules, &effective_pairs).collect();
+                if !tdz_pairs.is_empty() {
+                    let constraining_owner_edges =
+                        self.tdz_constraining_edges(&tdz_pairs, Some(overlay));
+                    verdict.unrealizable_sccs.push(UnrealizableScc {
+                        modules: i_modules,
+                        constraining_owner_edges,
+                    });
+                }
             }
         }
 
         verdict
+    }
+
+    /// Resolve a list of TDZ-violating `(from, to)` pairs to their
+    /// owner-edge ids, optionally applying `overlay`'s edits. Used
+    /// by `verdict*` to surface only the surgical set of
+    /// constraining edges the simulator flagged.
+    fn tdz_constraining_edges(
+        &self,
+        tdz_pairs: &[(ModuleId, ModuleId)],
+        overlay: Option<&QuotientOverlay>,
+    ) -> Vec<OwnerEdgeId> {
+        let mut edges: Vec<OwnerEdgeId> = Vec::new();
+        for &pair in tdz_pairs {
+            let bucket = match overlay {
+                Some(overlay) => self.constraining_bucket_with_overlay(pair, overlay),
+                None => self
+                    .constraining_buckets
+                    .get(&pair)
+                    .cloned()
+                    .unwrap_or_default(),
+            };
+            edges.extend(bucket.evidence_edges());
+        }
+        edges.sort();
+        edges
+    }
+
+    /// Build an ESM evaluation simulator from the current quotient
+    /// state, optionally applying `overlay`'s I-graph and
+    /// constraining-pair edits. Used by every `verdict*` to decide
+    /// whether Lemma 2 rescues a candidate asymmetric I-SCC.
+    fn build_simulator(&self, overlay: Option<&QuotientOverlay>) -> EsmEvaluationSimulator {
+        let mut i_successors: BTreeMap<ModuleId, BTreeSet<ModuleId>> = BTreeMap::new();
+        let i_view = match overlay {
+            Some(overlay) => Some(OverlayGraphView::new(&self.i_graph, &overlay.i_delta)),
+            None => None,
+        };
+        let i_pairs: BTreeSet<(ModuleId, ModuleId)> = if let Some(view) = &i_view {
+            // Effective edges = base ∪ added, with effective_count > 0.
+            let mut pairs: BTreeSet<(ModuleId, ModuleId)> = BTreeSet::new();
+            for (from, to) in self.i_graph.edge_pairs() {
+                if view.effective_count(from, to) > 0 {
+                    pairs.insert((from, to));
+                }
+            }
+            for (&(from, to), &count) in &overlay.unwrap().i_delta {
+                if count > 0 && view.effective_count(from, to) > 0 {
+                    pairs.insert((from, to));
+                }
+            }
+            pairs
+        } else {
+            self.i_graph.edge_pairs().collect()
+        };
+        for (from, to) in &i_pairs {
+            i_successors.entry(*from).or_default().insert(*to);
+        }
+        let constraining_pairs: BTreeSet<(ModuleId, ModuleId)> = match overlay {
+            Some(overlay) => self
+                .constraining_pairs_with_overlay(overlay)
+                .into_iter()
+                .filter(|pair| {
+                    // Drop pairs whose bucket emptied under the
+                    // overlay's edits — they no longer carry a
+                    // constraining edge after the hypothetical move.
+                    !self
+                        .constraining_bucket_with_overlay(*pair, overlay)
+                        .is_empty()
+                })
+                .collect(),
+            None => self.constraining_buckets.keys().copied().collect(),
+        };
+        EsmEvaluationSimulator::build(i_successors, &constraining_pairs, self.residual)
     }
 
     fn overlay_for_move(
@@ -882,41 +1290,6 @@ impl IncrementalQuotient {
         let mut edges = Vec::new();
         for pair in self.constraining_pairs_with_overlay(overlay) {
             if modules.contains(&pair.0) && modules.contains(&pair.1) {
-                edges.extend(
-                    self.constraining_bucket_with_overlay(pair, overlay)
-                        .evidence_edges(),
-                );
-            }
-        }
-        edges.sort();
-        edges
-    }
-
-    fn constraining_edges_targeting_residual(
-        &self,
-        modules: &BTreeSet<ModuleId>,
-        residual: ModuleId,
-    ) -> Vec<OwnerEdgeId> {
-        let mut edges = Vec::new();
-        for ((from, to), bucket) in &self.constraining_buckets {
-            if *to == residual && modules.contains(from) {
-                edges.extend(bucket.evidence_edges());
-            }
-        }
-        edges.sort();
-        edges
-    }
-
-    fn constraining_edges_targeting_residual_with_overlay(
-        &self,
-        modules: &BTreeSet<ModuleId>,
-        residual: ModuleId,
-        overlay: &QuotientOverlay,
-    ) -> Vec<OwnerEdgeId> {
-        let mut edges = Vec::new();
-        for pair in self.constraining_pairs_with_overlay(overlay) {
-            let (from, to) = pair;
-            if to == residual && modules.contains(&from) {
                 edges.extend(
                     self.constraining_bucket_with_overlay(pair, overlay)
                         .evidence_edges(),
@@ -1087,7 +1460,7 @@ impl<'g> RealizabilityIndex<'g> {
     /// Verdict against the current working partition. Reads the
     /// incrementally maintained quotient graph and evidence buckets.
     pub fn verdict(&self) -> RealizabilityVerdict {
-        self.quotient.verdict(self.partition.residual())
+        self.quotient.verdict()
     }
 
     /// Verdict filtered to SCCs and cross-rebinds touching `module`.
@@ -1095,8 +1468,7 @@ impl<'g> RealizabilityIndex<'g> {
     /// destination: unrelated pre-existing bad SCCs are intentionally
     /// ignored, matching the previous full-verdict-then-filter logic.
     pub fn verdict_touching(&self, module: ModuleId) -> RealizabilityVerdict {
-        self.quotient
-            .verdict_touching(module, self.partition.residual())
+        self.quotient.verdict_touching(module)
     }
 
     /// Verdict for a hypothetical owner move, filtered to the target
@@ -1112,8 +1484,7 @@ impl<'g> RealizabilityIndex<'g> {
         let overlay = self
             .quotient
             .overlay_for_move(self.owner_graph, &self.partition, owners, to);
-        self.quotient
-            .verdict_with_overlay_touching(to, self.partition.residual(), &overlay)
+        self.quotient.verdict_with_overlay_touching(to, &overlay)
     }
 }
 
@@ -1229,6 +1600,100 @@ mod tests {
         assert!(
             verdict.is_realizable(),
             "lazy-only cycle should be realizable: {verdict:#?}"
+        );
+    }
+
+    /// Asymmetric I-cycle `{mod_dep, mod_dependent}` with eager
+    /// `mod_dependent → mod_dep` and lazy `mod_dep → mod_dependent`.
+    /// Residual (`module_id(0)`) at-init-reads both, so residual has
+    /// I-edges into the SCC and Lemma 2 rescues — the simulator's
+    /// post-order puts mod_dep's body before mod_dependent's body.
+    /// Verdict must be empty.
+    #[test]
+    fn lemma_two_rescues_asymmetric_cycle_when_residual_imports_scc() {
+        // owner_0 (residual): const a = 1; (also reads b, lazy_reader at-init via console.log)
+        // owner_1 (mod_dep): const dep_value = "alpha"
+        // owner_2 (mod_dep): function lazy_reader() { return cross_value; }
+        // owner_3 (mod_dependent): const cross_value = dep_value + "-beta"
+        // owner_4 (residual): console.log reads dep_value, cross_value, lazy_reader at-init
+        let source = "const dep_value = \"alpha\"; const cross_value = dep_value + \"-beta\"; function lazy_reader() { return cross_value; } console.log(dep_value, cross_value, lazy_reader());";
+        let owner_graph = parse_and_build(source);
+        let mut partition = Partition::new(&owner_graph, module_id(0));
+        // dep_value (owner 0) → mod_dep, cross_value (owner 1) →
+        // mod_dependent, lazy_reader (owner 2) → mod_dep,
+        // console.log (owner 3) stays in residual (= module_id(0)).
+        partition.set(OwnerId(0), module_id(1));
+        partition.set(OwnerId(1), module_id(2));
+        partition.set(OwnerId(2), module_id(1));
+        let verdict = check_realizability(&owner_graph, &partition);
+        assert!(
+            verdict.is_realizable(),
+            "Lemma 2 should rescue this shape; verdict: {verdict:#?}",
+        );
+    }
+
+    /// Same SCC shape but residual has NO direct I-edge into the
+    /// SCC — residual only reaches the SCC through `mod_mediator`,
+    /// whose imports are sorted by `linker_position` (dependency
+    /// first). The simulator's DFS enters `mod_dep` first via
+    /// mediator; mod_dep's lazy back-edge to mod_dependent fires;
+    /// mod_dependent body evaluates with dep_value uninitialized.
+    /// Verdict must report the SCC.
+    #[test]
+    fn mediator_only_entrant_into_asymmetric_cycle_is_unrealizable() {
+        // owner_0: const dep_value = "alpha"
+        // owner_1: const cross_value = dep_value + "-beta"
+        // owner_2: function lazy_reader() { return cross_value; }
+        // owner_3: function mediator_helper() { return dep_value + lazy_reader(); }
+        // owner_4: const mediator_init = mediator_helper(); (at-init promotes
+        //          to a constraining edge into the dep_value owner —
+        //          mediator → mod_dep eager)
+        // owner_5: console.log(mediator_init); (residual at-init)
+        let source = "const dep_value = \"alpha\"; const cross_value = dep_value + \"-beta\"; function lazy_reader() { return cross_value; } function mediator_helper() { return dep_value + lazy_reader(); } const mediator_init = mediator_helper(); console.log(mediator_init);";
+        let owner_graph = parse_and_build(source);
+        let mut partition = Partition::new(&owner_graph, module_id(0));
+        partition.set(OwnerId(0), module_id(1)); // dep_value → mod_dep
+        partition.set(OwnerId(1), module_id(2)); // cross_value → mod_dependent
+        partition.set(OwnerId(2), module_id(1)); // lazy_reader → mod_dep
+        partition.set(OwnerId(3), module_id(3)); // mediator_helper → mod_mediator
+        partition.set(OwnerId(4), module_id(3)); // mediator_init → mod_mediator
+        // owner_5 (console.log) stays in residual.
+        let verdict = check_realizability(&owner_graph, &partition);
+        assert!(
+            !verdict.is_realizable(),
+            "mediator-only entrant should trigger TDZ; verdict: {verdict:#?}",
+        );
+        let modules = verdict.modules_in_unrealizable_sccs();
+        assert!(modules.contains(&module_id(1)) && modules.contains(&module_id(2)));
+    }
+
+    /// Residual is the source of a constraining edge into the SCC,
+    /// but the SCC also has a constraining-target-residual edge.
+    /// Lemma 2 fails: residual is the DFS root and evaluates last in
+    /// post-order; the SCC member reading residual's binding TDZs.
+    #[test]
+    fn constraining_edge_into_residual_inside_scc_is_unrealizable() {
+        // owner_0: class Backend { ... } (residual, TDZ-locked target)
+        // owner_1: let currentLogger; (mod_logger)
+        // owner_2: function setLogger(impl) { currentLogger = impl; ... } (mod_logger)
+        // owner_3: setLogger(new Backend()); (mod_logger, at-init reads Backend)
+        // owner_4: console.log(currentLogger.tag); (residual, lazy read of currentLogger from mod_logger via re-export)
+        let source = "class Backend { constructor() { this.tag = \"B\"; } } let currentLogger; function setLogger(impl) { currentLogger = impl; globalThis.__tag = impl.tag; } setLogger(new Backend()); console.log(currentLogger);";
+        let owner_graph = parse_and_build(source);
+        let mut partition = Partition::new(&owner_graph, module_id(0));
+        // Backend (owner 0) stays in residual.
+        partition.set(OwnerId(1), module_id(1)); // currentLogger → mod_logger
+        partition.set(OwnerId(2), module_id(1)); // setLogger → mod_logger
+        partition.set(OwnerId(3), module_id(1)); // setLogger(new Backend()) → mod_logger
+        // owner 4 (console.log) stays in residual.
+        let verdict = check_realizability(&owner_graph, &partition);
+        // mod_logger → residual EagerUse (constraining target = residual)
+        // residual → mod_logger LazyUse (re-export / console.log)
+        // SCC = {residual, mod_logger}. Constraining edge target = residual.
+        // Residual is DFS root; mod_logger body runs first, reads Backend → TDZ.
+        assert!(
+            !verdict.is_realizable(),
+            "constraining edge target=residual must TDZ; verdict: {verdict:#?}",
         );
     }
 

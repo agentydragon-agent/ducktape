@@ -550,32 +550,67 @@ produces entry imports `[mod_b, mod_a]` so the linker DFS visits
 mod_b → mod_a → mod_b (cycle no-op) and evaluates mod_a first, then
 mod_b. mod_b's at-init read of A succeeds.
 
-**Residual-in-cycle carve-out.** Lemma 2's "DFS unwinds via the
-dependency" only works when the cycle sits **below** the chunk's
-runtime entry (= the residual module emitted as `entry.js`). When
-residual is itself a cycle member, residual is the ESM DFS root —
-post-order evaluates every other cycle member first, then residual.
-Any constraining edge whose **target** is residual reads residual's
-not-yet-evaluated `class`/`const`/`let` bindings in their temporal
-dead zone. No source-order trick can fix this: ESM hoists every
-`import` above any statement, so residual's class declaration can't
-run before the imports' deps are evaluated.
+**Asymmetric-I-cycle gating: a runtime-DFS simulator.** Lemma 2's
+reversal trick only rescues an asymmetric I-cycle when
+ECMA-262's actual evaluation DFS, run over the materializer's
+import-order choices, lands every constraining edge's target
+strictly before its source. Whether that holds depends on the
+spec's full import topology — not just the SCC's internal shape:
 
-The realizability primitive (`check_realizability`) catches this
-shape with a second Tarjan pass over the full `I`-graph: any
-multi-module SCC containing residual with at least one constraining
-edge whose target is residual is rejected outright. The
-`(at-init forward, lazy back)` cycles that Lemma 2 _does_ satisfy —
-between non-residual modules — continue to pass.
+1. **Residual is in the cycle, with a constraining edge whose
+   target is residual.** Residual is the ESM DFS root —
+   post-order evaluates every other cycle member first, then
+   residual. A constraining read of residual's
+   `class`/`const`/`let` bindings TDZs. ESM hoists every
+   `import` above any statement, so no source-order trick fixes
+   it.
+2. **A non-residual mediator reaches into an SCC without
+   residual having a direct entrant.** When the only way DFS
+   reaches the SCC is through a mediator, the mediator's
+   imports are sorted by `linker_position` (dependency-first,
+   not reversed). DFS enters via the dependency, the lazy back-
+   edge fires the cycle, and the dependent's body evaluates
+   while the dependency's body is mid-evaluation. Result: TDZ.
 
-Because Lemma 2 is implemented (`ChunkFactorization::source_import_position`,
-consumed by `lowering::lower_chunk` when sorting entry's import list)
-and the residual-in-cycle carve-out is enforced by the gate, the
+The realizability primitive (`check_realizability` and the
+matching `IncrementalQuotient::verdict*` helpers) makes the
+verdict by:
+
+1. Pass 1: Tarjan over the constraining-edge subgraph. Any
+   multi-module SCC there is a mutual-eager cycle that no source
+   order can satisfy. Reject.
+2. Pass 2: Tarjan over the full I-graph (constraining ∪ lazy).
+   For every multi-module SCC carrying at least one constraining
+   edge, run an in-process **ESM evaluation simulator** rooted at
+   residual:
+   - At residual, sort imports by `source_import_position`
+     (Lemma 2 — intra-SCC reverse of constraining linker order).
+   - At every other module, sort imports by `linker_position`
+     (dependency-first toposort of the constraining subgraph).
+   - Walk DFS; record each module's post-order index when its
+     body would evaluate.
+   - For each constraining edge `(M, X)` inside the SCC, demand
+     `post_order[X] < post_order[M]`. Any violation = TDZ at
+     runtime → reject the SCC.
+
+Pure-lazy I-cycles (no constraining edge inside the SCC) skip
+pass 2's simulator and pass. The simulator mirrors the
+materializer's emit-time decisions exactly
+(`ChunkFactorization::{source_import_position, linker_position}`,
+`lowering::lower_chunk`, `lowering::imports_cross`), so a spec
+accepted by the gate is one the emitted ESM bundle actually
+evaluates without TDZ.
+
+Because Lemma 2 is implemented in the materializer and the
+gate's simulator decides asymmetric I-SCCs precisely, the
 validator (`validate_factorization` in
-`devinfra/js/debundle/validation.rs`) and read-only planner checks share
-the realizability primitive's verdict — a `peelable_now` proposal is a
-peel the gate will accept and the bundle will execute correctly at
-runtime.
+`devinfra/js/debundle/validation.rs`) and read-only planner
+checks share the realizability primitive's verdict — a
+`peelable_now` proposal is a peel the gate accepts and Node will
+execute correctly at runtime (the contract pinned by
+`e2e/lemma_two_rescued_asymmetric_cycle_test`,
+`e2e/mediator_reaches_asymmetric_cycle_test`, and
+`e2e/runtime_tdz_on_imported_class_test`).
 
 ## The realizability theorem
 

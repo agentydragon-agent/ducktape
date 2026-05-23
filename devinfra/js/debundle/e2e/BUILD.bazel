@@ -79,6 +79,8 @@ rust_library(
         "auto_grown_export_alias_collision_test",
         "runtime_tdz_on_imported_class_test",
         "accepted_spec_runs_under_node_test",
+        "lemma_two_rescued_asymmetric_cycle_test",
+        "mediator_reaches_asymmetric_cycle_test",
     ]
 ]
 

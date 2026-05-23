@@ -104,6 +104,14 @@ where
             .flatten()
     }
 
+    /// Every `(from, to)` pair whose edge count is nonzero, in sorted
+    /// order. Used by callers that need to materialize the full
+    /// adjacency outside the graph's internal representation (e.g. the
+    /// realizability simulator that mirrors emit-time DFS).
+    pub(crate) fn edge_pairs(&self) -> impl Iterator<Item = (N, N)> + '_ {
+        self.edge_counts.keys().copied()
+    }
+
     pub(crate) fn predecessors(&self, node: N) -> impl Iterator<Item = N> + '_ {
         self.in_edges
             .get(&node)
