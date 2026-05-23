@@ -10,23 +10,17 @@ Every PostgreSQL database in the cluster must be a CloudNativePG `Cluster`
 resource. No bare StatefulSets, Helm-bundled postgres subcharts, or custom
 postgres deployments.
 
-### R2: Three allowed configurations
+### R2: Two allowed configurations
 
 Only these CNPG cluster profiles are permitted:
 
-| Profile            | Instances | Pin                                      | Storage          | Anti-affinity                                          |
-| ------------------ | --------- | ---------------------------------------- | ---------------- | ------------------------------------------------------ |
-| **VPS-HA**         | 2         | `topology.kubernetes.io/region: hil`     | `local-path`     | `topologyKey: kubernetes.io/hostname` + CP tolerations |
-| **OVH-HA**         | 2         | `topology.kubernetes.io/zone: hil-ovh`   | `local-path-ovh` | `topologyKey: kubernetes.io/hostname`                  |
-| **Proxmox-single** | 1         | `topology.kubernetes.io/region: proxmox` | `local-path`     | n/a                                                    |
-
-**VPS-HA**: For services that must survive without Proxmox (DNS, auth, TF
-state). Two instances spread across the two Hetzner VPS nodes. Requires
-control-plane tolerations since VPS nodes carry the taint.
+| Profile            | Instances | Pin                                      | Storage          | Anti-affinity                         |
+| ------------------ | --------- | ---------------------------------------- | ---------------- | ------------------------------------- |
+| **OVH-HA**         | 2         | `topology.kubernetes.io/zone: hil-ovh`   | `local-path-ovh` | `topologyKey: kubernetes.io/hostname` |
+| **Proxmox-single** | 1         | `topology.kubernetes.io/region: proxmox` | `local-path`     | n/a                                   |
 
 **OVH-HA**: For services co-located with the SeaweedFS cluster on the two OVH
-kimsufi workers. Two instances on separate kimsufi nodes (same `hil` region
-as VPS-HA but the `hil-ovh` zone). No CP tolerations needed.
+kimsufi workers. Two instances on separate kimsufi nodes.
 
 **Proxmox-single**: For homelab services. Single instance co-located with the
 app on Proxmox. Relies on ZFS for local reliability; off-site backups via
@@ -39,9 +33,9 @@ all instances to one site avoids this.
 
 ### R3: CNPG storage class follows the pin
 
-VPS-HA and Proxmox-single use `local-path`; OVH-HA uses `local-path-ovh`
-(constrained to the OVH kimsufi nodes via `allowedTopologies`). HA profiles
-get replication at the CNPG level (2 instances on separate nodes);
+OVH-HA uses `local-path-ovh` (constrained to the OVH kimsufi nodes via
+`allowedTopologies`); Proxmox-single uses `local-path`. OVH-HA gets
+replication at the CNPG level (2 instances on separate nodes);
 Proxmox-single gets replication at the storage level (ZFS on the Proxmox
 host). No `longhorn` or `proxmox-csi-retain` for CNPG.
 
@@ -63,21 +57,21 @@ pinned DBs or vice versa. This prevents cross-site write latency.
 
 ## Current Compliance
 
-| Cluster           | Profile        | Compliant | Notes                                                   |
-| ----------------- | -------------- | --------- | ------------------------------------------------------- |
-| airlock-db        | OVH-HA         | Yes       |                                                         |
-| authentik-db-ovh  | OVH-HA         | Yes       | Replaces former authentik-db (VPS-HA, decommissioned).  |
-| grafana-db-ovh    | OVH-HA         | Yes       | Replaces former grafana-db (VPS-HA, decommissioned).    |
-| tofu-state-db-ovh | OVH-HA         | Yes       | Replaces former tofu-state-db (VPS-HA, decommissioned). |
-| atuin-db          | Proxmox-single | Yes       |                                                         |
-| langfuse-db       | Proxmox-single | Yes       |                                                         |
-| inventree-db      | Proxmox-single | Yes       |                                                         |
-| harbor-db         | Proxmox-single | Yes       |                                                         |
-| gitea-db          | Proxmox-single | Yes       |                                                         |
-| props-db          | Proxmox-single | Yes       |                                                         |
-| matrix-db         | Proxmox-single | Yes       |                                                         |
-| tandoor-db        | Proxmox-single | Yes       |                                                         |
-| attic-db          | OVH-HA         | Yes       |                                                         |
+| Cluster           | Profile        | Compliant |
+| ----------------- | -------------- | --------- |
+| airlock-db        | OVH-HA         | Yes       |
+| authentik-db-ovh  | OVH-HA         | Yes       |
+| grafana-db-ovh    | OVH-HA         | Yes       |
+| tofu-state-db-ovh | OVH-HA         | Yes       |
+| attic-db          | OVH-HA         | Yes       |
+| atuin-db          | Proxmox-single | Yes       |
+| langfuse-db       | Proxmox-single | Yes       |
+| inventree-db      | Proxmox-single | Yes       |
+| harbor-db         | Proxmox-single | Yes       |
+| gitea-db          | Proxmox-single | Yes       |
+| props-db          | Proxmox-single | Yes       |
+| matrix-db         | Proxmox-single | Yes       |
+| tandoor-db        | Proxmox-single | Yes       |
 
 ## TODO
 

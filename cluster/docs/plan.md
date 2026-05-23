@@ -294,7 +294,7 @@ See <plans/file_sync_evaluation.md>.
 | Website   | OK     | None (stateless)   |                                                               |
 | Ingress   | OK     | None (hostNetwork) | Cilium Gateway on VPS                                         |
 | Authentik | OK     | `local-path`       | All components pinned                                         |
-| Grafana   | OK     | CNPG VPS-HA        | grafana-operator managed, JWT auth, no admin creds dependency |
+| Grafana   | OK     | CNPG OVH-HA        | grafana-operator managed, JWT auth, no admin creds dependency |
 
 **Compliance checklist** for critical-path changes:
 
@@ -612,8 +612,8 @@ Minimize Hetzner volumes; generous on Proxmox.
 | Home     | Harbor, Gitea, Ollama                                         | Storage-heavy, tolerates downtime |
 | OVH      | SeaweedFS, attic-db, Nix cache chunks + Loki/Mimir/Tempo (S3) | Replicated across 2 kimsufi nodes |
 
-CNPG: individual clusters per app. Three profiles: VPS-HA (2 instances, Hetzner),
-OVH-HA (2 instances, OVH kimsufi), Proxmox-single (1 instance). See <cnpg_conventions.md>.
+CNPG: individual clusters per app. Two profiles: OVH-HA (2 instances, OVH
+kimsufi) and Proxmox-single (1 instance). See <cnpg_conventions.md>.
 
 ## Related Documentation
 
