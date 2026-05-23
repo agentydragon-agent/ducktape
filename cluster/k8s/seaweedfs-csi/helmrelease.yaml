@@ -20,12 +20,20 @@ spec:
     storageClassName: seaweedfs-ovh
     storageClassVolumeBindingMode: WaitForFirstConsumer
 
+    # Chart appVersion (v1.4.15) doesn't exist on Docker Hub yet; pin both
+    # plugin and mount-service images to the latest published tag.
+    seaweedfsCsiPlugin:
+      image: chrislusf/seaweedfs-csi-driver
+      tag: v1.4.14
+
     # Restrict the FUSE mount service + CSI node daemons to OVH kimsufi
     # nodes. Pods consuming seaweedfs-ovh PVCs must schedule on OVH; we
     # don't want phantom daemonsets on Hetzner/Proxmox until we know the
     # backend is suitable.
     mountService:
       enabled: true
+      image: chrislusf/seaweedfs-mount
+      tag: v1.4.14
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
