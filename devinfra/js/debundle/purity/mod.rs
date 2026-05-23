@@ -2351,3 +2351,6 @@ pub(crate) fn class_has_static_observable(
         _ => false,
     })
 }
+
+#[cfg(test)]
+mod classifier_tests;

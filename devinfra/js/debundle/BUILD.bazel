@@ -210,7 +210,7 @@ rust_library(
 rust_library(
     name = "analysis",
     srcs = [
-        "analysis_tests.rs",
+        "analysis_tests/mod.rs",
         "atomic_units.rs",
         "chunk_analysis.rs",
         "chunk_factorization.rs",
@@ -221,6 +221,7 @@ rust_library(
         "ids.rs",
         "lib.rs",
         "partition.rs",
+        "purity/classifier_tests.rs",
         "purity/mod.rs",
         "purity/whitelists.rs",
         "realizability.rs",
