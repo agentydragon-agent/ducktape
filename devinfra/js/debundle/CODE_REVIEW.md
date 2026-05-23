@@ -230,10 +230,6 @@ Both stages extract files for rayon parallel processing, then re-insert results.
 
 Ownership still passes through every stage via return: `artifact = result.artifact`. Could be cleaner with a builder or consuming pipeline, but each stage is now a pure function so the remaining smell is cosmetic.
 
-#### TODO: `ChunkMetadata.source_path: Option<String>` is always `Some`
-
-Every construction site sets `source_path: Some(...)`. The `Option` is used for `and_then` chaining convenience in `artifact.rs:723`. Consider making it `String` and adjusting the callers.
-
 #### TODO: Pipeline ordering — `generated_by_selected_module_lowering` flag
 
 `generated_by_selected_module_lowering` exists solely so `rewrite_chunk_entry_specifiers` can skip specifier rewriting on files synthesized by the lowering stage. This flag wouldn't be needed if specifier rewriting ran _before_ lowering. Investigate whether reordering the pipeline stages eliminates the need for the flag entirely.

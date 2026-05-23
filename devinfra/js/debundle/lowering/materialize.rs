@@ -873,7 +873,7 @@ pub(super) fn materialized_chunk_artifact(
         entry_file: target_file.clone(),
         files,
         metadata: ChunkMetadata {
-            source_path: Some(source_path.clone()),
+            source_path: source_path.clone(),
         },
     };
     let analysis = ChunkAnalysis {

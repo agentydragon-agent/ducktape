@@ -274,7 +274,7 @@ mod tests {
                 entry_file: file_name.to_string(),
                 files: vec![file],
                 metadata: ChunkMetadata {
-                    source_path: Some(format!("{chunk_name}.js")),
+                    source_path: format!("{chunk_name}.js"),
                 },
             },
             analysis: ChunkAnalysis {

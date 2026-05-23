@@ -159,7 +159,7 @@ impl JsFile {
 
 #[derive(Debug, Clone)]
 pub struct ChunkMetadata {
-    pub source_path: Option<String>,
+    pub source_path: String,
 }
 
 #[derive(Debug, Clone)]
@@ -793,7 +793,7 @@ impl ChunkBundle {
             .map(|chunk| chunk.analysis.source_path.clone())
             .or_else(|| {
                 self.find_js_chunk(chunk_id)
-                    .and_then(|chunk| chunk.metadata.source_path.clone())
+                    .map(|chunk| chunk.metadata.source_path.clone())
             })
             .or_else(|| Some(format!("{}.js", self.chunk_table.name(chunk_id))))
     }
@@ -1086,7 +1086,7 @@ pub fn load_js_chunks(
             entry_file,
             files,
             metadata: ChunkMetadata {
-                source_path: Some(source_path.clone()),
+                source_path: source_path.clone(),
             },
         });
     }

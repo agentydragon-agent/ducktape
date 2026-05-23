@@ -204,7 +204,7 @@ struct PrepareChunkJob {
     chunk_id: ChunkId,
     chunk_name: String,
     entry_file: String,
-    source_path: Option<String>,
+    source_path: String,
     entry_source: String,
 }
 
@@ -217,20 +217,17 @@ struct PreparedChunk {
 }
 
 fn prepare_chunk(job: PrepareChunkJob) -> Result<PreparedChunk> {
-    let source_path = job
-        .source_path
-        .unwrap_or_else(|| format!("{}.js", job.chunk_name));
     let (analysis, prepared_file, prepared_entry_file, parsed_files) = prepare_parsed_entry(
         &job.chunk_name,
         &job.entry_file,
-        &source_path,
+        &job.source_path,
         job.entry_source,
     )?;
     Ok(PreparedChunk {
         entry_file: prepared_entry_file,
         files: vec![prepared_file],
         metadata: ChunkMetadata {
-            source_path: Some(source_path),
+            source_path: job.source_path.clone(),
         },
         analysis,
         parsed_files,

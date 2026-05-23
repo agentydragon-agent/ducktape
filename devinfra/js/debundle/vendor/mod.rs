@@ -2984,7 +2984,7 @@ export { b as beta };
                     },
                 }],
                 metadata: ChunkMetadata {
-                    source_path: Some(format!("{chunk_id}.js")),
+                    source_path: format!("{chunk_id}.js"),
                 },
             },
             analysis: ChunkAnalysis {
