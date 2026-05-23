@@ -248,7 +248,7 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
     result = scenario_run["scenario_results"][0]
     assert result["scenario_id"] == "location_a"
     assert "status" not in result
-    assert result["metric_fan_columns"]["net_worth_usd"]["row_count"] == 13
+    assert len(result["metric_fan_columns"]["net_worth_usd"]["month_index"]) == 13
     assert {"mortgage_payments", "property_purchases"} <= set(scenario_run["sampling_metadata"]["event_stream_ids"])
 
     page_errors: list[str] = []

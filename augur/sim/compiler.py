@@ -1,8 +1,8 @@
-"""Python boundary for the dense-array Numba simulator.
+"""Python boundary for the dense-array simulator.
 
 This module owns all object-heavy work: string interning, Pydantic scenario
 inspection, Polars external-series reshaping, and static event-slot planning.
-The kernel consumes only numeric arrays and writes numeric outputs.
+The engine consumes only numeric arrays and writes numeric outputs.
 """
 
 from __future__ import annotations
@@ -56,8 +56,8 @@ class StringTable:
 class SlotPlan:
     """Dense shape contract for one compiled simulation.
 
-    Dimensions use the notation from `augur/plans/numba_shape_discipline.md`.
-    Counts that can be absent but are still iterated by the kernel use their
+    Dimensions use the notation from `augur/plans/dense_shape_discipline.md`.
+    Counts that can be absent but are still iterated by engine phases use their
     allocated sentinel axis size, usually `max(1, actual_count)`.
     """
 
@@ -93,6 +93,7 @@ class CompiledSimulation:
     cash_initial_balance: np.ndarray
     lot_id_codes: np.ndarray
     lot_agent_codes: np.ndarray
+    lot_account_codes: np.ndarray
     lot_asset_codes: np.ndarray
     lot_purchase_month: np.ndarray
     lot_cost_basis_per_unit: np.ndarray
@@ -166,6 +167,7 @@ class CompiledSimulation:
     sale_cause_codes: np.ndarray
     sale_month: np.ndarray
     sale_agent_codes: np.ndarray
+    sale_source_account_codes: np.ndarray
     sale_asset_codes: np.ndarray
     sale_quantity: np.ndarray
     sale_proceeds_account_codes: np.ndarray
@@ -313,6 +315,7 @@ def compile_simulation(
         sale_cause_codes,
         sale_month,
         sale_agent_codes,
+        sale_source_account_codes,
         sale_asset_codes,
         sale_quantity,
         sale_proceeds_account_codes,
@@ -365,6 +368,7 @@ def compile_simulation(
 
     lot_id_codes = []
     lot_agent_codes = []
+    lot_account_codes = []
     lot_asset_codes = []
     lot_purchase_month = []
     lot_cost_basis_per_unit = []
@@ -372,6 +376,7 @@ def compile_simulation(
     for lot in scenario.initial_lots:
         lot_id_codes.append(strings.require(lot.lot_id))
         lot_agent_codes.append(strings.require(lot.agent_id))
+        lot_account_codes.append(strings.require(lot.account_id))
         lot_asset_codes.append(strings.require(lot.asset_id))
         lot_purchase_month.append(int(lot.purchase_month_index))
         lot_cost_basis_per_unit.append(float(lot.cost_basis_per_unit_usd))
@@ -409,6 +414,7 @@ def compile_simulation(
         cash_initial_balance=np.asarray(cash_initial_balance, dtype=np.float64),
         lot_id_codes=np.asarray(lot_id_codes, dtype=np.int64),
         lot_agent_codes=np.asarray(lot_agent_codes, dtype=np.int64),
+        lot_account_codes=np.asarray(lot_account_codes, dtype=np.int64),
         lot_asset_codes=np.asarray(lot_asset_codes, dtype=np.int64),
         lot_purchase_month=np.asarray(lot_purchase_month, dtype=np.int64),
         lot_cost_basis_per_unit=np.asarray(lot_cost_basis_per_unit, dtype=np.float64),
@@ -482,6 +488,7 @@ def compile_simulation(
         sale_cause_codes=sale_cause_codes,
         sale_month=sale_month,
         sale_agent_codes=sale_agent_codes,
+        sale_source_account_codes=sale_source_account_codes,
         sale_asset_codes=sale_asset_codes,
         sale_quantity=sale_quantity,
         sale_proceeds_account_codes=sale_proceeds_account_codes,
@@ -927,6 +934,7 @@ def _compile_sales(
     cause = np.full((int(scenario.horizon_months), max(1, count)), NO_CODE, dtype=np.int64)
     month = np.full(max(1, count), NO_CODE, dtype=np.int64)
     agent = np.zeros(max(1, count), dtype=np.int64)
+    source_account = np.zeros(max(1, count), dtype=np.int64)
     asset = np.zeros(max(1, count), dtype=np.int64)
     quantity = np.zeros(max(1, count), dtype=np.float64)
     proceeds_account = np.zeros(max(1, count), dtype=np.int64)
@@ -937,6 +945,7 @@ def _compile_sales(
         cause[sale.month, idx] = strings.require(sale.cause_id)
         month[idx] = int(sale.month)
         agent[idx] = strings.require(sale.agent_id)
+        source_account[idx] = strings.require(sale.source_account_id)
         asset[idx] = strings.require(sale.asset_id)
         quantity[idx] = float(sale.quantity)
         proceeds_account[idx] = strings.require(sale.proceeds_account_id)
@@ -945,7 +954,18 @@ def _compile_sales(
             price_fixed[idx] = float(sale.price_per_unit_usd)
         else:
             price_series[idx] = series_index_by_id[sale.asset_id]
-    return cause, month, agent, asset, quantity, proceeds_account, proceeds_slot, price_fixed, price_series
+    return (
+        cause,
+        month,
+        agent,
+        source_account,
+        asset,
+        quantity,
+        proceeds_account,
+        proceeds_slot,
+        price_fixed,
+        price_series,
+    )
 
 
 def _compile_obligation_slots(

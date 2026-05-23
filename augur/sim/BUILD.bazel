@@ -107,7 +107,6 @@ py_library(
     srcs = ["scenario.py"],
     deps = [
         "//augur/model:series_model_py",
-        "@pypi//polars",
         "@pypi//pydantic",
     ],
 )
@@ -119,89 +118,23 @@ py_library(
         ":jurisdictions",
         ":locations",
         ":scenario",
-        "@pypi//polars",
     ],
 )
 
 py_library(
-    name = "amounts",
-    srcs = ["amounts.py"],
-    deps = [
-        ":external_series",
-        ":scenario",
-        "@pypi//polars",
-    ],
+    name = "tensor_fifo",
+    srcs = ["tensor_fifo.py"],
+    deps = ["@pypi//numpy"],
 )
 
-py_library(
-    name = "apply",
-    srcs = ["apply.py"],
+py_test(
+    name = "tensor_fifo_test",
+    srcs = ["tensor_fifo_test.py"],
     deps = [
-        ":events",
-        ":runtime",
-        ":state",
-        "@pypi//polars",
-    ],
-)
-
-py_library(
-    name = "liquidity",
-    srcs = ["liquidity.py"],
-    deps = [
-        ":events",
-        ":external_series",
-        ":scenario",
-        ":state",
-        "//augur:frames",
-        "@pypi//polars",
-    ],
-)
-
-py_library(
-    name = "obligations",
-    srcs = ["obligations.py"],
-    deps = [
-        ":amounts",
-        ":events",
-        ":external_series",
-        ":locations",
-        ":runtime",
-        ":scenario",
-        ":state",
-        "@pypi//polars",
-    ],
-)
-
-py_library(
-    name = "settlement",
-    srcs = ["settlement.py"],
-    deps = [
-        ":events",
-        ":liquidity",
-        ":state",
-        "@pypi//polars",
-    ],
-)
-
-py_library(
-    name = "step",
-    srcs = ["step.py"],
-    deps = [
-        ":amounts",
-        ":events",
-        ":external_series",
-        ":jurisdictions",
-        ":liquidity",
-        ":locations",
-        ":obligations",
-        ":runtime",
-        ":scenario",
-        ":settlement",
-        ":state",
-        ":tax",
-        "//augur:frames",
+        ":tensor_fifo",
         "@pypi//numpy",
-        "@pypi//polars",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 
@@ -228,27 +161,18 @@ py_library(
     name = "simulate",
     srcs = ["simulate.py"],
     deps = [
-        ":apply",
-        ":events",
+        ":engine",
         ":external_series",
-        ":jurisdictions",
-        ":locations",
-        ":numba_engine",
         ":run",
-        ":runtime",
         ":scenario",
-        ":state",
-        ":step",
-        "@pypi//polars",
     ],
 )
 
 py_library(
-    name = "numba_engine",
+    name = "engine",
     srcs = [
-        "numba/compiler.py",
-        "numba/engine.py",
-        "numba/kernels.py",
+        "compiler.py",
+        "engine.py",
     ],
     tags = ["no-mypy"],
     deps = [
@@ -260,21 +184,19 @@ py_library(
         ":runtime",
         ":scenario",
         ":state",
-        "@pypi//numba",
+        ":tensor_fifo",
         "@pypi//numpy",
         "@pypi//polars",
     ],
 )
 
 py_library(
-    name = "replay",
-    srcs = ["replay.py"],
+    name = "slice",
+    srcs = ["slice.py"],
     deps = [
-        ":apply",
-        ":run",
-        ":scenario",
-        ":simulate",
-        ":state",
+        ":engine",
+        ":external_series",
+        "@pypi//numpy",
         "@pypi//polars",
     ],
 )
@@ -293,7 +215,6 @@ py_library(
 SIMULATE_TEST_DEPS = [
     ":conftest",
     ":external_series",
-    ":replay",
     ":scenario",
     ":simulate",
     "//augur/model:gbm_py",
@@ -306,21 +227,14 @@ SIMULATE_TEST_DEPS = [
 
 py_test(
     name = "simulate_test",
-    srcs = ["simulate_test.py"],
-    deps = SIMULATE_TEST_DEPS,
-)
-
-py_test(
-    name = "simulate_numba_test",
     size = "medium",
     srcs = ["simulate_test.py"],
-    env = {"AUGUR_SIM_ENGINE": "numba"},
-    main = "simulate_test.py",
     deps = SIMULATE_TEST_DEPS,
 )
 
 py_test(
     name = "projections_test",
+    size = "medium",
     srcs = ["projections_test.py"],
     deps = [
         ":conftest",
@@ -355,6 +269,7 @@ py_binary(
 
 py_test(
     name = "bench_test",
+    size = "medium",
     srcs = ["bench_test.py"],
     deps = [
         ":bench_scenario",

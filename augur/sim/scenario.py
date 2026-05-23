@@ -10,9 +10,8 @@ external-series bundle reference, and tax profiles per agent.
 
 from __future__ import annotations
 
-from typing import Annotated, Literal, Protocol
+from typing import Annotated, Literal
 
-import polars as pl
 from pydantic import BaseModel, Field, NonNegativeInt, PositiveInt, model_validator
 
 from augur.model.series_model import SeriesModelBundle
@@ -33,20 +32,11 @@ class InitialAccountBalance(BaseModel):
     balance_usd: float
 
 
-class AmountSeriesContext(Protocol):
-    def series_at(self, month_index: int) -> pl.DataFrame: ...
-
-
 class FixedAmount(BaseModel):
     """A scalar dollar amount that does not vary by rollout or month."""
 
     kind: Literal["fixed"] = "fixed"
     amount_usd: float
-
-    def amount_by_rollout(
-        self, *, external_series: AmountSeriesContext, rollouts: pl.DataFrame, month: int, column_name: str
-    ) -> pl.DataFrame:
-        return rollouts.with_columns(pl.lit(self.amount_usd, dtype=pl.Float64()).alias(column_name))
 
 
 class SeriesIndexedAmount(BaseModel):
@@ -69,41 +59,9 @@ class SeriesIndexedAmount(BaseModel):
     base_month_index: NonNegativeInt = 0
     adjustment_period_months: PositiveInt = 1
 
-    def amount_by_rollout(
-        self, *, external_series: AmountSeriesContext, rollouts: pl.DataFrame, month: int, column_name: str
-    ) -> pl.DataFrame:
-        if month < self.base_month_index:
-            raise ValueError(
-                f"cannot evaluate series-indexed amount for month {month} before base month {self.base_month_index}"
-            )
-
-        reset_month = self._reset_month(month)
-        base = self._series_levels(external_series, month=self.base_month_index, column_name="_base_level")
-        reset = self._series_levels(external_series, month=reset_month, column_name="_reset_level")
-        evaluated = rollouts.join(base, on="rollout_index", how="left").join(reset, on="rollout_index", how="left")
-        if evaluated.filter(pl.col("_base_level").is_null() | pl.col("_reset_level").is_null()).height:
-            raise KeyError(
-                f"external series {self.series_id!r} must cover base month {self.base_month_index}, "
-                f"reset month {reset_month}, and every active rollout"
-            )
-        if evaluated.filter(pl.col("_base_level") == 0.0).height:
-            raise ValueError(f"external series {self.series_id!r} has zero base level at month {self.base_month_index}")
-        return evaluated.with_columns(
-            (pl.lit(self.base_amount_usd, dtype=pl.Float64()) * pl.col("_reset_level") / pl.col("_base_level")).alias(
-                column_name
-            )
-        ).select("rollout_index", column_name)
-
     def _reset_month(self, month: int) -> int:
         elapsed = month - self.base_month_index
         return self.base_month_index + (elapsed // self.adjustment_period_months) * self.adjustment_period_months
-
-    def _series_levels(self, external_series: AmountSeriesContext, *, month: int, column_name: str) -> pl.DataFrame:
-        return (
-            external_series.series_at(month)
-            .filter(pl.col("series_id") == self.series_id)
-            .select("rollout_index", pl.col("value").alias(column_name))
-        )
 
 
 type AmountSchedule = Annotated[FixedAmount | SeriesIndexedAmount, Field(discriminator="kind")]
@@ -202,10 +160,13 @@ class InitialLot(BaseModel):
     month 0 as an `AssetPurchase` event with the supplied
     `purchase_month_index` (which may be negative — purchases
     pre-dating the horizon are fine and feed into LTCG/STCG
-    classification of later sales)."""
+    classification of later sales). `account_id` identifies the
+    holding account used for FIFO pools; lots in different accounts
+    are not fungible."""
 
     lot_id: str
     agent_id: str
+    account_id: str = "checking"
     asset_id: str
     purchase_month_index: int
     quantity: float
@@ -214,9 +175,10 @@ class InitialLot(BaseModel):
 
 class ScheduledAssetSale(BaseModel):
     """Sell a configured quantity of an asset at a fixed month. The
-    sale consumes from the agent's lots of that asset in FIFO order
-    by `purchase_month_index`. Proceeds = `quantity * unit_price`
-    are credited to `proceeds_account_id`.
+    sale consumes from the agent's lots of that asset in
+    `source_account_id` in FIFO order by `purchase_month_index`.
+    Proceeds = `quantity * unit_price` are credited to
+    `proceeds_account_id`.
 
     `price_per_unit_usd` is optional: when supplied the sale uses
     that price uniformly across rollouts (useful for deterministic
@@ -227,6 +189,7 @@ class ScheduledAssetSale(BaseModel):
     month: int
     cause_id: str
     agent_id: str
+    source_account_id: str = "checking"
     asset_id: str
     quantity: float
     proceeds_account_id: str
@@ -358,10 +321,10 @@ class Scenario(BaseModel):
 
     @model_validator(mode="after")
     def _reject_duplicate_initial_lot_purchase_months(self) -> Scenario:
-        seen: dict[tuple[str, str, int], str] = {}
-        duplicates: list[tuple[str, str, int, str, str]] = []
+        seen: dict[tuple[str, str, str, int], str] = {}
+        duplicates: list[tuple[str, str, str, int, str, str]] = []
         for lot in self.initial_lots:
-            key = (lot.agent_id, lot.asset_id, lot.purchase_month_index)
+            key = (lot.agent_id, lot.account_id, lot.asset_id, lot.purchase_month_index)
             previous_lot_id = seen.get(key)
             if previous_lot_id is not None:
                 duplicates.append((*key, previous_lot_id, lot.lot_id))
@@ -369,8 +332,8 @@ class Scenario(BaseModel):
                 seen[key] = lot.lot_id
         if duplicates:
             duplicate_list = ", ".join(
-                f"{agent_id}/{asset_id}@{purchase_month} ({first_lot_id}, {second_lot_id})"
-                for agent_id, asset_id, purchase_month, first_lot_id, second_lot_id in sorted(duplicates)
+                f"{agent_id}/{account_id}/{asset_id}@{purchase_month} ({first_lot_id}, {second_lot_id})"
+                for agent_id, account_id, asset_id, purchase_month, first_lot_id, second_lot_id in sorted(duplicates)
             )
             raise ValueError(f"duplicate initial lot purchase months for FIFO pool(s): {duplicate_list}")
         return self

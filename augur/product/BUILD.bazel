@@ -3,8 +3,8 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 package(default_visibility = ["//visibility:public"])
 
 py_library(
-    name = "projection_py",
-    srcs = ["projection.py"],
+    name = "wire_py",
+    srcs = ["wire.py"],
     deps = [
         "//augur/api:schemas_py",
         "@pypi//pydantic",
@@ -12,20 +12,45 @@ py_library(
 )
 
 py_library(
-    name = "projection_service_py",
-    srcs = ["projection_service.py"],
+    name = "scenarios_py",
+    srcs = ["scenarios.py"],
     deps = [
-        ":projection_py",
+        ":wire_py",
         "//augur/api:config_py",
+        "//augur/api:portfolio_py",
         "//augur/api:scenario_set_py",
+        "//augur/model:series_py",
+        "//augur/sim:scenario",
+        "@pypi//more_itertools",
+    ],
+)
+
+py_library(
+    name = "decode_py",
+    srcs = ["decode.py"],
+    deps = [
+        ":wire_py",
+        "//augur/sim:engine",
+        "//augur/sim:run",
+        "@pypi//numpy",
+        "@pypi//polars",
+    ],
+)
+
+py_library(
+    name = "service_py",
+    srcs = ["service.py"],
+    deps = [
+        ":decode_py",
+        ":scenarios_py",
+        ":wire_py",
+        "//augur/api:portfolio_py",
         "//augur/api:schemas_py",
         "//augur/model:exogenous_py",
-        "//augur/model:series_py",
+        "//augur/sim:engine",
         "//augur/sim:external_series",
-        "//augur/sim:projections",
-        "//augur/sim:run",
-        "//augur/sim:scenario",
         "//augur/sim:simulate",
+        "//augur/sim:slice",
         "@pypi//numpy",
         "@pypi//polars",
     ],
@@ -53,29 +78,23 @@ py_test(
     ],
 )
 
-PROJECTION_SERVICE_TEST_DEPS = [
-    ":projection_py",
-    ":projection_service_py",
-    "//augur/api:config_py",
-    "//augur/model:exogenous_py",
-    "//augur/model:simple_exogenous_py",
-    "//util/bazel:runfiles",
-    "@pypi//pytest_bazel",
-]
-
 py_test(
-    name = "projection_service_test",
-    srcs = ["projection_service_test.py"],
-    data = ["//augur/api:public_fixture_config"],
-    deps = PROJECTION_SERVICE_TEST_DEPS,
-)
-
-py_test(
-    name = "projection_service_numba_test",
+    name = "service_test",
     size = "medium",
-    srcs = ["projection_service_test.py"],
+    srcs = ["service_test.py"],
     data = ["//augur/api:public_fixture_config"],
-    env = {"AUGUR_SIM_ENGINE": "numba"},
-    main = "projection_service_test.py",
-    deps = PROJECTION_SERVICE_TEST_DEPS,
+    deps = [
+        ":decode_py",
+        ":scenarios_py",
+        ":service_py",
+        ":wire_py",
+        "//augur/api:config_py",
+        "//augur/model:exogenous_py",
+        "//augur/model:series_py",
+        "//augur/model:simple_exogenous_py",
+        "//util/bazel:runfiles",
+        "@pypi//more_itertools",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )

@@ -119,7 +119,7 @@ engine's "five overlapping representations" problem.
    models, calibrate distributions, or sample production stochastic
    paths.
 
-4. **Event log — the canonical record of what happened** (polars,
+4. **Event log — the canonical record of what happened** (NumPy-backed tables,
    append-only). Every state-changing happening in the simulation
    appears here:
    - `events_log` — every event chronologically: cash transfers,
@@ -145,7 +145,7 @@ state, events_log.filter(month ≤ M))`. The log is what survives
    if working-state-layer 5 is dropped.
 
 5. **Working state — the incremental materialization of layer 4**
-   (polars, six frames). The simulator's current view of the
+   (NumPy-backed tables). The simulator's current view of the
    world. Six long-form frames keyed by `(rollout_index,
 month_index)` plus entity-id columns:
    - `cash_balances` — `(rollout, month, agent_id, account_id,
@@ -179,7 +179,7 @@ id, failure_month)`. Event-sourced.
    These frames **grow forward** as the loop advances; at month M
    they hold rows for months `0..M`. The state at month M is
    `frame.filter(month_index == M)`. Per-rollout / per-agent
-   queries are polars filters / group-bys.
+   queries are NumPy-backed table scans and aggregations.
 
    **The state-over-time IS an output of the simulation, but it
    is the materialization of the event log + trajectory reads**,
@@ -239,7 +239,7 @@ return SimulationRun(
 ```
 
 The simulator does not re-derive any prior month. Each `state_t`
-is the polars cross-section (no `month_index` column inside the
+is the state cross-section (no `month_index` column inside the
 step body — `state_t` is "the rollouts at one fixed month"); the
 loop tags it with `month_index = M` when appending to the
 forward-growing frames.
@@ -268,7 +268,7 @@ batch of events for this month. It does not mutate state. The
 loop's `apply_events(state, events)` step is the single mutation
 point.
 
-Phases run in this fixed order. Each phase is one or more polars
+Phases run in this fixed order. Each phase is one or more NumPy-backed tables
 expressions over the rollout column; no Python iteration over
 rollouts; each phase **appends rows to the within-step event
 buffer**. Phases later in the order can read events emitted by
@@ -513,7 +513,7 @@ Concretely:
     debt between two agents.
   - `"tax_payable"` for accrued-but-unpaid tax.
 
-Per-template rules live in code as functions over polars frames:
+Per-template rules live in code as functions over NumPy-backed tables:
 
 - `apply_mark_to_market_capital_gains_eligible_holding(frames,
 market)` — filters asset_lots by `template_id =
@@ -696,7 +696,7 @@ refactoring L1's transfer.
    HIFO, specific-id, and average-cost selection are later
    extensions.
 5. **L5** — exogenous trajectory-bundle consumer interface;
-   state-dependent decisions via polars expressions. Stochastic
+   state-dependent decisions via dense-array operations. Stochastic
    market sampling remains outside `sim`.
 6. **L6** — quarterly + year-end tax obligations + safe harbor;
    the tax-liability-instrument template; per-jurisdiction
@@ -735,9 +735,9 @@ layer's scenarios + adds the necessary code.
   functions are described as "they exist and have this
   responsibility"; their argument lists firm up as the first
   commits land.
-- **Concrete polars schema dtypes for every column.** The schemas
+- **Concrete table schema dtypes for every column.** The schemas
   are listed at the conceptual level; the production code's
-  `pl.DataType` declarations land with the first frame.
+  NumPy-backed table schema declarations land with the first frame.
 - **Performance characterization.** The forward loop is
   vectorized by construction (per the requirements doc) but
   benchmarking against the legacy engine is deferred to after

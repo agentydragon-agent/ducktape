@@ -14,8 +14,8 @@ js_library(
 )
 
 js_library(
-    name = "columnar",
-    srcs = ["columnar.js"],
+    name = "frame",
+    srcs = ["frame.js"],
 )
 
 js_library(

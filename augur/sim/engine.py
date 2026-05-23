@@ -1,4 +1,4 @@
-"""Numba-backed dense-array simulation engine."""
+"""Dense-array simulation engine."""
 
 from __future__ import annotations
 
@@ -8,10 +8,9 @@ from typing import Any
 import numpy as np
 import polars as pl
 
+from augur.sim.compiler import CompiledSimulation, SlotPlan, compile_simulation
 from augur.sim.events import EVENT_FRAMES, EventLog
 from augur.sim.external_series import ExternalSeriesContext
-from augur.sim.numba.compiler import CompiledSimulation, SlotPlan, compile_simulation
-from augur.sim.numba.kernels import run_simulation_kernel
 from augur.sim.run import SimulationRun
 from augur.sim.runtime import load_jurisdictions_for, load_locations_for
 from augur.sim.scenario import Scenario
@@ -26,11 +25,15 @@ from augur.sim.state import (
     ROLLOUT_STATUS_FRAME,
     TAX_LIABILITIES_FRAME,
 )
+from augur.sim.tensor_fifo import fifo_sell_dollars, fifo_sell_units, lot_order_for_pool
 
 NO_CODE = -1
+AMOUNT_FIXED = 0
 LONG_TERM_CAPITAL_GAIN_CODE = 0
 SHORT_TERM_CAPITAL_GAIN_CODE = 1
+SOURCE_CONFIGURED_OBLIGATION = 0
 SOURCE_MORTGAGE_PAYMENT = 1
+SOURCE_PROPERTY_TAX = 2
 SOURCE_ESTIMATED_TAX = 3
 SOURCE_ESTIMATED_TAX_Q4 = 4
 SOURCE_TAX_TRUE_UP = 5
@@ -142,6 +145,97 @@ class StateHistoryBuffers:
         )
         _expect_array("rollout_failed_state", self.rollout_failed_state, shape=(s, r), dtype=np.bool_)
         _expect_array("rollout_failed_month_state", self.rollout_failed_month_state, shape=(s, r), dtype=np.int64)
+
+
+@dataclass
+class CurrentStateBuffers:
+    cash: np.ndarray
+    lot_remaining: np.ndarray
+    ordinary_ytd: np.ndarray
+    capital_gain_active: np.ndarray
+    capital_gain_ytd: np.ndarray
+    tax_liability_active: np.ndarray
+    tax_liability_amount: np.ndarray
+    property_active: np.ndarray
+    property_basis: np.ndarray
+    property_ownership: np.ndarray
+    property_contribution: np.ndarray
+    property_equity: np.ndarray
+    liability_active: np.ndarray
+    liability_principal: np.ndarray
+    liability_monthly_payment: np.ndarray
+    liability_interest_ytd: np.ndarray
+    liability_principal_ytd: np.ndarray
+    failed: np.ndarray
+    failed_month: np.ndarray
+
+    def validate(self, plan: SlotPlan) -> None:
+        r = plan.rollout_count
+        _expect_array("current cash", self.cash, shape=(r, plan.cash_count), dtype=np.float64)
+        _expect_array("current lot_remaining", self.lot_remaining, shape=(r, plan.lot_count), dtype=np.float64)
+        _expect_array("current ordinary_ytd", self.ordinary_ytd, shape=(r, plan.tax_profile_count), dtype=np.float64)
+        _expect_array(
+            "current capital_gain_active",
+            self.capital_gain_active,
+            shape=(r, plan.capital_gain_agent_count, 2),
+            dtype=np.bool_,
+        )
+        _expect_array(
+            "current capital_gain_ytd",
+            self.capital_gain_ytd,
+            shape=(r, plan.capital_gain_agent_count, 2),
+            dtype=np.float64,
+        )
+        _expect_array(
+            "current tax_liability_active",
+            self.tax_liability_active,
+            shape=(r, plan.tax_liability_count),
+            dtype=np.bool_,
+        )
+        _expect_array(
+            "current tax_liability_amount",
+            self.tax_liability_amount,
+            shape=(r, plan.tax_liability_count),
+            dtype=np.float64,
+        )
+        _expect_array("current property_active", self.property_active, shape=(r, plan.property_count), dtype=np.bool_)
+        _expect_array("current property_basis", self.property_basis, shape=(r, plan.property_count), dtype=np.float64)
+        _expect_array(
+            "current property_ownership", self.property_ownership, shape=(r, plan.property_count), dtype=np.float64
+        )
+        _expect_array(
+            "current property_contribution",
+            self.property_contribution,
+            shape=(r, plan.property_count),
+            dtype=np.float64,
+        )
+        _expect_array("current property_equity", self.property_equity, shape=(r, plan.property_count), dtype=np.float64)
+        _expect_array(
+            "current liability_active", self.liability_active, shape=(r, plan.liability_count), dtype=np.bool_
+        )
+        _expect_array(
+            "current liability_principal", self.liability_principal, shape=(r, plan.liability_count), dtype=np.float64
+        )
+        _expect_array(
+            "current liability_monthly_payment",
+            self.liability_monthly_payment,
+            shape=(r, plan.liability_count),
+            dtype=np.float64,
+        )
+        _expect_array(
+            "current liability_interest_ytd",
+            self.liability_interest_ytd,
+            shape=(r, plan.liability_count),
+            dtype=np.float64,
+        )
+        _expect_array(
+            "current liability_principal_ytd",
+            self.liability_principal_ytd,
+            shape=(r, plan.liability_count),
+            dtype=np.float64,
+        )
+        _expect_array("current failed", self.failed, shape=(r,), dtype=np.bool_)
+        _expect_array("current failed_month", self.failed_month, shape=(r,), dtype=np.int64)
 
 
 @dataclass
@@ -524,9 +618,27 @@ class SimulationBuffers:
         return self.obligations.obligation_failure_active
 
 
-def simulate_with_external_series_numba(
+@dataclass
+class DenseSimulationResult:
+    plan: CompiledSimulation
+    buffers: SimulationBuffers
+    external_series: ExternalSeriesContext
+
+    def decode(self) -> SimulationRun:
+        return _decode_run(self.plan, self.buffers, self.external_series)
+
+
+def simulate_with_external_series_dense(
     scenario: Scenario, *, rollout_count: int, external_series: ExternalSeriesContext
 ) -> SimulationRun:
+    return simulate_with_external_series_dense_result(
+        scenario, rollout_count=rollout_count, external_series=external_series
+    ).decode()
+
+
+def simulate_with_external_series_dense_result(
+    scenario: Scenario, *, rollout_count: int, external_series: ExternalSeriesContext
+) -> DenseSimulationResult:
     plan = compile_simulation(
         scenario,
         rollout_count=rollout_count,
@@ -535,144 +647,725 @@ def simulate_with_external_series_numba(
         locations=load_locations_for(scenario),
     )
     buffers = _allocate_buffers(plan)
-    run_simulation_kernel(
-        plan.horizon_months,
-        plan.rollout_count,
-        plan.external_values,
-        plan.cash_initial_balance,
-        plan.lot_id_codes,
-        plan.lot_agent_codes,
-        plan.lot_asset_codes,
-        plan.lot_purchase_month,
-        plan.lot_cost_basis_per_unit,
-        plan.lot_initial_quantity,
-        plan.tax_profile_agent_codes,
-        plan.tax_profile_prior_year_tax,
-        plan.capital_gain_agent_codes,
-        plan.tax_profile_capital_gain_index,
-        plan.tax_link_profile_index,
-        plan.tax_link_standard_deduction,
-        plan.tax_link_has_ltcg,
-        plan.tax_link_ordinary_upper,
-        plan.tax_link_ordinary_rate,
-        plan.tax_link_ordinary_count,
-        plan.tax_link_ltcg_upper,
-        plan.tax_link_ltcg_rate,
-        plan.tax_link_ltcg_count,
-        plan.tax_liability_profile_index,
-        plan.tax_liability_link_index,
-        plan.tax_liability_year_end_month,
-        plan.transfer_cause_codes,
-        plan.transfer_from_cash_slot,
-        plan.transfer_to_cash_slot,
-        plan.transfer_income_profile_index,
-        plan.transfer_amount_kind,
-        plan.transfer_amount_fixed,
-        plan.transfer_amount_base,
-        plan.transfer_amount_series_index,
-        plan.transfer_amount_base_month,
-        plan.transfer_amount_adjustment_period,
-        plan.property_cause_codes,
-        plan.property_month,
-        plan.property_location_tax_rate,
-        plan.property_buyer_cash_slot,
-        plan.property_seller_cash_slot,
-        plan.property_down_payment,
-        plan.property_adjusted_basis,
-        plan.property_ownership_pct,
-        plan.property_stake_contribution,
-        plan.property_equity_ledger,
-        plan.property_mortgage_slot,
-        plan.liability_property_slot,
-        plan.liability_payment_cash_slot,
-        plan.liability_counterparty_cash_slot,
-        plan.liability_principal,
-        plan.liability_annual_rate,
-        plan.liability_term_months,
-        plan.liability_monthly_payment,
-        plan.sale_cause_codes,
-        plan.sale_month,
-        plan.sale_agent_codes,
-        plan.sale_asset_codes,
-        plan.sale_quantity,
-        plan.sale_proceeds_cash_slot,
-        plan.sale_price_fixed,
-        plan.sale_price_series_index,
-        plan.obligation_cause_codes,
-        plan.obligation_agent_codes,
-        plan.obligation_from_cash_slot,
-        plan.obligation_to_cash_slot,
-        plan.obligation_amount_kind,
-        plan.obligation_amount_fixed,
-        plan.obligation_amount_base,
-        plan.obligation_amount_series_index,
-        plan.obligation_amount_base_month,
-        plan.obligation_amount_adjustment_period,
-        plan.obligation_source_kind,
-        plan.obligation_source_index,
-        plan.tax_settlement_profile_index,
-        plan.liquidity_policy_agent_codes,
-        plan.liquidity_policy_cash_slot,
-        plan.liquidity_policy_buffer_trigger,
-        plan.liquidity_policy_buffer_sale,
-        plan.liquidity_policy_asset_codes,
-        plan.liquidity_policy_asset_series_index,
-        buffers.cash_state,
-        buffers.lot_state,
-        buffers.ordinary_state,
-        buffers.capital_gain_active_state,
-        buffers.capital_gain_state,
-        buffers.tax_liability_active_state,
-        buffers.tax_liability_state,
-        buffers.property_active_state,
-        buffers.property_basis_state,
-        buffers.property_ownership_state,
-        buffers.property_contribution_state,
-        buffers.property_equity_state,
-        buffers.liability_active_state,
-        buffers.liability_principal_state,
-        buffers.liability_monthly_payment_state,
-        buffers.liability_interest_ytd_state,
-        buffers.liability_principal_ytd_state,
-        buffers.rollout_failed_state,
-        buffers.rollout_failed_month_state,
-        buffers.transfer_active,
-        buffers.transfer_amount,
-        buffers.property_transfer_active,
-        buffers.property_purchase_active,
-        buffers.mortgage_origination_active,
-        buffers.sched_disp_active,
-        buffers.sched_disp_units,
-        buffers.sched_disp_basis,
-        buffers.sched_disp_proceeds,
-        buffers.liq_disp_active,
-        buffers.liq_disp_units,
-        buffers.liq_disp_basis,
-        buffers.liq_disp_proceeds,
-        buffers.tax_accrual_active,
-        buffers.tax_accrual_amount,
-        buffers.tax_breakdown_ordinary,
-        buffers.tax_breakdown_ltcg,
-        buffers.tax_breakdown_stcg,
-        buffers.tax_breakdown_ordinary_taxable,
-        buffers.tax_breakdown_capital_taxable,
-        buffers.tax_breakdown_ordinary_tax,
-        buffers.tax_breakdown_capital_tax,
-        buffers.obligation_active,
-        buffers.obligation_due,
-        buffers.obligation_paid,
-        buffers.obligation_shortfall,
-        buffers.obligation_attempt_policy,
-        buffers.obligation_failure_active,
-        buffers.mortgage_payment_active,
-        buffers.mortgage_payment_interest,
-        buffers.mortgage_payment_principal,
-        buffers.mortgage_payment_total,
-        buffers.tax_settlement_active,
-        buffers.tax_settlement_amount,
-        buffers.tax_settlement_year_end_month,
+    current = _allocate_current_state(plan)
+    _snapshot_initial_state(buffers, current)
+    for month in range(plan.horizon_months):
+        _run_month_step(plan, buffers, current, month)
+    return DenseSimulationResult(plan=plan, buffers=buffers, external_series=external_series)
+
+
+def _allocate_current_state(plan: CompiledSimulation) -> CurrentStateBuffers:
+    p = plan.slot_plan
+    r = p.rollout_count
+    current = CurrentStateBuffers(
+        cash=np.broadcast_to(plan.cash_initial_balance, (r, p.cash_count)).copy(),
+        lot_remaining=np.broadcast_to(plan.lot_initial_quantity, (r, p.lot_count)).copy(),
+        ordinary_ytd=np.zeros((r, p.tax_profile_count), dtype=np.float64),
+        capital_gain_active=np.zeros((r, p.capital_gain_agent_count, 2), dtype=np.bool_),
+        capital_gain_ytd=np.zeros((r, p.capital_gain_agent_count, 2), dtype=np.float64),
+        tax_liability_active=np.zeros((r, p.tax_liability_count), dtype=np.bool_),
+        tax_liability_amount=np.zeros((r, p.tax_liability_count), dtype=np.float64),
+        property_active=np.zeros((r, p.property_count), dtype=np.bool_),
+        property_basis=np.zeros((r, p.property_count), dtype=np.float64),
+        property_ownership=np.zeros((r, p.property_count), dtype=np.float64),
+        property_contribution=np.zeros((r, p.property_count), dtype=np.float64),
+        property_equity=np.zeros((r, p.property_count), dtype=np.float64),
+        liability_active=np.zeros((r, p.liability_count), dtype=np.bool_),
+        liability_principal=np.zeros((r, p.liability_count), dtype=np.float64),
+        liability_monthly_payment=np.zeros((r, p.liability_count), dtype=np.float64),
+        liability_interest_ytd=np.zeros((r, p.liability_count), dtype=np.float64),
+        liability_principal_ytd=np.zeros((r, p.liability_count), dtype=np.float64),
+        failed=np.zeros(r, dtype=np.bool_),
+        failed_month=np.full(r, NO_CODE, dtype=np.int64),
     )
-    return _decode_run(plan, buffers, external_series)
+    current.validate(p)
+    return current
+
+
+def _snapshot_initial_state(buffers: SimulationBuffers, current: CurrentStateBuffers) -> None:
+    _snapshot_current_state(buffers, current, snapshot_index=0)
+
+
+def _snapshot_current_state(buffers: SimulationBuffers, current: CurrentStateBuffers, *, snapshot_index: int) -> None:
+    buffers.cash_state[snapshot_index] = current.cash
+    buffers.lot_state[snapshot_index] = current.lot_remaining
+    buffers.ordinary_state[snapshot_index] = current.ordinary_ytd
+    buffers.capital_gain_active_state[snapshot_index] = current.capital_gain_active
+    buffers.capital_gain_state[snapshot_index] = current.capital_gain_ytd
+    buffers.tax_liability_active_state[snapshot_index] = current.tax_liability_active
+    buffers.tax_liability_state[snapshot_index] = current.tax_liability_amount
+    buffers.property_active_state[snapshot_index] = current.property_active
+    buffers.property_basis_state[snapshot_index] = current.property_basis
+    buffers.property_ownership_state[snapshot_index] = current.property_ownership
+    buffers.property_contribution_state[snapshot_index] = current.property_contribution
+    buffers.property_equity_state[snapshot_index] = current.property_equity
+    buffers.liability_active_state[snapshot_index] = current.liability_active
+    buffers.liability_principal_state[snapshot_index] = current.liability_principal
+    buffers.liability_monthly_payment_state[snapshot_index] = current.liability_monthly_payment
+    buffers.liability_interest_ytd_state[snapshot_index] = current.liability_interest_ytd
+    buffers.liability_principal_ytd_state[snapshot_index] = current.liability_principal_ytd
+    buffers.rollout_failed_state[snapshot_index] = current.failed
+    buffers.rollout_failed_month_state[snapshot_index] = current.failed_month
+
+
+def _zero_failed_state(current: CurrentStateBuffers) -> None:
+    failed = current.failed
+    if not failed.any():
+        return
+    current.cash[failed] = 0.0
+    current.lot_remaining[failed] = 0.0
+    current.ordinary_ytd[failed] = 0.0
+    current.capital_gain_ytd[failed] = 0.0
+    current.tax_liability_amount[failed] = 0.0
+    current.property_basis[failed] = 0.0
+    current.property_ownership[failed] = 0.0
+    current.property_contribution[failed] = 0.0
+    current.property_equity[failed] = 0.0
+    current.liability_principal[failed] = 0.0
+    current.liability_monthly_payment[failed] = 0.0
+    current.liability_interest_ytd[failed] = 0.0
+    current.liability_principal_ytd[failed] = 0.0
+
+
+def _run_month_step(
+    plan: CompiledSimulation, buffers: SimulationBuffers, current: CurrentStateBuffers, month: int
+) -> None:
+    _apply_scheduled_transfers(plan, buffers, current, month)
+    _apply_property_purchases(plan, buffers, current, month)
+    _apply_scheduled_asset_sales(plan, buffers, current, month)
+    _apply_tax_accruals(plan, buffers, current, month)
+    _apply_obligation_accruals(plan, buffers, current, month)
+    _apply_liquidity_policy_sales(plan, buffers, current, month)
+    _apply_obligation_settlement(plan, buffers, current, month)
+    _zero_failed_state(current)
+    _snapshot_current_state(buffers, current, snapshot_index=month + 1)
+
+
+def _apply_scheduled_transfers(
+    plan: CompiledSimulation, buffers: SimulationBuffers, current: CurrentStateBuffers, month: int
+) -> None:
+    active_rollout = ~current.failed
+    if not active_rollout.any():
+        return
+    for slot in range(plan.transfer_cause_codes.shape[1]):
+        if plan.transfer_cause_codes[month, slot] < 0:
+            continue
+        amount = _amount_values(
+            plan,
+            kind=int(plan.transfer_amount_kind[month, slot]),
+            fixed=float(plan.transfer_amount_fixed[month, slot]),
+            base=float(plan.transfer_amount_base[month, slot]),
+            series_index=int(plan.transfer_amount_series_index[month, slot]),
+            base_month=int(plan.transfer_amount_base_month[month, slot]),
+            adjustment_period=int(plan.transfer_amount_adjustment_period[month, slot]),
+            month=month,
+        )
+        buffers.transfer_active[month, slot, active_rollout] = True
+        buffers.transfer_amount[month, slot, active_rollout] = amount[active_rollout]
+        from_slot = int(plan.transfer_from_cash_slot[month, slot])
+        if from_slot >= 0:
+            current.cash[active_rollout, from_slot] -= amount[active_rollout]
+        to_slot = int(plan.transfer_to_cash_slot[month, slot])
+        if to_slot >= 0:
+            current.cash[active_rollout, to_slot] += amount[active_rollout]
+        profile = int(plan.transfer_income_profile_index[month, slot])
+        if profile >= 0:
+            current.ordinary_ytd[active_rollout, profile] += amount[active_rollout]
+
+
+def _amount_values(
+    plan: CompiledSimulation,
+    *,
+    kind: int,
+    fixed: float,
+    base: float,
+    series_index: int,
+    base_month: int,
+    adjustment_period: int,
+    month: int,
+) -> np.ndarray:
+    if kind == AMOUNT_FIXED:
+        return np.full(plan.rollout_count, fixed, dtype=np.float64)
+    elapsed = month - base_month
+    reset_month = base_month + (elapsed // adjustment_period) * adjustment_period
+    base_level = plan.external_values[series_index, :, base_month]
+    reset_level = plan.external_values[series_index, :, reset_month]
+    return base * reset_level / base_level
+
+
+def _apply_tax_accruals(
+    plan: CompiledSimulation, buffers: SimulationBuffers, current: CurrentStateBuffers, month: int
+) -> None:
+    active_rollout = ~current.failed
+    if month % 12 != 11 or not active_rollout.any():
+        return
+
+    for link in range(plan.tax_link_profile_index.shape[0]):
+        profile = int(plan.tax_link_profile_index[link])
+        gain_profile = int(plan.tax_profile_capital_gain_index[profile])
+        ordinary = current.ordinary_ytd[:, profile]
+        ltcg = current.capital_gain_ytd[:, gain_profile, LONG_TERM_CAPITAL_GAIN_CODE]
+        stcg = current.capital_gain_ytd[:, gain_profile, SHORT_TERM_CAPITAL_GAIN_CODE]
+        deduction = float(plan.tax_link_standard_deduction[link])
+
+        if int(plan.tax_link_has_ltcg[link]) == 1:
+            ordinary_taxable = np.maximum(ordinary + stcg - deduction, 0.0)
+            capital_taxable = ltcg
+            ordinary_tax = _apply_brackets(
+                ordinary_taxable,
+                upper=plan.tax_link_ordinary_upper[link],
+                rate=plan.tax_link_ordinary_rate[link],
+                count=int(plan.tax_link_ordinary_count[link]),
+            )
+            capital_tax = _apply_ltcg_brackets(
+                ltcg,
+                ordinary_taxable,
+                upper=plan.tax_link_ltcg_upper[link],
+                rate=plan.tax_link_ltcg_rate[link],
+                count=int(plan.tax_link_ltcg_count[link]),
+            )
+        else:
+            ordinary_taxable = np.maximum(ordinary + ltcg + stcg - deduction, 0.0)
+            capital_taxable = np.zeros(plan.rollout_count, dtype=np.float64)
+            ordinary_tax = _apply_brackets(
+                ordinary_taxable,
+                upper=plan.tax_link_ordinary_upper[link],
+                rate=plan.tax_link_ordinary_rate[link],
+                count=int(plan.tax_link_ordinary_count[link]),
+            )
+            capital_tax = np.zeros(plan.rollout_count, dtype=np.float64)
+
+        tax = ordinary_tax + capital_tax
+        buffers.tax_accrual_active[month, link, active_rollout] = True
+        buffers.tax_accrual_amount[month, link, active_rollout] = tax[active_rollout]
+        buffers.tax_breakdown_ordinary[month, link, active_rollout] = ordinary[active_rollout]
+        buffers.tax_breakdown_ltcg[month, link, active_rollout] = ltcg[active_rollout]
+        buffers.tax_breakdown_stcg[month, link, active_rollout] = stcg[active_rollout]
+        buffers.tax_breakdown_ordinary_taxable[month, link, active_rollout] = ordinary_taxable[active_rollout]
+        buffers.tax_breakdown_capital_taxable[month, link, active_rollout] = capital_taxable[active_rollout]
+        buffers.tax_breakdown_ordinary_tax[month, link, active_rollout] = ordinary_tax[active_rollout]
+        buffers.tax_breakdown_capital_tax[month, link, active_rollout] = capital_tax[active_rollout]
+
+        tax_slot = _tax_liability_slot_for(plan, profile_index=profile, link_index=link, year_end_month=month)
+        if tax_slot >= 0:
+            current.tax_liability_active[active_rollout, tax_slot] = True
+            current.tax_liability_amount[active_rollout, tax_slot] = tax[active_rollout]
+
+    for profile in range(current.ordinary_ytd.shape[1]):
+        current.ordinary_ytd[active_rollout, profile] = 0.0
+        gain_profile = int(plan.tax_profile_capital_gain_index[profile])
+        ltcg_active = active_rollout & current.capital_gain_active[:, gain_profile, LONG_TERM_CAPITAL_GAIN_CODE]
+        stcg_active = active_rollout & current.capital_gain_active[:, gain_profile, SHORT_TERM_CAPITAL_GAIN_CODE]
+        current.capital_gain_ytd[ltcg_active, gain_profile, LONG_TERM_CAPITAL_GAIN_CODE] = 0.0
+        current.capital_gain_ytd[stcg_active, gain_profile, SHORT_TERM_CAPITAL_GAIN_CODE] = 0.0
+
+
+def _apply_brackets(amount: np.ndarray, *, upper: np.ndarray, rate: np.ndarray, count: int) -> np.ndarray:
+    if count <= 0:
+        return np.zeros(amount.shape, dtype=np.float64)
+    upper = upper[:count]
+    rate = rate[:count]
+    previous_upper = np.concatenate((np.array([0.0], dtype=np.float64), upper[:-1]))
+    slice_top = np.minimum(amount[:, None], upper[None, :])
+    in_bracket = np.maximum(slice_top - previous_upper[None, :], 0.0)
+    return (in_bracket * rate[None, :]).sum(axis=1)
+
+
+def _apply_ltcg_brackets(
+    ltcg_amount: np.ndarray, ordinary_taxable: np.ndarray, *, upper: np.ndarray, rate: np.ndarray, count: int
+) -> np.ndarray:
+    if count <= 0:
+        return np.zeros(ltcg_amount.shape, dtype=np.float64)
+    upper = upper[:count]
+    rate = rate[:count]
+    previous_upper = np.concatenate((np.array([0.0], dtype=np.float64), upper[:-1]))
+    total_taxable = ordinary_taxable + ltcg_amount
+    slice_top = np.minimum(total_taxable[:, None], upper[None, :])
+    slice_bottom = np.maximum(ordinary_taxable[:, None], previous_upper[None, :])
+    in_bracket = np.maximum(slice_top - slice_bottom, 0.0)
+    return (in_bracket * rate[None, :]).sum(axis=1)
+
+
+def _tax_liability_slot_for(
+    plan: CompiledSimulation, *, profile_index: int, link_index: int, year_end_month: int
+) -> int:
+    slots = np.flatnonzero(
+        (plan.tax_liability_profile_index == profile_index)
+        & (plan.tax_liability_link_index == link_index)
+        & (plan.tax_liability_year_end_month == year_end_month)
+    )
+    if slots.size == 0:
+        return NO_CODE
+    return int(slots[0])
+
+
+def _apply_property_purchases(
+    plan: CompiledSimulation, buffers: SimulationBuffers, current: CurrentStateBuffers, month: int
+) -> None:
+    active_rollout = ~current.failed
+    if not active_rollout.any():
+        return
+    for prop in range(plan.property_month.shape[0]):
+        if plan.property_month[prop] != month:
+            continue
+        buffers.property_purchase_active[month, prop, active_rollout] = True
+        current.property_active[active_rollout, prop] = True
+        current.property_basis[active_rollout, prop] = plan.property_adjusted_basis[prop]
+        current.property_ownership[active_rollout, prop] = plan.property_ownership_pct[prop]
+        current.property_contribution[active_rollout, prop] = plan.property_stake_contribution[prop]
+        current.property_equity[active_rollout, prop] = plan.property_equity_ledger[prop]
+
+        buyer_cash = float(plan.property_stake_contribution[prop])
+        if buyer_cash > 0.0:
+            buffers.property_transfer_active[month, prop, active_rollout] = True
+            buyer_slot = int(plan.property_buyer_cash_slot[prop])
+            if buyer_slot >= 0:
+                current.cash[active_rollout, buyer_slot] -= buyer_cash
+            seller_slot = int(plan.property_seller_cash_slot[prop])
+            if seller_slot >= 0:
+                current.cash[active_rollout, seller_slot] += buyer_cash
+
+        liability_slot = int(plan.property_mortgage_slot[prop])
+        if liability_slot >= 0:
+            buffers.mortgage_origination_active[month, liability_slot, active_rollout] = True
+            current.liability_active[active_rollout, liability_slot] = True
+            current.liability_principal[active_rollout, liability_slot] = plan.liability_principal[liability_slot]
+            current.liability_monthly_payment[active_rollout, liability_slot] = plan.liability_monthly_payment[
+                liability_slot
+            ]
+            current.liability_interest_ytd[active_rollout, liability_slot] = 0.0
+            current.liability_principal_ytd[active_rollout, liability_slot] = 0.0
+
+
+def _apply_scheduled_asset_sales(
+    plan: CompiledSimulation, buffers: SimulationBuffers, current: CurrentStateBuffers, month: int
+) -> None:
+    active_rollout = ~current.failed
+    if not active_rollout.any():
+        return
+    for sale in range(plan.sale_month.shape[0]):
+        if plan.sale_month[sale] != month:
+            continue
+        ordered_lots = lot_order_for_pool(
+            lot_agent_codes=plan.lot_agent_codes,
+            lot_account_codes=plan.lot_account_codes,
+            lot_asset_codes=plan.lot_asset_codes,
+            lot_purchase_month=plan.lot_purchase_month,
+            lot_id_codes=plan.lot_id_codes,
+            agent_code=int(plan.sale_agent_codes[sale]),
+            account_code=int(plan.sale_source_account_codes[sale]),
+            asset_code=int(plan.sale_asset_codes[sale]),
+        )
+        target_units = np.where(active_rollout, float(plan.sale_quantity[sale]), 0.0)
+        price = _sale_unit_price(plan, month=month, sale=sale)
+        result = fifo_sell_units(
+            lot_remaining=current.lot_remaining,
+            ordered_lots=ordered_lots,
+            target_units=target_units,
+            unit_price=price,
+            cost_basis_per_unit=plan.lot_cost_basis_per_unit,
+        )
+        if result.oversell.any():
+            raise ValueError(
+                f"scheduled asset sale exceeds available lots: {_text(plan, plan.sale_cause_codes[month, sale])}"
+            )
+
+        current.lot_remaining -= result.sold_units
+        proceeds_slot = int(plan.sale_proceeds_cash_slot[sale])
+        if proceeds_slot >= 0:
+            current.cash[:, proceeds_slot] += result.total_proceeds
+        _record_capital_gains(
+            plan,
+            current,
+            month=month,
+            agent_code=int(plan.sale_agent_codes[sale]),
+            sold_units=result.sold_units,
+            gains=result.proceeds - result.cost_basis_consumed,
+        )
+        sale_active = result.sold_units > 0.0
+        buffers.sched_disp_active[month, sale] = sale_active.T
+        buffers.sched_disp_units[month, sale] += result.sold_units.T
+        buffers.sched_disp_basis[month, sale] += result.cost_basis_consumed.T
+        buffers.sched_disp_proceeds[month, sale] += result.proceeds.T
+
+
+def _apply_liquidity_policy_sales(
+    plan: CompiledSimulation, buffers: SimulationBuffers, current: CurrentStateBuffers, month: int
+) -> None:
+    active_rollout = ~current.failed
+    if not active_rollout.any():
+        return
+
+    obligation_active = buffers.obligation_active[month]
+    obligation_due = buffers.obligation_due[month]
+    for policy in range(plan.liquidity_policy_agent_codes.shape[0]):
+        policy_agent = int(plan.liquidity_policy_agent_codes[policy])
+        policy_account = int(plan.liquidity_policy_account_codes[policy])
+        policy_cash_slot = int(plan.liquidity_policy_cash_slot[policy])
+
+        matching_obligations = np.flatnonzero(
+            (plan.obligation_agent_codes[month] == policy_agent)
+            & (plan.obligation_from_cash_slot[month] == policy_cash_slot)
+        )
+        if matching_obligations.size:
+            matching_active = obligation_active[matching_obligations]
+            hard_demand = np.where(matching_active, obligation_due[matching_obligations], 0.0).sum(axis=0)
+            for row, slot in enumerate(matching_obligations):
+                buffers.obligation_attempt_policy[month, slot, matching_active[row]] = policy
+        else:
+            hard_demand = np.zeros(plan.rollout_count, dtype=np.float64)
+
+        cash_balance = (
+            current.cash[:, policy_cash_slot]
+            if policy_cash_slot >= 0
+            else np.zeros(plan.rollout_count, dtype=np.float64)
+        )
+        required_sale = np.maximum(hard_demand - cash_balance, 0.0)
+        post_required_cash = cash_balance + required_sale - hard_demand
+        buffer_sale = np.where(
+            (float(plan.liquidity_policy_buffer_sale[policy]) > 0.0)
+            & (post_required_cash < float(plan.liquidity_policy_buffer_trigger[policy])),
+            float(plan.liquidity_policy_buffer_sale[policy]),
+            0.0,
+        )
+        remaining_target = np.where(active_rollout, required_sale + buffer_sale, 0.0)
+        if not np.any((hard_demand > 0.0) | (remaining_target > 0.0)):
+            continue
+
+        for asset_idx in range(plan.liquidity_policy_asset_codes.shape[1]):
+            asset_code = int(plan.liquidity_policy_asset_codes[policy, asset_idx])
+            if asset_code < 0 or not np.any(remaining_target > 0.0):
+                continue
+            series_index = int(plan.liquidity_policy_asset_series_index[policy, asset_idx])
+            if series_index < 0:
+                continue
+            raw_price = plan.external_values[series_index, :, month]
+            valid_price = np.isfinite(raw_price) & (raw_price > 0.0)
+            unit_price = np.where(valid_price, raw_price, 0.0)
+
+            ordered_lots = lot_order_for_pool(
+                lot_agent_codes=plan.lot_agent_codes,
+                lot_account_codes=plan.lot_account_codes,
+                lot_asset_codes=plan.lot_asset_codes,
+                lot_purchase_month=plan.lot_purchase_month,
+                lot_id_codes=plan.lot_id_codes,
+                agent_code=policy_agent,
+                account_code=policy_account,
+                asset_code=asset_code,
+            )
+            if ordered_lots.size == 0:
+                continue
+
+            available_value = current.lot_remaining[:, ordered_lots].sum(axis=1) * unit_price
+            target_dollars = np.minimum(np.maximum(remaining_target, 0.0), available_value)
+            target_dollars = np.where(valid_price & active_rollout, target_dollars, 0.0)
+            if not np.any(target_dollars > 0.0):
+                continue
+
+            result = fifo_sell_dollars(
+                lot_remaining=current.lot_remaining,
+                ordered_lots=ordered_lots,
+                target_dollars=target_dollars,
+                unit_price=unit_price,
+                cost_basis_per_unit=plan.lot_cost_basis_per_unit,
+            )
+            if result.oversell.any():
+                raise ValueError(
+                    "liquidity policy attempted to sell more than available lots: "
+                    f"{plan.liquidity_policy_prefixes[policy]}"
+                )
+
+            current.lot_remaining -= result.sold_units
+            if policy_cash_slot >= 0:
+                current.cash[:, policy_cash_slot] += result.total_proceeds
+            _record_capital_gains(
+                plan,
+                current,
+                month=month,
+                agent_code=policy_agent,
+                sold_units=result.sold_units,
+                gains=result.proceeds - result.cost_basis_consumed,
+            )
+            sale_active = result.sold_units > 0.0
+            buffers.liq_disp_active[month, policy, asset_idx] |= sale_active.T
+            buffers.liq_disp_units[month, policy, asset_idx] += result.sold_units.T
+            buffers.liq_disp_basis[month, policy, asset_idx] += result.cost_basis_consumed.T
+            buffers.liq_disp_proceeds[month, policy, asset_idx] += result.proceeds.T
+            remaining_target = np.maximum(remaining_target - result.total_proceeds, 0.0)
+
+
+def _apply_obligation_accruals(
+    plan: CompiledSimulation, buffers: SimulationBuffers, current: CurrentStateBuffers, month: int
+) -> None:
+    active_rollout = ~current.failed
+    if not active_rollout.any():
+        return
+    for slot in range(plan.obligation_cause_codes.shape[1]):
+        if plan.obligation_cause_codes[month, slot] < 0 or plan.obligation_source_kind[month, slot] < 0:
+            continue
+        source_kind = int(plan.obligation_source_kind[month, slot])
+        source_index = int(plan.obligation_source_index[month, slot])
+        amount = np.zeros(plan.rollout_count, dtype=np.float64)
+        active = active_rollout.copy()
+
+        if source_kind == SOURCE_CONFIGURED_OBLIGATION:
+            amount = _amount_values(
+                plan,
+                kind=int(plan.obligation_amount_kind[month, slot]),
+                fixed=float(plan.obligation_amount_fixed[month, slot]),
+                base=float(plan.obligation_amount_base[month, slot]),
+                series_index=int(plan.obligation_amount_series_index[month, slot]),
+                base_month=int(plan.obligation_amount_base_month[month, slot]),
+                adjustment_period=int(plan.obligation_amount_adjustment_period[month, slot]),
+                month=month,
+            )
+        elif source_kind == SOURCE_MORTGAGE_PAYMENT:
+            liab = source_index
+            prop = int(plan.liability_property_slot[liab])
+            active &= (
+                current.liability_active[:, liab]
+                & (plan.property_month[prop] < month)
+                & (current.liability_principal[:, liab] > 0.0)
+            )
+            interest = current.liability_principal[:, liab] * float(plan.liability_annual_rate[liab]) / 12.0
+            amount = np.minimum(
+                current.liability_monthly_payment[:, liab], current.liability_principal[:, liab] + interest
+            )
+        elif source_kind == SOURCE_PROPERTY_TAX:
+            prop = source_index
+            active &= current.property_active[:, prop] & (plan.property_month[prop] < month)
+            rate = float(plan.obligation_amount_fixed[month, slot])
+            if np.isnan(rate):
+                rate = float(plan.property_location_tax_rate[prop])
+            amount = current.property_basis[:, prop] * rate / 12.0
+        elif source_kind == SOURCE_ESTIMATED_TAX:
+            amount = np.full(plan.rollout_count, float(plan.tax_profile_prior_year_tax[source_index]) / 4.0)
+        elif source_kind in (SOURCE_ESTIMATED_TAX_Q4, SOURCE_TAX_TRUE_UP):
+            profile = source_index
+            tax_year_end = (month // 12 - 1) * 12 + 11
+            actual = _actual_tax_for_profile_year(plan, current, profile_index=profile, year_end_month=tax_year_end)
+            safe_harbor = np.minimum(float(plan.tax_profile_prior_year_tax[profile]), actual)
+            paid_before_q4 = float(plan.tax_profile_prior_year_tax[profile]) * 0.75
+            if source_kind == SOURCE_ESTIMATED_TAX_Q4:
+                amount = np.maximum(safe_harbor - paid_before_q4, 0.0)
+            else:
+                amount = np.maximum(actual - safe_harbor, 0.0)
+        else:
+            continue
+
+        active &= amount > 0.0
+        if not active.any():
+            continue
+        buffers.obligation_active[month, slot, active] = True
+        buffers.obligation_due[month, slot, active] = amount[active]
+
+
+def _apply_obligation_settlement(
+    plan: CompiledSimulation, buffers: SimulationBuffers, current: CurrentStateBuffers, month: int
+) -> None:
+    active = buffers.obligation_active[month]
+    if not active.any():
+        return
+
+    due = buffers.obligation_due[month]
+    funded = _obligation_group_funded(plan, current, month=month, active=active, due=due)
+    tax_profile_count = plan.tax_profile_agent_codes.shape[0]
+    tax_payment_failed = np.zeros((tax_profile_count, plan.rollout_count), dtype=np.bool_)
+    tax_settlement_candidate = np.zeros((tax_profile_count, plan.rollout_count), dtype=np.float64)
+    tax_settlement_candidate_year_end = np.full((tax_profile_count, plan.rollout_count), NO_CODE, dtype=np.int64)
+
+    for slot in range(active.shape[0]):
+        active_slot = active[slot]
+        if not active_slot.any():
+            continue
+        source_kind = int(plan.obligation_source_kind[month, slot])
+        source_index = int(plan.obligation_source_index[month, slot])
+
+        if source_kind == SOURCE_TAX_TRUE_UP:
+            profile = source_index
+            tax_year_end = (month // 12 - 1) * 12 + 11
+            actual = _actual_tax_for_profile_year(plan, current, profile_index=profile, year_end_month=tax_year_end)
+            tax_settlement_candidate[profile, active_slot] = actual[active_slot]
+            tax_settlement_candidate_year_end[profile, active_slot] = tax_year_end
+
+        amount = due[slot]
+        paid = active_slot & funded[slot]
+        if paid.any():
+            buffers.obligation_paid[month, slot, paid] = amount[paid]
+            from_slot = int(plan.obligation_from_cash_slot[month, slot])
+            if from_slot >= 0:
+                current.cash[paid, from_slot] -= amount[paid]
+            to_slot = int(plan.obligation_to_cash_slot[month, slot])
+            if to_slot >= 0:
+                current.cash[paid, to_slot] += amount[paid]
+            if source_kind == SOURCE_MORTGAGE_PAYMENT:
+                _apply_mortgage_payment(
+                    plan, buffers, current, month=month, liability_slot=source_index, paid=paid, amount=amount
+                )
+
+        failed = active_slot & ~funded[slot]
+        if failed.any():
+            buffers.obligation_shortfall[month, slot, failed] = amount[failed]
+            buffers.obligation_failure_active[month, slot, failed] = True
+            first_failure = failed & (current.failed_month < 0)
+            current.failed[failed] = True
+            current.failed_month[first_failure] = month
+            if source_kind in (SOURCE_ESTIMATED_TAX, SOURCE_ESTIMATED_TAX_Q4, SOURCE_TAX_TRUE_UP):
+                tax_payment_failed[source_index, failed] = True
+
+    _apply_tax_settlements(
+        plan,
+        buffers,
+        current,
+        month=month,
+        tax_settlement_candidate=tax_settlement_candidate,
+        tax_settlement_candidate_year_end=tax_settlement_candidate_year_end,
+        tax_payment_failed=tax_payment_failed,
+    )
+
+
+def _obligation_group_funded(
+    plan: CompiledSimulation, current: CurrentStateBuffers, *, month: int, active: np.ndarray, due: np.ndarray
+) -> np.ndarray:
+    funded = np.zeros(active.shape, dtype=np.bool_)
+    for slot in range(active.shape[0]):
+        active_slot = active[slot]
+        if not active_slot.any():
+            continue
+        agent = int(plan.obligation_agent_codes[month, slot])
+        from_slot = int(plan.obligation_from_cash_slot[month, slot])
+        group = (plan.obligation_agent_codes[month] == agent) & (plan.obligation_from_cash_slot[month] == from_slot)
+        group_due = np.where(active[group], due[group], 0.0).sum(axis=0)
+        available = current.cash[:, from_slot] if from_slot >= 0 else np.zeros(plan.rollout_count, dtype=np.float64)
+        funded[slot] = active_slot & (available >= group_due - 1e-9)
+    return funded
+
+
+def _apply_mortgage_payment(
+    plan: CompiledSimulation,
+    buffers: SimulationBuffers,
+    current: CurrentStateBuffers,
+    *,
+    month: int,
+    liability_slot: int,
+    paid: np.ndarray,
+    amount: np.ndarray,
+) -> None:
+    principal_before = current.liability_principal[:, liability_slot]
+    interest = np.minimum(principal_before * float(plan.liability_annual_rate[liability_slot]) / 12.0, amount)
+    principal = np.minimum(np.maximum(amount - interest, 0.0), principal_before)
+
+    buffers.mortgage_payment_active[month, liability_slot, paid] = True
+    buffers.mortgage_payment_interest[month, liability_slot, paid] = interest[paid]
+    buffers.mortgage_payment_principal[month, liability_slot, paid] = principal[paid]
+    buffers.mortgage_payment_total[month, liability_slot, paid] = amount[paid]
+    current.liability_principal[paid, liability_slot] = np.maximum(0.0, principal_before[paid] - principal[paid])
+    current.liability_interest_ytd[paid, liability_slot] += interest[paid]
+    current.liability_principal_ytd[paid, liability_slot] += principal[paid]
+
+
+def _apply_tax_settlements(
+    plan: CompiledSimulation,
+    buffers: SimulationBuffers,
+    current: CurrentStateBuffers,
+    *,
+    month: int,
+    tax_settlement_candidate: np.ndarray,
+    tax_settlement_candidate_year_end: np.ndarray,
+    tax_payment_failed: np.ndarray,
+) -> None:
+    for profile in range(tax_settlement_candidate.shape[0]):
+        active = (tax_settlement_candidate[profile] > 0.0) & ~tax_payment_failed[profile]
+        if not active.any():
+            continue
+        buffers.tax_settlement_active[month, profile, active] = True
+        buffers.tax_settlement_amount[month, profile, active] = tax_settlement_candidate[profile, active]
+        buffers.tax_settlement_year_end_month[month, profile, active] = tax_settlement_candidate_year_end[
+            profile, active
+        ]
+        for year_end_month in np.unique(tax_settlement_candidate_year_end[profile, active]):
+            if year_end_month < 0:
+                continue
+            year_active = active & (tax_settlement_candidate_year_end[profile] == year_end_month)
+            _settle_tax_liabilities_for_profile_year(
+                plan,
+                current,
+                profile_index=profile,
+                year_end_month=int(year_end_month),
+                settlement_amount=tax_settlement_candidate[profile],
+                active=year_active,
+            )
+
+
+def _settle_tax_liabilities_for_profile_year(
+    plan: CompiledSimulation,
+    current: CurrentStateBuffers,
+    *,
+    profile_index: int,
+    year_end_month: int,
+    settlement_amount: np.ndarray,
+    active: np.ndarray,
+) -> None:
+    if not active.any():
+        return
+    slots = np.flatnonzero(
+        (plan.tax_liability_profile_index == profile_index) & (plan.tax_liability_year_end_month == year_end_month)
+    )
+    if slots.size == 0:
+        return
+    slot_amounts = current.tax_liability_amount[:, slots]
+    eligible_amounts = np.where(current.tax_liability_active[:, slots], slot_amounts, 0.0)
+    outstanding = eligible_amounts.sum(axis=1)
+    settlement = np.where(active, settlement_amount, 0.0)
+    weights = np.divide(
+        eligible_amounts, outstanding[:, None], out=np.zeros_like(eligible_amounts), where=outstanding[:, None] > 0.0
+    )
+    settled = np.minimum(eligible_amounts, weights * settlement[:, None])
+    current.tax_liability_amount[:, slots] = np.maximum(0.0, slot_amounts - settled)
+
+
+def _actual_tax_for_profile_year(
+    plan: CompiledSimulation, current: CurrentStateBuffers, *, profile_index: int, year_end_month: int
+) -> np.ndarray:
+    slots = np.flatnonzero(
+        (plan.tax_liability_profile_index == profile_index) & (plan.tax_liability_year_end_month == year_end_month)
+    )
+    if slots.size == 0:
+        return np.zeros(plan.rollout_count, dtype=np.float64)
+    return np.where(current.tax_liability_active[:, slots], current.tax_liability_amount[:, slots], 0.0).sum(axis=1)
+
+
+def _sale_unit_price(plan: CompiledSimulation, *, month: int, sale: int) -> np.ndarray:
+    fixed_price = float(plan.sale_price_fixed[sale])
+    if not np.isnan(fixed_price):
+        return np.full(plan.rollout_count, fixed_price, dtype=np.float64)
+    series_index = int(plan.sale_price_series_index[sale])
+    return plan.external_values[series_index, :, month]
+
+
+def _record_capital_gains(
+    plan: CompiledSimulation,
+    current: CurrentStateBuffers,
+    *,
+    month: int,
+    agent_code: int,
+    sold_units: np.ndarray,
+    gains: np.ndarray,
+) -> None:
+    if sold_units.size == 0:
+        return
+    for profile in range(plan.capital_gain_agent_codes.shape[0]):
+        if int(plan.capital_gain_agent_codes[profile]) != agent_code:
+            continue
+        for lot in range(plan.lot_id_codes.shape[0]):
+            cls = (
+                LONG_TERM_CAPITAL_GAIN_CODE
+                if month - int(plan.lot_purchase_month[lot]) >= 12
+                else SHORT_TERM_CAPITAL_GAIN_CODE
+            )
+            active = sold_units[:, lot] > 0.0
+            current.capital_gain_active[active, profile, cls] = True
+            current.capital_gain_ytd[:, profile, cls] += gains[:, lot]
 
 
 def _allocate_buffers(plan: CompiledSimulation) -> SimulationBuffers:
@@ -847,6 +1540,7 @@ def _decode_asset_lots(plan: CompiledSimulation, buffers: SimulationBuffers) -> 
             "month_index": month,
             "lot_id": _text(plan, plan.lot_id_codes[slot]),
             "agent_id": _text(plan, plan.lot_agent_codes[slot]),
+            "account_id": _text(plan, plan.lot_account_codes[slot]),
             "asset_id": _text(plan, plan.lot_asset_codes[slot]),
             "purchase_month_index": int(plan.lot_purchase_month[slot]),
             "cost_basis_per_unit_usd": float(plan.lot_cost_basis_per_unit[slot]),
@@ -1079,6 +1773,7 @@ def _decode_events(plan: CompiledSimulation, buffers: SimulationBuffers) -> Even
                             month=month,
                             cause_id=_text(plan, plan.sale_cause_codes[month, sale]),
                             agent_code=plan.sale_agent_codes[sale],
+                            source_account_code=plan.sale_source_account_codes[sale],
                             asset_code=plan.sale_asset_codes[sale],
                             lot=lot,
                             units=float(buffers.sched_disp_units[month, sale, lot, rollout]),
@@ -1104,6 +1799,7 @@ def _decode_events(plan: CompiledSimulation, buffers: SimulationBuffers) -> Even
                                 month=month,
                                 cause_id=cause_id,
                                 agent_code=plan.liquidity_policy_agent_codes[policy],
+                                source_account_code=plan.liquidity_policy_account_codes[policy],
                                 asset_code=asset_code,
                                 lot=lot,
                                 units=float(buffers.liq_disp_units[month, policy, asset_idx, lot, rollout]),
@@ -1238,6 +1934,7 @@ def _lot_row(
     month: int,
     cause_id: str | None,
     agent_code: int,
+    source_account_code: int,
     asset_code: int,
     lot: int,
     units: float,
@@ -1250,6 +1947,7 @@ def _lot_row(
         "month_index": month,
         "cause_id": cause_id,
         "agent_id": _text(plan, agent_code),
+        "source_account_id": _text(plan, source_account_code),
         "asset_id": _text(plan, asset_code),
         "lot_id": _text(plan, plan.lot_id_codes[lot]),
         "purchase_month_index": int(plan.lot_purchase_month[lot]),

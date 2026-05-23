@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections import Counter
 
 import yaml
+from more_itertools import one
 from pydantic import TypeAdapter
 
 from augur.api.bootstrap import (
@@ -24,7 +25,7 @@ from augur.api.bootstrap import (
 from augur.api.config import Config, LocationConfig, PropertyAssetConfig
 from augur.api.scenario_set import ActorRole
 from augur.api.schemas import KnobsConfig
-from augur.product.projection import MAX_HORIZON_MONTHS
+from augur.product.wire import MAX_HORIZON_MONTHS
 
 PROPERTY_ROWS_ADAPTER = TypeAdapter(tuple[Property, ...])
 
@@ -111,7 +112,7 @@ def _default_knobs_for_config(config: Config) -> KnobsConfig:
 
 def _primary_agent_label(config: Config) -> str:
     """Return the primary-owner label derived from config.agents."""
-    primary = next(agent for agent in config.agents if agent.role is ActorRole.PRIMARY_OWNER)
+    primary = one(agent for agent in config.agents if agent.role is ActorRole.PRIMARY_OWNER)
     return primary.label
 
 

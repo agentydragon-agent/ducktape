@@ -269,7 +269,7 @@ Suggested migration order:
       policies cover part of this; missing behavior should land as typed sim
       decisions/events with explicit cause IDs.
 - [ ] Consider a ledger/read-model storage layer once consumers need
-      double-entry projections. The deleted core accounting tables used Polars
+      double-entry projections. The deleted core accounting tables used NumPy-backed tables
       dimension/fact tables for chart accounts, journal-entry kinds, journal
       entries, postings, balance snapshots, rollout identity, and materialized
       Pydantic compatibility rows. Sim should keep event/state frames as the

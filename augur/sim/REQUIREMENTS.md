@@ -107,7 +107,7 @@ These are non-negotiable shapes. Every scenario below assumes them.
   withholding rules. If the spec changes the SALT cap or the LTCG
   threshold, exactly one place changes.
 - **Vectorized hot path.** Performance is a requirement, not an
-  afterthought. The per-month step runs as polars expressions / numpy
+  afterthought. The per-month step runs as dense-array operations / numpy
   ufuncs / equivalent bulk-vectorized ops over the rollout dimension.
   Python-level per-rollout work in the hot loop is a bug. Where a
   rule is naturally expressed as a join+group-by+window across a
@@ -115,7 +115,7 @@ These are non-negotiable shapes. Every scenario below assumes them.
   taxable_gain across all LTCG-eligible asset_change_log rows grouped
   by (rollout, year)"), that's the implementation — not a Python loop
   over rollouts that re-derives the same thing. The choice of
-  numpy / polars / pytorch / something else per piece is whatever
+  numpy / pytorch / something else per piece is whatever
   best vectorizes the operation; the constraint is "no per-rollout
   Python in the hot path", not the library.
 

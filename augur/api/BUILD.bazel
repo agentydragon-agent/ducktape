@@ -172,7 +172,8 @@ py_library(
         ":config_py",
         ":local_regulation_py",
         ":scenario_set_py",
-        "//augur/product:projection_py",
+        "//augur/product:wire_py",
+        "@pypi//more_itertools",
         "@pypi//pyyaml",
         "@pypi//types_pyyaml",
     ],
@@ -182,60 +183,52 @@ py_test(
     name = "catalog_test",
     srcs = ["catalog_test.py"],
     deps = [
-        ":backend_py",
         ":catalog_py",
         ":config_py",
+        ":finance_py",
         ":local_regulation_py",
         ":scenario_set_py",
+        ":scenario_set_service_py",
         "//augur/model:exogenous_provider_config_py",
         "//augur/model:testing_py",
+        "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
 
 py_library(
-    name = "backend_py",
-    srcs = ["backend.py"],
+    name = "scenario_set_service_py",
+    srcs = ["scenario_set_service.py"],
     deps = [
         ":bootstrap_py",
         ":bridge_py",
-        ":catalog_py",
-        ":config_py",
+        ":portfolio_py",
         ":response_py",
         ":scenario_set_py",
         ":scenario_tax_defaults_py",
         "//augur/model:exogenous_py",
-        "//augur/product:portfolio_py",
-        "//augur/product:projection_py",
-        "//augur/product:projection_service_py",
         "//augur/sim:external_series",
         "//augur/sim:simulate",
     ],
 )
 
-py_library(
-    name = "http_app_py",
-    srcs = ["http_app.py"],
+py_test(
+    name = "scenario_set_service_test",
+    size = "medium",
+    srcs = ["scenario_set_service_test.py"],
+    data = [
+        ":public_fixture_config",
+        ":public_fixture_properties",
+    ],
     deps = [
         ":casing_py",
+        ":catalog_py",
+        ":config_py",
         ":scenario_set_py",
-        "//augur/product:portfolio_py",
-        "//augur/product:projection_py",
-        "@pypi//fastapi",
-        "@pypi//pydantic",
-    ],
-)
-
-py_test(
-    name = "http_app_test",
-    srcs = ["http_app_test.py"],
-    deps = [
-        ":http_app_py",
-        ":scenario_set_py",
-        "//augur/product:projection_py",
-        "@pypi//fastapi",
-        "@pypi//httpx",
+        ":scenario_set_service_py",
+        "//augur/model:simple_exogenous_py",
+        "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
     ],
 )
@@ -271,6 +264,7 @@ py_library(
 
 py_test(
     name = "bridge_test",
+    size = "medium",
     srcs = ["bridge_test.py"],
     deps = [
         ":bridge_py",
@@ -280,24 +274,6 @@ py_test(
         "//augur/model:simple_exogenous_py",
         "@pypi//polars",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "backend_test",
-    srcs = ["backend_test.py"],
-    data = [
-        ":public_fixture_config",
-        ":public_fixture_properties",
-    ],
-    deps = [
-        ":backend_py",
-        ":casing_py",
-        ":config_py",
-        ":scenario_set_py",
-        "//augur/model:simple_exogenous_py",
-        "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
     ],
 )
@@ -324,12 +300,20 @@ py_library(
     name = "server_lib",
     srcs = ["server.py"],
     deps = [
-        ":backend_py",
+        ":casing_py",
+        ":catalog_py",
         ":config_py",
-        ":http_app_py",
+        ":scenario_set_py",
+        ":scenario_set_service_py",
         "//augur/model:exogenous_provider_config_py",
         "//augur/model:exogenous_py",
+        "//augur/product:portfolio_py",
+        "//augur/product:scenarios_py",
+        "//augur/product:service_py",
+        "//augur/product:wire_py",
         "@pypi//fastapi",
+        "@pypi//more_itertools",
+        "@pypi//pydantic",
         "@pypi//uvicorn",
     ],
 )
@@ -349,12 +333,11 @@ py_binary(
     ],
     main_module = "augur.api.profile_metric_fan",
     deps = [
-        ":backend_py",
         ":config_py",
         "//augur/model:simple_exogenous_py",
-        "//augur/product:portfolio_py",
-        "//augur/product:projection_py",
-        "//augur/product:projection_service_py",
+        "//augur/product:scenarios_py",
+        "//augur/product:service_py",
+        "//augur/product:wire_py",
         "//util/bazel:runfiles",
     ],
 )
@@ -366,6 +349,7 @@ aspect_py_binary(
     deps = [
         ":server_lib",
         "@pypi//fastapi",
+        "@pypi//more_itertools",
         "@pypi//uvicorn",
     ],
 )
@@ -428,7 +412,7 @@ py_library(
         ":browser_state_py",
         ":scenario_set_py",
         "//augur/product:portfolio_py",
-        "//augur/product:projection_py",
+        "//augur/product:wire_py",
         "@pypi//fastapi",
     ],
 )

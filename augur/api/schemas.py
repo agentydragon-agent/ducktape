@@ -1,19 +1,18 @@
 from __future__ import annotations
 
-from typing import Annotated, Any, Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, NonNegativeFloat, model_validator
+from pydantic import BaseModel, ConfigDict, Field, NonNegativeFloat
 
 
 class ApiModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
-class _InternalModel(BaseModel):
-    model_config = ConfigDict(extra="ignore", frozen=True)
-
-
 Percentage = Annotated[NonNegativeFloat, Field(le=100)]
+
+type Frame = dict[str, list[float | int | bool | str | None]]
+"""Rectangular, JSON-safe table payload: one column per key, equal-length lists."""
 
 
 class KnobsConfig(ApiModel):
@@ -41,20 +40,3 @@ class KnobsConfig(ApiModel):
     depreciable_basis_pct: float
     financing_mode: Literal["cash", "fixed_30", "fixed_15", "custom"]
     occupancy_type: Literal["primary_residence", "second_home", "investment"]
-
-
-class ColumnarTable(_InternalModel):
-    """Rectangular, JSON-safe table payload."""
-
-    row_count: int
-    columns: dict[str, list[Any]]
-
-    @model_validator(mode="after")
-    def _columns_match_row_count(self) -> ColumnarTable:
-        if self.row_count < 0:
-            raise ValueError("row_count must be non-negative")
-        lengths = {name: len(values) for name, values in self.columns.items()}
-        mismatched = {name: length for name, length in lengths.items() if length != self.row_count}
-        if mismatched:
-            raise ValueError(f"column lengths must equal row_count={self.row_count}: {mismatched}")
-        return self

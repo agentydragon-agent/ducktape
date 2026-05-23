@@ -3,7 +3,7 @@ import { Button, Checkbox, NativeSelect } from "@mantine/core";
 
 import { fetchAugurBootstrap, fetchProductMetricFan, fetchProductPortfolio, fetchProductRollout } from "./client.js";
 import { fanChartAxis, fanChartYearTicks, fmtAxisMetricValue } from "./lib/chart.js";
-import { rowsFromCamelColumnar } from "./lib/columnar.js";
+import { rowsFrom } from "./lib/frame.js";
 import { NumberField } from "./lib/controls.jsx";
 import { fmtNumber, fmtUsd } from "./lib/format.js";
 import { AugurShellHeader } from "./shell.jsx";
@@ -47,10 +47,11 @@ function clampInteger(value, min, max) {
 }
 
 function productInputDefaults(bootstrap) {
+  const defaultRolloutCount = bootstrap.defaultRolloutSamples ?? DEFAULT_PRODUCT_INPUT_BASE.rolloutCount;
   return {
     ...DEFAULT_PRODUCT_INPUT_BASE,
     horizonMonths: clampInteger(DEFAULT_PRODUCT_INPUT_BASE.horizonMonths, 1, bootstrap.maxHorizonMonths),
-    rolloutCount: clampInteger(DEFAULT_PRODUCT_INPUT_BASE.rolloutCount, 1, bootstrap.maxRolloutSamples),
+    rolloutCount: clampInteger(defaultRolloutCount, 1, bootstrap.maxRolloutSamples),
   };
 }
 
@@ -87,7 +88,7 @@ function productMetricFanRequest(input, bootstrap, metric) {
 function metricFanRows(result) {
   if (!result?.monthlyMetricFan) return [];
   const byMonth = new Map();
-  for (const row of rowsFromCamelColumnar(result?.monthlyMetricFan)) {
+  for (const row of rowsFrom(result?.monthlyMetricFan)) {
     const monthIndex = Number(row.monthIndex);
     const percentile = Number(row.percentile);
     const metricValue = Number(row.value);
@@ -106,7 +107,7 @@ function metricFanRows(result) {
 
 function terminalPercentileValue(result, percentile) {
   if (!result?.terminalMetricPercentiles) return null;
-  for (const row of rowsFromCamelColumnar(result?.terminalMetricPercentiles)) {
+  for (const row of rowsFrom(result?.terminalMetricPercentiles)) {
     if (Number(row.percentile) === percentile) {
       return Number(row.value);
     }
@@ -163,7 +164,7 @@ function rolloutSliverColor(rankPercentile) {
 
 function selectedRolloutMetricRows(detail, metric) {
   if (!detail?.rollout?.monthlyMetrics) return [];
-  return rowsFromCamelColumnar(detail.rollout.monthlyMetrics)
+  return rowsFrom(detail.rollout.monthlyMetrics)
     .map((row) => ({
       monthIndex: Number(row.monthIndex),
       year: Number(row.monthIndex) / 12,
@@ -246,8 +247,36 @@ function eventDetailText(event) {
   return "";
 }
 
+function jurisdictionLabel(jurisdictionId) {
+  if (jurisdictionId === "federal_us") return "federal";
+  if (jurisdictionId === "california") return "California";
+  return (jurisdictionId ?? "").replace(/_/g, " ");
+}
+
+function eventLabel(event) {
+  if (event?.kind === "public_security_sale") {
+    return `Sold ${event.assetLabel ?? event.assetId ?? "asset"}`;
+  }
+  if (event?.kind === "monthly_expense") {
+    return Number(event.shortfallUsd) > 0 ? "Monthly expenses shortfall" : "Paid monthly expenses";
+  }
+  if (event?.kind === "tax_accrual") {
+    return `Accrued ${jurisdictionLabel(event.jurisdictionId)} tax`;
+  }
+  if (event?.kind === "tax_payment") {
+    const shortfall = Number(event.shortfallUsd) > 0;
+    if (event.obligationType === "estimated_tax") return shortfall ? "Estimated tax shortfall" : "Paid estimated taxes";
+    if (event.obligationType === "tax_true_up") return shortfall ? "Tax true-up shortfall" : "Paid tax true-up";
+    return shortfall ? "Tax payment shortfall" : "Paid taxes";
+  }
+  if (event?.kind === "failure") {
+    return "Rollout failed";
+  }
+  return "Event";
+}
+
 function eventTitle(event) {
-  return `Month ${eventStateMonthIndex(event) ?? "n/a"}: ${event?.label ?? "Event"} ${fmtUsd(eventAmount(event))}`;
+  return `Month ${eventStateMonthIndex(event) ?? "n/a"}: ${eventLabel(event)} ${fmtUsd(eventAmount(event))}`;
 }
 
 function MetricFanChart({
@@ -681,7 +710,7 @@ function SelectedRolloutEventsPanel({
                               style={{ backgroundColor: eventColor(event) }}
                               aria-hidden="true"
                             />
-                            <span className="min-w-0 truncate font-semibold augur-strong">{event.label}</span>
+                            <span className="min-w-0 truncate font-semibold augur-strong">{eventLabel(event)}</span>
                           </div>
                         </td>
                         <td className="whitespace-nowrap px-3 py-2 text-right font-semibold augur-tabular">

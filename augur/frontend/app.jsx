@@ -17,7 +17,7 @@ import {
   UnstyledButton,
 } from "@mantine/core";
 
-import { rowsFromCamelColumnar } from "./lib/columnar.js";
+import { rowsFrom } from "./lib/frame.js";
 import { MoneyField, NumberField } from "./lib/controls.jsx";
 import { fmtInteger, fmtNumber, fmtPct, fmtUsd } from "./lib/format.js";
 import {
@@ -213,7 +213,7 @@ function distributionResultView(scenarioResult) {
 }
 
 function selectedRolloutResultView(scenarioResult, selectedRolloutIndex, kind) {
-  const monthlyRows = rowsFromTable(scenarioResult?.monthlyColumns);
+  const monthlyRows = rowsFrom(scenarioResult?.monthlyColumns);
   const selected = selectedRolloutFromRows(monthlyRows, selectedRolloutIndex);
   return {
     kind,
@@ -237,12 +237,8 @@ function accountingDetailResultView(scenarioResult, selectedRolloutIndex) {
   return selectedRolloutResultView(scenarioResult, selectedRolloutIndex, "accounting_detail");
 }
 
-function rowsFromTable(table) {
-  return table ? rowsFromCamelColumnar(table) : [];
-}
-
 function lastRow(table) {
-  const rows = rowsFromTable(table);
+  const rows = rowsFrom(table);
   return rows.length > 0 ? rows[rows.length - 1] : null;
 }
 
@@ -286,11 +282,11 @@ function scenarioResultById(result, scenarioId) {
 }
 
 function metricFanRows(scenarioResult, metricName) {
-  return rowsFromTable(scenarioResult?.metricFanColumns?.[metricName]);
+  return rowsFrom(scenarioResult?.metricFanColumns?.[metricName]);
 }
 
 function terminalRows(scenarioResult) {
-  return rowsFromTable(scenarioResult?.terminalColumns);
+  return rowsFrom(scenarioResult?.terminalColumns);
 }
 
 function terminalP50(scenarioResult, column) {

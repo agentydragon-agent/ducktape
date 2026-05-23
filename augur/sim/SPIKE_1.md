@@ -5,7 +5,7 @@ got tangled in the legacy engine — market-driven rollout divergence,
 the lot model + tax classification, federal + CA year-tax math with
 quarterly + year-end timing, and due-now liquidity/settlement.
 Validates
-the event-log-canonical / polars-vectorized architecture at scale.
+the event-log-canonical / dense-array architecture at scale.
 
 See <REQUIREMENTS.md> for the full target spec and <DESIGN.md> for
 the structural plan.
@@ -97,7 +97,7 @@ One tax-paying agent (Alice, single filer, located `"san_francisco"`):
 
 1. **Architecture proven.** The event log is canonical;
    `apply_events` is the single state-mutation point; every phase
-   of `step_emit_events` is polars expressions over the rollout
+   of `step_emit_events` is dense-array operations over the rollout
    column with no Python rollout loop.
 2. **Replay invariant holds.** For every M,
    `state_at(M).event_sourced == apply_events(initial,
@@ -145,7 +145,7 @@ build later-commit infrastructure.
    loop with one rollout. Alice gives Bob \$5 test.
 2. **L2.1-2.2** — multi-month loop, recurring transfer (paycheck
    arriving each month as repeated Transfer events).
-3. **L3.1-3.3** — rollout dimension scales from 1 to N as a polars
+3. **L3.1-3.3** — rollout dimension scales from 1 to N as a NumPy-backed tables
    column. Multi-rollout tests; assert at 1k rollouts.
 4. **L4 lots part A** — `asset_lots` schema, `AssetPurchase` +
    `AssetSale` events with FIFO lot consumption, lot-disposition

@@ -77,6 +77,7 @@ ASSET_LOT_SCHEMA = pl.Schema(
         "rollout_index": pl.Int64(),
         "lot_id": pl.Utf8(),
         "agent_id": pl.Utf8(),
+        "account_id": pl.Utf8(),
         "asset_id": pl.Utf8(),
         "purchase_month_index": pl.Int64(),
         "cost_basis_per_unit_usd": pl.Float64(),

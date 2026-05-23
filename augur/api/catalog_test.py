@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 import pytest_bazel
+from more_itertools import one
 
-from augur.api.backend import Backend, BackendRuntimeConfig
 from augur.api.catalog import build_bootstrap_payload
 from augur.api.config import (
     AgentDefinition,
@@ -21,6 +21,7 @@ from augur.api.config import (
 from augur.api.finance import ConcentratedHoldingSnapshot, FinanceSnapshot
 from augur.api.local_regulation import LocalRegulation
 from augur.api.scenario_set import ActorRole, ScenarioSet, TaxRegime
+from augur.api.scenario_set_service import ScenarioSetService
 from augur.model.exogenous_provider_config import SimpleExogenousProviderConfig
 from augur.model.testing import DeterministicSeriesFixtureModel
 
@@ -193,8 +194,21 @@ def _config(
     )
 
 
+def _scenario_set_service(
+    properties_path: Path, exogenous_model: DeterministicSeriesFixtureModel
+) -> ScenarioSetService:
+    config = _config(properties_path)
+    bootstrap = build_bootstrap_payload(config)
+    return ScenarioSetService(
+        portfolio=config.portfolio,
+        exogenous_model=exogenous_model,
+        properties_by_id={property_.id: property_ for property_ in bootstrap.properties},
+        locations_by_id={location.id: location for location in bootstrap.locations},
+    )
+
+
 def _property_by_id(bootstrap, property_id: str):
-    return next(property_ for property_ in bootstrap.properties if property_.id == property_id)
+    return one(property_ for property_ in bootstrap.properties if property_.id == property_id)
 
 
 def test_bootstrap_locations_default_to_loaded_property_source(tmp_path: Path) -> None:
@@ -212,7 +226,7 @@ def test_bootstrap_san_francisco_location_carries_modeled_tax_defaults(tmp_path:
     _write_builtin_properties(properties_path)
 
     bootstrap = build_bootstrap_payload(_config(properties_path))
-    location = next(loc for loc in bootstrap.locations if loc.id == "san_francisco_ca")
+    location = one(loc for loc in bootstrap.locations if loc.id == "san_francisco_ca")
 
     assert location.label == "San Francisco, CA"
     assert location.city == "San Francisco"
@@ -225,10 +239,7 @@ def test_backend_applies_location_tax_defaults_to_scenario(
 ) -> None:
     properties_path = tmp_path / "properties.json"
     _write_builtin_properties(properties_path)
-    backend = Backend(
-        augur_config=_config(properties_path),
-        runtime_config=BackendRuntimeConfig(exogenous_model=deterministic_exogenous_model),
-    )
+    service = _scenario_set_service(properties_path, deterministic_exogenous_model)
     request = {
         "scenario_set_id": "tax_defaults",
         "title": "Tax defaults",
@@ -245,7 +256,7 @@ def test_backend_applies_location_tax_defaults_to_scenario(
         ],
     }
 
-    scenario_set = backend._scenario_set_with_catalog_defaults(ScenarioSet.model_validate(request))
+    scenario_set = service.with_catalog_defaults(ScenarioSet.model_validate(request))
     scenario = scenario_set.scenarios[0]
 
     assert scenario.property_selection.tax_regime is TaxRegime.SAN_FRANCISCO_SECURED_PROPERTY_TAX
@@ -259,10 +270,7 @@ def test_backend_rejects_scenario_property_location_mismatch(
 ) -> None:
     properties_path = tmp_path / "properties.json"
     _write_builtin_properties(properties_path)
-    backend = Backend(
-        augur_config=_config(properties_path),
-        runtime_config=BackendRuntimeConfig(exogenous_model=deterministic_exogenous_model),
-    )
+    service = _scenario_set_service(properties_path, deterministic_exogenous_model)
     request = {
         "scenario_set_id": "mismatch",
         "title": "Property/location mismatch",
@@ -282,7 +290,7 @@ def test_backend_rejects_scenario_property_location_mismatch(
     }
 
     with pytest.raises(ValueError, match=r"property/location mismatch.*sf_with_wrong_location"):
-        backend.run_scenario_set_for_request_body(request)
+        service.run_for_request_body(request)
 
 
 def test_bootstrap_applies_public_property_asset_urls(tmp_path: Path) -> None:

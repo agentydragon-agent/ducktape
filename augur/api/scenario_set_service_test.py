@@ -1,24 +1,38 @@
 from __future__ import annotations
 
+from typing import cast
+
 import pytest_bazel
 
-from augur.api.backend import Backend, BackendRuntimeConfig
 from augur.api.casing import plain_json
+from augur.api.catalog import build_bootstrap_payload
 from augur.api.config import load_augur_config
 from augur.api.scenario_set import RolloutStatusType
+from augur.api.scenario_set_service import ScenarioSetService
+from augur.api.schemas import Frame
 from augur.model.simple_exogenous import SimpleExogenousModel
 from util.bazel.runfiles import get_required_path
 
 
-def test_backend_runs_joint_model_and_materializes_graph_tables() -> None:
-    backend = Backend(
-        augur_config=load_augur_config(get_required_path("_main/augur/api/testdata/config.yaml")),
-        runtime_config=BackendRuntimeConfig(
-            exogenous_model=SimpleExogenousModel(current_private_equity_price_usd=25.0)
-        ),
+def _floats(frame: Frame, column: str) -> list[float]:
+    return cast(list[float], frame[column])
+
+
+def _service() -> ScenarioSetService:
+    config = load_augur_config(get_required_path("_main/augur/api/testdata/config.yaml"))
+    bootstrap = build_bootstrap_payload(config)
+    return ScenarioSetService(
+        portfolio=config.portfolio,
+        exogenous_model=SimpleExogenousModel(current_private_equity_price_usd=25.0),
+        properties_by_id={property_.id: property_ for property_ in bootstrap.properties},
+        locations_by_id={location.id: location for location in bootstrap.locations},
     )
 
-    response = backend.run_scenario_set_for_request_body(
+
+def test_scenario_set_service_runs_joint_model_and_materializes_graph_tables() -> None:
+    service = _service()
+
+    response = service.run_for_request_body(
         {
             "scenario_set_id": "backend_smoke",
             "title": "Backend smoke",
@@ -88,13 +102,13 @@ def test_backend_runs_joint_model_and_materializes_graph_tables() -> None:
         response.projection_run.scenario_input_ids[0]
     }
     assert result.monthly_columns is not None
-    assert result.monthly_columns.row_count == 12
+    assert len(result.monthly_columns["month_index"]) == 12
     assert result.terminal_columns is not None
-    assert result.terminal_columns.row_count == 3
-    assert result.metric_fan_columns["net_worth_usd"].row_count == 4
-    assert "p05" in result.metric_fan_columns["net_worth_usd"].columns
-    assert "p95" in result.metric_fan_columns["net_worth_usd"].columns
-    assert sum(result.monthly_columns.columns["generic_sp500_sale_usd"]) > 0
+    assert len(result.terminal_columns["rollout_index"]) == 3
+    assert len(result.metric_fan_columns["net_worth_usd"]["month_index"]) == 4
+    assert "p05" in result.metric_fan_columns["net_worth_usd"]
+    assert "p95" in result.metric_fan_columns["net_worth_usd"]
+    assert sum(_floats(result.monthly_columns, "generic_sp500_sale_usd")) > 0
     assert [status.status for status in result.rollout_statuses] == [RolloutStatusType.ACTIVE] * 3
 
     payload = plain_json(response)
@@ -102,19 +116,14 @@ def test_backend_runs_joint_model_and_materializes_graph_tables() -> None:
     assert len(payload["exogenous_paths"]) == 3
     scenario_payload = payload["scenario_results"][0]
     assert len(scenario_payload["projection_trajectories"]) == 3
-    assert scenario_payload["metric_fan_columns"]["net_worth_usd"]["row_count"] == 4
-    assert scenario_payload["monthly_columns"]["row_count"] == 12
+    assert len(scenario_payload["metric_fan_columns"]["net_worth_usd"]["month_index"]) == 4
+    assert len(scenario_payload["monthly_columns"]["month_index"]) == 12
 
 
-def test_backend_accepts_catalog_defaulted_property_selection() -> None:
-    backend = Backend(
-        augur_config=load_augur_config(get_required_path("_main/augur/api/testdata/config.yaml")),
-        runtime_config=BackendRuntimeConfig(
-            exogenous_model=SimpleExogenousModel(current_private_equity_price_usd=25.0)
-        ),
-    )
+def test_scenario_set_service_accepts_catalog_defaulted_property_selection() -> None:
+    service = _service()
 
-    response = backend.run_scenario_set_for_request_body(
+    response = service.run_for_request_body(
         {
             "scenario_set_id": "backend_property_smoke",
             "title": "Backend property smoke",
@@ -146,16 +155,16 @@ def test_backend_accepts_catalog_defaulted_property_selection() -> None:
     assert result.summary.property_id == "location_a_property"
     assert result.summary.location_id == "location_a"
     assert result.monthly_columns is not None
-    columns = result.monthly_columns.columns
-    assert max(columns["property_value_usd"]) == 900_000.0
-    assert max(columns["mortgage_balance_usd"]) == 720_000.0
-    assert sum(columns["purchase_closing_cost_usd"]) == 67_500.0
-    assert sum(columns["mortgage_payment_usd"]) > 0
-    assert sum(columns["mortgage_interest_usd"]) > 0
-    assert sum(columns["mortgage_principal_usd"]) > 0
-    assert max(columns["home_equity_usd"]) > 180_000.0
+    monthly = result.monthly_columns
+    assert max(_floats(monthly, "property_value_usd")) == 900_000.0
+    assert max(_floats(monthly, "mortgage_balance_usd")) == 720_000.0
+    assert sum(_floats(monthly, "purchase_closing_cost_usd")) == 67_500.0
+    assert sum(_floats(monthly, "mortgage_payment_usd")) > 0
+    assert sum(_floats(monthly, "mortgage_interest_usd")) > 0
+    assert sum(_floats(monthly, "mortgage_principal_usd")) > 0
+    assert max(_floats(monthly, "home_equity_usd")) > 180_000.0
     assert result.terminal_columns is not None
-    assert result.terminal_columns.row_count == 3
+    assert len(result.terminal_columns["rollout_index"]) == 3
 
 
 if __name__ == "__main__":

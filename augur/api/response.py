@@ -22,7 +22,7 @@ from augur.api.scenario_set import (
     ScenarioSet,
     ScenarioSetRunResponse,
 )
-from augur.api.schemas import ColumnarTable
+from augur.api.schemas import Frame
 from augur.model.provenance import stable_identity_digest
 from augur.model.series import PRIVATE_EQUITY_SERIES_PREFIX, SP500_SERIES_ID
 from augur.sim.run import SimulationRun
@@ -626,11 +626,11 @@ def _empty_metrics(*names: str) -> pl.DataFrame:
     )
 
 
-def _metric_fan_columns(monthly_frame: pl.DataFrame) -> dict[str, ColumnarTable]:
+def _metric_fan_columns(monthly_frame: pl.DataFrame) -> dict[str, Frame]:
     return {metric: _fan_columns(monthly_frame, metric) for metric in _FAN_METRIC_NAMES}
 
 
-def _fan_columns(monthly_frame: pl.DataFrame, metric: str) -> ColumnarTable:
+def _fan_columns(monthly_frame: pl.DataFrame, metric: str) -> Frame:
     rollout_count = monthly_frame.get_column("rollout_index").n_unique()
     month_count = monthly_frame.get_column("month_index").n_unique()
     matrix = (
@@ -642,16 +642,13 @@ def _fan_columns(monthly_frame: pl.DataFrame, metric: str) -> ColumnarTable:
     )
     month_index = np.arange(month_count, dtype="int64")
     percentile_values = np.quantile(matrix, _FAN_QUANTILE_LEVELS, axis=0, method="linear")
-    columns: dict[str, list[Any]] = {
-        "month_index": month_index.tolist(),
-        "year": (month_index / MONTHS_PER_YEAR).tolist(),
-    }
+    columns: Frame = {"month_index": month_index.tolist(), "year": (month_index / MONTHS_PER_YEAR).tolist()}
     for index, percentile in enumerate(_FAN_PERCENTILES):
         columns[f"p{percentile:02d}"] = percentile_values[index].tolist()
-    return ColumnarTable(row_count=month_count, columns=columns)
+    return columns
 
 
-def _terminal_columns(monthly_frame: pl.DataFrame) -> ColumnarTable:
+def _terminal_columns(monthly_frame: pl.DataFrame) -> Frame:
     metric_names = tuple(metric for metric in ReportMetric if metric is not ReportMetric.MONTH_INDEX)
     terminal_metric_columns = [f"final_{metric}" for metric in metric_names] + [
         f"total_{metric}" for metric in metric_names
@@ -726,5 +723,5 @@ def _failure_summary_by_rollout(run: SimulationRun) -> dict[int, dict[str, Any]]
     }
 
 
-def _columnar(frame: pl.DataFrame) -> ColumnarTable:
-    return ColumnarTable(row_count=frame.height, columns=frame.to_dict(as_series=False))
+def _columnar(frame: pl.DataFrame) -> Frame:
+    return frame.to_dict(as_series=False)

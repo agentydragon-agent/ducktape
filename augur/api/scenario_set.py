@@ -7,7 +7,7 @@ from pydantic import Field, NonNegativeFloat, NonNegativeInt, PositiveFloat, Pos
 
 from augur.api.accounting import LiabilityState, LotDisposition, TaxLot
 from augur.api.local_regulation import LocalRegulation, TaxRegime
-from augur.api.schemas import ApiModel, ColumnarTable, Percentage
+from augur.api.schemas import ApiModel, Frame, Percentage
 
 
 class EventType(StrEnum):
@@ -1103,9 +1103,9 @@ class ScenarioResult(ApiModel):
     summary: ScenarioAcceptedSummary
     projection_trajectories: tuple[ProjectionTrajectoryIdentity, ...] = ()
     rollout_statuses: tuple[RolloutStatus, ...] = ()
-    metric_fan_columns: dict[str, ColumnarTable] = Field(default_factory=dict)
-    monthly_columns: ColumnarTable | None = None
-    terminal_columns: ColumnarTable | None = None
+    metric_fan_columns: dict[str, Frame] = Field(default_factory=dict)
+    monthly_columns: Frame | None = None
+    terminal_columns: Frame | None = None
     effects: tuple[Effect, ...] = ()
     policy_decisions: tuple[PolicyDecision, ...] = ()
     exogenous_observations: tuple[ExogenousObservation, ...] = ()

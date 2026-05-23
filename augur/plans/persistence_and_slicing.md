@@ -8,7 +8,7 @@ synchronously: ~25 MB per scenario at 128 × 360 with the gated default
 gaffer-private 15-scenario workload that scales to ~8 GB at response-build
 time, which OOM-killed the 4 GiB-limit augur container even after today's
 trace-storage refactors (which reduced _in-memory_ trace from ~3 GB Pydantic
-to ~5 MB polars per scenario, but didn't touch the response wire).
+to ~5 MB NumPy-backed tables per scenario, but didn't touch the response wire).
 
 The four `include_*` gates landed in `96537e7d` knock the _default_ response
 down to chart-essential surfaces. That fixes the OOM but leaves three
@@ -53,7 +53,7 @@ frames, stored either:
 - **In-process LRU** (simplest; sized to the container memory budget),
   invalidated on pod restart. Sufficient for "user changes one knob, hits
   run again 10 s later."
-- **On-disk** under `/var/lib/augur/runs/<key>.parquet` per polars frame
+- **On-disk** under `/var/lib/augur/runs/<key>.parquet` per NumPy-backed tables frame
   (already an Arrow-native format), and Pydantic-tuple fields serialized
   alongside. Survives pod restart, good for shared workspaces.
 - **Object storage** (S3-compatible) for cross-pod sharing if/when augur
@@ -90,7 +90,7 @@ GET /api/runs/<run_id>/scenarios/<scenario_id>/event_stream/<name>
       blow up the response
 ```
 
-The slice routes return the in-memory polars columns directly through the
+The slice routes return the in-memory NumPy-backed tables columns directly through the
 existing `ColumnarTable` shape, so the frontend's existing renderers keep
 working with no schema change beyond URL routing.
 

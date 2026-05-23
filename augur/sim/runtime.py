@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import polars as pl
-
 from augur.sim.jurisdictions import Jurisdiction, load_jurisdiction
 from augur.sim.locations import Location, load_location
 from augur.sim.scenario import Scenario
@@ -69,17 +67,3 @@ def capital_gain_classification(month_index: int, purchase_month_index: int) -> 
 
 def is_long_term_capital_gain(month_index: int, purchase_month_index: int) -> bool:
     return month_index - purchase_month_index >= 12
-
-
-def long_term_capital_gain_expr(month_index: int, purchase_month_column: str = "purchase_month_index") -> pl.Expr:
-    return (pl.lit(month_index) - pl.col(purchase_month_column)) >= 12
-
-
-def capital_gain_classification_expr(
-    month_index_column: str = "month_index", purchase_month_column: str = "purchase_month_index"
-) -> pl.Expr:
-    return (
-        pl.when(pl.col(month_index_column) - pl.col(purchase_month_column) >= 12)
-        .then(pl.lit(LONG_TERM_CAPITAL_GAIN))
-        .otherwise(pl.lit(SHORT_TERM_CAPITAL_GAIN))
-    )

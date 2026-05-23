@@ -11,7 +11,7 @@ from augur.api.bootstrap import BootstrapResponse
 from augur.api.browser_state import BrowserScenarioSetInput, BrowserScenarioSetInputOverrides
 from augur.api.scenario_set import ScenarioSet, ScenarioSetRunResponse
 from augur.product.portfolio import ProductPortfolioResponse
-from augur.product.projection import MetricFanRequest, MetricFanResponse, RolloutRequest, RolloutResponse
+from augur.product.wire import MetricFanRequest, MetricFanResponse, RolloutRequest, RolloutResponse
 
 
 def create_schema_app() -> FastAPI:

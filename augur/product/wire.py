@@ -6,7 +6,7 @@ from typing import Annotated, Literal
 
 from pydantic import Field, NonNegativeFloat, NonNegativeInt, PositiveFloat, PositiveInt
 
-from augur.api.schemas import ApiModel, ColumnarTable, Percentage
+from augur.api.schemas import ApiModel, Frame, Percentage
 
 SpendIndex = Literal["none", "inflation"]
 SellableBucket = Literal["public_securities"]
@@ -56,9 +56,7 @@ class TerminalMetrics(ApiModel):
 
 class _RolloutEventBase(ApiModel):
     month_index: NonNegativeInt
-    label: str
     amount_usd: NonNegativeFloat
-    detail: str = ""
 
 
 class PublicSecuritySaleEvent(_RolloutEventBase):
@@ -113,7 +111,7 @@ type RolloutEvent = Annotated[
 class RolloutOutput(ApiModel):
     seed: NonNegativeInt
     failed: bool
-    monthly_metrics: ColumnarTable
+    monthly_metrics: Frame
     terminal_metrics: TerminalMetrics
     events: tuple[RolloutEvent, ...] = ()
 
@@ -129,8 +127,8 @@ class RolloutSummary(ApiModel):
 class MetricFanResponse(ApiModel):
     exogenous_model_id: str
     metric: MetricName
-    monthly_metric_fan: ColumnarTable
-    terminal_metric_percentiles: ColumnarTable
+    monthly_metric_fan: Frame
+    terminal_metric_percentiles: Frame
     rollout_summaries: tuple[RolloutSummary, ...]
     failed_count: NonNegativeInt
     diagnostics: tuple[str, ...] = ()

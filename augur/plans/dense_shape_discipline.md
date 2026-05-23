@@ -1,15 +1,16 @@
-# Numba Simulator Shape Discipline Plan
+# Dense Simulator Shape Discipline Plan
 
-Status: first refactor pass applied.
+Status: first refactor pass applied. The next simulator-core direction is the
+rollout-axis tensorization plan in `augur/plans/tensorized_simulator.md`.
 
 Implemented:
 
 - `SlotPlan` records the compiled dense dimensions in
-  `augur/sim/numba/compiler.py`.
+  `augur/sim/compiler.py`.
 - `SimulationBuffers` now groups state history and event buffers by semantic
-  family in `augur/sim/numba/engine.py`.
+  family in `augur/sim/engine.py`.
 - `_allocate_buffers()` documents buffer shapes using the notation below and
-  validates all output buffers before invoking the Numba kernel.
+  validates all output buffers before invoking the dense engine.
 - Scheduled and liquidity lot-disposition buffers use semantic axes instead of
   flattened sale/policy/asset/lot slots.
 
@@ -17,11 +18,11 @@ Remaining follow-up:
 
 - Product metric fans still build a full `SimulationRun` before projecting
   metrics. The product service avoids selected-rollout event materialization,
-  but a future native Numba product path could read dense state buffers directly
+  but a future native dense product path could read dense state buffers directly
   and decode event tables only for selected rollout detail.
 
 This plan records the discipline we want before adding much more economic
-surface area to the Numba simulator. The current dense-array strategy is a good
+surface area to the dense simulator. The current dense-array strategy is a good
 fit for Augur: the simulation state is fixed-size for a compiled scenario, and
 the human-readable event streams have computable upper bounds. The refactor goal
 is not to switch frameworks or introduce ragged runtime data structures. The
@@ -30,19 +31,16 @@ or event kinds is mechanical and hard to mis-wire.
 
 ## Current Model
 
-The Numba backend has three conceptual layers:
+The dense backend has three conceptual layers:
 
-1. `augur/sim/numba/compiler.py` converts object-heavy scenario data into
+1. `augur/sim/compiler.py` converts object-heavy scenario data into
    dense numeric arrays: interned string codes, account slots, lot slots,
    monthly transfer/obligation slots, external series cubes, tax bracket
    arrays, and policy arrays.
-2. `augur/sim/numba/kernels.py` runs one mutable current state per rollout.
-   The current state is local to the rollout loop: cash balances, remaining
-   lots, YTD income, tax liabilities, property state, liability state, and
-   failure state. It writes snapshots and bounded event records into output
-   arrays.
-3. `augur/sim/numba/engine.py` allocates output buffers, invokes the kernel,
-   and decodes active output slots back into Polars `SimulationRun` frames.
+2. `augur/sim/engine.py` owns explicit `[R, ...]` current-state buffers and
+   applies month phases over the rollout axis.
+3. `augur/sim/engine.py` allocates output buffers, runs the phase driver, and
+   decodes active output slots back into NumPy-backed `SimulationRun` frames.
 
 Variable-length event streams are currently represented as dense buffers plus
 active masks. That is the desired broad shape. The rough edges are that shape
@@ -81,14 +79,14 @@ example:
 ## Principles
 
 - State arrays model what determines the next month. They are fixed for a
-  compiled scenario and are mutated in the kernel.
+  compiled scenario and are mutated by engine phases.
 - Event arrays model what happened for human inspection and replay tests. They
   are bounded projections of transitions and should be active-mask encoded.
 - Prefer semantic axes over flattened indices when an event is naturally
   multidimensional.
 - Keep shape ownership close to allocation and decode. Decoder loops should
   consume named shapes, not rediscover flattening math.
-- Validate compiled shapes once before calling Numba. Shape mismatch should be a
+- Validate compiled shapes once before running the dense engine. Shape mismatch should be a
   Python-side error, not silent corrupted output.
 - Do not introduce static shape-typing libraries for this slice. NumPy typing
   is useful for dtypes, but runtime validation and named buffer groups are more
@@ -126,7 +124,7 @@ dimensions have one named source of truth.
 ### 2. Split Buffer Groups
 
 Replace the single `_Buffers` bag with grouped dataclasses in
-`augur/sim/numba/engine.py`.
+`augur/sim/engine.py`.
 
 Suggested groups:
 
@@ -140,8 +138,8 @@ Suggested groups:
 - `PropertyEventBuffers`: property purchase transfers and mortgage originations.
 - `SimulationBuffers`: top-level grouping passed through allocation/decode.
 
-Keep kernel signatures pragmatic. It is acceptable for `simulate_with_external_series_numba()`
-to pass raw arrays into Numba while Python-side code owns named groups.
+Keep phase signatures pragmatic. It is acceptable for `simulate_with_external_series_dense()`
+to pass raw arrays through the engine while Python-side code owns named groups.
 
 ### 3. Document Shapes At Allocation
 
@@ -161,13 +159,13 @@ transfer_active=np.zeros((H, T, R), dtype=np.bool_)
 ### 4. Add Runtime Shape Validation
 
 Each buffer group should expose a `validate(plan: SlotPlan) -> None` method.
-Call validation immediately after allocation and before the kernel invocation.
+Call validation immediately after allocation and before the phase driver.
 
 Validation should assert:
 
 - expected shape for every array;
 - dtype for masks, codes, and numeric arrays;
-- no zero-sized dimensions where the kernel expects `max(1, ...)`;
+- no zero-sized dimensions where phase code expects `max(1, ...)`;
 - matching active/value shapes inside each event group.
 
 Use normal exceptions, not bare `assert`, so validation is not affected by
@@ -194,7 +192,7 @@ liquidity_lot_basis[H, Q, A, L, R]
 liquidity_lot_proceeds[H, Q, A, L, R]
 ```
 
-The kernel can then write using semantic indices instead of calculating
+The engine can then write using semantic indices instead of calculating
 `offset + lot`. The decoder can iterate the same axes and no longer reverse
 flattened slot math.
 
@@ -202,8 +200,8 @@ flattened slot math.
 
 Product metric-fan requests should not decode human event tables. The current
 product path already avoids selected-rollout event detail for metric fans, but
-the Numba engine still decodes a full `SimulationRun` before product metrics are
-projected. Keep a follow-up path open for native Numba product metrics that
+the dense engine still decodes a full `SimulationRun` before product metrics are
+projected. Keep a follow-up path open for native dense product metrics that
 reads dense state buffers directly and decodes events only for selected rollout
 detail.
 
@@ -215,8 +213,8 @@ state and event groups instead of depending on a monolithic `_Buffers` layout.
 Every refactor step should keep these green:
 
 ```bash
-bazelisk test //augur/sim:simulate_test //augur/sim:simulate_numba_test
-bazelisk test //augur/product:projection_service_test //augur/product:projection_service_numba_test
+bazelisk test //augur/sim:simulate_test
+bazelisk test //augur/product:projection_fan_test
 ```
 
 Before landing a shape-discipline slice, run:
@@ -231,11 +229,12 @@ browser/visual goldens in the same commit and rerun the full Augur suite.
 ## Non-Goals
 
 - Do not switch the simulator to TensorFlow, PyTorch, JAX, or a ragged-array
-  framework for this work.
+  framework as part of this shape-discipline cleanup. The tensorization plan may
+  evaluate JAX or PyTorch for specific gather/scatter/sort-heavy phases if NumPy
+  is not ergonomic or fast enough.
 - Do not add static shape typing libraries unless they prove useful in a small
   isolated experiment. Runtime validation plus named dimensions is the default.
-- Do not change simulator semantics while refactoring shapes. The paired Polars
-  and Numba simulator/product tests are the guardrail.
+- Do not change simulator semantics while refactoring shapes. The shared simulator/product API tests are the guardrail.
 - Do not make event tables mandatory for metric-fan requests. Human event decode
   remains an on-demand selected-rollout concern.
 
@@ -243,10 +242,10 @@ browser/visual goldens in the same commit and rerun the full Augur suite.
 
 This plan is complete when:
 
-- every Numba buffer allocation has documented dimensions;
+- every dense buffer allocation has documented dimensions;
 - a `SlotPlan` or equivalent owns all max slot counts and semantic dimensions;
 - buffer groups separate state history from typed event families;
-- shape validation runs before the kernel;
+- shape validation runs before the simulation phase driver;
 - scheduled and liquidity lot-disposition buffers use semantic axes instead of
   flattened `slot = outer * lot_count + lot` math;
 - product metric fans still avoid selected-rollout event materialization; and

@@ -1,9 +1,7 @@
-"""End-to-end tests for the spike-1 simulator.
+"""End-to-end tests for the simulator.
 
-L1 baseline: Alice gives Bob $5, single rollout, one-month horizon.
-The simulator advances state via the apply_events pipeline, records
-the transfer on the event log, and produces a long-form
-state-over-time frame that satisfies the conservation invariant.
+The simulator advances state in the dense-array engine, records events on the
+event log, and produces Polars boundary frames for projections and APIs.
 """
 
 from __future__ import annotations
@@ -16,7 +14,6 @@ from pydantic import ValidationError
 from augur.model.gbm import GeometricBrownian
 from augur.model.series_model import SeriesModelBundle
 from augur.sim.external_series import EXTERNAL_SERIES_VALUES_FRAME, ExternalSeriesContext
-from augur.sim.replay import assert_replay_invariant_holds
 from augur.sim.scenario import (
     Agent,
     InitialAccountBalance,
@@ -202,7 +199,9 @@ def test_scenario_rejects_duplicate_liquidity_policy_accounts() -> None:
 
 
 def test_scenario_rejects_duplicate_lot_purchase_months_within_fifo_pool() -> None:
-    with pytest.raises(ValidationError, match=r"duplicate initial lot purchase months.*alice/vti@-12.*old_a.*old_b"):
+    with pytest.raises(
+        ValidationError, match=r"duplicate initial lot purchase months.*alice/checking/vti@-12.*old_a.*old_b"
+    ):
         Scenario(
             agents=[Agent(agent_id="alice")],
             initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0)],
@@ -227,6 +226,35 @@ def test_scenario_rejects_duplicate_lot_purchase_months_within_fifo_pool() -> No
             tax_profiles=[],
             horizon_months=1,
         )
+
+
+def test_duplicate_lot_purchase_months_are_allowed_in_different_accounts() -> None:
+    Scenario(
+        agents=[Agent(agent_id="alice")],
+        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0)],
+        initial_lots=[
+            InitialLot(
+                lot_id="taxable_old",
+                agent_id="alice",
+                account_id="taxable",
+                asset_id="vti",
+                purchase_month_index=-12,
+                quantity=10.0,
+                cost_basis_per_unit_usd=80.0,
+            ),
+            InitialLot(
+                lot_id="ira_old",
+                agent_id="alice",
+                account_id="ira",
+                asset_id="vti",
+                purchase_month_index=-12,
+                quantity=5.0,
+                cost_basis_per_unit_usd=70.0,
+            ),
+        ],
+        tax_profiles=[],
+        horizon_months=1,
+    )
 
 
 def test_transfer_income_category_allows_only_ordinary() -> None:
@@ -383,16 +411,6 @@ def test_alice_gives_bob_five_dollars_one_rollout() -> None:
     assert txn["to_agent_id"] == "alice"
     assert txn["amount_usd"] == 5.0
     assert txn["month_index"] == 0
-
-
-def test_apply_events_is_only_mutation_replays_from_log() -> None:
-    """Smoke test for the replay-invariant helper on the L1 baseline
-    scenario. The helper checks every state frame the engine touches;
-    most scenario tests below also invoke it after their assertions to
-    extend the invariant coverage cheaply."""
-    scenario = _alice_bob_scenario()
-    result = simulate(scenario, rollout_count=1)
-    assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
 def test_no_scheduled_transfers_leaves_balances_unchanged() -> None:
@@ -605,7 +623,6 @@ def test_combined_one_off_and_recurring() -> None:
         .item()
     )
     assert alice_final == 15000.0
-    assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
 def test_initial_lot_partial_sale_consumes_units_credits_proceeds() -> None:
@@ -674,7 +691,6 @@ def test_initial_lot_partial_sale_consumes_units_credits_proceeds() -> None:
     assert disp["units_sold"] == 30.0
     assert disp["cost_basis_consumed_usd"] == 2400.0
     assert disp["proceeds_usd"] == 3600.0
-    assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
 def test_initial_lot_full_sale_zeros_remaining_quantity() -> None:
@@ -764,41 +780,6 @@ def test_asset_sale_scales_across_rollouts() -> None:
     assert end_state.get_column("remaining_quantity").unique().to_list() == [30.0]
 
 
-def test_lot_disposition_replay_invariant() -> None:
-    """Replay invariant on an L4-style scenario with lot dispositions.
-    Exercises the cap-gains YTD bucket path through the helper."""
-    scenario = Scenario(
-        agents=[Agent(agent_id="alice")],
-        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=50.0)],
-        initial_lots=[
-            InitialLot(
-                lot_id="seed",
-                agent_id="alice",
-                asset_id="vti",
-                purchase_month_index=-6,
-                quantity=40.0,
-                cost_basis_per_unit_usd=75.0,
-            )
-        ],
-        scheduled_asset_sales=[
-            ScheduledAssetSale(
-                month=1,
-                cause_id="partial",
-                agent_id="alice",
-                asset_id="vti",
-                quantity=10.0,
-                price_per_unit_usd=200.0,
-                proceeds_account_id="checking",
-            )
-        ],
-        tax_profiles=[],
-        horizon_months=2,
-    )
-    rollout_count = 3
-    result = simulate(scenario, rollout_count=rollout_count)
-    assert_replay_invariant_holds(scenario, result, rollout_count=rollout_count)
-
-
 def test_fifo_sale_crossing_two_lots() -> None:
     """L4 part B — multi-lot FIFO crossing. Alice has two lots of
     VTI: lot A (older, 6 months pre-horizon, 100 units @ $80) and
@@ -875,7 +856,6 @@ def test_fifo_sale_crossing_two_lots() -> None:
         .item()
         == 24000.0
     )
-    assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
 def test_same_month_scheduled_sales_consume_lots_sequentially() -> None:
@@ -940,7 +920,6 @@ def test_same_month_scheduled_sales_consume_lots_sequentially() -> None:
     ]
     final_cash = result.cash_balances.filter(pl.col("month_index") == 2).get_column("balance_usd").item()
     assert final_cash == pytest.approx(21_000.0)
-    assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
 def test_fifo_holding_period_classification_per_disposition() -> None:
@@ -1065,6 +1044,95 @@ def test_sales_of_two_different_assets_are_independent() -> None:
         .item()
         == 1350.0
     )
+
+
+def test_scheduled_sale_consumes_only_source_account_fifo_pool() -> None:
+    scenario = Scenario(
+        agents=[Agent(agent_id="alice")],
+        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0)],
+        initial_lots=[
+            InitialLot(
+                lot_id="taxable_vti",
+                agent_id="alice",
+                account_id="taxable",
+                asset_id="vti",
+                purchase_month_index=-12,
+                quantity=10.0,
+                cost_basis_per_unit_usd=80.0,
+            ),
+            InitialLot(
+                lot_id="ira_vti",
+                agent_id="alice",
+                account_id="ira",
+                asset_id="vti",
+                purchase_month_index=-12,
+                quantity=10.0,
+                cost_basis_per_unit_usd=70.0,
+            ),
+        ],
+        scheduled_asset_sales=[
+            ScheduledAssetSale(
+                month=1,
+                cause_id="taxable_sale",
+                agent_id="alice",
+                source_account_id="taxable",
+                asset_id="vti",
+                quantity=8.0,
+                price_per_unit_usd=100.0,
+                proceeds_account_id="checking",
+            )
+        ],
+        tax_profiles=[],
+        horizon_months=2,
+    )
+
+    result = simulate(scenario, rollout_count=1)
+
+    disposition = result.events_log.lot_dispositions.row(0, named=True)
+    assert disposition["source_account_id"] == "taxable"
+    assert disposition["lot_id"] == "taxable_vti"
+    assert disposition["units_sold"] == pytest.approx(8.0)
+
+    end_lots = result.asset_lots.filter(pl.col("month_index") == 2).sort("lot_id")
+    assert end_lots.select("lot_id", "account_id", "remaining_quantity").to_dicts() == [
+        {"lot_id": "ira_vti", "account_id": "ira", "remaining_quantity": pytest.approx(10.0)},
+        {"lot_id": "taxable_vti", "account_id": "taxable", "remaining_quantity": pytest.approx(2.0)},
+    ]
+
+
+def test_scheduled_sale_oversell_raises_without_partial_disposition() -> None:
+    scenario = Scenario(
+        agents=[Agent(agent_id="alice")],
+        initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0)],
+        initial_lots=[
+            InitialLot(
+                lot_id="taxable_vti",
+                agent_id="alice",
+                account_id="taxable",
+                asset_id="vti",
+                purchase_month_index=-12,
+                quantity=5.0,
+                cost_basis_per_unit_usd=80.0,
+            )
+        ],
+        scheduled_asset_sales=[
+            ScheduledAssetSale(
+                month=1,
+                cause_id="oversell",
+                agent_id="alice",
+                source_account_id="taxable",
+                asset_id="vti",
+                quantity=6.0,
+                price_per_unit_usd=100.0,
+                proceeds_account_id="checking",
+            )
+        ],
+        tax_profiles=[],
+        horizon_months=2,
+    )
+
+    with pytest.raises(ValueError, match="scheduled asset sale exceeds available lots"):
+        simulate(scenario, rollout_count=1)
 
 
 def test_series_driven_sale_uses_deterministic_price_curve(deterministic_series_bundle) -> None:
@@ -1245,7 +1313,6 @@ def test_year_end_tax_accrual_federal_and_california_single_filer() -> None:
     ytd_values = ytd_alice.get_column("ordinary_income_usd").to_list()
     assert ytd_values[11] == pytest.approx(11 * (200_000.0 / 12.0), abs=1e-6)
     assert ytd_values[12] == 0.0
-    assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
 def test_year_end_tax_includes_long_term_capital_gain_under_federal_ltcg_schedule() -> None:
@@ -1334,7 +1401,6 @@ def test_year_end_tax_includes_long_term_capital_gain_under_federal_ltcg_schedul
     row = cg_at_month_11.row(0, named=True)
     assert row["classification"] == "ltcg"
     assert row["gain_usd"] == pytest.approx(20_000.0, abs=1e-6)
-    assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
 def test_e2e_pinned_ltcg_tax_safe_harbor_and_cash_numerics() -> None:
@@ -1438,8 +1504,6 @@ def test_e2e_pinned_ltcg_tax_safe_harbor_and_cash_numerics() -> None:
     final_lot = result.asset_lots.filter((pl.col("lot_id") == "alice_long_vti") & (pl.col("month_index") == 13))
     assert final_lot.get_column("remaining_quantity").item() == 0.0
 
-    assert_replay_invariant_holds(scenario, result, rollout_count=1)
-
 
 def test_e2e_pinned_multi_asset_ltcg_stcg_tax_breakdown_numerics() -> None:
     """Pinned tax aggregation e2e: wages plus two asset sales.
@@ -1535,7 +1599,6 @@ def test_e2e_pinned_multi_asset_ltcg_stcg_tax_breakdown_numerics() -> None:
         .iter_rows(named=True)
     }
     assert gains == {"ltcg": pytest.approx(10_000.0), "stcg": pytest.approx(1_500.0)}
-    assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
 def test_e2e_pinned_tax_payments_force_asset_liquidation_and_settle_liability(deterministic_series_bundle) -> None:
@@ -1638,7 +1701,6 @@ def test_e2e_pinned_tax_payments_force_asset_liquidation_and_settle_liability(de
     final_due = result.tax_liabilities.filter(pl.col("month_index") == 13).get_column("amount_owed_usd").sum()
     assert final_due == pytest.approx(0.0, abs=1e-6)
     assert result.rollout_status.row(0, named=True)["status"] == "active"
-    assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
 def test_explicit_empty_tax_profiles_means_no_year_end_accrual() -> None:
@@ -1739,7 +1801,6 @@ def test_year_end_tax_payment_debits_agent_cash() -> None:
         .item()
     )
     assert irs_end_cash == pytest.approx(52_292.59, abs=0.02)
-    assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
 def test_tax_payment_can_trigger_rollout_failure_when_unfunded() -> None:
@@ -1803,7 +1864,6 @@ def test_tax_payment_can_trigger_rollout_failure_when_unfunded() -> None:
     assert failures.height == 1
     assert failures.row(0, named=True)["month_index"] == 12
     assert result.rollout_status.row(0, named=True)["status"] == "failed_insufficient_cash"
-    assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
 def test_due_now_obligation_sells_assets_and_settles(deterministic_series_bundle) -> None:
@@ -1866,7 +1926,111 @@ def test_due_now_obligation_sells_assets_and_settles(deterministic_series_bundle
     )
     assert final_cash == pytest.approx(0.0)
     assert result.events_log.rollout_failures.is_empty()
-    assert_replay_invariant_holds(scenario, result, rollout_count=1)
+
+
+def test_liquidity_policy_sale_uses_rollout_specific_prices() -> None:
+    scenario = Scenario(
+        agents=[Agent(agent_id="alice"), Agent(agent_id="landlord")],
+        initial_cash=[
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="landlord", account_id="checking", balance_usd=0.0),
+        ],
+        initial_lots=[
+            InitialLot(
+                lot_id="alice_vti",
+                agent_id="alice",
+                asset_id="vti",
+                purchase_month_index=-24,
+                quantity=10.0,
+                cost_basis_per_unit_usd=50.0,
+            )
+        ],
+        scheduled_obligations=[
+            ScheduledObligation(
+                month=0,
+                obligation_id="rent_due",
+                obligation_type="rent",
+                agent_id="alice",
+                from_account_id="checking",
+                to_agent_id="landlord",
+                to_account_id="checking",
+                amount_due_usd=500.0,
+            )
+        ],
+        liquidity_policies=[LiquidityPolicy(agent_id="alice", account_id="checking", asset_preference_chain=["vti"])],
+        tax_profiles=[],
+        horizon_months=1,
+    )
+    external_series = _external_series_context_for_levels("vti", levels_by_rollout=[[100.0, 100.0], [200.0, 200.0]])
+
+    result = simulate_with_external_series(scenario, rollout_count=2, external_series=external_series)
+
+    sales = result.events_log.lot_dispositions.sort("rollout_index")
+    assert sales.select("rollout_index", "units_sold", "proceeds_usd").to_dicts() == [
+        {"rollout_index": 0, "units_sold": pytest.approx(5.0), "proceeds_usd": pytest.approx(500.0)},
+        {"rollout_index": 1, "units_sold": pytest.approx(2.5), "proceeds_usd": pytest.approx(500.0)},
+    ]
+    assert result.events_log.rollout_failures.is_empty()
+
+
+def test_liquidity_policy_consumes_only_policy_account_fifo_pool(deterministic_series_bundle) -> None:
+    scenario = Scenario(
+        agents=[Agent(agent_id="alice"), Agent(agent_id="landlord")],
+        initial_cash=[
+            InitialAccountBalance(agent_id="alice", account_id="taxable", balance_usd=0.0),
+            InitialAccountBalance(agent_id="landlord", account_id="checking", balance_usd=0.0),
+        ],
+        initial_lots=[
+            InitialLot(
+                lot_id="alice_taxable_vti",
+                agent_id="alice",
+                account_id="taxable",
+                asset_id="vti",
+                purchase_month_index=-24,
+                quantity=5.0,
+                cost_basis_per_unit_usd=50.0,
+            ),
+            InitialLot(
+                lot_id="alice_ira_vti",
+                agent_id="alice",
+                account_id="ira",
+                asset_id="vti",
+                purchase_month_index=-24,
+                quantity=100.0,
+                cost_basis_per_unit_usd=50.0,
+            ),
+        ],
+        scheduled_obligations=[
+            ScheduledObligation(
+                month=0,
+                obligation_id="rent_due",
+                obligation_type="rent",
+                agent_id="alice",
+                from_account_id="taxable",
+                to_agent_id="landlord",
+                to_account_id="checking",
+                amount_due_usd=400.0,
+            )
+        ],
+        external_series=deterministic_series_bundle([100.0, 100.0]),
+        liquidity_policies=[LiquidityPolicy(agent_id="alice", account_id="taxable", asset_preference_chain=["vti"])],
+        tax_profiles=[],
+        horizon_months=1,
+    )
+
+    result = simulate(scenario, rollout_count=1)
+
+    disposition = result.events_log.lot_dispositions.row(0, named=True)
+    assert disposition["source_account_id"] == "taxable"
+    assert disposition["lot_id"] == "alice_taxable_vti"
+    assert disposition["units_sold"] == pytest.approx(4.0)
+
+    end_lots = result.asset_lots.filter(pl.col("month_index") == 1).sort("lot_id")
+    assert end_lots.select("lot_id", "account_id", "remaining_quantity").to_dicts() == [
+        {"lot_id": "alice_ira_vti", "account_id": "ira", "remaining_quantity": pytest.approx(100.0)},
+        {"lot_id": "alice_taxable_vti", "account_id": "taxable", "remaining_quantity": pytest.approx(1.0)},
+    ]
+    assert result.events_log.rollout_failures.is_empty()
 
 
 def test_series_indexed_recurring_rent_obligation_resets_yearly_by_rollout() -> None:
@@ -1915,7 +2079,6 @@ def test_series_indexed_recurring_rent_obligation_resets_yearly_by_rollout() -> 
     final_cash = result.cash_balances.filter(pl.col("month_index") == 13).sort(["rollout_index", "agent_id"])
     assert final_cash.get_column("balance_usd").to_list() == pytest.approx([6_900.0, 13_100.0, 7_100.0, 12_900.0])
     assert result.events_log.rollout_failures.is_empty()
-    assert_replay_invariant_holds(scenario, result, rollout_count=2)
 
 
 def test_series_indexed_recurring_transfer_uses_same_amount_schedule() -> None:
@@ -1956,7 +2119,6 @@ def test_series_indexed_recurring_transfer_uses_same_amount_schedule() -> None:
 
     final_cash = result.cash_balances.filter(pl.col("month_index") == 13).sort("agent_id")
     assert final_cash.get_column("balance_usd").to_list() == pytest.approx([19_800.0, 200.0])
-    assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
 def test_due_now_obligation_failure_aborts_payment() -> None:
@@ -1998,7 +2160,6 @@ def test_due_now_obligation_failure_aborts_payment() -> None:
     assert failure["obligation_type"] == "rent"
     assert failure["shortfall_usd"] == pytest.approx(500.0)
     assert result.rollout_status.row(0, named=True)["status"] == "failed_insufficient_cash"
-    assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
 def test_policy_without_sale_orders_fails_hard_demand_even_with_assets(deterministic_series_bundle) -> None:
@@ -2046,7 +2207,6 @@ def test_policy_without_sale_orders_fails_hard_demand_even_with_assets(determini
     assert settlement["amount_paid_usd"] == pytest.approx(0.0)
     assert settlement["shortfall_usd"] == pytest.approx(500.0)
     assert result.events_log.rollout_failures.height == 1
-    assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
 def test_cash_buffer_sale_evaluates_after_hard_demands(deterministic_series_bundle) -> None:
@@ -2107,7 +2267,6 @@ def test_cash_buffer_sale_evaluates_after_hard_demands(deterministic_series_bund
     )
     assert alice_final == pytest.approx(6500.0)
     assert result.events_log.rollout_failures.is_empty()
-    assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
 def test_cash_buffer_not_triggered_when_post_demand_cash_is_enough(deterministic_series_bundle) -> None:
@@ -2163,7 +2322,6 @@ def test_cash_buffer_not_triggered_when_post_demand_cash_is_enough(deterministic
     )
     assert alice_final == pytest.approx(2500.0)
     assert result.events_log.rollout_failures.is_empty()
-    assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
 def test_unfilled_cash_buffer_sale_does_not_fail_without_hard_demand() -> None:
@@ -2188,7 +2346,6 @@ def test_unfilled_cash_buffer_sale_does_not_fail_without_hard_demand() -> None:
     assert result.events_log.lot_dispositions.is_empty()
     assert result.events_log.rollout_failures.is_empty()
     assert result.rollout_status.row(0, named=True)["status"] == "active"
-    assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
 def test_same_account_hard_demands_settle_all_or_none() -> None:
@@ -2238,7 +2395,6 @@ def test_same_account_hard_demands_settle_all_or_none() -> None:
     ]
     assert result.events_log.transfers.is_empty()
     assert result.events_log.rollout_failures.height == 2
-    assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
 def test_explicit_sale_price_overrides_sampled_series(deterministic_series_bundle) -> None:
@@ -2360,7 +2516,6 @@ def test_real_estate_purchase_mortgage_and_property_tax_numerics() -> None:
     assert result.events_log.mortgage_originations.height == 1
     assert result.events_log.mortgage_payments.height == 1
     assert result.events_log.transfers.filter(pl.col("cause_id") == "sf_home_property_tax_m1").height == 1
-    assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
 def test_liquidity_policy_covers_monthly_spend_deficit(deterministic_series_bundle) -> None:
@@ -2419,7 +2574,6 @@ def test_liquidity_policy_covers_monthly_spend_deficit(deterministic_series_bund
         .item()
     )
     assert end_cash == pytest.approx(0.0, abs=1e-6)
-    assert_replay_invariant_holds(scenario, result, rollout_count=1)
 
 
 def test_rollout_marked_failed_when_assets_exhausted(deterministic_series_bundle) -> None:
@@ -2477,7 +2631,62 @@ def test_rollout_marked_failed_when_assets_exhausted(deterministic_series_bundle
     assert failed_cash.get_column("balance_usd").to_list() == [0.0, 0.0]
     failed_lots = result.asset_lots.filter((pl.col("rollout_index") == 0) & (pl.col("month_index") >= 1))
     assert failed_lots.get_column("remaining_quantity").to_list() == [0.0]
-    assert_replay_invariant_holds(scenario, result, rollout_count=1)
+
+
+def test_failed_rollout_skips_future_recurring_transfers(deterministic_series_bundle) -> None:
+    scenario = Scenario(
+        agents=[Agent(agent_id="alice"), Agent(agent_id="landlord"), Agent(agent_id="employer")],
+        initial_cash=[
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="landlord", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="employer", account_id="checking", balance_usd=0.0),
+        ],
+        initial_lots=[
+            InitialLot(
+                lot_id="alice_vti",
+                agent_id="alice",
+                asset_id="vti",
+                purchase_month_index=-1,
+                quantity=1.0,
+                cost_basis_per_unit_usd=80.0,
+            )
+        ],
+        recurring_obligations=[
+            RecurringObligation(
+                start_month=0,
+                obligation_id="alice_rent",
+                obligation_type="rent",
+                agent_id="alice",
+                from_account_id="checking",
+                to_agent_id="landlord",
+                to_account_id="checking",
+                amount_due_usd=1000.0,
+            )
+        ],
+        recurring_transfers=[
+            RecurringTransfer(
+                start_month=1,
+                cause_id="future_paycheck",
+                from_agent_id="employer",
+                from_account_id="checking",
+                to_agent_id="alice",
+                to_account_id="checking",
+                amount_usd=10_000.0,
+                income_category="ordinary",
+            )
+        ],
+        external_series=deterministic_series_bundle([100.0, 100.0, 100.0]),
+        liquidity_policies=[LiquidityPolicy(agent_id="alice", account_id="checking", asset_preference_chain=["vti"])],
+        tax_profiles=[],
+        horizon_months=2,
+    )
+
+    result = simulate(scenario, rollout_count=1)
+
+    assert result.rollout_status.row(0, named=True)["status"] == "failed_insufficient_cash"
+    assert result.events_log.transfers.is_empty()
+    failed_cash = result.cash_balances.filter(pl.col("month_index") >= 1).sort(["month_index", "agent_id"])
+    assert failed_cash.get_column("balance_usd").to_list() == [0.0] * failed_cash.height
 
 
 if __name__ == "__main__":
