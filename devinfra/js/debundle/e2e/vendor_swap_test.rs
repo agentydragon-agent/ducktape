@@ -730,6 +730,43 @@ impl PartialSwapFixture {
     }
 }
 
+fn run_partial_swap_raw(
+    ws: VendorTestWorkspace,
+    vendor_spec: serde_json::Map<String, Value>,
+    packages: &[(&str, &Path)],
+) -> PartialSwapFixture {
+    const MEGACHUNK_PATH: &str = "static/megachunk.js";
+
+    let spec_path = ws.root.path().join("transform_spec.yaml");
+    let spec = json!({
+        "vendor": {
+            MEGACHUNK_PATH: Value::Object(vendor_spec),
+        },
+        "inputs": { "input_root": &ws.snapshot_root, "js_list_path": &ws.js_list_path },
+        "swap_vendor_chunks": {
+            "output_manifest_path": &ws.manifest_path,
+            "output_wrapper_dir": &ws.wrapper_root,
+            "write": true,
+        },
+        "write_js_tree": { "out_dir": &ws.out_root },
+    });
+    write_yaml_file(&spec_path, &spec);
+
+    let result = run_debundler(&spec_path, packages);
+
+    let caller_emitted_path = ws.out_root.join("app/static/app").join("entry.js");
+    let megachunk_emitted_path = ws.out_root.join("app/static/megachunk").join("entry.js");
+
+    PartialSwapFixture {
+        result,
+        megachunk_chunk_path: MEGACHUNK_PATH.to_string(),
+        caller_emitted_path,
+        megachunk_emitted_path,
+        manifest_path: ws.manifest_path.clone(),
+        _root: ws.root,
+    }
+}
+
 fn run_partial_swap_fixture(args: PartialSwapFixtureArgs<'_>) -> PartialSwapFixture {
     const PACKAGE_NAME: &str = "zod";
     const SUBPATH: &str = "lib/index.mjs";
@@ -759,45 +796,22 @@ fn run_partial_swap_fixture(args: PartialSwapFixtureArgs<'_>) -> PartialSwapFixt
         );
     }
 
-    let spec_path = ws.root.path().join("transform_spec.yaml");
-    let spec = json!({
-        "vendor": {
-            MEGACHUNK_PATH: {
-                "level": "partial_swap",
-                "identity": "megachunk partial swap fixture",
-                "packages": {
-                    PACKAGE_NAME: {
-                        "namespace": "z",
-                        "version": args.upstream_version,
-                        "subpath": SUBPATH,
-                    },
-                },
-                "symbols": Value::Object(symbols_json),
+    let mut vendor = serde_json::Map::new();
+    vendor.insert("level".into(), json!("partial_swap"));
+    vendor.insert("identity".into(), json!("megachunk partial swap fixture"));
+    vendor.insert(
+        "packages".into(),
+        json!({
+            PACKAGE_NAME: {
+                "namespace": "z",
+                "version": args.upstream_version,
+                "subpath": SUBPATH,
             },
-        },
-        "inputs": { "input_root": &ws.snapshot_root, "js_list_path": &ws.js_list_path },
-        "swap_vendor_chunks": {
-            "output_manifest_path": &ws.manifest_path,
-            "output_wrapper_dir": &ws.wrapper_root,
-            "write": true,
-        },
-        "write_js_tree": { "out_dir": &ws.out_root },
-    });
-    write_yaml_file(&spec_path, &spec);
+        }),
+    );
+    vendor.insert("symbols".into(), Value::Object(symbols_json));
 
-    let result = run_debundler(&spec_path, &[(PACKAGE_NAME, &package_root)]);
-
-    let caller_emitted_path = ws.out_root.join("app/static/app").join("entry.js");
-    let megachunk_emitted_path = ws.out_root.join("app/static/megachunk").join("entry.js");
-
-    PartialSwapFixture {
-        result,
-        megachunk_chunk_path: MEGACHUNK_PATH.to_string(),
-        caller_emitted_path,
-        megachunk_emitted_path,
-        manifest_path: ws.manifest_path.clone(),
-        _root: ws.root,
-    }
+    run_partial_swap_raw(ws, vendor, &[(PACKAGE_NAME, &package_root)])
 }
 
 #[test]
@@ -1590,44 +1604,26 @@ fn run_partial_swap_kind_fixture(args: PartialSwapKindFixtureArgs<'_>) -> Partia
     if let Some(upstream_export) = args.upstream_export {
         symbol_obj.insert("upstream_export".to_string(), Value::from(upstream_export));
     }
-    let spec_path = ws.root.path().join("transform_spec.yaml");
-    let spec = json!({
-        "vendor": {
-            MEGACHUNK_PATH: {
-                "level": "partial_swap",
-                "identity": format!("megachunk {} swap fixture", args.kind),
-                "packages": {
-                    args.package_name: {
-                        "version": args.package_version,
-                        "subpath": args.subpath,
-                    },
-                },
-                "symbols": {
-                    args.chunk_export: Value::Object(symbol_obj),
-                },
+
+    let mut symbols = serde_json::Map::new();
+    symbols.insert(args.chunk_export.to_string(), Value::Object(symbol_obj));
+
+    let mut vendor = serde_json::Map::new();
+    vendor.insert("level".into(), json!("partial_swap"));
+    vendor.insert(
+        "identity".into(),
+        json!(format!("megachunk {} swap fixture", args.kind)),
+    );
+    vendor.insert(
+        "packages".into(),
+        json!({
+            args.package_name: {
+                "version": args.package_version,
+                "subpath": args.subpath,
             },
-        },
-        "inputs": { "input_root": &ws.snapshot_root, "js_list_path": &ws.js_list_path },
-        "swap_vendor_chunks": {
-            "output_manifest_path": &ws.manifest_path,
-            "output_wrapper_dir": &ws.wrapper_root,
-            "write": true,
-        },
-        "write_js_tree": { "out_dir": &ws.out_root },
-    });
-    write_yaml_file(&spec_path, &spec);
+        }),
+    );
+    vendor.insert("symbols".into(), Value::Object(symbols));
 
-    let result = run_debundler(&spec_path, &[(args.package_name, &package_root)]);
-
-    let caller_emitted_path = ws.out_root.join("app/static/app").join("entry.js");
-    let megachunk_emitted_path = ws.out_root.join("app/static/megachunk").join("entry.js");
-
-    PartialSwapFixture {
-        result,
-        megachunk_chunk_path: MEGACHUNK_PATH.to_string(),
-        caller_emitted_path,
-        megachunk_emitted_path,
-        manifest_path: ws.manifest_path.clone(),
-        _root: ws.root,
-    }
+    run_partial_swap_raw(ws, vendor, &[(args.package_name, &package_root)])
 }
