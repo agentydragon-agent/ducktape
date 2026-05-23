@@ -65,7 +65,7 @@ pinned DBs or vice versa. This prevents cross-site write latency.
 
 | Cluster       | Profile        | Compliant | Notes |
 | ------------- | -------------- | --------- | ----- |
-| airlock-db    | VPS-HA         | Yes       |       |
+| airlock-db    | OVH-HA         | Yes       |       |
 | authentik-db  | VPS-HA         | Yes       |       |
 | powerdns-db   | VPS-HA         | Yes       |       |
 | tofu-state-db | VPS-HA         | Yes       |       |
