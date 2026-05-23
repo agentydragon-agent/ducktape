@@ -9,3 +9,4 @@ kind: Kustomization
 resources:
   - credentials.sops.yaml
   - postgres-cluster.yaml
+  - postgres-cluster-ovh.yaml
