@@ -7,7 +7,6 @@ mod apply;
 mod rebind_folding;
 
 pub(super) use apply::apply_materialized_logical_chunks;
-use apply::{ApplyChunksResult, materialized_chunk_artifact};
 use rebind_folding::fold_rebind_atomic_units;
 
 use super::io::write_chunk_report_json;

@@ -1,5 +1,4 @@
 use super::*;
-use crate::time_phase;
 
 pub(crate) struct ApplyChunksResult {
     pub(crate) artifact: ChunkBundle,
