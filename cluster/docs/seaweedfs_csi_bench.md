@@ -14,6 +14,13 @@ Both PVCs bound to the same OVH kimsufi worker (`talos-kimsufi-worker-1`),
 so the only variable is the storage class. Identical `fio` jobs against
 each, run in `swfs-bench` namespace.
 
+Hardware (per <seaweedfs_trial_baseline.md>): OVH KS-5 dedicated server,
+Intel Xeon E3-1270 v6 (4c/8t), 32 GB RAM, 2× 2 TB SATA spinning HDD in
+JBOD. Talos uses `/dev/sda` for system; user data (both the local-path
+hostpath and the SeaweedFS volume server) lives on `/dev/sdb`, XFS,
+~1.95 TB usable. So both storage classes ultimately hit the same
+rotating disk — the numbers below are about the layers on top.
+
 | PVC             | StorageClass     | Backing                                  |
 | --------------- | ---------------- | ---------------------------------------- |
 | `bench-ovh`     | `local-path-ovh` | XFS on `/dev/sdb` of the kimsufi box     |
