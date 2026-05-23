@@ -18,13 +18,13 @@ spec:
         namespace: flux-system
       interval: 12h
   values:
-    deploymentMode: SingleBinary
+    deploymentMode: SimpleScalable
 
     loki:
       auth_enabled: false
 
       commonConfig:
-        replication_factor: 1
+        replication_factor: 2
 
       storage:
         type: s3
@@ -63,16 +63,20 @@ spec:
         delete_request_store: s3
 
     singleBinary:
-      replicas: 1
-      # Goldilocks disabled: we manage our own VPA (vpa.yaml) so we can set
-      # explicit min/max bounds alongside Auto mode. Two VPAs on the same
-      # workload conflict, so goldilocks must be opted out.
+      replicas: 0
+
+    # SimpleScalable: write owns the ingester WAL (needs PVC), backend's disk
+    # is shipper/compactor cache (emptyDir is fine), read is stateless.
+    # All pinned to OVH kimsufi zone so the PVCs land on local-path-ovh.
+
+    write:
+      replicas: 2
       annotations:
         goldilocks.fairwinds.com/enabled: "false"
       nodeSelector:
-        topology.kubernetes.io/region: hil
+        topology.kubernetes.io/zone: hil-ovh
       persistence:
-        storageClass: local-path-hetzner
+        storageClass: local-path-ovh
         size: 10Gi
       extraEnvFrom:
         - secretRef:
@@ -85,13 +89,41 @@ spec:
           cpu: 500m
           memory: 512Mi
 
-    # Disable unused deployment targets
     read:
-      replicas: 0
-    write:
-      replicas: 0
+      replicas: 2
+      annotations:
+        goldilocks.fairwinds.com/enabled: "false"
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      extraEnvFrom:
+        - secretRef:
+            name: loki-s3-credentials
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+        limits:
+          cpu: 500m
+          memory: 256Mi
+
     backend:
-      replicas: 0
+      replicas: 2
+      annotations:
+        goldilocks.fairwinds.com/enabled: "false"
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      persistence:
+        volumeClaimsEnabled: false
+      extraEnvFrom:
+        - secretRef:
+            name: loki-s3-credentials
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+        limits:
+          cpu: 500m
+          memory: 256Mi
 
     gateway:
       enabled: false
