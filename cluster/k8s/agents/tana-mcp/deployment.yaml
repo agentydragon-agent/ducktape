@@ -20,7 +20,7 @@ spec:
         app.kubernetes.io/name: tana-mcp
     spec:
       nodeSelector:
-        topology.kubernetes.io/region: hil
+        topology.kubernetes.io/zone: hil-ovh
       imagePullSecrets:
         - name: harbor-pull-robot
       containers:
@@ -110,7 +110,7 @@ spec:
       volumes:
         - name: tana-config
           persistentVolumeClaim:
-            claimName: tana-mcp-config
+            claimName: tana-mcp-config-ovh
         - name: nginx-config
           configMap:
             name: tana-mcp-nginx-config

@@ -1,12 +1,12 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: tana-mcp-config
+  name: tana-mcp-config-ovh
   namespace: tana-mcp
 spec:
   accessModes:
     - ReadWriteOnce
-  storageClassName: hcloud-volumes
+  storageClassName: local-path-ovh
   resources:
     requests:
-      storage: 1Gi
+      storage: 10Gi

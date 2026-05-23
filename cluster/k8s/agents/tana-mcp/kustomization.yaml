@@ -5,7 +5,6 @@ resources:
   - deployment.yaml
   - service.yaml
   - pvc.yaml
-  - volsync-migration.yaml
   - tana-agentydragon-gmail-com-account-pat.sops.yaml
 generatorOptions:
   disableNameSuffixHash: true
