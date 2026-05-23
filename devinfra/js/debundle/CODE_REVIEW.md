@@ -8,9 +8,9 @@ Full-package review of `devinfra/js/debundle/` (~47K lines). Findings prioritize
 
 ### `vendor/mod.rs` (3052 lines) — **Partially done**
 
-Manifest types extracted to `vendor/manifests.rs`. Strip logic extracted to `vendor/strip.rs`. Remaining work:
+Manifest types extracted to `vendor/manifests.rs`. Strip logic extracted to `vendor/strip.rs`. Partial swap dispatchers unified via `dispatch_partial_swap_jobs` generic. Remaining work:
 
-- `apply_partial_vendor_swaps` and `apply_bundled_partial_vendor_swaps` are near-identical dispatchers (build job vec, rayon `into_par_iter`, collect results, aggregate counts, write manifest). Unify with a generic helper or trait-based dispatch.
+- Further split: strip-specific helpers, annotation/identity logic, wrapper generation.
 
 ### `purity.rs` (2671 lines, 5 concerns)
 
@@ -66,10 +66,6 @@ Orchestration/plan resolution (lines 39–342), factorization wiring (344–579)
 ### `lowering/mod.rs` — 266-line import block
 
 Consequence of wildcard `use super::*` in every sub-module. A more targeted import strategy would reduce this.
-
-### `emit_harness.rs` — repeated JSON-write pattern
-
-`serde_json::to_writer_pretty` calls scattered across emit_harness.rs, write_tree.rs, artifact.rs, identifier_rename_queue.rs, pipeline.rs. Extract a shared `write_json` helper.
 
 ### `output_layout.rs` — 10 identical accessor methods
 
@@ -313,19 +309,19 @@ No longer a standalone crate — absorbed into `swc_ecma_minifier` as `pub(crate
 | -------------------------------- | -------------------------------------- |
 | God modules (P0)                 | 4 files totaling ~12K lines            |
 | Major duplication sites (P1)     | 3 patterns remaining                   |
-| Structural issues (P2)           | 4 findings                             |
+| Structural issues (P2)           | 3 findings                             |
 | Encapsulation / type design (P3) | 13 findings                            |
 | Test-specific (P5)               | 9 findings                             |
 | SWC reuse opportunities          | 8 underutilized utils, 1 DCE candidate |
 
 ## Top 5 Highest-Impact Actions
 
-1. **Continue splitting `vendor/mod.rs`** — manifests and strip extracted; remaining: unify partial-swap dispatchers into generic helper.
+1. **Continue splitting `vendor/mod.rs`** — manifests, strip, and partial-swap dispatchers extracted; remaining: strip-specific helpers, annotation/identity logic, wrapper generation.
 
 2. **Split `analysis_tests.rs`** into 6–8 topic-aligned test modules. Largest test file at 4095 lines.
 
 3. **Extract vendor-prune from `facts.rs`** into `facts/vendor_prune.rs`. Separates a 1000-line self-contained concern from general fact collection.
 
-4. **Extract `write_json` helper** from emit_harness.rs and write_tree.rs (2 identical copies), deduplicate direct `serde_json::to_writer_pretty` calls in artifact.rs, identifier_rename_queue.rs, pipeline.rs.
+4. **Split `lowering/materialize.rs`** — extract `fold_rebind_atomic_units` and deduplicate the `analysis_hints` collection loops.
 
-5. **Split `lowering/materialize.rs`** — extract `fold_rebind_atomic_units` and deduplicate the `analysis_hints` collection loops.
+5. **Extract purity whitelists** from `purity.rs` into `purity/whitelists.rs` (~400 lines of static data).
