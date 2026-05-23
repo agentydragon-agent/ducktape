@@ -162,23 +162,34 @@ pub fn check_realizability(
     //      relaxed clause-3 rule. Catches **mutual** constraining
     //      cycles (both sides eager-read each other; no source order
     //      can satisfy both).
-    //   2. Over the full I-graph (constraining + lazy), then filter
-    //      to SCCs that **contain the residual module and a
-    //      constraining edge whose target IS residual**. Catches the
-    //      `(at-init forward, lazy back)` shape where one cycle
-    //      member at-init reads from residual while residual lazily
-    //      re-imports from the member. ESM's DFS starts at the
-    //      chunk's runtime entry (= residual), so residual evaluates
-    //      LAST in post-order — every other cycle member runs first
-    //      and reads residual's class/const/let bindings in TDZ.
+    //   2. Over the full I-graph (constraining + lazy), then reject
+    //      any multi-module SCC that contains a constraining edge
+    //      between **any two members** (irrespective of whether
+    //      residual participates). Catches every
+    //      `(at-init forward, lazy back)` shape: the asymmetric
+    //      cycle whose constraining-only subgraph is acyclic, yet
+    //      whose ESM evaluation still TDZs because the linker's
+    //      post-order DFS evaluates the dependent (the side carrying
+    //      the back-edge into a TDZ-locked binding) before its
+    //      dependency.
     //
-    //      Asymmetric I-cycles where the constraining edge target
-    //      is a non-residual module DO satisfy Lemma 2: the
-    //      materializer's `source_import_position` puts the cycle
-    //      dependent first in residual's import list, ESM DFS unwinds
-    //      via the dependency, eval order respects the constraint.
-    //      Those stay realizable.
-    let residual = partition.residual();
+    //      Historical note: an earlier carve-out accepted such SCCs
+    //      when residual was outside the cycle, on the theory that
+    //      the materializer's `source_import_position` reverses
+    //      entry's import list within an SCC (Lemma 2) so DFS
+    //      unwinds via the dependency first. That worked only when
+    //      entry itself imported BOTH cycle members directly; the
+    //      moment a mediator (non-entry) module reaches into the
+    //      SCC, its imports are sorted by `linker_position`
+    //      (dependency-first), DFS enters via the dependency, the
+    //      lazy back-edge fires the cycle, and the dependent's body
+    //      evaluates while the dependency's body is mid-evaluation
+    //      — `Cannot access 'X' before initialization`. The
+    //      asymmetric-non-residual shape is therefore not safely
+    //      realizable in general; reject loudly so the spec author
+    //      sees the conflict instead of silently emitting JS that
+    //      TDZs at runtime. Pure-lazy I-cycles (no constraining
+    //      edge inside the SCC at all) remain realizable and pass.
     let mut con_graph: DiGraphMap<ModuleId, ()> = DiGraphMap::new();
     for &(from, to) in constraining_adj.keys() {
         con_graph.add_edge(from, to, ());
@@ -212,21 +223,20 @@ pub fn check_realizability(
             continue;
         }
         let modules: BTreeSet<ModuleId> = scc.iter().copied().collect();
-        if !modules.contains(&residual) {
+        if reported.contains(&modules) {
             continue;
         }
-        // Collect only the constraining edges into residual within
-        // this SCC. If any exist, the cycle's TDZ shape is real.
+        // Collect every constraining edge whose endpoints are both
+        // inside this SCC. If any exist, the cycle's TDZ shape is
+        // real — the constraining edge forces an init ordering that
+        // the lazy back-edge prevents the linker from honoring.
         let mut owner_edges: Vec<OwnerEdgeId> = Vec::new();
         for ((from, to), edges) in &constraining_adj {
-            if *to == residual && modules.contains(from) {
+            if modules.contains(from) && modules.contains(to) {
                 owner_edges.extend_from_slice(edges);
             }
         }
         if owner_edges.is_empty() {
-            continue;
-        }
-        if reported.contains(&modules) {
             continue;
         }
         owner_edges.sort();
@@ -681,7 +691,7 @@ impl IncrementalQuotient {
         }
     }
 
-    fn verdict(&self, residual: ModuleId) -> RealizabilityVerdict {
+    fn verdict(&self) -> RealizabilityVerdict {
         let mut verdict = RealizabilityVerdict {
             unrealizable_sccs: Vec::new(),
             cross_rebinds: self.cross_rebinds.values().cloned().collect(),
@@ -701,12 +711,11 @@ impl IncrementalQuotient {
         }
 
         for modules in self.i_graph.all_sccs() {
-            if modules.len() < 2 || !modules.contains(&residual) {
+            if modules.len() < 2 || reported.contains(&modules) {
                 continue;
             }
-            let constraining_owner_edges =
-                self.constraining_edges_targeting_residual(&modules, residual);
-            if constraining_owner_edges.is_empty() || reported.contains(&modules) {
+            let constraining_owner_edges = self.constraining_edges_inside(&modules);
+            if constraining_owner_edges.is_empty() {
                 continue;
             }
             verdict.unrealizable_sccs.push(UnrealizableScc {
@@ -718,7 +727,7 @@ impl IncrementalQuotient {
         verdict
     }
 
-    fn verdict_touching(&self, module: ModuleId, residual: ModuleId) -> RealizabilityVerdict {
+    fn verdict_touching(&self, module: ModuleId) -> RealizabilityVerdict {
         let mut verdict = RealizabilityVerdict {
             unrealizable_sccs: Vec::new(),
             cross_rebinds: self.cross_rebinds_touching(module),
@@ -736,9 +745,8 @@ impl IncrementalQuotient {
         }
 
         let i_modules = self.i_graph.scc_containing(module);
-        if i_modules.len() >= 2 && i_modules.contains(&residual) && !reported.contains(&i_modules) {
-            let constraining_owner_edges =
-                self.constraining_edges_targeting_residual(&i_modules, residual);
+        if i_modules.len() >= 2 && !reported.contains(&i_modules) {
+            let constraining_owner_edges = self.constraining_edges_inside(&i_modules);
             if !constraining_owner_edges.is_empty() {
                 verdict.unrealizable_sccs.push(UnrealizableScc {
                     modules: i_modules,
@@ -753,7 +761,6 @@ impl IncrementalQuotient {
     fn verdict_with_overlay_touching(
         &self,
         module: ModuleId,
-        residual: ModuleId,
         overlay: &QuotientOverlay,
     ) -> RealizabilityVerdict {
         let mut verdict = RealizabilityVerdict {
@@ -777,9 +784,9 @@ impl IncrementalQuotient {
 
         let i_graph = OverlayGraphView::new(&self.i_graph, &overlay.i_delta);
         let i_modules = i_graph.scc_containing(module);
-        if i_modules.len() >= 2 && i_modules.contains(&residual) && !reported.contains(&i_modules) {
-            let constraining_owner_edges = self
-                .constraining_edges_targeting_residual_with_overlay(&i_modules, residual, overlay);
+        if i_modules.len() >= 2 && !reported.contains(&i_modules) {
+            let constraining_owner_edges =
+                self.constraining_edges_inside_with_overlay(&i_modules, overlay);
             if !constraining_owner_edges.is_empty() {
                 verdict.unrealizable_sccs.push(UnrealizableScc {
                     modules: i_modules,
@@ -884,41 +891,6 @@ impl IncrementalQuotient {
         let mut edges = Vec::new();
         for pair in self.constraining_pairs_with_overlay(overlay) {
             if modules.contains(&pair.0) && modules.contains(&pair.1) {
-                edges.extend(
-                    self.constraining_bucket_with_overlay(pair, overlay)
-                        .evidence_edges(),
-                );
-            }
-        }
-        edges.sort();
-        edges
-    }
-
-    fn constraining_edges_targeting_residual(
-        &self,
-        modules: &BTreeSet<ModuleId>,
-        residual: ModuleId,
-    ) -> Vec<OwnerEdgeId> {
-        let mut edges = Vec::new();
-        for ((from, to), bucket) in &self.constraining_buckets {
-            if *to == residual && modules.contains(from) {
-                edges.extend(bucket.evidence_edges());
-            }
-        }
-        edges.sort();
-        edges
-    }
-
-    fn constraining_edges_targeting_residual_with_overlay(
-        &self,
-        modules: &BTreeSet<ModuleId>,
-        residual: ModuleId,
-        overlay: &QuotientOverlay,
-    ) -> Vec<OwnerEdgeId> {
-        let mut edges = Vec::new();
-        for pair in self.constraining_pairs_with_overlay(overlay) {
-            let (from, to) = pair;
-            if to == residual && modules.contains(&from) {
                 edges.extend(
                     self.constraining_bucket_with_overlay(pair, overlay)
                         .evidence_edges(),
@@ -1089,7 +1061,7 @@ impl<'g> RealizabilityIndex<'g> {
     /// Verdict against the current working partition. Reads the
     /// incrementally maintained quotient graph and evidence buckets.
     pub fn verdict(&self) -> RealizabilityVerdict {
-        self.quotient.verdict(self.partition.residual())
+        self.quotient.verdict()
     }
 
     /// Verdict filtered to SCCs and cross-rebinds touching `module`.
@@ -1097,8 +1069,7 @@ impl<'g> RealizabilityIndex<'g> {
     /// destination: unrelated pre-existing bad SCCs are intentionally
     /// ignored, matching the previous full-verdict-then-filter logic.
     pub fn verdict_touching(&self, module: ModuleId) -> RealizabilityVerdict {
-        self.quotient
-            .verdict_touching(module, self.partition.residual())
+        self.quotient.verdict_touching(module)
     }
 
     /// Verdict for a hypothetical owner move, filtered to the target
@@ -1114,8 +1085,7 @@ impl<'g> RealizabilityIndex<'g> {
         let overlay = self
             .quotient
             .overlay_for_move(self.owner_graph, &self.partition, owners, to);
-        self.quotient
-            .verdict_with_overlay_touching(to, self.partition.residual(), &overlay)
+        self.quotient.verdict_with_overlay_touching(to, &overlay)
     }
 }
 

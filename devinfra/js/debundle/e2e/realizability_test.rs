@@ -100,31 +100,38 @@ export { A, B, C, D };
 // --- I cycles via lazy back-edges ----------------------------------------
 
 #[test]
-fn mixed_cycle_with_lazy_back_edge_is_realizable() {
+fn mixed_cycle_with_lazy_back_edge_is_rejected() {
     // mod_a imports B from mod_b (readB body's lazy read); mod_b
     // imports A from mod_a (B's eager initializer). The imports
-    // graph `I` has a 2-cycle {mod_a, mod_b}, but the
-    // constraining-edge subgraph (drops LazyUse) is acyclic — only
-    // mod_b → mod_a constrains init order. The relaxed clause-3
-    // rule (DESIGN.md "Realizability primitive") accepts: per
-    // Lemma 2, the materializer's `source_import_position` puts
-    // mod_b (the cycle dependent) FIRST in entry's source, so the
-    // ESM linker's DFS unwinds the cycle through mod_a (the
-    // dependency) and post-DFS evaluation lands mod_a first. B's
-    // at-init read of A sees A defined.
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const A = "a-value";
+    // graph `I` has a 2-cycle {mod_a, mod_b}; the constraining-
+    // edge subgraph (drops LazyUse) is acyclic — only
+    // mod_b → mod_a constrains init order. Earlier versions of
+    // the realizability primitive accepted this shape on the
+    // theory that the materializer's `source_import_position`
+    // would reverse entry's import list within the SCC (Lemma 2)
+    // so DFS unwinds via the dependency first. That worked only
+    // when entry itself imported both SCC members directly; the
+    // moment a mediator (non-entry) module reached into the SCC
+    // via `linker_position`-sorted imports, DFS entered via the
+    // dependency, the lazy back-edge fired the cycle, and the
+    // dependent's body evaluated under TDZ. The gate now rejects
+    // any I-cycle containing a constraining edge between any two
+    // members; see `asymmetric_non_residual_cycle_test`.
+    expect_rejection_containing_all(
+        FixtureOpts::new(
+            r#"const A = "a-value";
 function readB() { return B; }
 const B = A + "-postfix";
 console.log(readB());
 export { A, B, readB };
 "#,
-        vec![
-            logical_module("mod_a", &[Member::new("A"), Member::new("readB")]),
-            logical_module("mod_b", &[Member::new("B")]),
-        ],
-    ));
-    assert_entry_output(&fixture, "a-value-postfix\n");
+            vec![
+                logical_module("mod_a", &[Member::new("A"), Member::new("readB")]),
+                logical_module("mod_b", &[Member::new("B")]),
+            ],
+        ),
+        &["cycle", "mod_a", "mod_b"],
+    );
 }
 
 #[test]

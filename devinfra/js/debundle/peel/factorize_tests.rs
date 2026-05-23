@@ -98,20 +98,25 @@ fn dag_has_no_cycles() {
     );
 }
 
-/// A mixed cycle (lazy forward-edge, at-init back-edge) where
-/// the lazy direction is NOT invoked at-init is realizable per
-/// DESIGN.md "Realizability primitive" clause 3 — the
-/// constraining-edge subgraph (drops LazyUse) has no
-/// multi-module SCC. The materializer's Lemma 2 steering
-/// (ChunkFactorization::source_import_position with SCC-aware reverse)
-/// gives entry an import order such that the ESM linker
-/// resolves the cycle without TDZ.
+/// An asymmetric I-cycle between two non-residual modules
+/// (lazy forward-edge, at-init back-edge) is *not* realizable.
+/// The constraining-edge subgraph is acyclic — only mod_1 →
+/// mod_0 constrains init order — but the imports-graph `I` has
+/// a 2-cycle. Earlier versions accepted this shape on the
+/// theory that the materializer's `source_import_position`
+/// (Lemma 2) would order entry's imports so DFS unwinds via
+/// the dependency first; that trick fails the moment a
+/// mediator module reaches into the SCC via `linker_position`-
+/// sorted imports, which is the gaffer load-test reproduction.
+/// The gate now rejects any I-cycle whose internal edges
+/// include a constraining edge between any two members.
 #[test]
-fn mixed_cycle_without_at_init_call_is_realizable() {
+fn mixed_cycle_without_at_init_call_is_rejected() {
     // mod_0 owns A and readB; readB body returns B (lazy read,
     // never invoked at-init). mod_1 owns B; B = A + 1
     // (at-init read of A). Constraining subgraph: only
-    // mod_1 → mod_0 — acyclic. Relaxed clause-3 accepts.
+    // mod_1 → mod_0 — acyclic. The I-graph has a 2-cycle
+    // {mod_0, mod_1}; the tightened clause-3 rule rejects.
     let module = parse("const A = 1; function readB() { return B; } const B = A + 1;");
     let facts = analyze_facts(&module);
     let mut binding_assignment = HashMap::new();
@@ -123,9 +128,9 @@ fn mixed_cycle_without_at_init_call_is_realizable() {
         Partition::from_binding_assignment(&owner_graph, &binding_assignment, residual());
     let report = validate_factorization(&owner_graph, &partition, &render);
     assert!(
-        report.cycles.is_empty(),
-        "mixed cycle with no at-init call should be realizable; got {:?}",
-        report.cycles,
+        !report.cycles.is_empty(),
+        "asymmetric I-cycle between non-residual mod_0/mod_1 must be \
+         reported as unrealizable; got empty cycle report",
     );
 }
 
