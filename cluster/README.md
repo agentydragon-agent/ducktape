@@ -35,14 +35,14 @@ See <docs/bootstrap.md> for full setup.
 
 ### Node Types
 
-| Node                                       | Type             | Region    | Availability     | Hardware            |
-| ------------------------------------------ | ---------------- | --------- | ---------------- | ------------------- |
-| `talos-vps-cp-0`, `talos-vps-cp-1`         | Talos CP         | `hil`     | Always on        | CPX31               |
-| `talos-vps-worker-0`, `talos-vps-worker-1` | Talos worker     | `hil`     | Always on        | CPX31               |
-| `talos-pve-cp-0`                           | Talos CP         | `proxmox` | Always on (home) | Proxmox VM          |
-| `wyrm2`                                    | NixOS GPU worker | `proxmox` | Always on (home) | 2x RTX 5090         |
-| `iguana`                                   | NixOS laptop     | `roaming` | Often offline    | ThinkPad X1 Extreme |
-| `rugged`                                   | NixOS laptop     | `roaming` | Often offline    | Dell Rugged 12      |
+| Node                               | Type             | Region    | Availability     | Hardware            |
+| ---------------------------------- | ---------------- | --------- | ---------------- | ------------------- |
+| `talos-vps-cp-0`, `talos-vps-cp-1` | Talos CP         | `hil`     | Always on        | CPX31               |
+| `talos-vps-worker-0`               | Talos worker     | `hil`     | Always on        | CPX31               |
+| `talos-pve-cp-0`                   | Talos CP         | `proxmox` | Always on (home) | Proxmox VM          |
+| `wyrm2`                            | NixOS GPU worker | `proxmox` | Always on (home) | 2x RTX 5090         |
+| `iguana`                           | NixOS laptop     | `roaming` | Often offline    | ThinkPad X1 Extreme |
+| `rugged`                           | NixOS laptop     | `roaming` | Often offline    | Dell Rugged 12      |
 
 Region labels are `topology.kubernetes.io/region`. Roaming nodes are laptops that
 join/leave the cluster frequently. `rugged` has taint

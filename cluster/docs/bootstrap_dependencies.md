@@ -130,7 +130,7 @@ Created by `tofu apply` Phase 2.
 
 | Resource                                           | Key Inputs                                        | What It Produces                    |
 | -------------------------------------------------- | ------------------------------------------------- | ----------------------------------- |
-| `hcloud_server.vps` (4x)                           | L0: hcloud token, Talos image                     | 2 CP + 2 worker VPS nodes           |
+| `hcloud_server.vps` (3x)                           | L0: hcloud token, Talos image                     | 2 CP + 1 worker VPS nodes           |
 | `proxmox_virtual_environment_vm.talos`             | L0: Proxmox token, Talos disk                     | 1 CP Proxmox VM                     |
 | `talos_machine_configuration_apply.*`              | L2: machine secrets, nebula certs, config patches | Talos config pushed to nodes        |
 | `talos_machine_bootstrap.cluster`                  | Machine config applied                            | etcd initialized, k8s API available |

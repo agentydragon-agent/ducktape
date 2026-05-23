@@ -17,7 +17,6 @@ locals {
     vps1            = "talos-vps-cp-1.nebula.allegedly.works"
     pve_cp0         = "talos-pve-cp-0.nebula.allegedly.works"
     vps_worker0     = "talos-vps-worker-0.nebula.allegedly.works"
-    vps_worker1     = "talos-vps-worker-1.nebula.allegedly.works"
     kimsufi_worker0 = "talos-kimsufi-worker-0.nebula.allegedly.works"
     kimsufi_worker1 = "talos-kimsufi-worker-1.nebula.allegedly.works"
     kimsufi_cp0     = "talos-kimsufi-cp-0.nebula.allegedly.works"
@@ -38,7 +37,6 @@ locals {
       "10.42.0.1"  = ["${hcloud_server.vps["vps0"].ipv4_address}:4242"]
       "10.42.0.2"  = ["${hcloud_server.vps["vps1"].ipv4_address}:4242"]
       "10.42.0.11" = ["${hcloud_server.vps["vps_worker0"].ipv4_address}:4242"]
-      "10.42.0.12" = ["${hcloud_server.vps["vps_worker1"].ipv4_address}:4242"]
     },
     {
       for key, node in data.ovh_dedicated_server.kimsufi :
@@ -119,16 +117,6 @@ locals {
         serve_dns        = true
         interval         = 10
         dns              = { host = "10.42.0.11", port = 53 }
-        local_allow_list = local.nebula_local_allow_list
-      }
-      relay = { am_relay = true }
-    })
-    vps_worker1 = merge(local.nebula_common, {
-      lighthouse = {
-        am_lighthouse    = true
-        serve_dns        = true
-        interval         = 10
-        dns              = { host = "10.42.0.12", port = 53 }
         local_allow_list = local.nebula_local_allow_list
       }
       relay = { am_relay = true }

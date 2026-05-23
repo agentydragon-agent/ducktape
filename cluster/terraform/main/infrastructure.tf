@@ -19,7 +19,6 @@ locals {
     vps0        = { name = "talos-vps-cp-0", server_type = "cpx31", role = "controlplane" }
     vps1        = { name = "talos-vps-cp-1", server_type = "cpx31", role = "controlplane" }
     vps_worker0 = { name = "talos-vps-worker-0", server_type = "cpx31", role = "worker" }
-    vps_worker1 = { name = "talos-vps-worker-1", server_type = "cpx31", role = "worker" }
   }
 
   # Derived: split by role for machine config generation

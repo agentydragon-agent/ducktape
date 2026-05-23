@@ -22,7 +22,6 @@ locals {
     "5.78.142.158",   # talos-vps-cp-0
     "5.78.144.197",   # talos-vps-cp-1
     "5.78.106.249",   # talos-vps-worker-0
-    "5.78.43.147",    # talos-vps-worker-1
     "147.135.39.162", # talos-kimsufi-worker-0
   ]
 }
