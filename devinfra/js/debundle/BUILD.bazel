@@ -113,6 +113,7 @@ rust_library(
         "vendor/manifests.rs",
         "vendor/mod.rs",
         "vendor/strip.rs",
+        "vendor/wrappers.rs",
     ],
     crate_root = "vendor/mod.rs",
     edition = "2024",
