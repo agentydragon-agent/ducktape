@@ -280,6 +280,7 @@ rust_library(
     name = "peel",
     srcs = [
         "peel/factorize.rs",
+        "peel/factorize_tests.rs",
         "peel/mod.rs",
         "peel/plan.rs",
         "peel/test_utils.rs",
