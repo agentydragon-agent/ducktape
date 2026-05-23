@@ -551,6 +551,9 @@ fn emit_proposals(
         .map(|(new_idx, (orig_idx, _))| (*orig_idx, new_idx))
         .collect();
     let mut out: Vec<FactorizeProposal> = indexed.into_iter().map(|(_, p)| p).collect();
+    for proposal in out.iter_mut() {
+        promote_anonymous_only_cell_to_extension(proposal);
+    }
     let mut fresh_counter = 0usize;
     for proposal in out.iter_mut() {
         if proposal.extends_module_id.is_none() {
@@ -569,6 +572,58 @@ fn emit_proposals(
             .collect();
     }
     out
+}
+
+/// Promote an anonymous-only fresh-module cell into an extension of
+/// the single active module its constraining edges target.
+///
+/// Motivation: top-level side-effect statements (`__decorate(...)`,
+/// `register(...)`, target-mutating `Foo.x = ...` installs, IIFE
+/// preludes) declare no binding name, so the spec author has no way
+/// to claim them by name. When the named binding they apply to is
+/// already in an active module, the natural spec edit is "extend
+/// that module with these `anonymous_statements:`". Without this
+/// promotion the planner just reports them as fresh
+/// `auto_partition_NNNN` proposals and the author has to spot them
+/// by hand.
+///
+/// Preconditions for promotion (all required):
+/// - `extends_module_id` is `None` (cell is a fresh-module proposal today).
+/// - `binding_ids` is empty (cell has no named bindings — promoting a
+///   cell with named bindings would force them into an existing
+///   module's `members:` list, which is a different spec edit and
+///   needs the author's judgement on naming).
+/// - `edges_to_other_residual_cells == 0` (the cell has no
+///   leftover residual dependency; promoting wouldn't strand the
+///   extension behind another residual cell).
+/// - `active_modules_referenced.len() == 1` and
+///   `edges_to_active_modules > 0` (every outgoing cross-module
+///   constraining edge points at exactly one active module — the
+///   unambiguous extension target).
+fn promote_anonymous_only_cell_to_extension(proposal: &mut FactorizeProposal) {
+    if proposal.extends_module_id.is_some()
+        || !proposal.binding_ids.is_empty()
+        || proposal.edges_to_other_residual_cells != 0
+        || proposal.edges_to_active_modules == 0
+        || proposal.active_modules_referenced.len() != 1
+    {
+        return;
+    }
+    let target = proposal.active_modules_referenced[0].clone();
+    proposal.extends_module_id = Some(target.clone());
+    proposal.proposed_module_id = format!("extend:{target}");
+    // The cell's owners are anonymous-only by precondition
+    // (`binding_ids` empty + every owner with no declared bindings
+    // contributed to `anonymous_statement_owner_ids` in
+    // `build_proposal`). Surface them in `extension_owner_ids`
+    // alongside the named-binding case so a downstream consumer
+    // reading the proposal can materialize the spec edit
+    // ("add these anonymous_statements to <target>.yaml") off
+    // a single field, distinguishing kinds by checking owner shape
+    // (named vs anonymous) on each id.
+    let mut ids = proposal.owner_ids.clone();
+    ids.sort();
+    proposal.extension_owner_ids = ids;
 }
 
 fn compute_topo_depths(

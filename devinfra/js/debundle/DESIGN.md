@@ -2056,8 +2056,26 @@ target-local effect on the class/prototype binding. That makes the
 anonymous statement a required companion of the class owner for
 materialization and factorize. The author still
 materializes it with `anonymous_statements:` because it has no binding
-name, but factorize's proposal already includes the anonymous owner id
-and will not propose the class alone.
+name, but the atomic-unit closure that contains the class also covers
+the anon owner, so the factorizer's proposal lists the anonymous
+owner id under `extension_owner_ids` and will not propose the class
+alone.
+
+The unannotated case — `__decorate(...)`, `register(...)`, and
+target-mutating `Foo.x = ...` installs that the analyzer cannot tag
+as target-local because no helper annotation matches — relies on a
+separate route. The factorizer's emit pass walks each fresh-module
+cell and promotes it to an extension of an existing active module
+when **every** outgoing cross-module constraining edge points at one
+active module, the cell declares no named bindings, and it has no
+outgoing edges to other residual cells. The cell's owners are surfaced
+in `extension_owner_ids`; the downstream consumer reads owner shape
+(named bindings vs anonymous statements) to decide whether to write a
+`members:` or `anonymous_statements:` entry into the extended module's
+yaml. The cell-level dependency-satisfaction check (no leftover
+residual deps + unambiguous active target) is what makes the promotion
+safe: the extension can be applied without leaving a downstream
+residual dependency.
 
 ### Different from binding selectors
 

@@ -116,6 +116,14 @@ The current proposal pass:
 3. Coalesces overlapping closures.
 4. Emits proposals under the size cap, and diagnostics for oversized or
    conflicting closures.
+5. Promotes orphaned anonymous-only cells into extensions of an active module
+   when every outgoing cross-module constraining edge points at exactly one
+   active module, the cell declares no named bindings, and there are no
+   outgoing edges to other residual cells. The cell's owners surface in
+   `extension_owner_ids` so a downstream consumer can write the
+   `anonymous_statements:` entries into the extended module's yaml. This
+   catches the canonical "decorator applications and `register(...)` calls
+   that the author left in residual when peeling the class they apply to."
 
 These proposals are useful work queues, not authoritative schema. Agents should
 still read source and choose honest module names and paths.

@@ -104,3 +104,24 @@ rust_test(
         "@rules_rust//tools/runfiles",
     ],
 )
+
+# Coverage for the factorizer routing orphaned anonymous statements
+# into the extension of their target active module.
+rust_test(
+    name = "peel_factorize_extend_anonymous_test",
+    srcs = ["peel_factorize_extend_anonymous_test.rs"],
+    crate_root = "peel_factorize_extend_anonymous_test.rs",
+    data = [
+        "//devinfra/js/debundle",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    edition = "2024",
+    deps = [
+        ":support",
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:peel",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@rules_rust//tools/runfiles",
+    ],
+)
