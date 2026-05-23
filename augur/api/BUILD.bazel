@@ -304,6 +304,7 @@ py_test(
 
 py_test(
     name = "server_test",
+    size = "medium",
     srcs = ["server_test.py"],
     data = [
         ":public_fixture_config",
@@ -351,7 +352,9 @@ py_binary(
         ":backend_py",
         ":config_py",
         "//augur/model:simple_exogenous_py",
+        "//augur/product:portfolio_py",
         "//augur/product:projection_py",
+        "//augur/product:projection_service_py",
         "//util/bazel:runfiles",
     ],
 )

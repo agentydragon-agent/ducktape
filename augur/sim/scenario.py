@@ -13,7 +13,7 @@ from __future__ import annotations
 from typing import Annotated, Literal, Protocol
 
 import polars as pl
-from pydantic import BaseModel, Field, NonNegativeInt, PositiveInt
+from pydantic import BaseModel, Field, NonNegativeInt, PositiveInt, model_validator
 
 from augur.model.series_model import SeriesModelBundle
 
@@ -108,6 +108,7 @@ class SeriesIndexedAmount(BaseModel):
 
 type AmountSchedule = Annotated[FixedAmount | SeriesIndexedAmount, Field(discriminator="kind")]
 type AmountSpec = float | AmountSchedule
+type TransferIncomeCategory = Literal["ordinary"]
 
 
 class ScheduledTransfer(BaseModel):
@@ -115,9 +116,9 @@ class ScheduledTransfer(BaseModel):
     month. Emitted by the engine as a Transfer event at that month;
     the amount may be fixed or derived from a series-indexed schedule.
 
-    `income_category` tags the transfer for downstream tax
-    classification. The canonical value at spike 1 is `"ordinary"`
-    (W-2-style wages for the recipient). When set, the recipient's
+    `income_category` tags the transfer for downstream tax classification.
+    Currently the only supported value is `"ordinary"` (W-2-style wages for the
+    recipient). When set, the recipient's
     `ordinary_income_ytd` increments by the transferred amount at
     apply time."""
 
@@ -128,7 +129,7 @@ class ScheduledTransfer(BaseModel):
     to_agent_id: str
     to_account_id: str
     amount_usd: AmountSpec
-    income_category: str | None = None
+    income_category: TransferIncomeCategory | None = None
 
 
 class RecurringTransfer(BaseModel):
@@ -152,7 +153,7 @@ class RecurringTransfer(BaseModel):
     to_agent_id: str
     to_account_id: str
     amount_usd: AmountSpec
-    income_category: str | None = None
+    income_category: TransferIncomeCategory | None = None
 
     def is_active_at(self, month: int) -> bool:
         return self.start_month <= month and (self.end_month is None or month <= self.end_month)
@@ -354,3 +355,53 @@ class Scenario(BaseModel):
     tax_profiles: list[TaxProfile]
     liquidity_policies: list[LiquidityPolicy] = Field(default_factory=list)
     horizon_months: PositiveInt
+
+    @model_validator(mode="after")
+    def _reject_duplicate_initial_lot_purchase_months(self) -> Scenario:
+        seen: dict[tuple[str, str, int], str] = {}
+        duplicates: list[tuple[str, str, int, str, str]] = []
+        for lot in self.initial_lots:
+            key = (lot.agent_id, lot.asset_id, lot.purchase_month_index)
+            previous_lot_id = seen.get(key)
+            if previous_lot_id is not None:
+                duplicates.append((*key, previous_lot_id, lot.lot_id))
+            else:
+                seen[key] = lot.lot_id
+        if duplicates:
+            duplicate_list = ", ".join(
+                f"{agent_id}/{asset_id}@{purchase_month} ({first_lot_id}, {second_lot_id})"
+                for agent_id, asset_id, purchase_month, first_lot_id, second_lot_id in sorted(duplicates)
+            )
+            raise ValueError(f"duplicate initial lot purchase months for FIFO pool(s): {duplicate_list}")
+        return self
+
+    @model_validator(mode="after")
+    def _reject_out_of_horizon_scheduled_events(self) -> Scenario:
+        horizon = int(self.horizon_months)
+        for sale in self.scheduled_asset_sales:
+            if not 0 <= sale.month < horizon:
+                raise ValueError(
+                    f"scheduled asset sale {sale.cause_id!r} has month {sale.month}, "
+                    f"outside scenario horizon [0, {horizon})"
+                )
+        for purchase in self.scheduled_property_purchases:
+            if not 0 <= purchase.month < horizon:
+                raise ValueError(
+                    f"scheduled property purchase {purchase.cause_id!r} has month {purchase.month}, "
+                    f"outside scenario horizon [0, {horizon})"
+                )
+        return self
+
+    @model_validator(mode="after")
+    def _reject_duplicate_liquidity_policy_accounts(self) -> Scenario:
+        seen: set[tuple[str, str]] = set()
+        duplicates: set[tuple[str, str]] = set()
+        for policy in self.liquidity_policies:
+            key = (policy.agent_id, policy.account_id)
+            if key in seen:
+                duplicates.add(key)
+            seen.add(key)
+        if duplicates:
+            duplicate_list = ", ".join(f"{agent_id}/{account_id}" for agent_id, account_id in sorted(duplicates))
+            raise ValueError(f"duplicate liquidity policies for account(s): {duplicate_list}")
+        return self

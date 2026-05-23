@@ -36,6 +36,13 @@ from augur.sim.jurisdictions import Jurisdiction
 from augur.sim.liquidity import plan_liquidity
 from augur.sim.locations import Location
 from augur.sim.obligations import emit_due_now_obligations
+from augur.sim.runtime import (
+    LONG_TERM_CAPITAL_GAIN,
+    SHORT_TERM_CAPITAL_GAIN,
+    is_tax_year_end,
+    long_term_capital_gain_expr,
+    mortgage_monthly_payment_usd,
+)
 from augur.sim.scenario import (
     RecurringTransfer,
     Scenario,
@@ -244,17 +251,10 @@ def _mortgage_origination_block_per_rollout(
         pl.lit(mortgage.annual_interest_rate, dtype=pl.Float64()).alias("annual_interest_rate"),
         pl.lit(int(mortgage.term_months), dtype=pl.Int64()).alias("term_months"),
         pl.lit(
-            _mortgage_monthly_payment_usd(mortgage.principal_usd, mortgage.annual_interest_rate, mortgage.term_months),
+            mortgage_monthly_payment_usd(mortgage.principal_usd, mortgage.annual_interest_rate, mortgage.term_months),
             dtype=pl.Float64(),
         ).alias("monthly_payment_usd"),
     ).pipe(EVENT_FRAMES.mortgage_originations.normalize)
-
-
-def _mortgage_monthly_payment_usd(principal_usd: float, annual_interest_rate: float, term_months: int) -> float:
-    monthly_rate = annual_interest_rate / 12.0
-    if monthly_rate == 0:
-        return principal_usd / term_months
-    return principal_usd * monthly_rate / (1.0 - (1.0 + monthly_rate) ** -term_months)
 
 
 def _property_purchase_transfer_events(scenario: Scenario, purchases: pl.DataFrame) -> pl.DataFrame:
@@ -298,7 +298,13 @@ def _emit_lot_dispositions(
     if not sales:
         return EVENT_FRAMES.lot_dispositions.empty()
     series_at_month = external_series.series_at(month)
-    blocks = [_fifo_dispositions_for_sale(state, sale, series_at_month, month) for sale in sales]
+    planning_state = state
+    blocks: list[pl.DataFrame] = []
+    for sale in sales:
+        sale_dispositions = _fifo_dispositions_for_sale(planning_state, sale, series_at_month, month)
+        if not sale_dispositions.is_empty():
+            blocks.append(sale_dispositions)
+            planning_state = _state_after_scheduled_lot_dispositions(planning_state, sale_dispositions)
     return EVENT_FRAMES.lot_dispositions.concat(blocks)
 
 
@@ -360,10 +366,21 @@ def _attach_unit_price(lots: pl.DataFrame, sale: ScheduledAssetSale, series_at_m
     return lots.join(values_for_asset.select("rollout_index", "_unit_price"), on="rollout_index", how="left")
 
 
-def _is_year_end(month: int) -> bool:
-    """Tax years are calendar-year-aligned at spike 1: the year
-    ends at month index 11, 23, 35, …"""
-    return month % 12 == 11
+def _state_after_scheduled_lot_dispositions(state: StateCrossSection, dispositions: pl.DataFrame) -> StateCrossSection:
+    deltas = dispositions.group_by(["rollout_index", "lot_id"]).agg(pl.col("units_sold").sum().alias("_units_sold"))
+    return StateCrossSection(
+        cash_balances=state.cash_balances,
+        asset_lots=state.asset_lots.join(deltas, on=["rollout_index", "lot_id"], how="left")
+        .with_columns(remaining_quantity=pl.col("remaining_quantity") - pl.col("_units_sold").fill_null(0.0))
+        .drop("_units_sold"),
+        ordinary_income_ytd=state.ordinary_income_ytd,
+        capital_gains_ytd=state.capital_gains_ytd,
+        tax_liabilities=state.tax_liabilities,
+        property_state=state.property_state,
+        property_stakes=state.property_stakes,
+        liabilities=state.liabilities,
+        rollout_status=state.rollout_status,
+    )
 
 
 def _emit_year_end_tax_events(
@@ -386,7 +403,7 @@ def _emit_year_end_tax_events(
     Like ordinary income, capital gains are summed as `state YTD +
     this-month's dispositions` since `apply_events` will produce
     that same YTD before the year closes."""
-    if not _is_year_end(month) or not scenario.tax_profiles:
+    if not is_tax_year_end(month) or not scenario.tax_profiles:
         return _empty_tax_year_events()
     eoy = _compute_end_of_year_taxable_components(state, transfers, dispositions, scenario.tax_profiles, month)
     events = [_tax_events_for_profile(profile, eoy, jurisdictions, month) for profile in scenario.tax_profiles]
@@ -417,10 +434,10 @@ def _compute_end_of_year_taxable_components(
     taxed_agents = [p.agent_id for p in profiles]
     pre_ord = state.ordinary_income_ytd.filter(pl.col("agent_id").is_in(taxed_agents))
     pre_cg = state.capital_gains_ytd.filter(pl.col("agent_id").is_in(taxed_agents))
-    pre_ltcg = pre_cg.filter(pl.col("classification") == "ltcg").select(
+    pre_ltcg = pre_cg.filter(pl.col("classification") == LONG_TERM_CAPITAL_GAIN).select(
         "rollout_index", "agent_id", pl.col("gain_usd").alias("ltcg_usd")
     )
-    pre_stcg = pre_cg.filter(pl.col("classification") == "stcg").select(
+    pre_stcg = pre_cg.filter(pl.col("classification") == SHORT_TERM_CAPITAL_GAIN).select(
         "rollout_index", "agent_id", pl.col("gain_usd").alias("stcg_usd")
     )
     this_month_ord = (
@@ -430,8 +447,7 @@ def _compute_end_of_year_taxable_components(
         .rename({"to_agent_id": "agent_id"})
     )
     classified_dispositions = dispositions.filter(pl.col("agent_id").is_in(taxed_agents)).with_columns(
-        gain_usd=pl.col("proceeds_usd") - pl.col("cost_basis_consumed_usd"),
-        is_ltcg=(pl.lit(month) - pl.col("purchase_month_index")) >= 12,
+        gain_usd=pl.col("proceeds_usd") - pl.col("cost_basis_consumed_usd"), is_ltcg=long_term_capital_gain_expr(month)
     )
     this_month_ltcg = (
         classified_dispositions.filter(pl.col("is_ltcg"))
