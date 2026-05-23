@@ -6,11 +6,10 @@ Full-package review of `devinfra/js/debundle/` (~47K lines). Findings prioritize
 
 ## P0 — God Modules
 
-### `vendor.rs` (3297 lines, 6 concerns)
+### `vendor.rs` (3297 lines, 6 concerns) — **Partially done**
 
-Mixes manifest types (~500 lines), AST synthesis helpers, import construction, and four distinct vendor operations (rename, full swap, partial swap, bundled partial swap).
+Manifest types extracted to `vendor/manifests.rs`. Strip logic extracted to `vendor/strip.rs`. Remaining work:
 
-- Manifest types (`VendorAnnotationsManifest`, `RenameVendorExportsManifest`, `VendorResolutionManifest`, `PartialSwapResolutionManifest`, `BundledPartialSwapResolutionManifest`) should live in `vendor/manifests.rs`.
 - AST helpers (`export_default_ident`, `export_const_member`, `make_namespace_import`, `make_default_import`, `make_named_import`) duplicate patterns from `js_ast.rs` and the lowering subsystem. Extract to a shared `ast_helpers.rs`.
 - `apply_partial_vendor_swaps` and `apply_bundled_partial_vendor_swaps` are near-identical dispatchers (build job vec, rayon `into_par_iter`, collect results, aggregate counts, write manifest). Unify with a generic helper or trait-based dispatch.
 - `build_named_from_module_default_spec` and `build_named_from_default_spec` differ in exactly one key (`wrapper_shape`). Single function parameterized by the shape.
@@ -42,9 +41,9 @@ Split into topic-aligned modules: `tests/facts.rs`, `tests/purity.rs`, `tests/pl
 
 Extracted `binding()`, `member()`, `module_ref()` to `peel/test_utils.rs`. The `owner()`, `atomic_unit()`, `atomic_edge()`, `graph_fixture()` helpers have different signatures/semantics between the two test modules and remain local.
 
-### Line-range accumulation (3 copies)
+### Line-range accumulation (3 copies) — **Done** (`0cbe93546`)
 
-`start_line.min(...)` / `end_line.max(...)` / `size_lines_estimate += end - start + 1` duplicated in `reports.rs:169–179`, `factorize.rs:636–639`, `plan.rs:1361–365`. Extract as a method on `SourceLocation` or a free function.
+Deduplicated into a shared helper.
 
 ### Vendor swap test workspace setup (4 copies)
 
@@ -54,9 +53,9 @@ Extracted `binding()`, `member()`, `module_ref()` to `peel/test_utils.rs`. The `
 
 ## P2 — Structural Issues
 
-### `lowering/util.rs` is a grab-bag module
+### `lowering/util.rs` is a grab-bag module — **Done** (`0cbe93546`)
 
-Violates STYLE.md "No grab-bag modules" rule. Contains ordinal arithmetic, var-decl splitting, scope name collection, import disambiguation, import-decl construction, I/O helpers, and error rendering. Split into `lowering/scope_names.rs`, `lowering/import_emit.rs`, `lowering/ordinal.rs`, `lowering/io.rs`.
+Split into `lowering/scope_names.rs`, `lowering/import_emit.rs`, `lowering/ordinal.rs`, `lowering/io.rs`.
 
 ### `lowering/materialize.rs` (1026 lines) mixes 4 concerns
 
@@ -245,10 +244,6 @@ Ownership still passes through every stage via return: `artifact = result.artifa
 
 Every construction site sets `source_path: Some(...)`. The `Option` is used for `and_then` chaining convenience in `artifact.rs:723`. Consider making it `String` and adjusting the callers.
 
-#### TODO: `LoadedJsChunks` is a partially-constructed artifact
-
-`Vec<Option<JsChunk>>` with holes. Constructed empty with `Default`, filled iteratively. Less urgent without the ChunkTable elimination.
-
 #### TODO: Pipeline ordering — `generated_by_selected_module_lowering` flag
 
 `generated_by_selected_module_lowering` exists solely so `rewrite_chunk_entry_specifiers` can skip specifier rewriting on files synthesized by the lowering stage. This flag wouldn't be needed if specifier rewriting ran _before_ lowering. Investigate whether reordering the pipeline stages eliminates the need for the flag entirely.
@@ -339,7 +334,7 @@ No longer a standalone crate — absorbed into `swc_ecma_minifier` as `pub(crate
 
 ## Top 5 Highest-Impact Actions
 
-1. **Split `vendor.rs`** into `vendor/{manifests,ast_helpers,rename,full_swap,partial_swap,bundled_partial_swap}.rs`. Addresses the worst god module and much of the duplication in one change.
+1. **Continue splitting `vendor.rs`** — manifests and strip extracted; remaining: AST helpers, unify partial-swap dispatchers, parameterize `build_named_from_*` by shape.
 
 2. **Split `analysis_tests.rs`** into 6–8 topic-aligned test modules. Largest test file at 4095 lines.
 
@@ -347,4 +342,4 @@ No longer a standalone crate — absorbed into `swc_ecma_minifier` as `pub(crate
 
 4. **Extract `write_json` helper** from `emit_harness.rs` (7 copies) and `write_tree.rs` (3 copies). Use `include_str!` for the embedded JS monitor script.
 
-5. **Split `lowering/util.rs`** grab-bag into focused modules (`scope_names.rs`, `import_emit.rs`, `ordinal.rs`, `io.rs`).
+5. ~~**Split `lowering/util.rs`**~~ — **Done** (`0cbe93546`). Split into `scope_names.rs`, `import_emit.rs`, `ordinal.rs`, `io.rs`.
