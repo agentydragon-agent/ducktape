@@ -430,10 +430,11 @@ in
     ];
 
     mcpServers = {
-      tana-local = {
-        type = "http";
-        url = "http://localhost:8262/mcp";
-      };
+      # Disabled - Tana MCP server now in cluster
+      # tana-local = {
+      #   type = "http";
+      #  url = "http://localhost:8262/mcp";
+      # };
 
       airlock = {
         type = "http";
