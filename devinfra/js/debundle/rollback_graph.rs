@@ -96,18 +96,18 @@ where
         self.restore_edge_count(from, to, old_count - 1);
     }
 
-    pub(crate) fn successors(&self, node: N) -> Vec<N> {
+    pub(crate) fn successors(&self, node: N) -> impl Iterator<Item = N> + '_ {
         self.out_edges
             .get(&node)
-            .map(|edges| edges.iter().copied().collect())
-            .unwrap_or_default()
+            .into_iter()
+            .flat_map(|edges| edges.iter().copied())
     }
 
-    pub(crate) fn predecessors(&self, node: N) -> Vec<N> {
+    pub(crate) fn predecessors(&self, node: N) -> impl Iterator<Item = N> + '_ {
         self.in_edges
             .get(&node)
-            .map(|edges| edges.iter().copied().collect())
-            .unwrap_or_default()
+            .into_iter()
+            .flat_map(|edges| edges.iter().copied())
     }
 
     pub(crate) fn scc_containing(&self, node: N) -> BTreeSet<N> {
@@ -197,9 +197,9 @@ where
             if !seen.insert(node) {
                 continue;
             }
-            let neighbors = match direction {
-                Direction::Forward => self.successors(node),
-                Direction::Reverse => self.predecessors(node),
+            let neighbors: Vec<N> = match direction {
+                Direction::Forward => self.successors(node).collect(),
+                Direction::Reverse => self.predecessors(node).collect(),
             };
             for neighbor in neighbors.into_iter().rev() {
                 if !seen.contains(&neighbor) {
@@ -283,8 +283,8 @@ mod tests {
         graph.decrement_edge(1, 2);
         assert_eq!(graph.edge_count(1, 2), 0);
         assert!(!graph.contains_edge(1, 2));
-        assert!(graph.successors(1).is_empty());
-        assert!(graph.predecessors(2).is_empty());
+        assert!(graph.successors(1).next().is_none());
+        assert!(graph.predecessors(2).next().is_none());
     }
 
     #[test]

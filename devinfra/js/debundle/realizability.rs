@@ -503,13 +503,11 @@ impl<'a> OverlayGraphView<'a> {
             WalkDirection::Forward => self
                 .base
                 .successors(node)
-                .into_iter()
                 .filter(|&to| self.effective_count(node, to) > 0)
                 .collect(),
             WalkDirection::Reverse => self
                 .base
                 .predecessors(node)
-                .into_iter()
                 .filter(|&from| self.effective_count(from, node) > 0)
                 .collect(),
         };
