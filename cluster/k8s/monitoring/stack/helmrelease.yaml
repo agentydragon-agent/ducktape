@@ -74,18 +74,14 @@ spec:
             metadata:
               name: db
             spec:
-              storageClassName: local-path-hetzner
+              storageClassName: local-path-ovh
               accessModes: ["ReadWriteOnce"]
               resources:
                 requests:
                   storage: 1Gi
         # Chart auto-generates podAntiAffinity when replicas > 1
-        tolerations:
-          - key: node-role.kubernetes.io/control-plane
-            operator: Exists
-            effect: NoSchedule
         nodeSelector:
-          topology.kubernetes.io/region: hil
+          topology.kubernetes.io/zone: hil-ovh
         resources:
           requests:
             cpu: 10m
