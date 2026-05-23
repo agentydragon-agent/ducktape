@@ -3,6 +3,13 @@
 //! files/applied/report are spliced into the artifact by
 //! `apply_materialized_logical_chunks`.
 
+mod apply;
+mod rebind_folding;
+
+pub(super) use apply::apply_materialized_logical_chunks;
+use apply::{ApplyChunksResult, materialized_chunk_artifact};
+use rebind_folding::fold_rebind_atomic_units;
+
 use super::io::write_chunk_report_json;
 use super::ordinal::statement_ordinal_for_body_index;
 use super::util::{render_atomic_unit_cause_guidance, target_file_for_request};
@@ -359,46 +366,18 @@ pub(super) fn materialize_logical_chunk(
             let mut hints = AnalysisHints::default();
             for req in &explicit_requests {
                 for m in &req.members {
-                    if m.purity == MemberPurity::Pure {
-                        hints.declared_pure.insert(m.binding.clone());
-                    }
-                    if m.purity == MemberPurity::PureNew {
-                        hints.declared_pure_new.insert(m.binding.clone());
-                    }
-                    if !m.pure_members.is_empty() {
-                        hints
-                            .declared_pure_members
-                            .entry(m.binding.clone())
-                            .or_default()
-                            .extend(m.pure_members.iter().cloned());
-                    }
-                    if let Some(effect) = known_effect_from_member_effect(m.effect) {
-                        hints.known_effects.insert(m.binding.clone(), effect);
-                    }
+                    apply_member_hints(&mut hints, &m.binding, m.purity, &m.pure_members, m.effect);
                 }
             }
             if let Some(cr) = chunk_renames.get(chunk_id) {
                 for m in &cr.members {
-                    if m.purity == MemberPurity::Pure {
-                        hints.declared_pure.insert(m.selector.binding.name.clone());
-                    }
-                    if m.purity == MemberPurity::PureNew {
-                        hints
-                            .declared_pure_new
-                            .insert(m.selector.binding.name.clone());
-                    }
-                    if !m.pure_members.is_empty() {
-                        hints
-                            .declared_pure_members
-                            .entry(m.selector.binding.name.clone())
-                            .or_default()
-                            .extend(m.pure_members.iter().cloned());
-                    }
-                    if let Some(effect) = known_effect_from_member_effect(m.effect) {
-                        hints
-                            .known_effects
-                            .insert(m.selector.binding.name.clone(), effect);
-                    }
+                    apply_member_hints(
+                        &mut hints,
+                        &m.selector.binding.name,
+                        m.purity,
+                        &m.pure_members,
+                        m.effect,
+                    );
                 }
             }
             hints
@@ -728,6 +707,31 @@ pub(super) fn materialize_logical_chunk(
     })
 }
 
+fn apply_member_hints(
+    hints: &mut AnalysisHints,
+    binding_name: &str,
+    purity: MemberPurity,
+    pure_members: &[String],
+    effect: MemberEffect,
+) {
+    if purity == MemberPurity::Pure {
+        hints.declared_pure.insert(binding_name.to_string());
+    }
+    if purity == MemberPurity::PureNew {
+        hints.declared_pure_new.insert(binding_name.to_string());
+    }
+    if !pure_members.is_empty() {
+        hints
+            .declared_pure_members
+            .entry(binding_name.to_string())
+            .or_default()
+            .extend(pure_members.iter().cloned());
+    }
+    if let Some(effect) = known_effect_from_member_effect(effect) {
+        hints.known_effects.insert(binding_name.to_string(), effect);
+    }
+}
+
 fn build_directory_dependency_facts(
     chunk_id: &str,
     factorization: &ChunkFactorization,
@@ -780,245 +784,4 @@ fn module_output_file(
         .logical_modules
         .get(idx)
         .map(|logical| join_module_path(&[chunk_id, &logical.target_file]))
-}
-
-pub(super) struct ApplyChunksResult {
-    pub(super) artifact: ChunkBundle,
-    pub(super) decomposition_by_chunk: HashMap<ChunkId, ChunkDecompositionOutput>,
-}
-
-pub(super) fn apply_materialized_logical_chunks(
-    artifact: ChunkBundle,
-    target_dir: &str,
-    chunks: Vec<MaterializedLogicalChunk>,
-) -> Result<ApplyChunksResult> {
-    let chunk_table = artifact.chunk_table.clone();
-    let mut replacements = BTreeMap::<ChunkId, MaterializedLogicalChunk>::new();
-    for chunk in chunks {
-        let chunk_id = chunk.chunk_id;
-        if replacements.insert(chunk_id, chunk).is_some() {
-            bail!(
-                "materialize_logical_modules produced duplicate chunk_id: {}",
-                chunk_table.name(chunk_id)
-            );
-        }
-    }
-
-    let source_chunks = artifact.chunks;
-    let mut output_chunks = Vec::with_capacity(source_chunks.len() + replacements.len());
-    let mut decomposition_by_chunk = HashMap::new();
-    for chunk_artifact in source_chunks {
-        if let Some(replacement) = replacements.remove(&chunk_artifact.chunk_id) {
-            let (new_artifact, decomposition) = materialized_chunk_artifact(
-                target_dir,
-                &chunk_table,
-                Some(chunk_artifact.analysis),
-                replacement,
-            );
-            decomposition_by_chunk.insert(new_artifact.chunk_id, decomposition);
-            output_chunks.push(new_artifact);
-        } else {
-            output_chunks.push(chunk_artifact);
-        }
-    }
-    for replacement in replacements.into_values() {
-        let (new_artifact, decomposition) =
-            materialized_chunk_artifact(target_dir, &chunk_table, None, replacement);
-        decomposition_by_chunk.insert(new_artifact.chunk_id, decomposition);
-        output_chunks.push(new_artifact);
-    }
-    Ok(ApplyChunksResult {
-        artifact: ChunkBundle {
-            chunks: output_chunks,
-            chunk_table: artifact.chunk_table,
-        },
-        decomposition_by_chunk,
-    })
-}
-
-pub(super) fn materialized_chunk_artifact(
-    target_dir: &str,
-    chunk_table: &ChunkTable,
-    base_analysis: Option<ChunkAnalysis>,
-    chunk: MaterializedLogicalChunk,
-) -> (ChunkArtifact, ChunkDecompositionOutput) {
-    let MaterializedLogicalChunk {
-        chunk_id,
-        target_file,
-        source_path,
-        files,
-        file_records,
-        applied,
-        directory_dependency_facts,
-        validation,
-        report,
-    } = chunk;
-    let chunk_name = chunk_table.name(chunk_id).to_string();
-    let manifest_files = file_records
-        .iter()
-        .map(|(file, role)| ChunkFileRecord {
-            file: file.clone(),
-            role: *role,
-        })
-        .collect();
-    let logical_modules = ChunkLogicalModulesSummary {
-        module_ids: report
-            .final_module_contents
-            .iter()
-            .map(|module| module.id.clone())
-            .collect(),
-        target_dir: target_dir.to_string(),
-    };
-    let js = JsChunk {
-        entry_file: target_file.clone(),
-        files,
-        metadata: ChunkMetadata {
-            source_path: source_path.clone(),
-        },
-    };
-    let analysis = ChunkAnalysis {
-        entry_file: target_file,
-        files: manifest_files,
-        ..base_analysis.unwrap_or_else(|| ChunkAnalysis {
-            chunk_id: chunk_name,
-            source_path,
-            parser: Default::default(),
-            entry_file: String::new(),
-            counts: Default::default(),
-            files: Vec::new(),
-            imports: Vec::new(),
-            export_aliases: Vec::new(),
-            unresolved_exports: Vec::new(),
-            kept_top_level_declarations: Vec::new(),
-        })
-    };
-
-    let decomposition = ChunkDecompositionOutput {
-        logical_modules,
-        selected_module_lowerings: applied,
-        directory_dependency_facts,
-        validation,
-    };
-    (
-        ChunkArtifact {
-            chunk_id,
-            js,
-            analysis,
-        },
-        decomposition,
-    )
-}
-
-/// Resolve rebind-only atomic-unit "soft" conflicts by silently
-/// extending the explicit claim's plan to cover any member of the
-/// cycle that has no explicit destination.
-///
-/// Atomic factor units symmetrize `LazyRebind`/`EagerRebind` edges
-/// (see <atomic_units.rs>) because ESM imports are read-only — a
-/// peel that places the rebind's write site in one module and its
-/// declaration in another would emit code that throws `TypeError:
-/// Assignment to constant variable` the first time the assignment
-/// fires. Without this pass, such a spec would surface as an
-/// `atomic_unit_conflict` and the materializer would bail.
-///
-/// When exactly one member of the cycle carries an explicit claim
-/// and the rest are unclaimed (or were already swept into the
-/// residual landing site), the conflict is the spec author's
-/// implicit oversight rather than a contradiction: they peeled the
-/// writer but left the declarer at the default destination, not
-/// realizing the cycle pulls them together. Extending the writer's
-/// module to cover the declarer keeps the rebind intra-module —
-/// the writer's assignment resolves locally — and preserves the
-/// spec's peel intent.
-///
-/// Multi-explicit-destination conflicts fall through unchanged so
-/// the materializer's bail surfaces the contradiction. Conflicts
-/// with non-rebind causes (`LocalEffect`, eager cycles, sequenced
-/// side-effect chains) also fall through — those have their own
-/// resolution stories and are intentionally surfaced as hard
-/// errors.
-fn fold_rebind_atomic_units(
-    precomputed: &OwnerGraphAndUnits,
-    binding_assignment: &mut HashMap<Id, usize>,
-    bindings_catalogue: &mut HashMap<Id, BindingKind>,
-    module_plans: &mut [ModulePlan],
-    residual_plan_index: Option<usize>,
-) {
-    let owner_graph = &precomputed.owner_graph;
-    'unit: for unit in &precomputed.atomic_units {
-        if unit.causes.is_empty() {
-            continue;
-        }
-        let rebind_only = unit
-            .causes
-            .iter()
-            .all(|cause| matches!(cause, DepKind::LazyRebind | DepKind::EagerRebind));
-        if !rebind_only {
-            continue;
-        }
-        let mut explicit_dest: Option<usize> = None;
-        let mut owners_to_fold: Vec<OwnerId> = Vec::new();
-        for &owner_id in &unit.members {
-            let Some(node) = owner_graph.node(owner_id) else {
-                continue;
-            };
-            if node.declared.is_empty() {
-                // Anonymous statements don't appear in `binding_assignment`;
-                // their routing is via `anonymous_ordinal_assignment`. They
-                // can't be the carrier of a rebind cause anyway — a rebind
-                // edge needs a declared target — so skipping them is safe.
-                continue;
-            }
-            let mut owner_claim: Option<usize> = None;
-            for binding_id in &node.declared {
-                let Some(&idx) = binding_assignment.get(binding_id) else {
-                    continue;
-                };
-                // A binding that was swept into the residual landing site
-                // counts as "unclaimed" for fold purposes — the user didn't
-                // explicitly route it there, the sweep did.
-                if Some(idx) == residual_plan_index {
-                    continue;
-                }
-                owner_claim = Some(idx);
-                break;
-            }
-            match owner_claim {
-                Some(idx) => match explicit_dest {
-                    None => explicit_dest = Some(idx),
-                    Some(existing) if existing != idx => continue 'unit,
-                    _ => {}
-                },
-                None => owners_to_fold.push(owner_id),
-            }
-        }
-        let Some(dest) = explicit_dest else {
-            continue;
-        };
-        if owners_to_fold.is_empty() {
-            continue;
-        }
-        let module_id = ModuleId(LogicalModuleIndex(dest));
-        for owner_id in owners_to_fold {
-            let Some(node) = owner_graph.node(owner_id) else {
-                continue;
-            };
-            for binding_id in &node.declared {
-                let was_assigned = binding_assignment.get(binding_id).copied();
-                binding_assignment.insert(binding_id.clone(), dest);
-                bindings_catalogue
-                    .insert(binding_id.clone(), BindingKind::Owned { owner: module_id });
-                let name = binding_id.0.as_ref().to_string();
-                module_plans[dest]
-                    .bindings
-                    .entry(name.clone())
-                    .or_insert_with(|| name.clone());
-                if let Some(was) = was_assigned
-                    && Some(was) == residual_plan_index
-                {
-                    module_plans[was].bindings.remove(&name);
-                }
-            }
-        }
-    }
 }
