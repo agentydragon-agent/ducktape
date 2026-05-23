@@ -4,7 +4,26 @@
 
 Linux by default. macOS-only components (Seatbelt, Sandboxer) are explicitly documented.
 
-@STYLE.md
+## Nix Devshell / Missing Tools
+
+This repo has a Nix flake with a devshell and a `.envrc` that activates it via
+direnv. On any machine with Nix installed, all tools (`bazelisk`, `bbr`,
+`pre-commit`, `ducktape-precommit`, `rustfmt`, the repo's specific `prettier`
+with its plugins, etc.) are provided by the devshell — not installed globally.
+
+If any of these tools appear missing or not on `PATH`, the devshell is likely not
+active. The fix is to ensure direnv has loaded the `.envrc`:
+
+```bash
+direnv allow   # if not yet allowed
+eval "$(direnv export bash)"  # to load it in the current shell
+```
+
+Or just run the operation under `nix develop` directly if direnv is unavailable.
+
+Do **not** resort to per-tool workarounds (downloading a standalone prettier,
+invoking ruff via pip, skipping hooks, etc.) — the Nix devshell provides exactly
+the right versions and plugin configurations.
 
 ## Session Start Hook (Claude Code Web)
 
@@ -16,10 +35,10 @@ The root cause is always a broken session start hook — notify the user if reco
 
 ## Kubernetes MCP Server (`kubectl-local`)
 
-Prefer the `kubectl-local` MCP server tools over `Bash(kubectl ...)` for
-`claude-sandbox` namespace operations. The MCP server uses a client certificate
-(CN=`claude-code-web`, group `oidc-ksbx-groups:kubectl-sandbox-users`) and never
-triggers permission prompts.
+Prefer the `kubectl-local` MCP server tools over `Bash(kubectl ...)` for any
+operation that the `oidc-ksbx-groups:kubectl-sandbox-users` RBAC group allows.
+The MCP server uses a client certificate (CN=`claude-code-web`, group
+`oidc-ksbx-groups:kubectl-sandbox-users`) and never triggers permission prompts.
 
 **RBAC** (see <cluster/k8s/agents/claude-rbac/>):
 
@@ -56,110 +75,139 @@ DCR workaround, and the whole OAuth-dance saga, see
 
 ## Sandbox
 
-Run `bb`, `bazel`, `terraform`/`tofu`, `kubectl`, `systemctl`, `ss`, `ip`, `curl`, and other network/system commands **outside the sandbox** (`dangerouslyDisableSandbox: true`). The sandbox blocks their network calls (including localhost, e.g., `kubectl` to haproxy on `localhost:7445`).
+Run `bb`, `bazel`, `bazelisk`, `bbr`, `terraform`/`tofu`, `kubectl`, `systemctl`, `ss`, `ip`, `curl`, and other network/system commands **outside the sandbox** (`dangerouslyDisableSandbox: true`). The sandbox blocks their network calls (including localhost, e.g., `kubectl` to haproxy on `localhost:7445`).
 
-**Bazel commands must always use `dangerouslyDisableSandbox: true`.** The global WebFetch domain allowlist triggers `--unshare-net`, which blocks Bazel's gRPC loopback. See `docs/claude_code_sandbox.md` for details.
+**All Bazel-family commands (`bazel`, `bazelisk`, `bb`, `bbr`) must always use `dangerouslyDisableSandbox: true`.** When any `WebFetch(domain:...)` permission rule exists in settings, the sandbox applies `--unshare-net` (full network namespace isolation). Bazel's Java gRPC client ignores `GRPC_PROXY` and performs direct DNS resolution — which is impossible in an isolated network namespace. This breaks RBE, BES upload, and remote cache. The sandbox proxy cannot fix this because Bazel's `--remote_proxy` / `--bes_proxy` only accept Unix sockets (raw TCP forwarders), not the HTTP CONNECT / SOCKS5 proxies the sandbox provides. See <docs/claude_code_sandbox.md> and <debug/bazel_sandbox_mitigations.md> for full analysis.
 
 ## Bazel Commands
 
-Use `bbr` for build, test, and query. Use `bb` directly only for `run`
-(local side effects) or when you need outputs on the local filesystem.
+### Tool hierarchy
+
+| Tool       | What it is                                                                                                                                                       |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bazelisk` | Bazel version manager — downloads and runs the correct Bazel version. Our shim also injects the session bazelrc.                                                 |
+| `bazel`    | Raw Bazel binary (avoid — version not pinned, no session bazelrc injection).                                                                                     |
+| `bb`       | BuildBuddy CLI. `bb remote` runs Bazel **on BuildBuddy RBE runner VMs** using files synced from the local repo.                                                  |
+| `bbr`      | Our convenience wrapper around `bb remote` (<devinfra/bbr.py>). Adds RBE flags, session tags, and auto-syncs git diffs. **Default choice for build/test/query.** |
+
+**Prefer `bbr` for almost everything.** Use `bb run` for targets that need to execute on the local machine (Gazelle, manifest updates, formatters). Use `bazelisk` for local runs that need the session bazelrc (cert injection, new external repo fetches).
+
+`bb run` always executes the binary locally — `--remote_executor=""` only controls whether _build actions_ use RBE, not where the binary runs. Omit it unless the target is known to fail when built on RBE.
 
 ```bash
 bbr test //path/to:target
 bbr build //path/to:target
 bbr query '...'
 
-# Local side effects only:
-bb run --remote_executor="" //devinfra:gazelle
+# Runs locally (binary always executes on the local machine):
+bb run //devinfra:gazelle
 ```
 
-**`bb` ignores the session bazelrc; use `bazelisk` for local runs that need it.**
-The Claude Code session start hook writes per-session Bazel config (JVM
-truststore startup args, RBE headers, etc.) to
-`<session_dir>/bazelrc`. The `bazelisk` shim auto-injects
-`--bazelrc=<session_dir>/bazelrc`; the `bb` shim does **not**. `bb` also
-passes `--nohome_rc --noworkspace_rc --nosystem_rc` and reconstructs
-the workspace `.bazelrc` flags itself, but it never sources the session
-bazelrc. If the invocation requires the session config — e.g. fetching
-new external repos through TLS-inspected egress — `bb` will start a fresh
-Bazel server without the truststore and fail with
-`TLS error: (certificate_unknown) PKIX path building failed` against
-`bcr.bazel.build` and friends. Cached invocations look fine because they
-piggyback on the warmed-up `bazelisk` server, but the moment the server
-restarts (option mismatch, idle timeout, fresh repo fetch) you get cert
-errors. For local-only execution that needs session config, use
-`bazelisk run //target -- ...`. RBE-bound work (`bbr ...`) is unaffected
-because runner VMs don't depend on the session truststore.
+### Remote execution and caching
 
-**Updating `requirements_bazel.txt`**: `bb run --remote_executor="" //:requirements.update`
-fails on NixOS (no `/bin/bash`). Use RBE instead:
+Remote execution (RBE) and remote caching are the **expected defaults** — do not disable them. In particular:
+
+- **Browser/visual tests must run with remote execution.** RBE runner VMs have the required Docker and display stack; local machines typically do not. Never skip or stub these tests to avoid needing RBE.
+- `--remote_executor=""` disables remote build actions. Only add it when a target is documented as failing on RBE (e.g. needs `/bin/bash` not present on the runner).
+- `--noremote_cache` / `--noremote_accept_cached` are fine for forcing a fresh run; they don't break correctness.
+
+**If any Bazel-family command (`bazel`, `bazelisk`, `bb`, `bbr`) cannot reach BuildBuddy** (connection refused, DNS failure, cert error):
+
+1. First, retry the Bash tool call with `dangerouslyDisableSandbox: true` — the Claude Code sandbox's `--unshare-net` breaks Bazel's gRPC DNS resolution even when the host is listed in the domain allowlist (see <docs/claude_code_sandbox.md>).
+2. If it still fails, **stop and report the connectivity issue to the user** before resorting to `--remote_executor=""`. The user may need to recover the session start hook or check VPN/firewall state.
+
+### Downloading remote build outputs
+
+`bbr` uses `--remote_download_minimal` by default, so artifacts stay on the runner. To fetch specific outputs:
+
+```bash
+# Fetch by regex (most common):
+bbr build //path/to:target --remote_download_regex='.*\.whl$'
+
+# Fetch all direct outputs of the requested targets:
+bbr build //path/to:target --remote_download_outputs=toplevel
+```
+
+Artifacts land at `bb-out/bazel-out/k8-fastbuild/bin/<pkg>/<name>` (not `bazel-bin/` — that symlink only exists in local workspaces).
+
+### Undeclared test outputs (golden PNGs, logs, HAR dumps)
+
+Tests write diagnostics to Bazel's `TEST_UNDECLARED_OUTPUTS_DIR`. These are
+uploaded to BuildBuddy automatically. Fetch them with `bbapi artifact`:
+
+```bash
+INV=$(cat ~/.cache/bbr/last_invocation_id)
+
+# List what's available (shows LABEL and NAME columns):
+bbapi artifact list "$INV"
+
+# Stream a specific file to stdout (pipe or redirect):
+bbapi artifact cat "$INV" pave_output.txt > local_copy.txt
+
+# Download to a file (defaults to the artifact's own filename):
+bbapi artifact download "$INV" pave_output.txt
+```
+
+`name-substr` is matched against `"label/name"` (e.g. `"test_render/test.outputs/empty.png"`).
+
+To update golden screenshots after a visual test run:
+
+```bash
+INV=$(cat ~/.cache/bbr/last_invocation_id)
+bbapi artifact download "$INV" "test.outputs/product_cash_runway.png"
+cp product_cash_runway.png augur/frontend/__screenshots__/product_cash_runway.png
+```
+
+The outer (bbr) invocation ID auto-resolves to the child Bazel invocation — either ID works.
+
+### Invocation tracking
+
+`bbr` writes the BuildBuddy invocation ID to `~/.cache/bbr/last_invocation_id`:
+
+```bash
+bbapi target <id>                    # List targets (auto-resolves workflow IDs)
+bbapi target log <id> <target>       # Fetch test log
+bbapi artifact list <id>             # List undeclared test outputs
+bbapi invocation <id>                # Invocation details (commit, branch, dirty)
+
+bbapi invocation list --tag session:<session-id>   # All invocations in this session
+bbapi target history --label //path:target          # Pass/fail timeline
+```
+
+### Session bazelrc and `bb` vs `bazelisk`
+
+**`bb` ignores the session bazelrc; use `bazelisk` for local runs that need it.**
+The Claude Code session start hook writes per-session Bazel config (JVM truststore,
+RBE headers) to `<session_dir>/bazelrc`. The `bazelisk` shim auto-injects it; `bb`
+does not. If `bb` starts a fresh Bazel server (option mismatch, idle timeout, new
+external repo fetch) it will fail with `TLS error: PKIX path building failed`. For
+local-only runs that need the session config, use `bazelisk run //target -- ...`.
+RBE-bound work (`bbr ...`) is unaffected because runner VMs don't use the session
+truststore.
+
+### Updating `requirements_bazel.txt`
+
+Use RBE to build, download the output, then regenerate the Gazelle manifest locally:
 
 ```bash
 bbr build //:requirements --remote_download_regex='.*requirements\.out' --noremote_accept_cached
 cp bb-out/bazel-out/k8-fastbuild/bin/requirements.out requirements_bazel.txt
-# Then update the gazelle manifest:
-bb run --remote_executor="" //devinfra:gazelle_python_manifest.update
+bb run //devinfra:gazelle_python_manifest.update
 ```
 
-`bbr` wraps `bb remote` (<devinfra/bbr.py>) — runs Bazel on a
-BuildBuddy runner VM with RBE, Firecracker isolation, and Docker. Syncs local
-git diffs automatically. See <devinfra/docs/bb_remote_internals.md>.
+### Unpushed commits
 
-**Unpushed commits on default branch**: `bbr` aborts if local
-`devel` differs from `origin/devel`. Fix: `git push` first, or use a feature
-branch.
+`bbr` aborts if local `devel` differs from `origin/devel`. Fix: `git push` first, or use a feature branch.
 
-**Downloading build outputs from RBE**: `--config=rbe` sets `--remote_download_minimal`,
-so build artifacts aren't downloaded by default. To force-download specific outputs,
-add `--remote_download_regex='<java regex>'` (e.g., `--remote_download_regex='.*\.whl$'`)
-or `--remote_download_outputs=toplevel` to fetch just the direct outputs of the
-requested targets. This is additive with `--remote_download_minimal`. For `bbr`, pass
-the flag before the target: `bbr build //target --remote_download_regex='.*\.whl$'`.
-
-**Downloaded artifacts land at `bb-out/bazel-out/<config>/bin/<pkg>/<name>`**, not
-`bb-out/bazel-bin/<pkg>/<name>`. The `bazel-bin/` convenience symlink only exists in
-local Bazel workspaces — `bb remote` does not create it on the runner side. For our
-standard RBE build (`--config=rbe --config=ci` from `.github/actions/bb-remote/`) the
-config is `k8-fastbuild`, so outputs land at `bb-out/bazel-out/k8-fastbuild/bin/...`.
-Workflows consuming bb-remote-built artifacts on the runner side (e.g. `push-images.yml`)
-must use the full path. See <devinfra/docs/bb_remote_internals.md> for details.
-
-**Requirements:** `bb` on PATH and `BUILDBUDDY_API_KEY` set (both provided by session
-start hook).
-
-**Configuration layers** (in priority order, last-wins for Bazel flags):
+### Configuration layers
 
 | Layer   | Source                           | Contents                                                  |
 | ------- | -------------------------------- | --------------------------------------------------------- |
 | Repo    | `devinfra/bbr.json` (checked in) | `runner_exec_properties`, `container_image`, `bazel_args` |
 | Session | `$BBR_BAZELRC` file              | `--build_metadata` (ROLE, session TAGS)                   |
-| Ad-hoc  | `$BBR_REMOTE_ARGS` env var       | Extra `bb remote` flags (slot 2)                          |
+| Ad-hoc  | `$BBR_REMOTE_ARGS` env var       | Extra `bb remote` flags                                   |
 
-The session hook writes `bbr.bazelrc` and exports `BBR_BAZELRC` automatically.
-
-**Invocation tracking:** `bbr` automatically writes the BuildBuddy invocation ID to
-`~/.cache/bbr/last_invocation_id` and prints a post-run summary with `bbapi` commands:
-
-```bash
-# After any bbr command, use the printed invocation ID:
-bbapi target <id>                    # List targets (auto-resolves workflow IDs)
-bbapi target log <id> <target>       # Fetch test log
-bbapi artifact <id>                  # List/download undeclared test outputs
-bbapi invocation <id>                # Invocation details (commit, branch, dirty)
-
-# Or read the last invocation ID from file:
-cat ~/.cache/bbr/last_invocation_id
-
-# List invocations filtered by session tag:
-bbapi invocation list --tag session:<session-id>
-
-# Target history (pass/fail timeline, useful for bisecting):
-bbapi target history --label //path:target
-```
-
-`bbapi target` and `bbapi target log` auto-resolve workflow (runner) invocation IDs
-to child invocations — either ID works.
+**Requirements:** `bb` on PATH and `BUILDBUDDY_API_KEY` set (both provided by the session start hook or Nix devshell).
 
 ## Terraform via Bazel
 
@@ -218,30 +266,25 @@ If you touched `ansible/`, also follow <ansible/AGENTS.md>.
 
 ## SOPS
 
-SOPS `.sops.yaml` creation rules match files by **path relative to the repo root**.
-Running `sops -e /tmp/some-file.yaml` fails with "no matching creation rules found"
-because the path doesn't match any rule. Always write the file to its final destination
+`.sops.yaml` rules match files by **path relative to repo root**.
+`sops -e /tmp/some-file.yaml` fails with "no matching creation rules found"
+because the path doesn't match any rule. Always write files to final locations
 (or a temp path under the repo) and encrypt in-place:
 
 ```bash
-# Correct: write file to destination first, then encrypt in-place
+# Correct: write to destination, then encrypt in-place
 cp /tmp/plaintext.yaml secrets/shared/kubeconfig.yaml
 sops -e -i secrets/shared/kubeconfig.yaml
 
-# Wrong: file outside repo — no creation rule matches
+# Wrong: outside repo — no creation rule matches
 sops -e /tmp/plaintext.yaml > secrets/shared/kubeconfig.yaml
 ```
 
-SOPS 3.12 auto-discovers `~/.ssh/id_rsa` but NOT `~/.ssh/id_ed25519`. The root
-`.envrc` (via `devinfra/secrets/cli_env.sh`) sets `SOPS_AGE_KEY` automatically
-by deriving from `~/.ssh/id_ed25519`. **Always run sops commands from within the
-repo directory** (with direnv active) so `SOPS_AGE_KEY` is set correctly.
-If you need to run sops outside the repo, derive the key manually:
-
-```bash
-export SOPS_AGE_KEY=$(ssh-to-age --private-key -i ~/.ssh/id_ed25519)
-sops -d secrets/shared/kubeconfig.yaml
-```
+SOPS 3.12 auto-discovers `~/.ssh/id_rsa` but NOT `~/.ssh/id_ed25519`.
+`.envrc` (via `devinfra/secrets/cli_env.sh`) sets `SOPS_AGE_KEY`
+by deriving from `~/.ssh/id_ed25519`. **Always run sops commands from within
+repo direnv** so `SOPS_AGE_KEY` is set correctly.
+If you need to run sops outside the repo, derive the key manually (see `.envrc`).
 
 ## Git
 
@@ -251,38 +294,13 @@ sops -d secrets/shared/kubeconfig.yaml
 
 ## Conventions
 
-### TODO Tracking
+See README.md for descriptions of each convention. Agent rules:
 
-`<subproject>/TODO.md`: persistent TODO tracking. TODOs local to a specific code location are fine as inline comments; cross-cutting or project-level TODOs belong in `TODO.md`.
-Once a TODO is fully completed, remove it from TODO.md.
-
-### Debug Notes
-
-`<subproject>/debug/<topic>.md`: persistent investigation notes (RCAs, debug logs). Examples: `debug/spice_lag/README.md`, `debug/wyrm-oom/INVESTIGATION.md`. The `cluster/` subproject uses `cluster/docs/lessons_learned/` instead.
-
-### Plans
-
-`<subproject>/plans/`: future work or work in progress. Once a plan is fully completed, delete it or squash into short tombstone/summary outside `plans/`.
-
-### SPEC.md — High-level component specifications
-
-`<subproject>/SPEC.md`: high-level, user-facing specification of what a
-component guarantees to its users. An outside observer should be able to read
-SPEC.md to understand what behaviors they can rely on, without having to read
-the implementation. Example: <devinfra/claude/claude_hook/SPEC.md> describes
-what the Claude Code hook daemon provides to every session, and the
-`/web_selfcheck` skill runs the acceptance tests derived from it.
-
-SPEC.md files **must** be updated when the high-level requirements of the
-thing they cover change — a new class of credential gets injected, a new
-shim behavior is added, a new profile lands, a new promise is made to the
-agent, etc.
-
-SPEC.md files **must not** record low-level implementation details that an
-outside observer would not notice. "Credentials are refreshed regularly by
-the backend service" belongs in SPEC.md; "credentials live in
-`<session_dir>/creds.json` and rotate every 300s via RPC to
-`rotate.example.com`" does not — that belongs in README.md or in the code.
+- **`x/`**: code under `x/` is experimental/unstable. Don't treat it as stable API.
+- **`TODO.md`**: cross-cutting or project-level TODOs go here. Remove entries once done.
+- **`plans/`**: delete or tombstone a plan once fully completed.
+- **`debug/`**: write investigation notes here, not in code comments or PR descriptions.
+- **`SPEC.md`**: update when the component's high-level contract changes (new promise, new credential class, new behavior visible to users). Do **not** record implementation details — those go in README.md or code. Example: <devinfra/claude/claude_hook/SPEC.md>.
 
 ## Testing
 
@@ -290,7 +308,7 @@ the backend service" belongs in SPEC.md; "credentials live in
 
 ```bash
 bbr test //path/to:test_target
-bb run --remote_executor="" //path/to:binary_target
+bb run //path/to:binary_target
 ```
 
 **CRITICAL gotcha**: All `py_test` targets MUST have a `pytest_bazel.main()` entry point. Without it, Bazel runs the file as a script which exits 0 without running tests. Add `@pypi//pytest_bazel` to deps.
@@ -310,7 +328,7 @@ if __name__ == "__main__":
 
 Use `py_test` macro from `//devinfra/python:defs.bzl` (not the raw `@rules_python` `py_test`) and set `requires_docker = True`. The macro handles `env_inherit`, tags, and Docker exec properties automatically. Do not add `env_inherit = ["DUCKTAPE_DOCKER_CLIENT_KEY"]` or `tags = ["requires_docker"]` manually.
 
-**Use undeclared test outputs for log capture**: Write diagnostic data (container logs, HAR dumps, config snapshots) to Bazel's undeclared test outputs directory via `util.testing.undeclared_outputs.undeclared_outputs_dir()`. These are uploaded to BuildBuddy and retrievable from the invocation. Do not dump large log blobs into test stdout/stderr — they clutter the test log and are harder to navigate. To read undeclared outputs from a test run:
+**Use undeclared test outputs for log capture**: Write diagnostic data (container logs, HAR dumps, config snapshots) to Bazel's undeclared test outputs directory via `util.testing.undeclared_outputs.undeclared_outputs_dir()`. These are uploaded to BuildBuddy and retrievable from the invocation. Do not dump large blobs into test stdout/stderr — they clutter the test log and are harder to navigate. To read undeclared outputs from a test run:
 
 ```bash
 TEST_DIR=$(bb info bazel-testlogs)/path/to/test_target
@@ -330,7 +348,7 @@ bbapi target history //path/to:test_target
 
 # 2. Identify the transition point (last pass → first fail)
 # 3. Use git log to find commits in that range
-git log --oneline <last-pass-commit>..<first-fail-commit>
+git log --oneline <last-pass>..<first-fail>
 
 # 4. Read the test log from the first failing invocation
 bbapi target log <failing-invocation-id> test_target
@@ -387,3 +405,5 @@ Uses `@aspect_rules_js`. **Do NOT run raw `pnpm install`** -- Bazel manages pnpm
 Adding deps: add to `package.json`, run Bazel (first build updates lockfile and fails), run again, commit `pnpm-lock.yaml`.
 
 See <props/frontend/AGENTS.md> for frontend conventions.
+
+@STYLE.md

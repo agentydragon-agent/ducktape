@@ -40,8 +40,8 @@ Personal infrastructure monorepo. Manages configuration for: **agentydragon** (T
 One `py_library` per `.py` file (no aggregators). Reference `//pkg:module` not `//pkg`. Bazel auto-generates `__init__.py` stubs via `imports = [".."]`.
 
 ```bash
-bb run --remote_executor="" //devinfra:gazelle              # Update BUILD files
-bb run --remote_executor="" //devinfra:gazelle -- --mode=diff  # Preview changes
+bb run //devinfra:gazelle              # Update BUILD files
+bb run //devinfra:gazelle -- --mode=diff  # Preview changes
 ```
 
 ### Rust
@@ -54,19 +54,19 @@ CARGO_BAZEL_REPIN=1 bb build --remote_executor="" @crates//:all  # Update Cargo.
 
 ### Remote Cache + RBE
 
-BuildBuddy provides remote cache and execution. See <devinfra/setup_buildbuddy.sh>.
+BuildBuddy provides remote caching and remote build execution (RBE). Build actions run on BuildBuddy runner VMs; results are cached so unchanged targets are instant on repeat runs.
 
-RBE worker image: `ghcr.io/agentydragon/rbe-worker` from <devinfra/rbe_image/Dockerfile>.
+- `bbr` — convenience wrapper around `bb remote`; runs the entire Bazel invocation on a BuildBuddy runner with RBE enabled. Default for builds, tests, and queries.
+- `bb run //target` — Bazel runs locally, build actions dispatched to RBE, binary always executed locally.
+- `bb run --remote_executor="" //target` — builds and runs entirely locally (only needed when a target is known to fail on RBE).
+
+RBE worker image: `ghcr.io/agentydragon/rbe-worker` from <devinfra/rbe_image/Dockerfile>. Setup: <devinfra/setup_buildbuddy.sh>.
 
 ## Dotfiles
 
 Managed by Nix home-manager in `nix/home/`. **Do NOT edit dotfiles in `~/`**.
 
 Deploy: `home-manager switch --flake ~/code/ducktape#<hostname>`
-
-## Ansible
-
-See <ansible/README.md>. Playbooks: `agentydragon.yaml`, `vps.yaml`, `gpd.yaml`, `wyrm.yaml`.
 
 ## Development
 
@@ -93,10 +93,10 @@ Other gitattributes consumed by pre-commit checks:
 
 ## CI
 
-- **BuildBuddy Workflows**: `bazel test //...` + `bazel build //...` (RBE, lint)
-- **GitHub Actions**: non-Bazel tasks (ansible-lint, nix, pre-commit), artifact publishing (wheels, container images)
+- **GitHub Actions + `bbr`**: `bazel {build,test} //...` via `bbr` (remote Bazel on BuildBuddy RBE, includes lint)
+- **GitHub Actions (non-Bazel)**: ansible-lint, nix, pre-commit, artifact publishing (wheels, container images)
 
-See `.github/workflows/` and `buildbuddy.yaml`.
+See `.github/workflows/`.
 
 ## Common Commands
 
@@ -105,10 +105,32 @@ See `.github/workflows/` and `buildbuddy.yaml`.
 bbr build //:requirements --remote_download_regex='.*requirements\.out' --noremote_accept_cached
 cp bb-out/bazel-out/k8-fastbuild/bin/requirements.out requirements_bazel.txt
 # Then regenerate the gazelle manifest:
-bb run --remote_executor="" //devinfra:gazelle_python_manifest.update
+bb run //devinfra:gazelle_python_manifest.update
 
-bb run --remote_executor="" //devinfra/lint:buildifier    # Format Bazel files
+bb run //devinfra/lint:buildifier    # Format Bazel files
 ```
+
+## Conventions
+
+### `x/` — Experimental
+
+`x/` subdirectories (e.g. `x/agent_server/`, `augur/x/`) mark experimental, in-flux, or one-off code that hasn't stabilized. Any directory at any level can have an `x/` subfolder. Don't expect stable APIs or finished design from code under `x/`.
+
+### `TODO.md`
+
+`<dir>/TODO.md` tracks persistent project-level TODOs. Inline code comments are fine for TODOs local to a specific location; cross-cutting or project-wide items go in `TODO.md`. Remove entries once fully completed.
+
+### `plans/`
+
+`<dir>/plans/` holds future work and work-in-progress design notes. Delete or tombstone a plan once it's fully done.
+
+### `debug/`
+
+`<dir>/debug/<topic>.md` holds investigation notes, RCAs, and debug logs. The `cluster/` subproject uses `cluster/docs/lessons_learned/` instead.
+
+### `SPEC.md`
+
+`<dir>/SPEC.md` is the high-level, user-facing specification of what a component guarantees. An outside observer should be able to read it to understand the component's contract without reading the implementation. Keep it at the "what it promises" level — implementation details belong in README.md or the code.
 
 ## License
 
