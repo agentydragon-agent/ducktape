@@ -16,7 +16,7 @@ spec:
   healthChecks:
     - apiVersion: postgresql.cnpg.io/v1
       kind: Cluster
-      name: grafana-db
+      name: grafana-db-ovh
       namespace: monitoring
   dependsOn:
     - name: monitoring-namespace

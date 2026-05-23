@@ -3,8 +3,6 @@ kind: Cluster
 metadata:
   name: grafana-db-ovh
   namespace: monitoring
-  annotations:
-    description: "Streaming replica of grafana-db; will be promoted to replace the Hetzner-pinned primary."
 spec:
   instances: 2
   imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
@@ -25,27 +23,3 @@ spec:
 
   monitoring:
     enablePodMonitor: true
-
-  replica:
-    enabled: true
-    source: grafana-db
-
-  bootstrap:
-    pg_basebackup:
-      source: grafana-db
-
-  externalClusters:
-    - name: grafana-db
-      connectionParameters:
-        host: grafana-db-rw.monitoring.svc.cluster.local
-        user: streaming_replica
-        dbname: postgres
-      sslKey:
-        name: grafana-db-replication
-        key: tls.key
-      sslCert:
-        name: grafana-db-replication
-        key: tls.crt
-      sslRootCert:
-        name: grafana-db-ca
-        key: ca.crt

@@ -18,7 +18,7 @@ spec:
       admin_password: ${GF_SECURITY_ADMIN_PASSWORD}
     database:
       type: postgres
-      host: grafana-db-rw.monitoring.svc.cluster.local:5432
+      host: grafana-db-ovh-rw.monitoring.svc.cluster.local:5432
       name: grafana
       user: grafana
       password: ${GF_DATABASE_PASSWORD}
