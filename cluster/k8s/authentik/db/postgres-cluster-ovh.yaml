@@ -3,8 +3,6 @@ kind: Cluster
 metadata:
   name: authentik-db-ovh
   namespace: authentik
-  annotations:
-    description: "Streaming replica of authentik-db; will be promoted to replace the Hetzner-pinned primary."
 spec:
   instances: 2
   imageName: ghcr.io/cloudnative-pg/postgresql:18.1-system-trixie
@@ -25,27 +23,3 @@ spec:
 
   monitoring:
     enablePodMonitor: true
-
-  replica:
-    enabled: true
-    source: authentik-db
-
-  bootstrap:
-    pg_basebackup:
-      source: authentik-db
-
-  externalClusters:
-    - name: authentik-db
-      connectionParameters:
-        host: authentik-db-rw.authentik.svc.cluster.local
-        user: streaming_replica
-        dbname: postgres
-      sslKey:
-        name: authentik-db-replication
-        key: tls.key
-      sslCert:
-        name: authentik-db-replication
-        key: tls.crt
-      sslRootCert:
-        name: authentik-db-ca
-        key: ca.crt

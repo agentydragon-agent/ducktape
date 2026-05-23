@@ -48,9 +48,9 @@ spec:
       error_reporting:
         enabled: false
 
-      # PostgreSQL configuration — external CNPG cluster (authentik-db)
+      # PostgreSQL configuration — external CNPG cluster (authentik-db-ovh)
       postgresql:
-        host: "authentik-db-rw"
+        host: "authentik-db-ovh-rw"
         name: "authentik"
         user: "authentik"
         password: "" # Loaded via env var (AUTHENTIK_POSTGRESQL__PASSWORD from CNPG secret)
