@@ -550,37 +550,27 @@ produces entry imports `[mod_b, mod_a]` so the linker DFS visits
 mod_b → mod_a → mod_b (cycle no-op) and evaluates mod_a first, then
 mod_b. mod_b's at-init read of A succeeds.
 
-**Asymmetric-I-cycle rejection.** Lemma 2's reversal trick only
-works when the chunk's runtime entry (= the residual module
-emitted as `entry.js`) imports both SCC members directly: entry's
-import list is the one sorted by `source_import_position`, so
-that's the only place the dependent-first reversal applies. Two
-shapes break the trick:
+**Residual-in-cycle carve-out.** Lemma 2's "DFS unwinds via the
+dependency" only works when the cycle sits **below** the chunk's
+runtime entry (= the residual module emitted as `entry.js`). When
+residual is itself a cycle member, residual is the ESM DFS root —
+post-order evaluates every other cycle member first, then residual.
+Any constraining edge whose **target** is residual reads residual's
+not-yet-evaluated `class`/`const`/`let` bindings in their temporal
+dead zone. No source-order trick can fix this: ESM hoists every
+`import` above any statement, so residual's class declaration can't
+run before the imports' deps are evaluated.
 
-1. **Residual is in the cycle.** Residual is the ESM DFS root —
-   post-order evaluates every other cycle member first, then
-   residual. Any constraining edge whose target is residual
-   reads residual's not-yet-evaluated `class`/`const`/`let`
-   bindings in their temporal dead zone. No source-order trick
-   can fix this: ESM hoists every `import` above any statement.
-2. **A mediator module reaches into a non-residual SCC.** When
-   some non-entry module imports SCC members, its import list is
-   sorted by `linker_position` (dependency-first), not reversed.
-   DFS enters via the dependency, the lazy back-edge fires the
-   cycle, and the dependent's body evaluates while the
-   dependency's body is mid-evaluation. Result: TDZ.
-
-The realizability primitive (`check_realizability`) catches both
-shapes with a second Tarjan pass over the full `I`-graph: any
-multi-module SCC whose internal edges include at least one
-constraining edge between any two members is rejected. Pure-lazy
-I-cycles (no constraining edge inside the SCC) remain realizable
-and pass — the function bodies that close the cycle only execute
-after both modules finish evaluating, so no TDZ.
+The realizability primitive (`check_realizability`) catches this
+shape with a second Tarjan pass over the full `I`-graph: any
+multi-module SCC containing residual with at least one constraining
+edge whose target is residual is rejected outright. The
+`(at-init forward, lazy back)` cycles that Lemma 2 _does_ satisfy —
+between non-residual modules — continue to pass.
 
 Because Lemma 2 is implemented (`ChunkFactorization::source_import_position`,
 consumed by `lowering::lower_chunk` when sorting entry's import list)
-and the asymmetric-I-cycle rejection is enforced by the gate, the
+and the residual-in-cycle carve-out is enforced by the gate, the
 validator (`validate_factorization` in
 `devinfra/js/debundle/validation.rs`) and read-only planner checks share
 the realizability primitive's verdict — a `peelable_now` proposal is a

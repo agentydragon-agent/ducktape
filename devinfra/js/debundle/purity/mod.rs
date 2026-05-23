@@ -1582,8 +1582,9 @@ fn classify_array_literal_element_purity(
     graph: &ChunkCodeGraph,
 ) -> Purity {
     if let Some(sp) = elem.spread {
-        return classify_fresh_array_spread_source_purity(
+        return classify_fresh_array_spread_source(
             &elem.expr,
+            None,
             shadowed,
             declared_pure,
             graph,
@@ -1598,32 +1599,54 @@ fn classify_array_literal_element_purity(
 /// are pure. This admits literal and conditional-literal shapes like
 /// `...[1, 2]` and `...(flag ? ["a"] : [])` while preserving the
 /// conservative `array_spread` verdict for arbitrary iterables.
-fn classify_fresh_array_spread_source_purity(
+///
+/// When `for_iterable` is `Some(callee)`, the Array arm classifies
+/// elements for `new Set(...)` / `new Map(...)` iterable semantics
+/// instead of generic array-literal purity.
+fn classify_fresh_array_spread_source(
     expr: &Expr,
+    for_iterable: Option<&str>,
     shadowed: &BTreeSet<&'static str>,
     declared_pure: &BTreeSet<String>,
     graph: &ChunkCodeGraph,
 ) -> Option<Purity> {
     match expr {
-        Expr::Paren(p) => {
-            classify_fresh_array_spread_source_purity(&p.expr, shadowed, declared_pure, graph)
-        }
-        Expr::Array(arr) => Some(classify_array_literal_purity(
-            arr,
+        Expr::Paren(p) => classify_fresh_array_spread_source(
+            &p.expr,
+            for_iterable,
             shadowed,
             declared_pure,
             graph,
-        )),
+        ),
+        Expr::Array(arr) => Some(if let Some(callee) = for_iterable {
+            arr.elems
+                .iter()
+                .map(|elem| {
+                    classify_iterable_element(
+                        elem.as_ref(),
+                        arr.span,
+                        callee,
+                        shadowed,
+                        declared_pure,
+                        graph,
+                    )
+                })
+                .fold(Purity::Pure, Purity::worst)
+        } else {
+            classify_array_literal_purity(arr, shadowed, declared_pure, graph)
+        }),
         Expr::Cond(cond) => Some(
             classify_expr_purity(&cond.test, shadowed, declared_pure, graph)
-                .worst(classify_fresh_array_spread_source_purity(
+                .worst(classify_fresh_array_spread_source(
                     &cond.cons,
+                    for_iterable,
                     shadowed,
                     declared_pure,
                     graph,
                 )?)
-                .worst(classify_fresh_array_spread_source_purity(
+                .worst(classify_fresh_array_spread_source(
                     &cond.alt,
+                    for_iterable,
                     shadowed,
                     declared_pure,
                     graph,
@@ -1834,9 +1857,9 @@ fn classify_iterable_element(
         );
     };
     if let Some(sp) = elem.spread {
-        return classify_fresh_array_spread_source_for_iterable(
+        return classify_fresh_array_spread_source(
             &elem.expr,
-            callee,
+            Some(callee),
             shadowed,
             declared_pure,
             graph,
@@ -1851,57 +1874,6 @@ fn classify_iterable_element(
             elem.expr.span(),
             format!("unsupported callee {callee} for array-iterable rule"),
         ),
-    }
-}
-
-fn classify_fresh_array_spread_source_for_iterable(
-    expr: &Expr,
-    callee: &str,
-    shadowed: &BTreeSet<&'static str>,
-    declared_pure: &BTreeSet<String>,
-    graph: &ChunkCodeGraph,
-) -> Option<Purity> {
-    match expr {
-        Expr::Paren(p) => classify_fresh_array_spread_source_for_iterable(
-            &p.expr,
-            callee,
-            shadowed,
-            declared_pure,
-            graph,
-        ),
-        Expr::Array(arr) => Some(
-            arr.elems
-                .iter()
-                .map(|elem| {
-                    classify_iterable_element(
-                        elem.as_ref(),
-                        arr.span,
-                        callee,
-                        shadowed,
-                        declared_pure,
-                        graph,
-                    )
-                })
-                .fold(Purity::Pure, Purity::worst),
-        ),
-        Expr::Cond(cond) => Some(
-            classify_expr_purity(&cond.test, shadowed, declared_pure, graph)
-                .worst(classify_fresh_array_spread_source_for_iterable(
-                    &cond.cons,
-                    callee,
-                    shadowed,
-                    declared_pure,
-                    graph,
-                )?)
-                .worst(classify_fresh_array_spread_source_for_iterable(
-                    &cond.alt,
-                    callee,
-                    shadowed,
-                    declared_pure,
-                    graph,
-                )?),
-        ),
-        _ => None,
     }
 }
 
