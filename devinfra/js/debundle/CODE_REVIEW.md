@@ -27,9 +27,9 @@ Tests 8+ distinct subsystems in one file: fact analysis, decorate helpers, cycle
 
 Split into topic-aligned modules: `tests/facts.rs`, `tests/purity.rs`, `tests/plain_data.rs`, `tests/cycles.rs`, `tests/atomic_units.rs`, `tests/statement_splitting.rs`.
 
-### `facts.rs` (2219 lines, 3 concerns)
+### `facts.rs` (1213 lines, 2 concerns) — **Partially done**
 
-~1000 lines of vendor-prune-specific local effect analysis (lines 533–1583) embedded in general statement-fact collection. The `vendor_prune_*` functions are a self-contained concern. Extract to `facts/vendor_prune.rs` or behind a feature flag. The vendor-prune analysis should accept `StatementFacts` as input rather than being embedded in the collection pass.
+Vendor-prune local effect analysis extracted to `facts/local_effects.rs`. Remaining: `StatementFacts` carries 14 BTreeSet<Id> fields with many derivable sets; every construction site must keep them mutually consistent.
 
 ---
 
@@ -320,8 +320,8 @@ No longer a standalone crate — absorbed into `swc_ecma_minifier` as `pub(crate
 
 2. **Split `analysis_tests.rs`** into 6–8 topic-aligned test modules. Largest test file at 4095 lines.
 
-3. **Extract vendor-prune from `facts.rs`** into `facts/vendor_prune.rs`. Separates a 1000-line self-contained concern from general fact collection.
+3. **Split `lowering/materialize.rs`** — extract `fold_rebind_atomic_units` and deduplicate the `analysis_hints` collection loops.
 
-4. **Split `lowering/materialize.rs`** — extract `fold_rebind_atomic_units` and deduplicate the `analysis_hints` collection loops.
+4. **Extract purity whitelists** from `purity.rs` into `purity/whitelists.rs` (~400 lines of static data).
 
-5. **Extract purity whitelists** from `purity.rs` into `purity/whitelists.rs` (~400 lines of static data).
+5. **Simplify `StatementFacts`** — 14 BTreeSet<Id> fields with many derivable sets; consider computing derived sets on demand.
