@@ -44,8 +44,9 @@ pub use facts::{
     local_namespace_iife_target,
 };
 pub use graph::{
-    DepKind, EdgeMetadata, EdgeReason, ModuleQuotient, OwnerGraph, OwnerGraphOptions, OwnerId,
-    OwnerNode, build_module_quotient, build_owner_graph, build_owner_graph_with,
+    DepKind, EdgeMetadata, EdgeReason, ModuleQuotient, OwnerEdge, OwnerEdgeId, OwnerGraph,
+    OwnerGraphOptions, OwnerId, OwnerNode, OwnerReportIndex, build_module_quotient,
+    build_owner_graph, build_owner_graph_with,
 };
 pub use ids::{
     BindingKind, ChunkId, ChunkTable, LogicalModule, LogicalModuleIndex, ModuleId,

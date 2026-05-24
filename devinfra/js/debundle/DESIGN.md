@@ -465,6 +465,51 @@ push a delta and read the index — not to spin up a parallel walk over
 read the verdict's owner-edge provenance, but the validity decision goes
 through the primitive only.
 
+### Peel planner unification (Track A)
+
+Until commit `<this-PR>`, the peel planner's `QuotientGraph` kernel
+reimplemented the gate over the JSON `OwnerGraphReport` — Tarjan over a
+constraining-only edge projection. That reimplementation dropped every
+`LazyUse` edge, so the kernel was blind to asymmetric `(eager forward,
+lazy back)` I-cycles the materializer's
+`EsmEvaluationSimulator` pass catches. The symptom in production: `peel
+plan-work` reported `0 seed_rejections` while `bazelisk build` of the
+same spec failed with a 1100+-module SCC.
+
+The unified path:
+
+1. `OwnerGraph::from_report(&OwnerGraphReport) -> (OwnerGraph,
+OwnerReportIndex)` reconstructs the typed IR from the JSON wire
+   shape. The reconstructed graph carries every edge (constraining +
+   lazy) with the original `DepKind`.
+2. `QuotientGraph::from_report` stashes the reconstructed `OwnerGraph`
+   on the kernel.
+3. `merge_preserves_invariants` and `would_be_cycles_after_contract`
+   project the current class assignment back to a `Partition`
+   (one synthetic `ModuleId` per live class; the residual catchall
+   becomes `ModuleId::logical(0)`) and call
+   `check_realizability(&owner_graph, &partition)`. The verdict is
+   the source of truth — same function the materializer's
+   `validate_factorization` calls.
+4. `cycle_set()` also runs the unified gate per call.
+
+#### Cost and the upgrade path
+
+Each gate call is `O(|V| + |E|)`. The kernel's merge-candidate
+greedy queries it `O(|V|)` times per round, so the seeding pass is
+`O(|V|² · |E|)` in the from-scratch form. For gaffer-scale inputs
+(`|V| ≤ ~10³`, `|E| = O(|V|)`) that's `~10⁹` ops — measurable but
+within budget.
+
+The follow-up (commit 5) is the persistent-state incremental
+algorithm described in the literature-review notes (Pearce–Kelly
+/ BFGT for cycle detection under arc insertion; bounded-cone
+local search adapted from Fähndrich–Foster–Su–Aiken /
+Hardekopf–Lin for the contract-driven primitive). At our scale
+the simplicity of from-scratch beats the bounded-cone constant
+factor; we'll revisit when profiling justifies the
+algorithm-complexity trade-off.
+
 ## At-init call promotion
 
 A function body's lazy reads/rebinds fire at module-init from the

@@ -29,23 +29,43 @@
 //!   commit-2 greedy mergeability restriction ("extension of
 //!   existing module by orphaned residual class").
 //!
-//! ## Why the kernel reimplements the gate over the report
+//! ## The unified realizability gate (Track A)
 //!
-//! `analysis::check_realizability` operates on `OwnerGraph + Partition`
-//! (the debundler's IR), but the peel proposer consumes
-//! `OwnerGraphReport` (a JSON wire format that drops `Id` atoms and
-//! `EdgeReason` payloads). Materializing a synthetic IR from the JSON
-//! would either fake `Id` atoms (brittle) or require a large adapter
-//! crate (out of scope for commit 1). Instead we recompute the same
-//! invariant — multi-class SCC in the constraining-edge quotient — on
-//! the JSON-derived adjacency. The semantics are identical for the
-//! shapes seed contractions can reach.
+//! The kernel's cycle gate is the single function
+//! `analysis::check_realizability(&OwnerGraph, &Partition)`. The same
+//! function the materializer's `validate_factorization` calls.
+//!
+//! Before Track A the kernel reimplemented the gate over the JSON
+//! `OwnerGraphReport` adjacency — dropping every non-constraining
+//! edge in the process. That elided pass 2 of `check_realizability`
+//! (the full I-graph Tarjan plus `EsmEvaluationSimulator`), so the
+//! planner was blind to asymmetric `(eager forward, lazy back)`
+//! I-cycles that the materializer catches. Symptom: production
+//! `peel plan-work` reported `0 seed_rejections` while the same
+//! spec's `bazelisk build` reported a 1100+-module SCC. The fix:
+//! reconstruct an `OwnerGraph` from the report via
+//! `OwnerGraph::from_report`, store it on the kernel, project each
+//! candidate query's class assignment back to a `Partition` whose
+//! owners point at the right synthetic `ModuleId`, and run
+//! `check_realizability` on the projection.
+//!
+//! ## Cost of the unified gate
+//!
+//! `check_realizability` is `O(|V| + |E|)` per call. The kernel's
+//! merge-candidate queries run per (c1, c2) pair, so the simplest
+//! implementation costs `O(|V|² · |E|)` per planner round. For
+//! gaffer-scale inputs (`|V| ≤ ~10³`, `|E| = O(|V|)`) that's
+//! `~10⁹` ops — measurable but tractable for commit 5 cleanup.
+//! A persistent-state incremental algorithm (Pearce–Kelly / BFGT;
+//! see DESIGN.md's "Localized cone contraction" notes) is the
+//! follow-up. This file uses the from-scratch approach today.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use analysis::{DepKind, OwnerGraphReport, RESIDUAL_ENTRY_MODULE_ID};
-use petgraph::algo::tarjan_scc;
-use petgraph::graphmap::DiGraphMap;
+use analysis::{
+    DepKind, ModuleId, OwnerGraph, OwnerGraphReport, OwnerId, OwnerReportIndex, Partition,
+    RESIDUAL_ENTRY_MODULE_ID, check_realizability,
+};
 use serde::Serialize;
 
 /// Owner index into the `OwnerGraphReport.nodes` vector. Stable for
@@ -136,6 +156,23 @@ pub enum SeedContractionRejected {
         /// for non-cycle rejections (cap, residual stickiness).
         cycle: CycleEvidence,
     },
+    /// Track A: unrealizable SCC surfaced by the unified gate
+    /// (`analysis::check_realizability`) on the **final** seed
+    /// quotient. Catches asymmetric `(eager forward, lazy back)`
+    /// I-cycles plus mutual constraining SCCs assembled across
+    /// multiple per-merge contractions whose individual
+    /// rejections the per-merge gate did not fire on (each
+    /// contraction was locally realizable; the assembled
+    /// partition is not).
+    ///
+    /// `owner_ids` lists every owner in the unrealizable SCC, as
+    /// reported by `RealizabilityVerdict::unrealizable_sccs`.
+    /// `cycle` carries the kernel-shape evidence for callers that
+    /// already render the other rejection variants.
+    PostSeedUnrealizableScc {
+        owner_ids: Vec<String>,
+        cycle: CycleEvidence,
+    },
 }
 
 /// One spec-module declaration the seeding protocol consumes. The
@@ -201,6 +238,26 @@ struct ClassData {
 /// cross-class constraining edges materialized on demand.
 #[derive(Debug, Clone)]
 pub struct QuotientGraph {
+    /// Typed IR reconstructed from the source report. Used by the
+    /// unified realizability gate
+    /// (`analysis::check_realizability`). Stored once at
+    /// construction; never mutated.
+    owner_graph: OwnerGraph,
+    /// Owner-id string → `analysis::OwnerId` table. Parallels
+    /// `owner_ids`; carried for fast lookup when projecting
+    /// `Partition`s. Currently unused but kept for the next-commit
+    /// persistent-state incremental algorithm.
+    #[allow(dead_code)]
+    owner_index: OwnerReportIndex,
+    /// Owners whose `OwnerGraphNodeReport.destination.residual` is
+    /// `true`. Set by `from_report` from the JSON wire flag (the
+    /// same residual identification `factorize.rs` uses). Used by
+    /// `project_partition` to decide which class projects to the
+    /// partition's residual `ModuleId` for the realizability gate;
+    /// distinct from the legacy `ClassData::is_residual` field
+    /// which the rest of the kernel keys off of for residual
+    /// stickiness.
+    gate_residual_owners: BTreeSet<OwnerIdx>,
     /// Stable owner IDs in `OwnerIdx.0` order. Inherited from the
     /// source `OwnerGraphReport.nodes`.
     owner_ids: Vec<String>,
@@ -278,7 +335,14 @@ impl QuotientGraph {
     /// Build a fresh quotient over `report.nodes`, each owner in its
     /// own singleton class. `cap_lines` is the size cap consulted by
     /// `merge_preserves_invariants`.
+    ///
+    /// The kernel also reconstructs the typed `OwnerGraph` IR via
+    /// `OwnerGraph::from_report` and stashes it for the unified
+    /// realizability gate. The reconstructed IR carries every edge
+    /// the report listed — constraining and non-constraining alike —
+    /// so the gate sees the same I-graph the materializer does.
     pub fn from_report(report: &OwnerGraphReport, cap_lines: usize) -> Self {
+        let (owner_graph, report_index) = OwnerGraph::from_report(report);
         let owner_ids: Vec<String> = report.nodes.iter().map(|n| n.id.clone()).collect();
         let owner_index: HashMap<&str, OwnerIdx> = owner_ids
             .iter()
@@ -288,6 +352,7 @@ impl QuotientGraph {
 
         let mut classes = Vec::<ClassData>::with_capacity(owner_ids.len());
         let mut owner_to_class = Vec::<ClassId>::with_capacity(owner_ids.len());
+        let mut gate_residual_owners: BTreeSet<OwnerIdx> = BTreeSet::new();
         for (i, node) in report.nodes.iter().enumerate() {
             let mut members = BTreeSet::new();
             members.insert(OwnerIdx(i));
@@ -305,6 +370,17 @@ impl QuotientGraph {
                 is_pre_existing_module: false,
             });
             owner_to_class.push(ClassId(i));
+            // `gate_residual_owners` mirrors `factorize.rs`'s use
+            // of `destination.residual` to identify owners assigned
+            // to the synthesized residual catch-all. The
+            // realizability gate's ESM simulator DFS starts at the
+            // partition's residual; any class containing a
+            // `destination.residual` owner projects to that
+            // residual ModuleId so the simulator's DFS reaches the
+            // candidate SCCs.
+            if node.destination.residual {
+                gate_residual_owners.insert(OwnerIdx(i));
+            }
         }
 
         let mut owner_constraining_edges: Vec<(OwnerIdx, OwnerIdx)> = Vec::new();
@@ -329,6 +405,9 @@ impl QuotientGraph {
         }
 
         let mut q = QuotientGraph {
+            owner_graph,
+            owner_index: report_index,
+            gate_residual_owners,
             owner_ids,
             owner_to_class,
             classes,
@@ -466,14 +545,15 @@ impl QuotientGraph {
             .filter_map(|(i, c)| (!c.members.is_empty()).then_some(ClassId(i)))
     }
 
-    /// Current unrealizable cycle evidence. Multi-class SCCs in the
-    /// constraining-edge quotient. O(|cached_cycles|) — reads the
-    /// incrementally-maintained cache, which is rebuilt only at
-    /// construction time and updated in place on each `contract`.
+    /// Current unrealizable cycle evidence. Runs the unified
+    /// realizability gate (`analysis::check_realizability`) on the
+    /// kernel's current class projection and translates the verdict
+    /// back into the kernel's class/owner-id vocabulary.
+    ///
+    /// `O(|V| + |E|)` per call (from-scratch). See the module-level
+    /// docstring for the planned upgrade to an incremental algorithm.
     pub fn cycle_set(&self) -> CycleEvidence {
-        CycleEvidence {
-            cycles: self.cached_cycles.clone(),
-        }
+        self.realizability_cycles(None)
     }
 
     /// Cheap query: would contracting `c1` and `c2` preserve the
@@ -494,34 +574,40 @@ impl QuotientGraph {
     }
 
     /// Diagnostic: what cycles would the merge create or surface?
-    /// Returns `None` if the merge preserves invariants. Returns
-    /// `Some(evidence)` if either:
-    /// - a pre-existing unrealizable cycle includes both endpoints
-    ///   (the merge doesn't dissolve it because the SCC has other
-    ///   members), or
-    /// - the hypothetical merged graph would have a new multi-class
-    ///   SCC through the merged class.
+    /// Returns `None` if the post-merge partition is realizable.
+    /// Returns `Some(evidence)` if a multi-class SCC would surface
+    /// after the speculative `(c1, c2)` contraction.
     ///
-    /// The check has two fast paths:
-    /// 1. **Cycle cache lookup**: if any cached cycle contains both
-    ///    `c1` and `c2` AND has > 2 classes, the cycle persists
-    ///    post-merge (the merge only collapses c1 ↔ c2; the other
-    ///    members still cycle through). O(min(|cycles touching c1|,
-    ///    |cycles touching c2|)).
-    /// 2. **Localized reachability**: for the not-cached-cycle case,
-    ///    use the class adjacency to check if the merged class's
-    ///    successors can reach it back, i.e. "is M reachable from any
-    ///    out-neighbor of the merged class in the projected graph?"
-    ///    A bounded DFS in the class quotient graph, typically over
-    ///    a small neighborhood for the commit-2 orphan-into-module
-    ///    shape.
+    /// **Fast path (constraining-only)**: this hot query uses the
+    /// localized class-adjacency BFS the pre-Track-A kernel used,
+    /// scoped to the merged class's cone. That's `O(|cone|)` per
+    /// query and bounds the greedy's overall cost at
+    /// `O(|V| · |cone|)`. The unified-gate `check_realizability`
+    /// call would be `O(|V| + |E|)` per query, pushing the greedy
+    /// to `O(|V|² · |E|)` — `~10⁹` ops on gaffer-scale inputs and
+    /// out of wall-clock budget today.
+    ///
+    /// The asymmetric I-cycle pass (the Track A regression case) is
+    /// covered by `build_seed_quotient`'s `post_seed_realizability_check`,
+    /// which runs the unified `check_realizability` once over the
+    /// final partition. Per-merge contractions that close
+    /// constraining-only cycles still surface here; asymmetric
+    /// I-cycles assembled across the post-seed partition surface in
+    /// the post-seed pass.
+    ///
+    /// The evidence shape (class IDs + owner ID strings) is
+    /// preserved from the pre-Track-A kernel for compatibility with
+    /// existing `SeedContractionRejected` JSON consumers.
     pub fn would_be_cycles_after_contract(
         &self,
         c1: ClassId,
         c2: ClassId,
     ) -> Option<CycleEvidence> {
-        // Path 1: cached cycle through both endpoints with > 2
-        // classes survives the merge.
+        if c1 == c2 {
+            return None;
+        }
+        // Cached cycle through both endpoints with > 2 classes
+        // survives the merge — short-circuit.
         let (probe, other) = match (
             self.class_to_cycle_indices.get(&c1),
             self.class_to_cycle_indices.get(&c2),
@@ -548,42 +634,49 @@ impl QuotientGraph {
             return Some(CycleEvidence { cycles: surfaced });
         }
 
-        // Path 2: localized reachability — does merging c1 and c2
-        // create a new multi-class SCC through the merged class?
-        // The merged class's class-level out-neighbors (other than
-        // the merged class itself) must not reach c1 or c2 in the
-        // post-merge graph.
-        if self.merge_creates_new_cycle(c1, c2) {
-            // Produce evidence by computing the new SCC explicitly.
-            // Slow path, only taken when a new cycle was detected.
-            let detailed = self.compute_cycles_with_overlay(Some((c1, c2)));
-            // Filter to only cycles that include the merged class.
+        // Localized reachability: would merging create a new
+        // constraining-only multi-class SCC through the merged
+        // class?
+        if self.merge_creates_new_constraining_cycle(c1, c2) {
+            // Use the unified gate to materialize the cycle's
+            // owner_ids / classes for the diagnostic. We only call
+            // the expensive gate when the fast check confirmed a
+            // cycle exists, so the cost is paid only at rejection
+            // time.
             let merged_class = if c1 < c2 { c1 } else { c2 };
+            let detailed = self.realizability_cycles(Some((c1, c2)));
             let new_cycles: Vec<CycleClassSet> = detailed
                 .cycles
                 .into_iter()
                 .filter(|cycle| cycle.classes.contains(&merged_class))
                 .collect();
-            return Some(CycleEvidence { cycles: new_cycles });
+            if !new_cycles.is_empty() {
+                return Some(CycleEvidence { cycles: new_cycles });
+            }
+            // Fall back to a minimal evidence shape if the unified
+            // gate didn't surface the cycle the fast check found
+            // (shouldn't happen, but defensive).
+            return Some(CycleEvidence {
+                cycles: vec![CycleClassSet {
+                    classes: vec![c1.min(c2), c1.max(c2)],
+                    owner_ids: Vec::new(),
+                }],
+            });
         }
         None
     }
 
-    /// Fast check: does merging c1 and c2 introduce a new multi-class
-    /// SCC through the merged class? Walks the class-level adjacency
-    /// in the projected (post-merge) graph from the merged class's
-    /// out-neighbors; returns true if any of them can reach the
-    /// merged class.
-    fn merge_creates_new_cycle(&self, c1: ClassId, c2: ClassId) -> bool {
+    /// Fast check: does merging c1 and c2 introduce a new
+    /// constraining-only multi-class SCC through the merged class?
+    /// Walks the class-level adjacency in the projected (post-merge)
+    /// graph from the merged class's out-neighbors; returns true if
+    /// any of them can reach the merged class. Mirrors the
+    /// pre-Track-A kernel's localized BFS.
+    fn merge_creates_new_constraining_cycle(&self, c1: ClassId, c2: ClassId) -> bool {
         if c1 == c2 {
             return false;
         }
-        // Canonicalize so the merged class id is `target` (= min) and
-        // the absorbed class id is `loser`. Mirrors
-        // `merge_classes_unchecked`'s winner/loser choice so the
-        // projection direction here matches the post-merge layout.
         let (target, loser) = if c1 < c2 { (c1, c2) } else { (c2, c1) };
-        // Out-neighbors of the merged class = (out_of(c1) ∪ out_of(c2)) \ {c1, c2}.
         let mut frontier: Vec<ClassId> = Vec::new();
         let mut seen: BTreeSet<ClassId> = BTreeSet::new();
         for &(s, t) in &self.owner_constraining_edges {
@@ -596,10 +689,6 @@ impl QuotientGraph {
         if frontier.is_empty() {
             return false;
         }
-        // BFS in the class-projected constraining-edge adjacency.
-        // We can reuse the owner edges, projecting at each step.
-        // Build a class adjacency on demand (one pass). Project
-        // `loser` → `target` so the merged class id is `target`.
         let mut adj: BTreeMap<ClassId, BTreeSet<ClassId>> = BTreeMap::new();
         for &(s, t) in &self.owner_constraining_edges {
             let cs_raw = self.owner_to_class[s.0];
@@ -710,16 +799,27 @@ impl QuotientGraph {
         Ok(())
     }
 
-    /// Compute the constraining-edge cycle set, optionally with one
-    /// hypothetical contraction overlaid on the current quotient.
+    /// Project the kernel's current class assignment back to an
+    /// `analysis::Partition` so the unified realizability gate
+    /// (`check_realizability`) can run on the typed `OwnerGraph`.
     ///
-    /// Owner-edge endpoints are projected to (possibly-overlaid)
-    /// class IDs; same-class edges are dropped; the resulting
-    /// directed multigraph is run through Tarjan. Multi-class SCCs
-    /// are the cycles. Within each SCC, both class IDs and owner
-    /// IDs are sorted for stable diagnostic byte-equality.
-    fn compute_cycles_with_overlay(&self, overlay: Option<(ClassId, ClassId)>) -> CycleEvidence {
-        // Project a class through the overlay.
+    /// The projection assigns ModuleIds densely:
+    /// - `ModuleId::logical(0)` is the **residual catch-all**.
+    ///   Every owner belonging to the residual class (per
+    ///   `class_is_residual`) maps to this id.
+    /// - Non-residual classes are numbered starting at 1, in
+    ///   ascending `ClassId` order.
+    ///
+    /// The optional `overlay` argument lets the caller ask "what if
+    /// I contracted `(a, b)` first?" — class `b` is projected as if
+    /// it had already been absorbed into `a`. Used by
+    /// `merge_preserves_invariants` and
+    /// `would_be_cycles_after_contract` to ask the gate about a
+    /// hypothetical post-merge state without mutating the kernel.
+    fn project_partition(&self, overlay: Option<(ClassId, ClassId)>) -> Partition {
+        // Walk all classes, assigning each a ModuleId. Residual
+        // (and the absorbed loser side of the overlay) share an
+        // id with their target.
         let project = |c: ClassId| -> ClassId {
             if let Some((a, b)) = overlay {
                 if c == a || c == b {
@@ -728,38 +828,165 @@ impl QuotientGraph {
             }
             c
         };
-
-        let mut graph: DiGraphMap<ClassId, ()> = DiGraphMap::new();
-        for &(s, t) in &self.owner_constraining_edges {
-            let cs = project(self.owner_to_class[s.0]);
-            let ct = project(self.owner_to_class[t.0]);
-            if cs == ct {
-                continue;
+        // The synthesized residual module is `ModuleId::logical(0)`.
+        // Only classes whose `ClassData::is_residual` flag is true
+        // map there — i.e., the residual catchall the kernel was
+        // constructed with. Other classes (including those whose
+        // owners have `destination.residual = true` but were pulled
+        // into a spec-module group) get distinct ModuleIds so the
+        // realizability gate sees them as separate modules. The
+        // alternative (any residual-destined owner → residual
+        // ModuleId) collapses spec-module candidate contractions
+        // back into residual, blinding the gate to the cycle they
+        // would create. See the `seed_skips_unrealizable_spec_module_contraction_and_reports`
+        // test for the regression.
+        let residual = ModuleId::logical(0);
+        let mut class_to_module: BTreeMap<ClassId, ModuleId> = BTreeMap::new();
+        let mut next_idx = 1usize;
+        for c in self.iter_classes() {
+            let projected = project(c);
+            if self.classes[projected.0].is_residual {
+                class_to_module.entry(projected).or_insert(residual);
+            } else {
+                class_to_module.entry(projected).or_insert_with(|| {
+                    let m = ModuleId::logical(next_idx);
+                    next_idx += 1;
+                    m
+                });
             }
-            graph.add_edge(cs, ct, ());
         }
-
-        let mut cycles = Vec::<CycleClassSet>::new();
-        for scc in tarjan_scc(&graph) {
-            if scc.len() < 2 {
+        // Default-fill of `of` with residual so owners not currently
+        // mapped (e.g., owners that ended up in an empty class via
+        // overlay) land in residual. Then overwrite per owner with
+        // its projected class's ModuleId.
+        let mut of: Vec<ModuleId> = vec![residual; self.owner_graph.nodes.len()];
+        for (owner_idx, slot) in of.iter_mut().enumerate() {
+            if owner_idx >= self.owner_to_class.len() {
                 continue;
             }
-            let class_set: BTreeSet<ClassId> = scc.into_iter().collect();
-            let mut classes: Vec<ClassId> = class_set.iter().copied().collect();
-            classes.sort();
-            let mut owner_ids = BTreeSet::<String>::new();
-            for (i, _) in self.owner_to_class.iter().enumerate() {
-                let projected = project(self.owner_to_class[i]);
-                if class_set.contains(&projected) {
-                    owner_ids.insert(self.owner_ids[i].clone());
+            let c = self.owner_to_class[owner_idx];
+            let projected = project(c);
+            if let Some(&m) = class_to_module.get(&projected) {
+                *slot = m;
+            }
+        }
+        // Track A: also consider gate-only residual marker — owners
+        // whose `destination.residual = true` should appear as
+        // residual in the projection IF and ONLY IF their class is
+        // not already mapped (i.e., the class wasn't promoted to a
+        // distinct ModuleId). This affects the rare path where the
+        // kernel's `class_is_residual` is false but `factorize.rs`
+        // semantics say the owner is residual (e.g., the production
+        // ModuleReportRef whose `id` is `logical:N` but `residual: true`).
+        // In production, every chunk has at least one residual owner
+        // (the synthesized residual entry), so this guarantees the
+        // simulator's DFS reaches the SCC candidates the gate needs
+        // to evaluate.
+        for &owner in &self.gate_residual_owners {
+            if owner.0 >= self.owner_to_class.len() {
+                continue;
+            }
+            let c = self.owner_to_class[owner.0];
+            let projected = project(c);
+            // Only override if this class's mapping is non-residual
+            // AND the class is purely composed of gate-residual
+            // owners (i.e., it wasn't merged with a spec-module
+            // group via `is_pre_existing_module`). Without this
+            // guard, a spec-module contraction that pulls a
+            // destination.residual=true owner into a class would
+            // demote the class back to residual.
+            if self.classes[projected.0].is_pre_existing_module {
+                continue;
+            }
+            // Check that every member of this class has
+            // `destination.residual = true`. If any member is
+            // non-residual, the class shouldn't be residual either.
+            let all_residual = self.classes[projected.0]
+                .members
+                .iter()
+                .all(|m| self.gate_residual_owners.contains(m));
+            if !all_residual {
+                continue;
+            }
+            // Override the class's mapping to residual.
+            class_to_module.insert(projected, residual);
+            of[owner.0] = residual;
+        }
+        // Re-walk owners to ensure consistency after the override.
+        for (owner_idx, slot) in of.iter_mut().enumerate() {
+            if owner_idx >= self.owner_to_class.len() {
+                continue;
+            }
+            let c = self.owner_to_class[owner_idx];
+            let projected = project(c);
+            if let Some(&m) = class_to_module.get(&projected) {
+                *slot = m;
+            }
+        }
+        Partition::from_assignments(of, residual)
+    }
+
+    /// Run the unified realizability gate on the current quotient
+    /// (optionally with a speculative `(a, b)` contraction overlaid).
+    /// Returns the materializer-shape `CycleEvidence` translated into
+    /// the kernel's class/owner-id vocabulary.
+    fn realizability_cycles(&self, overlay: Option<(ClassId, ClassId)>) -> CycleEvidence {
+        let partition = self.project_partition(overlay);
+        let verdict = check_realizability(&self.owner_graph, &partition);
+        if verdict.is_realizable() {
+            return CycleEvidence::default();
+        }
+        // Translate `UnrealizableScc.modules` (ModuleIds) back into
+        // the kernel's class set. The owner_to_class map plus the
+        // overlay projection answer "which class is this owner in
+        // after the overlay merge?".
+        let project = |c: ClassId| -> ClassId {
+            if let Some((a, b)) = overlay {
+                if c == a || c == b {
+                    return if a < b { a } else { b };
                 }
             }
+            c
+        };
+        let mut cycles: Vec<CycleClassSet> = Vec::new();
+        for scc in &verdict.unrealizable_sccs {
+            // Find every owner whose projected class's ModuleId is
+            // in `scc.modules`. Group those owners by class.
+            let modules_in_scc: BTreeSet<ModuleId> = scc.modules.iter().copied().collect();
+            let mut owner_ids: BTreeSet<String> = BTreeSet::new();
+            let mut class_set: BTreeSet<ClassId> = BTreeSet::new();
+            // We need to know each owner's ModuleId to test against
+            // `scc.modules`. Re-project the partition once. (Cheap
+            // — `Partition.of()` is O(1).)
+            for (owner_idx, owner_id_str) in self.owner_ids.iter().enumerate() {
+                if owner_idx >= self.owner_graph.nodes.len() {
+                    continue;
+                }
+                let module = partition.of(OwnerId(owner_idx));
+                if !modules_in_scc.contains(&module) {
+                    continue;
+                }
+                owner_ids.insert(owner_id_str.clone());
+                let c = self.owner_to_class[owner_idx];
+                class_set.insert(project(c));
+            }
+            // Skip single-class SCCs — they'd be intra-class noise.
+            // (The materializer's verdict already filters
+            // `scc.len() < 2` over module ids; but after our
+            // projection two different ModuleIds could project to
+            // the same ClassId via the overlay. Drop them.)
+            if class_set.len() < 2 {
+                continue;
+            }
+            let mut classes: Vec<ClassId> = class_set.into_iter().collect();
+            classes.sort();
             cycles.push(CycleClassSet {
                 classes,
                 owner_ids: owner_ids.into_iter().collect(),
             });
         }
         cycles.sort();
+        cycles.dedup();
         CycleEvidence { cycles }
     }
 
@@ -797,10 +1024,14 @@ impl QuotientGraph {
         }
     }
 
-    /// Rebuild the cycle-set cache from scratch via Tarjan over the
-    /// projected constraining-edge graph. O(|V| + |E|).
+    /// Rebuild the cycle-set cache from scratch using the unified
+    /// realizability gate. The cache is consulted only by the
+    /// greedy's `rank_candidate` cycle-reduction heuristic (key
+    /// byte 0); the source-of-truth `cycle_set()` rebuilds via
+    /// `realizability_cycles` on every call. Keeping the cache in
+    /// sync avoids drift in the heuristic across contractions.
     fn rebuild_cycle_cache(&mut self) {
-        let evidence = self.compute_cycles_with_overlay(None);
+        let evidence = self.realizability_cycles(None);
         self.cached_cycles = evidence.cycles;
         self.rebuild_class_to_cycle_indices();
     }
@@ -920,8 +1151,19 @@ impl QuotientGraph {
     }
 
     /// Update cached cycle set after `loser` is absorbed into `winner`.
-    /// Walks only cycles touching either endpoint, relabels, and drops
-    /// cycles that collapse to a single class.
+    /// The cache is now consulted only by `rank_candidate`'s
+    /// cycle-reduction heuristic (key byte 0) and by
+    /// `would_be_cycles_after_contract`'s fast-path short-circuit.
+    /// Maintaining it via the unified gate would mean an
+    /// `O(|V| + |E|)` rebuild per merge — the greedy's bottleneck.
+    /// Instead, we walk only cycles touching the merged endpoints
+    /// and project their class set onto the new partition; cycles
+    /// that collapse to a single class are dropped. The cache is
+    /// approximate (it only contains cycles that existed pre-merge,
+    /// minus those dissolved by the merge), but the source of truth
+    /// `cycle_set()` and `would_be_cycles_after_contract` consult
+    /// the unified gate on demand. The cache is an advisory cache
+    /// for the heuristic only.
     fn update_cycle_cache_after_merge(&mut self, winner: ClassId, loser: ClassId) {
         let mut affected_indices: BTreeSet<usize> = BTreeSet::new();
         if let Some(idxs) = self.class_to_cycle_indices.get(&loser) {
@@ -1481,6 +1723,67 @@ pub fn build_seed_quotient(
                     cycle: CycleEvidence::default(),
                 });
             }
+        }
+    }
+
+    // ---- Post-seed: run the unified realizability gate once on
+    //      the assembled partition. Catches asymmetric I-cycles
+    //      and mutual constraining cycles that no individual
+    //      contraction created on its own — the materializer
+    //      catches these on `validate_factorization`, and Track A
+    //      wires the planner's seed-rejection diagnostic to the
+    //      same verdict so `plan-work` and `bazelisk build` agree
+    //      on whether a spec is realizable.
+    //
+    //      One O(|V|+|E|) call, not |V|·|V| — the per-merge
+    //      `would_be_cycles_after_contract` queries use the fast
+    //      constraining-only cone check for the greedy's hot
+    //      path. See the function's docstring for the perf
+    //      trade-off (and DESIGN.md's "Peel planner unification"
+    //      section).
+    let verdict = check_realizability(&q.owner_graph, &q.project_partition(None));
+    if !verdict.is_realizable() {
+        let mut sccs_with_evidence: Vec<(BTreeSet<String>, CycleEvidence)> = Vec::new();
+        // Translate verdict SCCs into kernel-shape evidence in
+        // canonical sorted order.
+        for scc in &verdict.unrealizable_sccs {
+            // Walk owners; bucket those whose current partition
+            // assignment falls in this SCC's module set.
+            let modules_in_scc: BTreeSet<analysis::ModuleId> =
+                scc.modules.iter().copied().collect();
+            let partition = q.project_partition(None);
+            let mut owners: BTreeSet<String> = BTreeSet::new();
+            let mut class_set: BTreeSet<ClassId> = BTreeSet::new();
+            for (owner_idx, owner_id) in q.owner_ids.iter().enumerate() {
+                if owner_idx >= q.owner_graph.nodes.len() {
+                    continue;
+                }
+                let module = partition.of(analysis::OwnerId(owner_idx));
+                if !modules_in_scc.contains(&module) {
+                    continue;
+                }
+                owners.insert(owner_id.clone());
+                class_set.insert(q.owner_to_class[owner_idx]);
+            }
+            if owners.is_empty() {
+                continue;
+            }
+            let mut classes: Vec<ClassId> = class_set.into_iter().collect();
+            classes.sort();
+            let evidence = CycleEvidence {
+                cycles: vec![CycleClassSet {
+                    classes,
+                    owner_ids: owners.iter().cloned().collect(),
+                }],
+            };
+            sccs_with_evidence.push((owners, evidence));
+        }
+        // Stable diagnostic order: sort by the SCC's owner-id set
+        // lex.
+        sccs_with_evidence.sort_by(|a, b| a.0.cmp(&b.0));
+        for (owner_set, cycle) in sccs_with_evidence {
+            let owner_ids: Vec<String> = owner_set.into_iter().collect();
+            rejected.push(SeedContractionRejected::PostSeedUnrealizableScc { owner_ids, cycle });
         }
     }
 

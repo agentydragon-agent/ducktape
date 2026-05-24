@@ -98,6 +98,23 @@ impl EdgeReason {
         }
     }
 
+    /// Construct a synthetic edge reason from raw fields. Used by
+    /// `OwnerGraph::from_report` and similar JSON-recovery paths that
+    /// don't carry an `Id` atom for the binding. The realizability
+    /// gate (`check_realizability`) consults only `kind` — every
+    /// `is_*` and `constrains_init_order` predicate above delegates to
+    /// `kind` — so a synthetic reason without a binding is sufficient
+    /// for the gate. Source-of-truth construction from
+    /// `StatementFacts` still goes through the kind-specific helpers
+    /// above.
+    pub fn synthetic(kind: DepKind, statement_ordinal: StatementOrdinal) -> Self {
+        Self {
+            kind,
+            statement_ordinal,
+            binding: None,
+        }
+    }
+
     pub fn is_eager_use(&self) -> bool {
         self.kind == DepKind::EagerUse
     }
@@ -199,6 +216,110 @@ impl OwnerGraph {
     /// Edges terminating at `owner`.
     pub fn in_edges_of(&self, owner: OwnerId) -> &[OwnerEdgeId] {
         self.in_edges.get(owner.0).map(Vec::as_slice).unwrap_or(&[])
+    }
+}
+
+/// Recovery handle that maps the JSON `OwnerGraphReport` owner-id
+/// strings to the `OwnerId`s of an `OwnerGraph` built via
+/// `OwnerGraph::from_report`. The position of an owner-id in
+/// `OwnerGraphReport.nodes` equals the constructed `OwnerId.0`, so the
+/// index lookup is just a position scan; this struct keeps the lookup
+/// O(1) via an interned `HashMap`.
+#[derive(Debug, Clone)]
+pub struct OwnerReportIndex {
+    pub owner_ids: Vec<String>,
+    by_id: HashMap<String, OwnerId>,
+}
+
+impl OwnerReportIndex {
+    pub fn lookup(&self, id: &str) -> Option<OwnerId> {
+        self.by_id.get(id).copied()
+    }
+
+    pub fn id_of(&self, owner: OwnerId) -> Option<&str> {
+        self.owner_ids.get(owner.0).map(String::as_str)
+    }
+}
+
+impl OwnerGraph {
+    /// Reconstruct a typed `OwnerGraph` from a JSON-deserialized
+    /// `crate::OwnerGraphReport`. Used by the peel planner CLI so the
+    /// realizability gate consults the same IR shape the materializer
+    /// gate does, instead of re-deriving cycle detection over the
+    /// JSON-flattened edge list.
+    ///
+    /// The result is "gate-grade": the returned graph carries enough
+    /// information for `check_realizability` (edge endpoints,
+    /// `DepKind`, residual marker) but **not** every field
+    /// `build_owner_graph` populates from `StatementFacts`. Per-owner
+    /// `declared`, `kind`, `purity`, and per-edge `binding` are
+    /// stubbed with their default / synthetic shapes because the
+    /// JSON wire format doesn't carry the hygienic `Id` atoms the
+    /// source-of-truth constructor uses. Callers that need those
+    /// fields must build the graph from facts, not from the report.
+    ///
+    /// `OwnerEdgeId`s in the reconstructed graph are assigned in the
+    /// order edges appear in `report.edges`; they don't necessarily
+    /// match the original `OwnerEdgeId`s that produced the report.
+    /// The gate only uses them as opaque identifiers in its evidence
+    /// listing.
+    pub fn from_report(report: &crate::OwnerGraphReport) -> (Self, OwnerReportIndex) {
+        let owner_ids: Vec<String> = report.nodes.iter().map(|n| n.id.clone()).collect();
+        let by_id: HashMap<String, OwnerId> = owner_ids
+            .iter()
+            .enumerate()
+            .map(|(i, id)| (id.clone(), OwnerId(i)))
+            .collect();
+
+        let nodes: Vec<OwnerNode> = report
+            .nodes
+            .iter()
+            .enumerate()
+            .map(|(i, n)| OwnerNode {
+                id: OwnerId(i),
+                statement_ordinal: n.statement_ordinal,
+                source_location: n.source_location.clone(),
+                declared: BTreeSet::new(),
+                kind: n.statement_kind,
+                purity: n.purity.clone(),
+            })
+            .collect();
+
+        let mut edges: Vec<OwnerEdge> = Vec::with_capacity(report.edges.len());
+        for edge in &report.edges {
+            let (Some(&from), Some(&to)) = (by_id.get(&edge.source), by_id.get(&edge.target))
+            else {
+                continue;
+            };
+            let reason = EdgeReason::synthetic(edge.edge_kind, edge.statement_ordinal);
+            let id = OwnerEdgeId(edges.len());
+            edges.push(OwnerEdge {
+                id,
+                from,
+                to,
+                reason,
+            });
+        }
+
+        let mut out_edges: Vec<Vec<OwnerEdgeId>> = vec![Vec::new(); nodes.len()];
+        let mut in_edges: Vec<Vec<OwnerEdgeId>> = vec![Vec::new(); nodes.len()];
+        for edge in &edges {
+            if let Some(slot) = out_edges.get_mut(edge.from.0) {
+                slot.push(edge.id);
+            }
+            if let Some(slot) = in_edges.get_mut(edge.to.0) {
+                slot.push(edge.id);
+            }
+        }
+
+        let graph = OwnerGraph {
+            nodes,
+            edges,
+            out_edges,
+            in_edges,
+        };
+        let index = OwnerReportIndex { owner_ids, by_id };
+        (graph, index)
     }
 }
 

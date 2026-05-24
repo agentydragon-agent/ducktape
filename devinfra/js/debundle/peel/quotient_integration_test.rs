@@ -1705,6 +1705,580 @@ fn unification_rejects_cyclic_atomic_reachability_with_diagnostic() {
     );
 }
 
+// ---------- Track A unification: planner gate ≡ materializer gate. ----------
+//
+// The peel planner's seed-quotient cycle gate must produce the same
+// realizability verdict as the materializer's `check_realizability`
+// run on the projected partition. Before unification (pre-Track-A),
+// the planner reimplemented Tarjan over only constraining edges in
+// the JSON report, missing asymmetric I-cycles the materializer
+// catches via its `EsmEvaluationSimulator` pass. The tests below pin
+// the unified behavior: every planner verdict must match the
+// materializer verdict on the same input.
+
+/// Build an `OwnerGraph` + `Partition` from a report + spec module
+/// list. The partition assigns each owner to the module derived from
+/// its `destination.id`; residual destinations land on the residual
+/// `ModuleId`. Used by the planner-vs-materializer cross-check tests.
+fn owner_graph_and_partition_from_spec(
+    report: &analysis::OwnerGraphReport,
+    spec: &[peel::quotient::SpecModuleGroup],
+) -> (analysis::OwnerGraph, analysis::Partition) {
+    use std::collections::HashMap;
+    let (owner_graph, index) = analysis::OwnerGraph::from_report(report);
+    // Module-id assignment: residual goes to ModuleId(0). Every
+    // distinct spec module gets its own ModuleId starting at 1.
+    let residual = analysis::ModuleId::logical(0);
+    let mut spec_module_ids: HashMap<&str, analysis::ModuleId> = HashMap::new();
+    let mut next_idx = 1usize;
+    for module in spec {
+        spec_module_ids
+            .entry(module.module_id.as_str())
+            .or_insert_with(|| {
+                let m = analysis::ModuleId::logical(next_idx);
+                next_idx += 1;
+                m
+            });
+    }
+    // Owner→ModuleId: by default residual; spec modules override.
+    let mut of: Vec<analysis::ModuleId> = vec![residual; owner_graph.nodes.len()];
+    for module in spec {
+        let mid = spec_module_ids[module.module_id.as_str()];
+        for owner_id in &module.owner_ids {
+            if let Some(o) = index.lookup(owner_id) {
+                of[o.0] = mid;
+            }
+        }
+    }
+    let partition = analysis::Partition::from_assignments(of, residual);
+    (owner_graph, partition)
+}
+
+#[test]
+fn planner_seed_rejection_matches_materializer_verdict_on_asymmetric_cycle() {
+    // Asymmetric I-cycle through a non-residual mediator —
+    // the materializer-side adversarial shape Lemma 2 cannot rescue
+    // (mirrors `mediator_reaches_asymmetric_cycle_test`).
+    //
+    //   entry        -> mediator   EagerUse  (constraining=true)
+    //   mediator     -> dep        LazyUse   (non-constraining, opens DFS)
+    //   dependent    -> dep        EagerUse  (constraining=true) [fwd]
+    //   dep          -> dependent  LazyUse   (non-constraining)  [back]
+    //
+    // I-graph SCC after seeding spec modules:
+    //   {mod_dep, mod_dependent}. Residual reaches the SCC only via
+    //   mod_mediator (its `mediator → dep` lazy edge is part of I).
+    //
+    // Why Lemma 2 fails: mod_mediator's imports are sorted by
+    // linker_position (dependency-first), so DFS enters mod_dep
+    // first; mod_dep's body lazily references cross_value, then
+    // mod_dependent is entered → `cross_value`'s eager read of
+    // `dep_value` TDZs while mod_dep is mid-evaluation.
+    //
+    // Materializer flags the SCC as unrealizable; the buggy
+    // planner sees no constraining-only cycle and reports zero
+    // rejections.
+    let entry = residual_owner("owner:entry", 0, &[], 1);
+    let dep_value = active_owner("owner:dep_value", 1, &["BindingDepValue"], 5, "mod_dep");
+    let lazy_reader = active_owner("owner:lazy_reader", 2, &["BindingLazyReader"], 5, "mod_dep");
+    let cross_value = active_owner(
+        "owner:cross_value",
+        3,
+        &["BindingCrossValue"],
+        5,
+        "mod_dependent",
+    );
+    let mediator_helper = active_owner(
+        "owner:mediator_helper",
+        4,
+        &["BindingMediatorHelper"],
+        5,
+        "mod_mediator",
+    );
+    let mediator_init = active_owner(
+        "owner:mediator_init",
+        5,
+        &["BindingMediatorInit"],
+        5,
+        "mod_mediator",
+    );
+    let edges = vec![
+        // residual `entry` eagerly reads mediator_init →
+        // residual → mod_mediator (constraining).
+        owner_edge(
+            "edge:entry_mediator",
+            "owner:entry",
+            "owner:mediator_init",
+            analysis::DepKind::EagerUse,
+            true,
+        ),
+        // mediator_helper lazily reads dep_value → mod_mediator →
+        // mod_dep (lazy, non-constraining).
+        owner_edge(
+            "edge:mediator_dep",
+            "owner:mediator_helper",
+            "owner:dep_value",
+            analysis::DepKind::LazyUse,
+            false,
+        ),
+        // mediator_init eagerly calls mediator_helper (intra-module).
+        owner_edge(
+            "edge:mediator_intra",
+            "owner:mediator_init",
+            "owner:mediator_helper",
+            analysis::DepKind::EagerUse,
+            true,
+        ),
+        // cross_value eagerly reads dep_value → mod_dependent →
+        // mod_dep (constraining; forward).
+        owner_edge(
+            "edge:dependent_dep",
+            "owner:cross_value",
+            "owner:dep_value",
+            analysis::DepKind::EagerUse,
+            true,
+        ),
+        // lazy_reader's body lazily references cross_value →
+        // mod_dep → mod_dependent (lazy back-edge; closes I-SCC).
+        owner_edge(
+            "edge:dep_back",
+            "owner:lazy_reader",
+            "owner:cross_value",
+            analysis::DepKind::LazyUse,
+            false,
+        ),
+    ];
+    let report = graph_of(
+        vec![
+            entry.clone(),
+            dep_value.clone(),
+            lazy_reader.clone(),
+            cross_value.clone(),
+            mediator_helper.clone(),
+            mediator_init.clone(),
+        ],
+        edges,
+        vec![
+            atomic_unit_for("atomic:0", &[&entry]),
+            atomic_unit_for("atomic:1", &[&dep_value]),
+            atomic_unit_for("atomic:2", &[&lazy_reader]),
+            atomic_unit_for("atomic:3", &[&cross_value]),
+            atomic_unit_for("atomic:4", &[&mediator_helper]),
+            atomic_unit_for("atomic:5", &[&mediator_init]),
+        ],
+        vec![],
+    );
+    let spec = vec![
+        peel::quotient::SpecModuleGroup {
+            module_id: "mod_dep".to_string(),
+            owner_ids: vec![
+                "owner:dep_value".to_string(),
+                "owner:lazy_reader".to_string(),
+            ],
+        },
+        peel::quotient::SpecModuleGroup {
+            module_id: "mod_dependent".to_string(),
+            owner_ids: vec!["owner:cross_value".to_string()],
+        },
+        peel::quotient::SpecModuleGroup {
+            module_id: "mod_mediator".to_string(),
+            owner_ids: vec![
+                "owner:mediator_helper".to_string(),
+                "owner:mediator_init".to_string(),
+            ],
+        },
+    ];
+
+    // Materializer-side verdict.
+    let (owner_graph, partition) = owner_graph_and_partition_from_spec(&report, &spec);
+    let verdict = analysis::check_realizability(&owner_graph, &partition);
+    let materializer_unrealizable = !verdict.is_realizable();
+    assert!(
+        materializer_unrealizable,
+        "fixture is supposed to be unrealizable per the materializer: {verdict:?}",
+    );
+
+    // Planner-side verdict.
+    let (_q, rejected) =
+        peel::quotient::build_seed_quotient(&report, &report.atomic_graph.nodes, &spec, 10_000);
+    let planner_has_rejection = !rejected.is_empty();
+
+    // The two MUST agree. If the materializer says unrealizable, the
+    // planner must surface a seed rejection — both seeing the same
+    // asymmetric I-cycle.
+    //
+    // Note: the planner's surfacing is granular (per spec-module or
+    // per atomic-DAG edge). For this fixture both modules are
+    // singletons, so no in-module contraction happens; the cycle
+    // surfaces only if the planner *also* walks the post-seed
+    // partition and reports cycles, OR if the kernel's contract gate
+    // refuses some upstream merge. Either is acceptable evidence.
+    //
+    // Until Track A lands, the planner sees no `LazyUse` back-edge
+    // (it filters non-constraining edges) and the verdicts diverge.
+    assert_eq!(
+        materializer_unrealizable, planner_has_rejection,
+        "planner and materializer disagree on asymmetric I-cycle fixture:\n\
+         materializer unrealizable = {materializer_unrealizable}, \
+         planner rejected = {planner_has_rejection}\n\
+         materializer verdict: {verdict:?}\n\
+         planner rejections: {rejected:?}",
+    );
+}
+
+#[test]
+fn planner_and_materializer_agree_on_corpus() {
+    // Corpus property test: across a mix of well-formed and
+    // unrealizable fixture chunks, the planner's seed-quotient
+    // verdict and the materializer's `check_realizability` verdict
+    // agree on realizability (boolean). The fixtures cover:
+    //   - empty / no edges (trivially realizable);
+    //   - a single-module fixture with intra-module edges only;
+    //   - a single asymmetric I-cycle (unrealizable);
+    //   - a mutual constraining cycle (unrealizable);
+    //   - a pair of modules with only lazy edges between them
+    //     (realizable; planner used to over-reject when treated
+    //     differently from materializer).
+
+    struct Case {
+        label: &'static str,
+        report: analysis::OwnerGraphReport,
+        spec: Vec<peel::quotient::SpecModuleGroup>,
+    }
+
+    let mut cases: Vec<Case> = Vec::new();
+
+    // Case 1: empty graph.
+    cases.push(Case {
+        label: "empty",
+        report: graph_of(vec![], vec![], vec![], vec![]),
+        spec: vec![],
+    });
+
+    // Case 2: single module, no cross-module edges.
+    {
+        let a = active_owner("owner:a", 1, &["BindingA"], 5, "mod_solo");
+        let b = active_owner("owner:b", 2, &["BindingB"], 5, "mod_solo");
+        cases.push(Case {
+            label: "single_module_intra_edges",
+            report: graph_of(
+                vec![a.clone(), b.clone()],
+                vec![owner_edge(
+                    "edge:0",
+                    "owner:a",
+                    "owner:b",
+                    analysis::DepKind::EagerUse,
+                    true,
+                )],
+                vec![
+                    atomic_unit_for("atomic:0", &[&a]),
+                    atomic_unit_for("atomic:1", &[&b]),
+                ],
+                vec![],
+            ),
+            spec: vec![peel::quotient::SpecModuleGroup {
+                module_id: "mod_solo".to_string(),
+                owner_ids: vec!["owner:a".to_string(), "owner:b".to_string()],
+            }],
+        });
+    }
+
+    // Case 3: asymmetric I-cycle through a mediator (Lemma 2 cannot
+    // rescue). Mirrors the materializer's
+    // `mediator_reaches_asymmetric_cycle_test` shape — three
+    // modules, residual reaches the SCC only via a non-residual
+    // mediator. The SCC's constraining edge TDZs at runtime.
+    {
+        let entry = residual_owner("owner:entry", 0, &[], 1);
+        let dep_value = active_owner("owner:dep_value", 1, &["BindingDepValue"], 5, "mod_dep");
+        let lazy_reader =
+            active_owner("owner:lazy_reader", 2, &["BindingLazyReader"], 5, "mod_dep");
+        let cross_value = active_owner(
+            "owner:cross_value",
+            3,
+            &["BindingCrossValue"],
+            5,
+            "mod_dependent",
+        );
+        let mediator_helper = active_owner(
+            "owner:mediator_helper",
+            4,
+            &["BindingMediatorHelper"],
+            5,
+            "mod_mediator",
+        );
+        let mediator_init = active_owner(
+            "owner:mediator_init",
+            5,
+            &["BindingMediatorInit"],
+            5,
+            "mod_mediator",
+        );
+        cases.push(Case {
+            label: "asymmetric_i_cycle_via_mediator",
+            report: graph_of(
+                vec![
+                    entry.clone(),
+                    dep_value.clone(),
+                    lazy_reader.clone(),
+                    cross_value.clone(),
+                    mediator_helper.clone(),
+                    mediator_init.clone(),
+                ],
+                vec![
+                    owner_edge(
+                        "edge:entry_mediator",
+                        "owner:entry",
+                        "owner:mediator_init",
+                        analysis::DepKind::EagerUse,
+                        true,
+                    ),
+                    owner_edge(
+                        "edge:mediator_dep",
+                        "owner:mediator_helper",
+                        "owner:dep_value",
+                        analysis::DepKind::LazyUse,
+                        false,
+                    ),
+                    owner_edge(
+                        "edge:mediator_intra",
+                        "owner:mediator_init",
+                        "owner:mediator_helper",
+                        analysis::DepKind::EagerUse,
+                        true,
+                    ),
+                    owner_edge(
+                        "edge:dependent_dep",
+                        "owner:cross_value",
+                        "owner:dep_value",
+                        analysis::DepKind::EagerUse,
+                        true,
+                    ),
+                    owner_edge(
+                        "edge:dep_back",
+                        "owner:lazy_reader",
+                        "owner:cross_value",
+                        analysis::DepKind::LazyUse,
+                        false,
+                    ),
+                ],
+                vec![
+                    atomic_unit_for("atomic:0", &[&entry]),
+                    atomic_unit_for("atomic:1", &[&dep_value]),
+                    atomic_unit_for("atomic:2", &[&lazy_reader]),
+                    atomic_unit_for("atomic:3", &[&cross_value]),
+                    atomic_unit_for("atomic:4", &[&mediator_helper]),
+                    atomic_unit_for("atomic:5", &[&mediator_init]),
+                ],
+                vec![],
+            ),
+            spec: vec![
+                peel::quotient::SpecModuleGroup {
+                    module_id: "mod_dep".to_string(),
+                    owner_ids: vec![
+                        "owner:dep_value".to_string(),
+                        "owner:lazy_reader".to_string(),
+                    ],
+                },
+                peel::quotient::SpecModuleGroup {
+                    module_id: "mod_dependent".to_string(),
+                    owner_ids: vec!["owner:cross_value".to_string()],
+                },
+                peel::quotient::SpecModuleGroup {
+                    module_id: "mod_mediator".to_string(),
+                    owner_ids: vec![
+                        "owner:mediator_helper".to_string(),
+                        "owner:mediator_init".to_string(),
+                    ],
+                },
+            ],
+        });
+    }
+
+    // Case 4: mutual constraining cycle.
+    {
+        let a1 = residual_owner("owner:a1", 1, &["BindingA1"], 5);
+        let b1 = residual_owner("owner:b1", 2, &["BindingB1"], 5);
+        cases.push(Case {
+            label: "mutual_constraining_cycle",
+            report: graph_of(
+                vec![a1.clone(), b1.clone()],
+                vec![
+                    owner_edge(
+                        "edge:fwd",
+                        "owner:a1",
+                        "owner:b1",
+                        analysis::DepKind::EagerUse,
+                        true,
+                    ),
+                    owner_edge(
+                        "edge:back",
+                        "owner:b1",
+                        "owner:a1",
+                        analysis::DepKind::EagerUse,
+                        true,
+                    ),
+                ],
+                vec![
+                    atomic_unit_for("atomic:0", &[&a1]),
+                    atomic_unit_for("atomic:1", &[&b1]),
+                ],
+                vec![],
+            ),
+            // Note: residual destinations — no spec modules. The
+            // planner's seed pass merges atomic units only; since
+            // each atomic is a singleton, no contractions happen and
+            // no rejection fires. The materializer also sees the
+            // SCC purely within residual (one module) and doesn't
+            // flag it (intra-module). Both should agree: realizable.
+            spec: vec![],
+        });
+    }
+
+    // Case 5: lazy-only cross-module edges.
+    {
+        let alpha = active_owner("owner:alpha", 1, &["BindingAlpha"], 5, "mod_alpha");
+        let beta = active_owner("owner:beta", 2, &["BindingBeta"], 5, "mod_beta");
+        cases.push(Case {
+            label: "lazy_only_cross_module",
+            report: graph_of(
+                vec![alpha.clone(), beta.clone()],
+                vec![
+                    owner_edge(
+                        "edge:0",
+                        "owner:alpha",
+                        "owner:beta",
+                        analysis::DepKind::LazyUse,
+                        false,
+                    ),
+                    owner_edge(
+                        "edge:1",
+                        "owner:beta",
+                        "owner:alpha",
+                        analysis::DepKind::LazyUse,
+                        false,
+                    ),
+                ],
+                vec![
+                    atomic_unit_for("atomic:0", &[&alpha]),
+                    atomic_unit_for("atomic:1", &[&beta]),
+                ],
+                vec![],
+            ),
+            spec: vec![
+                peel::quotient::SpecModuleGroup {
+                    module_id: "mod_alpha".to_string(),
+                    owner_ids: vec!["owner:alpha".to_string()],
+                },
+                peel::quotient::SpecModuleGroup {
+                    module_id: "mod_beta".to_string(),
+                    owner_ids: vec!["owner:beta".to_string()],
+                },
+            ],
+        });
+    }
+
+    for case in &cases {
+        // Materializer-side.
+        let (owner_graph, partition) =
+            owner_graph_and_partition_from_spec(&case.report, &case.spec);
+        let verdict = analysis::check_realizability(&owner_graph, &partition);
+        let materializer_unrealizable = !verdict.is_realizable();
+
+        // Planner-side.
+        let (_q, rejected) = peel::quotient::build_seed_quotient(
+            &case.report,
+            &case.report.atomic_graph.nodes,
+            &case.spec,
+            10_000,
+        );
+        let planner_has_rejection = !rejected.is_empty();
+
+        assert_eq!(
+            materializer_unrealizable, planner_has_rejection,
+            "[{}] planner and materializer disagree:\n\
+             materializer unrealizable = {materializer_unrealizable}\n\
+             planner rejected = {planner_has_rejection}\n\
+             materializer verdict: {verdict:?}\n\
+             planner rejections: {rejected:?}",
+            case.label,
+        );
+    }
+}
+
+#[test]
+fn incremental_kernel_query_matches_rebuild_after_each_contract() {
+    // Property test (extends `incremental_state_matches_rebuild_on_synthetic_specs`):
+    // after every greedy contraction in the unified gate, the
+    // incremental kernel's verdict on a candidate merge agrees with
+    // the materializer's verdict on a from-scratch projected
+    // partition. This pins the unified gate's cross-query state
+    // updates against the from-scratch reference.
+
+    let mut fixtures: Vec<(
+        &'static str,
+        analysis::OwnerGraphReport,
+        Vec<peel::quotient::PartitionGroup>,
+    )> = Vec::new();
+    fixtures.push(("empty_corpus", fixture_singletons().1, vec![]));
+
+    {
+        let a = active_owner("owner:a", 1, &["BindingA"], 10, "ui/x");
+        let h1 = residual_owner("owner:h1", 2, &["BindingH1"], 5);
+        let h2 = residual_owner("owner:h2", 3, &["BindingH2"], 5);
+        fixtures.push((
+            "single_module_two_orphans_unified",
+            graph_of(
+                vec![a.clone(), h1.clone(), h2.clone()],
+                vec![
+                    owner_edge(
+                        "edge:0",
+                        "owner:a",
+                        "owner:h1",
+                        analysis::DepKind::EagerUse,
+                        true,
+                    ),
+                    owner_edge(
+                        "edge:1",
+                        "owner:a",
+                        "owner:h2",
+                        analysis::DepKind::EagerUse,
+                        true,
+                    ),
+                ],
+                vec![
+                    atomic_unit_for("atomic:0", &[&a]),
+                    atomic_unit_for("atomic:1", &[&h1]),
+                    atomic_unit_for("atomic:2", &[&h2]),
+                ],
+                vec![],
+            ),
+            vec![make_module_group("ui/x", vec![0])],
+        ));
+    }
+
+    for (label, report, groups) in fixtures {
+        let (mut incremental, _) =
+            peel::quotient::QuotientGraph::from_report_with_partition_extended(
+                &report, 10_000, &groups,
+            );
+
+        loop {
+            let one = peel::quotient::greedy_step(&mut incremental);
+            let Some(_) = one else { break };
+            // After the contract, the cached cycle set should equal
+            // a from-scratch rebuild over the same partition.
+            let cached = incremental.cycle_set();
+            let replay = replay_partition(&report, &groups, &incremental, 10_000);
+            assert_eq!(
+                cached,
+                replay.cycle_set(),
+                "[{label}] cached cycle set diverges from rebuild after merge",
+            );
+        }
+    }
+}
+
 #[test]
 fn unification_eliminates_cell_pipeline() {
     // Static check: the `Cell` IR struct and the

@@ -103,4 +103,12 @@ impl Partition {
     pub fn is_empty(&self) -> bool {
         self.of.is_empty()
     }
+
+    /// Construct a partition from a dense `Vec<ModuleId>` indexed by
+    /// `OwnerId.0`. Caller-supplied residual; intended for the peel
+    /// planner's projection of `QuotientGraph` class assignments back
+    /// to `Partition` slots before running `check_realizability`.
+    pub fn from_assignments(of: Vec<ModuleId>, residual: ModuleId) -> Self {
+        Self { of, residual }
+    }
 }
