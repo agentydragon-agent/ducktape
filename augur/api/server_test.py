@@ -155,7 +155,7 @@ def test_backend_server_runs_joint_scenario_set_and_materializes_graph_tables(se
         },
     )
 
-    assert scenario_run["sampling_metadata"]["exogenous_model_id"] == "simple_exogenous_model"
+    assert scenario_run["sampling_metadata"]["exogenous_model_id"] == "independent_exogenous_model"
     assert scenario_run["projection_run"]["scenario_set_id"] == "backend_smoke"
     assert scenario_run["projection_run"]["path_set_id"].startswith("path_set:")
     assert len(scenario_run["projection_run"]["scenario_input_ids"]) == 1
@@ -163,7 +163,7 @@ def test_backend_server_runs_joint_scenario_set_and_materializes_graph_tables(se
     assert {path["path_set_id"] for path in scenario_run["exogenous_paths"]} == {
         scenario_run["projection_run"]["path_set_id"]
     }
-    assert {path["exogenous_model_id"] for path in scenario_run["exogenous_paths"]} == {"simple_exogenous_model"}
+    assert {path["exogenous_model_id"] for path in scenario_run["exogenous_paths"]} == {"independent_exogenous_model"}
     assert len({path["exogenous_path_id"] for path in scenario_run["exogenous_paths"]}) == 3
     assert all(0 <= path["seed"] <= 2**32 - 1 for path in scenario_run["exogenous_paths"])
     [result] = scenario_run["scenario_results"]
@@ -312,7 +312,7 @@ def test_backend_server_runs_browser_shaped_property_request(server_url: str) ->
         },
     )
 
-    assert scenario_run["sampling_metadata"]["exogenous_model_id"] == "simple_exogenous_model"
+    assert scenario_run["sampling_metadata"]["exogenous_model_id"] == "independent_exogenous_model"
     [result] = scenario_run["scenario_results"]
     assert result["scenario_id"] == "location_a_purchase"
     assert result["summary"] == {"enabled": True, "property_id": "location_a_property", "location_id": "location_a"}
@@ -345,7 +345,7 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
         {"scenario": scenario, "rollout_seeds": [7, 8], "metric": "cash_usd", "percentiles": [0, 50, 100]},
     )
 
-    assert fan["exogenous_model_id"] == "simple_exogenous_model"
+    assert fan["exogenous_model_id"] == "independent_exogenous_model"
     assert "horizon_months" not in fan
     assert fan["metric"] == "cash_usd"
     assert fan["failed_count"] == 0
@@ -392,7 +392,7 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
 
     detail = _post_json(server_url, "/api/product/projections/rollout", {"scenario": scenario, "seed": 7})
 
-    assert detail["exogenous_model_id"] == "simple_exogenous_model"
+    assert detail["exogenous_model_id"] == "independent_exogenous_model"
     assert "horizon_months" not in detail
     assert detail["rollout"]["seed"] == 7
     assert detail["rollout"]["failed"] is False

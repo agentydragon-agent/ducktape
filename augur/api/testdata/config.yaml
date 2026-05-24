@@ -50,10 +50,56 @@ location_selection:
   - location_a
   - location_b
 exogenous_provider:
-  # Public fixture uses the simple stochastic provider — visual_golden_test
+  # Public fixture uses the independent-per-series provider — visual_golden_test
   # renders distribution fans (needs non-flat samples), and browser_shell_test
   # only checks API surface so doesn't care about the specific values.
-  type: simple
+  # GBM params are pre-computed from annual return / volatility:
+  #   monthly_log_return_sigma = annual_vol / sqrt(12)
+  #   monthly_log_return_mu    = annual_return / 12 - 0.5 * monthly_log_return_sigma^2
+  type: independent
+  series:
+    inflation: # annual return 3%, vol 1.5%
+      kind: gbm
+      initial_value: 1.0
+      monthly_log_return_mu: 0.0024906250
+      monthly_log_return_sigma: 0.0043301270
+    sp500: # annual return 7%, vol 16%
+      kind: gbm
+      initial_value: 1.0
+      monthly_log_return_mu: 0.0047666667
+      monthly_log_return_sigma: 0.0461880215
+    "home_value:location_a": # annual return 3.5%, vol 8%
+      kind: gbm
+      initial_value: 1.0
+      monthly_log_return_mu: 0.0026500000
+      monthly_log_return_sigma: 0.0230940108
+    "home_value:location_b":
+      kind: gbm
+      initial_value: 1.0
+      monthly_log_return_mu: 0.0026500000
+      monthly_log_return_sigma: 0.0230940108
+    "rent:location_a": # annual return 3%, vol 3%
+      kind: gbm
+      initial_value: 1.0
+      monthly_log_return_mu: 0.0024625000
+      monthly_log_return_sigma: 0.0086602540
+    "rent:location_b":
+      kind: gbm
+      initial_value: 1.0
+      monthly_log_return_mu: 0.0024625000
+      monthly_log_return_sigma: 0.0086602540
+    # Routing key matches the snapshot's holding_id; PE positions reference it
+    # via issuer_id (see browser fixture in augur/frontend/lib/scenario_set_state.js).
+    "private_equity:private_holding_a": # annual return 8%, vol 35%
+      kind: gbm
+      initial_value: 25.0
+      monthly_log_return_mu: 0.0015625000
+      monthly_log_return_sigma: 0.1010362971
+  events:
+    "private_equity_sale_opportunity:private_holding_a":
+      kind: poisson
+      monthly_lambda: 0.0138888889 # 1/72
+      min_horizon_months: 12
 minimum_reserve_mode: projected_deficits
 personal_finance:
   minimum_liquid_reserve_usd: 10000.0
@@ -89,11 +135,9 @@ snapshot:
   cash_usd: 250000.0
   concentrated_holdings:
     - basis_per_unit_usd: 5.0
-      fmv_usd_per_unit: 25.0
       holding_id: private_holding_a
       label: Private Holding A
       units: 1000
-      valuation_source: public fixture
   notes:
     - Public e2e fixture; values are synthetic.
   sp500_proxy_portfolio_usd: 750000.0

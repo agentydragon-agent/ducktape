@@ -17,7 +17,8 @@ from pydantic import TypeAdapter
 
 from augur.fit.main import main as train_main
 from augur.model.exogenous import ExogenousSamplingRequest
-from augur.model.exogenous_provider_config import ExogenousProviderConfig, SimpleExogenousProviderConfig
+from augur.model.exogenous_provider_config import ExogenousProviderConfig
+from augur.model.independent_exogenous import IndependentExogenousProviderConfig
 from augur.model.series import home_value_series_id, rent_series_id
 
 _ADAPTER: TypeAdapter[ExogenousProviderConfig] = TypeAdapter(ExogenousProviderConfig)
@@ -33,14 +34,15 @@ def test_train_then_load_and_sample(model_label: str, tmp_path: Path) -> None:
     assert out_blob.exists()
 
     parsed = _ADAPTER.validate_python(yaml.safe_load(out_manifest.read_text(encoding="utf-8")))
-    # Trainer only emits the active trained provider config; narrow away fixture
-    # providers so the trained-provider fields are accessible below.
-    assert not isinstance(parsed, SimpleExogenousProviderConfig)
+    # Trainer only emits the active trained provider config; narrow away the
+    # other discriminated-union variants so the trained-provider fields are
+    # accessible below.
+    assert not isinstance(parsed, IndependentExogenousProviderConfig)
     assert parsed.type == model_label
     assert parsed.trained_blob == out_blob
     assert parsed.latest_observations  # non-empty; exact keys depend on the source-data schema
 
-    model = parsed.realize_model(current_private_equity_price_usd=100.0)
+    model = parsed.realize_model()
     locations = sorted(parsed.location_series_sources.home_value)
     required_level_series = frozenset(
         {
@@ -54,7 +56,7 @@ def test_train_then_load_and_sample(model_label: str, tmp_path: Path) -> None:
     )
 
     assert str(sampled.metadata["exogenous_model_version_id"]).startswith("model_version:")
-    assert sampled.metadata["current_private_equity_price_usd"] == 100.0
+    assert sampled.metadata["private_equity_prices_usd"] == {}
     assert {
         row["series_id"] for row in sampled.levels.select("series_id").unique().iter_rows(named=True)
     } == required_level_series

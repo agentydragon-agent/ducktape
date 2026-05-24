@@ -112,7 +112,7 @@ class TestVecmModel:
         joint_model = VecmExogenousPathModel.from_loaded_model(
             model,
             latest_observations={"sp500": 5500.0, "home": 1_000_000.0, "rent": 3000.0, "inflation": 320.0},
-            current_private_equity_price_usd=50.0,
+            private_equity_prices_usd={"private_equity_x": 50.0},
             location_series_sources=LocationSeriesSources(
                 home_value={"san_francisco_ca": "home"}, rent={"san_francisco_ca": "rent"}
             ),
@@ -129,10 +129,10 @@ class TestVecmModel:
                         INFLATION_SERIES_ID,
                         home_value_series_id("san_francisco_ca"),
                         rent_series_id("san_francisco_ca"),
-                        private_equity_series_id("openai"),
+                        private_equity_series_id("private_equity_x"),
                     }
                 ),
-                required_event_series=frozenset({private_equity_sale_event_id("openai")}),
+                required_event_series=frozenset({private_equity_sale_event_id("private_equity_x")}),
             )
         )
 
@@ -144,7 +144,9 @@ class TestVecmModel:
             :, 0
         ].tolist() == [1_000_000.0, 1_000_000.0]
         assert (
-            sampled.event_matrix(private_equity_sale_event_id("openai"), rollout_count=2, horizon_months=12).dtype
+            sampled.event_matrix(
+                private_equity_sale_event_id("private_equity_x"), rollout_count=2, horizon_months=12
+            ).dtype
             == np.bool_
         )
         assert sampled.metadata["scenario_generator_id"] == "vecm_exogenous_path_model"

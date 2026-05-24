@@ -6,7 +6,7 @@ py_library(
     name = "dev_server_lib",
     srcs = ["dev_server.py"],
     deps = [
-        "//augur/api:config_py",
+        "//augur/api:config",
         "//augur/api:server_lib",
         "//util/bazel:runfiles",
         "@pypi//fastapi",

@@ -11,7 +11,6 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, PlainTextResponse
-from more_itertools import one
 from pydantic import ValidationError
 
 from augur.api.casing import plain_json
@@ -20,7 +19,6 @@ from augur.api.config import Config, load_augur_config, resolve_augur_config_pat
 from augur.api.scenario_set import ScenarioSet
 from augur.api.scenario_set_service import ScenarioSetService
 from augur.model.exogenous import ExogenousPathModel
-from augur.model.exogenous_provider_config import realize_exogenous_model
 from augur.product.portfolio import product_portfolio_response
 from augur.product.scenarios import resolve_primary_agent_id
 from augur.product.service import ProductService
@@ -31,18 +29,6 @@ from augur.product.wire import MetricFanRequest, RolloutRequest
 class ApiServerConfig:
     augur_config: Config
     exogenous_model: ExogenousPathModel
-
-
-def _current_private_equity_price_usd(augur_config: Config) -> float:
-    # Every provider must publish the current per-unit private-equity price so the
-    # simulator can resolve units-only PrivateEquityPosition entries.
-    return float(one(augur_config.snapshot.concentrated_holdings).fmv_usd_per_unit)
-
-
-def _make_exogenous_model(augur_config: Config, *, current_private_equity_price_usd: float) -> ExogenousPathModel:
-    return realize_exogenous_model(
-        augur_config.exogenous_provider, current_private_equity_price_usd=current_private_equity_price_usd
-    )
 
 
 def create_app(config: ApiServerConfig) -> FastAPI:
@@ -109,10 +95,7 @@ def create_app(config: ApiServerConfig) -> FastAPI:
 
 
 def create_app_from_augur_config(augur_config: Config) -> FastAPI:
-    current_private_equity_price_usd = _current_private_equity_price_usd(augur_config)
-    exogenous_model = _make_exogenous_model(
-        augur_config, current_private_equity_price_usd=current_private_equity_price_usd
-    )
+    exogenous_model = augur_config.exogenous_provider.realize_model()
     return create_app(ApiServerConfig(augur_config=augur_config, exogenous_model=exogenous_model))
 
 

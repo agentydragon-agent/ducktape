@@ -17,8 +17,21 @@ from augur.api.portfolio import (
     PublicSecurityTaxLotConfig,
 )
 from augur.api.scenario_set import ScenarioSet
+from augur.model.exogenous import ExogenousPathModel
+from augur.model.gbm import GeometricBrownian
+from augur.model.independent_exogenous import IndependentExogenousProviderConfig
 from augur.model.series import SP500_SERIES_ID, private_equity_series_id
-from augur.model.simple_exogenous import SimpleExogenousModel
+
+
+@pytest.fixture
+def exogenous_model() -> ExogenousPathModel:
+    return IndependentExogenousProviderConfig(
+        series={
+            SP500_SERIES_ID: GeometricBrownian(initial_value=1.0),
+            "inflation": GeometricBrownian(initial_value=1.0),
+            private_equity_series_id("private_equity_x"): GeometricBrownian(initial_value=1.0),
+        }
+    ).realize_model()
 
 
 def _scenario_set_body() -> dict:
@@ -70,7 +83,7 @@ def _scenario_set_body() -> dict:
     }
 
 
-def test_translate_current_api_shape_to_runtime_and_run_with_model_sample() -> None:
+def test_translate_current_api_shape_to_runtime_and_run_with_model_sample(exogenous_model: ExogenousPathModel) -> None:
     scenario_set = ScenarioSet.model_validate(_scenario_set_body())
 
     (translation,) = translate_scenario_set(scenario_set)
@@ -82,11 +95,7 @@ def test_translate_current_api_shape_to_runtime_and_run_with_model_sample() -> N
     assert translation.scenario.initial_lots[0].quantity == 1000.0
     assert translation.scenario.initial_lots[0].cost_basis_per_unit_usd == 0.7
 
-    result = simulate_translation(
-        SimpleExogenousModel(current_private_equity_price_usd=1.0),
-        translation,
-        sampling_request=scenario_set.sampling_request,
-    )
+    result = simulate_translation(exogenous_model, translation, sampling_request=scenario_set.sampling_request)
 
     assert result.series_values.filter(pl.col("series_id") == SP500_SERIES_ID).height == 12
     assert result.events_log.obligation_settlements.height == 9
@@ -238,7 +247,7 @@ def test_bridge_rejects_private_equity_explicit_marks_until_series_anchoring_exi
         translate_scenario_set(scenario_set)
 
 
-def test_property_selection_translates_to_month_zero_purchase_and_mortgage() -> None:
+def test_property_selection_translates_to_month_zero_purchase_and_mortgage(exogenous_model: ExogenousPathModel) -> None:
     body = _scenario_set_body()
     body["scenarios"][0]["property_selection"] = {
         "property_id": "sf_home",
@@ -297,11 +306,7 @@ def test_property_selection_translates_to_month_zero_purchase_and_mortgage() -> 
     assert purchase.mortgage.term_months == 360
     assert [(policy.property_id, policy.annual_tax_rate) for policy in translation.scenario.property_tax_policies] == []
 
-    result = simulate_translation(
-        SimpleExogenousModel(current_private_equity_price_usd=1.0),
-        translation,
-        sampling_request=scenario_set.sampling_request,
-    )
+    result = simulate_translation(exogenous_model, translation, sampling_request=scenario_set.sampling_request)
 
     final_property = result.property_state.filter(pl.col("month_index") == 3).row(0, named=True)
     assert final_property["property_id"] == "sf_home"
@@ -374,7 +379,9 @@ def test_property_tax_and_carrying_costs_translate_to_runtime_obligations() -> N
     }
 
 
-def test_configured_portfolio_lots_replace_legacy_public_stock_asset_but_keep_private_equity() -> None:
+def test_configured_portfolio_lots_replace_legacy_public_stock_asset_but_keep_private_equity(
+    exogenous_model: ExogenousPathModel,
+) -> None:
     body = _scenario_set_body()
     body["scenarios"][0]["initial_balance_sheet"]["assets"].append(
         {
@@ -383,7 +390,7 @@ def test_configured_portfolio_lots_replace_legacy_public_stock_asset_but_keep_pr
             "owner_actor_id": "owner",
             "units": 1_000.0,
             "cost_basis_usd": 5_000.0,
-            "issuer_id": "openai",
+            "issuer_id": "private_equity_x",
         }
     )
     scenario_set = ScenarioSet.model_validate(body)
@@ -411,7 +418,7 @@ def test_configured_portfolio_lots_replace_legacy_public_stock_asset_but_keep_pr
 
     (translation,) = translate_scenario_set(scenario_set, configured_lots=portfolio.to_initial_lots())
     sampled, result = sample_and_simulate_translation(
-        SimpleExogenousModel(current_private_equity_price_usd=1.0),
+        exogenous_model,
         translation,
         sampling_request=scenario_set.sampling_request,
         level_anchors=portfolio.level_anchors,
@@ -424,10 +431,12 @@ def test_configured_portfolio_lots_replace_legacy_public_stock_asset_but_keep_pr
     ]
     assert translation.scenario.initial_lots[0].quantity == 10.0
     assert translation.scenario.initial_lots[0].cost_basis_per_unit_usd == 300.0
-    assert translation.scenario.initial_lots[2].asset_id == private_equity_series_id("openai")
+    assert translation.scenario.initial_lots[2].asset_id == private_equity_series_id("private_equity_x")
     assert translation.scenario.initial_lots[2].quantity == 1_000.0
     assert translation.scenario.initial_lots[2].cost_basis_per_unit_usd == 5.0
-    assert translation.required_level_series == frozenset({SP500_SERIES_ID, private_equity_series_id("openai")})
+    assert translation.required_level_series == frozenset(
+        {SP500_SERIES_ID, private_equity_series_id("private_equity_x")}
+    )
     assert sampled.level_matrix(SP500_SERIES_ID, rollout_count=3, horizon_months=3)[:, 0].tolist() == [
         500.0,
         500.0,

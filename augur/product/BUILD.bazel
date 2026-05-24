@@ -3,33 +3,33 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 package(default_visibility = ["//visibility:public"])
 
 py_library(
-    name = "wire_py",
+    name = "wire",
     srcs = ["wire.py"],
     deps = [
-        "//augur/api:schemas_py",
+        "//augur/api:schemas",
         "@pypi//pydantic",
     ],
 )
 
 py_library(
-    name = "scenarios_py",
+    name = "scenarios",
     srcs = ["scenarios.py"],
     deps = [
-        ":wire_py",
-        "//augur/api:config_py",
-        "//augur/api:portfolio_py",
-        "//augur/api:scenario_set_py",
-        "//augur/model:series_py",
+        ":wire",
+        "//augur/api:config",
+        "//augur/api:portfolio",
+        "//augur/api:scenario_set",
+        "//augur/model:series",
         "//augur/sim:scenario",
         "@pypi//more_itertools",
     ],
 )
 
 py_library(
-    name = "decode_py",
+    name = "decode",
     srcs = ["decode.py"],
     deps = [
-        ":wire_py",
+        ":wire",
         "//augur/sim:engine",
         "//augur/sim:run",
         "@pypi//numpy",
@@ -38,15 +38,15 @@ py_library(
 )
 
 py_library(
-    name = "service_py",
+    name = "service",
     srcs = ["service.py"],
     deps = [
-        ":decode_py",
-        ":scenarios_py",
-        ":wire_py",
-        "//augur/api:portfolio_py",
-        "//augur/api:schemas_py",
-        "//augur/model:exogenous_py",
+        ":decode",
+        ":scenarios",
+        ":wire",
+        "//augur/api:portfolio",
+        "//augur/api:schemas",
+        "//augur/model:exogenous",
         "//augur/sim:engine",
         "//augur/sim:external_series",
         "//augur/sim:simulate",
@@ -57,12 +57,12 @@ py_library(
 )
 
 py_library(
-    name = "portfolio_py",
+    name = "portfolio",
     srcs = ["portfolio.py"],
     deps = [
-        "//augur/api:finance_py",
-        "//augur/api:portfolio_py",
-        "//augur/api:schemas_py",
+        "//augur/api:finance",
+        "//augur/api:portfolio",
+        "//augur/api:schemas",
         "@pypi//pydantic",
     ],
 )
@@ -71,9 +71,9 @@ py_test(
     name = "portfolio_test",
     srcs = ["portfolio_test.py"],
     deps = [
-        ":portfolio_py",
-        "//augur/api:finance_py",
-        "//augur/api:portfolio_py",
+        ":portfolio",
+        "//augur/api:finance",
+        "//augur/api:portfolio",
         "@pypi//pytest_bazel",
     ],
 )
@@ -87,15 +87,14 @@ py_test(
         "//augur/api:public_fixture_properties",
     ],
     deps = [
-        ":decode_py",
-        ":scenarios_py",
-        ":service_py",
-        ":wire_py",
-        "//augur/api:catalog_py",
-        "//augur/api:config_py",
-        "//augur/model:exogenous_py",
-        "//augur/model:series_py",
-        "//augur/model:simple_exogenous_py",
+        ":decode",
+        ":scenarios",
+        ":service",
+        ":wire",
+        "//augur/api:catalog",
+        "//augur/api:config",
+        "//augur/model:exogenous",
+        "//augur/model:series",
         "//util/bazel:runfiles",
         "@pypi//more_itertools",
         "@pypi//pytest",

@@ -28,7 +28,7 @@ from augur.api.portfolio import (
     PublicSecurityTaxLotConfig,
 )
 from augur.api.scenario_set import ActorRole, LiquidityReserveRuleType, TaxRegime
-from augur.model.exogenous_provider_config import SimpleExogenousProviderConfig
+from augur.model.independent_exogenous import IndependentExogenousProviderConfig
 
 
 def _minimal_config(**overrides: object) -> Config:
@@ -41,7 +41,7 @@ def _minimal_config(**overrides: object) -> Config:
         "snapshot": FinanceSnapshot(as_of_date="2026-05-12"),
         "default_rollout_samples": 128,
         "max_rollout_samples": 1_000_000,
-        "exogenous_provider": SimpleExogenousProviderConfig(),
+        "exogenous_provider": IndependentExogenousProviderConfig(),
     }
     defaults.update(overrides)
     return Config(**defaults)
@@ -118,11 +118,7 @@ def test_finance_snapshot_holdings_round_trip_through_json() -> None:
             cash_usd=100.0,
             concentrated_holdings=(
                 ConcentratedHoldingSnapshot(
-                    holding_id="example_holding",
-                    label="Example Holding",
-                    units=10,
-                    fmv_usd_per_unit=1.5,
-                    basis_per_unit_usd=0,
+                    holding_id="example_holding", label="Example Holding", units=10, basis_per_unit_usd=0
                 ),
             ),
         )
@@ -134,9 +130,7 @@ def test_finance_snapshot_holdings_round_trip_through_json() -> None:
     assert holding.holding_id == "example_holding"
     assert holding.label == "Example Holding"
     assert holding.units == 10
-    assert holding.fmv_usd_per_unit == 1.5
     assert holding.basis_per_unit_usd == 0
-    assert holding.value_usd == 15
 
 
 def test_config_carries_tax_lot_accurate_portfolio_schema() -> None:
@@ -203,7 +197,7 @@ def test_at_least_one_agent_required() -> None:
             snapshot=FinanceSnapshot(as_of_date="2026-05-12"),
             default_rollout_samples=128,
             max_rollout_samples=1_000_000,
-            exogenous_provider=SimpleExogenousProviderConfig(),
+            exogenous_provider=IndependentExogenousProviderConfig(),
         )
 
 
@@ -214,7 +208,7 @@ def test_actor_id_must_be_snake_case() -> None:
 
 def test_holding_id_must_be_snake_case() -> None:
     with pytest.raises(ValidationError, match="String should match pattern"):
-        ConcentratedHoldingSnapshot(holding_id="ExampleHolding", label="Example", units=100, fmv_usd_per_unit=1.0)
+        ConcentratedHoldingSnapshot(holding_id="ExampleHolding", label="Example", units=100)
 
 
 def test_snapshot_optional_fields_default_to_zero() -> None:
@@ -225,21 +219,17 @@ def test_snapshot_optional_fields_default_to_zero() -> None:
     assert snapshot.concentrated_holdings == ()
 
 
-def test_snapshot_carries_per_holding_fmv() -> None:
+def test_snapshot_carries_per_holding_basis() -> None:
     snapshot = FinanceSnapshot(
         as_of_date="2026-05-12",
         concentrated_holdings=(
             ConcentratedHoldingSnapshot(
-                holding_id="example_holding",
-                label="Example Holding",
-                units=10,
-                fmv_usd_per_unit=1.5,
-                valuation_source="placeholder",
+                holding_id="example_holding", label="Example Holding", units=10, basis_per_unit_usd=1.5
             ),
         ),
     )
-    assert snapshot.concentrated_holdings[0].fmv_usd_per_unit == 1.5
-    assert snapshot.concentrated_holdings[0].value_usd == 15
+    assert snapshot.concentrated_holdings[0].basis_per_unit_usd == 1.5
+    assert snapshot.concentrated_holdings[0].units == 10
 
 
 def test_unknown_field_is_rejected() -> None:
