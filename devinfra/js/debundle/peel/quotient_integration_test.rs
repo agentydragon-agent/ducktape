@@ -1449,3 +1449,287 @@ fn merge_absorbs_residual_owner_with_only_intra_deps() {
         "merge proposal should list owner:helper as an extension owner: {merge:?}",
     );
 }
+
+// ---------- Commit 4: unify cell discovery into seeding. ----------
+//
+// The commit-4 refactor deletes `proposal_cells_from_atomic_graph` and
+// its `Cell` IR; the equivalent partition is now produced by a third
+// gated contraction pass in `build_seed_quotient`. Behavior on
+// well-formed input is byte-identical to the commit-1b snapshots
+// (locked down by `factorize_golden_output_unchanged` above). Behavior
+// on input whose atomic-DAG reachability closure would form a cycle
+// is intentionally different: today's cell discovery would have
+// silently formed the closure and let the downstream realizability
+// gate report a generic cycle; the unified seeding refuses the
+// pass-3 contraction and emits a `SeedContractionRejected::AtomicReachability`
+// diagnostic pinpointing the rejected pair.
+
+#[test]
+fn unification_byte_identical_on_well_formed_inputs() {
+    // Companion to `factorize_golden_output_unchanged`. The plan's
+    // commit-4 spec calls out that the three commit-1b golden
+    // snapshots (residual_singletons, closed_residual_unit,
+    // extend_active_via_anon) produce zero rejections under the
+    // gated seeding and therefore must stay byte-identical after
+    // unification. This test asserts the "zero rejections" half;
+    // the byte-identity half is covered by
+    // `factorize_golden_output_unchanged`.
+    let claims_empty: BTreeMap<String, String> = BTreeMap::new();
+    let claims_active: BTreeMap<String, String> =
+        BTreeMap::from([("BindingA".to_string(), "ui/x".to_string())]);
+
+    let r1 = factorize(&golden_residual_singletons(), &claims_empty, 10_000);
+    let r2 = factorize(&golden_closed_residual_unit(), &claims_empty, 10_000);
+    let r3 = factorize(&golden_extend_active_via_anon(), &claims_active, 10_000);
+
+    assert!(
+        r1.seed_rejections.is_empty(),
+        "residual_singletons fixture must produce zero seed rejections: {:?}",
+        r1.seed_rejections,
+    );
+    assert!(
+        r2.seed_rejections.is_empty(),
+        "closed_residual_unit fixture must produce zero seed rejections: {:?}",
+        r2.seed_rejections,
+    );
+    assert!(
+        r3.seed_rejections.is_empty(),
+        "extend_active_via_anon fixture must produce zero seed rejections: {:?}",
+        r3.seed_rejections,
+    );
+}
+
+#[test]
+fn unification_rejects_cyclic_atomic_reachability_with_diagnostic() {
+    // Fixture: two residual atomic units mod_alpha = {Foo} and
+    // mod_beta = {Bar} with constraining edges in both directions
+    // (Foo reads Bar; Bar reads Foo). Atomic-DAG edges
+    // atomic:alpha → atomic:beta and atomic:beta → atomic:alpha.
+    // Today's cell discovery's transitive closure would coalesce
+    // {Foo, Bar} into a single residual cell (and the downstream
+    // realizability gate would then report the cycle as a generic
+    // SCC); the gated seeding's pass 3 contracts these one edge
+    // at a time. The first edge's contraction succeeds (singletons
+    // → one residual class). The second edge would re-encounter
+    // the already-contracted class (same-class) and skip silently
+    // — no diagnostic, no cycle. To create a *rejected* contraction
+    // diagnostic, we use three units with directional edges:
+    //   atomic:alpha (Foo, residual) → atomic:gamma (Helper, residual)
+    //   atomic:beta  (Bar, residual) → atomic:gamma (Helper, residual)
+    // and additionally
+    //   atomic:gamma → atomic:alpha (closing the cycle in atomic
+    //   graph through a third residual class).
+    // Pass 3 walks edges in id-lex order. After contracting
+    // alpha→gamma and beta→gamma, all three are one class. Then
+    // gamma→alpha is same-class. To force a *cyclic* rejection
+    // we need three classes where the third edge's contraction
+    // would create a multi-class SCC that wasn't there before.
+    //
+    // Simpler fixture: three singleton residual units linked
+    // alpha → beta → gamma → alpha as atomic-DAG edges, and the
+    // underlying owner-graph constraining edges form a directed
+    // 3-cycle. Pass 3 walks edges by id; the first two merges
+    // collapse {alpha, beta, gamma} into one residual class, so
+    // the third edge is same-class and not rejected. The cyclic-
+    // rejection diagnostic only fires when the merge candidate's
+    // *post-merge* cycle set includes the merged endpoints — i.e.,
+    // when there's a path from `c_target` back to `c_source` that
+    // does NOT pass through `c_target` or `c_source`'s eventual
+    // partners.
+    //
+    // Concrete fixture used here: residual owners Foo, Bar, Helper.
+    //   - Foo reads Bar (constraining; Foo → Bar)
+    //   - Bar reads Helper (constraining; Bar → Helper)
+    //   - Helper reads Foo (constraining; Helper → Foo)
+    // Each owner is its own atomic unit. Atomic-DAG edges:
+    //   atomic:foo → atomic:bar
+    //   atomic:bar → atomic:helper
+    //   atomic:helper → atomic:foo
+    // Pass 3 walks edges in id-lex order (alphabetical on edge id).
+    // We name the edges so the first-to-process one creates a
+    // singleton-class merge between Bar and Helper (closing two of
+    // the three classes), then the second-to-process edge attempts
+    // foo↔(bar+helper) — which would create a self-loop on the
+    // merged class (not a multi-class SCC) and is therefore
+    // accepted. So a 3-cycle of three residual singletons just
+    // collapses into one class.
+    //
+    // The cyclic-rejection diagnostic fires when a *fourth*
+    // class — a pre-existing spec module — closes the cycle. So the
+    // fixture pins one binding to a pre-existing module, leaving
+    // two residuals that would close a cycle through the module:
+    //   - Foo lives in spec module mod_alpha.
+    //   - Bar, Helper are residual.
+    //   - Bar reads Foo (Bar → Foo, constraining).
+    //   - Helper reads Bar (Helper → Bar, constraining).
+    //   - Foo reads Helper (Foo → Helper, constraining).
+    // Atomic-DAG edges:
+    //   atomic_edge:a (atomic:bar → atomic:foo)      // Bar reads Foo
+    //   atomic_edge:b (atomic:foo → atomic:helper)   // Foo reads Helper
+    //   atomic_edge:c (atomic:helper → atomic:bar)   // Helper reads Bar
+    // Only `atomic_edge:b` and `atomic_edge:c` have a residual
+    // target (Helper / Bar are residual; Foo is active so
+    // `atomic_edge:a` is skipped by pass-3's `target has residual`
+    // filter).
+    // Pass 3 in id-lex order:
+    //   atomic_edge:b: contract class(Foo) (= mod_alpha class) with
+    //     class(Helper). Singleton Helper → no pre-merge cycle. The
+    //     merge would set up Foo+Helper in one class; Bar still
+    //     reads Foo (Bar's only edge), Helper still reads Bar (now
+    //     Foo+Helper → Bar). New cross-class edges:
+    //       Bar → Foo+Helper (constraining, via Bar reads Foo)
+    //       Foo+Helper → Bar (constraining, via Helper reads Bar)
+    //     That's a 2-class SCC. The gate rejects.
+    //   atomic_edge:c: same situation by symmetry — would close a
+    //     2-class cycle.
+    // The diagnostic must name the rejected edge + pair.
+    let foo = active_owner("owner:foo", 1, &["Foo"], 5, "mod_alpha");
+    let bar = residual_owner("owner:bar", 2, &["Bar"], 5);
+    let helper = residual_owner("owner:helper", 3, &["Helper"], 5);
+    let edges = vec![
+        // Bar reads Foo
+        owner_edge("edge:0", "owner:bar", "owner:foo", DepKind::EagerUse, true),
+        // Foo reads Helper
+        owner_edge(
+            "edge:1",
+            "owner:foo",
+            "owner:helper",
+            DepKind::EagerUse,
+            true,
+        ),
+        // Helper reads Bar
+        owner_edge(
+            "edge:2",
+            "owner:helper",
+            "owner:bar",
+            DepKind::EagerUse,
+            true,
+        ),
+    ];
+    let report = graph_of(
+        vec![foo.clone(), bar.clone(), helper.clone()],
+        edges,
+        vec![
+            atomic_unit_for("atomic:foo", &[&foo]),
+            atomic_unit_for("atomic:bar", &[&bar]),
+            atomic_unit_for("atomic:helper", &[&helper]),
+        ],
+        vec![
+            // atomic_edge:a — Bar reads Foo (target active, skipped
+            // by pass 3's residual-target filter).
+            AtomicUnitEdgeReport {
+                id: "atomic_edge:a".to_string(),
+                source: "atomic:bar".to_string(),
+                target: "atomic:foo".to_string(),
+                edge_kinds: vec![DepKind::EagerUse],
+                owner_edge_ids: vec!["edge:0".to_string()],
+                constrains_init_order: true,
+            },
+            // atomic_edge:b — Foo reads Helper (target residual).
+            AtomicUnitEdgeReport {
+                id: "atomic_edge:b".to_string(),
+                source: "atomic:foo".to_string(),
+                target: "atomic:helper".to_string(),
+                edge_kinds: vec![DepKind::EagerUse],
+                owner_edge_ids: vec!["edge:1".to_string()],
+                constrains_init_order: true,
+            },
+            // atomic_edge:c — Helper reads Bar (target residual).
+            AtomicUnitEdgeReport {
+                id: "atomic_edge:c".to_string(),
+                source: "atomic:helper".to_string(),
+                target: "atomic:bar".to_string(),
+                edge_kinds: vec![DepKind::EagerUse],
+                owner_edge_ids: vec!["edge:2".to_string()],
+                constrains_init_order: true,
+            },
+        ],
+    );
+    // Spec module mod_alpha contains Foo. The factorize entry
+    // point derives spec_modules from the owner destinations, so
+    // the active owner above is already registered as mod_alpha.
+    let claims: BTreeMap<String, String> =
+        BTreeMap::from([("Foo".to_string(), "mod_alpha".to_string())]);
+    let result = factorize(&report, &claims, 10_000);
+
+    // (a) No proposal should bundle Foo with Helper or Bar — the
+    // cycle prevents merging Foo's class with Helper's class
+    // through the pass-3 atomic-DAG-reachability contraction.
+    let foo_extension = result
+        .proposals
+        .iter()
+        .find(|p| p.extends_module_id.as_deref() == Some("mod_alpha"));
+    if let Some(p) = foo_extension {
+        assert!(
+            !p.extension_owner_ids.contains(&"owner:helper".to_string())
+                && !p.extension_owner_ids.contains(&"owner:bar".to_string()),
+            "mod_alpha extension must NOT include Helper or Bar: {p:?}",
+        );
+    }
+
+    // (b) The seed rejections must include an AtomicReachability
+    // entry naming the rejected edge + pair.
+    let reachability_rejections: Vec<&SeedContractionRejected> = result
+        .seed_rejections
+        .iter()
+        .filter(|r| matches!(r, SeedContractionRejected::AtomicReachability { .. }))
+        .collect();
+    assert!(
+        !reachability_rejections.is_empty(),
+        "expected at least one AtomicReachability rejection, got: {:?}",
+        result.seed_rejections,
+    );
+    // At least one rejection must name a (Foo, Helper) or
+    // (Helper, Bar) or (Foo, Bar) pair (the cycle-closing edges).
+    let pinpoints_cycle = reachability_rejections.iter().any(|r| {
+        if let SeedContractionRejected::AtomicReachability {
+            rejected_pair,
+            cycle,
+            ..
+        } = r
+        {
+            !cycle.is_empty()
+                && (rejected_pair.0 == "owner:foo"
+                    || rejected_pair.1 == "owner:foo"
+                    || rejected_pair.0 == "owner:bar"
+                    || rejected_pair.1 == "owner:bar"
+                    || rejected_pair.0 == "owner:helper"
+                    || rejected_pair.1 == "owner:helper")
+        } else {
+            false
+        }
+    });
+    assert!(
+        pinpoints_cycle,
+        "AtomicReachability rejection must pinpoint a cycle-closing pair with cycle evidence: {reachability_rejections:?}",
+    );
+}
+
+#[test]
+fn unification_eliminates_cell_pipeline() {
+    // Static check: the `Cell` IR struct and the
+    // `proposal_cells_from_atomic_graph` symbol no longer exist
+    // in the peel crate's source. Embedding the source file at
+    // build time lets us assert at runtime that no recidivist
+    // restoration of the deleted symbols slipped back in.
+    //
+    // A direct compile-time guarantee (no public symbol exists)
+    // would be Rust's `peel::factorize::proposal_cells_from_atomic_graph`
+    // failing to compile — but the function is `fn` (module-
+    // private) in factorize.rs, so we can't probe for it from
+    // outside the crate. The source-embedded grep covers both
+    // module-private and public surfaces uniformly.
+    let factorize_src: &str = include_str!("factorize.rs");
+    assert!(
+        !factorize_src.contains("fn proposal_cells_from_atomic_graph"),
+        "`proposal_cells_from_atomic_graph` was deleted in commit 4; do not restore",
+    );
+    assert!(
+        !factorize_src.contains("struct Cell {"),
+        "the `Cell` IR struct was deleted in commit 4; do not restore",
+    );
+    assert!(
+        !factorize_src.contains("fn promote_anonymous_only_cell_to_extension"),
+        "`promote_anonymous_only_cell_to_extension` was deleted in commit 4 — subsumed by the greedy's 'extend single consumer' merges",
+    );
+}

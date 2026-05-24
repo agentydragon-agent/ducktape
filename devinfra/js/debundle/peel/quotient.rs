@@ -114,6 +114,28 @@ pub enum SeedContractionRejected {
         rejected_pair: (String, String),
         cycle: CycleEvidence,
     },
+    /// Pass-3 (atomic-DAG reachability closure) contraction rejected.
+    /// Pre-commit-4 behavior was: silently form the closure into a
+    /// "cell" even when cyclic; downstream realizability gate would
+    /// then report the cycle as a generic SCC. Post-commit-4: the
+    /// kernel refuses the merge at seeding time and emits this
+    /// diagnostic naming the source/target atomic-DAG edge whose
+    /// contraction would have created the cycle. See
+    /// `plans/peel_proposer_contraction_model.md`, commit 4.
+    AtomicReachability {
+        /// The atomic-DAG edge id whose contraction was refused.
+        edge_id: String,
+        source_unit_id: String,
+        target_unit_id: String,
+        /// `(source_owner_id, target_owner_id)` — the
+        /// representative owners (lowest `OwnerIdx` in each unit at
+        /// rejection time) whose class-level contraction tripped
+        /// the gate.
+        rejected_pair: (String, String),
+        /// Cycle evidence when the rejection is cycle-driven. Empty
+        /// for non-cycle rejections (cap, residual stickiness).
+        cycle: CycleEvidence,
+    },
 }
 
 /// One spec-module declaration the seeding protocol consumes. The
@@ -942,10 +964,19 @@ impl QuotientGraph {
 
     /// `true` if a class is **pre-existing module-anchored** —
     /// i.e., it was constructed from a `PartitionGroup` with
-    /// `is_pre_existing_module = true`. The greedy uses this to
-    /// restrict commit-2 merges to "extend module by orphan."
+    /// `is_pre_existing_module = true`, or marked by the seeding
+    /// protocol's spec-module pass. The greedy uses this to
+    /// restrict commit-2 merges to "extend module by orphan" and
+    /// commit-3 merges to module↔module fusions.
     pub fn class_is_pre_existing_module(&self, c: ClassId) -> bool {
         self.classes[c.0].is_pre_existing_module
+    }
+
+    /// Mark a class as pre-existing-module-anchored. Called by the
+    /// seeding protocol's spec-module pass; sticky across merges
+    /// (any subsequent contraction propagates the bit).
+    pub fn set_class_pre_existing_module(&mut self, c: ClassId) {
+        self.classes[c.0].is_pre_existing_module = true;
     }
 
     /// Number of owner edges between `a` and `b` (in either
@@ -1263,15 +1294,19 @@ pub fn build_seed_quotient(
     }
 
     // ---- Pass 2: spec modules. Canonical order: module id lex.
+    //      Every spec-module owner's surviving class is marked
+    //      `is_pre_existing_module = true` so the downstream greedy
+    //      can identify it as a viable absorption target (single-
+    //      owner modules included).
     let mut modules: Vec<&SpecModuleGroup> = spec_modules.iter().collect();
     modules.sort_by(|a, b| a.module_id.cmp(&b.module_id));
     for module in modules {
         let owner_idxs = resolve_owner_idxs(&q, &module.owner_ids);
-        if owner_idxs.len() < 2 {
+        if owner_idxs.is_empty() {
             continue;
         }
         let pivot = owner_idxs[0];
-        for &member in &owner_idxs[1..] {
+        for &member in owner_idxs.iter().skip(1) {
             let c_pivot = q.class_of(pivot);
             let c_member = q.class_of(member);
             if c_pivot == c_member {
@@ -1301,6 +1336,150 @@ pub fn build_seed_quotient(
                         cycle: CycleEvidence::default(),
                     });
                 }
+            }
+        }
+        // Mark every spec-module owner's surviving class as
+        // pre-existing-module-anchored (sticky across later
+        // pass-3 / greedy merges; needed for the greedy gate to
+        // recognize the orphan-absorption shape).
+        for &owner in &owner_idxs {
+            let c = q.class_of(owner);
+            q.set_class_pre_existing_module(c);
+        }
+    }
+
+    // ---- Pass 3: atomic-DAG reachability. For each atomic-DAG
+    //      edge `u → v` whose target unit has any residual member,
+    //      contract `class(rep(u))` with `class(rep(v))` through
+    //      the gated protocol. Subsumes today's
+    //      `proposal_cells_from_atomic_graph` (atomic-DAG
+    //      transitive closure + overlap coalesce) by reading the
+    //      same edge set, but rejections fire at the per-edge
+    //      granularity instead of silently forming cyclic cells.
+    //
+    //      Overlap coalesce: when two edges `u₁ → v` and `u₂ → v`
+    //      both contract into the same target class, the second
+    //      contraction sees the merged class (because the kernel's
+    //      `class_of` is read after the first contract). The
+    //      effect equivalent to today's `coalesce_overlapping_sets`
+    //      falls out for free.
+    //
+    //      Iteration to fixed point: a single linear scan over
+    //      atomic edges is enough for the success case (contractions
+    //      commute when only merging). Cycle-driven rejections may
+    //      become success after other merges (or remain rejections);
+    //      we iterate until a pass produces zero successful
+    //      contractions, then emit diagnostics from the final state.
+    //      Termination: each successful pass strictly reduces the
+    //      class count by ≥1; bounded by initial class count.
+    //
+    //      Diagnostic emission: dedupe by atomic-DAG edge id (each
+    //      edge produces at most one diagnostic). Diagnostics are
+    //      emitted in canonical (atomic-DAG edge id lex) order on
+    //      the final, fixed-point quotient state.
+    let atomic_edges_relevant: Vec<&analysis::AtomicUnitEdgeReport> = {
+        let unit_has_residual: std::collections::HashMap<&str, bool> = atomic_units
+            .iter()
+            .map(|unit| {
+                (
+                    unit.id.as_str(),
+                    unit.destinations.iter().any(|dest| dest.residual),
+                )
+            })
+            .collect();
+        let mut edges: Vec<&analysis::AtomicUnitEdgeReport> = report
+            .atomic_graph
+            .edges
+            .iter()
+            .filter(|e| e.constrains_init_order && e.source != e.target)
+            .filter(|e| {
+                unit_has_residual
+                    .get(e.target.as_str())
+                    .copied()
+                    .unwrap_or(false)
+            })
+            .collect();
+        edges.sort_by(|a, b| a.id.cmp(&b.id));
+        edges
+    };
+    let unit_owner_idxs: std::collections::HashMap<&str, Vec<OwnerIdx>> = atomic_units
+        .iter()
+        .map(|unit| (unit.id.as_str(), resolve_owner_idxs(&q, &unit.owner_ids)))
+        .collect();
+    loop {
+        let mut applied = 0usize;
+        for edge in &atomic_edges_relevant {
+            let Some(source_owners) = unit_owner_idxs.get(edge.source.as_str()) else {
+                continue;
+            };
+            let Some(target_owners) = unit_owner_idxs.get(edge.target.as_str()) else {
+                continue;
+            };
+            let (Some(&src_pivot), Some(&tgt_pivot)) =
+                (source_owners.first(), target_owners.first())
+            else {
+                continue;
+            };
+            let cs = q.class_of(src_pivot);
+            let ct = q.class_of(tgt_pivot);
+            if cs == ct {
+                continue;
+            }
+            if q.contract(cs, ct).is_ok() {
+                applied += 1;
+            }
+        }
+        if applied == 0 {
+            break;
+        }
+    }
+    // Walk edges once more to record diagnostics for the pairs that
+    // still cannot merge at fixed point.
+    for edge in &atomic_edges_relevant {
+        let Some(source_owners) = unit_owner_idxs.get(edge.source.as_str()) else {
+            continue;
+        };
+        let Some(target_owners) = unit_owner_idxs.get(edge.target.as_str()) else {
+            continue;
+        };
+        let (Some(&src_pivot), Some(&tgt_pivot)) = (source_owners.first(), target_owners.first())
+        else {
+            continue;
+        };
+        let cs = q.class_of(src_pivot);
+        let ct = q.class_of(tgt_pivot);
+        if cs == ct {
+            continue;
+        }
+        match q.contract(cs, ct) {
+            Ok(_) => {
+                // Should be unreachable: fixed-point loop already
+                // exited on zero successful contractions.
+                continue;
+            }
+            Err(ContractRejected::WouldCreateCycle { cycle }) => {
+                rejected.push(SeedContractionRejected::AtomicReachability {
+                    edge_id: edge.id.clone(),
+                    source_unit_id: edge.source.clone(),
+                    target_unit_id: edge.target.clone(),
+                    rejected_pair: (
+                        q.owner_id(src_pivot).to_string(),
+                        q.owner_id(tgt_pivot).to_string(),
+                    ),
+                    cycle,
+                });
+            }
+            Err(_) => {
+                rejected.push(SeedContractionRejected::AtomicReachability {
+                    edge_id: edge.id.clone(),
+                    source_unit_id: edge.source.clone(),
+                    target_unit_id: edge.target.clone(),
+                    rejected_pair: (
+                        q.owner_id(src_pivot).to_string(),
+                        q.owner_id(tgt_pivot).to_string(),
+                    ),
+                    cycle: CycleEvidence::default(),
+                });
             }
         }
     }

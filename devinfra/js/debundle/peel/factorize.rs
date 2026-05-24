@@ -18,15 +18,25 @@
 //!
 //! ## Renderer over `QuotientGraph`
 //!
-//! Commit 1b of `plans/peel_proposer_contraction_model.md` routes
-//! proposal emission through the kernel: the cell-discovery pass
-//! (`proposal_cells_from_atomic_graph`) materializes today's
-//! atomic-DAG-closure cells as a `QuotientGraph` partition (one class
-//! per cell, residual catch-alls as singletons), and `emit_proposals`
-//! reads class membership through that quotient. Commit 2's greedy
-//! plugs into the same kernel by applying additional contractions on
-//! top before emission. The output of `factorize` is byte-identical
-//! to the pre-kernel binary's output for the same input.
+//! Commit 4 of `plans/peel_proposer_contraction_model.md` unifies cell
+//! discovery and seed-quotient construction into a single, gated
+//! contraction protocol. The factorize pipeline is now:
+//!
+//!   1. `build_seed_quotient` — atomic-unit + spec-module +
+//!      atomic-DAG-reachability contractions, each gated by
+//!      `merge_preserves_invariants`. Cycle-rejected contractions
+//!      surface as `SeedContractionRejected::AtomicReachability`
+//!      diagnostics instead of silently forming cyclic cells.
+//!   2. `greedy_merge_to_convergence` — extends the quotient with
+//!      orphan-into-module and module↔module merges where the
+//!      gate permits.
+//!   3. `emit_proposals` — walks the surviving classes and
+//!      materializes each as a `FactorizeProposal`.
+//!
+//! Pre-commit-4 the renderer ran off a parallel `Vec<CellClassRecord>`
+//! produced by `proposal_cells_from_atomic_graph`. Both that helper
+//! and its `Cell` IR are gone; the quotient is now the single source
+//! of truth for "which owners are in which proposed class."
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
@@ -39,7 +49,7 @@ use analysis::{FactorizeDiagnosticReason, LineRange, OwnerGraphReport, PeelCandi
 use spec_modules::load_active_claims;
 
 use crate::quotient::{
-    ClassId, OwnerIdx, PartitionGroup, QuotientGraph, SeedContractionRejected, SpecModuleGroup,
+    ClassId, OwnerIdx, QuotientGraph, SeedContractionRejected, SpecModuleGroup,
     build_seed_quotient, greedy_merge_to_convergence,
 };
 
@@ -227,18 +237,28 @@ pub fn factorize(
         })
         .collect();
 
-    let (quotient, cell_records, diagnostics) = proposal_cells_from_atomic_graph(
+    // Spec-module groups: every active-claimed module's owners
+    // pre-contracted into one class. Used by `build_seed_quotient`'s
+    // pass 2 to seed pre-existing-module classes; the greedy then
+    // absorbs orphans into them.
+    let spec_modules = spec_module_groups(graph);
+    let (mut quotient, seed_rejections) = build_seed_quotient(
         graph,
-        &owner_index,
-        &owner_to_active_module,
+        &graph.atomic_graph.nodes,
+        &spec_modules,
         size_cap_lines,
     );
+    let _greedy_steps = greedy_merge_to_convergence(&mut quotient);
 
-    // Per-cell edge accounting. We walk every constraining edge
-    // once, classifying the source-cell / target-cell pair into:
-    // - internal (same cell, residual)            → cell.internal_edges
-    // - inter-residual (different residual cells) → cell.edges_to_other_residual_cells
-    // - cell → active claim                       → cell.edges_to_active_modules
+    // Per-class edge accounting. Walk every constraining owner
+    // edge and classify (source-class, target-class) into:
+    // - internal (same class, residual-only)
+    // - inter-residual (different non-pre-existing-module classes)
+    // - residual → pre-existing-module class
+    // Edges originating from non-residual owners are skipped (the
+    // edge-accounting surface mirrors today's cell-edge-accounting
+    // semantics; non-residual edges are part of the spec module's
+    // internal initialization, not relevant to peel proposals).
     let mut residual_constraining_edges: Vec<(usize, usize)> = Vec::new();
     let mut edges_to_active: Vec<(usize, String)> = Vec::new();
     for edge in &graph.edges {
@@ -261,17 +281,31 @@ pub fn factorize(
         }
     }
 
+    // Per-class label (pre-existing module path). Built from the
+    // active-claimed owners surviving in each class; if a class
+    // contains owners from two distinct active modules, the labels
+    // are collected and surfaced as a `merge_into` later.
+    let mut class_to_labels: BTreeMap<ClassId, BTreeSet<String>> = BTreeMap::new();
+    for (idx, _) in graph.nodes.iter().enumerate() {
+        let Some(label) = owner_to_active_module.get(&idx) else {
+            continue;
+        };
+        let c = quotient.class_of(OwnerIdx(idx));
+        class_to_labels.entry(c).or_default().insert(label.clone());
+    }
+
     let proposals = emit_proposals(
         &quotient,
-        &cell_records,
+        &class_to_labels,
         &residual_constraining_edges,
         &edges_to_active,
         graph,
+        size_cap_lines,
     );
+    let diagnostics = collect_size_cap_diagnostics(&quotient, graph, size_cap_lines);
     let status_counts = status_counts(&proposals);
     let diagnostic_counts = diagnostic_counts(&diagnostics);
     let size_distributions = size_distributions(&proposals);
-    let seed_rejections = compute_seed_rejections(graph, size_cap_lines);
     PeelFactorizeReport {
         proposals,
         diagnostics,
@@ -285,24 +319,10 @@ pub fn factorize(
     }
 }
 
-/// Build the seed quotient under the kernel and surface any rejected
-/// forced contractions. The quotient is constructed but not yet used
-/// to drive emission — today's `emit_proposals` path remains the
-/// renderer. Commit 2 enables greedy merges off this quotient; for
-/// commit 1 the kernel runs alongside `emit_proposals` as a
-/// pure-side-effect diagnostic.
-///
-/// Spec-module groups for the kernel come from grouping owners by
-/// their active destination (the same view `factorize` uses to label
-/// extensions). Owners whose destination is residual stay
-/// singletons; the kernel never tries to contract them with each
-/// other at this stage.
-fn compute_seed_rejections(
-    graph: &OwnerGraphReport,
-    cap_lines: usize,
-) -> Vec<SeedContractionRejected> {
-    // Group owners by their declared active destination. Residual
-    // owners are skipped — they're singletons in the spec.
+/// Spec-module groups derived from `graph.nodes` destinations.
+/// Owners with a non-residual destination are grouped by
+/// destination id; residual owners stay out (they'll be singletons).
+fn spec_module_groups(graph: &OwnerGraphReport) -> Vec<SpecModuleGroup> {
     let mut groups: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for node in &graph.nodes {
         if node.destination.residual {
@@ -313,7 +333,7 @@ fn compute_seed_rejections(
             .or_default()
             .push(node.id.clone());
     }
-    let spec_modules: Vec<SpecModuleGroup> = groups
+    groups
         .into_iter()
         .map(|(module_id, mut owner_ids)| {
             owner_ids.sort();
@@ -321,557 +341,8 @@ fn compute_seed_rejections(
                 module_id,
                 owner_ids,
             }
-        })
-        .collect();
-
-    let (_q, rejected) =
-        build_seed_quotient(graph, &graph.atomic_graph.nodes, &spec_modules, cap_lines);
-    rejected
-}
-
-/// Build the seed quotient (kernel-state-only entry-point) for
-/// callers that want to inspect the equivalence classes without
-/// running the full proposal-emission pipeline. Used by future
-/// commits (greedy merge step) and by tests.
-pub fn build_factorize_seed_quotient(
-    graph: &OwnerGraphReport,
-    cap_lines: usize,
-) -> (QuotientGraph, Vec<SeedContractionRejected>) {
-    let mut groups: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    for node in &graph.nodes {
-        if node.destination.residual {
-            continue;
-        }
-        groups
-            .entry(node.destination.id.clone())
-            .or_default()
-            .push(node.id.clone());
-    }
-    let spec_modules: Vec<SpecModuleGroup> = groups
-        .into_iter()
-        .map(|(module_id, mut owner_ids)| {
-            owner_ids.sort();
-            SpecModuleGroup {
-                module_id,
-                owner_ids,
-            }
-        })
-        .collect();
-    build_seed_quotient(graph, &graph.atomic_graph.nodes, &spec_modules, cap_lines)
-}
-
-/// Compute the atomic-DAG-reachability-closure cells that today's
-/// proposer renders into proposals, then construct a `QuotientGraph`
-/// whose equivalence classes are exactly those cells.
-///
-/// Returns:
-/// - the cells-derived quotient (residual atomic-unit closures
-///   contracted into single classes; unaffected owners remain
-///   singletons),
-/// - a list of `CellClassRecord` (one per emitted cell, in the same
-///   order today's pipeline produces) carrying the class id, the
-///   `extends_module_id`/`extension_owner_idxs` metadata, and the
-///   atomic-DAG-closure verdict,
-/// - the diagnostic list for cells that fail the active-module or
-///   size-cap gate.
-///
-/// This is the **Path B** implementation of commit 1b in
-/// `plans/peel_proposer_contraction_model.md`: today's cell
-/// semantics (transitive closure over atomic-DAG edges to
-/// residual-containing units, with overlap coalescing) is preserved
-/// verbatim; the kernel hosts the resulting partition as a quotient
-/// so the renderer (`emit_proposals`) reads class membership
-/// uniformly. Commit 2's greedy will plug in on top of this same
-/// quotient.
-fn proposal_cells_from_atomic_graph(
-    graph: &OwnerGraphReport,
-    owner_index: &HashMap<&str, usize>,
-    owner_to_active_module: &HashMap<usize, String>,
-    size_cap_lines: usize,
-) -> (
-    QuotientGraph,
-    Vec<CellClassRecord>,
-    Vec<FactorizeDiagnosticReport>,
-) {
-    let unit_index: HashMap<&str, usize> = graph
-        .atomic_graph
-        .nodes
-        .iter()
-        .enumerate()
-        .map(|(idx, unit)| (unit.id.as_str(), idx))
-        .collect();
-    let mut owner_to_unit = HashMap::<usize, usize>::new();
-    for (unit_idx, unit) in graph.atomic_graph.nodes.iter().enumerate() {
-        for owner_id in &unit.owner_ids {
-            if let Some(&owner_idx) = owner_index.get(owner_id.as_str()) {
-                owner_to_unit.insert(owner_idx, unit_idx);
-            }
-        }
-    }
-    let unit_has_residual: Vec<bool> = graph
-        .atomic_graph
-        .nodes
-        .iter()
-        .map(|unit| unit.destinations.iter().any(|dest| dest.residual))
-        .collect();
-    let mut outgoing_residual_units =
-        vec![BTreeSet::<usize>::new(); graph.atomic_graph.nodes.len()];
-    for edge in &graph.atomic_graph.edges {
-        if !edge.constrains_init_order {
-            continue;
-        }
-        let (Some(&source), Some(&target)) = (
-            unit_index.get(edge.source.as_str()),
-            unit_index.get(edge.target.as_str()),
-        ) else {
-            continue;
-        };
-        if source != target && unit_has_residual.get(target).copied().unwrap_or(false) {
-            outgoing_residual_units[source].insert(target);
-        }
-    }
-
-    let mut closed_sets: Vec<BTreeSet<usize>> = (0..graph.atomic_graph.nodes.len())
-        .filter(|&start| unit_has_residual[start])
-        .map(|start| close_residual_units(start, &outgoing_residual_units))
-        .collect();
-    coalesce_overlapping_sets(&mut closed_sets);
-
-    // First pass: classify each cell into "diagnostic" or
-    // "renderable" (= one cell-class in the quotient). Build the
-    // owner-index partition (`render_groups`) for the kernel.
-    let mut diagnostics = Vec::<FactorizeDiagnosticReport>::new();
-    let mut render_groups: Vec<Vec<OwnerIdx>> = Vec::new();
-    let mut render_metadata: Vec<RenderCellMetadata> = Vec::new();
-    let mut seen = BTreeSet::<(Option<String>, Vec<usize>)>::new();
-    for closed_units in closed_sets {
-        let cell = cell_from_units(graph, owner_index, &closed_units);
-        if cell.owners.is_empty() {
-            continue;
-        }
-        let active_destinations = active_destinations_for_cell(graph, &cell.owners);
-        if active_destinations.len() > 1 {
-            diagnostics.push(diagnostic_from_cell(
-                diagnostics.len(),
-                &cell,
-                graph,
-                PeelCandidateStatus::BlockedCycle,
-                FactorizeDiagnosticReason::ActiveModuleConflict,
-                active_destinations.into_iter().collect(),
-            ));
-            continue;
-        }
-        let mut cell = cell;
-        cell.extends_module_id = active_destinations.first().cloned();
-        if cell.extends_module_id.is_some() {
-            cell.extension_owner_idxs = cell
-                .owners
-                .iter()
-                .copied()
-                .filter(|idx| graph.nodes[*idx].destination.residual)
-                .collect();
-        }
-        let key_owners: Vec<usize> = cell.owners.iter().copied().collect();
-        if !seen.insert((cell.extends_module_id.clone(), key_owners)) {
-            continue;
-        }
-        if cell.lines > size_cap_lines {
-            diagnostics.push(diagnostic_from_cell(
-                diagnostics.len(),
-                &cell,
-                graph,
-                PeelCandidateStatus::BlockedResidualDependency,
-                FactorizeDiagnosticReason::ExceedsSizeCap,
-                Vec::new(),
-            ));
-            continue;
-        }
-        let group: Vec<OwnerIdx> = cell.owners.iter().map(|&idx| OwnerIdx(idx)).collect();
-        render_groups.push(group);
-        render_metadata.push(RenderCellMetadata {
-            extends_module_id: cell.extends_module_id,
-            extension_owner_idxs: cell.extension_owner_idxs,
-            verdict: Verdict {
-                status: PeelCandidateStatus::PeelableNow,
-                landable_today: true,
-                cycle_blocker_owner_ids: Vec::new(),
-            },
-        });
-    }
-
-    // Materialize the partition into a quotient. Two kinds of groups
-    // are stacked into the kernel:
-    //
-    //   - Cell groups: atomic-DAG-reachability closures produced by
-    //     the cell discovery pass above. These carry per-cell
-    //     metadata (`extends_module_id`, `extension_owner_idxs`,
-    //     verdict) that the renderer materializes into a proposal.
-    //
-    //   - Pre-existing module groups: every active-claim spec module,
-    //     with its owners co-located. These have no cell record;
-    //     they're seeded purely to give the commit-2 greedy a
-    //     pre-existing-module class to absorb orphans into.
-    //
-    // The greedy enumerates pre-existing-module classes and tries to
-    // absorb each connected residual orphan into them; this is the
-    // "extend existing module with new orphans" shape that
-    // generalizes today's `promote_anonymous_only_cell_to_extension`
-    // post-pass.
-    let mut extended_groups: Vec<PartitionGroup> = render_groups
-        .into_iter()
-        .zip(render_metadata.iter())
-        .map(|(owner_idxs, meta)| PartitionGroup {
-            owner_idxs,
-            is_pre_existing_module: meta.extends_module_id.is_some(),
-            label: meta.extends_module_id.clone(),
-        })
-        .collect();
-    let n_cell_groups = extended_groups.len();
-    // Add pre-existing-module groups derived from the spec.
-    // Group key uses `destination.id` so owners in the same active
-    // module are co-located; the label uses the active path
-    // (resolved via active_claims → target_file → label) so
-    // downstream `extends_module_id` matches the same path the
-    // legacy post-pass would have used (via
-    // `active_modules_referenced`).
-    let mut module_groups: BTreeMap<String, (String, Vec<OwnerIdx>)> = BTreeMap::new();
-    for (i, node) in graph.nodes.iter().enumerate() {
-        if node.destination.residual {
-            continue;
-        }
-        let active_path = owner_to_active_module
-            .get(&i)
-            .cloned()
-            .unwrap_or_else(|| node.destination.id.clone());
-        let entry = module_groups
-            .entry(node.destination.id.clone())
-            .or_insert_with(|| (active_path.clone(), Vec::new()));
-        entry.1.push(OwnerIdx(i));
-    }
-    for (_dest_id, (active_path, mut owner_idxs)) in module_groups {
-        owner_idxs.sort();
-        extended_groups.push(PartitionGroup {
-            owner_idxs,
-            is_pre_existing_module: true,
-            label: Some(active_path),
-        });
-    }
-    let (mut quotient, group_class_ids) =
-        QuotientGraph::from_report_with_partition_extended(graph, size_cap_lines, &extended_groups);
-    // Cell records consume only the first n_cell_groups class ids;
-    // the rest are pre-existing module classes that get folded into
-    // existing cell records by surviving-class collation below.
-    let group_class_ids: Vec<ClassId> = group_class_ids.into_iter().take(n_cell_groups).collect();
-
-    // Stash one owner per cell + one owner per module group *before*
-    // greedy — we'll use these to look up surviving classes and
-    // their labels after greedy collapses some classes.
-    let cell_anchors: Vec<OwnerIdx> = extended_groups
-        .iter()
-        .take(n_cell_groups)
-        .map(|g| {
-            *g.owner_idxs
-                .first()
-                .expect("partition group must be non-empty")
-        })
-        .collect();
-    let module_anchors: Vec<(OwnerIdx, String)> = extended_groups
-        .iter()
-        .skip(n_cell_groups)
-        .map(|g| {
-            (
-                *g.owner_idxs
-                    .first()
-                    .expect("module partition group must be non-empty"),
-                g.label.clone().expect("module group has label"),
-            )
-        })
-        .collect();
-    drop(group_class_ids); // no longer authoritative after greedy
-
-    // Commit 2: run greedy contractions on the cells-derived +
-    // pre-existing-module-augmented quotient. The greedy absorbs
-    // orphan residual singletons into pre-existing active module
-    // classes.
-    let _greedy_contractions = greedy_merge_to_convergence(&mut quotient);
-
-    // Resolve, for each surviving class, the list of pre-existing
-    // module labels that ended up in it. A class with ≥2 labels is a
-    // merge proposal; the renderer carries `merge_into` carrying the
-    // sorted label list.
-    let mut surviving_module_labels: BTreeMap<ClassId, Vec<String>> = BTreeMap::new();
-    for (anchor, label) in module_anchors.into_iter() {
-        surviving_module_labels
-            .entry(quotient.class_of(anchor))
-            .or_default()
-            .push(label);
-    }
-    for labels in surviving_module_labels.values_mut() {
-        labels.sort();
-        labels.dedup();
-    }
-
-    // Update each cell record's `class_id` to reflect any merges:
-    // a cell's surviving class is the current class of any of its
-    // original owners. If two cell records collapse to the same
-    // class (e.g. an orphan absorbed into a module), keep one and
-    // merge extension owners.
-    let mut by_surviving: BTreeMap<ClassId, CellClassRecord> = BTreeMap::new();
-    for (meta, anchor) in render_metadata.into_iter().zip(cell_anchors) {
-        let surviving = quotient.class_of(anchor);
-        let record = CellClassRecord {
-            class_id: surviving,
-            extends_module_id: meta.extends_module_id,
-            extension_owner_idxs: meta.extension_owner_idxs,
-            verdict: meta.verdict,
-            merge_into: None,
-        };
-        match by_surviving.get_mut(&surviving) {
-            None => {
-                by_surviving.insert(surviving, record);
-            }
-            Some(existing) => {
-                if existing.extends_module_id.is_none() && record.extends_module_id.is_some() {
-                    existing.extends_module_id = record.extends_module_id;
-                }
-                existing
-                    .extension_owner_idxs
-                    .extend(record.extension_owner_idxs);
-            }
-        }
-    }
-
-    // Synthesize a CellClassRecord for any surviving class that
-    // hosts a pre-existing module group but has no cell record.
-    // This covers two shapes:
-    //   - pure module extension (single module, no residual cell),
-    //   - module-only merges (≥2 modules fused, no residual cell).
-    // Both are commit-3 outputs; today's pipeline already covers
-    // module extension via the orphan-absorption path, but a pure
-    // module↔module merge has no residual orphan to anchor a cell.
-    for class_id in surviving_module_labels.keys().copied() {
-        if !by_surviving.contains_key(&class_id) {
-            by_surviving.insert(
-                class_id,
-                CellClassRecord {
-                    class_id,
-                    extends_module_id: None,
-                    extension_owner_idxs: BTreeSet::new(),
-                    verdict: Verdict {
-                        status: PeelCandidateStatus::PeelableNow,
-                        landable_today: true,
-                        cycle_blocker_owner_ids: Vec::new(),
-                    },
-                    merge_into: None,
-                },
-            );
-        }
-    }
-
-    // Stamp module-anchored records with their canonical
-    // `extends_module_id` and `merge_into` (when ≥2 modules fused).
-    for (class_id, labels) in &surviving_module_labels {
-        let Some(record) = by_surviving.get_mut(class_id) else {
-            continue;
-        };
-        // Canonical extends_module_id = first label by sort order.
-        // (Whichever one wins is arbitrary; downstream tooling will
-        // use merge_into when deciding which file becomes
-        // authoritative.)
-        if record.extends_module_id.is_none() {
-            record.extends_module_id = labels.first().cloned();
-        }
-        if labels.len() >= 2 {
-            record.merge_into = Some(labels.clone());
-        }
-    }
-
-    // After greedy, a pre-existing-module class may contain
-    // residual-origin owners that weren't in the original cell
-    // (the cell-discovery pass only emitted residual closures).
-    // Surface them as `extension_owner_idxs` so the renderer
-    // materializes the correct extend:M proposal.
-    for record in by_surviving.values_mut() {
-        if record.extends_module_id.is_none() {
-            continue;
-        }
-        let class_owners: Vec<OwnerIdx> = quotient.class_members(record.class_id).collect();
-        for owner in class_owners {
-            if graph.nodes[owner.0].destination.residual {
-                record.extension_owner_idxs.insert(owner.0);
-            }
-        }
-    }
-
-    let cell_records: Vec<CellClassRecord> = by_surviving.into_values().collect();
-    (quotient, cell_records, diagnostics)
-}
-
-/// Cell-class record passed to `emit_proposals`. The class id refers
-/// into the cells-derived quotient. Extension metadata is derived
-/// from owner destinations at cell-discovery time and survives the
-/// refactor unchanged.
-#[derive(Debug, Clone)]
-struct CellClassRecord {
-    class_id: ClassId,
-    extends_module_id: Option<String>,
-    extension_owner_idxs: BTreeSet<usize>,
-    verdict: Verdict,
-    /// Set when the surviving class fused two or more pre-existing
-    /// active module groups during greedy. Sorted list of module
-    /// labels (active paths). `None` otherwise.
-    merge_into: Option<Vec<String>>,
-}
-
-struct RenderCellMetadata {
-    extends_module_id: Option<String>,
-    extension_owner_idxs: BTreeSet<usize>,
-    verdict: Verdict,
-}
-
-fn close_residual_units(
-    start: usize,
-    outgoing_residual_units: &[BTreeSet<usize>],
-) -> BTreeSet<usize> {
-    let mut closed = BTreeSet::from([start]);
-    let mut stack = vec![start];
-    while let Some(unit) = stack.pop() {
-        for &target in &outgoing_residual_units[unit] {
-            if closed.insert(target) {
-                stack.push(target);
-            }
-        }
-    }
-    closed
-}
-
-fn coalesce_overlapping_sets(sets: &mut Vec<BTreeSet<usize>>) {
-    let mut changed = true;
-    while changed {
-        changed = false;
-        'outer: for left in 0..sets.len() {
-            for right in (left + 1)..sets.len() {
-                if sets[left].is_disjoint(&sets[right]) {
-                    continue;
-                }
-                let merged = sets.remove(right);
-                sets[left].extend(merged);
-                changed = true;
-                break 'outer;
-            }
-        }
-    }
-    sets.sort();
-}
-
-fn cell_from_units(
-    graph: &OwnerGraphReport,
-    owner_index: &HashMap<&str, usize>,
-    unit_indices: &BTreeSet<usize>,
-) -> Cell {
-    let mut owners = BTreeSet::<usize>::new();
-    for &unit_idx in unit_indices {
-        let Some(unit) = graph.atomic_graph.nodes.get(unit_idx) else {
-            continue;
-        };
-        for owner_id in &unit.owner_ids {
-            if let Some(&owner_idx) = owner_index.get(owner_id.as_str()) {
-                owners.insert(owner_idx);
-            }
-        }
-    }
-    let lines = owners
-        .iter()
-        .map(|&idx| owner_line_count(&graph.nodes[idx]))
-        .sum();
-    Cell {
-        owners,
-        lines,
-        extends_module_id: None,
-        extension_owner_idxs: BTreeSet::new(),
-    }
-}
-
-fn active_destinations_for_cell(
-    graph: &OwnerGraphReport,
-    owners: &BTreeSet<usize>,
-) -> BTreeSet<String> {
-    owners
-        .iter()
-        .filter_map(|&idx| {
-            let dest = &graph.nodes[idx].destination;
-            (!dest.residual).then(|| dest.id.clone())
         })
         .collect()
-}
-
-fn diagnostic_from_cell(
-    idx: usize,
-    cell: &Cell,
-    graph: &OwnerGraphReport,
-    status: PeelCandidateStatus,
-    reason: FactorizeDiagnosticReason,
-    active_modules_referenced: Vec<String>,
-) -> FactorizeDiagnosticReport {
-    // Diagnostics never reach the renderer-over-quotient path; they
-    // close before a class is allocated. Compute the same surface
-    // fields directly from the cell's owners.
-    let mut owner_ids: Vec<String> = Vec::with_capacity(cell.owners.len());
-    let mut binding_ids: BTreeSet<String> = BTreeSet::new();
-    let mut line_range = LineRange::new();
-    let mut max_ordinal = 0usize;
-    let mut min_ordinal = usize::MAX;
-    for &owner_idx in &cell.owners {
-        let node = &graph.nodes[owner_idx];
-        owner_ids.push(node.id.clone());
-        for binding in &node.declared_bindings {
-            binding_ids.insert(binding.binding.to_string());
-        }
-        if let Some(loc) = &node.source_location {
-            line_range.expand(loc);
-        }
-        min_ordinal = min_ordinal.min(node.statement_ordinal.0);
-        max_ordinal = max_ordinal.max(node.statement_ordinal.0);
-    }
-    owner_ids.sort();
-    FactorizeDiagnosticReport {
-        diagnostic_id: format!("diagnostic:{}_{idx:04}", diagnostic_reason_key(reason)),
-        owner_ids,
-        binding_ids: binding_ids.into_iter().collect(),
-        size_lines_estimate: cell.lines,
-        source_line_range: line_range.into_array(),
-        ordinal_span: max_ordinal.saturating_sub(min_ordinal),
-        status,
-        reason,
-        cycle_blocker_owner_ids: Vec::new(),
-        active_modules_referenced,
-        extends_module_id: cell.extends_module_id.clone(),
-    }
-}
-
-/// Intermediate representation of one atomic-DAG-reachability
-/// closure produced by `proposal_cells_from_atomic_graph`. Used to
-/// classify the closure into "diagnostic-bound" (active-module
-/// conflict, exceeds size cap) vs "renderable" and to materialize
-/// the resulting partition into a `QuotientGraph`. The renderer
-/// (`emit_proposals`) does not see `Cell`; it reads class membership
-/// directly from the quotient.
-#[derive(Debug, Clone)]
-struct Cell {
-    owners: BTreeSet<usize>,
-    lines: usize,
-    extends_module_id: Option<String>,
-    extension_owner_idxs: BTreeSet<usize>,
-}
-
-/// Per-cell gate result from the atomic-DAG closure. Attached to
-/// each `CellClassRecord` so the renderer can stamp the proposal
-/// with the cell-discovery pass's verdict.
-#[derive(Debug, Clone)]
-struct Verdict {
-    status: PeelCandidateStatus,
-    landable_today: bool,
-    cycle_blocker_owner_ids: Vec<String>,
 }
 
 fn owner_line_count(node: &analysis::OwnerGraphNodeReport) -> usize {
@@ -885,54 +356,107 @@ fn owner_line_count(node: &analysis::OwnerGraphNodeReport) -> usize {
         .unwrap_or(0)
 }
 
-struct ProposalContext<'a> {
-    graph: &'a OwnerGraphReport,
-    quotient: &'a QuotientGraph,
-    residual_edges: &'a [(usize, usize)],
-    active_edges: &'a [(usize, String)],
-    /// Map from owner-index to the cell-record index whose class
-    /// contains this owner. Owners not in any rendered cell-class
-    /// are absent from the map.
-    owner_to_cell: HashMap<usize, usize>,
-}
-
+/// Render the quotient's surviving (non-empty, non-residual-only)
+/// classes into proposals.
+///
+/// Each surviving class becomes at most one proposal. The shape is
+/// driven by `class_to_labels`:
+/// - 0 labels: residual-only class. Fresh-module proposal
+///   (`auto_partition_NNNN`).
+/// - 1 label: pre-existing-module class. Extension proposal
+///   (`extend:M`); proposal surfaces only the residual-origin
+///   owners as `extension_owner_ids` (the spec edit: "add these
+///   owners to module M"). If the class has no residual-origin
+///   owners, no proposal is emitted (the spec module is already
+///   complete).
+/// - ≥2 labels: module↔module merge proposal (`merge:M1+M2+…`).
+///   Residual-origin owners ride as `extension_owner_ids`.
+///
+/// The catch-all residual class (`destination.id == "residual"`) is
+/// excluded — it's never a proposal target. Classes that fail the
+/// post-greedy size cap appear as `FactorizeDiagnosticReport`s
+/// (computed separately in `collect_size_cap_diagnostics`).
 fn emit_proposals(
     quotient: &QuotientGraph,
-    cell_records: &[CellClassRecord],
+    class_to_labels: &BTreeMap<ClassId, BTreeSet<String>>,
     residual_edges: &[(usize, usize)],
     active_edges: &[(usize, String)],
     graph: &OwnerGraphReport,
+    size_cap_lines: usize,
 ) -> Vec<FactorizeProposal> {
-    // Build owner-to-cell from the quotient's class memberships,
-    // keyed by cell-record index (not class id). The renderer's
-    // edge-attribution logic treats cells as units; it doesn't need
-    // class ids, just per-cell identity.
-    let mut owner_to_cell: HashMap<usize, usize> = HashMap::new();
-    for (cell_idx, record) in cell_records.iter().enumerate() {
-        for owner in quotient.class_members(record.class_id) {
-            owner_to_cell.insert(owner.0, cell_idx);
+    // Build owner-to-class for every owner. The renderer's edge
+    // attribution treats classes as the unit of accounting (the
+    // pre-commit-4 code keyed by "cell_idx", a parallel index; the
+    // ClassId itself is now the natural key).
+    let mut owner_to_class: HashMap<usize, ClassId> = HashMap::new();
+    for (i, _) in graph.nodes.iter().enumerate() {
+        owner_to_class.insert(i, quotient.class_of(OwnerIdx(i)));
+    }
+
+    // Candidate classes: every live class that isn't the residual
+    // catch-all and either has owners or carries module labels. We
+    // skip classes whose only members are spec-module owners with
+    // no residual extensions (= pre-existing modules unchanged by
+    // the peel) — those don't represent a spec edit.
+    let mut candidate_classes: Vec<ClassId> = Vec::new();
+    for c in quotient.iter_classes() {
+        if quotient.class_is_residual(c) {
+            continue;
+        }
+        let labels = class_to_labels.get(&c);
+        let n_labels = labels.map(|s| s.len()).unwrap_or(0);
+        let has_residual_origin = quotient
+            .class_members(c)
+            .any(|o| graph.nodes[o.0].destination.residual);
+        if n_labels == 0 {
+            // Pure residual class. Always emit (fresh-module).
+            candidate_classes.push(c);
+        } else if n_labels == 1 {
+            // Extension: only emit if there are residual-origin
+            // owners to add. A class containing only the
+            // already-claimed spec-module owners is a no-op.
+            if has_residual_origin {
+                candidate_classes.push(c);
+            }
+        } else {
+            // Merge of ≥2 pre-existing modules. Always emit.
+            candidate_classes.push(c);
         }
     }
 
-    let ctx = ProposalContext {
-        graph,
-        quotient,
-        residual_edges,
-        active_edges,
-        owner_to_cell,
-    };
+    // Classes that exceed the size cap aren't proposals — they
+    // surface as diagnostics. Filter them out here so they don't
+    // count toward the `auto_partition_NNNN` numbering.
+    candidate_classes.retain(|c| quotient.class_lines(*c) <= size_cap_lines);
 
-    let mut proposals: Vec<FactorizeProposal> = cell_records
+    // Owner-index → candidate_classes-position. Used by edge-
+    // attribution to bucket cross-class edges by candidate id.
+    let mut owner_to_candidate: HashMap<usize, usize> = HashMap::new();
+    for (idx, &c) in candidate_classes.iter().enumerate() {
+        for owner in quotient.class_members(c) {
+            owner_to_candidate.insert(owner.0, idx);
+        }
+    }
+
+    let mut proposals: Vec<FactorizeProposal> = candidate_classes
         .iter()
         .enumerate()
-        .map(|(cell_idx, record)| build_proposal(cell_idx, record, &ctx))
+        .map(|(candidate_idx, &class_id)| {
+            build_proposal(
+                candidate_idx,
+                class_id,
+                class_to_labels.get(&class_id),
+                quotient,
+                residual_edges,
+                active_edges,
+                graph,
+                &owner_to_candidate,
+            )
+        })
         .collect();
 
     // Residual-dependency depth sort with source-line tie-break.
-    // Certified analyzer output normally has no outgoing residual
-    // constraining edges; this still keeps legacy/synthetic reports
-    // deterministic.
-    let depths = compute_topo_depths(cell_records.len(), residual_edges, &ctx.owner_to_cell);
+    let depths = compute_topo_depths(proposals.len(), residual_edges, &owner_to_candidate);
     let mut indexed: Vec<(usize, FactorizeProposal)> = proposals.drain(..).enumerate().collect();
     indexed.sort_by(|(li, left), (ri, right)| {
         depths[*li].cmp(&depths[*ri]).then_with(|| {
@@ -948,9 +472,9 @@ fn emit_proposals(
         })
     });
 
-    // After topo-sort the cells are renumbered; rebuild the original
-    // cell_idx → new_idx map so cross-references inside the
-    // `other_residual_cells_referenced` lists point at the right
+    // After topo-sort the candidate indices are renumbered; rebuild
+    // the original candidate_idx → new_idx map so cross-references
+    // inside `other_residual_cells_referenced` point at the right
     // post-sort module IDs.
     let new_id_for: HashMap<usize, usize> = indexed
         .iter()
@@ -958,12 +482,9 @@ fn emit_proposals(
         .map(|(new_idx, (orig_idx, _))| (*orig_idx, new_idx))
         .collect();
     let mut out: Vec<FactorizeProposal> = indexed.into_iter().map(|(_, p)| p).collect();
-    for proposal in out.iter_mut() {
-        promote_anonymous_only_cell_to_extension(proposal);
-    }
     let mut fresh_counter = 0usize;
     for proposal in out.iter_mut() {
-        if proposal.extends_module_id.is_none() {
+        if proposal.extends_module_id.is_none() && proposal.merge_into.is_none() {
             proposal.proposed_module_id = format!("auto_partition_{fresh_counter:04}");
             fresh_counter += 1;
         }
@@ -981,80 +502,83 @@ fn emit_proposals(
     out
 }
 
-/// Promote a fresh-module cell into an extension of the single
-/// active module its constraining edges target.
-///
-/// Motivation: top-level side-effect statements (`__decorate(...)`,
-/// `register(...)`, target-mutating `Foo.x = ...` installs, IIFE
-/// preludes) declare no binding name, so the spec author has no way
-/// to claim them by name. The same logic applies to small named
-/// helpers whose sole consumer is one active module. When greedy
-/// already absorbed the orphan into a module class (commit-2 path),
-/// this post-pass is a no-op. Where greedy didn't reach (e.g., the
-/// cell has `edges_to_other_residual_cells > 0` so greedy skipped
-/// it under the conservative gate; or the cell has no
-/// constraining-edge view of the active module yet the proposal
-/// surfaces it via `active_modules_referenced`), the post-pass
-/// fills the gap.
-///
-/// Preconditions for promotion (all required):
-/// - `extends_module_id` is `None` (cell is a fresh-module proposal today).
-/// - `edges_to_other_residual_cells == 0` (the cell has no
-///   leftover residual dependency; promoting wouldn't strand the
-///   extension behind another residual cell).
-/// - `active_modules_referenced.len() == 1` and
-///   `edges_to_active_modules > 0` (every outgoing cross-module
-///   constraining edge points at exactly one active module — the
-///   unambiguous extension target).
-///
-/// **Commit 2 change**: the historical `!binding_ids.is_empty()`
-/// gate (commit `e8bd6ea54`) has been lifted. A named helper with
-/// one consumer is the same "extend by orphan" shape as an
-/// anonymous side-effect statement; the spec-author judgement the
-/// gate deferred is captured by the spec module's existing
-/// `members:` list — adding a helper there is the natural
-/// resolution.
-fn promote_anonymous_only_cell_to_extension(proposal: &mut FactorizeProposal) {
-    if proposal.extends_module_id.is_some()
-        || proposal.edges_to_other_residual_cells != 0
-        || proposal.edges_to_active_modules == 0
-        || proposal.active_modules_referenced.len() != 1
-    {
-        return;
+/// Build a `FactorizeDiagnosticReport(ExceedsSizeCap)` for every
+/// surviving class whose combined line count exceeds the cap. The
+/// pre-commit-4 cell pipeline computed this from cell closures; the
+/// new pipeline reads it from the post-greedy quotient.
+fn collect_size_cap_diagnostics(
+    quotient: &QuotientGraph,
+    graph: &OwnerGraphReport,
+    size_cap_lines: usize,
+) -> Vec<FactorizeDiagnosticReport> {
+    let mut diagnostics = Vec::new();
+    for c in quotient.iter_classes() {
+        if quotient.class_is_residual(c) {
+            continue;
+        }
+        if quotient.class_lines(c) <= size_cap_lines {
+            continue;
+        }
+        // Compose the diagnostic from the class's owners.
+        let mut owner_ids: Vec<String> = Vec::new();
+        let mut binding_ids: BTreeSet<String> = BTreeSet::new();
+        let mut line_range = LineRange::new();
+        let mut max_ordinal = 0usize;
+        let mut min_ordinal = usize::MAX;
+        for owner in quotient.class_members(c) {
+            let node = &graph.nodes[owner.0];
+            owner_ids.push(node.id.clone());
+            for binding in &node.declared_bindings {
+                binding_ids.insert(binding.binding.to_string());
+            }
+            if let Some(loc) = &node.source_location {
+                line_range.expand(loc);
+            }
+            min_ordinal = min_ordinal.min(node.statement_ordinal.0);
+            max_ordinal = max_ordinal.max(node.statement_ordinal.0);
+        }
+        owner_ids.sort();
+        let idx = diagnostics.len();
+        diagnostics.push(FactorizeDiagnosticReport {
+            diagnostic_id: format!(
+                "diagnostic:{}_{idx:04}",
+                diagnostic_reason_key(FactorizeDiagnosticReason::ExceedsSizeCap),
+            ),
+            owner_ids,
+            binding_ids: binding_ids.into_iter().collect(),
+            size_lines_estimate: quotient.class_lines(c),
+            source_line_range: line_range.into_array(),
+            ordinal_span: max_ordinal.saturating_sub(min_ordinal),
+            status: PeelCandidateStatus::BlockedResidualDependency,
+            reason: FactorizeDiagnosticReason::ExceedsSizeCap,
+            cycle_blocker_owner_ids: Vec::new(),
+            active_modules_referenced: Vec::new(),
+            extends_module_id: None,
+        });
     }
-    let target = proposal.active_modules_referenced[0].clone();
-    proposal.extends_module_id = Some(target.clone());
-    proposal.proposed_module_id = format!("extend:{target}");
-    // Owners get listed in `extension_owner_ids` regardless of
-    // shape (named vs anonymous). Downstream consumers distinguish
-    // by checking each id's owner-node binding count.
-    let mut ids = proposal.owner_ids.clone();
-    ids.sort();
-    proposal.extension_owner_ids = ids;
+    diagnostics
 }
 
 fn compute_topo_depths(
-    cell_count: usize,
+    candidate_count: usize,
     residual_edges: &[(usize, usize)],
-    owner_to_cell: &HashMap<usize, usize>,
+    owner_to_candidate: &HashMap<usize, usize>,
 ) -> Vec<usize> {
-    let mut adj: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); cell_count];
+    let mut adj: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); candidate_count];
     for &(s, t) in residual_edges {
-        let (Some(&cs), Some(&ct)) = (owner_to_cell.get(&s), owner_to_cell.get(&t)) else {
+        let (Some(&cs), Some(&ct)) = (owner_to_candidate.get(&s), owner_to_candidate.get(&t))
+        else {
             continue;
         };
         if cs != ct {
             adj[cs].insert(ct);
         }
     }
-    let mut depths = vec![None; cell_count];
+    let mut depths = vec![None; candidate_count];
     fn dfs(node: usize, adj: &[BTreeSet<usize>], depths: &mut [Option<usize>]) -> usize {
         if let Some(d) = depths[node] {
             return d;
         }
-        // Mark as in-progress with depth 0. If a legacy/synthetic
-        // report contains an inter-cell cycle, the sort remains
-        // deterministic instead of recursing forever.
         depths[node] = Some(0);
         let max_child = adj[node]
             .iter()
@@ -1065,35 +589,44 @@ fn compute_topo_depths(
         depths[node] = Some(max_child);
         max_child
     }
-    for i in 0..cell_count {
+    for i in 0..candidate_count {
         dfs(i, &adj, &mut depths);
     }
     depths.into_iter().map(|d| d.unwrap_or(0)).collect()
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_proposal(
-    cell_idx: usize,
-    record: &CellClassRecord,
-    ctx: &ProposalContext,
+    candidate_idx: usize,
+    class_id: ClassId,
+    labels: Option<&BTreeSet<String>>,
+    quotient: &QuotientGraph,
+    residual_edges: &[(usize, usize)],
+    active_edges: &[(usize, String)],
+    graph: &OwnerGraphReport,
+    owner_to_candidate: &HashMap<usize, usize>,
 ) -> FactorizeProposal {
-    // Class members come from the quotient. For extension proposals
-    // (`extends_module_id.is_some()`) the proposal surfaces only the
-    // newly-added owners — those whose original destination was
-    // residual. The pre-existing module's own owners are skipped:
-    // the proposal represents the spec edit "add these owners to
-    // module M," not "rewrite M to contain all these owners." This
-    // matches the legacy `promote_anonymous_only_cell_to_extension`
-    // output shape that downstream consumers (lane workers, plan-
-    // work tooling) depend on.
-    let class_id = record.class_id;
-    let all_owner_idxs: Vec<usize> = ctx.quotient.class_members(class_id).map(|o| o.0).collect();
-    let class_lines = ctx.quotient.class_lines(class_id);
-    let is_extension = record.extends_module_id.is_some();
+    let label_vec: Vec<String> = labels
+        .map(|s| s.iter().cloned().collect())
+        .unwrap_or_default();
+    let is_extension = !label_vec.is_empty();
+    let merge_into: Option<Vec<String>> = (label_vec.len() >= 2).then(|| label_vec.clone());
+    let extends_module_id: Option<String> = (label_vec.len() == 1)
+        .then(|| label_vec[0].clone())
+        .or_else(|| {
+            // For merge proposals, choose a canonical
+            // `extends_module_id` = the first label (sorted). Pre-
+            // commit-4 emitted merges this way too.
+            (label_vec.len() >= 2).then(|| label_vec[0].clone())
+        });
+
+    let all_owner_idxs: Vec<usize> = quotient.class_members(class_id).map(|o| o.0).collect();
+    let class_lines = quotient.class_lines(class_id);
     let owner_idxs: Vec<usize> = if is_extension {
         all_owner_idxs
             .iter()
             .copied()
-            .filter(|&idx| ctx.graph.nodes[idx].destination.residual)
+            .filter(|&idx| graph.nodes[idx].destination.residual)
             .collect()
     } else {
         all_owner_idxs.clone()
@@ -1106,7 +639,7 @@ fn build_proposal(
     let mut max_ordinal = 0usize;
     let mut min_ordinal = usize::MAX;
     for &owner_idx in &owner_idxs {
-        let node = &ctx.graph.nodes[owner_idx];
+        let node = &graph.nodes[owner_idx];
         owner_ids.push(node.id.clone());
         if node.declared_bindings.is_empty() {
             anonymous_owner_ids.push(node.id.clone());
@@ -1126,13 +659,14 @@ fn build_proposal(
     let mut internal = 0usize;
     let mut to_residual = 0usize;
     let mut residual_targets: BTreeSet<usize> = BTreeSet::new();
-    for &(s, t) in ctx.residual_edges {
-        let (Some(&cs), Some(&ct)) = (ctx.owner_to_cell.get(&s), ctx.owner_to_cell.get(&t)) else {
+    for &(s, t) in residual_edges {
+        let (Some(&cs), Some(&ct)) = (owner_to_candidate.get(&s), owner_to_candidate.get(&t))
+        else {
             continue;
         };
-        if cs == cell_idx && ct == cell_idx {
+        if cs == candidate_idx && ct == candidate_idx {
             internal += 1;
-        } else if cs == cell_idx {
+        } else if cs == candidate_idx {
             to_residual += 1;
             residual_targets.insert(ct);
         }
@@ -1144,38 +678,33 @@ fn build_proposal(
 
     let mut to_active = 0usize;
     let mut active_targets: BTreeSet<String> = BTreeSet::new();
-    for (source_owner, module_path) in ctx.active_edges {
-        if ctx.owner_to_cell.get(source_owner) == Some(&cell_idx) {
+    for (source_owner, module_path) in active_edges {
+        if owner_to_candidate.get(source_owner) == Some(&candidate_idx) {
             to_active += 1;
             active_targets.insert(module_path.clone());
         }
     }
     let active_modules_referenced: Vec<String> = active_targets.into_iter().collect();
 
-    // `status`, `landable_today`, and blocker lists come from the atomic-DAG
-    // closure pass in this CLI invocation.
-    let cycle_blocker_owner_ids = record.verdict.cycle_blocker_owner_ids.clone();
-    let extension_owner_ids: Vec<String> = {
-        let mut ids: Vec<String> = record
-            .extension_owner_idxs
+    let extension_owner_ids: Vec<String> = if is_extension {
+        let mut ids: Vec<String> = owner_idxs
             .iter()
-            .map(|&idx| ctx.graph.nodes[idx].id.clone())
+            .map(|&idx| graph.nodes[idx].id.clone())
             .collect();
         ids.sort();
         ids
+    } else {
+        Vec::new()
     };
-    let proposed_module_id = match (&record.merge_into, &record.extends_module_id) {
-        // Merge proposals get a `merge:M1+M2+…` synthetic id so
-        // downstream tooling can tell at a glance which modules are
-        // being fused. The full label list rides on `merge_into`.
-        (Some(labels), _) => format!("merge:{}", labels.join("+")),
+    let proposed_module_id = match (&merge_into, &extends_module_id) {
+        (Some(lbls), _) => format!("merge:{}", lbls.join("+")),
         (None, Some(target)) => format!("extend:{target}"),
-        (None, None) => format!("auto_partition_{cell_idx:04}"),
+        (None, None) => format!("auto_partition_{candidate_idx:04}"),
     };
     let size_lines = if is_extension {
         owner_idxs
             .iter()
-            .map(|&idx| owner_line_count(&ctx.graph.nodes[idx]))
+            .map(|&idx| owner_line_count(&graph.nodes[idx]))
             .sum()
     } else {
         class_lines
@@ -1193,12 +722,12 @@ fn build_proposal(
         other_residual_cells_referenced,
         edges_to_active_modules: to_active,
         active_modules_referenced,
-        cycle_blocker_owner_ids,
-        status: record.verdict.status,
-        landable_today: record.verdict.landable_today,
-        extends_module_id: record.extends_module_id.clone(),
+        cycle_blocker_owner_ids: Vec::new(),
+        status: PeelCandidateStatus::PeelableNow,
+        landable_today: true,
+        extends_module_id,
         extension_owner_ids,
-        merge_into: record.merge_into.clone(),
+        merge_into,
     }
 }
 
