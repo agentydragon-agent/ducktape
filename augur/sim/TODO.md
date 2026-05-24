@@ -253,10 +253,51 @@ Suggested migration order:
 - [ ] Generalize the product `landlord` counterparty agent into a registry of
       named external sinks (landlord, lender, tax authority, HOA, insurer) as
       more outflows land.
+- [ ] Property-tax: Proposition-13-style annual assessed-value escalation
+      cap. Today `property_initial_assessed_value` is set at purchase and
+      never escalates; California allows up to 2%/yr growth in assessed
+      value. Long horizons (20-30y) understate property tax progressively
+      under current model — by year 30 the assessed value is ~1.81× the
+      purchase price under the 2% cap, so tax is understated by ~45%.
+      Fix: per-rollout state buffer for assessed value, year-end step that
+      grows by min(cpi_growth, 2%).
+- [ ] Property-tax: first-year supplemental assessment. In CA, a property
+      purchase triggers a prorated supplemental bill for the difference
+      between the previous owner's assessed value and the new purchase
+      price, billed in addition to the regular property tax in year 1.
+      Not modeled.
+- [ ] CFD / Mello-Roos special assessments: annual escalation cap. CA CFDs
+      typically grow the per-parcel special tax up to 2%/yr. Today
+      `annual_special_assessment_usd` is treated as flat for the simulation
+      horizon. Fix alongside Prop 13 escalation.
+- [ ] CFD / Mello-Roos special assessments: term / sunset modeling. Real
+      CFDs have stated terms (e.g., Mare Island CFDs were designed to
+      sunset as development completes; bond CFDs end when bonds are repaid).
+      Today special assessments persist for the whole simulation horizon.
+- [ ] CFD / Mello-Roos special assessments: itemized breakdown. Real CA
+      property-tax bills itemize each CFD separately (e.g., Mare Island
+      bills show CFD 2002-1, 2005-1A, 2005-1B as separate line items).
+      Today `Location.annual_special_assessment_usd` aggregates them into
+      one sum. Future: a list of named (cfd_id, annual_usd, term, growth)
+      records on `Location`.
+- [ ] HOA dues: monthly recurring obligation for property ownership.
+      `augur/api/bridge.py` already creates `RecurringObligation(
+obligation_type="hoa_dues")` for the scenario-set path; product
+      surface needs its own ScenarioKey knob + `ObligationType.HOA_DUES`
+      decode + UI control + event kind.
+- [ ] Homeowner's insurance: monthly recurring obligation. Same shape as
+      HOA. `bridge.py` uses `obligation_type="insurance_premium"`.
+- [ ] Maintenance: monthly recurring obligation (typically 1-2% of home
+      value annually, prorated to monthly). Same shape. `bridge.py` uses
+      `obligation_type="maintenance"`.
 - [ ] Finish the real-estate lifecycle: property sale, closing costs,
       mortgage payoff, sale proceeds split, occupancy changes,
       depreciation, §121 exclusion, §1250 recapture, itemized deductions,
       SALT cap, and qualified-residence mortgage-interest deduction.
+- [ ] Mid-horizon property purchases. Today the product surface locks
+      property purchase to month 0 ("what if I buy now"). Future timeline
+      work would let users model "what if I buy in 2 years" via a
+      configurable purchase month.
 - [ ] Reintroduce annual federal + California income-tax allocation natively
       only when sim has the underlying realized-income feeds. The deleted
       `augur/core/annual_tax.py` path handled externalized tax-parameter

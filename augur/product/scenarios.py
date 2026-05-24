@@ -4,19 +4,23 @@ from __future__ import annotations
 
 from more_itertools import one
 
+from augur.api.bootstrap import Property
 from augur.api.config import Config
 from augur.api.portfolio import PortfolioConfig
 from augur.api.scenario_set import ActorRole
-from augur.model.series import INFLATION_SERIES_ID, rent_series_id
-from augur.product.wire import FundingPolicy, ScenarioKey
+from augur.model.series import INFLATION_SERIES_ID, home_value_series_id, rent_series_id
+from augur.product.wire import CashFinancing, FundingPolicy, MortgageFinancing, PropertyPurchase, ScenarioKey
 from augur.sim.scenario import (
     Agent,
     InitialAccountBalance,
     InitialLot,
     LiquidityPolicy,
+    MortgageFinancing as SimMortgageFinancing,
     ObligationType,
+    PropertyTaxPolicy,
     RecurringObligation,
     Scenario,
+    ScheduledPropertyPurchase,
     SeriesIndexedAmount,
     TaxProfile,
 )
@@ -30,6 +34,10 @@ LANDLORD_ACCOUNT_ID = "checking"
 RENT_OBLIGATION_ID = "outside_rent"
 TAX_AUTHORITY_AGENT_ID = "tax_authority"
 TAX_AUTHORITY_ACCOUNT_ID = "checking"
+PROPERTY_SELLER_AGENT_ID = "property_seller"
+PROPERTY_SELLER_ACCOUNT_ID = "checking"
+MORTGAGE_LENDER_AGENT_ID = "mortgage_lender"
+MORTGAGE_LENDER_ACCOUNT_ID = "checking"
 
 
 def resolve_primary_agent_id(augur_config: Config) -> str:
@@ -54,18 +62,28 @@ def asset_label_by_series_id(portfolio: PortfolioConfig) -> dict[str, str]:
     }
 
 
-def required_level_series(scenario_key: ScenarioKey, *, initial_lots: tuple[InitialLot, ...]) -> frozenset[str]:
+def required_level_series(
+    scenario_key: ScenarioKey, *, initial_lots: tuple[InitialLot, ...], properties_by_id: dict[str, Property]
+) -> frozenset[str]:
     series_ids = {lot.asset_id for lot in initial_lots}
     if scenario_key.spend_index == "inflation":
         series_ids.add(INFLATION_SERIES_ID)
     if scenario_key.monthly_rent_usd > 0:
         assert scenario_key.rental_location_id is not None  # wire validator guarantees
         series_ids.add(rent_series_id(scenario_key.rental_location_id))
+    if scenario_key.property_purchase is not None:
+        property_ = properties_by_id[scenario_key.property_purchase.property_id]
+        series_ids.add(home_value_series_id(property_.location_id))
     return frozenset(series_ids)
 
 
 def build_scenario(
-    scenario_key: ScenarioKey, *, primary_agent_id: str, initial_cash_usd: float, initial_lots: tuple[InitialLot, ...]
+    scenario_key: ScenarioKey,
+    *,
+    primary_agent_id: str,
+    initial_cash_usd: float,
+    initial_lots: tuple[InitialLot, ...],
+    properties_by_id: dict[str, Property],
 ) -> Scenario:
     horizon_months = int(scenario_key.horizon_months)
     end_month = horizon_months - 1
@@ -118,11 +136,49 @@ def build_scenario(
             )
         )
 
+    scheduled_property_purchases: list[ScheduledPropertyPurchase] = []
+    property_tax_policies: list[PropertyTaxPolicy] = []
+    if scenario_key.property_purchase is not None:
+        property_ = properties_by_id[scenario_key.property_purchase.property_id]
+        agents.append(Agent(agent_id=PROPERTY_SELLER_AGENT_ID))
+        initial_cash.append(
+            InitialAccountBalance(
+                agent_id=PROPERTY_SELLER_AGENT_ID, account_id=PROPERTY_SELLER_ACCOUNT_ID, balance_usd=0.0
+            )
+        )
+        mortgage = _sim_mortgage_for(scenario_key.property_purchase, property_)
+        if mortgage is not None:
+            agents.append(Agent(agent_id=MORTGAGE_LENDER_AGENT_ID))
+            initial_cash.append(
+                InitialAccountBalance(
+                    agent_id=MORTGAGE_LENDER_AGENT_ID, account_id=MORTGAGE_LENDER_ACCOUNT_ID, balance_usd=0.0
+                )
+            )
+        scheduled_property_purchases.append(
+            _sim_property_purchase(
+                scenario_key.property_purchase, property_, primary_agent_id=primary_agent_id, mortgage=mortgage
+            )
+        )
+        property_tax_policies.append(
+            PropertyTaxPolicy(
+                property_id=property_.id,
+                owner_agent_id=primary_agent_id,
+                from_account_id=PRIMARY_ACCOUNT_ID,
+                tax_authority_agent_id=TAX_AUTHORITY_AGENT_ID,
+                tax_authority_account_id=TAX_AUTHORITY_ACCOUNT_ID,
+                annual_tax_rate=None,  # fall back to location YAML
+                start_month=0,
+                end_month=end_month,
+            )
+        )
+
     return Scenario(
         agents=agents,
         initial_lots=list(initial_lots),
         initial_cash=initial_cash,
         recurring_obligations=recurring_obligations,
+        scheduled_property_purchases=scheduled_property_purchases,
+        property_tax_policies=property_tax_policies,
         tax_profiles=[
             TaxProfile(
                 agent_id=primary_agent_id,
@@ -137,6 +193,46 @@ def build_scenario(
             scenario_key.funding_policy, primary_agent_id=primary_agent_id, initial_lots=initial_lots
         ),
         horizon_months=horizon_months,
+    )
+
+
+def _sim_mortgage_for(purchase: PropertyPurchase, property_: Property) -> SimMortgageFinancing | None:
+    if isinstance(purchase.financing, CashFinancing):
+        return None
+    assert isinstance(purchase.financing, MortgageFinancing)
+    principal = float(property_.price_usd) * (1.0 - purchase.financing.down_payment_pct / 100.0)
+    return SimMortgageFinancing(
+        liability_id=f"{property_.id}_mortgage",
+        lender_agent_id=MORTGAGE_LENDER_AGENT_ID,
+        lender_account_id=MORTGAGE_LENDER_ACCOUNT_ID,
+        principal_usd=principal,
+        annual_interest_rate=purchase.financing.annual_rate_pct / 100.0,
+        term_months=purchase.financing.term_months,
+    )
+
+
+def _sim_property_purchase(
+    purchase: PropertyPurchase, property_: Property, *, primary_agent_id: str, mortgage: SimMortgageFinancing | None
+) -> ScheduledPropertyPurchase:
+    purchase_price = float(property_.price_usd)
+    if isinstance(purchase.financing, CashFinancing):
+        down_payment = purchase_price
+    else:
+        down_payment = purchase_price * purchase.financing.down_payment_pct / 100.0
+    return ScheduledPropertyPurchase(
+        month=0,
+        cause_id=f"{property_.id}_purchase",
+        property_id=property_.id,
+        location_id=property_.location_id,
+        buyer_agent_id=primary_agent_id,
+        buyer_account_id=PRIMARY_ACCOUNT_ID,
+        seller_agent_id=PROPERTY_SELLER_AGENT_ID,
+        seller_account_id=PROPERTY_SELLER_ACCOUNT_ID,
+        purchase_price_usd=purchase_price,
+        down_payment_usd=down_payment,
+        buyer_closing_cost_usd=purchase_price * float(purchase.closing_cost_pct) / 100.0,
+        ownership_pct=1.0,
+        mortgage=mortgage,
     )
 
 

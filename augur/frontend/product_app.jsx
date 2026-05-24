@@ -19,6 +19,11 @@ const DEFAULT_PRODUCT_INPUT_BASE = {
   cashBufferSaleUsd: 0,
   monthlyRentUsd: 0,
   rentalLocationId: null,
+  propertyId: null,
+  financingKind: "cash",
+  downPaymentPct: 20,
+  mortgageTermMonths: 360,
+  annualRatePct: 7,
 };
 
 const FAN_PERCENTILES = [5, 25, 50, 75, 95];
@@ -28,6 +33,10 @@ const ROLLOUT_EVENT_COLORS = {
   public_security_sale: "#0f766e",
   monthly_expense: "#64748b",
   outside_rent: "#0891b2",
+  property_purchase: "#1d4ed8",
+  closing_cost_payment: "#7e22ce",
+  mortgage_payment: "#0369a1",
+  property_tax_payment: "#a16207",
   tax_accrual: "#b45309",
   tax_payment: "#7c3aed",
   failure: "#dc2626",
@@ -36,6 +45,9 @@ const ROLLOUT_EVENT_COLORS = {
 const METRIC_OPTIONS = [
   { value: "net_worth_usd", chartValue: "netWorthUsd", label: "Net worth" },
   { value: "public_security_value_usd", chartValue: "publicSecurityValueUsd", label: "Public security value" },
+  { value: "property_value_usd", chartValue: "propertyValueUsd", label: "Property value" },
+  { value: "mortgage_balance_usd", chartValue: "mortgageBalanceUsd", label: "Mortgage balance" },
+  { value: "home_equity_usd", chartValue: "homeEquityUsd", label: "Home equity" },
   { value: "liquid_net_worth_usd", chartValue: "liquidNetWorthUsd", label: "Liquid net worth" },
   { value: "cash_usd", chartValue: "cashUsd", label: "Cash balance" },
   { value: "shortfall_usd", chartValue: "shortfallUsd", label: "Cash shortfall" },
@@ -59,6 +71,21 @@ function productInputDefaults(bootstrap) {
   };
 }
 
+function buildPropertyFinancing(input) {
+  if (input.financingKind !== "mortgage") return { kind: "cash" };
+  return {
+    kind: "mortgage",
+    termMonths: Number(input.mortgageTermMonths) === 180 ? 180 : 360,
+    downPaymentPct: Math.max(0, Number(input.downPaymentPct) || 0),
+    annualRatePct: Math.max(0, Number(input.annualRatePct) || 0),
+  };
+}
+
+function buildPropertyPurchase(input) {
+  if (!input.propertyId) return null;
+  return { propertyId: input.propertyId, financing: buildPropertyFinancing(input) };
+}
+
 function productScenario(input, bootstrap) {
   const sellPublicSecurities = Boolean(input.sellPublicSecurities);
   const monthlyRentUsd = Math.max(0, Number(input.monthlyRentUsd) || 0);
@@ -75,6 +102,7 @@ function productScenario(input, bootstrap) {
     },
     monthlyRentUsd,
     rentalLocationId,
+    propertyPurchase: buildPropertyPurchase(input),
   };
 }
 
@@ -211,7 +239,11 @@ function eventGroupsByMonth(events) {
 function eventMarkerYOffset(event) {
   if (event?.kind === "tax_accrual") return -14;
   if (event?.kind === "public_security_sale") return -6;
+  if (event?.kind === "property_purchase") return -10;
+  if (event?.kind === "closing_cost_payment") return -4;
   if (event?.kind === "tax_payment") return 8;
+  if (event?.kind === "property_tax_payment") return 10;
+  if (event?.kind === "mortgage_payment") return 12;
   if (event?.kind === "failure") return 7;
   return 0;
 }
@@ -249,6 +281,25 @@ function eventDetailText(event) {
       ? `due ${fmtUsd(Number(event.amountDueUsd))}; shortfall ${fmtUsd(shortfall)}`
       : `due ${fmtUsd(Number(event.amountDueUsd))}`;
   }
+  if (event?.kind === "property_purchase") {
+    const mortgage = Number(event.mortgagePrincipalUsd);
+    const down = Number(event.downPaymentUsd);
+    const parts = [`down ${fmtUsd(down)}`];
+    if (mortgage > 0) parts.push(`mortgage ${fmtUsd(mortgage)}`);
+    return parts.join("; ");
+  }
+  if (event?.kind === "closing_cost_payment") {
+    return "";
+  }
+  if (event?.kind === "mortgage_payment") {
+    return `interest ${fmtUsd(Number(event.interestUsd))}; principal ${fmtUsd(Number(event.principalUsd))}`;
+  }
+  if (event?.kind === "property_tax_payment") {
+    const shortfall = Number(event.shortfallUsd);
+    return shortfall > 0
+      ? `due ${fmtUsd(Number(event.amountDueUsd))}; shortfall ${fmtUsd(shortfall)}`
+      : `due ${fmtUsd(Number(event.amountDueUsd))}`;
+  }
   if (event?.kind === "failure") {
     return `shortfall ${fmtUsd(Number(event.shortfallUsd))}`;
   }
@@ -279,6 +330,18 @@ function eventLabel(event) {
     if (event.obligationType === "estimated_tax") return shortfall ? "Estimated tax shortfall" : "Paid estimated taxes";
     if (event.obligationType === "tax_true_up") return shortfall ? "Tax true-up shortfall" : "Paid tax true-up";
     return shortfall ? "Tax payment shortfall" : "Paid taxes";
+  }
+  if (event?.kind === "property_purchase") {
+    return "Bought property";
+  }
+  if (event?.kind === "closing_cost_payment") {
+    return "Paid closing costs";
+  }
+  if (event?.kind === "mortgage_payment") {
+    return "Paid mortgage";
+  }
+  if (event?.kind === "property_tax_payment") {
+    return Number(event.shortfallUsd) > 0 ? "Property tax shortfall" : "Paid property tax";
   }
   if (event?.kind === "failure") {
     return "Rollout failed";
@@ -741,6 +804,102 @@ function SelectedRolloutEventsPanel({
   );
 }
 
+function propertyLabel(property) {
+  const sqft = Number(property.sqft);
+  const head = property.address || property.id;
+  const meta =
+    `${fmtUsd(Number(property.priceUsd))}` + (Number.isFinite(sqft) && sqft > 0 ? ` · ${fmtNumber(sqft)} sqft` : "");
+  return `${head} — ${meta}`;
+}
+
+function PropertyPurchasePanel({ bootstrap, input, onChange }) {
+  const properties = bootstrap.properties ?? [];
+  const selected = properties.find((property) => property.id === input.propertyId) ?? null;
+  const mortgageActive = input.propertyId != null && input.financingKind === "mortgage";
+  const propertyOptions = [
+    { value: "", label: properties.length === 0 ? "(no properties available)" : "(no purchase)" },
+    ...properties.map((property) => ({ value: property.id, label: propertyLabel(property) })),
+  ];
+  return (
+    <div className="augur-card p-4" data-product-property-panel="">
+      <div className="augur-eyebrow">Property purchase</div>
+      <div className="mt-4 grid gap-3">
+        <NativeSelect
+          label="Property"
+          aria-label="Property to purchase"
+          value={input.propertyId ?? ""}
+          disabled={properties.length === 0}
+          data={propertyOptions}
+          classNames={{ label: "augur-field-label mb-2 block", input: "augur-tabular" }}
+          onChange={(event) => onChange({ propertyId: event.target.value || null })}
+        />
+        {selected && (
+          <div className="rounded-md border border-slate-200 px-3 py-2 text-xs augur-muted dark:border-slate-700">
+            <div className="font-semibold augur-strong">{selected.address}</div>
+            <div className="mt-1">
+              {selected.neighborhood ? `${selected.neighborhood} · ` : ""}
+              {fmtNumber(Number(selected.beds))} bd / {fmtNumber(Number(selected.baths))} ba
+              {Number.isFinite(Number(selected.sqft)) && Number(selected.sqft) > 0
+                ? ` · ${fmtNumber(Number(selected.sqft))} sqft`
+                : ""}
+            </div>
+            <div className="mt-1">
+              Price {fmtUsd(Number(selected.priceUsd))}
+              {Number(selected.hoaMonthlyUsd) > 0 ? ` · HOA ${fmtUsd(Number(selected.hoaMonthlyUsd))}/mo` : ""}
+            </div>
+          </div>
+        )}
+        <NativeSelect
+          label="Financing"
+          aria-label="Property financing"
+          value={input.financingKind}
+          disabled={input.propertyId == null}
+          data={[
+            { value: "cash", label: "Cash" },
+            { value: "mortgage", label: "Mortgage" },
+          ]}
+          classNames={{ label: "augur-field-label mb-2 block", input: "augur-tabular" }}
+          onChange={(event) => onChange({ financingKind: event.target.value === "mortgage" ? "mortgage" : "cash" })}
+        />
+        <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1 2xl:grid-cols-3">
+          <NumberField
+            label="Down payment"
+            value={input.downPaymentPct}
+            min={0}
+            max={100}
+            step={1}
+            suffix="%"
+            disabled={!mortgageActive}
+            onChange={(downPaymentPct) => onChange({ downPaymentPct })}
+          />
+          <NativeSelect
+            label="Term"
+            aria-label="Mortgage term"
+            value={String(input.mortgageTermMonths)}
+            disabled={!mortgageActive}
+            data={[
+              { value: "360", label: "30 yr" },
+              { value: "180", label: "15 yr" },
+            ]}
+            classNames={{ label: "augur-field-label mb-2 block", input: "augur-tabular" }}
+            onChange={(event) => onChange({ mortgageTermMonths: Number(event.target.value) === 180 ? 180 : 360 })}
+          />
+          <NumberField
+            label="Annual rate"
+            value={input.annualRatePct}
+            min={0}
+            max={25}
+            step={0.125}
+            suffix="%"
+            disabled={!mortgageActive}
+            onChange={(annualRatePct) => onChange({ annualRatePct })}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ProductPortfolioPanel({ portfolio, error }) {
   const publicSecurities = portfolio?.publicSecurities ?? [];
   return (
@@ -1003,6 +1162,7 @@ function ProductProjectionWorkspace({ bootstrap }) {
               </div>
             </div>
             <ProductPortfolioPanel portfolio={portfolio} error={portfolioError} />
+            <PropertyPurchasePanel bootstrap={bootstrap} input={input} onChange={updateInput} />
             <div className="augur-card p-4">
               <div className="augur-eyebrow">Taxes</div>
               <div className="mt-4 grid grid-cols-2 gap-3 text-sm">

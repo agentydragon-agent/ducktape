@@ -10,7 +10,16 @@ from augur.api.schemas import ApiModel, Frame, Percentage
 
 SpendIndex = Literal["none", "inflation"]
 SellableBucket = Literal["public_securities"]
-MetricName = Literal["cash_usd", "public_security_value_usd", "liquid_net_worth_usd", "net_worth_usd", "shortfall_usd"]
+MetricName = Literal[
+    "cash_usd",
+    "public_security_value_usd",
+    "property_value_usd",
+    "mortgage_balance_usd",
+    "home_equity_usd",
+    "liquid_net_worth_usd",
+    "net_worth_usd",
+    "shortfall_usd",
+]
 MAX_HORIZON_MONTHS = 100 * 12
 DEFAULT_SELL_ORDER: tuple[SellableBucket, ...] = ("public_securities",)
 
@@ -21,6 +30,26 @@ class FundingPolicy(ApiModel):
     sell_order: tuple[SellableBucket, ...] = DEFAULT_SELL_ORDER
 
 
+class CashFinancing(ApiModel):
+    kind: Literal["cash"] = "cash"
+
+
+class MortgageFinancing(ApiModel):
+    kind: Literal["mortgage"] = "mortgage"
+    term_months: Literal[180, 360]
+    down_payment_pct: NonNegativeFloat
+    annual_rate_pct: NonNegativeFloat
+
+
+type PropertyFinancing = Annotated[CashFinancing | MortgageFinancing, Field(discriminator="kind")]
+
+
+class PropertyPurchase(ApiModel):
+    property_id: str
+    closing_cost_pct: NonNegativeFloat = 1.5
+    financing: PropertyFinancing
+
+
 class ScenarioKey(ApiModel):
     exogenous_model_id: str
     horizon_months: PositiveInt = Field(le=MAX_HORIZON_MONTHS)
@@ -29,6 +58,7 @@ class ScenarioKey(ApiModel):
     funding_policy: FundingPolicy = Field(default_factory=FundingPolicy)
     monthly_rent_usd: NonNegativeFloat = 0.0
     rental_location_id: str | None = None
+    property_purchase: PropertyPurchase | None = None
 
     @model_validator(mode="after")
     def _rent_location_consistency(self) -> ScenarioKey:
@@ -58,6 +88,9 @@ class RolloutRequest(ApiModel):
 class TerminalMetrics(ApiModel):
     cash_usd: float
     public_security_value_usd: NonNegativeFloat
+    property_value_usd: NonNegativeFloat = 0.0
+    mortgage_balance_usd: NonNegativeFloat = 0.0
+    home_equity_usd: float = 0.0
     liquid_net_worth_usd: float
     net_worth_usd: float
     shortfall_usd: NonNegativeFloat
@@ -87,6 +120,32 @@ class MonthlyExpenseEvent(_RolloutEventBase):
 
 class OutsideRentPaymentEvent(_RolloutEventBase):
     kind: Literal["outside_rent"] = "outside_rent"
+    amount_due_usd: NonNegativeFloat
+    amount_paid_usd: NonNegativeFloat
+    shortfall_usd: NonNegativeFloat
+
+
+class PropertyPurchaseEvent(_RolloutEventBase):
+    kind: Literal["property_purchase"] = "property_purchase"
+    property_id: str
+    purchase_price_usd: NonNegativeFloat
+    down_payment_usd: NonNegativeFloat
+    mortgage_principal_usd: NonNegativeFloat
+
+
+class ClosingCostPaymentEvent(_RolloutEventBase):
+    kind: Literal["closing_cost_payment"] = "closing_cost_payment"
+    property_id: str
+
+
+class MortgagePaymentEvent(_RolloutEventBase):
+    kind: Literal["mortgage_payment"] = "mortgage_payment"
+    interest_usd: NonNegativeFloat
+    principal_usd: NonNegativeFloat
+
+
+class PropertyTaxPaymentEvent(_RolloutEventBase):
+    kind: Literal["property_tax_payment"] = "property_tax_payment"
     amount_due_usd: NonNegativeFloat
     amount_paid_usd: NonNegativeFloat
     shortfall_usd: NonNegativeFloat
@@ -123,6 +182,10 @@ type RolloutEvent = Annotated[
     PublicSecuritySaleEvent
     | MonthlyExpenseEvent
     | OutsideRentPaymentEvent
+    | PropertyPurchaseEvent
+    | ClosingCostPaymentEvent
+    | MortgagePaymentEvent
+    | PropertyTaxPaymentEvent
     | TaxAccrualEvent
     | TaxPaymentEvent
     | RolloutFailureEvent,

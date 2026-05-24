@@ -137,6 +137,8 @@ class CompiledSimulation:
     property_id_codes: np.ndarray
     property_location_codes: np.ndarray
     property_location_tax_rate: np.ndarray
+    property_special_assessment_annual_usd: np.ndarray
+    property_initial_assessed_value: np.ndarray
     property_month: np.ndarray
     property_buyer_agent_codes: np.ndarray
     property_buyer_account_codes: np.ndarray
@@ -282,6 +284,8 @@ def compile_simulation(
         property_id_codes,
         property_location_codes,
         property_location_tax_rate,
+        property_special_assessment_annual_usd,
+        property_initial_assessed_value,
         property_month,
         property_buyer_agent_codes,
         property_buyer_account_codes,
@@ -458,6 +462,8 @@ def compile_simulation(
         property_id_codes=property_id_codes,
         property_location_codes=property_location_codes,
         property_location_tax_rate=property_location_tax_rate,
+        property_special_assessment_annual_usd=property_special_assessment_annual_usd,
+        property_initial_assessed_value=property_initial_assessed_value,
         property_month=property_month,
         property_buyer_agent_codes=property_buyer_agent_codes,
         property_buyer_account_codes=property_buyer_account_codes,
@@ -814,6 +820,8 @@ def _compile_properties_and_liabilities(
     prop_id = np.zeros(max(1, prop_count), dtype=np.int64)
     location_id = np.zeros(max(1, prop_count), dtype=np.int64)
     location_tax_rate = np.zeros(max(1, prop_count), dtype=np.float64)
+    special_assessment_annual_usd = np.zeros(max(1, prop_count), dtype=np.float64)
+    initial_assessed_value = np.zeros(max(1, prop_count), dtype=np.float64)
     month_array = np.full(max(1, prop_count), NO_CODE, dtype=np.int64)
     buyer_agent = np.zeros(max(1, prop_count), dtype=np.int64)
     buyer_account = np.zeros(max(1, prop_count), dtype=np.int64)
@@ -849,6 +857,8 @@ def _compile_properties_and_liabilities(
         location_id[idx] = strings.require(purchase.location_id)
         location = locations.get(purchase.location_id)
         location_tax_rate[idx] = 0.0 if location is None else float(location.annual_property_tax_rate)
+        special_assessment_annual_usd[idx] = 0.0 if location is None else float(location.annual_special_assessment_usd)
+        initial_assessed_value[idx] = float(purchase.purchase_price_usd)
         month_array[idx] = int(purchase.month)
         buyer_agent[idx] = strings.require(purchase.buyer_agent_id)
         buyer_account[idx] = strings.require(purchase.buyer_account_id)
@@ -894,6 +904,8 @@ def _compile_properties_and_liabilities(
         prop_id,
         location_id,
         location_tax_rate,
+        special_assessment_annual_usd,
+        initial_assessed_value,
         month_array,
         buyer_agent,
         buyer_account,

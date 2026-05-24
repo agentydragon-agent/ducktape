@@ -7,9 +7,14 @@ from typing import cast
 import numpy as np
 import polars as pl
 
+from augur.model.series import home_value_series_id
 from augur.product.wire import (
+    ClosingCostPaymentEvent,
     MonthlyExpenseEvent,
+    MortgagePaymentEvent,
     OutsideRentPaymentEvent,
+    PropertyPurchaseEvent,
+    PropertyTaxPaymentEvent,
     PublicSecuritySaleEvent,
     RolloutEvent,
     RolloutFailureEvent,
@@ -32,14 +37,20 @@ def monthly_metrics_for_rollout(dense: DenseSimulationResult, *, primary_agent_i
     month_indices = np.arange(plan.horizon_months + 1, dtype=np.int64)
     cash_usd = _cash_by_month(dense, primary_agent_code=primary_agent_code)
     public_security_value_usd = _public_security_value_by_month(dense, primary_agent_code=primary_agent_code)
+    property_value_usd = _property_value_by_month(dense, primary_agent_code=primary_agent_code)
+    mortgage_balance_usd = _mortgage_balance_by_month(dense, primary_agent_code=primary_agent_code)
+    home_equity_usd = property_value_usd - mortgage_balance_usd
     shortfall_usd = _shortfall_by_month(dense, primary_agent_code=primary_agent_code)
     liquid_net_worth_usd = cash_usd + public_security_value_usd
-    net_worth_usd = liquid_net_worth_usd
+    net_worth_usd = liquid_net_worth_usd + home_equity_usd
     return pl.DataFrame(
         {
             "month_index": month_indices,
             "cash_usd": cash_usd,
             "public_security_value_usd": public_security_value_usd,
+            "property_value_usd": property_value_usd,
+            "mortgage_balance_usd": mortgage_balance_usd,
+            "home_equity_usd": home_equity_usd,
             "liquid_net_worth_usd": liquid_net_worth_usd,
             "net_worth_usd": net_worth_usd,
             "shortfall_usd": shortfall_usd,
@@ -60,6 +71,9 @@ def terminal_metrics_from(monthly: pl.DataFrame, *, failed_month_index: int | No
     return TerminalMetrics(
         cash_usd=float(row["cash_usd"]),
         public_security_value_usd=float(row["public_security_value_usd"]),
+        property_value_usd=float(row["property_value_usd"]),
+        mortgage_balance_usd=float(row["mortgage_balance_usd"]),
+        home_equity_usd=float(row["home_equity_usd"]),
         liquid_net_worth_usd=float(row["liquid_net_worth_usd"]),
         net_worth_usd=float(row["net_worth_usd"]),
         shortfall_usd=float(monthly.select(pl.col("shortfall_usd").sum()).item()),
@@ -72,6 +86,9 @@ def rollout_events_from(
 ) -> tuple[RolloutEvent, ...]:
     events = [
         *_public_security_sale_events(run, primary_agent_id=primary_agent_id, asset_label_by_id=asset_label_by_id),
+        *_property_purchase_events(run, primary_agent_id=primary_agent_id),
+        *_mortgage_payment_events(run, primary_agent_id=primary_agent_id),
+        *_property_tax_payment_events(run, primary_agent_id=primary_agent_id),
         *_tax_accrual_events(run, primary_agent_id=primary_agent_id),
         *_tax_payment_events(run, primary_agent_id=primary_agent_id),
         *_monthly_expense_events(run, primary_agent_id=primary_agent_id),
@@ -79,12 +96,16 @@ def rollout_events_from(
         *_failure_events(run, primary_agent_id=primary_agent_id),
     ]
     priority = {
-        "public_security_sale": 0,
-        "tax_accrual": 1,
-        "tax_payment": 2,
-        "monthly_expense": 3,
-        "outside_rent": 4,
-        "failure": 5,
+        "property_purchase": 0,
+        "closing_cost_payment": 1,
+        "public_security_sale": 2,
+        "tax_accrual": 3,
+        "tax_payment": 4,
+        "property_tax_payment": 5,
+        "mortgage_payment": 6,
+        "monthly_expense": 7,
+        "outside_rent": 8,
+        "failure": 9,
     }
     return tuple(sorted(events, key=lambda event: (event.month_index, priority[event.kind])))
 
@@ -260,4 +281,106 @@ def _failure_events(run: SimulationRun, *, primary_agent_id: str) -> tuple[Rollo
             shortfall_usd=float(row["shortfall_usd"]),
         )
         for row in failure_rows.iter_rows(named=True)
+    )
+
+
+def _property_value_by_month(dense: DenseSimulationResult, *, primary_agent_code: int) -> np.ndarray:
+    plan = dense.plan
+    values = np.zeros(plan.horizon_months + 1, dtype=np.float64)
+    series_index_by_id = {series_id: index for index, series_id in enumerate(plan.series_ids)}
+    for prop in range(plan.property_id_codes.shape[0]):
+        if int(plan.property_buyer_agent_codes[prop]) != primary_agent_code:
+            continue
+        active = dense.buffers.property_active_state[:, _SINGLE_ROLLOUT_INDEX, prop]
+        purchase_month = int(plan.property_month[prop])
+        if purchase_month < 0:
+            continue
+        location_id = plan.strings[int(plan.property_location_codes[prop])]
+        series_index = series_index_by_id.get(home_value_series_id(location_id))
+        if series_index is None:
+            continue
+        levels = np.nan_to_num(plan.external_values[series_index, _SINGLE_ROLLOUT_INDEX, :], nan=0.0)
+        # State snapshots are H+1 rows: index 0 = pre-month-0 opening, index s = end of month s-1.
+        # The property is active starting at snapshot index `purchase_month + 1` (end of purchase month).
+        base_level = float(levels[purchase_month])
+        if base_level == 0.0:
+            continue
+        purchase_price = float(plan.property_purchase_price[prop])
+        # snapshot s corresponds to month index s-1 for s >= 1; clamp s=0 to month 0 for the base.
+        market = purchase_price * levels / base_level
+        values += np.where(active, market, 0.0)
+    return values
+
+
+def _mortgage_balance_by_month(dense: DenseSimulationResult, *, primary_agent_code: int) -> np.ndarray:
+    plan = dense.plan
+    balance = np.zeros(plan.horizon_months + 1, dtype=np.float64)
+    for lia in range(plan.liability_codes.shape[0]):
+        if int(plan.liability_agent_codes[lia]) != primary_agent_code:
+            continue
+        balance += dense.buffers.liability_principal_state[:, _SINGLE_ROLLOUT_INDEX, lia]
+    return balance
+
+
+def _property_purchase_events(run: SimulationRun, *, primary_agent_id: str) -> tuple[RolloutEvent, ...]:
+    primary_purchases = run.events_log.property_purchases.filter(pl.col("buyer_agent_id") == primary_agent_id)
+    originations = run.events_log.mortgage_originations.select(
+        pl.col("rollout_index"),
+        pl.col("month_index"),
+        pl.col("property_id"),
+        pl.col("principal_usd").alias("mortgage_principal_usd"),
+    )
+    joined = primary_purchases.join(
+        originations, on=["rollout_index", "month_index", "property_id"], how="left"
+    ).with_columns(mortgage_principal_usd=pl.col("mortgage_principal_usd").fill_null(0.0))
+    events: list[RolloutEvent] = []
+    for row in joined.iter_rows(named=True):
+        events.append(
+            PropertyPurchaseEvent(
+                month_index=int(row["month_index"]),
+                amount_usd=float(row["purchase_price_usd"]),
+                property_id=str(row["property_id"]),
+                purchase_price_usd=float(row["purchase_price_usd"]),
+                # equity_ledger_usd = purchase_price - mortgage_principal (compiler line 866);
+                # equals the cash down payment.
+                down_payment_usd=float(row["equity_ledger_usd"]),
+                mortgage_principal_usd=float(row["mortgage_principal_usd"]),
+            )
+        )
+        closing_cost = float(row["closing_cost_usd"])
+        if closing_cost > 0:
+            events.append(
+                ClosingCostPaymentEvent(
+                    month_index=int(row["month_index"]), amount_usd=closing_cost, property_id=str(row["property_id"])
+                )
+            )
+    return tuple(events)
+
+
+def _mortgage_payment_events(run: SimulationRun, *, primary_agent_id: str) -> tuple[RolloutEvent, ...]:
+    payment_rows = run.events_log.mortgage_payments.filter(pl.col("agent_id") == primary_agent_id).sort("month_index")
+    return tuple(
+        MortgagePaymentEvent(
+            month_index=int(row["month_index"]),
+            amount_usd=float(row["total_payment_usd"]),
+            interest_usd=float(row["interest_usd"]),
+            principal_usd=float(row["principal_usd"]),
+        )
+        for row in payment_rows.iter_rows(named=True)
+    )
+
+
+def _property_tax_payment_events(run: SimulationRun, *, primary_agent_id: str) -> tuple[RolloutEvent, ...]:
+    rows = run.events_log.obligation_settlements.filter(
+        (pl.col("agent_id") == primary_agent_id) & (pl.col("obligation_type") == ObligationType.PROPERTY_TAX)
+    ).sort("month_index")
+    return tuple(
+        PropertyTaxPaymentEvent(
+            month_index=int(row["month_index"]),
+            amount_usd=float(row["amount_paid_usd"]),
+            amount_due_usd=float(row["amount_due_usd"]),
+            amount_paid_usd=float(row["amount_paid_usd"]),
+            shortfall_usd=float(row["shortfall_usd"]),
+        )
+        for row in rows.iter_rows(named=True)
     )

@@ -15,6 +15,7 @@ from typing import cast
 import numpy as np
 import polars as pl
 
+from augur.api.bootstrap import Property
 from augur.api.portfolio import PortfolioConfig
 from augur.api.schemas import Frame
 from augur.model.exogenous import ExogenousPathModel, ExogenousSamplingRequest, anchor_sampled_series_levels
@@ -75,6 +76,7 @@ class ProductService:
         initial_cash_usd: float,
         primary_agent_id: str,
         known_location_ids: frozenset[str],
+        properties_by_id: dict[str, Property],
         exogenous_model: ExogenousPathModel,
         max_rollout_samples: int,
         max_cache_rollouts: int = DEFAULT_MAX_CACHE_ROLLOUTS,
@@ -85,6 +87,7 @@ class ProductService:
         self._initial_cash_usd = float(initial_cash_usd)
         self._primary_agent_id = primary_agent_id
         self._known_location_ids = known_location_ids
+        self._properties_by_id = properties_by_id
         self._exogenous_model = exogenous_model
         self._max_rollout_samples = int(max_rollout_samples)
         self._max_cache_rollouts = int(max_cache_rollouts)
@@ -135,6 +138,11 @@ class ProductService:
             and scenario_key.rental_location_id not in self._known_location_ids
         ):
             raise ValueError(f"unknown rental_location_id: {scenario_key.rental_location_id!r}")
+        if (
+            scenario_key.property_purchase is not None
+            and scenario_key.property_purchase.property_id not in self._properties_by_id
+        ):
+            raise ValueError(f"unknown property_id: {scenario_key.property_purchase.property_id!r}")
         cached_by_seed: dict[int, _CachedRollout] = {}
         missing: list[int] = []
         for seed in seeds:
@@ -164,12 +172,15 @@ class ProductService:
             primary_agent_id=self._primary_agent_id,
             initial_cash_usd=self._initial_cash_usd,
             initial_lots=self._initial_lots,
+            properties_by_id=self._properties_by_id,
         )
         sampled = self._exogenous_model.sample(
             ExogenousSamplingRequest(
                 horizon_months=int(scenario_key.horizon_months),
                 rollout_seeds=seeds,
-                required_level_series=required_level_series(scenario_key, initial_lots=self._initial_lots),
+                required_level_series=required_level_series(
+                    scenario_key, initial_lots=self._initial_lots, properties_by_id=self._properties_by_id
+                ),
             )
         )
         sampled = anchor_sampled_series_levels(sampled, self._portfolio.level_anchors)

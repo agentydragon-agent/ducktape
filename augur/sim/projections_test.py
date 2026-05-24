@@ -289,7 +289,7 @@ def test_projection_real_estate_book_net_worth_and_liability_balance() -> None:
     projection = project_simulation_run(simulate(scenario, rollout_count=1))
 
     mortgage_payment = 400_000.0 * 0.005 / (1.0 - (1.005**-360))
-    expected_cash = 120_000.0 - 110_000.0 - mortgage_payment - 510.0
+    expected_cash = 120_000.0 - 110_000.0 - mortgage_payment - 500.0
     expected_principal = 400_000.0 - (mortgage_payment - 2_000.0)
     alice_final = _net_worth_row(projection.net_worth, agent_id="alice", month=2)
     assert alice_final["cash_usd"] == pytest.approx(expected_cash)

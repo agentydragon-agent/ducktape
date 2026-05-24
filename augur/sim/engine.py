@@ -1137,7 +1137,9 @@ def _apply_obligation_accruals(
             rate = float(plan.obligation_amount_fixed[month, slot])
             if np.isnan(rate):
                 rate = float(plan.property_location_tax_rate[prop])
-            amount = current.property_basis[:, prop] * rate / 12.0
+            ad_valorem_monthly = plan.property_initial_assessed_value[prop] * rate / 12.0
+            non_ad_valorem_monthly = plan.property_special_assessment_annual_usd[prop] / 12.0
+            amount = np.full(plan.rollout_count, ad_valorem_monthly + non_ad_valorem_monthly)
         elif source_kind == SOURCE_ESTIMATED_TAX:
             amount = np.full(plan.rollout_count, float(plan.tax_profile_prior_year_tax[source_index]) / 4.0)
         elif source_kind in (SOURCE_ESTIMATED_TAX_Q4, SOURCE_TAX_TRUE_UP):

@@ -42,6 +42,7 @@ def main() -> int:
         initial_cash_usd=float(config.snapshot.cash_usd),
         primary_agent_id=resolve_primary_agent_id(config),
         known_location_ids=frozenset(location.id for location in bootstrap.locations),
+        properties_by_id={property_.id: property_ for property_ in bootstrap.properties},
         exogenous_model=_profile_exogenous_model(config),
         max_rollout_samples=config.max_rollout_samples,
     )

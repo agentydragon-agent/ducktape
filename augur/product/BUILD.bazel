@@ -16,6 +16,7 @@ py_library(
     srcs = ["scenarios.py"],
     deps = [
         ":wire_py",
+        "//augur/api:bootstrap_py",
         "//augur/api:config_py",
         "//augur/api:portfolio_py",
         "//augur/api:scenario_set_py",
@@ -30,8 +31,10 @@ py_library(
     srcs = ["decode.py"],
     deps = [
         ":wire_py",
+        "//augur/model:series_py",
         "//augur/sim:engine",
         "//augur/sim:run",
+        "//augur/sim:scenario",
         "@pypi//numpy",
         "@pypi//polars",
     ],
@@ -44,6 +47,7 @@ py_library(
         ":decode_py",
         ":scenarios_py",
         ":wire_py",
+        "//augur/api:bootstrap_py",
         "//augur/api:portfolio_py",
         "//augur/api:schemas_py",
         "//augur/model:exogenous_py",

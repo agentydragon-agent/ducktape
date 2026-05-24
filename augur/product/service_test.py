@@ -15,10 +15,17 @@ from augur.product import decode, service
 from augur.product.scenarios import resolve_primary_agent_id
 from augur.product.service import ProductService
 from augur.product.wire import (
+    CashFinancing,
+    ClosingCostPaymentEvent,
     FundingPolicy,
     MetricFanRequest,
     MonthlyExpenseEvent,
+    MortgageFinancing,
+    MortgagePaymentEvent,
     OutsideRentPaymentEvent,
+    PropertyPurchase,
+    PropertyPurchaseEvent,
+    PropertyTaxPaymentEvent,
     PublicSecuritySaleEvent,
     RolloutFailureEvent,
     RolloutRequest,
@@ -48,6 +55,7 @@ def _service(model: CountingExogenousModel, *, augur_config: Config | None = Non
         initial_cash_usd=float(config.snapshot.cash_usd),
         primary_agent_id=resolve_primary_agent_id(config),
         known_location_ids=frozenset(location.id for location in bootstrap.locations),
+        properties_by_id={property_.id: property_ for property_ in bootstrap.properties},
         exogenous_model=model,
         max_rollout_samples=config.max_rollout_samples,
         max_cache_rollouts=10,
@@ -401,6 +409,129 @@ def test_scenario_key_rejects_location_without_rent() -> None:
             spend_index="none",
             rental_location_id="location_a",
         )
+
+
+def _mortgage_purchase_scenario() -> ScenarioKey:
+    return ScenarioKey(
+        exogenous_model_id="current_exogenous_model",
+        horizon_months=2,
+        monthly_spend_usd=1_000.0,
+        spend_index="none",
+        funding_policy=FundingPolicy(sell_order=()),
+        property_purchase=PropertyPurchase(
+            property_id="location_a_property",
+            financing=MortgageFinancing(term_months=360, down_payment_pct=20.0, annual_rate_pct=7.0),
+        ),
+    )
+
+
+def test_property_purchase_emits_purchase_mortgage_and_property_tax_events() -> None:
+    model = CountingExogenousModel()
+    product = _service(model)
+
+    detail = product.rollout(RolloutRequest(scenario=_mortgage_purchase_scenario(), seed=7))
+
+    [purchase] = [event for event in detail.rollout.events if event.kind == "property_purchase"]
+    assert isinstance(purchase, PropertyPurchaseEvent)
+    assert purchase.property_id == "location_a_property"
+    assert purchase.month_index == 0
+    assert purchase.purchase_price_usd == pytest.approx(900_000.0)
+    assert purchase.down_payment_usd == pytest.approx(180_000.0)
+    assert purchase.mortgage_principal_usd == pytest.approx(720_000.0)
+
+    [closing] = [event for event in detail.rollout.events if event.kind == "closing_cost_payment"]
+    assert isinstance(closing, ClosingCostPaymentEvent)
+    assert closing.property_id == "location_a_property"
+    assert closing.month_index == 0
+    assert closing.amount_usd == pytest.approx(900_000.0 * 0.015)
+
+    mortgage_payments = [event for event in detail.rollout.events if event.kind == "mortgage_payment"]
+    monthly_payment = 720_000.0 * (0.07 / 12) / (1.0 - (1.0 + 0.07 / 12) ** -360)
+    assert mortgage_payments
+    for event in mortgage_payments:
+        assert isinstance(event, MortgagePaymentEvent)
+        assert event.amount_usd == pytest.approx(monthly_payment)
+        assert event.interest_usd + event.principal_usd == pytest.approx(monthly_payment)
+
+    property_taxes = [event for event in detail.rollout.events if event.kind == "property_tax_payment"]
+    monthly_property_tax = 900_000.0 * 0.01 / 12.0
+    assert property_taxes
+    for tax_event in property_taxes:
+        assert isinstance(tax_event, PropertyTaxPaymentEvent)
+        assert tax_event.amount_due_usd == pytest.approx(monthly_property_tax)
+        assert tax_event.amount_paid_usd == pytest.approx(monthly_property_tax)
+        assert tax_event.shortfall_usd == 0.0
+
+
+def test_property_purchase_metrics_track_value_balance_and_equity() -> None:
+    model = CountingExogenousModel()
+    product = _service(model)
+
+    detail = product.rollout(RolloutRequest(scenario=_mortgage_purchase_scenario(), seed=7))
+
+    # month_index=0 is the pre-purchase opening snapshot; the property activates at index 1
+    # (end of purchase month). Values mark-to-market against the home_value series so the index-1
+    # value may deviate from the $900k purchase price, but it must be positive and obey the
+    # accounting identities below.
+    metrics = detail.rollout.monthly_metrics
+    assert float(metrics["property_value_usd"][0]) == 0.0  # type: ignore[arg-type]
+    assert float(metrics["mortgage_balance_usd"][0]) == 0.0  # type: ignore[arg-type]
+    property_value_usd = float(metrics["property_value_usd"][1])  # type: ignore[arg-type]
+    mortgage_balance_usd = float(metrics["mortgage_balance_usd"][1])  # type: ignore[arg-type]
+    home_equity_usd = float(metrics["home_equity_usd"][1])  # type: ignore[arg-type]
+    liquid_net_worth_usd = float(metrics["liquid_net_worth_usd"][1])  # type: ignore[arg-type]
+    net_worth_usd = float(metrics["net_worth_usd"][1])  # type: ignore[arg-type]
+
+    assert property_value_usd > 0.0
+    assert mortgage_balance_usd == pytest.approx(720_000.0)
+    assert home_equity_usd == pytest.approx(property_value_usd - mortgage_balance_usd)
+    assert net_worth_usd == pytest.approx(liquid_net_worth_usd + home_equity_usd)
+    # Required-level-series should include the location's home-value series.
+    assert "home_value:location_a" in model.sample_requests[0].required_level_series
+
+
+def test_cash_property_purchase_omits_mortgage_payments() -> None:
+    model = CountingExogenousModel()
+    augur_config = _augur_config()
+    augur_config = augur_config.model_copy(
+        update={"snapshot": augur_config.snapshot.model_copy(update={"cash_usd": 1_200_000.0})}
+    )
+    product = _service(model, augur_config=augur_config)
+    scenario = ScenarioKey(
+        exogenous_model_id="current_exogenous_model",
+        horizon_months=2,
+        monthly_spend_usd=1_000.0,
+        spend_index="none",
+        funding_policy=FundingPolicy(sell_order=()),
+        property_purchase=PropertyPurchase(property_id="location_a_property", financing=CashFinancing()),
+    )
+
+    detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
+
+    [purchase] = [event for event in detail.rollout.events if event.kind == "property_purchase"]
+    assert isinstance(purchase, PropertyPurchaseEvent)
+    assert purchase.down_payment_usd == pytest.approx(900_000.0)
+    assert purchase.mortgage_principal_usd == 0.0
+    [closing] = [event for event in detail.rollout.events if event.kind == "closing_cost_payment"]
+    assert isinstance(closing, ClosingCostPaymentEvent)
+    assert closing.amount_usd == pytest.approx(900_000.0 * 0.015)
+    assert [event for event in detail.rollout.events if event.kind == "mortgage_payment"] == []
+    assert detail.rollout.monthly_metrics["mortgage_balance_usd"][0] == 0.0
+
+
+def test_property_purchase_rejects_unknown_property() -> None:
+    model = CountingExogenousModel()
+    product = _service(model)
+    scenario = ScenarioKey(
+        exogenous_model_id="current_exogenous_model",
+        horizon_months=2,
+        monthly_spend_usd=1_000.0,
+        spend_index="none",
+        property_purchase=PropertyPurchase(property_id="ghost_property", financing=CashFinancing()),
+    )
+
+    with pytest.raises(ValueError, match=r"unknown property_id"):
+        product.rollout(RolloutRequest(scenario=scenario, seed=7))
 
 
 if __name__ == "__main__":

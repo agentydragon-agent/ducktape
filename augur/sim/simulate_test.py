@@ -2510,12 +2510,111 @@ def test_real_estate_purchase_mortgage_and_property_tax_numerics() -> None:
         .get_column("balance_usd")
         .item()
     )
-    assert final_cash == pytest.approx(120_000.0 - 110_000.0 - mortgage_payment - 510.0)
+    # Property tax: 500_000 * 0.012 / 12 = 500.0 (basis excludes closing cost).
+    assert final_cash == pytest.approx(120_000.0 - 110_000.0 - mortgage_payment - 500.0)
 
     assert result.events_log.property_purchases.height == 1
     assert result.events_log.mortgage_originations.height == 1
     assert result.events_log.mortgage_payments.height == 1
     assert result.events_log.transfers.filter(pl.col("cause_id") == "sf_home_property_tax_m1").height == 1
+
+
+def test_property_tax_falls_back_to_location_rate_when_policy_rate_unset() -> None:
+    """When PropertyTaxPolicy.annual_tax_rate is None the engine reads the
+    rate from the location YAML fixture. Verifies the location-fallback path."""
+    scenario = Scenario(
+        agents=[Agent(agent_id="alice"), Agent(agent_id="seller"), Agent(agent_id="sf_tax_collector")],
+        initial_cash=[
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=600_000.0),
+            InitialAccountBalance(agent_id="seller", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="sf_tax_collector", account_id="checking", balance_usd=0.0),
+        ],
+        scheduled_property_purchases=[
+            ScheduledPropertyPurchase(
+                month=0,
+                cause_id="alice_buys_sf_home",
+                property_id="sf_home",
+                location_id="san_francisco",
+                buyer_agent_id="alice",
+                buyer_account_id="checking",
+                seller_agent_id="seller",
+                purchase_price_usd=500_000.0,
+                down_payment_usd=500_000.0,  # cash purchase
+                buyer_closing_cost_usd=0.0,
+                mortgage=None,
+            )
+        ],
+        property_tax_policies=[
+            PropertyTaxPolicy(
+                property_id="sf_home",
+                owner_agent_id="alice",
+                tax_authority_agent_id="sf_tax_collector",
+                annual_tax_rate=None,  # fall back to san_francisco.yaml: 0.01180
+            )
+        ],
+        tax_profiles=[],
+        horizon_months=2,
+    )
+
+    result = simulate(scenario, rollout_count=1)
+
+    # SF: 500_000 * 0.01180 / 12 = 491.6666...
+    sf_tax = (
+        result.cash_balances.filter((pl.col("month_index") == 2) & (pl.col("agent_id") == "sf_tax_collector"))
+        .get_column("balance_usd")
+        .item()
+    )
+    assert sf_tax == pytest.approx(500_000.0 * 0.01180 / 12.0)
+
+
+def test_property_tax_routes_flat_usd_special_assessment_from_location() -> None:
+    """Mare Island (Vallejo) carries flat-USD CFD special assessments on top
+    of the ad-valorem property tax. The engine should sum both into the
+    monthly property-tax obligation: ad-valorem + special_usd / 12."""
+    scenario = Scenario(
+        agents=[Agent(agent_id="alice"), Agent(agent_id="seller"), Agent(agent_id="vallejo_tax_collector")],
+        initial_cash=[
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=700_000.0),
+            InitialAccountBalance(agent_id="seller", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="vallejo_tax_collector", account_id="checking", balance_usd=0.0),
+        ],
+        scheduled_property_purchases=[
+            ScheduledPropertyPurchase(
+                month=0,
+                cause_id="alice_buys_mare_island_home",
+                property_id="mare_island_home",
+                location_id="vallejo_mare_island",
+                buyer_agent_id="alice",
+                buyer_account_id="checking",
+                seller_agent_id="seller",
+                purchase_price_usd=500_000.0,
+                down_payment_usd=500_000.0,  # cash purchase
+                buyer_closing_cost_usd=0.0,
+                mortgage=None,
+            )
+        ],
+        property_tax_policies=[
+            PropertyTaxPolicy(
+                property_id="mare_island_home",
+                owner_agent_id="alice",
+                tax_authority_agent_id="vallejo_tax_collector",
+                annual_tax_rate=None,  # fall back to vallejo_mare_island.yaml
+            )
+        ],
+        tax_profiles=[],
+        horizon_months=2,
+    )
+
+    result = simulate(scenario, rollout_count=1)
+
+    # Mare Island: 500_000 * 0.0115 / 12 + 2300 / 12 per month.
+    expected_monthly = 500_000.0 * 0.0115 / 12.0 + 2_300.0 / 12.0
+    tax_collected = (
+        result.cash_balances.filter((pl.col("month_index") == 2) & (pl.col("agent_id") == "vallejo_tax_collector"))
+        .get_column("balance_usd")
+        .item()
+    )
+    assert tax_collected == pytest.approx(expected_monthly)
 
 
 def test_liquidity_policy_covers_monthly_spend_deficit(deterministic_series_bundle) -> None:
