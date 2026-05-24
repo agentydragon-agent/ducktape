@@ -40,9 +40,9 @@ from augur.api.scenario_set import (
     TransactionCosts,
 )
 from augur.model.exogenous import (
-    ExogenousPathModel,
     ExogenousSamplingRequest,
     SampledExogenousBundle,
+    Sampler,
     anchor_sampled_series_levels,
 )
 from augur.model.series import SP500_SERIES_ID, private_equity_series_id
@@ -132,7 +132,7 @@ def required_level_series_for_scenario(scenario: Scenario) -> frozenset[str]:
 
 
 def sample_exogenous_for_scenario(
-    exogenous_model: ExogenousPathModel,
+    exogenous_model: Sampler,
     translation: ScenarioTranslation,
     *,
     sampling_request: SamplingRequest,
@@ -150,7 +150,7 @@ def sample_exogenous_for_scenario(
 
 
 def simulate_translation(
-    exogenous_model: ExogenousPathModel,
+    exogenous_model: Sampler,
     translation: ScenarioTranslation,
     *,
     sampling_request: SamplingRequest,
@@ -163,7 +163,7 @@ def simulate_translation(
 
 
 def sample_and_simulate_translation(
-    exogenous_model: ExogenousPathModel,
+    exogenous_model: Sampler,
     translation: ScenarioTranslation,
     *,
     sampling_request: SamplingRequest,
@@ -182,7 +182,7 @@ def sample_and_simulate_translation(
 
 
 def sample_exogenous_for_translations(
-    exogenous_model: ExogenousPathModel,
+    exogenous_model: Sampler,
     translations: tuple[ScenarioTranslation, ...],
     *,
     sampling_request: SamplingRequest,

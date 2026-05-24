@@ -19,9 +19,9 @@ from augur.model.deterministic import Constant, Deterministic
 from augur.model.exogenous import (
     SERIES_EVENTS_SCHEMA,
     SERIES_LEVELS_SCHEMA,
-    ExogenousPathModel,
     ExogenousSamplingRequest,
     SampledExogenousBundle,
+    Sampler,
     series_events_frame,
     series_levels_frame,
     series_values_from_bundle,
@@ -97,7 +97,7 @@ class SeriesModelBundle(BaseModel):
         required_level_series: frozenset[str] = frozenset(),
         required_event_series: frozenset[str] = frozenset(),
     ) -> SampledExogenousBundle:
-        model: ExogenousPathModel = self.model
+        model: Sampler = self.model
         return model.sample(
             ExogenousSamplingRequest(
                 horizon_months=horizon_months,

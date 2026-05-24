@@ -227,7 +227,7 @@ projection evaluates policies and accounting on those paths.
 Current Augur alignment:
 
 - `SamplingRequest` requests model id, rollout count, horizon, and seed.
-- `ExogenousPathModel.sample()` samples a `SampledExogenousBundle`.
+- `Sampler.sample()` samples a `SampledExogenousBundle`.
 - The API translator validates the `ScenarioSet`, materializes sim scenarios,
   samples or accepts a `SampledExogenousBundle`, then runs each translated
   scenario through `augur/sim`.

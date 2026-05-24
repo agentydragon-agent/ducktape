@@ -17,14 +17,14 @@ from augur.api.portfolio import (
     PublicSecurityTaxLotConfig,
 )
 from augur.api.scenario_set import ScenarioSet
-from augur.model.exogenous import ExogenousPathModel
+from augur.model.exogenous import Sampler
 from augur.model.gbm import GeometricBrownian
 from augur.model.independent_exogenous import IndependentExogenousProviderConfig
 from augur.model.series import SP500_SERIES_ID, private_equity_series_id
 
 
 @pytest.fixture
-def exogenous_model() -> ExogenousPathModel:
+def exogenous_model() -> Sampler:
     return IndependentExogenousProviderConfig(
         series={
             SP500_SERIES_ID: GeometricBrownian(initial_value=1.0),
@@ -83,7 +83,7 @@ def _scenario_set_body() -> dict:
     }
 
 
-def test_translate_current_api_shape_to_runtime_and_run_with_model_sample(exogenous_model: ExogenousPathModel) -> None:
+def test_translate_current_api_shape_to_runtime_and_run_with_model_sample(exogenous_model: Sampler) -> None:
     scenario_set = ScenarioSet.model_validate(_scenario_set_body())
 
     (translation,) = translate_scenario_set(scenario_set)
@@ -247,7 +247,7 @@ def test_bridge_rejects_private_equity_explicit_marks_until_series_anchoring_exi
         translate_scenario_set(scenario_set)
 
 
-def test_property_selection_translates_to_month_zero_purchase_and_mortgage(exogenous_model: ExogenousPathModel) -> None:
+def test_property_selection_translates_to_month_zero_purchase_and_mortgage(exogenous_model: Sampler) -> None:
     body = _scenario_set_body()
     body["scenarios"][0]["property_selection"] = {
         "property_id": "sf_home",
@@ -380,7 +380,7 @@ def test_property_tax_and_carrying_costs_translate_to_runtime_obligations() -> N
 
 
 def test_configured_portfolio_lots_replace_legacy_public_stock_asset_but_keep_private_equity(
-    exogenous_model: ExogenousPathModel,
+    exogenous_model: Sampler,
 ) -> None:
     body = _scenario_set_body()
     body["scenarios"][0]["initial_balance_sheet"]["assets"].append(

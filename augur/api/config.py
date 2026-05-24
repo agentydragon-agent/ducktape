@@ -127,7 +127,7 @@ class Config(ApiModel):
         description=(
             "Deployment's exogenous-bundle provider choice (discriminated by `type`: simple / vecm). "
             "Carries per-provider knobs and trained-asset paths; the server materializes this into a "
-            "runtime `ExogenousPathModel` at startup."
+            "runtime `Sampler` at startup."
         )
     )
 

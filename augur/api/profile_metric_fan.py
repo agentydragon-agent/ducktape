@@ -15,7 +15,7 @@ from typing import get_args
 
 from augur.api.catalog import build_bootstrap_payload
 from augur.api.config import Config, load_augur_config
-from augur.model.exogenous import ExogenousPathModel
+from augur.model.exogenous import Sampler
 from augur.product.scenarios import resolve_primary_agent_id
 from augur.product.service import ProductService
 from augur.product.wire import MetricFanRequest, MetricName, ScenarioKey
@@ -108,7 +108,7 @@ def _config_path(config: str | None) -> Path:
     return Path(config) if config is not None else get_required_path(DEFAULT_CONFIG_RUNFILE)
 
 
-def _profile_exogenous_model(config: Config) -> ExogenousPathModel:
+def _profile_exogenous_model(config: Config) -> Sampler:
     return config.exogenous_provider.realize_model()
 
 

@@ -18,7 +18,7 @@ from augur.api.catalog import build_bootstrap_payload
 from augur.api.config import Config, load_augur_config, resolve_augur_config_path
 from augur.api.scenario_set import ScenarioSet
 from augur.api.scenario_set_service import ScenarioSetService
-from augur.model.exogenous import ExogenousPathModel
+from augur.model.exogenous import Sampler
 from augur.product.portfolio import product_portfolio_response
 from augur.product.scenarios import resolve_primary_agent_id
 from augur.product.service import ProductService
@@ -28,7 +28,7 @@ from augur.product.wire import MetricFanRequest, RolloutRequest
 @dataclass(frozen=True)
 class ApiServerConfig:
     augur_config: Config
-    exogenous_model: ExogenousPathModel
+    exogenous_model: Sampler
 
 
 def create_app(config: ApiServerConfig) -> FastAPI:

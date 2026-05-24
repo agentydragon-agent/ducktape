@@ -14,7 +14,7 @@ still runtime-derived metadata rather than durable persisted artifacts.
 Current governed surface:
 
 - Active trained exogenous model: `vecm`.
-- `VecmExogenousPathModel`, which wraps a trained VECM blob and samples native
+- `VecmModel` (NumPyro), which loads a trained VECM blob and samples native
   `SampledExogenousBundle` levels/events.
 - Simple stochastic providers are runtime placeholders. Deterministic flat
   exogenous paths are test-only fixtures. Neither is a calibrated exogenous model.
@@ -64,8 +64,8 @@ Today that means:
   mortgage-rate evidence, and latest-observation metadata.
 - Calibration/fitting happens offline through `augur.fit`; runtime
   config points at the persisted trained VECM blob.
-- Sampled-bundle generation happens when `VecmExogenousPathModel` calls the fitted
-  model's `simulate(...)` and emits native sampled levels/events.
+- Sampled-bundle generation happens when `VecmModel.sample(request)` rolls
+  the fitted recurrence forward and emits native sampled levels/events.
 - Projection happens in `augur/sim`; the simulator should not receive
   source-specific objects such as FRED, Yahoo, Zillow, or Manifold shapes.
 

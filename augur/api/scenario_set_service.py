@@ -10,7 +10,7 @@ from augur.api.portfolio import PortfolioConfig
 from augur.api.response import scenario_set_response_from_runs
 from augur.api.scenario_set import Scenario, ScenarioSet, ScenarioSetRunResponse
 from augur.api.scenario_tax_defaults import scenario_with_location_tax_defaults
-from augur.model.exogenous import ExogenousPathModel
+from augur.model.exogenous import Sampler
 from augur.sim.external_series import materialize_sampled_exogenous
 from augur.sim.simulate import simulate_with_external_series
 
@@ -20,7 +20,7 @@ class ScenarioSetService:
         self,
         *,
         portfolio: PortfolioConfig,
-        exogenous_model: ExogenousPathModel,
+        exogenous_model: Sampler,
         properties_by_id: dict[str, Property],
         locations_by_id: dict[str, Location],
     ) -> None:
