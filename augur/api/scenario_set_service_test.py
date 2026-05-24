@@ -10,7 +10,6 @@ from augur.api.config import load_augur_config
 from augur.api.scenario_set import RolloutStatusType
 from augur.api.scenario_set_service import ScenarioSetService
 from augur.api.schemas import Frame
-from augur.model.simple_exogenous import SimpleExogenousModel
 from util.bazel.runfiles import get_required_path
 
 
@@ -23,7 +22,7 @@ def _service() -> ScenarioSetService:
     bootstrap = build_bootstrap_payload(config)
     return ScenarioSetService(
         portfolio=config.portfolio,
-        exogenous_model=SimpleExogenousModel(current_private_equity_price_usd=25.0),
+        exogenous_model=config.exogenous_provider.realize_model(),
         properties_by_id={property_.id: property_ for property_ in bootstrap.properties},
         locations_by_id={location.id: location for location in bootstrap.locations},
     )
@@ -82,14 +81,14 @@ def test_scenario_set_service_runs_joint_model_and_materializes_graph_tables() -
     )
 
     assert response.sampling_metadata is not None
-    assert response.sampling_metadata["exogenous_model_id"] == "simple_exogenous_model"
+    assert response.sampling_metadata["exogenous_model_id"] == "independent_exogenous_model"
     assert response.projection_run is not None
     assert response.projection_run.scenario_set_id == "backend_smoke"
     assert response.projection_run.path_set_id.startswith("path_set:")
     assert len(response.projection_run.scenario_input_ids) == 1
     assert [path.rollout_index for path in response.exogenous_paths] == [0, 1, 2]
     assert {path.path_set_id for path in response.exogenous_paths} == {response.projection_run.path_set_id}
-    assert {path.exogenous_model_id for path in response.exogenous_paths} == {"simple_exogenous_model"}
+    assert {path.exogenous_model_id for path in response.exogenous_paths} == {"independent_exogenous_model"}
     assert len({path.exogenous_path_id for path in response.exogenous_paths}) == 3
     assert all(0 <= path.seed <= 2**32 - 1 for path in response.exogenous_paths)
     result = response.scenario_results[0]

@@ -6,7 +6,7 @@ load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 package(default_visibility = ["//visibility:public"])
 
 py_library(
-    name = "schemas_py",
+    name = "schemas",
     srcs = ["schemas.py"],
     deps = [
         "@pypi//pydantic",
@@ -14,16 +14,16 @@ py_library(
 )
 
 py_library(
-    name = "accounting_py",
+    name = "accounting",
     srcs = ["accounting.py"],
     deps = [
-        ":schemas_py",
+        ":schemas",
         "@pypi//pydantic",
     ],
 )
 
 py_library(
-    name = "casing_py",
+    name = "casing",
     srcs = ["casing.py"],
     deps = [
         "@pypi//pydantic",
@@ -31,65 +31,65 @@ py_library(
 )
 
 py_library(
-    name = "finance_py",
+    name = "finance",
     srcs = ["finance.py"],
     deps = [
-        ":schemas_py",
+        ":schemas",
         "@pypi//pydantic",
     ],
 )
 
 py_library(
-    name = "local_regulation_py",
+    name = "local_regulation",
     srcs = ["local_regulation.py"],
     deps = [
-        ":schemas_py",
+        ":schemas",
         "@pypi//pydantic",
     ],
 )
 
 py_library(
-    name = "scenario_set_py",
+    name = "scenario_set",
     srcs = ["scenario_set.py"],
     deps = [
-        ":accounting_py",
-        ":local_regulation_py",
-        ":schemas_py",
+        ":accounting",
+        ":local_regulation",
+        ":schemas",
         "@pypi//pydantic",
     ],
 )
 
 py_library(
-    name = "scenario_tax_defaults_py",
+    name = "scenario_tax_defaults",
     srcs = ["scenario_tax_defaults.py"],
     deps = [
-        ":local_regulation_py",
-        ":scenario_set_py",
+        ":local_regulation",
+        ":scenario_set",
     ],
 )
 
 py_library(
-    name = "bootstrap_py",
+    name = "bootstrap",
     srcs = ["bootstrap.py"],
     deps = [
-        ":finance_py",
-        ":local_regulation_py",
-        ":scenario_set_py",
-        ":schemas_py",
+        ":finance",
+        ":local_regulation",
+        ":scenario_set",
+        ":schemas",
         "@pypi//pydantic",
     ],
 )
 
 py_library(
-    name = "config_py",
+    name = "config",
     srcs = ["config.py"],
     deps = [
-        ":bootstrap_py",
-        ":local_regulation_py",
-        ":portfolio_py",
-        ":scenario_set_py",
-        ":schemas_py",
-        "//augur/model:exogenous_provider_config_py",
+        ":bootstrap",
+        ":local_regulation",
+        ":portfolio",
+        ":scenario_set",
+        ":schemas",
+        "//augur/model:exogenous_provider_config",
         "@pypi//pydantic",
         "@pypi//pyyaml",
     ],
@@ -99,11 +99,11 @@ py_test(
     name = "config_test",
     srcs = ["config_test.py"],
     deps = [
-        ":config_py",
-        ":local_regulation_py",
-        ":portfolio_py",
-        ":scenario_set_py",
-        "//augur/model:exogenous_provider_config_py",
+        ":config",
+        ":local_regulation",
+        ":portfolio",
+        ":scenario_set",
+        "//augur/model:independent_exogenous",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -114,7 +114,7 @@ py_test(
     name = "local_regulation_test",
     srcs = ["local_regulation_test.py"],
     deps = [
-        ":local_regulation_py",
+        ":local_regulation",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -125,8 +125,8 @@ py_test(
     name = "scenario_set_test",
     srcs = ["scenario_set_test.py"],
     deps = [
-        ":local_regulation_py",
-        ":scenario_set_py",
+        ":local_regulation",
+        ":scenario_set",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -137,15 +137,15 @@ py_test(
     name = "scenario_tax_defaults_test",
     srcs = ["scenario_tax_defaults_test.py"],
     deps = [
-        ":local_regulation_py",
-        ":scenario_set_py",
-        ":scenario_tax_defaults_py",
+        ":local_regulation",
+        ":scenario_set",
+        ":scenario_tax_defaults",
         "@pypi//pytest_bazel",
     ],
 )
 
 py_library(
-    name = "portfolio_py",
+    name = "portfolio",
     srcs = ["portfolio.py"],
     deps = [
         "//augur/sim:scenario",
@@ -157,7 +157,7 @@ py_test(
     name = "portfolio_test",
     srcs = ["portfolio_test.py"],
     deps = [
-        ":portfolio_py",
+        ":portfolio",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -165,14 +165,14 @@ py_test(
 )
 
 py_library(
-    name = "catalog_py",
+    name = "catalog",
     srcs = ["catalog.py"],
     deps = [
-        ":bootstrap_py",
-        ":config_py",
-        ":local_regulation_py",
-        ":scenario_set_py",
-        "//augur/product:wire_py",
+        ":bootstrap",
+        ":config",
+        ":local_regulation",
+        ":scenario_set",
+        "//augur/product:wire",
         "@pypi//more_itertools",
         "@pypi//pyyaml",
         "@pypi//types_pyyaml",
@@ -183,14 +183,14 @@ py_test(
     name = "catalog_test",
     srcs = ["catalog_test.py"],
     deps = [
-        ":catalog_py",
-        ":config_py",
-        ":finance_py",
-        ":local_regulation_py",
-        ":scenario_set_py",
-        ":scenario_set_service_py",
-        "//augur/model:exogenous_provider_config_py",
-        "//augur/model:testing_py",
+        ":catalog",
+        ":config",
+        ":finance",
+        ":local_regulation",
+        ":scenario_set",
+        ":scenario_set_service",
+        "//augur/model:independent_exogenous",
+        "//augur/model:testing",
         "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -198,16 +198,16 @@ py_test(
 )
 
 py_library(
-    name = "scenario_set_service_py",
+    name = "scenario_set_service",
     srcs = ["scenario_set_service.py"],
     deps = [
-        ":bootstrap_py",
-        ":bridge_py",
-        ":portfolio_py",
-        ":response_py",
-        ":scenario_set_py",
-        ":scenario_tax_defaults_py",
-        "//augur/model:exogenous_py",
+        ":bootstrap",
+        ":bridge",
+        ":portfolio",
+        ":response",
+        ":scenario_set",
+        ":scenario_tax_defaults",
+        "//augur/model:exogenous",
         "//augur/sim:external_series",
         "//augur/sim:simulate",
     ],
@@ -222,24 +222,23 @@ py_test(
         ":public_fixture_properties",
     ],
     deps = [
-        ":casing_py",
-        ":catalog_py",
-        ":config_py",
-        ":scenario_set_py",
-        ":scenario_set_service_py",
-        "//augur/model:simple_exogenous_py",
+        ":casing",
+        ":catalog",
+        ":config",
+        ":scenario_set",
+        ":scenario_set_service",
         "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
     ],
 )
 
 py_library(
-    name = "bridge_py",
+    name = "bridge",
     srcs = ["bridge.py"],
     deps = [
-        ":scenario_set_py",
-        "//augur/model:exogenous_py",
-        "//augur/model:series_py",
+        ":scenario_set",
+        "//augur/model:exogenous",
+        "//augur/model:series",
         "//augur/sim:external_series",
         "//augur/sim:run",
         "//augur/sim:scenario",
@@ -250,12 +249,12 @@ py_library(
 )
 
 py_library(
-    name = "response_py",
+    name = "response",
     srcs = ["response.py"],
     deps = [
-        ":scenario_set_py",
-        "//augur/model:provenance_py",
-        "//augur/model:series_py",
+        ":scenario_set",
+        "//augur/model:provenance",
+        "//augur/model:series",
         "//augur/sim:run",
         "@pypi//numpy",
         "@pypi//polars",
@@ -267,11 +266,13 @@ py_test(
     size = "medium",
     srcs = ["bridge_test.py"],
     deps = [
-        ":bridge_py",
-        ":portfolio_py",
-        ":scenario_set_py",
-        "//augur/model:series_py",
-        "//augur/model:simple_exogenous_py",
+        ":bridge",
+        ":portfolio",
+        ":scenario_set",
+        "//augur/model:exogenous",
+        "//augur/model:gbm",
+        "//augur/model:independent_exogenous",
+        "//augur/model:series",
         "@pypi//polars",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -300,19 +301,17 @@ py_library(
     name = "server_lib",
     srcs = ["server.py"],
     deps = [
-        ":casing_py",
-        ":catalog_py",
-        ":config_py",
-        ":scenario_set_py",
-        ":scenario_set_service_py",
-        "//augur/model:exogenous_provider_config_py",
-        "//augur/model:exogenous_py",
-        "//augur/product:portfolio_py",
-        "//augur/product:scenarios_py",
-        "//augur/product:service_py",
-        "//augur/product:wire_py",
+        ":casing",
+        ":catalog",
+        ":config",
+        ":scenario_set",
+        ":scenario_set_service",
+        "//augur/model:exogenous",
+        "//augur/product:portfolio",
+        "//augur/product:scenarios",
+        "//augur/product:service",
+        "//augur/product:wire",
         "@pypi//fastapi",
-        "@pypi//more_itertools",
         "@pypi//pydantic",
         "@pypi//uvicorn",
     ],
@@ -333,12 +332,12 @@ py_binary(
     ],
     main_module = "augur.api.profile_metric_fan",
     deps = [
-        ":catalog_py",
-        ":config_py",
-        "//augur/model:simple_exogenous_py",
-        "//augur/product:scenarios_py",
-        "//augur/product:service_py",
-        "//augur/product:wire_py",
+        ":catalog",
+        ":config",
+        "//augur/model:exogenous",
+        "//augur/product:scenarios",
+        "//augur/product:service",
+        "//augur/product:wire",
         "//util/bazel:runfiles",
     ],
 )
@@ -396,24 +395,24 @@ oci_load(
 )
 
 py_library(
-    name = "browser_state_py",
+    name = "browser_state",
     srcs = ["browser_state.py"],
     deps = [
-        ":bootstrap_py",
-        ":scenario_set_py",
-        ":schemas_py",
+        ":bootstrap",
+        ":scenario_set",
+        ":schemas",
     ],
 )
 
 py_library(
-    name = "export_schema_py",
+    name = "export_schema",
     srcs = ["export_schema.py"],
     deps = [
-        ":bootstrap_py",
-        ":browser_state_py",
-        ":scenario_set_py",
-        "//augur/product:portfolio_py",
-        "//augur/product:wire_py",
+        ":bootstrap",
+        ":browser_state",
+        ":scenario_set",
+        "//augur/product:portfolio",
+        "//augur/product:wire",
         "@pypi//fastapi",
     ],
 )
@@ -421,7 +420,7 @@ py_library(
 py_binary(
     name = "export_schema_bin",
     main_module = "augur.api.export_schema",
-    deps = [":export_schema_py"],
+    deps = [":export_schema"],
 )
 
 filegroup(

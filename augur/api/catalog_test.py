@@ -22,7 +22,7 @@ from augur.api.finance import ConcentratedHoldingSnapshot, FinanceSnapshot
 from augur.api.local_regulation import LocalRegulation
 from augur.api.scenario_set import ActorRole, ScenarioSet, TaxRegime
 from augur.api.scenario_set_service import ScenarioSetService
-from augur.model.exogenous_provider_config import SimpleExogenousProviderConfig
+from augur.model.independent_exogenous import IndependentExogenousProviderConfig
 from augur.model.testing import DeterministicSeriesFixtureModel
 
 
@@ -176,12 +176,7 @@ def _config(
             sp500_proxy_portfolio_usd=100_000,
             concentrated_holdings=(
                 ConcentratedHoldingSnapshot(
-                    holding_id="fixture_holding_a",
-                    label="Fixture Holding A",
-                    units=500,
-                    fmv_usd_per_unit=20,
-                    basis_per_unit_usd=5,
-                    valuation_source="fixture mark",
+                    holding_id="fixture_holding_a", label="Fixture Holding A", units=500, basis_per_unit_usd=5
                 ),
             ),
         ),
@@ -190,7 +185,7 @@ def _config(
         max_rollout_samples=128,
         locations=_fixture_locations(),
         location_selection=location_selection,
-        exogenous_provider=SimpleExogenousProviderConfig(),
+        exogenous_provider=IndependentExogenousProviderConfig(),
     )
 
 
@@ -362,7 +357,7 @@ def test_bootstrap_carries_configured_finance_snapshot_and_defaults(tmp_path: Pa
     assert bootstrap.finance_snapshot.sp500_proxy_portfolio_usd == 100_000
     assert bootstrap.finance_snapshot.concentrated_holdings[0].label == "Fixture Holding A"
     assert bootstrap.finance_snapshot.concentrated_holdings[0].units == 500
-    assert bootstrap.finance_snapshot.concentrated_holdings[0].value_usd == 10_000
+    assert bootstrap.finance_snapshot.concentrated_holdings[0].basis_per_unit_usd == 5
 
 
 def test_bootstrap_rejects_unknown_property_location(tmp_path: Path) -> None:

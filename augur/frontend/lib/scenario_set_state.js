@@ -464,13 +464,14 @@ function scenarioBalanceSheet(scenario, bootstrap) {
   ];
   if (privateEquityUnits > 0) {
     // The browser stores units only; the backend derives value_usd from
-    // units × SampledExogenousBundle metadata's current_private_equity_price_usd at simulation init.
+    // units × SampledExogenousBundle metadata's private_equity_prices_usd[issuer] at simulation init.
     assets.push({
       assetId: "private_equity_private",
       assetType: "private_equity",
       ownerActorId: primary.actorId,
       units: privateEquityUnits,
       costBasisUsd: 0,
+      issuerId: "private_holding_a",
     });
   }
   return {

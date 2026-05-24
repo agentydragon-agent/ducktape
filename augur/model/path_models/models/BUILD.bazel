@@ -3,17 +3,17 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 package(default_visibility = ["//visibility:public"])
 
 py_library(
-    name = "vecm_py",
+    name = "vecm",
     srcs = ["vecm.py"],
     deps = [
         "//augur:frames",
-        "//augur/model:exogenous_py",
-        "//augur/model:location_series_sources_py",
-        "//augur/model:provenance_py",
-        "//augur/model:schemas_py",
-        "//augur/model:series_py",
-        "//augur/model/path_models:density_py",
-        "//augur/model/path_models:scenarios_py",
+        "//augur/model:exogenous",
+        "//augur/model:location_series_sources",
+        "//augur/model:provenance",
+        "//augur/model:schemas",
+        "//augur/model:series",
+        "//augur/model/path_models:density",
+        "//augur/model/path_models:scenarios",
         "@pypi//numpy",
         "@pypi//pydantic",
         "@pypi//statsmodels",
@@ -24,8 +24,8 @@ py_test(
     name = "vecm_test",
     srcs = ["vecm_test.py"],
     deps = [
-        ":vecm_py",
-        "//augur/model/path_models:scenarios_py",
+        ":vecm",
+        "//augur/model/path_models:scenarios",
         "@pypi//numpy",
         "@pypi//pytest_bazel",
     ],

@@ -955,10 +955,10 @@ class PrivateEquityPosition(ApiModel):
     - When `value_usd` is set, it is the authoritative month-0 mark — e.g. a tender-offer
       or manual mark carried through from deployment config.
     - When `value_usd` is absent, the month-0 mark is derived from
-      `units × SampledExogenousBundle.metadata["current_private_equity_price_usd"]`.
+      `units × SampledExogenousBundle.metadata["private_equity_prices_usd"][series_routing_key]`.
       Callers without an independent mark (such as the browser UI, which stores
-      units only) should leave `value_usd` unset; the simulator owns the
-      derivation.
+      units only) should leave `value_usd` unset; the exogenous model owns the
+      per-issuer price.
 
     `liquidity_regime` selects how the position can be sold. The default
     `LiquidityEventOnly()` preserves the original behavior (sale only at

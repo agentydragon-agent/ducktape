@@ -285,7 +285,7 @@ class VecmExogenousPathModel:
 
     model: VecmModel
     latest_observations: dict[str, Any]
-    current_private_equity_price_usd: float
+    private_equity_prices_usd: dict[str, float]
     location_series_sources: LocationSeriesSources
     label: str
     exogenous_model_version_id: str
@@ -298,7 +298,7 @@ class VecmExogenousPathModel:
         model: VecmModel,
         *,
         latest_observations: dict[str, Any],
-        current_private_equity_price_usd: float,
+        private_equity_prices_usd: dict[str, float],
         location_series_sources: LocationSeriesSources,
         evidence_source_id: str,
     ) -> VecmExogenousPathModel:
@@ -324,7 +324,7 @@ class VecmExogenousPathModel:
         return cls(
             model=model,
             latest_observations=dict(latest_observations),
-            current_private_equity_price_usd=float(current_private_equity_price_usd),
+            private_equity_prices_usd={k: float(v) for k, v in private_equity_prices_usd.items()},
             location_series_sources=location_series_sources,
             label=label,
             exogenous_model_version_id=exogenous_model_version_id,
@@ -380,7 +380,7 @@ class VecmExogenousPathModel:
                 "scenario_generator_version_id": "vecm_exogenous_path_model:v1",
                 "evidence_set_id": self.evidence_set_id,
                 "calibration_artifact_id": self.calibration_artifact_id,
-                "current_private_equity_price_usd": self.current_private_equity_price_usd,
+                "private_equity_prices_usd": dict(self.private_equity_prices_usd),
                 "event_stream_ids": ("private_equity_sale_opportunity_event",),
                 "notes": ("sampled by VecmExogenousPathModel",),
                 "exogenous_provider_label": self.label,
@@ -398,8 +398,12 @@ class VecmExogenousPathModel:
             return self._factor_level(self._location_factor("home_value", location_id), path_by_factor=path_by_factor)
         if location_id := series_suffix(series_id, RENT_SERIES_PREFIX):
             return self._factor_level(self._location_factor("rent", location_id), path_by_factor=path_by_factor)
-        if series_suffix(series_id, PRIVATE_EQUITY_SERIES_PREFIX) is not None:
-            return np.full(shape, self.current_private_equity_price_usd or 1.0, dtype="float64")
+        if (issuer_id := series_suffix(series_id, PRIVATE_EQUITY_SERIES_PREFIX)) is not None:
+            try:
+                price = self.private_equity_prices_usd[issuer_id]
+            except KeyError as error:
+                raise ValueError(f"VECM private_equity_prices_usd has no entry for issuer {issuer_id!r}") from error
+            return np.full(shape, price, dtype="float64")
         if series_suffix(series_id, CRYPTO_SERIES_PREFIX) is not None:
             return np.ones(shape, dtype="float64")
         raise ValueError(f"VECM exogenous model cannot sample level series {series_id!r}")
@@ -472,14 +476,18 @@ class VecmExogenousProviderConfig(FrozenModel):
         description="Latest observed series state at the start of the simulation horizon (factor → value)."
     )
     current_mortgage30_rate_pct: float
+    private_equity_prices_usd: dict[str, float] = Field(
+        default_factory=dict,
+        description="Per-issuer current per-unit private-equity price. Issuer ids match the `private_equity:<issuer>` series suffix.",
+    )
     location_series_sources: LocationSeriesSourcesConfig
 
-    def realize_model(self, *, current_private_equity_price_usd: float) -> VecmExogenousPathModel:
+    def realize_model(self) -> VecmExogenousPathModel:
         model = VecmModel.load(self)
         return VecmExogenousPathModel.from_loaded_model(
             model,
             latest_observations=self.latest_observations,
-            current_private_equity_price_usd=current_private_equity_price_usd,
+            private_equity_prices_usd=self.private_equity_prices_usd,
             location_series_sources=LocationSeriesSources.from_config(self.location_series_sources),
             evidence_source_id=str(self.trained_blob),
         )

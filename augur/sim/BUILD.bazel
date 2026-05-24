@@ -25,8 +25,8 @@ py_library(
     srcs = ["external_series.py"],
     deps = [
         "//augur:frames",
-        "//augur/model:exogenous_py",
-        "//augur/model:series_model_py",
+        "//augur/model:exogenous",
+        "//augur/model:series_model",
         "@pypi//polars",
     ],
 )
@@ -106,7 +106,7 @@ py_library(
     name = "scenario",
     srcs = ["scenario.py"],
     deps = [
-        "//augur/model:series_model_py",
+        "//augur/model:series_model",
         "@pypi//pydantic",
     ],
 )
@@ -206,8 +206,8 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     deps = [
-        "//augur/model:deterministic_py",
-        "//augur/model:series_model_py",
+        "//augur/model:deterministic",
+        "//augur/model:series_model",
         "@pypi//pytest",
     ],
 )
@@ -217,8 +217,8 @@ SIMULATE_TEST_DEPS = [
     ":external_series",
     ":scenario",
     ":simulate",
-    "//augur/model:gbm_py",
-    "//augur/model:series_model_py",
+    "//augur/model:gbm",
+    "//augur/model:series_model",
     "@pypi//polars",
     "@pypi//pydantic",
     "@pypi//pytest",
@@ -252,8 +252,8 @@ py_library(
     srcs = ["bench_scenario.py"],
     deps = [
         ":scenario",
-        "//augur/model:gbm_py",
-        "//augur/model:series_model_py",
+        "//augur/model:gbm",
+        "//augur/model:series_model",
     ],
 )
 
@@ -275,8 +275,8 @@ py_test(
         ":bench_scenario",
         ":scenario",
         ":simulate",
-        "//augur/model:deterministic_py",
-        "//augur/model:series_model_py",
+        "//augur/model:deterministic",
+        "//augur/model:series_model",
         "@pypi//polars",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

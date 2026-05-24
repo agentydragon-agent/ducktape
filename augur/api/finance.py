@@ -1,22 +1,19 @@
 from __future__ import annotations
 
-from pydantic import Field, NonNegativeFloat, NonNegativeInt, computed_field
+from pydantic import Field, NonNegativeFloat, NonNegativeInt
 
 from augur.api.schemas import ApiModel
 
 
 class ConcentratedHoldingSnapshot(ApiModel):
+    """Per-holding metadata. Per-unit valuation lives in the exogenous
+    provider config (the model is the source of truth for prices), so this
+    snapshot carries only static position identity and cost-basis facts."""
+
     holding_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
     label: str
     units: NonNegativeInt
-    fmv_usd_per_unit: NonNegativeFloat
     basis_per_unit_usd: NonNegativeFloat = 0.0
-    valuation_source: str = ""
-
-    @computed_field  # type: ignore[prop-decorator]
-    @property
-    def value_usd(self) -> float:
-        return self.units * self.fmv_usd_per_unit
 
 
 class FinanceSnapshot(ApiModel):
