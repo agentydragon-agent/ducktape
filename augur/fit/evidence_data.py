@@ -194,7 +194,15 @@ def _home_value_region_config(source_config: SourceDataConfig) -> dict[str, tupl
     return regions
 
 
-def _read_yahoo_spy_adjusted_close(path: Path) -> pd.Series:
+def _read_yahoo_adjusted_close(path: Path, *, minimum_samples: int = 36) -> pd.Series:
+    """Read a Yahoo-Finance v8 chart JSON down to `(timestamp -> adjusted_close)`.
+
+    SPY's daily history has ~8k rows. Crypto histories may be monthly or weekly
+    depending on what Yahoo serves under `range=max`; `minimum_samples` defaults
+    to 36 so the loader accepts the coarser series as long as there's at least
+    three years of data to fit on.
+    """
+
     payload = json.loads(path.read_text(encoding="utf-8"))
     result = ((payload.get("chart") or {}).get("result") or [None])[0]
     if not isinstance(result, dict):
@@ -211,9 +219,16 @@ def _read_yahoo_spy_adjusted_close(path: Path) -> pd.Series:
         if math.isfinite(number) and number > 0:
             dt = datetime.fromtimestamp(int(timestamp), tz=UTC).replace(tzinfo=None)
             rows[pd.Timestamp(dt.date())] = number
-    if len(rows) < 1000:
-        raise ValueError(f"{path} did not yield a credible SPY adjusted-close history")
+    if len(rows) < minimum_samples:
+        raise ValueError(
+            f"{path} did not yield a credible adjusted-close history ({len(rows)} samples < minimum {minimum_samples})"
+        )
     return pd.Series(rows).sort_index()
+
+
+def _read_yahoo_spy_adjusted_close(path: Path) -> pd.Series:
+    # SPY is daily; require thousands of rows to catch a truncated file.
+    return _read_yahoo_adjusted_close(path, minimum_samples=1000)
 
 
 def _returns(values: list[pd.DataFrame]) -> PeriodReturns:
@@ -244,6 +259,8 @@ def load_exogenous_evidence(source_config: SourceDataConfig, base_dir: str | Pat
     sp500_total_return = _monthly_last(
         _read_yahoo_spy_adjusted_close(resolve_path(source_config.yahoo_spy_adjusted_json, base_dir))
     )
+    btc_price = _monthly_last(_read_yahoo_adjusted_close(resolve_path(source_config.yahoo_btc_adjusted_json, base_dir)))
+    eth_price = _monthly_last(_read_yahoo_adjusted_close(resolve_path(source_config.yahoo_eth_adjusted_json, base_dir)))
     cpi = _monthly_last(_read_fred_series(resolve_path(source_config.fred_cpi_us_csv, base_dir), "CPIAUCSL"))
     rent = _monthly_last(_read_fred_series(resolve_path(source_config.fred_sf_rent_cpi_csv, base_dir), "CUURA422SEHA"))
     case_shiller = _monthly_last(_read_fred_series(resolve_path(source_config.fred_sfxrsa_csv, base_dir), "SFXRSA"))
@@ -258,10 +275,12 @@ def load_exogenous_evidence(source_config: SourceDataConfig, base_dir: str | Pat
         for factor_name, (region_name, state) in home_value_region_config.items()
     }
     home_factor_names = tuple(home_values)
-    factor_names = ("sp500", *home_factor_names, "rent:san_francisco_ca", "inflation")
+    factor_names = ("sp500", "crypto:btc", "crypto:eth", *home_factor_names, "rent:san_francisco_ca", "inflation")
     aligned = pd.concat(
         {
             "sp500": _monthly_unit_returns(sp500_total_return),
+            "crypto:btc": _monthly_unit_returns(btc_price),
+            "crypto:eth": _monthly_unit_returns(eth_price),
             **{factor_name: _monthly_unit_returns(series) for factor_name, series in home_values.items()},
             "rent:san_francisco_ca": _monthly_unit_returns(rent),
             "inflation": _monthly_unit_returns(cpi),
@@ -273,6 +292,8 @@ def load_exogenous_evidence(source_config: SourceDataConfig, base_dir: str | Pat
         raise ValueError(f"only {len(aligned)} aligned exogenous months were available")
 
     sp500_returns = _period_return_frame(sp500_total_return)
+    btc_returns = _period_return_frame(btc_price)
+    eth_returns = _period_return_frame(eth_price)
     home_value_returns = {factor_name: _period_return_frame(series) for factor_name, series in home_values.items()}
     case_shiller_returns = _period_return_frame(case_shiller)
     fhfa_returns = _period_return_frame(fhfa)
@@ -280,6 +301,8 @@ def load_exogenous_evidence(source_config: SourceDataConfig, base_dir: str | Pat
     cpi_returns = _period_return_frame(cpi)
     marginal = {
         "sp500": _returns([sp500_returns]),
+        "crypto:btc": _returns([btc_returns]),
+        "crypto:eth": _returns([eth_returns]),
         **{factor_name: _returns([returns]) for factor_name, returns in home_value_returns.items()},
         "rent:san_francisco_ca": _returns([rent_returns]),
         "inflation": _returns([cpi_returns]),
@@ -296,6 +319,16 @@ def load_exogenous_evidence(source_config: SourceDataConfig, base_dir: str | Pat
             "date": str(sp500_total_return.index[-1]),
             "value": float(sp500_total_return.iloc[-1]),
             "source": source_config.yahoo_spy_adjusted_json,
+        },
+        "btc_close_latest": {
+            "date": str(btc_price.index[-1]),
+            "value": float(btc_price.iloc[-1]),
+            "source": source_config.yahoo_btc_adjusted_json,
+        },
+        "eth_close_latest": {
+            "date": str(eth_price.index[-1]),
+            "value": float(eth_price.iloc[-1]),
+            "source": source_config.yahoo_eth_adjusted_json,
         },
         "zillow_home_value_latest_by_factor": {
             factor_name: {

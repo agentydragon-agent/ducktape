@@ -18,6 +18,8 @@ class ZillowCityRegionConfig(StrictModel):
 class SourceDataConfig(StrictModel):
     fred_sp500_csv: str
     yahoo_spy_adjusted_json: str
+    yahoo_btc_adjusted_json: str
+    yahoo_eth_adjusted_json: str
     fred_cpi_us_csv: str
     fred_sf_rent_cpi_csv: str
     fred_sfxrsa_csv: str

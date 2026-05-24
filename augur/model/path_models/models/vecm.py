@@ -497,7 +497,9 @@ class VecmModel:
                 raise ValueError(f"VECM private_equity_prices_usd has no entry for issuer {issuer_id!r}") from error
             return np.full(shape, price, dtype="float64")
         if series_suffix(series_id, CRYPTO_SERIES_PREFIX) is not None:
-            return np.ones(shape, dtype="float64")
+            # Crypto factor names match the wire id exactly (`crypto:btc`, `crypto:eth`), so the
+            # factor lookup is direct — no prefix-stripping translation table needed.
+            return self._factor_level(series_id, path_by_factor=path_by_factor)
         raise ValueError(f"VECM exogenous model cannot sample level series {series_id!r}")
 
     def _event_series(self, event_id: str, *, private_equity_events: np.ndarray) -> np.ndarray:

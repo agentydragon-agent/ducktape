@@ -33,17 +33,23 @@ upstream as of the last refresh. Series mapping:
 | `fred_fhfa_sf_oakland_berkeley.csv` | `ATNHPIUS41884Q` | FHFA SF-Oakland-Berkeley MSA all-transactions HPI (quarterly)     |
 | `fred_sf_rent_cpi.csv`              | `CUURA422SEHA`   | SF-area rent CPI (urban consumers, not seasonally adjusted)       |
 
-### `yahoo_spy_chart_adjusted.json`
+### `yahoo_spy_chart_adjusted.json`, `yahoo_btc_chart_adjusted.json`, `yahoo_eth_chart_adjusted.json`
 
-State Street SPY ETF daily prices, used as the SP500 total-return proxy
-(captures dividend reinvestment, which the raw FRED `SP500` price series does
-not).
+Three Yahoo Finance v8 chart-API snapshots, all trimmed to the same minimal
+shape (`meta.symbol`, `meta.currency`, `timestamp`, `indicators.adjclose[0].adjclose`)
+so the same loader path (`_read_yahoo_spy_adjusted_close`) reads them all.
 
-Source: Yahoo Finance v8 chart API.
+| Local file                      | Symbol    | What it is                                                                                                                      |
+| ------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `yahoo_spy_chart_adjusted.json` | `SPY`     | State Street SPY ETF daily prices — SP500 total-return proxy (captures dividend reinvestment, which FRED `SP500` does not).     |
+| `yahoo_btc_chart_adjusted.json` | `BTC-USD` | Bitcoin price. Yahoo aggregates crypto at coarser-than-daily under `range=max`; loader's `_monthly_last` normalizes either way. |
+| `yahoo_eth_chart_adjusted.json` | `ETH-USD` | Ethereum price (same caveat as BTC).                                                                                            |
+
+Source: Yahoo Finance v8 chart API. Substitute `<SYMBOL>` per row above:
 
 ```
-curl -sS 'https://query2.finance.yahoo.com/v8/finance/chart/SPY?range=max&interval=1d' \
-  -H 'User-Agent: Mozilla/5.0' -o yahoo_spy_chart_adjusted.json
+curl -sS 'https://query2.finance.yahoo.com/v8/finance/chart/<SYMBOL>?range=max&interval=1d' \
+  -H 'User-Agent: Mozilla/5.0' -o yahoo_<symbol>_chart_adjusted.json
 ```
 
 **Trimmed**. The upstream response carries six daily series under

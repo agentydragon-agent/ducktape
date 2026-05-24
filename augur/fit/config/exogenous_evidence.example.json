@@ -2,6 +2,8 @@
   "source_data": {
     "fred_sp500_csv": "../../data/fred_sp500.csv",
     "yahoo_spy_adjusted_json": "../../data/yahoo_spy_chart_adjusted.json",
+    "yahoo_btc_adjusted_json": "../../data/yahoo_btc_chart_adjusted.json",
+    "yahoo_eth_adjusted_json": "../../data/yahoo_eth_chart_adjusted.json",
     "fred_cpi_us_csv": "../../data/fred_cpi_us.csv",
     "fred_sf_rent_cpi_csv": "../../data/fred_sf_rent_cpi.csv",
     "fred_sfxrsa_csv": "../../data/fred_sfxrsa.csv",

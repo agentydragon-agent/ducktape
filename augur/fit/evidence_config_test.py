@@ -16,6 +16,8 @@ EXPECTED_SOURCE_DATA_KEYS = frozenset(
     {
         "fred_sp500_csv",
         "yahoo_spy_adjusted_json",
+        "yahoo_btc_adjusted_json",
+        "yahoo_eth_adjusted_json",
         "fred_cpi_us_csv",
         "fred_sf_rent_cpi_csv",
         "fred_sfxrsa_csv",
