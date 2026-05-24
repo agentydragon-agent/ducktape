@@ -8,13 +8,26 @@ import { NumberField } from "./lib/controls.jsx";
 import { fmtNumber, fmtUsd } from "./lib/format.js";
 import { AugurShellHeader } from "./shell.jsx";
 
+// Sell-order is stored as a string of single-char bucket codes, in priority order. "pc" means
+// "sell public securities first, then crypto if needed"; "c" means crypto only; "" disables auto
+// liquidity sales entirely. The translation to the wire's `sell_order` tuple happens at scenario
+// emission time. Storing it as a string (rather than an array) keeps default-comparison and URL
+// encoding trivial.
+const SELL_BUCKETS = [
+  { name: "public_securities", code: "p", label: "Public securities" },
+  { name: "crypto", code: "c", label: "Crypto" },
+];
+const SELL_BUCKET_BY_CODE = new Map(SELL_BUCKETS.map((bucket) => [bucket.code, bucket]));
+const SELL_BUCKET_BY_NAME = new Map(SELL_BUCKETS.map((bucket) => [bucket.name, bucket]));
+const DEFAULT_SELL_ORDER_CODES = SELL_BUCKETS.map((bucket) => bucket.code).join("");
+
 const DEFAULT_PRODUCT_INPUT_BASE = {
   horizonMonths: 48,
   rolloutCount: 100,
   firstSeed: 1301,
   monthlySpendUsd: 1400,
   spendIndex: "inflation",
-  sellPublicSecurities: true,
+  sellOrder: DEFAULT_SELL_ORDER_CODES,
   cashBufferTriggerBelowUsd: 4000,
   cashBufferSaleUsd: 10000,
   monthlyRentUsd: 0,
@@ -93,7 +106,10 @@ const INPUT_FIELDS = [
   { key: "firstSeed", type: "number" },
   { key: "monthlySpendUsd", type: "number" },
   { key: "spendIndex", type: "enum", codes: { inflation: "i", none: "n" } },
-  { key: "sellPublicSecurities", type: "bool" },
+  // sellOrder is a string of single-char bucket codes; "" is a legitimate value meaning "disable
+  // all auto-sales", so we use a sentinel ("_") in the URL to distinguish "explicitly empty"
+  // from "default" (which the encoder also represents as "").
+  { key: "sellOrder", type: "orderedCodes" },
   { key: "cashBufferTriggerBelowUsd", type: "number" },
   { key: "cashBufferSaleUsd", type: "number" },
   { key: "monthlyRentUsd", type: "number" },
@@ -117,6 +133,7 @@ function encodeInputValue(value, field) {
     return code;
   }
   if (field.type === "string") return encodeURIComponent(String(value));
+  if (field.type === "orderedCodes") return value === "" ? "_" : String(value);
   return String(value);
 }
 
@@ -130,6 +147,7 @@ function decodeInputValue(rawValue, field, defaultValue) {
     return defaultValue;
   }
   if (field.type === "string") return decodeURIComponent(rawValue);
+  if (field.type === "orderedCodes") return rawValue === "_" ? "" : rawValue;
   const numeric = Number(rawValue);
   return Number.isFinite(numeric) ? numeric : defaultValue;
 }
@@ -180,8 +198,19 @@ function buildPropertyPurchase(input) {
   };
 }
 
+function sellOrderBuckets(sellOrderCodes) {
+  const codes = String(sellOrderCodes ?? "");
+  const buckets = [];
+  for (const code of codes) {
+    const bucket = SELL_BUCKET_BY_CODE.get(code);
+    if (bucket && !buckets.includes(bucket.name)) buckets.push(bucket.name);
+  }
+  return buckets;
+}
+
 function productScenario(input, bootstrap) {
-  const sellPublicSecurities = Boolean(input.sellPublicSecurities);
+  const sellOrder = sellOrderBuckets(input.sellOrder);
+  const autoSellEnabled = sellOrder.length > 0;
   const monthlyRentUsd = Math.max(0, Number(input.monthlyRentUsd) || 0);
   const rentalLocationId = monthlyRentUsd > 0 ? input.rentalLocationId : null;
   return {
@@ -190,9 +219,9 @@ function productScenario(input, bootstrap) {
     monthlySpendUsd: Math.max(1, Number(input.monthlySpendUsd) || 1),
     spendIndex: input.spendIndex === "none" ? "none" : "inflation",
     fundingPolicy: {
-      cashBufferTriggerBelowUsd: sellPublicSecurities ? Math.max(0, Number(input.cashBufferTriggerBelowUsd) || 0) : 0,
-      cashBufferSaleUsd: sellPublicSecurities ? Math.max(0, Number(input.cashBufferSaleUsd) || 0) : 0,
-      sellOrder: sellPublicSecurities ? ["public_securities"] : [],
+      cashBufferTriggerBelowUsd: autoSellEnabled ? Math.max(0, Number(input.cashBufferTriggerBelowUsd) || 0) : 0,
+      cashBufferSaleUsd: autoSellEnabled ? Math.max(0, Number(input.cashBufferSaleUsd) || 0) : 0,
+      sellOrder,
     },
     monthlyRentUsd,
     rentalLocationId,
@@ -1210,6 +1239,105 @@ function PropertyPurchasePanel({ bootstrap, input, onChange }) {
   );
 }
 
+function portfolioHasBucket(portfolio, bucketName) {
+  const publicSecurities = portfolio?.publicSecurities ?? [];
+  if (bucketName === "crypto") {
+    return publicSecurities.some((position) => position.securityKind === "cryptocurrency");
+  }
+  if (bucketName === "public_securities") {
+    return publicSecurities.some((position) => position.securityKind !== "cryptocurrency");
+  }
+  return false;
+}
+
+function SellOrderControl({ sellOrder, portfolio, onChange }) {
+  // Render one row per bucket. Enabled rows appear in priority order at the top with up/down
+  // controls; disabled rows trail at the bottom, dimmed. Reorder mutates a string of bucket
+  // codes (e.g. "pc") so it slots into the URL encoder without an array-equality dance.
+  const codes = String(sellOrder ?? "");
+  const enabledCodes = [];
+  const seen = new Set();
+  for (const code of codes) {
+    if (SELL_BUCKET_BY_CODE.has(code) && !seen.has(code)) {
+      enabledCodes.push(code);
+      seen.add(code);
+    }
+  }
+  const disabledBuckets = SELL_BUCKETS.filter((bucket) => !seen.has(bucket.code));
+  const enabledBuckets = enabledCodes.map((code) => SELL_BUCKET_BY_CODE.get(code));
+  const visibleBuckets = [...enabledBuckets, ...disabledBuckets].filter((bucket) =>
+    portfolioHasBucket(portfolio, bucket.name)
+  );
+  if (visibleBuckets.length === 0) return null;
+
+  const setEnabled = (bucketCode, enabled) => {
+    const next = enabledCodes.filter((code) => code !== bucketCode);
+    if (enabled) next.push(bucketCode);
+    onChange(next.join(""));
+  };
+  const moveUp = (bucketCode) => {
+    const idx = enabledCodes.indexOf(bucketCode);
+    if (idx <= 0) return;
+    const next = enabledCodes.slice();
+    [next[idx - 1], next[idx]] = [next[idx], next[idx - 1]];
+    onChange(next.join(""));
+  };
+  const moveDown = (bucketCode) => {
+    const idx = enabledCodes.indexOf(bucketCode);
+    if (idx < 0 || idx >= enabledCodes.length - 1) return;
+    const next = enabledCodes.slice();
+    [next[idx], next[idx + 1]] = [next[idx + 1], next[idx]];
+    onChange(next.join(""));
+  };
+
+  return (
+    <div className="mt-3">
+      <div className="augur-field-label mb-2">Sell preference (top first)</div>
+      <ul className="space-y-1">
+        {visibleBuckets.map((bucket) => {
+          const enabledIdx = enabledCodes.indexOf(bucket.code);
+          const isEnabled = enabledIdx >= 0;
+          const canMoveUp = isEnabled && enabledIdx > 0;
+          const canMoveDown = isEnabled && enabledIdx < enabledCodes.length - 1;
+          return (
+            <li
+              key={bucket.code}
+              className={`flex items-center gap-2 rounded border border-slate-200 px-2 py-1 dark:border-slate-700 ${
+                isEnabled ? "" : "opacity-60"
+              }`}
+            >
+              <Checkbox
+                aria-label={`Sell ${bucket.label}`}
+                checked={isEnabled}
+                onChange={(event) => setEnabled(bucket.code, event.currentTarget.checked)}
+              />
+              <span className="flex-1 text-sm font-semibold augur-strong">{bucket.label}</span>
+              <button
+                type="button"
+                aria-label={`Move ${bucket.label} up`}
+                disabled={!canMoveUp}
+                onClick={() => moveUp(bucket.code)}
+                className="px-1 text-xs augur-muted disabled:opacity-30"
+              >
+                ▲
+              </button>
+              <button
+                type="button"
+                aria-label={`Move ${bucket.label} down`}
+                disabled={!canMoveDown}
+                onClick={() => moveDown(bucket.code)}
+                className="px-1 text-xs augur-muted disabled:opacity-30"
+              >
+                ▼
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
 function ProductPortfolioPanel({ portfolio, error }) {
   const publicSecurities = portfolio?.publicSecurities ?? [];
   return (
@@ -1487,33 +1615,30 @@ function ProductProjectionWorkspace({ bootstrap }) {
               </div>
               <div className="px-4 py-3">
                 <div className="augur-eyebrow">Funding</div>
-                <div className="mt-3 grid gap-3">
-                  <Checkbox
-                    label="Sell public securities"
-                    checked={Boolean(input.sellPublicSecurities)}
-                    classNames={{ label: "text-sm font-semibold augur-strong" }}
-                    onChange={(event) => updateInput({ sellPublicSecurities: event.currentTarget.checked })}
+                <SellOrderControl
+                  sellOrder={input.sellOrder}
+                  portfolio={portfolio}
+                  onChange={(sellOrder) => updateInput({ sellOrder })}
+                />
+                <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+                  <NumberField
+                    label="Trigger below"
+                    value={input.cashBufferTriggerBelowUsd}
+                    min={0}
+                    step={1000}
+                    prefix="$"
+                    disabled={!input.sellOrder}
+                    onChange={(cashBufferTriggerBelowUsd) => updateInput({ cashBufferTriggerBelowUsd })}
                   />
-                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
-                    <NumberField
-                      label="Trigger below"
-                      value={input.cashBufferTriggerBelowUsd}
-                      min={0}
-                      step={1000}
-                      prefix="$"
-                      disabled={!input.sellPublicSecurities}
-                      onChange={(cashBufferTriggerBelowUsd) => updateInput({ cashBufferTriggerBelowUsd })}
-                    />
-                    <NumberField
-                      label="Sell amount"
-                      value={input.cashBufferSaleUsd}
-                      min={0}
-                      step={1000}
-                      prefix="$"
-                      disabled={!input.sellPublicSecurities}
-                      onChange={(cashBufferSaleUsd) => updateInput({ cashBufferSaleUsd })}
-                    />
-                  </div>
+                  <NumberField
+                    label="Sell amount"
+                    value={input.cashBufferSaleUsd}
+                    min={0}
+                    step={1000}
+                    prefix="$"
+                    disabled={!input.sellOrder}
+                    onChange={(cashBufferSaleUsd) => updateInput({ cashBufferSaleUsd })}
+                  />
                 </div>
               </div>
               <details className="px-4 py-3 [&_summary::-webkit-details-marker]:hidden">

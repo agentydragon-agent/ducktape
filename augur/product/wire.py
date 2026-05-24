@@ -9,7 +9,7 @@ from pydantic import Field, NonNegativeFloat, NonNegativeInt, PositiveFloat, Pos
 from augur.api.schemas import ApiModel, Frame, Percentage
 
 SpendIndex = Literal["none", "inflation"]
-SellableBucket = Literal["public_securities"]
+SellableBucket = Literal["public_securities", "crypto"]
 MetricName = Literal[
     "cash_usd",
     "public_security_value_usd",
@@ -21,7 +21,7 @@ MetricName = Literal[
     "shortfall_usd",
 ]
 MAX_HORIZON_MONTHS = 100 * 12
-DEFAULT_SELL_ORDER: tuple[SellableBucket, ...] = ("public_securities",)
+DEFAULT_SELL_ORDER: tuple[SellableBucket, ...] = ("public_securities", "crypto")
 
 
 class FundingPolicy(ApiModel):

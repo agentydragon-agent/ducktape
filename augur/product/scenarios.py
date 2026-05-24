@@ -361,10 +361,21 @@ def _liquidity_policies_from_funding_policy(
 def _asset_preference_chain_from_sell_order(
     funding_policy: FundingPolicy, *, initial_lots: tuple[InitialLot, ...]
 ) -> list[str]:
+    """Translate the wire's `sell_order` tuple to a deduplicated asset-ID list for the sim.
+
+    `public_securities` covers non-crypto holdings (SP500-style ETFs, individual stocks);
+    `crypto` covers anything whose asset_id sits under the `crypto:` namespace. A bucket
+    absent from `sell_order` means "don't auto-sell from this bucket" — the resulting
+    asset-ID list simply omits those lots. An empty `sell_order` yields an empty chain,
+    which the sim treats as "no liquidity sales allowed" (hard-demand failures still fire).
+    """
+
     asset_ids: list[str] = []
     for bucket in funding_policy.sell_order:
         if bucket == "public_securities":
-            asset_ids.extend(lot.asset_id for lot in initial_lots)
+            asset_ids.extend(lot.asset_id for lot in initial_lots if not lot.asset_id.startswith("crypto:"))
+        elif bucket == "crypto":
+            asset_ids.extend(lot.asset_id for lot in initial_lots if lot.asset_id.startswith("crypto:"))
         else:
             raise ValueError(f"unsupported sell_order bucket: {bucket!r}")
     return list(dict.fromkeys(asset_ids))
