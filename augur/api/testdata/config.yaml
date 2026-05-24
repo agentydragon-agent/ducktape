@@ -127,6 +127,30 @@ portfolio:
       symbol: VOO
       unit_value_usd: 500.0
       value_series_id: sp500
+    - position_id: btc_holding
+      account_id: taxable_brokerage
+      label: Bitcoin
+      lots:
+        - cost_basis_usd: 30000.0
+          holding_period_months_at_start: 36
+          lot_id: btc_2023_05
+          quantity: 1.0
+      security_kind: cryptocurrency
+      symbol: BTC
+      unit_value_usd: 75000.0
+      value_series_id: crypto:btc
+    - position_id: eth_holding
+      account_id: taxable_brokerage
+      label: Ethereum
+      lots:
+        - cost_basis_usd: 15000.0
+          holding_period_months_at_start: 30
+          lot_id: eth_2023_11
+          quantity: 5.0
+      security_kind: cryptocurrency
+      symbol: ETH
+      unit_value_usd: 2100.0
+      value_series_id: crypto:eth
 property_source:
   properties_path: properties.json
 reserve_forward_months: 12

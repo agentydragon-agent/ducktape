@@ -31,6 +31,11 @@ class PublicSecurityKind(StrEnum):
     ETF = "etf"
     STOCK = "stock"
     MUTUAL_FUND = "mutual_fund"
+    # Crypto holdings (BTC, ETH, …) flow through the same position/lot machinery as stocks —
+    # FIFO cost basis, cap-gains treatment, sampled price series via the VECM `crypto:*`
+    # factors. Calling them "public securities" is a slight misnomer for crypto, but the
+    # sim doesn't distinguish, so we lean on this enum value for display routing only.
+    CRYPTOCURRENCY = "cryptocurrency"
     OTHER = "other"
 
 

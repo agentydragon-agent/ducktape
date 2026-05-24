@@ -59,7 +59,7 @@ def initial_lots_from_portfolio(portfolio: PortfolioConfig, *, primary_agent_id:
     unsupported_owner_ids = sorted({lot.agent_id for lot in lots if lot.agent_id != primary_agent_id})
     if unsupported_owner_ids:
         raise ValueError(
-            "product portfolio projection only supports public-security lots owned by the primary agent; "
+            "product portfolio projection only supports holding lots owned by the primary agent; "
             f"got owner agent ids {unsupported_owner_ids}"
         )
     return lots

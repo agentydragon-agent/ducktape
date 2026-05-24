@@ -87,7 +87,9 @@ def test_metric_fan_and_rollout_detail_share_cached_sim_rollouts(
     )
 
     assert [request.rollout_seeds for request in counting_exogenous_model.sample_requests] == [(7, 8)]
-    assert counting_exogenous_model.sample_requests[0].required_level_series == frozenset({SP500_SERIES_ID})
+    assert counting_exogenous_model.sample_requests[0].required_level_series == frozenset(
+        {SP500_SERIES_ID, "crypto:btc", "crypto:eth"}
+    )
     assert fan.exogenous_model_id == "independent_exogenous_model"
     assert fan.metric == "cash_usd"
     assert fan.failed_count == 0

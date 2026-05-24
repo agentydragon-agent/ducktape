@@ -441,23 +441,39 @@ def test_backend_server_product_portfolio_returns_configured_public_securities(s
 
     assert portfolio["as_of_date"] == "2026-05-14"
     assert portfolio["cash_usd"] == 250_000.0
-    assert portfolio["total_public_security_value_usd"] == 750_000.0
-    assert portfolio["total_public_security_cost_basis_usd"] == 550_000.0
-    [position] = portfolio["public_securities"]
-    assert position["account_label"] == "Taxable Brokerage"
-    assert position["label"] == "SP500 Proxy"
-    assert position["symbol"] == "VOO"
-    assert position["security_kind"] == "etf"
-    assert position["value_series_id"] == "sp500"
-    assert position["unit_value_usd"] == 500.0
-    assert position["quantity"] == 1_500.0
-    assert position["current_value_usd"] == 750_000.0
-    assert position["total_cost_basis_usd"] == 550_000.0
-    assert [lot["lot_id"] for lot in position["lots"]] == ["sp500_proxy_2020_01", "sp500_proxy_2024_06"]
-    assert [lot["holding_period_months_at_start"] for lot in position["lots"]] == [76, 23]
-    assert [lot["quantity"] for lot in position["lots"]] == [750.0, 750.0]
-    assert [lot["cost_basis_usd"] for lot in position["lots"]] == [300_000.0, 250_000.0]
-    assert [lot["cost_basis_per_unit_usd"] for lot in position["lots"]] == [400.0, 333.3333333333333]
+    # SP500: 1500 * $500 = $750k; BTC: 1 * $75k = $75k; ETH: 5 * $2.1k = $10.5k.
+    assert portfolio["total_public_security_value_usd"] == 835_500.0
+    # SP500 basis $550k + BTC basis $30k + ETH basis $15k = $595k.
+    assert portfolio["total_public_security_cost_basis_usd"] == 595_000.0
+    positions_by_id = {position["position_id"]: position for position in portfolio["public_securities"]}
+    assert set(positions_by_id) == {"sp500_proxy", "btc_holding", "eth_holding"}
+    sp500 = positions_by_id["sp500_proxy"]
+    assert sp500["account_label"] == "Taxable Brokerage"
+    assert sp500["label"] == "SP500 Proxy"
+    assert sp500["symbol"] == "VOO"
+    assert sp500["security_kind"] == "etf"
+    assert sp500["value_series_id"] == "sp500"
+    assert sp500["unit_value_usd"] == 500.0
+    assert sp500["quantity"] == 1_500.0
+    assert sp500["current_value_usd"] == 750_000.0
+    assert sp500["total_cost_basis_usd"] == 550_000.0
+    assert [lot["lot_id"] for lot in sp500["lots"]] == ["sp500_proxy_2020_01", "sp500_proxy_2024_06"]
+    assert [lot["holding_period_months_at_start"] for lot in sp500["lots"]] == [76, 23]
+    assert [lot["quantity"] for lot in sp500["lots"]] == [750.0, 750.0]
+    assert [lot["cost_basis_usd"] for lot in sp500["lots"]] == [300_000.0, 250_000.0]
+    assert [lot["cost_basis_per_unit_usd"] for lot in sp500["lots"]] == [400.0, 333.3333333333333]
+    btc = positions_by_id["btc_holding"]
+    assert btc["symbol"] == "BTC"
+    assert btc["security_kind"] == "cryptocurrency"
+    assert btc["value_series_id"] == "crypto:btc"
+    assert btc["unit_value_usd"] == 75_000.0
+    assert btc["current_value_usd"] == 75_000.0
+    eth = positions_by_id["eth_holding"]
+    assert eth["symbol"] == "ETH"
+    assert eth["security_kind"] == "cryptocurrency"
+    assert eth["value_series_id"] == "crypto:eth"
+    assert eth["unit_value_usd"] == 2_100.0
+    assert eth["current_value_usd"] == 10_500.0
 
 
 def test_backend_server_zeroes_failed_product_rollout_metrics(server_url: str) -> None:
