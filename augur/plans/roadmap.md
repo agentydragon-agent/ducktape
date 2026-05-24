@@ -491,9 +491,10 @@ Work:
   `augur/sim` through `SampledExogenousBundle`. **The biggest remaining
   variance source the simulator silently ignores.**
 - **Tax surface beyond sale tax** — qualified dividends, short-term gains,
-  capital losses + carryforward, rental income tax, SALT/property-tax
-  deductions, passive-loss release. Most valuable once Priority 3
-  produces dividend-like income streams.
+  capital losses + carryforward, rental income tax, passive-loss release.
+  Most valuable once Priority 3 produces dividend-like income streams.
+  (~~SALT/property-tax federal deduction~~ done — `FederalSaltDeductionPolicy`
+  with year-keyed cap; AGI phase-out + sales-tax election still deferred.)
 - **`RegimeChange` mid-rollout events** — IPO converts
   `LiquidityEventOnly` → `PublicMarket`. The discriminated-union shape
   already supports it; runtime needs to sample the event month and flip

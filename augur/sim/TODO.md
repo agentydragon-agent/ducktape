@@ -330,7 +330,9 @@ obligation_type="hoa_dues")` for the scenario-set path; product
 - [ ] Finish the real-estate lifecycle: property sale, closing costs,
       mortgage payoff, sale proceeds split, occupancy changes,
       depreciation, §121 exclusion, §1250 recapture, itemized deductions,
-      SALT cap, and qualified-residence mortgage-interest deduction.
+      and qualified-residence mortgage-interest deduction. (~~SALT cap~~
+      done — `FederalSaltDeductionPolicy` with year-keyed `cap_schedule`,
+      modeling gaps documented in `scenario.py`.)
 - [ ] Mid-horizon property purchases. Today the product surface locks
       property purchase to month 0 ("what if I buy now"). Future timeline
       work would let users model "what if I buy in 2 years" via a
@@ -340,7 +342,7 @@ obligation_type="hoa_dues")` for the scenario-set path; product
       `augur/core/annual_tax.py` path handled externalized tax-parameter
       validation, federal/CA standard deductions and ordinary brackets,
       federal long-term capital-gain tiers, NIIT, unrecaptured §1250 gain,
-      California behavioral-health surtax, SALT cap, qualified-residence
+      California behavioral-health surtax, qualified-residence
       mortgage-interest cap, and annual allocation of tax back to monthly
       property-sale, public-security-sale, private-equity-sale, and rental
       income sources. The sim version should be jurisdiction reference data

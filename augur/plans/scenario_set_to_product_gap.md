@@ -84,10 +84,21 @@ Listed in approximate user priority.
 - **What**: distinguish primary residence from rental property; needed for §121 (sale exclusion), §1250 recapture, and rental-income event stream
 - **Effort**: high. Gated on property-sale lifecycle.
 
-### SALT cap (federal Schedule A $10k) — worth porting
+### ~~SALT cap (federal Schedule A)~~ — done
 
-- **What**: cap state-and-local taxes deducted federally; minor magnitude (~$3k/yr error on default CA scenario, ~$100k cumulative on 30-year horizon) but a directional bias that overstates net worth today
-- **Effort**: medium. Touches MID + property-tax federal deduction path.
+Landed as `FederalSaltDeductionPolicy` with a year-keyed `cap_schedule`. Default
+schedule encodes the TCJA + OBBBA timeline ($40k for years 0-3, $10k from year 4);
+empty schedule models the post-OBBBA TCJA sunset (no cap). State income tax for
+the profile's non-federal jurisdictions plus property tax paid this calendar year
+flow into the federal itemized deduction, capped per schedule. Engine processes
+state links before federal SALT links so the cap math has all the inputs.
+
+Modeling gaps explicitly deferred (documented in `scenario.py`):
+
+- AGI-based phase-out of the $40k cap for high earners (treated as flat ceiling).
+- Sales-tax election in lieu of state income tax (for no-state-income-tax states).
+- Payment-vs-accrual timing nuance (we deduct state tax accrued in the calendar
+  year, equivalent to assuming withholding equals accrual).
 
 ## Skip entirely
 
@@ -112,4 +123,4 @@ scenario-set deletion time should also drop the schema.
 1. ~~**Terminal distribution histogram**~~ — done.
 2. **Multi-scenario comparison** (Tier 1) — the only remaining deletion blocker.
 3. **Delete scenario-set** + bridge + legacy frontend route + the rejected/aspirational schema (`PropertyPurchaseEvent.month_index`, crypto/PE schema types, occupancy/rental enums, etc.).
-4. **Tier 2 features** in user-priority order — likely crypto → PE → SALT cap → multi-actor → occupancy.
+4. **Tier 2 features** in user-priority order — likely crypto → PE → multi-actor → occupancy. ~~SALT cap~~ done.
