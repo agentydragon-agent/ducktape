@@ -814,36 +814,35 @@ impl<'a> OverlayGraphView<'a> {
     }
 
     fn has_neighbor(&self, node: ModuleId, direction: WalkDirection) -> bool {
-        let base_neighbors = match direction {
-            WalkDirection::Forward => self.base.successors(node),
-            WalkDirection::Reverse => self.base.predecessors(node),
-        };
-        for neighbor in base_neighbors {
+        let check = |neighbor| {
             let (from, to) = match direction {
                 WalkDirection::Forward => (node, neighbor),
                 WalkDirection::Reverse => (neighbor, node),
             };
-            if self.effective_count(from, to) > 0 {
-                return true;
-            }
-        }
-
-        let overlay_neighbors = match direction {
-            WalkDirection::Forward => self.added_out.get(&node),
-            WalkDirection::Reverse => self.added_in.get(&node),
+            self.effective_count(from, to) > 0
         };
-        if let Some(overlay_neighbors) = overlay_neighbors {
-            for &neighbor in overlay_neighbors {
-                let (from, to) = match direction {
-                    WalkDirection::Forward => (node, neighbor),
-                    WalkDirection::Reverse => (neighbor, node),
-                };
-                if self.effective_count(from, to) > 0 {
+        match direction {
+            WalkDirection::Forward => {
+                if self.base.successors(node).any(check) {
                     return true;
+                }
+                if let Some(overlay) = self.added_out.get(&node) {
+                    if overlay.iter().any(|&n| check(n)) {
+                        return true;
+                    }
+                }
+            }
+            WalkDirection::Reverse => {
+                if self.base.predecessors(node).any(check) {
+                    return true;
+                }
+                if let Some(overlay) = self.added_in.get(&node) {
+                    if overlay.iter().any(|&n| check(n)) {
+                        return true;
+                    }
                 }
             }
         }
-
         false
     }
 
