@@ -312,6 +312,57 @@ is a real guarantee, not a heuristic.
   - `contract_never_un_contracts` — API surface check.
   - Golden: existing factorize output unchanged after the refactor.
 
+#### Commit 1b — Renderer over a cells-derived quotient (Path B)
+
+Split out from commit 1 to keep the staging reviewable. Lands the
+renderer-over-quotient half of commit 1 verbatim:
+
+- Cell-discovery (`proposal_cells_from_atomic_graph`) is preserved
+  bit-for-bit — atomic-DAG reachability closure + overlap
+  coalescing. The cells it produces are then materialized as a
+  `QuotientGraph` partition via a new
+  `QuotientGraph::from_report_with_partition` constructor (one
+  class per cell, owners not in any cell stay singletons). The
+  constructor bypasses the realizability gate because the cells
+  were computed under today's pre-kernel algorithm; the gate
+  applies to the seeding protocol, not to this Path B bridge.
+- `emit_proposals` reads class membership through the quotient
+  (`class_members`, `class_lines`) instead of from `&[(Cell,
+Verdict)]`. Per-cell metadata (`extends_module_id`,
+  `extension_owner_idxs`, verdict) rides alongside as a parallel
+  `CellClassRecord` vec.
+- `promote_anonymous_only_cell_to_extension` survives **unchanged**
+  as a post-pass over the emitted proposals. Its semantics are
+  shape-driven (binding ids empty, single active reference,
+  etc.) — invariant under the renderer-source swap. Commit 2
+  will fold its work into the greedy "extend single consumer"
+  case; commit 1b doesn't touch it.
+- Output is byte-identical to the pre-commit-1 binary,
+  load-bearing-checked by `factorize_golden_output_unchanged` in
+  `peel/quotient_integration_test.rs`. Snapshots live at
+  `devinfra/js/debundle/peel/golden/*.json` for three fixtures:
+  `residual_singletons`, `closed_residual_unit`,
+  `extend_active_via_anon`.
+- New internal test
+  `partition_constructor_contracts_each_group` covers the
+  refactor's bridge invariant: each input group becomes one
+  class; ungrouped owners stay singletons.
+
+**Path A deferred.** Path A (extending the seeding protocol with
+a third pass that contracts atomic-DAG-reachability closures
+under gating) was considered first. The cell-coalescing rules
+("merge overlapping closures of residual-target reachability")
+don't cleanly express as gated pairwise contractions: today's
+closures cross active owners freely when an active owner is a
+member of a residual-containing unit, and the overlap
+coalescing is set-merge, not pairwise. Reworking the closure
+into per-contraction gating would have introduced semantic
+divergence from today's cells; Path B preserves them verbatim
+and is the documented fallback path the plan calls out.
+Commit 2's greedy plugs into the cells-derived quotient
+directly — there's no inherent obstacle to the kernel hosting
+both partitions.
+
 ### Commit 2 — Enable greedy on uncontroversial shapes
 
 - Implement `greedy_merge_to_convergence` with the coupling / size /

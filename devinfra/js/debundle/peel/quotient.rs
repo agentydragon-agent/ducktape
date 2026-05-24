@@ -204,6 +204,51 @@ impl QuotientGraph {
         }
     }
 
+    /// Build a quotient over `report.nodes` and immediately contract
+    /// each owner group into a single class. Unlike `contract`, this
+    /// bypasses the realizability gate — the partition is taken as
+    /// authoritative. Returns the quotient plus a list of class IDs,
+    /// one per input group, in the same order as `groups`.
+    ///
+    /// Used by `peel::factorize::emit_proposals` to render off a
+    /// cells-derived quotient (Path B in
+    /// `plans/peel_proposer_contraction_model.md`'s commit 1b): the
+    /// cell-discovery pass produces equivalence classes that are not
+    /// derivable from the seeding protocol's gated contractions, so
+    /// the kernel hosts them as a partition rather than as a sequence
+    /// of gated contractions.
+    ///
+    /// Groups containing owners already implicitly co-located with
+    /// other groups (overlap) are not supported and will panic; the
+    /// caller is expected to pre-coalesce overlapping groups, which
+    /// `proposal_cells_from_atomic_graph` already does.
+    pub fn from_report_with_partition(
+        report: &OwnerGraphReport,
+        cap_lines: usize,
+        groups: &[Vec<OwnerIdx>],
+    ) -> (Self, Vec<ClassId>) {
+        let mut q = Self::from_report(report, cap_lines);
+        let mut group_class_ids = Vec::with_capacity(groups.len());
+        for group in groups {
+            let mut winner: Option<ClassId> = None;
+            for &owner in group {
+                let c = q.class_of(owner);
+                match winner {
+                    None => winner = Some(c),
+                    Some(w) if c == w => {}
+                    Some(w) => {
+                        let merged = q
+                            .merge_classes_unchecked(w, c)
+                            .expect("partition group owners are pre-coalesced");
+                        winner = Some(merged);
+                    }
+                }
+            }
+            group_class_ids.push(winner.expect("partition group must be non-empty"));
+        }
+        (q, group_class_ids)
+    }
+
     /// The class an owner currently belongs to.
     pub fn class_of(&self, o: OwnerIdx) -> ClassId {
         self.owner_to_class[o.0]
@@ -330,6 +375,25 @@ impl QuotientGraph {
     /// id (`c1.min(c2)`).
     pub fn contract(&mut self, c1: ClassId, c2: ClassId) -> Result<ClassId, ContractRejected> {
         self.check_merge(c1, c2)?;
+        self.merge_classes_unchecked(c1, c2)
+    }
+
+    /// Merge two classes without consulting the realizability /
+    /// residual / cap gates. The lower of the two `ClassId`s
+    /// survives; the higher is emptied. Returns the survivor.
+    ///
+    /// `SameClass` is still rejected (caller error). All other gate
+    /// clauses are bypassed — this method is the partition-driven
+    /// entrypoint used by `from_report_with_partition`. External
+    /// callers should prefer `contract`.
+    fn merge_classes_unchecked(
+        &mut self,
+        c1: ClassId,
+        c2: ClassId,
+    ) -> Result<ClassId, ContractRejected> {
+        if c1 == c2 {
+            return Err(ContractRejected::SameClass);
+        }
         let (winner, loser) = if c1 < c2 { (c1, c2) } else { (c2, c1) };
         // Move members from loser to winner.
         let loser_members = std::mem::take(&mut self.classes[loser.0].members);

@@ -45,6 +45,7 @@ props/specimens/*/*/code/**
 
 # JS debundler golden testdata - must match pipeline output exactly, not reformatted
 devinfra/js/debundle/harness/testdata/**
+devinfra/js/debundle/peel/golden/**
 
 # Lock files - managed by package managers
 **/pnpm-lock.yaml

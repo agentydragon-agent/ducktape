@@ -15,6 +15,18 @@
 //!
 //! Diagnostics come through separately. A diagnostic is not a module
 //! assignment the author can land as-is.
+//!
+//! ## Renderer over `QuotientGraph`
+//!
+//! Commit 1b of `plans/peel_proposer_contraction_model.md` routes
+//! proposal emission through the kernel: the cell-discovery pass
+//! (`proposal_cells_from_atomic_graph`) materializes today's
+//! atomic-DAG-closure cells as a `QuotientGraph` partition (one class
+//! per cell, residual catch-alls as singletons), and `emit_proposals`
+//! reads class membership through that quotient. Commit 2's greedy
+//! plugs into the same kernel by applying additional contractions on
+//! top before emission. The output of `factorize` is byte-identical
+//! to the pre-kernel binary's output for the same input.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
@@ -27,7 +39,7 @@ use analysis::{FactorizeDiagnosticReason, LineRange, OwnerGraphReport, PeelCandi
 use spec_modules::load_active_claims;
 
 use crate::quotient::{
-    QuotientGraph, SeedContractionRejected, SpecModuleGroup, build_seed_quotient,
+    ClassId, OwnerIdx, QuotientGraph, SeedContractionRejected, SpecModuleGroup, build_seed_quotient,
 };
 
 #[derive(Debug, Clone)]
@@ -202,7 +214,7 @@ pub fn factorize(
         })
         .collect();
 
-    let (cells, diagnostics) =
+    let (quotient, cell_records, diagnostics) =
         proposal_cells_from_atomic_graph(graph, &owner_index, size_cap_lines);
 
     // Per-cell edge accounting. We walk every constraining edge
@@ -233,7 +245,8 @@ pub fn factorize(
     }
 
     let proposals = emit_proposals(
-        &cells,
+        &quotient,
+        &cell_records,
         &residual_constraining_edges,
         &edges_to_active,
         graph,
@@ -330,11 +343,38 @@ pub fn build_factorize_seed_quotient(
     build_seed_quotient(graph, &graph.atomic_graph.nodes, &spec_modules, cap_lines)
 }
 
+/// Compute the atomic-DAG-reachability-closure cells that today's
+/// proposer renders into proposals, then construct a `QuotientGraph`
+/// whose equivalence classes are exactly those cells.
+///
+/// Returns:
+/// - the cells-derived quotient (residual atomic-unit closures
+///   contracted into single classes; unaffected owners remain
+///   singletons),
+/// - a list of `CellClassRecord` (one per emitted cell, in the same
+///   order today's pipeline produces) carrying the class id, the
+///   `extends_module_id`/`extension_owner_idxs` metadata, and the
+///   atomic-DAG-closure verdict,
+/// - the diagnostic list for cells that fail the active-module or
+///   size-cap gate.
+///
+/// This is the **Path B** implementation of commit 1b in
+/// `plans/peel_proposer_contraction_model.md`: today's cell
+/// semantics (transitive closure over atomic-DAG edges to
+/// residual-containing units, with overlap coalescing) is preserved
+/// verbatim; the kernel hosts the resulting partition as a quotient
+/// so the renderer (`emit_proposals`) reads class membership
+/// uniformly. Commit 2's greedy will plug in on top of this same
+/// quotient.
 fn proposal_cells_from_atomic_graph(
     graph: &OwnerGraphReport,
     owner_index: &HashMap<&str, usize>,
     size_cap_lines: usize,
-) -> (Vec<(Cell, Verdict)>, Vec<FactorizeDiagnosticReport>) {
+) -> (
+    QuotientGraph,
+    Vec<CellClassRecord>,
+    Vec<FactorizeDiagnosticReport>,
+) {
     let unit_index: HashMap<&str, usize> = graph
         .atomic_graph
         .nodes
@@ -379,8 +419,12 @@ fn proposal_cells_from_atomic_graph(
         .collect();
     coalesce_overlapping_sets(&mut closed_sets);
 
-    let mut cells = Vec::<(Cell, Verdict)>::new();
+    // First pass: classify each cell into "diagnostic" or
+    // "renderable" (= one cell-class in the quotient). Build the
+    // owner-index partition (`render_groups`) for the kernel.
     let mut diagnostics = Vec::<FactorizeDiagnosticReport>::new();
+    let mut render_groups: Vec<Vec<OwnerIdx>> = Vec::new();
+    let mut render_metadata: Vec<RenderCellMetadata> = Vec::new();
     let mut seen = BTreeSet::<(Option<String>, Vec<usize>)>::new();
     for closed_units in closed_sets {
         let cell = cell_from_units(graph, owner_index, &closed_units);
@@ -424,16 +468,53 @@ fn proposal_cells_from_atomic_graph(
             ));
             continue;
         }
-        cells.push((
-            cell,
-            Verdict {
+        let group: Vec<OwnerIdx> = cell.owners.iter().map(|&idx| OwnerIdx(idx)).collect();
+        render_groups.push(group);
+        render_metadata.push(RenderCellMetadata {
+            extends_module_id: cell.extends_module_id,
+            extension_owner_idxs: cell.extension_owner_idxs,
+            verdict: Verdict {
                 status: PeelCandidateStatus::PeelableNow,
                 landable_today: true,
                 cycle_blocker_owner_ids: Vec::new(),
             },
-        ));
+        });
     }
-    (cells, diagnostics)
+
+    // Materialize the partition into a quotient. The kernel hosts the
+    // equivalence relation; the renderer reads class members through
+    // `quotient.class_members`.
+    let (quotient, group_class_ids) =
+        QuotientGraph::from_report_with_partition(graph, size_cap_lines, &render_groups);
+    let cell_records: Vec<CellClassRecord> = render_metadata
+        .into_iter()
+        .zip(group_class_ids)
+        .map(|(meta, class_id)| CellClassRecord {
+            class_id,
+            extends_module_id: meta.extends_module_id,
+            extension_owner_idxs: meta.extension_owner_idxs,
+            verdict: meta.verdict,
+        })
+        .collect();
+    (quotient, cell_records, diagnostics)
+}
+
+/// Cell-class record passed to `emit_proposals`. The class id refers
+/// into the cells-derived quotient. Extension metadata is derived
+/// from owner destinations at cell-discovery time and survives the
+/// refactor unchanged.
+#[derive(Debug, Clone)]
+struct CellClassRecord {
+    class_id: ClassId,
+    extends_module_id: Option<String>,
+    extension_owner_idxs: BTreeSet<usize>,
+    verdict: Verdict,
+}
+
+struct RenderCellMetadata {
+    extends_module_id: Option<String>,
+    extension_owner_idxs: BTreeSet<usize>,
+    verdict: Verdict,
 }
 
 fn close_residual_units(
@@ -520,36 +601,49 @@ fn diagnostic_from_cell(
     reason: FactorizeDiagnosticReason,
     active_modules_referenced: Vec<String>,
 ) -> FactorizeDiagnosticReport {
-    let proposal = build_proposal(
-        idx,
-        cell,
-        &Verdict {
-            status,
-            landable_today: false,
-            cycle_blocker_owner_ids: Vec::new(),
-        },
-        &ProposalContext {
-            graph,
-            residual_edges: &[],
-            active_edges: &[],
-            owner_to_cell: HashMap::new(),
-        },
-    );
+    // Diagnostics never reach the renderer-over-quotient path; they
+    // close before a class is allocated. Compute the same surface
+    // fields directly from the cell's owners.
+    let mut owner_ids: Vec<String> = Vec::with_capacity(cell.owners.len());
+    let mut binding_ids: BTreeSet<String> = BTreeSet::new();
+    let mut line_range = LineRange::new();
+    let mut max_ordinal = 0usize;
+    let mut min_ordinal = usize::MAX;
+    for &owner_idx in &cell.owners {
+        let node = &graph.nodes[owner_idx];
+        owner_ids.push(node.id.clone());
+        for binding in &node.declared_bindings {
+            binding_ids.insert(binding.binding.to_string());
+        }
+        if let Some(loc) = &node.source_location {
+            line_range.expand(loc);
+        }
+        min_ordinal = min_ordinal.min(node.statement_ordinal.0);
+        max_ordinal = max_ordinal.max(node.statement_ordinal.0);
+    }
+    owner_ids.sort();
     FactorizeDiagnosticReport {
         diagnostic_id: format!("diagnostic:{}_{idx:04}", diagnostic_reason_key(reason)),
-        owner_ids: proposal.owner_ids,
-        binding_ids: proposal.binding_ids,
-        size_lines_estimate: proposal.size_lines_estimate,
-        source_line_range: proposal.source_line_range,
-        ordinal_span: proposal.ordinal_span,
+        owner_ids,
+        binding_ids: binding_ids.into_iter().collect(),
+        size_lines_estimate: cell.lines,
+        source_line_range: line_range.into_array(),
+        ordinal_span: max_ordinal.saturating_sub(min_ordinal),
         status,
         reason,
-        cycle_blocker_owner_ids: proposal.cycle_blocker_owner_ids,
+        cycle_blocker_owner_ids: Vec::new(),
         active_modules_referenced,
         extends_module_id: cell.extends_module_id.clone(),
     }
 }
 
+/// Intermediate representation of one atomic-DAG-reachability
+/// closure produced by `proposal_cells_from_atomic_graph`. Used to
+/// classify the closure into "diagnostic-bound" (active-module
+/// conflict, exceeds size cap) vs "renderable" and to materialize
+/// the resulting partition into a `QuotientGraph`. The renderer
+/// (`emit_proposals`) does not see `Cell`; it reads class membership
+/// directly from the quotient.
 #[derive(Debug, Clone)]
 struct Cell {
     owners: BTreeSet<usize>,
@@ -558,7 +652,9 @@ struct Cell {
     extension_owner_idxs: BTreeSet<usize>,
 }
 
-/// Per-cell gate result from the atomic-DAG closure.
+/// Per-cell gate result from the atomic-DAG closure. Attached to
+/// each `CellClassRecord` so the renderer can stamp the proposal
+/// with the cell-discovery pass's verdict.
 #[derive(Debug, Clone)]
 struct Verdict {
     status: PeelCandidateStatus,
@@ -579,42 +675,52 @@ fn owner_line_count(node: &analysis::OwnerGraphNodeReport) -> usize {
 
 struct ProposalContext<'a> {
     graph: &'a OwnerGraphReport,
+    quotient: &'a QuotientGraph,
     residual_edges: &'a [(usize, usize)],
     active_edges: &'a [(usize, String)],
+    /// Map from owner-index to the cell-record index whose class
+    /// contains this owner. Owners not in any rendered cell-class
+    /// are absent from the map.
     owner_to_cell: HashMap<usize, usize>,
 }
 
 fn emit_proposals(
-    cells: &[(Cell, Verdict)],
+    quotient: &QuotientGraph,
+    cell_records: &[CellClassRecord],
     residual_edges: &[(usize, usize)],
     active_edges: &[(usize, String)],
     graph: &OwnerGraphReport,
 ) -> Vec<FactorizeProposal> {
+    // Build owner-to-cell from the quotient's class memberships,
+    // keyed by cell-record index (not class id). The renderer's
+    // edge-attribution logic treats cells as units; it doesn't need
+    // class ids, just per-cell identity.
     let mut owner_to_cell: HashMap<usize, usize> = HashMap::new();
-    for (cell_idx, (cell, _)) in cells.iter().enumerate() {
-        for &owner in &cell.owners {
-            owner_to_cell.insert(owner, cell_idx);
+    for (cell_idx, record) in cell_records.iter().enumerate() {
+        for owner in quotient.class_members(record.class_id) {
+            owner_to_cell.insert(owner.0, cell_idx);
         }
     }
 
     let ctx = ProposalContext {
         graph,
+        quotient,
         residual_edges,
         active_edges,
         owner_to_cell,
     };
 
-    let mut proposals: Vec<FactorizeProposal> = cells
+    let mut proposals: Vec<FactorizeProposal> = cell_records
         .iter()
         .enumerate()
-        .map(|(cell_idx, (cell, verdict))| build_proposal(cell_idx, cell, verdict, &ctx))
+        .map(|(cell_idx, record)| build_proposal(cell_idx, record, &ctx))
         .collect();
 
     // Residual-dependency depth sort with source-line tie-break.
     // Certified analyzer output normally has no outgoing residual
     // constraining edges; this still keeps legacy/synthetic reports
     // deterministic.
-    let depths = compute_topo_depths(cells.len(), residual_edges, &ctx.owner_to_cell);
+    let depths = compute_topo_depths(cell_records.len(), residual_edges, &ctx.owner_to_cell);
     let mut indexed: Vec<(usize, FactorizeProposal)> = proposals.drain(..).enumerate().collect();
     indexed.sort_by(|(li, left), (ri, right)| {
         depths[*li].cmp(&depths[*ri]).then_with(|| {
@@ -755,17 +861,23 @@ fn compute_topo_depths(
 
 fn build_proposal(
     cell_idx: usize,
-    cell: &Cell,
-    verdict: &Verdict,
+    record: &CellClassRecord,
     ctx: &ProposalContext,
 ) -> FactorizeProposal {
-    let mut owner_ids: Vec<String> = Vec::with_capacity(cell.owners.len());
+    // Class members come from the quotient. The renderer treats the
+    // class as the unit of emission — exactly what commit 2's greedy
+    // will produce after additional contractions.
+    let class_id = record.class_id;
+    let owner_idxs: Vec<usize> = ctx.quotient.class_members(class_id).map(|o| o.0).collect();
+    let class_lines = ctx.quotient.class_lines(class_id);
+
+    let mut owner_ids: Vec<String> = Vec::with_capacity(owner_idxs.len());
     let mut anonymous_owner_ids: Vec<String> = Vec::new();
     let mut binding_ids: BTreeSet<String> = BTreeSet::new();
     let mut line_range = LineRange::new();
     let mut max_ordinal = 0usize;
     let mut min_ordinal = usize::MAX;
-    for &owner_idx in &cell.owners {
+    for &owner_idx in &owner_idxs {
         let node = &ctx.graph.nodes[owner_idx];
         owner_ids.push(node.id.clone());
         if node.declared_bindings.is_empty() {
@@ -814,9 +926,9 @@ fn build_proposal(
 
     // `status`, `landable_today`, and blocker lists come from the atomic-DAG
     // closure pass in this CLI invocation.
-    let cycle_blocker_owner_ids = verdict.cycle_blocker_owner_ids.clone();
+    let cycle_blocker_owner_ids = record.verdict.cycle_blocker_owner_ids.clone();
     let extension_owner_ids: Vec<String> = {
-        let mut ids: Vec<String> = cell
+        let mut ids: Vec<String> = record
             .extension_owner_idxs
             .iter()
             .map(|&idx| ctx.graph.nodes[idx].id.clone())
@@ -824,7 +936,7 @@ fn build_proposal(
         ids.sort();
         ids
     };
-    let proposed_module_id = match &cell.extends_module_id {
+    let proposed_module_id = match &record.extends_module_id {
         Some(target) => format!("extend:{target}"),
         None => format!("auto_partition_{cell_idx:04}"),
     };
@@ -833,7 +945,7 @@ fn build_proposal(
         owner_ids,
         binding_ids: binding_ids.into_iter().collect(),
         anonymous_statement_owner_ids: anonymous_owner_ids,
-        size_lines_estimate: cell.lines,
+        size_lines_estimate: class_lines,
         source_line_range: line_range.into_array(),
         ordinal_span: max_ordinal.saturating_sub(min_ordinal),
         internal_edges: internal,
@@ -842,9 +954,9 @@ fn build_proposal(
         edges_to_active_modules: to_active,
         active_modules_referenced,
         cycle_blocker_owner_ids,
-        status: verdict.status,
-        landable_today: verdict.landable_today,
-        extends_module_id: cell.extends_module_id.clone(),
+        status: record.verdict.status,
+        landable_today: record.verdict.landable_today,
+        extends_module_id: record.extends_module_id.clone(),
         extension_owner_ids,
     }
 }

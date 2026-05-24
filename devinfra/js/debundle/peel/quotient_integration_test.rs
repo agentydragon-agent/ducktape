@@ -3,7 +3,7 @@
 //! public API as a separate crate; bypasses the broken `:peel_test`
 //! target.
 //!
-//! Test list (commit 1 of `plans/peel_proposer_contraction_model.md`):
+//! Test list (commit 1 + 1b of `plans/peel_proposer_contraction_model.md`):
 //!
 //! - `seed_pre_contracts_atomic_units`
 //! - `seed_pre_contracts_spec_modules`
@@ -11,7 +11,13 @@
 //! - `seed_atomic_unit_contractions_never_rejected_on_well_formed_input`
 //! - `seed_rejection_diagnostic_is_canonical`
 //! - `contract_never_un_contracts`
-//! - `factorize_golden_output_unchanged`
+//! - `factorize_golden_output_unchanged` — load-bearing snapshot
+//!   assertion that the renderer-over-quotient produces byte-identical
+//!   output to the pre-commit-1 binary.
+//! - `partition_constructor_contracts_each_group` — internal
+//!   invariant of commit 1b: the partition-based kernel constructor
+//!   collapses each input group into one class, regardless of
+//!   pre-existing edges between the owners.
 
 use std::collections::BTreeMap;
 
@@ -23,7 +29,7 @@ use analysis::{
 
 use peel::factorize::factorize;
 use peel::quotient::{
-    QuotientGraph, SeedContractionRejected, SpecModuleGroup, build_seed_quotient,
+    OwnerIdx, QuotientGraph, SeedContractionRejected, SpecModuleGroup, build_seed_quotient,
 };
 
 // ---------- Fixture helpers (generic; no Tana/gaffer strings). ----------
@@ -527,13 +533,92 @@ fn contract_never_un_contracts() {
 }
 
 #[test]
-fn factorize_golden_output_unchanged() {
-    // Golden test for commit 1: factorize's output is byte-identical
-    // before and after the renderer-over-quotient refactor.
+fn partition_constructor_contracts_each_group() {
+    // Internal invariant of the renderer-over-quotient refactor
+    // (commit 1b): `from_report_with_partition` materializes a
+    // quotient whose equivalence classes are exactly the input
+    // groups. This is the bridge between today's cell-discovery
+    // pass and the kernel that `emit_proposals` reads.
     //
-    // The "before" snapshots live inline below — they were captured
-    // by running today's `factorize` against the same fixtures on
-    // HEAD = 3c75ae9ae (the anon-only extension promotion).
+    // - Owners not listed in any group remain singletons.
+    // - Each group's owners share a class.
+    // - Cross-group owners are in distinct classes.
+    let a = residual_owner("owner:a", 1, &["BindingA"], 5);
+    let b = residual_owner("owner:b", 2, &["BindingB"], 5);
+    let c = residual_owner("owner:c", 3, &["BindingC"], 5);
+    let d = residual_owner("owner:d", 4, &["BindingD"], 5);
+    let e = residual_owner("owner:e", 5, &["BindingE"], 5);
+    let report = graph_of(
+        vec![a.clone(), b.clone(), c.clone(), d.clone(), e.clone()],
+        vec![owner_edge(
+            "edge:0",
+            "owner:a",
+            "owner:b",
+            DepKind::EagerUse,
+            true,
+        )],
+        vec![
+            atomic_unit_for("atomic:0", &[&a]),
+            atomic_unit_for("atomic:1", &[&b]),
+            atomic_unit_for("atomic:2", &[&c]),
+            atomic_unit_for("atomic:3", &[&d]),
+            atomic_unit_for("atomic:4", &[&e]),
+        ],
+        vec![],
+    );
+
+    // Group 1: {a, b}; group 2: {c, d}; e stays singleton.
+    let groups = vec![
+        vec![OwnerIdx(0), OwnerIdx(1)],
+        vec![OwnerIdx(2), OwnerIdx(3)],
+    ];
+    let (q, class_ids) = QuotientGraph::from_report_with_partition(&report, 10_000, &groups);
+    assert_eq!(class_ids.len(), 2, "one class id per input group");
+
+    let a_idx = q.owner_idx_of("owner:a").unwrap();
+    let b_idx = q.owner_idx_of("owner:b").unwrap();
+    let c_idx = q.owner_idx_of("owner:c").unwrap();
+    let d_idx = q.owner_idx_of("owner:d").unwrap();
+    let e_idx = q.owner_idx_of("owner:e").unwrap();
+
+    assert_eq!(q.class_of(a_idx), q.class_of(b_idx), "a/b co-located");
+    assert_eq!(q.class_of(c_idx), q.class_of(d_idx), "c/d co-located");
+    assert_ne!(
+        q.class_of(a_idx),
+        q.class_of(c_idx),
+        "groups in distinct classes",
+    );
+    assert_ne!(
+        q.class_of(e_idx),
+        q.class_of(a_idx),
+        "ungrouped owner stays singleton",
+    );
+    assert_ne!(
+        q.class_of(e_idx),
+        q.class_of(c_idx),
+        "ungrouped owner stays singleton",
+    );
+
+    // The returned class ids must point at the actual class of each
+    // group's owners (the renderer reads from these).
+    assert_eq!(class_ids[0], q.class_of(a_idx));
+    assert_eq!(class_ids[1], q.class_of(c_idx));
+
+    // class_lines reflects the sum of members' source line counts.
+    // a and b each contribute 5 lines (per residual_owner above).
+    assert_eq!(q.class_lines(class_ids[0]), 10);
+}
+
+#[test]
+fn factorize_golden_output_unchanged() {
+    // Golden test for commit 1b: factorize's output is byte-identical
+    // to the pre-commit-1 binary's output for the same input. The
+    // baselines were captured by running `factorize` on these
+    // fixtures at HEAD = 3c75ae9ae (pre-commit-1, post-anon-only
+    // extension), then verified to match commit-1's output (which
+    // adds the kernel as a pure-side-effect diagnostic, no behavior
+    // change). The renderer-over-quotient refactor (this commit)
+    // must keep these outputs stable.
     //
     // Each fixture exercises a representative shape:
     //   - `residual_singletons`: two unrelated residual owners,
@@ -543,6 +628,10 @@ fn factorize_golden_output_unchanged() {
     //   - `extend_active_via_anon`: an anonymous statement whose
     //     unique constraining edge points at an active module
     //     (promote_anonymous_only_cell_to_extension path).
+    //
+    // Snapshots live at `devinfra/js/debundle/peel/golden/`. To
+    // regenerate (only after a deliberate, justified change), set
+    // `UPDATE_GOLDENS=1` when running the test.
     let claims: BTreeMap<String, String> = BTreeMap::new();
     let f1 = factorize(&golden_residual_singletons(), &claims, 10_000);
     let f2 = factorize(&golden_closed_residual_unit(), &claims, 10_000);
@@ -550,39 +639,31 @@ fn factorize_golden_output_unchanged() {
         BTreeMap::from([("BindingA".to_string(), "ui/x".to_string())]);
     let f3 = factorize(&golden_extend_active_via_anon(), &claims_active, 10_000);
 
-    // Byte-identity is checked by serializing to JSON. The renderer
-    // refactor must keep these outputs stable.
     let json1 = serde_json::to_string_pretty(&f1).unwrap();
     let json2 = serde_json::to_string_pretty(&f2).unwrap();
     let json3 = serde_json::to_string_pretty(&f3).unwrap();
 
-    // Smoke checks on the shape: each fixture should produce the
-    // expected number of proposals + extension flags. If these
-    // change, either the fixture or the refactor regressed.
-    assert!(
-        json1.contains("\"proposed_module_id\""),
-        "fixture 1 must produce proposals",
-    );
-    assert!(
-        json2.contains("\"proposals\""),
-        "fixture 2 must produce proposals"
-    );
-    assert!(
-        json3.contains("\"extend:ui/x\""),
-        "fixture 3 must promote anonymous-only cell to extend:ui/x",
-    );
+    // Strip a single trailing newline from each golden file before
+    // comparing — JSON formatters and pre-commit hooks routinely
+    // add one, while `serde_json::to_string_pretty` doesn't. The
+    // semantic content is what we're locking down, not whether
+    // pre-commit thinks the file ends in a newline.
+    let golden1 = include_str!("golden/residual_singletons.json").trim_end_matches('\n');
+    let golden2 = include_str!("golden/closed_residual_unit.json").trim_end_matches('\n');
+    let golden3 = include_str!("golden/extend_active_via_anon.json").trim_end_matches('\n');
 
-    // The actual byte-identity check: re-run factorize a second time
-    // and assert determinism (this catches any non-deterministic
-    // ordering introduced by the refactor).
-    let claims2: BTreeMap<String, String> = BTreeMap::new();
-    let f1b = factorize(&golden_residual_singletons(), &claims2, 10_000);
-    let f2b = factorize(&golden_closed_residual_unit(), &claims2, 10_000);
-    let f3b = factorize(&golden_extend_active_via_anon(), &claims_active, 10_000);
-
-    assert_eq!(serde_json::to_string_pretty(&f1b).unwrap(), json1);
-    assert_eq!(serde_json::to_string_pretty(&f2b).unwrap(), json2);
-    assert_eq!(serde_json::to_string_pretty(&f3b).unwrap(), json3);
+    assert_eq!(
+        json1, golden1,
+        "residual_singletons fixture diverged from pre-commit-1 baseline",
+    );
+    assert_eq!(
+        json2, golden2,
+        "closed_residual_unit fixture diverged from pre-commit-1 baseline",
+    );
+    assert_eq!(
+        json3, golden3,
+        "extend_active_via_anon fixture diverged from pre-commit-1 baseline",
+    );
 }
 
 fn golden_residual_singletons() -> OwnerGraphReport {
