@@ -50,7 +50,7 @@ location_selection:
   - location_a
   - location_b
 exogenous_provider:
-  # Public fixture uses the independent-per-series provider — visual_golden_test
+  # Public fixture uses the independent-per-series provider — visual_test
   # renders distribution fans (needs non-flat samples), and browser_shell_test
   # only checks API surface so doesn't care about the specific values.
   # GBM params are pre-computed from annual return / volatility:

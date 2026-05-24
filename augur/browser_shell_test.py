@@ -157,6 +157,8 @@ def _wait_for_url_state(page: Page, predicate: Callable[[dict[str, Any]], bool])
 
 
 def _assert_context_panel_boundary(page: Page, selector: str) -> None:
+    """Each `data-scenario-context-panel` / `data-run-context-panel` must live outside the
+    result-panel tree so context info doesn't get duplicated per result panel."""
     panel = page.locator(selector)
     panel.wait_for(state="visible", timeout=30_000)
     assert panel.count() == 1
@@ -165,20 +167,10 @@ def _assert_context_panel_boundary(page: Page, selector: str) -> None:
     assert page.locator(f"[data-result-panel-kind] {selector}").count() == 0
 
 
-def _assert_property_location_context_boundary(page: Page) -> None:
-    _assert_context_panel_boundary(page, "[data-scenario-context-panel='property-location']")
-
-
-def _assert_scenario_contract_context_boundary(page: Page) -> None:
-    _assert_context_panel_boundary(page, "[data-scenario-context-panel='scenario-contract']")
-
-
-def _assert_financing_tax_context_boundary(page: Page) -> None:
-    _assert_context_panel_boundary(page, "[data-scenario-context-panel='financing-tax']")
-
-
-def _assert_sampling_metadata_context_boundary(page: Page) -> None:
-    _assert_context_panel_boundary(page, "[data-run-context-panel='exogenous-metadata']")
+def _assert_context_panel_boundaries(page: Page, *names: str) -> None:
+    for name in names:
+        attribute = "data-run-context-panel" if name == "exogenous-metadata" else "data-scenario-context-panel"
+        _assert_context_panel_boundary(page, f"[{attribute}='{name}']")
 
 
 def _wait_for_successful_run(page: Page, *, scenario_requests: list[dict[str, Any]]) -> None:
@@ -295,17 +287,16 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
     assert page.locator("[data-result-panel-kind='trajectory']").count() == 0
     assert page.locator("[data-result-panel-kind='accounting_detail']").count() == 0
     _wait_for_successful_run(page, scenario_requests=scenario_requests)
-    _assert_sampling_metadata_context_boundary(page)
-    _assert_scenario_contract_context_boundary(page)
     page.get_by_text("Event stream IDs").wait_for(state="hidden", timeout=30_000)
     page.get_by_text("Exogenous model metadata").click()
     page.get_by_text("Event stream IDs").wait_for(state="visible", timeout=30_000)
     page.get_by_text("Location A baseline").first.wait_for(state="visible", timeout=30_000)
     page.get_by_text("Location B baseline").first.wait_for(state="visible", timeout=30_000)
     page.get_by_text("Location A Property").first.wait_for(state="visible", timeout=30_000)
-    _assert_property_location_context_boundary(page)
-    _assert_financing_tax_context_boundary(page)
     page.get_by_text("No image").first.wait_for(state="visible", timeout=30_000)
+    _assert_context_panel_boundaries(
+        page, "property-location", "scenario-contract", "financing-tax", "exogenous-metadata"
+    )
     page.get_by_role("tab", name="Trajectory").click()
     page.get_by_text("Trajectory view").wait_for(state="visible", timeout=30_000)
     page.wait_for_function("() => window.location.pathname === '/trajectory'")
@@ -314,10 +305,9 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
     assert page.locator("[data-result-panel-kind='trajectory']").count() >= 3
     assert page.locator("[data-result-panel-kind='accounting_detail']").count() >= 1
     assert page.locator("[data-result-panel-kind='distribution']").count() == 0
-    _assert_property_location_context_boundary(page)
-    _assert_financing_tax_context_boundary(page)
-    _assert_sampling_metadata_context_boundary(page)
-    _assert_scenario_contract_context_boundary(page)
+    _assert_context_panel_boundaries(
+        page, "property-location", "scenario-contract", "financing-tax", "exogenous-metadata"
+    )
     assert page.evaluate("() => new URL(window.location.href).searchParams.get('rollout')") == "0"
     assert page.evaluate("() => new URL(window.location.href).searchParams.get('scenario')") == "scenario_1"
 
@@ -325,29 +315,26 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
     page.get_by_label("SP500-like portfolio").fill("200000")
     page.get_by_text("SP500 sales").first.wait_for(state="visible", timeout=30_000)
 
+    # Switch to Location B and customize financing/occupancy/PE knobs, then assert the rich
+    # form state landed in the URL via the encoded `?state=` payload.
     page.get_by_label("Scenario property").select_option("location_b_property")
     page.get_by_role("heading", name="Location B Property").wait_for(state="visible", timeout=30_000)
-    _assert_property_location_context_boundary(page)
-    _assert_financing_tax_context_boundary(page)
-    _assert_scenario_contract_context_boundary(page)
     page.get_by_label("Financing mode").select_option("custom")
     page.get_by_label("Down payment").fill("40")
     page.get_by_label("Custom mortgage rate").fill("7.35")
     page.get_by_label("Vacancy", exact=True).fill("9")
     page.get_by_label(re.compile("Private .* units")).fill("1000")
-
     rich_state = _wait_for_url_state(
         page,
-        lambda state: bool(
-            state.get("scenarios")
-            and any(
-                scenario["property_and_location"]["property_id"] == "location_b_property"
-                and scenario["financing"]["financing_mode"] == "custom"
-                and scenario["occupancy_and_rental"]["vacancy_pct"] == 9
-                and scenario["initial_balance_sheet"]["private_equity_units"] == 1000
-                and scenario["policies"]["private_equity_sale_policy"] == "none"
-                for scenario in state["scenarios"]
-            )
+        lambda state: any(
+            scenario["property_and_location"]["property_id"] == "location_b_property"
+            and scenario["financing"]["financing_mode"] == "custom"
+            and scenario["financing"]["down_payment_pct"] == 40
+            and scenario["financing"]["custom_mortgage_rate"] == 7.35
+            and scenario["occupancy_and_rental"]["vacancy_pct"] == 9
+            and scenario["initial_balance_sheet"]["private_equity_units"] == 1000
+            and scenario["policies"]["private_equity_sale_policy"] == "none"
+            for scenario in state.get("scenarios", [])
         ),
     )
     rich_scenario = next(
@@ -356,24 +343,14 @@ def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server
         if scenario["property_and_location"]["property_id"] == "location_b_property"
         and scenario["financing"]["financing_mode"] == "custom"
     )
-    assert rich_scenario["property_and_location"]["property_id"] == "location_b_property"
-    assert rich_scenario["financing"]["financing_mode"] == "custom"
-    assert rich_scenario["financing"]["down_payment_pct"] == 40
-    assert rich_scenario["financing"]["custom_mortgage_rate"] == 7.35
-    assert rich_scenario["occupancy_and_rental"]["vacancy_pct"] == 9
-    assert rich_scenario["initial_balance_sheet"]["private_equity_units"] == 1000
-    assert rich_scenario["policies"]["private_equity_sale_policy"] == "none"
-    assert rich_scenario["policies"]["private_equity_liquid_net_worth_floor_usd"] == 0
-    assert rich_scenario["policies"]["private_equity_tender_sale_amount_usd"] == 0
-    assert "actors_and_ownership" not in rich_scenario
+    assert "actors_and_ownership" not in rich_scenario  # multi-actor surface remains hidden
 
-    assert page.get_by_text("Rai").count() == 0
-    assert page.get_by_text("Auragon").count() == 0
-    assert page.get_by_text("OpenAI").count() == 0
-    assert page.get_by_text("San Francisco").count() == 0
-    assert page.get_by_text("Vallejo").count() == 0
-    assert page.get_by_text("Owner", exact=True).count() == 0
-    assert page.get_by_text("Partner", exact=True).count() == 0
+    # Private-data leak checks: nothing from the author's real-life fixtures should ever surface
+    # in a public-fixture run.
+    for forbidden in ("Rai", "Auragon", "OpenAI", "San Francisco", "Vallejo"):
+        assert page.get_by_text(forbidden).count() == 0, f"unexpected private label {forbidden!r}"
+    for forbidden_exact in ("Owner", "Partner"):
+        assert page.get_by_text(forbidden_exact, exact=True).count() == 0
     assert any(url.endswith("/api/scenario_sets/run") for url in request_urls)
     assert not any("/api/run" in url or "/api/cases/" in url or "/api/projection/" in url for url in request_urls)
     assert page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth + 1")

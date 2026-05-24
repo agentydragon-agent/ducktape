@@ -2,16 +2,16 @@
 
 Update flow for intentional frontend changes:
 
-    nix develop --command bazelisk test //augur:visual_golden_test \
-        --test_env=UPDATE_GOLDEN=1 \
+    nix develop --command bazelisk test //augur:visual_test \\
+        --test_env=UPDATE_GOLDEN=1 \\
         --remote_upload_local_results=false --nocache_test_results
 
 Then copy the produced PNGs from the test's undeclared outputs into
 `augur/frontend/__screenshots__/` and rerun this test without `UPDATE_GOLDEN`.
 With BuildBuddy/RBE, use the invocation id printed by Bazel:
 
-    for f in distribution_default distribution_fan trajectory_scenario_2_rollout_3; do
-        bbapi artifact "$INV" "test.outputs/$f.png" \
+    for f in distribution_default distribution_fan trajectory_scenario_2_rollout_3 product_cash_runway; do
+        bbapi artifact "$INV" "test.outputs/$f.png" \\
             > "augur/frontend/__screenshots__/$f.png"
     done
 """
@@ -27,8 +27,8 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections.abc import Iterator
-from dataclasses import dataclass
+from collections.abc import Callable, Iterator
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -55,9 +55,10 @@ if TYPE_CHECKING:
 class VisualCase:
     name: str
     path: str
-    visible_text: str
-    hidden_text: str
-    min_fan_band_height: float | None = None
+    wait_ready: Callable[[Page], None]
+    # Optional interaction to run after the page is ready but before screenshot (e.g. clicking a
+    # rollout sliver to expand the events panel). Mutating callable; receives the live `Page`.
+    interact: Callable[[Page], None] | None = field(default=None)
 
 
 def _encode_visual_state(scenario_set_input: dict[str, object]) -> str:
@@ -129,30 +130,157 @@ FAN_STATE: dict[str, object] = {
 }
 
 
+SCREENSHOT_VIEWPORT: ViewportSize = {"width": 1280, "height": 1000}
+FROZEN_NOW_MS = 1_779_768_000_000  # 2026-05-15T12:00:00Z.
+
+
+def _wait_for_scenario_set_page(
+    page: Page, *, visible_text: str, hidden_text: str, min_fan_band_height: int | None = None
+) -> None:
+    """Wait for the legacy scenario-set surface to render a stable scenario-set result."""
+    page.add_style_tag(content=deterministic_style())
+    page.get_by_role("heading", name="Augur", exact=True).wait_for(state="visible", timeout=30_000)
+    try:
+        page.get_by_text(visible_text).first.wait_for(state="visible", timeout=30_000)
+    except Exception as error:
+        raise AssertionError(
+            f"did not render expected text {visible_text!r}.\nBody: {page.evaluate('() => document.body.innerText')}"
+        ) from error
+    page.wait_for_function(
+        "() => new URL(window.location.href).searchParams.has('state') "
+        "&& !document.body.innerText.includes('Running...')"
+    )
+    if min_fan_band_height is not None:
+        page.wait_for_function(
+            """
+            (minFanBandHeight) => {
+              const chart = Array.from(document.querySelectorAll('svg[role="img"]')).find((svg) =>
+                (svg.getAttribute("aria-label") || "").includes("probability fan chart")
+              );
+              if (!chart) return false;
+              const heights = Array.from(chart.querySelectorAll("polygon")).map((polygon) => {
+                const points = (polygon.getAttribute("points") || "")
+                  .trim()
+                  .split(/\\s+/)
+                  .map((point) => Number(point.split(",")[1]))
+                  .filter(Number.isFinite);
+                if (points.length === 0) return 0;
+                return Math.max(...points) - Math.min(...points);
+              });
+              return Math.max(0, ...heights) >= minFanBandHeight;
+            }
+            """,
+            arg=min_fan_band_height,
+            timeout=30_000,
+        )
+    assert page.get_by_text(hidden_text).count() == 0
+    assert page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth + 1")
+    page.evaluate("() => document.fonts.ready.then(() => true)")
+
+
+def _wait_for_product_page(page: Page) -> None:
+    """Wait for the product surface's net-worth fan to render at non-zero height."""
+    page.add_style_tag(content=deterministic_style())
+    page.locator("[data-augur-surface='product']").wait_for(state="visible", timeout=30_000)
+    page.locator("[data-product-fan-chart='netWorthUsd']").wait_for(state="visible", timeout=30_000)
+    page.get_by_role("heading", name="Augur", exact=True).wait_for(state="visible", timeout=30_000)
+    page.get_by_text("Product projection").first.wait_for(state="visible", timeout=30_000)
+    page.get_by_role("heading", name="Cash projection fan").first.wait_for(state="visible", timeout=30_000)
+    page.get_by_label("Metric to plot").wait_for(state="visible", timeout=30_000)
+    page.wait_for_function(
+        """
+        () => {
+          const chart = document.querySelector("[data-product-fan-chart='netWorthUsd'] svg[role='img']");
+          if (!chart) return false;
+          const heights = Array.from(chart.querySelectorAll("polygon")).map((polygon) => {
+            const points = (polygon.getAttribute("points") || "")
+              .trim()
+              .split(/\\s+/)
+              .map((point) => Number(point.split(",")[1]))
+              .filter(Number.isFinite);
+            return points.length ? Math.max(...points) - Math.min(...points) : 0;
+          });
+          return Math.max(0, ...heights) >= 80;
+        }
+        """,
+        timeout=30_000,
+    )
+    assert page.get_by_text("Terminal scenario comparison").count() == 0
+    assert page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth + 1")
+    page.evaluate("() => document.fonts.ready.then(() => true)")
+
+
+def _select_first_rollout(page: Page) -> None:
+    """Click the first rollout sliver and exercise the marker↔event-table cross-selection
+    handshake. Leaves the table-clicked-month selected so the screenshot shows event detail."""
+    page.locator("[data-product-rollout-sliver]").first.click()
+    page.locator("[data-product-selected-rollout-line]").wait_for(state="visible", timeout=30_000)
+    page.locator("[data-product-rollout-event-marker]").first.wait_for(state="visible", timeout=30_000)
+    page.get_by_text("Selected rollout events").wait_for(state="visible", timeout=30_000)
+    page.locator(r"text=/Seed \d+ - (completed|failed m\d+)/").wait_for(state="visible", timeout=30_000)
+    marker = page.locator("[data-product-rollout-event-marker]").last
+    marker_month = marker.get_attribute("data-product-rollout-event-marker-month")
+    assert marker_month is not None
+    marker.click()
+    page.locator(
+        f"[data-product-rollout-event-month='{marker_month}'][data-product-rollout-event-month-selected='true']"
+    ).wait_for(state="visible", timeout=30_000)
+    marker.click()
+    page.locator(
+        f"[data-product-rollout-event-month='{marker_month}'][data-product-rollout-event-month-selected='false']"
+    ).wait_for(state="visible", timeout=30_000)
+    page.locator(
+        f"[data-product-rollout-event-marker-month='{marker_month}'][data-product-rollout-event-marker-selected='false']"
+    ).first.wait_for(state="visible", timeout=30_000)
+    table_group = page.locator("[data-product-rollout-event-month]").first
+    table_month = table_group.get_attribute("data-product-rollout-event-month")
+    assert table_month is not None
+    table_group.click()
+    page.locator(
+        f"[data-product-rollout-event-marker-month='{table_month}'][data-product-rollout-event-marker-selected='true']"
+    ).first.wait_for(state="visible", timeout=30_000)
+    table_group.click()
+    page.locator(
+        f"[data-product-rollout-event-month='{table_month}'][data-product-rollout-event-month-selected='false']"
+    ).wait_for(state="visible", timeout=30_000)
+    page.locator(
+        f"[data-product-rollout-event-marker-month='{table_month}'][data-product-rollout-event-marker-selected='false']"
+    ).first.wait_for(state="visible", timeout=30_000)
+    table_group.click()
+    page.locator(
+        f"[data-product-rollout-event-marker-month='{table_month}'][data-product-rollout-event-marker-selected='true']"
+    ).first.wait_for(state="visible", timeout=30_000)
+
+
 VISUAL_CASES = (
     VisualCase(
         name="distribution_default",
         path="/distribution?scenario=scenario_1&rollout=0",
-        visible_text="Terminal scenario comparison",
-        hidden_text="Selected path monthly ledger",
+        wait_ready=lambda page: _wait_for_scenario_set_page(
+            page, visible_text="Terminal scenario comparison", hidden_text="Selected path monthly ledger"
+        ),
     ),
     VisualCase(
         name="distribution_fan",
         path=_visual_path("/distribution", FAN_STATE, scenario="location_a_fan"),
-        visible_text="Scenario probability fans",
-        hidden_text="Selected path monthly ledger",
-        min_fan_band_height=80,
+        wait_ready=lambda page: _wait_for_scenario_set_page(
+            page,
+            visible_text="Scenario probability fans",
+            hidden_text="Selected path monthly ledger",
+            min_fan_band_height=80,
+        ),
     ),
     VisualCase(
         name="trajectory_scenario_2_rollout_3",
         path="/trajectory?scenario=scenario_2&rollout=3",
-        visible_text="Selected path monthly ledger",
-        hidden_text="Terminal scenario comparison",
+        wait_ready=lambda page: _wait_for_scenario_set_page(
+            page, visible_text="Selected path monthly ledger", hidden_text="Terminal scenario comparison"
+        ),
+    ),
+    VisualCase(
+        name="product_cash_runway", path="/product", wait_ready=_wait_for_product_page, interact=_select_first_rollout
     ),
 )
-
-SCREENSHOT_VIEWPORT: ViewportSize = {"width": 1280, "height": 1000}
-FROZEN_NOW_MS = 1_779_768_000_000  # 2026-05-15T12:00:00Z.
 
 
 @pytest.fixture
@@ -228,61 +356,20 @@ def page(browser: Browser) -> Iterator[Page]:
             context.close()
 
 
-def _wait_for_augur_page(page: Page, case: VisualCase) -> None:
-    page.add_style_tag(content=deterministic_style())
-    page.get_by_role("heading", name="Augur", exact=True).wait_for(state="visible", timeout=30_000)
-    try:
-        page.get_by_text(case.visible_text).first.wait_for(state="visible", timeout=30_000)
-    except Exception as error:
-        raise AssertionError(
-            f"{case.name} did not render expected text {case.visible_text!r}.\n"
-            f"Body text: {page.evaluate('() => document.body.innerText')}"
-        ) from error
-    page.wait_for_function(
-        "() => new URL(window.location.href).searchParams.has('state') "
-        "&& !document.body.innerText.includes('Running...')"
-    )
-    if case.min_fan_band_height is not None:
-        page.wait_for_function(
-            """
-            (minFanBandHeight) => {
-              const chart = Array.from(document.querySelectorAll('svg[role="img"]')).find((svg) =>
-                (svg.getAttribute("aria-label") || "").includes("probability fan chart")
-              );
-              if (!chart) return false;
-              const heights = Array.from(chart.querySelectorAll("polygon")).map((polygon) => {
-                const points = (polygon.getAttribute("points") || "")
-                  .trim()
-                  .split(/\\s+/)
-                  .map((point) => Number(point.split(",")[1]))
-                  .filter(Number.isFinite);
-                if (points.length === 0) return 0;
-                return Math.max(...points) - Math.min(...points);
-              });
-              return Math.max(0, ...heights) >= minFanBandHeight;
-            }
-            """,
-            arg=case.min_fan_band_height,
-            timeout=30_000,
-        )
-    assert page.get_by_text(case.hidden_text).count() == 0
-    assert page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth + 1")
-    page.evaluate("() => document.fonts.ready.then(() => true)")
-
-
 def _render_case(page: Page, origin: str, case: VisualCase, out_dir: Path, suffix: str) -> Path:
     page.goto(f"{origin}{case.path}", wait_until="networkidle", timeout=60_000)
-    _wait_for_augur_page(page, case)
-    stable_url = page.url
-    page.goto(stable_url, wait_until="networkidle", timeout=60_000)
-    _wait_for_augur_page(page, case)
+    case.wait_ready(page)
+    page.goto(page.url, wait_until="networkidle", timeout=60_000)
+    case.wait_ready(page)
+    if case.interact is not None:
+        case.interact(page)
     actual_path = out_dir / f"{case.name}.{suffix}.png"
     page.screenshot(path=str(actual_path), full_page=True, animations="disabled", caret="hide", scale="css")
     return actual_path
 
 
 @pytest.mark.parametrize("case", VISUAL_CASES, ids=[case.name for case in VISUAL_CASES])
-def test_augur_full_page_visual_golden(page: Page, augur_server: str, tmp_path: Path, case: VisualCase) -> None:
+def test_augur_visual_golden(page: Page, augur_server: str, tmp_path: Path, case: VisualCase) -> None:
     undeclared_dir = undeclared_outputs_dir()
     first_path = _render_case(page, augur_server, case, tmp_path, "first")
     second_path = _render_case(page, augur_server, case, tmp_path, "second")

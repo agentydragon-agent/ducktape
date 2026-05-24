@@ -20,6 +20,7 @@ const DEFAULT_PRODUCT_INPUT_BASE = {
   monthlyRentUsd: 0,
   rentalLocationId: null,
   propertyId: null,
+  livesHere: true,
   financingKind: "cash",
   downPaymentPct: 20,
   mortgageTermMonths: 360,
@@ -76,6 +77,90 @@ function productInputDefaults(bootstrap) {
   };
 }
 
+// URL serialization: a single `?s=` query param carries all scenario inputs as a positional dot-
+// separated string. A version letter prefix gates schema changes; trailing default values are
+// trimmed; enums use one-letter codes. Examples:
+//   ?s=1                                                  → all defaults
+//   ?s=1.120...5000.n..200000.100000...location_a_property..m.10
+//
+// The ordering, encoding, and code maps live here in INPUT_FIELDS. Adding a new input means
+// appending to INPUT_FIELDS; old URLs continue to decode (missing positions = defaults).
+const INPUT_SCHEMA_VERSION = "1";
+
+const INPUT_FIELDS = [
+  { key: "horizonMonths", type: "number" },
+  { key: "rolloutCount", type: "number" },
+  { key: "firstSeed", type: "number" },
+  { key: "monthlySpendUsd", type: "number" },
+  { key: "spendIndex", type: "enum", codes: { inflation: "i", none: "n" } },
+  { key: "sellPublicSecurities", type: "bool" },
+  { key: "cashBufferTriggerBelowUsd", type: "number" },
+  { key: "cashBufferSaleUsd", type: "number" },
+  { key: "monthlyRentUsd", type: "number" },
+  { key: "rentalLocationId", type: "string" },
+  { key: "propertyId", type: "string" },
+  { key: "livesHere", type: "bool" },
+  { key: "financingKind", type: "enum", codes: { cash: "c", mortgage: "m" } },
+  { key: "downPaymentPct", type: "number" },
+  { key: "mortgageTermMonths", type: "number" },
+  { key: "annualRatePct", type: "number" },
+  { key: "annualInsurancePct", type: "number" },
+  { key: "annualMaintenancePct", type: "number" },
+];
+
+function encodeInputValue(value, field) {
+  if (value == null) return "";
+  if (field.type === "bool") return value ? "1" : "0";
+  if (field.type === "enum") {
+    const code = field.codes[value];
+    if (code == null) throw new Error(`unknown enum value ${value} for ${field.key}`);
+    return code;
+  }
+  if (field.type === "string") return encodeURIComponent(String(value));
+  return String(value);
+}
+
+function decodeInputValue(rawValue, field, defaultValue) {
+  if (rawValue === "") return defaultValue;
+  if (field.type === "bool") return rawValue === "1";
+  if (field.type === "enum") {
+    for (const [name, code] of Object.entries(field.codes)) {
+      if (code === rawValue) return name;
+    }
+    return defaultValue;
+  }
+  if (field.type === "string") return decodeURIComponent(rawValue);
+  const numeric = Number(rawValue);
+  return Number.isFinite(numeric) ? numeric : defaultValue;
+}
+
+function productInputToSearch(input, bootstrap) {
+  const defaults = productInputDefaults(bootstrap);
+  const encoded = INPUT_FIELDS.map((field) => {
+    if (input[field.key] === defaults[field.key]) return "";
+    return encodeInputValue(input[field.key], field);
+  });
+  while (encoded.length > 0 && encoded[encoded.length - 1] === "") encoded.pop();
+  if (encoded.length === 0) return `s=${INPUT_SCHEMA_VERSION}`;
+  return `s=${INPUT_SCHEMA_VERSION}.${encoded.join(".")}`;
+}
+
+function productInputFromSearch(searchString, bootstrap) {
+  const defaults = productInputDefaults(bootstrap);
+  const params = new URLSearchParams(searchString);
+  const packed = params.get("s");
+  if (!packed) return defaults;
+  const [version, ...values] = packed.split(".");
+  if (version !== INPUT_SCHEMA_VERSION) return defaults;
+  const parsed = { ...defaults };
+  values.forEach((rawValue, index) => {
+    if (index >= INPUT_FIELDS.length) return;
+    const field = INPUT_FIELDS[index];
+    parsed[field.key] = decodeInputValue(rawValue, field, defaults[field.key]);
+  });
+  return parsed;
+}
+
 function buildPropertyFinancing(input) {
   if (input.financingKind !== "mortgage") return { kind: "cash" };
   return {
@@ -88,7 +173,11 @@ function buildPropertyFinancing(input) {
 
 function buildPropertyPurchase(input) {
   if (!input.propertyId) return null;
-  return { propertyId: input.propertyId, financing: buildPropertyFinancing(input) };
+  return {
+    propertyId: input.propertyId,
+    financing: buildPropertyFinancing(input),
+    isPrimaryResidence: Boolean(input.livesHere),
+  };
 }
 
 function productScenario(input, bootstrap) {
@@ -279,11 +368,20 @@ function eventDetailText(event) {
   if (event?.kind === "tax_accrual") {
     const capitalGainTax = Number(event.capitalGainTaxUsd);
     const gain = Number(event.ltcgUsd) + Number(event.stcgUsd);
-    return [
+    const itemized = Number(event.itemizedDeductionUsd);
+    const standard = Number(event.standardDeductionUsd);
+    const mid = Number(event.mortgageInterestDeductionUsd);
+    const parts = [
       `ordinary tax ${fmtUsd(Number(event.ordinaryTaxUsd))}`,
       `gain tax ${fmtUsd(capitalGainTax)}`,
       `gains ${fmtUsd(gain)}`,
-    ].join("; ");
+    ];
+    if (mid > 0) {
+      const usedItemized = itemized > standard;
+      parts.push(`MID ${fmtUsd(mid)}`);
+      parts.push(`deduction ${fmtUsd(usedItemized ? itemized : standard)} (${usedItemized ? "itemized" : "standard"})`);
+    }
+    return parts.join("; ");
   }
   if (event?.kind === "tax_payment") {
     const shortfall = Number(event.shortfallUsd);
@@ -952,6 +1050,14 @@ function PropertyPurchasePanel({ bootstrap, input, onChange }) {
           disabled={input.propertyId == null}
           onChange={(annualMaintenancePct) => onChange({ annualMaintenancePct })}
         />
+        <Checkbox
+          label="Owner lives in this property"
+          aria-label="Owner lives in this property"
+          checked={Boolean(input.livesHere)}
+          disabled={input.propertyId == null}
+          classNames={{ label: "text-sm font-semibold augur-strong" }}
+          onChange={(event) => onChange({ livesHere: event.currentTarget.checked })}
+        />
       </div>
     </div>
   );
@@ -1040,7 +1146,7 @@ function ProductProjectionLoading({ error }) {
 }
 
 function ProductProjectionWorkspace({ bootstrap }) {
-  const [input, setInput] = useState(() => productInputDefaults(bootstrap));
+  const [input, setInput] = useState(() => productInputFromSearch(window.location.search, bootstrap));
   const [selectedMetricValue, setSelectedMetricValue] = useState("net_worth_usd");
   const [result, setResult] = useState(null);
   const [runError, setRunError] = useState(null);
@@ -1077,6 +1183,17 @@ function ProductProjectionWorkspace({ bootstrap }) {
     setSelectedEventMonthIndex((previous) => (previous === monthIndex ? null : monthIndex));
   };
   const selectedRolloutLoading = selectedSeed != null && result != null && !selectedDetail && !rolloutError;
+
+  // Mirror the scenario form to `?key=value&…` in the URL so refreshes preserve state and the URL
+  // is shareable. Use `replaceState` instead of pushState — typing in a NumberField shouldn't
+  // pollute the browser history with one entry per keystroke.
+  useEffect(() => {
+    const search = productInputToSearch(input, bootstrap);
+    const newUrl = `${window.location.pathname}${search ? "?" + search : ""}${window.location.hash}`;
+    if (newUrl !== window.location.pathname + window.location.search + window.location.hash) {
+      window.history.replaceState(null, "", newUrl);
+    }
+  }, [input, bootstrap]);
 
   useEffect(() => {
     const controller = new AbortController();
