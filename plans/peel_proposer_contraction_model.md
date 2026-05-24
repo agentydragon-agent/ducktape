@@ -257,17 +257,28 @@ to do.
 
 The API doesn't change between the two implementation cuts:
 
-- **First cut (correctness)**: `merge_preserves_invariants` rebuilds the
-  cycle set by running the existing realizability gate on a synthetic
-  post-merge quotient. O(|edges|) per query. `contract` also rebuilds.
-  Slow on large graphs but obviously correct.
-- **Second cut (incremental)**: keep the constraining-edge-subgraph SCCs
-  - the ESM-eval-simulator's post-order DFS as persistent state.
-    `contract` runs an incremental SCC update (Pearce-Kelly style) +
-    restricted post-order recompute over the affected reachability cone.
+- **First cut (correctness, commit 1/1b)**: `merge_preserves_invariants`
+  rebuilds the cycle set by running the existing realizability gate on
+  a synthetic post-merge quotient. O(|edges|) per query. `contract`
+  also rebuilds. Slow on large graphs but obviously correct. Sufficient
+  for the seed-and-rejection diagnostics that ship in commit 1; the
+  greedy is not yet enabled.
+- **Second cut (incremental, commit 2)**: keep the constraining-edge
+  subgraph SCCs + the ESM-eval-simulator's post-order DFS as persistent
+  state on `QuotientGraph`. `merge_preserves_invariants` consults the
+  cached state in O(|Δ|) where Δ is the affected reachability cone
+  around the candidate merge endpoints. `contract` runs an incremental
+  SCC update (Pearce-Kelly style) + restricted post-order recompute
+  over Δ. Amortized cost per merge in a sparse graph is closer to
+  O(log V).
 
-Migration from first to second cut is a pure performance refactor that
-won't change behavior.
+**The second cut must land with the greedy**, not after it. Greedy is
+O(|candidates| × per-query) per iteration, candidates is O(|E|), and
+there can be O(|V|) iterations to convergence. With the first cut's
+O(|E|) query this is O(|V| · |E|²) per planner run — unusable on
+gaffer-scale inputs (|V| ≈ 2K classes, |E| ≈ 50K edges → ~10¹¹ ops).
+Shipping the greedy on the first cut would be a feature nobody can run
+against real input. Hence the merged commit-2 scope below.
 
 ## Why merges don't create cycles
 
@@ -288,7 +299,7 @@ latter are now strictly shorter or absent.
 Therefore `merge_preserves_invariants` checking cycle-set monotonicity
 is a real guarantee, not a heuristic.
 
-## Migration path (TDD, three commits on `tdz-gate-fix`)
+## Migration path (TDD, four commits on `tdz-gate-fix`)
 
 ### Commit 1 — Kernel introduction, no behavior change
 
@@ -348,22 +359,38 @@ Verdict)]`. Per-cell metadata (`extends_module_id`,
   refactor's bridge invariant: each input group becomes one
   class; ungrouped owners stay singletons.
 
-**Path A deferred.** Path A (extending the seeding protocol with
-a third pass that contracts atomic-DAG-reachability closures
-under gating) was considered first. The cell-coalescing rules
-("merge overlapping closures of residual-target reachability")
-don't cleanly express as gated pairwise contractions: today's
-closures cross active owners freely when an active owner is a
-member of a residual-containing unit, and the overlap
-coalescing is set-merge, not pairwise. Reworking the closure
-into per-contraction gating would have introduced semantic
-divergence from today's cells; Path B preserves them verbatim
-and is the documented fallback path the plan calls out.
-Commit 2's greedy plugs into the cells-derived quotient
-directly — there's no inherent obstacle to the kernel hosting
-both partitions.
+**Path A deferred — not abandoned.** Path A (extending the
+seeding protocol with a third pass that contracts
+atomic-DAG-reachability closures under gating) was considered
+first. The reason for deferral is precisely **byte-identity**:
+today's cell discovery forms closures freely — even ones that
+end up cyclic — and reports problems via the realizability
+gate downstream. The seeding protocol is _gated_: it refuses
+contractions that would create cycles and reports
+`SeedContractionRejected` instead. So Path A _changes
+behavior_ on unrealizable inputs, turning "form cyclic cell,
+report cycle later" into "refuse cell merge, report rejection
+with cycle evidence." This is a strictly better outcome
+(pinpoint diagnostics vs blob report), but it violates commit
+1b's byte-identity contract.
 
-### Commit 2 — Enable greedy on uncontroversial shapes
+Path A is the **planned destination** — see commit 4 (the
+unification commit) below. Cell discovery is logically the same
+process as quotient seeding; the only reason they're separate
+today is that cells predate the kernel. Eventually the cell
+pipeline gets deleted and seeding subsumes it under uniform
+gated semantics. The intentional behavior change on unrealizable
+inputs is part of the trade.
+
+### Commit 2 — Enable greedy on uncontroversial shapes (with incremental realizability)
+
+Greedy and incremental realizability ship together — the greedy is
+only practical with the incremental cut of `merge_preserves_invariants`
+(see "Incremental realizability — staging" above for the complexity
+argument). Splitting them was a staging artifact, not an engineering
+boundary.
+
+Algorithm work:
 
 - Implement `greedy_merge_to_convergence` with the coupling / size /
   cycle-resolution / lex tiebreak order.
@@ -371,17 +398,42 @@ both partitions.
   orphaned residual class" (the cases today's code already handles).
 - **Lift the line-605 named-binding gate** — extensions of single
   helpers into their unique consumer fall out for free.
-- Tests:
-  - `greedy_extends_existing_module_with_only_consumer` — anon orphan.
-  - `greedy_absorbs_tiny_named_helper_into_unique_consumer` — named.
-    Initially RED (today's gate rejects this); GREEN after.
-  - `greedy_terminates_at_convergence` — class count strictly
-    decreasing.
-  - `greedy_never_splits_existing_spec_module` — fixture with spec
-    module containing multiple bindings; assert greedy doesn't
-    propose splitting it no matter what merges happen elsewhere.
-  - `greedy_never_merges_into_residual` — assert no proposal contracts
-    a class into residual.
+
+Performance work (incremental realizability):
+
+- Promote the constraining-edge SCC partition and the ESM-eval
+  simulator's post-order DFS to persistent state on `QuotientGraph`.
+  Build it once in `from_report_*`; update on every `contract`.
+- `merge_preserves_invariants` becomes a cached lookup that walks only
+  the affected reachability cone (Δ) around the candidate endpoints.
+- `contract` runs incremental SCC maintenance (Pearce-Kelly: order
+  classes by topological position, update affected positions only on
+  cycle-creating merges; here merges only _destroy_ SCCs, which is the
+  easier direction).
+
+Tests (algorithm):
+
+- `greedy_extends_existing_module_with_only_consumer` — anon orphan.
+- `greedy_absorbs_tiny_named_helper_into_unique_consumer` — named.
+  Initially RED (today's gate rejects this); GREEN after.
+- `greedy_terminates_at_convergence` — class count strictly
+  decreasing.
+- `greedy_never_splits_existing_spec_module` — fixture with spec
+  module containing multiple bindings; assert greedy doesn't
+  propose splitting it no matter what merges happen elsewhere.
+- `greedy_never_merges_into_residual` — assert no proposal contracts
+  a class into residual.
+
+Tests (performance + incremental invariants):
+
+- `incremental_state_matches_rebuild_on_synthetic_specs` — property
+  test: for a corpus of fixture chunks, after each greedy contraction,
+  assert the cached SCC + post-order state byte-equals what a full
+  rebuild would produce. Load-bearing correctness guard.
+- `greedy_on_gaffer_chunk_completes_under_one_minute` — benchmark with
+  the real owner_graph.json from a recent gaffer cache; assert
+  wall-time bound. RED today (greedy doesn't exist); GREEN after
+  commit 2 lands with both halves.
 
 ### Commit 3 — Enable full mergeability + merge output shape
 
@@ -408,12 +460,43 @@ both partitions.
   consuming the new output shape. The ducktape kernel just emits the
   proposal.
 
-### Commit 4 (deferred) — Incremental realizability
+### Commit 4 — Unify cell discovery into seeding (Path A)
 
-- Replace first-cut rebuild-on-query with persistent SCC + post-order
-  state. Pure performance refactor.
-- Add benchmark tests: greedy on a chunk with ~2000 owners should
-  complete in well under 1s.
+**Intentional non-byte-identical change** — the destination Path A
+that commit 1b deferred. Delete
+`proposal_cells_from_atomic_graph` and its associated cell IR.
+Extend `build_seed_quotient` with a third gated contraction pass:
+for each atomic-DAG edge whose target is in a residual atomic
+unit, contract the source class with the target class through
+the same gated protocol. Iterate to fixed point if needed for
+overlap-coalesce equivalence. Closures that today would have
+been formed despite cyclicity now appear as
+`SeedContractionRejected::AtomicReachability` diagnostics
+instead.
+
+- Today's `Vec<CellClassRecord>` parallel state goes away; the
+  quotient is the only representation of "which owners are in
+  which proposed class."
+- `promote_anonymous_only_cell_to_extension` is fully subsumed
+  by the greedy's "extend single consumer" merges; the post-pass
+  is deleted.
+- The golden snapshots from commit 1b are **invalidated** for
+  fixtures with unrealizable inputs (those gain a rejection
+  diagnostic where they used to have a proposal). Snapshots for
+  well-formed fixtures stay byte-identical (no behavior change
+  there).
+- Tests:
+  - `unification_byte_identical_on_well_formed_inputs` — golden
+    suite still passes for fixtures that produce zero
+    rejections.
+  - `unification_rejects_cyclic_atomic_reachability_with_diagnostic` —
+    fixture whose atomic-DAG reachability closure would form a
+    cycle; assert (a) no proposal emitted for that closure, (b)
+    `SeedContractionRejected::AtomicReachability` entry pinpoints
+    the rejected pair.
+  - `unification_eliminates_cell_pipeline` — static check (no
+    `Cell` struct, no `proposal_cells_from_atomic_graph`
+    symbol).
 
 ## Out of scope
 
