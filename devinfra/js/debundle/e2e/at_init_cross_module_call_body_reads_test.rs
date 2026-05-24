@@ -171,8 +171,7 @@ fn at_init_call_keeps_owner_edge_marked_with_callee() {
         1,
         "expected exactly one owner-level promoted EagerUse edge \
          from `triggerInit` ({trigger_owner}) to `crossModBinding` \
-         ({target_owner}); got {:#?}\n\nFull owner graph: {graph:#?}",
-        promoted,
+         ({target_owner}); got {promoted:#?}\n\nFull owner graph: {graph:#?}",
     );
     assert_eq!(
         promoted[0].at_init_callee_owner.as_deref(),

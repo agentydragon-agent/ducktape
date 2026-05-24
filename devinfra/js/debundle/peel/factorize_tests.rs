@@ -1,8 +1,18 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap};
 
-use crate::*;
+use analysis::*;
 use swc_common::{FileName, SyntaxContext, sync::Lrc};
+use swc_ecma_ast::{Id, Module};
 use swc_ecma_parser::{Parser, StringInput, Syntax, lexer::Lexer};
+
+/// Test helper mirroring the one in `analysis_tests/mod.rs`.
+/// Provided here because the `logical` free function is not
+/// part of the `analysis` crate's public API — it is a test-only
+/// convenience for constructing `ModuleId` values from a raw
+/// logical index.
+fn logical(idx: usize) -> ModuleId {
+    ModuleId::logical(idx)
+}
 
 /// Construct an `Id` for a test fixture binding using
 /// `SyntaxContext::empty()`. Real chunks would use the chunk's
@@ -28,13 +38,7 @@ fn parse(source: &str) -> Module {
 }
 
 fn analyze_facts(module: &Module) -> Vec<StatementFacts> {
-    let owner_graph = build_owner_graph(&analyze_chunk(
-        module,
-        &AnalysisHints::default(),
-        None,
-        |_| None,
-    ));
-    owner_graph.into_nodes().map(|n| n.facts).collect()
+    analyze_chunk(module, &AnalysisHints::default(), None, |_| None).facts
 }
 
 /// logical module always sits at the highest index appended by
@@ -158,11 +162,13 @@ fn at_init_call_promotion_materializes_owner_edge() {
         .filter(|e| e.from == OwnerId(2) && e.to == OwnerId(3))
         .collect();
     assert!(
-        promoted.iter().any(|e| e.reason.kind == DepKind::EagerUse),
+        promoted
+            .iter()
+            .any(|e| e.reason.kind() == DepKind::EagerUse),
         "expected a promoted EagerUse edge owner 2 → owner 3 in {:?}",
         owner_graph
             .iter_edges()
-            .map(|e| (e.from, e.to, e.reason.kind))
+            .map(|e| (e.from, e.to, e.reason.kind()))
             .collect::<Vec<_>>(),
     );
 }
@@ -435,9 +441,9 @@ fn owner_graph_retains_reads_to_unassigned_declared_bindings() {
         factorization.analysis.owner_graph.edges.iter().any(|edge| {
             edge.from == OwnerId(0)
                 && edge.to == OwnerId(1)
-                && edge.reason.kind == DepKind::EagerUse
-                && edge.reason.statement_ordinal == StatementOrdinal(0)
-                && edge.reason.binding.as_ref().is_some_and(|id| id.0 == "X")
+                && edge.reason.kind() == DepKind::EagerUse
+                && edge.reason.statement_ordinal() == StatementOrdinal(0)
+                && edge.reason.binding().is_some_and(|id| id.0 == "X")
         }),
         "owner graph should retain the unassigned declared provider edge",
     );
@@ -736,12 +742,12 @@ fn split_comma_list_attributes_later_declarator_read_to_later_owner() {
         .find(|edge| {
             edge.from == second_owner
                 && edge.to == first_owner
-                && edge.reason.kind == DepKind::EagerUse
-                && edge.reason.binding.as_ref() == Some(&first_binding)
+                && edge.reason.kind() == DepKind::EagerUse
+                && edge.reason.binding() == Some(&first_binding)
         })
         .expect("second's initializer should eagerly read first");
     assert_eq!(
-        edge.reason.statement_ordinal,
+        edge.reason.statement_ordinal(),
         graph.node(second_owner).unwrap().statement_ordinal,
         "the read edge must be attributed to the later declarator's owner",
     );

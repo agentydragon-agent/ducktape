@@ -184,6 +184,9 @@ impl EdgeReason {
     pub fn binding(&self) -> Option<&Id> {
         self.binding.as_ref()
     }
+    pub fn statement_ordinal(&self) -> StatementOrdinal {
+        self.statement_ordinal
+    }
     pub fn is_rebind(&self) -> bool {
         matches!(self.kind, DepKind::EagerRebind | DepKind::LazyRebind)
     }

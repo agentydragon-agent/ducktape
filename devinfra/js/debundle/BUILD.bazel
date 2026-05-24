@@ -306,7 +306,11 @@ rust_test(
     name = "peel_test",
     crate = ":peel",
     edition = "2024",
-    deps = ["@crates//:tempfile"],
+    deps = [
+        "@crates//:swc_ecma_ast",
+        "@crates//:swc_ecma_parser",
+        "@crates//:tempfile",
+    ],
 )
 
 # Integration tests for the QuotientGraph kernel. Compiled as a
