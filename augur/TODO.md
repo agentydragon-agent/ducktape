@@ -42,14 +42,26 @@ generic backlog rather than a second ordered roadmap.
       replace the temporary compatibility response with native projection read
       models. The migration inventory for current API fields lives in
       `augur/sim/TODO.md#api-to-sim-translation-inventory`.
-- [ ] **PE valuation should actually be sampled** (Priority 3 in
-      `plans/roadmap.md`). The exogenous provider holds private-equity marks
-      flat at 1.0 for the entire horizon. The fit is **open design work**
-      — available evidence is sparse (e.g. ~5-10 historical OpenAI
-      tenders), so the natural shape is a model fit **jointly** with
-      SP500, inflation, and the per-location housing factors that the
-      exogenous provider already estimates (VECM/VAR/Wilkie/etc.), rather
-      than an independent process per PE asset.
+- [ ] **PE valuation should actually be sampled — PROMOTED to near-term
+      after 2026-05-24 VECM rollout.** The exogenous provider holds
+      private-equity marks flat at 1.0 for the entire horizon under VECM.
+      Production (gaffer-private) currently ships with `openai` at a
+      hand-set FMV that doesn't move with rollouts — the user explicitly
+      called out wanting this fixed soon so PE valuations stop being a
+      made-up constant. The fit is **open design work** — available
+      evidence is sparse (e.g. ~5-10 historical OpenAI tenders), so the
+      natural shape is a model fit **jointly** with SP500, inflation, and
+      the per-location housing factors that the exogenous provider already
+      estimates (VECM/VAR/Wilkie/etc.), rather than an independent process
+      per PE asset. Pair with the sales-policy work in sim/frontend (see
+      the next TODO).
+- [ ] **PE sale policy + frontend sale modelling — PROMOTED with PE
+      valuation.** Once PE prices move stochastically, scenarios need a
+      well-defined sale policy (sell-at-tender vs hold-to-IPO, partial
+      lots, tax-lot selection) and a frontend surface to configure it.
+      Today the user has no way to express "sell N shares when offered
+      and the price exceeds X" inside a scenario; the runtime only sees
+      a deterministic tender mask.
 - [ ] **Tender timing should be sampled**, fitted jointly with the PE
       price model on the same sparse evidence. Today the exogenous provider
       emits tender opportunities at deterministic month indices (every 12

@@ -239,6 +239,14 @@ Acceptance criteria:
 
 ## Priority 3: Sampled Private-Equity, Sampled Tender Timing, And Crypto
 
+**2026-05-24 priority bump on the PE half**: gaffer-private now ships with a
+calibrated VECM exogenous model, but PE prices are still flat-1.0 multipliers
+under VECM. The OpenAI position in production carries a hand-set FMV that
+doesn't move with rollouts — explicit user direction is to land sampled PE
+valuation + a sale-policy surface in frontend/sim soon so production stops
+showing a made-up PE value. Crypto remains lower-urgency. Don't reorder the
+roadmap headings yet, but treat the PE/tender bullets here as near-term.
+
 Today the market provider holds private-equity marks **flat over the entire
 horizon** (`private_equity_value_multipliers = np.ones(shape)`) and emits
 tender opportunities at **deterministic** months (every 12 months from t=0,
