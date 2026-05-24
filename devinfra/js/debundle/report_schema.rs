@@ -104,6 +104,16 @@ pub struct OwnerGraphEdgeReport {
     pub binding: Option<Atom>,
     pub statement_ordinal: StatementOrdinal,
     pub constrains_init_order: bool,
+    /// Owner id (e.g. `"owner:42"`) of the at-init callee whose body
+    /// produced this edge. `Some(...)` iff the edge was emitted by
+    /// `graph::promote_at_init_calls`; mirrors
+    /// `EdgeReason::at_init_callee_owner` through the wire format so
+    /// the peel planner's `from_report` can reapply the same
+    /// cross-module at-init promotion filter the materializer's gate
+    /// does. See `EdgeReason::at_init_callee_owner` for the ESM-
+    /// semantics justification.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub at_init_callee_owner: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

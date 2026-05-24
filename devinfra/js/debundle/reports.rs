@@ -54,6 +54,7 @@ pub(crate) fn build_owner_graph_report(factorization: &ChunkFactorization) -> Ow
             binding: edge.reason.binding.as_ref().map(|id| id.0.clone()),
             statement_ordinal: edge.reason.statement_ordinal,
             constrains_init_order: edge.reason.constrains_init_order(),
+            at_init_callee_owner: edge.reason.at_init_callee_owner().map(owner_key),
         })
         .collect();
     let atomic_graph = build_atomic_graph_report(factorization, owner_edges);
@@ -115,6 +116,9 @@ pub(crate) fn build_quotient_edge_reports(
         let from = partition.of(edge.from);
         let to = partition.of(edge.to);
         if from == to {
+            continue;
+        }
+        if crate::graph::is_cross_module_at_init_promotion(edge, partition) {
             continue;
         }
         if edge.reason.is_sequenced() && !seen_side_effect_module_pairs.insert((from, to)) {

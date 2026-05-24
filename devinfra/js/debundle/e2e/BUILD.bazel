@@ -75,6 +75,7 @@ rust_library(
         "at_init_promotion_nested_closure_test",
         "at_init_promotion_post_await_test",
         "at_init_promotion_fndecl_direct_read_test",
+        "at_init_cross_module_call_body_reads_test",
         "at_init_s_chain_dataflow_test",
         "auto_grown_export_alias_collision_test",
         "runtime_tdz_on_imported_class_test",

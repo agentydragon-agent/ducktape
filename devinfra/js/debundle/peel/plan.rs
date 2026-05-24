@@ -1353,6 +1353,7 @@ mod tests {
                 binding: Some("ZZ".into()),
                 statement_ordinal: StatementOrdinal(2),
                 constrains_init_order: true,
+                at_init_callee_owner: None,
             }],
             quotient: OwnerGraphQuotientReport {
                 nodes: Vec::new(),
@@ -1492,6 +1493,7 @@ mod tests {
             binding: Some("ZZ".into()),
             statement_ordinal: StatementOrdinal(3),
             constrains_init_order: true,
+            at_init_callee_owner: None,
         });
         graph.edges.push(OwnerGraphEdgeReport {
             id: "edge:2".to_string(),
@@ -1501,6 +1503,7 @@ mod tests {
             binding: Some("ZZ".into()),
             statement_ordinal: StatementOrdinal(4),
             constrains_init_order: true,
+            at_init_callee_owner: None,
         });
 
         let (_temp, common) = fixture_with_graph(graph);

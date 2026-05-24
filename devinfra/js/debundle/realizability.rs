@@ -132,6 +132,13 @@ pub fn check_realizability(
         if from == to {
             continue;
         }
+        // Drop spurious cross-module promoted reads/rebinds. See
+        // `is_cross_module_at_init_promotion` for the ESM-semantics
+        // justification — the constraint is redundant with the
+        // caller-module -> callee-module edge already in the graph.
+        if crate::graph::is_cross_module_at_init_promotion(edge, partition) {
+            continue;
+        }
         if edge.reason.is_rebind() {
             verdict.cross_rebinds.push(CrossRebindEdge {
                 from,
@@ -702,8 +709,24 @@ fn increment_delta(
     }
 }
 
-fn edge_contribution(edge: &OwnerEdge, from: ModuleId, to: ModuleId) -> Option<EdgeContribution> {
+fn edge_contribution(
+    edge: &OwnerEdge,
+    from: ModuleId,
+    to: ModuleId,
+    callee_module: Option<ModuleId>,
+) -> Option<EdgeContribution> {
     if from == to {
+        return None;
+    }
+    // Same cross-module at-init promotion filter `build_module_quotient`
+    // and `check_realizability` apply, but evaluated against the
+    // overlay's post-move partition: a body-read promotion contributes
+    // only when the callee shares a module with the caller after the
+    // hypothetical move.
+    if let Some(callee_module) = callee_module
+        && edge.reason.at_init_callee_owner().is_some()
+        && callee_module != from
+    {
         return None;
     }
 
@@ -906,6 +929,9 @@ impl IncrementalQuotient {
         if from == to {
             return;
         }
+        if crate::graph::is_cross_module_at_init_promotion(edge, partition) {
+            return;
+        }
         if edge.reason.is_rebind() {
             self.cross_rebinds.insert(
                 edge.id,
@@ -940,6 +966,9 @@ impl IncrementalQuotient {
         let from = partition.of(edge.from);
         let to = partition.of(edge.to);
         if from == to {
+            return;
+        }
+        if crate::graph::is_cross_module_at_init_promotion(edge, partition) {
             return;
         }
         if edge.reason.is_rebind() {
@@ -1209,7 +1238,25 @@ impl IncrementalQuotient {
         let mut overlay = QuotientOverlay::default();
         for edge_id in impacted_edges {
             let edge = &owner_graph.edges[edge_id.0];
-            let current = edge_contribution(edge, partition.of(edge.from), partition.of(edge.to));
+            // Translate the at-init callee owner (if any) to its
+            // pre-move and post-move modules so `edge_contribution`
+            // can apply the cross-module at-init promotion filter
+            // under both the base and overlay partitions.
+            let callee_owner = edge.reason.at_init_callee_owner();
+            let current_callee_module = callee_owner.map(|o| partition.of(o));
+            let next_callee_module = callee_owner.map(|o| {
+                if owners.contains(&o) {
+                    to
+                } else {
+                    partition.of(o)
+                }
+            });
+            let current = edge_contribution(
+                edge,
+                partition.of(edge.from),
+                partition.of(edge.to),
+                current_callee_module,
+            );
             let next_from = if owners.contains(&edge.from) {
                 to
             } else {
@@ -1220,7 +1267,7 @@ impl IncrementalQuotient {
             } else {
                 partition.of(edge.to)
             };
-            let next = edge_contribution(edge, next_from, next_to);
+            let next = edge_contribution(edge, next_from, next_to, next_callee_module);
             if current == next {
                 continue;
             }
