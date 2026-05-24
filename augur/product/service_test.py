@@ -18,6 +18,7 @@ from augur.product.wire import (
     ClosingCostPaymentEvent,
     FundingPolicy,
     HoaDuesPaymentEvent,
+    HomeownersInsurancePaymentEvent,
     MetricFanRequest,
     MonthlyExpenseEvent,
     MortgageFinancing,
@@ -582,6 +583,54 @@ def test_property_purchase_skips_hoa_when_property_has_no_monthly_hoa(
     detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
 
     assert [event for event in detail.rollout.events if event.kind == "hoa_dues_payment"] == []
+
+
+def test_property_purchase_emits_homeowners_insurance_at_default_pct(
+    counting_exogenous_model: CountingExogenousModel,
+) -> None:
+    product = _service(counting_exogenous_model)
+    # location_a_property is $900k. Default annual_insurance_pct=0.4 → $300/mo at month 0.
+    scenario = ScenarioKey(
+        exogenous_model_id="current_exogenous_model",
+        horizon_months=3,
+        monthly_spend_usd=1_000.0,
+        spend_index="none",
+        funding_policy=FundingPolicy(sell_order=()),
+        property_purchase=PropertyPurchase(
+            property_id="location_a_property",
+            financing=MortgageFinancing(term_months=360, down_payment_pct=20.0, annual_rate_pct=7.0),
+        ),
+    )
+
+    detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
+
+    insurance_events = [event for event in detail.rollout.events if event.kind == "homeowners_insurance_payment"]
+    assert insurance_events
+    monthly_premium = 0.4 / 100.0 * 900_000.0 / 12.0
+    for event in insurance_events:
+        assert isinstance(event, HomeownersInsurancePaymentEvent)
+        assert event.amount_due_usd == pytest.approx(monthly_premium, rel=0.1)
+        assert event.amount_paid_usd == pytest.approx(event.amount_due_usd)
+        assert event.shortfall_usd == 0.0
+
+
+def test_property_purchase_with_zero_insurance_pct_omits_insurance(
+    counting_exogenous_model: CountingExogenousModel,
+) -> None:
+    product = _service(counting_exogenous_model)
+    scenario = ScenarioKey(
+        exogenous_model_id="current_exogenous_model",
+        horizon_months=2,
+        monthly_spend_usd=1_000.0,
+        spend_index="none",
+        funding_policy=FundingPolicy(sell_order=()),
+        property_purchase=PropertyPurchase(property_id="location_a_property", financing=CashFinancing()),
+        annual_insurance_pct=0.0,
+    )
+
+    detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
+
+    assert [event for event in detail.rollout.events if event.kind == "homeowners_insurance_payment"] == []
 
 
 def test_property_purchase_rejects_unknown_property(counting_exogenous_model: CountingExogenousModel) -> None:

@@ -24,6 +24,7 @@ const DEFAULT_PRODUCT_INPUT_BASE = {
   downPaymentPct: 20,
   mortgageTermMonths: 360,
   annualRatePct: 7,
+  annualInsurancePct: 0.4,
 };
 
 const FAN_PERCENTILES = [5, 25, 50, 75, 95];
@@ -38,6 +39,7 @@ const ROLLOUT_EVENT_COLORS = {
   mortgage_payment: "#0369a1",
   property_tax_payment: "#a16207",
   hoa_dues_payment: "#14b8a6",
+  homeowners_insurance_payment: "#9333ea",
   tax_accrual: "#b45309",
   tax_payment: "#7c3aed",
   failure: "#dc2626",
@@ -104,6 +106,7 @@ function productScenario(input, bootstrap) {
     monthlyRentUsd,
     rentalLocationId,
     propertyPurchase: buildPropertyPurchase(input),
+    annualInsurancePct: Math.max(0, Number(input.annualInsurancePct) || 0),
   };
 }
 
@@ -245,6 +248,7 @@ function eventMarkerYOffset(event) {
   if (event?.kind === "tax_payment") return 8;
   if (event?.kind === "property_tax_payment") return 10;
   if (event?.kind === "hoa_dues_payment") return 14;
+  if (event?.kind === "homeowners_insurance_payment") return 16;
   if (event?.kind === "mortgage_payment") return 12;
   if (event?.kind === "failure") return 7;
   return 0;
@@ -308,6 +312,12 @@ function eventDetailText(event) {
       ? `due ${fmtUsd(Number(event.amountDueUsd))}; shortfall ${fmtUsd(shortfall)}`
       : `due ${fmtUsd(Number(event.amountDueUsd))}`;
   }
+  if (event?.kind === "homeowners_insurance_payment") {
+    const shortfall = Number(event.shortfallUsd);
+    return shortfall > 0
+      ? `due ${fmtUsd(Number(event.amountDueUsd))}; shortfall ${fmtUsd(shortfall)}`
+      : `due ${fmtUsd(Number(event.amountDueUsd))}`;
+  }
   if (event?.kind === "failure") {
     return `shortfall ${fmtUsd(Number(event.shortfallUsd))}`;
   }
@@ -353,6 +363,9 @@ function eventLabel(event) {
   }
   if (event?.kind === "hoa_dues_payment") {
     return Number(event.shortfallUsd) > 0 ? "HOA dues shortfall" : "Paid HOA dues";
+  }
+  if (event?.kind === "homeowners_insurance_payment") {
+    return Number(event.shortfallUsd) > 0 ? "Homeowner's insurance shortfall" : "Paid homeowner's insurance";
   }
   if (event?.kind === "failure") {
     return "Rollout failed";
@@ -906,6 +919,16 @@ function PropertyPurchasePanel({ bootstrap, input, onChange }) {
             onChange={(annualRatePct) => onChange({ annualRatePct })}
           />
         </div>
+        <NumberField
+          label="Insurance (% of price / yr)"
+          value={input.annualInsurancePct}
+          min={0}
+          max={10}
+          step={0.05}
+          suffix="%"
+          disabled={input.propertyId == null}
+          onChange={(annualInsurancePct) => onChange({ annualInsurancePct })}
+        />
       </div>
     </div>
   );

@@ -50,6 +50,9 @@ class PropertyPurchase(ApiModel):
     financing: PropertyFinancing
 
 
+DEFAULT_ANNUAL_INSURANCE_PCT = 0.4
+
+
 class ScenarioKey(ApiModel):
     exogenous_model_id: str
     horizon_months: PositiveInt = Field(le=MAX_HORIZON_MONTHS)
@@ -59,6 +62,7 @@ class ScenarioKey(ApiModel):
     monthly_rent_usd: NonNegativeFloat = 0.0
     rental_location_id: str | None = None
     property_purchase: PropertyPurchase | None = None
+    annual_insurance_pct: NonNegativeFloat = DEFAULT_ANNUAL_INSURANCE_PCT
 
     @model_validator(mode="after")
     def _rent_location_consistency(self) -> ScenarioKey:
@@ -158,6 +162,13 @@ class HoaDuesPaymentEvent(_RolloutEventBase):
     shortfall_usd: NonNegativeFloat
 
 
+class HomeownersInsurancePaymentEvent(_RolloutEventBase):
+    kind: Literal["homeowners_insurance_payment"] = "homeowners_insurance_payment"
+    amount_due_usd: NonNegativeFloat
+    amount_paid_usd: NonNegativeFloat
+    shortfall_usd: NonNegativeFloat
+
+
 class TaxAccrualEvent(_RolloutEventBase):
     kind: Literal["tax_accrual"] = "tax_accrual"
     jurisdiction_id: str
@@ -194,6 +205,7 @@ type RolloutEvent = Annotated[
     | MortgagePaymentEvent
     | PropertyTaxPaymentEvent
     | HoaDuesPaymentEvent
+    | HomeownersInsurancePaymentEvent
     | TaxAccrualEvent
     | TaxPaymentEvent
     | RolloutFailureEvent,

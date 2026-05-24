@@ -41,6 +41,9 @@ MORTGAGE_LENDER_ACCOUNT_ID = "checking"
 HOA_AGENT_ID = "hoa"
 HOA_ACCOUNT_ID = "checking"
 HOA_OBLIGATION_ID = "hoa_dues"
+INSURER_AGENT_ID = "insurer"
+INSURER_ACCOUNT_ID = "checking"
+INSURANCE_OBLIGATION_ID = "homeowners_insurance"
 
 
 def resolve_primary_agent_id(augur_config: Config) -> str:
@@ -78,6 +81,8 @@ def required_level_series(
         property_ = properties_by_id[scenario_key.property_purchase.property_id]
         series_ids.add(home_value_series_id(property_.location_id))
         if property_.hoa_monthly_usd > 0:
+            series_ids.add(INFLATION_SERIES_ID)
+        if scenario_key.annual_insurance_pct > 0:
             series_ids.add(INFLATION_SERIES_ID)
     return frozenset(series_ids)
 
@@ -195,6 +200,27 @@ def build_scenario(
                         base_amount_usd=float(property_.hoa_monthly_usd),
                         series_id=INFLATION_SERIES_ID,
                         adjustment_period_months=1,
+                    ),
+                )
+            )
+        if scenario_key.annual_insurance_pct > 0:
+            agents.append(Agent(agent_id=INSURER_AGENT_ID))
+            initial_cash.append(
+                InitialAccountBalance(agent_id=INSURER_AGENT_ID, account_id=INSURER_ACCOUNT_ID, balance_usd=0.0)
+            )
+            monthly_insurance_usd = float(scenario_key.annual_insurance_pct) / 100.0 * float(property_.price_usd) / 12.0
+            recurring_obligations.append(
+                RecurringObligation(
+                    start_month=0,
+                    end_month=end_month,
+                    obligation_id=INSURANCE_OBLIGATION_ID,
+                    obligation_type=ObligationType.HOMEOWNERS_INSURANCE,
+                    agent_id=primary_agent_id,
+                    from_account_id=PRIMARY_ACCOUNT_ID,
+                    to_agent_id=INSURER_AGENT_ID,
+                    to_account_id=INSURER_ACCOUNT_ID,
+                    amount_due_usd=SeriesIndexedAmount(
+                        base_amount_usd=monthly_insurance_usd, series_id=INFLATION_SERIES_ID, adjustment_period_months=1
                     ),
                 )
             )
