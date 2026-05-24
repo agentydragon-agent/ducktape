@@ -10,6 +10,7 @@ external-series bundle reference, and tax profiles per agent.
 
 from __future__ import annotations
 
+from enum import StrEnum
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, NonNegativeInt, PositiveInt, model_validator
@@ -115,6 +116,21 @@ class RecurringTransfer(BaseModel):
 
     def is_active_at(self, month: int) -> bool:
         return self.start_month <= month and (self.end_month is None or month <= self.end_month)
+
+
+class ObligationType(StrEnum):
+    """Closed set of `obligation_type` values that flow through dense engine event tables.
+
+    Sim and product callers should use these enum members at construction sites and at
+    filter sites in decoded `obligation_settlements` / `obligation_failures` frames.
+    """
+
+    CASH_SPEND = "cash_spend"
+    OUTSIDE_RENT = "outside_rent"
+    ESTIMATED_TAX = "estimated_tax"
+    TAX_TRUE_UP = "tax_true_up"
+    MORTGAGE_PAYMENT = "mortgage_payment"
+    PROPERTY_TAX = "property_tax"
 
 
 class ScheduledObligation(BaseModel):

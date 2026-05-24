@@ -634,5 +634,48 @@ def test_backend_server_product_rollout_includes_federal_and_california_tax_even
     assert tax_payment["shortfall_usd"] == 0.0
 
 
+def test_backend_server_product_outside_rent_re_pegs_yearly(server_url: str) -> None:
+    scenario = {
+        "exogenous_model_id": "current_exogenous_model",
+        "horizon_months": 13,
+        "monthly_spend_usd": 1000.0,
+        "spend_index": "none",
+        "monthly_rent_usd": 3000.0,
+        "rental_location_id": "location_a",
+        "funding_policy": {"cash_buffer_trigger_below_usd": 0.0, "cash_buffer_sale_usd": 0.0, "sell_order": []},
+    }
+
+    detail = _post_json(server_url, "/api/product/projections/rollout", {"scenario": scenario, "seed": 7})
+
+    rent_events = [event for event in detail["rollout"]["events"] if event["kind"] == "outside_rent"]
+    assert len(rent_events) == 13
+    year_zero = [event for event in rent_events if event["month_index"] < 12]
+    assert {event["amount_paid_usd"] for event in year_zero} == {3000.0}
+    [year_one_event] = [event for event in rent_events if event["month_index"] == 12]
+    assert year_one_event["amount_paid_usd"] != 3000.0
+
+
+def test_backend_server_product_rent_rejects_unknown_location(server_url: str) -> None:
+    scenario = {
+        "exogenous_model_id": "current_exogenous_model",
+        "horizon_months": 3,
+        "monthly_spend_usd": 1000.0,
+        "spend_index": "none",
+        "monthly_rent_usd": 3000.0,
+        "rental_location_id": "not_a_real_location",
+        "funding_policy": {"cash_buffer_trigger_below_usd": 0.0, "cash_buffer_sale_usd": 0.0, "sell_order": []},
+    }
+
+    request = urllib.request.Request(
+        f"{server_url}/api/product/projections/rollout",
+        data=json.dumps({"scenario": scenario, "seed": 7}).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with pytest.raises(urllib.error.HTTPError) as exc_info:
+        urllib.request.urlopen(request, timeout=240)
+    assert exc_info.value.code == 400
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

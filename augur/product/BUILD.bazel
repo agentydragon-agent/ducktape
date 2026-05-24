@@ -82,12 +82,16 @@ py_test(
     name = "service_test",
     size = "medium",
     srcs = ["service_test.py"],
-    data = ["//augur/api:public_fixture_config"],
+    data = [
+        "//augur/api:public_fixture_config",
+        "//augur/api:public_fixture_properties",
+    ],
     deps = [
         ":decode_py",
         ":scenarios_py",
         ":service_py",
         ":wire_py",
+        "//augur/api:catalog_py",
         "//augur/api:config_py",
         "//augur/model:exogenous_py",
         "//augur/model:series_py",

@@ -7,13 +7,14 @@ from more_itertools import one
 from augur.api.config import Config
 from augur.api.portfolio import PortfolioConfig
 from augur.api.scenario_set import ActorRole
-from augur.model.series import INFLATION_SERIES_ID
+from augur.model.series import INFLATION_SERIES_ID, rent_series_id
 from augur.product.wire import FundingPolicy, ScenarioKey
 from augur.sim.scenario import (
     Agent,
     InitialAccountBalance,
     InitialLot,
     LiquidityPolicy,
+    ObligationType,
     RecurringObligation,
     Scenario,
     SeriesIndexedAmount,
@@ -24,6 +25,9 @@ PRIMARY_ACCOUNT_ID = "checking"
 SPEND_SINK_AGENT_ID = "spend_sink"
 SPEND_SINK_ACCOUNT_ID = "checking"
 SPEND_OBLIGATION_ID = "monthly_spend"
+LANDLORD_AGENT_ID = "landlord"
+LANDLORD_ACCOUNT_ID = "checking"
+RENT_OBLIGATION_ID = "outside_rent"
 TAX_AUTHORITY_AGENT_ID = "tax_authority"
 TAX_AUTHORITY_ACCOUNT_ID = "checking"
 
@@ -54,53 +58,71 @@ def required_level_series(scenario_key: ScenarioKey, *, initial_lots: tuple[Init
     series_ids = {lot.asset_id for lot in initial_lots}
     if scenario_key.spend_index == "inflation":
         series_ids.add(INFLATION_SERIES_ID)
+    if scenario_key.monthly_rent_usd > 0:
+        assert scenario_key.rental_location_id is not None  # wire validator guarantees
+        series_ids.add(rent_series_id(scenario_key.rental_location_id))
     return frozenset(series_ids)
 
 
 def build_scenario(
     scenario_key: ScenarioKey, *, primary_agent_id: str, initial_cash_usd: float, initial_lots: tuple[InitialLot, ...]
 ) -> Scenario:
-    amount_due_usd: float | SeriesIndexedAmount
-    if scenario_key.spend_index == "inflation":
-        amount_due_usd = SeriesIndexedAmount(
-            base_amount_usd=float(scenario_key.monthly_spend_usd),
-            series_id=INFLATION_SERIES_ID,
-            adjustment_period_months=1,
-        )
-    elif scenario_key.spend_index == "none":
-        amount_due_usd = float(scenario_key.monthly_spend_usd)
-    else:
-        raise ValueError(f"unsupported spend_index: {scenario_key.spend_index!r}")
+    horizon_months = int(scenario_key.horizon_months)
+    end_month = horizon_months - 1
 
-    return Scenario(
-        agents=[
-            Agent(agent_id=primary_agent_id),
-            Agent(agent_id=SPEND_SINK_AGENT_ID),
-            Agent(agent_id=TAX_AUTHORITY_AGENT_ID),
-        ],
-        initial_lots=list(initial_lots),
-        initial_cash=[
-            InitialAccountBalance(
-                agent_id=primary_agent_id, account_id=PRIMARY_ACCOUNT_ID, balance_usd=initial_cash_usd
-            ),
-            InitialAccountBalance(agent_id=SPEND_SINK_AGENT_ID, account_id=SPEND_SINK_ACCOUNT_ID, balance_usd=0.0),
-            InitialAccountBalance(
-                agent_id=TAX_AUTHORITY_AGENT_ID, account_id=TAX_AUTHORITY_ACCOUNT_ID, balance_usd=0.0
-            ),
-        ],
-        recurring_obligations=[
+    agents = [
+        Agent(agent_id=primary_agent_id),
+        Agent(agent_id=SPEND_SINK_AGENT_ID),
+        Agent(agent_id=TAX_AUTHORITY_AGENT_ID),
+    ]
+    initial_cash = [
+        InitialAccountBalance(agent_id=primary_agent_id, account_id=PRIMARY_ACCOUNT_ID, balance_usd=initial_cash_usd),
+        InitialAccountBalance(agent_id=SPEND_SINK_AGENT_ID, account_id=SPEND_SINK_ACCOUNT_ID, balance_usd=0.0),
+        InitialAccountBalance(agent_id=TAX_AUTHORITY_AGENT_ID, account_id=TAX_AUTHORITY_ACCOUNT_ID, balance_usd=0.0),
+    ]
+    recurring_obligations = [
+        RecurringObligation(
+            start_month=0,
+            end_month=end_month,
+            obligation_id=SPEND_OBLIGATION_ID,
+            obligation_type=ObligationType.CASH_SPEND,
+            agent_id=primary_agent_id,
+            from_account_id=PRIMARY_ACCOUNT_ID,
+            to_agent_id=SPEND_SINK_AGENT_ID,
+            to_account_id=SPEND_SINK_ACCOUNT_ID,
+            amount_due_usd=_monthly_spend_amount(scenario_key),
+        )
+    ]
+
+    if scenario_key.monthly_rent_usd > 0:
+        assert scenario_key.rental_location_id is not None  # wire validator guarantees
+        agents.append(Agent(agent_id=LANDLORD_AGENT_ID))
+        initial_cash.append(
+            InitialAccountBalance(agent_id=LANDLORD_AGENT_ID, account_id=LANDLORD_ACCOUNT_ID, balance_usd=0.0)
+        )
+        recurring_obligations.append(
             RecurringObligation(
                 start_month=0,
-                end_month=int(scenario_key.horizon_months) - 1,
-                obligation_id=SPEND_OBLIGATION_ID,
-                obligation_type="cash_spend",
+                end_month=end_month,
+                obligation_id=RENT_OBLIGATION_ID,
+                obligation_type=ObligationType.OUTSIDE_RENT,
                 agent_id=primary_agent_id,
                 from_account_id=PRIMARY_ACCOUNT_ID,
-                to_agent_id=SPEND_SINK_AGENT_ID,
-                to_account_id=SPEND_SINK_ACCOUNT_ID,
-                amount_due_usd=amount_due_usd,
+                to_agent_id=LANDLORD_AGENT_ID,
+                to_account_id=LANDLORD_ACCOUNT_ID,
+                amount_due_usd=SeriesIndexedAmount(
+                    base_amount_usd=float(scenario_key.monthly_rent_usd),
+                    series_id=rent_series_id(scenario_key.rental_location_id),
+                    adjustment_period_months=12,
+                ),
             )
-        ],
+        )
+
+    return Scenario(
+        agents=agents,
+        initial_lots=list(initial_lots),
+        initial_cash=initial_cash,
+        recurring_obligations=recurring_obligations,
         tax_profiles=[
             TaxProfile(
                 agent_id=primary_agent_id,
@@ -114,8 +136,20 @@ def build_scenario(
         liquidity_policies=_liquidity_policies_from_funding_policy(
             scenario_key.funding_policy, primary_agent_id=primary_agent_id, initial_lots=initial_lots
         ),
-        horizon_months=int(scenario_key.horizon_months),
+        horizon_months=horizon_months,
     )
+
+
+def _monthly_spend_amount(scenario_key: ScenarioKey) -> float | SeriesIndexedAmount:
+    if scenario_key.spend_index == "inflation":
+        return SeriesIndexedAmount(
+            base_amount_usd=float(scenario_key.monthly_spend_usd),
+            series_id=INFLATION_SERIES_ID,
+            adjustment_period_months=1,
+        )
+    if scenario_key.spend_index == "none":
+        return float(scenario_key.monthly_spend_usd)
+    raise ValueError(f"unsupported spend_index: {scenario_key.spend_index!r}")
 
 
 def _liquidity_policies_from_funding_policy(

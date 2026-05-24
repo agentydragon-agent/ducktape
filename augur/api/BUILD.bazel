@@ -333,6 +333,7 @@ py_binary(
     ],
     main_module = "augur.api.profile_metric_fan",
     deps = [
+        ":catalog_py",
         ":config_py",
         "//augur/model:simple_exogenous_py",
         "//augur/product:scenarios_py",

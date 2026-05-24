@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import Field, NonNegativeFloat, NonNegativeInt, PositiveFloat, PositiveInt
+from pydantic import Field, NonNegativeFloat, NonNegativeInt, PositiveFloat, PositiveInt, model_validator
 
 from augur.api.schemas import ApiModel, Frame, Percentage
 
@@ -27,6 +27,16 @@ class ScenarioKey(ApiModel):
     monthly_spend_usd: PositiveFloat
     spend_index: SpendIndex
     funding_policy: FundingPolicy = Field(default_factory=FundingPolicy)
+    monthly_rent_usd: NonNegativeFloat = 0.0
+    rental_location_id: str | None = None
+
+    @model_validator(mode="after")
+    def _rent_location_consistency(self) -> ScenarioKey:
+        if self.monthly_rent_usd > 0 and self.rental_location_id is None:
+            raise ValueError("rental_location_id is required when monthly_rent_usd > 0")
+        if self.monthly_rent_usd == 0 and self.rental_location_id is not None:
+            raise ValueError("rental_location_id must be unset when monthly_rent_usd == 0")
+        return self
 
 
 class MetricFanRequest(ApiModel):
@@ -75,6 +85,13 @@ class MonthlyExpenseEvent(_RolloutEventBase):
     shortfall_usd: NonNegativeFloat
 
 
+class OutsideRentPaymentEvent(_RolloutEventBase):
+    kind: Literal["outside_rent"] = "outside_rent"
+    amount_due_usd: NonNegativeFloat
+    amount_paid_usd: NonNegativeFloat
+    shortfall_usd: NonNegativeFloat
+
+
 class TaxAccrualEvent(_RolloutEventBase):
     kind: Literal["tax_accrual"] = "tax_accrual"
     jurisdiction_id: str
@@ -103,7 +120,12 @@ class RolloutFailureEvent(_RolloutEventBase):
 
 
 type RolloutEvent = Annotated[
-    PublicSecuritySaleEvent | MonthlyExpenseEvent | TaxAccrualEvent | TaxPaymentEvent | RolloutFailureEvent,
+    PublicSecuritySaleEvent
+    | MonthlyExpenseEvent
+    | OutsideRentPaymentEvent
+    | TaxAccrualEvent
+    | TaxPaymentEvent
+    | RolloutFailureEvent,
     Field(discriminator="kind"),
 ]
 

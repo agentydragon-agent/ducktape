@@ -17,6 +17,8 @@ const DEFAULT_PRODUCT_INPUT_BASE = {
   sellPublicSecurities: true,
   cashBufferTriggerBelowUsd: 0,
   cashBufferSaleUsd: 0,
+  monthlyRentUsd: 0,
+  rentalLocationId: null,
 };
 
 const FAN_PERCENTILES = [5, 25, 50, 75, 95];
@@ -25,6 +27,7 @@ const FAILED_ROLLOUT_COLOR = "#ef4444";
 const ROLLOUT_EVENT_COLORS = {
   public_security_sale: "#0f766e",
   monthly_expense: "#64748b",
+  outside_rent: "#0891b2",
   tax_accrual: "#b45309",
   tax_payment: "#7c3aed",
   failure: "#dc2626",
@@ -52,11 +55,14 @@ function productInputDefaults(bootstrap) {
     ...DEFAULT_PRODUCT_INPUT_BASE,
     horizonMonths: clampInteger(DEFAULT_PRODUCT_INPUT_BASE.horizonMonths, 1, bootstrap.maxHorizonMonths),
     rolloutCount: clampInteger(defaultRolloutCount, 1, bootstrap.maxRolloutSamples),
+    rentalLocationId: bootstrap.locations[0]?.id ?? null,
   };
 }
 
 function productScenario(input, bootstrap) {
   const sellPublicSecurities = Boolean(input.sellPublicSecurities);
+  const monthlyRentUsd = Math.max(0, Number(input.monthlyRentUsd) || 0);
+  const rentalLocationId = monthlyRentUsd > 0 ? input.rentalLocationId : null;
   return {
     exogenousModelId: "current_exogenous_model",
     horizonMonths: clampInteger(input.horizonMonths, 1, bootstrap.maxHorizonMonths),
@@ -67,6 +73,8 @@ function productScenario(input, bootstrap) {
       cashBufferSaleUsd: sellPublicSecurities ? Math.max(0, Number(input.cashBufferSaleUsd) || 0) : 0,
       sellOrder: sellPublicSecurities ? ["public_securities"] : [],
     },
+    monthlyRentUsd,
+    rentalLocationId,
   };
 }
 
@@ -220,7 +228,7 @@ function eventDetailText(event) {
   if (event?.kind === "public_security_sale") {
     return `${fmtNumber(Number(event.units))} units; basis ${fmtUsd(Number(event.costBasisUsd))}`;
   }
-  if (event?.kind === "monthly_expense") {
+  if (event?.kind === "monthly_expense" || event?.kind === "outside_rent") {
     const shortfall = Number(event.shortfallUsd);
     return shortfall > 0
       ? `due ${fmtUsd(Number(event.amountDueUsd))}; shortfall ${fmtUsd(shortfall)}`
@@ -259,6 +267,9 @@ function eventLabel(event) {
   }
   if (event?.kind === "monthly_expense") {
     return Number(event.shortfallUsd) > 0 ? "Monthly expenses shortfall" : "Paid monthly expenses";
+  }
+  if (event?.kind === "outside_rent") {
+    return Number(event.shortfallUsd) > 0 ? "Rent shortfall" : "Paid rent";
   }
   if (event?.kind === "tax_accrual") {
     return `Accrued ${jurisdictionLabel(event.jurisdictionId)} tax`;
@@ -954,6 +965,23 @@ function ProductProjectionWorkspace({ bootstrap }) {
                   ]}
                   classNames={{ label: "augur-field-label mb-2 block", input: "augur-tabular" }}
                   onChange={(event) => updateInput({ spendIndex: event.target.value })}
+                />
+                <NumberField
+                  label="Monthly rent"
+                  value={input.monthlyRentUsd}
+                  min={0}
+                  step={100}
+                  prefix="$"
+                  onChange={(monthlyRentUsd) => updateInput({ monthlyRentUsd })}
+                />
+                <NativeSelect
+                  label="Rent location"
+                  aria-label="Rent location"
+                  value={input.rentalLocationId ?? ""}
+                  disabled={Number(input.monthlyRentUsd) <= 0 || bootstrap.locations.length === 0}
+                  data={bootstrap.locations.map((location) => ({ value: location.id, label: location.label }))}
+                  classNames={{ label: "augur-field-label mb-2 block", input: "augur-tabular" }}
+                  onChange={(event) => updateInput({ rentalLocationId: event.target.value || null })}
                 />
                 <NumberField
                   label="Horizon"

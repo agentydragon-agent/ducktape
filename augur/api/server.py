@@ -52,6 +52,7 @@ def create_app(config: ApiServerConfig) -> FastAPI:
         portfolio=augur_config.portfolio,
         initial_cash_usd=float(augur_config.snapshot.cash_usd),
         primary_agent_id=resolve_primary_agent_id(augur_config),
+        known_location_ids=frozenset(location.id for location in bootstrap.locations),
         exogenous_model=config.exogenous_model,
         max_rollout_samples=augur_config.max_rollout_samples,
     )

@@ -74,6 +74,7 @@ class ProductService:
         portfolio: PortfolioConfig,
         initial_cash_usd: float,
         primary_agent_id: str,
+        known_location_ids: frozenset[str],
         exogenous_model: ExogenousPathModel,
         max_rollout_samples: int,
         max_cache_rollouts: int = DEFAULT_MAX_CACHE_ROLLOUTS,
@@ -83,6 +84,7 @@ class ProductService:
         self._portfolio = portfolio
         self._initial_cash_usd = float(initial_cash_usd)
         self._primary_agent_id = primary_agent_id
+        self._known_location_ids = known_location_ids
         self._exogenous_model = exogenous_model
         self._max_rollout_samples = int(max_rollout_samples)
         self._max_cache_rollouts = int(max_cache_rollouts)
@@ -128,6 +130,11 @@ class ProductService:
     def _decoded_rollouts(self, scenario_key: ScenarioKey, seeds: tuple[int, ...]) -> tuple[_DecodedRollout, ...]:
         if scenario_key.exogenous_model_id != "current_exogenous_model":
             raise ValueError(f"unsupported exogenous_model_id: {scenario_key.exogenous_model_id!r}")
+        if (
+            scenario_key.rental_location_id is not None
+            and scenario_key.rental_location_id not in self._known_location_ids
+        ):
+            raise ValueError(f"unknown rental_location_id: {scenario_key.rental_location_id!r}")
         cached_by_seed: dict[int, _CachedRollout] = {}
         missing: list[int] = []
         for seed in seeds:

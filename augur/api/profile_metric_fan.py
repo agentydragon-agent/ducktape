@@ -13,6 +13,7 @@ from pathlib import Path
 from types import FrameType
 from typing import get_args
 
+from augur.api.catalog import build_bootstrap_payload
 from augur.api.config import Config, load_augur_config
 from augur.model.simple_exogenous import SimpleExogenousModel, SimpleExogenousModelConfig
 from augur.product.scenarios import resolve_primary_agent_id
@@ -35,10 +36,12 @@ class ProfileTimeoutError(TimeoutError):
 def main() -> int:
     args = _arg_parser().parse_args()
     config = load_augur_config(_config_path(args.config))
+    bootstrap = build_bootstrap_payload(config)
     service = ProductService(
         portfolio=config.portfolio,
         initial_cash_usd=float(config.snapshot.cash_usd),
         primary_agent_id=resolve_primary_agent_id(config),
+        known_location_ids=frozenset(location.id for location in bootstrap.locations),
         exogenous_model=_profile_exogenous_model(config),
         max_rollout_samples=config.max_rollout_samples,
     )

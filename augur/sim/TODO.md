@@ -244,6 +244,15 @@ Suggested migration order:
 
 ## Sim Capability Gaps
 
+- [ ] Cap on `SeriesIndexedAmount` year-over-year escalation, for rent-control
+      / stabilized leases (e.g., SF 7%/yr cap, rent-stabilized 3%/yr cap).
+      Currently `SeriesIndexedAmount` escalates by the full series ratio
+      without bound; outside-rent obligations under such regimes will overstate
+      escalation. Surface a `rent_cap_pct` knob on the product `ScenarioKey`
+      once the sim cap lands.
+- [ ] Generalize the product `landlord` counterparty agent into a registry of
+      named external sinks (landlord, lender, tax authority, HOA, insurer) as
+      more outflows land.
 - [ ] Finish the real-estate lifecycle: property sale, closing costs,
       mortgage payoff, sale proceeds split, occupancy changes,
       depreciation, §121 exclusion, §1250 recapture, itemized deductions,

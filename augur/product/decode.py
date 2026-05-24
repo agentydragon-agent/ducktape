@@ -9,6 +9,7 @@ import polars as pl
 
 from augur.product.wire import (
     MonthlyExpenseEvent,
+    OutsideRentPaymentEvent,
     PublicSecuritySaleEvent,
     RolloutEvent,
     RolloutFailureEvent,
@@ -18,8 +19,10 @@ from augur.product.wire import (
 )
 from augur.sim.engine import DenseSimulationResult
 from augur.sim.run import SimulationRun
+from augur.sim.scenario import ObligationType
 
 _SINGLE_ROLLOUT_INDEX = 0
+_TAX_PAYMENT_OBLIGATION_TYPES = (ObligationType.ESTIMATED_TAX, ObligationType.TAX_TRUE_UP)
 
 
 def monthly_metrics_for_rollout(dense: DenseSimulationResult, *, primary_agent_id: str) -> pl.DataFrame:
@@ -72,9 +75,17 @@ def rollout_events_from(
         *_tax_accrual_events(run, primary_agent_id=primary_agent_id),
         *_tax_payment_events(run, primary_agent_id=primary_agent_id),
         *_monthly_expense_events(run, primary_agent_id=primary_agent_id),
+        *_outside_rent_events(run, primary_agent_id=primary_agent_id),
         *_failure_events(run, primary_agent_id=primary_agent_id),
     ]
-    priority = {"public_security_sale": 0, "tax_accrual": 1, "tax_payment": 2, "monthly_expense": 3, "failure": 4}
+    priority = {
+        "public_security_sale": 0,
+        "tax_accrual": 1,
+        "tax_payment": 2,
+        "monthly_expense": 3,
+        "outside_rent": 4,
+        "failure": 5,
+    }
     return tuple(sorted(events, key=lambda event: (event.month_index, priority[event.kind])))
 
 
@@ -150,7 +161,7 @@ def _public_security_sale_events(
 
 def _monthly_expense_events(run: SimulationRun, *, primary_agent_id: str) -> tuple[RolloutEvent, ...]:
     expense_rows = run.events_log.obligation_settlements.filter(
-        (pl.col("agent_id") == primary_agent_id) & (pl.col("obligation_type") == "cash_spend")
+        (pl.col("agent_id") == primary_agent_id) & (pl.col("obligation_type") == ObligationType.CASH_SPEND)
     ).sort("month_index", "obligation_id")
     return tuple(
         MonthlyExpenseEvent(
@@ -161,6 +172,22 @@ def _monthly_expense_events(run: SimulationRun, *, primary_agent_id: str) -> tup
             shortfall_usd=float(row["shortfall_usd"]),
         )
         for row in expense_rows.iter_rows(named=True)
+    )
+
+
+def _outside_rent_events(run: SimulationRun, *, primary_agent_id: str) -> tuple[RolloutEvent, ...]:
+    rent_rows = run.events_log.obligation_settlements.filter(
+        (pl.col("agent_id") == primary_agent_id) & (pl.col("obligation_type") == ObligationType.OUTSIDE_RENT)
+    ).sort("month_index", "obligation_id")
+    return tuple(
+        OutsideRentPaymentEvent(
+            month_index=int(row["month_index"]),
+            amount_usd=float(row["amount_paid_usd"]),
+            amount_due_usd=float(row["amount_due_usd"]),
+            amount_paid_usd=float(row["amount_paid_usd"]),
+            shortfall_usd=float(row["shortfall_usd"]),
+        )
+        for row in rent_rows.iter_rows(named=True)
     )
 
 
@@ -207,7 +234,7 @@ def _tax_accrual_events(run: SimulationRun, *, primary_agent_id: str) -> tuple[R
 
 def _tax_payment_events(run: SimulationRun, *, primary_agent_id: str) -> tuple[RolloutEvent, ...]:
     tax_payment_rows = run.events_log.obligation_settlements.filter(
-        (pl.col("agent_id") == primary_agent_id) & pl.col("obligation_type").is_in(["estimated_tax", "tax_true_up"])
+        (pl.col("agent_id") == primary_agent_id) & pl.col("obligation_type").is_in(_TAX_PAYMENT_OBLIGATION_TYPES)
     ).sort("month_index", "obligation_id")
     return tuple(
         TaxPaymentEvent(
