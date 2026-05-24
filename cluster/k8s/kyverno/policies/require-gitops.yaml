@@ -64,6 +64,10 @@ spec:
               - kind: ServiceAccount
                 name: monitoring-operator
                 namespace: monitoring
+          - subjects:
+              - kind: ServiceAccount
+                name: grafana-operator
+                namespace: monitoring
           # Allow Authentik (creates outpost Deployments from provider CRs)
           - subjects:
               - kind: ServiceAccount

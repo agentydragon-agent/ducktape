@@ -5,6 +5,10 @@ metadata:
   namespace: monitoring
 spec:
   interval: 30m
+  # 2026-05-24: nothing else writes the operator's Deployment, so it's
+  # safe to have Flux re-apply on drift (e.g. accidental kubectl scale).
+  driftDetection:
+    mode: enabled
   chart:
     spec:
       chart: grafana-operator

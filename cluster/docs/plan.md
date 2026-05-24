@@ -372,6 +372,32 @@ Deployed in Audit mode (`require-gitops` ClusterPolicy, 3 replicas).
 - [ ] Generic operator exclusion (skip resources with `ownerReferences`)
 - [ ] Image registry allowlist (`ghcr.io`, `docker.io`, `registry.allegedly.works`, `quay.io`)
 
+### Flux HelmRelease Drift Detection
+
+By default Flux's helm-controller only runs `helm upgrade` when an HR's spec
+changes, not on the periodic interval. A hand-edit like
+`kubectl scale deployment ... --replicas=0` is invisible to it — the Helm
+release is still recorded as "deployed" with the right values, the deployment
+object still exists, so nothing looks drifted. Hit on 2026-05-24 when
+`grafana-operator` had been hand-scaled to 0 for ~10 days without Flux
+restoring it; grafana-deployment then sat at 0/0 because the operator
+wasn't reconciling.
+
+Per-HR opt-in fix:
+
+```yaml
+spec:
+  driftDetection:
+    mode: enabled
+```
+
+- [ ] Enable on `grafana-operator` (low-risk; nothing else writes that
+      Deployment)
+- [ ] Audit which HRs are safe to enable wider — anything where another
+      controller legitimately mutates Helm-managed resources (HPA scaling,
+      sidecar injectors, security defaulters, VPA on `Auto` mode) will
+      fight drift correction and should stay off.
+
 ### Cilium Mutual Auth (SPIRE) -- Paused
 
 SPIRE disabled — times out on Talos bootstrap. Nebula provides inter-node encryption.
