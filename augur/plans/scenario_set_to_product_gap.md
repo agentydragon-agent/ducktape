@@ -49,11 +49,14 @@ then delete scenario-set + bridge + legacy frontend route.
 - **Why missing from product**: product is single-scenario end-to-end (wire `ScenarioKey` → response). No scenario list, no cross-scenario aggregation in UI.
 - **Effort**: medium. Shareable scenario-comparison permalink comes for free.
 
-### Terminal distribution histogram (replaces today's terminal strip)
+### ~~Terminal distribution histogram (replaces today's terminal strip)~~ — done
 
-- **Scenario-set location**: `augur/frontend/app.jsx:288`–`301`, `:747`–`800` `TerminalMetricsPanel` with percentile columns
-- **Design intent**: not a literal port of the table. Replace product's existing strip-of-rectangles terminal selector with a histogram whose bars are stacks of clickable cells — each cell is one rollout. Hover → terminal value + rollout index. Click → trajectory opens. P5/P25/P50/P75/P95 vertical markers overlay. Subsumes the existing selector strip and adds distribution shape.
-- **Effort**: low. Terminal values + rollout indices already in metric-fan response.
+Landed in `augur/frontend/product_app.jsx` as `TerminalDistributionHistogram` and
+follow-up refinements (failed cells colored red inline with the rest of the
+distribution, metric-aware binning that tracks the chart's selected metric,
+nice currency tick steps, gap-aware container sizing so cells don't get clipped).
+The terminal-metrics table also got a SELECTED column whose position floats to
+the correct slot among the percentiles based on the chart's selected metric.
 
 ## Tier 2 — genuine new modeling (post-deletion)
 
@@ -106,7 +109,7 @@ scenario-set deletion time should also drop the schema.
 
 ## Suggested sequence
 
-1. **Terminal distribution histogram** (Tier 1) — small, immediate UX win, no backend work.
-2. **Multi-scenario comparison** (Tier 1) — the medium piece. Once landed, scenario-set deletion is unblocked.
+1. ~~**Terminal distribution histogram**~~ — done.
+2. **Multi-scenario comparison** (Tier 1) — the only remaining deletion blocker.
 3. **Delete scenario-set** + bridge + legacy frontend route + the rejected/aspirational schema (`PropertyPurchaseEvent.month_index`, crypto/PE schema types, occupancy/rental enums, etc.).
 4. **Tier 2 features** in user-priority order — likely crypto → PE → SALT cap → multi-actor → occupancy.
