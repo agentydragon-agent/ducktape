@@ -25,6 +25,7 @@ const DEFAULT_PRODUCT_INPUT_BASE = {
   mortgageTermMonths: 360,
   annualRatePct: 7,
   annualInsurancePct: 0.4,
+  annualMaintenancePct: 1.0,
 };
 
 const FAN_PERCENTILES = [5, 25, 50, 75, 95];
@@ -40,6 +41,7 @@ const ROLLOUT_EVENT_COLORS = {
   property_tax_payment: "#a16207",
   hoa_dues_payment: "#14b8a6",
   homeowners_insurance_payment: "#9333ea",
+  property_maintenance_payment: "#d97706",
   tax_accrual: "#b45309",
   tax_payment: "#7c3aed",
   failure: "#dc2626",
@@ -107,6 +109,7 @@ function productScenario(input, bootstrap) {
     rentalLocationId,
     propertyPurchase: buildPropertyPurchase(input),
     annualInsurancePct: Math.max(0, Number(input.annualInsurancePct) || 0),
+    annualMaintenancePct: Math.max(0, Number(input.annualMaintenancePct) || 0),
   };
 }
 
@@ -249,6 +252,7 @@ function eventMarkerYOffset(event) {
   if (event?.kind === "property_tax_payment") return 10;
   if (event?.kind === "hoa_dues_payment") return 14;
   if (event?.kind === "homeowners_insurance_payment") return 16;
+  if (event?.kind === "property_maintenance_payment") return 18;
   if (event?.kind === "mortgage_payment") return 12;
   if (event?.kind === "failure") return 7;
   return 0;
@@ -318,6 +322,12 @@ function eventDetailText(event) {
       ? `due ${fmtUsd(Number(event.amountDueUsd))}; shortfall ${fmtUsd(shortfall)}`
       : `due ${fmtUsd(Number(event.amountDueUsd))}`;
   }
+  if (event?.kind === "property_maintenance_payment") {
+    const shortfall = Number(event.shortfallUsd);
+    return shortfall > 0
+      ? `due ${fmtUsd(Number(event.amountDueUsd))}; shortfall ${fmtUsd(shortfall)}`
+      : `due ${fmtUsd(Number(event.amountDueUsd))}`;
+  }
   if (event?.kind === "failure") {
     return `shortfall ${fmtUsd(Number(event.shortfallUsd))}`;
   }
@@ -366,6 +376,9 @@ function eventLabel(event) {
   }
   if (event?.kind === "homeowners_insurance_payment") {
     return Number(event.shortfallUsd) > 0 ? "Homeowner's insurance shortfall" : "Paid homeowner's insurance";
+  }
+  if (event?.kind === "property_maintenance_payment") {
+    return Number(event.shortfallUsd) > 0 ? "Maintenance shortfall" : "Paid maintenance";
   }
   if (event?.kind === "failure") {
     return "Rollout failed";
@@ -928,6 +941,16 @@ function PropertyPurchasePanel({ bootstrap, input, onChange }) {
           suffix="%"
           disabled={input.propertyId == null}
           onChange={(annualInsurancePct) => onChange({ annualInsurancePct })}
+        />
+        <NumberField
+          label="Maintenance (% of price / yr)"
+          value={input.annualMaintenancePct}
+          min={0}
+          max={10}
+          step={0.1}
+          suffix="%"
+          disabled={input.propertyId == null}
+          onChange={(annualMaintenancePct) => onChange({ annualMaintenancePct })}
         />
       </div>
     </div>

@@ -51,6 +51,7 @@ class PropertyPurchase(ApiModel):
 
 
 DEFAULT_ANNUAL_INSURANCE_PCT = 0.4
+DEFAULT_ANNUAL_MAINTENANCE_PCT = 1.0
 
 
 class ScenarioKey(ApiModel):
@@ -63,6 +64,7 @@ class ScenarioKey(ApiModel):
     rental_location_id: str | None = None
     property_purchase: PropertyPurchase | None = None
     annual_insurance_pct: NonNegativeFloat = DEFAULT_ANNUAL_INSURANCE_PCT
+    annual_maintenance_pct: NonNegativeFloat = DEFAULT_ANNUAL_MAINTENANCE_PCT
 
     @model_validator(mode="after")
     def _rent_location_consistency(self) -> ScenarioKey:
@@ -169,6 +171,13 @@ class HomeownersInsurancePaymentEvent(_RolloutEventBase):
     shortfall_usd: NonNegativeFloat
 
 
+class PropertyMaintenancePaymentEvent(_RolloutEventBase):
+    kind: Literal["property_maintenance_payment"] = "property_maintenance_payment"
+    amount_due_usd: NonNegativeFloat
+    amount_paid_usd: NonNegativeFloat
+    shortfall_usd: NonNegativeFloat
+
+
 class TaxAccrualEvent(_RolloutEventBase):
     kind: Literal["tax_accrual"] = "tax_accrual"
     jurisdiction_id: str
@@ -206,6 +215,7 @@ type RolloutEvent = Annotated[
     | PropertyTaxPaymentEvent
     | HoaDuesPaymentEvent
     | HomeownersInsurancePaymentEvent
+    | PropertyMaintenancePaymentEvent
     | TaxAccrualEvent
     | TaxPaymentEvent
     | RolloutFailureEvent,
