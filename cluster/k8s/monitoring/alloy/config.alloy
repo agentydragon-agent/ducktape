@@ -64,7 +64,7 @@ otelcol.exporter.loki "default" {
 
 loki.write "monitoring" {
   endpoint {
-    url = "http://loki.loki.svc.cluster.local:3100/loki/api/v1/push"
+    url = "http://loki-write.loki.svc.cluster.local:3100/loki/api/v1/push"
   }
 }
 

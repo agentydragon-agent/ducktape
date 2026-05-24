@@ -132,16 +132,23 @@ endpoints:
 
   # ── cluster ───────────────────────────────────────────────────────────
 
-  - name: Loki
+  - name: Loki write
     group: cluster
-    url: http://loki.loki.svc.cluster.local:3100/ready
+    url: http://loki-write.loki.svc.cluster.local:3100/ready
+    interval: 60s
+    conditions:
+      - "[STATUS] == 200"
+
+  - name: Loki read
+    group: cluster
+    url: http://loki-read.loki.svc.cluster.local:3100/ready
     interval: 60s
     conditions:
       - "[STATUS] == 200"
 
   - name: Loki labels API
     group: cluster
-    url: http://loki.loki.svc.cluster.local:3100/loki/api/v1/labels
+    url: http://loki-read.loki.svc.cluster.local:3100/loki/api/v1/labels
     interval: 120s
     conditions:
       - "[STATUS] == 200"
