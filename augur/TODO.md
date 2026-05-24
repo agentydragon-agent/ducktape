@@ -43,6 +43,35 @@ generic backlog rather than a second ordered roadmap.
       30y rate flat at today's value over the entire horizon. Refinance
       and variable-rate scenarios unreachable until the joint exogenous
       model produces a sampled mortgage-rate path.
+- [ ] **Probabilistic mortgage-offer model, conditioned on term.** Today
+      scenarios take a single flat `financing.mortgage_rate_pct` from user
+      input. The "what rate would the buyer actually get at purchase
+      month?" question deserves its own model — output a distribution
+      over offered rates conditioned on term (30y fixed, 15y fixed,
+      jumbo, ARM, etc.), optionally on credit score / LTV / loan size,
+      so scenario builders can sample a realistic offer instead of
+      hard-coding one. FRED has term-stratified series; could fit
+      jointly with the broader rate factor once the consumer side is
+      wired (see preceding bullet — until scenarios sample at purchase
+      month, both this and the sampled-rate-path entry are blocked on
+      consumer wiring, not modeling).
+- [ ] **Per-location rent series.** The VECM exogenous model fits a single
+      `rent:san_francisco_ca` factor (FRED SF rent CPI) and aliases it for
+      every other location via `location_series_sources.rent`. So today
+      `rent:vallejo_ca` and `rent:mare_island_vallejo_ca` are literally the
+      same trajectory as SF rent. Wire dedicated FRED rent CPI series (or
+      equivalent) per location, fit them as additional VECM factors, and
+      remove the SF-rent aliasing.
+- [ ] **Mare Island home_value distinct from Vallejo.** Today
+      `home_value:mare_island_vallejo_ca` aliases to the Vallejo Zillow
+      ZHVI factor (gaffer config piggybacks). Source separate Mare Island
+      data — Zillow may not stratify it, so this likely needs a different
+      provider or a deliberate adjustment factor.
+- [ ] **More cities in the Zillow home-value pipeline.** The Zillow CSV
+      already has every US metro; the loader filters to the configured
+      `zillow_home_value_regions` set. Adding a city to a deployment
+      should just be a config edit, but we should document the
+      "available cities" surface and consider a discovery helper.
 - [ ] **`RegimeChange` mid-rollout events.** The `LiquidityRegime` shape
       already supports `LiquidityEventOnly → PublicMarket` transitions
       (e.g. IPO), but no runtime hook flips the regime today. Exogenous

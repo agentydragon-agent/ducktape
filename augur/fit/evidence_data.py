@@ -37,7 +37,7 @@ def resolve_path(path: str | Path, base_dir: str | Path) -> Path:
     return (Path(base_dir) / p).resolve()
 
 
-BASE_HOME_VALUE_FACTOR = "home"
+BASE_HOME_VALUE_FACTOR = "home_value:san_francisco_ca"
 MONTHS_PER_YEAR = 12
 DATA_DERIVED_SERIES_PATH_PRIOR_SUFFIXES = ("_monthly_log_mu", "_monthly_log_mu_sigma", "_monthly_log_vol_sigma")
 MIN_MONTHLY_LOG_MU_SIGMA = 0.005 / MONTHS_PER_YEAR
@@ -258,12 +258,12 @@ def load_exogenous_evidence(source_config: SourceDataConfig, base_dir: str | Pat
         for factor_name, (region_name, state) in home_value_region_config.items()
     }
     home_factor_names = tuple(home_values)
-    factor_names = ("sp500", *home_factor_names, "rent", "inflation")
+    factor_names = ("sp500", *home_factor_names, "rent:san_francisco_ca", "inflation")
     aligned = pd.concat(
         {
             "sp500": _monthly_unit_returns(sp500_total_return),
             **{factor_name: _monthly_unit_returns(series) for factor_name, series in home_values.items()},
-            "rent": _monthly_unit_returns(rent),
+            "rent:san_francisco_ca": _monthly_unit_returns(rent),
             "inflation": _monthly_unit_returns(cpi),
         },
         axis=1,
@@ -281,7 +281,7 @@ def load_exogenous_evidence(source_config: SourceDataConfig, base_dir: str | Pat
     marginal = {
         "sp500": _returns([sp500_returns]),
         **{factor_name: _returns([returns]) for factor_name, returns in home_value_returns.items()},
-        "rent": _returns([rent_returns]),
+        "rent:san_francisco_ca": _returns([rent_returns]),
         "inflation": _returns([cpi_returns]),
     }
     series_path_calibration, calibrated_series_path_priors = calibrate_series_path_priors(factor_names, marginal)

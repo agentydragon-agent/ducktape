@@ -102,7 +102,7 @@ def _evidence_fred_only(config: EvidenceConfig, base_dir: Path) -> tuple[Histori
     source = config.source_data
     series_sources = LocationSeriesSources.from_config(config.location_series_sources)
     home_factor_names = tuple(dict.fromkeys(series_sources.home_value.values()))
-    factor_names = ("sp500", *home_factor_names, "rent", "inflation")
+    factor_names = ("sp500", *home_factor_names, "rent:san_francisco_ca", "inflation")
     sp500_path = resolve_path(source.fred_sp500_csv, base_dir)
     home_path = resolve_path(source.fred_sfxrsa_csv, base_dir)
     rent_path = resolve_path(source.fred_sf_rent_cpi_csv, base_dir)
@@ -116,7 +116,9 @@ def _evidence_fred_only(config: EvidenceConfig, base_dir: Path) -> tuple[Histori
     mortgage = _read_fred_csv(mortgage_path, "MORTGAGE30US")
 
     aligned = pd.concat(
-        {"sp500": sp500, **dict.fromkeys(home_factor_names, home), "rent": rent, "inflation": cpi}, axis=1, join="inner"
+        {"sp500": sp500, **dict.fromkeys(home_factor_names, home), "rent:san_francisco_ca": rent, "inflation": cpi},
+        axis=1,
+        join="inner",
     ).dropna()
     if len(aligned) < 36:
         raise ValueError(f"only {len(aligned)} aligned months across the FRED-only synthesized series")

@@ -49,12 +49,12 @@ class EvidenceConfig(StrictModel):
         unknown_rent = {
             location_id: factor_name
             for location_id, factor_name in self.location_series_sources.rent.items()
-            if factor_name != "rent"
+            if factor_name != "rent:san_francisco_ca"
         }
         if unknown_rent:
             raise ValueError(
                 "location_series_sources.rent references unknown source factors "
-                f"{unknown_rent}; configured rent factors=['rent']"
+                f"{unknown_rent}; configured rent factors=['rent:san_francisco_ca']"
             )
         return self
 

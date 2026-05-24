@@ -9,10 +9,10 @@
     "fred_mortgage30_csv": "../../data/fred_mortgage30.csv",
     "zillow_city_zhvi_csv": "../../data/zillow_city_zhvi_uc_sfrcondo_tier_0.33_0.67_sm_sa_month.csv",
     "zillow_home_value_regions": {
-      "home": {
+      "home_value:san_francisco_ca": {
         "region_name": "San Francisco"
       },
-      "vallejo_home": {
+      "home_value:vallejo_ca": {
         "region_name": "Vallejo"
       }
     },
@@ -20,13 +20,13 @@
   },
   "location_series_sources": {
     "home_value": {
-      "san_francisco_ca": "home",
-      "vallejo_ca": "vallejo_home"
+      "san_francisco_ca": "home_value:san_francisco_ca",
+      "vallejo_ca": "home_value:vallejo_ca"
     },
     "rent": {
-      "san_francisco_ca": "rent",
-      "vallejo_ca": "rent",
-      "mare_island_vallejo_ca": "rent"
+      "san_francisco_ca": "rent:san_francisco_ca",
+      "vallejo_ca": "rent:san_francisco_ca",
+      "mare_island_vallejo_ca": "rent:san_francisco_ca"
     }
   }
 }

@@ -40,9 +40,12 @@ def test_example_evidence_config_is_the_public_file_boundary_contract() -> None:
     assert set(payload) == EXPECTED_TOP_LEVEL_KEYS
     assert set(payload["source_data"]) == EXPECTED_SOURCE_DATA_KEYS
     assert set(payload["location_series_sources"]) == EXPECTED_LOCATION_SERIES_SOURCE_KEYS
-    assert sorted(config.source_data.zillow_home_value_regions) == ["home", "vallejo_home"]
-    assert config.location_series_sources.home_value["san_francisco_ca"] == "home"
-    assert config.location_series_sources.rent["mare_island_vallejo_ca"] == "rent"
+    assert sorted(config.source_data.zillow_home_value_regions) == [
+        "home_value:san_francisco_ca",
+        "home_value:vallejo_ca",
+    ]
+    assert config.location_series_sources.home_value["san_francisco_ca"] == "home_value:san_francisco_ca"
+    assert config.location_series_sources.rent["mare_island_vallejo_ca"] == "rent:san_francisco_ca"
 
 
 def test_load_evidence_config_rejects_stale_runtime_knobs(tmp_path: Path) -> None:

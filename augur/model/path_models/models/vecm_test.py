@@ -28,7 +28,11 @@ def _series_from_log_levels(log_levels: np.ndarray) -> HistoricalSeries:
 def _historical_series_from_log_levels(log_levels: np.ndarray) -> HistoricalSeries:
     levels = np.exp(log_levels - log_levels[0])
     months = tuple(f"2000-{i:02d}" for i in range(levels.shape[0]))
-    return HistoricalSeries(factor_names=("sp500", "home", "rent", "inflation"), levels=levels, months=months)
+    return HistoricalSeries(
+        factor_names=("sp500", "home_value:san_francisco_ca", "rent:san_francisco_ca", "inflation"),
+        levels=levels,
+        months=months,
+    )
 
 
 class TestVecmModel:
@@ -111,10 +115,16 @@ class TestVecmModel:
         model.fit(_historical_series_from_log_levels(log_levels))
         joint_model = VecmExogenousPathModel.from_loaded_model(
             model,
-            latest_observations={"sp500": 5500.0, "home": 1_000_000.0, "rent": 3000.0, "inflation": 320.0},
+            latest_observations={
+                "sp500": 5500.0,
+                "home_value:san_francisco_ca": 1_000_000.0,
+                "rent:san_francisco_ca": 3000.0,
+                "inflation": 320.0,
+            },
             private_equity_prices_usd={"private_equity_x": 50.0},
             location_series_sources=LocationSeriesSources(
-                home_value={"san_francisco_ca": "home"}, rent={"san_francisco_ca": "rent"}
+                home_value={"san_francisco_ca": "home_value:san_francisco_ca"},
+                rent={"san_francisco_ca": "rent:san_francisco_ca"},
             ),
             evidence_source_id="test",
         )

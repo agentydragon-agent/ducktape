@@ -436,7 +436,7 @@ class VecmExogenousPathModel:
 
         if factor_name == "sp500":
             return self._latest_observation_value("spy_adjusted_close_latest", fallback_key="sp500_price_latest")
-        if factor_name == "rent":
+        if factor_name == "rent:san_francisco_ca":
             return self._latest_observation_value("sf_rent_cpi_latest")
         if factor_name == "inflation":
             return self._latest_observation_value("cpi_latest")
