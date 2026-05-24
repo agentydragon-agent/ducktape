@@ -34,7 +34,7 @@ export function NumberField({
       rightSectionPointerEvents="none"
       rightSectionWidth={numberFieldSectionWidth(formattedSuffix)}
       thousandSeparator=","
-      classNames={{ label: "augur-field-label mb-2 block", input: "augur-tabular" }}
+      classNames={{ label: "augur-field-label mb-1 block", input: "augur-tabular" }}
       {...inputProps}
       onChange={(nextValue) => {
         const number = typeof nextValue === "number" ? nextValue : Number(nextValue);

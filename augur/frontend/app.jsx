@@ -344,7 +344,7 @@ function rolloutStatusForIndex(scenarioResult, rolloutIndex) {
 
 function selectedRolloutStatusText(status) {
   if (!status) return "status unknown";
-  const minCash = fmtUsd(Number(status.minCashUsd));
+  const minCash = fmtUsd(status.minCashUsd);
   if (status.status === ROLLOUT_STATUS_ACTIVE) {
     return `active; minimum cash ${minCash}`;
   }
@@ -609,13 +609,13 @@ function PortfolioSnapshotPanel({ bootstrap }) {
   const holding = primaryConcentratedHolding(bootstrap);
   const rows = [
     ["As of", snapshot.asOfDate ?? "n/a"],
-    ["Cash", fmtUsd(Number(snapshot.cashUsd))],
-    ["Wealthfront SP500", fmtUsd(Number(snapshot.wealthfrontSp500Usd))],
-    ["IBKR VT", fmtUsd(Number(snapshot.ibkrVtUsd))],
-    ["SP500-like total", fmtUsd(Number(snapshot.sp500ProxyPortfolioUsd))],
+    ["Cash", fmtUsd(snapshot.cashUsd)],
+    ["Wealthfront SP500", fmtUsd(snapshot.wealthfrontSp500Usd)],
+    ["IBKR VT", fmtUsd(snapshot.ibkrVtUsd)],
+    ["SP500-like total", fmtUsd(snapshot.sp500ProxyPortfolioUsd)],
   ];
   if (holding) {
-    rows.push([`${holding.label} units`, fmtNumber(Number(holding.units))]);
+    rows.push([`${holding.label} units`, fmtNumber(holding.units)]);
     rows.push([`${holding.label} value`, fmtUsd(concentratedHoldingValueUsd(holding))]);
   }
   return (

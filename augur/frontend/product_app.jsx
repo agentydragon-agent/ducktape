@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Button, Checkbox, NativeSelect } from "@mantine/core";
 
 import { fetchAugurBootstrap, fetchProductMetricFan, fetchProductPortfolio, fetchProductRollout } from "./client.js";
-import { fanChartAxis, fanChartYearTicks, fmtAxisMetricValue } from "./lib/chart.js";
+import { currencyFanChartAxis, fanChartAxis, fanChartYearTicks, fmtAxisMetricValue } from "./lib/chart.js";
 import { rowsFrom } from "./lib/frame.js";
 import { NumberField } from "./lib/controls.jsx";
 import { fmtNumber, fmtUsd } from "./lib/format.js";
@@ -10,7 +10,7 @@ import { AugurShellHeader } from "./shell.jsx";
 
 const DEFAULT_PRODUCT_INPUT_BASE = {
   horizonMonths: 48,
-  rolloutCount: 32,
+  rolloutCount: 100,
   firstSeed: 1301,
   monthlySpendUsd: 1400,
   spendIndex: "inflation",
@@ -266,8 +266,21 @@ function quantile(values, percentile) {
   return sorted[lowerIndex] * (1 - weight) + sorted[upperIndex] * weight;
 }
 
-function terminalMetricTableRows(summaries, selectedSummary) {
-  return METRIC_OPTIONS.map((metric) => ({
+const PROPERTY_METRIC_VALUES = new Set(["property_value_usd"]);
+const MORTGAGE_METRIC_VALUES = new Set(["mortgage_balance_usd", "home_equity_usd"]);
+
+function visibleMetricOptions(input) {
+  const hasProperty = input?.propertyId != null;
+  const hasMortgage = hasProperty && input?.financingKind === "mortgage";
+  return METRIC_OPTIONS.filter((metric) => {
+    if (!hasProperty && PROPERTY_METRIC_VALUES.has(metric.value)) return false;
+    if (!hasMortgage && MORTGAGE_METRIC_VALUES.has(metric.value)) return false;
+    return true;
+  });
+}
+
+function terminalMetricTableRows(summaries, selectedSummary, metrics) {
+  return metrics.map((metric) => ({
     metric,
     percentiles: FAN_PERCENTILES.map((percentile) => ({
       percentile,
@@ -357,13 +370,13 @@ function eventAmount(event) {
 
 function eventDetailText(event) {
   if (event?.kind === "public_security_sale") {
-    return `${fmtNumber(Number(event.units))} units; basis ${fmtUsd(Number(event.costBasisUsd))}`;
+    return `${fmtNumber(event.units)} units; basis ${fmtUsd(event.costBasisUsd)}`;
   }
   if (event?.kind === "monthly_expense" || event?.kind === "outside_rent") {
     const shortfall = Number(event.shortfallUsd);
     return shortfall > 0
-      ? `due ${fmtUsd(Number(event.amountDueUsd))}; shortfall ${fmtUsd(shortfall)}`
-      : `due ${fmtUsd(Number(event.amountDueUsd))}`;
+      ? `due ${fmtUsd(event.amountDueUsd)}; shortfall ${fmtUsd(shortfall)}`
+      : `due ${fmtUsd(event.amountDueUsd)}`;
   }
   if (event?.kind === "tax_accrual") {
     const capitalGainTax = Number(event.capitalGainTaxUsd);
@@ -372,7 +385,7 @@ function eventDetailText(event) {
     const standard = Number(event.standardDeductionUsd);
     const mid = Number(event.mortgageInterestDeductionUsd);
     const parts = [
-      `ordinary tax ${fmtUsd(Number(event.ordinaryTaxUsd))}`,
+      `ordinary tax ${fmtUsd(event.ordinaryTaxUsd)}`,
       `gain tax ${fmtUsd(capitalGainTax)}`,
       `gains ${fmtUsd(gain)}`,
     ];
@@ -386,8 +399,8 @@ function eventDetailText(event) {
   if (event?.kind === "tax_payment") {
     const shortfall = Number(event.shortfallUsd);
     return shortfall > 0
-      ? `due ${fmtUsd(Number(event.amountDueUsd))}; shortfall ${fmtUsd(shortfall)}`
-      : `due ${fmtUsd(Number(event.amountDueUsd))}`;
+      ? `due ${fmtUsd(event.amountDueUsd)}; shortfall ${fmtUsd(shortfall)}`
+      : `due ${fmtUsd(event.amountDueUsd)}`;
   }
   if (event?.kind === "property_purchase") {
     const mortgage = Number(event.mortgagePrincipalUsd);
@@ -400,34 +413,34 @@ function eventDetailText(event) {
     return "";
   }
   if (event?.kind === "mortgage_payment") {
-    return `interest ${fmtUsd(Number(event.interestUsd))}; principal ${fmtUsd(Number(event.principalUsd))}`;
+    return `interest ${fmtUsd(event.interestUsd)}; principal ${fmtUsd(event.principalUsd)}`;
   }
   if (event?.kind === "property_tax_payment") {
     const shortfall = Number(event.shortfallUsd);
     return shortfall > 0
-      ? `due ${fmtUsd(Number(event.amountDueUsd))}; shortfall ${fmtUsd(shortfall)}`
-      : `due ${fmtUsd(Number(event.amountDueUsd))}`;
+      ? `due ${fmtUsd(event.amountDueUsd)}; shortfall ${fmtUsd(shortfall)}`
+      : `due ${fmtUsd(event.amountDueUsd)}`;
   }
   if (event?.kind === "hoa_dues_payment") {
     const shortfall = Number(event.shortfallUsd);
     return shortfall > 0
-      ? `due ${fmtUsd(Number(event.amountDueUsd))}; shortfall ${fmtUsd(shortfall)}`
-      : `due ${fmtUsd(Number(event.amountDueUsd))}`;
+      ? `due ${fmtUsd(event.amountDueUsd)}; shortfall ${fmtUsd(shortfall)}`
+      : `due ${fmtUsd(event.amountDueUsd)}`;
   }
   if (event?.kind === "homeowners_insurance_payment") {
     const shortfall = Number(event.shortfallUsd);
     return shortfall > 0
-      ? `due ${fmtUsd(Number(event.amountDueUsd))}; shortfall ${fmtUsd(shortfall)}`
-      : `due ${fmtUsd(Number(event.amountDueUsd))}`;
+      ? `due ${fmtUsd(event.amountDueUsd)}; shortfall ${fmtUsd(shortfall)}`
+      : `due ${fmtUsd(event.amountDueUsd)}`;
   }
   if (event?.kind === "property_maintenance_payment") {
     const shortfall = Number(event.shortfallUsd);
     return shortfall > 0
-      ? `due ${fmtUsd(Number(event.amountDueUsd))}; shortfall ${fmtUsd(shortfall)}`
-      : `due ${fmtUsd(Number(event.amountDueUsd))}`;
+      ? `due ${fmtUsd(event.amountDueUsd)}; shortfall ${fmtUsd(shortfall)}`
+      : `due ${fmtUsd(event.amountDueUsd)}`;
   }
   if (event?.kind === "failure") {
-    return `shortfall ${fmtUsd(Number(event.shortfallUsd))}`;
+    return `shortfall ${fmtUsd(event.shortfallUsd)}`;
   }
   return "";
 }
@@ -676,15 +689,69 @@ function MetricFanChart({
   );
 }
 
-function RolloutSliverStrip({ summaries, selectedSeed, loadingSeed, onSelect }) {
+function terminalHistogramBins(completedEntries, binCount, axisMin, axisMax) {
+  const span = axisMax - axisMin;
+  const binWidth = span > 0 ? span / binCount : 1;
+  const bins = Array.from({ length: binCount }, (_, index) => ({
+    lo: axisMin + index * binWidth,
+    hi: axisMin + (index + 1) * binWidth,
+    rollouts: [],
+  }));
+  for (const entry of completedEntries) {
+    const idx = Math.min(binCount - 1, Math.max(0, Math.floor((entry.value - axisMin) / binWidth)));
+    bins[idx].rollouts.push(entry);
+  }
+  for (const bin of bins) {
+    bin.rollouts.sort((left, right) => left.value - right.value);
+  }
+  return bins;
+}
+
+function TerminalDistributionHistogram({ summaries, selectedSeed, loadingSeed, onSelect }) {
   if (summaries.length === 0) return null;
-  const sortedSummaries = summaries.slice().sort((left, right) => left.sortRank - right.sortRank);
+  const metric = METRIC_BY_VALUE.get("net_worth_usd");
+  const completed = [];
+  const failed = [];
+  for (const summary of summaries) {
+    const value = terminalMetricValue(summary.terminalMetrics, metric);
+    if (summary.failed || !Number.isFinite(value)) {
+      failed.push({ summary, value: Number.isFinite(value) ? value : null });
+    } else {
+      completed.push({ summary, value });
+    }
+  }
+  const axis =
+    completed.length > 0
+      ? currencyFanChartAxis(
+          completed.map((entry) => entry.value),
+          6
+        )
+      : { min: 0, max: 1, range: 1, ticks: [0, 1] };
+  const binCount = Math.max(8, Math.min(36, Math.ceil(Math.sqrt(completed.length) * 1.3)));
+  const bins = terminalHistogramBins(completed, binCount, axis.min, axis.max);
+  const maxBinCount = Math.max(failed.length, ...bins.map((bin) => bin.rollouts.length), 1);
+  const cellHeight = Math.max(3, Math.min(10, Math.floor(220 / maxBinCount)));
+  const containerHeight = Math.max(80, Math.min(240, cellHeight * maxBinCount + 4));
+  const percentiles = FAN_PERCENTILES.map((percentile) => ({
+    percentile,
+    value: quantile(
+      completed.map((entry) => entry.value),
+      percentile
+    ),
+  })).filter((row) => Number.isFinite(row.value));
+  const axisLeftPct = (value) => {
+    if (!Number.isFinite(value) || axis.range <= 0) return null;
+    return ((value - axis.min) / axis.range) * 100;
+  };
+  const xTicks = Array.isArray(axis.ticks) ? axis.ticks.slice().sort((left, right) => left - right) : [];
   return (
     <div className="border-t border-slate-200 px-4 py-3 dark:border-slate-700">
       <div className="mb-2 flex items-center justify-between gap-3">
         <div>
-          <div className="augur-eyebrow">Rollouts</div>
-          <div className="mt-1 text-xs augur-muted">Ranked by terminal net worth; failures first.</div>
+          <div className="augur-eyebrow">Terminal net worth distribution</div>
+          <div className="mt-1 text-xs augur-muted">
+            One cell per rollout; click to inspect. Failures are stacked on the left.
+          </div>
         </div>
         {selectedSeed != null && (
           <button
@@ -696,57 +763,141 @@ function RolloutSliverStrip({ summaries, selectedSeed, loadingSeed, onSelect }) 
           </button>
         )}
       </div>
-      <div className="overflow-x-auto pb-1">
-        <div className="flex min-w-[30rem] items-end gap-px" role="list" aria-label="Select rollout to inspect">
-          {sortedSummaries.map((summary) => {
-            const seed = Number(summary.seed);
-            const isSelected = selectedSeed === seed;
-            const isLoading = loadingSeed === seed;
-            const failedMonth = summary.terminalMetrics?.failedMonthIndex;
-            const titleParts = [
-              `Seed ${seed}`,
-              `P${Math.round(Number(summary.rankPercentile))}`,
-              rolloutStatusText(summary),
-              `terminal net worth ${fmtUsd(terminalMetricValue(summary.terminalMetrics, METRIC_BY_VALUE.get("net_worth_usd")))}`,
-            ];
+      <div className="flex items-stretch gap-3">
+        {failed.length > 0 && (
+          <TerminalHistogramColumn
+            label="Failed"
+            rollouts={failed}
+            cellHeight={cellHeight}
+            containerHeight={containerHeight}
+            selectedSeed={selectedSeed}
+            loadingSeed={loadingSeed}
+            onSelect={onSelect}
+            cellColor={() => FAILED_ROLLOUT_COLOR}
+            width="2.5rem"
+          />
+        )}
+        <div className="relative flex flex-1 flex-col">
+          <div
+            className="flex flex-1 items-end gap-px"
+            role="list"
+            aria-label="Select rollout to inspect"
+            style={{ height: containerHeight }}
+          >
+            {bins.map((bin, index) => (
+              <TerminalHistogramColumn
+                key={index}
+                rollouts={bin.rollouts}
+                cellHeight={cellHeight}
+                containerHeight={containerHeight}
+                selectedSeed={selectedSeed}
+                loadingSeed={loadingSeed}
+                onSelect={onSelect}
+                cellColor={(entry) => rolloutSliverColor(entry.summary.rankPercentile)}
+              />
+            ))}
+          </div>
+          {percentiles.map(({ percentile, value }) => {
+            const leftPct = axisLeftPct(value);
+            if (leftPct == null) return null;
             return (
-              <button
-                key={seed}
-                type="button"
-                aria-label={titleParts.join(", ")}
-                aria-pressed={isSelected}
-                className="relative h-7 flex-1 rounded-[2px] transition hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-teal-400"
-                data-product-rollout-sliver={seed}
-                onClick={() => onSelect(isSelected ? null : seed)}
-                style={{
-                  backgroundColor: rolloutSliverColor(summary.rankPercentile),
-                  border: isSelected ? `2px solid ${SELECTED_ROLLOUT_COLOR}` : "1px solid rgba(15, 23, 42, 0.12)",
-                  minWidth: "4px",
-                }}
-                title={titleParts.join(" - ")}
+              <div
+                key={percentile}
+                className="pointer-events-none absolute inset-y-0"
+                style={{ left: `${leftPct}%` }}
+                aria-hidden="true"
               >
-                {summary.failed && <span className="absolute inset-x-0 top-0 h-[3px] bg-red-500" aria-hidden="true" />}
-                {isLoading && (
-                  <span
-                    className="absolute inset-x-[35%] bottom-1 h-[3px] rounded-full bg-teal-500"
-                    aria-hidden="true"
-                  />
-                )}
-                <span className="sr-only">
-                  {Number.isFinite(failedMonth) ? `failed in month ${failedMonth}` : rolloutStatusText(summary)}
-                </span>
-              </button>
+                <div className="absolute inset-y-0 w-px bg-slate-400/80 dark:bg-slate-300/40" />
+                <div
+                  className="absolute -translate-x-1/2 whitespace-nowrap text-[10px] font-semibold text-slate-500 dark:text-slate-400"
+                  style={{ top: -14 }}
+                >
+                  P{percentile}
+                </div>
+              </div>
             );
           })}
+          <div className="relative mt-1 h-4 text-[10px] augur-tabular augur-muted" aria-hidden="true">
+            {xTicks.map((value, index) => {
+              const leftPct = axisLeftPct(value);
+              if (leftPct == null || leftPct < -1 || leftPct > 101) return null;
+              return (
+                <span
+                  key={index}
+                  className="absolute -translate-x-1/2 whitespace-nowrap"
+                  style={{ left: `${leftPct}%` }}
+                >
+                  {fmtAxisMetricValue(metric.chartValue, value)}
+                </span>
+              );
+            })}
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-function TerminalMetricTable({ summaries, selectedSummary }) {
+function TerminalHistogramColumn({
+  rollouts,
+  cellHeight,
+  containerHeight,
+  selectedSeed,
+  loadingSeed,
+  onSelect,
+  cellColor,
+  width,
+}) {
+  const metric = METRIC_BY_VALUE.get("net_worth_usd");
+  return (
+    <div
+      className="flex flex-col-reverse items-stretch overflow-hidden"
+      style={{ width: width ?? "auto", flex: width ? "none" : 1, height: containerHeight, gap: 1 }}
+    >
+      {rollouts.map((entry) => {
+        const seed = Number(entry.summary.seed);
+        const isSelected = selectedSeed === seed;
+        const isLoading = loadingSeed === seed;
+        const failedMonth = entry.summary.terminalMetrics?.failedMonthIndex;
+        const valueLabel = Number.isFinite(entry.value) ? fmtUsd(entry.value) : "n/a";
+        const titleParts = [
+          `Seed ${seed}`,
+          `P${Math.round(Number(entry.summary.rankPercentile))}`,
+          rolloutStatusText(entry.summary),
+          `terminal net worth ${valueLabel}`,
+        ];
+        return (
+          <button
+            key={seed}
+            type="button"
+            aria-label={titleParts.join(", ")}
+            aria-pressed={isSelected}
+            className="relative rounded-[2px] transition hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-teal-400"
+            data-product-rollout-sliver={seed}
+            onClick={() => onSelect(isSelected ? null : seed)}
+            style={{
+              height: cellHeight,
+              backgroundColor: cellColor(entry),
+              border: isSelected ? `2px solid ${SELECTED_ROLLOUT_COLOR}` : "1px solid rgba(15, 23, 42, 0.12)",
+            }}
+            title={titleParts.join(" - ")}
+          >
+            {isLoading && (
+              <span className="absolute inset-x-[30%] inset-y-[30%] rounded-full bg-teal-500" aria-hidden="true" />
+            )}
+            <span className="sr-only">
+              {Number.isFinite(failedMonth) ? `failed in month ${failedMonth}` : rolloutStatusText(entry.summary)}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function TerminalMetricTable({ summaries, selectedSummary, metrics }) {
   if (summaries.length === 0) return null;
-  const rows = terminalMetricTableRows(summaries, selectedSummary);
+  const rows = terminalMetricTableRows(summaries, selectedSummary, metrics);
   return (
     <div className="border-t border-slate-200 dark:border-slate-700">
       <div className="flex flex-col gap-1 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
@@ -942,8 +1093,7 @@ function SelectedRolloutEventsPanel({
 function propertyLabel(property) {
   const sqft = Number(property.sqft);
   const head = property.address || property.id;
-  const meta =
-    `${fmtUsd(Number(property.priceUsd))}` + (Number.isFinite(sqft) && sqft > 0 ? ` · ${fmtNumber(sqft)} sqft` : "");
+  const meta = `${fmtUsd(property.priceUsd)}` + (Number.isFinite(sqft) && sqft > 0 ? ` · ${fmtNumber(sqft)} sqft` : "");
   return `${head} — ${meta}`;
 }
 
@@ -956,108 +1106,103 @@ function PropertyPurchasePanel({ bootstrap, input, onChange }) {
     ...properties.map((property) => ({ value: property.id, label: propertyLabel(property) })),
   ];
   return (
-    <div className="augur-card p-4" data-product-property-panel="">
+    <div className="px-4 py-3" data-product-property-panel="">
       <div className="augur-eyebrow">Property purchase</div>
-      <div className="mt-4 grid gap-3">
+      <div className="mt-3 grid gap-3">
         <NativeSelect
-          label="Property"
           aria-label="Property to purchase"
           value={input.propertyId ?? ""}
           disabled={properties.length === 0}
           data={propertyOptions}
-          classNames={{ label: "augur-field-label mb-2 block", input: "augur-tabular" }}
+          classNames={{ input: "augur-tabular" }}
           onChange={(event) => onChange({ propertyId: event.target.value || null })}
         />
         {selected && (
-          <div className="rounded-md border border-slate-200 px-3 py-2 text-xs augur-muted dark:border-slate-700">
-            <div className="font-semibold augur-strong">{selected.address}</div>
-            <div className="mt-1">
-              {selected.neighborhood ? `${selected.neighborhood} · ` : ""}
-              {fmtNumber(Number(selected.beds))} bd / {fmtNumber(Number(selected.baths))} ba
-              {Number.isFinite(Number(selected.sqft)) && Number(selected.sqft) > 0
-                ? ` · ${fmtNumber(Number(selected.sqft))} sqft`
-                : ""}
-            </div>
-            <div className="mt-1">
-              Price {fmtUsd(Number(selected.priceUsd))}
-              {Number(selected.hoaMonthlyUsd) > 0 ? ` · HOA ${fmtUsd(Number(selected.hoaMonthlyUsd))}/mo` : ""}
-            </div>
+          <div className="text-xs augur-muted">
+            {[
+              selected.neighborhood,
+              `${fmtNumber(selected.beds)} bd / ${fmtNumber(selected.baths)} ba`,
+              Number(selected.hoaMonthlyUsd) > 0 ? `HOA ${fmtUsd(selected.hoaMonthlyUsd)}/mo` : null,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
           </div>
         )}
-        <NativeSelect
-          label="Financing"
-          aria-label="Property financing"
-          value={input.financingKind}
-          disabled={input.propertyId == null}
-          data={[
-            { value: "cash", label: "Cash" },
-            { value: "mortgage", label: "Mortgage" },
-          ]}
-          classNames={{ label: "augur-field-label mb-2 block", input: "augur-tabular" }}
-          onChange={(event) => onChange({ financingKind: event.target.value === "mortgage" ? "mortgage" : "cash" })}
-        />
-        <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1 2xl:grid-cols-3">
-          <NumberField
-            label="Down payment"
-            value={input.downPaymentPct}
-            min={0}
-            max={100}
-            step={1}
-            suffix="%"
-            disabled={!mortgageActive}
-            onChange={(downPaymentPct) => onChange({ downPaymentPct })}
-          />
-          <NativeSelect
-            label="Term"
-            aria-label="Mortgage term"
-            value={String(input.mortgageTermMonths)}
-            disabled={!mortgageActive}
-            data={[
-              { value: "360", label: "30 yr" },
-              { value: "180", label: "15 yr" },
-            ]}
-            classNames={{ label: "augur-field-label mb-2 block", input: "augur-tabular" }}
-            onChange={(event) => onChange({ mortgageTermMonths: Number(event.target.value) === 180 ? 180 : 360 })}
-          />
-          <NumberField
-            label="Annual rate"
-            value={input.annualRatePct}
-            min={0}
-            max={25}
-            step={0.125}
-            suffix="%"
-            disabled={!mortgageActive}
-            onChange={(annualRatePct) => onChange({ annualRatePct })}
-          />
-        </div>
-        <NumberField
-          label="Insurance (% of price / yr)"
-          value={input.annualInsurancePct}
-          min={0}
-          max={10}
-          step={0.05}
-          suffix="%"
-          disabled={input.propertyId == null}
-          onChange={(annualInsurancePct) => onChange({ annualInsurancePct })}
-        />
-        <NumberField
-          label="Maintenance (% of price / yr)"
-          value={input.annualMaintenancePct}
-          min={0}
-          max={10}
-          step={0.1}
-          suffix="%"
-          disabled={input.propertyId == null}
-          onChange={(annualMaintenancePct) => onChange({ annualMaintenancePct })}
-        />
-        <Checkbox
-          label="Owner lives in this property"
-          aria-label="Owner lives in this property"
-          checked={Boolean(input.livesHere)}
-          disabled={input.propertyId == null}
-          classNames={{ label: "text-sm font-semibold augur-strong" }}
-          onChange={(event) => onChange({ livesHere: event.currentTarget.checked })}
-        />
+        {input.propertyId != null && (
+          <>
+            <NativeSelect
+              label="Financing"
+              aria-label="Property financing"
+              value={input.financingKind}
+              data={[
+                { value: "cash", label: "Cash" },
+                { value: "mortgage", label: "Mortgage" },
+              ]}
+              classNames={{ label: "augur-field-label mb-2 block", input: "augur-tabular" }}
+              onChange={(event) => onChange({ financingKind: event.target.value === "mortgage" ? "mortgage" : "cash" })}
+            />
+            {mortgageActive && (
+              <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1 2xl:grid-cols-3">
+                <NumberField
+                  label="Down payment"
+                  value={input.downPaymentPct}
+                  min={0}
+                  max={100}
+                  step={1}
+                  suffix="%"
+                  onChange={(downPaymentPct) => onChange({ downPaymentPct })}
+                />
+                <NativeSelect
+                  label="Term"
+                  aria-label="Mortgage term"
+                  value={String(input.mortgageTermMonths)}
+                  data={[
+                    { value: "360", label: "30 yr" },
+                    { value: "180", label: "15 yr" },
+                  ]}
+                  classNames={{ label: "augur-field-label mb-2 block", input: "augur-tabular" }}
+                  onChange={(event) => onChange({ mortgageTermMonths: Number(event.target.value) === 180 ? 180 : 360 })}
+                />
+                <NumberField
+                  label="Annual rate"
+                  value={input.annualRatePct}
+                  min={0}
+                  max={25}
+                  step={0.125}
+                  suffix="%"
+                  onChange={(annualRatePct) => onChange({ annualRatePct })}
+                />
+              </div>
+            )}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <NumberField
+                label="Insurance (% of price / yr)"
+                value={input.annualInsurancePct}
+                min={0}
+                max={10}
+                step={0.05}
+                suffix="%"
+                onChange={(annualInsurancePct) => onChange({ annualInsurancePct })}
+              />
+              <NumberField
+                label="Maintenance (% of price / yr)"
+                value={input.annualMaintenancePct}
+                min={0}
+                max={10}
+                step={0.1}
+                suffix="%"
+                onChange={(annualMaintenancePct) => onChange({ annualMaintenancePct })}
+              />
+            </div>
+            <Checkbox
+              label="Owner lives in this property"
+              aria-label="Owner lives in this property"
+              checked={Boolean(input.livesHere)}
+              classNames={{ label: "text-sm font-semibold augur-strong" }}
+              onChange={(event) => onChange({ livesHere: event.currentTarget.checked })}
+            />
+          </>
+        )}
       </div>
     </div>
   );
@@ -1066,62 +1211,63 @@ function PropertyPurchasePanel({ bootstrap, input, onChange }) {
 function ProductPortfolioPanel({ portfolio, error }) {
   const publicSecurities = portfolio?.publicSecurities ?? [];
   return (
-    <div className="augur-card p-4">
+    <div className="px-4 py-3">
       <div className="augur-eyebrow">Initial portfolio</div>
       {error ? (
         <div className="mt-3 augur-note-danger text-sm">Portfolio failed to load: {error}</div>
       ) : (
-        <div className="mt-4 space-y-3">
-          <div className="grid grid-cols-2 gap-3 text-sm">
-            <div>
-              <div className="augur-field-label mb-1">Cash</div>
-              <div className="font-semibold augur-tabular">{fmtUsd(Number(portfolio?.cashUsd))}</div>
-            </div>
-            <div>
-              <div className="augur-field-label mb-1">Public securities</div>
-              <div className="font-semibold augur-tabular">
-                {fmtUsd(Number(portfolio?.totalPublicSecurityValueUsd))}
-              </div>
-            </div>
-          </div>
-          {publicSecurities.length === 0 ? (
-            <div className="text-sm augur-muted">No public securities</div>
-          ) : (
-            <div className="divide-y divide-slate-200 rounded-md border border-slate-200 dark:divide-slate-700 dark:border-slate-700">
-              {publicSecurities.map((position) => (
-                <div key={position.positionId} className="p-3">
-                  <div className="flex min-w-0 items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="truncate text-sm font-semibold augur-strong">
-                        {position.label || position.symbol}
-                      </div>
-                      <div className="mt-1 text-xs augur-muted">
-                        {position.symbol} · {position.accountLabel || position.accountId}
-                      </div>
-                    </div>
-                    <div className="shrink-0 text-right text-sm font-semibold augur-tabular">
-                      {fmtUsd(Number(position.currentValueUsd))}
-                    </div>
+        <table className="mt-3 w-full text-sm">
+          <thead>
+            <tr className="text-left text-[11px] uppercase tracking-wide augur-muted">
+              <th className="py-1 font-normal">Holding</th>
+              <th className="py-1 text-right font-normal">Units</th>
+              <th className="py-1 text-right font-normal">Unit value</th>
+              <th className="py-1 text-right font-normal">Basis</th>
+              <th className="py-1 text-right font-normal">Value</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr className="border-t border-slate-100 dark:border-slate-800">
+              <td className="py-1 font-semibold augur-strong">Cash</td>
+              <td className="py-1 text-right augur-muted">—</td>
+              <td className="py-1 text-right augur-muted">—</td>
+              <td className="py-1 text-right augur-muted">—</td>
+              <td className="py-1 text-right font-semibold augur-tabular">{fmtUsd(portfolio?.cashUsd)}</td>
+            </tr>
+            {publicSecurities.map((position) => (
+              <tr key={position.positionId} className="border-t border-slate-100 dark:border-slate-800">
+                <td className="py-1">
+                  <div className="truncate font-semibold augur-strong">{position.label || position.symbol}</div>
+                  <div className="truncate text-xs augur-muted">
+                    {position.symbol} · {position.accountLabel || position.accountId}
                   </div>
-                  <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
-                    <div>
-                      <div className="augur-muted">Units</div>
-                      <div className="font-semibold augur-tabular">{fmtNumber(Number(position.quantity))}</div>
-                    </div>
-                    <div>
-                      <div className="augur-muted">Unit value</div>
-                      <div className="font-semibold augur-tabular">{fmtUsd(Number(position.unitValueUsd))}</div>
-                    </div>
-                    <div>
-                      <div className="augur-muted">Basis</div>
-                      <div className="font-semibold augur-tabular">{fmtUsd(Number(position.totalCostBasisUsd))}</div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
+                </td>
+                <td className="py-1 text-right augur-tabular">{fmtNumber(position.quantity)}</td>
+                <td className="py-1 text-right augur-tabular">{fmtUsd(position.unitValueUsd)}</td>
+                <td className="py-1 text-right augur-tabular">{fmtUsd(position.totalCostBasisUsd)}</td>
+                <td className="py-1 text-right font-semibold augur-tabular">{fmtUsd(position.currentValueUsd)}</td>
+              </tr>
+            ))}
+            {publicSecurities.length === 0 && (
+              <tr className="border-t border-slate-100 dark:border-slate-800">
+                <td colSpan={5} className="py-1 augur-muted">
+                  No public securities
+                </td>
+              </tr>
+            )}
+          </tbody>
+          {publicSecurities.length > 0 && (
+            <tfoot>
+              <tr className="border-t border-slate-200 dark:border-slate-700">
+                <td className="py-1 text-xs augur-muted">Public securities</td>
+                <td colSpan={3} />
+                <td className="py-1 text-right font-semibold augur-tabular">
+                  {fmtUsd(portfolio?.totalPublicSecurityValueUsd)}
+                </td>
+              </tr>
+            </tfoot>
           )}
-        </div>
+        </table>
       )}
     </div>
   );
@@ -1157,7 +1303,9 @@ function ProductProjectionWorkspace({ bootstrap }) {
   const [rolloutError, setRolloutError] = useState(null);
   const [selectedEventMonthIndex, setSelectedEventMonthIndex] = useState(null);
   const [hoveredEventMonthIndex, setHoveredEventMonthIndex] = useState(null);
-  const selectedMetric = METRIC_BY_VALUE.get(selectedMetricValue) ?? METRIC_OPTIONS[0];
+  const visibleMetrics = useMemo(() => visibleMetricOptions(input), [input]);
+  const selectedMetric =
+    visibleMetrics.find((metric) => metric.value === selectedMetricValue) ?? visibleMetrics[0] ?? METRIC_OPTIONS[0];
   const request = useMemo(
     () => productMetricFanRequest(input, bootstrap, selectedMetric),
     [input, bootstrap, selectedMetric]
@@ -1275,11 +1423,23 @@ function ProductProjectionWorkspace({ bootstrap }) {
 
       <main className="px-4 py-6 sm:px-6 lg:px-8">
         <section className="grid min-w-0 gap-5 xl:grid-cols-[26rem_minmax(0,1fr)]">
-          <aside className="min-w-0 space-y-5">
-            <div className="augur-card p-4">
-              <div className="augur-eyebrow">Scenario</div>
-              <h2 className="display mt-2 text-xl augur-heading">Cash projection</h2>
-              <div className="mt-5 grid gap-3">
+          <aside className="min-w-0 space-y-3">
+            <div className="augur-card divide-y divide-slate-200 dark:divide-slate-700">
+              <div className="px-4 py-3">
+                <div className="augur-eyebrow">Scenario</div>
+                <div className="mt-3">
+                  <NumberField
+                    label="Horizon"
+                    value={input.horizonMonths}
+                    min={1}
+                    max={bootstrap.maxHorizonMonths}
+                    step={12}
+                    suffix="mo"
+                    onChange={(horizonMonths) => updateInput({ horizonMonths })}
+                  />
+                </div>
+              </div>
+              <div className="grid gap-3 px-4 py-3 sm:grid-cols-2">
                 <NumberField
                   label="Monthly spend"
                   value={input.monthlySpendUsd}
@@ -1289,14 +1449,14 @@ function ProductProjectionWorkspace({ bootstrap }) {
                   onChange={(monthlySpendUsd) => updateInput({ monthlySpendUsd })}
                 />
                 <NativeSelect
-                  label="Spend index"
+                  label="Index"
                   aria-label="Spend index"
                   value={input.spendIndex}
                   data={[
                     { value: "inflation", label: "Inflation" },
                     { value: "none", label: "None" },
                   ]}
-                  classNames={{ label: "augur-field-label mb-2 block", input: "augur-tabular" }}
+                  classNames={{ label: "augur-field-label mb-1 block", input: "augur-tabular" }}
                   onChange={(event) => updateInput({ spendIndex: event.target.value })}
                 />
                 <NumberField
@@ -1308,103 +1468,87 @@ function ProductProjectionWorkspace({ bootstrap }) {
                   onChange={(monthlyRentUsd) => updateInput({ monthlyRentUsd })}
                 />
                 <NativeSelect
-                  label="Rent location"
+                  label="Location"
                   aria-label="Rent location"
                   value={input.rentalLocationId ?? ""}
                   disabled={Number(input.monthlyRentUsd) <= 0 || bootstrap.locations.length === 0}
                   data={bootstrap.locations.map((location) => ({ value: location.id, label: location.label }))}
-                  classNames={{ label: "augur-field-label mb-2 block", input: "augur-tabular" }}
+                  classNames={{ label: "augur-field-label mb-1 block", input: "augur-tabular" }}
                   onChange={(event) => updateInput({ rentalLocationId: event.target.value || null })}
                 />
-                <NumberField
-                  label="Horizon"
-                  value={input.horizonMonths}
-                  min={1}
-                  max={bootstrap.maxHorizonMonths}
-                  step={12}
-                  suffix="mo"
-                  onChange={(horizonMonths) => updateInput({ horizonMonths })}
-                />
-                <NumberField
-                  label="Rollouts"
-                  value={input.rolloutCount}
-                  min={1}
-                  max={bootstrap.maxRolloutSamples}
-                  step={1}
-                  onChange={(rolloutCount) => updateInput({ rolloutCount })}
-                />
               </div>
-            </div>
-            <ProductPortfolioPanel portfolio={portfolio} error={portfolioError} />
-            <PropertyPurchasePanel bootstrap={bootstrap} input={input} onChange={updateInput} />
-            <div className="augur-card p-4">
-              <div className="augur-eyebrow">Taxes</div>
-              <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-                <div>
-                  <div className="augur-field-label mb-1">Jurisdictions</div>
-                  <div className="font-semibold augur-strong">Federal + California</div>
-                </div>
-                <div>
-                  <div className="augur-field-label mb-1">Filing</div>
-                  <div className="font-semibold augur-strong">Single</div>
+              <ProductPortfolioPanel portfolio={portfolio} error={portfolioError} />
+              <PropertyPurchasePanel bootstrap={bootstrap} input={input} onChange={updateInput} />
+              <div className="px-4 py-3">
+                <div className="augur-eyebrow">Taxes</div>
+                <div className="mt-2 text-xs augur-muted">Federal + California · single filer</div>
+              </div>
+              <div className="px-4 py-3">
+                <div className="augur-eyebrow">Funding</div>
+                <div className="mt-3 grid gap-3">
+                  <Checkbox
+                    label="Sell public securities"
+                    checked={Boolean(input.sellPublicSecurities)}
+                    classNames={{ label: "text-sm font-semibold augur-strong" }}
+                    onChange={(event) => updateInput({ sellPublicSecurities: event.currentTarget.checked })}
+                  />
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+                    <NumberField
+                      label="Trigger below"
+                      value={input.cashBufferTriggerBelowUsd}
+                      min={0}
+                      step={1000}
+                      prefix="$"
+                      disabled={!input.sellPublicSecurities}
+                      onChange={(cashBufferTriggerBelowUsd) => updateInput({ cashBufferTriggerBelowUsd })}
+                    />
+                    <NumberField
+                      label="Sell amount"
+                      value={input.cashBufferSaleUsd}
+                      min={0}
+                      step={1000}
+                      prefix="$"
+                      disabled={!input.sellPublicSecurities}
+                      onChange={(cashBufferSaleUsd) => updateInput({ cashBufferSaleUsd })}
+                    />
+                  </div>
                 </div>
               </div>
-            </div>
-            <div className="augur-card p-4">
-              <div className="augur-eyebrow">Funding</div>
-              <div className="mt-4 grid gap-3">
-                <Checkbox
-                  label="Sell public securities"
-                  checked={Boolean(input.sellPublicSecurities)}
-                  classNames={{ label: "text-sm font-semibold augur-strong" }}
-                  onChange={(event) => updateInput({ sellPublicSecurities: event.currentTarget.checked })}
-                />
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+              <details className="px-4 py-3 [&_summary::-webkit-details-marker]:hidden">
+                <summary className="augur-eyebrow cursor-pointer list-none">
+                  <span className="inline-flex items-center gap-1">
+                    <span aria-hidden="true" className="transition-transform [details[open]_&]:rotate-90">
+                      ▸
+                    </span>
+                    Sampling
+                  </span>
+                </summary>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
                   <NumberField
-                    label="Trigger below"
-                    value={input.cashBufferTriggerBelowUsd}
-                    min={0}
-                    step={1000}
-                    prefix="$"
-                    disabled={!input.sellPublicSecurities}
-                    onChange={(cashBufferTriggerBelowUsd) => updateInput({ cashBufferTriggerBelowUsd })}
+                    label="Rollouts"
+                    value={input.rolloutCount}
+                    min={1}
+                    max={bootstrap.maxRolloutSamples}
+                    step={1}
+                    onChange={(rolloutCount) => updateInput({ rolloutCount })}
                   />
                   <NumberField
-                    label="Sell amount"
-                    value={input.cashBufferSaleUsd}
+                    label="First seed"
+                    value={input.firstSeed}
                     min={0}
-                    step={1000}
-                    prefix="$"
-                    disabled={!input.sellPublicSecurities}
-                    onChange={(cashBufferSaleUsd) => updateInput({ cashBufferSaleUsd })}
+                    max={2 ** 31 - 1}
+                    step={1}
+                    onChange={(firstSeed) => updateInput({ firstSeed })}
                   />
                 </div>
-              </div>
+              </details>
             </div>
-            <div className="augur-card p-4">
-              <div className="augur-eyebrow">Sampling</div>
-              <div className="mt-4 grid gap-3">
-                <NumberField
-                  label="First seed"
-                  value={input.firstSeed}
-                  min={0}
-                  max={2 ** 31 - 1}
-                  step={1}
-                  onChange={(firstSeed) => updateInput({ firstSeed })}
-                />
-                <Button variant="light" onClick={() => setInput(productInputDefaults(bootstrap))}>
-                  Reset
-                </Button>
-              </div>
-            </div>
+            <Button variant="subtle" onClick={() => setInput(productInputDefaults(bootstrap))}>
+              Reset form
+            </Button>
           </aside>
 
           <div className="min-w-0 space-y-5">
-            <div className="border-b border-slate-300 pb-5 dark:border-slate-700">
-              <div className="augur-eyebrow">Product projection</div>
-              <h2 className="display mt-2 text-3xl text-slate-950 dark:text-slate-50">Cash projection fan</h2>
-            </div>
-
             {runError && <div className="augur-note-danger p-4 text-sm">Product projection failed: {runError}</div>}
 
             <div className="grid gap-3 sm:grid-cols-3">
@@ -1427,21 +1571,16 @@ function ProductProjectionWorkspace({ bootstrap }) {
             </div>
 
             <section className="augur-panel overflow-hidden" aria-label="Cash projection workspace">
-              <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-3 dark:border-slate-700 sm:flex-row sm:items-end sm:justify-between">
-                <div>
-                  <div className="augur-eyebrow">Metric fan</div>
-                  <div className="mt-1 text-sm augur-muted">{selectedMetric.label}</div>
-                </div>
+              <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
                 <NativeSelect
-                  label="Metric"
                   aria-label="Metric to plot"
                   value={selectedMetric.value}
-                  data={METRIC_OPTIONS.map((metric) => ({ value: metric.value, label: metric.label }))}
-                  classNames={{ label: "augur-field-label mb-2 block", input: "augur-tabular min-w-[12rem]" }}
+                  data={visibleMetrics.map((metric) => ({ value: metric.value, label: metric.label }))}
+                  classNames={{ input: "augur-tabular min-w-[12rem]" }}
                   onChange={(event) => setSelectedMetricValue(event.target.value)}
                 />
               </div>
-              <RolloutSliverStrip
+              <TerminalDistributionHistogram
                 summaries={rolloutSummaries}
                 selectedSeed={selectedSeed}
                 loadingSeed={selectedRolloutLoading ? selectedSeed : null}
@@ -1469,16 +1608,22 @@ function ProductProjectionWorkspace({ bootstrap }) {
                   <div className="augur-note-danger">Selected rollout failed to load: {rolloutError}</div>
                 </div>
               )}
-              <SelectedRolloutEventsPanel
-                events={selectedEvents}
+              {selectedSeed != null && (
+                <SelectedRolloutEventsPanel
+                  events={selectedEvents}
+                  selectedSummary={selectedSummary}
+                  loading={selectedRolloutLoading}
+                  selectedEventMonthIndex={selectedEventMonthIndex}
+                  hoveredEventMonthIndex={hoveredEventMonthIndex}
+                  onSelectEventMonth={toggleSelectedEventMonthIndex}
+                  onHoverEventMonth={setHoveredEventMonthIndex}
+                />
+              )}
+              <TerminalMetricTable
+                summaries={rolloutSummaries}
                 selectedSummary={selectedSummary}
-                loading={selectedRolloutLoading}
-                selectedEventMonthIndex={selectedEventMonthIndex}
-                hoveredEventMonthIndex={hoveredEventMonthIndex}
-                onSelectEventMonth={toggleSelectedEventMonthIndex}
-                onHoverEventMonth={setHoveredEventMonthIndex}
+                metrics={visibleMetrics}
               />
-              <TerminalMetricTable summaries={rolloutSummaries} selectedSummary={selectedSummary} />
             </section>
           </div>
         </section>
