@@ -98,8 +98,14 @@ TAX_BREAKDOWN_EVENT_SCHEMA = pl.Schema(
         # mortgages. Zero when no MortgageInterestDeductionPolicy applies (e.g. cash buy, owner
         # doesn't live in the property, or jurisdiction excluded from the policy's cap map).
         "mortgage_interest_deduction_usd": pl.Float64(),
-        # Total itemized deductions used after comparing against the standard. Equals MID when
-        # itemized > standard; equals standard otherwise. Today MID is the only itemized item.
+        # Federal SALT deduction allowed this year: property tax paid this calendar year + state
+        # income tax accrued this year for the profile's non-federal jurisdictions, capped per
+        # the federal SALT schedule. Zero on state-jurisdiction links (SALT is a federal-only
+        # Schedule A concept) and on federal links without a FederalSaltDeductionPolicy.
+        "salt_deduction_usd": pl.Float64(),
+        # Total itemized deductions used after comparing against the standard: MID + SALT today,
+        # plus other Schedule A lines once we model them. Equals MID + SALT when itemized >
+        # standard; equals standard otherwise.
         "itemized_deduction_usd": pl.Float64(),
         "ordinary_taxable_usd": pl.Float64(),
         "capital_gain_taxable_usd": pl.Float64(),

@@ -166,6 +166,10 @@ class CurrentStateBuffers:
     liability_monthly_payment: np.ndarray
     liability_interest_ytd: np.ndarray
     liability_principal_ytd: np.ndarray
+    # Property-tax USD paid this calendar year, per (rollout, profile). Property-tax obligation
+    # settlements add to this so the federal SALT pass at year-end can read accumulated SALT.
+    # Zeroed in the year-end accrual after federal SALT has been consumed.
+    property_tax_ytd: np.ndarray
     failed: np.ndarray
     failed_month: np.ndarray
 
@@ -233,6 +237,9 @@ class CurrentStateBuffers:
             self.liability_principal_ytd,
             shape=(r, plan.liability_count),
             dtype=np.float64,
+        )
+        _expect_array(
+            "current property_tax_ytd", self.property_tax_ytd, shape=(r, plan.tax_profile_count), dtype=np.float64
         )
         _expect_array("current failed", self.failed, shape=(r,), dtype=np.bool_)
         _expect_array("current failed_month", self.failed_month, shape=(r,), dtype=np.int64)
@@ -319,6 +326,7 @@ class TaxEventBuffers:
     tax_breakdown_stcg: np.ndarray
     tax_breakdown_standard_deduction: np.ndarray
     tax_breakdown_mortgage_interest_deduction: np.ndarray
+    tax_breakdown_salt_deduction: np.ndarray
     tax_breakdown_itemized_deduction: np.ndarray
     tax_breakdown_ordinary_taxable: np.ndarray
     tax_breakdown_capital_taxable: np.ndarray
@@ -349,6 +357,9 @@ class TaxEventBuffers:
             self.tax_breakdown_mortgage_interest_deduction,
             shape=tax_link_shape,
             dtype=np.float64,
+        )
+        _expect_array(
+            "tax_breakdown_salt_deduction", self.tax_breakdown_salt_deduction, shape=tax_link_shape, dtype=np.float64
         )
         _expect_array(
             "tax_breakdown_itemized_deduction",
@@ -595,6 +606,10 @@ class SimulationBuffers:
         return self.taxes.tax_breakdown_mortgage_interest_deduction
 
     @property
+    def tax_breakdown_salt_deduction(self) -> np.ndarray:
+        return self.taxes.tax_breakdown_salt_deduction
+
+    @property
     def tax_breakdown_itemized_deduction(self) -> np.ndarray:
         return self.taxes.tax_breakdown_itemized_deduction
 
@@ -708,6 +723,7 @@ def _allocate_current_state(plan: CompiledSimulation) -> CurrentStateBuffers:
         liability_monthly_payment=np.zeros((r, p.liability_count), dtype=np.float64),
         liability_interest_ytd=np.zeros((r, p.liability_count), dtype=np.float64),
         liability_principal_ytd=np.zeros((r, p.liability_count), dtype=np.float64),
+        property_tax_ytd=np.zeros((r, p.tax_profile_count), dtype=np.float64),
         failed=np.zeros(r, dtype=np.bool_),
         failed_month=np.full(r, NO_CODE, dtype=np.int64),
     )
@@ -828,6 +844,105 @@ def _amount_values(
     return base * reset_level / base_level
 
 
+def _compute_tax_for_link(
+    plan: CompiledSimulation, current: CurrentStateBuffers, *, link: int, salt_deduction: np.ndarray
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Run the bracket math for one tax link, given a pre-computed SALT addition.
+
+    Returns `(mortgage_interest_deduction, itemized_deduction, ordinary_taxable,
+    capital_taxable, ordinary_tax, capital_tax)`. `salt_deduction` is zero for
+    non-SALT links; for the federal SALT link it carries the capped SALT total
+    that should stack onto MID inside itemized.
+    """
+
+    profile = int(plan.tax_link_profile_index[link])
+    gain_profile = int(plan.tax_profile_capital_gain_index[profile])
+    ordinary = current.ordinary_ytd[:, profile]
+    ltcg = current.capital_gain_ytd[:, gain_profile, LONG_TERM_CAPITAL_GAIN_CODE]
+    stcg = current.capital_gain_ytd[:, gain_profile, SHORT_TERM_CAPITAL_GAIN_CODE]
+    standard_deduction = float(plan.tax_link_standard_deduction[link])
+    if bool(plan.tax_link_mid_active[link]):
+        mortgage_interest_deduction = current.liability_interest_ytd @ plan.tax_link_mid_principal_ratio[link]
+    else:
+        mortgage_interest_deduction = np.zeros(plan.rollout_count, dtype=np.float64)
+    itemized_deduction = mortgage_interest_deduction + salt_deduction
+    deduction_used = np.maximum(itemized_deduction, standard_deduction)
+
+    if int(plan.tax_link_has_ltcg[link]) == 1:
+        ordinary_taxable = np.maximum(ordinary + stcg - deduction_used, 0.0)
+        capital_taxable = ltcg
+        ordinary_tax = _apply_brackets(
+            ordinary_taxable,
+            upper=plan.tax_link_ordinary_upper[link],
+            rate=plan.tax_link_ordinary_rate[link],
+            count=int(plan.tax_link_ordinary_count[link]),
+        )
+        capital_tax = _apply_ltcg_brackets(
+            ltcg,
+            ordinary_taxable,
+            upper=plan.tax_link_ltcg_upper[link],
+            rate=plan.tax_link_ltcg_rate[link],
+            count=int(plan.tax_link_ltcg_count[link]),
+        )
+    else:
+        ordinary_taxable = np.maximum(ordinary + ltcg + stcg - deduction_used, 0.0)
+        capital_taxable = np.zeros(plan.rollout_count, dtype=np.float64)
+        ordinary_tax = _apply_brackets(
+            ordinary_taxable,
+            upper=plan.tax_link_ordinary_upper[link],
+            rate=plan.tax_link_ordinary_rate[link],
+            count=int(plan.tax_link_ordinary_count[link]),
+        )
+        capital_tax = np.zeros(plan.rollout_count, dtype=np.float64)
+    return mortgage_interest_deduction, itemized_deduction, ordinary_taxable, capital_taxable, ordinary_tax, capital_tax
+
+
+def _write_tax_link_buffers(
+    plan: CompiledSimulation,
+    buffers: SimulationBuffers,
+    current: CurrentStateBuffers,
+    *,
+    link: int,
+    month: int,
+    active_rollout: np.ndarray,
+    standard_deduction: float,
+    mortgage_interest_deduction: np.ndarray,
+    salt_deduction: np.ndarray,
+    itemized_deduction: np.ndarray,
+    ordinary_taxable: np.ndarray,
+    capital_taxable: np.ndarray,
+    ordinary_tax: np.ndarray,
+    capital_tax: np.ndarray,
+) -> np.ndarray:
+    profile = int(plan.tax_link_profile_index[link])
+    gain_profile = int(plan.tax_profile_capital_gain_index[profile])
+    ordinary = current.ordinary_ytd[:, profile]
+    ltcg = current.capital_gain_ytd[:, gain_profile, LONG_TERM_CAPITAL_GAIN_CODE]
+    stcg = current.capital_gain_ytd[:, gain_profile, SHORT_TERM_CAPITAL_GAIN_CODE]
+    tax = ordinary_tax + capital_tax
+    buffers.tax_accrual_active[month, link, active_rollout] = True
+    buffers.tax_accrual_amount[month, link, active_rollout] = tax[active_rollout]
+    buffers.tax_breakdown_ordinary[month, link, active_rollout] = ordinary[active_rollout]
+    buffers.tax_breakdown_ltcg[month, link, active_rollout] = ltcg[active_rollout]
+    buffers.tax_breakdown_stcg[month, link, active_rollout] = stcg[active_rollout]
+    buffers.tax_breakdown_standard_deduction[month, link, active_rollout] = standard_deduction
+    buffers.tax_breakdown_mortgage_interest_deduction[month, link, active_rollout] = mortgage_interest_deduction[
+        active_rollout
+    ]
+    buffers.tax_breakdown_salt_deduction[month, link, active_rollout] = salt_deduction[active_rollout]
+    buffers.tax_breakdown_itemized_deduction[month, link, active_rollout] = itemized_deduction[active_rollout]
+    buffers.tax_breakdown_ordinary_taxable[month, link, active_rollout] = ordinary_taxable[active_rollout]
+    buffers.tax_breakdown_capital_taxable[month, link, active_rollout] = capital_taxable[active_rollout]
+    buffers.tax_breakdown_ordinary_tax[month, link, active_rollout] = ordinary_tax[active_rollout]
+    buffers.tax_breakdown_capital_tax[month, link, active_rollout] = capital_tax[active_rollout]
+
+    tax_slot = _tax_liability_slot_for(plan, profile_index=profile, link_index=link, year_end_month=month)
+    if tax_slot >= 0:
+        current.tax_liability_active[active_rollout, tax_slot] = True
+        current.tax_liability_amount[active_rollout, tax_slot] = tax[active_rollout]
+    return tax
+
+
 def _apply_tax_accruals(
     plan: CompiledSimulation, buffers: SimulationBuffers, current: CurrentStateBuffers, month: int
 ) -> None:
@@ -835,71 +950,79 @@ def _apply_tax_accruals(
     if month % 12 != 11 or not active_rollout.any():
         return
 
-    for link in range(plan.tax_link_profile_index.shape[0]):
-        profile = int(plan.tax_link_profile_index[link])
-        gain_profile = int(plan.tax_profile_capital_gain_index[profile])
-        ordinary = current.ordinary_ytd[:, profile]
-        ltcg = current.capital_gain_ytd[:, gain_profile, LONG_TERM_CAPITAL_GAIN_CODE]
-        stcg = current.capital_gain_ytd[:, gain_profile, SHORT_TERM_CAPITAL_GAIN_CODE]
+    link_count = plan.tax_link_profile_index.shape[0]
+    # First pass: every link that isn't a SALT-active federal link. Stash its annual tax so
+    # the SALT pass can sum state-link contributions per federal link.
+    annual_tax_by_link = np.zeros((plan.rollout_count, max(1, link_count)), dtype=np.float64)
+    zero_salt = np.zeros(plan.rollout_count, dtype=np.float64)
+    for link in range(link_count):
+        if bool(plan.tax_link_salt_active[link]):
+            continue
         standard_deduction = float(plan.tax_link_standard_deduction[link])
-        if bool(plan.tax_link_mid_active[link]):
-            # interest_ytd: (rollouts, L); ratio: (L,) — matmul gives (rollouts,)
-            mortgage_interest_deduction = current.liability_interest_ytd @ plan.tax_link_mid_principal_ratio[link]
-        else:
-            mortgage_interest_deduction = np.zeros(plan.rollout_count, dtype=np.float64)
-        # Today the only itemized line is MID. Once SALT / state-tax / charitable arrive, sum them
-        # here. The taxpayer uses max(itemized, standard); we expose both so the consumer can
-        # tell which one drove the tax bill.
-        itemized_deduction = mortgage_interest_deduction
-        deduction_used = np.maximum(itemized_deduction, standard_deduction)
+        (
+            mortgage_interest_deduction,
+            itemized_deduction,
+            ordinary_taxable,
+            capital_taxable,
+            ordinary_tax,
+            capital_tax,
+        ) = _compute_tax_for_link(plan, current, link=link, salt_deduction=zero_salt)
+        tax = _write_tax_link_buffers(
+            plan,
+            buffers,
+            current,
+            link=link,
+            month=month,
+            active_rollout=active_rollout,
+            standard_deduction=standard_deduction,
+            mortgage_interest_deduction=mortgage_interest_deduction,
+            salt_deduction=zero_salt,
+            itemized_deduction=itemized_deduction,
+            ordinary_taxable=ordinary_taxable,
+            capital_taxable=capital_taxable,
+            ordinary_tax=ordinary_tax,
+            capital_tax=capital_tax,
+        )
+        annual_tax_by_link[:, link] = tax
 
-        if int(plan.tax_link_has_ltcg[link]) == 1:
-            ordinary_taxable = np.maximum(ordinary + stcg - deduction_used, 0.0)
-            capital_taxable = ltcg
-            ordinary_tax = _apply_brackets(
-                ordinary_taxable,
-                upper=plan.tax_link_ordinary_upper[link],
-                rate=plan.tax_link_ordinary_rate[link],
-                count=int(plan.tax_link_ordinary_count[link]),
-            )
-            capital_tax = _apply_ltcg_brackets(
-                ltcg,
-                ordinary_taxable,
-                upper=plan.tax_link_ltcg_upper[link],
-                rate=plan.tax_link_ltcg_rate[link],
-                count=int(plan.tax_link_ltcg_count[link]),
-            )
-        else:
-            ordinary_taxable = np.maximum(ordinary + ltcg + stcg - deduction_used, 0.0)
-            capital_taxable = np.zeros(plan.rollout_count, dtype=np.float64)
-            ordinary_tax = _apply_brackets(
-                ordinary_taxable,
-                upper=plan.tax_link_ordinary_upper[link],
-                rate=plan.tax_link_ordinary_rate[link],
-                count=int(plan.tax_link_ordinary_count[link]),
-            )
-            capital_tax = np.zeros(plan.rollout_count, dtype=np.float64)
-
-        tax = ordinary_tax + capital_tax
-        buffers.tax_accrual_active[month, link, active_rollout] = True
-        buffers.tax_accrual_amount[month, link, active_rollout] = tax[active_rollout]
-        buffers.tax_breakdown_ordinary[month, link, active_rollout] = ordinary[active_rollout]
-        buffers.tax_breakdown_ltcg[month, link, active_rollout] = ltcg[active_rollout]
-        buffers.tax_breakdown_stcg[month, link, active_rollout] = stcg[active_rollout]
-        buffers.tax_breakdown_standard_deduction[month, link, active_rollout] = standard_deduction
-        buffers.tax_breakdown_mortgage_interest_deduction[month, link, active_rollout] = mortgage_interest_deduction[
-            active_rollout
-        ]
-        buffers.tax_breakdown_itemized_deduction[month, link, active_rollout] = itemized_deduction[active_rollout]
-        buffers.tax_breakdown_ordinary_taxable[month, link, active_rollout] = ordinary_taxable[active_rollout]
-        buffers.tax_breakdown_capital_taxable[month, link, active_rollout] = capital_taxable[active_rollout]
-        buffers.tax_breakdown_ordinary_tax[month, link, active_rollout] = ordinary_tax[active_rollout]
-        buffers.tax_breakdown_capital_tax[month, link, active_rollout] = capital_tax[active_rollout]
-
-        tax_slot = _tax_liability_slot_for(plan, profile_index=profile, link_index=link, year_end_month=month)
-        if tax_slot >= 0:
-            current.tax_liability_active[active_rollout, tax_slot] = True
-            current.tax_liability_amount[active_rollout, tax_slot] = tax[active_rollout]
+    # Second pass: SALT-active federal links. SALT = property tax YTD for this profile + sum of
+    # contributing-state-link annual tax, all capped per the year's schedule entry.
+    year_index = month // 12
+    cap_year_index = min(year_index, plan.tax_link_salt_cap_by_year.shape[1] - 1)
+    for link in range(link_count):
+        if not bool(plan.tax_link_salt_active[link]):
+            continue
+        profile = int(plan.tax_link_profile_index[link])
+        state_tax_total = annual_tax_by_link @ plan.tax_link_salt_contributing_mask[link].astype(np.float64)
+        salt_total = current.property_tax_ytd[:, profile] + state_tax_total
+        cap = float(plan.tax_link_salt_cap_by_year[link, cap_year_index])
+        salt_deduction = np.minimum(salt_total, cap)
+        standard_deduction = float(plan.tax_link_standard_deduction[link])
+        (
+            mortgage_interest_deduction,
+            itemized_deduction,
+            ordinary_taxable,
+            capital_taxable,
+            ordinary_tax,
+            capital_tax,
+        ) = _compute_tax_for_link(plan, current, link=link, salt_deduction=salt_deduction)
+        tax = _write_tax_link_buffers(
+            plan,
+            buffers,
+            current,
+            link=link,
+            month=month,
+            active_rollout=active_rollout,
+            standard_deduction=standard_deduction,
+            mortgage_interest_deduction=mortgage_interest_deduction,
+            salt_deduction=salt_deduction,
+            itemized_deduction=itemized_deduction,
+            ordinary_taxable=ordinary_taxable,
+            capital_taxable=capital_taxable,
+            ordinary_tax=ordinary_tax,
+            capital_tax=capital_tax,
+        )
+        annual_tax_by_link[:, link] = tax
 
     for profile in range(current.ordinary_ytd.shape[1]):
         current.ordinary_ytd[active_rollout, profile] = 0.0
@@ -911,6 +1034,8 @@ def _apply_tax_accruals(
     # Zero YTD interest at year-end so next year's MID accumulation starts fresh. Mirrors the
     # ordinary/capital-gain YTD resets above.
     current.liability_interest_ytd[active_rollout, :] = 0.0
+    # Same treatment for property-tax YTD; the federal SALT pass above has consumed it.
+    current.property_tax_ytd[active_rollout, :] = 0.0
 
 
 def _apply_brackets(amount: np.ndarray, *, upper: np.ndarray, rate: np.ndarray, count: int) -> np.ndarray:
@@ -1257,6 +1382,11 @@ def _apply_obligation_settlement(
                 _apply_mortgage_payment(
                     plan, buffers, current, month=month, liability_slot=source_index, paid=paid, amount=amount
                 )
+            # Accumulate property-tax payments into the owner's per-profile YTD bucket so the
+            # year-end federal SALT pass can read them.
+            property_tax_profile = int(plan.obligation_property_tax_profile[month, slot])
+            if property_tax_profile >= 0:
+                current.property_tax_ytd[paid, property_tax_profile] += amount[paid]
 
         failed = active_slot & ~funded[slot]
         if failed.any():
@@ -1505,6 +1635,7 @@ def _allocate_buffers(plan: CompiledSimulation) -> SimulationBuffers:
             tax_breakdown_stcg=np.zeros((h, p.tax_link_count, r), dtype=np.float64),
             tax_breakdown_standard_deduction=np.zeros((h, p.tax_link_count, r), dtype=np.float64),
             tax_breakdown_mortgage_interest_deduction=np.zeros((h, p.tax_link_count, r), dtype=np.float64),
+            tax_breakdown_salt_deduction=np.zeros((h, p.tax_link_count, r), dtype=np.float64),
             tax_breakdown_itemized_deduction=np.zeros((h, p.tax_link_count, r), dtype=np.float64),
             tax_breakdown_ordinary_taxable=np.zeros((h, p.tax_link_count, r), dtype=np.float64),
             tax_breakdown_capital_taxable=np.zeros((h, p.tax_link_count, r), dtype=np.float64),
@@ -1899,6 +2030,7 @@ def _decode_events(plan: CompiledSimulation, buffers: SimulationBuffers) -> Even
                         "mortgage_interest_deduction_usd": float(
                             buffers.tax_breakdown_mortgage_interest_deduction[month, link, rollout]
                         ),
+                        "salt_deduction_usd": float(buffers.tax_breakdown_salt_deduction[month, link, rollout]),
                         "itemized_deduction_usd": float(buffers.tax_breakdown_itemized_deduction[month, link, rollout]),
                         "ordinary_taxable_usd": float(buffers.tax_breakdown_ordinary_taxable[month, link, rollout]),
                         "capital_gain_taxable_usd": float(buffers.tax_breakdown_capital_taxable[month, link, rollout]),

@@ -316,6 +316,69 @@ class PropertyTaxPolicy(BaseModel):
         return self.start_month <= month and (self.end_month is None or month <= self.end_month)
 
 
+class FederalSaltCapEntry(BaseModel):
+    """One step of the federal SALT-cap schedule.
+
+    The cap that applies in calendar-year-index `Y` is the `cap_usd` of the
+    latest entry with `effective_year_index <= Y`. Year-index is 0-based from
+    the start of the simulation horizon, so [(0, 40_000.0), (4, 10_000.0)]
+    encodes "$40k for years 0..3, then $10k from year 4 onward" — the OBBBA
+    transition for a 2026-start sim ($40k for 2026..2029, $10k from 2030).
+    """
+
+    effective_year_index: int
+    cap_usd: float
+
+
+# Default schedule reflects the TCJA + OBBBA federal SALT-cap timeline as
+# enacted through mid-2025: $40k cap for 2025..2029 (current sims start in 2026
+# so year index 0..3), reverting to $10k from 2030 onward. Sims that span the
+# transition see the cap tighten mid-horizon.
+#
+# Known modeling gaps (not implemented; document so the consumer knows what
+# we elide):
+#   - **AGI-based phase-out of the $40k cap.** The OBBBA cap phases down for
+#     high incomes (over ~$500k AGI); we treat it as a flat ceiling.
+#   - **Sales tax election.** Taxpayers in no-state-income-tax states may
+#     deduct state sales tax instead of state income tax; we always use the
+#     accrued state income tax.
+#   - **Timing nuance.** Real Schedule A allows deducting state taxes *paid*
+#     in the calendar year, which can include prior-year true-ups. We deduct
+#     state tax *accrued in this calendar year* (equivalent to assuming all
+#     state tax is withheld in the year of accrual).
+#   - **Standalone post-2029 sunset.** If Congress doesn't extend OBBBA,
+#     2030+ reverts to the TCJA $10k cap — already reflected here. If the
+#     entire TCJA sunset triggers, the cap disappears (deduction becomes
+#     unlimited); express that by passing an empty schedule (no entries =
+#     no cap = uncapped SALT deduction).
+DEFAULT_FEDERAL_SALT_CAP_SCHEDULE: tuple[FederalSaltCapEntry, ...] = (
+    FederalSaltCapEntry(effective_year_index=0, cap_usd=40_000.0),
+    FederalSaltCapEntry(effective_year_index=4, cap_usd=10_000.0),
+)
+
+
+class FederalSaltDeductionPolicy(BaseModel):
+    """Federal SALT deduction (Schedule A) for one tax profile.
+
+    SALT contributors are derived from the targeted `TaxProfile`: every
+    jurisdiction in `TaxProfile.jurisdiction_ids` other than
+    `federal_jurisdiction_id` is treated as a state/local jurisdiction whose
+    annual accrued income tax flows into the federal SALT total, alongside
+    property tax paid this calendar year by the profile's agent. The total
+    is capped per `cap_schedule` and surfaces as a federal itemized line
+    that stacks with MID.
+
+    `federal_jurisdiction_id` is the jurisdiction within the profile that
+    *receives* the SALT deduction; the SALT cap is a federal-Schedule-A
+    concept and only applies there. Default `federal_us` matches the
+    convention used by `local_regulation.py` and `tax_profile_defaults`.
+    """
+
+    profile_id: str
+    federal_jurisdiction_id: str = "federal_us"
+    cap_schedule: list[FederalSaltCapEntry] = Field(default_factory=lambda: list(DEFAULT_FEDERAL_SALT_CAP_SCHEDULE))
+
+
 class MortgageInterestDeductionPolicy(BaseModel):
     """Mortgage-interest deduction (IRC §163(h)(3)) for one liability.
 
@@ -356,6 +419,7 @@ class Scenario(BaseModel):
     scheduled_property_purchases: list[ScheduledPropertyPurchase] = Field(default_factory=list)
     property_tax_policies: list[PropertyTaxPolicy] = Field(default_factory=list)
     mortgage_interest_deduction_policies: list[MortgageInterestDeductionPolicy] = Field(default_factory=list)
+    federal_salt_deduction_policies: list[FederalSaltDeductionPolicy] = Field(default_factory=list)
     external_series: SeriesModelBundle = Field(default_factory=SeriesModelBundle)
     # Required so callers explicitly choose either taxed agents or an intentional no-tax scenario.
     tax_profiles: list[TaxProfile]

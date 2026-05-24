@@ -16,6 +16,8 @@ from augur.model.series_model import SeriesModelBundle
 from augur.sim.external_series import EXTERNAL_SERIES_VALUES_FRAME, ExternalSeriesContext
 from augur.sim.scenario import (
     Agent,
+    FederalSaltCapEntry,
+    FederalSaltDeductionPolicy,
     InitialAccountBalance,
     InitialLot,
     LiquidityPolicy,
@@ -2798,6 +2800,7 @@ def _mid_scenario(
     annual_w2_income_usd: float = 200_000.0,
     horizon_months: int = 13,
     mortgage_interest_deduction_policies: list[MortgageInterestDeductionPolicy] | None = None,
+    federal_salt_deduction_policies: list[FederalSaltDeductionPolicy] | None = None,
 ) -> Scenario:
     """A minimal MID scenario: $W2 wages all year + property purchase on month 0."""
     mortgage_principal = purchase_price_usd - down_payment_usd
@@ -2821,7 +2824,7 @@ def _mid_scenario(
         recurring_transfers=[
             RecurringTransfer(
                 start_month=0,
-                end_month=11,
+                end_month=horizon_months - 1,
                 cause_id="alice_paycheck",
                 from_agent_id="payroll",
                 from_account_id="checking",
@@ -2861,6 +2864,7 @@ def _mid_scenario(
             )
         ],
         mortgage_interest_deduction_policies=mortgage_interest_deduction_policies or [],
+        federal_salt_deduction_policies=federal_salt_deduction_policies or [],
         tax_profiles=[
             TaxProfile(
                 agent_id="alice",
@@ -3063,6 +3067,207 @@ def test_mid_year_to_year_resets_interest_ytd() -> None:
     # Sanity: year-2 must be far less than the cumulative-since-origination figure that would
     # appear if YTD never zeroed.
     assert year_2_mid < year_1_mid + expected_year_2 / 2.0
+
+
+def _accrual_breakdowns_in_year(result, *, jurisdiction_id: str, year_index: int) -> dict | None:
+    target_month = 12 * year_index + 11
+    for row in result.events_log.tax_breakdowns.iter_rows(named=True):
+        if row["jurisdiction_id"] == jurisdiction_id and row["month_index"] == target_month:
+            return dict(row)
+    return None
+
+
+def test_salt_deduction_under_cap_passes_through_in_full() -> None:
+    """SALT total under the year-0 $40k cap → full state+property tax flows into federal itemized.
+
+    Single filer with $200k W-2 wages + $900k home. Year-1 property tax ≈ $10.8k; CA state tax
+    on $200k ordinary ≈ $15-17k. SALT ≈ $26-28k, well under the $40k cap, so the federal
+    salt_deduction_usd equals state+property tax exactly.
+    """
+    mid_policies = [MortgageInterestDeductionPolicy(liability_id="sf_home_mortgage", owner_agent_id="alice")]
+    salt_policies = [FederalSaltDeductionPolicy(profile_id="alice")]
+    result = simulate(
+        _mid_scenario(
+            purchase_price_usd=900_000.0,
+            down_payment_usd=180_000.0,
+            annual_rate=0.07,
+            term_months=360,
+            mortgage_interest_deduction_policies=mid_policies,
+            federal_salt_deduction_policies=salt_policies,
+        ),
+        rollout_count=1,
+    )
+
+    fed = _accrual_breakdown(result, jurisdiction_id="federal_us")
+    ca = _accrual_breakdown(result, jurisdiction_id="california")
+    property_tax_paid = float(
+        result.events_log.obligation_settlements.filter(
+            (pl.col("obligation_type") == "property_tax") & (pl.col("month_index") <= 11)
+        )
+        .get_column("amount_paid_usd")
+        .sum()
+    )
+    expected_salt = property_tax_paid + float(ca["total_tax_usd"])
+    assert expected_salt < 40_000.0
+    assert float(fed["salt_deduction_usd"]) == pytest.approx(expected_salt, rel=1e-9)
+    # Itemized = MID + SALT; both should land in the federal row.
+    assert float(fed["itemized_deduction_usd"]) == pytest.approx(
+        float(fed["mortgage_interest_deduction_usd"]) + expected_salt, rel=1e-9
+    )
+    # CA row never gets SALT (federal-only concept).
+    assert float(ca["salt_deduction_usd"]) == 0.0
+
+
+def test_salt_cap_binds_for_high_income_high_property_tax() -> None:
+    """Crank income high enough that property tax + CA state tax > $40k cap; deduction clips to cap.
+
+    Use $1.5M home (≈ $18k/yr property tax) + $1M W-2 wages (CA state tax ≈ $90k+).
+    Year-0 SALT total ≫ $40k → salt_deduction_usd clips to the cap exactly.
+    """
+    mid_policies = [MortgageInterestDeductionPolicy(liability_id="sf_home_mortgage", owner_agent_id="alice")]
+    salt_policies = [FederalSaltDeductionPolicy(profile_id="alice")]
+    result = simulate(
+        _mid_scenario(
+            purchase_price_usd=1_500_000.0,
+            down_payment_usd=400_000.0,
+            annual_rate=0.07,
+            term_months=360,
+            annual_w2_income_usd=1_000_000.0,
+            mortgage_interest_deduction_policies=mid_policies,
+            federal_salt_deduction_policies=salt_policies,
+        ),
+        rollout_count=1,
+    )
+
+    fed = _accrual_breakdown(result, jurisdiction_id="federal_us")
+    ca = _accrual_breakdown(result, jurisdiction_id="california")
+    property_tax_paid = float(
+        result.events_log.obligation_settlements.filter(
+            (pl.col("obligation_type") == "property_tax") & (pl.col("month_index") <= 11)
+        )
+        .get_column("amount_paid_usd")
+        .sum()
+    )
+    raw_salt = property_tax_paid + float(ca["total_tax_usd"])
+    assert raw_salt > 40_000.0
+    assert float(fed["salt_deduction_usd"]) == pytest.approx(40_000.0, rel=1e-9)
+    assert float(fed["itemized_deduction_usd"]) == pytest.approx(
+        float(fed["mortgage_interest_deduction_usd"]) + 40_000.0, rel=1e-9
+    )
+
+
+def test_salt_inactive_when_policy_empty_matches_no_salt_baseline() -> None:
+    """Regression: omitting FederalSaltDeductionPolicy leaves federal itemized at MID only."""
+    mid_policies = [MortgageInterestDeductionPolicy(liability_id="sf_home_mortgage", owner_agent_id="alice")]
+    result = simulate(
+        _mid_scenario(
+            purchase_price_usd=900_000.0,
+            down_payment_usd=180_000.0,
+            annual_rate=0.07,
+            term_months=360,
+            mortgage_interest_deduction_policies=mid_policies,
+        ),
+        rollout_count=1,
+    )
+
+    fed = _accrual_breakdown(result, jurisdiction_id="federal_us")
+    assert float(fed["salt_deduction_usd"]) == 0.0
+    assert float(fed["itemized_deduction_usd"]) == pytest.approx(
+        float(fed["mortgage_interest_deduction_usd"]), rel=1e-9
+    )
+
+
+def test_salt_cap_schedule_tightens_from_year_zero_to_year_four() -> None:
+    """OBBBA $40k cap (years 0-3) tightens to TCJA $10k cap from year 4 onward.
+
+    Run a 5-year horizon so we accrue at year-end month 11 (year 0, $40k cap) and
+    year-end month 59 (year 4, $10k cap). Both years see the same income shape, so any
+    drop in salt_deduction_usd from year 0 to year 4 must come from the schedule
+    transition. The default cap_schedule encodes both entries; we don't override it here.
+    """
+    mid_policies = [MortgageInterestDeductionPolicy(liability_id="sf_home_mortgage", owner_agent_id="alice")]
+    salt_policies = [FederalSaltDeductionPolicy(profile_id="alice")]
+    result = simulate(
+        _mid_scenario(
+            purchase_price_usd=900_000.0,
+            down_payment_usd=180_000.0,
+            annual_rate=0.07,
+            term_months=360,
+            horizon_months=60,
+            mortgage_interest_deduction_policies=mid_policies,
+            federal_salt_deduction_policies=salt_policies,
+        ),
+        rollout_count=1,
+    )
+
+    year_0 = _accrual_breakdowns_in_year(result, jurisdiction_id="federal_us", year_index=0)
+    year_4 = _accrual_breakdowns_in_year(result, jurisdiction_id="federal_us", year_index=4)
+    assert year_0 is not None
+    assert year_4 is not None
+    # Year 0: total SALT well over $10k but under $40k — uncapped or capped at $40k.
+    # Year 4: any SALT total > $10k clips to $10k.
+    assert float(year_4["salt_deduction_usd"]) == pytest.approx(10_000.0, rel=1e-9)
+    assert float(year_0["salt_deduction_usd"]) > float(year_4["salt_deduction_usd"])
+
+
+def test_salt_uncapped_when_cap_schedule_is_empty() -> None:
+    """An empty cap_schedule models full TCJA sunset: SALT deduction = state + property tax, no cap.
+
+    Useful for sensitivity runs that assume no SALT cap (pre-2018 / post-sunset world).
+    """
+    mid_policies = [MortgageInterestDeductionPolicy(liability_id="sf_home_mortgage", owner_agent_id="alice")]
+    salt_policies = [FederalSaltDeductionPolicy(profile_id="alice", cap_schedule=[])]
+    result = simulate(
+        _mid_scenario(
+            purchase_price_usd=1_500_000.0,
+            down_payment_usd=400_000.0,
+            annual_rate=0.07,
+            term_months=360,
+            annual_w2_income_usd=1_000_000.0,
+            mortgage_interest_deduction_policies=mid_policies,
+            federal_salt_deduction_policies=salt_policies,
+        ),
+        rollout_count=1,
+    )
+
+    fed = _accrual_breakdown(result, jurisdiction_id="federal_us")
+    ca = _accrual_breakdown(result, jurisdiction_id="california")
+    property_tax_paid = float(
+        result.events_log.obligation_settlements.filter(
+            (pl.col("obligation_type") == "property_tax") & (pl.col("month_index") <= 11)
+        )
+        .get_column("amount_paid_usd")
+        .sum()
+    )
+    expected_salt = property_tax_paid + float(ca["total_tax_usd"])
+    assert float(fed["salt_deduction_usd"]) == pytest.approx(expected_salt, rel=1e-9)
+    # No cap applied — should easily exceed the default $40k cap.
+    assert float(fed["salt_deduction_usd"]) > 40_000.0
+
+
+def test_salt_cap_uses_overriding_schedule_first_year() -> None:
+    """Explicit schedule overrides the default; verify the engine reads cap from policy."""
+    mid_policies = [MortgageInterestDeductionPolicy(liability_id="sf_home_mortgage", owner_agent_id="alice")]
+    salt_policies = [
+        FederalSaltDeductionPolicy(
+            profile_id="alice", cap_schedule=[FederalSaltCapEntry(effective_year_index=0, cap_usd=5_000.0)]
+        )
+    ]
+    result = simulate(
+        _mid_scenario(
+            purchase_price_usd=900_000.0,
+            down_payment_usd=180_000.0,
+            annual_rate=0.07,
+            term_months=360,
+            mortgage_interest_deduction_policies=mid_policies,
+            federal_salt_deduction_policies=salt_policies,
+        ),
+        rollout_count=1,
+    )
+
+    fed = _accrual_breakdown(result, jurisdiction_id="federal_us")
+    # SALT total far exceeds $5k → cap binds at $5k exactly.
+    assert float(fed["salt_deduction_usd"]) == pytest.approx(5_000.0, rel=1e-9)
 
 
 if __name__ == "__main__":

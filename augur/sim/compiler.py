@@ -125,6 +125,17 @@ class CompiledSimulation:
     # Per-link boolean: true iff that link has at least one non-zero MID ratio. Lets the
     # engine skip the matmul + max for jurisdictions or scenarios without MID-eligible debt.
     tax_link_mid_active: np.ndarray
+    # Per-link boolean: true iff this link is the federal jurisdiction of a profile that has a
+    # FederalSaltDeductionPolicy. Federal SALT deduction is only computed for these links.
+    tax_link_salt_active: np.ndarray
+    # tax_link × calendar-year matrix of SALT-cap-in-USD. Only populated for SALT-active links;
+    # 0.0 elsewhere (and unread on the engine side). Year index 0 = first horizon year.
+    tax_link_salt_cap_by_year: np.ndarray
+    # tax_link × tax_link mask. For each SALT-active federal link L, the row identifies the
+    # state-jurisdiction sibling links of the same profile whose accrued annual tax flows into
+    # L's SALT total. Engine uses this to gather state taxes after the first-pass non-SALT
+    # tax computation.
+    tax_link_salt_contributing_mask: np.ndarray
     tax_liability_profile_index: np.ndarray
     tax_liability_link_index: np.ndarray
     tax_liability_year_end_month: np.ndarray
@@ -202,6 +213,10 @@ class CompiledSimulation:
     obligation_amount_adjustment_period: np.ndarray
     obligation_source_kind: np.ndarray
     obligation_source_index: np.ndarray
+    # For property-tax obligations, the tax-profile index whose SALT total should be credited
+    # when the payment settles. NO_CODE for non-property-tax obligations and for property-tax
+    # obligations whose owner doesn't have a TaxProfile.
+    obligation_property_tax_profile: np.ndarray
     tax_settlement_profile_index: np.ndarray
     liquidity_policy_agent_codes: np.ndarray
     liquidity_policy_account_codes: np.ndarray
@@ -335,6 +350,15 @@ def compile_simulation(
         liability_principal=liability_principal,
     )
 
+    (tax_link_salt_active, tax_link_salt_cap_by_year, tax_link_salt_contributing_mask) = (
+        _compile_federal_salt_deductions(
+            scenario,
+            strings,
+            tax_link_profile_index=tax_link_profile_index,
+            tax_link_jurisdiction_codes=tax_link_jurisdiction_codes,
+        )
+    )
+
     (
         sale_cause_codes,
         sale_month,
@@ -367,6 +391,7 @@ def compile_simulation(
         obligation_source_kind,
         obligation_source_index,
         tax_settlement_profile_index,
+        obligation_property_tax_profile,
     ) = _compile_obligation_slots(
         scenario,
         strings,
@@ -463,6 +488,9 @@ def compile_simulation(
         tax_link_ltcg_count=tax_link_ltcg_count,
         tax_link_mid_principal_ratio=tax_link_mid_principal_ratio,
         tax_link_mid_active=tax_link_mid_active,
+        tax_link_salt_active=tax_link_salt_active,
+        tax_link_salt_cap_by_year=tax_link_salt_cap_by_year,
+        tax_link_salt_contributing_mask=tax_link_salt_contributing_mask,
         tax_liability_profile_index=tax_liability_profile_index,
         tax_liability_link_index=tax_liability_link_index,
         tax_liability_year_end_month=tax_liability_year_end_month,
@@ -540,6 +568,7 @@ def compile_simulation(
         obligation_amount_adjustment_period=obligation_amount_adjustment_period,
         obligation_source_kind=obligation_source_kind,
         obligation_source_index=obligation_source_index,
+        obligation_property_tax_profile=obligation_property_tax_profile,
         tax_settlement_profile_index=tax_settlement_profile_index,
         liquidity_policy_agent_codes=liquidity_policy_agent_codes,
         liquidity_policy_account_codes=liquidity_policy_account_codes,
@@ -853,6 +882,89 @@ def _compile_mortgage_interest_deductions(
     return ratio, active
 
 
+def _compile_federal_salt_deductions(
+    scenario: Scenario,
+    strings: StringTable,
+    *,
+    tax_link_profile_index: np.ndarray,
+    tax_link_jurisdiction_codes: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Compile federal SALT-deduction plumbing.
+
+    Returns three arrays sized to the tax-link grid:
+
+    - `salt_active[link]`: True iff `link` is the federal jurisdiction of a profile
+      with a FederalSaltDeductionPolicy.
+    - `salt_cap_by_year[link, year]`: per-calendar-year SALT cap in USD for SALT-active
+      links; the schedule's cap entries are forward-filled across the horizon.
+    - `contributing_mask[link, other_link]`: True iff `other_link` is a non-federal
+      sibling (same profile) of the SALT-active federal `link`. Engine sums the
+      first-pass annual tax of these state links into the federal SALT total.
+    """
+
+    link_count = tax_link_profile_index.shape[0]
+    horizon = int(scenario.horizon_months)
+    year_count = max(1, (horizon + 11) // 12)
+    salt_active = np.zeros(max(1, link_count), dtype=np.bool_)
+    salt_cap_by_year = np.zeros((max(1, link_count), year_count), dtype=np.float64)
+    contributing_mask = np.zeros((max(1, link_count), max(1, link_count)), dtype=np.bool_)
+
+    if link_count == 0 or not scenario.federal_salt_deduction_policies:
+        return salt_active, salt_cap_by_year, contributing_mask
+
+    # Map (profile_index, jurisdiction_code) -> link_index for cross-link lookups.
+    link_by_profile_jurisdiction: dict[tuple[int, int], int] = {}
+    for link in range(link_count):
+        profile_idx = int(tax_link_profile_index[link])
+        jur_code = int(tax_link_jurisdiction_codes[link])
+        link_by_profile_jurisdiction[(profile_idx, jur_code)] = link
+
+    profile_index_by_agent: dict[int, int] = {
+        strings.require(p.agent_id): i for i, p in enumerate(scenario.tax_profiles)
+    }
+
+    for policy in scenario.federal_salt_deduction_policies:
+        profile_agent_code = strings.require(policy.profile_id)
+        profile_index = profile_index_by_agent.get(profile_agent_code)
+        if profile_index is None:
+            raise ValueError(
+                f"federal_salt_deduction_policies profile_id={policy.profile_id!r} does not match "
+                f"any TaxProfile.agent_id"
+            )
+        federal_jur_code = strings.require(policy.federal_jurisdiction_id)
+        federal_link = link_by_profile_jurisdiction.get((profile_index, federal_jur_code))
+        if federal_link is None:
+            raise ValueError(
+                f"federal_salt_deduction_policies profile_id={policy.profile_id!r} does not have a "
+                f"tax link for federal_jurisdiction_id={policy.federal_jurisdiction_id!r}"
+            )
+        salt_active[federal_link] = True
+        for sibling in range(link_count):
+            if sibling == federal_link:
+                continue
+            if int(tax_link_profile_index[sibling]) != profile_index:
+                continue
+            contributing_mask[federal_link, sibling] = True
+
+        # Forward-fill the cap schedule across the horizon's calendar years. Entries are
+        # tuples (effective_year_index, cap_usd); for each year, pick the latest entry whose
+        # effective_year_index <= year. If no entry applies (e.g. schedule starts at year 2),
+        # the cap is 0 (no allowed deduction). An empty schedule means SALT is effectively
+        # uncapped — represent that by a large sentinel cap.
+        if not policy.cap_schedule:
+            salt_cap_by_year[federal_link, :] = np.inf
+            continue
+        sorted_entries = sorted(policy.cap_schedule, key=lambda entry: entry.effective_year_index)
+        for year in range(year_count):
+            applicable = [entry for entry in sorted_entries if entry.effective_year_index <= year]
+            if not applicable:
+                salt_cap_by_year[federal_link, year] = 0.0
+            else:
+                salt_cap_by_year[federal_link, year] = float(applicable[-1].cap_usd)
+
+    return salt_active, salt_cap_by_year, contributing_mask
+
+
 def _compile_capital_gain_agents(scenario: Scenario, strings: StringTable) -> tuple[np.ndarray, np.ndarray]:
     agent_ids: list[str] = []
     seen: set[str] = set()
@@ -1134,6 +1246,11 @@ def _compile_obligation_slots(
     source_kind = _empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
     source_index = _empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
     tax_settlement_profile = _empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
+    # Default NO_CODE; populated only for property-tax obligations whose owner has a TaxProfile.
+    property_tax_profile = _empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
+    agent_to_profile_index: dict[int, int] = {
+        strings.require(p.agent_id): i for i, p in enumerate(scenario.tax_profiles)
+    }
 
     profile_by_index = scenario.tax_profiles
     for month, specs in enumerate(monthly_specs):
@@ -1220,6 +1337,8 @@ def _compile_obligation_slots(
                 amount_fixed[month, idx] = (
                     float(policy.annual_tax_rate) if policy.annual_tax_rate is not None else np.nan
                 )
+                owner_code = strings.require(policy.owner_agent_id)
+                property_tax_profile[month, idx] = agent_to_profile_index.get(owner_code, NO_CODE)
             elif kind in {3, 4, 5}:
                 profile_index = int(spec["source"])
                 profile = profile_by_index[profile_index]
@@ -1267,6 +1386,7 @@ def _compile_obligation_slots(
         source_kind,
         source_index,
         tax_settlement_profile,
+        property_tax_profile,
     )
 
 
