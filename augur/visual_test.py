@@ -184,8 +184,6 @@ def _wait_for_product_page(page: Page) -> None:
     page.locator("[data-augur-surface='product']").wait_for(state="visible", timeout=30_000)
     page.locator("[data-product-fan-chart='netWorthUsd']").wait_for(state="visible", timeout=30_000)
     page.get_by_role("heading", name="Augur", exact=True).wait_for(state="visible", timeout=30_000)
-    page.get_by_text("Product projection").first.wait_for(state="visible", timeout=30_000)
-    page.get_by_role("heading", name="Cash projection fan").first.wait_for(state="visible", timeout=30_000)
     page.get_by_label("Metric to plot").wait_for(state="visible", timeout=30_000)
     page.wait_for_function(
         """
@@ -232,9 +230,14 @@ def _select_first_rollout(page: Page) -> None:
     page.locator(
         f"[data-product-rollout-event-marker-month='{marker_month}'][data-product-rollout-event-marker-selected='false']"
     ).first.wait_for(state="visible", timeout=30_000)
-    table_group = page.locator("[data-product-rollout-event-month]").first
-    table_month = table_group.get_attribute("data-product-rollout-event-month")
-    assert table_month is not None
+    # Pick a table-row month that has a corresponding marker — `monthly_expense` and `outside_rent`
+    # have no markers, so the first table row may be a marker-less month.
+    first_marker_month = page.locator("[data-product-rollout-event-marker]").first.get_attribute(
+        "data-product-rollout-event-marker-month"
+    )
+    assert first_marker_month is not None
+    table_group = page.locator(f"[data-product-rollout-event-month='{first_marker_month}']")
+    table_month = first_marker_month
     table_group.click()
     page.locator(
         f"[data-product-rollout-event-marker-month='{table_month}'][data-product-rollout-event-marker-selected='true']"

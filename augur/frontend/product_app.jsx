@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Button, Checkbox, NativeSelect } from "@mantine/core";
 
 import { fetchAugurBootstrap, fetchProductMetricFan, fetchProductPortfolio, fetchProductRollout } from "./client.js";
-import { currencyFanChartAxis, fanChartAxis, fanChartYearTicks, fmtAxisMetricValue } from "./lib/chart.js";
+import { fanChartAxis, fanChartYearTicks, fmtAxisMetricValue, fmtMetricValue } from "./lib/chart.js";
 import { rowsFrom } from "./lib/frame.js";
 import { NumberField } from "./lib/controls.jsx";
 import { fmtNumber, fmtUsd } from "./lib/format.js";
@@ -15,8 +15,8 @@ const DEFAULT_PRODUCT_INPUT_BASE = {
   monthlySpendUsd: 1400,
   spendIndex: "inflation",
   sellPublicSecurities: true,
-  cashBufferTriggerBelowUsd: 0,
-  cashBufferSaleUsd: 0,
+  cashBufferTriggerBelowUsd: 4000,
+  cashBufferSaleUsd: 10000,
   monthlyRentUsd: 0,
   rentalLocationId: null,
   propertyId: null,
@@ -544,6 +544,10 @@ function MetricFanChart({
   const selectedRowByMonth = new Map(selectedRows.map((row) => [row.monthIndex, row]));
   const eventMarkers = selectedEvents
     .map((event, index) => {
+      // Hide bullets for events that fire every month (monthly spend, outside rent).
+      // Their presence on every tick is visual noise; the chart still shows them in the
+      // event detail panel below.
+      if (event?.kind === "monthly_expense" || event?.kind === "outside_rent") return null;
       const monthIndex = eventMonthIndex(event);
       if (monthIndex == null) return null;
       const row = selectedRowByMonth.get(monthIndex);
@@ -707,35 +711,30 @@ function terminalHistogramBins(completedEntries, binCount, axisMin, axisMax) {
   return bins;
 }
 
-function TerminalDistributionHistogram({ summaries, selectedSeed, loadingSeed, onSelect }) {
+function TerminalDistributionHistogram({ summaries, selectedSeed, loadingSeed, onSelect, metric }) {
   if (summaries.length === 0) return null;
-  const metric = METRIC_BY_VALUE.get("net_worth_usd");
-  const completed = [];
-  const failed = [];
-  for (const summary of summaries) {
-    const value = terminalMetricValue(summary.terminalMetrics, metric);
-    if (summary.failed || !Number.isFinite(value)) {
-      failed.push({ summary, value: Number.isFinite(value) ? value : null });
-    } else {
-      completed.push({ summary, value });
-    }
-  }
+  const entries = summaries
+    .map((summary) => ({ summary, value: terminalMetricValue(summary.terminalMetrics, metric) }))
+    .filter((entry) => Number.isFinite(entry.value));
   const axis =
-    completed.length > 0
-      ? currencyFanChartAxis(
-          completed.map((entry) => entry.value),
-          6
+    entries.length > 0
+      ? fanChartAxis(
+          metric.chartValue,
+          entries.map((entry) => entry.value)
         )
       : { min: 0, max: 1, range: 1, ticks: [0, 1] };
-  const binCount = Math.max(8, Math.min(36, Math.ceil(Math.sqrt(completed.length) * 1.3)));
-  const bins = terminalHistogramBins(completed, binCount, axis.min, axis.max);
-  const maxBinCount = Math.max(failed.length, ...bins.map((bin) => bin.rollouts.length), 1);
-  const cellHeight = Math.max(3, Math.min(10, Math.floor(220 / maxBinCount)));
-  const containerHeight = Math.max(80, Math.min(240, cellHeight * maxBinCount + 4));
+  const binCount = Math.max(8, Math.min(36, Math.ceil(Math.sqrt(entries.length) * 1.3)));
+  const bins = terminalHistogramBins(entries, binCount, axis.min, axis.max);
+  const maxBinCount = Math.max(...bins.map((bin) => bin.rollouts.length), 1);
+  // Cells stack with a 1-px gap, so the real rendered column height is
+  // `(cellHeight + 1) * maxBinCount` — accounting for the gap keeps overflow-hidden from
+  // silently clipping the tops of the tallest bars.
+  const cellHeight = Math.max(2, Math.min(10, Math.floor(280 / maxBinCount) - 1));
+  const containerHeight = Math.max(80, Math.min(320, (cellHeight + 1) * maxBinCount + 4));
   const percentiles = FAN_PERCENTILES.map((percentile) => ({
     percentile,
     value: quantile(
-      completed.map((entry) => entry.value),
+      entries.filter((entry) => !entry.summary.failed).map((entry) => entry.value),
       percentile
     ),
   })).filter((row) => Number.isFinite(row.value));
@@ -748,10 +747,8 @@ function TerminalDistributionHistogram({ summaries, selectedSeed, loadingSeed, o
     <div className="border-t border-slate-200 px-4 py-3 dark:border-slate-700">
       <div className="mb-2 flex items-center justify-between gap-3">
         <div>
-          <div className="augur-eyebrow">Terminal net worth distribution</div>
-          <div className="mt-1 text-xs augur-muted">
-            One cell per rollout; click to inspect. Failures are stacked on the left.
-          </div>
+          <div className="augur-eyebrow">Terminal {metric.label.toLowerCase()} distribution</div>
+          <div className="mt-1 text-xs augur-muted">One cell per rollout; click to inspect. Failures in red.</div>
         </div>
         {selectedSeed != null && (
           <button
@@ -764,19 +761,6 @@ function TerminalDistributionHistogram({ summaries, selectedSeed, loadingSeed, o
         )}
       </div>
       <div className="flex items-stretch gap-3">
-        {failed.length > 0 && (
-          <TerminalHistogramColumn
-            label="Failed"
-            rollouts={failed}
-            cellHeight={cellHeight}
-            containerHeight={containerHeight}
-            selectedSeed={selectedSeed}
-            loadingSeed={loadingSeed}
-            onSelect={onSelect}
-            cellColor={() => FAILED_ROLLOUT_COLOR}
-            width="2.5rem"
-          />
-        )}
         <div className="relative flex flex-1 flex-col">
           <div
             className="flex flex-1 items-end gap-px"
@@ -793,7 +777,10 @@ function TerminalDistributionHistogram({ summaries, selectedSeed, loadingSeed, o
                 selectedSeed={selectedSeed}
                 loadingSeed={loadingSeed}
                 onSelect={onSelect}
-                cellColor={(entry) => rolloutSliverColor(entry.summary.rankPercentile)}
+                metric={metric}
+                cellColor={(entry) =>
+                  entry.summary.failed ? FAILED_ROLLOUT_COLOR : rolloutSliverColor(entry.summary.rankPercentile)
+                }
               />
             ))}
           </div>
@@ -846,25 +833,24 @@ function TerminalHistogramColumn({
   loadingSeed,
   onSelect,
   cellColor,
-  width,
+  metric,
 }) {
-  const metric = METRIC_BY_VALUE.get("net_worth_usd");
   return (
     <div
-      className="flex flex-col-reverse items-stretch overflow-hidden"
-      style={{ width: width ?? "auto", flex: width ? "none" : 1, height: containerHeight, gap: 1 }}
+      className="flex flex-1 flex-col-reverse items-stretch overflow-hidden"
+      style={{ height: containerHeight, gap: 1 }}
     >
       {rollouts.map((entry) => {
         const seed = Number(entry.summary.seed);
         const isSelected = selectedSeed === seed;
         const isLoading = loadingSeed === seed;
         const failedMonth = entry.summary.terminalMetrics?.failedMonthIndex;
-        const valueLabel = Number.isFinite(entry.value) ? fmtUsd(entry.value) : "n/a";
+        const valueLabel = Number.isFinite(entry.value) ? fmtMetricValue(metric.chartValue, entry.value) : "n/a";
         const titleParts = [
           `Seed ${seed}`,
           `P${Math.round(Number(entry.summary.rankPercentile))}`,
           rolloutStatusText(entry.summary),
-          `terminal net worth ${valueLabel}`,
+          `terminal ${metric.label.toLowerCase()} ${valueLabel}`,
         ];
         return (
           <button
@@ -895,9 +881,19 @@ function TerminalHistogramColumn({
   );
 }
 
-function TerminalMetricTable({ summaries, selectedSummary, metrics }) {
+function TerminalMetricTable({ summaries, selectedSummary, metrics, selectedMetric }) {
   if (summaries.length === 0) return null;
   const rows = terminalMetricTableRows(summaries, selectedSummary, metrics);
+  // Determine where the SELECTED column slots into the percentile order based on the
+  // currently-selected metric's selected value vs. its percentile distribution.
+  const anchorRow = rows.find((row) => row.metric.value === selectedMetric?.value);
+  const anchorValue = anchorRow?.selectedValue;
+  const showSelectedColumn = selectedSummary != null && Number.isFinite(anchorValue);
+  let selectedColumnIndex = FAN_PERCENTILES.length;
+  if (showSelectedColumn) {
+    const insertAt = anchorRow.percentiles.findIndex(({ value }) => Number.isFinite(value) && anchorValue < value);
+    selectedColumnIndex = insertAt === -1 ? FAN_PERCENTILES.length : insertAt;
+  }
   return (
     <div className="border-t border-slate-200 dark:border-slate-700">
       <div className="flex flex-col gap-1 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
@@ -918,12 +914,17 @@ function TerminalMetricTable({ summaries, selectedSummary, metrics }) {
           <thead>
             <tr className="bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500 dark:bg-slate-900 dark:text-slate-400">
               <th className="px-4 py-2 font-semibold">Metric</th>
-              {FAN_PERCENTILES.map((percentile) => (
-                <th key={percentile} className="px-3 py-2 text-right font-semibold">
-                  P{percentile}
-                </th>
+              {FAN_PERCENTILES.map((percentile, index) => (
+                <React.Fragment key={percentile}>
+                  {showSelectedColumn && selectedColumnIndex === index && (
+                    <th className="px-3 py-2 text-right font-semibold text-teal-700 dark:text-teal-300">Selected</th>
+                  )}
+                  <th className="px-3 py-2 text-right font-semibold">P{percentile}</th>
+                </React.Fragment>
               ))}
-              <th className="px-4 py-2 text-right font-semibold text-teal-700 dark:text-teal-300">Selected</th>
+              {showSelectedColumn && selectedColumnIndex === FAN_PERCENTILES.length && (
+                <th className="px-3 py-2 text-right font-semibold text-teal-700 dark:text-teal-300">Selected</th>
+              )}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -932,14 +933,21 @@ function TerminalMetricTable({ summaries, selectedSummary, metrics }) {
                 <th className="whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-700 dark:text-slate-200">
                   {row.metric.label}
                 </th>
-                {row.percentiles.map(({ percentile, value }) => (
-                  <td key={percentile} className="px-3 py-2 text-right augur-tabular">
-                    {fmtUsd(value)}
-                  </td>
+                {row.percentiles.map(({ percentile, value }, index) => (
+                  <React.Fragment key={percentile}>
+                    {showSelectedColumn && selectedColumnIndex === index && (
+                      <td className="px-3 py-2 text-right font-semibold text-teal-700 augur-tabular dark:text-teal-300">
+                        {fmtUsd(row.selectedValue)}
+                      </td>
+                    )}
+                    <td className="px-3 py-2 text-right augur-tabular">{fmtUsd(value)}</td>
+                  </React.Fragment>
                 ))}
-                <td className="px-4 py-2 text-right font-semibold text-teal-700 augur-tabular dark:text-teal-300">
-                  {selectedSummary ? fmtUsd(row.selectedValue) : "-"}
-                </td>
+                {showSelectedColumn && selectedColumnIndex === FAN_PERCENTILES.length && (
+                  <td className="px-3 py-2 text-right font-semibold text-teal-700 augur-tabular dark:text-teal-300">
+                    {fmtUsd(row.selectedValue)}
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
@@ -994,26 +1002,23 @@ function SelectedRolloutEventsPanel({
           <table className="min-w-full text-sm">
             <thead className="sticky top-0 bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500 dark:bg-slate-900 dark:text-slate-400">
               <tr>
-                <th className="px-4 py-2 font-semibold">Month</th>
-                <th className="px-3 py-2 font-semibold">Event</th>
+                <th className="px-4 py-2 font-semibold">Event</th>
                 <th className="px-3 py-2 text-right font-semibold">Amount</th>
                 <th className="px-4 py-2 font-semibold">Detail</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {groups.map((group) => {
+            <tbody>
+              {groups.map((group, groupIndex) => {
                 const isSelected = selectedEventMonthIndex === group.monthIndex;
                 const isHovered = hoveredEventMonthIndex === group.monthIndex;
-                const headerClassName = isSelected
-                  ? "cursor-pointer bg-teal-50 text-teal-900 outline-none dark:bg-teal-950/40 dark:text-teal-100"
+                const zebra =
+                  groupIndex % 2 === 1 ? "bg-slate-50/70 dark:bg-slate-900/50" : "bg-white dark:bg-slate-950/30";
+                const groupTint = isSelected
+                  ? "bg-teal-50 dark:bg-teal-950/30"
                   : isHovered
-                    ? "cursor-pointer bg-cyan-50 text-slate-900 outline-none dark:bg-slate-800 dark:text-slate-100"
-                    : "cursor-pointer bg-slate-50 text-slate-700 outline-none hover:bg-slate-100 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800";
-                const rowClassName = isSelected
-                  ? "cursor-pointer bg-teal-50/60 dark:bg-teal-950/20"
-                  : isHovered
-                    ? "cursor-pointer bg-cyan-50/60 dark:bg-slate-800/70"
-                    : "cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/70";
+                    ? "bg-cyan-50 dark:bg-slate-800"
+                    : zebra;
+                const interactiveClassName = `cursor-pointer outline-none ${groupTint}`;
                 return (
                   <React.Fragment key={group.monthIndex}>
                     <tr
@@ -1026,7 +1031,7 @@ function SelectedRolloutEventsPanel({
                       }}
                       role="button"
                       tabIndex={0}
-                      className={headerClassName}
+                      className={interactiveClassName}
                       data-product-rollout-event-month={group.monthIndex}
                       data-product-rollout-event-month-selected={isSelected ? "true" : "false"}
                       data-product-rollout-event-month-hovered={isHovered ? "true" : "false"}
@@ -1037,15 +1042,13 @@ function SelectedRolloutEventsPanel({
                       onFocus={() => onHoverEventMonth?.(group.monthIndex)}
                       onBlur={() => onHoverEventMonth?.(null)}
                     >
-                      <td className="whitespace-nowrap px-4 py-2 font-semibold augur-tabular">
-                        {group.monthIndex + 1}
-                      </td>
-                      <td className="px-3 py-2 font-semibold" colSpan={3}>
+                      <td
+                        className="px-4 pb-1 pt-2 text-xs font-semibold uppercase tracking-wide augur-muted"
+                        colSpan={3}
+                      >
                         <div className="flex min-w-0 items-center justify-between gap-3">
                           <span>Month {group.monthIndex + 1}</span>
-                          <span className="shrink-0 text-[11px] uppercase tracking-wide augur-muted">
-                            {fmtNumber(group.events.length)} events
-                          </span>
+                          <span className="shrink-0">{fmtNumber(group.events.length)} events</span>
                         </div>
                       </td>
                     </tr>
@@ -1054,7 +1057,7 @@ function SelectedRolloutEventsPanel({
                         key={`${event.kind}-${event.monthIndex}-${index}`}
                         role="button"
                         tabIndex={0}
-                        className={rowClassName}
+                        className={interactiveClassName}
                         onClick={() => onSelectEventMonth?.(group.monthIndex)}
                         onKeyDown={(keyboardEvent) => selectMonthFromKeyboard(keyboardEvent, group.monthIndex)}
                         onMouseEnter={() => onHoverEventMonth?.(group.monthIndex)}
@@ -1062,21 +1065,20 @@ function SelectedRolloutEventsPanel({
                         onFocus={() => onHoverEventMonth?.(group.monthIndex)}
                         onBlur={() => onHoverEventMonth?.(null)}
                       >
-                        <td className="whitespace-nowrap px-4 py-2 augur-tabular">{eventStateMonthIndex(event)}</td>
-                        <td className="px-3 py-2">
+                        <td className="px-4 py-1">
                           <div className="flex min-w-0 items-center gap-2">
                             <span
                               className="h-2.5 w-2.5 shrink-0 rounded-full"
                               style={{ backgroundColor: eventColor(event) }}
                               aria-hidden="true"
                             />
-                            <span className="min-w-0 truncate font-semibold augur-strong">{eventLabel(event)}</span>
+                            <span className="min-w-0 truncate">{eventLabel(event)}</span>
                           </div>
                         </td>
-                        <td className="whitespace-nowrap px-3 py-2 text-right font-semibold augur-tabular">
+                        <td className="whitespace-nowrap px-3 py-1 text-right augur-tabular">
                           {fmtUsd(eventAmount(event))}
                         </td>
-                        <td className="min-w-[12rem] px-4 py-2 text-xs augur-muted">{eventDetailText(event)}</td>
+                        <td className="min-w-[12rem] px-4 py-1 text-xs augur-muted">{eventDetailText(event)}</td>
                       </tr>
                     ))}
                   </React.Fragment>
@@ -1582,6 +1584,7 @@ function ProductProjectionWorkspace({ bootstrap }) {
               </div>
               <TerminalDistributionHistogram
                 summaries={rolloutSummaries}
+                metric={selectedMetric}
                 selectedSeed={selectedSeed}
                 loadingSeed={selectedRolloutLoading ? selectedSeed : null}
                 onSelect={setSelectedSeed}
@@ -1623,6 +1626,7 @@ function ProductProjectionWorkspace({ bootstrap }) {
                 summaries={rolloutSummaries}
                 selectedSummary={selectedSummary}
                 metrics={visibleMetrics}
+                selectedMetric={selectedMetric}
               />
             </section>
           </div>
