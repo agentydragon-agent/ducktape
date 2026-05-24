@@ -26,10 +26,13 @@ from augur.api.config import Config, LocationConfig, PropertyAssetConfig
 from augur.api.finance import FinanceSnapshot
 from augur.api.scenario_set import ActorRole
 from augur.api.schemas import KnobsConfig
+from augur.model.deterministic import Constant, Deterministic
 from augur.model.exogenous_provider_config import ExogenousProviderConfig
+from augur.model.gbm import GeometricBrownian
 from augur.model.independent_exogenous import IndependentExogenousProviderConfig
 from augur.model.path_models.models.vecm import VecmExogenousProviderConfig
 from augur.model.series import PRIVATE_EQUITY_SERIES_PREFIX, series_suffix
+from augur.model.series_model import ScalarSeriesSpec
 from augur.product.wire import MAX_HORIZON_MONTHS
 
 PROPERTY_ROWS_ADAPTER = TypeAdapter(tuple[Property, ...])
@@ -247,6 +250,19 @@ def _pe_unit_prices(provider: ExogenousProviderConfig) -> dict[str, float]:
         for series_id, spec in provider.series.items():
             issuer = series_suffix(series_id, PRIVATE_EQUITY_SERIES_PREFIX)
             if issuer is not None:
-                prices[issuer] = float(spec.initial_value)
+                prices[issuer] = _t0_level(spec)
         return prices
     return {}
+
+
+def _t0_level(spec: ScalarSeriesSpec) -> float:
+    """Extract the month-0 level from a scalar series spec, dispatching on
+    the spec's discriminator. Used to surface the current PE mark for
+    bootstrap-time display; no sampling involved."""
+    if isinstance(spec, GeometricBrownian):
+        return float(spec.initial_value)
+    if isinstance(spec, Constant):
+        return float(spec.value)
+    if isinstance(spec, Deterministic):
+        return float(spec.levels[0])
+    raise TypeError(f"unsupported ScalarSeriesSpec variant: {type(spec).__name__}")
