@@ -280,7 +280,10 @@ gaffer-scale inputs (|V| ≈ 2K classes, |E| ≈ 50K edges → ~10¹¹ ops).
 Shipping the greedy on the first cut would be a feature nobody can run
 against real input. Hence the merged commit-2 scope below.
 
-## Why merges don't create cycles
+## When merges create cycles, and how the kernel handles it
+
+Earlier drafts of this plan claimed "merges only destroy cycles." That
+proof was wrong. Here is the correct picture.
 
 Merging two classes `c₁` and `c₂` into `c`:
 
@@ -289,15 +292,37 @@ Merging two classes `c₁` and `c₂` into `c`:
 - All other edges incident on `c₁` or `c₂` get re-pointed to `c`.
 - No new cross-class edges are introduced.
 
-Any cycle in the post-merge quotient must visit `c`. If the corresponding
-pre-merge cycle visited both `c₁` and `c₂`, it becomes intra-cluster
-(gone). If it visited only one, the cycle is unchanged modulo relabeling.
-So the post-merge cycle set is a strict subset of the pre-merge cycle set
-union the set of pre-existing cycles touching the merged endpoints; the
-latter are now strictly shorter or absent.
+**Cycles that pre-existed and touched both endpoints**: become
+intra-cluster on `c`, gone. **Cycles that touched only one endpoint**:
+unchanged modulo relabeling.
 
-Therefore `merge_preserves_invariants` checking cycle-set monotonicity
-is a real guarantee, not a heuristic.
+**New cycles**: a path `c₁ → x → c₂` plus an existing edge `c₂ → c₁`
+(or vice versa) creates a new cycle through the merged `c`, because the
+two ends of the path are now the same class. This is the case the
+original proof missed — merging two classes that share a path through
+some third class `x` can introduce a cycle that didn't exist before in
+the SCC structure even though no edge was created.
+
+**Practical implication**: `merge_preserves_invariants` cannot simply
+check "is the post-merge cycle set ⊆ pre-merge cycle set" via the
+cached cycles alone, because new SCCs can appear from the through-third-
+class case. The kernel's implementation handles this in two parts:
+
+1. **Cached-cycle scan** — covers "merge endpoints are both in a
+   pre-existing SCC, does the SCC survive": O(1) lookup against
+   `class_to_cycle_indices`.
+2. **Localized class-quotient BFS** — covers "merge creates a new SCC":
+   from the merge endpoints, BFS through the quotient and check
+   reachability back. Only the reachability cone Δ around the candidate
+   endpoints needs to be visited; this stays cheap on a sparse class
+   graph.
+
+Together they form the incremental `merge_preserves_invariants`
+predicate. The full realizability gate (`check_realizability`) remains
+the correctness reference; the property test
+`incremental_state_matches_rebuild_on_synthetic_specs` pins
+`kernel_query == full_rebuild_check` for every state the kernel
+reports.
 
 ## Migration path (TDD, four commits on `tdz-gate-fix`)
 
