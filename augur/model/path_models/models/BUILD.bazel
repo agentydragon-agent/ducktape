@@ -5,6 +5,7 @@ package(default_visibility = ["//visibility:public"])
 py_library(
     name = "vecm",
     srcs = ["vecm.py"],
+    data = ["//augur/fit/calibrated:trained_vecm_blob"],
     deps = [
         "//augur:frames",
         "//augur/model:exogenous",
@@ -13,6 +14,7 @@ py_library(
         "//augur/model:schemas",
         "//augur/model:series",
         "//augur/model/path_models:scenarios",
+        "//util/bazel:runfiles",
         "@pypi//jax",
         "@pypi//numpy",
         "@pypi//numpyro",

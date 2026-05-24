@@ -11,7 +11,10 @@ so the simulator never has to be told about prices out of band.
 exogenous_provider:
   # Pre-trained VECM provider — load the trained blob at startup, no fitting.
   type: vecm
-  trained_blob: /etc/augur/trained_vecm.npz
+  # /opt/augur/... is where //augur/fit/calibrated:trained_vecm_image_layer
+  # bakes the blob in the augur OCI image. Leave null to fall back to the
+  # runfiles location of the same blob (used by Bazel-driven dev binaries).
+  trained_blob: /opt/augur/trained_vecm.npz
   latest_observations: {sp500: 5500.0, ...}
   current_mortgage30_rate_pct: 6.5
   private_equity_prices_usd: {private_equity_x: 50.0}

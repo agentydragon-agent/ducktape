@@ -71,6 +71,12 @@ from augur.model.series import (
     SP500_SERIES_ID,
     series_suffix,
 )
+from util.bazel.runfiles import get_required_path
+
+# Runfile location of the checked-in trained VECM blob. Used as a fallback
+# when the deployment config leaves `trained_blob` unset — see
+# `VecmExogenousProviderConfig.realize_model`.
+_BUNDLED_VECM_BLOB_RUNFILE = "_main/augur/fit/calibrated/trained_vecm.npz"
 
 # Tender / sale opportunity events repeat at a fixed cadence. Deterministic per
 # rollout — same months across paths, simplifies the bundle event masks.
@@ -575,7 +581,15 @@ class VecmExogenousProviderConfig(FrozenModel):
     startup; no fitting happens on the request path."""
 
     type: Literal["vecm"] = "vecm"
-    trained_blob: Path = Field(description="Absolute path to the .npz produced by VecmModel.save(...).")
+    trained_blob: Path | None = Field(
+        default=None,
+        description=(
+            "Absolute path to the .npz produced by VecmModel.save(...). "
+            "Leave null to use the trained blob bundled into the augur image "
+            "(at `/opt/augur/trained_vecm.npz` in the OCI image; the same "
+            "file is in runfiles for Bazel-driven dev binaries)."
+        ),
+    )
     latest_observations: dict[str, Any] = Field(
         description="Latest observed series state at the start of the simulation horizon (factor → value)."
     )
@@ -590,10 +604,13 @@ class VecmExogenousProviderConfig(FrozenModel):
     location_series_sources: LocationSeriesSourcesConfig
 
     def realize_model(self) -> VecmModel:
+        blob_path = (
+            self.trained_blob if self.trained_blob is not None else get_required_path(_BUNDLED_VECM_BLOB_RUNFILE)
+        )
         return VecmModel.from_blob(
-            self.trained_blob,
+            blob_path,
             latest_observations=self.latest_observations,
             location_series_sources=LocationSeriesSources.from_config(self.location_series_sources),
             private_equity_prices_usd=self.private_equity_prices_usd,
-            evidence_source_id=str(self.trained_blob),
+            evidence_source_id=str(blob_path),
         )

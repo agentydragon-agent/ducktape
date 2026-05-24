@@ -385,7 +385,10 @@ oci_image(
         "org.opencontainers.image.source": "https://github.com/agentydragon/ducktape",
         "org.opencontainers.image.title": "augur",
     },
-    tars = [":server_image_layers"],
+    tars = [
+        ":server_image_layers",
+        "//augur/fit/calibrated:trained_vecm_image_layer",
+    ],
 )
 
 oci_load(
