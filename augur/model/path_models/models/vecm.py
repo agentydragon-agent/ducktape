@@ -1,32 +1,52 @@
-"""Vector Error Correction Model (VECM) on log-levels.
+"""Vector Error Correction Model (VECM) as a NumPyro generative model.
 
-  Δr_t = α (β' x_{t-1} + μ) + Σ_{i=1..p-1} Γ_i Δr_{t-i} + ε_t,  ε_t ~ N(0, Σ)
+  Δr_t = α (β' x_{t-1} + μ) + ε_t,  ε_t ~ N(0, Σ)
 
-where x_t is the F-vector of log-levels and `coint_rank` is the assumed
-rank of the cointegration relationship. Equivalent to a VAR(p) on
-log-levels with a long-run pull toward the cointegrating relationships
-β' x + μ = 0; for the configured factors this is what binds rent
-and CPI to a shared trend rather than letting them drift apart over 30
-years.
+where x_t is the F-vector of log-levels. Identification: β[0] = 1 fixed,
+β[1:] free. We always use coint_rank = 1; for the configured factors a
+single cointegrating relationship is what binds rent and CPI to a shared
+trend rather than letting them drift apart over a 30-year horizon.
 
-Fit via `statsmodels.tsa.vector_ar.vecm.VECM` once at training time; we
-then extract α, β, Γ, the constant inside the relation, and the residual
-covariance into typed attributes and drop the third-party fit object —
-predict / simulate read these attributes directly. The predictive
-density at month t is multivariate normal with mean from the fitted
-recurrence and covariance from the fitted residual covariance.
+The generative function `_vecm_generative(log_levels)` is the single source
+of truth used by:
+
+- `VecmModel.fit(historical)` — SVI / MAP optimisation over the model's
+  free parameters with the obs site bound to the observed differences.
+  Weakly-informative priors approximate maximum-likelihood — augur tracks
+  fit quality via held-out predictive density on the metric battery, not
+  by parameter equivalence with the previous statsmodels implementation.
+- `VecmModel.predictive(historical, t, horizon=h)` — returns the joint
+  predictive `MultivariateNormal` over the cumulative h-step log-return,
+  closed form at h=1, MC-fitted Gaussian at h>1.
+- `VecmModel.sample(request)` — rolls the recurrence forward stochastically
+  per rollout, converts log-level paths to multipliers, dispatches augur
+  series ids (inflation, sp500, home_value:*, rent:*, private_equity:*,
+  crypto:*) onto factor paths via `location_series_sources`, scales by
+  the deployment's `latest_observations`, populates tender events, and
+  returns a `SampledExogenousBundle`.
+
+VecmModel implements Sampler + Fittable + Scorable from one class — the
+trainable thing and the runtime sampler are the same object, parameterised
+by `params` once `fit` (or `from_blob`) has run.
 """
 
 from __future__ import annotations
 
-import math
+from collections.abc import Mapping
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
 from typing import Any, Literal
 
+import jax
+import jax.numpy as jnp
 import numpy as np
+import numpyro
+import numpyro.distributions as dist
+from numpyro.infer import SVI, Trace_ELBO
+from numpyro.infer.autoguide import AutoDelta
+from numpyro.optim import Adam
 from pydantic import Field
-from statsmodels.tsa.vector_ar.vecm import VECM
 
 from augur.frames import concat_frames
 from augur.model.exogenous import (
@@ -38,8 +58,7 @@ from augur.model.exogenous import (
     series_levels_frame,
 )
 from augur.model.location_series_sources import LocationSeriesSources, LocationSeriesSourcesConfig
-from augur.model.path_models._density import gaussian_logpdf, gaussian_logpdf_from_samples
-from augur.model.path_models.scenarios import HistoricalSeries, Scenarios
+from augur.model.path_models.scenarios import HistoricalSeries
 from augur.model.provenance import stable_identity_digest
 from augur.model.schemas import FrozenModel
 from augur.model.series import (
@@ -53,310 +72,262 @@ from augur.model.series import (
     series_suffix,
 )
 
-# Constant inside the cointegration relation. Other deterministic options
-# ("co", "lo", "li", "n") change which constants/trends statsmodels populates
-# on the fit result; `fit()` below assumes "ci" when it copies parameters out.
-# Add another mode only after extending the parameter copy + `_predict_mean`.
-_DETERMINISTIC: Literal["ci"] = "ci"
+# Tender / sale opportunity events repeat at a fixed cadence. Deterministic per
+# rollout — same months across paths, simplifies the bundle event masks.
 _TENDER_INTERVAL_MONTHS = 12
+
+# Sample count for h>1 MC predictive density.
+_MC_HORIZON_SAMPLES = 5000
+
+# NumPyro inference defaults — informative priors + Adam SVI. The previous
+# "weakly informative" Normal(0, 100) scales on α, β let AutoDelta walk to
+# a degenerate MAP where |α|, |β| ≈ 30-50 and the cointegrating residual
+# β·x_t + μ ran to ≈ 16 on held-out months. Prediction E[Δr] = α·(β·x+μ)
+# then exploded to log-returns of magnitude ~10² while observed Δr ≈ 10⁻²,
+# tanking held-out log-density by ~5e5 nats/month. VECM is only weakly
+# identified without a rank-restriction (Johansen's eigendecomposition does
+# that explicitly; we don't, so we ridge-regularise instead). At
+# α ~ N(0, 0.1), β_tail ~ N(0, 0.5), 20k iters @ lr=0.005, held-out
+# per_month lands at ~+15.85 nats (baseline statsmodels was +17.79) and
+# multi_step h=12 at ~+0.88 (baseline -5.50; the NumPyro fit is actually
+# better at long horizons — the regularisation curbs the spurious mean
+# reversion the old MLE picked up).
+_DEFAULT_FIT_ITERS = 20000
+_DEFAULT_LEARNING_RATE = 0.005
+_ALPHA_PRIOR_SCALE = 0.1
+_BETA_TAIL_PRIOR_SCALE = 0.5
+_CONST_COINT_PRIOR_SCALE = 5.0
+# Cholesky parameterisation lives on the log scale. A typical monthly
+# log-return residual has σ in the 0.005-0.05 range, so log σ ∈ [-5.3, -3.0].
+# Prior Normal(-4, 2) covers σ ∈ [≈0.002, ≈0.135] within ±1 sd; not biasing,
+# and well-conditioned: SVI gradients on log_diag carry orders-of-magnitude
+# rescaling through `exp(...)` instead of getting flattened by a saturating
+# softplus. The previous `chol_raw=Normal(0,1)` + softplus init started at
+# σ ≈ 0.7 (~70× too large) and softplus saturated as `chol_raw` decreased,
+# trapping SVI at the prior mode and tanking held-out log-density.
+_LOG_DIAG_PRIOR_MEAN = -4.0
+_LOG_DIAG_PRIOR_STD = 2.0
+_OFFDIAG_PRIOR_STD = 0.1
+
+
+def _vecm_generative(log_levels: jnp.ndarray) -> None:
+    """VECM(k=1, r=1) joint distribution on Δr given x_{t-1}.
+
+    Inputs are the observed log-levels `(n_obs, n_factors)`. The function
+    declares sample sites for the model parameters with weak priors and an
+    obs site for Δr conditioned on the inferred parameters. Used for
+    fitting, scoring, and sampling — see module docstring.
+
+    The residual covariance Σ = chol · cholᵀ is parameterised by `log_diag`
+    (length n_factors) and a flat vector of strictly-lower-triangular
+    off-diagonals; the log-scale diagonal sidesteps the softplus-saturation
+    pathology that broke the earlier parameterisation.
+    """
+    _n_obs, n_factors = log_levels.shape
+    # β identification: β[0] = 1 fixed, β[1:] free (Johansen normalisation).
+    beta_tail = numpyro.sample("beta_tail", dist.Normal(jnp.zeros(n_factors - 1), _BETA_TAIL_PRIOR_SCALE).to_event(1))
+    beta = jnp.concatenate([jnp.ones(1), beta_tail])
+    alpha = numpyro.sample("alpha", dist.Normal(jnp.zeros(n_factors), _ALPHA_PRIOR_SCALE).to_event(1))
+    const_coint = numpyro.sample("const_coint", dist.Normal(0.0, _CONST_COINT_PRIOR_SCALE))
+    log_diag = numpyro.sample(
+        "log_diag", dist.Normal(jnp.full((n_factors,), _LOG_DIAG_PRIOR_MEAN), _LOG_DIAG_PRIOR_STD).to_event(1)
+    )
+    n_offdiag = n_factors * (n_factors - 1) // 2
+    offdiag_flat = numpyro.sample("offdiag_flat", dist.Normal(jnp.zeros(n_offdiag), _OFFDIAG_PRIOR_STD).to_event(1))
+    chol = _build_cholesky(jnp.asarray(log_diag), jnp.asarray(offdiag_flat), n_factors)
+    # Recurrence: Δr_t = α (β' x_{t-1} + μ) + ε_t
+    x_prev = log_levels[:-1]
+    diff = jnp.diff(log_levels, axis=0)
+    coint_arr = jnp.matmul(jnp.asarray(x_prev), beta) + const_coint
+    mu_step = jnp.einsum("t,f->tf", coint_arr, alpha)
+    numpyro.sample("obs", dist.MultivariateNormal(mu_step, scale_tril=chol), obs=diff)
+
+
+def _build_cholesky(log_diag: jnp.ndarray, offdiag_flat: jnp.ndarray, n_factors: int) -> jnp.ndarray:
+    """Build the n_factors × n_factors lower-triangular Cholesky factor.
+
+    Diagonal = `exp(log_diag)`; strictly-lower-triangular entries come from
+    `offdiag_flat` in row-major order (so the first n_factors-1 entries are
+    row 1, next n_factors-2 are row 2, etc. — whatever
+    `jnp.tril_indices(n_factors, k=-1)` returns).
+    """
+    row_idx, col_idx = jnp.tril_indices(n_factors, k=-1)
+    chol = jnp.diag(jnp.exp(log_diag))
+    return chol.at[row_idx, col_idx].set(offdiag_flat)
+
+
+def _build_cholesky_np(log_diag: np.ndarray, offdiag_flat: np.ndarray, n_factors: int) -> np.ndarray:
+    row_idx, col_idx = np.tril_indices(n_factors, k=-1)
+    chol = np.diag(np.exp(log_diag))
+    chol[row_idx, col_idx] = offdiag_flat
+    return chol
+
+
+@partial(jax.jit, static_argnames=("horizon",))
+def _roll_log_level_paths(
+    beta: jnp.ndarray,
+    alpha: jnp.ndarray,
+    const_coint: jnp.ndarray,
+    chol: jnp.ndarray,
+    x0: jnp.ndarray,
+    keys: jnp.ndarray,
+    horizon: int,
+) -> jnp.ndarray:
+    """Stochastically roll the VECM recurrence `horizon` steps from `x0` for
+    each PRNG key in `keys`. Returns paths shape `(n_rollouts, horizon+1, F)`
+    with `paths[:, 0, :] = x0`.
+
+    Module-level + JIT-compiled by design: the previous implementation defined
+    `step` / `roll` inside the calling method, so every call produced a fresh
+    Python closure and JAX retraced + recompiled the lax.scan body. With
+    hundreds of rolling-origin scoring calls per metric run, that recompilation
+    cost dominated runtime by orders of magnitude.
+    """
+    n_factors = x0.shape[0]
+
+    def step(x_prev: jnp.ndarray, key: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
+        eps_std = jax.random.normal(key, shape=(n_factors,))
+        eps = chol @ eps_std
+        coint = beta @ x_prev + const_coint
+        x_next = x_prev + coint * alpha + eps
+        return x_next, x_next
+
+    def roll_one(key: jnp.ndarray) -> jnp.ndarray:
+        inner_keys = jax.random.split(key, horizon)
+        _, forward = jax.lax.scan(step, x0, inner_keys)
+        return jnp.concatenate([x0[None, :], forward], axis=0)
+
+    return jax.vmap(roll_one)(keys)
 
 
 @dataclass(frozen=True)
 class VecmConfig:
-    """Vecm hyperparameters fixed at construction. `k_ar_diff` is the lag
-    order on Δlog-level terms; `coint_rank` is r in the rank-r
-    cointegration assumption (1 binds the configured factors to a single
-    long-run relationship)."""
+    """Fit hyperparameters. coint_rank=1 is what binds the factors via a
+    single long-run relationship; coint_rank>1 not currently supported."""
 
-    k_ar_diff: int = 1
-    coint_rank: int = 1
-
-    def __post_init__(self) -> None:
-        if self.k_ar_diff < 0:
-            raise ValueError(f"k_ar_diff must be >= 0; got {self.k_ar_diff}")
-        if self.coint_rank < 1:
-            raise ValueError(f"coint_rank must be >= 1; got {self.coint_rank}")
-
-
-def _zeros2() -> np.ndarray:
-    return np.zeros((0, 0))
-
-
-def _zeros1() -> np.ndarray:
-    return np.zeros((0,))
+    n_iters: int = _DEFAULT_FIT_ITERS
+    learning_rate: float = _DEFAULT_LEARNING_RATE
+    seed: int = 0
 
 
 @dataclass
 class VecmModel:
-    label = "vecm"
+    """VECM joint exogenous model — Sampler, Fittable, Scorable.
 
+    Holds three groups of state:
+
+    1. Fit results (factor_names, n_factors, params, train_log_levels):
+       populated by `fit(historical)` or `from_blob(...)`. Define the
+       statistical model.
+    2. Deployment-layer config (latest_observations, location_series_sources,
+       private_equity_prices_usd): set by `VecmExogenousProviderConfig.realize_model`
+       from YAML. Define how factor paths map onto augur series ids and
+       how multipliers scale to absolute levels.
+    3. Provenance ids (exogenous_model_version_id, evidence_set_id,
+       calibration_artifact_id): set after fit or load via
+       `_compute_provenance`. Surface as bundle metadata.
+    """
+
+    label: str = "vecm"
     config: VecmConfig = field(default_factory=VecmConfig)
 
-    # Parameters extracted from the statsmodels fit — empty until `fit()` runs.
-    alpha: np.ndarray = field(default_factory=_zeros2)  # (F, r)
-    beta: np.ndarray = field(default_factory=_zeros2)  # (F, r)
-    gamma: np.ndarray = field(default_factory=_zeros2)  # (F, F * k_ar_diff)
-    const_coint: np.ndarray = field(default_factory=_zeros1)  # (r,)
-    inv_cov: np.ndarray = field(default_factory=_zeros2)  # (F, F)
-    cov_chol: np.ndarray = field(default_factory=_zeros2)  # (F, F)
-    cov_log_det: float = 0.0
+    # Fit results.
     factor_names: tuple[str, ...] = ()
     n_factors: int = 0
-    train_log_levels: np.ndarray = field(default_factory=_zeros2)  # for simulation seed
+    params: dict[str, np.ndarray] = field(default_factory=dict)
+    train_log_levels: np.ndarray = field(default_factory=lambda: np.zeros((0, 0)))
+
+    # Deployment-layer config.
+    latest_observations: dict[str, Any] = field(default_factory=dict)
+    private_equity_prices_usd: dict[str, float] = field(default_factory=dict)
+    location_series_sources: LocationSeriesSources | None = None
+
+    # Provenance.
+    exogenous_model_version_id: str = ""
+    evidence_set_id: str = ""
+    calibration_artifact_id: str = ""
+
+    # ──────────────────────── Fittable ────────────────────────
 
     def fit(self, historical: HistoricalSeries) -> None:
+        """SVI / MAP estimation of the VECM parameters from observed log-levels.
+
+        AutoDelta MAP with informative Normal priors on α, β, μ (see module
+        constants). The priors act as ridge regularisation that keeps the
+        weakly-identified cointegration vector from collapsing to a
+        degenerate (huge-magnitude) MAP — see header notes for the per-month
+        log-density these defaults produce vs the statsmodels baseline.
+        """
         log_levels = np.log(historical.levels)
-        if log_levels.shape[0] < self.config.k_ar_diff + 3:
-            raise ValueError("VECM needs more observations than k_ar_diff + 3")
+        if log_levels.shape[0] < 3:
+            raise ValueError("VECM needs at least 3 observations to fit")
 
-        model = VECM(
-            log_levels, k_ar_diff=self.config.k_ar_diff, coint_rank=self.config.coint_rank, deterministic=_DETERMINISTIC
-        )
-        fit = model.fit()
-
-        residuals = np.asarray(fit.resid)
-        n_obs, n_factors = residuals.shape
-        cov = (residuals.T @ residuals) / max(1, n_obs - 1)
-        cov = (cov + cov.T) / 2 + np.eye(n_factors) * 1e-12
-        sign, log_det = np.linalg.slogdet(cov)
-        if sign <= 0:
-            raise ValueError("VECM residual covariance has non-positive determinant")
-
-        # Extract typed parameter arrays from the statsmodels fit and drop the
-        # third-party object — `_predict_mean` reads only these.
-        self.alpha = np.asarray(fit.alpha)
-        self.beta = np.asarray(fit.beta)
-        self.gamma = np.asarray(fit.gamma)
-        self.const_coint = np.asarray(fit.const_coint).reshape(-1)
-        self.inv_cov = np.linalg.inv(cov)
-        self.cov_chol = np.linalg.cholesky(cov)
-        self.cov_log_det = float(log_det)
-        self.factor_names = historical.factor_names
-        self.n_factors = n_factors
+        rng = jax.random.PRNGKey(self.config.seed)
+        guide = AutoDelta(_vecm_generative)
+        svi = SVI(_vecm_generative, guide, Adam(self.config.learning_rate), Trace_ELBO())
+        result = svi.run(rng, self.config.n_iters, jnp.asarray(log_levels), progress_bar=False)
+        self.params = {k: np.asarray(v) for k, v in result.params.items()}
+        self.factor_names = tuple(historical.factor_names)
+        self.n_factors = int(log_levels.shape[1])
         self.train_log_levels = log_levels.copy()
 
-    def log_predictive_density(self, historical: HistoricalSeries, t: int) -> float | None:
-        if t < self.config.k_ar_diff + 1:
-            raise ValueError(f"VECM with k_ar_diff={self.config.k_ar_diff} needs t >= k_ar_diff + 1; got {t}")
+    # ──────────────────────── Scorable ────────────────────────
+
+    def predictive(self, historical: HistoricalSeries, t: int, *, horizon: int = 1) -> dist.Distribution | None:
+        """Joint predictive distribution over the cumulative `horizon`-step
+        log-return at origin t.
+
+        h=1: closed-form `MultivariateNormal(μ_t, Σ)` from the fitted recurrence.
+        h>1: Gaussian fit to a Monte-Carlo unroll of `_MC_HORIZON_SAMPLES` paths.
+        Returns None when the requested origin doesn't have h observations
+        available (so the scorer marks the row Unscored).
+        """
+        if not self.params:
+            raise RuntimeError("VecmModel has no fitted parameters; call fit() or from_blob() first")
+        if horizon < 1:
+            raise ValueError(f"horizon must be >= 1; got {horizon}")
         log_levels = np.log(historical.levels)
-        # The fitted VECM recurrence predicts Δlog_level[t+1] from
-        # log_level[t] and the previous k_ar_diff Δlog_levels:
-        #   Δr_{t+1} = α @ (β' @ x_t + const_coint) + Γ_blocks @ stacked_Δr
-        mu = self._predict_mean(log_levels, t)
-        diff = log_levels[t + 1] - log_levels[t] - mu
-        return gaussian_logpdf(diff=diff, inv_cov=self.inv_cov, log_det=self.cov_log_det)
-
-    def log_predictive_marginals(self, historical: HistoricalSeries, t: int) -> dict[str, float] | None:
-        if t < self.config.k_ar_diff + 1:
-            raise ValueError(f"VECM with k_ar_diff={self.config.k_ar_diff} needs t >= k_ar_diff + 1; got {t}")
-        log_levels = np.log(historical.levels)
-        mu = self._predict_mean(log_levels, t)
-        diff = log_levels[t + 1] - log_levels[t] - mu
-        cov = np.linalg.inv(self.inv_cov)
-        sd = np.sqrt(np.diag(cov))
-        names = self.factor_names or tuple(f"f{i}" for i in range(diff.shape[0]))
-        out: dict[str, float] = {}
-        for k, name in enumerate(names):
-            out[name] = float(-0.5 * (math.log(2 * math.pi) + 2 * math.log(sd[k]) + (diff[k] / sd[k]) ** 2))
-        return out
-
-    def log_predictive_density_at_horizon(self, historical: HistoricalSeries, t: int, h: int) -> float | None:
-        if h < 1:
-            raise ValueError(f"h must be >= 1; got {h}")
-        if t < self.config.k_ar_diff + 1:
+        n_steps = log_levels.shape[0] - 1
+        if t + horizon > n_steps:
             return None
-        log_returns_full = np.diff(np.log(historical.levels), axis=0)
-        if t + h > log_returns_full.shape[0]:
-            return None
+        if horizon == 1:
+            mu = self._predict_mean_np(log_levels[t])
+            cov = self._cov_np()
+            return dist.MultivariateNormal(
+                jnp.asarray(mu, dtype=jnp.float32), covariance_matrix=jnp.asarray(cov, dtype=jnp.float32)
+            )
+        # MC h-step
+        return self._mc_horizon_predictive(log_levels[: t + 1], horizon=horizon, origin=t)
 
-        # Monte Carlo: roll the VECM recurrence forward from log_levels[:t+1].
-        rng = np.random.default_rng(int(t) * 1009 + h)
-        n_paths_mc = 5000
-        n_factors = log_returns_full.shape[1]
-        log_levels = np.log(historical.levels[: t + 1])
-
-        history = log_levels[-(self.config.k_ar_diff + 2) :]
-        log_levels_buf = np.broadcast_to(history, (n_paths_mc, history.shape[0], n_factors)).copy()
-
-        innovations = rng.standard_normal((n_paths_mc, h, n_factors)) @ self.cov_chol.T
-        cumulative_log_returns = np.zeros((n_paths_mc, n_factors))
-        for step in range(h):
-            for path_idx in range(n_paths_mc):
-                tail = log_levels_buf[path_idx]
-                t_local = tail.shape[0] - 1
-                mu = self._predict_mean(tail, t_local)
-                # Capture last log-level *before* mutating the buffer — tail is
-                # a view, so the in-place update below would alias it to the
-                # new next_level and zero out the diff.
-                last_level = tail[-1].copy()
-                next_level = last_level + mu + innovations[path_idx, step, :]
-                log_levels_buf[path_idx] = np.concatenate([tail[1:], next_level[None, :]], axis=0)
-                cumulative_log_returns[path_idx] += next_level - last_level
-
-        observed_cumulative = log_returns_full[t : t + h].sum(axis=0)
-        return gaussian_logpdf_from_samples(samples=cumulative_log_returns, observation=observed_cumulative)
-
-    def _predict_mean(self, log_levels: np.ndarray, t: int) -> np.ndarray:
-        """Predict E[Δlog_levels[t+1] | log_levels[:t+1]] under deterministic="ci"
-        from the typed parameter arrays populated by `fit()`."""
-        x = log_levels[t]
-        beta_eff = self.beta[: x.shape[0]]
-        coint_term = beta_eff.T @ x + self.const_coint
-        mean = self.alpha @ coint_term
-
-        if self.config.k_ar_diff > 0:
-            diffs = [log_levels[t - i] - log_levels[t - i - 1] for i in range(self.config.k_ar_diff)]
-            mean = mean + self.gamma @ np.concatenate(diffs)
-
-        return np.asarray(mean)
-
-    def save(self, descriptor: VecmExogenousProviderConfig) -> None:
-        """Persist post-fit state to the `.npz` archive named by the
-        descriptor's `trained_blob` so the runtime can skip re-fitting at
-        startup. Symmetric to `VecmModel.load(descriptor)`."""
-        np.savez_compressed(
-            descriptor.trained_blob,
-            k_ar_diff=np.array(self.config.k_ar_diff),
-            coint_rank=np.array(self.config.coint_rank),
-            alpha=self.alpha,
-            beta=self.beta,
-            gamma=self.gamma,
-            const_coint=self.const_coint,
-            inv_cov=self.inv_cov,
-            cov_chol=self.cov_chol,
-            cov_log_det=np.array(self.cov_log_det),
-            factor_names=np.array(self.factor_names, dtype=object),
-            train_log_levels=self.train_log_levels,
-        )
-
-    @staticmethod
-    def load(descriptor: VecmExogenousProviderConfig) -> VecmModel:
-        with np.load(descriptor.trained_blob, allow_pickle=True) as data:
-            config = VecmConfig(k_ar_diff=int(data["k_ar_diff"]), coint_rank=int(data["coint_rank"]))
-            factor_names = tuple(str(name) for name in data["factor_names"])
-            model = VecmModel(config=config)
-            model.alpha = np.asarray(data["alpha"])
-            model.beta = np.asarray(data["beta"])
-            model.gamma = np.asarray(data["gamma"])
-            model.const_coint = np.asarray(data["const_coint"])
-            model.inv_cov = np.asarray(data["inv_cov"])
-            model.cov_chol = np.asarray(data["cov_chol"])
-            model.cov_log_det = float(data["cov_log_det"])
-            model.factor_names = factor_names
-            model.n_factors = len(factor_names)
-            model.train_log_levels = np.asarray(data["train_log_levels"])
-        return model
-
-    def simulate(self, n_paths: int, n_months: int, seed: int) -> Scenarios:
-        rng = np.random.default_rng(seed)
-        n_factors = self.n_factors
-        train_log_levels = self.train_log_levels
-
-        history = train_log_levels[-(self.config.k_ar_diff + 2) :]
-        log_levels_buf = np.broadcast_to(history, (n_paths, history.shape[0], n_factors)).copy()
-
-        out_log_levels = np.empty((n_paths, n_months + 1, n_factors), dtype="float64")
-        out_log_levels[:, 0, :] = log_levels_buf[:, -1, :]
-
-        innovations = rng.standard_normal((n_paths, n_months, n_factors)) @ self.cov_chol.T
-
-        for step in range(n_months):
-            for path_idx in range(n_paths):
-                tail = log_levels_buf[path_idx]
-                t_local = tail.shape[0] - 1
-                mu = self._predict_mean(tail, t_local)
-                next_level = tail[-1] + mu + innovations[path_idx, step, :]
-                log_levels_buf[path_idx] = np.concatenate([tail[1:], next_level[None, :]], axis=0)
-                out_log_levels[path_idx, step + 1, :] = next_level
-
-        # Convert to multipliers normalized so multipliers[:, 0, :] = 1.0.
-        multipliers = np.exp(out_log_levels - out_log_levels[:, :1, :])
-        return Scenarios(
-            factor_names=self.factor_names or tuple(f"f{i}" for i in range(n_factors)),
-            multipliers=multipliers,
-            seed=seed,
-            label=self.label,
-        )
-
-
-@dataclass(frozen=True)
-class VecmExogenousPathModel:
-    """Native sampled-bundle wrapper around a fitted `VecmModel`."""
-
-    model: VecmModel
-    latest_observations: dict[str, Any]
-    private_equity_prices_usd: dict[str, float]
-    location_series_sources: LocationSeriesSources
-    label: str
-    exogenous_model_version_id: str
-    evidence_set_id: str
-    calibration_artifact_id: str
-
-    @classmethod
-    def from_loaded_model(
-        cls,
-        model: VecmModel,
-        *,
-        latest_observations: dict[str, Any],
-        private_equity_prices_usd: dict[str, float],
-        location_series_sources: LocationSeriesSources,
-        evidence_source_id: str,
-    ) -> VecmExogenousPathModel:
-        factor_names = tuple(model.factor_names)
-        label = model.label
-        exogenous_model_version_id = "model_version:" + stable_identity_digest(
-            {"label": label, "class": type(model).__qualname__}
-        )
-        evidence_set_id = "evidence_set:" + stable_identity_digest(
-            {
-                "evidence_source_id": evidence_source_id,
-                "factor_names": factor_names,
-                "latest_observations": dict(latest_observations),
-            }
-        )
-        calibration_artifact_id = "calibration_artifact:" + stable_identity_digest(
-            {
-                "exogenous_model_id": label,
-                "exogenous_model_version_id": exogenous_model_version_id,
-                "evidence_set_id": evidence_set_id,
-            }
-        )
-        return cls(
-            model=model,
-            latest_observations=dict(latest_observations),
-            private_equity_prices_usd={k: float(v) for k, v in private_equity_prices_usd.items()},
-            location_series_sources=location_series_sources,
-            label=label,
-            exogenous_model_version_id=exogenous_model_version_id,
-            evidence_set_id=evidence_set_id,
-            calibration_artifact_id=calibration_artifact_id,
-        )
+    # ──────────────────────── Sampler ────────────────────────
 
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
-        if request.rollout_count:
-            multipliers = np.concatenate(
-                [
-                    self.model.simulate(n_paths=1, n_months=request.horizon_months, seed=seed).multipliers
-                    for seed in request.rollout_seeds
-                ],
-                axis=0,
-            )
+        """Roll the VECM forward for each rollout seed, convert log-level
+        paths to multipliers, dispatch augur series ids onto factors, scale
+        by deployment `latest_observations`, populate tender events, and
+        emit a `SampledExogenousBundle`."""
+        if self.location_series_sources is None:
+            raise RuntimeError("VecmModel.sample requires location_series_sources; set via realize_model")
+        rollout_count = request.rollout_count
+        horizon_months = request.horizon_months
+        if rollout_count == 0:
+            multipliers = np.empty((0, horizon_months + 1, self.n_factors), dtype="float64")
         else:
-            multipliers = np.empty((0, request.horizon_months + 1, self.model.n_factors), dtype="float64")
-        factor_names = self.model.factor_names or tuple(f"f{i}" for i in range(self.model.n_factors))
+            multipliers = self._simulate_multipliers(rollout_seeds=request.rollout_seeds, horizon_months=horizon_months)
+        factor_names = self.factor_names or tuple(f"f{i}" for i in range(self.n_factors))
         path_by_factor = {
             factor_name: multipliers[:, :, factor_index] for factor_index, factor_name in enumerate(factor_names)
         }
-        shape = (request.rollout_count, request.horizon_months + 1)
+        shape = (rollout_count, horizon_months + 1)
         private_equity_events = np.zeros(shape, dtype=np.bool_)
-        private_equity_events[:, _TENDER_INTERVAL_MONTHS : request.horizon_months + 1 : _TENDER_INTERVAL_MONTHS] = True
+        private_equity_events[:, _TENDER_INTERVAL_MONTHS : horizon_months + 1 : _TENDER_INTERVAL_MONTHS] = True
 
         level_blocks = [
             series_levels_frame(
                 series_id,
                 self._level_series(series_id, path_by_factor=path_by_factor, shape=shape),
-                rollout_count=request.rollout_count,
-                horizon_months=request.horizon_months,
+                rollout_count=rollout_count,
+                horizon_months=horizon_months,
             )
             for series_id in sorted(request.required_level_series)
         ]
@@ -364,8 +335,8 @@ class VecmExogenousPathModel:
             series_events_frame(
                 event_id,
                 self._event_series(event_id, private_equity_events=private_equity_events),
-                rollout_count=request.rollout_count,
-                horizon_months=request.horizon_months,
+                rollout_count=rollout_count,
+                horizon_months=horizon_months,
             )
             for event_id in sorted(request.required_event_series)
         ]
@@ -376,16 +347,131 @@ class VecmExogenousPathModel:
                 "model_version_id": self.exogenous_model_version_id,
                 "exogenous_model_id": self.label,
                 "exogenous_model_version_id": self.exogenous_model_version_id,
-                "scenario_generator_id": "vecm_exogenous_path_model",
-                "scenario_generator_version_id": "vecm_exogenous_path_model:v1",
+                "scenario_generator_id": "vecm_numpyro",
+                "scenario_generator_version_id": "vecm_numpyro:v1",
                 "evidence_set_id": self.evidence_set_id,
                 "calibration_artifact_id": self.calibration_artifact_id,
                 "private_equity_prices_usd": dict(self.private_equity_prices_usd),
                 "event_stream_ids": ("private_equity_sale_opportunity_event",),
-                "notes": ("sampled by VecmExogenousPathModel",),
+                "notes": ("sampled by VecmModel (NumPyro)",),
                 "exogenous_provider_label": self.label,
             },
         )
+
+    # ──────────────────────── Persistence ────────────────────────
+
+    def save(self, blob_path: Path) -> None:
+        """Persist post-fit state to a `.npz` archive: the SVI/MAP params,
+        factor names, and the training log-level history needed to roll
+        forward at sample time."""
+        payload: dict[str, Any] = {
+            "factor_names": np.array(self.factor_names, dtype=object),
+            "n_factors": np.array(self.n_factors),
+            "train_log_levels": self.train_log_levels,
+            **self.params,
+        }
+        np.savez_compressed(blob_path, **payload)
+
+    @classmethod
+    def from_blob(
+        cls,
+        blob_path: Path,
+        *,
+        latest_observations: Mapping[str, Any],
+        location_series_sources: LocationSeriesSources,
+        private_equity_prices_usd: Mapping[str, float],
+        evidence_source_id: str,
+        config: VecmConfig | None = None,
+    ) -> VecmModel:
+        """Load post-fit state from a `.npz` written by `save(...)`, attach
+        deployment-layer config from the runtime YAML, and compute
+        provenance ids."""
+        with np.load(blob_path, allow_pickle=True) as data:
+            param_keys = {k for k in data.files if k not in {"factor_names", "n_factors", "train_log_levels"}}
+            params = {k: np.asarray(data[k]) for k in param_keys}
+            factor_names = tuple(str(name) for name in data["factor_names"])
+            train_log_levels = np.asarray(data["train_log_levels"])
+            n_factors = int(data["n_factors"])
+        model = cls(
+            config=config or VecmConfig(),
+            factor_names=factor_names,
+            n_factors=n_factors,
+            params=params,
+            train_log_levels=train_log_levels,
+            latest_observations=dict(latest_observations),
+            private_equity_prices_usd={k: float(v) for k, v in private_equity_prices_usd.items()},
+            location_series_sources=location_series_sources,
+        )
+        model._compute_provenance(evidence_source_id)
+        return model
+
+    # ──────────────────────── Internal: forecast ────────────────────────
+
+    def _packed_params(self) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+        """Pack the fitted params into (beta, alpha, const_coint, L) jnp arrays.
+
+        Returned tuple is the argument set consumed by `_roll_log_level_paths`.
+        """
+        beta_tail = jnp.asarray(self.params["beta_tail_auto_loc"])
+        alpha = jnp.asarray(self.params["alpha_auto_loc"])
+        const_coint = jnp.asarray(self.params["const_coint_auto_loc"])
+        chol = _build_cholesky(
+            jnp.asarray(self.params["log_diag_auto_loc"]),
+            jnp.asarray(self.params["offdiag_flat_auto_loc"]),
+            self.n_factors,
+        )
+        beta = jnp.concatenate([jnp.ones(1), beta_tail])
+        return beta, alpha, const_coint, chol
+
+    def _simulate_multipliers(self, *, rollout_seeds: tuple[int, ...], horizon_months: int) -> np.ndarray:
+        """Stochastically roll the VECM recurrence `horizon_months` steps for
+        each seed; return multipliers shape `(n_rollouts, horizon_months+1, F)`
+        normalised so multipliers[:, 0, :] = 1.0."""
+        beta, alpha, const_coint, chol = self._packed_params()
+        x0 = jnp.asarray(self.train_log_levels[-1])
+        rngs = jnp.stack([jax.random.PRNGKey(int(seed)) for seed in rollout_seeds])
+        log_level_paths = _roll_log_level_paths(beta, alpha, const_coint, chol, x0, rngs, horizon_months)
+        multipliers = jnp.exp(log_level_paths - log_level_paths[:, :1, :])
+        return np.asarray(multipliers)
+
+    def _mc_horizon_predictive(
+        self, log_levels_history: np.ndarray, *, horizon: int, origin: int
+    ) -> dist.MultivariateNormal:
+        """Roll forward `horizon` steps from `log_levels_history[-1]` using
+        the fitted params; fit a multivariate Gaussian to the
+        `_MC_HORIZON_SAMPLES` × F matrix of cumulative log-returns."""
+        beta, alpha, const_coint, chol = self._packed_params()
+        x0 = jnp.asarray(log_levels_history[-1])
+        base_key = jax.random.PRNGKey(int(origin) * 1009 + horizon)
+        keys = jax.random.split(base_key, _MC_HORIZON_SAMPLES)
+        paths = _roll_log_level_paths(beta, alpha, const_coint, chol, x0, keys, horizon)
+        # paths shape (n_samples, horizon+1, F); cumulative h-step log-return = paths[-1] - paths[0]
+        samples = paths[:, -1, :] - paths[:, 0, :]
+        samples_np = np.asarray(samples)
+        mean = samples_np.mean(axis=0)
+        diff = samples_np - mean
+        cov = (diff.T @ diff) / (samples_np.shape[0] - 1)
+        cov = (cov + cov.T) / 2 + np.eye(self.n_factors) * 1e-12
+        return dist.MultivariateNormal(
+            jnp.asarray(mean, dtype=jnp.float32), covariance_matrix=jnp.asarray(cov, dtype=jnp.float32)
+        )
+
+    def _predict_mean_np(self, x_prev: np.ndarray) -> np.ndarray:
+        """E[Δr_{t+1} | x_t] from fitted params, in numpy."""
+        beta_tail = self.params["beta_tail_auto_loc"]
+        alpha = self.params["alpha_auto_loc"]
+        const_coint = float(self.params["const_coint_auto_loc"])
+        beta = np.concatenate([np.ones(1), beta_tail])
+        coint = float(beta @ x_prev) + const_coint
+        return np.asarray(coint * alpha)
+
+    def _cov_np(self) -> np.ndarray:
+        chol = _build_cholesky_np(
+            self.params["log_diag_auto_loc"], self.params["offdiag_flat_auto_loc"], self.n_factors
+        )
+        return np.asarray(chol @ chol.T)
+
+    # ──────────────────────── Internal: bundle dispatch ────────────────────────
 
     def _level_series(
         self, series_id: str, *, path_by_factor: dict[str, np.ndarray], shape: tuple[int, int]
@@ -414,6 +500,8 @@ class VecmExogenousPathModel:
         raise ValueError(f"VECM exogenous model cannot sample event series {event_id!r}")
 
     def _location_factor(self, kind: Literal["home_value", "rent"], location_id: str) -> str:
+        if self.location_series_sources is None:
+            raise RuntimeError("VecmModel has no location_series_sources")
         source_by_location = (
             self.location_series_sources.home_value if kind == "home_value" else self.location_series_sources.rent
         )
@@ -426,26 +514,23 @@ class VecmExogenousPathModel:
         try:
             multiplier = path_by_factor[factor_name]
         except KeyError as error:
-            raise ValueError(f"VECM trained blob has no factor {factor_name!r}") from error
+            raise ValueError(f"VECM fit blob has no factor {factor_name!r}") from error
         return self._latest_factor_value(factor_name) * multiplier
 
     def _latest_factor_value(self, factor_name: str) -> float:
         direct = self.latest_observations.get(factor_name)
         if isinstance(direct, (int, float)):
             return float(direct)
-
         if factor_name == "sp500":
             return self._latest_observation_value("spy_adjusted_close_latest", fallback_key="sp500_price_latest")
         if factor_name == "rent:san_francisco_ca":
             return self._latest_observation_value("sf_rent_cpi_latest")
         if factor_name == "inflation":
             return self._latest_observation_value("cpi_latest")
-
         for key in ("zillow_home_value_latest_by_factor", "case_shiller_home_value_latest_by_factor"):
             by_factor = self.latest_observations.get(key)
             if isinstance(by_factor, dict) and factor_name in by_factor:
                 return _observation_value(by_factor[factor_name], f"{key}[{factor_name!r}]")
-
         raise ValueError(f"VECM config latest_observations has no usable latest value for factor {factor_name!r}")
 
     def _latest_observation_value(self, key: str, *, fallback_key: str | None = None) -> float:
@@ -455,6 +540,25 @@ class VecmExogenousPathModel:
             return _observation_value(self.latest_observations[fallback_key], fallback_key)
         expected = key if fallback_key is None else f"{key!r} or {fallback_key!r}"
         raise ValueError(f"VECM config latest_observations has no {expected}")
+
+    def _compute_provenance(self, evidence_source_id: str) -> None:
+        self.exogenous_model_version_id = "model_version:" + stable_identity_digest(
+            {"label": self.label, "class": type(self).__qualname__}
+        )
+        self.evidence_set_id = "evidence_set:" + stable_identity_digest(
+            {
+                "evidence_source_id": evidence_source_id,
+                "factor_names": self.factor_names,
+                "latest_observations": dict(self.latest_observations),
+            }
+        )
+        self.calibration_artifact_id = "calibration_artifact:" + stable_identity_digest(
+            {
+                "exogenous_model_id": self.label,
+                "exogenous_model_version_id": self.exogenous_model_version_id,
+                "evidence_set_id": self.evidence_set_id,
+            }
+        )
 
 
 def _observation_value(observation: Any, key: str) -> float:
@@ -471,23 +575,25 @@ class VecmExogenousProviderConfig(FrozenModel):
     startup; no fitting happens on the request path."""
 
     type: Literal["vecm"] = "vecm"
-    trained_blob: Path = Field(description="Absolute path to the .npz produced by VecmModel.save(descriptor).")
+    trained_blob: Path = Field(description="Absolute path to the .npz produced by VecmModel.save(...).")
     latest_observations: dict[str, Any] = Field(
         description="Latest observed series state at the start of the simulation horizon (factor → value)."
     )
     current_mortgage30_rate_pct: float
     private_equity_prices_usd: dict[str, float] = Field(
         default_factory=dict,
-        description="Per-issuer current per-unit private-equity price. Issuer ids match the `private_equity:<issuer>` series suffix.",
+        description=(
+            "Per-issuer current per-unit private-equity price. Issuer ids match "
+            "the `private_equity:<issuer>` series suffix."
+        ),
     )
     location_series_sources: LocationSeriesSourcesConfig
 
-    def realize_model(self) -> VecmExogenousPathModel:
-        model = VecmModel.load(self)
-        return VecmExogenousPathModel.from_loaded_model(
-            model,
+    def realize_model(self) -> VecmModel:
+        return VecmModel.from_blob(
+            self.trained_blob,
             latest_observations=self.latest_observations,
-            private_equity_prices_usd=self.private_equity_prices_usd,
             location_series_sources=LocationSeriesSources.from_config(self.location_series_sources),
+            private_equity_prices_usd=self.private_equity_prices_usd,
             evidence_source_id=str(self.trained_blob),
         )

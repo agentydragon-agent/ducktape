@@ -89,6 +89,10 @@ py_library(
         ":schemas",
         ":series",
         ":series_model",
+        "//augur/model/path_models:scenarios",
+        "@pypi//jax",
+        "@pypi//numpy",
+        "@pypi//numpyro",
         "@pypi//pydantic",
     ],
 )

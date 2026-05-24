@@ -1,10 +1,21 @@
-"""Score the active trained exogenous model on the same metric battery.
+"""Score the active exogenous models on the same metric battery.
 
-Loads historical exogenous-factor data, fits each model from
-the active model list, runs held-out + rolling-origin + multi-step predictive
-log-density, writes a `summary.json`.
+Loads historical exogenous-factor data, builds each model from the active
+list (`_ACTIVE_MODEL_METRIC_SPECS`), runs held-out + rolling-origin +
+multi-step predictive log-density + CRPS, writes a `summary.json`.
 
-Use as a yardstick for "did the change to model X regress its score?"
+Use as a yardstick for "did the change to model X regress its score?".
+Currently included:
+
+  - **VECM** (NumPyro, joint cointegrated): fits per-origin in
+    rolling-origin scoring.
+  - **Independent** (YAML-configured per-series GBM): no fit step;
+    same testdata config the dev fixture uses.
+
+A model that doesn't satisfy `Fittable` is skipped from rolling-origin
+scoring but still appears in held-out and multi-step rows (those don't
+refit). A model that returns `None` from `predictive(...)` shows up as
+an `Unscored*` row instead of crashing.
 """
 
 from __future__ import annotations
@@ -14,26 +25,47 @@ import json
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
+
+import yaml
 
 from augur.fit.data import load_historical
-from augur.fit.exogenous_model import PredictiveSeriesModel
-from augur.fit.metrics import (
-    held_out_predictive_log_density,
-    multi_step_predictive_log_density,
-    rolling_origin_predictive_log_density,
-)
+from augur.fit.exogenous_model import FittableScorable, Scorable
+from augur.fit.metrics import held_out_predictive_score, multi_step_predictive_score, rolling_origin_predictive_score
+from augur.model.independent_exogenous import IndependentExogenousProviderConfig
 from augur.model.path_models.models.vecm import VecmConfig, VecmModel
+from augur.model.path_models.scenarios import HistoricalSeries
+from util.bazel.runfiles import get_required_path
 
 
 @dataclass(frozen=True)
 class ModelMetricSpec:
-    build: Callable[[], PredictiveSeriesModel]
+    label: str
+    build_scorable: Callable[[], Scorable]
+    build_fittable_scorable: Callable[[], FittableScorable] | None = None
     rolling_origin_refit_every: int = 1
 
 
+def _build_independent_from_testdata() -> Scorable:
+    config_path = get_required_path("_main/augur/api/testdata/config.yaml")
+    payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    provider_payload = payload["exogenous_provider"]
+    config = IndependentExogenousProviderConfig.model_validate(provider_payload)
+    return cast(Scorable, config.realize_model())
+
+
 _ACTIVE_MODEL_METRIC_SPECS: tuple[ModelMetricSpec, ...] = (
-    ModelMetricSpec(build=lambda: VecmModel(VecmConfig(k_ar_diff=1, coint_rank=1))),
+    ModelMetricSpec(
+        label="vecm",
+        build_scorable=lambda: VecmModel(config=VecmConfig()),
+        build_fittable_scorable=lambda: VecmModel(config=VecmConfig()),
+        # NumPyro SVI default takes ~5min per fit @ 20k iters. refit_every=1
+        # would multiply by ~190 origins → unusable. Annual refit gives a
+        # tractable ~16 fits while still tracking how fit quality evolves
+        # with more data.
+        rolling_origin_refit_every=12,
+    ),
+    ModelMetricSpec(label="independent", build_scorable=_build_independent_from_testdata, build_fittable_scorable=None),
 )
 
 
@@ -49,16 +81,36 @@ def evaluate_all(
     rolling_rows: list[dict[str, Any]] = []
     multi_step_rows: list[dict[str, Any]] = []
     for spec in _ACTIVE_MODEL_METRIC_SPECS:
-        held_out = held_out_predictive_log_density(spec.build(), historical, train_fraction=train_fraction)
-        held_out_rows.append(asdict(held_out))
-        rolling = rolling_origin_predictive_log_density(
-            spec.build, historical, min_train=rolling_min_train, refit_every=spec.rolling_origin_refit_every
+        held_out_model = spec.build_scorable()
+        if spec.build_fittable_scorable is not None:
+            # Fittable: train on the prefix before scoring.
+            fit_train_end = max(1, round((historical.levels.shape[0] - 1) * train_fraction))
+            # Mutating fit on a fresh instance avoids leaking state across calls.
+            train_series = HistoricalSeries(
+                factor_names=historical.factor_names,
+                levels=historical.levels[: fit_train_end + 1],
+                months=historical.months[: fit_train_end + 1],
+            )
+            fittable = spec.build_fittable_scorable()
+            fittable.fit(train_series)
+            held_out_model = fittable
+        held_out = held_out_predictive_score(held_out_model, historical, train_fraction=train_fraction)
+        held_out_rows.append({"model": spec.label, **asdict(held_out)})
+
+        if spec.build_fittable_scorable is not None:
+            rolling = rolling_origin_predictive_score(
+                spec.build_fittable_scorable,
+                historical,
+                min_train=rolling_min_train,
+                refit_every=spec.rolling_origin_refit_every,
+            )
+            rolling_rows.append({"model": spec.label, **asdict(rolling)})
+
+        # Multi-step uses the (possibly fitted) held_out_model.
+        multi_step = multi_step_predictive_score(
+            held_out_model, historical, horizons=multi_step_horizons, train_fraction=train_fraction
         )
-        rolling_rows.append(asdict(rolling))
-        multi_step = multi_step_predictive_log_density(
-            spec.build(), historical, horizons=multi_step_horizons, train_fraction=train_fraction
-        )
-        multi_step_rows.append(asdict(multi_step))
+        multi_step_rows.append({"model": spec.label, **asdict(multi_step)})
     return {
         "factor_names": list(historical.factor_names),
         "n_steps": historical.levels.shape[0] - 1,
@@ -74,9 +126,7 @@ def evaluate_all(
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        description="Augur: score the active trained exogenous model on the metric battery."
-    )
+    parser = argparse.ArgumentParser(description="Augur: score the active exogenous models on the metric battery.")
     parser.add_argument(
         "--config", type=Path, default=None, help="path to exogenous_evidence.example.json (default: bundled)"
     )

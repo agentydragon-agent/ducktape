@@ -92,8 +92,13 @@ class SampledExogenousBundle:
         )
 
 
-class ExogenousPathModel(Protocol):
-    """Joint exogenous path model API consumed by the simulator."""
+class Sampler(Protocol):
+    """Runtime sampling boundary — required of every augur exogenous model.
+
+    Anything that can't be sampled is unusable in the augur sim. `Fittable`
+    (offline trainer) and `Scorable` (metric battery) extend this protocol
+    for models that additionally support training / scoring.
+    """
 
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
         """Return all modeled external drivers as a sampled levels/events bundle."""

@@ -12,21 +12,26 @@ py_library(
         "//augur/model:provenance",
         "//augur/model:schemas",
         "//augur/model:series",
-        "//augur/model/path_models:density",
         "//augur/model/path_models:scenarios",
+        "@pypi//jax",
         "@pypi//numpy",
+        "@pypi//numpyro",
         "@pypi//pydantic",
-        "@pypi//statsmodels",
     ],
 )
 
 py_test(
     name = "vecm_test",
+    size = "large",
     srcs = ["vecm_test.py"],
     deps = [
         ":vecm",
+        "//augur/model:exogenous",
+        "//augur/model:location_series_sources",
+        "//augur/model:series",
         "//augur/model/path_models:scenarios",
         "@pypi//numpy",
+        "@pypi//numpyro",
         "@pypi//pytest_bazel",
     ],
 )

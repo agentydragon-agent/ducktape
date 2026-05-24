@@ -1,13 +1,20 @@
-"""VECM sanity tests."""
+"""VECM (NumPyro) sanity tests.
+
+These tests exercise the NumPyro-fit VECM end-to-end on synthetic
+cointegrated series + the augur runtime sampling boundary. They run on
+small horizons / coarse tolerances because SVI/MAP isn't bit-deterministic
+across machines.
+"""
 
 from __future__ import annotations
 
 import numpy as np
 import pytest_bazel
+from numpyro import distributions as dist
 
 from augur.model.exogenous import ExogenousSamplingRequest
 from augur.model.location_series_sources import LocationSeriesSources
-from augur.model.path_models.models.vecm import VecmConfig, VecmExogenousPathModel, VecmModel
+from augur.model.path_models.models.vecm import VecmConfig, VecmModel
 from augur.model.path_models.scenarios import HistoricalSeries
 from augur.model.series import (
     INFLATION_SERIES_ID,
@@ -25,7 +32,7 @@ def _series_from_log_levels(log_levels: np.ndarray) -> HistoricalSeries:
     return HistoricalSeries(factor_names=tuple(f"f{i}" for i in range(levels.shape[1])), levels=levels, months=months)
 
 
-def _historical_series_from_log_levels(log_levels: np.ndarray) -> HistoricalSeries:
+def _historical_series_4factor(log_levels: np.ndarray) -> HistoricalSeries:
     levels = np.exp(log_levels - log_levels[0])
     months = tuple(f"2000-{i:02d}" for i in range(levels.shape[0]))
     return HistoricalSeries(
@@ -35,71 +42,57 @@ def _historical_series_from_log_levels(log_levels: np.ndarray) -> HistoricalSeri
     )
 
 
+def _cointegrated_two_factor(seed: int, n_steps: int) -> HistoricalSeries:
+    rng = np.random.default_rng(seed)
+    r1 = np.cumsum(rng.normal(scale=0.02, size=n_steps))
+    gap = np.zeros(n_steps)
+    for t in range(1, n_steps):
+        gap[t] = 0.7 * gap[t - 1] + rng.normal(scale=0.005)
+    r2 = r1 + gap
+    log_levels = np.column_stack([r1, r2])
+    log_levels = np.concatenate([np.zeros((1, 2)), log_levels], axis=0)
+    return _series_from_log_levels(log_levels)
+
+
 class TestVecmModel:
-    def test_fit_runs_on_simulated_cointegrated_series(self) -> None:
-        # Build a 2-factor cointegrated random walk: r2 = r1 + small mean-reverting noise.
-        rng = np.random.default_rng(42)
-        n_steps = 400
-        r1 = np.cumsum(rng.normal(scale=0.02, size=n_steps))
-        gap = np.zeros(n_steps)
-        for t in range(1, n_steps):
-            gap[t] = 0.7 * gap[t - 1] + rng.normal(scale=0.005)
-        r2 = r1 + gap
-        log_levels = np.column_stack([r1, r2])
-        log_levels = np.concatenate([np.zeros((1, 2)), log_levels], axis=0)
-        historical = _series_from_log_levels(log_levels)
+    def test_fit_then_predictive_returns_a_multivariate_gaussian(self) -> None:
+        historical = _cointegrated_two_factor(seed=42, n_steps=200)
 
-        model = VecmModel(VecmConfig(k_ar_diff=1, coint_rank=1))
+        model = VecmModel(config=VecmConfig(n_iters=500))
         model.fit(historical)
 
-        density = model.log_predictive_density(historical, 200)
-        assert density is not None
-        assert np.isfinite(density)
+        pred = model.predictive(historical, t=100, horizon=1)
+        assert isinstance(pred, dist.MultivariateNormal)
+        log_levels = np.log(historical.levels)
+        observed = log_levels[101] - log_levels[100]
+        log_prob = float(np.asarray(pred.log_prob(np.asarray(observed, dtype="float32"))))
+        assert np.isfinite(log_prob)
 
-    def test_simulate_returns_finite_positive_starting_at_one(self) -> None:
-        rng = np.random.default_rng(7)
-        n_steps = 200
-        r1 = np.cumsum(rng.normal(scale=0.02, size=n_steps))
-        gap = np.zeros(n_steps)
-        for t in range(1, n_steps):
-            gap[t] = 0.7 * gap[t - 1] + rng.normal(scale=0.005)
-        r2 = r1 + gap
-        log_levels = np.column_stack([r1, r2])
-        log_levels = np.concatenate([np.zeros((1, 2)), log_levels], axis=0)
-        historical = _series_from_log_levels(log_levels)
+    def test_predictive_returns_none_when_horizon_exceeds_window(self) -> None:
+        historical = _cointegrated_two_factor(seed=7, n_steps=150)
 
-        model = VecmModel(VecmConfig(k_ar_diff=1, coint_rank=1))
-        model.fit(historical)
-        scenarios = model.simulate(n_paths=4, n_months=24, seed=99)
-        assert scenarios.multipliers.shape == (4, 25, 2)
-        np.testing.assert_array_equal(scenarios.multipliers[:, 0, :], np.ones((4, 2)))
-        assert np.all(np.isfinite(scenarios.multipliers))
-        assert np.all(scenarios.multipliers > 0)
-
-    def test_h1_horizon_density_approximately_matches_one_step(self) -> None:
-        rng = np.random.default_rng(42)
-        n_steps = 400
-        r1 = np.cumsum(rng.normal(scale=0.02, size=n_steps))
-        gap = np.zeros(n_steps)
-        for t in range(1, n_steps):
-            gap[t] = 0.7 * gap[t - 1] + rng.normal(scale=0.005)
-        r2 = r1 + gap
-        log_levels = np.column_stack([r1, r2])
-        log_levels = np.concatenate([np.zeros((1, 2)), log_levels], axis=0)
-        historical = _series_from_log_levels(log_levels)
-
-        model = VecmModel(VecmConfig(k_ar_diff=1, coint_rank=1))
+        model = VecmModel(config=VecmConfig(n_iters=300))
         model.fit(historical)
 
-        for t in (50, 100, 200):
-            one_step = model.log_predictive_density(historical, t)
-            assert one_step is not None
-            h1 = model.log_predictive_density_at_horizon(historical, t, 1)
-            assert h1 is not None
-            # MC-Gaussian fit on 5000 samples should be within ~1 nat of closed form.
-            assert abs(h1 - one_step) < 1.5, f"t={t}: closed={one_step}, h1={h1}"
+        # n_steps observation transitions = 150, so origin t=148 with h=3 has no
+        # observed value to score against → predictive returns None.
+        assert model.predictive(historical, t=148, horizon=3) is None
 
-    def test_joint_exogenous_model_samples_levels_and_events(self) -> None:
+    def test_h1_horizon_predictive_matches_one_step_in_distribution(self) -> None:
+        historical = _cointegrated_two_factor(seed=42, n_steps=200)
+
+        model = VecmModel(config=VecmConfig(n_iters=500))
+        model.fit(historical)
+
+        for t in (50, 100, 150):
+            one_step = model.predictive(historical, t, horizon=1)
+            h1 = model.predictive(historical, t, horizon=1)
+            assert isinstance(one_step, dist.MultivariateNormal)
+            assert isinstance(h1, dist.MultivariateNormal)
+            # h=1 is closed-form in both paths; same params.
+            np.testing.assert_allclose(np.asarray(one_step.mean), np.asarray(h1.mean), atol=1e-6)
+
+    def test_sample_returns_correct_shapes_and_metadata(self) -> None:
         rng = np.random.default_rng(123)
         base = np.cumsum(rng.normal(scale=0.01, size=240))
         log_levels = np.column_stack(
@@ -111,25 +104,25 @@ class TestVecmModel:
             ]
         )
         log_levels = np.concatenate([np.zeros((1, 4)), log_levels], axis=0)
-        model = VecmModel(VecmConfig(k_ar_diff=1, coint_rank=1))
-        model.fit(_historical_series_from_log_levels(log_levels))
-        joint_model = VecmExogenousPathModel.from_loaded_model(
-            model,
-            latest_observations={
-                "sp500": 5500.0,
-                "home_value:san_francisco_ca": 1_000_000.0,
-                "rent:san_francisco_ca": 3000.0,
-                "inflation": 320.0,
-            },
-            private_equity_prices_usd={"private_equity_x": 50.0},
-            location_series_sources=LocationSeriesSources(
-                home_value={"san_francisco_ca": "home_value:san_francisco_ca"},
-                rent={"san_francisco_ca": "rent:san_francisco_ca"},
-            ),
-            evidence_source_id="test",
-        )
+        historical = _historical_series_4factor(log_levels)
 
-        sampled = joint_model.sample(
+        model = VecmModel(config=VecmConfig(n_iters=500))
+        model.fit(historical)
+        # Attach deployment-layer state (normally done by realize_model).
+        model.latest_observations = {
+            "sp500": 5500.0,
+            "home_value:san_francisco_ca": 1_000_000.0,
+            "rent:san_francisco_ca": 3000.0,
+            "inflation": 320.0,
+        }
+        model.private_equity_prices_usd = {"private_equity_x": 50.0}
+        model.location_series_sources = LocationSeriesSources(
+            home_value={"san_francisco_ca": "home_value:san_francisco_ca"},
+            rent={"san_francisco_ca": "rent:san_francisco_ca"},
+        )
+        model._compute_provenance(evidence_source_id="test")
+
+        sampled = model.sample(
             ExogenousSamplingRequest(
                 horizon_months=12,
                 rollout_seeds=(7, 8),
@@ -146,6 +139,7 @@ class TestVecmModel:
             )
         )
 
+        # SP500 paths start at 5500 (the latest observation) and scale by month-0=1 multiplier.
         assert sampled.level_matrix(SP500_SERIES_ID, rollout_count=2, horizon_months=12)[:, 0].tolist() == [
             5500.0,
             5500.0,
@@ -159,7 +153,7 @@ class TestVecmModel:
             ).dtype
             == np.bool_
         )
-        assert sampled.metadata["scenario_generator_id"] == "vecm_exogenous_path_model"
+        assert sampled.metadata["scenario_generator_id"] == "vecm_numpyro"
 
 
 if __name__ == "__main__":

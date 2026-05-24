@@ -13,11 +13,15 @@ from __future__ import annotations
 
 from typing import Literal, assert_never
 
+import jax.numpy as jnp
+import numpy as np
+from numpyro import distributions as dist
 from pydantic import Field
 
 from augur.model.deterministic import Constant, Deterministic
-from augur.model.exogenous import ExogenousPathModel, ExogenousSamplingRequest, SampledExogenousBundle
+from augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle
 from augur.model.gbm import GeometricBrownian
+from augur.model.path_models.scenarios import HistoricalSeries
 from augur.model.schemas import FrozenModel
 from augur.model.series import PRIVATE_EQUITY_SERIES_PREFIX, series_suffix
 from augur.model.series_model import IndependentSeriesModels, ScalarEventSpec, ScalarSeriesSpec
@@ -35,26 +39,65 @@ class IndependentExogenousProviderConfig(FrozenModel):
     series: dict[str, ScalarSeriesSpec] = Field(default_factory=dict)
     events: dict[str, ScalarEventSpec] = Field(default_factory=dict)
 
-    def realize_model(self) -> ExogenousPathModel:
+    def realize_model(self) -> IndependentExogenousModel:
         return IndependentExogenousModel(series=self.series, events=self.events)
 
 
 class IndependentExogenousModel(FrozenModel):
-    """Runtime exogenous model built from an `IndependentExogenousProviderConfig`."""
+    """Runtime exogenous model built from an `IndependentExogenousProviderConfig`.
 
+    Implements `Sampler` (the runtime sampling contract) and `Scorable` (the
+    metric battery contract). No `Fittable` — params are YAML-set, not fit.
+    """
+
+    label: str = "independent_exogenous_model"
     series: dict[str, ScalarSeriesSpec]
     events: dict[str, ScalarEventSpec]
+
+    @property
+    def factor_names(self) -> tuple[str, ...]:
+        return tuple(self.series.keys())
 
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
         bundle = IndependentSeriesModels(series=self.series, events=self.events).sample(request)
         return SampledExogenousBundle(
             levels=bundle.levels,
             events=bundle.events,
-            metadata={
-                "exogenous_model_id": "independent_exogenous_model",
-                "private_equity_prices_usd": self._private_equity_prices_usd(),
-            },
+            metadata={"exogenous_model_id": self.label, "private_equity_prices_usd": self._private_equity_prices_usd()},
         )
+
+    def predictive(self, historical: HistoricalSeries, t: int, *, horizon: int = 1) -> dist.Distribution | None:
+        """Joint predictive over the cumulative `horizon`-step log-return at
+        origin t for the factor list `historical.factor_names`.
+
+        Under per-series independence (the whole point of this provider) the
+        joint is a `MultivariateNormal` with diagonal covariance. The
+        marginal for factor i is `N(horizon · μ_i, horizon · σ_i²)` — h
+        independent N(μ, σ²) increments cumulate to N(hμ, hσ²).
+
+        Returns `None` if any factor in `historical.factor_names` isn't
+        backed by a GBM scalar in the provider config — Constant /
+        Deterministic factors have zero predictive variance and the
+        density is degenerate.
+        """
+        if horizon < 1:
+            raise ValueError(f"horizon must be >= 1; got {horizon}")
+        n_steps = historical.levels.shape[0] - 1
+        if t + horizon > n_steps:
+            return None
+
+        mus: list[float] = []
+        sigmas: list[float] = []
+        for factor in historical.factor_names:
+            spec = self.series.get(factor)
+            if not isinstance(spec, GeometricBrownian):
+                return None
+            mus.append(float(spec.monthly_log_return_mu) * horizon)
+            sigmas.append(float(spec.monthly_log_return_sigma) * np.sqrt(horizon))
+        mean_arr = jnp.asarray(np.asarray(mus, dtype=np.float32))
+        sd_arr = jnp.asarray(np.asarray(sigmas, dtype=np.float32))
+        cov_arr = jnp.diag(sd_arr**2)
+        return dist.MultivariateNormal(mean_arr, covariance_matrix=cov_arr)
 
     def _private_equity_prices_usd(self) -> dict[str, float]:
         prices: dict[str, float] = {}

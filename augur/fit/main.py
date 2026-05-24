@@ -1,6 +1,6 @@
 """Offline exogenous-model training entry point.
 
-Reads an `EvidenceConfig` + source CSVs, fits a chosen `PredictiveSeriesModel`, and
+Reads an `EvidenceConfig` + source CSVs, fits a chosen `Fittable` model, and
 writes two files: a `ExogenousProviderConfig` YAML (the discriminated
 deployment config that the augur server reads at startup as part of
 `Config.exogenous_provider`) and a per-model trained-state blob (e.g. an
@@ -67,8 +67,9 @@ def main(argv: list[str] | None = None) -> int:
     config = load_evidence_config(evidence_config_path)
     historical, evidence = load_evidence(config, evidence_config_path.parent)
 
-    model = VecmModel(VecmConfig(k_ar_diff=1, coint_rank=1))
+    model = VecmModel(config=VecmConfig())
     model.fit(historical)
+    model.save(out_blob)
 
     provider_config = VecmExogenousProviderConfig(
         trained_blob=out_blob,
@@ -76,7 +77,6 @@ def main(argv: list[str] | None = None) -> int:
         current_mortgage30_rate_pct=float(evidence.current_mortgage30_rate_pct),
         location_series_sources=config.location_series_sources,
     )
-    model.save(provider_config)
 
     out_provider_config.write_text(
         yaml.safe_dump(provider_config.model_dump(mode="json"), sort_keys=True, default_flow_style=False),

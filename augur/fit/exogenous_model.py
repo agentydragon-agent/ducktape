@@ -1,16 +1,40 @@
+"""Trainer- and scorer-facing protocols for augur exogenous models.
+
+`Fittable` and `Scorable` both extend `Sampler` (in `augur/model/exogenous.py`).
+Every augur model is a Sampler — anything that can't be sampled is unusable
+in the augur sim runtime. Adding `Fittable` means the model can be trained
+offline from historical evidence; adding `Scorable` means it exposes a
+predictive distribution the metric battery can project log-density / CRPS /
+marginal density from.
+
+A model can satisfy any subset:
+
+  - `Sampler` only: test fixtures, future bootstrap-style models that
+    refuse to expose density.
+  - `Sampler & Scorable`: hand-configured providers like `IndependentExogenousModel`
+    whose params are YAML-set; no fit step, but the predictive is a
+    closed-form product of Gaussian marginals.
+  - `Sampler & Fittable & Scorable`: the VECM NumPyro model — fit from a
+    `HistoricalSeries`, then both score density and sample paths from
+    the same generative definition + fitted params.
+"""
+
 from __future__ import annotations
 
 from typing import Protocol
 
-from augur.model.path_models.scenarios import HistoricalSeries, Scenarios
+from numpyro import distributions as dist
+
+from augur.model.exogenous import Sampler
+from augur.model.path_models.scenarios import HistoricalSeries
 
 
-class PredictiveSeriesModel(Protocol):
-    """Model-neutral interface every candidate joint-time-series model implements.
+class Fittable(Sampler, Protocol):
+    """A `Sampler` that can be fitted offline from a `HistoricalSeries`.
 
-    Phase A only exercises the likelihood path. `fit` and `simulate` are kept
-    in the protocol so the same models are ready for the rollout-diagnostic
-    phase later.
+    Consumed by the trainer in `augur/fit/main.py`. The metric battery
+    additionally requires `Scorable`; rolling-origin scoring refits the
+    model at each origin, so it requires `Fittable & Scorable`.
     """
 
     label: str
@@ -18,40 +42,46 @@ class PredictiveSeriesModel(Protocol):
 
     def fit(self, historical: HistoricalSeries) -> None: ...
 
-    def simulate(self, n_paths: int, n_months: int, seed: int) -> Scenarios: ...
 
-    def log_predictive_density(self, historical: HistoricalSeries, t: int) -> float | None:
-        """Log p(historical.levels[t+1] | historical.levels[:t+1]) under the
-        currently fitted model. Returns None when the model can't expose a
-        density (e.g. block bootstrap)."""
-        ...
+class Scorable(Sampler, Protocol):
+    """A `Sampler` that exposes its predictive distribution. Consumed by
+    the metric battery in `augur/fit/metrics.py` via the projection
+    utilities in `augur/fit/scoring.py`.
 
-    def log_predictive_marginals(self, historical: HistoricalSeries, t: int) -> dict[str, float] | None:
-        """Per-factor *marginal* univariate log-densities of
-        `historical.levels[t+1] | historical.levels[:t+1]`.
+    A `Scorable` need not be `Fittable` — a YAML-configured Independent
+    provider exposes closed-form Gaussian predictives from hand-tuned
+    GBM params, without ever calling `fit()`.
+    """
 
-        Sum is **not** equal to the joint log-density when factors are
-        cross-correlated (cross-asset structure lives in the off-diagonal of
-        the joint covariance). Useful as an interpretive breakdown of where a
-        model's joint score comes from. Returns None when the model declines
-        to expose marginals (e.g. block bootstrap).
+    label: str
+    factor_names: tuple[str, ...]
+
+    def predictive(self, historical: HistoricalSeries, t: int, *, horizon: int = 1) -> dist.Distribution | None:
+        """Joint predictive distribution over the cumulative `horizon`-step
+        log-return at origin `t`, conditioned on the observed history
+        `historical.levels[:t+1]`.
+
+        For `horizon=1` the predictive describes `r_{t+1}` (the one-month
+        log-return from t to t+1). For `horizon=h > 1` the predictive
+        describes `Σ_{k=1..h} r_{t+k}` — the cumulative h-month log-return.
+        Multi-step horizons reveal structural differences (vol clustering,
+        cointegration pull, cascade dynamics) that one-step density smooths
+        over.
+
+        Returns `None` for models that decline to expose a tractable
+        predictive (e.g. block-bootstrap-style empirical samplers). The
+        metric scorer marks the result `Unscored` when this happens.
+
+        Implementors typically return a `numpyro.distributions.MultivariateNormal`
+        in closed form (VECM h=1, Independent provider) or as a Gaussian fit to
+        a Monte-Carlo unroll (VECM h>1).
         """
         ...
 
-    def log_predictive_density_at_horizon(self, historical: HistoricalSeries, t: int, h: int) -> float | None:
-        """Joint log-density of `historical.levels[t+h] | historical.levels[:t+1]`.
 
-        h-step-ahead density: condition on history up to and including t+1
-        (i.e. the levels through `t+1`), then predict the cumulative
-        log-return over the next h months without seeing intermediate
-        observations. Reveals structural differences (vol clustering,
-        cointegration pull, cascade dynamics) that one-step-ahead density
-        smooths over.
-
-        Closed-form for VAR / Wilkie / VECM (multivariate Gaussian under the
-        fitted recurrence). DCC / SV families don't have a closed form;
-        they should fit a Gaussian to a Monte-Carlo cloud of h-step-ahead
-        cumulative log-returns. Returns None when the model declines to
-        expose an h-step density.
-        """
-        ...
+class FittableScorable(Fittable, Scorable, Protocol):
+    """A model that is both `Fittable` and `Scorable`. Python doesn't have
+    an intersection-type expression for `Fittable & Scorable`, so the
+    rolling-origin scorer (which refits at each origin and then scores)
+    types its model parameter against this combined protocol instead.
+    """

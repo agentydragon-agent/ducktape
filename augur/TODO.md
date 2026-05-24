@@ -9,6 +9,29 @@ generic backlog rather than a second ordered roadmap.
 
 ## Next
 
+- [ ] **VECM NumPyro h=1 fit-quality vs statsmodels baseline.** After the
+      NumPyro migration (log-scale Cholesky, ridge-regularised α / β,
+      20k SVI iters), held-out per-month log-density is +15.85 nats on
+      the testdata evidence vs the statsmodels MLE baseline of +17.79 —
+      about 2 nats off at h=1. Multi-step h=12 is actually _better_
+      (+0.88 vs -5.50; the ridge penalty curbs spurious mean reversion).
+      The 2-nat gap at h=1 is most likely the priors' shrinkage on α / β
+      biasing the cointegration pull on training-window residuals.
+      Options to close it: (1) further-tighten or anneal the priors over
+      iterations; (2) preconditioned SVI / second-order MAP for tighter
+      convergence; (3) NUTS for the full posterior, dropping point
+      estimates entirely. Stretch goal: held-out per_month within
+      ~1 nat of +17.79.
+- [ ] **Independent provider in metric_report.** The testdata YAML uses
+      synthetic location ids (`home_value:location_a`, `rent:location_a`)
+      that don't match the historical evidence's factor names
+      (`home_value:san_francisco_ca`, etc.). `IndependentExogenousModel.predictive`
+      returns None when any requested factor is missing, so the metric
+      report emits Unscored rows for Independent. Either (a) build a
+      synthetic Independent provider from the historical's factor list
+      and empirical per-factor mean/std, or (b) seed the metric report
+      from a different YAML config that aligns with the evidence.
+
 - [ ] **Finish the projection API contract now that backend execution is
       runtime-backed.** Track the concrete replacement work in `augur/sim/TODO.md`.
       The production path now translates current API payloads, expands scalar
