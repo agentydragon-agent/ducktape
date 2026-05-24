@@ -8,7 +8,7 @@
 #   devinfra/python/rename_py_suffix.sh //augur/...
 #   devinfra/python/rename_py_suffix.sh '//cluster/...'
 #
-# See devinfra/docs/buildozer-rename-py-suffix.md for the convention and the
+# See devinfra/docs/buildozer_rename_py_suffix.md for the convention and the
 # rationale for two replace passes.
 
 set -uo pipefail
