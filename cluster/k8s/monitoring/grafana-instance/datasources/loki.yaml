@@ -11,7 +11,10 @@ spec:
     name: Loki
     type: loki
     access: proxy
-    url: http://loki.loki.svc.cluster.local:3100
+    # SimpleScalable: reads go to the read Deployment's Service.
+    # The single-binary `loki` Service was removed when we switched
+    # off SingleBinary mode.
+    url: http://loki-read.loki.svc.cluster.local:3100
     isDefault: false
     editable: true
     jsonData:
