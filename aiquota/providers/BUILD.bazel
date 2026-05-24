@@ -1,4 +1,4 @@
-load("@rules_python//python:defs.bzl", "py_library")
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
 
 py_library(
     name = "base",
@@ -29,6 +29,7 @@ py_library(
     deps = [
         ":base",
         "//aiquota:models",
+        "@pypi//atomicwrites",
         "@pypi//httpx",
         "@pypi//pydantic",
     ],
@@ -44,5 +45,17 @@ py_library(
         "//aiquota:models",
         "@pypi//httpx",
         "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_codex",
+    srcs = ["test_codex.py"],
+    imports = ["../.."],
+    deps = [
+        ":codex_lib",
+        "//aiquota:models",
+        "@pypi//httpx",
+        "@pypi//pytest_bazel",
     ],
 )

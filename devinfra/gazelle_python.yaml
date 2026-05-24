@@ -48,6 +48,7 @@ manifest:
     asttokens: asttokens
     asyncpg: asyncpg
     asyncvnc: asyncvnc
+    atomicwrites: atomicwrites
     attr: attrs
     attrs: attrs
     authlib: authlib
@@ -253,6 +254,8 @@ manifest:
     jaraco.classes: jaraco.classes
     jaraco.context: jaraco_context
     jaraco.functools: jaraco_functools
+    jax: jax
+    jaxlib: jaxlib
     jedi: jedi
     jeepney: jeepney
     jinja2: jinja2
@@ -349,6 +352,7 @@ manifest:
     mitmproxy_linux: mitmproxy_linux
     mitmproxy_rs: mitmproxy_rs
     mizani: mizani
+    ml_dtypes: ml_dtypes
     mmh3: mmh3
     more_itertools: more_itertools
     mpl_toolkits.axes_grid1: matplotlib
@@ -358,6 +362,7 @@ manifest:
     msgpack: msgpack
     multidict: multidict
     multipart: python_multipart
+    multipledispatch: multipledispatch
     mypy: mypy
     mypy_extensions: mypy_extensions
     mypyc: mypy
@@ -371,6 +376,7 @@ manifest:
     nio: matrix_nio
     nodeenv: nodeenv
     numpy: numpy
+    numpyro: numpyro
     oauthlib: oauthlib
     onnxruntime: onnxruntime
     openai: openai
@@ -400,6 +406,7 @@ manifest:
     opentelemetry.util.re: opentelemetry_api
     opentelemetry.util.types: opentelemetry_api
     opentelemetry.version: opentelemetry_api
+    opt_einsum: opt_einsum
     orjson: orjson
     ormsgpack: ormsgpack
     overrides: overrides
@@ -642,4 +649,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: d247d1dad3abf944de573385fc8d166e1e804cff48174c1e96c24e113b7ebf98
+integrity: 380a07b619488b94a212f4334025539be28907877320889c7b5a5ae6a51b8629

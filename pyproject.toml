@@ -26,6 +26,7 @@ dependencies = [
     "structlog",
     "platformdirs>=3.0",
     "filelock>=3.0",
+    "atomicwrites>=1.4.1",
 
     # Web frameworks
     "fastapi>=0.115.0",
@@ -184,11 +185,14 @@ dependencies = [
     "supervisor>=4.2",
 
     "numpy",
-    "numba>=0.64",
     "polars>=1",
 
     # augur (financial-futures simulator) — DCC-GARCH market model uses arch
     "arch>=7",
+    # augur — NumPyro PPL spike (a JAX-backed probabilistic programming
+    # library); evaluating whether to fold the augur PredictiveSeriesModel /
+    # ExogenousPathModel protocols behind a single generative-model API.
+    "numpyro>=0.15",
 
     # skills
     "asyncvnc>=1.3.0",
