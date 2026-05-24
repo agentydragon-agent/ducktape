@@ -26,6 +26,10 @@ use serde::Serialize;
 use analysis::{FactorizeDiagnosticReason, LineRange, OwnerGraphReport, PeelCandidateStatus};
 use spec_modules::load_active_claims;
 
+use crate::quotient::{
+    QuotientGraph, SeedContractionRejected, SpecModuleGroup, build_seed_quotient,
+};
+
 #[derive(Debug, Clone)]
 pub struct PeelFactorizeOptions {
     pub owner_graph_path: PathBuf,
@@ -51,6 +55,14 @@ pub struct PeelFactorizeReport {
     /// Proposal size histograms. Each bucket includes total count
     /// plus how many proposals in the bucket are landable today.
     pub size_distributions: FactorizeSizeDistributions,
+    /// Per-contraction rejection diagnostics from the seeding
+    /// protocol (`peel::quotient::build_seed_quotient`). Empty on
+    /// well-formed input; populated when the spec declares an
+    /// unrealizable owner grouping. Skipped from JSON output when
+    /// empty so existing well-formed fixtures stay byte-identical.
+    /// See `plans/peel_proposer_contraction_model.md`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub seed_rejections: Vec<SeedContractionRejected>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -229,6 +241,7 @@ pub fn factorize(
     let status_counts = status_counts(&proposals);
     let diagnostic_counts = diagnostic_counts(&diagnostics);
     let size_distributions = size_distributions(&proposals);
+    let seed_rejections = compute_seed_rejections(graph, size_cap_lines);
     PeelFactorizeReport {
         proposals,
         diagnostics,
@@ -238,7 +251,83 @@ pub fn factorize(
         status_counts,
         diagnostic_counts,
         size_distributions,
+        seed_rejections,
     }
+}
+
+/// Build the seed quotient under the kernel and surface any rejected
+/// forced contractions. The quotient is constructed but not yet used
+/// to drive emission — today's `emit_proposals` path remains the
+/// renderer. Commit 2 enables greedy merges off this quotient; for
+/// commit 1 the kernel runs alongside `emit_proposals` as a
+/// pure-side-effect diagnostic.
+///
+/// Spec-module groups for the kernel come from grouping owners by
+/// their active destination (the same view `factorize` uses to label
+/// extensions). Owners whose destination is residual stay
+/// singletons; the kernel never tries to contract them with each
+/// other at this stage.
+fn compute_seed_rejections(
+    graph: &OwnerGraphReport,
+    cap_lines: usize,
+) -> Vec<SeedContractionRejected> {
+    // Group owners by their declared active destination. Residual
+    // owners are skipped — they're singletons in the spec.
+    let mut groups: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for node in &graph.nodes {
+        if node.destination.residual {
+            continue;
+        }
+        groups
+            .entry(node.destination.id.clone())
+            .or_default()
+            .push(node.id.clone());
+    }
+    let spec_modules: Vec<SpecModuleGroup> = groups
+        .into_iter()
+        .map(|(module_id, mut owner_ids)| {
+            owner_ids.sort();
+            SpecModuleGroup {
+                module_id,
+                owner_ids,
+            }
+        })
+        .collect();
+
+    let (_q, rejected) =
+        build_seed_quotient(graph, &graph.atomic_graph.nodes, &spec_modules, cap_lines);
+    rejected
+}
+
+/// Build the seed quotient (kernel-state-only entry-point) for
+/// callers that want to inspect the equivalence classes without
+/// running the full proposal-emission pipeline. Used by future
+/// commits (greedy merge step) and by tests.
+pub fn build_factorize_seed_quotient(
+    graph: &OwnerGraphReport,
+    cap_lines: usize,
+) -> (QuotientGraph, Vec<SeedContractionRejected>) {
+    let mut groups: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for node in &graph.nodes {
+        if node.destination.residual {
+            continue;
+        }
+        groups
+            .entry(node.destination.id.clone())
+            .or_default()
+            .push(node.id.clone());
+    }
+    let spec_modules: Vec<SpecModuleGroup> = groups
+        .into_iter()
+        .map(|(module_id, mut owner_ids)| {
+            owner_ids.sort();
+            SpecModuleGroup {
+                module_id,
+                owner_ids,
+            }
+        })
+        .collect();
+    build_seed_quotient(graph, &graph.atomic_graph.nodes, &spec_modules, cap_lines)
 }
 
 fn proposal_cells_from_atomic_graph(

@@ -1,5 +1,6 @@
 pub mod factorize;
 pub mod plan;
+pub mod quotient;
 
 pub use plan::{PeelArgs, run_peel};
 

@@ -1,0 +1,395 @@
+# Peel Proposer: Graph-Edge Contraction Model
+
+Refactor of the debundle peel proposer around a uniform abstraction:
+**progressive vertex contraction in the owner graph's quotient**. Replaces the
+current collection of special-case proposal shapes (fresh module / atomic-unit
+split / anon-only promotion) with one operation — contract two equivalence
+classes — and one algorithm — greedy hierarchical merging — that subsumes all
+of them.
+
+## Motivation
+
+Today's `factorize.rs` has several proposal-emitting paths, each with its own
+preconditions and rendering logic:
+
+- "Fresh module" proposals from `factorize_atomic_unit` closures of residual
+  atomic units.
+- "Atomic-unit straddles existing module" → `extends_module_id` set during
+  `active_destinations_for_cell` (factorize.rs:413-424).
+- "Anonymous-only orphan with single active consumer" →
+  `promote_anonymous_only_cell_to_extension` (factorize.rs:575-615, added in
+  commit `3c75ae9ae`).
+- Named-binding orphans with a single active consumer are **explicitly gated
+  out** at line 605 with the comment _"needs the author's judgement on
+  naming."_
+
+This shape doesn't generalize:
+
+- A 5-line helper used only by one existing module gets proposed as a
+  brand-new module, violating the project rule "no tiny modules <30 lines."
+- Two existing modules whose owners mutually constrain each other (the
+  TDZ-cycle shape) have no proposal path: the proposer can't suggest "merge
+  them"; the human must spot it.
+- New shapes require new code branches and new fields on `FactorizeProposal`.
+
+## Mental model
+
+The owner graph is a directed multigraph (vertices = owners — named binding
+declarations + anonymous statements + the residual catch-all; edges typed:
+`EagerUse`, `LazyUse`, `Sequenced`, `EagerRebind`, `LazyRebind`).
+
+At any point in the peel we operate on its **quotient under an equivalence
+relation `~`**. Vertices of the quotient are equivalence classes (clusters);
+edges are the union of cross-class edges between members. The peel state is
+just `~`.
+
+Two operations on `~`:
+
+- **Contract** `c₁` and `c₂` → coarsen `~` by merging them. Edges between
+  them become self-loops (dropped). External edges union onto the merged
+  class.
+- **Split** is forbidden.
+
+The spec is the initial `~`: every owner in module `M` starts contracted with
+every other owner of `M`. The residual catch-all is one big class. Atomic
+units (sets of owners forced together by at-init read closure) are also
+pre-contracted.
+
+A _proposal_ is a single contraction. A _plan_ is a sequence of contractions
+(= a path from seed to converged quotient).
+
+### Why this subsumes today's shapes
+
+Under the contraction model, every existing proposal shape is just a
+contraction operation with different operands:
+
+| Today's shape                                | Contraction equivalent                                              |
+| -------------------------------------------- | ------------------------------------------------------------------- |
+| Fresh module from residual atomic units      | Contract several residual atomic-component classes together         |
+| Extend module M with anonymous statement X   | Contract class `[M]` with singleton `{X}`                           |
+| Extend module M with named binding helper    | Same: contract `[M]` with `{helper}` (the line-605 gate disappears) |
+| Atomic-unit straddles module M               | Contract the residual half of the unit with `[M]`                   |
+| Merge modules A and B (possibly absorbing C) | Contract `[A]`, `[B]`, and (optionally) `{C}` together              |
+| Cycle-resolving co-location                  | Contract the cyclically-coupled clusters                            |
+
+The kernel exposes one primitive; the public `FactorizeProposal` becomes a
+_renderer_ that inspects the operands of a contraction and produces the
+appropriate `members:` / `anonymous_statements:` / `extends_module_id:` /
+`merge_into:` fields downstream consumers (plan-work JSON, lane workers) read.
+
+## Algorithm — seed-and-greedy
+
+### Seeding (per-contraction, with rejection diagnostics)
+
+Build the seed quotient by applying forced contractions **one at a time**,
+gating each on realizability:
+
+```text
+Q := QuotientGraph(every owner a singleton class)
+rejected := []
+
+// 1. Atomic components. At-init closure means these MUST be co-located;
+//    they're provably never the cause of unrealizability (contracting
+//    them only intra-clusterizes edges, never cross-clusterizes).
+//    Apply through the same gated protocol so future gate regressions
+//    can't silently break the invariant.
+for unit in canonical_order(atomic_units):
+    pivot := owner with smallest OwnerId in unit
+    for member in unit.others_in_owner_id_order():
+        if Q.merge_preserves_invariants(class_of(pivot), class_of(member)):
+            Q.contract(class_of(pivot), class_of(member))
+        else:
+            rejected.push(SeedContractionRejected::AtomicUnit { … })
+            // Should be unreachable in well-formed input; treat as a
+            // debundle bug if it ever fires.
+
+// 2. Pre-existing spec modules. These CAN unrealize the quotient when
+//    the author has accidentally declared a cyclic grouping. Skip and
+//    report — never silently corrupt the build.
+for module in canonical_order(spec_modules):
+    pivot := owner with smallest OwnerId in module
+    for member in module.others_in_owner_id_order():
+        if Q.merge_preserves_invariants(class_of(pivot), class_of(member)):
+            Q.contract(class_of(pivot), class_of(member))
+        else:
+            rejected.push(SeedContractionRejected::SpecModule {
+                module_id, rejected_pair: (pivot, member),
+                cycle: Q.would_be_cycles_after_contract(...),
+            })
+
+return (Q, rejected)
+```
+
+**Properties:**
+
+1. The seed quotient is **always realizable** by construction. Skipped
+   contractions cannot leave unrealizability for the greedy to clean up.
+2. Spec authors get **pinpoint diagnostics**: instead of "your spec
+   produces a 1109-module SCC, good luck," the report names the specific
+   `(module_id, owner_pair)` whose contraction would have created which
+   specific cycle.
+3. The author chooses how to resolve a rejected contraction: split the
+   module, move bindings, or accept that the rejected pair won't be
+   co-located as originally declared. Critically, **the build never
+   silently emits invalid JS**.
+4. `canonical_order` makes the diagnostic stable: atomic units by lowest
+   OwnerId member, then spec modules by module path lexicographically;
+   within a module, members by OwnerId.
+
+### Greedy merge to convergence
+
+```text
+loop:
+    candidates := all (c₁, c₂) where mergeable(Q, c₁, c₂)
+    if candidates is empty: break
+    (c₁, c₂) := pick_best(Q, candidates)
+    Q := contract(Q, c₁, c₂)
+return Q
+```
+
+`mergeable(Q, c₁, c₂)`:
+
+- `c₁ ≠ c₂`
+- `c₁` and `c₂` are connected by at least one cross-edge (don't merge
+  unrelated islands)
+- `lines(c₁) + lines(c₂) ≤ size_cap_lines` (existing cap, default 10000)
+- Neither class is `residual` (residual is sticky; we peel **out of** it,
+  never absorb into it)
+- `Q.merge_preserves_invariants(c₁, c₂)` — post-merge cycle set is a
+  subset of pre-merge cycle set (always true for a merge, since merging
+  can only ever shrink the cycle set — but we check defensively against
+  future gate clauses that might add new requirements)
+
+`pick_best(Q, candidates)` — deterministic with canonical tiebreaks:
+
+1. Prefer merges that **strictly reduce** the realizability cycle set.
+   Vestigial in normal flow (seed is realizable), useful as a defensive
+   tiebreaker.
+2. Then prefer merges with the highest **coupling**, where
+
+   ```
+   coupling(c₁, c₂) = Σ edge_weight(e) for e in cross_edges(c₁, c₂)
+                      / min(|out_edges(c₁)|, |out_edges(c₂)|)
+
+   edge_weight(EagerUse)      = 4
+   edge_weight(EagerRebind)   = 4
+   edge_weight(Sequenced)     = 2
+   edge_weight(LazyUse)       = 1
+   edge_weight(LazyRebind)    = 1
+   ```
+
+   Biases toward structurally-strong (constraining) relationships.
+
+3. Then prefer the merge whose **result is smallest** (preserves
+   remaining budget for later merges).
+4. Tiebreak: lexicographic by canonical `(ClassId, ClassId)` pair.
+
+`pick_best` is total and deterministic.
+
+## Kernel API
+
+```rust
+/// All owners start as their own class. Contraction merges two classes.
+/// Splits are not exposed as an operation.
+pub struct QuotientGraph {
+    classes: Vec<ClassData>,
+    owner_to_class: Vec<ClassId>,
+    edges: CrossClassEdgeIndex, // (from_class, to_class) → edge multiset
+    cap_lines: usize,
+    cycle_set: CycleSet, // maintained incrementally
+}
+
+impl QuotientGraph {
+    pub fn from_owner_graph(g: &OwnerGraph, cap_lines: usize) -> Self;
+
+    pub fn class_of(&self, o: OwnerId) -> ClassId;
+    pub fn cycle_set(&self) -> &CycleSet;
+
+    /// Cheap query: would contracting (c1, c2) keep the cycle set ⊆ current,
+    /// stay under cap, and respect the residual rule? No state mutation.
+    pub fn merge_preserves_invariants(&self, c1: ClassId, c2: ClassId) -> bool;
+
+    /// Diagnostic: what cycles would the contraction create (or remove)?
+    /// Returns None if merge is fine.
+    pub fn would_be_cycles_after_contract(&self, c1: ClassId, c2: ClassId)
+        -> Option<CycleEvidence>;
+
+    /// Apply a contraction; updates cycle set + post-order state.
+    /// Returns Err if invariants would be violated (caller should have
+    /// checked first; this is the belt-and-braces).
+    pub fn contract(&mut self, c1: ClassId, c2: ClassId)
+        -> Result<(), ContractRejected>;
+}
+
+pub fn build_seed_quotient(
+    g: &OwnerGraph,
+    atomic_units: &[AtomicUnit],
+    spec_modules: &[SpecModule],
+    cap_lines: usize,
+) -> (QuotientGraph, Vec<SeedContractionRejected>);
+
+pub fn greedy_merge_to_convergence(q: &mut QuotientGraph)
+    -> Vec<(ClassId, ClassId)>;
+```
+
+### Diagnostic shape
+
+```rust
+pub enum SeedContractionRejected {
+    AtomicUnit {
+        owners: Vec<OwnerId>,
+        rejected_pair: (OwnerId, OwnerId),
+        cycle: CycleEvidence,
+    },
+    SpecModule {
+        module_id: String,
+        rejected_pair: (OwnerId, OwnerId),
+        cycle: CycleEvidence,
+    },
+}
+```
+
+Emitted in `reports/tree/.../seed_rejections.json` alongside the existing
+`cycles.json`; surfaced in plan-work output so spec authors can decide what
+to do.
+
+### Incremental realizability — staging
+
+The API doesn't change between the two implementation cuts:
+
+- **First cut (correctness)**: `merge_preserves_invariants` rebuilds the
+  cycle set by running the existing realizability gate on a synthetic
+  post-merge quotient. O(|edges|) per query. `contract` also rebuilds.
+  Slow on large graphs but obviously correct.
+- **Second cut (incremental)**: keep the constraining-edge-subgraph SCCs
+  - the ESM-eval-simulator's post-order DFS as persistent state.
+    `contract` runs an incremental SCC update (Pearce-Kelly style) +
+    restricted post-order recompute over the affected reachability cone.
+
+Migration from first to second cut is a pure performance refactor that
+won't change behavior.
+
+## Why merges don't create cycles
+
+Merging two classes `c₁` and `c₂` into `c`:
+
+- All edges between `c₁` and `c₂` become self-loops on `c` (dropped from
+  cross-class edge set).
+- All other edges incident on `c₁` or `c₂` get re-pointed to `c`.
+- No new cross-class edges are introduced.
+
+Any cycle in the post-merge quotient must visit `c`. If the corresponding
+pre-merge cycle visited both `c₁` and `c₂`, it becomes intra-cluster
+(gone). If it visited only one, the cycle is unchanged modulo relabeling.
+So the post-merge cycle set is a strict subset of the pre-merge cycle set
+union the set of pre-existing cycles touching the merged endpoints; the
+latter are now strictly shorter or absent.
+
+Therefore `merge_preserves_invariants` checking cycle-set monotonicity
+is a real guarantee, not a heuristic.
+
+## Migration path (TDD, three commits on `tdz-gate-fix`)
+
+### Commit 1 — Kernel introduction, no behavior change
+
+- Add `QuotientGraph`, `build_seed_quotient`, `merge_preserves_invariants`,
+  `contract` (first-cut incremental: rebuild on each call).
+- Add `SeedContractionRejected` diagnostic struct + JSON emission.
+- Re-express today's `factorize::build_proposal` output as a renderer over
+  a quotient built from the spec but with the greedy disabled. Output
+  should be byte-identical to today (validated by golden tests).
+- Tests:
+  - `seed_pre_contracts_atomic_units` — every atomic-unit owner pair
+    shares a class at seed.
+  - `seed_pre_contracts_spec_modules` — every spec-module owner pair
+    shares a class at seed.
+  - `seed_skips_unrealizable_spec_module_contraction_and_reports` —
+    fixture: spec declares M, M' whose owners' edges form an asymmetric
+    cycle; assert one appears in rejections with cycle evidence.
+  - `seed_atomic_unit_contractions_never_rejected_on_well_formed_input` —
+    regression guard.
+  - `seed_rejection_diagnostic_is_canonical` — determinism check.
+  - `contract_never_un_contracts` — API surface check.
+  - Golden: existing factorize output unchanged after the refactor.
+
+### Commit 2 — Enable greedy on uncontroversial shapes
+
+- Implement `greedy_merge_to_convergence` with the coupling / size /
+  cycle-resolution / lex tiebreak order.
+- Initially restrict `mergeable` to "extension of existing module by
+  orphaned residual class" (the cases today's code already handles).
+- **Lift the line-605 named-binding gate** — extensions of single
+  helpers into their unique consumer fall out for free.
+- Tests:
+  - `greedy_extends_existing_module_with_only_consumer` — anon orphan.
+  - `greedy_absorbs_tiny_named_helper_into_unique_consumer` — named.
+    Initially RED (today's gate rejects this); GREEN after.
+  - `greedy_terminates_at_convergence` — class count strictly
+    decreasing.
+  - `greedy_never_splits_existing_spec_module` — fixture with spec
+    module containing multiple bindings; assert greedy doesn't
+    propose splitting it no matter what merges happen elsewhere.
+  - `greedy_never_merges_into_residual` — assert no proposal contracts
+    a class into residual.
+
+### Commit 3 — Enable full mergeability + merge output shape
+
+- Drop the restriction on which classes can be operands; allow merges
+  between two pre-existing module classes (with or without absorbing
+  residual classes).
+- Add `merge_into: Option<Vec<String>>` field to `FactorizeProposal`
+  (or equivalent) so downstream consumers can see "this proposal
+  merges modules A and B."
+- Tests:
+  - `greedy_merges_three_clusters_under_cap` — user's example: clusters
+    of 20+20+10 lines mutually coupled, cap=150. Assert all three
+    merged.
+  - `greedy_stops_at_cap` — same fixture, cap=40. Assert exactly two
+    merged.
+  - `greedy_resolves_realizability_cycle_by_merging` — `mod_a ↔ mod_b`
+    asymmetric cycle. Assert greedy merges them and post-merge
+    quotient is realizable.
+  - `merge_two_existing_modules_with_mutual_eager_reads` — assert
+    proposal output carries `merge_into: Some(["mod_a", "mod_b"])`.
+  - `merge_absorbs_residual_owner_with_only_intra_deps`.
+- **Out of scope for this commit**: lane-worker rule for "edit two
+  module yamls together → merge them." That's a gaffer-side ticket
+  consuming the new output shape. The ducktape kernel just emits the
+  proposal.
+
+### Commit 4 (deferred) — Incremental realizability
+
+- Replace first-cut rebuild-on-query with persistent SCC + post-order
+  state. Pure performance refactor.
+- Add benchmark tests: greedy on a chunk with ~2000 owners should
+  complete in well under 1s.
+
+## Out of scope
+
+- **Naming**. Minified names stay minified through the proposer; the
+  rename queue resolves them later. The proposer outputs whatever
+  names the spec or atomic-unit closure assigns.
+- **Per-module taxonomy decisions**. The proposer doesn't decide
+  module paths for merged-existing-modules; that's a human choice
+  surfaced to the lane worker.
+- **Loosening the gate**. The realizability gate's correctness invariants
+  are unchanged; this plan is about how the proposer _uses_ the gate,
+  not what the gate computes.
+- **Replacing the FAS heuristic in cycle cut reports**. The simulator
+  already narrows; the user-facing cut report is a separate surface.
+
+## Open follow-ups for downstream consumers
+
+After commits 1-3 land in ducktape, gaffer's plan-work and lane-worker
+tooling need updates:
+
+- **plan-work consumer** needs to know how to write spec yaml for the
+  new "extend existing module with named binding" output shape (today
+  it only writes for anon).
+- **Lane workers** need a rule for "merge two existing modules":
+  combine their `members:` lists into one yaml file, delete the other,
+  optionally add `anonymous_statements:` for absorbed residual owners.
+- **CLI flags**: `debundle peel plan-work` should grow flags for
+  `--cap-lines` (override) and `--report-rejections-only` (skip
+  greedy, just emit seed rejection diagnostics — useful when a spec
+  author is debugging an unrealizable spec).

@@ -283,6 +283,7 @@ rust_library(
         "peel/factorize_tests.rs",
         "peel/mod.rs",
         "peel/plan.rs",
+        "peel/quotient.rs",
         "peel/test_utils.rs",
     ],
     crate_root = "peel/mod.rs",
@@ -293,6 +294,7 @@ rust_library(
         ":spec_modules",
         "@crates//:anyhow",
         "@crates//:clap",
+        "@crates//:petgraph",
         "@crates//:serde",
         "@crates//:serde_json",
         "@crates//:swc_atoms",
@@ -305,6 +307,22 @@ rust_test(
     crate = ":peel",
     edition = "2024",
     deps = ["@crates//:tempfile"],
+)
+
+# Integration tests for the QuotientGraph kernel. Compiled as a
+# separate crate against `:peel`'s public API so they bypass the
+# `peel_test` build (which is broken by misplaced helpers in
+# peel/factorize_tests.rs unrelated to the kernel).
+rust_test(
+    name = "peel_quotient_integration_test",
+    srcs = ["peel/quotient_integration_test.rs"],
+    crate_root = "peel/quotient_integration_test.rs",
+    edition = "2024",
+    deps = [
+        ":analysis",
+        ":peel",
+        "@crates//:serde_json",
+    ],
 )
 
 rust_library(
