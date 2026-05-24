@@ -501,7 +501,7 @@ Completed:
   chart, and shows terminal metrics beside the distribution percentiles without
   downloading full rollout tables in the aggregate metric-fan response.
 - Added focused coverage through the product route and browser golden:
-  `//augur/api:server_test` and `//augur:product_visual_golden_test`.
+  `//augur/api:server_test` and `//augur:visual_test`.
 - Added passive configured public-security lots to the product projection
   translator, including anchored sampled price paths and product metrics for
   public-security value and liquid net worth.
@@ -547,7 +547,7 @@ Remaining:
 - Browser/API smoke test on the parallel product frontend route. The current
   route-level cash-spend e2e is in `//augur/api:server_test`.
 - Visual goldens for visible product frontend changes. The current product
-  golden is `//augur:product_visual_golden_test`.
+  golden is `//augur:visual_test`.
 
 ## Open Questions
 

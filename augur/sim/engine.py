@@ -317,6 +317,9 @@ class TaxEventBuffers:
     tax_breakdown_ordinary: np.ndarray
     tax_breakdown_ltcg: np.ndarray
     tax_breakdown_stcg: np.ndarray
+    tax_breakdown_standard_deduction: np.ndarray
+    tax_breakdown_mortgage_interest_deduction: np.ndarray
+    tax_breakdown_itemized_deduction: np.ndarray
     tax_breakdown_ordinary_taxable: np.ndarray
     tax_breakdown_capital_taxable: np.ndarray
     tax_breakdown_ordinary_tax: np.ndarray
@@ -335,6 +338,24 @@ class TaxEventBuffers:
         _expect_array("tax_breakdown_ordinary", self.tax_breakdown_ordinary, shape=tax_link_shape, dtype=np.float64)
         _expect_array("tax_breakdown_ltcg", self.tax_breakdown_ltcg, shape=tax_link_shape, dtype=np.float64)
         _expect_array("tax_breakdown_stcg", self.tax_breakdown_stcg, shape=tax_link_shape, dtype=np.float64)
+        _expect_array(
+            "tax_breakdown_standard_deduction",
+            self.tax_breakdown_standard_deduction,
+            shape=tax_link_shape,
+            dtype=np.float64,
+        )
+        _expect_array(
+            "tax_breakdown_mortgage_interest_deduction",
+            self.tax_breakdown_mortgage_interest_deduction,
+            shape=tax_link_shape,
+            dtype=np.float64,
+        )
+        _expect_array(
+            "tax_breakdown_itemized_deduction",
+            self.tax_breakdown_itemized_deduction,
+            shape=tax_link_shape,
+            dtype=np.float64,
+        )
         _expect_array(
             "tax_breakdown_ordinary_taxable",
             self.tax_breakdown_ordinary_taxable,
@@ -566,6 +587,18 @@ class SimulationBuffers:
         return self.taxes.tax_breakdown_stcg
 
     @property
+    def tax_breakdown_standard_deduction(self) -> np.ndarray:
+        return self.taxes.tax_breakdown_standard_deduction
+
+    @property
+    def tax_breakdown_mortgage_interest_deduction(self) -> np.ndarray:
+        return self.taxes.tax_breakdown_mortgage_interest_deduction
+
+    @property
+    def tax_breakdown_itemized_deduction(self) -> np.ndarray:
+        return self.taxes.tax_breakdown_itemized_deduction
+
+    @property
     def tax_breakdown_ordinary_taxable(self) -> np.ndarray:
         return self.taxes.tax_breakdown_ordinary_taxable
 
@@ -733,10 +766,12 @@ def _run_month_step(
     _apply_scheduled_transfers(plan, buffers, current, month)
     _apply_property_purchases(plan, buffers, current, month)
     _apply_scheduled_asset_sales(plan, buffers, current, month)
-    _apply_tax_accruals(plan, buffers, current, month)
     _apply_obligation_accruals(plan, buffers, current, month)
     _apply_liquidity_policy_sales(plan, buffers, current, month)
     _apply_obligation_settlement(plan, buffers, current, month)
+    # Tax accruals run last so December's mortgage payment has already landed its interest into
+    # `liability_interest_ytd` before the year-end MID computation reads it.
+    _apply_tax_accruals(plan, buffers, current, month)
     _zero_failed_state(current)
     _snapshot_current_state(buffers, current, snapshot_index=month + 1)
 
@@ -806,10 +841,20 @@ def _apply_tax_accruals(
         ordinary = current.ordinary_ytd[:, profile]
         ltcg = current.capital_gain_ytd[:, gain_profile, LONG_TERM_CAPITAL_GAIN_CODE]
         stcg = current.capital_gain_ytd[:, gain_profile, SHORT_TERM_CAPITAL_GAIN_CODE]
-        deduction = float(plan.tax_link_standard_deduction[link])
+        standard_deduction = float(plan.tax_link_standard_deduction[link])
+        if bool(plan.tax_link_mid_active[link]):
+            # interest_ytd: (rollouts, L); ratio: (L,) — matmul gives (rollouts,)
+            mortgage_interest_deduction = current.liability_interest_ytd @ plan.tax_link_mid_principal_ratio[link]
+        else:
+            mortgage_interest_deduction = np.zeros(plan.rollout_count, dtype=np.float64)
+        # Today the only itemized line is MID. Once SALT / state-tax / charitable arrive, sum them
+        # here. The taxpayer uses max(itemized, standard); we expose both so the consumer can
+        # tell which one drove the tax bill.
+        itemized_deduction = mortgage_interest_deduction
+        deduction_used = np.maximum(itemized_deduction, standard_deduction)
 
         if int(plan.tax_link_has_ltcg[link]) == 1:
-            ordinary_taxable = np.maximum(ordinary + stcg - deduction, 0.0)
+            ordinary_taxable = np.maximum(ordinary + stcg - deduction_used, 0.0)
             capital_taxable = ltcg
             ordinary_tax = _apply_brackets(
                 ordinary_taxable,
@@ -825,7 +870,7 @@ def _apply_tax_accruals(
                 count=int(plan.tax_link_ltcg_count[link]),
             )
         else:
-            ordinary_taxable = np.maximum(ordinary + ltcg + stcg - deduction, 0.0)
+            ordinary_taxable = np.maximum(ordinary + ltcg + stcg - deduction_used, 0.0)
             capital_taxable = np.zeros(plan.rollout_count, dtype=np.float64)
             ordinary_tax = _apply_brackets(
                 ordinary_taxable,
@@ -841,6 +886,11 @@ def _apply_tax_accruals(
         buffers.tax_breakdown_ordinary[month, link, active_rollout] = ordinary[active_rollout]
         buffers.tax_breakdown_ltcg[month, link, active_rollout] = ltcg[active_rollout]
         buffers.tax_breakdown_stcg[month, link, active_rollout] = stcg[active_rollout]
+        buffers.tax_breakdown_standard_deduction[month, link, active_rollout] = standard_deduction
+        buffers.tax_breakdown_mortgage_interest_deduction[month, link, active_rollout] = mortgage_interest_deduction[
+            active_rollout
+        ]
+        buffers.tax_breakdown_itemized_deduction[month, link, active_rollout] = itemized_deduction[active_rollout]
         buffers.tax_breakdown_ordinary_taxable[month, link, active_rollout] = ordinary_taxable[active_rollout]
         buffers.tax_breakdown_capital_taxable[month, link, active_rollout] = capital_taxable[active_rollout]
         buffers.tax_breakdown_ordinary_tax[month, link, active_rollout] = ordinary_tax[active_rollout]
@@ -858,6 +908,9 @@ def _apply_tax_accruals(
         stcg_active = active_rollout & current.capital_gain_active[:, gain_profile, SHORT_TERM_CAPITAL_GAIN_CODE]
         current.capital_gain_ytd[ltcg_active, gain_profile, LONG_TERM_CAPITAL_GAIN_CODE] = 0.0
         current.capital_gain_ytd[stcg_active, gain_profile, SHORT_TERM_CAPITAL_GAIN_CODE] = 0.0
+    # Zero YTD interest at year-end so next year's MID accumulation starts fresh. Mirrors the
+    # ordinary/capital-gain YTD resets above.
+    current.liability_interest_ytd[active_rollout, :] = 0.0
 
 
 def _apply_brackets(amount: np.ndarray, *, upper: np.ndarray, rate: np.ndarray, count: int) -> np.ndarray:
@@ -1450,6 +1503,9 @@ def _allocate_buffers(plan: CompiledSimulation) -> SimulationBuffers:
             tax_breakdown_ordinary=np.zeros((h, p.tax_link_count, r), dtype=np.float64),
             tax_breakdown_ltcg=np.zeros((h, p.tax_link_count, r), dtype=np.float64),
             tax_breakdown_stcg=np.zeros((h, p.tax_link_count, r), dtype=np.float64),
+            tax_breakdown_standard_deduction=np.zeros((h, p.tax_link_count, r), dtype=np.float64),
+            tax_breakdown_mortgage_interest_deduction=np.zeros((h, p.tax_link_count, r), dtype=np.float64),
+            tax_breakdown_itemized_deduction=np.zeros((h, p.tax_link_count, r), dtype=np.float64),
             tax_breakdown_ordinary_taxable=np.zeros((h, p.tax_link_count, r), dtype=np.float64),
             tax_breakdown_capital_taxable=np.zeros((h, p.tax_link_count, r), dtype=np.float64),
             tax_breakdown_ordinary_tax=np.zeros((h, p.tax_link_count, r), dtype=np.float64),
@@ -1840,6 +1896,10 @@ def _decode_events(plan: CompiledSimulation, buffers: SimulationBuffers) -> Even
                         "ltcg_usd": float(buffers.tax_breakdown_ltcg[month, link, rollout]),
                         "stcg_usd": float(buffers.tax_breakdown_stcg[month, link, rollout]),
                         "standard_deduction_usd": float(plan.tax_link_standard_deduction[link]),
+                        "mortgage_interest_deduction_usd": float(
+                            buffers.tax_breakdown_mortgage_interest_deduction[month, link, rollout]
+                        ),
+                        "itemized_deduction_usd": float(buffers.tax_breakdown_itemized_deduction[month, link, rollout]),
                         "ordinary_taxable_usd": float(buffers.tax_breakdown_ordinary_taxable[month, link, rollout]),
                         "capital_gain_taxable_usd": float(buffers.tax_breakdown_capital_taxable[month, link, rollout]),
                         "ordinary_tax_usd": float(buffers.tax_breakdown_ordinary_tax[month, link, rollout]),

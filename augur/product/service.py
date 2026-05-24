@@ -18,7 +18,7 @@ import polars as pl
 from augur.api.bootstrap import Property
 from augur.api.portfolio import PortfolioConfig
 from augur.api.schemas import Frame
-from augur.model.exogenous import ExogenousPathModel, ExogenousSamplingRequest, anchor_sampled_series_levels
+from augur.model.exogenous import ExogenousSamplingRequest, Sampler, anchor_sampled_series_levels
 from augur.product.decode import (
     failed_month_index_for_rollout,
     monthly_metrics_for_rollout,
@@ -77,7 +77,7 @@ class ProductService:
         primary_agent_id: str,
         known_location_ids: frozenset[str],
         properties_by_id: dict[str, Property],
-        exogenous_model: ExogenousPathModel,
+        exogenous_model: Sampler,
         max_rollout_samples: int,
         max_cache_rollouts: int = DEFAULT_MAX_CACHE_ROLLOUTS,
     ) -> None:

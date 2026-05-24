@@ -94,6 +94,13 @@ TAX_BREAKDOWN_EVENT_SCHEMA = pl.Schema(
         "ltcg_usd": pl.Float64(),
         "stcg_usd": pl.Float64(),
         "standard_deduction_usd": pl.Float64(),
+        # MID under this jurisdiction's principal cap, summed across the profile's qualifying
+        # mortgages. Zero when no MortgageInterestDeductionPolicy applies (e.g. cash buy, owner
+        # doesn't live in the property, or jurisdiction excluded from the policy's cap map).
+        "mortgage_interest_deduction_usd": pl.Float64(),
+        # Total itemized deductions used after comparing against the standard. Equals MID when
+        # itemized > standard; equals standard otherwise. Today MID is the only itemized item.
+        "itemized_deduction_usd": pl.Float64(),
         "ordinary_taxable_usd": pl.Float64(),
         "capital_gain_taxable_usd": pl.Float64(),
         "ordinary_tax_usd": pl.Float64(),

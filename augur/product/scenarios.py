@@ -16,6 +16,7 @@ from augur.sim.scenario import (
     InitialLot,
     LiquidityPolicy,
     MortgageFinancing as SimMortgageFinancing,
+    MortgageInterestDeductionPolicy,
     ObligationType,
     PropertyTaxPolicy,
     RecurringObligation,
@@ -153,6 +154,7 @@ def build_scenario(
 
     scheduled_property_purchases: list[ScheduledPropertyPurchase] = []
     property_tax_policies: list[PropertyTaxPolicy] = []
+    mortgage_interest_deduction_policies: list[MortgageInterestDeductionPolicy] = []
     if scenario_key.property_purchase is not None:
         property_ = properties_by_id[scenario_key.property_purchase.property_id]
         agents.append(Agent(agent_id=PROPERTY_SELLER_AGENT_ID))
@@ -169,6 +171,10 @@ def build_scenario(
                     agent_id=MORTGAGE_LENDER_AGENT_ID, account_id=MORTGAGE_LENDER_ACCOUNT_ID, balance_usd=0.0
                 )
             )
+            if scenario_key.property_purchase.is_primary_residence:
+                mortgage_interest_deduction_policies.append(
+                    MortgageInterestDeductionPolicy(liability_id=mortgage.liability_id, owner_agent_id=primary_agent_id)
+                )
         scheduled_property_purchases.append(
             _sim_property_purchase(
                 scenario_key.property_purchase, property_, primary_agent_id=primary_agent_id, mortgage=mortgage
@@ -264,6 +270,7 @@ def build_scenario(
         recurring_obligations=recurring_obligations,
         scheduled_property_purchases=scheduled_property_purchases,
         property_tax_policies=property_tax_policies,
+        mortgage_interest_deduction_policies=mortgage_interest_deduction_policies,
         tax_profiles=[
             TaxProfile(
                 agent_id=primary_agent_id,

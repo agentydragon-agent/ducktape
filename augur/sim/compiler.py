@@ -18,6 +18,7 @@ from augur.sim.locations import Location
 from augur.sim.runtime import mortgage_monthly_payment_usd
 from augur.sim.scenario import (
     FixedAmount,
+    MortgageInterestDeductionPolicy,
     RecurringObligation,
     RecurringTransfer,
     Scenario,
@@ -116,6 +117,14 @@ class CompiledSimulation:
     tax_link_ltcg_upper: np.ndarray
     tax_link_ltcg_rate: np.ndarray
     tax_link_ltcg_count: np.ndarray
+    # tax_link × liability matrix; entry (link, lia) is the pro-rata MID ratio
+    # `min(1, principal_cap[jurisdiction] / liability_principal[lia])` for liabilities
+    # owned by the link's profile agent and listed in a MortgageInterestDeductionPolicy;
+    # 0.0 otherwise. Engine does `interest_ytd @ ratio[link]` per link to get MID per rollout.
+    tax_link_mid_principal_ratio: np.ndarray
+    # Per-link boolean: true iff that link has at least one non-zero MID ratio. Lets the
+    # engine skip the matmul + max for jurisdictions or scenarios without MID-eligible debt.
+    tax_link_mid_active: np.ndarray
     tax_liability_profile_index: np.ndarray
     tax_liability_link_index: np.ndarray
     tax_liability_year_end_month: np.ndarray
@@ -315,6 +324,17 @@ def compile_simulation(
         liability_monthly_payment,
     ) = _compile_properties_and_liabilities(scenario, strings, account_slot_by_key, locations)
 
+    (tax_link_mid_principal_ratio, tax_link_mid_active) = _compile_mortgage_interest_deductions(
+        scenario,
+        strings,
+        tax_link_profile_index=tax_link_profile_index,
+        tax_link_jurisdiction_codes=tax_link_jurisdiction_codes,
+        tax_profile_agent_codes=tax_profile_agent_codes,
+        liability_codes=liability_codes,
+        liability_agent_codes=liability_agent_codes,
+        liability_principal=liability_principal,
+    )
+
     (
         sale_cause_codes,
         sale_month,
@@ -441,6 +461,8 @@ def compile_simulation(
         tax_link_ltcg_upper=tax_link_ltcg_upper,
         tax_link_ltcg_rate=tax_link_ltcg_rate,
         tax_link_ltcg_count=tax_link_ltcg_count,
+        tax_link_mid_principal_ratio=tax_link_mid_principal_ratio,
+        tax_link_mid_active=tax_link_mid_active,
         tax_liability_profile_index=tax_liability_profile_index,
         tax_liability_link_index=tax_liability_link_index,
         tax_liability_year_end_month=tax_liability_year_end_month,
@@ -763,6 +785,72 @@ def _compile_tax(
         ltcg_rate,
         ltcg_count,
     )
+
+
+def _compile_mortgage_interest_deductions(
+    scenario: Scenario,
+    strings: StringTable,
+    *,
+    tax_link_profile_index: np.ndarray,
+    tax_link_jurisdiction_codes: np.ndarray,
+    tax_profile_agent_codes: np.ndarray,
+    liability_codes: np.ndarray,
+    liability_agent_codes: np.ndarray,
+    liability_principal: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Compile the precomputed per-(tax_link, liability) MID ratio matrix.
+
+    For each (link, liability) pair, the ratio is the pro-rata
+    `min(1, principal_cap / origination_principal)` factor applied to YTD interest
+    when the engine sums MID at year-end. Zero where: (a) the liability isn't
+    owned by the link's profile agent, (b) the liability has no
+    MortgageInterestDeductionPolicy entry, or (c) the policy's
+    per_jurisdiction_principal_cap_usd map omits the link's jurisdiction.
+    """
+
+    link_count = tax_link_profile_index.shape[0]
+    liability_count = liability_codes.shape[0]
+    ratio = np.zeros((max(1, link_count), max(1, liability_count)), dtype=np.float64)
+    active = np.zeros(max(1, link_count), dtype=np.bool_)
+
+    if link_count == 0 or liability_count == 0 or not scenario.mortgage_interest_deduction_policies:
+        return ratio, active
+
+    liability_slot_by_code = {int(liability_codes[lia]): lia for lia in range(liability_count)}
+    policies_by_liability_slot: dict[int, MortgageInterestDeductionPolicy] = {}
+    for policy in scenario.mortgage_interest_deduction_policies:
+        liability_code = strings.require(policy.liability_id)
+        if liability_code not in liability_slot_by_code:
+            raise ValueError(
+                f"mortgage_interest_deduction_policies references unknown liability_id "
+                f"{policy.liability_id!r}; known liabilities: {sorted(strings.values[int(c)] for c in liability_codes)}"
+            )
+        lia_slot = liability_slot_by_code[liability_code]
+        owner_code = strings.require(policy.owner_agent_id)
+        if int(liability_agent_codes[lia_slot]) != owner_code:
+            raise ValueError(
+                f"mortgage_interest_deduction_policies owner_agent_id={policy.owner_agent_id!r} does not match "
+                f"the liability's owner for liability_id={policy.liability_id!r}"
+            )
+        policies_by_liability_slot[lia_slot] = policy
+
+    for link in range(link_count):
+        profile_index = int(tax_link_profile_index[link])
+        link_agent_code = int(tax_profile_agent_codes[profile_index])
+        jurisdiction_id = strings.values[int(tax_link_jurisdiction_codes[link])]
+        for lia_slot, policy in policies_by_liability_slot.items():
+            if int(liability_agent_codes[lia_slot]) != link_agent_code:
+                continue
+            cap = policy.per_jurisdiction_principal_cap_usd.get(jurisdiction_id)
+            if cap is None:
+                continue
+            principal = float(liability_principal[lia_slot])
+            if principal <= 0.0:
+                continue
+            ratio[link, lia_slot] = min(1.0, float(cap) / principal)
+        active[link] = bool(np.any(ratio[link] > 0.0))
+
+    return ratio, active
 
 
 def _compile_capital_gain_agents(scenario: Scenario, strings: StringTable) -> tuple[np.ndarray, np.ndarray]:

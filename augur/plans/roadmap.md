@@ -57,7 +57,12 @@ Near-term translation order:
   and derive current value from `units * price[t=0]`, not interpret a scenario
   `value_usd` as quantity.
 - Then add tax profile/ordinary income translation, outside-rent obligations,
-  and the current dataframe-derived response tables. Outside rent can start as
+  and the current dataframe-derived response tables. **Ordinary income
+  translation is currently deferred (low priority, 2026-05-24):** the
+  scenarios we plan around today are post-earning retirement projections
+  rather than active W-2 income, so the income knob is not on the near-term
+  path. Outside rent and the response shape work continue as planned.
+  Outside rent can start as
   a flat compatibility obligation, but the target is indexing it to modeled
   rent-cost series from `augur/model` for the applicable rental market: configure
   current rent on the as-of date plus a model series key, then scale future rent

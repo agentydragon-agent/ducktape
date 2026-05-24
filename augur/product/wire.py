@@ -48,6 +48,10 @@ class PropertyPurchase(ApiModel):
     property_id: str
     closing_cost_pct: NonNegativeFloat = 1.5
     financing: PropertyFinancing
+    # Owner-occupied: gates the federal/CA mortgage interest deduction (§163(h)(3)). When false,
+    # the property is treated as an investment / second home and no MID policy is built. No
+    # default: callers must commit to an answer rather than inherit one silently.
+    is_primary_residence: bool
 
 
 DEFAULT_ANNUAL_INSURANCE_PCT = 0.4
@@ -188,6 +192,12 @@ class TaxAccrualEvent(_RolloutEventBase):
     ordinary_tax_usd: NonNegativeFloat
     capital_gain_tax_usd: NonNegativeFloat
     total_tax_usd: NonNegativeFloat
+    # MID under this jurisdiction's principal cap, 0.0 when not active.
+    mortgage_interest_deduction_usd: NonNegativeFloat = 0.0
+    # Sum of itemized lines (today MID is the only one). Consumer renders the larger of itemized
+    # vs. standard as the "deduction used".
+    itemized_deduction_usd: NonNegativeFloat = 0.0
+    standard_deduction_usd: NonNegativeFloat = 0.0
 
 
 class TaxPaymentEvent(_RolloutEventBase):

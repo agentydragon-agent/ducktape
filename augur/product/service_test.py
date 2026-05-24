@@ -8,7 +8,7 @@ from more_itertools import one
 
 from augur.api.catalog import build_bootstrap_payload
 from augur.api.config import Config, load_augur_config
-from augur.model.exogenous import ExogenousPathModel, ExogenousSamplingRequest, SampledExogenousBundle
+from augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle, Sampler
 from augur.model.series import INFLATION_SERIES_ID, SP500_SERIES_ID
 from augur.product import decode, service
 from augur.product.scenarios import resolve_primary_agent_id
@@ -38,7 +38,7 @@ from util.bazel.runfiles import get_required_path
 
 @dataclass
 class CountingExogenousModel:
-    inner: ExogenousPathModel
+    inner: Sampler
     sample_requests: list[ExogenousSamplingRequest] = field(default_factory=list)
 
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
@@ -434,6 +434,7 @@ def _mortgage_purchase_scenario() -> ScenarioKey:
         property_purchase=PropertyPurchase(
             property_id="location_a_property",
             financing=MortgageFinancing(term_months=360, down_payment_pct=20.0, annual_rate_pct=7.0),
+            is_primary_residence=True,
         ),
     )
 
@@ -517,7 +518,9 @@ def test_cash_property_purchase_omits_mortgage_payments(counting_exogenous_model
         monthly_spend_usd=1_000.0,
         spend_index="none",
         funding_policy=FundingPolicy(sell_order=()),
-        property_purchase=PropertyPurchase(property_id="location_a_property", financing=CashFinancing()),
+        property_purchase=PropertyPurchase(
+            property_id="location_a_property", financing=CashFinancing(), is_primary_residence=True
+        ),
     )
 
     detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
@@ -547,6 +550,7 @@ def test_property_purchase_emits_hoa_dues_when_property_has_monthly_hoa(
         property_purchase=PropertyPurchase(
             property_id="location_b_property",
             financing=MortgageFinancing(term_months=360, down_payment_pct=20.0, annual_rate_pct=7.0),
+            is_primary_residence=True,
         ),
     )
 
@@ -578,6 +582,7 @@ def test_property_purchase_skips_hoa_when_property_has_no_monthly_hoa(
         property_purchase=PropertyPurchase(
             property_id="location_a_property",
             financing=MortgageFinancing(term_months=360, down_payment_pct=20.0, annual_rate_pct=7.0),
+            is_primary_residence=True,
         ),
     )
 
@@ -600,6 +605,7 @@ def test_property_purchase_emits_homeowners_insurance_at_default_pct(
         property_purchase=PropertyPurchase(
             property_id="location_a_property",
             financing=MortgageFinancing(term_months=360, down_payment_pct=20.0, annual_rate_pct=7.0),
+            is_primary_residence=True,
         ),
     )
 
@@ -625,7 +631,9 @@ def test_property_purchase_with_zero_insurance_pct_omits_insurance(
         monthly_spend_usd=1_000.0,
         spend_index="none",
         funding_policy=FundingPolicy(sell_order=()),
-        property_purchase=PropertyPurchase(property_id="location_a_property", financing=CashFinancing()),
+        property_purchase=PropertyPurchase(
+            property_id="location_a_property", financing=CashFinancing(), is_primary_residence=True
+        ),
         annual_insurance_pct=0.0,
     )
 
@@ -646,6 +654,7 @@ def test_property_purchase_emits_maintenance_at_default_pct(counting_exogenous_m
         property_purchase=PropertyPurchase(
             property_id="location_a_property",
             financing=MortgageFinancing(term_months=360, down_payment_pct=20.0, annual_rate_pct=7.0),
+            is_primary_residence=True,
         ),
     )
 
@@ -671,7 +680,9 @@ def test_property_purchase_with_zero_maintenance_pct_omits_maintenance(
         monthly_spend_usd=1_000.0,
         spend_index="none",
         funding_policy=FundingPolicy(sell_order=()),
-        property_purchase=PropertyPurchase(property_id="location_a_property", financing=CashFinancing()),
+        property_purchase=PropertyPurchase(
+            property_id="location_a_property", financing=CashFinancing(), is_primary_residence=True
+        ),
         annual_maintenance_pct=0.0,
     )
 
@@ -687,11 +698,111 @@ def test_property_purchase_rejects_unknown_property(counting_exogenous_model: Co
         horizon_months=2,
         monthly_spend_usd=1_000.0,
         spend_index="none",
-        property_purchase=PropertyPurchase(property_id="ghost_property", financing=CashFinancing()),
+        property_purchase=PropertyPurchase(
+            property_id="ghost_property", financing=CashFinancing(), is_primary_residence=True
+        ),
     )
 
     with pytest.raises(ValueError, match=r"unknown property_id"):
         product.rollout(RolloutRequest(scenario=scenario, seed=7))
+
+
+def test_primary_residence_mortgage_emits_mortgage_interest_deduction_policy(
+    counting_exogenous_model: CountingExogenousModel,
+) -> None:
+    """A mortgaged primary residence builds one MortgageInterestDeductionPolicy on the sim
+    Scenario; tax_accrual events surface a non-zero mortgage_interest_deduction_usd."""
+    augur_config = _augur_config()
+    augur_config = augur_config.model_copy(
+        update={"snapshot": augur_config.snapshot.model_copy(update={"cash_usd": 400_000.0})}
+    )
+    product = _service(counting_exogenous_model, augur_config=augur_config)
+    scenario = ScenarioKey(
+        exogenous_model_id="current_exogenous_model",
+        horizon_months=13,
+        monthly_spend_usd=1_000.0,
+        spend_index="none",
+        funding_policy=FundingPolicy(sell_order=()),
+        property_purchase=PropertyPurchase(
+            property_id="location_a_property",
+            financing=MortgageFinancing(term_months=360, down_payment_pct=20.0, annual_rate_pct=7.0),
+            is_primary_residence=True,
+        ),
+    )
+
+    detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
+
+    accruals = [event for event in detail.rollout.events if event.kind == "tax_accrual"]
+    federal_accrual = one(event for event in accruals if event.jurisdiction_id == "federal_us")
+    assert federal_accrual.mortgage_interest_deduction_usd > 0.0
+    assert federal_accrual.standard_deduction_usd == pytest.approx(14_600.0)
+    # MID on a $900k * 80% = $720k mortgage is comfortably above the standard deduction.
+    assert federal_accrual.itemized_deduction_usd > federal_accrual.standard_deduction_usd
+
+
+def test_secondary_residence_mortgage_omits_mortgage_interest_deduction(
+    counting_exogenous_model: CountingExogenousModel,
+) -> None:
+    """`is_primary_residence=False` should produce zero MID even with a mortgage."""
+    augur_config = _augur_config()
+    augur_config = augur_config.model_copy(
+        update={"snapshot": augur_config.snapshot.model_copy(update={"cash_usd": 400_000.0})}
+    )
+    product = _service(counting_exogenous_model, augur_config=augur_config)
+    scenario = ScenarioKey(
+        exogenous_model_id="current_exogenous_model",
+        horizon_months=13,
+        monthly_spend_usd=1_000.0,
+        spend_index="none",
+        funding_policy=FundingPolicy(sell_order=()),
+        property_purchase=PropertyPurchase(
+            property_id="location_a_property",
+            financing=MortgageFinancing(term_months=360, down_payment_pct=20.0, annual_rate_pct=7.0),
+            is_primary_residence=False,
+        ),
+    )
+
+    detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
+
+    federal_accrual = one(
+        event
+        for event in detail.rollout.events
+        if event.kind == "tax_accrual" and event.jurisdiction_id == "federal_us"
+    )
+    assert federal_accrual.mortgage_interest_deduction_usd == 0.0
+    assert federal_accrual.itemized_deduction_usd == 0.0
+    assert federal_accrual.standard_deduction_usd == pytest.approx(14_600.0)
+
+
+def test_cash_property_purchase_omits_mortgage_interest_deduction(
+    counting_exogenous_model: CountingExogenousModel,
+) -> None:
+    """A cash purchase has no mortgage and therefore no MID even when is_primary_residence=True."""
+    augur_config = _augur_config()
+    augur_config = augur_config.model_copy(
+        update={"snapshot": augur_config.snapshot.model_copy(update={"cash_usd": 1_200_000.0})}
+    )
+    product = _service(counting_exogenous_model, augur_config=augur_config)
+    scenario = ScenarioKey(
+        exogenous_model_id="current_exogenous_model",
+        horizon_months=13,
+        monthly_spend_usd=1_000.0,
+        spend_index="none",
+        funding_policy=FundingPolicy(sell_order=()),
+        property_purchase=PropertyPurchase(
+            property_id="location_a_property", financing=CashFinancing(), is_primary_residence=True
+        ),
+    )
+
+    detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
+
+    federal_accrual = one(
+        event
+        for event in detail.rollout.events
+        if event.kind == "tax_accrual" and event.jurisdiction_id == "federal_us"
+    )
+    assert federal_accrual.mortgage_interest_deduction_usd == 0.0
+    assert federal_accrual.itemized_deduction_usd == 0.0
 
 
 if __name__ == "__main__":

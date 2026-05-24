@@ -316,6 +316,29 @@ class PropertyTaxPolicy(BaseModel):
         return self.start_month <= month and (self.end_month is None or month <= self.end_month)
 
 
+class MortgageInterestDeductionPolicy(BaseModel):
+    """Mortgage-interest deduction (IRC §163(h)(3)) for one liability.
+
+    At each tax-year-end, deductible interest =
+    `liability_interest_ytd * min(1, principal_cap / origination_principal)`
+    per jurisdiction listed in `per_jurisdiction_principal_cap_usd`.
+    The qualifying interest from this policy is summed across all
+    qualifying liabilities owned by the profile's agent and compared
+    against the standard deduction; the engine uses
+    `max(itemized, standard)` before bracket-walking.
+
+    Federal (post-TCJA) caps acquisition debt at $750k. California's
+    pre-TCJA $1M cap was preserved, so the two diverge for moderately-
+    large mortgages.
+    """
+
+    liability_id: str
+    owner_agent_id: str
+    per_jurisdiction_principal_cap_usd: dict[str, float] = Field(
+        default_factory=lambda: {"federal_us": 750_000.0, "california": 1_000_000.0}
+    )
+
+
 class Scenario(BaseModel):
     """Spike-1 simulation scenario. Carries the minimum to run
     a multi-rollout simulation over a fixed horizon with both
@@ -332,6 +355,7 @@ class Scenario(BaseModel):
     scheduled_asset_sales: list[ScheduledAssetSale] = Field(default_factory=list)
     scheduled_property_purchases: list[ScheduledPropertyPurchase] = Field(default_factory=list)
     property_tax_policies: list[PropertyTaxPolicy] = Field(default_factory=list)
+    mortgage_interest_deduction_policies: list[MortgageInterestDeductionPolicy] = Field(default_factory=list)
     external_series: SeriesModelBundle = Field(default_factory=SeriesModelBundle)
     # Required so callers explicitly choose either taxed agents or an intentional no-tax scenario.
     tax_profiles: list[TaxProfile]

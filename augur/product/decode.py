@@ -228,6 +228,9 @@ def _tax_accrual_events(run: SimulationRun, *, primary_agent_id: str) -> tuple[R
         "ordinary_income_usd",
         "ltcg_usd",
         "stcg_usd",
+        "standard_deduction_usd",
+        "mortgage_interest_deduction_usd",
+        "itemized_deduction_usd",
         "ordinary_tax_usd",
         "capital_gain_tax_usd",
         "total_tax_usd",
@@ -239,6 +242,9 @@ def _tax_accrual_events(run: SimulationRun, *, primary_agent_id: str) -> tuple[R
             ordinary_income_usd=pl.col("ordinary_income_usd").fill_null(0.0),
             ltcg_usd=pl.col("ltcg_usd").fill_null(0.0),
             stcg_usd=pl.col("stcg_usd").fill_null(0.0),
+            standard_deduction_usd=pl.col("standard_deduction_usd").fill_null(0.0),
+            mortgage_interest_deduction_usd=pl.col("mortgage_interest_deduction_usd").fill_null(0.0),
+            itemized_deduction_usd=pl.col("itemized_deduction_usd").fill_null(0.0),
             ordinary_tax_usd=pl.col("ordinary_tax_usd").fill_null(pl.col("amount_usd")),
             capital_gain_tax_usd=pl.col("capital_gain_tax_usd").fill_null(0.0),
             total_tax_usd=pl.col("total_tax_usd").fill_null(pl.col("amount_usd")),
@@ -257,6 +263,9 @@ def _tax_accrual_events(run: SimulationRun, *, primary_agent_id: str) -> tuple[R
             ordinary_tax_usd=float(row["ordinary_tax_usd"]),
             capital_gain_tax_usd=float(row["capital_gain_tax_usd"]),
             total_tax_usd=float(row["total_tax_usd"]),
+            mortgage_interest_deduction_usd=float(row["mortgage_interest_deduction_usd"]),
+            itemized_deduction_usd=float(row["itemized_deduction_usd"]),
+            standard_deduction_usd=float(row["standard_deduction_usd"]),
         )
         for row in accrual_rows.iter_rows(named=True)
     )

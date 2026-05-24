@@ -234,6 +234,14 @@ Suggested migration order:
 
 - [ ] First: tax profile/ordinary income, outside rent, and the current SP500
       spend smoke response shape.
+  - **Priority note (2026-05-24)**: ordinary income / W-2 translation is
+    currently _low priority_. The scenarios we want to model today are
+    asset-spend-down retirement-style projections (existing portfolio +
+    monthly spend + optional property purchase), not pre-retirement
+    earning. The MID feature shipped without an income knob and is
+    visible through the CA-side deduction on capital-gain sales.
+    Promote income back to "near-term" only when a scenario actually
+    requires earning during the horizon.
 - [ ] Second: property purchase, mortgage origination, property tax, and
       browser smoke on the backend.
 - [ ] Third: crypto positions and liquidity preferences.

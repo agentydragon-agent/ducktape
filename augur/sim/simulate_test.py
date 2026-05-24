@@ -20,6 +20,7 @@ from augur.sim.scenario import (
     InitialLot,
     LiquidityPolicy,
     MortgageFinancing,
+    MortgageInterestDeductionPolicy,
     PropertyTaxPolicy,
     RecurringObligation,
     RecurringTransfer,
@@ -2786,6 +2787,282 @@ def test_failed_rollout_skips_future_recurring_transfers(deterministic_series_bu
     assert result.events_log.transfers.is_empty()
     failed_cash = result.cash_balances.filter(pl.col("month_index") >= 1).sort(["month_index", "agent_id"])
     assert failed_cash.get_column("balance_usd").to_list() == [0.0] * failed_cash.height
+
+
+def _mid_scenario(
+    *,
+    purchase_price_usd: float,
+    down_payment_usd: float,
+    annual_rate: float,
+    term_months: int,
+    annual_w2_income_usd: float = 200_000.0,
+    horizon_months: int = 13,
+    mortgage_interest_deduction_policies: list[MortgageInterestDeductionPolicy] | None = None,
+) -> Scenario:
+    """A minimal MID scenario: $W2 wages all year + property purchase on month 0."""
+    mortgage_principal = purchase_price_usd - down_payment_usd
+    return Scenario(
+        agents=[
+            Agent(agent_id="alice"),
+            Agent(agent_id="payroll"),
+            Agent(agent_id="irs"),
+            Agent(agent_id="seller"),
+            Agent(agent_id="bank"),
+            Agent(agent_id="sf_tax_collector"),
+        ],
+        initial_cash=[
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=down_payment_usd + 50_000.0),
+            InitialAccountBalance(agent_id="payroll", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="seller", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="bank", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="sf_tax_collector", account_id="checking", balance_usd=0.0),
+        ],
+        recurring_transfers=[
+            RecurringTransfer(
+                start_month=0,
+                end_month=11,
+                cause_id="alice_paycheck",
+                from_agent_id="payroll",
+                from_account_id="checking",
+                to_agent_id="alice",
+                to_account_id="checking",
+                amount_usd=annual_w2_income_usd / 12.0,
+                income_category="ordinary",
+            )
+        ],
+        scheduled_property_purchases=[
+            ScheduledPropertyPurchase(
+                month=0,
+                cause_id="alice_buys_sf_home",
+                property_id="sf_home",
+                location_id="san_francisco",
+                buyer_agent_id="alice",
+                buyer_account_id="checking",
+                seller_agent_id="seller",
+                purchase_price_usd=purchase_price_usd,
+                down_payment_usd=down_payment_usd,
+                buyer_closing_cost_usd=0.0,
+                mortgage=MortgageFinancing(
+                    liability_id="sf_home_mortgage",
+                    lender_agent_id="bank",
+                    principal_usd=mortgage_principal,
+                    annual_interest_rate=annual_rate,
+                    term_months=term_months,
+                ),
+            )
+        ],
+        property_tax_policies=[
+            PropertyTaxPolicy(
+                property_id="sf_home",
+                owner_agent_id="alice",
+                tax_authority_agent_id="sf_tax_collector",
+                annual_tax_rate=0.012,
+            )
+        ],
+        mortgage_interest_deduction_policies=mortgage_interest_deduction_policies or [],
+        tax_profiles=[
+            TaxProfile(
+                agent_id="alice",
+                filing_status="single",
+                jurisdiction_ids=["federal_us", "california"],
+                tax_authority_agent_id="irs",
+            )
+        ],
+        horizon_months=horizon_months,
+    )
+
+
+def _accrual_breakdown(result, *, jurisdiction_id: str) -> dict:
+    return next(
+        row
+        for row in result.events_log.tax_breakdowns.iter_rows(named=True)
+        if row["jurisdiction_id"] == jurisdiction_id
+    )
+
+
+def _liability_year_interest(result, *, liability_id: str, through_month: int) -> float:
+    """Sum of interest paid on a liability across mortgage payments up to and including
+    `through_month` (inclusive)."""
+    rows = result.events_log.mortgage_payments.filter(
+        (pl.col("liability_id") == liability_id) & (pl.col("month_index") <= through_month)
+    )
+    return float(rows.get_column("interest_usd").sum())
+
+
+def test_year_end_tax_accrual_with_mortgage_interest_deduction_above_standard() -> None:
+    """MID above the federal standard deduction; both federal and CA fully deduct it (no cap clip).
+
+    $720k / 30y / 7% mortgage → first-year interest ≈ $46k > $14.6k federal standard. The deduction
+    used switches from standard to itemized for both jurisdictions, dropping tax accruals by
+    (itemized - standard) * 24% federal and × 9.3% CA (both marginal brackets stay put).
+
+    The expected interest is read from `mortgage_payments` rather than computed analytically so
+    the test stays valid even if the engine's amortization schedule changes by a digit.
+    """
+    mid_policies = [MortgageInterestDeductionPolicy(liability_id="sf_home_mortgage", owner_agent_id="alice")]
+    baseline = simulate(
+        _mid_scenario(purchase_price_usd=900_000.0, down_payment_usd=180_000.0, annual_rate=0.07, term_months=360),
+        rollout_count=1,
+    )
+    deducted = simulate(
+        _mid_scenario(
+            purchase_price_usd=900_000.0,
+            down_payment_usd=180_000.0,
+            annual_rate=0.07,
+            term_months=360,
+            mortgage_interest_deduction_policies=mid_policies,
+        ),
+        rollout_count=1,
+    )
+
+    year_1_interest = _liability_year_interest(deducted, liability_id="sf_home_mortgage", through_month=11)
+    assert year_1_interest > 14_600.0  # sanity: above federal standard so itemization should kick in
+
+    federal_baseline = _accrual_breakdown(baseline, jurisdiction_id="federal_us")
+    federal_deducted = _accrual_breakdown(deducted, jurisdiction_id="federal_us")
+    california_baseline = _accrual_breakdown(baseline, jurisdiction_id="california")
+    california_deducted = _accrual_breakdown(deducted, jurisdiction_id="california")
+
+    # Baseline: standard deduction wins, no MID.
+    assert federal_baseline["mortgage_interest_deduction_usd"] == 0.0
+    assert federal_baseline["itemized_deduction_usd"] == 0.0
+    assert federal_baseline["standard_deduction_usd"] == pytest.approx(14_600.0)
+
+    # Deducted: full first-year interest itemized federally + CA (no cap clip at $720k).
+    assert federal_deducted["mortgage_interest_deduction_usd"] == pytest.approx(year_1_interest, rel=1e-9)
+    assert federal_deducted["itemized_deduction_usd"] == pytest.approx(year_1_interest, rel=1e-9)
+    assert california_deducted["mortgage_interest_deduction_usd"] == pytest.approx(year_1_interest, rel=1e-9)
+    assert california_deducted["itemized_deduction_usd"] == pytest.approx(year_1_interest, rel=1e-9)
+
+    # Tax savings: (itemized - standard) * marginal rate. Both jurisdictions stay in the same
+    # bracket either way ($200k W-2 → fed 24%, CA 9.3%).
+    federal_savings = federal_baseline["total_tax_usd"] - federal_deducted["total_tax_usd"]
+    assert federal_savings == pytest.approx((year_1_interest - 14_600.0) * 0.24, abs=0.5)
+    california_savings = california_baseline["total_tax_usd"] - california_deducted["total_tax_usd"]
+    assert california_savings == pytest.approx((year_1_interest - 5_363.0) * 0.093, abs=0.5)
+
+
+def test_mortgage_interest_deduction_inactive_when_policy_empty() -> None:
+    """Without a MortgageInterestDeductionPolicy, tax accruals match the no-mortgage baseline.
+
+    Same scenario as the test above but `mortgage_interest_deduction_policies=[]`. The new
+    breakdown columns report 0.0 MID and 0.0 itemized; the standard deduction wins.
+    """
+    result = simulate(
+        _mid_scenario(purchase_price_usd=900_000.0, down_payment_usd=180_000.0, annual_rate=0.07, term_months=360),
+        rollout_count=1,
+    )
+
+    federal = _accrual_breakdown(result, jurisdiction_id="federal_us")
+    california = _accrual_breakdown(result, jurisdiction_id="california")
+    assert federal["mortgage_interest_deduction_usd"] == 0.0
+    assert federal["itemized_deduction_usd"] == 0.0
+    assert federal["standard_deduction_usd"] == pytest.approx(14_600.0)
+    assert california["mortgage_interest_deduction_usd"] == 0.0
+    assert california["itemized_deduction_usd"] == 0.0
+    assert california["standard_deduction_usd"] == pytest.approx(5_363.0)
+
+
+def test_mid_federal_cap_clips_but_ca_cap_does_not() -> None:
+    """$850k mortgage: federal cap ratio 750/850, CA cap ratio 1.0 → CA itemizes more."""
+    mid_policies = [MortgageInterestDeductionPolicy(liability_id="sf_home_mortgage", owner_agent_id="alice")]
+    result = simulate(
+        _mid_scenario(
+            purchase_price_usd=1_050_000.0,
+            down_payment_usd=200_000.0,
+            annual_rate=0.07,
+            term_months=360,
+            mortgage_interest_deduction_policies=mid_policies,
+        ),
+        rollout_count=1,
+    )
+
+    raw_interest = _liability_year_interest(result, liability_id="sf_home_mortgage", through_month=11)
+    federal = _accrual_breakdown(result, jurisdiction_id="federal_us")
+    california = _accrual_breakdown(result, jurisdiction_id="california")
+    assert federal["mortgage_interest_deduction_usd"] == pytest.approx(raw_interest * (750_000.0 / 850_000.0), rel=1e-9)
+    assert california["mortgage_interest_deduction_usd"] == pytest.approx(raw_interest, rel=1e-9)
+    assert california["itemized_deduction_usd"] > federal["itemized_deduction_usd"]
+
+
+def test_mid_below_standard_falls_back_to_standard_deduction() -> None:
+    """Small mortgage interest stays itemized in the breakdown but the standard deduction wins,
+    so taxable income matches the no-MID baseline.
+    """
+    mid_policies = [MortgageInterestDeductionPolicy(liability_id="sf_home_mortgage", owner_agent_id="alice")]
+    baseline = simulate(
+        _mid_scenario(purchase_price_usd=200_000.0, down_payment_usd=120_000.0, annual_rate=0.05, term_months=360),
+        rollout_count=1,
+    )
+    with_policy = simulate(
+        _mid_scenario(
+            purchase_price_usd=200_000.0,
+            down_payment_usd=120_000.0,
+            annual_rate=0.05,
+            term_months=360,
+            mortgage_interest_deduction_policies=mid_policies,
+        ),
+        rollout_count=1,
+    )
+
+    interest = _liability_year_interest(with_policy, liability_id="sf_home_mortgage", through_month=11)
+    federal = _accrual_breakdown(with_policy, jurisdiction_id="federal_us")
+    # Year-1 interest on $80k @ 5% should be well below the $14,600 federal standard.
+    assert interest < 14_600.0
+    # Both itemized and MID report the sum of itemized lines (MID is the only one today). The
+    # standard-deduction comparison happens inside the tax math and uses max(itemized, standard),
+    # so the consumer can detect "standard won" by `standard > itemized`.
+    assert federal["mortgage_interest_deduction_usd"] == pytest.approx(interest, rel=1e-9)
+    assert federal["itemized_deduction_usd"] == pytest.approx(interest, rel=1e-9)
+    assert federal["standard_deduction_usd"] == pytest.approx(14_600.0)
+    # Total tax matches the no-policy baseline exactly because the standard deduction wins.
+    federal_baseline = _accrual_breakdown(baseline, jurisdiction_id="federal_us")
+    assert federal["total_tax_usd"] == pytest.approx(federal_baseline["total_tax_usd"], abs=1e-6)
+
+
+def test_mid_year_to_year_resets_interest_ytd() -> None:
+    """A 25-month horizon fires two year-end accruals. Year-2 MID must reflect only year-2 interest,
+    not the cumulative two-year sum — confirms the year-end `liability_interest_ytd` zeroing.
+    """
+    mid_policies = [MortgageInterestDeductionPolicy(liability_id="sf_home_mortgage", owner_agent_id="alice")]
+    result = simulate(
+        _mid_scenario(
+            purchase_price_usd=600_000.0,
+            down_payment_usd=200_000.0,
+            annual_rate=0.07,
+            term_months=360,
+            horizon_months=25,
+            mortgage_interest_deduction_policies=mid_policies,
+        ),
+        rollout_count=1,
+    )
+
+    federal_rows = sorted(
+        (
+            row
+            for row in result.events_log.tax_breakdowns.iter_rows(named=True)
+            if row["jurisdiction_id"] == "federal_us"
+        ),
+        key=lambda row: row["month_index"],
+    )
+    assert len(federal_rows) == 2  # year-end accruals at month 11 and month 23
+    year_1_mid = federal_rows[0]["mortgage_interest_deduction_usd"]
+    year_2_mid = federal_rows[1]["mortgage_interest_deduction_usd"]
+    # Year-1 MID = sum of interest on payments 1..11 (origination at month 0 has no payment;
+    # first amortizing payment lands at month 1, so year 1 has only 11 payments).
+    expected_year_1 = _liability_year_interest(result, liability_id="sf_home_mortgage", through_month=11)
+    assert year_1_mid == pytest.approx(expected_year_1, rel=1e-9)
+    # Year-2 = sum of interest on payments 12..23 (12 payments). Without the year-end
+    # `liability_interest_ytd` zeroing, year_2_mid would equal the full 23-month cumulative
+    # interest (≈ year_1 + year_2_payments) instead of just the year-2 portion.
+    expected_year_2 = (
+        _liability_year_interest(result, liability_id="sf_home_mortgage", through_month=23) - expected_year_1
+    )
+    assert year_2_mid == pytest.approx(expected_year_2, rel=1e-9)
+    # Sanity: year-2 must be far less than the cumulative-since-origination figure that would
+    # appear if YTD never zeroed.
+    assert year_2_mid < year_1_mid + expected_year_2 / 2.0
 
 
 if __name__ == "__main__":
