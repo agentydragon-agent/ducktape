@@ -1,31 +1,19 @@
 from __future__ import annotations
 
-from pydantic import Field, NonNegativeFloat, NonNegativeInt, computed_field
+from pydantic import Field, NonNegativeFloat, NonNegativeInt
 
 from augur.api.schemas import ApiModel
 
 
 class ConcentratedHoldingSnapshot(ApiModel):
-    """Per-holding metadata + the model's current per-unit mark.
-
-    `fmv_usd_per_unit` is sourced from the exogenous provider (VECM's
-    `private_equity_prices_usd[holding_id]` or independent's
-    `series['private_equity:<holding_id>'].initial_value`) by the bootstrap
-    builder — config files don't repeat it. The computed `value_usd` is
-    the snapshot-time mark surfaced to the UI; it doesn't track stochastic
-    PE price paths during a sim, which the exogenous provider owns.
-    """
+    """Per-holding metadata. Per-unit valuation lives in the exogenous
+    provider config (the model is the source of truth for prices), so this
+    snapshot carries only static position identity and cost-basis facts."""
 
     holding_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
     label: str
     units: NonNegativeInt
     basis_per_unit_usd: NonNegativeFloat = 0.0
-    fmv_usd_per_unit: NonNegativeFloat = 0.0
-
-    @computed_field  # type: ignore[prop-decorator]
-    @property
-    def value_usd(self) -> float:
-        return float(self.units) * float(self.fmv_usd_per_unit)
 
 
 class FinanceSnapshot(ApiModel):

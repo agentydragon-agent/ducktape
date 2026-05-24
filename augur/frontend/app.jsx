@@ -26,8 +26,6 @@ import {
   createScenarioInput,
   normalizeScenarioSetInput,
   patchScenarioInputSection,
-  privateEquityCurrentUnitPriceUsd,
-  privateEquityValueUsdForUnits,
   scenarioSetInputFromUrlSearch,
   scenarioSetInputToRequest,
   searchWithScenarioSetInput,
@@ -269,14 +267,6 @@ function primaryConcentratedHolding(bootstrap) {
   return bootstrap?.financeSnapshot?.concentratedHoldings?.[0] ?? null;
 }
 
-function concentratedHoldingValueUsd(holding) {
-  const explicitValue = Number(holding?.valueUsd);
-  if (Number.isFinite(explicitValue)) return explicitValue;
-  const units = Number(holding?.units);
-  const fmv = Number(holding?.fmvUsdPerUnit);
-  return Number.isFinite(units) && Number.isFinite(fmv) ? units * fmv : NaN;
-}
-
 function scenarioResultById(result, scenarioId) {
   return result?.scenarioResults?.find((item) => item.scenarioId === scenarioId) ?? null;
 }
@@ -433,18 +423,6 @@ function OptionButtons({ label, options, value, onChange }) {
 
 function ControlGrid({ children, className = "" }) {
   return <div className={`${CONTROL_GRID_CLASS} ${className}`}>{children}</div>;
-}
-
-function ReadOnlyMetricField({ label, value, detail = null }) {
-  return (
-    <div className="min-w-0 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 dark:border-slate-700 dark:bg-slate-900/70">
-      <div className="mb-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
-        {label}
-      </div>
-      <div className="mono truncate text-sm font-semibold augur-strong">{value}</div>
-      {detail && <div className="mt-1 truncate text-xs augur-muted">{detail}</div>}
-    </div>
-  );
 }
 
 function SelectField({ label, value, onChange, options }) {
@@ -616,7 +594,6 @@ function PortfolioSnapshotPanel({ bootstrap }) {
   ];
   if (holding) {
     rows.push([`${holding.label} units`, fmtNumber(holding.units)]);
-    rows.push([`${holding.label} value`, fmtUsd(concentratedHoldingValueUsd(holding))]);
   }
   return (
     <div className="max-w-2xl">
@@ -1078,8 +1055,6 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
   const primaryLabel = primary?.label ?? "Owner";
   const concentratedHolding = primaryConcentratedHolding(bootstrap);
   const privateEquityLabel = concentratedHolding?.label ?? "Private equity";
-  const privateEquityCurrentValueUsd = privateEquityValueUsdForUnits(bootstrap, initialBalanceSheet.privateEquityUnits);
-  const privateEquityUnitPriceUsd = privateEquityCurrentUnitPriceUsd(bootstrap);
   const isCustomFinancing = financing.financingMode === "custom";
   const locationsById = useMemo(
     () => new Map(bootstrap.locations.map((location) => [location.id, location])),
@@ -1308,11 +1283,6 @@ function SelectedScenarioControls({ scenario, scenarioSetInput, onChange, bootst
               onChange={(startingPortfolioUsd) =>
                 updateScenarioSection("initialBalanceSheet", { startingPortfolioUsd })
               }
-            />
-            <ReadOnlyMetricField
-              label={`${privateEquityLabel} value`}
-              value={fmtUsd(privateEquityCurrentValueUsd)}
-              detail={Number.isFinite(privateEquityUnitPriceUsd) ? `${fmtUsd(privateEquityUnitPriceUsd)} / unit` : null}
             />
             <NumberField
               label={`${privateEquityLabel} units`}

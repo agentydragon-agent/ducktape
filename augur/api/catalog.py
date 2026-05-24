@@ -23,16 +23,8 @@ from augur.api.bootstrap import (
     RentalUsePolicyOption,
 )
 from augur.api.config import Config, LocationConfig, PropertyAssetConfig
-from augur.api.finance import FinanceSnapshot
 from augur.api.scenario_set import ActorRole
 from augur.api.schemas import KnobsConfig
-from augur.model.deterministic import Constant, Deterministic
-from augur.model.exogenous_provider_config import ExogenousProviderConfig
-from augur.model.gbm import GeometricBrownian
-from augur.model.independent_exogenous import IndependentExogenousProviderConfig
-from augur.model.path_models.models.vecm import VecmExogenousProviderConfig
-from augur.model.series import PRIVATE_EQUITY_SERIES_PREFIX, series_suffix
-from augur.model.series_model import ScalarSeriesSpec
 from augur.product.wire import MAX_HORIZON_MONTHS
 
 PROPERTY_ROWS_ADAPTER = TypeAdapter(tuple[Property, ...])
@@ -218,51 +210,5 @@ def build_bootstrap_payload(config: Config) -> BootstrapResponse:
         owner_residence_mode_options=_owner_residence_mode_options(primary),
         rental_use_policy_options=_rental_use_policy_options(primary),
         agents=[AgentOption(actor_id=agent.actor_id, label=agent.label, role=agent.role) for agent in config.agents],
-        finance_snapshot=_finance_snapshot_with_pe_marks(config),
+        finance_snapshot=config.snapshot,
     )
-
-
-def _finance_snapshot_with_pe_marks(config: Config) -> FinanceSnapshot:
-    """Return the configured `FinanceSnapshot` with `fmv_usd_per_unit` filled
-    in on each concentrated holding from the deployment's exogenous provider.
-
-    The snapshot config doesn't repeat per-unit prices (the exogenous provider
-    is the source of truth). Bootstrap-time enrichment surfaces the current
-    mark so the frontend can render the holding's $value without separately
-    asking the simulator for it.
-    """
-    pe_prices = _pe_unit_prices(config.exogenous_provider)
-    return config.snapshot.model_copy(
-        update={
-            "concentrated_holdings": tuple(
-                holding.model_copy(update={"fmv_usd_per_unit": pe_prices.get(holding.holding_id, 0.0)})
-                for holding in config.snapshot.concentrated_holdings
-            )
-        }
-    )
-
-
-def _pe_unit_prices(provider: ExogenousProviderConfig) -> dict[str, float]:
-    if isinstance(provider, VecmExogenousProviderConfig):
-        return {issuer: float(price) for issuer, price in provider.private_equity_prices_usd.items()}
-    if isinstance(provider, IndependentExogenousProviderConfig):
-        prices: dict[str, float] = {}
-        for series_id, spec in provider.series.items():
-            issuer = series_suffix(series_id, PRIVATE_EQUITY_SERIES_PREFIX)
-            if issuer is not None:
-                prices[issuer] = _t0_level(spec)
-        return prices
-    return {}
-
-
-def _t0_level(spec: ScalarSeriesSpec) -> float:
-    """Extract the month-0 level from a scalar series spec, dispatching on
-    the spec's discriminator. Used to surface the current PE mark for
-    bootstrap-time display; no sampling involved."""
-    if isinstance(spec, GeometricBrownian):
-        return float(spec.initial_value)
-    if isinstance(spec, Constant):
-        return float(spec.value)
-    if isinstance(spec, Deterministic):
-        return float(spec.levels[0])
-    raise TypeError(f"unsupported ScalarSeriesSpec variant: {type(spec).__name__}")

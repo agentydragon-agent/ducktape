@@ -63,25 +63,9 @@ function defaultConcentratedHolding(bootstrap) {
   return bootstrap?.financeSnapshot?.concentratedHoldings?.[0] ?? null;
 }
 
-function holdingValueUsd(holding) {
-  return finiteNumber(holding?.valueUsd, finiteNumber(holding?.units, 0) * finiteNumber(holding?.fmvUsdPerUnit, 0));
-}
-
 function scenarioSection(scenario, section) {
   const value = scenario?.[section];
   return value && typeof value === "object" ? value : {};
-}
-
-export function privateEquityCurrentUnitPriceUsd(bootstrap) {
-  const holding = defaultConcentratedHolding(bootstrap);
-  const fmv = finiteNumber(holding?.fmvUsdPerUnit, NaN);
-  if (Number.isFinite(fmv)) return fmv;
-  const units = finiteNumber(holding?.units, 0);
-  return units > 0 ? holdingValueUsd(holding) / units : 0;
-}
-
-export function privateEquityValueUsdForUnits(bootstrap, units) {
-  return Math.max(0, finiteNumber(units, 0)) * privateEquityCurrentUnitPriceUsd(bootstrap);
 }
 
 function scenarioIdFromIndex(index) {
