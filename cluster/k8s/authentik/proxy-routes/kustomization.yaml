@@ -13,7 +13,6 @@ resources:
   - longhorn-httproute.yaml
   - goldilocks-httproute.yaml
   - tandoor-httproute.yaml
-  - authentik-mcp-poc-backend-httproute.yaml
   - sdr-httproute.yaml
   - adsb-httproute.yaml
   - openhands-httproute.yaml

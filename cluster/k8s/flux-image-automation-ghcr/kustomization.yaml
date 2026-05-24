@@ -32,10 +32,6 @@ resources:
   - claude-jwt-rotation-image-policy.yaml
   - attic-jwt-rotation-image-repository.yaml
   - attic-jwt-rotation-image-policy.yaml
-  - authentik-mcp-poc-server-image-repository.yaml
-  - authentik-mcp-poc-server-image-policy.yaml
-  - authentik-mcp-poc-backend-image-repository.yaml
-  - authentik-mcp-poc-backend-image-policy.yaml
   - grocy-mcp-oidc-server-image-repository.yaml
   - grocy-mcp-oidc-server-image-policy.yaml
   # CLEANUP: remove kubernetes-mcp-server entries when upstream releases

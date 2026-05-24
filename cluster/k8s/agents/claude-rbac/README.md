@@ -76,7 +76,7 @@ Namespaced RoleBindings live in per-service `agent-rbac/` directories. Each is a
 Flux kustomization that depends only on the target namespace + `claude-rbac`.
 
 **Namespace diagnostics** (`namespace-diagnostics-reader` ClusterRole bound per-namespace):
-harbor, gatus, authentik-mcp-poc, csi-proxmox, openebs, proxmox-proxy, cnpg-system,
+harbor, gatus, csi-proxmox, openebs, proxmox-proxy, cnpg-system,
 nvidia-device-plugin, node-feature-discovery, local-path-storage, cert-manager, litellm,
 docker-ci, matrix, grocy-sf, grocy-vallejo, study-casino, props, tana-mcp
 

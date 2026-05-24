@@ -53,7 +53,7 @@ The MCP server uses a client certificate (CN=`claude-code-web`, group
   full list. Covers: harbor, langfuse, ollama, openclaw, props, gatus, csi-proxmox,
   openebs, proxmox-proxy, cnpg-system, nvidia-device-plugin, node-feature-discovery,
   local-path-storage, cert-manager, litellm, docker-ci, matrix, grocy-sf, grocy-vallejo,
-  study-casino, authentik-mcp-poc, monitoring, kube-system, longhorn-system,
+  study-casino, monitoring, kube-system, longhorn-system,
   flux-system, airlock, authentik, augur.
 
 **Escape hatch**: `Bash(kubectl ...)` uses the user's personal kubeconfig (CLI) or

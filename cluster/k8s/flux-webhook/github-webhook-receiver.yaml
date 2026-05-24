@@ -42,12 +42,6 @@ spec:
       name: auth-proxy
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository
-      name: authentik-mcp-poc-backend
-    - apiVersion: image.toolkit.fluxcd.io/v1beta2
-      kind: ImageRepository
-      name: authentik-mcp-poc-server
-    - apiVersion: image.toolkit.fluxcd.io/v1beta2
-      kind: ImageRepository
       name: claude-jwt-rotation
     - apiVersion: image.toolkit.fluxcd.io/v1beta2
       kind: ImageRepository

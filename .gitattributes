@@ -41,6 +41,11 @@ cluster/** filename-conventions-ignored=true
 terraform/** filename-conventions-ignored=true
 tf/** filename-conventions-ignored=true
 
+# Archived cluster + tf manifests parked under x/ keep their original
+# kebab-case directory names.
+x/*/cluster/** filename-conventions-ignored=true
+x/*/tf/** filename-conventions-ignored=true
+
 # Logseq page names - dashes are part of the page title
 llm/instruct_logseq/pages/** filename-conventions-ignored=true
 
