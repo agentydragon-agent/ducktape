@@ -39,7 +39,8 @@ use analysis::{FactorizeDiagnosticReason, LineRange, OwnerGraphReport, PeelCandi
 use spec_modules::load_active_claims;
 
 use crate::quotient::{
-    ClassId, OwnerIdx, QuotientGraph, SeedContractionRejected, SpecModuleGroup, build_seed_quotient,
+    ClassId, OwnerIdx, PartitionGroup, QuotientGraph, SeedContractionRejected, SpecModuleGroup,
+    build_seed_quotient, greedy_merge_to_convergence,
 };
 
 #[derive(Debug, Clone)]
@@ -214,8 +215,12 @@ pub fn factorize(
         })
         .collect();
 
-    let (quotient, cell_records, diagnostics) =
-        proposal_cells_from_atomic_graph(graph, &owner_index, size_cap_lines);
+    let (quotient, cell_records, diagnostics) = proposal_cells_from_atomic_graph(
+        graph,
+        &owner_index,
+        &owner_to_active_module,
+        size_cap_lines,
+    );
 
     // Per-cell edge accounting. We walk every constraining edge
     // once, classifying the source-cell / target-cell pair into:
@@ -369,6 +374,7 @@ pub fn build_factorize_seed_quotient(
 fn proposal_cells_from_atomic_graph(
     graph: &OwnerGraphReport,
     owner_index: &HashMap<&str, usize>,
+    owner_to_active_module: &HashMap<usize, String>,
     size_cap_lines: usize,
 ) -> (
     QuotientGraph,
@@ -481,21 +487,170 @@ fn proposal_cells_from_atomic_graph(
         });
     }
 
-    // Materialize the partition into a quotient. The kernel hosts the
-    // equivalence relation; the renderer reads class members through
-    // `quotient.class_members`.
-    let (quotient, group_class_ids) =
-        QuotientGraph::from_report_with_partition(graph, size_cap_lines, &render_groups);
-    let cell_records: Vec<CellClassRecord> = render_metadata
+    // Materialize the partition into a quotient. Two kinds of groups
+    // are stacked into the kernel:
+    //
+    //   - Cell groups: atomic-DAG-reachability closures produced by
+    //     the cell discovery pass above. These carry per-cell
+    //     metadata (`extends_module_id`, `extension_owner_idxs`,
+    //     verdict) that the renderer materializes into a proposal.
+    //
+    //   - Pre-existing module groups: every active-claim spec module,
+    //     with its owners co-located. These have no cell record;
+    //     they're seeded purely to give the commit-2 greedy a
+    //     pre-existing-module class to absorb orphans into.
+    //
+    // The greedy enumerates pre-existing-module classes and tries to
+    // absorb each connected residual orphan into them; this is the
+    // "extend existing module with new orphans" shape that
+    // generalizes today's `promote_anonymous_only_cell_to_extension`
+    // post-pass.
+    let mut extended_groups: Vec<PartitionGroup> = render_groups
         .into_iter()
-        .zip(group_class_ids)
-        .map(|(meta, class_id)| CellClassRecord {
-            class_id,
+        .zip(render_metadata.iter())
+        .map(|(owner_idxs, meta)| PartitionGroup {
+            owner_idxs,
+            is_pre_existing_module: meta.extends_module_id.is_some(),
+            label: meta.extends_module_id.clone(),
+        })
+        .collect();
+    let n_cell_groups = extended_groups.len();
+    // Add pre-existing-module groups derived from the spec.
+    // Group key uses `destination.id` so owners in the same active
+    // module are co-located; the label uses the active path
+    // (resolved via active_claims → target_file → label) so
+    // downstream `extends_module_id` matches the same path the
+    // legacy post-pass would have used (via
+    // `active_modules_referenced`).
+    let mut module_groups: BTreeMap<String, (String, Vec<OwnerIdx>)> = BTreeMap::new();
+    for (i, node) in graph.nodes.iter().enumerate() {
+        if node.destination.residual {
+            continue;
+        }
+        let active_path = owner_to_active_module
+            .get(&i)
+            .cloned()
+            .unwrap_or_else(|| node.destination.id.clone());
+        let entry = module_groups
+            .entry(node.destination.id.clone())
+            .or_insert_with(|| (active_path.clone(), Vec::new()));
+        entry.1.push(OwnerIdx(i));
+    }
+    for (_dest_id, (active_path, mut owner_idxs)) in module_groups {
+        owner_idxs.sort();
+        extended_groups.push(PartitionGroup {
+            owner_idxs,
+            is_pre_existing_module: true,
+            label: Some(active_path),
+        });
+    }
+    let (mut quotient, group_class_ids) =
+        QuotientGraph::from_report_with_partition_extended(graph, size_cap_lines, &extended_groups);
+    // Cell records consume only the first n_cell_groups class ids;
+    // the rest are pre-existing module classes that get folded into
+    // existing cell records by surviving-class collation below.
+    let group_class_ids: Vec<ClassId> = group_class_ids.into_iter().take(n_cell_groups).collect();
+
+    // Stash one owner per cell + one owner per module group *before*
+    // greedy — we'll use these to look up surviving classes and
+    // their labels after greedy collapses some classes.
+    let cell_anchors: Vec<OwnerIdx> = extended_groups
+        .iter()
+        .take(n_cell_groups)
+        .map(|g| {
+            *g.owner_idxs
+                .first()
+                .expect("partition group must be non-empty")
+        })
+        .collect();
+    let module_anchors: Vec<(OwnerIdx, String)> = extended_groups
+        .iter()
+        .skip(n_cell_groups)
+        .map(|g| {
+            (
+                *g.owner_idxs
+                    .first()
+                    .expect("module partition group must be non-empty"),
+                g.label.clone().expect("module group has label"),
+            )
+        })
+        .collect();
+    drop(group_class_ids); // no longer authoritative after greedy
+
+    // Commit 2: run greedy contractions on the cells-derived +
+    // pre-existing-module-augmented quotient. The greedy absorbs
+    // orphan residual singletons into pre-existing active module
+    // classes.
+    let _greedy_contractions = greedy_merge_to_convergence(&mut quotient);
+
+    // Resolve each pre-existing module group's surviving class +
+    // label. Used downstream to set `extends_module_id` on cell
+    // records whose surviving class is a module class.
+    let surviving_module_label: BTreeMap<ClassId, String> = module_anchors
+        .into_iter()
+        .map(|(anchor, label)| (quotient.class_of(anchor), label))
+        .collect();
+
+    // Update each cell record's `class_id` to reflect any merges:
+    // a cell's surviving class is the current class of any of its
+    // original owners. If two cell records collapse to the same
+    // class (e.g. an orphan absorbed into a module), keep one and
+    // merge extension owners.
+    let mut by_surviving: BTreeMap<ClassId, CellClassRecord> = BTreeMap::new();
+    for (meta, anchor) in render_metadata.into_iter().zip(cell_anchors) {
+        let surviving = quotient.class_of(anchor);
+        let record = CellClassRecord {
+            class_id: surviving,
             extends_module_id: meta.extends_module_id,
             extension_owner_idxs: meta.extension_owner_idxs,
             verdict: meta.verdict,
-        })
-        .collect();
+        };
+        match by_surviving.get_mut(&surviving) {
+            None => {
+                by_surviving.insert(surviving, record);
+            }
+            Some(existing) => {
+                if existing.extends_module_id.is_none() && record.extends_module_id.is_some() {
+                    existing.extends_module_id = record.extends_module_id;
+                }
+                existing
+                    .extension_owner_idxs
+                    .extend(record.extension_owner_idxs);
+            }
+        }
+    }
+
+    // For surviving classes that became module-anchored via greedy
+    // (the cell record alone had no `extends_module_id`, but the
+    // merged class now hosts a pre-existing module's owners),
+    // stamp the module label so the renderer emits an `extend:M`
+    // proposal rather than a fresh `auto_partition_NNNN`.
+    for (class_id, label) in &surviving_module_label {
+        if let Some(record) = by_surviving.get_mut(class_id) {
+            if record.extends_module_id.is_none() {
+                record.extends_module_id = Some(label.clone());
+            }
+        }
+    }
+
+    // After greedy, a pre-existing-module class may contain
+    // residual-origin owners that weren't in the original cell
+    // (the cell-discovery pass only emitted residual closures).
+    // Surface them as `extension_owner_idxs` so the renderer
+    // materializes the correct extend:M proposal.
+    for record in by_surviving.values_mut() {
+        if record.extends_module_id.is_none() {
+            continue;
+        }
+        let class_owners: Vec<OwnerIdx> = quotient.class_members(record.class_id).collect();
+        for owner in class_owners {
+            if graph.nodes[owner.0].destination.residual {
+                record.extension_owner_idxs.insert(owner.0);
+            }
+        }
+    }
+
+    let cell_records: Vec<CellClassRecord> = by_surviving.into_values().collect();
     (quotient, cell_records, diagnostics)
 }
 
@@ -769,25 +924,24 @@ fn emit_proposals(
     out
 }
 
-/// Promote an anonymous-only fresh-module cell into an extension of
-/// the single active module its constraining edges target.
+/// Promote a fresh-module cell into an extension of the single
+/// active module its constraining edges target.
 ///
 /// Motivation: top-level side-effect statements (`__decorate(...)`,
 /// `register(...)`, target-mutating `Foo.x = ...` installs, IIFE
 /// preludes) declare no binding name, so the spec author has no way
-/// to claim them by name. When the named binding they apply to is
-/// already in an active module, the natural spec edit is "extend
-/// that module with these `anonymous_statements:`". Without this
-/// promotion the planner just reports them as fresh
-/// `auto_partition_NNNN` proposals and the author has to spot them
-/// by hand.
+/// to claim them by name. The same logic applies to small named
+/// helpers whose sole consumer is one active module. When greedy
+/// already absorbed the orphan into a module class (commit-2 path),
+/// this post-pass is a no-op. Where greedy didn't reach (e.g., the
+/// cell has `edges_to_other_residual_cells > 0` so greedy skipped
+/// it under the conservative gate; or the cell has no
+/// constraining-edge view of the active module yet the proposal
+/// surfaces it via `active_modules_referenced`), the post-pass
+/// fills the gap.
 ///
 /// Preconditions for promotion (all required):
 /// - `extends_module_id` is `None` (cell is a fresh-module proposal today).
-/// - `binding_ids` is empty (cell has no named bindings — promoting a
-///   cell with named bindings would force them into an existing
-///   module's `members:` list, which is a different spec edit and
-///   needs the author's judgement on naming).
 /// - `edges_to_other_residual_cells == 0` (the cell has no
 ///   leftover residual dependency; promoting wouldn't strand the
 ///   extension behind another residual cell).
@@ -795,9 +949,16 @@ fn emit_proposals(
 ///   `edges_to_active_modules > 0` (every outgoing cross-module
 ///   constraining edge points at exactly one active module — the
 ///   unambiguous extension target).
+///
+/// **Commit 2 change**: the historical `!binding_ids.is_empty()`
+/// gate (commit `e8bd6ea54`) has been lifted. A named helper with
+/// one consumer is the same "extend by orphan" shape as an
+/// anonymous side-effect statement; the spec-author judgement the
+/// gate deferred is captured by the spec module's existing
+/// `members:` list — adding a helper there is the natural
+/// resolution.
 fn promote_anonymous_only_cell_to_extension(proposal: &mut FactorizeProposal) {
     if proposal.extends_module_id.is_some()
-        || !proposal.binding_ids.is_empty()
         || proposal.edges_to_other_residual_cells != 0
         || proposal.edges_to_active_modules == 0
         || proposal.active_modules_referenced.len() != 1
@@ -807,15 +968,9 @@ fn promote_anonymous_only_cell_to_extension(proposal: &mut FactorizeProposal) {
     let target = proposal.active_modules_referenced[0].clone();
     proposal.extends_module_id = Some(target.clone());
     proposal.proposed_module_id = format!("extend:{target}");
-    // The cell's owners are anonymous-only by precondition
-    // (`binding_ids` empty + every owner with no declared bindings
-    // contributed to `anonymous_statement_owner_ids` in
-    // `build_proposal`). Surface them in `extension_owner_ids`
-    // alongside the named-binding case so a downstream consumer
-    // reading the proposal can materialize the spec edit
-    // ("add these anonymous_statements to <target>.yaml") off
-    // a single field, distinguishing kinds by checking owner shape
-    // (named vs anonymous) on each id.
+    // Owners get listed in `extension_owner_ids` regardless of
+    // shape (named vs anonymous). Downstream consumers distinguish
+    // by checking each id's owner-node binding count.
     let mut ids = proposal.owner_ids.clone();
     ids.sort();
     proposal.extension_owner_ids = ids;
@@ -864,12 +1019,28 @@ fn build_proposal(
     record: &CellClassRecord,
     ctx: &ProposalContext,
 ) -> FactorizeProposal {
-    // Class members come from the quotient. The renderer treats the
-    // class as the unit of emission — exactly what commit 2's greedy
-    // will produce after additional contractions.
+    // Class members come from the quotient. For extension proposals
+    // (`extends_module_id.is_some()`) the proposal surfaces only the
+    // newly-added owners — those whose original destination was
+    // residual. The pre-existing module's own owners are skipped:
+    // the proposal represents the spec edit "add these owners to
+    // module M," not "rewrite M to contain all these owners." This
+    // matches the legacy `promote_anonymous_only_cell_to_extension`
+    // output shape that downstream consumers (lane workers, plan-
+    // work tooling) depend on.
     let class_id = record.class_id;
-    let owner_idxs: Vec<usize> = ctx.quotient.class_members(class_id).map(|o| o.0).collect();
+    let all_owner_idxs: Vec<usize> = ctx.quotient.class_members(class_id).map(|o| o.0).collect();
     let class_lines = ctx.quotient.class_lines(class_id);
+    let is_extension = record.extends_module_id.is_some();
+    let owner_idxs: Vec<usize> = if is_extension {
+        all_owner_idxs
+            .iter()
+            .copied()
+            .filter(|&idx| ctx.graph.nodes[idx].destination.residual)
+            .collect()
+    } else {
+        all_owner_idxs.clone()
+    };
 
     let mut owner_ids: Vec<String> = Vec::with_capacity(owner_idxs.len());
     let mut anonymous_owner_ids: Vec<String> = Vec::new();
@@ -940,12 +1111,20 @@ fn build_proposal(
         Some(target) => format!("extend:{target}"),
         None => format!("auto_partition_{cell_idx:04}"),
     };
+    let size_lines = if is_extension {
+        owner_idxs
+            .iter()
+            .map(|&idx| owner_line_count(&ctx.graph.nodes[idx]))
+            .sum()
+    } else {
+        class_lines
+    };
     FactorizeProposal {
         proposed_module_id,
         owner_ids,
         binding_ids: binding_ids.into_iter().collect(),
         anonymous_statement_owner_ids: anonymous_owner_ids,
-        size_lines_estimate: class_lines,
+        size_lines_estimate: size_lines,
         source_line_range: line_range.into_array(),
         ordinal_span: max_ordinal.saturating_sub(min_ordinal),
         internal_edges: internal,

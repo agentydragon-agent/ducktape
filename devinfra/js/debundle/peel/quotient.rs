@@ -15,10 +15,19 @@
 //! `plans/peel_proposer_contraction_model.md` (commit 1) for the
 //! mental model.
 //!
-//! This kernel is the **first cut** (correctness, not speed): the
-//! cycle set is rebuilt from scratch on every query and on every
-//! mutation. Commit 4 will replace it with persistent SCC + post-order
-//! state.
+//! Commit 2 of the plan adds:
+//! - `greedy_merge_to_convergence` — the greedy contraction loop
+//!   with deterministic `pick_best` tiebreaks.
+//! - Incremental cycle-set cache. The cycle set is computed once in
+//!   `from_report*` and maintained across `contract` calls without
+//!   rebuilding from scratch. Merges only ever shrink the cycle set
+//!   (proof in the plan's "Why merges don't create cycles" section),
+//!   so the cache update is cheap: walk cycles touching the merged
+//!   endpoints, project class labels, drop cycles that collapse to
+//!   a single class.
+//! - `is_pre_existing_module` per-class metadata. Required by the
+//!   commit-2 greedy mergeability restriction ("extension of
+//!   existing module by orphaned residual class").
 //!
 //! ## Why the kernel reimplements the gate over the report
 //!
@@ -32,9 +41,9 @@
 //! the JSON-derived adjacency. The semantics are identical for the
 //! shapes seed contractions can reach.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use analysis::{OwnerGraphReport, RESIDUAL_ENTRY_MODULE_ID};
+use analysis::{DepKind, OwnerGraphReport, RESIDUAL_ENTRY_MODULE_ID};
 use petgraph::algo::tarjan_scc;
 use petgraph::graphmap::DiGraphMap;
 use serde::Serialize;
@@ -116,6 +125,35 @@ pub struct SpecModuleGroup {
     pub owner_ids: Vec<String>,
 }
 
+/// One input group for `QuotientGraph::from_report_with_partition_extended`.
+/// Used by the renderer to materialize cells-derived partitions with
+/// per-class metadata the commit-2 greedy needs.
+#[derive(Debug, Clone)]
+pub struct PartitionGroup {
+    pub owner_idxs: Vec<OwnerIdx>,
+    /// `true` if this group corresponds to a pre-existing active
+    /// spec module (the greedy may extend it by absorbing orphan
+    /// residual classes). `false` if this group is a residual
+    /// atomic-DAG closure or an ad-hoc grouping.
+    pub is_pre_existing_module: bool,
+    /// Optional human-readable label (e.g., module id). Carried by
+    /// the kernel for diagnostic purposes only.
+    pub label: Option<String>,
+}
+
+/// One step of the greedy merge loop. Returned by
+/// `greedy_step` so callers (incremental-invariant property tests,
+/// dry-run diagnostics) can step through one contraction at a time.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub struct GreedyStep {
+    /// The two classes the step picked, in canonical (lower, higher)
+    /// order. After the contract, only `surviving` remains.
+    pub picked: (ClassId, ClassId),
+    /// The class id that survived the contraction (always equals
+    /// `picked.0.min(picked.1)`).
+    pub surviving: ClassId,
+}
+
 /// Internal: one class's metadata. Class membership is tracked by
 /// `owner_to_class`; this struct caches per-class aggregates that
 /// `merge_preserves_invariants` consults.
@@ -127,6 +165,14 @@ struct ClassData {
     lines: usize,
     /// `true` if this class contains the residual catch-all.
     is_residual: bool,
+    /// `true` if this class was seeded by a `PartitionGroup` with
+    /// `is_pre_existing_module = true`. Sticky across merges (a
+    /// merge of two pre-existing-module classes — only allowed in
+    /// commit 3 — produces a class that is itself pre-existing).
+    /// Default `false` for singletons constructed from
+    /// `from_report` or for residual atomic-DAG-closure classes
+    /// seeded by `from_report_with_partition`.
+    is_pre_existing_module: bool,
 }
 
 /// The quotient graph: owners partitioned into classes, with the
@@ -145,12 +191,65 @@ pub struct QuotientGraph {
     /// Constraining-edge owner adjacency: `(from_owner, to_owner)`
     /// pairs from `OwnerGraphReport.edges` whose
     /// `constrains_init_order` is true and whose endpoints both
-    /// resolve to known owners. Source-of-truth; the cycle set is
-    /// computed from this each query.
+    /// resolve to known owners. Source-of-truth for the cycle set.
     owner_constraining_edges: Vec<(OwnerIdx, OwnerIdx)>,
+    /// **All** owner edges, with their weight (from `DepKind`).
+    /// Used by the greedy's coupling metric. Self-loops and
+    /// non-constraining edges are included; `class_cross_edges`
+    /// filters out same-class pairs at query time.
+    owner_weighted_edges: Vec<WeightedOwnerEdge>,
     /// Cap on per-class combined lines. Exceeding this is a rejected
     /// merge.
     cap_lines: usize,
+    /// Cached cycle set, maintained incrementally across `contract`.
+    /// Recomputed from scratch in `from_report*`, then updated in
+    /// place. Invariants: classes monotonically decrease (a contracted
+    /// class id is rewritten to its survivor); cycles that collapse
+    /// to a single class are dropped.
+    cached_cycles: Vec<CycleClassSet>,
+    /// Class → indices into `cached_cycles` whose `classes` list
+    /// contains this class. Permits O(min(|cycles touching c1|,
+    /// |cycles touching c2|)) `merge_preserves_invariants` and
+    /// `contract`-time cycle maintenance.
+    class_to_cycle_indices: BTreeMap<ClassId, Vec<usize>>,
+    /// Class-level constraining-edge adjacency (out-edges). Self-loops
+    /// are dropped; multi-edges between the same class pair are
+    /// counted in the multiplicity map below.
+    class_out: BTreeMap<ClassId, BTreeSet<ClassId>>,
+    /// Symmetric (in-edges).
+    class_in: BTreeMap<ClassId, BTreeSet<ClassId>>,
+    /// Multiplicity of each (from_class, to_class) constraining-edge
+    /// pair. Drives incremental updates: when the multiplicity drops
+    /// to 0, the adjacency entry is removed.
+    class_edge_multiplicity: BTreeMap<(ClassId, ClassId), usize>,
+    /// Coupling weight per (from_class, to_class) cross-class pair.
+    /// Sum of `edge_weight` for every owner edge between the two
+    /// classes (constraining or not). Used by the greedy's pick_best
+    /// coupling metric. Updated on contract by relabeling endpoints.
+    class_edge_weight: BTreeMap<(ClassId, ClassId), u64>,
+    /// Number of *outgoing* owner edges from each class (any kind,
+    /// constraining or not). Used as the denominator of the coupling
+    /// metric: `min(|out(c1)|, |out(c2)|)`.
+    class_out_edge_count: BTreeMap<ClassId, usize>,
+}
+
+/// One owner-edge with its `DepKind`-derived weight. Stored on the
+/// kernel so the greedy can evaluate the coupling metric without
+/// re-parsing the input report.
+#[derive(Debug, Clone, Copy)]
+struct WeightedOwnerEdge {
+    from: OwnerIdx,
+    to: OwnerIdx,
+    weight: u32,
+}
+
+fn edge_weight(kind: DepKind) -> u32 {
+    match kind {
+        DepKind::EagerUse | DepKind::EagerRebind => 4,
+        DepKind::Sequenced => 2,
+        DepKind::LazyUse | DepKind::LazyRebind => 1,
+        DepKind::LocalEffect => 2,
+    }
 }
 
 impl QuotientGraph {
@@ -159,10 +258,10 @@ impl QuotientGraph {
     /// `merge_preserves_invariants`.
     pub fn from_report(report: &OwnerGraphReport, cap_lines: usize) -> Self {
         let owner_ids: Vec<String> = report.nodes.iter().map(|n| n.id.clone()).collect();
-        let owner_index: BTreeMap<String, OwnerIdx> = owner_ids
+        let owner_index: HashMap<&str, OwnerIdx> = owner_ids
             .iter()
             .enumerate()
-            .map(|(i, id)| (id.clone(), OwnerIdx(i)))
+            .map(|(i, id)| (id.as_str(), OwnerIdx(i)))
             .collect();
 
         let mut classes = Vec::<ClassData>::with_capacity(owner_ids.len());
@@ -170,38 +269,61 @@ impl QuotientGraph {
         for (i, node) in report.nodes.iter().enumerate() {
             let mut members = BTreeSet::new();
             members.insert(OwnerIdx(i));
+            // `is_residual` marks the literal residual_entry
+            // catch-all class only, not every owner currently
+            // destined for residual_entry. The catch-all is
+            // identified by its module id; the commit-2 greedy
+            // refuses to absorb any orphan INTO it, but freely
+            // merges residual-orphan singletons among themselves
+            // or into pre-existing active module classes.
             classes.push(ClassData {
                 members,
                 lines: owner_line_count_from_report(node),
-                is_residual: node.destination.residual
-                    || node.destination.id == RESIDUAL_ENTRY_MODULE_ID,
+                is_residual: node.destination.id == RESIDUAL_ENTRY_MODULE_ID,
+                is_pre_existing_module: false,
             });
             owner_to_class.push(ClassId(i));
         }
 
         let mut owner_constraining_edges: Vec<(OwnerIdx, OwnerIdx)> = Vec::new();
+        let mut owner_weighted_edges: Vec<WeightedOwnerEdge> =
+            Vec::with_capacity(report.edges.len());
         for edge in &report.edges {
-            if !edge.constrains_init_order {
-                continue;
-            }
-            let (Some(&s), Some(&t)) =
-                (owner_index.get(&edge.source), owner_index.get(&edge.target))
-            else {
+            let (Some(&s), Some(&t)) = (
+                owner_index.get(edge.source.as_str()),
+                owner_index.get(edge.target.as_str()),
+            ) else {
                 continue;
             };
-            if s == t {
+            owner_weighted_edges.push(WeightedOwnerEdge {
+                from: s,
+                to: t,
+                weight: edge_weight(edge.edge_kind),
+            });
+            if !edge.constrains_init_order || s == t {
                 continue;
             }
             owner_constraining_edges.push((s, t));
         }
 
-        QuotientGraph {
+        let mut q = QuotientGraph {
             owner_ids,
             owner_to_class,
             classes,
             owner_constraining_edges,
+            owner_weighted_edges,
             cap_lines,
-        }
+            cached_cycles: Vec::new(),
+            class_to_cycle_indices: BTreeMap::new(),
+            class_out: BTreeMap::new(),
+            class_in: BTreeMap::new(),
+            class_edge_multiplicity: BTreeMap::new(),
+            class_edge_weight: BTreeMap::new(),
+            class_out_edge_count: BTreeMap::new(),
+        };
+        q.rebuild_class_adjacency();
+        q.rebuild_cycle_cache();
+        q
     }
 
     /// Build a quotient over `report.nodes` and immediately contract
@@ -227,11 +349,32 @@ impl QuotientGraph {
         cap_lines: usize,
         groups: &[Vec<OwnerIdx>],
     ) -> (Self, Vec<ClassId>) {
+        let extended_groups: Vec<PartitionGroup> = groups
+            .iter()
+            .map(|owner_idxs| PartitionGroup {
+                owner_idxs: owner_idxs.clone(),
+                is_pre_existing_module: false,
+                label: None,
+            })
+            .collect();
+        Self::from_report_with_partition_extended(report, cap_lines, &extended_groups)
+    }
+
+    /// Like `from_report_with_partition`, but each group carries
+    /// per-class metadata (`is_pre_existing_module`, optional
+    /// `label`). The greedy's mergeability check consults
+    /// `is_pre_existing_module` to restrict commit-2 merges to
+    /// "extend existing module by orphaned residual class."
+    pub fn from_report_with_partition_extended(
+        report: &OwnerGraphReport,
+        cap_lines: usize,
+        groups: &[PartitionGroup],
+    ) -> (Self, Vec<ClassId>) {
         let mut q = Self::from_report(report, cap_lines);
         let mut group_class_ids = Vec::with_capacity(groups.len());
         for group in groups {
             let mut winner: Option<ClassId> = None;
-            for &owner in group {
+            for &owner in &group.owner_idxs {
                 let c = q.class_of(owner);
                 match winner {
                     None => winner = Some(c),
@@ -244,8 +387,18 @@ impl QuotientGraph {
                     }
                 }
             }
-            group_class_ids.push(winner.expect("partition group must be non-empty"));
+            let survivor = winner.expect("partition group must be non-empty");
+            if group.is_pre_existing_module {
+                q.classes[survivor.0].is_pre_existing_module = true;
+            }
+            group_class_ids.push(survivor);
         }
+        // Partition seeding bypasses the gate, so the cached
+        // adjacency / cycle set can drift from the per-merge
+        // incremental update. Rebuild from scratch so callers see
+        // the correct initial state.
+        q.rebuild_class_adjacency();
+        q.rebuild_cycle_cache();
         (q, group_class_ids)
     }
 
@@ -292,9 +445,13 @@ impl QuotientGraph {
     }
 
     /// Current unrealizable cycle evidence. Multi-class SCCs in the
-    /// constraining-edge quotient.
+    /// constraining-edge quotient. O(|cached_cycles|) — reads the
+    /// incrementally-maintained cache, which is rebuilt only at
+    /// construction time and updated in place on each `contract`.
     pub fn cycle_set(&self) -> CycleEvidence {
-        self.compute_cycles_with_overlay(None)
+        CycleEvidence {
+            cycles: self.cached_cycles.clone(),
+        }
     }
 
     /// Cheap query: would contracting `c1` and `c2` preserve the
@@ -317,52 +474,130 @@ impl QuotientGraph {
     /// Diagnostic: what cycles would the merge create or surface?
     /// Returns `None` if the merge preserves invariants. Returns
     /// `Some(evidence)` if either:
-    /// - the merge would violate residual-stickiness or the cap
-    ///   (evidence empty), or
-    /// - a strictly new cycle would appear in the post-merge cycle
-    ///   set (evidence: the new cycles).
+    /// - a pre-existing unrealizable cycle includes both endpoints
+    ///   (the merge doesn't dissolve it because the SCC has other
+    ///   members), or
+    /// - the hypothetical merged graph would have a new multi-class
+    ///   SCC through the merged class.
     ///
-    /// The merge cannot create new cycles under today's gate (proof
-    /// in the plan). The diagnostic exists so the seed protocol can
-    /// surface the *current* unrealizable cycle the spec author's
-    /// declared grouping would inhabit — i.e. the cycle the seed
-    /// would have to live inside if the contraction proceeded.
+    /// The check has two fast paths:
+    /// 1. **Cycle cache lookup**: if any cached cycle contains both
+    ///    `c1` and `c2` AND has > 2 classes, the cycle persists
+    ///    post-merge (the merge only collapses c1 ↔ c2; the other
+    ///    members still cycle through). O(min(|cycles touching c1|,
+    ///    |cycles touching c2|)).
+    /// 2. **Localized reachability**: for the not-cached-cycle case,
+    ///    use the class adjacency to check if the merged class's
+    ///    successors can reach it back, i.e. "is M reachable from any
+    ///    out-neighbor of the merged class in the projected graph?"
+    ///    A bounded DFS in the class quotient graph, typically over
+    ///    a small neighborhood for the commit-2 orphan-into-module
+    ///    shape.
     pub fn would_be_cycles_after_contract(
         &self,
         c1: ClassId,
         c2: ClassId,
     ) -> Option<CycleEvidence> {
-        let pre = self.cycle_set();
-        let post = self.compute_cycles_with_overlay(Some((c1, c2)));
-        // Cycles strictly added by the merge (defensive — should
-        // always be empty under today's gate).
-        let pre_keys: BTreeSet<Vec<ClassId>> =
-            pre.cycles.iter().map(|c| c.classes.clone()).collect();
-        let mut added: Vec<CycleClassSet> = post
-            .cycles
-            .iter()
-            .filter(|c| !pre_keys.contains(&c.classes))
-            .cloned()
-            .collect();
-
-        // Surface the pre-existing cycle that *includes* both
-        // endpoints, if any — that's the cycle the seed protocol
-        // wants to attribute the rejection to. (The merge wouldn't
-        // create it; the spec's grouping inherits it.)
-        let mut surfaced: Vec<CycleClassSet> = pre
-            .cycles
-            .iter()
-            .filter(|c| c.classes.contains(&c1) && c.classes.contains(&c2))
-            .cloned()
-            .collect();
-        surfaced.append(&mut added);
-        if surfaced.is_empty() {
-            None
-        } else {
+        // Path 1: cached cycle through both endpoints with > 2
+        // classes survives the merge.
+        let (probe, other) = match (
+            self.class_to_cycle_indices.get(&c1),
+            self.class_to_cycle_indices.get(&c2),
+        ) {
+            (Some(a), Some(b)) => {
+                if a.len() <= b.len() {
+                    (a, c2)
+                } else {
+                    (b, c1)
+                }
+            }
+            _ => (&Vec::new() as &Vec<usize>, c2),
+        };
+        let mut surfaced: Vec<CycleClassSet> = Vec::new();
+        for &idx in probe {
+            let cycle = &self.cached_cycles[idx];
+            if cycle.classes.contains(&other) && cycle.classes.len() > 2 {
+                surfaced.push(cycle.clone());
+            }
+        }
+        if !surfaced.is_empty() {
             surfaced.sort();
             surfaced.dedup();
-            Some(CycleEvidence { cycles: surfaced })
+            return Some(CycleEvidence { cycles: surfaced });
         }
+
+        // Path 2: localized reachability — does merging c1 and c2
+        // create a new multi-class SCC through the merged class?
+        // The merged class's class-level out-neighbors (other than
+        // the merged class itself) must not reach c1 or c2 in the
+        // post-merge graph.
+        if self.merge_creates_new_cycle(c1, c2) {
+            // Produce evidence by computing the new SCC explicitly.
+            // Slow path, only taken when a new cycle was detected.
+            let detailed = self.compute_cycles_with_overlay(Some((c1, c2)));
+            // Filter to only cycles that include the merged class.
+            let merged_class = if c1 < c2 { c1 } else { c2 };
+            let new_cycles: Vec<CycleClassSet> = detailed
+                .cycles
+                .into_iter()
+                .filter(|cycle| cycle.classes.contains(&merged_class))
+                .collect();
+            return Some(CycleEvidence { cycles: new_cycles });
+        }
+        None
+    }
+
+    /// Fast check: does merging c1 and c2 introduce a new multi-class
+    /// SCC through the merged class? Walks the class-level adjacency
+    /// in the projected (post-merge) graph from the merged class's
+    /// out-neighbors; returns true if any of them can reach c1 or c2.
+    fn merge_creates_new_cycle(&self, c1: ClassId, c2: ClassId) -> bool {
+        if c1 == c2 {
+            return false;
+        }
+        // Out-neighbors of the merged class = (out_of(c1) ∪ out_of(c2)) \ {c1, c2}.
+        let mut frontier: Vec<ClassId> = Vec::new();
+        let mut seen: BTreeSet<ClassId> = BTreeSet::new();
+        for &(s, t) in &self.owner_constraining_edges {
+            let cs = self.owner_to_class[s.0];
+            let ct = self.owner_to_class[t.0];
+            if (cs == c1 || cs == c2) && ct != c1 && ct != c2 && seen.insert(ct) {
+                frontier.push(ct);
+            }
+        }
+        if frontier.is_empty() {
+            return false;
+        }
+        // BFS in the class-projected constraining-edge adjacency.
+        // We can reuse the owner edges, projecting at each step.
+        // Build a class adjacency on demand (one pass).
+        let mut adj: BTreeMap<ClassId, BTreeSet<ClassId>> = BTreeMap::new();
+        for &(s, t) in &self.owner_constraining_edges {
+            let cs_raw = self.owner_to_class[s.0];
+            let ct_raw = self.owner_to_class[t.0];
+            // Project the merge.
+            let cs = if cs_raw == c2 { c1 } else { cs_raw };
+            let ct = if ct_raw == c2 { c1 } else { ct_raw };
+            if cs == ct {
+                continue;
+            }
+            adj.entry(cs).or_default().insert(ct);
+        }
+        let target = if c1 < c2 { c1 } else { c2 };
+        let mut stack = frontier;
+        while let Some(node) = stack.pop() {
+            if node == target {
+                return true;
+            }
+            if let Some(next) = adj.get(&node) {
+                for &n in next {
+                    if seen.insert(n) {
+                        stack.push(n);
+                    }
+                }
+            }
+        }
+        false
     }
 
     /// Apply a contraction. Returns `Err(ContractRejected)` if any
@@ -399,8 +634,10 @@ impl QuotientGraph {
         let loser_members = std::mem::take(&mut self.classes[loser.0].members);
         let loser_lines = self.classes[loser.0].lines;
         let loser_residual = self.classes[loser.0].is_residual;
+        let loser_pre_existing = self.classes[loser.0].is_pre_existing_module;
         self.classes[loser.0].lines = 0;
         self.classes[loser.0].is_residual = false;
+        self.classes[loser.0].is_pre_existing_module = false;
         for member in &loser_members {
             self.owner_to_class[member.0] = winner;
         }
@@ -409,6 +646,11 @@ impl QuotientGraph {
         if loser_residual {
             self.classes[winner.0].is_residual = true;
         }
+        if loser_pre_existing {
+            self.classes[winner.0].is_pre_existing_module = true;
+        }
+        self.update_class_adjacency_after_merge(winner, loser);
+        self.update_cycle_cache_after_merge(winner, loser);
         Ok(winner)
     }
 
@@ -492,6 +734,432 @@ impl QuotientGraph {
         }
         cycles.sort();
         CycleEvidence { cycles }
+    }
+
+    // ---------------------------------------------------------------
+    // Incremental class adjacency + cycle-cache maintenance.
+    // ---------------------------------------------------------------
+
+    /// Rebuild class-level constraining-edge adjacency from scratch.
+    /// O(|owner edges|). Called in `from_report*` and as a fallback;
+    /// merges should use `update_class_adjacency_after_merge`.
+    fn rebuild_class_adjacency(&mut self) {
+        self.class_out.clear();
+        self.class_in.clear();
+        self.class_edge_multiplicity.clear();
+        self.class_edge_weight.clear();
+        self.class_out_edge_count.clear();
+        for &(s, t) in &self.owner_constraining_edges {
+            let cs = self.owner_to_class[s.0];
+            let ct = self.owner_to_class[t.0];
+            if cs == ct {
+                continue;
+            }
+            self.class_out.entry(cs).or_default().insert(ct);
+            self.class_in.entry(ct).or_default().insert(cs);
+            *self.class_edge_multiplicity.entry((cs, ct)).or_insert(0) += 1;
+        }
+        for &edge in &self.owner_weighted_edges {
+            let cs = self.owner_to_class[edge.from.0];
+            let ct = self.owner_to_class[edge.to.0];
+            if cs == ct {
+                continue;
+            }
+            *self.class_edge_weight.entry((cs, ct)).or_insert(0) += edge.weight as u64;
+            *self.class_out_edge_count.entry(cs).or_insert(0) += 1;
+        }
+    }
+
+    /// Rebuild the cycle-set cache from scratch via Tarjan over the
+    /// projected constraining-edge graph. O(|V| + |E|).
+    fn rebuild_cycle_cache(&mut self) {
+        let evidence = self.compute_cycles_with_overlay(None);
+        self.cached_cycles = evidence.cycles;
+        self.rebuild_class_to_cycle_indices();
+    }
+
+    fn rebuild_class_to_cycle_indices(&mut self) {
+        self.class_to_cycle_indices.clear();
+        for (idx, cycle) in self.cached_cycles.iter().enumerate() {
+            for &class in &cycle.classes {
+                self.class_to_cycle_indices
+                    .entry(class)
+                    .or_default()
+                    .push(idx);
+            }
+        }
+    }
+
+    /// Update class adjacency after `loser` is absorbed into `winner`.
+    /// Relabels all loser-incident entries to winner, dropping self-
+    /// loops. O(|out_edges(loser)| + |in_edges(loser)|) — typically
+    /// small for the commit-2 orphan shape.
+    fn update_class_adjacency_after_merge(&mut self, winner: ClassId, loser: ClassId) {
+        // Out-edges from loser are re-pointed to winner.
+        let loser_out = self.class_out.remove(&loser).unwrap_or_default();
+        for to in loser_out {
+            // Remove loser -> to from `class_in[to]`.
+            if let Some(in_set) = self.class_in.get_mut(&to) {
+                in_set.remove(&loser);
+            }
+            let mult = self
+                .class_edge_multiplicity
+                .remove(&(loser, to))
+                .unwrap_or(0);
+            if to == winner {
+                // Self-loop after merge — drop entirely.
+                continue;
+            }
+            if mult > 0 {
+                *self
+                    .class_edge_multiplicity
+                    .entry((winner, to))
+                    .or_insert(0) += mult;
+                self.class_out.entry(winner).or_default().insert(to);
+                self.class_in.entry(to).or_default().insert(winner);
+            }
+        }
+        // In-edges to loser are re-pointed to winner.
+        let loser_in = self.class_in.remove(&loser).unwrap_or_default();
+        for from in loser_in {
+            if let Some(out_set) = self.class_out.get_mut(&from) {
+                out_set.remove(&loser);
+            }
+            let mult = self
+                .class_edge_multiplicity
+                .remove(&(from, loser))
+                .unwrap_or(0);
+            if from == winner {
+                continue;
+            }
+            if mult > 0 {
+                *self
+                    .class_edge_multiplicity
+                    .entry((from, winner))
+                    .or_insert(0) += mult;
+                self.class_in.entry(winner).or_default().insert(from);
+                self.class_out.entry(from).or_default().insert(winner);
+            }
+        }
+        // Weight + out-edge count: walk owner edges to find affected
+        // pairs. Cheaper than maintaining a per-owner incidence list:
+        // the gaffer worst case has owners with bounded degree.
+        // Rebuild the weight/count entries by re-walking
+        // owner_weighted_edges incident to the merged class. Filter
+        // to edges where either endpoint is now in `winner`.
+        // (This is the only O(|E|) operation we accept per merge;
+        // typical contracts are 100s of merges, so total O(|E| · |contracts|);
+        // for gaffer scale that's ~5e7 ops, well under the budget.)
+        //
+        // The trade is simplicity: maintaining per-owner edge
+        // indices to localize this to O(|incident edges|) would
+        // require another vector. Skipping for now; revisit if the
+        // benchmark exceeds budget.
+        self.recompute_class_weight_for(winner);
+    }
+
+    /// Recompute coupling weight and out-edge count entries
+    /// incident to `class` by re-walking weighted owner edges.
+    /// Used after a merge to refresh weight/count for the merged
+    /// class. Coupled with the adjacency relabeling done in
+    /// `update_class_adjacency_after_merge`.
+    fn recompute_class_weight_for(&mut self, class: ClassId) {
+        // Clear weight + count entries incident to `class`.
+        let to_drop: Vec<(ClassId, ClassId)> = self
+            .class_edge_weight
+            .keys()
+            .filter(|(a, b)| *a == class || *b == class)
+            .copied()
+            .collect();
+        for key in to_drop {
+            self.class_edge_weight.remove(&key);
+        }
+        self.class_out_edge_count.remove(&class);
+        // Re-walk; sum weights and count outs for any edges incident
+        // to `class`.
+        for &edge in &self.owner_weighted_edges {
+            let cs = self.owner_to_class[edge.from.0];
+            let ct = self.owner_to_class[edge.to.0];
+            if cs == ct {
+                continue;
+            }
+            if cs == class || ct == class {
+                *self.class_edge_weight.entry((cs, ct)).or_insert(0) += edge.weight as u64;
+            }
+            if cs == class {
+                *self.class_out_edge_count.entry(class).or_insert(0) += 1;
+            }
+        }
+    }
+
+    /// Update cached cycle set after `loser` is absorbed into `winner`.
+    /// Walks only cycles touching either endpoint, relabels, and drops
+    /// cycles that collapse to a single class.
+    fn update_cycle_cache_after_merge(&mut self, winner: ClassId, loser: ClassId) {
+        let mut affected_indices: BTreeSet<usize> = BTreeSet::new();
+        if let Some(idxs) = self.class_to_cycle_indices.get(&loser) {
+            affected_indices.extend(idxs.iter().copied());
+        }
+        if let Some(idxs) = self.class_to_cycle_indices.get(&winner) {
+            affected_indices.extend(idxs.iter().copied());
+        }
+        if affected_indices.is_empty() {
+            return;
+        }
+        let mut drop_indices: BTreeSet<usize> = BTreeSet::new();
+        for idx in &affected_indices {
+            let cycle = &mut self.cached_cycles[*idx];
+            let mut new_classes: BTreeSet<ClassId> = BTreeSet::new();
+            for &c in &cycle.classes {
+                if c == loser {
+                    new_classes.insert(winner);
+                } else {
+                    new_classes.insert(c);
+                }
+            }
+            cycle.classes = new_classes.into_iter().collect();
+            cycle.classes.sort();
+            if cycle.classes.len() < 2 {
+                drop_indices.insert(*idx);
+            }
+        }
+        if !drop_indices.is_empty() {
+            let mut new_cycles: Vec<CycleClassSet> = Vec::new();
+            for (idx, cycle) in self.cached_cycles.iter().enumerate() {
+                if !drop_indices.contains(&idx) {
+                    new_cycles.push(cycle.clone());
+                }
+            }
+            self.cached_cycles = new_cycles;
+        }
+        self.rebuild_class_to_cycle_indices();
+    }
+
+    /// `true` if a class is **pre-existing module-anchored** —
+    /// i.e., it was constructed from a `PartitionGroup` with
+    /// `is_pre_existing_module = true`. The greedy uses this to
+    /// restrict commit-2 merges to "extend module by orphan."
+    pub fn class_is_pre_existing_module(&self, c: ClassId) -> bool {
+        self.classes[c.0].is_pre_existing_module
+    }
+
+    /// Number of owner edges between `a` and `b` (in either
+    /// direction), as constraining-edge multiplicities. Used by the
+    /// coupling metric.
+    fn cross_edge_count(&self, a: ClassId, b: ClassId) -> u64 {
+        let ab = self
+            .class_edge_multiplicity
+            .get(&(a, b))
+            .copied()
+            .unwrap_or(0);
+        let ba = self
+            .class_edge_multiplicity
+            .get(&(b, a))
+            .copied()
+            .unwrap_or(0);
+        (ab + ba) as u64
+    }
+
+    fn coupling_weight(&self, a: ClassId, b: ClassId) -> u64 {
+        let ab = self.class_edge_weight.get(&(a, b)).copied().unwrap_or(0);
+        let ba = self.class_edge_weight.get(&(b, a)).copied().unwrap_or(0);
+        ab + ba
+    }
+
+    fn class_out_count(&self, c: ClassId) -> u64 {
+        self.class_out_edge_count.get(&c).copied().unwrap_or(0) as u64
+    }
+
+    /// All neighboring classes of `c` (out + in directions). Used by
+    /// the greedy to enumerate candidate merge partners restricted to
+    /// classes connected by a cross-edge.
+    fn class_neighbors(&self, c: ClassId) -> BTreeSet<ClassId> {
+        let mut out: BTreeSet<ClassId> = BTreeSet::new();
+        if let Some(s) = self.class_out.get(&c) {
+            out.extend(s.iter().copied());
+        }
+        if let Some(s) = self.class_in.get(&c) {
+            out.extend(s.iter().copied());
+        }
+        out
+    }
+}
+
+// ---------------------------------------------------------------------
+// Greedy merge to convergence (commit 2).
+// ---------------------------------------------------------------------
+
+/// Commit-2 mergeability gate: restricted to "extension of existing
+/// module by orphaned residual class." Exactly one operand must have
+/// `is_pre_existing_module = true`; the other must be a non-residual
+/// residual-orphan (lone owner not anchored to a pre-existing module).
+/// Commit 3 will relax this to allow merging two pre-existing modules
+/// and absorbing residual owners freely.
+///
+/// Common preconditions checked here (apply to all merges):
+/// - Distinct classes.
+/// - Neither is the residual catchall.
+/// - At least one cross-edge connects the two.
+/// - Combined lines under the cap.
+/// - `merge_preserves_invariants` holds (cycle gate).
+/// - **Unambiguous extension target**: the orphan's cross-edges to
+///   pre-existing-module classes target exactly one such class — the
+///   merge partner. If the orphan also has cross-edges into other
+///   active modules, the spec author needs to disambiguate by hand;
+///   the greedy refuses the merge (matches the existing
+///   `promote_anonymous_only_cell_to_extension` post-pass's
+///   `active_modules_referenced.len() == 1` guard).
+pub fn mergeable_commit2(q: &QuotientGraph, c1: ClassId, c2: ClassId) -> bool {
+    if c1 == c2 {
+        return false;
+    }
+    // Residual is sticky.
+    if q.class_is_residual(c1) || q.class_is_residual(c2) {
+        return false;
+    }
+    // Exactly one operand must be a pre-existing module.
+    let pre1 = q.class_is_pre_existing_module(c1);
+    let pre2 = q.class_is_pre_existing_module(c2);
+    if pre1 == pre2 {
+        return false;
+    }
+    // Connected by at least one cross-edge.
+    if q.cross_edge_count(c1, c2) == 0 {
+        return false;
+    }
+    // Unambiguous extension target: the orphan side must reach
+    // exactly one pre-existing-module class via cross-edges.
+    let orphan = if pre1 { c2 } else { c1 };
+    let mut module_neighbors: usize = 0;
+    for n in q.class_neighbors(orphan) {
+        if n == orphan {
+            continue;
+        }
+        if q.class_is_pre_existing_module(n) && !q.class_is_residual(n) {
+            module_neighbors += 1;
+        }
+    }
+    if module_neighbors != 1 {
+        return false;
+    }
+    q.merge_preserves_invariants(c1, c2)
+}
+
+/// One pass of the greedy: enumerate candidate merges, pick the best,
+/// apply. Returns `None` at convergence (no candidates).
+pub fn greedy_step(q: &mut QuotientGraph) -> Option<GreedyStep> {
+    let candidate = pick_best_candidate(q)?;
+    let (a, b) = candidate.pair;
+    let survivor = q.contract(a, b).ok()?;
+    Some(GreedyStep {
+        picked: (a.min(b), a.max(b)),
+        surviving: survivor,
+    })
+}
+
+/// Run `greedy_step` to convergence. Returns the sequence of
+/// (c1, c2) contractions in the order they were applied. Each
+/// returned pair uses canonical (lower, higher) ClassId order — the
+/// surviving class is always the lower of the two.
+pub fn greedy_merge_to_convergence(q: &mut QuotientGraph) -> Vec<(ClassId, ClassId)> {
+    let mut steps: Vec<(ClassId, ClassId)> = Vec::new();
+    while let Some(step) = greedy_step(q) {
+        steps.push(step.picked);
+    }
+    steps
+}
+
+/// Ranked candidate for `pick_best`.
+#[derive(Debug, Clone, Copy)]
+struct RankedCandidate {
+    /// Canonical pair (lower ClassId, higher ClassId).
+    pair: (ClassId, ClassId),
+    /// `pick_best` sort key (lower is better). Construction:
+    /// - byte 0 (most significant): inverse of "cycle-set
+    ///   reduction" — 0 if the merge strictly reduces the cycle set,
+    ///   1 otherwise. Vestigial in normal flow (seed is realizable);
+    ///   tiebreaker for unrealizable seeds.
+    /// - bytes 1..9: inverse of coupling-numerator (so higher
+    ///   coupling sorts earlier).
+    /// - bytes 9..17: result-size (lines), smaller first.
+    /// - bytes 17..25: canonical pair (a, b) lex.
+    sort_key: [u8; 33],
+}
+
+fn pick_best_candidate(q: &QuotientGraph) -> Option<RankedCandidate> {
+    // Enumerate candidate pairs: any (c, n) where c is a pre-existing
+    // module class and n is a non-pre-existing non-residual neighbor.
+    // The mergeable_commit2 gate is the source of truth; we use the
+    // pre-existing-module side as the iteration anchor so we don't
+    // re-evaluate symmetric pairs twice.
+    let mut best: Option<RankedCandidate> = None;
+    for c in q.iter_classes() {
+        if !q.class_is_pre_existing_module(c) || q.class_is_residual(c) {
+            continue;
+        }
+        let neighbors = q.class_neighbors(c);
+        for n in neighbors {
+            if n == c {
+                continue;
+            }
+            if !mergeable_commit2(q, c, n) {
+                continue;
+            }
+            let candidate = rank_candidate(q, c, n);
+            best = match best {
+                None => Some(candidate),
+                Some(prev) if candidate.sort_key < prev.sort_key => Some(candidate),
+                Some(prev) => Some(prev),
+            };
+        }
+    }
+    best
+}
+
+fn rank_candidate(q: &QuotientGraph, a: ClassId, b: ClassId) -> RankedCandidate {
+    let (low, high) = if a < b { (a, b) } else { (b, a) };
+    let mut key = [0u8; 33];
+
+    // Cycle-reduction key: 0 if merge strictly reduces |cycle_set|, 1
+    // otherwise. Currently the cycle set is always preserved or
+    // shrunk; a true "reduction" happens when low and high are in a
+    // 2-class cycle. We check via the cached cycle index.
+    let mut reduces = false;
+    if let (Some(la), Some(lb)) = (
+        q.class_to_cycle_indices.get(&low),
+        q.class_to_cycle_indices.get(&high),
+    ) {
+        // Intersection of cycle indices.
+        let set_a: BTreeSet<usize> = la.iter().copied().collect();
+        for idx in lb {
+            if set_a.contains(idx) {
+                reduces = true;
+                break;
+            }
+        }
+    }
+    key[0] = if reduces { 0 } else { 1 };
+
+    // Coupling: higher = better → invert.
+    let coupling_num = q.coupling_weight(low, high);
+    let coupling_denom = q.class_out_count(low).min(q.class_out_count(high)).max(1);
+    // Encode as 16-bit fixed-point: scale by 1e6 to keep precision.
+    let coupling_fixed: u64 =
+        ((coupling_num as u128) * 1_000_000 / (coupling_denom as u128)) as u64;
+    let inv_coupling: u64 = u64::MAX - coupling_fixed;
+    key[1..9].copy_from_slice(&inv_coupling.to_be_bytes());
+
+    // Result size (lines) — smaller better, natural order.
+    let combined_lines = (q.class_lines(low) + q.class_lines(high)) as u64;
+    key[9..17].copy_from_slice(&combined_lines.to_be_bytes());
+
+    // Canonical pair lex.
+    key[17..25].copy_from_slice(&(low.0 as u64).to_be_bytes());
+    key[25..33].copy_from_slice(&(high.0 as u64).to_be_bytes());
+
+    RankedCandidate {
+        pair: (low, high),
+        sort_key: key,
     }
 }
 
