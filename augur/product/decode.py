@@ -10,6 +10,7 @@ import polars as pl
 from augur.model.series import home_value_series_id
 from augur.product.wire import (
     ClosingCostPaymentEvent,
+    HoaDuesPaymentEvent,
     MonthlyExpenseEvent,
     MortgagePaymentEvent,
     OutsideRentPaymentEvent,
@@ -89,6 +90,7 @@ def rollout_events_from(
         *_property_purchase_events(run, primary_agent_id=primary_agent_id),
         *_mortgage_payment_events(run, primary_agent_id=primary_agent_id),
         *_property_tax_payment_events(run, primary_agent_id=primary_agent_id),
+        *_hoa_dues_events(run, primary_agent_id=primary_agent_id),
         *_tax_accrual_events(run, primary_agent_id=primary_agent_id),
         *_tax_payment_events(run, primary_agent_id=primary_agent_id),
         *_monthly_expense_events(run, primary_agent_id=primary_agent_id),
@@ -102,10 +104,11 @@ def rollout_events_from(
         "tax_accrual": 3,
         "tax_payment": 4,
         "property_tax_payment": 5,
-        "mortgage_payment": 6,
-        "monthly_expense": 7,
-        "outside_rent": 8,
-        "failure": 9,
+        "hoa_dues_payment": 6,
+        "mortgage_payment": 7,
+        "monthly_expense": 8,
+        "outside_rent": 9,
+        "failure": 10,
     }
     return tuple(sorted(events, key=lambda event: (event.month_index, priority[event.kind])))
 
@@ -376,6 +379,22 @@ def _property_tax_payment_events(run: SimulationRun, *, primary_agent_id: str) -
     ).sort("month_index")
     return tuple(
         PropertyTaxPaymentEvent(
+            month_index=int(row["month_index"]),
+            amount_usd=float(row["amount_paid_usd"]),
+            amount_due_usd=float(row["amount_due_usd"]),
+            amount_paid_usd=float(row["amount_paid_usd"]),
+            shortfall_usd=float(row["shortfall_usd"]),
+        )
+        for row in rows.iter_rows(named=True)
+    )
+
+
+def _hoa_dues_events(run: SimulationRun, *, primary_agent_id: str) -> tuple[RolloutEvent, ...]:
+    rows = run.events_log.obligation_settlements.filter(
+        (pl.col("agent_id") == primary_agent_id) & (pl.col("obligation_type") == ObligationType.HOA_DUES)
+    ).sort("month_index")
+    return tuple(
+        HoaDuesPaymentEvent(
             month_index=int(row["month_index"]),
             amount_usd=float(row["amount_paid_usd"]),
             amount_due_usd=float(row["amount_due_usd"]),

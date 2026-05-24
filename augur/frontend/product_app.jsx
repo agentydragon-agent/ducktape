@@ -37,6 +37,7 @@ const ROLLOUT_EVENT_COLORS = {
   closing_cost_payment: "#7e22ce",
   mortgage_payment: "#0369a1",
   property_tax_payment: "#a16207",
+  hoa_dues_payment: "#14b8a6",
   tax_accrual: "#b45309",
   tax_payment: "#7c3aed",
   failure: "#dc2626",
@@ -243,6 +244,7 @@ function eventMarkerYOffset(event) {
   if (event?.kind === "closing_cost_payment") return -4;
   if (event?.kind === "tax_payment") return 8;
   if (event?.kind === "property_tax_payment") return 10;
+  if (event?.kind === "hoa_dues_payment") return 14;
   if (event?.kind === "mortgage_payment") return 12;
   if (event?.kind === "failure") return 7;
   return 0;
@@ -300,6 +302,12 @@ function eventDetailText(event) {
       ? `due ${fmtUsd(Number(event.amountDueUsd))}; shortfall ${fmtUsd(shortfall)}`
       : `due ${fmtUsd(Number(event.amountDueUsd))}`;
   }
+  if (event?.kind === "hoa_dues_payment") {
+    const shortfall = Number(event.shortfallUsd);
+    return shortfall > 0
+      ? `due ${fmtUsd(Number(event.amountDueUsd))}; shortfall ${fmtUsd(shortfall)}`
+      : `due ${fmtUsd(Number(event.amountDueUsd))}`;
+  }
   if (event?.kind === "failure") {
     return `shortfall ${fmtUsd(Number(event.shortfallUsd))}`;
   }
@@ -342,6 +350,9 @@ function eventLabel(event) {
   }
   if (event?.kind === "property_tax_payment") {
     return Number(event.shortfallUsd) > 0 ? "Property tax shortfall" : "Paid property tax";
+  }
+  if (event?.kind === "hoa_dues_payment") {
+    return Number(event.shortfallUsd) > 0 ? "HOA dues shortfall" : "Paid HOA dues";
   }
   if (event?.kind === "failure") {
     return "Rollout failed";

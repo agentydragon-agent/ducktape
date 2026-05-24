@@ -131,6 +131,7 @@ class ObligationType(StrEnum):
     TAX_TRUE_UP = "tax_true_up"
     MORTGAGE_PAYMENT = "mortgage_payment"
     PROPERTY_TAX = "property_tax"
+    HOA_DUES = "hoa_dues"
 
 
 class ScheduledObligation(BaseModel):

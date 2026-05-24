@@ -9,7 +9,7 @@ from more_itertools import one
 from augur.api.catalog import build_bootstrap_payload
 from augur.api.config import Config, load_augur_config
 from augur.model.exogenous import ExogenousPathModel, ExogenousSamplingRequest, SampledExogenousBundle
-from augur.model.series import SP500_SERIES_ID
+from augur.model.series import INFLATION_SERIES_ID, SP500_SERIES_ID
 from augur.product import decode, service
 from augur.product.scenarios import resolve_primary_agent_id
 from augur.product.service import ProductService
@@ -17,6 +17,7 @@ from augur.product.wire import (
     CashFinancing,
     ClosingCostPaymentEvent,
     FundingPolicy,
+    HoaDuesPaymentEvent,
     MetricFanRequest,
     MonthlyExpenseEvent,
     MortgageFinancing,
@@ -435,9 +436,10 @@ def _mortgage_purchase_scenario() -> ScenarioKey:
     )
 
 
-def test_property_purchase_emits_purchase_mortgage_and_property_tax_events() -> None:
-    model = CountingExogenousModel()
-    product = _service(model)
+def test_property_purchase_emits_purchase_mortgage_and_property_tax_events(
+    counting_exogenous_model: CountingExogenousModel,
+) -> None:
+    product = _service(counting_exogenous_model)
 
     detail = product.rollout(RolloutRequest(scenario=_mortgage_purchase_scenario(), seed=7))
 
@@ -473,9 +475,10 @@ def test_property_purchase_emits_purchase_mortgage_and_property_tax_events() -> 
         assert tax_event.shortfall_usd == 0.0
 
 
-def test_property_purchase_metrics_track_value_balance_and_equity() -> None:
-    model = CountingExogenousModel()
-    product = _service(model)
+def test_property_purchase_metrics_track_value_balance_and_equity(
+    counting_exogenous_model: CountingExogenousModel,
+) -> None:
+    product = _service(counting_exogenous_model)
 
     detail = product.rollout(RolloutRequest(scenario=_mortgage_purchase_scenario(), seed=7))
 
@@ -497,16 +500,15 @@ def test_property_purchase_metrics_track_value_balance_and_equity() -> None:
     assert home_equity_usd == pytest.approx(property_value_usd - mortgage_balance_usd)
     assert net_worth_usd == pytest.approx(liquid_net_worth_usd + home_equity_usd)
     # Required-level-series should include the location's home-value series.
-    assert "home_value:location_a" in model.sample_requests[0].required_level_series
+    assert "home_value:location_a" in counting_exogenous_model.sample_requests[0].required_level_series
 
 
-def test_cash_property_purchase_omits_mortgage_payments() -> None:
-    model = CountingExogenousModel()
+def test_cash_property_purchase_omits_mortgage_payments(counting_exogenous_model: CountingExogenousModel) -> None:
     augur_config = _augur_config()
     augur_config = augur_config.model_copy(
         update={"snapshot": augur_config.snapshot.model_copy(update={"cash_usd": 1_200_000.0})}
     )
-    product = _service(model, augur_config=augur_config)
+    product = _service(counting_exogenous_model, augur_config=augur_config)
     scenario = ScenarioKey(
         exogenous_model_id="current_exogenous_model",
         horizon_months=2,
@@ -529,9 +531,61 @@ def test_cash_property_purchase_omits_mortgage_payments() -> None:
     assert detail.rollout.monthly_metrics["mortgage_balance_usd"][0] == 0.0
 
 
-def test_property_purchase_rejects_unknown_property() -> None:
-    model = CountingExogenousModel()
-    product = _service(model)
+def test_property_purchase_emits_hoa_dues_when_property_has_monthly_hoa(
+    counting_exogenous_model: CountingExogenousModel,
+) -> None:
+    product = _service(counting_exogenous_model)
+    # location_b_property has hoa_monthly_usd=150 in the public fixture.
+    scenario = ScenarioKey(
+        exogenous_model_id="current_exogenous_model",
+        horizon_months=3,
+        monthly_spend_usd=1_000.0,
+        spend_index="none",
+        funding_policy=FundingPolicy(sell_order=()),
+        property_purchase=PropertyPurchase(
+            property_id="location_b_property",
+            financing=MortgageFinancing(term_months=360, down_payment_pct=20.0, annual_rate_pct=7.0),
+        ),
+    )
+
+    detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
+
+    hoa_events = [event for event in detail.rollout.events if event.kind == "hoa_dues_payment"]
+    assert hoa_events
+    for event in hoa_events:
+        assert isinstance(event, HoaDuesPaymentEvent)
+        # Base is 150.0 USD/month; inflation-indexed so the realized amount drifts each month, but it
+        # must stay near base on a short horizon.
+        assert event.amount_due_usd == pytest.approx(150.0, rel=0.1)
+        assert event.amount_paid_usd == pytest.approx(event.amount_due_usd)
+        assert event.shortfall_usd == 0.0
+    assert INFLATION_SERIES_ID in counting_exogenous_model.sample_requests[0].required_level_series
+
+
+def test_property_purchase_skips_hoa_when_property_has_no_monthly_hoa(
+    counting_exogenous_model: CountingExogenousModel,
+) -> None:
+    product = _service(counting_exogenous_model)
+    # location_a_property has hoa_monthly_usd=0 in the public fixture.
+    scenario = ScenarioKey(
+        exogenous_model_id="current_exogenous_model",
+        horizon_months=3,
+        monthly_spend_usd=1_000.0,
+        spend_index="none",
+        funding_policy=FundingPolicy(sell_order=()),
+        property_purchase=PropertyPurchase(
+            property_id="location_a_property",
+            financing=MortgageFinancing(term_months=360, down_payment_pct=20.0, annual_rate_pct=7.0),
+        ),
+    )
+
+    detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
+
+    assert [event for event in detail.rollout.events if event.kind == "hoa_dues_payment"] == []
+
+
+def test_property_purchase_rejects_unknown_property(counting_exogenous_model: CountingExogenousModel) -> None:
+    product = _service(counting_exogenous_model)
     scenario = ScenarioKey(
         exogenous_model_id="current_exogenous_model",
         horizon_months=2,

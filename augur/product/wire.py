@@ -151,6 +151,13 @@ class PropertyTaxPaymentEvent(_RolloutEventBase):
     shortfall_usd: NonNegativeFloat
 
 
+class HoaDuesPaymentEvent(_RolloutEventBase):
+    kind: Literal["hoa_dues_payment"] = "hoa_dues_payment"
+    amount_due_usd: NonNegativeFloat
+    amount_paid_usd: NonNegativeFloat
+    shortfall_usd: NonNegativeFloat
+
+
 class TaxAccrualEvent(_RolloutEventBase):
     kind: Literal["tax_accrual"] = "tax_accrual"
     jurisdiction_id: str
@@ -186,6 +193,7 @@ type RolloutEvent = Annotated[
     | ClosingCostPaymentEvent
     | MortgagePaymentEvent
     | PropertyTaxPaymentEvent
+    | HoaDuesPaymentEvent
     | TaxAccrualEvent
     | TaxPaymentEvent
     | RolloutFailureEvent,

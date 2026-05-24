@@ -285,11 +285,35 @@ Suggested migration order:
 obligation_type="hoa_dues")` for the scenario-set path; product
       surface needs its own ScenarioKey knob + `ObligationType.HOA_DUES`
       decode + UI control + event kind.
+  - First-cut simplifications worth tightening later:
+    - Indexed to `INFLATION_SERIES_ID`. Real HOAs ratchet in lumpy annual
+      board votes that often outpace CPI; modelling that needs a per-HOA
+      dues schedule.
+    - No special HOA assessments (roof, seismic retrofit, litigation).
+      These are large, sporadic, and modelled separately from the dues
+      stream when they happen.
 - [ ] Homeowner's insurance: monthly recurring obligation. Same shape as
       HOA. `bridge.py` uses `obligation_type="insurance_premium"`.
+  - First-cut simplifications worth tightening later:
+    - One ScenarioKey-level `annual_insurance_pct` knob × purchase price.
+      Real premiums vary 5–10× by location (CA wildfire non-renewals,
+      FAIR-plan fallback, FL hurricane). Move to a per-location
+      `annual_insurance_pct` field once we have a second location with
+      real data.
+    - No deductible / claim modelling, no replacement-cost escalation
+      independent of the home value series, no force-placed coverage on
+      mortgage default.
 - [ ] Maintenance: monthly recurring obligation (typically 1-2% of home
       value annually, prorated to monthly). Same shape. `bridge.py` uses
       `obligation_type="maintenance"`.
+  - First-cut simplifications worth tightening later:
+    - ScenarioKey-level `annual_maintenance_pct` knob × purchase price,
+      smoothed to monthly. Real maintenance is lumpy (roof replacement
+      $20–40k, HVAC $10–15k, sewer line $5–15k); the 1% rule averages
+      these over decades.
+    - Tax treatment ignored: capital improvements (roof, addition)
+      should add to basis for §1250 / §121; routine repairs should not.
+      Today we treat the whole stream as deductible-free cash outflow.
 - [ ] Finish the real-estate lifecycle: property sale, closing costs,
       mortgage payoff, sale proceeds split, occupancy changes,
       depreciation, §121 exclusion, §1250 recapture, itemized deductions,

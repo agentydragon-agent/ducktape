@@ -267,6 +267,12 @@ def _terminal_metric_value(terminal: TerminalMetrics, metric: MetricName) -> flo
             return terminal.cash_usd
         case "public_security_value_usd":
             return terminal.public_security_value_usd
+        case "property_value_usd":
+            return terminal.property_value_usd
+        case "mortgage_balance_usd":
+            return terminal.mortgage_balance_usd
+        case "home_equity_usd":
+            return terminal.home_equity_usd
         case "liquid_net_worth_usd":
             return terminal.liquid_net_worth_usd
         case "net_worth_usd":
