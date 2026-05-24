@@ -314,6 +314,11 @@ obligation_type="hoa_dues")` for the scenario-set path; product
     - Tax treatment ignored: capital improvements (roof, addition)
       should add to basis for §1250 / §121; routine repairs should not.
       Today we treat the whole stream as deductible-free cash outflow.
+    - Indexed to `INFLATION_SERIES_ID`. A more accurate model would
+      re-peg to the home-value series (maintenance scales with what's
+      there, not what you paid grown by CPI); the two diverge over
+      decades in appreciating/depreciating markets. Insurance has the
+      same issue (replacement-cost premiums track home value).
 - [ ] Finish the real-estate lifecycle: property sale, closing costs,
       mortgage payoff, sale proceeds split, occupancy changes,
       depreciation, §121 exclusion, §1250 recapture, itemized deductions,
