@@ -20,7 +20,10 @@ spec:
   values:
     config:
       clients:
-        - url: http://loki.loki.svc.cluster.local:3100/loki/api/v1/push
+        # SimpleScalable: push to the write StatefulSet's service.
+        # The single-binary `loki` Service was removed when we switched
+        # off SingleBinary mode.
+        - url: http://loki-write.loki.svc.cluster.local:3100/loki/api/v1/push
 
     resources:
       requests:
