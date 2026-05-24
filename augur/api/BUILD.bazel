@@ -170,8 +170,13 @@ py_library(
     deps = [
         ":bootstrap",
         ":config",
+        ":finance",
         ":local_regulation",
         ":scenario_set",
+        "//augur/model:exogenous_provider_config",
+        "//augur/model:independent_exogenous",
+        "//augur/model:series",
+        "//augur/model/path_models/models:vecm",
         "//augur/product:wire",
         "@pypi//more_itertools",
         "@pypi//pyyaml",
