@@ -48,18 +48,18 @@ spec:
           s3:
             bucket_name: mimir-blocks
 
-        # Chart 6.x defaults to Kafka ingest storage. Disable — single
-        # ingester, no benefit from decoupled write path.
+        # Chart 6.x defaults to Kafka ingest storage. Disable — at this
+        # scale (2 ingesters, no Kafka) the decoupled write path isn't
+        # worth the operator + Kafka cluster overhead.
         ingest_storage:
           enabled: false
         ingester:
           push_grpc_method_enabled: true
-          # We run a single ingester (replicas=1 in the chart values below);
-          # the distributor's default replication_factor=3 makes writes fail
-          # with "at least 2 live replicas required" (HTTP 500 to Alloy
-          # remote_write). Force RF=1 so quorum = 1.
+          # 2 ingesters on the 2 OVH kimsufi workers with RF=2:
+          # every sample lives on both pods, so we can drain a node
+          # and the survivor still serves writes + reads.
           ring:
-            replication_factor: 1
+            replication_factor: 2
 
         multitenancy_enabled: false
 
@@ -85,7 +85,7 @@ spec:
           ingestion_burst_size: 500000
 
     # --- Component replicas (minimal for small cluster) ---
-    # All pinned to Hetzner VPS workers. No CP tolerations — workers only.
+    # All pinned to the OVH kimsufi workers. No CP tolerations — workers only.
     # No explicit limits — Goldilocks/VPA (mode: initial) manages them.
 
     distributor:
@@ -95,21 +95,33 @@ spec:
           cpu: 50m
           memory: 128Mi
       nodeSelector:
-        topology.kubernetes.io/region: hil
+        topology.kubernetes.io/zone: hil-ovh
 
     ingester:
-      replicas: 1
+      replicas: 2
       persistentVolume:
-        storageClass: local-path-hetzner
+        storageClass: local-path-ovh
         size: 10Gi
       resources:
         requests:
           cpu: 100m
           memory: 256Mi
       nodeSelector:
-        topology.kubernetes.io/region: hil
+        topology.kubernetes.io/zone: hil-ovh
+      # 2 ingesters + RF=2 + RF=2 on the 2 kimsufi workers gives all-pairs
+      # placement; zone-aware would just add a second StatefulSet and
+      # rollout-operator coupling for no behavioural win at this scale.
       zoneAwareReplication:
         enabled: false
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app.kubernetes.io/component: ingester
+                  app.kubernetes.io/name: mimir
+                  app.kubernetes.io/instance: mimir
+              topologyKey: kubernetes.io/hostname
 
     querier:
       replicas: 1
@@ -118,7 +130,7 @@ spec:
           cpu: 50m
           memory: 128Mi
       nodeSelector:
-        topology.kubernetes.io/region: hil
+        topology.kubernetes.io/zone: hil-ovh
 
     query_frontend:
       replicas: 1
@@ -127,7 +139,7 @@ spec:
           cpu: 50m
           memory: 128Mi
       nodeSelector:
-        topology.kubernetes.io/region: hil
+        topology.kubernetes.io/zone: hil-ovh
 
     query_scheduler:
       replicas: 1
@@ -136,7 +148,7 @@ spec:
           cpu: 10m
           memory: 64Mi
       nodeSelector:
-        topology.kubernetes.io/region: hil
+        topology.kubernetes.io/zone: hil-ovh
 
     compactor:
       replicas: 1
@@ -150,7 +162,7 @@ spec:
           cpu: 50m
           memory: 128Mi
       nodeSelector:
-        topology.kubernetes.io/region: hil
+        topology.kubernetes.io/zone: hil-ovh
 
     store_gateway:
       replicas: 1
@@ -165,7 +177,7 @@ spec:
           cpu: 50m
           memory: 128Mi
       nodeSelector:
-        topology.kubernetes.io/region: hil
+        topology.kubernetes.io/zone: hil-ovh
       zoneAwareReplication:
         enabled: false
 
@@ -176,7 +188,7 @@ spec:
           cpu: 10m
           memory: 32Mi
       nodeSelector:
-        topology.kubernetes.io/region: hil
+        topology.kubernetes.io/zone: hil-ovh
 
     # --- Disabled components ---
 
@@ -188,7 +200,7 @@ spec:
           cpu: 50m
           memory: 128Mi
       nodeSelector:
-        topology.kubernetes.io/region: hil
+        topology.kubernetes.io/zone: hil-ovh
 
     alertmanager:
       enabled: false
