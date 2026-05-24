@@ -49,12 +49,10 @@ The MCP server uses a client certificate (CN=`claude-code-web`, group
   deployments, Flux kustomizations (+ patch for reconcile triggers), HelmReleases,
   cert-manager, CNPG clusters, metrics, Longhorn, Gateway API, Kyverno, and more.
 - **Cross-namespace read**: per-service `agent-rbac/` directories bind ClusterRoles
-  in each target namespace. See `cluster/k8s/agents/claude-rbac/README.md` for the
-  full list. Covers: harbor, langfuse, ollama, openclaw, props, gatus, csi-proxmox,
-  openebs, proxmox-proxy, cnpg-system, nvidia-device-plugin, node-feature-discovery,
-  local-path-storage, cert-manager, litellm, docker-ci, matrix, grocy-sf, grocy-vallejo,
-  study-casino, monitoring, kube-system, longhorn-system,
-  flux-system, airlock, authentik, augur.
+  in each target namespace. See `cluster/k8s/agents/claude-rbac/README.md` for
+  context; the per-namespace breakdown is:
+
+@cluster/k8s/agents/claude-rbac/permissions.md
 
 **Escape hatch**: `Bash(kubectl ...)` uses the user's personal kubeconfig (CLI) or
 session kubeconfig (web) for operations needing higher privileges or other namespaces.

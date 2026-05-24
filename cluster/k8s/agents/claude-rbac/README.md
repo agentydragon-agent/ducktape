@@ -75,22 +75,7 @@ bound via `shared-rbac/clusterrolebinding-cluster-diagnostics-reader.yaml`:
 Namespaced RoleBindings live in per-service `agent-rbac/` directories. Each is an independent
 Flux kustomization that depends only on the target namespace + `claude-rbac`.
 
-**Namespace diagnostics** (`namespace-diagnostics-reader` ClusterRole bound per-namespace):
-harbor, gatus, csi-proxmox, openebs, proxmox-proxy, cnpg-system,
-nvidia-device-plugin, node-feature-discovery, local-path-storage, cert-manager, litellm,
-docker-ci, matrix, grocy-sf, grocy-vallejo, study-casino, props, tana-mcp
-
-**Extended read**: ollama (`rolebinding-ollama-reader.yaml` in `ollama/agent-rbac/`),
-langfuse (in `langfuse/agent-rbac/`), openclaw (in `openclaw/gateway-agent-rbac/`),
-props (Role + RoleBinding in `props/agent-rbac/`)
-
-**Logs/configmaps** (`logs-configmaps-reader` ClusterRole bound per-namespace):
-monitoring, kube-system, longhorn-system, grocy-sf, grocy-vallejo, airlock, authentik,
-augur (plus `flux-system` in `shared-rbac/`). The augur binding lives cross-repo
-in `gaffer-private/k8s/augur/agent-rbac/` since augur itself is reconciled from
-gaffer-private. The augur agent-rbac directory also defines an in-namespace Role
-granting `pods/exec`, `pods/attach`, and `pods/portforward` for debugging the
-single-replica augur deployment.
+@permissions.md
 
 ## Adding Agent RBAC for a New Service
 
