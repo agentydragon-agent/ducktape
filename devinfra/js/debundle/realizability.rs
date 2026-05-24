@@ -461,6 +461,7 @@ fn compute_source_import_position(
 ///   - At `residual`: `source_import_position` (Lemma 2-aware).
 ///   - Elsewhere: `linker_position` ascending (dependency-first;
 ///     mirrors `lowering::imports_cross::cross_module_imports_for_plan`).
+///
 /// Modules without a `linker_position` slot fall back to
 /// `usize::MAX` — i.e. evaluated last among that module's imports —
 /// matching the materializer's `unwrap_or(usize::MAX)`.
@@ -1183,10 +1184,7 @@ impl IncrementalQuotient {
     /// whether Lemma 2 rescues a candidate asymmetric I-SCC.
     fn build_simulator(&self, overlay: Option<&QuotientOverlay>) -> EsmEvaluationSimulator {
         let mut i_successors: BTreeMap<ModuleId, BTreeSet<ModuleId>> = BTreeMap::new();
-        let i_view = match overlay {
-            Some(overlay) => Some(OverlayGraphView::new(&self.i_graph, &overlay.i_delta)),
-            None => None,
-        };
+        let i_view = overlay.map(|overlay| OverlayGraphView::new(&self.i_graph, &overlay.i_delta));
         let i_pairs: BTreeSet<(ModuleId, ModuleId)> = if let Some(view) = &i_view {
             // Effective edges = base ∪ added, with effective_count > 0.
             let mut pairs: BTreeSet<(ModuleId, ModuleId)> = BTreeSet::new();

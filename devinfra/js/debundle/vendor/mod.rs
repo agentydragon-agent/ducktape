@@ -20,7 +20,9 @@ use artifact::{
     module_path_dirname, normalize_module_path, relative_module_specifier,
 };
 use binding_targets::{declaration_name_strings, module_export_name};
-use js_ast::{ParsedJsModule, emit_js_module, parse_js_module, str_value};
+#[cfg(test)]
+use js_ast::emit_js_module;
+use js_ast::{ParsedJsModule, parse_js_module, str_value};
 pub use manifests::*;
 use spec::{
     BundledPartialSwapMark, PartialSwapKind, PartialSwapMark, PartialSwapPackage, SwapMark,
