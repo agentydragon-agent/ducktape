@@ -145,6 +145,18 @@ pub struct FactorizeProposal {
     /// Loose owner ids (residual today) that would be added to
     /// `extends_module_id`. Empty for fresh-module proposals.
     pub extension_owner_ids: Vec<String>,
+    /// `Some(ids)` if this proposal merges two or more pre-existing
+    /// active modules. The list is the active module ids being
+    /// merged, in canonical (sorted) order. `None` for non-merge
+    /// proposals (fresh module or single-module extension).
+    ///
+    /// When set, downstream consumers materialize the spec edit
+    /// "combine modules A, B (, C, …) into one yaml file." The
+    /// proposal's `owner_ids` is the union of merged-module owners
+    /// plus any absorbed residual orphans (which also appear in
+    /// `extension_owner_ids`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub merge_into: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -583,13 +595,21 @@ fn proposal_cells_from_atomic_graph(
     // classes.
     let _greedy_contractions = greedy_merge_to_convergence(&mut quotient);
 
-    // Resolve each pre-existing module group's surviving class +
-    // label. Used downstream to set `extends_module_id` on cell
-    // records whose surviving class is a module class.
-    let surviving_module_label: BTreeMap<ClassId, String> = module_anchors
-        .into_iter()
-        .map(|(anchor, label)| (quotient.class_of(anchor), label))
-        .collect();
+    // Resolve, for each surviving class, the list of pre-existing
+    // module labels that ended up in it. A class with ≥2 labels is a
+    // merge proposal; the renderer carries `merge_into` carrying the
+    // sorted label list.
+    let mut surviving_module_labels: BTreeMap<ClassId, Vec<String>> = BTreeMap::new();
+    for (anchor, label) in module_anchors.into_iter() {
+        surviving_module_labels
+            .entry(quotient.class_of(anchor))
+            .or_default()
+            .push(label);
+    }
+    for labels in surviving_module_labels.values_mut() {
+        labels.sort();
+        labels.dedup();
+    }
 
     // Update each cell record's `class_id` to reflect any merges:
     // a cell's surviving class is the current class of any of its
@@ -604,6 +624,7 @@ fn proposal_cells_from_atomic_graph(
             extends_module_id: meta.extends_module_id,
             extension_owner_idxs: meta.extension_owner_idxs,
             verdict: meta.verdict,
+            merge_into: None,
         };
         match by_surviving.get_mut(&surviving) {
             None => {
@@ -620,16 +641,48 @@ fn proposal_cells_from_atomic_graph(
         }
     }
 
-    // For surviving classes that became module-anchored via greedy
-    // (the cell record alone had no `extends_module_id`, but the
-    // merged class now hosts a pre-existing module's owners),
-    // stamp the module label so the renderer emits an `extend:M`
-    // proposal rather than a fresh `auto_partition_NNNN`.
-    for (class_id, label) in &surviving_module_label {
-        if let Some(record) = by_surviving.get_mut(class_id) {
-            if record.extends_module_id.is_none() {
-                record.extends_module_id = Some(label.clone());
-            }
+    // Synthesize a CellClassRecord for any surviving class that
+    // hosts a pre-existing module group but has no cell record.
+    // This covers two shapes:
+    //   - pure module extension (single module, no residual cell),
+    //   - module-only merges (≥2 modules fused, no residual cell).
+    // Both are commit-3 outputs; today's pipeline already covers
+    // module extension via the orphan-absorption path, but a pure
+    // module↔module merge has no residual orphan to anchor a cell.
+    for class_id in surviving_module_labels.keys().copied() {
+        if !by_surviving.contains_key(&class_id) {
+            by_surviving.insert(
+                class_id,
+                CellClassRecord {
+                    class_id,
+                    extends_module_id: None,
+                    extension_owner_idxs: BTreeSet::new(),
+                    verdict: Verdict {
+                        status: PeelCandidateStatus::PeelableNow,
+                        landable_today: true,
+                        cycle_blocker_owner_ids: Vec::new(),
+                    },
+                    merge_into: None,
+                },
+            );
+        }
+    }
+
+    // Stamp module-anchored records with their canonical
+    // `extends_module_id` and `merge_into` (when ≥2 modules fused).
+    for (class_id, labels) in &surviving_module_labels {
+        let Some(record) = by_surviving.get_mut(class_id) else {
+            continue;
+        };
+        // Canonical extends_module_id = first label by sort order.
+        // (Whichever one wins is arbitrary; downstream tooling will
+        // use merge_into when deciding which file becomes
+        // authoritative.)
+        if record.extends_module_id.is_none() {
+            record.extends_module_id = labels.first().cloned();
+        }
+        if labels.len() >= 2 {
+            record.merge_into = Some(labels.clone());
         }
     }
 
@@ -664,6 +717,10 @@ struct CellClassRecord {
     extends_module_id: Option<String>,
     extension_owner_idxs: BTreeSet<usize>,
     verdict: Verdict,
+    /// Set when the surviving class fused two or more pre-existing
+    /// active module groups during greedy. Sorted list of module
+    /// labels (active paths). `None` otherwise.
+    merge_into: Option<Vec<String>>,
 }
 
 struct RenderCellMetadata {
@@ -1107,9 +1164,13 @@ fn build_proposal(
         ids.sort();
         ids
     };
-    let proposed_module_id = match &record.extends_module_id {
-        Some(target) => format!("extend:{target}"),
-        None => format!("auto_partition_{cell_idx:04}"),
+    let proposed_module_id = match (&record.merge_into, &record.extends_module_id) {
+        // Merge proposals get a `merge:M1+M2+…` synthetic id so
+        // downstream tooling can tell at a glance which modules are
+        // being fused. The full label list rides on `merge_into`.
+        (Some(labels), _) => format!("merge:{}", labels.join("+")),
+        (None, Some(target)) => format!("extend:{target}"),
+        (None, None) => format!("auto_partition_{cell_idx:04}"),
     };
     let size_lines = if is_extension {
         owner_idxs
@@ -1137,6 +1198,7 @@ fn build_proposal(
         landable_today: record.verdict.landable_today,
         extends_module_id: record.extends_module_id.clone(),
         extension_owner_ids,
+        merge_into: record.merge_into.clone(),
     }
 }
 

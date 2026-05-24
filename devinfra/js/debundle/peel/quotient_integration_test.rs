@@ -1193,3 +1193,259 @@ fn greedy_on_gaffer_chunk_completes_under_one_minute() {
         "factorize on gaffer-scale input must complete in under 60s, took {elapsed:?}",
     );
 }
+
+// ---------- Commit 3: full mergeability + merge output shape. ----------
+//
+// The commit-3 gate allows two pre-existing-module classes to merge
+// (with or without absorbing residual orphans). The renderer carries
+// `merge_into: Option<Vec<String>>` on proposals whose operands
+// include ≥2 pre-existing-module groups.
+
+#[test]
+fn greedy_merges_three_clusters_under_cap() {
+    // Three pre-existing-module clusters of 20 + 20 + 10 lines, all
+    // mutually coupled by EagerUse edges. Cap = 150 → all three fit.
+    // Assert greedy merges all three into one class.
+    let a = active_owner("owner:a", 1, &["BindingA"], 20, "ui/a");
+    let b = active_owner("owner:b", 2, &["BindingB"], 20, "ui/b");
+    let c = active_owner("owner:c", 3, &["BindingC"], 10, "ui/c");
+    let report = graph_of(
+        vec![a.clone(), b.clone(), c.clone()],
+        vec![
+            owner_edge("edge:ab", "owner:a", "owner:b", DepKind::EagerUse, true),
+            owner_edge("edge:bc", "owner:b", "owner:c", DepKind::EagerUse, true),
+            owner_edge("edge:ac", "owner:a", "owner:c", DepKind::EagerUse, true),
+        ],
+        vec![
+            atomic_unit_for("atomic:a", &[&a]),
+            atomic_unit_for("atomic:b", &[&b]),
+            atomic_unit_for("atomic:c", &[&c]),
+        ],
+        vec![],
+    );
+    let groups = vec![
+        make_module_group("ui/a", vec![0]),
+        make_module_group("ui/b", vec![1]),
+        make_module_group("ui/c", vec![2]),
+    ];
+    let (mut q, _) = QuotientGraph::from_report_with_partition_extended(&report, 150, &groups);
+    let contractions = greedy_merge_to_convergence(&mut q);
+    assert_eq!(
+        contractions.len(),
+        2,
+        "three clusters under cap should collapse via 2 contractions: {contractions:?}",
+    );
+    let a_idx = q.owner_idx_of("owner:a").unwrap();
+    let b_idx = q.owner_idx_of("owner:b").unwrap();
+    let c_idx = q.owner_idx_of("owner:c").unwrap();
+    assert_eq!(q.class_of(a_idx), q.class_of(b_idx));
+    assert_eq!(q.class_of(b_idx), q.class_of(c_idx));
+}
+
+#[test]
+fn greedy_stops_at_cap() {
+    // Same fixture as `greedy_merges_three_clusters_under_cap`, cap
+    // = 40 lines. After the first merge the surviving class is 40
+    // lines; the third cluster's 10-line addition would tip it to
+    // 50, exceeding the cap. Assert exactly one contraction occurred.
+    let a = active_owner("owner:a", 1, &["BindingA"], 20, "ui/a");
+    let b = active_owner("owner:b", 2, &["BindingB"], 20, "ui/b");
+    let c = active_owner("owner:c", 3, &["BindingC"], 10, "ui/c");
+    let report = graph_of(
+        vec![a.clone(), b.clone(), c.clone()],
+        vec![
+            owner_edge("edge:ab", "owner:a", "owner:b", DepKind::EagerUse, true),
+            owner_edge("edge:bc", "owner:b", "owner:c", DepKind::EagerUse, true),
+            owner_edge("edge:ac", "owner:a", "owner:c", DepKind::EagerUse, true),
+        ],
+        vec![
+            atomic_unit_for("atomic:a", &[&a]),
+            atomic_unit_for("atomic:b", &[&b]),
+            atomic_unit_for("atomic:c", &[&c]),
+        ],
+        vec![],
+    );
+    let groups = vec![
+        make_module_group("ui/a", vec![0]),
+        make_module_group("ui/b", vec![1]),
+        make_module_group("ui/c", vec![2]),
+    ];
+    let (mut q, _) = QuotientGraph::from_report_with_partition_extended(&report, 40, &groups);
+    let contractions = greedy_merge_to_convergence(&mut q);
+    assert_eq!(
+        contractions.len(),
+        1,
+        "cap=40 must allow exactly one merge: {contractions:?}",
+    );
+    // Determinism: candidates are (a, b)=20+20=40, (a, c)=20+10=30
+    // (cycle-creating; rejected), (b, c)=20+10=30. After cycle
+    // filtering, (b, c) wins on result-size (30 < 40); (a, b) is
+    // refused on second-pass cap because its 40-line survivor +
+    // 10-line orphan would exceed 40 anyway, but it's picked
+    // strictly after (b, c) by the tiebreak.
+    let a_idx = q.owner_idx_of("owner:a").unwrap();
+    let b_idx = q.owner_idx_of("owner:b").unwrap();
+    let c_idx = q.owner_idx_of("owner:c").unwrap();
+    assert_eq!(
+        q.class_of(b_idx),
+        q.class_of(c_idx),
+        "owner:b and owner:c should be merged (smallest combined size wins tiebreak)",
+    );
+    assert_ne!(
+        q.class_of(a_idx),
+        q.class_of(b_idx),
+        "owner:a stays separate (a+bc would total 50, over cap 40)",
+    );
+}
+
+#[test]
+fn greedy_resolves_realizability_cycle_by_merging() {
+    // Asymmetric I-cycle: mod_a → mod_b (EagerUse constraining) and
+    // mod_b → mod_a (LazyUse non-constraining). The constraining
+    // edge alone doesn't cycle, but the symmetric coupling makes
+    // them a strong merge candidate; after merge the post-merge
+    // quotient is realizable (intra-class self-loop).
+    let a = active_owner("owner:a", 1, &["BindingA"], 10, "ui/a");
+    let b = active_owner("owner:b", 2, &["BindingB"], 10, "ui/b");
+    let report = graph_of(
+        vec![a.clone(), b.clone()],
+        vec![
+            owner_edge("edge:ab", "owner:a", "owner:b", DepKind::EagerUse, true),
+            owner_edge("edge:ba", "owner:b", "owner:a", DepKind::LazyUse, false),
+        ],
+        vec![
+            atomic_unit_for("atomic:a", &[&a]),
+            atomic_unit_for("atomic:b", &[&b]),
+        ],
+        vec![],
+    );
+    let groups = vec![
+        make_module_group("ui/a", vec![0]),
+        make_module_group("ui/b", vec![1]),
+    ];
+    let (mut q, _) = QuotientGraph::from_report_with_partition_extended(&report, 10_000, &groups);
+    let contractions = greedy_merge_to_convergence(&mut q);
+    assert_eq!(
+        contractions.len(),
+        1,
+        "asymmetric coupling between two modules should merge: {contractions:?}",
+    );
+    let a_idx = q.owner_idx_of("owner:a").unwrap();
+    let b_idx = q.owner_idx_of("owner:b").unwrap();
+    assert_eq!(q.class_of(a_idx), q.class_of(b_idx));
+    // Post-merge quotient: no remaining cross-class cycles.
+    assert!(
+        q.cycle_set().cycles.is_empty(),
+        "post-merge quotient should be realizable: {:?}",
+        q.cycle_set(),
+    );
+}
+
+#[test]
+fn merge_two_existing_modules_with_mutual_eager_reads() {
+    // Two pre-existing modules with mutual EagerUse cross-edges.
+    // Assert the rendered proposal carries `merge_into:
+    // Some(["ui/a", "ui/b"])`.
+    let a = active_owner("owner:a", 1, &["BindingA"], 10, "ui/a");
+    let b = active_owner("owner:b", 2, &["BindingB"], 10, "ui/b");
+    let report = graph_of(
+        vec![a.clone(), b.clone()],
+        vec![
+            owner_edge("edge:ab", "owner:a", "owner:b", DepKind::EagerUse, true),
+            owner_edge("edge:ba", "owner:b", "owner:a", DepKind::EagerUse, true),
+        ],
+        vec![
+            atomic_unit_for("atomic:a", &[&a]),
+            atomic_unit_for("atomic:b", &[&b]),
+        ],
+        vec![],
+    );
+    let claims: BTreeMap<String, String> = BTreeMap::from([
+        ("BindingA".to_string(), "ui/a".to_string()),
+        ("BindingB".to_string(), "ui/b".to_string()),
+    ]);
+    let result = factorize(&report, &claims, 10_000);
+    let merge_proposals: Vec<&peel::factorize::FactorizeProposal> = result
+        .proposals
+        .iter()
+        .filter(|p| p.merge_into.is_some())
+        .collect();
+    assert_eq!(
+        merge_proposals.len(),
+        1,
+        "exactly one merge proposal expected, got proposals: {:?}",
+        result.proposals,
+    );
+    let merge_into = merge_proposals[0].merge_into.clone().unwrap();
+    assert_eq!(
+        merge_into,
+        vec!["ui/a".to_string(), "ui/b".to_string()],
+        "merge_into should list both module ids in canonical order",
+    );
+}
+
+#[test]
+fn merge_absorbs_residual_owner_with_only_intra_deps() {
+    // mod_a + mod_b mutually coupled; residual `helper` reads from
+    // both. Assert the merge proposal's operands include
+    // `owner:helper`.
+    let a = active_owner("owner:a", 1, &["BindingA"], 10, "ui/a");
+    let b = active_owner("owner:b", 2, &["BindingB"], 10, "ui/b");
+    let helper = residual_owner("owner:helper", 3, &["BindingHelper"], 5);
+    let report = graph_of(
+        vec![a.clone(), b.clone(), helper.clone()],
+        vec![
+            owner_edge("edge:ab", "owner:a", "owner:b", DepKind::EagerUse, true),
+            owner_edge("edge:ba", "owner:b", "owner:a", DepKind::EagerUse, true),
+            owner_edge(
+                "edge:helper_a",
+                "owner:helper",
+                "owner:a",
+                DepKind::EagerUse,
+                true,
+            ),
+            owner_edge(
+                "edge:helper_b",
+                "owner:helper",
+                "owner:b",
+                DepKind::EagerUse,
+                true,
+            ),
+        ],
+        vec![
+            atomic_unit_for("atomic:a", &[&a]),
+            atomic_unit_for("atomic:b", &[&b]),
+            atomic_unit_for("atomic:helper", &[&helper]),
+        ],
+        vec![],
+    );
+    let claims: BTreeMap<String, String> = BTreeMap::from([
+        ("BindingA".to_string(), "ui/a".to_string()),
+        ("BindingB".to_string(), "ui/b".to_string()),
+    ]);
+    let result = factorize(&report, &claims, 10_000);
+    let merge_proposals: Vec<&peel::factorize::FactorizeProposal> = result
+        .proposals
+        .iter()
+        .filter(|p| p.merge_into.is_some())
+        .collect();
+    assert_eq!(
+        merge_proposals.len(),
+        1,
+        "exactly one merge proposal expected, got proposals: {:?}",
+        result.proposals,
+    );
+    let merge = merge_proposals[0];
+    assert_eq!(
+        merge.merge_into.clone().unwrap(),
+        vec!["ui/a".to_string(), "ui/b".to_string()],
+    );
+    // The merge proposal carries the absorbed residual helper as
+    // an extension owner — `merge + extend` semantics.
+    assert!(
+        merge
+            .extension_owner_ids
+            .contains(&"owner:helper".to_string()),
+        "merge proposal should list owner:helper as an extension owner: {merge:?}",
+    );
+}

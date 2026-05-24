@@ -550,18 +550,24 @@ impl QuotientGraph {
     /// Fast check: does merging c1 and c2 introduce a new multi-class
     /// SCC through the merged class? Walks the class-level adjacency
     /// in the projected (post-merge) graph from the merged class's
-    /// out-neighbors; returns true if any of them can reach c1 or c2.
+    /// out-neighbors; returns true if any of them can reach the
+    /// merged class.
     fn merge_creates_new_cycle(&self, c1: ClassId, c2: ClassId) -> bool {
         if c1 == c2 {
             return false;
         }
+        // Canonicalize so the merged class id is `target` (= min) and
+        // the absorbed class id is `loser`. Mirrors
+        // `merge_classes_unchecked`'s winner/loser choice so the
+        // projection direction here matches the post-merge layout.
+        let (target, loser) = if c1 < c2 { (c1, c2) } else { (c2, c1) };
         // Out-neighbors of the merged class = (out_of(c1) ∪ out_of(c2)) \ {c1, c2}.
         let mut frontier: Vec<ClassId> = Vec::new();
         let mut seen: BTreeSet<ClassId> = BTreeSet::new();
         for &(s, t) in &self.owner_constraining_edges {
             let cs = self.owner_to_class[s.0];
             let ct = self.owner_to_class[t.0];
-            if (cs == c1 || cs == c2) && ct != c1 && ct != c2 && seen.insert(ct) {
+            if (cs == target || cs == loser) && ct != target && ct != loser && seen.insert(ct) {
                 frontier.push(ct);
             }
         }
@@ -570,20 +576,19 @@ impl QuotientGraph {
         }
         // BFS in the class-projected constraining-edge adjacency.
         // We can reuse the owner edges, projecting at each step.
-        // Build a class adjacency on demand (one pass).
+        // Build a class adjacency on demand (one pass). Project
+        // `loser` → `target` so the merged class id is `target`.
         let mut adj: BTreeMap<ClassId, BTreeSet<ClassId>> = BTreeMap::new();
         for &(s, t) in &self.owner_constraining_edges {
             let cs_raw = self.owner_to_class[s.0];
             let ct_raw = self.owner_to_class[t.0];
-            // Project the merge.
-            let cs = if cs_raw == c2 { c1 } else { cs_raw };
-            let ct = if ct_raw == c2 { c1 } else { ct_raw };
+            let cs = if cs_raw == loser { target } else { cs_raw };
+            let ct = if ct_raw == loser { target } else { ct_raw };
             if cs == ct {
                 continue;
             }
             adj.entry(cs).or_default().insert(ct);
         }
-        let target = if c1 < c2 { c1 } else { c2 };
         let mut stack = frontier;
         while let Some(node) = stack.pop() {
             if node == target {
@@ -989,26 +994,31 @@ impl QuotientGraph {
 // Greedy merge to convergence (commit 2).
 // ---------------------------------------------------------------------
 
-/// Commit-2 mergeability gate: restricted to "extension of existing
-/// module by orphaned residual class." Exactly one operand must have
-/// `is_pre_existing_module = true`; the other must be a non-residual
-/// residual-orphan (lone owner not anchored to a pre-existing module).
-/// Commit 3 will relax this to allow merging two pre-existing modules
-/// and absorbing residual owners freely.
+/// Commit-3 mergeability gate. Allows two shapes:
+///   1. Two pre-existing-module classes (merge modules A and B).
+///      May happen with or without first absorbing residual orphans
+///      into either side via successive shape-(2) merges.
+///   2. One pre-existing-module class + one orphan residual class
+///      (extend module A with an orphan); requires the orphan's
+///      cross-edges to pre-existing modules to target exactly one
+///      module — the merge partner. The "unambiguous extension"
+///      check matches today's
+///      `promote_anonymous_only_cell_to_extension` post-pass.
 ///
-/// Common preconditions checked here (apply to all merges):
+/// Orphan↔orphan merges are NOT permitted by this gate: today's
+/// cell-discovery pass already closes residual atomic-DAG
+/// reachability into single classes, so any orphan↔orphan grouping
+/// that should happen is already represented as a single class
+/// pre-greedy. Allowing orphan↔orphan here would let greedy fuse
+/// unrelated residuals based purely on cross-edge presence, which
+/// is over-aggressive on real inputs.
+///
+/// Common preconditions:
 /// - Distinct classes.
 /// - Neither is the residual catchall.
 /// - At least one cross-edge connects the two.
-/// - Combined lines under the cap.
-/// - `merge_preserves_invariants` holds (cycle gate).
-/// - **Unambiguous extension target**: the orphan's cross-edges to
-///   pre-existing-module classes target exactly one such class — the
-///   merge partner. If the orphan also has cross-edges into other
-///   active modules, the spec author needs to disambiguate by hand;
-///   the greedy refuses the merge (matches the existing
-///   `promote_anonymous_only_cell_to_extension` post-pass's
-///   `active_modules_referenced.len() == 1` guard).
+/// - Combined lines under the cap (`merge_preserves_invariants`).
+/// - Cycle gate holds (`merge_preserves_invariants`).
 pub fn mergeable_commit2(q: &QuotientGraph, c1: ClassId, c2: ClassId) -> bool {
     if c1 == c2 {
         return false;
@@ -1017,31 +1027,36 @@ pub fn mergeable_commit2(q: &QuotientGraph, c1: ClassId, c2: ClassId) -> bool {
     if q.class_is_residual(c1) || q.class_is_residual(c2) {
         return false;
     }
-    // Exactly one operand must be a pre-existing module.
-    let pre1 = q.class_is_pre_existing_module(c1);
-    let pre2 = q.class_is_pre_existing_module(c2);
-    if pre1 == pre2 {
-        return false;
-    }
     // Connected by at least one cross-edge.
     if q.cross_edge_count(c1, c2) == 0 {
         return false;
     }
-    // Unambiguous extension target: the orphan side must reach
-    // exactly one pre-existing-module class via cross-edges.
-    let orphan = if pre1 { c2 } else { c1 };
-    let mut module_neighbors: usize = 0;
-    for n in q.class_neighbors(orphan) {
-        if n == orphan {
-            continue;
-        }
-        if q.class_is_pre_existing_module(n) && !q.class_is_residual(n) {
-            module_neighbors += 1;
-        }
-    }
-    if module_neighbors != 1 {
+    let pre1 = q.class_is_pre_existing_module(c1);
+    let pre2 = q.class_is_pre_existing_module(c2);
+    // At least one operand must be a pre-existing-module class.
+    if !pre1 && !pre2 {
         return false;
     }
+    // Shape (2): orphan + module → require unambiguous extension
+    // target. If the orphan touches multiple modules via cross-edges,
+    // the spec author must disambiguate; the greedy refuses.
+    if pre1 != pre2 {
+        let orphan = if pre1 { c2 } else { c1 };
+        let mut module_neighbors: usize = 0;
+        for n in q.class_neighbors(orphan) {
+            if n == orphan {
+                continue;
+            }
+            if q.class_is_pre_existing_module(n) && !q.class_is_residual(n) {
+                module_neighbors += 1;
+            }
+        }
+        if module_neighbors != 1 {
+            return false;
+        }
+    }
+    // Shape (1): pre↔pre — no additional precondition beyond the
+    // common checks above.
     q.merge_preserves_invariants(c1, c2)
 }
 
