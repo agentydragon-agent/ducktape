@@ -600,6 +600,102 @@ class TestRentalIncomeTaxation:
         year_1_federal = next(b for b in breakdowns if b["month_index"] == 23 and b["jurisdiction_id"] == "federal_us")
         assert year_1_federal["ordinary_income_usd"] == pytest.approx(45_454.55, abs=0.05)
 
+    def test_lifecycle_start_renting_redirects_mortgage_interest_from_mid_to_schedule_e(self):
+        """At start-of-rental, MID drops to 0 for the now-rented portion of mortgage interest,
+        and Schedule E picks it up. Comparison: same scenario with rented_fraction=0 throughout
+        vs. with StartRentingEvent at month 0 setting rented_fraction=1.0 — the second case
+        should yield zero MID line."""
+
+        breakdowns_owner = self._mortgage_lifecycle_breakdown(start_renting_at=None)
+        # NOTE: StartRentingEvent must fire strictly after purchase (month 0), so use month 1.
+        breakdowns_rent = self._mortgage_lifecycle_breakdown(start_renting_at=1)
+        # Owner-occupied: positive MID
+        assert breakdowns_owner["federal_us"]["mortgage_interest_deduction_usd"] > 0
+        # Rented from month 1: MID for year 0 is the month-0 interest only (a tiny first-month
+        # owner-share interest), much smaller than full-year owner-occupied MID.
+        assert (
+            breakdowns_rent["federal_us"]["mortgage_interest_deduction_usd"]
+            < breakdowns_owner["federal_us"]["mortgage_interest_deduction_usd"] * 0.15
+        )
+
+    def _mortgage_lifecycle_breakdown(self, *, start_renting_at: int | None) -> dict:
+        end_month = 11
+        purchase_price = 500_000.0
+        lifecycle_events = (
+            [StartRentingEvent(month=start_renting_at, property_id="p1", rented_fraction=1.0)]
+            if start_renting_at is not None
+            else []
+        )
+        scenario = Scenario(
+            agents=[
+                Agent(agent_id=OWNER_AGENT_ID),
+                Agent(agent_id=TENANT_AGENT_ID),
+                Agent(agent_id="property_seller"),
+                Agent(agent_id="lender"),
+                Agent(agent_id="irs"),
+            ],
+            initial_cash=[
+                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance_usd=700_000.0),
+                InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id="property_seller", account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id="lender", account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+            ],
+            recurring_transfers=[
+                RecurringTransfer(
+                    start_month=0,
+                    end_month=end_month,
+                    cause_id="paycheck",
+                    from_agent_id=TENANT_AGENT_ID,
+                    from_account_id="checking",
+                    to_agent_id=OWNER_AGENT_ID,
+                    to_account_id="checking",
+                    amount_usd=5_000.0,
+                    income_category="ordinary",
+                )
+            ],
+            scheduled_property_purchases=[
+                ScheduledPropertyPurchase(
+                    month=0,
+                    cause_id="p1_purchase",
+                    property_id="p1",
+                    location_id="san_francisco",
+                    buyer_agent_id=OWNER_AGENT_ID,
+                    buyer_account_id="checking",
+                    seller_agent_id="property_seller",
+                    purchase_price_usd=purchase_price,
+                    down_payment_usd=purchase_price * 0.20,
+                    land_value_fraction=1.0,  # isolate from depreciation
+                    mortgage=MortgageFinancing(
+                        liability_id="p1_mortgage",
+                        lender_agent_id="lender",
+                        lender_account_id="checking",
+                        principal_usd=purchase_price * 0.80,
+                        annual_interest_rate=0.06,
+                        term_months=360,
+                    ),
+                    ownership_pct=1.0,
+                    rented_fraction=0.0,
+                )
+            ],
+            property_lifecycle_events=lifecycle_events,
+            mortgage_interest_deduction_policies=[
+                MortgageInterestDeductionPolicy(liability_id="p1_mortgage", owner_agent_id=OWNER_AGENT_ID)
+            ],
+            tax_profiles=[
+                TaxProfile(
+                    agent_id=OWNER_AGENT_ID,
+                    filing_status="single",
+                    jurisdiction_ids=["federal_us", "california"],
+                    tax_authority_agent_id="irs",
+                )
+            ],
+            horizon_months=12,
+        )
+        ctx = _multi_series(levels_by_series={"home_value:san_francisco": {0: [1.0] * 13}})
+        run = simulate_with_external_series(scenario, external_series=ctx, rollout_count=1)
+        return {row["jurisdiction_id"]: row for row in run.events_log.tax_breakdowns.iter_rows(named=True)}
+
     def test_lifecycle_stop_renting_halts_depreciation(self):
         """StopRentingEvent at month 12 → depreciation accrues months 0-11 only.
         Year 0 ordinary: $60k rent - $14.5k dep = $45.5k.

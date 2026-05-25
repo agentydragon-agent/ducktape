@@ -191,10 +191,16 @@ class CurrentStateBuffers:
     property_depreciation_ytd: np.ndarray
     # Runtime rented_fraction per (rollout, property) (0..1). Initialized at scenario start from
     # `plan.property_rented_fraction[prop]` and mutated by `_apply_lifecycle_events` when
-    # PropertyLifecycleEvent rows fire mid-horizon. Depreciation accrual reads this each month.
-    # MID/SALT scaling still uses `plan.property_rented_fraction` in phase 3.0 — sub-phase 3.1
-    # plumbs the runtime state through MID/SALT.
+    # PropertyLifecycleEvent rows fire mid-horizon. Depreciation accrual, MID computation, and
+    # Schedule E rental interest all read this each month.
     property_rented_fraction: np.ndarray
+    # Rented-share of YTD mortgage interest per (rollout, liability). Each mortgage payment
+    # accrues `interest × current.property_rented_fraction[r, prop_of_lia]` into this buffer.
+    # At year-end:
+    #   MID owner-share interest = liability_interest_ytd - liability_rental_interest_ytd
+    #   Schedule E rental interest = liability_rental_interest_ytd (deducted from ordinary_ytd).
+    # Reset annually.
+    liability_rental_interest_ytd: np.ndarray
     failed: np.ndarray
     failed_month: np.ndarray
 
@@ -282,6 +288,12 @@ class CurrentStateBuffers:
             "current property_rented_fraction",
             self.property_rented_fraction,
             shape=(r, plan.property_count),
+            dtype=np.float64,
+        )
+        _expect_array(
+            "current liability_rental_interest_ytd",
+            self.liability_rental_interest_ytd,
+            shape=(r, plan.liability_count),
             dtype=np.float64,
         )
         _expect_array("current failed", self.failed, shape=(r,), dtype=np.bool_)
@@ -776,6 +788,7 @@ def _allocate_current_state(plan: CompiledSimulation) -> CurrentStateBuffers:
         # Broadcast the compile-time initial rented_fraction across rollouts. Lifecycle events
         # may then mutate per-(rollout, property) state at runtime.
         property_rented_fraction=np.broadcast_to(plan.property_rented_fraction, (r, p.property_count)).copy(),
+        liability_rental_interest_ytd=np.zeros((r, p.liability_count), dtype=np.float64),
         failed=np.zeros(r, dtype=np.bool_),
         failed_month=np.full(r, NO_CODE, dtype=np.int64),
     )
@@ -926,7 +939,10 @@ def _compute_tax_for_link(
     stcg = current.capital_gain_ytd[:, gain_profile, SHORT_TERM_CAPITAL_GAIN_CODE]
     standard_deduction = float(plan.tax_link_standard_deduction[link])
     if bool(plan.tax_link_mid_active[link]):
-        mortgage_interest_deduction = current.liability_interest_ytd @ plan.tax_link_mid_principal_ratio[link]
+        # MID applies only to the owner-occupied share of interest. Rented-share interest
+        # is deducted via the Schedule E hook at the top of `_apply_tax_accruals`.
+        owner_interest_ytd = current.liability_interest_ytd - current.liability_rental_interest_ytd
+        mortgage_interest_deduction = owner_interest_ytd @ plan.tax_link_mid_principal_ratio[link]
     else:
         mortgage_interest_deduction = np.zeros(plan.rollout_count, dtype=np.float64)
     itemized_deduction = mortgage_interest_deduction + salt_deduction
@@ -1184,19 +1200,18 @@ def _apply_tax_accruals(
     if month % 12 != 11 or not active_rollout.any():
         return
 
-    # Schedule E rental interest deduction: for each rented liability, the rented-fraction
-    # share of YTD interest deducts from the owner's ordinary_ytd. (The owner-share is
-    # already accounted for via MID's compile-time `(1 - rented_fraction)` scale-down on the
-    # principal ratio.) This must run before the bracket walk reads ordinary_ytd.
-    liability_count = plan.liability_rented_fraction.shape[0]
+    # Schedule E rental interest deduction: for each liability, the YTD rented-share interest
+    # (accumulated per-month against the runtime `current.property_rented_fraction`) deducts
+    # from the owner's ordinary_ytd. The owner share is fed into MID below. This must run
+    # before the bracket walk reads ordinary_ytd.
+    liability_count = current.liability_rental_interest_ytd.shape[1]
     for lia in range(liability_count):
-        rented = float(plan.liability_rented_fraction[lia])
-        if rented <= 0.0:
-            continue
         profile = int(plan.liability_owner_profile_index[lia])
         if profile < 0:
             continue
-        schedule_e_interest = current.liability_interest_ytd[:, lia] * rented
+        schedule_e_interest = current.liability_rental_interest_ytd[:, lia]
+        if not bool((schedule_e_interest != 0.0).any()):
+            continue
         current.ordinary_ytd[active_rollout, profile] -= schedule_e_interest[active_rollout]
 
     # Schedule E §168 depreciation deduction: the YTD depreciation accrued this calendar year
@@ -1296,6 +1311,7 @@ def _apply_tax_accruals(
     # Zero YTD interest at year-end so next year's MID accumulation starts fresh. Mirrors the
     # ordinary/capital-gain YTD resets above.
     current.liability_interest_ytd[active_rollout, :] = 0.0
+    current.liability_rental_interest_ytd[active_rollout, :] = 0.0
     # Same treatment for property-tax YTD; the federal SALT pass above has consumed it.
     current.property_tax_ytd[active_rollout, :] = 0.0
 
@@ -1645,18 +1661,31 @@ def _apply_obligation_settlement(
                     plan, buffers, current, month=month, liability_slot=source_index, paid=paid, amount=amount
                 )
             # Accumulate property-tax payments into the owner's per-profile YTD bucket so the
-            # year-end federal SALT pass can read them. Multiply by owner_fraction so that for
-            # rented properties only the owner-use share contributes to SALT; the rented share
-            # is routed to Schedule E via the deduction_profile path below.
+            # year-end federal SALT pass can read them. For property-tax obligations
+            # (obligation_property_slot >= 0), use runtime `current.property_rented_fraction`
+            # so mid-horizon lifecycle events take effect. Only the owner-use share
+            # contributes to SALT; the rented share routes to Schedule E via deduction_profile.
             property_tax_profile = int(plan.obligation_property_tax_profile[month, slot])
+            property_slot = int(plan.obligation_property_slot[month, slot])
             if property_tax_profile >= 0:
-                owner_fraction = float(plan.obligation_property_tax_owner_fraction[month, slot])
-                current.property_tax_ytd[paid, property_tax_profile] += amount[paid] * owner_fraction
-            # Schedule E deduction: decrement payer's ordinary_ytd by amount × deductible_fraction.
+                if property_slot >= 0:
+                    rented_per_rollout = current.property_rented_fraction[:, property_slot]
+                    owner_per_rollout = 1.0 - rented_per_rollout
+                    current.property_tax_ytd[paid, property_tax_profile] += amount[paid] * owner_per_rollout[paid]
+                else:
+                    owner_fraction = float(plan.obligation_property_tax_owner_fraction[month, slot])
+                    current.property_tax_ytd[paid, property_tax_profile] += amount[paid] * owner_fraction
+            # Schedule E deduction: decrement payer's ordinary_ytd. For property-tax
+            # obligations the deductible_fraction comes from runtime state; for other
+            # deductible obligations it comes from the compile-time value.
             deduction_profile = int(plan.obligation_deduction_profile_index[month, slot])
             if deduction_profile >= 0:
-                deductible_fraction = float(plan.obligation_deductible_fraction[month, slot])
-                current.ordinary_ytd[paid, deduction_profile] -= amount[paid] * deductible_fraction
+                if property_slot >= 0:
+                    rented_per_rollout = current.property_rented_fraction[:, property_slot]
+                    current.ordinary_ytd[paid, deduction_profile] -= amount[paid] * rented_per_rollout[paid]
+                else:
+                    deductible_fraction = float(plan.obligation_deductible_fraction[month, slot])
+                    current.ordinary_ytd[paid, deduction_profile] -= amount[paid] * deductible_fraction
 
         failed = active_slot & ~funded[slot]
         if failed.any():
@@ -1717,6 +1746,12 @@ def _apply_mortgage_payment(
     current.liability_principal[paid, liability_slot] = np.maximum(0.0, principal_before[paid] - principal[paid])
     current.liability_interest_ytd[paid, liability_slot] += interest[paid]
     current.liability_principal_ytd[paid, liability_slot] += principal[paid]
+    # Per-month rented share of interest, indexed by runtime property_rented_fraction so that
+    # mid-horizon lifecycle transitions take effect immediately for MID + Schedule E.
+    prop_slot = int(plan.liability_property_slot[liability_slot])
+    if prop_slot >= 0:
+        rented = current.property_rented_fraction[:, prop_slot]
+        current.liability_rental_interest_ytd[paid, liability_slot] += interest[paid] * rented[paid]
 
 
 def _apply_tax_settlements(

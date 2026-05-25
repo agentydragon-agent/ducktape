@@ -208,11 +208,6 @@ class CompiledSimulation:
     lifecycle_event_month_starts: np.ndarray
     liability_codes: np.ndarray
     liability_property_slot: np.ndarray
-    # Per-liability rented_fraction (0..1), inherited from the parent property at compile time.
-    # Used by the engine to deduct Schedule E rental interest from the owner's ordinary_ytd at
-    # year-end (= liability_interest_ytd × rented_fraction). Phase 3 lifecycle events will
-    # eventually replace this constant-for-horizon value with a runtime-mutated state buffer.
-    liability_rented_fraction: np.ndarray
     # Profile index of each liability's owner. NO_CODE if the owner has no tax profile.
     liability_owner_profile_index: np.ndarray
     liability_agent_codes: np.ndarray
@@ -257,8 +252,14 @@ class CompiledSimulation:
     # expense, 0.4 = 40% of the obligation is deductible because the property is 40% rented).
     obligation_deductible_fraction: np.ndarray
     # For property-tax obligations: fraction of the paid amount that contributes to SALT
-    # (= 1 - rented_fraction). Defaults to 1.0 for non-property-tax obligations.
+    # (= 1 - rented_fraction). Defaults to 1.0 for non-property-tax obligations. Deprecated:
+    # `obligation_property_slot` lets the engine look up runtime rented_fraction instead;
+    # the compile-time value here is just an initial value for the no-lifecycle case.
     obligation_property_tax_owner_fraction: np.ndarray
+    # For property-tax obligations: the property slot the obligation is tied to so the engine
+    # can look up `current.property_rented_fraction[r, slot]` at settlement time. NO_CODE for
+    # non-property-tax obligations.
+    obligation_property_slot: np.ndarray
     obligation_source_kind: np.ndarray
     obligation_source_index: np.ndarray
     # For property-tax obligations, the tax-profile index whose SALT total should be credited
@@ -501,13 +502,6 @@ def compile_simulation(
         lifecycle_event_month, np.arange(int(scenario.horizon_months) + 1), side="left"
     ).astype(np.int64)
 
-    liability_rented_fraction = np.array(
-        [
-            float(scenario.scheduled_property_purchases[int(liability_property_slot[lia])].rented_fraction)
-            for lia in range(liability_codes.shape[0])
-        ],
-        dtype=np.float64,
-    )
     liability_owner_profile_index = np.array(
         [
             profile_index_by_agent.get(strings.values[int(liability_agent_codes[lia])], NO_CODE)
@@ -525,7 +519,6 @@ def compile_simulation(
         liability_codes=liability_codes,
         liability_agent_codes=liability_agent_codes,
         liability_principal=liability_principal,
-        liability_rented_fraction=liability_rented_fraction,
     )
 
     (tax_link_salt_active, tax_link_salt_cap_by_year, tax_link_salt_contributing_mask) = (
@@ -571,6 +564,7 @@ def compile_simulation(
         tax_settlement_profile_index,
         obligation_property_tax_profile,
         obligation_property_tax_owner_fraction,
+        obligation_property_slot,
         obligation_deduction_profile_index,
         obligation_deductible_fraction,
     ) = _compile_obligation_slots(
@@ -746,7 +740,6 @@ def compile_simulation(
         property_mortgage_slot=property_mortgage_slot,
         liability_codes=liability_codes,
         liability_property_slot=liability_property_slot,
-        liability_rented_fraction=liability_rented_fraction,
         liability_owner_profile_index=liability_owner_profile_index,
         property_rented_fraction=property_rented_fraction,
         property_building_basis=property_building_basis,
@@ -796,6 +789,7 @@ def compile_simulation(
         obligation_deduction_profile_index=obligation_deduction_profile_index,
         obligation_deductible_fraction=obligation_deductible_fraction,
         obligation_property_tax_owner_fraction=obligation_property_tax_owner_fraction,
+        obligation_property_slot=obligation_property_slot,
         external_event_ids=external_event_ids,
         external_event_values=external_event_values,
         pe_issuer_codes=pe_issuer_codes,
@@ -1242,7 +1236,6 @@ def _compile_mortgage_interest_deductions(
     liability_codes: np.ndarray,
     liability_agent_codes: np.ndarray,
     liability_principal: np.ndarray,
-    liability_rented_fraction: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Compile the precomputed per-(tax_link, liability) MID ratio matrix.
 
@@ -1293,12 +1286,11 @@ def _compile_mortgage_interest_deductions(
             principal = float(liability_principal[lia_slot])
             if principal <= 0.0:
                 continue
-            base_ratio = min(1.0, float(cap) / principal)
-            # MID applies only to the owner-occupied portion of mortgage interest. The
-            # rented-fraction share is deducted separately as Schedule E rental interest
-            # (handled in the engine's year-end accrual). Scale here at compile time.
-            owner_fraction = 1.0 - float(liability_rented_fraction[lia_slot])
-            ratio[link, lia_slot] = base_ratio * owner_fraction
+            # Principal-cap ratio only. The owner-vs-rented split is now applied at runtime
+            # via parallel `liability_rental_interest_ytd` accumulation that mirrors
+            # `current.property_rented_fraction` — mid-horizon lifecycle events take effect
+            # immediately in MID/Schedule E.
+            ratio[link, lia_slot] = min(1.0, float(cap) / principal)
         active[link] = bool(np.any(ratio[link] > 0.0))
 
     return ratio, active
@@ -1670,10 +1662,12 @@ def _compile_obligation_slots(
     tax_settlement_profile = _empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
     # Default NO_CODE; populated only for property-tax obligations whose owner has a TaxProfile.
     property_tax_profile = _empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
-    # Fraction of paid property tax that contributes to SALT (only the owner-use share).
-    # Defaults to 1.0 (full owner-use). Set to (1 - rented_fraction) for property-tax obligations
-    # on rented properties; the rented_fraction share is routed to Schedule E instead.
+    # Fraction of paid property tax that contributes to SALT (initial value for no-lifecycle
+    # scenarios; engine reads runtime `current.property_rented_fraction` when
+    # `obligation_property_slot[month, slot] >= 0`).
     property_tax_owner_fraction = _empty_month_matrix(horizon, max_slots, np.float64, 1.0)
+    # Property slot for property-tax obligations. NO_CODE elsewhere.
+    property_slot_matrix = _empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
     # Schedule E deduction wiring: NO_CODE / 0.0 unless the obligation declares
     # deduction_category. Engine decrements ordinary_ytd by amount × deductible_fraction
     # at settlement time when deduction_profile >= 0.
@@ -1775,14 +1769,16 @@ def _compile_obligation_slots(
                 owner_code = strings.require(policy.owner_agent_id)
                 owner_profile = agent_to_profile_index.get(owner_code, NO_CODE)
                 property_tax_profile[month, idx] = owner_profile
+                # Wire the property slot so the engine can look up runtime rented_fraction at
+                # settlement time. SALT/Schedule E split moves with mid-horizon lifecycle events.
+                property_slot_matrix[month, idx] = prop_slot
+                # Compile-time initial values used only when property_slot is NO_CODE (i.e.
+                # this branch is skipped) or as a no-lifecycle fallback.
                 rented_fraction_val = float(purchase.rented_fraction)
-                if rented_fraction_val > 0.0:
-                    # Only the owner-use share contributes to SALT.
-                    property_tax_owner_fraction[month, idx] = 1.0 - rented_fraction_val
-                    # The rented-use share is a Schedule E deduction.
-                    if owner_profile >= 0:
-                        deduction_profile[month, idx] = owner_profile
-                        deductible_fraction[month, idx] = rented_fraction_val
+                property_tax_owner_fraction[month, idx] = 1.0 - rented_fraction_val
+                if owner_profile >= 0:
+                    deduction_profile[month, idx] = owner_profile
+                    deductible_fraction[month, idx] = rented_fraction_val
             elif kind in {3, 4, 5}:
                 profile_index = int(spec["source"])
                 profile = profile_by_index[profile_index]
@@ -1832,6 +1828,7 @@ def _compile_obligation_slots(
         tax_settlement_profile,
         property_tax_profile,
         property_tax_owner_fraction,
+        property_slot_matrix,
         deduction_profile,
         deductible_fraction,
     )
