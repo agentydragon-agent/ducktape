@@ -18,6 +18,7 @@ from augur.product.wire import (
     ClosingCostPaymentEvent,
     FundingPolicy,
     HoaDuesPaymentEvent,
+    HoldingSaleEvent,
     HomeownersInsurancePaymentEvent,
     MetricFanRequest,
     MonthlyExpenseEvent,
@@ -28,7 +29,6 @@ from augur.product.wire import (
     PropertyPurchase,
     PropertyPurchaseEvent,
     PropertyTaxPaymentEvent,
-    PublicSecuritySaleEvent,
     RolloutFailureEvent,
     RolloutRequest,
     ScenarioKey,
@@ -122,7 +122,7 @@ def test_metric_fan_and_rollout_detail_share_cached_sim_rollouts(
     assert detail.exogenous_model_id == "independent_exogenous_model"
     assert detail.rollout.seed == 7
     assert detail.rollout.monthly_metrics["cash_usd"] == [250_000.0, 249_000.0, 248_000.0, 247_000.0]
-    assert detail.rollout.monthly_metrics["public_security_value_usd"][0] == 750_000.0
+    assert detail.rollout.monthly_metrics["holding_value_usd"][0] == 750_000.0
     assert detail.rollout.monthly_metrics["liquid_net_worth_usd"][0] == 1_000_000.0
     assert detail.rollout.monthly_metrics["net_worth_usd"][0] == 1_000_000.0
     assert [event.kind for event in detail.rollout.events] == ["monthly_expense"] * 3
@@ -132,11 +132,11 @@ def test_metric_fan_and_rollout_detail_share_cached_sim_rollouts(
         1_000.0,
     ]
 
-    public_security_fan = product.metric_fan(
-        MetricFanRequest(scenario=scenario, rollout_seeds=(7, 8), metric="public_security_value_usd", percentiles=(50,))
+    holding_fan = product.metric_fan(
+        MetricFanRequest(scenario=scenario, rollout_seeds=(7, 8), metric="holding_value_usd", percentiles=(50,))
     )
 
-    assert public_security_fan.monthly_metric_fan["value"][0] == 750_000.0
+    assert holding_fan.monthly_metric_fan["value"][0] == 750_000.0
 
     fan_with_one_new_seed = product.metric_fan(
         MetricFanRequest(scenario=scenario, rollout_seeds=(7, 8, 9), metric="cash_usd", percentiles=(50,))
@@ -203,7 +203,7 @@ def test_failed_rollout_metrics_freeze_at_zero_after_failure(counting_exogenous_
     assert summary.failed is True
     assert summary.terminal_metrics.failed_month_index == 0
     assert summary.terminal_metrics.cash_usd == 0.0
-    assert summary.terminal_metrics.public_security_value_usd == 0.0
+    assert summary.terminal_metrics.holding_value_usd == 0.0
     assert summary.terminal_metrics.net_worth_usd == 0.0
     assert summary.terminal_metrics.shortfall_usd == 300_000.0
 
@@ -211,7 +211,7 @@ def test_failed_rollout_metrics_freeze_at_zero_after_failure(counting_exogenous_
 
     assert detail.rollout.failed is True
     assert detail.rollout.monthly_metrics["cash_usd"] == [250_000.0, 0.0, 0.0, 0.0]
-    assert detail.rollout.monthly_metrics["public_security_value_usd"] == [750_000.0, 0.0, 0.0, 0.0]
+    assert detail.rollout.monthly_metrics["holding_value_usd"] == [750_000.0, 0.0, 0.0, 0.0]
     assert detail.rollout.monthly_metrics["net_worth_usd"] == [1_000_000.0, 0.0, 0.0, 0.0]
     assert [event.kind for event in detail.rollout.events] == ["monthly_expense", "failure"]
     expense, failure = detail.rollout.events
@@ -222,7 +222,7 @@ def test_failed_rollout_metrics_freeze_at_zero_after_failure(counting_exogenous_
     assert failure.shortfall_usd == 300_000.0
 
 
-def test_default_funding_policy_sells_public_securities_for_required_spend(
+def test_default_funding_policy_sells_holdings_for_required_spend(
     counting_exogenous_model: CountingExogenousModel,
 ) -> None:
     product = _service(counting_exogenous_model)
@@ -235,16 +235,16 @@ def test_default_funding_policy_sells_public_securities_for_required_spend(
     assert detail.rollout.failed is False
     columns = detail.rollout.monthly_metrics
     assert columns["cash_usd"] == [250_000.0, 0.0]
-    public_security_value_usd = columns["public_security_value_usd"]
-    assert public_security_value_usd[0] == 750_000.0
-    terminal_public_security_value_usd = float(public_security_value_usd[1])  # type: ignore[arg-type]
-    assert 0.0 < terminal_public_security_value_usd < 750_000.0
+    holding_value_usd = columns["holding_value_usd"]
+    assert holding_value_usd[0] == 750_000.0
+    terminal_holding_value_usd = float(holding_value_usd[1])  # type: ignore[arg-type]
+    assert 0.0 < terminal_holding_value_usd < 750_000.0
     assert detail.rollout.terminal_metrics.cash_usd == 0.0
     assert detail.rollout.terminal_metrics.shortfall_usd == 0.0
-    assert detail.rollout.terminal_metrics.net_worth_usd == pytest.approx(terminal_public_security_value_usd)
-    assert [event.kind for event in detail.rollout.events] == ["public_security_sale", "monthly_expense"]
+    assert detail.rollout.terminal_metrics.net_worth_usd == pytest.approx(terminal_holding_value_usd)
+    assert [event.kind for event in detail.rollout.events] == ["holding_sale", "monthly_expense"]
     sale, expense = detail.rollout.events
-    assert isinstance(sale, PublicSecuritySaleEvent)
+    assert isinstance(sale, HoldingSaleEvent)
     assert isinstance(expense, MonthlyExpenseEvent)
     assert sale.asset_label == "SP500 Proxy (VOO)"
     assert sale.proceeds_usd == pytest.approx(50_000.0)
@@ -272,9 +272,9 @@ def test_product_cash_buffer_uses_sim_trigger_and_fixed_sale_amount(
     assert detail.rollout.monthly_metrics["cash_usd"] == [250_000.0, 269_000.0]
     assert detail.rollout.terminal_metrics.cash_usd == 269_000.0
     assert detail.rollout.terminal_metrics.shortfall_usd == 0.0
-    assert [event.kind for event in detail.rollout.events] == ["public_security_sale", "monthly_expense"]
+    assert [event.kind for event in detail.rollout.events] == ["holding_sale", "monthly_expense"]
     sale, expense = detail.rollout.events
-    assert isinstance(sale, PublicSecuritySaleEvent)
+    assert isinstance(sale, HoldingSaleEvent)
     assert isinstance(expense, MonthlyExpenseEvent)
     assert sale.proceeds_usd == pytest.approx(20_000.0)
     assert expense.amount_paid_usd == 1_000.0
@@ -301,7 +301,7 @@ def test_product_rollout_includes_zero_tax_accrual_events_without_taxable_income
     assert [event for event in detail.rollout.events if event.kind == "tax_payment"] == []
 
 
-def test_product_rollout_includes_federal_and_california_tax_events_for_public_security_sales(
+def test_product_rollout_includes_federal_and_california_tax_events_for_holding_sales(
     counting_exogenous_model: CountingExogenousModel,
 ) -> None:
     product = _service(counting_exogenous_model)

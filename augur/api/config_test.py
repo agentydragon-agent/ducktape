@@ -21,12 +21,7 @@ from augur.api.config import (
 )
 from augur.api.finance import ConcentratedHoldingSnapshot, FinanceSnapshot
 from augur.api.local_regulation import LocalRegulation
-from augur.api.portfolio import (
-    PortfolioAccountConfig,
-    PortfolioConfig,
-    PublicSecurityPositionConfig,
-    PublicSecurityTaxLotConfig,
-)
+from augur.api.portfolio import HoldingPositionConfig, HoldingTaxLotConfig, PortfolioAccountConfig, PortfolioConfig
 from augur.api.scenario_set import ActorRole, LiquidityReserveRuleType, TaxRegime
 from augur.model.independent_exogenous import IndependentExogenousProviderConfig
 
@@ -137,8 +132,8 @@ def test_config_carries_tax_lot_accurate_portfolio_schema() -> None:
     config = _minimal_config(
         portfolio=PortfolioConfig(
             accounts=(PortfolioAccountConfig(account_id="taxable_brokerage", owner_agent_id="alpha"),),
-            public_securities=(
-                PublicSecurityPositionConfig(
+            holdings=(
+                HoldingPositionConfig(
                     position_id="voo_position",
                     account_id="taxable_brokerage",
                     symbol="VOO",
@@ -146,7 +141,7 @@ def test_config_carries_tax_lot_accurate_portfolio_schema() -> None:
                     value_series_id="voo",
                     unit_value_usd=500.0,
                     lots=(
-                        PublicSecurityTaxLotConfig(
+                        HoldingTaxLotConfig(
                             lot_id="voo_2024_05_12",
                             holding_period_months_at_start=24,
                             quantity=100,
@@ -160,7 +155,7 @@ def test_config_carries_tax_lot_accurate_portfolio_schema() -> None:
 
     reloaded = Config.model_validate_json(config.model_dump_json(exclude_computed_fields=True))
 
-    assert reloaded.portfolio.public_securities[0].lots[0].holding_period_months_at_start == 24
+    assert reloaded.portfolio.holdings[0].lots[0].holding_period_months_at_start == 24
     assert reloaded.portfolio.to_initial_lots()[0].purchase_month_index == -24
 
 

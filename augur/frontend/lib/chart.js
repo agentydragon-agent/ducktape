@@ -23,7 +23,7 @@ const METRIC_DISPLAY_NAMES = {
   privateEquityValueUsd: "Private-equity value",
   propertyCarryingCostUsd: "Property carrying costs",
   propertyValueUsd: "Property value",
-  publicSecurityValueUsd: "Public security value",
+  holdingValueUsd: "Public security value",
   rentalIncomeUsd: "Rental income",
   shortfallUsd: "Cash shortfall",
   totalGenericSp500SaleUsd: "Total SP500 sales",

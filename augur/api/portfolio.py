@@ -27,7 +27,7 @@ class PortfolioAccountType(StrEnum):
     TAXABLE_BROKERAGE = "taxable_brokerage"
 
 
-class PublicSecurityKind(StrEnum):
+class HoldingKind(StrEnum):
     ETF = "etf"
     STOCK = "stock"
     MUTUAL_FUND = "mutual_fund"
@@ -36,6 +36,14 @@ class PublicSecurityKind(StrEnum):
     # factors. Calling them "public securities" is a slight misnomer for crypto, but the
     # sim doesn't distinguish, so we lean on this enum value for display routing only.
     CRYPTOCURRENCY = "cryptocurrency"
+    # Private equity (pre-IPO company shares). Like crypto, leans on the same lot machinery
+    # for FIFO + cap gains. Diverges from stocks in two ways the sim cares about:
+    # (1) the asset_id sits under the `private_equity:` namespace so a sampled tender-event
+    # series can be matched per issuer, and (2) PE positions are never included in
+    # LiquidityPolicy.asset_preference_chain — they can only be sold when a sampled tender
+    # event fires, dispatched by PrivateEquityTenderPolicy. Display-only routing here; the
+    # constraint lives in the sim wiring.
+    PRIVATE_EQUITY = "private_equity"
     OTHER = "other"
 
 
@@ -46,7 +54,7 @@ class PortfolioAccountConfig(PortfolioConfigModel):
     label: str | None = None
 
 
-class PublicSecurityTaxLotConfig(PortfolioConfigModel):
+class HoldingTaxLotConfig(PortfolioConfigModel):
     lot_id: str = Field(pattern=_ID_PATTERN)
     holding_period_months_at_start: NonNegativeInt
     quantity: PositiveFloat
@@ -57,12 +65,12 @@ class PublicSecurityTaxLotConfig(PortfolioConfigModel):
         return float(self.cost_basis_usd / self.quantity)
 
 
-class PublicSecurityPositionConfig(PortfolioConfigModel):
+class HoldingPositionConfig(PortfolioConfigModel):
     position_id: str = Field(pattern=_ID_PATTERN)
     account_id: str = Field(pattern=_ID_PATTERN)
     label: str | None = None
     symbol: str
-    security_kind: PublicSecurityKind
+    security_kind: HoldingKind
     value_series_id: str = Field(
         pattern=_SERIES_ID_PATTERN,
         description=(
@@ -71,7 +79,7 @@ class PublicSecurityPositionConfig(PortfolioConfigModel):
         ),
     )
     unit_value_usd: PositiveFloat
-    lots: tuple[PublicSecurityTaxLotConfig, ...] = Field(min_length=1)
+    lots: tuple[HoldingTaxLotConfig, ...] = Field(min_length=1)
 
     @property
     def total_quantity(self) -> float:
@@ -95,7 +103,7 @@ class PortfolioConfig(PortfolioConfigModel):
     """
 
     accounts: tuple[PortfolioAccountConfig, ...] = ()
-    public_securities: tuple[PublicSecurityPositionConfig, ...] = ()
+    holdings: tuple[HoldingPositionConfig, ...] = ()
 
     @model_validator(mode="after")
     def _validate_references(self) -> PortfolioConfig:
@@ -105,21 +113,21 @@ class PortfolioConfig(PortfolioConfigModel):
 
         known_accounts = {account.account_id for account in self.accounts}
         missing_accounts = sorted(
-            {position.account_id for position in self.public_securities if position.account_id not in known_accounts}
+            {position.account_id for position in self.holdings if position.account_id not in known_accounts}
         )
         if missing_accounts:
             raise ValueError(f"portfolio positions reference unknown account_id values: {missing_accounts}")
 
-        duplicate_positions = _duplicates(position.position_id for position in self.public_securities)
+        duplicate_positions = _duplicates(position.position_id for position in self.holdings)
         if duplicate_positions:
             raise ValueError(f"public securities must have unique position_id values: {duplicate_positions}")
 
-        duplicate_lots = _duplicates(lot.lot_id for position in self.public_securities for lot in position.lots)
+        duplicate_lots = _duplicates(lot.lot_id for position in self.holdings for lot in position.lots)
         if duplicate_lots:
             raise ValueError(f"public security tax lots must have unique lot_id values: {duplicate_lots}")
 
         series_unit_values: dict[str, float] = {}
-        for position in self.public_securities:
+        for position in self.holdings:
             unit_value = float(position.unit_value_usd)
             if (
                 position.value_series_id in series_unit_values
@@ -134,12 +142,12 @@ class PortfolioConfig(PortfolioConfigModel):
         return self
 
     @property
-    def total_public_security_value_usd(self) -> float:
-        return sum(position.current_value_usd for position in self.public_securities)
+    def total_holdings_value_usd(self) -> float:
+        return sum(position.current_value_usd for position in self.holdings)
 
     @property
     def level_anchors(self) -> dict[str, float]:
-        return {position.value_series_id: float(position.unit_value_usd) for position in self.public_securities}
+        return {position.value_series_id: float(position.unit_value_usd) for position in self.holdings}
 
     def to_initial_lots(self) -> tuple[InitialLot, ...]:
         account_by_id = {account.account_id: account for account in self.accounts}
@@ -152,7 +160,7 @@ class PortfolioConfig(PortfolioConfigModel):
                 quantity=float(lot.quantity),
                 cost_basis_per_unit_usd=lot.cost_basis_per_unit_usd,
             )
-            for position in self.public_securities
+            for position in self.holdings
             for lot in position.lots
         )
 

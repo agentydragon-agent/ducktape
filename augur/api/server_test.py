@@ -379,16 +379,16 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
         "value": [247_000.0, 247_000.0, 247_000.0],
     }
 
-    public_security_fan = _post_json(
+    holding_fan = _post_json(
         server_url,
         "/api/product/projections/metric_fan",
-        {"scenario": scenario, "rollout_seeds": [7, 8], "metric": "public_security_value_usd", "percentiles": [50]},
+        {"scenario": scenario, "rollout_seeds": [7, 8], "metric": "holding_value_usd", "percentiles": [50]},
     )
 
-    assert public_security_fan["metric"] == "public_security_value_usd"
-    assert public_security_fan["monthly_metric_fan"]["month_index"] == [0, 1, 2, 3]
-    assert public_security_fan["monthly_metric_fan"]["percentile"] == [50.0] * 4
-    assert public_security_fan["monthly_metric_fan"]["value"][0] == 750_000.0
+    assert holding_fan["metric"] == "holding_value_usd"
+    assert holding_fan["monthly_metric_fan"]["month_index"] == [0, 1, 2, 3]
+    assert holding_fan["monthly_metric_fan"]["percentile"] == [50.0] * 4
+    assert holding_fan["monthly_metric_fan"]["value"][0] == 750_000.0
 
     detail = _post_json(server_url, "/api/product/projections/rollout", {"scenario": scenario, "seed": 7})
 
@@ -400,13 +400,14 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
     assert len(columns["month_index"]) == 4
     assert columns["month_index"] == [0, 1, 2, 3]
     assert columns["cash_usd"] == [250_000.0, 249_000.0, 248_000.0, 247_000.0]
-    assert columns["public_security_value_usd"][0] == 750_000.0
+    assert columns["holding_value_usd"][0] == 750_000.0
     assert columns["liquid_net_worth_usd"][0] == 1_000_000.0
     assert columns["net_worth_usd"][0] == 1_000_000.0
     assert set(columns) == {
         "month_index",
         "cash_usd",
-        "public_security_value_usd",
+        "holding_value_usd",
+        "private_equity_value_usd",
         "property_value_usd",
         "mortgage_balance_usd",
         "home_equity_usd",
@@ -416,14 +417,14 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
     }
     terminal = detail["rollout"]["terminal_metrics"]
     assert terminal["cash_usd"] == 247_000.0
-    assert terminal["public_security_value_usd"] > 0
-    assert terminal["liquid_net_worth_usd"] == pytest.approx(
-        terminal["cash_usd"] + terminal["public_security_value_usd"]
-    )
+    assert terminal["holding_value_usd"] > 0
+    assert terminal["private_equity_value_usd"] == 0.0
+    assert terminal["liquid_net_worth_usd"] == pytest.approx(terminal["cash_usd"] + terminal["holding_value_usd"])
     assert terminal["net_worth_usd"] == pytest.approx(terminal["liquid_net_worth_usd"])
     assert set(terminal) == {
         "cash_usd",
-        "public_security_value_usd",
+        "holding_value_usd",
+        "private_equity_value_usd",
         "property_value_usd",
         "mortgage_balance_usd",
         "home_equity_usd",
@@ -436,16 +437,16 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
     assert [event["amount_paid_usd"] for event in detail["rollout"]["events"]] == [1_000.0, 1_000.0, 1_000.0]
 
 
-def test_backend_server_product_portfolio_returns_configured_public_securities(server_url: str) -> None:
+def test_backend_server_product_portfolio_returns_configured_holdings(server_url: str) -> None:
     portfolio = _get_json(server_url, "/api/product/portfolio")
 
     assert portfolio["as_of_date"] == "2026-05-14"
     assert portfolio["cash_usd"] == 250_000.0
     # SP500: 1500 * $500 = $750k; BTC: 1 * $75k = $75k; ETH: 5 * $2.1k = $10.5k.
-    assert portfolio["total_public_security_value_usd"] == 835_500.0
+    assert portfolio["total_holdings_value_usd"] == 835_500.0
     # SP500 basis $550k + BTC basis $30k + ETH basis $15k = $595k.
-    assert portfolio["total_public_security_cost_basis_usd"] == 595_000.0
-    positions_by_id = {position["position_id"]: position for position in portfolio["public_securities"]}
+    assert portfolio["total_holdings_cost_basis_usd"] == 595_000.0
+    positions_by_id = {position["position_id"]: position for position in portfolio["holdings"]}
     assert set(positions_by_id) == {"sp500_proxy", "btc_holding", "eth_holding"}
     sp500 = positions_by_id["sp500_proxy"]
     assert sp500["account_label"] == "Taxable Brokerage"
@@ -497,7 +498,7 @@ def test_backend_server_zeroes_failed_product_rollout_metrics(server_url: str) -
     assert summary["failed"] is True
     assert summary["terminal_metrics"]["failed_month_index"] == 0
     assert summary["terminal_metrics"]["cash_usd"] == 0.0
-    assert summary["terminal_metrics"]["public_security_value_usd"] == 0.0
+    assert summary["terminal_metrics"]["holding_value_usd"] == 0.0
     assert summary["terminal_metrics"]["net_worth_usd"] == 0.0
     assert summary["terminal_metrics"]["shortfall_usd"] == 300_000.0
 
@@ -508,7 +509,7 @@ def test_backend_server_zeroes_failed_product_rollout_metrics(server_url: str) -
     columns = detail["rollout"]["monthly_metrics"]
     assert columns["month_index"] == [0, 1, 2, 3]
     assert columns["cash_usd"] == [250_000.0, 0.0, 0.0, 0.0]
-    assert columns["public_security_value_usd"] == [750_000.0, 0.0, 0.0, 0.0]
+    assert columns["holding_value_usd"] == [750_000.0, 0.0, 0.0, 0.0]
     assert columns["net_worth_usd"] == [1_000_000.0, 0.0, 0.0, 0.0]
     expense, failure = detail["rollout"]["events"]
     assert expense == {
@@ -529,7 +530,7 @@ def test_backend_server_zeroes_failed_product_rollout_metrics(server_url: str) -
     }
 
 
-def test_backend_server_product_default_funding_sells_public_security_for_required_spend(server_url: str) -> None:
+def test_backend_server_product_default_funding_sells_holding_for_required_spend(server_url: str) -> None:
     scenario = {
         "exogenous_model_id": "current_exogenous_model",
         "horizon_months": 1,
@@ -542,17 +543,17 @@ def test_backend_server_product_default_funding_sells_public_security_for_requir
     assert detail["rollout"]["failed"] is False
     columns = detail["rollout"]["monthly_metrics"]
     assert columns["cash_usd"] == [250_000.0, 0.0]
-    assert columns["public_security_value_usd"][0] == 750_000.0
-    assert 0.0 < columns["public_security_value_usd"][1] < 750_000.0
+    assert columns["holding_value_usd"][0] == 750_000.0
+    assert 0.0 < columns["holding_value_usd"][1] < 750_000.0
     terminal = detail["rollout"]["terminal_metrics"]
     assert terminal["cash_usd"] == 0.0
     assert terminal["shortfall_usd"] == 0.0
-    assert terminal["net_worth_usd"] == pytest.approx(columns["public_security_value_usd"][1])
+    assert terminal["net_worth_usd"] == pytest.approx(columns["holding_value_usd"][1])
     sale, expense = detail["rollout"]["events"]
     assert sale == {
         "month_index": 0,
         "amount_usd": 50_000.0,
-        "kind": "public_security_sale",
+        "kind": "holding_sale",
         "asset_id": "sp500",
         "asset_label": "SP500 Proxy (VOO)",
         "units": 100.0,
@@ -578,7 +579,7 @@ def test_backend_server_product_cash_buffer_uses_trigger_and_fixed_sale_amount(s
         "funding_policy": {
             "cash_buffer_trigger_below_usd": 260_000.0,
             "cash_buffer_sale_usd": 20_000.0,
-            "sell_order": ["public_securities"],
+            "sell_order": ["stocks"],
         },
     }
 
@@ -590,7 +591,7 @@ def test_backend_server_product_cash_buffer_uses_trigger_and_fixed_sale_amount(s
     assert detail["rollout"]["terminal_metrics"]["cash_usd"] == 269_000.0
     assert detail["rollout"]["terminal_metrics"]["shortfall_usd"] == 0.0
     sale, expense = detail["rollout"]["events"]
-    assert sale["kind"] == "public_security_sale"
+    assert sale["kind"] == "holding_sale"
     assert sale["proceeds_usd"] == pytest.approx(20_000.0)
     assert expense["kind"] == "monthly_expense"
     assert expense["amount_paid_usd"] == 1_000.0
@@ -616,7 +617,7 @@ def test_backend_server_product_rollout_includes_zero_tax_accrual_events_without
     assert [event for event in detail["rollout"]["events"] if event["kind"] == "tax_payment"] == []
 
 
-def test_backend_server_product_rollout_includes_federal_and_california_tax_events_for_public_security_sales(
+def test_backend_server_product_rollout_includes_federal_and_california_tax_events_for_holding_sales(
     server_url: str,
 ) -> None:
     scenario = {
@@ -627,7 +628,7 @@ def test_backend_server_product_rollout_includes_federal_and_california_tax_even
         "funding_policy": {
             "cash_buffer_trigger_below_usd": 260_000.0,
             "cash_buffer_sale_usd": 500_000.0,
-            "sell_order": ["public_securities"],
+            "sell_order": ["stocks"],
         },
     }
 

@@ -9,10 +9,11 @@ from pydantic import Field, NonNegativeFloat, NonNegativeInt, PositiveFloat, Pos
 from augur.api.schemas import ApiModel, Frame, Percentage
 
 SpendIndex = Literal["none", "inflation"]
-SellableBucket = Literal["public_securities", "crypto"]
+SellableBucket = Literal["stocks", "crypto"]
 MetricName = Literal[
     "cash_usd",
-    "public_security_value_usd",
+    "holding_value_usd",
+    "private_equity_value_usd",
     "property_value_usd",
     "mortgage_balance_usd",
     "home_equity_usd",
@@ -21,7 +22,7 @@ MetricName = Literal[
     "shortfall_usd",
 ]
 MAX_HORIZON_MONTHS = 100 * 12
-DEFAULT_SELL_ORDER: tuple[SellableBucket, ...] = ("public_securities", "crypto")
+DEFAULT_SELL_ORDER: tuple[SellableBucket, ...] = ("stocks", "crypto")
 
 
 class FundingPolicy(ApiModel):
@@ -97,7 +98,8 @@ class RolloutRequest(ApiModel):
 
 class TerminalMetrics(ApiModel):
     cash_usd: float
-    public_security_value_usd: NonNegativeFloat
+    holding_value_usd: NonNegativeFloat
+    private_equity_value_usd: NonNegativeFloat = 0.0
     property_value_usd: NonNegativeFloat = 0.0
     mortgage_balance_usd: NonNegativeFloat = 0.0
     home_equity_usd: float = 0.0
@@ -112,8 +114,8 @@ class _RolloutEventBase(ApiModel):
     amount_usd: NonNegativeFloat
 
 
-class PublicSecuritySaleEvent(_RolloutEventBase):
-    kind: Literal["public_security_sale"] = "public_security_sale"
+class HoldingSaleEvent(_RolloutEventBase):
+    kind: Literal["holding_sale"] = "holding_sale"
     asset_id: str
     asset_label: str | None = None
     units: NonNegativeFloat
@@ -216,7 +218,7 @@ class RolloutFailureEvent(_RolloutEventBase):
 
 
 type RolloutEvent = Annotated[
-    PublicSecuritySaleEvent
+    HoldingSaleEvent
     | MonthlyExpenseEvent
     | OutsideRentPaymentEvent
     | PropertyPurchaseEvent

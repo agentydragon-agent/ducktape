@@ -3,24 +3,19 @@ from __future__ import annotations
 import pytest_bazel
 
 from augur.api.finance import FinanceSnapshot
-from augur.api.portfolio import (
-    PortfolioAccountConfig,
-    PortfolioConfig,
-    PublicSecurityPositionConfig,
-    PublicSecurityTaxLotConfig,
-)
+from augur.api.portfolio import HoldingPositionConfig, HoldingTaxLotConfig, PortfolioAccountConfig, PortfolioConfig
 from augur.product.portfolio import product_portfolio_response
 
 
-def test_product_portfolio_response_includes_public_security_positions_and_lots() -> None:
+def test_product_portfolio_response_includes_holding_positions_and_lots() -> None:
     response = product_portfolio_response(
         snapshot=FinanceSnapshot(as_of_date="2026-05-14", cash_usd=50_000.0),
         portfolio=PortfolioConfig(
             accounts=(
                 PortfolioAccountConfig(account_id="taxable", owner_agent_id="agent_a", label="Taxable Brokerage"),
             ),
-            public_securities=(
-                PublicSecurityPositionConfig(
+            holdings=(
+                HoldingPositionConfig(
                     position_id="sp500_proxy",
                     account_id="taxable",
                     label="SP500 Proxy",
@@ -29,13 +24,13 @@ def test_product_portfolio_response_includes_public_security_positions_and_lots(
                     value_series_id="sp500",
                     unit_value_usd=500.0,
                     lots=(
-                        PublicSecurityTaxLotConfig(
+                        HoldingTaxLotConfig(
                             lot_id="sp500_2020_01",
                             holding_period_months_at_start=76,
                             quantity=150.0,
                             cost_basis_usd=60_000.0,
                         ),
-                        PublicSecurityTaxLotConfig(
+                        HoldingTaxLotConfig(
                             lot_id="sp500_2024_06",
                             holding_period_months_at_start=23,
                             quantity=150.0,
@@ -49,9 +44,9 @@ def test_product_portfolio_response_includes_public_security_positions_and_lots(
 
     assert response.as_of_date == "2026-05-14"
     assert response.cash_usd == 50_000.0
-    assert response.total_public_security_value_usd == 150_000.0
-    assert response.total_public_security_cost_basis_usd == 110_000.0
-    [position] = response.public_securities
+    assert response.total_holdings_value_usd == 150_000.0
+    assert response.total_holdings_cost_basis_usd == 110_000.0
+    [position] = response.holdings
     assert position.account_label == "Taxable Brokerage"
     assert position.label == "SP500 Proxy"
     assert position.symbol == "VOO"

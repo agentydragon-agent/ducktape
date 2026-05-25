@@ -11,6 +11,7 @@ from augur.model.series import home_value_series_id
 from augur.product.wire import (
     ClosingCostPaymentEvent,
     HoaDuesPaymentEvent,
+    HoldingSaleEvent,
     HomeownersInsurancePaymentEvent,
     MonthlyExpenseEvent,
     MortgagePaymentEvent,
@@ -18,7 +19,6 @@ from augur.product.wire import (
     PropertyMaintenancePaymentEvent,
     PropertyPurchaseEvent,
     PropertyTaxPaymentEvent,
-    PublicSecuritySaleEvent,
     RolloutEvent,
     RolloutFailureEvent,
     TaxAccrualEvent,
@@ -39,18 +39,24 @@ def monthly_metrics_for_rollout(dense: DenseSimulationResult, *, primary_agent_i
     primary_agent_code = _required_string_code(plan.strings, primary_agent_id)
     month_indices = np.arange(plan.horizon_months + 1, dtype=np.int64)
     cash_usd = _cash_by_month(dense, primary_agent_code=primary_agent_code)
-    public_security_value_usd = _public_security_value_by_month(dense, primary_agent_code=primary_agent_code)
+    holding_value_usd = _holding_value_by_month(dense, primary_agent_code=primary_agent_code)
+    private_equity_value_usd = _private_equity_value_by_month(dense, primary_agent_code=primary_agent_code)
     property_value_usd = _property_value_by_month(dense, primary_agent_code=primary_agent_code)
     mortgage_balance_usd = _mortgage_balance_by_month(dense, primary_agent_code=primary_agent_code)
     home_equity_usd = property_value_usd - mortgage_balance_usd
     shortfall_usd = _shortfall_by_month(dense, primary_agent_code=primary_agent_code)
-    liquid_net_worth_usd = cash_usd + public_security_value_usd
-    net_worth_usd = liquid_net_worth_usd + home_equity_usd
+    # liquid_net_worth excludes private equity by design: PE is only saleable at sparse
+    # tender events, so it doesn't satisfy "cash you could get tomorrow" semantics. The
+    # PrivateEquityTenderPolicy uses this same definition when deciding how much PE to
+    # liquidate at a tender (sell enough to lift liquid_net_worth to a configured floor).
+    liquid_net_worth_usd = cash_usd + holding_value_usd
+    net_worth_usd = liquid_net_worth_usd + home_equity_usd + private_equity_value_usd
     return pl.DataFrame(
         {
             "month_index": month_indices,
             "cash_usd": cash_usd,
-            "public_security_value_usd": public_security_value_usd,
+            "holding_value_usd": holding_value_usd,
+            "private_equity_value_usd": private_equity_value_usd,
             "property_value_usd": property_value_usd,
             "mortgage_balance_usd": mortgage_balance_usd,
             "home_equity_usd": home_equity_usd,
@@ -73,7 +79,8 @@ def terminal_metrics_from(monthly: pl.DataFrame, *, failed_month_index: int | No
     row = monthly.tail(1).row(0, named=True)
     return TerminalMetrics(
         cash_usd=float(row["cash_usd"]),
-        public_security_value_usd=float(row["public_security_value_usd"]),
+        holding_value_usd=float(row["holding_value_usd"]),
+        private_equity_value_usd=float(row["private_equity_value_usd"]),
         property_value_usd=float(row["property_value_usd"]),
         mortgage_balance_usd=float(row["mortgage_balance_usd"]),
         home_equity_usd=float(row["home_equity_usd"]),
@@ -88,7 +95,7 @@ def rollout_events_from(
     run: SimulationRun, *, primary_agent_id: str, asset_label_by_id: dict[str, str]
 ) -> tuple[RolloutEvent, ...]:
     events = [
-        *_public_security_sale_events(run, primary_agent_id=primary_agent_id, asset_label_by_id=asset_label_by_id),
+        *_holding_sale_events(run, primary_agent_id=primary_agent_id, asset_label_by_id=asset_label_by_id),
         *_property_purchase_events(run, primary_agent_id=primary_agent_id),
         *_mortgage_payment_events(run, primary_agent_id=primary_agent_id),
         *_property_tax_payment_events(run, primary_agent_id=primary_agent_id),
@@ -104,7 +111,7 @@ def rollout_events_from(
     priority = {
         "property_purchase": 0,
         "closing_cost_payment": 1,
-        "public_security_sale": 2,
+        "holding_sale": 2,
         "tax_accrual": 3,
         "tax_payment": 4,
         "property_tax_payment": 5,
@@ -129,7 +136,35 @@ def _cash_by_month(dense: DenseSimulationResult, *, primary_agent_code: int) -> 
     return cast(np.ndarray, dense.buffers.cash_state[:, _SINGLE_ROLLOUT_INDEX, :][:, cash_slots].sum(axis=1))
 
 
-def _public_security_value_by_month(dense: DenseSimulationResult, *, primary_agent_code: int) -> np.ndarray:
+_PRIVATE_EQUITY_ASSET_PREFIX = "private_equity:"
+
+
+def _holding_value_by_month(dense: DenseSimulationResult, *, primary_agent_code: int) -> np.ndarray:
+    """Sum of liquid-holding lots (stocks + crypto) priced at sampled series.
+
+    Excludes private-equity lots: PE is illiquid (saleable only at tender events) so it
+    doesn't count toward liquid net worth. PE valuation surfaces separately via
+    `_private_equity_value_by_month`.
+    """
+
+    return _lot_value_by_month(
+        dense, primary_agent_code=primary_agent_code, include=lambda asset_id: not _is_private_equity(asset_id)
+    )
+
+
+def _private_equity_value_by_month(dense: DenseSimulationResult, *, primary_agent_code: int) -> np.ndarray:
+    """Sum of private-equity lots priced at the latest sampled mark for each issuer."""
+
+    return _lot_value_by_month(
+        dense, primary_agent_code=primary_agent_code, include=lambda asset_id: _is_private_equity(asset_id)
+    )
+
+
+def _is_private_equity(asset_id: str) -> bool:
+    return asset_id.startswith(_PRIVATE_EQUITY_ASSET_PREFIX)
+
+
+def _lot_value_by_month(dense: DenseSimulationResult, *, primary_agent_code: int, include) -> np.ndarray:
     plan = dense.plan
     values = np.zeros(plan.horizon_months + 1, dtype=np.float64)
     series_index_by_id = {series_id: index for index, series_id in enumerate(plan.series_ids)}
@@ -137,6 +172,8 @@ def _public_security_value_by_month(dense: DenseSimulationResult, *, primary_age
         if int(plan.lot_agent_codes[lot]) != primary_agent_code:
             continue
         asset_id = plan.strings[int(plan.lot_asset_codes[lot])]
+        if not include(asset_id):
+            continue
         series_index = series_index_by_id.get(asset_id)
         if series_index is None:
             continue
@@ -162,7 +199,7 @@ def _required_string_code(strings: tuple[str, ...], value: str) -> int:
         raise ValueError(f"compiled simulation string table does not contain {value!r}") from exc
 
 
-def _public_security_sale_events(
+def _holding_sale_events(
     run: SimulationRun, *, primary_agent_id: str, asset_label_by_id: dict[str, str]
 ) -> tuple[RolloutEvent, ...]:
     sale_rows = (
@@ -176,7 +213,7 @@ def _public_security_sale_events(
         .sort("month_index", "asset_id")
     )
     return tuple(
-        PublicSecuritySaleEvent(
+        HoldingSaleEvent(
             month_index=int(row["month_index"]),
             amount_usd=float(row["proceeds_usd"]),
             asset_id=str(row["asset_id"]),

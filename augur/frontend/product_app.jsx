@@ -14,7 +14,7 @@ import { AugurShellHeader } from "./shell.jsx";
 // emission time. Storing it as a string (rather than an array) keeps default-comparison and URL
 // encoding trivial.
 const SELL_BUCKETS = [
-  { name: "public_securities", code: "p", label: "Public securities" },
+  { name: "stocks", code: "s", label: "Stocks" },
   { name: "crypto", code: "c", label: "Crypto" },
 ];
 const SELL_BUCKET_BY_CODE = new Map(SELL_BUCKETS.map((bucket) => [bucket.code, bucket]));
@@ -46,7 +46,7 @@ const FAN_PERCENTILES = [5, 25, 50, 75, 95];
 const SELECTED_ROLLOUT_COLOR = "#0f766e";
 const FAILED_ROLLOUT_COLOR = "#ef4444";
 const ROLLOUT_EVENT_COLORS = {
-  public_security_sale: "#0f766e",
+  holding_sale: "#0f766e",
   monthly_expense: "#64748b",
   outside_rent: "#0891b2",
   property_purchase: "#1d4ed8",
@@ -63,7 +63,7 @@ const ROLLOUT_EVENT_COLORS = {
 
 const METRIC_OPTIONS = [
   { value: "net_worth_usd", chartValue: "netWorthUsd", label: "Net worth" },
-  { value: "public_security_value_usd", chartValue: "publicSecurityValueUsd", label: "Public security value" },
+  { value: "holding_value_usd", chartValue: "holdingValueUsd", label: "Public security value" },
   { value: "property_value_usd", chartValue: "propertyValueUsd", label: "Property value" },
   { value: "mortgage_balance_usd", chartValue: "mortgageBalanceUsd", label: "Mortgage balance" },
   { value: "home_equity_usd", chartValue: "homeEquityUsd", label: "Home equity" },
@@ -376,7 +376,7 @@ function eventGroupsByMonth(events) {
 
 function eventMarkerYOffset(event) {
   if (event?.kind === "tax_accrual") return -14;
-  if (event?.kind === "public_security_sale") return -6;
+  if (event?.kind === "holding_sale") return -6;
   if (event?.kind === "property_purchase") return -10;
   if (event?.kind === "closing_cost_payment") return -4;
   if (event?.kind === "tax_payment") return 8;
@@ -398,7 +398,7 @@ function eventAmount(event) {
 }
 
 function eventDetailText(event) {
-  if (event?.kind === "public_security_sale") {
+  if (event?.kind === "holding_sale") {
     return `${fmtNumber(event.units)} units; basis ${fmtUsd(event.costBasisUsd)}`;
   }
   if (event?.kind === "monthly_expense" || event?.kind === "outside_rent") {
@@ -481,7 +481,7 @@ function jurisdictionLabel(jurisdictionId) {
 }
 
 function eventLabel(event) {
-  if (event?.kind === "public_security_sale") {
+  if (event?.kind === "holding_sale") {
     return `Sold ${event.assetLabel ?? event.assetId ?? "asset"}`;
   }
   if (event?.kind === "monthly_expense") {
@@ -1240,12 +1240,12 @@ function PropertyPurchasePanel({ bootstrap, input, onChange }) {
 }
 
 function portfolioHasBucket(portfolio, bucketName) {
-  const publicSecurities = portfolio?.publicSecurities ?? [];
+  const holdings = portfolio?.holdings ?? [];
   if (bucketName === "crypto") {
-    return publicSecurities.some((position) => position.securityKind === "cryptocurrency");
+    return holdings.some((position) => position.securityKind === "cryptocurrency");
   }
-  if (bucketName === "public_securities") {
-    return publicSecurities.some((position) => position.securityKind !== "cryptocurrency");
+  if (bucketName === "holdings") {
+    return holdings.some((position) => position.securityKind !== "cryptocurrency");
   }
   return false;
 }
@@ -1339,7 +1339,7 @@ function SellOrderControl({ sellOrder, portfolio, onChange }) {
 }
 
 function ProductPortfolioPanel({ portfolio, error }) {
-  const publicSecurities = portfolio?.publicSecurities ?? [];
+  const holdings = portfolio?.holdings ?? [];
   return (
     <div className="px-4 py-3">
       <div className="augur-eyebrow">Initial portfolio</div>
@@ -1364,7 +1364,7 @@ function ProductPortfolioPanel({ portfolio, error }) {
               <td className="py-1 text-right augur-muted">—</td>
               <td className="py-1 text-right font-semibold augur-tabular">{fmtUsd(portfolio?.cashUsd)}</td>
             </tr>
-            {publicSecurities.map((position) => (
+            {holdings.map((position) => (
               <tr key={position.positionId} className="border-t border-slate-100 dark:border-slate-800">
                 <td className="py-1">
                   <div className="truncate font-semibold augur-strong">{position.label || position.symbol}</div>
@@ -1378,7 +1378,7 @@ function ProductPortfolioPanel({ portfolio, error }) {
                 <td className="py-1 text-right font-semibold augur-tabular">{fmtUsd(position.currentValueUsd)}</td>
               </tr>
             ))}
-            {publicSecurities.length === 0 && (
+            {holdings.length === 0 && (
               <tr className="border-t border-slate-100 dark:border-slate-800">
                 <td colSpan={5} className="py-1 augur-muted">
                   No public securities
@@ -1386,13 +1386,13 @@ function ProductPortfolioPanel({ portfolio, error }) {
               </tr>
             )}
           </tbody>
-          {publicSecurities.length > 0 && (
+          {holdings.length > 0 && (
             <tfoot>
               <tr className="border-t border-slate-200 dark:border-slate-700">
                 <td className="py-1 text-xs augur-muted">Public securities</td>
                 <td colSpan={3} />
                 <td className="py-1 text-right font-semibold augur-tabular">
-                  {fmtUsd(portfolio?.totalPublicSecurityValueUsd)}
+                  {fmtUsd(portfolio?.totalHoldingsValueUsd)}
                 </td>
               </tr>
             </tfoot>

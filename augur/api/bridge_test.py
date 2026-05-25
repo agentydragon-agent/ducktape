@@ -10,12 +10,7 @@ from augur.api.bridge import (
     simulate_translation,
     translate_scenario_set,
 )
-from augur.api.portfolio import (
-    PortfolioAccountConfig,
-    PortfolioConfig,
-    PublicSecurityPositionConfig,
-    PublicSecurityTaxLotConfig,
-)
+from augur.api.portfolio import HoldingPositionConfig, HoldingTaxLotConfig, PortfolioAccountConfig, PortfolioConfig
 from augur.api.scenario_set import ScenarioSet
 from augur.model.exogenous import Sampler
 from augur.model.gbm import GeometricBrownian
@@ -396,8 +391,8 @@ def test_configured_portfolio_lots_replace_legacy_public_stock_asset_but_keep_pr
     scenario_set = ScenarioSet.model_validate(body)
     portfolio = PortfolioConfig(
         accounts=(PortfolioAccountConfig(account_id="taxable_brokerage", owner_agent_id="owner"),),
-        public_securities=(
-            PublicSecurityPositionConfig(
+        holdings=(
+            HoldingPositionConfig(
                 position_id="sp500_position",
                 account_id="taxable_brokerage",
                 symbol="SP500",
@@ -405,10 +400,10 @@ def test_configured_portfolio_lots_replace_legacy_public_stock_asset_but_keep_pr
                 value_series_id=SP500_SERIES_ID,
                 unit_value_usd=500.0,
                 lots=(
-                    PublicSecurityTaxLotConfig(
+                    HoldingTaxLotConfig(
                         lot_id="sp500_2024_05", holding_period_months_at_start=24, quantity=10.0, cost_basis_usd=3_000.0
                     ),
-                    PublicSecurityTaxLotConfig(
+                    HoldingTaxLotConfig(
                         lot_id="sp500_2026_05", holding_period_months_at_start=0, quantity=5.0, cost_basis_usd=2_000.0
                     ),
                 ),

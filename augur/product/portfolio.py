@@ -5,7 +5,7 @@ from __future__ import annotations
 from pydantic import NonNegativeFloat, NonNegativeInt
 
 from augur.api.finance import FinanceSnapshot
-from augur.api.portfolio import PortfolioConfig, PublicSecurityPositionConfig
+from augur.api.portfolio import HoldingPositionConfig, PortfolioConfig
 from augur.api.schemas import ApiModel
 
 
@@ -35,31 +35,27 @@ class ProductPublicSecurityPosition(ApiModel):
 class ProductPortfolioResponse(ApiModel):
     as_of_date: str
     cash_usd: float
-    public_securities: tuple[ProductPublicSecurityPosition, ...]
-    total_public_security_value_usd: NonNegativeFloat
-    total_public_security_cost_basis_usd: NonNegativeFloat
+    holdings: tuple[ProductPublicSecurityPosition, ...]
+    total_holdings_value_usd: NonNegativeFloat
+    total_holdings_cost_basis_usd: NonNegativeFloat
 
 
 def product_portfolio_response(*, snapshot: FinanceSnapshot, portfolio: PortfolioConfig) -> ProductPortfolioResponse:
     account_label_by_id = {account.account_id: account.label for account in portfolio.accounts}
-    public_securities = tuple(
-        _public_security_position(position, account_label=account_label_by_id.get(position.account_id))
-        for position in portfolio.public_securities
+    holdings = tuple(
+        _holding_position(position, account_label=account_label_by_id.get(position.account_id))
+        for position in portfolio.holdings
     )
     return ProductPortfolioResponse(
         as_of_date=snapshot.as_of_date,
         cash_usd=float(snapshot.cash_usd),
-        public_securities=public_securities,
-        total_public_security_value_usd=sum(float(position.current_value_usd) for position in public_securities),
-        total_public_security_cost_basis_usd=sum(
-            float(position.total_cost_basis_usd) for position in public_securities
-        ),
+        holdings=holdings,
+        total_holdings_value_usd=sum(float(position.current_value_usd) for position in holdings),
+        total_holdings_cost_basis_usd=sum(float(position.total_cost_basis_usd) for position in holdings),
     )
 
 
-def _public_security_position(
-    position: PublicSecurityPositionConfig, *, account_label: str | None
-) -> ProductPublicSecurityPosition:
+def _holding_position(position: HoldingPositionConfig, *, account_label: str | None) -> ProductPublicSecurityPosition:
     return ProductPublicSecurityPosition(
         position_id=position.position_id,
         account_id=position.account_id,

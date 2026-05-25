@@ -265,8 +265,8 @@ def _terminal_metric_value(terminal: TerminalMetrics, metric: MetricName) -> flo
     match metric:
         case "cash_usd":
             return terminal.cash_usd
-        case "public_security_value_usd":
-            return terminal.public_security_value_usd
+        case "holding_value_usd":
+            return terminal.holding_value_usd
         case "property_value_usd":
             return terminal.property_value_usd
         case "mortgage_balance_usd":

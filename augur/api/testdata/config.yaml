@@ -110,7 +110,7 @@ portfolio:
       account_type: taxable_brokerage
       label: Taxable Brokerage
       owner_agent_id: agent_a
-  public_securities:
+  holdings:
     - position_id: sp500_proxy
       account_id: taxable_brokerage
       label: SP500 Proxy
@@ -151,6 +151,9 @@ portfolio:
       symbol: ETH
       unit_value_usd: 2100.0
       value_series_id: crypto:eth
+    # PE position deferred to phase 3 (tender-event pipeline) — needs the
+    # PE-trajectory exogenous source wired before the sim can evaluate `private_equity:*`
+    # series. Until then, omitting from testdata keeps the e2e fixture runnable.
 property_source:
   properties_path: properties.json
 reserve_forward_months: 12

@@ -68,7 +68,7 @@ def initial_lots_from_portfolio(portfolio: PortfolioConfig, *, primary_agent_id:
 def asset_label_by_series_id(portfolio: PortfolioConfig) -> dict[str, str]:
     return {
         position.value_series_id: f"{position.label or position.symbol} ({position.symbol})"
-        for position in portfolio.public_securities
+        for position in portfolio.holdings
     }
 
 
@@ -363,17 +363,22 @@ def _asset_preference_chain_from_sell_order(
 ) -> list[str]:
     """Translate the wire's `sell_order` tuple to a deduplicated asset-ID list for the sim.
 
-    `public_securities` covers non-crypto holdings (SP500-style ETFs, individual stocks);
-    `crypto` covers anything whose asset_id sits under the `crypto:` namespace. A bucket
-    absent from `sell_order` means "don't auto-sell from this bucket" — the resulting
-    asset-ID list simply omits those lots. An empty `sell_order` yields an empty chain,
-    which the sim treats as "no liquidity sales allowed" (hard-demand failures still fire).
+    `stocks` covers anything that isn't crypto or private equity — ETFs, individual stocks,
+    mutual funds; `crypto` covers asset_ids under the `crypto:` namespace. Private equity
+    (`private_equity:` namespace) is *never* included in any liquidity-sale bucket: it's only
+    saleable at sparse tender events, dispatched by `PrivateEquityTenderPolicy` outside the
+    liquidity-policy path. A bucket absent from `sell_order` means "don't auto-sell from this
+    bucket"; an empty `sell_order` yields an empty chain (hard-demand failures still fire).
     """
 
     asset_ids: list[str] = []
     for bucket in funding_policy.sell_order:
-        if bucket == "public_securities":
-            asset_ids.extend(lot.asset_id for lot in initial_lots if not lot.asset_id.startswith("crypto:"))
+        if bucket == "stocks":
+            asset_ids.extend(
+                lot.asset_id
+                for lot in initial_lots
+                if not lot.asset_id.startswith("crypto:") and not lot.asset_id.startswith("private_equity:")
+            )
         elif bucket == "crypto":
             asset_ids.extend(lot.asset_id for lot in initial_lots if lot.asset_id.startswith("crypto:"))
         else:
