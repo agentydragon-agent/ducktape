@@ -152,7 +152,7 @@ def test_metric_fan_decodes_each_rollout_once_per_batch(
 ) -> None:
     product = _service(counting_exogenous_model)
     scenario = _scenario_key()
-    original = decode.monthly_metrics_for_rollout
+    original = decode.monthly_metric_arrays
     calls = 0
 
     def counted(*args, **kwargs):
@@ -160,7 +160,7 @@ def test_metric_fan_decodes_each_rollout_once_per_batch(
         calls += 1
         return original(*args, **kwargs)
 
-    monkeypatch.setattr(service, "monthly_metrics_for_rollout", counted)
+    monkeypatch.setattr(service, "monthly_metric_arrays", counted)
 
     product.metric_fan(
         MetricFanRequest(scenario=scenario, rollout_seeds=(7, 8, 9, 10), metric="cash_usd", percentiles=(50,))

@@ -33,37 +33,59 @@ _SINGLE_ROLLOUT_INDEX = 0
 _TAX_PAYMENT_OBLIGATION_TYPES = (ObligationType.ESTIMATED_TAX, ObligationType.TAX_TRUE_UP)
 
 
-def monthly_metrics_for_rollout(dense: DenseSimulationResult, *, primary_agent_id: str) -> pl.DataFrame:
+def monthly_metric_arrays(dense: DenseSimulationResult, *, primary_agent_id: str) -> dict[str, np.ndarray]:
+    """Per-month product metrics for one R=1 rollout as a `{metric_name: (H+1,) ndarray}` dict.
+
+    The fan + rollout-detail paths consume this directly — polars-frame construction is the
+    dominant cost in the metric-fan hot path. The rollout-detail wire shape
+    (`Frame = dict[str, list[...]]`) is also built directly from these arrays via `.tolist()`
+    in `service.rollout`, with no intermediate polars frame.
+    """
+
     _check_r1(dense)
     plan = dense.plan
     primary_agent_code = _required_string_code(plan.strings, primary_agent_id)
-    month_indices = np.arange(plan.horizon_months + 1, dtype=np.int64)
     cash_usd = _cash_by_month(dense, primary_agent_code=primary_agent_code)
     holding_value_usd = _holding_value_by_month(dense, primary_agent_code=primary_agent_code)
     private_equity_value_usd = _private_equity_value_by_month(dense, primary_agent_code=primary_agent_code)
     property_value_usd = _property_value_by_month(dense, primary_agent_code=primary_agent_code)
     mortgage_balance_usd = _mortgage_balance_by_month(dense, primary_agent_code=primary_agent_code)
     home_equity_usd = property_value_usd - mortgage_balance_usd
-    shortfall_usd = _shortfall_by_month(dense, primary_agent_code=primary_agent_code)
     # liquid_net_worth excludes private equity by design: PE is only saleable at sparse
     # tender events, so it doesn't satisfy "cash you could get tomorrow" semantics. The
     # PrivateEquityTenderPolicy uses this same definition when deciding how much PE to
     # liquidate at a tender (sell enough to lift liquid_net_worth to a configured floor).
     liquid_net_worth_usd = cash_usd + holding_value_usd
-    net_worth_usd = liquid_net_worth_usd + home_equity_usd + private_equity_value_usd
-    return pl.DataFrame(
-        {
-            "month_index": month_indices,
-            "cash_usd": cash_usd,
-            "holding_value_usd": holding_value_usd,
-            "private_equity_value_usd": private_equity_value_usd,
-            "property_value_usd": property_value_usd,
-            "mortgage_balance_usd": mortgage_balance_usd,
-            "home_equity_usd": home_equity_usd,
-            "liquid_net_worth_usd": liquid_net_worth_usd,
-            "net_worth_usd": net_worth_usd,
-            "shortfall_usd": shortfall_usd,
-        }
+    return {
+        "month_index": np.arange(plan.horizon_months + 1, dtype=np.int64),
+        "cash_usd": cash_usd,
+        "holding_value_usd": holding_value_usd,
+        "private_equity_value_usd": private_equity_value_usd,
+        "property_value_usd": property_value_usd,
+        "mortgage_balance_usd": mortgage_balance_usd,
+        "home_equity_usd": home_equity_usd,
+        "liquid_net_worth_usd": liquid_net_worth_usd,
+        "net_worth_usd": liquid_net_worth_usd + home_equity_usd + private_equity_value_usd,
+        "shortfall_usd": _shortfall_by_month(dense, primary_agent_code=primary_agent_code),
+    }
+
+
+def terminal_metrics_from_arrays(arrays: dict[str, np.ndarray], *, failed_month_index: int | None) -> TerminalMetrics:
+    """Numpy-direct terminal-metrics extraction from `monthly_metric_arrays`."""
+
+    if arrays["month_index"].size == 0:
+        raise ValueError("rollout produced no monthly metrics")
+    return TerminalMetrics(
+        cash_usd=float(arrays["cash_usd"][-1]),
+        holding_value_usd=float(arrays["holding_value_usd"][-1]),
+        private_equity_value_usd=float(arrays["private_equity_value_usd"][-1]),
+        property_value_usd=float(arrays["property_value_usd"][-1]),
+        mortgage_balance_usd=float(arrays["mortgage_balance_usd"][-1]),
+        home_equity_usd=float(arrays["home_equity_usd"][-1]),
+        liquid_net_worth_usd=float(arrays["liquid_net_worth_usd"][-1]),
+        net_worth_usd=float(arrays["net_worth_usd"][-1]),
+        shortfall_usd=float(arrays["shortfall_usd"].sum()),
+        failed_month_index=failed_month_index,
     )
 
 
@@ -71,24 +93,6 @@ def failed_month_index_for_rollout(dense: DenseSimulationResult) -> int | None:
     _check_r1(dense)
     failed_month = int(dense.buffers.rollout_failed_month_state[-1, _SINGLE_ROLLOUT_INDEX])
     return None if failed_month < 0 else failed_month
-
-
-def terminal_metrics_from(monthly: pl.DataFrame, *, failed_month_index: int | None) -> TerminalMetrics:
-    if monthly.is_empty():
-        raise ValueError("rollout produced no monthly metrics")
-    row = monthly.tail(1).row(0, named=True)
-    return TerminalMetrics(
-        cash_usd=float(row["cash_usd"]),
-        holding_value_usd=float(row["holding_value_usd"]),
-        private_equity_value_usd=float(row["private_equity_value_usd"]),
-        property_value_usd=float(row["property_value_usd"]),
-        mortgage_balance_usd=float(row["mortgage_balance_usd"]),
-        home_equity_usd=float(row["home_equity_usd"]),
-        liquid_net_worth_usd=float(row["liquid_net_worth_usd"]),
-        net_worth_usd=float(row["net_worth_usd"]),
-        shortfall_usd=float(monthly.select(pl.col("shortfall_usd").sum()).item()),
-        failed_month_index=failed_month_index,
-    )
 
 
 def rollout_events_from(

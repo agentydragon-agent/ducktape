@@ -13,7 +13,6 @@ from dataclasses import dataclass
 from typing import cast
 
 import numpy as np
-import polars as pl
 
 from augur.api.bootstrap import Property
 from augur.api.portfolio import PortfolioConfig
@@ -21,9 +20,9 @@ from augur.api.schemas import Frame
 from augur.model.exogenous import ExogenousSamplingRequest, Sampler, anchor_sampled_series_levels
 from augur.product.decode import (
     failed_month_index_for_rollout,
-    monthly_metrics_for_rollout,
+    monthly_metric_arrays,
     rollout_events_from,
-    terminal_metrics_from,
+    terminal_metrics_from_arrays,
 )
 from augur.product.scenarios import (
     asset_label_by_series_id,
@@ -60,7 +59,7 @@ class _CachedRollout:
 @dataclass(frozen=True)
 class _DecodedRollout:
     seed: int
-    monthly_metrics: pl.DataFrame
+    monthly_metric_arrays: dict[str, np.ndarray]
     terminal_metrics: TerminalMetrics
     cached: _CachedRollout
 
@@ -120,12 +119,15 @@ class ProductService:
             primary_agent_id=self._primary_agent_id,
             asset_label_by_id=self._asset_label_by_id,
         )
+        # `monthly_metrics` ships as `Frame = dict[str, list[...]]`; build directly from numpy
+        # instead of round-tripping through polars.
+        monthly_metrics_frame = {name: arr.tolist() for name, arr in decoded.monthly_metric_arrays.items()}
         return RolloutResponse(
             exogenous_model_id=decoded.cached.exogenous_model_id,
             rollout=RolloutOutput(
                 seed=decoded.seed,
                 failed=decoded.failed,
-                monthly_metrics=decoded.monthly_metrics.to_dict(as_series=False),
+                monthly_metrics=monthly_metrics_frame,
                 terminal_metrics=decoded.terminal_metrics,
                 events=events,
             ),
@@ -160,10 +162,12 @@ class ProductService:
         decoded: list[_DecodedRollout] = []
         for seed in seeds:
             cached = cached_by_seed[seed]
-            monthly = monthly_metrics_for_rollout(cached.dense, primary_agent_id=self._primary_agent_id)
-            terminal = terminal_metrics_from(monthly, failed_month_index=failed_month_index_for_rollout(cached.dense))
+            arrays = monthly_metric_arrays(cached.dense, primary_agent_id=self._primary_agent_id)
+            terminal = terminal_metrics_from_arrays(
+                arrays, failed_month_index=failed_month_index_for_rollout(cached.dense)
+            )
             decoded.append(
-                _DecodedRollout(seed=seed, monthly_metrics=monthly, terminal_metrics=terminal, cached=cached)
+                _DecodedRollout(seed=seed, monthly_metric_arrays=arrays, terminal_metrics=terminal, cached=cached)
             )
         return tuple(decoded)
 
@@ -247,13 +251,13 @@ def _metric_matrix(
 ) -> tuple[np.ndarray, np.ndarray] | None:
     if not rollouts:
         return None
-    month_indices = rollouts[0].monthly_metrics["month_index"].to_numpy().astype(np.int64, copy=False)
+    month_indices = rollouts[0].monthly_metric_arrays["month_index"]
     values = np.empty((len(rollouts), month_indices.size), dtype=np.float64)
     for rollout_index, rollout in enumerate(rollouts):
-        rollout_months = rollout.monthly_metrics["month_index"].to_numpy().astype(np.int64, copy=False)
+        rollout_months = rollout.monthly_metric_arrays["month_index"]
         if rollout_months.shape != month_indices.shape or not np.array_equal(rollout_months, month_indices):
             raise ValueError("metric fan rollouts have inconsistent month indices")
-        values[rollout_index] = rollout.monthly_metrics[metric].to_numpy().astype(np.float64, copy=False)
+        values[rollout_index] = rollout.monthly_metric_arrays[metric].astype(np.float64, copy=False)
     return month_indices, values
 
 
