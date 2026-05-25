@@ -7,10 +7,13 @@ Anything fully shipped is removed — git history is the record of done work.
 ## Architecture / cutover
 
 - Replace the temporary sim dataframe-to-legacy-table materializer with
-  serialized `ProjectionRun` read models. The current sim path derives
-  monthly/terminal/fan/status/metadata tables from `SimulationRun`
-  dataframes for frontend smoke; the durable API should expose compact
-  scenario metadata + distribution-first projections instead.
+  serialized `ProjectionRun` read models. The product metric-fan path
+  already bypasses polars (`monthly_metric_arrays` returns numpy direct
+  from `dense.buffers.*`), but the rollout-detail endpoint still calls
+  `dense.decode()` to materialize event-log polars frames before the
+  product layer projects them. The durable API should expose compact
+  scenario metadata + distribution-first projections instead of the
+  legacy `SimulationRun` shape entirely.
 - Make liquidity policies an account-keyed simulator program internally.
   Config/wire shape can stay list-friendly, but the runtime/compiler
   should consume `{(agent_id, account_id): policy}` so "one policy per

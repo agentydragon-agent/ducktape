@@ -176,12 +176,29 @@ liq_disp_units[H, Q, A, L, R]
       that are later zeroed away.
 - [x] Snapshot writes are direct array assignments from current state into
       `state_history[month + 1]`.
-- [ ] Product metric fans still decode full `SimulationRun` frames before
-      projecting metrics. Add a native dense metric path that reads state
-      history arrays and decodes event tables only for selected rollout detail.
-- [ ] Keep event materialization honest. If a transition is tensorized but event
-      buffers are not yet emitted with the same detail as the prior phase, leave
-      a TODO here and add a focused test gap.
+- [x] Product metric fans bypass the polars `SimulationRun` decode entirely:
+      `monthly_metric_arrays` (`augur/product/decode.py`) returns a
+      `{name: (H+1,) ndarray}` dict from state buffers; `_DecodedRollout`
+      caches the dict instead of a polars frame. Wire `monthly_metrics`
+      payload built via `{name: arr.tolist()}`, not `pl.DataFrame(...).to_dict()`.
+- [x] State-history decoders (`_decode_cash`, `_decode_asset_lots`,
+      `_decode_ordinary_income`, `_decode_capital_gains`,
+      `_decode_tax_liabilities`, `_decode_property_state`,
+      `_decode_property_stakes`, `_decode_liabilities`,
+      `_decode_rollout_status_history`, `_decode_final_rollout_status`)
+      vectorized via numpy-broadcast index columns + boolean-masked gather +
+      one `pl.from_numpy(...)` pass. Replaces ~(H+1)×R×S Python dict
+      constructions and `_text()` lookups per decode with O(S) string
+      lookups + one polars materialization.
+- [x] Event decoders (`_decode_transfers`, `_decode_property_purchases`,
+      `_decode_sched_dispositions`, `_decode_liquidity_dispositions`,
+      `_decode_tax_accruals`, `_decode_obligations`,
+      `_decode_mortgage_originations`, `_decode_mortgage_payments`,
+      `_decode_tax_settlements`) vectorized via `np.argwhere(active)` over
+      each family's mask, then bool-gather + per-axis ID lookup. Dynamic
+      cause-ID f-strings (e.g. `"{liab}_payment_m{month}"`) shrink from
+      `O(M × axes × R)` dense iterations to a Python comp over the sparse
+      gathered `N` events.
 
 ## Phase Algorithms
 
@@ -440,9 +457,14 @@ selected rollout detail.
    - [x] liquidity-sale disposition event buffers.
 
 7. Product fast path:
-   - [ ] expose dense state history to product metric-fan projection;
-   - [ ] avoid full `SimulationRun` decode for metric fans;
-   - [ ] keep selected-rollout detail fetch decoding events on demand.
+   - [x] expose dense state history to product metric-fan projection
+         (`monthly_metric_arrays` reads `dense.buffers.*` directly);
+   - [x] avoid full `SimulationRun` decode for metric fans (fan endpoint
+         never calls `dense.decode()`; rollout-detail endpoint still does
+         for the event log, but state + event decoders are both vectorized);
+   - [x] keep selected-rollout detail fetch decoding events on demand
+         (event decoders only run when `rollout_events_from` is called for
+         the per-seed detail endpoint).
 
 ## Validation Gates
 
@@ -484,6 +506,8 @@ bazelisk run --config=nolint \
   Prototype with NumPy before considering JAX, PyTorch, or another compiled helper.
 - For repeated group aggregation, is `np.add.at` fast/readable enough, or should
   we precompile dense group matrices and use masked reductions?
-- Should dense event buffers be written for every metric-fan request, or should
-  metric-fan paths skip event buffers entirely and re-run/decode selected
-  rollout detail on demand?
+- Resolved: metric-fan paths skip event decode entirely (`service.metric_fan`
+  consumes only `monthly_metric_arrays`). Selected-rollout detail still calls
+  `dense.decode()` to materialize the event log. Event buffers are written
+  unconditionally during sim (cheap dense writes); decode is what was costly,
+  and that's vectorized now.
