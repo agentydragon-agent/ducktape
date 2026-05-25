@@ -785,6 +785,10 @@ def _run_month_step(
     _apply_obligation_accruals(plan, buffers, current, month)
     _apply_liquidity_policy_sales(plan, buffers, current, month)
     _apply_obligation_settlement(plan, buffers, current, month)
+    # PE tender sales fire after obligation settlement so the policy compares against the
+    # post-settlement liquid net worth (cash already moved out for this month's bills) and the
+    # cap-gain accrual from any tender is captured by the year-end tax pass below.
+    _apply_pe_tenders(plan, buffers, current, month)
     # Tax accruals run last so December's mortgage payment has already landed its interest into
     # `liability_interest_ytd` before the year-end MID computation reads it.
     _apply_tax_accruals(plan, buffers, current, month)
@@ -941,6 +945,122 @@ def _write_tax_link_buffers(
         current.tax_liability_active[active_rollout, tax_slot] = True
         current.tax_liability_amount[active_rollout, tax_slot] = tax[active_rollout]
     return tax
+
+
+def _apply_pe_tenders(
+    plan: CompiledSimulation, buffers: SimulationBuffers, current: CurrentStateBuffers, month: int
+) -> None:
+    """Fire LNW-floor-driven private-equity tender sales for any issuer whose sampled tender
+    event activates this month.
+
+    Per issuer with a policy assignment:
+      1. Look up the per-rollout boolean of "tender fires this month".
+      2. If any rollout fires: read the issuer's per-rollout mark (level series).
+      3. Compute the owner's liquid net worth = cash + non-PE lot value.
+      4. shortfall = max(0, floor - LNW), capped by available PE value.
+      5. Drain FIFO from the issuer's lots at the mark, credit proceeds to the policy's
+         designated cash slot, accrue the cap gain to the owner's capital_gain_ytd.
+
+    Multiple issuers tendering the same month are processed in array order; each updates
+    cash and lot_remaining before the next issuer's LNW computation runs, so the floor
+    genuinely caps aggregate sale across same-month tenders.
+    """
+
+    issuer_count = plan.pe_issuer_codes.shape[0]
+    if issuer_count == 0:
+        return
+    active_rollout = ~current.failed
+    if not active_rollout.any():
+        return
+    for issuer_idx in range(issuer_count):
+        if int(plan.pe_issuer_codes[issuer_idx]) < 0:
+            continue
+        policy_idx = int(plan.pe_issuer_policy_index[issuer_idx])
+        event_series_idx = int(plan.pe_issuer_event_series_index[issuer_idx])
+        level_series_idx = int(plan.pe_issuer_level_series_index[issuer_idx])
+        if policy_idx < 0 or event_series_idx < 0 or level_series_idx < 0:
+            continue
+        tender_active = plan.external_event_values[event_series_idx, :, month]  # (rollout,)
+        tender_active = tender_active & active_rollout
+        if not tender_active.any():
+            continue
+        mark = plan.external_values[level_series_idx, :, month]
+        mark = np.nan_to_num(mark, nan=0.0)
+        valid_mark = mark > 0.0
+        if not valid_mark.any():
+            continue
+
+        floor = _amount_values(
+            plan,
+            kind=int(plan.pe_policy_floor_kind[policy_idx]),
+            fixed=float(plan.pe_policy_floor_fixed[policy_idx]),
+            base=float(plan.pe_policy_floor_base[policy_idx]),
+            series_index=int(plan.pe_policy_floor_series_index[policy_idx]),
+            base_month=int(plan.pe_policy_floor_base_month[policy_idx]),
+            adjustment_period=int(plan.pe_policy_floor_adjustment_period[policy_idx]),
+            month=month,
+        )
+        lnw = _compute_liquid_net_worth(plan, current, policy_idx=policy_idx, month=month)
+        shortfall = np.maximum(0.0, floor - lnw)
+
+        lot_indices = np.flatnonzero(plan.pe_issuer_lot_mask[issuer_idx])
+        if lot_indices.size == 0:
+            continue
+        ordered_lots = lot_indices[np.argsort(plan.lot_purchase_month[lot_indices], kind="stable")]
+        units_held = current.lot_remaining[:, ordered_lots].sum(axis=1)
+        available_value = units_held * mark
+        target_dollars = np.minimum(shortfall, available_value)
+        target_dollars = np.where(tender_active & valid_mark, target_dollars, 0.0)
+        if not (target_dollars > 0.0).any():
+            continue
+
+        result = fifo_sell_dollars(
+            lot_remaining=current.lot_remaining,
+            ordered_lots=ordered_lots,
+            target_dollars=target_dollars,
+            unit_price=mark,
+            cost_basis_per_unit=plan.lot_cost_basis_per_unit,
+        )
+        if result.oversell.any():
+            raise ValueError(
+                f"PE tender attempted to sell more than available lots for issuer "
+                f"{_text(plan, plan.pe_issuer_codes[issuer_idx])}"
+            )
+        current.lot_remaining -= result.sold_units
+        proceeds_slot = int(plan.pe_policy_proceeds_cash_slot[policy_idx])
+        if proceeds_slot >= 0:
+            current.cash[:, proceeds_slot] += result.total_proceeds
+        owner_code = int(plan.pe_policy_owner_agent_codes[policy_idx])
+        _record_capital_gains(
+            plan,
+            current,
+            month=month,
+            agent_code=owner_code,
+            sold_units=result.sold_units,
+            gains=result.proceeds - result.cost_basis_consumed,
+        )
+
+
+def _compute_liquid_net_worth(
+    plan: CompiledSimulation, current: CurrentStateBuffers, *, policy_idx: int, month: int
+) -> np.ndarray:
+    """Per-rollout LNW = cash in policy-owner accounts + non-PE-lot value at current prices."""
+
+    owner_cash_mask = plan.pe_policy_owner_cash_mask[policy_idx]
+    cash_total = (current.cash * owner_cash_mask[None, :]).sum(axis=1)
+    lot_mask = plan.pe_policy_owner_non_pe_lot_mask[policy_idx]
+    if not lot_mask.any():
+        return cash_total
+    lot_indices = np.flatnonzero(lot_mask)
+    series_indices = plan.lot_asset_series_index[lot_indices]
+    valid = series_indices >= 0
+    safe_series_indices = np.where(valid, series_indices, 0)
+    prices = plan.external_values[safe_series_indices, :, month]  # (lot, rollout)
+    prices = np.where(valid[:, None], prices, 0.0)
+    prices = np.nan_to_num(prices, nan=0.0)
+    quantities = current.lot_remaining[:, lot_indices]  # (rollout, lot)
+    lot_value = (quantities * prices.T).sum(axis=1)
+    return cash_total + lot_value
 
 
 def _apply_tax_accruals(

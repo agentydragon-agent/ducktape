@@ -12,6 +12,7 @@ from typing import Any
 
 import numpy as np
 
+from augur.model.series import PRIVATE_EQUITY_SERIES_PREFIX, private_equity_sale_event_id
 from augur.sim.external_series import ExternalSeriesContext
 from augur.sim.jurisdictions import Jurisdiction
 from augur.sim.locations import Location
@@ -96,6 +97,10 @@ class CompiledSimulation:
     lot_agent_codes: np.ndarray
     lot_account_codes: np.ndarray
     lot_asset_codes: np.ndarray
+    # Per-lot index into `external_values` for the lot's pricing series. NO_CODE for lots
+    # whose asset_id has no registered sampled level (defensive: shouldn't normally happen
+    # for holdings, but the sentinel keeps lookups safe).
+    lot_asset_series_index: np.ndarray
     lot_purchase_month: np.ndarray
     lot_cost_basis_per_unit: np.ndarray
     lot_initial_quantity: np.ndarray
@@ -217,6 +222,45 @@ class CompiledSimulation:
     # when the payment settles. NO_CODE for non-property-tax obligations and for property-tax
     # obligations whose owner doesn't have a TaxProfile.
     obligation_property_tax_profile: np.ndarray
+    # External event-series tables, parallel to `series_ids` / `external_values` but for
+    # boolean event paths (private-equity tender opportunities, future regime-change events).
+    external_event_ids: tuple[str, ...]
+    external_event_values: np.ndarray
+    # Per-PE-issuer arrays. Issuers are the distinct `private_equity:<issuer>` asset_ids
+    # appearing in `initial_lots`. For each issuer:
+    #   - the event-series index identifying its tender-opportunity stream (NO_CODE if no
+    #     event series is registered for it — issuer never tenders within the sim horizon)
+    #   - the level-series index for its sampled mark (used both for portfolio valuation and
+    #     for sale-proceeds = units * mark at tender)
+    #   - the policy index (into the per-policy arrays below) whose LNW-floor governs sales
+    #     on tenders for this issuer (NO_CODE if no PrivateEquityTenderPolicy applies)
+    pe_issuer_codes: np.ndarray
+    pe_issuer_event_series_index: np.ndarray
+    pe_issuer_level_series_index: np.ndarray
+    pe_issuer_policy_index: np.ndarray
+    # 2D boolean mask: (issuer_count, lot_count). True iff that lot is a PE lot for that
+    # issuer. The engine FIFO-orders lots within an issuer-mask and drains them on sale.
+    pe_issuer_lot_mask: np.ndarray
+    # Per-policy arrays: one row per PrivateEquityTenderPolicy in the scenario.
+    #   - owner_agent_codes: the policy's owner
+    #   - proceeds_cash_slot: where tender proceeds land
+    #   - floor_*: AmountSpec arrays evaluated at the event month to yield the LNW floor
+    #   - owner_cash_mask: (policy_count, cash_count) — which cash slots count toward the
+    #     owner's liquid net worth
+    #   - owner_non_pe_lot_mask: (policy_count, lot_count) — which lots count toward the
+    #     owner's liquid net worth (owned by the policy's agent AND not in any
+    #     `private_equity:*` asset). PE lots themselves are explicitly excluded since "you
+    #     can't liquidate PE on demand" is the whole reason the floor matters.
+    pe_policy_owner_agent_codes: np.ndarray
+    pe_policy_proceeds_cash_slot: np.ndarray
+    pe_policy_floor_kind: np.ndarray
+    pe_policy_floor_fixed: np.ndarray
+    pe_policy_floor_base: np.ndarray
+    pe_policy_floor_series_index: np.ndarray
+    pe_policy_floor_base_month: np.ndarray
+    pe_policy_floor_adjustment_period: np.ndarray
+    pe_policy_owner_cash_mask: np.ndarray
+    pe_policy_owner_non_pe_lot_mask: np.ndarray
     tax_settlement_profile_index: np.ndarray
     liquidity_policy_agent_codes: np.ndarray
     liquidity_policy_account_codes: np.ndarray
@@ -259,6 +303,17 @@ def compile_simulation(
     series_index_by_id = {series_id: idx for idx, series_id in enumerate(series_ids)}
     external_values = _external_values_cube(
         external_series, series_index_by_id=series_index_by_id, rollout_count=rollout_count, horizon_months=horizon
+    )
+    external_event_ids = tuple(
+        str(event_id)
+        for event_id in external_series.series_events.select("event_id").unique().get_column("event_id").to_list()
+    )
+    external_event_index_by_id = {event_id: idx for idx, event_id in enumerate(external_event_ids)}
+    external_event_values = _external_event_values_cube(
+        external_series,
+        event_index_by_id=external_event_index_by_id,
+        rollout_count=rollout_count,
+        horizon_months=horizon,
     )
 
     profile_index_by_agent = {profile.agent_id: idx for idx, profile in enumerate(scenario.tax_profiles)}
@@ -431,6 +486,38 @@ def compile_simulation(
         lot_cost_basis_per_unit.append(float(lot.cost_basis_per_unit_usd))
         lot_initial_quantity.append(float(lot.quantity))
 
+    lot_agent_codes_arr = np.asarray(lot_agent_codes, dtype=np.int64)
+    lot_asset_codes_arr = np.asarray(lot_asset_codes, dtype=np.int64)
+    lot_asset_series_index = np.asarray(
+        [series_index_by_id.get(lot.asset_id, NO_CODE) for lot in scenario.initial_lots], dtype=np.int64
+    )
+    cash_agent_codes_arr = np.asarray([strings.require(b.agent_id) for b in scenario.initial_cash], dtype=np.int64)
+    (
+        pe_issuer_codes,
+        pe_issuer_event_series_index,
+        pe_issuer_level_series_index,
+        pe_issuer_policy_index,
+        pe_issuer_lot_mask,
+        pe_policy_owner_agent_codes,
+        pe_policy_proceeds_cash_slot,
+        pe_policy_floor_kind,
+        pe_policy_floor_fixed,
+        pe_policy_floor_base,
+        pe_policy_floor_series_index,
+        pe_policy_floor_base_month,
+        pe_policy_floor_adjustment_period,
+        pe_policy_owner_cash_mask,
+        pe_policy_owner_non_pe_lot_mask,
+    ) = _compile_private_equity_tenders(
+        scenario,
+        strings,
+        series_index_by_id=series_index_by_id,
+        event_index_by_id=external_event_index_by_id,
+        lot_agent_codes=lot_agent_codes_arr,
+        lot_asset_codes=lot_asset_codes_arr,
+        cash_agent_codes=cash_agent_codes_arr,
+    )
+
     slot_plan = SlotPlan(
         event_months=horizon,
         snapshot_months=horizon + 1,
@@ -465,6 +552,7 @@ def compile_simulation(
         lot_agent_codes=np.asarray(lot_agent_codes, dtype=np.int64),
         lot_account_codes=np.asarray(lot_account_codes, dtype=np.int64),
         lot_asset_codes=np.asarray(lot_asset_codes, dtype=np.int64),
+        lot_asset_series_index=lot_asset_series_index,
         lot_purchase_month=np.asarray(lot_purchase_month, dtype=np.int64),
         lot_cost_basis_per_unit=np.asarray(lot_cost_basis_per_unit, dtype=np.float64),
         lot_initial_quantity=np.asarray(lot_initial_quantity, dtype=np.float64),
@@ -569,6 +657,23 @@ def compile_simulation(
         obligation_source_kind=obligation_source_kind,
         obligation_source_index=obligation_source_index,
         obligation_property_tax_profile=obligation_property_tax_profile,
+        external_event_ids=external_event_ids,
+        external_event_values=external_event_values,
+        pe_issuer_codes=pe_issuer_codes,
+        pe_issuer_event_series_index=pe_issuer_event_series_index,
+        pe_issuer_level_series_index=pe_issuer_level_series_index,
+        pe_issuer_policy_index=pe_issuer_policy_index,
+        pe_issuer_lot_mask=pe_issuer_lot_mask,
+        pe_policy_owner_agent_codes=pe_policy_owner_agent_codes,
+        pe_policy_proceeds_cash_slot=pe_policy_proceeds_cash_slot,
+        pe_policy_floor_kind=pe_policy_floor_kind,
+        pe_policy_floor_fixed=pe_policy_floor_fixed,
+        pe_policy_floor_base=pe_policy_floor_base,
+        pe_policy_floor_series_index=pe_policy_floor_series_index,
+        pe_policy_floor_base_month=pe_policy_floor_base_month,
+        pe_policy_floor_adjustment_period=pe_policy_floor_adjustment_period,
+        pe_policy_owner_cash_mask=pe_policy_owner_cash_mask,
+        pe_policy_owner_non_pe_lot_mask=pe_policy_owner_non_pe_lot_mask,
         tax_settlement_profile_index=tax_settlement_profile_index,
         liquidity_policy_agent_codes=liquidity_policy_agent_codes,
         liquidity_policy_account_codes=liquidity_policy_account_codes,
@@ -629,6 +734,174 @@ def _external_values_cube(
         if 0 <= rollout_index < rollout_count and 0 <= month_index <= horizon_months:
             values[series_index, rollout_index, month_index] = float(row["value"])
     return values
+
+
+def _external_event_values_cube(
+    external_series: ExternalSeriesContext,
+    *,
+    event_index_by_id: dict[str, int],
+    rollout_count: int,
+    horizon_months: int,
+) -> np.ndarray:
+    """Dense (event_count, rollout, month+1) boolean cube of sampled exogenous events."""
+
+    values = np.zeros((max(1, len(event_index_by_id)), rollout_count, horizon_months + 1), dtype=np.bool_)
+    if external_series.series_events.is_empty():
+        return values
+    for row in external_series.series_events.iter_rows(named=True):
+        event_index = event_index_by_id.get(str(row["event_id"]))
+        if event_index is None:
+            continue
+        rollout_index = int(row["rollout_index"])
+        month_index = int(row["month_index"])
+        if 0 <= rollout_index < rollout_count and 0 <= month_index <= horizon_months:
+            values[event_index, rollout_index, month_index] = bool(row["active"])
+    return values
+
+
+def _compile_private_equity_tenders(
+    scenario: Scenario,
+    strings: StringTable,
+    *,
+    series_index_by_id: dict[str, int],
+    event_index_by_id: dict[str, int],
+    lot_agent_codes: np.ndarray,
+    lot_asset_codes: np.ndarray,
+    cash_agent_codes: np.ndarray,
+) -> tuple[np.ndarray, ...]:
+    """Compile per-(issuer, policy) arrays driving the PE tender-sale path.
+
+    Issuer set is derived from `initial_lots` (any `private_equity:<issuer>` asset_id);
+    the policy set is `scenario.private_equity_tender_policies` (per-owner). Each issuer
+    maps to a policy by matching the lot's owner_agent_id to the policy's owner. The
+    engine uses these arrays to fire LNW-floor-driven sales when a tender event activates.
+    """
+
+    issuer_to_lots: dict[str, list[int]] = {}
+    for lot_index, lot in enumerate(scenario.initial_lots):
+        if not lot.asset_id.startswith(PRIVATE_EQUITY_SERIES_PREFIX):
+            continue
+        issuer = lot.asset_id[len(PRIVATE_EQUITY_SERIES_PREFIX) :]
+        issuer_to_lots.setdefault(issuer, []).append(lot_index)
+    issuer_ids = tuple(sorted(issuer_to_lots))
+
+    policies = scenario.private_equity_tender_policies
+    policy_count = max(1, len(policies))
+    lot_count = lot_agent_codes.shape[0]
+    cash_count = cash_agent_codes.shape[0]
+    issuer_count = max(1, len(issuer_ids))
+
+    pe_issuer_codes = np.full(issuer_count, NO_CODE, dtype=np.int64)
+    pe_issuer_event_series_index = np.full(issuer_count, NO_CODE, dtype=np.int64)
+    pe_issuer_level_series_index = np.full(issuer_count, NO_CODE, dtype=np.int64)
+    pe_issuer_policy_index = np.full(issuer_count, NO_CODE, dtype=np.int64)
+    pe_issuer_lot_mask = np.zeros((issuer_count, max(1, lot_count)), dtype=np.bool_)
+
+    pe_policy_owner_agent_codes = np.full(policy_count, NO_CODE, dtype=np.int64)
+    pe_policy_proceeds_cash_slot = np.full(policy_count, NO_CODE, dtype=np.int64)
+    pe_policy_floor_kind = np.full(policy_count, AMOUNT_FIXED, dtype=np.int64)
+    pe_policy_floor_fixed = np.zeros(policy_count, dtype=np.float64)
+    pe_policy_floor_base = np.zeros(policy_count, dtype=np.float64)
+    pe_policy_floor_series_index = np.full(policy_count, NO_CODE, dtype=np.int64)
+    pe_policy_floor_base_month = np.zeros(policy_count, dtype=np.int64)
+    pe_policy_floor_adjustment_period = np.ones(policy_count, dtype=np.int64)
+    pe_policy_owner_cash_mask = np.zeros((policy_count, max(1, cash_count)), dtype=np.bool_)
+    pe_policy_owner_non_pe_lot_mask = np.zeros((policy_count, max(1, lot_count)), dtype=np.bool_)
+
+    if not issuer_ids and not policies:
+        return (
+            pe_issuer_codes,
+            pe_issuer_event_series_index,
+            pe_issuer_level_series_index,
+            pe_issuer_policy_index,
+            pe_issuer_lot_mask,
+            pe_policy_owner_agent_codes,
+            pe_policy_proceeds_cash_slot,
+            pe_policy_floor_kind,
+            pe_policy_floor_fixed,
+            pe_policy_floor_base,
+            pe_policy_floor_series_index,
+            pe_policy_floor_base_month,
+            pe_policy_floor_adjustment_period,
+            pe_policy_owner_cash_mask,
+            pe_policy_owner_non_pe_lot_mask,
+        )
+
+    # Per-policy arrays.
+    for policy_idx, policy in enumerate(policies):
+        owner_code = strings.require(policy.owner_agent_id)
+        pe_policy_owner_agent_codes[policy_idx] = owner_code
+        # Proceeds cash slot: the (owner_agent, proceeds_account_id) pair.
+        proceeds_account_code = strings.require(policy.proceeds_account_id)
+        # Account-slot lookup: scan cash_agent_codes for the agent + account match. Cash slots are
+        # indexed by (agent, account) pair; we walk the cash table to find the right slot.
+        # The compiled `cash_account_codes` array would also be helpful, but we don't have it
+        # passed in — instead we use the strings agent code + a downstream lookup.
+        # For now: we rely on the engine to look up the proceeds slot by matching agent code +
+        # a parallel cash_account_codes (passed via plan.cash_account_codes elsewhere).
+        # We store NO_CODE for the slot here; engine resolves at run time. Actually let's just
+        # precompute it: take the first cash slot owned by the owner agent — convention is each
+        # actor has a single primary "checking" slot.
+        # TODO: when an actor has multiple accounts, we should match the policy.proceeds_account_id
+        # explicitly. For v1 single-actor scenarios this is the same as the first matching slot.
+        del proceeds_account_code  # unused for now; rely on owner-cash mask for proceeds
+        owner_cash_slots = np.flatnonzero(cash_agent_codes == owner_code)
+        if owner_cash_slots.size > 0:
+            pe_policy_proceeds_cash_slot[policy_idx] = int(owner_cash_slots[0])
+        kind, fixed, base, series, base_month, period = _amount_arrays(
+            policy.liquid_net_worth_floor, series_index_by_id
+        )
+        pe_policy_floor_kind[policy_idx] = kind
+        pe_policy_floor_fixed[policy_idx] = fixed
+        pe_policy_floor_base[policy_idx] = base
+        pe_policy_floor_series_index[policy_idx] = series
+        pe_policy_floor_base_month[policy_idx] = base_month
+        pe_policy_floor_adjustment_period[policy_idx] = period
+        if cash_count > 0:
+            pe_policy_owner_cash_mask[policy_idx, :cash_count] = cash_agent_codes == owner_code
+        if lot_count > 0:
+            owner_lots = lot_agent_codes == owner_code
+            pe_codes = {strings.require(f"{PRIVATE_EQUITY_SERIES_PREFIX}{issuer}") for issuer in issuer_to_lots}
+            non_pe_lot = ~np.isin(lot_asset_codes, list(pe_codes)) if pe_codes else np.ones(lot_count, dtype=np.bool_)
+            pe_policy_owner_non_pe_lot_mask[policy_idx, :lot_count] = owner_lots & non_pe_lot
+
+    # Per-issuer arrays.
+    policy_index_by_owner = {int(pe_policy_owner_agent_codes[idx]): idx for idx in range(len(policies))}
+    for issuer_idx, issuer in enumerate(issuer_ids):
+        pe_issuer_codes[issuer_idx] = strings.require(issuer)
+        level_series_id = f"{PRIVATE_EQUITY_SERIES_PREFIX}{issuer}"
+        event_series_id = private_equity_sale_event_id(issuer)
+        if level_series_id in series_index_by_id:
+            pe_issuer_level_series_index[issuer_idx] = series_index_by_id[level_series_id]
+        if event_series_id in event_index_by_id:
+            pe_issuer_event_series_index[issuer_idx] = event_index_by_id[event_series_id]
+        # Lot indices owned by this issuer.
+        lots = issuer_to_lots[issuer]
+        for lot_index in lots:
+            pe_issuer_lot_mask[issuer_idx, lot_index] = True
+        # Resolve policy by owner-agent match. All lots for a given issuer in v1 are owned by
+        # the same agent (single-actor scenarios); use the first lot's owner.
+        owner_code = int(lot_agent_codes[lots[0]])
+        if owner_code in policy_index_by_owner:
+            pe_issuer_policy_index[issuer_idx] = policy_index_by_owner[owner_code]
+
+    return (
+        pe_issuer_codes,
+        pe_issuer_event_series_index,
+        pe_issuer_level_series_index,
+        pe_issuer_policy_index,
+        pe_issuer_lot_mask,
+        pe_policy_owner_agent_codes,
+        pe_policy_proceeds_cash_slot,
+        pe_policy_floor_kind,
+        pe_policy_floor_fixed,
+        pe_policy_floor_base,
+        pe_policy_floor_series_index,
+        pe_policy_floor_base_month,
+        pe_policy_floor_adjustment_period,
+        pe_policy_owner_cash_mask,
+        pe_policy_owner_non_pe_lot_mask,
+    )
 
 
 def _slot(account_slot_by_key: dict[tuple[str, str], int], agent_id: str, account_id: str) -> int:

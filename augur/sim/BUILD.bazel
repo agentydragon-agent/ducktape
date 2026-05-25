@@ -185,6 +185,7 @@ py_library(
         ":scenario",
         ":state",
         ":tensor_fifo",
+        "//augur/model:series",
         "@pypi//numpy",
         "@pypi//polars",
     ],

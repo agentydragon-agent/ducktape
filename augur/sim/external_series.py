@@ -17,19 +17,31 @@ from dataclasses import dataclass
 import polars as pl
 
 from augur.frames import FrameSpec
-from augur.model.exogenous import SERIES_VALUES_SCHEMA, SampledExogenousBundle, series_values_from_bundle
+from augur.model.exogenous import (
+    SERIES_EVENTS_SCHEMA,
+    SERIES_VALUES_SCHEMA,
+    SampledExogenousBundle,
+    series_values_from_bundle,
+)
 from augur.model.series_model import SeriesModelBundle, materialize_series_values
 
 EXTERNAL_SERIES_VALUES_FRAME = FrameSpec("series_values", SERIES_VALUES_SCHEMA)
+EXTERNAL_SERIES_EVENTS_FRAME = FrameSpec("series_events", SERIES_EVENTS_SCHEMA)
 
 
 @dataclass(frozen=True)
 class ExternalSeriesContext:
     """The materialized external-series frame plus quick filtered views.
     Construct once at sim start; pass alongside `state` into step
-    calls. The frame schema is `SERIES_VALUES_SCHEMA`."""
+    calls.
+
+    `series_values` carries level series (asset prices, CPI levels, rent levels).
+    `series_events` carries boolean event paths (private-equity tender opportunities,
+    future regime-change events). Both are long-form polars frames keyed by
+    `(rollout_index, month_index, series_id|event_id)`."""
 
     series_values: pl.DataFrame
+    series_events: pl.DataFrame
 
     def series_at(self, month_index: int) -> pl.DataFrame:
         """Cross-section view at the given month: one row per
@@ -50,7 +62,8 @@ def materialize_external_series(
     return ExternalSeriesContext(
         series_values=EXTERNAL_SERIES_VALUES_FRAME.normalize(
             materialize_series_values(bundle, rollout_seeds=rollout_seeds, horizon_months=horizon_months)
-        )
+        ),
+        series_events=EXTERNAL_SERIES_EVENTS_FRAME.empty(),
     )
 
 
@@ -58,5 +71,6 @@ def materialize_sampled_exogenous(bundle: SampledExogenousBundle) -> ExternalSer
     """Adapt a model-owned sampled bundle into the simulator's series context."""
 
     return ExternalSeriesContext(
-        series_values=EXTERNAL_SERIES_VALUES_FRAME.normalize(series_values_from_bundle(bundle))
+        series_values=EXTERNAL_SERIES_VALUES_FRAME.normalize(series_values_from_bundle(bundle)),
+        series_events=EXTERNAL_SERIES_EVENTS_FRAME.normalize(bundle.events),
     )

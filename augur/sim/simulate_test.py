@@ -13,16 +13,18 @@ from pydantic import ValidationError
 
 from augur.model.gbm import GeometricBrownian
 from augur.model.series_model import SeriesModelBundle
-from augur.sim.external_series import EXTERNAL_SERIES_VALUES_FRAME, ExternalSeriesContext
+from augur.sim.external_series import EXTERNAL_SERIES_EVENTS_FRAME, EXTERNAL_SERIES_VALUES_FRAME, ExternalSeriesContext
 from augur.sim.scenario import (
     Agent,
     FederalSaltCapEntry,
     FederalSaltDeductionPolicy,
+    FixedAmount,
     InitialAccountBalance,
     InitialLot,
     LiquidityPolicy,
     MortgageFinancing,
     MortgageInterestDeductionPolicy,
+    PrivateEquityTenderPolicy,
     PropertyTaxPolicy,
     RecurringObligation,
     RecurringTransfer,
@@ -47,7 +49,8 @@ def _external_series_context_for_levels(series_id: str, levels_by_rollout: list[
                     for month_index, level in enumerate(levels)
                 ]
             )
-        )
+        ),
+        series_events=EXTERNAL_SERIES_EVENTS_FRAME.empty(),
     )
 
 
@@ -3268,6 +3271,225 @@ def test_salt_cap_uses_overriding_schedule_first_year() -> None:
     fed = _accrual_breakdown(result, jurisdiction_id="federal_us")
     # SALT total far exceeds $5k → cap binds at $5k exactly.
     assert float(fed["salt_deduction_usd"]) == pytest.approx(5_000.0, rel=1e-9)
+
+
+def _pe_tender_scenario(
+    *,
+    initial_cash_usd: float,
+    monthly_spend_usd: float,
+    pe_units: float,
+    pe_cost_basis_per_unit_usd: float,
+    pe_holding_period_months: int,
+    horizon_months: int,
+    lnw_floor_usd: float,
+) -> Scenario:
+    """A minimal PE-only scenario: Alice holds N units of acme PE, spends $M/month, has
+    a `PrivateEquityTenderPolicy` with a fixed LNW floor. No income, no property."""
+
+    return Scenario(
+        agents=[Agent(agent_id="alice"), Agent(agent_id="spend_sink")],
+        initial_cash=[
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=initial_cash_usd),
+            InitialAccountBalance(agent_id="spend_sink", account_id="checking", balance_usd=0.0),
+        ],
+        initial_lots=[
+            InitialLot(
+                lot_id="acme_lot_a",
+                agent_id="alice",
+                account_id="checking",
+                asset_id="private_equity:acme",
+                purchase_month_index=-pe_holding_period_months,
+                quantity=pe_units,
+                cost_basis_per_unit_usd=pe_cost_basis_per_unit_usd,
+            )
+        ],
+        recurring_obligations=[
+            RecurringObligation(
+                start_month=0,
+                end_month=horizon_months - 1,
+                obligation_id="monthly_spend",
+                obligation_type="cash_spend",
+                agent_id="alice",
+                from_account_id="checking",
+                to_agent_id="spend_sink",
+                to_account_id="checking",
+                amount_due_usd=float(monthly_spend_usd),
+            )
+        ],
+        private_equity_tender_policies=[
+            PrivateEquityTenderPolicy(
+                owner_agent_id="alice",
+                proceeds_account_id="checking",
+                liquid_net_worth_floor=FixedAmount(amount_usd=lnw_floor_usd),
+            )
+        ],
+        tax_profiles=[],
+        horizon_months=horizon_months,
+    )
+
+
+def _pe_external_series(
+    *,
+    initial_mark_usd: float,
+    tender_month: int | None,
+    tender_mark_usd: float | None,
+    horizon_months: int,
+    rollout_count: int = 1,
+) -> ExternalSeriesContext:
+    """Build an ExternalSeriesContext with one PE level + event series for acme.
+
+    Level: flat at `initial_mark_usd` through the horizon, stepping to `tender_mark_usd`
+    at `tender_month` and onward. Event: True only at `tender_month` (or never if None).
+    """
+
+    level_rows = []
+    event_rows = []
+    for rollout in range(rollout_count):
+        current_mark = initial_mark_usd
+        for month in range(horizon_months + 1):
+            if tender_month is not None and month == tender_month and tender_mark_usd is not None:
+                current_mark = tender_mark_usd
+            level_rows.append(
+                {
+                    "rollout_index": rollout,
+                    "month_index": month,
+                    "series_id": "private_equity:acme",
+                    "value": current_mark,
+                }
+            )
+            event_rows.append(
+                {
+                    "rollout_index": rollout,
+                    "month_index": month,
+                    "event_id": "private_equity_sale_opportunity:acme",
+                    "active": (tender_month is not None and month == tender_month),
+                }
+            )
+    return ExternalSeriesContext(
+        series_values=EXTERNAL_SERIES_VALUES_FRAME.normalize(pl.DataFrame(level_rows)),
+        series_events=EXTERNAL_SERIES_EVENTS_FRAME.normalize(pl.DataFrame(event_rows)),
+    )
+
+
+def _pe_lot_remaining_at(result, *, lot_id: str, month_index: int) -> float:
+    row = result.asset_lots.filter((pl.col("lot_id") == lot_id) & (pl.col("month_index") == month_index)).row(
+        0, named=True
+    )
+    return float(row["remaining_quantity"])
+
+
+def _alice_cash_at(result, *, month_index: int) -> float:
+    rows = result.cash_balances.filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == month_index))
+    return float(rows.get_column("balance_usd").sum())
+
+
+def test_pe_tender_never_fires_leaves_position_intact() -> None:
+    """Without any tender event, the PE position carries through the horizon untouched."""
+
+    scenario = _pe_tender_scenario(
+        initial_cash_usd=100_000.0,
+        monthly_spend_usd=0.0,
+        pe_units=100.0,
+        pe_cost_basis_per_unit_usd=10.0,
+        pe_holding_period_months=36,
+        horizon_months=24,
+        lnw_floor_usd=500_000.0,  # floor above LNW; would sell if a tender fired
+    )
+    external = _pe_external_series(initial_mark_usd=50.0, tender_month=None, tender_mark_usd=None, horizon_months=24)
+    result = simulate_with_external_series(scenario, rollout_count=1, external_series=external)
+    # Lot untouched at end of horizon.
+    assert _pe_lot_remaining_at(result, lot_id="acme_lot_a", month_index=24) == pytest.approx(100.0)
+    # Cash: starts at $100k, $0 spend → never changes.
+    assert _alice_cash_at(result, month_index=24) == pytest.approx(100_000.0)
+
+
+def test_pe_tender_fires_below_floor_sells_to_lift_lnw() -> None:
+    """A tender at month 5 with LNW below the floor triggers a sale that lifts LNW
+    toward the floor. PE position drained by `min(units_held, shortfall / mark)`."""
+
+    initial_cash = 30_000.0
+    monthly_spend = 1_000.0
+    horizon = 12
+    tender_month = 5
+    initial_mark = 50.0
+    tender_mark = 60.0
+    pe_units = 100.0
+    floor = 50_000.0
+    scenario = _pe_tender_scenario(
+        initial_cash_usd=initial_cash,
+        monthly_spend_usd=monthly_spend,
+        pe_units=pe_units,
+        pe_cost_basis_per_unit_usd=10.0,
+        pe_holding_period_months=36,
+        horizon_months=horizon,
+        lnw_floor_usd=floor,
+    )
+    external = _pe_external_series(
+        initial_mark_usd=initial_mark, tender_month=tender_month, tender_mark_usd=tender_mark, horizon_months=horizon
+    )
+    result = simulate_with_external_series(scenario, rollout_count=1, external_series=external)
+
+    # Pre-tender cash after settling month-5 spend = 30k - 6*1k = 24k. (months 0..5 each pay $1k)
+    # LNW pre-tender = 24k (no other holdings). Shortfall = 50k - 24k = 26k.
+    # Available PE value = 100 units * $60/unit = $6k → sell entire position.
+    # Cash after = 24k + 6k = 30k. Lot remaining = 0.
+    snapshot = tender_month + 1
+    assert _pe_lot_remaining_at(result, lot_id="acme_lot_a", month_index=snapshot) == pytest.approx(0.0, abs=1e-6)
+    assert _alice_cash_at(result, month_index=snapshot) == pytest.approx(30_000.0, abs=1.0)
+
+
+def test_pe_tender_fires_above_floor_no_sale() -> None:
+    """When LNW already exceeds the floor, a tender opportunity passes without a sale."""
+
+    scenario = _pe_tender_scenario(
+        initial_cash_usd=200_000.0,
+        monthly_spend_usd=0.0,
+        pe_units=100.0,
+        pe_cost_basis_per_unit_usd=10.0,
+        pe_holding_period_months=36,
+        horizon_months=12,
+        lnw_floor_usd=50_000.0,
+    )
+    external = _pe_external_series(initial_mark_usd=50.0, tender_month=5, tender_mark_usd=60.0, horizon_months=12)
+    result = simulate_with_external_series(scenario, rollout_count=1, external_series=external)
+    # Cash 200k > floor 50k → no sale at tender.
+    assert _pe_lot_remaining_at(result, lot_id="acme_lot_a", month_index=6) == pytest.approx(100.0)
+    assert _alice_cash_at(result, month_index=6) == pytest.approx(200_000.0)
+
+
+def test_pe_tender_inactive_when_no_policy() -> None:
+    """Regression: a tender event fires but no PrivateEquityTenderPolicy → no sale."""
+
+    scenario = _pe_tender_scenario(
+        initial_cash_usd=30_000.0,
+        monthly_spend_usd=1_000.0,
+        pe_units=100.0,
+        pe_cost_basis_per_unit_usd=10.0,
+        pe_holding_period_months=36,
+        horizon_months=12,
+        lnw_floor_usd=50_000.0,
+    )
+    scenario_no_policy = scenario.model_copy(update={"private_equity_tender_policies": []})
+    external = _pe_external_series(initial_mark_usd=50.0, tender_month=5, tender_mark_usd=60.0, horizon_months=12)
+    result = simulate_with_external_series(scenario_no_policy, rollout_count=1, external_series=external)
+    assert _pe_lot_remaining_at(result, lot_id="acme_lot_a", month_index=6) == pytest.approx(100.0)
+
+
+def test_pe_tender_zero_floor_never_sells() -> None:
+    """A floor of $0 means LNW is always at-or-above the floor → tenders never trigger sales."""
+
+    scenario = _pe_tender_scenario(
+        initial_cash_usd=1_000.0,
+        monthly_spend_usd=0.0,
+        pe_units=100.0,
+        pe_cost_basis_per_unit_usd=10.0,
+        pe_holding_period_months=36,
+        horizon_months=12,
+        lnw_floor_usd=0.0,
+    )
+    external = _pe_external_series(initial_mark_usd=50.0, tender_month=5, tender_mark_usd=60.0, horizon_months=12)
+    result = simulate_with_external_series(scenario, rollout_count=1, external_series=external)
+    assert _pe_lot_remaining_at(result, lot_id="acme_lot_a", month_index=6) == pytest.approx(100.0)
 
 
 if __name__ == "__main__":
