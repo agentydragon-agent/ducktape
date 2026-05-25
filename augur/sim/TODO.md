@@ -1,429 +1,225 @@
 # Augur Sim TODO
 
-Current tracker for gaps in `augur/sim` now that it is the primary simulation
-backend for the Augur frontend/API.
+Future-facing tracker for known incomplete pieces and follow-ups in `augur/sim`
+and the layers immediately around it (product translator, wire, frontend).
+Anything fully shipped is removed — git history is the record of done work.
 
-## Switchover Definition
+## Architecture / cutover
 
-The replacement is done when the production API path is:
+- Replace the `augur/api/bridge.py` legacy compatibility translator (still
+  used by the `scenario_set` route + the browser-shaped property test) with
+  a native sim request schema, or narrow it to legacy-import paths only.
+  The product surface already routes directly through
+  `augur/product/scenarios.build_scenario`, so the bridge is no longer the
+  only entry point — but the browser test in `augur/api/server_test.py`
+  layers PE from `initial_balance_sheet.assets` on top of the fixture's
+  `portfolio.holdings`, which is the duplication symptom of having two
+  active translation paths.
+- Replace the temporary sim dataframe-to-legacy-table materializer with
+  serialized `ProjectionRun` read models. The current sim path derives
+  monthly/terminal/fan/status/metadata tables from `SimulationRun`
+  dataframes for frontend smoke; the durable API should expose compact
+  scenario metadata + distribution-first projections instead.
+- Decide the browser/backend ownership boundary for low-level sim programs.
+  Today the browser emits some timeline-shaped event objects while the
+  backend also owns catalog defaults, financing math, counterparties,
+  payments, and sim lowering. Before adding richer lifecycle controls,
+  choose: browser sends high-level intent only and backend expands it, or
+  browser becomes responsible for constructing an explicit sim program.
+- Make liquidity policies an account-keyed simulator program internally.
+  Config/wire shape can stay list-friendly, but the runtime/compiler
+  should consume `{(agent_id, account_id): policy}` so "one policy per
+  cash account" is encoded by data shape, not validators.
+- Define the month-0 anchoring rule for every model-driven level series
+  in one place. Implementations exist (sp500, crypto, home_value, rent,
+  PE, inflation), but no single document says whether a configured value
+  is a sim-month-0 level or a fixed contract value.
 
-```text
-current API / catalog config
-  -> typed sim scenario + exogenous sampling request with explicit rollout seeds
-  -> augur/model ExogenousPathModel.sample(...)
-  -> SampledExogenousBundle levels/events
-  -> augur/sim deterministic evaluation
-  -> augur/api ProjectionRun/read models
-```
+## Tax
 
-`augur/api` still contains compatibility request/response schemas while
-`augur/model` owns exogenous-provider schemas and provenance helpers. The deleted
-`augur/core` tree is no longer the production owner of exogenous sampling, path
-evaluation, or response semantics.
+- Reintroduce ordinary income / W-2 sources when a scenario needs
+  pre-retirement earning. Currently deferred (priority note 2026-05-24):
+  the product targets asset-spend-down retirement projections. MID ships
+  visible through CA-side deduction on capital-gain sales without an
+  income knob. Promote when a scenario requires earning during the
+  horizon.
+- Prior-year tax for federal/CA estimated quarterly payments. The
+  underpayment-penalty path is explicitly deferred (see "Explicitly
+  Deferred"), but quarterly estimates affect cashflow timing and aren't
+  modeled.
+- NIIT (3.8% on investment income above thresholds) and filing statuses
+  beyond single. Out of scope until a scenario surfaces them.
 
-## Replacement Checklist
+## Real-estate lifecycle
 
-- [ ] Broaden the explicit translator from the current browser/API payload
-      into `augur.sim.scenario.Scenario`. The first slices support generic
-      SP500 lots, checking cash, monthly spend, checking-floor public-stock
-      sales, month-0 property purchase, mortgage origination, and
-      valuation-only private-equity lots. Tax, crypto, richer property
-      cashflows, private-equity liquidity, and richer policy slices still need
-      native sim translation.
-- [ ] Replace the temporary sim dataframe-to-legacy-table materializer with
-      serialized `ProjectionRun` read models. The current sim path derives
-      monthly, terminal, fan, status, and metadata tables from
-      `SimulationRun` dataframes so existing frontend graphs can smoke; the
-      durable API should expose compact scenario metadata plus
-      distribution-first projections instead of preserving legacy field names.
-- [ ] Replace core-side required-series discovery with full sim scenario
-      introspection so model providers know which public markets, private
-      equity paths, locations, currencies, and other exogenous series must
-      be sampled. The initial sim backend path already unions required level
-      series across translated scenarios before sampling one shared exogenous
-      bundle.
-- [ ] Add the sim-side external-series consumption adapter: sampled levels/events should
-      drive mark-to-market asset values, rent/home-value paths, private-equity
-      marks, private-equity sale opportunities, mortgage/rate paths when they
-      exist, and any future exogenous streams. `augur/sim` must not sample
-      production exogenous paths internally.
-- [ ] Replace bespoke partner-equity contribution handling with the generic
-      property-stake model once property stakes are covered by sim tests.
-- [ ] Replace ad hoc catalog/default expansion in the backend compatibility
-      translator with a `Config`/catalog-to-runtime scenario builder that
-      remains compatible with `gaffer-private` deployment YAML.
-- [ ] Continue the staged rollout after the backend sim smoke: broaden the
-      fixture slice and keep browser smoke coverage on the backend.
-- [ ] Make liquidity policies an account-keyed simulator program internally.
-      The config/wire shape can remain list-friendly, but the runtime/compiler
-      should consume something typed like `{(agent_id, account_id): policy}` so
-      "one liquidity policy per cash account" is encoded by the data shape
-      rather than only by a duplicate-check validator.
+The product surface handles month-0 property purchase, mortgage origination
+(180/360-term fixed-rate), property tax, HOA, insurance, maintenance, MID,
+and SALT. Still missing:
 
-## Frontend/API Integration Blockers
+- **Property sale**: end-of-horizon and mid-horizon. Needs closing-cost
+  schedule, mortgage payoff, §121 primary-residence exclusion, §1250
+  unrecaptured-depreciation recapture on rentals, and proceeds split
+  when partner stakes exist.
+- **Mid-horizon property purchases**. Today the product knob is "buy at
+  month 0 or don't buy". Timeline work would let users model "buy in 2
+  years" via a configurable purchase month.
+- **Move residence** events (changes owner-occupancy → MID/§121 status).
+- **Start/stop rental** events (changes obligation streams + tax
+  treatment).
+- **Whole rental plans**: whole-property rental, room rental, vacancy
+  assumptions, management fees, leasing fees. Today only outside-rent
+  (the user paying rent) is modeled, not the user as landlord. Tenant
+  rent income should use the same rent-cost indexing contract as
+  outside rent (`base_rent * rent_cost_series[t] / rent_cost_series[0]`).
+- **Property-tax: Proposition-13-style 2%/yr assessed-value escalation
+  cap.** `property_initial_assessed_value` is set at purchase and never
+  escalates. Long horizons (20-30y) progressively understate tax — by
+  year 30 assessed value is ~1.81× under the cap, so tax is understated
+  by ~45%. Fix: per-rollout state buffer for assessed value, year-end
+  step `min(cpi_growth, 2%)`.
+- **Property-tax: first-year supplemental assessment** (CA). A purchase
+  triggers a prorated supplemental bill for the difference between the
+  previous owner's assessed value and the new purchase price, billed in
+  addition to the regular bill in year 1.
+- **CFD / Mello-Roos special assessments**: annual escalation cap (2%/yr
+  in CA); term / sunset modeling (real CFDs end when bonds repay);
+  itemized breakdown (real bills list each CFD separately, e.g. Mare
+  Island bills show CFD 2002-1 / 2005-1A / 2005-1B). Today
+  `Location.annual_special_assessment_usd` is a flat aggregate.
+- **HOA, insurance, maintenance** — knobs exist but model is coarse:
+  - HOA is indexed to CPI; real HOAs ratchet in lumpy board votes that
+    often outpace CPI. Needs a per-HOA dues schedule.
+  - HOA special assessments (roof, seismic retrofit, litigation) are
+    not modeled.
+  - Insurance is one ScenarioKey-level `annual_insurance_pct` × purchase
+    price. Real premiums vary 5–10× by location (CA wildfire
+    non-renewals, FAIR-plan fallback, FL hurricane). Move to
+    per-location `annual_insurance_pct` once we have a second location
+    with real data. No deductible / claim modeling. No replacement-cost
+    escalation independent of home value.
+  - Maintenance is a flat percentage of purchase price smoothed monthly.
+    Real maintenance is lumpy (roof $20-40k, HVAC $10-15k). Tax
+    treatment ignored: capital improvements should add to §1250 / §121
+    basis; routine repairs should not. Today treated as deductible-free
+    cash outflow.
 
-- [ ] Add API serialization, compact scenario metadata, and a frontend
-      adapter over `ProjectionRun`. Prefer a clean `model -> sim -> api`
-      contract over matching legacy compatibility-table names. Keep this scoped
-      to the broader scenario/read-model replacement rather than the lightweight
-      product-route cache.
-- [ ] Expand the backend sim smoke harness beyond the current smoke slices.
-      The harness proves current `ScenarioSet` requests can translate into sim,
-      sample model-owned bundles, complete `augur/sim`, and return graphable
-      tables without relying on core output equality.
-- [ ] Preserve legacy scalar-seed behavior only at the API compatibility edge.
-      The request translator or core shim should expand scalar seed + rollout
-      count into explicit rollout seeds; model implementations and sim should
-      never rely on an omitted/default seed.
-- [ ] Define the minimal compatibility response for existing frontend routes:
-      scenario metadata, distribution summaries, selected-rollout trajectory
-      series, accounting/detail drilldowns, warnings, and model provenance.
-      Anything else should move behind sliced read-model endpoints instead of
-      being preserved as legacy top-level fields.
-- [ ] Remove or hide legacy partner-equity contribution inputs from
-      frontend/backend integration until a generic, tested property-stake
-      model exists. Do not add a bespoke partner-contribution pathway to
-      `sim`.
+## Private equity
 
-## API-to-Sim Translation Inventory
+PE tender regime is wired end-to-end (sim engine → wire → translator →
+frontend LNW-floor knob). Still missing:
 
-This inventory tracks the current `augur.api.scenario_set.ScenarioSet`
-compatibility translator, not the long-term native sim request schema. Keep the
-translator honest: unsupported current-API fields should fail loudly until they
-are translated or removed from the frontend path.
+- **Public-market PE regime** (post-IPO unrestricted shares behaving like
+  public stock).
+- **Acquisition regime** (PE position bought out at a specified or
+  modeled price, often above marketed valuation, with lockup variations).
+- **PE IPO and PE acquisition lifecycle events** — should lower into the
+  appropriate regime transition.
+- **`PartnerEquityAccrualPolicy`** translation — depends on the generic
+  property-stake model covering partner ownership, contribution
+  allocation, and balance snapshots.
 
-Already covered by the sim backend smoke:
+## Counterparties & accounts
 
-- [x] Actors become `augur.sim.scenario.Agent` rows.
-- [x] Checking account balances become `InitialAccountBalance` rows.
-- [x] Request-local generic SP500 positions become `InitialLot` rows for the
-      first smoke slice. This is a compatibility stopgap; durable translation
-      should source real public-security lots from backend config.
-- [x] Flat `MonthlySpendPolicy` becomes a recurring hard obligation.
-- [x] SP500-only `CheckingFloorSellPublicStockPolicy` becomes a
-      `LiquidityPolicy`.
-- [x] Scalar API seed plus rollout count expands into explicit rollout seeds
-      for `ExogenousSamplingRequest`.
-- [x] Required level series are inferred from translated initial lots,
-      scheduled asset sales, and liquidity-policy asset chains, then unioned
-      across scenarios before sampling one shared exogenous bundle.
-- [x] Request-local private-equity holdings with positive units, basis, and
-      issuer routing become valuation-only `InitialLot` rows when the browser
-      leaves `value_usd` unset. This keeps the browser-shaped concentrated
-      holding payload working while explicit mark anchoring and sale/tender
-      behavior are still deliberately unsupported.
+- The product surface already names counterparty agents (`LANDLORD_AGENT_ID`,
+  `MORTGAGE_LENDER_AGENT_ID`, `PROPERTY_SELLER_AGENT_ID`, `HOA_AGENT_ID`,
+  `INSURER_AGENT_ID`, `MAINTENANCE_VENDOR_AGENT_ID`, `TAX_AUTHORITY_AGENT_ID`,
+  `SPEND_SINK_AGENT_ID`). Future: generalize into a registry of named
+  external sinks rather than hard-coded constants, so adding a new
+  counterparty doesn't require touching `scenarios.py`.
+- Account-type taxonomy is currently `checking` + `taxable_brokerage`.
+  When the YAML snapshot needs them: typed `crypto_exchange`,
+  `lender`/`loan-side`, and bookkeeping counterparty accounts (most can
+  start as metadata + routing, not bespoke settlement logic).
 
-Translator gaps to migrate next:
+## Exogenous sampling / VECM
 
-- [x] Add a first-class path-indexed amount shape for configured recurring sim
-      cashflows. `SeriesIndexedAmount` now represents "amount is `$X` at base
-      month, then scales by `model_series[reset_month] / model_series[base]`"
-      and supports fixed-length reset periods such as annual rent resets.
-      The product cash-spend route uses it for inflation-indexed spend. Future
-      translator slices should use it for outside rent, tenant rent, and later
-      recurring property costs instead of inventing special-case growth flags.
-- [ ] Define the month-0 anchoring rule for every model-driven level series.
-      Public securities, home value, rent, crypto, private-equity marks, and
-      inflation-indexed amounts should all say whether the configured value is
-      a simulation month-0 level or a fixed contract value.
-- [ ] Keep legacy aggregate public-equity values only as UI/bootstrap
-      compatibility. `sp500_proxy_portfolio_usd`, `wealthfront_sp500_usd`, and
-      similar display totals may be computed from configured positions, but
-      sim should not treat a dollar value as a lot quantity.
-- [ ] Translate tax profiles: filing status, taxing jurisdictions,
-      prior-year tax for estimated payments, annual ordinary income as a
-      recurring taxable income source, and any standard-deduction overrides the
-      sim tax layer supports.
-- [ ] Translate outside rent into recurring obligations whose amount can be
-      indexed to modeled rent costs. The first translator slice may keep the
-      current flat amount, but durable outside-rent behavior should consume an
-      `augur/model` rent-cost series for the applicable rental market. The
-      config shape should be a month-0 base rent plus a rent-cost model series
-      key; sim then computes monthly rent as
-      `base_rent * rent_cost_series[t] / rent_cost_series[0]`. CPI or wage
-      indexing can be model choices behind that series, not hard-coded sim
-      behavior.
-- [ ] Drive owned-property value from modeled home-value series. A selected
-      property should start from its configured/list purchase value at the
-      month-0 anchor, then mark to market by the applicable
-      `home_value:<location>` series. Future sale proceeds should use the same
-      value path unless an explicit sale contract price exists.
-- [ ] Translate financing into `MortgageFinancing`: loan amount, rate, term,
-      lender agent/account, payment account, and liability id. Mortgage-rate
-      sampling remains an exogenous-model/sim capability follow-up.
-- [ ] Translate property tax policy from local regulation and property
-      selection. Maintenance, insurance, HOA, rental income, depreciation, and
-      sale costs need either native sim policies/events or explicit deferral.
-- [ ] Translate rental plans: whole-property rental, room rental, rental start
-      and stop windows, vacancy assumptions, management fees, and leasing fees.
-      These should become property cashflow policies or recurring
-      income/obligation streams over sim state, not standalone core arrays.
-      Tenant rent income should use the same rent-cost indexing contract as
-      outside rent: configured month-0 rent plus a property/rental-market
-      rent-cost model series, with future tenant rent scaled by
-      `rent_cost_series[t] / rent_cost_series[0]`.
-- [ ] Keep rental lifecycle transitions out of the initial cutover. For now,
-      assume the scenario's selected rental state applies for the whole horizon;
-      later browser timeline work can lower rental start/stop controls into
-      explicit sim events.
-- [ ] Translate special assessments into scheduled obligations.
-- [ ] Translate explicit portfolio trade events into scheduled asset
-      purchases/sales once sim has the needed buy-side accounting.
-- [x] Translate crypto positions into sim asset lots with per-symbol market
-      series IDs, basis, quantity/value handling, and liquidity-policy
-      preferences. BTC + ETH now flow as `crypto:<symbol>` value series
-      through the VECM joint fit (factor included in trained blob,
-      runtime sampler resolves latest-close anchors), become `InitialLot`
-      rows via the `holdings:` portfolio surface, and are sellable through
-      the `crypto` bucket of the sell-order tuple.
-- [x] Finish private-equity native runtime semantics: explicit mark anchoring,
-      liquidity regime (tender-only — never enters
-      `LiquidityPolicy.asset_preference_chain`), tender event consumption,
-      and event-stream requirements (per-issuer
-      `private_equity_sale_opportunity:<issuer>` event series). Engine
-      drains PE lots FIFO at each tender event and accrues cap-gains via
-      the same path as ordinary sales. Public-market and acquisition
-      regimes are deferred.
-- [x] Translate `PrivateEquitySalePolicy` after private-equity state and tender
-      events are native to sim. Replaced by `PrivateEquityTenderPolicy`:
-      each tender event sells units to lift liquid net worth (cash +
-      non-PE holdings) to an inflation-indexed floor. Translator at
-      `augur/product/scenarios._build_private_equity_tender_policies`.
-- [x] Reintroduce private-stock sale policy controls in the frontend after the
-      native sim policy exists. LNW-floor `NumberField` + "Index floor to
-      inflation" `Checkbox` in the Funding card; URL-serialized via
-      `peLnwFloorUsd` + `peIndexFloorToInflation`; emitted on the wire as
-      `peTenderPolicy.{liquidNetWorthFloorUsd, indexFloorToInflation}`.
-- [x] Translate `CheckingFloorSellPublicStockPolicy.sale_asset_preference`
-      beyond SP500: crypto positions ride the same ordered sell-order
-      surface (`stocks`, `crypto` buckets). PE intentionally uses a
-      separate dispatch path via `PrivateEquityTenderPolicy` since PE is
-      tender-event-only and not part of the LNW liquidity chain.
-- [ ] Translate `PartnerEquityAccrualPolicy` only after the generic property
-      stake model covers partner ownership, contribution allocation, and
-      balance snapshots.
-- [ ] Translate explicit property lifecycle events: property purchase,
-      property sale, mortgage origination, move residence, start/stop rental,
-      PE IPO, and PE acquisition. Events with no native runtime semantics should
-      stay hard errors.
-- [ ] Keep browser timeline lowering deliberately narrow for the first cutover:
-      property purchase happens at month 0, owner occupancy lasts forever when
-      selected, and sale may be modeled only as an end-of-horizon event if the
-      response needs it. Mid-horizon purchases, moves, and rental start/stop are
-      later sim-event work.
-- [ ] Decide the browser/backend ownership boundary for low-level sim programs.
-      Today the browser still emits some timeline-shaped event objects while
-      the backend also owns catalog defaults, financing math, counterparties,
-      payments, and sim lowering. Before adding richer lifecycle controls,
-      choose whether the browser sends high-level user intent only and the
-      backend expands it into low-level events/payments, or whether the browser
-      becomes responsible for constructing an explicit sim program.
-- [ ] Split economic counterparties into explicit agents/accounts. Landlord,
-      tenant, lender, seller, tax authority, HOA, insurer, and other sinks
-      should not all collapse into a generic `external` account once their
-      cashflows matter in reports or taxes.
-- [ ] Support the account types the YAML snapshot actually needs: checking,
-      taxable brokerage, crypto exchange, lender/loan-side accounts, and
-      bookkeeping counterparty accounts. Escrow can stay out of scope unless a
-      real workflow needs it; most account types can initially be metadata plus
-      routing, not bespoke settlement logic.
-- [ ] Expand required-series introspection to cover inflation, home
-      value, owned-property rent, outside-rent cost, crypto prices,
-      private-equity marks, private-equity opportunity/regime events, and
-      mortgage/rate paths.
-- [ ] Keep backend/sim results nominal-dollar only for the cutover. Real-dollar
-      or inflation-adjusted display should be a later postprocessing/read-model
-      layer, not alternate simulator accounting.
-- [ ] Let the frontend omit unsupported legacy metrics during the cutover. The
-      response should expose only metrics it can derive honestly; property,
-      tax, crypto, private-equity, and detail streams can be filled back in as
-      their native sim frames land.
-- [ ] Make YAML configuration the source of truth for initial positions and
-      other deployment facts. Bootstrap/UI defaults should be derived from the
-      loaded config; scenario controls may drop or hide toggles for fields that
-      are not meant to be user-twiddled in the product.
+- Replace the VECM wrapper's ad-hoc latest-observation lookup with a
+  typed evidence-artifact / runtime-state boundary. The model should
+  receive factor-keyed current levels and provenance metadata directly,
+  not infer `sp500`, home-value, rent, and inflation values from
+  source-specific `latest_observations` maps. The current branchy
+  `_latest_factor_value` (with the recent `crypto:*` addition) is the
+  shape of the problem.
+- **Mortgage-rate path sampling**. Today the mortgage rate is a single
+  PMMS survey number at scenario time; required-series introspection
+  doesn't cover a mortgage30 path. Adding it would let "what if rates
+  fall to 5% in 18mo" scenarios work.
+- **Variable spending / obligation amounts** sourced from exogenous
+  paths (today they're either constants or `SeriesIndexedAmount` against
+  one model series; richer functional forms aren't supported).
+- **Rent cap on `SeriesIndexedAmount`** for rent-control / stabilized
+  leases (SF 7%/yr cap, rent-stabilized 3%/yr cap). Currently
+  `SeriesIndexedAmount` escalates by the full series ratio without
+  bound; outside-rent obligations under those regimes will overstate
+  escalation. Surface a `rent_cap_pct` knob on `ScenarioKey` once the
+  sim cap lands.
+- **Constrained sellability masks E2E**. PE uses the mask to gate
+  tender-event-only sales, but the general "lot sellable only when X"
+  pattern isn't exercised broadly (e.g. RSU vesting cliffs, ISO holding
+  periods, ESPP qualifying-disposition windows).
 
-Suggested migration order:
+## Trades & ledger
 
-- [ ] First: tax profile/ordinary income, outside rent, and the current SP500
-      spend smoke response shape.
-  - **Priority note (2026-05-24)**: ordinary income / W-2 translation is
-    currently _low priority_. The scenarios we want to model today are
-    asset-spend-down retirement-style projections (existing portfolio +
-    monthly spend + optional property purchase), not pre-retirement
-    earning. The MID feature shipped without an income knob and is
-    visible through the CA-side deduction on capital-gain sales.
-    Promote income back to "near-term" only when a scenario actually
-    requires earning during the horizon.
-- [ ] Second: property purchase, mortgage origination, property tax, and
-      browser smoke on the backend.
-- [x] Third: crypto positions and liquidity preferences.
-- [x] Fourth: private equity, tender regime, and partner property stakes.
-      Tender regime done end-to-end (sim engine → wire → translator →
-      frontend). Public-market and acquisition PE regimes deferred;
-      partner property stakes remain out of scope (no PartnerEquityAccrualPolicy yet).
-- [ ] Fifth: replace the compatibility translator with a native sim request
-      schema or narrow it to legacy imports only.
+- **Explicit portfolio trade events**: scheduled asset purchases/sales
+  beyond the existing month-0 property purchase. Needs buy-side
+  accounting in sim (today only sales are modeled, via liquidity policy
+  or PE tender).
+- **Ordered policy-program surface** — only if richer decisions need it.
+  Existing obligations + liquidity policies cover today's use cases;
+  missing behavior should land as typed sim decisions/events with
+  explicit cause IDs (not as a generic policy interpreter).
+- **Ledger / double-entry read model** — only if consumers need
+  double-entry projections. Sim should keep event/state frames as the
+  source of truth and derive compact `ProjectionRun` slices first.
+- **Declarative posting-schema layer** — only if ledger projections
+  need repeated double-entry templates.
 
-## Sim Capability Gaps
+## Frontend / API
 
-- [ ] Cap on `SeriesIndexedAmount` year-over-year escalation, for rent-control
-      / stabilized leases (e.g., SF 7%/yr cap, rent-stabilized 3%/yr cap).
-      Currently `SeriesIndexedAmount` escalates by the full series ratio
-      without bound; outside-rent obligations under such regimes will overstate
-      escalation. Surface a `rent_cap_pct` knob on the product `ScenarioKey`
-      once the sim cap lands.
-- [ ] Generalize the product `landlord` counterparty agent into a registry of
-      named external sinks (landlord, lender, tax authority, HOA, insurer) as
-      more outflows land.
-- [ ] Property-tax: Proposition-13-style annual assessed-value escalation
-      cap. Today `property_initial_assessed_value` is set at purchase and
-      never escalates; California allows up to 2%/yr growth in assessed
-      value. Long horizons (20-30y) understate property tax progressively
-      under current model — by year 30 the assessed value is ~1.81× the
-      purchase price under the 2% cap, so tax is understated by ~45%.
-      Fix: per-rollout state buffer for assessed value, year-end step that
-      grows by min(cpi_growth, 2%).
-- [ ] Property-tax: first-year supplemental assessment. In CA, a property
-      purchase triggers a prorated supplemental bill for the difference
-      between the previous owner's assessed value and the new purchase
-      price, billed in addition to the regular property tax in year 1.
-      Not modeled.
-- [ ] CFD / Mello-Roos special assessments: annual escalation cap. CA CFDs
-      typically grow the per-parcel special tax up to 2%/yr. Today
-      `annual_special_assessment_usd` is treated as flat for the simulation
-      horizon. Fix alongside Prop 13 escalation.
-- [ ] CFD / Mello-Roos special assessments: term / sunset modeling. Real
-      CFDs have stated terms (e.g., Mare Island CFDs were designed to
-      sunset as development completes; bond CFDs end when bonds are repaid).
-      Today special assessments persist for the whole simulation horizon.
-- [ ] CFD / Mello-Roos special assessments: itemized breakdown. Real CA
-      property-tax bills itemize each CFD separately (e.g., Mare Island
-      bills show CFD 2002-1, 2005-1A, 2005-1B as separate line items).
-      Today `Location.annual_special_assessment_usd` aggregates them into
-      one sum. Future: a list of named (cfd_id, annual_usd, term, growth)
-      records on `Location`.
-- [ ] HOA dues: monthly recurring obligation for property ownership.
-      `augur/api/bridge.py` already creates `RecurringObligation(
-obligation_type="hoa_dues")` for the scenario-set path; product
-      surface needs its own ScenarioKey knob + `ObligationType.HOA_DUES`
-      decode + UI control + event kind.
-  - First-cut simplifications worth tightening later:
-    - Indexed to `INFLATION_SERIES_ID`. Real HOAs ratchet in lumpy annual
-      board votes that often outpace CPI; modelling that needs a per-HOA
-      dues schedule.
-    - No special HOA assessments (roof, seismic retrofit, litigation).
-      These are large, sporadic, and modelled separately from the dues
-      stream when they happen.
-- [ ] Homeowner's insurance: monthly recurring obligation. Same shape as
-      HOA. `bridge.py` uses `obligation_type="insurance_premium"`.
-  - First-cut simplifications worth tightening later:
-    - One ScenarioKey-level `annual_insurance_pct` knob × purchase price.
-      Real premiums vary 5–10× by location (CA wildfire non-renewals,
-      FAIR-plan fallback, FL hurricane). Move to a per-location
-      `annual_insurance_pct` field once we have a second location with
-      real data.
-    - No deductible / claim modelling, no replacement-cost escalation
-      independent of the home value series, no force-placed coverage on
-      mortgage default.
-- [ ] Maintenance: monthly recurring obligation (typically 1-2% of home
-      value annually, prorated to monthly). Same shape. `bridge.py` uses
-      `obligation_type="maintenance"`.
-  - First-cut simplifications worth tightening later:
-    - ScenarioKey-level `annual_maintenance_pct` knob × purchase price,
-      smoothed to monthly. Real maintenance is lumpy (roof replacement
-      $20–40k, HVAC $10–15k, sewer line $5–15k); the 1% rule averages
-      these over decades.
-    - Tax treatment ignored: capital improvements (roof, addition)
-      should add to basis for §1250 / §121; routine repairs should not.
-      Today we treat the whole stream as deductible-free cash outflow.
-    - Indexed to `INFLATION_SERIES_ID`. A more accurate model would
-      re-peg to the home-value series (maintenance scales with what's
-      there, not what you paid grown by CPI); the two diverge over
-      decades in appreciating/depreciating markets. Insurance has the
-      same issue (replacement-cost premiums track home value).
-- [ ] Finish the real-estate lifecycle: property sale, closing costs,
-      mortgage payoff, sale proceeds split, occupancy changes,
-      depreciation, §121 exclusion, §1250 recapture, itemized deductions,
-      and qualified-residence mortgage-interest deduction. (~~SALT cap~~
-      done — `FederalSaltDeductionPolicy` with year-keyed `cap_schedule`,
-      modeling gaps documented in `scenario.py`.)
-- [ ] Mid-horizon property purchases. Today the product surface locks
-      property purchase to month 0 ("what if I buy now"). Future timeline
-      work would let users model "what if I buy in 2 years" via a
-      configurable purchase month.
-- [ ] Reintroduce annual federal + California income-tax allocation natively
-      only when sim has the underlying realized-income feeds. The deleted
-      `augur/core/annual_tax.py` path handled externalized tax-parameter
-      validation, federal/CA standard deductions and ordinary brackets,
-      federal long-term capital-gain tiers, NIIT, unrecaptured §1250 gain,
-      California behavioral-health surtax, qualified-residence
-      mortgage-interest cap, and annual allocation of tax back to monthly
-      property-sale, public-security-sale, private-equity-sale, and rental
-      income sources. The sim version should be jurisdiction reference data
-      plus annual tax accrual/settlement over realized sim events, not a
-      core-shaped array helper.
-- [ ] Add an ordered policy-program surface only if richer decisions
-      need it. The deleted `augur/core/policy_runtime.py` path had ordered
-      per-actor policy programs, monthly-spend debit decisions,
-      checking-floor public-stock sale instructions, private-equity
-      sale-opportunity decisions/applications, crypto and public-security sale
-      appliers, partner contribution/ownership accrual, and property
-      operating-cashflow applications. Existing sim obligations and liquidity
-      policies cover part of this; missing behavior should land as typed sim
-      decisions/events with explicit cause IDs.
-- [ ] Consider a ledger/read-model storage layer once consumers need
-      double-entry projections. The deleted core accounting tables used NumPy-backed tables
-      dimension/fact tables for chart accounts, journal-entry kinds, journal
-      entries, postings, balance snapshots, rollout identity, and materialized
-      Pydantic compatibility rows. Sim should keep event/state frames as the
-      source of truth and derive compact `ProjectionRun` slices first; add
-      double-entry tables only as a tested reporting/read-model layer.
-- [ ] Consider a declarative sim posting-schema layer only if ledger
-      projections need repeated double-entry templates. The deleted core
-      posting schemas described opening balances, public-security/crypto/
-      private-equity/property sales, tax accrual/payment, partner
-      contribution and principal-credit allocation, mortgage payment, cash
-      debit obligation settlements, monthly spend, and property operating
-      entries.
-- [ ] Mine the deleted core `PortfolioStatement` only for config-ingestion
-      ideas, not as a runtime model. The current user-friendly deployment YAML
-      lives in `augur/api/portfolio.py`; future sim/config work may still want
-      custody/source metadata, valuation provenance, tax-lot cost basis,
-      account references, public-security lots, crypto lots, private-equity
-      lots, and tender-window metadata.
-- [ ] Treat `augur/model/x/legacy_market_models/` as non-runtime code. Port
-      only models selected by production or used as representative joint-model
-      coverage; delete or keep the rest quarantined until a fresh design pass.
-- [ ] Replace the VECM wrapper's ad hoc latest-observation lookup with a
-      typed evidence artifact/runtime state boundary. The model should receive
-      factor-keyed current levels and provenance metadata directly, not infer
-      `sp500`, home-value, rent, and inflation values from source-specific
-      `latest_observations` maps.
-- [ ] Add variable spending/obligation amounts sourced from exogenous
-      model paths.
-- [ ] Exercise constrained sellability masks end to end.
+- Add API serialization, compact scenario metadata, and a frontend
+  adapter over `ProjectionRun`. Prefer a clean `model -> sim -> api`
+  contract over matching legacy compatibility-table names.
+- Expand the backend sim smoke harness beyond the current slices. Today
+  it proves `ScenarioSet` requests translate, sample, complete, and
+  return graphable tables; richer assertions on event streams would
+  catch regressions earlier.
+- Let the frontend omit unsupported legacy metrics during the cutover.
+  Property, tax, crypto, PE, and detail streams should be filled back
+  in only as their native sim frames land — not preserved as legacy
+  top-level fields.
 
-## Refactor Follow-Ups
+## Refactor follow-ups
 
-- [ ] Revisit whether policy should emit all agent actions, including
-      obligation-payment transfers. Potential future shape: hard
-      demands are inputs to the agent policy, the policy emits both
-      liquidation orders and checking-cash payment transfers, and
-      settlement only validates that every hard demand was satisfied.
-      Current split is narrower: policy emits sales; settlement emits
-      required payments.
-- [ ] Consider whether `EventLog` should expose only catalog-keyed
-      access (`log.frame(EVENT_FRAMES.transfers)`) or keep the current
-      convenience properties (`log.transfers`, etc.). The catalog now
-      owns schema/normalization, but the property layer still repeats
-      event names for caller ergonomics.
+- Revisit whether policy should emit all agent actions, including
+  obligation-payment transfers. Potential future shape: hard demands
+  are inputs to the agent policy; the policy emits both liquidation
+  orders and checking-cash payment transfers; settlement only validates
+  that every hard demand was satisfied. Current split: policy emits
+  sales; settlement emits required payments.
+- Consider whether `EventLog` should expose only catalog-keyed access
+  (`log.frame(EVENT_FRAMES.transfers)`) or keep the current convenience
+  properties (`log.transfers`, etc.). The catalog now owns
+  schema/normalization but the property layer still repeats event names
+  for caller ergonomics.
+- Treat `augur/model/x/legacy_market_models/` as non-runtime code. Port
+  only models selected by production or used as representative
+  joint-model coverage; delete or keep the rest quarantined.
+- Mine the deleted core `PortfolioStatement` for config-ingestion ideas
+  only, not as a runtime model. The current user-friendly deployment
+  YAML in `augur/api/portfolio.py` may still want custody/source
+  metadata, valuation provenance, account references, and tender-window
+  metadata.
 
-## Explicitly Deferred
+## Explicitly deferred
 
-- [ ] HIFO, specific-id, and average-cost lot selection.
-- [ ] Withholding, underpayment penalties, partial obligation
-      payments, delinquency balances, grace periods, and failure recovery.
-- [ ] NIIT and filing statuses beyond single.
-- [ ] Consider globally unique account ids to remove repeated
-      `agent_id` join boilerplate.
+Documented to prevent re-discovery; intentionally not on the roadmap.
+
+- HIFO, specific-id, and average-cost lot selection (FIFO is the only
+  cost basis method today).
+- Withholding, underpayment penalties, partial obligation payments,
+  delinquency balances, grace periods, and failure recovery.
+- Globally unique account IDs to remove repeated `agent_id` join
+  boilerplate.
+- Real-dollar / inflation-adjusted display as a separate accounting
+  mode. Should be a postprocessing/read-model layer, not alternate
+  simulator accounting.
