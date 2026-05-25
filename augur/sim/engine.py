@@ -1073,6 +1073,21 @@ def _apply_tax_accruals(
     if month % 12 != 11 or not active_rollout.any():
         return
 
+    # Schedule E rental interest deduction: for each rented liability, the rented-fraction
+    # share of YTD interest deducts from the owner's ordinary_ytd. (The owner-share is
+    # already accounted for via MID's compile-time `(1 - rented_fraction)` scale-down on the
+    # principal ratio.) This must run before the bracket walk reads ordinary_ytd.
+    liability_count = plan.liability_rented_fraction.shape[0]
+    for lia in range(liability_count):
+        rented = float(plan.liability_rented_fraction[lia])
+        if rented <= 0.0:
+            continue
+        profile = int(plan.liability_owner_profile_index[lia])
+        if profile < 0:
+            continue
+        schedule_e_interest = current.liability_interest_ytd[:, lia] * rented
+        current.ordinary_ytd[active_rollout, profile] -= schedule_e_interest[active_rollout]
+
     link_count = plan.tax_link_profile_index.shape[0]
     # First pass: every link that isn't a SALT-active federal link. Stash its annual tax so
     # the SALT pass can sum state-link contributions per federal link.

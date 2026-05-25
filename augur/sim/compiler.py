@@ -186,6 +186,13 @@ class CompiledSimulation:
     property_mortgage_slot: np.ndarray
     liability_codes: np.ndarray
     liability_property_slot: np.ndarray
+    # Per-liability rented_fraction (0..1), inherited from the parent property at compile time.
+    # Used by the engine to deduct Schedule E rental interest from the owner's ordinary_ytd at
+    # year-end (= liability_interest_ytd × rented_fraction). Phase 3 lifecycle events will
+    # eventually replace this constant-for-horizon value with a runtime-mutated state buffer.
+    liability_rented_fraction: np.ndarray
+    # Profile index of each liability's owner. NO_CODE if the owner has no tax profile.
+    liability_owner_profile_index: np.ndarray
     liability_agent_codes: np.ndarray
     liability_payment_account_codes: np.ndarray
     liability_payment_cash_slot: np.ndarray
@@ -409,6 +416,25 @@ def compile_simulation(
         liability_monthly_payment,
     ) = _compile_properties_and_liabilities(scenario, strings, account_slot_by_key, locations)
 
+    # Per-liability rented_fraction: each liability is tied to one property via
+    # liability_property_slot; the property's rented_fraction (0..1) drives both the MID
+    # scale-down (MID applies only to owner-use share = 1 - rented_fraction) and the
+    # Schedule E rental-interest deduction (= rented_fraction × interest_ytd).
+    liability_rented_fraction = np.array(
+        [
+            float(scenario.scheduled_property_purchases[int(liability_property_slot[lia])].rented_fraction)
+            for lia in range(liability_codes.shape[0])
+        ],
+        dtype=np.float64,
+    )
+    liability_owner_profile_index = np.array(
+        [
+            profile_index_by_agent.get(strings.values[int(liability_agent_codes[lia])], NO_CODE)
+            for lia in range(liability_codes.shape[0])
+        ],
+        dtype=np.int64,
+    )
+
     (tax_link_mid_principal_ratio, tax_link_mid_active) = _compile_mortgage_interest_deductions(
         scenario,
         strings,
@@ -418,6 +444,7 @@ def compile_simulation(
         liability_codes=liability_codes,
         liability_agent_codes=liability_agent_codes,
         liability_principal=liability_principal,
+        liability_rented_fraction=liability_rented_fraction,
     )
 
     (tax_link_salt_active, tax_link_salt_cap_by_year, tax_link_salt_contributing_mask) = (
@@ -638,6 +665,8 @@ def compile_simulation(
         property_mortgage_slot=property_mortgage_slot,
         liability_codes=liability_codes,
         liability_property_slot=liability_property_slot,
+        liability_rented_fraction=liability_rented_fraction,
+        liability_owner_profile_index=liability_owner_profile_index,
         liability_agent_codes=liability_agent_codes,
         liability_payment_account_codes=liability_payment_account_codes,
         liability_payment_cash_slot=liability_payment_cash_slot,
@@ -1125,6 +1154,7 @@ def _compile_mortgage_interest_deductions(
     liability_codes: np.ndarray,
     liability_agent_codes: np.ndarray,
     liability_principal: np.ndarray,
+    liability_rented_fraction: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Compile the precomputed per-(tax_link, liability) MID ratio matrix.
 
@@ -1175,7 +1205,12 @@ def _compile_mortgage_interest_deductions(
             principal = float(liability_principal[lia_slot])
             if principal <= 0.0:
                 continue
-            ratio[link, lia_slot] = min(1.0, float(cap) / principal)
+            base_ratio = min(1.0, float(cap) / principal)
+            # MID applies only to the owner-occupied portion of mortgage interest. The
+            # rented-fraction share is deducted separately as Schedule E rental interest
+            # (handled in the engine's year-end accrual). Scale here at compile time.
+            owner_fraction = 1.0 - float(liability_rented_fraction[lia_slot])
+            ratio[link, lia_slot] = base_ratio * owner_fraction
         active[link] = bool(np.any(ratio[link] > 0.0))
 
     return ratio, active
