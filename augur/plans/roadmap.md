@@ -10,20 +10,18 @@ and deployment-specific composition stay in the downstream private repo.
 ## Sources
 
 - `augur/SPEC.md`: product contract and simulator vocabulary.
+- `augur/sim/REQUIREMENTS.md` + `augur/sim/DESIGN.md`: simulator capability
+  surface and structural decisions.
 - `augur/plans/e2e_redesign.md`: distribution-first runtime redesign and
   ledger/reconciliation work.
+- `augur/plans/tensorized_simulator.md`: rollout-axis tensorization tracker.
 - `augur/plans/prior_art_audit.md`: external architecture lessons for path
   identity, governance, policy projection, and accounting traces.
-- `augur/plans/cleanup_audit.md`: local stale-path audit and deletion sequence.
-- `augur/sim/TODO.md`: backend replacement checklist for the sim cutover.
+- `augur/sim/TODO.md`: forward-looking sim/product follow-ups.
 - `augur/TODO.md`: public generic backlog.
 - `gaffer-private/TODO.md`: private personal-finance modeling follow-ups.
 - `gaffer-private/x/augur/SPEC.md`: private deployment boundary and image
   privacy contract.
-- `gaffer-private/debug/augur-ui-structural-review-2026-05-15.md`: screenshot
-  review and UI/domain-boundary audit.
-- `gaffer-private/x/augur/model/legacy_pymc/PLAN.md`: archived only. Do not
-  revive this provider without a fresh model-design pass.
 
 ## North Star
 
@@ -117,211 +115,59 @@ The prior-art audit points to a conservative target shape:
   typed model/evidence/calibration/generator/path identities; the next cleanup
   is to persist real artifacts and validation results behind those IDs.
 
-## Priority 1: Type Result Views And Accounting Detail
+## Priority 1 — superseded: typed result views
 
-Distribution and trajectory have separate top-level views. The React app now
-uses capability-focused result helper wrappers so child panels ask for
-distribution percentiles, selected-rollout rows, or accounting-detail rows
-instead of reaching through raw result payloads. The remaining product and
-correctness work is to keep that boundary intact while deeper accounting views
-and inputs move into their final shape.
+This priority described the typed result-panel contract
+(`data-result-panel-kind` = `distribution` / `trajectory` /
+`accounting_detail`) and the `/inputs` persistent edit surface that
+lived in the deleted scenario_set frontend. The product surface uses
+a much narrower UI shape and a single `MetricFanResponse` +
+`RolloutResponse` API; result-panel typing is no longer load-bearing.
 
-Current state and target shape:
+Surviving guardrail: Mantine remains the standard React component
+kit. `MantineProvider` wraps the product shell in `app.jsx`; keep
+migrating remaining controls to Mantine rather than inventing local
+widgets. The deferred multi-scenario comparison feature
+(`augur/sim/TODO.md` "Product UX") will need a comparable typed shape
+when it lands.
 
-- `/inputs` or an equivalent persistent edit surface: scenario identity,
-  initial balance sheet, actors/ownership, property/location, financing,
-  occupancy/rental plan, tax/accounting assumptions, market assumptions, and
-  policy programs.
-- Property/location details, financing/tax assumptions, market metadata, and
-  accepted scenario contract are shared context, not distribution or trajectory
-  output. Keep that boundary as result panels and inputs continue to move.
+## Priority 2 — done: scenario_set browser state retired
 
-Implementation notes:
+The whole scenario_set frontend (its hand-written URL state encoder,
+section overrides, app shell) was deleted in favor of the much narrower
+`ScenarioKey` payload that the product surface consumes. Multi-scenario
+comparison is the only behavioral gap from that surface that survives
+as a forward-looking item; see `augur/sim/TODO.md` "Product UX".
 
-- Keep result panels declared through the shared frontend result-panel contract:
-  `distribution`, `trajectory`, or `accounting_detail`. The contract is encoded
-  in `data-result-panel-kind`; view-level headers provide the visible
-  distribution/trajectory context so child trajectory panels do not need
-  repetitive chips.
-- Trajectory URLs are reproducible only when the encoded sampling request has a
-  deterministic seed. The locator is effectively scenario-set input plus
-  exogenous model/version plus seed plus `scenario_id` plus `rollout_index`; seed
-  and rollout alone are not enough.
-- The same `rollout_index` should identify the same exogenous path
-  across scenarios in a scenario-set run so trajectory comparison is meaningful.
-- Keep report/view knobs honest: `include_monthly_columns` is currently real;
-  do not add report selectors or response-shaping fields unless the backend and
-  UI actually honor them.
+## Priority 3 — done: sampled PE / tender timing / crypto
 
-Acceptance criteria:
+All three variance sources are now sampled, not flat:
 
-- Every result panel has a machine-readable mode: distribution, trajectory, or
-  accounting detail. The current React app has the panel contract and per-view
-  helper wrappers in place; keep extending them as panels split or move while
-  keeping visible mode labels at the page/view boundary rather than repeating
-  them on every child card.
-- No panel combines percentile summaries with one-rollout path rows unless the
-  split is explicit and visually separated.
-- Scenario/run context is not rendered as distribution or trajectory output;
-  it is shown in shared context or a dedicated details/input surface.
-- Deltas are result-view comparisons between two real scenarios, not a
-  simulator-level baseline inside each rollout. Prefer paired differences when
-  both scenarios share exogenous paths; otherwise expose the choice as a
-  distribution of sampled differences between scenario distributions.
-- Full-page visual goldens cover representative distribution and trajectory
-  routes so UI structure changes are reviewable in git.
+- **PE valuation** is sampled per-issuer via `PreSampledPrivateEquitySampler`
+  consuming a JSONL trajectory artifact from the gaffer-private
+  joint-fit pipeline (5-15 historical tenders → posterior over price ×
+  timing). The product wire exposes `pe_tender_policy` (LNW floor +
+  optional inflation indexing) and the sim engine drains lots FIFO at
+  each tender event.
+- **Tender timing** rides in the same JSONL artifact as sampled
+  `private_equity_sale_opportunity:<issuer>` event streams. Two
+  rollouts of the same scenario now see different tender months.
+- **Crypto** flows as `crypto:<symbol>` factors through the VECM joint
+  fit (BTC + ETH wired in `evidence_data.py`; `_latest_factor_value`
+  resolves crypto:btc → `btc_close_latest` etc.). The calibrated blob
+  at `augur/fit/calibrated/trained_vecm.npz` includes their
+  posteriors. Crypto holdings flow through `portfolio.holdings` as
+  `cryptocurrency` `security_kind` and are sellable through the
+  liquidity `crypto` bucket.
 
-Component-kit decision:
+Remaining open follow-ups in this area:
 
-- Mantine is the standard React component kit for Augur. The app now installs a
-  `MantineProvider` and uses Mantine primitives for result tabs/disclosure; keep
-  migrating remaining controls to Mantine instead of inventing new local widgets.
-
-## Priority 2: Keep Browser State Structured And Schema-Driven
-
-The flat browser scenario row has been retired from normal app state and
-request mapping. URL and browser scenario inputs are nested by domain section,
-UI writes go through section-scoped patches, and new URL versions can break
-stale state. The next risk is allowing the browser to become an independent
-schema owner through hand-written field lists and ad hoc validators.
-
-Target browser state:
-
-- `identity`: scenario id, label, color, enabled state, comparison membership.
-- `actors_and_ownership`: primary owner, optional counterparties, ownership
-  agreements, actor-specific policy activation.
-- `initial_balance_sheet`: accounts, liquid positions, private positions,
-  property positions, liabilities, cost bases, units, and lot-level fields once
-  available.
-- `property_and_location`: selected property, location entity, local
-  regulation/tax knobs, property assumptions.
-- `financing`: standard mortgage products and explicit custom override mode if
-  retained.
-- `occupancy_and_rental`: residence and rental-use plan.
-- `tax_accounting`: tax rates, filing assumptions, basis assumptions, timing
-  assumptions, and approximation disclaimers.
-- `sampling`: selected exogenous model, rollout count, horizon, seed, and
-  shared-path behavior.
-- `policies`: ordered actor policy programs.
-
-Implementation notes:
-
-- URL state does not need stale compatibility unless explicitly requested.
-- The browser state and request mapping now consume structured scenario
-  sections directly. Do not reintroduce a catch-all flat scenario view or
-  wide-row migration path.
-- Generate browser-side schema/types from the backend Pydantic/OpenAPI schema
-  instead of growing independent hand-written JS schemas. The repo already has
-  `//devinfra/js:openapi.bzl` and `//props/frontend/src/lib:schema` as patterns
-  for this class of build-time propagation.
-- Private-equity initial positions should eventually carry units plus a holding
-  or price-model reference, not a duplicated editable `value_usd`. Today the
-  browser derives a backend asset value from units only because the generic
-  backend asset schema still requires a mark; simulation should own that mark.
-- Reintroduce partner/co-owner contributions only after `augur/sim` has a
-  tested agreement model. The old product-facing `scenario.actorPolicy` path is
-  shelved rather than migrated.
-  A partner contribution should look like a contract: agent X pays agent Y some
-  amount over a period and receives a specified equity/share/claim in return.
-  The exact object model is still open, but it should live in actor/ownership
-  state rather than as a scenario-wide enum that triggers bespoke runtime code.
-- `scenarioSetInputToRequest` should mostly map structured UI state into the
-  backend schema. It should stop hiding domain decisions behind unrelated flat
-  fields or actor-policy ids.
-- App tests should cover current structured state and generated boundary
-  validation rather than preserving older wide-row browser contracts.
-
-Acceptance criteria:
-
-- Adding a new tax assumption, asset type, policy, or actor does not require
-  another unrelated field on a giant scenario object.
-- The app state names the same domain layers the backend schema names.
-- Normal app code does not call a catch-all flat scenario view.
-
-## Priority 3: Sampled Private-Equity, Sampled Tender Timing, And Crypto
-
-**2026-05-24 priority bump on the PE half**: gaffer-private now ships with a
-calibrated VECM exogenous model, but PE prices are still flat-1.0 multipliers
-under VECM. The OpenAI position in production carries a hand-set FMV that
-doesn't move with rollouts — explicit user direction is to land sampled PE
-valuation + a sale-policy surface in frontend/sim soon so production stops
-showing a made-up PE value. Crypto remains lower-urgency. Don't reorder the
-roadmap headings yet, but treat the PE/tender bullets here as near-term.
-
-Today the market provider holds private-equity marks **flat over the entire
-horizon** (`private_equity_value_multipliers = np.ones(shape)`) and emits
-tender opportunities at **deterministic** months (every 12 months from t=0,
-identical across rollouts and across PE assets). Crypto holdings are dropped
-from `to_initial_balance_sheet()` entirely — the asset class doesn't exist
-in the runtime universe.
-
-That's three major sources of variance the simulator silently ignores. A
-distribution over outcomes that has no PE price uncertainty and pre-known
-tender months is not a real distribution over PE outcomes.
-
-### Gaps to close
-
-1. **PE valuation should be sampled.** Per-asset value paths keyed by holding
-   identity in `SampledExogenousBundle`, persisted via its metadata. The
-   model is **open design work** — the user's available evidence is sparse
-   (5-10 historical OpenAI tenders), so the right fit is likely a joint
-   model with SP500, inflation, and per-location housing (currently jointly
-   modeled by VECM/VAR/Wilkie/etc.) rather than an independent process per
-   PE asset. No specific algorithm is baked in here; the followup picks one
-   after a calibration pass on real evidence.
-
-2. **Tender timing should be sampled.** Replace the deterministic 12-month
-   mask with a fitted arrival process. Again **open design**: fit the tender
-   arrival rate (and any regime conditioning) jointly with the price model
-   on the same sparse evidence. The explicit `PrivateEquityLot.tender_windows`
-   path landed earlier covers cases where the deployment knows specific
-   future windows; this followup adds a sampled fallback for the open-ended
-   horizon.
-
-3. **Crypto should be modeled.** Runtime asset class + funding-policy
-   surfacing landed via #1582. The remaining gap is sampling a per-asset
-   price path so crypto contributes real variance instead of riding a flat
-   `np.ones(...)` placeholder. Model choice is open; joint vs independent
-   fit is part of the same design pass as the PE side.
-
-### Calibration & evidence boundary
-
-Per-asset PE / crypto paths and tender-arrival rates are model inputs that
-should live in `augur/model/`, not `augur/core/`. Result metadata declares
-which calibration artifact the run used. Calibration evidence is private
-(it's specific deployment data), so the fitted models stay downstream while
-the generic framework exposes a typed "sampled PE / crypto / tender" model
-contract.
-
-### Result-layer separation (unchanged from prior framing)
-
-Distinguish private-equity mark value, tender-eligible value, actually-sold
-amount, post-tax proceeds, and actual liquid net worth. `liquid_net_worth`
-stays cash + public liquid securities — never tender-eligible PE marks.
-
-### Acceptance
-
-- A scenario with two PE holdings on independently sampled paths produces a
-  non-zero correlation deviation between them across rollouts.
-- Two rollouts of the same scenario have **different** tender months for
-  the same PE asset (proving timing is sampled, not fixed).
-- A scenario with crypto holdings has crypto price uncertainty in the
-  distribution over net-worth outcomes; selling crypto records realized
-  gain through the same tax flow as stock sales.
-- The reason for a sale or non-sale is still inspectable as a policy
-  decision with explicit cause IDs.
-
-### Policy / sale machinery (unchanged from prior framing)
-
-- Exogenous/model layer emits private-equity sale opportunities: tender,
-  acquisition, IPO/regime change, lockup expiry, public-market availability.
-- Policy layer decides participation: never sell, sell fixed fraction, sell
-  fixed units, sell enough to reach concentration/liquid-reserve target, or
-  custom downstream rule. The first concrete browser/core rule sells a fixed
-  amount into SP500 when cash plus public stock falls below a configured
-  floor and a tender opportunity exists.
-- Accounting layer applies sale, basis, tax estimate/liability, proceeds
-  destination, and cause IDs.
+- **PE public-market and acquisition regimes** (post-IPO unrestricted
+  shares; acquisition buyout). Tracked in `augur/sim/TODO.md`
+  "Private equity".
+- **Mortgage-rate path sampling** (today: single PMMS survey number;
+  no `mortgage30:*` series in the VECM). Tracked in `augur/sim/TODO.md`
+  "Exogenous sampling / VECM".
 
 ## Priority 4: Tax, Basis, And Accounting State
 
@@ -448,60 +294,22 @@ Work:
 - Refresh `augur/SPEC.md` after policy execution, tax timing, and result-view
   contracts stabilize.
 
-## Immediate Implementation Sequence
-
-1. Drive the backend switchover as an integration lane: translate the current
-   API/catalog payload into a typed sim scenario, discover required market
-   series from that sim scenario, expand any legacy scalar seed into explicit
-   per-rollout seeds, sample `augur/model`'s `SampledExogenousBundle`, run
-   `augur/sim`, and serialize projection/read models through `augur/api`.
-2. Expand sim smoke coverage for API-shaped requests: translate current
-   request/catalog objects, sample model-owned bundles, run `augur/sim`, and
-   assert durable sim invariants before changing the default frontend/API path.
-3. Keep the switchover slice scoped: support month-0 property purchase,
-   forever occupancy when selected, no rental start/stop transition, nominal
-   backend dollars, and config-owned initial positions. Unsupported frontend
-   metrics/controls can be hidden until their native runtime data exists.
-4. Continue core model cleanup only where it reduces switchover risk:
-   account-aware obligations/funding, failure/default semantics, and
-   ledger/accounting detail as the source of truth for monthly report arrays.
-5. Persist and harden trajectory, path, cause, and model-governance identities
-   so a selected rollout can be reproduced and audited from scenario input
-   through exogenous evidence and policy decisions.
-6. Keep expanding ordered actor policy programs through explicit decision and
-   instruction traces, now that execution order is the runtime path.
-7. Move public generic data toward typed config resources: local
-   regulation/tax defaults, catalog rows, market config, and eventually a
-   deployment-supplied portfolio/account YAML contract. Private values stay in
-   downstream repos.
-8. Wire the generated Augur OpenAPI/browser schema target into browser state
-   normalization and request mapping, then split app/frontend/server packages
-   after the core contracts and server cleanup settle.
-
 ## Next Lanes (parallelism + sequencing)
 
-- **Backend contract completion** — the next integration lane now
-  that backend execution is runtime-backed. Close the checklist in `augur/sim/TODO.md`:
-  broaden the sim scenario translator, complete required-market-series
-  discovery, expand sim market consumption, keep browser smoke coverage, and
-  replace compatibility tables with projection/read-model serialization.
-- **Priority 3 — sampled PE / sampled tender timing / sampled crypto +
-  sampled mortgage rate** (open design work; see the priority section
-  above). Joint fit with SP500 / inflation / per-location housing factors
-  on sparse evidence. Lives entirely in `augur/model/` and feeds
-  `augur/sim` through `SampledExogenousBundle`. **The biggest remaining
-  variance source the simulator silently ignores.**
 - **Tax surface beyond sale tax** — qualified dividends, short-term gains,
   capital losses + carryforward, rental income tax, passive-loss release.
-  Most valuable once Priority 3 produces dividend-like income streams.
   (~~SALT/property-tax federal deduction~~ done — `FederalSaltDeductionPolicy`
   with year-keyed cap; AGI phase-out + sales-tax election still deferred.)
 - **`RegimeChange` mid-rollout events** — IPO converts
   `LiquidityEventOnly` → `PublicMarket`. The discriminated-union shape
   already supports it; runtime needs to sample the event month and flip
-  the variant.
+  the variant. Companion to PE acquisition events.
+- **Mortgage-rate path sampling** — today the mortgage rate is a single
+  PMMS survey number at scenario time; required-series introspection
+  doesn't cover a `mortgage30:*` path. Adding it would let "what if
+  rates fall to 5% in 18 months" scenarios work.
 - **Underpayment penalty on quarterly estimates** — IRS interest rate +
-  3% on shortfalls. Layers on the year-end true-up that #1592 landed.
+  3% on shortfalls. Layers on the year-end true-up already in place.
 - **Borrowing facilities** — overdraft, margin, credit line as explicit
   funding sources in the obligation pipeline. Today negative cash is a
   silent warning; with explicit borrowing it becomes an
@@ -509,48 +317,12 @@ Work:
 - **Persist model-governance artifacts** — durable evidence / calibration
   / validation-report storage for market providers. `augur/model/`.
   Self-contained, can run in parallel with anything.
-- **Reintroduce partner/co-owner agreements only after sim is wired**
-  (Priority 2). The product-facing `scenario.actorPolicy` path is shelved.
-  "Agent X pays agent Y this amount over this period for this share/claim"
-  should come back as a tested agreement model in `augur/sim`, not as a
-  scenario-wide enum.
+- **Reintroduce partner/co-owner agreements** after sim has a tested
+  agreement model. "Agent X pays agent Y this amount over this period
+  for this share/claim" should come back as a tested agreement model
+  in `augur/sim`, not as a scenario-wide enum.
 
 ## Next Work Plans
-
-### Plan B: Make Private-Equity Opportunities And Policy Explicit
-
-Scope:
-
-- Rename remaining result labels that imply general liquidity when the model
-  only has tender eligibility or sale opportunity value.
-- Add stable IDs and row-level observations for private-equity tender
-  opportunities.
-- Extend policy-decision rows so sale and non-sale reasons are enough for the
-  trajectory view to explain each tender.
-- Keep `liquid_net_worth` as cash plus public liquid securities.
-
-Validation:
-
-- `nix develop --command bazelisk --output_user_root=/tmp/bazel-augur-pe-plan test //augur/api:backend_test //augur/api:server_test //augur/api:browser_shell_test --nocache_test_results --test_size_filters=small,medium,large`
-
-### Plan C: Unified Obligation/Funding Semantics (complete)
-
-Plan C is **done** for the legacy `augur/core` path. Every immediate cash
-demand flows through the unified `_settle_required_cash_obligations`
-pipeline: annual tax, estimated tax (quarterly with safe-harbor),
-mortgage, property tax, HOA, insurance, maintenance, outside rent, partner
-contribution, special assessment. Partner contribution is no longer a
-product-facing frontend/backend feature; it is shelved until a tested
-`augur/sim` agreement model exists. Each obligation type has a
-`required: bool` flag, emits settlement rows, and produces `FailureEvent` +
-`RolloutStatusType.FAILED` on shortfall. Two follow-ons remain, both
-deliberately scoped out of Plan C and tracked in `TODO.md`:
-
-- **Underpayment-penalty calculation** on estimated-tax shortfalls (IRS
-  short-term rate + 3% on the under-paid amount).
-- **Discretionary-obligation deferral** semantics — every variant is
-  currently `required=True`; flipping any to discretionary (deferral
-  rather than failure) is a future PR.
 
 ### Plan D: Keep Evidence Configuration Typed At The Boundary (guardrail)
 

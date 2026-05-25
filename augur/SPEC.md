@@ -150,18 +150,17 @@ For one rollout, given a `Scenario` and an exogenous trajectory bundle:
 
 ## Outputs
 
-A scenario-set run produces a typed `ScenarioSetRunResponse`:
+The product API exposes two response shapes against a `ScenarioKey`:
 
-- `SampledExogenousBundle.metadata`: the exogenous trajectory bundle identity,
-  model / calibration provenance, seed, rollout count, horizon, event streams,
-  and source metadata.
-- `ScenarioResult`: one result per scenario, each with accepted input summary,
-  report tables, metric summaries, effects (sales), policy decisions, exogenous
-  observations, obligations + settlement results + funding decisions, accounting
-  details, ledger entries, and balance snapshots.
-- `ReportTable`: columnar per-month arrays for fan charts, sample paths, and
-  terminal distributions.
-- `warnings`: validation or modeling notes that did not prevent the run.
+- `MetricFanResponse` — one user-selected metric over the horizon as a
+  percentile fan across the requested rollout seeds, plus per-rollout
+  summaries (terminal metrics, sort rank, pass/fail) keyed by seed.
+- `RolloutResponse` — full per-month metric frame and typed event log for
+  one selected rollout seed.
+
+Both carry an `exogenous_model_id` so the caller can identify which
+trajectory bundle the response was sampled against. Failed rollouts zero
+their downstream metrics from the failure month onward.
 
 ## What augur does not do (non-goals)
 

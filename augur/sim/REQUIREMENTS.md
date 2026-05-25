@@ -1,10 +1,12 @@
 # Augur sim — requirements
 
-A clean-rewrite target for the Augur financial-futures simulator. This
-document captures what the implementation must be able to model, framed as
-natural-language scenarios free of API choices. The companion design work
-happens in `augur/sim/` alongside the code as it lands; nothing here commits to
-a function shape, a library, or a file layout.
+The capability surface of the shipped `augur/sim` financial simulator —
+what scenarios it must be able to model — framed as natural-language
+scenarios free of API choices. Companion to `DESIGN.md`, which records
+the structural decisions that realize these requirements. Originally
+authored as a clean-rewrite target for the (now-deleted) legacy core;
+kept in the same shape because the layered scenarios remain the right
+acceptance surface for the shipped engine.
 
 ## What the simulator is
 
@@ -1230,133 +1232,3 @@ are not maintained alongside as separate state.
   from the configured ordinary income, no "skip quarterlies in year
   0"). If the scenario does not configure it, the engine raises at
   scenario-validation time — the user has to make the call.
-
-## Stretch goals (signs of good design)
-
-These are not critical-path requirements but they are diagnostic.
-If the design comes out clean, they fall out for free; if achieving
-them requires intrusive engine changes, that points at a smell in
-the design that's worth examining before shipping.
-
-- **Tax math applies to any tax-paying agent, not a hardwired
-  "primary owner".** The critical floor is that one primary agent
-  pays their federal + CA income taxes correctly (S6, S7). The
-  stretch goal is that the engine has no special-case path for that
-  one agent: the year-tax template (see [Asset templates and rule
-  routing](#asset-templates-and-rule-routing)) runs once per
-  (rollout, year), grouped over every agent the scenario marks as
-  tax-paying. If the scenario configures two tax-paying agents,
-  both get year-tax computations, both get quarterly + year-end
-  obligations, both settle from their own cash + liquidity policies —
-  with no engine-level changes. If achieving this requires more
-  than scenario configuration, the design has a `primary_owner`
-  hardcoded somewhere it shouldn't be.
-
-  This stretches naturally to a hypothetical scenario where Alice
-  and Auragon are both individual tax-paying agents in the same
-  rollout (each with their own filing status, own income streams,
-  own holdings, own deductions). Owner-plus-partner property
-  scenarios should not need to invent a special "second agent
-  pathway" — the second agent is just a second `tax_payer=true` row
-  in the agents frame.
-
-  Single-agent tax math is **critical**; multi-agent tax math is
-  **stretch**. If multi-agent doesn't work but single-agent does,
-  that's a shippable state; the engine's structure should make
-  multi-agent a small follow-up, not a redesign.
-
-- **Adding a new inter-agent loan instance is configuration.**
-  Today the only inter-agent loan type the simulator must handle is
-  a mortgage between an individual (Alice) and a lender (Bank Bob).
-  The amortizing-loan template (see [Asset templates and rule
-  routing](#asset-templates-and-rule-routing)) is written to cover
-  ANY fixed-payment debt between two agents — the same code path
-  serves an intra-family personal loan, a partner-equity loan, a
-  car loan, an HELOC, etc. The stretch goal is that adding such a
-  loan to a scenario is **scenario configuration**, not engine
-  code: pick the template, supply the principal / rate / term /
-  borrower / lender / deductibility-flag parameters, and the loan
-  works.
-
-  If adding "Alice borrows \$20k from her mom" to a scenario
-  requires touching engine code, the amortizing-loan template
-  isn't generic enough.
-
-- **Partner equity / co-ownership of an asset.** The existing legacy
-  engine has a "partner equity accrual" feature: a second agent
-  contributes a fixed monthly cash amount toward a shared property
-  and builds up an equity stake over time per a configured
-  equity-per-dollar-contributed formula; at sale, the partner
-  receives their share of net proceeds. This is genuinely
-  multi-agent — two agents have stakes in one property — and ties
-  the multi-agent-tax stretch goal (above) to a concrete scenario.
-
-  Critical floor: single-owner properties work. Stretch: a property
-  can carry a "co-ownership ledger" — rows on a `property_stake`
-  frame, one per (agent, property) pair — that tracks each agent's
-  contribution + equity share over time. Sale proceeds split across
-  the ledger. The depreciable-real-property template already
-  references a stake column (per [Asset templates and rule
-  routing](#asset-templates-and-rule-routing)); making it
-  multi-row-per-property is the stretch.
-
-  Partner-contribution modeling is shelved until the generic
-  property-stake model and tested sim backend are the integration
-  boundary. Do not preserve a bespoke "partner contribution"
-  pathway from the legacy frontend/backend just to match old UI
-  fields. If this later lands, it should compose from normal
-  inter-agent transfers or obligations plus property-stake rows,
-  not a parallel settlement subsystem.
-
-  Lower priority than the multi-agent tax stretch above; landing
-  this without it requires the partner stake but not the partner's
-  own tax computation (which simplifies somewhat, since the
-  partner is effectively a non-tax-paying co-owner in single-
-  primary-agent scenarios).
-
-## Deferred quality improvements
-
-Lower-priority cleanups that aren't blocking any layer but should
-land before the simulator is treated as production-grade.
-
-- **Fixed-point arithmetic for exact-cent quantities.** Cash
-  balances, tax payments, transfer amounts, lot proceeds, and
-  every other dollar quantity that conceptually has a finite
-  cent-precision representation should be carried as `int64` in
-  the relevant base unit, not `float64`. Concretely:
-  - **Cash / dollar columns**: `int64` cents. Every column whose
-    suffix is `_usd` today becomes `_cents` (or stays `_usd`
-    with the dtype change documented). The replay-invariant
-    helper's float-rounding tolerance disappears — equality
-    becomes bit-exact.
-  - **Tax-form line items**: `int64` whole dollars. IRS Form 1040
-    (and the FTB 540 equivalents) instruct you to round to whole
-    dollars on every line, and quarterly estimated vouchers
-    require it. Bracket-walk outputs and accrual amounts should
-    round to whole dollars before being booked / paid.
-  - **Asset quantities with native indivisible units**: carry in
-    the smallest indivisible unit. Bitcoin in satoshis (1 BTC =
-    10^8 sat), fractional shares at the broker's native precision
-    (typically 10^-6 shares), property in whole-square-foot lot
-    sizes if those ever matter.
-  - **Inherently-float quantities**: market prices, GBM log
-    returns, depreciation fractions, bracket rates. These stay
-    `float64`; the engine multiplies them by the integer unit
-    quantities and rounds the result back to the integer
-    representation at settlement boundaries (e.g. `proceeds_cents
-= round_half_even(quantity_units * price_usd_float * 100)`).
-
-  Splits cleanly across the engine boundary: scenario YAML
-  declares dollar / unit amounts; the engine internalizes them as
-  integers; output formatting converts back for the human-readable
-  surfaces. None of the math changes — only the dtypes and the
-  rounding-at-settlement convention do.
-
-## Open questions
-
-These are still unresolved and need a decision before the relevant
-layer lands. They aren't blocking the earlier layers.
-
-- **Agent-to-agent gifting tax treatment.** S1.2 establishes that
-  transfers can carry an income classification. Gift tax,
-  exclusions, lifetime exemption — out of scope here, or modeled?

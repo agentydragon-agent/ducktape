@@ -200,14 +200,10 @@ frontend LNW-floor knob). Still missing:
 - Add API serialization, compact scenario metadata, and a frontend
   adapter over `ProjectionRun`. Prefer a clean `model -> sim -> api`
   contract over matching legacy compatibility-table names.
-- Expand the backend sim smoke harness beyond the current slices. Today
-  it proves `ScenarioSet` requests translate, sample, complete, and
-  return graphable tables; richer assertions on event streams would
-  catch regressions earlier.
-- Let the frontend omit unsupported legacy metrics during the cutover.
-  Property, tax, crypto, PE, and detail streams should be filled back
-  in only as their native sim frames land — not preserved as legacy
-  top-level fields.
+- Expand the backend sim smoke harness beyond the current slices.
+  Today `//augur/api:server_test` proves `ScenarioKey` requests
+  translate, sample, complete, and return the product response shape;
+  richer assertions on event streams would catch regressions earlier.
 
 ## Refactor follow-ups
 

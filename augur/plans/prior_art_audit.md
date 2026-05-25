@@ -32,31 +32,6 @@ The important gaps the rest of this audit explores:
   feeds model fitting; fitted scenario generators feed `SampledExogenousBundle`;
   the sim projector should not know source-specific evidence.
 
-## Local Architecture Grounding
-
-This audit is grounded in the current Augur files:
-
-- `augur/plans/roadmap.md` and `augur/TODO.md`: current priorities emphasize
-  distribution-first results, trajectory inspection, typed result panels,
-  ordered policy programs, ledger reconciliation, cash-under-zero semantics,
-  trajectory identity, and evidence/model boundary cleanup.
-- `augur/SPEC.md`: declares Augur as a probabilistic multi-agent economic
-  simulator with scenarios, markets, policies, actions, and per-rollout state.
-- `augur/api/scenario_set.py`: defines `ScenarioSet`, `Scenario`,
-  `SamplingRequest`, policies, actions, policy decisions, exogenous observations,
-  ledger entries, balance snapshots, accounting details, and result payloads.
-- `augur/model/exogenous.py`: defines `SampledExogenousBundle` with sampled
-  rollout/month external level and event series plus model provenance.
-- `augur/sim/`: deterministically evaluates typed scenarios over a sampled
-  bundle and emits state/event frames.
-- `augur/api/response.py`: derives the current compatibility graph tables
-  from sim dataframes until final projection/read models replace them.
-- Deleted legacy `augur/core/policy_runtime.py`: previously defined
-  `ActorPolicyProgram`, instruction batches, application results, ledger
-  batches, and partner-ownership accrual.
-- `augur/model/`: contains evidence loading, exogenous model protocols,
-  historical series, and sim-native joint exogenous models.
-
 ## Prior-Art Catalog
 
 ### QuantLib
@@ -453,48 +428,6 @@ Recommended vocabulary:
 - `PredictiveSeriesModelFit`
 - `ScenarioGenerator`
 - `SampledExogenousBundle`
-
-## Alignment Audit
-
-### Too Simplistic Or Weird
-
-- `rollout_index` is doing too much. It is a UI selector, array coordinate,
-  paired-comparison key, and pseudo trajectory id.
-- `SampledExogenousBundle.metadata` names streams but not event instances,
-  event source versions, or opportunity ids.
-- `PrivateEquitySaleOpportunityObservation` has no stable opportunity id.
-- Policy execution is class-grouped. This conflicts with "ordered actor policy
-  programs" and will become brittle when policies compete for cash or assets.
-- Some asset/liability variants still look more public than their runtime
-  semantics justify; each should either drive simulation state or be rejected
-  until implemented.
-- `TaxPaymentTiming.ALLOCATED_TO_SOURCE_MONTH` is documented as a debt item; it
-  should become liability/payment timing, not just a source-month adjustment.
-- `TaxProfile.marginal_tax_rate` and `cap_gains_rate` are too coarse for
-  serious household tax modeling, even with explicit non-goals.
-- `domain`/`category` ledger rows are useful but too weak as the long-term
-  accounting substrate.
-- Initial state and scheduled transitions still live across several shapes:
-  property selection, financing, occupancy, rental, events, policies, and
-  initial balance sheet.
-
-### Actively Risky
-
-- Negative `cash_usd` can be an accepted projection state without explicit
-  default, borrowing, liquidation, or failed-rollout semantics.
-- Result arrays can still become a parallel truth source unless every field is
-  state-, ledger-, snapshot-, or accounting-detail-backed.
-- A user could treat tender-eligible private-equity value as liquid if result
-  labels or APIs drift; the code is moving away from this, but the domain
-  distinction must stay enforced.
-- Reproducibility is under-specified. A URL with seed and rollout is not enough
-  if model code, source data, calibration, or scenario generator settings move.
-- Policy-order regressions will be hard to spot when multiple policies interact
-  with the same cash, assets, lots, or opportunity stream, so the ordered
-  program dispatcher needs durable guard tests.
-- Governance is not yet strong enough for financial advice-like use. Even for a
-  personal tool, outputs should state model version, evidence, assumptions,
-  limitations, and validation status.
 
 ## Recommended Architecture Vocabulary
 
