@@ -1,14 +1,9 @@
 # Tensorized Simulator Plan
 
-Status: in progress. The current dense backend has explicit rollout-axis state
-buffers, and the first month-step phases have been lifted into NumPy operations
-over the rollout axis. The core month-step phases now run as NumPy/Python
-phase functions over rollouts.
-
-This plan tracks the path from "dense arrays plus scalar rollout loop" to a
-proper tensorized simulator. Keep this file updated whenever a phase is
-actually tensorized, and keep the TODO list honest for phases that still have a
-per-rollout loop or scalar helper.
+The dense backend's month-step phases run as NumPy operations over the rollout
+axis `R`, not as scalar per-rollout loops. Event and state decoders are
+likewise vectorized. This doc records the design (goals, invariants, phase
+algorithms) and what's still open.
 
 ## Goal
 
@@ -19,7 +14,7 @@ for month in range(H):
     ...
 ```
 
-Within a month, state transitions should operate over the rollout axis `R` with
+Within a month, state transitions operate over the rollout axis `R` with
 array operations:
 
 ```python
@@ -27,25 +22,25 @@ cash[:, checking_slot] -= monthly_due
 failed |= cash[:, checking_slot] < 0.0
 ```
 
-The simulator should not rely on Numba `parallel=True` / `prange` for rollout
+The simulator does not rely on Numba `parallel=True` / `prange` for rollout
 parallelism. That path was measured as pathological for Augur's accounting
 kernel: cold `1x1` product metric-fan compile was about `82.9s`, with about
 `64.0s` in Numba parfor lowering. Plain cached Numba for the same month-step
 shape cold-compiled in about `15.6s`.
 
-The target design is:
+The chosen design:
 
-- NumPy-style tensor operations over `R` for normal monthly state transitions.
+- NumPy-style tensor operations over `R` for monthly state transitions.
 - Dense active-mask event buffers for human-readable event traces.
 - Polars at table/API boundaries.
 - Small compiled helpers only where logic is genuinely scalar or irregular.
-- JAX or PyTorch are acceptable candidates if NumPy lacks a usable primitive or
-  if their gather/scatter/sort APIs materially simplify a phase.
+- JAX or PyTorch reserved for phases where NumPy lacks a usable primitive
+  or its gather/scatter/sort APIs would materially simplify the phase.
 
 ## Framework Stance
 
-Start with NumPy because the current backend already owns NumPy arrays and
-because NumPy has the important primitives for the first pass:
+NumPy owns the current backend because it has the important primitives for
+this workload:
 
 - `np.where` for masks;
 - `np.minimum`, `np.maximum`, `np.clip` for pointwise transitions;
@@ -54,62 +49,45 @@ because NumPy has the important primitives for the first pass:
 - `np.put_along_axis`, `np.add.at`, and assignment into gathered/scattered
   arrays for updates.
 
-If those primitives make a phase unreadable or too allocation-heavy, evaluate
-JAX or PyTorch for that phase. Both families have axis-wise sort/gather/scatter
-operations. The risk is not conceptual availability; the risk is dependency
-weight, cold compile behavior for JAX, and whether a mixed NumPy/framework
-boundary makes the simulator harder to maintain.
+If those primitives make a phase unreadable or too allocation-heavy,
+evaluate JAX or PyTorch for that phase. Both families have axis-wise
+sort/gather/scatter operations. The cost is dependency weight, cold compile
+behavior for JAX, and whether a mixed NumPy/framework boundary makes the
+simulator harder to maintain.
 
-Do not move the whole simulator to a new framework as a first step. Tensorize
-the dataflow and phase boundaries first; that makes a later framework swap a
-mechanical decision instead of a rewrite mixed with semantic changes.
+Do not move the whole simulator to a new framework as a first step.
+Tensorize the dataflow and phase boundaries first; that makes a later
+framework swap a mechanical decision instead of a rewrite mixed with
+semantic changes.
 
-## Research Findings: FIFO Primitives
-
-Conclusion: NumPy itself has enough primitives for the first tensorized FIFO
-implementation.
+## FIFO Primitives — NumPy
 
 The needed operation is not an unbounded queue append/pop. It is bounded
-ordered consumption from a fixed lot axis. That maps to:
+ordered consumption from a fixed lot axis, which maps to:
 
 - `np.lexsort` or stable `np.argsort` to precompute the FIFO lot order by
   `(agent, account, asset, purchase_month, lot_id)`;
-- `np.take_along_axis` when the order is per rollout or per slice, or direct
-  indexed selection when the order is static for a `(agent, account, asset)`
-  group;
-- `np.cumsum(..., axis=1)` to compute the prefix quantity/value consumed before
-  each ordered lot;
-- pointwise `np.clip`, `np.minimum`, and `np.divide(..., where=...)` to compute
-  the units actually sold from each lot;
-- `np.put_along_axis` or direct advanced assignment to scatter sold units back
-  when each target lot appears once;
+- `np.take_along_axis` when the order is per rollout or per slice, or
+  direct indexed selection when the order is static for a
+  `(agent, account, asset)` group;
+- `np.cumsum(..., axis=1)` to compute the prefix quantity/value consumed
+  before each ordered lot;
+- pointwise `np.clip`, `np.minimum`, and `np.divide(..., where=...)` to
+  compute the units actually sold from each lot;
+- `np.put_along_axis` or direct advanced assignment to scatter sold units
+  back when each target lot appears once;
 - `np.add.at` when multiple source positions may accumulate into the same
-  output position, such as grouped tax/event aggregation or any future shape
-  with repeated lot indices.
+  output position, such as grouped tax/event aggregation.
 
-JAX and PyTorch have equivalent or stronger gather/scatter APIs, but they do
-not need to be added now. JAX adds a compilation/runtime model and different
-out-of-bounds semantics. PyTorch adds a large dependency and another tensor
-type at the simulator boundary. Re-evaluate only after a NumPy prototype shows
-FIFO scatter/gather is either too slow, too allocation-heavy, or too hard to
-read. If one narrow scalar corner remains awkward, consider a small compiled
-helper before moving the whole backend to another tensor framework.
-
-Sources checked for this decision:
-
-- NumPy docs: `take_along_axis`, `put_along_axis`, `ufunc.at`, `lexsort`,
-  `cumsum`, and `clip`.
-- JAX docs: `jax.numpy.take_along_axis` and `ndarray.at`. JAX has the
-  primitives, but its indexed update semantics and compilation model would be a
-  simulator-wide choice.
-- PyTorch docs: `gather`, `scatter_add_`, `scatter_reduce_`, `sort`, and
-  `cumsum`. PyTorch has the primitives, but its gather/scatter APIs do not
-  broadcast `index`/`src`, CUDA scatter may be nondeterministic, and
-  `scatter_reduce_` is documented as beta.
+JAX and PyTorch have equivalent or stronger gather/scatter APIs. Re-evaluate
+only if a NumPy prototype shows FIFO scatter/gather is too slow,
+too allocation-heavy, or too hard to read. If one narrow scalar corner
+remains awkward, consider a small compiled helper before moving the whole
+backend to another tensor framework.
 
 ## Shape Notation
 
-Use the same notation as `dense_shape_discipline.md`, plus:
+Use the same notation as the engine code, plus:
 
 - `R`: rollouts.
 - `H`: event months.
@@ -126,7 +104,7 @@ Use the same notation as `dense_shape_discipline.md`, plus:
 - `Q`: liquidity policies.
 - `A`: asset order slots per liquidity policy.
 
-State arrays should put rollout first unless there is a strong reason not to:
+State arrays put rollout first unless there's a strong reason not to:
 
 ```python
 cash[R, C]
@@ -139,8 +117,7 @@ liability_principal[R, B]
 failed[R]
 ```
 
-Event buffers can keep their existing event-first layout if that keeps decode
-simple:
+Event buffers keep their event-first layout for decode simplicity:
 
 ```python
 transfer_active[H, T, R]
@@ -148,57 +125,78 @@ sched_disp_units[H, D, L, R]
 liq_disp_units[H, Q, A, L, R]
 ```
 
-## Current Not-Yet-Tensorized TODOs
+## Invariants the engine maintains
 
-- [x] Tax accrual uses Python/NumPy bracket application over `[R, K]`
-      intermediates and reductions.
-- [x] Fixed and series-indexed amount evaluation uses a vectorized Python
-      evaluator returning `amount[R]` for transfer and obligation slots.
-- [x] Scheduled transfers are tensorized per monthly slot as updates to
-      `cash[:, from_slot]`, `cash[:, to_slot]`, and
-      `ordinary_ytd[:, profile]`.
-- [x] Property purchases and mortgage originations are tensorized by applying
-      month-active property slots across all rollouts.
-- [x] Scheduled asset sales use bounded vector FIFO over `R` and `L`.
-- [x] Liquidity policies use policy and asset-order loops where each iteration
-      sells target dollars across all rollouts via the tensor FIFO helper.
-      Declared failure reasons for unfilled buffer-only sales are still pending.
-- [x] Tax accrual is tensorized per tax link, including ordinary brackets,
-      LTCG brackets, tax liability writes, and yearly YTD reset.
-- [x] Obligation due computation and settlement are tensorized per monthly
-      slot, including group funding by `(agent, cash_account)`,
-      paid/shortfall masks, mortgage payment state updates, and tax
-      settlement.
-- [x] Failed-rollout value zeroing is vectorized in the Python month driver
-      after settlement.
-- [x] Pre-settlement phases apply `active = ~failed` masks before event/state
-      writes, so failed rollouts stay frozen instead of emitting future events
-      that are later zeroed away.
-- [x] Snapshot writes are direct array assignments from current state into
-      `state_history[month + 1]`.
-- [x] Product metric fans bypass the polars `SimulationRun` decode entirely:
-      `monthly_metric_arrays` (`augur/product/decode.py`) returns a
-      `{name: (H+1,) ndarray}` dict from state buffers; `_DecodedRollout`
-      caches the dict instead of a polars frame. Wire `monthly_metrics`
-      payload built via `{name: arr.tolist()}`, not `pl.DataFrame(...).to_dict()`.
-- [x] State-history decoders (`_decode_cash`, `_decode_asset_lots`,
-      `_decode_ordinary_income`, `_decode_capital_gains`,
-      `_decode_tax_liabilities`, `_decode_property_state`,
-      `_decode_property_stakes`, `_decode_liabilities`,
-      `_decode_rollout_status_history`, `_decode_final_rollout_status`)
-      vectorized via numpy-broadcast index columns + boolean-masked gather +
-      one `pl.from_numpy(...)` pass. Replaces ~(H+1)×R×S Python dict
-      constructions and `_text()` lookups per decode with O(S) string
-      lookups + one polars materialization.
-- [x] Event decoders (`_decode_transfers`, `_decode_property_purchases`,
-      `_decode_sched_dispositions`, `_decode_liquidity_dispositions`,
-      `_decode_tax_accruals`, `_decode_obligations`,
-      `_decode_mortgage_originations`, `_decode_mortgage_payments`,
-      `_decode_tax_settlements`) vectorized via `np.argwhere(active)` over
-      each family's mask, then bool-gather + per-axis ID lookup. Dynamic
-      cause-ID f-strings (e.g. `"{liab}_payment_m{month}"`) shrink from
-      `O(M × axes × R)` dense iterations to a Python comp over the sparse
-      gathered `N` events.
+These are the load-bearing properties of the tensorized design. Any change to
+the month-step or decode path must preserve them.
+
+### Month-step phases run over the rollout axis
+
+- Amount evaluation (`evaluate_amount_for_month`) returns `amount[R]` for
+  fixed and series-indexed amounts; rollout variation flows from
+  `external_values`.
+- Scheduled transfers apply per monthly slot via masked updates to
+  `cash[:, from_slot]`, `cash[:, to_slot]`, and
+  `ordinary_ytd[:, profile]`.
+- Property purchases and mortgage originations apply month-active property
+  slots across all rollouts in one pass.
+- Scheduled asset sales use the bounded vector FIFO helper (`fifo_sell`)
+  over `R × L` with target dollars or target units.
+- Liquidity policies iterate policy and asset-order axes; each iteration
+  sells target dollars across all rollouts via the same FIFO helper. The
+  outer loop is over policies and asset-order slots (small fixed dimensions),
+  not over rollouts.
+- Tax accrual computes ordinary brackets, LTCG brackets, MID, SALT, tax
+  liability writes, and the year-end YTD reset all per tax link over `R`.
+- Obligation due computation and settlement apply per monthly slot with
+  group funding by `(agent, cash_account)`; `paid` / `shortfall` / failure
+  masks are full `R` boolean arrays.
+
+### Failure semantics are vectorized
+
+- `active = ~failed` is computed at the top of every pre-settlement phase,
+  so failed rollouts don't emit future events that have to be zeroed later.
+- New failures during a month update `failed[R]` and `failed_month[R]`
+  with masked assignment.
+- After settlement, value-bearing state for failed rollouts is zeroed by
+  one masked write across the rollout axis.
+
+### Snapshots are direct array assignments
+
+Snapshot writes copy current state into `state_history[month + 1]` without
+intermediate dicts or row builders.
+
+### Decode is dense → sparse, not nested loops
+
+State-history decoders (`_decode_cash`, `_decode_asset_lots`,
+`_decode_ordinary_income`, `_decode_capital_gains`,
+`_decode_tax_liabilities`, `_decode_property_state`,
+`_decode_property_stakes`, `_decode_liabilities`,
+`_decode_rollout_status_history`, `_decode_final_rollout_status`) gather
+all `(month, rollout, slot)` triples via numpy broadcasts, optionally
+filter by an active mask, and materialize the polars frame in one
+`pl.from_numpy(...)` call. Per-slot string columns are resolved by
+`_codes_to_strings` (O(slot) Python work) and indexed.
+
+Event decoders (`_decode_transfers`, `_decode_property_purchases`,
+`_decode_sched_dispositions`, `_decode_liquidity_dispositions`,
+`_decode_tax_accruals`, `_decode_obligations`,
+`_decode_mortgage_originations`, `_decode_mortgage_payments`,
+`_decode_tax_settlements`) gather sparse events via `np.argwhere(active)`,
+then bool-gather value buffers and index per-axis ID lookups. Dynamic
+cause-ID f-strings are O(N gathered events) comp, not the dense iteration
+space. `_frame_from_columns` passes `schema=spec.schema` to
+`pl.DataFrame()` so object-dtype string columns cast to `pl.Utf8`,
+keeping `pl.concat` across families dtype-clean.
+
+### Product fan bypasses polars entirely
+
+`monthly_metric_arrays` reads `dense.buffers.*` directly and returns
+`{name: (H+1,) ndarray}`. `_DecodedRollout` caches that dict, not a
+polars frame. The fan endpoint never calls `dense.decode()`; the
+rollout-detail endpoint calls `dense.decode()` only for the event log
+and emits `monthly_metrics` via `{name: arr.tolist()}`, not
+`pl.DataFrame(...).to_dict()`.
 
 ## Phase Algorithms
 
@@ -240,12 +238,12 @@ transfer_active[month, slot, active] = True
 transfer_amount[month, slot, active] = amount[active]
 ```
 
-Guard invalid `from_slot` / `to_slot` values consistently before touching
-cash arrays.
+Invalid `from_slot` / `to_slot` values are guarded before touching cash
+arrays.
 
 ### Tax Brackets
 
-For one tax link, compute all rollouts at once:
+For one tax link, all rollouts at once:
 
 ```python
 upper = ordinary_upper[link, :K]
@@ -256,17 +254,16 @@ in_bracket = np.clip(slice_top - prev[None, :], 0.0, None)
 tax = (in_bracket * rate[None, :]).sum(axis=1)
 ```
 
-Long-term capital gain brackets use the same idea, with `ordinary_taxable[:, None]`
-as the bracket floor.
+Long-term capital gain brackets use the same idea, with
+`ordinary_taxable[:, None]` as the bracket floor.
 
 ### FIFO Lot Sales
 
-FIFO selling is the main irregular operation, but it is still bounded and can be
-handled tensorially.
-
-Precompute static lot order per `(agent, account, asset)` after filtering to
-eligible lots. Lots in different accounts are not fungible unless a higher
-level policy explicitly iterates over both accounts:
+FIFO selling is the main irregular operation, but it's bounded and
+tensorial. Precompute the static lot order per `(agent, account, asset)`
+after filtering to eligible lots. Lots in different accounts are not
+fungible unless a higher-level policy explicitly iterates over both
+accounts:
 
 ```python
 lot_order[agent_account_asset] = np.lexsort((lot_id, purchase_month))
@@ -276,10 +273,10 @@ For a target dollar sale across all rollouts:
 
 ```python
 ordered_lots = lot_order[agent_account_asset]  # [L]
-qty = lot_remaining[:, ordered_lots]  # [R, L]
-price = unit_price[:, None]  # [R, 1]
-available_value = qty * price  # [R, L]
-available_total = available_value.sum(axis=1)  # [R]
+qty = lot_remaining[:, ordered_lots]            # [R, L]
+price = unit_price[:, None]                     # [R, 1]
+available_value = qty * price                   # [R, L]
+available_total = available_value.sum(axis=1)   # [R]
 oversell = target_dollars > available_total + epsilon
 before_value = np.cumsum(available_value, axis=1) - available_value
 sold_value = np.clip(
@@ -297,16 +294,16 @@ sold_units = np.divide(
 ```
 
 Then scatter `sold_units` back to `lot_remaining[:, ordered_lots]` and write
-event buffers. Oversell rows must not be silently partial-filled: either mark
-the rollout failed with a declared reason or raise a Python exception before
-returning a response. Prefer rollout failure for runtime economic outcomes so
-metric fans can show the distribution; reserve exceptions for statically invalid
-scenario configuration. Scheduled sale oversell should therefore normally be a
-rollout failure with a reason such as `scheduled_sale_insufficient_lots`, not a
-partial sale. Because each ordered lot appears once for an
-`(agent, account, asset)` group, the main FIFO scatter should not need
-reduction. If a future shape permits duplicate target lots, use `np.add.at` or
-switch the helper to JAX/PyTorch scatter APIs.
+event buffers. Oversell rows must not be silently partial-filled: either
+mark the rollout failed with a declared reason or raise a Python exception
+before returning a response. Prefer rollout failure for runtime economic
+outcomes so metric fans can show the distribution; reserve exceptions for
+statically invalid scenario configuration. Scheduled sale oversell is a
+rollout failure with a reason such as `scheduled_sale_insufficient_lots`,
+not a partial sale. Because each ordered lot appears once for an
+`(agent, account, asset)` group, the main FIFO scatter doesn't need
+reduction. If a future shape permits duplicate target lots, use `np.add.at`
+or switch the helper to JAX/PyTorch scatter APIs.
 
 For target unit sales:
 
@@ -327,13 +324,13 @@ sold_basis = sold_units * lot_basis_per_unit[None, :]
 sold_gain = sold_value - sold_basis
 ```
 
-Capital gain profile updates can start as explicit sums per compiled gain
-profile/holding-period class. If a vectorized form has repeated group targets,
-use `np.add.at` into `capital_gain_ytd[R, G, 2]`.
+Capital gain profile updates start as explicit sums per compiled gain
+profile / holding-period class. If a vectorized form has repeated group
+targets, use `np.add.at` into `capital_gain_ytd[R, G, 2]`.
 
 ### Liquidity Policy Sell Order
 
-Keep ordered control-flow over policy and asset-order axes; vectorize inside
+Ordered control flow over policy and asset-order axes; vectorize inside
 each step over `R`:
 
 ```python
@@ -353,16 +350,16 @@ for policy in policies:
     )
 ```
 
-This exactly matches "sell assets in configured order" while avoiding a
-rollout loop. The liquidity policy should avoid asking the FIFO helper for more
-than the current asset slot can provide. If the whole configured sell order
-cannot restore the buffer, mark the rollout failed with a declared liquidity
+This matches "sell assets in configured order" while avoiding a rollout
+loop. The liquidity policy doesn't ask the FIFO helper for more than the
+current asset slot can provide. If the whole configured sell order cannot
+restore the buffer, the rollout is marked failed with a declared liquidity
 failure reason.
 
 ### Obligation Settlement
 
-Compile each obligation slot to a group id keyed by `(agent_code,
-from_cash_slot)`. For month `m`:
+Each obligation slot is compiled to a group id keyed by
+`(agent_code, from_cash_slot)`. For month `m`:
 
 ```python
 due[R, O] = vectorized_due_amounts(...)
@@ -372,105 +369,28 @@ paid[R, O] = np.where(funded[R, obligation_group[O]], due[R, O], 0.0)
 shortfall[R, O] = due[R, O] - paid[R, O]
 ```
 
-This preserves current all-or-nothing group settlement semantics while making
-the grouping explicit.
-
-### Failure Freezing
-
-Maintain `active = ~failed` at the top of every phase. When a new failure is
-detected:
-
-```python
-new_failed = active & has_shortfall
-failed |= new_failed
-failed_month = np.where(new_failed & (failed_month < 0), month, failed_month)
-```
-
-At the end of the month, zero value-bearing state for failed rollouts with
-masked assignment. Future months see `active=False` and skip scheduled events.
+This preserves all-or-nothing group settlement semantics while making the
+grouping explicit.
 
 ### Event Materialization
 
-Events remain dense buffers plus active masks. Tensorized phases must write the
-same event facts the semantic transition produces:
+Events remain dense buffers plus active masks. Tensorized phases write the
+same event facts the semantic transition produces: active mask,
+amount/due/paid/shortfall, lot units/basis/proceeds, tax breakdowns,
+source slot/policy attempt metadata where applicable.
 
-- active mask;
-- amount/due/paid/shortfall;
-- lot units/basis/proceeds;
-- tax breakdowns;
-- source slot/policy attempt metadata where applicable.
+Metric-fan requests never force full event decode. The core writes dense
+event buffers unconditionally (cheap), but API/product layers decode events
+only for selected rollout detail.
 
-Do not let metric-fan requests force full event decode. The core may write
-dense event buffers, but API/product layers should decode events only for
-selected rollout detail.
+## Open work
 
-## Work Slices
-
-1. Current branch cleanup:
-   - [x] Remove Numba `parallel=True` and `prange`.
-   - [x] Keep explicit `R` current-state buffers.
-   - [x] Drop the plain-Numba month-step path after replacing it with
-         tensorized phases.
-
-2. Introduce tensorized phase scaffolding:
-   - [x] Add a `TensorState`/current-state helper with named arrays and shape
-         validation. Filled by `CurrentStateBuffers` in `augur/sim/engine.py`
-         under a different name; the role (named-rollout-axis arrays with
-         shape validation in `_allocate_current_state`) is what the plan
-         called for.
-   - [x] Keep the serial month loop in Python.
-
-3. Vectorize low-irregularity phases:
-   - [x] snapshots;
-   - [x] failure zeroing;
-   - [x] active masks for all pre-settlement phases;
-   - [x] fixed and indexed amount evaluation for transfer slots;
-   - [x] fixed and indexed amount evaluation for obligation slots;
-   - [x] transfers;
-   - [x] property purchase and mortgage origination.
-
-4. Vectorize taxes:
-   - [x] ordinary bracket tax;
-   - [x] LTCG bracket tax;
-   - [x] tax liability write and yearly YTD reset.
-
-5. Vectorize obligations:
-   - [x] due computation;
-   - [x] group funding by `(agent, cash_account)`;
-   - [x] paid/shortfall/failure buffers;
-   - [x] mortgage payment principal/interest updates;
-   - [x] tax settlement.
-
-6. Vectorize sales:
-   - [x] add a small deterministic NumPy FIFO prototype/test covering partial
-         first-lot sales, multi-lot sales, zero-price/no-sale behavior, and
-         per-rollout different sale targets;
-   - [x] add scheduled-sale oversell tests for requested units exceeding
-         eligible `(agent, account, asset)` lots;
-   - [ ] add liquidity-policy oversell tests for declared failure reason when
-         the configured sell order cannot restore the cash buffer;
-   - [x] scheduled target-unit sales;
-   - [x] liquidity target-dollar sales;
-   - [x] scheduled-sale capital gain updates;
-   - [x] liquidity-sale capital gain updates;
-   - [x] scheduled-sale disposition event buffers;
-   - [x] liquidity-sale disposition event buffers.
-
-7. Product fast path:
-   - [x] expose dense state history to product metric-fan projection
-         (`monthly_metric_arrays` reads `dense.buffers.*` directly);
-   - [x] avoid full `SimulationRun` decode for metric fans (fan endpoint
-         never calls `dense.decode()`; rollout-detail endpoint still does
-         for the event log, but state + event decoders are both vectorized);
-   - [x] keep selected-rollout detail fetch decoding events on demand
-         (event decoders only run when `rollout_events_from` is called for
-         the per-seed detail endpoint).
+- **Liquidity-policy oversell failure reason.** Add a test asserting that
+  when the configured sell order cannot restore the cash buffer, the
+  rollout is failed with a declared liquidity failure reason (not a silent
+  partial fill). The engine path exists; the test gap is the open item.
 
 ## Validation Gates
-
-For each tensorized phase, add or preserve tests at the API/product level when
-the behavior is externally visible. Keep simulator-level tests for exact event
-and state semantics.
 
 Focused gate:
 
@@ -502,12 +422,5 @@ bazelisk run --config=nolint \
 
 ## Open Questions
 
-- Resolved: NumPy has the FIFO primitives needed for the first implementation.
-  Prototype with NumPy before considering JAX, PyTorch, or another compiled helper.
-- For repeated group aggregation, is `np.add.at` fast/readable enough, or should
-  we precompile dense group matrices and use masked reductions?
-- Resolved: metric-fan paths skip event decode entirely (`service.metric_fan`
-  consumes only `monthly_metric_arrays`). Selected-rollout detail still calls
-  `dense.decode()` to materialize the event log. Event buffers are written
-  unconditionally during sim (cheap dense writes); decode is what was costly,
-  and that's vectorized now.
+- For repeated group aggregation, is `np.add.at` fast/readable enough, or
+  should we precompile dense group matrices and use masked reductions?
