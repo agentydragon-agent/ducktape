@@ -91,6 +91,44 @@ class RentalManagement(ApiModel):
     avg_tenancy_months: PositiveInt = 24
 
 
+class StartRentingEventWire(ApiModel):
+    """Lifecycle event: a property's rented_fraction becomes positive at `month`."""
+
+    kind: Literal["start_renting"] = "start_renting"
+    month: PositiveInt
+    rented_fraction: PositiveFloat = Field(le=1.0)
+
+
+class StopRentingEventWire(ApiModel):
+    """Lifecycle event: a property's rented_fraction becomes 0 at `month`."""
+
+    kind: Literal["stop_renting"] = "stop_renting"
+    month: PositiveInt
+
+
+class ChangeRentalPlanEventWire(ApiModel):
+    """Lifecycle event: rented_fraction changes between two positive values at `month`."""
+
+    kind: Literal["change_rental_plan"] = "change_rental_plan"
+    month: PositiveInt
+    rented_fraction: PositiveFloat = Field(le=1.0)
+
+
+class CapitalImprovementEventWire(ApiModel):
+    """Lifecycle event: cash debit + building basis bump (e.g. new roof, kitchen remodel)."""
+
+    kind: Literal["capital_improvement"] = "capital_improvement"
+    month: PositiveInt
+    amount_usd: PositiveFloat
+    description: str = ""
+
+
+type PropertyLifecycleEventWire = Annotated[
+    StartRentingEventWire | StopRentingEventWire | ChangeRentalPlanEventWire | CapitalImprovementEventWire,
+    Field(discriminator="kind"),
+]
+
+
 class PropertyPurchase(ApiModel):
     property_id: str
     closing_cost_pct: NonNegativeFloat = 1.5
@@ -99,11 +137,14 @@ class PropertyPurchase(ApiModel):
     # the property is treated as an investment / second home and no MID policy is built. No
     # default: callers must commit to an answer rather than inherit one silently.
     is_primary_residence: bool
-    # The property is rented (whole or partial) from month 0. Phase 3 will let the user
-    # toggle this mid-horizon via lifecycle events.
+    # The property is rented (whole or partial) from month 0. Mid-horizon transitions live
+    # in `lifecycle_events`.
     initial_rental: RentalIncomePlan | None = None
     # Property is managed by an agency. Requires `initial_rental` set.
     rental_management: RentalManagement | None = None
+    # Mid-horizon transitions (start/stop renting, change rental plan, capital improvements)
+    # for this property.
+    lifecycle_events: tuple[PropertyLifecycleEventWire, ...] = ()
 
     @model_validator(mode="after")
     def _rental_management_requires_rental(self) -> PropertyPurchase:

@@ -19,6 +19,8 @@ from augur.product.wire import (
 from augur.sim.pricing import OccupancyMode, insurance_rate, maintenance_rate
 from augur.sim.scenario import (
     Agent,
+    CapitalImprovementEvent,
+    ChangeRentalPlanEvent,
     FixedAmount,
     InitialAccountBalance,
     InitialLot,
@@ -27,6 +29,7 @@ from augur.sim.scenario import (
     MortgageInterestDeductionPolicy,
     ObligationType,
     PrivateEquityTenderPolicy,
+    PropertyLifecycleEvent,
     PropertyTaxPolicy,
     RecurringObligation,
     RecurringTransfer,
@@ -34,6 +37,8 @@ from augur.sim.scenario import (
     ScheduledPropertyPurchase,
     ScheduledTransfer,
     SeriesIndexedAmount,
+    StartRentingEvent,
+    StopRentingEvent,
     TaxProfile,
     TransferDeductionCategory,
 )
@@ -197,6 +202,7 @@ def build_scenario(
         )
 
     scheduled_property_purchases: list[ScheduledPropertyPurchase] = []
+    property_lifecycle_events: list[PropertyLifecycleEvent] = []
     property_tax_policies: list[PropertyTaxPolicy] = []
     mortgage_interest_deduction_policies: list[MortgageInterestDeductionPolicy] = []
     if scenario_key.property_purchase is not None:
@@ -223,6 +229,9 @@ def build_scenario(
             _sim_property_purchase(
                 scenario_key.property_purchase, property_, primary_agent_id=primary_agent_id, mortgage=mortgage
             )
+        )
+        property_lifecycle_events.extend(
+            _sim_lifecycle_events(scenario_key.property_purchase, property_id=property_.id)
         )
         property_tax_policies.append(
             PropertyTaxPolicy(
@@ -350,6 +359,7 @@ def build_scenario(
         recurring_transfers=recurring_transfers,
         scheduled_transfers=scheduled_transfers,
         scheduled_property_purchases=scheduled_property_purchases,
+        property_lifecycle_events=property_lifecycle_events,
         property_tax_policies=property_tax_policies,
         mortgage_interest_deduction_policies=mortgage_interest_deduction_policies,
         private_equity_tender_policies=private_equity_tender_policies,
@@ -401,6 +411,37 @@ def _schedule_e_split(rented_fraction: float) -> tuple[TransferDeductionCategory
     if rented_fraction <= 0.0:
         return (None, 0.0)
     return ("ordinary", float(rented_fraction))
+
+
+def _sim_lifecycle_events(purchase: PropertyPurchase, property_id: str) -> list[PropertyLifecycleEvent]:
+    """Translate wire lifecycle events to sim-side events."""
+
+    sim_events: list[PropertyLifecycleEvent] = []
+    for event in purchase.lifecycle_events:
+        if event.kind == "start_renting":
+            sim_events.append(
+                StartRentingEvent(
+                    month=int(event.month), property_id=property_id, rented_fraction=float(event.rented_fraction)
+                )
+            )
+        elif event.kind == "stop_renting":
+            sim_events.append(StopRentingEvent(month=int(event.month), property_id=property_id))
+        elif event.kind == "change_rental_plan":
+            sim_events.append(
+                ChangeRentalPlanEvent(
+                    month=int(event.month), property_id=property_id, rented_fraction=float(event.rented_fraction)
+                )
+            )
+        elif event.kind == "capital_improvement":
+            sim_events.append(
+                CapitalImprovementEvent(
+                    month=int(event.month),
+                    property_id=property_id,
+                    amount_usd=float(event.amount_usd),
+                    description=event.description,
+                )
+            )
+    return sim_events
 
 
 def _initial_occupancy(purchase: PropertyPurchase) -> tuple[OccupancyMode, float]:
