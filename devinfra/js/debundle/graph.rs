@@ -1079,6 +1079,38 @@ pub(crate) fn cross_module_partition_endpoints(
     Some((from, to))
 }
 
+/// Gate-side counterpart of [`cross_module_partition_endpoints`] that
+/// keeps cross-module at-init promoted edges. The emitter's
+/// `collect_phantom_side_effect_providers` adds phantom side-effect
+/// imports for these edges, which can reorder ESM's link DFS so the
+/// target module evaluates while the caller module is still on the
+/// stack — closing a TDZ cycle that
+/// [`is_cross_module_at_init_promotion`]'s "callee module is fully
+/// evaluated by the time the body call fires" claim hides.
+///
+/// History: the prior fix in commit `12ce3884b` removed the
+/// promoted-edge drop from `check_realizability`,
+/// `edge_contribution`, and `IncrementalQuotient::{insert,remove}_current_edge`.
+/// Commit `2d6be2473` ("extract `cross_module_partition_endpoints`
+/// helper") silently re-introduced the drop by routing those call
+/// sites through the same helper as `build_module_quotient` and
+/// `reports.rs`. This sibling helper exists so the gate paths
+/// preserve `12ce3884b`'s fix while leaving the emit-side and
+/// reports view (where the drop is intentional) untouched. See
+/// `realizability::tests::promoted_edge_in_aggregator_cycle_is_unrealizable`
+/// for the regression fixture.
+pub(crate) fn gate_constraining_partition_endpoints(
+    edge: &OwnerEdge,
+    partition: &Partition,
+) -> Option<(ModuleId, ModuleId)> {
+    let from = partition.of(edge.from);
+    let to = partition.of(edge.to);
+    if from == to {
+        return None;
+    }
+    Some((from, to))
+}
+
 /// Quotient the owner graph by `partition` to build the module
 /// dependency graph consumed by validation and emit. The single
 /// public construction path; validation and reports both go through

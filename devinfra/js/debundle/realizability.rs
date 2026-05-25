@@ -129,9 +129,13 @@ pub fn check_realizability(
             continue;
         }
         // Project edge onto the module quotient. Drops same-module
-        // edges and spurious cross-module at-init promotions (see
-        // `cross_module_partition_endpoints` for the invariant).
-        let Some((from, to)) = crate::graph::cross_module_partition_endpoints(edge, partition)
+        // edges but KEEPS cross-module at-init promoted edges — those
+        // are load-bearing for the emitter's phantom side-effect
+        // imports and the runtime DFS that follows them. See
+        // `gate_constraining_partition_endpoints` for the full
+        // justification and `tests::promoted_edge_in_aggregator_cycle_is_unrealizable`
+        // for the regression fixture.
+        let Some((from, to)) = crate::graph::gate_constraining_partition_endpoints(edge, partition)
         else {
             continue;
         };
@@ -711,22 +715,18 @@ fn edge_contribution(
     edge: &OwnerEdge,
     from: ModuleId,
     to: ModuleId,
-    callee_module: Option<ModuleId>,
+    _callee_module: Option<ModuleId>,
 ) -> Option<EdgeContribution> {
     if from == to {
         return None;
     }
-    // Same cross-module at-init promotion filter `build_module_quotient`
-    // and `check_realizability` apply, but evaluated against the
-    // overlay's post-move partition: a body-read promotion contributes
-    // only when the callee shares a module with the caller after the
-    // hypothetical move.
-    if let Some(callee_module) = callee_module
-        && edge.reason.at_init_callee_owner().is_some()
-        && callee_module != from
-    {
-        return None;
-    }
+    // NOTE: cross-module at-init promoted edges are intentionally NOT
+    // filtered here — the matching gate-side view in
+    // `gate_constraining_partition_endpoints` keeps them for soundness
+    // (see `tests::promoted_edge_in_aggregator_cycle_is_unrealizable`).
+    // The `_callee_module` parameter is retained on the signature so
+    // call sites that still thread it through don't need their
+    // signatures changed; it is no longer consulted.
 
     let kind = if edge.reason.is_rebind() {
         EdgeContributionKind::Rebind
@@ -1020,9 +1020,11 @@ impl IncrementalQuotient {
         partition: &Partition,
         update_graphs: bool,
     ) {
-        // Same partition view every other quotient consumer uses; see
-        // `cross_module_partition_endpoints` invariant doc.
-        let Some((from, to)) = crate::graph::cross_module_partition_endpoints(edge, partition)
+        // Gate-side view: keep cross-module at-init promoted edges.
+        // See `gate_constraining_partition_endpoints` for why and
+        // `tests::promoted_edge_in_aggregator_cycle_is_unrealizable`
+        // for the regression fixture.
+        let Some((from, to)) = crate::graph::gate_constraining_partition_endpoints(edge, partition)
         else {
             return;
         };
@@ -1060,9 +1062,10 @@ impl IncrementalQuotient {
         partition: &Partition,
         update_graphs: bool,
     ) {
-        // Same partition view every other quotient consumer uses; see
-        // `cross_module_partition_endpoints` invariant doc.
-        let Some((from, to)) = crate::graph::cross_module_partition_endpoints(edge, partition)
+        // Gate-side view: keep cross-module at-init promoted edges.
+        // Must mirror `add_current_edge` (see
+        // `gate_constraining_partition_endpoints`).
+        let Some((from, to)) = crate::graph::gate_constraining_partition_endpoints(edge, partition)
         else {
             return;
         };
@@ -1923,6 +1926,109 @@ mod tests {
         assert!(
             !verdict.is_realizable(),
             "constraining edge target=residual must TDZ; verdict: {verdict:#?}",
+        );
+    }
+
+    /// Namespace-aggregator split: a module-level `const ids = {...sub1, ...sub2}`
+    /// gets sub1 and sub2 extracted into separate modules. The aggregator's
+    /// initializer carries at-init reads of sub1 and sub2 (the spread RHS
+    /// reads them). If a sub-module also reads back into the residual or
+    /// aggregator at-init, the resulting cross-module SCC must be detected
+    /// by the gate or the emitted ESM will TDZ at runtime under Node.
+    ///
+    /// Shape used here: sub1 reads `seed` declared in residual at-init;
+    /// residual reads `ids` at-init. Cycle:
+    ///   residual --EagerUse--> mod_ids   (`const consumed = ids.foo`)
+    ///   mod_ids  --EagerUse--> mod_sub1  (`const ids = {...sub1, ...sub2}`)
+    ///   mod_sub1 --EagerUse--> residual  (`const sub1 = { foo: seed }`)
+    /// The gate must reject this partition.
+    #[test]
+    fn namespace_aggregator_with_back_edge_through_sub_is_unrealizable() {
+        // owner_0: const seed = "S"           (residual)
+        // owner_1: const sub1 = { foo: seed }  (mod_sub1) — eager_read of seed
+        // owner_2: const sub2 = { bar: 1 }     (mod_sub2) — no cross-module reads
+        // owner_3: const ids = {...sub1, ...sub2} (mod_ids) — eager reads sub1, sub2
+        // owner_4: const consumed = ids.foo + ids.bar (residual) — eager read of ids
+        let source = "const seed = \"S\"; const sub1 = { foo: seed }; const sub2 = { bar: 1 }; const ids = {...sub1, ...sub2}; const consumed = ids.foo + ids.bar; console.log(consumed);";
+        let owner_graph = parse_and_build(source);
+        let mut partition = Partition::new(&owner_graph, module_id(0));
+        partition.set(OwnerId(1), module_id(1)); // sub1 → mod_sub1
+        partition.set(OwnerId(2), module_id(2)); // sub2 → mod_sub2
+        partition.set(OwnerId(3), module_id(3)); // ids  → mod_ids
+        let verdict = check_realizability(&owner_graph, &partition);
+        assert!(
+            !verdict.is_realizable(),
+            "namespace-aggregator split with sub→residual back edge \
+             must be flagged by the gate; verdict: {verdict:#?}",
+        );
+    }
+
+    /// Same aggregator shape but with sub1 and sub2 INDEPENDENT of residual
+    /// (pure literal initializers). The split is realizable: ESM evaluates
+    /// sub1, sub2, then ids, then residual.
+    #[test]
+    fn namespace_aggregator_with_pure_subs_is_realizable() {
+        // owner_0: const sub1 = { foo: 1 }
+        // owner_1: const sub2 = { bar: 2 }
+        // owner_2: const ids = {...sub1, ...sub2}
+        // owner_3: console.log(ids)
+        let source = "const sub1 = { foo: 1 }; const sub2 = { bar: 2 }; const ids = {...sub1, ...sub2}; console.log(ids);";
+        let owner_graph = parse_and_build(source);
+        let mut partition = Partition::new(&owner_graph, module_id(0));
+        partition.set(OwnerId(0), module_id(1)); // sub1 → mod_sub1
+        partition.set(OwnerId(1), module_id(2)); // sub2 → mod_sub2
+        partition.set(OwnerId(2), module_id(3)); // ids  → mod_ids
+        let verdict = check_realizability(&owner_graph, &partition);
+        assert!(
+            verdict.is_realizable(),
+            "pure namespace-aggregator split must be realizable; verdict: {verdict:#?}",
+        );
+    }
+
+    /// **RED regression test** for the namespace-aggregator TDZ hole.
+    ///
+    /// The cycle goes through a *promoted* edge — the sub-module's at-init
+    /// `readSeed()` call has its body's read of `seed` (in residual) promoted
+    /// to a sub→residual eager edge. `cross_module_partition_endpoints` drops
+    /// it under `is_cross_module_at_init_promotion` because the call target
+    /// `readSeed` lives in `mod_helpers`, not `mod_sub1`. With the drop, the
+    /// gate sees no cycle. Without the drop, the cycle
+    /// `residual→mod_ids→mod_sub1→residual` is closed.
+    ///
+    /// ESM runtime DFS from residual:
+    ///   residual → mod_ids → mod_sub1 → mod_helpers (eval helpers)
+    ///                                 → residual (on stack, skip).
+    ///   Post-order: helpers, then mod_sub1.
+    ///   When `mod_sub1`'s body evaluates `readSeed()`, the call reads
+    ///   `seed` from residual — residual is mid-DFS, `seed` is TDZ-locked.
+    ///   ⇒ `ReferenceError: Cannot access 'seed' before initialization`.
+    ///
+    /// `at_init_promotion_drop_unsound_in_cycle_test` (the 12ce3884b
+    /// fixture) is the prior incarnation of this case; that fix was
+    /// silently reverted by commit 2d6be2473 when
+    /// `cross_module_partition_endpoints` was extracted (the helper
+    /// re-introduced the drop the prior commit removed).
+    #[test]
+    fn promoted_edge_in_aggregator_cycle_is_unrealizable() {
+        // owner_0: const seed = "S"                  (residual)
+        // owner_1: const readSeed = () => seed       (mod_helpers)
+        // owner_2: const sub1 = { foo: readSeed() }  (mod_sub1) — at-init call into mod_helpers
+        // owner_3: const ids = sub1.foo + "x"        (mod_ids)
+        // owner_4: const consumed = ids              (residual)
+        let source = "const seed = \"S\"; const readSeed = () => seed; const sub1 = { foo: readSeed() }; const ids = sub1.foo + \"x\"; const consumed = ids; console.log(consumed);";
+        let owner_graph = parse_and_build(source);
+        let mut partition = Partition::new(&owner_graph, module_id(0));
+        partition.set(OwnerId(1), module_id(1)); // readSeed → mod_helpers
+        partition.set(OwnerId(2), module_id(2)); // sub1 → mod_sub1
+        partition.set(OwnerId(3), module_id(3)); // ids → mod_ids
+        let verdict = check_realizability(&owner_graph, &partition);
+        assert!(
+            !verdict.is_realizable(),
+            "promoted-edge aggregator cycle must be flagged by the gate \
+             (mod_sub1's readSeed() at-init call reads `seed` in residual; \
+             residual reads `ids` in mod_ids; mod_ids reads `sub1` in \
+             mod_sub1 — closes a cycle through the promoted edge); \
+             verdict: {verdict:#?}",
         );
     }
 
