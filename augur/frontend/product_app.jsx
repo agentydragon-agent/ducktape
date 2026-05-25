@@ -65,7 +65,8 @@ const ROLLOUT_EVENT_COLORS = {
 
 const METRIC_OPTIONS = [
   { value: "net_worth_usd", chartValue: "netWorthUsd", label: "Net worth" },
-  { value: "holding_value_usd", chartValue: "holdingValueUsd", label: "Public security value" },
+  { value: "holding_value_usd", chartValue: "holdingValueUsd", label: "Holdings value" },
+  { value: "private_equity_value_usd", chartValue: "privateEquityValueUsd", label: "Private equity value" },
   { value: "property_value_usd", chartValue: "propertyValueUsd", label: "Property value" },
   { value: "mortgage_balance_usd", chartValue: "mortgageBalanceUsd", label: "Mortgage balance" },
   { value: "home_equity_usd", chartValue: "homeEquityUsd", label: "Home equity" },
@@ -1389,7 +1390,7 @@ function ProductPortfolioPanel({ portfolio, error }) {
             {holdings.length === 0 && (
               <tr className="border-t border-slate-100 dark:border-slate-800">
                 <td colSpan={5} className="py-1 augur-muted">
-                  No public securities
+                  No holdings
                 </td>
               </tr>
             )}
