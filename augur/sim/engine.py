@@ -189,6 +189,12 @@ class CurrentStateBuffers:
     # YTD depreciation accrued this calendar year per (rollout, property). Used at year-end to
     # deduct Schedule E depreciation from the owner's ordinary_ytd; zeroed after.
     property_depreciation_ytd: np.ndarray
+    # Runtime rented_fraction per (rollout, property) (0..1). Initialized at scenario start from
+    # `plan.property_rented_fraction[prop]` and mutated by `_apply_lifecycle_events` when
+    # PropertyLifecycleEvent rows fire mid-horizon. Depreciation accrual reads this each month.
+    # MID/SALT scaling still uses `plan.property_rented_fraction` in phase 3.0 — sub-phase 3.1
+    # plumbs the runtime state through MID/SALT.
+    property_rented_fraction: np.ndarray
     failed: np.ndarray
     failed_month: np.ndarray
 
@@ -269,6 +275,12 @@ class CurrentStateBuffers:
         _expect_array(
             "current property_depreciation_ytd",
             self.property_depreciation_ytd,
+            shape=(r, plan.property_count),
+            dtype=np.float64,
+        )
+        _expect_array(
+            "current property_rented_fraction",
+            self.property_rented_fraction,
             shape=(r, plan.property_count),
             dtype=np.float64,
         )
@@ -761,6 +773,9 @@ def _allocate_current_state(plan: CompiledSimulation) -> CurrentStateBuffers:
         property_tax_ytd=np.zeros((r, p.tax_profile_count), dtype=np.float64),
         property_cumulative_depreciation=np.zeros((r, p.property_count), dtype=np.float64),
         property_depreciation_ytd=np.zeros((r, p.property_count), dtype=np.float64),
+        # Broadcast the compile-time initial rented_fraction across rollouts. Lifecycle events
+        # may then mutate per-(rollout, property) state at runtime.
+        property_rented_fraction=np.broadcast_to(plan.property_rented_fraction, (r, p.property_count)).copy(),
         failed=np.zeros(r, dtype=np.bool_),
         failed_month=np.full(r, NO_CODE, dtype=np.int64),
     )
@@ -817,6 +832,7 @@ def _zero_failed_state(current: CurrentStateBuffers) -> None:
 def _run_month_step(
     plan: CompiledSimulation, buffers: SimulationBuffers, current: CurrentStateBuffers, month: int
 ) -> None:
+    _apply_lifecycle_events(plan, current, month)
     _apply_scheduled_transfers(plan, buffers, current, month)
     _apply_property_purchases(plan, buffers, current, month)
     _apply_scheduled_asset_sales(plan, buffers, current, month)
@@ -1107,27 +1123,58 @@ def _compute_liquid_net_worth(
     return cash_total + lot_value
 
 
+def _apply_lifecycle_events(plan: CompiledSimulation, current: CurrentStateBuffers, month: int) -> None:
+    """Apply this month's PropertyLifecycleEvent rows to per-rollout runtime state.
+
+    The compiler sorted events by month and built per-month index ranges in
+    `plan.lifecycle_event_month_starts`. For each event firing this month, mutate
+    `current.property_rented_fraction[:, prop]` to the new value across all active rollouts.
+    Phase 3 lifecycle events are deterministic — they fire identically on every rollout. (Future
+    policy-driven lifecycle decisions, per the plan, would emit per-rollout decisions; the same
+    apply machinery handles them by indexing the rollout subset.)
+    """
+
+    starts = plan.lifecycle_event_month_starts
+    if month + 1 >= starts.shape[0]:
+        return
+    begin = int(starts[month])
+    end = int(starts[month + 1])
+    if begin == end:
+        return
+    active_rollout = ~current.failed
+    if not active_rollout.any():
+        return
+    for i in range(begin, end):
+        prop = int(plan.lifecycle_event_property[i])
+        new_fraction = float(plan.lifecycle_event_rented_fraction[i])
+        current.property_rented_fraction[active_rollout, prop] = new_fraction
+
+
 def _apply_depreciation_accrual(plan: CompiledSimulation, current: CurrentStateBuffers) -> None:
     """Accrue §168 straight-line depreciation for each rented property.
 
-    Monthly depreciation = `building_basis × rented_fraction / (27.5 × 12)`. Only properties
-    that are currently active (purchased and not sold) with rented_fraction > 0 accrue. Updates
-    both the cumulative buffer (used for §1250 recapture at sale) and the YTD buffer (read at
+    Monthly depreciation = `building_basis × current.property_rented_fraction / (27.5 × 12)`.
+    Reads the runtime `current.property_rented_fraction[r, p]` so mid-horizon lifecycle
+    events (StartRenting/StopRenting/ChangeRentalPlan) take effect immediately. Updates both
+    the cumulative buffer (used for §1250 recapture at sale) and the YTD buffer (read at
     year-end by `_apply_tax_accruals` to net Schedule E depreciation against ordinary income).
     """
 
     active_rollout = ~current.failed
     if not active_rollout.any():
         return
-    property_count = plan.property_rented_fraction.shape[0]
+    property_count = current.property_rented_fraction.shape[1]
     for prop in range(property_count):
-        rented = float(plan.property_rented_fraction[prop])
-        if rented <= 0.0:
+        basis = float(plan.property_building_basis[prop])
+        if basis <= 0.0:
             continue
-        monthly_dep = float(plan.property_building_basis[prop]) * rented / (27.5 * 12.0)
         active_for_property = active_rollout & current.property_active[:, prop]
-        current.property_cumulative_depreciation[active_for_property, prop] += monthly_dep
-        current.property_depreciation_ytd[active_for_property, prop] += monthly_dep
+        if not active_for_property.any():
+            continue
+        rented = current.property_rented_fraction[:, prop]
+        monthly_dep = basis * rented / (27.5 * 12.0)
+        current.property_cumulative_depreciation[active_for_property, prop] += monthly_dep[active_for_property]
+        current.property_depreciation_ytd[active_for_property, prop] += monthly_dep[active_for_property]
 
 
 def _apply_tax_accruals(

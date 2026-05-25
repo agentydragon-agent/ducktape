@@ -554,7 +554,44 @@ income tax on net rental income (depending on basis and other
 income); cumulative depreciation reaches ~$36k after 36 months on a
 $700k building basis.
 
-### Phase 3: Lifecycle events (no sale yet)
+### Phase 3 sub-phases (current best plan after Phase 2 landed)
+
+Phase 2 left the engine with **compile-time-baked** rented_fraction:
+`plan.property_rented_fraction[prop]`, `plan.liability_rented_fraction[lia]`, plus
+compile-time scaling of MID (`tax_link_mid_principal_ratio` ×= `(1 - rented_fraction)`)
+and per-obligation `property_tax_owner_fraction`. To support mid-horizon
+lifecycle events, all of these must become runtime-state-driven.
+
+- **3.0**: Sim scenario types (`PropertyLifecycleEvent` union of
+  `StartRentingEvent` / `StopRentingEvent` / `ChangeRentalPlanEvent`).
+  Runtime state buffer `CurrentStateBuffers.property_rented_fraction[R, P]`
+  initialized from `plan.property_rented_fraction[P]`. Per-month
+  `_apply_lifecycle_events` mutates the state buffer. Depreciation accrual
+  reads runtime state. Sim-layer tests for: rented_fraction transitions
+  mid-horizon → depreciation rate changes accordingly. (MID/SALT/property-tax
+  still use initial rented_fraction in this sub-phase — limitation documented.)
+- **3.1**: Refactor MID + property-tax obligations to use runtime state.
+  - Mortgage interest: split each month's paid interest into
+    `current.liability_owner_interest_ytd[R, L]` (× `1 - rented_fraction`) and
+    `current.liability_rental_interest_ytd[R, L]` (× `rented_fraction`). MID at
+    year-end multiplies the owner buffer by `tax_link_mid_principal_ratio`
+    (now unscaled at compile time); rental buffer deducts as Schedule E.
+  - Property tax: scale obligation_property_tax_owner_fraction at settle time
+    by `current.property_rented_fraction[r, prop]` instead of the compile-time
+    array. Same for the deductible_fraction → Schedule E.
+- **3.2**: Residence timeline. `ScenarioKey.residence_timeline` with
+  `OutsideRentSegment | OwnerResidenceSegment`. Engine gates outside-rent
+  obligation on `current.user_residence_property_id[R]`. Wire-layer
+  backward-compat decoding from flat `monthly_rent_usd`.
+- **3.3**: `CapitalImprovementEvent` — debits cash, bumps `building_basis`
+  by amount_usd, depreciation continues on the new (higher) basis.
+- **3.4**: Wire layer + product translator for PropertyLifecycleEvent +
+  ResidenceTimeline. Translator pushes them through to sim scenario.
+- **3.5**: Frontend lifecycle editor + residence timeline editor.
+
+Each sub-phase ships independently with its own e2e tests.
+
+### Phase 3 (original plan — superseded by sub-phases above)
 
 Goal: scenarios can declare events that change rental status or
 fraction mid-horizon, and the engine applies them via the

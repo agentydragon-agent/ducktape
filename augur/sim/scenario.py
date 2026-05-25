@@ -298,6 +298,43 @@ class MortgageFinancing(BaseModel):
     term_months: PositiveInt
 
 
+class StartRentingEvent(BaseModel):
+    """Mid-horizon transition: a property's rented_fraction changes to a positive value.
+
+    The new value can be 1.0 (full rental) or partial (rooms / ADU). If the property was
+    already rented, this is treated as a `ChangeRentalPlanEvent` — use that for clarity at
+    config sites.
+    """
+
+    kind: Literal["start_renting"] = "start_renting"
+    month: int
+    property_id: str
+    rented_fraction: float = Field(ge=0.0, le=1.0)
+
+
+class StopRentingEvent(BaseModel):
+    """Mid-horizon transition: a property's rented_fraction goes to 0 (no longer rented)."""
+
+    kind: Literal["stop_renting"] = "stop_renting"
+    month: int
+    property_id: str
+
+
+class ChangeRentalPlanEvent(BaseModel):
+    """Mid-horizon transition: a property's rented_fraction changes between two positive values
+    (e.g. owner-occupier converts a basement to ADU — fraction goes from 0.2 to 0.4)."""
+
+    kind: Literal["change_rental_plan"] = "change_rental_plan"
+    month: int
+    property_id: str
+    rented_fraction: float = Field(gt=0.0, le=1.0)
+
+
+type PropertyLifecycleEvent = Annotated[
+    StartRentingEvent | StopRentingEvent | ChangeRentalPlanEvent, Field(discriminator="kind")
+]
+
+
 class ScheduledPropertyPurchase(BaseModel):
     """Purchase a real property at a fixed month.
 
@@ -497,6 +534,10 @@ class Scenario(BaseModel):
     recurring_obligations: list[RecurringObligation] = Field(default_factory=list)
     scheduled_asset_sales: list[ScheduledAssetSale] = Field(default_factory=list)
     scheduled_property_purchases: list[ScheduledPropertyPurchase] = Field(default_factory=list)
+    # Mid-horizon transitions that mutate per-property rented_fraction at runtime. Each event
+    # must reference an existing property_id from scheduled_property_purchases and fire after
+    # that property's purchase month.
+    property_lifecycle_events: list[PropertyLifecycleEvent] = Field(default_factory=list)
     property_tax_policies: list[PropertyTaxPolicy] = Field(default_factory=list)
     mortgage_interest_deduction_policies: list[MortgageInterestDeductionPolicy] = Field(default_factory=list)
     federal_salt_deduction_policies: list[FederalSaltDeductionPolicy] = Field(default_factory=list)

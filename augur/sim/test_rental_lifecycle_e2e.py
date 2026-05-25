@@ -30,6 +30,8 @@ from augur.sim.scenario import (
     ScheduledPropertyPurchase,
     ScheduledTransfer,
     SeriesIndexedAmount,
+    StartRentingEvent,
+    StopRentingEvent,
     TaxProfile,
 )
 from augur.sim.simulate import simulate_with_external_series
@@ -519,6 +521,157 @@ class TestRentalIncomeTaxation:
         # Federal ordinary income: $60,000 rental - $14,545.45 depreciation = $45,454.55.
         breakdowns = {row["jurisdiction_id"]: row for row in run.events_log.tax_breakdowns.iter_rows(named=True)}
         assert breakdowns["federal_us"]["ordinary_income_usd"] == pytest.approx(45_454.55, abs=0.02)
+
+    def test_lifecycle_start_renting_starts_depreciation_accrual_mid_horizon(self):
+        """StartRentingEvent at month 12 → depreciation accrues only from month 12 onward.
+        24-month horizon, $400k building basis, 12 months of rental → annual depreciation
+        in year 1 = 0; in year 2 (after start) = $400k / 27.5 = $14,545.45."""
+
+        end_month = 23  # 24-month horizon
+        purchase_price = 500_000.0
+        scenario = Scenario(
+            agents=[
+                Agent(agent_id=OWNER_AGENT_ID),
+                Agent(agent_id=TENANT_AGENT_ID),
+                Agent(agent_id="property_seller"),
+                Agent(agent_id="irs"),
+            ],
+            initial_cash=[
+                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance_usd=600_000.0),
+                InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id="property_seller", account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+            ],
+            recurring_transfers=[
+                RecurringTransfer(
+                    # Rental income only fires from month 12 — matches the start-renting event.
+                    start_month=12,
+                    end_month=end_month,
+                    cause_id="rental_income:p1",
+                    from_agent_id=TENANT_AGENT_ID,
+                    from_account_id="checking",
+                    to_agent_id=OWNER_AGENT_ID,
+                    to_account_id="checking",
+                    amount_usd=SeriesIndexedAmount(
+                        base_amount_usd=5_000.0, series_id=RENT_SERIES_ID, adjustment_period_months=12
+                    ),
+                    income_category="ordinary",
+                )
+            ],
+            scheduled_property_purchases=[
+                ScheduledPropertyPurchase(
+                    month=0,
+                    cause_id="p1_purchase",
+                    property_id="p1",
+                    location_id="san_francisco",
+                    buyer_agent_id=OWNER_AGENT_ID,
+                    buyer_account_id="checking",
+                    seller_agent_id="property_seller",
+                    purchase_price_usd=purchase_price,
+                    down_payment_usd=purchase_price,
+                    ownership_pct=1.0,
+                    rented_fraction=0.0,  # owner-occupied at start
+                    land_value_fraction=0.20,
+                    buyer_closing_cost_usd=0.0,
+                )
+            ],
+            property_lifecycle_events=[StartRentingEvent(month=12, property_id="p1", rented_fraction=1.0)],
+            tax_profiles=[
+                TaxProfile(
+                    agent_id=OWNER_AGENT_ID,
+                    filing_status="single",
+                    jurisdiction_ids=["federal_us", "california"],
+                    tax_authority_agent_id="irs",
+                )
+            ],
+            horizon_months=24,
+        )
+        ctx = _multi_series(
+            levels_by_series={RENT_SERIES_ID: {0: [1.0] * 25}, "home_value:san_francisco": {0: [1.0] * 25}}
+        )
+        run = simulate_with_external_series(scenario, external_series=ctx, rollout_count=1)
+        breakdowns = list(run.events_log.tax_breakdowns.sort("month_index", "jurisdiction_id").iter_rows(named=True))
+        # Year 0 (month 11) federal_us: rented_fraction=0 the whole year, no rental income, no
+        # depreciation → ordinary_income = $0.
+        year_0_federal = next(b for b in breakdowns if b["month_index"] == 11 and b["jurisdiction_id"] == "federal_us")
+        assert year_0_federal["ordinary_income_usd"] == pytest.approx(0.0, abs=1e-6)
+        # Year 1 (month 23) federal_us: 12 months rent ($60k) minus 12 months depreciation ($14.5k)
+        # ≈ $45,454.55.
+        year_1_federal = next(b for b in breakdowns if b["month_index"] == 23 and b["jurisdiction_id"] == "federal_us")
+        assert year_1_federal["ordinary_income_usd"] == pytest.approx(45_454.55, abs=0.05)
+
+    def test_lifecycle_stop_renting_halts_depreciation(self):
+        """StopRentingEvent at month 12 → depreciation accrues months 0-11 only.
+        Year 0 ordinary: $60k rent - $14.5k dep = $45.5k.
+        Year 1 ordinary: $0 rent (no more rental income), no dep → $0.
+        """
+
+        purchase_price = 500_000.0
+        scenario = Scenario(
+            agents=[
+                Agent(agent_id=OWNER_AGENT_ID),
+                Agent(agent_id=TENANT_AGENT_ID),
+                Agent(agent_id="property_seller"),
+                Agent(agent_id="irs"),
+            ],
+            initial_cash=[
+                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance_usd=600_000.0),
+                InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id="property_seller", account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+            ],
+            recurring_transfers=[
+                RecurringTransfer(
+                    start_month=0,
+                    end_month=11,  # rental income only in year 0
+                    cause_id="rental_income:p1",
+                    from_agent_id=TENANT_AGENT_ID,
+                    from_account_id="checking",
+                    to_agent_id=OWNER_AGENT_ID,
+                    to_account_id="checking",
+                    amount_usd=SeriesIndexedAmount(
+                        base_amount_usd=5_000.0, series_id=RENT_SERIES_ID, adjustment_period_months=12
+                    ),
+                    income_category="ordinary",
+                )
+            ],
+            scheduled_property_purchases=[
+                ScheduledPropertyPurchase(
+                    month=0,
+                    cause_id="p1_purchase",
+                    property_id="p1",
+                    location_id="san_francisco",
+                    buyer_agent_id=OWNER_AGENT_ID,
+                    buyer_account_id="checking",
+                    seller_agent_id="property_seller",
+                    purchase_price_usd=purchase_price,
+                    down_payment_usd=purchase_price,
+                    ownership_pct=1.0,
+                    rented_fraction=1.0,
+                    land_value_fraction=0.20,
+                    buyer_closing_cost_usd=0.0,
+                )
+            ],
+            property_lifecycle_events=[StopRentingEvent(month=12, property_id="p1")],
+            tax_profiles=[
+                TaxProfile(
+                    agent_id=OWNER_AGENT_ID,
+                    filing_status="single",
+                    jurisdiction_ids=["federal_us", "california"],
+                    tax_authority_agent_id="irs",
+                )
+            ],
+            horizon_months=24,
+        )
+        ctx = _multi_series(
+            levels_by_series={RENT_SERIES_ID: {0: [1.0] * 25}, "home_value:san_francisco": {0: [1.0] * 25}}
+        )
+        run = simulate_with_external_series(scenario, external_series=ctx, rollout_count=1)
+        breakdowns = list(run.events_log.tax_breakdowns.sort("month_index", "jurisdiction_id").iter_rows(named=True))
+        year_0_federal = next(b for b in breakdowns if b["month_index"] == 11 and b["jurisdiction_id"] == "federal_us")
+        assert year_0_federal["ordinary_income_usd"] == pytest.approx(45_454.55, abs=0.05)
+        year_1_federal = next(b for b in breakdowns if b["month_index"] == 23 and b["jurisdiction_id"] == "federal_us")
+        assert year_1_federal["ordinary_income_usd"] == pytest.approx(0.0, abs=1e-6)
 
     def test_depreciation_does_not_accrue_when_not_rented(self):
         """No rental → no depreciation accrual → no Schedule E deduction."""
