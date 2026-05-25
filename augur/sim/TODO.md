@@ -79,22 +79,44 @@ Anything fully shipped is removed — git history is the record of done work.
 - NIIT (3.8% on investment income above thresholds) and filing statuses
   beyond single. Out of scope until a scenario surfaces them.
 
+## Rental tax — Phase 2 follow-ups
+
+Phase 2.0 + 2.1 landed: rental income taxed as ordinary; management +
+leasing fees deduct via `income_category="ordinary_deduction"`.
+Remaining engine surgery to close the gap with real tax treatment:
+
+- **Rented-fraction share of obligation expenses as Schedule E
+  deductions.** Mortgage interest, property tax, HOA, insurance, and
+  maintenance fire as `RecurringObligation`s today; the deduction
+  pipeline only handles transfers. Either extend obligations with an
+  income_category like the transfer flow, or route the deductible
+  share through a paired ordinary_deduction transfer at obligation
+  settlement.
+- **MID scaled by (1 - rented_fraction).** Today
+  `MortgageInterestDeductionPolicy` is binary (added iff
+  `is_primary_residence=True`). For partial rentals the deduction
+  should scale by the owner-occupied fraction. Plumb `rented_fraction`
+  per property into the MID compile path.
+- **SALT-eligible property tax scaled by (1 - rented_fraction).** SALT
+  cap applies only to the owner-use portion.
+- **Cumulative depreciation buffer + monthly accrual.** New
+  per-rollout per-property state buffer; accrue `building_basis ×
+fraction_rented / (27.5 × 12)` each month while in `RENTED_*`. Both
+  a Schedule E deduction and the basis for §1250 recapture at sale
+  (phase 4).
+- **`land_value_fraction` on `ScheduledPropertyPurchase`** (default
+  0.20) so `building_basis` is computable at purchase.
+
+These pair with phase 4 (sale + §1250 recapture), so the depreciation
+buffer can land in either phase as long as it's wired before sale.
+
 ## Real-estate lifecycle
 
-The product surface handles month-0 property purchase, mortgage origination
-(180/360-term fixed-rate), property tax, HOA, insurance, maintenance, MID,
-and SALT. Still missing:
+The product surface handles month-0 property purchase, mortgage
+origination (180/360-term fixed-rate), property tax, HOA, insurance,
+maintenance, MID, SALT, and landlord rental income (Phase 1). Still
+missing:
 
-- **Landlord rental income** (whole-property or fractional). The user
-  collects rent from a property they own, indexed to the property's
-  location's rent-cost series the same way `monthly_rent_usd`
-  (outside-rent) is today (`base_rent * rent_cost_series[t] /
-rent_cost_series[0]`). Knobs on `PropertyPurchase` or a sibling
-  `RentalIncomePlan`: `monthly_rent_collected_usd`, `fraction_rented`
-  (1.0 = whole property; <1.0 = rooms / ADU / partial year),
-  `vacancy_pct`, `management_fee_pct`, `leasing_fee_pct`. Sim adds a
-  recurring inbound obligation from a tenant counterparty agent. The
-  scenario-set surface had this; product has not yet.
 - **Mid-horizon property lifecycle events** for owned property. A typed
   event timeline on `PropertyPurchase` (or a parallel
   `PropertyTimeline`) lets the user model role changes during the
