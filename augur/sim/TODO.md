@@ -6,26 +6,11 @@ Anything fully shipped is removed — git history is the record of done work.
 
 ## Architecture / cutover
 
-- Replace the `augur/api/bridge.py` legacy compatibility translator (still
-  used by the `scenario_set` route + the browser-shaped property test) with
-  a native sim request schema, or narrow it to legacy-import paths only.
-  The product surface already routes directly through
-  `augur/product/scenarios.build_scenario`, so the bridge is no longer the
-  only entry point — but the browser test in `augur/api/server_test.py`
-  layers PE from `initial_balance_sheet.assets` on top of the fixture's
-  `portfolio.holdings`, which is the duplication symptom of having two
-  active translation paths.
 - Replace the temporary sim dataframe-to-legacy-table materializer with
   serialized `ProjectionRun` read models. The current sim path derives
   monthly/terminal/fan/status/metadata tables from `SimulationRun`
   dataframes for frontend smoke; the durable API should expose compact
   scenario metadata + distribution-first projections instead.
-- Decide the browser/backend ownership boundary for low-level sim programs.
-  Today the browser emits some timeline-shaped event objects while the
-  backend also owns catalog defaults, financing math, counterparties,
-  payments, and sim lowering. Before adding richer lifecycle controls,
-  choose: browser sends high-level intent only and backend expands it, or
-  browser becomes responsible for constructing an explicit sim program.
 - Make liquidity policies an account-keyed simulator program internally.
   Config/wire shape can stay list-friendly, but the runtime/compiler
   should consume `{(agent_id, account_id): policy}` so "one policy per
@@ -34,6 +19,25 @@ Anything fully shipped is removed — git history is the record of done work.
   in one place. Implementations exist (sp500, crypto, home_value, rent,
   PE, inflation), but no single document says whether a configured value
   is a sim-month-0 level or a fixed contract value.
+
+## Product UX
+
+- **Multi-scenario comparison.** The product UI today renders one
+  `ScenarioKey` at a time. The deleted scenario-set surface was the only
+  place where side-by-side fan-chart overlay existed (e.g. "rent for two
+  years and then buy" vs. "buy now"). Re-add in the product shape:
+  - URL state encodes a set (rename `?s=` → `?scenarios=`; one-scenario
+    URLs decode as a 1-element set so links from before the change keep
+    working).
+  - One shared exogenous bundle per request (single sample of the
+    market path) so the comparison stays apples-to-apples across
+    scenarios — vary only the user-driven knobs, not the underlying
+    paths.
+  - Frontend renders matched percentile fans with one color per scenario,
+    a shared x-axis, a small comparison legend, and a per-scenario
+    "controls" panel collapsible into a side-by-side grid.
+  - Terminal-percentile table grows columns per scenario; rollout
+    sliver/event panel selection scopes to one scenario at a time.
 
 ## Tax
 
@@ -56,21 +60,38 @@ The product surface handles month-0 property purchase, mortgage origination
 (180/360-term fixed-rate), property tax, HOA, insurance, maintenance, MID,
 and SALT. Still missing:
 
-- **Property sale**: end-of-horizon and mid-horizon. Needs closing-cost
-  schedule, mortgage payoff, §121 primary-residence exclusion, §1250
-  unrecaptured-depreciation recapture on rentals, and proceeds split
-  when partner stakes exist.
-- **Mid-horizon property purchases**. Today the product knob is "buy at
-  month 0 or don't buy". Timeline work would let users model "buy in 2
-  years" via a configurable purchase month.
-- **Move residence** events (changes owner-occupancy → MID/§121 status).
-- **Start/stop rental** events (changes obligation streams + tax
-  treatment).
-- **Whole rental plans**: whole-property rental, room rental, vacancy
-  assumptions, management fees, leasing fees. Today only outside-rent
-  (the user paying rent) is modeled, not the user as landlord. Tenant
-  rent income should use the same rent-cost indexing contract as
-  outside rent (`base_rent * rent_cost_series[t] / rent_cost_series[0]`).
+- **Landlord rental income** (whole-property or fractional). The user
+  collects rent from a property they own, indexed to the property's
+  location's rent-cost series the same way `monthly_rent_usd`
+  (outside-rent) is today (`base_rent * rent_cost_series[t] /
+rent_cost_series[0]`). Knobs on `PropertyPurchase` or a sibling
+  `RentalIncomePlan`: `monthly_rent_collected_usd`, `fraction_rented`
+  (1.0 = whole property; <1.0 = rooms / ADU / partial year),
+  `vacancy_pct`, `management_fee_pct`, `leasing_fee_pct`. Sim adds a
+  recurring inbound obligation from a tenant counterparty agent. The
+  scenario-set surface had this; product has not yet.
+- **Mid-horizon property lifecycle events** for owned property. A typed
+  event timeline on `PropertyPurchase` (or a parallel
+  `PropertyTimeline`) lets the user model role changes during the
+  horizon. Events:
+  - **Move into the property in year N** (off → owner-occupied;
+    triggers §163(h)(3) MID eligibility, §121 clock start, ends the
+    outside-rent obligation if applicable).
+  - **Move out of the property in year N** (owner-occupied → not
+    owner-occupied; opposite transitions).
+  - **Start renting it out in year N** (off / owner-occupied → rental;
+    enables landlord rental income from the item above; triggers
+    depreciation basis allocation when supported).
+  - **Stop renting in year N** (rental → off / owner-occupied).
+  - **Mid-horizon property purchase** in year N (today the product knob
+    is locked to "buy at month 0 or don't"; same `PropertyPurchase`
+    plumbed to fire at a configurable month).
+  - **Property sale** in year N or at end-of-horizon. Needs
+    closing-cost schedule, mortgage payoff, §121 primary-residence
+    exclusion, §1250 unrecaptured-depreciation recapture on rentals,
+    and proceeds split when partner stakes exist.
+    Engine support: occupancy / rental-status state machines and the
+    MID/§121/depreciation rules that respect them.
 - **Property-tax: Proposition-13-style 2%/yr assessed-value escalation
   cap.** `property_initial_assessed_value` is set at purchase and never
   escalates. Long horizons (20-30y) progressively understate tax — by
