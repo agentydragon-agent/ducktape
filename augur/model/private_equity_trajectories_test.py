@@ -1,0 +1,238 @@
+"""Tests for the PE trajectory artifact reader + sampler overlay."""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass, field
+from pathlib import Path
+
+import numpy as np
+import polars as pl
+import pytest
+import pytest_bazel
+
+from augur.model.exogenous import (
+    SERIES_EVENTS_SCHEMA,
+    SERIES_LEVELS_SCHEMA,
+    ExogenousSamplingRequest,
+    SampledExogenousBundle,
+    Sampler,
+    series_levels_frame,
+)
+from augur.model.private_equity_trajectories import (
+    PreSampledPrivateEquitySampler,
+    PrivateEquityTrajectorySet,
+    TenderEvent,
+    read_private_equity_trajectories_jsonl,
+)
+from augur.model.series import private_equity_sale_event_id, private_equity_series_id
+
+
+@dataclass(frozen=True)
+class _MinimalSampler(Sampler):
+    """A trivial Sampler that emits whatever level/event frames it was constructed with —
+    no PE, no other series — so tests can isolate the overlay's behavior."""
+
+    levels: pl.DataFrame = field(default_factory=lambda: SERIES_LEVELS_SCHEMA.to_frame())
+    events: pl.DataFrame = field(default_factory=lambda: SERIES_EVENTS_SCHEMA.to_frame())
+
+    def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
+        return SampledExogenousBundle(levels=self.levels, events=self.events, metadata={"underlying_id": "minimal"})
+
+
+def _write_jsonl(path: Path, rows: list[dict[str, object]]) -> Path:
+    path.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+    return path
+
+
+def test_read_jsonl_groups_tender_events_by_issuer_and_trajectory(tmp_path: Path) -> None:
+    artifact = _write_jsonl(
+        tmp_path / "pe.jsonl",
+        [
+            {
+                "issuer_id": "acme",
+                "trajectory_index": 0,
+                "month_index": 5,
+                "event_type": "tender",
+                "price_per_share_usd": 100.0,
+            },
+            {
+                "issuer_id": "acme",
+                "trajectory_index": 0,
+                "month_index": 18,
+                "event_type": "tender",
+                "price_per_share_usd": 130.0,
+            },
+            {
+                "issuer_id": "acme",
+                "trajectory_index": 1,
+                "month_index": 9,
+                "event_type": "tender",
+                "price_per_share_usd": 90.0,
+            },
+            # Non-tender events are tolerated and ignored.
+            {
+                "issuer_id": "acme",
+                "trajectory_index": 0,
+                "month_index": 22,
+                "event_type": "ipo",
+                "price_per_share_usd": 200.0,
+            },
+        ],
+    )
+    sets = read_private_equity_trajectories_jsonl(artifact, initial_marks={"acme": 80.0})
+    assert set(sets) == {"acme"}
+    acme = sets["acme"]
+    assert acme.initial_mark_usd == 80.0
+    assert len(acme.trajectories) == 2
+    assert acme.trajectories[0] == (
+        TenderEvent(month_index=5, price_per_share_usd=100.0),
+        TenderEvent(month_index=18, price_per_share_usd=130.0),
+    )
+    assert acme.trajectories[1] == (TenderEvent(month_index=9, price_per_share_usd=90.0),)
+
+
+def test_read_jsonl_synthesizes_empty_trajectory_set_for_issuers_with_no_events(tmp_path: Path) -> None:
+    """An issuer listed in `initial_marks` but absent from the artifact gets an empty
+    trajectory list — useful for positions held but with no tender history fit yet."""
+
+    artifact = _write_jsonl(tmp_path / "pe.jsonl", [])
+    sets = read_private_equity_trajectories_jsonl(artifact, initial_marks={"holdco": 12.5})
+    assert sets["holdco"].initial_mark_usd == 12.5
+    assert sets["holdco"].trajectories == ()
+
+
+def test_read_jsonl_rejects_unknown_issuer(tmp_path: Path) -> None:
+    artifact = _write_jsonl(
+        tmp_path / "pe.jsonl",
+        [
+            {
+                "issuer_id": "mystery",
+                "trajectory_index": 0,
+                "month_index": 1,
+                "event_type": "tender",
+                "price_per_share_usd": 1.0,
+            }
+        ],
+    )
+    with pytest.raises(ValueError, match="mystery"):
+        read_private_equity_trajectories_jsonl(artifact, initial_marks={"acme": 100.0})
+
+
+def test_sampler_overlay_emits_piecewise_constant_mark_and_event_pulse() -> None:
+    """A trajectory with one tender at month 5 yields:
+    - level series flat at initial_mark up to month 4, then steps to tender price for the rest
+    - event series with active=True only at month 5
+    """
+
+    trajectory_set = PrivateEquityTrajectorySet(
+        issuer_id="acme",
+        initial_mark_usd=50.0,
+        trajectories=((TenderEvent(month_index=5, price_per_share_usd=120.0),),),
+    )
+    sampler = PreSampledPrivateEquitySampler(
+        underlying=_MinimalSampler(), trajectories_by_issuer={"acme": trajectory_set}
+    )
+    request = ExogenousSamplingRequest(horizon_months=10, rollout_seeds=(0,))
+    bundle = sampler.sample(request)
+
+    level_series = private_equity_series_id("acme")
+    levels = bundle.level_matrix(level_series, rollout_count=1, horizon_months=10)
+    np.testing.assert_array_equal(levels[0], np.array([50.0] * 5 + [120.0] * 6))
+
+    event_series = private_equity_sale_event_id("acme")
+    events = bundle.event_matrix(event_series, rollout_count=1, horizon_months=10)
+    expected_events = np.zeros(11, dtype=np.bool_)
+    expected_events[5] = True
+    np.testing.assert_array_equal(events[0], expected_events)
+
+
+def test_sampler_overlay_cycles_trajectories_by_seed_modulo() -> None:
+    """Rollout `i` picks trajectory `rollout_seeds[i] % trajectory_count`, so trajectories
+    are deterministic per seed and rollouts cycle when there are more rollouts than
+    trajectories."""
+
+    trajectory_set = PrivateEquityTrajectorySet(
+        issuer_id="acme",
+        initial_mark_usd=10.0,
+        trajectories=(
+            (TenderEvent(month_index=3, price_per_share_usd=20.0),),
+            (TenderEvent(month_index=4, price_per_share_usd=30.0),),
+        ),
+    )
+    sampler = PreSampledPrivateEquitySampler(
+        underlying=_MinimalSampler(), trajectories_by_issuer={"acme": trajectory_set}
+    )
+    request = ExogenousSamplingRequest(horizon_months=6, rollout_seeds=(0, 1, 2, 3))
+    bundle = sampler.sample(request)
+
+    events = bundle.event_matrix(private_equity_sale_event_id("acme"), rollout_count=4, horizon_months=6)
+    # seed 0 -> traj 0 -> tender at month 3
+    assert events[0, 3]
+    assert not events[0, 4]
+    # seed 1 -> traj 1 -> tender at month 4
+    assert events[1, 4]
+    assert not events[1, 3]
+    # seed 2 -> traj 0 (cycled)
+    assert events[2, 3]
+    # seed 3 -> traj 1
+    assert events[3, 4]
+
+
+def test_sampler_overlay_emits_flat_initial_mark_with_no_trajectories() -> None:
+    """An issuer with `trajectories=()` yields a flat initial mark across the whole horizon
+    and zero events — equivalent to "this position is held but never tenders during the sim"."""
+
+    trajectory_set = PrivateEquityTrajectorySet(issuer_id="holdco", initial_mark_usd=42.0, trajectories=())
+    sampler = PreSampledPrivateEquitySampler(
+        underlying=_MinimalSampler(), trajectories_by_issuer={"holdco": trajectory_set}
+    )
+    request = ExogenousSamplingRequest(horizon_months=3, rollout_seeds=(7,))
+    bundle = sampler.sample(request)
+
+    levels = bundle.level_matrix(private_equity_series_id("holdco"), rollout_count=1, horizon_months=3)
+    np.testing.assert_array_equal(levels[0], np.array([42.0, 42.0, 42.0, 42.0]))
+    events = bundle.event_matrix(private_equity_sale_event_id("holdco"), rollout_count=1, horizon_months=3)
+    np.testing.assert_array_equal(events[0], np.zeros(4, dtype=np.bool_))
+
+
+def test_sampler_overlay_replaces_pre_existing_pe_series_from_underlying() -> None:
+    """If the underlying provider also emits a `private_equity:*` level (e.g. VECM's
+    placeholder constant), the overlay must strip it so we don't end up with duplicate
+    rows for the same series. The PE artifact is the source of truth."""
+
+    placeholder_levels = series_levels_frame(
+        private_equity_series_id("acme"), np.full((1, 6), 999.0), rollout_count=1, horizon_months=5
+    )
+    underlying = _MinimalSampler(levels=placeholder_levels)
+    trajectory_set = PrivateEquityTrajectorySet(
+        issuer_id="acme",
+        initial_mark_usd=100.0,
+        trajectories=((TenderEvent(month_index=2, price_per_share_usd=150.0),),),
+    )
+    sampler = PreSampledPrivateEquitySampler(underlying=underlying, trajectories_by_issuer={"acme": trajectory_set})
+    bundle = sampler.sample(ExogenousSamplingRequest(horizon_months=5, rollout_seeds=(0,)))
+
+    # Exactly one row per (rollout, month) for the acme PE series — the underlying's 999.0
+    # placeholder must be filtered out.
+    acme_rows = bundle.levels.filter(pl.col("series_id") == private_equity_series_id("acme"))
+    assert len(acme_rows) == 6  # rollout=0 across months 0..5
+    levels = bundle.level_matrix(private_equity_series_id("acme"), rollout_count=1, horizon_months=5)
+    np.testing.assert_array_equal(levels[0], np.array([100.0, 100.0, 150.0, 150.0, 150.0, 150.0]))
+
+
+def test_sampler_overlay_preserves_underlying_non_pe_series() -> None:
+    """Non-PE level series from the underlying flow through unchanged."""
+
+    sp500_levels = series_levels_frame("sp500", np.array([[1.0, 1.02, 1.05]]), rollout_count=1, horizon_months=2)
+    underlying = _MinimalSampler(levels=sp500_levels)
+    sampler = PreSampledPrivateEquitySampler(underlying=underlying, trajectories_by_issuer={})
+    bundle = sampler.sample(ExogenousSamplingRequest(horizon_months=2, rollout_seeds=(0,)))
+
+    np.testing.assert_array_equal(
+        bundle.level_matrix("sp500", rollout_count=1, horizon_months=2), np.array([[1.0, 1.02, 1.05]])
+    )
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

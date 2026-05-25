@@ -148,3 +148,28 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "private_equity_trajectories",
+    srcs = ["private_equity_trajectories.py"],
+    deps = [
+        ":exogenous",
+        ":series",
+        "@pypi//numpy",
+        "@pypi//polars",
+    ],
+)
+
+py_test(
+    name = "private_equity_trajectories_test",
+    srcs = ["private_equity_trajectories_test.py"],
+    deps = [
+        ":exogenous",
+        ":private_equity_trajectories",
+        ":series",
+        "@pypi//numpy",
+        "@pypi//polars",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
