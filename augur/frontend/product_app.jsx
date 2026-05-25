@@ -61,6 +61,16 @@ const DEFAULT_PRODUCT_INPUT_BASE = {
   annualRatePct: 7,
   annualInsurancePct: 0.4,
   annualMaintenancePct: 1.0,
+  rentItOut: false,
+  // Rental monthly rent: 0 means "use the property's rent_estimate_usd". Any positive value
+  // overrides the property record.
+  rentalMonthlyUsd: 0,
+  rentalFractionRented: 1.0,
+  rentalVacancyPct: 5,
+  useRentalManagement: false,
+  managementFeePct: 8,
+  leasingFeeMonths: 1.0,
+  avgTenancyMonths: 24,
 };
 
 const FAN_PERCENTILES = [5, 25, 50, 75, 95];
@@ -146,6 +156,14 @@ const INPUT_FIELDS = [
   { key: "annualRatePct", type: "number" },
   { key: "annualInsurancePct", type: "number" },
   { key: "annualMaintenancePct", type: "number" },
+  { key: "rentItOut", type: "bool" },
+  { key: "rentalMonthlyUsd", type: "number" },
+  { key: "rentalFractionRented", type: "number" },
+  { key: "rentalVacancyPct", type: "number" },
+  { key: "useRentalManagement", type: "bool" },
+  { key: "managementFeePct", type: "number" },
+  { key: "leasingFeeMonths", type: "number" },
+  { key: "avgTenancyMonths", type: "number" },
 ];
 
 function encodeInputValue(value, field) {
@@ -213,12 +231,40 @@ function buildPropertyFinancing(input) {
   };
 }
 
+function buildRentalIncomePlan(input) {
+  if (!input.rentItOut) return null;
+  const userOverride = Math.max(0, Number(input.rentalMonthlyUsd) || 0);
+  const fraction = Math.min(1, Math.max(0.01, Number(input.rentalFractionRented) || 1.0));
+  const vacancyPct = Math.min(1, Math.max(0, (Number(input.rentalVacancyPct) || 0) / 100));
+  return {
+    // null lets the backend fall back to property.rent_estimate_usd.
+    monthlyRentCollectedUsd: userOverride > 0 ? userOverride : null,
+    fractionRented: fraction,
+    vacancyPct,
+  };
+}
+
+function buildRentalManagement(input) {
+  if (!input.rentItOut || !input.useRentalManagement) return null;
+  return {
+    managementFeePct: Math.max(0, Number(input.managementFeePct) || 0),
+    leasingFeeMonths: Math.max(0, Number(input.leasingFeeMonths) || 0),
+    avgTenancyMonths: clampInteger(input.avgTenancyMonths, 1, 600),
+  };
+}
+
 function buildPropertyPurchase(input) {
   if (!input.propertyId) return null;
+  const initialRental = buildRentalIncomePlan(input);
+  // Wire enforces is_primary_residence=False when fraction_rented=1.0; mirror that here
+  // so the user can't submit an inconsistent ScenarioKey from the UI.
+  const isPrimaryResidence = initialRental?.fractionRented === 1.0 ? false : Boolean(input.livesHere);
   return {
     propertyId: input.propertyId,
     financing: buildPropertyFinancing(input),
-    isPrimaryResidence: Boolean(input.livesHere),
+    isPrimaryResidence,
+    initialRental,
+    rentalManagement: buildRentalManagement(input),
   };
 }
 
@@ -1228,12 +1274,97 @@ function PropertyPurchasePanel({ bootstrap, input, onChange }) {
               label="Owner lives in this property"
               aria-label="Owner lives in this property"
               checked={Boolean(input.livesHere)}
+              disabled={input.rentItOut && Number(input.rentalFractionRented) >= 1.0}
               classNames={{ label: "text-sm font-semibold augur-strong" }}
               onChange={(event) => onChange({ livesHere: event.currentTarget.checked })}
             />
+            <Checkbox
+              label="Rent this property out"
+              aria-label="Rent this property out"
+              checked={Boolean(input.rentItOut)}
+              classNames={{ label: "text-sm font-semibold augur-strong" }}
+              onChange={(event) => onChange({ rentItOut: event.currentTarget.checked })}
+            />
+            {input.rentItOut && <RentalPanel input={input} property={selected} onChange={onChange} />}
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+function RentalPanel({ input, property, onChange }) {
+  const propertyRentEstimate = property?.rentEstimateUsd ?? null;
+  const rentPlaceholder =
+    propertyRentEstimate != null && propertyRentEstimate > 0
+      ? `${fmtUsd(propertyRentEstimate)} (property default)`
+      : "(required)";
+  return (
+    <div className="mt-1 ml-4 grid gap-3 border-l-2 border-slate-300 pl-3 dark:border-slate-600">
+      <NumberField
+        label="Monthly rent collected (0 = use property default)"
+        value={input.rentalMonthlyUsd}
+        min={0}
+        step={50}
+        suffix="$"
+        placeholder={rentPlaceholder}
+        onChange={(rentalMonthlyUsd) => onChange({ rentalMonthlyUsd })}
+      />
+      <div className="grid gap-3 sm:grid-cols-2">
+        <NumberField
+          label="Fraction rented"
+          value={input.rentalFractionRented}
+          min={0.01}
+          max={1.0}
+          step={0.05}
+          onChange={(rentalFractionRented) => onChange({ rentalFractionRented })}
+        />
+        <NumberField
+          label="Vacancy"
+          value={input.rentalVacancyPct}
+          min={0}
+          max={100}
+          step={1}
+          suffix="%"
+          onChange={(rentalVacancyPct) => onChange({ rentalVacancyPct })}
+        />
+      </div>
+      <Checkbox
+        label="Use a property management agency"
+        aria-label="Use a property management agency"
+        checked={Boolean(input.useRentalManagement)}
+        classNames={{ label: "text-sm font-semibold augur-strong" }}
+        onChange={(event) => onChange({ useRentalManagement: event.currentTarget.checked })}
+      />
+      {input.useRentalManagement && (
+        <div className="grid gap-3 sm:grid-cols-3">
+          <NumberField
+            label="Management fee"
+            value={input.managementFeePct}
+            min={0}
+            max={50}
+            step={0.5}
+            suffix="%"
+            onChange={(managementFeePct) => onChange({ managementFeePct })}
+          />
+          <NumberField
+            label="Leasing fee (months)"
+            value={input.leasingFeeMonths}
+            min={0}
+            max={3}
+            step={0.25}
+            onChange={(leasingFeeMonths) => onChange({ leasingFeeMonths })}
+          />
+          <NumberField
+            label="Avg tenancy (mo)"
+            value={input.avgTenancyMonths}
+            min={1}
+            max={120}
+            step={1}
+            onChange={(avgTenancyMonths) => onChange({ avgTenancyMonths })}
+          />
+        </div>
+      )}
     </div>
   );
 }
