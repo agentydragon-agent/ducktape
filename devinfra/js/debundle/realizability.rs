@@ -1719,23 +1719,18 @@ fn overlay_is_simulator_noop(overlay: Option<&QuotientOverlay>) -> bool {
 
 fn impacted_owner_edges(owner_graph: &OwnerGraph, owners: &[OwnerId]) -> Vec<OwnerEdgeId> {
     let mut impacted = BTreeSet::<OwnerEdgeId>::new();
-    let owner_set: BTreeSet<OwnerId> = owners.iter().copied().collect();
     for owner in owners {
         impacted.extend(owner_graph.out_edges_of(*owner).iter().copied());
         impacted.extend(owner_graph.in_edges_of(*owner).iter().copied());
-    }
-    // Also impact edges whose `at_init_callee_owner` is in the move
-    // set — `is_cross_module_at_init_promotion`'s verdict depends on
-    // `partition.of(callee_owner)`, so moving a callee owner can flip
-    // an edge's contribution between "skipped (intra-callee-module)"
-    // and "counted (cross-callee-module)" without the callee owner
-    // appearing on `from`/`to`.
-    for edge in &owner_graph.edges {
-        if let Some(callee) = edge.reason.at_init_callee_owner()
-            && owner_set.contains(&callee)
-        {
-            impacted.insert(edge.id);
-        }
+        // Edges whose `at_init_callee_owner` is in the move set —
+        // `is_cross_module_at_init_promotion`'s verdict depends on
+        // `partition.of(callee_owner)`, so moving a callee owner can
+        // flip an edge's contribution between "skipped
+        // (intra-callee-module)" and "counted (cross-callee-module)"
+        // without the callee owner appearing on `from`/`to`.
+        // Resolved via the precomputed `callee_edges` CSR instead of
+        // a per-call full-edge-list scan.
+        impacted.extend(owner_graph.callee_edges_of(*owner).iter().copied());
     }
     impacted.into_iter().collect()
 }

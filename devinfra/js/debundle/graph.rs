@@ -240,6 +240,14 @@ pub struct OwnerGraph {
     pub out_edges: Vec<Vec<OwnerEdgeId>>,
     /// CSR adjacency by target owner.
     pub in_edges: Vec<Vec<OwnerEdgeId>>,
+    /// CSR-style "edges referencing this owner as their at-init
+    /// callee", indexed by owner index. Empty for owners that no edge
+    /// references via `EdgeReason::at_init_callee_owner`. Lets
+    /// `impacted_owner_edges` look up callee-referencing edges in
+    /// `O(|edges of that callee|)` instead of scanning the full edge
+    /// list per call (a `verdict_with_overlay_touching` per-candidate
+    /// hot path on gaffer-scale inputs).
+    pub callee_edges: Vec<Vec<OwnerEdgeId>>,
 }
 
 #[derive(Debug, Clone)]
@@ -279,6 +287,15 @@ impl OwnerGraph {
     /// Edges terminating at `owner`.
     pub fn in_edges_of(&self, owner: OwnerId) -> &[OwnerEdgeId] {
         self.in_edges.get(owner.0).map(Vec::as_slice).unwrap_or(&[])
+    }
+
+    /// Edges referencing `owner` as their at-init callee. Mirrors
+    /// `out_edges_of`/`in_edges_of` but for the callee-owner index.
+    pub fn callee_edges_of(&self, owner: OwnerId) -> &[OwnerEdgeId] {
+        self.callee_edges
+            .get(owner.0)
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
     }
 }
 
@@ -378,11 +395,17 @@ impl OwnerGraph {
 
         let mut out_edges: Vec<Vec<OwnerEdgeId>> = vec![Vec::new(); nodes.len()];
         let mut in_edges: Vec<Vec<OwnerEdgeId>> = vec![Vec::new(); nodes.len()];
+        let mut callee_edges: Vec<Vec<OwnerEdgeId>> = vec![Vec::new(); nodes.len()];
         for edge in &edges {
             if let Some(slot) = out_edges.get_mut(edge.from.0) {
                 slot.push(edge.id);
             }
             if let Some(slot) = in_edges.get_mut(edge.to.0) {
+                slot.push(edge.id);
+            }
+            if let Some(callee) = edge.reason.at_init_callee_owner()
+                && let Some(slot) = callee_edges.get_mut(callee.0)
+            {
                 slot.push(edge.id);
             }
         }
@@ -392,6 +415,7 @@ impl OwnerGraph {
             edges,
             out_edges,
             in_edges,
+            callee_edges,
         };
         let index = OwnerReportIndex { owner_ids, by_id };
         (graph, index)
@@ -687,11 +711,17 @@ pub fn build_owner_graph_with(facts: &[StatementFacts], options: OwnerGraphOptio
         .collect();
     let mut out_edges: Vec<Vec<OwnerEdgeId>> = vec![Vec::new(); nodes.len()];
     let mut in_edges: Vec<Vec<OwnerEdgeId>> = vec![Vec::new(); nodes.len()];
+    let mut callee_edges: Vec<Vec<OwnerEdgeId>> = vec![Vec::new(); nodes.len()];
     for edge in &edges {
         if let Some(slot) = out_edges.get_mut(edge.from.0) {
             slot.push(edge.id);
         }
         if let Some(slot) = in_edges.get_mut(edge.to.0) {
+            slot.push(edge.id);
+        }
+        if let Some(callee) = edge.reason.at_init_callee_owner()
+            && let Some(slot) = callee_edges.get_mut(callee.0)
+        {
             slot.push(edge.id);
         }
     }
@@ -701,6 +731,7 @@ pub fn build_owner_graph_with(facts: &[StatementFacts], options: OwnerGraphOptio
         edges,
         out_edges,
         in_edges,
+        callee_edges,
     }
 }
 
