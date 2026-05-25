@@ -132,7 +132,6 @@ locals {
     "talos-vps-cp-0.nebula.allegedly.works"         = { ip = "10.42.0.1/16", groups = "lighthouse" }
     "talos-vps-cp-1.nebula.allegedly.works"         = { ip = "10.42.0.2/16", groups = "lighthouse" }
     "talos-pve-cp-0.nebula.allegedly.works"         = { ip = "10.42.0.10/16", groups = "" }
-    "talos-vps-worker-0.nebula.allegedly.works"     = { ip = "10.42.0.11/16", groups = "lighthouse" }
     "talos-kimsufi-worker-0.nebula.allegedly.works" = { ip = "10.42.0.13/16", groups = "lighthouse" }
     "talos-kimsufi-worker-1.nebula.allegedly.works" = { ip = "10.42.0.14/16", groups = "lighthouse" }
     "talos-kimsufi-cp-0.nebula.allegedly.works"     = { ip = "10.42.0.15/16", groups = "lighthouse" }

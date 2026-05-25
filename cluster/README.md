@@ -38,7 +38,6 @@ See <docs/bootstrap.md> for full setup.
 | Node                               | Type             | Region    | Availability     | Hardware            |
 | ---------------------------------- | ---------------- | --------- | ---------------- | ------------------- |
 | `talos-vps-cp-0`, `talos-vps-cp-1` | Talos CP         | `hil`     | Always on        | CPX31               |
-| `talos-vps-worker-0`               | Talos worker     | `hil`     | Always on        | CPX31               |
 | `talos-pve-cp-0`                   | Talos CP         | `proxmox` | Always on (home) | Proxmox VM          |
 | `wyrm2`                            | NixOS GPU worker | `proxmox` | Always on (home) | 2x RTX 5090         |
 | `iguana`                           | NixOS laptop     | `roaming` | Often offline    | ThinkPad X1 Extreme |
@@ -79,7 +78,6 @@ All storage is region-local — no cross-site synchronous replication.
 | StorageClass         | Provisioner            | Region    | Notes                                                                    |
 | -------------------- | ---------------------- | --------- | ------------------------------------------------------------------------ |
 | `local-path`         | local-path-provisioner | Any       | CNPG (most databases), Gatus                                             |
-| `local-path-hetzner` | local-path-provisioner | `hil`     | Loki, Mimir, Alertmanager, Grafana DB                                    |
 | `local-path-proxmox` | local-path-provisioner | `proxmox` | Matrix, ActivityWatch, Scanner, OpenClaw, Google Workspace MCP, Tana MCP |
 | `local-path-ovh`     | local-path-provisioner | `hil-ovh` | SeaweedFS volume servers, attic-db (CNPG OVH-HA)                         |
 | `lvm-proxmox-ssd`    | OpenEBS LVM CSI        | `proxmox` | NVMe thin provisioning: Firecracker                                      |
@@ -115,11 +113,11 @@ which reads the env var and injects GPU devices/libraries via host CDI specs.
 
 ## Failure Modes
 
-| Scenario        | Cluster    | Ingress | DNS   | Authentik | Notes                                     |
-| --------------- | ---------- | ------- | ----- | --------- | ----------------------------------------- |
-| Single VPS down | 2/3 quorum | Works   | Works | Works     | 1 server+worker replica on surviving VPS  |
-| Both VPS down   | 1/3 only   | Down    | Down  | Down      | Home pods continue but cluster frozen     |
-| Home down       | 2/3 quorum | Works   | Works | Works     | All VPS-critical services on `local-path` |
+| Scenario        | Cluster    | Ingress | DNS   | Authentik | Notes                                         |
+| --------------- | ---------- | ------- | ----- | --------- | --------------------------------------------- |
+| Single VPS down | 2/3 quorum | Works   | Works | Works     | Surviving VPS CP carries ingress + lighthouse |
+| Both VPS down   | 1/3 only   | Down    | Down  | Down      | Home pods continue but cluster frozen         |
+| Home down       | 2/3 quorum | Works   | Works | Works     | All VPS-critical services on `local-path`     |
 
 ### VPS-Only Resilience Invariants
 

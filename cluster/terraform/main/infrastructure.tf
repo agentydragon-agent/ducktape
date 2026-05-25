@@ -16,9 +16,8 @@ locals {
 
   # Node topology - VPS nodes
   vps_nodes = {
-    vps0        = { name = "talos-vps-cp-0", server_type = "cpx31", role = "controlplane" }
-    vps1        = { name = "talos-vps-cp-1", server_type = "cpx31", role = "controlplane" }
-    vps_worker0 = { name = "talos-vps-worker-0", server_type = "cpx31", role = "worker" }
+    vps0 = { name = "talos-vps-cp-0", server_type = "cpx31", role = "controlplane" }
+    vps1 = { name = "talos-vps-cp-1", server_type = "cpx31", role = "controlplane" }
   }
 
   # Derived: split by role for machine config generation
