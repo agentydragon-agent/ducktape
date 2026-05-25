@@ -11,6 +11,7 @@ import polars as pl
 from augur.sim.compiler import (
     LIFECYCLE_KIND_CAPITAL_IMPROVEMENT,
     LIFECYCLE_KIND_FRACTION,
+    LIFECYCLE_KIND_SALE,
     CompiledSimulation,
     SlotPlan,
     compile_simulation,
@@ -1192,6 +1193,86 @@ def _apply_lifecycle_events(plan: CompiledSimulation, current: CurrentStateBuffe
             if owner_cash_slot >= 0:
                 current.cash[active_rollout, owner_cash_slot] -= amount
             current.property_building_basis[active_rollout, prop] += amount
+        elif kind == LIFECYCLE_KIND_SALE:
+            _apply_property_sale(
+                plan,
+                current,
+                month=month,
+                prop=prop,
+                closing_cost_pct=float(plan.lifecycle_event_amount[i]),
+                active_rollout=active_rollout,
+            )
+
+
+def _apply_property_sale(
+    plan: CompiledSimulation,
+    current: CurrentStateBuffers,
+    *,
+    month: int,
+    prop: int,
+    closing_cost_pct: float,
+    active_rollout: np.ndarray,
+) -> None:
+    """Execute a PropertySaleEvent for one property.
+
+    - Market value = purchase_price × home_value_series[t] / home_value_series[base_month].
+    - Gross proceeds = market value × (1 - closing_cost_pct / 100).
+    - Net proceeds to owner cash = gross - outstanding mortgage balance.
+    - Realized gain = gross_proceeds - (purchase_price + capex - cumulative_depreciation).
+    - §1250 recapture = min(realized_gain, cumulative_dep) → added to owner's ordinary_ytd
+      (approximation: real federal §1250 caps at 25%, CA taxes as ordinary).
+    - Remainder = post-recapture LTCG → added to owner's long_term_capital_gain_ytd.
+    - Mortgage paid off; property frozen (property_active → False, rented_fraction → 0,
+      building_basis → 0, cumulative_depreciation preserved for record).
+    """
+
+    series_idx = int(plan.property_home_value_series_index[prop])
+    if series_idx < 0:
+        # No home_value series available — skip sale (engineer error in scenario; should be
+        # surfaced at compile time but we tolerate gracefully here).
+        return
+    base_value = plan.external_values[series_idx, :, 0]  # per-rollout, base month
+    sale_value_series = plan.external_values[series_idx, :, month]  # per-rollout, sale month
+    purchase_price = float(plan.property_purchase_price[prop])
+    market_value = purchase_price * sale_value_series / base_value  # (R,)
+    gross_proceeds = market_value * (1.0 - closing_cost_pct / 100.0)
+
+    # Adjusted basis = (purchase_price + capex done) - cumulative depreciation. The runtime
+    # building_basis includes capex bumps but excludes land; reconstitute full basis below.
+    initial_building_basis = float(plan.property_building_basis[prop])
+    capex = current.property_building_basis[:, prop] - initial_building_basis
+    cum_dep = current.property_cumulative_depreciation[:, prop]
+    adjusted_basis = purchase_price + capex - cum_dep
+    realized_gain = gross_proceeds - adjusted_basis
+    recapture = np.minimum(np.maximum(realized_gain, 0.0), cum_dep)
+    ltcg = np.maximum(realized_gain - recapture, 0.0)
+
+    owner_cash_slot = int(plan.property_buyer_cash_slot[prop])
+    # Pay off any outstanding mortgage on this property; net cash to owner = gross - payoff.
+    mortgage_payoff = np.zeros(plan.rollout_count, dtype=np.float64)
+    for lia in range(int(plan.liability_property_slot.shape[0])):
+        if int(plan.liability_property_slot[lia]) == prop:
+            mortgage_payoff += current.liability_principal[:, lia]
+            current.liability_principal[:, lia] = 0.0
+            current.liability_active[:, lia] = False
+
+    net_cash = gross_proceeds - mortgage_payoff
+    if owner_cash_slot >= 0:
+        current.cash[active_rollout, owner_cash_slot] += net_cash[active_rollout]
+
+    # Tax routing: recapture to ordinary; remainder to LTCG.
+    owner_profile = int(plan.property_owner_profile_index[prop])
+    if owner_profile >= 0:
+        current.ordinary_ytd[active_rollout, owner_profile] += recapture[active_rollout]
+        gain_profile = int(plan.tax_profile_capital_gain_index[owner_profile])
+        if gain_profile >= 0:
+            current.capital_gain_ytd[active_rollout, gain_profile, LONG_TERM_CAPITAL_GAIN_CODE] += ltcg[active_rollout]
+            current.capital_gain_active[active_rollout, gain_profile, LONG_TERM_CAPITAL_GAIN_CODE] = True
+
+    # Freeze property state. cumulative_depreciation preserved as a historical record.
+    current.property_active[active_rollout, prop] = False
+    current.property_rented_fraction[active_rollout, prop] = 0.0
+    current.property_building_basis[active_rollout, prop] = 0.0
 
 
 def _apply_depreciation_accrual(plan: CompiledSimulation, current: CurrentStateBuffers) -> None:

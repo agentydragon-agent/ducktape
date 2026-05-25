@@ -307,36 +307,44 @@ class MortgageFinancing(BaseModel):
     term_months: PositiveInt
 
 
-class StartRentingEvent(BaseModel):
-    """Mid-horizon transition: a property's rented_fraction changes to a positive value.
+class SetRentedFractionEvent(BaseModel):
+    """Mid-horizon transition: set a property's rented_fraction to a new value at `month`.
 
-    The new value can be 1.0 (full rental) or partial (rooms / ADU). If the property was
-    already rented, this is treated as a `ChangeRentalPlanEvent` — use that for clarity at
-    config sites.
+    Subsumes the previously-separate start/stop/change-rental-plan events —
+    `rented_fraction=1.0` is "start full rental", `0.0` is "stop renting", anything in
+    between is a partial rental (rooms / ADU). Validation ensures values are in [0.0, 1.0].
     """
 
-    kind: Literal["start_renting"] = "start_renting"
+    kind: Literal["set_rented_fraction"] = "set_rented_fraction"
     month: int
     property_id: str
     rented_fraction: float = Field(ge=0.0, le=1.0)
 
 
-class StopRentingEvent(BaseModel):
-    """Mid-horizon transition: a property's rented_fraction goes to 0 (no longer rented)."""
+class PropertySaleEvent(BaseModel):
+    """Mid-horizon sale of a property.
 
-    kind: Literal["stop_renting"] = "stop_renting"
+    At `month`:
+    - gross proceeds = `property_market_value_at_month × (1 - closing_cost_pct)` where
+      market value is derived from the home_value series for the property's location.
+    - any outstanding mortgage on this property is paid off from the proceeds.
+    - net cash to owner = gross_proceeds - mortgage_balance.
+    - realized gain = gross_proceeds - (purchase_price + capex - cumulative_depreciation).
+    - depreciation recapture (§1250 unrecaptured) = min(realized_gain, cumulative_dep).
+      Recapture is added to ordinary income (approximation — real federal §1250 caps at
+      25%, CA taxes as ordinary; we use marginal-ordinary for both for first-cut accuracy).
+    - long-term capital gain on the post-recapture remainder.
+    - property is marked sold; rented_fraction → 0; no further depreciation, MID, SALT,
+      Schedule E, or rental income for this property.
+
+    §121 primary-residence exclusion (24-of-60 owner-occupied months test) is a phase-4
+    follow-up — for now sales are taxed without the exclusion.
+    """
+
+    kind: Literal["property_sale"] = "property_sale"
     month: int
     property_id: str
-
-
-class ChangeRentalPlanEvent(BaseModel):
-    """Mid-horizon transition: a property's rented_fraction changes between two positive values
-    (e.g. owner-occupier converts a basement to ADU — fraction goes from 0.2 to 0.4)."""
-
-    kind: Literal["change_rental_plan"] = "change_rental_plan"
-    month: int
-    property_id: str
-    rented_fraction: float = Field(gt=0.0, le=1.0)
+    closing_cost_pct: float = Field(ge=0.0, le=100.0)
 
 
 class CapitalImprovementEvent(BaseModel):
@@ -357,7 +365,7 @@ class CapitalImprovementEvent(BaseModel):
 
 
 type PropertyLifecycleEvent = Annotated[
-    StartRentingEvent | StopRentingEvent | ChangeRentalPlanEvent | CapitalImprovementEvent, Field(discriminator="kind")
+    SetRentedFractionEvent | CapitalImprovementEvent | PropertySaleEvent, Field(discriminator="kind")
 ]
 
 

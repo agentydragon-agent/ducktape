@@ -91,27 +91,15 @@ class RentalManagement(ApiModel):
     avg_tenancy_months: PositiveInt = 24
 
 
-class StartRentingEventWire(ApiModel):
-    """Lifecycle event: a property's rented_fraction becomes positive at `month`."""
+class SetRentedFractionEventWire(ApiModel):
+    """Lifecycle event: set a property's rented_fraction to a new value at `month`.
 
-    kind: Literal["start_renting"] = "start_renting"
+    Subsumes start/stop/change-rental-plan — 1.0 is "full rental", 0.0 is "stop renting".
+    """
+
+    kind: Literal["set_rented_fraction"] = "set_rented_fraction"
     month: PositiveInt
-    rented_fraction: PositiveFloat = Field(le=1.0)
-
-
-class StopRentingEventWire(ApiModel):
-    """Lifecycle event: a property's rented_fraction becomes 0 at `month`."""
-
-    kind: Literal["stop_renting"] = "stop_renting"
-    month: PositiveInt
-
-
-class ChangeRentalPlanEventWire(ApiModel):
-    """Lifecycle event: rented_fraction changes between two positive values at `month`."""
-
-    kind: Literal["change_rental_plan"] = "change_rental_plan"
-    month: PositiveInt
-    rented_fraction: PositiveFloat = Field(le=1.0)
+    rented_fraction: NonNegativeFloat = Field(le=1.0)
 
 
 class CapitalImprovementEventWire(ApiModel):
@@ -123,9 +111,16 @@ class CapitalImprovementEventWire(ApiModel):
     description: str = ""
 
 
+class PropertySaleEventWire(ApiModel):
+    """Lifecycle event: property is sold at `month`. Mortgage paid off; gain/recapture taxed."""
+
+    kind: Literal["property_sale"] = "property_sale"
+    month: PositiveInt
+    closing_cost_pct: NonNegativeFloat = Field(le=100.0)
+
+
 type PropertyLifecycleEventWire = Annotated[
-    StartRentingEventWire | StopRentingEventWire | ChangeRentalPlanEventWire | CapitalImprovementEventWire,
-    Field(discriminator="kind"),
+    SetRentedFractionEventWire | CapitalImprovementEventWire | PropertySaleEventWire, Field(discriminator="kind")
 ]
 
 

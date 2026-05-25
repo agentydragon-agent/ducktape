@@ -9,18 +9,21 @@ from augur.api.config import Config
 from augur.api.portfolio import PortfolioConfig
 from augur.model.series import INFLATION_SERIES_ID, home_value_series_id, private_equity_sale_event_id, rent_series_id
 from augur.product.wire import (
+    CapitalImprovementEventWire,
     CashFinancing,
     FundingPolicy,
     MortgageFinancing,
+    PropertyLifecycleEventWire,
     PropertyPurchase,
+    PropertySaleEventWire,
     RentalIncomePlan,
     ScenarioKey,
+    SetRentedFractionEventWire,
 )
 from augur.sim.pricing import OccupancyMode, insurance_rate, maintenance_rate
 from augur.sim.scenario import (
     Agent,
     CapitalImprovementEvent,
-    ChangeRentalPlanEvent,
     FixedAmount,
     InitialAccountBalance,
     InitialLot,
@@ -30,6 +33,7 @@ from augur.sim.scenario import (
     ObligationType,
     PrivateEquityTenderPolicy,
     PropertyLifecycleEvent,
+    PropertySaleEvent,
     PropertyTaxPolicy,
     RecurringObligation,
     RecurringTransfer,
@@ -37,8 +41,7 @@ from augur.sim.scenario import (
     ScheduledPropertyPurchase,
     ScheduledTransfer,
     SeriesIndexedAmount,
-    StartRentingEvent,
-    StopRentingEvent,
+    SetRentedFractionEvent,
     TaxProfile,
     TransferDeductionCategory,
 )
@@ -231,7 +234,8 @@ def build_scenario(
             )
         )
         property_lifecycle_events.extend(
-            _sim_lifecycle_events(scenario_key.property_purchase, property_id=property_.id)
+            _sim_lifecycle_event(event, property_id=property_.id)
+            for event in scenario_key.property_purchase.lifecycle_events
         )
         property_tax_policies.append(
             PropertyTaxPolicy(
@@ -413,35 +417,27 @@ def _schedule_e_split(rented_fraction: float) -> tuple[TransferDeductionCategory
     return ("ordinary", float(rented_fraction))
 
 
-def _sim_lifecycle_events(purchase: PropertyPurchase, property_id: str) -> list[PropertyLifecycleEvent]:
-    """Translate wire lifecycle events to sim-side events."""
+def _sim_lifecycle_event(event: PropertyLifecycleEventWire, *, property_id: str) -> PropertyLifecycleEvent:
+    """Translate one wire lifecycle event to its sim-side equivalent.
 
-    sim_events: list[PropertyLifecycleEvent] = []
-    for event in purchase.lifecycle_events:
-        if event.kind == "start_renting":
-            sim_events.append(
-                StartRentingEvent(
-                    month=int(event.month), property_id=property_id, rented_fraction=float(event.rented_fraction)
-                )
-            )
-        elif event.kind == "stop_renting":
-            sim_events.append(StopRentingEvent(month=int(event.month), property_id=property_id))
-        elif event.kind == "change_rental_plan":
-            sim_events.append(
-                ChangeRentalPlanEvent(
-                    month=int(event.month), property_id=property_id, rented_fraction=float(event.rented_fraction)
-                )
-            )
-        elif event.kind == "capital_improvement":
-            sim_events.append(
-                CapitalImprovementEvent(
-                    month=int(event.month),
-                    property_id=property_id,
-                    amount_usd=float(event.amount_usd),
-                    description=event.description,
-                )
-            )
-    return sim_events
+    Wire variants and sim variants are kept separate because the wire variants are scoped
+    to a specific PropertyPurchase (so they don't carry property_id), while sim variants
+    are a flat list with explicit property_id. Beyond that the shapes match. Dispatch is
+    by `isinstance` over the Pydantic discriminated union.
+    """
+
+    month = int(event.month)
+    if isinstance(event, SetRentedFractionEventWire):
+        return SetRentedFractionEvent(
+            month=month, property_id=property_id, rented_fraction=float(event.rented_fraction)
+        )
+    if isinstance(event, CapitalImprovementEventWire):
+        return CapitalImprovementEvent(
+            month=month, property_id=property_id, amount_usd=float(event.amount_usd), description=event.description
+        )
+    if isinstance(event, PropertySaleEventWire):
+        return PropertySaleEvent(month=month, property_id=property_id, closing_cost_pct=float(event.closing_cost_pct))
+    raise TypeError(f"unknown PropertyLifecycleEventWire variant: {type(event).__name__}")
 
 
 def _initial_occupancy(purchase: PropertyPurchase) -> tuple[OccupancyMode, float]:

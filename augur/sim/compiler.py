@@ -12,20 +12,23 @@ from typing import Any
 
 import numpy as np
 
-from augur.model.series import PRIVATE_EQUITY_SERIES_PREFIX, private_equity_sale_event_id
+from augur.model.series import PRIVATE_EQUITY_SERIES_PREFIX, home_value_series_id, private_equity_sale_event_id
 from augur.sim.external_series import ExternalSeriesContext
 from augur.sim.jurisdictions import Jurisdiction
 from augur.sim.locations import Location
 from augur.sim.runtime import mortgage_monthly_payment_usd
 from augur.sim.scenario import (
+    CapitalImprovementEvent,
     FixedAmount,
     MortgageInterestDeductionPolicy,
+    PropertySaleEvent,
     RecurringObligation,
     RecurringTransfer,
     Scenario,
     ScheduledObligation,
     ScheduledTransfer,
     SeriesIndexedAmount,
+    SetRentedFractionEvent,
 )
 
 NO_CODE = -1
@@ -35,6 +38,7 @@ ORDINARY_INCOME_CATEGORY = "ordinary"
 ORDINARY_DEDUCTION_CATEGORY = "ordinary"
 LIFECYCLE_KIND_FRACTION = 0
 LIFECYCLE_KIND_CAPITAL_IMPROVEMENT = 1
+LIFECYCLE_KIND_SALE = 2
 
 
 class StringTable:
@@ -196,6 +200,9 @@ class CompiledSimulation:
     # Profile index of each property's owner (buyer_agent_id → tax profile). NO_CODE if the
     # owner has no tax profile. Used to route Schedule E depreciation deductions.
     property_owner_profile_index: np.ndarray
+    # Series index of each property's home_value series, used at sale time to compute market
+    # value. NO_CODE if the series wasn't configured in the scenario.
+    property_home_value_series_index: np.ndarray
     # PropertyLifecycleEvent rows compiled into per-month sparse storage. Sorted by month so
     # the engine can scan a per-month index range in O(1) lookup via
     # `lifecycle_event_month_starts`.
@@ -470,12 +477,22 @@ def compile_simulation(
         [profile_index_by_agent.get(p.buyer_agent_id, NO_CODE) for p in scenario.scheduled_property_purchases],
         dtype=np.int64,
     )
+    # Each property's home_value series — used at sale time to compute market value.
+
+    property_home_value_series_index = np.array(
+        [
+            series_index_by_id.get(home_value_series_id(p.location_id), NO_CODE)
+            for p in scenario.scheduled_property_purchases
+        ],
+        dtype=np.int64,
+    )
     # Allocate min-shape arrays for the no-property scenario so downstream callers can index
     # `property_building_basis[max(1, property_count)]` without special-casing.
     if property_count == 0:
         property_rented_fraction = np.zeros(1, dtype=np.float64)
         property_building_basis = np.zeros(1, dtype=np.float64)
         property_owner_profile_index = np.full(1, NO_CODE, dtype=np.int64)
+        property_home_value_series_index = np.full(1, NO_CODE, dtype=np.int64)
 
     # Compile PropertyLifecycleEvent rows. Sort by month so we can build per-month index ranges.
     lifecycle_events_sorted = sorted(scenario.property_lifecycle_events, key=lambda e: (int(e.month), e.property_id))
@@ -501,15 +518,19 @@ def compile_simulation(
             )
         lifecycle_event_month[i] = int(event.month)
         lifecycle_event_property[i] = slot
-        if event.kind == "capital_improvement":
+        if isinstance(event, SetRentedFractionEvent):
+            lifecycle_event_kind[i] = LIFECYCLE_KIND_FRACTION
+            lifecycle_event_rented_fraction[i] = float(event.rented_fraction)
+        elif isinstance(event, CapitalImprovementEvent):
             lifecycle_event_kind[i] = LIFECYCLE_KIND_CAPITAL_IMPROVEMENT
             lifecycle_event_amount[i] = float(event.amount_usd)
+        elif isinstance(event, PropertySaleEvent):
+            lifecycle_event_kind[i] = LIFECYCLE_KIND_SALE
+            # Reuse `lifecycle_event_amount` as the closing_cost_pct (0..100). Different field
+            # semantic per kind, but storing in the same dense column avoids another array.
+            lifecycle_event_amount[i] = float(event.closing_cost_pct)
         else:
-            lifecycle_event_kind[i] = LIFECYCLE_KIND_FRACTION
-            if event.kind == "stop_renting":
-                lifecycle_event_rented_fraction[i] = 0.0
-            else:
-                lifecycle_event_rented_fraction[i] = float(event.rented_fraction)
+            raise TypeError(f"unknown PropertyLifecycleEvent variant: {type(event).__name__}")
     # Build per-month start indices, length horizon + 1. `starts[M]` = first event index for
     # month >= M; `starts[H]` = lifecycle_event_count so the apply loop can do
     # `events_for_month_M = events[starts[M]:starts[M+1]]`.
@@ -760,6 +781,7 @@ def compile_simulation(
         property_rented_fraction=property_rented_fraction,
         property_building_basis=property_building_basis,
         property_owner_profile_index=property_owner_profile_index,
+        property_home_value_series_index=property_home_value_series_index,
         lifecycle_event_month=lifecycle_event_month,
         lifecycle_event_property=lifecycle_event_property,
         lifecycle_event_kind=lifecycle_event_kind,

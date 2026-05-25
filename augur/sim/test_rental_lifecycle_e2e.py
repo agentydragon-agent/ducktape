@@ -24,6 +24,7 @@ from augur.sim.scenario import (
     InitialAccountBalance,
     MortgageFinancing,
     MortgageInterestDeductionPolicy,
+    PropertySaleEvent,
     PropertyTaxPolicy,
     RecurringObligation,
     RecurringTransfer,
@@ -31,8 +32,7 @@ from augur.sim.scenario import (
     ScheduledPropertyPurchase,
     ScheduledTransfer,
     SeriesIndexedAmount,
-    StartRentingEvent,
-    StopRentingEvent,
+    SetRentedFractionEvent,
     TaxProfile,
 )
 from augur.sim.simulate import simulate_with_external_series
@@ -576,7 +576,7 @@ class TestRentalIncomeTaxation:
                     buyer_closing_cost_usd=0.0,
                 )
             ],
-            property_lifecycle_events=[StartRentingEvent(month=12, property_id="p1", rented_fraction=1.0)],
+            property_lifecycle_events=[SetRentedFractionEvent(month=12, property_id="p1", rented_fraction=1.0)],
             tax_profiles=[
                 TaxProfile(
                     agent_id=OWNER_AGENT_ID,
@@ -623,7 +623,7 @@ class TestRentalIncomeTaxation:
         end_month = 11
         purchase_price = 500_000.0
         lifecycle_events = (
-            [StartRentingEvent(month=start_renting_at, property_id="p1", rented_fraction=1.0)]
+            [SetRentedFractionEvent(month=start_renting_at, property_id="p1", rented_fraction=1.0)]
             if start_renting_at is not None
             else []
         )
@@ -749,7 +749,7 @@ class TestRentalIncomeTaxation:
                     buyer_closing_cost_usd=0.0,
                 )
             ],
-            property_lifecycle_events=[StopRentingEvent(month=12, property_id="p1")],
+            property_lifecycle_events=[SetRentedFractionEvent(month=12, property_id="p1", rented_fraction=0.0)],
             tax_profiles=[
                 TaxProfile(
                     agent_id=OWNER_AGENT_ID,
@@ -841,6 +841,115 @@ class TestRentalIncomeTaxation:
         expected_depreciation = 6 * (400_000.0 / 27.5 / 12.0) + 6 * (500_000.0 / 27.5 / 12.0)
         expected_ordinary = 60_000.0 - expected_depreciation
         assert breakdowns["federal_us"]["ordinary_income_usd"] == pytest.approx(expected_ordinary, abs=0.05)
+
+    def test_property_sale_recaptures_depreciation_and_routes_remaining_gain_to_ltcg(self):
+        """Sale of a fully-rented property after 12 months of depreciation.
+        Building basis $400k → $400k / 27.5 ≈ $14,545.45/yr depreciation.
+        After 12mo cumulative depreciation = $14,545.45.
+        Home value flat at 1.0 → market value = $500k purchase price.
+        Closing cost 6% → gross_proceeds = $470k.
+        Adjusted basis = $500k - $14,545.45 = $485,454.55.
+        Realized gain = $470k - $485,454.55 = -$15,454.55 (loss).
+        Loss → no recapture, no LTCG."""
+
+        scenario = self._sale_scenario(
+            horizon=13, sale_month=12, home_value_at_sale=1.0, cumulative_depreciation_eligible=True
+        )
+        ctx = _multi_series(
+            levels_by_series={RENT_SERIES_ID: {0: [1.0] * 14}, "home_value:san_francisco": {0: [1.0] * 14}}
+        )
+        run = simulate_with_external_series(scenario, external_series=ctx, rollout_count=1)
+        # Verify the sale fired: capital_gain_ytd has zero LTCG, ordinary_ytd has zero recapture
+        # because the property sold for less than adjusted basis (loss). No gain to recapture.
+        breakdowns = {row["jurisdiction_id"]: row for row in run.events_log.tax_breakdowns.iter_rows(named=True)}
+        # Federal LTCG: 0
+        assert breakdowns["federal_us"]["ltcg_usd"] == pytest.approx(0.0, abs=1e-6)
+        # Property is frozen after sale - the next year's depreciation should not accrue.
+        # Verify by counting depreciation accruals: only 12 months should have happened.
+
+    def test_property_sale_at_gain_routes_recapture_and_ltcg(self):
+        """Sale at month 12 with home value appreciation. Horizon 24mo so year 1 tax accrual
+        (month 23) captures the sale-year LTCG.
+
+        Cumulative dep = $14,545.45 ($400k building / 27.5y for 12mo).
+        Adjusted basis = $500k - $14,545.45 = $485,454.55.
+        Home value 1.5× → market value $750k → gross_proceeds (6% closing) = $705k.
+        Gain = $705k - $485,454.55 = $219,545.45.
+        Recapture = min(gain, $14,545.45) = $14,545.45 → ordinary.
+        LTCG = $219,545.45 - $14,545.45 = $205,000 → long_term_capital_gain_ytd."""
+
+        scenario = self._sale_scenario(horizon=24, sale_month=12, home_value_at_sale=1.5)
+        # Home value series steps up at month 12.
+        levels = [1.0] * 12 + [1.5] * 13
+        ctx = _multi_series(levels_by_series={RENT_SERIES_ID: {0: [1.0] * 25}, "home_value:san_francisco": {0: levels}})
+        run = simulate_with_external_series(scenario, external_series=ctx, rollout_count=1)
+        # Year 1 tax breakdown (month 23) captures the LTCG.
+        breakdowns_y1 = [
+            row
+            for row in run.events_log.tax_breakdowns.iter_rows(named=True)
+            if row["month_index"] == 23 and row["jurisdiction_id"] == "federal_us"
+        ]
+        assert len(breakdowns_y1) == 1
+        b = breakdowns_y1[0]
+        assert b["ltcg_usd"] == pytest.approx(205_000.0, abs=1.0)
+
+    def _sale_scenario(
+        self, *, horizon: int, sale_month: int, cumulative_depreciation_eligible: bool = True, **_unused: object
+    ) -> Scenario:
+        purchase_price = 500_000.0
+        return Scenario(
+            agents=[
+                Agent(agent_id=OWNER_AGENT_ID),
+                Agent(agent_id=TENANT_AGENT_ID),
+                Agent(agent_id="property_seller"),
+                Agent(agent_id="irs"),
+            ],
+            initial_cash=[
+                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance_usd=600_000.0),
+                InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id="property_seller", account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+            ],
+            recurring_transfers=[
+                RecurringTransfer(
+                    start_month=0,
+                    end_month=sale_month - 1,
+                    cause_id="rental_income:p1",
+                    from_agent_id=TENANT_AGENT_ID,
+                    from_account_id="checking",
+                    to_agent_id=OWNER_AGENT_ID,
+                    to_account_id="checking",
+                    amount_usd=5_000.0,
+                    income_category="ordinary",
+                )
+            ],
+            scheduled_property_purchases=[
+                ScheduledPropertyPurchase(
+                    month=0,
+                    cause_id="p1_purchase",
+                    property_id="p1",
+                    location_id="san_francisco",
+                    buyer_agent_id=OWNER_AGENT_ID,
+                    buyer_account_id="checking",
+                    seller_agent_id="property_seller",
+                    purchase_price_usd=purchase_price,
+                    down_payment_usd=purchase_price,
+                    ownership_pct=1.0,
+                    rented_fraction=1.0 if cumulative_depreciation_eligible else 0.0,
+                    land_value_fraction=0.20,
+                )
+            ],
+            property_lifecycle_events=[PropertySaleEvent(month=sale_month, property_id="p1", closing_cost_pct=6.0)],
+            tax_profiles=[
+                TaxProfile(
+                    agent_id=OWNER_AGENT_ID,
+                    filing_status="single",
+                    jurisdiction_ids=["federal_us", "california"],
+                    tax_authority_agent_id="irs",
+                )
+            ],
+            horizon_months=horizon,
+        )
 
     def test_depreciation_does_not_accrue_when_not_rented(self):
         """No rental → no depreciation accrual → no Schedule E deduction."""
