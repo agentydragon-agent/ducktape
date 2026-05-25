@@ -432,6 +432,12 @@ def _wire_landlord_rental(
             amount_usd=SeriesIndexedAmount(
                 base_amount_usd=base_monthly_collected, series_id=rent_series, adjustment_period_months=12
             ),
+            # Rental income is ordinary income (taxed at owner's marginal bracket).
+            # Schedule E deductions for rented-share property expenses + depreciation +
+            # MID/SALT scaling by rented_fraction are not yet wired (deferred follow-ups);
+            # rental income is currently over-taxed by that amount. §469 passive-loss
+            # limitation is explicitly deferred per the plan.
+            income_category="ordinary",
         )
     )
 

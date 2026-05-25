@@ -23,6 +23,7 @@ from augur.sim.scenario import (
     Scenario,
     ScheduledTransfer,
     SeriesIndexedAmount,
+    TaxProfile,
 )
 from augur.sim.simulate import simulate_with_external_series
 
@@ -247,6 +248,66 @@ class TestLeasingFee:
         run = _run(scenario)
         leasing = run.events_log.transfers.filter(pl.col("cause_id").str.starts_with("leasing_fee:p1"))
         assert leasing.height == 0
+
+
+class TestRentalIncomeTaxation:
+    """Phase 2.0: rental income transfers carry income_category='ordinary', so they accrue
+    into the owner's taxable ordinary income at year-end. Schedule E deductions and
+    MID/SALT scaling are deferred to follow-up commits; rental income is currently
+    over-taxed by the amount of those deductions.
+    """
+
+    def _taxed_rental_scenario(self, *, monthly_rent: float, horizon_months: int = 12) -> Scenario:
+        end_month = horizon_months - 1
+        return Scenario(
+            agents=[Agent(agent_id=OWNER_AGENT_ID), Agent(agent_id=TENANT_AGENT_ID), Agent(agent_id="irs")],
+            initial_cash=[
+                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance_usd=100_000.0),
+                InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+            ],
+            recurring_transfers=[
+                RecurringTransfer(
+                    start_month=0,
+                    end_month=end_month,
+                    cause_id="rental_income:p1",
+                    from_agent_id=TENANT_AGENT_ID,
+                    from_account_id="checking",
+                    to_agent_id=OWNER_AGENT_ID,
+                    to_account_id="checking",
+                    amount_usd=SeriesIndexedAmount(
+                        base_amount_usd=monthly_rent, series_id=RENT_SERIES_ID, adjustment_period_months=12
+                    ),
+                    income_category="ordinary",
+                )
+            ],
+            tax_profiles=[
+                TaxProfile(
+                    agent_id=OWNER_AGENT_ID,
+                    filing_status="single",
+                    jurisdiction_ids=["federal_us", "california"],
+                    tax_authority_agent_id="irs",
+                )
+            ],
+            horizon_months=horizon_months,
+        )
+
+    def test_rental_income_accrues_into_ordinary_ytd(self):
+        # $4,000/mo × 12 = $48,000 gross rental income → ordinary income line on tax_breakdowns.
+        scenario = self._taxed_rental_scenario(monthly_rent=4_000.0)
+        run = _run(scenario)
+        breakdowns = {row["jurisdiction_id"]: row for row in run.events_log.tax_breakdowns.iter_rows(named=True)}
+        assert breakdowns["federal_us"]["ordinary_income_usd"] == pytest.approx(48_000.0, abs=1e-6)
+
+    def test_rental_income_generates_tax_accruals_at_year_end(self):
+        scenario = self._taxed_rental_scenario(monthly_rent=4_000.0)
+        run = _run(scenario)
+        accruals = run.events_log.tax_accruals.sort("jurisdiction_id")
+        assert accruals.height == 2  # federal + CA
+        # Accruals fire at month 11 (year-end).
+        assert all(month == 11 for month in accruals["month_index"].to_list())
+        # Both jurisdictions should levy positive tax on $48k of ordinary income.
+        assert all(amount > 0 for amount in accruals["amount_usd"].to_list())
 
 
 class TestRentalCashflowReconciliation:
