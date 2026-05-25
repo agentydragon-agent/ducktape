@@ -294,16 +294,12 @@ def test_backend_server_runs_browser_shaped_property_request(server_url: str) ->
                                 "balance_usd": 350_000,
                             }
                         ],
-                        "assets": [
-                            {
-                                "asset_id": "private_holding_a",
-                                "asset_type": "private_equity",
-                                "owner_actor_id": "agent_a",
-                                "units": 1_000,
-                                "cost_basis_usd": 5_000,
-                                "issuer_id": "private_holding_a",
-                            }
-                        ],
+                        # PE position comes from the fixture's `portfolio.holdings` PHA row
+                        # (1000 units @ $25 anchor). Don't duplicate it here — both the
+                        # bridge translator and the product translator would otherwise both
+                        # synthesize PHA lots, doubling the position. See TODO.md
+                        # "Architecture / cutover" item on bridge.py replacement.
+                        "assets": [],
                         "liabilities": [],
                     },
                     "policies": [],
@@ -327,11 +323,10 @@ def test_backend_server_runs_browser_shaped_property_request(server_url: str) ->
     assert 180_000 <= _sum(columns["mortgage_payment_usd"]) <= 195_000
     assert 150_000 <= _sum(columns["mortgage_interest_usd"]) <= 185_000
     assert 20_000 <= _sum(columns["mortgage_principal_usd"]) <= 55_000
-    # PE comes from both the fixture's portfolio.holdings PHA row (1000 units @ $25 anchor)
-    # AND the scenario's initial_balance_sheet.assets PHA entry (1000 units), layered →
-    # ~2000 units → $50k baseline. Bounds widen to absorb GBM drift over 52 months.
-    assert 30_000 <= _min(columns["private_equity_value_usd"]) <= 60_000
-    assert 40_000 <= _max(columns["private_equity_value_usd"]) <= 90_000
+    # PE comes solely from the fixture's portfolio.holdings PHA row (1000 units @ $25 anchor)
+    # → $25k baseline. Bounds span the GBM drift across 52 months.
+    assert 10_000 <= _min(columns["private_equity_value_usd"]) <= 30_000
+    assert 20_000 <= _max(columns["private_equity_value_usd"]) <= 45_000
     assert 1_100_000 <= _max(columns["net_worth_usd"]) <= 1_350_000
 
 
