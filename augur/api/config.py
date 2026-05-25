@@ -18,21 +18,26 @@ from __future__ import annotations
 import os
 from collections import Counter
 from datetime import date
+from enum import StrEnum
 from pathlib import Path
 
 import yaml
 from pydantic import Field, HttpUrl, NonNegativeFloat, NonNegativeInt, PositiveInt, model_validator
 
-from augur.api.bootstrap import DefaultScenario
+from augur.api.bootstrap import ActorRole, DefaultScenario
 from augur.api.finance import FinanceSnapshot
 from augur.api.local_regulation import LocalRegulation
 from augur.api.portfolio import PortfolioConfig
-from augur.api.scenario_set import ActorRole, LiquidityReserveRuleType
 from augur.api.schemas import ApiModel
 from augur.model.exogenous_provider_config import ExogenousProviderConfig
 
 AUGUR_CONFIG_PATH_ENV_VAR = "AUGUR_CONFIG_PATH"
 DEFAULT_AUGUR_CONFIG_PATH = Path("/etc/augur/config.yaml")
+
+
+class LiquidityReserveRuleType(StrEnum):
+    FIXED = "fixed"
+    PROJECTED_DEFICITS = "projected_deficits"
 
 
 def _duplicates(values) -> list[str]:

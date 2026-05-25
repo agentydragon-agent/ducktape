@@ -9,6 +9,7 @@ import pytest
 import pytest_bazel
 from more_itertools import one
 
+from augur.api.bootstrap import ActorRole
 from augur.api.catalog import build_bootstrap_payload
 from augur.api.config import (
     AgentDefinition,
@@ -19,8 +20,8 @@ from augur.api.config import (
     PropertySourceConfig,
 )
 from augur.api.finance import ConcentratedHoldingSnapshot, FinanceSnapshot
-from augur.api.local_regulation import LocalRegulation
-from augur.api.scenario_set import ActorRole, ScenarioSet, TaxRegime
+from augur.api.local_regulation import LocalRegulation, TaxRegime
+from augur.api.scenario_set import ScenarioSet
 from augur.api.scenario_set_service import ScenarioSetService
 from augur.model.independent_exogenous import IndependentExogenousProviderConfig
 from augur.model.testing import DeterministicSeriesFixtureModel

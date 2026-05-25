@@ -6,8 +6,12 @@ from typing import Annotated, Any, Literal
 from pydantic import Field, NonNegativeFloat, NonNegativeInt, PositiveFloat, PositiveInt, model_validator
 
 from augur.api.accounting import LiabilityState, LotDisposition, TaxLot
+from augur.api.bootstrap import ActorRole, PropertyId
+from augur.api.config import LiquidityReserveRuleType
 from augur.api.local_regulation import LocalRegulation, TaxRegime
 from augur.api.schemas import ApiModel, Frame, Percentage
+
+__all__ = ["ActorRole", "LiquidityReserveRuleType", "PropertyId"]
 
 
 class EventType(StrEnum):
@@ -38,11 +42,6 @@ class PrivateEquitySaleRuleType(StrEnum):
 class PrivateEquitySaleProceedsDestination(StrEnum):
     CASH = "cash"
     GENERIC_SP500_STOCK = "generic_sp500_stock"
-
-
-class LiquidityReserveRuleType(StrEnum):
-    FIXED = "fixed"
-    PROJECTED_DEFICITS = "projected_deficits"
 
 
 class EffectType(StrEnum):
@@ -213,13 +212,6 @@ class FailureEventType(StrEnum):
     UNSETTLED_OBLIGATION = "unsettled_obligation"
 
 
-class ActorRole(StrEnum):
-    PRIMARY_OWNER = "primary_owner"
-    EQUITY_BUILDING_OCCUPANT = "equity_building_occupant"
-    TENANT = "tenant"
-    LANDLORD = "landlord"
-
-
 class AccountType(StrEnum):
     CHECKING = "checking"
     TAXABLE_BROKERAGE = "taxable_brokerage"
@@ -231,9 +223,6 @@ class AssetType(StrEnum):
     GENERIC_SP500_STOCK = "generic_sp500_stock"
     CRYPTO = "crypto"
     PRIVATE_EQUITY = "private_equity"
-
-
-PropertyId = str
 
 
 class OccupancyMode(StrEnum):

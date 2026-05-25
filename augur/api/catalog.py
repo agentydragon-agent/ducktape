@@ -13,6 +13,7 @@ from more_itertools import one
 from pydantic import TypeAdapter
 
 from augur.api.bootstrap import (
+    ActorRole,
     AgentOption,
     BootstrapResponse,
     Location,
@@ -23,7 +24,6 @@ from augur.api.bootstrap import (
     RentalUsePolicyOption,
 )
 from augur.api.config import Config, LocationConfig, PropertyAssetConfig
-from augur.api.scenario_set import ActorRole
 from augur.api.schemas import KnobsConfig
 from augur.product.wire import MAX_HORIZON_MONTHS
 

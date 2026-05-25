@@ -6,8 +6,16 @@ from pydantic import Field, PositiveInt
 
 from augur.api.finance import FinanceSnapshot
 from augur.api.local_regulation import LocalRegulation
-from augur.api.scenario_set import ActorRole, PropertyId
 from augur.api.schemas import ApiModel, KnobsConfig
+
+PropertyId = str
+
+
+class ActorRole(StrEnum):
+    PRIMARY_OWNER = "primary_owner"
+    EQUITY_BUILDING_OCCUPANT = "equity_building_occupant"
+    TENANT = "tenant"
+    LANDLORD = "landlord"
 
 
 class OwnerResidenceModeId(StrEnum):

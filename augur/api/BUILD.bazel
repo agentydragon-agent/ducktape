@@ -53,6 +53,8 @@ py_library(
     srcs = ["scenario_set.py"],
     deps = [
         ":accounting",
+        ":bootstrap",
+        ":config",
         ":local_regulation",
         ":schemas",
         "@pypi//pydantic",
@@ -74,7 +76,6 @@ py_library(
     deps = [
         ":finance",
         ":local_regulation",
-        ":scenario_set",
         ":schemas",
         "@pypi//pydantic",
     ],
@@ -87,7 +88,6 @@ py_library(
         ":bootstrap",
         ":local_regulation",
         ":portfolio",
-        ":scenario_set",
         ":schemas",
         "//augur/model:exogenous_provider_config",
         "@pypi//pydantic",

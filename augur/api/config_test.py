@@ -9,9 +9,11 @@ import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
+from augur.api.bootstrap import ActorRole
 from augur.api.config import (
     AgentDefinition,
     Config,
+    LiquidityReserveRuleType,
     LocationConfig,
     PersonalFinanceConfig,
     PropertyAssetConfig,
@@ -20,9 +22,8 @@ from augur.api.config import (
     load_augur_config,
 )
 from augur.api.finance import ConcentratedHoldingSnapshot, FinanceSnapshot
-from augur.api.local_regulation import LocalRegulation
+from augur.api.local_regulation import LocalRegulation, TaxRegime
 from augur.api.portfolio import HoldingPositionConfig, HoldingTaxLotConfig, PortfolioAccountConfig, PortfolioConfig
-from augur.api.scenario_set import ActorRole, LiquidityReserveRuleType, TaxRegime
 from augur.model.independent_exogenous import IndependentExogenousProviderConfig
 
 

@@ -4,10 +4,9 @@ from __future__ import annotations
 
 from more_itertools import one
 
-from augur.api.bootstrap import Property
+from augur.api.bootstrap import ActorRole, Property
 from augur.api.config import Config
 from augur.api.portfolio import PortfolioConfig
-from augur.api.scenario_set import ActorRole
 from augur.model.series import INFLATION_SERIES_ID, home_value_series_id, private_equity_sale_event_id, rent_series_id
 from augur.product.wire import CashFinancing, FundingPolicy, MortgageFinancing, PropertyPurchase, ScenarioKey
 from augur.sim.scenario import (
