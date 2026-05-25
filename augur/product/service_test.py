@@ -88,7 +88,7 @@ def test_metric_fan_and_rollout_detail_share_cached_sim_rollouts(
 
     assert [request.rollout_seeds for request in counting_exogenous_model.sample_requests] == [(7, 8)]
     assert counting_exogenous_model.sample_requests[0].required_level_series == frozenset(
-        {SP500_SERIES_ID, "crypto:btc", "crypto:eth"}
+        {SP500_SERIES_ID, "crypto:btc", "crypto:eth", "private_equity:private_holding_a"}
     )
     assert fan.exogenous_model_id == "independent_exogenous_model"
     assert fan.metric == "cash_usd"
@@ -124,7 +124,8 @@ def test_metric_fan_and_rollout_detail_share_cached_sim_rollouts(
     assert detail.rollout.monthly_metrics["cash_usd"] == [250_000.0, 249_000.0, 248_000.0, 247_000.0]
     assert detail.rollout.monthly_metrics["holding_value_usd"][0] == 750_000.0
     assert detail.rollout.monthly_metrics["liquid_net_worth_usd"][0] == 1_000_000.0
-    assert detail.rollout.monthly_metrics["net_worth_usd"][0] == 1_000_000.0
+    # +$25k for the PHA private-equity position (1000 units at $25 anchor).
+    assert detail.rollout.monthly_metrics["net_worth_usd"][0] == 1_025_000.0
     assert [event.kind for event in detail.rollout.events] == ["monthly_expense"] * 3
     assert [event.amount_paid_usd for event in detail.rollout.events if event.kind == "monthly_expense"] == [
         1_000.0,
@@ -198,7 +199,8 @@ def test_failed_rollout_metrics_freeze_at_zero_after_failure(counting_exogenous_
 
     assert fan.failed_count == 1
     assert fan.monthly_metric_fan["month_index"] == [0, 1, 2, 3]
-    assert fan.monthly_metric_fan["value"] == [1_000_000.0, 0.0, 0.0, 0.0]
+    # Month 0 = cash 250k + holdings 750k + PHA 25k; failure zeros subsequent months.
+    assert fan.monthly_metric_fan["value"] == [1_025_000.0, 0.0, 0.0, 0.0]
     [summary] = fan.rollout_summaries
     assert summary.failed is True
     assert summary.terminal_metrics.failed_month_index == 0
@@ -212,7 +214,7 @@ def test_failed_rollout_metrics_freeze_at_zero_after_failure(counting_exogenous_
     assert detail.rollout.failed is True
     assert detail.rollout.monthly_metrics["cash_usd"] == [250_000.0, 0.0, 0.0, 0.0]
     assert detail.rollout.monthly_metrics["holding_value_usd"] == [750_000.0, 0.0, 0.0, 0.0]
-    assert detail.rollout.monthly_metrics["net_worth_usd"] == [1_000_000.0, 0.0, 0.0, 0.0]
+    assert detail.rollout.monthly_metrics["net_worth_usd"] == [1_025_000.0, 0.0, 0.0, 0.0]
     assert [event.kind for event in detail.rollout.events] == ["monthly_expense", "failure"]
     expense, failure = detail.rollout.events
     assert isinstance(expense, MonthlyExpenseEvent)
@@ -241,7 +243,10 @@ def test_default_funding_policy_sells_holdings_for_required_spend(
     assert 0.0 < terminal_holding_value_usd < 750_000.0
     assert detail.rollout.terminal_metrics.cash_usd == 0.0
     assert detail.rollout.terminal_metrics.shortfall_usd == 0.0
-    assert detail.rollout.terminal_metrics.net_worth_usd == pytest.approx(terminal_holding_value_usd)
+    terminal_pe_value_usd = float(columns["private_equity_value_usd"][1])  # type: ignore[arg-type]
+    assert detail.rollout.terminal_metrics.net_worth_usd == pytest.approx(
+        terminal_holding_value_usd + terminal_pe_value_usd
+    )
     assert [event.kind for event in detail.rollout.events] == ["holding_sale", "monthly_expense"]
     sale, expense = detail.rollout.events
     assert isinstance(sale, HoldingSaleEvent)
@@ -498,12 +503,13 @@ def test_property_purchase_metrics_track_value_balance_and_equity(
     mortgage_balance_usd = float(metrics["mortgage_balance_usd"][1])  # type: ignore[arg-type]
     home_equity_usd = float(metrics["home_equity_usd"][1])  # type: ignore[arg-type]
     liquid_net_worth_usd = float(metrics["liquid_net_worth_usd"][1])  # type: ignore[arg-type]
+    private_equity_value_usd = float(metrics["private_equity_value_usd"][1])  # type: ignore[arg-type]
     net_worth_usd = float(metrics["net_worth_usd"][1])  # type: ignore[arg-type]
 
     assert property_value_usd > 0.0
     assert mortgage_balance_usd == pytest.approx(720_000.0)
     assert home_equity_usd == pytest.approx(property_value_usd - mortgage_balance_usd)
-    assert net_worth_usd == pytest.approx(liquid_net_worth_usd + home_equity_usd)
+    assert net_worth_usd == pytest.approx(liquid_net_worth_usd + home_equity_usd + private_equity_value_usd)
     # Required-level-series should include the location's home-value series.
     assert "home_value:location_a" in counting_exogenous_model.sample_requests[0].required_level_series
 

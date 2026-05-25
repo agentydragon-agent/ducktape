@@ -327,8 +327,11 @@ def test_backend_server_runs_browser_shaped_property_request(server_url: str) ->
     assert 180_000 <= _sum(columns["mortgage_payment_usd"]) <= 195_000
     assert 150_000 <= _sum(columns["mortgage_interest_usd"]) <= 185_000
     assert 20_000 <= _sum(columns["mortgage_principal_usd"]) <= 55_000
-    assert 10_000 <= _min(columns["private_equity_value_usd"]) <= 30_000
-    assert 20_000 <= _max(columns["private_equity_value_usd"]) <= 45_000
+    # PE comes from both the fixture's portfolio.holdings PHA row (1000 units @ $25 anchor)
+    # AND the scenario's initial_balance_sheet.assets PHA entry (1000 units), layered →
+    # ~2000 units → $50k baseline. Bounds widen to absorb GBM drift over 52 months.
+    assert 30_000 <= _min(columns["private_equity_value_usd"]) <= 60_000
+    assert 40_000 <= _max(columns["private_equity_value_usd"]) <= 90_000
     assert 1_100_000 <= _max(columns["net_worth_usd"]) <= 1_350_000
 
 
@@ -402,7 +405,8 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
     assert columns["cash_usd"] == [250_000.0, 249_000.0, 248_000.0, 247_000.0]
     assert columns["holding_value_usd"][0] == 750_000.0
     assert columns["liquid_net_worth_usd"][0] == 1_000_000.0
-    assert columns["net_worth_usd"][0] == 1_000_000.0
+    # +$25k for the PHA private-equity position (1000 units at $25 anchor).
+    assert columns["net_worth_usd"][0] == 1_025_000.0
     assert set(columns) == {
         "month_index",
         "cash_usd",
@@ -418,9 +422,11 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
     terminal = detail["rollout"]["terminal_metrics"]
     assert terminal["cash_usd"] == 247_000.0
     assert terminal["holding_value_usd"] > 0
-    assert terminal["private_equity_value_usd"] == 0.0
+    assert terminal["private_equity_value_usd"] > 0
     assert terminal["liquid_net_worth_usd"] == pytest.approx(terminal["cash_usd"] + terminal["holding_value_usd"])
-    assert terminal["net_worth_usd"] == pytest.approx(terminal["liquid_net_worth_usd"])
+    assert terminal["net_worth_usd"] == pytest.approx(
+        terminal["liquid_net_worth_usd"] + terminal["private_equity_value_usd"]
+    )
     assert set(terminal) == {
         "cash_usd",
         "holding_value_usd",
@@ -442,12 +448,13 @@ def test_backend_server_product_portfolio_returns_configured_holdings(server_url
 
     assert portfolio["as_of_date"] == "2026-05-14"
     assert portfolio["cash_usd"] == 250_000.0
-    # SP500: 1500 * $500 = $750k; BTC: 1 * $75k = $75k; ETH: 5 * $2.1k = $10.5k.
-    assert portfolio["total_holdings_value_usd"] == 835_500.0
-    # SP500 basis $550k + BTC basis $30k + ETH basis $15k = $595k.
-    assert portfolio["total_holdings_cost_basis_usd"] == 595_000.0
+    # SP500: 1500 * $500 = $750k; BTC: 1 * $75k = $75k; ETH: 5 * $2.1k = $10.5k;
+    # PHA (PE): 1000 * $25 = $25k.
+    assert portfolio["total_holdings_value_usd"] == 860_500.0
+    # SP500 basis $550k + BTC basis $30k + ETH basis $15k + PHA basis $5k = $600k.
+    assert portfolio["total_holdings_cost_basis_usd"] == 600_000.0
     positions_by_id = {position["position_id"]: position for position in portfolio["holdings"]}
-    assert set(positions_by_id) == {"sp500_proxy", "btc_holding", "eth_holding"}
+    assert set(positions_by_id) == {"sp500_proxy", "btc_holding", "eth_holding", "private_holding_a"}
     sp500 = positions_by_id["sp500_proxy"]
     assert sp500["account_label"] == "Taxable Brokerage"
     assert sp500["label"] == "SP500 Proxy"
@@ -475,6 +482,13 @@ def test_backend_server_product_portfolio_returns_configured_holdings(server_url
     assert eth["value_series_id"] == "crypto:eth"
     assert eth["unit_value_usd"] == 2_100.0
     assert eth["current_value_usd"] == 10_500.0
+    pha = positions_by_id["private_holding_a"]
+    assert pha["symbol"] == "PHA"
+    assert pha["security_kind"] == "private_equity"
+    assert pha["value_series_id"] == "private_equity:private_holding_a"
+    assert pha["unit_value_usd"] == 25.0
+    assert pha["current_value_usd"] == 25_000.0
+    assert pha["total_cost_basis_usd"] == 5_000.0
 
 
 def test_backend_server_zeroes_failed_product_rollout_metrics(server_url: str) -> None:
@@ -493,7 +507,8 @@ def test_backend_server_zeroes_failed_product_rollout_metrics(server_url: str) -
 
     assert fan["failed_count"] == 1
     assert fan["monthly_metric_fan"]["month_index"] == [0, 1, 2, 3]
-    assert fan["monthly_metric_fan"]["value"] == [1_000_000.0, 0.0, 0.0, 0.0]
+    # Month 0 = cash 250k + holdings 750k + PHA 25k; failure zeros subsequent months.
+    assert fan["monthly_metric_fan"]["value"] == [1_025_000.0, 0.0, 0.0, 0.0]
     [summary] = fan["rollout_summaries"]
     assert summary["failed"] is True
     assert summary["terminal_metrics"]["failed_month_index"] == 0
@@ -510,7 +525,7 @@ def test_backend_server_zeroes_failed_product_rollout_metrics(server_url: str) -
     assert columns["month_index"] == [0, 1, 2, 3]
     assert columns["cash_usd"] == [250_000.0, 0.0, 0.0, 0.0]
     assert columns["holding_value_usd"] == [750_000.0, 0.0, 0.0, 0.0]
-    assert columns["net_worth_usd"] == [1_000_000.0, 0.0, 0.0, 0.0]
+    assert columns["net_worth_usd"] == [1_025_000.0, 0.0, 0.0, 0.0]
     expense, failure = detail["rollout"]["events"]
     assert expense == {
         "month_index": 0,
@@ -548,7 +563,9 @@ def test_backend_server_product_default_funding_sells_holding_for_required_spend
     terminal = detail["rollout"]["terminal_metrics"]
     assert terminal["cash_usd"] == 0.0
     assert terminal["shortfall_usd"] == 0.0
-    assert terminal["net_worth_usd"] == pytest.approx(columns["holding_value_usd"][1])
+    assert terminal["net_worth_usd"] == pytest.approx(
+        columns["holding_value_usd"][1] + columns["private_equity_value_usd"][1]
+    )
     sale, expense = detail["rollout"]["events"]
     assert sale == {
         "month_index": 0,
