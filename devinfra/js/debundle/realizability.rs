@@ -29,6 +29,7 @@
 //! the maintained quotient; candidate verdicts use localized
 //! reachability around the hypothetical destination.
 
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 
 use petgraph::algo::tarjan_scc;
@@ -290,6 +291,7 @@ pub fn check_realizability(
 /// source `M`. Equivalent to asking whether the emitted ESM bundle
 /// would actually execute without TDZ on the constraining edges in
 /// the candidate SCC.
+#[derive(Debug, Clone, Eq, PartialEq)]
 struct EsmEvaluationSimulator {
     /// Post-order index per module after DFS from residual. Lower
     /// index = earlier post-order = body evaluates earlier. Modules
@@ -893,6 +895,26 @@ struct IncrementalQuotient {
     /// (residual) vs which use plain linker_position
     /// (every other module).
     residual: ModuleId,
+    /// Lazily-computed base `EsmEvaluationSimulator` for the current
+    /// committed I-graph / constraining-buckets state. Invalidated on
+    /// every `add_current_edge` / `remove_current_edge` that mutates
+    /// the underlying graphs. Used by `verdict()` and
+    /// `verdict_touching()` directly, and by `build_simulator(Some(_))`
+    /// when the overlay introduces no I-graph or constraining-edge
+    /// changes (the no-op overlay short-circuit).
+    cached_base_simulator: RefCell<Option<EsmEvaluationSimulator>>,
+    /// Lazily-computed materialization of the base I-graph as an
+    /// adjacency map keyed by source module. Mirrors what
+    /// `EsmEvaluationSimulator::build` would walk from
+    /// `i_graph.edge_pairs()` on each call — extracted into a shared
+    /// cache so the overlay-aware simulator build can patch this
+    /// instead of rewalking every edge. Invalidated alongside the
+    /// simulator cache.
+    cached_base_i_successors: RefCell<Option<BTreeMap<ModuleId, BTreeSet<ModuleId>>>>,
+    /// Lazily-computed snapshot of the constraining pairs set
+    /// (`constraining_buckets.keys()`). Shared with the overlay path
+    /// to avoid the O(|constraining_buckets|) walk on every call.
+    cached_base_constraining_pairs: RefCell<Option<BTreeSet<(ModuleId, ModuleId)>>>,
 }
 
 impl IncrementalQuotient {
@@ -903,11 +925,85 @@ impl IncrementalQuotient {
             constraining_buckets: BTreeMap::new(),
             cross_rebinds: BTreeMap::new(),
             residual: partition.residual(),
+            cached_base_simulator: RefCell::new(None),
+            cached_base_i_successors: RefCell::new(None),
+            cached_base_constraining_pairs: RefCell::new(None),
         };
         for edge in &owner_graph.edges {
             quotient.add_current_edge(edge, partition, true);
         }
         quotient
+    }
+
+    /// Invalidate the cached base simulator and its precomputed input
+    /// snapshots. Called from every mutating path that changes the
+    /// I-graph adjacency or the constraining-edge buckets. Each is
+    /// rebuilt lazily on the next read.
+    fn invalidate_cached_simulator(&mut self) {
+        *self.cached_base_simulator.borrow_mut() = None;
+        *self.cached_base_i_successors.borrow_mut() = None;
+        *self.cached_base_constraining_pairs.borrow_mut() = None;
+    }
+
+    /// Borrow the base simulator, building it on demand if the cache
+    /// is empty. The simulator is a function of `(i_graph,
+    /// constraining_buckets, residual)` — all of which are stable
+    /// between mutating calls — so the cached instance is reused
+    /// across queries that don't apply an overlay.
+    fn base_simulator(&self) -> std::cell::Ref<'_, EsmEvaluationSimulator> {
+        {
+            let mut slot = self.cached_base_simulator.borrow_mut();
+            if slot.is_none() {
+                let (i_successors, constraining_pairs) = self.effective_simulator_inputs(None);
+                *slot = Some(EsmEvaluationSimulator::build(
+                    i_successors,
+                    &constraining_pairs,
+                    self.residual,
+                ));
+            }
+        }
+        std::cell::Ref::map(self.cached_base_simulator.borrow(), |opt| {
+            opt.as_ref()
+                .expect("cached_base_simulator was just populated")
+        })
+    }
+
+    /// Borrow the base I-successor adjacency, recomputing it from the
+    /// I-graph on first access after invalidation. Walks every base
+    /// edge once per refresh — overlay queries clone-and-patch this
+    /// instead of rewalking every edge per call.
+    fn base_i_successors(&self) -> std::cell::Ref<'_, BTreeMap<ModuleId, BTreeSet<ModuleId>>> {
+        {
+            let mut slot = self.cached_base_i_successors.borrow_mut();
+            if slot.is_none() {
+                let mut succs: BTreeMap<ModuleId, BTreeSet<ModuleId>> = BTreeMap::new();
+                for (from, to) in self.i_graph.edge_pairs() {
+                    succs.entry(from).or_default().insert(to);
+                }
+                *slot = Some(succs);
+            }
+        }
+        std::cell::Ref::map(self.cached_base_i_successors.borrow(), |opt| {
+            opt.as_ref()
+                .expect("cached_base_i_successors was just populated")
+        })
+    }
+
+    /// Borrow the base constraining-pair set, recomputing it on first
+    /// access after invalidation. Equivalent to
+    /// `constraining_buckets.keys().copied().collect()` but cached
+    /// across overlay queries.
+    fn base_constraining_pairs(&self) -> std::cell::Ref<'_, BTreeSet<(ModuleId, ModuleId)>> {
+        {
+            let mut slot = self.cached_base_constraining_pairs.borrow_mut();
+            if slot.is_none() {
+                *slot = Some(self.constraining_buckets.keys().copied().collect());
+            }
+        }
+        std::cell::Ref::map(self.cached_base_constraining_pairs.borrow(), |opt| {
+            opt.as_ref()
+                .expect("cached_base_constraining_pairs was just populated")
+        })
     }
 
     fn marks(&self) -> (GraphMark, GraphMark) {
@@ -917,6 +1013,8 @@ impl IncrementalQuotient {
     fn rollback_graphs(&mut self, i_mark: GraphMark, constraining_mark: GraphMark) {
         self.i_graph.rollback_to(i_mark);
         self.constraining_graph.rollback_to(constraining_mark);
+        // Graph topology just changed; drop the cached simulator.
+        self.invalidate_cached_simulator();
     }
 
     fn add_current_edge(
@@ -945,6 +1043,9 @@ impl IncrementalQuotient {
             return;
         }
 
+        // I-graph or constraining-bucket mutation invalidates the
+        // cached base simulator.
+        self.invalidate_cached_simulator();
         if update_graphs {
             self.i_graph.increment_edge(from, to);
         }
@@ -977,6 +1078,9 @@ impl IncrementalQuotient {
             return;
         }
 
+        // I-graph or constraining-bucket mutation invalidates the
+        // cached base simulator.
+        self.invalidate_cached_simulator();
         if update_graphs {
             self.i_graph.decrement_edge(from, to);
         }
@@ -1182,45 +1286,104 @@ impl IncrementalQuotient {
     /// state, optionally applying `overlay`'s I-graph and
     /// constraining-pair edits. Used by every `verdict*` to decide
     /// whether Lemma 2 rescues a candidate asymmetric I-SCC.
+    ///
+    /// Fast path: when `overlay` is `None` *or* the overlay introduces
+    /// no I-graph and no constraining-bucket changes (a no-op merge
+    /// from the simulator's perspective), return the cached base
+    /// simulator without recomputing. Otherwise, fall through to
+    /// `build_simulator_from_scratch`.
     fn build_simulator(&self, overlay: Option<&QuotientOverlay>) -> EsmEvaluationSimulator {
-        let mut i_successors: BTreeMap<ModuleId, BTreeSet<ModuleId>> = BTreeMap::new();
-        let i_view = overlay.map(|overlay| OverlayGraphView::new(&self.i_graph, &overlay.i_delta));
-        let i_pairs: BTreeSet<(ModuleId, ModuleId)> = if let Some(view) = &i_view {
-            // Effective edges = base ∪ added, with effective_count > 0.
-            let mut pairs: BTreeSet<(ModuleId, ModuleId)> = BTreeSet::new();
-            for (from, to) in self.i_graph.edge_pairs() {
-                if view.effective_count(from, to) > 0 {
-                    pairs.insert((from, to));
-                }
-            }
-            for (&(from, to), &count) in &overlay.unwrap().i_delta {
-                if count > 0 && view.effective_count(from, to) > 0 {
-                    pairs.insert((from, to));
-                }
-            }
-            pairs
-        } else {
-            self.i_graph.edge_pairs().collect()
-        };
-        for (from, to) in &i_pairs {
-            i_successors.entry(*from).or_default().insert(*to);
+        if overlay_is_simulator_noop(overlay) {
+            return self.base_simulator().clone();
         }
-        let constraining_pairs: BTreeSet<(ModuleId, ModuleId)> = match overlay {
-            Some(overlay) => self
-                .constraining_pairs_with_overlay(overlay)
-                .into_iter()
-                .filter(|pair| {
-                    // Drop pairs whose bucket emptied under the
-                    // overlay's edits — they no longer carry a
-                    // constraining edge after the hypothetical move.
-                    !self
-                        .constraining_bucket_with_overlay(*pair, overlay)
-                        .is_empty()
-                })
-                .collect(),
-            None => self.constraining_buckets.keys().copied().collect(),
-        };
+        self.build_simulator_from_scratch(overlay)
+    }
+
+    /// Cold-path simulator construction. Materializes the effective
+    /// `i_successors` / `constraining_pairs` via
+    /// `effective_simulator_inputs` (cached base + cheap overlay
+    /// patch) and calls `EsmEvaluationSimulator::build`. Used by:
+    ///   - the lazy build of `cached_base_simulator` (overlay = None,
+    ///     via `base_simulator`),
+    ///   - overlay queries whose overlay actually changes the
+    ///     I-graph or constraining-bucket structure (slow path of
+    ///     `build_simulator`).
+    fn build_simulator_from_scratch(
+        &self,
+        overlay: Option<&QuotientOverlay>,
+    ) -> EsmEvaluationSimulator {
+        let (i_successors, constraining_pairs) = self.effective_simulator_inputs(overlay);
         EsmEvaluationSimulator::build(i_successors, &constraining_pairs, self.residual)
+    }
+
+    /// Materialize `(i_successors, constraining_pairs)` — the inputs
+    /// `EsmEvaluationSimulator::build` consumes — for the current
+    /// committed state with `overlay`'s edits applied. Factored out of
+    /// `build_simulator_from_scratch` because the overlay-pair
+    /// assembly is the per-call cost we measure separately from the
+    /// simulator's own toposort + DFS.
+    ///
+    /// The base case (`overlay = None`) returns clones of
+    /// `base_i_successors()` / `base_constraining_pairs()` — the
+    /// shared caches refreshed on the next mutation. The overlay
+    /// case applies the overlay's small `i_delta` / constraining
+    /// edits to a cloned base, which is `O(|overlay|)` instead of the
+    /// previous `O(|base_edges|)` per call.
+    fn effective_simulator_inputs(
+        &self,
+        overlay: Option<&QuotientOverlay>,
+    ) -> (
+        BTreeMap<ModuleId, BTreeSet<ModuleId>>,
+        BTreeSet<(ModuleId, ModuleId)>,
+    ) {
+        let Some(overlay) = overlay else {
+            return (
+                self.base_i_successors().clone(),
+                self.base_constraining_pairs().clone(),
+            );
+        };
+        // Overlay path: clone base + apply deltas. Each i_delta entry
+        // is either an addition (count > 0) or a removal (count < 0,
+        // offsetting an existing base edge). The effective edge set
+        // is the symmetric difference described by `effective_count`.
+        let mut i_successors = self.base_i_successors().clone();
+        for (&(from, to), &count) in &overlay.i_delta {
+            let base = self.i_graph.edge_count(from, to) as isize;
+            let effective = base + count;
+            if effective > 0 {
+                i_successors.entry(from).or_default().insert(to);
+            } else {
+                // Effective edge dropped from the base set.
+                if let Some(succs) = i_successors.get_mut(&from) {
+                    succs.remove(&to);
+                    if succs.is_empty() {
+                        i_successors.remove(&from);
+                    }
+                }
+            }
+        }
+        let mut constraining_pairs = self.base_constraining_pairs().clone();
+        // Only pairs the overlay actually touched need re-evaluation
+        // against the effective bucket: untouched pairs keep the base
+        // bucket (which is non-empty by construction of
+        // `constraining_buckets`).
+        let touched_pairs: BTreeSet<(ModuleId, ModuleId)> = overlay
+            .constraining_added
+            .keys()
+            .chain(overlay.constraining_removed.keys())
+            .copied()
+            .collect();
+        for pair in &touched_pairs {
+            if self
+                .constraining_bucket_with_overlay(*pair, overlay)
+                .is_empty()
+            {
+                constraining_pairs.remove(pair);
+            } else {
+                constraining_pairs.insert(*pair);
+            }
+        }
+        (i_successors, constraining_pairs)
     }
 
     fn overlay_for_move(
@@ -1537,6 +1700,22 @@ impl RealizabilityIndex {
             .overlay_for_move(owner_graph, &self.partition, owners, to);
         self.quotient.verdict_with_overlay_touching(to, &overlay)
     }
+}
+
+/// True when `overlay` introduces no changes the ESM evaluation
+/// simulator can observe — i.e. `i_delta` is empty AND no constraining
+/// bucket is added/removed. Cross-rebind edits do not affect the
+/// simulator (rebinds participate in the rebind verdict, not the
+/// I-graph DFS or constraining-edge SCC). Used by
+/// `IncrementalQuotient::build_simulator`'s fast path to reuse the
+/// cached base simulator.
+fn overlay_is_simulator_noop(overlay: Option<&QuotientOverlay>) -> bool {
+    let Some(overlay) = overlay else {
+        return true;
+    };
+    overlay.i_delta.is_empty()
+        && overlay.constraining_added.is_empty()
+        && overlay.constraining_removed.is_empty()
 }
 
 fn impacted_owner_edges(owner_graph: &OwnerGraph, owners: &[OwnerId]) -> Vec<OwnerEdgeId> {
@@ -2124,6 +2303,150 @@ mod tests {
                 .filter(|rebind| rebind.from == module || rebind.to == module)
                 .cloned()
                 .collect(),
+        }
+    }
+
+    /// Reach inside the `RealizabilityIndex` to assert that the
+    /// `IncrementalQuotient`'s cached base simulator (when populated)
+    /// matches a from-scratch `EsmEvaluationSimulator::build` against
+    /// the live `i_graph` + `constraining_buckets`. Lives in the
+    /// realizability.rs `mod tests` so it can name the private types
+    /// (`IncrementalQuotient`, `EsmEvaluationSimulator`).
+    fn assert_cached_simulator_matches_rebuild(
+        index: &RealizabilityIndex,
+        label: &str,
+        phase: &str,
+    ) {
+        let quotient = &index.quotient;
+        // Materialize the same inputs `EsmEvaluationSimulator::build`
+        // would have walked from scratch, bypassing the cache so a
+        // bug in the cached-input path can't mask a divergence here.
+        let mut i_successors: BTreeMap<ModuleId, BTreeSet<ModuleId>> = BTreeMap::new();
+        for (from, to) in quotient.i_graph.edge_pairs() {
+            i_successors.entry(from).or_default().insert(to);
+        }
+        let constraining_pairs: BTreeSet<(ModuleId, ModuleId)> =
+            quotient.constraining_buckets.keys().copied().collect();
+        let rebuilt =
+            EsmEvaluationSimulator::build(i_successors, &constraining_pairs, quotient.residual);
+        // Force the cache to populate (verdict() takes the base path).
+        let cached = quotient.base_simulator().clone();
+        assert_eq!(
+            cached, rebuilt,
+            "{label}: cached base simulator diverges from rebuild ({phase})",
+        );
+
+        // Property: the cached `(i_successors, constraining_pairs)`
+        // inputs must match the from-scratch walk too. This pins the
+        // overlay path's clone-and-patch correctness — overlay queries
+        // mutate these cached snapshots, and a mismatched base would
+        // taint every overlay query.
+        let (cached_inputs_succs, cached_inputs_pairs) = quotient.effective_simulator_inputs(None);
+        let mut fresh_succs: BTreeMap<ModuleId, BTreeSet<ModuleId>> = BTreeMap::new();
+        for (from, to) in quotient.i_graph.edge_pairs() {
+            fresh_succs.entry(from).or_default().insert(to);
+        }
+        let fresh_pairs: BTreeSet<(ModuleId, ModuleId)> =
+            quotient.constraining_buckets.keys().copied().collect();
+        assert_eq!(
+            cached_inputs_succs, fresh_succs,
+            "{label}: cached base i_successors diverges from rebuild ({phase})",
+        );
+        assert_eq!(
+            cached_inputs_pairs, fresh_pairs,
+            "{label}: cached base constraining pairs diverges from rebuild ({phase})",
+        );
+    }
+
+    /// Property test pinning the incremental simulator cache to its
+    /// from-scratch correctness reference. For each fixture, applies
+    /// an arbitrary sequence of `MoveOwners` deltas through the
+    /// `RealizabilityIndex`, asserting after every push and every
+    /// undo that the `IncrementalQuotient`'s cached
+    /// `EsmEvaluationSimulator` byte-equals what
+    /// `EsmEvaluationSimulator::build(...)` would produce against the
+    /// current `i_graph` / `constraining_buckets`. Also asserts the
+    /// cached `(i_successors, constraining_pairs)` snapshots match.
+    ///
+    /// Initially RED before the cache is wired to invalidate on edge
+    /// mutations; GREEN once `add_current_edge` /
+    /// `remove_current_edge` / `rollback_graphs` all drop the cache.
+    #[test]
+    fn incremental_simulator_matches_rebuild_after_each_delta() {
+        struct Fixture {
+            label: &'static str,
+            source: &'static str,
+            deltas: Vec<(Vec<usize>, usize)>,
+        }
+        let fixtures = vec![
+            // Two-cycle plus a lazy bystander.
+            Fixture {
+                label: "two_eager_plus_lazy",
+                source: "const a = b + 1; const b = a + 1; function c() { return a; }",
+                deltas: vec![(vec![1], 1), (vec![2], 2), (vec![1, 2], 3)],
+            },
+            // Asymmetric I-cycle with a residual mediator.
+            Fixture {
+                label: "asymmetric_with_mediator",
+                source: "const dep_value = \"alpha\"; const cross_value = dep_value + \"-beta\"; \
+                         function lazy_reader() { return cross_value; } \
+                         function mediator_helper() { return dep_value + lazy_reader(); } \
+                         const mediator_init = mediator_helper(); console.log(mediator_init);",
+                deltas: vec![(vec![0, 2], 1), (vec![1], 2), (vec![3, 4], 3)],
+            },
+            // Cross-destination rebind — exercises the rebind-only
+            // overlay code path (no simulator change).
+            Fixture {
+                label: "rebind_then_unmove",
+                source: "let a = 0; function b() { a = 1; }",
+                deltas: vec![(vec![1], 1), (vec![1], 0)],
+            },
+            // Single-module fixture (no cross-module edges → simulator
+            // input set stays empty across all deltas).
+            Fixture {
+                label: "single_module",
+                source: "const a = 1; const b = a + 1; const c = a * b;",
+                deltas: vec![(vec![1], 1), (vec![2], 1), (vec![1, 2], 0)],
+            },
+        ];
+        for fixture in fixtures {
+            let owner_graph = parse_and_build(fixture.source);
+            let baseline = Partition::new(&owner_graph, module_id(0));
+            let mut index = RealizabilityIndex::from_partition(&owner_graph, baseline);
+            assert_cached_simulator_matches_rebuild(&index, fixture.label, "initial");
+            let mut handles: Vec<DeltaHandle> = Vec::new();
+            for (owner_indices, dest) in &fixture.deltas {
+                let owners: Vec<OwnerId> = owner_indices.iter().copied().map(OwnerId).collect();
+                let handle = index.push(
+                    &owner_graph,
+                    PartitionDelta::MoveOwners {
+                        owners,
+                        to: module_id(*dest),
+                    },
+                );
+                handles.push(handle);
+                assert_cached_simulator_matches_rebuild(&index, fixture.label, "after-push");
+                // verdict() pulls through the cached simulator; assert
+                // it stays consistent with `check_realizability`.
+                let projected = index.partition().clone();
+                assert_eq!(
+                    normalize_verdict(index.verdict()),
+                    normalize_verdict(check_realizability(&owner_graph, &projected)),
+                    "{}: verdict diverged from check_realizability after push",
+                    fixture.label,
+                );
+            }
+            while let Some(handle) = handles.pop() {
+                index.undo(&owner_graph, handle);
+                assert_cached_simulator_matches_rebuild(&index, fixture.label, "after-undo");
+                let projected = index.partition().clone();
+                assert_eq!(
+                    normalize_verdict(index.verdict()),
+                    normalize_verdict(check_realizability(&owner_graph, &projected)),
+                    "{}: verdict diverged from check_realizability after undo",
+                    fixture.label,
+                );
+            }
         }
     }
 }
