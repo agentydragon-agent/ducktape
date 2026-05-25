@@ -30,6 +30,8 @@ const DEFAULT_PRODUCT_INPUT_BASE = {
   sellOrder: DEFAULT_SELL_ORDER_CODES,
   cashBufferTriggerBelowUsd: 4000,
   cashBufferSaleUsd: 10000,
+  peLnwFloorUsd: 0,
+  peIndexFloorToInflation: true,
   monthlyRentUsd: 0,
   rentalLocationId: null,
   propertyId: null,
@@ -112,6 +114,8 @@ const INPUT_FIELDS = [
   { key: "sellOrder", type: "orderedCodes" },
   { key: "cashBufferTriggerBelowUsd", type: "number" },
   { key: "cashBufferSaleUsd", type: "number" },
+  { key: "peLnwFloorUsd", type: "number" },
+  { key: "peIndexFloorToInflation", type: "bool" },
   { key: "monthlyRentUsd", type: "number" },
   { key: "rentalLocationId", type: "string" },
   { key: "propertyId", type: "string" },
@@ -222,6 +226,10 @@ function productScenario(input, bootstrap) {
       cashBufferTriggerBelowUsd: autoSellEnabled ? Math.max(0, Number(input.cashBufferTriggerBelowUsd) || 0) : 0,
       cashBufferSaleUsd: autoSellEnabled ? Math.max(0, Number(input.cashBufferSaleUsd) || 0) : 0,
       sellOrder,
+    },
+    peTenderPolicy: {
+      liquidNetWorthFloorUsd: Math.max(0, Number(input.peLnwFloorUsd) || 0),
+      indexFloorToInflation: Boolean(input.peIndexFloorToInflation),
     },
     monthlyRentUsd,
     rentalLocationId,
@@ -1638,6 +1646,26 @@ function ProductProjectionWorkspace({ bootstrap }) {
                     prefix="$"
                     disabled={!input.sellOrder}
                     onChange={(cashBufferSaleUsd) => updateInput({ cashBufferSaleUsd })}
+                  />
+                </div>
+                <div className="mt-3 text-xs augur-muted">
+                  PE tenders: sell enough at each modeled tender event to lift liquid net worth (cash + non-PE holdings)
+                  to this floor. Zero disables PE sales.
+                </div>
+                <div className="mt-2 grid gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+                  <NumberField
+                    label="LNW floor"
+                    value={input.peLnwFloorUsd}
+                    min={0}
+                    step={10000}
+                    prefix="$"
+                    onChange={(peLnwFloorUsd) => updateInput({ peLnwFloorUsd })}
+                  />
+                  <Checkbox
+                    label="Index floor to inflation"
+                    checked={Boolean(input.peIndexFloorToInflation)}
+                    disabled={Number(input.peLnwFloorUsd) <= 0}
+                    onChange={(event) => updateInput({ peIndexFloorToInflation: event.currentTarget.checked })}
                   />
                 </div>
               </div>
