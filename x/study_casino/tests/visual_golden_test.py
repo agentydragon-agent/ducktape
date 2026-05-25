@@ -13,9 +13,9 @@ them into `x/study_casino/frontend/__screenshots__/`. Using the
 invocation id printed by bbr:
 
     INV="<invocation-id>"
-    for f in $(bbapi artifact "$INV" --list | grep '\\.png$'); do
-      bbapi artifact "$INV" "test.outputs/$f" \\
-        > x/study_casino/frontend/__screenshots__/"$f"
+    for f in $(bbapi artifact list "$INV" | awk '/\\.png$/ {print $NF}'); do
+      bbapi artifact download "$INV" "test.outputs/$f" \\
+        -o x/study_casino/frontend/__screenshots__/"$f"
     done
 """
 

@@ -11,8 +11,8 @@ Then copy the produced PNGs from the test's undeclared outputs into
 With BuildBuddy/RBE, use the invocation id printed by Bazel:
 
     for f in distribution_default distribution_fan trajectory_scenario_2_rollout_3 product_cash_runway; do
-        bbapi artifact "$INV" "test.outputs/$f.png" \\
-            > "augur/frontend/__screenshots__/$f.png"
+        bbapi artifact download "$INV" "test.outputs/$f.png" \\
+            -o "augur/frontend/__screenshots__/$f.png"
     done
 """
 

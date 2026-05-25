@@ -111,8 +111,8 @@ INV=$(cat ~/.cache/bbr/last_invocation_id)
 for view in panel menu; do
   for f in both_ok both_cool both_warn both_hot \
            short_hot mixed error no_data; do
-    bbapi artifact "$INV" "${view}_${f}.png" \
-      > gnome/claude_quota/__snapshots__/${view}_${f}.png
+    bbapi artifact download "$INV" "${view}_${f}.png" \
+      -o gnome/claude_quota/__snapshots__/${view}_${f}.png
   done
 done
 

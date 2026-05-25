@@ -35,8 +35,8 @@ Update flow when the rendering changes intentionally:
 
     INV=<invocation-id from build output>
     for f in empty tints hot extra_enabled_not_burning; do
-      bbapi artifact "$INV" "test.outputs/$f.png" \\
-        > "aiquota/gnome/__snapshots__/$f.png"
+      bbapi artifact download "$INV" "test.outputs/$f.png" \\
+        -o "aiquota/gnome/__snapshots__/$f.png"
     done
 
     # Eyeball, commit, then re-run without UPDATE_GOLDEN=1 to confirm green.

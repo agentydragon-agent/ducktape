@@ -63,8 +63,15 @@ bbapi target stats [--repo URL]
 # Show flake samples for a specific target
 bbapi target flakes <target-label> [--repo URL]
 
-# List artifacts, or download one by name match
-bbapi artifact <invocation-id> [name-substring]
+# List artifacts for an invocation
+bbapi artifact list <invocation-id>
+
+# Stream a matching artifact to stdout
+bbapi artifact cat <invocation-id> <name-substring>
+
+# Download a matching artifact to a file (defaults to artifact basename;
+# override with -o/--output)
+bbapi artifact download <invocation-id> <name-substring> [-o PATH]
 
 # List remote executions for an invocation
 bbapi execution <invocation-id>
@@ -123,13 +130,14 @@ The workflow invocation (command: `workflow run`) is a wrapper; the child
 invocation contains the actual `bazel test` results, targets, and artifacts.
 
 - `bbapi invocation` shows `Child: <child-id>` for workflow invocations
-- `bbapi artifact` and `bbapi target log` auto-resolve workflow invocations
-  to their children — you can pass either the workflow or child ID
+- `bbapi artifact {list,cat,download}` and `bbapi target log` auto-resolve
+  workflow invocations to their children — you can pass either the workflow
+  or child ID
 - `bbapi target` also auto-resolves workflow invocations to their children
 
 ### Artifact Name Matching
 
-`bbapi artifact` and `bbapi target log` match against `"label/name"`:
+`bbapi artifact {cat,download}` and `bbapi target log` match against `"label/name"`:
 
 - `"test_handlers"` matches `//x/gatelet/server/auth:test_handlers/test.log`
 - `"test_handlers/test.xml"` matches the XML output specifically
