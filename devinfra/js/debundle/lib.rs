@@ -47,7 +47,7 @@ pub use graph::{
     ChunkConstrainingEdgeSet, DepKind, EdgeMetadata, EdgeReason, ModuleQuotient, OwnerEdge,
     OwnerEdgeId, OwnerGraph, OwnerGraphOptions, OwnerId, OwnerNode, OwnerReportIndex,
     build_module_quotient, build_owner_graph, build_owner_graph_with,
-    chunk_constraining_module_edges,
+    chunk_constraining_module_edges, chunk_linker_order, chunk_source_import_order,
 };
 pub use ids::{
     BindingKind, ChunkId, ChunkTable, LogicalModule, LogicalModuleIndex, ModuleId,

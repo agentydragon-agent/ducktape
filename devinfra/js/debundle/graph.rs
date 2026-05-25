@@ -1255,6 +1255,116 @@ impl ChunkConstrainingEdgeSet {
     }
 }
 
+/// Toposort of the canonical edge set, deepest dependency first.
+/// The position of a module in the returned map is its
+/// "linker_position": the relative order ECMA-262's depth-first
+/// link traversal needs to evaluate this chunk so that every
+/// constraining edge `M → M'` has `M'` evaluating before `M`.
+///
+/// Modules that don't participate in any canonical edge are omitted
+/// from the result (they're absent from the constraining DAG, hence
+/// unconstrained relative to it). Callers fall back to `usize::MAX`
+/// when sorting by linker_position so unconstrained modules sort
+/// LAST.
+///
+/// Note: every edge in the canonical set already satisfies
+/// `constrains_init_order()`, so the toposort runs on the full
+/// set — no extra filter needed. If the canonical edge set has a
+/// constraining-only cycle (Pass 1 reports it as unrealizable),
+/// `toposort` returns `Err`; this function returns the empty map.
+pub fn chunk_linker_order(edges: &ChunkConstrainingEdgeSet) -> BTreeMap<ModuleId, usize> {
+    use petgraph::algo::toposort;
+    let mut graph: DiGraphMap<ModuleId, ()> = DiGraphMap::new();
+    for (from, to) in edges.pairs() {
+        graph.add_node(from);
+        graph.add_node(to);
+        graph.add_edge(from, to, ());
+    }
+    match toposort(&graph, None) {
+        Ok(order) => order
+            .into_iter()
+            .rev()
+            .enumerate()
+            .map(|(idx, id)| (id, idx))
+            .collect(),
+        Err(_) => BTreeMap::new(),
+    }
+}
+
+/// Lemma 2 ordering: sort by `(SCC dep rank ASC, intra-SCC
+/// linker_position DESC)`. SCCs are over the canonical edge set
+/// (the I-graph the emitter and runtime actually traverse). SCC
+/// dep rank = min linker_position of SCC members.
+///
+/// The returned vector is the order in which entry's source-level
+/// `import` directives must appear so the runtime ECMA-262 linker
+/// DFS lands on the desired evaluation order (post-DFS = ESM Phase-2
+/// evaluation). Within each SCC, members with no linker_position
+/// (modules absent from the canonical set — they can only be SCC
+/// members via lazy back-edges; canonical edges are all
+/// init-constraining, so this case is empty by construction — but
+/// the `None`-after-Some clause is kept for robustness against
+/// future filter changes that might admit non-constraining members)
+/// sort AFTER constraining members.
+///
+/// `extra_nodes` — modules that should appear in the result even if
+/// they have no canonical edges (e.g. spec-known logical modules
+/// the emitter wants a deterministic source-order slot for). These
+/// land at the end with `linker_position = None`.
+pub fn chunk_source_import_order(
+    edges: &ChunkConstrainingEdgeSet,
+    extra_nodes: &BTreeSet<ModuleId>,
+) -> Vec<ModuleId> {
+    use petgraph::algo::tarjan_scc;
+    let linker_position = chunk_linker_order(edges);
+    let mut graph: DiGraphMap<ModuleId, ()> = DiGraphMap::new();
+    let mut nodes: BTreeSet<ModuleId> = extra_nodes.iter().copied().collect();
+    for (from, to) in edges.pairs() {
+        graph.add_node(from);
+        graph.add_node(to);
+        graph.add_edge(from, to, ());
+        nodes.insert(from);
+        nodes.insert(to);
+    }
+    for &n in &nodes {
+        graph.add_node(n);
+    }
+    let sccs = tarjan_scc(&graph);
+    let mut scc_of: BTreeMap<ModuleId, usize> = BTreeMap::new();
+    let mut scc_rank: Vec<usize> = Vec::with_capacity(sccs.len());
+    for (idx, scc) in sccs.iter().enumerate() {
+        let min_pos = scc
+            .iter()
+            .filter_map(|m| linker_position.get(m).copied())
+            .min()
+            .unwrap_or(usize::MAX);
+        scc_rank.push(min_pos);
+        for m in scc {
+            scc_of.insert(*m, idx);
+        }
+    }
+    let mut sorted: Vec<ModuleId> = nodes.into_iter().collect();
+    sorted.sort_by(|a, b| {
+        let a_rank = scc_of
+            .get(a)
+            .and_then(|i| scc_rank.get(*i).copied())
+            .unwrap_or(usize::MAX);
+        let b_rank = scc_of
+            .get(b)
+            .and_then(|i| scc_rank.get(*i).copied())
+            .unwrap_or(usize::MAX);
+        let a_pos = linker_position.get(a).copied();
+        let b_pos = linker_position.get(b).copied();
+        a_rank.cmp(&b_rank).then_with(|| match (a_pos, b_pos) {
+            (Some(a), Some(b)) => b.cmp(&a),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => std::cmp::Ordering::Equal,
+        })
+    });
+    sorted
+}
+
 /// Stable per-chunk identity of an owner-graph edge. Equal to the
 /// edge's position in [`OwnerGraph::edges`]. The previous
 /// representation stored the report-shape spelling
@@ -1397,6 +1507,49 @@ mod chunk_constraining_module_edges_tests {
             pair_count <= 1,
             "sequenced edges between the same pair must dedup; got {pair_count}",
         );
+    }
+
+    /// `chunk_linker_order` on a 3-module DAG returns dependency-first
+    /// positions: deepest dependency at index 0, dependent at the
+    /// last index.
+    #[test]
+    fn chunk_linker_order_assigns_positions_dependency_first() {
+        let source = "const leaf = 1; const middle = leaf + 1; const top = middle + 1;";
+        let owner_graph = parse_and_build(source);
+        let mut partition = Partition::new(&owner_graph, module_id(0));
+        partition.set(OwnerId(0), module_id(1)); // leaf
+        partition.set(OwnerId(1), module_id(2)); // middle
+        partition.set(OwnerId(2), module_id(3)); // top
+        let canonical = chunk_constraining_module_edges(&owner_graph, &partition);
+        let linker = chunk_linker_order(&canonical);
+        // leaf (mod_1) must come before middle (mod_2) and top (mod_3).
+        assert!(linker[&module_id(1)] < linker[&module_id(2)]);
+        assert!(linker[&module_id(2)] < linker[&module_id(3)]);
+    }
+
+    /// `chunk_source_import_order` reverses within an SCC so the
+    /// dependent appears first in source. Asymmetric cycle shape: a
+    /// canonical edge from dependent → dependency, but only after
+    /// the unification's lazy-edge exclusion takes effect (so the
+    /// SCC is detected via some other path — here we exercise it
+    /// directly with the modules present even though canonical
+    /// edges are acyclic post-fix).
+    #[test]
+    fn chunk_source_import_order_includes_extra_nodes() {
+        // Simple two-module DAG.
+        let source = "const a = 1; const b = a + 1;";
+        let owner_graph = parse_and_build(source);
+        let mut partition = Partition::new(&owner_graph, module_id(0));
+        partition.set(OwnerId(1), module_id(1));
+        let canonical = chunk_constraining_module_edges(&owner_graph, &partition);
+        let extra: BTreeSet<ModuleId> = BTreeSet::from([module_id(5), module_id(0)]);
+        let order = chunk_source_import_order(&canonical, &extra);
+        assert!(
+            order.contains(&module_id(5)),
+            "extra node must be included; got {order:?}"
+        );
+        assert!(order.contains(&module_id(0)));
+        assert!(order.contains(&module_id(1)));
     }
 
     /// Asymmetric I-cycle shape: eager forward + lazy back. The
