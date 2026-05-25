@@ -379,6 +379,45 @@ class FederalSaltDeductionPolicy(BaseModel):
     cap_schedule: list[FederalSaltCapEntry] = Field(default_factory=lambda: list(DEFAULT_FEDERAL_SALT_CAP_SCHEDULE))
 
 
+class PrivateEquityTenderPolicy(BaseModel):
+    """Sell private-equity units at sampled tender events to lift liquid net worth to a floor.
+
+    At each tender event for any held PE position belonging to `owner_agent_id`, the engine:
+
+    1. Computes the rollout's current liquid net worth (cash + non-PE lots × their current
+       sampled price, by definition excluding PE itself — PE is illiquid).
+    2. Evaluates `liquid_net_worth_floor` at the event month. `SeriesIndexedAmount` lets the
+       floor inflate (or peg to any other series); a `FixedAmount` keeps it nominal.
+    3. `shortfall = max(0, floor - lnw)`.
+    4. Sells `min(units_held_in_issuer, shortfall / mark)` units of the tendering issuer at
+       the issuer's per-rollout mark (from the PE trajectory bundle).
+    5. Proceeds credit `proceeds_account_id`; cap-gain flows through the standard FIFO
+       lot-drain machinery (LTCG / STCG by holding period — IRS treats crypto/property/PE
+       identically for cap-gains purposes).
+
+    Multiple tenders firing in the same month process in deterministic issuer order; each
+    sale updates the cash balance + lot remaining before the next tender's LNW check runs,
+    so the floor genuinely caps aggregate sale across all same-month tenders.
+
+    Scope notes (deferred enhancements, captured here so a future reader knows what's missing):
+
+    - **Per-issuer policies.** v1 supports one global policy per agent; a per-issuer policy
+      list (`floor_by_issuer: dict[str, AmountSchedule]`) could allow "sell only OpenAI to
+      reach $X, never sell SpaceX") if needed.
+    - **Partial-tender fraction.** Real tenders sometimes cap participation (e.g. "you may
+      sell up to 20% of your holdings"). The trajectory artifact carries a
+      `saleable_fraction` field already; consuming it would let the policy gate units sold
+      to `min(units_held × saleable_fraction, shortfall / mark)`. Not wired today.
+    - **§1202 QSBS exclusion.** Federal exclusion of up to $10M / 10× basis on qualified
+      small-business stock held ≥5 years. Not modeled; the user confirmed they don't hold
+      QSBS-eligible PE.
+    """
+
+    owner_agent_id: str
+    proceeds_account_id: str = "checking"
+    liquid_net_worth_floor: AmountSchedule
+
+
 class MortgageInterestDeductionPolicy(BaseModel):
     """Mortgage-interest deduction (IRC §163(h)(3)) for one liability.
 
@@ -420,6 +459,7 @@ class Scenario(BaseModel):
     property_tax_policies: list[PropertyTaxPolicy] = Field(default_factory=list)
     mortgage_interest_deduction_policies: list[MortgageInterestDeductionPolicy] = Field(default_factory=list)
     federal_salt_deduction_policies: list[FederalSaltDeductionPolicy] = Field(default_factory=list)
+    private_equity_tender_policies: list[PrivateEquityTenderPolicy] = Field(default_factory=list)
     external_series: SeriesModelBundle = Field(default_factory=SeriesModelBundle)
     # Required so callers explicitly choose either taxed agents or an intentional no-tax scenario.
     tax_profiles: list[TaxProfile]
