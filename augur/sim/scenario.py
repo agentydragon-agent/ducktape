@@ -329,6 +329,12 @@ class ScheduledPropertyPurchase(BaseModel):
     ownership_pct: float = 1.0
     mortgage: MortgageFinancing | None = None
     rented_fraction: float = Field(default=0.0, ge=0.0, le=1.0)
+    # Tax-assessor split between land (non-depreciable) and building (depreciable, 27.5-year
+    # straight-line under §168). Default 0.20 (20% land / 80% building) is a common
+    # cost-segregation rule of thumb absent assessor data. The engine accrues monthly
+    # depreciation = `building_basis × rented_fraction / (27.5 × 12)` where building_basis =
+    # `purchase_price_usd × (1 - land_value_fraction) + buyer_closing_cost_usd`.
+    land_value_fraction: float = Field(default=0.20, ge=0.0, le=1.0)
 
 
 class PropertyTaxPolicy(BaseModel):

@@ -184,6 +184,16 @@ class CompiledSimulation:
     property_stake_contribution: np.ndarray
     property_equity_ledger: np.ndarray
     property_mortgage_slot: np.ndarray
+    # Per-property rented_fraction (0..1). 0 = pure owner-occupied/off; 1 = pure investment.
+    # Drives MID/SALT/Schedule E splits + monthly depreciation accrual.
+    property_rented_fraction: np.ndarray
+    # Per-property depreciable building basis = purchase_price × (1 - land_value_fraction) +
+    # buyer_closing_cost. Land is non-depreciable; the 27.5-year SL clock applies only to the
+    # building portion. Capitalized closing costs add to the depreciable basis.
+    property_building_basis: np.ndarray
+    # Profile index of each property's owner (buyer_agent_id → tax profile). NO_CODE if the
+    # owner has no tax profile. Used to route Schedule E depreciation deductions.
+    property_owner_profile_index: np.ndarray
     liability_codes: np.ndarray
     liability_property_slot: np.ndarray
     # Per-liability rented_fraction (0..1), inherited from the parent property at compile time.
@@ -420,6 +430,29 @@ def compile_simulation(
     # liability_property_slot; the property's rented_fraction (0..1) drives both the MID
     # scale-down (MID applies only to owner-use share = 1 - rented_fraction) and the
     # Schedule E rental-interest deduction (= rented_fraction × interest_ytd).
+    property_count = len(scenario.scheduled_property_purchases)
+    property_rented_fraction = np.array(
+        [float(p.rented_fraction) for p in scenario.scheduled_property_purchases], dtype=np.float64
+    )
+    # Building basis = (purchase price × (1 - land_fraction)) + capitalized closing costs.
+    property_building_basis = np.array(
+        [
+            float(p.purchase_price_usd) * (1.0 - float(p.land_value_fraction)) + float(p.buyer_closing_cost_usd)
+            for p in scenario.scheduled_property_purchases
+        ],
+        dtype=np.float64,
+    )
+    property_owner_profile_index = np.array(
+        [profile_index_by_agent.get(p.buyer_agent_id, NO_CODE) for p in scenario.scheduled_property_purchases],
+        dtype=np.int64,
+    )
+    # Allocate min-shape arrays for the no-property scenario so downstream callers can index
+    # `property_building_basis[max(1, property_count)]` without special-casing.
+    if property_count == 0:
+        property_rented_fraction = np.zeros(1, dtype=np.float64)
+        property_building_basis = np.zeros(1, dtype=np.float64)
+        property_owner_profile_index = np.full(1, NO_CODE, dtype=np.int64)
+
     liability_rented_fraction = np.array(
         [
             float(scenario.scheduled_property_purchases[int(liability_property_slot[lia])].rented_fraction)
@@ -667,6 +700,9 @@ def compile_simulation(
         liability_property_slot=liability_property_slot,
         liability_rented_fraction=liability_rented_fraction,
         liability_owner_profile_index=liability_owner_profile_index,
+        property_rented_fraction=property_rented_fraction,
+        property_building_basis=property_building_basis,
+        property_owner_profile_index=property_owner_profile_index,
         liability_agent_codes=liability_agent_codes,
         liability_payment_account_codes=liability_payment_account_codes,
         liability_payment_cash_slot=liability_payment_cash_slot,

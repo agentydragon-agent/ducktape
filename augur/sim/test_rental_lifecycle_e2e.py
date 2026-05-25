@@ -446,6 +446,143 @@ class TestRentalIncomeTaxation:
         breakdowns = {row["jurisdiction_id"]: row for row in run.events_log.tax_breakdowns.iter_rows(named=True)}
         assert breakdowns["federal_us"]["ordinary_income_usd"] == pytest.approx(67_200.0, abs=1e-6)
 
+    def test_depreciation_accrues_monthly_and_deducts_as_schedule_e(self):
+        """§168 monthly depreciation accrues for rented property and reduces taxable ordinary
+        income at year-end. Building basis = $500k × 0.80 = $400k; rented_fraction = 1.0;
+        annual depreciation = $400k / 27.5 ≈ $14,545.45."""
+
+        end_month = 11
+        purchase_price = 500_000.0
+        scenario = Scenario(
+            agents=[
+                Agent(agent_id=OWNER_AGENT_ID),
+                Agent(agent_id=TENANT_AGENT_ID),
+                Agent(agent_id="property_seller"),
+                Agent(agent_id="irs"),
+            ],
+            initial_cash=[
+                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance_usd=600_000.0),
+                InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id="property_seller", account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+            ],
+            recurring_transfers=[
+                RecurringTransfer(
+                    start_month=0,
+                    end_month=end_month,
+                    cause_id="rental_income:p1",
+                    from_agent_id=TENANT_AGENT_ID,
+                    from_account_id="checking",
+                    to_agent_id=OWNER_AGENT_ID,
+                    to_account_id="checking",
+                    amount_usd=SeriesIndexedAmount(
+                        base_amount_usd=5_000.0, series_id=RENT_SERIES_ID, adjustment_period_months=12
+                    ),
+                    income_category="ordinary",
+                )
+            ],
+            scheduled_property_purchases=[
+                ScheduledPropertyPurchase(
+                    month=0,
+                    cause_id="p1_purchase",
+                    property_id="p1",
+                    location_id="san_francisco",
+                    buyer_agent_id=OWNER_AGENT_ID,
+                    buyer_account_id="checking",
+                    seller_agent_id="property_seller",
+                    purchase_price_usd=purchase_price,
+                    down_payment_usd=purchase_price,
+                    ownership_pct=1.0,
+                    rented_fraction=1.0,
+                    land_value_fraction=0.20,
+                    buyer_closing_cost_usd=0.0,
+                )
+            ],
+            tax_profiles=[
+                TaxProfile(
+                    agent_id=OWNER_AGENT_ID,
+                    filing_status="single",
+                    jurisdiction_ids=["federal_us", "california"],
+                    tax_authority_agent_id="irs",
+                )
+            ],
+            horizon_months=12,
+        )
+        ctx = _multi_series(
+            levels_by_series={RENT_SERIES_ID: {0: [1.0] * 13}, "home_value:san_francisco": {0: [1.0] * 13}}
+        )
+        run = simulate_with_external_series(scenario, external_series=ctx, rollout_count=1)
+        # Cumulative depreciation grows monotonically; at month 12 (post-horizon snapshot) it's
+        # accrued 12 months worth = $400,000 / 27.5 = $14,545.45.
+        terminal_dep = run.property_state.filter(pl.col("month_index") == 12)
+        assert terminal_dep.height == 1
+        # Federal ordinary income: $60,000 rental - $14,545.45 depreciation = $45,454.55.
+        breakdowns = {row["jurisdiction_id"]: row for row in run.events_log.tax_breakdowns.iter_rows(named=True)}
+        assert breakdowns["federal_us"]["ordinary_income_usd"] == pytest.approx(45_454.55, abs=0.02)
+
+    def test_depreciation_does_not_accrue_when_not_rented(self):
+        """No rental → no depreciation accrual → no Schedule E deduction."""
+
+        end_month = 11
+        purchase_price = 500_000.0
+        scenario = Scenario(
+            agents=[
+                Agent(agent_id=OWNER_AGENT_ID),
+                Agent(agent_id=TENANT_AGENT_ID),
+                Agent(agent_id="property_seller"),
+                Agent(agent_id="irs"),
+            ],
+            initial_cash=[
+                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance_usd=600_000.0),
+                InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id="property_seller", account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+            ],
+            recurring_transfers=[
+                RecurringTransfer(
+                    start_month=0,
+                    end_month=end_month,
+                    cause_id="paycheck",
+                    from_agent_id=TENANT_AGENT_ID,
+                    from_account_id="checking",
+                    to_agent_id=OWNER_AGENT_ID,
+                    to_account_id="checking",
+                    amount_usd=5_000.0,
+                    income_category="ordinary",
+                )
+            ],
+            scheduled_property_purchases=[
+                ScheduledPropertyPurchase(
+                    month=0,
+                    cause_id="p1_purchase",
+                    property_id="p1",
+                    location_id="san_francisco",
+                    buyer_agent_id=OWNER_AGENT_ID,
+                    buyer_account_id="checking",
+                    seller_agent_id="property_seller",
+                    purchase_price_usd=purchase_price,
+                    down_payment_usd=purchase_price,
+                    ownership_pct=1.0,
+                    rented_fraction=0.0,
+                    land_value_fraction=0.20,
+                )
+            ],
+            tax_profiles=[
+                TaxProfile(
+                    agent_id=OWNER_AGENT_ID,
+                    filing_status="single",
+                    jurisdiction_ids=["federal_us", "california"],
+                    tax_authority_agent_id="irs",
+                )
+            ],
+            horizon_months=12,
+        )
+        ctx = _multi_series(levels_by_series={"home_value:san_francisco": {0: [1.0] * 13}})
+        run = simulate_with_external_series(scenario, external_series=ctx, rollout_count=1)
+        breakdowns = {row["jurisdiction_id"]: row for row in run.events_log.tax_breakdowns.iter_rows(named=True)}
+        # No depreciation → ordinary income equals gross paycheck income: $60,000.
+        assert breakdowns["federal_us"]["ordinary_income_usd"] == pytest.approx(60_000.0, abs=1e-6)
+
     def test_mortgage_interest_deducts_full_for_owner_occupied_and_scales_for_partial_rental(self):
         """MID applies to the owner-fraction of mortgage interest; the rented-fraction share
         deducts as Schedule E rental interest. The MID compile-time scaling and the engine's
@@ -505,6 +642,8 @@ class TestRentalIncomeTaxation:
                     seller_agent_id="property_seller",
                     purchase_price_usd=purchase_price,
                     down_payment_usd=purchase_price * 0.20,
+                    # Isolate the MID-vs-Schedule-E comparison from depreciation.
+                    land_value_fraction=1.0,
                     mortgage=MortgageFinancing(
                         liability_id="p1_mortgage",
                         lender_agent_id="lender",
@@ -591,6 +730,10 @@ class TestRentalIncomeTaxation:
                     down_payment_usd=purchase_price,
                     ownership_pct=1.0,
                     rented_fraction=rented_fraction,
+                    # Isolate the property-tax assertion from depreciation: setting
+                    # land_value_fraction=1.0 makes the building basis zero, so no §168
+                    # depreciation accrues for this test.
+                    land_value_fraction=1.0,
                 )
             ],
             property_tax_policies=[

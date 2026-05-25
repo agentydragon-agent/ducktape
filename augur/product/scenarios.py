@@ -556,6 +556,8 @@ def _sim_property_purchase(
         ownership_pct=1.0,
         mortgage=mortgage,
         rented_fraction=rented_fraction,
+        # The wire schema doesn't yet expose this knob; we use the sim default (0.20) until
+        # the deployment-config / property-record story lands. See augur/sim/TODO.md.
     )
 
 

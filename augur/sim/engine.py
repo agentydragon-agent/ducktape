@@ -65,6 +65,12 @@ class StateHistoryBuffers:
     liability_monthly_payment_state: np.ndarray
     liability_interest_ytd_state: np.ndarray
     liability_principal_ytd_state: np.ndarray
+    # Cumulative §168 depreciation USD per (snapshot_month, rollout, property). Monotone
+    # non-decreasing; accrues monthly while a property has rented_fraction > 0. Used at sale
+    # time for §1250 unrecaptured-depreciation recapture (phase 4) and at year-end for the
+    # Schedule E depreciation deduction (the YTD slice is computed from the delta between
+    # consecutive snapshots).
+    property_cumulative_depreciation_state: np.ndarray
     rollout_failed_state: np.ndarray
     rollout_failed_month_state: np.ndarray
 
@@ -143,6 +149,12 @@ class StateHistoryBuffers:
             shape=(s, r, plan.liability_count),
             dtype=np.float64,
         )
+        _expect_array(
+            "property_cumulative_depreciation_state",
+            self.property_cumulative_depreciation_state,
+            shape=(s, r, plan.property_count),
+            dtype=np.float64,
+        )
         _expect_array("rollout_failed_state", self.rollout_failed_state, shape=(s, r), dtype=np.bool_)
         _expect_array("rollout_failed_month_state", self.rollout_failed_month_state, shape=(s, r), dtype=np.int64)
 
@@ -170,6 +182,13 @@ class CurrentStateBuffers:
     # settlements add to this so the federal SALT pass at year-end can read accumulated SALT.
     # Zeroed in the year-end accrual after federal SALT has been consumed.
     property_tax_ytd: np.ndarray
+    # Cumulative §168 depreciation per (rollout, property). Monotone non-decreasing; accrues
+    # monthly while rented_fraction > 0. Used for Schedule E deduction (delta-vs-prior-year-end)
+    # and §1250 recapture at sale (phase 4).
+    property_cumulative_depreciation: np.ndarray
+    # YTD depreciation accrued this calendar year per (rollout, property). Used at year-end to
+    # deduct Schedule E depreciation from the owner's ordinary_ytd; zeroed after.
+    property_depreciation_ytd: np.ndarray
     failed: np.ndarray
     failed_month: np.ndarray
 
@@ -240,6 +259,18 @@ class CurrentStateBuffers:
         )
         _expect_array(
             "current property_tax_ytd", self.property_tax_ytd, shape=(r, plan.tax_profile_count), dtype=np.float64
+        )
+        _expect_array(
+            "current property_cumulative_depreciation",
+            self.property_cumulative_depreciation,
+            shape=(r, plan.property_count),
+            dtype=np.float64,
+        )
+        _expect_array(
+            "current property_depreciation_ytd",
+            self.property_depreciation_ytd,
+            shape=(r, plan.property_count),
+            dtype=np.float64,
         )
         _expect_array("current failed", self.failed, shape=(r,), dtype=np.bool_)
         _expect_array("current failed_month", self.failed_month, shape=(r,), dtype=np.int64)
@@ -502,6 +533,10 @@ class SimulationBuffers:
         return self.state.liability_principal_ytd_state
 
     @property
+    def property_cumulative_depreciation_state(self) -> np.ndarray:
+        return self.state.property_cumulative_depreciation_state
+
+    @property
     def rollout_failed_state(self) -> np.ndarray:
         return self.state.rollout_failed_state
 
@@ -724,6 +759,8 @@ def _allocate_current_state(plan: CompiledSimulation) -> CurrentStateBuffers:
         liability_interest_ytd=np.zeros((r, p.liability_count), dtype=np.float64),
         liability_principal_ytd=np.zeros((r, p.liability_count), dtype=np.float64),
         property_tax_ytd=np.zeros((r, p.tax_profile_count), dtype=np.float64),
+        property_cumulative_depreciation=np.zeros((r, p.property_count), dtype=np.float64),
+        property_depreciation_ytd=np.zeros((r, p.property_count), dtype=np.float64),
         failed=np.zeros(r, dtype=np.bool_),
         failed_month=np.full(r, NO_CODE, dtype=np.int64),
     )
@@ -753,6 +790,7 @@ def _snapshot_current_state(buffers: SimulationBuffers, current: CurrentStateBuf
     buffers.liability_monthly_payment_state[snapshot_index] = current.liability_monthly_payment
     buffers.liability_interest_ytd_state[snapshot_index] = current.liability_interest_ytd
     buffers.liability_principal_ytd_state[snapshot_index] = current.liability_principal_ytd
+    buffers.property_cumulative_depreciation_state[snapshot_index] = current.property_cumulative_depreciation
     buffers.rollout_failed_state[snapshot_index] = current.failed
     buffers.rollout_failed_month_state[snapshot_index] = current.failed_month
 
@@ -789,6 +827,9 @@ def _run_month_step(
     # post-settlement liquid net worth (cash already moved out for this month's bills) and the
     # cap-gain accrual from any tender is captured by the year-end tax pass below.
     _apply_pe_tenders(plan, buffers, current, month)
+    # §168 monthly depreciation accrual for rented properties; must run before tax accruals so
+    # the year-end pass sees this month's contribution in property_depreciation_ytd.
+    _apply_depreciation_accrual(plan, current)
     # Tax accruals run last so December's mortgage payment has already landed its interest into
     # `liability_interest_ytd` before the year-end MID computation reads it.
     _apply_tax_accruals(plan, buffers, current, month)
@@ -1066,6 +1107,29 @@ def _compute_liquid_net_worth(
     return cash_total + lot_value
 
 
+def _apply_depreciation_accrual(plan: CompiledSimulation, current: CurrentStateBuffers) -> None:
+    """Accrue §168 straight-line depreciation for each rented property.
+
+    Monthly depreciation = `building_basis × rented_fraction / (27.5 × 12)`. Only properties
+    that are currently active (purchased and not sold) with rented_fraction > 0 accrue. Updates
+    both the cumulative buffer (used for §1250 recapture at sale) and the YTD buffer (read at
+    year-end by `_apply_tax_accruals` to net Schedule E depreciation against ordinary income).
+    """
+
+    active_rollout = ~current.failed
+    if not active_rollout.any():
+        return
+    property_count = plan.property_rented_fraction.shape[0]
+    for prop in range(property_count):
+        rented = float(plan.property_rented_fraction[prop])
+        if rented <= 0.0:
+            continue
+        monthly_dep = float(plan.property_building_basis[prop]) * rented / (27.5 * 12.0)
+        active_for_property = active_rollout & current.property_active[:, prop]
+        current.property_cumulative_depreciation[active_for_property, prop] += monthly_dep
+        current.property_depreciation_ytd[active_for_property, prop] += monthly_dep
+
+
 def _apply_tax_accruals(
     plan: CompiledSimulation, buffers: SimulationBuffers, current: CurrentStateBuffers, month: int
 ) -> None:
@@ -1087,6 +1151,19 @@ def _apply_tax_accruals(
             continue
         schedule_e_interest = current.liability_interest_ytd[:, lia] * rented
         current.ordinary_ytd[active_rollout, profile] -= schedule_e_interest[active_rollout]
+
+    # Schedule E §168 depreciation deduction: the YTD depreciation accrued this calendar year
+    # for each rented property deducts from the owner's ordinary_ytd. Then reset YTD.
+    property_count = plan.property_owner_profile_index.shape[0]
+    for prop in range(property_count):
+        profile = int(plan.property_owner_profile_index[prop])
+        if profile < 0:
+            continue
+        ytd = current.property_depreciation_ytd[:, prop]
+        if not bool((ytd != 0.0).any()):
+            continue
+        current.ordinary_ytd[active_rollout, profile] -= ytd[active_rollout]
+    current.property_depreciation_ytd[active_rollout, :] = 0.0
 
     link_count = plan.tax_link_profile_index.shape[0]
     # First pass: every link that isn't a SALT-active federal link. Stash its annual tax so
@@ -1732,6 +1809,8 @@ def _allocate_buffers(plan: CompiledSimulation) -> SimulationBuffers:
             liability_monthly_payment_state=np.zeros((s, r, p.liability_count), dtype=np.float64),
             liability_interest_ytd_state=np.zeros((s, r, p.liability_count), dtype=np.float64),
             liability_principal_ytd_state=np.zeros((s, r, p.liability_count), dtype=np.float64),
+            # property_cumulative_depreciation_state[S, R, P]
+            property_cumulative_depreciation_state=np.zeros((s, r, p.property_count), dtype=np.float64),
             # rollout failure state[S, R]
             rollout_failed_state=np.zeros((s, r), dtype=np.bool_),
             rollout_failed_month_state=np.full((s, r), NO_CODE, dtype=np.int64),
