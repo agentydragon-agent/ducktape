@@ -125,6 +125,18 @@ pub(super) fn materialize_logical_chunk(
     let mut anonymous_ordinal_assignment = BTreeMap::<usize, usize>::new();
     let mut module_plans = Vec::new();
     let mut bindings_catalogue = HashMap::<Id, BindingKind>::new();
+    // Name-keyed index into `bindings_catalogue` for the
+    // duplicate-claim check below. The previous shape — a linear scan
+    // of the entire `bindings_catalogue` HashMap on every member of
+    // every request — was the dominant cost in `build_module_plans`
+    // on chunks with thousands of spec modules (O(N^2) over the
+    // growing catalogue). Every catalogue key is constructed via
+    // `top_level_id(name, chunk_top_level_mark)`, so the `name`
+    // alone uniquely identifies the catalogue entry within a chunk;
+    // we mirror inserts into this index and look up by `&str` to
+    // keep duplicate detection O(1) per member while preserving the
+    // same error semantics.
+    let mut catalogue_index_by_name = HashMap::<String, BindingKind>::new();
     let mut imported_binding_resolver =
         ArtifactSourceImportResolutionCache::new(artifact, artifact_indexes);
     let mut imported_from_by_src = BTreeMap::<String, String>::new();
@@ -153,11 +165,7 @@ pub(super) fn materialize_logical_chunk(
         let dest_target_file = target_file_for_request(target_dir, &request.target_path)?;
         let module_id = ModuleId(LogicalModuleIndex(index));
         for member in &request.members {
-            if let Some(existing_kind) = bindings_catalogue
-                .iter()
-                .find(|(id, _)| id.0.as_ref() == member.binding.as_str())
-                .map(|(_, v)| v)
-            {
+            if let Some(existing_kind) = catalogue_index_by_name.get(member.binding.as_str()) {
                 let existing_id = match existing_kind {
                     BindingKind::Owned {
                         owner: ModuleId(LogicalModuleIndex(owner_index)),
@@ -195,15 +203,15 @@ pub(super) fn materialize_logical_chunk(
                     &member.binding,
                     &mut imported_from_by_src,
                 )?;
-                bindings_catalogue.insert(
-                    top_level_id(&member.binding, chunk_top_level_mark),
-                    BindingKind::Imported {
-                        imported_name: imported_name.into(),
-                        imported_from,
-                        re_exporter: module_id,
-                        public_name: member.export_name.as_str().into(),
-                    },
-                );
+                let kind = BindingKind::Imported {
+                    imported_name: imported_name.into(),
+                    imported_from,
+                    re_exporter: module_id,
+                    public_name: member.export_name.as_str().into(),
+                };
+                catalogue_index_by_name.insert(member.binding.clone(), kind.clone());
+                bindings_catalogue
+                    .insert(top_level_id(&member.binding, chunk_top_level_mark), kind);
             } else {
                 bindings.insert(member.binding.clone(), member.export_name.clone());
             }
@@ -212,7 +220,9 @@ pub(super) fn materialize_logical_chunk(
             let binding_id = top_level_id(binding, chunk_top_level_mark);
             if declaration_by_name.contains_key(&binding_id) {
                 binding_assignment.insert(binding_id.clone(), index);
-                bindings_catalogue.insert(binding_id, BindingKind::Owned { owner: module_id });
+                let kind = BindingKind::Owned { owner: module_id };
+                catalogue_index_by_name.insert(binding.clone(), kind.clone());
+                bindings_catalogue.insert(binding_id, kind);
             }
         }
         module_plans.push(ModulePlan {
@@ -225,6 +235,12 @@ pub(super) fn materialize_logical_chunk(
         });
     }
     drop(imported_binding_resolver);
+    // The name-keyed catalogue index only services duplicate-claim
+    // detection inside the explicit-requests loop above. Destructure
+    // siblings and residual sweep below append to `bindings_catalogue`
+    // without name-collision checks, so we don't need to keep the
+    // index in sync past this point.
+    drop(catalogue_index_by_name);
 
     // Destructure-atomicity: a destructuring declarator like
     // `const { x, y } = obj` binds multiple names from a single
