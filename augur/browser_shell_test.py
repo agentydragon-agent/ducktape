@@ -1,18 +1,15 @@
-"""Public Augur browser smoke test against the Bazel-runnable server."""
+"""Public Augur product-surface browser smoke test against the Bazel-runnable server."""
 
 from __future__ import annotations
 
-import json
 import os
-import re
 import subprocess
 import time
 import urllib.error
 import urllib.request
-from base64 import urlsafe_b64decode
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING
 
 import pytest
 import pytest_bazel
@@ -24,7 +21,7 @@ from util.testing.undeclared_outputs import undeclared_outputs_dir
 pytest_plugins = ("util.playwright",)
 
 if TYPE_CHECKING:
-    from playwright.sync_api import Browser, Page, Playwright, Request
+    from playwright.sync_api import Browser, Page, Playwright
 
 
 @pytest.fixture
@@ -105,261 +102,9 @@ def augur_server(tmp_path: Path) -> Iterator[str]:
         server_log.close()
 
 
-def _get_json(origin: str, path: str) -> dict[str, Any]:
-    with urllib.request.urlopen(f"{origin}{path}", timeout=10) as response:
-        assert response.status == 200
-        assert "application/json" in response.headers["content-type"]
-        return cast(dict[str, Any], json.loads(response.read().decode()))
-
-
-def _post_json(origin: str, path: str, payload: dict[str, Any]) -> dict[str, Any]:
-    request = urllib.request.Request(
-        f"{origin}{path}",
-        data=json.dumps(payload).encode(),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    with urllib.request.urlopen(request, timeout=10) as response:
-        assert response.status == 200
-        assert "application/json" in response.headers["content-type"]
-        return cast(dict[str, Any], json.loads(response.read().decode()))
-
-
-def _assert_missing(origin: str, path: str, method: str = "GET") -> None:
-    request = urllib.request.Request(f"{origin}{path}", data=b"{}" if method == "POST" else None, method=method)
-    if method == "POST":
-        request.add_header("Content-Type", "application/json")
-    with pytest.raises(urllib.error.HTTPError) as error_info:
-        urllib.request.urlopen(request, timeout=10)
-    assert error_info.value.code == 404
-    assert "application/json" in error_info.value.headers["content-type"]
-
-
-def _decode_url_state(page: Page) -> dict[str, Any] | None:
-    state = page.evaluate("() => new URL(window.location.href).searchParams.get('state')")
-    if not state:
-        return None
-    padded_state = state + "=" * (-len(state) % 4)
-    payload = json.loads(urlsafe_b64decode(padded_state.encode()).decode())
-    return cast(dict[str, Any], payload)
-
-
-def _wait_for_url_state(page: Page, predicate: Callable[[dict[str, Any]], bool]) -> dict[str, Any]:
-    deadline = time.monotonic() + 15
-    while time.monotonic() < deadline:
-        state = _decode_url_state(page)
-        if state is not None and predicate(state):
-            return state
-        time.sleep(0.1)
-    raise AssertionError(
-        f"timed out waiting for scenario URL state; saw:\n{json.dumps(_decode_url_state(page), indent=2)}"
-    )
-
-
-def _assert_context_panel_boundary(page: Page, selector: str) -> None:
-    """Each `data-scenario-context-panel` / `data-run-context-panel` must live outside the
-    result-panel tree so context info doesn't get duplicated per result panel."""
-    panel = page.locator(selector)
-    panel.wait_for(state="visible", timeout=30_000)
-    assert panel.count() == 1
-    assert page.locator(f"{selector}[data-result-panel-kind]").count() == 0
-    assert page.locator(f"{selector} [data-result-panel-kind]").count() == 0
-    assert page.locator(f"[data-result-panel-kind] {selector}").count() == 0
-
-
-def _assert_context_panel_boundaries(page: Page, *names: str) -> None:
-    for name in names:
-        attribute = "data-run-context-panel" if name == "exogenous-metadata" else "data-scenario-context-panel"
-        _assert_context_panel_boundary(page, f"[{attribute}='{name}']")
-
-
-def _wait_for_successful_run(page: Page, *, scenario_requests: list[dict[str, Any]]) -> None:
-    try:
-        page.get_by_text("Exogenous model metadata").wait_for(state="visible", timeout=30_000)
-    except Exception as error:
-        run_error = page.get_by_text("Scenario-set run failed").first
-        run_error_text = run_error.inner_text(timeout=1_000) if run_error.count() else "<none>"
-        raise AssertionError(
-            "Augur browser did not render a successful scenario-set run.\n"
-            f"Run error: {run_error_text}\n"
-            f"Body text: {page.evaluate('() => document.body.innerText')}\n"
-            f"Scenario requests: {json.dumps(scenario_requests, indent=2)}"
-        ) from error
-
-
-def test_public_augur_shell_runs_against_fixture_config(page: Page, augur_server: str) -> None:
-    _assert_missing(augur_server, "/api/cases")
-    _assert_missing(augur_server, "/api/run", method="POST")
-    _assert_missing(augur_server, "/api/projection/bootstrap")
-
-    bootstrap = _get_json(augur_server, "/api/bootstrap")
-    assert {property_["id"] for property_ in bootstrap["properties"]} == {"location_a_property", "location_b_property"}
-    assert {location["id"] for location in bootstrap["locations"]} == {"location_a", "location_b"}
-    bootstrap_json = json.dumps(bootstrap)
-    assert "San Francisco" not in bootstrap_json
-    assert "Vallejo" not in bootstrap_json
-    assert "actor_policy_options" not in bootstrap
-    assert "default_actor_policy" not in bootstrap
-    assert "default_partner_monthly_payment_usd" not in bootstrap
-    assert bootstrap["default_initial_checking_usd"] == 250000
-    assert bootstrap["default_knobs"]["starting_portfolio_usd"] == 750000
-    assert bootstrap["finance_snapshot"]["sp500_proxy_portfolio_usd"] == 750000
-    assert bootstrap["finance_snapshot"]["concentrated_holdings"][0]["units"] == 1000
-
-    scenario_run = _post_json(
-        augur_server,
-        "/api/scenario_sets/run",
-        {
-            "scenario_set_id": "public_browser_contract",
-            "title": "Public browser contract",
-            "sampling_request": {"rollout_count": 4, "horizon_months": 12, "seed": 11},
-            "scenarios": [
-                {
-                    "scenario_id": "location_a",
-                    "label": "Location A",
-                    "actors": [{"actor_id": "agent_a", "label": "Agent A", "role": "primary_owner"}],
-                    "property_selection": {"property_id": "location_a_property"},
-                    "financing": {"financing_mode": "fixed_30", "down_payment_pct": 25, "mortgage_rate_pct": 6.5},
-                    "initial_balance_sheet": {
-                        "accounts": [
-                            {
-                                "account_id": "checking",
-                                "account_type": "checking",
-                                "owner_actor_id": "agent_a",
-                                "balance_usd": 350_000,
-                            }
-                        ],
-                        "assets": [],
-                        "liabilities": [],
-                    },
-                    "policies": [],
-                }
-            ],
-        },
-    )
-    result = scenario_run["scenario_results"][0]
-    assert result["scenario_id"] == "location_a"
-    assert "status" not in result
-    assert len(result["metric_fan_columns"]["net_worth_usd"]["month_index"]) == 13
-    assert {"mortgage_payments", "property_purchases"} <= set(scenario_run["sampling_metadata"]["event_stream_ids"])
-
-    page_errors: list[str] = []
-    console_errors: list[str] = []
-    bad_responses: list[str] = []
-    request_urls: list[str] = []
-    scenario_requests: list[dict[str, Any]] = []
-
-    page.on("pageerror", lambda error: page_errors.append(error.message))
-    page.on(
-        "console",
-        lambda message: (
-            console_errors.append(message.text)
-            if message.type == "error" and "Failed to load resource" not in message.text
-            else None
-        ),
-    )
-    page.on(
-        "response",
-        lambda response: (
-            bad_responses.append(f"{response.status} {response.url}")
-            if response.url.startswith(augur_server) and response.status >= 400
-            else None
-        ),
-    )
-
-    def record_request(request: Request) -> None:
-        if not request.url.startswith(augur_server):
-            return
-        request_urls.append(request.url)
-        if request.method == "POST" and request.url.endswith("/api/scenario_sets/run") and request.post_data:
-            scenario_requests.append(json.loads(request.post_data))
-
-    page.on("request", record_request)
-
-    page.goto(augur_server, wait_until="domcontentloaded")
-    page.get_by_role("heading", name="Augur", exact=True).wait_for(state="visible", timeout=15_000)
-    page.get_by_text("Financial futures explorer").wait_for(state="visible", timeout=30_000)
-    page.get_by_text("Distribution view").wait_for(state="visible", timeout=30_000)
-    page.get_by_text("Terminal scenario comparison").wait_for(state="visible", timeout=30_000)
-    assert page.evaluate("() => window.location.pathname") == "/distribution"
-    assert page.get_by_text("Selected path monthly ledger").count() == 0
-    assert page.locator("[data-result-panel-kind='distribution']").count() >= 2
-    assert page.locator("[data-result-panel-kind='trajectory']").count() == 0
-    assert page.locator("[data-result-panel-kind='accounting_detail']").count() == 0
-    _wait_for_successful_run(page, scenario_requests=scenario_requests)
-    page.get_by_text("Event stream IDs").wait_for(state="hidden", timeout=30_000)
-    page.get_by_text("Exogenous model metadata").click()
-    page.get_by_text("Event stream IDs").wait_for(state="visible", timeout=30_000)
-    page.get_by_text("Location A baseline").first.wait_for(state="visible", timeout=30_000)
-    page.get_by_text("Location B baseline").first.wait_for(state="visible", timeout=30_000)
-    page.get_by_text("Location A Property").first.wait_for(state="visible", timeout=30_000)
-    page.get_by_text("No image").first.wait_for(state="visible", timeout=30_000)
-    _assert_context_panel_boundaries(
-        page, "property-location", "scenario-contract", "financing-tax", "exogenous-metadata"
-    )
-    page.get_by_role("tab", name="Trajectory").click()
-    page.get_by_text("Trajectory view").wait_for(state="visible", timeout=30_000)
-    page.wait_for_function("() => window.location.pathname === '/trajectory'")
-    page.get_by_text("Selected path monthly ledger").wait_for(state="visible", timeout=30_000)
-    assert page.get_by_text("Terminal scenario comparison").count() == 0
-    assert page.locator("[data-result-panel-kind='trajectory']").count() >= 3
-    assert page.locator("[data-result-panel-kind='accounting_detail']").count() >= 1
-    assert page.locator("[data-result-panel-kind='distribution']").count() == 0
-    _assert_context_panel_boundaries(
-        page, "property-location", "scenario-contract", "financing-tax", "exogenous-metadata"
-    )
-    assert page.evaluate("() => new URL(window.location.href).searchParams.get('rollout')") == "0"
-    assert page.evaluate("() => new URL(window.location.href).searchParams.get('scenario')") == "scenario_1"
-
-    page.get_by_label("Checking buffer").fill("100000")
-    page.get_by_label("SP500-like portfolio").fill("200000")
-    page.get_by_text("SP500 sales").first.wait_for(state="visible", timeout=30_000)
-
-    # Switch to Location B and customize financing/occupancy/PE knobs, then assert the rich
-    # form state landed in the URL via the encoded `?state=` payload.
-    page.get_by_label("Scenario property").select_option("location_b_property")
-    page.get_by_role("heading", name="Location B Property").wait_for(state="visible", timeout=30_000)
-    page.get_by_label("Financing mode").select_option("custom")
-    page.get_by_label("Down payment").fill("40")
-    page.get_by_label("Custom mortgage rate").fill("7.35")
-    page.get_by_label("Vacancy", exact=True).fill("9")
-    page.get_by_label(re.compile("Private .* units")).fill("1000")
-    rich_state = _wait_for_url_state(
-        page,
-        lambda state: any(
-            scenario["property_and_location"]["property_id"] == "location_b_property"
-            and scenario["financing"]["financing_mode"] == "custom"
-            and scenario["financing"]["down_payment_pct"] == 40
-            and scenario["financing"]["custom_mortgage_rate"] == 7.35
-            and scenario["occupancy_and_rental"]["vacancy_pct"] == 9
-            and scenario["initial_balance_sheet"]["private_equity_units"] == 1000
-            and scenario["policies"]["private_equity_sale_policy"] == "none"
-            for scenario in state.get("scenarios", [])
-        ),
-    )
-    rich_scenario = next(
-        scenario
-        for scenario in rich_state["scenarios"]
-        if scenario["property_and_location"]["property_id"] == "location_b_property"
-        and scenario["financing"]["financing_mode"] == "custom"
-    )
-    assert "actors_and_ownership" not in rich_scenario  # multi-actor surface remains hidden
-
-    # Private-data leak checks: nothing from the author's real-life fixtures should ever surface
-    # in a public-fixture run.
-    for forbidden in ("Rai", "Auragon", "OpenAI", "San Francisco", "Vallejo"):
-        assert page.get_by_text(forbidden).count() == 0, f"unexpected private label {forbidden!r}"
-    for forbidden_exact in ("Owner", "Partner"):
-        assert page.get_by_text(forbidden_exact, exact=True).count() == 0
-    assert any(url.endswith("/api/scenario_sets/run") for url in request_urls)
-    assert not any("/api/run" in url or "/api/cases/" in url or "/api/projection/" in url for url in request_urls)
-    assert page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth + 1")
-    assert bad_responses == []
-    assert page_errors == []
-    assert console_errors == []
-
-
-def test_product_frontend_shell_can_jump_to_scenario_set_shell(page: Page, augur_server: str) -> None:
+def test_product_shell_renders_metric_fan_charts(page: Page, augur_server: str) -> None:
+    """Smoke-test the product surface end-to-end: load `/product`, select a few metrics,
+    confirm the matching fan chart renders for each."""
     page.goto(f"{augur_server}/product", wait_until="domcontentloaded")
     page.locator("[data-augur-surface='product']").wait_for(state="visible", timeout=15_000)
     page.get_by_label("Metric to plot").wait_for(state="visible", timeout=15_000)
@@ -367,15 +112,6 @@ def test_product_frontend_shell_can_jump_to_scenario_set_shell(page: Page, augur
     page.locator("[data-product-fan-chart='cashUsd']").wait_for(state="visible", timeout=30_000)
     page.get_by_label("Metric to plot").select_option("holding_value_usd")
     page.locator("[data-product-fan-chart='holdingValueUsd']").wait_for(state="visible", timeout=30_000)
-
-    page.get_by_role("link", name="Scenario set").click()
-    page.locator("[data-augur-surface='scenario-set']").wait_for(state="visible", timeout=15_000)
-    page.wait_for_function("() => window.location.pathname === '/distribution'")
-    page.get_by_text("Financial futures explorer").wait_for(state="visible", timeout=15_000)
-
-    page.get_by_role("link", name="Product").click()
-    page.locator("[data-augur-surface='product']").wait_for(state="visible", timeout=15_000)
-    page.wait_for_function("() => window.location.pathname === '/product'")
 
 
 if __name__ == "__main__":

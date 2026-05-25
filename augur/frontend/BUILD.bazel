@@ -29,7 +29,6 @@ js_library(
         "//augur/frontend/lib:controls",
         "//augur/frontend/lib:format",
         "//augur/frontend/lib:frame",
-        "//augur/frontend/lib:scenario_set_state",
         "//augur/frontend/lib:schema_zod",
     ],
 )
@@ -75,7 +74,6 @@ filegroup(
         "//augur/frontend/lib:controls",
         "//augur/frontend/lib:format",
         "//augur/frontend/lib:frame",
-        "//augur/frontend/lib:scenario_set_state",
     ],
 )
 

@@ -10,22 +10,17 @@ Then copy the produced PNGs from the test's undeclared outputs into
 `augur/frontend/__screenshots__/` and rerun this test without `UPDATE_GOLDEN`.
 With BuildBuddy/RBE, use the invocation id printed by Bazel:
 
-    for f in distribution_default distribution_fan trajectory_scenario_2_rollout_3 product_cash_runway; do
-        bbapi artifact download "$INV" "test.outputs/$f.png" \\
-            -o "augur/frontend/__screenshots__/$f.png"
-    done
+    bbapi artifact download "$INV" "test.outputs/product_cash_runway.png" \\
+        -o augur/frontend/__screenshots__/product_cash_runway.png
 """
 
 from __future__ import annotations
 
-import base64
-import json
 import os
 import shutil
 import subprocess
 import time
 import urllib.error
-import urllib.parse
 import urllib.request
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
@@ -61,121 +56,8 @@ class VisualCase:
     interact: Callable[[Page], None] | None = field(default=None)
 
 
-def _encode_visual_state(scenario_set_input: dict[str, object]) -> str:
-    payload_json = json.dumps(scenario_set_input, separators=(",", ":"), sort_keys=True).encode()
-    return base64.urlsafe_b64encode(payload_json).decode().rstrip("=")
-
-
-def _visual_path(path: str, scenario_set_input: dict[str, object], *, scenario: str, rollout: int = 0) -> str:
-    query = urllib.parse.urlencode(
-        {"state": _encode_visual_state(scenario_set_input), "scenario": scenario, "rollout": str(rollout)}
-    )
-    return f"{path}?{query}"
-
-
-FAN_STATE: dict[str, object] = {
-    "title": "Augur distribution fan fixture",
-    "sampling_request": {"exogenous_model_id": "visual_fan", "rollout_count": 32, "horizon_months": 36, "seed": 23},
-    "report_spec": {"percentiles": [5, 25, 50, 75, 95], "include_monthly_columns": True},
-    "scenarios": [
-        {
-            "identity": {
-                "scenario_id": "location_a_fan",
-                "label": "Location A 3-year fan",
-                "enabled": True,
-                "color": "#2563eb",
-            },
-            "property_and_location": {"property_id": "location_a_property"},
-            "timeline": {"hold_years": 3},
-            "financing": {"financing_mode": "fixed_30", "down_payment_pct": 25},
-            "initial_balance_sheet": {
-                "initial_checking_usd": 75000,
-                "starting_portfolio_usd": 350000,
-                "private_equity_units": 2500,
-            },
-            "policies": {"checking_floor_usd": 100000, "checking_sale_amount_usd": 50000},
-        },
-        {
-            "identity": {
-                "scenario_id": "location_b_fan",
-                "label": "Location B 3-year fan",
-                "enabled": True,
-                "color": "#dc2626",
-            },
-            "property_and_location": {"property_id": "location_b_property"},
-            "timeline": {"hold_years": 3},
-            "financing": {"financing_mode": "fixed_30", "down_payment_pct": 20},
-            "occupancy_and_rental": {
-                "owner_residence_mode": "selected_property",
-                "rental_use_policy": "not_rented",
-                "rooms_rented_while_living": 0,
-                "room_rent_monthly_usd": 0,
-                "room_vacancy_pct": 0,
-                "vacancy_pct": 8,
-                "management_fee_pct": 8,
-                "leasing_fee_pct": 0,
-            },
-            "initial_balance_sheet": {
-                "initial_checking_usd": 75000,
-                "starting_portfolio_usd": 350000,
-                "private_equity_units": 2500,
-            },
-            "policies": {
-                "checking_floor_usd": 100000,
-                "checking_sale_amount_usd": 50000,
-                "private_equity_sale_policy": "none",
-            },
-        },
-    ],
-}
-
-
 SCREENSHOT_VIEWPORT: ViewportSize = {"width": 1280, "height": 1000}
 FROZEN_NOW_MS = 1_779_768_000_000  # 2026-05-15T12:00:00Z.
-
-
-def _wait_for_scenario_set_page(
-    page: Page, *, visible_text: str, hidden_text: str, min_fan_band_height: int | None = None
-) -> None:
-    """Wait for the legacy scenario-set surface to render a stable scenario-set result."""
-    page.add_style_tag(content=deterministic_style())
-    page.get_by_role("heading", name="Augur", exact=True).wait_for(state="visible", timeout=30_000)
-    try:
-        page.get_by_text(visible_text).first.wait_for(state="visible", timeout=30_000)
-    except Exception as error:
-        raise AssertionError(
-            f"did not render expected text {visible_text!r}.\nBody: {page.evaluate('() => document.body.innerText')}"
-        ) from error
-    page.wait_for_function(
-        "() => new URL(window.location.href).searchParams.has('state') "
-        "&& !document.body.innerText.includes('Running...')"
-    )
-    if min_fan_band_height is not None:
-        page.wait_for_function(
-            """
-            (minFanBandHeight) => {
-              const chart = Array.from(document.querySelectorAll('svg[role="img"]')).find((svg) =>
-                (svg.getAttribute("aria-label") || "").includes("probability fan chart")
-              );
-              if (!chart) return false;
-              const heights = Array.from(chart.querySelectorAll("polygon")).map((polygon) => {
-                const points = (polygon.getAttribute("points") || "")
-                  .trim()
-                  .split(/\\s+/)
-                  .map((point) => Number(point.split(",")[1]))
-                  .filter(Number.isFinite);
-                if (points.length === 0) return 0;
-                return Math.max(...points) - Math.min(...points);
-              });
-              return Math.max(0, ...heights) >= minFanBandHeight;
-            }
-            """,
-            arg=min_fan_band_height,
-            timeout=30_000,
-        )
-    assert page.get_by_text(hidden_text).count() == 0
-    assert page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth + 1")
-    page.evaluate("() => document.fonts.ready.then(() => true)")
 
 
 def _wait_for_product_page(page: Page) -> None:
@@ -256,30 +138,6 @@ def _select_first_rollout(page: Page) -> None:
 
 
 VISUAL_CASES = (
-    VisualCase(
-        name="distribution_default",
-        path="/distribution?scenario=scenario_1&rollout=0",
-        wait_ready=lambda page: _wait_for_scenario_set_page(
-            page, visible_text="Terminal scenario comparison", hidden_text="Selected path monthly ledger"
-        ),
-    ),
-    VisualCase(
-        name="distribution_fan",
-        path=_visual_path("/distribution", FAN_STATE, scenario="location_a_fan"),
-        wait_ready=lambda page: _wait_for_scenario_set_page(
-            page,
-            visible_text="Scenario probability fans",
-            hidden_text="Selected path monthly ledger",
-            min_fan_band_height=80,
-        ),
-    ),
-    VisualCase(
-        name="trajectory_scenario_2_rollout_3",
-        path="/trajectory?scenario=scenario_2&rollout=3",
-        wait_ready=lambda page: _wait_for_scenario_set_page(
-            page, visible_text="Selected path monthly ledger", hidden_text="Terminal scenario comparison"
-        ),
-    ),
     VisualCase(
         name="product_cash_runway", path="/product", wait_ready=_wait_for_product_page, interact=_select_first_rollout
     ),
