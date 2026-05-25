@@ -5,7 +5,7 @@ import posixpath
 from dataclasses import dataclass
 from pathlib import Path
 
-from devinfra.js.debundle.live_proxy.package_tree import assert_real_path_within_root, resolve_package_subpath
+from devinfra.js.debundle.live_proxy.package_tree import assert_subpath_does_not_escape, resolve_package_subpath
 
 
 @dataclass(frozen=True)
@@ -195,16 +195,16 @@ def resolve_partial_swap_runtime_request(
             if not rest.startswith(package_prefix):
                 continue
             suffix = rest[len(package_prefix) :]
-            file_path, resolved_suffix = resolve_partial_swap_asset_path(entry.mount_root, suffix)
-            assert_path_within_root(
-                file_path, entry.mount_root, f"Partial-swap request escapes mounted root for {entry.package}: {suffix}"
+            # The request suffix is the only attacker-controlled portion; once
+            # it lexically stays inside the mounted root, the join is safe
+            # regardless of where symlinks below the root point. The previous
+            # implementation `.resolve()`d the joined path and compared with
+            # `mount_root.resolve()`, which broke under Bazel's runfiles tree
+            # because leaf files are symlinks back into `bin/node_modules`.
+            assert_subpath_does_not_escape(
+                entry.package, suffix, f"Partial-swap request escapes mounted root for {entry.package}: {suffix}"
             )
-            if file_path.exists():
-                assert_real_path_within_root(
-                    file_path,
-                    entry.mount_root,
-                    f"Partial-swap request realpath escapes mounted root for {entry.package}: {suffix}",
-                )
+            file_path, resolved_suffix = resolve_partial_swap_asset_path(entry.mount_root, suffix)
             return PartialSwapRequest(
                 entry=entry,
                 file_path=file_path,
@@ -261,19 +261,17 @@ def resolve_vendor_mounted_path(entry: VendorRuntimeEntry, suffix: str) -> Path:
     if suffix in {"", "."}:
         raise RuntimeError(f"Invalid vendor request path for {entry.chunk_id}: {suffix}")
     mounted_relative_path = alias_vendor_entry_path(entry, suffix)
-    resolved_path = (entry.mount_root / mounted_relative_path).resolve()
-    assert_path_within_root(
-        resolved_path,
-        entry.mount_root,
+    # Validate the mounted relative path before joining with the mount root.
+    # We cannot use `Path.resolve()` to detect escapes after the join because
+    # Bazel's runfiles tree contains symlinks that point back into
+    # `bazel-out/.../bin/node_modules`, so a legitimate file inside the
+    # package would appear to "escape" once resolved.
+    assert_subpath_does_not_escape(
+        entry.chunk_id,
+        mounted_relative_path,
         f"Vendor request escapes mounted root for {entry.chunk_id}: {mounted_relative_path}",
     )
-    if resolved_path.exists():
-        assert_real_path_within_root(
-            resolved_path,
-            entry.mount_root,
-            f"Vendor request realpath escapes mounted root for {entry.chunk_id}: {mounted_relative_path}",
-        )
-    return resolved_path
+    return entry.mount_root / mounted_relative_path
 
 
 def alias_vendor_entry_path(entry: VendorRuntimeEntry, suffix: str) -> str:
@@ -317,13 +315,6 @@ def resolve_mount_root(file_path: Path, entry_file: str) -> Path:
 
 def is_root_mounted_entry_file(entry_file: str) -> bool:
     return "/" not in entry_file
-
-
-def assert_path_within_root(path: Path, root: Path, message: str) -> None:
-    try:
-        path.resolve().relative_to(root.resolve())
-    except ValueError as exc:
-        raise RuntimeError(f"{message}: {path}") from exc
 
 
 def resolve_relative(root: Path, value: str) -> Path:

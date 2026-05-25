@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import posixpath
 from pathlib import Path
 from typing import Any, cast
 
@@ -45,8 +46,11 @@ def resolve_package_root(
         raise RuntimeError(f"Package root not provided for {package_name}")
 
     resolved_packages_root = (packages_root or default_packages_root()).resolve()
-    package_root = resolved_packages_root.joinpath(*package_path_segments(package_name)).resolve()
-    assert_path_within_root(package_root, resolved_packages_root, f"Package {package_name} escapes packages root")
+    package_root = resolved_packages_root.joinpath(*package_path_segments(package_name))
+    assert_subpath_does_not_escape(
+        package_name, "/".join(package_path_segments(package_name)), f"Package {package_name} escapes packages root"
+    )
+    package_root = package_root.resolve()
     if not package_root.exists():
         raise RuntimeError(f"Package root not found for {package_name}: {package_root}")
     return package_root
@@ -63,30 +67,83 @@ def resolve_package_subpath(
     resolved_package_root = package_root or resolve_package_root(
         package_name, package_roots=package_roots, packages_root=packages_root
     )
-    file_path = (resolved_package_root / subpath).resolve()
-    assert_path_within_root(
-        file_path, resolved_package_root, f"Package {package_name} subpath escapes package root: {subpath}"
+    # Reject subpaths that try to escape the package root via parent-dir
+    # references BEFORE joining with the root. We cannot rely on
+    # `Path.resolve()` to detect escapes after joining, because Bazel's
+    # runfiles tree materializes package directories as real directories whose
+    # files are symlinks back to the original `bazel-out/.../bin/node_modules`
+    # location. Calling `.resolve()` on `root / subpath` would follow those
+    # leaf symlinks and produce a path outside the runfiles tree even when
+    # the subpath itself is well-formed.
+    assert_subpath_does_not_escape(
+        package_name, subpath, f"Package {package_name} subpath escapes package root: {subpath}"
     )
+    file_path = resolved_package_root / subpath
     if not file_path.exists():
         raise RuntimeError(f"Package file not found for {package_name}: {subpath} -> {file_path}")
-    assert_real_path_within_root(
-        file_path, resolved_package_root, f"Package {package_name} subpath realpath escapes package root: {subpath}"
-    )
     return file_path
 
 
-def assert_real_path_within_root(path: Path, root: Path, message: str) -> Path:
-    real_path = path.resolve()
-    real_root = root.resolve()
-    assert_path_within_root(real_path, real_root, message)
-    return real_path
+def assert_subpath_does_not_escape(package_name: str, subpath: str, message: str) -> None:
+    """Reject subpaths that contain absolute components or `..` escapes.
+
+    Compares the lexically-normalized form of `subpath` against itself: if
+    normalization changes anything to start with `..` or to become absolute,
+    the input was trying to climb above the package root. This is a
+    pre-symlink-resolution check, so it works correctly inside sandboxed
+    Bazel runfiles trees where intermediate path components may be symlinks
+    that point back into `bazel-out` and would confuse `Path.resolve()`.
+    """
+    if not isinstance(subpath, str):
+        raise RuntimeError(f"{message}: non-string subpath {subpath!r}")
+    if subpath.startswith(("/", "\\")):
+        raise RuntimeError(f"{message}: subpath is absolute")
+    # Normalize forward slashes; allow either separator on the way in.
+    normalized = posixpath.normpath(subpath.replace("\\", "/"))
+    if normalized == ".." or normalized.startswith("../"):
+        raise RuntimeError(f"{message}: subpath climbs above package root")
+    # `os.path.normpath` collapses redundant separators but does not catch
+    # cases where the original subpath was an absolute path on Windows; the
+    # absolute-check above plus this pure-forward-slash normalization is
+    # sufficient on POSIX, which is the only target for this code path.
 
 
 def assert_path_within_root(path: Path, root: Path, message: str) -> None:
+    """Verify ``path.resolve()`` is contained in ``root.resolve()``.
+
+    Use this only when both paths are known to live on the same physical
+    branch of the filesystem (e.g. when ``path`` is an absolute caller-
+    supplied URL that has not been joined to ``root``). For checking that a
+    joined ``root / subpath`` stays inside the package, use
+    :func:`assert_subpath_does_not_escape` instead, which avoids symlink
+    resolution entirely.
+    """
     try:
         path.resolve().relative_to(root.resolve())
     except ValueError as exc:
         raise RuntimeError(f"{message}: {path}") from exc
+
+
+def assert_real_path_within_root(path: Path, root: Path, message: str) -> Path:
+    """Deprecated: use :func:`assert_subpath_does_not_escape` instead.
+
+    This function compared the real (symlink-resolved) path of ``path``
+    against the real path of ``root``. That check is incompatible with
+    Bazel's runfiles tree materialization, where package directories are
+    real directories whose leaf files are symlinks back to the original
+    ``bazel-out/.../bin/node_modules`` location. After resolving symlinks,
+    a perfectly legitimate file inside the package root ends up at a path
+    outside the runfiles tree, triggering a false escape error.
+
+    Kept as a no-op-style wrapper around :func:`assert_path_within_root`
+    so that existing callers continue to compile; new code should validate
+    the subpath string with :func:`assert_subpath_does_not_escape` before
+    joining it with the package root.
+    """
+    real_path = path.resolve()
+    real_root = root.resolve()
+    assert_path_within_root(real_path, real_root, message)
+    return real_path
 
 
 def package_path_segments(package_name: str) -> list[str]:
