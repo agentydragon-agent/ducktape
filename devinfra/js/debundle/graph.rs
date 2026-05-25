@@ -1041,6 +1041,44 @@ pub(crate) fn is_cross_module_at_init_promotion(edge: &OwnerEdge, partition: &Pa
     partition.of(callee_owner) != partition.of(edge.from)
 }
 
+/// Partition-projected endpoints of `edge` when it participates in the
+/// module quotient view; `None` means "skip this edge."
+///
+/// Invariant: this is the single function any consumer building a
+/// quotient view of the owner graph MUST consult so they agree on the
+/// same partition view of every edge. Two filters are folded in here:
+///
+/// 1. Same-module edges (`from == to` after partition projection) are
+///    intra-module and never appear in the module quotient.
+/// 2. Cross-module at-init promotions are dropped per
+///    [`is_cross_module_at_init_promotion`]'s ESM-semantics
+///    justification.
+///
+/// History: the same `from == to` + `is_cross_module_at_init_promotion`
+/// filter pair was previously open-coded at five sites
+/// (`build_module_quotient`, `check_realizability`,
+/// `OwnerGraph::from_report`-derived gate use,
+/// `IncrementalQuotient::{add,remove}_current_edge`,
+/// `reports::build_quotient_edge_reports`). A TDZ-class soundness hole
+/// reopens any time one of those sites omits or reorders the
+/// projection — the per-edge filter pair must stay identical at every
+/// call site, because the module-level cycle gate's verdict depends on
+/// it. Centralise here.
+pub(crate) fn cross_module_partition_endpoints(
+    edge: &OwnerEdge,
+    partition: &Partition,
+) -> Option<(ModuleId, ModuleId)> {
+    let from = partition.of(edge.from);
+    let to = partition.of(edge.to);
+    if from == to {
+        return None;
+    }
+    if is_cross_module_at_init_promotion(edge, partition) {
+        return None;
+    }
+    Some((from, to))
+}
+
 /// Quotient the owner graph by `partition` to build the module
 /// dependency graph consumed by validation and emit. The single
 /// public construction path; validation and reports both go through
@@ -1049,14 +1087,9 @@ pub fn build_module_quotient(owner_graph: &OwnerGraph, partition: &Partition) ->
     let mut graph = ModuleQuotient(DiGraphMap::new());
     let mut seen_side_effect_module_pairs = BTreeSet::<(ModuleId, ModuleId)>::new();
     for edge in &owner_graph.edges {
-        let from = partition.of(edge.from);
-        let to = partition.of(edge.to);
-        if from == to {
+        let Some((from, to)) = cross_module_partition_endpoints(edge, partition) else {
             continue;
-        }
-        if is_cross_module_at_init_promotion(edge, partition) {
-            continue;
-        }
+        };
         if edge.reason.is_sequenced() && !seen_side_effect_module_pairs.insert((from, to)) {
             continue;
         }
@@ -1089,4 +1122,50 @@ pub struct OwnerEdge {
     pub from: OwnerId,
     pub to: OwnerId,
     pub reason: EdgeReason,
+}
+
+#[cfg(test)]
+mod partition_view_invariant_tests {
+    //! Regression coverage for the
+    //! [`cross_module_partition_endpoints`] invariant: every consumer
+    //! that builds a quotient view of the owner graph must agree on
+    //! the same filter (skip `from == to` AND skip cross-module
+    //! at-init promotions). A past TDZ-class soundness hole reopened
+    //! the moment one site forgot one half of the filter. This test
+    //! is a static guard that no consumer outside `graph.rs` may call
+    //! [`is_cross_module_at_init_promotion`] directly — they must go
+    //! through `cross_module_partition_endpoints` so the two checks
+    //! stay welded together at the source level.
+    //!
+    //! Files scanned are the four other partition-quotient consumers
+    //! the helper was extracted from: realizability check, the two
+    //! incremental-simulator edge mutators (same file), and the
+    //! reports quotient builder. Add new sibling consumers to the
+    //! `INCLUDE_STR_CALL_SITES` array below as they appear.
+    const INCLUDE_STR_CALL_SITES: &[(&str, &str)] = &[
+        ("realizability.rs", include_str!("realizability.rs")),
+        ("reports.rs", include_str!("reports.rs")),
+    ];
+
+    #[test]
+    fn no_consumer_calls_is_cross_module_at_init_promotion_directly() {
+        for (path, source) in INCLUDE_STR_CALL_SITES {
+            for (lineno, line) in source.lines().enumerate() {
+                // Skip the doc-comment references that exist only to
+                // name-drop the helper in prose.
+                if line.trim_start().starts_with("//") {
+                    continue;
+                }
+                assert!(
+                    !line.contains("is_cross_module_at_init_promotion"),
+                    "{path}:{} calls `is_cross_module_at_init_promotion` directly. \
+                     Route through `cross_module_partition_endpoints` so the \
+                     `from == to` and promoted-edge filters stay welded together \
+                     across consumers (see invariant doc on \
+                     `cross_module_partition_endpoints`).\nline: {line}",
+                    lineno + 1,
+                );
+            }
+        }
+    }
 }

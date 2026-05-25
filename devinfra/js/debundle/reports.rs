@@ -113,14 +113,12 @@ pub(crate) fn build_quotient_edge_reports(
     let mut accum = BTreeMap::<(ModuleId, ModuleId), QuotientEdgeAccumulator>::new();
     let mut seen_side_effect_module_pairs = BTreeSet::<(ModuleId, ModuleId)>::new();
     for edge in owner_edges {
-        let from = partition.of(edge.from);
-        let to = partition.of(edge.to);
-        if from == to {
+        // Same partition view every other quotient consumer uses; see
+        // `cross_module_partition_endpoints` invariant doc.
+        let Some((from, to)) = crate::graph::cross_module_partition_endpoints(edge, partition)
+        else {
             continue;
-        }
-        if crate::graph::is_cross_module_at_init_promotion(edge, partition) {
-            continue;
-        }
+        };
         if edge.reason.is_sequenced() && !seen_side_effect_module_pairs.insert((from, to)) {
             continue;
         }

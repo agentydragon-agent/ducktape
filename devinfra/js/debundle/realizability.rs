@@ -128,18 +128,13 @@ pub fn check_realizability(
         if owner_graph.node(edge.from).is_none() || owner_graph.node(edge.to).is_none() {
             continue;
         }
-        let from = partition.of(edge.from);
-        let to = partition.of(edge.to);
-        if from == to {
+        // Project edge onto the module quotient. Drops same-module
+        // edges and spurious cross-module at-init promotions (see
+        // `cross_module_partition_endpoints` for the invariant).
+        let Some((from, to)) = crate::graph::cross_module_partition_endpoints(edge, partition)
+        else {
             continue;
-        }
-        // Drop spurious cross-module promoted reads/rebinds. See
-        // `is_cross_module_at_init_promotion` for the ESM-semantics
-        // justification — the constraint is redundant with the
-        // caller-module -> callee-module edge already in the graph.
-        if crate::graph::is_cross_module_at_init_promotion(edge, partition) {
-            continue;
-        }
+        };
         if edge.reason.is_rebind() {
             verdict.cross_rebinds.push(CrossRebindEdge {
                 from,
@@ -1025,14 +1020,12 @@ impl IncrementalQuotient {
         partition: &Partition,
         update_graphs: bool,
     ) {
-        let from = partition.of(edge.from);
-        let to = partition.of(edge.to);
-        if from == to {
+        // Same partition view every other quotient consumer uses; see
+        // `cross_module_partition_endpoints` invariant doc.
+        let Some((from, to)) = crate::graph::cross_module_partition_endpoints(edge, partition)
+        else {
             return;
-        }
-        if crate::graph::is_cross_module_at_init_promotion(edge, partition) {
-            return;
-        }
+        };
         if edge.reason.is_rebind() {
             self.cross_rebinds.insert(
                 edge.id,
@@ -1067,14 +1060,12 @@ impl IncrementalQuotient {
         partition: &Partition,
         update_graphs: bool,
     ) {
-        let from = partition.of(edge.from);
-        let to = partition.of(edge.to);
-        if from == to {
+        // Same partition view every other quotient consumer uses; see
+        // `cross_module_partition_endpoints` invariant doc.
+        let Some((from, to)) = crate::graph::cross_module_partition_endpoints(edge, partition)
+        else {
             return;
-        }
-        if crate::graph::is_cross_module_at_init_promotion(edge, partition) {
-            return;
-        }
+        };
         if edge.reason.is_rebind() {
             self.cross_rebinds.remove(&edge.id);
             return;
