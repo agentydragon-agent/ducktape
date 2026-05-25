@@ -1510,6 +1510,11 @@ def _apply_obligation_settlement(
             property_tax_profile = int(plan.obligation_property_tax_profile[month, slot])
             if property_tax_profile >= 0:
                 current.property_tax_ytd[paid, property_tax_profile] += amount[paid]
+            # Schedule E deduction: decrement payer's ordinary_ytd by amount × deductible_fraction.
+            deduction_profile = int(plan.obligation_deduction_profile_index[month, slot])
+            if deduction_profile >= 0:
+                deductible_fraction = float(plan.obligation_deductible_fraction[month, slot])
+                current.ordinary_ytd[paid, deduction_profile] -= amount[paid] * deductible_fraction
 
         failed = active_slot & ~funded[slot]
         if failed.any():

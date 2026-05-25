@@ -155,6 +155,13 @@ class ScheduledObligation(BaseModel):
     liquidity-policy path: available cash plus policy-emitted sale
     proceeds must cover the whole amount, and the rollout fails if
     the full amount cannot be paid immediately.
+
+    `deduction_category` tags the (paid) amount as a tax-deductible
+    expense for `agent_id`. When set, `agent_id`'s ordinary_income_ytd
+    decrements by `deductible_fraction × paid_amount` at settlement
+    time. `deductible_fraction` defaults to 1.0; smaller values model
+    partial deductibility (e.g. the rented share of HOA dues on a
+    partial rental).
     """
 
     month: int
@@ -165,10 +172,16 @@ class ScheduledObligation(BaseModel):
     to_agent_id: str
     to_account_id: str
     amount_due_usd: AmountSpec
+    deduction_category: TransferDeductionCategory | None = None
+    deductible_fraction: float = Field(default=1.0, ge=0.0, le=1.0)
 
 
 class RecurringObligation(BaseModel):
-    """A required due-now payment that repeats in a month window."""
+    """A required due-now payment that repeats in a month window.
+
+    `deduction_category` + `deductible_fraction` work the same way as on
+    `ScheduledObligation` — see that class's docstring.
+    """
 
     start_month: int
     end_month: int | None = None
@@ -179,6 +192,8 @@ class RecurringObligation(BaseModel):
     to_agent_id: str
     to_account_id: str
     amount_due_usd: AmountSpec
+    deduction_category: TransferDeductionCategory | None = None
+    deductible_fraction: float = Field(default=1.0, ge=0.0, le=1.0)
 
     def is_active_at(self, month: int) -> bool:
         return self.start_month <= month and (self.end_month is None or month <= self.end_month)

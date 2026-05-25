@@ -19,6 +19,7 @@ from augur.sim.external_series import EXTERNAL_SERIES_EVENTS_FRAME, EXTERNAL_SER
 from augur.sim.scenario import (
     Agent,
     InitialAccountBalance,
+    RecurringObligation,
     RecurringTransfer,
     Scenario,
     ScheduledTransfer,
@@ -371,6 +372,139 @@ class TestRentalIncomeTaxation:
         # Gross rental: 12 × $5,000 = $60,000. Management fee: 12 × $500 = $6,000.
         # Net ordinary income exposed to brackets = $54,000.
         assert breakdowns["federal_us"]["ordinary_income_usd"] == pytest.approx(54_000.0, abs=1e-6)
+
+    def test_obligation_deduction_decrements_payer_ordinary_ytd(self):
+        """Schedule E on obligations: a paid RecurringObligation with
+        deduction_category='ordinary' and deductible_fraction=1.0 decrements the payer's
+        ordinary_income_ytd by the full settled amount."""
+
+        end_month = 11
+        # $6,000/mo gross rent → $72,000/yr; $400/mo HOA fully deductible → $4,800/yr Schedule E.
+        # Net ordinary income for tax = $72,000 - $4,800 = $67,200.
+        scenario = Scenario(
+            agents=[
+                Agent(agent_id=OWNER_AGENT_ID),
+                Agent(agent_id=TENANT_AGENT_ID),
+                Agent(agent_id="hoa"),
+                Agent(agent_id="irs"),
+            ],
+            initial_cash=[
+                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance_usd=100_000.0),
+                InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id="hoa", account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+            ],
+            recurring_transfers=[
+                RecurringTransfer(
+                    start_month=0,
+                    end_month=end_month,
+                    cause_id="rental_income:p1",
+                    from_agent_id=TENANT_AGENT_ID,
+                    from_account_id="checking",
+                    to_agent_id=OWNER_AGENT_ID,
+                    to_account_id="checking",
+                    amount_usd=SeriesIndexedAmount(
+                        base_amount_usd=6_000.0, series_id=RENT_SERIES_ID, adjustment_period_months=12
+                    ),
+                    income_category="ordinary",
+                )
+            ],
+            recurring_obligations=[
+                RecurringObligation(
+                    start_month=0,
+                    end_month=end_month,
+                    obligation_id="hoa_dues",
+                    obligation_type="hoa_dues",
+                    agent_id=OWNER_AGENT_ID,
+                    from_account_id="checking",
+                    to_agent_id="hoa",
+                    to_account_id="checking",
+                    amount_due_usd=SeriesIndexedAmount(
+                        base_amount_usd=400.0, series_id=RENT_SERIES_ID, adjustment_period_months=12
+                    ),
+                    deduction_category="ordinary",
+                    deductible_fraction=1.0,
+                )
+            ],
+            tax_profiles=[
+                TaxProfile(
+                    agent_id=OWNER_AGENT_ID,
+                    filing_status="single",
+                    jurisdiction_ids=["federal_us", "california"],
+                    tax_authority_agent_id="irs",
+                )
+            ],
+            horizon_months=12,
+        )
+        run = _run(scenario)
+        breakdowns = {row["jurisdiction_id"]: row for row in run.events_log.tax_breakdowns.iter_rows(named=True)}
+        assert breakdowns["federal_us"]["ordinary_income_usd"] == pytest.approx(67_200.0, abs=1e-6)
+
+    def test_obligation_deductible_fraction_scales_deduction(self):
+        """Partial rental: HOA dues are only deductible up to the rented fraction (0.5
+        in this test → only $200 of the $400/mo HOA deducts each month)."""
+
+        end_month = 11
+        # Gross rental $30,000/yr (50% rented); HOA $400/mo, 50% deductible → $200/mo × 12 = $2,400.
+        # Net ordinary income = $30,000 - $2,400 = $27,600.
+        scenario = Scenario(
+            agents=[
+                Agent(agent_id=OWNER_AGENT_ID),
+                Agent(agent_id=TENANT_AGENT_ID),
+                Agent(agent_id="hoa"),
+                Agent(agent_id="irs"),
+            ],
+            initial_cash=[
+                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance_usd=100_000.0),
+                InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id="hoa", account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+            ],
+            recurring_transfers=[
+                RecurringTransfer(
+                    start_month=0,
+                    end_month=end_month,
+                    cause_id="rental_income:p1",
+                    from_agent_id=TENANT_AGENT_ID,
+                    from_account_id="checking",
+                    to_agent_id=OWNER_AGENT_ID,
+                    to_account_id="checking",
+                    amount_usd=SeriesIndexedAmount(
+                        base_amount_usd=2_500.0, series_id=RENT_SERIES_ID, adjustment_period_months=12
+                    ),
+                    income_category="ordinary",
+                )
+            ],
+            recurring_obligations=[
+                RecurringObligation(
+                    start_month=0,
+                    end_month=end_month,
+                    obligation_id="hoa_dues",
+                    obligation_type="hoa_dues",
+                    agent_id=OWNER_AGENT_ID,
+                    from_account_id="checking",
+                    to_agent_id="hoa",
+                    to_account_id="checking",
+                    amount_due_usd=SeriesIndexedAmount(
+                        base_amount_usd=400.0, series_id=RENT_SERIES_ID, adjustment_period_months=12
+                    ),
+                    deduction_category="ordinary",
+                    deductible_fraction=0.5,
+                )
+            ],
+            tax_profiles=[
+                TaxProfile(
+                    agent_id=OWNER_AGENT_ID,
+                    filing_status="single",
+                    jurisdiction_ids=["federal_us", "california"],
+                    tax_authority_agent_id="irs",
+                )
+            ],
+            horizon_months=12,
+        )
+        run = _run(scenario)
+        breakdowns = {row["jurisdiction_id"]: row for row in run.events_log.tax_breakdowns.iter_rows(named=True)}
+        assert breakdowns["federal_us"]["ordinary_income_usd"] == pytest.approx(27_600.0, abs=1e-6)
 
 
 class TestRentalCashflowReconciliation:

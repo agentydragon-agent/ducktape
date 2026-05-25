@@ -221,6 +221,12 @@ class CompiledSimulation:
     obligation_amount_series_index: np.ndarray
     obligation_amount_base_month: np.ndarray
     obligation_amount_adjustment_period: np.ndarray
+    # NO_CODE if the obligation is not tax-deductible for the payer; otherwise the profile
+    # index whose ordinary_income_ytd should decrement when the obligation settles.
+    obligation_deduction_profile_index: np.ndarray
+    # Fraction of the paid amount that is tax-deductible (e.g. 1.0 = fully deductible Schedule E
+    # expense, 0.4 = 40% of the obligation is deductible because the property is 40% rented).
+    obligation_deductible_fraction: np.ndarray
     obligation_source_kind: np.ndarray
     obligation_source_index: np.ndarray
     # For property-tax obligations, the tax-profile index whose SALT total should be credited
@@ -453,6 +459,8 @@ def compile_simulation(
         obligation_source_index,
         tax_settlement_profile_index,
         obligation_property_tax_profile,
+        obligation_deduction_profile_index,
+        obligation_deductible_fraction,
     ) = _compile_obligation_slots(
         scenario,
         strings,
@@ -664,6 +672,8 @@ def compile_simulation(
         obligation_source_kind=obligation_source_kind,
         obligation_source_index=obligation_source_index,
         obligation_property_tax_profile=obligation_property_tax_profile,
+        obligation_deduction_profile_index=obligation_deduction_profile_index,
+        obligation_deductible_fraction=obligation_deductible_fraction,
         external_event_ids=external_event_ids,
         external_event_values=external_event_values,
         pe_issuer_codes=pe_issuer_codes,
@@ -1532,6 +1542,11 @@ def _compile_obligation_slots(
     tax_settlement_profile = _empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
     # Default NO_CODE; populated only for property-tax obligations whose owner has a TaxProfile.
     property_tax_profile = _empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
+    # Schedule E deduction wiring: NO_CODE / 0.0 unless the obligation declares
+    # deduction_category. Engine decrements ordinary_ytd by amount × deductible_fraction
+    # at settlement time when deduction_profile >= 0.
+    deduction_profile = _empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
+    deductible_fraction = _empty_month_matrix(horizon, max_slots, np.float64, 0.0)
     agent_to_profile_index: dict[int, int] = {
         strings.require(p.agent_id): i for i, p in enumerate(scenario.tax_profiles)
     }
@@ -1563,6 +1578,10 @@ def _compile_obligation_slots(
                 amount_series[month, idx] = series
                 amount_base_month[month, idx] = base_month
                 amount_period[month, idx] = period
+                if config.deduction_category == ORDINARY_DEDUCTION_CATEGORY:
+                    profile = agent_to_profile_index.get(strings.require(config.agent_id), NO_CODE)
+                    deduction_profile[month, idx] = profile
+                    deductible_fraction[month, idx] = float(config.deductible_fraction)
             elif spec["kind"] in {1, 2, 3, 4, 5}:
                 # The dynamic source fields are decoded later from source_kind/source_index.
                 continue
@@ -1671,6 +1690,8 @@ def _compile_obligation_slots(
         source_index,
         tax_settlement_profile,
         property_tax_profile,
+        deduction_profile,
+        deductible_fraction,
     )
 
 

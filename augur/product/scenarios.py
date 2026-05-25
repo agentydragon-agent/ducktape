@@ -35,6 +35,7 @@ from augur.sim.scenario import (
     ScheduledTransfer,
     SeriesIndexedAmount,
     TaxProfile,
+    TransferDeductionCategory,
 )
 
 PRIMARY_ACCOUNT_ID = "checking"
@@ -235,6 +236,11 @@ def build_scenario(
                 end_month=end_month,
             )
         )
+        initial_occupancy_mode, initial_rented_fraction = _initial_occupancy(scenario_key.property_purchase)
+        # Schedule E for property expenses: the rented fraction of HOA / insurance / maintenance /
+        # property tax is deductible against rental income. For Phase 1 with constant occupancy,
+        # this fraction is set once at compile time and applied at every monthly settlement.
+        property_deduction_category, property_deductible_fraction = _schedule_e_split(initial_rented_fraction)
         if property_.hoa_monthly_usd > 0:
             agents.append(Agent(agent_id=HOA_AGENT_ID))
             initial_cash.append(
@@ -255,9 +261,10 @@ def build_scenario(
                         series_id=INFLATION_SERIES_ID,
                         adjustment_period_months=1,
                     ),
+                    deduction_category=property_deduction_category,
+                    deductible_fraction=property_deductible_fraction,
                 )
             )
-        initial_occupancy_mode, initial_rented_fraction = _initial_occupancy(scenario_key.property_purchase)
         if scenario_key.annual_insurance_pct > 0:
             agents.append(Agent(agent_id=INSURER_AGENT_ID))
             initial_cash.append(
@@ -282,6 +289,8 @@ def build_scenario(
                     amount_due_usd=SeriesIndexedAmount(
                         base_amount_usd=monthly_insurance_usd, series_id=INFLATION_SERIES_ID, adjustment_period_months=1
                     ),
+                    deduction_category=property_deduction_category,
+                    deductible_fraction=property_deductible_fraction,
                 )
             )
         if scenario_key.annual_maintenance_pct > 0:
@@ -312,6 +321,8 @@ def build_scenario(
                         series_id=INFLATION_SERIES_ID,
                         adjustment_period_months=1,
                     ),
+                    deduction_category=property_deduction_category,
+                    deductible_fraction=property_deductible_fraction,
                 )
             )
         _wire_landlord_rental(
@@ -372,6 +383,21 @@ def _resolve_monthly_rent(rental: RentalIncomePlan, *, property_: Property) -> f
             "monthly_rent_collected_usd; one or the other is required to model rental income"
         )
     return float(property_.rent_estimate_usd)
+
+
+def _schedule_e_split(rented_fraction: float) -> tuple[TransferDeductionCategory | None, float]:
+    """Compute the (`deduction_category`, `deductible_fraction`) pair for a property expense.
+
+    Rented fraction > 0 → property expenses route a `rented_fraction` share to Schedule E
+    against rental income; fraction = 0 (pure owner-occupied) → no Schedule E deduction
+    (mortgage interest still flows to MID via the existing MID policy; SALT applies as
+    today). The Phase 2 follow-ups in `augur/sim/TODO.md` track scaling MID/SALT
+    themselves by (1 - rented_fraction); this helper only handles the Schedule E side.
+    """
+
+    if rented_fraction <= 0.0:
+        return (None, 0.0)
+    return ("ordinary", float(rented_fraction))
 
 
 def _initial_occupancy(purchase: PropertyPurchase) -> tuple[OccupancyMode, float]:
