@@ -46,10 +46,6 @@ export function NumberField({
   );
 }
 
-export function MoneyField(props) {
-  return <NumberField prefix="$" {...props} />;
-}
-
 // Mantine NativeSelect with the project's standard label classNames so callsites don't repeat
 // `classNames={{ label: "augur-field-label mb-1 block", input: "augur-tabular" }}` per use.
 export function NativeSelectField(props) {

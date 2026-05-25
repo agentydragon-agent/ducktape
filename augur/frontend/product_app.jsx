@@ -6,7 +6,26 @@ import { fanChartAxis, fanChartYearTicks, fmtAxisMetricValue, fmtMetricValue } f
 import { rowsFrom } from "./lib/frame.js";
 import { NativeSelectField, NumberField } from "./lib/controls.jsx";
 import { clampInteger, fmtNumber, fmtUsd } from "./lib/format.js";
-import { AugurShellHeader } from "./shell.jsx";
+
+function AugurHeader({ rightSlot = null }) {
+  return (
+    <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur dark:border-slate-800 dark:bg-slate-950/95 sm:px-6 lg:px-8">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="min-w-0">
+          <h1 className="text-base font-semibold text-slate-950 dark:text-slate-50">Augur</h1>
+          <div className="text-xs uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+            Financial futures explorer
+          </div>
+        </div>
+        {rightSlot && (
+          <div className="flex min-w-[min(100%,28rem)] flex-1 flex-wrap items-center justify-end gap-3 text-xs augur-muted sm:flex-none">
+            {rightSlot}
+          </div>
+        )}
+      </div>
+    </header>
+  );
+}
 
 // Sell-order is stored as a string of single-char bucket codes, in priority order. "pc" means
 // "sell public securities first, then crypto if needed"; "c" means crypto only; "" disables auto
@@ -1389,7 +1408,7 @@ function ProductProjectionLoading({ error }) {
       data-augur-surface="product"
       className="min-h-screen bg-slate-100 text-slate-800 dark:bg-slate-950 dark:text-slate-100"
     >
-      <AugurShellHeader activeSurface="product" rightSlot={<span className="whitespace-nowrap">Product API</span>} />
+      <AugurHeader rightSlot={<span className="whitespace-nowrap">Product API</span>} />
       <main className="px-4 py-6 sm:px-6 lg:px-8">
         {error ? (
           <div className="augur-note-danger max-w-lg p-4 text-sm">Augur bootstrap failed: {error}</div>
@@ -1526,8 +1545,7 @@ function ProductProjectionWorkspace({ bootstrap }) {
       data-augur-surface="product"
       className="min-h-screen bg-slate-100 text-slate-800 dark:bg-slate-950 dark:text-slate-100"
     >
-      <AugurShellHeader
-        activeSurface="product"
+      <AugurHeader
         rightSlot={<span className="whitespace-nowrap">{fmtNumber(request.rolloutSeeds.length)} rollouts</span>}
       />
 

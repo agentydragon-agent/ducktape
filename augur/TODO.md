@@ -176,24 +176,6 @@ generic backlog rather than a second ordered roadmap.
       `projection_run_id` / `projection_trajectory_id` graph identities unless
       server-side persistence and slicing need them; and unused
       `ExogenousObservation` response models if they remain unmaterialized.
-- [ ] **Extend `ReportSpec` `include_*` gates to the smaller response
-      fields**. `include_funding_decisions` / `include_obligations` /
-      `include_settlement_results` / `include_failure_events` shipped
-      default-off (commit `96537e7d`); follow up with
-      `include_market_observations` (~30 MB), `include_projection_trajectories`,
-      `include_effects`, `include_policy_decisions`, `include_tax_lots`,
-      `include_lot_dispositions`, `include_accounting_details`,
-      `include_liabilities`. None are read by any current frontend; one
-      backend test (`test_scenario_set_response_serializes_discriminated_effects`)
-      reads `market_observations` via the response and would need to opt in.
-- [ ] **Server-side result persistence + slicing.** Sketch in
-      `augur/plans/persistence_and_slicing.md`. Build the durable
-      scenario-set/run slicing layer beyond the lightweight product-route
-      rollout cache: cache `SimulationRun` / `ProjectionRun` data keyed by
-      content-addressed scenario and sampling inputs; expose
-      `/api/runs/<id>/monthly_columns`,
-      `/api/runs/<id>/rollout/<i>/series/<metric>`, etc. so the frontend can
-      fetch slices on demand instead of getting everything every time.
 
 ## Step 7 Scope
 

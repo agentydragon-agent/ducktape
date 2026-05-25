@@ -516,23 +516,6 @@ Work:
 
 ## Next Work Plans
 
-### Plan A: Consume Generated Browser Schemas
-
-Scope:
-
-- Wire `augur/frontend/lib/scenario_set_state.js` and tests to consume the generated
-  Augur OpenAPI/browser schema target instead of hand-maintaining boundary
-  field lists and ad hoc object probes.
-- Keep the generated schema target as the only browser-facing API schema source
-  of truth; backend Pydantic models define the public payloads.
-- Avoid defining an independent Augur Zod schema by hand; if Zod is used, it
-  should be generated from the Python schema.
-
-Validation:
-
-- `nix develop --command pre-commit run --files augur/frontend/lib/BUILD.bazel augur/frontend/lib/scenario_set_state.js augur/frontend/lib/scenario_set_state_test.mjs augur/plans/roadmap.md augur/TODO.md`
-- `nix develop --command bazelisk --output_user_root=/tmp/bazel-augur-schema-generation test //augur/frontend/lib:scenario_set_state_test //augur/api:browser_shell_test --nocache_test_results --test_size_filters=small,medium,large`
-
 ### Plan B: Make Private-Equity Opportunities And Policy Explicit
 
 Scope:
@@ -581,8 +564,8 @@ seed; the market config should not keep a second inert copy.
 For each public framework slice:
 
 ```bash
-bbr test //augur/api:browser_shell_test
-bbr test //augur/frontend/lib:scenario_set_state_test
+bbr test //augur:browser_shell_test
+bbr test //augur:visual_test
 bbr test //augur/api:server_test
 ```
 

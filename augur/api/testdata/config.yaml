@@ -88,8 +88,10 @@ exogenous_provider:
       initial_value: 1.0
       monthly_log_return_mu: 0.0024625000
       monthly_log_return_sigma: 0.0086602540
-    # Routing key matches the snapshot's holding_id; PE positions reference it
-    # via issuer_id (see browser fixture in augur/frontend/lib/scenario_set_state.js).
+    # Routing key matches the portfolio `private_equity:<issuer>` value_series_id and the
+    # snapshot.concentrated_holdings.holding_id; the product translator
+    # (`augur/product/scenarios._build_private_equity_tender_policies`) wires this issuer
+    # to a tender policy when the PE row is present in `portfolio.holdings`.
     "private_equity:private_holding_a": # annual return 8%, vol 35%
       kind: gbm
       initial_value: 25.0
