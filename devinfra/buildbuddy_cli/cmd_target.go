@@ -344,7 +344,7 @@ Examples:
 					fmt.Fprintf(os.Stderr, "  %s  %s\n", a.Label, a.Name)
 				}
 			}
-			return downloadArtifact(c, matches[:1], matches[0].Label+"/"+matches[0].Name)
+			return catArtifact(c, matches[:1], matches[0].Label+"/"+matches[0].Name)
 		},
 	}
 	cmd.Flags().StringVar(&artifactName, "artifact", "test.log", "Artifact name to download (default: test.log)")
