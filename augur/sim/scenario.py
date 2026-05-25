@@ -306,6 +306,13 @@ class ScheduledPropertyPurchase(BaseModel):
     buyer closing costs. Mortgage proceeds are not routed through the
     buyer's cash account in this first slice; the purchase is booked
     net, with the debt appearing as a liability.
+
+    `rented_fraction` (0..1) is the share of the property that is
+    rented out at purchase month. 0.0 = pure owner-occupied / off
+    (no Schedule E); 1.0 = pure investment (full Schedule E + no
+    MID/SALT); values in between = mixed-use (proportional Schedule E
+    + reduced MID/SALT). Phase 3 lifecycle events will replace this
+    constant-for-horizon value with a runtime-mutated state buffer.
     """
 
     month: int
@@ -321,6 +328,7 @@ class ScheduledPropertyPurchase(BaseModel):
     buyer_closing_cost_usd: float = 0.0
     ownership_pct: float = 1.0
     mortgage: MortgageFinancing | None = None
+    rented_fraction: float = Field(default=0.0, ge=0.0, le=1.0)
 
 
 class PropertyTaxPolicy(BaseModel):

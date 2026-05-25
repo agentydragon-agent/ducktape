@@ -18,10 +18,14 @@ import pytest_bazel
 from augur.sim.external_series import EXTERNAL_SERIES_EVENTS_FRAME, EXTERNAL_SERIES_VALUES_FRAME, ExternalSeriesContext
 from augur.sim.scenario import (
     Agent,
+    FederalSaltCapEntry,
+    FederalSaltDeductionPolicy,
     InitialAccountBalance,
+    PropertyTaxPolicy,
     RecurringObligation,
     RecurringTransfer,
     Scenario,
+    ScheduledPropertyPurchase,
     ScheduledTransfer,
     SeriesIndexedAmount,
     TaxProfile,
@@ -439,6 +443,112 @@ class TestRentalIncomeTaxation:
         run = _run(scenario)
         breakdowns = {row["jurisdiction_id"]: row for row in run.events_log.tax_breakdowns.iter_rows(named=True)}
         assert breakdowns["federal_us"]["ordinary_income_usd"] == pytest.approx(67_200.0, abs=1e-6)
+
+    def test_property_tax_routes_owner_fraction_to_salt_and_rented_fraction_to_schedule_e(self):
+        """Per-property `rented_fraction=0.75` should:
+        - route 25% of property tax to SALT (owner-use portion)
+        - route 75% of property tax to Schedule E (rented-use portion deduction).
+        """
+
+        # Build via ScheduledPropertyPurchase + PropertyTaxPolicy so the kind=2 compiler branch
+        # populates the owner_fraction + deduction_profile arrays.
+        end_month = 11
+        purchase_price = 600_000.0
+        rented_fraction = 0.75
+        annual_tax_rate = 0.012  # 1.2% of price = $7,200/yr → $600/mo
+        scenario = Scenario(
+            agents=[
+                Agent(agent_id=OWNER_AGENT_ID),
+                Agent(agent_id=TENANT_AGENT_ID),
+                Agent(agent_id="property_seller"),
+                Agent(agent_id="tax_authority"),
+                Agent(agent_id="irs"),
+            ],
+            initial_cash=[
+                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance_usd=700_000.0),
+                InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id="property_seller", account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id="tax_authority", account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+            ],
+            recurring_transfers=[
+                RecurringTransfer(
+                    start_month=0,
+                    end_month=end_month,
+                    cause_id="rental_income:p1",
+                    from_agent_id=TENANT_AGENT_ID,
+                    from_account_id="checking",
+                    to_agent_id=OWNER_AGENT_ID,
+                    to_account_id="checking",
+                    amount_usd=SeriesIndexedAmount(
+                        base_amount_usd=4_000.0, series_id=RENT_SERIES_ID, adjustment_period_months=12
+                    ),
+                    income_category="ordinary",
+                )
+            ],
+            scheduled_property_purchases=[
+                ScheduledPropertyPurchase(
+                    month=0,
+                    cause_id="p1_purchase",
+                    property_id="p1",
+                    location_id="san_francisco",
+                    buyer_agent_id=OWNER_AGENT_ID,
+                    buyer_account_id="checking",
+                    seller_agent_id="property_seller",
+                    purchase_price_usd=purchase_price,
+                    down_payment_usd=purchase_price,
+                    ownership_pct=1.0,
+                    rented_fraction=rented_fraction,
+                )
+            ],
+            property_tax_policies=[
+                PropertyTaxPolicy(
+                    property_id="p1",
+                    owner_agent_id=OWNER_AGENT_ID,
+                    from_account_id="checking",
+                    tax_authority_agent_id="tax_authority",
+                    tax_authority_account_id="checking",
+                    annual_tax_rate=annual_tax_rate,
+                    start_month=0,
+                    end_month=end_month,
+                )
+            ],
+            federal_salt_deduction_policies=[
+                FederalSaltDeductionPolicy(
+                    profile_id=OWNER_AGENT_ID,
+                    cap_schedule=[FederalSaltCapEntry(effective_year_index=0, cap_usd=10_000.0)],
+                )
+            ],
+            tax_profiles=[
+                TaxProfile(
+                    agent_id=OWNER_AGENT_ID,
+                    filing_status="single",
+                    jurisdiction_ids=["federal_us", "california"],
+                    tax_authority_agent_id="irs",
+                )
+            ],
+            horizon_months=12,
+        )
+        # Series needs home_value:san_francisco too for property purchase.
+        ctx = _multi_series(
+            levels_by_series={RENT_SERIES_ID: {0: [1.0] * 13}, "home_value:san_francisco": {0: [1.0] * 13}}
+        )
+        run = simulate_with_external_series(scenario, external_series=ctx, rollout_count=1)
+        # Debug: surface any rollout failure before asserting on tax flows.
+        status = run.rollout_status
+        assert status["status"][0] != "failed", (
+            f"rollout failed at month {status['failed_month'][0]}; "
+            f"failures: {run.events_log.rollout_failures.to_dicts()}"
+        )
+        breakdowns = {row["jurisdiction_id"]: row for row in run.events_log.tax_breakdowns.iter_rows(named=True)}
+        # Gross rent: 12 × $4,000 = $48,000. Property tax fires at months 1..11 (11 payments;
+        # month 0 is the purchase month, no tax that month) → $7,200 × 11/12 = $6,600.
+        # rented_fraction=0.75 → $4,950 routes to Schedule E + $1,650 routes to SALT.
+        # Federal ordinary_income_usd after Schedule E = $48,000 - $4,950 = $43,050.
+        # (The SALT total combines property tax + state income tax and gets capped, so we
+        # don't assert on the absolute SALT number here. The owner-fraction effect is
+        # observable through ordinary_income decreasing relative to the rental income.)
+        assert breakdowns["federal_us"]["ordinary_income_usd"] == pytest.approx(43_050.0, abs=1e-6)
 
     def test_obligation_deductible_fraction_scales_deduction(self):
         """Partial rental: HOA dues are only deductible up to the rented fraction (0.5

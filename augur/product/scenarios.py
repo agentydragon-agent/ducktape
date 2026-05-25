@@ -540,6 +540,7 @@ def _sim_property_purchase(
         down_payment = purchase_price
     else:
         down_payment = purchase_price * purchase.financing.down_payment_pct / 100.0
+    rented_fraction = float(purchase.initial_rental.fraction_rented) if purchase.initial_rental is not None else 0.0
     return ScheduledPropertyPurchase(
         month=0,
         cause_id=f"{property_.id}_purchase",
@@ -554,6 +555,7 @@ def _sim_property_purchase(
         buyer_closing_cost_usd=purchase_price * float(purchase.closing_cost_pct) / 100.0,
         ownership_pct=1.0,
         mortgage=mortgage,
+        rented_fraction=rented_fraction,
     )
 
 

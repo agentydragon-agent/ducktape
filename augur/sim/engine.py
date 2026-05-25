@@ -1506,10 +1506,13 @@ def _apply_obligation_settlement(
                     plan, buffers, current, month=month, liability_slot=source_index, paid=paid, amount=amount
                 )
             # Accumulate property-tax payments into the owner's per-profile YTD bucket so the
-            # year-end federal SALT pass can read them.
+            # year-end federal SALT pass can read them. Multiply by owner_fraction so that for
+            # rented properties only the owner-use share contributes to SALT; the rented share
+            # is routed to Schedule E via the deduction_profile path below.
             property_tax_profile = int(plan.obligation_property_tax_profile[month, slot])
             if property_tax_profile >= 0:
-                current.property_tax_ytd[paid, property_tax_profile] += amount[paid]
+                owner_fraction = float(plan.obligation_property_tax_owner_fraction[month, slot])
+                current.property_tax_ytd[paid, property_tax_profile] += amount[paid] * owner_fraction
             # Schedule E deduction: decrement payer's ordinary_ytd by amount × deductible_fraction.
             deduction_profile = int(plan.obligation_deduction_profile_index[month, slot])
             if deduction_profile >= 0:
