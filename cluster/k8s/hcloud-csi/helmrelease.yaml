@@ -31,14 +31,27 @@ spec:
       - name: hcloud-volumes
         defaultStorageClass: false
         reclaimPolicy: Retain
-    # Filter on zone (`hil-dc1`), not region (`hil`). Both Hetzner VPS and
-    # OVH Kimsufi bare metal nodes share region=`hil`, but only Hetzner Cloud
-    # nodes are reachable by the Hetzner CSI driver (it talks to hcloud API
-    # with node IDs that don't exist for OVH). Hetzner VPS get zone=`hil-dc1`
+    # Pin to Hetzner Cloud nodes only — the driver talks to the hcloud API
+    # with node IDs that don't exist for OVH. Hetzner VPS get zone=`hil-dc1`
     # from Talos CCM; kimsufi gets zone=`hil-ovh` (explicit node label).
+    # Tolerate the control-plane taint so the controller can land on a CP
+    # when no VPS workers are present (talos-vps-worker-0 was decommissioned).
+    #
+    # TODO: remove this chart entirely. No active workloads use hcloud-volumes
+    # (the only PV is `tana-mcp/tana-mcp-config`, Released). Also clean up the
+    # 4 orphaned 10Gi volumes in Hetzner (hcloud volume list) and drop
+    # `cluster/terraform/main/hetzner-csi.tf` (the API-token secret).
     controller:
       nodeSelector:
         topology.kubernetes.io/zone: hil-dc1
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
     node:
       nodeSelector:
         topology.kubernetes.io/zone: hil-dc1
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
