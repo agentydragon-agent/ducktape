@@ -127,6 +127,21 @@ py_library(
     deps = ["@pypi//numpy"],
 )
 
+py_library(
+    name = "pricing",
+    srcs = ["pricing.py"],
+)
+
+py_test(
+    name = "pricing_test",
+    srcs = ["pricing_test.py"],
+    deps = [
+        ":pricing",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_test(
     name = "tensor_fifo_test",
     srcs = ["tensor_fifo_test.py"],
@@ -231,6 +246,20 @@ py_test(
     size = "medium",
     srcs = ["simulate_test.py"],
     deps = SIMULATE_TEST_DEPS,
+)
+
+py_test(
+    name = "test_rental_lifecycle_e2e",
+    size = "medium",
+    srcs = ["test_rental_lifecycle_e2e.py"],
+    deps = [
+        ":external_series",
+        ":scenario",
+        ":simulate",
+        "@pypi//polars",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )
 
 py_test(

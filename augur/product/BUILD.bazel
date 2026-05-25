@@ -20,6 +20,7 @@ py_library(
         "//augur/api:config",
         "//augur/api:portfolio",
         "//augur/model:series",
+        "//augur/sim:pricing",
         "//augur/sim:scenario",
         "@pypi//more_itertools",
     ],

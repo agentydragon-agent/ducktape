@@ -58,6 +58,39 @@ class MortgageFinancing(ApiModel):
 type PropertyFinancing = Annotated[CashFinancing | MortgageFinancing, Field(discriminator="kind")]
 
 
+class RentalIncomePlan(ApiModel):
+    """The property is being rented out to a tenant.
+
+    `fraction_rented` = 1.0 means the whole property is rented (pure investment or
+    user lives elsewhere). `fraction_rented` < 1.0 means partial rental (e.g. owner
+    occupies the main unit and rents the ADU / rents rooms).
+
+    `monthly_rent_collected_usd` is the gross monthly rent (before vacancy + management
+    fees). If `None`, the translator falls back to `Property.rent_estimate_usd` for the
+    purchased property; if that's also missing, the request is rejected.
+    """
+
+    monthly_rent_collected_usd: PositiveFloat | None = None
+    fraction_rented: PositiveFloat = Field(default=1.0, le=1.0)
+    # 0..1 multiplier on collected rent. Captures marketing-time vacancy + tenant turnover
+    # vacancy in a smoothed-average form; per-rollout stochastic vacancy is a future model.
+    vacancy_pct: NonNegativeFloat = Field(default=0.05, le=1.0)
+
+
+class RentalManagement(ApiModel):
+    """Property management agency terms.
+
+    Management fee fires monthly against collected (post-vacancy) rent.
+    Leasing fee fires every `avg_tenancy_months` while the property is rented (first fire
+    when the rental status activates). Captures lifetime tenant-placement cost without
+    modeling specific tenants.
+    """
+
+    management_fee_pct: NonNegativeFloat = Field(default=8.0, le=100.0)
+    leasing_fee_months: NonNegativeFloat = Field(default=1.0)
+    avg_tenancy_months: PositiveInt = 24
+
+
 class PropertyPurchase(ApiModel):
     property_id: str
     closing_cost_pct: NonNegativeFloat = 1.5
@@ -66,6 +99,20 @@ class PropertyPurchase(ApiModel):
     # the property is treated as an investment / second home and no MID policy is built. No
     # default: callers must commit to an answer rather than inherit one silently.
     is_primary_residence: bool
+    # The property is rented (whole or partial) from month 0. Phase 3 will let the user
+    # toggle this mid-horizon via lifecycle events.
+    initial_rental: RentalIncomePlan | None = None
+    # Property is managed by an agency. Requires `initial_rental` set.
+    rental_management: RentalManagement | None = None
+
+    @model_validator(mode="after")
+    def _rental_management_requires_rental(self) -> PropertyPurchase:
+        if self.rental_management is not None and self.initial_rental is None:
+            raise ValueError("rental_management requires initial_rental to be set")
+        # Pure investment property must not also claim primary-residence MID treatment.
+        if self.initial_rental is not None and self.initial_rental.fraction_rented >= 1.0 and self.is_primary_residence:
+            raise ValueError("is_primary_residence must be False when fraction_rented == 1.0")
+        return self
 
 
 DEFAULT_ANNUAL_INSURANCE_PCT = 0.4

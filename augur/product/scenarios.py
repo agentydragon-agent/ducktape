@@ -8,7 +8,15 @@ from augur.api.bootstrap import ActorRole, Property
 from augur.api.config import Config
 from augur.api.portfolio import PortfolioConfig
 from augur.model.series import INFLATION_SERIES_ID, home_value_series_id, private_equity_sale_event_id, rent_series_id
-from augur.product.wire import CashFinancing, FundingPolicy, MortgageFinancing, PropertyPurchase, ScenarioKey
+from augur.product.wire import (
+    CashFinancing,
+    FundingPolicy,
+    MortgageFinancing,
+    PropertyPurchase,
+    RentalIncomePlan,
+    ScenarioKey,
+)
+from augur.sim.pricing import OccupancyMode, insurance_rate, maintenance_rate
 from augur.sim.scenario import (
     Agent,
     FixedAmount,
@@ -21,8 +29,10 @@ from augur.sim.scenario import (
     PrivateEquityTenderPolicy,
     PropertyTaxPolicy,
     RecurringObligation,
+    RecurringTransfer,
     Scenario,
     ScheduledPropertyPurchase,
+    ScheduledTransfer,
     SeriesIndexedAmount,
     TaxProfile,
 )
@@ -49,6 +59,13 @@ INSURANCE_OBLIGATION_ID = "homeowners_insurance"
 MAINTENANCE_VENDOR_AGENT_ID = "maintenance_vendor"
 MAINTENANCE_VENDOR_ACCOUNT_ID = "checking"
 MAINTENANCE_OBLIGATION_ID = "property_maintenance"
+TENANT_AGENT_ID = "tenant"
+TENANT_ACCOUNT_ID = "checking"
+RENTAL_INCOME_CAUSE_ID = "rental_income"
+PROPERTY_MANAGEMENT_AGENT_ID = "property_management_agency"
+PROPERTY_MANAGEMENT_ACCOUNT_ID = "checking"
+MANAGEMENT_FEE_CAUSE_ID = "management_fee"
+LEASING_FEE_CAUSE_ID = "leasing_fee"
 
 
 def resolve_primary_agent_id(augur_config: Config) -> str:
@@ -91,6 +108,8 @@ def required_level_series(
             series_ids.add(INFLATION_SERIES_ID)
         if scenario_key.annual_maintenance_pct > 0:
             series_ids.add(INFLATION_SERIES_ID)
+        if scenario_key.property_purchase.initial_rental is not None:
+            series_ids.add(rent_series_id(property_.location_id))
     # PE tender policy with an inflation-indexed floor needs the CPI series.
     if (
         scenario_key.pe_tender_policy.liquid_net_worth_floor_usd > 0
@@ -149,6 +168,8 @@ def build_scenario(
             amount_due_usd=_monthly_spend_amount(scenario_key),
         )
     ]
+    recurring_transfers: list[RecurringTransfer] = []
+    scheduled_transfers: list[ScheduledTransfer] = []
 
     if scenario_key.monthly_rent_usd > 0:
         assert scenario_key.rental_location_id is not None  # wire validator guarantees
@@ -236,12 +257,18 @@ def build_scenario(
                     ),
                 )
             )
+        initial_occupancy_mode, initial_rented_fraction = _initial_occupancy(scenario_key.property_purchase)
         if scenario_key.annual_insurance_pct > 0:
             agents.append(Agent(agent_id=INSURER_AGENT_ID))
             initial_cash.append(
                 InitialAccountBalance(agent_id=INSURER_AGENT_ID, account_id=INSURER_ACCOUNT_ID, balance_usd=0.0)
             )
-            monthly_insurance_usd = float(scenario_key.annual_insurance_pct) / 100.0 * float(property_.price_usd) / 12.0
+            effective_insurance_pct = insurance_rate(
+                base_annual_pct=float(scenario_key.annual_insurance_pct),
+                occupancy_mode=initial_occupancy_mode,
+                rented_fraction=initial_rented_fraction,
+            )
+            monthly_insurance_usd = effective_insurance_pct / 100.0 * float(property_.price_usd) / 12.0
             recurring_obligations.append(
                 RecurringObligation(
                     start_month=0,
@@ -264,9 +291,12 @@ def build_scenario(
                     agent_id=MAINTENANCE_VENDOR_AGENT_ID, account_id=MAINTENANCE_VENDOR_ACCOUNT_ID, balance_usd=0.0
                 )
             )
-            monthly_maintenance_usd = (
-                float(scenario_key.annual_maintenance_pct) / 100.0 * float(property_.price_usd) / 12.0
+            effective_maintenance_pct = maintenance_rate(
+                base_annual_pct=float(scenario_key.annual_maintenance_pct),
+                occupancy_mode=initial_occupancy_mode,
+                rented_fraction=initial_rented_fraction,
             )
+            monthly_maintenance_usd = effective_maintenance_pct / 100.0 * float(property_.price_usd) / 12.0
             recurring_obligations.append(
                 RecurringObligation(
                     start_month=0,
@@ -284,6 +314,16 @@ def build_scenario(
                     ),
                 )
             )
+        _wire_landlord_rental(
+            scenario_key.property_purchase,
+            property_=property_,
+            primary_agent_id=primary_agent_id,
+            horizon_months=horizon_months,
+            agents=agents,
+            initial_cash=initial_cash,
+            recurring_transfers=recurring_transfers,
+            scheduled_transfers=scheduled_transfers,
+        )
 
     private_equity_tender_policies = _build_private_equity_tender_policies(
         scenario_key=scenario_key, initial_lots=initial_lots, primary_agent_id=primary_agent_id
@@ -293,6 +333,8 @@ def build_scenario(
         initial_lots=list(initial_lots),
         initial_cash=initial_cash,
         recurring_obligations=recurring_obligations,
+        recurring_transfers=recurring_transfers,
+        scheduled_transfers=scheduled_transfers,
         scheduled_property_purchases=scheduled_property_purchases,
         property_tax_policies=property_tax_policies,
         mortgage_interest_deduction_policies=mortgage_interest_deduction_policies,
@@ -312,6 +354,131 @@ def build_scenario(
         ),
         horizon_months=horizon_months,
     )
+
+
+def _resolve_monthly_rent(rental: RentalIncomePlan, *, property_: Property) -> float:
+    """Resolve the gross monthly rent for a landlord rental.
+
+    User-supplied `monthly_rent_collected_usd` wins. Otherwise fall back to the
+    deployment's `Property.rent_estimate_usd`. If neither is set, reject the request —
+    the deployment is missing data the scenario needs.
+    """
+
+    if rental.monthly_rent_collected_usd is not None:
+        return float(rental.monthly_rent_collected_usd)
+    if property_.rent_estimate_usd is None:
+        raise ValueError(
+            f"property {property_.id!r} has no rent_estimate_usd and the scenario did not supply "
+            "monthly_rent_collected_usd; one or the other is required to model rental income"
+        )
+    return float(property_.rent_estimate_usd)
+
+
+def _initial_occupancy(purchase: PropertyPurchase) -> tuple[OccupancyMode, float]:
+    """Initial-month (occupancy_mode, rented_fraction) implied by the purchase.
+
+    Phase 1: occupancy is constant for the horizon and derived purely from `initial_rental`
+    + `is_primary_residence`. Phase 3 will replace this with a runtime state machine driven
+    by lifecycle events.
+    """
+
+    if purchase.initial_rental is None:
+        return OccupancyMode.OWNER_OCCUPIED if purchase.is_primary_residence else OccupancyMode.OFF, 0.0
+    fraction = float(purchase.initial_rental.fraction_rented)
+    if fraction >= 1.0:
+        return OccupancyMode.RENTED_FULL, 1.0
+    return OccupancyMode.RENTED_PARTIAL, fraction
+
+
+def _wire_landlord_rental(
+    purchase: PropertyPurchase,
+    *,
+    property_: Property,
+    primary_agent_id: str,
+    horizon_months: int,
+    agents: list[Agent],
+    initial_cash: list[InitialAccountBalance],
+    recurring_transfers: list[RecurringTransfer],
+    scheduled_transfers: list[ScheduledTransfer],
+) -> None:
+    """Wire up tenant→owner rent + owner→agency management/leasing fees.
+
+    Phase 1: rental is constant from month 0 through end-of-horizon. The tenant→owner
+    transfer is gross-of-management but net-of-vacancy (vacancy is "lost income", not paid
+    to anyone). The management fee is a separate outbound transfer to the management
+    agency. Leasing fee fires at month 0 and every `avg_tenancy_months` thereafter
+    while the property is in a rental status.
+    """
+
+    rental = purchase.initial_rental
+    if rental is None:
+        return
+    end_month = horizon_months - 1
+    rent_series = rent_series_id(property_.location_id)
+    base_monthly_rent = _resolve_monthly_rent(rental, property_=property_)
+    base_monthly_collected = base_monthly_rent * float(rental.fraction_rented) * (1.0 - float(rental.vacancy_pct))
+
+    agents.append(Agent(agent_id=TENANT_AGENT_ID))
+    initial_cash.append(InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id=TENANT_ACCOUNT_ID, balance_usd=0.0))
+    recurring_transfers.append(
+        RecurringTransfer(
+            start_month=0,
+            end_month=end_month,
+            cause_id=f"{RENTAL_INCOME_CAUSE_ID}:{property_.id}",
+            from_agent_id=TENANT_AGENT_ID,
+            from_account_id=TENANT_ACCOUNT_ID,
+            to_agent_id=primary_agent_id,
+            to_account_id=PRIMARY_ACCOUNT_ID,
+            amount_usd=SeriesIndexedAmount(
+                base_amount_usd=base_monthly_collected, series_id=rent_series, adjustment_period_months=12
+            ),
+        )
+    )
+
+    management = purchase.rental_management
+    if management is None:
+        return
+    agents.append(Agent(agent_id=PROPERTY_MANAGEMENT_AGENT_ID))
+    initial_cash.append(
+        InitialAccountBalance(
+            agent_id=PROPERTY_MANAGEMENT_AGENT_ID, account_id=PROPERTY_MANAGEMENT_ACCOUNT_ID, balance_usd=0.0
+        )
+    )
+    management_fee_fraction = float(management.management_fee_pct) / 100.0
+    if management_fee_fraction > 0:
+        recurring_transfers.append(
+            RecurringTransfer(
+                start_month=0,
+                end_month=end_month,
+                cause_id=f"{MANAGEMENT_FEE_CAUSE_ID}:{property_.id}",
+                from_agent_id=primary_agent_id,
+                from_account_id=PRIMARY_ACCOUNT_ID,
+                to_agent_id=PROPERTY_MANAGEMENT_AGENT_ID,
+                to_account_id=PROPERTY_MANAGEMENT_ACCOUNT_ID,
+                amount_usd=SeriesIndexedAmount(
+                    base_amount_usd=base_monthly_collected * management_fee_fraction,
+                    series_id=rent_series,
+                    adjustment_period_months=12,
+                ),
+            )
+        )
+    leasing_fee_months_val = float(management.leasing_fee_months)
+    if leasing_fee_months_val > 0:
+        leasing_fee_base = base_monthly_rent * leasing_fee_months_val
+        scheduled_transfers.extend(
+            ScheduledTransfer(
+                month=fire_month,
+                cause_id=f"{LEASING_FEE_CAUSE_ID}:{property_.id}:m{fire_month}",
+                from_agent_id=primary_agent_id,
+                from_account_id=PRIMARY_ACCOUNT_ID,
+                to_agent_id=PROPERTY_MANAGEMENT_AGENT_ID,
+                to_account_id=PROPERTY_MANAGEMENT_ACCOUNT_ID,
+                amount_usd=SeriesIndexedAmount(
+                    base_amount_usd=leasing_fee_base, series_id=rent_series, adjustment_period_months=12
+                ),
+            )
+            for fire_month in range(0, horizon_months, int(management.avg_tenancy_months))
+        )
 
 
 def _sim_mortgage_for(purchase: PropertyPurchase, property_: Property) -> SimMortgageFinancing | None:

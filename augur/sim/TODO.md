@@ -252,6 +252,22 @@ frontend LNW-floor knob). Still missing:
   metadata, valuation provenance, account references, and tender-window
   metadata.
 
+## Future / nice-to-have
+
+- **Stochastic tenant model.** Landlord rental income today uses a
+  flat `vacancy_pct` multiplier + leasing fee firing on a fixed
+  `avg_tenancy_months` cadence. Since we already have exogenous
+  stochasticity wired (VECM joint fit, per-rollout paths), we can
+  model individual tenants stochastically: sample tenancy duration
+  from a distribution (geometric / Weibull fit to real data), sample
+  vacancy gap between tenants, sample rent-roll at each new tenancy
+  (could regress against the rent series mean). This converts
+  vacancy + leasing-fee timing from a smoothed assumption into a real
+  per-rollout stochastic source, useful both for distribution
+  variance and for short-horizon scenarios where leasing-fee lumpiness
+  matters. Defer until landlord-rental scenarios are common enough
+  that the smoothed model bites.
+
 ## Explicitly deferred
 
 Documented to prevent re-discovery; intentionally not on the roadmap.
