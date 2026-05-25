@@ -131,13 +131,13 @@ pub(super) fn assigned_module_for_ids(
 /// gives the spec author vocabulary to search for (`cycle`,
 /// `side-effect`, `mutable`, `assignment`, `cross-destination`).
 pub(super) fn render_atomic_unit_cause_guidance(conflicts: &[AtomicUnitConflict]) -> String {
-    let mut causes: Vec<DepKind> = conflicts
+    // `AtomicUnit::causes` is already a `BTreeSet<DepKind>` — gather
+    // per-conflict causes into one `BTreeSet` so iteration stays
+    // `DepKind`-`Ord`-stable without a post-collection sort.
+    let causes: BTreeSet<DepKind> = conflicts
         .iter()
         .flat_map(|c| c.causes.iter().copied())
-        .collect::<HashSet<_>>()
-        .into_iter()
         .collect();
-    causes.sort();
     let mut out = String::new();
     for cause in &causes {
         out.push_str(match cause {

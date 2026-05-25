@@ -162,7 +162,10 @@ fn build_atomic_graph_report(
             let mut members = Vec::new();
             let mut anonymous_statement_owner_ids = Vec::new();
             let mut destinations_by_id = BTreeMap::<String, ModuleReportRef>::new();
-            let mut causes: Vec<DepKind> = unit.causes.iter().copied().collect();
+            // `unit.causes` is a `BTreeSet<DepKind>` — iteration is
+            // already `DepKind`-`Ord`-stable so the previous
+            // `causes.sort()` is redundant.
+            let causes: Vec<DepKind> = unit.causes.iter().copied().collect();
             let mut line_range = LineRange::new();
             let mut min_ordinal = usize::MAX;
             let mut max_ordinal = 0usize;
@@ -185,7 +188,6 @@ fn build_atomic_graph_report(
             }
             members.sort();
             members.dedup();
-            causes.sort();
             anonymous_statement_owner_ids.sort();
             AtomicUnitReport {
                 id: atomic_unit_key(idx),
