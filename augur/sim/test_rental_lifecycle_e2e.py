@@ -309,6 +309,69 @@ class TestRentalIncomeTaxation:
         # Both jurisdictions should levy positive tax on $48k of ordinary income.
         assert all(amount > 0 for amount in accruals["amount_usd"].to_list())
 
+    def test_management_fee_deducts_from_taxable_ordinary_income(self):
+        """Schedule E: a management fee transfer with income_category='ordinary_deduction'
+        should subtract from the owner's ordinary_income_ytd, reducing taxable income."""
+
+        end_month = 11
+        # $5,000/mo rental + $500/mo management fee → $60k gross - $6k deduction = $54k taxable.
+        scenario = Scenario(
+            agents=[
+                Agent(agent_id=OWNER_AGENT_ID),
+                Agent(agent_id=TENANT_AGENT_ID),
+                Agent(agent_id=MGMT_AGENT_ID),
+                Agent(agent_id="irs"),
+            ],
+            initial_cash=[
+                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance_usd=100_000.0),
+                InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id=MGMT_AGENT_ID, account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+            ],
+            recurring_transfers=[
+                RecurringTransfer(
+                    start_month=0,
+                    end_month=end_month,
+                    cause_id="rental_income:p1",
+                    from_agent_id=TENANT_AGENT_ID,
+                    from_account_id="checking",
+                    to_agent_id=OWNER_AGENT_ID,
+                    to_account_id="checking",
+                    amount_usd=SeriesIndexedAmount(
+                        base_amount_usd=5_000.0, series_id=RENT_SERIES_ID, adjustment_period_months=12
+                    ),
+                    income_category="ordinary",
+                ),
+                RecurringTransfer(
+                    start_month=0,
+                    end_month=end_month,
+                    cause_id="management_fee:p1",
+                    from_agent_id=OWNER_AGENT_ID,
+                    from_account_id="checking",
+                    to_agent_id=MGMT_AGENT_ID,
+                    to_account_id="checking",
+                    amount_usd=SeriesIndexedAmount(
+                        base_amount_usd=500.0, series_id=RENT_SERIES_ID, adjustment_period_months=12
+                    ),
+                    income_category="ordinary_deduction",
+                ),
+            ],
+            tax_profiles=[
+                TaxProfile(
+                    agent_id=OWNER_AGENT_ID,
+                    filing_status="single",
+                    jurisdiction_ids=["federal_us", "california"],
+                    tax_authority_agent_id="irs",
+                )
+            ],
+            horizon_months=12,
+        )
+        run = _run(scenario)
+        breakdowns = {row["jurisdiction_id"]: row for row in run.events_log.tax_breakdowns.iter_rows(named=True)}
+        # Gross rental: 12 × $5,000 = $60,000. Management fee: 12 × $500 = $6,000.
+        # Net ordinary income exposed to brackets = $54,000.
+        assert breakdowns["federal_us"]["ordinary_income_usd"] == pytest.approx(54_000.0, abs=1e-6)
+
 
 class TestRentalCashflowReconciliation:
     def test_owner_cash_balance_after_one_year_matches_expected_net(self):

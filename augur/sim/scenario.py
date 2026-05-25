@@ -67,7 +67,7 @@ class SeriesIndexedAmount(BaseModel):
 
 type AmountSchedule = Annotated[FixedAmount | SeriesIndexedAmount, Field(discriminator="kind")]
 type AmountSpec = float | AmountSchedule
-type TransferIncomeCategory = Literal["ordinary"]
+type TransferIncomeCategory = Literal["ordinary", "ordinary_deduction"]
 
 
 class ScheduledTransfer(BaseModel):
@@ -75,11 +75,15 @@ class ScheduledTransfer(BaseModel):
     month. Emitted by the engine as a Transfer event at that month;
     the amount may be fixed or derived from a series-indexed schedule.
 
-    `income_category` tags the transfer for downstream tax classification.
-    Currently the only supported value is `"ordinary"` (W-2-style wages for the
-    recipient). When set, the recipient's
-    `ordinary_income_ytd` increments by the transferred amount at
-    apply time."""
+    `income_category` tags the transfer for downstream tax classification:
+
+    - `"ordinary"` — W-2-style wages, rental income, etc.: the `to_agent_id`'s
+      `ordinary_income_ytd` increments by the transferred amount.
+    - `"ordinary_deduction"` — Schedule-E-style deductible expense (e.g. property
+      management fee paid by the owner): the `from_agent_id`'s
+      `ordinary_income_ytd` decrements by the transferred amount. Used for
+      deductible expenses paid via transfer flows (not the obligation/settlement
+      pipeline). §469 passive-activity loss limitations are not modeled."""
 
     month: int
     cause_id: str

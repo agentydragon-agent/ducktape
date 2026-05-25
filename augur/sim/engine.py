@@ -826,6 +826,9 @@ def _apply_scheduled_transfers(
         profile = int(plan.transfer_income_profile_index[month, slot])
         if profile >= 0:
             current.ordinary_ytd[active_rollout, profile] += amount[active_rollout]
+        deduction_profile = int(plan.transfer_deduction_profile_index[month, slot])
+        if deduction_profile >= 0:
+            current.ordinary_ytd[active_rollout, deduction_profile] -= amount[active_rollout]
 
 
 def _amount_values(

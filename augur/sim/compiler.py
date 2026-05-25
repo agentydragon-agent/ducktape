@@ -32,6 +32,7 @@ NO_CODE = -1
 AMOUNT_FIXED = 0
 AMOUNT_SERIES_INDEXED = 1
 ORDINARY_INCOME_CATEGORY = "ordinary"
+ORDINARY_DEDUCTION_CATEGORY = "ordinary_deduction"
 
 
 class StringTable:
@@ -152,6 +153,10 @@ class CompiledSimulation:
     transfer_to_account_codes: np.ndarray
     transfer_to_cash_slot: np.ndarray
     transfer_income_profile_index: np.ndarray
+    # Parallel array to `transfer_income_profile_index`. NO_CODE if the transfer is not a
+    # deduction; otherwise the profile index of the `from_agent` whose ordinary_ytd
+    # should decrement when the transfer fires. Used by Schedule E expense flows.
+    transfer_deduction_profile_index: np.ndarray
     transfer_amount_kind: np.ndarray
     transfer_amount_fixed: np.ndarray
     transfer_amount_base: np.ndarray
@@ -350,6 +355,7 @@ def compile_simulation(
         transfer_to_account_codes,
         transfer_to_cash_slot,
         transfer_income_profile_index,
+        transfer_deduction_profile_index,
         transfer_amount_kind,
         transfer_amount_fixed,
         transfer_amount_base,
@@ -590,6 +596,7 @@ def compile_simulation(
         transfer_to_account_codes=transfer_to_account_codes,
         transfer_to_cash_slot=transfer_to_cash_slot,
         transfer_income_profile_index=transfer_income_profile_index,
+        transfer_deduction_profile_index=transfer_deduction_profile_index,
         transfer_amount_kind=transfer_amount_kind,
         transfer_amount_fixed=transfer_amount_fixed,
         transfer_amount_base=transfer_amount_base,
@@ -957,6 +964,7 @@ def _compile_transfer_slots(
     to_account = _empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
     to_slot = _empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
     income_profile = _empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
+    deduction_profile = _empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
     amount_kind = _empty_month_matrix(horizon, max_slots, np.int64, AMOUNT_FIXED)
     amount_fixed = _empty_month_matrix(horizon, max_slots, np.float64, 0.0)
     amount_base = _empty_month_matrix(horizon, max_slots, np.float64, 0.0)
@@ -975,6 +983,8 @@ def _compile_transfer_slots(
             to_slot[month, idx] = _slot(account_slot_by_key, transfer.to_agent_id, transfer.to_account_id)
             if transfer.income_category == ORDINARY_INCOME_CATEGORY:
                 income_profile[month, idx] = profile_index_by_agent.get(transfer.to_agent_id, NO_CODE)
+            elif transfer.income_category == ORDINARY_DEDUCTION_CATEGORY:
+                deduction_profile[month, idx] = profile_index_by_agent.get(transfer.from_agent_id, NO_CODE)
             kind, fixed, base, series, base_month, period = _amount_arrays(transfer.amount_usd, series_index_by_id)
             amount_kind[month, idx] = kind
             amount_fixed[month, idx] = fixed
@@ -991,6 +1001,7 @@ def _compile_transfer_slots(
         to_account,
         to_slot,
         income_profile,
+        deduction_profile,
         amount_kind,
         amount_fixed,
         amount_base,
