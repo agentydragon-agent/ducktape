@@ -3,14 +3,14 @@ const SPECIAL_SNAKE_KEYS = {
   to_value: "to",
 };
 
-export function snakeToCamelKey(key) {
+function snakeToCamelKey(key) {
   if (SPECIAL_SNAKE_KEYS[key]) {
     return SPECIAL_SNAKE_KEYS[key];
   }
   return key.replace(/_([a-z0-9])/g, (_, char) => char.toUpperCase());
 }
 
-export function camelToSnakeKey(key) {
+function camelToSnakeKey(key) {
   return key.replace(/[A-Z]/g, (char) => `_${char.toLowerCase()}`);
 }
 

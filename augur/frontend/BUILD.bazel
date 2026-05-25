@@ -22,7 +22,6 @@ js_library(
     ],
     deps = REACT_DEPS + [
         "//:node_modules/@mantine/core",
-        "//augur/frontend/lib:backend_client",
         "//augur/frontend/lib:casing",
         "//augur/frontend/lib:chart",
         "//augur/frontend/lib:controls",
@@ -66,7 +65,6 @@ filegroup(
         "index.html",
         "main.jsx",
         "product_app.jsx",
-        "//augur/frontend/lib:backend_client",
         "//augur/frontend/lib:casing",
         "//augur/frontend/lib:chart",
         "//augur/frontend/lib:controls",

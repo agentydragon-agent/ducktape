@@ -37,8 +37,3 @@ js_library(
     name = "format",
     srcs = ["format.js"],
 )
-
-js_library(
-    name = "backend_client",
-    srcs = ["backend_client.js"],
-)

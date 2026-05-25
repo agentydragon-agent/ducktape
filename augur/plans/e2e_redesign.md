@@ -7,7 +7,7 @@ expanding e2e coverage in spirals: write a small simulation scenario, discover t
 clunky/dead/weird API surface, fix that surface, then make the next spiral
 larger.
 
-The natural public unit is a `ScenarioSet` simulated over an exogenous
+The natural public unit is a `ScenarioKey` simulated over an exogenous
 trajectory bundle. A selected one-rollout path is useful for UI inspection, but it is
 one sampled trajectory from a distribution, not a separate deterministic product
 API.
@@ -159,12 +159,11 @@ verification loop.
 ## App-State Schema-Driven Boundary (achieved guardrail)
 
 The OpenAPI/Zod pipeline is wired and live: `client.js` validates every API
-response, `decodeScenarioSetUrlState` validates URL state against the overrides
-schema, and `serializableScenarioSetInput` projects through
-`zBrowserScenarioSetInputOverridesInput` (#1581) so adding a new
-Pydantic field propagates to the browser without a hand-maintained field
-list. **Guardrail**: do not reintroduce hand-maintained schema lists or
-ad hoc boundary checks. Pydantic stays the single source of truth.
+response against the generated Zod schemas (`zBootstrapResponse`,
+`zMetricFanResponse`, `zRolloutResponse`, …), so adding a new Pydantic field
+propagates to the browser without a hand-maintained field list.
+**Guardrail**: do not reintroduce hand-maintained schema lists or ad hoc
+boundary checks. Pydantic stays the single source of truth.
 
 ## Verification
 

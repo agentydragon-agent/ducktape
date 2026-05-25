@@ -27,10 +27,11 @@ and deployment-specific composition stay in the downstream private repo.
 
 ## North Star
 
-Augur simulates a `ScenarioSet` across sampled exogenous paths and returns a
-distribution over trajectories. A selected rollout is an inspection aid, not a
-separate deterministic product. The UI, app state, and result APIs should make
-that distinction impossible to miss.
+Augur simulates one (and, on the roadmap, a small set of) `ScenarioKey`s across
+sampled exogenous paths and returns a distribution over trajectories. A
+selected rollout is an inspection aid, not a separate deterministic product.
+The UI, app state, and result APIs should make that distinction impossible to
+miss.
 
 The core model should stay structured around actors, accounts, assets,
 liabilities, markets, policies, actions, ledgers, accounting detail, and
