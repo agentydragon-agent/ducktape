@@ -39,6 +39,13 @@ pub(super) struct MaterializedLogicalChunk {
     pub(super) directory_dependency_facts: Vec<DirectoryDependencyFact>,
     pub(super) validation: ChunkValidationSummary,
     pub(super) report: ChunkModulesReport,
+    /// Spec member claims that named a binding for which no
+    /// top-level declaration exists in this chunk. Materialization
+    /// continues — the binding silently falls through to the
+    /// residual sweep — but `materialize_logical_modules` rolls
+    /// these up across every chunk and fails the pipeline at the
+    /// end with the full list.
+    pub(super) unmatched_spec_claims: Vec<crate::UnmatchedSpecClaim>,
 }
 
 pub(super) fn materialize_logical_chunk(
@@ -140,6 +147,7 @@ pub(super) fn materialize_logical_chunk(
     let mut imported_binding_resolver =
         ArtifactSourceImportResolutionCache::new(artifact, artifact_indexes);
     let mut imported_from_by_src = BTreeMap::<String, String>::new();
+    let mut unmatched_spec_claims = Vec::<crate::UnmatchedSpecClaim>::new();
     for (index, request) in explicit_requests.iter_mut().enumerate() {
         let mut bindings = HashMap::<String, String>::new();
         let anonymous_statement_ordinals =
@@ -216,13 +224,30 @@ pub(super) fn materialize_logical_chunk(
                 bindings.insert(member.binding.clone(), member.export_name.clone());
             }
         }
-        for binding in bindings.keys() {
+        for (binding, export_name) in &bindings {
             let binding_id = top_level_id(binding, chunk_top_level_mark);
             if declaration_by_name.contains_key(&binding_id) {
                 binding_assignment.insert(binding_id.clone(), index);
                 let kind = BindingKind::Owned { owner: module_id };
                 catalogue_index_by_name.insert(binding.clone(), kind.clone());
                 bindings_catalogue.insert(binding_id, kind);
+            } else {
+                // The spec claimed a binding name that does not
+                // appear as a top-level declaration in this chunk —
+                // the previous behavior silently dropped the claim,
+                // leaving the destination module short one export
+                // and the binding falling into the residual sweep.
+                // Record it so the pipeline can fail at the end
+                // with the full list across every chunk; meanwhile
+                // keep lowering as if the spec had not claimed the
+                // name (lower_chunk only touches binding ids it can
+                // resolve, so the missing claim is a no-op here).
+                unmatched_spec_claims.push(crate::UnmatchedSpecClaim {
+                    chunk_id: chunk_id.to_string(),
+                    module_id: request.id.clone(),
+                    binding_name: binding.clone(),
+                    export_name: export_name.clone(),
+                });
             }
         }
         module_plans.push(ModulePlan {
@@ -711,6 +736,7 @@ pub(super) fn materialize_logical_chunk(
     };
     Ok(MaterializedLogicalChunk {
         chunk_id: chunk_id_interned,
+        unmatched_spec_claims,
         target_file,
         source_path,
         files,

@@ -129,6 +129,27 @@ pub struct MaterializeLogicalModulesResult {
     pub selected_lowerings: Vec<SelectedModuleLowering>,
     pub module_count: usize,
     pub decomposition_by_chunk: HashMap<ChunkId, ChunkDecompositionOutput>,
+    /// Spec claims that named a binding for which no top-level
+    /// declaration exists in the source chunk. Previously dropped
+    /// silently — the binding would fall through to the residual and
+    /// the named module's export list would be one entry short. Now
+    /// collected across every chunk so the pipeline keeps emitting
+    /// (the chunk lowers as if the spec had not claimed the missing
+    /// name), then fails at the end with the full list. See
+    /// [`UnmatchedSpecClaim`].
+    pub unmatched_spec_claims: Vec<UnmatchedSpecClaim>,
+}
+
+/// A `define_logical_module` member whose `binding.name` did not
+/// resolve to a top-level declaration in the chunk. Surfaced after
+/// the pipeline finishes so the build prints every offender at once
+/// instead of failing on the first chunk.
+#[derive(Debug, Clone, Serialize)]
+pub struct UnmatchedSpecClaim {
+    pub chunk_id: String,
+    pub module_id: String,
+    pub binding_name: String,
+    pub export_name: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -240,6 +261,7 @@ pub fn materialize_logical_modules(
 
     let mut reports = Vec::with_capacity(chunk_results.len());
     let mut applied = Vec::<SelectedModuleLowering>::new();
+    let mut unmatched_spec_claims = Vec::<UnmatchedSpecClaim>::new();
     for chunk_result in &chunk_results {
         if let Some(report_out_dir) = &report_out_dir {
             write_chunk_report_json(
@@ -251,6 +273,7 @@ pub fn materialize_logical_modules(
         }
         applied.extend(chunk_result.applied.iter().cloned());
         reports.push(chunk_result.report.clone());
+        unmatched_spec_claims.extend(chunk_result.unmatched_spec_claims.iter().cloned());
     }
     let apply_result = apply_materialized_logical_chunks(artifact, &target_dir, chunk_results)?;
     artifact = apply_result.artifact;
@@ -262,5 +285,6 @@ pub fn materialize_logical_modules(
         selected_lowerings: applied,
         module_count,
         decomposition_by_chunk,
+        unmatched_spec_claims,
     })
 }
