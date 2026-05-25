@@ -19,7 +19,6 @@ py_library(
         "//augur/api:bootstrap",
         "//augur/api:config",
         "//augur/api:portfolio",
-        "//augur/api:scenario_set",
         "//augur/model:series",
         "//augur/sim:scenario",
         "@pypi//more_itertools",

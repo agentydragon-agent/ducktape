@@ -16,8 +16,6 @@ from pydantic import ValidationError
 from augur.api.casing import plain_json
 from augur.api.catalog import build_bootstrap_payload
 from augur.api.config import Config, load_augur_config, resolve_augur_config_path
-from augur.api.scenario_set import ScenarioSet
-from augur.api.scenario_set_service import ScenarioSetService
 from augur.model.exogenous import Sampler
 from augur.product.portfolio import product_portfolio_response
 from augur.product.scenarios import resolve_primary_agent_id
@@ -43,12 +41,6 @@ def create_app(config: ApiServerConfig) -> FastAPI:
         exogenous_model=config.exogenous_model,
         max_rollout_samples=augur_config.max_rollout_samples,
     )
-    scenario_set_service = ScenarioSetService(
-        portfolio=augur_config.portfolio,
-        exogenous_model=config.exogenous_model,
-        properties_by_id={property_.id: property_ for property_ in bootstrap.properties},
-        locations_by_id={location.id: location for location in bootstrap.locations},
-    )
 
     app = FastAPI(title="Augur scenario API")
     no_store = {"cache-control": "no-store"}
@@ -71,10 +63,6 @@ def create_app(config: ApiServerConfig) -> FastAPI:
     @app.get("/api/product/portfolio")
     def product_portfolio_snapshot() -> JSONResponse:
         return payload(product_portfolio_response(snapshot=augur_config.snapshot, portfolio=augur_config.portfolio))
-
-    @app.post("/api/scenario_sets/run")
-    def run_scenario_set(scenario_set: ScenarioSet) -> JSONResponse:
-        return payload(scenario_set_service.run(scenario_set))
 
     @app.post("/api/product/projections/metric_fan")
     def product_projection_metric_fan(request: MetricFanRequest) -> JSONResponse:

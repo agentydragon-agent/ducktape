@@ -8,8 +8,6 @@ from fastapi import FastAPI
 from fastapi.responses import PlainTextResponse
 
 from augur.api.bootstrap import BootstrapResponse
-from augur.api.browser_state import BrowserScenarioSetInput, BrowserScenarioSetInputOverrides
-from augur.api.scenario_set import ScenarioSet, ScenarioSetRunResponse
 from augur.product.portfolio import ProductPortfolioResponse
 from augur.product.wire import MetricFanRequest, MetricFanResponse, RolloutRequest, RolloutResponse
 
@@ -25,29 +23,12 @@ def create_schema_app() -> FastAPI:
     def product_portfolio() -> ProductPortfolioResponse:
         raise RuntimeError("schema-only route")
 
-    @app.post("/api/scenario_sets/run", response_model=ScenarioSetRunResponse)
-    def run_scenario_set(scenario_set: ScenarioSet) -> ScenarioSetRunResponse:
-        raise RuntimeError("schema-only route")
-
     @app.post("/api/product/projections/metric_fan", response_model=MetricFanResponse)
     def product_projection_metric_fan(request: MetricFanRequest) -> MetricFanResponse:
         raise RuntimeError("schema-only route")
 
     @app.post("/api/product/projections/rollout", response_model=RolloutResponse)
     def product_projection_rollout(request: RolloutRequest) -> RolloutResponse:
-        raise RuntimeError("schema-only route")
-
-    # Browser-internal nested state shape. Not a real server endpoint; declared
-    # so FastAPI emits BrowserScenarioSetInput / *Overrides (and their section
-    # sub-models) into components.schemas, where the Zod codegen picks them
-    # up. The frontend's URL state and section validators consume the
-    # generated schemas instead of hand-maintaining parallel field lists.
-    @app.post("/api/_browser_state", response_model=BrowserScenarioSetInput, include_in_schema=True)
-    def _browser_state(payload: BrowserScenarioSetInput) -> BrowserScenarioSetInput:
-        raise RuntimeError("schema-only route")
-
-    @app.post("/api/_browser_state_overrides", response_model=BrowserScenarioSetInputOverrides, include_in_schema=True)
-    def _browser_state_overrides(payload: BrowserScenarioSetInputOverrides) -> BrowserScenarioSetInputOverrides:
         raise RuntimeError("schema-only route")
 
     @app.get("/healthz", response_class=PlainTextResponse)

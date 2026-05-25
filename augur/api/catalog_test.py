@@ -21,15 +21,7 @@ from augur.api.config import (
 )
 from augur.api.finance import ConcentratedHoldingSnapshot, FinanceSnapshot
 from augur.api.local_regulation import LocalRegulation, TaxRegime
-from augur.api.scenario_set import ScenarioSet
-from augur.api.scenario_set_service import ScenarioSetService
 from augur.model.independent_exogenous import IndependentExogenousProviderConfig
-from augur.model.testing import DeterministicSeriesFixtureModel
-
-
-@pytest.fixture
-def deterministic_exogenous_model() -> DeterministicSeriesFixtureModel:
-    return DeterministicSeriesFixtureModel()
 
 
 def _write_properties(path: Path) -> None:
@@ -190,19 +182,6 @@ def _config(
     )
 
 
-def _scenario_set_service(
-    properties_path: Path, exogenous_model: DeterministicSeriesFixtureModel
-) -> ScenarioSetService:
-    config = _config(properties_path)
-    bootstrap = build_bootstrap_payload(config)
-    return ScenarioSetService(
-        portfolio=config.portfolio,
-        exogenous_model=exogenous_model,
-        properties_by_id={property_.id: property_ for property_ in bootstrap.properties},
-        locations_by_id={location.id: location for location in bootstrap.locations},
-    )
-
-
 def _property_by_id(bootstrap, property_id: str):
     return one(property_ for property_ in bootstrap.properties if property_.id == property_id)
 
@@ -228,65 +207,6 @@ def test_bootstrap_san_francisco_location_carries_modeled_tax_defaults(tmp_path:
     assert location.city == "San Francisco"
     assert location.local_regulation.property_tax_regime is TaxRegime.SAN_FRANCISCO_SECURED_PROPERTY_TAX
     assert TaxRegime.SAN_FRANCISCO_TRANSFER_TAX in location.local_regulation.default_tax_regimes
-
-
-def test_backend_applies_location_tax_defaults_to_scenario(
-    tmp_path: Path, deterministic_exogenous_model: DeterministicSeriesFixtureModel
-) -> None:
-    properties_path = tmp_path / "properties.json"
-    _write_builtin_properties(properties_path)
-    service = _scenario_set_service(properties_path, deterministic_exogenous_model)
-    request = {
-        "scenario_set_id": "tax_defaults",
-        "title": "Tax defaults",
-        "sampling_request": {"rollout_count": 1, "horizon_months": 1, "seed": 1},
-        "scenarios": [
-            {
-                "scenario_id": "sf_property",
-                "label": "SF Property",
-                "actors": [{"actor_id": "agent_a", "label": "Agent A", "role": "primary_owner"}],
-                "property_selection": {"property_id": "sf_property"},
-                "occupancy_plan": {"occupancy_mode": "owner_lives_in_property"},
-                "rental_plan": {"rental_mode": "not_rented"},
-            }
-        ],
-    }
-
-    scenario_set = service.with_catalog_defaults(ScenarioSet.model_validate(request))
-    scenario = scenario_set.scenarios[0]
-
-    assert scenario.property_selection.tax_regime is TaxRegime.SAN_FRANCISCO_SECURED_PROPERTY_TAX
-    assert TaxRegime.SAN_FRANCISCO_SECURED_PROPERTY_TAX in scenario.tax_regimes
-    assert TaxRegime.SAN_FRANCISCO_TRANSFER_TAX in scenario.tax_regimes
-    assert TaxRegime.PRIMARY_RESIDENCE_EXCLUSION in scenario.tax_regimes
-
-
-def test_backend_rejects_scenario_property_location_mismatch(
-    tmp_path: Path, deterministic_exogenous_model: DeterministicSeriesFixtureModel
-) -> None:
-    properties_path = tmp_path / "properties.json"
-    _write_builtin_properties(properties_path)
-    service = _scenario_set_service(properties_path, deterministic_exogenous_model)
-    request = {
-        "scenario_set_id": "mismatch",
-        "title": "Property/location mismatch",
-        "sampling_request": {"rollout_count": 1, "horizon_months": 1, "seed": 1},
-        "scenarios": [
-            {
-                "scenario_id": "sf_with_wrong_location",
-                "label": "SF Property pinned to Vallejo",
-                "actors": [{"actor_id": "agent_a", "label": "Agent A", "role": "primary_owner"}],
-                # sf_property is in san_francisco_ca per `_write_builtin_properties`;
-                # caller asks the simulator to treat it as vallejo_ca → mismatch.
-                "property_selection": {"property_id": "sf_property", "location_id": "location_a"},
-                "occupancy_plan": {"occupancy_mode": "owner_lives_in_property"},
-                "rental_plan": {"rental_mode": "not_rented"},
-            }
-        ],
-    }
-
-    with pytest.raises(ValueError, match=r"property/location mismatch.*sf_with_wrong_location"):
-        service.run_for_request_body(request)
 
 
 def test_bootstrap_applies_public_property_asset_urls(tmp_path: Path) -> None:
