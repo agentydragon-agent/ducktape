@@ -1834,36 +1834,24 @@ def _state_axes(h1: int, r: int, s: int) -> tuple[np.ndarray, np.ndarray, np.nda
     return months, rollouts, slots
 
 
-def _frame(rows: list[dict[str, Any]], spec: Any) -> pl.DataFrame:
-    if not rows:
-        return spec.empty()
-    return spec.normalize(pl.DataFrame(rows))
+def _state_history_frame_from_columns(columns: dict[str, np.ndarray], spec: Any) -> pl.DataFrame:
+    """Build a state-history frame from pre-built numpy column arrays. State-history specs
+    don't carry `month_index` in their schema (the cross-section is one month wide); decode
+    adds month_index in front of every column the spec declares, so this helper threads
+    `rollout_index`, `month_index`, and the spec's remaining columns in the expected order.
+    Empty input produces a correctly-typed empty frame."""
 
-
-def _state_history_frame(rows: list[dict[str, Any]], spec: Any) -> pl.DataFrame:
-    columns = ["rollout_index", "month_index", *(name for name in spec.schema.names() if name != "rollout_index")]
-    if rows:
-        return pl.DataFrame(rows).select(columns)
-    schema = pl.Schema(
+    state_schema = pl.Schema(
         {
             "rollout_index": pl.Int64(),
             "month_index": pl.Int64(),
             **{name: dtype for name, dtype in spec.schema.items() if name != "rollout_index"},
         }
     )
-    return schema.to_frame()
-
-
-def _state_history_frame_from_columns(columns: dict[str, np.ndarray], spec: Any) -> pl.DataFrame:
-    """Vectorized counterpart to `_state_history_frame` — build a state-history frame from
-    pre-built numpy column arrays. Empty input produces a correctly-typed empty frame.
-    """
-
     n = next(iter(columns.values())).size
     if n == 0:
-        return _state_history_frame([], spec)
-    column_order = ["rollout_index", "month_index", *(name for name in spec.schema.names() if name != "rollout_index")]
-    return pl.DataFrame(columns).select(column_order)
+        return state_schema.to_frame()
+    return pl.DataFrame(columns, schema=state_schema).select(list(state_schema.names()))
 
 
 def _decode_cash(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
@@ -2093,263 +2081,466 @@ def _decode_final_rollout_status(plan: CompiledSimulation, buffers: SimulationBu
 
 
 def _decode_events(plan: CompiledSimulation, buffers: SimulationBuffers) -> EventLog:
-    transfer_rows: list[dict[str, Any]] = []
-    lot_rows: list[dict[str, Any]] = []
-    tax_accrual_rows: list[dict[str, Any]] = []
-    tax_breakdown_rows: list[dict[str, Any]] = []
-    tax_settlement_rows: list[dict[str, Any]] = []
-    obligation_rows: list[dict[str, Any]] = []
-    obligation_settlement_rows: list[dict[str, Any]] = []
-    property_purchase_rows: list[dict[str, Any]] = []
-    mortgage_origination_rows: list[dict[str, Any]] = []
-    mortgage_payment_rows: list[dict[str, Any]] = []
-    failure_rows: list[dict[str, Any]] = []
-
-    for month in range(plan.horizon_months):
-        for slot in range(plan.transfer_cause_codes.shape[1]):
-            for rollout in range(plan.rollout_count):
-                if not buffers.transfer_active[month, slot, rollout]:
-                    continue
-                transfer_rows.append(
-                    {
-                        "rollout_index": rollout,
-                        "month_index": month,
-                        "cause_id": _text(plan, plan.transfer_cause_codes[month, slot]),
-                        "from_agent_id": _text(plan, plan.transfer_from_agent_codes[month, slot]),
-                        "from_account_id": _text(plan, plan.transfer_from_account_codes[month, slot]),
-                        "to_agent_id": _text(plan, plan.transfer_to_agent_codes[month, slot]),
-                        "to_account_id": _text(plan, plan.transfer_to_account_codes[month, slot]),
-                        "amount_usd": float(buffers.transfer_amount[month, slot, rollout]),
-                        "income_category": "ordinary" if plan.transfer_income_profile_index[month, slot] >= 0 else None,
-                    }
-                )
-        for prop in range(plan.property_id_codes.shape[0]):
-            for rollout in range(plan.rollout_count):
-                if not buffers.property_purchase_active[month, prop, rollout]:
-                    continue
-                property_purchase_rows.append(_property_purchase_row(plan, prop, rollout, month))
-                if buffers.property_transfer_active[month, prop, rollout]:
-                    transfer_rows.append(_property_transfer_row(plan, prop, rollout, month))
-        for sale in range(plan.sale_month.shape[0]):
-            for lot in range(plan.lot_id_codes.shape[0]):
-                for rollout in range(plan.rollout_count):
-                    if not buffers.sched_disp_active[month, sale, lot, rollout]:
-                        continue
-                    lot_rows.append(
-                        _lot_row(
-                            plan,
-                            rollout=rollout,
-                            month=month,
-                            cause_id=_text(plan, plan.sale_cause_codes[month, sale]),
-                            agent_code=plan.sale_agent_codes[sale],
-                            source_account_code=plan.sale_source_account_codes[sale],
-                            asset_code=plan.sale_asset_codes[sale],
-                            lot=lot,
-                            units=float(buffers.sched_disp_units[month, sale, lot, rollout]),
-                            basis=float(buffers.sched_disp_basis[month, sale, lot, rollout]),
-                            proceeds=float(buffers.sched_disp_proceeds[month, sale, lot, rollout]),
-                            proceeds_account_code=plan.sale_proceeds_account_codes[sale],
-                        )
-                    )
-        for policy in range(plan.liquidity_policy_agent_codes.shape[0]):
-            for asset_idx in range(plan.liquidity_policy_asset_codes.shape[1]):
-                asset_code = plan.liquidity_policy_asset_codes[policy, asset_idx]
-                if asset_code < 0:
-                    continue
-                cause_id = f"{plan.liquidity_policy_prefixes[policy]}_m{month}_{_text(plan, asset_code)}"
-                for lot in range(plan.lot_id_codes.shape[0]):
-                    for rollout in range(plan.rollout_count):
-                        if not buffers.liq_disp_active[month, policy, asset_idx, lot, rollout]:
-                            continue
-                        lot_rows.append(
-                            _lot_row(
-                                plan,
-                                rollout=rollout,
-                                month=month,
-                                cause_id=cause_id,
-                                agent_code=plan.liquidity_policy_agent_codes[policy],
-                                source_account_code=plan.liquidity_policy_account_codes[policy],
-                                asset_code=asset_code,
-                                lot=lot,
-                                units=float(buffers.liq_disp_units[month, policy, asset_idx, lot, rollout]),
-                                basis=float(buffers.liq_disp_basis[month, policy, asset_idx, lot, rollout]),
-                                proceeds=float(buffers.liq_disp_proceeds[month, policy, asset_idx, lot, rollout]),
-                                proceeds_account_code=plan.liquidity_policy_account_codes[policy],
-                            )
-                        )
-        for link in range(plan.tax_link_profile_index.shape[0]):
-            for rollout in range(plan.rollout_count):
-                if not buffers.tax_accrual_active[month, link, rollout]:
-                    continue
-                profile = int(plan.tax_link_profile_index[link])
-                cause_id = f"{_text(plan, plan.tax_profile_agent_codes[profile])}_{_text(plan, plan.tax_link_jurisdiction_codes[link])}_year_end_accrual_m{month}"
-                tax = float(buffers.tax_accrual_amount[month, link, rollout])
-                tax_accrual_rows.append(
-                    {
-                        "rollout_index": rollout,
-                        "month_index": month,
-                        "cause_id": cause_id,
-                        "agent_id": _text(plan, plan.tax_profile_agent_codes[profile]),
-                        "jurisdiction_id": _text(plan, plan.tax_link_jurisdiction_codes[link]),
-                        "tax_year_end_month": month,
-                        "amount_usd": tax,
-                    }
-                )
-                tax_breakdown_rows.append(
-                    {
-                        "rollout_index": rollout,
-                        "month_index": month,
-                        "cause_id": cause_id,
-                        "agent_id": _text(plan, plan.tax_profile_agent_codes[profile]),
-                        "jurisdiction_id": _text(plan, plan.tax_link_jurisdiction_codes[link]),
-                        "tax_year_end_month": month,
-                        "ordinary_income_usd": float(buffers.tax_breakdown_ordinary[month, link, rollout]),
-                        "ltcg_usd": float(buffers.tax_breakdown_ltcg[month, link, rollout]),
-                        "stcg_usd": float(buffers.tax_breakdown_stcg[month, link, rollout]),
-                        "standard_deduction_usd": float(plan.tax_link_standard_deduction[link]),
-                        "mortgage_interest_deduction_usd": float(
-                            buffers.tax_breakdown_mortgage_interest_deduction[month, link, rollout]
-                        ),
-                        "salt_deduction_usd": float(buffers.tax_breakdown_salt_deduction[month, link, rollout]),
-                        "itemized_deduction_usd": float(buffers.tax_breakdown_itemized_deduction[month, link, rollout]),
-                        "ordinary_taxable_usd": float(buffers.tax_breakdown_ordinary_taxable[month, link, rollout]),
-                        "capital_gain_taxable_usd": float(buffers.tax_breakdown_capital_taxable[month, link, rollout]),
-                        "ordinary_tax_usd": float(buffers.tax_breakdown_ordinary_tax[month, link, rollout]),
-                        "capital_gain_tax_usd": float(buffers.tax_breakdown_capital_tax[month, link, rollout]),
-                        "total_tax_usd": tax,
-                    }
-                )
-        for slot in range(plan.obligation_cause_codes.shape[1]):
-            for rollout in range(plan.rollout_count):
-                if not buffers.obligation_active[month, slot, rollout]:
-                    continue
-                obligation_rows.append(_obligation_row(plan, buffers, month, slot, rollout))
-                obligation_settlement_rows.append(_obligation_settlement_row(plan, buffers, month, slot, rollout))
-                if buffers.obligation_paid[month, slot, rollout] > 0:
-                    transfer_rows.append(_obligation_transfer_row(plan, buffers, month, slot, rollout))
-                if buffers.obligation_failure_active[month, slot, rollout]:
-                    failure_rows.append(_failure_row(plan, buffers, month, slot, rollout))
-        for liab in range(plan.liability_codes.shape[0]):
-            for rollout in range(plan.rollout_count):
-                if buffers.mortgage_origination_active[month, liab, rollout]:
-                    mortgage_origination_rows.append(_mortgage_origination_row(plan, liab, rollout, month))
-                if buffers.mortgage_payment_active[month, liab, rollout]:
-                    mortgage_payment_rows.append(_mortgage_payment_row(plan, buffers, liab, rollout, month))
-        for profile in range(plan.tax_profile_agent_codes.shape[0]):
-            for rollout in range(plan.rollout_count):
-                if not buffers.tax_settlement_active[month, profile, rollout]:
-                    continue
-                year_end = int(buffers.tax_settlement_year_end_month[month, profile, rollout])
-                tax_year = (year_end - 11) // 12
-                tax_settlement_rows.append(
-                    {
-                        "rollout_index": rollout,
-                        "month_index": month,
-                        "cause_id": f"{_text(plan, plan.tax_profile_agent_codes[profile])}_tax_settlement_y{tax_year}",
-                        "agent_id": _text(plan, plan.tax_profile_agent_codes[profile]),
-                        "tax_year_end_month": year_end,
-                        "amount_usd": float(buffers.tax_settlement_amount[month, profile, rollout]),
-                    }
-                )
-
+    transfer_frames: list[pl.DataFrame] = []
+    lot_frames: list[pl.DataFrame] = []
+    transfer_frames.append(_decode_transfers(plan, buffers))
+    property_purchases_frame, property_transfer_frame = _decode_property_purchases(plan, buffers)
+    transfer_frames.append(property_transfer_frame)
+    lot_frames.append(_decode_sched_dispositions(plan, buffers))
+    lot_frames.append(_decode_liquidity_dispositions(plan, buffers))
+    tax_accruals_frame, tax_breakdowns_frame = _decode_tax_accruals(plan, buffers)
+    obligation_accruals_frame, obligation_settlements_frame, obligation_transfer_frame, failure_frame = (
+        _decode_obligations(plan, buffers)
+    )
+    transfer_frames.append(obligation_transfer_frame)
     return EventLog.from_frames(
         {
-            "transfers": _frame(transfer_rows, EVENT_FRAMES.transfers),
-            "lot_dispositions": _frame(lot_rows, EVENT_FRAMES.lot_dispositions),
-            "tax_accruals": _frame(tax_accrual_rows, EVENT_FRAMES.tax_accruals),
-            "tax_breakdowns": _frame(tax_breakdown_rows, EVENT_FRAMES.tax_breakdowns),
-            "tax_settlements": _frame(tax_settlement_rows, EVENT_FRAMES.tax_settlements),
-            "obligation_accruals": _frame(obligation_rows, EVENT_FRAMES.obligation_accruals),
-            "obligation_settlements": _frame(obligation_settlement_rows, EVENT_FRAMES.obligation_settlements),
-            "property_purchases": _frame(property_purchase_rows, EVENT_FRAMES.property_purchases),
-            "mortgage_originations": _frame(mortgage_origination_rows, EVENT_FRAMES.mortgage_originations),
-            "mortgage_payments": _frame(mortgage_payment_rows, EVENT_FRAMES.mortgage_payments),
-            "rollout_failures": _frame(failure_rows, EVENT_FRAMES.rollout_failures),
+            "transfers": EVENT_FRAMES.transfers.concat(transfer_frames),
+            "lot_dispositions": EVENT_FRAMES.lot_dispositions.concat(lot_frames),
+            "tax_accruals": tax_accruals_frame,
+            "tax_breakdowns": tax_breakdowns_frame,
+            "tax_settlements": _decode_tax_settlements(plan, buffers),
+            "obligation_accruals": obligation_accruals_frame,
+            "obligation_settlements": obligation_settlements_frame,
+            "property_purchases": property_purchases_frame,
+            "mortgage_originations": _decode_mortgage_originations(plan, buffers),
+            "mortgage_payments": _decode_mortgage_payments(plan, buffers),
+            "rollout_failures": failure_frame,
         }
     )
 
 
-def _property_purchase_row(plan: CompiledSimulation, prop: int, rollout: int, month: int) -> dict[str, Any]:
-    return {
-        "rollout_index": rollout,
-        "month_index": month,
-        "cause_id": _text(plan, plan.property_cause_codes[month, prop]),
-        "property_id": _text(plan, plan.property_id_codes[prop]),
-        "location_id": _text(plan, plan.property_location_codes[prop]),
-        "buyer_agent_id": _text(plan, plan.property_buyer_agent_codes[prop]),
-        "purchase_price_usd": float(plan.property_purchase_price[prop]),
-        "closing_cost_usd": float(plan.property_closing_cost[prop]),
-        "adjusted_basis_usd": float(plan.property_adjusted_basis[prop]),
-        "ownership_pct": float(plan.property_ownership_pct[prop]),
-        "stake_contribution_usd": float(plan.property_stake_contribution[prop]),
-        "equity_ledger_usd": float(plan.property_equity_ledger[prop]),
-    }
+def _decode_transfers(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
+    active = buffers.transfer_active  # (M, S, R)
+    months, slots, rollouts = np.argwhere(active).T if active.any() else (np.array([], dtype=np.int64),) * 3
+    cause_ids = _codes_to_strings(plan, plan.transfer_cause_codes)[months, slots]
+    from_agents = _codes_to_strings(plan, plan.transfer_from_agent_codes)[months, slots]
+    from_accounts = _codes_to_strings(plan, plan.transfer_from_account_codes)[months, slots]
+    to_agents = _codes_to_strings(plan, plan.transfer_to_agent_codes)[months, slots]
+    to_accounts = _codes_to_strings(plan, plan.transfer_to_account_codes)[months, slots]
+    amounts = buffers.transfer_amount[months, slots, rollouts]
+    income_categories = np.where(plan.transfer_income_profile_index[months, slots] >= 0, "ordinary", None).astype(
+        object
+    )
+    return _frame_from_columns(
+        EVENT_FRAMES.transfers,
+        rollout_index=rollouts,
+        month_index=months,
+        cause_id=cause_ids,
+        from_agent_id=from_agents,
+        from_account_id=from_accounts,
+        to_agent_id=to_agents,
+        to_account_id=to_accounts,
+        amount_usd=amounts,
+        income_category=income_categories,
+    )
 
 
-def _property_transfer_row(plan: CompiledSimulation, prop: int, rollout: int, month: int) -> dict[str, Any]:
-    cause = _text(plan, plan.property_cause_codes[month, prop])
-    return {
-        "rollout_index": rollout,
-        "month_index": month,
-        "cause_id": f"{cause}_buyer_cash",
-        "from_agent_id": _text(plan, plan.property_buyer_agent_codes[prop]),
-        "from_account_id": _text(plan, plan.property_buyer_account_codes[prop]),
-        "to_agent_id": _text(plan, plan.property_seller_agent_codes[prop]),
-        "to_account_id": _text(plan, plan.property_seller_account_codes[prop]),
-        "amount_usd": float(plan.property_stake_contribution[prop]),
-        "income_category": None,
-    }
+def _decode_property_purchases(
+    plan: CompiledSimulation, buffers: SimulationBuffers
+) -> tuple[pl.DataFrame, pl.DataFrame]:
+    """Returns (property_purchases_frame, derived_transfers_frame).
+
+    The transfers frame is the subset of purchases whose `property_transfer_active` flag is
+    set — the buyer-cash transfer that goes alongside the purchase event.
+    """
+
+    active = buffers.property_purchase_active  # (M, P, R)
+    if active.any():
+        months, props, rollouts = np.argwhere(active).T
+    else:
+        months = props = rollouts = np.array([], dtype=np.int64)
+    cause_ids = _codes_to_strings(plan, plan.property_cause_codes)[months, props]
+    property_ids = _codes_to_strings(plan, plan.property_id_codes)[props]
+    location_ids = _codes_to_strings(plan, plan.property_location_codes)[props]
+    buyer_agents = _codes_to_strings(plan, plan.property_buyer_agent_codes)[props]
+    buyer_accounts = _codes_to_strings(plan, plan.property_buyer_account_codes)[props]
+    seller_agents = _codes_to_strings(plan, plan.property_seller_agent_codes)[props]
+    seller_accounts = _codes_to_strings(plan, plan.property_seller_account_codes)[props]
+    purchases = _frame_from_columns(
+        EVENT_FRAMES.property_purchases,
+        rollout_index=rollouts,
+        month_index=months,
+        cause_id=cause_ids,
+        property_id=property_ids,
+        location_id=location_ids,
+        buyer_agent_id=buyer_agents,
+        purchase_price_usd=plan.property_purchase_price.astype(np.float64)[props],
+        closing_cost_usd=plan.property_closing_cost.astype(np.float64)[props],
+        adjusted_basis_usd=plan.property_adjusted_basis.astype(np.float64)[props],
+        ownership_pct=plan.property_ownership_pct.astype(np.float64)[props],
+        stake_contribution_usd=plan.property_stake_contribution.astype(np.float64)[props],
+        equity_ledger_usd=plan.property_equity_ledger.astype(np.float64)[props],
+    )
+    # Derived buyer-cash transfers: subset where `property_transfer_active` also holds.
+    transfer_mask = buffers.property_transfer_active[months, props, rollouts]
+    if transfer_mask.any():
+        m_t = months[transfer_mask]
+        p_t = props[transfer_mask]
+        r_t = rollouts[transfer_mask]
+        cause_t = np.array([f"{c}_buyer_cash" for c in cause_ids[transfer_mask]], dtype=object)
+        transfers = _frame_from_columns(
+            EVENT_FRAMES.transfers,
+            rollout_index=r_t,
+            month_index=m_t,
+            cause_id=cause_t,
+            from_agent_id=buyer_agents[transfer_mask],
+            from_account_id=buyer_accounts[transfer_mask],
+            to_agent_id=seller_agents[transfer_mask],
+            to_account_id=seller_accounts[transfer_mask],
+            amount_usd=plan.property_stake_contribution.astype(np.float64)[p_t],
+            income_category=np.full(p_t.size, None, dtype=object),
+        )
+    else:
+        transfers = EVENT_FRAMES.transfers.empty()
+    return purchases, transfers
 
 
-def _lot_row(
-    plan: CompiledSimulation,
+def _decode_sched_dispositions(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
+    active = buffers.sched_disp_active  # (M, sale, lot, R)
+    if active.any():
+        months, sales, lots, rollouts = np.argwhere(active).T
+    else:
+        months = sales = lots = rollouts = np.array([], dtype=np.int64)
+    cause_ids = _codes_to_strings(plan, plan.sale_cause_codes)[months, sales]
+    return _lot_disposition_frame(
+        plan=plan,
+        rollouts=rollouts,
+        months=months,
+        cause_ids=cause_ids,
+        agent_codes=plan.sale_agent_codes[sales],
+        source_account_codes=plan.sale_source_account_codes[sales],
+        asset_codes=plan.sale_asset_codes[sales],
+        lots=lots,
+        units=buffers.sched_disp_units[months, sales, lots, rollouts],
+        basis=buffers.sched_disp_basis[months, sales, lots, rollouts],
+        proceeds=buffers.sched_disp_proceeds[months, sales, lots, rollouts],
+        proceeds_account_codes=plan.sale_proceeds_account_codes[sales],
+    )
+
+
+def _decode_liquidity_dispositions(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
+    active = buffers.liq_disp_active  # (M, policy, asset_idx, lot, R)
+    # Pre-filter inactive asset slots (asset_code < 0). The plan's liquidity_policy_asset_codes
+    # is (policy, asset_idx); a negative entry means that asset slot isn't used by the policy.
+    asset_valid = plan.liquidity_policy_asset_codes >= 0  # (policy, asset_idx)
+    # Broadcast valid mask to active's shape and AND it in.
+    valid_full = asset_valid[None, :, :, None, None]  # (1, policy, asset_idx, 1, 1)
+    active = active & valid_full
+    if active.any():
+        months, policies, asset_idxs, lots, rollouts = np.argwhere(active).T
+    else:
+        months = policies = asset_idxs = lots = rollouts = np.array([], dtype=np.int64)
+    asset_codes = plan.liquidity_policy_asset_codes[policies, asset_idxs]
+    # Per-event cause_id is "{policy_prefix}_m{month}_{asset_name}". O(N) Python comp over
+    # the gathered events, not the dense iteration space.
+    asset_names = _codes_to_strings(plan, plan.liquidity_policy_asset_codes)[policies, asset_idxs]
+    prefixes_per_event = np.array(plan.liquidity_policy_prefixes, dtype=object)[policies]
+    cause_ids = np.array(
+        [f"{p}_m{m}_{a}" for p, m, a in zip(prefixes_per_event, months, asset_names, strict=True)], dtype=object
+    )
+    return _lot_disposition_frame(
+        plan=plan,
+        rollouts=rollouts,
+        months=months,
+        cause_ids=cause_ids,
+        agent_codes=plan.liquidity_policy_agent_codes[policies],
+        source_account_codes=plan.liquidity_policy_account_codes[policies],
+        asset_codes=asset_codes,
+        lots=lots,
+        units=buffers.liq_disp_units[months, policies, asset_idxs, lots, rollouts],
+        basis=buffers.liq_disp_basis[months, policies, asset_idxs, lots, rollouts],
+        proceeds=buffers.liq_disp_proceeds[months, policies, asset_idxs, lots, rollouts],
+        proceeds_account_codes=plan.liquidity_policy_account_codes[policies],
+    )
+
+
+def _lot_disposition_frame(
     *,
-    rollout: int,
-    month: int,
-    cause_id: str | None,
-    agent_code: int,
-    source_account_code: int,
-    asset_code: int,
-    lot: int,
-    units: float,
-    basis: float,
-    proceeds: float,
-    proceeds_account_code: int,
-) -> dict[str, Any]:
-    return {
-        "rollout_index": rollout,
-        "month_index": month,
-        "cause_id": cause_id,
-        "agent_id": _text(plan, agent_code),
-        "source_account_id": _text(plan, source_account_code),
-        "asset_id": _text(plan, asset_code),
-        "lot_id": _text(plan, plan.lot_id_codes[lot]),
-        "purchase_month_index": int(plan.lot_purchase_month[lot]),
-        "units_sold": units,
-        "cost_basis_consumed_usd": basis,
-        "proceeds_usd": proceeds,
-        "proceeds_account_id": _text(plan, proceeds_account_code),
-    }
+    plan: CompiledSimulation,
+    rollouts: np.ndarray,
+    months: np.ndarray,
+    cause_ids: np.ndarray,
+    agent_codes: np.ndarray,
+    source_account_codes: np.ndarray,
+    asset_codes: np.ndarray,
+    lots: np.ndarray,
+    units: np.ndarray,
+    basis: np.ndarray,
+    proceeds: np.ndarray,
+    proceeds_account_codes: np.ndarray,
+) -> pl.DataFrame:
+    return _frame_from_columns(
+        EVENT_FRAMES.lot_dispositions,
+        rollout_index=rollouts,
+        month_index=months,
+        cause_id=cause_ids,
+        agent_id=_codes_to_strings(plan, agent_codes),
+        source_account_id=_codes_to_strings(plan, source_account_codes),
+        asset_id=_codes_to_strings(plan, asset_codes),
+        lot_id=_codes_to_strings(plan, plan.lot_id_codes)[lots],
+        purchase_month_index=plan.lot_purchase_month.astype(np.int64)[lots],
+        units_sold=units,
+        cost_basis_consumed_usd=basis,
+        proceeds_usd=proceeds,
+        proceeds_account_id=_codes_to_strings(plan, proceeds_account_codes),
+    )
 
 
-def _obligation_row(
-    plan: CompiledSimulation, buffers: SimulationBuffers, month: int, slot: int, rollout: int
-) -> dict[str, Any]:
-    return {
-        "rollout_index": rollout,
-        "month_index": month,
-        "cause_id": _text(plan, plan.obligation_cause_codes[month, slot]),
-        "obligation_id": _text(plan, plan.obligation_id_codes[month, slot]),
-        "obligation_type": _text(plan, plan.obligation_type_codes[month, slot]),
-        "agent_id": _text(plan, plan.obligation_agent_codes[month, slot]),
-        "from_account_id": _text(plan, plan.obligation_from_account_codes[month, slot]),
-        "to_agent_id": _text(plan, plan.obligation_to_agent_codes[month, slot]),
-        "to_account_id": _text(plan, plan.obligation_to_account_codes[month, slot]),
-        "amount_due_usd": float(buffers.obligation_due[month, slot, rollout]),
-    }
+def _decode_tax_accruals(plan: CompiledSimulation, buffers: SimulationBuffers) -> tuple[pl.DataFrame, pl.DataFrame]:
+    """Returns (tax_accruals_frame, tax_breakdowns_frame). Same active mask, two output frames."""
+
+    active = buffers.tax_accrual_active  # (M, link, R)
+    if active.any():
+        months, links, rollouts = np.argwhere(active).T
+    else:
+        months = links = rollouts = np.array([], dtype=np.int64)
+    profiles = plan.tax_link_profile_index.astype(np.int64)[links]
+    agent_ids = _codes_to_strings(plan, plan.tax_profile_agent_codes)[profiles]
+    jurisdiction_ids = _codes_to_strings(plan, plan.tax_link_jurisdiction_codes)[links]
+    # cause_id is f"{agent_id}_{jurisdiction_id}_year_end_accrual_m{month}".
+    cause_ids = np.array(
+        [f"{a}_{j}_year_end_accrual_m{m}" for a, j, m in zip(agent_ids, jurisdiction_ids, months, strict=True)],
+        dtype=object,
+    )
+    totals = buffers.tax_accrual_amount[months, links, rollouts]
+    accruals = _frame_from_columns(
+        EVENT_FRAMES.tax_accruals,
+        rollout_index=rollouts,
+        month_index=months,
+        cause_id=cause_ids,
+        agent_id=agent_ids,
+        jurisdiction_id=jurisdiction_ids,
+        tax_year_end_month=months,
+        amount_usd=totals,
+    )
+    breakdowns = _frame_from_columns(
+        EVENT_FRAMES.tax_breakdowns,
+        rollout_index=rollouts,
+        month_index=months,
+        cause_id=cause_ids,
+        agent_id=agent_ids,
+        jurisdiction_id=jurisdiction_ids,
+        tax_year_end_month=months,
+        ordinary_income_usd=buffers.tax_breakdown_ordinary[months, links, rollouts],
+        ltcg_usd=buffers.tax_breakdown_ltcg[months, links, rollouts],
+        stcg_usd=buffers.tax_breakdown_stcg[months, links, rollouts],
+        standard_deduction_usd=plan.tax_link_standard_deduction.astype(np.float64)[links],
+        mortgage_interest_deduction_usd=buffers.tax_breakdown_mortgage_interest_deduction[months, links, rollouts],
+        salt_deduction_usd=buffers.tax_breakdown_salt_deduction[months, links, rollouts],
+        itemized_deduction_usd=buffers.tax_breakdown_itemized_deduction[months, links, rollouts],
+        ordinary_taxable_usd=buffers.tax_breakdown_ordinary_taxable[months, links, rollouts],
+        capital_gain_taxable_usd=buffers.tax_breakdown_capital_taxable[months, links, rollouts],
+        ordinary_tax_usd=buffers.tax_breakdown_ordinary_tax[months, links, rollouts],
+        capital_gain_tax_usd=buffers.tax_breakdown_capital_tax[months, links, rollouts],
+        total_tax_usd=totals,
+    )
+    return accruals, breakdowns
+
+
+def _decode_obligations(
+    plan: CompiledSimulation, buffers: SimulationBuffers
+) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame, pl.DataFrame]:
+    """Returns (accruals, settlements, derived_transfers, failures).
+
+    Base mask is `obligation_active`; the transfer-row subset gates on
+    `obligation_paid > 0`, the failure-row subset on `obligation_failure_active`.
+    """
+
+    active = buffers.obligation_active  # (M, S, R)
+    if active.any():
+        months, slots, rollouts = np.argwhere(active).T
+    else:
+        months = slots = rollouts = np.array([], dtype=np.int64)
+    cause_ids = _codes_to_strings(plan, plan.obligation_cause_codes)[months, slots]
+    obligation_ids = _codes_to_strings(plan, plan.obligation_id_codes)[months, slots]
+    obligation_types = _codes_to_strings(plan, plan.obligation_type_codes)[months, slots]
+    agent_ids = _codes_to_strings(plan, plan.obligation_agent_codes)[months, slots]
+    from_account_ids = _codes_to_strings(plan, plan.obligation_from_account_codes)[months, slots]
+    to_agent_ids = _codes_to_strings(plan, plan.obligation_to_agent_codes)[months, slots]
+    to_account_ids = _codes_to_strings(plan, plan.obligation_to_account_codes)[months, slots]
+    amount_due = buffers.obligation_due[months, slots, rollouts]
+    amount_paid = buffers.obligation_paid[months, slots, rollouts]
+    shortfall = buffers.obligation_shortfall[months, slots, rollouts]
+    attempt_policy = buffers.obligation_attempt_policy[months, slots, rollouts]
+    attempted_sources_per_event = _attempted_sources_for_policy_indices(plan, attempt_policy)
+
+    accruals = _frame_from_columns(
+        EVENT_FRAMES.obligation_accruals,
+        rollout_index=rollouts,
+        month_index=months,
+        cause_id=cause_ids,
+        obligation_id=obligation_ids,
+        obligation_type=obligation_types,
+        agent_id=agent_ids,
+        from_account_id=from_account_ids,
+        to_agent_id=to_agent_ids,
+        to_account_id=to_account_ids,
+        amount_due_usd=amount_due,
+    )
+    settlements = _frame_from_columns(
+        EVENT_FRAMES.obligation_settlements,
+        rollout_index=rollouts,
+        month_index=months,
+        cause_id=cause_ids,
+        obligation_id=obligation_ids,
+        obligation_type=obligation_types,
+        agent_id=agent_ids,
+        from_account_id=from_account_ids,
+        amount_due_usd=amount_due,
+        amount_paid_usd=amount_paid,
+        shortfall_usd=shortfall,
+        attempted_funding_sources=attempted_sources_per_event,
+    )
+    # Subset 1: obligations with paid > 0 emit a derived transfer row.
+    paid_mask = amount_paid > 0
+    if paid_mask.any():
+        transfers = _frame_from_columns(
+            EVENT_FRAMES.transfers,
+            rollout_index=rollouts[paid_mask],
+            month_index=months[paid_mask],
+            cause_id=cause_ids[paid_mask],
+            from_agent_id=agent_ids[paid_mask],
+            from_account_id=from_account_ids[paid_mask],
+            to_agent_id=to_agent_ids[paid_mask],
+            to_account_id=to_account_ids[paid_mask],
+            amount_usd=amount_paid[paid_mask],
+            income_category=np.full(int(paid_mask.sum()), None, dtype=object),
+        )
+    else:
+        transfers = EVENT_FRAMES.transfers.empty()
+    # Subset 2: obligations whose failure flag fired emit a failure row.
+    failure_mask = buffers.obligation_failure_active[months, slots, rollouts]
+    if failure_mask.any():
+        failure_cause_ids = np.array([f"{oid}_failure" for oid in obligation_ids[failure_mask]], dtype=object)
+        failures = _frame_from_columns(
+            EVENT_FRAMES.rollout_failures,
+            rollout_index=rollouts[failure_mask],
+            month_index=months[failure_mask],
+            cause_id=failure_cause_ids,
+            agent_id=agent_ids[failure_mask],
+            deficit_usd=shortfall[failure_mask],
+            obligation_id=obligation_ids[failure_mask],
+            obligation_type=obligation_types[failure_mask],
+            amount_due_usd=amount_due[failure_mask],
+            amount_paid_usd=amount_paid[failure_mask],
+            shortfall_usd=shortfall[failure_mask],
+            attempted_funding_sources=attempted_sources_per_event[failure_mask],
+        )
+    else:
+        failures = EVENT_FRAMES.rollout_failures.empty()
+    return accruals, settlements, transfers, failures
+
+
+def _attempted_sources_for_policy_indices(plan: CompiledSimulation, attempt_policy: np.ndarray) -> np.ndarray:
+    """Map a per-event `attempt_policy` int array to the matching joined-asset-names strings.
+
+    `-1` (no attempting policy) maps to `""`. The result is an object-dtype array of strings,
+    shape matching the input.
+    """
+
+    policy_count = plan.liquidity_policy_asset_codes.shape[0]
+    lookup = np.empty(policy_count + 1, dtype=object)
+    lookup[0] = ""
+    for policy in range(policy_count):
+        lookup[policy + 1] = _attempted_sources(plan, policy)
+    # Shift attempt_policy by +1 so -1 -> 0 (empty string).
+    return lookup[attempt_policy.astype(np.int64) + 1]
+
+
+def _decode_mortgage_originations(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
+    active = buffers.mortgage_origination_active  # (M, liab, R)
+    if active.any():
+        months, liabs, rollouts = np.argwhere(active).T
+    else:
+        months = liabs = rollouts = np.array([], dtype=np.int64)
+    props = plan.liability_property_slot.astype(np.int64)[liabs]
+    cause_codes_per_event = plan.property_cause_codes[months, props]
+    cause_text = _codes_to_strings(plan, cause_codes_per_event)
+    cause_ids = np.array([f"{c}_mortgage_origination" for c in cause_text], dtype=object)
+    return _frame_from_columns(
+        EVENT_FRAMES.mortgage_originations,
+        rollout_index=rollouts,
+        month_index=months,
+        cause_id=cause_ids,
+        liability_id=_codes_to_strings(plan, plan.liability_codes)[liabs],
+        agent_id=_codes_to_strings(plan, plan.liability_agent_codes)[liabs],
+        payment_account_id=_codes_to_strings(plan, plan.liability_payment_account_codes)[liabs],
+        counterparty_agent_id=_codes_to_strings(plan, plan.liability_counterparty_agent_codes)[liabs],
+        counterparty_account_id=_codes_to_strings(plan, plan.liability_counterparty_account_codes)[liabs],
+        property_id=_codes_to_strings(plan, plan.property_id_codes)[props],
+        principal_usd=plan.liability_principal.astype(np.float64)[liabs],
+        annual_interest_rate=plan.liability_annual_rate.astype(np.float64)[liabs],
+        term_months=plan.liability_term_months.astype(np.int64)[liabs],
+        monthly_payment_usd=plan.liability_monthly_payment.astype(np.float64)[liabs],
+    )
+
+
+def _decode_mortgage_payments(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
+    active = buffers.mortgage_payment_active  # (M, liab, R)
+    if active.any():
+        months, liabs, rollouts = np.argwhere(active).T
+    else:
+        months = liabs = rollouts = np.array([], dtype=np.int64)
+    props = plan.liability_property_slot.astype(np.int64)[liabs]
+    liability_ids = _codes_to_strings(plan, plan.liability_codes)[liabs]
+    cause_ids = np.array([f"{lid}_payment_m{m}" for lid, m in zip(liability_ids, months, strict=True)], dtype=object)
+    return _frame_from_columns(
+        EVENT_FRAMES.mortgage_payments,
+        rollout_index=rollouts,
+        month_index=months,
+        cause_id=cause_ids,
+        liability_id=liability_ids,
+        agent_id=_codes_to_strings(plan, plan.liability_agent_codes)[liabs],
+        counterparty_agent_id=_codes_to_strings(plan, plan.liability_counterparty_agent_codes)[liabs],
+        property_id=_codes_to_strings(plan, plan.property_id_codes)[props],
+        from_account_id=_codes_to_strings(plan, plan.liability_payment_account_codes)[liabs],
+        to_account_id=_codes_to_strings(plan, plan.liability_counterparty_account_codes)[liabs],
+        interest_usd=buffers.mortgage_payment_interest[months, liabs, rollouts],
+        principal_usd=buffers.mortgage_payment_principal[months, liabs, rollouts],
+        total_payment_usd=buffers.mortgage_payment_total[months, liabs, rollouts],
+    )
+
+
+def _decode_tax_settlements(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
+    active = buffers.tax_settlement_active  # (M, profile, R)
+    if active.any():
+        months, profiles, rollouts = np.argwhere(active).T
+    else:
+        months = profiles = rollouts = np.array([], dtype=np.int64)
+    agent_ids = _codes_to_strings(plan, plan.tax_profile_agent_codes)[profiles]
+    year_end = buffers.tax_settlement_year_end_month[months, profiles, rollouts].astype(np.int64)
+    tax_years = (year_end - 11) // 12
+    cause_ids = np.array([f"{a}_tax_settlement_y{y}" for a, y in zip(agent_ids, tax_years, strict=True)], dtype=object)
+    return _frame_from_columns(
+        EVENT_FRAMES.tax_settlements,
+        rollout_index=rollouts,
+        month_index=months,
+        cause_id=cause_ids,
+        agent_id=agent_ids,
+        tax_year_end_month=year_end,
+        amount_usd=buffers.tax_settlement_amount[months, profiles, rollouts],
+    )
+
+
+def _frame_from_columns(spec: Any, **columns: np.ndarray) -> pl.DataFrame:
+    """Materialize an event frame from numpy column arrays. Empty input produces a
+    correctly-typed empty frame matching the spec's schema. Polars cast/infer is driven by
+    `spec.schema` so object-dtype numpy arrays of Python strings become `pl.Utf8` (rather
+    than `pl.Object`, which breaks downstream concat between dense and empty frames)."""
+
+    n = next(iter(columns.values())).size
+    if n == 0:
+        return spec.empty()
+    return pl.DataFrame(columns, schema=spec.schema).select(spec.schema.names())
 
 
 def _attempted_sources(plan: CompiledSimulation, policy: int) -> str:
+    """Per-policy joined-asset-names string used in obligation settlement / failure rows.
+
+    Called once per policy at decode time (small fixed count) to populate the lookup table
+    `_attempted_sources_for_policy_indices` uses to gather per-event strings."""
+
     if policy < 0:
         return ""
     return ",".join(
@@ -2357,98 +2548,3 @@ def _attempted_sources(plan: CompiledSimulation, policy: int) -> str:
         for asset_code in plan.liquidity_policy_asset_codes[policy].tolist()
         if asset_code >= 0
     )
-
-
-def _obligation_settlement_row(
-    plan: CompiledSimulation, buffers: SimulationBuffers, month: int, slot: int, rollout: int
-) -> dict[str, Any]:
-    return {
-        "rollout_index": rollout,
-        "month_index": month,
-        "cause_id": _text(plan, plan.obligation_cause_codes[month, slot]),
-        "obligation_id": _text(plan, plan.obligation_id_codes[month, slot]),
-        "obligation_type": _text(plan, plan.obligation_type_codes[month, slot]),
-        "agent_id": _text(plan, plan.obligation_agent_codes[month, slot]),
-        "from_account_id": _text(plan, plan.obligation_from_account_codes[month, slot]),
-        "amount_due_usd": float(buffers.obligation_due[month, slot, rollout]),
-        "amount_paid_usd": float(buffers.obligation_paid[month, slot, rollout]),
-        "shortfall_usd": float(buffers.obligation_shortfall[month, slot, rollout]),
-        "attempted_funding_sources": _attempted_sources(
-            plan, int(buffers.obligation_attempt_policy[month, slot, rollout])
-        ),
-    }
-
-
-def _obligation_transfer_row(
-    plan: CompiledSimulation, buffers: SimulationBuffers, month: int, slot: int, rollout: int
-) -> dict[str, Any]:
-    return {
-        "rollout_index": rollout,
-        "month_index": month,
-        "cause_id": _text(plan, plan.obligation_cause_codes[month, slot]),
-        "from_agent_id": _text(plan, plan.obligation_agent_codes[month, slot]),
-        "from_account_id": _text(plan, plan.obligation_from_account_codes[month, slot]),
-        "to_agent_id": _text(plan, plan.obligation_to_agent_codes[month, slot]),
-        "to_account_id": _text(plan, plan.obligation_to_account_codes[month, slot]),
-        "amount_usd": float(buffers.obligation_paid[month, slot, rollout]),
-        "income_category": None,
-    }
-
-
-def _failure_row(
-    plan: CompiledSimulation, buffers: SimulationBuffers, month: int, slot: int, rollout: int
-) -> dict[str, Any]:
-    return {
-        "rollout_index": rollout,
-        "month_index": month,
-        "cause_id": f"{_text(plan, plan.obligation_id_codes[month, slot])}_failure",
-        "agent_id": _text(plan, plan.obligation_agent_codes[month, slot]),
-        "deficit_usd": float(buffers.obligation_shortfall[month, slot, rollout]),
-        "obligation_id": _text(plan, plan.obligation_id_codes[month, slot]),
-        "obligation_type": _text(plan, plan.obligation_type_codes[month, slot]),
-        "amount_due_usd": float(buffers.obligation_due[month, slot, rollout]),
-        "amount_paid_usd": float(buffers.obligation_paid[month, slot, rollout]),
-        "shortfall_usd": float(buffers.obligation_shortfall[month, slot, rollout]),
-        "attempted_funding_sources": _attempted_sources(
-            plan, int(buffers.obligation_attempt_policy[month, slot, rollout])
-        ),
-    }
-
-
-def _mortgage_origination_row(plan: CompiledSimulation, liab: int, rollout: int, month: int) -> dict[str, Any]:
-    prop = int(plan.liability_property_slot[liab])
-    return {
-        "rollout_index": rollout,
-        "month_index": month,
-        "cause_id": f"{_text(plan, plan.property_cause_codes[month, prop])}_mortgage_origination",
-        "liability_id": _text(plan, plan.liability_codes[liab]),
-        "agent_id": _text(plan, plan.liability_agent_codes[liab]),
-        "payment_account_id": _text(plan, plan.liability_payment_account_codes[liab]),
-        "counterparty_agent_id": _text(plan, plan.liability_counterparty_agent_codes[liab]),
-        "counterparty_account_id": _text(plan, plan.liability_counterparty_account_codes[liab]),
-        "property_id": _text(plan, plan.property_id_codes[prop]),
-        "principal_usd": float(plan.liability_principal[liab]),
-        "annual_interest_rate": float(plan.liability_annual_rate[liab]),
-        "term_months": int(plan.liability_term_months[liab]),
-        "monthly_payment_usd": float(plan.liability_monthly_payment[liab]),
-    }
-
-
-def _mortgage_payment_row(
-    plan: CompiledSimulation, buffers: SimulationBuffers, liab: int, rollout: int, month: int
-) -> dict[str, Any]:
-    prop = int(plan.liability_property_slot[liab])
-    return {
-        "rollout_index": rollout,
-        "month_index": month,
-        "cause_id": f"{_text(plan, plan.liability_codes[liab])}_payment_m{month}",
-        "liability_id": _text(plan, plan.liability_codes[liab]),
-        "agent_id": _text(plan, plan.liability_agent_codes[liab]),
-        "counterparty_agent_id": _text(plan, plan.liability_counterparty_agent_codes[liab]),
-        "property_id": _text(plan, plan.property_id_codes[prop]),
-        "from_account_id": _text(plan, plan.liability_payment_account_codes[liab]),
-        "to_account_id": _text(plan, plan.liability_counterparty_account_codes[liab]),
-        "interest_usd": float(buffers.mortgage_payment_interest[month, liab, rollout]),
-        "principal_usd": float(buffers.mortgage_payment_principal[month, liab, rollout]),
-        "total_payment_usd": float(buffers.mortgage_payment_total[month, liab, rollout]),
-    }
