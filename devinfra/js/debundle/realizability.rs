@@ -1383,18 +1383,24 @@ impl IncrementalQuotient {
 /// updates only quotient edge buckets incident to those owners, and
 /// records enough graph state for LIFO undo. `verdict()` reads the
 /// maintained quotient graph instead of rebuilding it from owner edges.
-pub struct RealizabilityIndex<'g> {
-    owner_graph: &'g OwnerGraph,
+///
+/// The index does NOT hold a borrow of `OwnerGraph`. Every mutating
+/// method (`push`, `undo`, `scoped`) and every `*_after_moving_owners*`
+/// verdict query takes the graph as a parameter. Storing the borrow
+/// would force callers that also own the graph (e.g., the peel kernel's
+/// `QuotientGraph`) into a self-referential struct; passing the graph
+/// per call keeps that ownership flat.
+#[derive(Debug, Clone)]
+pub struct RealizabilityIndex {
     partition: Partition,
     quotient: IncrementalQuotient,
     journal: Vec<JournalEntry>,
 }
 
-impl<'g> RealizabilityIndex<'g> {
-    pub fn from_partition(owner_graph: &'g OwnerGraph, partition: Partition) -> Self {
+impl RealizabilityIndex {
+    pub fn from_partition(owner_graph: &OwnerGraph, partition: Partition) -> Self {
         let quotient = IncrementalQuotient::new(owner_graph, &partition);
         Self {
-            owner_graph,
             partition,
             quotient,
             journal: Vec::new(),
@@ -1416,7 +1422,7 @@ impl<'g> RealizabilityIndex<'g> {
     /// LIFO-ordered without manual bookkeeping. Use raw `push`/`undo`
     /// only when the lifetime crosses control-flow boundaries that
     /// `scoped` can't span.
-    pub fn push(&mut self, delta: PartitionDelta) -> DeltaHandle {
+    pub fn push(&mut self, owner_graph: &OwnerGraph, delta: PartitionDelta) -> DeltaHandle {
         let entry = match delta {
             PartitionDelta::MoveOwners { owners, to } => {
                 let owners: Vec<OwnerId> = owners
@@ -1424,10 +1430,10 @@ impl<'g> RealizabilityIndex<'g> {
                     .collect::<BTreeSet<_>>()
                     .into_iter()
                     .collect();
-                let impacted_edges = impacted_owner_edges(self.owner_graph, &owners);
+                let impacted_edges = impacted_owner_edges(owner_graph, &owners);
                 let (i_graph_mark, constraining_graph_mark) = self.quotient.marks();
                 for edge_id in &impacted_edges {
-                    let edge = &self.owner_graph.edges[edge_id.0];
+                    let edge = &owner_graph.edges[edge_id.0];
                     self.quotient
                         .remove_current_edge(edge, &self.partition, true);
                 }
@@ -1441,7 +1447,7 @@ impl<'g> RealizabilityIndex<'g> {
                     prior.push((owner, was));
                 }
                 for edge_id in &impacted_edges {
-                    let edge = &self.owner_graph.edges[edge_id.0];
+                    let edge = &owner_graph.edges[edge_id.0];
                     self.quotient.add_current_edge(edge, &self.partition, true);
                 }
                 JournalEntry {
@@ -1459,7 +1465,7 @@ impl<'g> RealizabilityIndex<'g> {
 
     /// Roll back the delta identified by `handle`. Must be the top of
     /// the journal; debug builds panic otherwise.
-    pub fn undo(&mut self, handle: DeltaHandle) {
+    pub fn undo(&mut self, owner_graph: &OwnerGraph, handle: DeltaHandle) {
         debug_assert_eq!(
             handle.0 + 1,
             self.journal.len(),
@@ -1473,7 +1479,7 @@ impl<'g> RealizabilityIndex<'g> {
             .pop()
             .expect("journal must be non-empty for undo");
         for edge_id in &entry.impacted_edges {
-            let edge = &self.owner_graph.edges[edge_id.0];
+            let edge = &owner_graph.edges[edge_id.0];
             self.quotient
                 .remove_current_edge(edge, &self.partition, false);
         }
@@ -1481,7 +1487,7 @@ impl<'g> RealizabilityIndex<'g> {
             self.partition.set(owner, prior);
         }
         for edge_id in &entry.impacted_edges {
-            let edge = &self.owner_graph.edges[edge_id.0];
+            let edge = &owner_graph.edges[edge_id.0];
             self.quotient.add_current_edge(edge, &self.partition, false);
         }
         self.quotient
@@ -1491,13 +1497,13 @@ impl<'g> RealizabilityIndex<'g> {
     /// Apply `delta`, run `f` against the index in its post-push
     /// state, then undo. The scoped form guarantees the per-call
     /// push/undo pair regardless of `f`'s control flow.
-    pub fn scoped<F, R>(&mut self, delta: PartitionDelta, f: F) -> R
+    pub fn scoped<F, R>(&mut self, owner_graph: &OwnerGraph, delta: PartitionDelta, f: F) -> R
     where
         F: FnOnce(&mut Self) -> R,
     {
-        let handle = self.push(delta);
+        let handle = self.push(owner_graph, delta);
         let result = f(self);
-        self.undo(handle);
+        self.undo(owner_graph, handle);
         result
     }
 
@@ -1522,21 +1528,36 @@ impl<'g> RealizabilityIndex<'g> {
     /// reachability against the effective graph.
     pub fn verdict_after_moving_owners_touching(
         &self,
+        owner_graph: &OwnerGraph,
         owners: &[OwnerId],
         to: ModuleId,
     ) -> RealizabilityVerdict {
         let overlay = self
             .quotient
-            .overlay_for_move(self.owner_graph, &self.partition, owners, to);
+            .overlay_for_move(owner_graph, &self.partition, owners, to);
         self.quotient.verdict_with_overlay_touching(to, &overlay)
     }
 }
 
 fn impacted_owner_edges(owner_graph: &OwnerGraph, owners: &[OwnerId]) -> Vec<OwnerEdgeId> {
     let mut impacted = BTreeSet::<OwnerEdgeId>::new();
+    let owner_set: BTreeSet<OwnerId> = owners.iter().copied().collect();
     for owner in owners {
         impacted.extend(owner_graph.out_edges_of(*owner).iter().copied());
         impacted.extend(owner_graph.in_edges_of(*owner).iter().copied());
+    }
+    // Also impact edges whose `at_init_callee_owner` is in the move
+    // set — `is_cross_module_at_init_promotion`'s verdict depends on
+    // `partition.of(callee_owner)`, so moving a callee owner can flip
+    // an edge's contribution between "skipped (intra-callee-module)"
+    // and "counted (cross-callee-module)" without the callee owner
+    // appearing on `from`/`to`.
+    for edge in &owner_graph.edges {
+        if let Some(callee) = edge.reason.at_init_callee_owner()
+            && owner_set.contains(&callee)
+        {
+            impacted.insert(edge.id);
+        }
     }
     impacted.into_iter().collect()
 }
@@ -1765,10 +1786,13 @@ mod tests {
         assert!(baseline_verdict.is_realizable());
 
         let mut index = RealizabilityIndex::from_partition(&owner_graph, baseline.clone());
-        let handle = index.push(PartitionDelta::MoveOwners {
-            owners: vec![OwnerId(1)],
-            to: module_id(1),
-        });
+        let handle = index.push(
+            &owner_graph,
+            PartitionDelta::MoveOwners {
+                owners: vec![OwnerId(1)],
+                to: module_id(1),
+            },
+        );
         // After push: matches the explicitly-built post-delta partition.
         let mut hypothetical = baseline.clone();
         hypothetical.set(OwnerId(1), module_id(1));
@@ -1779,7 +1803,7 @@ mod tests {
         );
         assert!(!index.verdict().is_realizable());
 
-        index.undo(handle);
+        index.undo(&owner_graph, handle);
         // After undo: matches the baseline exactly.
         assert!(index.verdict().is_realizable());
         for owner_id in 0..owner_graph.nodes.len() {
@@ -1798,13 +1822,16 @@ mod tests {
         let baseline = Partition::new(&owner_graph, module_id(0));
         let mut index = RealizabilityIndex::from_partition(&owner_graph, baseline.clone());
 
-        let handle = index.push(PartitionDelta::MoveOwners {
-            owners: vec![OwnerId(1), OwnerId(1)],
-            to: module_id(1),
-        });
+        let handle = index.push(
+            &owner_graph,
+            PartitionDelta::MoveOwners {
+                owners: vec![OwnerId(1), OwnerId(1)],
+                to: module_id(1),
+            },
+        );
         assert_eq!(index.partition().of(OwnerId(1)), module_id(1));
 
-        index.undo(handle);
+        index.undo(&owner_graph, handle);
         assert_eq!(index.partition().of(OwnerId(1)), baseline.of(OwnerId(1)));
         assert_eq!(
             normalize_verdict(index.verdict()),
@@ -1820,8 +1847,10 @@ mod tests {
         let mut index = RealizabilityIndex::from_partition(&owner_graph, baseline.clone());
         let before = normalize_verdict(index.verdict());
 
-        let overlay = index.verdict_after_moving_owners_touching(&[OwnerId(1)], module_id(1));
+        let overlay =
+            index.verdict_after_moving_owners_touching(&owner_graph, &[OwnerId(1)], module_id(1));
         let scoped = index.scoped(
+            &owner_graph,
             PartitionDelta::MoveOwners {
                 owners: vec![OwnerId(1)],
                 to: module_id(1),
@@ -1845,8 +1874,10 @@ mod tests {
         let baseline = Partition::new(&owner_graph, module_id(0));
         let mut index = RealizabilityIndex::from_partition(&owner_graph, baseline);
 
-        let overlay = index.verdict_after_moving_owners_touching(&[OwnerId(1)], module_id(1));
+        let overlay =
+            index.verdict_after_moving_owners_touching(&owner_graph, &[OwnerId(1)], module_id(1));
         let scoped = index.scoped(
+            &owner_graph,
             PartitionDelta::MoveOwners {
                 owners: vec![OwnerId(1)],
                 to: module_id(1),
@@ -1874,8 +1905,10 @@ mod tests {
         explicit.set(OwnerId(1), module_id(4));
         let mut index = RealizabilityIndex::from_partition(&owner_graph, baseline);
 
-        let overlay = index.verdict_after_moving_owners_touching(&[OwnerId(1)], module_id(4));
+        let overlay =
+            index.verdict_after_moving_owners_touching(&owner_graph, &[OwnerId(1)], module_id(4));
         let scoped = index.scoped(
+            &owner_graph,
             PartitionDelta::MoveOwners {
                 owners: vec![OwnerId(1)],
                 to: module_id(4),
@@ -1903,6 +1936,7 @@ mod tests {
         let mut index = RealizabilityIndex::from_partition(&owner_graph, baseline.clone());
 
         let inside_verdict_realizable = index.scoped(
+            &owner_graph,
             PartitionDelta::MoveOwners {
                 owners: vec![OwnerId(1)],
                 to: module_id(1),
@@ -1933,34 +1967,40 @@ mod tests {
             normalize_verdict(check_realizability(&owner_graph, &explicit)),
         );
 
-        let first = index.push(PartitionDelta::MoveOwners {
-            owners: vec![OwnerId(1)],
-            to: module_id(1),
-        });
+        let first = index.push(
+            &owner_graph,
+            PartitionDelta::MoveOwners {
+                owners: vec![OwnerId(1)],
+                to: module_id(1),
+            },
+        );
         explicit.set(OwnerId(1), module_id(1));
         assert_eq!(
             normalize_verdict(index.verdict()),
             normalize_verdict(check_realizability(&owner_graph, &explicit)),
         );
 
-        let second = index.push(PartitionDelta::MoveOwners {
-            owners: vec![OwnerId(2)],
-            to: module_id(2),
-        });
+        let second = index.push(
+            &owner_graph,
+            PartitionDelta::MoveOwners {
+                owners: vec![OwnerId(2)],
+                to: module_id(2),
+            },
+        );
         explicit.set(OwnerId(2), module_id(2));
         assert_eq!(
             normalize_verdict(index.verdict()),
             normalize_verdict(check_realizability(&owner_graph, &explicit)),
         );
 
-        index.undo(second);
+        index.undo(&owner_graph, second);
         explicit.set(OwnerId(2), module_id(0));
         assert_eq!(
             normalize_verdict(index.verdict()),
             normalize_verdict(check_realizability(&owner_graph, &explicit)),
         );
 
-        index.undo(first);
+        index.undo(&owner_graph, first);
         explicit.set(OwnerId(1), module_id(0));
         assert_eq!(
             normalize_verdict(index.verdict()),
@@ -1980,14 +2020,20 @@ mod tests {
         let owner_graph = parse_and_build(source);
         let baseline = Partition::new(&owner_graph, module_id(0));
         let mut index = RealizabilityIndex::from_partition(&owner_graph, baseline);
-        index.push(PartitionDelta::MoveOwners {
-            owners: vec![OwnerId(1)],
-            to: module_id(1),
-        });
-        index.push(PartitionDelta::MoveOwners {
-            owners: vec![OwnerId(2)],
-            to: module_id(2),
-        });
+        index.push(
+            &owner_graph,
+            PartitionDelta::MoveOwners {
+                owners: vec![OwnerId(1)],
+                to: module_id(1),
+            },
+        );
+        index.push(
+            &owner_graph,
+            PartitionDelta::MoveOwners {
+                owners: vec![OwnerId(2)],
+                to: module_id(2),
+            },
+        );
 
         let full = index.verdict();
         assert_eq!(
@@ -2009,10 +2055,13 @@ mod tests {
         let mut explicit = baseline.clone();
         let mut index = RealizabilityIndex::from_partition(&owner_graph, baseline);
 
-        index.push(PartitionDelta::MoveOwners {
-            owners: vec![OwnerId(1)],
-            to: module_id(1),
-        });
+        index.push(
+            &owner_graph,
+            PartitionDelta::MoveOwners {
+                owners: vec![OwnerId(1)],
+                to: module_id(1),
+            },
+        );
         explicit.set(OwnerId(1), module_id(1));
 
         let verdict = index.verdict();

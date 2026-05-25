@@ -24,7 +24,8 @@ use std::collections::BTreeMap;
 use analysis::{
     AtomicGraphReport, AtomicUnitEdgeReport, AtomicUnitReport, BindingReport, DepKind, LineRange,
     ModuleReportRef, OwnerGraphEdgeReport, OwnerGraphNodeReport, OwnerGraphQuotientReport,
-    OwnerGraphReport, Purity, SourceLocation, StatementKind, StatementOrdinal,
+    OwnerGraphReport, Purity, RealizabilityVerdict, SourceLocation, StatementKind,
+    StatementOrdinal, check_realizability,
 };
 
 use peel::factorize::factorize;
@@ -1148,6 +1149,248 @@ fn replay_partition(
         .collect();
     let (q, _) = QuotientGraph::from_report_with_partition_extended(report, cap_lines, &groups);
     q
+}
+
+type NormalizedVerdict = (
+    std::collections::BTreeSet<(Vec<analysis::ModuleId>, Vec<usize>)>,
+    std::collections::BTreeSet<(analysis::ModuleId, analysis::ModuleId, usize)>,
+);
+
+/// Normalize a `RealizabilityVerdict` for byte-equal comparison.
+/// The verdict's `unrealizable_sccs` carry `BTreeSet<ModuleId>`s,
+/// which iterate in deterministic order; we collect SCCs into a
+/// `BTreeSet<(Vec<ModuleId>, Vec<usize>)>` so comparison is
+/// insensitive to SCC ordering. Similarly for `cross_rebinds`.
+fn normalize_verdict(verdict: RealizabilityVerdict) -> NormalizedVerdict {
+    let sccs = verdict
+        .unrealizable_sccs
+        .into_iter()
+        .map(|scc| {
+            let modules: Vec<analysis::ModuleId> = scc.modules.into_iter().collect();
+            let edges: Vec<usize> = scc
+                .constraining_owner_edges
+                .into_iter()
+                .map(|e| e.0)
+                .collect();
+            (modules, edges)
+        })
+        .collect();
+    let rebinds = verdict
+        .cross_rebinds
+        .into_iter()
+        .map(|r| (r.from, r.to, r.owner_edge.0))
+        .collect();
+    (sccs, rebinds)
+}
+
+#[test]
+fn incremental_index_matches_rebuild_on_synthetic_specs() {
+    // Property: after each `merge_preserves_invariants` /
+    // `would_be_cycles_after_contract` query or `contract` call on
+    // the kernel, the kernel's `realizability_verdict()` (read from
+    // the persistent `RealizabilityIndex`) byte-equals a from-scratch
+    // `check_realizability(&owner_graph, &project_partition(None))`.
+    //
+    // Pins commit 5's wiring: the index's committed partition stays
+    // synchronized with the kernel's class projection across both
+    // committed mutations and speculative push/undo queries. RED if
+    // the index is forked from the kernel; GREEN when the wiring is
+    // correct.
+    use peel::quotient::{ClassId, PartitionGroup};
+
+    let mut fixtures: Vec<(&'static str, OwnerGraphReport, Vec<PartitionGroup>)> = Vec::new();
+    fixtures.push(("empty_singletons", fixture_singletons().1, vec![]));
+    {
+        // Two singleton spec modules with a shared orphan in between.
+        let a = active_owner("owner:a", 1, &["BindingA"], 10, "ui/x");
+        let b = active_owner("owner:b", 2, &["BindingB"], 10, "ui/y");
+        let h = residual_owner("owner:h", 3, &["BindingH"], 5);
+        fixtures.push((
+            "two_modules_shared_orphan",
+            graph_of(
+                vec![a.clone(), b.clone(), h.clone()],
+                vec![
+                    owner_edge("edge:0", "owner:a", "owner:h", DepKind::EagerUse, true),
+                    owner_edge("edge:1", "owner:b", "owner:h", DepKind::EagerUse, true),
+                ],
+                vec![
+                    atomic_unit_for("atomic:0", &[&a]),
+                    atomic_unit_for("atomic:1", &[&b]),
+                    atomic_unit_for("atomic:2", &[&h]),
+                ],
+                vec![],
+            ),
+            vec![
+                make_module_group("ui/x", vec![0]),
+                make_module_group("ui/y", vec![1]),
+            ],
+        ));
+    }
+    {
+        // Module with internal eager edges plus one orphan consumer.
+        let a1 = active_owner("owner:a1", 1, &["BindingA1"], 10, "ui/x");
+        let a2 = active_owner("owner:a2", 2, &["BindingA2"], 10, "ui/x");
+        let h = residual_owner("owner:h", 3, &["BindingH"], 5);
+        fixtures.push((
+            "module_with_internal_edges",
+            graph_of(
+                vec![a1.clone(), a2.clone(), h.clone()],
+                vec![
+                    owner_edge("edge:0", "owner:a1", "owner:a2", DepKind::EagerUse, true),
+                    owner_edge("edge:1", "owner:a1", "owner:h", DepKind::EagerUse, true),
+                ],
+                vec![
+                    atomic_unit_for("atomic:0", &[&a1]),
+                    atomic_unit_for("atomic:1", &[&a2]),
+                    atomic_unit_for("atomic:2", &[&h]),
+                ],
+                vec![],
+            ),
+            vec![make_module_group("ui/x", vec![0, 1])],
+        ));
+    }
+    {
+        // Three modules, chain of consumption.
+        let a = active_owner("owner:a", 1, &["BindingA"], 10, "ui/x");
+        let b = active_owner("owner:b", 2, &["BindingB"], 10, "ui/y");
+        let c = active_owner("owner:c", 3, &["BindingC"], 10, "ui/z");
+        fixtures.push((
+            "three_modules_chain",
+            graph_of(
+                vec![a.clone(), b.clone(), c.clone()],
+                vec![
+                    owner_edge("edge:0", "owner:a", "owner:b", DepKind::EagerUse, true),
+                    owner_edge("edge:1", "owner:b", "owner:c", DepKind::EagerUse, true),
+                ],
+                vec![
+                    atomic_unit_for("atomic:0", &[&a]),
+                    atomic_unit_for("atomic:1", &[&b]),
+                    atomic_unit_for("atomic:2", &[&c]),
+                ],
+                vec![],
+            ),
+            vec![
+                make_module_group("ui/x", vec![0]),
+                make_module_group("ui/y", vec![1]),
+                make_module_group("ui/z", vec![2]),
+            ],
+        ));
+    }
+    {
+        // Two modules with mutual eager edges — unrealizable from
+        // the seed.
+        let a = active_owner("owner:a", 1, &["BindingA"], 10, "ui/x");
+        let b = active_owner("owner:b", 2, &["BindingB"], 10, "ui/y");
+        fixtures.push((
+            "mutual_eager_cycle",
+            graph_of(
+                vec![a.clone(), b.clone()],
+                vec![
+                    owner_edge("edge:0", "owner:a", "owner:b", DepKind::EagerUse, true),
+                    owner_edge("edge:1", "owner:b", "owner:a", DepKind::EagerUse, true),
+                ],
+                vec![
+                    atomic_unit_for("atomic:0", &[&a]),
+                    atomic_unit_for("atomic:1", &[&b]),
+                ],
+                vec![],
+            ),
+            vec![
+                make_module_group("ui/x", vec![0]),
+                make_module_group("ui/y", vec![1]),
+            ],
+        ));
+    }
+    {
+        // Module + residual fan-out with multiple orphans.
+        let a = active_owner("owner:a", 1, &["BindingA"], 10, "ui/x");
+        let h1 = residual_owner("owner:h1", 2, &["BindingH1"], 5);
+        let h2 = residual_owner("owner:h2", 3, &["BindingH2"], 5);
+        let h3 = residual_owner("owner:h3", 4, &["BindingH3"], 5);
+        fixtures.push((
+            "module_fanout_three_orphans",
+            graph_of(
+                vec![a.clone(), h1.clone(), h2.clone(), h3.clone()],
+                vec![
+                    owner_edge("edge:0", "owner:a", "owner:h1", DepKind::EagerUse, true),
+                    owner_edge("edge:1", "owner:a", "owner:h2", DepKind::EagerUse, true),
+                    owner_edge("edge:2", "owner:a", "owner:h3", DepKind::EagerUse, true),
+                ],
+                vec![
+                    atomic_unit_for("atomic:0", &[&a]),
+                    atomic_unit_for("atomic:1", &[&h1]),
+                    atomic_unit_for("atomic:2", &[&h2]),
+                    atomic_unit_for("atomic:3", &[&h3]),
+                ],
+                vec![],
+            ),
+            vec![make_module_group("ui/x", vec![0])],
+        ));
+    }
+    assert!(
+        fixtures.len() >= 5,
+        "property test needs >= 5 fixture chunks",
+    );
+
+    for (label, report, groups) in fixtures {
+        let (mut q, _) =
+            QuotientGraph::from_report_with_partition_extended(&report, 10_000, &groups);
+
+        // Initial assertion: incremental verdict matches rebuild.
+        {
+            let incremental = normalize_verdict(q.realizability_verdict());
+            let rebuild = normalize_verdict(check_realizability(
+                q.owner_graph_for_tests(),
+                &q.project_partition_for_tests(),
+            ));
+            assert_eq!(
+                incremental, rebuild,
+                "{label}: initial incremental verdict diverges from rebuild",
+            );
+        }
+
+        // Walk through a sequence of arbitrary operations: alternate
+        // `merge_preserves_invariants` queries on every pair of live
+        // classes with `contract` of one greedily-picked pair per
+        // round, with a final `would_be_cycles_after_contract` query
+        // on the residual class pair (if any) for good measure.
+        loop {
+            // Issue queries against every live (c1, c2) pair without
+            // mutating; assert verdict invariance.
+            let live: Vec<ClassId> = q.iter_classes().collect();
+            for i in 0..live.len() {
+                for j in (i + 1)..live.len() {
+                    let _ = q.merge_preserves_invariants(live[i], live[j]);
+                    let _ = q.would_be_cycles_after_contract(live[i], live[j]);
+                    let incremental = normalize_verdict(q.realizability_verdict());
+                    let rebuild = normalize_verdict(check_realizability(
+                        q.owner_graph_for_tests(),
+                        &q.project_partition_for_tests(),
+                    ));
+                    assert_eq!(
+                        incremental, rebuild,
+                        "{label}: incremental verdict diverges from rebuild \
+                         after query on ({:?}, {:?})",
+                        live[i], live[j],
+                    );
+                }
+            }
+            // Pick one greedy contract and apply it; reassert.
+            let one = peel::quotient::greedy_step(&mut q);
+            let Some(step) = one else { break };
+            let incremental = normalize_verdict(q.realizability_verdict());
+            let rebuild = normalize_verdict(check_realizability(
+                q.owner_graph_for_tests(),
+                &q.project_partition_for_tests(),
+            ));
+            assert_eq!(
+                incremental, rebuild,
+                "{label}: incremental verdict diverges from rebuild \
+                 after contract {:?}",
+                step.picked,
+            );
+        }
+    }
 }
 
 #[test]

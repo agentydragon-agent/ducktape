@@ -495,20 +495,99 @@ OwnerReportIndex)` reconstructs the typed IR from the JSON wire
 
 #### Cost and the upgrade path
 
-Each gate call is `O(|V| + |E|)`. The kernel's merge-candidate
-greedy queries it `O(|V|)` times per round, so the seeding pass is
-`O(|V|² · |E|)` in the from-scratch form. For gaffer-scale inputs
-(`|V| ≤ ~10³`, `|E| = O(|V|)`) that's `~10⁹` ops — measurable but
-within budget.
+A from-scratch `check_realizability` call is `O(|V| + |E|)`. The
+kernel's merge-candidate greedy queries it `O(|V|)` times per round,
+so a naive seeding pass would be `O(|V|² · |E|)`. For gaffer-scale
+inputs (`|V| ≤ ~10³`, `|E| = O(|V|)`) that's `~10⁹` ops — measurable
+but within budget.
 
-The follow-up (commit 5) is the persistent-state incremental
-algorithm described in the literature-review notes (Pearce–Kelly
-/ BFGT for cycle detection under arc insertion; bounded-cone
-local search adapted from Fähndrich–Foster–Su–Aiken /
-Hardekopf–Lin for the contract-driven primitive). At our scale
-the simplicity of from-scratch beats the bounded-cone constant
-factor; we'll revisit when profiling justifies the
-algorithm-complexity trade-off.
+The kernel uses the persistent `RealizabilityIndex` (DESIGN.md
+"Realizability primitive → Iterative, undo-aware shape") instead of
+rebuilding from scratch per query. `QuotientGraph::from_report`
+initializes the index from the singleton-class partition projection
+and stores it alongside the typed `OwnerGraph`. Every committed
+mutation — `contract`, the partition-driven group merges in
+`from_report_with_partition_extended`, the `is_pre_existing_module`
+promotion in `set_class_pre_existing_module` — synthesizes the
+corresponding `PartitionDelta::MoveOwners` and pushes it onto the
+index. The index maintains the constraining-edge graph SCC state,
+the I-graph adjacency, the `EsmEvaluationSimulator` per-pair bucket,
+and the cross-rebind set incrementally, touching only quotient edge
+buckets incident to the moved owners.
+
+For speculative queries — `merge_preserves_invariants`,
+`would_be_cycles_after_contract` — the kernel computes the merge's
+post-state ModuleId via `projected_winner_module_after_merge`
+(mirroring the gate-residual override `project_partition` would
+apply), then routes through `verdict_after_moving_owners_touching`.
+That fast path applies a per-edge overlay on the maintained graphs
+without mutating them and reads only SCCs touching the hypothetical
+destination — `O(|cone|)` per query, not `O(|V| + |E|)`. The rare
+multi-target case (gate-residual promotion transitions during a
+contract) falls back to a scoped push/verdict/undo over the index
+journal.
+
+The kernel's `ClassId ↔ ModuleId` mapping (`class_module_id`) is
+maintained alongside the index. Initialization assigns each
+non-residual non-gate-residual class a fresh `ModuleId::logical(N)`;
+the residual catch-all class and every gate-residual singleton
+share `ModuleId::logical(0)`. Class IDs are never reused (contracted
+classes leave empty slots), and surviving classes keep their
+ModuleId across merges. The exception is a pre-existing-module
+promotion: when `set_class_pre_existing_module` flips the
+`is_pre_existing_module` bit on a class that was previously
+gate-residual-only (and so mapped to the residual ModuleId), the
+class is promoted to a fresh non-residual ModuleId and a
+`MoveOwners` delta is pushed to keep the index's working partition
+in sync.
+
+#### References
+
+The incremental realizability path draws on the following lines of
+research; cited here so the trade-offs in "Cost and the upgrade
+path" and "Why not Pearce-Kelly verbatim" can be cross-checked
+against the primary sources.
+
+- **Bender, Fineman, Gilbert, Tarjan.** _Incremental Cycle
+  Detection, Topological Ordering, and Strong Component
+  Maintenance._ ACM Transactions on Algorithms 12(2):14, 2015. The
+  BFGT amortized bound for arc-insertion cycle detection.
+  ([arXiv:1105.2397](https://arxiv.org/abs/1105.2397))
+- **Pearce, Kelly.** _A Dynamic Topological Sort Algorithm for
+  Directed Acyclic Graphs._ ACM Journal of Experimental
+  Algorithmics 12, 2007. The "PK" algorithm for online topological
+  order under edge insertion.
+- **Fähndrich, Foster, Su, Aiken.** _Partial Online Cycle
+  Elimination in Inclusion Constraint Graphs._ PLDI 1998. Localized
+  bounded-cone cycle elimination in pointer-analysis constraint
+  graphs — the structural closest match to the kernel's
+  contraction-driven primitive.
+- **Hardekopf, Lin.** _The Ant and the Grasshopper: Fast and
+  Accurate Pointer Analysis for Millions of Lines of Code._ PLDI
+  2007 (with subsequent 2009 work on lazy / hybrid cycle detection).
+  Practical scaling of constraint-graph cycle elimination.
+
+#### Why not Pearce–Kelly verbatim
+
+The literature on incremental SCC maintenance — Pearce & Kelly's
+online topological order plus Bender, Fineman, Gilbert, and Tarjan's
+work (BFGT) — solves cycle detection under arc **insertion** with
+single-edge insertion as the user primitive. The peel proposer's
+primitive is **contraction** (vertex identification): a merge fuses
+two classes' incident edges and may collapse multiple
+constraining-edge cycles to single classes that get dropped. Naive
+"reinsert every loser-incident edge into the winner" simulations
+match Pearce–Kelly's insertion model but waste work — the merge can
+also delete edges (intra-class self-loops, cycles that shrink to a
+single class). The persistent index instead maintains the maintained
+quotient adjacency directly via `IncrementalQuotient::add/remove_current_edge`,
+which is structurally closer to the bounded-cone local-search
+algorithms from pointer-analysis literature (Fähndrich–Foster–
+Su–Aiken; Hardekopf–Lin). The "no bespoke parallel walks"
+invariant elsewhere in DESIGN.md still holds: the one place the
+kernel maintains its own derived state is the advisory
+`cached_cycles` heuristic on `rank_candidate`, which is documented
+as cache-not-source-of-truth.
 
 ## At-init call promotion
 
