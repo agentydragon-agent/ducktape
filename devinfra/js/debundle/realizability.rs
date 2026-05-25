@@ -1899,6 +1899,66 @@ mod tests {
         assert!(modules.contains(&module_id(1)) && modules.contains(&module_id(2)));
     }
 
+    /// **RED regression test** for the gaffer over-rejection (the
+    /// "Pass 2 simulator considers lazy back-edges in the runtime DFS"
+    /// bug). Asymmetric I-cycle where residual reaches the SCC only
+    /// via the constraining edge's **target** (the dependency), not
+    /// the source (the dependent). Lemma 2's source-import reversal
+    /// can't help because residual has no direct i_edge into the
+    /// dependent — DFS enters the SCC via the dependency, then the
+    /// dependency's lazy back-edge to the dependent pulls the
+    /// dependent in first, producing a `post_order[dependent] <
+    /// post_order[dependency]` that the `tdz_pairs` check flags as
+    /// TDZ. But the runtime ESM DFS does NOT follow lazy back-edges
+    /// (they're function-body reads, no ESM `import` emitted), so
+    /// the actual evaluation order is `dependency` body → `residual`
+    /// body, with the dependent never loaded — no TDZ at runtime,
+    /// gate should accept.
+    ///
+    /// Shape (gaffer's `domains/system/ids` ↔ `domains/system/schemas`
+    /// minimal repro):
+    ///   - `mod_schemas` owns `schemas_target` (the eager-read target)
+    ///     and `lazy_back` (whose body lazily references `ids_val`).
+    ///   - `mod_ids` owns `ids_val`, whose initializer eager-reads
+    ///     `schemas_target` from `mod_schemas`.
+    ///   - residual reads ONLY `schemas_target` — no direct
+    ///     reference to `ids_val`.
+    /// I-graph cross-module edges:
+    ///   - `mod_ids → mod_schemas` `EagerUse(schemas_target)` (forward, constraining)
+    ///   - `mod_schemas → mod_ids` `LazyUse(ids_val)` (back, non-constraining)
+    ///   - `residual → mod_schemas` `EagerUse(schemas_target)` (constraining)
+    /// I-graph SCC: `{mod_ids, mod_schemas}`. Residual is NOT in the
+    /// SCC; residual's only I-edge into the SCC is to `mod_schemas`.
+    ///
+    /// Before the fix: gate rejects. After the unification (lazy
+    /// edges excluded from the simulator's i_successors), gate
+    /// accepts.
+    #[test]
+    fn pass_two_simulator_must_ignore_lazy_back_edges_in_runtime_dfs() {
+        // owner_0: const schemas_target = "v"     (mod_schemas)
+        // owner_1: function lazy_back() { return ids_val; }
+        //                                         (mod_schemas; lazy_use ids_val)
+        // owner_2: const ids_val = schemas_target + "-derived"
+        //                                         (mod_ids; eager_use schemas_target)
+        // owner_3: console.log(schemas_target);   (residual; eager_use schemas_target)
+        let source = "const schemas_target = \"v\"; function lazy_back() { return ids_val; } const ids_val = schemas_target + \"-derived\"; console.log(schemas_target);";
+        let owner_graph = parse_and_build(source);
+        let mut partition = Partition::new(&owner_graph, module_id(0));
+        partition.set(OwnerId(0), module_id(1)); // schemas_target → mod_schemas
+        partition.set(OwnerId(1), module_id(1)); // lazy_back     → mod_schemas
+        partition.set(OwnerId(2), module_id(2)); // ids_val       → mod_ids
+        // owner_3 (console.log) stays in residual.
+        let verdict = check_realizability(&owner_graph, &partition);
+        assert!(
+            verdict.is_realizable(),
+            "gaffer-shape asymmetric cycle must accept: lazy back-edge from \
+             mod_schemas to mod_ids is a function-body read, not an ESM \
+             import. Runtime DFS won't follow it; the Pass-2 simulator's \
+             post-order must mirror that by excluding lazy edges from \
+             i_successors. verdict: {verdict:#?}",
+        );
+    }
+
     /// Residual is the source of a constraining edge into the SCC,
     /// but the SCC also has a constraining-target-residual edge.
     /// Lemma 2 fails: residual is the DFS root and evaluates last in
