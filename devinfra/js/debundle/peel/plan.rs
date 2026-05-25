@@ -1289,7 +1289,7 @@ mod tests {
             declared_bindings: vec![test_utils::member(binding, export_name)],
             statement_kind: StatementKind::VarDecl,
             purity: Purity::Pure,
-            destination: test_utils::module_ref("residual", true),
+            destination: test_utils::module_ref("logical:residual", true),
         }
     }
 
@@ -1402,12 +1402,7 @@ mod tests {
         fixture_with_graph(graph_fixture())
     }
 
-    // Pre-existing failure surfaced when fixing the peel_test build:
-    // proposal counts under the limit have shifted since this test was
-    // authored. Marked `ignore` to unblock the release — needs to be
-    // re-baselined against the current factorizer output.
     #[test]
-    #[ignore = "plan-work proposal counts changed; needs re-baseline"]
     fn plan_work_limit_keeps_sorted_prefix_and_reports_totals() {
         let (_temp, common) = fixture();
         let report = run_plan_work_report(&PlanWorkArgs {
@@ -1455,11 +1450,7 @@ mod tests {
         assert_eq!(row.complete_unit_ids, vec!["atomic:0".to_string()]);
     }
 
-    // Pre-existing failure surfaced when fixing the peel_test build:
-    // explain output index 0 is no longer populated for this fixture.
-    // Marked `ignore` to unblock the release.
     #[test]
-    #[ignore = "explain fixture indexing changed; needs re-baseline"]
     fn explain_binding_includes_graph_and_spec_context() {
         let (_temp, common) = fixture();
         let report = run_explain_report(&ExplainArgs {

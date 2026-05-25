@@ -1069,13 +1069,13 @@ mod tests {
         assert_eq!(proposal.active_modules_referenced, vec!["ui/x".to_string()],);
     }
 
-    // Pre-existing failure surfaced when fixing the peel_test build:
-    // the size-cap diagnostic for closures is no longer emitted at the
-    // current cap value. Marked `ignore` to unblock the release —
-    // factorizer cap diagnostics need to be re-evaluated independently.
+    // Owners that individually exceed the size cap surface as
+    // `ExceedsSizeCap` diagnostics rather than proposals. The seed
+    // quotient's size-cap gate refuses to merge the two owners into
+    // a closure (combined 20 lines > cap=5), so each oversized
+    // singleton class becomes its own diagnostic.
     #[test]
-    #[ignore = "factorizer no longer emits ExceedsSizeCap diagnostic for two-owner closures; tracked separately"]
-    fn size_capped_atomic_closure_becomes_diagnostic() {
+    fn oversized_singletons_become_size_cap_diagnostics() {
         let a = owner("a", 1, &["a"], 10);
         let b = owner("b", 2, &["b"], 10);
         let graph = graph_with_atomic_units(
@@ -1085,11 +1085,25 @@ mod tests {
             vec![atomic_edge("atomic_edge:0", "atomic:0", "atomic:1")],
         );
         let report = factorize(&graph, &no_claims(), 5);
-        let diagnostic = report
+        assert!(
+            report.proposals.is_empty(),
+            "oversized owners should not appear as proposals: {report:#?}",
+        );
+        let binding_sets: Vec<Vec<String>> = report
             .diagnostics
             .iter()
-            .find(|diagnostic| diagnostic.binding_ids == vec!["a".to_string(), "b".to_string()])
-            .expect("closure diagnostic");
-        assert_eq!(diagnostic.reason, FactorizeDiagnosticReason::ExceedsSizeCap);
+            .map(|diagnostic| diagnostic.binding_ids.clone())
+            .collect();
+        assert_eq!(
+            binding_sets,
+            vec![vec!["a".to_string()], vec!["b".to_string()]],
+            "each oversized singleton class should surface as its own diagnostic",
+        );
+        assert!(
+            report
+                .diagnostics
+                .iter()
+                .all(|diagnostic| diagnostic.reason == FactorizeDiagnosticReason::ExceedsSizeCap),
+        );
     }
 }
