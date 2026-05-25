@@ -29,6 +29,7 @@ from augur.product.scenarios import (
     asset_label_by_series_id,
     build_scenario,
     initial_lots_from_portfolio,
+    required_event_series,
     required_level_series,
 )
 from augur.product.wire import (
@@ -181,6 +182,7 @@ class ProductService:
                 required_level_series=required_level_series(
                     scenario_key, initial_lots=self._initial_lots, properties_by_id=self._properties_by_id
                 ),
+                required_event_series=required_event_series(self._initial_lots),
             )
         )
         sampled = anchor_sampled_series_levels(sampled, self._portfolio.level_anchors)

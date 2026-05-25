@@ -31,6 +31,19 @@ class FundingPolicy(ApiModel):
     sell_order: tuple[SellableBucket, ...] = DEFAULT_SELL_ORDER
 
 
+class PrivateEquityTenderPolicyWire(ApiModel):
+    """User-facing PE tender policy. At each tender event for any held PE position, the
+    engine sells units to lift liquid net worth (cash + non-PE holdings) to this floor.
+
+    `liquid_net_worth_floor_usd` of 0 disables PE sales entirely (LNW always >= floor).
+    `index_floor_to_inflation` (default true) inflates the floor with CPI so the real-terms
+    target stays constant over long horizons. Set to false to keep the floor nominal.
+    """
+
+    liquid_net_worth_floor_usd: NonNegativeFloat = 0.0
+    index_floor_to_inflation: bool = True
+
+
 class CashFinancing(ApiModel):
     kind: Literal["cash"] = "cash"
 
@@ -65,6 +78,7 @@ class ScenarioKey(ApiModel):
     monthly_spend_usd: PositiveFloat
     spend_index: SpendIndex
     funding_policy: FundingPolicy = Field(default_factory=FundingPolicy)
+    pe_tender_policy: PrivateEquityTenderPolicyWire = Field(default_factory=PrivateEquityTenderPolicyWire)
     monthly_rent_usd: NonNegativeFloat = 0.0
     rental_location_id: str | None = None
     property_purchase: PropertyPurchase | None = None

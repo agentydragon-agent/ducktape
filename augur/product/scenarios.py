@@ -8,16 +8,18 @@ from augur.api.bootstrap import Property
 from augur.api.config import Config
 from augur.api.portfolio import PortfolioConfig
 from augur.api.scenario_set import ActorRole
-from augur.model.series import INFLATION_SERIES_ID, home_value_series_id, rent_series_id
+from augur.model.series import INFLATION_SERIES_ID, home_value_series_id, private_equity_sale_event_id, rent_series_id
 from augur.product.wire import CashFinancing, FundingPolicy, MortgageFinancing, PropertyPurchase, ScenarioKey
 from augur.sim.scenario import (
     Agent,
+    FixedAmount,
     InitialAccountBalance,
     InitialLot,
     LiquidityPolicy,
     MortgageFinancing as SimMortgageFinancing,
     MortgageInterestDeductionPolicy,
     ObligationType,
+    PrivateEquityTenderPolicy,
     PropertyTaxPolicy,
     RecurringObligation,
     Scenario,
@@ -90,7 +92,28 @@ def required_level_series(
             series_ids.add(INFLATION_SERIES_ID)
         if scenario_key.annual_maintenance_pct > 0:
             series_ids.add(INFLATION_SERIES_ID)
+    # PE tender policy with an inflation-indexed floor needs the CPI series.
+    if (
+        scenario_key.pe_tender_policy.liquid_net_worth_floor_usd > 0
+        and scenario_key.pe_tender_policy.index_floor_to_inflation
+    ):
+        series_ids.add(INFLATION_SERIES_ID)
     return frozenset(series_ids)
+
+
+def required_event_series(initial_lots: tuple[InitialLot, ...]) -> frozenset[str]:
+    """PE tender event series needed by the sim, one per held PE issuer.
+
+    The product translator passes this to the exogenous-sampling layer so the trajectory
+    provider knows which event streams to materialize for this scenario.
+    """
+
+    event_ids: set[str] = set()
+    for lot in initial_lots:
+        if lot.asset_id.startswith("private_equity:"):
+            issuer = lot.asset_id[len("private_equity:") :]
+            event_ids.add(private_equity_sale_event_id(issuer))
+    return frozenset(event_ids)
 
 
 def build_scenario(
@@ -263,6 +286,9 @@ def build_scenario(
                 )
             )
 
+    private_equity_tender_policies = _build_private_equity_tender_policies(
+        scenario_key=scenario_key, initial_lots=initial_lots, primary_agent_id=primary_agent_id
+    )
     return Scenario(
         agents=agents,
         initial_lots=list(initial_lots),
@@ -271,6 +297,7 @@ def build_scenario(
         scheduled_property_purchases=scheduled_property_purchases,
         property_tax_policies=property_tax_policies,
         mortgage_interest_deduction_policies=mortgage_interest_deduction_policies,
+        private_equity_tender_policies=private_equity_tender_policies,
         tax_profiles=[
             TaxProfile(
                 agent_id=primary_agent_id,
@@ -384,3 +411,31 @@ def _asset_preference_chain_from_sell_order(
         else:
             raise ValueError(f"unsupported sell_order bucket: {bucket!r}")
     return list(dict.fromkeys(asset_ids))
+
+
+def _build_private_equity_tender_policies(
+    *, scenario_key: ScenarioKey, initial_lots: tuple[InitialLot, ...], primary_agent_id: str
+) -> list[PrivateEquityTenderPolicy]:
+    """Build the sim `PrivateEquityTenderPolicy` list from the wire's pe_tender_policy.
+
+    A single policy targets the primary agent. Emitted only when the user holds at least one
+    PE lot AND set a positive `liquid_net_worth_floor_usd` — a zero floor or no PE position
+    means the policy is a no-op, so we omit it entirely to keep the sim's per-issuer arrays
+    smaller.
+    """
+
+    holds_pe = any(lot.asset_id.startswith("private_equity:") for lot in initial_lots)
+    floor_usd = float(scenario_key.pe_tender_policy.liquid_net_worth_floor_usd)
+    if not holds_pe or floor_usd <= 0:
+        return []
+    if scenario_key.pe_tender_policy.index_floor_to_inflation:
+        floor: FixedAmount | SeriesIndexedAmount = SeriesIndexedAmount(
+            base_amount_usd=floor_usd, series_id=INFLATION_SERIES_ID, adjustment_period_months=1
+        )
+    else:
+        floor = FixedAmount(amount_usd=floor_usd)
+    return [
+        PrivateEquityTenderPolicy(
+            owner_agent_id=primary_agent_id, proceeds_account_id=PRIMARY_ACCOUNT_ID, liquid_net_worth_floor=floor
+        )
+    ]
