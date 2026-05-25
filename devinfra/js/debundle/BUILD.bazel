@@ -237,6 +237,7 @@ rust_library(
     deps = [
         ":binding_targets",
         "@crates//:petgraph",
+        "@crates//:rayon",
         "@crates//:serde",
         "@crates//:swc_atoms",
         "@crates//:swc_common",
