@@ -69,7 +69,8 @@
 //! upgrade path" for the per-merge cost analysis and the references
 //! block for the underlying literature.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::cmp::Reverse;
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap};
 
 use analysis::{
     DepKind, ModuleId, OwnerGraph, OwnerGraphReport, OwnerId, OwnerReportIndex, Partition,
@@ -1844,6 +1845,18 @@ impl QuotientGraph {
 /// - Combined lines under the cap (`merge_preserves_invariants`).
 /// - Cycle gate holds (`merge_preserves_invariants`).
 pub fn mergeable_commit2(q: &mut QuotientGraph, c1: ClassId, c2: ClassId) -> bool {
+    if !mergeable_commit2_preconditions(q, c1, c2) {
+        return false;
+    }
+    q.merge_preserves_invariants(c1, c2)
+}
+
+/// Cheap mergeability preconditions: every clause of `mergeable_commit2`
+/// EXCEPT the final `merge_preserves_invariants` verdict. Splitting
+/// this out lets the lazy-PQ driver run the cheap preconditions
+/// before the (expensive) verdict — and lets coupling-drift
+/// detection happen between the two.
+fn mergeable_commit2_preconditions(q: &QuotientGraph, c1: ClassId, c2: ClassId) -> bool {
     if c1 == c2 {
         return false;
     }
@@ -1881,11 +1894,18 @@ pub fn mergeable_commit2(q: &mut QuotientGraph, c1: ClassId, c2: ClassId) -> boo
     }
     // Shape (1): pre↔pre — no additional precondition beyond the
     // common checks above.
-    q.merge_preserves_invariants(c1, c2)
+    true
 }
 
 /// One pass of the greedy: enumerate candidate merges, pick the best,
 /// apply. Returns `None` at convergence (no candidates).
+///
+/// Implementation: full O(|V|+|E|) scan of candidates each call. The
+/// production `greedy_merge_to_convergence` uses the lazy-PQ driver
+/// (`greedy_merge_to_convergence_lazy_pq`); this entrypoint is kept
+/// for callers/tests that want a single-step driver and for the
+/// reference `greedy_merge_to_convergence_full_scan` byte-equality
+/// gate.
 pub fn greedy_step(q: &mut QuotientGraph) -> Option<GreedyStep> {
     let candidate = pick_best_candidate(q)?;
     let (a, b) = candidate.pair;
@@ -1896,14 +1916,251 @@ pub fn greedy_step(q: &mut QuotientGraph) -> Option<GreedyStep> {
     })
 }
 
-/// Run `greedy_step` to convergence. Returns the sequence of
-/// (c1, c2) contractions in the order they were applied. Each
-/// returned pair uses canonical (lower, higher) ClassId order — the
-/// surviving class is always the lower of the two.
+/// Run the greedy contraction loop to convergence. Returns the
+/// sequence of (c1, c2) contractions in the order they were applied.
+/// Each returned pair uses canonical (lower, higher) ClassId order —
+/// the surviving class is always the lower of the two.
+///
+/// Driver: lazy priority-queue candidate enumeration. The PQ is
+/// initialized once over all cross-class pairs; each contract pushes
+/// fresh entries for the winner's new neighborhood and pop-time
+/// staleness checks re-rank entries whose coupling has drifted. See
+/// `plans/peel_lazy_pq_greedy.md` for the algorithm and
+/// `greedy_merge_to_convergence_full_scan` for the byte-equal
+/// reference driver retained as a correctness gate.
 pub fn greedy_merge_to_convergence(q: &mut QuotientGraph) -> Vec<(ClassId, ClassId)> {
+    greedy_merge_to_convergence_lazy_pq(q)
+}
+
+/// Reference implementation of the greedy loop using a per-iteration
+/// full scan. Retained as the load-bearing correctness reference for
+/// the property test
+/// `lazy_pq_greedy_matches_full_scan_greedy_on_corpus`. Do not call
+/// from production code — `O(|V|·|E|)` outer shape is the reason the
+/// lazy-PQ driver exists.
+#[doc(hidden)]
+pub fn greedy_merge_to_convergence_full_scan(q: &mut QuotientGraph) -> Vec<(ClassId, ClassId)> {
     let mut steps: Vec<(ClassId, ClassId)> = Vec::new();
     while let Some(step) = greedy_step(q) {
         steps.push(step.picked);
+    }
+    steps
+}
+
+// ---------------------------------------------------------------------
+// Lazy priority-queue greedy driver.
+//
+// See `plans/peel_lazy_pq_greedy.md` for the spec. The PQ stores one
+// entry per unordered cross-class pair, ordered by the same sort key
+// `pick_best_candidate` uses. On pop we re-check class existence,
+// mergeability, and coupling drift; on a successful contract we push
+// fresh entries for the winner's new neighborhood and drain the
+// discard pile (transiently-failing entries from this iteration).
+// ---------------------------------------------------------------------
+
+/// One entry in the lazy-PQ candidate queue. The ordering is on
+/// `Reverse<sort_key>` so `BinaryHeap` (a max-heap) returns the
+/// smallest sort_key first — matching `pick_best_candidate`'s
+/// "lower is better" semantics. `c1`/`c2` are stored in canonical
+/// order (low, high) for class-existence checks; `stored_sort_key`
+/// equals the sort key at push time and is compared to a freshly
+/// computed key on pop to detect coupling/cycle-score drift.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+struct CandidateEntry {
+    /// Reverse-wrapped 33-byte sort key. BinaryHeap pops the largest
+    /// `Ord` value; `Reverse<sort_key>` means "largest reversed" =
+    /// "smallest sort_key" pops first.
+    ordering: Reverse<[u8; 33]>,
+    /// Canonical low ClassId of the pair.
+    c1: ClassId,
+    /// Canonical high ClassId of the pair.
+    c2: ClassId,
+}
+
+impl Ord for CandidateEntry {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // BinaryHeap pops the maximum. We want smallest sort_key
+        // first; `Reverse` flips it. Tiebreak on (c1, c2) is already
+        // encoded in the sort_key tail, so a tie here means the
+        // entries are literally for the same pair (a duplicate
+        // re-push at the same key).
+        self.ordering.cmp(&other.ordering)
+    }
+}
+
+impl PartialOrd for CandidateEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+/// True if both classes still exist (non-empty members). Used as the
+/// class-existence guard at step 1 of the pop loop.
+fn classes_alive(q: &QuotientGraph, c1: ClassId, c2: ClassId) -> bool {
+    !q.classes[c1.0].members.is_empty() && !q.classes[c2.0].members.is_empty()
+}
+
+/// Push one entry per unordered cross-class pair (low, high) with
+/// `low < high` and a non-zero constraining-edge multiplicity. The
+/// candidate space matches `pick_best_candidate`'s iteration: anchored
+/// at pre-existing-module classes, neighbor reached via the
+/// constraining adjacency. Mergeability filtering is deferred to pop
+/// time so non-monotone gate failures (e.g., the "unambiguous
+/// extension target" rule in `mergeable_commit2`) get retried after
+/// later contracts unlock them.
+fn initialize_candidate_queue(q: &QuotientGraph) -> BinaryHeap<CandidateEntry> {
+    let mut heap: BinaryHeap<CandidateEntry> = BinaryHeap::new();
+    // Pre-existing-module classes are the iteration anchor — same as
+    // `pick_best_candidate`. A pair (a, b) is anchored iff at least
+    // one side is pre-existing-module non-residual; we iterate from
+    // the pre-existing side to avoid double-pushing symmetric pairs.
+    let anchors: Vec<ClassId> = q
+        .iter_classes()
+        .filter(|c| q.class_is_pre_existing_module(*c) && !q.class_is_residual(*c))
+        .collect();
+    let mut seen: BTreeSet<(ClassId, ClassId)> = BTreeSet::new();
+    for c in anchors {
+        let neighbors = q.class_neighbors(c);
+        for n in neighbors {
+            if n == c {
+                continue;
+            }
+            let (low, high) = if c < n { (c, n) } else { (n, c) };
+            if !seen.insert((low, high)) {
+                continue;
+            }
+            let candidate = rank_candidate(q, low, high);
+            heap.push(CandidateEntry {
+                ordering: Reverse(candidate.sort_key),
+                c1: low,
+                c2: high,
+            });
+        }
+    }
+    heap
+}
+
+/// Push fresh `(winner, X)` entries for every X in winner's current
+/// cross-class neighborhood. Called after each successful contract.
+/// Step 3 of the pop loop catches coupling drift on other pairs
+/// lazily — we don't eagerly re-push X's other neighbors.
+fn repush_affected_neighborhood(
+    q: &QuotientGraph,
+    heap: &mut BinaryHeap<CandidateEntry>,
+    winner: ClassId,
+) {
+    for n in q.class_neighbors(winner) {
+        if n == winner {
+            continue;
+        }
+        let (low, high) = if winner < n { (winner, n) } else { (n, winner) };
+        let candidate = rank_candidate(q, low, high);
+        heap.push(CandidateEntry {
+            ordering: Reverse(candidate.sort_key),
+            c1: low,
+            c2: high,
+        });
+    }
+}
+
+/// Lazy-PQ greedy driver. Same output as
+/// `greedy_merge_to_convergence_full_scan` modulo the byte-equality
+/// gate. See `plans/peel_lazy_pq_greedy.md` for the algorithm.
+fn greedy_merge_to_convergence_lazy_pq(q: &mut QuotientGraph) -> Vec<(ClassId, ClassId)> {
+    let mut steps: Vec<(ClassId, ClassId)> = Vec::new();
+    let mut heap = initialize_candidate_queue(q);
+    loop {
+        let mut discard_pile: Vec<CandidateEntry> = Vec::new();
+        let mut committed_winner: Option<ClassId> = None;
+        while let Some(entry) = heap.pop() {
+            // 1. Class-existence guard. Once a ClassId is the loser
+            //    of a contract, its `members` are emptied; it never
+            //    comes back.
+            if !classes_alive(q, entry.c1, entry.c2) {
+                continue;
+            }
+
+            // 2. Cheap mergeability preconditions (non-monotone).
+            //    Residual stickiness, cross-edge presence, the
+            //    pre-existing-module-anchor rule, and the
+            //    unambiguous-extension rule. The unambiguous-extension
+            //    clause especially can flip from false to true after
+            //    an unrelated contract (when an orphan's competing
+            //    module neighbor merges away), so we stash on the
+            //    discard pile rather than dropping the entry
+            //    permanently.
+            if !mergeable_commit2_preconditions(q, entry.c1, entry.c2) {
+                discard_pile.push(entry);
+                continue;
+            }
+
+            // 3. Lazy coupling/cycle-score drift detection. The sort
+            //    key depends on coupling_weight, class_out_count, and
+            //    the cycle index — all of which can change when an
+            //    unrelated merge collapses a shared neighbor. We
+            //    recompute the full sort key and, if it differs from
+            //    the stored value, re-push at the new key and continue
+            //    popping. The true max-coupling surfaces because a
+            //    stale-high entry cannot sit at the top.
+            let candidate = rank_candidate(q, entry.c1, entry.c2);
+            if candidate.sort_key != entry.ordering.0 {
+                heap.push(CandidateEntry {
+                    ordering: Reverse(candidate.sort_key),
+                    c1: entry.c1,
+                    c2: entry.c2,
+                });
+                continue;
+            }
+
+            // 4. Verdict check (non-monotone). The dominant inner
+            //    cost — deferred until we're about to commit. A
+            //    cycle through (c1, c2) can be broken by a merge
+            //    elsewhere along the cycle, so verdict failures go
+            //    to the discard pile to get retried after the next
+            //    successful contract.
+            if !q.merge_preserves_invariants(entry.c1, entry.c2) {
+                discard_pile.push(entry);
+                continue;
+            }
+
+            // 5. Commit. `contract` re-runs `check_merge`, which
+            //    repeats the verdict we just confirmed; succeeds
+            //    except in racy edge cases (none today). On the off
+            //    chance it fails we treat it as a non-monotone
+            //    failure (discard-pile) for the same reasons as step
+            //    4.
+            match q.contract(entry.c1, entry.c2) {
+                Ok(winner) => {
+                    steps.push((entry.c1, entry.c2));
+                    committed_winner = Some(winner);
+                    break;
+                }
+                Err(_) => {
+                    discard_pile.push(entry);
+                    continue;
+                }
+            }
+        }
+
+        match committed_winner {
+            Some(winner) => {
+                // State just changed: push fresh entries for the
+                // winner's new neighborhood and drain the discard pile
+                // back into the queue. Every transiently-failing
+                // candidate gets a fresh chance to commit.
+                repush_affected_neighborhood(q, &mut heap, winner);
+                for entry in discard_pile.drain(..) {
+                    heap.push(entry);
+                }
+            }
+            None => {
+                // Inner loop exited because the queue is empty
+                // without a commit. No state has changed since the
+                // discarded entries failed — re-checking would fail
+                // the same way. Drop the pile and terminate.
+                break;
+            }
+        }
     }
     steps
 }

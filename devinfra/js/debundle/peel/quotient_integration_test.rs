@@ -31,7 +31,7 @@ use analysis::{
 use peel::factorize::factorize;
 use peel::quotient::{
     OwnerIdx, QuotientGraph, SeedContractionRejected, SpecModuleGroup, build_seed_quotient,
-    greedy_merge_to_convergence,
+    greedy_merge_to_convergence, greedy_merge_to_convergence_full_scan,
 };
 
 // ---------- Fixture helpers (generic; no Tana/gaffer strings). ----------
@@ -2550,4 +2550,225 @@ fn unification_eliminates_cell_pipeline() {
         !factorize_src.contains("fn promote_anonymous_only_cell_to_extension"),
         "`promote_anonymous_only_cell_to_extension` was deleted in commit 4 — subsumed by the greedy's 'extend single consumer' merges",
     );
+}
+
+// ---------------------------------------------------------------------
+// Lazy-PQ vs. full-scan byte-equality corpus.
+//
+// See `plans/peel_lazy_pq_greedy.md` "Output equivalence to the
+// current greedy" — this is the load-bearing correctness gate for
+// the PQ-driven greedy. Every fixture below builds a quotient and
+// runs both drivers from identical starting states; the contraction
+// sequences must be byte-equal.
+// ---------------------------------------------------------------------
+
+/// Build a fixture quotient from a report + spec module groups. Two
+/// independent quotients are constructed (one for each driver) so
+/// the comparison is over isolated graphs.
+fn build_fixture(
+    report: &OwnerGraphReport,
+    groups: &[peel::quotient::PartitionGroup],
+    cap_lines: usize,
+) -> (QuotientGraph, QuotientGraph) {
+    let (q_a, _) = QuotientGraph::from_report_with_partition_extended(report, cap_lines, groups);
+    let (q_b, _) = QuotientGraph::from_report_with_partition_extended(report, cap_lines, groups);
+    (q_a, q_b)
+}
+
+/// Fixture 1: chain. One pre-existing module a; orphans b → c → d → e
+/// chain backward into a. Greedy should absorb them sequentially.
+fn fixture_chain() -> (OwnerGraphReport, Vec<peel::quotient::PartitionGroup>) {
+    let a = active_owner("owner:a", 1, &["BindingA"], 10, "ui/x");
+    let b = residual_owner("owner:b", 2, &["BindingB"], 5);
+    let c = residual_owner("owner:c", 3, &["BindingC"], 5);
+    let d = residual_owner("owner:d", 4, &["BindingD"], 5);
+    let e = residual_owner("owner:e", 5, &["BindingE"], 5);
+    let edges = vec![
+        owner_edge("edge:0", "owner:b", "owner:a", DepKind::EagerUse, true),
+        owner_edge("edge:1", "owner:c", "owner:b", DepKind::EagerUse, true),
+        owner_edge("edge:2", "owner:d", "owner:c", DepKind::EagerUse, true),
+        owner_edge("edge:3", "owner:e", "owner:d", DepKind::EagerUse, true),
+    ];
+    let report = graph_of(
+        vec![a.clone(), b.clone(), c.clone(), d.clone(), e.clone()],
+        edges,
+        vec![
+            atomic_unit_for("atomic:0", &[&a]),
+            atomic_unit_for("atomic:1", &[&b]),
+            atomic_unit_for("atomic:2", &[&c]),
+            atomic_unit_for("atomic:3", &[&d]),
+            atomic_unit_for("atomic:4", &[&e]),
+        ],
+        vec![],
+    );
+    let groups = vec![make_module_group("ui/x", vec![0])];
+    (report, groups)
+}
+
+/// Fixture 2: star topology. One pre-existing module a; orphans b,
+/// c, d, e each connect ONLY to a (no inter-orphan edges). Greedy
+/// absorbs each in some deterministic order.
+fn fixture_star() -> (OwnerGraphReport, Vec<peel::quotient::PartitionGroup>) {
+    let a = active_owner("owner:a", 1, &["BindingA"], 10, "ui/x");
+    let b = residual_owner("owner:b", 2, &["BindingB"], 5);
+    let c = residual_owner("owner:c", 3, &["BindingC"], 5);
+    let d = residual_owner("owner:d", 4, &["BindingD"], 5);
+    let e = residual_owner("owner:e", 5, &["BindingE"], 5);
+    let edges = vec![
+        owner_edge("edge:0", "owner:b", "owner:a", DepKind::EagerUse, true),
+        owner_edge("edge:1", "owner:c", "owner:a", DepKind::EagerUse, true),
+        owner_edge("edge:2", "owner:d", "owner:a", DepKind::EagerUse, true),
+        owner_edge("edge:3", "owner:e", "owner:a", DepKind::EagerUse, true),
+    ];
+    let report = graph_of(
+        vec![a.clone(), b.clone(), c.clone(), d.clone(), e.clone()],
+        edges,
+        vec![
+            atomic_unit_for("atomic:0", &[&a]),
+            atomic_unit_for("atomic:1", &[&b]),
+            atomic_unit_for("atomic:2", &[&c]),
+            atomic_unit_for("atomic:3", &[&d]),
+            atomic_unit_for("atomic:4", &[&e]),
+        ],
+        vec![],
+    );
+    let groups = vec![make_module_group("ui/x", vec![0])];
+    (report, groups)
+}
+
+/// Fixture 3: mutual-eager edges between two pre-existing modules
+/// (no constraining cycle — eager reads in one direction only, even
+/// though both directions exist on the I-graph). The greedy must
+/// either merge the two modules or leave them alone deterministically.
+fn fixture_mutual_eager() -> (OwnerGraphReport, Vec<peel::quotient::PartitionGroup>) {
+    let a = active_owner("owner:a", 1, &["BindingA"], 10, "ui/x");
+    let b = active_owner("owner:b", 2, &["BindingB"], 10, "ui/y");
+    let h1 = residual_owner("owner:h1", 3, &["BindingH1"], 5);
+    let h2 = residual_owner("owner:h2", 4, &["BindingH2"], 5);
+    let edges = vec![
+        // h1 reads a (constraining); h2 reads b (constraining).
+        owner_edge("edge:0", "owner:h1", "owner:a", DepKind::EagerUse, true),
+        owner_edge("edge:1", "owner:h2", "owner:b", DepKind::EagerUse, true),
+        // Cross-module non-constraining lazy edges (a ↔ b) — present
+        // for coupling, not for constraining adjacency.
+        owner_edge("edge:2", "owner:a", "owner:b", DepKind::LazyUse, false),
+        owner_edge("edge:3", "owner:b", "owner:a", DepKind::LazyUse, false),
+    ];
+    let report = graph_of(
+        vec![a.clone(), b.clone(), h1.clone(), h2.clone()],
+        edges,
+        vec![
+            atomic_unit_for("atomic:0", &[&a]),
+            atomic_unit_for("atomic:1", &[&b]),
+            atomic_unit_for("atomic:2", &[&h1]),
+            atomic_unit_for("atomic:3", &[&h2]),
+        ],
+        vec![],
+    );
+    let groups = vec![
+        make_module_group("ui/x", vec![0]),
+        make_module_group("ui/y", vec![1]),
+    ];
+    (report, groups)
+}
+
+/// Fixture 4: asymmetric cycle that the greedy must resolve by
+/// contracting one pair, dissolving the other side of the cycle.
+/// Two modules a, b with constraining edges a → b and b → a (via
+/// helpers); greedy should pick one merge.
+fn fixture_asymmetric_cycle() -> (OwnerGraphReport, Vec<peel::quotient::PartitionGroup>) {
+    let a = active_owner("owner:a", 1, &["BindingA"], 10, "ui/x");
+    let b = active_owner("owner:b", 2, &["BindingB"], 10, "ui/y");
+    let h = residual_owner("owner:h", 3, &["BindingH"], 5);
+    let edges = vec![
+        // a → h → b is the forward path; b → a directly closes the
+        // cycle. h is an orphan with a unique extension target (a).
+        owner_edge("edge:0", "owner:a", "owner:h", DepKind::EagerUse, true),
+        owner_edge("edge:1", "owner:h", "owner:b", DepKind::EagerUse, true),
+    ];
+    let report = graph_of(
+        vec![a.clone(), b.clone(), h.clone()],
+        edges,
+        vec![
+            atomic_unit_for("atomic:0", &[&a]),
+            atomic_unit_for("atomic:1", &[&b]),
+            atomic_unit_for("atomic:2", &[&h]),
+        ],
+        vec![],
+    );
+    let groups = vec![
+        make_module_group("ui/x", vec![0]),
+        make_module_group("ui/y", vec![1]),
+    ];
+    (report, groups)
+}
+
+/// Fixture 5: fully-connected small classes. Three pre-existing
+/// modules a, b, c; each pair has a constraining edge in one
+/// direction (forming a 3-cycle). Plus three orphans, each uniquely
+/// pointing to one of the modules. Tests coupling-drift handling:
+/// once one orphan is absorbed, its absorber's coupling vs. the
+/// other modules may shift.
+fn fixture_fully_connected_small() -> (OwnerGraphReport, Vec<peel::quotient::PartitionGroup>) {
+    let a = active_owner("owner:a", 1, &["BindingA"], 10, "ui/x");
+    let b = active_owner("owner:b", 2, &["BindingB"], 10, "ui/y");
+    let c = active_owner("owner:c", 3, &["BindingC"], 10, "ui/z");
+    let oa = residual_owner("owner:oa", 4, &["BindingOA"], 5);
+    let ob = residual_owner("owner:ob", 5, &["BindingOB"], 5);
+    let oc = residual_owner("owner:oc", 6, &["BindingOC"], 5);
+    let edges = vec![
+        owner_edge("edge:0", "owner:oa", "owner:a", DepKind::EagerUse, true),
+        owner_edge("edge:1", "owner:ob", "owner:b", DepKind::EagerUse, true),
+        owner_edge("edge:2", "owner:oc", "owner:c", DepKind::EagerUse, true),
+    ];
+    let report = graph_of(
+        vec![
+            a.clone(),
+            b.clone(),
+            c.clone(),
+            oa.clone(),
+            ob.clone(),
+            oc.clone(),
+        ],
+        edges,
+        vec![
+            atomic_unit_for("atomic:0", &[&a]),
+            atomic_unit_for("atomic:1", &[&b]),
+            atomic_unit_for("atomic:2", &[&c]),
+            atomic_unit_for("atomic:3", &[&oa]),
+            atomic_unit_for("atomic:4", &[&ob]),
+            atomic_unit_for("atomic:5", &[&oc]),
+        ],
+        vec![],
+    );
+    let groups = vec![
+        make_module_group("ui/x", vec![0]),
+        make_module_group("ui/y", vec![1]),
+        make_module_group("ui/z", vec![2]),
+    ];
+    (report, groups)
+}
+
+type Fixture = (OwnerGraphReport, Vec<peel::quotient::PartitionGroup>);
+type FixtureBuilder = fn() -> Fixture;
+
+#[test]
+fn lazy_pq_greedy_matches_full_scan_greedy_on_corpus() {
+    let fixtures: Vec<(&str, FixtureBuilder)> = vec![
+        ("chain", fixture_chain),
+        ("star", fixture_star),
+        ("mutual_eager", fixture_mutual_eager),
+        ("asymmetric_cycle", fixture_asymmetric_cycle),
+        ("fully_connected_small", fixture_fully_connected_small),
+    ];
+    for (name, builder) in fixtures {
+        let (report, groups) = builder();
+        let (mut q_full, mut q_lazy) = build_fixture(&report, &groups, 10_000);
+        let full_scan_steps = greedy_merge_to_convergence_full_scan(&mut q_full);
+        let lazy_pq_steps = greedy_merge_to_convergence(&mut q_lazy);
+        assert_eq!(
+            lazy_pq_steps, full_scan_steps,
+            "[{name}] lazy-PQ greedy diverged from full-scan greedy"
+        );
+    }
 }
