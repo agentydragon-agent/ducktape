@@ -123,6 +123,10 @@ class CompiledSimulation:
     tax_link_jurisdiction_codes: np.ndarray
     tax_link_standard_deduction: np.ndarray
     tax_link_has_ltcg: np.ndarray
+    # §1250 unrecaptured-depreciation rate cap. Positive => federal-style flat rate (e.g.
+    # 0.25 for federal_us); 0.0 => no separate cap, recapture is taxed as ordinary inside
+    # the standard bracket walk (state-style, e.g. California).
+    tax_link_section_1250_rate: np.ndarray
     tax_link_ordinary_upper: np.ndarray
     tax_link_ordinary_rate: np.ndarray
     tax_link_ordinary_count: np.ndarray
@@ -387,6 +391,7 @@ def compile_simulation(
         tax_link_jurisdiction_codes,
         tax_link_standard_deduction,
         tax_link_has_ltcg,
+        tax_link_section_1250_rate,
         tax_link_ordinary_upper,
         tax_link_ordinary_rate,
         tax_link_ordinary_count,
@@ -725,6 +730,7 @@ def compile_simulation(
         tax_link_jurisdiction_codes=tax_link_jurisdiction_codes,
         tax_link_standard_deduction=tax_link_standard_deduction,
         tax_link_has_ltcg=tax_link_has_ltcg,
+        tax_link_section_1250_rate=tax_link_section_1250_rate,
         tax_link_ordinary_upper=tax_link_ordinary_upper,
         tax_link_ordinary_rate=tax_link_ordinary_rate,
         tax_link_ordinary_count=tax_link_ordinary_count,
@@ -1177,6 +1183,10 @@ def _compile_transfer_slots(
     )
 
 
+SECTION_1250_FEDERAL_CAP_RATE = 0.25
+SECTION_1250_FEDERAL_JURISDICTION_ID = "federal_us"
+
+
 def _compile_tax(
     scenario: Scenario,
     strings: StringTable,
@@ -1193,6 +1203,7 @@ def _compile_tax(
     link_jurisdiction = []
     standard_deduction = []
     has_ltcg = []
+    section_1250_rate: list[float] = []
     ordinary_brackets: list[list[tuple[float, float]]] = []
     ltcg_brackets: list[list[tuple[float, float]]] = []
 
@@ -1225,6 +1236,11 @@ def _compile_tax(
             link_jurisdiction.append(strings.require(jurisdiction_id))
             standard_deduction.append(float(jurisdiction.standard_deduction[profile.filing_status]))
             has_ltcg.append(1 if jurisdiction.ltcg_brackets is not None else 0)
+            # Federal-us gets the §1250 25% flat rate cap; all other jurisdictions tax
+            # unrecaptured-depreciation as ordinary income (CA, etc.).
+            section_1250_rate.append(
+                SECTION_1250_FEDERAL_CAP_RATE if jurisdiction_id == SECTION_1250_FEDERAL_JURISDICTION_ID else 0.0
+            )
             ordinary_brackets.append(ordinary)
             ltcg_brackets.append(ltcg)
 
@@ -1257,6 +1273,7 @@ def _compile_tax(
         np.asarray(link_jurisdiction, dtype=np.int64),
         np.asarray(standard_deduction, dtype=np.float64),
         np.asarray(has_ltcg, dtype=np.int64),
+        np.asarray(section_1250_rate, dtype=np.float64),
         ordinary_upper,
         ordinary_rate,
         ordinary_count,

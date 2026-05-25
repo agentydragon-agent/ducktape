@@ -314,6 +314,38 @@ class RolloutFailureEvent(_RolloutEventBase):
     shortfall_usd: NonNegativeFloat
 
 
+class SetRentedFractionMarkerEvent(_RolloutEventBase):
+    """A `PropertyLifecycleEvent.SetRentedFraction` fired this month: a moment where the
+    property's rented_fraction changed (start renting, stop renting, change %)."""
+
+    kind: Literal["set_rented_fraction"] = "set_rented_fraction"
+    property_id: str
+    rented_fraction: float
+
+
+class CapitalImprovementMarkerEvent(_RolloutEventBase):
+    """A `PropertyLifecycleEvent.CapitalImprovement` fired this month: cash debit and basis
+    bump on the named property."""
+
+    kind: Literal["capital_improvement"] = "capital_improvement"
+    property_id: str
+
+
+class PropertySaleMarkerEvent(_RolloutEventBase):
+    """A `PropertyLifecycleEvent.Sale` fired this month: market sale of the named property
+    with full closing-cost, recapture, §121 exclusion, and LTCG breakdown."""
+
+    kind: Literal["property_sale"] = "property_sale"
+    property_id: str
+    gross_proceeds_usd: NonNegativeFloat
+    mortgage_payoff_usd: NonNegativeFloat
+    net_cash_to_owner_usd: float
+    realized_gain_usd: float
+    depreciation_recapture_usd: NonNegativeFloat
+    section_121_exclusion_usd: NonNegativeFloat
+    long_term_capital_gain_usd: NonNegativeFloat
+
+
 type RolloutEvent = Annotated[
     HoldingSaleEvent
     | MonthlyExpenseEvent
@@ -327,7 +359,10 @@ type RolloutEvent = Annotated[
     | PropertyMaintenancePaymentEvent
     | TaxAccrualEvent
     | TaxPaymentEvent
-    | RolloutFailureEvent,
+    | RolloutFailureEvent
+    | SetRentedFractionMarkerEvent
+    | CapitalImprovementMarkerEvent
+    | PropertySaleMarkerEvent,
     Field(discriminator="kind"),
 ]
 

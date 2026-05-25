@@ -2,7 +2,8 @@
 
 ## Status (as of session close, 2026-05-25)
 
-Phases 1, 2, 3, and 4 landed end-to-end at sim + wire + product layers.
+Phases 1–4 landed end-to-end at sim + wire + product layers. §121, §1250 federal cap,
+lifecycle-event frame logging, and frontend rollout-graph markers also landed.
 
 - **Phase 1 — Static landlord rental + agency.** Tenant→owner rental income with vacancy,
   fraction-rented, management fee, leasing fee on `avg_tenancy_months` cadence. Frontend
@@ -15,22 +16,40 @@ Phases 1, 2, 3, and 4 landed end-to-end at sim + wire + product layers.
   Runtime per-rollout state buffers for rented_fraction + building_basis. Lifecycle apply
   phase runs first in each month step. All Schedule E + MID + SALT + depreciation reads
   runtime state. Wire + product translator: PropertyPurchase.lifecycle_events. ✓
-- **Phase 4 — Property sale + §1250 recapture.** PropertySaleEvent. At sale: market value
-  from home_value series, mortgage payoff, realized gain, §1250 recapture to ordinary,
-  remainder to LTCG. State frozen post-sale. §121 primary-residence exclusion deferred. ✓
+- **Phase 4 — Property sale.** PropertySaleEvent. At sale: market value from home_value
+  series, mortgage payoff, realized gain, §1250 recapture routed to its own YTD bucket,
+  §121 exclusion applied where qualified, remainder to LTCG. State frozen post-sale. ✓
+- **Phase 4.1 — §121 primary-residence exclusion.** Per-property cumulative
+  `property_owner_occupied_months` counter increments monthly when the property is active
+  and `rented_fraction < 1.0`. Snapshot history lets the sale handler compute the
+  24-of-last-60 window and apply up to the single-filer $250k exclusion to post-recapture
+  gain. Per-rollout exclusion amount surfaces in the property_sale_events frame. ✓
+- **Phase 4.2 — §1250 25% federal rate cap.** Recapture routed to a dedicated
+  `recapture_section_1250_ytd` bucket instead of ordinary. Per-link
+  `tax_link_section_1250_rate` dispatches: federal-style links (rate > 0) tax recapture at
+  the flat cap rate as capital tax; state-style links (rate = 0) add recapture to the
+  ordinary bracket walk (California treatment). Reset at year-end. ✓
+- **Phase 4.3 — Lifecycle frame logging + frontend markers.** Engine `LifecycleEventBuffers`
+  records per-(event, rollout) fired flag and per-rollout sale amounts (gross/payoff/net
+  cash/realized gain/recapture/§121 exclusion/LTCG). Decoded into three frames:
+  `set_rented_fraction_events`, `capital_improvement_events`, `property_sale_events`.
+  Product wire adds `SetRentedFractionMarkerEvent`, `CapitalImprovementMarkerEvent`,
+  `PropertySaleMarkerEvent` to the `RolloutEvent` union. Frontend
+  `ROLLOUT_EVENT_COLORS`/Y-offset/`EVENT_FORMATTERS` render markers on the rollout graph
+  and the event table. ✓
 
 Deferred follow-ups:
 
-- **§121 primary-residence exclusion** (24-of-60 owner-occupied months test) at sale.
-- **§1250 25% federal rate cap.** Today recapture flows through marginal ordinary.
 - **Frontend lifecycle editor.** The wire types are present; users can submit scenarios
   via API with lifecycle events but there's no UI to compose them yet.
 - **Residence timeline.** Outside-rent obligation gated by where the user lives. Engine
   supports multi-obligation pattern (different start/end months); the wire-side timeline
   is not yet shaped.
-- **Rollout-graph event annotations** for lifecycle events. The engine doesn't yet log
-  lifecycle markers into a dedicated event frame; cashflow side effects (transfers,
-  obligations) already render.
+- **§121 enhancements.** Joint-filer $500k cap (today single-filer $250k only); pro-rata
+  exclusion for non-qualified-use periods (post-2009 rental periods reducing the exclusion
+  share); cooling-off (one sale per 24 months).
+- **§1250 exact marginal-rate floor.** Today federal flat 25%; the real rule is
+  min(marginal_ord_rate, 25%) — strictly lower for taxpayers in <25% brackets.
 - **Stochastic tenant model** (already in `augur/sim/TODO.md` under "Future").
 
 Adds (a) realistic landlord rental income with vacancy + property

@@ -256,6 +256,36 @@ LOT_DISPOSITION_EVENT_SCHEMA = pl.Schema(
 )
 
 
+SET_RENTED_FRACTION_EVENT_SCHEMA = pl.Schema(
+    {"rollout_index": pl.Int64(), "month_index": pl.Int64(), "property_id": pl.Utf8(), "rented_fraction": pl.Float64()}
+)
+
+CAPITAL_IMPROVEMENT_EVENT_SCHEMA = pl.Schema(
+    {
+        "rollout_index": pl.Int64(),
+        "month_index": pl.Int64(),
+        "property_id": pl.Utf8(),
+        "amount_usd": pl.Float64(),
+        "description": pl.Utf8(),
+    }
+)
+
+PROPERTY_SALE_EVENT_SCHEMA = pl.Schema(
+    {
+        "rollout_index": pl.Int64(),
+        "month_index": pl.Int64(),
+        "property_id": pl.Utf8(),
+        "gross_proceeds_usd": pl.Float64(),
+        "mortgage_payoff_usd": pl.Float64(),
+        "net_cash_to_owner_usd": pl.Float64(),
+        "realized_gain_usd": pl.Float64(),
+        "depreciation_recapture_usd": pl.Float64(),
+        "section_121_exclusion_usd": pl.Float64(),
+        "long_term_capital_gain_usd": pl.Float64(),
+    }
+)
+
+
 @dataclass(frozen=True)
 class EventFrameCatalog:
     """Schemas for every frame carried by `EventLog`."""
@@ -272,6 +302,9 @@ class EventFrameCatalog:
     mortgage_originations: FrameSpec
     mortgage_payments: FrameSpec
     rollout_failures: FrameSpec
+    set_rented_fraction_events: FrameSpec
+    capital_improvement_events: FrameSpec
+    property_sale_events: FrameSpec
 
     def ordered(self) -> tuple[FrameSpec, ...]:
         return (
@@ -287,6 +320,9 @@ class EventFrameCatalog:
             self.mortgage_originations,
             self.mortgage_payments,
             self.rollout_failures,
+            self.set_rented_fraction_events,
+            self.capital_improvement_events,
+            self.property_sale_events,
         )
 
 
@@ -303,6 +339,9 @@ EVENT_FRAMES = EventFrameCatalog(
     mortgage_originations=FrameSpec("mortgage_originations", MORTGAGE_ORIGINATION_EVENT_SCHEMA),
     mortgage_payments=FrameSpec("mortgage_payments", MORTGAGE_PAYMENT_EVENT_SCHEMA),
     rollout_failures=FrameSpec("rollout_failures", ROLLOUT_FAILURE_EVENT_SCHEMA),
+    set_rented_fraction_events=FrameSpec("set_rented_fraction_events", SET_RENTED_FRACTION_EVENT_SCHEMA),
+    capital_improvement_events=FrameSpec("capital_improvement_events", CAPITAL_IMPROVEMENT_EVENT_SCHEMA),
+    property_sale_events=FrameSpec("property_sale_events", PROPERTY_SALE_EVENT_SCHEMA),
 )
 
 EVENT_FRAME_SPECS = EVENT_FRAMES.ordered()
@@ -394,3 +433,15 @@ class EventLog:
     @property
     def rollout_failures(self) -> pl.DataFrame:
         return self.frame(EVENT_FRAMES.rollout_failures)
+
+    @property
+    def set_rented_fraction_events(self) -> pl.DataFrame:
+        return self.frame(EVENT_FRAMES.set_rented_fraction_events)
+
+    @property
+    def capital_improvement_events(self) -> pl.DataFrame:
+        return self.frame(EVENT_FRAMES.capital_improvement_events)
+
+    @property
+    def property_sale_events(self) -> pl.DataFrame:
+        return self.frame(EVENT_FRAMES.property_sale_events)

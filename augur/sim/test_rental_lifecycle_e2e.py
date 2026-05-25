@@ -875,7 +875,7 @@ class TestRentalIncomeTaxation:
         Adjusted basis = $500k - $14,545.45 = $485,454.55.
         Home value 1.5× → market value $750k → gross_proceeds (6% closing) = $705k.
         Gain = $705k - $485,454.55 = $219,545.45.
-        Recapture = min(gain, $14,545.45) = $14,545.45 → ordinary.
+        Recapture = min(gain, $14,545.45) = $14,545.45 → §1250 (federal 25%, CA ordinary).
         LTCG = $219,545.45 - $14,545.45 = $205,000 → long_term_capital_gain_ytd."""
 
         scenario = self._sale_scenario(horizon=24, sale_month=12, home_value_at_sale=1.5)
@@ -892,6 +892,200 @@ class TestRentalIncomeTaxation:
         assert len(breakdowns_y1) == 1
         b = breakdowns_y1[0]
         assert b["ltcg_usd"] == pytest.approx(205_000.0, abs=1.0)
+
+    def test_section_1250_recapture_taxed_at_federal_25pct_cap(self):
+        """Federal §1250 unrecaptured-depreciation gain caps at 25% (not the marginal rate).
+
+        Sale happens at month 12 (year 2). The recapture lands in year 2's tax accruals
+        (month_index=23 year-end). Year 2 has no rental income (rent stops at sale-1),
+        so federal year-2 ordinary stays at 0 because recapture is routed to its own
+        25% bucket — *not* to ordinary_ytd. California, having no §1250 cap, sees the
+        recapture as ordinary income.
+        """
+
+        scenario = self._sale_scenario(horizon=24, sale_month=12, home_value_at_sale=1.5)
+        levels = [1.0] * 12 + [1.5] * 13
+        ctx = _multi_series(levels_by_series={RENT_SERIES_ID: {0: [1.0] * 25}, "home_value:san_francisco": {0: levels}})
+        run = simulate_with_external_series(scenario, external_series=ctx, rollout_count=1)
+        # Year 2 tax accrual (month 23) is when the sale-year tax falls due.
+        federal_y2 = next(
+            row
+            for row in run.events_log.tax_breakdowns.iter_rows(named=True)
+            if row["month_index"] == 23 and row["jurisdiction_id"] == "federal_us"
+        )
+        california_y2 = next(
+            row
+            for row in run.events_log.tax_breakdowns.iter_rows(named=True)
+            if row["month_index"] == 23 and row["jurisdiction_id"] == "california"
+        )
+        recapture = 14_545.45
+        # `ordinary_income_usd` records `current.ordinary_ytd[profile]` — recapture lives in
+        # `recapture_section_1250_ytd`, so neither column shows it.
+        assert federal_y2["ordinary_income_usd"] == pytest.approx(0.0, abs=1e-6)
+        assert california_y2["ordinary_income_usd"] == pytest.approx(0.0, abs=1e-6)
+        # Federal: recapture is NOT in `ordinary_taxable` (it skips the ordinary bracket walk
+        # entirely; it's taxed at the flat 25% cap below).
+        assert federal_y2["ordinary_taxable_usd"] == pytest.approx(0.0, abs=1e-6)
+        # Federal LTCG bracket walk with ordinary_taxable=0 and LTCG=$205k for single filer:
+        # 0% slice: 0..47025 ($47025 at 0% = 0); 15% slice: 47025..205000 ($157975 at 15% = $23,696.25).
+        # Plus §1250 25% × $14,545.45 = $3,636.36. Federal capital_gain_tax = $27,332.61.
+        ltcg_tax_federal = 0.15 * (205_000.0 - 47_025.0)
+        section_1250_tax = recapture * 0.25
+        assert federal_y2["capital_gain_tax_usd"] == pytest.approx(ltcg_tax_federal + section_1250_tax, abs=2.0)
+        # California: no §1250 cap → recapture is added to ordinary brackets (and CA has no
+        # separate LTCG schedule, so LTCG is in ordinary too). ordinary_taxable = LTCG + recapture
+        # - CA standard deduction. capital_gain_tax_usd = 0.
+        assert california_y2["capital_gain_tax_usd"] == pytest.approx(0.0, abs=1e-6)
+        assert california_y2["ordinary_taxable_usd"] == pytest.approx(
+            205_000.0 + recapture - california_y2["standard_deduction_usd"], abs=1.0
+        )
+
+    def test_section_121_exclusion_after_24_owner_occupied_months(self):
+        """Owner-occupied for ≥ 24 of the last 60 months → up to $250k of post-recapture
+        gain is excluded from LTCG (single-filer cap).
+
+        Buy as primary residence (rented_fraction=0). Hold for 30 months. Then sell with
+        $200k appreciation: realized gain = $188k (after closing costs), all of it post-
+        recapture (no depreciation accrued because never rented). §121 excludes the full
+        $188k → LTCG = 0; section_121_exclusion_usd in the sale event records $188k.
+        """
+
+        purchase_price = 500_000.0
+        sale_month = 30
+        horizon = 36
+        scenario = Scenario(
+            agents=[Agent(agent_id=OWNER_AGENT_ID), Agent(agent_id="property_seller"), Agent(agent_id="irs")],
+            initial_cash=[
+                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance_usd=600_000.0),
+                InitialAccountBalance(agent_id="property_seller", account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+            ],
+            scheduled_property_purchases=[
+                ScheduledPropertyPurchase(
+                    month=0,
+                    cause_id="p1_purchase",
+                    property_id="p1",
+                    location_id="san_francisco",
+                    buyer_agent_id=OWNER_AGENT_ID,
+                    buyer_account_id="checking",
+                    seller_agent_id="property_seller",
+                    purchase_price_usd=purchase_price,
+                    down_payment_usd=purchase_price,
+                    ownership_pct=1.0,
+                    rented_fraction=0.0,
+                    land_value_fraction=0.20,
+                )
+            ],
+            property_lifecycle_events=[PropertySaleEvent(month=sale_month, property_id="p1", closing_cost_pct=6.0)],
+            tax_profiles=[
+                TaxProfile(
+                    agent_id=OWNER_AGENT_ID,
+                    filing_status="single",
+                    jurisdiction_ids=["federal_us", "california"],
+                    tax_authority_agent_id="irs",
+                )
+            ],
+            horizon_months=horizon,
+        )
+        # Home value 1.4× at sale time.
+        home_values = [1.0] * sale_month + [1.4] * (horizon + 1 - sale_month)
+        ctx = _multi_series(
+            levels_by_series={RENT_SERIES_ID: {0: [1.0] * (horizon + 1)}, "home_value:san_francisco": {0: home_values}}
+        )
+        run = simulate_with_external_series(scenario, external_series=ctx, rollout_count=1)
+        # Sale event surfaces in property_sale_events frame.
+        sale_rows = run.events_log.property_sale_events.to_dicts()
+        assert len(sale_rows) == 1
+        sale = sale_rows[0]
+        # Gross = $500k × 1.4 × 0.94 = $658k. Realized gain = $658k - $500k = $158k.
+        assert sale["gross_proceeds_usd"] == pytest.approx(658_000.0, abs=1.0)
+        assert sale["realized_gain_usd"] == pytest.approx(158_000.0, abs=1.0)
+        assert sale["depreciation_recapture_usd"] == pytest.approx(0.0, abs=1e-6)
+        # §121 fully excludes the $158k gain (well under $250k single-filer cap).
+        assert sale["section_121_exclusion_usd"] == pytest.approx(158_000.0, abs=1.0)
+        assert sale["long_term_capital_gain_usd"] == pytest.approx(0.0, abs=1e-6)
+
+    def test_section_121_does_not_apply_without_owner_occupied_months(self):
+        """Same sale at month 30, but the property has been 100% rented the entire time.
+        Owner-occupied months = 0, so §121 does not apply. The depreciation recapture +
+        LTCG flow remains intact."""
+
+        scenario = self._sale_scenario(horizon=36, sale_month=30, home_value_at_sale=1.4)
+        home_values = [1.0] * 30 + [1.4] * 7
+        ctx = _multi_series(
+            levels_by_series={RENT_SERIES_ID: {0: [1.0] * 37}, "home_value:san_francisco": {0: home_values}}
+        )
+        run = simulate_with_external_series(scenario, external_series=ctx, rollout_count=1)
+        sale = run.events_log.property_sale_events.to_dicts()[0]
+        # §121 should be exactly zero — never owner-occupied.
+        assert sale["section_121_exclusion_usd"] == pytest.approx(0.0, abs=1e-6)
+        # Recapture should be positive (30 months of depreciation × $400k / 27.5 / 12 ≈ $36,363).
+        assert sale["depreciation_recapture_usd"] == pytest.approx(36_363.64, abs=1.0)
+
+    def test_lifecycle_event_frames_logged_for_each_kind(self):
+        """All three lifecycle event kinds appear in their respective frames, one row per
+        (rollout, event)."""
+
+        purchase_price = 500_000.0
+        scenario = Scenario(
+            agents=[Agent(agent_id=OWNER_AGENT_ID), Agent(agent_id="property_seller"), Agent(agent_id="irs")],
+            initial_cash=[
+                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance_usd=800_000.0),
+                InitialAccountBalance(agent_id="property_seller", account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+            ],
+            scheduled_property_purchases=[
+                ScheduledPropertyPurchase(
+                    month=0,
+                    cause_id="p1_purchase",
+                    property_id="p1",
+                    location_id="san_francisco",
+                    buyer_agent_id=OWNER_AGENT_ID,
+                    buyer_account_id="checking",
+                    seller_agent_id="property_seller",
+                    purchase_price_usd=purchase_price,
+                    down_payment_usd=purchase_price,
+                    ownership_pct=1.0,
+                    rented_fraction=0.0,
+                    land_value_fraction=0.20,
+                )
+            ],
+            property_lifecycle_events=[
+                SetRentedFractionEvent(month=6, property_id="p1", rented_fraction=1.0),
+                CapitalImprovementEvent(month=8, property_id="p1", amount_usd=50_000.0, description="new roof"),
+                PropertySaleEvent(month=12, property_id="p1", closing_cost_pct=6.0),
+            ],
+            tax_profiles=[
+                TaxProfile(
+                    agent_id=OWNER_AGENT_ID,
+                    filing_status="single",
+                    jurisdiction_ids=["federal_us", "california"],
+                    tax_authority_agent_id="irs",
+                )
+            ],
+            horizon_months=24,
+        )
+        ctx = _multi_series(
+            levels_by_series={RENT_SERIES_ID: {0: [1.0] * 25}, "home_value:san_francisco": {0: [1.0] * 25}}
+        )
+        run = simulate_with_external_series(scenario, external_series=ctx, rollout_count=1)
+
+        rented_rows = run.events_log.set_rented_fraction_events.to_dicts()
+        assert len(rented_rows) == 1
+        assert rented_rows[0]["month_index"] == 6
+        assert rented_rows[0]["rented_fraction"] == 1.0
+        assert rented_rows[0]["property_id"] == "p1"
+
+        capex_rows = run.events_log.capital_improvement_events.to_dicts()
+        assert len(capex_rows) == 1
+        assert capex_rows[0]["month_index"] == 8
+        assert capex_rows[0]["amount_usd"] == pytest.approx(50_000.0)
+        assert capex_rows[0]["property_id"] == "p1"
+
+        sale_rows = run.events_log.property_sale_events.to_dicts()
+        assert len(sale_rows) == 1
+        assert sale_rows[0]["month_index"] == 12
+        assert sale_rows[0]["property_id"] == "p1"
 
     def _sale_scenario(
         self, *, horizon: int, sale_month: int, cumulative_depreciation_eligible: bool = True, **_unused: object

@@ -9,6 +9,7 @@ import polars as pl
 
 from augur.model.series import home_value_series_id
 from augur.product.wire import (
+    CapitalImprovementMarkerEvent,
     ClosingCostPaymentEvent,
     HoaDuesPaymentEvent,
     HoldingSaleEvent,
@@ -18,9 +19,11 @@ from augur.product.wire import (
     OutsideRentPaymentEvent,
     PropertyMaintenancePaymentEvent,
     PropertyPurchaseEvent,
+    PropertySaleMarkerEvent,
     PropertyTaxPaymentEvent,
     RolloutEvent,
     RolloutFailureEvent,
+    SetRentedFractionMarkerEvent,
     TaxAccrualEvent,
     TaxPaymentEvent,
     TerminalMetrics,
@@ -111,21 +114,27 @@ def rollout_events_from(
         *_monthly_expense_events(run, primary_agent_id=primary_agent_id),
         *_outside_rent_events(run, primary_agent_id=primary_agent_id),
         *_failure_events(run, primary_agent_id=primary_agent_id),
+        *_set_rented_fraction_events(run),
+        *_capital_improvement_events(run),
+        *_property_sale_events(run),
     ]
     priority = {
         "property_purchase": 0,
         "closing_cost_payment": 1,
-        "holding_sale": 2,
-        "tax_accrual": 3,
-        "tax_payment": 4,
-        "property_tax_payment": 5,
-        "hoa_dues_payment": 6,
-        "homeowners_insurance_payment": 7,
-        "property_maintenance_payment": 8,
-        "mortgage_payment": 9,
-        "monthly_expense": 10,
-        "outside_rent": 11,
-        "failure": 12,
+        "set_rented_fraction": 2,
+        "capital_improvement": 3,
+        "property_sale": 4,
+        "holding_sale": 5,
+        "tax_accrual": 6,
+        "tax_payment": 7,
+        "property_tax_payment": 8,
+        "hoa_dues_payment": 9,
+        "homeowners_insurance_payment": 10,
+        "property_maintenance_payment": 11,
+        "mortgage_payment": 12,
+        "monthly_expense": 13,
+        "outside_rent": 14,
+        "failure": 15,
     }
     return tuple(sorted(events, key=lambda event: (event.month_index, priority[event.kind])))
 
@@ -488,6 +497,53 @@ def _property_maintenance_events(run: SimulationRun, *, primary_agent_id: str) -
             amount_due_usd=float(row["amount_due_usd"]),
             amount_paid_usd=float(row["amount_paid_usd"]),
             shortfall_usd=float(row["shortfall_usd"]),
+        )
+        for row in rows.iter_rows(named=True)
+    )
+
+
+def _set_rented_fraction_events(run: SimulationRun) -> tuple[RolloutEvent, ...]:
+    """Lifecycle SetRentedFraction markers. Product scenarios only model the primary owner,
+    so every lifecycle event in the log belongs to a primary-owned property."""
+
+    rows = run.events_log.set_rented_fraction_events.sort("month_index", "property_id")
+    return tuple(
+        SetRentedFractionMarkerEvent(
+            month_index=int(row["month_index"]),
+            amount_usd=0.0,
+            property_id=str(row["property_id"]),
+            rented_fraction=float(row["rented_fraction"]),
+        )
+        for row in rows.iter_rows(named=True)
+    )
+
+
+def _capital_improvement_events(run: SimulationRun) -> tuple[RolloutEvent, ...]:
+    rows = run.events_log.capital_improvement_events.sort("month_index", "property_id")
+    return tuple(
+        CapitalImprovementMarkerEvent(
+            month_index=int(row["month_index"]),
+            amount_usd=float(row["amount_usd"]),
+            property_id=str(row["property_id"]),
+        )
+        for row in rows.iter_rows(named=True)
+    )
+
+
+def _property_sale_events(run: SimulationRun) -> tuple[RolloutEvent, ...]:
+    rows = run.events_log.property_sale_events.sort("month_index", "property_id")
+    return tuple(
+        PropertySaleMarkerEvent(
+            month_index=int(row["month_index"]),
+            amount_usd=float(row["gross_proceeds_usd"]),
+            property_id=str(row["property_id"]),
+            gross_proceeds_usd=float(row["gross_proceeds_usd"]),
+            mortgage_payoff_usd=float(row["mortgage_payoff_usd"]),
+            net_cash_to_owner_usd=float(row["net_cash_to_owner_usd"]),
+            realized_gain_usd=float(row["realized_gain_usd"]),
+            depreciation_recapture_usd=float(row["depreciation_recapture_usd"]),
+            section_121_exclusion_usd=float(row["section_121_exclusion_usd"]),
+            long_term_capital_gain_usd=float(row["long_term_capital_gain_usd"]),
         )
         for row in rows.iter_rows(named=True)
     )

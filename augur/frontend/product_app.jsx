@@ -90,6 +90,9 @@ const ROLLOUT_EVENT_COLORS = {
   tax_accrual: "#b45309",
   tax_payment: "#7c3aed",
   failure: "#dc2626",
+  set_rented_fraction: "#0ea5e9",
+  capital_improvement: "#15803d",
+  property_sale: "#be123c",
 };
 
 const METRIC_OPTIONS = [
@@ -452,6 +455,9 @@ function eventMarkerYOffset(event) {
   if (event?.kind === "tax_accrual") return -14;
   if (event?.kind === "holding_sale") return -6;
   if (event?.kind === "property_purchase") return -10;
+  if (event?.kind === "property_sale") return -8;
+  if (event?.kind === "capital_improvement") return -2;
+  if (event?.kind === "set_rented_fraction") return 4;
   if (event?.kind === "closing_cost_payment") return -4;
   if (event?.kind === "tax_payment") return 8;
   if (event?.kind === "property_tax_payment") return 10;
@@ -567,6 +573,37 @@ const EVENT_FORMATTERS = {
     detail: dueWithShortfallDetail,
   },
   failure: { label: () => "Rollout failed", detail: (event) => `shortfall ${fmtUsd(event.shortfallUsd)}` },
+  set_rented_fraction: {
+    label: (event) => {
+      const fraction = Number(event.rentedFraction);
+      if (fraction <= 0) return "Stopped renting";
+      if (fraction >= 1) return "Started renting out fully";
+      return `Set rented to ${(fraction * 100).toFixed(0)}%`;
+    },
+    detail: (event) => `${event.propertyId}`,
+  },
+  capital_improvement: {
+    label: () => "Capital improvement",
+    detail: (event) => `${event.propertyId}; basis bump ${fmtUsd(event.amountUsd)}`,
+  },
+  property_sale: {
+    label: () => "Sold property",
+    detail: (event) => {
+      const parts = [
+        `${event.propertyId}`,
+        `proceeds ${fmtUsd(event.grossProceedsUsd)}`,
+        `payoff ${fmtUsd(event.mortgagePayoffUsd)}`,
+        `net cash ${fmtUsd(event.netCashToOwnerUsd)}`,
+      ];
+      const recapture = Number(event.depreciationRecaptureUsd);
+      if (recapture > 0) parts.push(`§1250 ${fmtUsd(recapture)}`);
+      const exclusion = Number(event.section121ExclusionUsd);
+      if (exclusion > 0) parts.push(`§121 ${fmtUsd(exclusion)}`);
+      const ltcg = Number(event.longTermCapitalGainUsd);
+      if (ltcg > 0) parts.push(`LTCG ${fmtUsd(ltcg)}`);
+      return parts.join("; ");
+    },
+  },
 };
 
 function eventLabel(event) {

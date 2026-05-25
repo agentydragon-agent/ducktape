@@ -78,6 +78,10 @@ class StateHistoryBuffers:
     # Schedule E depreciation deduction (the YTD slice is computed from the delta between
     # consecutive snapshots).
     property_cumulative_depreciation_state: np.ndarray
+    # Cumulative count of owner-occupied months per (snapshot_month, rollout, property). Used
+    # at sale time to compute the §121 24-of-last-60-months test by subtracting the 60-mo-ago
+    # snapshot from the current cumulative count.
+    property_owner_occupied_months_state: np.ndarray
     rollout_failed_state: np.ndarray
     rollout_failed_month_state: np.ndarray
 
@@ -162,6 +166,12 @@ class StateHistoryBuffers:
             shape=(s, r, plan.property_count),
             dtype=np.float64,
         )
+        _expect_array(
+            "property_owner_occupied_months_state",
+            self.property_owner_occupied_months_state,
+            shape=(s, r, plan.property_count),
+            dtype=np.int64,
+        )
         _expect_array("rollout_failed_state", self.rollout_failed_state, shape=(s, r), dtype=np.bool_)
         _expect_array("rollout_failed_month_state", self.rollout_failed_month_state, shape=(s, r), dtype=np.int64)
 
@@ -205,6 +215,15 @@ class CurrentStateBuffers:
     # `plan.property_building_basis[prop]` and bumped by `CapitalImprovementEvent`. Depreciation
     # accrual multiplies this by `current.property_rented_fraction[r, p] / (27.5 × 12)` monthly.
     property_building_basis: np.ndarray
+    # Cumulative count of owner-occupied months per (rollout, property). Increments by 1 each
+    # month while `property_active[:, p] AND property_rented_fraction[:, p] < 1.0`. At sale
+    # time the engine looks back 60 months by subtracting the 60-mo-ago snapshot — qualifies
+    # for §121 if the difference is ≥ 24.
+    property_owner_occupied_months: np.ndarray
+    # YTD §1250 unrecaptured-depreciation gain per (rollout, tax_profile). Populated by
+    # PropertySaleEvent. At year-end, federal taxes this at min(25%, marginal); CA taxes as
+    # ordinary (added back to bracket input). Zeroed at year-end.
+    recapture_section_1250_ytd: np.ndarray
     # Rented-share of YTD mortgage interest per (rollout, liability). Each mortgage payment
     # accrues `interest × current.property_rented_fraction[r, prop_of_lia]` into this buffer.
     # At year-end:
@@ -308,6 +327,18 @@ class CurrentStateBuffers:
             dtype=np.float64,
         )
         _expect_array(
+            "current property_owner_occupied_months",
+            self.property_owner_occupied_months,
+            shape=(r, plan.property_count),
+            dtype=np.int64,
+        )
+        _expect_array(
+            "current recapture_section_1250_ytd",
+            self.recapture_section_1250_ytd,
+            shape=(r, plan.tax_profile_count),
+            dtype=np.float64,
+        )
+        _expect_array(
             "current liability_rental_interest_ytd",
             self.liability_rental_interest_ytd,
             shape=(r, plan.liability_count),
@@ -315,6 +346,39 @@ class CurrentStateBuffers:
         )
         _expect_array("current failed", self.failed, shape=(r,), dtype=np.bool_)
         _expect_array("current failed_month", self.failed_month, shape=(r,), dtype=np.int64)
+
+
+@dataclass
+class LifecycleEventBuffers:
+    """Per-(lifecycle_event_index, rollout) tracking for deterministic lifecycle events.
+
+    `fired[e, r]` = True iff event `e` fired on rollout `r` (i.e., the rollout was not failed
+    when the event month arrived). Sale events also populate the per-amount arrays at the
+    moment of the sale; for non-sale kinds those arrays stay zero.
+    """
+
+    fired: np.ndarray
+    sale_gross_proceeds: np.ndarray
+    sale_mortgage_payoff: np.ndarray
+    sale_net_cash: np.ndarray
+    sale_realized_gain: np.ndarray
+    sale_recapture: np.ndarray
+    sale_section_121_exclusion: np.ndarray
+    sale_long_term_gain: np.ndarray
+
+    def validate(self, plan: SlotPlan, event_count: int) -> None:
+        shape = (max(1, event_count), plan.rollout_count)
+        _expect_array("lifecycle_fired", self.fired, shape=shape, dtype=np.bool_)
+        for name, arr in [
+            ("sale_gross_proceeds", self.sale_gross_proceeds),
+            ("sale_mortgage_payoff", self.sale_mortgage_payoff),
+            ("sale_net_cash", self.sale_net_cash),
+            ("sale_realized_gain", self.sale_realized_gain),
+            ("sale_recapture", self.sale_recapture),
+            ("sale_section_121_exclusion", self.sale_section_121_exclusion),
+            ("sale_long_term_gain", self.sale_long_term_gain),
+        ]:
+            _expect_array(name, arr, shape=shape, dtype=np.float64)
 
 
 @dataclass
@@ -491,6 +555,7 @@ class SimulationBuffers:
     lot_dispositions: LotDispositionEventBuffers
     taxes: TaxEventBuffers
     obligations: ObligationEventBuffers
+    lifecycle: LifecycleEventBuffers
 
     def validate(self, plan: CompiledSimulation) -> None:
         slot_plan = plan.slot_plan
@@ -504,6 +569,7 @@ class SimulationBuffers:
         self.lot_dispositions.validate(slot_plan)
         self.taxes.validate(slot_plan)
         self.obligations.validate(slot_plan)
+        self.lifecycle.validate(slot_plan, event_count=int(plan.lifecycle_event_month.shape[0]))
 
     @property
     def cash_state(self) -> np.ndarray:
@@ -576,6 +642,10 @@ class SimulationBuffers:
     @property
     def property_cumulative_depreciation_state(self) -> np.ndarray:
         return self.state.property_cumulative_depreciation_state
+
+    @property
+    def property_owner_occupied_months_state(self) -> np.ndarray:
+        return self.state.property_owner_occupied_months_state
 
     @property
     def rollout_failed_state(self) -> np.ndarray:
@@ -741,6 +811,38 @@ class SimulationBuffers:
     def obligation_failure_active(self) -> np.ndarray:
         return self.obligations.obligation_failure_active
 
+    @property
+    def lifecycle_fired(self) -> np.ndarray:
+        return self.lifecycle.fired
+
+    @property
+    def lifecycle_sale_gross_proceeds(self) -> np.ndarray:
+        return self.lifecycle.sale_gross_proceeds
+
+    @property
+    def lifecycle_sale_mortgage_payoff(self) -> np.ndarray:
+        return self.lifecycle.sale_mortgage_payoff
+
+    @property
+    def lifecycle_sale_net_cash(self) -> np.ndarray:
+        return self.lifecycle.sale_net_cash
+
+    @property
+    def lifecycle_sale_realized_gain(self) -> np.ndarray:
+        return self.lifecycle.sale_realized_gain
+
+    @property
+    def lifecycle_sale_recapture(self) -> np.ndarray:
+        return self.lifecycle.sale_recapture
+
+    @property
+    def lifecycle_sale_section_121_exclusion(self) -> np.ndarray:
+        return self.lifecycle.sale_section_121_exclusion
+
+    @property
+    def lifecycle_sale_long_term_gain(self) -> np.ndarray:
+        return self.lifecycle.sale_long_term_gain
+
 
 @dataclass
 class DenseSimulationResult:
@@ -806,6 +908,8 @@ def _allocate_current_state(plan: CompiledSimulation) -> CurrentStateBuffers:
         # may then mutate per-(rollout, property) state at runtime.
         property_rented_fraction=np.broadcast_to(plan.property_rented_fraction, (r, p.property_count)).copy(),
         property_building_basis=np.broadcast_to(plan.property_building_basis, (r, p.property_count)).copy(),
+        property_owner_occupied_months=np.zeros((r, p.property_count), dtype=np.int64),
+        recapture_section_1250_ytd=np.zeros((r, p.tax_profile_count), dtype=np.float64),
         liability_rental_interest_ytd=np.zeros((r, p.liability_count), dtype=np.float64),
         failed=np.zeros(r, dtype=np.bool_),
         failed_month=np.full(r, NO_CODE, dtype=np.int64),
@@ -837,6 +941,7 @@ def _snapshot_current_state(buffers: SimulationBuffers, current: CurrentStateBuf
     buffers.liability_interest_ytd_state[snapshot_index] = current.liability_interest_ytd
     buffers.liability_principal_ytd_state[snapshot_index] = current.liability_principal_ytd
     buffers.property_cumulative_depreciation_state[snapshot_index] = current.property_cumulative_depreciation
+    buffers.property_owner_occupied_months_state[snapshot_index] = current.property_owner_occupied_months
     buffers.rollout_failed_state[snapshot_index] = current.failed
     buffers.rollout_failed_month_state[snapshot_index] = current.failed_month
 
@@ -863,7 +968,7 @@ def _zero_failed_state(current: CurrentStateBuffers) -> None:
 def _run_month_step(
     plan: CompiledSimulation, buffers: SimulationBuffers, current: CurrentStateBuffers, month: int
 ) -> None:
-    _apply_lifecycle_events(plan, current, month)
+    _apply_lifecycle_events(plan, buffers, current, month)
     _apply_scheduled_transfers(plan, buffers, current, month)
     _apply_property_purchases(plan, buffers, current, month)
     _apply_scheduled_asset_sales(plan, buffers, current, month)
@@ -874,6 +979,10 @@ def _run_month_step(
     # post-settlement liquid net worth (cash already moved out for this month's bills) and the
     # cap-gain accrual from any tender is captured by the year-end tax pass below.
     _apply_pe_tenders(plan, buffers, current, month)
+    # Owner-occupied month counter: §121 24-of-60 window machinery. Increments before
+    # depreciation accrual so a SetRentedFractionEvent firing this month is correctly
+    # reflected (e.g., a conversion to 100% rental this month does NOT count toward §121).
+    _apply_owner_occupied_month(current)
     # §168 monthly depreciation accrual for rented properties; must run before tax accruals so
     # the year-end pass sees this month's contribution in property_depreciation_ytd.
     _apply_depreciation_accrual(plan, current)
@@ -948,6 +1057,13 @@ def _compute_tax_for_link(
     capital_taxable, ordinary_tax, capital_tax)`. `salt_deduction` is zero for
     non-SALT links; for the federal SALT link it carries the capped SALT total
     that should stack onto MID inside itemized.
+
+    §1250 unrecaptured-depreciation gain is routed by `tax_link_section_1250_rate`:
+    - Federal-style links (rate > 0): the recapture bucket is taxed at the flat cap
+      rate (e.g. 25% on `federal_us`) and added to `capital_tax`. It is *not* mixed
+      into the ordinary bracket walk.
+    - State-style links (rate == 0): the recapture is added to ordinary income and
+      flows through the standard bracket walk (CA treats it as ordinary).
     """
 
     profile = int(plan.tax_link_profile_index[link])
@@ -955,6 +1071,8 @@ def _compute_tax_for_link(
     ordinary = current.ordinary_ytd[:, profile]
     ltcg = current.capital_gain_ytd[:, gain_profile, LONG_TERM_CAPITAL_GAIN_CODE]
     stcg = current.capital_gain_ytd[:, gain_profile, SHORT_TERM_CAPITAL_GAIN_CODE]
+    recapture = current.recapture_section_1250_ytd[:, profile]
+    section_1250_rate = float(plan.tax_link_section_1250_rate[link])
     standard_deduction = float(plan.tax_link_standard_deduction[link])
     if bool(plan.tax_link_mid_active[link]):
         # MID applies only to the owner-occupied share of interest. Rented-share interest
@@ -966,8 +1084,18 @@ def _compute_tax_for_link(
     itemized_deduction = mortgage_interest_deduction + salt_deduction
     deduction_used = np.maximum(itemized_deduction, standard_deduction)
 
+    # State-style §1250: lumped into ordinary; federal-style: taxed at flat cap rate as
+    # capital tax. Both branches keep `recapture` out of `ordinary_taxable` so the federal
+    # bracket walk does not double-tax it.
+    if section_1250_rate > 0.0:
+        section_1250_tax = recapture * section_1250_rate
+        ordinary_for_brackets = ordinary
+    else:
+        section_1250_tax = np.zeros(plan.rollout_count, dtype=np.float64)
+        ordinary_for_brackets = ordinary + recapture
+
     if int(plan.tax_link_has_ltcg[link]) == 1:
-        ordinary_taxable = np.maximum(ordinary + stcg - deduction_used, 0.0)
+        ordinary_taxable = np.maximum(ordinary_for_brackets + stcg - deduction_used, 0.0)
         capital_taxable = ltcg
         ordinary_tax = _apply_brackets(
             ordinary_taxable,
@@ -975,15 +1103,18 @@ def _compute_tax_for_link(
             rate=plan.tax_link_ordinary_rate[link],
             count=int(plan.tax_link_ordinary_count[link]),
         )
-        capital_tax = _apply_ltcg_brackets(
-            ltcg,
-            ordinary_taxable,
-            upper=plan.tax_link_ltcg_upper[link],
-            rate=plan.tax_link_ltcg_rate[link],
-            count=int(plan.tax_link_ltcg_count[link]),
+        capital_tax = (
+            _apply_ltcg_brackets(
+                ltcg,
+                ordinary_taxable,
+                upper=plan.tax_link_ltcg_upper[link],
+                rate=plan.tax_link_ltcg_rate[link],
+                count=int(plan.tax_link_ltcg_count[link]),
+            )
+            + section_1250_tax
         )
     else:
-        ordinary_taxable = np.maximum(ordinary + ltcg + stcg - deduction_used, 0.0)
+        ordinary_taxable = np.maximum(ordinary_for_brackets + ltcg + stcg - deduction_used, 0.0)
         capital_taxable = np.zeros(plan.rollout_count, dtype=np.float64)
         ordinary_tax = _apply_brackets(
             ordinary_taxable,
@@ -991,7 +1122,7 @@ def _compute_tax_for_link(
             rate=plan.tax_link_ordinary_rate[link],
             count=int(plan.tax_link_ordinary_count[link]),
         )
-        capital_tax = np.zeros(plan.rollout_count, dtype=np.float64)
+        capital_tax = section_1250_tax
     return mortgage_interest_deduction, itemized_deduction, ordinary_taxable, capital_taxable, ordinary_tax, capital_tax
 
 
@@ -1157,14 +1288,21 @@ def _compute_liquid_net_worth(
     return cash_total + lot_value
 
 
-def _apply_lifecycle_events(plan: CompiledSimulation, current: CurrentStateBuffers, month: int) -> None:
+def _apply_lifecycle_events(
+    plan: CompiledSimulation, buffers: SimulationBuffers, current: CurrentStateBuffers, month: int
+) -> None:
     """Apply this month's PropertyLifecycleEvent rows to per-rollout runtime state.
 
-    Two kinds of event share the same machinery:
+    Three kinds share the same machinery:
     - `LIFECYCLE_KIND_FRACTION`: mutate `current.property_rented_fraction[:, prop]` to the
-      event's new value (start/stop renting, change rental plan).
+      event's new value.
     - `LIFECYCLE_KIND_CAPITAL_IMPROVEMENT`: debit owner's cash by `amount_usd` and increase
       `current.property_building_basis[:, prop]` by the same amount.
+    - `LIFECYCLE_KIND_SALE`: dispatch to `_apply_property_sale` which also fills the per-event
+      `sale_*` arrays on `buffers.lifecycle`.
+
+    For each event that fires for an active rollout, `buffers.lifecycle.fired[event_index, r]`
+    is set. The decoder turns this into a polars frame so the frontend can render markers.
 
     Phase 3 lifecycle events are deterministic per rollout. Future policy-driven decisions
     would emit per-rollout records; this apply machinery handles them by indexing the rollout
@@ -1184,6 +1322,7 @@ def _apply_lifecycle_events(plan: CompiledSimulation, current: CurrentStateBuffe
     for i in range(begin, end):
         prop = int(plan.lifecycle_event_property[i])
         kind = int(plan.lifecycle_event_kind[i])
+        buffers.lifecycle_fired[i, active_rollout] = True
         if kind == LIFECYCLE_KIND_FRACTION:
             new_fraction = float(plan.lifecycle_event_rented_fraction[i])
             current.property_rented_fraction[active_rollout, prop] = new_fraction
@@ -1196,35 +1335,60 @@ def _apply_lifecycle_events(plan: CompiledSimulation, current: CurrentStateBuffe
         elif kind == LIFECYCLE_KIND_SALE:
             _apply_property_sale(
                 plan,
+                buffers,
                 current,
                 month=month,
+                event_index=i,
                 prop=prop,
                 closing_cost_pct=float(plan.lifecycle_event_amount[i]),
                 active_rollout=active_rollout,
             )
 
 
+SECTION_121_LOOKBACK_MONTHS = 60
+SECTION_121_MIN_QUALIFYING_MONTHS = 24
+SECTION_121_SINGLE_FILER_EXCLUSION_USD = 250_000.0
+
+
 def _apply_property_sale(
     plan: CompiledSimulation,
+    buffers: SimulationBuffers,
     current: CurrentStateBuffers,
     *,
     month: int,
+    event_index: int,
     prop: int,
     closing_cost_pct: float,
     active_rollout: np.ndarray,
 ) -> None:
-    """Execute a PropertySaleEvent for one property.
+    """Execute a PropertySaleEvent for one property and log the per-rollout amounts.
 
     - Market value = purchase_price × home_value_series[t] / home_value_series[base_month].
     - Gross proceeds = market value × (1 - closing_cost_pct / 100).
     - Net proceeds to owner cash = gross - outstanding mortgage balance.
     - Realized gain = gross_proceeds - (purchase_price + capex - cumulative_depreciation).
-    - §1250 recapture = min(realized_gain, cumulative_dep) → added to owner's ordinary_ytd
-      (approximation: real federal §1250 caps at 25%, CA taxes as ordinary).
-    - Remainder = post-recapture LTCG → added to owner's long_term_capital_gain_ytd.
+    - §1250 recapture = min(realized_gain, cumulative_dep) → routed to a dedicated YTD bucket
+      so the federal link can tax it at 25% (its dedicated rate), while CA-style links treat
+      it as ordinary income inside their standard bracket walk.
+    - §121: if the property was owner-occupied at least
+      `SECTION_121_MIN_QUALIFYING_MONTHS` of the last `SECTION_121_LOOKBACK_MONTHS`,
+      exclude up to `SECTION_121_SINGLE_FILER_EXCLUSION_USD` of the post-recapture gain
+      from LTCG (single-filer cap).
+    - Remainder = post-exclusion LTCG → added to owner's long_term_capital_gain_ytd.
     - Mortgage paid off; property frozen (property_active → False, rented_fraction → 0,
       building_basis → 0, cumulative_depreciation preserved for record).
+    - Per-rollout proceeds/payoff/gain/recapture/121-exclusion/ltcg are written to
+      `buffers.lifecycle.sale_*[event_index, r]`.
     """
+
+    rollout_count = plan.rollout_count
+    sale_gross_proceeds = np.zeros(rollout_count, dtype=np.float64)
+    sale_mortgage_payoff = np.zeros(rollout_count, dtype=np.float64)
+    sale_net_cash = np.zeros(rollout_count, dtype=np.float64)
+    sale_realized_gain = np.zeros(rollout_count, dtype=np.float64)
+    sale_recapture = np.zeros(rollout_count, dtype=np.float64)
+    sale_section_121 = np.zeros(rollout_count, dtype=np.float64)
+    sale_long_term_gain = np.zeros(rollout_count, dtype=np.float64)
 
     series_idx = int(plan.property_home_value_series_index[prop])
     if series_idx < 0:
@@ -1245,11 +1409,25 @@ def _apply_property_sale(
     adjusted_basis = purchase_price + capex - cum_dep
     realized_gain = gross_proceeds - adjusted_basis
     recapture = np.minimum(np.maximum(realized_gain, 0.0), cum_dep)
-    ltcg = np.maximum(realized_gain - recapture, 0.0)
+    post_recapture_gain = np.maximum(realized_gain - recapture, 0.0)
+
+    # §121 ownership/use test: count owner-occupied months in the last
+    # SECTION_121_LOOKBACK_MONTHS. `property_owner_occupied_months` is cumulative-since-purchase
+    # and is only incremented this month after `_apply_lifecycle_events` returns; subtracting
+    # the lookback snapshot gives the count of qualifying months strictly inside the window.
+    current_cum = current.property_owner_occupied_months[:, prop].astype(np.int64)
+    lookback_snapshot_index = max(0, month - SECTION_121_LOOKBACK_MONTHS)
+    snapshot_cum = buffers.property_owner_occupied_months_state[lookback_snapshot_index, :, prop].astype(np.int64)
+    months_in_window = current_cum - snapshot_cum
+    qualifies = months_in_window >= SECTION_121_MIN_QUALIFYING_MONTHS
+    section_121_exclusion = np.where(
+        qualifies, np.minimum(post_recapture_gain, SECTION_121_SINGLE_FILER_EXCLUSION_USD), 0.0
+    )
+    ltcg = post_recapture_gain - section_121_exclusion
 
     owner_cash_slot = int(plan.property_buyer_cash_slot[prop])
     # Pay off any outstanding mortgage on this property; net cash to owner = gross - payoff.
-    mortgage_payoff = np.zeros(plan.rollout_count, dtype=np.float64)
+    mortgage_payoff = np.zeros(rollout_count, dtype=np.float64)
     for lia in range(int(plan.liability_property_slot.shape[0])):
         if int(plan.liability_property_slot[lia]) == prop:
             mortgage_payoff += current.liability_principal[:, lia]
@@ -1260,10 +1438,11 @@ def _apply_property_sale(
     if owner_cash_slot >= 0:
         current.cash[active_rollout, owner_cash_slot] += net_cash[active_rollout]
 
-    # Tax routing: recapture to ordinary; remainder to LTCG.
+    # Tax routing: recapture goes to its own YTD bucket (federal cap dispatch happens in
+    # `_compute_tax_for_link`); the post-recapture, post-§121 remainder is LTCG.
     owner_profile = int(plan.property_owner_profile_index[prop])
     if owner_profile >= 0:
-        current.ordinary_ytd[active_rollout, owner_profile] += recapture[active_rollout]
+        current.recapture_section_1250_ytd[active_rollout, owner_profile] += recapture[active_rollout]
         gain_profile = int(plan.tax_profile_capital_gain_index[owner_profile])
         if gain_profile >= 0:
             current.capital_gain_ytd[active_rollout, gain_profile, LONG_TERM_CAPITAL_GAIN_CODE] += ltcg[active_rollout]
@@ -1273,6 +1452,41 @@ def _apply_property_sale(
     current.property_active[active_rollout, prop] = False
     current.property_rented_fraction[active_rollout, prop] = 0.0
     current.property_building_basis[active_rollout, prop] = 0.0
+
+    # Log per-rollout amounts (zero on failed rollouts).
+    sale_gross_proceeds[active_rollout] = gross_proceeds[active_rollout]
+    sale_mortgage_payoff[active_rollout] = mortgage_payoff[active_rollout]
+    sale_net_cash[active_rollout] = net_cash[active_rollout]
+    sale_realized_gain[active_rollout] = realized_gain[active_rollout]
+    sale_recapture[active_rollout] = recapture[active_rollout]
+    sale_section_121[active_rollout] = section_121_exclusion[active_rollout]
+    sale_long_term_gain[active_rollout] = ltcg[active_rollout]
+    buffers.lifecycle_sale_gross_proceeds[event_index] = sale_gross_proceeds
+    buffers.lifecycle_sale_mortgage_payoff[event_index] = sale_mortgage_payoff
+    buffers.lifecycle_sale_net_cash[event_index] = sale_net_cash
+    buffers.lifecycle_sale_realized_gain[event_index] = sale_realized_gain
+    buffers.lifecycle_sale_recapture[event_index] = sale_recapture
+    buffers.lifecycle_sale_section_121_exclusion[event_index] = sale_section_121
+    buffers.lifecycle_sale_long_term_gain[event_index] = sale_long_term_gain
+
+
+def _apply_owner_occupied_month(current: CurrentStateBuffers) -> None:
+    """Increment per-property owner-occupied-month counters for §121 tracking.
+
+    A property is "owner-occupied this month" if it's active and rented_fraction < 1.0 (at
+    least partial owner residence). The cumulative count is the §121 base; the
+    snapshot history lets the sale handler compute the 24-of-last-60-months window.
+    """
+
+    active_rollout = ~current.failed
+    if not active_rollout.any():
+        return
+    property_count = current.property_rented_fraction.shape[1]
+    for prop in range(property_count):
+        owner_occupied = (
+            active_rollout & current.property_active[:, prop] & (current.property_rented_fraction[:, prop] < 1.0)
+        )
+        current.property_owner_occupied_months[owner_occupied, prop] += 1
 
 
 def _apply_depreciation_accrual(plan: CompiledSimulation, current: CurrentStateBuffers) -> None:
@@ -1423,6 +1637,9 @@ def _apply_tax_accruals(
     current.liability_rental_interest_ytd[active_rollout, :] = 0.0
     # Same treatment for property-tax YTD; the federal SALT pass above has consumed it.
     current.property_tax_ytd[active_rollout, :] = 0.0
+    # §1250 recapture YTD: consumed by both federal (flat 25%) and state (ordinary brackets)
+    # links above. Reset so next year's recapture from a separate sale starts fresh.
+    current.recapture_section_1250_ytd[active_rollout, :] = 0.0
 
 
 def _apply_brackets(amount: np.ndarray, *, upper: np.ndarray, rate: np.ndarray, count: int) -> np.ndarray:
@@ -2002,6 +2219,8 @@ def _allocate_buffers(plan: CompiledSimulation) -> SimulationBuffers:
             liability_principal_ytd_state=np.zeros((s, r, p.liability_count), dtype=np.float64),
             # property_cumulative_depreciation_state[S, R, P]
             property_cumulative_depreciation_state=np.zeros((s, r, p.property_count), dtype=np.float64),
+            # property_owner_occupied_months_state[S, R, P]
+            property_owner_occupied_months_state=np.zeros((s, r, p.property_count), dtype=np.int64),
             # rollout failure state[S, R]
             rollout_failed_state=np.zeros((s, r), dtype=np.bool_),
             rollout_failed_month_state=np.full((s, r), NO_CODE, dtype=np.int64),
@@ -2070,6 +2289,18 @@ def _allocate_buffers(plan: CompiledSimulation) -> SimulationBuffers:
             obligation_shortfall=np.zeros((h, p.max_obligation_slots, r), dtype=np.float64),
             obligation_attempt_policy=np.full((h, p.max_obligation_slots, r), NO_CODE, dtype=np.int64),
             obligation_failure_active=np.zeros((h, p.max_obligation_slots, r), dtype=np.bool_),
+        ),
+        lifecycle=LifecycleEventBuffers(
+            fired=np.zeros((max(1, int(plan.lifecycle_event_month.shape[0])), r), dtype=np.bool_),
+            sale_gross_proceeds=np.zeros((max(1, int(plan.lifecycle_event_month.shape[0])), r), dtype=np.float64),
+            sale_mortgage_payoff=np.zeros((max(1, int(plan.lifecycle_event_month.shape[0])), r), dtype=np.float64),
+            sale_net_cash=np.zeros((max(1, int(plan.lifecycle_event_month.shape[0])), r), dtype=np.float64),
+            sale_realized_gain=np.zeros((max(1, int(plan.lifecycle_event_month.shape[0])), r), dtype=np.float64),
+            sale_recapture=np.zeros((max(1, int(plan.lifecycle_event_month.shape[0])), r), dtype=np.float64),
+            sale_section_121_exclusion=np.zeros(
+                (max(1, int(plan.lifecycle_event_month.shape[0])), r), dtype=np.float64
+            ),
+            sale_long_term_gain=np.zeros((max(1, int(plan.lifecycle_event_month.shape[0])), r), dtype=np.float64),
         ),
     )
     buffers.validate(plan)
@@ -2389,6 +2620,7 @@ def _decode_events(plan: CompiledSimulation, buffers: SimulationBuffers) -> Even
         _decode_obligations(plan, buffers)
     )
     transfer_frames.append(obligation_transfer_frame)
+    set_rented_fraction_frame, capital_improvement_frame, property_sale_frame = _decode_lifecycle_events(plan, buffers)
     return EventLog.from_frames(
         {
             "transfers": EVENT_FRAMES.transfers.concat(transfer_frames),
@@ -2402,8 +2634,78 @@ def _decode_events(plan: CompiledSimulation, buffers: SimulationBuffers) -> Even
             "mortgage_originations": _decode_mortgage_originations(plan, buffers),
             "mortgage_payments": _decode_mortgage_payments(plan, buffers),
             "rollout_failures": failure_frame,
+            "set_rented_fraction_events": set_rented_fraction_frame,
+            "capital_improvement_events": capital_improvement_frame,
+            "property_sale_events": property_sale_frame,
         }
     )
+
+
+def _decode_lifecycle_events(
+    plan: CompiledSimulation, buffers: SimulationBuffers
+) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
+    """Decode `buffers.lifecycle` into per-kind polars frames.
+
+    Each lifecycle event is fanned out to one row per active (rollout, event) pair using
+    `buffers.lifecycle_fired`. The compile-time `lifecycle_event_kind` selects which schema
+    each event belongs to; sale events additionally pull per-rollout dollar figures from the
+    `sale_*` arrays.
+    """
+
+    event_count = int(plan.lifecycle_event_month.shape[0])
+    if event_count == 0:
+        return (
+            EVENT_FRAMES.set_rented_fraction_events.empty(),
+            EVENT_FRAMES.capital_improvement_events.empty(),
+            EVENT_FRAMES.property_sale_events.empty(),
+        )
+    fired = buffers.lifecycle_fired[:event_count]  # (E, R)
+    events_idx, rollouts = np.argwhere(fired).T if fired.any() else (np.array([], dtype=np.int64),) * 2
+    if events_idx.size == 0:
+        return (
+            EVENT_FRAMES.set_rented_fraction_events.empty(),
+            EVENT_FRAMES.capital_improvement_events.empty(),
+            EVENT_FRAMES.property_sale_events.empty(),
+        )
+    months = plan.lifecycle_event_month.astype(np.int64)[events_idx]
+    property_slots = plan.lifecycle_event_property.astype(np.int64)[events_idx]
+    property_ids = _codes_to_strings(plan, plan.property_id_codes)[property_slots]
+    kinds = plan.lifecycle_event_kind.astype(np.int64)[events_idx]
+    fraction_mask = kinds == LIFECYCLE_KIND_FRACTION
+    capital_mask = kinds == LIFECYCLE_KIND_CAPITAL_IMPROVEMENT
+    sale_mask = kinds == LIFECYCLE_KIND_SALE
+
+    set_rented_fraction_frame = _frame_from_columns(
+        EVENT_FRAMES.set_rented_fraction_events,
+        rollout_index=rollouts[fraction_mask],
+        month_index=months[fraction_mask],
+        property_id=property_ids[fraction_mask],
+        rented_fraction=plan.lifecycle_event_rented_fraction.astype(np.float64)[events_idx[fraction_mask]],
+    )
+    capital_improvement_frame = _frame_from_columns(
+        EVENT_FRAMES.capital_improvement_events,
+        rollout_index=rollouts[capital_mask],
+        month_index=months[capital_mask],
+        property_id=property_ids[capital_mask],
+        amount_usd=plan.lifecycle_event_amount.astype(np.float64)[events_idx[capital_mask]],
+        description=np.full(int(capital_mask.sum()), "", dtype=object),
+    )
+    property_sale_frame = _frame_from_columns(
+        EVENT_FRAMES.property_sale_events,
+        rollout_index=rollouts[sale_mask],
+        month_index=months[sale_mask],
+        property_id=property_ids[sale_mask],
+        gross_proceeds_usd=buffers.lifecycle_sale_gross_proceeds[events_idx[sale_mask], rollouts[sale_mask]],
+        mortgage_payoff_usd=buffers.lifecycle_sale_mortgage_payoff[events_idx[sale_mask], rollouts[sale_mask]],
+        net_cash_to_owner_usd=buffers.lifecycle_sale_net_cash[events_idx[sale_mask], rollouts[sale_mask]],
+        realized_gain_usd=buffers.lifecycle_sale_realized_gain[events_idx[sale_mask], rollouts[sale_mask]],
+        depreciation_recapture_usd=buffers.lifecycle_sale_recapture[events_idx[sale_mask], rollouts[sale_mask]],
+        section_121_exclusion_usd=buffers.lifecycle_sale_section_121_exclusion[
+            events_idx[sale_mask], rollouts[sale_mask]
+        ],
+        long_term_capital_gain_usd=buffers.lifecycle_sale_long_term_gain[events_idx[sale_mask], rollouts[sale_mask]],
+    )
+    return set_rented_fraction_frame, capital_improvement_frame, property_sale_frame
 
 
 def _decode_transfers(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
