@@ -96,8 +96,6 @@ spec:
           emptyDir:
             medium: Memory
             sizeLimit: 8Mi
-      nodeSelector:
-        topology.kubernetes.io/region: hil
 ---
 apiVersion: v1
 kind: Service

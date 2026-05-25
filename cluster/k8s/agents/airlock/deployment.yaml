@@ -21,8 +21,6 @@ spec:
         app.kubernetes.io/component: server
     spec:
       serviceAccountName: airlock
-      nodeSelector:
-        topology.kubernetes.io/region: hil
       securityContext:
         fsGroup: 1000
       imagePullSecrets:

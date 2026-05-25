@@ -81,9 +81,6 @@ spec:
           maxSurge: 1
           maxUnavailable: 0
 
-      nodeSelector:
-        topology.kubernetes.io/region: hil
-
       affinity:
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
@@ -159,9 +156,6 @@ spec:
           maxSurge: 1
           maxUnavailable: 0
 
-      nodeSelector:
-        topology.kubernetes.io/region: hil
-
       affinity:
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
@@ -205,12 +199,12 @@ spec:
     postgresql:
       enabled: false
 
-    # Redis (required for worker message queue) — pinned to VPS
+    # TODO: replace this chart-bundled Redis with an operator-managed
+    # RedisReplication (redis.redis.opstreelabs.in/v1beta2) like grocy/tana-mcp/
+    # manifold-mcp use. Then set redis.enabled: false and point Authentik at the
+    # operator-managed Valkey via AUTHENTIK_REDIS__HOST / AUTHENTIK_REDIS__PASSWORD.
     redis:
       enabled: true
-      master:
-        nodeSelector:
-          topology.kubernetes.io/region: hil
 
     # Service account
     serviceAccount:
