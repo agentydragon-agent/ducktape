@@ -169,23 +169,36 @@ Translator gaps to migrate next:
 - [ ] Translate special assessments into scheduled obligations.
 - [ ] Translate explicit portfolio trade events into scheduled asset
       purchases/sales once sim has the needed buy-side accounting.
-- [ ] Translate crypto positions into sim asset lots with per-symbol market
+- [x] Translate crypto positions into sim asset lots with per-symbol market
       series IDs, basis, quantity/value handling, and liquidity-policy
-      preferences.
-- [ ] Finish private-equity native runtime semantics: explicit mark anchoring,
-      liquidity regime, tender/public-market/acquisition constraints, and
-      event stream requirements.
-- [ ] Translate `PrivateEquitySalePolicy` after private-equity state and tender
-      events are native to sim.
-- [ ] Reintroduce private-stock sale policy controls in the frontend after the
-      native sim policy exists. The sim cutover intentionally hides the old
-      browser tender-policy control because selecting it generated a backend
-      `PrivateEquitySalePolicy` that sim rejects; bring it back only once the
-      policy lowers into native private-stock/tender events instead of the old
-      core-shaped policy.
-- [ ] Translate `CheckingFloorSellPublicStockPolicy.sale_asset_preference`
-      beyond SP500: crypto and public-market private equity should use the
-      same ordered liquidity-policy surface once those assets are native.
+      preferences. BTC + ETH now flow as `crypto:<symbol>` value series
+      through the VECM joint fit (factor included in trained blob,
+      runtime sampler resolves latest-close anchors), become `InitialLot`
+      rows via the `holdings:` portfolio surface, and are sellable through
+      the `crypto` bucket of the sell-order tuple.
+- [x] Finish private-equity native runtime semantics: explicit mark anchoring,
+      liquidity regime (tender-only — never enters
+      `LiquidityPolicy.asset_preference_chain`), tender event consumption,
+      and event-stream requirements (per-issuer
+      `private_equity_sale_opportunity:<issuer>` event series). Engine
+      drains PE lots FIFO at each tender event and accrues cap-gains via
+      the same path as ordinary sales. Public-market and acquisition
+      regimes are deferred.
+- [x] Translate `PrivateEquitySalePolicy` after private-equity state and tender
+      events are native to sim. Replaced by `PrivateEquityTenderPolicy`:
+      each tender event sells units to lift liquid net worth (cash +
+      non-PE holdings) to an inflation-indexed floor. Translator at
+      `augur/product/scenarios._build_private_equity_tender_policies`.
+- [x] Reintroduce private-stock sale policy controls in the frontend after the
+      native sim policy exists. LNW-floor `NumberField` + "Index floor to
+      inflation" `Checkbox` in the Funding card; URL-serialized via
+      `peLnwFloorUsd` + `peIndexFloorToInflation`; emitted on the wire as
+      `peTenderPolicy.{liquidNetWorthFloorUsd, indexFloorToInflation}`.
+- [x] Translate `CheckingFloorSellPublicStockPolicy.sale_asset_preference`
+      beyond SP500: crypto positions ride the same ordered sell-order
+      surface (`stocks`, `crypto` buckets). PE intentionally uses a
+      separate dispatch path via `PrivateEquityTenderPolicy` since PE is
+      tender-event-only and not part of the LNW liquidity chain.
 - [ ] Translate `PartnerEquityAccrualPolicy` only after the generic property
       stake model covers partner ownership, contribution allocation, and
       balance snapshots.
@@ -244,9 +257,11 @@ Suggested migration order:
     requires earning during the horizon.
 - [ ] Second: property purchase, mortgage origination, property tax, and
       browser smoke on the backend.
-- [ ] Third: crypto positions and liquidity preferences.
-- [ ] Fourth: private equity, tender/public/acquisition regimes, and partner
-      property stakes.
+- [x] Third: crypto positions and liquidity preferences.
+- [x] Fourth: private equity, tender regime, and partner property stakes.
+      Tender regime done end-to-end (sim engine → wire → translator →
+      frontend). Public-market and acquisition PE regimes deferred;
+      partner property stakes remain out of scope (no PartnerEquityAccrualPolicy yet).
 - [ ] Fifth: replace the compatibility translator with a native sim request
       schema or narrow it to legacy imports only.
 
