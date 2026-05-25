@@ -4,8 +4,8 @@ import { Button, Checkbox, NativeSelect } from "@mantine/core";
 import { fetchAugurBootstrap, fetchProductMetricFan, fetchProductPortfolio, fetchProductRollout } from "./client.js";
 import { fanChartAxis, fanChartYearTicks, fmtAxisMetricValue, fmtMetricValue } from "./lib/chart.js";
 import { rowsFrom } from "./lib/frame.js";
-import { NumberField } from "./lib/controls.jsx";
-import { fmtNumber, fmtUsd } from "./lib/format.js";
+import { NativeSelectField, NumberField } from "./lib/controls.jsx";
+import { clampInteger, fmtNumber, fmtUsd } from "./lib/format.js";
 import { AugurShellHeader } from "./shell.jsx";
 
 // Sell-order is stored as a string of single-char bucket codes, in priority order. "pc" means
@@ -77,11 +77,11 @@ const METRIC_OPTIONS = [
 
 const METRIC_BY_VALUE = new Map(METRIC_OPTIONS.map((metric) => [metric.value, metric]));
 
-function clampInteger(value, min, max) {
-  const number = Math.trunc(Number(value));
-  if (!Number.isFinite(number)) return min;
-  return Math.min(max, Math.max(min, number));
-}
+const TABLE_NUMERIC_CELL = "px-3 py-2 text-right augur-tabular";
+const TABLE_NUMERIC_HEADER = "px-3 py-2 text-right font-semibold";
+// "Selected rollout" callout cells / headers in the percentile table — teal accent.
+const SELECTED_COL_HEADER = "px-3 py-2 text-right font-semibold text-teal-700 dark:text-teal-300";
+const SELECTED_COL_CELL = "px-3 py-2 text-right font-semibold text-teal-700 augur-tabular dark:text-teal-300";
 
 function productInputDefaults(bootstrap) {
   const defaultRolloutCount = bootstrap.defaultRolloutSamples ?? DEFAULT_PRODUCT_INPUT_BASE.rolloutCount;
@@ -406,133 +406,110 @@ function eventAmount(event) {
   return Number(event?.amountUsd);
 }
 
-function eventDetailText(event) {
-  if (event?.kind === "holding_sale") {
-    return `${fmtNumber(event.units)} units; basis ${fmtUsd(event.costBasisUsd)}`;
-  }
-  if (event?.kind === "monthly_expense" || event?.kind === "outside_rent") {
-    const shortfall = Number(event.shortfallUsd);
-    return shortfall > 0
-      ? `due ${fmtUsd(event.amountDueUsd)}; shortfall ${fmtUsd(shortfall)}`
-      : `due ${fmtUsd(event.amountDueUsd)}`;
-  }
-  if (event?.kind === "tax_accrual") {
-    const capitalGainTax = Number(event.capitalGainTaxUsd);
-    const gain = Number(event.ltcgUsd) + Number(event.stcgUsd);
-    const itemized = Number(event.itemizedDeductionUsd);
-    const standard = Number(event.standardDeductionUsd);
-    const mid = Number(event.mortgageInterestDeductionUsd);
-    const parts = [
-      `ordinary tax ${fmtUsd(event.ordinaryTaxUsd)}`,
-      `gain tax ${fmtUsd(capitalGainTax)}`,
-      `gains ${fmtUsd(gain)}`,
-    ];
-    if (mid > 0) {
-      const usedItemized = itemized > standard;
-      parts.push(`MID ${fmtUsd(mid)}`);
-      parts.push(`deduction ${fmtUsd(usedItemized ? itemized : standard)} (${usedItemized ? "itemized" : "standard"})`);
-    }
-    return parts.join("; ");
-  }
-  if (event?.kind === "tax_payment") {
-    const shortfall = Number(event.shortfallUsd);
-    return shortfall > 0
-      ? `due ${fmtUsd(event.amountDueUsd)}; shortfall ${fmtUsd(shortfall)}`
-      : `due ${fmtUsd(event.amountDueUsd)}`;
-  }
-  if (event?.kind === "property_purchase") {
-    const mortgage = Number(event.mortgagePrincipalUsd);
-    const down = Number(event.downPaymentUsd);
-    const parts = [`down ${fmtUsd(down)}`];
-    if (mortgage > 0) parts.push(`mortgage ${fmtUsd(mortgage)}`);
-    return parts.join("; ");
-  }
-  if (event?.kind === "closing_cost_payment") {
-    return "";
-  }
-  if (event?.kind === "mortgage_payment") {
-    return `interest ${fmtUsd(event.interestUsd)}; principal ${fmtUsd(event.principalUsd)}`;
-  }
-  if (event?.kind === "property_tax_payment") {
-    const shortfall = Number(event.shortfallUsd);
-    return shortfall > 0
-      ? `due ${fmtUsd(event.amountDueUsd)}; shortfall ${fmtUsd(shortfall)}`
-      : `due ${fmtUsd(event.amountDueUsd)}`;
-  }
-  if (event?.kind === "hoa_dues_payment") {
-    const shortfall = Number(event.shortfallUsd);
-    return shortfall > 0
-      ? `due ${fmtUsd(event.amountDueUsd)}; shortfall ${fmtUsd(shortfall)}`
-      : `due ${fmtUsd(event.amountDueUsd)}`;
-  }
-  if (event?.kind === "homeowners_insurance_payment") {
-    const shortfall = Number(event.shortfallUsd);
-    return shortfall > 0
-      ? `due ${fmtUsd(event.amountDueUsd)}; shortfall ${fmtUsd(shortfall)}`
-      : `due ${fmtUsd(event.amountDueUsd)}`;
-  }
-  if (event?.kind === "property_maintenance_payment") {
-    const shortfall = Number(event.shortfallUsd);
-    return shortfall > 0
-      ? `due ${fmtUsd(event.amountDueUsd)}; shortfall ${fmtUsd(shortfall)}`
-      : `due ${fmtUsd(event.amountDueUsd)}`;
-  }
-  if (event?.kind === "failure") {
-    return `shortfall ${fmtUsd(event.shortfallUsd)}`;
-  }
-  return "";
-}
-
 function jurisdictionLabel(jurisdictionId) {
   if (jurisdictionId === "federal_us") return "federal";
   if (jurisdictionId === "california") return "California";
   return (jurisdictionId ?? "").replace(/_/g, " ");
 }
 
+function formatDueWithShortfall(amountDueUsd, shortfallUsd) {
+  const shortfall = Number(shortfallUsd);
+  const base = `due ${fmtUsd(amountDueUsd)}`;
+  return shortfall > 0 ? `${base}; shortfall ${fmtUsd(shortfall)}` : base;
+}
+
+function shortfallLabel(event, { ok, shortfall }) {
+  return Number(event.shortfallUsd) > 0 ? shortfall : ok;
+}
+
+function taxPaymentLabel(event) {
+  const isShortfall = Number(event.shortfallUsd) > 0;
+  if (event.obligationType === "estimated_tax") return isShortfall ? "Estimated tax shortfall" : "Paid estimated taxes";
+  if (event.obligationType === "tax_true_up") return isShortfall ? "Tax true-up shortfall" : "Paid tax true-up";
+  return isShortfall ? "Tax payment shortfall" : "Paid taxes";
+}
+
+function taxAccrualDetail(event) {
+  const capitalGainTax = Number(event.capitalGainTaxUsd);
+  const gain = Number(event.ltcgUsd) + Number(event.stcgUsd);
+  const itemized = Number(event.itemizedDeductionUsd);
+  const standard = Number(event.standardDeductionUsd);
+  const mid = Number(event.mortgageInterestDeductionUsd);
+  const parts = [
+    `ordinary tax ${fmtUsd(event.ordinaryTaxUsd)}`,
+    `gain tax ${fmtUsd(capitalGainTax)}`,
+    `gains ${fmtUsd(gain)}`,
+  ];
+  if (mid > 0) {
+    const usedItemized = itemized > standard;
+    parts.push(`MID ${fmtUsd(mid)}`);
+    parts.push(`deduction ${fmtUsd(usedItemized ? itemized : standard)} (${usedItemized ? "itemized" : "standard"})`);
+  }
+  return parts.join("; ");
+}
+
+function propertyPurchaseDetail(event) {
+  const mortgage = Number(event.mortgagePrincipalUsd);
+  const parts = [`down ${fmtUsd(event.downPaymentUsd)}`];
+  if (mortgage > 0) parts.push(`mortgage ${fmtUsd(mortgage)}`);
+  return parts.join("; ");
+}
+
+const dueWithShortfallDetail = (event) => formatDueWithShortfall(event.amountDueUsd, event.shortfallUsd);
+
+// Single source of truth for per-event-kind label + detail rendering. Adding a new
+// `RolloutEvent` discriminator must add an entry here, otherwise eventLabel/eventDetailText fall
+// back to the generic "Event" / "" defaults.
+const EVENT_FORMATTERS = {
+  holding_sale: {
+    label: (event) => `Sold ${event.assetLabel ?? event.assetId ?? "asset"}`,
+    detail: (event) => `${fmtNumber(event.units)} units; basis ${fmtUsd(event.costBasisUsd)}`,
+  },
+  monthly_expense: {
+    label: (event) => shortfallLabel(event, { ok: "Paid monthly expenses", shortfall: "Monthly expenses shortfall" }),
+    detail: dueWithShortfallDetail,
+  },
+  outside_rent: {
+    label: (event) => shortfallLabel(event, { ok: "Paid rent", shortfall: "Rent shortfall" }),
+    detail: dueWithShortfallDetail,
+  },
+  tax_accrual: {
+    label: (event) => `Accrued ${jurisdictionLabel(event.jurisdictionId)} tax`,
+    detail: taxAccrualDetail,
+  },
+  tax_payment: { label: taxPaymentLabel, detail: dueWithShortfallDetail },
+  property_purchase: { label: () => "Bought property", detail: propertyPurchaseDetail },
+  closing_cost_payment: { label: () => "Paid closing costs", detail: () => "" },
+  mortgage_payment: {
+    label: () => "Paid mortgage",
+    detail: (event) => `interest ${fmtUsd(event.interestUsd)}; principal ${fmtUsd(event.principalUsd)}`,
+  },
+  property_tax_payment: {
+    label: (event) => shortfallLabel(event, { ok: "Paid property tax", shortfall: "Property tax shortfall" }),
+    detail: dueWithShortfallDetail,
+  },
+  hoa_dues_payment: {
+    label: (event) => shortfallLabel(event, { ok: "Paid HOA dues", shortfall: "HOA dues shortfall" }),
+    detail: dueWithShortfallDetail,
+  },
+  homeowners_insurance_payment: {
+    label: (event) =>
+      shortfallLabel(event, { ok: "Paid homeowner's insurance", shortfall: "Homeowner's insurance shortfall" }),
+    detail: dueWithShortfallDetail,
+  },
+  property_maintenance_payment: {
+    label: (event) => shortfallLabel(event, { ok: "Paid maintenance", shortfall: "Maintenance shortfall" }),
+    detail: dueWithShortfallDetail,
+  },
+  failure: { label: () => "Rollout failed", detail: (event) => `shortfall ${fmtUsd(event.shortfallUsd)}` },
+};
+
 function eventLabel(event) {
-  if (event?.kind === "holding_sale") {
-    return `Sold ${event.assetLabel ?? event.assetId ?? "asset"}`;
-  }
-  if (event?.kind === "monthly_expense") {
-    return Number(event.shortfallUsd) > 0 ? "Monthly expenses shortfall" : "Paid monthly expenses";
-  }
-  if (event?.kind === "outside_rent") {
-    return Number(event.shortfallUsd) > 0 ? "Rent shortfall" : "Paid rent";
-  }
-  if (event?.kind === "tax_accrual") {
-    return `Accrued ${jurisdictionLabel(event.jurisdictionId)} tax`;
-  }
-  if (event?.kind === "tax_payment") {
-    const shortfall = Number(event.shortfallUsd) > 0;
-    if (event.obligationType === "estimated_tax") return shortfall ? "Estimated tax shortfall" : "Paid estimated taxes";
-    if (event.obligationType === "tax_true_up") return shortfall ? "Tax true-up shortfall" : "Paid tax true-up";
-    return shortfall ? "Tax payment shortfall" : "Paid taxes";
-  }
-  if (event?.kind === "property_purchase") {
-    return "Bought property";
-  }
-  if (event?.kind === "closing_cost_payment") {
-    return "Paid closing costs";
-  }
-  if (event?.kind === "mortgage_payment") {
-    return "Paid mortgage";
-  }
-  if (event?.kind === "property_tax_payment") {
-    return Number(event.shortfallUsd) > 0 ? "Property tax shortfall" : "Paid property tax";
-  }
-  if (event?.kind === "hoa_dues_payment") {
-    return Number(event.shortfallUsd) > 0 ? "HOA dues shortfall" : "Paid HOA dues";
-  }
-  if (event?.kind === "homeowners_insurance_payment") {
-    return Number(event.shortfallUsd) > 0 ? "Homeowner's insurance shortfall" : "Paid homeowner's insurance";
-  }
-  if (event?.kind === "property_maintenance_payment") {
-    return Number(event.shortfallUsd) > 0 ? "Maintenance shortfall" : "Paid maintenance";
-  }
-  if (event?.kind === "failure") {
-    return "Rollout failed";
-  }
-  return "Event";
+  return EVENT_FORMATTERS[event?.kind]?.label(event) ?? "Event";
+}
+
+function eventDetailText(event) {
+  return EVENT_FORMATTERS[event?.kind]?.detail(event) ?? "";
 }
 
 function eventTitle(event) {
@@ -955,13 +932,13 @@ function TerminalMetricTable({ summaries, selectedSummary, metrics, selectedMetr
               {FAN_PERCENTILES.map((percentile, index) => (
                 <React.Fragment key={percentile}>
                   {showSelectedColumn && selectedColumnIndex === index && (
-                    <th className="px-3 py-2 text-right font-semibold text-teal-700 dark:text-teal-300">Selected</th>
+                    <th className={SELECTED_COL_HEADER}>Selected</th>
                   )}
-                  <th className="px-3 py-2 text-right font-semibold">P{percentile}</th>
+                  <th className={TABLE_NUMERIC_HEADER}>P{percentile}</th>
                 </React.Fragment>
               ))}
               {showSelectedColumn && selectedColumnIndex === FAN_PERCENTILES.length && (
-                <th className="px-3 py-2 text-right font-semibold text-teal-700 dark:text-teal-300">Selected</th>
+                <th className={SELECTED_COL_HEADER}>Selected</th>
               )}
             </tr>
           </thead>
@@ -974,17 +951,13 @@ function TerminalMetricTable({ summaries, selectedSummary, metrics, selectedMetr
                 {row.percentiles.map(({ percentile, value }, index) => (
                   <React.Fragment key={percentile}>
                     {showSelectedColumn && selectedColumnIndex === index && (
-                      <td className="px-3 py-2 text-right font-semibold text-teal-700 augur-tabular dark:text-teal-300">
-                        {fmtUsd(row.selectedValue)}
-                      </td>
+                      <td className={SELECTED_COL_CELL}>{fmtUsd(row.selectedValue)}</td>
                     )}
-                    <td className="px-3 py-2 text-right augur-tabular">{fmtUsd(value)}</td>
+                    <td className={TABLE_NUMERIC_CELL}>{fmtUsd(value)}</td>
                   </React.Fragment>
                 ))}
                 {showSelectedColumn && selectedColumnIndex === FAN_PERCENTILES.length && (
-                  <td className="px-3 py-2 text-right font-semibold text-teal-700 augur-tabular dark:text-teal-300">
-                    {fmtUsd(row.selectedValue)}
-                  </td>
+                  <td className={SELECTED_COL_CELL}>{fmtUsd(row.selectedValue)}</td>
                 )}
               </tr>
             ))}
@@ -1041,7 +1014,7 @@ function SelectedRolloutEventsPanel({
             <thead className="sticky top-0 bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500 dark:bg-slate-900 dark:text-slate-400">
               <tr>
                 <th className="px-4 py-2 font-semibold">Event</th>
-                <th className="px-3 py-2 text-right font-semibold">Amount</th>
+                <th className={TABLE_NUMERIC_HEADER}>Amount</th>
                 <th className="px-4 py-2 font-semibold">Detail</th>
               </tr>
             </thead>
@@ -1170,7 +1143,7 @@ function PropertyPurchasePanel({ bootstrap, input, onChange }) {
         )}
         {input.propertyId != null && (
           <>
-            <NativeSelect
+            <NativeSelectField
               label="Financing"
               aria-label="Property financing"
               value={input.financingKind}
@@ -1178,7 +1151,6 @@ function PropertyPurchasePanel({ bootstrap, input, onChange }) {
                 { value: "cash", label: "Cash" },
                 { value: "mortgage", label: "Mortgage" },
               ]}
-              classNames={{ label: "augur-field-label mb-2 block", input: "augur-tabular" }}
               onChange={(event) => onChange({ financingKind: event.target.value === "mortgage" ? "mortgage" : "cash" })}
             />
             {mortgageActive && (
@@ -1192,7 +1164,7 @@ function PropertyPurchasePanel({ bootstrap, input, onChange }) {
                   suffix="%"
                   onChange={(downPaymentPct) => onChange({ downPaymentPct })}
                 />
-                <NativeSelect
+                <NativeSelectField
                   label="Term"
                   aria-label="Mortgage term"
                   value={String(input.mortgageTermMonths)}
@@ -1200,7 +1172,6 @@ function PropertyPurchasePanel({ bootstrap, input, onChange }) {
                     { value: "360", label: "30 yr" },
                     { value: "180", label: "15 yr" },
                   ]}
-                  classNames={{ label: "augur-field-label mb-2 block", input: "augur-tabular" }}
                   onChange={(event) => onChange({ mortgageTermMonths: Number(event.target.value) === 180 ? 180 : 360 })}
                 />
                 <NumberField
@@ -1587,7 +1558,7 @@ function ProductProjectionWorkspace({ bootstrap }) {
                   prefix="$"
                   onChange={(monthlySpendUsd) => updateInput({ monthlySpendUsd })}
                 />
-                <NativeSelect
+                <NativeSelectField
                   label="Index"
                   aria-label="Spend index"
                   value={input.spendIndex}
@@ -1595,7 +1566,6 @@ function ProductProjectionWorkspace({ bootstrap }) {
                     { value: "inflation", label: "Inflation" },
                     { value: "none", label: "None" },
                   ]}
-                  classNames={{ label: "augur-field-label mb-1 block", input: "augur-tabular" }}
                   onChange={(event) => updateInput({ spendIndex: event.target.value })}
                 />
                 <NumberField
@@ -1606,13 +1576,12 @@ function ProductProjectionWorkspace({ bootstrap }) {
                   prefix="$"
                   onChange={(monthlyRentUsd) => updateInput({ monthlyRentUsd })}
                 />
-                <NativeSelect
+                <NativeSelectField
                   label="Location"
                   aria-label="Rent location"
                   value={input.rentalLocationId ?? ""}
                   disabled={Number(input.monthlyRentUsd) <= 0 || bootstrap.locations.length === 0}
                   data={bootstrap.locations.map((location) => ({ value: location.id, label: location.label }))}
-                  classNames={{ label: "augur-field-label mb-1 block", input: "augur-tabular" }}
                   onChange={(event) => updateInput({ rentalLocationId: event.target.value || null })}
                 />
               </div>

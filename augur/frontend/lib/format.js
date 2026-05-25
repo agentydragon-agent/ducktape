@@ -20,6 +20,8 @@ export function fmtNumber(value) {
   return number.toLocaleString("en-US", { maximumFractionDigits: 0 });
 }
 
-export function fmtInteger(value) {
-  return fmtNumber(value);
+export function clampInteger(value, min, max) {
+  const number = Math.trunc(Number(value));
+  if (!Number.isFinite(number)) return min;
+  return Math.min(max, Math.max(min, number));
 }
