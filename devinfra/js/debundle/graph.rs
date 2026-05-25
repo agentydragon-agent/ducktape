@@ -1130,6 +1130,131 @@ pub fn build_module_quotient(owner_graph: &OwnerGraph, partition: &Partition) ->
     graph
 }
 
+/// The canonical chunk-wide ESM I-graph. Each entry is a module-level
+/// init-order-constraining read or sequenced effect that the
+/// emitter actually emits as an ESM `import` directive and that the
+/// runtime ECMA-262 linker DFS therefore traverses when the chunk
+/// loads. Both the realizability gate (Pass-2 simulator's
+/// `i_successors`, linker / source-import positions) and the
+/// emitter (`lowering::plan_references::collect_phantom_side_effect_providers`,
+/// `chunk_factorization::compute_{linker,source_import}_order`)
+/// MUST drive their topology decisions through this single set so
+/// they cannot drift apart.
+///
+/// Filter rule:
+///   * Drop same-module edges (no ESM `import`).
+///   * Keep cross-module edges whose reason `constrains_init_order()`
+///     and is **not** a rebind — i.e. `EagerUse`, `Sequenced`,
+///     `LocalEffect`. These are the edges the emitter currently
+///     turns into either a binding-level ESM import or a phantom
+///     side-effect import.
+///   * Drop pure `LazyUse` cross-module edges. They are
+///     function-body reads, resolved at call time after every module
+///     has loaded; the runtime DFS never follows them, so neither
+///     can the gate's simulator without manufacturing imaginary
+///     cycles.
+///   * Drop `EagerRebind` / `LazyRebind` cross-module edges. They
+///     surface as `cross_rebinds` in the realizability verdict, not
+///     as I-graph nodes; the emitter never emits them as imports.
+///   * Keep cross-module at-init promoted edges (see
+///     [`gate_constraining_partition_endpoints`]) — the emitter's
+///     phantom side-effect importer also keeps them, so the gate
+///     must too.
+///
+/// Sequenced edges are deduped per `(from, to)` pair to mirror the
+/// dedup `build_module_quotient` performs: multiple sequenced
+/// reasons between the same module pair represent the same
+/// ordering constraint and should not over-weight the I-graph.
+///
+/// Returns the canonical edge set plus a precomputed `from -> {to}`
+/// adjacency map (`i_successors`) ready to feed into the simulator.
+pub fn chunk_constraining_module_edges(
+    owner_graph: &OwnerGraph,
+    partition: &Partition,
+) -> ChunkConstrainingEdgeSet {
+    let mut edges: BTreeMap<(ModuleId, ModuleId), Vec<OwnerEdgeId>> = BTreeMap::new();
+    let mut i_successors: BTreeMap<ModuleId, BTreeSet<ModuleId>> = BTreeMap::new();
+    let mut seen_sequenced_pairs: BTreeSet<(ModuleId, ModuleId)> = BTreeSet::new();
+    for edge in &owner_graph.edges {
+        if owner_graph.node(edge.from).is_none() || owner_graph.node(edge.to).is_none() {
+            continue;
+        }
+        // Gate-side view: keep cross-module at-init promoted edges.
+        // The matching `cross_module_partition_endpoints` lenient
+        // view would drop them; the canonical edge set is the
+        // strict view (see `gate_constraining_partition_endpoints`).
+        let Some((from, to)) = gate_constraining_partition_endpoints(edge, partition) else {
+            continue;
+        };
+        if edge.reason.is_rebind() {
+            // Rebinds are not I-graph members; they surface via the
+            // `cross_rebinds` verdict and are never emitted as ESM
+            // imports.
+            continue;
+        }
+        if !edge.reason.constrains_init_order() {
+            // Pure `LazyUse` cross-module edges: function-body reads
+            // resolved at call time. Runtime DFS never follows them,
+            // so the canonical I-graph excludes them.
+            continue;
+        }
+        if edge.reason.is_sequenced() && !seen_sequenced_pairs.insert((from, to)) {
+            continue;
+        }
+        edges.entry((from, to)).or_default().push(edge.id);
+        i_successors.entry(from).or_default().insert(to);
+    }
+    ChunkConstrainingEdgeSet {
+        edges,
+        i_successors,
+    }
+}
+
+/// Output of [`chunk_constraining_module_edges`]: the canonical
+/// chunk-wide ESM I-graph plus its precomputed adjacency map.
+///
+/// Consumers MUST treat this as the single source of truth for the
+/// "edges the emitter emits as ESM imports" question. See the
+/// function-level doc for the filter rule.
+#[derive(Debug, Clone, Default, Eq, PartialEq)]
+pub struct ChunkConstrainingEdgeSet {
+    /// `(from_module, to_module) -> all owner-edge ids` projecting
+    /// onto this module pair. Stable ordering by `(ModuleId,
+    /// ModuleId)`.
+    pub edges: BTreeMap<(ModuleId, ModuleId), Vec<OwnerEdgeId>>,
+    /// `from_module -> set of import targets`. Equivalent to
+    /// `edges.keys().fold(...)` but precomputed because every
+    /// simulator and emitter consumer walks adjacency, not the raw
+    /// `(from, to)` list.
+    pub i_successors: BTreeMap<ModuleId, BTreeSet<ModuleId>>,
+}
+
+impl ChunkConstrainingEdgeSet {
+    /// `(from, to) -> &[OwnerEdgeId]` lookup.
+    pub fn edges_for(&self, from: ModuleId, to: ModuleId) -> &[OwnerEdgeId] {
+        self.edges
+            .get(&(from, to))
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+    }
+
+    /// `from -> &BTreeSet<ModuleId>` lookup, empty default.
+    pub fn successors_of(&self, from: ModuleId) -> Option<&BTreeSet<ModuleId>> {
+        self.i_successors.get(&from)
+    }
+
+    /// `(from, to)` pairs in the canonical edge set. Stable iteration
+    /// order.
+    pub fn pairs(&self) -> impl Iterator<Item = (ModuleId, ModuleId)> + '_ {
+        self.edges.keys().copied()
+    }
+
+    /// Membership test for the canonical edge set.
+    pub fn contains(&self, from: ModuleId, to: ModuleId) -> bool {
+        self.edges.contains_key(&(from, to))
+    }
+}
+
 /// Stable per-chunk identity of an owner-graph edge. Equal to the
 /// edge's position in [`OwnerGraph::edges`]. The previous
 /// representation stored the report-shape spelling
@@ -1154,6 +1279,150 @@ pub struct OwnerEdge {
     pub from: OwnerId,
     pub to: OwnerId,
     pub reason: EdgeReason,
+}
+
+#[cfg(test)]
+mod chunk_constraining_module_edges_tests {
+    //! Regression coverage for [`chunk_constraining_module_edges`]'s
+    //! filter rule. The canonical edge set must match what the
+    //! emitter actually emits as ESM `import` directives — namely
+    //! all cross-module non-rebind non-LazyUse edges, including
+    //! cross-module at-init promoted edges.
+    use std::collections::BTreeSet;
+
+    use swc_common::{FileName, SourceMap, sync::Lrc};
+    use swc_ecma_parser::{Parser, StringInput, Syntax, lexer::Lexer};
+
+    use super::*;
+    use crate::ids::{LogicalModuleIndex, ModuleId};
+    use crate::partition::Partition;
+    use crate::{AnalysisHints, OwnerGraph, facts::analyze_chunk};
+
+    fn module_id(index: usize) -> ModuleId {
+        ModuleId(LogicalModuleIndex(index))
+    }
+
+    fn parse_and_build(source: &str) -> OwnerGraph {
+        let cm: Lrc<SourceMap> = Default::default();
+        let fm = cm.new_source_file(
+            FileName::Custom("test.js".into()).into(),
+            source.to_string(),
+        );
+        let lexer = Lexer::new(
+            Syntax::Es(Default::default()),
+            Default::default(),
+            StringInput::from(&*fm),
+            None,
+        );
+        let module = Parser::new_from(lexer)
+            .parse_module()
+            .expect("parse module");
+        let facts = analyze_chunk(&module, &AnalysisHints::default(), None, |_| None).facts;
+        build_owner_graph(&facts)
+    }
+
+    /// Pure cross-module lazy edge must not appear in the canonical
+    /// edge set. The emitter never emits an ESM `import` for a
+    /// function-body read; the gate must agree.
+    #[test]
+    fn lazy_only_cross_module_edge_excluded() {
+        let source = "const a = 1; function f() { return a; }";
+        let owner_graph = parse_and_build(source);
+        let mut partition = Partition::new(&owner_graph, module_id(0));
+        partition.set(OwnerId(1), module_id(1));
+        let canonical = chunk_constraining_module_edges(&owner_graph, &partition);
+        // `f` reads `a` from a function body → LazyUse f → a, so the
+        // only cross-module edge is mod_1 → mod_0 LazyUse.
+        assert!(
+            canonical.edges.is_empty(),
+            "lazy-only cross-module edges must be excluded; got {:#?}",
+            canonical.edges
+        );
+        assert!(canonical.i_successors.is_empty());
+    }
+
+    /// Cross-module eager_use edge appears in the canonical set.
+    #[test]
+    fn eager_cross_module_edge_included() {
+        let source = "const a = 1; const b = a + 1;";
+        let owner_graph = parse_and_build(source);
+        let mut partition = Partition::new(&owner_graph, module_id(0));
+        partition.set(OwnerId(1), module_id(1));
+        let canonical = chunk_constraining_module_edges(&owner_graph, &partition);
+        let pairs: BTreeSet<(ModuleId, ModuleId)> = canonical.pairs().collect();
+        assert_eq!(
+            pairs,
+            BTreeSet::from([(module_id(1), module_id(0))]),
+            "eager cross-module read `b = a + 1` must contribute mod_1 → mod_0"
+        );
+        assert!(canonical.contains(module_id(1), module_id(0)));
+    }
+
+    /// Same-module edges (intra-module reads) never appear in the
+    /// canonical set — they don't correspond to any ESM import.
+    #[test]
+    fn same_module_edges_excluded() {
+        let source = "const a = 1; const b = a + 1;";
+        let owner_graph = parse_and_build(source);
+        // Both owners in module 0 → no cross-module edges.
+        let partition = Partition::new(&owner_graph, module_id(0));
+        let canonical = chunk_constraining_module_edges(&owner_graph, &partition);
+        assert!(canonical.edges.is_empty());
+    }
+
+    /// Sequenced edges between the same module pair are deduped (one
+    /// representative owner edge per pair) so that having N sequenced
+    /// reasons between two modules doesn't over-weight the I-graph.
+    /// This mirrors `build_module_quotient`'s dedup.
+    #[test]
+    fn sequenced_edges_dedup_per_pair() {
+        // Two impure statements in different modules: each carries a
+        // Sequenced edge from the later impure stmt to the earlier
+        // (graph.rs::sequenced_edges).
+        let source = "console.log(\"a\"); console.log(\"b\"); console.log(\"c\");";
+        let owner_graph = parse_and_build(source);
+        let mut partition = Partition::new(&owner_graph, module_id(0));
+        partition.set(OwnerId(1), module_id(1));
+        partition.set(OwnerId(2), module_id(1));
+        let canonical = chunk_constraining_module_edges(&owner_graph, &partition);
+        // mod_1 contains owners 1 and 2; the only cross-module
+        // sequenced edge is from mod_1 to mod_0 (owners 1, 2 both
+        // sequenced after owner 0). We expect exactly ONE pair, even
+        // though two owners contribute.
+        let pair_count: usize = canonical
+            .pairs()
+            .filter(|&(from, to)| from == module_id(1) && to == module_id(0))
+            .count();
+        assert!(
+            pair_count <= 1,
+            "sequenced edges between the same pair must dedup; got {pair_count}",
+        );
+    }
+
+    /// Asymmetric I-cycle shape: eager forward + lazy back. The
+    /// canonical edge set must contain ONLY the forward edge — the
+    /// lazy back-edge is dropped. This is the gaffer fix: a
+    /// dependency's lazy back-edge to its dependent must NOT appear
+    /// in the runtime DFS topology the simulator walks.
+    #[test]
+    fn asymmetric_cycle_canonical_set_excludes_lazy_back_edge() {
+        let source = "const schemas_target = \"v\"; function lazy_back() { return ids_val; } const ids_val = schemas_target + \"-derived\";";
+        let owner_graph = parse_and_build(source);
+        let mut partition = Partition::new(&owner_graph, module_id(0));
+        partition.set(OwnerId(0), module_id(1)); // schemas_target -> mod_schemas
+        partition.set(OwnerId(1), module_id(1)); // lazy_back     -> mod_schemas
+        partition.set(OwnerId(2), module_id(2)); // ids_val       -> mod_ids
+        let canonical = chunk_constraining_module_edges(&owner_graph, &partition);
+        let pairs: BTreeSet<(ModuleId, ModuleId)> = canonical.pairs().collect();
+        assert!(
+            pairs.contains(&(module_id(2), module_id(1))),
+            "forward eager edge ids → schemas must be present; got {pairs:?}"
+        );
+        assert!(
+            !pairs.contains(&(module_id(1), module_id(2))),
+            "lazy back-edge schemas → ids must NOT be present; got {pairs:?}"
+        );
+    }
 }
 
 #[cfg(test)]
