@@ -793,50 +793,47 @@ impl<'a> OverlayGraphView<'a> {
     fn reachable_from(&self, start: ModuleId, direction: WalkDirection) -> BTreeSet<ModuleId> {
         let mut seen = BTreeSet::new();
         let mut stack = vec![start];
+        // Hoist these match arms out of the inner loop to avoid the
+        // O(|stack|) dispatch and the per-call BTreeSet allocation in
+        // the previous `neighbors()` helper. The `seen` set provides
+        // dedup between base/overlay edges, so we can iterate both
+        // streams directly without a scratch set.
         while let Some(node) = stack.pop() {
             if !seen.insert(node) {
                 continue;
             }
-            for neighbor in self.neighbors(node, direction).into_iter().rev() {
-                if !seen.contains(&neighbor) {
-                    stack.push(neighbor);
+            match direction {
+                WalkDirection::Forward => {
+                    for to in self.base.successors(node) {
+                        if !seen.contains(&to) && self.effective_count(node, to) > 0 {
+                            stack.push(to);
+                        }
+                    }
+                    if let Some(overlay_neighbors) = self.added_out.get(&node) {
+                        for &to in overlay_neighbors {
+                            if !seen.contains(&to) && self.effective_count(node, to) > 0 {
+                                stack.push(to);
+                            }
+                        }
+                    }
+                }
+                WalkDirection::Reverse => {
+                    for from in self.base.predecessors(node) {
+                        if !seen.contains(&from) && self.effective_count(from, node) > 0 {
+                            stack.push(from);
+                        }
+                    }
+                    if let Some(overlay_neighbors) = self.added_in.get(&node) {
+                        for &from in overlay_neighbors {
+                            if !seen.contains(&from) && self.effective_count(from, node) > 0 {
+                                stack.push(from);
+                            }
+                        }
+                    }
                 }
             }
         }
         seen
-    }
-
-    fn neighbors(&self, node: ModuleId, direction: WalkDirection) -> Vec<ModuleId> {
-        let mut neighbors: BTreeSet<ModuleId> = match direction {
-            WalkDirection::Forward => self
-                .base
-                .successors(node)
-                .filter(|&to| self.effective_count(node, to) > 0)
-                .collect(),
-            WalkDirection::Reverse => self
-                .base
-                .predecessors(node)
-                .filter(|&from| self.effective_count(from, node) > 0)
-                .collect(),
-        };
-
-        let overlay_neighbors = match direction {
-            WalkDirection::Forward => self.added_out.get(&node),
-            WalkDirection::Reverse => self.added_in.get(&node),
-        };
-        if let Some(overlay_neighbors) = overlay_neighbors {
-            for &neighbor in overlay_neighbors {
-                let (from, to) = match direction {
-                    WalkDirection::Forward => (node, neighbor),
-                    WalkDirection::Reverse => (neighbor, node),
-                };
-                if self.effective_count(from, to) > 0 {
-                    neighbors.insert(neighbor);
-                }
-            }
-        }
-
-        neighbors.into_iter().collect()
     }
 
     fn has_neighbor(&self, node: ModuleId, direction: WalkDirection) -> bool {

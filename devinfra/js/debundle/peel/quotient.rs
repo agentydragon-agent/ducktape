@@ -315,6 +315,23 @@ pub struct QuotientGraph {
     /// classes (constraining or not). Used by the greedy's pick_best
     /// coupling metric. Updated on contract by relabeling endpoints.
     class_edge_weight: BTreeMap<(ClassId, ClassId), u64>,
+    /// Multiplicity per (from_class, to_class) cross-class pair across
+    /// *all* owner edges (constraining or not). Mirrors
+    /// `class_edge_multiplicity` but for the weighted-edge set used by
+    /// the coupling metric. Drives incremental updates of both
+    /// `class_edge_weight` and `class_out_edge_count` on contract.
+    class_weighted_edge_count: BTreeMap<(ClassId, ClassId), u32>,
+    /// Predecessor set for the weighted (all-edges) adjacency.
+    /// Lets `relabel_weighted_edges_after_merge` find `(x, loser)`
+    /// entries in O(|predecessors of loser|) without a full
+    /// `class_weighted_edge_count` scan. The constraining `class_in`
+    /// is a subset of this set.
+    class_weighted_in: BTreeMap<ClassId, BTreeSet<ClassId>>,
+    /// Successor set for the weighted (all-edges) adjacency.
+    /// Mirror of `class_weighted_in`. Constructed alongside the count
+    /// map; iterating successors of `loser` is symmetric to iterating
+    /// predecessors.
+    class_weighted_out: BTreeMap<ClassId, BTreeSet<ClassId>>,
     /// Number of *outgoing* owner edges from each class (any kind,
     /// constraining or not). Used as the denominator of the coupling
     /// metric: `min(|out(c1)|, |out(c2)|)`.
@@ -486,6 +503,9 @@ impl QuotientGraph {
             class_in: BTreeMap::new(),
             class_edge_multiplicity: BTreeMap::new(),
             class_edge_weight: BTreeMap::new(),
+            class_weighted_edge_count: BTreeMap::new(),
+            class_weighted_in: BTreeMap::new(),
+            class_weighted_out: BTreeMap::new(),
             class_out_edge_count: BTreeMap::new(),
             realizability_index,
             class_module_id,
@@ -765,43 +785,62 @@ impl QuotientGraph {
     /// graph from the merged class's out-neighbors; returns true if
     /// any of them can reach the merged class. Mirrors the
     /// pre-Track-A kernel's localized BFS.
+    ///
+    /// Uses the persistently-maintained `class_out` adjacency
+    /// (refreshed every contract by `update_class_adjacency_after_merge`);
+    /// the post-merge view is materialized lazily by treating any
+    /// successor equal to `loser` as `target`. No O(|E|) scratch
+    /// rebuild per call.
     fn merge_creates_new_constraining_cycle(&self, c1: ClassId, c2: ClassId) -> bool {
         if c1 == c2 {
             return false;
         }
         let (target, loser) = if c1 < c2 { (c1, c2) } else { (c2, c1) };
-        let mut frontier: Vec<ClassId> = Vec::new();
+        // Build the BFS frontier from the *post-merge* target's
+        // out-neighbors: union of `class_out[target]` and
+        // `class_out[loser]`, with `loser` relabeled to `target` and
+        // self-loops dropped.
         let mut seen: BTreeSet<ClassId> = BTreeSet::new();
-        for &(s, t) in &self.owner_constraining_edges {
-            let cs = self.owner_to_class[s.0];
-            let ct = self.owner_to_class[t.0];
-            if (cs == target || cs == loser) && ct != target && ct != loser && seen.insert(ct) {
-                frontier.push(ct);
+        let mut stack: Vec<ClassId> = Vec::new();
+        let push_succ = |succ: ClassId, seen: &mut BTreeSet<ClassId>, stack: &mut Vec<ClassId>| {
+            // Relabel loser → target.
+            let mapped = if succ == loser { target } else { succ };
+            // Drop the self-loop the merge creates.
+            if mapped == target {
+                return;
+            }
+            if seen.insert(mapped) {
+                stack.push(mapped);
+            }
+        };
+        if let Some(outs) = self.class_out.get(&target) {
+            for &n in outs {
+                push_succ(n, &mut seen, &mut stack);
             }
         }
-        if frontier.is_empty() {
+        if let Some(outs) = self.class_out.get(&loser) {
+            for &n in outs {
+                push_succ(n, &mut seen, &mut stack);
+            }
+        }
+        if stack.is_empty() {
             return false;
         }
-        let mut adj: BTreeMap<ClassId, BTreeSet<ClassId>> = BTreeMap::new();
-        for &(s, t) in &self.owner_constraining_edges {
-            let cs_raw = self.owner_to_class[s.0];
-            let ct_raw = self.owner_to_class[t.0];
-            let cs = if cs_raw == loser { target } else { cs_raw };
-            let ct = if ct_raw == loser { target } else { ct_raw };
-            if cs == ct {
-                continue;
-            }
-            adj.entry(cs).or_default().insert(ct);
-        }
-        let mut stack = frontier;
+        // DFS in the projected post-merge graph: any successor equal
+        // to `loser` is treated as `target`. A path that reaches
+        // `target` closes a new cycle through the merged class.
         while let Some(node) = stack.pop() {
-            if node == target {
-                return true;
-            }
-            if let Some(next) = adj.get(&node) {
-                for &n in next {
-                    if seen.insert(n) {
-                        stack.push(n);
+            // `node` was already canonicalized (loser → target) before
+            // push; check against target only.
+            debug_assert_ne!(node, loser);
+            if let Some(outs) = self.class_out.get(&node) {
+                for &next in outs {
+                    let mapped = if next == loser { target } else { next };
+                    if mapped == target {
+                        return true;
+                    }
+                    if seen.insert(mapped) {
+                        stack.push(mapped);
                     }
                 }
             }
@@ -1231,6 +1270,9 @@ impl QuotientGraph {
         self.class_in.clear();
         self.class_edge_multiplicity.clear();
         self.class_edge_weight.clear();
+        self.class_weighted_edge_count.clear();
+        self.class_weighted_in.clear();
+        self.class_weighted_out.clear();
         self.class_out_edge_count.clear();
         for &(s, t) in &self.owner_constraining_edges {
             let cs = self.owner_to_class[s.0];
@@ -1249,6 +1291,12 @@ impl QuotientGraph {
                 continue;
             }
             *self.class_edge_weight.entry((cs, ct)).or_insert(0) += edge.weight as u64;
+            let count_entry = self.class_weighted_edge_count.entry((cs, ct)).or_insert(0);
+            if *count_entry == 0 {
+                self.class_weighted_out.entry(cs).or_default().insert(ct);
+                self.class_weighted_in.entry(ct).or_default().insert(cs);
+            }
+            *count_entry += 1;
             *self.class_out_edge_count.entry(cs).or_insert(0) += 1;
         }
     }
@@ -1493,53 +1541,116 @@ impl QuotientGraph {
                 self.class_out.entry(from).or_default().insert(winner);
             }
         }
-        // Weight + out-edge count: walk owner edges to find affected
-        // pairs. Cheaper than maintaining a per-owner incidence list:
-        // the gaffer worst case has owners with bounded degree.
-        // Rebuild the weight/count entries by re-walking
-        // owner_weighted_edges incident to the merged class. Filter
-        // to edges where either endpoint is now in `winner`.
-        // (This is the only O(|E|) operation we accept per merge;
-        // typical contracts are 100s of merges, so total O(|E| · |contracts|);
-        // for gaffer scale that's ~5e7 ops, well under the budget.)
-        //
-        // The trade is simplicity: maintaining per-owner edge
-        // indices to localize this to O(|incident edges|) would
-        // require another vector. Skipping for now; revisit if the
-        // benchmark exceeds budget.
-        self.recompute_class_weight_for(winner);
+        // Weight + out-edge count: relabel incrementally, scoped to
+        // entries whose key touches `loser`. The keys-to-touch set
+        // is bounded by the classes adjacent to `loser` (typically a
+        // handful), not by the global edge count.
+        self.relabel_weighted_edges_after_merge(winner, loser);
     }
 
-    /// Recompute coupling weight and out-edge count entries
-    /// incident to `class` by re-walking weighted owner edges.
-    /// Used after a merge to refresh weight/count for the merged
-    /// class. Coupled with the adjacency relabeling done in
-    /// `update_class_adjacency_after_merge`.
-    fn recompute_class_weight_for(&mut self, class: ClassId) {
-        // Clear weight + count entries incident to `class`.
-        let to_drop: Vec<(ClassId, ClassId)> = self
-            .class_edge_weight
-            .keys()
-            .filter(|(a, b)| *a == class || *b == class)
-            .copied()
-            .collect();
-        for key in to_drop {
-            self.class_edge_weight.remove(&key);
-        }
-        self.class_out_edge_count.remove(&class);
-        // Re-walk; sum weights and count outs for any edges incident
-        // to `class`.
-        for &edge in &self.owner_weighted_edges {
-            let cs = self.owner_to_class[edge.from.0];
-            let ct = self.owner_to_class[edge.to.0];
-            if cs == ct {
+    /// Relabel `class_edge_weight` / `class_weighted_edge_count` /
+    /// `class_out_edge_count` / `class_weighted_in` /
+    /// `class_weighted_out` entries after `loser` is absorbed into
+    /// `winner`. Mirrors `update_class_adjacency_after_merge`'s
+    /// relabel-rather-than-rebuild approach for the constraining
+    /// adjacency. O(|classes weighted-adjacent to loser|).
+    ///
+    /// Invariants maintained:
+    /// - `class_edge_weight[(a,b)]` = sum of `edge_weight` over all
+    ///   `owner_weighted_edges` where `class(from) == a`, `class(to) ==
+    ///   b`, `a != b`.
+    /// - `class_weighted_edge_count[(a,b)]` = number of such edges.
+    /// - `class_out_edge_count[c]` = sum of `class_weighted_edge_count`
+    ///   entries with first coordinate `c`.
+    /// - `class_weighted_out[a]` contains `b` iff
+    ///   `class_weighted_edge_count[(a,b)] > 0`. Symmetric for
+    ///   `class_weighted_in`.
+    fn relabel_weighted_edges_after_merge(&mut self, winner: ClassId, loser: ClassId) {
+        // Outgoing edges from loser: (loser, x) for x in
+        // class_weighted_out[loser].
+        let loser_outs = self.class_weighted_out.remove(&loser).unwrap_or_default();
+        for x in loser_outs {
+            // Drop the (loser, x) entry; the `in` set entry on x is
+            // updated to point at winner (or removed if self-loop).
+            if let Some(in_set) = self.class_weighted_in.get_mut(&x) {
+                in_set.remove(&loser);
+            }
+            let w = self.class_edge_weight.remove(&(loser, x)).unwrap_or(0);
+            let k = self
+                .class_weighted_edge_count
+                .remove(&(loser, x))
+                .unwrap_or(0);
+            if x == winner {
+                // (loser, winner) -> intra-class after merge, drop.
+                // Edges previously counted under loser's outgoing
+                // (about to be dropped) and not under winner's; no
+                // change to winner's count needed for this branch.
                 continue;
             }
-            if cs == class || ct == class {
-                *self.class_edge_weight.entry((cs, ct)).or_insert(0) += edge.weight as u64;
+            if k > 0 {
+                let new_weight = self.class_edge_weight.entry((winner, x)).or_insert(0);
+                *new_weight += w;
+                let new_count_entry = self
+                    .class_weighted_edge_count
+                    .entry((winner, x))
+                    .or_insert(0);
+                let prev_count = *new_count_entry;
+                *new_count_entry += k;
+                if prev_count == 0 {
+                    self.class_weighted_out.entry(winner).or_default().insert(x);
+                    self.class_weighted_in.entry(x).or_default().insert(winner);
+                }
+                *self.class_out_edge_count.entry(winner).or_insert(0) += k as usize;
             }
-            if cs == class {
-                *self.class_out_edge_count.entry(class).or_insert(0) += 1;
+        }
+        // Drop loser's outgoing total entirely (its contributions are
+        // now under winner or dissolved as self-loops).
+        self.class_out_edge_count.remove(&loser);
+
+        // Incoming edges to loser: (x, loser) for x in
+        // class_weighted_in[loser]. Note `loser` itself may appear in
+        // the set if a (loser, loser) self-loop ever entered — but
+        // self-loops are filtered at construction time so this never
+        // happens.
+        let loser_ins = self.class_weighted_in.remove(&loser).unwrap_or_default();
+        for x in loser_ins {
+            if let Some(out_set) = self.class_weighted_out.get_mut(&x) {
+                out_set.remove(&loser);
+            }
+            let w = self.class_edge_weight.remove(&(x, loser)).unwrap_or(0);
+            let k = self
+                .class_weighted_edge_count
+                .remove(&(x, loser))
+                .unwrap_or(0);
+            if x == winner {
+                // (winner, loser) -> intra-class self-loop after merge,
+                // drop. These edges previously contributed `k` to
+                // `class_out_edge_count[winner]`; subtract.
+                if k > 0 {
+                    if let Some(cnt) = self.class_out_edge_count.get_mut(&winner) {
+                        *cnt = cnt.saturating_sub(k as usize);
+                        if *cnt == 0 {
+                            self.class_out_edge_count.remove(&winner);
+                        }
+                    }
+                }
+                continue;
+            }
+            // (x, loser) -> (x, winner). `class_out_edge_count[x]`
+            // unchanged (x is still the source).
+            if k > 0 {
+                let new_weight = self.class_edge_weight.entry((x, winner)).or_insert(0);
+                *new_weight += w;
+                let new_count_entry = self
+                    .class_weighted_edge_count
+                    .entry((x, winner))
+                    .or_insert(0);
+                let prev_count = *new_count_entry;
+                *new_count_entry += k;
+                if prev_count == 0 {
+                    self.class_weighted_out.entry(x).or_default().insert(winner);
+                    self.class_weighted_in.entry(winner).or_default().insert(x);
+                }
             }
         }
     }
