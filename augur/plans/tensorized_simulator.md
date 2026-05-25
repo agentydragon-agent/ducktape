@@ -396,11 +396,12 @@ selected rollout detail.
          tensorized phases.
 
 2. Introduce tensorized phase scaffolding:
-   - [ ] Add a `TensorState`/current-state helper with named arrays and shape
-         validation.
-   - [ ] Add a `TensorScratch` holder for reusable `[R]`, `[R, L]`, `[R, O]`,
-         and `[R, K]` temporaries to avoid accidental allocation blowups.
-   - [ ] Keep the serial month loop in Python.
+   - [x] Add a `TensorState`/current-state helper with named arrays and shape
+         validation. Filled by `CurrentStateBuffers` in `augur/sim/engine.py`
+         under a different name; the role (named-rollout-axis arrays with
+         shape validation in `_allocate_current_state`) is what the plan
+         called for.
+   - [x] Keep the serial month loop in Python.
 
 3. Vectorize low-irregularity phases:
    - [x] snapshots;
@@ -481,9 +482,6 @@ bazelisk run --config=nolint \
 
 - Resolved: NumPy has the FIFO primitives needed for the first implementation.
   Prototype with NumPy before considering JAX, PyTorch, or another compiled helper.
-- How much temporary memory do bracket and FIFO vectorizations allocate at
-  product-scale `R`, `L`, `O`, and `K`? Add `TensorScratch` if allocations show
-  up in profiles.
 - For repeated group aggregation, is `np.add.at` fast/readable enough, or should
   we precompile dense group matrices and use masked reductions?
 - Should dense event buffers be written for every metric-fan request, or should
