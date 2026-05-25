@@ -339,8 +339,25 @@ class ChangeRentalPlanEvent(BaseModel):
     rented_fraction: float = Field(gt=0.0, le=1.0)
 
 
+class CapitalImprovementEvent(BaseModel):
+    """Mid-horizon capital improvement (roof, kitchen remodel, HVAC, etc).
+
+    Debits the property owner's cash by `amount_usd` and increases the property's depreciable
+    building basis by the same amount. Future depreciation accrues on the new (higher) basis.
+    The new improvement is treated as adding to the existing depreciation track rather than
+    starting a separate 27.5-year clock (a simplification — cost-segregation studies in
+    practice can split improvements into 5/7/15/27.5 year buckets; out of scope here).
+    """
+
+    kind: Literal["capital_improvement"] = "capital_improvement"
+    month: int
+    property_id: str
+    amount_usd: float = Field(gt=0.0)
+    description: str = ""
+
+
 type PropertyLifecycleEvent = Annotated[
-    StartRentingEvent | StopRentingEvent | ChangeRentalPlanEvent, Field(discriminator="kind")
+    StartRentingEvent | StopRentingEvent | ChangeRentalPlanEvent | CapitalImprovementEvent, Field(discriminator="kind")
 ]
 
 

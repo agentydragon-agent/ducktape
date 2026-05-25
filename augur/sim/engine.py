@@ -8,7 +8,13 @@ from typing import Any
 import numpy as np
 import polars as pl
 
-from augur.sim.compiler import CompiledSimulation, SlotPlan, compile_simulation
+from augur.sim.compiler import (
+    LIFECYCLE_KIND_CAPITAL_IMPROVEMENT,
+    LIFECYCLE_KIND_FRACTION,
+    CompiledSimulation,
+    SlotPlan,
+    compile_simulation,
+)
 from augur.sim.events import EVENT_FRAMES, EventLog
 from augur.sim.external_series import ExternalSeriesContext
 from augur.sim.run import SimulationRun
@@ -194,6 +200,10 @@ class CurrentStateBuffers:
     # PropertyLifecycleEvent rows fire mid-horizon. Depreciation accrual, MID computation, and
     # Schedule E rental interest all read this each month.
     property_rented_fraction: np.ndarray
+    # Runtime depreciable building basis per (rollout, property). Initialized from
+    # `plan.property_building_basis[prop]` and bumped by `CapitalImprovementEvent`. Depreciation
+    # accrual multiplies this by `current.property_rented_fraction[r, p] / (27.5 × 12)` monthly.
+    property_building_basis: np.ndarray
     # Rented-share of YTD mortgage interest per (rollout, liability). Each mortgage payment
     # accrues `interest × current.property_rented_fraction[r, prop_of_lia]` into this buffer.
     # At year-end:
@@ -287,6 +297,12 @@ class CurrentStateBuffers:
         _expect_array(
             "current property_rented_fraction",
             self.property_rented_fraction,
+            shape=(r, plan.property_count),
+            dtype=np.float64,
+        )
+        _expect_array(
+            "current property_building_basis",
+            self.property_building_basis,
             shape=(r, plan.property_count),
             dtype=np.float64,
         )
@@ -788,6 +804,7 @@ def _allocate_current_state(plan: CompiledSimulation) -> CurrentStateBuffers:
         # Broadcast the compile-time initial rented_fraction across rollouts. Lifecycle events
         # may then mutate per-(rollout, property) state at runtime.
         property_rented_fraction=np.broadcast_to(plan.property_rented_fraction, (r, p.property_count)).copy(),
+        property_building_basis=np.broadcast_to(plan.property_building_basis, (r, p.property_count)).copy(),
         liability_rental_interest_ytd=np.zeros((r, p.liability_count), dtype=np.float64),
         failed=np.zeros(r, dtype=np.bool_),
         failed_month=np.full(r, NO_CODE, dtype=np.int64),
@@ -1142,12 +1159,15 @@ def _compute_liquid_net_worth(
 def _apply_lifecycle_events(plan: CompiledSimulation, current: CurrentStateBuffers, month: int) -> None:
     """Apply this month's PropertyLifecycleEvent rows to per-rollout runtime state.
 
-    The compiler sorted events by month and built per-month index ranges in
-    `plan.lifecycle_event_month_starts`. For each event firing this month, mutate
-    `current.property_rented_fraction[:, prop]` to the new value across all active rollouts.
-    Phase 3 lifecycle events are deterministic — they fire identically on every rollout. (Future
-    policy-driven lifecycle decisions, per the plan, would emit per-rollout decisions; the same
-    apply machinery handles them by indexing the rollout subset.)
+    Two kinds of event share the same machinery:
+    - `LIFECYCLE_KIND_FRACTION`: mutate `current.property_rented_fraction[:, prop]` to the
+      event's new value (start/stop renting, change rental plan).
+    - `LIFECYCLE_KIND_CAPITAL_IMPROVEMENT`: debit owner's cash by `amount_usd` and increase
+      `current.property_building_basis[:, prop]` by the same amount.
+
+    Phase 3 lifecycle events are deterministic per rollout. Future policy-driven decisions
+    would emit per-rollout records; this apply machinery handles them by indexing the rollout
+    subset.
     """
 
     starts = plan.lifecycle_event_month_starts
@@ -1162,8 +1182,16 @@ def _apply_lifecycle_events(plan: CompiledSimulation, current: CurrentStateBuffe
         return
     for i in range(begin, end):
         prop = int(plan.lifecycle_event_property[i])
-        new_fraction = float(plan.lifecycle_event_rented_fraction[i])
-        current.property_rented_fraction[active_rollout, prop] = new_fraction
+        kind = int(plan.lifecycle_event_kind[i])
+        if kind == LIFECYCLE_KIND_FRACTION:
+            new_fraction = float(plan.lifecycle_event_rented_fraction[i])
+            current.property_rented_fraction[active_rollout, prop] = new_fraction
+        elif kind == LIFECYCLE_KIND_CAPITAL_IMPROVEMENT:
+            amount = float(plan.lifecycle_event_amount[i])
+            owner_cash_slot = int(plan.property_buyer_cash_slot[prop])
+            if owner_cash_slot >= 0:
+                current.cash[active_rollout, owner_cash_slot] -= amount
+            current.property_building_basis[active_rollout, prop] += amount
 
 
 def _apply_depreciation_accrual(plan: CompiledSimulation, current: CurrentStateBuffers) -> None:
@@ -1181,13 +1209,13 @@ def _apply_depreciation_accrual(plan: CompiledSimulation, current: CurrentStateB
         return
     property_count = current.property_rented_fraction.shape[1]
     for prop in range(property_count):
-        basis = float(plan.property_building_basis[prop])
-        if basis <= 0.0:
-            continue
         active_for_property = active_rollout & current.property_active[:, prop]
         if not active_for_property.any():
             continue
+        # Both rented_fraction and building_basis are runtime per-rollout state — they may
+        # have been mutated by PropertyLifecycleEvent rows this month.
         rented = current.property_rented_fraction[:, prop]
+        basis = current.property_building_basis[:, prop]
         monthly_dep = basis * rented / (27.5 * 12.0)
         current.property_cumulative_depreciation[active_for_property, prop] += monthly_dep[active_for_property]
         current.property_depreciation_ytd[active_for_property, prop] += monthly_dep[active_for_property]

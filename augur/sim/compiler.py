@@ -33,6 +33,8 @@ AMOUNT_FIXED = 0
 AMOUNT_SERIES_INDEXED = 1
 ORDINARY_INCOME_CATEGORY = "ordinary"
 ORDINARY_DEDUCTION_CATEGORY = "ordinary"
+LIFECYCLE_KIND_FRACTION = 0
+LIFECYCLE_KIND_CAPITAL_IMPROVEMENT = 1
 
 
 class StringTable:
@@ -194,17 +196,23 @@ class CompiledSimulation:
     # Profile index of each property's owner (buyer_agent_id → tax profile). NO_CODE if the
     # owner has no tax profile. Used to route Schedule E depreciation deductions.
     property_owner_profile_index: np.ndarray
-    # PropertyLifecycleEvent rows compiled into per-month sparse storage.
-    # `lifecycle_event_month[i]` = the month the event fires;
-    # `lifecycle_event_property[i]` = the property slot to mutate;
-    # `lifecycle_event_rented_fraction[i]` = the new rented_fraction to set on the property
-    # at that month. StopRenting events emit rented_fraction=0.0.
-    # Sorted by month so the engine can scan a per-month index range in O(1) lookup.
+    # PropertyLifecycleEvent rows compiled into per-month sparse storage. Sorted by month so
+    # the engine can scan a per-month index range in O(1) lookup via
+    # `lifecycle_event_month_starts`.
+    #   lifecycle_event_month[i]: the month the event fires.
+    #   lifecycle_event_property[i]: the property slot.
+    #   lifecycle_event_kind[i]: LIFECYCLE_KIND_FRACTION (0) for rented_fraction change
+    #                            (start/stop/change-rental-plan);
+    #                            LIFECYCLE_KIND_CAPITAL_IMPROVEMENT (1) for cash + basis bump.
+    #   lifecycle_event_rented_fraction[i]: new rented_fraction (kind 0); 0.0 (kind 1).
+    #   lifecycle_event_amount[i]: USD amount for capital improvement (kind 1); 0.0 (kind 0).
     lifecycle_event_month: np.ndarray
     lifecycle_event_property: np.ndarray
+    lifecycle_event_kind: np.ndarray
     lifecycle_event_rented_fraction: np.ndarray
-    # Per-month start index into the above arrays (length horizon_months + 1). Events for
-    # month M live at slots [lifecycle_event_month_starts[M], lifecycle_event_month_starts[M+1]).
+    lifecycle_event_amount: np.ndarray
+    # Per-month start index (length horizon_months + 1). Events for month M live at slots
+    # [lifecycle_event_month_starts[M], lifecycle_event_month_starts[M+1]).
     lifecycle_event_month_starts: np.ndarray
     liability_codes: np.ndarray
     liability_property_slot: np.ndarray
@@ -474,7 +482,9 @@ def compile_simulation(
     lifecycle_event_count = len(lifecycle_events_sorted)
     lifecycle_event_month = np.empty(lifecycle_event_count, dtype=np.int64)
     lifecycle_event_property = np.empty(lifecycle_event_count, dtype=np.int64)
-    lifecycle_event_rented_fraction = np.empty(lifecycle_event_count, dtype=np.float64)
+    lifecycle_event_kind = np.empty(lifecycle_event_count, dtype=np.int64)
+    lifecycle_event_rented_fraction = np.zeros(lifecycle_event_count, dtype=np.float64)
+    lifecycle_event_amount = np.zeros(lifecycle_event_count, dtype=np.float64)
     for i, event in enumerate(lifecycle_events_sorted):
         if event.property_id not in property_slot_by_id:
             raise ValueError(
@@ -491,10 +501,15 @@ def compile_simulation(
             )
         lifecycle_event_month[i] = int(event.month)
         lifecycle_event_property[i] = slot
-        if event.kind == "stop_renting":
-            lifecycle_event_rented_fraction[i] = 0.0
+        if event.kind == "capital_improvement":
+            lifecycle_event_kind[i] = LIFECYCLE_KIND_CAPITAL_IMPROVEMENT
+            lifecycle_event_amount[i] = float(event.amount_usd)
         else:
-            lifecycle_event_rented_fraction[i] = float(event.rented_fraction)
+            lifecycle_event_kind[i] = LIFECYCLE_KIND_FRACTION
+            if event.kind == "stop_renting":
+                lifecycle_event_rented_fraction[i] = 0.0
+            else:
+                lifecycle_event_rented_fraction[i] = float(event.rented_fraction)
     # Build per-month start indices, length horizon + 1. `starts[M]` = first event index for
     # month >= M; `starts[H]` = lifecycle_event_count so the apply loop can do
     # `events_for_month_M = events[starts[M]:starts[M+1]]`.
@@ -747,7 +762,9 @@ def compile_simulation(
         property_owner_profile_index=property_owner_profile_index,
         lifecycle_event_month=lifecycle_event_month,
         lifecycle_event_property=lifecycle_event_property,
+        lifecycle_event_kind=lifecycle_event_kind,
         lifecycle_event_rented_fraction=lifecycle_event_rented_fraction,
+        lifecycle_event_amount=lifecycle_event_amount,
         lifecycle_event_month_starts=lifecycle_event_month_starts,
         liability_agent_codes=liability_agent_codes,
         liability_payment_account_codes=liability_payment_account_codes,

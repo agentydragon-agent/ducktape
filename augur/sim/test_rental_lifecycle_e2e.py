@@ -18,6 +18,7 @@ import pytest_bazel
 from augur.sim.external_series import EXTERNAL_SERIES_EVENTS_FRAME, EXTERNAL_SERIES_VALUES_FRAME, ExternalSeriesContext
 from augur.sim.scenario import (
     Agent,
+    CapitalImprovementEvent,
     FederalSaltCapEntry,
     FederalSaltDeductionPolicy,
     InitialAccountBalance,
@@ -768,6 +769,78 @@ class TestRentalIncomeTaxation:
         assert year_0_federal["ordinary_income_usd"] == pytest.approx(45_454.55, abs=0.05)
         year_1_federal = next(b for b in breakdowns if b["month_index"] == 23 and b["jurisdiction_id"] == "federal_us")
         assert year_1_federal["ordinary_income_usd"] == pytest.approx(0.0, abs=1e-6)
+
+    def test_capital_improvement_bumps_basis_and_accelerates_depreciation(self):
+        """CapitalImprovementEvent at month 6 bumps building basis by $100k.
+        Building basis after improvement = $400k + $100k = $500k.
+        Monthly depreciation after month 6 = $500k / 27.5 / 12 ≈ $1,515.15
+        (vs. ~$1,212.12/mo before). Cash decreases by $100k at month 6."""
+
+        end_month = 11
+        purchase_price = 500_000.0
+        scenario = Scenario(
+            agents=[
+                Agent(agent_id=OWNER_AGENT_ID),
+                Agent(agent_id=TENANT_AGENT_ID),
+                Agent(agent_id="property_seller"),
+                Agent(agent_id="irs"),
+            ],
+            initial_cash=[
+                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance_usd=700_000.0),
+                InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id="property_seller", account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+            ],
+            recurring_transfers=[
+                RecurringTransfer(
+                    start_month=0,
+                    end_month=end_month,
+                    cause_id="rental_income:p1",
+                    from_agent_id=TENANT_AGENT_ID,
+                    from_account_id="checking",
+                    to_agent_id=OWNER_AGENT_ID,
+                    to_account_id="checking",
+                    amount_usd=5_000.0,
+                    income_category="ordinary",
+                )
+            ],
+            scheduled_property_purchases=[
+                ScheduledPropertyPurchase(
+                    month=0,
+                    cause_id="p1_purchase",
+                    property_id="p1",
+                    location_id="san_francisco",
+                    buyer_agent_id=OWNER_AGENT_ID,
+                    buyer_account_id="checking",
+                    seller_agent_id="property_seller",
+                    purchase_price_usd=purchase_price,
+                    down_payment_usd=purchase_price,
+                    ownership_pct=1.0,
+                    rented_fraction=1.0,
+                    land_value_fraction=0.20,
+                )
+            ],
+            property_lifecycle_events=[
+                CapitalImprovementEvent(month=6, property_id="p1", amount_usd=100_000.0, description="new roof")
+            ],
+            tax_profiles=[
+                TaxProfile(
+                    agent_id=OWNER_AGENT_ID,
+                    filing_status="single",
+                    jurisdiction_ids=["federal_us", "california"],
+                    tax_authority_agent_id="irs",
+                )
+            ],
+            horizon_months=12,
+        )
+        ctx = _multi_series(levels_by_series={"home_value:san_francisco": {0: [1.0] * 13}})
+        run = simulate_with_external_series(scenario, external_series=ctx, rollout_count=1)
+        breakdowns = {row["jurisdiction_id"]: row for row in run.events_log.tax_breakdowns.iter_rows(named=True)}
+        # 6 months at $400k/27.5/12 + 6 months at $500k/27.5/12
+        # = 6 × 1212.12 + 6 × 1515.15 = 7272.73 + 9090.91 = 16363.64
+        expected_depreciation = 6 * (400_000.0 / 27.5 / 12.0) + 6 * (500_000.0 / 27.5 / 12.0)
+        expected_ordinary = 60_000.0 - expected_depreciation
+        assert breakdowns["federal_us"]["ordinary_income_usd"] == pytest.approx(expected_ordinary, abs=0.05)
 
     def test_depreciation_does_not_accrue_when_not_rented(self):
         """No rental → no depreciation accrual → no Schedule E deduction."""
