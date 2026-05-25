@@ -535,6 +535,9 @@ class VecmModel:
             return self._latest_observation_value("sf_rent_cpi_latest")
         if factor_name == "inflation":
             return self._latest_observation_value("cpi_latest")
+        if factor_name.startswith("crypto:"):
+            symbol = factor_name[len("crypto:") :]
+            return self._latest_observation_value(f"{symbol}_close_latest")
         for key in ("zillow_home_value_latest_by_factor", "case_shiller_home_value_latest_by_factor"):
             by_factor = self.latest_observations.get(key)
             if isinstance(by_factor, dict) and factor_name in by_factor:

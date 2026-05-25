@@ -19,6 +19,7 @@ from augur.model.path_models.scenarios import HistoricalSeries
 from augur.model.series import (
     INFLATION_SERIES_ID,
     SP500_SERIES_ID,
+    crypto_series_id,
     home_value_series_id,
     private_equity_sale_event_id,
     private_equity_series_id,
@@ -154,6 +155,50 @@ class TestVecmModel:
             == np.bool_
         )
         assert sampled.metadata["scenario_generator_id"] == "vecm_numpyro"
+
+    def test_sample_anchors_crypto_factors_to_latest_close(self) -> None:
+        rng = np.random.default_rng(456)
+        base = np.cumsum(rng.normal(scale=0.02, size=200))
+        log_levels = np.column_stack(
+            [
+                base + rng.normal(scale=0.015, size=200),
+                base * 0.6 + rng.normal(scale=0.03, size=200),
+                base * 0.4 + rng.normal(scale=0.025, size=200),
+            ]
+        )
+        log_levels = np.concatenate([np.zeros((1, 3)), log_levels], axis=0)
+        levels = np.exp(log_levels - log_levels[0])
+        months = tuple(f"2010-{i:02d}" for i in range(levels.shape[0]))
+        historical = HistoricalSeries(factor_names=("sp500", "crypto:btc", "crypto:eth"), levels=levels, months=months)
+
+        model = VecmModel(config=VecmConfig(n_iters=300))
+        model.fit(historical)
+        model.latest_observations = {
+            "spy_adjusted_close_latest": 5500.0,
+            "btc_close_latest": 65_000.0,
+            "eth_close_latest": 3_200.0,
+        }
+        model.location_series_sources = LocationSeriesSources(home_value={}, rent={})
+        model._compute_provenance(evidence_source_id="test")
+
+        sampled = model.sample(
+            ExogenousSamplingRequest(
+                horizon_months=6,
+                rollout_seeds=(11, 12),
+                required_level_series=frozenset({SP500_SERIES_ID, crypto_series_id("btc"), crypto_series_id("eth")}),
+            )
+        )
+
+        # Month-0 multiplier is 1.0, so the first sampled level equals latest_observations directly.
+        # This proves _latest_factor_value's crypto:* branch correctly maps to <symbol>_close_latest.
+        assert sampled.level_matrix(crypto_series_id("btc"), rollout_count=2, horizon_months=6)[:, 0].tolist() == [
+            65_000.0,
+            65_000.0,
+        ]
+        assert sampled.level_matrix(crypto_series_id("eth"), rollout_count=2, horizon_months=6)[:, 0].tolist() == [
+            3_200.0,
+            3_200.0,
+        ]
 
 
 if __name__ == "__main__":
