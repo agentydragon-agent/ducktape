@@ -174,6 +174,11 @@ class ScheduledObligation(BaseModel):
     amount_due_usd: AmountSpec
     deduction_category: TransferDeductionCategory | None = None
     deductible_fraction: float = Field(default=1.0, ge=0.0, le=1.0)
+    # When set, ties the obligation to a property; the engine then uses
+    # `current.property_rented_fraction[r, prop]` at settlement time to override the
+    # compile-time `deductible_fraction` (allowing mid-horizon lifecycle events to take
+    # effect). Used today by HOA / insurance / maintenance flows on rented properties.
+    property_id: str | None = None
 
 
 class RecurringObligation(BaseModel):
@@ -194,6 +199,10 @@ class RecurringObligation(BaseModel):
     amount_due_usd: AmountSpec
     deduction_category: TransferDeductionCategory | None = None
     deductible_fraction: float = Field(default=1.0, ge=0.0, le=1.0)
+    # When set, ties the obligation to a property; the engine uses
+    # `current.property_rented_fraction[r, prop]` at settlement time to override the
+    # compile-time `deductible_fraction` so mid-horizon lifecycle events take effect.
+    property_id: str | None = None
 
     def is_active_at(self, month: int) -> bool:
         return self.start_month <= month and (self.end_month is None or month <= self.end_month)

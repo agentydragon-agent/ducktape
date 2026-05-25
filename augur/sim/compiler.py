@@ -574,6 +574,7 @@ def compile_simulation(
         series_index_by_id,
         property_id_codes,
         property_month,
+        property_slot_by_id,
         liability_codes,
         liability_property_slot,
         tax_profile_prior_year_tax,
@@ -1601,6 +1602,7 @@ def _compile_obligation_slots(
     series_index_by_id: dict[str, int],
     property_id_codes: np.ndarray,
     property_month: np.ndarray,
+    property_slot_by_id: dict[str, int],
     liability_codes: np.ndarray,
     liability_property_slot: np.ndarray,
     tax_profile_prior_year_tax: np.ndarray,
@@ -1708,6 +1710,14 @@ def _compile_obligation_slots(
                     profile = agent_to_profile_index.get(strings.require(config.agent_id), NO_CODE)
                     deduction_profile[month, idx] = profile
                     deductible_fraction[month, idx] = float(config.deductible_fraction)
+                # Tie the obligation to a property if requested so the engine reads runtime
+                # rented_fraction at settlement time instead of the compile-time fraction.
+                if config.property_id is not None:
+                    if config.property_id not in property_slot_by_id:
+                        raise ValueError(
+                            f"Obligation {config.obligation_id!r} references unknown property_id {config.property_id!r}"
+                        )
+                    property_slot_matrix[month, idx] = property_slot_by_id[config.property_id]
             elif spec["kind"] in {1, 2, 3, 4, 5}:
                 # The dynamic source fields are decoded later from source_kind/source_index.
                 continue

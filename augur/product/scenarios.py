@@ -263,6 +263,7 @@ def build_scenario(
                     ),
                     deduction_category=property_deduction_category,
                     deductible_fraction=property_deductible_fraction,
+                    property_id=property_.id,
                 )
             )
         if scenario_key.annual_insurance_pct > 0:
@@ -291,6 +292,7 @@ def build_scenario(
                     ),
                     deduction_category=property_deduction_category,
                     deductible_fraction=property_deductible_fraction,
+                    property_id=property_.id,
                 )
             )
         if scenario_key.annual_maintenance_pct > 0:
@@ -323,6 +325,7 @@ def build_scenario(
                     ),
                     deduction_category=property_deduction_category,
                     deductible_fraction=property_deductible_fraction,
+                    property_id=property_.id,
                 )
             )
         _wire_landlord_rental(
