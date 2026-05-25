@@ -96,6 +96,13 @@ let
     }
   );
 
+  # Derive haproxy backends from the mesh SSOT (hosts with role=control-plane).
+  # See cluster/docs/mesh_membership.md.
+  meshConfig = builtins.fromJSON (builtins.readFile ../../../nebula-mesh.json);
+  meshControlPlaneEndpoints = map (h: "${h.nebula_ip}:6443") (
+    lib.filter (h: h.role == "control-plane") (lib.attrValues meshConfig.hosts)
+  );
+
   haproxyServerLines = lib.concatStringsSep "\n    " (
     lib.imap1 (
       i: ep: "server cp-${toString i} ${ep} check inter 5s fall 3 rise 2"
@@ -141,12 +148,8 @@ in
 
     controlPlaneEndpoints = lib.mkOption {
       type = lib.types.listOf lib.types.str;
-      default = [
-        "10.42.0.1:6443" # talos-vps-cp-0
-        "10.42.0.2:6443" # talos-vps-cp-1
-        "10.42.0.10:6443" # talos-pve-cp-0
-      ];
-      description = "Control plane API server endpoints (IP:port) for the local haproxy load balancer";
+      default = meshControlPlaneEndpoints;
+      description = "Control plane API server endpoints (IP:port) for the local haproxy load balancer. Default derived from nebula-mesh.json hosts with role=control-plane.";
     };
 
   };

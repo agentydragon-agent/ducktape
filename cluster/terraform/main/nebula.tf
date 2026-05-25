@@ -1,24 +1,49 @@
 # Nebula Mesh — per-node machine config patches
 #
-# PKI (CA + node certs) is managed in persistent-auth.tf (same root).
-# Talos nodes: add to local.talos_nebula_nodes (tofu generates + embeds certs).
-# Non-Talos nodes: certs in SOPS (see docs/secrets.md).
+# Host roster (SSOT): ../../../nebula-mesh.json
+# Add/remove/re-IP runbook: cluster/docs/mesh_membership.md
+#
+# This file consumes the roster and produces:
+#   - Per-node Nebula configs (ExtensionServiceConfig YAMLs mounted by Talos)
+#   - A drift check comparing roster endpoints to live hcloud/OVH IPs
+#
+# Cert PKI (CA + node certs) lives in persistent-auth.tf, which also reads the
+# roster (filtered to tofu-managed hosts).
 
 locals {
   nebula_ca_cert = local_file.nebula_ca_crt.content
 
-  # Lighthouse topology from shared config (single source of truth)
-  nebula_mesh_config    = jsondecode(file("${path.module}/../../../nebula-mesh.json"))
-  nebula_lighthouse_ips = local.nebula_mesh_config.lighthouse_ips
+  # Single source of truth for the mesh roster.
+  nebula_mesh  = jsondecode(file("${path.module}/../../../nebula-mesh.json"))
+  nebula_hosts = local.nebula_mesh.hosts
 
-  # Maps TF node keys → persistent-auth node names for cert lookup
+  # Map TF resource keys → roster host names (cert subject =
+  # "<host>.nebula.allegedly.works"). Add a row when adding a TF-managed
+  # host to the roster.
+  nebula_tf_key_to_host = {
+    vps0            = "talos-vps-cp-0"
+    vps1            = "talos-vps-cp-1"
+    pve_cp0         = "talos-pve-cp-0"
+    kimsufi_worker0 = "talos-kimsufi-worker-0"
+    kimsufi_worker1 = "talos-kimsufi-worker-1"
+    kimsufi_cp0     = "talos-kimsufi-cp-0"
+  }
+
+  # Derived: list of all lighthouse IPs (for non-lighthouse nodes' `lighthouse.hosts`).
+  nebula_lighthouse_ips = [
+    for name, h in local.nebula_hosts : h.nebula_ip if try(h.lighthouse, false)
+  ]
+
+  # Derived: static_host_map for every host with a public endpoint.
+  nebula_static_host_map = {
+    for name, h in local.nebula_hosts :
+    h.nebula_ip => [h.endpoint] if can(h.endpoint)
+  }
+
+  # Map TF key → certificate file name.
   nebula_node_names = {
-    vps0            = "talos-vps-cp-0.nebula.allegedly.works"
-    vps1            = "talos-vps-cp-1.nebula.allegedly.works"
-    pve_cp0         = "talos-pve-cp-0.nebula.allegedly.works"
-    kimsufi_worker0 = "talos-kimsufi-worker-0.nebula.allegedly.works"
-    kimsufi_worker1 = "talos-kimsufi-worker-1.nebula.allegedly.works"
-    kimsufi_cp0     = "talos-kimsufi-cp-0.nebula.allegedly.works"
+    for tf_key, host in local.nebula_tf_key_to_host :
+    tf_key => "${host}.nebula.allegedly.works"
   }
 
   nebula_certs = {
@@ -29,21 +54,12 @@ locals {
     }
   }
 
-  # VPS public IPs for the static host map — lighthouses must be reachable by IP.
-  # OVH entries are dynamic: only active Kimsufi servers have data sources.
-  nebula_static_host_map = merge(
-    {
-      "10.42.0.1" = ["${hcloud_server.vps["vps0"].ipv4_address}:4242"]
-      "10.42.0.2" = ["${hcloud_server.vps["vps1"].ipv4_address}:4242"]
-    },
-    {
-      for key, node in data.ovh_dedicated_server.kimsufi :
-      local.active_kimsufi_servers[key].nebula_ip => ["${node.ip}:4242"]
-    },
-    {
-      for key, node in data.ovh_dedicated_server.kimsufi_cp :
-      local.active_kimsufi_cp_servers[key].nebula_ip => ["${node.ip}:4242"]
-    },
+  # Live endpoints reported by hcloud / OVH data sources, keyed by TF resource
+  # key. Used by the drift check below.
+  nebula_live_endpoints = merge(
+    { for k in keys(local.vps_cp_nodes) : k => "${hcloud_server.vps[k].ipv4_address}:4242" },
+    { for k in keys(data.ovh_dedicated_server.kimsufi) : k => "${data.ovh_dedicated_server.kimsufi[k].ip}:4242" },
+    { for k in keys(data.ovh_dedicated_server.kimsufi_cp) : k => "${data.ovh_dedicated_server.kimsufi_cp[k].ip}:4242" },
   )
 
   # PKI paths — must match mountPath values in extensionServiceConfigs below
@@ -85,63 +101,33 @@ locals {
     firewall = local.nebula_firewall
   }
 
-  # Per-node Nebula daemon configurations (common fields + per-node overrides)
-  nebula_configs = {
-    # VPS lighthouses: am_lighthouse + am_relay (relay required for NAT'd home nodes)
-    vps0 = merge(local.nebula_common, {
+  # Per-node Nebula daemon configurations.
+  #
+  # The lighthouse {} and relay {} stanzas have legitimately different shapes
+  # for lighthouses vs clients (e.g. lighthouse-only `serve_dns`, `dns`; client-
+  # only `hosts`, `use_relays`). Tofu's ternary requires both branches to share
+  # a type, so we build the two flavours as separate comprehensions and merge.
+  #
+  # Invariant for TF-managed hosts: lighthouse=true ⇔ relay=true. Non-
+  # lighthouses use lighthouse-as-relay.
+  nebula_configs_lighthouse = {
+    for tf_key, host_name in local.nebula_tf_key_to_host :
+    tf_key => merge(local.nebula_common, {
       lighthouse = {
         am_lighthouse    = true
         serve_dns        = true
         interval         = 10
-        dns              = { host = "10.42.0.1", port = 53 }
+        dns              = { host = local.nebula_hosts[host_name].nebula_ip, port = 53 }
         local_allow_list = local.nebula_local_allow_list
       }
       relay = { am_relay = true }
     })
-    vps1 = merge(local.nebula_common, {
-      lighthouse = {
-        am_lighthouse    = true
-        serve_dns        = true
-        interval         = 10
-        dns              = { host = "10.42.0.2", port = 53 }
-        local_allow_list = local.nebula_local_allow_list
-      }
-      relay = { am_relay = true }
-    })
-    # OVH Kimsufi bare metal: has public IP, acts as lighthouse + relay
-    kimsufi_worker0 = merge(local.nebula_common, {
-      lighthouse = {
-        am_lighthouse    = true
-        serve_dns        = true
-        interval         = 10
-        dns              = { host = "10.42.0.13", port = 53 }
-        local_allow_list = local.nebula_local_allow_list
-      }
-      relay = { am_relay = true }
-    })
-    kimsufi_worker1 = merge(local.nebula_common, {
-      lighthouse = {
-        am_lighthouse    = true
-        serve_dns        = true
-        interval         = 10
-        dns              = { host = "10.42.0.14", port = 53 }
-        local_allow_list = local.nebula_local_allow_list
-      }
-      relay = { am_relay = true }
-    })
-    # OVH Kimsufi bare metal control plane: public IP, acts as lighthouse + relay
-    kimsufi_cp0 = merge(local.nebula_common, {
-      lighthouse = {
-        am_lighthouse    = true
-        serve_dns        = true
-        interval         = 10
-        dns              = { host = "10.42.0.15", port = 53 }
-        local_allow_list = local.nebula_local_allow_list
-      }
-      relay = { am_relay = true }
-    })
-    # Proxmox home node: not a lighthouse, uses VPS relays for NAT traversal
-    pve_cp0 = merge(local.nebula_common, {
+    if try(local.nebula_hosts[host_name].lighthouse, false)
+  }
+
+  nebula_configs_client = {
+    for tf_key, host_name in local.nebula_tf_key_to_host :
+    tf_key => merge(local.nebula_common, {
       lighthouse = {
         am_lighthouse    = false
         interval         = 10
@@ -150,7 +136,10 @@ locals {
       }
       relay = { relays = local.nebula_lighthouse_ips, use_relays = true }
     })
+    if !try(local.nebula_hosts[host_name].lighthouse, false)
   }
+
+  nebula_configs = merge(local.nebula_configs_lighthouse, local.nebula_configs_client)
 
   # Per-node ExtensionServiceConfig documents (apiVersion: v1alpha1 /
   # kind: ExtensionServiceConfig): mount Nebula certs + config into the extension
@@ -186,5 +175,31 @@ locals {
   nebula_machine_patches = {
     for key in keys(local.nebula_node_names) :
     key => [local.nebula_extension_config[key]]
+  }
+}
+
+# Drift check: every TF-managed host that has a live endpoint must match the
+# roster. Skip if the roster declares no endpoint yet (chicken-and-egg case
+# for a brand-new Hetzner VPS — see cluster/docs/mesh_membership.md).
+check "nebula_mesh_endpoint_drift" {
+  assert {
+    condition = alltrue([
+      for tf_key, host_name in local.nebula_tf_key_to_host :
+      try(local.nebula_hosts[host_name].endpoint, null) == try(local.nebula_live_endpoints[tf_key], null)
+      if contains(keys(local.nebula_live_endpoints), tf_key)
+      && try(local.nebula_hosts[host_name].endpoint, null) != null
+    ])
+    error_message = format(
+      "nebula-mesh.json endpoint drift vs live infrastructure (see cluster/docs/mesh_membership.md):\n%s",
+      join("\n", [
+        for tf_key, host_name in local.nebula_tf_key_to_host :
+        format("  %s (tf=%s): json=%s live=%s", host_name, tf_key,
+          try(local.nebula_hosts[host_name].endpoint, "<missing>"),
+        try(local.nebula_live_endpoints[tf_key], "<missing>"))
+        if contains(keys(local.nebula_live_endpoints), tf_key)
+        && try(local.nebula_hosts[host_name].endpoint, null) != null
+        && try(local.nebula_hosts[host_name].endpoint, "") != try(local.nebula_live_endpoints[tf_key], "")
+      ]),
+    )
   }
 }

@@ -155,4 +155,5 @@ relocate (VPS workers are tight on memory).
 - Resource definitions: `cluster/terraform/main/ovh-nodes.tf`,
   `cluster/terraform/main/nebula.tf`, `cluster/terraform/main/persistent-auth.tf`
 - Service-name vars: `cluster/terraform/main/variables.tf`
+- Mesh roster (where to register the new host): <mesh_membership.md>
 - Historical gotchas: <lessons_learned/2026_05_13_provisioning_ovh_kimsufi.md>

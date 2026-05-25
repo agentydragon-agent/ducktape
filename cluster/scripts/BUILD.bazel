@@ -2,7 +2,7 @@
 # Cluster utility scripts (non-validation).
 # Validators are in //cluster/validation/.
 
-load("//devinfra/python:defs.bzl", "py_binary")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 
 # Verify Authentik authentication works end-to-end
 py_binary(
@@ -10,8 +10,21 @@ py_binary(
     srcs = ["check_authentik_login.py"],
 )
 
+# Typed loader for nebula-mesh.json. Shared by render_mobile_nebula_config and
+# the validation test in //cluster/validation/.
+py_library(
+    name = "nebula_mesh",
+    srcs = ["nebula_mesh.py"],
+    data = ["//:nebula-mesh.json"],
+    visibility = ["//cluster:__subpackages__"],
+    deps = ["@pypi//pydantic"],
+)
+
 py_binary(
     name = "render_mobile_nebula_config",
     srcs = ["render_mobile_nebula_config.py"],
-    deps = ["@pypi//pyyaml"],
+    deps = [
+        ":nebula_mesh",
+        "@pypi//pyyaml",
+    ],
 )

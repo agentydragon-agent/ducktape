@@ -121,26 +121,25 @@ data "sops_file" "flux_deploy_key" {
 locals {
   nebula_cert_dir = "${path.module}/nebula-certs"
 
-  # Talos nodes — tofu generates certs and embeds them in machine config patches
-  # (nebula.tf). Add new Talos nodes here.
+  # Tofu-managed Talos nodes — derived from the mesh roster
+  # (../../../nebula-mesh.json). Tofu issues certs and embeds them in machine
+  # config patches (nebula.tf). To add a new Talos node, edit the roster — see
+  # cluster/docs/mesh_membership.md.
+  #
   # Cert names use FQDN under nebula.allegedly.works so that systemd-resolved
   # can route queries via ~nebula.allegedly.works without +DefaultRoute (which
   # breaks public DNS when cluster nodes are unreachable).
-  # Groups are unused (no nebula firewall rules reference them) but kept
-  # minimal for future use.
+  #
+  # Non-tofu nodes (atlas, wyrm2, rugged, iguana, pixel6) have certs in
+  # secrets/nebula/. See docs/secrets.md "Nebula Certs for Non-Talos Nodes".
   talos_nebula_nodes = {
-    "talos-vps-cp-0.nebula.allegedly.works"         = { ip = "10.42.0.1/16", groups = "lighthouse" }
-    "talos-vps-cp-1.nebula.allegedly.works"         = { ip = "10.42.0.2/16", groups = "lighthouse" }
-    "talos-pve-cp-0.nebula.allegedly.works"         = { ip = "10.42.0.10/16", groups = "" }
-    "talos-kimsufi-worker-0.nebula.allegedly.works" = { ip = "10.42.0.13/16", groups = "lighthouse" }
-    "talos-kimsufi-worker-1.nebula.allegedly.works" = { ip = "10.42.0.14/16", groups = "lighthouse" }
-    "talos-kimsufi-cp-0.nebula.allegedly.works"     = { ip = "10.42.0.15/16", groups = "lighthouse" }
+    for name, h in local.nebula_hosts :
+    "${name}.nebula.allegedly.works" => {
+      ip     = "${h.nebula_ip}/16"
+      groups = join(",", try(h.cert_groups, []))
+    }
+    if startswith(try(h.managed_by, ""), "tofu-")
   }
-
-  # Non-Talos nodes (wyrm2, rugged, iguana, atlas, activitywatch)
-  # have certs in secrets/nebula/ — plaintext .crt + SOPS binary .sops.key.
-  # IPs are embedded in the certs — use `nebula-cert print` to inspect.
-  # See docs/secrets.md "Nebula Certs for Non-Talos Nodes" for the generation workflow.
 }
 
 # Nebula CA — plaintext cert + SOPS binary key (secrets/nebula/).

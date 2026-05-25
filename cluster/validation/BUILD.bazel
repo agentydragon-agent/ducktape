@@ -254,6 +254,18 @@ py_test(
 )
 
 py_test(
+    name = "test_nebula_mesh",
+    srcs = ["test_nebula_mesh.py"],
+    data = ["//:nebula-mesh.json"],
+    deps = [
+        "//cluster/scripts:nebula_mesh",
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_cluster_integration",
     srcs = ["test_cluster_integration.py"],
     data = [

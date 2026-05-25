@@ -3,16 +3,16 @@
 from __future__ import annotations
 
 import argparse
-import json
-import os
 import stat
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import yaml
 from yaml.nodes import Node
+
+from cluster.scripts import nebula_mesh
 
 MESH_DOMAIN = "nebula.allegedly.works"
 DEFAULT_MTU = 1300
@@ -35,19 +35,6 @@ def represent_literal_string(dumper: MobileNebulaDumper, data: LiteralString) ->
 MobileNebulaDumper.add_representer(LiteralString, represent_literal_string)
 
 
-def find_repo_root() -> Path:
-    workspace = os.environ.get("BUILD_WORKSPACE_DIRECTORY")
-    if workspace:
-        return Path(workspace)
-
-    path = Path.cwd().resolve()
-    for candidate in [path, *path.parents]:
-        if (candidate / "nebula-mesh.json").exists():
-            return candidate
-
-    raise SystemExit("could not find repo root containing nebula-mesh.json")
-
-
 def decrypt_sops_binary(path: Path) -> str:
     try:
         result = subprocess.run(["sops", "-d", str(path)], check=True, capture_output=True, text=True)
@@ -59,19 +46,15 @@ def decrypt_sops_binary(path: Path) -> str:
     return result.stdout
 
 
-def render_config(*, ca: str, cert: str, key: str, mesh_config: dict[str, Any], include_dns: bool) -> str:
-    lighthouses = [str(ip) for ip in cast("list[Any]", mesh_config["lighthouse_ips"])]
-    static_host_map = cast("dict[str, list[Any]]", mesh_config["static_host_map"])
-
+def render_config(*, ca: str, cert: str, key: str, mesh: nebula_mesh.Mesh, include_dns: bool) -> str:
+    lighthouses = mesh.lighthouse_ips()
     config: dict[str, Any] = {
         "pki": {
             "ca": LiteralString(ca.rstrip("\n") + "\n"),
             "cert": LiteralString(cert.rstrip("\n") + "\n"),
             "key": LiteralString(key.rstrip("\n") + "\n"),
         },
-        "static_host_map": {
-            nebula_ip: [str(endpoint) for endpoint in endpoints] for nebula_ip, endpoints in static_host_map.items()
-        },
+        "static_host_map": mesh.static_host_map(),
         "lighthouse": {"am_lighthouse": False, "interval": 10, "hosts": lighthouses},
         "relay": {"relays": lighthouses, "use_relays": True},
         "listen": {"host": "0.0.0.0", "port": 4242},
@@ -118,15 +101,14 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    repo_root = find_repo_root()
+    repo_root = nebula_mesh.repo_root()
     output = args.output or Path("/tmp") / f"{args.host}.mobile-nebula.yaml"
 
     ca_path = repo_root / "secrets/nebula/ca.crt"
     cert_path = repo_root / f"secrets/nebula/{args.host}.crt"
     key_path = repo_root / f"secrets/nebula/{args.host}.sops.key"
-    mesh_path = repo_root / "nebula-mesh.json"
 
-    missing = [path for path in [ca_path, cert_path, key_path, mesh_path] if not path.exists()]
+    missing = [path for path in [ca_path, cert_path, key_path] if not path.exists()]
     if missing:
         for path in missing:
             print(f"missing: {path}", file=sys.stderr)
@@ -136,7 +118,7 @@ def main() -> int:
         ca=ca_path.read_text(),
         cert=cert_path.read_text(),
         key=decrypt_sops_binary(key_path),
-        mesh_config=json.loads(mesh_path.read_text()),
+        mesh=nebula_mesh.load(),
         include_dns=args.dns,
     )
 

@@ -78,7 +78,7 @@ Delegate complex diagnostics and independent workstreams to subagents via the Ta
 
 ## Key Files
 
-All in `terraform/main/`:
+In `terraform/main/`:
 
 | File                       | Purpose                                        |
 | -------------------------- | ---------------------------------------------- |
@@ -88,6 +88,13 @@ All in `terraform/main/`:
 | `cilium.tf`                | CNI configuration                              |
 | `main.tf`                  | Providers, firewall, Talos bootstrap           |
 | `persistent-auth.tf`       | Keypairs, tokens (`prevent_destroy` lifecycle) |
+| `nebula.tf`                | Per-node Nebula config + endpoint drift check  |
+
+At repo root:
+
+| File               | Purpose                                                              |
+| ------------------ | -------------------------------------------------------------------- |
+| `nebula-mesh.json` | Mesh host roster (SSOT). Add/remove/re-IP: <docs/mesh_membership.md> |
 
 ## SSO
 

@@ -35,18 +35,24 @@ See <docs/bootstrap.md> for full setup.
 
 ### Node Types
 
-| Node                               | Type             | Region    | Availability     | Hardware            |
-| ---------------------------------- | ---------------- | --------- | ---------------- | ------------------- |
-| `talos-vps-cp-0`, `talos-vps-cp-1` | Talos CP         | `hil`     | Always on        | CPX31               |
-| `talos-pve-cp-0`                   | Talos CP         | `proxmox` | Always on (home) | Proxmox VM          |
-| `wyrm2`                            | NixOS GPU worker | `proxmox` | Always on (home) | 2x RTX 5090         |
-| `iguana`                           | NixOS laptop     | `roaming` | Often offline    | ThinkPad X1 Extreme |
-| `rugged`                           | NixOS laptop     | `roaming` | Often offline    | Dell Rugged 12      |
+| Node                                               | Type             | Region    | Availability     | Hardware            |
+| -------------------------------------------------- | ---------------- | --------- | ---------------- | ------------------- |
+| `talos-vps-cp-0`, `talos-vps-cp-1`                 | Talos CP         | `hil`     | Always on        | Hetzner CPX31       |
+| `talos-kimsufi-cp-0`                               | Talos CP         | `hil`     | Always on        | OVH Kimsufi         |
+| `talos-pve-cp-0`                                   | Talos CP         | `proxmox` | Always on (home) | Proxmox VM          |
+| `talos-kimsufi-worker-0`, `talos-kimsufi-worker-1` | Talos worker     | `hil`     | Always on        | OVH Kimsufi         |
+| `wyrm2`                                            | NixOS GPU worker | `proxmox` | Always on (home) | 2x RTX 5090         |
+| `iguana`                                           | NixOS laptop     | `roaming` | Often offline    | ThinkPad X1 Extreme |
+| `rugged`                                           | NixOS laptop     | `roaming` | Often offline    | Dell Rugged 12      |
 
 Region labels are `topology.kubernetes.io/region`. Roaming nodes are laptops that
 join/leave the cluster frequently. `rugged` has taint
 `node-role.kubernetes.io/roaming=true:NoSchedule`. Do not schedule workloads that
 require persistent availability on roaming nodes.
+
+Mesh roster (every Nebula peer, including non-k8s hosts like `atlas`, `pixel6`)
+lives in `nebula-mesh.json` at the repo root. To add or remove a node, see
+<docs/mesh_membership.md>.
 
 ## Services
 

@@ -3,7 +3,8 @@
 #
 # Set caCertPath/hostCertPath/hostKeyPath (e.g. to sops-nix secret paths) to
 # generate /etc/nebula/config.yaml from Nix. Lighthouse topology is read from
-# nebula-mesh.yaml at the repo root (single source of truth).
+# nebula-mesh.json at the repo root (single source of truth). See
+# cluster/docs/mesh_membership.md for add/remove/re-IP flow.
 {
   config,
   pkgs,
@@ -12,8 +13,14 @@
 }:
 let
   cfg = config.ducktape.nebulaMesh;
-  # Read lighthouse topology from shared config (single source of truth)
+  # Single source of truth for the mesh host roster.
+  # See cluster/docs/mesh_membership.md for add/remove/re-IP flow.
   meshConfig = builtins.fromJSON (builtins.readFile ../../../nebula-mesh.json);
+  meshHosts = lib.attrValues meshConfig.hosts;
+  meshLighthouses = map (h: h.nebula_ip) (lib.filter (h: h.lighthouse or false) meshHosts);
+  meshStaticHostMap = lib.listToAttrs (
+    map (h: lib.nameValuePair h.nebula_ip [ h.endpoint ]) (lib.filter (h: h ? endpoint) meshHosts)
+  );
   generatedConfig = builtins.toJSON {
     pki = {
       ca = cfg.caCertPath;
@@ -83,14 +90,14 @@ in
 
     lighthouses = lib.mkOption {
       type = lib.types.listOf lib.types.str;
-      default = meshConfig.lighthouse_ips;
-      description = "Nebula IPs of lighthouse nodes (from nebula-mesh.json)";
+      default = meshLighthouses;
+      description = "Nebula IPs of lighthouse nodes (derived from nebula-mesh.json hosts where lighthouse=true)";
     };
 
     staticHostMap = lib.mkOption {
       type = lib.types.attrsOf (lib.types.listOf lib.types.str);
-      default = meshConfig.static_host_map;
-      description = "Nebula IP → [hostname:port] mapping for lighthouses (from nebula-mesh.json)";
+      default = meshStaticHostMap;
+      description = "Nebula IP → [host:port] for hosts with a public endpoint (derived from nebula-mesh.json)";
     };
 
     caCertPath = lib.mkOption {
