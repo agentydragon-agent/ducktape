@@ -15,7 +15,7 @@ and deployment-specific composition stay in the downstream private repo.
 - `augur/plans/e2e_redesign.md`: distribution-first runtime redesign and
   ledger/reconciliation work.
 - `augur/plans/tensorized_simulator.md`: rollout-axis tensorization tracker.
-- `augur/plans/prior_art_audit.md`: external architecture lessons for path
+- `augur/docs/prior_art_audit.md`: external architecture lessons for path
   identity, governance, policy projection, and accounting traces.
 - `augur/sim/TODO.md`: forward-looking sim/product follow-ups.
 - `augur/TODO.md`: public generic backlog.
