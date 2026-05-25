@@ -1,5 +1,38 @@
 # Plan: Landlord Rental Income + Mid-Horizon Lifecycle Events
 
+## Status (as of session close, 2026-05-25)
+
+Phases 1, 2, 3, and 4 landed end-to-end at sim + wire + product layers.
+
+- **Phase 1 — Static landlord rental + agency.** Tenant→owner rental income with vacancy,
+  fraction-rented, management fee, leasing fee on `avg_tenancy_months` cadence. Frontend
+  rental panel shipped. ✓
+- **Phase 2 — Rental taxes.** Rental income as ordinary; Schedule E deductions on transfers
+  (management, leasing) and obligations (HOA, insurance, maintenance, property tax); MID
+  scaled by owner-fraction; SALT scaled by owner-fraction; §168 depreciation accrual on a
+  cumulative state buffer (ready for §1250 at sale) + year-end Schedule E deduction. ✓
+- **Phase 3 — Lifecycle events.** Engine: SetRentedFractionEvent, CapitalImprovementEvent.
+  Runtime per-rollout state buffers for rented_fraction + building_basis. Lifecycle apply
+  phase runs first in each month step. All Schedule E + MID + SALT + depreciation reads
+  runtime state. Wire + product translator: PropertyPurchase.lifecycle_events. ✓
+- **Phase 4 — Property sale + §1250 recapture.** PropertySaleEvent. At sale: market value
+  from home_value series, mortgage payoff, realized gain, §1250 recapture to ordinary,
+  remainder to LTCG. State frozen post-sale. §121 primary-residence exclusion deferred. ✓
+
+Deferred follow-ups:
+
+- **§121 primary-residence exclusion** (24-of-60 owner-occupied months test) at sale.
+- **§1250 25% federal rate cap.** Today recapture flows through marginal ordinary.
+- **Frontend lifecycle editor.** The wire types are present; users can submit scenarios
+  via API with lifecycle events but there's no UI to compose them yet.
+- **Residence timeline.** Outside-rent obligation gated by where the user lives. Engine
+  supports multi-obligation pattern (different start/end months); the wire-side timeline
+  is not yet shaped.
+- **Rollout-graph event annotations** for lifecycle events. The engine doesn't yet log
+  lifecycle markers into a dedicated event frame; cashflow side effects (transfers,
+  obligations) already render.
+- **Stochastic tenant model** (already in `augur/sim/TODO.md` under "Future").
+
 Adds (a) realistic landlord rental income with vacancy + property
 management agency + taxes, and (b) mid-horizon lifecycle events that
 change property occupancy/rental status and the user's residence,
