@@ -41,12 +41,14 @@ back into typed backend objects.
 The intended production backend path is `augur/model -> augur/sim -> augur/api`:
 model providers sample exogenous levels/events with provenance, `augur/sim`
 deterministically evaluates typed scenarios over those paths, and `augur/api`
-serves compact projection/read models. The backend now executes only this sim
-path. The current compatibility response proves browser-shaped smoke requests
-can sample a shared market bundle, run `augur/sim`, and derive
-graphable response tables from sim dataframes; the next cutover work is
-broadening that slice and replacing the temporary legacy-table materializer
-with final read models.
+serves compact projection/read models. The product metric-fan endpoint
+already runs numpy-direct from `dense.buffers.*` (`monthly_metric_arrays`),
+but the rollout-detail endpoint still calls `dense.decode()` to materialize
+the long-form `SimulationRun` polars frames before the product layer
+projects them. The next cutover is exposing `ProjectionRun` read models
+(`augur/sim/projections.py`) over a `ScenarioKey` directly, instead of the
+intermediate dataframe materialization. Tracked under "Architecture /
+cutover" in `augur/sim/TODO.md`.
 
 Near-term translation order:
 
