@@ -1806,6 +1806,34 @@ def _text(plan: CompiledSimulation, code: int) -> str | None:
     return plan.strings[code]
 
 
+def _codes_to_strings(plan: CompiledSimulation, codes: np.ndarray) -> np.ndarray:
+    """Vectorize `_text` over an int-code array; preserves the input shape.
+
+    Output dtype is `object` (str | None entries). Polars will infer pl.Utf8 on
+    DataFrame construction; None becomes null."""
+
+    flat = np.asarray(codes, dtype=np.int64).reshape(-1)
+    out = np.empty(flat.size, dtype=object)
+    strings = plan.strings
+    for i in range(flat.size):
+        code = int(flat[i])
+        out[i] = strings[code] if code >= 0 else None
+    return out.reshape(np.asarray(codes).shape)
+
+
+def _state_axes(h1: int, r: int, s: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Ravelled (month, rollout, slot) index columns for a state buffer of shape `(h1, r, s)`.
+
+    Order is row-major over `(month, rollout, slot)` — matches the iteration order the
+    old list-of-dicts decoders used so the resulting frame's row order is preserved.
+    """
+
+    months = np.broadcast_to(np.arange(h1, dtype=np.int64)[:, None, None], (h1, r, s)).ravel()
+    rollouts = np.broadcast_to(np.arange(r, dtype=np.int64)[None, :, None], (h1, r, s)).ravel()
+    slots = np.broadcast_to(np.arange(s, dtype=np.int64)[None, None, :], (h1, r, s)).ravel()
+    return months, rollouts, slots
+
+
 def _frame(rows: list[dict[str, Any]], spec: Any) -> pl.DataFrame:
     if not rows:
         return spec.empty()
@@ -1826,188 +1854,217 @@ def _state_history_frame(rows: list[dict[str, Any]], spec: Any) -> pl.DataFrame:
     return schema.to_frame()
 
 
+def _state_history_frame_from_columns(columns: dict[str, np.ndarray], spec: Any) -> pl.DataFrame:
+    """Vectorized counterpart to `_state_history_frame` — build a state-history frame from
+    pre-built numpy column arrays. Empty input produces a correctly-typed empty frame.
+    """
+
+    n = next(iter(columns.values())).size
+    if n == 0:
+        return _state_history_frame([], spec)
+    column_order = ["rollout_index", "month_index", *(name for name in spec.schema.names() if name != "rollout_index")]
+    return pl.DataFrame(columns).select(column_order)
+
+
 def _decode_cash(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
-    rows = [
+    state = buffers.cash_state  # (H+1, r, s)
+    h1, r, s = state.shape
+    months, rollouts, slots = _state_axes(h1, r, s)
+    agent_ids = _codes_to_strings(plan, plan.cash_agent_codes)
+    account_ids = _codes_to_strings(plan, plan.cash_account_codes)
+    return _state_history_frame_from_columns(
         {
-            "rollout_index": rollout,
-            "month_index": month,
-            "agent_id": _text(plan, plan.cash_agent_codes[slot]),
-            "account_id": _text(plan, plan.cash_account_codes[slot]),
-            "balance_usd": float(buffers.cash_state[month, rollout, slot]),
-        }
-        for month in range(plan.horizon_months + 1)
-        for rollout in range(plan.rollout_count)
-        for slot in range(plan.cash_initial_balance.shape[0])
-    ]
-    return _state_history_frame(rows, CASH_BALANCES_FRAME)
+            "rollout_index": rollouts,
+            "month_index": months,
+            "agent_id": agent_ids[slots],
+            "account_id": account_ids[slots],
+            "balance_usd": state.reshape(-1),
+        },
+        CASH_BALANCES_FRAME,
+    )
 
 
 def _decode_asset_lots(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
-    rows = [
+    state = buffers.lot_state  # (H+1, r, s)
+    h1, r, s = state.shape
+    months, rollouts, slots = _state_axes(h1, r, s)
+    return _state_history_frame_from_columns(
         {
-            "rollout_index": rollout,
-            "month_index": month,
-            "lot_id": _text(plan, plan.lot_id_codes[slot]),
-            "agent_id": _text(plan, plan.lot_agent_codes[slot]),
-            "account_id": _text(plan, plan.lot_account_codes[slot]),
-            "asset_id": _text(plan, plan.lot_asset_codes[slot]),
-            "purchase_month_index": int(plan.lot_purchase_month[slot]),
-            "cost_basis_per_unit_usd": float(plan.lot_cost_basis_per_unit[slot]),
-            "remaining_quantity": float(buffers.lot_state[month, rollout, slot]),
-        }
-        for month in range(plan.horizon_months + 1)
-        for rollout in range(plan.rollout_count)
-        for slot in range(plan.lot_initial_quantity.shape[0])
-    ]
-    return _state_history_frame(rows, ASSET_LOT_FRAME)
+            "rollout_index": rollouts,
+            "month_index": months,
+            "lot_id": _codes_to_strings(plan, plan.lot_id_codes)[slots],
+            "agent_id": _codes_to_strings(plan, plan.lot_agent_codes)[slots],
+            "account_id": _codes_to_strings(plan, plan.lot_account_codes)[slots],
+            "asset_id": _codes_to_strings(plan, plan.lot_asset_codes)[slots],
+            "purchase_month_index": plan.lot_purchase_month.astype(np.int64)[slots],
+            "cost_basis_per_unit_usd": plan.lot_cost_basis_per_unit.astype(np.float64)[slots],
+            "remaining_quantity": state.reshape(-1),
+        },
+        ASSET_LOT_FRAME,
+    )
 
 
 def _decode_ordinary_income(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
-    rows = [
+    state = buffers.ordinary_state  # (H+1, r, p)
+    h1, r, p = state.shape
+    months, rollouts, profiles = _state_axes(h1, r, p)
+    return _state_history_frame_from_columns(
         {
-            "rollout_index": rollout,
-            "month_index": month,
-            "agent_id": _text(plan, plan.tax_profile_agent_codes[profile]),
-            "ordinary_income_usd": float(buffers.ordinary_state[month, rollout, profile]),
-        }
-        for month in range(plan.horizon_months + 1)
-        for rollout in range(plan.rollout_count)
-        for profile in range(plan.tax_profile_agent_codes.shape[0])
-    ]
-    return _state_history_frame(rows, ORDINARY_INCOME_YTD_FRAME)
+            "rollout_index": rollouts,
+            "month_index": months,
+            "agent_id": _codes_to_strings(plan, plan.tax_profile_agent_codes)[profiles],
+            "ordinary_income_usd": state.reshape(-1),
+        },
+        ORDINARY_INCOME_YTD_FRAME,
+    )
 
 
 def _decode_capital_gains(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
-    rows: list[dict[str, Any]] = []
-    for month in range(plan.horizon_months + 1):
-        for rollout in range(plan.rollout_count):
-            for profile in range(plan.capital_gain_agent_codes.shape[0]):
-                for cls, classification in (
-                    (LONG_TERM_CAPITAL_GAIN_CODE, "ltcg"),
-                    (SHORT_TERM_CAPITAL_GAIN_CODE, "stcg"),
-                ):
-                    if not buffers.capital_gain_active_state[month, rollout, profile, cls]:
-                        continue
-                    rows.append(
-                        {
-                            "rollout_index": rollout,
-                            "month_index": month,
-                            "agent_id": _text(plan, plan.capital_gain_agent_codes[profile]),
-                            "classification": classification,
-                            "gain_usd": float(buffers.capital_gain_state[month, rollout, profile, cls]),
-                        }
-                    )
-    return _state_history_frame(rows, CAPITAL_GAINS_YTD_FRAME)
+    # capital_gain_state: (H+1, r, p, 2). Last axis is (LTCG, STCG) per *_CAPITAL_GAIN_CODE.
+    # Mask-filter keeps only `active_state[m, r, p, cls]` rows. The two `cls` codes happen to be
+    # 0 and 1, with LTCG = LONG_TERM... = 0, STCG = SHORT_TERM... = 1, but iterate explicitly so
+    # the classification column matches the legacy decoder's row order ((profile, ltcg, stcg)).
+    state = buffers.capital_gain_state
+    active = buffers.capital_gain_active_state
+    h1, r, p, _c = state.shape
+    months = np.broadcast_to(np.arange(h1, dtype=np.int64)[:, None, None, None], (h1, r, p, 2))
+    rollouts = np.broadcast_to(np.arange(r, dtype=np.int64)[None, :, None, None], (h1, r, p, 2))
+    profiles = np.broadcast_to(np.arange(p, dtype=np.int64)[None, None, :, None], (h1, r, p, 2))
+    # Order class slots so LTCG (index LONG_TERM_CAPITAL_GAIN_CODE) comes first within each profile.
+    cls_order = np.array([LONG_TERM_CAPITAL_GAIN_CODE, SHORT_TERM_CAPITAL_GAIN_CODE], dtype=np.int64)
+    classification_labels = np.array(["ltcg", "stcg"], dtype=object)
+    state_o = state[:, :, :, cls_order]
+    active_o = active[:, :, :, cls_order]
+    cls_labels = np.broadcast_to(classification_labels[None, None, None, :], (h1, r, p, 2))
+    mask = active_o.reshape(-1)
+    agent_ids = _codes_to_strings(plan, plan.capital_gain_agent_codes)
+    return _state_history_frame_from_columns(
+        {
+            "rollout_index": rollouts.reshape(-1)[mask],
+            "month_index": months.reshape(-1)[mask],
+            "agent_id": agent_ids[profiles.reshape(-1)[mask]],
+            "classification": cls_labels.reshape(-1)[mask],
+            "gain_usd": state_o.reshape(-1)[mask],
+        },
+        CAPITAL_GAINS_YTD_FRAME,
+    )
 
 
 def _decode_tax_liabilities(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
-    rows: list[dict[str, Any]] = []
-    for month in range(plan.horizon_months + 1):
-        for rollout in range(plan.rollout_count):
-            for slot in range(plan.tax_liability_profile_index.shape[0]):
-                if not buffers.tax_liability_active_state[month, rollout, slot]:
-                    continue
-                link = int(plan.tax_liability_link_index[slot])
-                profile = int(plan.tax_liability_profile_index[slot])
-                rows.append(
-                    {
-                        "rollout_index": rollout,
-                        "month_index": month,
-                        "agent_id": _text(plan, plan.tax_profile_agent_codes[profile]),
-                        "jurisdiction_id": _text(plan, plan.tax_link_jurisdiction_codes[link]),
-                        "tax_year_end_month": int(plan.tax_liability_year_end_month[slot]),
-                        "amount_owed_usd": float(buffers.tax_liability_state[month, rollout, slot]),
-                    }
-                )
-    return _state_history_frame(rows, TAX_LIABILITIES_FRAME)
+    state = buffers.tax_liability_state  # (H+1, r, s)
+    active = buffers.tax_liability_active_state
+    h1, r, s = state.shape
+    months, rollouts, slots = _state_axes(h1, r, s)
+    mask = active.reshape(-1)
+    profile_per_slot = plan.tax_liability_profile_index.astype(np.int64)
+    link_per_slot = plan.tax_liability_link_index.astype(np.int64)
+    agent_per_profile = _codes_to_strings(plan, plan.tax_profile_agent_codes)
+    juris_per_link = _codes_to_strings(plan, plan.tax_link_jurisdiction_codes)
+    return _state_history_frame_from_columns(
+        {
+            "rollout_index": rollouts[mask],
+            "month_index": months[mask],
+            "agent_id": agent_per_profile[profile_per_slot[slots[mask]]],
+            "jurisdiction_id": juris_per_link[link_per_slot[slots[mask]]],
+            "tax_year_end_month": plan.tax_liability_year_end_month.astype(np.int64)[slots[mask]],
+            "amount_owed_usd": state.reshape(-1)[mask],
+        },
+        TAX_LIABILITIES_FRAME,
+    )
 
 
 def _decode_property_state(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
-    rows: list[dict[str, Any]] = []
-    for month in range(plan.horizon_months + 1):
-        for rollout in range(plan.rollout_count):
-            for prop in range(plan.property_id_codes.shape[0]):
-                if not buffers.property_active_state[month, rollout, prop]:
-                    continue
-                rows.append(
-                    {
-                        "rollout_index": rollout,
-                        "month_index": month,
-                        "property_id": _text(plan, plan.property_id_codes[prop]),
-                        "location_id": _text(plan, plan.property_location_codes[prop]),
-                        "purchase_month_index": int(plan.property_month[prop]),
-                        "adjusted_basis_usd": float(buffers.property_basis_state[month, rollout, prop]),
-                    }
-                )
-    return _state_history_frame(rows, PROPERTY_STATE_FRAME)
+    basis = buffers.property_basis_state  # (H+1, r, p)
+    active = buffers.property_active_state
+    h1, r, p = basis.shape
+    months, rollouts, props = _state_axes(h1, r, p)
+    mask = active.reshape(-1)
+    property_ids = _codes_to_strings(plan, plan.property_id_codes)
+    location_ids = _codes_to_strings(plan, plan.property_location_codes)
+    return _state_history_frame_from_columns(
+        {
+            "rollout_index": rollouts[mask],
+            "month_index": months[mask],
+            "property_id": property_ids[props[mask]],
+            "location_id": location_ids[props[mask]],
+            "purchase_month_index": plan.property_month.astype(np.int64)[props[mask]],
+            "adjusted_basis_usd": basis.reshape(-1)[mask],
+        },
+        PROPERTY_STATE_FRAME,
+    )
 
 
 def _decode_property_stakes(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
-    rows: list[dict[str, Any]] = []
-    for month in range(plan.horizon_months + 1):
-        for rollout in range(plan.rollout_count):
-            for prop in range(plan.property_id_codes.shape[0]):
-                if not buffers.property_active_state[month, rollout, prop]:
-                    continue
-                rows.append(
-                    {
-                        "rollout_index": rollout,
-                        "month_index": month,
-                        "property_id": _text(plan, plan.property_id_codes[prop]),
-                        "agent_id": _text(plan, plan.property_buyer_agent_codes[prop]),
-                        "ownership_pct": float(buffers.property_ownership_state[month, rollout, prop]),
-                        "contribution_used_usd": float(buffers.property_contribution_state[month, rollout, prop]),
-                        "equity_ledger_usd": float(buffers.property_equity_state[month, rollout, prop]),
-                    }
-                )
-    return _state_history_frame(rows, PROPERTY_STAKE_FRAME)
+    active = buffers.property_active_state  # (H+1, r, p)
+    h1, r, p = active.shape
+    months, rollouts, props = _state_axes(h1, r, p)
+    mask = active.reshape(-1)
+    property_ids = _codes_to_strings(plan, plan.property_id_codes)
+    buyer_ids = _codes_to_strings(plan, plan.property_buyer_agent_codes)
+    return _state_history_frame_from_columns(
+        {
+            "rollout_index": rollouts[mask],
+            "month_index": months[mask],
+            "property_id": property_ids[props[mask]],
+            "agent_id": buyer_ids[props[mask]],
+            "ownership_pct": buffers.property_ownership_state.reshape(-1)[mask],
+            "contribution_used_usd": buffers.property_contribution_state.reshape(-1)[mask],
+            "equity_ledger_usd": buffers.property_equity_state.reshape(-1)[mask],
+        },
+        PROPERTY_STAKE_FRAME,
+    )
 
 
 def _decode_liabilities(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
-    rows: list[dict[str, Any]] = []
-    for month in range(plan.horizon_months + 1):
-        for rollout in range(plan.rollout_count):
-            for liab in range(plan.liability_codes.shape[0]):
-                if not buffers.liability_active_state[month, rollout, liab]:
-                    continue
-                prop = int(plan.liability_property_slot[liab])
-                rows.append(
-                    {
-                        "rollout_index": rollout,
-                        "month_index": month,
-                        "liability_id": _text(plan, plan.liability_codes[liab]),
-                        "agent_id": _text(plan, plan.liability_agent_codes[liab]),
-                        "payment_account_id": _text(plan, plan.liability_payment_account_codes[liab]),
-                        "counterparty_agent_id": _text(plan, plan.liability_counterparty_agent_codes[liab]),
-                        "counterparty_account_id": _text(plan, plan.liability_counterparty_account_codes[liab]),
-                        "property_id": _text(plan, plan.property_id_codes[prop]),
-                        "principal_usd": float(buffers.liability_principal_state[month, rollout, liab]),
-                        "annual_interest_rate": float(plan.liability_annual_rate[liab]),
-                        "term_months": int(plan.liability_term_months[liab]),
-                        "origination_month_index": int(plan.property_month[prop]),
-                        "monthly_payment_usd": float(buffers.liability_monthly_payment_state[month, rollout, liab]),
-                        "interest_paid_ytd_usd": float(buffers.liability_interest_ytd_state[month, rollout, liab]),
-                        "principal_paid_ytd_usd": float(buffers.liability_principal_ytd_state[month, rollout, liab]),
-                    }
-                )
-    return _state_history_frame(rows, LIABILITY_FRAME)
+    principal = buffers.liability_principal_state  # (H+1, R, n_liab)
+    active = buffers.liability_active_state
+    h1, r, n_liab = principal.shape
+    months, rollouts, liabs = _state_axes(h1, r, n_liab)
+    mask = active.reshape(-1)
+    liability_ids = _codes_to_strings(plan, plan.liability_codes)
+    agent_ids = _codes_to_strings(plan, plan.liability_agent_codes)
+    payment_account_ids = _codes_to_strings(plan, plan.liability_payment_account_codes)
+    counterparty_agent_ids = _codes_to_strings(plan, plan.liability_counterparty_agent_codes)
+    counterparty_account_ids = _codes_to_strings(plan, plan.liability_counterparty_account_codes)
+    property_ids_per_liab = _codes_to_strings(plan, plan.property_id_codes)[
+        plan.liability_property_slot.astype(np.int64)
+    ]
+    origination_per_liab = plan.property_month.astype(np.int64)[plan.liability_property_slot.astype(np.int64)]
+    return _state_history_frame_from_columns(
+        {
+            "rollout_index": rollouts[mask],
+            "month_index": months[mask],
+            "liability_id": liability_ids[liabs[mask]],
+            "agent_id": agent_ids[liabs[mask]],
+            "payment_account_id": payment_account_ids[liabs[mask]],
+            "counterparty_agent_id": counterparty_agent_ids[liabs[mask]],
+            "counterparty_account_id": counterparty_account_ids[liabs[mask]],
+            "property_id": property_ids_per_liab[liabs[mask]],
+            "principal_usd": principal.reshape(-1)[mask],
+            "annual_interest_rate": plan.liability_annual_rate.astype(np.float64)[liabs[mask]],
+            "term_months": plan.liability_term_months.astype(np.int64)[liabs[mask]],
+            "origination_month_index": origination_per_liab[liabs[mask]],
+            "monthly_payment_usd": buffers.liability_monthly_payment_state.reshape(-1)[mask],
+            "interest_paid_ytd_usd": buffers.liability_interest_ytd_state.reshape(-1)[mask],
+            "principal_paid_ytd_usd": buffers.liability_principal_ytd_state.reshape(-1)[mask],
+        },
+        LIABILITY_FRAME,
+    )
 
 
 def _decode_rollout_status_history(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
-    rows = [
-        {
-            "rollout_index": rollout,
-            "month_index": month,
-            "status": "failed_insufficient_cash" if buffers.rollout_failed_state[month, rollout] else "active",
-            "failed_month": None
-            if buffers.rollout_failed_month_state[month, rollout] < 0
-            else int(buffers.rollout_failed_month_state[month, rollout]),
-        }
-        for month in range(plan.horizon_months + 1)
-        for rollout in range(plan.rollout_count)
-    ]
+    failed_state = buffers.rollout_failed_state  # (H+1, r) bool
+    failed_month_state = buffers.rollout_failed_month_state.astype(np.int64)  # (H+1, r) int
+    h1, r = failed_state.shape
+    months = np.broadcast_to(np.arange(h1, dtype=np.int64)[:, None], (h1, r)).ravel()
+    rollouts = np.broadcast_to(np.arange(r, dtype=np.int64)[None, :], (h1, r)).ravel()
+    status = np.where(failed_state.reshape(-1), "failed_insufficient_cash", "active")
+    failed_month_flat = failed_month_state.reshape(-1)
+    # Polars rejects an object-dtype column for an Int64 schema; build the int|None list explicitly.
+    # `h1*r` is small (≤ horizon × rollout_count) so the Python loop is fine.
+    failed_month_col = [None if m < 0 else int(m) for m in failed_month_flat]
     return pl.DataFrame(
-        rows,
+        {"rollout_index": rollouts, "month_index": months, "status": status, "failed_month": failed_month_col},
         schema={
             "rollout_index": pl.Int64(),
             "month_index": pl.Int64(),
@@ -2019,17 +2076,20 @@ def _decode_rollout_status_history(plan: CompiledSimulation, buffers: Simulation
 
 def _decode_final_rollout_status(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
     month = plan.horizon_months
-    rows = [
-        {
-            "rollout_index": rollout,
-            "status": "failed_insufficient_cash" if buffers.rollout_failed_state[month, rollout] else "active",
-            "failed_month": None
-            if buffers.rollout_failed_month_state[month, rollout] < 0
-            else int(buffers.rollout_failed_month_state[month, rollout]),
-        }
-        for rollout in range(plan.rollout_count)
-    ]
-    return _frame(rows, ROLLOUT_STATUS_FRAME)
+    failed = buffers.rollout_failed_state[month]  # (r,) bool
+    failed_month = buffers.rollout_failed_month_state[month].astype(np.int64)  # (r,) int
+    r = failed.shape[0]
+    if r == 0:
+        return ROLLOUT_STATUS_FRAME.empty()
+    rollouts = np.arange(r, dtype=np.int64)
+    status = np.where(failed, "failed_insufficient_cash", "active")
+    failed_month_col = [None if m < 0 else int(m) for m in failed_month]
+    return ROLLOUT_STATUS_FRAME.normalize(
+        pl.DataFrame(
+            {"rollout_index": rollouts, "status": status, "failed_month": failed_month_col},
+            schema={"rollout_index": pl.Int64(), "status": pl.Utf8(), "failed_month": pl.Int64()},
+        )
+    )
 
 
 def _decode_events(plan: CompiledSimulation, buffers: SimulationBuffers) -> EventLog:
