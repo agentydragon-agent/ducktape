@@ -32,7 +32,7 @@ NO_CODE = -1
 AMOUNT_FIXED = 0
 AMOUNT_SERIES_INDEXED = 1
 ORDINARY_INCOME_CATEGORY = "ordinary"
-ORDINARY_DEDUCTION_CATEGORY = "ordinary_deduction"
+ORDINARY_DEDUCTION_CATEGORY = "ordinary"
 
 
 class StringTable:
@@ -983,7 +983,7 @@ def _compile_transfer_slots(
             to_slot[month, idx] = _slot(account_slot_by_key, transfer.to_agent_id, transfer.to_account_id)
             if transfer.income_category == ORDINARY_INCOME_CATEGORY:
                 income_profile[month, idx] = profile_index_by_agent.get(transfer.to_agent_id, NO_CODE)
-            elif transfer.income_category == ORDINARY_DEDUCTION_CATEGORY:
+            if transfer.deduction_category == ORDINARY_DEDUCTION_CATEGORY:
                 deduction_profile[month, idx] = profile_index_by_agent.get(transfer.from_agent_id, NO_CODE)
             kind, fixed, base, series, base_month, period = _amount_arrays(transfer.amount_usd, series_index_by_id)
             amount_kind[month, idx] = kind

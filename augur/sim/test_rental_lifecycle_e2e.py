@@ -310,7 +310,7 @@ class TestRentalIncomeTaxation:
         assert all(amount > 0 for amount in accruals["amount_usd"].to_list())
 
     def test_management_fee_deducts_from_taxable_ordinary_income(self):
-        """Schedule E: a management fee transfer with income_category='ordinary_deduction'
+        """Schedule E: a management fee transfer with deduction_category='ordinary'
         should subtract from the owner's ordinary_income_ytd, reducing taxable income."""
 
         end_month = 11
@@ -353,7 +353,7 @@ class TestRentalIncomeTaxation:
                     amount_usd=SeriesIndexedAmount(
                         base_amount_usd=500.0, series_id=RENT_SERIES_ID, adjustment_period_months=12
                     ),
-                    income_category="ordinary_deduction",
+                    deduction_category="ordinary",
                 ),
             ],
             tax_profiles=[

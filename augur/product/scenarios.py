@@ -467,7 +467,7 @@ def _wire_landlord_rental(
                     adjustment_period_months=12,
                 ),
                 # Management fee is a Schedule E deduction against rental income.
-                income_category="ordinary_deduction",
+                deduction_category="ordinary",
             )
         )
     leasing_fee_months_val = float(management.leasing_fee_months)
@@ -485,7 +485,7 @@ def _wire_landlord_rental(
                     base_amount_usd=leasing_fee_base, series_id=rent_series, adjustment_period_months=12
                 ),
                 # Leasing fee is a Schedule E deduction against rental income.
-                income_category="ordinary_deduction",
+                deduction_category="ordinary",
             )
             for fire_month in range(0, horizon_months, int(management.avg_tenancy_months))
         )

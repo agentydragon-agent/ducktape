@@ -67,7 +67,8 @@ class SeriesIndexedAmount(BaseModel):
 
 type AmountSchedule = Annotated[FixedAmount | SeriesIndexedAmount, Field(discriminator="kind")]
 type AmountSpec = float | AmountSchedule
-type TransferIncomeCategory = Literal["ordinary", "ordinary_deduction"]
+type TransferIncomeCategory = Literal["ordinary"]
+type TransferDeductionCategory = Literal["ordinary"]
 
 
 class ScheduledTransfer(BaseModel):
@@ -75,15 +76,20 @@ class ScheduledTransfer(BaseModel):
     month. Emitted by the engine as a Transfer event at that month;
     the amount may be fixed or derived from a series-indexed schedule.
 
-    `income_category` tags the transfer for downstream tax classification:
+    `income_category` tags the transfer as taxable income for the
+    `to_agent_id` (recipient). When `"ordinary"`, the recipient's
+    `ordinary_income_ytd` increments by the transferred amount —
+    W-2-style wages, rental income, etc.
 
-    - `"ordinary"` — W-2-style wages, rental income, etc.: the `to_agent_id`'s
-      `ordinary_income_ytd` increments by the transferred amount.
-    - `"ordinary_deduction"` — Schedule-E-style deductible expense (e.g. property
-      management fee paid by the owner): the `from_agent_id`'s
-      `ordinary_income_ytd` decrements by the transferred amount. Used for
-      deductible expenses paid via transfer flows (not the obligation/settlement
-      pipeline). §469 passive-activity loss limitations are not modeled."""
+    `deduction_category` tags the transfer as a deductible expense for
+    the `from_agent_id` (payer). When `"ordinary"`, the payer's
+    `ordinary_income_ytd` decrements by the transferred amount —
+    Schedule-E-style deductible expenses paid via transfer flows
+    (property management fee, leasing fee, etc.). §469
+    passive-activity loss limitations are not modeled. A transfer can
+    carry both categories simultaneously (rare but legal — e.g.
+    inter-company payment that is income to recipient and deductible
+    by payer)."""
 
     month: int
     cause_id: str
@@ -93,6 +99,7 @@ class ScheduledTransfer(BaseModel):
     to_account_id: str
     amount_usd: AmountSpec
     income_category: TransferIncomeCategory | None = None
+    deduction_category: TransferDeductionCategory | None = None
 
 
 class RecurringTransfer(BaseModel):
@@ -117,6 +124,7 @@ class RecurringTransfer(BaseModel):
     to_account_id: str
     amount_usd: AmountSpec
     income_category: TransferIncomeCategory | None = None
+    deduction_category: TransferDeductionCategory | None = None
 
     def is_active_at(self, month: int) -> bool:
         return self.start_month <= month and (self.end_month is None or month <= self.end_month)

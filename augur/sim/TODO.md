@@ -82,8 +82,9 @@ Anything fully shipped is removed — git history is the record of done work.
 ## Rental tax — Phase 2 follow-ups
 
 Phase 2.0 + 2.1 landed: rental income taxed as ordinary; management +
-leasing fees deduct via `income_category="ordinary_deduction"`.
-Remaining engine surgery to close the gap with real tax treatment:
+leasing fees deduct via `deduction_category="ordinary"` (the
+transfer-side Schedule E channel). Remaining engine surgery to close
+the gap with real tax treatment:
 
 - **Rented-fraction share of obligation expenses as Schedule E
   deductions.** Mortgage interest, property tax, HOA, insurance, and
