@@ -883,6 +883,16 @@ enum WalkDirection {
     Reverse,
 }
 
+/// Module-keyed adjacency: `from → {to, ...}`. Cached on the
+/// `IncrementalQuotient` so the overlay-aware simulator build can patch
+/// it instead of rewalking every edge in `i_graph.edge_pairs()`.
+type ISuccessorsMap = BTreeMap<ModuleId, BTreeSet<ModuleId>>;
+
+/// Set of constraining-edge endpoints, as
+/// `(from_module, to_module)` pairs. Cached snapshot of
+/// `constraining_buckets.keys()` for the overlay path.
+type ConstrainingPairs = BTreeSet<(ModuleId, ModuleId)>;
+
 #[derive(Debug, Clone)]
 struct IncrementalQuotient {
     i_graph: RollbackDiGraph<ModuleId>,
@@ -904,17 +914,12 @@ struct IncrementalQuotient {
     /// changes (the no-op overlay short-circuit).
     cached_base_simulator: RefCell<Option<EsmEvaluationSimulator>>,
     /// Lazily-computed materialization of the base I-graph as an
-    /// adjacency map keyed by source module. Mirrors what
-    /// `EsmEvaluationSimulator::build` would walk from
-    /// `i_graph.edge_pairs()` on each call — extracted into a shared
-    /// cache so the overlay-aware simulator build can patch this
-    /// instead of rewalking every edge. Invalidated alongside the
-    /// simulator cache.
-    cached_base_i_successors: RefCell<Option<BTreeMap<ModuleId, BTreeSet<ModuleId>>>>,
+    /// adjacency map keyed by source module. See `ISuccessorsMap`.
+    /// Invalidated alongside the simulator cache.
+    cached_base_i_successors: RefCell<Option<ISuccessorsMap>>,
     /// Lazily-computed snapshot of the constraining pairs set
-    /// (`constraining_buckets.keys()`). Shared with the overlay path
-    /// to avoid the O(|constraining_buckets|) walk on every call.
-    cached_base_constraining_pairs: RefCell<Option<BTreeSet<(ModuleId, ModuleId)>>>,
+    /// (`constraining_buckets.keys()`). See `ConstrainingPairs`.
+    cached_base_constraining_pairs: RefCell<Option<ConstrainingPairs>>,
 }
 
 impl IncrementalQuotient {
@@ -1332,10 +1337,7 @@ impl IncrementalQuotient {
     fn effective_simulator_inputs(
         &self,
         overlay: Option<&QuotientOverlay>,
-    ) -> (
-        BTreeMap<ModuleId, BTreeSet<ModuleId>>,
-        BTreeSet<(ModuleId, ModuleId)>,
-    ) {
+    ) -> (ISuccessorsMap, ConstrainingPairs) {
         let Some(overlay) = overlay else {
             return (
                 self.base_i_successors().clone(),
