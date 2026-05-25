@@ -79,37 +79,9 @@ Anything fully shipped is removed — git history is the record of done work.
 - NIIT (3.8% on investment income above thresholds) and filing statuses
   beyond single. Out of scope until a scenario surfaces them.
 
-## Rental tax — Phase 2 follow-ups
+## Rental tax — Phase 2 done
 
-Phase 2.0 + 2.1 landed: rental income taxed as ordinary; management +
-leasing fees deduct via `deduction_category="ordinary"` (the
-transfer-side Schedule E channel). Remaining engine surgery to close
-the gap with real tax treatment:
-
-- **Rented-fraction share of obligation expenses as Schedule E
-  deductions.** Mortgage interest, property tax, HOA, insurance, and
-  maintenance fire as `RecurringObligation`s today; the deduction
-  pipeline only handles transfers. Either extend obligations with an
-  income_category like the transfer flow, or route the deductible
-  share through a paired ordinary_deduction transfer at obligation
-  settlement.
-- **MID scaled by (1 - rented_fraction).** Today
-  `MortgageInterestDeductionPolicy` is binary (added iff
-  `is_primary_residence=True`). For partial rentals the deduction
-  should scale by the owner-occupied fraction. Plumb `rented_fraction`
-  per property into the MID compile path.
-- **SALT-eligible property tax scaled by (1 - rented_fraction).** SALT
-  cap applies only to the owner-use portion.
-- **Cumulative depreciation buffer + monthly accrual.** New
-  per-rollout per-property state buffer; accrue `building_basis ×
-fraction_rented / (27.5 × 12)` each month while in `RENTED_*`. Both
-  a Schedule E deduction and the basis for §1250 recapture at sale
-  (phase 4).
-- **`land_value_fraction` on `ScheduledPropertyPurchase`** (default
-  0.20) so `building_basis` is computable at purchase.
-
-These pair with phase 4 (sale + §1250 recapture), so the depreciation
-buffer can land in either phase as long as it's wired before sale.
+Landed end-to-end: rental income taxed as ordinary; Schedule E deductions for management/leasing/HOA/insurance/maintenance via deduction_category="ordinary" on transfers + obligations; MID + SALT scaled by (1 - rented_fraction) at compile time; rented-share of mortgage interest deducted via engine year-end Schedule E hook; §168 depreciation accrual on a cumulative state buffer (ready for §1250 recapture in phase 4) + year-end Schedule E deduction.
 
 ## Real-estate lifecycle
 
