@@ -50,50 +50,30 @@ projects them. The next cutover is exposing `ProjectionRun` read models
 intermediate dataframe materialization. Tracked under "Architecture /
 cutover" in `augur/sim/TODO.md`.
 
-Near-term translation order:
+Standing guidance during continued cutover:
 
-- Fix current smoke-slice correctness first by moving opening public
-  securities into backend YAML config as actual positions: position id, account,
-  owner, symbol/security identity, exogenous-model series mapping, units, starting
-  price, and cost basis. The sim translator should create concrete initial lots
-  and derive current value from `units * price[t=0]`, not interpret a scenario
-  `value_usd` as quantity.
-- Then add tax profile/ordinary income translation, outside-rent obligations,
-  and the current dataframe-derived response tables. **Ordinary income
-  translation is currently deferred (low priority, 2026-05-24):** the
-  scenarios we plan around today are post-earning retirement projections
-  rather than active W-2 income, so the income knob is not on the near-term
-  path. Outside rent and the response shape work continue as planned.
-  Outside rent can start as
-  a flat compatibility obligation, but the target is indexing it to modeled
-  rent-cost series from `augur/model` for the applicable rental market: configure
-  current rent on the as-of date plus a model series key, then scale future rent
-  by the series ratio from that as-of value. Generalize this into a
-  path-indexed amount contract for other recurring cashflows instead of adding
-  one-off inflation/rent flags.
-- Continue the first property slice: month-0 purchase and mortgage origination
-  smoke through the backend, then add property tax. Keep this slice
-  narrow: purchase is month 0, occupancy is forever when selected, rental state
-  does not transition mid-horizon, and any sale support can be end-of-horizon
-  only if needed for graphs. Property value should start from the
-  configured/list value and index by the modeled home-value series; future-month
-  purchase semantics are deferred. When native rental cashflows land, tenant
-  rent income for owned properties should use the same current-rent plus modeled
-  rent-cost series indexing contract as outside rent.
-- Add crypto positions and liquidity preferences after the property smoke is
-  graphable.
-- Add private equity, tender/public/acquisition regimes, and partner property
-  stakes after those concepts have native sim state and event streams.
-- Once the compatibility slice is broad enough for the frontend, replace it
-  with a native sim request schema or keep it only for legacy imports.
-- Keep backend/sim accounting in nominal dollars through the cutover. Any
-  inflation-adjusted display belongs in a later postprocessing/read-model layer.
-- Derive bootstrap/UI defaults from YAML deployment config and remove or hide UI
-  toggles for facts that should remain config-only, especially initial
-  positions.
-- Split counterparties and accounts as the relevant cashflows land: landlord,
-  tenant, lender, seller, tax authority, HOA, insurer, brokerage, crypto
-  exchange, and other bookkeeping identities should be explicit rather than
+- **Ordinary income translation is deferred (low priority, 2026-05-24).**
+  Today's scenarios are post-earning retirement projections rather than
+  active W-2 income; the income knob is not on the near-term path.
+  Promote when a scenario requires earning during the horizon.
+- **Path-indexed recurring cashflows.** Outside rent indexes to the
+  modeled rent-cost series from `augur/model` (configure current rent on
+  the as-of date plus a model series key, scale future rent by the
+  series ratio). Generalize this into a single path-indexed amount
+  contract for other recurring cashflows rather than adding one-off
+  inflation/rent flags. When native landlord rental cashflows land
+  (`augur/sim/TODO.md` "Real-estate lifecycle"), tenant rent income for
+  owned properties should use the same contract.
+- **Nominal dollars through sim.** Backend/sim accounting stays in
+  nominal dollars. Any inflation-adjusted display belongs in a
+  postprocessing/read-model layer.
+- **YAML-derived defaults.** Continue migrating bootstrap/UI defaults
+  away from frontend literals and into deployment YAML; hide UI toggles
+  for facts that should remain config-only (especially initial
+  positions).
+- **Explicit counterparties.** Split counterparties/accounts as the
+  relevant cashflows land — landlord, tenant, lender, seller, tax
+  authority, HOA, insurer, brokerage, crypto exchange — rather than
   collapsing into one generic external sink.
 
 ## Prior-Art Shape For Core Cleanup
