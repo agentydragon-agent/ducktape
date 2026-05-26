@@ -137,10 +137,27 @@ def _select_first_rollout(page: Page) -> None:
     ).first.wait_for(state="visible", timeout=30_000)
 
 
+def _wait_for_property_panel(page: Page) -> None:
+    """Wait for the property panel + lifecycle editor to mount with the prefilled events."""
+    _wait_for_product_page(page)
+    page.locator("[data-product-property-panel]").wait_for(state="visible", timeout=30_000)
+    page.get_by_text("Timeline (mid-horizon changes)").wait_for(state="visible", timeout=30_000)
+    # Three event rows pre-decoded from the URL: set-rented%, capital improvement, sale.
+    page.get_by_label("Rented %", exact=True).wait_for(state="visible", timeout=30_000)
+    page.get_by_label("Amount", exact=True).wait_for(state="visible", timeout=30_000)
+    page.get_by_label("Closing cost", exact=True).wait_for(state="visible", timeout=30_000)
+
+
+# `?s=1.240............location_a_property` selects the fixture property `location_a_property`
+# with horizonMonths=240. The 12 dots between "240" and the value are the empty positions for
+# rolloutCount..rentalLocationId (all defaults). `?lc=` carries three lifecycle events.
+_PROPERTY_LIFECYCLE_URL = "/product?s=1.240............location_a_property&lc=r24:50~c60:50000~s120:6"
+
 VISUAL_CASES = (
     VisualCase(
         name="product_cash_runway", path="/product", wait_ready=_wait_for_product_page, interact=_select_first_rollout
     ),
+    VisualCase(name="product_property_lifecycle", path=_PROPERTY_LIFECYCLE_URL, wait_ready=_wait_for_property_panel),
 )
 
 
