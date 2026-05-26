@@ -94,41 +94,45 @@ package with two modules:
   cross-phase helpers (`_sale_unit_price`, `_record_capital_gains`,
   tax-bracket helpers, mortgage-payment helpers, etc.).
 
-**Steps 5-7 landed** (`augur/sim/compiler/`): compiler.py converted to
-a package, with shared helpers + 4 domains extracted:
+**B4c landed** (`augur/sim/compiler/`): compiler.py is now a package
+where every CompileOutput class lives in its own per-domain module
+paired with its codec twin. `compiler/__init__.py` shrank from 1833
+LOC to ~430 LOC of pure orchestration: `SlotPlan`,
+`CompiledSimulation`, `compile_simulation`, and the series-helpers
+(`_collect_series_ids`, `_external_values_cube`,
+`_external_event_values_cube`).
 
-- `compiler/__init__.py` (~1430 LOC, down from 1833): orchestration
-  `compile_simulation`, `SlotPlan`, `CompiledSimulation`, and the
-  remaining un-extracted CompileOutputs.
+Per-domain modules:
+
 - `compiler/helpers.py`: `StringTable`, `slot`, `amount_arrays`,
   `empty_month_matrix`, plus `NO_CODE` / `AMOUNT_*` / `ORDINARY_*`
-  constants (leading `_` dropped since they're imported cross-module).
-- `compiler/lifecycle.py`: `LifecycleEventCompileOutput` ↔
-  `codec/lifecycle.py`. Owns `LIFECYCLE_KIND_*` constants.
-- `compiler/transfers.py`: `TransferCompileOutput` ↔ `codec/transfers.py`.
-- `compiler/assets.py`: `SaleCompileOutput` ↔ `codec/assets.py` (sales
-  - lot-disposition events).
-- `compiler/liquidity.py`: `LiquidityPolicyCompileOutput` (decode side
-  flows through `codec/assets.py` as lot dispositions).
+  constants.
+- `compiler/lifecycle.py` ↔ `codec/lifecycle.py` — owns
+  `LIFECYCLE_KIND_*` constants.
+- `compiler/transfers.py` ↔ `codec/transfers.py`.
+- `compiler/assets.py` ↔ `codec/assets.py` (scheduled sales).
+- `compiler/liquidity.py` (decode flows through `codec/assets.py` as
+  lot dispositions).
+- `compiler/properties.py` ↔ `codec/properties.py` +
+  `codec/liabilities.py` (produces both PropertyCompileOutput and
+  LiabilityCompileOutput in lockstep).
+- `compiler/obligations.py` ↔ `codec/obligations.py` (includes
+  `estimated_tax_quarter` helper).
+- `compiler/tax.py` ↔ `codec/tax.py` — owns `TaxCompileOutput` +
+  `TaxLiabilityCompileOutput` + `compile_capital_gain_agents` +
+  §121 exclusion lookup + §1250 constants.
+- `compiler/deductions.py`: `MIDCompileOutput`, `SaltCompileOutput`,
+  decoded as part of `codec/tax.py`'s tax-breakdown events.
+- `compiler/pe.py`: `PEIssuerCompileOutput`, `PEPolicyCompileOutput`.
 
-**Remaining work**:
+**Remaining (optional)**:
 
-- Optional finer subdivision of `engine/phases.py` into
+- Finer subdivision of `engine/phases.py` into
   `engine/phases/{transfers,purchases,obligations,taxes,pe_tenders,
 lifecycle}.py` — defer until phases.py becomes a pain point.
-- Lift remaining compiler domains:
-  - `compiler/obligations.py`: `ObligationCompileOutput` (~230 LOC).
-  - `compiler/properties.py` + `compiler/liabilities.py`:
-    `PropertyCompileOutput` + `LiabilityCompileOutput` (currently
-    produced by one combined `_compile_properties_and_liabilities`;
-    split into two when extracted).
-  - `compiler/tax.py`: `TaxCompileOutput` + `_compile_tax` + sibling
-    helpers (`_compile_capital_gain_agents`, `_section_121_exclusion_for`,
-    `_estimated_tax_quarter`, `TaxLiabilityCompileOutput`).
-  - `compiler/deductions.py`: `MIDCompileOutput` + `SaltCompileOutput`
-    - their compile helpers.
-  - `compiler/pe.py`: `PEIssuerCompileOutput` + `PEPolicyCompileOutput`
-    - `_compile_private_equity_tenders`.
+- Lift the orchestrator's series helpers
+  (`_collect_series_ids`/`_external_values_cube`) into
+  `compiler/series.py` if `compiler/__init__.py` grows further.
 
 ### B5. Bundle lifecycle-event discriminators into per-event-kind dataclasses (small to medium; new)
 
@@ -189,7 +193,5 @@ current action:
 
 | #   | Area                                                              | Impact     | Effort   |
 | --- | ----------------------------------------------------------------- | ---------- | -------- |
-| B4b | Split engine.py runtime into `engine/phases/*.py` + `engine/loop` | DX         | medium   |
-| B4c | Split compiler.py per domain to mirror `codec/`                   | DX         | large    |
 | B5  | Bundle lifecycle/obligation discriminators into typed views       | DX         | medium   |
 | X1  | GitHub Actions blocked: account suspension blocks all push-images | cross-repo | external |
