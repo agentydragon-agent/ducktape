@@ -66,6 +66,11 @@ jobs:
           - { image: "//airlock/auth_proxy:image", image_name: auth-proxy, test_target: "//airlock/auth_proxy/..." }
           - { image: "//augur/api:image", image_name: augur, test_target: "//augur/api/..." }
           - {
+              image: "//augur/frontend:image",
+              image_name: augur-frontend,
+              test_target: "//augur/frontend:image_build_test",
+            }
+          - {
               image: "//homeassistant/proxy:image",
               image_name: homeassistant-proxy,
               test_target: "//homeassistant/proxy/...",

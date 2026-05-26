@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Augur">
+  <defs>
+    <clipPath id="augur-bird">
+      <path d="M 4 36 Q 16 18 32 28 Q 48 18 60 36 Q 50 32 38 32 Q 32 36 26 32 Q 14 32 4 36 Z" />
+    </clipPath>
+  </defs>
+  <g clip-path="url(#augur-bird)">
+    <rect x="0" y="16" width="64" height="10" fill="#93c5fd" />
+    <rect x="0" y="26" width="64" height="6" fill="#60a5fa" />
+    <rect x="0" y="32" width="64" height="10" fill="#3b82f6" />
+  </g>
+</svg>

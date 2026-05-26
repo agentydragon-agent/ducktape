@@ -1,15 +1,21 @@
+load("@aspect_bazel_lib//lib:copy_to_directory.bzl", "copy_to_directory")
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("@aspect_rules_js//js:defs.bzl", "js_library", "js_run_binary")
+load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@npm_ducktape//:@tailwindcss/cli/package_json.bzl", tailwindcss_bin = "bin")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
 package(default_visibility = ["//visibility:public"])
 
 # -- Frontend bundle -----------------------------------------------------------
 #
-# Generic augur React app + its tailwind-driven stylesheet. The bundle excludes
-# property-image assets — deployments (e.g. gaffer) overlay those on top of
-# `:bundle_base` to produce the final image bundle.
+# Generic augur React app + its tailwind-driven stylesheet. `:bundle_base`
+# contains everything nginx needs to serve the app; `:image` packages it on
+# top of `nginx_unprivileged`. Deployments that need extra static assets
+# (e.g. gaffer-private's property photos) can overlay `:image` or mount
+# additional files at runtime via a volume.
 
 REACT_DEPS = ["//:node_modules/react"]
 
@@ -114,12 +120,62 @@ copy_file(
     out = "dist/index.html",
 )
 
+copy_file(
+    name = "bundle_favicon",
+    src = "favicon.svg",
+    out = "dist/favicon.svg",
+)
+
 filegroup(
     name = "bundle_base",
     srcs = [
+        ":bundle_favicon",
         ":bundle_index_html",
         ":main_bundle",
         ":styles_css",
+    ],
+)
+
+# -- OCI image -----------------------------------------------------------------
+#
+# Static-assets sidecar: `nginx_unprivileged` serving the React bundle from
+# `/usr/share/nginx/html`. The nginx config itself is mounted into the pod
+# at runtime via a ConfigMap (see gaffer-private's k8s/augur/nginx.conf).
+
+copy_to_directory(
+    name = "frontend_files",
+    srcs = [":bundle_base"],
+    out = "usr/share/nginx/html",
+    root_paths = ["augur/frontend/dist"],
+)
+
+pkg_tar(
+    name = "frontend_tar",
+    srcs = [":frontend_files"],
+    package_dir = "/usr/share/nginx",
+)
+
+oci_image(
+    name = "image",
+    base = "@nginx_unprivileged_linux_amd64",
+    labels = {
+        "org.opencontainers.image.source": "https://github.com/agentydragon/ducktape",
+        "org.opencontainers.image.title": "augur-frontend",
+    },
+    tars = [":frontend_tar"],
+)
+
+oci_load(
+    name = "image_load",
+    image = ":image",
+    repo_tags = ["augur-frontend:dev"],
+)
+
+build_test(
+    name = "image_build_test",
+    targets = [
+        ":image",
+        ":image.digest",
     ],
 )
 
