@@ -556,12 +556,15 @@ rust_library(
     crate_root = "cli.rs",
     edition = "2024",
     deps = [
+        ":analysis",
         ":comment_cli",
         ":module_cli",
         ":peel",
         ":pipeline",
+        ":spec_modules",
         "@crates//:anyhow",
         "@crates//:clap",
+        "@crates//:serde_json",
     ],
 )
 
@@ -572,6 +575,7 @@ rust_test(
     deps = [
         ":js_ast",
         ":spec_tree",
+        "@crates//:tempfile",
     ],
 )
 

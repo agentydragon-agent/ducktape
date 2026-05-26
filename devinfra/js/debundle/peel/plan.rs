@@ -32,165 +32,165 @@ pub struct PeelArgs {
 
 #[derive(Debug, Subcommand)]
 enum PeelCommand {
-    /// Emit module-assignment proposals and diagnostics derived from the atomic DAG.
+    /// Deprecated alias for `debundle modules propose`.
     #[command(name = "plan-work")]
     PlanWork(PlanWorkArgs),
-    /// List atomic units from the emitted graph.
+    /// Deprecated alias for `debundle atoms`.
     Units(UnitsArgs),
-    /// Report binding/module patch coverage against atomic units.
+    /// Deprecated alias for `debundle coverage`.
     #[command(name = "patch-plan")]
     PatchPlan(PatchPlanArgs),
-    /// Explain one owner, binding, proposal, unit, or diagnostic with graph/spec context.
+    /// Deprecated alias for `debundle describe <id>`.
     Explain(ExplainArgs),
-    /// Print source text for one owner, binding, proposal, unit, or diagnostic.
+    /// Deprecated alias for `debundle show-source <id>`.
     #[command(name = "source-slice")]
     SourceSlice(SourceSliceArgs),
-    /// Summarize current atomic graph and recommendation counts.
+    /// Deprecated alias for `debundle graph-summary`.
     #[command(name = "graph-summary")]
     GraphSummary(GraphSummaryArgs),
 }
 
 #[derive(Debug, Clone, ClapArgs)]
-struct CommonArgs {
+pub struct CommonArgs {
     /// Path to `owner_graph.json` (debundler analysis output).
-    #[arg(long = "graph")]
-    owner_graph_path: PathBuf,
+    #[arg(long = "graph", env = "DEBUNDLE_GRAPH")]
+    pub owner_graph_path: PathBuf,
 
     /// Root of emitted-module `*.yaml` spec files.
-    #[arg(long = "modules")]
-    modules_root: PathBuf,
+    #[arg(long = "modules", env = "DEBUNDLE_MODULES")]
+    pub modules_root: PathBuf,
 }
 
 #[derive(Debug, Clone, ClapArgs)]
-struct PlanWorkArgs {
+pub struct PlanWorkArgs {
     #[command(flatten)]
-    common: CommonArgs,
+    pub common: CommonArgs,
 
     /// Hard line ceiling per emitted proposal.
     #[arg(long = "size-cap-lines", default_value_t = 10_000)]
-    size_cap_lines: usize,
+    pub size_cap_lines: usize,
 
     /// Maximum number of proposals and diagnostics to emit. Zero means unlimited.
     #[arg(long, default_value_t = 0)]
-    limit: usize,
+    pub limit: usize,
 }
 
 #[derive(Debug, Clone, ClapArgs)]
-struct UnitsArgs {
+pub struct UnitsArgs {
     #[command(flatten)]
-    common: CommonArgs,
+    pub common: CommonArgs,
 
     /// Maximum number of units to emit. Zero means unlimited.
     #[arg(long, default_value_t = 0)]
-    limit: usize,
+    pub limit: usize,
 
     /// Filter to units containing at least one residual owner.
     #[arg(long = "residual-only")]
-    residual_only: bool,
+    pub residual_only: bool,
 
     /// Filter to units with at least one renamed export.
     #[arg(long = "readable-only")]
-    readable_only: bool,
+    pub readable_only: bool,
 
     /// Also group emitted units by current destination.
     #[arg(long = "by-destination")]
-    by_destination: bool,
+    pub by_destination: bool,
 }
 
 #[derive(Debug, Clone, ClapArgs)]
-struct PatchPlanArgs {
+pub struct PatchPlanArgs {
     #[command(flatten)]
-    common: CommonArgs,
+    pub common: CommonArgs,
 
     /// Maximum number of rows to keep. Zero means unlimited.
     #[arg(long, default_value_t = 0)]
-    limit: usize,
+    pub limit: usize,
 }
 
 #[derive(Debug, Clone, ClapArgs)]
-struct GraphSummaryArgs {
+pub struct GraphSummaryArgs {
     #[command(flatten)]
-    common: CommonArgs,
+    pub common: CommonArgs,
 
     /// Hard line ceiling per emitted proposal.
     #[arg(long = "size-cap-lines", default_value_t = 10_000)]
-    size_cap_lines: usize,
+    pub size_cap_lines: usize,
 
     /// Maximum number of largest residual units to emit. Zero means unlimited.
     #[arg(long, default_value_t = 10)]
-    limit: usize,
+    pub limit: usize,
 }
 
 #[derive(Debug, Clone, ClapArgs)]
-struct ExplainArgs {
+pub struct ExplainArgs {
     #[command(flatten)]
-    common: CommonArgs,
+    pub common: CommonArgs,
 
     #[command(flatten)]
-    selection: SelectionArgs,
+    pub selection: SelectionArgs,
 
     /// Hard line ceiling used when resolving `--proposal-id`.
     #[arg(long = "size-cap-lines", default_value_t = 10_000)]
-    size_cap_lines: usize,
+    pub size_cap_lines: usize,
 
     /// Maximum number of rows to emit per report section. Zero means unlimited.
     #[arg(long, default_value_t = 0)]
-    limit: usize,
+    pub limit: usize,
 }
 
 #[derive(Debug, Clone, ClapArgs)]
-struct SourceSliceArgs {
+pub struct SourceSliceArgs {
     #[command(flatten)]
-    common: CommonArgs,
+    pub common: CommonArgs,
 
     #[command(flatten)]
-    selection: SelectionArgs,
+    pub selection: SelectionArgs,
 
     /// Hard line ceiling used when resolving `--proposal-id`.
     #[arg(long = "size-cap-lines", default_value_t = 10_000)]
-    size_cap_lines: usize,
+    pub size_cap_lines: usize,
 
     /// Extra source lines to include around the selected owner span.
     #[arg(long = "context-lines", default_value_t = 20)]
-    context_lines: usize,
+    pub context_lines: usize,
 
     /// Root used to resolve relative `source_location.source_path` values.
-    #[arg(long = "source-root")]
-    source_root: Option<PathBuf>,
+    #[arg(long = "source-root", env = "DEBUNDLE_SOURCE_ROOT")]
+    pub source_root: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, ClapArgs)]
-struct SelectionArgs {
+pub struct SelectionArgs {
     /// Select one owner id from `owner_graph.json`.
     #[arg(long = "owner-id")]
-    owner_id: Option<String>,
+    pub owner_id: Option<String>,
 
     /// Select the owner that declares this input binding id.
     #[arg(long = "binding-id")]
-    binding_id: Option<String>,
+    pub binding_id: Option<String>,
 
     /// Select a factorizer proposal by `proposed_module_id`.
     #[arg(long = "proposal-id")]
-    proposal_id: Option<String>,
+    pub proposal_id: Option<String>,
 
     /// Select one atomic unit id from `owner_graph.json`.
     #[arg(long = "unit-id")]
-    unit_id: Option<String>,
+    pub unit_id: Option<String>,
 
     /// Select one factorizer diagnostic by `diagnostic_id`.
     #[arg(long = "diagnostic-id")]
-    diagnostic_id: Option<String>,
+    pub diagnostic_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-struct QueryReport {
-    kind: QueryKind,
-    value: String,
+pub struct QueryReport {
+    pub kind: QueryKind,
+    pub value: String,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-enum QueryKind {
+pub enum QueryKind {
     Owner,
     Binding,
     Proposal,
@@ -230,182 +230,195 @@ impl SelectionKind {
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-struct UnitsReport {
-    units: Vec<AtomicUnitReport>,
+pub struct UnitsReport {
+    pub units: Vec<AtomicUnitReport>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    groups: Vec<UnitGroup>,
+    pub groups: Vec<UnitGroup>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-struct UnitGroup {
-    destination: String,
-    unit_ids: Vec<String>,
+pub struct UnitGroup {
+    pub destination: String,
+    pub unit_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-struct PlanWorkReport {
+pub struct PlanWorkReport {
     #[serde(flatten)]
-    report: PeelFactorizeReport,
+    pub report: PeelFactorizeReport,
     #[serde(skip_serializing_if = "Option::is_none")]
-    limits: Option<LimitReport>,
+    pub limits: Option<LimitReport>,
 }
 
 #[derive(Debug, Clone, Serialize)]
-struct ExplainReport {
-    query: QueryReport,
-    owner_ids: Vec<String>,
-    owners: Vec<OwnerGraphNodeReport>,
-    neighbor_owners: Vec<OwnerGraphNodeReport>,
-    bindings: Vec<BindingReport>,
-    binding_homes: Vec<BindingHomeReport>,
-    incoming_edges: Vec<OwnerGraphEdgeReport>,
-    outgoing_edges: Vec<OwnerGraphEdgeReport>,
-    atomic_units: Vec<AtomicUnitReport>,
-    incoming_atomic_edges: Vec<AtomicUnitEdgeReport>,
-    outgoing_atomic_edges: Vec<AtomicUnitEdgeReport>,
-    quotient_edges: Vec<QuotientEdgeReport>,
-    factorize_proposals: Vec<FactorizeProposal>,
-    factorize_diagnostics: Vec<FactorizeDiagnosticReport>,
+pub struct ExplainReport {
+    pub query: QueryReport,
+    pub owner_ids: Vec<String>,
+    pub owners: Vec<OwnerGraphNodeReport>,
+    pub neighbor_owners: Vec<OwnerGraphNodeReport>,
+    pub bindings: Vec<BindingReport>,
+    pub binding_homes: Vec<BindingHomeReport>,
+    pub incoming_edges: Vec<OwnerGraphEdgeReport>,
+    pub outgoing_edges: Vec<OwnerGraphEdgeReport>,
+    pub atomic_units: Vec<AtomicUnitReport>,
+    pub incoming_atomic_edges: Vec<AtomicUnitEdgeReport>,
+    pub outgoing_atomic_edges: Vec<AtomicUnitEdgeReport>,
+    pub quotient_edges: Vec<QuotientEdgeReport>,
+    pub factorize_proposals: Vec<FactorizeProposal>,
+    pub factorize_diagnostics: Vec<FactorizeDiagnosticReport>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    limits: Option<LimitReport>,
+    pub limits: Option<LimitReport>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-struct PatchPlanReport {
-    rows: Vec<PatchPlanRow>,
-    summary: PatchPlanSummary,
+pub struct PatchPlanReport {
+    pub rows: Vec<PatchPlanRow>,
+    pub summary: PatchPlanSummary,
     #[serde(skip_serializing_if = "Option::is_none")]
-    limits: Option<LimitReport>,
+    pub limits: Option<LimitReport>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-struct PatchPlanSummary {
-    total_patch_sets: usize,
-    complete_patch_sets: usize,
-    split_patch_sets: usize,
-    unknown_binding_count: usize,
+pub struct PatchPlanSummary {
+    pub total_patch_sets: usize,
+    pub complete_patch_sets: usize,
+    pub split_patch_sets: usize,
+    pub unknown_binding_count: usize,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-struct PatchPlanRow {
-    path: String,
-    file: String,
-    status: PatchPlanStatus,
-    requested_binding_ids: Vec<String>,
-    unknown_binding_ids: Vec<String>,
-    unit_ids: Vec<String>,
-    complete_unit_ids: Vec<String>,
-    split_unit_ids: Vec<String>,
-    missing_binding_ids: Vec<String>,
-    missing_owner_ids: Vec<String>,
-    missing_anonymous_owner_ids: Vec<String>,
-    matching_proposal_ids: Vec<String>,
+pub struct PatchPlanRow {
+    pub path: String,
+    pub file: String,
+    pub status: PatchPlanStatus,
+    pub requested_binding_ids: Vec<String>,
+    pub unknown_binding_ids: Vec<String>,
+    pub unit_ids: Vec<String>,
+    pub complete_unit_ids: Vec<String>,
+    pub split_unit_ids: Vec<String>,
+    pub missing_binding_ids: Vec<String>,
+    pub missing_owner_ids: Vec<String>,
+    pub missing_anonymous_owner_ids: Vec<String>,
+    pub matching_proposal_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "snake_case")]
-enum PatchPlanStatus {
+pub enum PatchPlanStatus {
     CompleteUnits,
     SplitUnits,
     UnknownBindings,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-struct GraphSummaryReport {
-    owner_count: usize,
-    owner_edge_count: usize,
-    atomic_unit_count: usize,
-    residual_atomic_unit_count: usize,
-    atomic_edge_count: usize,
-    module_count: usize,
-    module_edge_count: usize,
-    proposal_count: usize,
-    diagnostic_count: usize,
-    largest_residual_units: Vec<UnitSummary>,
+pub struct GraphSummaryReport {
+    pub owner_count: usize,
+    pub owner_edge_count: usize,
+    pub atomic_unit_count: usize,
+    pub residual_atomic_unit_count: usize,
+    pub atomic_edge_count: usize,
+    pub module_count: usize,
+    pub module_edge_count: usize,
+    pub proposal_count: usize,
+    pub diagnostic_count: usize,
+    pub largest_residual_units: Vec<UnitSummary>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-struct UnitSummary {
-    unit_id: String,
-    size_lines_estimate: usize,
-    members: Vec<BindingReport>,
+pub struct UnitSummary {
+    pub unit_id: String,
+    pub size_lines_estimate: usize,
+    pub members: Vec<BindingReport>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-struct LimitReport {
-    limit: usize,
-    sections: BTreeMap<&'static str, LimitSectionReport>,
+pub struct LimitReport {
+    pub limit: usize,
+    pub sections: BTreeMap<&'static str, LimitSectionReport>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-struct LimitSectionReport {
-    total: usize,
-    emitted: usize,
-    truncated: bool,
+pub struct LimitSectionReport {
+    pub total: usize,
+    pub emitted: usize,
+    pub truncated: bool,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq, PartialOrd, Ord)]
-struct BindingHomeReport {
-    binding: String,
-    name: String,
-    source_kind: BindingHomeSourceKind,
-    path: String,
+pub struct BindingHomeReport {
+    pub binding: String,
+    pub name: String,
+    pub source_kind: BindingHomeSourceKind,
+    pub path: String,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "snake_case")]
-enum BindingHomeSourceKind {
+pub enum BindingHomeSourceKind {
     Module,
     BindingPatch,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-struct SourceSliceReport {
-    query: QueryReport,
-    owner_ids: Vec<String>,
-    slices: Vec<SourceSlice>,
+pub struct SourceSliceReport {
+    pub query: QueryReport,
+    pub owner_ids: Vec<String>,
+    pub slices: Vec<SourceSlice>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-struct SourceSlice {
-    source_path: String,
-    resolved_path: String,
-    start_line: usize,
-    end_line: usize,
-    context_start_line: usize,
-    context_end_line: usize,
-    text: String,
+pub struct SourceSlice {
+    pub source_path: String,
+    pub resolved_path: String,
+    pub start_line: usize,
+    pub end_line: usize,
+    pub context_start_line: usize,
+    pub context_end_line: usize,
+    pub text: String,
 }
 
 pub fn run_peel(args: PeelArgs) -> Result<()> {
     match args.command {
         PeelCommand::PlanWork(args) => {
+            deprecation_notice("peel plan-work", "modules propose");
             print_json(&run_plan_work_report(&args)?).context("writing plan-work JSON")
         }
         PeelCommand::Units(args) => {
+            deprecation_notice("peel units", "atoms");
             print_json(&run_units_report(&args)?).context("writing units JSON")
         }
         PeelCommand::PatchPlan(args) => {
+            deprecation_notice("peel patch-plan", "coverage");
             print_json(&run_patch_plan_report(&args)?).context("writing patch-plan JSON")
         }
         PeelCommand::Explain(args) => {
+            deprecation_notice("peel explain", "describe <id>");
             print_json(&run_explain_report(&args)?).context("writing explain JSON")
         }
         PeelCommand::SourceSlice(args) => {
+            deprecation_notice("peel source-slice", "show-source <id>");
             print_json(&run_source_slice_report(&args)?).context("writing source-slice JSON")
         }
         PeelCommand::GraphSummary(args) => {
+            deprecation_notice("peel graph-summary", "graph-summary");
             print_json(&run_graph_summary_report(&args)?).context("writing graph-summary JSON")
         }
     }
 }
 
-fn print_json<T: Serialize>(value: &T) -> Result<()> {
+fn deprecation_notice(old: &str, new: &str) {
+    eprintln!(
+        "warning: `debundle {old}` is deprecated; use `debundle {new}` instead. The `peel` \
+         namespace will be removed in a future release."
+    );
+}
+
+pub fn print_json<T: Serialize>(value: &T) -> Result<()> {
     println!("{}", serde_json::to_string_pretty(value)?);
     Ok(())
 }
 
-fn run_plan_work_report(args: &PlanWorkArgs) -> Result<PlanWorkReport> {
+pub fn run_plan_work_report(args: &PlanWorkArgs) -> Result<PlanWorkReport> {
     let mut report = analyze_peel_factorize(&PeelFactorizeOptions {
         owner_graph_path: args.common.owner_graph_path.clone(),
         modules_root: args.common.modules_root.clone(),
@@ -433,7 +446,7 @@ fn run_plan_work_report(args: &PlanWorkArgs) -> Result<PlanWorkReport> {
     })
 }
 
-fn run_units_report(args: &UnitsArgs) -> Result<UnitsReport> {
+pub fn run_units_report(args: &UnitsArgs) -> Result<UnitsReport> {
     let graph = load_graph(&args.common.owner_graph_path)?;
     let mut units = graph.atomic_graph.nodes.clone();
     if args.residual_only {
@@ -467,7 +480,7 @@ fn run_units_report(args: &UnitsArgs) -> Result<UnitsReport> {
     Ok(UnitsReport { units, groups })
 }
 
-fn run_patch_plan_report(args: &PatchPlanArgs) -> Result<PatchPlanReport> {
+pub fn run_patch_plan_report(args: &PatchPlanArgs) -> Result<PatchPlanReport> {
     let graph = load_graph(&args.common.owner_graph_path)?;
     let factorize = analyze_peel_factorize(&PeelFactorizeOptions {
         owner_graph_path: args.common.owner_graph_path.clone(),
@@ -497,7 +510,7 @@ fn run_patch_plan_report(args: &PatchPlanArgs) -> Result<PatchPlanReport> {
     })
 }
 
-fn run_graph_summary_report(args: &GraphSummaryArgs) -> Result<GraphSummaryReport> {
+pub fn run_graph_summary_report(args: &GraphSummaryArgs) -> Result<GraphSummaryReport> {
     let graph = load_graph(&args.common.owner_graph_path)?;
     let factorize = analyze_peel_factorize(&PeelFactorizeOptions {
         owner_graph_path: args.common.owner_graph_path.clone(),
@@ -557,7 +570,7 @@ macro_rules! apply_limits {
     };
 }
 
-fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
+pub fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
     let graph = load_graph(&args.common.owner_graph_path)?;
     let selection = args.selection.selection_kind()?;
     let query = query_report(&selection);
@@ -694,7 +707,7 @@ fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
     })
 }
 
-fn run_source_slice_report(args: &SourceSliceArgs) -> Result<SourceSliceReport> {
+pub fn run_source_slice_report(args: &SourceSliceArgs) -> Result<SourceSliceReport> {
     let graph = load_graph(&args.common.owner_graph_path)?;
     let selection = args.selection.selection_kind()?;
     let query = query_report(&selection);

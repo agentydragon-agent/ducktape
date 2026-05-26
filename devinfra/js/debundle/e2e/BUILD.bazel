@@ -159,3 +159,19 @@ rust_test(
         "@crates//:tempfile",
     ],
 )
+
+# Top-level query commands lifted from `peel <sub>` to top-level:
+# `atoms`, `coverage`, `graph-summary`, `describe`, `show-source`,
+# `modules propose`. Calls the public peel report fns directly.
+rust_test(
+    name = "top_level_query_cli_test",
+    srcs = ["top_level_query_cli_test.rs"],
+    crate_root = "top_level_query_cli_test.rs",
+    edition = "2024",
+    deps = [
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:peel",
+        "@crates//:serde_json",
+        "@crates//:tempfile",
+    ],
+)

@@ -30,18 +30,18 @@ enum ModuleCommand {
 }
 
 #[derive(Debug, ClapArgs)]
-struct MergeArgs {
+pub struct MergeArgs {
     /// Root directory containing the per-module YAML tree.
-    #[arg(long = "modules")]
-    modules_root: PathBuf,
+    #[arg(long = "modules", env = "DEBUNDLE_MODULES")]
+    pub modules_root: PathBuf,
 
     /// Target module path (relative to --modules) to merge into.
     #[arg(long = "target")]
-    target: PathBuf,
+    pub target: PathBuf,
 
     /// Source module paths (relative to --modules) to merge in.
     #[arg(required = true)]
-    sources: Vec<PathBuf>,
+    pub sources: Vec<PathBuf>,
 }
 
 /// Summary returned by [`merge_modules`].
@@ -68,12 +68,23 @@ impl MergeSummary {
 pub fn run_module_cli(args: ModuleArgs) -> Result<()> {
     match args.command {
         ModuleCommand::Merge(merge) => {
-            let sources: Vec<&Path> = merge.sources.iter().map(PathBuf::as_path).collect();
-            let summary = merge_modules(&merge.modules_root, &merge.target, &sources)?;
-            println!("{}", summary.summary_line());
-            Ok(())
+            eprintln!(
+                "warning: `debundle module merge` is deprecated; use `debundle modules \
+                 merge` instead."
+            );
+            run_merge(merge)
         }
     }
+}
+
+/// Public entry point for the merge verb. Used by the top-level
+/// `debundle modules merge` and by the deprecated `debundle module
+/// merge` alias.
+pub fn run_merge(merge: MergeArgs) -> Result<()> {
+    let sources: Vec<&Path> = merge.sources.iter().map(PathBuf::as_path).collect();
+    let summary = merge_modules(&merge.modules_root, &merge.target, &sources)?;
+    println!("{}", summary.summary_line());
+    Ok(())
 }
 
 /// Merge `sources` into `target` under `modules_root`, then delete the

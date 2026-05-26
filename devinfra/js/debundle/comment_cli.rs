@@ -56,11 +56,9 @@ enum BindingsCommand {
     Comment(BindingCommentArgs),
 }
 
-/// Top-level `debundle modules ...` argument shape.
-///
-/// Currently only carries `comment`. Future renames (docs/cli.md)
-/// move `module merge` -> `modules merge` and add `modules list` /
-/// `modules propose` here.
+/// Comment-only inner subcommand shape. Composed by the top-level
+/// `debundle modules ...` clap node alongside non-comment verbs
+/// (merge, propose) — see `cli.rs`.
 #[derive(Debug, ClapArgs)]
 pub struct ModulesArgs {
     #[command(subcommand)]
@@ -203,6 +201,19 @@ pub fn run_modules_cli(args: ModulesArgs) -> Result<()> {
     match args.command {
         ModulesCommand::Comment(args) => run_module_comment(args),
     }
+}
+
+/// Public entry point for the inner `comment` verb under either the
+/// `bindings` or `modules` namespace. Composed by the top-level
+/// `cli.rs` so the new `modules` clap node can sit alongside `merge`
+/// / `propose` without duplicating the comment YAML logic.
+pub fn run_binding_comment_cmd(args: BindingCommentArgs) -> Result<()> {
+    run_binding_comment(args)
+}
+
+/// See [`run_binding_comment_cmd`].
+pub fn run_module_comment_cmd(args: ModuleCommentArgs) -> Result<()> {
+    run_module_comment(args)
 }
 
 // ---------------------------------------------------------------------
