@@ -148,10 +148,11 @@ def _wait_for_property_panel(page: Page) -> None:
     page.get_by_label("Closing cost", exact=True).wait_for(state="visible", timeout=30_000)
 
 
-# `?s=1.240............location_a_property` selects the fixture property `location_a_property`
+# `?s=2.240............location_a_property` selects the fixture property `location_a_property`
 # with horizonMonths=240. The 12 dots between "240" and the value are the empty positions for
 # rolloutCount..rentalLocationId (all defaults). `?lc=` carries three lifecycle events.
-_PROPERTY_LIFECYCLE_URL = "/product?s=1.240............location_a_property&lc=r24:50~c60:50000~s120:6"
+# Schema version 2 (matches the v2 schema bump for the fraction-rented percentage encoding).
+_PROPERTY_LIFECYCLE_URL = "/product?s=2.240............location_a_property&lc=r24:50~c60:50000~s120:6"
 
 VISUAL_CASES = (
     VisualCase(
