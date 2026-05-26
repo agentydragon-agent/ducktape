@@ -170,33 +170,8 @@ class CompiledSimulation:
     #     for sale-proceeds = units * mark at tender)
     #   - the policy index (into the per-policy arrays below) whose LNW-floor governs sales
     #     on tenders for this issuer (NO_CODE if no PrivateEquityTenderPolicy applies)
-    pe_issuer_codes: NDArray[np.int64]
-    pe_issuer_event_series_index: NDArray[np.int64]
-    pe_issuer_level_series_index: NDArray[np.int64]
-    pe_issuer_policy_index: NDArray[np.int64]
-    # 2D boolean mask: (issuer_count, lot_count). True iff that lot is a PE lot for that
-    # issuer. The engine FIFO-orders lots within an issuer-mask and drains them on sale.
-    pe_issuer_lot_mask: NDArray[np.bool_]
-    # Per-policy arrays: one row per PrivateEquityTenderPolicy in the scenario.
-    #   - owner_agent_codes: the policy's owner
-    #   - proceeds_cash_slot: where tender proceeds land
-    #   - floor_*: AmountSpec arrays evaluated at the event month to yield the LNW floor
-    #   - owner_cash_mask: (policy_count, cash_count) — which cash slots count toward the
-    #     owner's liquid net worth
-    #   - owner_non_pe_lot_mask: (policy_count, lot_count) — which lots count toward the
-    #     owner's liquid net worth (owned by the policy's agent AND not in any
-    #     `private_equity:*` asset). PE lots themselves are explicitly excluded since "you
-    #     can't liquidate PE on demand" is the whole reason the floor matters.
-    pe_policy_owner_agent_codes: NDArray[np.int64]
-    pe_policy_proceeds_cash_slot: NDArray[np.int64]
-    pe_policy_floor_kind: NDArray[np.int64]
-    pe_policy_floor_fixed: NDArray[np.float64]
-    pe_policy_floor_base: NDArray[np.float64]
-    pe_policy_floor_series_index: NDArray[np.int64]
-    pe_policy_floor_base_month: NDArray[np.int64]
-    pe_policy_floor_adjustment_period: NDArray[np.int64]
-    pe_policy_owner_cash_mask: NDArray[np.bool_]
-    pe_policy_owner_non_pe_lot_mask: NDArray[np.bool_]
+    pe_issuers: PEIssuerCompileOutput
+    pe_policies: PEPolicyCompileOutput
     liquidity_policies: LiquidityPolicyCompileOutput
 
 
@@ -349,23 +324,7 @@ def compile_simulation(
         [series_index_by_id.get(lot.asset_id, NO_CODE) for lot in scenario.initial_lots], dtype=np.int64
     )
     cash_agent_codes_arr = np.asarray([strings.require(b.agent_id) for b in scenario.initial_cash], dtype=np.int64)
-    (
-        pe_issuer_codes,
-        pe_issuer_event_series_index,
-        pe_issuer_level_series_index,
-        pe_issuer_policy_index,
-        pe_issuer_lot_mask,
-        pe_policy_owner_agent_codes,
-        pe_policy_proceeds_cash_slot,
-        pe_policy_floor_kind,
-        pe_policy_floor_fixed,
-        pe_policy_floor_base,
-        pe_policy_floor_series_index,
-        pe_policy_floor_base_month,
-        pe_policy_floor_adjustment_period,
-        pe_policy_owner_cash_mask,
-        pe_policy_owner_non_pe_lot_mask,
-    ) = _compile_private_equity_tenders(
+    pe_issuers, pe_policies = _compile_private_equity_tenders(
         scenario,
         strings,
         series_index_by_id=series_index_by_id,
@@ -435,21 +394,8 @@ def compile_simulation(
         obligations=obligations,
         external_event_ids=external_event_ids,
         external_event_values=external_event_values,
-        pe_issuer_codes=pe_issuer_codes,
-        pe_issuer_event_series_index=pe_issuer_event_series_index,
-        pe_issuer_level_series_index=pe_issuer_level_series_index,
-        pe_issuer_policy_index=pe_issuer_policy_index,
-        pe_issuer_lot_mask=pe_issuer_lot_mask,
-        pe_policy_owner_agent_codes=pe_policy_owner_agent_codes,
-        pe_policy_proceeds_cash_slot=pe_policy_proceeds_cash_slot,
-        pe_policy_floor_kind=pe_policy_floor_kind,
-        pe_policy_floor_fixed=pe_policy_floor_fixed,
-        pe_policy_floor_base=pe_policy_floor_base,
-        pe_policy_floor_series_index=pe_policy_floor_series_index,
-        pe_policy_floor_base_month=pe_policy_floor_base_month,
-        pe_policy_floor_adjustment_period=pe_policy_floor_adjustment_period,
-        pe_policy_owner_cash_mask=pe_policy_owner_cash_mask,
-        pe_policy_owner_non_pe_lot_mask=pe_policy_owner_non_pe_lot_mask,
+        pe_issuers=pe_issuers,
+        pe_policies=pe_policies,
         liquidity_policies=liquidity_policies,
     )
 
@@ -527,6 +473,39 @@ def _external_event_values_cube(
     return values
 
 
+@dataclass(frozen=True)
+class PEIssuerCompileOutput:
+    """Per-issuer arrays (one row per distinct `private_equity:<issuer>` asset). An issuer
+    is `policy_index = NO_CODE` if no PrivateEquityTenderPolicy applies (issuer never
+    tenders within horizon); the engine skips it. `lot_mask[i, l]` flags which lots
+    belong to issuer `i`."""
+
+    codes: NDArray[np.int64]
+    event_series: NDArray[np.int64]
+    level_series: NDArray[np.int64]
+    policy_index: NDArray[np.int64]
+    lot_mask: NDArray[np.bool_]
+
+
+@dataclass(frozen=True)
+class PEPolicyCompileOutput:
+    """Per-policy arrays (one row per PrivateEquityTenderPolicy). `floor_*` is the
+    indexed-amount schedule for the liquid-net-worth floor (CPI-indexable). `owner_cash_mask`
+    + `owner_non_pe_lot_mask` are (policy × slot) masks the engine uses to compute LNW
+    from the owner's non-PE liquid assets."""
+
+    owner_agent: NDArray[np.int64]
+    proceeds_cash_slot: NDArray[np.int64]
+    floor_kind: NDArray[np.int64]
+    floor_fixed: NDArray[np.float64]
+    floor_base: NDArray[np.float64]
+    floor_series: NDArray[np.int64]
+    floor_base_month: NDArray[np.int64]
+    floor_period: NDArray[np.int64]
+    owner_cash_mask: NDArray[np.bool_]
+    owner_non_pe_lot_mask: NDArray[np.bool_]
+
+
 def _compile_private_equity_tenders(
     scenario: Scenario,
     strings: StringTable,
@@ -536,7 +515,7 @@ def _compile_private_equity_tenders(
     lot_agent_codes: np.ndarray,
     lot_asset_codes: np.ndarray,
     cash_agent_codes: np.ndarray,
-) -> tuple[np.ndarray, ...]:
+) -> tuple[PEIssuerCompileOutput, PEPolicyCompileOutput]:
     """Compile per-(issuer, policy) arrays driving the PE tender-sale path.
 
     Issuer set is derived from `initial_lots` (any `private_equity:<issuer>` asset_id);
@@ -576,24 +555,27 @@ def _compile_private_equity_tenders(
     pe_policy_owner_cash_mask = np.zeros((policy_count, max(1, cash_count)), dtype=np.bool_)
     pe_policy_owner_non_pe_lot_mask = np.zeros((policy_count, max(1, lot_count)), dtype=np.bool_)
 
+    issuers = PEIssuerCompileOutput(
+        codes=pe_issuer_codes,
+        event_series=pe_issuer_event_series_index,
+        level_series=pe_issuer_level_series_index,
+        policy_index=pe_issuer_policy_index,
+        lot_mask=pe_issuer_lot_mask,
+    )
+    pe_policies = PEPolicyCompileOutput(
+        owner_agent=pe_policy_owner_agent_codes,
+        proceeds_cash_slot=pe_policy_proceeds_cash_slot,
+        floor_kind=pe_policy_floor_kind,
+        floor_fixed=pe_policy_floor_fixed,
+        floor_base=pe_policy_floor_base,
+        floor_series=pe_policy_floor_series_index,
+        floor_base_month=pe_policy_floor_base_month,
+        floor_period=pe_policy_floor_adjustment_period,
+        owner_cash_mask=pe_policy_owner_cash_mask,
+        owner_non_pe_lot_mask=pe_policy_owner_non_pe_lot_mask,
+    )
     if not issuer_ids and not policies:
-        return (
-            pe_issuer_codes,
-            pe_issuer_event_series_index,
-            pe_issuer_level_series_index,
-            pe_issuer_policy_index,
-            pe_issuer_lot_mask,
-            pe_policy_owner_agent_codes,
-            pe_policy_proceeds_cash_slot,
-            pe_policy_floor_kind,
-            pe_policy_floor_fixed,
-            pe_policy_floor_base,
-            pe_policy_floor_series_index,
-            pe_policy_floor_base_month,
-            pe_policy_floor_adjustment_period,
-            pe_policy_owner_cash_mask,
-            pe_policy_owner_non_pe_lot_mask,
-        )
+        return issuers, pe_policies
 
     # Per-policy arrays.
     for policy_idx, policy in enumerate(policies):
@@ -653,23 +635,7 @@ def _compile_private_equity_tenders(
         if owner_code in policy_index_by_owner:
             pe_issuer_policy_index[issuer_idx] = policy_index_by_owner[owner_code]
 
-    return (
-        pe_issuer_codes,
-        pe_issuer_event_series_index,
-        pe_issuer_level_series_index,
-        pe_issuer_policy_index,
-        pe_issuer_lot_mask,
-        pe_policy_owner_agent_codes,
-        pe_policy_proceeds_cash_slot,
-        pe_policy_floor_kind,
-        pe_policy_floor_fixed,
-        pe_policy_floor_base,
-        pe_policy_floor_series_index,
-        pe_policy_floor_base_month,
-        pe_policy_floor_adjustment_period,
-        pe_policy_owner_cash_mask,
-        pe_policy_owner_non_pe_lot_mask,
-    )
+    return issuers, pe_policies
 
 
 def _slot(account_slot_by_key: dict[tuple[str, str], int], agent_id: str, account_id: str) -> int:

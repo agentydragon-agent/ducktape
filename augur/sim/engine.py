@@ -1194,18 +1194,18 @@ def _apply_pe_tenders(
     genuinely caps aggregate sale across same-month tenders.
     """
 
-    issuer_count = plan.pe_issuer_codes.shape[0]
+    issuer_count = plan.pe_issuers.codes.shape[0]
     if issuer_count == 0:
         return
     active_rollout = ~current.failed
     if not active_rollout.any():
         return
     for issuer_idx in range(issuer_count):
-        if int(plan.pe_issuer_codes[issuer_idx]) < 0:
+        if int(plan.pe_issuers.codes[issuer_idx]) < 0:
             continue
-        policy_idx = int(plan.pe_issuer_policy_index[issuer_idx])
-        event_series_idx = int(plan.pe_issuer_event_series_index[issuer_idx])
-        level_series_idx = int(plan.pe_issuer_level_series_index[issuer_idx])
+        policy_idx = int(plan.pe_issuers.policy_index[issuer_idx])
+        event_series_idx = int(plan.pe_issuers.event_series[issuer_idx])
+        level_series_idx = int(plan.pe_issuers.level_series[issuer_idx])
         if policy_idx < 0 or event_series_idx < 0 or level_series_idx < 0:
             continue
         tender_active = plan.external_event_values[event_series_idx, :, month]  # (rollout,)
@@ -1220,18 +1220,18 @@ def _apply_pe_tenders(
 
         floor = _amount_values(
             plan,
-            kind=int(plan.pe_policy_floor_kind[policy_idx]),
-            fixed=float(plan.pe_policy_floor_fixed[policy_idx]),
-            base=float(plan.pe_policy_floor_base[policy_idx]),
-            series_index=int(plan.pe_policy_floor_series_index[policy_idx]),
-            base_month=int(plan.pe_policy_floor_base_month[policy_idx]),
-            adjustment_period=int(plan.pe_policy_floor_adjustment_period[policy_idx]),
+            kind=int(plan.pe_policies.floor_kind[policy_idx]),
+            fixed=float(plan.pe_policies.floor_fixed[policy_idx]),
+            base=float(plan.pe_policies.floor_base[policy_idx]),
+            series_index=int(plan.pe_policies.floor_series[policy_idx]),
+            base_month=int(plan.pe_policies.floor_base_month[policy_idx]),
+            adjustment_period=int(plan.pe_policies.floor_period[policy_idx]),
             month=month,
         )
         lnw = _compute_liquid_net_worth(plan, current, policy_idx=policy_idx, month=month)
         shortfall = np.maximum(0.0, floor - lnw)
 
-        lot_indices = np.flatnonzero(plan.pe_issuer_lot_mask[issuer_idx])
+        lot_indices = np.flatnonzero(plan.pe_issuers.lot_mask[issuer_idx])
         if lot_indices.size == 0:
             continue
         ordered_lots = lot_indices[np.argsort(plan.lot_purchase_month[lot_indices], kind="stable")]
@@ -1252,13 +1252,13 @@ def _apply_pe_tenders(
         if result.oversell.any():
             raise ValueError(
                 f"PE tender attempted to sell more than available lots for issuer "
-                f"{_text(plan, plan.pe_issuer_codes[issuer_idx])}"
+                f"{_text(plan, plan.pe_issuers.codes[issuer_idx])}"
             )
         current.lot_remaining -= result.sold_units
-        proceeds_slot = int(plan.pe_policy_proceeds_cash_slot[policy_idx])
+        proceeds_slot = int(plan.pe_policies.proceeds_cash_slot[policy_idx])
         if proceeds_slot >= 0:
             current.cash[:, proceeds_slot] += result.total_proceeds
-        owner_code = int(plan.pe_policy_owner_agent_codes[policy_idx])
+        owner_code = int(plan.pe_policies.owner_agent[policy_idx])
         _record_capital_gains(
             plan,
             current,
@@ -1274,9 +1274,9 @@ def _compute_liquid_net_worth(
 ) -> np.ndarray:
     """Per-rollout LNW = cash in policy-owner accounts + non-PE-lot value at current prices."""
 
-    owner_cash_mask = plan.pe_policy_owner_cash_mask[policy_idx]
+    owner_cash_mask = plan.pe_policies.owner_cash_mask[policy_idx]
     cash_total = (current.cash * owner_cash_mask[None, :]).sum(axis=1)
-    lot_mask = plan.pe_policy_owner_non_pe_lot_mask[policy_idx]
+    lot_mask = plan.pe_policies.owner_non_pe_lot_mask[policy_idx]
     if not lot_mask.any():
         return cash_total
     lot_indices = np.flatnonzero(lot_mask)
