@@ -113,10 +113,26 @@ the right primitive.
 
 ### Quotient queries
 
-| Command                                                                                | Mutates? | Function                                                                                                                                                               | Status            |
-| -------------------------------------------------------------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
-| `debundle scc [--binding <sym>] [--cycles-only] [--residual-only] [--singletons-only]` | no       | List SCCs in the module-quotient graph. Filter to a single binding's SCC or to a specific class. (Streaming output via `--format ndjson` — see "Output format" above.) | **planned** (#83) |
-| `debundle cluster <sym>`                                                               | no       | List the module-quotient neighbors of a binding's owner.                                                                                                               | **planned** (#83) |
+| Command                                                                                | Mutates? | Function                                                                                                                                                                                                                                                                                                                                                | Status            |
+| -------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| `debundle scc [--binding <sym>] [--cycles-only] [--residual-only] [--singletons-only]` | no       | List SCCs in the module-quotient graph. Filter to a single binding's SCC or to a specific class. (Streaming output via `--format ndjson` — see "Output format" above.)                                                                                                                                                                                  | **planned** (#83) |
+| `debundle cluster <sym>`                                                               | no       | List the module-quotient neighbors of a binding's owner.                                                                                                                                                                                                                                                                                                | **planned** (#83) |
+| `debundle gate list`                                                                   | no       | List every blocking SCC in `cycles.json`. One row per entry: id, modules count, cut size. (Streaming via `--format ndjson`.)                                                                                                                                                                                                                            | shipped           |
+| `debundle gate describe <id> [--binding <sym>]`                                        | no       | Full picture for one blocking SCC: modules list, cut, plus the per-edge evidence recomputed on demand from `owner_graph.json` and the SCC's module set. Renders the same per-binding-pair blame view the realizability gate emits to stderr at rejection time. `--binding` narrows evidence to one symbol's contribution (handy for 1000-module SCCs). | shipped           |
+| `debundle gate cut <id>`                                                               | no       | Just the cut edges for one blocking SCC. The actionable subset — spec authors read this to pick which back-edge to break.                                                                                                                                                                                                                               | shipped           |
+
+The `gate` namespace names what is rejecting: the realizability
+gate. It complements `scc` (which lists every quotient SCC,
+including singletons and realizable multi-node ones); `gate` lists
+**only** the SCCs the gate rejected. The unit is the blocking SCC,
+not a cycle — a single SCC can contain exponentially many simple
+cycles, so the CLI exposes the cut (a primitive on the SCC) but
+deliberately not a `cycle list`.
+
+Each `gate ...` command accepts an optional `--cycles <path>` flag
+that overrides the default `cycles.json` location (sibling of
+`--graph`). All other inputs follow the standard `--graph` /
+`--modules` convention below.
 
 ### Atomic-DAG queries
 

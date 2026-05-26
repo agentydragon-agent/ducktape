@@ -463,15 +463,11 @@ web spec via the new top-level CLI). Each is a small `bindings ...` /
   An optional `--with-anonymous` flag exposing that count alongside
   `member_count` would let `debundle modules list --residual --with-anonymous`
   surface the residual sentinel's anonymous-statement drift over time.
-- **No `debundle cycles ...` namespace.** Today cycle evidence lives
-  in `reports/tree/<chunk>/cycles.json` and consumers query it with
-  `jq`. The data is rich (cut edges, evidence per cycle, modules-in-
-  SCC) and worth a first-class CLI surface:
-  - `debundle cycles list` (one line per cycle: id, size, cut count)
-  - `debundle cycles describe <id>` (full cut + evidence + module list, formatted)
-  - `debundle cycles cut <id>` (just the back-edges — the actionable set).
-
-  The cycle ID could be the cycle's index in `cycles.json` or
-  a stable hash of the SCC's module set. Reuses the same JSON inputs
-  `scc` already consumes (`$GRAPH` + the chunk's `cycles.json`),
-  so it's plumbing only.
+- ~~**No `debundle cycles ...` namespace.**~~ Shipped as
+  `debundle gate {list,describe,cut}` (the unit is the blocking SCC,
+  not a cycle — a single SCC can carry exponentially many simple
+  cycles, so the CLI exposes the cut as a primitive but deliberately
+  not a `cycle list`). `cycles.json` is now the trimmed wire shape
+  `[{id, modules, cut}]`; `describe <id>` re-derives the per-edge
+  evidence on demand from `owner_graph.json` + the SCC's module set,
+  matching the per-rejection stderr summary the gate emits today.
