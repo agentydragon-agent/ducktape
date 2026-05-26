@@ -118,10 +118,12 @@ Either delete (and the fallback) or document the formal retention plan.
   from `CompiledSimulation`, `_compile_obligation_slots` return, and the
   populate site.
 
-### C5. `Property.{flags, notes, source_url}` (open)
-
-Never consumed in frontend. Drop unless a planned UI surface exists; check
-gaffer-private `properties.yaml` consumers first.
+- **C5.** `Property.{notes, source_url}` — ✅ surfaced in `a8e6aee5a`.
+  PropertyPurchasePanel now renders a "Source listing ↗" link and a
+  `whitespace-pre-line` notes block. `notes` collapsed from `tuple[str,
+...]` to `str` (transitional list→str validator with CLEANUP tombstone
+  while gaffer-private migrates to single-string yaml). `flags` is
+  still unused on the frontend — leaves as the only remaining C5 item.
 
 ### C6. Frontend `quantile()` — false positive
 
@@ -151,15 +153,25 @@ onReset}`. Workspace shrank by ~145 lines.
   band/line polylines, which stayed inline because they're a handful of
   lines each.
 
-## E. Polish / UX (open)
+- **D5. RolloutResultsPanel extraction.** ✅ Landed in `440baec90`.
+  Pulled the chart + per-rollout details block (metric picker, terminal
+  histogram, fan chart, event legend/panel, terminal metric table) out
+  of `ProductProjectionWorkspace` into its own component receiving the
+  state slices it renders. The workspace render shrank by ~50 lines and
+  the panel is now navigable in isolation.
 
-### E1. `eventMarkerYOffset` missing 8 of 16 event kinds
+## E. Polish / UX
 
-`outside_rent`, `closing_cost_payment`, `hoa_dues_payment`,
-`homeowners_insurance_payment`, `property_maintenance_payment`,
-`tax_accrual`, `capital_improvement`, `set_rented_fraction` fall through to 0. Markers stack on the line — visible clutter when a month has 3+ events.
+- **E1. Event legend + per-kind visibility + per-month marker stacking.** ✅
+  Landed in `7ed53e6d5`. Replaced the static `eventMarkerYOffset` table
+  with a `useVisibleEventKinds` hook + `EventKindLegend` chip strip
+  under the chart. Each chip toggles its kind on/off (shift-click = "only
+  this kind"); top-right gives bulk Show all / Hide all. The chart
+  buckets visible events by month and stacks them upward using
+  `EVENT_MARKER_STACK_PITCH_PX`, so markers no longer overlap when a
+  month has 3+ events.
 
-### E2. Escape key doesn't clear event selection
+### E2. Escape key doesn't clear event selection (open)
 
 Mouse leave clears hover; keyboard has Enter/Space to select but no Escape
 to deselect.
@@ -181,28 +193,37 @@ Tracked in `augur/sim/TODO.md`; gaps noted:
 ## Phase plan
 
 - **Phase 1 (correctness)** — ✅ A1, A2, A3 landed.
-- **Phase 2 (dead-code sweep)** — partial: C4 landed; C1/C2/C6 turned out to
-  be false positives; **C3, C5 still open.**
+- **Phase 2 (dead-code sweep)** — C4 landed; C5 partially landed
+  (`notes`/`source_url` surfaced, `flags` still unused); C1/C2/C6 turned out to
+  be false positives; **C3 still open, C5 `flags` still open.**
 - **Phase 3 (structural refactor)** — open. B1 grouping
   `CompiledSimulation` into nested arenas is the biggest lever; B2, B3, B4
   follow naturally.
-- **Phase 4 (frontend reorg)** — D1, D2, D4 landed. **D3, E1, E2 still
-  open.**
+- **Phase 4 (frontend reorg)** — D1, D2, D4, D5, E1 landed. **D3, E2 still open.**
 - **Phase 5 (modeling realism)** — deferred, tracked in
   `augur/sim/TODO.md`.
 
+## Cross-repo follow-ups
+
+- **`gaffer-private` notes migration** — local commit `d5ab98b5d` on
+  `gaffer-private/main` converts every property's `notes:` from per-paragraph
+  YAML list to a single literal-block scalar. Awaiting push. Once that's live
+  in cluster, drop the transitional list→str validator on
+  `augur.api.bootstrap.Property._collapse_list_notes` (tagged
+  `CLEANUP(2026-05-25)`).
+
 ## Remaining open items, ranked
 
-| #   | Area                                             | Impact                         | Effort |
-| --- | ------------------------------------------------ | ------------------------------ | ------ |
-| A4  | §1250 marginal-rate floor                        | over-estimate for low brackets | small  |
-| A5  | MID acquisition-vs-HELOC                         | over-estimate w/ HELOC         | medium |
-| B1  | CompiledSimulation 170 → 8 nested arenas         | big DX win                     | large  |
-| B2  | Compile-helpers tuple→dataclass                  | DX                             | medium |
-| B3  | `_wire_landlord_rental` return instead of mutate | DX                             | small  |
-| B4  | Split compiler.py + engine.py                    | DX                             | large  |
-| C3  | Drop `obligation_property_tax_owner_fraction`    | tiny                           | small  |
-| C5  | Drop `Property.flags/notes/source_url`           | tiny                           | small  |
-| D3  | `isEventPostSale` helper                         | tiny                           | small  |
-| E1  | Missing event Y-offsets                          | minor UX                       | small  |
-| E2  | Escape clears selection                          | minor UX                       | small  |
+| #    | Area                                                          | Impact                         | Effort |
+| ---- | ------------------------------------------------------------- | ------------------------------ | ------ |
+| A4   | §1250 marginal-rate floor                                     | over-estimate for low brackets | small  |
+| A5   | MID acquisition-vs-HELOC                                      | over-estimate w/ HELOC         | medium |
+| B1   | CompiledSimulation 170 → 8 nested arenas                      | big DX win                     | large  |
+| B2   | Compile-helpers tuple→dataclass                               | DX                             | medium |
+| B3   | `_wire_landlord_rental` return instead of mutate              | DX                             | small  |
+| B4   | Split compiler.py + engine.py                                 | DX                             | large  |
+| C3   | Drop `obligation_property_tax_owner_fraction`                 | tiny                           | small  |
+| C5\* | Drop unused `Property.flags`                                  | tiny                           | small  |
+| D3   | `isEventPostSale` helper                                      | tiny                           | small  |
+| E2   | Escape clears selection                                       | minor UX                       | small  |
+| X1   | Push gaffer-private notes migration + drop list→str validator | cross-repo                     | small  |
