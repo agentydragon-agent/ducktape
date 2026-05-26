@@ -453,3 +453,38 @@ Most sites are one-shot init / report generation (not hot path);
 worth converting a few specific report-generation sites to
 `BTreeMap` for semantic clarity (the sorted order is the point,
 not an afterthought), but no urgent action.
+
+## CLI gaps found while surveying real specs
+
+Rough edges hit during a real-corpus survey (2026-05-26, gaffer's tana
+web spec via the new top-level CLI). Each is a small `bindings ...` /
+`modules ...` addition; nothing structural.
+
+- **No `debundle spec stats` one-shot.** Common first-question — "how
+  many modules / bindings / orphans / residual?" — requires
+  `modules list --format json | jq` + `bindings list --format json | jq`
+  + manual aggregation. A `spec stats` (or `modules stats` / `bindings
+  stats`) command that emits the totals + the singleton/tiny/medium/large
+  member-count buckets in one pass would be the natural shape.
+- **`modules list --empty` shows every empty module, including ones
+  preserved by a `comment:`.** The actually-actionable subset is
+  "empty AND no comment" — i.e. the auto-deletable set. Add a
+  `--auto-deletable` filter (or expose `--empty --no-comment`) so
+  `debundle modules list --auto-deletable --format json | jq -r
+  '.modules[].path' | xargs rm` is the safe one-liner for sweeping
+  drained cruft.
+- **No `debundle modules delete` subcommand.** Today the workflow is
+  plain `rm` on the YAML file (the spec compiler infers the module
+  path from the file location). Documented in `docs/cli.md`, but it
+  trips up readers who expect the `modules` namespace to be complete.
+  Either add a thin wrapper (`modules delete <path>`, optionally with
+  realizability check + `--force` for non-empty) or surface the `rm`
+  recipe in `modules list --empty`'s output so the next step is
+  obvious.
+- **`modules list` member-count is the only signal of module size**;
+  there's no quick way to spot a module whose member count is right
+  but whose `anonymous_statements:` count is huge (the residual case).
+  An optional `--with-anonymous` flag exposing that count alongside
+  `member_count` would let `debundle modules list --residual
+  --with-anonymous` surface the residual sentinel's anonymous-statement
+  drift over time.
