@@ -386,7 +386,7 @@ curr.writes`. Soundness follows because any swap of two
   strict S-edge against every prior impure owner (also acting as
   an opaque barrier for later statements). Auditing the input
   bundle for these shapes is the precondition (see
-  `dataflow_audit.md`).
+  `README.md` → "Conditionally-correct optimizations").
 
 ### Relationship
 

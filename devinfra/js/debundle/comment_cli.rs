@@ -58,8 +58,8 @@ enum BindingsCommand {
 
 /// Top-level `debundle modules ...` argument shape.
 ///
-/// Currently only carries `comment`. Future renames (CLI.md) move
-/// `module merge` -> `modules merge` and add `modules list` /
+/// Currently only carries `comment`. Future renames (docs/cli.md)
+/// move `module merge` -> `modules merge` and add `modules list` /
 /// `modules propose` here.
 #[derive(Debug, ClapArgs)]
 pub struct ModulesArgs {

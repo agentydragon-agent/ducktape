@@ -65,7 +65,8 @@ pub struct TransformSpec {
     /// inferences that hold only when the input satisfies a checkable
     /// precondition (see `devinfra/js/debundle/AGENTS.md` →
     /// "Conditionally-correct optimizations" and
-    /// `devinfra/js/debundle/dataflow_audit.md`). Default-empty: every
+    /// `devinfra/js/debundle/README.md` →
+    /// "Conditionally-correct optimizations"). Default-empty: every
     /// chunk uses the strictly-conservative analysis paths unless the
     /// spec explicitly opts in.
     #[serde(default)]
@@ -97,8 +98,9 @@ pub struct TransformSpec {
 
 /// Per-chunk opt-ins for conditionally-correct analyses. Each field
 /// defaults `false` — chunks must explicitly opt in. See
-/// `devinfra/js/debundle/dataflow_audit.md` for the soundness audit
-/// each opt-in requires.
+/// `devinfra/js/debundle/README.md` →
+/// "Conditionally-correct optimizations" for the precondition each
+/// opt-in requires.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ChunkAnalysisOptions {

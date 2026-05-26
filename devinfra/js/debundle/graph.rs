@@ -22,7 +22,8 @@ pub struct OwnerGraphOptions {
     /// Emit the side-effect ordering chain using per-statement
     /// (writes, reads) summaries instead of the adjacent-impure
     /// transitive reduction. See the S-chain block in
-    /// `build_owner_graph_with` and `dataflow_audit.md`.
+    /// `build_owner_graph_with` and `README.md` →
+    /// "Conditionally-correct optimizations".
     pub dataflow_aware_s_chain: bool,
 }
 
@@ -750,8 +751,9 @@ pub fn build_owner_graph_with(facts: &[StatementFacts], options: OwnerGraphOptio
 ///   the `dataflow_summarizable` check (dynamic globalThis key, `with`,
 ///   direct `eval`, `Function(...)` constructor, `defineProperty` on
 ///   globals, `Proxy` on globals) fall back to the strict edge against
-///   every prior impure owner. See `dataflow_audit.md` for the
-///   precondition this relaxation requires.
+///   every prior impure owner. See `README.md` →
+///   "Conditionally-correct optimizations" for the precondition this
+///   relaxation requires.
 ///
 /// `purity` is computed upstream (`classify_expr_purity`) so pure
 /// literal initializers (`const X = 42`, `const X = { a: 1 }`,

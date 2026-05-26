@@ -289,9 +289,8 @@ fn bail_out_keeps_s_edge_when_statement_uses_direct_eval() {
     // Direct `eval(...)` can read or write any cell in scope; the
     // statement must fall back to the strict S-edge regardless of
     // whether its syntactic write set is otherwise disjoint from the
-    // prior statement's writes. Tana's bundle contains no direct
-    // `eval` (see `dataflow_audit.md`), so this guard fires only on
-    // future regressions or on inputs we haven't audited.
+    // prior statement's writes. See `README.md` →
+    // "Conditionally-correct optimizations" for the full bail-out list.
     let fixture = run_fixture(dataflow_opts(
         r#"const tagA = (globalThis.alpha = "alpha-val", "tag-a");
 const tagB = (eval("globalThis.beta = 'beta-val'"), "tag-b");

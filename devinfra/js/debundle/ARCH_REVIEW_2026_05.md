@@ -281,7 +281,7 @@ But the Stage A boundary's _bigger_ payoff would be at the **call-site level**: 
 
 ### The DESIGN.md vs CODE_REVIEW.md vs README.md vs guide.md split
 
-These four files plus AGENTS.md plus RENAME.md plus FACTORIZE.md plus PIPELINE_SPLIT.md plus dataflow_audit.md document the same project from eight perspectives. Skimming them, I find:
+These four files plus AGENTS.md plus RENAME.md plus FACTORIZE.md plus PIPELINE_SPLIT.md document the same project from seven perspectives. Skimming them, I find:
 
 - DESIGN.md is the canonical theorem + algorithm document.
 - AGENTS.md is the canonical "how to work on this crate" document.

@@ -82,8 +82,9 @@ pub struct StatementFacts {
     /// dataflow-aware S-chain emission in `graph.rs`. Tracks the
     /// outer-observable cells the statement touches at-init:
     /// binding cells (declared / rebound / read) and static-key
-    /// `globalThis.<prop>` cells. See `dataflow_audit.md` for the
-    /// soundness precondition; `effects.dataflow_summarizable=false`
+    /// `globalThis.<prop>` cells. See `README.md` →
+    /// "Conditionally-correct optimizations" for the soundness
+    /// precondition; `effects.dataflow_summarizable=false`
     /// means the statement contains a shape we can't statically
     /// summarize (dynamic `globalThis[<expr>]`, `with`, direct
     /// `eval`, `Function(...)` constructor, etc.) and downstream
