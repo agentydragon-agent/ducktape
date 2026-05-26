@@ -52,12 +52,12 @@ The choices boil down to: **JSON pretty + indexed**, **JSON compact + accompanyi
 
 Today `owner_graph.json` is JSON-pretty, ~3 MB for gaffer. Easy to `jq`, easy to read in editors, easy to diff.
 
-| Pros | Cons |
-|---|---|
-| `jq` works out of the box | Large on disk; bazel action cache footprint matters at gaffer scale |
-| Human-readable diffs | Re-parsing 3 MB JSON takes ~100ms; not free |
-| No schema migration ceremony | No schema enforcement; field renames silently break consumers |
-| One-tool inspection | Hard to load partial slices |
+| Pros                         | Cons                                                                |
+| ---------------------------- | ------------------------------------------------------------------- |
+| `jq` works out of the box    | Large on disk; bazel action cache footprint matters at gaffer scale |
+| Human-readable diffs         | Re-parsing 3 MB JSON takes ~100ms; not free                         |
+| No schema migration ceremony | No schema enforcement; field renames silently break consumers       |
+| One-tool inspection          | Hard to load partial slices                                         |
 
 This works fine and is the lowest-friction option. The marginal cost over what we already write is small.
 
@@ -65,11 +65,11 @@ This works fine and is the lowest-friction option. The marginal cost over what w
 
 Same content, NDJSON instead of one big array. Each line is `{type: "node"|"edge"|"unit", ...}`. A small `index.json` lists byte offsets per chunk_id / per section.
 
-| Pros | Cons |
-|---|---|
+| Pros                                       | Cons                                   |
+| ------------------------------------------ | -------------------------------------- |
 | Streaming consumers can read incrementally | Still text; size similar to status quo |
-| Random access via offset index | Custom-built; not a real format |
-| `jq -c` still works per line | Adds a second file to manage |
+| Random access via offset index             | Custom-built; not a real format        |
+| `jq -c` still works per line               | Adds a second file to manage           |
 
 Probably not worth the index machinery vs Option 1.
 
@@ -77,12 +77,12 @@ Probably not worth the index machinery vs Option 1.
 
 Define a `chunk_analysis.proto` mirroring `OwnerGraphAndUnits`. Emit `chunk_analysis.pb` per chunk.
 
-| Pros | Cons |
-|---|---|
-| Compact: 3-5× smaller than JSON pretty | Binary; `cat` / `grep` no longer work |
-| Versioned schema; field changes are explicit | Querying requires a dedicated tool |
-| Fast load (zero-copy with `prost` + `bytes`) | Cross-language consumers need the same `.proto` |
-| Existing rules_rust_prost + protobuf in MODULE.bazel | Build complexity (gen code, deps) |
+| Pros                                                 | Cons                                            |
+| ---------------------------------------------------- | ----------------------------------------------- |
+| Compact: 3-5× smaller than JSON pretty               | Binary; `cat` / `grep` no longer work           |
+| Versioned schema; field changes are explicit         | Querying requires a dedicated tool              |
+| Fast load (zero-copy with `prost` + `bytes`)         | Cross-language consumers need the same `.proto` |
+| Existing rules_rust_prost + protobuf in MODULE.bazel | Build complexity (gen code, deps)               |
 
 To preserve queryability, ship a tiny `debundle inspect` CLI:
 
@@ -106,13 +106,13 @@ This is what I'd recommend if the proto cost feels worth it. If the goal is most
 
 **Then revisit** with measurement. If load-time of the JSON becomes a hot spot in `peel`-family tools, or if the action-cache footprint balloons, migrate to Option 4 (proto primary + JSON debug). The migration is a clean swap inside `lib.rs`'s artifact-load helper; consumers don't change.
 
-The thing I'd *not* do is jump directly to proto. The format isn't broken — JSON has been serving us. The bottleneck is "we re-do Stage A every time," not "JSON is too slow." Fix the bottleneck first; reformat second if measurement says it's worth it.
+The thing I'd _not_ do is jump directly to proto. The format isn't broken — JSON has been serving us. The bottleneck is "we re-do Stage A every time," not "JSON is too slow." Fix the bottleneck first; reformat second if measurement says it's worth it.
 
 ## What about the AST?
 
 Stage B's lowering pass needs the SWC AST to emit JS. **Decision: Stage B re-parses.** Option 1.
 
-The originally-considered "serialize the SWC AST in Stage A" path is structurally blocked by SWC's hygiene model. `Id = (Atom, SyntaxContext)` carries a `SyntaxContext` index that is meaningful only within one SWC `Globals` instance. A separate-process Stage B would see deserialized `SyntaxContext` values that point at entries in *its own* intern table — which were created by its own `apply_mark` calls — and the freshly-resolved `top_level_id` would not agree with the wire-loaded one. See `ARCH_REVIEW_2026_05.md` §"Pipeline-split risks" for the empirical demonstration and `stage_one_sidecars.rs` for the corresponding scope decision.
+The originally-considered "serialize the SWC AST in Stage A" path is structurally blocked by SWC's hygiene model. `Id = (Atom, SyntaxContext)` carries a `SyntaxContext` index that is meaningful only within one SWC `Globals` instance. A separate-process Stage B would see deserialized `SyntaxContext` values that point at entries in _its own_ intern table — which were created by its own `apply_mark` calls — and the freshly-resolved `top_level_id` would not agree with the wire-loaded one. See `ARCH_REVIEW_2026_05.md` §"Pipeline-split risks" for the empirical demonstration and `stage_one_sidecars.rs` for the corresponding scope decision.
 
 The implications:
 
@@ -152,11 +152,13 @@ full reasoning and the rejected-alternatives list.
 ## Implementation sequencing (revised)
 
 In flight / done:
+
 1. **`chunk_analysis/{facts.json, atomic_units.json, manifest.json}` writers** — landed (`stage_one_sidecars.rs`).
 2. **`facts.json` is debug-only**: human inspection, same-process tooling. Documented in `WIRE_FORMAT.md`.
 3. **Query CLIs build on the existing Atom-only reports**, not on a cross-process Stage A artifact.
 
 Followups (separate tasks):
+
 - `binding describe <symbol>` — reads `owner_graph.json` + spec.
 - Top-level `debundle scc` — surfaces the same data as `peel scc` from the CLI's top level.
 - `cluster <binding>` — quotient neighbors.

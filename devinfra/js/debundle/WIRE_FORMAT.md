@@ -30,13 +30,13 @@ SyntaxContext)`. The `SyntaxContext` half is dropped at serialization.
 
 Files following the convention:
 
-| File | Field carrying binding identity |
-|---|---|
-| `owner_graph.json` | `nodes[].declared_bindings[].binding: Atom`, `edges[].binding: Option<Atom>` |
-| `cycles.json` | `evidence[].binding: Option<Atom>`, `evidence[].from_binding: Option<Atom>`, `cut[].{binding, from_binding}` |
-| `atomic_unit_conflicts.json` | `claims[].binding_names: Vec<Atom>` |
-| `chunk_analysis/atomic_units.json` | members are `OwnerId` integers, not `Id`s — no `Atom` and no `SyntaxContext` |
-| `chunk_analysis/manifest.json` | no binding identities |
+| File                               | Field carrying binding identity                                                                              |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `owner_graph.json`                 | `nodes[].declared_bindings[].binding: Atom`, `edges[].binding: Option<Atom>`                                 |
+| `cycles.json`                      | `evidence[].binding: Option<Atom>`, `evidence[].from_binding: Option<Atom>`, `cut[].{binding, from_binding}` |
+| `atomic_unit_conflicts.json`       | `claims[].binding_names: Vec<Atom>`                                                                          |
+| `chunk_analysis/atomic_units.json` | members are `OwnerId` integers, not `Id`s — no `Atom` and no `SyntaxContext`                                 |
+| `chunk_analysis/manifest.json`     | no binding identities                                                                                        |
 
 `Atom` serializes as a plain JSON string via `swc_atoms`'s own
 `Serialize` impl. That impl writes the **string content** — interned
@@ -54,7 +54,7 @@ lookup and never becomes an edge**.
 Consequence: the only `Id`s that survive into the owner graph have
 `ctxt = top_level_mark.apply_to(empty)`, i.e. they're the chunk-top-
 level bindings the resolver assigned that single shared context to. By
-the time we serialize them, the `ctxt` is *redundant* — it's the same
+the time we serialize them, the `ctxt` is _redundant_ — it's the same
 for every binding in the file — so dropping it loses no information.
 
 A consumer reconstructing an `Id` from `Atom` does:
@@ -65,7 +65,7 @@ top_level_id(name, fresh_top_level_mark)
 
 i.e. pairs the name with whatever `top_level_mark` the consumer's own
 resolver assigned to the chunk. This works because both sides agree
-that *every name in this file is a chunk-top-level binding* — the
+that _every name in this file is a chunk-top-level binding_ — the
 ctxt is determined by that role, not by the wire data.
 
 ## The exception: `facts.json` carries `SyntaxContext`
@@ -84,7 +84,7 @@ across every `StatementFactsReport` field
 
 `StatementFacts` is **pre-filter** raw analyzer output.
 `StatementFactsCollector::visit_ident` (`facts/mod.rs:900`) records
-*every* `Ident::to_id()` the visitor encounters, including reads
+_every_ `Ident::to_id()` the visitor encounters, including reads
 inside nested function bodies (the visitor descends into them via
 `lazy_visit_function` / `lazy_visit_arrow_expr` / etc., bumping
 `lazy_depth` but not skipping the subtree).
@@ -98,7 +98,7 @@ alongside chunk-top-level reads and globals (`SyntaxContext::empty()`).
 The downstream owner-graph build at `graph.rs:608` walks these and
 looks each one up in `binding_owner`. Inner-scope `Id`s miss the
 lookup (their `ctxt` doesn't match any chunk-top-level binding) and
-are silently dropped. The filter happens *between* `facts.json` and
+are silently dropped. The filter happens _between_ `facts.json` and
 `owner_graph.json`.
 
 ### Why "drop ctxt, reconstruct via top_level_id" is unsound for facts.json
@@ -108,10 +108,10 @@ via `top_level_id(name, fresh_mark)`, **shadowing produces false
 positives**. Worked example:
 
 ```js
-const counter = 0;                  // top-level binding (top_level_ctxt)
+const counter = 0; // top-level binding (top_level_ctxt)
 function increment() {
-  let counter = 1;                  // inner binding (inner_ctxt)
-  return counter;                   // lazy_read records (counter, inner_ctxt)
+  let counter = 1; // inner binding (inner_ctxt)
+  return counter; // lazy_read records (counter, inner_ctxt)
 }
 ```
 
@@ -206,15 +206,15 @@ the same conceptual binding.
 
 ## Reader audiences
 
-| Consumer | Reads | Cross-process? |
-|---|---|---|
-| Spec author with `jq` | `owner_graph.json`, `cycles.json`, `atomic_unit_conflicts.json` | yes (Atom-only) |
-| `peel scc` / `peel units` / `peel patch-plan` / `peel graph-summary` | `owner_graph.json` + spec | yes (Atom-only) |
-| `peel plan-work` | `owner_graph.json` + spec | yes (Atom-only) |
-| `debundle module merge` (today) | spec YAMLs only | yes |
-| Future `binding describe` / top-level `scc` / `cluster` / `binding show-code` | `owner_graph.json`, `atomic_units.json`, source bytes | yes (Atom-only; planned) |
-| Debugging human inspecting `facts.json` | `facts.json` | NO — same-process only |
-| Materializer (`debundle run`) | spec + chunk bytes + everything in-process | N/A — always in-process |
+| Consumer                                                                      | Reads                                                           | Cross-process?           |
+| ----------------------------------------------------------------------------- | --------------------------------------------------------------- | ------------------------ |
+| Spec author with `jq`                                                         | `owner_graph.json`, `cycles.json`, `atomic_unit_conflicts.json` | yes (Atom-only)          |
+| `peel scc` / `peel units` / `peel patch-plan` / `peel graph-summary`          | `owner_graph.json` + spec                                       | yes (Atom-only)          |
+| `peel plan-work`                                                              | `owner_graph.json` + spec                                       | yes (Atom-only)          |
+| `debundle module merge` (today)                                               | spec YAMLs only                                                 | yes                      |
+| Future `binding describe` / top-level `scc` / `cluster` / `binding show-code` | `owner_graph.json`, `atomic_units.json`, source bytes           | yes (Atom-only; planned) |
+| Debugging human inspecting `facts.json`                                       | `facts.json`                                                    | NO — same-process only   |
+| Materializer (`debundle run`)                                                 | spec + chunk bytes + everything in-process                      | N/A — always in-process  |
 
 ## Status of related tasks
 

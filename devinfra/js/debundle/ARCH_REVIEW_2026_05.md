@@ -4,17 +4,17 @@ Reviewed against `01c149496` on branch `feat-arch-review-2026-05`. Read on top o
 
 ## Executive summary
 
-1. **The Stage A boundary is real but the rest of the per-chunk pipeline is still patch-driven.** `lowering/materialize/mod.rs::materialize_logical_chunk` is 750 lines that thread *five* loose mutable maps (`binding_assignment`, `bindings_catalogue`, `anonymous_ordinal_assignment`, `module_plans`, `residual_plan_index`) through eight phases of inline + helper-call mutation. There is no `ModulePlanBuilder` type encapsulating these; each helper takes `&mut` to four or five of them. This is the patch-on-patch shape the maintainer suspected.
+1. **The Stage A boundary is real but the rest of the per-chunk pipeline is still patch-driven.** `lowering/materialize/mod.rs::materialize_logical_chunk` is 750 lines that thread _five_ loose mutable maps (`binding_assignment`, `bindings_catalogue`, `anonymous_ordinal_assignment`, `module_plans`, `residual_plan_index`) through eight phases of inline + helper-call mutation. There is no `ModulePlanBuilder` type encapsulating these; each helper takes `&mut` to four or five of them. This is the patch-on-patch shape the maintainer suspected.
 
-2. **There are two parallel implementations of "Lemma 2" ordering** — once in `graph.rs::{chunk_linker_order, chunk_source_import_order}` (consumed by the realizability gate's `EsmEvaluationSimulator`), and once in `chunk_factorization.rs::{compute_linker_order, compute_source_import_order}` (consumed by the materializer/emitter). Both compute Tarjan-SCC + minimum-linker-position-per-SCC + `(scc_rank ASC, intra-SCC linker_position DESC)`. DESIGN.md §"Lemma 2" pins them as the *same algorithm with the same answer*; the implementations are textbook duplicate code, and they take *different inputs* (constraining-edge view vs. `ModuleQuotient`) so they can drift silently. The Pass-2 simulator going TDZ-clean while the emitter produces TDZ at runtime is exactly the failure mode this duplication invites.
+2. **There are two parallel implementations of "Lemma 2" ordering** — once in `graph.rs::{chunk_linker_order, chunk_source_import_order}` (consumed by the realizability gate's `EsmEvaluationSimulator`), and once in `chunk_factorization.rs::{compute_linker_order, compute_source_import_order}` (consumed by the materializer/emitter). Both compute Tarjan-SCC + minimum-linker-position-per-SCC + `(scc_rank ASC, intra-SCC linker_position DESC)`. DESIGN.md §"Lemma 2" pins them as the _same algorithm with the same answer_; the implementations are textbook duplicate code, and they take _different inputs_ (constraining-edge view vs. `ModuleQuotient`) so they can drift silently. The Pass-2 simulator going TDZ-clean while the emitter produces TDZ at runtime is exactly the failure mode this duplication invites.
 
-3. **`tarjan_scc` runs four-to-five times per chunk over essentially the same graph.** `realizability::check_realizability` runs it twice (Pass 1 over constraining, Pass 2 over full I-graph). `validation::validate_factorization` calls into `check_realizability` and then runs Tarjan a *third* time over the module quotient to build cycle reports. `chunk_factorization::compute_source_import_order` runs a *fourth* over the same module quotient. `reports::build_quotient_scc_reports` runs a *fifth* over the same quotient. With the `IncrementalQuotient` cache + `cached_base_simulator`, the runtime cost is partially amortised, but the *code structure* still has five hand-written SCC consumers that each project + walk the quotient independently. Folding 3/5 of these into the realizability primitive is a quick win.
+3. **`tarjan_scc` runs four-to-five times per chunk over essentially the same graph.** `realizability::check_realizability` runs it twice (Pass 1 over constraining, Pass 2 over full I-graph). `validation::validate_factorization` calls into `check_realizability` and then runs Tarjan a _third_ time over the module quotient to build cycle reports. `chunk_factorization::compute_source_import_order` runs a _fourth_ over the same module quotient. `reports::build_quotient_scc_reports` runs a _fifth_ over the same quotient. With the `IncrementalQuotient` cache + `cached_base_simulator`, the runtime cost is partially amortised, but the _code structure_ still has five hand-written SCC consumers that each project + walk the quotient independently. Folding 3/5 of these into the realizability primitive is a quick win.
 
-3. **There are two distinct types named `ChunkAnalysis`** (`chunk_analysis::ChunkAnalysis`, `artifact::ChunkAnalysis`), both `pub`, both exported through `lib.rs` (via `pub use chunk_analysis::ChunkAnalysis` and via the broader `artifact` re-exports in the parent `pipeline` crate). One is "inputs+IR+caches" for the factorizer; the other is "JSON per-chunk report stub". `CODE_REVIEW.md` notes the rename history but the two structs still coexist. This is genuinely confusing for a reader pattern-matching on the term.
+4. **There are two distinct types named `ChunkAnalysis`** (`chunk_analysis::ChunkAnalysis`, `artifact::ChunkAnalysis`), both `pub`, both exported through `lib.rs` (via `pub use chunk_analysis::ChunkAnalysis` and via the broader `artifact` re-exports in the parent `pipeline` crate). One is "inputs+IR+caches" for the factorizer; the other is "JSON per-chunk report stub". `CODE_REVIEW.md` notes the rename history but the two structs still coexist. This is genuinely confusing for a reader pattern-matching on the term.
 
-4. **The dual `cross_module_partition_endpoints` / `gate_constraining_partition_endpoints` is the most concrete example of patch-on-patch architecture.** The same projection helper has two versions that differ only in whether they drop cross-module at-init-promoted edges, with the difference documented in a doc-comment "history" log naming three commit SHAs and a regression test ("`12ce3884b` removed the drop … `2d6be2473` silently re-introduced the drop … this sibling helper exists so the gate paths preserve `12ce3884b`'s fix"). The right fix is to push the distinction into the edge itself (an `EdgeRole` enum) so there is one projection helper that consults the role; the current shape encodes a 12-month bug-fix history into two near-identical function names.
+5. **The dual `cross_module_partition_endpoints` / `gate_constraining_partition_endpoints` is the most concrete example of patch-on-patch architecture.** The same projection helper has two versions that differ only in whether they drop cross-module at-init-promoted edges, with the difference documented in a doc-comment "history" log naming three commit SHAs and a regression test ("`12ce3884b` removed the drop … `2d6be2473` silently re-introduced the drop … this sibling helper exists so the gate paths preserve `12ce3884b`'s fix"). The right fix is to push the distinction into the edge itself (an `EdgeRole` enum) so there is one projection helper that consults the role; the current shape encodes a 12-month bug-fix history into two near-identical function names.
 
-5. **Stage A on-disk serialization (in-flight on three sibling branches) currently loses the `Id` hygiene identity across the Stage A/B boundary.** `facts/wire.rs::IdReport` round-trips `(name, ctxt: u32)`, but `SyntaxContext`'s `u32` value is meaningful only within one SWC `Globals` instance. If Stage B re-parses (per `PIPELINE_SPLIT.md`'s recommendation), the freshly-resolved `top_level_id` will have a different `Mark` and the deserialized `Id`s won't compare equal. Same problem hits `OwnerGraph::from_report`, which today already drops `declared: BTreeSet::new()` on round-trip (`graph.rs:362`) — i.e. the existing JSON wire shape already loses the binding identities every downstream `compute_owner_claims`-style consumer needs.
+6. **Stage A on-disk serialization (in-flight on three sibling branches) currently loses the `Id` hygiene identity across the Stage A/B boundary.** `facts/wire.rs::IdReport` round-trips `(name, ctxt: u32)`, but `SyntaxContext`'s `u32` value is meaningful only within one SWC `Globals` instance. If Stage B re-parses (per `PIPELINE_SPLIT.md`'s recommendation), the freshly-resolved `top_level_id` will have a different `Mark` and the deserialized `Id`s won't compare equal. Same problem hits `OwnerGraph::from_report`, which today already drops `declared: BTreeSet::new()` on round-trip (`graph.rs:362`) — i.e. the existing JSON wire shape already loses the binding identities every downstream `compute_owner_claims`-style consumer needs.
 
 ## Ad-hoc wiring + pipeline-state passing
 
@@ -39,7 +39,7 @@ These get mutated by:
 - The `for (claimed_name, sibling_set) in &destructure_siblings` loop (lines 285–316).
 - The two residual-fallback branches (lines 327–387).
 - `fold_rebind_atomic_units(precomputed, &mut binding_assignment, &mut bindings_catalogue, &mut module_plans, residual_plan_index)` (line 497, signature in `rebind_folding.rs:31`).
-- `synthesize_mini_factor_plans` (signature in `lowering/plans.rs:157`, ten arguments including *five* `&mut` references).
+- `synthesize_mini_factor_plans` (signature in `lowering/plans.rs:157`, ten arguments including _five_ `&mut` references).
 - The `project_factorization_modules` map (lines 520–556).
 - The "anon_residual_sentinel" appender that pushes a fake module index past `module_plans.len()` (lines 569–582) for transitional behavior.
 
@@ -61,7 +61,7 @@ The `lowering/plans.rs::synthesize_mini_factor_plans` 10-arg signature in partic
 
 `stage_one.rs:72` is a genuinely clean composer. The reason it works is that **the boundary at Stage A is well-defined**: the inputs and outputs are clear, the composer's only job is to call `analyze_chunk` then `compute_owner_graph_and_units_with`. The Stage A composer is exactly the shape every other composite operation in this crate should look like, and is the strongest design point in the recent refactor.
 
-That said, `stage_one.rs:46` notes "Why a free function with no struct fanout" — but the doc-string concedes that the side-effecting interleaving (redundant-hint stderr, top-level-await `bail!`, atomic-unit-rebind folding) **still happens inline at the materializer**. Stage A *separation* isn't done; the composer is a function-level renaming. The next refactor (post-sidecar) needs to move those side-effecting paths into the composer's owners.
+That said, `stage_one.rs:46` notes "Why a free function with no struct fanout" — but the doc-string concedes that the side-effecting interleaving (redundant-hint stderr, top-level-await `bail!`, atomic-unit-rebind folding) **still happens inline at the materializer**. Stage A _separation_ isn't done; the composer is a function-level renaming. The next refactor (post-sidecar) needs to move those side-effecting paths into the composer's owners.
 
 ## Duplicated calculations
 
@@ -69,12 +69,12 @@ That said, `stage_one.rs:46` notes "Why a free function with no struct fanout" �
 
 The maintainer asks "is anything that walks the owner graph computed in more than one place?" The answer is yes:
 
-| Site | Function | Input | Output |
-|---|---|---|---|
-| `graph.rs:1290` | `chunk_linker_order(edges: &ChunkConstrainingEdgeSet)` | constraining edges + `i_successors` | `BTreeMap<ModuleId, usize>` |
-| `graph.rs:1329` | `chunk_source_import_order(edges, &extra_nodes)` | as above + extras | `Vec<ModuleId>` |
-| `chunk_factorization.rs:212` | `compute_linker_order(&ModuleQuotient, _logical_modules)` | the `ModuleQuotient` | `Vec<ModuleId>` |
-| `chunk_factorization.rs:263` | `compute_source_import_order(&ModuleQuotient, &logical_modules, &linker_position_by_module)` | as above + linker positions | `Vec<ModuleId>` |
+| Site                         | Function                                                                                     | Input                               | Output                      |
+| ---------------------------- | -------------------------------------------------------------------------------------------- | ----------------------------------- | --------------------------- |
+| `graph.rs:1290`              | `chunk_linker_order(edges: &ChunkConstrainingEdgeSet)`                                       | constraining edges + `i_successors` | `BTreeMap<ModuleId, usize>` |
+| `graph.rs:1329`              | `chunk_source_import_order(edges, &extra_nodes)`                                             | as above + extras                   | `Vec<ModuleId>`             |
+| `chunk_factorization.rs:212` | `compute_linker_order(&ModuleQuotient, _logical_modules)`                                    | the `ModuleQuotient`                | `Vec<ModuleId>`             |
+| `chunk_factorization.rs:263` | `compute_source_import_order(&ModuleQuotient, &logical_modules, &linker_position_by_module)` | as above + linker positions         | `Vec<ModuleId>`             |
 
 The two pairs run the same algorithm on different graph representations. `graph.rs`'s pair is used by the realizability gate's `EsmEvaluationSimulator` (`realizability.rs:281`). `chunk_factorization.rs`'s pair is used by the materializer (`lowering::lower_chunk` consumes `factorization.linker_order` and `factorization.source_import_position`).
 
@@ -88,7 +88,7 @@ Across the gate + validator + factorization + reports + simulator:
 
 1. `realizability.rs:155` — Pass 1 over `con_graph` (constraining-edge view).
 2. `realizability.rs:192` — Pass 2 over `i_graph` (full I-graph view, includes lazy back-edges).
-3. `validation.rs:270` — `tarjan_scc(&graph.0)` on the `ModuleQuotient` to build cycle reports for the verdict that *just rejected*.
+3. `validation.rs:270` — `tarjan_scc(&graph.0)` on the `ModuleQuotient` to build cycle reports for the verdict that _just rejected_.
 4. `validation.rs:437` — Tarjan inside `compute_realizability_cut`'s while-loop, called per cycle. Necessary by the algorithm; this is the FAS iteration.
 5. `chunk_factorization.rs:268` — `tarjan_scc(&dep_graph.0)` for `compute_source_import_order`.
 6. `reports.rs:323` — `tarjan_scc(&factorization.dep_graph.0)` to build `QuotientSccReport`s.
@@ -96,13 +96,13 @@ Across the gate + validator + factorization + reports + simulator:
 8. `graph.rs:884` — `tarjan_scc` inside `promote_at_init_calls` (call-graph SCC for the closure fixpoint; different graph, legitimate).
 9. `atomic_units.rs:103` — `tarjan_scc(&g_atomic)` (constraining-edge owner SCC, structural atoms; different graph, legitimate).
 
-#1, #2, #3, #5, #6, #7 are all SCC walks of related views of the same module quotient. The `RealizabilityIndex` caches its constraining + I-graphs and has a `cached_base_simulator`, so the runtime cost is partially hidden. The *code-structure* cost is not. A reader auditing "what computes SCCs in this crate?" finds eight call sites and has to manually triage which graphs are actually distinct.
+#1, #2, #3, #5, #6, #7 are all SCC walks of related views of the same module quotient. The `RealizabilityIndex` caches its constraining + I-graphs and has a `cached_base_simulator`, so the runtime cost is partially hidden. The _code-structure_ cost is not. A reader auditing "what computes SCCs in this crate?" finds eight call sites and has to manually triage which graphs are actually distinct.
 
 **Concrete fix.** The realizability primitive's verdict should carry its SCC partition. `validate_factorization` should consume that partition to build cycle reports rather than re-walking the quotient. `chunk_factorization::compute_source_import_order` should delegate to `graph::chunk_source_import_order` (see previous point). `reports::build_quotient_scc_reports` should consume the same verdict-carried partition.
 
 ### Identical Lemma-2 sort comparator open-coded twice
 
-Compare `graph.rs:1367–1384` (the comparator inside `chunk_source_import_order`) with `chunk_factorization.rs:296–325` (the comparator inside `compute_source_import_order`). Both implement exactly the same `(SCC rank ASC, intra-SCC linker_position DESC, with usize::MAX tiebreak and Less for `Some(_)` over `None`)` rule. They share the same documentation comment block ("(SCC rank ASC, intra-SCC linker_position DESC) — DESC reverses within each SCC so the cycle dependent comes first…"). Two implementations of the same closure with the same prose — a wholly mechanical reduction.
+Compare `graph.rs:1367–1384` (the comparator inside `chunk_source_import_order`) with `chunk_factorization.rs:296–325` (the comparator inside `compute_source_import_order`). Both implement exactly the same `(SCC rank ASC, intra-SCC linker_position DESC, with usize::MAX tiebreak and Less for `Some(\_)`over`None`)` rule. They share the same documentation comment block ("(SCC rank ASC, intra-SCC linker_position DESC) — DESC reverses within each SCC so the cycle dependent comes first…"). Two implementations of the same closure with the same prose — a wholly mechanical reduction.
 
 ### `OwnerGraphReport::from_report` drops `declared` on the floor
 
@@ -123,7 +123,7 @@ In the Stage A sidecar plan, this matters: every Stage B consumer that runs `ass
 5. Falls back to a manual scan if FAS only flagged lazy edges.
 6. Removes one edge, loops.
 
-The Tarjan-SCC + FAS + remove-edge loop is itself a known algorithm shape (iterative FAS-by-SCC). `petgraph` has it built in via `condensation`: condense to a DAG of SCCs, walk the condensation top-down. The current loop is correct but `O(|cycles| · |V| + |E|)` per chunk, when a single condensation pass + FAS-per-condensation-node would be `O(|V| + |E|)`. More importantly, the loop's "fallback to scanning the SCC's edges if FAS only flagged lazy edges" branch (`validation.rs:482`) papers over what looks like a soundness/precision issue in how FAS is being used: FAS doesn't know about edge labels, so it picks whatever it picks; trying to make it pick R/S edges by post-filtering its result is a hack. The right fix is to filter the edge set down to constraining edges *before* calling FAS, then map the result back. (`greedy_feedback_arc_set` accepts arbitrary graphs; nothing stops the caller from omitting `LazyUse` edges from the working `DiGraph`.) Simpler, faster, no fallback needed.
+The Tarjan-SCC + FAS + remove-edge loop is itself a known algorithm shape (iterative FAS-by-SCC). `petgraph` has it built in via `condensation`: condense to a DAG of SCCs, walk the condensation top-down. The current loop is correct but `O(|cycles| · |V| + |E|)` per chunk, when a single condensation pass + FAS-per-condensation-node would be `O(|V| + |E|)`. More importantly, the loop's "fallback to scanning the SCC's edges if FAS only flagged lazy edges" branch (`validation.rs:482`) papers over what looks like a soundness/precision issue in how FAS is being used: FAS doesn't know about edge labels, so it picks whatever it picks; trying to make it pick R/S edges by post-filtering its result is a hack. The right fix is to filter the edge set down to constraining edges _before_ calling FAS, then map the result back. (`greedy_feedback_arc_set` accepts arbitrary graphs; nothing stops the caller from omitting `LazyUse` edges from the working `DiGraph`.) Simpler, faster, no fallback needed.
 
 ### `RollbackDiGraph`-vs-petgraph parity in tests
 
@@ -131,7 +131,7 @@ The Tarjan-SCC + FAS + remove-edge loop is itself a known algorithm shape (itera
 
 ### Hand-rolled cycle-no-op DFS in `simulate_esm_post_order`
 
-`realizability.rs:366–428`. The simulator implements a DFS-with-cycle-no-op manually, with explicit `Frame::Enter` / `Frame::Finish` work-stack frames. The simulator is the right algorithm — the ECMA-262 spec is explicitly post-order DFS — but the implementation could use `petgraph::visit::DfsPostOrder` if we built a small wrapper that respects the `sorted_successors` ordering decision. Today's hand-rolled stack is fine in isolation, but it's another instance of "we built a custom traversal because the existing one didn't take a sort-key parameter." A `petgraph::visit::DfsPostOrder` over a graph wrapper that lazily reorders neighbors would let the simulator focus on the *semantic* check (post-order indices) rather than the DFS bookkeeping.
+`realizability.rs:366–428`. The simulator implements a DFS-with-cycle-no-op manually, with explicit `Frame::Enter` / `Frame::Finish` work-stack frames. The simulator is the right algorithm — the ECMA-262 spec is explicitly post-order DFS — but the implementation could use `petgraph::visit::DfsPostOrder` if we built a small wrapper that respects the `sorted_successors` ordering decision. Today's hand-rolled stack is fine in isolation, but it's another instance of "we built a custom traversal because the existing one didn't take a sort-key parameter." A `petgraph::visit::DfsPostOrder` over a graph wrapper that lazily reorders neighbors would let the simulator focus on the _semantic_ check (post-order indices) rather than the DFS bookkeeping.
 
 ### `swc_ecma_visit` usage is reasonable
 
@@ -151,7 +151,7 @@ Searched for hand-rolled AST walks that should have been visitors. Found only th
 
 ### Two `ChunkAnalysis` types
 
-`chunk_analysis.rs:26` (`ChunkAnalysis` for factorize-time IR) and `artifact.rs:261` (`ChunkAnalysis` for the JSON report). Both `pub`. The `chunk_analysis::ChunkAnalysis` is re-exported by `lib.rs:37`. The `artifact::ChunkAnalysis` is in the outer pipeline crate but it's adjacent in the same crate root, and `ChunkManifest::from_analysis(analysis: &ChunkAnalysis, ...)` (`artifact.rs:319`) takes the *artifact* version — so the type signature is ambiguous to a reader who has only one of the two in scope.
+`chunk_analysis.rs:26` (`ChunkAnalysis` for factorize-time IR) and `artifact.rs:261` (`ChunkAnalysis` for the JSON report). Both `pub`. The `chunk_analysis::ChunkAnalysis` is re-exported by `lib.rs:37`. The `artifact::ChunkAnalysis` is in the outer pipeline crate but it's adjacent in the same crate root, and `ChunkManifest::from_analysis(analysis: &ChunkAnalysis, ...)` (`artifact.rs:319`) takes the _artifact_ version — so the type signature is ambiguous to a reader who has only one of the two in scope.
 
 **Concrete fix.** Rename `artifact::ChunkAnalysis` to `ChunkAnalysisReport` (it's a serializable report and the field shapes match `ChunkManifest` almost exactly). `chunk_analysis::ChunkAnalysis` keeps the unqualified name; readers stay oriented.
 
@@ -177,21 +177,21 @@ That's seven distinct types (`ChunkAnalysis` ×2, `ChunkFactorization`, `Factori
 
 ### `pub(crate)` on internals is broad
 
-`OwnerGraph` fields are `pub(crate)` not `pub`, which is the right scope; but `pub(crate)` means every module in the crate can mutate them. With `RealizabilityIndex` holding owner-edge references, `IncrementalQuotient` maintaining bucket state derived from the owner graph, and `OwnerGraph::from_report` reconstructing it from JSON, the *crate-internal* invariant surface is large. The `no_consumer_calls_is_cross_module_at_init_promotion_directly` test (`graph.rs:1637`) is a tell — when a project starts adding *grep-based invariant tests* to keep parallel call sites in sync, that's the signal that the type system isn't carrying the invariant.
+`OwnerGraph` fields are `pub(crate)` not `pub`, which is the right scope; but `pub(crate)` means every module in the crate can mutate them. With `RealizabilityIndex` holding owner-edge references, `IncrementalQuotient` maintaining bucket state derived from the owner graph, and `OwnerGraph::from_report` reconstructing it from JSON, the _crate-internal_ invariant surface is large. The `no_consumer_calls_is_cross_module_at_init_promotion_directly` test (`graph.rs:1637`) is a tell — when a project starts adding _grep-based invariant tests_ to keep parallel call sites in sync, that's the signal that the type system isn't carrying the invariant.
 
 ## Name overloading
 
 In addition to `ChunkAnalysis` ×2 (covered above), watch out for:
 
 - **`ChunkFactorization` vs `ChunkAnalysis`**: both are per-chunk IR; the difference is whether the partition is applied. Could be `ChunkAnalysis` (no partition) vs `FactorizedChunk` (partition applied) and the meaning would be more obvious.
-- **`ChunkAnalysisOptions`** (`spec.rs:104`) is a *spec-side* per-chunk knob holder; **`OwnerGraphOptions`** (`graph.rs:21`) is the *graph-build-side* knob holder; the materializer copies one field from the former into the latter (`lowering/materialize/mod.rs:435–439`). The duplication of "options" types with the same one field (`dataflow_aware_s_chain`) is a sign that the type is doing too little — fold them together once Stage A is genuinely cacheable (Stage A's cache key needs `OwnerGraphOptions`, so the spec/graph boundary forces a copy today).
+- **`ChunkAnalysisOptions`** (`spec.rs:104`) is a _spec-side_ per-chunk knob holder; **`OwnerGraphOptions`** (`graph.rs:21`) is the _graph-build-side_ knob holder; the materializer copies one field from the former into the latter (`lowering/materialize/mod.rs:435–439`). The duplication of "options" types with the same one field (`dataflow_aware_s_chain`) is a sign that the type is doing too little — fold them together once Stage A is genuinely cacheable (Stage A's cache key needs `OwnerGraphOptions`, so the spec/graph boundary forces a copy today).
 - **`linker_order` (`Vec<String>` in `FactorizationReport`)** vs **`linker_order` (`Vec<ModuleId>` in `ChunkFactorization`)** vs **`chunk_linker_order` (`BTreeMap<ModuleId, usize>` in `graph.rs`)** — three different shapes for "the toposort of the constraining-edge graph", differing in element type and whether it's "list" or "map (position lookup)". Pick one canonical type, derive the others.
 - **`UnrealizableScc` (`realizability.rs:50`)** vs **`CycleReport` (`validation.rs:35`)** vs **`QuotientSccReport` (`report_schema.rs`)** vs **`AtomicUnitConflict` (`factor_assembly.rs:35`)** — four representations of "the spec is unrealizable, here's why" with subtly different fields. `UnrealizableScc` carries `constraining_owner_edges`; `CycleReport` carries `cut` (a minimum cut) + `evidence`; `QuotientSccReport` carries `module_edge_ids` + `constraining_module_edge_ids`. Two of these contain the same data ("the modules in the SCC + the edges in the SCC"), with the cut/evidence/min decoration added by the validator. The right shape is one core type with optional decorations, not four parallel structs.
-- **`AnalysisHints`** (`facts/mod.rs`-exported) lives in `facts`, but holds spec-derived data (`declared_pure`, `declared_pure_new`, `declared_pure_members`, `known_effects`). The data is spec-shaped, the type is in facts. This becomes a problem at Stage A serialization time: Stage A *needs* the hints (purity inference reads them) but the hints come from the spec which is Stage B's input. Today's pipeline collects them before Stage A runs — fine — but the Stage A cache key has to include the hints, which violates the "Stage A is spec-independent" framing in `PIPELINE_SPLIT.md`.
+- **`AnalysisHints`** (`facts/mod.rs`-exported) lives in `facts`, but holds spec-derived data (`declared_pure`, `declared_pure_new`, `declared_pure_members`, `known_effects`). The data is spec-shaped, the type is in facts. This becomes a problem at Stage A serialization time: Stage A _needs_ the hints (purity inference reads them) but the hints come from the spec which is Stage B's input. Today's pipeline collects them before Stage A runs — fine — but the Stage A cache key has to include the hints, which violates the "Stage A is spec-independent" framing in `PIPELINE_SPLIT.md`.
 
 ## Algorithmic clarity (realizability gate, atom detection)
 
-### The gate is *more* coherent than the maintainer fears, but its docs make it look like a stack of patches
+### The gate is _more_ coherent than the maintainer fears, but its docs make it look like a stack of patches
 
 The realizability gate's actual algorithm, read carefully, is:
 
@@ -199,10 +199,10 @@ The realizability gate's actual algorithm, read carefully, is:
 
 That's one algorithm with two passes. Pass 1 is a cheap necessary condition (mutual at-init cycles can never be rescued by reordering); Pass 2 is the precise condition (the runtime DFS-simulator decides asymmetric cycles). The 2× Tarjan is structural to the algorithm, not patchy. **This is fine.** The DESIGN.md theorem reads cleanly.
 
-What's *patchy* is:
+What's _patchy_ is:
 
 1. The `gate_constraining_partition_endpoints` / `cross_module_partition_endpoints` split (covered in Executive summary #4).
-2. The promoted-edge logic. `EdgeReason::at_init_callee_owner` (`graph.rs:75`) is a side channel on every edge that exists *only* to decide whether `is_cross_module_at_init_promotion` drops the edge in the lenient view. The data flows through serialization (`EdgeReason::synthetic_with_callee`), through the canonical edge set, through the gate-side endpoints helper. It's loadbearing for soundness (per the `promoted_edge_in_aggregator_cycle_is_unrealizable` regression), but the *concept* "this is a promoted edge, the gate sees it differently from the emitter" is encoded as a flag on every edge plus a pair of projection helpers plus a documentation history log. Cleaner: an explicit `EdgeRole { Direct, PromotedAtInit { callee_owner: OwnerId } }` enum, with the projection helper consulting the role and the gate/emitter rules being a single `match`.
+2. The promoted-edge logic. `EdgeReason::at_init_callee_owner` (`graph.rs:75`) is a side channel on every edge that exists _only_ to decide whether `is_cross_module_at_init_promotion` drops the edge in the lenient view. The data flows through serialization (`EdgeReason::synthetic_with_callee`), through the canonical edge set, through the gate-side endpoints helper. It's loadbearing for soundness (per the `promoted_edge_in_aggregator_cycle_is_unrealizable` regression), but the _concept_ "this is a promoted edge, the gate sees it differently from the emitter" is encoded as a flag on every edge plus a pair of projection helpers plus a documentation history log. Cleaner: an explicit `EdgeRole { Direct, PromotedAtInit { callee_owner: OwnerId } }` enum, with the projection helper consulting the role and the gate/emitter rules being a single `match`.
 3. The `EsmEvaluationSimulator::from_adjacency` (`realizability.rs:306`) constructor exists only because the overlay path (`IncrementalQuotient`) has its edges in a different shape than the canonical edge set. So `from_adjacency` rebuilds a fake `ChunkConstrainingEdgeSet { edges: empty_map_for_each_constraining_pair, i_successors }` and feeds it to `build`. This is two structurally identical inputs that diverged because two callers had different sources; the right shape is for `build` to take the two adjacency maps directly. Today's "construct fake edges map" is a kludge to fit the constructor.
 
 ### Atomic-units classification has two paths but only one is wired
@@ -213,7 +213,7 @@ Spec-induced atoms (the SCCs of `I ∪ S` under the quotient) are NOT precompute
 
 ### Tests for `at_init_promotion_drop_unsound_in_cycle` flag exactly the right kind of pattern
 
-`realizability.rs:1986` (`promoted_edge_in_aggregator_cycle_is_unrealizable`) is a test that exists to pin the *re-introduction* of a previously-fixed bug. The doc-comment narrates the SHA-by-SHA history. Reading that doc-comment is what a regression test should *avoid* requiring — the structural fix is to make the bug structurally impossible. Today the gate-side / lenient endpoints split is doc-and-test-pinned; an `EdgeRole`-typed solution would let the type checker carry the invariant.
+`realizability.rs:1986` (`promoted_edge_in_aggregator_cycle_is_unrealizable`) is a test that exists to pin the _re-introduction_ of a previously-fixed bug. The doc-comment narrates the SHA-by-SHA history. Reading that doc-comment is what a regression test should _avoid_ requiring — the structural fix is to make the bug structurally impossible. Today the gate-side / lenient endpoints split is doc-and-test-pinned; an `EdgeRole`-typed solution would let the type checker carry the invariant.
 
 ## Pipeline-split risks (factor in the three in-flight branches)
 
@@ -234,24 +234,24 @@ This is testable today: write a unit test that
 3. Deserializes via `to_facts`, calls `top_level_id` on a top-level binding name.
 4. Asserts the result `Id` equals the deserialized one.
 
-I believe this currently *would* fail — though the wire format's `facts_round_trip_unit` test only covers same-process round-trip, where the `Globals` is the same. The test the wire format actually needs is the cross-`Globals` test.
+I believe this currently _would_ fail — though the wire format's `facts_round_trip_unit` test only covers same-process round-trip, where the `Globals` is the same. The test the wire format actually needs is the cross-`Globals` test.
 
-The fix: don't serialize `SyntaxContext`. Stage A serializes `Atom` (the name) plus *whatever metadata Stage B needs to reconstruct the `SyntaxContext`*. For chunk-top-level bindings that's "this name was bound at chunk top level", and Stage B applies `top_level_id(name, chunk_top_level_mark)` to materialize the `Id`. For non-top-level bindings (does the wire format need to carry any? — `lazy_reads` can reference globals, captured names, etc.) we'd need to think harder.
+The fix: don't serialize `SyntaxContext`. Stage A serializes `Atom` (the name) plus _whatever metadata Stage B needs to reconstruct the `SyntaxContext`_. For chunk-top-level bindings that's "this name was bound at chunk top level", and Stage B applies `top_level_id(name, chunk_top_level_mark)` to materialize the `Id`. For non-top-level bindings (does the wire format need to carry any? — `lazy_reads` can reference globals, captured names, etc.) we'd need to think harder.
 
-The reachable simplification: the wire format only needs to carry the binding *name* (the `Atom`), plus an enum tag (`TopLevel | ImportedFromChunk(...) | Global`). Stage B reconstructs `Id`s using its own `top_level_mark`. This avoids round-tripping a meaningless `u32` and makes the wire format `Globals`-agnostic.
+The reachable simplification: the wire format only needs to carry the binding _name_ (the `Atom`), plus an enum tag (`TopLevel | ImportedFromChunk(...) | Global`). Stage B reconstructs `Id`s using its own `top_level_mark`. This avoids round-tripping a meaningless `u32` and makes the wire format `Globals`-agnostic.
 
 This change is structurally large for the in-flight branch — recommend the maintainer of `feat-facts-wire-format` consider it before landing.
 
 ### `feat-stage-a-sidecars`: per-concept JSON sidecars vs. one artifact
 
-`PIPELINE_SPLIT.md` recommends Option 1 (one JSON pretty file) but the in-flight `feat-stage-a-sidecars` branch's `output_layout.rs` diff adds three constants (`CHUNK_ANALYSIS_AST_REPORT = "ast.json"`, `CHUNK_ANALYSIS_ATOMIC_UNITS_REPORT = "atomic_units.json"`, `CHUNK_ANALYSIS_MANIFEST_REPORT = "manifest.json"`) — i.e. it's heading for the *multiple files* shape. Per the PIPELINE_SPLIT.md table, this trades:
+`PIPELINE_SPLIT.md` recommends Option 1 (one JSON pretty file) but the in-flight `feat-stage-a-sidecars` branch's `output_layout.rs` diff adds three constants (`CHUNK_ANALYSIS_AST_REPORT = "ast.json"`, `CHUNK_ANALYSIS_ATOMIC_UNITS_REPORT = "atomic_units.json"`, `CHUNK_ANALYSIS_MANIFEST_REPORT = "manifest.json"`) — i.e. it's heading for the _multiple files_ shape. Per the PIPELINE_SPLIT.md table, this trades:
 
 - **Pro**: each file is consumable in isolation; e.g. `units` CLI loads only `atomic_units.json`.
 - **Con**: load-time hits per file are additive; the existing 3 MB `owner_graph.json` for gaffer becomes 3 MB × N files; the cache-key invalidation surface widens (any file's mtime drift redo-triggers Stage B).
 
 The PIPELINE_SPLIT.md "Recommendation" section actually recommends one file with Option 1 first ("Start with Option 1 (JSON pretty)"). The in-flight branch is going further than the doc recommends. Worth a conversation before landing.
 
-The deeper concern: at gaffer scale the `owner_graph.json` is **3 MB pretty-printed**. Sharding it into 4–5 files doesn't reduce that, it *multiplies* the read/parse cost. The right answer is probably what `PIPELINE_SPLIT.md` calls Option 4 (binary primary + JSON debug), but landed in a *later* PR after measuring whether load-time is actually a hot spot. The in-flight branch is doing the file split without that measurement.
+The deeper concern: at gaffer scale the `owner_graph.json` is **3 MB pretty-printed**. Sharding it into 4–5 files doesn't reduce that, it _multiplies_ the read/parse cost. The right answer is probably what `PIPELINE_SPLIT.md` calls Option 4 (binary primary + JSON debug), but landed in a _later_ PR after measuring whether load-time is actually a hot spot. The in-flight branch is doing the file split without that measurement.
 
 **Concrete recommendation for the maintainer**: ask the `feat-stage-a-sidecars` author whether the split into `ast.json` + `atomic_units.json` + `manifest.json` is justified by per-consumer load patterns (i.e. is there a CLI that wants `atomic_units` but not `ast`?). If not, collapse to one file. If yes, document which CLI consumes which file, so future readers see the rationale.
 
@@ -261,9 +261,9 @@ The deeper concern: at gaffer scale the `owner_graph.json` is **3 MB pretty-prin
 
 ### General observation on the pipeline split
 
-The PIPELINE_SPLIT.md plan is good, *for the right level of plumbing*. The current Stage A composer (`stage_one.rs`) is a step toward the split. The next step (sidecar JSON) is in flight. Both are correct.
+The PIPELINE*SPLIT.md plan is good, \_for the right level of plumbing*. The current Stage A composer (`stage_one.rs`) is a step toward the split. The next step (sidecar JSON) is in flight. Both are correct.
 
-But the Stage A boundary's *bigger* payoff would be at the **call-site level**: today the pipeline runs everything inline in `materialize_logical_chunk`, including side-effecting actions (top-level-await `bail!`, redundant-hint stderr). When Stage A becomes its own Bazel action, those side effects move *out of the materializer's process* and become "produce a Stage A artifact + log warnings as part of that action". The materializer process loads the artifact and *doesn't* re-emit warnings. The split's correctness depends on the warnings being part of the Stage A artifact's success/failure, not the materializer's. Today the warnings are stderr from the materializer; that has to change. Worth pinning a TODO somewhere in `stage_one.rs` so the reader knows the next step.
+But the Stage A boundary's _bigger_ payoff would be at the **call-site level**: today the pipeline runs everything inline in `materialize_logical_chunk`, including side-effecting actions (top-level-await `bail!`, redundant-hint stderr). When Stage A becomes its own Bazel action, those side effects move _out of the materializer's process_ and become "produce a Stage A artifact + log warnings as part of that action". The materializer process loads the artifact and _doesn't_ re-emit warnings. The split's correctness depends on the warnings being part of the Stage A artifact's success/failure, not the materializer's. Today the warnings are stderr from the materializer; that has to change. Worth pinning a TODO somewhere in `stage_one.rs` so the reader knows the next step.
 
 ## Test-vs-spec drift
 
@@ -292,7 +292,7 @@ These four files plus AGENTS.md plus RENAME.md plus FACTORIZE.md plus PIPELINE_S
 - FACTORIZE.md is a focused doc on the factorization step.
 - RENAME.md is a focused doc on the readability rename pass.
 
-This is a lot. There is one bit of genuine drift: `PIPELINE_SPLIT.md` describes `factor_assembly::compute_owner_claims` as a public API ("apply spec → claims (factor_assembly::compute_owner_claims)") but `factor_assembly.rs:90` has it as `fn compute_owner_claims` — *private*. Minor, but evidence that PIPELINE_SPLIT.md was written before the implementation it describes.
+This is a lot. There is one bit of genuine drift: `PIPELINE_SPLIT.md` describes `factor_assembly::compute_owner_claims` as a public API ("apply spec → claims (factor*assembly::compute_owner_claims)") but `factor_assembly.rs:90` has it as `fn compute_owner_claims` — \_private*. Minor, but evidence that PIPELINE_SPLIT.md was written before the implementation it describes.
 
 ## Quick wins (≤30 min each)
 

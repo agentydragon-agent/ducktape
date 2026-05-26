@@ -1233,25 +1233,25 @@ should not stay in Stage B.
 
 ### Two classes of atom
 
-A spec is unrealizable when its assignment forces a *constraining
-cycle* somewhere — but constraints live at two different levels of
+A spec is unrealizable when its assignment forces a _constraining
+cycle_ somewhere — but constraints live at two different levels of
 the graph, and the validator surfaces them through two separate
-diagnostic paths. They differ only in *where* the cycle appears
-(owner level vs module-quotient level), not in *what* the proof
+diagnostic paths. They differ only in _where_ the cycle appears
+(owner level vs module-quotient level), not in _what_ the proof
 requires. Both reject the same broad property: "some pair (or set)
 of bindings is forced to co-locate, and the spec splits them."
 
-| Atom class | Where the cycle lives | Detector | Diagnostic |
-|---|---|---|---|
-| **Structural** | SCC of `G_atomic` on the **owner graph** — independent of any spec | `compute_atomic_units` | `AtomicUnitConflict` — names the unit's owners + the modules the spec routes them to + the `DepKind` causes |
+| Atom class       | Where the cycle lives                                                 | Detector                                         | Diagnostic                                                                                                   |
+| ---------------- | --------------------------------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| **Structural**   | SCC of `G_atomic` on the **owner graph** — independent of any spec    | `compute_atomic_units`                           | `AtomicUnitConflict` — names the unit's owners + the modules the spec routes them to + the `DepKind` causes  |
 | **Spec-induced** | SCC of `I ∪ S` on the **module quotient** under the spec's assignment | `check_realizability` + `validate_factorization` | `CycleReport` — names the binding pair(s) on each cut edge, the source and target modules, and the edge kind |
 
 `G_atomic` over owners is acyclic-by-quotient on the chunker's
 original output: bundlers can't emit JavaScript that TDZs at runtime
 (the bundle ran for someone). So every owner-level SCC of
 constraining edges (`EagerUse`, `Sequenced`, `EagerRebind`,
-`LazyRebind`, `LocalEffect`) reflects a *colocation invariant the
-bundler relied on*. Any spec assignment that routes the unit's
+`LazyRebind`, `LocalEffect`) reflects a _colocation invariant the
+bundler relied on_. Any spec assignment that routes the unit's
 owners to different modules is invalid — `assemble_partition`
 detects this before the materializer touches the quotient. **No
 information about the spec is required to identify a structural
@@ -1259,13 +1259,13 @@ atom**: it is a property of the source bytes plus the analyzer's
 edge classification.
 
 A **spec-induced atom** is one level up. Each owner may be in its
-own structural atom (singleton), and the *module quotient under the
-spec's assignment* may still close a cycle through them. The
+own structural atom (singleton), and the _module quotient under the
+spec's assignment_ may still close a cycle through them. The
 worked example in §"Worked example: cycle through a lazy back-edge"
 is exactly this shape: the binding-level read graph is a DAG, but
 the spec's choice to put `B` and `readB` in different modules makes
 the module-level `I ∪ S` graph cyclic. The fix is identical in
-*shape* — co-locate the bindings — but the *unit being preserved* is
+_shape_ — co-locate the bindings — but the _unit being preserved_ is
 defined by the spec's quotient, not the source bytes.
 
 Why two paths in the implementation: structural conflicts can be
@@ -1273,7 +1273,7 @@ caught with no module quotient ever built — it's an `O(|V| + |E|)`
 SCC computation on the owner graph that produces a clean blame
 ("these owners can never split"). Spec-induced cycles require the
 quotient (because they're about the assignment) and produce a more
-nuanced blame (which *binding pairs* on which *cut edges* close the
+nuanced blame (which _binding pairs_ on which _cut edges_ close the
 cycle, after `petgraph::algo::greedy_feedback_arc_set` picks the
 cheapest cut to break).
 
