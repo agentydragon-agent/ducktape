@@ -56,7 +56,7 @@ let
   zshInit = builtins.readFile ./shell/zsh-init.zsh;
 
   ducktapePackages = import ../packages {
-    inherit lib pkgs;
+    inherit lib pkgs pkgsUnstable;
     artifacts = ducktape-artifacts;
   };
   inherit (ducktapePackages)
