@@ -9,8 +9,8 @@
 //! 750-line god function with parallel mutable state" for the
 //! original motivation.
 
-use super::*;
 use super::super::ordinal::body_index_for_statement_ordinal;
+use super::*;
 
 /// Output of `ChunkPlanBuilder::finalize`: everything downstream
 /// `lower_chunk` + the chunk-report builder need from the plan
@@ -187,8 +187,10 @@ impl ChunkPlanBuilder {
                 };
                 self.catalogue_index_by_name
                     .insert(member.binding.clone(), kind.clone());
-                self.bindings_catalogue
-                    .insert(top_level_id(&member.binding, ctx.chunk_top_level_mark), kind);
+                self.bindings_catalogue.insert(
+                    top_level_id(&member.binding, ctx.chunk_top_level_mark),
+                    kind,
+                );
             } else {
                 bindings.insert(member.binding.clone(), member.export_name.clone());
             }
@@ -283,7 +285,8 @@ impl ChunkPlanBuilder {
                 let sibling_id = top_level_id(sibling, chunk_top_level_mark);
                 match self.binding_assignment.get(&sibling_id).copied() {
                     None => {
-                        self.binding_assignment.insert(sibling_id.clone(), owner_index);
+                        self.binding_assignment
+                            .insert(sibling_id.clone(), owner_index);
                         self.bindings_catalogue
                             .insert(sibling_id, BindingKind::Owned { owner: owner_id });
                         let plan = &mut self.module_plans[owner_index];
@@ -485,7 +488,8 @@ impl ChunkPlanBuilder {
                     let Some(body_idx) = body_index_for_statement_ordinal(body, stmt_ord) else {
                         continue;
                     };
-                    self.anonymous_ordinal_assignment.insert(body_idx, synthetic_idx);
+                    self.anonymous_ordinal_assignment
+                        .insert(body_idx, synthetic_idx);
                     anonymous_statement_ordinals.push(body_idx);
                     continue;
                 }
@@ -552,5 +556,4 @@ impl ChunkPlanBuilder {
             unmatched_spec_claims: self.unmatched_spec_claims,
         }
     }
-
 }

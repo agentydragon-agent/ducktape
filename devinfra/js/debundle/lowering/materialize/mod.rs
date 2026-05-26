@@ -508,9 +508,8 @@ fn validate_and_emit_reports(
             // `modules` set via `debundle gate describe <id>`. See
             // `validation.rs` `BlockingSccEntry` for the schema and
             // `docs/cli.md` § "Gate queries" for the CLI surface.
-            let wire = ::analysis::BlockingSccEntry::from_cycle_reports(
-                &factorization_report.cycles,
-            );
+            let wire =
+                ::analysis::BlockingSccEntry::from_cycle_reports(&factorization_report.cycles);
             time_phase!(timings, "write_cycles_report", {
                 write_chunk_report_json(report_out_dir, chunk_id, CYCLES_REPORT, &wire)
             })?;

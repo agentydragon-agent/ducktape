@@ -897,8 +897,7 @@ fn run_modules_list(args: ModulesListArgs) -> Result<()> {
         // anonymous statements is not deletable-without-`--force`
         // and isn't empty in any meaningful sense — its rebuild
         // side-effects are still part of the spec.
-        let is_truly_empty =
-            entry.member_count == 0 && entry.anonymous_statement_count == 0;
+        let is_truly_empty = entry.member_count == 0 && entry.anonymous_statement_count == 0;
         let keep = (!args.empty || is_truly_empty)
             && (!args.residual || entry.residual)
             && (!args.unassigned_bindings || is_truly_empty);
