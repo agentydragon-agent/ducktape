@@ -1788,10 +1788,10 @@ def _apply_liquidity_policy_sales(
 
     obligation_active = buffers.obligation_active[month]
     obligation_due = buffers.obligation_due[month]
-    for policy in range(plan.liquidity_policy_agent_codes.shape[0]):
-        policy_agent = int(plan.liquidity_policy_agent_codes[policy])
-        policy_account = int(plan.liquidity_policy_account_codes[policy])
-        policy_cash_slot = int(plan.liquidity_policy_cash_slot[policy])
+    for policy in range(plan.liquidity_policies.agent.shape[0]):
+        policy_agent = int(plan.liquidity_policies.agent[policy])
+        policy_account = int(plan.liquidity_policies.account[policy])
+        policy_cash_slot = int(plan.liquidity_policies.cash_slot[policy])
 
         matching_obligations = np.flatnonzero(
             (plan.obligations.agent[month] == policy_agent)
@@ -1817,22 +1817,22 @@ def _apply_liquidity_policy_sales(
         # raw float) gives a constant vector with no work.
         buffer_trigger_values = _amount_values(
             plan,
-            kind=int(plan.liquidity_policy_trigger_kind[policy]),
-            fixed=float(plan.liquidity_policy_trigger_fixed[policy]),
-            base=float(plan.liquidity_policy_trigger_base[policy]),
-            series_index=int(plan.liquidity_policy_trigger_series_index[policy]),
-            base_month=int(plan.liquidity_policy_trigger_base_month[policy]),
-            adjustment_period=int(plan.liquidity_policy_trigger_adjustment_period[policy]),
+            kind=int(plan.liquidity_policies.trigger_kind[policy]),
+            fixed=float(plan.liquidity_policies.trigger_fixed[policy]),
+            base=float(plan.liquidity_policies.trigger_base[policy]),
+            series_index=int(plan.liquidity_policies.trigger_series[policy]),
+            base_month=int(plan.liquidity_policies.trigger_base_month[policy]),
+            adjustment_period=int(plan.liquidity_policies.trigger_period[policy]),
             month=month,
         )
         buffer_sale_values = _amount_values(
             plan,
-            kind=int(plan.liquidity_policy_sale_kind[policy]),
-            fixed=float(plan.liquidity_policy_sale_fixed[policy]),
-            base=float(plan.liquidity_policy_sale_base[policy]),
-            series_index=int(plan.liquidity_policy_sale_series_index[policy]),
-            base_month=int(plan.liquidity_policy_sale_base_month[policy]),
-            adjustment_period=int(plan.liquidity_policy_sale_adjustment_period[policy]),
+            kind=int(plan.liquidity_policies.sale_kind[policy]),
+            fixed=float(plan.liquidity_policies.sale_fixed[policy]),
+            base=float(plan.liquidity_policies.sale_base[policy]),
+            series_index=int(plan.liquidity_policies.sale_series[policy]),
+            base_month=int(plan.liquidity_policies.sale_base_month[policy]),
+            adjustment_period=int(plan.liquidity_policies.sale_period[policy]),
             month=month,
         )
         buffer_sale = np.where(
@@ -1842,11 +1842,11 @@ def _apply_liquidity_policy_sales(
         if not np.any((hard_demand > 0.0) | (remaining_target > 0.0)):
             continue
 
-        for asset_idx in range(plan.liquidity_policy_asset_codes.shape[1]):
-            asset_code = int(plan.liquidity_policy_asset_codes[policy, asset_idx])
+        for asset_idx in range(plan.liquidity_policies.assets.shape[1]):
+            asset_code = int(plan.liquidity_policies.assets[policy, asset_idx])
             if asset_code < 0 or not np.any(remaining_target > 0.0):
                 continue
-            series_index = int(plan.liquidity_policy_asset_series_index[policy, asset_idx])
+            series_index = int(plan.liquidity_policies.asset_series[policy, asset_idx])
             if series_index < 0:
                 continue
             raw_price = plan.external_values[series_index, :, month]
@@ -1882,7 +1882,7 @@ def _apply_liquidity_policy_sales(
             if result.oversell.any():
                 raise ValueError(
                     "liquidity policy attempted to sell more than available lots: "
-                    f"{plan.liquidity_policy_prefixes[policy]}"
+                    f"{plan.liquidity_policies.cause_id_prefixes[policy]}"
                 )
 
             current.lot_remaining -= result.sold_units
@@ -2847,7 +2847,7 @@ def _decode_liquidity_dispositions(plan: CompiledSimulation, buffers: Simulation
     active = buffers.liq_disp_active  # (M, policy, asset_idx, lot, R)
     # Pre-filter inactive asset slots (asset_code < 0). The plan's liquidity_policy_asset_codes
     # is (policy, asset_idx); a negative entry means that asset slot isn't used by the policy.
-    asset_valid = plan.liquidity_policy_asset_codes >= 0  # (policy, asset_idx)
+    asset_valid = plan.liquidity_policies.assets >= 0  # (policy, asset_idx)
     # Broadcast valid mask to active's shape and AND it in.
     valid_full = asset_valid[None, :, :, None, None]  # (1, policy, asset_idx, 1, 1)
     active = active & valid_full
@@ -2855,11 +2855,11 @@ def _decode_liquidity_dispositions(plan: CompiledSimulation, buffers: Simulation
         months, policies, asset_idxs, lots, rollouts = np.argwhere(active).T
     else:
         months = policies = asset_idxs = lots = rollouts = np.array([], dtype=np.int64)
-    asset_codes = plan.liquidity_policy_asset_codes[policies, asset_idxs]
+    asset_codes = plan.liquidity_policies.assets[policies, asset_idxs]
     # Per-event cause_id is "{policy_prefix}_m{month}_{asset_name}". O(N) Python comp over
     # the gathered events, not the dense iteration space.
-    asset_names = _codes_to_strings(plan, plan.liquidity_policy_asset_codes)[policies, asset_idxs]
-    prefixes_per_event = np.array(plan.liquidity_policy_prefixes, dtype=object)[policies]
+    asset_names = _codes_to_strings(plan, plan.liquidity_policies.assets)[policies, asset_idxs]
+    prefixes_per_event = np.array(plan.liquidity_policies.cause_id_prefixes, dtype=object)[policies]
     cause_ids = np.array(
         [f"{p}_m{m}_{a}" for p, m, a in zip(prefixes_per_event, months, asset_names, strict=True)], dtype=object
     )
@@ -2868,14 +2868,14 @@ def _decode_liquidity_dispositions(plan: CompiledSimulation, buffers: Simulation
         rollouts=rollouts,
         months=months,
         cause_ids=cause_ids,
-        agent_codes=plan.liquidity_policy_agent_codes[policies],
-        source_account_codes=plan.liquidity_policy_account_codes[policies],
+        agent_codes=plan.liquidity_policies.agent[policies],
+        source_account_codes=plan.liquidity_policies.account[policies],
         asset_codes=asset_codes,
         lots=lots,
         units=buffers.liq_disp_units[months, policies, asset_idxs, lots, rollouts],
         basis=buffers.liq_disp_basis[months, policies, asset_idxs, lots, rollouts],
         proceeds=buffers.liq_disp_proceeds[months, policies, asset_idxs, lots, rollouts],
-        proceeds_account_codes=plan.liquidity_policy_account_codes[policies],
+        proceeds_account_codes=plan.liquidity_policies.account[policies],
     )
 
 
@@ -3063,7 +3063,7 @@ def _attempted_sources_for_policy_indices(plan: CompiledSimulation, attempt_poli
     shape matching the input.
     """
 
-    policy_count = plan.liquidity_policy_asset_codes.shape[0]
+    policy_count = plan.liquidity_policies.assets.shape[0]
     lookup = np.empty(policy_count + 1, dtype=object)
     lookup[0] = ""
     for policy in range(policy_count):
@@ -3169,6 +3169,6 @@ def _attempted_sources(plan: CompiledSimulation, policy: int) -> str:
         return ""
     return ",".join(
         _text(plan, asset_code) or ""
-        for asset_code in plan.liquidity_policy_asset_codes[policy].tolist()
+        for asset_code in plan.liquidity_policies.assets[policy].tolist()
         if asset_code >= 0
     )

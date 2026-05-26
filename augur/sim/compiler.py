@@ -213,26 +213,7 @@ class CompiledSimulation:
     pe_policy_floor_adjustment_period: NDArray[np.int64]
     pe_policy_owner_cash_mask: NDArray[np.bool_]
     pe_policy_owner_non_pe_lot_mask: NDArray[np.bool_]
-    liquidity_policy_agent_codes: NDArray[np.int64]
-    liquidity_policy_account_codes: NDArray[np.int64]
-    liquidity_policy_cash_slot: NDArray[np.int64]
-    # Buffer trigger / sale: indexed-amount arrays (see `_amount_arrays`). Engine evaluates per
-    # month via `_amount_values` so the buffer can be CPI-indexed (or any other series).
-    liquidity_policy_trigger_kind: NDArray[np.int64]
-    liquidity_policy_trigger_fixed: NDArray[np.float64]
-    liquidity_policy_trigger_base: NDArray[np.float64]
-    liquidity_policy_trigger_series_index: NDArray[np.int64]
-    liquidity_policy_trigger_base_month: NDArray[np.int64]
-    liquidity_policy_trigger_adjustment_period: NDArray[np.int64]
-    liquidity_policy_sale_kind: NDArray[np.int64]
-    liquidity_policy_sale_fixed: NDArray[np.float64]
-    liquidity_policy_sale_base: NDArray[np.float64]
-    liquidity_policy_sale_series_index: NDArray[np.int64]
-    liquidity_policy_sale_base_month: NDArray[np.int64]
-    liquidity_policy_sale_adjustment_period: NDArray[np.int64]
-    liquidity_policy_asset_codes: NDArray[np.int64]
-    liquidity_policy_asset_series_index: NDArray[np.int64]
-    liquidity_policy_prefixes: tuple[str, ...]
+    liquidity_policies: LiquidityPolicyCompileOutput
 
 
 def compile_simulation(
@@ -402,26 +383,7 @@ def compile_simulation(
         tax,
     )
 
-    (
-        liquidity_policy_agent_codes,
-        liquidity_policy_account_codes,
-        liquidity_policy_cash_slot,
-        liquidity_policy_trigger_kind,
-        liquidity_policy_trigger_fixed,
-        liquidity_policy_trigger_base,
-        liquidity_policy_trigger_series_index,
-        liquidity_policy_trigger_base_month,
-        liquidity_policy_trigger_adjustment_period,
-        liquidity_policy_sale_kind,
-        liquidity_policy_sale_fixed,
-        liquidity_policy_sale_base,
-        liquidity_policy_sale_series_index,
-        liquidity_policy_sale_base_month,
-        liquidity_policy_sale_adjustment_period,
-        liquidity_policy_asset_codes,
-        liquidity_policy_asset_series_index,
-        liquidity_policy_prefixes,
-    ) = _compile_liquidity_policies(scenario, strings, account_slot_by_key, series_index_by_id)
+    liquidity_policies = _compile_liquidity_policies(scenario, strings, account_slot_by_key, series_index_by_id)
 
     lot_id_codes = []
     lot_agent_codes = []
@@ -486,8 +448,8 @@ def compile_simulation(
         max_transfer_slots=transfers.cause.shape[1],
         max_obligation_slots=obligations.cause.shape[1],
         scheduled_sale_count=sales.month.shape[0],
-        liquidity_policy_count=liquidity_policy_asset_codes.shape[0],
-        max_liquidity_policy_assets=liquidity_policy_asset_codes.shape[1],
+        liquidity_policy_count=liquidity_policies.assets.shape[0],
+        max_liquidity_policy_assets=liquidity_policies.assets.shape[1],
         max_tax_settlement_slots=max(1, len(scenario.tax_profiles)),
     )
 
@@ -551,24 +513,7 @@ def compile_simulation(
         pe_policy_floor_adjustment_period=pe_policy_floor_adjustment_period,
         pe_policy_owner_cash_mask=pe_policy_owner_cash_mask,
         pe_policy_owner_non_pe_lot_mask=pe_policy_owner_non_pe_lot_mask,
-        liquidity_policy_agent_codes=liquidity_policy_agent_codes,
-        liquidity_policy_account_codes=liquidity_policy_account_codes,
-        liquidity_policy_cash_slot=liquidity_policy_cash_slot,
-        liquidity_policy_trigger_kind=liquidity_policy_trigger_kind,
-        liquidity_policy_trigger_fixed=liquidity_policy_trigger_fixed,
-        liquidity_policy_trigger_base=liquidity_policy_trigger_base,
-        liquidity_policy_trigger_series_index=liquidity_policy_trigger_series_index,
-        liquidity_policy_trigger_base_month=liquidity_policy_trigger_base_month,
-        liquidity_policy_trigger_adjustment_period=liquidity_policy_trigger_adjustment_period,
-        liquidity_policy_sale_kind=liquidity_policy_sale_kind,
-        liquidity_policy_sale_fixed=liquidity_policy_sale_fixed,
-        liquidity_policy_sale_base=liquidity_policy_sale_base,
-        liquidity_policy_sale_series_index=liquidity_policy_sale_series_index,
-        liquidity_policy_sale_base_month=liquidity_policy_sale_base_month,
-        liquidity_policy_sale_adjustment_period=liquidity_policy_sale_adjustment_period,
-        liquidity_policy_asset_codes=liquidity_policy_asset_codes,
-        liquidity_policy_asset_series_index=liquidity_policy_asset_series_index,
-        liquidity_policy_prefixes=liquidity_policy_prefixes,
+        liquidity_policies=liquidity_policies,
     )
 
 
@@ -1795,12 +1740,40 @@ def _estimated_tax_quarter(month: int) -> int | None:
     return None
 
 
+@dataclass(frozen=True)
+class LiquidityPolicyCompileOutput:
+    """Per-policy + (policy × asset-preference) arrays for the cash-buffer / asset-sale
+    LiquidityPolicy. Trigger fires when cash drops below the indexed `trigger_*` schedule;
+    `sale_*` is the indexed sale amount; `assets` is the per-policy asset-preference
+    chain (NO_CODE for empty slots). `cause_id_prefixes` is one string per policy used
+    to format cause_id strings at sale time."""
+
+    agent: NDArray[np.int64]
+    account: NDArray[np.int64]
+    cash_slot: NDArray[np.int64]
+    trigger_kind: NDArray[np.int64]
+    trigger_fixed: NDArray[np.float64]
+    trigger_base: NDArray[np.float64]
+    trigger_series: NDArray[np.int64]
+    trigger_base_month: NDArray[np.int64]
+    trigger_period: NDArray[np.int64]
+    sale_kind: NDArray[np.int64]
+    sale_fixed: NDArray[np.float64]
+    sale_base: NDArray[np.float64]
+    sale_series: NDArray[np.int64]
+    sale_base_month: NDArray[np.int64]
+    sale_period: NDArray[np.int64]
+    assets: NDArray[np.int64]
+    asset_series: NDArray[np.int64]
+    cause_id_prefixes: tuple[str, ...]
+
+
 def _compile_liquidity_policies(
     scenario: Scenario,
     strings: StringTable,
     account_slot_by_key: dict[tuple[str, str], int],
     series_index_by_id: dict[str, int],
-) -> tuple[np.ndarray, ...]:
+) -> LiquidityPolicyCompileOutput:
     policy_count = len(scenario.liquidity_policies)
     slot_count = max(1, policy_count)
     max_assets = max(1, max((len(policy.asset_preference_chain) for policy in scenario.liquidity_policies), default=0))
@@ -1846,23 +1819,23 @@ def _compile_liquidity_policies(
         for asset_idx, asset_id in enumerate(policy.asset_preference_chain):
             assets[idx, asset_idx] = strings.require(asset_id)
             asset_series[idx, asset_idx] = series_index_by_id.get(asset_id, NO_CODE)
-    return (
-        agent,
-        account,
-        cash_slot,
-        trigger_kind,
-        trigger_fixed,
-        trigger_base,
-        trigger_series_index,
-        trigger_base_month,
-        trigger_adjustment_period,
-        sale_kind,
-        sale_fixed,
-        sale_base,
-        sale_series_index,
-        sale_base_month,
-        sale_adjustment_period,
-        assets,
-        asset_series,
-        tuple(prefixes),
+    return LiquidityPolicyCompileOutput(
+        agent=agent,
+        account=account,
+        cash_slot=cash_slot,
+        trigger_kind=trigger_kind,
+        trigger_fixed=trigger_fixed,
+        trigger_base=trigger_base,
+        trigger_series=trigger_series_index,
+        trigger_base_month=trigger_base_month,
+        trigger_period=trigger_adjustment_period,
+        sale_kind=sale_kind,
+        sale_fixed=sale_fixed,
+        sale_base=sale_base,
+        sale_series=sale_series_index,
+        sale_base_month=sale_base_month,
+        sale_period=sale_adjustment_period,
+        assets=assets,
+        asset_series=asset_series,
+        cause_id_prefixes=tuple(prefixes),
     )
