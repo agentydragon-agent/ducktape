@@ -18,7 +18,7 @@ use analysis::{
     write_stage_one_sidecars,
 };
 use artifact::{
-    ArtifactIndexes, ArtifactSourceImportResolver, ChunkAnalysis, ChunkArtifact, ChunkBundle,
+    ArtifactIndexes, ArtifactSourceImportResolver, ChunkAnalysisReport, ChunkArtifact, ChunkBundle,
     ChunkDecompositionOutput, ChunkFileRecord, ChunkId, ChunkLogicalModulesSummary, ChunkMetadata,
     ChunkTable, ChunkValidationSummary, DirectoryDependencyFact, FileMetadata, FileRole, JsChunk,
     JsFile, JsFileBody, SelectedModuleLowering, get_chunk_entry_path, join_module_path,

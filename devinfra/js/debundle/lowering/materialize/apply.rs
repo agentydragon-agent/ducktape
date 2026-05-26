@@ -57,7 +57,7 @@ pub(crate) fn apply_materialized_logical_chunks(
 pub(super) fn materialized_chunk_artifact(
     target_dir: &str,
     chunk_table: &ChunkTable,
-    base_analysis: Option<ChunkAnalysis>,
+    base_analysis: Option<ChunkAnalysisReport>,
     chunk: MaterializedLogicalChunk,
 ) -> (ChunkArtifact, ChunkDecompositionOutput) {
     let MaterializedLogicalChunk {
@@ -98,10 +98,10 @@ pub(super) fn materialized_chunk_artifact(
             source_path: source_path.clone(),
         },
     };
-    let analysis = ChunkAnalysis {
+    let analysis = ChunkAnalysisReport {
         entry_file: target_file,
         files: manifest_files,
-        ..base_analysis.unwrap_or_else(|| ChunkAnalysis {
+        ..base_analysis.unwrap_or_else(|| ChunkAnalysisReport {
             chunk_id: chunk_name,
             source_path,
             parser: Default::default(),

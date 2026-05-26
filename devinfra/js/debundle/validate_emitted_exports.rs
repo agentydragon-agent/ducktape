@@ -227,7 +227,7 @@ fn exported_decl_names(decl: &Decl) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use artifact::{
-        ChunkAnalysis, ChunkArtifact, ChunkBundle, ChunkMetadata, ChunkTable, FileMetadata,
+        ChunkAnalysisReport, ChunkArtifact, ChunkBundle, ChunkMetadata, ChunkTable, FileMetadata,
         FileRole, JsChunk, JsFile, JsFileBody,
     };
     use js_ast::parse_js_module;
@@ -278,7 +278,7 @@ mod tests {
                     source_path: format!("{chunk_name}.js"),
                 },
             },
-            analysis: ChunkAnalysis {
+            analysis: ChunkAnalysisReport {
                 chunk_id: chunk_name.to_string(),
                 source_path: format!("{chunk_name}.js"),
                 parser: Default::default(),

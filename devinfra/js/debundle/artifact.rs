@@ -32,7 +32,7 @@ pub struct ChunkBundle {
 pub struct ChunkArtifact {
     pub chunk_id: ChunkId,
     pub js: JsChunk,
-    pub analysis: ChunkAnalysis,
+    pub analysis: ChunkAnalysisReport,
 }
 
 pub struct JsChunk {
@@ -271,7 +271,7 @@ pub struct ArtifactChunkRecord {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct ChunkAnalysis {
+pub struct ChunkAnalysisReport {
     pub chunk_id: String,
     pub source_path: String,
     pub parser: ParserOptionsRecord,
@@ -330,7 +330,7 @@ pub struct ChunkManifest {
 
 impl ChunkManifest {
     pub fn from_analysis(
-        analysis: &ChunkAnalysis,
+        analysis: &ChunkAnalysisReport,
         decomposition: Option<&ChunkDecompositionOutput>,
         output_metrics: OutputMetrics,
     ) -> Self {

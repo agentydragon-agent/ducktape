@@ -2411,7 +2411,7 @@ fn validate_optional_local_symbol(
 mod tests {
     use super::*;
     use artifact::{
-        ChunkAnalysis, ChunkArtifact, ChunkMetadata, FileMetadata, FileRole, JsChunk, JsFile,
+        ChunkAnalysisReport, ChunkArtifact, ChunkMetadata, FileMetadata, FileRole, JsChunk, JsFile,
     };
     use spec::VendorRole;
 
@@ -2568,7 +2568,7 @@ export { b as beta };
                     source_path: format!("{chunk_id}.js"),
                 },
             },
-            analysis: ChunkAnalysis {
+            analysis: ChunkAnalysisReport {
                 chunk_id: chunk_id.to_string(),
                 source_path: format!("{chunk_id}.js"),
                 parser: Default::default(),
