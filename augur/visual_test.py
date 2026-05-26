@@ -143,7 +143,7 @@ def _wait_for_property_panel(page: Page) -> None:
     page.locator("[data-product-property-panel]").wait_for(state="visible", timeout=30_000)
     page.get_by_text("Timeline (mid-horizon changes)").wait_for(state="visible", timeout=30_000)
     # Three event rows pre-decoded from the URL: set-rented%, capital improvement, sale.
-    page.get_by_label("Rented %", exact=True).wait_for(state="visible", timeout=30_000)
+    page.get_by_label("Rented", exact=True).wait_for(state="visible", timeout=30_000)
     page.get_by_label("Amount", exact=True).wait_for(state="visible", timeout=30_000)
     page.get_by_label("Closing cost", exact=True).wait_for(state="visible", timeout=30_000)
 
