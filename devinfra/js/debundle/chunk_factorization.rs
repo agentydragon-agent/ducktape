@@ -1,13 +1,13 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
-
-use petgraph::algo::{tarjan_scc, toposort};
-use petgraph::graphmap::DiGraphMap;
 
 use crate::atomic_units::{AtomicUnit, OwnerGraphAndUnits, compute_owner_graph_and_units};
 use crate::chunk_analysis::ChunkAnalysis;
 use crate::factor_assembly::{AtomicUnitConflict, assemble_partition};
-use crate::graph::build_module_quotient;
+use crate::graph::{
+    build_module_quotient, chunk_constraining_module_edges, chunk_linker_order,
+    chunk_source_import_order,
+};
 use crate::partition::Partition;
 use crate::reports::build_owner_graph_report;
 use crate::validation::validate_factorization;
@@ -116,15 +116,30 @@ impl ChunkFactorization {
         let partition = outcome.partition;
         let assembly_conflicts = outcome.conflicts;
         let dep_graph = build_module_quotient(&owner_graph, &partition);
-        let linker_order = compute_linker_order(&dep_graph, &logical_modules);
-        let linker_position_by_module: HashMap<ModuleId, usize> = linker_order
-            .iter()
-            .copied()
-            .enumerate()
-            .map(|(idx, id)| (id, idx))
+        // Drive Lemma-2 ordering through the canonical
+        // `ChunkConstrainingEdgeSet` so the emitter and the gate's
+        // simulator share one source of truth — see `graph.rs:
+        // chunk_constraining_module_edges` for the invariant doc.
+        let canonical_edges = chunk_constraining_module_edges(&owner_graph, &partition);
+        let linker_position_btree: BTreeMap<ModuleId, usize> =
+            chunk_linker_order(&canonical_edges);
+        // Recover the linker-order Vec by sorting modules by their
+        // assigned position. Modules absent from the canonical set
+        // are unconstrained relative to it and not present here.
+        let mut linker_order_pairs: Vec<(ModuleId, usize)> =
+            linker_position_btree.iter().map(|(m, p)| (*m, *p)).collect();
+        linker_order_pairs.sort_by_key(|(_, p)| *p);
+        let linker_order: Vec<ModuleId> =
+            linker_order_pairs.into_iter().map(|(m, _)| m).collect();
+        let linker_position_by_module: HashMap<ModuleId, usize> =
+            linker_position_btree.into_iter().collect();
+        // Every logical module needs a deterministic source-order
+        // slot for emit stability, even singletons that don't
+        // participate in any canonical edge.
+        let extra_nodes: BTreeSet<ModuleId> = (0..logical_modules.len())
+            .map(|idx| ModuleId(LogicalModuleIndex(idx)))
             .collect();
-        let source_import_order =
-            compute_source_import_order(&dep_graph, &logical_modules, &linker_position_by_module);
+        let source_import_order = chunk_source_import_order(&canonical_edges, &extra_nodes);
         let source_import_position_by_module: HashMap<ModuleId, usize> = source_import_order
             .iter()
             .copied()
@@ -197,131 +212,4 @@ impl ChunkFactorization {
     pub fn owner_graph_report(&self) -> OwnerGraphReport {
         build_owner_graph_report(self)
     }
-}
-
-/// Topological linearization of the dep graph, dependency-first.
-/// Empty if the graph has cycles (`tarjan_scc` plus the validator
-/// gate handle that case).
-///
-/// The dep-graph edge convention is `(M, M')` meaning `M` depends
-/// on `M'`. `petgraph::algo::toposort` returns `u`-before-`v` for
-/// every edge `(u, v)`, which under our convention puts dependents
-/// before dependencies. The returned order is reversed so the
-/// dependency comes first — matching the order ECMA-262's link
-/// traversal needs to evaluate (deepest leaf first).
-fn compute_linker_order(
-    dep_graph: &ModuleQuotient,
-    _logical_modules: &[LogicalModule],
-) -> Vec<ModuleId> {
-    // Only modules that participate in a CONSTRAINING edge end up in
-    // linker_order. Modules with only `LazyUse` edges (or no edges at
-    // all) have no init-order constraint and are left out, so
-    // `linker_position_by_module.get(m)` returns `None` for them.
-    // `compute_source_import_order`'s `None`-handling sorts them
-    // AFTER constraining members within their SCC — preserving
-    // Lemma 2's "dependent first" within the constraining subgraph
-    // without letting lazy-only members displace the dependent. See
-    // <accepted_spec_runs_under_node_test::early_entry_importer_…>
-    // for the runtime TDZ that motivated this change.
-    let mut graph = DiGraphMap::<ModuleId, ()>::new();
-    for (from, to, weight) in dep_graph.all_edges() {
-        if !weight.constrains_init_order() {
-            continue;
-        }
-        graph.add_node(from);
-        graph.add_node(to);
-        graph.add_edge(from, to, ());
-    }
-    match toposort(&graph, None) {
-        Ok(order) => order.into_iter().rev().collect(),
-        Err(_) => Vec::new(),
-    }
-}
-
-/// Compute the source order in which entry's emitted `import`
-/// directives must appear so the ESM linker's depth-first
-/// instantiation lands on a Phase-2 evaluation order matching
-/// `linker_order`. Implements DESIGN.md "The realizability theorem"
-/// Lemma 2.
-///
-/// The idea: ESM Phase-2 evaluates a module's source-order imports
-/// recursively, then runs the module's own init code. For acyclic
-/// imports graphs, post-DFS-order matches source order — so
-/// dependency-first source produces dependency-first evaluation.
-/// For cyclic imports graphs accepted by the relaxed clause-3 rule
-/// (the constraining-edge subgraph is acyclic even though `I` has
-/// the cycle), DFS into the first imported SCC member recurses to
-/// its dependency, hits the cycle back-edge, and finalizes the
-/// dependency LAST in post-order — wrong. The fix: within each SCC
-/// of `I`, reverse the order so the most-dependent member is first
-/// in source, the cycle unwinds through its dependencies, and
-/// post-order matches the dependency-first ordering the
-/// constraining-edge subgraph defines.
-///
-/// Returns a `Vec<ModuleId>` ordered such that index 0 should be
-/// entry's first import.
-fn compute_source_import_order(
-    dep_graph: &ModuleQuotient,
-    logical_modules: &[LogicalModule],
-    linker_position_by_module: &HashMap<ModuleId, usize>,
-) -> Vec<ModuleId> {
-    let sccs = tarjan_scc(&dep_graph.0);
-    let mut scc_of: HashMap<ModuleId, usize> = HashMap::new();
-    let mut scc_rank: Vec<usize> = Vec::with_capacity(sccs.len());
-    for (idx, scc) in sccs.iter().enumerate() {
-        let min_pos = scc
-            .iter()
-            .filter_map(|m| linker_position_by_module.get(m).copied())
-            .min()
-            .unwrap_or(usize::MAX);
-        scc_rank.push(min_pos);
-        for m in scc {
-            scc_of.insert(*m, idx);
-        }
-    }
-    // Start from every module the factorization knows about. Modules
-    // with no dep-graph edges (singletons) still need a deterministic
-    // source-order slot for emit stability.
-    let mut nodes: Vec<ModuleId> = (0..logical_modules.len())
-        .map(|idx| ModuleId(LogicalModuleIndex(idx)))
-        .collect();
-    for (from, to, _) in dep_graph.all_edges() {
-        if !nodes.contains(&from) {
-            nodes.push(from);
-        }
-        if !nodes.contains(&to) {
-            nodes.push(to);
-        }
-    }
-    nodes.sort_by(|a, b| {
-        let a_scc = scc_of.get(a).copied();
-        let b_scc = scc_of.get(b).copied();
-        let a_rank = a_scc
-            .and_then(|i| scc_rank.get(i).copied())
-            .unwrap_or(usize::MAX);
-        let b_rank = b_scc
-            .and_then(|i| scc_rank.get(i).copied())
-            .unwrap_or(usize::MAX);
-        let a_pos = linker_position_by_module.get(a).copied();
-        let b_pos = linker_position_by_module.get(b).copied();
-        // (SCC rank ASC, intra-SCC linker_position DESC). DESC reverses
-        // within each SCC so the cycle dependent (highest linker_position
-        // = last in linker_order = the dependent) comes first in entry's
-        // source; the rank ASC keeps SCCs dependency-first relative to
-        // each other.
-        //
-        // Members with NO `linker_position` (not in the constraining-edge
-        // graph — only reachable via `LazyUse`) must come LAST within
-        // their SCC. Otherwise they'd displace the constraining dependent
-        // from first position, and ESM's DFS would enter the SCC via
-        // them, bypassing Lemma 2's planned post-order. See
-        // `accepted_spec_runs_under_node_test::early_entry_importer_…`.
-        a_rank.cmp(&b_rank).then_with(|| match (a_pos, b_pos) {
-            (Some(a), Some(b)) => b.cmp(&a),
-            (Some(_), None) => std::cmp::Ordering::Less,
-            (None, Some(_)) => std::cmp::Ordering::Greater,
-            (None, None) => std::cmp::Ordering::Equal,
-        })
-    });
-    nodes
 }
