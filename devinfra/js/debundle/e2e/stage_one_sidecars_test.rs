@@ -12,7 +12,7 @@
 //! requires `Globals`-portable hygiene to be useful in a separate-
 //! process Stage B; v1 defers that wire-format redesign and keeps the
 //! sidecars scoped to in-process inspection. See
-//! `stage_one_sidecars.rs` docstring for the rationale.
+//! `stage_one/sidecars.rs` docstring for the rationale.
 
 use std::fs;
 
@@ -89,7 +89,7 @@ export { A, B, readA, readB };
     );
 
     // v1 explicitly does NOT write ast.json (deferred wire-format
-    // redesign — see stage_one_sidecars.rs docstring).
+    // redesign — see stage_one/sidecars.rs docstring).
     assert!(
         !chunk_analysis_dir.join("ast.json").exists(),
         "ast.json must not be written in v1",

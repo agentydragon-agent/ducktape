@@ -10,10 +10,10 @@ round-trip, in-process side effects) see
 
 The pieces motivating the original split are all in place:
 
-- **Stage A composer** (`stage_one.rs::compute_stage_one_analysis`):
+- **Stage A composer** (`stage_one/mod.rs::compute_stage_one_analysis`):
   a clean composer that runs parse + facts + owner_graph +
   atomic_units, with explicit input/output types.
-- **Stage A sidecars** (`stage_one_sidecars.rs`): per-concept JSON
+- **Stage A sidecars** (`stage_one/sidecars.rs`): per-concept JSON
   files written under `reports/tree/<chunk_id>/chunk_analysis/`:
   `facts.json`, `atomic_units.json`, `manifest.json`. No `ast.json`
   — see §"AST: not serialized" below.
@@ -66,7 +66,7 @@ the freshly-resolved `top_level_id` would not agree with the
 wire-loaded one. See `ARCH_REVIEW_2026_05.md` §"Pipeline-split
 residuals" for the empirical demonstration.
 
-Consequence: v1 sidecars (`stage_one_sidecars.rs`) write `facts.json`,
+Consequence: v1 sidecars (`stage_one/sidecars.rs`) write `facts.json`,
 `atomic_units.json`, `manifest.json`. They **do not** write
 `ast.json`. `swc_ecma_ast/serde-impl` stays as plumbing.
 
@@ -128,7 +128,7 @@ The materializer pipeline runs everything inline in
 becomes its own Bazel action, those side effects need to move out of
 the materializer's process: produce a Stage A artifact + log warnings
 as part of that action; the materializer loads the artifact and
-doesn't re-emit. This is queued for `stage_one.rs` and is the next
+doesn't re-emit. This is queued for `stage_one/mod.rs` and is the next
 step beyond the composer extraction.
 
 ### Stage A artifact size / format

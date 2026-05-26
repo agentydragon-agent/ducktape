@@ -294,7 +294,7 @@ mod tests {
     use swc_ecma_ast::Module;
     use swc_ecma_parser::{Parser, StringInput, Syntax, lexer::Lexer};
 
-    /// Parse helper mirrors `stage_one.rs::tests::parse`.
+    /// Parse helper mirrors `stage_one/mod.rs::tests::parse`.
     fn parse(source: &str) -> Module {
         let cm: Lrc<SourceMap> = Default::default();
         let fm = cm.new_source_file(

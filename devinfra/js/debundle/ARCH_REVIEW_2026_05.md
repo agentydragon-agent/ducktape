@@ -55,9 +55,9 @@ The `lowering/plans.rs::synthesize_mini_factor_plans` 10-arg signature in partic
 
 ### `compute_stage_one_analysis` is itself an example of the right direction
 
-`stage_one.rs:72` is a genuinely clean composer. The reason it works is that **the boundary at Stage A is well-defined**: the inputs and outputs are clear, the composer's only job is to call `analyze_chunk` then `compute_owner_graph_and_units_with`. The Stage A composer is exactly the shape every other composite operation in this crate should look like, and is the strongest design point in the recent refactor.
+`stage_one/mod.rs:72` is a genuinely clean composer. The reason it works is that **the boundary at Stage A is well-defined**: the inputs and outputs are clear, the composer's only job is to call `analyze_chunk` then `compute_owner_graph_and_units_with`. The Stage A composer is exactly the shape every other composite operation in this crate should look like, and is the strongest design point in the recent refactor.
 
-That said, `stage_one.rs:46` notes "Why a free function with no struct fanout" — but the doc-string concedes that the side-effecting interleaving (redundant-hint stderr, top-level-await `bail!`, atomic-unit-rebind folding) **still happens inline at the materializer**. Stage A _separation_ isn't done; the composer is a function-level renaming. The next refactor (post-sidecar) needs to move those side-effecting paths into the composer's owners.
+That said, `stage_one/mod.rs:46` notes "Why a free function with no struct fanout" — but the doc-string concedes that the side-effecting interleaving (redundant-hint stderr, top-level-await `bail!`, atomic-unit-rebind folding) **still happens inline at the materializer**. Stage A _separation_ isn't done; the composer is a function-level renaming. The next refactor (post-sidecar) needs to move those side-effecting paths into the composer's owners.
 
 ## Duplicated calculations
 
@@ -187,7 +187,7 @@ The fix: don't serialize `SyntaxContext`. Carry the binding `Atom` plus an enum 
 
 ### Stage A side effects are still in the materializer's process
 
-Today the pipeline runs everything inline in `materialize_logical_chunk`, including side-effecting actions (top-level-await `bail!`, redundant-hint stderr). When Stage A becomes its own Bazel action, those side effects need to move out of the materializer's process: produce a Stage A artifact + log warnings as part of that action; the materializer loads the artifact and doesn't re-emit. Today the warnings are stderr from the materializer; that has to change. Worth pinning a TODO in `stage_one.rs` so the reader knows the next step.
+Today the pipeline runs everything inline in `materialize_logical_chunk`, including side-effecting actions (top-level-await `bail!`, redundant-hint stderr). When Stage A becomes its own Bazel action, those side effects need to move out of the materializer's process: produce a Stage A artifact + log warnings as part of that action; the materializer loads the artifact and doesn't re-emit. Today the warnings are stderr from the materializer; that has to change. Worth pinning a TODO in `stage_one/mod.rs` so the reader knows the next step.
 
 ## Test-vs-spec drift
 

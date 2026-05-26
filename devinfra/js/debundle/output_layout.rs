@@ -22,7 +22,7 @@ pub const INDEX_REPORT: &str = "index.json";
 // Stage A on-disk sidecar layout: a per-chunk `chunk_analysis/`
 // directory holding the per-concept JSON files that describe Stage
 // A's output, plus a manifest envelope that pins the file set and
-// schema version. See `stage_one_sidecars.rs` for the writers and
+// schema version. See `stage_one/sidecars.rs` for the writers and
 // DESIGN.md §"Pipeline split (Stage A / Stage B)" for context.
 //
 // v1 deliberately omits an `ast.json` constant. Serializing the SWC

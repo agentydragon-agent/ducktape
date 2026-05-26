@@ -177,7 +177,7 @@ pub(super) fn materialize_logical_chunk(
         runtime_ast.line_index()
     });
     // Stage A: spec-independent analysis (facts + owner graph +
-    // structural atomic units). See `stage_one.rs` for the composer;
+    // structural atomic units). See `stage_one/mod.rs` for the composer;
     // DESIGN.md §"Pipeline split (Stage A / Stage B)" for the
     // boundary's role. v1 keeps Stage A in memory; v2 adds
     // per-concept JSON sidecars + a `materialize_from_*` entry point
@@ -202,7 +202,7 @@ pub(super) fn materialize_logical_chunk(
     // reader (task #78) can pick up Stage B from a cached Stage A
     // action. Conditional on `report_out_dir`: the in-memory pipeline
     // still works without them, and the e2e suites that don't request
-    // a report dir shouldn't pay the I/O cost. See `stage_one_sidecars.rs`.
+    // a report dir shouldn't pay the I/O cost. See `stage_one/sidecars.rs`.
     if let Some(report_out_dir) = report_out_dir {
         time_phase!(timings, "write_stage_one_sidecars", {
             write_stage_one_sidecars(report_out_dir, chunk_id, &stage_one)
