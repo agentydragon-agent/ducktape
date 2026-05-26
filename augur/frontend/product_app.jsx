@@ -62,11 +62,12 @@ const DEFAULT_PRODUCT_INPUT_BASE = {
   annualRatePct: 7,
   annualInsurancePct: 0.4,
   annualMaintenancePct: 1.0,
-  rentItOut: false,
   // Rental monthly rent override: null means "use the property's rent_estimate_usd";
   // 0 means "no rent collected"; any positive value overrides the property record.
   rentalMonthlyUsd: null,
-  rentalFractionRentedPct: 100,
+  // 0 = not rented (pure primary residence); 100 = fully rented out; in between = partial
+  // (e.g. owner-occupied + ADU). Drives whether `initial_rental` is emitted on the wire.
+  rentalFractionRentedPct: 0,
   rentalVacancyPct: 5,
   useRentalManagement: false,
   managementFeePct: 8,
@@ -151,8 +152,9 @@ function productInputDefaults(bootstrap) {
 // appending to INPUT_FIELDS; old URLs continue to decode (missing positions = defaults).
 // Bump SCHEMA_VERSION when a field's semantic encoding changes — old URLs then fall back to
 // defaults rather than reinterpreting (e.g. v1 stored rentalFractionRented as a 0..1 fraction,
-// v2 stores rentalFractionRentedPct as a 0..100 percentage).
-const INPUT_SCHEMA_VERSION = "2";
+// v2 stores rentalFractionRentedPct as a 0..100 percentage, v3 dropped `rentItOut` so the
+// rental fields are always present and `fractionRentedPct == 0` means "not rented").
+const INPUT_SCHEMA_VERSION = "3";
 
 const INPUT_FIELDS = [
   { key: "horizonMonths", type: "number" },
@@ -178,7 +180,6 @@ const INPUT_FIELDS = [
   { key: "annualRatePct", type: "number" },
   { key: "annualInsurancePct", type: "number" },
   { key: "annualMaintenancePct", type: "number" },
-  { key: "rentItOut", type: "bool" },
   { key: "rentalMonthlyUsd", type: "number" },
   { key: "rentalFractionRentedPct", type: "number" },
   { key: "rentalVacancyPct", type: "number" },
@@ -331,17 +332,20 @@ function buildPropertyFinancing(input) {
 }
 
 function buildRentalIncomePlan(input) {
-  if (!input.rentItOut) return null;
+  // `rentalFractionRentedPct` = 0 → property isn't rented at all; no rental plan on the wire.
+  const fractionPct = Number(input.rentalFractionRentedPct) || 0;
+  if (fractionPct <= 0) return null;
   // `rentalMonthlyUsd` is null → use property default; numeric → explicit override (incl. 0).
   const override = input.rentalMonthlyUsd;
   const monthlyRentCollectedUsd = override == null ? null : Math.max(0, Number(override) || 0);
-  const fraction = Math.min(1, Math.max(0.01, (Number(input.rentalFractionRentedPct) || 100) / 100));
+  const fraction = Math.min(1, Math.max(0.01, fractionPct / 100));
   const vacancyPct = Math.min(1, Math.max(0, (Number(input.rentalVacancyPct) || 0) / 100));
   return { monthlyRentCollectedUsd, fractionRented: fraction, vacancyPct };
 }
 
 function buildRentalManagement(input) {
-  if (!input.rentItOut || !input.useRentalManagement) return null;
+  // Management agency only makes sense when there's something to rent.
+  if (!input.useRentalManagement || (Number(input.rentalFractionRentedPct) || 0) <= 0) return null;
   return {
     managementFeePct: Math.max(0, Number(input.managementFeePct) || 0),
     leasingFeeMonths: Math.max(0, Number(input.leasingFeeMonths) || 0),
@@ -1436,18 +1440,13 @@ function PropertyPurchasePanel({ bootstrap, input, onChange }) {
               label="Owner lives in this property"
               aria-label="Owner lives in this property"
               checked={Boolean(input.livesHere)}
-              disabled={input.rentItOut && Number(input.rentalFractionRentedPct) >= 100}
+              // Fully rented = owner doesn't live there. The wire validator enforces this
+              // (is_primary_residence must be False when fraction_rented == 1.0).
+              disabled={Number(input.rentalFractionRentedPct) >= 100}
               classNames={{ label: "text-sm font-semibold augur-strong" }}
               onChange={(event) => onChange({ livesHere: event.currentTarget.checked })}
             />
-            <Checkbox
-              label="Rent this property out"
-              aria-label="Rent this property out"
-              checked={Boolean(input.rentItOut)}
-              classNames={{ label: "text-sm font-semibold augur-strong" }}
-              onChange={(event) => onChange({ rentItOut: event.currentTarget.checked })}
-            />
-            {input.rentItOut && <RentalPanel input={input} property={selected} onChange={onChange} />}
+            <RentalPanel input={input} property={selected} onChange={onChange} />
             <LifecycleEventsEditor
               events={input.propertyLifecycleEvents ?? []}
               horizonMonths={input.horizonMonths}
@@ -1631,22 +1630,18 @@ function RentalPanel({ input, property, onChange }) {
     propertyRentEstimate != null && propertyRentEstimate > 0
       ? `${fmtUsd(propertyRentEstimate)} (property default)`
       : "(required)";
+  const fractionPct = Number(input.rentalFractionRentedPct) || 0;
+  // When the property isn't being rented (fraction = 0), the monthly-rent / vacancy / management
+  // fields are no-ops on the wire. Mute them visually rather than hide so the user can see why
+  // there's no rental contribution.
+  const rentalActive = fractionPct > 0;
   return (
-    <div className="mt-1 ml-4 grid gap-3 border-l-2 border-slate-300 pl-3 dark:border-slate-600">
-      <NumberField
-        label="Monthly rent collected"
-        value={input.rentalMonthlyUsd}
-        min={0}
-        step={50}
-        prefix="$"
-        placeholder={rentPlaceholder}
-        onChange={(rentalMonthlyUsd) => onChange({ rentalMonthlyUsd })}
-      />
+    <div className="mt-1 grid gap-3">
       <div className="grid gap-3 sm:grid-cols-2">
         <NumberField
           label="Fraction rented"
           value={input.rentalFractionRentedPct}
-          min={1}
+          min={0}
           max={100}
           step={5}
           suffix="%"
@@ -1659,12 +1654,24 @@ function RentalPanel({ input, property, onChange }) {
           max={100}
           step={1}
           suffix="%"
+          disabled={!rentalActive}
           onChange={(rentalVacancyPct) => onChange({ rentalVacancyPct })}
         />
       </div>
+      <NumberField
+        label="Monthly rent collected"
+        value={input.rentalMonthlyUsd}
+        min={0}
+        step={50}
+        prefix="$"
+        placeholder={rentPlaceholder}
+        disabled={!rentalActive}
+        onChange={(rentalMonthlyUsd) => onChange({ rentalMonthlyUsd })}
+      />
       <Checkbox
         label="Use a property management agency"
         aria-label="Use a property management agency"
+        disabled={!rentalActive}
         checked={Boolean(input.useRentalManagement)}
         classNames={{ label: "text-sm font-semibold augur-strong" }}
         onChange={(event) => onChange({ useRentalManagement: event.currentTarget.checked })}
