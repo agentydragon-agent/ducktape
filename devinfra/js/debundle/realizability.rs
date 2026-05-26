@@ -37,9 +37,8 @@ use petgraph::graphmap::DiGraphMap;
 
 use crate::OwnerId;
 use crate::graph::{
-    ChunkConstrainingEdgeSet, OwnerEdge, OwnerEdgeId, OwnerGraph, build_module_quotient,
-    chunk_constraining_module_edges, chunk_linker_order_from_pairs,
-    chunk_source_import_order_from_adjacency,
+    OwnerEdge, OwnerEdgeId, OwnerGraph, build_module_quotient, chunk_constraining_module_edges,
+    chunk_linker_order_from_pairs, chunk_source_import_order_from_adjacency,
 };
 use crate::ids::ModuleId;
 use crate::partition::Partition;
@@ -2385,11 +2384,8 @@ mod tests {
         }
         let constraining_pairs: BTreeSet<(ModuleId, ModuleId)> =
             quotient.constraining_buckets.keys().copied().collect();
-        let rebuilt = EsmEvaluationSimulator::build(
-            &i_successors,
-            &constraining_pairs,
-            quotient.residual,
-        );
+        let rebuilt =
+            EsmEvaluationSimulator::build(&i_successors, &constraining_pairs, quotient.residual);
         // Force the cache to populate (verdict() takes the base path).
         let cached = quotient.base_simulator().clone();
         assert_eq!(

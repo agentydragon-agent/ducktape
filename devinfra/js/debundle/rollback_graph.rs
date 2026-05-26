@@ -218,7 +218,7 @@ where
     }
 }
 
-impl<'a, N> GraphBase for &'a PetgraphView<'_, N>
+impl<N> GraphBase for &PetgraphView<'_, N>
 where
     N: Copy + Ord,
 {
@@ -226,16 +226,16 @@ where
     type EdgeId = (N, N);
 }
 
-impl<'a, N> GraphRef for &'a PetgraphView<'_, N> where N: Copy + Ord {}
+impl<N> GraphRef for &PetgraphView<'_, N> where N: Copy + Ord {}
 
-impl<'a, N> GraphProp for &'a PetgraphView<'_, N>
+impl<N> GraphProp for &PetgraphView<'_, N>
 where
     N: Copy + Ord,
 {
     type EdgeType = Directed;
 }
 
-impl<'a, N> NodeIndexable for &'a PetgraphView<'_, N>
+impl<N> NodeIndexable for &PetgraphView<'_, N>
 where
     N: Copy + Ord,
 {

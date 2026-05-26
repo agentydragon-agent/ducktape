@@ -1357,11 +1357,7 @@ pub fn chunk_source_import_order(
     edges: &ChunkConstrainingEdgeSet,
     extra_nodes: &BTreeSet<ModuleId>,
 ) -> Vec<ModuleId> {
-    chunk_source_import_order_from_adjacency(
-        edges.pairs(),
-        &edges.i_successors,
-        extra_nodes,
-    )
+    chunk_source_import_order_from_adjacency(edges.pairs(), &edges.i_successors, extra_nodes)
 }
 
 /// Adjacency-only variant of [`chunk_source_import_order`]. The
