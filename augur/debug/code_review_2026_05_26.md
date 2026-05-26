@@ -59,16 +59,41 @@ Still flat:
 - **Lot + cash + external-series leftovers**: small clusters; defer if not
   blocking other work.
 
-### B4. Split monolithic `compiler.py` + `engine.py` (large; mostly mechanical after B1)
+### B4. Split monolithic `compiler.py` + `engine.py`
 
-`compiler.py` is ~2k lines; `engine.py` is ~3k. Both should split by
-domain:
+**Step 1 landed** (`augur/sim/buffers.py`): all buffer dataclasses
+(`CurrentStateBuffers`, `StateHistoryBuffers`, 6 × `*EventBuffers`,
+`SimulationBuffers`) lifted out of engine.py into a standalone module
+that depends only on `SlotPlan` + `CompiledSimulation`. Frees codec/
+to consume buffers without an engine-cycle.
 
-- `compiler/{tax,properties_and_liabilities,transfers_and_obligations,assets_and_sales,base}.py`
-- `engine/{phase_transfers,phase_purchases,phase_obligations,phase_taxes,phase_pe_tenders,phase_lifecycle,phase_settlement,buffers,decode}.py`
+**Step 2+3 landed** (`augur/sim/codec/`): full encoder/decoder pairing
+established. Per-domain modules own the `decode_*` functions paired
+with their compile-side twins:
 
-Orchestration (`_run_month_step`) stays in `engine/__init__.py` or
-`engine/loop.py`.
+- `codec/{assets,tax,liabilities,transfers,obligations,lifecycle,properties}.py`
+  — one per `*CompileOutput` arena.
+- `codec/helpers.py` — shared `codes_to_strings`, `state_axes`,
+  `r_first_view`, `text`, `frame_from_columns`,
+  `state_history_frame_from_columns` (all dropped leading `_`).
+- `codec/plan.py` — `DenseSimulationResult`, `decode_run` orchestrator,
+  `decode_events`, rollout-status decoders.
+
+engine.py is now 1.5k LOC of pure runtime: phase functions, buffer
+allocators, `_run_month_step`, `simulate_with_external_series_dense*`.
+
+**Remaining work**:
+
+- Split engine.py's phase functions into `engine/phases/{transfers,
+purchases,obligations,taxes,pe_tenders,lifecycle,settlement}.py`,
+  with `engine/loop.py` keeping `_run_month_step` orchestration and
+  `engine/__init__.py` re-exporting `simulate_*` + `DenseSimulationResult`.
+- Split compiler.py (1.8k LOC) per domain into
+  `compiler/{tax,properties,liabilities,transfers,obligations,assets,
+pe,lifecycle,liquidity,plan,indices}.py` mirroring the codec layout
+  (so `codec/<X>.py` and `compiler/<X>.py` are literal siblings).
+  Shared `profile_index_by_agent` / `slot_by_id` maps go to
+  `compiler/indices.py`.
 
 ### B5. Bundle lifecycle-event discriminators into per-event-kind dataclasses (small to medium; new)
 
@@ -129,6 +154,7 @@ current action:
 
 | #   | Area                                                              | Impact     | Effort   |
 | --- | ----------------------------------------------------------------- | ---------- | -------- |
+| B4b | Split engine.py runtime into `engine/phases/*.py` + `engine/loop` | DX         | medium   |
+| B4c | Split compiler.py per domain to mirror `codec/`                   | DX         | large    |
 | B5  | Bundle lifecycle/obligation discriminators into typed views       | DX         | medium   |
-| B4  | Split compiler.py + engine.py                                     | DX         | large    |
 | X1  | GitHub Actions blocked: account suspension blocks all push-images | cross-repo | external |
