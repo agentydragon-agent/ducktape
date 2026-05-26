@@ -286,6 +286,28 @@ rust_test(
 )
 
 rust_library(
+    name = "spec_stats",
+    srcs = ["spec_stats.rs"],
+    crate_root = "spec_stats.rs",
+    edition = "2024",
+    deps = [
+        ":spec_modules",
+        "@crates//:anyhow",
+        "@crates//:serde",
+    ],
+)
+
+rust_test(
+    name = "spec_stats_test",
+    crate = ":spec_stats",
+    edition = "2024",
+    deps = [
+        "@crates//:serde_json",
+        "@crates//:tempfile",
+    ],
+)
+
+rust_library(
     name = "peel",
     srcs = [
         "peel/factorize.rs",
@@ -585,6 +607,7 @@ rust_library(
         ":peel",
         ":pipeline",
         ":spec_modules",
+        ":spec_stats",
         "@crates//:anyhow",
         "@crates//:clap",
         "@crates//:serde",

@@ -17,6 +17,7 @@ use peel::{
     run_plan_work_report, run_source_slice_report, run_units_report,
 };
 use pipeline::{TransformArgs, run_transform_cli};
+use spec_stats::{SpecStats, compute_spec_stats, render_spec_stats_text};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -61,6 +62,36 @@ enum DebundleCommand {
     Scc(SccArgs),
     /// List the module-quotient neighbors of a binding's owner.
     Cluster(ClusterArgs),
+    /// Spec-wide queries (e.g. `spec stats`).
+    Spec(SpecNs),
+}
+
+/// Args for `debundle spec ...`.
+#[derive(Debug, ClapArgs)]
+pub struct SpecNs {
+    #[command(subcommand)]
+    command: SpecNsCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum SpecNsCommand {
+    /// Emit spec-wide summary: module + binding totals and member-count buckets.
+    Stats(SpecStatsArgs),
+}
+
+/// Args for `debundle spec stats`. Source is the on-disk modules tree;
+/// totals match what `debundle modules list` + `debundle bindings
+/// list` would aggregate when run pairwise.
+#[derive(Debug, ClapArgs)]
+pub struct SpecStatsArgs {
+    /// Modules tree root.
+    #[arg(long = "modules", env = "DEBUNDLE_MODULES")]
+    pub modules_root: PathBuf,
+
+    /// Output format. Default `text` on tty, `json` on pipe. `ndjson`
+    /// emits one line per top-level section (`modules`, `bindings`).
+    #[arg(long, value_enum)]
+    pub format: Option<OutputFormat>,
 }
 
 /// Args for `debundle scc`.
@@ -367,6 +398,9 @@ pub fn run_debundle_cli(args: DebundleArgs) -> Result<()> {
         DebundleCommand::ShowSource(args) => run_show_source(args),
         DebundleCommand::Scc(args) => run_scc(args),
         DebundleCommand::Cluster(args) => run_cluster(args),
+        DebundleCommand::Spec(args) => match args.command {
+            SpecNsCommand::Stats(s) => run_spec_stats_cmd(s),
+        },
     }
 }
 
@@ -856,6 +890,44 @@ fn run_modules_list(args: ModulesListArgs) -> Result<()> {
     let report = ModulesListReport { modules: entries };
     let format = OutputFormat::resolve(args.format);
     print_report(&report, format, render_modules_list_text).context("writing modules list output")
+}
+
+fn run_spec_stats_cmd(args: SpecStatsArgs) -> Result<()> {
+    let stats = compute_spec_stats(&args.modules_root)?;
+    let format = OutputFormat::resolve(args.format);
+    match format {
+        OutputFormat::Ndjson => {
+            // One line per top-level section. Each line is a tagged
+            // object so downstream consumers can dispatch on `section`.
+            #[derive(serde::Serialize)]
+            struct Line<'a, T: serde::Serialize> {
+                section: &'a str,
+                #[serde(flatten)]
+                payload: &'a T,
+            }
+            println!(
+                "{}",
+                serde_json::to_string(&Line {
+                    section: "modules",
+                    payload: &stats.modules,
+                })?
+            );
+            println!(
+                "{}",
+                serde_json::to_string(&Line {
+                    section: "bindings",
+                    payload: &stats.bindings,
+                })?
+            );
+            Ok(())
+        }
+        _ => print_report(&stats, format, render_spec_stats_text_wrapper)
+            .context("writing spec stats output"),
+    }
+}
+
+fn render_spec_stats_text_wrapper(stats: &SpecStats, out: &mut String) {
+    render_spec_stats_text(stats, out);
 }
 
 fn render_modules_list_text(report: &ModulesListReport, out: &mut String) {
