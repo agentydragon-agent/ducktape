@@ -9,7 +9,6 @@ mod rebind_folding;
 
 pub(super) use apply::apply_materialized_logical_chunks;
 use plan_builder::{ChunkPlan, ChunkPlanBuilder, ExplicitRequestContext};
-use rebind_folding::fold_rebind_atomic_units;
 
 use super::io::write_chunk_report_json;
 use super::ordinal::statement_ordinal_for_body_index;
@@ -289,24 +288,18 @@ pub(super) fn materialize_logical_chunk(
                 ordinal = ord.0,
             );
         }
-        let (
-            binding_assignment,
-            anonymous_ordinal_assignment,
-            module_plans,
-            bindings_catalogue,
-            residual_plan_index,
-            _unmatched_spec_claims,
-        ) = builder.parts_mut();
         time_phase!(timings, "fold_rebind_atomic_units", {
-            fold_rebind_atomic_units(
-                &precomputed,
-                binding_assignment,
-                bindings_catalogue,
-                module_plans,
-                *residual_plan_index,
-            );
+            builder.fold_rebind_units(&precomputed);
         });
         if matches!(chunk_unassigned_mode, UnassignedMode::MiniFactors) {
+            let (
+                binding_assignment,
+                anonymous_ordinal_assignment,
+                module_plans,
+                bindings_catalogue,
+                residual_plan_index,
+                _unmatched_spec_claims,
+            ) = builder.parts_mut();
             time_phase!(timings, "synthesize_mini_factor_plans", {
                 synthesize_mini_factor_plans(
                     &precomputed,

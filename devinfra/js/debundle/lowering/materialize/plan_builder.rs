@@ -395,6 +395,22 @@ impl ChunkPlanBuilder {
         Ok(())
     }
 
+    /// Resolve rebind-only atomic-unit soft conflicts: extend an
+    /// explicit claim's plan to cover any cycle member that has no
+    /// explicit destination, so that ESM-read-only-import semantics
+    /// don't surface the conflict as an unrealizable spec.
+    ///
+    /// Implementation in `rebind_folding::fold_rebind_atomic_units`.
+    pub(super) fn fold_rebind_units(&mut self, precomputed: &OwnerGraphAndUnits) {
+        super::rebind_folding::fold_rebind_atomic_units(
+            precomputed,
+            &mut self.binding_assignment,
+            &mut self.bindings_catalogue,
+            &mut self.module_plans,
+            self.residual_plan_index,
+        );
+    }
+
     pub(super) fn finalize(self) -> ChunkPlan {
         ChunkPlan {
             module_plans: self.module_plans,
