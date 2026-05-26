@@ -234,7 +234,14 @@
           ++ extraModules;
         };
       inherit (pkgs) lib;
-      ducktapePkgs = import ./nix/packages { inherit lib pkgs artifacts; };
+      ducktapePkgs = import ./nix/packages {
+        inherit
+          lib
+          pkgs
+          pkgsUnstable
+          artifacts
+          ;
+      };
       # gaffer-private's drivectl/drivefs, fetched purely as store paths from
       # cache.allegedly.works/gaffer (no source eval). Empty until gaffer CI's
       # first push populates ./nix/gaffer-pins.json.

@@ -2,9 +2,22 @@
 {
   lib,
   pkgs,
+  pkgsUnstable,
   artifacts,
 }:
 let
+  # CLEANUP: the ducktape wheel is built (on Bazel) against
+  # `fastmcp>=3.0` and `mcp==1.26.0` (see requirements_bazel.txt). nixpkgs
+  # 25.11 has fastmcp 2.12 / mcp 1.15, and even nixos-unstable currently
+  # has fastmcp 2.14 — no channel ships fastmcp 3.x yet. Bumping just mcp
+  # surfaces another API gap (`fastmcp.server.providers`, new in 3.x).
+  #
+  # Until nixpkgs catches up — or we vendor fastmcp 3.x locally — the
+  # ducktape wheel's MCP-using entry points (`git-commit-ai`,
+  # `gmail-archiver`) won't import inside the Nix environment, even
+  # though they work fine on Bazel/RBE. The pythonImportsCheck below is
+  # narrowed to entry-points that don't touch fastmcp/mcp.
+  inherit (pkgs) python3Packages;
   # CI wheels land in the nix store as "source" (no .whl extension).
   # pypaInstallPhase globs *.whl, so we restore the original filename.
   renameWheel =
@@ -30,7 +43,7 @@ let
       buildInputs ? [ ],
       mainProgram ? null,
     }:
-    pkgs.python3Packages.buildPythonApplication {
+    python3Packages.buildPythonApplication {
       inherit pname;
       version = "latest";
       format = "wheel";
@@ -76,7 +89,7 @@ let
     pname = "ducktape-util";
     description = "Shared utility library (util.bazel, util.fs, etc.)";
     importsCheck = [ "util" ];
-    propagatedBuildInputs = with pkgs.python3Packages; [
+    propagatedBuildInputs = with python3Packages; [
       opentelemetry-api
       opentelemetry-sdk
       tenacity
@@ -91,7 +104,7 @@ let
     # SYNC: This list must match `requires` in //:ducktape_git_hooks_wheel (BUILD.bazel).
     # When adding a dependency, update BOTH places.
     propagatedBuildInputs =
-      with pkgs.python3Packages;
+      with python3Packages;
       [
         httpx
         networkx
@@ -150,24 +163,24 @@ rec {
     description = "bb remote wrapper with repo-level config from devinfra/bbr.json";
     mainProgram = "bbr";
     importsCheck = [ "devinfra.bbr" ];
-    propagatedBuildInputs = with pkgs.python3Packages; [ pygit2 ];
+    propagatedBuildInputs = with python3Packages; [ pygit2 ];
   };
 
   ducktape = mkWheel {
     pname = "ducktape";
     description = "CLI tools (git-commit-ai, difftree, gmail-archiver)";
     mainProgram = "git-commit-ai";
-    # CLEANUP(2026-05-25): add `git_commit_ai.cli` and `gmail_archiver.main`
-    #   here once the artifact-pin refreshes. The BUILD fix that makes them
-    #   reach the umbrella has landed (see //:ducktape_pkg and
-    #   //git_commit_ai:cli), but the pinned wheel was built before that
-    #   fix — leaving them in `importsCheck` now would fail the Nix build.
+    # CLEANUP: include `git_commit_ai.cli` and `gmail_archiver.main` once
+    # the Nix environment has fastmcp 3.x available — see the long comment
+    # near `python3Packages` above. The umbrella wheel does bundle these
+    # modules (verified against the rebuilt artifact), but they import
+    # fastmcp/mcp APIs that nixpkgs currently can't satisfy.
     importsCheck = [
       "difftree.cli"
       "skills.hetzner_vnc_screenshot.vnc_screenshot"
       "skills.proxmox_vm.vm_interact"
     ];
-    propagatedBuildInputs = with pkgs.python3Packages; [
+    propagatedBuildInputs = with python3Packages; [
       aiodocker
       anyio
       httpx
@@ -212,7 +225,7 @@ rec {
     # The wheel declares pip-level deps; this list provides Nix-level equivalents.
     # When adding a dependency, update BOTH places.
     #
-    propagatedBuildInputs = with pkgs.python3Packages; [
+    propagatedBuildInputs = with python3Packages; [
       httpx
       platformdirs
       pydantic
@@ -260,7 +273,7 @@ rec {
       cairo
       gtk3
     ];
-    propagatedBuildInputs = with pkgs.python3Packages; [
+    propagatedBuildInputs = with python3Packages; [
       absl-py
       dbus-python
       pycairo
