@@ -5,9 +5,8 @@ from typing import Literal
 
 from pydantic import Field, PositiveInt
 
-from augur.api.finance import FinanceSnapshot
 from augur.api.local_regulation import LocalRegulation
-from augur.api.schemas import ApiModel, KnobsConfig
+from augur.api.schemas import ApiModel
 
 PropertyId = str
 
@@ -17,43 +16,6 @@ class ActorRole(StrEnum):
     EQUITY_BUILDING_OCCUPANT = "equity_building_occupant"
     TENANT = "tenant"
     LANDLORD = "landlord"
-
-
-class OwnerResidenceModeId(StrEnum):
-    SELECTED_PROPERTY = "selected_property"
-    OTHER_OWNED_PROPERTY = "other_owned_property"
-    RENTAL_ELSEWHERE = "rental_elsewhere"
-
-
-class RentalUsePolicyId(StrEnum):
-    NOT_RENTED = "not_rented"
-    RENT_ROOMS_WHILE_OWNER_LIVES_THERE = "rent_rooms_while_owner_lives_there"
-    RENT_WHOLE_PROPERTY = "rent_whole_property"
-
-
-class Option(ApiModel):
-    id: str
-    label: str
-    description: str
-
-
-class OwnerResidenceModeOption(Option):
-    id: OwnerResidenceModeId
-
-
-class RentalUsePolicyOption(Option):
-    id: RentalUsePolicyId
-
-
-class AgentOption(ApiModel):
-    actor_id: str
-    label: str
-    role: ActorRole
-
-
-class DefaultScenario(ApiModel):
-    property_id: PropertyId
-    label: str | None = None
 
 
 class Location(ApiModel):
@@ -131,20 +93,7 @@ class ProductInputDefaults(ApiModel):
 class BootstrapResponse(ApiModel):
     locations: list[Location]
     properties: list[Property]
-    default_property_id: str
-    default_owner_residence_mode: OwnerResidenceModeId
-    default_owner_residence_property_id: str | None = None
-    default_rental_use_policy: RentalUsePolicyId
-    default_initial_checking_usd: float
-    default_checking_floor_usd: float
-    default_checking_sale_amount_usd: float
-    default_knobs: KnobsConfig
     default_rollout_samples: PositiveInt
     max_rollout_samples: PositiveInt
     max_horizon_months: PositiveInt
-    default_scenarios: list[DefaultScenario]
-    owner_residence_mode_options: list[OwnerResidenceModeOption]
-    rental_use_policy_options: list[RentalUsePolicyOption]
-    agents: list[AgentOption]
-    finance_snapshot: FinanceSnapshot
     product_input_defaults: ProductInputDefaults = Field(default_factory=ProductInputDefaults)

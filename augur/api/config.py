@@ -17,13 +17,12 @@ from __future__ import annotations
 
 import os
 from collections import Counter
-from datetime import date
 from pathlib import Path
 
 import yaml
-from pydantic import Field, HttpUrl, NonNegativeFloat, PositiveInt, model_validator
+from pydantic import Field, HttpUrl, PositiveInt, model_validator
 
-from augur.api.bootstrap import ActorRole, DefaultScenario, ProductInputDefaults
+from augur.api.bootstrap import ActorRole, ProductInputDefaults
 from augur.api.finance import FinanceSnapshot
 from augur.api.local_regulation import LocalRegulation
 from augur.api.portfolio import PortfolioConfig
@@ -108,11 +107,8 @@ class Config(ApiModel):
     portfolio: PortfolioConfig = Field(default_factory=PortfolioConfig)
     locations: tuple[LocationConfig, ...] = ()
     location_selection: tuple[str, ...] | None = None
-    starting_portfolio_usd: NonNegativeFloat = 0.0
-    pmms_survey_date: date | None = None
     default_rollout_samples: PositiveInt
     max_rollout_samples: PositiveInt
-    bootstrap_default_scenarios: tuple[DefaultScenario, ...] = ()
     # User-overridable starting values for the product input panel. Optional per-field; the
     # frontend layers these over its hard-coded base defaults at bootstrap time so deployments
     # (e.g. `gaffer-private`) can bias the UI without code changes.

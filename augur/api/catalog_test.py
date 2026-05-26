@@ -12,7 +12,7 @@ from more_itertools import one
 from augur.api.bootstrap import ActorRole
 from augur.api.catalog import build_bootstrap_payload
 from augur.api.config import AgentDefinition, Config, LocationConfig, PropertyAssetConfig, PropertySourceConfig
-from augur.api.finance import ConcentratedHoldingSnapshot, FinanceSnapshot
+from augur.api.finance import FinanceSnapshot
 from augur.api.local_regulation import LocalRegulation, TaxRegime
 from augur.model.independent_exogenous import IndependentExogenousProviderConfig
 
@@ -153,19 +153,7 @@ def _config(
     return Config(
         agents=(AgentDefinition(actor_id="agent_a", label="Agent A", role=ActorRole.PRIMARY_OWNER),),
         property_source=PropertySourceConfig(properties_path=properties_path, property_assets=property_assets),
-        snapshot=FinanceSnapshot(
-            as_of_date="2026-05-14",
-            cash_usd=12_345,
-            wealthfront_sp500_usd=61_000,
-            ibkr_vt_usd=39_000,
-            sp500_proxy_portfolio_usd=100_000,
-            concentrated_holdings=(
-                ConcentratedHoldingSnapshot(
-                    holding_id="fixture_holding_a", label="Fixture Holding A", units=500, basis_per_unit_usd=5
-                ),
-            ),
-        ),
-        starting_portfolio_usd=100_000,
+        snapshot=FinanceSnapshot(as_of_date="2026-05-14", cash_usd=12_345),
         default_rollout_samples=8,
         max_rollout_samples=128,
         locations=_fixture_locations(),
@@ -253,24 +241,15 @@ def test_bootstrap_location_selection_filters_properties_and_locations(tmp_path:
     assert [property_.id for property_ in bootstrap.properties] == ["location_a_property"]
 
 
-def test_bootstrap_carries_configured_finance_snapshot_and_defaults(tmp_path: Path) -> None:
+def test_bootstrap_carries_sampling_defaults(tmp_path: Path) -> None:
     properties_path = tmp_path / "properties.json"
     _write_properties(properties_path)
 
     bootstrap = build_bootstrap_payload(_config(properties_path))
 
-    assert bootstrap.default_initial_checking_usd == 12_345
     assert bootstrap.default_rollout_samples == 8
     assert bootstrap.max_rollout_samples == 128
     assert bootstrap.max_horizon_months == 1200
-    assert bootstrap.default_knobs.starting_portfolio_usd == 100_000
-    assert bootstrap.finance_snapshot.cash_usd == 12_345
-    assert bootstrap.finance_snapshot.wealthfront_sp500_usd == 61_000
-    assert bootstrap.finance_snapshot.ibkr_vt_usd == 39_000
-    assert bootstrap.finance_snapshot.sp500_proxy_portfolio_usd == 100_000
-    assert bootstrap.finance_snapshot.concentrated_holdings[0].label == "Fixture Holding A"
-    assert bootstrap.finance_snapshot.concentrated_holdings[0].units == 500
-    assert bootstrap.finance_snapshot.concentrated_holdings[0].basis_per_unit_usd == 5
 
 
 def test_bootstrap_rejects_unknown_property_location(tmp_path: Path) -> None:

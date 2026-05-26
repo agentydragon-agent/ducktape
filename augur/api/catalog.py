@@ -12,49 +12,11 @@ import yaml
 from more_itertools import one
 from pydantic import TypeAdapter
 
-from augur.api.bootstrap import (
-    ActorRole,
-    AgentOption,
-    BootstrapResponse,
-    Location,
-    OwnerResidenceModeId,
-    OwnerResidenceModeOption,
-    Property,
-    RentalUsePolicyId,
-    RentalUsePolicyOption,
-)
+from augur.api.bootstrap import ActorRole, BootstrapResponse, Location, Property
 from augur.api.config import Config, LocationConfig, PropertyAssetConfig
-from augur.api.schemas import KnobsConfig
 from augur.product.wire import MAX_HORIZON_MONTHS
 
 PROPERTY_ROWS_ADAPTER = TypeAdapter(tuple[Property, ...])
-
-DEFAULT_KNOBS = KnobsConfig(
-    down_payment_pct=25,
-    credit_score=776,
-    custom_mortgage_rate=6.5,
-    custom_mortgage_term_years=30,
-    starting_portfolio_usd=0,
-    hold_years=5,
-    appreciation_rate=2,
-    sp500_rate=7,
-    maintenance_pct=1,
-    owner_occupancy_years=0,
-    inflation=3,
-    vacancy_pct=5,
-    mgmt_pct=8,
-    leasing_fee_pct=0,
-    rooms_rented_while_living=0,
-    room_rent_monthly_usd=0,
-    room_vacancy_pct=0,
-    portfolio_liquidation_tax_pct=0,
-    insurance_annual_usd=1800,
-    closing_cost_buy_pct=2.5,
-    closing_cost_sell_pct=6.5,
-    depreciable_basis_pct=80,
-    financing_mode="fixed_30",
-    occupancy_type="investment",
-)
 
 
 def _location_from_config(config: LocationConfig) -> Location:
@@ -105,57 +67,12 @@ def _apply_property_assets(config: Config, properties: tuple[Property, ...]) -> 
     )
 
 
-def _default_knobs_for_config(config: Config) -> KnobsConfig:
-    starting_portfolio_usd = config.starting_portfolio_usd or config.snapshot.sp500_proxy_portfolio_usd
-    return DEFAULT_KNOBS.model_copy(update={"starting_portfolio_usd": starting_portfolio_usd})
+def _validate_primary_agent_exists(config: Config) -> None:
+    """`config.agents` must include exactly one PRIMARY_OWNER. The product surface assumes a
+    single primary throughout, so reject early on misconfig rather than failing deep in the
+    sim translator."""
 
-
-def _primary_agent_label(config: Config) -> str:
-    """Return the primary-owner label derived from config.agents."""
-    primary = one(agent for agent in config.agents if agent.role is ActorRole.PRIMARY_OWNER)
-    return primary.label
-
-
-def _owner_residence_mode_options(primary: str) -> list[OwnerResidenceModeOption]:
-    return [
-        OwnerResidenceModeOption(
-            id=OwnerResidenceModeId.SELECTED_PROPERTY,
-            label=f"{primary} lives in selected property",
-            description=f"{primary} occupies the selected property for the modeled owner-occupancy period.",
-        ),
-        OwnerResidenceModeOption(
-            id=OwnerResidenceModeId.OTHER_OWNED_PROPERTY,
-            label=f"{primary} lives in another modeled property",
-            description=(
-                f"{primary}'s residence is another selected property while this property can be rented or held."
-            ),
-        ),
-        OwnerResidenceModeOption(
-            id=OwnerResidenceModeId.RENTAL_ELSEWHERE,
-            label=f"{primary} rents elsewhere",
-            description=(f"{primary} does not live in a modeled owned property in this scenario."),
-        ),
-    ]
-
-
-def _rental_use_policy_options(primary: str) -> list[RentalUsePolicyOption]:
-    return [
-        RentalUsePolicyOption(
-            id=RentalUsePolicyId.NOT_RENTED,
-            label="Not rented",
-            description=f"No rental income is modeled while {primary} uses the property.",
-        ),
-        RentalUsePolicyOption(
-            id=RentalUsePolicyId.RENT_ROOMS_WHILE_OWNER_LIVES_THERE,
-            label="Rent rooms while living there",
-            description=f"Room rental income applies during {primary}'s owner-occupancy period.",
-        ),
-        RentalUsePolicyOption(
-            id=RentalUsePolicyId.RENT_WHOLE_PROPERTY,
-            label="Rent whole property",
-            description=f"Whole-property rental income applies when the property is not occupied by {primary}.",
-        ),
-    ]
+    one(agent for agent in config.agents if agent.role is ActorRole.PRIMARY_OWNER)
 
 
 def _load_properties(config: Config, *, location_by_id: dict[str, Location]) -> tuple[Property, ...]:
@@ -191,25 +108,12 @@ def build_bootstrap_payload(config: Config) -> BootstrapResponse:
     )
     if not properties:
         raise ValueError("Augur property catalog has no properties after applying location_selection")
-    primary = _primary_agent_label(config)
+    _validate_primary_agent_exists(config)
     return BootstrapResponse(
         locations=locations,
         properties=properties,
-        default_property_id=properties[0].id,
-        default_owner_residence_mode=OwnerResidenceModeId.SELECTED_PROPERTY,
-        default_owner_residence_property_id=properties[0].id,
-        default_rental_use_policy=RentalUsePolicyId.NOT_RENTED,
-        default_initial_checking_usd=config.snapshot.cash_usd,
-        default_checking_floor_usd=10_000,
-        default_checking_sale_amount_usd=20_000,
-        default_knobs=_default_knobs_for_config(config),
         default_rollout_samples=config.default_rollout_samples,
         max_rollout_samples=config.max_rollout_samples,
         max_horizon_months=MAX_HORIZON_MONTHS,
-        default_scenarios=list(config.bootstrap_default_scenarios),
-        owner_residence_mode_options=_owner_residence_mode_options(primary),
-        rental_use_policy_options=_rental_use_policy_options(primary),
-        agents=[AgentOption(actor_id=agent.actor_id, label=agent.label, role=agent.role) for agent in config.agents],
-        finance_snapshot=config.snapshot,
         product_input_defaults=config.product_input_defaults,
     )

@@ -168,10 +168,3 @@ property_source:
 snapshot:
   as_of_date: "2026-05-14"
   cash_usd: 250000.0
-  concentrated_holdings:
-    - basis_per_unit_usd: 5.0
-      holding_id: private_holding_a
-      label: Private Holding A
-      units: 1000
-  sp500_proxy_portfolio_usd: 750000.0
-starting_portfolio_usd: 750000.0

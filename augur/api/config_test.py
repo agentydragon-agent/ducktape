@@ -19,7 +19,7 @@ from augur.api.config import (
     dump_augur_config_yaml,
     load_augur_config,
 )
-from augur.api.finance import ConcentratedHoldingSnapshot, FinanceSnapshot
+from augur.api.finance import FinanceSnapshot
 from augur.api.local_regulation import LocalRegulation, TaxRegime
 from augur.api.portfolio import HoldingPositionConfig, HoldingTaxLotConfig, PortfolioAccountConfig, PortfolioConfig
 from augur.model.independent_exogenous import IndependentExogenousProviderConfig
@@ -102,28 +102,6 @@ def test_property_asset_property_ids_must_be_unique() -> None:
         )
 
 
-def test_finance_snapshot_holdings_round_trip_through_json() -> None:
-    config = _minimal_config(
-        snapshot=FinanceSnapshot(
-            as_of_date="2026-05-12",
-            cash_usd=100.0,
-            concentrated_holdings=(
-                ConcentratedHoldingSnapshot(
-                    holding_id="example_holding", label="Example Holding", units=10, basis_per_unit_usd=0
-                ),
-            ),
-        )
-    )
-
-    reloaded = Config.model_validate_json(config.model_dump_json(exclude_computed_fields=True))
-
-    holding = reloaded.snapshot.concentrated_holdings[0]
-    assert holding.holding_id == "example_holding"
-    assert holding.label == "Example Holding"
-    assert holding.units == 10
-    assert holding.basis_per_unit_usd == 0
-
-
 def test_config_carries_tax_lot_accurate_portfolio_schema() -> None:
     config = _minimal_config(
         portfolio=PortfolioConfig(
@@ -196,29 +174,9 @@ def test_actor_id_must_be_snake_case() -> None:
         AgentDefinition(actor_id="Alpha", label="Alpha", role=ActorRole.PRIMARY_OWNER)
 
 
-def test_holding_id_must_be_snake_case() -> None:
-    with pytest.raises(ValidationError, match="String should match pattern"):
-        ConcentratedHoldingSnapshot(holding_id="ExampleHolding", label="Example", units=100)
-
-
 def test_snapshot_optional_fields_default_to_zero() -> None:
     snapshot = FinanceSnapshot(as_of_date="2026-05-12")
     assert snapshot.cash_usd == 0.0
-    assert snapshot.wealthfront_sp500_usd == 0.0
-    assert snapshot.concentrated_holdings == ()
-
-
-def test_snapshot_carries_per_holding_basis() -> None:
-    snapshot = FinanceSnapshot(
-        as_of_date="2026-05-12",
-        concentrated_holdings=(
-            ConcentratedHoldingSnapshot(
-                holding_id="example_holding", label="Example Holding", units=10, basis_per_unit_usd=1.5
-            ),
-        ),
-    )
-    assert snapshot.concentrated_holdings[0].basis_per_unit_usd == 1.5
-    assert snapshot.concentrated_holdings[0].units == 10
 
 
 def test_unknown_field_is_rejected() -> None:
@@ -227,7 +185,7 @@ def test_unknown_field_is_rejected() -> None:
 
 
 def test_yaml_round_trip_through_dump_and_load(tmp_path) -> None:
-    config = _minimal_config(location_selection=("san_francisco_ca",), starting_portfolio_usd=100.0)
+    config = _minimal_config(location_selection=("san_francisco_ca",))
 
     path = tmp_path / "config.yaml"
     path.write_text(dump_augur_config_yaml(config), encoding="utf-8")
