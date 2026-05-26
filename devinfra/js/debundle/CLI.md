@@ -14,8 +14,9 @@ on-stderr convention as the rest of ducktape.
 
 ## Convention: validate-by-default for mutating commands
 
-Every command that **modifies the spec** (`binding assign`, `binding
-rename`, `modules merge`) runs validation **by default** before
+Every command that **modifies the spec** (`bindings assign`,
+`bindings rename`, `modules merge`) runs validation **by default**
+before
 writing changes back to disk. For commands that affect the chunk's
 factorization (anything that moves a binding between modules), that
 means the full realizability gate; for renames, it means name-
@@ -67,23 +68,21 @@ with a list. Use the minified form to disambiguate.
 | `debundle run` | yes (emits JS + reports) | Run the full transform pipeline: parse + facts + owner_graph + atomic_units + realizability gate + lower + emit. | shipped |
 | `debundle run --dry-run` | no | Run through validation only; do not emit JS. | **planned** |
 
-### Binding-scoped (mutating)
-
-Read-only binding queries use the top-level `describe` and
-`show-source` commands (which accept any ID, including bindings).
-The `binding` namespace holds only the mutating operations.
+### Bindings
 
 | Command | Mutates? | Function | Status |
 |---|---|---|---|
-| `debundle binding assign <sym>:<module>[:<readable>] …` | yes (spec) | Move one or more bindings into named logical modules **atomically**. Each positional argument is colon-separated: `<sym>:<module>` to move and keep the current name, `<sym>:<module>:<readable>` to move and rename in the same step. `<sym>` accepts minified or readable form; the optional third field always sets the new readable `name:`. `--batch <file.json>` (or `--batch -` for stdin) reads moves as a JSON array of `{sym, module, readable?}` objects. Validation runs on the *whole batch's* post-state. Default: validate + apply atomically. `--no-verify` / `--dry-run` available. See "Batch atomicity" below. | **planned** (#82) |
-| `debundle binding rename <original> <readable>` | yes (spec) | Rename a binding's readable `name:` without moving it. `<original>` accepts minified or current readable form. Validation here is name-collision detection (no two bindings in the chunk get the same readable name). Mostly a convenience over `binding assign` for the rename-without-move case. `--no-verify` / `--dry-run` available. | **planned** (#82) |
+| `debundle bindings list [--in <module>] [--unrenamed] [--orphan]` | no | List bindings in the chunk with summary stats (home module, current readable name if any, atom-membership flag). Filters available for the common reverse-lookup cases (e.g. `--unrenamed` to find bindings still using the minified name). | **planned** |
+| `debundle bindings assign <sym>:<module>[:<readable>] …` | yes (spec) | Move one or more bindings into named logical modules **atomically**. Each positional argument is colon-separated: `<sym>:<module>` to move and keep the current name, `<sym>:<module>:<readable>` to move and rename in the same step. `<sym>` accepts minified or readable form; the optional third field always sets the new readable `name:`. **Neither `<sym>` nor `<readable>` may contain `:`** — use `--batch` JSON for any edge case where they do. `--batch <file.json>` (or `--batch -` for stdin) reads moves as a JSON array of `{sym, module, readable?}` objects (or `modules propose`'s native output shape). Validation runs on the *whole batch's* post-state. Destination modules are auto-created if they don't yet exist; source modules that become empty after the move are deleted. Default: validate + apply atomically. `--no-verify` / `--dry-run` available. See "Batch atomicity" below. | **planned** (#82) |
+| `debundle bindings rename <original> <readable>` | yes (spec) | Rename a binding's readable `name:` without moving it. `<original>` accepts minified or current readable form. Neither `<original>` nor `<readable>` may contain `:`. Validation here is name-collision detection (no two bindings in the chunk get the same readable name). Mostly a convenience over `bindings assign` for the rename-without-move case. `--no-verify` / `--dry-run` available. | **planned** (#82) |
 
 ### Modules
 
 | Command | Mutates? | Function | Status |
 |---|---|---|---|
+| `debundle modules list [--empty] [--residual] [--unassigned-bindings]` | no | List all modules in the spec with summary stats (member count, atom membership, residual flag). Filters available for the common reverse-lookup cases. | **planned** |
 | `debundle modules merge --target <T> <sources...>` | yes (spec) | Splice `members:` + `anonymous_statements:` from each source YAML into `<T>`; delete the sources. Default: validate + apply. `--no-verify` / `--dry-run` available. | shipped (as `module merge`; **planned rename** to `modules merge` + validation hookup #84) |
-| `debundle modules propose` | no | Emit factorizer proposals (binding → module assignment recommendations) + diagnostics derived from the atomic DAG. Read-only — surfaces *suggested* assignments; applying them requires `binding assign`. Was `peel plan-work`. | shipped (as `peel plan-work`; **planned rename**) |
+| `debundle modules propose` | no | Emit factorizer proposals (binding → module assignment recommendations) + diagnostics derived from the atomic DAG. Read-only — surfaces *suggested* assignments; applying them requires `bindings assign`. The JSON output shape is one of the input shapes `bindings assign --batch` accepts (see "Batch atomicity" below). Was `peel plan-work`. | shipped (as `peel plan-work`; **planned rename**) |
 
 Renaming or disabling a module is **not** a CLI operation — it's a
 plain `mv` on the YAML file. The spec compiler infers the module
@@ -107,7 +106,7 @@ the right primitive.
 
 | Command | Mutates? | Function | Status |
 |---|---|---|---|
-| `debundle scc [--binding <sym>] [--cycles-only] [--residual-only] [--singletons-only] [--ndjson]` | no | List SCCs in the module-quotient graph. Filter to a single binding's SCC or to a specific class. | **planned** (#83) |
+| `debundle scc [--binding <sym>] [--cycles-only] [--residual-only] [--singletons-only]` | no | List SCCs in the module-quotient graph. Filter to a single binding's SCC or to a specific class. (Streaming output via `--format ndjson` — see "Output format" above.) | **planned** (#83) |
 | `debundle cluster <sym>` | no | List the module-quotient neighbors of a binding's owner. | **planned** (#83) |
 
 ### Atomic-DAG queries
@@ -130,16 +129,50 @@ stderr deprecation note pointing to the top-level form.
 
 ## Argument conventions
 
-Every command that needs an owner-graph input takes `--graph <path>`
-(the `owner_graph.json` from a pipeline run). Every command that
-reads or writes the spec takes `--modules <dir>` (the per-module
-YAML tree root). Commands that slice source text take
-`--source-root <dir>` (the upstream snapshot root containing the
-original chunk bytes).
+Three common paths show up on most commands. Each accepts both a
+flag and an env var; the flag wins if both are set.
 
-## Batch atomicity (`binding assign`)
+| Flag | Env var | Meaning |
+|---|---|---|
+| `--graph <path>` | `DEBUNDLE_GRAPH` | `owner_graph.json` for the chunk being inspected. The graph path implies the chunk; multi-chunk callers point at different graphs per invocation. |
+| `--modules <dir>` | `DEBUNDLE_MODULES` | Per-module YAML tree root (the directory under `spec/modules/`). |
+| `--source-root <dir>` | `DEBUNDLE_SOURCE_ROOT` | Upstream snapshot root containing the original chunk bytes. Needed by `show-source` and by `describe` for IDs that resolve to a source location. |
 
-`binding assign` takes one or more positional triples
+Setting all three env vars in the shell once per session lets
+commands run without repeating the flags:
+
+```bash
+export DEBUNDLE_GRAPH=$REPORTS/tree/static/index-DI2GynTv/owner_graph.json
+export DEBUNDLE_MODULES=tana/re/web/78d928dca7/spec/modules
+export DEBUNDLE_SOURCE_ROOT=tana/upstream/web/snapshots/78d928dca7
+
+debundle describe XOe
+debundle scc --binding XOe
+debundle bindings assign XOe:runtime/plugins
+```
+
+## Output format
+
+Every read-only command supports `--format <text|json|ndjson>`:
+
+- `text` — human-readable default for interactive use.
+- `json` — single JSON document.
+- `ndjson` — one JSON value per line, for streaming consumers (`jq -c`, piping to other commands).
+
+If `--format` isn't passed and stdout is **not** a tty (i.e. the
+command is in a pipeline), the default flips to `json`. So
+`debundle modules propose | jq …` works without an explicit
+`--format json`.
+
+Mutating commands (`bindings assign`, `bindings rename`, `modules
+merge`) print a one-line "ok" / "would change N files" / "rejected"
+result. Combined with `--dry-run` they currently print only the
+verdict; a structured diff (post-mutation YAML preview) is a
+documented TODO in the codebase but not in v1.
+
+## Batch atomicity (`bindings assign`)
+
+`bindings assign` takes one or more positional triples
 `<sym>:<module>[:<readable>]`. Validation runs on the post-batch
 spec, not after each individual assignment — so multi-binding
 refactors whose intermediate (after some-but-not-all moves) states
@@ -149,20 +182,20 @@ would be invalid can land in one shot.
 
 ```bash
 # 1. Single move, keep current name.
-debundle binding assign --modules $MOD XOe:runtime/plugins
+debundle bindings assign --modules $MOD XOe:runtime/plugins
 
 # 2. Single move + rename.
-debundle binding assign --modules $MOD XOe:runtime/plugins:PluginSettingsAccessor
+debundle bindings assign --modules $MOD XOe:runtime/plugins:PluginSettingsAccessor
 
 # 3. Multi-move batch (positional triples).
-debundle binding assign --modules $MOD \
+debundle bindings assign --modules $MOD \
     XOe:runtime/plugins:PluginSettingsAccessor \
     YOe:runtime/plugins \
     ZOe:runtime/widgets:WidgetRegistry
 
 # 4. Large refactors: --batch reads JSON from a file (or `-` for stdin).
-debundle binding assign --modules $MOD --batch moves.json
-debundle binding assign --modules $MOD --batch -  < moves.json
+debundle bindings assign --modules $MOD --batch moves.json
+debundle bindings assign --modules $MOD --batch -  < moves.json
 ```
 
 `<sym>` accepts either the minified name (`XOe`) or the current
@@ -214,9 +247,45 @@ validation one).
 ### Per-move semantics
 
 If you want refuse-intermediate-invalid semantics, invoke
-`binding assign` once per move. Per-batch is the default because
+`bindings assign` once per move. Per-batch is the default because
 the common case for batch is "this refactor needs all-or-nothing
 application." Per-move would be the surprising default.
+
+## Rejection diagnostics
+
+When validation refuses a mutating command, the diagnostic names
+exactly what's wrong without making the spec author re-derive the
+analysis from scratch. Two kinds:
+
+**Atom split** (refused by the realizability gate). The diagnostic
+lists each split atom: which owners it covers, which modules its
+members would land in, and the `DepKind` causes from the unit
+(eager cycle, rebind, sequenced, etc. — same data shape as
+`AtomicUnitConflict`). Example shape:
+
+```
+atom-split refused — cannot apply 3 of 5 moves:
+  atom { iRe, rRe, MRe } [causes: eager_use]
+    iRe -> domains/system/ids       (planned by request)
+    rRe -> domains/system/schemas   (CURRENT — unmoved)
+    MRe -> domains/system/schemas   (CURRENT — unmoved)
+  reason: rRe and MRe must co-locate with iRe; the requested move
+    splits the atom into ids vs schemas.
+```
+
+The diagnostic does **not** auto-compute the minimal completion
+("also move rRe and MRe to ids") — that's deferred (see "Out of
+scope" below). It does name the owners and the destinations, so
+the author can compute the completion by inspection.
+
+**Name collision** (refused by `bindings rename` or by `bindings
+assign` when a `:readable` field collides). Lists each collision:
+the existing binding holding the name, the binding the rename
+would have given it.
+
+Both diagnostic shapes go to stderr; the command exits non-zero.
+With `--format json` the diagnostic is also serialized to stdout
+as a structured object so machine readers can parse it.
 
 ## Out of scope
 
@@ -229,6 +298,17 @@ application." Per-move would be the surprising default.
   `facts/wire.rs` module docstring.
 - **Module rename / disable** is just `mv` on the YAML file (see
   "Modules" above). No dedicated subcommand.
+- **Auto-computed minimal completion** for atom-split rejections.
+  The diagnostic names the split atom and which destinations its
+  members would land in (see "Rejection diagnostics") but does not
+  compute the smallest extra-moves set that'd fix it. The author
+  reads off the completion from the printed atom membership.
+  Worth revisiting once the basic CLI surface is in use.
+- **YAML diff in `--dry-run`.** v1 prints only an "ok / would
+  change N files" verdict line. A structured diff (post-mutation
+  YAML preview) is a documented TODO in the codebase but not in
+  v1.
+- **Tab completion.** Not in v1.
 
 ## See also
 
