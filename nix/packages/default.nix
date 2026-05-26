@@ -196,14 +196,10 @@ rec {
     pname = "ducktape";
     description = "CLI tools (git-commit-ai, difftree, gmail-archiver)";
     mainProgram = "git-commit-ai";
-    # CLEANUP(2026-05-26): re-add `git_commit_ai.cli` + `gmail_archiver.main`
-    #   here once the artifact pin refreshes with the umbrella that ships
-    #   `mako_utils/` (BUILD.bazel change in the same commit as this one).
-    #   The fastmcp/mcp Nix-side overrides are already in place; this is
-    #   just waiting on the rebuilt wheel to contain the missing in-repo
-    #   package.
     importsCheck = [
       "difftree.cli"
+      "git_commit_ai.cli"
+      "gmail_archiver.main"
       "skills.hetzner_vnc_screenshot.vnc_screenshot"
       "skills.proxmox_vm.vm_interact"
     ];
