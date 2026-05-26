@@ -170,7 +170,7 @@ class CompiledSimulation:
     transfer_to_account_codes: NDArray[np.int64]
     transfer_to_cash_slot: NDArray[np.int64]
     transfer_income_profile_index: NDArray[np.int64]
-    # Parallel array to `transfer_income_profile_index`. NO_CODE if the transfer is not a
+    # Parallel array to `transfers.income_profile`. NO_CODE if the transfer is not a
     # deduction; otherwise the profile index of the `from_agent` whose ordinary_ytd
     # should decrement when the transfer fires. Used by Schedule E expense flows.
     transfer_deduction_profile_index: NDArray[np.int64]
@@ -396,27 +396,9 @@ def compile_simulation(
     tax = _compile_tax(scenario, strings, account_slot_by_key, jurisdictions)
     (capital_gain_agent_codes, tax_profile_capital_gain_index) = _compile_capital_gain_agents(scenario, strings)
 
-    (tax_liability_profile_index, tax_liability_link_index, tax_liability_year_end_month) = (
-        _compile_tax_liability_slots(horizon, tax)
-    )
+    tax_liabilities = _compile_tax_liability_slots(horizon, tax)
 
-    (
-        transfer_cause_codes,
-        transfer_from_agent_codes,
-        transfer_from_account_codes,
-        transfer_from_cash_slot,
-        transfer_to_agent_codes,
-        transfer_to_account_codes,
-        transfer_to_cash_slot,
-        transfer_income_profile_index,
-        transfer_deduction_profile_index,
-        transfer_amount_kind,
-        transfer_amount_fixed,
-        transfer_amount_base,
-        transfer_amount_series_index,
-        transfer_amount_base_month,
-        transfer_amount_adjustment_period,
-    ) = _compile_transfer_slots(scenario, strings, account_slot_by_key, profile_index_by_agent, series_index_by_id)
+    transfers = _compile_transfer_slots(scenario, strings, account_slot_by_key, profile_index_by_agent, series_index_by_id)
 
     (
         property_cause_codes,
@@ -685,10 +667,10 @@ def compile_simulation(
         tax_profile_count=tax.profile_agent.shape[0],
         capital_gain_agent_count=capital_gain_agent_codes.shape[0],
         tax_link_count=max(1, tax.link_profile.shape[0]),
-        tax_liability_count=tax_liability_profile_index.shape[0],
+        tax_liability_count=tax_liabilities.profile_index.shape[0],
         property_count=property_month.shape[0],
         liability_count=liability_codes.shape[0],
-        max_transfer_slots=transfer_cause_codes.shape[1],
+        max_transfer_slots=transfers.cause.shape[1],
         max_obligation_slots=obligation_cause_codes.shape[1],
         scheduled_sale_count=sale_month.shape[0],
         liquidity_policy_count=liquidity_policy_asset_codes.shape[0],
@@ -739,24 +721,24 @@ def compile_simulation(
         tax_link_salt_active=tax_link_salt_active,
         tax_link_salt_cap_by_year=tax_link_salt_cap_by_year,
         tax_link_salt_contributing_mask=tax_link_salt_contributing_mask,
-        tax_liability_profile_index=tax_liability_profile_index,
-        tax_liability_link_index=tax_liability_link_index,
-        tax_liability_year_end_month=tax_liability_year_end_month,
-        transfer_cause_codes=transfer_cause_codes,
-        transfer_from_agent_codes=transfer_from_agent_codes,
-        transfer_from_account_codes=transfer_from_account_codes,
-        transfer_from_cash_slot=transfer_from_cash_slot,
-        transfer_to_agent_codes=transfer_to_agent_codes,
-        transfer_to_account_codes=transfer_to_account_codes,
-        transfer_to_cash_slot=transfer_to_cash_slot,
-        transfer_income_profile_index=transfer_income_profile_index,
-        transfer_deduction_profile_index=transfer_deduction_profile_index,
-        transfer_amount_kind=transfer_amount_kind,
-        transfer_amount_fixed=transfer_amount_fixed,
-        transfer_amount_base=transfer_amount_base,
-        transfer_amount_series_index=transfer_amount_series_index,
-        transfer_amount_base_month=transfer_amount_base_month,
-        transfer_amount_adjustment_period=transfer_amount_adjustment_period,
+        tax_liability_profile_index=tax_liabilities.profile_index,
+        tax_liability_link_index=tax_liabilities.link_index,
+        tax_liability_year_end_month=tax_liabilities.year_end_month,
+        transfer_cause_codes=transfers.cause,
+        transfer_from_agent_codes=transfers.from_agent,
+        transfer_from_account_codes=transfers.from_account,
+        transfer_from_cash_slot=transfers.from_slot,
+        transfer_to_agent_codes=transfers.to_agent,
+        transfer_to_account_codes=transfers.to_account,
+        transfer_to_cash_slot=transfers.to_slot,
+        transfer_income_profile_index=transfers.income_profile,
+        transfer_deduction_profile_index=transfers.deduction_profile,
+        transfer_amount_kind=transfers.amount_kind,
+        transfer_amount_fixed=transfers.amount_fixed,
+        transfer_amount_base=transfers.amount_base,
+        transfer_amount_series_index=transfers.amount_series,
+        transfer_amount_base_month=transfers.amount_base_month,
+        transfer_amount_adjustment_period=transfers.amount_period,
         property_cause_codes=property_cause_codes,
         property_id_codes=property_id_codes,
         property_location_codes=property_location_codes,
@@ -1115,13 +1097,37 @@ def _empty_month_matrix(months: int, slots: int, dtype: Any, fill: int | float =
     return matrix
 
 
+@dataclass(frozen=True)
+class TransferCompileOutput:
+    """Per-(month, slot) tables for scheduled + recurring transfers. `cause/from_*/to_*`
+    identify the parties; `income_profile`/`deduction_profile` route taxable income or
+    Schedule-E deductions; `amount_*` is the union-typed amount schedule (fixed or
+    series-indexed)."""
+
+    cause: NDArray[np.int64]
+    from_agent: NDArray[np.int64]
+    from_account: NDArray[np.int64]
+    from_slot: NDArray[np.int64]
+    to_agent: NDArray[np.int64]
+    to_account: NDArray[np.int64]
+    to_slot: NDArray[np.int64]
+    income_profile: NDArray[np.int64]
+    deduction_profile: NDArray[np.int64]
+    amount_kind: NDArray[np.int64]
+    amount_fixed: NDArray[np.float64]
+    amount_base: NDArray[np.float64]
+    amount_series: NDArray[np.int64]
+    amount_base_month: NDArray[np.int64]
+    amount_period: NDArray[np.int64]
+
+
 def _compile_transfer_slots(
     scenario: Scenario,
     strings: StringTable,
     account_slot_by_key: dict[tuple[str, str], int],
     profile_index_by_agent: dict[str, int],
     series_index_by_id: dict[str, int],
-) -> tuple[np.ndarray, ...]:
+) -> TransferCompileOutput:
     by_month: list[list[ScheduledTransfer | RecurringTransfer]] = []
     max_slots = 0
     horizon = int(scenario.horizon_months)
@@ -1169,22 +1175,22 @@ def _compile_transfer_slots(
             amount_series[month, idx] = series
             amount_base_month[month, idx] = base_month
             amount_period[month, idx] = period
-    return (
-        cause,
-        from_agent,
-        from_account,
-        from_slot,
-        to_agent,
-        to_account,
-        to_slot,
-        income_profile,
-        deduction_profile,
-        amount_kind,
-        amount_fixed,
-        amount_base,
-        amount_series,
-        amount_base_month,
-        amount_period,
+    return TransferCompileOutput(
+        cause=cause,
+        from_agent=from_agent,
+        from_account=from_account,
+        from_slot=from_slot,
+        to_agent=to_agent,
+        to_account=to_account,
+        to_slot=to_slot,
+        income_profile=income_profile,
+        deduction_profile=deduction_profile,
+        amount_kind=amount_kind,
+        amount_fixed=amount_fixed,
+        amount_base=amount_base,
+        amount_series=amount_series,
+        amount_base_month=amount_base_month,
+        amount_period=amount_period,
     )
 
 
@@ -1516,7 +1522,18 @@ def _compile_capital_gain_agents(scenario: Scenario, strings: StringTable) -> tu
     )
 
 
-def _compile_tax_liability_slots(horizon: int, tax: TaxCompileOutput) -> tuple[np.ndarray, ...]:
+@dataclass(frozen=True)
+class TaxLiabilityCompileOutput:
+    """Per-tax-liability arrays produced by `_compile_tax_liability_slots`. One row per
+    (link, year-end-month) pair where a tax liability accrues. Engine looks up the
+    profile + link + payment month to schedule estimated-tax/true-up obligations."""
+
+    profile_index: NDArray[np.int64]
+    link_index: NDArray[np.int64]
+    year_end_month: NDArray[np.int64]
+
+
+def _compile_tax_liability_slots(horizon: int, tax: TaxCompileOutput) -> TaxLiabilityCompileOutput:
     profile_indices = []
     link_indices = []
     end_months = []
@@ -1527,10 +1544,10 @@ def _compile_tax_liability_slots(horizon: int, tax: TaxCompileOutput) -> tuple[n
             profile_indices.append(profile_index)
             link_indices.append(link_index)
             end_months.append(month)
-    return (
-        np.asarray(profile_indices, dtype=np.int64),
-        np.asarray(link_indices, dtype=np.int64),
-        np.asarray(end_months, dtype=np.int64),
+    return TaxLiabilityCompileOutput(
+        profile_index=np.asarray(profile_indices, dtype=np.int64),
+        link_index=np.asarray(link_indices, dtype=np.int64),
+        year_end_month=np.asarray(end_months, dtype=np.int64),
     )
 
 
