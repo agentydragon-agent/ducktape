@@ -1487,20 +1487,24 @@ function LifecycleEventsEditor({ events, horizonMonths, onChange }) {
           Add events to change the property's rented %, fund a capital improvement, or sell mid-horizon.
         </div>
       )}
-      {events.map((event, index) => (
-        <LifecycleEventRow
-          key={index}
-          event={event}
-          maxMonth={maxMonth}
-          postSale={
-            saleMonth != null &&
-            (event.month > saleMonth || (event.month === saleMonth && event.kind !== "property_sale"))
-          }
-          onChange={(patch) => updateEvent(index, patch)}
-          onReplaceKind={(kind) => updateEvent(index, defaultLifecycleEvent(kind, event.month))}
-          onRemove={() => removeEvent(index)}
-        />
-      ))}
+      {events.length > 0 && (
+        <div className="overflow-hidden rounded border border-slate-300 divide-y divide-slate-300 dark:border-slate-600 dark:divide-slate-600">
+          {events.map((event, index) => (
+            <LifecycleEventRow
+              key={index}
+              event={event}
+              maxMonth={maxMonth}
+              postSale={
+                saleMonth != null &&
+                (event.month > saleMonth || (event.month === saleMonth && event.kind !== "property_sale"))
+              }
+              onChange={(patch) => updateEvent(index, patch)}
+              onReplaceKind={(kind) => updateEvent(index, defaultLifecycleEvent(kind, event.month))}
+              onRemove={() => removeEvent(index)}
+            />
+          ))}
+        </div>
+      )}
       <div>
         <Button size="xs" variant="default" disabled={!canAdd} onClick={addEvent}>
           + Add event
@@ -1524,10 +1528,13 @@ function firstSaleMonth(events) {
 }
 
 function LifecycleEventRow({ event, maxMonth, postSale, onChange, onReplaceKind, onRemove }) {
+  // Borderless row — the outer editor frame provides the pill outline; `divide-y` draws the
+  // horizontal separator between consecutive rows. The post-sale state tints the row's
+  // background so the warning is still obvious without breaking the shared frame.
   return (
     <div
-      className={`grid items-end gap-2 rounded border p-2 dark:border-slate-600 sm:grid-cols-[7rem_10rem_1fr_auto] ${
-        postSale ? "border-rose-500 bg-rose-50 dark:bg-rose-950/30" : "border-slate-300"
+      className={`grid items-end gap-2 p-2 sm:grid-cols-[7rem_10rem_1fr_auto] ${
+        postSale ? "bg-rose-50 dark:bg-rose-950/30" : ""
       }`}
     >
       <NumberField
