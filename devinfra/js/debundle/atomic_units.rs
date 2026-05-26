@@ -4,7 +4,7 @@
 //! bundle's original init order is otherwise unrealizable as ESM.
 //! [`crate::factor_assembly::assemble_partition`] consumes the units
 //! plus YAML claims and `unassigned_mode` to produce the final
-//! partition. See `DESIGN.md` §"Two classes of atom" + §"Factor
+//! partition. See `docs/design.md` §"Two classes of atom" + §"Factor
 //! assembly inside `debundle run`" for the architecture.
 //!
 //! Closure rules for `G_atomic` — for each edge `e: u → v` with

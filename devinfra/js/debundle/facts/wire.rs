@@ -1,6 +1,6 @@
 //! Wire-format mirror types for per-chunk static facts.
 //!
-//! Stage A of the per-chunk pipeline (see PIPELINE_SPLIT.md and DESIGN.md
+//! Stage A of the per-chunk pipeline (see docs/lessons_learned/cross_process_stage_b.md and docs/design.md
 //! §"Pipeline split (Stage A / Stage B)") needs to ship the full per-
 //! statement facts to disk as a sidecar artifact so a separate Stage B
 //! action can read them back without re-parsing the chunk. The native

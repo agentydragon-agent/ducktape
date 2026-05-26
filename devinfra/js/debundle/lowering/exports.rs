@@ -152,7 +152,7 @@ pub(super) fn entry_exports_for_moved_bindings(
 /// way peeling a body whose lazy/eager reads target an
 /// unexported residual binding emits valid JS without making the
 /// peel proposer responsible for predicting the materializer's
-/// export policy. See DESIGN.md "Valid peels and atomic modules"
+/// export policy. See docs/design.md "Valid peels and atomic modules"
 /// (importability clause).
 ///
 /// Returns a `local → exported` map (with `local == exported`

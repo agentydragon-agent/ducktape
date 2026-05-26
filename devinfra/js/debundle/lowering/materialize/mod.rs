@@ -177,11 +177,7 @@ pub(super) fn materialize_logical_chunk(
         runtime_ast.line_index()
     });
     // Stage A: spec-independent analysis (facts + owner graph +
-    // structural atomic units). See `stage_one/mod.rs` for the composer;
-    // DESIGN.md §"Pipeline split (Stage A / Stage B)" for the
-    // boundary's role. v1 keeps Stage A in memory; v2 adds
-    // per-concept JSON sidecars + a `materialize_from_*` entry point
-    // so a Bazel rule can split into two cacheable actions.
+    // structural atomic units). See `stage_one/mod.rs` for the composer.
     let owner_graph_options = OwnerGraphOptions {
         dataflow_aware_s_chain: chunk_analysis_options
             .get(chunk_id)
@@ -196,18 +192,6 @@ pub(super) fn materialize_logical_chunk(
             owner_graph_options,
         )
     });
-    // Stage A on-disk sidecars: snapshot the spec-independent analysis
-    // (AST + facts + atomic units + manifest) under
-    // `<chunk_id>/chunk_analysis/` so a future `materialize_from_analysis`
-    // reader (task #78) can pick up Stage B from a cached Stage A
-    // action. Conditional on `report_out_dir`: the in-memory pipeline
-    // still works without them, and the e2e suites that don't request
-    // a report dir shouldn't pay the I/O cost. See `stage_one/sidecars.rs`.
-    if let Some(report_out_dir) = report_out_dir {
-        time_phase!(timings, "write_stage_one_sidecars", {
-            write_stage_one_sidecars(report_out_dir, chunk_id, &stage_one)
-        })?;
-    }
     let StageOneAnalysis {
         fact_analysis: analysis,
         owner_graph_and_units: precomputed,
@@ -217,7 +201,7 @@ pub(super) fn materialize_logical_chunk(
         anyhow::bail!(
             "materialize_logical_modules: chunk {chunk_id} has top-level `await` \
              at statement #{ordinal} (TLA); the debundler's realizability theorem \
-             does not cover async modules (DESIGN.md A2). Wrap the awaited code \
+             does not cover async modules (docs/design.md A2). Wrap the awaited code \
              in an async function or rewrite as a synchronous initialization.",
             ordinal = ord.0,
         );
@@ -496,7 +480,7 @@ fn validate_and_emit_reports(
         );
         let causes = render_atomic_unit_cause_guidance(&factorization_report.atomic_unit_conflicts);
         bail!(
-            "materialize_logical_modules: chunk {chunk_id} has {n} atomic-factor-unit conflict(s) — the spec assigns members of one atomic factor unit to different destination modules, forming a cycle in the module dep graph that the constraining-edge SCC analysis says is unrealizable. Atomic factor units come from `G_atomic` SCC over the owner graph (DESIGN.md §\"Two classes of atom\"); every member must co-locate. {causes}Resolve by reconciling each unit's claims into a single destination. Full evidence written to reports/tree/{chunk_id}/atomic_unit_conflicts.json; owner graph written to reports/tree/{chunk_id}/owner_graph.json. Summary:\n{summary}",
+            "materialize_logical_modules: chunk {chunk_id} has {n} atomic-factor-unit conflict(s) — the spec assigns members of one atomic factor unit to different destination modules, forming a cycle in the module dep graph that the constraining-edge SCC analysis says is unrealizable. Atomic factor units come from `G_atomic` SCC over the owner graph (docs/design.md §\"Two classes of atom\"); every member must co-locate. {causes}Resolve by reconciling each unit's claims into a single destination. Full evidence written to reports/tree/{chunk_id}/atomic_unit_conflicts.json; owner graph written to reports/tree/{chunk_id}/owner_graph.json. Summary:\n{summary}",
             n = factorization_report.atomic_unit_conflicts.len(),
         );
     }

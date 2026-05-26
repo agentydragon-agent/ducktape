@@ -60,7 +60,7 @@ fn analyzer_factorizer_peels_lazy_consumer_alone_under_emit_auto_grow() {
     // lazy read of `dep` (residual + unexported) made `consumer`
     // `blocked_emit_resolvability`, so the factorizer combined the
     // pair `{dep, consumer}` into one cell to "internalize the
-    // prerequisite". DESIGN.md "Emit-side responsibilities" now
+    // prerequisite". docs/design.md "Emit-side responsibilities" now
     // owns that: emit auto-grows entry's exports, so `consumer` is
     // independently peelable. The factorizer proposes
     // `{consumer}` alone, and `dep` stays in residual entry.
@@ -217,7 +217,7 @@ fn factorizer_proposes_lazy_only_consumer_alone_via_emit_auto_grown_exports() {
     // `consumer` lazily reads `dep` (inside its body). Under the old
     // emit-resolvability proposer gate this peel was refused; the
     // factorizer combined `consumer` with `dep` into one cell as a
-    // workaround. The new design (DESIGN.md "Valid peels and atomic
+    // workaround. The new design (docs/design.md "Valid peels and atomic
     // modules", importability clause) makes the emitter grow entry's
     // export list on demand, so `consumer` is peelable on its own
     // and the factorizer proposes the smaller `{consumer}` cell.

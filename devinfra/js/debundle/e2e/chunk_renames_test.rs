@@ -199,7 +199,7 @@ fn private_chunk_renamed_residual_helper_used_by_extracted_module_auto_grows_ent
     // is `readableHelper`, exported as `helper`.
     //
     // Pre-redesign behavior was to reject this spec ("not exported by
-    // entry"). DESIGN.md "Valid peels and atomic modules" now says
+    // entry"). docs/design.md "Valid peels and atomic modules" now says
     // residual entry bindings are importable because the emitter
     // auto-exports them on demand; "private to entry" is not a
     // first-class spec contract.

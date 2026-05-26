@@ -84,7 +84,6 @@ rust_library(
         "mediator_reaches_asymmetric_cycle_test",
         "namespace_aggregator_split_tdz_test",
         "spec_comments_test",
-        "stage_one_sidecars_test",
     ]
 ]
 

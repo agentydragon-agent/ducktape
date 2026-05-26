@@ -963,11 +963,11 @@ export { a, b, c };
 // Direct-peelable singleton is forced to drag in whatever the
 // immediately-prior side-effecting owner happens to be.
 //
-// On Tana this manifests as the `dg = window?.Meticulous?.…`
+// On the upstream this manifests as the `dg = window?.Meticulous?.…`
 // declarator being chained to the constructor-call declarator
 // `Lge = new $g()` that precedes it in the same comma-list,
 // creating a cross-module side-effect-order edge that closes a
-// 4-module cycle (apply_decorators → tana_logger →
+// 4-module cycle (apply_decorators → logger_module →
 // test_detection → workspace/invite/state) once the spec
 // claims dg in its proper home.
 //
@@ -975,7 +975,7 @@ export { a, b, c };
 // recurse through its base (`OptChainBase::Member` /
 // `OptChainBase::Call`) and classify by the underlying access.
 // For static-property reads on a whitelisted receiver (Math,
-// Array, …), this returns `Pure`. The Tana case
+// Array, …), this returns `Pure`. The the upstream case
 // (`window?.Meticulous?.…`) needs R2 (extending the
 // whitelist to host globals) on top — this test pins R1
 // using a receiver that's already on the whitelist.

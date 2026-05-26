@@ -90,7 +90,7 @@ impl ChunkTable {
 }
 
 /// How a top-level binding in the chunk relates to the split. See
-/// DESIGN.md "Two binding kinds".
+/// docs/design.md "Two binding kinds".
 #[derive(Debug, Clone)]
 pub enum BindingKind {
     /// Declared by a top-level `var/let/const/function/class` in this

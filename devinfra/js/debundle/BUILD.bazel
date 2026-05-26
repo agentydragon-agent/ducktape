@@ -233,7 +233,6 @@ rust_library(
         "reports/schema.rs",
         "rollback_graph.rs",
         "stage_one/mod.rs",
-        "stage_one/sidecars.rs",
         "validation.rs",
     ],
     crate_root = "lib.rs",

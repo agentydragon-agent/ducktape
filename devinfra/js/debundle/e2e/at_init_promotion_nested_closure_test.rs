@@ -3,7 +3,7 @@
 //! lexically appear inside a nested closure but never fire at
 //! module-initialization time.
 //!
-//! Background: DESIGN.md "At-init call promotion" makes the
+//! Background: docs/design.md "At-init call promotion" makes the
 //! caller-statement of an at-init call inherit its callee's
 //! transitive `lazy_reads` and `lazy_rebinds`. The classifier in
 //! `facts.rs` now tracks a `lazy_depth` counter on each
@@ -60,8 +60,8 @@
 //!   per-owner rebind/read seeds — so an at-init call only inherits
 //!   the synchronous part of the callee's body.
 //!
-//! Production observation: gaffer-private's Tana chunk
-//! `static/index-DI2GynTv` produced 22 cross-module
+//! Production observation: a real production chunk
+//! `static/index-EXAMPLE` produced 22 cross-module
 //! `eager_rebind` edges all sharing `statement_ordinal: 9705`
 //! (the top-level `try { ... Age(...) ... }` bootstrap), creating a
 //! 690-owner SCC spanning 11 modules. Every promoted rebind in

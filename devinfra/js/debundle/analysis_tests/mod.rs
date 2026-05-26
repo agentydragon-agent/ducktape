@@ -48,7 +48,7 @@ fn analyze_facts(module: &Module) -> Vec<StatementFacts> {
 
 /// A direct call `f()` at the chunk top level records `f` in the
 /// statement's `at_init_calls` set. Drives at-init call promotion
-/// per DESIGN.md "At-init call promotion".
+/// per docs/design.md "At-init call promotion".
 #[test]
 fn at_init_call_recorded() {
     let module = parse("function f() {} f();");

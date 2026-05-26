@@ -3,7 +3,7 @@
 //! This is a generalization of #1681: that PR pinned the
 //! residual-class TDZ shape. This pins a different shape that
 //! the post-#1683 gate still accepts but TDZs at runtime —
-//! confirmed against a real Tana bundle reproduction.
+//! confirmed against a real an upstream bundle reproduction.
 //!
 //! ## Invariant being pinned
 //!
@@ -115,8 +115,8 @@ fn at_init_through_deep_residual_chain_executes_under_node() {
     // Three-deep call chain: mod_init at-init → bootstrap (residual)
     // → startTracking (residual) → reads T (in mod_logger).
     //
-    // Matches the Tana chain: init_state.bootstrap → gR
-    // (startWebClientBootstrap) → startBootProgressTracking →
+    // Matches the the upstream chain: an entry-side bootstrap statement → gR
+    // (an outer helper) → an inner helper →
     // reads T.
     let fixture = run_fixture(FixtureOpts::new(
         r#"let T = "ready";
@@ -140,10 +140,10 @@ fn at_init_through_residual_function_executes_under_node() {
     // mod_init at-init calls a function decl that lives in
     // residual, whose body reads T (in mod_logger).
     //
-    // This matches the Tana repro shape: init_state's bootstrap
-    // anonymous statement calls `gR()` (startWebClientBootstrap,
+    // This matches the the upstream repro shape: an entry-side module's bootstrap
+    // anonymous statement calls `gR()` (an outer helper,
     // a function decl in residual), whose body eventually
-    // reads `T` (in `infra/logging/tana_logger`). At-init
+    // reads `T` (in `logger_module`). At-init
     // promotion through the residual function decl is what we
     // need to surface the eager_use edge `mod_init → mod_logger`
     // for source_import_position to order them correctly.
@@ -222,24 +222,24 @@ export { T, readT, init, disableDevMode, middleHelper, loggerReader };
 fn peeled_method_reassigning_top_level_let_executes_under_node() {
     // ★ RED test: minimal reproduction of the
     // `Assignment to constant variable` runtime crash hit
-    // when peeling Tana's `ComputedViewRunner` class.
+    // when peeling the upstream `an upstream class` class.
     //
-    // Tana shape (paraphrased):
+    // the upstream shape (paraphrased):
     //
     //   let isSearchBeingRefreshedForNode = (n) => false;
-    //   class ComputedViewRunner {
+    //   class an upstream class {
     //     static setIsSearchBeingRefreshedForNodeHandler(e) {
     //       isSearchBeingRefreshedForNode = e;           // ← write
     //     }
     //   }
     //
-    // Before peeling `ComputedViewRunner`, the write lives in
+    // Before peeling `an upstream class`, the write lives in
     // the same module as the `let` declaration: legal. After
-    // peeling `ComputedViewRunner` into its own module, the
+    // peeling `an upstream class` into its own module, the
     // emitted file looks like:
     //
     //   import { isSearchBeingRefreshedForNode } from "../entry.js";
-    //   class ComputedViewRunner {
+    //   class an upstream class {
     //     static setIsSearchBeingRefreshedForNodeHandler(e) {
     //       isSearchBeingRefreshedForNode = e;
     //     }

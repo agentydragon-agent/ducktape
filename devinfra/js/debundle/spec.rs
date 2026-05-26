@@ -284,7 +284,7 @@ pub enum UnassignedMode {
     /// One synthetic mini-factor per unclaimed atomic factor unit.
     /// The residual catch-all collapses to whatever truly cannot
     /// be peeled (typically empty for clean chunks). See
-    /// `DESIGN.md` §"Layered mental model" + §"Two classes of atom".
+    /// `docs/design.md` §"Layered mental model" + §"Two classes of atom".
     MiniFactors,
 }
 
@@ -583,7 +583,7 @@ pub enum MemberPurity {
     Default,
     /// Author asserts that calls to the bound function have no observable
     /// side effects. Validator drops `S` edges for `<binding>(...)` call
-    /// sites. See AGENTS.md "Declared purity" + DESIGN.md A9.
+    /// sites. See AGENTS.md "Declared purity" + docs/design.md A9.
     Pure,
     /// Author asserts that `new <binding>(...)` has no observable side
     /// effects beyond evaluating its constructor arguments. The analyzer
@@ -601,6 +601,6 @@ pub enum MemberEffect {
     /// TypeScript `__decorate`-style target-local mutation effect.
     /// The analyzer shape-checks the call and models it as a local
     /// effect on the target class/prototype instead of as a global
-    /// side-effect-order edge. See DESIGN.md A10.
+    /// side-effect-order edge. See docs/design.md A10.
     TypescriptDecorateHelper,
 }

@@ -6,11 +6,9 @@ Full-package review of `devinfra/js/debundle/` (~47K lines). Findings prioritize
 
 ## P0 — God Modules
 
-### `vendor/mod.rs` (3052 lines) — **Partially done**
+### `vendor/mod.rs` further split
 
-Manifest types extracted to `vendor/manifests.rs`. Strip logic extracted to `vendor/strip.rs`. Partial swap dispatchers unified via `dispatch_partial_swap_jobs` generic. Remaining work:
-
-- Further split: strip-specific helpers, annotation/identity logic, wrapper generation.
+Remaining: strip-specific helpers, annotation/identity logic, wrapper generation could each lift out into their own modules alongside the already-extracted `vendor/manifests.rs` and `vendor/strip.rs`.
 
 ### `purity.rs` (2671 lines, 5 concerns)
 
@@ -27,33 +25,25 @@ Tests 8+ distinct subsystems in one file: fact analysis, decorate helpers, cycle
 
 Split into topic-aligned modules: `tests/facts.rs`, `tests/purity.rs`, `tests/plain_data.rs`, `tests/cycles.rs`, `tests/atomic_units.rs`, `tests/statement_splitting.rs`.
 
-### `facts.rs` (1213 lines, 2 concerns) — **Partially done**
+### `facts.rs` (1213 lines, 2 concerns)
 
-Vendor-prune local effect analysis extracted to `facts/local_effects.rs`. Remaining: `StatementFacts` carries 14 BTreeSet<Id> fields with many derivable sets; every construction site must keep them mutually consistent.
+`StatementFacts` carries 14 BTreeSet<Id> fields with many derivable sets; every construction site must keep them mutually consistent.
 
 ---
 
 ## P1 — Major Duplication
 
-### Test fixture builders in peel/ (2 copies) — **Partially done** (`f576e543c`)
+### Test fixture builders in peel/ remaining duplicates
 
-Extracted `binding()`, `member()`, `module_ref()` to `peel/test_utils.rs`. The `owner()`, `atomic_unit()`, `atomic_edge()`, `graph_fixture()` helpers have different signatures/semantics between the two test modules and remain local.
+`peel/test_utils.rs` already hosts `binding()`, `member()`, `module_ref()`. The `owner()`, `atomic_unit()`, `atomic_edge()`, `graph_fixture()` helpers have different signatures/semantics between the two test modules and remain local — could probably be unified with a small enum-tagged builder.
 
-### Line-range accumulation (3 copies) — **Done** (`0cbe93546`)
+### Vendor swap test workspace setup remaining adopters
 
-Deduplicated into a shared helper.
-
-### Vendor swap test workspace setup — **Partially done**
-
-`VendorTestWorkspace` builder extracted but only adopted by 2 of 4 fixture constructors (`run_partial_swap_fixture`, `run_partial_swap_kind_fixture`). `run_named_from_module_default_fixture` and `run_named_from_default_fixture` still construct workspaces inline.
+`VendorTestWorkspace` builder exists but `run_named_from_module_default_fixture` and `run_named_from_default_fixture` still construct workspaces inline. Adopt the builder there to match `run_partial_swap_fixture` / `run_partial_swap_kind_fixture`.
 
 ---
 
 ## P2 — Structural Issues
-
-### `lowering/util.rs` is a grab-bag module — **Done** (`0cbe93546`)
-
-Split into `lowering/scope_names.rs`, `lowering/import_emit.rs`, `lowering/ordinal.rs`, `lowering/io.rs`.
 
 ### `lowering/materialize.rs` (1026 lines) mixes 4 concerns
 

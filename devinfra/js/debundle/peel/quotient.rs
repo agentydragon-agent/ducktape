@@ -56,7 +56,7 @@
 //! implementation would cost `O(|V|² · |E|)` per planner round.
 //!
 //! Commit 5 wires the kernel through `analysis::RealizabilityIndex`,
-//! the persistent-state incremental form of the gate (DESIGN.md
+//! the persistent-state incremental form of the gate (docs/design.md
 //! "Realizability primitive → Iterative, undo-aware shape"). Per
 //! contract, the kernel pushes a `PartitionDelta::MoveOwners` for the
 //! loser class's owners onto the index; the index updates only the
@@ -65,7 +65,7 @@
 //! single-target moves or a scoped push/undo for the rare
 //! multi-target case (gate-residual collapse transitions).
 //!
-//! See DESIGN.md "Peel planner unification (Track A) → Cost and the
+//! See docs/design.md "Peel planner unification (Track A) → Cost and the
 //! upgrade path" for the per-merge cost analysis and the references
 //! block for the underlying literature.
 
@@ -2556,7 +2556,7 @@ pub fn build_seed_quotient(
     //      `would_be_cycles_after_contract` queries use the fast
     //      constraining-only cone check for the greedy's hot
     //      path. See the function's docstring for the perf
-    //      trade-off (and DESIGN.md's "Peel planner unification"
+    //      trade-off (and docs/design.md's "Peel planner unification"
     //      section).
     let verdict = q.realizability_verdict();
     if !verdict.is_realizable() {

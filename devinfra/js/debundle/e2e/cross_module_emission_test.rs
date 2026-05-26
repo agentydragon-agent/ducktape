@@ -32,7 +32,7 @@ export { b };
 
 #[test]
 fn rejects_extracted_binding_assigned_by_residual_owner() {
-    // This is the minimal shape behind the Tana boot-progress
+    // This is the minimal shape behind the an upstream boot-progress
     // `Assignment to constant variable` failure: the spec peels a
     // mutable binding, while a still-residual function assigns to
     // that binding at runtime. Emitting `import { a } ...` into the
@@ -94,7 +94,7 @@ console.log(Text({ id: "probe" }).props.id);
 
 #[test]
 fn jsx_names_do_not_import_residual_binding() {
-    // Tana's Text component has this shape after minification:
+    // the upstream Text component has this shape after minification:
     // `function Text({ id: h }) { return <span id={h} />; }`.
     // The JSX `span`/`id` tokens are syntax names, not references to
     // residual top-level bindings.
@@ -200,7 +200,7 @@ console.log(w({ a: null, b: "d" }));
 
 #[test]
 fn duplicate_top_level_decl_claims_are_rejected() {
-    // Regression for the gaffer Tana case: two YAMLs both claim the
+    // Regression for the gaffer the upstream case: two YAMLs both claim the
     // same input-bundle top-level binding (e.g. both `runtime.yaml`
     // and `ai_conversation_node_accessor.yaml` export
     // `AIConversationNodeAccessor` from binding `ho`). Previously the

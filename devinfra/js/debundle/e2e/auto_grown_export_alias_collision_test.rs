@@ -27,7 +27,7 @@
 //! ## Generalized pattern
 //!
 //! Anonymized from a real failure observed in a large bundle
-//! (`static/index-DI2GynTv`), where the chunk's source export
+//! (`static/index-EXAMPLE`), where the chunk's source export
 //! contained `BackgroundPattern as av` and the residual body
 //! also had a top-level `const av = …` binding referenced by a
 //! peeled module. Four public names (`a6`, `aI`, `av`, `bu`) all

@@ -1,7 +1,7 @@
 //! Single source of truth for the three-clause validity predicate
-//! (DESIGN.md "Valid peels and atomic modules"). The validator and any
+//! (docs/design.md "Valid peels and atomic modules"). The validator and any
 //! hypothetical-move planner checks reach the verdict through this module —
-//! see "Realizability primitive" in `DESIGN.md`.
+//! see "Realizability primitive" in `docs/design.md`.
 //!
 //! Scope: clauses 2 (no cross-destination rebinding writes) and 3
 //! (no multi-module SCC in the constraining-edge subgraph of the
@@ -1422,7 +1422,7 @@ impl IncrementalQuotient {
 
 /// Mutable index over a working partition. The single shared
 /// implementation of the three-clause predicate, exposed in the
-/// transactional shape DESIGN.md "Realizability primitive" prescribes.
+/// transactional shape docs/design.md "Realizability primitive" prescribes.
 ///
 /// Each `push` snapshots the prior assignments of the touched owners,
 /// updates only quotient edge buckets incident to those owners, and

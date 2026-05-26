@@ -37,7 +37,7 @@ use std::fs;
 // named members.
 //
 // Per the user constraint, the selector must address statements
-// by **AST shape**, not line/column — the Tana dump is prettified
+// by **AST shape**, not line/column — the the upstream dump is prettified
 // and lines aren't stable across re-prettifies.
 #[test]
 fn round_trip_peels_anon_statement_with_named_member() {
@@ -120,7 +120,7 @@ export { X, Existing };
             "x_module",
             &[Member::new("X")],
             // Selector that doesn't appear in the chunk: the author's
-            // upstream Tana refactor renamed or removed the leading
+            // upstream an upstream refactor renamed or removed the leading
             // console.log, but the spec still claims it.
             &[r#"console.log("nope");"#],
         )],
@@ -200,7 +200,7 @@ export { X, Existing };
 // and named members within the same logical module.
 //
 // Within a module's body, statements emit in their original
-// chunk source order (Invariant #2 in DESIGN.md). Anonymous
+// chunk source order (Invariant #2 in docs/design.md). Anonymous
 // statements claimed by the module must interleave naturally
 // with named members — there's no separate "anon section" or
 // reordering pass.
@@ -282,7 +282,7 @@ export { A, B, Existing };
 
 // Pin matching of multi-line IIFE anonymous statements.
 //
-// Tana's actual companions are not single-line `console.log`
+// the upstream actual companions are not single-line `console.log`
 // calls; they include multi-line IIFE preludes like the Sentry
 // debug-id wrapper:
 //
@@ -313,8 +313,8 @@ export { A, B, Existing };
 #[test]
 fn multi_line_iife_anon_statement_matches_modulo_whitespace() {
     let fixture = run_fixture(FixtureOpts::new(
-        // Source mirrors the Tana Sentry-prelude shape (lines
-        // 1-17 in `static/index-DI2GynTv.js`): a `!`-prefixed
+        // Source mirrors the an upstream Sentry-prelude shape (lines
+        // 1-17 in `static/index-EXAMPLE.js`): a `!`-prefixed
         // IIFE expression statement that walks `globalThis` to
         // attach a debug id.
         r#"!(function () {

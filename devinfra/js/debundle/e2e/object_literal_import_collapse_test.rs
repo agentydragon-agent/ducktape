@@ -15,7 +15,7 @@
 //!
 //! ## Companion bug (not pinned here)
 //!
-//! While peeling Tana's `getActionEventLimits` (an object-literal
+//! While peeling the upstream `someObjectLiteralExport` (an object-literal
 //! `const` mapping readable property names to imports from a sibling
 //! `sync_timing` module), a related but separate failure was observed
 //! where the lowerer's import-planning pass walks object-literal
@@ -27,7 +27,7 @@
 //! time. The synthetic two-line source below does NOT repro that
 //! shape; it only exercises the path-normalization layer. See PR
 //! #1625's analyzer-side companion bug for the proposer/gate side of
-//! the same Tana session.
+//! the same session of the upstream bundle.
 
 use debundle_e2e_support::*;
 use std::fs;
@@ -116,8 +116,8 @@ fn peeled_object_literal_emits_well_formed_import_for_value_identifiers() {
     // chunk's original stdout. `assert_entry_output` surfaces a
     // `ReferenceError` (missing import) or any other module-load
     // failure as a non-zero node exit. If the lowerer's import-emission
-    // ever regresses to dropping the cross-module values (per the Tana
-    // `getActionEventLimits` companion bug noted above), this
+    // ever regresses to dropping the cross-module values (per the the upstream
+    // `someObjectLiteralExport` companion bug noted above), this
     // assertion catches it.
     assert_entry_output(&fixture, "a:b:c\n");
 }

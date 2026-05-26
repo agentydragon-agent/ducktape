@@ -308,7 +308,7 @@ mod tests {
     #[test]
     fn flags_named_alias_colliding_with_local_export() {
         js_ast::with_swc_globals(|| {
-            // The Chromium-silent failure mode the tana smoke hit:
+            // The Chromium-silent failure mode the the upstream smoke hit:
             // one `export {...}` block ships `BackgroundPattern as av`,
             // a separate block ships the local `av` directly.
             let source = "\

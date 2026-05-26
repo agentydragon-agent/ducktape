@@ -61,7 +61,7 @@ pub struct StatementFacts {
     /// owner-graph build to drive at-init call promotion: a call from
     /// statement S to chunk-declared function `f` is treated as
     /// transitively reading everything `f`'s body lazily reads. See
-    /// DESIGN.md "At-init call promotion". Indirect calls
+    /// docs/design.md "At-init call promotion". Indirect calls
     /// (`const g = f; g()`), method calls (`obj.method()`), and
     /// computed callees are skipped — the callee must be a direct
     /// `Ident`.
@@ -404,7 +404,7 @@ pub(crate) fn top_level_item_views(body: &[ModuleItem]) -> Vec<TopLevelItemView<
 /// this set to skip the whitelist for any receiver the chunk
 /// shadows — `const Math = …` and
 /// `import { Math } from "./userland"` both make `Math.PI` an
-/// Unknown read, not the global constant. See DESIGN.md A8.
+/// Unknown read, not the global constant. See docs/design.md A8.
 pub(crate) fn compute_shadowed_globals(body: &[TopLevelItemView<'_>]) -> BTreeSet<&'static str> {
     let mut shadowed = BTreeSet::new();
     let try_shadow = |name: &str, into: &mut BTreeSet<&'static str>| {

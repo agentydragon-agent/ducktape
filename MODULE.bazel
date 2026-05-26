@@ -575,28 +575,6 @@ crate.from_cargo(
     manifests = ["//:Cargo.toml"],
 )
 
-# Enable swc_ecma_ast/serde so `Module` (and the rest of the AST) can be
-# round-tripped via serde_json — used by the Stage A on-disk sidecar
-# (`chunk_analysis/ast.json`) that the pipeline-split writes (see
-# devinfra/js/debundle/PIPELINE_SPLIT.md). bzlmod-friendly: pass features
-# via crate.annotation rather than the workspace Cargo.toml's `features =`
-# list — the latter does not round-trip through `crate.from_cargo`'s
-# feature resolution in bazel.
-# swc_ecma_ast's actual `Serialize` / `Deserialize` derives are gated on
-# `feature = "serde-impl"` (set by the `ast_node` proc-macro). Flipping
-# only the `serde` feature wires the optional dep but does not enable the
-# derives. Both must be in `crate_features`; `deps` carries the optional
-# `serde` crate because `crate.annotation` does not auto-resolve
-# Cargo feature -> dep mappings.
-crate.annotation(
-    crate = "swc_ecma_ast",
-    crate_features = [
-        "serde",
-        "serde-impl",
-    ],
-    deps = ["@crates//:serde"],
-)
-
 # expose the generated repo (↑ name="crates")
 use_repo(crate, "crates")
 

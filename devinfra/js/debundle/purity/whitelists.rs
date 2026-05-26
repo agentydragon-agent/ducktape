@@ -61,7 +61,7 @@ pub(super) const PURE_STATIC_PROPS: &[(&str, &str)] = &[
 /// fires no user-defined code on any argument type — no `ToNumber`
 /// / `ToString` / `ToPrimitive` / `ToPropertyKey` coercion, no
 /// iterator protocol, no proxy trap, no own-property `[[Get]]`,
-/// no mutation of any reachable object. See DESIGN.md A8 for the
+/// no mutation of any reachable object. See docs/design.md A8 for the
 /// admission contract; AGENTS.md "Pure-call whitelist soundness"
 /// for the agent-facing rule. New entries land only with a spec
 /// citation showing no user-callback path; "common in practice"

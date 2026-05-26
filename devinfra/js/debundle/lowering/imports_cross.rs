@@ -20,7 +20,7 @@ pub(super) fn cross_module_imports_for_plan(
     // `import` directives in source order, and the deepest leaf
     // reached first evaluates first. Putting the earliest-in-`L`
     // provider at the top of the import list steers the traversal
-    // toward an `I ∪ S`-respecting evaluation order. See DESIGN.md
+    // toward an `I ∪ S`-respecting evaluation order. See docs/design.md
     // "Lemma 2".
     let mut providers: Vec<usize> = imports_by_provider.keys().copied().collect();
     providers.sort_by_key(|&idx| {
@@ -48,9 +48,9 @@ pub(super) fn cross_module_imports_for_plan(
 /// at-init promotion constraints as real ESM imports so the linker's
 /// DFS visits the providers as dependencies of this module — needed
 /// because the actual bindings being read live in residual function
-/// decls (e.g. `gR(iA)` → `startBootProgressTracking()` → reads
-/// `tanaLogger`), so the per-module emit path never adds an explicit
-/// import for `tanaLogger` in `init_state.js` on its own.
+/// decls (e.g. a top-level helper → another helper → reads a
+/// logger binding), so the per-module emit path never adds an explicit
+/// import for the logger binding in the consuming module on its own.
 ///
 /// Sorted by linker_position so the resulting import order matches
 /// `cross_module_imports_for_plan`. Side-effect imports are emitted

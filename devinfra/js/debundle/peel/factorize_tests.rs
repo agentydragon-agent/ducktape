@@ -104,7 +104,7 @@ fn dag_has_no_cycles() {
 
 /// A mixed cycle (lazy forward-edge, at-init back-edge) where
 /// the lazy direction is NOT invoked at-init is realizable per
-/// DESIGN.md "Realizability primitive" clause 3 — the
+/// docs/design.md "Realizability primitive" clause 3 — the
 /// constraining-edge subgraph (drops LazyUse) has no
 /// multi-module SCC. The materializer's Lemma 2 steering
 /// (ChunkFactorization::source_import_position with SCC-aware reverse)
@@ -1029,7 +1029,7 @@ fn validate_surfaces_linker_order_for_acyclic_spec() {
 fn validate_returns_empty_linker_order_for_cyclic_spec() {
     // Genuine cross-module constraining cycle: `A = B + 1` and
     // `B = A + 1` both read at-init. After the relaxed-predicate
-    // routing of the validator (DESIGN.md "Realizability
+    // routing of the validator (docs/design.md "Realizability
     // primitive"), the case has to actually produce a cycle in
     // the constraining-edge subgraph — mutual at-init reads do.
     let factorization = factorization_for(

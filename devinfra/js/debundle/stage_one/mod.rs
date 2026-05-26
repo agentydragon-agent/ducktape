@@ -1,8 +1,5 @@
 //! Stage A composer for the per-chunk pipeline.
 //!
-//! See DESIGN.md §"Pipeline split (Stage A / Stage B)" and the
-//! design proposal at `PIPELINE_SPLIT.md` for the broader plan.
-//!
 //! Stage A is the **spec-independent** half of the per-chunk
 //! pipeline. Given a parsed chunk AST plus analysis hints + per-
 //! chunk owner-graph options, it produces:
@@ -20,25 +17,19 @@
 //! spec, the partition, chunk renames, or the unassigned-mode
 //! policy — those are Stage B inputs.
 //!
-//! v1 (this commit): Stage A is materialized only in memory, by
-//! callers (today: `materialize_logical_chunk`) that call
-//! [`compute_stage_one_analysis`] and pass its components to
-//! Stage B. Follow-up tasks expose [`StageOneAnalysis`] as a serialized
-//! sidecar artifact (per-concept JSON files under
-//! `reports/tree/<chunk_id>/chunk_analysis/`) and add a Stage B
-//! entry point that reads it back, so a Bazel rule can split into
-//! two cacheable actions.
+//! Stage A is materialized only in memory, by callers
+//! (today: `materialize_logical_chunk`) that call
+//! [`compute_stage_one_analysis`] and pass its components to Stage B.
+//! A previous design also serialized Stage A's output to disk so a
+//! separate-process Stage B could consume the cache; that design was
+//! abandoned (see `docs/lessons_learned/cross_process_stage_b.md`).
+//! The composer survives as a structural readability boundary.
 //!
-//! Why a free function with no struct fanout: the existing pipeline
-//! still owns the side-effect actions that sit between Stage A and
-//! Stage B (redundant-hint warnings on stderr, top-level-await bail,
-//! atomic-unit-rebind folding into the partition). Moving them all
-//! through a freestanding `StageOneAnalysis` runner would require
-//! threading more context than is paid for in v1. This composer
-//! gives the boundary a single named call site without that wider
-//! refactor.
-
-pub mod sidecars;
+//! Side-effecting actions that sit between Stage A and Stage B
+//! (redundant-hint warnings on stderr, top-level-await bail,
+//! atomic-unit-rebind folding into the partition) still run inline
+//! in the materializer. Moving them into the composer's owners is a
+//! follow-up cleanup.
 
 use swc_common::Span;
 use swc_ecma_ast::Module;
@@ -57,7 +48,7 @@ pub struct StageOneAnalysis {
     pub fact_analysis: ChunkFactAnalysis,
     /// Owner graph + structural atomic units derived from
     /// `fact_analysis.facts`. Carries no spec-dependent state; the
-    /// atomic units here are the *structural* class (per DESIGN.md
+    /// atomic units here are the *structural* class (per docs/design.md
     /// §"Two classes of atom") that any valid factorization must
     /// preserve.
     pub owner_graph_and_units: OwnerGraphAndUnits,

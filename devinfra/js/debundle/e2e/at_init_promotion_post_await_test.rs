@@ -1,4 +1,4 @@
-//! Regression test: at-init call promotion (DESIGN.md "At-init call
+//! Regression test: at-init call promotion (docs/design.md "At-init call
 //! promotion") must not propagate rebinds or calls that lexically
 //! appear inside an async function body **after** the first `await`.
 //! Those statements run in a microtask after the at-init caller has
@@ -76,7 +76,7 @@
 //!
 //! ## Production observation
 //!
-//! gaffer-private's Tana chunk `static/index-DI2GynTv` post-#1634
+//! a real production chunk `static/index-EXAMPLE` post-#1634
 //! materializer rejects with a 690-owner atomic-factor-unit conflict
 //! spanning residual + 9 named modules. Tracing the 11 cross-module
 //! `eager_rebind` edges from the bootstrap statement (owner:9705,

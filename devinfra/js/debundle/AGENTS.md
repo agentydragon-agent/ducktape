@@ -3,7 +3,7 @@
 > The canonical design — what debundling means as a problem, what
 > emit strategies are correct under which conditions, and the
 > realizability theorem the validator enforces — lives in
-> <DESIGN.md>. Read that first when working on the splitting
+> <docs/design.md>. Read that first when working on the splitting
 > pipeline. This file documents agent-facing operating principles
 > on top of the design.
 
@@ -254,7 +254,7 @@ cells the statement touches. Each impure statement carries a
 `dataflow_summarizable` bit; statements that fail the check fall back
 to the unconditional adjacent-impure S-edge.
 
-This is deliberate: the real input (the Tana RE bundle in
+This is deliberate: the real input (the real-corpus bundle in
 `gaffer-private`, props/frontend, etc.) is well-behaved and admits
 precise reasoning even though generic JS does not. Document each such
 optimization with (a) the precondition it requires, (b) where the

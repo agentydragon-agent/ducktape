@@ -133,7 +133,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
     // depth-first link traversal evaluates dependencies first.
     // Plan-order disambiguation + linker-order placement keeps
     // the import-collision contract while satisfying Lemma 2's
-    // emit-side constraint. See DESIGN.md "Module dep graphs"
+    // emit-side constraint. See docs/design.md "Module dep graphs"
     // and "Lemma 2".
     let build_entry_imports_started = Instant::now();
     let mut entry_imports: Vec<(usize, ModuleItem)> = Vec::new();
@@ -248,7 +248,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         ));
     }
     // Sort entry imports by ChunkFactorization::source_import_position, which
-    // implements Lemma 2 (DESIGN.md "The realizability theorem"):
+    // implements Lemma 2 (docs/design.md "The realizability theorem"):
     // for acyclic imports graphs the order matches linker_order
     // (dependency-first source), but for cyclic-I shapes accepted
     // by the relaxed clause-3 rule the SCC members are reverse-
@@ -306,7 +306,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         // peel whose body happens to read a top-level binding that
         // the upstream source didn't already `export {...}`.
         // Emitting the export here makes the assignment importable
-        // by construction (see DESIGN.md "Valid peels and atomic
+        // by construction (see docs/design.md "Valid peels and atomic
         // modules", importability clause). The grow set excludes
         // names already in entry's source-level exports.
         let auto_grow = auto_grown_residual_exports(

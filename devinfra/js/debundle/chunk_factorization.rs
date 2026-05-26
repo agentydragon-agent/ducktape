@@ -61,7 +61,7 @@ pub struct ChunkFactorization {
     /// reject the spec). Used by the emitter to author each
     /// module's `import` directive list in an order that steers
     /// ECMA-262's linker DFS toward an `I ∪ S`-respecting
-    /// evaluation order; see DESIGN.md "Lemma 2".
+    /// evaluation order; see docs/design.md "Lemma 2".
     pub linker_order: Vec<ModuleId>,
     linker_position_by_module: HashMap<ModuleId, usize>,
     source_import_position_by_module: HashMap<ModuleId, usize>,
@@ -201,7 +201,7 @@ impl ChunkFactorization {
     /// in source so the ESM linker's depth-first instantiation lands
     /// on a Phase-2 evaluation order matching `linker_order`.
     ///
-    /// Per DESIGN.md "The realizability theorem", Lemma 2: for
+    /// Per docs/design.md "The realizability theorem", Lemma 2: for
     /// acyclic shapes this coincides with `linker_position`
     /// (dependency-first source order). For cyclic-I shapes accepted
     /// by the relaxed clause-3 rule, SCC members are reverse-sorted

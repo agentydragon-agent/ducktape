@@ -48,7 +48,7 @@
 //! Generic naming — `targetFn` is the peel target, `sA`/`sB` are the
 //! minified import locals, `propKeyA`/`propKeyB` are the readable
 //! property keys that drive the heuristic rename. The exact shape the
-//! Tana `getActionEventLimits` peel hit.
+//! the upstream `someObjectLiteralExport` peel hit.
 
 use debundle_e2e_support::*;
 use std::fs;

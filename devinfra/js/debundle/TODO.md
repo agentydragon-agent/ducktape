@@ -133,7 +133,7 @@ The current remaining plan, ordered by leverage:
    This is the new top hot loop: **12.62% Children %** under
    `lower_chunk` (>20% of `lower_chunk`'s own time). The shape is
    `Vec<NamedSpecifier>::retain(|spec| consumers.any(|c| c.name ==
-   spec.name))` — O(N×M) scan, with each comparison going through
+spec.name))` — O(N×M) scan, with each comparison going through
    `swc_atoms::Atom::as_str` → `hstr::Atom::as_str` /
    `TaggedValue::data` (`Iterator::any::check::{{closure}}` was
    5.93% self, 9.63% Children %). Convert the inner `any` to a
@@ -205,7 +205,7 @@ Tighten before the next large peel loop:
   while `peel/factorize.rs` produces advisory planner proposals from
   the serialized atomic DAG (surfaced as `debundle modules propose`).
   Keep docs explicit about which one they mean.
-- FACTORIZE.md is deleted; its content is folded into `DESIGN.md`
+- FACTORIZE.md is deleted; its content is folded into `docs/design.md`
   §"Layered mental model" + §"Factor assembly inside `debundle run`".
 
 ## Analysis semantics breadth
@@ -467,7 +467,7 @@ not an afterthought), but no urgent action.
 
 ## CLI gaps found while surveying real specs
 
-Rough edges hit during a real-corpus survey (2026-05-26, gaffer's tana
+Rough edges hit during a real-corpus survey (2026-05-26, the real-corpus
 web spec via the new top-level CLI). Each is a small `bindings ...` /
 `modules ...` addition; nothing structural.
 

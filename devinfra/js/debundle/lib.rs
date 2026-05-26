@@ -1,6 +1,6 @@
 //! Module analysis engine for `materialize_logical_modules`.
 //!
-//! Background: see <DESIGN.md>. This crate treats debundling as an
+//! Background: see <docs/design.md>. This crate treats debundling as an
 //! owner-graph quotient and scheduling problem:
 //!
 //! 1. Analyze each source chunk into top-level owner facts: declarations,
@@ -69,9 +69,6 @@ pub use reports::schema::{
     OwnerGraphNodeReport, OwnerGraphQuotientReport, OwnerGraphReport, PeelCandidateStatus,
     QuotientEdgeReport, QuotientSccReport, RESIDUAL_ENTRY_LABEL, RESIDUAL_ENTRY_MODULE_ID,
     SourceLocation,
-};
-pub use stage_one::sidecars::{
-    CHUNK_ANALYSIS_MANIFEST_SCHEMA_VERSION, ChunkAnalysisManifest, write_stage_one_sidecars,
 };
 pub use stage_one::{StageOneAnalysis, compute_stage_one_analysis};
 pub use validation::{

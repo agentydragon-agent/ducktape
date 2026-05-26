@@ -25,7 +25,7 @@ pub struct FactorizationReport {
     /// dependency-first. Empty when the dep graph has cycles
     /// (validation rejects). Captured here so debug tooling can
     /// see the linker's evaluation order without re-running
-    /// materialization. See DESIGN.md "Lemma 2".
+    /// materialization. See docs/design.md "Lemma 2".
     pub linker_order: Vec<String>,
 }
 
@@ -277,7 +277,7 @@ fn cut_pairs_count(cut: &[CycleEdge]) -> usize {
 /// residual-in-cycle case (any multi-module SCC in `I` containing
 /// residual with a constraining edge whose target is residual), and
 /// `lower_chunk` realizes Lemma 2's source-import-order steering for
-/// every spec that makes it past the gate. See DESIGN.md "Lemma 2:
+/// every spec that makes it past the gate. See docs/design.md "Lemma 2:
 /// entry-side import ordering" for the order-steering algorithm and
 /// the residual-in-cycle carve-out.
 ///
@@ -321,7 +321,7 @@ pub fn validate_factorization(
         if !is_cycle {
             continue;
         }
-        // Realizability filter (per DESIGN.md "The realizability
+        // Realizability filter (per docs/design.md "The realizability
         // theorem"): an `I ∪ S` SCC is unrealizable iff at least
         // one cross-module edge between its members carries a
         // realizability-constraining reason — an at-init read
@@ -449,7 +449,7 @@ pub fn render_atomic_unit_conflict_summary(
 ///
 /// Soundness: removing every FAS edge makes the constraining
 /// subgraph of `scc` acyclic, so the surviving cross-module edges
-/// have a valid evaluation order — realizable per the DESIGN.md
+/// have a valid evaluation order — realizable per the docs/design.md
 /// realizability theorem. Cuts are sorted deterministically
 /// `(from, to, statement_ordinal, binding, kind)` so test
 /// snapshots compare cleanly.

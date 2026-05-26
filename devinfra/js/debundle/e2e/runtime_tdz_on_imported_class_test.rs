@@ -57,7 +57,7 @@
 //!   (the `console.log` reads it; or the residual statement is
 //!   peeled and replaced by a re-export).
 //!
-//! The relaxed realizability primitive (DESIGN.md "Realizability
+//! The relaxed realizability primitive (docs/design.md "Realizability
 //! primitive", clause 3) accepts cycles whose constraining-edge
 //! subgraph (drops `LazyUse`) has no multi-module SCC. Here the
 //! constraining edges from `mod_logger → entry` form a singleton

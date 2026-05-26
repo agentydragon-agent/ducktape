@@ -644,7 +644,7 @@ fn plain_data_ts_enum_iife_inner_param_write_doesnt_disqualify_outer_candidate()
 
 #[test]
 fn plain_data_default_param_write_to_shadowed_m_keeps_system_ids_plain() {
-    // Tana/Vite shape: the chunk also has a top-level `const m`
+    // an upstream Vite-style shape: the chunk also has a top-level `const m`
     // plain-data systemIds table, while Vite emits a helper with
     // a default parameter named `m` and a later default param
     // writes `m.f = [...]`. That write targets the parameter
@@ -977,7 +977,7 @@ fn plain_data_read_with_static_property_is_pure() {
 #[test]
 fn plain_data_chain_collapses_size_33_walkthrough_shape() {
     // The full chain-of-hints case from
-    // `tana/x/research/ducktape_purity_recursive.md`: a config
+    // `(internal purity research notes)`: a config
     // table `TA`, an accessor `Me`, an env-derived predicate
     // `$i`, and a top-level binding `gF` whose init is an
     // object literal whose values are calls to `Me`. Today the

@@ -1,8 +1,8 @@
 # Debundle crate — architecture review (May 2026)
 
-Reviewed against `01c149496` on branch `feat-arch-review-2026-05`. Read on top of `DESIGN.md`, `PIPELINE_SPLIT.md`, `CODE_REVIEW.md`, `AGENTS.md`. Findings are at the design/architecture level; small style points already covered by `CODE_REVIEW.md` are not repeated.
+Reviewed against `01c149496` on branch `feat-arch-review-2026-05`. Read on top of `docs/design.md`, `CODE_REVIEW.md`, `AGENTS.md`. Findings are at the design/architecture level; small style points already covered by `CODE_REVIEW.md` are not repeated.
 
-> **Progress note.** Items handled since the original review have been removed; remaining items are the open backlog. Done so far: Lemma-2 ordering unified on `graph.rs` (`da7e928e2`); `RollbackDiGraph` SCC delegated to petgraph (`b62c9996f`); `artifact::ChunkAnalysis` renamed to `ChunkAnalysisReport`, `ModuleQuotient` inner field tightened to `pub(crate)`, `RealizabilityVerdict::scc_partition()` introduced (3 dep-graph SCC walks merged; 2 remain — see §"`tarjan_scc` over the module quotient" below) (`af45fccdc`, `7d2d79bc9`, `073493e6d`). The cross-process Stage B plan was also abandoned — see `WIRE_FORMAT.md` §"Cross-process scope: not a goal"; the items in this review that assumed cross-process caching of Stage A artifacts have been dropped.
+> **Status.** Items handled since the original review have been removed; what remains is the open backlog. The cross-process Stage B plan was also abandoned — items in this review that assumed cross-process caching of Stage A artifacts have been dropped along with it. Narrative + rejected alternatives: `docs/lessons_learned/cross_process_stage_b.md`.
 
 ## Executive summary
 
@@ -143,7 +143,7 @@ Watch out for:
 - **`ChunkAnalysisOptions`** (`spec.rs:104`) is a _spec-side_ per-chunk knob holder; **`OwnerGraphOptions`** (`graph.rs:21`) is the _graph-build-side_ knob holder; the materializer copies one field from the former into the latter (`lowering/materialize/mod.rs:435–439`). The duplication of "options" types with the same one field (`dataflow_aware_s_chain`) is a sign that the type is doing too little — fold them together. (The original motivation for keeping them separate — Stage A cache-key independence — went away when cross-process Stage B was dropped.)
 - **`linker_order` (`Vec<String>` in `FactorizationReport`)** vs **`linker_order` (`Vec<ModuleId>` in `ChunkFactorization`)** vs **`chunk_linker_order` (`BTreeMap<ModuleId, usize>` in `graph.rs`)** — three different shapes for "the toposort of the constraining-edge graph", differing in element type and whether it's "list" or "map (position lookup)". Pick one canonical type, derive the others.
 - **`UnrealizableScc` (`realizability.rs:50`)** vs **`CycleReport` (`validation.rs:35`)** vs **`QuotientSccReport` (`reports/schema.rs`)** vs **`AtomicUnitConflict` (`factor_assembly.rs:35`)** — four representations of "the spec is unrealizable, here's why" with subtly different fields. `UnrealizableScc` carries `constraining_owner_edges`; `CycleReport` carries `cut` (a minimum cut) + `evidence`; `QuotientSccReport` carries `module_edge_ids` + `constraining_module_edge_ids`. Two of these contain the same data ("the modules in the SCC + the edges in the SCC"), with the cut/evidence/min decoration added by the validator. The right shape is one core type with optional decorations, not four parallel structs.
-- **`AnalysisHints`** (`facts/mod.rs`-exported) lives in `facts`, but holds spec-derived data (`declared_pure`, `declared_pure_new`, `declared_pure_members`, `known_effects`). The data is spec-shaped, the type is in facts. Today's pipeline collects the hints before the Stage A composer runs — fine for the in-process flow — but the "Stage A is spec-independent" framing in `PIPELINE_SPLIT.md` always rested on `AnalysisHints` magically not counting as spec. With cross-process Stage B dropped, the framing is no longer load-bearing, but the module-vs-data-shape mismatch (spec-shaped data living in the facts module) is still ugly and worth a re-home.
+- **`AnalysisHints`** (`facts/mod.rs`-exported) lives in `facts`, but holds spec-derived data (`declared_pure`, `declared_pure_new`, `declared_pure_members`, `known_effects`). The data is spec-shaped, the type is in facts. Today's pipeline collects the hints before the Stage A composer runs — fine for the in-process flow — but the "Stage A is spec-independent" framing in `docs/lessons_learned/cross_process_stage_b.md` always rested on `AnalysisHints` magically not counting as spec. With cross-process Stage B dropped, the framing is no longer load-bearing, but the module-vs-data-shape mismatch (spec-shaped data living in the facts module) is still ugly and worth a re-home.
 
 ## Algorithmic clarity (realizability gate, atom detection)
 
@@ -153,7 +153,7 @@ The realizability gate's actual algorithm, read carefully, is:
 
 > Build the canonical constraining-edge view of the I-graph; the gate accepts iff (a) Tarjan on the constraining-edge view has no multi-module SCC, and (b) for every multi-module SCC in the full I-graph that has at least one constraining edge, the ECMA-262 Phase-2 simulator (rooted at residual, with residual's imports sorted by `source_import_position` and every other module's by `linker_position`) yields a post-order with `post_order[target] < post_order[source]` for every constraining edge.
 
-That's one algorithm with two passes. Pass 1 is a cheap necessary condition (mutual at-init cycles can never be rescued by reordering); Pass 2 is the precise condition (the runtime DFS-simulator decides asymmetric cycles). The 2× Tarjan is structural to the algorithm, not patchy. **This is fine.** The DESIGN.md theorem reads cleanly.
+That's one algorithm with two passes. Pass 1 is a cheap necessary condition (mutual at-init cycles can never be rescued by reordering); Pass 2 is the precise condition (the runtime DFS-simulator decides asymmetric cycles). The 2× Tarjan is structural to the algorithm, not patchy. **This is fine.** The docs/design.md theorem reads cleanly.
 
 What's _patchy_ is:
 
@@ -165,7 +165,7 @@ What's _patchy_ is:
 
 `atomic_units.rs::compute_atomic_units` is the structural-atom detector (SCCs of the constraining-edge owner graph). `factor_assembly::detect_unit_conflict` is the "did the spec split a unit?" detector. The structural atoms are computed once per chunk (in `compute_owner_graph_and_units_with`), passed through `OwnerGraphAndUnits` to the materializer and into `ChunkFactorization`. Clean — this is the right shape.
 
-Spec-induced atoms (the SCCs of `I ∪ S` under the quotient) are NOT precomputed; they emerge from the realizability primitive. DESIGN.md §"Two classes of atom" labels them as a distinct concept. After `7d2d79bc9` the verdict exposes the SCC partition and `validate_factorization` consumes it instead of re-walking; the residual walk lives on `ChunkFactorization::dep_graph_sccs` for the materializer/emitter path (see §"Duplicated calculations" for the open consolidation).
+Spec-induced atoms (the SCCs of `I ∪ S` under the quotient) are NOT precomputed; they emerge from the realizability primitive. docs/design.md §"Two classes of atom" labels them as a distinct concept. After `7d2d79bc9` the verdict exposes the SCC partition and `validate_factorization` consumes it instead of re-walking; the residual walk lives on `ChunkFactorization::dep_graph_sccs` for the materializer/emitter path (see §"Duplicated calculations" for the open consolidation).
 
 ### Tests for `at_init_promotion_drop_unsound_in_cycle` flag exactly the right kind of pattern
 
@@ -185,31 +185,29 @@ Spec-induced atoms (the SCCs of `I ∪ S` under the quotient) are NOT precompute
 
 `TODO.md` mentions a `module merge` task (task #73). The `feat-cli-module-merge` branch is in flight. No drift.
 
-### The DESIGN.md vs CODE_REVIEW.md vs README.md vs guide.md split
+### The docs/design.md vs CODE_REVIEW.md vs README.md vs guide.md split
 
 These files plus AGENTS.md plus RENAME.md document the same project from multiple perspectives. Skimming them, I find:
 
-- DESIGN.md is the canonical theorem + algorithm document.
+- docs/design.md is the canonical theorem + algorithm document.
 - AGENTS.md is the canonical "how to work on this crate" document.
 - CODE_REVIEW.md is a prior code-review backlog (clearly marked, useful).
 - README.md is a marketing-shaped pitch with usage.
 - guide.md is shorter intro material.
 - TODO.md is a 21K-byte backlog.
-- ~~FACTORIZE.md~~ — deleted; folded into DESIGN.md (May 2026).
-- ~~PIPELINE_SPLIT.md~~ — the cross-process Stage B plan it described was abandoned; see `WIRE_FORMAT.md` §"Cross-process scope: not a goal".
+- ~~FACTORIZE.md~~ — deleted; folded into docs/design.md (May 2026).
+- ~~docs/lessons_learned/cross_process_stage_b.md~~ — tombstone; the cross-process Stage B plan it described was abandoned. See `docs/lessons_learned/cross_process_stage_b.md`.
 - RENAME.md is a focused doc on the readability rename pass.
 
 ## Quick wins (≤30 min each)
 
-1. **Make `factor_assembly::compute_owner_claims` `pub`** to match `PIPELINE_SPLIT.md`'s assertion. If the doc is wrong, fix the doc.
+1. **Carry chunk-top-level `Mark` on the typed `Partition`** (or on a `ChunkContext` wrapper) so `top_level_id` lookups don't have to be threaded through every materialize-side function as a separate parameter. Today `lowering/materialize/mod.rs:100` reads it from the AST and threads it through eight call sites.
 
-2. **Carry chunk-top-level `Mark` on the typed `Partition`** (or on a `ChunkContext` wrapper) so `top_level_id` lookups don't have to be threaded through every materialize-side function as a separate parameter. Today `lowering/materialize/mod.rs:100` reads it from the AST and threads it through eight call sites.
+2. **Pull `apply_member_hints`'s five arguments into `Member::collect_hints(&self, hints: &mut AnalysisHints)`**. Five-arg helper goes away; call site (`lowering/materialize/mod.rs:405–423`) becomes `for m in &req.members { m.collect_hints(&mut hints); }`.
 
-3. **Pull `apply_member_hints`'s five arguments into `Member::collect_hints(&self, hints: &mut AnalysisHints)`**. Five-arg helper goes away; call site (`lowering/materialize/mod.rs:405–423`) becomes `for m in &req.members { m.collect_hints(&mut hints); }`.
+3. **Add a single `EdgeRole` enum** as a field of `EdgeReason` (variants `Direct` / `PromotedAtInit { callee_owner }`) so the gate/lenient projection helpers can fold into one helper that consults the role. Removes the dual `*_partition_endpoints` helpers + their commit-SHA history doc-comments.
 
-4. **Add a single `EdgeRole` enum** as a field of `EdgeReason` (variants `Direct` / `PromotedAtInit { callee_owner }`) so the gate/lenient projection helpers can fold into one helper that consults the role. Removes the dual `*_partition_endpoints` helpers + their commit-SHA history doc-comments.
-
-5. **`lowering/plans.rs::synthesize_mini_factor_plans` → method on a builder**. Ten-arg function with five `&mut` references becomes `builder.synthesize_mini_factors(precomputed, body, target_dir)`.
+4. **`lowering/plans.rs::synthesize_mini_factor_plans` → method on a builder**. Ten-arg function with five `&mut` references becomes `builder.synthesize_mini_factors(precomputed, body, target_dir)`.
 
 ## Multi-session refactors (1–3 day projects)
 

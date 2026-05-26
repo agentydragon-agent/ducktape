@@ -233,5 +233,5 @@ edge), so the optimization is safe to enable even on bundles that
 mix audited and unaudited code — only the unsummarizable statements
 pay the conservative cost.
 
-See `DESIGN.md` → "Emission modes" for the precise dataflow-aware
+See `docs/design.md` → "Emission modes" for the precise dataflow-aware
 emission rule.

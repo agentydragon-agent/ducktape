@@ -1,4 +1,4 @@
-//! Realizability gate (`I ∪ S` per <DESIGN.md>): the
+//! Realizability gate (`I ∪ S` per <docs/design.md>): the
 //! materializer accepts a spec and emits a behaviour-preserving
 //! bundle iff every imports plus side-effect-ordering SCC is
 //! realizable. Lazy-only import cycles are allowed; cycles with
@@ -796,7 +796,7 @@ export { A, B, fromB, a_in_x };
     );
 }
 
-// --- Top-level await is rejected (DESIGN.md A2) --------------------------
+// --- Top-level await is rejected (docs/design.md A2) --------------------------
 
 #[test]
 fn top_level_await_is_rejected() {

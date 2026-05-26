@@ -344,6 +344,6 @@ command, not by hand-editing generated output.
 
 - `cli.md` — full command surface (shipped + planned).
 - `README.md` — crate pitch, Bazel integration, `comment:` schema.
-- `DESIGN.md` — the realizability theorem the gate enforces.
-- `FACTORIZE.md` (legacy; folded into `DESIGN.md`) — owner / atomic /
+- `design.md` — the realizability theorem the gate enforces.
+- `FACTORIZE.md` (legacy; folded into `design.md`) — owner / atomic /
   module graph vocabulary.

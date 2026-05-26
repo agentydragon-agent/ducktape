@@ -21,7 +21,7 @@
 //! The selector encodes a symbol identity that survives upstream
 //! version bumps even when minified names regenerate:
 //!
-//! - `chunk_id`: the chunk source path (e.g. `static/index-DI2GynTv`).
+//! - `chunk_id`: the chunk source path (e.g. `static/index-EXAMPLE`).
 //!   Vite-emitted chunk filenames carry a content hash; the unhashed
 //!   prefix is the stable part the spec generator uses, but we keep the
 //!   full chunk_id because Vite-generated hashes are stable across

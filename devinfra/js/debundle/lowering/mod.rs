@@ -15,7 +15,6 @@ use analysis::{
     OwnerGraphOptions, OwnerId, RedundantPureMemberReason, RedundantPurityHint,
     RedundantPurityReason, StageOneAnalysis, compute_stage_one_analysis,
     render_atomic_unit_conflict_summary, render_cycle_summary, top_level_id,
-    write_stage_one_sidecars,
 };
 use artifact::{
     ArtifactIndexes, ArtifactSourceImportResolver, ChunkAnalysisReport, ChunkArtifact, ChunkBundle,

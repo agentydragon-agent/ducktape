@@ -616,13 +616,13 @@ mod tests {
     <link rel="modulepreload" href="./static/chunk-DuckMock.js">
   </head>
   <body>
-    <script type="module" src="./static/index-DuckMock.js"></script>
+    <script type="module" src="./static/index-EXAMPLE.js"></script>
   </body>
 </html>
 "#,
             )?;
             fs::write(
-                snapshot.join("static/index-DuckMock.js"),
+                snapshot.join("static/index-EXAMPLE.js"),
                 "import { y } from './chunk-DuckMock.js';\nglobalThis.__value = y;\n",
             )?;
             fs::write(
@@ -631,7 +631,7 @@ mod tests {
             )?;
             fs::write(
                 extracted.join("js-files.txt"),
-                "static/index-DuckMock.js\nstatic/chunk-DuckMock.js\n",
+                "static/index-EXAMPLE.js\nstatic/chunk-DuckMock.js\n",
             )?;
             let js_list_path = extracted.join("js-files.txt");
             let asset_summary_path = extracted.join("asset-summary.json");
@@ -665,7 +665,7 @@ mod tests {
 
             assert!(out.join("app/bootstrap.js").exists());
             assert!(out.join("reports/runtime.json").exists());
-            let entry = fs::read_to_string(out.join("app/static/index-DuckMock/entry.js"))?;
+            let entry = fs::read_to_string(out.join("app/static/index-EXAMPLE/entry.js"))?;
             assert!(entry.contains("../chunk-DuckMock/entry.js"));
             let chunk_entry = fs::read_to_string(out.join("app/static/chunk-DuckMock/entry.js"))?;
             let total_bytes = entry.len() + chunk_entry.len();

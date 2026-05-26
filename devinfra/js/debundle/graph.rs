@@ -712,7 +712,7 @@ pub fn build_owner_graph_with(facts: &[StatementFacts], options: OwnerGraphOptio
         }
     }
 
-    // At-init call promotion (DESIGN.md "At-init call promotion").
+    // At-init call promotion (docs/design.md "At-init call promotion").
     //
     // A function body's lazy reads/rebinds fire at-init from the
     // perspective of any caller that invokes the function at-init.
@@ -781,7 +781,7 @@ pub fn build_owner_graph_with(facts: &[StatementFacts], options: OwnerGraphOptio
     }
 }
 
-/// Side-effect ordering edges (`S` per DESIGN.md "Module dep graphs").
+/// Side-effect ordering edges (`S` per docs/design.md "Module dep graphs").
 /// At owner level, links impure top-level statements so any realizable
 /// schedule preserves their observable order.
 ///
@@ -874,7 +874,7 @@ fn emit_s_chain(
 /// every statement that at-init-calls the function. Transitive over
 /// the call graph among chunk-declared functions: a top-level
 /// `f()` whose `f` calls `g` in its body promotes through `g`'s lazy
-/// reads/rebinds too. See DESIGN.md "At-init call promotion".
+/// reads/rebinds too. See docs/design.md "At-init call promotion".
 ///
 /// Per-statement dedup: at most one promoted eager edge per
 /// (caller, target-owner) pair, and at most one promoted rebind edge
@@ -892,7 +892,7 @@ fn promote_at_init_calls(
     //    body_calls. Nested-closure calls (e.g. inside an arrow
     //    returned by the body) don't fire when the body is invoked
     //    synchronously, so they don't belong on the promotion call
-    //    graph — see DESIGN.md "At-init call promotion" and the e2e
+    //    graph — see docs/design.md "At-init call promotion" and the e2e
     //    test `at_init_promotion_nested_closure_test`.
     //
     //    Add every owner whose body has any first-order lazy reads /

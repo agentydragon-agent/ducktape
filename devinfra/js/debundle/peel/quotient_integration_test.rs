@@ -34,7 +34,7 @@ use peel::quotient::{
     greedy_merge_to_convergence, greedy_merge_to_convergence_full_scan,
 };
 
-// ---------- Fixture helpers (generic; no Tana/gaffer strings). ----------
+// ---------- Fixture helpers (generic; no the upstream/gaffer strings). ----------
 
 fn binding(name: &str) -> BindingReport {
     BindingReport {
