@@ -1192,17 +1192,21 @@ pub fn chunk_constraining_module_edges(
             // imports.
             continue;
         }
+        // Every non-rebind cross-module edge — including LazyUse —
+        // joins `i_successors`. The simulator's Pass-2 DFS needs
+        // lazy back-edges to identify asymmetric (constraining
+        // forward / lazy back) I-cycles that Lemma 2's source-import
+        // reversal must rescue. The diagnostic `edges` field below
+        // is constraining-only — that's the surface Pass-1's strict
+        // SCC search and the cycle-report carry.
+        i_successors.entry(from).or_default().insert(to);
         if !edge.reason.constrains_init_order() {
-            // Pure `LazyUse` cross-module edges: function-body reads
-            // resolved at call time. Runtime DFS never follows them,
-            // so the canonical I-graph excludes them.
             continue;
         }
         if edge.reason.is_sequenced() && !seen_sequenced_pairs.insert((from, to)) {
             continue;
         }
         edges.entry((from, to)).or_default().push(edge.id);
-        i_successors.entry(from).or_default().insert(to);
     }
     ChunkConstrainingEdgeSet {
         edges,
@@ -1243,10 +1247,21 @@ impl ChunkConstrainingEdgeSet {
         self.i_successors.get(&from)
     }
 
-    /// `(from, to)` pairs in the canonical edge set. Stable iteration
-    /// order.
+    /// `(from, to)` pairs in the canonical edge set (constraining
+    /// only). Stable iteration order.
     pub fn pairs(&self) -> impl Iterator<Item = (ModuleId, ModuleId)> + '_ {
         self.edges.keys().copied()
+    }
+
+    /// `(from, to)` pairs across the full I-graph (constraining +
+    /// lazy back-edges). Used by Lemma 2's SCC computation so the
+    /// dependent/dependency reversal within asymmetric I-cycles is
+    /// detected — the constraining-only view collapses those into
+    /// singleton SCCs and would miss the reversal opportunity.
+    pub fn i_pairs(&self) -> impl Iterator<Item = (ModuleId, ModuleId)> + '_ {
+        self.i_successors
+            .iter()
+            .flat_map(|(from, succs)| succs.iter().map(move |to| (*from, *to)))
     }
 
     /// Membership test for the canonical edge set.
@@ -1317,9 +1332,14 @@ pub fn chunk_source_import_order(
 ) -> Vec<ModuleId> {
     use petgraph::algo::tarjan_scc;
     let linker_position = chunk_linker_order(edges);
+    // SCCs are computed over the FULL I-graph (constraining + lazy
+    // back-edges) so Lemma 2's intra-SCC `linker_position`-DESC
+    // reversal catches asymmetric cycles. The constraining-only
+    // view would collapse `(constraining-forward, lazy-back)`
+    // shapes into singleton SCCs and miss the rescue.
     let mut graph: DiGraphMap<ModuleId, ()> = DiGraphMap::new();
     let mut nodes: BTreeSet<ModuleId> = extra_nodes.iter().copied().collect();
-    for (from, to) in edges.pairs() {
+    for (from, to) in edges.i_pairs() {
         graph.add_node(from);
         graph.add_node(to);
         graph.add_edge(from, to, ());
@@ -1434,21 +1454,33 @@ mod chunk_constraining_module_edges_tests {
     /// Pure cross-module lazy edge must not appear in the canonical
     /// edge set. The emitter never emits an ESM `import` for a
     /// function-body read; the gate must agree.
+    /// Pure cross-module `LazyUse` edges contribute to
+    /// `i_successors` (the runtime DFS topology — required for
+    /// Lemma 2 asymmetric-cycle detection) but never to `edges`
+    /// (the constraining/diagnostic surface).
     #[test]
-    fn lazy_only_cross_module_edge_excluded() {
+    fn lazy_only_cross_module_edge_in_i_successors_not_edges() {
         let source = "const a = 1; function f() { return a; }";
         let owner_graph = parse_and_build(source);
         let mut partition = Partition::new(&owner_graph, module_id(0));
         partition.set(OwnerId(1), module_id(1));
         let canonical = chunk_constraining_module_edges(&owner_graph, &partition);
-        // `f` reads `a` from a function body → LazyUse f → a, so the
-        // only cross-module edge is mod_1 → mod_0 LazyUse.
+        // `f` reads `a` from a function body → LazyUse f → a. The
+        // constraining `edges` surface stays empty because lazy
+        // reads don't constrain init order.
         assert!(
             canonical.edges.is_empty(),
-            "lazy-only cross-module edges must be excluded; got {:#?}",
+            "lazy edges must NOT enter constraining `edges`; got {:#?}",
             canonical.edges
         );
-        assert!(canonical.i_successors.is_empty());
+        // But the simulator's DFS topology (`i_successors`)
+        // includes the lazy back-edge — Pass 2's asymmetric-cycle
+        // rescue needs it.
+        assert!(
+            !canonical.i_successors.is_empty(),
+            "lazy edges must contribute to `i_successors`; empty: {:#?}",
+            canonical.i_successors
+        );
     }
 
     /// Cross-module eager_use edge appears in the canonical set.
