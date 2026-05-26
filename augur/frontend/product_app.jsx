@@ -93,6 +93,53 @@ const LIFECYCLE_KIND_FROM_CODE = { r: "set_rented_fraction", c: "capital_improve
 const FAN_PERCENTILES = [5, 25, 50, 75, 95];
 const SELECTED_ROLLOUT_COLOR = "#0f766e";
 const FAILED_ROLLOUT_COLOR = "#ef4444";
+// Canonical order of event kinds — drives both the legend's chip order and the in-month
+// vertical stacking order on the chart. Mirrors `priority` in `augur/product/decode.py`
+// so the wire-emit order and the visual order agree (the decoder already sorts events by
+// (month_index, priority[kind]) before sending).
+const ROLLOUT_EVENT_KIND_ORDER = [
+  "property_purchase",
+  "closing_cost_payment",
+  "set_rented_fraction",
+  "capital_improvement",
+  "property_sale",
+  "holding_sale",
+  "tax_accrual",
+  "tax_payment",
+  "property_tax_payment",
+  "hoa_dues_payment",
+  "homeowners_insurance_payment",
+  "property_maintenance_payment",
+  "mortgage_payment",
+  "monthly_expense",
+  "outside_rent",
+  "failure",
+];
+
+const ROLLOUT_EVENT_KIND_LABELS = {
+  property_purchase: "Property purchase",
+  closing_cost_payment: "Closing cost",
+  set_rented_fraction: "Set rented %",
+  capital_improvement: "Capital improvement",
+  property_sale: "Property sale",
+  holding_sale: "Holding sale",
+  tax_accrual: "Tax accrual",
+  tax_payment: "Tax payment",
+  property_tax_payment: "Property tax",
+  hoa_dues_payment: "HOA dues",
+  homeowners_insurance_payment: "Homeowners insurance",
+  property_maintenance_payment: "Maintenance",
+  mortgage_payment: "Mortgage payment",
+  monthly_expense: "Monthly expense",
+  outside_rent: "Outside rent",
+  failure: "Rollout failure",
+};
+
+// Kinds that fire every month produce one marker per row at the same x position — visual
+// clutter rather than signal. They start hidden in the legend; users can toggle them back on
+// if they want to confirm the per-month accrual is firing.
+const DEFAULT_HIDDEN_EVENT_KINDS = new Set(["monthly_expense", "outside_rent"]);
+
 const ROLLOUT_EVENT_COLORS = {
   holding_sale: "#0f766e",
   monthly_expense: "#64748b",
@@ -111,6 +158,10 @@ const ROLLOUT_EVENT_COLORS = {
   capital_improvement: "#15803d",
   property_sale: "#be123c",
 };
+
+// Pixel pitch between vertical marker stacks (events stack upward above the rollout line).
+const EVENT_MARKER_STACK_PITCH_PX = 12;
+const EVENT_MARKER_STACK_BASE_OFFSET_PX = -10;
 
 const METRIC_OPTIONS = [
   { value: "net_worth_usd", chartValue: "netWorthUsd", label: "Net worth" },
@@ -601,24 +652,6 @@ function eventGroupsByMonth(events) {
     .map(([monthIndex, monthEvents]) => ({ monthIndex, events: monthEvents }));
 }
 
-function eventMarkerYOffset(event) {
-  if (event?.kind === "tax_accrual") return -14;
-  if (event?.kind === "holding_sale") return -6;
-  if (event?.kind === "property_purchase") return -10;
-  if (event?.kind === "property_sale") return -8;
-  if (event?.kind === "capital_improvement") return -2;
-  if (event?.kind === "set_rented_fraction") return 4;
-  if (event?.kind === "closing_cost_payment") return -4;
-  if (event?.kind === "tax_payment") return 8;
-  if (event?.kind === "property_tax_payment") return 10;
-  if (event?.kind === "hoa_dues_payment") return 14;
-  if (event?.kind === "homeowners_insurance_payment") return 16;
-  if (event?.kind === "property_maintenance_payment") return 18;
-  if (event?.kind === "mortgage_payment") return 12;
-  if (event?.kind === "failure") return 7;
-  return 0;
-}
-
 function eventColor(event) {
   return ROLLOUT_EVENT_COLORS[event?.kind] ?? "#64748b";
 }
@@ -803,6 +836,8 @@ function FanEventMarker({
   monthIndex,
   row,
   color,
+  stackIndex,
+  stackCount,
   x,
   y,
   top,
@@ -816,9 +851,17 @@ function FanEventMarker({
   const isHovered = hoveredEventMonthIndex === monthIndex;
   const isActive = isSelected || isHovered;
   const markerX = x(row);
-  const markerY = Math.max(top + 6, Math.min(top + plotHeight - 6, y(row.value) + eventMarkerYOffset(event)));
-  const baseRadius = event.kind === "monthly_expense" ? 2.5 : 4.5;
+  // Stack the dots vertically *above* the rollout line, in the order the events arrive
+  // (which `decode.py:rollout_events_from` already sorts by `priority[kind]`). The vertical
+  // guide line still anchors at the row's value so the user can read the month at a glance.
+  const stackOffset = EVENT_MARKER_STACK_BASE_OFFSET_PX - stackIndex * EVENT_MARKER_STACK_PITCH_PX;
+  const markerY = Math.max(top + 6, Math.min(top + plotHeight - 6, y(row.value) + stackOffset));
+  const baseRadius = 4.5;
   const radius = isActive ? baseRadius + 2.2 : baseRadius;
+  // Only the top-most marker in a stack draws the vertical guide line; otherwise every event
+  // would render an overlapping line at the same x. The line still appears whenever any
+  // member of the stack is hovered/selected because the activeness propagates per-month.
+  const drawsGuideLine = stackIndex === stackCount - 1;
   return (
     <g
       key={`${event.kind}-${event.monthIndex}-${index}`}
@@ -841,14 +884,14 @@ function FanEventMarker({
       onBlur={() => onHoverEventMonth?.(null)}
       style={{ cursor: "pointer" }}
     >
-      {event.kind !== "monthly_expense" && (
+      {drawsGuideLine && (
         <line
           x1={markerX}
           x2={markerX}
           y1={top}
           y2={top + plotHeight}
-          stroke={color}
-          opacity={isActive ? 0.34 : 0.16}
+          stroke="var(--augur-chart-grid)"
+          opacity={isActive ? 0.46 : 0.2}
           strokeWidth={isActive ? 1.6 : 1}
         />
       )}
@@ -868,7 +911,7 @@ function FanEventMarker({
         cy={markerY}
         r={radius}
         fill={color}
-        opacity={isActive || event.kind !== "monthly_expense" ? 0.98 : 0.78}
+        opacity={0.98}
         stroke="white"
         strokeWidth={isActive ? 2 : 1.25}
       >
@@ -886,6 +929,7 @@ function MetricFanChart({
   selectedEvents,
   selectedSeed,
   selectedFailed,
+  visibleEventKinds,
   selectedEventMonthIndex,
   hoveredEventMonthIndex,
   onSelectEventMonth,
@@ -919,19 +963,36 @@ function MetricFanChart({
   const selectedLine = selectedRows.map((row) => `${x(row)},${y(row.value)}`).join(" ");
   const selectedColor = selectedFailed ? FAILED_ROLLOUT_COLOR : SELECTED_ROLLOUT_COLOR;
   const selectedRowByMonth = new Map(selectedRows.map((row) => [row.monthIndex, row]));
-  const eventMarkers = selectedEvents
-    .map((event, index) => {
-      // Hide bullets for events that fire every month (monthly spend, outside rent).
-      // Their presence on every tick is visual noise; the chart still shows them in the
-      // event detail panel below.
-      if (event?.kind === "monthly_expense" || event?.kind === "outside_rent") return null;
-      const monthIndex = eventMonthIndex(event);
-      if (monthIndex == null) return null;
-      const row = selectedRowByMonth.get(monthIndex);
-      if (!row) return null;
-      return { event, index, monthIndex, row, color: eventColor(event) };
-    })
-    .filter(Boolean);
+  // Filter by user-selected visibility, then bucket by month so the renderer can stack
+  // multiple kinds at the same month index instead of overlapping them at a fixed Y.
+  // `selectedEvents` already arrives sorted by (month_index, priority[kind]) from
+  // `decode.py:rollout_events_from`, so within-month iteration order is canonical.
+  const monthBuckets = new Map();
+  for (let index = 0; index < selectedEvents.length; index += 1) {
+    const event = selectedEvents[index];
+    if (!visibleEventKinds.has(event.kind)) continue;
+    const monthIndex = eventMonthIndex(event);
+    if (monthIndex == null) continue;
+    const row = selectedRowByMonth.get(monthIndex);
+    if (!row) continue;
+    if (!monthBuckets.has(monthIndex)) monthBuckets.set(monthIndex, []);
+    monthBuckets.get(monthIndex).push({ event, index, row });
+  }
+  const eventMarkers = [];
+  for (const [monthIndex, bucket] of monthBuckets) {
+    for (let stackIndex = 0; stackIndex < bucket.length; stackIndex += 1) {
+      const { event, index, row } = bucket[stackIndex];
+      eventMarkers.push({
+        event,
+        index,
+        monthIndex,
+        row,
+        color: eventColor(event),
+        stackIndex,
+        stackCount: bucket.length,
+      });
+    }
+  }
   const band = (upperPercentile, lowerPercentile) => {
     const upper = rows.map((row) => `${x(row)},${y(valueAt(row, upperPercentile))}`).join(" ");
     const lower = rows
@@ -1999,6 +2060,31 @@ function ProductProjectionLoading({ error }) {
 // so consumers can spread `eventSelection` instead of threading each leaf through every
 // component. Reset is exposed as `clear()` for the consumer that wants to drop selection
 // when the rollout context changes.
+// Per-kind chart visibility. Single source of truth: a `Set<string>` of kinds the user
+// has flipped ON. Defaults to "everything except every-month accruals" (see
+// DEFAULT_HIDDEN_EVENT_KINDS) so the chart stays readable on first load. The legend below
+// the chart shows one chip per kind that actually appears in the selected rollout; toggling
+// the chip mutates this set. `only(kind)` flips to "just this kind", `showAll`/`hideAll`
+// are the bulk operations.
+function useVisibleEventKinds() {
+  const allKinds = ROLLOUT_EVENT_KIND_ORDER;
+  const [visible, setVisible] = useState(
+    () => new Set(allKinds.filter((kind) => !DEFAULT_HIDDEN_EVENT_KINDS.has(kind)))
+  );
+  const toggle = (kind) => {
+    setVisible((previous) => {
+      const next = new Set(previous);
+      if (next.has(kind)) next.delete(kind);
+      else next.add(kind);
+      return next;
+    });
+  };
+  const only = (kind) => setVisible(new Set([kind]));
+  const showAll = () => setVisible(new Set(allKinds));
+  const hideAll = () => setVisible(new Set());
+  return { visible, toggle, only, showAll, hideAll };
+}
+
 function useEventSelection() {
   const [selectedEventMonthIndex, setSelectedEventMonthIndex] = useState(null);
   const [hoveredEventMonthIndex, setHoveredEventMonthIndex] = useState(null);
@@ -2028,6 +2114,7 @@ function ProductProjectionWorkspace({ bootstrap }) {
   const [rolloutDetails, setRolloutDetails] = useState(() => new Map());
   const [rolloutError, setRolloutError] = useState(null);
   const eventSelection = useEventSelection();
+  const visibleEventKinds = useVisibleEventKinds();
   const visibleMetrics = useMemo(() => visibleMetricOptions(input), [input]);
   const selectedMetric =
     visibleMetrics.find((metric) => metric.value === selectedMetricValue) ?? visibleMetrics[0] ?? METRIC_OPTIONS[0];
@@ -2201,6 +2288,7 @@ function ProductProjectionWorkspace({ bootstrap }) {
                   selectedEvents={selectedEvents}
                   selectedSeed={selectedSeed}
                   selectedFailed={selectedSummary?.failed ?? false}
+                  visibleEventKinds={visibleEventKinds.visible}
                   selectedEventMonthIndex={eventSelection.selectedEventMonthIndex}
                   hoveredEventMonthIndex={eventSelection.hoveredEventMonthIndex}
                   onSelectEventMonth={eventSelection.onSelectEventMonth}
@@ -2208,6 +2296,9 @@ function ProductProjectionWorkspace({ bootstrap }) {
                 />
               ) : (
                 <div className="flex min-h-[22rem] items-center justify-center text-sm augur-muted">Running...</div>
+              )}
+              {selectedSeed != null && selectedEvents.length > 0 && (
+                <EventKindLegend events={selectedEvents} visibility={visibleEventKinds} />
               )}
               {rolloutError && (
                 <div className="border-t border-slate-200 p-4 dark:border-slate-700">
@@ -2235,6 +2326,80 @@ function ProductProjectionWorkspace({ bootstrap }) {
           </div>
         </section>
       </main>
+    </div>
+  );
+}
+
+// Color-coded chip per event kind present in the selected rollout, with a click-to-toggle
+// visibility against the chart's marker stack. Count next to each label is the number of
+// events of that kind in the rollout. Top-right controls flip the entire set (Show all /
+// Hide all). Bulk shortcut: shift-click a chip to isolate that kind ("Only this").
+function EventKindLegend({ events, visibility }) {
+  const countsByKind = new Map();
+  for (const event of events) {
+    const kind = event?.kind;
+    if (kind == null) continue;
+    countsByKind.set(kind, (countsByKind.get(kind) ?? 0) + 1);
+  }
+  const presentKinds = ROLLOUT_EVENT_KIND_ORDER.filter((kind) => countsByKind.has(kind));
+  if (presentKinds.length === 0) return null;
+  return (
+    <div className="border-t border-slate-200 px-4 py-3 dark:border-slate-700">
+      <div className="flex items-center justify-between gap-3">
+        <div className="augur-eyebrow">Event kinds</div>
+        <div className="flex items-center gap-2 text-[11px]">
+          <button
+            type="button"
+            className="rounded px-1.5 py-0.5 text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+            onClick={visibility.showAll}
+          >
+            Show all
+          </button>
+          <button
+            type="button"
+            className="rounded px-1.5 py-0.5 text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+            onClick={visibility.hideAll}
+          >
+            Hide all
+          </button>
+        </div>
+      </div>
+      <ul className="mt-2 flex flex-wrap gap-1.5" role="list" aria-label="Event-kind visibility legend">
+        {presentKinds.map((kind) => {
+          const isVisible = visibility.visible.has(kind);
+          const color = ROLLOUT_EVENT_COLORS[kind] ?? "#64748b";
+          const label = ROLLOUT_EVENT_KIND_LABELS[kind] ?? kind;
+          const count = countsByKind.get(kind);
+          return (
+            <li key={kind}>
+              <button
+                type="button"
+                aria-pressed={isVisible}
+                title={
+                  isVisible ? `Hide ${label} markers (shift-click: only)` : `Show ${label} markers (shift-click: only)`
+                }
+                onClick={(mouseEvent) => {
+                  if (mouseEvent.shiftKey) visibility.only(kind);
+                  else visibility.toggle(kind);
+                }}
+                className={`flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-semibold transition-opacity ${
+                  isVisible
+                    ? "border-slate-300 bg-white text-slate-800 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+                    : "border-dashed border-slate-300 bg-transparent text-slate-400 opacity-60 dark:border-slate-700 dark:text-slate-500"
+                }`}
+              >
+                <span
+                  aria-hidden="true"
+                  className="inline-block h-2.5 w-2.5 rounded-full"
+                  style={{ backgroundColor: color, opacity: isVisible ? 1 : 0.4 }}
+                />
+                <span>{label}</span>
+                <span className="augur-tabular augur-muted">{count}</span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }
