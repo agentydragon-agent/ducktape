@@ -498,14 +498,20 @@ pub struct FileBoundarySummary {
     pub files: BTreeMap<String, usize>,
 }
 
+/// Per-edge histogram. Emitted as a JSON array of `[key, count]` pairs to
+/// skip serde's per-edge `BTreeMap` machinery — this was the 1.51% hotspot
+/// inside `write_tree_reports` (`perf/2026_05_26.md`). Pairs are
+/// lexicographically sorted by key so the output is stable for diffing.
+pub type EdgeHistogram = Vec<(String, usize)>;
+
 #[derive(Debug, Clone, Serialize)]
 pub struct DirectoryDependencyEdgeManifest {
     pub source_dir: String,
     pub target_dir: String,
-    pub edge_count_by_kind: BTreeMap<String, usize>,
-    pub symbols: BTreeMap<String, usize>,
-    pub source_files: BTreeMap<String, usize>,
-    pub target_files: BTreeMap<String, usize>,
+    pub edge_count_by_kind: EdgeHistogram,
+    pub symbols: EdgeHistogram,
+    pub source_files: EdgeHistogram,
+    pub target_files: EdgeHistogram,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1463,12 +1469,20 @@ impl DirectoryEdgeAccumulator {
         DirectoryDependencyEdgeManifest {
             source_dir: self.source_dir,
             target_dir: self.target_dir,
-            edge_count_by_kind: self.edge_count_by_kind,
-            symbols: self.symbols,
-            source_files: self.source_files,
-            target_files: self.target_files,
+            edge_count_by_kind: histogram_into_pairs(self.edge_count_by_kind),
+            symbols: histogram_into_pairs(self.symbols),
+            source_files: histogram_into_pairs(self.source_files),
+            target_files: histogram_into_pairs(self.target_files),
         }
     }
+}
+
+/// Convert a `BTreeMap` histogram into a sorted `Vec<(key, count)>` pair
+/// list. Equivalent ordering to iterating the `BTreeMap`, but cheaper to
+/// serialize since serde emits a plain JSON array instead of opening and
+/// closing a map for each per-edge field.
+fn histogram_into_pairs(map: BTreeMap<String, usize>) -> EdgeHistogram {
+    map.into_iter().collect()
 }
 
 struct DirectionalSummary {
