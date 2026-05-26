@@ -23,7 +23,7 @@ def slice_dense_result(dense: DenseSimulationResult, *, rollout_index: int) -> D
         external_values=dense.plan.external_values[:, rollout_index : rollout_index + 1, :].copy(),
     )
     buffers = SimulationBuffers(
-        state=_take_dc(dense.buffers.state, rollout_index, axis=1),
+        state=_take_dc(dense.buffers.state, rollout_index, axis=-1),
         transfers=_take_dc(dense.buffers.transfers, rollout_index, axis=-1),
         properties=_take_dc(dense.buffers.properties, rollout_index, axis=-1),
         lot_dispositions=_take_dc(dense.buffers.lot_dispositions, rollout_index, axis=-1),
