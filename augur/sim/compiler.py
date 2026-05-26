@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
+from numpy.typing import NDArray
 
 from augur.model.series import PRIVATE_EQUITY_SERIES_PREFIX, home_value_series_id, private_equity_sale_event_id
 from augur.sim.external_series import ExternalSeriesContext
@@ -97,122 +98,122 @@ class CompiledSimulation:
     slot_plan: SlotPlan
     strings: tuple[str, ...]
     series_ids: tuple[str, ...]
-    external_values: np.ndarray
-    cash_agent_codes: np.ndarray
-    cash_account_codes: np.ndarray
-    cash_initial_balance: np.ndarray
-    lot_id_codes: np.ndarray
-    lot_agent_codes: np.ndarray
-    lot_account_codes: np.ndarray
-    lot_asset_codes: np.ndarray
+    external_values: NDArray[np.float64]
+    cash_agent_codes: NDArray[np.int64]
+    cash_account_codes: NDArray[np.int64]
+    cash_initial_balance: NDArray[np.float64]
+    lot_id_codes: NDArray[np.int64]
+    lot_agent_codes: NDArray[np.int64]
+    lot_account_codes: NDArray[np.int64]
+    lot_asset_codes: NDArray[np.int64]
     # Per-lot index into `external_values` for the lot's pricing series. NO_CODE for lots
     # whose asset_id has no registered sampled level (defensive: shouldn't normally happen
     # for holdings, but the sentinel keeps lookups safe).
-    lot_asset_series_index: np.ndarray
-    lot_purchase_month: np.ndarray
-    lot_cost_basis_per_unit: np.ndarray
-    lot_initial_quantity: np.ndarray
-    tax_profile_agent_codes: np.ndarray
-    tax_profile_payment_slot: np.ndarray
-    tax_profile_payment_account_codes: np.ndarray
-    tax_profile_authority_agent_codes: np.ndarray
-    tax_profile_authority_account_codes: np.ndarray
-    tax_profile_prior_year_tax: np.ndarray
+    lot_asset_series_index: NDArray[np.int64]
+    lot_purchase_month: NDArray[np.int64]
+    lot_cost_basis_per_unit: NDArray[np.float64]
+    lot_initial_quantity: NDArray[np.float64]
+    tax_profile_agent_codes: NDArray[np.int64]
+    tax_profile_payment_slot: NDArray[np.int64]
+    tax_profile_payment_account_codes: NDArray[np.int64]
+    tax_profile_authority_agent_codes: NDArray[np.int64]
+    tax_profile_authority_account_codes: NDArray[np.int64]
+    tax_profile_prior_year_tax: NDArray[np.float64]
     # Per-profile §121 primary-residence exclusion cap, in USD. Looked up by filing status at
     # compile time (`_SECTION_121_EXCLUSION_USD_BY_FILING_STATUS`); only `single` is wired
     # today, so the cap is uniformly $250k for the v1 surface. Engine reads this on every
     # property sale to compute the exclusion ceiling.
-    tax_profile_section_121_exclusion_usd: np.ndarray
-    capital_gain_agent_codes: np.ndarray
-    tax_profile_capital_gain_index: np.ndarray
-    tax_link_profile_index: np.ndarray
-    tax_link_jurisdiction_codes: np.ndarray
-    tax_link_standard_deduction: np.ndarray
-    tax_link_has_ltcg: np.ndarray
+    tax_profile_section_121_exclusion_usd: NDArray[np.float64]
+    capital_gain_agent_codes: NDArray[np.int64]
+    tax_profile_capital_gain_index: NDArray[np.int64]
+    tax_link_profile_index: NDArray[np.int64]
+    tax_link_jurisdiction_codes: NDArray[np.int64]
+    tax_link_standard_deduction: NDArray[np.float64]
+    tax_link_has_ltcg: NDArray[np.int64]
     # §1250 unrecaptured-depreciation rate cap. Positive => federal-style flat rate (e.g.
     # 0.25 for federal_us); 0.0 => no separate cap, recapture is taxed as ordinary inside
     # the standard bracket walk (state-style, e.g. California).
-    tax_link_section_1250_rate: np.ndarray
-    tax_link_ordinary_upper: np.ndarray
-    tax_link_ordinary_rate: np.ndarray
-    tax_link_ordinary_count: np.ndarray
-    tax_link_ltcg_upper: np.ndarray
-    tax_link_ltcg_rate: np.ndarray
-    tax_link_ltcg_count: np.ndarray
+    tax_link_section_1250_rate: NDArray[np.float64]
+    tax_link_ordinary_upper: NDArray[np.float64]
+    tax_link_ordinary_rate: NDArray[np.float64]
+    tax_link_ordinary_count: NDArray[np.int64]
+    tax_link_ltcg_upper: NDArray[np.float64]
+    tax_link_ltcg_rate: NDArray[np.float64]
+    tax_link_ltcg_count: NDArray[np.int64]
     # tax_link × liability matrix; entry (link, lia) is the pro-rata MID ratio
     # `min(1, principal_cap[jurisdiction] / liability_principal[lia])` for liabilities
     # owned by the link's profile agent and listed in a MortgageInterestDeductionPolicy;
     # 0.0 otherwise. Engine does `interest_ytd @ ratio[link]` per link to get MID per rollout.
-    tax_link_mid_principal_ratio: np.ndarray
+    tax_link_mid_principal_ratio: NDArray[np.float64]
     # Per-link boolean: true iff that link has at least one non-zero MID ratio. Lets the
     # engine skip the matmul + max for jurisdictions or scenarios without MID-eligible debt.
-    tax_link_mid_active: np.ndarray
+    tax_link_mid_active: NDArray[np.bool_]
     # Per-link boolean: true iff this link is the federal jurisdiction of a profile that has a
     # FederalSaltDeductionPolicy. Federal SALT deduction is only computed for these links.
-    tax_link_salt_active: np.ndarray
+    tax_link_salt_active: NDArray[np.bool_]
     # tax_link × calendar-year matrix of SALT-cap-in-USD. Only populated for SALT-active links;
     # 0.0 elsewhere (and unread on the engine side). Year index 0 = first horizon year.
-    tax_link_salt_cap_by_year: np.ndarray
+    tax_link_salt_cap_by_year: NDArray[np.float64]
     # tax_link × tax_link mask. For each SALT-active federal link L, the row identifies the
     # state-jurisdiction sibling links of the same profile whose accrued annual tax flows into
     # L's SALT total. Engine uses this to gather state taxes after the first-pass non-SALT
     # tax computation.
-    tax_link_salt_contributing_mask: np.ndarray
-    tax_liability_profile_index: np.ndarray
-    tax_liability_link_index: np.ndarray
-    tax_liability_year_end_month: np.ndarray
-    transfer_cause_codes: np.ndarray
-    transfer_from_agent_codes: np.ndarray
-    transfer_from_account_codes: np.ndarray
-    transfer_from_cash_slot: np.ndarray
-    transfer_to_agent_codes: np.ndarray
-    transfer_to_account_codes: np.ndarray
-    transfer_to_cash_slot: np.ndarray
-    transfer_income_profile_index: np.ndarray
+    tax_link_salt_contributing_mask: NDArray[np.bool_]
+    tax_liability_profile_index: NDArray[np.int64]
+    tax_liability_link_index: NDArray[np.int64]
+    tax_liability_year_end_month: NDArray[np.int64]
+    transfer_cause_codes: NDArray[np.int64]
+    transfer_from_agent_codes: NDArray[np.int64]
+    transfer_from_account_codes: NDArray[np.int64]
+    transfer_from_cash_slot: NDArray[np.int64]
+    transfer_to_agent_codes: NDArray[np.int64]
+    transfer_to_account_codes: NDArray[np.int64]
+    transfer_to_cash_slot: NDArray[np.int64]
+    transfer_income_profile_index: NDArray[np.int64]
     # Parallel array to `transfer_income_profile_index`. NO_CODE if the transfer is not a
     # deduction; otherwise the profile index of the `from_agent` whose ordinary_ytd
     # should decrement when the transfer fires. Used by Schedule E expense flows.
-    transfer_deduction_profile_index: np.ndarray
-    transfer_amount_kind: np.ndarray
-    transfer_amount_fixed: np.ndarray
-    transfer_amount_base: np.ndarray
-    transfer_amount_series_index: np.ndarray
-    transfer_amount_base_month: np.ndarray
-    transfer_amount_adjustment_period: np.ndarray
-    property_cause_codes: np.ndarray
-    property_id_codes: np.ndarray
-    property_location_codes: np.ndarray
-    property_location_tax_rate: np.ndarray
-    property_special_assessment_annual_usd: np.ndarray
-    property_initial_assessed_value: np.ndarray
-    property_month: np.ndarray
-    property_buyer_agent_codes: np.ndarray
-    property_buyer_account_codes: np.ndarray
-    property_buyer_cash_slot: np.ndarray
-    property_seller_agent_codes: np.ndarray
-    property_seller_account_codes: np.ndarray
-    property_seller_cash_slot: np.ndarray
-    property_purchase_price: np.ndarray
-    property_closing_cost: np.ndarray
-    property_down_payment: np.ndarray
-    property_adjusted_basis: np.ndarray
-    property_ownership_pct: np.ndarray
-    property_stake_contribution: np.ndarray
-    property_equity_ledger: np.ndarray
-    property_mortgage_slot: np.ndarray
+    transfer_deduction_profile_index: NDArray[np.int64]
+    transfer_amount_kind: NDArray[np.int64]
+    transfer_amount_fixed: NDArray[np.float64]
+    transfer_amount_base: NDArray[np.float64]
+    transfer_amount_series_index: NDArray[np.int64]
+    transfer_amount_base_month: NDArray[np.int64]
+    transfer_amount_adjustment_period: NDArray[np.int64]
+    property_cause_codes: NDArray[np.int64]
+    property_id_codes: NDArray[np.int64]
+    property_location_codes: NDArray[np.int64]
+    property_location_tax_rate: NDArray[np.float64]
+    property_special_assessment_annual_usd: NDArray[np.float64]
+    property_initial_assessed_value: NDArray[np.float64]
+    property_month: NDArray[np.int64]
+    property_buyer_agent_codes: NDArray[np.int64]
+    property_buyer_account_codes: NDArray[np.int64]
+    property_buyer_cash_slot: NDArray[np.int64]
+    property_seller_agent_codes: NDArray[np.int64]
+    property_seller_account_codes: NDArray[np.int64]
+    property_seller_cash_slot: NDArray[np.int64]
+    property_purchase_price: NDArray[np.float64]
+    property_closing_cost: NDArray[np.float64]
+    property_down_payment: NDArray[np.float64]
+    property_adjusted_basis: NDArray[np.float64]
+    property_ownership_pct: NDArray[np.float64]
+    property_stake_contribution: NDArray[np.float64]
+    property_equity_ledger: NDArray[np.float64]
+    property_mortgage_slot: NDArray[np.int64]
     # Per-property rented_fraction (0..1). 0 = pure owner-occupied/off; 1 = pure investment.
     # Drives MID/SALT/Schedule E splits + monthly depreciation accrual.
-    property_rented_fraction: np.ndarray
+    property_rented_fraction: NDArray[np.float64]
     # Per-property depreciable building basis = purchase_price × (1 - land_value_fraction) +
     # buyer_closing_cost. Land is non-depreciable; the 27.5-year SL clock applies only to the
     # building portion. Capitalized closing costs add to the depreciable basis.
-    property_building_basis: np.ndarray
+    property_building_basis: NDArray[np.float64]
     # Profile index of each property's owner (buyer_agent_id → tax profile). NO_CODE if the
     # owner has no tax profile. Used to route Schedule E depreciation deductions.
-    property_owner_profile_index: np.ndarray
+    property_owner_profile_index: NDArray[np.int64]
     # Series index of each property's home_value series, used at sale time to compute market
     # value. NO_CODE if the series wasn't configured in the scenario.
-    property_home_value_series_index: np.ndarray
+    property_home_value_series_index: NDArray[np.int64]
     # PropertyLifecycleEvent rows compiled into per-month sparse storage. Sorted by month so
     # the engine can scan a per-month index range in O(1) lookup via
     # `lifecycle_event_month_starts`.
@@ -223,73 +224,73 @@ class CompiledSimulation:
     #                            LIFECYCLE_KIND_CAPITAL_IMPROVEMENT (1) for cash + basis bump.
     #   lifecycle_event_rented_fraction[i]: new rented_fraction (kind 0); 0.0 (kind 1).
     #   lifecycle_event_amount[i]: USD amount for capital improvement (kind 1); 0.0 (kind 0).
-    lifecycle_event_month: np.ndarray
-    lifecycle_event_property: np.ndarray
-    lifecycle_event_kind: np.ndarray
-    lifecycle_event_rented_fraction: np.ndarray
-    lifecycle_event_amount: np.ndarray
+    lifecycle_event_month: NDArray[np.int64]
+    lifecycle_event_property: NDArray[np.int64]
+    lifecycle_event_kind: NDArray[np.int64]
+    lifecycle_event_rented_fraction: NDArray[np.float64]
+    lifecycle_event_amount: NDArray[np.float64]
     # Per-month start index (length horizon_months + 1). Events for month M live at slots
     # [lifecycle_event_month_starts[M], lifecycle_event_month_starts[M+1]).
-    lifecycle_event_month_starts: np.ndarray
-    liability_codes: np.ndarray
-    liability_property_slot: np.ndarray
+    lifecycle_event_month_starts: NDArray[np.int64]
+    liability_codes: NDArray[np.int64]
+    liability_property_slot: NDArray[np.int64]
     # Profile index of each liability's owner. NO_CODE if the owner has no tax profile.
-    liability_owner_profile_index: np.ndarray
-    liability_agent_codes: np.ndarray
-    liability_payment_account_codes: np.ndarray
-    liability_payment_cash_slot: np.ndarray
-    liability_counterparty_agent_codes: np.ndarray
-    liability_counterparty_account_codes: np.ndarray
-    liability_counterparty_cash_slot: np.ndarray
-    liability_principal: np.ndarray
-    liability_annual_rate: np.ndarray
-    liability_term_months: np.ndarray
-    liability_monthly_payment: np.ndarray
-    sale_cause_codes: np.ndarray
-    sale_month: np.ndarray
-    sale_agent_codes: np.ndarray
-    sale_source_account_codes: np.ndarray
-    sale_asset_codes: np.ndarray
-    sale_quantity: np.ndarray
-    sale_proceeds_account_codes: np.ndarray
-    sale_proceeds_cash_slot: np.ndarray
-    sale_price_fixed: np.ndarray
-    sale_price_series_index: np.ndarray
-    obligation_cause_codes: np.ndarray
-    obligation_id_codes: np.ndarray
-    obligation_type_codes: np.ndarray
-    obligation_agent_codes: np.ndarray
-    obligation_from_account_codes: np.ndarray
-    obligation_from_cash_slot: np.ndarray
-    obligation_to_agent_codes: np.ndarray
-    obligation_to_account_codes: np.ndarray
-    obligation_to_cash_slot: np.ndarray
-    obligation_amount_kind: np.ndarray
-    obligation_amount_fixed: np.ndarray
-    obligation_amount_base: np.ndarray
-    obligation_amount_series_index: np.ndarray
-    obligation_amount_base_month: np.ndarray
-    obligation_amount_adjustment_period: np.ndarray
+    liability_owner_profile_index: NDArray[np.int64]
+    liability_agent_codes: NDArray[np.int64]
+    liability_payment_account_codes: NDArray[np.int64]
+    liability_payment_cash_slot: NDArray[np.int64]
+    liability_counterparty_agent_codes: NDArray[np.int64]
+    liability_counterparty_account_codes: NDArray[np.int64]
+    liability_counterparty_cash_slot: NDArray[np.int64]
+    liability_principal: NDArray[np.float64]
+    liability_annual_rate: NDArray[np.float64]
+    liability_term_months: NDArray[np.int64]
+    liability_monthly_payment: NDArray[np.float64]
+    sale_cause_codes: NDArray[np.int64]
+    sale_month: NDArray[np.int64]
+    sale_agent_codes: NDArray[np.int64]
+    sale_source_account_codes: NDArray[np.int64]
+    sale_asset_codes: NDArray[np.int64]
+    sale_quantity: NDArray[np.float64]
+    sale_proceeds_account_codes: NDArray[np.int64]
+    sale_proceeds_cash_slot: NDArray[np.int64]
+    sale_price_fixed: NDArray[np.float64]
+    sale_price_series_index: NDArray[np.int64]
+    obligation_cause_codes: NDArray[np.int64]
+    obligation_id_codes: NDArray[np.int64]
+    obligation_type_codes: NDArray[np.int64]
+    obligation_agent_codes: NDArray[np.int64]
+    obligation_from_account_codes: NDArray[np.int64]
+    obligation_from_cash_slot: NDArray[np.int64]
+    obligation_to_agent_codes: NDArray[np.int64]
+    obligation_to_account_codes: NDArray[np.int64]
+    obligation_to_cash_slot: NDArray[np.int64]
+    obligation_amount_kind: NDArray[np.int64]
+    obligation_amount_fixed: NDArray[np.float64]
+    obligation_amount_base: NDArray[np.float64]
+    obligation_amount_series_index: NDArray[np.int64]
+    obligation_amount_base_month: NDArray[np.int64]
+    obligation_amount_adjustment_period: NDArray[np.int64]
     # NO_CODE if the obligation is not tax-deductible for the payer; otherwise the profile
     # index whose ordinary_income_ytd should decrement when the obligation settles.
-    obligation_deduction_profile_index: np.ndarray
+    obligation_deduction_profile_index: NDArray[np.int64]
     # Fraction of the paid amount that is tax-deductible (e.g. 1.0 = fully deductible Schedule E
     # expense, 0.4 = 40% of the obligation is deductible because the property is 40% rented).
-    obligation_deductible_fraction: np.ndarray
+    obligation_deductible_fraction: NDArray[np.float64]
     # For property-tax obligations: the property slot the obligation is tied to so the engine
     # can look up `current.property_rented_fraction[r, slot]` at settlement time. NO_CODE for
     # non-property-tax obligations.
-    obligation_property_slot: np.ndarray
-    obligation_source_kind: np.ndarray
-    obligation_source_index: np.ndarray
+    obligation_property_slot: NDArray[np.int64]
+    obligation_source_kind: NDArray[np.int64]
+    obligation_source_index: NDArray[np.int64]
     # For property-tax obligations, the tax-profile index whose SALT total should be credited
     # when the payment settles. NO_CODE for non-property-tax obligations and for property-tax
     # obligations whose owner doesn't have a TaxProfile.
-    obligation_property_tax_profile: np.ndarray
+    obligation_property_tax_profile: NDArray[np.int64]
     # External event-series tables, parallel to `series_ids` / `external_values` but for
     # boolean event paths (private-equity tender opportunities, future regime-change events).
     external_event_ids: tuple[str, ...]
-    external_event_values: np.ndarray
+    external_event_values: NDArray[np.bool_]
     # Per-PE-issuer arrays. Issuers are the distinct `private_equity:<issuer>` asset_ids
     # appearing in `initial_lots`. For each issuer:
     #   - the event-series index identifying its tender-opportunity stream (NO_CODE if no
@@ -298,13 +299,13 @@ class CompiledSimulation:
     #     for sale-proceeds = units * mark at tender)
     #   - the policy index (into the per-policy arrays below) whose LNW-floor governs sales
     #     on tenders for this issuer (NO_CODE if no PrivateEquityTenderPolicy applies)
-    pe_issuer_codes: np.ndarray
-    pe_issuer_event_series_index: np.ndarray
-    pe_issuer_level_series_index: np.ndarray
-    pe_issuer_policy_index: np.ndarray
+    pe_issuer_codes: NDArray[np.int64]
+    pe_issuer_event_series_index: NDArray[np.int64]
+    pe_issuer_level_series_index: NDArray[np.int64]
+    pe_issuer_policy_index: NDArray[np.int64]
     # 2D boolean mask: (issuer_count, lot_count). True iff that lot is a PE lot for that
     # issuer. The engine FIFO-orders lots within an issuer-mask and drains them on sale.
-    pe_issuer_lot_mask: np.ndarray
+    pe_issuer_lot_mask: NDArray[np.bool_]
     # Per-policy arrays: one row per PrivateEquityTenderPolicy in the scenario.
     #   - owner_agent_codes: the policy's owner
     #   - proceeds_cash_slot: where tender proceeds land
@@ -315,35 +316,35 @@ class CompiledSimulation:
     #     owner's liquid net worth (owned by the policy's agent AND not in any
     #     `private_equity:*` asset). PE lots themselves are explicitly excluded since "you
     #     can't liquidate PE on demand" is the whole reason the floor matters.
-    pe_policy_owner_agent_codes: np.ndarray
-    pe_policy_proceeds_cash_slot: np.ndarray
-    pe_policy_floor_kind: np.ndarray
-    pe_policy_floor_fixed: np.ndarray
-    pe_policy_floor_base: np.ndarray
-    pe_policy_floor_series_index: np.ndarray
-    pe_policy_floor_base_month: np.ndarray
-    pe_policy_floor_adjustment_period: np.ndarray
-    pe_policy_owner_cash_mask: np.ndarray
-    pe_policy_owner_non_pe_lot_mask: np.ndarray
-    liquidity_policy_agent_codes: np.ndarray
-    liquidity_policy_account_codes: np.ndarray
-    liquidity_policy_cash_slot: np.ndarray
+    pe_policy_owner_agent_codes: NDArray[np.int64]
+    pe_policy_proceeds_cash_slot: NDArray[np.int64]
+    pe_policy_floor_kind: NDArray[np.int64]
+    pe_policy_floor_fixed: NDArray[np.float64]
+    pe_policy_floor_base: NDArray[np.float64]
+    pe_policy_floor_series_index: NDArray[np.int64]
+    pe_policy_floor_base_month: NDArray[np.int64]
+    pe_policy_floor_adjustment_period: NDArray[np.int64]
+    pe_policy_owner_cash_mask: NDArray[np.bool_]
+    pe_policy_owner_non_pe_lot_mask: NDArray[np.bool_]
+    liquidity_policy_agent_codes: NDArray[np.int64]
+    liquidity_policy_account_codes: NDArray[np.int64]
+    liquidity_policy_cash_slot: NDArray[np.int64]
     # Buffer trigger / sale: indexed-amount arrays (see `_amount_arrays`). Engine evaluates per
     # month via `_amount_values` so the buffer can be CPI-indexed (or any other series).
-    liquidity_policy_trigger_kind: np.ndarray
-    liquidity_policy_trigger_fixed: np.ndarray
-    liquidity_policy_trigger_base: np.ndarray
-    liquidity_policy_trigger_series_index: np.ndarray
-    liquidity_policy_trigger_base_month: np.ndarray
-    liquidity_policy_trigger_adjustment_period: np.ndarray
-    liquidity_policy_sale_kind: np.ndarray
-    liquidity_policy_sale_fixed: np.ndarray
-    liquidity_policy_sale_base: np.ndarray
-    liquidity_policy_sale_series_index: np.ndarray
-    liquidity_policy_sale_base_month: np.ndarray
-    liquidity_policy_sale_adjustment_period: np.ndarray
-    liquidity_policy_asset_codes: np.ndarray
-    liquidity_policy_asset_series_index: np.ndarray
+    liquidity_policy_trigger_kind: NDArray[np.int64]
+    liquidity_policy_trigger_fixed: NDArray[np.float64]
+    liquidity_policy_trigger_base: NDArray[np.float64]
+    liquidity_policy_trigger_series_index: NDArray[np.int64]
+    liquidity_policy_trigger_base_month: NDArray[np.int64]
+    liquidity_policy_trigger_adjustment_period: NDArray[np.int64]
+    liquidity_policy_sale_kind: NDArray[np.int64]
+    liquidity_policy_sale_fixed: NDArray[np.float64]
+    liquidity_policy_sale_base: NDArray[np.float64]
+    liquidity_policy_sale_series_index: NDArray[np.int64]
+    liquidity_policy_sale_base_month: NDArray[np.int64]
+    liquidity_policy_sale_adjustment_period: NDArray[np.int64]
+    liquidity_policy_asset_codes: NDArray[np.int64]
+    liquidity_policy_asset_series_index: NDArray[np.int64]
     liquidity_policy_prefixes: tuple[str, ...]
 
 
