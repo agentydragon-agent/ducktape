@@ -1554,8 +1554,15 @@ function LifecycleEventRow({ event, maxMonth, postSale, onChange, onReplaceKind,
         onChange={(domEvent) => onReplaceKind(domEvent.target.value)}
       />
       <LifecycleEventValueField event={event} onChange={onChange} />
-      <Button size="xs" variant="subtle" color="red" onClick={onRemove} aria-label="Remove event">
-        ×
+      <Button
+        size="xs"
+        variant="outline"
+        color="red"
+        onClick={onRemove}
+        aria-label="Remove event"
+        className="self-center"
+      >
+        Remove
       </Button>
       {postSale && (
         <div className="col-span-full text-xs text-rose-700 dark:text-rose-300">
@@ -1772,20 +1779,25 @@ function SellOrderControl({ sellOrder, portfolio, onChange }) {
     onChange(next.join(""));
   };
 
+  const firstDisabledCode = visibleBuckets.find((bucket) => enabledCodes.indexOf(bucket.code) < 0)?.code ?? null;
   return (
     <div className="mt-3">
       <div className="augur-field-label mb-2">Sell preference (top first)</div>
-      <ul className="space-y-1">
+      <ul className="overflow-hidden rounded border border-slate-200 divide-y divide-slate-200 dark:border-slate-700 dark:divide-slate-700">
         {visibleBuckets.map((bucket) => {
           const enabledIdx = enabledCodes.indexOf(bucket.code);
           const isEnabled = enabledIdx >= 0;
           const canMoveUp = isEnabled && enabledIdx > 0;
           const canMoveDown = isEnabled && enabledIdx < enabledCodes.length - 1;
+          // Visual separator between "enabled" and "shelved" groups: the first disabled bucket
+          // gets an extra top border + a muted background so the user can tell at a glance which
+          // sources are in the active order versus parked below.
+          const shelfBoundary = bucket.code === firstDisabledCode && enabledCodes.length > 0;
           return (
             <li
               key={bucket.code}
-              className={`flex items-center gap-2 rounded border border-slate-200 px-2 py-1 dark:border-slate-700 ${
-                isEnabled ? "" : "opacity-60"
+              className={`flex items-center gap-2 px-2 py-1 ${isEnabled ? "" : "bg-slate-50 opacity-70 dark:bg-slate-900/40"} ${
+                shelfBoundary ? "border-t-2 border-t-slate-300 dark:border-t-slate-600" : ""
               }`}
             >
               <Checkbox
@@ -2122,7 +2134,9 @@ function ProductProjectionWorkspace({ bootstrap }) {
                   disabled={!input.sellOrder}
                   onChange={(choice) => updateInput({ cashBufferIndexToInflation: choice === "inflation" })}
                 />
-                <div className="mt-3 text-xs augur-muted">
+                <hr className="my-4 border-slate-200 dark:border-slate-700" />
+                <div className="augur-eyebrow">Private equity tenders</div>
+                <div className="mt-2 text-xs augur-muted">
                   PE tenders: sell enough at each modeled tender event to lift liquid net worth (cash + non-PE holdings)
                   to this floor. Zero disables PE sales.
                 </div>

@@ -263,6 +263,29 @@ frontend LNW-floor knob). Still missing:
   matters. Defer until landlord-rental scenarios are common enough
   that the smoothed model bites.
 
+## Funding policy: asset-balance targeting
+
+Today `FundingPolicy` is a cash-buffer + ordered sell list — it only
+fires when cash dips below `cash_buffer_trigger_below_usd`. Extend
+with a target-balance mode: the user specifies a desired allocation
+across liquid asset classes (e.g. 50% stocks / 30% crypto / 20%
+cash), the engine periodically rebalances by selling overweight
+buckets and buying underweight ones. Needs:
+
+- Wire: `FundingPolicy.target_allocation: dict[bucket, fraction] | None`
+  alongside the existing trigger/sell knobs.
+- Sim: an `AssetBalanceRebalancingPolicy` (or extend `LiquidityPolicy`)
+  that runs on a configurable cadence and emits buy/sell orders to
+  reduce drift past a tolerance threshold.
+- Tax routing: rebalancing sells realize gains/losses through the
+  same FIFO + capital-gain plumbing the cash-buffer path uses.
+- Frontend: alongside the existing "Sell preference" list, a
+  target-allocation editor (one row per bucket, percentage, must
+  sum to 100).
+
+Defer until a scenario actually needs it — single-bucket portfolios
+or pure cash-buffer behavior cover the common cases today.
+
 ## Explicitly deferred
 
 Documented to prevent re-discovery; intentionally not on the roadmap.
