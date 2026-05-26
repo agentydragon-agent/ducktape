@@ -14,17 +14,19 @@ import numpy as np
 from numpy.typing import NDArray
 
 from augur.model.series import PRIVATE_EQUITY_SERIES_PREFIX, home_value_series_id, private_equity_sale_event_id
+from augur.sim.compiler.assets import SaleCompileOutput, compile_sales
 from augur.sim.compiler.helpers import (
     AMOUNT_FIXED,
     NO_CODE,
     ORDINARY_DEDUCTION_CATEGORY,
-    ORDINARY_INCOME_CATEGORY,
     StringTable,
     amount_arrays,
     empty_month_matrix,
     slot,
 )
 from augur.sim.compiler.lifecycle import LifecycleEventCompileOutput, compile_lifecycle_events
+from augur.sim.compiler.liquidity import LiquidityPolicyCompileOutput, compile_liquidity_policies
+from augur.sim.compiler.transfers import TransferCompileOutput, compile_transfer_slots
 from augur.sim.external_series import ExternalSeriesContext
 from augur.sim.jurisdictions import Jurisdiction
 from augur.sim.locations import Location
@@ -33,10 +35,8 @@ from augur.sim.scenario import (
     FilingStatus,
     MortgageInterestDeductionPolicy,
     RecurringObligation,
-    RecurringTransfer,
     Scenario,
     ScheduledObligation,
-    ScheduledTransfer,
     SeriesIndexedAmount,
 )
 
@@ -186,7 +186,7 @@ def compile_simulation(
 
     tax_liabilities = _compile_tax_liability_slots(horizon, tax)
 
-    transfers = _compile_transfer_slots(
+    transfers = compile_transfer_slots(
         scenario, strings, account_slot_by_key, profile_index_by_agent, series_index_by_id
     )
 
@@ -245,13 +245,13 @@ def compile_simulation(
     mid = _compile_mortgage_interest_deductions(scenario, strings, tax=tax, liabilities=liabilities)
     salt = _compile_federal_salt_deductions(scenario, strings, tax=tax)
 
-    sales = _compile_sales(scenario, strings, account_slot_by_key, series_index_by_id)
+    sales = compile_sales(scenario, strings, account_slot_by_key, series_index_by_id)
 
     obligations = _compile_obligation_slots(
         scenario, strings, account_slot_by_key, series_index_by_id, properties, property_slot_by_id, liabilities, tax
     )
 
-    liquidity_policies = _compile_liquidity_policies(scenario, strings, account_slot_by_key, series_index_by_id)
+    liquidity_policies = compile_liquidity_policies(scenario, strings, account_slot_by_key, series_index_by_id)
 
     lot_id_codes = []
     lot_agent_codes = []
@@ -582,103 +582,6 @@ def _compile_private_equity_tenders(
             pe_issuer_policy_index[issuer_idx] = policy_index_by_owner[owner_code]
 
     return issuers, pe_policies
-
-
-@dataclass(frozen=True)
-class TransferCompileOutput:
-    """Per-(month, slot) tables for scheduled + recurring transfers. `cause/from_*/to_*`
-    identify the parties; `income_profile`/`deduction_profile` route taxable income or
-    Schedule-E deductions; `amount_*` is the union-typed amount schedule (fixed or
-    series-indexed)."""
-
-    cause: NDArray[np.int64]
-    from_agent: NDArray[np.int64]
-    from_account: NDArray[np.int64]
-    from_slot: NDArray[np.int64]
-    to_agent: NDArray[np.int64]
-    to_account: NDArray[np.int64]
-    to_slot: NDArray[np.int64]
-    income_profile: NDArray[np.int64]
-    deduction_profile: NDArray[np.int64]
-    amount_kind: NDArray[np.int64]
-    amount_fixed: NDArray[np.float64]
-    amount_base: NDArray[np.float64]
-    amount_series: NDArray[np.int64]
-    amount_base_month: NDArray[np.int64]
-    amount_period: NDArray[np.int64]
-
-
-def _compile_transfer_slots(
-    scenario: Scenario,
-    strings: StringTable,
-    account_slot_by_key: dict[tuple[str, str], int],
-    profile_index_by_agent: dict[str, int],
-    series_index_by_id: dict[str, int],
-) -> TransferCompileOutput:
-    by_month: list[list[ScheduledTransfer | RecurringTransfer]] = []
-    max_slots = 0
-    horizon = int(scenario.horizon_months)
-    for month in range(horizon):
-        active: list[ScheduledTransfer | RecurringTransfer] = [
-            t for t in scenario.scheduled_transfers if t.month == month
-        ]
-        active.extend(t for t in scenario.recurring_transfers if t.is_active_at(month))
-        by_month.append(active)
-        max_slots = max(max_slots, len(active))
-
-    cause = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
-    from_agent = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
-    from_account = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
-    from_slot = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
-    to_agent = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
-    to_account = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
-    to_slot = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
-    income_profile = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
-    deduction_profile = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
-    amount_kind = empty_month_matrix(horizon, max_slots, np.int64, AMOUNT_FIXED)
-    amount_fixed = empty_month_matrix(horizon, max_slots, np.float64, 0.0)
-    amount_base = empty_month_matrix(horizon, max_slots, np.float64, 0.0)
-    amount_series = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
-    amount_base_month = empty_month_matrix(horizon, max_slots, np.int64, 0)
-    amount_period = empty_month_matrix(horizon, max_slots, np.int64, 1)
-
-    for month, active in enumerate(by_month):
-        for idx, transfer in enumerate(active):
-            cause[month, idx] = strings.require(transfer.cause_id)
-            from_agent[month, idx] = strings.require(transfer.from_agent_id)
-            from_account[month, idx] = strings.require(transfer.from_account_id)
-            from_slot[month, idx] = slot(account_slot_by_key, transfer.from_agent_id, transfer.from_account_id)
-            to_agent[month, idx] = strings.require(transfer.to_agent_id)
-            to_account[month, idx] = strings.require(transfer.to_account_id)
-            to_slot[month, idx] = slot(account_slot_by_key, transfer.to_agent_id, transfer.to_account_id)
-            if transfer.income_category == ORDINARY_INCOME_CATEGORY:
-                income_profile[month, idx] = profile_index_by_agent.get(transfer.to_agent_id, NO_CODE)
-            if transfer.deduction_category == ORDINARY_DEDUCTION_CATEGORY:
-                deduction_profile[month, idx] = profile_index_by_agent.get(transfer.from_agent_id, NO_CODE)
-            kind, fixed, base, series, base_month, period = amount_arrays(transfer.amount_usd, series_index_by_id)
-            amount_kind[month, idx] = kind
-            amount_fixed[month, idx] = fixed
-            amount_base[month, idx] = base
-            amount_series[month, idx] = series
-            amount_base_month[month, idx] = base_month
-            amount_period[month, idx] = period
-    return TransferCompileOutput(
-        cause=cause,
-        from_agent=from_agent,
-        from_account=from_account,
-        from_slot=from_slot,
-        to_agent=to_agent,
-        to_account=to_account,
-        to_slot=to_slot,
-        income_profile=income_profile,
-        deduction_profile=deduction_profile,
-        amount_kind=amount_kind,
-        amount_fixed=amount_fixed,
-        amount_base=amount_base,
-        amount_series=amount_series,
-        amount_base_month=amount_base_month,
-        amount_period=amount_period,
-    )
 
 
 SECTION_1250_FEDERAL_CAP_RATE = 0.25
@@ -1256,68 +1159,6 @@ def _compile_properties_and_liabilities(
 
 
 @dataclass(frozen=True)
-class SaleCompileOutput:
-    """Scheduled asset-sale plumbing. One row per scheduled sale. `price_fixed[i]` is
-    NaN when the sale price comes from a sampled series — `price_series[i]` is that
-    series index, NO_CODE otherwise."""
-
-    cause: NDArray[np.int64]
-    month: NDArray[np.int64]
-    agent: NDArray[np.int64]
-    source_account: NDArray[np.int64]
-    asset: NDArray[np.int64]
-    quantity: NDArray[np.float64]
-    proceeds_account: NDArray[np.int64]
-    proceeds_slot: NDArray[np.int64]
-    price_fixed: NDArray[np.float64]
-    price_series: NDArray[np.int64]
-
-
-def _compile_sales(
-    scenario: Scenario,
-    strings: StringTable,
-    account_slot_by_key: dict[tuple[str, str], int],
-    series_index_by_id: dict[str, int],
-) -> SaleCompileOutput:
-    count = len(scenario.scheduled_asset_sales)
-    cause = np.full((int(scenario.horizon_months), max(1, count)), NO_CODE, dtype=np.int64)
-    month = np.full(max(1, count), NO_CODE, dtype=np.int64)
-    agent = np.zeros(max(1, count), dtype=np.int64)
-    source_account = np.zeros(max(1, count), dtype=np.int64)
-    asset = np.zeros(max(1, count), dtype=np.int64)
-    quantity = np.zeros(max(1, count), dtype=np.float64)
-    proceeds_account = np.zeros(max(1, count), dtype=np.int64)
-    proceeds_slot = np.full(max(1, count), NO_CODE, dtype=np.int64)
-    price_fixed = np.full(max(1, count), np.nan, dtype=np.float64)
-    price_series = np.full(max(1, count), NO_CODE, dtype=np.int64)
-    for idx, sale in enumerate(scenario.scheduled_asset_sales):
-        cause[sale.month, idx] = strings.require(sale.cause_id)
-        month[idx] = int(sale.month)
-        agent[idx] = strings.require(sale.agent_id)
-        source_account[idx] = strings.require(sale.source_account_id)
-        asset[idx] = strings.require(sale.asset_id)
-        quantity[idx] = float(sale.quantity)
-        proceeds_account[idx] = strings.require(sale.proceeds_account_id)
-        proceeds_slot[idx] = slot(account_slot_by_key, sale.agent_id, sale.proceeds_account_id)
-        if sale.price_per_unit_usd is not None:
-            price_fixed[idx] = float(sale.price_per_unit_usd)
-        else:
-            price_series[idx] = series_index_by_id[sale.asset_id]
-    return SaleCompileOutput(
-        cause=cause,
-        month=month,
-        agent=agent,
-        source_account=source_account,
-        asset=asset,
-        quantity=quantity,
-        proceeds_account=proceeds_account,
-        proceeds_slot=proceeds_slot,
-        price_fixed=price_fixed,
-        price_series=price_series,
-    )
-
-
-@dataclass(frozen=True)
 class ObligationCompileOutput:
     """Per-(month, slot) obligation plumbing covering scheduled/recurring
     obligations + mortgage payments + property-tax accruals + estimated-tax/
@@ -1596,104 +1437,3 @@ def _estimated_tax_quarter(month: int) -> int | None:
     if month_in_year == 0 and month > 0:
         return 4
     return None
-
-
-@dataclass(frozen=True)
-class LiquidityPolicyCompileOutput:
-    """Per-policy + (policy × asset-preference) arrays for the cash-buffer / asset-sale
-    LiquidityPolicy. Trigger fires when cash drops below the indexed `trigger_*` schedule;
-    `sale_*` is the indexed sale amount; `assets` is the per-policy asset-preference
-    chain (NO_CODE for empty slots). `cause_id_prefixes` is one string per policy used
-    to format cause_id strings at sale time."""
-
-    agent: NDArray[np.int64]
-    account: NDArray[np.int64]
-    cash_slot: NDArray[np.int64]
-    trigger_kind: NDArray[np.int64]
-    trigger_fixed: NDArray[np.float64]
-    trigger_base: NDArray[np.float64]
-    trigger_series: NDArray[np.int64]
-    trigger_base_month: NDArray[np.int64]
-    trigger_period: NDArray[np.int64]
-    sale_kind: NDArray[np.int64]
-    sale_fixed: NDArray[np.float64]
-    sale_base: NDArray[np.float64]
-    sale_series: NDArray[np.int64]
-    sale_base_month: NDArray[np.int64]
-    sale_period: NDArray[np.int64]
-    assets: NDArray[np.int64]
-    asset_series: NDArray[np.int64]
-    cause_id_prefixes: tuple[str, ...]
-
-
-def _compile_liquidity_policies(
-    scenario: Scenario,
-    strings: StringTable,
-    account_slot_by_key: dict[tuple[str, str], int],
-    series_index_by_id: dict[str, int],
-) -> LiquidityPolicyCompileOutput:
-    policy_count = len(scenario.liquidity_policies)
-    slot_count = max(1, policy_count)
-    max_assets = max(1, max((len(policy.asset_preference_chain) for policy in scenario.liquidity_policies), default=0))
-    agent = np.zeros(slot_count, dtype=np.int64)
-    account = np.zeros(slot_count, dtype=np.int64)
-    cash_slot = np.full(slot_count, NO_CODE, dtype=np.int64)
-    trigger_kind = np.full(slot_count, AMOUNT_FIXED, dtype=np.int64)
-    trigger_fixed = np.zeros(slot_count, dtype=np.float64)
-    trigger_base = np.zeros(slot_count, dtype=np.float64)
-    trigger_series_index = np.full(slot_count, NO_CODE, dtype=np.int64)
-    trigger_base_month = np.zeros(slot_count, dtype=np.int64)
-    trigger_adjustment_period = np.ones(slot_count, dtype=np.int64)
-    sale_kind = np.full(slot_count, AMOUNT_FIXED, dtype=np.int64)
-    sale_fixed = np.zeros(slot_count, dtype=np.float64)
-    sale_base = np.zeros(slot_count, dtype=np.float64)
-    sale_series_index = np.full(slot_count, NO_CODE, dtype=np.int64)
-    sale_base_month = np.zeros(slot_count, dtype=np.int64)
-    sale_adjustment_period = np.ones(slot_count, dtype=np.int64)
-    assets = np.full((slot_count, max_assets), NO_CODE, dtype=np.int64)
-    asset_series = np.full((slot_count, max_assets), NO_CODE, dtype=np.int64)
-    prefixes: list[str] = []
-    for idx, policy in enumerate(scenario.liquidity_policies):
-        agent[idx] = strings.require(policy.agent_id)
-        account[idx] = strings.require(policy.account_id)
-        cash_slot[idx] = slot(account_slot_by_key, policy.agent_id, policy.account_id)
-        (
-            trigger_kind[idx],
-            trigger_fixed[idx],
-            trigger_base[idx],
-            trigger_series_index[idx],
-            trigger_base_month[idx],
-            trigger_adjustment_period[idx],
-        ) = amount_arrays(policy.cash_buffer_trigger_below_usd, series_index_by_id)
-        (
-            sale_kind[idx],
-            sale_fixed[idx],
-            sale_base[idx],
-            sale_series_index[idx],
-            sale_base_month[idx],
-            sale_adjustment_period[idx],
-        ) = amount_arrays(policy.cash_buffer_sale_usd, series_index_by_id)
-        prefixes.append(policy.cause_id_prefix)
-        for asset_idx, asset_id in enumerate(policy.asset_preference_chain):
-            assets[idx, asset_idx] = strings.require(asset_id)
-            asset_series[idx, asset_idx] = series_index_by_id.get(asset_id, NO_CODE)
-    return LiquidityPolicyCompileOutput(
-        agent=agent,
-        account=account,
-        cash_slot=cash_slot,
-        trigger_kind=trigger_kind,
-        trigger_fixed=trigger_fixed,
-        trigger_base=trigger_base,
-        trigger_series=trigger_series_index,
-        trigger_base_month=trigger_base_month,
-        trigger_period=trigger_adjustment_period,
-        sale_kind=sale_kind,
-        sale_fixed=sale_fixed,
-        sale_base=sale_base,
-        sale_series=sale_series_index,
-        sale_base_month=sale_base_month,
-        sale_period=sale_adjustment_period,
-        assets=assets,
-        asset_series=asset_series,
-        cause_id_prefixes=tuple(prefixes),
-    )
