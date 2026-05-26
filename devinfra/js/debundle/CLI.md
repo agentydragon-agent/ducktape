@@ -8,30 +8,30 @@ and planned. The "Status" column marks each one:
   implemented.
 
 The CLI is one binary (`bazel run @ducktape_debundle_bin//file:debundle`
-or built locally as `bazel-bin/devinfra/js/debundle/debundle`).
-All commands share the same JSON-on-stdout / structured-diagnostic-
+or built locally as `bazel-bin/devinfra/js/debundle/debundle`). All
+commands share the same JSON-on-stdout / structured-diagnostic-
 on-stderr convention as the rest of ducktape.
 
 ## Convention: validate-by-default for mutating commands
 
-Every command that **modifies the spec** (any operation that could
-change the chunk's factorization — binding assignment, module
-merge/rename/disable, etc.) runs the realizability gate **by
-default** before writing changes back to disk. If the simulated
-post-mutation spec would produce an atom split or a constraining
-SCC, the command refuses with a binding-pair-blame diagnostic
-(same renderer the materializer uses) and **does not modify any
-file**.
+Every command that **modifies the spec** (`binding assign`, `binding
+rename`, `module merge`) runs validation **by default** before
+writing changes back to disk. For commands that affect the chunk's
+factorization (anything that moves a binding between modules), that
+means the full realizability gate; for renames, it means name-
+collision detection. If validation fails the command refuses with a
+structured diagnostic (binding-pair blame for gate rejections, name
+clash for renames) and **does not modify any file**.
 
 Two flags adjust the default on every mutating command:
 
 | Flag | Effect |
 |---|---|
 | (default) | Validate; refuse the change if invalid; apply if valid. |
-| `--no-verify` | Skip validation; apply the change regardless. Escape hatch for multi-step refactors where an intermediate state is intentionally invalid. Don't use casually; the next command will surface any leftover invalidity. |
-| `--dry-run` | Validate (or simulate) but do not modify any file. Print the validation result + a diff summary of what would change. |
+| `--no-verify` | Skip validation; apply the change regardless. Escape hatch for multi-step refactors where an intermediate state is intentionally invalid. Don't use casually. |
+| `--dry-run` | Validate (or simulate) but do not modify any file. Print the validation result + a diff summary. |
 
-`--dry-run` and `--no-verify` can be combined: shows what would
+`--dry-run` and `--no-verify` can be combined: show what would
 change without validating. Mostly useful when investigating *why*
 the gate would reject and you want to inspect the intermediate
 state without committing to it.
@@ -39,12 +39,24 @@ state without committing to it.
 Read-only commands (queries, listings, source slicing) take
 neither flag — they have no side effects.
 
-The `run` command (full pipeline) is a special case: the gate is
-part of the pipeline contract, not an optional pre-check.
-`run --dry-run` runs every pass up to and including the gate, then
-stops before writing JS. There is no `run --no-verify` — if you
-want the pipeline to emit JS regardless of the gate, fix the spec
-first.
+`run` is a special case: the gate is part of the pipeline contract,
+not an optional pre-check. `run --dry-run` runs every pass up to
+and including the gate, then stops before writing JS. There is no
+`run --no-verify` — if you want the pipeline to emit JS regardless
+of the gate, fix the spec first.
+
+## Name resolution
+
+Every command that takes a binding name (`<sym>`) accepts **either
+form** wherever the lookup is unambiguous:
+
+- The *minimized* name from the chunk (e.g. `XOe`) — the stable
+  hygiene-aware identity.
+- The *readable* name from the spec's `name:` field
+  (e.g. `PluginSettingsAccessor`).
+
+If both forms could match different bindings, the command refuses
+with a list. Use the minified form to disambiguate.
 
 ## Command table
 
@@ -52,42 +64,67 @@ first.
 
 | Command | Mutates? | Function | Status |
 |---|---|---|---|
-| `debundle run` | yes (emits JS tree + reports) | Run the full transform pipeline: parse + facts + owner_graph + atomic_units + realizability gate + lower + emit. | shipped |
-| `debundle run --dry-run` | no | Run the pipeline through validation only; do not emit JS. | **planned** |
+| `debundle run` | yes (emits JS + reports) | Run the full transform pipeline: parse + facts + owner_graph + atomic_units + realizability gate + lower + emit. | shipped |
+| `debundle run --dry-run` | no | Run through validation only; do not emit JS. | **planned** |
 
 ### Binding-scoped
 
 | Command | Mutates? | Function | Status |
 |---|---|---|---|
-| `debundle binding describe <sym>` | no | Look up a binding by minimized name. Prints: home module, owner statement, declared bindings on the same owner, structural-atom membership, edges in/out at owner level, edges in/out at module-quotient level. | **planned** (#80) |
-| `debundle binding show-code <sym>` | no | Print the source text for the binding's owner statement (reads `owner_graph.json` for the SourceLocation; slices the original chunk bytes). | **planned** (#81) |
-| `debundle binding assign …` | yes (spec) | Move one or more bindings into named logical modules **atomically**. The validation gate runs on the whole batch's *post-state*, so refactors whose intermediate (after some-but-not-all moves) states would be invalid land in one shot. Input shapes (any combination): positional `<sym> <module>` pair for the trivial single-binding case; repeated `--move <sym>=<module>` flags for inline batches; `--batch <file.tsv>` for large refactors. Optional repeatable `--rename <sym>=<new-name>` for readable-name changes paired by binding name. Default: validate + apply atomically; refuse the entire batch if invalid. `--no-verify` / `--dry-run` available. See "Batch atomicity" below for the contract. | **planned** (#82) |
+| `debundle binding describe <sym>` | no | Look up a binding: home module, owner statement, declared bindings on the same owner, structural-atom membership, edges in/out at owner level + module-quotient level. Accepts minified or readable name. | **planned** (#80) |
+| `debundle binding show-source <sym>` | no | Print the source text for the binding's owner statement. (Same renderer as the top-level `show-source <id>` when the ID is a binding.) | **planned** (#81) |
+| `debundle binding assign <sym>:<module>[:<readable>] …` | yes (spec) | Move one or more bindings into named logical modules **atomically**. Each positional argument is colon-separated: `<sym>:<module>` to move and keep the current name, `<sym>:<module>:<readable>` to move and rename in the same step. `<sym>` accepts minified or readable form; the optional third field always sets the new readable `name:`. Validation runs on the *whole batch's* post-state. Default: validate + apply atomically. `--no-verify` / `--dry-run` available. See "Batch atomicity" below. | **planned** (#82) |
+| `debundle binding rename <original> <readable>` | yes (spec) | Rename a binding's readable `name:` without moving it. `<original>` accepts minified or current readable form. Validation here is name-collision detection (no two bindings in the chunk get the same readable name). Mostly a convenience over `binding assign` for the rename-without-move case. `--no-verify` / `--dry-run` available. | **planned** (#82) |
 
 ### Module-scoped
 
 | Command | Mutates? | Function | Status |
 |---|---|---|---|
 | `debundle module merge --target <T> <sources...>` | yes (spec) | Splice `members:` + `anonymous_statements:` from each source YAML into `<T>`; delete the sources. Default: validate + apply. `--no-verify` / `--dry-run` available. | shipped (no-validate) + **planned validation hookup** (#84) |
-| `debundle module rename <old-path> <new-path>` | yes (spec) | Rename a module YAML; the compiler infers the new module path from the new filename. Default: validate + apply. `--no-verify` / `--dry-run` available. | **planned** |
-| `debundle module disable <module>` | yes (spec) | Rename `<module>.yaml` to `<module>.yaml.disabled` so the compiler skips it. Bindings the module owned fall back to residual (and validation will surface any resulting atom split). Default: validate + apply. `--no-verify` / `--dry-run` available. | **planned** |
+
+Renaming or disabling a module is **not** a CLI operation — it's a
+plain `mv` on the YAML file. The spec compiler infers the module
+path from the file location, so:
+
+```bash
+# Rename: the module path is re-derived from the new filename.
+mv $MOD/runtime/plugins.yaml $MOD/runtime/plugin_settings.yaml
+
+# Disable: any non-.yaml suffix makes the compiler skip the file.
+mv $MOD/runtime/plugins.yaml $MOD/runtime/plugins.yaml.disabled
+```
+
+After the `mv`, the next `debundle run` (or any subsequent mutating
+command on the spec) re-validates and surfaces any resulting atom
+split as a gate diagnostic. No dedicated `module rename` /
+`module disable` subcommand — the filesystem operation is already
+the right primitive.
 
 ### Quotient queries
 
 | Command | Mutates? | Function | Status |
 |---|---|---|---|
-| `debundle scc [--binding <sym>] [--cycles-only] [--residual-only] [--singletons-only] [--ndjson]` | no | List SCCs in the module-quotient graph. Filter to a single binding's SCC or to a specific class (cycles, residual-only, singletons). | **planned** (#83) |
+| `debundle scc [--binding <sym>] [--cycles-only] [--residual-only] [--singletons-only] [--ndjson]` | no | List SCCs in the module-quotient graph. Filter to a single binding's SCC or to a specific class. | **planned** (#83) |
 | `debundle cluster <sym>` | no | List the module-quotient neighbors of a binding's owner. | **planned** (#83) |
 
-### Atomic-DAG queries (existing `peel` family)
+### Atomic-DAG queries
+
+(Previously under `debundle peel <…>`; the four marked below are
+moving to top level, and `peel plan-work` is being renamed to
+`propose modules`.)
 
 | Command | Mutates? | Function | Status |
 |---|---|---|---|
-| `debundle peel plan-work` | no | Emit factorizer proposals + diagnostics derived from the atomic DAG. Each proposal suggests a binding-to-module assignment. | shipped |
-| `debundle peel units` | no | List atomic units from the owner graph. | shipped |
-| `debundle peel patch-plan` | no | Coverage report: which atomic units are claimed by the spec, which are residual fallbacks. | shipped |
-| `debundle peel explain <id>` | no | Dereference a proposal/unit/owner/binding/diagnostic ID with full graph + spec context. | shipped |
-| `debundle peel source-slice <id>` | no | Print source text for any ID type. (For binding IDs, equivalent to `binding show-code`.) | shipped |
-| `debundle peel graph-summary` | no | High-level counts (owners, edges, atoms, residual-eligible bindings, etc.). | shipped |
+| `debundle units` | no | List atomic units from the owner graph. | shipped (under `peel`; **planned rename**) |
+| `debundle propose modules` | no | Emit factorizer proposals (binding → module assignment recommendations) + diagnostics derived from the atomic DAG. Was `peel plan-work`. | shipped (as `peel plan-work`; **planned rename**) |
+| `debundle coverage` | no | Report spec coverage against atomic units: which units are claimed, which fall through to residual. Was `peel patch-plan`. | shipped (as `peel patch-plan`; **planned rename**) |
+| `debundle graph-summary` | no | High-level counts (owners, edges, atoms, residual-eligible bindings, etc.). | shipped (under `peel`; **planned rename**) |
+| `debundle explain <id>` | no | Dereference any ID (proposal, unit, owner, binding, diagnostic) with full graph + spec context. Accepts both minified and readable binding names. | shipped (as `peel explain`; **planned rename**) |
+| `debundle show-source <id>` | no | Print the source text for any ID (binding, owner, proposal, unit, diagnostic). For binding IDs, equivalent to `binding show-source` — same underlying renderer. Was `peel source-slice`. | shipped (as `peel source-slice`; **planned rename** + dedup) |
+
+The `peel` namespace goes away. Existing `peel <…>` invocations
+continue to work as deprecated aliases for one release with a
+stderr deprecation note pointing to the top-level form.
 
 ## Argument conventions
 
@@ -98,60 +135,48 @@ YAML tree root). Commands that slice source text take
 `--source-root <dir>` (the upstream snapshot root containing the
 original chunk bytes).
 
-For commands that target a specific binding, `<sym>` is the
-*minimized* name (e.g. `XOe`) — the local binding identifier in
-the chunk's source. To look up by readable name, use
-`debundle peel explain` which accepts both.
-
 ## Batch atomicity (`binding assign`)
 
-`binding assign` accepts multiple binding-to-module moves in one
-invocation. **Validation runs on the post-batch spec**, not after
-each individual move. This matters because some refactors cross an
-intermediate invalid state: moving binding `A` alone splits an
-atom; moving `A` *and* `B` together preserves the atom (because
-both move to the same destination). A per-move validation would
-reject the same operation a per-batch validation accepts.
+`binding assign` takes one or more positional triples
+`<sym>:<module>[:<readable>]`. Validation runs on the post-batch
+spec, not after each individual assignment — so multi-binding
+refactors whose intermediate (after some-but-not-all moves) states
+would be invalid can land in one shot.
 
 ### Input shapes
 
-Any combination of the following is allowed:
-
 ```bash
-# 1. Single positional pair — the trivial case.
-debundle binding assign --modules $MOD XOe runtime/plugins
+# 1. Single move, keep current name.
+debundle binding assign --modules $MOD XOe:runtime/plugins
 
-# 2. Repeated --move flags — inline small batch.
+# 2. Single move + rename.
+debundle binding assign --modules $MOD XOe:runtime/plugins:PluginSettingsAccessor
+
+# 3. Multi-move batch (positional triples).
 debundle binding assign --modules $MOD \
-    --move XOe=runtime/plugins \
-    --move YOe=runtime/plugins
+    XOe:runtime/plugins:PluginSettingsAccessor \
+    YOe:runtime/plugins \
+    ZOe:runtime/widgets:WidgetRegistry
 
-# 3. --batch TSV file — for refactors moving dozens of bindings.
-#    Each line: <binding>\t<destination-module>\t[optional-rename]
+# 4. Large refactors: --batch reads TSV from a file.
+#    Each line: <sym>\t<module>\t[optional-readable]
 debundle binding assign --modules $MOD --batch moves.tsv
-
-# 4. Mixed: positional + flags is allowed.
-debundle binding assign --modules $MOD ROOT runtime/main \
-    --move CHILD=runtime/main \
-    --rename ROOT=AppRoot
 ```
 
-`--rename <sym>=<new-name>` is repeatable; each rename pairs by
-binding name with whichever move it matches. A `--rename` for a
-binding that isn't being moved in the same batch is allowed
-(rename in place); a `--rename` for a binding that doesn't exist
-is an error before any change applies.
+`<sym>` accepts either the minified name (`XOe`) or the current
+readable name (`PluginSettingsAccessor`). The optional third field
+sets the **new** readable name; omitting it preserves whatever
+readable name is currently in the spec.
 
 ### Atomicity contract
 
-1. Parse all moves + renames from positional, `--move`, `--batch`,
-   `--rename`. Dedupe; the *last* assignment for a binding wins
-   (so `--move A=X --move A=Y` reduces to `A=Y` with a warning on
-   stderr).
+1. Parse all moves from positional + `--batch`. Dedupe; the *last*
+   assignment for a binding wins (with a stderr warning on
+   conflict).
 2. Read the current spec. Compute the post-batch spec in memory.
 3. Run the realizability gate on the post-batch spec.
 4. If invalid (or any duplicate-binding-claim from the simulated
-   move would surface): print binding-pair blame, exit non-zero,
+   moves would surface): print binding-pair blame, exit non-zero,
    **do not modify any file**.
 5. If valid: write every affected YAML in one pass. The output is
    atomic from the consumer's perspective — every file that
@@ -162,36 +187,34 @@ result + the planned diff. `--no-verify` skips step 3 (still does
 duplicate-claim detection — that's a structural error, not a
 validation one).
 
-### Why no per-move validation
+### Per-move semantics
 
-If you want per-move validation (refuse intermediate-invalid
-states), invoke `binding assign` once per move. Per-batch is the
-default because the common case for batch is "this refactor needs
-all-or-nothing application." Per-move semantics is the surprising
-case.
+If you want refuse-intermediate-invalid semantics, invoke
+`binding assign` once per move. Per-batch is the default because
+the common case for batch is "this refactor needs all-or-nothing
+application." Per-move would be the surprising default.
 
 ## Out of scope
 
 - **No cross-process materializer reader.** `debundle run` reads
   the spec and emits JS in one process. There is no
-  `materialize-from-cache` mode — the materializer is fast enough
-  at gaffer scale that the wire-format complexity of a separate
-  Stage B action isn't worth it. See `WIRE_FORMAT.md` §"Cross-process
-  scope: not a goal" for the analysis.
-
-- **`facts.json` is not a CLI input.** It's written to
-  `reports/tree/<chunk>/chunk_analysis/facts.json` as an in-process
-  debug artifact. Humans inspect it; CLI tooling doesn't read it.
-  See `facts/wire.rs` module docstring for why.
+  `materialize-from-cache` mode — see `WIRE_FORMAT.md`
+  §"Cross-process scope: not a goal" for the analysis.
+- **`facts.json` is not a CLI input.** It's an in-process debug
+  artifact at `reports/tree/<chunk>/chunk_analysis/facts.json`. See
+  `facts/wire.rs` module docstring.
+- **Module rename / disable** is just `mv` on the YAML file (see
+  "Module-scoped" above). No dedicated subcommand.
 
 ## See also
 
 - `AGENTS.md` — generic operator workflows that compose these
   commands.
-- `DESIGN.md` — the realizability theorem the validation gate enforces.
+- `DESIGN.md` — the realizability theorem the validation gate
+  enforces.
 - `WIRE_FORMAT.md` — JSON sidecar conventions readers of these
   commands consume.
 - `PIPELINE_SPLIT.md` — how the underlying Stage A / Stage B
   composition relates to these commands' inputs and outputs.
-- `FACTORIZE.md` — the factorization algorithm `peel plan-work`
+- `FACTORIZE.md` — the factorization algorithm `propose modules`
   draws its proposals from.
