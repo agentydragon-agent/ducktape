@@ -1000,31 +1000,31 @@ def _apply_scheduled_transfers(
     active_rollout = ~current.failed
     if not active_rollout.any():
         return
-    for slot in range(plan.transfer_cause_codes.shape[1]):
-        if plan.transfer_cause_codes[month, slot] < 0:
+    for slot in range(plan.transfers.cause.shape[1]):
+        if plan.transfers.cause[month, slot] < 0:
             continue
         amount = _amount_values(
             plan,
-            kind=int(plan.transfer_amount_kind[month, slot]),
-            fixed=float(plan.transfer_amount_fixed[month, slot]),
-            base=float(plan.transfer_amount_base[month, slot]),
-            series_index=int(plan.transfer_amount_series_index[month, slot]),
-            base_month=int(plan.transfer_amount_base_month[month, slot]),
-            adjustment_period=int(plan.transfer_amount_adjustment_period[month, slot]),
+            kind=int(plan.transfers.amount_kind[month, slot]),
+            fixed=float(plan.transfers.amount_fixed[month, slot]),
+            base=float(plan.transfers.amount_base[month, slot]),
+            series_index=int(plan.transfers.amount_series[month, slot]),
+            base_month=int(plan.transfers.amount_base_month[month, slot]),
+            adjustment_period=int(plan.transfers.amount_period[month, slot]),
             month=month,
         )
         buffers.transfer_active[month, slot, active_rollout] = True
         buffers.transfer_amount[month, slot, active_rollout] = amount[active_rollout]
-        from_slot = int(plan.transfer_from_cash_slot[month, slot])
+        from_slot = int(plan.transfers.from_slot[month, slot])
         if from_slot >= 0:
             current.cash[active_rollout, from_slot] -= amount[active_rollout]
-        to_slot = int(plan.transfer_to_cash_slot[month, slot])
+        to_slot = int(plan.transfers.to_slot[month, slot])
         if to_slot >= 0:
             current.cash[active_rollout, to_slot] += amount[active_rollout]
-        profile = int(plan.transfer_income_profile_index[month, slot])
+        profile = int(plan.transfers.income_profile[month, slot])
         if profile >= 0:
             current.ordinary_ytd[active_rollout, profile] += amount[active_rollout]
-        deduction_profile = int(plan.transfer_deduction_profile_index[month, slot])
+        deduction_profile = int(plan.transfers.deduction_profile[month, slot])
         if deduction_profile >= 0:
             current.ordinary_ytd[active_rollout, deduction_profile] -= amount[active_rollout]
 
@@ -2737,13 +2737,13 @@ def _decode_lifecycle_events(
 def _decode_transfers(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
     active = buffers.transfer_active  # (M, S, R)
     months, slots, rollouts = np.argwhere(active).T if active.any() else (np.array([], dtype=np.int64),) * 3
-    cause_ids = _codes_to_strings(plan, plan.transfer_cause_codes)[months, slots]
-    from_agents = _codes_to_strings(plan, plan.transfer_from_agent_codes)[months, slots]
-    from_accounts = _codes_to_strings(plan, plan.transfer_from_account_codes)[months, slots]
-    to_agents = _codes_to_strings(plan, plan.transfer_to_agent_codes)[months, slots]
-    to_accounts = _codes_to_strings(plan, plan.transfer_to_account_codes)[months, slots]
+    cause_ids = _codes_to_strings(plan, plan.transfers.cause)[months, slots]
+    from_agents = _codes_to_strings(plan, plan.transfers.from_agent)[months, slots]
+    from_accounts = _codes_to_strings(plan, plan.transfers.from_account)[months, slots]
+    to_agents = _codes_to_strings(plan, plan.transfers.to_agent)[months, slots]
+    to_accounts = _codes_to_strings(plan, plan.transfers.to_account)[months, slots]
     amounts = buffers.transfer_amount[months, slots, rollouts]
-    income_categories = np.where(plan.transfer_income_profile_index[months, slots] >= 0, "ordinary", None).astype(
+    income_categories = np.where(plan.transfers.income_profile[months, slots] >= 0, "ordinary", None).astype(
         object
     )
     return _frame_from_columns(

@@ -136,24 +136,7 @@ class CompiledSimulation:
     # tax computation.
     tax_link_salt_contributing_mask: NDArray[np.bool_]
     tax_liabilities: TaxLiabilityCompileOutput
-    transfer_cause_codes: NDArray[np.int64]
-    transfer_from_agent_codes: NDArray[np.int64]
-    transfer_from_account_codes: NDArray[np.int64]
-    transfer_from_cash_slot: NDArray[np.int64]
-    transfer_to_agent_codes: NDArray[np.int64]
-    transfer_to_account_codes: NDArray[np.int64]
-    transfer_to_cash_slot: NDArray[np.int64]
-    transfer_income_profile_index: NDArray[np.int64]
-    # Parallel array to `transfers.income_profile`. NO_CODE if the transfer is not a
-    # deduction; otherwise the profile index of the `from_agent` whose ordinary_ytd
-    # should decrement when the transfer fires. Used by Schedule E expense flows.
-    transfer_deduction_profile_index: NDArray[np.int64]
-    transfer_amount_kind: NDArray[np.int64]
-    transfer_amount_fixed: NDArray[np.float64]
-    transfer_amount_base: NDArray[np.float64]
-    transfer_amount_series_index: NDArray[np.int64]
-    transfer_amount_base_month: NDArray[np.int64]
-    transfer_amount_adjustment_period: NDArray[np.int64]
+    transfers: TransferCompileOutput
     property_cause_codes: NDArray[np.int64]
     property_id_codes: NDArray[np.int64]
     property_location_codes: NDArray[np.int64]
@@ -679,21 +662,7 @@ def compile_simulation(
         tax_link_salt_cap_by_year=tax_link_salt_cap_by_year,
         tax_link_salt_contributing_mask=tax_link_salt_contributing_mask,
         tax_liabilities=tax_liabilities,
-        transfer_cause_codes=transfers.cause,
-        transfer_from_agent_codes=transfers.from_agent,
-        transfer_from_account_codes=transfers.from_account,
-        transfer_from_cash_slot=transfers.from_slot,
-        transfer_to_agent_codes=transfers.to_agent,
-        transfer_to_account_codes=transfers.to_account,
-        transfer_to_cash_slot=transfers.to_slot,
-        transfer_income_profile_index=transfers.income_profile,
-        transfer_deduction_profile_index=transfers.deduction_profile,
-        transfer_amount_kind=transfers.amount_kind,
-        transfer_amount_fixed=transfers.amount_fixed,
-        transfer_amount_base=transfers.amount_base,
-        transfer_amount_series_index=transfers.amount_series,
-        transfer_amount_base_month=transfers.amount_base_month,
-        transfer_amount_adjustment_period=transfers.amount_period,
+        transfers=transfers,
         property_cause_codes=property_cause_codes,
         property_id_codes=property_id_codes,
         property_location_codes=property_location_codes,
