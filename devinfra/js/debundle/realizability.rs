@@ -631,7 +631,6 @@ fn edge_contribution(
     edge: &OwnerEdge,
     from: ModuleId,
     to: ModuleId,
-    _callee_module: Option<ModuleId>,
 ) -> Option<EdgeContribution> {
     if from == to {
         return None;
@@ -640,9 +639,6 @@ fn edge_contribution(
     // filtered here — the matching gate-side view in
     // `gate_constraining_partition_endpoints` keeps them for soundness
     // (see `tests::promoted_edge_in_aggregator_cycle_is_unrealizable`).
-    // The `_callee_module` parameter is retained on the signature so
-    // call sites that still thread it through don't need their
-    // signatures changed; it is no longer consulted.
 
     let kind = if edge.reason.is_rebind() {
         EdgeContributionKind::Rebind
@@ -1311,25 +1307,8 @@ impl IncrementalQuotient {
         let mut overlay = QuotientOverlay::default();
         for edge_id in impacted_edges {
             let edge = &owner_graph.edges[edge_id.0];
-            // Translate the at-init callee owner (if any) to its
-            // pre-move and post-move modules so `edge_contribution`
-            // can apply the cross-module at-init promotion filter
-            // under both the base and overlay partitions.
-            let callee_owner = edge.reason.at_init_callee_owner();
-            let current_callee_module = callee_owner.map(|o| partition.of(o));
-            let next_callee_module = callee_owner.map(|o| {
-                if owners.contains(&o) {
-                    to
-                } else {
-                    partition.of(o)
-                }
-            });
-            let current = edge_contribution(
-                edge,
-                partition.of(edge.from),
-                partition.of(edge.to),
-                current_callee_module,
-            );
+            let current =
+                edge_contribution(edge, partition.of(edge.from), partition.of(edge.to));
             let next_from = if owners.contains(&edge.from) {
                 to
             } else {
@@ -1340,7 +1319,7 @@ impl IncrementalQuotient {
             } else {
                 partition.of(edge.to)
             };
-            let next = edge_contribution(edge, next_from, next_to, next_callee_module);
+            let next = edge_contribution(edge, next_from, next_to);
             if current == next {
                 continue;
             }

@@ -222,15 +222,13 @@ This is a lot. There is one bit of genuine drift: `PIPELINE_SPLIT.md` describes 
 
 1. **Make `factor_assembly::compute_owner_claims` `pub`** to match `PIPELINE_SPLIT.md`'s assertion. If the doc is wrong, fix the doc.
 
-2. **Remove the `_callee_module` parameter from `edge_contribution`**. `realizability.rs:614` already has the comment "The `_callee_module` parameter is retained on the signature so call sites that still thread it through don't need their signatures changed; it is no longer consulted." Just remove it from callers (`realizability.rs:611`'s only consumer is callsite-internal); the comment can go.
+2. **Carry chunk-top-level `Mark` on the typed `Partition`** (or on a `ChunkContext` wrapper) so `top_level_id` lookups don't have to be threaded through every materialize-side function as a separate parameter. Today `lowering/materialize/mod.rs:100` reads it from the AST and threads it through eight call sites.
 
-3. **Carry chunk-top-level `Mark` on the typed `Partition`** (or on a `ChunkContext` wrapper) so `top_level_id` lookups don't have to be threaded through every materialize-side function as a separate parameter. Today `lowering/materialize/mod.rs:100` reads it from the AST and threads it through eight call sites.
+3. **Pull `apply_member_hints`'s five arguments into `Member::collect_hints(&self, hints: &mut AnalysisHints)`**. Five-arg helper goes away; call site (`lowering/materialize/mod.rs:405–423`) becomes `for m in &req.members { m.collect_hints(&mut hints); }`.
 
-4. **Pull `apply_member_hints`'s five arguments into `Member::collect_hints(&self, hints: &mut AnalysisHints)`**. Five-arg helper goes away; call site (`lowering/materialize/mod.rs:405–423`) becomes `for m in &req.members { m.collect_hints(&mut hints); }`.
+4. **Add a single `EdgeRole` enum** as a field of `EdgeReason` (variants `Direct` / `PromotedAtInit { callee_owner }`) so the gate/lenient projection helpers can fold into one helper that consults the role. Removes the dual `*_partition_endpoints` helpers + their commit-SHA history doc-comments.
 
-5. **Add a single `EdgeRole` enum** as a field of `EdgeReason` (variants `Direct` / `PromotedAtInit { callee_owner }`) so the gate/lenient projection helpers can fold into one helper that consults the role. Removes the dual `*_partition_endpoints` helpers + their commit-SHA history doc-comments.
-
-6. **`lowering/plans.rs::synthesize_mini_factor_plans` → method on a builder**. Ten-arg function with five `&mut` references becomes `builder.synthesize_mini_factors(precomputed, body, target_dir)`.
+5. **`lowering/plans.rs::synthesize_mini_factor_plans` → method on a builder**. Ten-arg function with five `&mut` references becomes `builder.synthesize_mini_factors(precomputed, body, target_dir)`.
 
 ## Multi-session refactors (1–3 day projects)
 
