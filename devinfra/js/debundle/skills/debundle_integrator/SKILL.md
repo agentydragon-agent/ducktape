@@ -11,7 +11,8 @@ base branch.
 Read bundled references as needed:
 
 - `references/workflow.md` for orchestration and failure routing
-- `references/guide.md` for gate/regen evidence conventions
+- `references/guide.md` for step-by-step workflows (gate/regen
+  conventions, `--dry-run` previews)
 - `references/cli.md` for the full `debundle` command surface
 - `references/README.md` for the crate pitch + Comments
 

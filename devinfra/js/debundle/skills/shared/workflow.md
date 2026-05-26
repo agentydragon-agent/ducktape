@@ -16,8 +16,10 @@ verification gates.
   conventions from source behavior, and writes current-state architecture notes
   and reorg recommendations.
 - Integrator: lands worker branches through a validated merge train.
-- Planner/namer skills: `debundle_plan_work` handles `debundle peel`
-  graph/source queries; `debundle_mint_names` handles naming-only edits.
+- Planner/namer skills: `debundle_plan_work` handles read-only
+  `debundle` graph/source queries (`describe`, `show-source`, `atoms`,
+  `coverage`, `modules propose`, `scc`, `cluster`, `graph-summary`);
+  `debundle_mint_names` handles naming-only edits.
 
 ## Adapter Contract
 
@@ -38,7 +40,8 @@ Public skills must not encode private project names or fixed app taxonomies.
 
 1. Refresh debundle outputs, root/chunk reports, directory reports, and
    owner graph.
-2. Run `plan-work` and capture progress metrics.
+2. Run `debundle modules propose` (and `graph-summary` for aggregate
+   counts) and capture progress metrics.
 3. Ask intake for dispatchable seeds.
 4. Dispatch independent lane workers and any architect/naming/doc cleanup work.
 5. Integrate green worker branches in batches.

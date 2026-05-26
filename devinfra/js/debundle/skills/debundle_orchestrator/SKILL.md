@@ -11,7 +11,7 @@ routes work between specialist roles and owns project-adapter details.
 Read bundled references as needed:
 
 - `references/workflow.md` for the shared multi-agent workflow
-- `references/guide.md` for common CLI evidence surfaces
+- `references/guide.md` for step-by-step workflows
 - `references/cli.md` for the full `debundle` command surface
 - `references/README.md` for the crate pitch + Bazel integration + Comments
 - `references/module_shape.md` for when to route to architect or lane workers
@@ -30,7 +30,7 @@ Before dispatching work, collect:
 ## Role Routing
 
 - Use `debundle_plan_work` to refresh planner evidence.
-- Send `plan-work` output to `debundle_intake` for seeds.
+- Send `modules propose` output to `debundle_intake` for seeds.
 - Send seed clusters or reorg tasks to `debundle_lane_worker`.
 - Wake `debundle_architect` periodically or when module shape seems to drift.
 - Use `debundle_integrator` for merge trains of worker commits.
@@ -44,7 +44,8 @@ dispatch the integrator.
 ## Round Loop
 
 1. Refresh the debundle outputs, manifest, and owner graph.
-2. Run `plan-work` and update progress metrics.
+2. Run `debundle modules propose` and `debundle graph-summary` to update
+   progress metrics.
 3. Ask intake for dispatchable seeds.
 4. Dispatch independent lane workers and any reorg/naming/doc cleanup work.
 5. Integrate green worker branches in batches.

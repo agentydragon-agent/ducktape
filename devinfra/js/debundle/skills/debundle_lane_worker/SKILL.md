@@ -1,6 +1,6 @@
 ---
 name: debundle_lane_worker
-description: Apply one scoped debundle peel or reorganization assignment in a worktree. Use for confirming atomic-DAG unit coverage, reading binding context, choosing honest module boundaries, editing debundle YAML, running the adapter-provided gate and regen commands, and committing one reviewable worker branch.
+description: Apply one scoped debundle module-assignment or reorganization task in a worktree. Use for confirming atomic-DAG unit coverage, reading binding context, choosing honest module boundaries, editing debundle YAML (directly or via `debundle bindings assign` / `bindings rename` / `modules merge`), running the adapter-provided gate and regen commands, and committing one reviewable worker branch.
 ---
 
 # Debundle Lane Worker
@@ -12,7 +12,8 @@ the architect.
 Read bundled references as needed:
 
 - `references/workflow.md` for role boundaries and failure routing
-- `references/guide.md` for graph/source/gate evidence conventions
+- `references/guide.md` for step-by-step workflows (atom-split rejection,
+  binding move/rename, modules merge)
 - `references/cli.md` for the full `debundle` command surface
 - `references/README.md` for the crate pitch + Comments
 - `references/module_shape.md` for seam and layer-ownership heuristics
@@ -30,13 +31,19 @@ The orchestrator or project adapter provides:
 ## Procedure
 
 1. Confirm the worktree is at the expected base before editing.
-2. Check the assignment against the current graph with `debundle_plan_work`
-   commands such as `explain` and `source-slice`.
+2. Check the assignment against the current graph with `debundle describe`
+   and `debundle show-source`; if needed, scan with `debundle atoms`,
+   `coverage`, or `cluster <sym>` (see `references/cli.md`).
 3. Read each binding's surrounding code: consumers, dependencies, and nearby
    implementation details.
 4. Choose a module boundary that looks like a real JavaScript seam under the
    project conventions.
-5. Edit only the debundle spec and required generated output paths. Do not
+5. Apply the assignment. Prefer `debundle bindings assign` (single or
+   `--batch <file.json>`) over hand-editing module YAML — it validates
+   atomically and refuses to apply if the post-batch state breaks the
+   gate. Use `debundle bindings rename` for rename-only changes, and
+   `debundle modules merge` (still pre-realizability-hookup; rerun
+   `debundle run` after to confirm) for consolidating modules. Do not
    modify the upstream/source bundle.
 6. Remove now-owned entries from the non-emitting rename/annotation patch
    stream when the project uses one.
@@ -68,9 +75,14 @@ natural owner still belongs to a larger atomic unit that should move together.
 
 - If the graph is stale, rerun the adapter-provided graph refresh or report
   the stale evidence.
-- If the gate rejects the batch, read the structured cycle/report output
-  first. Use the cut/evidence if present; do not blindly bisect before reading
-  the report.
+- If `bindings assign` refuses with an atom-split diagnostic, read
+  `references/guide.md` →"Fixing an atom-split rejection": inspect the
+  named atom with `describe <atom-id>`, expand the move set to keep the
+  atom whole, and retry. Do not blindly bisect before reading the
+  diagnostic.
+- If the gate rejects via `debundle run`, read the structured cycle/report
+  output (`cycles.json`, `atomic_unit_conflicts.json`) first. Use the
+  cut/evidence if present.
 - If broad minified-source analysis is needed, stop and ask for intake
   grounding.
 - If the destination is architecturally unclear, stop and route to the

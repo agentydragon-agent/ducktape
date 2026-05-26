@@ -1,6 +1,6 @@
 ---
 name: debundle_intake
-description: Turn `debundle peel plan-work` output into named, dispatchable seed clusters for debundle lane workers. Use for reading factorizer proposals, lightly grounding source meaning, choosing tentative destinations, and producing seeds.json without editing the spec or running gates.
+description: Turn `debundle modules propose` output into named, dispatchable seed clusters for debundle lane workers. Use for reading factorizer proposals, lightly grounding source meaning, choosing tentative destinations, and producing seeds.json without editing the spec or running gates.
 ---
 
 # Debundle Intake
@@ -11,7 +11,7 @@ translates certified structural proposals into work packets for lane workers.
 Read bundled references as needed:
 
 - `references/workflow.md` for handoffs and scratch-state conventions
-- `references/guide.md` for common graph/source query surfaces
+- `references/guide.md` for step-by-step workflows
 - `references/cli.md` for the full `debundle` command surface
 - `references/README.md` for the crate pitch + Comments
 - `references/module_shape.md` for destination and cohesion heuristics
@@ -20,8 +20,8 @@ Read bundled references as needed:
 
 The orchestrator or project adapter provides:
 
-- `<factor-json>` from `debundle peel plan-work`
-- `<graph>` and `<modules-dir>` for follow-up `explain` or `source-slice`
+- `<proposals-json>` from `debundle modules propose`
+- `<graph>` and `<modules-dir>` for follow-up `describe` or `show-source`
 - `<source-root>` or emitted JS root for short body reads
 - `<conventions-docs>` and any current architecture notes
 - a scratch directory for `seeds.json`, `inflight.json`, `landed.json`, and
@@ -33,11 +33,11 @@ For each `proposals[]` entry with `landable_today: true`:
 
 - classify it as `fresh`, `extend_active`, or `side_effect_cell`
 - read enough source to choose a tentative name and destination
-- keep whole owner sets together; do not split certified peel sets
+- keep whole owner sets together; do not split certified proposal sets
 - flag ambiguous or oversized proposals for the architect
 - skip `diagnostics[]` as dispatchable work
 
-Use `debundle_plan_work` commands for `explain` and `source-slice`. Do not
+Use `debundle_plan_work` for `describe` and `show-source` lookups. Do not
 reimplement graph parsing by grepping generated output unless the graph lacks
 the needed evidence.
 
@@ -57,7 +57,7 @@ Write `<scratch>/seeds.json`:
 ```json
 [
   {
-    "factor_id": "auto_partition_0042",
+    "proposal_id": "auto_partition_0042",
     "kind": "fresh",
     "owner_ids": ["..."],
     "binding_ids": ["..."],
@@ -71,6 +71,10 @@ Write `<scratch>/seeds.json`:
   }
 ]
 ```
+
+For workers consuming this directly via `debundle bindings assign --batch`,
+re-shape the entries to the batch format (`{sym, module, readable?}`); see
+`references/cli.md` §"Batch atomicity".
 
 Sort seeds by:
 
