@@ -73,7 +73,8 @@ use imports_runtime::{
 use io::{prepare_output_dir, prune_artifact_to_chunk_ids, write_chunk_report_json};
 use lower::{LowerChunkInputs, LoweredChunk, lower_chunk};
 use materialize::{
-    MaterializeLogicalChunkInputs, apply_materialized_logical_chunks, materialize_logical_chunk,
+    ChunkContext, ChunkSpec, MaterializeLogicalChunkInputs, apply_materialized_logical_chunks,
+    materialize_logical_chunk,
 };
 use naturalize::naturalize_module_body;
 use plan_references::{
@@ -240,16 +241,20 @@ pub fn materialize_logical_modules(
             .map(|chunk_id| {
                 GLOBALS.set(globals, || {
                     materialize_logical_chunk(MaterializeLogicalChunkInputs {
-                        artifact: artifact_ref,
-                        artifact_indexes: &artifact_indexes,
-                        logical_modules,
-                        chunk_renames,
-                        unassigned_mode,
-                        chunk_analysis_options,
-                        file: options.file.as_deref(),
-                        target_dir: &target_dir,
-                        report_out_dir: report_out_dir.as_deref(),
-                        chunk_id,
+                        context: ChunkContext {
+                            artifact: artifact_ref,
+                            artifact_indexes: &artifact_indexes,
+                            chunk_id,
+                            file: options.file.as_deref(),
+                            target_dir: &target_dir,
+                            report_out_dir: report_out_dir.as_deref(),
+                        },
+                        spec: ChunkSpec {
+                            logical_modules,
+                            chunk_renames,
+                            unassigned_mode,
+                            chunk_analysis_options,
+                        },
                     })
                 })
             })

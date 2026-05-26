@@ -17,17 +17,30 @@ use super::*;
 use crate::time_phase;
 use output_layout::{ATOMIC_UNIT_CONFLICTS_REPORT, CYCLES_REPORT, OWNER_GRAPH_REPORT};
 
-pub(super) struct MaterializeLogicalChunkInputs<'a> {
+/// Per-chunk inputs that identify the chunk and where its outputs
+/// should land. Bundled into `MaterializeLogicalChunkInputs::context`.
+pub(super) struct ChunkContext<'a> {
     pub(super) artifact: &'a ChunkBundle,
     pub(super) artifact_indexes: &'a ArtifactIndexes,
+    pub(super) chunk_id: &'a str,
+    pub(super) file: Option<&'a str>,
+    pub(super) target_dir: &'a str,
+    pub(super) report_out_dir: Option<&'a Path>,
+}
+
+/// Spec-derived per-chunk inputs: logical-module layout, chunk
+/// renames, unassigned-mode, and analysis-options. Bundled into
+/// `MaterializeLogicalChunkInputs::spec`.
+pub(super) struct ChunkSpec<'a> {
     pub(super) logical_modules: &'a BTreeMap<String, BTreeMap<String, LogicalModule>>,
     pub(super) chunk_renames: &'a BTreeMap<String, ChunkRenames>,
     pub(super) unassigned_mode: &'a BTreeMap<String, UnassignedMode>,
     pub(super) chunk_analysis_options: &'a BTreeMap<String, ChunkAnalysisOptions>,
-    pub(super) file: Option<&'a str>,
-    pub(super) target_dir: &'a str,
-    pub(super) report_out_dir: Option<&'a Path>,
-    pub(super) chunk_id: &'a str,
+}
+
+pub(super) struct MaterializeLogicalChunkInputs<'a> {
+    pub(super) context: ChunkContext<'a>,
+    pub(super) spec: ChunkSpec<'a>,
 }
 
 pub(super) struct MaterializedLogicalChunk {
@@ -52,18 +65,21 @@ pub(super) struct MaterializedLogicalChunk {
 pub(super) fn materialize_logical_chunk(
     inputs: MaterializeLogicalChunkInputs<'_>,
 ) -> Result<MaterializedLogicalChunk> {
-    let MaterializeLogicalChunkInputs {
+    let MaterializeLogicalChunkInputs { context, spec } = inputs;
+    let ChunkContext {
         artifact,
         artifact_indexes,
+        chunk_id,
+        file,
+        target_dir,
+        report_out_dir,
+    } = context;
+    let ChunkSpec {
         logical_modules,
         chunk_renames,
         unassigned_mode,
         chunk_analysis_options,
-        file,
-        target_dir,
-        report_out_dir,
-        chunk_id,
-    } = inputs;
+    } = spec;
     // The spec validator (`validate_transform_spec`) enforces that
     // every materialised chunk has an `unassigned_mode` entry, so
     // this lookup must not miss. Missing here is a bug in the
