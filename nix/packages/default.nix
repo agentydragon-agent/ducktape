@@ -6,18 +6,44 @@
   artifacts,
 }:
 let
-  # CLEANUP: the ducktape wheel is built (on Bazel) against
-  # `fastmcp>=3.0` and `mcp==1.26.0` (see requirements_bazel.txt). nixpkgs
-  # 25.11 has fastmcp 2.12 / mcp 1.15, and even nixos-unstable currently
-  # has fastmcp 2.14 — no channel ships fastmcp 3.x yet. Bumping just mcp
-  # surfaces another API gap (`fastmcp.server.providers`, new in 3.x).
-  #
-  # Until nixpkgs catches up — or we vendor fastmcp 3.x locally — the
-  # ducktape wheel's MCP-using entry points (`git-commit-ai`,
-  # `gmail-archiver`) won't import inside the Nix environment, even
-  # though they work fine on Bazel/RBE. The pythonImportsCheck below is
-  # narrowed to entry-points that don't touch fastmcp/mcp.
-  inherit (pkgs) python3Packages;
+  # The ducktape umbrella wheel is built (on Bazel) against
+  # `fastmcp>=3.0` + `mcp==1.26.0` (see requirements_bazel.txt). nixpkgs
+  # 25.11 ships fastmcp 2.12 + mcp 1.15, and even nixos-unstable only has
+  # fastmcp 2.14. To let the MCP-using entry points (`git-commit-ai`,
+  # `gmail-archiver`) import on NixOS we vendor mcp 1.26 (rebuilt against
+  # the stable python interpreter) and the three packages that fastmcp 3
+  # needs but nixpkgs doesn't carry: fastmcp itself, uncalled-for, and
+  # py-key-value-aio. Applied via a python interpreter override so the
+  # whole closure shares one consistent site-packages.
+  python3 = pkgs.python3.override {
+    self = python3;
+    packageOverrides = pyfinal: pyprev: {
+      mcp = pyprev.mcp.overridePythonAttrs (old: {
+        version = "1.26.0";
+        inherit (pkgsUnstable.python3Packages.mcp) src;
+        # 1.26.0 added pyjwt + typing-inspection to its runtime deps
+        # (nixpkgs 25.11's derivation still encodes the 1.15.0 set).
+        dependencies =
+          old.dependencies
+          ++ (with pyprev; [
+            pyjwt
+            cryptography
+            typing-inspection
+          ]);
+      });
+      uncalled-for = pkgs.callPackage ./uncalled-for.nix {
+        python3Packages = pyfinal;
+      };
+      py-key-value-aio = pkgs.callPackage ./py-key-value-aio.nix {
+        python3Packages = pyfinal;
+      };
+      fastmcp = pkgs.callPackage ./fastmcp.nix {
+        python3Packages = pyfinal;
+        inherit (pyfinal) py-key-value-aio uncalled-for;
+      };
+    };
+  };
+  python3Packages = python3.pkgs;
   # CI wheels land in the nix store as "source" (no .whl extension).
   # pypaInstallPhase globs *.whl, so we restore the original filename.
   renameWheel =
@@ -65,8 +91,8 @@ let
       ducktapePythonImportsCheck = ''
         export SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt
         echo "Check imports (SSL_CERT_FILE pinned): ${builtins.concatStringsSep " " importsCheck}"
-        export PYTHONPATH="$out/lib/${pkgs.python3.libPrefix}/site-packages:$PYTHONPATH"
-        (cd "$out" && ${pkgs.python3.interpreter} -c \
+        export PYTHONPATH="$out/lib/${python3.libPrefix}/site-packages:$PYTHONPATH"
+        (cd "$out" && ${python3.interpreter} -c \
           'import sys, importlib; [importlib.import_module(m) for m in sys.argv[1:]]' \
           ${builtins.concatStringsSep " " importsCheck})
       '';
@@ -170,11 +196,12 @@ rec {
     pname = "ducktape";
     description = "CLI tools (git-commit-ai, difftree, gmail-archiver)";
     mainProgram = "git-commit-ai";
-    # CLEANUP: include `git_commit_ai.cli` and `gmail_archiver.main` once
-    # the Nix environment has fastmcp 3.x available — see the long comment
-    # near `python3Packages` above. The umbrella wheel does bundle these
-    # modules (verified against the rebuilt artifact), but they import
-    # fastmcp/mcp APIs that nixpkgs currently can't satisfy.
+    # CLEANUP(2026-05-26): re-add `git_commit_ai.cli` + `gmail_archiver.main`
+    #   here once the artifact pin refreshes with the umbrella that ships
+    #   `mako_utils/` (BUILD.bazel change in the same commit as this one).
+    #   The fastmcp/mcp Nix-side overrides are already in place; this is
+    #   just waiting on the rebuilt wheel to contain the missing in-repo
+    #   package.
     importsCheck = [
       "difftree.cli"
       "skills.hetzner_vnc_screenshot.vnc_screenshot"
