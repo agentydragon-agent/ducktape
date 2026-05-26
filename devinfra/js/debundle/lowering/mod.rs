@@ -71,7 +71,10 @@ use imports_runtime::{
     import_decl_module_item, resolve_imported_binding, source_chunk_imports_for_moved_body,
 };
 use io::{prepare_output_dir, prune_artifact_to_chunk_ids, write_chunk_report_json};
-use lower::{LowerChunkInputs, LoweredChunk, lower_chunk};
+use lower::{
+    LowerChunkAst, LowerChunkContext, LowerChunkInputs, LowerChunkPlan, LowerChunkSpecFacts,
+    LoweredChunk, lower_chunk,
+};
 use materialize::{
     ChunkContext, ChunkSpec, MaterializeLogicalChunkInputs, apply_materialized_logical_chunks,
     materialize_logical_chunk,

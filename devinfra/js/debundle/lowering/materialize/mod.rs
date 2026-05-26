@@ -285,24 +285,32 @@ pub(super) fn materialize_logical_chunk(
 
     let lowered = time_phase!(timings, "lower_chunk_total", {
         lower_chunk(LowerChunkInputs {
-            artifact,
-            artifact_indexes,
-            runtime_ast,
-            header_lines: &header_lines,
-            entry_file: &target_file,
-            chunk_id,
-            source_path: &source_path,
-            declarations: &declarations,
-            declaration_by_name: &declaration_by_name,
-            module_plans: &module_plans,
-            binding_assignment: &binding_assignment,
-            chunk_top_level_mark,
-            anonymous_ordinal_assignment: &anonymous_ordinal_assignment,
-            factorization: &factorization,
-            chunk_renames: &chunk_renames_map,
-            runtime_import_facts: &runtime_import_facts,
-            pre_existing_entry_exports: &pre_existing_entry_exports,
-            pre_existing_public_export_names: &pre_existing_public_export_names,
+            context: LowerChunkContext {
+                artifact,
+                artifact_indexes,
+                chunk_id,
+                source_path: &source_path,
+                entry_file: &target_file,
+                header_lines: &header_lines,
+            },
+            ast: LowerChunkAst {
+                runtime_ast,
+                declarations: &declarations,
+                declaration_by_name: &declaration_by_name,
+                chunk_top_level_mark,
+            },
+            plan: LowerChunkPlan {
+                module_plans: &module_plans,
+                binding_assignment: &binding_assignment,
+                anonymous_ordinal_assignment: &anonymous_ordinal_assignment,
+                factorization: &factorization,
+            },
+            spec_facts: LowerChunkSpecFacts {
+                runtime_import_facts: &runtime_import_facts,
+                chunk_renames: &chunk_renames_map,
+                pre_existing_entry_exports: &pre_existing_entry_exports,
+                pre_existing_public_export_names: &pre_existing_public_export_names,
+            },
         })
     })?;
     let LoweredChunk {

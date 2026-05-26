@@ -24,24 +24,42 @@ pub(super) struct LoweredChunk {
     pub(super) timings: PhaseTimings,
 }
 
-pub(super) struct LowerChunkInputs<'a> {
+/// Chunk-identity + file-path inputs to `lower_chunk`. Held in
+/// `LowerChunkInputs::context`.
+pub(super) struct LowerChunkContext<'a> {
     pub(super) artifact: &'a ChunkBundle,
     pub(super) artifact_indexes: &'a ArtifactIndexes,
-    pub(super) runtime_ast: &'a ParsedJsModule,
-    pub(super) header_lines: &'a [String],
-    pub(super) entry_file: &'a str,
     pub(super) chunk_id: &'a str,
     pub(super) source_path: &'a str,
+    pub(super) entry_file: &'a str,
+    pub(super) header_lines: &'a [String],
+}
+
+/// AST-side inputs: the parsed runtime module plus the top-level
+/// declaration index. Held in `LowerChunkInputs::ast`.
+pub(super) struct LowerChunkAst<'a> {
+    pub(super) runtime_ast: &'a ParsedJsModule,
     pub(super) declarations: &'a [TopLevelDecl],
     pub(super) declaration_by_name: &'a HashMap<Id, usize>,
+    pub(super) chunk_top_level_mark: swc_common::Mark,
+}
+
+/// Plan-side inputs: the per-chunk module plans + the binding /
+/// anonymous-ordinal assignment + the realizability factorization.
+/// Held in `LowerChunkInputs::plan`.
+pub(super) struct LowerChunkPlan<'a> {
     pub(super) module_plans: &'a [ModulePlan],
     pub(super) binding_assignment: &'a HashMap<Id, usize>,
-    pub(super) chunk_top_level_mark: swc_common::Mark,
     /// Top-level statement ordinal → module_plan index for owners
     /// the spec claimed as anonymous-statement members. See
     /// `ModulePlan::anonymous_statement_ordinals`.
     pub(super) anonymous_ordinal_assignment: &'a BTreeMap<usize, usize>,
     pub(super) factorization: &'a ChunkFactorization,
+}
+
+/// Spec-derived + chunk-AST-derived facts the lowerer consults at
+/// emission time. Held in `LowerChunkInputs::spec_facts`.
+pub(super) struct LowerChunkSpecFacts<'a> {
     pub(super) runtime_import_facts: &'a RuntimeImportFacts,
     /// In-place renames from `TransformSpec::chunk_renames`. Applied
     /// to bindings staying in entry's body — i.e. those *not* in
@@ -66,27 +84,46 @@ pub(super) struct LowerChunkInputs<'a> {
     pub(super) pre_existing_public_export_names: &'a HashSet<String>,
 }
 
+pub(super) struct LowerChunkInputs<'a> {
+    pub(super) context: LowerChunkContext<'a>,
+    pub(super) ast: LowerChunkAst<'a>,
+    pub(super) plan: LowerChunkPlan<'a>,
+    pub(super) spec_facts: LowerChunkSpecFacts<'a>,
+}
+
 pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> {
     let LowerChunkInputs {
+        context,
+        ast,
+        plan,
+        spec_facts,
+    } = inputs;
+    let LowerChunkContext {
         artifact,
         artifact_indexes,
-        runtime_ast,
-        header_lines,
-        entry_file,
         chunk_id,
         source_path,
+        entry_file,
+        header_lines,
+    } = context;
+    let LowerChunkAst {
+        runtime_ast,
         declarations,
         declaration_by_name,
+        chunk_top_level_mark,
+    } = ast;
+    let LowerChunkPlan {
         module_plans,
         binding_assignment,
-        chunk_top_level_mark,
         anonymous_ordinal_assignment,
         factorization,
+    } = plan;
+    let LowerChunkSpecFacts {
         runtime_import_facts,
         chunk_renames,
         pre_existing_entry_exports,
         pre_existing_public_export_names,
-    } = inputs;
+    } = spec_facts;
     let is_module_owned = |name: &str| -> bool {
         binding_assignment.contains_key(&top_level_id(name, chunk_top_level_mark))
     };

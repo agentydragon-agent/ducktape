@@ -6,15 +6,9 @@ Reviewed against `01c149496` on branch `feat-arch-review-2026-05`. Read on top o
 
 ## Executive summary
 
-1. **`MaterializeLogicalChunkInputs` is still a 9-field bag of `&` references** (with `LowerChunkInputs` at 16). `materialize_logical_chunk` itself is now ~306 lines (down from 750 after the `ChunkPlanBuilder` extraction) and the five mutable maps that used to thread through eight inline phases are now encapsulated. What remains is the inputs bag: same encapsulation move at one level higher. Split into `ChunkContext` + `ChunkSpec` + `ChunkAnalysisInputs`. Mechanical.
-
-2. **The dual `cross_module_partition_endpoints` / `gate_constraining_partition_endpoints` is the most concrete example of patch-on-patch architecture.** The same projection helper has two versions that differ only in whether they drop cross-module at-init-promoted edges, with the difference documented in a doc-comment "history" log naming three commit SHAs and a regression test ("`12ce3884b` removed the drop … `2d6be2473` silently re-introduced the drop … this sibling helper exists so the gate paths preserve `12ce3884b`'s fix"). The right fix is to push the distinction into the edge itself (an `EdgeRole` enum) so there is one projection helper that consults the role; the current shape encodes a 12-month bug-fix history into two near-identical function names.
+1. **The dual `cross_module_partition_endpoints` / `gate_constraining_partition_endpoints` is the most concrete example of patch-on-patch architecture.** The same projection helper has two versions that differ only in whether they drop cross-module at-init-promoted edges, with the difference documented in a doc-comment "history" log naming three commit SHAs and a regression test ("`12ce3884b` removed the drop … `2d6be2473` silently re-introduced the drop … this sibling helper exists so the gate paths preserve `12ce3884b`'s fix"). The right fix is to push the distinction into the edge itself (an `EdgeRole` enum) so there is one projection helper that consults the role; the current shape encodes a 12-month bug-fix history into two near-identical function names.
 
 ## Ad-hoc wiring + pipeline-state passing
-
-### `MaterializeLogicalChunkInputs` is a 9-field bag of `&` references
-
-`lowering/materialize/mod.rs:19`. The struct exists only as an argument-list workaround for a 9-arg function call — it doesn't encapsulate anything. Same applies to the next-stage `LowerChunkInputs` (lines 664–683 spell out 16 fields when constructing it). These should be split into smaller domain types: `ChunkContext` (`artifact`, `artifact_indexes`, `chunk_id`, `target_dir`, `report_out_dir`), `ChunkSpec` (`logical_modules`, `chunk_renames`, `unassigned_mode`, `chunk_analysis_options`), and `ChunkAnalysisInputs` (the AST + facts + owner graph). The current bags conceal that `materialize_logical_chunk` actually wants three distinct inputs.
 
 ### `compute_stage_one_analysis` is itself an example of the right direction
 
@@ -165,12 +159,6 @@ These files plus AGENTS.md plus RENAME.md document the same project from multipl
 1. **Carry chunk-top-level `Mark` on the typed `Partition`** (or on a `ChunkContext` wrapper) so `top_level_id` lookups don't have to be threaded through every materialize-side function as a separate parameter. Today `lowering/materialize/mod.rs:100` reads it from the AST and threads it through eight call sites.
 
 2. **Add a single `EdgeRole` enum** as a field of `EdgeReason` (variants `Direct` / `PromotedAtInit { callee_owner }`) so the gate/lenient projection helpers can fold into one helper that consults the role. Removes the dual `*_partition_endpoints` helpers + their commit-SHA history doc-comments.
-
-## Multi-session refactors (1–3 day projects)
-
-### `MaterializeLogicalChunkInputs` split
-
-The 9-field `&`-references bag in `lowering/materialize/mod.rs` is the natural follow-up to the ChunkPlanBuilder extraction: split into `ChunkContext` (`artifact`, `artifact_indexes`, `chunk_id`, `target_dir`, `report_out_dir`), `ChunkSpec` (`logical_modules`, `chunk_renames`, `unassigned_mode`, `chunk_analysis_options`), and `ChunkAnalysisInputs` (the AST + facts + owner graph). Same shape applies to `LowerChunkInputs` (16 fields). Mechanical encapsulation cleanup.
 
 ## Concerns to discuss before deciding
 
