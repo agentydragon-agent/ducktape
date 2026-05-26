@@ -6,6 +6,7 @@ from typing import Any
 
 import httpx
 import pytest_bazel
+import respx
 
 from aiquota.models import FetchError, FetchSuccess
 from aiquota.providers.codex import OAUTH_CLIENT_ID, TOKEN_URL, USAGE_URL, CodexProvider, CodexSettings
@@ -41,50 +42,37 @@ def _auth(
     }
 
 
-def _usage_response(token: str) -> httpx.Response:
-    return httpx.Response(
-        200,
-        request=httpx.Request("GET", USAGE_URL),
-        json={
-            "rate_limit": {
-                "primary_window": {"used_percent": 12.5, "limit_window_seconds": 18000, "reset_after_seconds": 120}
-            }
-        },
-        headers={"content-type": "application/json"},
-    )
+_USAGE_BODY = {
+    "rate_limit": {"primary_window": {"used_percent": 12.5, "limit_window_seconds": 18000, "reset_after_seconds": 120}}
+}
 
 
-def test_refreshes_expired_access_token_before_usage(monkeypatch: Any, tmp_path: Path) -> None:
+async def test_refreshes_expired_access_token_before_usage(tmp_path: Path) -> None:
     expired = _jwt(datetime.now(UTC) - timedelta(minutes=5))
     fresh = _jwt(datetime.now(UTC) + timedelta(days=10))
     path = tmp_path / "auth.json"
     path.write_text(json.dumps(_auth(expired, refresh_token="old-refresh")))
     seen_get_tokens: list[str] = []
 
-    def fake_post(url: str, **kwargs: Any) -> httpx.Response:
-        assert url == TOKEN_URL
-        assert kwargs["json"] == {
-            "client_id": OAUTH_CLIENT_ID,
-            "grant_type": "refresh_token",
-            "refresh_token": "old-refresh",
-        }
-        return httpx.Response(
-            200,
-            request=httpx.Request("POST", TOKEN_URL),
-            json={"access_token": fresh, "refresh_token": "new-refresh", "id_token": "new-id"},
+    def usage_side_effect(request: httpx.Request) -> httpx.Response:
+        seen_get_tokens.append(request.headers["Authorization"].removeprefix("Bearer "))
+        return httpx.Response(200, json=_USAGE_BODY)
+
+    with respx.mock(assert_all_called=False) as mock:
+        post_route = mock.post(TOKEN_URL).mock(
+            return_value=httpx.Response(
+                200, json={"access_token": fresh, "refresh_token": "new-refresh", "id_token": "new-id"}
+            )
         )
+        mock.get(USAGE_URL).mock(side_effect=usage_side_effect)
+        output = await CodexProvider(CodexSettings(auth_path=path)).fetch()
 
-    def fake_get(url: str, **kwargs: Any) -> httpx.Response:
-        assert url == USAGE_URL
-        auth = kwargs["headers"]["Authorization"]
-        seen_get_tokens.append(auth.removeprefix("Bearer "))
-        return _usage_response(auth)
-
-    monkeypatch.setattr(httpx, "post", fake_post)
-    monkeypatch.setattr(httpx, "get", fake_get)
-
-    output = CodexProvider(CodexSettings(auth_path=path)).fetch()
-
+    assert post_route.call_count == 1
+    assert json.loads(post_route.calls.last.request.read()) == {
+        "client_id": OAUTH_CLIENT_ID,
+        "grant_type": "refresh_token",
+        "refresh_token": "old-refresh",
+    }
     assert isinstance(output.result, FetchSuccess)
     assert seen_get_tokens == [fresh]
     saved = json.loads(path.read_text())
@@ -93,77 +81,66 @@ def test_refreshes_expired_access_token_before_usage(monkeypatch: Any, tmp_path:
     assert saved["tokens"]["id_token"] == "new-id"
 
 
-def test_unauthorized_reloads_changed_auth_before_refreshing(monkeypatch: Any, tmp_path: Path) -> None:
+async def test_unauthorized_reloads_changed_auth_before_refreshing(tmp_path: Path) -> None:
     old = _jwt(datetime.now(UTC) + timedelta(days=10))
     fresh = _jwt(datetime.now(UTC) + timedelta(days=11))
     path = tmp_path / "auth.json"
     path.write_text(json.dumps(_auth(old, refresh_token="old-refresh")))
     seen_get_tokens: list[str] = []
 
-    def fake_post(url: str, **kwargs: Any) -> httpx.Response:
-        raise AssertionError("token refresh should not be called after auth file changed")
-
-    def fake_get(url: str, **kwargs: Any) -> httpx.Response:
-        auth = kwargs["headers"]["Authorization"].removeprefix("Bearer ")
+    def usage_side_effect(request: httpx.Request) -> httpx.Response:
+        auth = request.headers["Authorization"].removeprefix("Bearer ")
         seen_get_tokens.append(auth)
         if len(seen_get_tokens) == 1:
             path.write_text(json.dumps(_auth(fresh, refresh_token="new-refresh")))
-            return httpx.Response(401, request=httpx.Request("GET", USAGE_URL), text="unauthorized")
-        return _usage_response(auth)
+            return httpx.Response(401, text="unauthorized")
+        return httpx.Response(200, json=_USAGE_BODY)
 
-    monkeypatch.setattr(httpx, "post", fake_post)
-    monkeypatch.setattr(httpx, "get", fake_get)
-
-    output = CodexProvider(CodexSettings(auth_path=path)).fetch()
+    with respx.mock(assert_all_called=False) as mock:
+        post_route = mock.post(TOKEN_URL).mock(
+            side_effect=AssertionError("token refresh should not be called after auth file changed")
+        )
+        mock.get(USAGE_URL).mock(side_effect=usage_side_effect)
+        output = await CodexProvider(CodexSettings(auth_path=path)).fetch()
 
     assert isinstance(output.result, FetchSuccess)
     assert seen_get_tokens == [old, fresh]
+    assert post_route.call_count == 0
 
 
-def test_refresh_failure_uses_token_written_by_another_process(monkeypatch: Any, tmp_path: Path) -> None:
+async def test_refresh_failure_uses_token_written_by_another_process(tmp_path: Path) -> None:
     expired = _jwt(datetime.now(UTC) - timedelta(minutes=5))
     fresh = _jwt(datetime.now(UTC) + timedelta(days=10))
     path = tmp_path / "auth.json"
     path.write_text(json.dumps(_auth(expired, refresh_token="old-refresh")))
     seen_get_tokens: list[str] = []
 
-    def fake_post(url: str, **kwargs: Any) -> httpx.Response:
+    def post_side_effect(request: httpx.Request) -> httpx.Response:
         path.write_text(json.dumps(_auth(fresh, refresh_token="new-refresh")))
-        return httpx.Response(
-            401, request=httpx.Request("POST", TOKEN_URL), json={"error": {"code": "refresh_token_reused"}}
-        )
+        return httpx.Response(401, json={"error": {"code": "refresh_token_reused"}})
 
-    def fake_get(url: str, **kwargs: Any) -> httpx.Response:
-        auth = kwargs["headers"]["Authorization"].removeprefix("Bearer ")
-        seen_get_tokens.append(auth)
-        return _usage_response(auth)
+    def usage_side_effect(request: httpx.Request) -> httpx.Response:
+        seen_get_tokens.append(request.headers["Authorization"].removeprefix("Bearer "))
+        return httpx.Response(200, json=_USAGE_BODY)
 
-    monkeypatch.setattr(httpx, "post", fake_post)
-    monkeypatch.setattr(httpx, "get", fake_get)
-
-    output = CodexProvider(CodexSettings(auth_path=path)).fetch()
+    with respx.mock(assert_all_called=False) as mock:
+        mock.post(TOKEN_URL).mock(side_effect=post_side_effect)
+        mock.get(USAGE_URL).mock(side_effect=usage_side_effect)
+        output = await CodexProvider(CodexSettings(auth_path=path)).fetch()
 
     assert isinstance(output.result, FetchSuccess)
     assert seen_get_tokens == [fresh]
     assert json.loads(path.read_text())["tokens"]["refresh_token"] == "new-refresh"
 
 
-def test_refresh_failure_without_new_auth_returns_fetch_error(monkeypatch: Any, tmp_path: Path) -> None:
+async def test_refresh_failure_without_new_auth_returns_fetch_error(tmp_path: Path) -> None:
     expired = _jwt(datetime.now(UTC) - timedelta(minutes=5))
     path = tmp_path / "auth.json"
     path.write_text(json.dumps(_auth(expired, refresh_token="old-refresh")))
 
-    def fake_post(url: str, **kwargs: Any) -> httpx.Response:
-        return httpx.Response(
-            401, request=httpx.Request("POST", TOKEN_URL), json={"error": {"code": "refresh_token_reused"}}
-        )
-
-    def fake_get(url: str, **kwargs: Any) -> httpx.Response:
-        raise AssertionError("usage should not be fetched after refresh failure")
-
-    monkeypatch.setattr(httpx, "post", fake_post)
-    monkeypatch.setattr(httpx, "get", fake_get)
-
-    output = CodexProvider(CodexSettings(auth_path=path)).fetch()
+    with respx.mock(assert_all_called=False) as mock:
+        mock.post(TOKEN_URL).mock(return_value=httpx.Response(401, json={"error": {"code": "refresh_token_reused"}}))
+        mock.get(USAGE_URL).mock(side_effect=AssertionError("usage should not be fetched after refresh failure"))
+        output = await CodexProvider(CodexSettings(auth_path=path)).fetch()
 
     assert isinstance(output.result, FetchError)

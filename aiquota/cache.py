@@ -1,3 +1,4 @@
+import asyncio
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -31,12 +32,13 @@ class QuotaCache:
         except OSError:
             pass
 
-    def fetch_all(self, providers: list[Provider]) -> AllQuotas:
+    async def fetch_all(self, providers: list[Provider]) -> AllQuotas:
         cached = self.read()
         if cached is not None and datetime.now(UTC) - cached.fetched_at < self.ttl:
             return cached
         prior = {pq.provider: pq for pq in cached.providers} if cached else {}
-        results = [_assemble(p.name, p.fetch(), prior.get(p.name)) for p in providers]
+        outputs = await asyncio.gather(*(p.fetch() for p in providers))
+        results = [_assemble(p.name, out, prior.get(p.name)) for p, out in zip(providers, outputs, strict=True)]
         fresh = AllQuotas(providers=results, fetched_at=datetime.now(UTC))
         self.write(fresh)
         return fresh
@@ -47,8 +49,8 @@ class QuotaService:
         self.providers = _instantiate(config)
         self.cache = cache or QuotaCache()
 
-    def fetch_all(self) -> AllQuotas:
-        return self.cache.fetch_all(self.providers)
+    async def fetch_all(self) -> AllQuotas:
+        return await self.cache.fetch_all(self.providers)
 
 
 def _instantiate(config: Config) -> list[Provider]:

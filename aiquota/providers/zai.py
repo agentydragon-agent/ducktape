@@ -73,7 +73,7 @@ class ZaiProvider(Provider):
     def __init__(self, settings: ZaiSettings) -> None:
         self.settings = settings
 
-    def fetch(self) -> ProviderFetch:
+    async def fetch(self) -> ProviderFetch:
         now = datetime.now(UTC)
         path = self.settings.api_key_path
         if path is None:
@@ -87,7 +87,8 @@ class ZaiProvider(Provider):
             return ProviderFetch(fetched_at=now, result=FetchError(error="api key file is empty"))
 
         try:
-            resp = httpx.get(QUOTA_URL, headers={"Authorization": f"Bearer {key}"}, timeout=API_TIMEOUT_SECS)
+            async with httpx.AsyncClient(timeout=API_TIMEOUT_SECS) as client:
+                resp = await client.get(QUOTA_URL, headers={"Authorization": f"Bearer {key}"})
             resp.raise_for_status()
             quota = _QuotaResponse.model_validate(resp.json())
         except Exception as e:

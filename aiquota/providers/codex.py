@@ -169,15 +169,14 @@ def _auth_stale(auth: _AuthState) -> bool:
     return last_refresh is not None and datetime.now(UTC) - last_refresh > TOKEN_REFRESH_INTERVAL
 
 
-def _refresh_token(auth: _AuthState) -> _AuthState | None:
+async def _refresh_token(auth: _AuthState, client: httpx.AsyncClient) -> _AuthState | None:
     refresh_token = auth.tokens.refresh_token
     if not refresh_token:
         return None
-    resp = httpx.post(
+    resp = await client.post(
         TOKEN_URL,
         json={"client_id": OAUTH_CLIENT_ID, "grant_type": "refresh_token", "refresh_token": refresh_token},
         headers={"Content-Type": "application/json"},
-        timeout=API_TIMEOUT_SECS,
     )
     resp.raise_for_status()
     data = _TokenRefreshResponse.model_validate(resp.json())
@@ -201,13 +200,13 @@ def _refresh_token(auth: _AuthState) -> _AuthState | None:
     return _read_auth(auth.path)
 
 
-def _refresh_or_reload(auth: _AuthState) -> _AuthState | None:
+async def _refresh_or_reload(auth: _AuthState, client: httpx.AsyncClient) -> _AuthState | None:
     latest = _read_auth(auth.path)
     if _auth_changed(auth, latest):
         return latest
     candidate = latest or auth
     try:
-        return _refresh_token(candidate)
+        return await _refresh_token(candidate, client)
     except httpx.HTTPStatusError:
         latest_after_error = _read_auth(auth.path)
         if _auth_changed(candidate, latest_after_error):
@@ -225,8 +224,8 @@ def _usage_headers(auth: _AuthState) -> dict[str, str]:
     return headers
 
 
-def _fetch_usage(auth: _AuthState) -> _UsageResponse:
-    resp = httpx.get(USAGE_URL, headers=_usage_headers(auth), timeout=API_TIMEOUT_SECS)
+async def _fetch_usage(auth: _AuthState, client: httpx.AsyncClient) -> _UsageResponse:
+    resp = await client.get(USAGE_URL, headers=_usage_headers(auth))
     resp.raise_for_status()
     return _UsageResponse.model_validate(resp.json())
 
@@ -249,34 +248,35 @@ class CodexProvider(Provider):
     def __init__(self, settings: CodexSettings) -> None:
         self.settings = settings
 
-    def fetch(self) -> ProviderFetch:
+    async def fetch(self) -> ProviderFetch:
         now = datetime.now(UTC)
         auth = _read_auth(self.settings.auth_path)
         if not auth:
             return ProviderFetch(fetched_at=now, result=FetchError(error="no codex auth found"))
 
-        if _auth_stale(auth):
+        async with httpx.AsyncClient(timeout=API_TIMEOUT_SECS) as client:
+            if _auth_stale(auth):
+                try:
+                    auth = await _refresh_or_reload(auth, client)
+                except Exception as e:
+                    return ProviderFetch(fetched_at=now, result=FetchError(error=str(e)))
+                if not auth:
+                    return ProviderFetch(fetched_at=now, result=FetchError(error="codex token refresh failed"))
+
             try:
-                auth = _refresh_or_reload(auth)
+                usage = await _fetch_usage(auth, client)
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code != 401:
+                    return ProviderFetch(fetched_at=now, result=FetchError(error=str(e)))
+                try:
+                    refreshed = await _refresh_or_reload(auth, client)
+                    if not refreshed:
+                        return ProviderFetch(fetched_at=now, result=FetchError(error="codex token refresh failed"))
+                    usage = await _fetch_usage(refreshed, client)
+                except Exception as refresh_error:
+                    return ProviderFetch(fetched_at=now, result=FetchError(error=str(refresh_error)))
             except Exception as e:
                 return ProviderFetch(fetched_at=now, result=FetchError(error=str(e)))
-            if not auth:
-                return ProviderFetch(fetched_at=now, result=FetchError(error="codex token refresh failed"))
-
-        try:
-            usage = _fetch_usage(auth)
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code != 401:
-                return ProviderFetch(fetched_at=now, result=FetchError(error=str(e)))
-            try:
-                refreshed = _refresh_or_reload(auth)
-                if not refreshed:
-                    return ProviderFetch(fetched_at=now, result=FetchError(error="codex token refresh failed"))
-                usage = _fetch_usage(refreshed)
-            except Exception as refresh_error:
-                return ProviderFetch(fetched_at=now, result=FetchError(error=str(refresh_error)))
-        except Exception as e:
-            return ProviderFetch(fetched_at=now, result=FetchError(error=str(e)))
 
         rl = usage.rate_limit
         short = _to_window(rl.primary_window if rl else None)

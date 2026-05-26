@@ -1,3 +1,4 @@
+import asyncio
 import sys
 from pathlib import Path
 
@@ -33,15 +34,14 @@ def fetch(ctx: typer.Context) -> None:
     terminal and GNOME popup agree within the cache TTL. The cache refreshes
     itself when older than `CACHE_TTL` (see aiquota/cache.py).
     """
-    quotas = _service(ctx).fetch_all()
+    quotas = asyncio.run(_service(ctx).fetch_all())
     print(render_human.render(quotas))
 
 
 @app.command()
 def tmux(ctx: typer.Context) -> None:
     """Render quota status as a tmux status line segment."""
-    svc = _service(ctx)
-    quotas = svc.fetch_all()
+    quotas = asyncio.run(_service(ctx).fetch_all())
     sys.stdout.write(render_tmux.render(quotas.providers))
 
 
@@ -53,7 +53,7 @@ def gnome_extension_json(ctx: typer.Context) -> None:
     `extra_status`) so the extension and the CLI can't drift on policy
     decisions. See aiquota/AGENTS.md.
     """
-    quotas = _service(ctx).fetch_all()
+    quotas = asyncio.run(_service(ctx).fetch_all())
     view = view_model.to_view(quotas)
     sys.stdout.write(view.model_dump_json(indent=2))
     sys.stdout.write("\n")

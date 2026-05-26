@@ -66,8 +66,11 @@ py_test(
     imports = ["../.."],
     deps = [
         ":codex_lib",
+        "//:conftest",
         "//aiquota:models",
         "@pypi//httpx",
+        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
+        "@pypi//respx",
     ],
 )

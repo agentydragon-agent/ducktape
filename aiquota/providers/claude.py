@@ -115,11 +115,11 @@ def _save_credentials(path: Path, creds: _Credentials) -> None:
         logger.debug("Could not write Claude credentials", exc_info=True)
 
 
-def _refresh_token(path: Path, creds: _Credentials) -> str | None:
+async def _refresh_token(path: Path, creds: _Credentials, client: httpx.AsyncClient) -> str | None:
     oauth = creds.claude_ai_oauth
     if not oauth or not oauth.refresh_token:
         return None
-    resp = httpx.post(
+    resp = await client.post(
         TOKEN_URL,
         json={
             "grant_type": "refresh_token",
@@ -127,7 +127,6 @@ def _refresh_token(path: Path, creds: _Credentials) -> str | None:
             "client_id": OAUTH_CLIENT_ID,
             "scope": " ".join(OAUTH_SCOPES),
         },
-        timeout=API_TIMEOUT_SECS,
     )
     resp.raise_for_status()
     data = _TokenRefreshResponse.model_validate(resp.json())
@@ -172,24 +171,22 @@ class ClaudeProvider(Provider):
     def __init__(self, settings: ClaudeSettings) -> None:
         self.settings = settings
 
-    def fetch(self) -> ProviderFetch:
+    async def fetch(self) -> ProviderFetch:
         now = datetime.now(UTC)
         path = self.settings.credentials_path
         creds, token = _read_credentials(path)
         if not token:
             return ProviderFetch(fetched_at=now, result=FetchError(error="no credentials found"))
 
-        if _token_expired(creds):
-            token = _refresh_token(path, creds)
-            if not token:
-                return ProviderFetch(fetched_at=now, result=FetchError(error="token refresh failed"))
-
         try:
-            resp = httpx.get(
-                USAGE_URL,
-                headers={"Authorization": f"Bearer {token}", "anthropic-beta": "oauth-2025-04-20"},
-                timeout=API_TIMEOUT_SECS,
-            )
+            async with httpx.AsyncClient(timeout=API_TIMEOUT_SECS) as client:
+                if _token_expired(creds):
+                    token = await _refresh_token(path, creds, client)
+                    if not token:
+                        return ProviderFetch(fetched_at=now, result=FetchError(error="token refresh failed"))
+                resp = await client.get(
+                    USAGE_URL, headers={"Authorization": f"Bearer {token}", "anthropic-beta": "oauth-2025-04-20"}
+                )
             resp.raise_for_status()
             usage = _UsageResponse.model_validate(resp.json())
         except Exception as e:
