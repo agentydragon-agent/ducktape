@@ -1981,7 +1981,7 @@ function ProductProjectionWorkspace({ bootstrap }) {
                   />
                 </div>
               </div>
-              <div className="grid gap-3 px-4 py-3 sm:grid-cols-2">
+              <div className="px-4 py-3">
                 <NumberField
                   label="Monthly spend"
                   value={input.monthlySpendUsd}
@@ -1990,16 +1990,14 @@ function ProductProjectionWorkspace({ bootstrap }) {
                   prefix="$"
                   onChange={(monthlySpendUsd) => updateInput({ monthlySpendUsd })}
                 />
-                <NativeSelectField
-                  label="Index"
-                  aria-label="Spend index"
-                  value={input.spendIndex}
-                  data={[
-                    { value: "inflation", label: "Inflation" },
-                    { value: "none", label: "None" },
-                  ]}
-                  onChange={(event) => updateInput({ spendIndex: event.target.value })}
+                <Checkbox
+                  className="mt-2"
+                  label="Index to inflation"
+                  checked={input.spendIndex === "inflation"}
+                  onChange={(event) => updateInput({ spendIndex: event.currentTarget.checked ? "inflation" : "none" })}
                 />
+              </div>
+              <div className="grid gap-3 px-4 py-3 sm:grid-cols-2">
                 <NumberField
                   label="Monthly rent"
                   value={input.monthlyRentUsd}
@@ -2052,7 +2050,7 @@ function ProductProjectionWorkspace({ bootstrap }) {
                 </div>
                 <Checkbox
                   className="mt-2"
-                  label="Index trigger + sell amount to inflation"
+                  label="Index to inflation"
                   checked={Boolean(input.cashBufferIndexToInflation)}
                   disabled={!input.sellOrder}
                   onChange={(event) => updateInput({ cashBufferIndexToInflation: event.currentTarget.checked })}
@@ -2071,7 +2069,7 @@ function ProductProjectionWorkspace({ bootstrap }) {
                     onChange={(peLnwFloorUsd) => updateInput({ peLnwFloorUsd })}
                   />
                   <Checkbox
-                    label="Index floor to inflation"
+                    label="Index to inflation"
                     checked={Boolean(input.peIndexFloorToInflation)}
                     disabled={Number(input.peLnwFloorUsd) <= 0}
                     onChange={(event) => updateInput({ peIndexFloorToInflation: event.currentTarget.checked })}
