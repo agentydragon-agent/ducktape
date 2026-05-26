@@ -4,9 +4,11 @@
 //! `apply_materialized_logical_chunks`.
 
 mod apply;
+mod plan_builder;
 mod rebind_folding;
 
 pub(super) use apply::apply_materialized_logical_chunks;
+use plan_builder::{ChunkPlan, ChunkPlanBuilder};
 use rebind_folding::fold_rebind_atomic_units;
 
 use super::io::write_chunk_report_json;
@@ -128,10 +130,15 @@ pub(super) fn materialize_logical_chunk(
     let residual_request = requests.iter().find(|request| request.residual).cloned();
 
     let build_module_plans_started = Instant::now();
-    let mut binding_assignment = HashMap::<Id, usize>::new();
-    let mut anonymous_ordinal_assignment = BTreeMap::<usize, usize>::new();
-    let mut module_plans = Vec::new();
-    let mut bindings_catalogue = HashMap::<Id, BindingKind>::new();
+    let mut builder = ChunkPlanBuilder::new();
+    let (
+        binding_assignment,
+        anonymous_ordinal_assignment,
+        module_plans,
+        bindings_catalogue,
+        residual_plan_index,
+        unmatched_spec_claims,
+    ) = builder.parts_mut();
     // Name-keyed index into `bindings_catalogue` for the
     // duplicate-claim check below. The previous shape — a linear scan
     // of the entire `bindings_catalogue` HashMap on every member of
@@ -147,7 +154,6 @@ pub(super) fn materialize_logical_chunk(
     let mut imported_binding_resolver =
         ArtifactSourceImportResolutionCache::new(artifact, artifact_indexes);
     let mut imported_from_by_src = BTreeMap::<String, String>::new();
-    let mut unmatched_spec_claims = Vec::<crate::UnmatchedSpecClaim>::new();
     for (index, request) in explicit_requests.iter_mut().enumerate() {
         let mut bindings = HashMap::<String, String>::new();
         let anonymous_statement_ordinals =
@@ -327,14 +333,14 @@ pub(super) fn materialize_logical_chunk(
         }
     }
 
-    // The catchall destination index, or `None` when the chunk has
-    // no residual landing site (default `InlineInEntry` mode with
-    // no fallback request, or `MiniFactors` mode). When set, points
-    // either to a synthesized memberless residual plan (built below)
-    // or to an explicit logical-module plan whose target matches
-    // `unassigned_mode: catchall_file { target }` and which is
-    // therefore the designated overflow destination.
-    let mut residual_plan_index: Option<usize> = None;
+    // The catchall destination index (`residual_plan_index`) lives
+    // on the builder. When set, it points either to a synthesized
+    // memberless residual plan (built below) or to an explicit
+    // logical-module plan whose target matches `unassigned_mode:
+    // catchall_file { target }` and which is therefore the
+    // designated overflow destination. `None` means the chunk has no
+    // residual landing site (default `InlineInEntry` mode with no
+    // fallback request, or `MiniFactors` mode).
     let catchall_target_for_overflow = chunk_unassigned_mode.catchall_file_target();
     if let Some(residual) = &residual_request {
         let residual_index = module_plans.len();
@@ -365,7 +371,7 @@ pub(super) fn materialize_logical_chunk(
                 comment: None,
                 binding_comments: BTreeMap::new(),
             });
-            residual_plan_index = Some(residual_index);
+            *residual_plan_index = Some(residual_index);
         }
     } else if let Some(catchall_target) = catchall_target_for_overflow {
         // No memberless residual request was synthesized — an
@@ -396,7 +402,7 @@ pub(super) fn materialize_logical_chunk(
                     }
                 }
             }
-            residual_plan_index = Some(owner_index);
+            *residual_plan_index = Some(owner_index);
         }
     }
     timings.add("build_module_plans", build_module_plans_started.elapsed());
@@ -409,7 +415,14 @@ pub(super) fn materialize_logical_chunk(
     })?
     .unwrap_or_default();
 
-    let (factorization, redundant_purity_hints) = {
+    let (
+        factorization,
+        redundant_purity_hints,
+        module_plans,
+        binding_assignment,
+        anonymous_ordinal_assignment,
+        unmatched_spec_claims,
+    ) = {
         // Spec annotations carried on any member form (logical-module
         // member, chunk_renames member) propagate the same way:
         // collect them by local binding name and feed them into fact
@@ -523,10 +536,10 @@ pub(super) fn materialize_logical_chunk(
         time_phase!(timings, "fold_rebind_atomic_units", {
             fold_rebind_atomic_units(
                 &precomputed,
-                &mut binding_assignment,
-                &mut bindings_catalogue,
-                &mut module_plans,
-                residual_plan_index,
+                binding_assignment,
+                bindings_catalogue,
+                module_plans,
+                *residual_plan_index,
             );
         });
         if matches!(chunk_unassigned_mode, UnassignedMode::MiniFactors) {
@@ -534,16 +547,25 @@ pub(super) fn materialize_logical_chunk(
                 synthesize_mini_factor_plans(
                     &precomputed,
                     &runtime_ast.module.body,
-                    residual_plan_index,
-                    &mut module_plans,
-                    &mut binding_assignment,
-                    &mut bindings_catalogue,
-                    &mut anonymous_ordinal_assignment,
+                    *residual_plan_index,
+                    module_plans,
+                    binding_assignment,
+                    bindings_catalogue,
+                    anonymous_ordinal_assignment,
                     chunk_top_level_mark,
                     target_dir,
                 )
             })?;
         }
+        // Release the `parts_mut` borrow before consuming the builder.
+        // From here on, plan state is owned by the returned `ChunkPlan`.
+        let ChunkPlan {
+            module_plans,
+            binding_assignment,
+            bindings_catalogue,
+            anonymous_ordinal_assignment,
+            unmatched_spec_claims,
+        } = builder.finalize();
         let mut logical_modules: Vec<FactorizationLogicalModule> =
             time_phase!(timings, "project_factorization_modules", {
                 module_plans
@@ -628,7 +650,14 @@ pub(super) fn materialize_logical_chunk(
                 default_destination,
             )
         });
-        (factorization, redundant_purity_hints)
+        (
+            factorization,
+            redundant_purity_hints,
+            module_plans,
+            binding_assignment,
+            anonymous_ordinal_assignment,
+            unmatched_spec_claims,
+        )
     };
     let factorization_report = time_phase!(timings, "validate_factorization", {
         factorization.validate()

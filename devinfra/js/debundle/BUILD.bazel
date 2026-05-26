@@ -386,6 +386,7 @@ rust_library(
         "lowering/lower.rs",
         "lowering/materialize/apply.rs",
         "lowering/materialize/mod.rs",
+        "lowering/materialize/plan_builder.rs",
         "lowering/materialize/rebind_folding.rs",
         "lowering/mod.rs",
         "lowering/naturalize.rs",
