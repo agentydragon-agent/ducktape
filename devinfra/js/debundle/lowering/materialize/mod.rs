@@ -170,31 +170,8 @@ pub(super) fn materialize_logical_chunk(
     })?
     .unwrap_or_default();
 
-    // Spec annotations carried on any member form (logical-module
-    // member, chunk_renames member) propagate the same way: collect
-    // them by local binding name and feed them into fact analysis.
-    // They are semantic trust assertions, not ownership claims;
-    // binding patches routed through chunk_renames still do not force
-    // factorizer grouping.
     let analysis_hints: AnalysisHints = time_phase!(timings, "collect_analysis_hints", {
-        let mut hints = AnalysisHints::default();
-        for req in &explicit_requests {
-            for m in &req.members {
-                apply_member_hints(&mut hints, &m.binding, m.purity, &m.pure_members, m.effect);
-            }
-        }
-        if let Some(cr) = chunk_renames.get(chunk_id) {
-            for m in &cr.members {
-                apply_member_hints(
-                    &mut hints,
-                    &m.selector.binding.name,
-                    m.purity,
-                    &m.pure_members,
-                    m.effect,
-                );
-            }
-        }
-        hints
+        collect_analysis_hints(&explicit_requests, chunk_renames.get(chunk_id))
     });
     let line_index = time_phase!(timings, "build_source_line_index", {
         runtime_ast.line_index()
@@ -235,40 +212,7 @@ pub(super) fn materialize_logical_chunk(
         fact_analysis: analysis,
         owner_graph_and_units: precomputed,
     } = stage_one;
-    // Per-hint warnings on stderr: each `purity: pure` spec hint the
-    // analyzer infers automatically (binding's body classifies Pure
-    // without the override, or admits as PlainData). Surfaced every
-    // build so spec authors are nudged to prune load-free hints —
-    // every such hint is an extra trust assertion the validator can't
-    // re-verify, and the shrinking trust surface is the point of
-    // recursive purity inference.
-    for hint in &analysis.redundant_purity_hints {
-        eprintln!(
-            "warning: chunk {chunk_id}: `purity: pure` hint on binding `{binding}` is redundant — \
-             the analyzer infers {reason} for this binding without the hint and the override is a no-op. \
-             Remove the hint from the spec.",
-            binding = hint.binding_name,
-            reason = match hint.reason {
-                RedundantPurityReason::InferredPureFunction =>
-                    "pure (the function body classifies Pure by recursive analysis)",
-                RedundantPurityReason::InferredPlainDataBinding =>
-                    "PlainData (chunk-local const/let plain literal with no chunk-wide writes through the binding)",
-            },
-        );
-    }
-    for hint in &analysis.redundant_pure_member_hints {
-        eprintln!(
-            "warning: chunk {chunk_id}: `pure_members: [{property}]` on binding `{binding}` \
-             is redundant — the analyzer infers {reason} without the hint. \
-             Remove the entry from the spec.",
-            binding = hint.binding_name,
-            property = hint.property,
-            reason = match hint.reason {
-                RedundantPureMemberReason::WhitelistedStaticCall =>
-                    "pure via PURE_STATIC_CALLS (already on the global-receiver whitelist)",
-            },
-        );
-    }
+    report_redundant_hints_to_stderr(chunk_id, &analysis);
     if let Some(ord) = analysis.top_level_await {
         anyhow::bail!(
             "materialize_logical_modules: chunk {chunk_id} has top-level `await` \
@@ -295,66 +239,18 @@ pub(super) fn materialize_logical_chunk(
         anonymous_ordinal_assignment,
         unmatched_spec_claims,
     } = builder.finalize();
-    let mut logical_modules: Vec<FactorizationLogicalModule> =
+    let (logical_modules, default_destination) =
         time_phase!(timings, "project_factorization_modules", {
-            module_plans
-                .iter()
-                .map(|plan| FactorizationLogicalModule {
-                    id: plan.id.clone(),
-                    target_file: plan.target_file.clone(),
-                    residual: !plan.explicit,
-                    rename_map: plan
-                        .bindings
-                        .iter()
-                        .map(|(local, exported)| {
-                            (
-                                top_level_id(local, chunk_top_level_mark),
-                                exported.as_str().into(),
-                            )
-                        })
-                        .collect(),
-                    // ChunkFactorization's owner graph uses post-comma-list-split
-                    // `StatementOrdinal`s; convert body indices here so
-                    // the destination override targets the right owner
-                    // node (an anon body item is always a single
-                    // post-split position, but earlier comma-list
-                    // var-decls in the chunk shift the count).
-                    anonymous_statement_ordinals: plan
-                        .anonymous_statement_ordinals
-                        .iter()
-                        .map(|body_idx| {
-                            statement_ordinal_for_body_index(&runtime_ast.module.body, *body_idx)
-                        })
-                        .collect(),
-                })
-                .collect()
-        });
-    // Commit 1 transitional behavior: the partition's "default
-    // destination" — the module owners with no claim fall back to —
-    // is a factorization-only sentinel logical module appended past
-    // `module_plans.len()`. The emit loop iterates `module_plans`,
-    // so the sentinel never gets emitted as a file. Anonymous
-    // statements without an explicit logical-module
-    // `anonymous_statements` match thus stay in the sentinel,
-    // preserving the pre-refactor split where anon-fallback was a
-    // distinct destination from the residual logical module (which
-    // only held named-unclaimed bindings). Commit 2 collapses this
-    // sentinel back into the residual module via explicit
-    // `anonymous_statement_ordinals` routing.
-    let sentinel_residual_target = chunk_unassigned_mode
-        .catchall_file_target()
-        .map(|t| target_file_for_request(target_dir, t))
-        .transpose()?
-        .unwrap_or_else(|| target_file.clone());
-    let sentinel_idx = logical_modules.len();
-    logical_modules.push(FactorizationLogicalModule {
-        id: format!("{chunk_id}::anon_residual_sentinel"),
-        target_file: sentinel_residual_target,
-        residual: true,
-        rename_map: HashMap::new(),
-        anonymous_statement_ordinals: Vec::new(),
-    });
-    let default_destination = ModuleId(LogicalModuleIndex(sentinel_idx));
+            project_factorization_modules_with_sentinel(
+                &module_plans,
+                &runtime_ast.module.body,
+                chunk_top_level_mark,
+                chunk_id,
+                target_dir,
+                &target_file,
+                chunk_unassigned_mode.catchall_file_target(),
+            )
+        })?;
     let redundant_purity_hints = analysis.redundant_purity_hints;
     let factorization_chunk_renames: HashMap<Id, swc_atoms::Atom> = chunk_renames_map
         .iter()
@@ -379,59 +275,13 @@ pub(super) fn materialize_logical_chunk(
     let factorization_report = time_phase!(timings, "validate_factorization", {
         factorization.validate()
     });
-    if let Some(report_out_dir) = report_out_dir {
-        let owner_graph_report = time_phase!(timings, "build_owner_graph_report", {
-            factorization.owner_graph_report()
-        });
-        time_phase!(timings, "write_owner_graph_report", {
-            write_chunk_report_json(
-                report_out_dir,
-                chunk_id,
-                OWNER_GRAPH_REPORT,
-                &owner_graph_report,
-            )
-        })?;
-    }
-
-    if !factorization_report.atomic_unit_conflicts.is_empty() {
-        if let Some(report_out_dir) = report_out_dir {
-            time_phase!(timings, "write_atomic_unit_conflicts_report", {
-                write_chunk_report_json(
-                    report_out_dir,
-                    chunk_id,
-                    ATOMIC_UNIT_CONFLICTS_REPORT,
-                    &factorization_report.atomic_unit_conflicts,
-                )
-            })?;
-        }
-        let summary = render_atomic_unit_conflict_summary(
-            &factorization_report.atomic_unit_conflicts,
-            &|id| factorization.analysis.module_name(id),
-        );
-        let causes = render_atomic_unit_cause_guidance(&factorization_report.atomic_unit_conflicts);
-        bail!(
-            "materialize_logical_modules: chunk {chunk_id} has {n} atomic-factor-unit conflict(s) — the spec assigns members of one atomic factor unit to different destination modules, forming a cycle in the module dep graph that the constraining-edge SCC analysis says is unrealizable. Atomic factor units come from FACTORIZE.md's `G_atomic` SCC over the owner graph; every member must co-locate. {causes}Resolve by reconciling each unit's claims into a single destination. Full evidence written to reports/tree/{chunk_id}/atomic_unit_conflicts.json; owner graph written to reports/tree/{chunk_id}/owner_graph.json. Summary:\n{summary}",
-            n = factorization_report.atomic_unit_conflicts.len(),
-        );
-    }
-
-    if !factorization_report.cycles.is_empty() {
-        if let Some(report_out_dir) = report_out_dir {
-            time_phase!(timings, "write_cycles_report", {
-                write_chunk_report_json(
-                    report_out_dir,
-                    chunk_id,
-                    CYCLES_REPORT,
-                    &factorization_report.cycles,
-                )
-            })?;
-        }
-        let summary = render_cycle_summary(&factorization_report.cycles);
-        bail!(
-            "materialize_logical_modules: chunk {chunk_id} — spec is unrealizable: {n} module-quotient SCC(s) with at-init / side-effect edges between members. Each SCC names the binding pairs whose split forced the cycle; co-locate them or break a back-edge. Full per-cycle evidence at reports/tree/{chunk_id}/cycles.json; owner graph at reports/tree/{chunk_id}/owner_graph.json. Summary:\n{summary}",
-            n = factorization_report.cycles.len(),
-        );
-    }
+    validate_and_emit_reports(
+        chunk_id,
+        report_out_dir,
+        &factorization,
+        &factorization_report,
+        &mut timings,
+    )?;
 
     let lowered = time_phase!(timings, "lower_chunk_total", {
         lower_chunk(LowerChunkInputs {
@@ -464,31 +314,7 @@ pub(super) fn materialize_logical_chunk(
     timings.extend_prefixed("lower", lower_timings);
 
     let final_modules = time_phase!(timings, "build_final_module_report", {
-        module_plans
-            .iter()
-            .map(|plan| {
-                let mut sorted: Vec<(&String, &String)> = plan.bindings.iter().collect();
-                sorted.sort_by(|a, b| a.0.cmp(b.0));
-                let binding_names: Vec<String> = sorted.iter().map(|(k, _)| (*k).clone()).collect();
-                let member_names: Vec<String> = sorted.iter().map(|(_, v)| (*v).clone()).collect();
-                let binding_ids: Vec<Id> = binding_names
-                    .iter()
-                    .map(|name| top_level_id(name, chunk_top_level_mark))
-                    .collect();
-                let owner_ids = factorization
-                    .analysis
-                    .owner_report_ids_for_bindings(binding_ids.iter());
-                FinalModuleContent {
-                    binding_names,
-                    file: plan.target_file.clone(),
-                    id: plan.id.clone(),
-                    member_names,
-                    path: plan.target_path.clone(),
-                    owner_ids,
-                    residual: !plan.explicit,
-                }
-            })
-            .collect::<Vec<_>>()
+        build_final_module_report(&module_plans, &factorization, chunk_top_level_mark)
     });
     let directory_dependency_facts = time_phase!(timings, "build_directory_dependency_facts", {
         build_directory_dependency_facts(chunk_id, &factorization)
@@ -528,6 +354,240 @@ pub(super) fn materialize_logical_chunk(
         validation,
         report,
     })
+}
+
+/// Build the `FactorizationLogicalModule` list the factorizer
+/// consumes from the per-chunk `ModulePlan`s, then append the
+/// "anon residual" sentinel that holds the partition's default
+/// destination.
+///
+/// Commit 1 transitional behavior: the partition's "default
+/// destination" — the module owners with no claim fall back to — is a
+/// factorization-only sentinel logical module appended past
+/// `module_plans.len()`. The emit loop iterates `module_plans`, so
+/// the sentinel never gets emitted as a file. Anonymous statements
+/// without an explicit logical-module `anonymous_statements` match
+/// thus stay in the sentinel, preserving the pre-refactor split
+/// where anon-fallback was a distinct destination from the residual
+/// logical module (which only held named-unclaimed bindings). Commit
+/// 2 collapses this sentinel back into the residual module via
+/// explicit `anonymous_statement_ordinals` routing.
+fn project_factorization_modules_with_sentinel(
+    module_plans: &[ModulePlan],
+    body: &[ModuleItem],
+    chunk_top_level_mark: swc_common::Mark,
+    chunk_id: &str,
+    target_dir: &str,
+    target_file: &str,
+    catchall_target_for_overflow: Option<&str>,
+) -> Result<(Vec<FactorizationLogicalModule>, ModuleId)> {
+    let mut logical_modules: Vec<FactorizationLogicalModule> = module_plans
+        .iter()
+        .map(|plan| FactorizationLogicalModule {
+            id: plan.id.clone(),
+            target_file: plan.target_file.clone(),
+            residual: !plan.explicit,
+            rename_map: plan
+                .bindings
+                .iter()
+                .map(|(local, exported)| {
+                    (
+                        top_level_id(local, chunk_top_level_mark),
+                        exported.as_str().into(),
+                    )
+                })
+                .collect(),
+            // ChunkFactorization's owner graph uses post-comma-list-split
+            // `StatementOrdinal`s; convert body indices here so the
+            // destination override targets the right owner node (an
+            // anon body item is always a single post-split position,
+            // but earlier comma-list var-decls in the chunk shift the
+            // count).
+            anonymous_statement_ordinals: plan
+                .anonymous_statement_ordinals
+                .iter()
+                .map(|body_idx| statement_ordinal_for_body_index(body, *body_idx))
+                .collect(),
+        })
+        .collect();
+    let sentinel_residual_target = catchall_target_for_overflow
+        .map(|t| target_file_for_request(target_dir, t))
+        .transpose()?
+        .unwrap_or_else(|| target_file.to_string());
+    let sentinel_idx = logical_modules.len();
+    logical_modules.push(FactorizationLogicalModule {
+        id: format!("{chunk_id}::anon_residual_sentinel"),
+        target_file: sentinel_residual_target,
+        residual: true,
+        rename_map: HashMap::new(),
+        anonymous_statement_ordinals: Vec::new(),
+    });
+    Ok((logical_modules, ModuleId(LogicalModuleIndex(sentinel_idx))))
+}
+
+/// Collect `AnalysisHints` from spec member annotations (purity,
+/// pure_members, effect). Spec annotations carried on any member
+/// form (logical-module member, chunk_renames member) propagate the
+/// same way: collect them by local binding name and feed them into
+/// fact analysis. They are semantic trust assertions, not ownership
+/// claims; binding patches routed through chunk_renames still do not
+/// force factorizer grouping.
+fn collect_analysis_hints(
+    explicit_requests: &[LogicalRequest],
+    chunk_renames: Option<&ChunkRenames>,
+) -> AnalysisHints {
+    let mut hints = AnalysisHints::default();
+    for req in explicit_requests {
+        for m in &req.members {
+            apply_member_hints(&mut hints, &m.binding, m.purity, &m.pure_members, m.effect);
+        }
+    }
+    if let Some(cr) = chunk_renames {
+        for m in &cr.members {
+            apply_member_hints(
+                &mut hints,
+                &m.selector.binding.name,
+                m.purity,
+                &m.pure_members,
+                m.effect,
+            );
+        }
+    }
+    hints
+}
+
+/// Write per-chunk validation reports (owner graph, atomic-unit
+/// conflicts, cycles) and bail with a human-readable summary when
+/// the spec is unrealizable.
+fn validate_and_emit_reports(
+    chunk_id: &str,
+    report_out_dir: Option<&Path>,
+    factorization: &ChunkFactorization,
+    factorization_report: &::analysis::FactorizationReport,
+    timings: &mut PhaseTimings,
+) -> Result<()> {
+    if let Some(report_out_dir) = report_out_dir {
+        let owner_graph_report = time_phase!(timings, "build_owner_graph_report", {
+            factorization.owner_graph_report()
+        });
+        time_phase!(timings, "write_owner_graph_report", {
+            write_chunk_report_json(
+                report_out_dir,
+                chunk_id,
+                OWNER_GRAPH_REPORT,
+                &owner_graph_report,
+            )
+        })?;
+    }
+    if !factorization_report.atomic_unit_conflicts.is_empty() {
+        if let Some(report_out_dir) = report_out_dir {
+            time_phase!(timings, "write_atomic_unit_conflicts_report", {
+                write_chunk_report_json(
+                    report_out_dir,
+                    chunk_id,
+                    ATOMIC_UNIT_CONFLICTS_REPORT,
+                    &factorization_report.atomic_unit_conflicts,
+                )
+            })?;
+        }
+        let summary = render_atomic_unit_conflict_summary(
+            &factorization_report.atomic_unit_conflicts,
+            &|id| factorization.analysis.module_name(id),
+        );
+        let causes = render_atomic_unit_cause_guidance(&factorization_report.atomic_unit_conflicts);
+        bail!(
+            "materialize_logical_modules: chunk {chunk_id} has {n} atomic-factor-unit conflict(s) — the spec assigns members of one atomic factor unit to different destination modules, forming a cycle in the module dep graph that the constraining-edge SCC analysis says is unrealizable. Atomic factor units come from FACTORIZE.md's `G_atomic` SCC over the owner graph; every member must co-locate. {causes}Resolve by reconciling each unit's claims into a single destination. Full evidence written to reports/tree/{chunk_id}/atomic_unit_conflicts.json; owner graph written to reports/tree/{chunk_id}/owner_graph.json. Summary:\n{summary}",
+            n = factorization_report.atomic_unit_conflicts.len(),
+        );
+    }
+    if !factorization_report.cycles.is_empty() {
+        if let Some(report_out_dir) = report_out_dir {
+            time_phase!(timings, "write_cycles_report", {
+                write_chunk_report_json(
+                    report_out_dir,
+                    chunk_id,
+                    CYCLES_REPORT,
+                    &factorization_report.cycles,
+                )
+            })?;
+        }
+        let summary = render_cycle_summary(&factorization_report.cycles);
+        bail!(
+            "materialize_logical_modules: chunk {chunk_id} — spec is unrealizable: {n} module-quotient SCC(s) with at-init / side-effect edges between members. Each SCC names the binding pairs whose split forced the cycle; co-locate them or break a back-edge. Full per-cycle evidence at reports/tree/{chunk_id}/cycles.json; owner graph at reports/tree/{chunk_id}/owner_graph.json. Summary:\n{summary}",
+            n = factorization_report.cycles.len(),
+        );
+    }
+    Ok(())
+}
+
+/// Build the per-plan `FinalModuleContent` rows for `ChunkModulesReport`.
+/// Each plan's binding map is iterated in name-sorted order so the
+/// resulting JSON is deterministic across runs.
+fn build_final_module_report(
+    module_plans: &[ModulePlan],
+    factorization: &ChunkFactorization,
+    chunk_top_level_mark: swc_common::Mark,
+) -> Vec<FinalModuleContent> {
+    module_plans
+        .iter()
+        .map(|plan| {
+            let mut sorted: Vec<(&String, &String)> = plan.bindings.iter().collect();
+            sorted.sort_by(|a, b| a.0.cmp(b.0));
+            let binding_names: Vec<String> = sorted.iter().map(|(k, _)| (*k).clone()).collect();
+            let member_names: Vec<String> = sorted.iter().map(|(_, v)| (*v).clone()).collect();
+            let binding_ids: Vec<Id> = binding_names
+                .iter()
+                .map(|name| top_level_id(name, chunk_top_level_mark))
+                .collect();
+            let owner_ids = factorization
+                .analysis
+                .owner_report_ids_for_bindings(binding_ids.iter());
+            FinalModuleContent {
+                binding_names,
+                file: plan.target_file.clone(),
+                id: plan.id.clone(),
+                member_names,
+                path: plan.target_path.clone(),
+                owner_ids,
+                residual: !plan.explicit,
+            }
+        })
+        .collect()
+}
+
+/// Emit one stderr warning per spec hint the analyzer inferred
+/// automatically. Surfaced every build so spec authors are nudged to
+/// prune load-free hints — every such hint is an extra trust
+/// assertion the validator can't re-verify, and the shrinking trust
+/// surface is the point of recursive purity inference.
+fn report_redundant_hints_to_stderr(chunk_id: &str, analysis: &::analysis::ChunkFactAnalysis) {
+    for hint in &analysis.redundant_purity_hints {
+        eprintln!(
+            "warning: chunk {chunk_id}: `purity: pure` hint on binding `{binding}` is redundant — \
+             the analyzer infers {reason} for this binding without the hint and the override is a no-op. \
+             Remove the hint from the spec.",
+            binding = hint.binding_name,
+            reason = match hint.reason {
+                RedundantPurityReason::InferredPureFunction =>
+                    "pure (the function body classifies Pure by recursive analysis)",
+                RedundantPurityReason::InferredPlainDataBinding =>
+                    "PlainData (chunk-local const/let plain literal with no chunk-wide writes through the binding)",
+            },
+        );
+    }
+    for hint in &analysis.redundant_pure_member_hints {
+        eprintln!(
+            "warning: chunk {chunk_id}: `pure_members: [{property}]` on binding `{binding}` \
+             is redundant — the analyzer infers {reason} without the hint. \
+             Remove the entry from the spec.",
+            binding = hint.binding_name,
+            property = hint.property,
+            reason = match hint.reason {
+                RedundantPureMemberReason::WhitelistedStaticCall =>
+                    "pure via PURE_STATIC_CALLS (already on the global-receiver whitelist)",
+            },
+        );
+    }
 }
 
 fn apply_member_hints(
