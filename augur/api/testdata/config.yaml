@@ -2,11 +2,6 @@ agents:
   - actor_id: agent_a
     label: Agent A
     role: primary_owner
-bootstrap_default_scenarios:
-  - label: Location A baseline
-    property_id: location_a_property
-  - label: Location B baseline
-    property_id: location_b_property
 default_rollout_samples: 8
 max_rollout_samples: 1000000
 locations:
@@ -102,7 +97,6 @@ exogenous_provider:
       kind: poisson
       monthly_lambda: 0.0138888889 # 1/72
       min_horizon_months: 12
-pmms_survey_date: "2026-05-14"
 portfolio:
   accounts:
     - account_id: taxable_brokerage
