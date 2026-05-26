@@ -267,9 +267,8 @@ pub fn validate_factorization(
         })
         .collect();
     let graph = &build_module_quotient(owner_graph, partition);
-    let sccs = tarjan_scc(&graph.0);
     let mut cycles = Vec::new();
-    for scc in sccs {
+    for scc in verdict.scc_partition() {
         let in_scc: HashSet<ModuleId> = scc.iter().copied().collect();
         let is_cycle = scc.len() > 1 || (scc.len() == 1 && graph.contains_edge(scc[0], scc[0]));
         if !is_cycle {
@@ -308,7 +307,7 @@ pub fn validate_factorization(
                 });
             }
         }
-        let cut = compute_realizability_cut(graph, &scc, module_name, &from_binding_by_ordinal);
+        let cut = compute_realizability_cut(graph, scc, module_name, &from_binding_by_ordinal);
         cycles.push(CycleReport {
             modules: scc.iter().copied().map(module_name).collect(),
             evidence,

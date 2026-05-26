@@ -1,6 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use petgraph::algo::tarjan_scc;
 use rayon::prelude::*;
 use swc_ecma_ast::Id;
 
@@ -320,7 +319,7 @@ fn build_quotient_scc_reports(
 ) -> Vec<QuotientSccReport> {
     let quotient_edges_by_source = quotient_edge_indices_by_source(quotient_edges);
     let mut sccs = Vec::new();
-    for scc in tarjan_scc(&factorization.dep_graph.0) {
+    for scc in factorization.dep_graph_sccs() {
         let is_cycle = scc.len() > 1
             || (scc.len() == 1 && factorization.dep_graph.contains_edge(scc[0], scc[0]));
         if !is_cycle {

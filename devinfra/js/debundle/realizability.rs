@@ -37,8 +37,8 @@ use petgraph::graphmap::DiGraphMap;
 
 use crate::OwnerId;
 use crate::graph::{
-    ChunkConstrainingEdgeSet, OwnerEdge, OwnerEdgeId, OwnerGraph, chunk_constraining_module_edges,
-    chunk_linker_order, chunk_source_import_order,
+    ChunkConstrainingEdgeSet, OwnerEdge, OwnerEdgeId, OwnerGraph, build_module_quotient,
+    chunk_constraining_module_edges, chunk_linker_order, chunk_source_import_order,
 };
 use crate::ids::ModuleId;
 use crate::partition::Partition;
@@ -68,11 +68,19 @@ pub struct CrossRebindEdge {
 }
 
 /// Verdict on a (current or hypothetical) destination assignment.
-/// Empty verdict ↔ realizable per clauses 2 and 3.
+/// Empty `unrealizable_sccs` + `cross_rebinds` ↔ realizable per
+/// clauses 2 and 3.
 #[derive(Debug, Clone, Default, Eq, PartialEq)]
 pub struct RealizabilityVerdict {
     pub unrealizable_sccs: Vec<UnrealizableScc>,
     pub cross_rebinds: Vec<CrossRebindEdge>,
+    /// SCCs of the module-quotient graph (`build_module_quotient`),
+    /// in `tarjan_scc` reverse-topological order. Populated only by
+    /// the free function [`check_realizability`]; the
+    /// `RealizabilityIndex` verdict paths (which work off cached
+    /// constraining + I subgraphs and never materialise the full
+    /// module quotient) leave this empty.
+    scc_partition: Vec<Vec<ModuleId>>,
 }
 
 impl RealizabilityVerdict {
@@ -92,6 +100,14 @@ impl RealizabilityVerdict {
         }
         out
     }
+
+    /// SCCs of the module-quotient graph. See the field doc on
+    /// `scc_partition`. Only populated by [`check_realizability`];
+    /// callers that consume `RealizabilityIndex::verdict*` outputs
+    /// get an empty slice.
+    pub fn scc_partition(&self) -> &[Vec<ModuleId>] {
+        &self.scc_partition
+    }
 }
 
 /// Pure-function form. Builds the constraining-edge quotient, runs
@@ -103,7 +119,10 @@ pub fn check_realizability(
     owner_graph: &OwnerGraph,
     partition: &Partition,
 ) -> RealizabilityVerdict {
-    let mut verdict = RealizabilityVerdict::default();
+    let mut verdict = RealizabilityVerdict {
+        scc_partition: tarjan_scc(&build_module_quotient(owner_graph, partition).0),
+        ..RealizabilityVerdict::default()
+    };
 
     // Cross-destination rebinds are a separate clause-2 violation and
     // not part of the I-graph. Collect them in a single pass over
@@ -998,6 +1017,7 @@ impl IncrementalQuotient {
         let mut verdict = RealizabilityVerdict {
             unrealizable_sccs: Vec::new(),
             cross_rebinds: self.cross_rebinds.values().cloned().collect(),
+            ..RealizabilityVerdict::default()
         };
         let mut reported = BTreeSet::<BTreeSet<ModuleId>>::new();
 
@@ -1050,6 +1070,7 @@ impl IncrementalQuotient {
         let mut verdict = RealizabilityVerdict {
             unrealizable_sccs: Vec::new(),
             cross_rebinds: self.cross_rebinds_touching(module),
+            ..RealizabilityVerdict::default()
         };
         let mut reported = BTreeSet::<BTreeSet<ModuleId>>::new();
 
@@ -1097,6 +1118,7 @@ impl IncrementalQuotient {
         let mut verdict = RealizabilityVerdict {
             unrealizable_sccs: Vec::new(),
             cross_rebinds: self.cross_rebinds_touching_with_overlay(module, overlay),
+            ..RealizabilityVerdict::default()
         };
         let mut reported = BTreeSet::<BTreeSet<ModuleId>>::new();
 
@@ -2368,6 +2390,7 @@ mod tests {
                 .filter(|rebind| rebind.from == module || rebind.to == module)
                 .cloned()
                 .collect(),
+            ..RealizabilityVerdict::default()
         }
     }
 

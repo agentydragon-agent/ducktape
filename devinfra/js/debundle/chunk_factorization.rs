@@ -1,6 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
 
+use petgraph::algo::tarjan_scc;
+
 use crate::atomic_units::{AtomicUnit, OwnerGraphAndUnits, compute_owner_graph_and_units};
 use crate::chunk_analysis::ChunkAnalysis;
 use crate::factor_assembly::{AtomicUnitConflict, assemble_partition};
@@ -46,6 +48,12 @@ pub struct ChunkFactorization {
     /// emitting code.
     pub assembly_conflicts: Vec<AtomicUnitConflict>,
     pub dep_graph: ModuleQuotient,
+    /// SCC partition of `dep_graph` in `tarjan_scc` reverse-
+    /// topological order. Precomputed at build time so downstream
+    /// consumers (`validation::validate_factorization` via the
+    /// verdict's `scc_partition`, `reports::build_quotient_scc_reports`)
+    /// share one walk.
+    dep_graph_sccs: Vec<Vec<ModuleId>>,
     /// Topological linearization of `I ∪ S`, dependency-first
     /// (the module at index 0 must evaluate before any other; the
     /// last module — typically the residual entry — evaluates
@@ -116,6 +124,11 @@ impl ChunkFactorization {
         let partition = outcome.partition;
         let assembly_conflicts = outcome.conflicts;
         let dep_graph = build_module_quotient(&owner_graph, &partition);
+        // Cache the dep-graph SCC partition so downstream consumers
+        // (`reports::build_quotient_scc_reports`, the validator's
+        // verdict path) share one Tarjan walk instead of each
+        // recomputing it.
+        let dep_graph_sccs = tarjan_scc(&dep_graph.0);
         // Drive Lemma-2 ordering through the canonical
         // `ChunkConstrainingEdgeSet` so the emitter and the gate's
         // simulator share one source of truth — see `graph.rs:
@@ -160,10 +173,19 @@ impl ChunkFactorization {
             atomic_units,
             assembly_conflicts,
             dep_graph,
+            dep_graph_sccs,
             linker_order,
             linker_position_by_module,
             source_import_position_by_module,
         }
+    }
+
+    /// SCC partition of `dep_graph` (the module quotient), in
+    /// `tarjan_scc` reverse-topological order. Precomputed at build
+    /// time and shared with downstream consumers in lieu of a fresh
+    /// Tarjan walk.
+    pub fn dep_graph_sccs(&self) -> &[Vec<ModuleId>] {
+        &self.dep_graph_sccs
     }
 
     /// Position of `id` in `linker_order`, if present. Used by the
