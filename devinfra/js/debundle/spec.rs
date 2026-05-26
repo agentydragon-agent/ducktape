@@ -284,7 +284,7 @@ pub enum UnassignedMode {
     /// One synthetic mini-factor per unclaimed atomic factor unit.
     /// The residual catch-all collapses to whatever truly cannot
     /// be peeled (typically empty for clean chunks). See
-    /// FACTORIZE.md.
+    /// `DESIGN.md` §"Layered mental model" + §"Two classes of atom".
     MiniFactors,
 }
 

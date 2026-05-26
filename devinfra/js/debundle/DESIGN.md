@@ -1329,6 +1329,55 @@ realizable when analysis is conservative; that is the intended
 failure mode. Those rejections should come with owner-level evidence
 showing which graph edges made the split unverifiable.
 
+### Layered mental model
+
+Five layers, bottom-up:
+
+1. **Owner graph** — fine-grained program facts (`graph.rs`).
+   One vertex per top-level owner; edges record `EagerUse`,
+   `LazyUse`, `EagerRebind`, `LazyRebind`, `Sequenced`, and the
+   local-effect edges that target-local mutation produces. Each
+   edge records whether it constrains init/materialization order.
+2. **Atomic graph** — SCC condensation of the constraining-edge
+   subgraph of the owner graph; a DAG of atomic units
+   (`compute_atomic_units`). Each unit is the smallest set of
+   owners a valid module assignment may not split. Surfaced in
+   `owner_graph.json.atomic_graph`.
+3. **Spec partition** — the author's current assignment of owners
+   to modules (the spec's `members:` + `anonymous_statements:`
+   plus the residual default).
+4. **Module quotient** — the owner graph projected onto the spec's
+   partition. Cross-module edges are the realizability evidence
+   `check_realizability` operates on.
+5. **Module proposals** — DAG-derived advisory recommendations
+   computed by the factorizer (`debundle modules propose`) over
+   `atomic_graph`. **Not** emitted by `debundle run`; they are a
+   read-only planner projection.
+
+When debugging planner output, start with the atomic unit. If an
+assignment would split a unit, the assignment is wrong regardless
+of how plausible the binding names look. If a proposal is too
+broad, inspect the atomic-DAG edges that close it and decide
+whether the edge classification is too conservative or whether the
+larger module is genuinely required.
+
+### Factor assembly inside `debundle run`
+
+The spec's explicit claims are resolved against the owner graph in
+`factor_assembly.rs`. The rules are deliberately strict:
+
+- Two different logical modules may not claim owners from the same
+  atomic unit.
+- A module claim that only covers part of an atomic unit is a
+  conflict, not an implicit request to move the rest.
+- Unclaimed owners default to the synthesized residual module.
+- The materializer consumes only the final explicit partition; it
+  does not silently co-move extra owners on behalf of the author.
+
+If the explicit partition is inconsistent, `debundle run` rejects
+and emits diagnostic side outputs (`cycles.json` or
+`atomic_unit_conflicts.json` under `reports/tree/<chunk-id>/`).
+
 ## Spec explicitness and diagnostics
 
 A tempting design for spec ergonomics is an _automatic closure

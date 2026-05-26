@@ -205,7 +205,7 @@ Today the pipeline runs everything inline in `materialize_logical_chunk`, includ
 
 ### The DESIGN.md vs CODE_REVIEW.md vs README.md vs guide.md split
 
-These four files plus AGENTS.md plus RENAME.md plus FACTORIZE.md plus PIPELINE_SPLIT.md document the same project from seven perspectives. Skimming them, I find:
+These four files plus AGENTS.md plus RENAME.md plus PIPELINE_SPLIT.md document the same project from multiple perspectives. Skimming them, I find:
 
 - DESIGN.md is the canonical theorem + algorithm document.
 - AGENTS.md is the canonical "how to work on this crate" document.
@@ -213,7 +213,7 @@ These four files plus AGENTS.md plus RENAME.md plus FACTORIZE.md plus PIPELINE_S
 - README.md is a marketing-shaped pitch with usage.
 - guide.md is shorter intro material.
 - TODO.md is a 21K-byte backlog.
-- FACTORIZE.md is a focused doc on the factorization step.
+- ~~FACTORIZE.md~~ — deleted; folded into DESIGN.md (May 2026).
 - RENAME.md is a focused doc on the readability rename pass.
 
 This is a lot. There is one bit of genuine drift: `PIPELINE_SPLIT.md` describes `factor_assembly::compute_owner_claims` as a public API ("apply spec → claims (factor*assembly::compute_owner_claims)") but `factor_assembly.rs:90` has it as `fn compute_owner_claims` — \_private*. Minor, but evidence that PIPELINE_SPLIT.md was written before the implementation it describes.

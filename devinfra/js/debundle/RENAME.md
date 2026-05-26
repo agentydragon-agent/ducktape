@@ -72,7 +72,7 @@ Plus one mapping and one heuristic:
 ## Docs to Update
 
 - `DESIGN.md`: ~15 references to `ChunkFactorization`, `FactorizationReport`, `validate_factorization`, `factor_assembly`
-- `FACTORIZE.md`: conceptual doc about the partition/proposal model; rename to `PARTITIONS.md` or `GRAPH_VOCABULARY.md`
+- ~~`FACTORIZE.md`~~: deleted; conceptual content folded into `DESIGN.md` §"Layered mental model" + §"Factor assembly inside `debundle run`".
 - `TODO.md`: `peel/factorize.rs` reference
 - `README.md`: any `ChunkFactorization` references
 - `debug/perf/2026_05_20_large_web_corpus/README.md`: `ChunkFactorization` reference

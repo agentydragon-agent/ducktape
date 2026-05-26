@@ -6,8 +6,8 @@
 //! `DepKind` causes from the unit) so the materializer can reject
 //! before emit. This pass deliberately does *not* extend a single-
 //! member claim to cover the rest of its unit — that promotion is
-//! an authoring decision surfaced by `debundle peel patch-plan`.
-//! See `FACTORIZE.md`.
+//! an authoring decision surfaced by `debundle coverage`.
+//! See `DESIGN.md` §"Factor assembly inside `debundle run`".
 
 use std::collections::{BTreeSet, HashMap};
 

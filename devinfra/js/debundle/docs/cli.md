@@ -356,5 +356,6 @@ examples.
   commands consume.
 - `PIPELINE_SPLIT.md` — how the underlying Stage A / Stage B
   composition relates to these commands' inputs and outputs.
-- `FACTORIZE.md` — the factorization algorithm `modules propose`
-  draws its proposals from.
+- `DESIGN.md` §"Layered mental model" + §"Factor assembly inside
+  `debundle run`" — the factorization algorithm `modules propose`
+  draws its proposals from. (Was the standalone `FACTORIZE.md`.)

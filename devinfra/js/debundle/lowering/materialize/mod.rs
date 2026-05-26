@@ -496,7 +496,7 @@ fn validate_and_emit_reports(
         );
         let causes = render_atomic_unit_cause_guidance(&factorization_report.atomic_unit_conflicts);
         bail!(
-            "materialize_logical_modules: chunk {chunk_id} has {n} atomic-factor-unit conflict(s) — the spec assigns members of one atomic factor unit to different destination modules, forming a cycle in the module dep graph that the constraining-edge SCC analysis says is unrealizable. Atomic factor units come from FACTORIZE.md's `G_atomic` SCC over the owner graph; every member must co-locate. {causes}Resolve by reconciling each unit's claims into a single destination. Full evidence written to reports/tree/{chunk_id}/atomic_unit_conflicts.json; owner graph written to reports/tree/{chunk_id}/owner_graph.json. Summary:\n{summary}",
+            "materialize_logical_modules: chunk {chunk_id} has {n} atomic-factor-unit conflict(s) — the spec assigns members of one atomic factor unit to different destination modules, forming a cycle in the module dep graph that the constraining-edge SCC analysis says is unrealizable. Atomic factor units come from `G_atomic` SCC over the owner graph (DESIGN.md §\"Two classes of atom\"); every member must co-locate. {causes}Resolve by reconciling each unit's claims into a single destination. Full evidence written to reports/tree/{chunk_id}/atomic_unit_conflicts.json; owner graph written to reports/tree/{chunk_id}/owner_graph.json. Summary:\n{summary}",
             n = factorization_report.atomic_unit_conflicts.len(),
         );
     }
