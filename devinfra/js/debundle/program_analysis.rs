@@ -15,6 +15,53 @@ use binding_targets::{
 };
 use js_ast::{ParsedJsModule, SourceLineIndex, str_value};
 
+/// True when a specifier string is a relative module path that
+/// `rewrite_chunk_entry_specifiers` could rewrite (any `.` / `/`
+/// prefix). Kept in sync with the predicate in
+/// `rewrite_specifiers::is_relative_specifier`.
+fn is_relative_specifier(source: &str) -> bool {
+    source.starts_with('.') || source.starts_with('/')
+}
+
+/// If `node` is `import("literal")` and the literal is a relative
+/// module path, return it; otherwise `None`.
+fn dynamic_import_relative_specifier(node: &CallExpr) -> Option<String> {
+    if !matches!(node.callee, Callee::Import(_)) {
+        return None;
+    }
+    let first = node.args.first()?;
+    if first.spread.is_some() {
+        return None;
+    }
+    let Expr::Lit(Lit::Str(s)) = &*first.expr else {
+        return None;
+    };
+    let v = str_value(s);
+    is_relative_specifier(&v).then_some(v)
+}
+
+/// If `node` is `new Worker("literal")` / `new SharedWorker("literal")`
+/// and the literal is a relative module path, return it; otherwise `None`.
+fn worker_relative_specifier(node: &NewExpr) -> Option<String> {
+    let callee_is_worker = matches!(
+        &*node.callee,
+        Expr::Ident(ident) if ident.sym == *"Worker" || ident.sym == *"SharedWorker"
+    );
+    if !callee_is_worker {
+        return None;
+    }
+    let args = node.args.as_ref()?;
+    let first = args.first()?;
+    if first.spread.is_some() {
+        return None;
+    }
+    let Expr::Lit(Lit::Str(s)) = &*first.expr else {
+        return None;
+    };
+    let v = str_value(s);
+    is_relative_specifier(&v).then_some(v)
+}
+
 pub struct ProgramAnalysis {
     pub imports: Vec<ImportRecord>,
     pub import_by_local_name: HashMap<String, ImportSpecifierRecord>,
@@ -23,6 +70,15 @@ pub struct ProgramAnalysis {
     pub side_effects: Vec<SideEffectRecord>,
     pub dynamic_import_count: usize,
     pub observable_module_effect: bool,
+    /// True when the module body contains any specifier that
+    /// `rewrite_chunk_entry_specifiers` could rewrite (any `import`,
+    /// `export … from`, `import(...)`, or `new Worker(...)` /
+    /// `new SharedWorker(...)` whose source is a relative path
+    /// starting with `.` or `/`). Collected during the same module
+    /// walk as `dynamic_import_count` / `observable_module_effect` so
+    /// `prepare_js_chunks` can decide AST retention without a second
+    /// full-tree visit.
+    pub has_rewritable_specifier: bool,
 }
 
 pub struct OwnerRecord {
@@ -97,9 +153,19 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
     let mut export_aliases = Vec::new();
     let mut owners = Vec::new();
     let mut side_effects = Vec::new();
-    let mut dynamic_imports = DynamicImportCounter::default();
-    parsed.module.visit_with(&mut dynamic_imports);
-    let observable_module_effect = observable_effect_module(&parsed.module);
+    // Fused module-level walk: collects everything that previously
+    // required a separate `visit_with` over the whole module
+    // (dynamic-import count, observable top-level effects,
+    // rewritable-specifier presence). Each concern's `visit_*`
+    // hooks live on the same struct and write into independent
+    // fields, so adding/removing concerns is local.
+    let mut module_scan = ModuleScanVisitor::default();
+    parsed.module.visit_with(&mut module_scan);
+    let ModuleScanVisitor {
+        dynamic_import_count,
+        observable_module_effect,
+        has_rewritable_specifier,
+    } = module_scan;
 
     for (ordinal, item) in parsed.module.body.iter().enumerate() {
         if let ModuleItem::ModuleDecl(ModuleDecl::Import(decl)) = item {
@@ -180,8 +246,9 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
         export_aliases,
         owners,
         side_effects,
-        dynamic_import_count: dynamic_imports.count,
+        dynamic_import_count,
         observable_module_effect,
+        has_rewritable_specifier,
     }
 }
 
@@ -323,21 +390,83 @@ fn runtime_sensitive_module_item(item: &ModuleItem) -> bool {
     collector.sensitive
 }
 
-fn observable_effect_module(module: &Module) -> bool {
-    let mut collector = ObservableTopLevelEffectCollector::default();
-    module.visit_with(&mut collector);
-    collector.observed
-}
-
+/// Single-pass module-level walk producing every fact set the
+/// stage-one analyzer needs that does not depend on per-statement
+/// phase tracking:
+///
+/// - `dynamic_import_count`: number of `import(...)` call expressions
+///   anywhere in the module.
+/// - `observable_module_effect`: any `new …(…)` or any `window.*` /
+///   `document.*` member access; matches the previous
+///   `ObservableTopLevelEffectCollector` exactly.
+/// - `has_rewritable_specifier`: any `import`, `export … from`,
+///   `import(…literal)`, or `new Worker(…literal)` /
+///   `new SharedWorker(…literal)` whose source literal is a relative
+///   module path (`.` / `/` prefix). Mirrors `rewrite_source`'s gate
+///   so `prepare_js_chunks` can drop the AST when no rewrite is
+///   possible.
+///
+/// Replaces three independent module-level `Visit` impls that each
+/// walked the full module — one `visit_with` per concern. Concerns
+/// here are independent: their hooks set distinct fields and never
+/// short-circuit each other.
 #[derive(Default)]
-struct DynamicImportCounter {
-    count: usize,
+struct ModuleScanVisitor {
+    dynamic_import_count: usize,
+    observable_module_effect: bool,
+    has_rewritable_specifier: bool,
 }
 
-impl Visit for DynamicImportCounter {
+impl Visit for ModuleScanVisitor {
     fn visit_call_expr(&mut self, node: &CallExpr) {
         if matches!(node.callee, Callee::Import(_)) {
-            self.count += 1;
+            self.dynamic_import_count += 1;
+            if !self.has_rewritable_specifier
+                && dynamic_import_relative_specifier(node).is_some()
+            {
+                self.has_rewritable_specifier = true;
+            }
+        }
+        node.visit_children_with(self);
+    }
+
+    fn visit_new_expr(&mut self, node: &NewExpr) {
+        self.observable_module_effect = true;
+        if !self.has_rewritable_specifier && worker_relative_specifier(node).is_some() {
+            self.has_rewritable_specifier = true;
+        }
+        node.visit_children_with(self);
+    }
+
+    fn visit_member_expr(&mut self, node: &MemberExpr) {
+        if !self.observable_module_effect
+            && member_root_sym(&node.obj).is_some_and(|sym| sym == "window" || sym == "document")
+        {
+            self.observable_module_effect = true;
+        }
+        node.visit_children_with(self);
+    }
+
+    fn visit_import_decl(&mut self, node: &ImportDecl) {
+        if !self.has_rewritable_specifier && is_relative_specifier(&str_value(&node.src)) {
+            self.has_rewritable_specifier = true;
+        }
+        node.visit_children_with(self);
+    }
+
+    fn visit_named_export(&mut self, node: &NamedExport) {
+        if !self.has_rewritable_specifier
+            && let Some(src) = &node.src
+            && is_relative_specifier(&str_value(src))
+        {
+            self.has_rewritable_specifier = true;
+        }
+        node.visit_children_with(self);
+    }
+
+    fn visit_export_all(&mut self, node: &ExportAll) {
+        if !self.has_rewritable_specifier && is_relative_specifier(&str_value(&node.src)) {
+            self.has_rewritable_specifier = true;
         }
         node.visit_children_with(self);
     }
@@ -364,25 +493,6 @@ impl Visit for RuntimeSensitiveCollector {
 
     fn visit_await_expr(&mut self, node: &AwaitExpr) {
         self.sensitive = true;
-        node.visit_children_with(self);
-    }
-}
-
-#[derive(Default)]
-struct ObservableTopLevelEffectCollector {
-    observed: bool,
-}
-
-impl Visit for ObservableTopLevelEffectCollector {
-    fn visit_new_expr(&mut self, node: &NewExpr) {
-        self.observed = true;
-        node.visit_children_with(self);
-    }
-
-    fn visit_member_expr(&mut self, node: &MemberExpr) {
-        if member_root_sym(&node.obj).is_some_and(|sym| sym == "window" || sym == "document") {
-            self.observed = true;
-        }
         node.visit_children_with(self);
     }
 }

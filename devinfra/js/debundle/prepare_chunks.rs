@@ -16,7 +16,6 @@ use js_ast::{ParsedJsModule, parse_js_module_consuming};
 use program_analysis::{
     ProgramAnalysis, analyze_program_shallow, build_chunk_manifest_from_analysis,
 };
-use rewrite_specifiers::ast_has_rewritable_specifier;
 use spec::TransformSpec;
 
 const CANONICALIZE_HEADER_LINES: &[&str] = &[
@@ -120,16 +119,16 @@ pub fn prepare_js_chunks(
     // modules, renames, vendor); on top of those, `rewrite_chunk_entry_specifiers`
     // runs unconditionally for every chunk, so we must also keep the AST whenever
     // that stage would actually rewrite anything in this chunk's entry. The
-    // unified predicate `ast_has_rewritable_specifier` mirrors `rewrite_source`
-    // exactly — both treat a specifier as rewriteable iff it is a relative path
-    // (`.` or `/` prefix). Sharing the predicate prevents drift if either side
-    // grows.
+    // `has_rewritable_specifier` fact mirrors `rewrite_source`'s relative-path
+    // gate (`.` or `/` prefix) exactly and is computed during the first-pass
+    // `analyze_program_shallow` walk, so this second pass does not need to
+    // re-visit the AST.
     let prepared_chunks = parsed_chunks
         .into_iter()
         .map(|(chunk_id, chunk_name, mut prepared)| {
             let needs_ast =
                 needs_ast_for_chunk(&chunk_name, spec, &import_index, &vendor_target_chunk_ids)
-                    || entry_has_rewritable_specifier(&prepared);
+                    || prepared.has_rewritable_specifier;
 
             if !needs_ast {
                 if let Some(pos) = prepared
@@ -214,15 +213,22 @@ struct PreparedChunk {
     metadata: ChunkMetadata,
     analysis: ChunkAnalysisReport,
     parsed_files: Vec<ParsedJsFileRecord>,
+    /// Captured from the fused `analyze_program_shallow` walk so the
+    /// second pass can decide AST retention without re-visiting the
+    /// AST. Replaces the dedicated `ast_has_rewritable_specifier`
+    /// traversal that used to run for every chunk in
+    /// `entry_has_rewritable_specifier`.
+    has_rewritable_specifier: bool,
 }
 
 fn prepare_chunk(job: PrepareChunkJob) -> Result<PreparedChunk> {
-    let (analysis, prepared_file, prepared_entry_file, parsed_files) = prepare_parsed_entry(
-        &job.chunk_name,
-        &job.entry_file,
-        &job.source_path,
-        job.entry_source,
-    )?;
+    let (analysis, has_rewritable_specifier, prepared_file, prepared_entry_file, parsed_files) =
+        prepare_parsed_entry(
+            &job.chunk_name,
+            &job.entry_file,
+            &job.source_path,
+            job.entry_source,
+        )?;
     Ok(PreparedChunk {
         entry_file: prepared_entry_file,
         files: vec![prepared_file],
@@ -231,6 +237,7 @@ fn prepare_chunk(job: PrepareChunkJob) -> Result<PreparedChunk> {
         },
         analysis,
         parsed_files,
+        has_rewritable_specifier,
     })
 }
 
@@ -239,7 +246,7 @@ fn prepare_parsed_entry(
     entry_file: &str,
     source_path: &str,
     entry_source: String,
-) -> Result<(ChunkAnalysisReport, JsFile, String, Vec<ParsedJsFileRecord>)> {
+) -> Result<(ChunkAnalysisReport, bool, JsFile, String, Vec<ParsedJsFileRecord>)> {
     let source_bytes = entry_source.len();
     let source_name = format!("{chunk_id}/{entry_file}");
 
@@ -250,11 +257,13 @@ fn prepare_parsed_entry(
     let analysis_started = Instant::now();
     let analysis = analyze_program_shallow(&parsed);
     let analysis_duration = analysis_started.elapsed();
+    let has_rewritable_specifier = analysis.has_rewritable_specifier;
 
     let manifest = build_parsed_chunk_manifest(chunk_id, source_path, &analysis);
     let file = canonical_parsed_file(chunk_id, source_path, parsed);
     Ok((
         manifest,
+        has_rewritable_specifier,
         file,
         CANONICAL_CHUNK_ENTRY_FILE.to_string(),
         vec![ParsedJsFileRecord {
@@ -347,26 +356,6 @@ fn build_import_index(
                 acc
             },
         )
-}
-
-/// True iff this chunk's entry-file AST contains any specifier that
-/// `rewrite_chunk_entry_specifiers` could rewrite. Looking at the actual
-/// AST (rather than the manifest's static-import list) is what makes this
-/// coherent with the rewrite phase: we cover dynamic `import(...)` and
-/// `new Worker(...)` shapes too, and we apply the same relative-path
-/// gate (`.` / `/` prefix) that `rewrite_source` uses.
-fn entry_has_rewritable_specifier(prepared: &PreparedChunk) -> bool {
-    let Some(entry) = prepared
-        .files
-        .iter()
-        .find(|f| f.path == prepared.entry_file)
-    else {
-        return false;
-    };
-    let JsFileBody::Ast(parsed) = &entry.body else {
-        return false;
-    };
-    ast_has_rewritable_specifier(parsed)
 }
 
 /// Determine if a chunk needs to keep its AST based on the spec and import index.
