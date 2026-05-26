@@ -1,15 +1,23 @@
 # Augur code review — 2026-05-26 (open items)
 
 Trimmed to active work. Landed items recorded in `git log` — search for
-`augur/sim:`, `augur/api`, `augur/frontend:` between `ef0a8178b` and
-`1b6c46d47` to see them. Phases 1 (correctness), 2 (dead code), and 4
-(frontend reorg) are closed.
+`augur/sim:`, `augur/api`, `augur/frontend:`. Phases 1 (correctness), 2
+(dead code), and 4 (frontend reorg) are closed.
+
+**B2 + B1 progress (in-flight on `augur-arena-refactor` worktree):**
+Tax, TaxLiability, Transfer, Property, Liability, Sale, Obligation,
+LiquidityPolicy, LifecycleEvent CompileOutput dataclasses landed and
+embedded into `CompiledSimulation`. Remaining flat fields still hold
+PE issuer + policy, MID + SALT, capital-gain agents, lot/cash arrays,
+and lifecycle-state extras (`property_rented_fraction`, `property_building_basis`,
+`property_owner_profile_index`, `property_home_value_series_index`,
+`liability_owner_profile_index`).
 
 ## B. Structural refactor (Phase 3)
 
 Listed in recommended execution order — each row sets up the next.
 
-### B0. Unify rollout axis to R-last (medium; precursor to B1)
+### B0. Unify rollout axis to R-last (medium; precursor to B1 nesting completion)
 
 `CurrentStateBuffers` fields are shaped `(R, *)` (rollout-first);
 `SimulationBuffers` fields are shaped `(*, R)` (rollout-last). Plan
@@ -26,46 +34,32 @@ Mechanical change:
 - Sanity-check with `bbr test //augur/sim/...` (numerical results must
   be identical — this is a pure layout change).
 
-Land **before B1**: the nested-arena PR is much easier to read if axes
-are already consistent. Two separate PRs.
+### B1. Finish remaining `CompiledSimulation` arenas (medium remaining)
 
-Overall order within Phase 3: **B3 → B2 → B0 → B1 → B4**. B3 + B2 name
-the seams first, then B0 transposes one field at a time, then B1 nests
-the now-consistent arrays.
+Already landed: tax / tax_liabilities / transfers / properties / liabilities /
+sales / obligations / liquidity_policies / lifecycle_events.
 
-### B3. `_wire_landlord_rental` mutates 4 lists in place (small)
+Still flat:
 
-`scenarios.py` helper takes 8 keyword-only params and threads
-`agents`/`initial_cash`/`recurring_transfers`/`scheduled_transfers`
-lists through, appending to each. Return a dataclass the caller merges
-instead. Good warmup that defines a typed return shape Phase 3 reuses.
-
-### B2. Compile-helper tuple returns → dataclasses (medium)
-
-`_compile_tax` returns an 18-tuple (was 17, +1 after A1's §121 array);
-`_compile_properties_and_liabilities` returns a 33-tuple. Replace each
-with a typed `*CompileOutput` dataclass; split the 33-tuple helper into
-`_compile_properties` + `_compile_liabilities`. Names produced here are
-the seams B1 will reuse.
-
-### B1. `CompiledSimulation` ~170 fields → ~8 nested arenas (large; biggest lever)
-
-Single flat dataclass. Unpacking patterns like
-`int(plan.property_owner_profile_index[prop])` are everywhere in
-`engine.py`. Group into:
-
-- `TaxArrays` (profile + link arrays, ~30 fields)
-- `PropertyArrays` (property/lifecycle compile arrays, ~25 fields)
-- `LiabilityArrays` (mortgage compile arrays, ~12 fields)
-- `LiquidityPolicyArrays` (buffer + asset preference, ~17 fields)
-- `TransferArrays` (recurring/scheduled transfer slot tables, ~15 fields)
-- `ObligationArrays` (~20 fields)
-- `LotArrays` / `CashArrays` (small clusters)
-- `ExternalSeriesArrays` (string codes + cube)
-
-~6× reduction in top-level dataclass surface; IDE navigation gets vastly
-better; tests can construct partial fixtures from one arena instead of
-"all 170 fields".
+- **PE arena**: `pe_issuer_codes` + `pe_issuer_*` (~5) + `pe_policy_*` (~12).
+  Two natural sub-dataclasses (`PEIssuerCompileOutput`, `PEPolicyCompileOutput`)
+  or one combined.
+- **MID + SALT slice on TaxCompileOutput**: `tax_link_mid_principal_ratio`,
+  `tax_link_mid_active`, `tax_link_salt_active`, `tax_link_salt_cap_by_year`,
+  `tax_link_salt_contributing_mask`. These are outputs of
+  `_compile_mortgage_interest_deductions` + `_compile_federal_salt_deductions`,
+  not `_compile_tax` directly; need their own CompileOutputs or fold into
+  TaxCompileOutput.
+- **Capital-gain agents**: `capital_gain_agent_codes`,
+  `tax_profile_capital_gain_index` — tiny (2 fields), small win.
+- **Lifecycle state extras** computed in `compile_simulation` after the helpers
+  run: `property_rented_fraction`, `property_building_basis`,
+  `property_owner_profile_index`, `property_home_value_series_index`,
+  `liability_owner_profile_index`. Could be on `PropertyCompileOutput` /
+  `LiabilityCompileOutput` if the helper signature widens to receive
+  `property_slot_by_id` + `profile_index_by_agent`.
+- **Lot + cash + external-series leftovers**: small clusters; defer if not
+  blocking other work.
 
 ### B4. Split monolithic `compiler.py` + `engine.py` (large; mostly mechanical after B1)
 
@@ -77,6 +71,25 @@ domain:
 
 Orchestration (`_run_month_step`) stays in `engine/__init__.py` or
 `engine/loop.py`.
+
+### B5. Bundle lifecycle-event discriminators into per-event-kind dataclasses (small to medium; new)
+
+`LifecycleEventCompileOutput` stores all kinds in a single dense table with
+`kind ∈ {LIFECYCLE_KIND_FRACTION, LIFECYCLE_KIND_CAPITAL_IMPROVEMENT,
+LIFECYCLE_KIND_SALE}` and reuses `amount` for both USD spend (kind 1) and
+closing-cost % (kind 2). Same pattern exists in `ObligationCompileOutput`
+(`source_kind` ∈ {0..5} with `source_index` re-purposed per kind) and in
+the wire/scenario layer (`SetRentedFractionEvent` / `CapitalImprovementEvent`
+/ `PropertySaleEvent` Pydantic discriminated union).
+
+The numpy hot loop wants the dense table for vectorization; the engine's
+slow path + decode pass would benefit from a typed view that maps each
+row to its discriminated dataclass. Sketch: a `LifecycleEventView`
+property on `LifecycleEventCompileOutput` that yields typed event rows
+(or sub-array slices keyed by kind). Same idea for obligation source kinds.
+This is the "discriminated union over a SoA layout" pattern — bundle the
+discriminator + per-kind payload into the class system so callers don't
+have to remember kind-specific field reuse.
 
 ## X. Cross-repo follow-ups
 
@@ -111,11 +124,10 @@ current action:
 
 ## Open items, ranked
 
-| #   | Area                                                   | Impact     | Effort |
-| --- | ------------------------------------------------------ | ---------- | ------ |
-| B3  | `_wire_landlord_rental` return instead of mutate       | DX         | small  |
-| B2  | Compile-helpers tuple→dataclass                        | DX         | medium |
-| B0  | Unify rollout axis to R-last on `current` buffers      | DX         | medium |
-| B1  | CompiledSimulation 170 → 8 nested arenas               | big DX win | large  |
-| B4  | Split compiler.py + engine.py                          | DX         | large  |
-| X1  | After Flux reconcile: drop `_collapse_list_notes` shim | cross-repo | small  |
+| #  | Area                                                                | Impact     | Effort |
+| -- | ------------------------------------------------------------------- | ---------- | ------ |
+| B1 | Finish remaining `CompiledSimulation` arenas (PE, MID/SALT, lot/cash) | DX win    | medium |
+| B0 | Unify rollout axis to R-last on `current` buffers                   | DX         | medium |
+| B5 | Bundle lifecycle/obligation discriminators into typed views         | DX         | medium |
+| B4 | Split compiler.py + engine.py                                       | DX         | large  |
+| X1 | After Flux reconcile: drop `_collapse_list_notes` shim              | cross-repo | small  |
