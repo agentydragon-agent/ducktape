@@ -1638,10 +1638,7 @@ function LifecycleEventsEditor({ events, horizonMonths, onChange }) {
               key={event._id ?? index}
               event={event}
               maxMonth={maxMonth}
-              postSale={
-                saleMonth != null &&
-                (event.month > saleMonth || (event.month === saleMonth && event.kind !== "property_sale"))
-              }
+              postSale={isEventPostSale(event, saleMonth)}
               onChange={(patch) => updateEvent(index, patch)}
               onReplaceKind={(kind) => updateEvent(index, defaultLifecycleEvent(kind, event.month))}
               onRemove={() => removeEvent(index)}
@@ -1669,6 +1666,16 @@ function firstSaleMonth(events) {
     }
   }
   return earliest;
+}
+
+// True for any event the wire validator rejects as a post-sale residual: events strictly
+// after `saleMonth`, plus same-month non-sale events (a SetRentedFraction in the same month
+// as the sale is also illegal). `saleMonth == null` means no sale on the timeline → nothing
+// is post-sale.
+function isEventPostSale(event, saleMonth) {
+  if (saleMonth == null) return false;
+  if (event.month > saleMonth) return true;
+  return event.month === saleMonth && event.kind !== "property_sale";
 }
 
 function LifecycleEventRow({ event, maxMonth, postSale, onChange, onReplaceKind, onRemove }) {
@@ -2107,6 +2114,19 @@ function useEventSelection() {
     setSelectedEventMonthIndex(null);
     setHoveredEventMonthIndex(null);
   };
+  // Global Escape clears the selection (mouseleave already clears hover, but keyboard
+  // users couldn't deselect after pressing Enter/Space on a marker). Stays a no-op
+  // while nothing is selected so other Escape consumers (modals, menus) keep priority.
+  useEffect(() => {
+    if (selectedEventMonthIndex == null) return undefined;
+    const onKeyDown = (event) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      clear();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [selectedEventMonthIndex]);
   return {
     selectedEventMonthIndex,
     hoveredEventMonthIndex,
