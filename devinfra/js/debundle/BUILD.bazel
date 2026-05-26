@@ -530,12 +530,32 @@ rust_test(
 )
 
 rust_library(
+    name = "comment_cli",
+    srcs = ["comment_cli.rs"],
+    crate_root = "comment_cli.rs",
+    edition = "2024",
+    deps = [
+        "@crates//:anyhow",
+        "@crates//:clap",
+        "@crates//:serde_yaml",
+    ],
+)
+
+rust_test(
+    name = "comment_cli_test",
+    crate = ":comment_cli",
+    edition = "2024",
+    deps = ["@crates//:tempfile"],
+)
+
+rust_library(
     name = "cli",
     srcs = ["cli.rs"],
     crate_name = "debundle_cli",
     crate_root = "cli.rs",
     edition = "2024",
     deps = [
+        ":comment_cli",
         ":module_cli",
         ":peel",
         ":pipeline",

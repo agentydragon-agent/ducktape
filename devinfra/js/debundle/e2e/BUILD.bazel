@@ -143,3 +143,18 @@ rust_test(
         "@crates//:tempfile",
     ],
 )
+
+# CLI verbs `debundle bindings comment` + `debundle modules comment`:
+# YAML `comment:` field edits including a fake-`$EDITOR` flow. Calls
+# the library's public Rust entry points directly.
+rust_test(
+    name = "comment_cli_test",
+    srcs = ["comment_cli_test.rs"],
+    crate_root = "comment_cli_test.rs",
+    edition = "2024",
+    deps = [
+        "//devinfra/js/debundle:comment_cli",
+        "@crates//:serde_yaml",
+        "@crates//:tempfile",
+    ],
+)
