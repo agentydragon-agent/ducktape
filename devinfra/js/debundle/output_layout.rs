@@ -19,6 +19,17 @@ pub const CYCLES_REPORT: &str = "cycles.json";
 pub const ATOMIC_UNIT_CONFLICTS_REPORT: &str = "atomic_unit_conflicts.json";
 pub const INDEX_REPORT: &str = "index.json";
 
+// Stage A on-disk sidecar layout: a per-chunk `chunk_analysis/`
+// directory holding the per-concept JSON files that fully describe
+// Stage A's output, plus a manifest envelope that pins the file set
+// and schema version. See `stage_one_sidecars.rs` for the writers
+// and DESIGN.md §"Pipeline split (Stage A / Stage B)" for context.
+pub const CHUNK_ANALYSIS_DIR: &str = "chunk_analysis";
+pub const CHUNK_ANALYSIS_AST_REPORT: &str = "ast.json";
+pub const CHUNK_ANALYSIS_FACTS_REPORT: &str = "facts.json";
+pub const CHUNK_ANALYSIS_ATOMIC_UNITS_REPORT: &str = "atomic_units.json";
+pub const CHUNK_ANALYSIS_MANIFEST_REPORT: &str = "manifest.json";
+
 #[derive(Debug, Clone)]
 pub struct DebundleOutputLayout {
     root: PathBuf,

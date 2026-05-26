@@ -446,6 +446,24 @@ pub(super) fn materialize_logical_chunk(
                 owner_graph_options,
             )
         });
+        // Stage A on-disk sidecars: snapshot the spec-independent
+        // analysis (AST + facts + atomic units + manifest) under
+        // `<chunk_id>/chunk_analysis/` so a future
+        // `materialize_from_analysis` reader (task #78) can pick up
+        // Stage B from a cached Stage A action. Conditional on
+        // `report_out_dir`: the in-memory pipeline still works without
+        // them, and the e2e suites that don't request a report dir
+        // shouldn't pay the I/O cost. See `stage_one_sidecars.rs`.
+        if let Some(report_out_dir) = report_out_dir {
+            time_phase!(timings, "write_stage_one_sidecars", {
+                write_stage_one_sidecars(
+                    report_out_dir,
+                    chunk_id,
+                    &stage_one,
+                    &runtime_ast.module,
+                )
+            })?;
+        }
         let StageOneAnalysis {
             fact_analysis: analysis,
             owner_graph_and_units: precomputed,

@@ -215,7 +215,7 @@ pub enum DepKind {
 /// Stable-in-run identity of an owner graph vertex. V1 owner
 /// vertices are post-comma-list `StatementFacts` rows, so the id
 /// is the row's source-order ordinal.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct OwnerId(pub usize);
 

@@ -23,7 +23,7 @@ use std::collections::BTreeSet;
 
 use petgraph::algo::tarjan_scc;
 use petgraph::graphmap::DiGraphMap;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::facts::StatementFacts;
 use crate::graph::{DepKind, OwnerGraph, OwnerGraphOptions, OwnerId, build_owner_graph_with};
@@ -37,7 +37,7 @@ use crate::graph::{DepKind, OwnerGraph, OwnerGraphOptions, OwnerId, build_owner_
 /// `causes` is a `BTreeSet<DepKind>` so iteration order is the
 /// `DepKind` `Ord` order — consumers that serialise the field can
 /// drop their own post-collection sort.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AtomicUnit {
     pub members: BTreeSet<OwnerId>,
     pub causes: BTreeSet<DepKind>,

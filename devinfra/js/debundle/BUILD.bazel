@@ -232,15 +232,19 @@ rust_library(
         "reports.rs",
         "rollback_graph.rs",
         "stage_one.rs",
+        "stage_one_sidecars.rs",
         "validation.rs",
     ],
     crate_root = "lib.rs",
     edition = "2024",
     deps = [
         ":binding_targets",
+        ":output_layout",
+        "@crates//:anyhow",
         "@crates//:petgraph",
         "@crates//:rayon",
         "@crates//:serde",
+        "@crates//:serde_json",
         "@crates//:swc_atoms",
         "@crates//:swc_common",
         "@crates//:swc_ecma_ast",
@@ -256,6 +260,7 @@ rust_test(
         "@crates//:serde_json",
         "@crates//:swc_common",
         "@crates//:swc_ecma_parser",
+        "@crates//:tempfile",
     ],
 )
 
