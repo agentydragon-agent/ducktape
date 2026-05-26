@@ -214,7 +214,7 @@ class CurrentStateBuffers:
     property_rented_fraction: NDArray[np.float64]
     # Runtime depreciable building basis per (rollout, property). Initialized from
     # `plan.property_building_basis[prop]` and bumped by `CapitalImprovementEvent`. Depreciation
-    # accrual multiplies this by `current.property_rented_fraction[r, p] / (27.5 × 12)` monthly.
+    # accrual multiplies this by `current.property_rented_fraction[p, r] / (27.5 × 12)` monthly.
     property_building_basis: NDArray[np.float64]
     # Cumulative count of owner-occupied months per (rollout, property). Increments by 1 each
     # month while `property_active[:, p] AND property_rented_fraction[:, p] < 1.0`. At sale
@@ -226,7 +226,7 @@ class CurrentStateBuffers:
     # ordinary (added back to bracket input). Zeroed at year-end.
     recapture_section_1250_ytd: NDArray[np.float64]
     # Rented-share of YTD mortgage interest per (rollout, liability). Each mortgage payment
-    # accrues `interest × current.property_rented_fraction[r, prop_of_lia]` into this buffer.
+    # accrues `interest × current.property_rented_fraction[prop_of_lia, r]` into this buffer.
     # At year-end:
     #   MID owner-share interest = liability_interest_ytd - liability_rental_interest_ytd
     #   Schedule E rental interest = liability_rental_interest_ytd (deducted from ordinary_ytd).
@@ -237,112 +237,112 @@ class CurrentStateBuffers:
 
     def validate(self, plan: SlotPlan) -> None:
         r = plan.rollout_count
-        _expect_array("current cash", self.cash, shape=(r, plan.cash_count), dtype=np.float64)
-        _expect_array("current lot_remaining", self.lot_remaining, shape=(r, plan.lot_count), dtype=np.float64)
-        _expect_array("current ordinary_ytd", self.ordinary_ytd, shape=(r, plan.tax_profile_count), dtype=np.float64)
+        _expect_array("current cash", self.cash, shape=(plan.cash_count, r), dtype=np.float64)
+        _expect_array("current lot_remaining", self.lot_remaining, shape=(plan.lot_count, r), dtype=np.float64)
+        _expect_array("current ordinary_ytd", self.ordinary_ytd, shape=(plan.tax_profile_count, r), dtype=np.float64)
         _expect_array(
             "current capital_gain_active",
             self.capital_gain_active,
-            shape=(r, plan.capital_gain_agent_count, 2),
+            shape=(plan.capital_gain_agent_count, 2, r),
             dtype=np.bool_,
         )
         _expect_array(
             "current capital_gain_ytd",
             self.capital_gain_ytd,
-            shape=(r, plan.capital_gain_agent_count, 2),
+            shape=(plan.capital_gain_agent_count, 2, r),
             dtype=np.float64,
         )
         _expect_array(
             "current tax_liability_active",
             self.tax_liability_active,
-            shape=(r, plan.tax_liability_count),
+            shape=(plan.tax_liability_count, r),
             dtype=np.bool_,
         )
         _expect_array(
             "current tax_liability_amount",
             self.tax_liability_amount,
-            shape=(r, plan.tax_liability_count),
+            shape=(plan.tax_liability_count, r),
             dtype=np.float64,
         )
-        _expect_array("current property_active", self.property_active, shape=(r, plan.property_count), dtype=np.bool_)
-        _expect_array("current property_basis", self.property_basis, shape=(r, plan.property_count), dtype=np.float64)
+        _expect_array("current property_active", self.property_active, shape=(plan.property_count, r), dtype=np.bool_)
+        _expect_array("current property_basis", self.property_basis, shape=(plan.property_count, r), dtype=np.float64)
         _expect_array(
-            "current property_ownership", self.property_ownership, shape=(r, plan.property_count), dtype=np.float64
+            "current property_ownership", self.property_ownership, shape=(plan.property_count, r), dtype=np.float64
         )
         _expect_array(
             "current property_contribution",
             self.property_contribution,
-            shape=(r, plan.property_count),
+            shape=(plan.property_count, r),
             dtype=np.float64,
         )
-        _expect_array("current property_equity", self.property_equity, shape=(r, plan.property_count), dtype=np.float64)
+        _expect_array("current property_equity", self.property_equity, shape=(plan.property_count, r), dtype=np.float64)
         _expect_array(
-            "current liability_active", self.liability_active, shape=(r, plan.liability_count), dtype=np.bool_
+            "current liability_active", self.liability_active, shape=(plan.liability_count, r), dtype=np.bool_
         )
         _expect_array(
-            "current liability_principal", self.liability_principal, shape=(r, plan.liability_count), dtype=np.float64
+            "current liability_principal", self.liability_principal, shape=(plan.liability_count, r), dtype=np.float64
         )
         _expect_array(
             "current liability_monthly_payment",
             self.liability_monthly_payment,
-            shape=(r, plan.liability_count),
+            shape=(plan.liability_count, r),
             dtype=np.float64,
         )
         _expect_array(
             "current liability_interest_ytd",
             self.liability_interest_ytd,
-            shape=(r, plan.liability_count),
+            shape=(plan.liability_count, r),
             dtype=np.float64,
         )
         _expect_array(
             "current liability_principal_ytd",
             self.liability_principal_ytd,
-            shape=(r, plan.liability_count),
+            shape=(plan.liability_count, r),
             dtype=np.float64,
         )
         _expect_array(
-            "current property_tax_ytd", self.property_tax_ytd, shape=(r, plan.tax_profile_count), dtype=np.float64
+            "current property_tax_ytd", self.property_tax_ytd, shape=(plan.tax_profile_count, r), dtype=np.float64
         )
         _expect_array(
             "current property_cumulative_depreciation",
             self.property_cumulative_depreciation,
-            shape=(r, plan.property_count),
+            shape=(plan.property_count, r),
             dtype=np.float64,
         )
         _expect_array(
             "current property_depreciation_ytd",
             self.property_depreciation_ytd,
-            shape=(r, plan.property_count),
+            shape=(plan.property_count, r),
             dtype=np.float64,
         )
         _expect_array(
             "current property_rented_fraction",
             self.property_rented_fraction,
-            shape=(r, plan.property_count),
+            shape=(plan.property_count, r),
             dtype=np.float64,
         )
         _expect_array(
             "current property_building_basis",
             self.property_building_basis,
-            shape=(r, plan.property_count),
+            shape=(plan.property_count, r),
             dtype=np.float64,
         )
         _expect_array(
             "current property_owner_occupied_months",
             self.property_owner_occupied_months,
-            shape=(r, plan.property_count),
+            shape=(plan.property_count, r),
             dtype=np.int64,
         )
         _expect_array(
             "current recapture_section_1250_ytd",
             self.recapture_section_1250_ytd,
-            shape=(r, plan.tax_profile_count),
+            shape=(plan.tax_profile_count, r),
             dtype=np.float64,
         )
         _expect_array(
             "current liability_rental_interest_ytd",
             self.liability_rental_interest_ytd,
-            shape=(r, plan.liability_count),
+            shape=(plan.liability_count, r),
             dtype=np.float64,
         )
         _expect_array("current failed", self.failed, shape=(r,), dtype=np.bool_)
@@ -884,34 +884,40 @@ def simulate_with_external_series_dense_result(
 def _allocate_current_state(plan: CompiledSimulation) -> CurrentStateBuffers:
     p = plan.slot_plan
     r = p.rollout_count
+    # Per-rollout state is R-last so per-step broadcasts (`current.foo[slot, :] += amount`)
+    # are contiguous and `current.foo[..., r]` is a contiguous per-rollout view.
     current = CurrentStateBuffers(
-        cash=np.broadcast_to(plan.cash_initial_balance, (r, p.cash_count)).copy(),
-        lot_remaining=np.broadcast_to(plan.lot_initial_quantity, (r, p.lot_count)).copy(),
-        ordinary_ytd=np.zeros((r, p.tax_profile_count), dtype=np.float64),
-        capital_gain_active=np.zeros((r, p.capital_gain_agent_count, 2), dtype=np.bool_),
-        capital_gain_ytd=np.zeros((r, p.capital_gain_agent_count, 2), dtype=np.float64),
-        tax_liability_active=np.zeros((r, p.tax_liability_count), dtype=np.bool_),
-        tax_liability_amount=np.zeros((r, p.tax_liability_count), dtype=np.float64),
-        property_active=np.zeros((r, p.property_count), dtype=np.bool_),
-        property_basis=np.zeros((r, p.property_count), dtype=np.float64),
-        property_ownership=np.zeros((r, p.property_count), dtype=np.float64),
-        property_contribution=np.zeros((r, p.property_count), dtype=np.float64),
-        property_equity=np.zeros((r, p.property_count), dtype=np.float64),
-        liability_active=np.zeros((r, p.liability_count), dtype=np.bool_),
-        liability_principal=np.zeros((r, p.liability_count), dtype=np.float64),
-        liability_monthly_payment=np.zeros((r, p.liability_count), dtype=np.float64),
-        liability_interest_ytd=np.zeros((r, p.liability_count), dtype=np.float64),
-        liability_principal_ytd=np.zeros((r, p.liability_count), dtype=np.float64),
-        property_tax_ytd=np.zeros((r, p.tax_profile_count), dtype=np.float64),
-        property_cumulative_depreciation=np.zeros((r, p.property_count), dtype=np.float64),
-        property_depreciation_ytd=np.zeros((r, p.property_count), dtype=np.float64),
+        cash=np.broadcast_to(plan.cash_initial_balance[:, None], (p.cash_count, r)).copy(),
+        lot_remaining=np.broadcast_to(plan.lot_initial_quantity[:, None], (p.lot_count, r)).copy(),
+        ordinary_ytd=np.zeros((p.tax_profile_count, r), dtype=np.float64),
+        capital_gain_active=np.zeros((p.capital_gain_agent_count, 2, r), dtype=np.bool_),
+        capital_gain_ytd=np.zeros((p.capital_gain_agent_count, 2, r), dtype=np.float64),
+        tax_liability_active=np.zeros((p.tax_liability_count, r), dtype=np.bool_),
+        tax_liability_amount=np.zeros((p.tax_liability_count, r), dtype=np.float64),
+        property_active=np.zeros((p.property_count, r), dtype=np.bool_),
+        property_basis=np.zeros((p.property_count, r), dtype=np.float64),
+        property_ownership=np.zeros((p.property_count, r), dtype=np.float64),
+        property_contribution=np.zeros((p.property_count, r), dtype=np.float64),
+        property_equity=np.zeros((p.property_count, r), dtype=np.float64),
+        liability_active=np.zeros((p.liability_count, r), dtype=np.bool_),
+        liability_principal=np.zeros((p.liability_count, r), dtype=np.float64),
+        liability_monthly_payment=np.zeros((p.liability_count, r), dtype=np.float64),
+        liability_interest_ytd=np.zeros((p.liability_count, r), dtype=np.float64),
+        liability_principal_ytd=np.zeros((p.liability_count, r), dtype=np.float64),
+        property_tax_ytd=np.zeros((p.tax_profile_count, r), dtype=np.float64),
+        property_cumulative_depreciation=np.zeros((p.property_count, r), dtype=np.float64),
+        property_depreciation_ytd=np.zeros((p.property_count, r), dtype=np.float64),
         # Broadcast the compile-time initial rented_fraction across rollouts. Lifecycle events
-        # may then mutate per-(rollout, property) state at runtime.
-        property_rented_fraction=np.broadcast_to(plan.property_rented_fraction, (r, p.property_count)).copy(),
-        property_building_basis=np.broadcast_to(plan.property_building_basis, (r, p.property_count)).copy(),
-        property_owner_occupied_months=np.zeros((r, p.property_count), dtype=np.int64),
-        recapture_section_1250_ytd=np.zeros((r, p.tax_profile_count), dtype=np.float64),
-        liability_rental_interest_ytd=np.zeros((r, p.liability_count), dtype=np.float64),
+        # may then mutate per-(property, rollout) state at runtime.
+        property_rented_fraction=np.broadcast_to(
+            plan.property_rented_fraction[:, None], (p.property_count, r)
+        ).copy(),
+        property_building_basis=np.broadcast_to(
+            plan.property_building_basis[:, None], (p.property_count, r)
+        ).copy(),
+        property_owner_occupied_months=np.zeros((p.property_count, r), dtype=np.int64),
+        recapture_section_1250_ytd=np.zeros((p.tax_profile_count, r), dtype=np.float64),
+        liability_rental_interest_ytd=np.zeros((p.liability_count, r), dtype=np.float64),
         failed=np.zeros(r, dtype=np.bool_),
         failed_month=np.full(r, NO_CODE, dtype=np.int64),
     )
@@ -924,25 +930,28 @@ def _snapshot_initial_state(buffers: SimulationBuffers, current: CurrentStateBuf
 
 
 def _snapshot_current_state(buffers: SimulationBuffers, current: CurrentStateBuffers, *, snapshot_index: int) -> None:
-    buffers.cash_state[snapshot_index] = current.cash
-    buffers.lot_state[snapshot_index] = current.lot_remaining
-    buffers.ordinary_state[snapshot_index] = current.ordinary_ytd
-    buffers.capital_gain_active_state[snapshot_index] = current.capital_gain_active
-    buffers.capital_gain_state[snapshot_index] = current.capital_gain_ytd
-    buffers.tax_liability_active_state[snapshot_index] = current.tax_liability_active
-    buffers.tax_liability_state[snapshot_index] = current.tax_liability_amount
-    buffers.property_active_state[snapshot_index] = current.property_active
-    buffers.property_basis_state[snapshot_index] = current.property_basis
-    buffers.property_ownership_state[snapshot_index] = current.property_ownership
-    buffers.property_contribution_state[snapshot_index] = current.property_contribution
-    buffers.property_equity_state[snapshot_index] = current.property_equity
-    buffers.liability_active_state[snapshot_index] = current.liability_active
-    buffers.liability_principal_state[snapshot_index] = current.liability_principal
-    buffers.liability_monthly_payment_state[snapshot_index] = current.liability_monthly_payment
-    buffers.liability_interest_ytd_state[snapshot_index] = current.liability_interest_ytd
-    buffers.liability_principal_ytd_state[snapshot_index] = current.liability_principal_ytd
-    buffers.property_cumulative_depreciation_state[snapshot_index] = current.property_cumulative_depreciation
-    buffers.property_owner_occupied_months_state[snapshot_index] = current.property_owner_occupied_months
+    # `current.*` is R-last per B0; StateHistoryBuffers is still (s, r, count) — transpose
+    # to (s, count, r) becomes a follow-up step. For now, write the transpose at the seam.
+    buffers.cash_state[snapshot_index] = current.cash.T
+    buffers.lot_state[snapshot_index] = current.lot_remaining.T
+    buffers.ordinary_state[snapshot_index] = current.ordinary_ytd.T
+    # 3D (count_a, count_b, R) → (R, count_a, count_b): move axis 2 to axis 0.
+    buffers.capital_gain_active_state[snapshot_index] = np.moveaxis(current.capital_gain_active, -1, 0)
+    buffers.capital_gain_state[snapshot_index] = np.moveaxis(current.capital_gain_ytd, -1, 0)
+    buffers.tax_liability_active_state[snapshot_index] = current.tax_liability_active.T
+    buffers.tax_liability_state[snapshot_index] = current.tax_liability_amount.T
+    buffers.property_active_state[snapshot_index] = current.property_active.T
+    buffers.property_basis_state[snapshot_index] = current.property_basis.T
+    buffers.property_ownership_state[snapshot_index] = current.property_ownership.T
+    buffers.property_contribution_state[snapshot_index] = current.property_contribution.T
+    buffers.property_equity_state[snapshot_index] = current.property_equity.T
+    buffers.liability_active_state[snapshot_index] = current.liability_active.T
+    buffers.liability_principal_state[snapshot_index] = current.liability_principal.T
+    buffers.liability_monthly_payment_state[snapshot_index] = current.liability_monthly_payment.T
+    buffers.liability_interest_ytd_state[snapshot_index] = current.liability_interest_ytd.T
+    buffers.liability_principal_ytd_state[snapshot_index] = current.liability_principal_ytd.T
+    buffers.property_cumulative_depreciation_state[snapshot_index] = current.property_cumulative_depreciation.T
+    buffers.property_owner_occupied_months_state[snapshot_index] = current.property_owner_occupied_months.T
     buffers.rollout_failed_state[snapshot_index] = current.failed
     buffers.rollout_failed_month_state[snapshot_index] = current.failed_month
 
@@ -951,19 +960,19 @@ def _zero_failed_state(current: CurrentStateBuffers) -> None:
     failed = current.failed
     if not failed.any():
         return
-    current.cash[failed] = 0.0
-    current.lot_remaining[failed] = 0.0
-    current.ordinary_ytd[failed] = 0.0
-    current.capital_gain_ytd[failed] = 0.0
-    current.tax_liability_amount[failed] = 0.0
-    current.property_basis[failed] = 0.0
-    current.property_ownership[failed] = 0.0
-    current.property_contribution[failed] = 0.0
-    current.property_equity[failed] = 0.0
-    current.liability_principal[failed] = 0.0
-    current.liability_monthly_payment[failed] = 0.0
-    current.liability_interest_ytd[failed] = 0.0
-    current.liability_principal_ytd[failed] = 0.0
+    current.cash[:, failed] = 0.0
+    current.lot_remaining[:, failed] = 0.0
+    current.ordinary_ytd[:, failed] = 0.0
+    current.capital_gain_ytd[:, :, failed] = 0.0
+    current.tax_liability_amount[:, failed] = 0.0
+    current.property_basis[:, failed] = 0.0
+    current.property_ownership[:, failed] = 0.0
+    current.property_contribution[:, failed] = 0.0
+    current.property_equity[:, failed] = 0.0
+    current.liability_principal[:, failed] = 0.0
+    current.liability_monthly_payment[:, failed] = 0.0
+    current.liability_interest_ytd[:, failed] = 0.0
+    current.liability_principal_ytd[:, failed] = 0.0
 
 
 def _run_month_step(
@@ -1017,16 +1026,16 @@ def _apply_scheduled_transfers(
         buffers.transfer_amount[month, slot, active_rollout] = amount[active_rollout]
         from_slot = int(plan.transfers.from_slot[month, slot])
         if from_slot >= 0:
-            current.cash[active_rollout, from_slot] -= amount[active_rollout]
+            current.cash[from_slot, active_rollout] -= amount[active_rollout]
         to_slot = int(plan.transfers.to_slot[month, slot])
         if to_slot >= 0:
-            current.cash[active_rollout, to_slot] += amount[active_rollout]
+            current.cash[to_slot, active_rollout] += amount[active_rollout]
         profile = int(plan.transfers.income_profile[month, slot])
         if profile >= 0:
-            current.ordinary_ytd[active_rollout, profile] += amount[active_rollout]
+            current.ordinary_ytd[profile, active_rollout] += amount[active_rollout]
         deduction_profile = int(plan.transfers.deduction_profile[month, slot])
         if deduction_profile >= 0:
-            current.ordinary_ytd[active_rollout, deduction_profile] -= amount[active_rollout]
+            current.ordinary_ytd[deduction_profile, active_rollout] -= amount[active_rollout]
 
 
 def _amount_values(
@@ -1071,10 +1080,10 @@ def _compute_tax_for_link(
 
     profile = int(plan.tax.link_profile[link])
     gain_profile = int(plan.tax_profile_capital_gain_index[profile])
-    ordinary = current.ordinary_ytd[:, profile]
-    ltcg = current.capital_gain_ytd[:, gain_profile, LONG_TERM_CAPITAL_GAIN_CODE]
-    stcg = current.capital_gain_ytd[:, gain_profile, SHORT_TERM_CAPITAL_GAIN_CODE]
-    recapture = current.recapture_section_1250_ytd[:, profile]
+    ordinary = current.ordinary_ytd[profile, :]
+    ltcg = current.capital_gain_ytd[gain_profile, LONG_TERM_CAPITAL_GAIN_CODE, :]
+    stcg = current.capital_gain_ytd[gain_profile, SHORT_TERM_CAPITAL_GAIN_CODE, :]
+    recapture = current.recapture_section_1250_ytd[profile, :]
     section_1250_rate = float(plan.tax.link_section_1250_rate[link])
     standard_deduction = float(plan.tax.link_standard_deduction[link])
     if bool(plan.mid.link_active[link]):
@@ -1148,9 +1157,9 @@ def _write_tax_link_buffers(
 ) -> np.ndarray:
     profile = int(plan.tax.link_profile[link])
     gain_profile = int(plan.tax_profile_capital_gain_index[profile])
-    ordinary = current.ordinary_ytd[:, profile]
-    ltcg = current.capital_gain_ytd[:, gain_profile, LONG_TERM_CAPITAL_GAIN_CODE]
-    stcg = current.capital_gain_ytd[:, gain_profile, SHORT_TERM_CAPITAL_GAIN_CODE]
+    ordinary = current.ordinary_ytd[profile, :]
+    ltcg = current.capital_gain_ytd[gain_profile, LONG_TERM_CAPITAL_GAIN_CODE, :]
+    stcg = current.capital_gain_ytd[gain_profile, SHORT_TERM_CAPITAL_GAIN_CODE, :]
     tax = ordinary_tax + capital_tax
     buffers.tax_accrual_active[month, link, active_rollout] = True
     buffers.tax_accrual_amount[month, link, active_rollout] = tax[active_rollout]
@@ -1170,8 +1179,8 @@ def _write_tax_link_buffers(
 
     tax_slot = _tax_liability_slot_for(plan, profile_index=profile, link_index=link, year_end_month=month)
     if tax_slot >= 0:
-        current.tax_liability_active[active_rollout, tax_slot] = True
-        current.tax_liability_amount[active_rollout, tax_slot] = tax[active_rollout]
+        current.tax_liability_active[tax_slot, active_rollout] = True
+        current.tax_liability_amount[tax_slot, active_rollout] = tax[active_rollout]
     return tax
 
 
@@ -1235,7 +1244,7 @@ def _apply_pe_tenders(
         if lot_indices.size == 0:
             continue
         ordered_lots = lot_indices[np.argsort(plan.lot_purchase_month[lot_indices], kind="stable")]
-        units_held = current.lot_remaining[:, ordered_lots].sum(axis=1)
+        units_held = current.lot_remaining[ordered_lots, :].sum(axis=0)
         available_value = units_held * mark
         target_dollars = np.minimum(shortfall, available_value)
         target_dollars = np.where(tender_active & valid_mark, target_dollars, 0.0)
@@ -1257,7 +1266,7 @@ def _apply_pe_tenders(
         current.lot_remaining -= result.sold_units
         proceeds_slot = int(plan.pe_policies.proceeds_cash_slot[policy_idx])
         if proceeds_slot >= 0:
-            current.cash[:, proceeds_slot] += result.total_proceeds
+            current.cash[proceeds_slot, :] += result.total_proceeds
         owner_code = int(plan.pe_policies.owner_agent[policy_idx])
         _record_capital_gains(
             plan,
@@ -1286,8 +1295,8 @@ def _compute_liquid_net_worth(
     prices = plan.external_values[safe_series_indices, :, month]  # (lot, rollout)
     prices = np.where(valid[:, None], prices, 0.0)
     prices = np.nan_to_num(prices, nan=0.0)
-    quantities = current.lot_remaining[:, lot_indices]  # (rollout, lot)
-    lot_value = (quantities * prices.T).sum(axis=1)
+    quantities = current.lot_remaining[lot_indices, :]  # (lot, rollout)
+    lot_value = (quantities * prices).sum(axis=0)
     return cash_total + lot_value
 
 
@@ -1297,10 +1306,10 @@ def _apply_lifecycle_events(
     """Apply this month's PropertyLifecycleEvent rows to per-rollout runtime state.
 
     Three kinds share the same machinery:
-    - `LIFECYCLE_KIND_FRACTION`: mutate `current.property_rented_fraction[:, prop]` to the
+    - `LIFECYCLE_KIND_FRACTION`: mutate `current.property_rented_fraction[prop, :]` to the
       event's new value.
     - `LIFECYCLE_KIND_CAPITAL_IMPROVEMENT`: debit owner's cash by `amount_usd` and increase
-      `current.property_building_basis[:, prop]` by the same amount.
+      `current.property_building_basis[prop, :]` by the same amount.
     - `LIFECYCLE_KIND_SALE`: dispatch to `_apply_property_sale` which also fills the per-event
       `sale_*` arrays on `buffers.lifecycle`.
 
@@ -1328,13 +1337,13 @@ def _apply_lifecycle_events(
         buffers.lifecycle_fired[i, active_rollout] = True
         if kind == LIFECYCLE_KIND_FRACTION:
             new_fraction = float(plan.lifecycle_events.rented_fraction[i])
-            current.property_rented_fraction[active_rollout, prop] = new_fraction
+            current.property_rented_fraction[prop, active_rollout] = new_fraction
         elif kind == LIFECYCLE_KIND_CAPITAL_IMPROVEMENT:
             amount = float(plan.lifecycle_events.amount[i])
             owner_cash_slot = int(plan.properties.buyer_slot[prop])
             if owner_cash_slot >= 0:
-                current.cash[active_rollout, owner_cash_slot] -= amount
-            current.property_building_basis[active_rollout, prop] += amount
+                current.cash[owner_cash_slot, active_rollout] -= amount
+            current.property_building_basis[prop, active_rollout] += amount
         elif kind == LIFECYCLE_KIND_SALE:
             _apply_property_sale(
                 plan,
@@ -1410,8 +1419,8 @@ def _apply_property_sale(
     # Adjusted basis = (purchase_price + capex done) - cumulative depreciation. The runtime
     # building_basis includes capex bumps but excludes land; reconstitute full basis below.
     initial_building_basis = float(plan.property_building_basis[prop])
-    capex = current.property_building_basis[:, prop] - initial_building_basis
-    cum_dep = current.property_cumulative_depreciation[:, prop]
+    capex = current.property_building_basis[prop, :] - initial_building_basis
+    cum_dep = current.property_cumulative_depreciation[prop, :]
     adjusted_basis = purchase_price + capex - cum_dep
     realized_gain = gross_proceeds - adjusted_basis
     recapture = np.minimum(np.maximum(realized_gain, 0.0), cum_dep)
@@ -1421,7 +1430,7 @@ def _apply_property_sale(
     # SECTION_121_LOOKBACK_MONTHS. `property_owner_occupied_months` is cumulative-since-purchase
     # and is only incremented this month after `_apply_lifecycle_events` returns; subtracting
     # the lookback snapshot gives the count of qualifying months strictly inside the window.
-    current_cum = current.property_owner_occupied_months[:, prop].astype(np.int64)
+    current_cum = current.property_owner_occupied_months[prop, :].astype(np.int64)
     lookback_snapshot_index = max(0, month - SECTION_121_LOOKBACK_MONTHS)
     snapshot_cum = buffers.property_owner_occupied_months_state[lookback_snapshot_index, :, prop].astype(np.int64)
     months_in_window = current_cum - snapshot_cum
@@ -1438,28 +1447,28 @@ def _apply_property_sale(
     mortgage_payoff = np.zeros(rollout_count, dtype=np.float64)
     for lia in range(int(plan.liabilities.property_slot.shape[0])):
         if int(plan.liabilities.property_slot[lia]) == prop:
-            mortgage_payoff += current.liability_principal[:, lia]
-            current.liability_principal[:, lia] = 0.0
-            current.liability_active[:, lia] = False
+            mortgage_payoff += current.liability_principal[lia, :]
+            current.liability_principal[lia, :] = 0.0
+            current.liability_active[lia, :] = False
 
     net_cash = gross_proceeds - mortgage_payoff
     if owner_cash_slot >= 0:
-        current.cash[active_rollout, owner_cash_slot] += net_cash[active_rollout]
+        current.cash[owner_cash_slot, active_rollout] += net_cash[active_rollout]
 
     # Tax routing: recapture goes to its own YTD bucket (federal cap dispatch happens in
     # `_compute_tax_for_link`); the post-recapture, post-§121 remainder is LTCG.
     # `owner_profile` was already resolved above for the §121 cap lookup.
     if owner_profile >= 0:
-        current.recapture_section_1250_ytd[active_rollout, owner_profile] += recapture[active_rollout]
+        current.recapture_section_1250_ytd[owner_profile, active_rollout] += recapture[active_rollout]
         gain_profile = int(plan.tax_profile_capital_gain_index[owner_profile])
         if gain_profile >= 0:
-            current.capital_gain_ytd[active_rollout, gain_profile, LONG_TERM_CAPITAL_GAIN_CODE] += ltcg[active_rollout]
-            current.capital_gain_active[active_rollout, gain_profile, LONG_TERM_CAPITAL_GAIN_CODE] = True
+            current.capital_gain_ytd[gain_profile, LONG_TERM_CAPITAL_GAIN_CODE, active_rollout] += ltcg[active_rollout]
+            current.capital_gain_active[gain_profile, LONG_TERM_CAPITAL_GAIN_CODE, active_rollout] = True
 
     # Freeze property state. cumulative_depreciation preserved as a historical record.
-    current.property_active[active_rollout, prop] = False
-    current.property_rented_fraction[active_rollout, prop] = 0.0
-    current.property_building_basis[active_rollout, prop] = 0.0
+    current.property_active[prop, active_rollout] = False
+    current.property_rented_fraction[prop, active_rollout] = 0.0
+    current.property_building_basis[prop, active_rollout] = 0.0
 
     # Log per-rollout amounts (zero on failed rollouts).
     sale_gross_proceeds[active_rollout] = gross_proceeds[active_rollout]
@@ -1492,16 +1501,16 @@ def _apply_owner_occupied_month(current: CurrentStateBuffers) -> None:
     property_count = current.property_rented_fraction.shape[1]
     for prop in range(property_count):
         owner_occupied = (
-            active_rollout & current.property_active[:, prop] & (current.property_rented_fraction[:, prop] < 1.0)
+            active_rollout & current.property_active[prop, :] & (current.property_rented_fraction[prop, :] < 1.0)
         )
-        current.property_owner_occupied_months[owner_occupied, prop] += 1
+        current.property_owner_occupied_months[prop, owner_occupied] += 1
 
 
 def _apply_depreciation_accrual(plan: CompiledSimulation, current: CurrentStateBuffers) -> None:
     """Accrue §168 straight-line depreciation for each rented property.
 
     Monthly depreciation = `building_basis × current.property_rented_fraction / (27.5 × 12)`.
-    Reads the runtime `current.property_rented_fraction[r, p]` so mid-horizon lifecycle
+    Reads the runtime `current.property_rented_fraction[p, r]` so mid-horizon lifecycle
     events (StartRenting/StopRenting/ChangeRentalPlan) take effect immediately. Updates both
     the cumulative buffer (used for §1250 recapture at sale) and the YTD buffer (read at
     year-end by `_apply_tax_accruals` to net Schedule E depreciation against ordinary income).
@@ -1512,16 +1521,16 @@ def _apply_depreciation_accrual(plan: CompiledSimulation, current: CurrentStateB
         return
     property_count = current.property_rented_fraction.shape[1]
     for prop in range(property_count):
-        active_for_property = active_rollout & current.property_active[:, prop]
+        active_for_property = active_rollout & current.property_active[prop, :]
         if not active_for_property.any():
             continue
         # Both rented_fraction and building_basis are runtime per-rollout state — they may
         # have been mutated by PropertyLifecycleEvent rows this month.
-        rented = current.property_rented_fraction[:, prop]
-        basis = current.property_building_basis[:, prop]
+        rented = current.property_rented_fraction[prop, :]
+        basis = current.property_building_basis[prop, :]
         monthly_dep = basis * rented / (27.5 * 12.0)
-        current.property_cumulative_depreciation[active_for_property, prop] += monthly_dep[active_for_property]
-        current.property_depreciation_ytd[active_for_property, prop] += monthly_dep[active_for_property]
+        current.property_cumulative_depreciation[prop, active_for_property] += monthly_dep[active_for_property]
+        current.property_depreciation_ytd[prop, active_for_property] += monthly_dep[active_for_property]
 
 
 def _apply_tax_accruals(
@@ -1540,10 +1549,10 @@ def _apply_tax_accruals(
         profile = int(plan.liability_owner_profile_index[lia])
         if profile < 0:
             continue
-        schedule_e_interest = current.liability_rental_interest_ytd[:, lia]
+        schedule_e_interest = current.liability_rental_interest_ytd[lia, :]
         if not bool((schedule_e_interest != 0.0).any()):
             continue
-        current.ordinary_ytd[active_rollout, profile] -= schedule_e_interest[active_rollout]
+        current.ordinary_ytd[profile, active_rollout] -= schedule_e_interest[active_rollout]
 
     # Schedule E §168 depreciation deduction: the YTD depreciation accrued this calendar year
     # for each rented property deducts from the owner's ordinary_ytd. Then reset YTD.
@@ -1552,11 +1561,11 @@ def _apply_tax_accruals(
         profile = int(plan.property_owner_profile_index[prop])
         if profile < 0:
             continue
-        ytd = current.property_depreciation_ytd[:, prop]
+        ytd = current.property_depreciation_ytd[prop, :]
         if not bool((ytd != 0.0).any()):
             continue
-        current.ordinary_ytd[active_rollout, profile] -= ytd[active_rollout]
-    current.property_depreciation_ytd[active_rollout, :] = 0.0
+        current.ordinary_ytd[profile, active_rollout] -= ytd[active_rollout]
+    current.property_depreciation_ytd[:, active_rollout] = 0.0
 
     link_count = plan.tax.link_profile.shape[0]
     # First pass: every link that isn't a SALT-active federal link. Stash its annual tax so
@@ -1602,7 +1611,7 @@ def _apply_tax_accruals(
             continue
         profile = int(plan.tax.link_profile[link])
         state_tax_total = annual_tax_by_link @ plan.salt.contributing_mask[link].astype(np.float64)
-        salt_total = current.property_tax_ytd[:, profile] + state_tax_total
+        salt_total = current.property_tax_ytd[profile, :] + state_tax_total
         cap = float(plan.salt.cap_by_year[link, cap_year_index])
         salt_deduction = np.minimum(salt_total, cap)
         standard_deduction = float(plan.tax.link_standard_deduction[link])
@@ -1633,21 +1642,21 @@ def _apply_tax_accruals(
         annual_tax_by_link[:, link] = tax
 
     for profile in range(current.ordinary_ytd.shape[1]):
-        current.ordinary_ytd[active_rollout, profile] = 0.0
+        current.ordinary_ytd[profile, active_rollout] = 0.0
         gain_profile = int(plan.tax_profile_capital_gain_index[profile])
-        ltcg_active = active_rollout & current.capital_gain_active[:, gain_profile, LONG_TERM_CAPITAL_GAIN_CODE]
-        stcg_active = active_rollout & current.capital_gain_active[:, gain_profile, SHORT_TERM_CAPITAL_GAIN_CODE]
-        current.capital_gain_ytd[ltcg_active, gain_profile, LONG_TERM_CAPITAL_GAIN_CODE] = 0.0
-        current.capital_gain_ytd[stcg_active, gain_profile, SHORT_TERM_CAPITAL_GAIN_CODE] = 0.0
+        ltcg_active = active_rollout & current.capital_gain_active[gain_profile, LONG_TERM_CAPITAL_GAIN_CODE, :]
+        stcg_active = active_rollout & current.capital_gain_active[gain_profile, SHORT_TERM_CAPITAL_GAIN_CODE, :]
+        current.capital_gain_ytd[gain_profile, LONG_TERM_CAPITAL_GAIN_CODE, ltcg_active] = 0.0
+        current.capital_gain_ytd[gain_profile, SHORT_TERM_CAPITAL_GAIN_CODE, stcg_active] = 0.0
     # Zero YTD interest at year-end so next year's MID accumulation starts fresh. Mirrors the
     # ordinary/capital-gain YTD resets above.
-    current.liability_interest_ytd[active_rollout, :] = 0.0
-    current.liability_rental_interest_ytd[active_rollout, :] = 0.0
+    current.liability_interest_ytd[:, active_rollout] = 0.0
+    current.liability_rental_interest_ytd[:, active_rollout] = 0.0
     # Same treatment for property-tax YTD; the federal SALT pass above has consumed it.
-    current.property_tax_ytd[active_rollout, :] = 0.0
+    current.property_tax_ytd[:, active_rollout] = 0.0
     # §1250 recapture YTD: consumed by both federal (flat 25%) and state (ordinary brackets)
     # links above. Reset so next year's recapture from a separate sale starts fresh.
-    current.recapture_section_1250_ytd[active_rollout, :] = 0.0
+    current.recapture_section_1250_ytd[:, active_rollout] = 0.0
 
 
 def _apply_brackets(amount: np.ndarray, *, upper: np.ndarray, rate: np.ndarray, count: int) -> np.ndarray:
@@ -1699,32 +1708,32 @@ def _apply_property_purchases(
         if plan.properties.month[prop] != month:
             continue
         buffers.property_purchase_active[month, prop, active_rollout] = True
-        current.property_active[active_rollout, prop] = True
-        current.property_basis[active_rollout, prop] = plan.properties.adjusted_basis[prop]
-        current.property_ownership[active_rollout, prop] = plan.properties.ownership[prop]
-        current.property_contribution[active_rollout, prop] = plan.properties.stake_contribution[prop]
-        current.property_equity[active_rollout, prop] = plan.properties.equity_ledger[prop]
+        current.property_active[prop, active_rollout] = True
+        current.property_basis[prop, active_rollout] = plan.properties.adjusted_basis[prop]
+        current.property_ownership[prop, active_rollout] = plan.properties.ownership[prop]
+        current.property_contribution[prop, active_rollout] = plan.properties.stake_contribution[prop]
+        current.property_equity[prop, active_rollout] = plan.properties.equity_ledger[prop]
 
         buyer_cash = float(plan.properties.stake_contribution[prop])
         if buyer_cash > 0.0:
             buffers.property_transfer_active[month, prop, active_rollout] = True
             buyer_slot = int(plan.properties.buyer_slot[prop])
             if buyer_slot >= 0:
-                current.cash[active_rollout, buyer_slot] -= buyer_cash
+                current.cash[buyer_slot, active_rollout] -= buyer_cash
             seller_slot = int(plan.properties.seller_slot[prop])
             if seller_slot >= 0:
-                current.cash[active_rollout, seller_slot] += buyer_cash
+                current.cash[seller_slot, active_rollout] += buyer_cash
 
         liability_slot = int(plan.properties.mortgage_slot[prop])
         if liability_slot >= 0:
             buffers.mortgage_origination_active[month, liability_slot, active_rollout] = True
-            current.liability_active[active_rollout, liability_slot] = True
-            current.liability_principal[active_rollout, liability_slot] = plan.liabilities.principal[liability_slot]
-            current.liability_monthly_payment[active_rollout, liability_slot] = plan.liabilities.monthly_payment[
+            current.liability_active[liability_slot, active_rollout] = True
+            current.liability_principal[liability_slot, active_rollout] = plan.liabilities.principal[liability_slot]
+            current.liability_monthly_payment[liability_slot, active_rollout] = plan.liabilities.monthly_payment[
                 liability_slot
             ]
-            current.liability_interest_ytd[active_rollout, liability_slot] = 0.0
-            current.liability_principal_ytd[active_rollout, liability_slot] = 0.0
+            current.liability_interest_ytd[liability_slot, active_rollout] = 0.0
+            current.liability_principal_ytd[liability_slot, active_rollout] = 0.0
 
 
 def _apply_scheduled_asset_sales(
@@ -1763,7 +1772,7 @@ def _apply_scheduled_asset_sales(
         current.lot_remaining -= result.sold_units
         proceeds_slot = int(plan.sales.proceeds_slot[sale])
         if proceeds_slot >= 0:
-            current.cash[:, proceeds_slot] += result.total_proceeds
+            current.cash[proceeds_slot, :] += result.total_proceeds
         _record_capital_gains(
             plan,
             current,
@@ -1806,7 +1815,7 @@ def _apply_liquidity_policy_sales(
             hard_demand = np.zeros(plan.rollout_count, dtype=np.float64)
 
         cash_balance = (
-            current.cash[:, policy_cash_slot]
+            current.cash[policy_cash_slot, :]
             if policy_cash_slot >= 0
             else np.zeros(plan.rollout_count, dtype=np.float64)
         )
@@ -1866,7 +1875,7 @@ def _apply_liquidity_policy_sales(
             if ordered_lots.size == 0:
                 continue
 
-            available_value = current.lot_remaining[:, ordered_lots].sum(axis=1) * unit_price
+            available_value = current.lot_remaining[ordered_lots, :].sum(axis=0) * unit_price
             target_dollars = np.minimum(np.maximum(remaining_target, 0.0), available_value)
             target_dollars = np.where(valid_price & active_rollout, target_dollars, 0.0)
             if not np.any(target_dollars > 0.0):
@@ -1887,7 +1896,7 @@ def _apply_liquidity_policy_sales(
 
             current.lot_remaining -= result.sold_units
             if policy_cash_slot >= 0:
-                current.cash[:, policy_cash_slot] += result.total_proceeds
+                current.cash[policy_cash_slot, :] += result.total_proceeds
             _record_capital_gains(
                 plan,
                 current,
@@ -1933,17 +1942,17 @@ def _apply_obligation_accruals(
             liab = source_index
             prop = int(plan.liabilities.property_slot[liab])
             active &= (
-                current.liability_active[:, liab]
+                current.liability_active[liab, :]
                 & (plan.properties.month[prop] < month)
-                & (current.liability_principal[:, liab] > 0.0)
+                & (current.liability_principal[liab, :] > 0.0)
             )
-            interest = current.liability_principal[:, liab] * float(plan.liabilities.annual_rate[liab]) / 12.0
+            interest = current.liability_principal[liab, :] * float(plan.liabilities.annual_rate[liab]) / 12.0
             amount = np.minimum(
-                current.liability_monthly_payment[:, liab], current.liability_principal[:, liab] + interest
+                current.liability_monthly_payment[liab, :], current.liability_principal[liab, :] + interest
             )
         elif source_kind == SOURCE_PROPERTY_TAX:
             prop = source_index
-            active &= current.property_active[:, prop] & (plan.properties.month[prop] < month)
+            active &= current.property_active[prop, :] & (plan.properties.month[prop] < month)
             rate = float(plan.obligations.amount_fixed[month, slot])
             if np.isnan(rate):
                 rate = float(plan.properties.location_tax_rate[prop])
@@ -2006,10 +2015,10 @@ def _apply_obligation_settlement(
             buffers.obligation_paid[month, slot, paid] = amount[paid]
             from_slot = int(plan.obligations.from_slot[month, slot])
             if from_slot >= 0:
-                current.cash[paid, from_slot] -= amount[paid]
+                current.cash[from_slot, paid] -= amount[paid]
             to_slot = int(plan.obligations.to_slot[month, slot])
             if to_slot >= 0:
-                current.cash[paid, to_slot] += amount[paid]
+                current.cash[to_slot, paid] += amount[paid]
             if source_kind == SOURCE_MORTGAGE_PAYMENT:
                 _apply_mortgage_payment(
                     plan, buffers, current, month=month, liability_slot=source_index, paid=paid, amount=amount
@@ -2024,20 +2033,20 @@ def _apply_obligation_settlement(
             property_slot = int(plan.obligations.property_slot[month, slot])
             if property_tax_profile >= 0:
                 assert property_slot >= 0, "property-tax obligation must be tied to a property slot"
-                rented_per_rollout = current.property_rented_fraction[:, property_slot]
+                rented_per_rollout = current.property_rented_fraction[property_slot, :]
                 owner_per_rollout = 1.0 - rented_per_rollout
-                current.property_tax_ytd[paid, property_tax_profile] += amount[paid] * owner_per_rollout[paid]
+                current.property_tax_ytd[property_tax_profile, paid] += amount[paid] * owner_per_rollout[paid]
             # Schedule E deduction: decrement payer's ordinary_ytd. For property-tax
             # obligations the deductible_fraction comes from runtime state; for other
             # deductible obligations it comes from the compile-time value.
             deduction_profile = int(plan.obligations.deduction_profile[month, slot])
             if deduction_profile >= 0:
                 if property_slot >= 0:
-                    rented_per_rollout = current.property_rented_fraction[:, property_slot]
-                    current.ordinary_ytd[paid, deduction_profile] -= amount[paid] * rented_per_rollout[paid]
+                    rented_per_rollout = current.property_rented_fraction[property_slot, :]
+                    current.ordinary_ytd[deduction_profile, paid] -= amount[paid] * rented_per_rollout[paid]
                 else:
                     deductible_fraction = float(plan.obligations.deductible_fraction[month, slot])
-                    current.ordinary_ytd[paid, deduction_profile] -= amount[paid] * deductible_fraction
+                    current.ordinary_ytd[deduction_profile, paid] -= amount[paid] * deductible_fraction
 
         failed = active_slot & ~funded[slot]
         if failed.any():
@@ -2072,7 +2081,7 @@ def _obligation_group_funded(
         from_slot = int(plan.obligations.from_slot[month, slot])
         group = (plan.obligations.agent[month] == agent) & (plan.obligations.from_slot[month] == from_slot)
         group_due = np.where(active[group], due[group], 0.0).sum(axis=0)
-        available = current.cash[:, from_slot] if from_slot >= 0 else np.zeros(plan.rollout_count, dtype=np.float64)
+        available = current.cash[from_slot, :] if from_slot >= 0 else np.zeros(plan.rollout_count, dtype=np.float64)
         funded[slot] = active_slot & (available >= group_due - 1e-9)
     return funded
 
@@ -2087,7 +2096,7 @@ def _apply_mortgage_payment(
     paid: np.ndarray,
     amount: np.ndarray,
 ) -> None:
-    principal_before = current.liability_principal[:, liability_slot]
+    principal_before = current.liability_principal[liability_slot, :]
     interest = np.minimum(principal_before * float(plan.liabilities.annual_rate[liability_slot]) / 12.0, amount)
     principal = np.minimum(np.maximum(amount - interest, 0.0), principal_before)
 
@@ -2095,15 +2104,15 @@ def _apply_mortgage_payment(
     buffers.mortgage_payment_interest[month, liability_slot, paid] = interest[paid]
     buffers.mortgage_payment_principal[month, liability_slot, paid] = principal[paid]
     buffers.mortgage_payment_total[month, liability_slot, paid] = amount[paid]
-    current.liability_principal[paid, liability_slot] = np.maximum(0.0, principal_before[paid] - principal[paid])
-    current.liability_interest_ytd[paid, liability_slot] += interest[paid]
-    current.liability_principal_ytd[paid, liability_slot] += principal[paid]
+    current.liability_principal[liability_slot, paid] = np.maximum(0.0, principal_before[paid] - principal[paid])
+    current.liability_interest_ytd[liability_slot, paid] += interest[paid]
+    current.liability_principal_ytd[liability_slot, paid] += principal[paid]
     # Per-month rented share of interest, indexed by runtime property_rented_fraction so that
     # mid-horizon lifecycle transitions take effect immediately for MID + Schedule E.
     prop_slot = int(plan.liabilities.property_slot[liability_slot])
     if prop_slot >= 0:
-        rented = current.property_rented_fraction[:, prop_slot]
-        current.liability_rental_interest_ytd[paid, liability_slot] += interest[paid] * rented[paid]
+        rented = current.property_rented_fraction[prop_slot, :]
+        current.liability_rental_interest_ytd[liability_slot, paid] += interest[paid] * rented[paid]
 
 
 def _apply_tax_settlements(
@@ -2155,15 +2164,15 @@ def _settle_tax_liabilities_for_profile_year(
     )
     if slots.size == 0:
         return
-    slot_amounts = current.tax_liability_amount[:, slots]
-    eligible_amounts = np.where(current.tax_liability_active[:, slots], slot_amounts, 0.0)
+    slot_amounts = current.tax_liability_amount[slots, :]
+    eligible_amounts = np.where(current.tax_liability_active[slots, :], slot_amounts, 0.0)
     outstanding = eligible_amounts.sum(axis=1)
     settlement = np.where(active, settlement_amount, 0.0)
     weights = np.divide(
         eligible_amounts, outstanding[:, None], out=np.zeros_like(eligible_amounts), where=outstanding[:, None] > 0.0
     )
     settled = np.minimum(eligible_amounts, weights * settlement[:, None])
-    current.tax_liability_amount[:, slots] = np.maximum(0.0, slot_amounts - settled)
+    current.tax_liability_amount[slots, :] = np.maximum(0.0, slot_amounts - settled)
 
 
 def _actual_tax_for_profile_year(
@@ -2174,7 +2183,7 @@ def _actual_tax_for_profile_year(
     )
     if slots.size == 0:
         return np.zeros(plan.rollout_count, dtype=np.float64)
-    return np.where(current.tax_liability_active[:, slots], current.tax_liability_amount[:, slots], 0.0).sum(axis=1)
+    return np.where(current.tax_liability_active[slots, :], current.tax_liability_amount[slots, :], 0.0).sum(axis=1)
 
 
 def _sale_unit_price(plan: CompiledSimulation, *, month: int, sale: int) -> np.ndarray:
@@ -2206,8 +2215,8 @@ def _record_capital_gains(
                 else SHORT_TERM_CAPITAL_GAIN_CODE
             )
             active = sold_units[:, lot] > 0.0
-            current.capital_gain_active[active, profile, cls] = True
-            current.capital_gain_ytd[:, profile, cls] += gains[:, lot]
+            current.capital_gain_active[profile, cls, active] = True
+            current.capital_gain_ytd[profile, cls, :] += gains[:, lot]
 
 
 def _allocate_buffers(plan: CompiledSimulation) -> SimulationBuffers:
