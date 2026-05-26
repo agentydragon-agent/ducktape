@@ -187,6 +187,9 @@ py_library(
     name = "engine",
     srcs = [
         "buffers.py",
+        "codec/__init__.py",
+        "codec/helpers.py",
+        "codec/properties.py",
         "compiler.py",
         "engine.py",
     ],
