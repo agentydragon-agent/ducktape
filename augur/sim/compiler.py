@@ -113,33 +113,9 @@ class CompiledSimulation:
     lot_purchase_month: NDArray[np.int64]
     lot_cost_basis_per_unit: NDArray[np.float64]
     lot_initial_quantity: NDArray[np.float64]
-    tax_profile_agent_codes: NDArray[np.int64]
-    tax_profile_payment_slot: NDArray[np.int64]
-    tax_profile_payment_account_codes: NDArray[np.int64]
-    tax_profile_authority_agent_codes: NDArray[np.int64]
-    tax_profile_authority_account_codes: NDArray[np.int64]
-    tax_profile_prior_year_tax: NDArray[np.float64]
-    # Per-profile §121 primary-residence exclusion cap, in USD. Looked up by filing status at
-    # compile time (`_SECTION_121_EXCLUSION_USD_BY_FILING_STATUS`); only `single` is wired
-    # today, so the cap is uniformly $250k for the v1 surface. Engine reads this on every
-    # property sale to compute the exclusion ceiling.
-    tax_profile_section_121_exclusion_usd: NDArray[np.float64]
+    tax: TaxCompileOutput
     capital_gain_agent_codes: NDArray[np.int64]
     tax_profile_capital_gain_index: NDArray[np.int64]
-    tax_link_profile_index: NDArray[np.int64]
-    tax_link_jurisdiction_codes: NDArray[np.int64]
-    tax_link_standard_deduction: NDArray[np.float64]
-    tax_link_has_ltcg: NDArray[np.int64]
-    # §1250 unrecaptured-depreciation rate cap. Positive => federal-style flat rate (e.g.
-    # 0.25 for federal_us); 0.0 => no separate cap, recapture is taxed as ordinary inside
-    # the standard bracket walk (state-style, e.g. California).
-    tax_link_section_1250_rate: NDArray[np.float64]
-    tax_link_ordinary_upper: NDArray[np.float64]
-    tax_link_ordinary_rate: NDArray[np.float64]
-    tax_link_ordinary_count: NDArray[np.int64]
-    tax_link_ltcg_upper: NDArray[np.float64]
-    tax_link_ltcg_rate: NDArray[np.float64]
-    tax_link_ltcg_count: NDArray[np.int64]
     # tax_link × liability matrix; entry (link, lia) is the pro-rata MID ratio
     # `min(1, principal_cap[jurisdiction] / liability_principal[lia])` for liabilities
     # owned by the link's profile agent and listed in a MortgageInterestDeductionPolicy;
@@ -694,26 +670,9 @@ def compile_simulation(
         lot_purchase_month=np.asarray(lot_purchase_month, dtype=np.int64),
         lot_cost_basis_per_unit=np.asarray(lot_cost_basis_per_unit, dtype=np.float64),
         lot_initial_quantity=np.asarray(lot_initial_quantity, dtype=np.float64),
-        tax_profile_agent_codes=tax.profile_agent,
-        tax_profile_payment_slot=tax.profile_payment_slot,
-        tax_profile_payment_account_codes=tax.profile_payment_account,
-        tax_profile_authority_agent_codes=tax.profile_authority_agent,
-        tax_profile_authority_account_codes=tax.profile_authority_account,
-        tax_profile_prior_year_tax=tax.profile_prior_year_tax,
-        tax_profile_section_121_exclusion_usd=tax.profile_section_121_exclusion,
+        tax=tax,
         capital_gain_agent_codes=capital_gain_agent_codes,
         tax_profile_capital_gain_index=tax_profile_capital_gain_index,
-        tax_link_profile_index=tax.link_profile,
-        tax_link_jurisdiction_codes=tax.link_jurisdiction,
-        tax_link_standard_deduction=tax.link_standard_deduction,
-        tax_link_has_ltcg=tax.link_has_ltcg,
-        tax_link_section_1250_rate=tax.link_section_1250_rate,
-        tax_link_ordinary_upper=tax.link_ordinary_upper,
-        tax_link_ordinary_rate=tax.link_ordinary_rate,
-        tax_link_ordinary_count=tax.link_ordinary_count,
-        tax_link_ltcg_upper=tax.link_ltcg_upper,
-        tax_link_ltcg_rate=tax.link_ltcg_rate,
-        tax_link_ltcg_count=tax.link_ltcg_count,
         tax_link_mid_principal_ratio=tax_link_mid_principal_ratio,
         tax_link_mid_active=tax_link_mid_active,
         tax_link_salt_active=tax_link_salt_active,

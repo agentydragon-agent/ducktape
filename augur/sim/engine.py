@@ -1069,14 +1069,14 @@ def _compute_tax_for_link(
       flows through the standard bracket walk (CA treats it as ordinary).
     """
 
-    profile = int(plan.tax_link_profile_index[link])
+    profile = int(plan.tax.link_profile[link])
     gain_profile = int(plan.tax_profile_capital_gain_index[profile])
     ordinary = current.ordinary_ytd[:, profile]
     ltcg = current.capital_gain_ytd[:, gain_profile, LONG_TERM_CAPITAL_GAIN_CODE]
     stcg = current.capital_gain_ytd[:, gain_profile, SHORT_TERM_CAPITAL_GAIN_CODE]
     recapture = current.recapture_section_1250_ytd[:, profile]
-    section_1250_rate = float(plan.tax_link_section_1250_rate[link])
-    standard_deduction = float(plan.tax_link_standard_deduction[link])
+    section_1250_rate = float(plan.tax.link_section_1250_rate[link])
+    standard_deduction = float(plan.tax.link_standard_deduction[link])
     if bool(plan.tax_link_mid_active[link]):
         # MID applies only to the owner-occupied share of interest. Rented-share interest
         # is deducted via the Schedule E hook at the top of `_apply_tax_accruals`.
@@ -1092,19 +1092,19 @@ def _compute_tax_for_link(
     federal_style_section_1250 = section_1250_rate > 0.0
     ordinary_for_brackets = ordinary if federal_style_section_1250 else ordinary + recapture
 
-    ordinary_upper = plan.tax_link_ordinary_upper[link]
-    ordinary_rate = plan.tax_link_ordinary_rate[link]
-    ordinary_count = int(plan.tax_link_ordinary_count[link])
-    if int(plan.tax_link_has_ltcg[link]) == 1:
+    ordinary_upper = plan.tax.link_ordinary_upper[link]
+    ordinary_rate = plan.tax.link_ordinary_rate[link]
+    ordinary_count = int(plan.tax.link_ordinary_count[link])
+    if int(plan.tax.link_has_ltcg[link]) == 1:
         ordinary_taxable = np.maximum(ordinary_for_brackets + stcg - deduction_used, 0.0)
         capital_taxable = ltcg
         ordinary_tax = _apply_brackets(ordinary_taxable, upper=ordinary_upper, rate=ordinary_rate, count=ordinary_count)
         ltcg_tax = _apply_ltcg_brackets(
             ltcg,
             ordinary_taxable,
-            upper=plan.tax_link_ltcg_upper[link],
-            rate=plan.tax_link_ltcg_rate[link],
-            count=int(plan.tax_link_ltcg_count[link]),
+            upper=plan.tax.link_ltcg_upper[link],
+            rate=plan.tax.link_ltcg_rate[link],
+            count=int(plan.tax.link_ltcg_count[link]),
         )
     else:
         ordinary_taxable = np.maximum(ordinary_for_brackets + ltcg + stcg - deduction_used, 0.0)
@@ -1146,7 +1146,7 @@ def _write_tax_link_buffers(
     ordinary_tax: np.ndarray,
     capital_tax: np.ndarray,
 ) -> np.ndarray:
-    profile = int(plan.tax_link_profile_index[link])
+    profile = int(plan.tax.link_profile[link])
     gain_profile = int(plan.tax_profile_capital_gain_index[profile])
     ordinary = current.ordinary_ytd[:, profile]
     ltcg = current.capital_gain_ytd[:, gain_profile, LONG_TERM_CAPITAL_GAIN_CODE]
@@ -1350,7 +1350,7 @@ def _apply_lifecycle_events(
 
 SECTION_121_LOOKBACK_MONTHS = 60
 SECTION_121_MIN_QUALIFYING_MONTHS = 24
-# Per-profile cap lives on the plan: `plan.tax_profile_section_121_exclusion_usd[owner_profile]`.
+# Per-profile cap lives on the plan: `plan.tax.profile_section_121_exclusion[owner_profile]`.
 # Compiler populates it from `_SECTION_121_EXCLUSION_USD_BY_FILING_STATUS`, which only knows the
 # single-filer variant today — any other filing status raises NotImplementedError at compile
 # time so no rollout silently runs with the wrong cap.
@@ -1378,7 +1378,7 @@ def _apply_property_sale(
       it as ordinary income inside their standard bracket walk.
     - §121: if the property was owner-occupied at least
       `SECTION_121_MIN_QUALIFYING_MONTHS` of the last `SECTION_121_LOOKBACK_MONTHS`,
-      exclude up to `plan.tax_profile_section_121_exclusion_usd[owner_profile]` of the
+      exclude up to `plan.tax.profile_section_121_exclusion[owner_profile]` of the
       post-recapture gain from LTCG. The cap is keyed on filing status at compile time.
     - Remainder = post-exclusion LTCG → added to owner's long_term_capital_gain_ytd.
     - Mortgage paid off; property frozen (property_active → False, rented_fraction → 0,
@@ -1429,7 +1429,7 @@ def _apply_property_sale(
     owner_profile = int(plan.property_owner_profile_index[prop])
     # `property_owner_profile_index` is filled at compile time; a property with no tax owner
     # (sentinel -1) means there's nobody to exclude for, so §121 collapses to 0.
-    exclusion_cap = float(plan.tax_profile_section_121_exclusion_usd[owner_profile]) if owner_profile >= 0 else 0.0
+    exclusion_cap = float(plan.tax.profile_section_121_exclusion[owner_profile]) if owner_profile >= 0 else 0.0
     section_121_exclusion = np.where(qualifies, np.minimum(post_recapture_gain, exclusion_cap), 0.0)
     ltcg = post_recapture_gain - section_121_exclusion
 
@@ -1558,7 +1558,7 @@ def _apply_tax_accruals(
         current.ordinary_ytd[active_rollout, profile] -= ytd[active_rollout]
     current.property_depreciation_ytd[active_rollout, :] = 0.0
 
-    link_count = plan.tax_link_profile_index.shape[0]
+    link_count = plan.tax.link_profile.shape[0]
     # First pass: every link that isn't a SALT-active federal link. Stash its annual tax so
     # the SALT pass can sum state-link contributions per federal link.
     annual_tax_by_link = np.zeros((plan.rollout_count, max(1, link_count)), dtype=np.float64)
@@ -1566,7 +1566,7 @@ def _apply_tax_accruals(
     for link in range(link_count):
         if bool(plan.tax_link_salt_active[link]):
             continue
-        standard_deduction = float(plan.tax_link_standard_deduction[link])
+        standard_deduction = float(plan.tax.link_standard_deduction[link])
         (
             mortgage_interest_deduction,
             itemized_deduction,
@@ -1600,12 +1600,12 @@ def _apply_tax_accruals(
     for link in range(link_count):
         if not bool(plan.tax_link_salt_active[link]):
             continue
-        profile = int(plan.tax_link_profile_index[link])
+        profile = int(plan.tax.link_profile[link])
         state_tax_total = annual_tax_by_link @ plan.tax_link_salt_contributing_mask[link].astype(np.float64)
         salt_total = current.property_tax_ytd[:, profile] + state_tax_total
         cap = float(plan.tax_link_salt_cap_by_year[link, cap_year_index])
         salt_deduction = np.minimum(salt_total, cap)
-        standard_deduction = float(plan.tax_link_standard_deduction[link])
+        standard_deduction = float(plan.tax.link_standard_deduction[link])
         (
             mortgage_interest_deduction,
             itemized_deduction,
@@ -1951,13 +1951,13 @@ def _apply_obligation_accruals(
             non_ad_valorem_monthly = plan.property_special_assessment_annual_usd[prop] / 12.0
             amount = np.full(plan.rollout_count, ad_valorem_monthly + non_ad_valorem_monthly)
         elif source_kind == SOURCE_ESTIMATED_TAX:
-            amount = np.full(plan.rollout_count, float(plan.tax_profile_prior_year_tax[source_index]) / 4.0)
+            amount = np.full(plan.rollout_count, float(plan.tax.profile_prior_year_tax[source_index]) / 4.0)
         elif source_kind in (SOURCE_ESTIMATED_TAX_Q4, SOURCE_TAX_TRUE_UP):
             profile = source_index
             tax_year_end = (month // 12 - 1) * 12 + 11
             actual = _actual_tax_for_profile_year(plan, current, profile_index=profile, year_end_month=tax_year_end)
-            safe_harbor = np.minimum(float(plan.tax_profile_prior_year_tax[profile]), actual)
-            paid_before_q4 = float(plan.tax_profile_prior_year_tax[profile]) * 0.75
+            safe_harbor = np.minimum(float(plan.tax.profile_prior_year_tax[profile]), actual)
+            paid_before_q4 = float(plan.tax.profile_prior_year_tax[profile]) * 0.75
             if source_kind == SOURCE_ESTIMATED_TAX_Q4:
                 amount = np.maximum(safe_harbor - paid_before_q4, 0.0)
             else:
@@ -1981,7 +1981,7 @@ def _apply_obligation_settlement(
 
     due = buffers.obligation_due[month]
     funded = _obligation_group_funded(plan, current, month=month, active=active, due=due)
-    tax_profile_count = plan.tax_profile_agent_codes.shape[0]
+    tax_profile_count = plan.tax.profile_agent.shape[0]
     tax_payment_failed = np.zeros((tax_profile_count, plan.rollout_count), dtype=np.bool_)
     tax_settlement_candidate = np.zeros((tax_profile_count, plan.rollout_count), dtype=np.float64)
     tax_settlement_candidate_year_end = np.full((tax_profile_count, plan.rollout_count), NO_CODE, dtype=np.int64)
@@ -2453,7 +2453,7 @@ def _decode_ordinary_income(plan: CompiledSimulation, buffers: SimulationBuffers
         {
             "rollout_index": rollouts,
             "month_index": months,
-            "agent_id": _codes_to_strings(plan, plan.tax_profile_agent_codes)[profiles],
+            "agent_id": _codes_to_strings(plan, plan.tax.profile_agent)[profiles],
             "ordinary_income_usd": state.reshape(-1),
         },
         ORDINARY_INCOME_YTD_FRAME,
@@ -2499,8 +2499,8 @@ def _decode_tax_liabilities(plan: CompiledSimulation, buffers: SimulationBuffers
     mask = active.reshape(-1)
     profile_per_slot = plan.tax_liabilities.profile_index.astype(np.int64)
     link_per_slot = plan.tax_liabilities.link_index.astype(np.int64)
-    agent_per_profile = _codes_to_strings(plan, plan.tax_profile_agent_codes)
-    juris_per_link = _codes_to_strings(plan, plan.tax_link_jurisdiction_codes)
+    agent_per_profile = _codes_to_strings(plan, plan.tax.profile_agent)
+    juris_per_link = _codes_to_strings(plan, plan.tax.link_jurisdiction)
     return _state_history_frame_from_columns(
         {
             "rollout_index": rollouts[mask],
@@ -2919,9 +2919,9 @@ def _decode_tax_accruals(plan: CompiledSimulation, buffers: SimulationBuffers) -
         months, links, rollouts = np.argwhere(active).T
     else:
         months = links = rollouts = np.array([], dtype=np.int64)
-    profiles = plan.tax_link_profile_index.astype(np.int64)[links]
-    agent_ids = _codes_to_strings(plan, plan.tax_profile_agent_codes)[profiles]
-    jurisdiction_ids = _codes_to_strings(plan, plan.tax_link_jurisdiction_codes)[links]
+    profiles = plan.tax.link_profile.astype(np.int64)[links]
+    agent_ids = _codes_to_strings(plan, plan.tax.profile_agent)[profiles]
+    jurisdiction_ids = _codes_to_strings(plan, plan.tax.link_jurisdiction)[links]
     # cause_id is f"{agent_id}_{jurisdiction_id}_year_end_accrual_m{month}".
     cause_ids = np.array(
         [f"{a}_{j}_year_end_accrual_m{m}" for a, j, m in zip(agent_ids, jurisdiction_ids, months, strict=True)],
@@ -2949,7 +2949,7 @@ def _decode_tax_accruals(plan: CompiledSimulation, buffers: SimulationBuffers) -
         ordinary_income_usd=buffers.tax_breakdown_ordinary[months, links, rollouts],
         ltcg_usd=buffers.tax_breakdown_ltcg[months, links, rollouts],
         stcg_usd=buffers.tax_breakdown_stcg[months, links, rollouts],
-        standard_deduction_usd=plan.tax_link_standard_deduction.astype(np.float64)[links],
+        standard_deduction_usd=plan.tax.link_standard_deduction.astype(np.float64)[links],
         mortgage_interest_deduction_usd=buffers.tax_breakdown_mortgage_interest_deduction[months, links, rollouts],
         salt_deduction_usd=buffers.tax_breakdown_salt_deduction[months, links, rollouts],
         itemized_deduction_usd=buffers.tax_breakdown_itemized_deduction[months, links, rollouts],
@@ -3132,7 +3132,7 @@ def _decode_tax_settlements(plan: CompiledSimulation, buffers: SimulationBuffers
         months, profiles, rollouts = np.argwhere(active).T
     else:
         months = profiles = rollouts = np.array([], dtype=np.int64)
-    agent_ids = _codes_to_strings(plan, plan.tax_profile_agent_codes)[profiles]
+    agent_ids = _codes_to_strings(plan, plan.tax.profile_agent)[profiles]
     year_end = buffers.tax_settlement_year_end_month[months, profiles, rollouts].astype(np.int64)
     tax_years = (year_end - 11) // 12
     cause_ids = np.array([f"{a}_tax_settlement_y{y}" for a, y in zip(agent_ids, tax_years, strict=True)], dtype=object)
