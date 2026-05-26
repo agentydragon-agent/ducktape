@@ -198,6 +198,7 @@ py_library(
         "codec/tax.py",
         "codec/transfers.py",
         "compiler/__init__.py",
+        "compiler/helpers.py",
         "compiler/lifecycle.py",
         "engine/__init__.py",
         "engine/phases.py",

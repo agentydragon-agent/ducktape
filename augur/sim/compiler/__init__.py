@@ -14,6 +14,16 @@ import numpy as np
 from numpy.typing import NDArray
 
 from augur.model.series import PRIVATE_EQUITY_SERIES_PREFIX, home_value_series_id, private_equity_sale_event_id
+from augur.sim.compiler.helpers import (
+    AMOUNT_FIXED,
+    NO_CODE,
+    ORDINARY_DEDUCTION_CATEGORY,
+    ORDINARY_INCOME_CATEGORY,
+    StringTable,
+    amount_arrays,
+    empty_month_matrix,
+    slot,
+)
 from augur.sim.compiler.lifecycle import LifecycleEventCompileOutput, compile_lifecycle_events
 from augur.sim.external_series import ExternalSeriesContext
 from augur.sim.jurisdictions import Jurisdiction
@@ -21,7 +31,6 @@ from augur.sim.locations import Location
 from augur.sim.runtime import mortgage_monthly_payment_usd
 from augur.sim.scenario import (
     FilingStatus,
-    FixedAmount,
     MortgageInterestDeductionPolicy,
     RecurringObligation,
     RecurringTransfer,
@@ -30,32 +39,6 @@ from augur.sim.scenario import (
     ScheduledTransfer,
     SeriesIndexedAmount,
 )
-
-NO_CODE = -1
-AMOUNT_FIXED = 0
-AMOUNT_SERIES_INDEXED = 1
-ORDINARY_INCOME_CATEGORY = "ordinary"
-ORDINARY_DEDUCTION_CATEGORY = "ordinary"
-
-
-class StringTable:
-    def __init__(self) -> None:
-        self._by_value: dict[str, int] = {}
-        self.values: list[str] = []
-
-    def intern(self, value: str | None) -> int:
-        if value is None:
-            return NO_CODE
-        existing = self._by_value.get(value)
-        if existing is not None:
-            return existing
-        code = len(self.values)
-        self._by_value[value] = code
-        self.values.append(value)
-        return code
-
-    def require(self, value: str) -> int:
-        return self.intern(value)
 
 
 @dataclass(frozen=True)
@@ -563,9 +546,7 @@ def _compile_private_equity_tenders(
         owner_cash_slots = np.flatnonzero(cash_agent_codes == owner_code)
         if owner_cash_slots.size > 0:
             pe_policy_proceeds_cash_slot[policy_idx] = int(owner_cash_slots[0])
-        kind, fixed, base, series, base_month, period = _amount_arrays(
-            policy.liquid_net_worth_floor, series_index_by_id
-        )
+        kind, fixed, base, series, base_month, period = amount_arrays(policy.liquid_net_worth_floor, series_index_by_id)
         pe_policy_floor_kind[policy_idx] = kind
         pe_policy_floor_fixed[policy_idx] = fixed
         pe_policy_floor_base[policy_idx] = base
@@ -601,33 +582,6 @@ def _compile_private_equity_tenders(
             pe_issuer_policy_index[issuer_idx] = policy_index_by_owner[owner_code]
 
     return issuers, pe_policies
-
-
-def _slot(account_slot_by_key: dict[tuple[str, str], int], agent_id: str, account_id: str) -> int:
-    return account_slot_by_key.get((agent_id, account_id), NO_CODE)
-
-
-def _amount_arrays(amount: Any, series_index_by_id: dict[str, int]) -> tuple[int, float, float, int, int, int]:
-    if isinstance(amount, int | float):
-        return AMOUNT_FIXED, float(amount), 0.0, NO_CODE, 0, 1
-    if isinstance(amount, FixedAmount):
-        return AMOUNT_FIXED, float(amount.amount_usd), 0.0, NO_CODE, 0, 1
-    if isinstance(amount, SeriesIndexedAmount):
-        return (
-            AMOUNT_SERIES_INDEXED,
-            0.0,
-            float(amount.base_amount_usd),
-            series_index_by_id[amount.series_id],
-            int(amount.base_month_index),
-            int(amount.adjustment_period_months),
-        )
-    raise TypeError(f"unsupported amount spec: {amount!r}")
-
-
-def _empty_month_matrix(months: int, slots: int, dtype: Any, fill: int | float = 0) -> np.ndarray:
-    matrix = np.empty((months, max(1, slots)), dtype=dtype)
-    matrix[...] = fill
-    return matrix
 
 
 @dataclass(frozen=True)
@@ -672,36 +626,36 @@ def _compile_transfer_slots(
         by_month.append(active)
         max_slots = max(max_slots, len(active))
 
-    cause = _empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
-    from_agent = _empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
-    from_account = _empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
-    from_slot = _empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
-    to_agent = _empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
-    to_account = _empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
-    to_slot = _empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
-    income_profile = _empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
-    deduction_profile = _empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
-    amount_kind = _empty_month_matrix(horizon, max_slots, np.int64, AMOUNT_FIXED)
-    amount_fixed = _empty_month_matrix(horizon, max_slots, np.float64, 0.0)
-    amount_base = _empty_month_matrix(horizon, max_slots, np.float64, 0.0)
-    amount_series = _empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
-    amount_base_month = _empty_month_matrix(horizon, max_slots, np.int64, 0)
-    amount_period = _empty_month_matrix(horizon, max_slots, np.int64, 1)
+    cause = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
+    from_agent = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
+    from_account = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
+    from_slot = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
+    to_agent = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
+    to_account = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
+    to_slot = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
+    income_profile = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
+    deduction_profile = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
+    amount_kind = empty_month_matrix(horizon, max_slots, np.int64, AMOUNT_FIXED)
+    amount_fixed = empty_month_matrix(horizon, max_slots, np.float64, 0.0)
+    amount_base = empty_month_matrix(horizon, max_slots, np.float64, 0.0)
+    amount_series = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
+    amount_base_month = empty_month_matrix(horizon, max_slots, np.int64, 0)
+    amount_period = empty_month_matrix(horizon, max_slots, np.int64, 1)
 
     for month, active in enumerate(by_month):
         for idx, transfer in enumerate(active):
             cause[month, idx] = strings.require(transfer.cause_id)
             from_agent[month, idx] = strings.require(transfer.from_agent_id)
             from_account[month, idx] = strings.require(transfer.from_account_id)
-            from_slot[month, idx] = _slot(account_slot_by_key, transfer.from_agent_id, transfer.from_account_id)
+            from_slot[month, idx] = slot(account_slot_by_key, transfer.from_agent_id, transfer.from_account_id)
             to_agent[month, idx] = strings.require(transfer.to_agent_id)
             to_account[month, idx] = strings.require(transfer.to_account_id)
-            to_slot[month, idx] = _slot(account_slot_by_key, transfer.to_agent_id, transfer.to_account_id)
+            to_slot[month, idx] = slot(account_slot_by_key, transfer.to_agent_id, transfer.to_account_id)
             if transfer.income_category == ORDINARY_INCOME_CATEGORY:
                 income_profile[month, idx] = profile_index_by_agent.get(transfer.to_agent_id, NO_CODE)
             if transfer.deduction_category == ORDINARY_DEDUCTION_CATEGORY:
                 deduction_profile[month, idx] = profile_index_by_agent.get(transfer.from_agent_id, NO_CODE)
-            kind, fixed, base, series, base_month, period = _amount_arrays(transfer.amount_usd, series_index_by_id)
+            kind, fixed, base, series, base_month, period = amount_arrays(transfer.amount_usd, series_index_by_id)
             amount_kind[month, idx] = kind
             amount_fixed[month, idx] = fixed
             amount_base[month, idx] = base
@@ -811,7 +765,7 @@ def _compile_tax(
     max_ltcg = 1
     for profile_index, profile in enumerate(scenario.tax_profiles):
         profile_agent.append(strings.require(profile.agent_id))
-        payment_slot.append(_slot(account_slot_by_key, profile.agent_id, profile.payment_account_id))
+        payment_slot.append(slot(account_slot_by_key, profile.agent_id, profile.payment_account_id))
         payment_account.append(strings.require(profile.payment_account_id))
         authority_agent.append(strings.require(profile.tax_authority_agent_id))
         authority_account.append(strings.require(profile.tax_authority_account_id))
@@ -1226,10 +1180,10 @@ def _compile_properties_and_liabilities(
         month_array[idx] = int(purchase.month)
         buyer_agent[idx] = strings.require(purchase.buyer_agent_id)
         buyer_account[idx] = strings.require(purchase.buyer_account_id)
-        buyer_slot[idx] = _slot(account_slot_by_key, purchase.buyer_agent_id, purchase.buyer_account_id)
+        buyer_slot[idx] = slot(account_slot_by_key, purchase.buyer_agent_id, purchase.buyer_account_id)
         seller_agent[idx] = strings.require(purchase.seller_agent_id)
         seller_account[idx] = strings.require(purchase.seller_account_id)
-        seller_slot[idx] = _slot(account_slot_by_key, purchase.seller_agent_id, purchase.seller_account_id)
+        seller_slot[idx] = slot(account_slot_by_key, purchase.seller_agent_id, purchase.seller_account_id)
         mortgage_principal = purchase.mortgage.principal_usd if purchase.mortgage is not None else 0.0
         purchase_price[idx] = float(purchase.purchase_price_usd)
         closing_cost[idx] = float(purchase.buyer_closing_cost_usd)
@@ -1239,20 +1193,17 @@ def _compile_properties_and_liabilities(
         stake_contribution[idx] = float(purchase.down_payment_usd + purchase.buyer_closing_cost_usd)
         equity_ledger[idx] = float(purchase.purchase_price_usd - mortgage_principal)
         if purchase.mortgage is not None:
-            slot = len(liability_codes)
-            mortgage_slot[idx] = slot
+            mortgage_slot[idx] = len(liability_codes)
             mortgage = purchase.mortgage
             liability_codes.append(strings.require(mortgage.liability_id))
             liability_property_slot.append(idx)
             liability_agent.append(strings.require(purchase.buyer_agent_id))
             liability_payment_account.append(strings.require(purchase.buyer_account_id))
-            liability_payment_slot.append(
-                _slot(account_slot_by_key, purchase.buyer_agent_id, purchase.buyer_account_id)
-            )
+            liability_payment_slot.append(slot(account_slot_by_key, purchase.buyer_agent_id, purchase.buyer_account_id))
             liability_counterparty_agent.append(strings.require(mortgage.lender_agent_id))
             liability_counterparty_account.append(strings.require(mortgage.lender_account_id))
             liability_counterparty_slot.append(
-                _slot(account_slot_by_key, mortgage.lender_agent_id, mortgage.lender_account_id)
+                slot(account_slot_by_key, mortgage.lender_agent_id, mortgage.lender_account_id)
             )
             liability_principal.append(float(mortgage.principal_usd))
             liability_rate.append(float(mortgage.annual_interest_rate))
@@ -1347,7 +1298,7 @@ def _compile_sales(
         asset[idx] = strings.require(sale.asset_id)
         quantity[idx] = float(sale.quantity)
         proceeds_account[idx] = strings.require(sale.proceeds_account_id)
-        proceeds_slot[idx] = _slot(account_slot_by_key, sale.agent_id, sale.proceeds_account_id)
+        proceeds_slot[idx] = slot(account_slot_by_key, sale.agent_id, sale.proceeds_account_id)
         if sale.price_per_unit_usd is not None:
             price_fixed[idx] = float(sale.price_per_unit_usd)
         else:
@@ -1447,32 +1398,32 @@ def _compile_obligation_slots(
                     monthly_specs[month].append({"kind": 5, "source": profile_index, "tax_year": tax_year})
 
     max_slots = max(1, max((len(specs) for specs in monthly_specs), default=0))
-    cause = _empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
-    obligation_id = _empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
-    obligation_type = _empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
-    agent = _empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
-    from_account = _empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
-    from_slot = _empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
-    to_agent = _empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
-    to_account = _empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
-    to_slot = _empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
-    amount_kind = _empty_month_matrix(horizon, max_slots, np.int64, AMOUNT_FIXED)
-    amount_fixed = _empty_month_matrix(horizon, max_slots, np.float64, 0.0)
-    amount_base = _empty_month_matrix(horizon, max_slots, np.float64, 0.0)
-    amount_series = _empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
-    amount_base_month = _empty_month_matrix(horizon, max_slots, np.int64, 0)
-    amount_period = _empty_month_matrix(horizon, max_slots, np.int64, 1)
-    source_kind = _empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
-    source_index = _empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
+    cause = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
+    obligation_id = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
+    obligation_type = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
+    agent = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
+    from_account = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
+    from_slot = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
+    to_agent = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
+    to_account = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
+    to_slot = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
+    amount_kind = empty_month_matrix(horizon, max_slots, np.int64, AMOUNT_FIXED)
+    amount_fixed = empty_month_matrix(horizon, max_slots, np.float64, 0.0)
+    amount_base = empty_month_matrix(horizon, max_slots, np.float64, 0.0)
+    amount_series = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
+    amount_base_month = empty_month_matrix(horizon, max_slots, np.int64, 0)
+    amount_period = empty_month_matrix(horizon, max_slots, np.int64, 1)
+    source_kind = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
+    source_index = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
     # Default NO_CODE; populated only for property-tax obligations whose owner has a TaxProfile.
-    property_tax_profile = _empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
+    property_tax_profile = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
     # Property slot for property-tax obligations. NO_CODE elsewhere.
-    property_slot_matrix = _empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
+    property_slot_matrix = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
     # Schedule E deduction wiring: NO_CODE / 0.0 unless the obligation declares
     # deduction_category. Engine decrements ordinary_ytd by amount × deductible_fraction
     # at settlement time when deduction_profile >= 0.
-    deduction_profile = _empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
-    deductible_fraction = _empty_month_matrix(horizon, max_slots, np.float64, 0.0)
+    deduction_profile = empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
+    deductible_fraction = empty_month_matrix(horizon, max_slots, np.float64, 0.0)
     agent_to_profile_index: dict[int, int] = {
         strings.require(p.agent_id): i for i, p in enumerate(scenario.tax_profiles)
     }
@@ -1491,13 +1442,11 @@ def _compile_obligation_slots(
                 obligation_type[month, idx] = strings.require(config.obligation_type)
                 agent[month, idx] = strings.require(config.agent_id)
                 from_account[month, idx] = strings.require(config.from_account_id)
-                from_slot[month, idx] = _slot(account_slot_by_key, config.agent_id, config.from_account_id)
+                from_slot[month, idx] = slot(account_slot_by_key, config.agent_id, config.from_account_id)
                 to_agent[month, idx] = strings.require(config.to_agent_id)
                 to_account[month, idx] = strings.require(config.to_account_id)
-                to_slot[month, idx] = _slot(account_slot_by_key, config.to_agent_id, config.to_account_id)
-                kind, fixed, base, series, base_month, period = _amount_arrays(
-                    config.amount_due_usd, series_index_by_id
-                )
+                to_slot[month, idx] = slot(account_slot_by_key, config.to_agent_id, config.to_account_id)
+                kind, fixed, base, series, base_month, period = amount_arrays(config.amount_due_usd, series_index_by_id)
                 amount_kind[month, idx] = kind
                 amount_fixed[month, idx] = fixed
                 amount_base[month, idx] = base
@@ -1537,10 +1486,10 @@ def _compile_obligation_slots(
                 obligation_type[month, idx] = strings.require("mortgage_payment")
                 agent[month, idx] = strings.require(purchase.buyer_agent_id)
                 from_account[month, idx] = strings.require(purchase.buyer_account_id)
-                from_slot[month, idx] = _slot(account_slot_by_key, purchase.buyer_agent_id, purchase.buyer_account_id)
+                from_slot[month, idx] = slot(account_slot_by_key, purchase.buyer_agent_id, purchase.buyer_account_id)
                 to_agent[month, idx] = strings.require(purchase.mortgage.lender_agent_id)
                 to_account[month, idx] = strings.require(purchase.mortgage.lender_account_id)
-                to_slot[month, idx] = _slot(
+                to_slot[month, idx] = slot(
                     account_slot_by_key, purchase.mortgage.lender_agent_id, purchase.mortgage.lender_account_id
                 )
             elif kind == 2:
@@ -1565,10 +1514,10 @@ def _compile_obligation_slots(
                 obligation_type[month, idx] = strings.require("property_tax")
                 agent[month, idx] = strings.require(policy.owner_agent_id)
                 from_account[month, idx] = strings.require(policy.from_account_id)
-                from_slot[month, idx] = _slot(account_slot_by_key, policy.owner_agent_id, policy.from_account_id)
+                from_slot[month, idx] = slot(account_slot_by_key, policy.owner_agent_id, policy.from_account_id)
                 to_agent[month, idx] = strings.require(policy.tax_authority_agent_id)
                 to_account[month, idx] = strings.require(policy.tax_authority_account_id)
-                to_slot[month, idx] = _slot(
+                to_slot[month, idx] = slot(
                     account_slot_by_key, policy.tax_authority_agent_id, policy.tax_authority_account_id
                 )
                 amount_fixed[month, idx] = (
@@ -1605,10 +1554,10 @@ def _compile_obligation_slots(
                 obligation_type[month, idx] = strings.require(obligation_type_text)
                 agent[month, idx] = strings.require(profile.agent_id)
                 from_account[month, idx] = strings.require(profile.payment_account_id)
-                from_slot[month, idx] = _slot(account_slot_by_key, profile.agent_id, profile.payment_account_id)
+                from_slot[month, idx] = slot(account_slot_by_key, profile.agent_id, profile.payment_account_id)
                 to_agent[month, idx] = strings.require(profile.tax_authority_agent_id)
                 to_account[month, idx] = strings.require(profile.tax_authority_account_id)
-                to_slot[month, idx] = _slot(
+                to_slot[month, idx] = slot(
                     account_slot_by_key, profile.tax_authority_agent_id, profile.tax_authority_account_id
                 )
     return ObligationCompileOutput(
@@ -1707,7 +1656,7 @@ def _compile_liquidity_policies(
     for idx, policy in enumerate(scenario.liquidity_policies):
         agent[idx] = strings.require(policy.agent_id)
         account[idx] = strings.require(policy.account_id)
-        cash_slot[idx] = _slot(account_slot_by_key, policy.agent_id, policy.account_id)
+        cash_slot[idx] = slot(account_slot_by_key, policy.agent_id, policy.account_id)
         (
             trigger_kind[idx],
             trigger_fixed[idx],
@@ -1715,7 +1664,7 @@ def _compile_liquidity_policies(
             trigger_series_index[idx],
             trigger_base_month[idx],
             trigger_adjustment_period[idx],
-        ) = _amount_arrays(policy.cash_buffer_trigger_below_usd, series_index_by_id)
+        ) = amount_arrays(policy.cash_buffer_trigger_below_usd, series_index_by_id)
         (
             sale_kind[idx],
             sale_fixed[idx],
@@ -1723,7 +1672,7 @@ def _compile_liquidity_policies(
             sale_series_index[idx],
             sale_base_month[idx],
             sale_adjustment_period[idx],
-        ) = _amount_arrays(policy.cash_buffer_sale_usd, series_index_by_id)
+        ) = amount_arrays(policy.cash_buffer_sale_usd, series_index_by_id)
         prefixes.append(policy.cause_id_prefix)
         for asset_idx, asset_id in enumerate(policy.asset_preference_chain):
             assets[idx, asset_idx] = strings.require(asset_id)
