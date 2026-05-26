@@ -204,3 +204,17 @@ rust_test(
         "@crates//:tempfile",
     ],
 )
+
+# `debundle bindings list` / `rename` / `assign` against in-memory
+# YAML fixtures. Calls the library entry points directly.
+rust_test(
+    name = "bindings_assign_cli_test",
+    srcs = ["bindings_assign_cli_test.rs"],
+    crate_root = "bindings_assign_cli_test.rs",
+    edition = "2024",
+    deps = [
+        "//devinfra/js/debundle:binding_ops",
+        "@crates//:serde_yaml",
+        "@crates//:tempfile",
+    ],
+)

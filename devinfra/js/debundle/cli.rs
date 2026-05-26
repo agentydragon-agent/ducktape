@@ -2,8 +2,12 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use clap::{Args as ClapArgs, Parser, Subcommand};
+use binding_ops::{
+    AssignOutcome, BindingsListFilters, Move, parse_batch_json, parse_move_triple,
+    rename_binding, run_bindings_assign, run_bindings_list,
+};
 use comment_cli::{
-    BindingsArgs, ModuleCommentArgs, run_bindings_cli, run_module_comment_cmd,
+    BindingCommentArgs, ModuleCommentArgs, run_binding_comment_cmd, run_module_comment_cmd,
 };
 use module_cli::{MergeArgs, ModuleArgs, run_merge, run_module_cli};
 use peel::{
@@ -36,8 +40,8 @@ enum DebundleCommand {
     Peel(PeelArgs),
     /// (Deprecated) `debundle module merge`. Use `debundle modules merge`.
     Module(ModuleArgs),
-    /// Per-binding spec edits.
-    Bindings(BindingsArgs),
+    /// Per-binding spec verbs (comment, list, rename, assign).
+    Bindings(BindingsNs),
     /// Module-level spec verbs (comment, merge, propose).
     Modules(ModulesNs),
     /// List structural atoms (owner-level SCCs of the constraining-edge graph).
@@ -144,6 +148,83 @@ enum ModulesNsCommand {
     List(ModulesListArgs),
 }
 
+/// Top-level `debundle bindings ...` argument node.
+#[derive(Debug, ClapArgs)]
+pub struct BindingsNs {
+    #[command(subcommand)]
+    command: BindingsNsCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum BindingsNsCommand {
+    /// Read, set, edit, or clear a binding's `comment:` field.
+    Comment(BindingCommentArgs),
+    /// List every binding in the spec with home module + filters.
+    List(BindingsListNsArgs),
+    /// Rename a binding's readable `name:` without moving it.
+    Rename(BindingsRenameArgs),
+    /// Move one or more bindings between modules atomically.
+    Assign(BindingsAssignArgs),
+}
+
+#[derive(Debug, ClapArgs)]
+pub struct BindingsListNsArgs {
+    #[arg(long = "modules", env = "DEBUNDLE_MODULES")]
+    pub modules_root: PathBuf,
+    /// Restrict to bindings whose home module equals this path.
+    #[arg(long = "in")]
+    pub in_module: Option<String>,
+    /// Restrict to bindings still using their minified name.
+    #[arg(long)]
+    pub unrenamed: bool,
+    /// Restrict to bindings that are the only member of their module.
+    #[arg(long)]
+    pub orphan: bool,
+    /// Output format. Default `text` on tty, `json` on pipe.
+    #[arg(long, value_enum)]
+    pub format: Option<OutputFormat>,
+}
+
+#[derive(Debug, ClapArgs)]
+pub struct BindingsRenameArgs {
+    #[arg(long = "modules", env = "DEBUNDLE_MODULES")]
+    pub modules_root: PathBuf,
+    /// Current minified or readable name of the binding.
+    pub original: String,
+    /// New readable name (must not contain `:`).
+    pub readable: String,
+    /// Validate but do not modify any file.
+    #[arg(long)]
+    pub dry_run: bool,
+    /// Skip name-collision validation. Don't use casually.
+    #[arg(long)]
+    pub no_verify: bool,
+    /// Output format. Default `text` on tty, `json` on pipe.
+    #[arg(long, value_enum)]
+    pub format: Option<OutputFormat>,
+}
+
+#[derive(Debug, ClapArgs)]
+pub struct BindingsAssignArgs {
+    #[arg(long = "modules", env = "DEBUNDLE_MODULES")]
+    pub modules_root: PathBuf,
+    /// Positional `<sym>:<module>[:<readable>]` triples. May be empty
+    /// when `--batch` is supplied.
+    pub triples: Vec<String>,
+    /// Read additional moves from a JSON file (or `-` for stdin).
+    #[arg(long)]
+    pub batch: Option<String>,
+    /// Validate but do not modify any file.
+    #[arg(long)]
+    pub dry_run: bool,
+    /// Skip realizability + collision validation. Don't use casually.
+    #[arg(long)]
+    pub no_verify: bool,
+    /// Output format. Default `text` on tty, `json` on pipe.
+    #[arg(long, value_enum)]
+    pub format: Option<OutputFormat>,
+}
+
 /// Args for `debundle modules list`.
 #[derive(Debug, ClapArgs)]
 pub struct ModulesListArgs {
@@ -245,7 +326,12 @@ pub fn run_debundle_cli(args: DebundleArgs) -> Result<()> {
         }
         DebundleCommand::Peel(args) => run_peel(args).context("running peel query"),
         DebundleCommand::Module(args) => run_module_cli(args).context("running module subcommand"),
-        DebundleCommand::Bindings(args) => run_bindings_cli(args),
+        DebundleCommand::Bindings(args) => match args.command {
+            BindingsNsCommand::Comment(c) => run_binding_comment_cmd(c),
+            BindingsNsCommand::List(l) => run_bindings_list_cmd(l),
+            BindingsNsCommand::Rename(r) => run_bindings_rename_cmd(r),
+            BindingsNsCommand::Assign(a) => run_bindings_assign_cmd(a),
+        },
         DebundleCommand::Modules(args) => match args.command {
             ModulesNsCommand::Comment(c) => run_module_comment_cmd(c),
             ModulesNsCommand::Merge(m) => run_merge(m),
@@ -632,6 +718,111 @@ fn render_cluster_text(report: &ClusterReport, out: &mut String) {
         "  outgoing: {}\n",
         report.outgoing_modules.join(", ")
     ));
+}
+
+fn run_bindings_list_cmd(args: BindingsListNsArgs) -> Result<()> {
+    let filters = BindingsListFilters {
+        in_module: args.in_module,
+        unrenamed: args.unrenamed,
+        orphan: args.orphan,
+    };
+    let report = run_bindings_list(&args.modules_root, &filters)?;
+    let format = OutputFormat::resolve(args.format);
+    print_report(&report, format, render_bindings_list_text)
+        .context("writing bindings list output")
+}
+
+fn render_bindings_list_text(report: &binding_ops::BindingsListReport, out: &mut String) {
+    out.push_str(&format!("{} binding(s)\n", report.bindings.len()));
+    for entry in &report.bindings {
+        let mut flags = Vec::new();
+        if entry.orphan {
+            flags.push("orphan");
+        }
+        if entry.unrenamed {
+            flags.push("unrenamed");
+        }
+        let readable = entry.readable.as_deref().unwrap_or("-");
+        out.push_str(&format!(
+            "  {}  {}  [{}]  {}\n",
+            entry.binding,
+            entry.module,
+            readable,
+            flags.join(",")
+        ));
+    }
+}
+
+fn run_bindings_rename_cmd(args: BindingsRenameArgs) -> Result<()> {
+    let out = rename_binding(
+        &args.modules_root,
+        &args.original,
+        &args.readable,
+        args.dry_run,
+        args.no_verify,
+    )?;
+    let format = OutputFormat::resolve(args.format);
+    match format {
+        OutputFormat::Text => {
+            println!(
+                "{}: {} -> {} ({})",
+                out.action,
+                out.old_readable.as_deref().unwrap_or(&out.binding_name),
+                out.new_readable,
+                out.file.display()
+            );
+        }
+        OutputFormat::Json | OutputFormat::Ndjson => {
+            let payload = serde_json::json!({
+                "action": out.action,
+                "binding": out.binding_name,
+                "old_readable": out.old_readable,
+                "new_readable": out.new_readable,
+                "file": out.file.display().to_string(),
+            });
+            println!("{}", serde_json::to_string_pretty(&payload)?);
+        }
+    }
+    Ok(())
+}
+
+fn run_bindings_assign_cmd(args: BindingsAssignArgs) -> Result<()> {
+    use std::io::Read;
+    let mut moves: Vec<Move> = Vec::new();
+    for t in &args.triples {
+        moves.push(parse_move_triple(t)?);
+    }
+    if let Some(path) = &args.batch {
+        let text = if path == "-" {
+            let mut buf = String::new();
+            std::io::stdin().read_to_string(&mut buf)?;
+            buf
+        } else {
+            std::fs::read_to_string(path).with_context(|| format!("reading {path}"))?
+        };
+        moves.extend(parse_batch_json(&text)?);
+    }
+    let out = run_bindings_assign(&args.modules_root, moves, args.dry_run, args.no_verify)?;
+    let format = OutputFormat::resolve(args.format);
+    print_assign_outcome(&out, format)
+}
+
+fn print_assign_outcome(out: &AssignOutcome, format: OutputFormat) -> Result<()> {
+    match format {
+        OutputFormat::Text => {
+            println!(
+                "{}: {} move(s); {} file(s) written, {} file(s) deleted",
+                out.action,
+                out.moves_applied,
+                out.files_written.len(),
+                out.files_deleted.len()
+            );
+        }
+        OutputFormat::Json | OutputFormat::Ndjson => {
+            println!("{}", serde_json::to_string_pretty(out)?);
+        }
+    }
+    Ok(())
 }
 
 fn run_modules_list(args: ModulesListArgs) -> Result<()> {

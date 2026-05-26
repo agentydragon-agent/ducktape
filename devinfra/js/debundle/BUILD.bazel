@@ -542,6 +542,27 @@ rust_library(
     ],
 )
 
+rust_library(
+    name = "binding_ops",
+    srcs = ["binding_ops.rs"],
+    crate_root = "binding_ops.rs",
+    edition = "2024",
+    deps = [
+        ":spec_modules",
+        "@crates//:anyhow",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@crates//:serde_yaml",
+    ],
+)
+
+rust_test(
+    name = "binding_ops_test",
+    crate = ":binding_ops",
+    edition = "2024",
+    deps = ["@crates//:tempfile"],
+)
+
 rust_test(
     name = "comment_cli_test",
     crate = ":comment_cli",
@@ -557,6 +578,7 @@ rust_library(
     edition = "2024",
     deps = [
         ":analysis",
+        ":binding_ops",
         ":comment_cli",
         ":module_cli",
         ":peel",
