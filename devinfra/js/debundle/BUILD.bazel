@@ -2,7 +2,7 @@ load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files(["guide.md"])
+exports_files(["README.md"])
 
 rust_library(
     name = "js_ast",
