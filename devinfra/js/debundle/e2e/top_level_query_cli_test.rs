@@ -10,8 +10,8 @@ use std::path::Path;
 
 use analysis::{
     AtomicGraphReport, AtomicUnitReport, BindingReport, DepKind, ModuleReportRef,
-    OwnerGraphEdgeReport, OwnerGraphNodeReport, OwnerGraphQuotientReport, OwnerGraphReport,
-    Purity, QuotientSccReport, SourceLocation, StatementKind, StatementOrdinal,
+    OwnerGraphEdgeReport, OwnerGraphNodeReport, OwnerGraphQuotientReport, OwnerGraphReport, Purity,
+    QuotientSccReport, SourceLocation, StatementKind, StatementOrdinal,
 };
 use peel::{
     CommonArgs, ExplainArgs, GraphSummaryArgs, PatchPlanArgs, PlanWorkArgs, SelectionArgs,

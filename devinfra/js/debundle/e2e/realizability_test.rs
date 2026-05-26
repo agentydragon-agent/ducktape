@@ -603,8 +603,10 @@ export { a1, a2, b1 };
             i as u64,
             "id should be the entry's index in cycles.json",
         );
-        assert!(!obj.contains_key("evidence"),
-            "evidence is recomputed on demand by `debundle gate describe`, not on disk");
+        assert!(
+            !obj.contains_key("evidence"),
+            "evidence is recomputed on demand by `debundle gate describe`, not on disk"
+        );
     }
     assert!(
         graph.quotient.sccs.iter().any(|scc| {

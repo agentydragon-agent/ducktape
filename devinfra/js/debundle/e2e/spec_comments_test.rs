@@ -82,8 +82,7 @@ export { value };
 
 #[test]
 fn module_level_comment_lands_at_top_of_file_before_imports() {
-    let comment =
-        "Module-wide documentation.\nSecond line of the module comment.";
+    let comment = "Module-wide documentation.\nSecond line of the module comment.";
     let fixture = run_fixture(FixtureOpts::new(
         r#"const a = "a";
 const b = "b";

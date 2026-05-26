@@ -217,11 +217,7 @@ pub fn run_merge(merge: MergeArgs) -> Result<()> {
 
 /// Like `merge_modules` but without writing/deleting. Returns the
 /// summary that would be produced. Used by `--dry-run`.
-fn preview_merge(
-    modules_root: &Path,
-    target: &Path,
-    sources: &[&Path],
-) -> Result<MergeSummary> {
+fn preview_merge(modules_root: &Path, target: &Path, sources: &[&Path]) -> Result<MergeSummary> {
     let target_abs = if target.is_absolute() {
         target.to_path_buf()
     } else {
@@ -365,8 +361,7 @@ pub fn run_delete(args: DeleteArgs) -> Result<()> {
     for p in &paths_abs {
         let doc = read_yaml(p)?;
         let member_count = sequence_field(&doc, "members").map_or(0, Vec::len);
-        let has_anon = sequence_field(&doc, "anonymous_statements")
-            .is_some_and(|s| !s.is_empty());
+        let has_anon = sequence_field(&doc, "anonymous_statements").is_some_and(|s| !s.is_empty());
         if member_count > 0 || has_anon {
             all_empty = false;
             non_empty.push((p.clone(), member_count, has_anon));
@@ -604,8 +599,8 @@ fn read_member_bindings(path: &Path) -> Result<BTreeSet<String>> {
     if !is_module_yaml(path) {
         return Ok(BTreeSet::new());
     }
-    let module = read_module_file(path)
-        .with_context(|| format!("reading module {}", path.display()))?;
+    let module =
+        read_module_file(path).with_context(|| format!("reading module {}", path.display()))?;
     let mut names: BTreeSet<String> = BTreeSet::new();
     for member in module.members {
         names.insert(member.selector.binding.name);
@@ -624,9 +619,7 @@ fn gate_post_edit_partition(owner_graph_path: &Path, post_spec: &PostEditSpec) -
         &fs::read_to_string(owner_graph_path)
             .with_context(|| format!("reading {}", owner_graph_path.display()))?,
     )
-    .with_context(|| {
-        format!("parsing owner graph {}", owner_graph_path.display())
-    })?;
+    .with_context(|| format!("parsing owner graph {}", owner_graph_path.display()))?;
 
     // The gate algorithm walks edges + partition, not declared sets.
     // Pass `&[]` for facts — `from_report` leaves `declared` empty,

@@ -428,9 +428,7 @@ impl Visit for ModuleScanVisitor {
     fn visit_call_expr(&mut self, node: &CallExpr) {
         if matches!(node.callee, Callee::Import(_)) {
             self.dynamic_import_count += 1;
-            if !self.has_rewritable_specifier
-                && dynamic_import_relative_specifier(node).is_some()
-            {
+            if !self.has_rewritable_specifier && dynamic_import_relative_specifier(node).is_some() {
                 self.has_rewritable_specifier = true;
             }
         }

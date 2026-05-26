@@ -134,7 +134,8 @@ pub fn check_realizability(
         if !edge.reason.is_rebind() {
             continue;
         }
-        let Some((from, to)) = crate::graph::partition_endpoints(edge, partition, crate::graph::EndpointView::Gate)
+        let Some((from, to)) =
+            crate::graph::partition_endpoints(edge, partition, crate::graph::EndpointView::Gate)
         else {
             continue;
         };
@@ -627,11 +628,7 @@ fn increment_delta(
     }
 }
 
-fn edge_contribution(
-    edge: &OwnerEdge,
-    from: ModuleId,
-    to: ModuleId,
-) -> Option<EdgeContribution> {
+fn edge_contribution(edge: &OwnerEdge, from: ModuleId, to: ModuleId) -> Option<EdgeContribution> {
     if from == to {
         return None;
     }
@@ -937,7 +934,8 @@ impl IncrementalQuotient {
         // See [`crate::graph::partition_endpoints`] for why and
         // `tests::promoted_edge_in_aggregator_cycle_is_unrealizable`
         // for the regression fixture.
-        let Some((from, to)) = crate::graph::partition_endpoints(edge, partition, crate::graph::EndpointView::Gate)
+        let Some((from, to)) =
+            crate::graph::partition_endpoints(edge, partition, crate::graph::EndpointView::Gate)
         else {
             return;
         };
@@ -978,7 +976,8 @@ impl IncrementalQuotient {
         // Gate-side view: keep cross-module at-init promoted edges.
         // Must mirror `add_current_edge` (see
         // [`crate::graph::partition_endpoints`]).
-        let Some((from, to)) = crate::graph::partition_endpoints(edge, partition, crate::graph::EndpointView::Gate)
+        let Some((from, to)) =
+            crate::graph::partition_endpoints(edge, partition, crate::graph::EndpointView::Gate)
         else {
             return;
         };
@@ -1308,8 +1307,7 @@ impl IncrementalQuotient {
         let mut overlay = QuotientOverlay::default();
         for edge_id in impacted_edges {
             let edge = &owner_graph.edges[edge_id.0];
-            let current =
-                edge_contribution(edge, partition.of(edge.from), partition.of(edge.to));
+            let current = edge_contribution(edge, partition.of(edge.from), partition.of(edge.to));
             let next_from = if owners.contains(&edge.from) {
                 to
             } else {

@@ -8,8 +8,8 @@ use swc_common::GLOBALS;
 
 use analysis::ChunkId;
 use artifact::{
-    ArtifactChunkRecord, ArtifactCounts, CANONICAL_CHUNK_ENTRY_FILE, ChunkAnalysisReport, ChunkArtifact,
-    ChunkBundle, ChunkMetadata, FileMetadata, FileRole, JsChunk, JsFile, JsFileBody,
+    ArtifactChunkRecord, ArtifactCounts, CANONICAL_CHUNK_ENTRY_FILE, ChunkAnalysisReport,
+    ChunkArtifact, ChunkBundle, ChunkMetadata, FileMetadata, FileRole, JsChunk, JsFile, JsFileBody,
     LoadedJsChunks, ParsedJsFileRecord,
 };
 use js_ast::{ParsedJsModule, parse_js_module_consuming};
@@ -246,7 +246,13 @@ fn prepare_parsed_entry(
     entry_file: &str,
     source_path: &str,
     entry_source: String,
-) -> Result<(ChunkAnalysisReport, bool, JsFile, String, Vec<ParsedJsFileRecord>)> {
+) -> Result<(
+    ChunkAnalysisReport,
+    bool,
+    JsFile,
+    String,
+    Vec<ParsedJsFileRecord>,
+)> {
     let source_bytes = entry_source.len();
     let source_name = format!("{chunk_id}/{entry_file}");
 
@@ -303,7 +309,9 @@ fn canonical_parsed_file(chunk_id: &str, source_path: &str, parsed: ParsedJsModu
     }
 }
 
-fn build_prepare_output(manifests: &[ChunkAnalysisReport]) -> (ArtifactCounts, Vec<ArtifactChunkRecord>) {
+fn build_prepare_output(
+    manifests: &[ChunkAnalysisReport],
+) -> (ArtifactCounts, Vec<ArtifactChunkRecord>) {
     let counts = ArtifactCounts {
         kept_top_level_declaration_owners: manifests
             .iter()

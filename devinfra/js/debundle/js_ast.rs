@@ -5,7 +5,7 @@ use swc_atoms::Atom;
 use swc_common::comments::{Comment, CommentKind, Comments, SingleThreadedComments};
 use swc_common::sync::Lrc;
 use swc_common::{BytePos, DUMMY_SP, FileName, GLOBALS, Globals, Mark, SourceMap, Spanned};
-use swc_ecma_ast::{Decl, ModuleDecl, ModuleItem, Module, Pat, Stmt, Str};
+use swc_ecma_ast::{Decl, Module, ModuleDecl, ModuleItem, Pat, Stmt, Str};
 use swc_ecma_codegen::text_writer::JsWriter;
 use swc_ecma_codegen::{Config, Emitter};
 use swc_ecma_parser::{Parser, StringInput, Syntax, TsSyntax, lexer::Lexer};
@@ -558,15 +558,14 @@ mod tests {
             )
             .unwrap();
             let mut binding_comments = BTreeMap::new();
-            binding_comments.insert(
-                "a".to_string(),
-                "doc for a.\nsecond line.".to_string(),
-            );
+            binding_comments.insert("a".to_string(), "doc for a.\nsecond line.".to_string());
             binding_comments.insert("b".to_string(), "doc for b.".to_string());
             let source = emit_js_module_with_comments(&parsed, &[], &binding_comments).unwrap();
             // Each binding's comment lands above its declaration; SWC
             // emits one `// <text>` per `Line` comment in the map.
-            let a_pos = source.find("const a = 1").expect("must contain const a = 1");
+            let a_pos = source
+                .find("const a = 1")
+                .expect("must contain const a = 1");
             let comment_a_pos = source
                 .find("// doc for a.")
                 .expect("must contain doc for a");

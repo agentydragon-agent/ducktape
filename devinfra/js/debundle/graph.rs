@@ -396,10 +396,8 @@ impl OwnerGraph {
         // wire shapes — `OwnerGraphNodeReport.statement_ordinal` and
         // `StatementFactsReport.ordinal`. Build a lookup table once
         // so the per-node hydration below is O(1) per node.
-        let declared_by_ordinal: HashMap<StatementOrdinal, &Vec<crate::IdReport>> = facts
-            .iter()
-            .map(|f| (f.ordinal, &f.declared))
-            .collect();
+        let declared_by_ordinal: HashMap<StatementOrdinal, &Vec<crate::IdReport>> =
+            facts.iter().map(|f| (f.ordinal, &f.declared)).collect();
 
         let nodes: Vec<OwnerNode> = report
             .nodes
@@ -1120,7 +1118,10 @@ pub(crate) fn partition_endpoints(
         return None;
     }
     if view == EndpointView::Lenient
-        && edge.reason.role.is_cross_module_promotion(edge.from, partition)
+        && edge
+            .reason
+            .role
+            .is_cross_module_promotion(edge.from, partition)
     {
         return None;
     }
@@ -1698,11 +1699,7 @@ mod edge_role_wire_format_tests {
     fn promoted_at_init_role_round_trips_with_callee_owner() {
         let report = OwnerGraphReport {
             chunk_id: "chunk".into(),
-            nodes: vec![
-                node("owner:0", 0),
-                node("owner:1", 1),
-                node("owner:2", 2),
-            ],
+            nodes: vec![node("owner:0", 0), node("owner:1", 1), node("owner:2", 2)],
             edges: vec![OwnerGraphEdgeReport {
                 id: "owner_edge:0".to_string(),
                 source: "owner:1".to_string(),
@@ -1801,16 +1798,16 @@ mod declared_round_trip_tests {
     //! in-memory original).
     use std::collections::HashMap;
 
-    use crate::facts::analyze_chunk;
     use crate::factor_assembly::assemble_partition;
+    use crate::facts::analyze_chunk;
     use crate::graph::{OwnerGraph, build_owner_graph};
     use crate::ids::{BindingKind, LogicalModule, LogicalModuleIndex, ModuleId};
     use crate::partition::Partition;
+    use crate::reports::owner_key;
     use crate::reports::schema::{
         AtomicGraphReport, OwnerGraphEdgeReport, OwnerGraphNodeReport, OwnerGraphQuotientReport,
         OwnerGraphReport,
     };
-    use crate::reports::owner_key;
     use crate::{AnalysisHints, BindingReport, StatementFactsReport};
 
     use swc_common::{FileName, SourceMap, sync::Lrc};
@@ -1932,7 +1929,13 @@ mod declared_round_trip_tests {
                 rename_map: HashMap::new(),
             },
         ];
-        (owner_graph, facts_reports, report, bindings, logical_modules)
+        (
+            owner_graph,
+            facts_reports,
+            report,
+            bindings,
+            logical_modules,
+        )
     }
 
     /// Serialize a graph with non-empty `declared`, deserialize, and
@@ -1988,8 +1991,13 @@ mod declared_round_trip_tests {
         let (original, facts, report, bindings, logical_modules) = build_and_serialize(source);
         let residual = ModuleId(LogicalModuleIndex(1));
         let atomic_units = crate::atomic_units::compute_atomic_units(&original);
-        let original_outcome =
-            assemble_partition(&original, &atomic_units, &bindings, &logical_modules, residual);
+        let original_outcome = assemble_partition(
+            &original,
+            &atomic_units,
+            &bindings,
+            &logical_modules,
+            residual,
+        );
 
         let (round_tripped, _) = OwnerGraph::from_report(&report, &facts);
         let restored_units = crate::atomic_units::compute_atomic_units(&round_tripped);

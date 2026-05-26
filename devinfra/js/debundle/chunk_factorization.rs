@@ -134,16 +134,16 @@ impl ChunkFactorization {
         // simulator share one source of truth — see `graph.rs:
         // chunk_constraining_module_edges` for the invariant doc.
         let canonical_edges = chunk_constraining_module_edges(&owner_graph, &partition);
-        let linker_position_btree: BTreeMap<ModuleId, usize> =
-            chunk_linker_order(&canonical_edges);
+        let linker_position_btree: BTreeMap<ModuleId, usize> = chunk_linker_order(&canonical_edges);
         // Recover the linker-order Vec by sorting modules by their
         // assigned position. Modules absent from the canonical set
         // are unconstrained relative to it and not present here.
-        let mut linker_order_pairs: Vec<(ModuleId, usize)> =
-            linker_position_btree.iter().map(|(m, p)| (*m, *p)).collect();
+        let mut linker_order_pairs: Vec<(ModuleId, usize)> = linker_position_btree
+            .iter()
+            .map(|(m, p)| (*m, *p))
+            .collect();
         linker_order_pairs.sort_by_key(|(_, p)| *p);
-        let linker_order: Vec<ModuleId> =
-            linker_order_pairs.into_iter().map(|(m, _)| m).collect();
+        let linker_order: Vec<ModuleId> = linker_order_pairs.into_iter().map(|(m, _)| m).collect();
         let linker_position_by_module: HashMap<ModuleId, usize> =
             linker_position_btree.into_iter().collect();
         // Every logical module needs a deterministic source-order

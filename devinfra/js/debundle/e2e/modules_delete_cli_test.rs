@@ -179,8 +179,14 @@ fn dry_run_prints_verdict_without_deleting() {
         stdout.contains("dry-run: would delete 1 file(s)"),
         "expected dry-run verdict on stdout, got {stdout:?}",
     );
-    assert!(root.join("ui/empty.yaml").exists(), "file must remain on disk");
-    assert_eq!(fs::read_to_string(root.join("ui/empty.yaml")).unwrap(), body);
+    assert!(
+        root.join("ui/empty.yaml").exists(),
+        "file must remain on disk"
+    );
+    assert_eq!(
+        fs::read_to_string(root.join("ui/empty.yaml")).unwrap(),
+        body
+    );
 }
 
 #[test]
@@ -265,6 +271,10 @@ fn delete_modules_library_dry_run_leaves_files_in_place() {
     let summary = delete_modules(&abs, true).unwrap();
     assert_eq!(summary.deleted.len(), 1);
     assert!(summary.dry_run);
-    assert!(summary.summary_line().contains("dry-run: would delete 1 file(s)"));
+    assert!(
+        summary
+            .summary_line()
+            .contains("dry-run: would delete 1 file(s)")
+    );
     assert!(root.join("a.yaml").exists());
 }

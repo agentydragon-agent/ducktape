@@ -188,7 +188,9 @@ pub fn run_bindings_list(
             && (!filters.unrenamed || e.unrenamed)
             && (!filters.orphan || e.orphan)
     });
-    entries.sort_by(|a, b| (a.module.as_str(), a.binding.as_str()).cmp(&(b.module.as_str(), b.binding.as_str())));
+    entries.sort_by(|a, b| {
+        (a.module.as_str(), a.binding.as_str()).cmp(&(b.module.as_str(), b.binding.as_str()))
+    });
     Ok(BindingsListReport { bindings: entries })
 }
 
@@ -335,9 +337,7 @@ pub struct AssignOutcome {
 pub fn parse_move_triple(s: &str) -> Result<Move> {
     let parts: Vec<&str> = s.splitn(3, ':').collect();
     if parts.len() < 2 {
-        bail!(
-            "expected `<sym>:<module>[:<readable>]`, got {s:?} (one colon at minimum)"
-        );
+        bail!("expected `<sym>:<module>[:<readable>]`, got {s:?} (one colon at minimum)");
     }
     Ok(Move {
         sym: parts[0].to_string(),
@@ -473,7 +473,10 @@ pub fn run_bindings_assign(
                     let Some(map) = member.as_mapping() else {
                         continue;
                     };
-                    let readable = map.get(yk("name")).and_then(Value::as_str).unwrap_or_default();
+                    let readable = map
+                        .get(yk("name"))
+                        .and_then(Value::as_str)
+                        .unwrap_or_default();
                     if readable == new_readable {
                         hits.push(format!("  {} ({}@{})", file.display(), mp, idx));
                     }
@@ -515,8 +518,7 @@ pub fn run_bindings_assign(
         if !docs.contains_key(&dest_path) {
             let mut map = Mapping::new();
             map.insert(yk("members"), Value::Sequence(Vec::new()));
-            let dest_file =
-                modules_root.join(format!("{dest_path}.yaml"));
+            let dest_file = modules_root.join(format!("{dest_path}.yaml"));
             docs.insert(dest_path.clone(), (dest_file, Value::Mapping(map)));
         }
         let member = pulled.remove(&p.req.sym).expect("pulled member missing");
@@ -781,10 +783,7 @@ mod tests {
             "members:\n  - selector: { binding: { name: XOe } }\n",
         );
         let err = rename_binding(root, "XOe", "Other", false, false).unwrap_err();
-        assert!(
-            format!("{err}").contains("name collision"),
-            "got {err}"
-        );
+        assert!(format!("{err}").contains("name collision"), "got {err}");
     }
 
     #[test]
@@ -814,7 +813,11 @@ mod tests {
             "src.yaml",
             "members:\n  - selector: { binding: { name: XOe } }\n",
         );
-        write(root, "dest.yaml", "members:\n  - selector: { binding: { name: YOe } }\n");
+        write(
+            root,
+            "dest.yaml",
+            "members:\n  - selector: { binding: { name: YOe } }\n",
+        );
         let moves = vec![Move {
             sym: "XOe".into(),
             module: "dest".into(),

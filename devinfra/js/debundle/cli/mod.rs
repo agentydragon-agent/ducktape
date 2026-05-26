@@ -5,17 +5,17 @@ pub mod module;
 
 use std::path::PathBuf;
 
-use anyhow::{Context, Result};
-use clap::{Args as ClapArgs, Parser, Subcommand};
 use crate::binding::{
-    AssignOutcome, BindingsListFilters, Move, parse_batch_json, parse_move_triple,
-    rename_binding, run_bindings_assign, run_bindings_list,
+    AssignOutcome, BindingsListFilters, Move, parse_batch_json, parse_move_triple, rename_binding,
+    run_bindings_assign, run_bindings_list,
 };
 use crate::comment::{
     BindingCommentArgs, ModuleCommentArgs, run_binding_comment_cmd, run_module_comment_cmd,
 };
 use crate::gate::{GateArgs, run_gate_cli};
 use crate::module::{DeleteArgs, MergeArgs, ModuleArgs, run_delete, run_merge, run_module_cli};
+use anyhow::{Context, Result};
+use clap::{Args as ClapArgs, Parser, Subcommand};
 use peel::{
     CommonArgs as PeelCommonArgs, ExplainArgs, GraphSummaryArgs, OutputFormat, PatchPlanArgs,
     PeelArgs, PlanWorkArgs, SelectionArgs, SourceSliceArgs, UnitsArgs, print_report,
@@ -393,8 +393,7 @@ pub fn run_debundle_cli(args: DebundleArgs) -> Result<()> {
         DebundleCommand::Coverage(args) => {
             let format = OutputFormat::resolve(args.format);
             let report = run_patch_plan_report(&args)?;
-            print_report(&report, format, render_patch_plan_text)
-                .context("writing coverage output")
+            print_report(&report, format, render_patch_plan_text).context("writing coverage output")
         }
         DebundleCommand::GraphSummary(args) => {
             let format = OutputFormat::resolve(args.format);
@@ -554,11 +553,7 @@ fn run_show_source(args: ShowSourceArgs) -> Result<()> {
 /// `describe <module-path>`: resolve every binding in the module to
 /// owner ids then run the same explain report. Falls through to an
 /// empty selection (no owners) when the module YAML has no bindings.
-fn describe_module(
-    module_path: &str,
-    common: &PeelCommonArgs,
-    format: OutputFormat,
-) -> Result<()> {
+fn describe_module(module_path: &str, common: &PeelCommonArgs, format: OutputFormat) -> Result<()> {
     use std::collections::BTreeSet;
     let bindings = collect_module_bindings(module_path, &common.modules_root)?;
     if bindings.is_empty() {
@@ -567,9 +562,7 @@ fn describe_module(
     let graph: analysis::OwnerGraphReport = serde_json::from_str(&std::fs::read_to_string(
         &common.owner_graph_path,
     )?)
-    .with_context(|| {
-        format!("parsing owner graph {}", common.owner_graph_path.display())
-    })?;
+    .with_context(|| format!("parsing owner graph {}", common.owner_graph_path.display()))?;
     let mut owner_ids: BTreeSet<String> = BTreeSet::new();
     for node in &graph.nodes {
         if node
@@ -637,12 +630,14 @@ fn show_module_source(
 
 fn run_scc(args: SccArgs) -> Result<()> {
     let graph: analysis::OwnerGraphReport = serde_json::from_str(
-        &std::fs::read_to_string(&args.common.owner_graph_path).with_context(|| {
-            format!("reading {}", args.common.owner_graph_path.display())
-        })?,
+        &std::fs::read_to_string(&args.common.owner_graph_path)
+            .with_context(|| format!("reading {}", args.common.owner_graph_path.display()))?,
     )
     .with_context(|| {
-        format!("parsing owner graph {}", args.common.owner_graph_path.display())
+        format!(
+            "parsing owner graph {}",
+            args.common.owner_graph_path.display()
+        )
     })?;
     // If a binding was supplied, find its owner -> destination module
     // first; we restrict SCCs to ones containing that destination.
@@ -721,9 +716,8 @@ fn render_scc_text(report: &SccReport, out: &mut String) {
 
 fn run_cluster(args: ClusterArgs) -> Result<()> {
     let graph: analysis::OwnerGraphReport = serde_json::from_str(
-        &std::fs::read_to_string(&args.common.owner_graph_path).with_context(|| {
-            format!("reading {}", args.common.owner_graph_path.display())
-        })?,
+        &std::fs::read_to_string(&args.common.owner_graph_path)
+            .with_context(|| format!("reading {}", args.common.owner_graph_path.display()))?,
     )?;
     let owner = graph
         .nodes
@@ -778,8 +772,7 @@ fn run_bindings_list_cmd(args: BindingsListNsArgs) -> Result<()> {
     };
     let report = run_bindings_list(&args.modules_root, &filters)?;
     let format = OutputFormat::resolve(args.format);
-    print_report(&report, format, render_bindings_list_text)
-        .context("writing bindings list output")
+    print_report(&report, format, render_bindings_list_text).context("writing bindings list output")
 }
 
 fn render_bindings_list_text(report: &crate::binding::BindingsListReport, out: &mut String) {
@@ -967,11 +960,7 @@ fn render_modules_list_text(report: &ModulesListReport, out: &mut String) {
 fn render_units_text(report: &peel::UnitsReport, out: &mut String) {
     out.push_str(&format!("{} atom(s)\n", report.units.len()));
     for unit in &report.units {
-        let bindings: Vec<&str> = unit
-            .members
-            .iter()
-            .map(|m| m.binding.as_str())
-            .collect();
+        let bindings: Vec<&str> = unit.members.iter().map(|m| m.binding.as_str()).collect();
         out.push_str(&format!(
             "  {}  [{}]  size={}\n",
             unit.id,
@@ -1023,7 +1012,10 @@ fn render_plan_work_text(report: &peel::PlanWorkReport, out: &mut String) {
 }
 
 fn render_explain_text(report: &peel::ExplainReport, out: &mut String) {
-    out.push_str(&format!("{:?} {:?}\n", report.query.kind, report.query.value));
+    out.push_str(&format!(
+        "{:?} {:?}\n",
+        report.query.kind, report.query.value
+    ));
     out.push_str(&format!("  owners: {}\n", report.owner_ids.join(", ")));
     out.push_str(&format!(
         "  bindings: {}\n",
@@ -1061,9 +1053,8 @@ fn collect_module_bindings(
 ) -> Result<std::collections::BTreeSet<String>> {
     use std::collections::BTreeSet;
     let yaml_path = modules_root.join(format!("{module_path}.yaml"));
-    let module = spec_modules::read_module_file(&yaml_path).with_context(|| {
-        format!("reading module YAML {}", yaml_path.display())
-    })?;
+    let module = spec_modules::read_module_file(&yaml_path)
+        .with_context(|| format!("reading module YAML {}", yaml_path.display()))?;
     Ok(module
         .members
         .into_iter()
@@ -1318,7 +1309,10 @@ mod tests {
     fn dispatch_id_diagnostic_prefix() {
         let tmp = tempfile::tempdir().unwrap();
         let sel = super::dispatch_id_selection("diagnostic:size_cap_0001", tmp.path()).unwrap();
-        assert_eq!(sel.diagnostic_id.as_deref(), Some("diagnostic:size_cap_0001"));
+        assert_eq!(
+            sel.diagnostic_id.as_deref(),
+            Some("diagnostic:size_cap_0001")
+        );
     }
 
     #[test]

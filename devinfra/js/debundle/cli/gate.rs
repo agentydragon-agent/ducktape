@@ -172,8 +172,8 @@ pub fn run_gate_cli(args: GateArgs) -> Result<()> {
 
 fn load_cycles(common: &GateCommonArgs) -> Result<Vec<BlockingSccEntry>> {
     let path = common.resolved_cycles_path();
-    let text = std::fs::read_to_string(&path)
-        .with_context(|| format!("reading {}", path.display()))?;
+    let text =
+        std::fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
     serde_json::from_str(&text)
         .with_context(|| format!("parsing blocking-SCC report {}", path.display()))
 }
@@ -181,9 +181,8 @@ fn load_cycles(common: &GateCommonArgs) -> Result<Vec<BlockingSccEntry>> {
 fn load_graph(common: &GateCommonArgs) -> Result<OwnerGraphReport> {
     let text = std::fs::read_to_string(&common.owner_graph_path)
         .with_context(|| format!("reading {}", common.owner_graph_path.display()))?;
-    serde_json::from_str(&text).with_context(|| {
-        format!("parsing owner graph {}", common.owner_graph_path.display())
-    })
+    serde_json::from_str(&text)
+        .with_context(|| format!("parsing owner graph {}", common.owner_graph_path.display()))
 }
 
 fn run_list(args: GateListArgs) -> Result<()> {
@@ -219,13 +218,12 @@ fn render_list_text(report: &GateListReport, out: &mut String) {
 }
 
 fn find_entry(entries: &[BlockingSccEntry], id: usize) -> Result<&BlockingSccEntry> {
-    entries
-        .iter()
-        .find(|e| e.id == id)
-        .ok_or_else(|| anyhow::anyhow!(
+    entries.iter().find(|e| e.id == id).ok_or_else(|| {
+        anyhow::anyhow!(
             "no blocking SCC with id {id} in cycles.json (found {} entries)",
             entries.len(),
-        ))
+        )
+    })
 }
 
 fn run_describe(args: GateDescribeArgs) -> Result<()> {
@@ -546,11 +544,11 @@ struct BlamePairAgg {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use analysis::{AtomicGraphReport, Purity};
     use analysis::{
         BindingReport, EdgeRoleReport, ModuleReportRef, OwnerGraphEdgeReport, OwnerGraphNodeReport,
         OwnerGraphQuotientReport, OwnerGraphReport, StatementKind,
     };
-    use analysis::{AtomicGraphReport, Purity};
 
     fn module_ref(label: &str) -> ModuleReportRef {
         ModuleReportRef {
@@ -643,8 +641,16 @@ mod tests {
         let evidence =
             super::recompute_evidence(&graph, &["mod_a".to_string(), "mod_b".to_string()]);
         assert_eq!(evidence.len(), 2, "{evidence:#?}");
-        assert!(evidence.iter().any(|e| e.from == "mod_a" && e.to == "mod_b"));
-        assert!(evidence.iter().any(|e| e.from == "mod_b" && e.to == "mod_a"));
+        assert!(
+            evidence
+                .iter()
+                .any(|e| e.from == "mod_a" && e.to == "mod_b")
+        );
+        assert!(
+            evidence
+                .iter()
+                .any(|e| e.from == "mod_b" && e.to == "mod_a")
+        );
         // Source binding labels come from the source owner's first
         // declared binding.
         for e in &evidence {

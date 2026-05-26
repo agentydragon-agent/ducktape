@@ -12,8 +12,7 @@ fn debundle_binary() -> PathBuf {
     let runfiles_path = std::env::var("RUNFILES_DIR")
         .or_else(|_| std::env::var("TEST_SRCDIR"))
         .expect("runfiles env var");
-    let candidate = Path::new(&runfiles_path)
-        .join("_main/devinfra/js/debundle/debundle");
+    let candidate = Path::new(&runfiles_path).join("_main/devinfra/js/debundle/debundle");
     assert!(
         candidate.exists(),
         "debundle binary not at {}",
