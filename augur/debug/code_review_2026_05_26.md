@@ -9,6 +9,30 @@ Trimmed to active work. Landed items recorded in `git log` — search for
 
 Listed in recommended execution order — each row sets up the next.
 
+### B0. Unify rollout axis to R-last (medium; precursor to B1)
+
+`CurrentStateBuffers` fields are shaped `(R, *)` (rollout-first);
+`SimulationBuffers` fields are shaped `(*, R)` (rollout-last). Plan
+arrays in `CompiledSimulation` have no R axis. Unify on **R-last** —
+NumPy convention, trailing-axis-fastest broadcasting, contiguous
+`state[..., r]` per-rollout views, and makes the per-step write
+patterns `current.foo[profile, :] += amount` contiguous (currently
+strided as `current.foo[:, profile]`).
+
+Mechanical change:
+
+- Transpose every `CurrentStateBuffers` field at allocation time.
+- Swap index order at every engine read/write site.
+- Sanity-check with `bbr test //augur/sim/...` (numerical results must
+  be identical — this is a pure layout change).
+
+Land **before B1**: the nested-arena PR is much easier to read if axes
+are already consistent. Two separate PRs.
+
+Overall order within Phase 3: **B3 → B2 → B0 → B1 → B4**. B3 + B2 name
+the seams first, then B0 transposes one field at a time, then B1 nests
+the now-consistent arrays.
+
 ### B3. `_wire_landlord_rental` mutates 4 lists in place (small)
 
 `scenarios.py` helper takes 8 keyword-only params and threads
@@ -91,6 +115,7 @@ current action:
 | --- | ------------------------------------------------------ | ---------- | ------ |
 | B3  | `_wire_landlord_rental` return instead of mutate       | DX         | small  |
 | B2  | Compile-helpers tuple→dataclass                        | DX         | medium |
+| B0  | Unify rollout axis to R-last on `current` buffers      | DX         | medium |
 | B1  | CompiledSimulation 170 → 8 nested arenas               | big DX win | large  |
 | B4  | Split compiler.py + engine.py                          | DX         | large  |
 | X1  | After Flux reconcile: drop `_collapse_list_notes` shim | cross-repo | small  |
