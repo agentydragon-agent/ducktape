@@ -47,6 +47,19 @@ Anything fully shipped is removed — git history is the record of done work.
 
 ## Product UX
 
+- **Deterministic lifecycle markers on the fan chart.** Today
+  `SetRentedFractionEvent`, `CapitalImprovementEvent`, and
+  `PropertySaleEvent` markers only appear on the per-selected-rollout
+  chart. Because they fire at fixed months for every rollout (the
+  scenario is deterministic at the lifecycle level), the aggregate
+  `MetricFanChart` should also draw a vertical guide at each event's
+  month, with a tooltip / legend entry showing the kind. Sketch:
+  thread the lifecycle events into `MetricFanChart` alongside the
+  per-rollout list; render a separate marker layer keyed on
+  `month_index` only. Skip cap-improvement amounts in the fan tooltip
+  (use the per-rollout panel for that) — the fan markers are just
+  "something happens here" guides.
+
 - **Multi-scenario comparison.** The product UI today renders one
   `ScenarioKey` at a time. The deleted scenario-set surface was the only
   place where side-by-side fan-chart overlay existed (e.g. "rent for two

@@ -1789,41 +1789,58 @@ function SellOrderControl({ sellOrder, portfolio, onChange }) {
           const isEnabled = enabledIdx >= 0;
           const canMoveUp = isEnabled && enabledIdx > 0;
           const canMoveDown = isEnabled && enabledIdx < enabledCodes.length - 1;
-          // Visual separator between "enabled" and "shelved" groups: the first disabled bucket
-          // gets an extra top border + a muted background so the user can tell at a glance which
-          // sources are in the active order versus parked below.
+          // Visual separator between "in order" and "shelved" groups.
           const shelfBoundary = bucket.code === firstDisabledCode && enabledCodes.length > 0;
           return (
             <li
               key={bucket.code}
-              className={`flex items-center gap-2 px-2 py-1 ${isEnabled ? "" : "bg-slate-50 opacity-70 dark:bg-slate-900/40"} ${
+              className={`flex items-center gap-2 px-2 py-1 ${isEnabled ? "" : "bg-slate-50 opacity-80 dark:bg-slate-900/40"} ${
                 shelfBoundary ? "border-t-2 border-t-slate-300 dark:border-t-slate-600" : ""
               }`}
             >
-              <Checkbox
-                aria-label={`Sell ${bucket.label}`}
-                checked={isEnabled}
-                onChange={(event) => setEnabled(bucket.code, event.currentTarget.checked)}
-              />
+              <span className="w-6 text-right text-sm font-semibold augur-tabular augur-muted">
+                {isEnabled ? `${enabledIdx + 1}.` : ""}
+              </span>
               <span className="flex-1 text-sm font-semibold augur-strong">{bucket.label}</span>
-              <button
-                type="button"
-                aria-label={`Move ${bucket.label} up`}
-                disabled={!canMoveUp}
-                onClick={() => moveUp(bucket.code)}
-                className="px-1 text-xs augur-muted disabled:opacity-30"
-              >
-                ▲
-              </button>
-              <button
-                type="button"
-                aria-label={`Move ${bucket.label} down`}
-                disabled={!canMoveDown}
-                onClick={() => moveDown(bucket.code)}
-                className="px-1 text-xs augur-muted disabled:opacity-30"
-              >
-                ▼
-              </button>
+              {isEnabled ? (
+                <>
+                  <button
+                    type="button"
+                    aria-label={`Move ${bucket.label} up`}
+                    disabled={!canMoveUp}
+                    onClick={() => moveUp(bucket.code)}
+                    className="px-1 text-xs augur-muted disabled:opacity-30"
+                  >
+                    ▲
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Move ${bucket.label} down`}
+                    disabled={!canMoveDown}
+                    onClick={() => moveDown(bucket.code)}
+                    className="px-1 text-xs augur-muted disabled:opacity-30"
+                  >
+                    ▼
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Remove ${bucket.label} from sell order`}
+                    onClick={() => setEnabled(bucket.code, false)}
+                    className="ml-1 rounded px-1.5 text-sm font-semibold text-rose-600 hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-rose-950/30"
+                  >
+                    ×
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  aria-label={`Add ${bucket.label} to sell order`}
+                  onClick={() => setEnabled(bucket.code, true)}
+                  className="rounded px-1.5 text-sm font-semibold text-emerald-600 hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-950/30"
+                >
+                  +
+                </button>
+              )}
             </li>
           );
         })}
