@@ -768,6 +768,116 @@ function eventTitle(event) {
   return `Month ${eventStateMonthIndex(event) ?? "n/a"}: ${eventLabel(event)} ${fmtUsd(eventAmount(event))}`;
 }
 
+function FanAxes({ left, top, plotWidth, plotHeight, height, x, y, yAxis, maxYear, metric }) {
+  return (
+    <>
+      {yAxis.ticks.map((value) => {
+        const yPos = y(value);
+        return (
+          <g key={value}>
+            <line x1={left} x2={left + plotWidth} y1={yPos} y2={yPos} stroke="var(--augur-chart-grid)" />
+            <text x={left - 8} y={yPos + 4} textAnchor="end" className="fill-slate-500 text-[11px] augur-tabular">
+              {fmtAxisMetricValue(metric.chartValue, value)}
+            </text>
+          </g>
+        );
+      })}
+      {fanChartYearTicks(maxYear).map((year) => {
+        const xPos = left + (year / maxYear) * plotWidth;
+        return (
+          <g key={year}>
+            <line x1={xPos} x2={xPos} y1={top} y2={top + plotHeight} stroke="var(--augur-chart-grid-subtle)" />
+            <text x={xPos} y={height - 15} textAnchor="middle" className="fill-slate-500 text-[11px]">
+              {year} yr
+            </text>
+          </g>
+        );
+      })}
+    </>
+  );
+}
+
+function FanEventMarker({
+  event,
+  index,
+  monthIndex,
+  row,
+  color,
+  x,
+  y,
+  top,
+  plotHeight,
+  selectedEventMonthIndex,
+  hoveredEventMonthIndex,
+  onSelectEventMonth,
+  onHoverEventMonth,
+}) {
+  const isSelected = selectedEventMonthIndex === monthIndex;
+  const isHovered = hoveredEventMonthIndex === monthIndex;
+  const isActive = isSelected || isHovered;
+  const markerX = x(row);
+  const markerY = Math.max(top + 6, Math.min(top + plotHeight - 6, y(row.value) + eventMarkerYOffset(event)));
+  const baseRadius = event.kind === "monthly_expense" ? 2.5 : 4.5;
+  const radius = isActive ? baseRadius + 2.2 : baseRadius;
+  return (
+    <g
+      key={`${event.kind}-${event.monthIndex}-${index}`}
+      role="button"
+      tabIndex={0}
+      aria-label={eventTitle(event)}
+      data-product-rollout-event-marker={event.kind}
+      data-product-rollout-event-marker-month={monthIndex}
+      data-product-rollout-event-marker-selected={isSelected ? "true" : "false"}
+      data-product-rollout-event-marker-hovered={isHovered ? "true" : "false"}
+      onClick={() => onSelectEventMonth?.(monthIndex)}
+      onKeyDown={(keyboardEvent) => {
+        if (keyboardEvent.key !== "Enter" && keyboardEvent.key !== " ") return;
+        keyboardEvent.preventDefault();
+        onSelectEventMonth?.(monthIndex);
+      }}
+      onMouseEnter={() => onHoverEventMonth?.(monthIndex)}
+      onMouseLeave={() => onHoverEventMonth?.(null)}
+      onFocus={() => onHoverEventMonth?.(monthIndex)}
+      onBlur={() => onHoverEventMonth?.(null)}
+      style={{ cursor: "pointer" }}
+    >
+      {event.kind !== "monthly_expense" && (
+        <line
+          x1={markerX}
+          x2={markerX}
+          y1={top}
+          y2={top + plotHeight}
+          stroke={color}
+          opacity={isActive ? 0.34 : 0.16}
+          strokeWidth={isActive ? 1.6 : 1}
+        />
+      )}
+      {isActive && (
+        <circle
+          cx={markerX}
+          cy={markerY}
+          r={radius + 3}
+          fill="none"
+          stroke={isSelected ? SELECTED_ROLLOUT_COLOR : "#0891b2"}
+          strokeWidth="2"
+          opacity="0.72"
+        />
+      )}
+      <circle
+        cx={markerX}
+        cy={markerY}
+        r={radius}
+        fill={color}
+        opacity={isActive || event.kind !== "monthly_expense" ? 0.98 : 0.78}
+        stroke="white"
+        strokeWidth={isActive ? 2 : 1.25}
+      >
+        <title>{eventTitle(event)}</title>
+      </circle>
+    </g>
+  );
+}
+
 function MetricFanChart({
   rows,
   metric,
@@ -841,28 +951,18 @@ function MetricFanChart({
         className="min-w-[42rem] w-full"
       >
         <rect x={left} y={top} width={plotWidth} height={plotHeight} fill="transparent" />
-        {yAxis.ticks.map((value) => {
-          const yPos = y(value);
-          return (
-            <g key={value}>
-              <line x1={left} x2={left + plotWidth} y1={yPos} y2={yPos} stroke="var(--augur-chart-grid)" />
-              <text x={left - 8} y={yPos + 4} textAnchor="end" className="fill-slate-500 text-[11px] augur-tabular">
-                {fmtAxisMetricValue(metric.chartValue, value)}
-              </text>
-            </g>
-          );
-        })}
-        {fanChartYearTicks(maxYear).map((year) => {
-          const xPos = left + (year / maxYear) * plotWidth;
-          return (
-            <g key={year}>
-              <line x1={xPos} x2={xPos} y1={top} y2={top + plotHeight} stroke="var(--augur-chart-grid-subtle)" />
-              <text x={xPos} y={height - 15} textAnchor="middle" className="fill-slate-500 text-[11px]">
-                {year} yr
-              </text>
-            </g>
-          );
-        })}
+        <FanAxes
+          left={left}
+          top={top}
+          plotWidth={plotWidth}
+          plotHeight={plotHeight}
+          height={height}
+          x={x}
+          y={y}
+          yAxis={yAxis}
+          maxYear={maxYear}
+          metric={metric}
+        />
         <polygon points={band(outerHigh, outerLow)} fill="#2563eb" opacity="0.14" />
         <polygon points={band(innerHigh, innerLow)} fill="#2563eb" opacity="0.22" />
         <polyline points={line(median)} fill="none" stroke="#1d4ed8" strokeWidth="2.75" />
@@ -889,72 +989,20 @@ function MetricFanChart({
             />
           </>
         )}
-        {eventMarkers.map(({ event, index, monthIndex, row, color }) => {
-          const isSelected = selectedEventMonthIndex === monthIndex;
-          const isHovered = hoveredEventMonthIndex === monthIndex;
-          const isActive = isSelected || isHovered;
-          const markerX = x(row);
-          const markerY = Math.max(top + 6, Math.min(top + plotHeight - 6, y(row.value) + eventMarkerYOffset(event)));
-          const baseRadius = event.kind === "monthly_expense" ? 2.5 : 4.5;
-          const radius = isActive ? baseRadius + 2.2 : baseRadius;
-          return (
-            <g
-              key={`${event.kind}-${event.monthIndex}-${index}`}
-              role="button"
-              tabIndex={0}
-              aria-label={eventTitle(event)}
-              data-product-rollout-event-marker={event.kind}
-              data-product-rollout-event-marker-month={monthIndex}
-              data-product-rollout-event-marker-selected={isSelected ? "true" : "false"}
-              data-product-rollout-event-marker-hovered={isHovered ? "true" : "false"}
-              onClick={() => onSelectEventMonth?.(monthIndex)}
-              onKeyDown={(keyboardEvent) => {
-                if (keyboardEvent.key !== "Enter" && keyboardEvent.key !== " ") return;
-                keyboardEvent.preventDefault();
-                onSelectEventMonth?.(monthIndex);
-              }}
-              onMouseEnter={() => onHoverEventMonth?.(monthIndex)}
-              onMouseLeave={() => onHoverEventMonth?.(null)}
-              onFocus={() => onHoverEventMonth?.(monthIndex)}
-              onBlur={() => onHoverEventMonth?.(null)}
-              style={{ cursor: "pointer" }}
-            >
-              {event.kind !== "monthly_expense" && (
-                <line
-                  x1={markerX}
-                  x2={markerX}
-                  y1={top}
-                  y2={top + plotHeight}
-                  stroke={color}
-                  opacity={isActive ? 0.34 : 0.16}
-                  strokeWidth={isActive ? 1.6 : 1}
-                />
-              )}
-              {isActive && (
-                <circle
-                  cx={markerX}
-                  cy={markerY}
-                  r={radius + 3}
-                  fill="none"
-                  stroke={isSelected ? SELECTED_ROLLOUT_COLOR : "#0891b2"}
-                  strokeWidth="2"
-                  opacity="0.72"
-                />
-              )}
-              <circle
-                cx={markerX}
-                cy={markerY}
-                r={radius}
-                fill={color}
-                opacity={isActive || event.kind !== "monthly_expense" ? 0.98 : 0.78}
-                stroke="white"
-                strokeWidth={isActive ? 2 : 1.25}
-              >
-                <title>{eventTitle(event)}</title>
-              </circle>
-            </g>
-          );
-        })}
+        {eventMarkers.map((markerProps) => (
+          <FanEventMarker
+            key={`${markerProps.event.kind}-${markerProps.event.monthIndex}-${markerProps.index}`}
+            {...markerProps}
+            x={x}
+            y={y}
+            top={top}
+            plotHeight={plotHeight}
+            selectedEventMonthIndex={selectedEventMonthIndex}
+            hoveredEventMonthIndex={hoveredEventMonthIndex}
+            onSelectEventMonth={onSelectEventMonth}
+            onHoverEventMonth={onHoverEventMonth}
+          />
+        ))}
       </svg>
     </div>
   );
@@ -1947,6 +1995,28 @@ function ProductProjectionLoading({ error }) {
   );
 }
 
+// Encapsulate the four-prop event-selection drilling (`selected/hovered month + setters`)
+// so consumers can spread `eventSelection` instead of threading each leaf through every
+// component. Reset is exposed as `clear()` for the consumer that wants to drop selection
+// when the rollout context changes.
+function useEventSelection() {
+  const [selectedEventMonthIndex, setSelectedEventMonthIndex] = useState(null);
+  const [hoveredEventMonthIndex, setHoveredEventMonthIndex] = useState(null);
+  const toggle = (monthIndex) =>
+    setSelectedEventMonthIndex((previous) => (previous === monthIndex ? null : monthIndex));
+  const clear = () => {
+    setSelectedEventMonthIndex(null);
+    setHoveredEventMonthIndex(null);
+  };
+  return {
+    selectedEventMonthIndex,
+    hoveredEventMonthIndex,
+    onSelectEventMonth: toggle,
+    onHoverEventMonth: setHoveredEventMonthIndex,
+    clear,
+  };
+}
+
 function ProductProjectionWorkspace({ bootstrap }) {
   const [input, setInput] = useState(() => productInputFromSearch(window.location.search, bootstrap));
   const [selectedMetricValue, setSelectedMetricValue] = useState("net_worth_usd");
@@ -1957,8 +2027,7 @@ function ProductProjectionWorkspace({ bootstrap }) {
   const [selectedSeed, setSelectedSeed] = useState(null);
   const [rolloutDetails, setRolloutDetails] = useState(() => new Map());
   const [rolloutError, setRolloutError] = useState(null);
-  const [selectedEventMonthIndex, setSelectedEventMonthIndex] = useState(null);
-  const [hoveredEventMonthIndex, setHoveredEventMonthIndex] = useState(null);
+  const eventSelection = useEventSelection();
   const visibleMetrics = useMemo(() => visibleMetricOptions(input), [input]);
   const selectedMetric =
     visibleMetrics.find((metric) => metric.value === selectedMetricValue) ?? visibleMetrics[0] ?? METRIC_OPTIONS[0];
@@ -1983,9 +2052,6 @@ function ProductProjectionWorkspace({ bootstrap }) {
   const failedCount = result?.failedCount ?? null;
   const terminalP50 = terminalPercentileValue(result, 50);
   const updateInput = (patch) => setInput((previous) => ({ ...previous, ...patch }));
-  const toggleSelectedEventMonthIndex = (monthIndex) => {
-    setSelectedEventMonthIndex((previous) => (previous === monthIndex ? null : monthIndex));
-  };
   const selectedRolloutLoading = selectedSeed != null && result != null && !selectedDetail && !rolloutError;
 
   // Mirror the scenario form to `?key=value&…` in the URL so refreshes preserve state and the URL
@@ -2043,8 +2109,8 @@ function ProductProjectionWorkspace({ bootstrap }) {
   }, [result, selectedSeed]);
 
   useEffect(() => {
-    setSelectedEventMonthIndex(null);
-    setHoveredEventMonthIndex(null);
+    eventSelection.clear();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `clear` is stable per render.
   }, [selectedDetailKey]);
 
   useEffect(() => {
@@ -2078,149 +2144,14 @@ function ProductProjectionWorkspace({ bootstrap }) {
 
       <main className="px-4 py-6 sm:px-6 lg:px-8">
         <section className="grid min-w-0 gap-5 xl:grid-cols-[26rem_minmax(0,1fr)]">
-          <aside className="min-w-0 space-y-3">
-            <div className="augur-card divide-y divide-slate-200 dark:divide-slate-700">
-              <div className="px-4 py-3">
-                <div className="augur-eyebrow">Scenario</div>
-                <div className="mt-3">
-                  <NumberField
-                    label="Horizon"
-                    value={input.horizonMonths}
-                    min={1}
-                    max={bootstrap.maxHorizonMonths}
-                    step={12}
-                    suffix="mo"
-                    onChange={(horizonMonths) => updateInput({ horizonMonths })}
-                  />
-                </div>
-              </div>
-              <div className="px-4 py-3">
-                <NumberField
-                  label="Monthly spend"
-                  value={input.monthlySpendUsd}
-                  min={1}
-                  step={100}
-                  prefix="$"
-                  onChange={(monthlySpendUsd) => updateInput({ monthlySpendUsd })}
-                />
-                <IndexPicker
-                  className="mt-2"
-                  value={input.spendIndex}
-                  onChange={(spendIndex) => updateInput({ spendIndex })}
-                />
-              </div>
-              <div className="grid gap-3 px-4 py-3 sm:grid-cols-2">
-                <NumberField
-                  label="Monthly rent"
-                  value={input.monthlyRentUsd}
-                  min={0}
-                  step={100}
-                  prefix="$"
-                  onChange={(monthlyRentUsd) => updateInput({ monthlyRentUsd })}
-                />
-                <NativeSelectField
-                  label="Location"
-                  aria-label="Rent location"
-                  value={input.rentalLocationId ?? ""}
-                  disabled={Number(input.monthlyRentUsd) <= 0 || bootstrap.locations.length === 0}
-                  data={bootstrap.locations.map((location) => ({ value: location.id, label: location.label }))}
-                  onChange={(event) => updateInput({ rentalLocationId: event.target.value || null })}
-                />
-              </div>
-              <ProductPortfolioPanel portfolio={portfolio} error={portfolioError} />
-              <PropertyPurchasePanel bootstrap={bootstrap} input={input} onChange={updateInput} />
-              <div className="px-4 py-3">
-                <div className="augur-eyebrow">Taxes</div>
-                <div className="mt-2 text-xs augur-muted">Federal + California · single filer</div>
-              </div>
-              <div className="px-4 py-3">
-                <div className="augur-eyebrow">Funding</div>
-                <SellOrderControl
-                  sellOrder={input.sellOrder}
-                  portfolio={portfolio}
-                  onChange={(sellOrder) => updateInput({ sellOrder })}
-                />
-                <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
-                  <NumberField
-                    label="Trigger below"
-                    value={input.cashBufferTriggerBelowUsd}
-                    min={0}
-                    step={1000}
-                    prefix="$"
-                    disabled={!input.sellOrder}
-                    onChange={(cashBufferTriggerBelowUsd) => updateInput({ cashBufferTriggerBelowUsd })}
-                  />
-                  <NumberField
-                    label="Sell amount"
-                    value={input.cashBufferSaleUsd}
-                    min={0}
-                    step={1000}
-                    prefix="$"
-                    disabled={!input.sellOrder}
-                    onChange={(cashBufferSaleUsd) => updateInput({ cashBufferSaleUsd })}
-                  />
-                </div>
-                <IndexPicker
-                  className="mt-2"
-                  value={input.cashBufferIndexToInflation ? "inflation" : "none"}
-                  disabled={!input.sellOrder}
-                  onChange={(choice) => updateInput({ cashBufferIndexToInflation: choice === "inflation" })}
-                />
-                <hr className="my-4 border-slate-200 dark:border-slate-700" />
-                <div className="augur-eyebrow">Private equity tenders</div>
-                <div className="mt-2 text-xs augur-muted">
-                  PE tenders: sell enough at each modeled tender event to lift liquid net worth (cash + non-PE holdings)
-                  to this floor. Zero disables PE sales.
-                </div>
-                <div className="mt-2 grid gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
-                  <NumberField
-                    label="LNW floor"
-                    value={input.peLnwFloorUsd}
-                    min={0}
-                    step={10000}
-                    prefix="$"
-                    onChange={(peLnwFloorUsd) => updateInput({ peLnwFloorUsd })}
-                  />
-                  <IndexPicker
-                    value={input.peIndexFloorToInflation ? "inflation" : "none"}
-                    disabled={Number(input.peLnwFloorUsd) <= 0}
-                    onChange={(choice) => updateInput({ peIndexFloorToInflation: choice === "inflation" })}
-                  />
-                </div>
-              </div>
-              <details className="px-4 py-3 [&_summary::-webkit-details-marker]:hidden">
-                <summary className="augur-eyebrow cursor-pointer list-none">
-                  <span className="inline-flex items-center gap-1">
-                    <span aria-hidden="true" className="transition-transform [details[open]_&]:rotate-90">
-                      ▸
-                    </span>
-                    Sampling
-                  </span>
-                </summary>
-                <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                  <NumberField
-                    label="Rollouts"
-                    value={input.rolloutCount}
-                    min={1}
-                    max={bootstrap.maxRolloutSamples}
-                    step={1}
-                    onChange={(rolloutCount) => updateInput({ rolloutCount })}
-                  />
-                  <NumberField
-                    label="First seed"
-                    value={input.firstSeed}
-                    min={0}
-                    max={2 ** 31 - 1}
-                    step={1}
-                    onChange={(firstSeed) => updateInput({ firstSeed })}
-                  />
-                </div>
-              </details>
-            </div>
-            <Button variant="subtle" onClick={() => setInput(productInputDefaults(bootstrap))}>
-              Reset form
-            </Button>
-          </aside>
+          <ProductScenarioForm
+            input={input}
+            bootstrap={bootstrap}
+            portfolio={portfolio}
+            portfolioError={portfolioError}
+            onChange={updateInput}
+            onReset={() => setInput(productInputDefaults(bootstrap))}
+          />
 
           <div className="min-w-0 space-y-5">
             {runError && <div className="augur-note-danger p-4 text-sm">Product projection failed: {runError}</div>}
@@ -2270,10 +2201,10 @@ function ProductProjectionWorkspace({ bootstrap }) {
                   selectedEvents={selectedEvents}
                   selectedSeed={selectedSeed}
                   selectedFailed={selectedSummary?.failed ?? false}
-                  selectedEventMonthIndex={selectedEventMonthIndex}
-                  hoveredEventMonthIndex={hoveredEventMonthIndex}
-                  onSelectEventMonth={toggleSelectedEventMonthIndex}
-                  onHoverEventMonth={setHoveredEventMonthIndex}
+                  selectedEventMonthIndex={eventSelection.selectedEventMonthIndex}
+                  hoveredEventMonthIndex={eventSelection.hoveredEventMonthIndex}
+                  onSelectEventMonth={eventSelection.onSelectEventMonth}
+                  onHoverEventMonth={eventSelection.onHoverEventMonth}
                 />
               ) : (
                 <div className="flex min-h-[22rem] items-center justify-center text-sm augur-muted">Running...</div>
@@ -2288,10 +2219,10 @@ function ProductProjectionWorkspace({ bootstrap }) {
                   events={selectedEvents}
                   selectedSummary={selectedSummary}
                   loading={selectedRolloutLoading}
-                  selectedEventMonthIndex={selectedEventMonthIndex}
-                  hoveredEventMonthIndex={hoveredEventMonthIndex}
-                  onSelectEventMonth={toggleSelectedEventMonthIndex}
-                  onHoverEventMonth={setHoveredEventMonthIndex}
+                  selectedEventMonthIndex={eventSelection.selectedEventMonthIndex}
+                  hoveredEventMonthIndex={eventSelection.hoveredEventMonthIndex}
+                  onSelectEventMonth={eventSelection.onSelectEventMonth}
+                  onHoverEventMonth={eventSelection.onHoverEventMonth}
                 />
               )}
               <TerminalMetricTable
@@ -2305,6 +2236,152 @@ function ProductProjectionWorkspace({ bootstrap }) {
         </section>
       </main>
     </div>
+  );
+}
+
+// Sidebar form: every knob that mutates the `input` scenario state. Workspace owns
+// the state + reset action; this component just renders inputs against it.
+function ProductScenarioForm({ input, bootstrap, portfolio, portfolioError, onChange, onReset }) {
+  return (
+    <aside className="min-w-0 space-y-3">
+      <div className="augur-card divide-y divide-slate-200 dark:divide-slate-700">
+        <div className="px-4 py-3">
+          <div className="augur-eyebrow">Scenario</div>
+          <div className="mt-3">
+            <NumberField
+              label="Horizon"
+              value={input.horizonMonths}
+              min={1}
+              max={bootstrap.maxHorizonMonths}
+              step={12}
+              suffix="mo"
+              onChange={(horizonMonths) => onChange({ horizonMonths })}
+            />
+          </div>
+        </div>
+        <div className="px-4 py-3">
+          <NumberField
+            label="Monthly spend"
+            value={input.monthlySpendUsd}
+            min={1}
+            step={100}
+            prefix="$"
+            onChange={(monthlySpendUsd) => onChange({ monthlySpendUsd })}
+          />
+          <IndexPicker className="mt-2" value={input.spendIndex} onChange={(spendIndex) => onChange({ spendIndex })} />
+        </div>
+        <div className="grid gap-3 px-4 py-3 sm:grid-cols-2">
+          <NumberField
+            label="Monthly rent"
+            value={input.monthlyRentUsd}
+            min={0}
+            step={100}
+            prefix="$"
+            onChange={(monthlyRentUsd) => onChange({ monthlyRentUsd })}
+          />
+          <NativeSelectField
+            label="Location"
+            aria-label="Rent location"
+            value={input.rentalLocationId ?? ""}
+            disabled={Number(input.monthlyRentUsd) <= 0 || bootstrap.locations.length === 0}
+            data={bootstrap.locations.map((location) => ({ value: location.id, label: location.label }))}
+            onChange={(event) => onChange({ rentalLocationId: event.target.value || null })}
+          />
+        </div>
+        <ProductPortfolioPanel portfolio={portfolio} error={portfolioError} />
+        <PropertyPurchasePanel bootstrap={bootstrap} input={input} onChange={onChange} />
+        <div className="px-4 py-3">
+          <div className="augur-eyebrow">Taxes</div>
+          <div className="mt-2 text-xs augur-muted">Federal + California · single filer</div>
+        </div>
+        <div className="px-4 py-3">
+          <div className="augur-eyebrow">Funding</div>
+          <SellOrderControl
+            sellOrder={input.sellOrder}
+            portfolio={portfolio}
+            onChange={(sellOrder) => onChange({ sellOrder })}
+          />
+          <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+            <NumberField
+              label="Trigger below"
+              value={input.cashBufferTriggerBelowUsd}
+              min={0}
+              step={1000}
+              prefix="$"
+              disabled={!input.sellOrder}
+              onChange={(cashBufferTriggerBelowUsd) => onChange({ cashBufferTriggerBelowUsd })}
+            />
+            <NumberField
+              label="Sell amount"
+              value={input.cashBufferSaleUsd}
+              min={0}
+              step={1000}
+              prefix="$"
+              disabled={!input.sellOrder}
+              onChange={(cashBufferSaleUsd) => onChange({ cashBufferSaleUsd })}
+            />
+          </div>
+          <IndexPicker
+            className="mt-2"
+            value={input.cashBufferIndexToInflation ? "inflation" : "none"}
+            disabled={!input.sellOrder}
+            onChange={(choice) => onChange({ cashBufferIndexToInflation: choice === "inflation" })}
+          />
+          <hr className="my-4 border-slate-200 dark:border-slate-700" />
+          <div className="augur-eyebrow">Private equity tenders</div>
+          <div className="mt-2 text-xs augur-muted">
+            PE tenders: sell enough at each modeled tender event to lift liquid net worth (cash + non-PE holdings) to
+            this floor. Zero disables PE sales.
+          </div>
+          <div className="mt-2 grid gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+            <NumberField
+              label="LNW floor"
+              value={input.peLnwFloorUsd}
+              min={0}
+              step={10000}
+              prefix="$"
+              onChange={(peLnwFloorUsd) => onChange({ peLnwFloorUsd })}
+            />
+            <IndexPicker
+              value={input.peIndexFloorToInflation ? "inflation" : "none"}
+              disabled={Number(input.peLnwFloorUsd) <= 0}
+              onChange={(choice) => onChange({ peIndexFloorToInflation: choice === "inflation" })}
+            />
+          </div>
+        </div>
+        <details className="px-4 py-3 [&_summary::-webkit-details-marker]:hidden">
+          <summary className="augur-eyebrow cursor-pointer list-none">
+            <span className="inline-flex items-center gap-1">
+              <span aria-hidden="true" className="transition-transform [details[open]_&]:rotate-90">
+                ▸
+              </span>
+              Sampling
+            </span>
+          </summary>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <NumberField
+              label="Rollouts"
+              value={input.rolloutCount}
+              min={1}
+              max={bootstrap.maxRolloutSamples}
+              step={1}
+              onChange={(rolloutCount) => onChange({ rolloutCount })}
+            />
+            <NumberField
+              label="First seed"
+              value={input.firstSeed}
+              min={0}
+              max={2 ** 31 - 1}
+              step={1}
+              onChange={(firstSeed) => onChange({ firstSeed })}
+            />
+          </div>
+        </details>
+      </div>
+      <Button variant="subtle" onClick={onReset}>
+        Reset form
+      </Button>
+    </aside>
   );
 }
 
