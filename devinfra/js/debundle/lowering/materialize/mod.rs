@@ -425,14 +425,31 @@ pub(super) fn materialize_logical_chunk(
         let line_index = time_phase!(timings, "build_source_line_index", {
             runtime_ast.line_index()
         });
-        let analysis = time_phase!(timings, "analyze_chunk", {
-            analyze_chunk(
+        // Stage A: spec-independent analysis (facts + owner graph +
+        // structural atomic units). See `stage_one.rs` for the
+        // composer; DESIGN.md §"Pipeline split (Stage A / Stage B)"
+        // for the boundary's role. v1 keeps Stage A in memory; v2
+        // adds per-concept JSON sidecars + a `materialize_from_*`
+        // entry point so a Bazel rule can split into two cacheable
+        // actions.
+        let owner_graph_options = OwnerGraphOptions {
+            dataflow_aware_s_chain: chunk_analysis_options
+                .get(chunk_id)
+                .is_some_and(|opts| opts.dataflow_aware_s_chain),
+        };
+        let stage_one = time_phase!(timings, "compute_stage_one_analysis", {
+            compute_stage_one_analysis(
                 &runtime_ast.module,
                 &analysis_hints,
                 Some(&source_path),
                 |span| line_index.line_range_for_span(span),
+                owner_graph_options,
             )
         });
+        let StageOneAnalysis {
+            fact_analysis: analysis,
+            owner_graph_and_units: precomputed,
+        } = stage_one;
         // Per-hint warnings on stderr: each `purity: pure` spec hint
         // the analyzer infers automatically (binding's body classifies
         // Pure without the override, or admits as PlainData). Surfaced
@@ -476,14 +493,6 @@ pub(super) fn materialize_logical_chunk(
                 ordinal = ord.0,
             );
         }
-        let owner_graph_options = OwnerGraphOptions {
-            dataflow_aware_s_chain: chunk_analysis_options
-                .get(chunk_id)
-                .is_some_and(|opts| opts.dataflow_aware_s_chain),
-        };
-        let precomputed = time_phase!(timings, "compute_owner_graph_and_units", {
-            compute_owner_graph_and_units_with(&analysis.facts, owner_graph_options)
-        });
         time_phase!(timings, "fold_rebind_atomic_units", {
             fold_rebind_atomic_units(
                 &precomputed,

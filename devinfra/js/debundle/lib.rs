@@ -27,6 +27,7 @@ mod realizability;
 mod report_schema;
 mod reports;
 mod rollback_graph;
+mod stage_one;
 mod validation;
 
 pub use atomic_units::{
@@ -49,6 +50,7 @@ pub use graph::{
     build_module_quotient, build_owner_graph, build_owner_graph_with,
     chunk_constraining_module_edges, chunk_linker_order, chunk_source_import_order,
 };
+pub use stage_one::{StageOneAnalysis, compute_stage_one_analysis};
 pub use ids::{
     BindingKind, ChunkId, ChunkTable, LogicalModule, LogicalModuleIndex, ModuleId,
     StatementOrdinal, top_level_id,

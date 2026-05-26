@@ -1199,6 +1199,38 @@ as `ExternalChunk(_)` leaves in the per-chunk graph. **Future
 work**: a multi-chunk lift would have `validate_factorization` take a
 `BTreeMap<ChunkId, ChunkFactorization>` and walk the union graph.
 
+### Pipeline split (Stage A / Stage B)
+
+The per-chunk pipeline is two halves with sharply different
+dependencies:
+
+- **Stage A** (spec-independent): parse → per-statement facts →
+  owner graph → structural atomic units. Pure function of
+  `(source bytes, analysis hints, OwnerGraphOptions)`. The composer
+  is `stage_one::compute_stage_one_analysis`, returning a
+  `StageOneAnalysis` that bundles `ChunkFactAnalysis` (facts +
+  top-level-await detection + redundant-hint warnings) with the
+  `OwnerGraphAndUnits` derived from those facts.
+- **Stage B** (spec-dependent): assemble the partition from the
+  spec's binding claims, run the realizability gate, lower to ESM.
+  Today this lives inline in `lowering::materialize_logical_chunk`.
+
+The materializer is the composition of both. v1 (current code)
+materializes Stage A only in-memory: the composer is a single named
+call site, so future work can pull Stage A out into its own Bazel
+action with a cacheable on-disk artifact (per-concept JSON sidecars:
+`facts.json`, `owner_graph_structural.json`, `atomic_units.json`,
+`ast.json`) without touching the materializer's interior. The
+proposal at `PIPELINE_SPLIT.md` covers the planned split into
+separate cacheable Bazel actions.
+
+The reason to call this out: every diagnostic in §"Two classes of
+atom" lives in Stage B (it depends on the spec's quotient), but its
+inputs all come from Stage A. Refactors that move work between the
+two halves must respect the boundary — anything spec-dependent
+cannot move into Stage A; anything that only depends on source bytes
+should not stay in Stage B.
+
 ### Two classes of atom
 
 A spec is unrealizable when its assignment forces a *constraining

@@ -13,7 +13,7 @@ use analysis::{
     AnalysisHints, AtomicUnitConflict, BindingKind, ChunkFactorization, DepKind, KnownEffect,
     LogicalModule as FactorizationLogicalModule, LogicalModuleIndex, ModuleId, OwnerGraphAndUnits,
     OwnerGraphOptions, OwnerId, RedundantPureMemberReason, RedundantPurityHint,
-    RedundantPurityReason, analyze_chunk, compute_owner_graph_and_units_with,
+    RedundantPurityReason, StageOneAnalysis, compute_stage_one_analysis,
     render_atomic_unit_conflict_summary, render_cycle_summary, top_level_id,
 };
 use artifact::{
