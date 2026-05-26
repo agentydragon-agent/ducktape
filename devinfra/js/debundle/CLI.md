@@ -67,12 +67,14 @@ with a list. Use the minified form to disambiguate.
 | `debundle run` | yes (emits JS + reports) | Run the full transform pipeline: parse + facts + owner_graph + atomic_units + realizability gate + lower + emit. | shipped |
 | `debundle run --dry-run` | no | Run through validation only; do not emit JS. | **planned** |
 
-### Binding-scoped
+### Binding-scoped (mutating)
+
+Read-only binding queries use the top-level `describe` and
+`show-source` commands (which accept any ID, including bindings).
+The `binding` namespace holds only the mutating operations.
 
 | Command | Mutates? | Function | Status |
 |---|---|---|---|
-| `debundle binding describe <sym>` | no | Look up a binding: home module, owner statement, declared bindings on the same owner, structural-atom membership, edges in/out at owner level + module-quotient level. Accepts minified or readable name. | **planned** (#80) |
-| `debundle binding show-source <sym>` | no | Print the source text for the binding's owner statement. (Same renderer as the top-level `show-source <id>` when the ID is a binding.) | **planned** (#81) |
 | `debundle binding assign <sym>:<module>[:<readable>] …` | yes (spec) | Move one or more bindings into named logical modules **atomically**. Each positional argument is colon-separated: `<sym>:<module>` to move and keep the current name, `<sym>:<module>:<readable>` to move and rename in the same step. `<sym>` accepts minified or readable form; the optional third field always sets the new readable `name:`. `--batch <file.json>` (or `--batch -` for stdin) reads moves as a JSON array of `{sym, module, readable?}` objects. Validation runs on the *whole batch's* post-state. Default: validate + apply atomically. `--no-verify` / `--dry-run` available. See "Batch atomicity" below. | **planned** (#82) |
 | `debundle binding rename <original> <readable>` | yes (spec) | Rename a binding's readable `name:` without moving it. `<original>` accepts minified or current readable form. Validation here is name-collision detection (no two bindings in the chunk get the same readable name). Mostly a convenience over `binding assign` for the rename-without-move case. `--no-verify` / `--dry-run` available. | **planned** (#82) |
 
@@ -115,12 +117,12 @@ moving to top level, and `peel plan-work` is being renamed to
 
 | Command | Mutates? | Function | Status |
 |---|---|---|---|
-| `debundle units` | no | List atomic units from the owner graph. | shipped (under `peel`; **planned rename**) |
+| `debundle atoms` | no | List structural atoms (owner-level SCCs of the constraining-edge graph; per DESIGN.md §"Two classes of atom"). Was `peel units`. | shipped (as `peel units`; **planned rename**) |
 | `debundle propose modules` | no | Emit factorizer proposals (binding → module assignment recommendations) + diagnostics derived from the atomic DAG. Was `peel plan-work`. | shipped (as `peel plan-work`; **planned rename**) |
-| `debundle coverage` | no | Report spec coverage against atomic units: which units are claimed, which fall through to residual. Was `peel patch-plan`. | shipped (as `peel patch-plan`; **planned rename**) |
+| `debundle coverage` | no | Report spec coverage against atoms: which atoms are claimed, which fall through to residual. Was `peel patch-plan`. | shipped (as `peel patch-plan`; **planned rename**) |
 | `debundle graph-summary` | no | High-level counts (owners, edges, atoms, residual-eligible bindings, etc.). | shipped (under `peel`; **planned rename**) |
-| `debundle explain <id>` | no | Dereference any ID (proposal, unit, owner, binding, diagnostic) with full graph + spec context. Accepts both minified and readable binding names. | shipped (as `peel explain`; **planned rename**) |
-| `debundle show-source <id>` | no | Print the source text for any ID (binding, owner, proposal, unit, diagnostic). For binding IDs, equivalent to `binding show-source` — same underlying renderer. Was `peel source-slice`. | shipped (as `peel source-slice`; **planned rename** + dedup) |
+| `debundle describe <id>` | no | Dereference any identifier with full graph + spec context. Accepted ID kinds: a binding (minified `XOe` or readable `PluginSettingsAccessor`), a module path (`runtime/plugins`), a proposal id, an atom id, an owner id (`owner:42`), a diagnostic id. The renderer dispatches on the kind it detects. Was `peel explain`. | shipped (as `peel explain`; **planned rename**) |
+| `debundle show-source <id>` | no | Print the source text for any identifier. Accepted ID kinds: binding (minified or readable), module path (concatenated source of every owner statement in the module, in declaration order), proposal id, atom id, owner id, diagnostic id. Was `peel source-slice`. | shipped (as `peel source-slice`; **planned rename**) |
 
 The `peel` namespace goes away. Existing `peel <…>` invocations
 continue to work as deprecated aliases for one release with a
