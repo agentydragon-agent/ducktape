@@ -1347,7 +1347,10 @@ def _apply_lifecycle_events(
 
 SECTION_121_LOOKBACK_MONTHS = 60
 SECTION_121_MIN_QUALIFYING_MONTHS = 24
-SECTION_121_SINGLE_FILER_EXCLUSION_USD = 250_000.0
+# Per-profile cap lives on the plan: `plan.tax_profile_section_121_exclusion_usd[owner_profile]`.
+# Compiler populates it from `_SECTION_121_EXCLUSION_USD_BY_FILING_STATUS`, which only knows the
+# single-filer variant today — any other filing status raises NotImplementedError at compile
+# time so no rollout silently runs with the wrong cap.
 
 
 def _apply_property_sale(
@@ -1372,8 +1375,8 @@ def _apply_property_sale(
       it as ordinary income inside their standard bracket walk.
     - §121: if the property was owner-occupied at least
       `SECTION_121_MIN_QUALIFYING_MONTHS` of the last `SECTION_121_LOOKBACK_MONTHS`,
-      exclude up to `SECTION_121_SINGLE_FILER_EXCLUSION_USD` of the post-recapture gain
-      from LTCG (single-filer cap).
+      exclude up to `plan.tax_profile_section_121_exclusion_usd[owner_profile]` of the
+      post-recapture gain from LTCG. The cap is keyed on filing status at compile time.
     - Remainder = post-exclusion LTCG → added to owner's long_term_capital_gain_ytd.
     - Mortgage paid off; property frozen (property_active → False, rented_fraction → 0,
       building_basis → 0, cumulative_depreciation preserved for record).
@@ -1420,9 +1423,11 @@ def _apply_property_sale(
     snapshot_cum = buffers.property_owner_occupied_months_state[lookback_snapshot_index, :, prop].astype(np.int64)
     months_in_window = current_cum - snapshot_cum
     qualifies = months_in_window >= SECTION_121_MIN_QUALIFYING_MONTHS
-    section_121_exclusion = np.where(
-        qualifies, np.minimum(post_recapture_gain, SECTION_121_SINGLE_FILER_EXCLUSION_USD), 0.0
-    )
+    owner_profile = int(plan.property_owner_profile_index[prop])
+    # `property_owner_profile_index` is filled at compile time; a property with no tax owner
+    # (sentinel -1) means there's nobody to exclude for, so §121 collapses to 0.
+    exclusion_cap = float(plan.tax_profile_section_121_exclusion_usd[owner_profile]) if owner_profile >= 0 else 0.0
+    section_121_exclusion = np.where(qualifies, np.minimum(post_recapture_gain, exclusion_cap), 0.0)
     ltcg = post_recapture_gain - section_121_exclusion
 
     owner_cash_slot = int(plan.property_buyer_cash_slot[prop])
@@ -1440,7 +1445,7 @@ def _apply_property_sale(
 
     # Tax routing: recapture goes to its own YTD bucket (federal cap dispatch happens in
     # `_compute_tax_for_link`); the post-recapture, post-§121 remainder is LTCG.
-    owner_profile = int(plan.property_owner_profile_index[prop])
+    # `owner_profile` was already resolved above for the §121 cap lookup.
     if owner_profile >= 0:
         current.recapture_section_1250_ytd[active_rollout, owner_profile] += recapture[active_rollout]
         gain_profile = int(plan.tax_profile_capital_gain_index[owner_profile])

@@ -28,6 +28,7 @@ from augur.model.gbm import GeometricBrownian
 from augur.model.series_model import SeriesModelBundle
 from augur.sim.scenario import (
     Agent,
+    FilingStatus,
     InitialAccountBalance,
     InitialLot,
     LiquidityPolicy,
@@ -119,7 +120,7 @@ def build_bench_scenario(
         tax_profiles=[
             TaxProfile(
                 agent_id="alice",
-                filing_status="single",
+                filing_status=FilingStatus.SINGLE,
                 jurisdiction_ids=["federal_us", "california"],
                 tax_authority_agent_id="irs",
                 prior_year_tax_usd=prior_year_tax_usd,

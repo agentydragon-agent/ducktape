@@ -24,6 +24,7 @@ from augur.sim.pricing import OccupancyMode, insurance_rate, maintenance_rate
 from augur.sim.scenario import (
     Agent,
     CapitalImprovementEvent,
+    FilingStatus,
     FixedAmount,
     InitialAccountBalance,
     InitialLot,
@@ -376,7 +377,7 @@ def build_scenario(
         tax_profiles=[
             TaxProfile(
                 agent_id=primary_agent_id,
-                filing_status="single",
+                filing_status=FilingStatus.SINGLE,
                 jurisdiction_ids=["federal_us", "california"],
                 tax_authority_agent_id=TAX_AUTHORITY_AGENT_ID,
                 payment_account_id=PRIMARY_ACCOUNT_ID,

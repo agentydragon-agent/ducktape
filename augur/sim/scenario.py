@@ -18,6 +18,16 @@ from pydantic import BaseModel, Field, NonNegativeInt, PositiveInt, model_valida
 from augur.model.series_model import SeriesModelBundle
 
 
+class FilingStatus(StrEnum):
+    """Federal/state filing status. Today only single-filer is wired through the tax + §121
+    math; adding a new variant requires touching every place that branches on filing status
+    (bracket lookup keys in jurisdiction YAMLs, §121 cap table in `_apply_property_sale`,
+    standard-deduction lookup, …). The enum makes this an explicit blocker on every
+    callsite rather than a string typo silently falling through to a missing-key error."""
+
+    SINGLE = "single"
+
+
 class Agent(BaseModel):
     """An agent in the simulation. Identified by a stable id used
     on every frame keyed by agent_id."""
@@ -290,7 +300,7 @@ class TaxProfile(BaseModel):
     January true-up pays the full accrued tax."""
 
     agent_id: str
-    filing_status: str = "single"
+    filing_status: FilingStatus = FilingStatus.SINGLE
     jurisdiction_ids: list[str]
     tax_authority_agent_id: str
     payment_account_id: str = "checking"

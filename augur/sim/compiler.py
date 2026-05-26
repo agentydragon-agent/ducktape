@@ -19,6 +19,7 @@ from augur.sim.locations import Location
 from augur.sim.runtime import mortgage_monthly_payment_usd
 from augur.sim.scenario import (
     CapitalImprovementEvent,
+    FilingStatus,
     FixedAmount,
     MortgageInterestDeductionPolicy,
     PropertySaleEvent,
@@ -117,6 +118,11 @@ class CompiledSimulation:
     tax_profile_authority_agent_codes: np.ndarray
     tax_profile_authority_account_codes: np.ndarray
     tax_profile_prior_year_tax: np.ndarray
+    # Per-profile §121 primary-residence exclusion cap, in USD. Looked up by filing status at
+    # compile time (`_SECTION_121_EXCLUSION_USD_BY_FILING_STATUS`); only `single` is wired
+    # today, so the cap is uniformly $250k for the v1 surface. Engine reads this on every
+    # property sale to compute the exclusion ceiling.
+    tax_profile_section_121_exclusion_usd: np.ndarray
     capital_gain_agent_codes: np.ndarray
     tax_profile_capital_gain_index: np.ndarray
     tax_link_profile_index: np.ndarray
@@ -399,6 +405,7 @@ def compile_simulation(
         tax_profile_authority_agent_codes,
         tax_profile_authority_account_codes,
         tax_profile_prior_year_tax,
+        tax_profile_section_121_exclusion_usd,
         tax_link_profile_index,
         tax_link_jurisdiction_codes,
         tax_link_standard_deduction,
@@ -746,6 +753,7 @@ def compile_simulation(
         tax_profile_authority_agent_codes=tax_profile_authority_agent_codes,
         tax_profile_authority_account_codes=tax_profile_authority_account_codes,
         tax_profile_prior_year_tax=tax_profile_prior_year_tax,
+        tax_profile_section_121_exclusion_usd=tax_profile_section_121_exclusion_usd,
         capital_gain_agent_codes=capital_gain_agent_codes,
         tax_profile_capital_gain_index=tax_profile_capital_gain_index,
         tax_link_profile_index=tax_link_profile_index,
@@ -1218,6 +1226,24 @@ def _compile_transfer_slots(
 SECTION_1250_FEDERAL_CAP_RATE = 0.25
 SECTION_1250_FEDERAL_JURISDICTION_ID = "federal_us"
 
+# §121 primary-residence exclusion cap (post-recapture LTCG that can be excluded from federal
+# capital gains on a sale of a qualifying residence). Single filer: $250k. The lookup table
+# is the single source of truth; new `FilingStatus` variants must add an entry here or
+# `_section_121_exclusion_for` raises NotImplementedError — which keeps "I forgot this
+# branch" from silently falling through to a wrong tax number.
+_SECTION_121_EXCLUSION_USD_BY_FILING_STATUS: dict[FilingStatus, float] = {FilingStatus.SINGLE: 250_000.0}
+
+
+def _section_121_exclusion_for(filing_status: FilingStatus) -> float:
+    if filing_status not in _SECTION_121_EXCLUSION_USD_BY_FILING_STATUS:
+        raise NotImplementedError(
+            f"§121 exclusion cap is not implemented for filing_status={filing_status!r}; "
+            f"add a {filing_status} entry to _SECTION_121_EXCLUSION_USD_BY_FILING_STATUS "
+            f"and audit every other place that branches on filing status (jurisdiction "
+            f"bracket lookups, standard-deduction lookups, MID, SALT cap, NIIT thresholds)."
+        )
+    return _SECTION_121_EXCLUSION_USD_BY_FILING_STATUS[filing_status]
+
 
 def _compile_tax(
     scenario: Scenario,
@@ -1238,6 +1264,7 @@ def _compile_tax(
     section_1250_rate: list[float] = []
     ordinary_brackets: list[list[tuple[float, float]]] = []
     ltcg_brackets: list[list[tuple[float, float]]] = []
+    section_121_exclusion: list[float] = []
 
     max_ord = 1
     max_ltcg = 1
@@ -1248,6 +1275,7 @@ def _compile_tax(
         authority_agent.append(strings.require(profile.tax_authority_agent_id))
         authority_account.append(strings.require(profile.tax_authority_account_id))
         prior_year_tax.append(float(profile.prior_year_tax_usd))
+        section_121_exclusion.append(_section_121_exclusion_for(profile.filing_status))
         for jurisdiction_id in profile.jurisdiction_ids:
             jurisdiction = jurisdictions[jurisdiction_id]
             ordinary = [
@@ -1301,6 +1329,7 @@ def _compile_tax(
         np.asarray(authority_agent, dtype=np.int64),
         np.asarray(authority_account, dtype=np.int64),
         np.asarray(prior_year_tax, dtype=np.float64),
+        np.asarray(section_121_exclusion, dtype=np.float64),
         np.asarray(link_profile, dtype=np.int64),
         np.asarray(link_jurisdiction, dtype=np.int64),
         np.asarray(standard_deduction, dtype=np.float64),

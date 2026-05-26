@@ -7,6 +7,7 @@ import pytest_bazel
 from augur.sim.projections import project_simulation_run
 from augur.sim.scenario import (
     Agent,
+    FilingStatus,
     InitialAccountBalance,
     InitialLot,
     LiquidityPolicy,
@@ -177,7 +178,7 @@ def test_projection_tax_safe_harbor_breakdown_and_payments() -> None:
         tax_profiles=[
             TaxProfile(
                 agent_id="alice",
-                filing_status="single",
+                filing_status=FilingStatus.SINGLE,
                 jurisdiction_ids=["federal_us", "california"],
                 tax_authority_agent_id="irs",
                 prior_year_tax_usd=4_000.0,

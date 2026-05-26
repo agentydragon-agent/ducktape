@@ -21,6 +21,7 @@ from augur.sim.scenario import (
     CapitalImprovementEvent,
     FederalSaltCapEntry,
     FederalSaltDeductionPolicy,
+    FilingStatus,
     InitialAccountBalance,
     MortgageFinancing,
     MortgageInterestDeductionPolicy,
@@ -294,7 +295,7 @@ class TestRentalIncomeTaxation:
             tax_profiles=[
                 TaxProfile(
                     agent_id=OWNER_AGENT_ID,
-                    filing_status="single",
+                    filing_status=FilingStatus.SINGLE,
                     jurisdiction_ids=["federal_us", "california"],
                     tax_authority_agent_id="irs",
                 )
@@ -369,7 +370,7 @@ class TestRentalIncomeTaxation:
             tax_profiles=[
                 TaxProfile(
                     agent_id=OWNER_AGENT_ID,
-                    filing_status="single",
+                    filing_status=FilingStatus.SINGLE,
                     jurisdiction_ids=["federal_us", "california"],
                     tax_authority_agent_id="irs",
                 )
@@ -438,7 +439,7 @@ class TestRentalIncomeTaxation:
             tax_profiles=[
                 TaxProfile(
                     agent_id=OWNER_AGENT_ID,
-                    filing_status="single",
+                    filing_status=FilingStatus.SINGLE,
                     jurisdiction_ids=["federal_us", "california"],
                     tax_authority_agent_id="irs",
                 )
@@ -504,7 +505,7 @@ class TestRentalIncomeTaxation:
             tax_profiles=[
                 TaxProfile(
                     agent_id=OWNER_AGENT_ID,
-                    filing_status="single",
+                    filing_status=FilingStatus.SINGLE,
                     jurisdiction_ids=["federal_us", "california"],
                     tax_authority_agent_id="irs",
                 )
@@ -580,7 +581,7 @@ class TestRentalIncomeTaxation:
             tax_profiles=[
                 TaxProfile(
                     agent_id=OWNER_AGENT_ID,
-                    filing_status="single",
+                    filing_status=FilingStatus.SINGLE,
                     jurisdiction_ids=["federal_us", "california"],
                     tax_authority_agent_id="irs",
                 )
@@ -686,7 +687,7 @@ class TestRentalIncomeTaxation:
             tax_profiles=[
                 TaxProfile(
                     agent_id=OWNER_AGENT_ID,
-                    filing_status="single",
+                    filing_status=FilingStatus.SINGLE,
                     jurisdiction_ids=["federal_us", "california"],
                     tax_authority_agent_id="irs",
                 )
@@ -753,7 +754,7 @@ class TestRentalIncomeTaxation:
             tax_profiles=[
                 TaxProfile(
                     agent_id=OWNER_AGENT_ID,
-                    filing_status="single",
+                    filing_status=FilingStatus.SINGLE,
                     jurisdiction_ids=["federal_us", "california"],
                     tax_authority_agent_id="irs",
                 )
@@ -826,7 +827,7 @@ class TestRentalIncomeTaxation:
             tax_profiles=[
                 TaxProfile(
                     agent_id=OWNER_AGENT_ID,
-                    filing_status="single",
+                    filing_status=FilingStatus.SINGLE,
                     jurisdiction_ids=["federal_us", "california"],
                     tax_authority_agent_id="irs",
                 )
@@ -980,7 +981,7 @@ class TestRentalIncomeTaxation:
             tax_profiles=[
                 TaxProfile(
                     agent_id=OWNER_AGENT_ID,
-                    filing_status="single",
+                    filing_status=FilingStatus.SINGLE,
                     jurisdiction_ids=["federal_us", "california"],
                     tax_authority_agent_id="irs",
                 )
@@ -1058,7 +1059,7 @@ class TestRentalIncomeTaxation:
             tax_profiles=[
                 TaxProfile(
                     agent_id=OWNER_AGENT_ID,
-                    filing_status="single",
+                    filing_status=FilingStatus.SINGLE,
                     jurisdiction_ids=["federal_us", "california"],
                     tax_authority_agent_id="irs",
                 )
@@ -1137,7 +1138,7 @@ class TestRentalIncomeTaxation:
             tax_profiles=[
                 TaxProfile(
                     agent_id=OWNER_AGENT_ID,
-                    filing_status="single",
+                    filing_status=FilingStatus.SINGLE,
                     jurisdiction_ids=["federal_us", "california"],
                     tax_authority_agent_id="irs",
                 )
@@ -1195,7 +1196,7 @@ class TestRentalIncomeTaxation:
             tax_profiles=[
                 TaxProfile(
                     agent_id=OWNER_AGENT_ID,
-                    filing_status="single",
+                    filing_status=FilingStatus.SINGLE,
                     jurisdiction_ids=["federal_us", "california"],
                     tax_authority_agent_id="irs",
                 )
@@ -1287,7 +1288,7 @@ class TestRentalIncomeTaxation:
             tax_profiles=[
                 TaxProfile(
                     agent_id=OWNER_AGENT_ID,
-                    filing_status="single",
+                    filing_status=FilingStatus.SINGLE,
                     jurisdiction_ids=["federal_us", "california"],
                     tax_authority_agent_id="irs",
                 )
@@ -1382,7 +1383,7 @@ class TestRentalIncomeTaxation:
             tax_profiles=[
                 TaxProfile(
                     agent_id=OWNER_AGENT_ID,
-                    filing_status="single",
+                    filing_status=FilingStatus.SINGLE,
                     jurisdiction_ids=["federal_us", "california"],
                     tax_authority_agent_id="irs",
                 )
@@ -1465,7 +1466,7 @@ class TestRentalIncomeTaxation:
             tax_profiles=[
                 TaxProfile(
                     agent_id=OWNER_AGENT_ID,
-                    filing_status="single",
+                    filing_status=FilingStatus.SINGLE,
                     jurisdiction_ids=["federal_us", "california"],
                     tax_authority_agent_id="irs",
                 )

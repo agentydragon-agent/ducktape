@@ -18,6 +18,7 @@ from augur.sim.scenario import (
     Agent,
     FederalSaltCapEntry,
     FederalSaltDeductionPolicy,
+    FilingStatus,
     FixedAmount,
     InitialAccountBalance,
     InitialLot,
@@ -1277,7 +1278,7 @@ def test_year_end_tax_accrual_federal_and_california_single_filer() -> None:
         tax_profiles=[
             TaxProfile(
                 agent_id="alice",
-                filing_status="single",
+                filing_status=FilingStatus.SINGLE,
                 jurisdiction_ids=["federal_us", "california"],
                 tax_authority_agent_id="irs",
             )
@@ -1380,7 +1381,7 @@ def test_year_end_tax_includes_long_term_capital_gain_under_federal_ltcg_schedul
         tax_profiles=[
             TaxProfile(
                 agent_id="alice",
-                filing_status="single",
+                filing_status=FilingStatus.SINGLE,
                 jurisdiction_ids=["federal_us", "california"],
                 tax_authority_agent_id="irs",
             )
@@ -1464,7 +1465,7 @@ def test_e2e_pinned_ltcg_tax_safe_harbor_and_cash_numerics() -> None:
         tax_profiles=[
             TaxProfile(
                 agent_id="alice",
-                filing_status="single",
+                filing_status=FilingStatus.SINGLE,
                 jurisdiction_ids=["federal_us", "california"],
                 tax_authority_agent_id="irs",
                 prior_year_tax_usd=4_000.0,
@@ -1580,7 +1581,10 @@ def test_e2e_pinned_multi_asset_ltcg_stcg_tax_breakdown_numerics() -> None:
         ],
         tax_profiles=[
             TaxProfile(
-                agent_id="alice", filing_status="single", jurisdiction_ids=["federal_us"], tax_authority_agent_id="irs"
+                agent_id="alice",
+                filing_status=FilingStatus.SINGLE,
+                jurisdiction_ids=["federal_us"],
+                tax_authority_agent_id="irs",
             )
         ],
         horizon_months=12,
@@ -1660,7 +1664,7 @@ def test_e2e_pinned_tax_payments_force_asset_liquidation_and_settle_liability(de
         tax_profiles=[
             TaxProfile(
                 agent_id="alice",
-                filing_status="single",
+                filing_status=FilingStatus.SINGLE,
                 jurisdiction_ids=["federal_us"],
                 tax_authority_agent_id="irs",
                 prior_year_tax_usd=2_000.0,
@@ -1766,7 +1770,7 @@ def test_year_end_tax_payment_debits_agent_cash() -> None:
         tax_profiles=[
             TaxProfile(
                 agent_id="alice",
-                filing_status="single",
+                filing_status=FilingStatus.SINGLE,
                 jurisdiction_ids=["federal_us", "california"],
                 tax_authority_agent_id="irs",
             )
@@ -1848,7 +1852,7 @@ def test_tax_payment_can_trigger_rollout_failure_when_unfunded() -> None:
         tax_profiles=[
             TaxProfile(
                 agent_id="alice",
-                filing_status="single",
+                filing_status=FilingStatus.SINGLE,
                 jurisdiction_ids=["federal_us", "california"],
                 tax_authority_agent_id="irs",
             )
@@ -2871,7 +2875,7 @@ def _mid_scenario(
         tax_profiles=[
             TaxProfile(
                 agent_id="alice",
-                filing_status="single",
+                filing_status=FilingStatus.SINGLE,
                 jurisdiction_ids=["federal_us", "california"],
                 tax_authority_agent_id="irs",
             )
