@@ -456,12 +456,7 @@ pub(super) fn materialize_logical_chunk(
         // shouldn't pay the I/O cost. See `stage_one_sidecars.rs`.
         if let Some(report_out_dir) = report_out_dir {
             time_phase!(timings, "write_stage_one_sidecars", {
-                write_stage_one_sidecars(
-                    report_out_dir,
-                    chunk_id,
-                    &stage_one,
-                    &runtime_ast.module,
-                )
+                write_stage_one_sidecars(report_out_dir, chunk_id, &stage_one)
             })?;
         }
         let StageOneAnalysis {

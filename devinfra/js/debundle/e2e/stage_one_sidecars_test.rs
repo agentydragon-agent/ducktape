@@ -1,18 +1,23 @@
-//! Stage A on-disk sidecar writers.
+//! Stage A on-disk sidecar writers (v1, in-process inspection).
 //!
 //! `materialize_logical_chunk` snapshots the per-chunk Stage A analysis
 //! to `<report_out_dir>/<chunk_id>/chunk_analysis/` whenever the
 //! pipeline runs with a report directory. This test pins the sidecar
-//! contract end-to-end: a small fixture spec produces the four sibling
-//! files, the manifest carries the expected envelope shape, and each
-//! payload deserializes back into the native type the future
-//! `materialize_from_analysis` reader (task #78) will consume.
+//! contract end-to-end: a small fixture spec produces the v1 sibling
+//! files (facts + atomic_units + manifest), the manifest carries the
+//! expected envelope shape, and each payload deserializes back into
+//! the native type.
+//!
+//! v1 intentionally does NOT write `ast.json`. The SWC `Module`
+//! requires `Globals`-portable hygiene to be useful in a separate-
+//! process Stage B; v1 defers that wire-format redesign and keeps the
+//! sidecars scoped to in-process inspection. See
+//! `stage_one_sidecars.rs` docstring for the rationale.
 
 use std::fs;
 
 use analysis::{AtomicUnit, ChunkAnalysisManifest, ChunkFactsReport};
 use debundle_e2e_support::*;
-use swc_ecma_ast::Module;
 
 /// Helper: read and deserialize a sidecar file at
 /// `<chunk_analysis_dir>/<name>`. Wraps both the read and the parse
@@ -75,11 +80,6 @@ export { A, B, readA, readB };
         "manifest carries the fixture's chunk id",
     );
     assert!(
-        manifest.paths.iter().any(|p| p == "ast.json"),
-        "manifest lists ast.json: {:?}",
-        manifest.paths,
-    );
-    assert!(
         manifest.paths.iter().any(|p| p == "facts.json"),
         "manifest lists facts.json: {:?}",
         manifest.paths,
@@ -90,11 +90,16 @@ export { A, B, readA, readB };
         manifest.paths,
     );
 
-    // AST: round-trips through swc's serde impl back into a Module.
-    let module: Module = read_sidecar(&chunk_analysis_dir, "ast.json");
+    // v1 explicitly does NOT write ast.json (deferred wire-format
+    // redesign — see stage_one_sidecars.rs docstring).
     assert!(
-        !module.body.is_empty(),
-        "deserialized AST should carry at least one top-level item",
+        !chunk_analysis_dir.join("ast.json").exists(),
+        "ast.json must not be written in v1",
+    );
+    assert!(
+        !manifest.paths.iter().any(|p| p == "ast.json"),
+        "manifest must not list ast.json in v1: {:?}",
+        manifest.paths,
     );
 
     // Facts: round-trips through `ChunkFactsReport`; the fixture has

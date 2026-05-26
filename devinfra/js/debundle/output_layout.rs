@@ -20,12 +20,21 @@ pub const ATOMIC_UNIT_CONFLICTS_REPORT: &str = "atomic_unit_conflicts.json";
 pub const INDEX_REPORT: &str = "index.json";
 
 // Stage A on-disk sidecar layout: a per-chunk `chunk_analysis/`
-// directory holding the per-concept JSON files that fully describe
-// Stage A's output, plus a manifest envelope that pins the file set
-// and schema version. See `stage_one_sidecars.rs` for the writers
-// and DESIGN.md §"Pipeline split (Stage A / Stage B)" for context.
+// directory holding the per-concept JSON files that describe Stage
+// A's output, plus a manifest envelope that pins the file set and
+// schema version. See `stage_one_sidecars.rs` for the writers and
+// DESIGN.md §"Pipeline split (Stage A / Stage B)" for context.
+//
+// v1 deliberately omits an `ast.json` constant. Serializing the SWC
+// `Module` requires the `swc_ecma_ast/serde-impl` feature (enabled
+// in MODULE.bazel) and is technically supported, but the resulting
+// `Id` values carry `SyntaxContext` indices that are meaningful only
+// within the producing SWC `Globals` instance. A separate-process
+// Stage B reader cannot make those identities line up with its own
+// fresh `Globals` without a wire-format redesign. v1 ships the
+// sidecars as in-process inspection only and defers the AST serde
+// path until that redesign lands.
 pub const CHUNK_ANALYSIS_DIR: &str = "chunk_analysis";
-pub const CHUNK_ANALYSIS_AST_REPORT: &str = "ast.json";
 pub const CHUNK_ANALYSIS_FACTS_REPORT: &str = "facts.json";
 pub const CHUNK_ANALYSIS_ATOMIC_UNITS_REPORT: &str = "atomic_units.json";
 pub const CHUNK_ANALYSIS_MANIFEST_REPORT: &str = "manifest.json";

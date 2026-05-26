@@ -1,54 +1,68 @@
-//! On-disk sidecar writers for Stage A artifacts.
+//! On-disk sidecar writers for Stage A artifacts (v1, in-process).
 //!
 //! Stage A (see `stage_one.rs` and DESIGN.md §"Pipeline split (Stage A /
 //! Stage B)") is the spec-independent half of the per-chunk pipeline.
-//! Its output — per-statement facts, the owner graph, and the
-//! structural atomic units, plus the AST that produced them — is
-//! everything Stage B needs to start. Serializing those values as a
-//! collection of sibling JSON files under
-//! `reports/tree/<chunk_id>/chunk_analysis/` gives a future
-//! `materialize_from_analysis` reader (task #78) a stable read surface,
-//! and lets a Bazel rule split the chunk pipeline into two cacheable
-//! actions.
+//! This module writes a subset of its outputs — per-statement facts,
+//! the structural atomic units, plus a manifest — as sibling JSON
+//! files under `reports/tree/<chunk_id>/chunk_analysis/`. The sidecars
+//! are emitted from inside the materializer alongside the other
+//! per-chunk reports; they're consumed by `peel`-family CLI tooling
+//! and by humans inspecting the pipeline.
+//!
+//! ## Out of scope for v1
+//!
+//! **No `ast.json`.** Serializing the SWC `Module` requires the
+//! `swc_ecma_ast/serde-impl` feature (enabled in MODULE.bazel) and
+//! round-trips through `serde_json`, but `Id = (Atom, SyntaxContext)`
+//! values carry a `SyntaxContext` whose `u32` is meaningful only within
+//! the SWC `Globals` instance that produced it. A reader in a *separate
+//! process* — the cacheable-action target the full pipeline split is
+//! aiming for — cannot make those identities line up with its own
+//! `top_level_id`-resolved bindings without a structural change to the
+//! wire format (drop `ctxt`, carry a scope discriminator, reconstruct
+//! `Id`s post-resolver in the reader). That redesign is deferred. See
+//! `ARCH_REVIEW_2026_05.md` §"Pipeline-split risks" for the analysis.
+//!
+//! Until that redesign lands, v1's sidecars are designed for **in-
+//! process inspection**: a CLI tool or a debugging human reads them
+//! during the same materializer run that produced them, where the
+//! shared `Globals` makes the `Id` identities valid. A separate-process
+//! `materialize_from_analysis` reader (task #78) is blocked on the wire
+//! format redesign.
 //!
 //! ## File layout
 //!
-//! Given `report_out_dir = <reports>/tree` (the layout's tree root —
-//! the same value `write_chunk_report_json` already receives), this
-//! writer creates a `<chunk_id>/chunk_analysis/` directory holding
-//! four sibling files:
+//! Given `report_out_dir = <reports>/tree`, this writer creates a
+//! `<chunk_id>/chunk_analysis/` directory holding three sibling files:
 //!
-//! - `ast.json`        — the raw `swc_ecma_ast::Module` (swc's
-//!   `serde-impl` feature handles serialization end-to-end).
-//! - `facts.json`      — a `ChunkFactsReport` (see `facts/wire.rs`)
-//!   round-trippable back into `ChunkFactAnalysis`.
+//! - `facts.json`        — a `ChunkFactsReport` (see `facts/wire.rs`)
+//!   round-trippable back into `ChunkFactAnalysis` *within the same
+//!   `Globals` scope*.
 //! - `atomic_units.json` — the `Vec<AtomicUnit>` from
 //!   `OwnerGraphAndUnits` (already `Serialize`).
-//! - `manifest.json`   — a small envelope with `schema_version`,
+//! - `manifest.json`     — a small envelope with `schema_version`,
 //!   `chunk_id`, and the sibling filenames a reader should expect.
 //!
-//! Each file is written pretty-printed; together they're small (the
-//! AST and facts dominate, and they're capped by chunk size).
+//! Each file is written pretty-printed; sizes are bounded by chunk
+//! size.
 //!
 //! ## Why a manifest
 //!
 //! The manifest pins the on-disk filenames and a `schema_version` so a
 //! reader can fail fast on shape drift without probing for every
-//! sibling file. The `paths` array intentionally lists the four
-//! companion filenames (not absolute paths) so the artifact is
-//! relocatable — a reader resolves them relative to the manifest's
-//! parent directory.
+//! sibling file. The `paths` array intentionally lists the companion
+//! filenames (not absolute paths) so the artifact is relocatable — a
+//! reader resolves them relative to the manifest's parent directory.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use swc_ecma_ast::Module;
 
 use output_layout::{
-    CHUNK_ANALYSIS_AST_REPORT, CHUNK_ANALYSIS_ATOMIC_UNITS_REPORT, CHUNK_ANALYSIS_DIR,
-    CHUNK_ANALYSIS_FACTS_REPORT, CHUNK_ANALYSIS_MANIFEST_REPORT,
+    CHUNK_ANALYSIS_ATOMIC_UNITS_REPORT, CHUNK_ANALYSIS_DIR, CHUNK_ANALYSIS_FACTS_REPORT,
+    CHUNK_ANALYSIS_MANIFEST_REPORT,
 };
 
 use crate::StageOneAnalysis;
@@ -79,7 +93,6 @@ impl ChunkAnalysisManifest {
             schema_version: CHUNK_ANALYSIS_MANIFEST_SCHEMA_VERSION,
             chunk_id: chunk_id.to_string(),
             paths: vec![
-                CHUNK_ANALYSIS_AST_REPORT.to_string(),
                 CHUNK_ANALYSIS_FACTS_REPORT.to_string(),
                 CHUNK_ANALYSIS_ATOMIC_UNITS_REPORT.to_string(),
             ],
@@ -87,7 +100,7 @@ impl ChunkAnalysisManifest {
     }
 }
 
-/// Write all four Stage A sidecars to
+/// Write the v1 Stage A sidecars to
 /// `<report_out_dir>/<chunk_id>/chunk_analysis/`.
 ///
 /// `report_out_dir` is the *tree root* (the same path `materialize_*`
@@ -95,18 +108,18 @@ impl ChunkAnalysisManifest {
 /// as a `/`-separated subpath so chunk ids like `static/app` nest
 /// correctly under the tree root — matching the convention every
 /// other chunk-report writer in the crate uses.
+///
+/// v1 writes three sidecars (facts, atomic_units, manifest). The AST
+/// is intentionally not serialized; see the module docstring for the
+/// `SyntaxContext`/`Globals` rationale.
 pub fn write_stage_one_sidecars(
     report_out_dir: &Path,
     chunk_id: &str,
     stage_one: &StageOneAnalysis,
-    module: &Module,
 ) -> Result<()> {
     let dir = chunk_analysis_dir(report_out_dir, chunk_id);
     fs::create_dir_all(&dir)
         .with_context(|| format!("create chunk_analysis dir: {}", dir.display()))?;
-
-    write_pretty_json(&dir.join(CHUNK_ANALYSIS_AST_REPORT), module)
-        .with_context(|| format!("write {CHUNK_ANALYSIS_AST_REPORT}"))?;
 
     let facts = ChunkFactsReport::from_analysis(&stage_one.fact_analysis);
     write_pretty_json(&dir.join(CHUNK_ANALYSIS_FACTS_REPORT), &facts)
@@ -144,6 +157,7 @@ mod tests {
     use crate::compute_stage_one_analysis;
     use crate::graph::OwnerGraphOptions;
     use swc_common::{FileName, SourceMap, sync::Lrc};
+    use swc_ecma_ast::Module;
     use swc_ecma_parser::{Parser, StringInput, Syntax, lexer::Lexer};
 
     fn parse(source: &str) -> Module {
@@ -164,7 +178,7 @@ mod tests {
     }
 
     #[test]
-    fn writes_four_sidecars_under_chunk_analysis_dir() {
+    fn writes_v1_sidecars_under_chunk_analysis_dir() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let module = parse("const A = 1;\nconst B = A + 1;\nexport { A, B };\n");
         let stage_one = compute_stage_one_analysis(
@@ -175,13 +189,11 @@ mod tests {
             OwnerGraphOptions::default(),
         );
 
-        write_stage_one_sidecars(tmp.path(), "static/app", &stage_one, &module)
-            .expect("write sidecars");
+        write_stage_one_sidecars(tmp.path(), "static/app", &stage_one).expect("write sidecars");
 
         let dir = tmp.path().join("static/app/chunk_analysis");
         assert!(dir.is_dir(), "chunk_analysis dir created: {}", dir.display());
         for name in [
-            CHUNK_ANALYSIS_AST_REPORT,
             CHUNK_ANALYSIS_FACTS_REPORT,
             CHUNK_ANALYSIS_ATOMIC_UNITS_REPORT,
             CHUNK_ANALYSIS_MANIFEST_REPORT,
@@ -193,12 +205,18 @@ mod tests {
             );
         }
 
-        let manifest_body = fs::read_to_string(dir.join(CHUNK_ANALYSIS_MANIFEST_REPORT))
-            .expect("read manifest");
+        // ast.json is intentionally NOT written; see module docstring.
+        assert!(
+            !dir.join("ast.json").exists(),
+            "ast.json must not be written in v1 (see module docstring)",
+        );
+
+        let manifest_body =
+            fs::read_to_string(dir.join(CHUNK_ANALYSIS_MANIFEST_REPORT)).expect("read manifest");
         let manifest: ChunkAnalysisManifest =
             serde_json::from_str(&manifest_body).expect("parse manifest");
         assert_eq!(manifest.schema_version, CHUNK_ANALYSIS_MANIFEST_SCHEMA_VERSION);
         assert_eq!(manifest.chunk_id, "static/app");
-        assert_eq!(manifest.paths.len(), 3);
+        assert_eq!(manifest.paths.len(), 2);
     }
 }
