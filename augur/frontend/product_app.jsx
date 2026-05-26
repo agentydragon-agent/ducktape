@@ -2116,6 +2116,92 @@ function useEventSelection() {
   };
 }
 
+// The chart + per-rollout details column under the scenario form. Composes the metric
+// picker, terminal histogram, fan chart, event legend/panel, and metric table for the
+// currently selected rollout. All state lives in `ProductProjectionWorkspace`; this
+// component is the rendering shell.
+function RolloutResultsPanel({
+  visibleMetrics,
+  selectedMetric,
+  onSelectMetric,
+  rolloutSummaries,
+  selectedSeed,
+  onSelectSeed,
+  selectedRolloutLoading,
+  fanRows,
+  percentiles,
+  selectedRows,
+  selectedEvents,
+  selectedSummary,
+  visibleEventKinds,
+  eventSelection,
+  rolloutError,
+}) {
+  return (
+    <section className="augur-panel overflow-hidden" aria-label="Cash projection workspace">
+      <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
+        <NativeSelect
+          aria-label="Metric to plot"
+          value={selectedMetric.value}
+          data={visibleMetrics.map((metric) => ({ value: metric.value, label: metric.label }))}
+          classNames={{ input: "augur-tabular min-w-[12rem]" }}
+          onChange={(event) => onSelectMetric(event.target.value)}
+        />
+      </div>
+      <TerminalDistributionHistogram
+        summaries={rolloutSummaries}
+        metric={selectedMetric}
+        selectedSeed={selectedSeed}
+        loadingSeed={selectedRolloutLoading ? selectedSeed : null}
+        onSelect={onSelectSeed}
+      />
+      {fanRows.length > 0 ? (
+        <MetricFanChart
+          rows={fanRows}
+          metric={selectedMetric}
+          percentiles={percentiles}
+          selectedRows={selectedRows}
+          selectedEvents={selectedEvents}
+          selectedSeed={selectedSeed}
+          selectedFailed={selectedSummary?.failed ?? false}
+          visibleEventKinds={visibleEventKinds.visible}
+          selectedEventMonthIndex={eventSelection.selectedEventMonthIndex}
+          hoveredEventMonthIndex={eventSelection.hoveredEventMonthIndex}
+          onSelectEventMonth={eventSelection.onSelectEventMonth}
+          onHoverEventMonth={eventSelection.onHoverEventMonth}
+        />
+      ) : (
+        <div className="flex min-h-[22rem] items-center justify-center text-sm augur-muted">Running...</div>
+      )}
+      {selectedSeed != null && selectedEvents.length > 0 && (
+        <EventKindLegend events={selectedEvents} visibility={visibleEventKinds} />
+      )}
+      {rolloutError && (
+        <div className="border-t border-slate-200 p-4 dark:border-slate-700">
+          <div className="augur-note-danger">Selected rollout failed to load: {rolloutError}</div>
+        </div>
+      )}
+      {selectedSeed != null && (
+        <SelectedRolloutEventsPanel
+          events={selectedEvents}
+          selectedSummary={selectedSummary}
+          loading={selectedRolloutLoading}
+          selectedEventMonthIndex={eventSelection.selectedEventMonthIndex}
+          hoveredEventMonthIndex={eventSelection.hoveredEventMonthIndex}
+          onSelectEventMonth={eventSelection.onSelectEventMonth}
+          onHoverEventMonth={eventSelection.onHoverEventMonth}
+        />
+      )}
+      <TerminalMetricTable
+        summaries={rolloutSummaries}
+        selectedSummary={selectedSummary}
+        metrics={visibleMetrics}
+        selectedMetric={selectedMetric}
+      />
+    </section>
+  );
+}
+
 function ProductProjectionWorkspace({ bootstrap }) {
   const [input, setInput] = useState(() => productInputFromSearch(window.location.search, bootstrap));
   const [selectedMetricValue, setSelectedMetricValue] = useState("net_worth_usd");
@@ -2275,67 +2361,23 @@ function ProductProjectionWorkspace({ bootstrap }) {
               </div>
             </div>
 
-            <section className="augur-panel overflow-hidden" aria-label="Cash projection workspace">
-              <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
-                <NativeSelect
-                  aria-label="Metric to plot"
-                  value={selectedMetric.value}
-                  data={visibleMetrics.map((metric) => ({ value: metric.value, label: metric.label }))}
-                  classNames={{ input: "augur-tabular min-w-[12rem]" }}
-                  onChange={(event) => setSelectedMetricValue(event.target.value)}
-                />
-              </div>
-              <TerminalDistributionHistogram
-                summaries={rolloutSummaries}
-                metric={selectedMetric}
-                selectedSeed={selectedSeed}
-                loadingSeed={selectedRolloutLoading ? selectedSeed : null}
-                onSelect={setSelectedSeed}
-              />
-              {fanRows.length > 0 ? (
-                <MetricFanChart
-                  rows={fanRows}
-                  metric={selectedMetric}
-                  percentiles={request.percentiles}
-                  selectedRows={selectedRows}
-                  selectedEvents={selectedEvents}
-                  selectedSeed={selectedSeed}
-                  selectedFailed={selectedSummary?.failed ?? false}
-                  visibleEventKinds={visibleEventKinds.visible}
-                  selectedEventMonthIndex={eventSelection.selectedEventMonthIndex}
-                  hoveredEventMonthIndex={eventSelection.hoveredEventMonthIndex}
-                  onSelectEventMonth={eventSelection.onSelectEventMonth}
-                  onHoverEventMonth={eventSelection.onHoverEventMonth}
-                />
-              ) : (
-                <div className="flex min-h-[22rem] items-center justify-center text-sm augur-muted">Running...</div>
-              )}
-              {selectedSeed != null && selectedEvents.length > 0 && (
-                <EventKindLegend events={selectedEvents} visibility={visibleEventKinds} />
-              )}
-              {rolloutError && (
-                <div className="border-t border-slate-200 p-4 dark:border-slate-700">
-                  <div className="augur-note-danger">Selected rollout failed to load: {rolloutError}</div>
-                </div>
-              )}
-              {selectedSeed != null && (
-                <SelectedRolloutEventsPanel
-                  events={selectedEvents}
-                  selectedSummary={selectedSummary}
-                  loading={selectedRolloutLoading}
-                  selectedEventMonthIndex={eventSelection.selectedEventMonthIndex}
-                  hoveredEventMonthIndex={eventSelection.hoveredEventMonthIndex}
-                  onSelectEventMonth={eventSelection.onSelectEventMonth}
-                  onHoverEventMonth={eventSelection.onHoverEventMonth}
-                />
-              )}
-              <TerminalMetricTable
-                summaries={rolloutSummaries}
-                selectedSummary={selectedSummary}
-                metrics={visibleMetrics}
-                selectedMetric={selectedMetric}
-              />
-            </section>
+            <RolloutResultsPanel
+              visibleMetrics={visibleMetrics}
+              selectedMetric={selectedMetric}
+              onSelectMetric={setSelectedMetricValue}
+              rolloutSummaries={rolloutSummaries}
+              selectedSeed={selectedSeed}
+              onSelectSeed={setSelectedSeed}
+              selectedRolloutLoading={selectedRolloutLoading}
+              fanRows={fanRows}
+              percentiles={request.percentiles}
+              selectedRows={selectedRows}
+              selectedEvents={selectedEvents}
+              selectedSummary={selectedSummary}
+              visibleEventKinds={visibleEventKinds}
+              eventSelection={eventSelection}
+              rolloutError={rolloutError}
+            />
           </div>
         </section>
       </main>
