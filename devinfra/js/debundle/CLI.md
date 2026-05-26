@@ -15,7 +15,7 @@ on-stderr convention as the rest of ducktape.
 ## Convention: validate-by-default for mutating commands
 
 Every command that **modifies the spec** (`binding assign`, `binding
-rename`, `module merge`) runs validation **by default** before
+rename`, `modules merge`) runs validation **by default** before
 writing changes back to disk. For commands that affect the chunk's
 factorization (anything that moves a binding between modules), that
 means the full realizability gate; for renames, it means name-
@@ -78,11 +78,12 @@ The `binding` namespace holds only the mutating operations.
 | `debundle binding assign <sym>:<module>[:<readable>] …` | yes (spec) | Move one or more bindings into named logical modules **atomically**. Each positional argument is colon-separated: `<sym>:<module>` to move and keep the current name, `<sym>:<module>:<readable>` to move and rename in the same step. `<sym>` accepts minified or readable form; the optional third field always sets the new readable `name:`. `--batch <file.json>` (or `--batch -` for stdin) reads moves as a JSON array of `{sym, module, readable?}` objects. Validation runs on the *whole batch's* post-state. Default: validate + apply atomically. `--no-verify` / `--dry-run` available. See "Batch atomicity" below. | **planned** (#82) |
 | `debundle binding rename <original> <readable>` | yes (spec) | Rename a binding's readable `name:` without moving it. `<original>` accepts minified or current readable form. Validation here is name-collision detection (no two bindings in the chunk get the same readable name). Mostly a convenience over `binding assign` for the rename-without-move case. `--no-verify` / `--dry-run` available. | **planned** (#82) |
 
-### Module-scoped
+### Modules
 
 | Command | Mutates? | Function | Status |
 |---|---|---|---|
-| `debundle module merge --target <T> <sources...>` | yes (spec) | Splice `members:` + `anonymous_statements:` from each source YAML into `<T>`; delete the sources. Default: validate + apply. `--no-verify` / `--dry-run` available. | shipped (no-validate) + **planned validation hookup** (#84) |
+| `debundle modules merge --target <T> <sources...>` | yes (spec) | Splice `members:` + `anonymous_statements:` from each source YAML into `<T>`; delete the sources. Default: validate + apply. `--no-verify` / `--dry-run` available. | shipped (as `module merge`; **planned rename** to `modules merge` + validation hookup #84) |
+| `debundle modules propose` | no | Emit factorizer proposals (binding → module assignment recommendations) + diagnostics derived from the atomic DAG. Read-only — surfaces *suggested* assignments; applying them requires `binding assign`. Was `peel plan-work`. | shipped (as `peel plan-work`; **planned rename**) |
 
 Renaming or disabling a module is **not** a CLI operation — it's a
 plain `mv` on the YAML file. The spec compiler infers the module
@@ -98,8 +99,8 @@ mv $MOD/runtime/plugins.yaml $MOD/runtime/plugins.yaml.disabled
 
 After the `mv`, the next `debundle run` (or any subsequent mutating
 command on the spec) re-validates and surfaces any resulting atom
-split as a gate diagnostic. No dedicated `module rename` /
-`module disable` subcommand — the filesystem operation is already
+split as a gate diagnostic. No dedicated `modules rename` /
+`modules disable` subcommand — the filesystem operation is already
 the right primitive.
 
 ### Quotient queries
@@ -111,14 +112,13 @@ the right primitive.
 
 ### Atomic-DAG queries
 
-(Previously under `debundle peel <…>`; the four marked below are
-moving to top level, and `peel plan-work` is being renamed to
-`propose modules`.)
+(Previously under `debundle peel <…>`; all moving to top level.
+`peel plan-work` is being renamed and moved to `modules propose` —
+see "Modules" above.)
 
 | Command | Mutates? | Function | Status |
 |---|---|---|---|
 | `debundle atoms` | no | List structural atoms (owner-level SCCs of the constraining-edge graph; per DESIGN.md §"Two classes of atom"). Was `peel units`. | shipped (as `peel units`; **planned rename**) |
-| `debundle propose modules` | no | Emit factorizer proposals (binding → module assignment recommendations) + diagnostics derived from the atomic DAG. Was `peel plan-work`. | shipped (as `peel plan-work`; **planned rename**) |
 | `debundle coverage` | no | Report spec coverage against atoms: which atoms are claimed, which fall through to residual. Was `peel patch-plan`. | shipped (as `peel patch-plan`; **planned rename**) |
 | `debundle graph-summary` | no | High-level counts (owners, edges, atoms, residual-eligible bindings, etc.). | shipped (under `peel`; **planned rename**) |
 | `debundle describe <id>` | no | Dereference any identifier with full graph + spec context. Accepted ID kinds: a binding (minified `XOe` or readable `PluginSettingsAccessor`), a module path (`runtime/plugins`), a proposal id, an atom id, an owner id (`owner:42`), a diagnostic id. The renderer dispatches on the kind it detects. Was `peel explain`. | shipped (as `peel explain`; **planned rename**) |
@@ -188,7 +188,7 @@ A top-level JSON array of move objects:
 
 JSON over TSV because: schema-validated, queryable with `jq`,
 composable with the other JSON outputs from the same CLI
-(`scc --ndjson`, `propose modules`, etc.), and lets `--batch -`
+(`scc --ndjson`, `modules propose`, etc.), and lets `--batch -`
 pipe directly from those producers without a TSV conversion step
 in between.
 
@@ -228,7 +228,7 @@ application." Per-move would be the surprising default.
   artifact at `reports/tree/<chunk>/chunk_analysis/facts.json`. See
   `facts/wire.rs` module docstring.
 - **Module rename / disable** is just `mv` on the YAML file (see
-  "Module-scoped" above). No dedicated subcommand.
+  "Modules" above). No dedicated subcommand.
 
 ## See also
 
@@ -240,5 +240,5 @@ application." Per-move would be the surprising default.
   commands consume.
 - `PIPELINE_SPLIT.md` — how the underlying Stage A / Stage B
   composition relates to these commands' inputs and outputs.
-- `FACTORIZE.md` — the factorization algorithm `propose modules`
+- `FACTORIZE.md` — the factorization algorithm `modules propose`
   draws its proposals from.
