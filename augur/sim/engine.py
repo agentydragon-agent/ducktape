@@ -1059,9 +1059,11 @@ def _compute_tax_for_link(
     that should stack onto MID inside itemized.
 
     §1250 unrecaptured-depreciation gain is routed by `tax_link_section_1250_rate`:
-    - Federal-style links (rate > 0): the recapture bucket is taxed at the flat cap
-      rate (e.g. 25% on `federal_us`) and added to `capital_tax`. It is *not* mixed
-      into the ordinary bracket walk.
+    - Federal-style links (rate > 0): the recapture stays out of the ordinary bracket
+      walk. After `ordinary_tax` is known, the IRS Unrecaptured §1250 Worksheet rule
+      taxes the recapture at the *lesser of* its implied marginal ordinary rate (what
+      it would owe if stacked on top of `ordinary_taxable`) or the flat cap rate (25%
+      on `federal_us`). The result is added to `capital_tax`.
     - State-style links (rate == 0): the recapture is added to ordinary income and
       flows through the standard bracket walk (CA treats it as ordinary).
     """
@@ -1084,45 +1086,45 @@ def _compute_tax_for_link(
     itemized_deduction = mortgage_interest_deduction + salt_deduction
     deduction_used = np.maximum(itemized_deduction, standard_deduction)
 
-    # State-style §1250: lumped into ordinary; federal-style: taxed at flat cap rate as
-    # capital tax. Both branches keep `recapture` out of `ordinary_taxable` so the federal
-    # bracket walk does not double-tax it.
-    if section_1250_rate > 0.0:
-        section_1250_tax = recapture * section_1250_rate
-        ordinary_for_brackets = ordinary
-    else:
-        section_1250_tax = np.zeros(plan.rollout_count, dtype=np.float64)
-        ordinary_for_brackets = ordinary + recapture
+    # State-style §1250 lumps recapture into ordinary income; federal-style holds it out
+    # so the IRS worksheet cap can apply after the bracket walk.
+    federal_style_section_1250 = section_1250_rate > 0.0
+    ordinary_for_brackets = ordinary if federal_style_section_1250 else ordinary + recapture
 
+    ordinary_upper = plan.tax_link_ordinary_upper[link]
+    ordinary_rate = plan.tax_link_ordinary_rate[link]
+    ordinary_count = int(plan.tax_link_ordinary_count[link])
     if int(plan.tax_link_has_ltcg[link]) == 1:
         ordinary_taxable = np.maximum(ordinary_for_brackets + stcg - deduction_used, 0.0)
         capital_taxable = ltcg
-        ordinary_tax = _apply_brackets(
+        ordinary_tax = _apply_brackets(ordinary_taxable, upper=ordinary_upper, rate=ordinary_rate, count=ordinary_count)
+        ltcg_tax = _apply_ltcg_brackets(
+            ltcg,
             ordinary_taxable,
-            upper=plan.tax_link_ordinary_upper[link],
-            rate=plan.tax_link_ordinary_rate[link],
-            count=int(plan.tax_link_ordinary_count[link]),
-        )
-        capital_tax = (
-            _apply_ltcg_brackets(
-                ltcg,
-                ordinary_taxable,
-                upper=plan.tax_link_ltcg_upper[link],
-                rate=plan.tax_link_ltcg_rate[link],
-                count=int(plan.tax_link_ltcg_count[link]),
-            )
-            + section_1250_tax
+            upper=plan.tax_link_ltcg_upper[link],
+            rate=plan.tax_link_ltcg_rate[link],
+            count=int(plan.tax_link_ltcg_count[link]),
         )
     else:
         ordinary_taxable = np.maximum(ordinary_for_brackets + ltcg + stcg - deduction_used, 0.0)
         capital_taxable = np.zeros(plan.rollout_count, dtype=np.float64)
-        ordinary_tax = _apply_brackets(
-            ordinary_taxable,
-            upper=plan.tax_link_ordinary_upper[link],
-            rate=plan.tax_link_ordinary_rate[link],
-            count=int(plan.tax_link_ordinary_count[link]),
+        ordinary_tax = _apply_brackets(ordinary_taxable, upper=ordinary_upper, rate=ordinary_rate, count=ordinary_count)
+        ltcg_tax = np.zeros(plan.rollout_count, dtype=np.float64)
+
+    if federal_style_section_1250:
+        # IRS Unrecaptured §1250 Gain Worksheet: lesser of the implied marginal ordinary
+        # tax on the recapture (what it would owe stacked on top of ordinary_taxable) or
+        # the flat federal cap. Sub-25%-bracket taxpayers benefit from the marginal floor;
+        # high-bracket taxpayers are unchanged because the 25% cap binds.
+        ordinary_tax_with_recapture = _apply_brackets(
+            ordinary_taxable + recapture, upper=ordinary_upper, rate=ordinary_rate, count=ordinary_count
         )
-        capital_tax = section_1250_tax
+        implied_recapture_tax = np.maximum(ordinary_tax_with_recapture - ordinary_tax, 0.0)
+        section_1250_tax = np.minimum(implied_recapture_tax, recapture * section_1250_rate)
+    else:
+        section_1250_tax = np.zeros(plan.rollout_count, dtype=np.float64)
+
+    capital_tax = ltcg_tax + section_1250_tax
     return mortgage_interest_deduction, itemized_deduction, ordinary_taxable, capital_taxable, ordinary_tax, capital_tax
 
 
