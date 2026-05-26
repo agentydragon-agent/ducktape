@@ -292,24 +292,10 @@ pub(super) fn materialize_logical_chunk(
             builder.fold_rebind_units(&precomputed);
         });
         if matches!(chunk_unassigned_mode, UnassignedMode::MiniFactors) {
-            let (
-                binding_assignment,
-                anonymous_ordinal_assignment,
-                module_plans,
-                bindings_catalogue,
-                residual_plan_index,
-                _unmatched_spec_claims,
-            ) = builder.parts_mut();
             time_phase!(timings, "synthesize_mini_factor_plans", {
-                synthesize_mini_factor_plans(
+                builder.synthesize_mini_factors(
                     &precomputed,
                     &runtime_ast.module.body,
-                    *residual_plan_index,
-                    module_plans,
-                    binding_assignment,
-                    bindings_catalogue,
-                    anonymous_ordinal_assignment,
-                    chunk_top_level_mark,
                     target_dir,
                 )
             })?;

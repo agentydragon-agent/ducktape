@@ -1,9 +1,7 @@
 //! Spec-derived request + plan structures plus the helpers that
-//! convert spec entries into `LogicalRequest`s and synthesize
-//! mini-factor plans for unclaimed atomic units.
+//! convert spec entries into `LogicalRequest`s. Mini-factor plan
+//! synthesis lives on `ChunkPlanBuilder::synthesize_mini_factors`.
 
-use super::ordinal::body_index_for_statement_ordinal;
-use super::util::target_file_for_request;
 use super::*;
 
 #[derive(Debug, Clone)]
@@ -171,132 +169,6 @@ pub(super) fn logical_requests_for_chunk(
         });
     }
     Ok(requests)
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(super) fn synthesize_mini_factor_plans(
-    precomputed: &OwnerGraphAndUnits,
-    body: &[ModuleItem],
-    residual_plan_index: Option<usize>,
-    module_plans: &mut Vec<ModulePlan>,
-    binding_assignment: &mut HashMap<Id, usize>,
-    bindings_catalogue: &mut HashMap<Id, BindingKind>,
-    anonymous_ordinal_assignment: &mut BTreeMap<usize, usize>,
-    _chunk_top_level_mark: swc_common::Mark,
-    target_dir: &str,
-) -> Result<()> {
-    let owner_graph = &precomputed.owner_graph;
-    let atomic_units = &precomputed.atomic_units;
-    let mut owner_declared_names: HashMap<OwnerId, Vec<Id>> = HashMap::new();
-    let mut owner_statement_ordinal: HashMap<OwnerId, usize> = HashMap::new();
-    for node in owner_graph.iter_nodes() {
-        let ids: Vec<Id> = node.declared.iter().cloned().collect();
-        owner_declared_names.insert(node.id, ids);
-        owner_statement_ordinal.insert(node.id, node.statement_ordinal.0);
-    }
-
-    // A unit member counts as unclaimed iff every declared binding is
-    // either absent from `binding_assignment` or assigned to the
-    // residual plan (if any); anonymous owners must similarly be
-    // unassigned or routed via residual. If any member is claimed by
-    // an explicit (non-residual) plan, the spec author already named
-    // the unit's destination — leave the existing claim intact (and
-    // let downstream validation flag an atomic-unit conflict if the
-    // claims disagree).
-    let is_owner_unclaimed = |owner: OwnerId| -> bool {
-        let names = owner_declared_names
-            .get(&owner)
-            .map(Vec::as_slice)
-            .unwrap_or(&[]);
-        for id in names {
-            match binding_assignment.get(id).copied() {
-                None => continue,
-                Some(idx) if Some(idx) == residual_plan_index => continue,
-                Some(_) => return false,
-            }
-        }
-        if names.is_empty() {
-            let Some(stmt_ord) = owner_statement_ordinal.get(&owner).copied() else {
-                return true;
-            };
-            let Some(body_idx) = body_index_for_statement_ordinal(body, stmt_ord) else {
-                return true;
-            };
-            match anonymous_ordinal_assignment.get(&body_idx).copied() {
-                None => return true,
-                Some(idx) if Some(idx) == residual_plan_index => return true,
-                Some(_) => return false,
-            }
-        }
-        true
-    };
-
-    let mut unclaimed_units: Vec<&BTreeSet<OwnerId>> = atomic_units
-        .iter()
-        .filter(|unit| unit.members.iter().copied().all(is_owner_unclaimed))
-        .map(|unit| &unit.members)
-        .collect();
-    // Stable iteration order: smallest OwnerId first.
-    unclaimed_units.sort_by_key(|members| members.iter().next().copied());
-
-    for (idx, members) in unclaimed_units.into_iter().enumerate() {
-        let synthetic_idx = module_plans.len();
-        let synthetic_module_id = ModuleId(LogicalModuleIndex(synthetic_idx));
-        let target_path = format!("__auto/mini/{idx:04}");
-        let target_file = target_file_for_request(target_dir, &target_path)?;
-        let mut bindings = HashMap::<String, String>::new();
-        let mut anonymous_statement_ordinals = Vec::<usize>::new();
-        for owner in members {
-            let names = owner_declared_names
-                .get(owner)
-                .map(Vec::as_slice)
-                .unwrap_or(&[]);
-            if names.is_empty() {
-                let Some(stmt_ord) = owner_statement_ordinal.get(owner).copied() else {
-                    continue;
-                };
-                let Some(body_idx) = body_index_for_statement_ordinal(body, stmt_ord) else {
-                    continue;
-                };
-                anonymous_ordinal_assignment.insert(body_idx, synthetic_idx);
-                anonymous_statement_ordinals.push(body_idx);
-                continue;
-            }
-            for name in names {
-                let name_str = name.0.to_string();
-                bindings.insert(name_str.clone(), name_str.clone());
-                // Move the binding out of the residual plan (if it was
-                // staged there by the sweep above) into the synthesized
-                // plan. The residual plan's bindings/anonymous-ordinal
-                // maps are pruned so it doesn't double-claim members.
-                if let Some(prev) = binding_assignment.get(name).copied()
-                    && Some(prev) == residual_plan_index
-                    && let Some(residual_idx) = residual_plan_index
-                {
-                    module_plans[residual_idx].bindings.remove(&name_str);
-                }
-                binding_assignment.insert(name.clone(), synthetic_idx);
-                bindings_catalogue.insert(
-                    name.clone(),
-                    BindingKind::Owned {
-                        owner: synthetic_module_id,
-                    },
-                );
-            }
-        }
-        anonymous_statement_ordinals.sort_unstable();
-        module_plans.push(ModulePlan {
-            id: target_path.clone(),
-            target_file,
-            target_path,
-            explicit: false,
-            bindings,
-            anonymous_statement_ordinals,
-            comment: None,
-            binding_comments: BTreeMap::new(),
-        });
-    }
-    Ok(())
 }
 
 pub(super) fn build_members(members: &[spec::Member]) -> Vec<MemberRequest> {

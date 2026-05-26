@@ -83,7 +83,7 @@ use plan_references::{
 };
 use plans::{
     LogicalRequest, MemberRequest, ModulePlan, known_effect_from_member_effect,
-    logical_requests_for_chunk, synthesize_mini_factor_plans,
+    logical_requests_for_chunk,
 };
 use rewrite_runtime::rewrite_runtime_sources_for_target;
 use runtime_imports::{

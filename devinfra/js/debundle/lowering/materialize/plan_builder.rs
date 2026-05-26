@@ -10,6 +10,7 @@
 //! original motivation.
 
 use super::*;
+use super::super::ordinal::body_index_for_statement_ordinal;
 
 /// Output of `ChunkPlanBuilder::finalize`: everything downstream
 /// `lower_chunk` + the chunk-report builder need from the plan
@@ -395,6 +396,137 @@ impl ChunkPlanBuilder {
         Ok(())
     }
 
+    /// `MiniFactors` mode: every unclaimed atomic factor unit gets
+    /// its own synthesized plan at `__auto/mini/NNNN`. Run after
+    /// `fold_rebind_units` so the residual sweep + rebind folding
+    /// have already settled which units are still unclaimed. Bindings
+    /// previously parked at the residual plan are moved out into the
+    /// synthesized plan; the residual plan's `bindings` map is
+    /// pruned to match.
+    pub(super) fn synthesize_mini_factors(
+        &mut self,
+        precomputed: &OwnerGraphAndUnits,
+        body: &[ModuleItem],
+        target_dir: &str,
+    ) -> Result<()> {
+        let owner_graph = &precomputed.owner_graph;
+        let atomic_units = &precomputed.atomic_units;
+        let mut owner_declared_names: HashMap<OwnerId, Vec<Id>> = HashMap::new();
+        let mut owner_statement_ordinal: HashMap<OwnerId, usize> = HashMap::new();
+        for node in owner_graph.iter_nodes() {
+            let ids: Vec<Id> = node.declared.iter().cloned().collect();
+            owner_declared_names.insert(node.id, ids);
+            owner_statement_ordinal.insert(node.id, node.statement_ordinal.0);
+        }
+
+        let residual_plan_index = self.residual_plan_index;
+        let binding_assignment = &self.binding_assignment;
+        let anonymous_ordinal_assignment = &self.anonymous_ordinal_assignment;
+        // A unit member counts as unclaimed iff every declared binding
+        // is either absent from `binding_assignment` or assigned to
+        // the residual plan (if any); anonymous owners must similarly
+        // be unassigned or routed via residual. If any member is
+        // claimed by an explicit (non-residual) plan, the spec author
+        // already named the unit's destination — leave the existing
+        // claim intact (and let downstream validation flag an
+        // atomic-unit conflict if the claims disagree).
+        let is_owner_unclaimed = |owner: OwnerId| -> bool {
+            let names = owner_declared_names
+                .get(&owner)
+                .map(Vec::as_slice)
+                .unwrap_or(&[]);
+            for id in names {
+                match binding_assignment.get(id).copied() {
+                    None => continue,
+                    Some(idx) if Some(idx) == residual_plan_index => continue,
+                    Some(_) => return false,
+                }
+            }
+            if names.is_empty() {
+                let Some(stmt_ord) = owner_statement_ordinal.get(&owner).copied() else {
+                    return true;
+                };
+                let Some(body_idx) = body_index_for_statement_ordinal(body, stmt_ord) else {
+                    return true;
+                };
+                match anonymous_ordinal_assignment.get(&body_idx).copied() {
+                    None => return true,
+                    Some(idx) if Some(idx) == residual_plan_index => return true,
+                    Some(_) => return false,
+                }
+            }
+            true
+        };
+
+        let mut unclaimed_units: Vec<&BTreeSet<OwnerId>> = atomic_units
+            .iter()
+            .filter(|unit| unit.members.iter().copied().all(is_owner_unclaimed))
+            .map(|unit| &unit.members)
+            .collect();
+        // Stable iteration order: smallest OwnerId first.
+        unclaimed_units.sort_by_key(|members| members.iter().next().copied());
+
+        for (idx, members) in unclaimed_units.into_iter().enumerate() {
+            let synthetic_idx = self.module_plans.len();
+            let synthetic_module_id = ModuleId(LogicalModuleIndex(synthetic_idx));
+            let target_path = format!("__auto/mini/{idx:04}");
+            let target_file = target_file_for_request(target_dir, &target_path)?;
+            let mut bindings = HashMap::<String, String>::new();
+            let mut anonymous_statement_ordinals = Vec::<usize>::new();
+            for owner in members {
+                let names = owner_declared_names
+                    .get(owner)
+                    .map(Vec::as_slice)
+                    .unwrap_or(&[]);
+                if names.is_empty() {
+                    let Some(stmt_ord) = owner_statement_ordinal.get(owner).copied() else {
+                        continue;
+                    };
+                    let Some(body_idx) = body_index_for_statement_ordinal(body, stmt_ord) else {
+                        continue;
+                    };
+                    self.anonymous_ordinal_assignment.insert(body_idx, synthetic_idx);
+                    anonymous_statement_ordinals.push(body_idx);
+                    continue;
+                }
+                for name in names {
+                    let name_str = name.0.to_string();
+                    bindings.insert(name_str.clone(), name_str.clone());
+                    // Move the binding out of the residual plan (if it
+                    // was staged there by the sweep above) into the
+                    // synthesized plan. The residual plan's
+                    // bindings/anonymous-ordinal maps are pruned so it
+                    // doesn't double-claim members.
+                    if let Some(prev) = self.binding_assignment.get(name).copied()
+                        && Some(prev) == residual_plan_index
+                        && let Some(residual_idx) = residual_plan_index
+                    {
+                        self.module_plans[residual_idx].bindings.remove(&name_str);
+                    }
+                    self.binding_assignment.insert(name.clone(), synthetic_idx);
+                    self.bindings_catalogue.insert(
+                        name.clone(),
+                        BindingKind::Owned {
+                            owner: synthetic_module_id,
+                        },
+                    );
+                }
+            }
+            anonymous_statement_ordinals.sort_unstable();
+            self.module_plans.push(ModulePlan {
+                id: target_path.clone(),
+                target_file,
+                target_path,
+                explicit: false,
+                bindings,
+                anonymous_statement_ordinals,
+                comment: None,
+                binding_comments: BTreeMap::new(),
+            });
+        }
+        Ok(())
+    }
+
     /// Resolve rebind-only atomic-unit soft conflicts: extend an
     /// explicit claim's plan to cover any cycle member that has no
     /// explicit destination, so that ESM-read-only-import semantics
@@ -421,26 +553,4 @@ impl ChunkPlanBuilder {
         }
     }
 
-    /// Access the mutable interior for callers that still hold the
-    /// pre-refactor inline shape. Will shrink as each phase moves
-    /// into a builder method.
-    pub(super) fn parts_mut(
-        &mut self,
-    ) -> (
-        &mut HashMap<Id, usize>,
-        &mut BTreeMap<usize, usize>,
-        &mut Vec<ModulePlan>,
-        &mut HashMap<Id, BindingKind>,
-        &mut Option<usize>,
-        &mut Vec<crate::UnmatchedSpecClaim>,
-    ) {
-        (
-            &mut self.binding_assignment,
-            &mut self.anonymous_ordinal_assignment,
-            &mut self.module_plans,
-            &mut self.bindings_catalogue,
-            &mut self.residual_plan_index,
-            &mut self.unmatched_spec_claims,
-        )
-    }
 }
