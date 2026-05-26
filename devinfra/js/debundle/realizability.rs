@@ -30,10 +30,11 @@
 //! reachability around the hypothetical destination.
 
 use std::cell::RefCell;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use petgraph::algo::tarjan_scc;
 use petgraph::graphmap::DiGraphMap;
+use petgraph::visit::{DfsPostOrder, GraphBase, GraphRef, IntoNeighbors, Visitable};
 
 use crate::OwnerId;
 use crate::graph::{
@@ -375,68 +376,86 @@ impl EsmEvaluationSimulator {
 /// Modules without a `linker_position` slot fall back to
 /// `usize::MAX` — i.e. evaluated last among that module's imports —
 /// matching the materializer's `unwrap_or(usize::MAX)`.
+///
+/// Cycle no-op: a back-edge to a module already on the link-DFS
+/// stack is skipped. petgraph's `DfsPostOrder` filters neighbors
+/// already in its `discovered` set, which covers both back-edges
+/// (discovered-but-not-finished) and cross-edges (already finished),
+/// matching the hand-rolled walker's `on_stack` + `visited` checks.
 fn simulate_esm_post_order(
     residual: ModuleId,
     i_successors: &BTreeMap<ModuleId, BTreeSet<ModuleId>>,
     linker_position: &BTreeMap<ModuleId, usize>,
     source_import_position: &BTreeMap<ModuleId, usize>,
 ) -> BTreeMap<ModuleId, usize> {
-    enum Frame {
-        Enter(ModuleId),
-        Finish(ModuleId),
+    let graph = EsmIGraph {
+        i_successors,
+        residual,
+        linker_position,
+        source_import_position,
+    };
+    let mut dfs = DfsPostOrder::new(&graph, residual);
+    let mut post_order: BTreeMap<ModuleId, usize> = BTreeMap::new();
+    while let Some(node) = dfs.next(&graph) {
+        let idx = post_order.len();
+        post_order.insert(node, idx);
+    }
+    post_order
+}
+
+/// Petgraph view over `i_successors` that bakes in the ECMA-262
+/// import-order sort: residual fans out in `source_import_position`
+/// order, every other module in `linker_position` order. Neighbors
+/// are yielded in REVERSE sort-key order so that
+/// `DfsPostOrder`'s push-all-then-pop-top semantics visits the
+/// smallest-key successor first (matching the hand-rolled walker's
+/// reverse-push of `sorted_successors`).
+struct EsmIGraph<'a> {
+    i_successors: &'a BTreeMap<ModuleId, BTreeSet<ModuleId>>,
+    residual: ModuleId,
+    linker_position: &'a BTreeMap<ModuleId, usize>,
+    source_import_position: &'a BTreeMap<ModuleId, usize>,
+}
+
+impl GraphBase for &EsmIGraph<'_> {
+    type NodeId = ModuleId;
+    type EdgeId = (ModuleId, ModuleId);
+}
+
+impl GraphRef for &EsmIGraph<'_> {}
+
+impl Visitable for &EsmIGraph<'_> {
+    type Map = HashSet<ModuleId>;
+
+    fn visit_map(&self) -> Self::Map {
+        HashSet::new()
     }
 
-    let mut on_stack: BTreeSet<ModuleId> = BTreeSet::new();
-    let mut visited: BTreeSet<ModuleId> = BTreeSet::new();
-    let mut post_order: BTreeMap<ModuleId, usize> = BTreeMap::new();
-    let mut next_post_index: usize = 0;
-    let mut work: Vec<Frame> = vec![Frame::Enter(residual)];
+    fn reset_map(&self, map: &mut Self::Map) {
+        map.clear();
+    }
+}
 
-    let sorted_successors = |node: ModuleId| -> Vec<ModuleId> {
-        let Some(succs) = i_successors.get(&node) else {
-            return Vec::new();
+impl IntoNeighbors for &EsmIGraph<'_> {
+    type Neighbors = std::vec::IntoIter<ModuleId>;
+
+    fn neighbors(self, node: ModuleId) -> Self::Neighbors {
+        let Some(succs) = self.i_successors.get(&node) else {
+            return Vec::new().into_iter();
         };
         let mut succs: Vec<ModuleId> = succs.iter().copied().collect();
-        if node == residual {
-            succs.sort_by_key(|m| source_import_position.get(m).copied().unwrap_or(usize::MAX));
+        let positions = if node == self.residual {
+            self.source_import_position
         } else {
-            succs.sort_by_key(|m| linker_position.get(m).copied().unwrap_or(usize::MAX));
-        }
-        succs
-    };
-
-    while let Some(frame) = work.pop() {
-        match frame {
-            Frame::Enter(node) => {
-                if visited.contains(&node) {
-                    continue;
-                }
-                if on_stack.contains(&node) {
-                    // Cycle no-op: ESM doesn't re-enter a module
-                    // already on the link-DFS stack.
-                    continue;
-                }
-                on_stack.insert(node);
-                work.push(Frame::Finish(node));
-                // Push successors in REVERSE source order so the
-                // first source-order successor is popped (DFS'd
-                // into) first.
-                let succs = sorted_successors(node);
-                for succ in succs.into_iter().rev() {
-                    work.push(Frame::Enter(succ));
-                }
-            }
-            Frame::Finish(node) => {
-                on_stack.remove(&node);
-                if visited.insert(node) {
-                    post_order.insert(node, next_post_index);
-                    next_post_index += 1;
-                }
-            }
-        }
+            self.linker_position
+        };
+        // Reverse sort: largest key first, smallest key last. petgraph's
+        // DfsPostOrder pushes neighbors in iteration order and visits
+        // the top of the stack next, so the LAST-yielded neighbor is
+        // descended into first.
+        succs.sort_by_key(|m| std::cmp::Reverse(positions.get(m).copied().unwrap_or(usize::MAX)));
+        succs.into_iter()
     }
-
-    post_order
 }
 
 /// A reversible mutation of a `Partition`. Planner checks can construct
