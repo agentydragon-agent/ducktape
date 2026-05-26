@@ -1090,7 +1090,7 @@ def _compute_tax_for_link(
         # MID applies only to the owner-occupied share of interest. Rented-share interest
         # is deducted via the Schedule E hook at the top of `_apply_tax_accruals`.
         owner_interest_ytd = current.liability_interest_ytd - current.liability_rental_interest_ytd
-        mortgage_interest_deduction = owner_interest_ytd @ plan.mid.principal_ratio[link]
+        mortgage_interest_deduction = plan.mid.principal_ratio[link] @ owner_interest_ytd
     else:
         mortgage_interest_deduction = np.zeros(plan.rollout_count, dtype=np.float64)
     itemized_deduction = mortgage_interest_deduction + salt_deduction
@@ -1251,8 +1251,10 @@ def _apply_pe_tenders(
         if not (target_dollars > 0.0).any():
             continue
 
+        # `fifo_sell_dollars` works in (R, L); current.lot_remaining is (L, R) per B0,
+        # so transpose at the call seam.
         result = fifo_sell_dollars(
-            lot_remaining=current.lot_remaining,
+            lot_remaining=current.lot_remaining.T,
             ordered_lots=ordered_lots,
             target_dollars=target_dollars,
             unit_price=mark,
@@ -1263,7 +1265,7 @@ def _apply_pe_tenders(
                 f"PE tender attempted to sell more than available lots for issuer "
                 f"{_text(plan, plan.pe_issuers.codes[issuer_idx])}"
             )
-        current.lot_remaining -= result.sold_units
+        current.lot_remaining -= result.sold_units.T
         proceeds_slot = int(plan.pe_policies.proceeds_cash_slot[policy_idx])
         if proceeds_slot >= 0:
             current.cash[proceeds_slot, :] += result.total_proceeds
@@ -1284,7 +1286,7 @@ def _compute_liquid_net_worth(
     """Per-rollout LNW = cash in policy-owner accounts + non-PE-lot value at current prices."""
 
     owner_cash_mask = plan.pe_policies.owner_cash_mask[policy_idx]
-    cash_total = (current.cash * owner_cash_mask[None, :]).sum(axis=1)
+    cash_total = (current.cash * owner_cash_mask[:, None]).sum(axis=0)
     lot_mask = plan.pe_policies.owner_non_pe_lot_mask[policy_idx]
     if not lot_mask.any():
         return cash_total
@@ -1498,7 +1500,7 @@ def _apply_owner_occupied_month(current: CurrentStateBuffers) -> None:
     active_rollout = ~current.failed
     if not active_rollout.any():
         return
-    property_count = current.property_rented_fraction.shape[1]
+    property_count = current.property_rented_fraction.shape[0]
     for prop in range(property_count):
         owner_occupied = (
             active_rollout & current.property_active[prop, :] & (current.property_rented_fraction[prop, :] < 1.0)
@@ -1519,7 +1521,7 @@ def _apply_depreciation_accrual(plan: CompiledSimulation, current: CurrentStateB
     active_rollout = ~current.failed
     if not active_rollout.any():
         return
-    property_count = current.property_rented_fraction.shape[1]
+    property_count = current.property_rented_fraction.shape[0]
     for prop in range(property_count):
         active_for_property = active_rollout & current.property_active[prop, :]
         if not active_for_property.any():
@@ -1544,7 +1546,7 @@ def _apply_tax_accruals(
     # (accumulated per-month against the runtime `current.property_rented_fraction`) deducts
     # from the owner's ordinary_ytd. The owner share is fed into MID below. This must run
     # before the bracket walk reads ordinary_ytd.
-    liability_count = current.liability_rental_interest_ytd.shape[1]
+    liability_count = current.liability_rental_interest_ytd.shape[0]
     for lia in range(liability_count):
         profile = int(plan.liability_owner_profile_index[lia])
         if profile < 0:
@@ -1641,7 +1643,7 @@ def _apply_tax_accruals(
         )
         annual_tax_by_link[:, link] = tax
 
-    for profile in range(current.ordinary_ytd.shape[1]):
+    for profile in range(current.ordinary_ytd.shape[0]):
         current.ordinary_ytd[profile, active_rollout] = 0.0
         gain_profile = int(plan.tax_profile_capital_gain_index[profile])
         ltcg_active = active_rollout & current.capital_gain_active[gain_profile, LONG_TERM_CAPITAL_GAIN_CODE, :]
@@ -1758,7 +1760,7 @@ def _apply_scheduled_asset_sales(
         target_units = np.where(active_rollout, float(plan.sales.quantity[sale]), 0.0)
         price = _sale_unit_price(plan, month=month, sale=sale)
         result = fifo_sell_units(
-            lot_remaining=current.lot_remaining,
+            lot_remaining=current.lot_remaining.T,
             ordered_lots=ordered_lots,
             target_units=target_units,
             unit_price=price,
@@ -1769,7 +1771,7 @@ def _apply_scheduled_asset_sales(
                 f"scheduled asset sale exceeds available lots: {_text(plan, plan.sales.cause[month, sale])}"
             )
 
-        current.lot_remaining -= result.sold_units
+        current.lot_remaining -= result.sold_units.T
         proceeds_slot = int(plan.sales.proceeds_slot[sale])
         if proceeds_slot >= 0:
             current.cash[proceeds_slot, :] += result.total_proceeds
@@ -1882,7 +1884,7 @@ def _apply_liquidity_policy_sales(
                 continue
 
             result = fifo_sell_dollars(
-                lot_remaining=current.lot_remaining,
+                lot_remaining=current.lot_remaining.T,
                 ordered_lots=ordered_lots,
                 target_dollars=target_dollars,
                 unit_price=unit_price,
@@ -1894,7 +1896,7 @@ def _apply_liquidity_policy_sales(
                     f"{plan.liquidity_policies.cause_id_prefixes[policy]}"
                 )
 
-            current.lot_remaining -= result.sold_units
+            current.lot_remaining -= result.sold_units.T
             if policy_cash_slot >= 0:
                 current.cash[policy_cash_slot, :] += result.total_proceeds
             _record_capital_gains(
@@ -2183,7 +2185,7 @@ def _actual_tax_for_profile_year(
     )
     if slots.size == 0:
         return np.zeros(plan.rollout_count, dtype=np.float64)
-    return np.where(current.tax_liability_active[slots, :], current.tax_liability_amount[slots, :], 0.0).sum(axis=1)
+    return np.where(current.tax_liability_active[slots, :], current.tax_liability_amount[slots, :], 0.0).sum(axis=0)
 
 
 def _sale_unit_price(plan: CompiledSimulation, *, month: int, sale: int) -> np.ndarray:
