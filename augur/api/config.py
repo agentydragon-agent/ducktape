@@ -18,11 +18,10 @@ from __future__ import annotations
 import os
 from collections import Counter
 from datetime import date
-from enum import StrEnum
 from pathlib import Path
 
 import yaml
-from pydantic import Field, HttpUrl, NonNegativeFloat, NonNegativeInt, PositiveInt, model_validator
+from pydantic import Field, HttpUrl, NonNegativeFloat, PositiveInt, model_validator
 
 from augur.api.bootstrap import ActorRole, DefaultScenario, ProductInputDefaults
 from augur.api.finance import FinanceSnapshot
@@ -33,11 +32,6 @@ from augur.model.exogenous_provider_config import ExogenousProviderConfig
 
 AUGUR_CONFIG_PATH_ENV_VAR = "AUGUR_CONFIG_PATH"
 DEFAULT_AUGUR_CONFIG_PATH = Path("/etc/augur/config.yaml")
-
-
-class LiquidityReserveRuleType(StrEnum):
-    FIXED = "fixed"
-    PROJECTED_DEFICITS = "projected_deficits"
 
 
 def _duplicates(values) -> list[str]:
@@ -54,12 +48,6 @@ class AgentDefinition(ApiModel):
     actor_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
     label: str
     role: ActorRole
-
-
-class PersonalFinanceConfig(ApiModel):
-    """User-specific finance defaults that are not balance-sheet rows."""
-
-    minimum_liquid_reserve_usd: NonNegativeFloat = 0.0
 
 
 class PropertyAssetConfig(ApiModel):
@@ -115,14 +103,11 @@ class Config(ApiModel):
     """
 
     agents: tuple[AgentDefinition, ...] = Field(min_length=1)
-    personal_finance: PersonalFinanceConfig
     property_source: PropertySourceConfig
     snapshot: FinanceSnapshot
     portfolio: PortfolioConfig = Field(default_factory=PortfolioConfig)
     locations: tuple[LocationConfig, ...] = ()
     location_selection: tuple[str, ...] | None = None
-    minimum_reserve_mode: LiquidityReserveRuleType = LiquidityReserveRuleType.PROJECTED_DEFICITS
-    reserve_forward_months: NonNegativeInt = 12
     starting_portfolio_usd: NonNegativeFloat = 0.0
     pmms_survey_date: date | None = None
     default_rollout_samples: PositiveInt

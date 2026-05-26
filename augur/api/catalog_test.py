@@ -11,14 +11,7 @@ from more_itertools import one
 
 from augur.api.bootstrap import ActorRole
 from augur.api.catalog import build_bootstrap_payload
-from augur.api.config import (
-    AgentDefinition,
-    Config,
-    LocationConfig,
-    PersonalFinanceConfig,
-    PropertyAssetConfig,
-    PropertySourceConfig,
-)
+from augur.api.config import AgentDefinition, Config, LocationConfig, PropertyAssetConfig, PropertySourceConfig
 from augur.api.finance import ConcentratedHoldingSnapshot, FinanceSnapshot
 from augur.api.local_regulation import LocalRegulation, TaxRegime
 from augur.model.independent_exogenous import IndependentExogenousProviderConfig
@@ -159,7 +152,6 @@ def _config(
 ) -> Config:
     return Config(
         agents=(AgentDefinition(actor_id="agent_a", label="Agent A", role=ActorRole.PRIMARY_OWNER),),
-        personal_finance=PersonalFinanceConfig(minimum_liquid_reserve_usd=0),
         property_source=PropertySourceConfig(properties_path=properties_path, property_assets=property_assets),
         snapshot=FinanceSnapshot(
             as_of_date="2026-05-14",

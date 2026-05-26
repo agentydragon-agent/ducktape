@@ -299,6 +299,33 @@ buckets and buying underweight ones. Needs:
 Defer until a scenario actually needs it — single-bucket portfolios
 or pure cash-buffer behavior cover the common cases today.
 
+## Funding policy: "reserve for N months" threshold
+
+The old `Config.reserve_forward_months` knob (paired with
+`minimum_reserve_mode: projected_deficits`) used to drive a forward-
+looking liquidity reserve target — "keep enough cash to cover the next N
+months of projected deficits". The fields were removed because no live
+consumer read them after the scenario*set deletion, but the \_capability*
+is still desirable on the product surface as a `FundingPolicy` knob.
+
+Sketch:
+
+- `FundingPolicy.reserve_months: PositiveInt | None = None` — when set,
+  the cash-buffer trigger becomes `sum(next reserve_months months of
+scheduled obligations) - expected income`, evaluated per rollout per
+  month.
+- Engine: in `_apply_liquidity_policy_sales`, compute the forward
+  projected deficit from `plan.obligation_due[month .. month+N, ...]`
+  (or a precomputed cumulative sum) and use that as the trigger
+  threshold instead of the static `cash_buffer_trigger_below_usd`.
+- Wire/frontend: dual-mode picker — "absolute $ trigger" vs "N months
+  of runway"; defaults to absolute.
+- Tax routing: rebalancing sells realize gains/losses through the same
+  FIFO + capital-gain plumbing the cash-buffer path uses.
+
+Defer until a scenario actually needs the dynamic threshold; the
+absolute trigger covers today's product surface.
+
 ## Explicitly deferred
 
 Documented to prevent re-discovery; intentionally not on the roadmap.

@@ -25,4 +25,3 @@ class FinanceSnapshot(ApiModel):
     ibkr_vt_usd: float = 0.0
     sp500_proxy_portfolio_usd: float = 0.0
     concentrated_holdings: tuple[ConcentratedHoldingSnapshot, ...] = ()
-    notes: tuple[str, ...] = ()

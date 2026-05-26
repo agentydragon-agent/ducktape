@@ -102,9 +102,6 @@ exogenous_provider:
       kind: poisson
       monthly_lambda: 0.0138888889 # 1/72
       min_horizon_months: 12
-minimum_reserve_mode: projected_deficits
-personal_finance:
-  minimum_liquid_reserve_usd: 10000.0
 pmms_survey_date: "2026-05-14"
 portfolio:
   accounts:
@@ -167,7 +164,7 @@ portfolio:
       value_series_id: private_equity:private_holding_a
 property_source:
   properties_path: properties.json
-reserve_forward_months: 12
+# Public e2e fixture; values are synthetic.
 snapshot:
   as_of_date: "2026-05-14"
   cash_usd: 250000.0
@@ -176,7 +173,5 @@ snapshot:
       holding_id: private_holding_a
       label: Private Holding A
       units: 1000
-  notes:
-    - Public e2e fixture; values are synthetic.
   sp500_proxy_portfolio_usd: 750000.0
 starting_portfolio_usd: 750000.0

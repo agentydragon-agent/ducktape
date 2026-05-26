@@ -13,9 +13,7 @@ from augur.api.bootstrap import ActorRole
 from augur.api.config import (
     AgentDefinition,
     Config,
-    LiquidityReserveRuleType,
     LocationConfig,
-    PersonalFinanceConfig,
     PropertyAssetConfig,
     PropertySourceConfig,
     dump_augur_config_yaml,
@@ -32,7 +30,6 @@ def _minimal_config(**overrides: object) -> Config:
     intentionally generic — deployments supply their own real values."""
     defaults: dict[str, object] = {
         "agents": (AgentDefinition(actor_id="alpha", label="Alpha", role=ActorRole.PRIMARY_OWNER),),
-        "personal_finance": PersonalFinanceConfig(),
         "property_source": PropertySourceConfig(properties_path="/tmp/properties.json"),
         "snapshot": FinanceSnapshot(as_of_date="2026-05-12"),
         "default_rollout_samples": 128,
@@ -61,8 +58,6 @@ def test_minimal_config_validates_with_explicit_sampling_config() -> None:
 
     assert config.agents[0].actor_id == "alpha"
     assert config.location_selection is None
-    assert config.minimum_reserve_mode is LiquidityReserveRuleType.PROJECTED_DEFICITS
-    assert config.reserve_forward_months == 12
     assert config.default_rollout_samples == 128
     assert config.max_rollout_samples == 1_000_000
 
@@ -188,7 +183,6 @@ def test_at_least_one_agent_required() -> None:
     with pytest.raises(ValidationError, match="Tuple should have at least 1 item"):
         Config(
             agents=(),
-            personal_finance=PersonalFinanceConfig(),
             property_source=PropertySourceConfig(properties_path="/tmp/x.json"),
             snapshot=FinanceSnapshot(as_of_date="2026-05-12"),
             default_rollout_samples=128,
@@ -211,7 +205,6 @@ def test_snapshot_optional_fields_default_to_zero() -> None:
     snapshot = FinanceSnapshot(as_of_date="2026-05-12")
     assert snapshot.cash_usd == 0.0
     assert snapshot.wealthfront_sp500_usd == 0.0
-    assert snapshot.notes == ()
     assert snapshot.concentrated_holdings == ()
 
 
