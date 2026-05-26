@@ -5,7 +5,7 @@
 use std::fs;
 use std::path::Path;
 
-use binding_ops::{
+use debundle_cli::binding::{
     BindingsListFilters, Move, parse_batch_json, parse_move_triple, rename_binding,
     run_bindings_assign, run_bindings_list,
 };

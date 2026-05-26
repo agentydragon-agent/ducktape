@@ -1,4 +1,4 @@
-//! End-to-end exercise of `comment_cli`'s public Rust entry points
+//! End-to-end exercise of `cli::comment`'s public Rust entry points
 //! plus a fake-`$EDITOR` flow.
 //!
 //! Calls the library directly so this doesn't depend on the built
@@ -11,7 +11,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::sync::Mutex;
 
-use comment_cli::{CommentMode, apply_binding_comment, apply_module_comment};
+use debundle_cli::comment::{CommentMode, apply_binding_comment, apply_module_comment};
 use serde_yaml::Value;
 use tempfile::TempDir;
 

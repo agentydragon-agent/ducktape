@@ -1,15 +1,19 @@
+pub mod binding;
+pub mod comment;
+pub mod module;
+
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use clap::{Args as ClapArgs, Parser, Subcommand};
-use binding_ops::{
+use crate::binding::{
     AssignOutcome, BindingsListFilters, Move, parse_batch_json, parse_move_triple,
     rename_binding, run_bindings_assign, run_bindings_list,
 };
-use comment_cli::{
+use crate::comment::{
     BindingCommentArgs, ModuleCommentArgs, run_binding_comment_cmd, run_module_comment_cmd,
 };
-use module_cli::{DeleteArgs, MergeArgs, ModuleArgs, run_delete, run_merge, run_module_cli};
+use crate::module::{DeleteArgs, MergeArgs, ModuleArgs, run_delete, run_merge, run_module_cli};
 use peel::{
     CommonArgs as PeelCommonArgs, ExplainArgs, GraphSummaryArgs, OutputFormat, PatchPlanArgs,
     PeelArgs, PlanWorkArgs, SelectionArgs, SourceSliceArgs, UnitsArgs, print_report,
@@ -158,7 +162,7 @@ pub struct ClusterReport {
 }
 
 /// Args for `debundle modules ...`. Aggregates the existing
-/// comment-edit verb (kept in `comment_cli`) with the new
+/// comment-edit verb (in `cli::comment`) with the new
 /// `merge` / `delete` / `propose` verbs lifted from `module merge`
 /// and `peel plan-work`.
 #[derive(Debug, ClapArgs)]
@@ -769,7 +773,7 @@ fn run_bindings_list_cmd(args: BindingsListNsArgs) -> Result<()> {
         .context("writing bindings list output")
 }
 
-fn render_bindings_list_text(report: &binding_ops::BindingsListReport, out: &mut String) {
+fn render_bindings_list_text(report: &crate::binding::BindingsListReport, out: &mut String) {
     out.push_str(&format!("{} binding(s)\n", report.bindings.len()));
     for entry in &report.bindings {
         let mut flags = Vec::new();

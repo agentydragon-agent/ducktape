@@ -1,6 +1,6 @@
 //! End-to-end check of `debundle modules delete` against tempdir
 //! fixtures. The structural Rust entry point is hit directly via
-//! `module_cli::delete_modules`, and the CLI surface (refusal
+//! `cli::module::delete_modules`, and the CLI surface (refusal
 //! semantics, `--force`, `--dry-run`, `--no-verify`, atomicity) is
 //! exercised by shelling out to the built `debundle` binary so the
 //! clap wiring and the env-var plumbing are covered too.
@@ -9,7 +9,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use module_cli::delete_modules;
+use debundle_cli::module::delete_modules;
 use tempfile::TempDir;
 
 fn debundle_binary() -> PathBuf {

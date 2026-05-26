@@ -639,9 +639,9 @@ fn members_seq(doc: &Value) -> Option<&Vec<Value>> {
 }
 
 // ---------------------------------------------------------------------
-// YAML helpers (re-declared here so this module is independent of
-// the comment_cli crate; both share the same shape but neither
-// crate sees the other).
+// YAML helpers (re-declared here so this submodule remains
+// independent of `cli::comment`; both share the same shape but
+// neither imports the other).
 // ---------------------------------------------------------------------
 
 fn yk(s: &str) -> Value {

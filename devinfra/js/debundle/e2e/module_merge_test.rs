@@ -1,4 +1,4 @@
-//! End-to-end check of `module_cli::merge_modules` against a tempdir
+//! End-to-end check of `cli::module::merge_modules` against a tempdir
 //! fixture. Hits the public Rust function directly so the test does
 //! not depend on the built `debundle` binary.
 
@@ -6,7 +6,7 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-use module_cli::merge_modules;
+use debundle_cli::module::merge_modules;
 use serde_yaml::Value;
 use tempfile::TempDir;
 

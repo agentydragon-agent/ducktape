@@ -141,7 +141,7 @@ rust_test(
     data = ["//devinfra/js/debundle"],
     edition = "2024",
     deps = [
-        "//devinfra/js/debundle:module_cli",
+        "//devinfra/js/debundle:cli",
         "@crates//:serde_yaml",
         "@crates//:tempfile",
     ],
@@ -157,7 +157,7 @@ rust_test(
     data = ["//devinfra/js/debundle"],
     edition = "2024",
     deps = [
-        "//devinfra/js/debundle:module_cli",
+        "//devinfra/js/debundle:cli",
         "@crates//:tempfile",
     ],
 )
@@ -171,7 +171,7 @@ rust_test(
     crate_root = "comment_cli_test.rs",
     edition = "2024",
     deps = [
-        "//devinfra/js/debundle:comment_cli",
+        "//devinfra/js/debundle:cli",
         "@crates//:serde_yaml",
         "@crates//:tempfile",
     ],
@@ -245,7 +245,7 @@ rust_test(
     crate_root = "bindings_assign_cli_test.rs",
     edition = "2024",
     deps = [
-        "//devinfra/js/debundle:binding_ops",
+        "//devinfra/js/debundle:cli",
         "@crates//:serde_yaml",
         "@crates//:tempfile",
     ],

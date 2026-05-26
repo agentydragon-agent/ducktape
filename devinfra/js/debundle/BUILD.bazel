@@ -535,75 +535,18 @@ rust_test(
 )
 
 rust_library(
-    name = "module_cli",
-    srcs = ["module_cli.rs"],
-    crate_root = "module_cli.rs",
-    edition = "2024",
-    deps = [
-        "@crates//:anyhow",
-        "@crates//:clap",
-        "@crates//:serde_yaml",
-    ],
-)
-
-rust_test(
-    name = "module_cli_test",
-    crate = ":module_cli",
-    edition = "2024",
-    deps = ["@crates//:tempfile"],
-)
-
-rust_library(
-    name = "comment_cli",
-    srcs = ["comment_cli.rs"],
-    crate_root = "comment_cli.rs",
-    edition = "2024",
-    deps = [
-        "@crates//:anyhow",
-        "@crates//:clap",
-        "@crates//:serde_yaml",
-    ],
-)
-
-rust_library(
-    name = "binding_ops",
-    srcs = ["binding_ops.rs"],
-    crate_root = "binding_ops.rs",
-    edition = "2024",
-    deps = [
-        ":spec_modules",
-        "@crates//:anyhow",
-        "@crates//:serde",
-        "@crates//:serde_json",
-        "@crates//:serde_yaml",
-    ],
-)
-
-rust_test(
-    name = "binding_ops_test",
-    crate = ":binding_ops",
-    edition = "2024",
-    deps = ["@crates//:tempfile"],
-)
-
-rust_test(
-    name = "comment_cli_test",
-    crate = ":comment_cli",
-    edition = "2024",
-    deps = ["@crates//:tempfile"],
-)
-
-rust_library(
     name = "cli",
-    srcs = ["cli.rs"],
+    srcs = [
+        "cli/binding.rs",
+        "cli/comment.rs",
+        "cli/mod.rs",
+        "cli/module.rs",
+    ],
     crate_name = "debundle_cli",
-    crate_root = "cli.rs",
+    crate_root = "cli/mod.rs",
     edition = "2024",
     deps = [
         ":analysis",
-        ":binding_ops",
-        ":comment_cli",
-        ":module_cli",
         ":peel",
         ":pipeline",
         ":spec_modules",
@@ -612,6 +555,7 @@ rust_library(
         "@crates//:clap",
         "@crates//:serde",
         "@crates//:serde_json",
+        "@crates//:serde_yaml",
     ],
 )
 
