@@ -9,7 +9,7 @@
 //! an authoring decision surfaced by `debundle peel patch-plan`.
 //! See `FACTORIZE.md`.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap};
 
 use serde::Serialize;
 use swc_atoms::Atom;
@@ -39,8 +39,9 @@ pub struct AtomicUnitConflict {
     /// Constraining-edge kinds inside the unit (mirrors
     /// [`AtomicUnit::causes`]). Lets the materializer's diagnostic
     /// tell the author what kind of edge forced co-location (eager
-    /// cycle, rebind, sequenced side-effect chain).
-    pub causes: HashSet<DepKind>,
+    /// cycle, rebind, sequenced side-effect chain). `BTreeSet` so
+    /// iteration is `DepKind`-`Ord`-stable for downstream rendering.
+    pub causes: BTreeSet<DepKind>,
 }
 
 #[derive(Debug, Clone)]

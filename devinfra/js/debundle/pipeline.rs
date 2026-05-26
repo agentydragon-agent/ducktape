@@ -12,7 +12,7 @@ use artifact::load_js_chunks;
 use artifact::write_json;
 use artifact::{ChunkDecompositionOutput, ChunkId};
 use emit_harness::{EmitBrowserHarnessOptions, emit_browser_harness};
-use lowering::{MaterializeLogicalModulesOptions, materialize_logical_modules};
+use lowering::{MaterializeLogicalModulesOptions, UnmatchedSpecClaim, materialize_logical_modules};
 use prepare_chunks::prepare_js_chunks;
 use rewrite_specifiers::rewrite_chunk_entry_specifiers;
 use spec::{MaterializeLogicalModulesConfig, TransformSpec, VendorLevel};
@@ -162,6 +162,13 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<()> {
     let mut module_count: usize = 0;
     let mut selected_lowerings: Vec<artifact::SelectedModuleLowering> = Vec::new();
     let mut decomposition_by_chunk: HashMap<ChunkId, ChunkDecompositionOutput> = HashMap::new();
+    // Spec member claims whose `binding.name` did not resolve to a
+    // top-level declaration in the source chunk. Collected across
+    // every chunk by `materialize_logical_modules`; surfaced at the
+    // end of the pipeline (after vendor swaps, emit-shape check, and
+    // tree/harness emission) so the user sees the full list and the
+    // generated output is still available for inspection.
+    let mut unmatched_spec_claims: Vec<UnmatchedSpecClaim> = Vec::new();
     if !materialise_chunk_ids.is_empty() {
         let MaterializeLogicalModulesConfig {
             file,
@@ -187,6 +194,7 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<()> {
         module_count = materialize_result.module_count;
         selected_lowerings = materialize_result.selected_lowerings;
         decomposition_by_chunk = materialize_result.decomposition_by_chunk;
+        unmatched_spec_claims = materialize_result.unmatched_spec_claims;
     }
 
     let partial_result = run_partial_vendor_swaps(artifact, &artifact_indexes, &spec, cli)?;
@@ -229,6 +237,32 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<()> {
             snapshot_root: cfg.snapshot_root.clone(),
         };
         emit_browser_harness(&artifact, &opts, &chunk_records, &decomposition_by_chunk)?;
+    }
+
+    // Defer unmatched-spec-claim failure to here so the build runs
+    // emit + reports first — the user gets the full list across
+    // every chunk plus the artifact tree to inspect, instead of one
+    // bail per first-offending chunk and no output.
+    if !unmatched_spec_claims.is_empty() {
+        let mut lines = String::new();
+        for claim in &unmatched_spec_claims {
+            lines.push_str(&format!(
+                "  - chunk {chunk_id}: module {module_id} claims binding `{binding}` (export `{export}`); \
+                 no top-level declaration with that name exists in the chunk.\n",
+                chunk_id = claim.chunk_id,
+                module_id = claim.module_id,
+                binding = claim.binding_name,
+                export = claim.export_name,
+            ));
+        }
+        bail!(
+            "Transform spec referenced {n} top-level binding name(s) that the source chunk \
+             does not declare. The pipeline finished emitting (so any unrelated modules \
+             still landed), but unresolved spec claims silently fall into the residual sweep \
+             and leave the named destination module short an export. Fix the spec (correct \
+             the binding name, drop the member, or rename via `chunk_renames`):\n{lines}",
+            n = unmatched_spec_claims.len(),
+        );
     }
 
     Ok(())

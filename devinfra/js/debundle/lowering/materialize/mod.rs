@@ -39,6 +39,13 @@ pub(super) struct MaterializedLogicalChunk {
     pub(super) directory_dependency_facts: Vec<DirectoryDependencyFact>,
     pub(super) validation: ChunkValidationSummary,
     pub(super) report: ChunkModulesReport,
+    /// Spec member claims that named a binding for which no
+    /// top-level declaration exists in this chunk. Materialization
+    /// continues — the binding silently falls through to the
+    /// residual sweep — but `materialize_logical_modules` rolls
+    /// these up across every chunk and fails the pipeline at the
+    /// end with the full list.
+    pub(super) unmatched_spec_claims: Vec<crate::UnmatchedSpecClaim>,
 }
 
 pub(super) fn materialize_logical_chunk(
@@ -125,9 +132,22 @@ pub(super) fn materialize_logical_chunk(
     let mut anonymous_ordinal_assignment = BTreeMap::<usize, usize>::new();
     let mut module_plans = Vec::new();
     let mut bindings_catalogue = HashMap::<Id, BindingKind>::new();
+    // Name-keyed index into `bindings_catalogue` for the
+    // duplicate-claim check below. The previous shape — a linear scan
+    // of the entire `bindings_catalogue` HashMap on every member of
+    // every request — was the dominant cost in `build_module_plans`
+    // on chunks with thousands of spec modules (O(N^2) over the
+    // growing catalogue). Every catalogue key is constructed via
+    // `top_level_id(name, chunk_top_level_mark)`, so the `name`
+    // alone uniquely identifies the catalogue entry within a chunk;
+    // we mirror inserts into this index and look up by `&str` to
+    // keep duplicate detection O(1) per member while preserving the
+    // same error semantics.
+    let mut catalogue_index_by_name = HashMap::<String, BindingKind>::new();
     let mut imported_binding_resolver =
         ArtifactSourceImportResolutionCache::new(artifact, artifact_indexes);
     let mut imported_from_by_src = BTreeMap::<String, String>::new();
+    let mut unmatched_spec_claims = Vec::<crate::UnmatchedSpecClaim>::new();
     for (index, request) in explicit_requests.iter_mut().enumerate() {
         let mut bindings = HashMap::<String, String>::new();
         let anonymous_statement_ordinals =
@@ -153,11 +173,7 @@ pub(super) fn materialize_logical_chunk(
         let dest_target_file = target_file_for_request(target_dir, &request.target_path)?;
         let module_id = ModuleId(LogicalModuleIndex(index));
         for member in &request.members {
-            if let Some(existing_kind) = bindings_catalogue
-                .iter()
-                .find(|(id, _)| id.0.as_ref() == member.binding.as_str())
-                .map(|(_, v)| v)
-            {
+            if let Some(existing_kind) = catalogue_index_by_name.get(member.binding.as_str()) {
                 let existing_id = match existing_kind {
                     BindingKind::Owned {
                         owner: ModuleId(LogicalModuleIndex(owner_index)),
@@ -195,24 +211,43 @@ pub(super) fn materialize_logical_chunk(
                     &member.binding,
                     &mut imported_from_by_src,
                 )?;
-                bindings_catalogue.insert(
-                    top_level_id(&member.binding, chunk_top_level_mark),
-                    BindingKind::Imported {
-                        imported_name: imported_name.into(),
-                        imported_from,
-                        re_exporter: module_id,
-                        public_name: member.export_name.as_str().into(),
-                    },
-                );
+                let kind = BindingKind::Imported {
+                    imported_name: imported_name.into(),
+                    imported_from,
+                    re_exporter: module_id,
+                    public_name: member.export_name.as_str().into(),
+                };
+                catalogue_index_by_name.insert(member.binding.clone(), kind.clone());
+                bindings_catalogue
+                    .insert(top_level_id(&member.binding, chunk_top_level_mark), kind);
             } else {
                 bindings.insert(member.binding.clone(), member.export_name.clone());
             }
         }
-        for binding in bindings.keys() {
+        for (binding, export_name) in &bindings {
             let binding_id = top_level_id(binding, chunk_top_level_mark);
             if declaration_by_name.contains_key(&binding_id) {
                 binding_assignment.insert(binding_id.clone(), index);
-                bindings_catalogue.insert(binding_id, BindingKind::Owned { owner: module_id });
+                let kind = BindingKind::Owned { owner: module_id };
+                catalogue_index_by_name.insert(binding.clone(), kind.clone());
+                bindings_catalogue.insert(binding_id, kind);
+            } else {
+                // The spec claimed a binding name that does not
+                // appear as a top-level declaration in this chunk —
+                // the previous behavior silently dropped the claim,
+                // leaving the destination module short one export
+                // and the binding falling into the residual sweep.
+                // Record it so the pipeline can fail at the end
+                // with the full list across every chunk; meanwhile
+                // keep lowering as if the spec had not claimed the
+                // name (lower_chunk only touches binding ids it can
+                // resolve, so the missing claim is a no-op here).
+                unmatched_spec_claims.push(crate::UnmatchedSpecClaim {
+                    chunk_id: chunk_id.to_string(),
+                    module_id: request.id.clone(),
+                    binding_name: binding.clone(),
+                    export_name: export_name.clone(),
+                });
             }
         }
         module_plans.push(ModulePlan {
@@ -225,6 +260,12 @@ pub(super) fn materialize_logical_chunk(
         });
     }
     drop(imported_binding_resolver);
+    // The name-keyed catalogue index only services duplicate-claim
+    // detection inside the explicit-requests loop above. Destructure
+    // siblings and residual sweep below append to `bindings_catalogue`
+    // without name-collision checks, so we don't need to keep the
+    // index in sync past this point.
+    drop(catalogue_index_by_name);
 
     // Destructure-atomicity: a destructuring declarator like
     // `const { x, y } = obj` binds multiple names from a single
@@ -384,14 +425,31 @@ pub(super) fn materialize_logical_chunk(
         let line_index = time_phase!(timings, "build_source_line_index", {
             runtime_ast.line_index()
         });
-        let analysis = time_phase!(timings, "analyze_chunk", {
-            analyze_chunk(
+        // Stage A: spec-independent analysis (facts + owner graph +
+        // structural atomic units). See `stage_one.rs` for the
+        // composer; DESIGN.md §"Pipeline split (Stage A / Stage B)"
+        // for the boundary's role. v1 keeps Stage A in memory; v2
+        // adds per-concept JSON sidecars + a `materialize_from_*`
+        // entry point so a Bazel rule can split into two cacheable
+        // actions.
+        let owner_graph_options = OwnerGraphOptions {
+            dataflow_aware_s_chain: chunk_analysis_options
+                .get(chunk_id)
+                .is_some_and(|opts| opts.dataflow_aware_s_chain),
+        };
+        let stage_one = time_phase!(timings, "compute_stage_one_analysis", {
+            compute_stage_one_analysis(
                 &runtime_ast.module,
                 &analysis_hints,
                 Some(&source_path),
                 |span| line_index.line_range_for_span(span),
+                owner_graph_options,
             )
         });
+        let StageOneAnalysis {
+            fact_analysis: analysis,
+            owner_graph_and_units: precomputed,
+        } = stage_one;
         // Per-hint warnings on stderr: each `purity: pure` spec hint
         // the analyzer infers automatically (binding's body classifies
         // Pure without the override, or admits as PlainData). Surfaced
@@ -435,14 +493,6 @@ pub(super) fn materialize_logical_chunk(
                 ordinal = ord.0,
             );
         }
-        let owner_graph_options = OwnerGraphOptions {
-            dataflow_aware_s_chain: chunk_analysis_options
-                .get(chunk_id)
-                .is_some_and(|opts| opts.dataflow_aware_s_chain),
-        };
-        let precomputed = time_phase!(timings, "compute_owner_graph_and_units", {
-            compute_owner_graph_and_units_with(&analysis.facts, owner_graph_options)
-        });
         time_phase!(timings, "fold_rebind_atomic_units", {
             fold_rebind_atomic_units(
                 &precomputed,
@@ -605,8 +655,8 @@ pub(super) fn materialize_logical_chunk(
         }
         let summary = render_cycle_summary(&factorization_report.cycles);
         bail!(
-            "materialize_logical_modules: chunk {chunk_id} has {} cycle(s) in the imports + side-effect module dep graph; spec is unrealizable. Resolve by colocating cyclically-coupled bindings or moving the constraining owner endpoints. Full cycle evidence written to reports/tree/{chunk_id}/cycles.json; owner graph written to reports/tree/{chunk_id}/owner_graph.json. Summary:\n{summary}",
-            factorization_report.cycles.len(),
+            "materialize_logical_modules: chunk {chunk_id} — spec is unrealizable: {n} module-quotient SCC(s) with at-init / side-effect edges between members. Each SCC names the binding pairs whose split forced the cycle; co-locate them or break a back-edge. Full per-cycle evidence at reports/tree/{chunk_id}/cycles.json; owner graph at reports/tree/{chunk_id}/owner_graph.json. Summary:\n{summary}",
+            n = factorization_report.cycles.len(),
         );
     }
 
@@ -695,6 +745,7 @@ pub(super) fn materialize_logical_chunk(
     };
     Ok(MaterializedLogicalChunk {
         chunk_id: chunk_id_interned,
+        unmatched_spec_claims,
         target_file,
         source_path,
         files,

@@ -230,6 +230,7 @@ rust_library(
         "report_schema.rs",
         "reports.rs",
         "rollback_graph.rs",
+        "stage_one.rs",
         "validation.rs",
     ],
     crate_root = "lib.rs",
@@ -237,6 +238,7 @@ rust_library(
     deps = [
         ":binding_targets",
         "@crates//:petgraph",
+        "@crates//:rayon",
         "@crates//:serde",
         "@crates//:swc_atoms",
         "@crates//:swc_common",

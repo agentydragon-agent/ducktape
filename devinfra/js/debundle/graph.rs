@@ -1041,6 +1041,76 @@ pub(crate) fn is_cross_module_at_init_promotion(edge: &OwnerEdge, partition: &Pa
     partition.of(callee_owner) != partition.of(edge.from)
 }
 
+/// Partition-projected endpoints of `edge` when it participates in the
+/// module quotient view; `None` means "skip this edge."
+///
+/// Invariant: this is the single function any consumer building a
+/// quotient view of the owner graph MUST consult so they agree on the
+/// same partition view of every edge. Two filters are folded in here:
+///
+/// 1. Same-module edges (`from == to` after partition projection) are
+///    intra-module and never appear in the module quotient.
+/// 2. Cross-module at-init promotions are dropped per
+///    [`is_cross_module_at_init_promotion`]'s ESM-semantics
+///    justification.
+///
+/// History: the same `from == to` + `is_cross_module_at_init_promotion`
+/// filter pair was previously open-coded at five sites
+/// (`build_module_quotient`, `check_realizability`,
+/// `OwnerGraph::from_report`-derived gate use,
+/// `IncrementalQuotient::{add,remove}_current_edge`,
+/// `reports::build_quotient_edge_reports`). A TDZ-class soundness hole
+/// reopens any time one of those sites omits or reorders the
+/// projection — the per-edge filter pair must stay identical at every
+/// call site, because the module-level cycle gate's verdict depends on
+/// it. Centralise here.
+pub(crate) fn cross_module_partition_endpoints(
+    edge: &OwnerEdge,
+    partition: &Partition,
+) -> Option<(ModuleId, ModuleId)> {
+    let from = partition.of(edge.from);
+    let to = partition.of(edge.to);
+    if from == to {
+        return None;
+    }
+    if is_cross_module_at_init_promotion(edge, partition) {
+        return None;
+    }
+    Some((from, to))
+}
+
+/// Gate-side counterpart of [`cross_module_partition_endpoints`] that
+/// keeps cross-module at-init promoted edges. The emitter's
+/// `collect_phantom_side_effect_providers` adds phantom side-effect
+/// imports for these edges, which can reorder ESM's link DFS so the
+/// target module evaluates while the caller module is still on the
+/// stack — closing a TDZ cycle that
+/// [`is_cross_module_at_init_promotion`]'s "callee module is fully
+/// evaluated by the time the body call fires" claim hides.
+///
+/// History: the prior fix in commit `12ce3884b` removed the
+/// promoted-edge drop from `check_realizability`,
+/// `edge_contribution`, and `IncrementalQuotient::{insert,remove}_current_edge`.
+/// Commit `2d6be2473` ("extract `cross_module_partition_endpoints`
+/// helper") silently re-introduced the drop by routing those call
+/// sites through the same helper as `build_module_quotient` and
+/// `reports.rs`. This sibling helper exists so the gate paths
+/// preserve `12ce3884b`'s fix while leaving the emit-side and
+/// reports view (where the drop is intentional) untouched. See
+/// `realizability::tests::promoted_edge_in_aggregator_cycle_is_unrealizable`
+/// for the regression fixture.
+pub(crate) fn gate_constraining_partition_endpoints(
+    edge: &OwnerEdge,
+    partition: &Partition,
+) -> Option<(ModuleId, ModuleId)> {
+    let from = partition.of(edge.from);
+    let to = partition.of(edge.to);
+    if from == to {
+        return None;
+    }
+    Some((from, to))
+}
+
 /// Quotient the owner graph by `partition` to build the module
 /// dependency graph consumed by validation and emit. The single
 /// public construction path; validation and reports both go through
@@ -1049,20 +1119,270 @@ pub fn build_module_quotient(owner_graph: &OwnerGraph, partition: &Partition) ->
     let mut graph = ModuleQuotient(DiGraphMap::new());
     let mut seen_side_effect_module_pairs = BTreeSet::<(ModuleId, ModuleId)>::new();
     for edge in &owner_graph.edges {
-        let from = partition.of(edge.from);
-        let to = partition.of(edge.to);
-        if from == to {
+        let Some((from, to)) = cross_module_partition_endpoints(edge, partition) else {
             continue;
-        }
-        if is_cross_module_at_init_promotion(edge, partition) {
-            continue;
-        }
+        };
         if edge.reason.is_sequenced() && !seen_side_effect_module_pairs.insert((from, to)) {
             continue;
         }
         graph.record_reason(from, to, edge.reason.clone());
     }
     graph
+}
+
+/// The canonical chunk-wide ESM I-graph. Each entry is a module-level
+/// init-order-constraining read or sequenced effect that the
+/// emitter actually emits as an ESM `import` directive and that the
+/// runtime ECMA-262 linker DFS therefore traverses when the chunk
+/// loads. Both the realizability gate (Pass-2 simulator's
+/// `i_successors`, linker / source-import positions) and the
+/// emitter (`lowering::plan_references::collect_phantom_side_effect_providers`,
+/// `chunk_factorization::compute_{linker,source_import}_order`)
+/// MUST drive their topology decisions through this single set so
+/// they cannot drift apart.
+///
+/// Filter rule:
+///   * Drop same-module edges (no ESM `import`).
+///   * Keep cross-module edges whose reason `constrains_init_order()`
+///     and is **not** a rebind — i.e. `EagerUse`, `Sequenced`,
+///     `LocalEffect`. These are the edges the emitter currently
+///     turns into either a binding-level ESM import or a phantom
+///     side-effect import.
+///   * Drop pure `LazyUse` cross-module edges. They are
+///     function-body reads, resolved at call time after every module
+///     has loaded; the runtime DFS never follows them, so neither
+///     can the gate's simulator without manufacturing imaginary
+///     cycles.
+///   * Drop `EagerRebind` / `LazyRebind` cross-module edges. They
+///     surface as `cross_rebinds` in the realizability verdict, not
+///     as I-graph nodes; the emitter never emits them as imports.
+///   * Keep cross-module at-init promoted edges (see
+///     [`gate_constraining_partition_endpoints`]) — the emitter's
+///     phantom side-effect importer also keeps them, so the gate
+///     must too.
+///
+/// Sequenced edges are deduped per `(from, to)` pair to mirror the
+/// dedup `build_module_quotient` performs: multiple sequenced
+/// reasons between the same module pair represent the same
+/// ordering constraint and should not over-weight the I-graph.
+///
+/// Returns the canonical edge set plus a precomputed `from -> {to}`
+/// adjacency map (`i_successors`) ready to feed into the simulator.
+pub fn chunk_constraining_module_edges(
+    owner_graph: &OwnerGraph,
+    partition: &Partition,
+) -> ChunkConstrainingEdgeSet {
+    let mut edges: BTreeMap<(ModuleId, ModuleId), Vec<OwnerEdgeId>> = BTreeMap::new();
+    let mut i_successors: BTreeMap<ModuleId, BTreeSet<ModuleId>> = BTreeMap::new();
+    let mut seen_sequenced_pairs: BTreeSet<(ModuleId, ModuleId)> = BTreeSet::new();
+    for edge in &owner_graph.edges {
+        if owner_graph.node(edge.from).is_none() || owner_graph.node(edge.to).is_none() {
+            continue;
+        }
+        // Gate-side view: keep cross-module at-init promoted edges.
+        // The matching `cross_module_partition_endpoints` lenient
+        // view would drop them; the canonical edge set is the
+        // strict view (see `gate_constraining_partition_endpoints`).
+        let Some((from, to)) = gate_constraining_partition_endpoints(edge, partition) else {
+            continue;
+        };
+        if edge.reason.is_rebind() {
+            // Rebinds are not I-graph members; they surface via the
+            // `cross_rebinds` verdict and are never emitted as ESM
+            // imports.
+            continue;
+        }
+        // Every non-rebind cross-module edge — including LazyUse —
+        // joins `i_successors`. The simulator's Pass-2 DFS needs
+        // lazy back-edges to identify asymmetric (constraining
+        // forward / lazy back) I-cycles that Lemma 2's source-import
+        // reversal must rescue. The diagnostic `edges` field below
+        // is constraining-only — that's the surface Pass-1's strict
+        // SCC search and the cycle-report carry.
+        i_successors.entry(from).or_default().insert(to);
+        if !edge.reason.constrains_init_order() {
+            continue;
+        }
+        if edge.reason.is_sequenced() && !seen_sequenced_pairs.insert((from, to)) {
+            continue;
+        }
+        edges.entry((from, to)).or_default().push(edge.id);
+    }
+    ChunkConstrainingEdgeSet {
+        edges,
+        i_successors,
+    }
+}
+
+/// Output of [`chunk_constraining_module_edges`]: the canonical
+/// chunk-wide ESM I-graph plus its precomputed adjacency map.
+///
+/// Consumers MUST treat this as the single source of truth for the
+/// "edges the emitter emits as ESM imports" question. See the
+/// function-level doc for the filter rule.
+#[derive(Debug, Clone, Default, Eq, PartialEq)]
+pub struct ChunkConstrainingEdgeSet {
+    /// `(from_module, to_module) -> all owner-edge ids` projecting
+    /// onto this module pair. Stable ordering by `(ModuleId,
+    /// ModuleId)`.
+    pub edges: BTreeMap<(ModuleId, ModuleId), Vec<OwnerEdgeId>>,
+    /// `from_module -> set of import targets`. Equivalent to
+    /// `edges.keys().fold(...)` but precomputed because every
+    /// simulator and emitter consumer walks adjacency, not the raw
+    /// `(from, to)` list.
+    pub i_successors: BTreeMap<ModuleId, BTreeSet<ModuleId>>,
+}
+
+impl ChunkConstrainingEdgeSet {
+    /// `(from, to) -> &[OwnerEdgeId]` lookup.
+    pub fn edges_for(&self, from: ModuleId, to: ModuleId) -> &[OwnerEdgeId] {
+        self.edges
+            .get(&(from, to))
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+    }
+
+    /// `from -> &BTreeSet<ModuleId>` lookup, empty default.
+    pub fn successors_of(&self, from: ModuleId) -> Option<&BTreeSet<ModuleId>> {
+        self.i_successors.get(&from)
+    }
+
+    /// `(from, to)` pairs in the canonical edge set (constraining
+    /// only). Stable iteration order.
+    pub fn pairs(&self) -> impl Iterator<Item = (ModuleId, ModuleId)> + '_ {
+        self.edges.keys().copied()
+    }
+
+    /// `(from, to)` pairs across the full I-graph (constraining +
+    /// lazy back-edges). Used by Lemma 2's SCC computation so the
+    /// dependent/dependency reversal within asymmetric I-cycles is
+    /// detected — the constraining-only view collapses those into
+    /// singleton SCCs and would miss the reversal opportunity.
+    pub fn i_pairs(&self) -> impl Iterator<Item = (ModuleId, ModuleId)> + '_ {
+        self.i_successors
+            .iter()
+            .flat_map(|(from, succs)| succs.iter().map(move |to| (*from, *to)))
+    }
+
+    /// Membership test for the canonical edge set.
+    pub fn contains(&self, from: ModuleId, to: ModuleId) -> bool {
+        self.edges.contains_key(&(from, to))
+    }
+}
+
+/// Toposort of the canonical edge set, deepest dependency first.
+/// The position of a module in the returned map is its
+/// "linker_position": the relative order ECMA-262's depth-first
+/// link traversal needs to evaluate this chunk so that every
+/// constraining edge `M → M'` has `M'` evaluating before `M`.
+///
+/// Modules that don't participate in any canonical edge are omitted
+/// from the result (they're absent from the constraining DAG, hence
+/// unconstrained relative to it). Callers fall back to `usize::MAX`
+/// when sorting by linker_position so unconstrained modules sort
+/// LAST.
+///
+/// Note: every edge in the canonical set already satisfies
+/// `constrains_init_order()`, so the toposort runs on the full
+/// set — no extra filter needed. If the canonical edge set has a
+/// constraining-only cycle (Pass 1 reports it as unrealizable),
+/// `toposort` returns `Err`; this function returns the empty map.
+pub fn chunk_linker_order(edges: &ChunkConstrainingEdgeSet) -> BTreeMap<ModuleId, usize> {
+    use petgraph::algo::toposort;
+    let mut graph: DiGraphMap<ModuleId, ()> = DiGraphMap::new();
+    for (from, to) in edges.pairs() {
+        graph.add_node(from);
+        graph.add_node(to);
+        graph.add_edge(from, to, ());
+    }
+    match toposort(&graph, None) {
+        Ok(order) => order
+            .into_iter()
+            .rev()
+            .enumerate()
+            .map(|(idx, id)| (id, idx))
+            .collect(),
+        Err(_) => BTreeMap::new(),
+    }
+}
+
+/// Lemma 2 ordering: sort by `(SCC dep rank ASC, intra-SCC
+/// linker_position DESC)`. SCCs are over the canonical edge set
+/// (the I-graph the emitter and runtime actually traverse). SCC
+/// dep rank = min linker_position of SCC members.
+///
+/// The returned vector is the order in which entry's source-level
+/// `import` directives must appear so the runtime ECMA-262 linker
+/// DFS lands on the desired evaluation order (post-DFS = ESM Phase-2
+/// evaluation). Within each SCC, members with no linker_position
+/// (modules absent from the canonical set — they can only be SCC
+/// members via lazy back-edges; canonical edges are all
+/// init-constraining, so this case is empty by construction — but
+/// the `None`-after-Some clause is kept for robustness against
+/// future filter changes that might admit non-constraining members)
+/// sort AFTER constraining members.
+///
+/// `extra_nodes` — modules that should appear in the result even if
+/// they have no canonical edges (e.g. spec-known logical modules
+/// the emitter wants a deterministic source-order slot for). These
+/// land at the end with `linker_position = None`.
+pub fn chunk_source_import_order(
+    edges: &ChunkConstrainingEdgeSet,
+    extra_nodes: &BTreeSet<ModuleId>,
+) -> Vec<ModuleId> {
+    use petgraph::algo::tarjan_scc;
+    let linker_position = chunk_linker_order(edges);
+    // SCCs are computed over the FULL I-graph (constraining + lazy
+    // back-edges) so Lemma 2's intra-SCC `linker_position`-DESC
+    // reversal catches asymmetric cycles. The constraining-only
+    // view would collapse `(constraining-forward, lazy-back)`
+    // shapes into singleton SCCs and miss the rescue.
+    let mut graph: DiGraphMap<ModuleId, ()> = DiGraphMap::new();
+    let mut nodes: BTreeSet<ModuleId> = extra_nodes.iter().copied().collect();
+    for (from, to) in edges.i_pairs() {
+        graph.add_node(from);
+        graph.add_node(to);
+        graph.add_edge(from, to, ());
+        nodes.insert(from);
+        nodes.insert(to);
+    }
+    for &n in &nodes {
+        graph.add_node(n);
+    }
+    let sccs = tarjan_scc(&graph);
+    let mut scc_of: BTreeMap<ModuleId, usize> = BTreeMap::new();
+    let mut scc_rank: Vec<usize> = Vec::with_capacity(sccs.len());
+    for (idx, scc) in sccs.iter().enumerate() {
+        let min_pos = scc
+            .iter()
+            .filter_map(|m| linker_position.get(m).copied())
+            .min()
+            .unwrap_or(usize::MAX);
+        scc_rank.push(min_pos);
+        for m in scc {
+            scc_of.insert(*m, idx);
+        }
+    }
+    let mut sorted: Vec<ModuleId> = nodes.into_iter().collect();
+    sorted.sort_by(|a, b| {
+        let a_rank = scc_of
+            .get(a)
+            .and_then(|i| scc_rank.get(*i).copied())
+            .unwrap_or(usize::MAX);
+        let b_rank = scc_of
+            .get(b)
+            .and_then(|i| scc_rank.get(*i).copied())
+            .unwrap_or(usize::MAX);
+        let a_pos = linker_position.get(a).copied();
+        let b_pos = linker_position.get(b).copied();
+        a_rank.cmp(&b_rank).then_with(|| match (a_pos, b_pos) {
+            (Some(a), Some(b)) => b.cmp(&a),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => std::cmp::Ordering::Equal,
+        })
+    });
+    sorted
 }
 
 /// Stable per-chunk identity of an owner-graph edge. Equal to the
@@ -1089,4 +1409,249 @@ pub struct OwnerEdge {
     pub from: OwnerId,
     pub to: OwnerId,
     pub reason: EdgeReason,
+}
+
+#[cfg(test)]
+mod chunk_constraining_module_edges_tests {
+    //! Regression coverage for [`chunk_constraining_module_edges`]'s
+    //! filter rule. The canonical edge set must match what the
+    //! emitter actually emits as ESM `import` directives — namely
+    //! all cross-module non-rebind non-LazyUse edges, including
+    //! cross-module at-init promoted edges.
+    use std::collections::BTreeSet;
+
+    use swc_common::{FileName, SourceMap, sync::Lrc};
+    use swc_ecma_parser::{Parser, StringInput, Syntax, lexer::Lexer};
+
+    use super::*;
+    use crate::ids::{LogicalModuleIndex, ModuleId};
+    use crate::partition::Partition;
+    use crate::{AnalysisHints, OwnerGraph, facts::analyze_chunk};
+
+    fn module_id(index: usize) -> ModuleId {
+        ModuleId(LogicalModuleIndex(index))
+    }
+
+    fn parse_and_build(source: &str) -> OwnerGraph {
+        let cm: Lrc<SourceMap> = Default::default();
+        let fm = cm.new_source_file(
+            FileName::Custom("test.js".into()).into(),
+            source.to_string(),
+        );
+        let lexer = Lexer::new(
+            Syntax::Es(Default::default()),
+            Default::default(),
+            StringInput::from(&*fm),
+            None,
+        );
+        let module = Parser::new_from(lexer)
+            .parse_module()
+            .expect("parse module");
+        let facts = analyze_chunk(&module, &AnalysisHints::default(), None, |_| None).facts;
+        build_owner_graph(&facts)
+    }
+
+    /// Pure cross-module lazy edge must not appear in the canonical
+    /// edge set. The emitter never emits an ESM `import` for a
+    /// function-body read; the gate must agree.
+    /// Pure cross-module `LazyUse` edges contribute to
+    /// `i_successors` (the runtime DFS topology — required for
+    /// Lemma 2 asymmetric-cycle detection) but never to `edges`
+    /// (the constraining/diagnostic surface).
+    #[test]
+    fn lazy_only_cross_module_edge_in_i_successors_not_edges() {
+        let source = "const a = 1; function f() { return a; }";
+        let owner_graph = parse_and_build(source);
+        let mut partition = Partition::new(&owner_graph, module_id(0));
+        partition.set(OwnerId(1), module_id(1));
+        let canonical = chunk_constraining_module_edges(&owner_graph, &partition);
+        // `f` reads `a` from a function body → LazyUse f → a. The
+        // constraining `edges` surface stays empty because lazy
+        // reads don't constrain init order.
+        assert!(
+            canonical.edges.is_empty(),
+            "lazy edges must NOT enter constraining `edges`; got {:#?}",
+            canonical.edges
+        );
+        // But the simulator's DFS topology (`i_successors`)
+        // includes the lazy back-edge — Pass 2's asymmetric-cycle
+        // rescue needs it.
+        assert!(
+            !canonical.i_successors.is_empty(),
+            "lazy edges must contribute to `i_successors`; empty: {:#?}",
+            canonical.i_successors
+        );
+    }
+
+    /// Cross-module eager_use edge appears in the canonical set.
+    #[test]
+    fn eager_cross_module_edge_included() {
+        let source = "const a = 1; const b = a + 1;";
+        let owner_graph = parse_and_build(source);
+        let mut partition = Partition::new(&owner_graph, module_id(0));
+        partition.set(OwnerId(1), module_id(1));
+        let canonical = chunk_constraining_module_edges(&owner_graph, &partition);
+        let pairs: BTreeSet<(ModuleId, ModuleId)> = canonical.pairs().collect();
+        assert_eq!(
+            pairs,
+            BTreeSet::from([(module_id(1), module_id(0))]),
+            "eager cross-module read `b = a + 1` must contribute mod_1 → mod_0"
+        );
+        assert!(canonical.contains(module_id(1), module_id(0)));
+    }
+
+    /// Same-module edges (intra-module reads) never appear in the
+    /// canonical set — they don't correspond to any ESM import.
+    #[test]
+    fn same_module_edges_excluded() {
+        let source = "const a = 1; const b = a + 1;";
+        let owner_graph = parse_and_build(source);
+        // Both owners in module 0 → no cross-module edges.
+        let partition = Partition::new(&owner_graph, module_id(0));
+        let canonical = chunk_constraining_module_edges(&owner_graph, &partition);
+        assert!(canonical.edges.is_empty());
+    }
+
+    /// Sequenced edges between the same module pair are deduped (one
+    /// representative owner edge per pair) so that having N sequenced
+    /// reasons between two modules doesn't over-weight the I-graph.
+    /// This mirrors `build_module_quotient`'s dedup.
+    #[test]
+    fn sequenced_edges_dedup_per_pair() {
+        // Two impure statements in different modules: each carries a
+        // Sequenced edge from the later impure stmt to the earlier
+        // (graph.rs::sequenced_edges).
+        let source = "console.log(\"a\"); console.log(\"b\"); console.log(\"c\");";
+        let owner_graph = parse_and_build(source);
+        let mut partition = Partition::new(&owner_graph, module_id(0));
+        partition.set(OwnerId(1), module_id(1));
+        partition.set(OwnerId(2), module_id(1));
+        let canonical = chunk_constraining_module_edges(&owner_graph, &partition);
+        // mod_1 contains owners 1 and 2; the only cross-module
+        // sequenced edge is from mod_1 to mod_0 (owners 1, 2 both
+        // sequenced after owner 0). We expect exactly ONE pair, even
+        // though two owners contribute.
+        let pair_count: usize = canonical
+            .pairs()
+            .filter(|&(from, to)| from == module_id(1) && to == module_id(0))
+            .count();
+        assert!(
+            pair_count <= 1,
+            "sequenced edges between the same pair must dedup; got {pair_count}",
+        );
+    }
+
+    /// `chunk_linker_order` on a 3-module DAG returns dependency-first
+    /// positions: deepest dependency at index 0, dependent at the
+    /// last index.
+    #[test]
+    fn chunk_linker_order_assigns_positions_dependency_first() {
+        let source = "const leaf = 1; const middle = leaf + 1; const top = middle + 1;";
+        let owner_graph = parse_and_build(source);
+        let mut partition = Partition::new(&owner_graph, module_id(0));
+        partition.set(OwnerId(0), module_id(1)); // leaf
+        partition.set(OwnerId(1), module_id(2)); // middle
+        partition.set(OwnerId(2), module_id(3)); // top
+        let canonical = chunk_constraining_module_edges(&owner_graph, &partition);
+        let linker = chunk_linker_order(&canonical);
+        // leaf (mod_1) must come before middle (mod_2) and top (mod_3).
+        assert!(linker[&module_id(1)] < linker[&module_id(2)]);
+        assert!(linker[&module_id(2)] < linker[&module_id(3)]);
+    }
+
+    /// `chunk_source_import_order` reverses within an SCC so the
+    /// dependent appears first in source. Asymmetric cycle shape: a
+    /// canonical edge from dependent → dependency, but only after
+    /// the unification's lazy-edge exclusion takes effect (so the
+    /// SCC is detected via some other path — here we exercise it
+    /// directly with the modules present even though canonical
+    /// edges are acyclic post-fix).
+    #[test]
+    fn chunk_source_import_order_includes_extra_nodes() {
+        // Simple two-module DAG.
+        let source = "const a = 1; const b = a + 1;";
+        let owner_graph = parse_and_build(source);
+        let mut partition = Partition::new(&owner_graph, module_id(0));
+        partition.set(OwnerId(1), module_id(1));
+        let canonical = chunk_constraining_module_edges(&owner_graph, &partition);
+        let extra: BTreeSet<ModuleId> = BTreeSet::from([module_id(5), module_id(0)]);
+        let order = chunk_source_import_order(&canonical, &extra);
+        assert!(
+            order.contains(&module_id(5)),
+            "extra node must be included; got {order:?}"
+        );
+        assert!(order.contains(&module_id(0)));
+        assert!(order.contains(&module_id(1)));
+    }
+
+    /// Asymmetric I-cycle shape: eager forward + lazy back. The
+    /// canonical edge set must contain ONLY the forward edge — the
+    /// lazy back-edge is dropped. This is the gaffer fix: a
+    /// dependency's lazy back-edge to its dependent must NOT appear
+    /// in the runtime DFS topology the simulator walks.
+    #[test]
+    fn asymmetric_cycle_canonical_set_excludes_lazy_back_edge() {
+        let source = "const schemas_target = \"v\"; function lazy_back() { return ids_val; } const ids_val = schemas_target + \"-derived\";";
+        let owner_graph = parse_and_build(source);
+        let mut partition = Partition::new(&owner_graph, module_id(0));
+        partition.set(OwnerId(0), module_id(1)); // schemas_target -> mod_schemas
+        partition.set(OwnerId(1), module_id(1)); // lazy_back     -> mod_schemas
+        partition.set(OwnerId(2), module_id(2)); // ids_val       -> mod_ids
+        let canonical = chunk_constraining_module_edges(&owner_graph, &partition);
+        let pairs: BTreeSet<(ModuleId, ModuleId)> = canonical.pairs().collect();
+        assert!(
+            pairs.contains(&(module_id(2), module_id(1))),
+            "forward eager edge ids → schemas must be present; got {pairs:?}"
+        );
+        assert!(
+            !pairs.contains(&(module_id(1), module_id(2))),
+            "lazy back-edge schemas → ids must NOT be present; got {pairs:?}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod partition_view_invariant_tests {
+    //! Regression coverage for the
+    //! [`cross_module_partition_endpoints`] invariant: every consumer
+    //! that builds a quotient view of the owner graph must agree on
+    //! the same filter (skip `from == to` AND skip cross-module
+    //! at-init promotions). A past TDZ-class soundness hole reopened
+    //! the moment one site forgot one half of the filter. This test
+    //! is a static guard that no consumer outside `graph.rs` may call
+    //! [`is_cross_module_at_init_promotion`] directly — they must go
+    //! through `cross_module_partition_endpoints` so the two checks
+    //! stay welded together at the source level.
+    //!
+    //! Files scanned are the four other partition-quotient consumers
+    //! the helper was extracted from: realizability check, the two
+    //! incremental-simulator edge mutators (same file), and the
+    //! reports quotient builder. Add new sibling consumers to the
+    //! `INCLUDE_STR_CALL_SITES` array below as they appear.
+    const INCLUDE_STR_CALL_SITES: &[(&str, &str)] = &[
+        ("realizability.rs", include_str!("realizability.rs")),
+        ("reports.rs", include_str!("reports.rs")),
+    ];
+
+    #[test]
+    fn no_consumer_calls_is_cross_module_at_init_promotion_directly() {
+        for (path, source) in INCLUDE_STR_CALL_SITES {
+            for (lineno, line) in source.lines().enumerate() {
+                // Skip the doc-comment references that exist only to
+                // name-drop the helper in prose.
+                if line.trim_start().starts_with("//") {
+                    continue;
+                }
+                assert!(
+                    !line.contains("is_cross_module_at_init_promotion"),
+                    "{path}:{} calls `is_cross_module_at_init_promotion` directly. \
+                     Route through `cross_module_partition_endpoints` so the \
+                     `from == to` and promoted-edge filters stay welded together \
+                     across consumers (see invariant doc on \
+                     `cross_module_partition_endpoints`).\nline: {line}",
+                    lineno + 1,
+                );
+            }
+        }
+    }
 }

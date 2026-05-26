@@ -1137,10 +1137,18 @@ imports `readB` first, DFS goes `entry → mod_a → mod_b → mod_a
 works or breaks depending on entry-import ordering.
 
 The realizable fix is to colocate `B` with `readB` in one
-module, dissolving the SCC.
+module, dissolving the SCC. This is the canonical example of a
+**spec-induced atom** in the sense of §"Two classes of atom"
+below: the owner-level read graph is a DAG, but the spec's choice
+to split `B` from `readB` makes the module-level `I ∪ S` cyclic.
+The validator's `CycleReport` names this exact binding pair (with
+the now-binding-pair-blame `render_cycle_summary` format), so the
+diagnostic points the spec author directly at "{B, readB} must
+co-locate."
 
 The synthetic minimization is in <e2e/realizability_test.rs>
-(`rejects_cycle_through_lazy_back_edge`).
+(`rejects_cycle_through_lazy_back_edge`); the namespace-aggregator
+form is in <e2e/namespace_aggregator_split_tdz_test.rs>.
 
 ### Why a static gate, not a runtime check
 
@@ -1191,6 +1199,92 @@ as `ExternalChunk(_)` leaves in the per-chunk graph. **Future
 work**: a multi-chunk lift would have `validate_factorization` take a
 `BTreeMap<ChunkId, ChunkFactorization>` and walk the union graph.
 
+### Pipeline split (Stage A / Stage B)
+
+The per-chunk pipeline is two halves with sharply different
+dependencies:
+
+- **Stage A** (spec-independent): parse → per-statement facts →
+  owner graph → structural atomic units. Pure function of
+  `(source bytes, analysis hints, OwnerGraphOptions)`. The composer
+  is `stage_one::compute_stage_one_analysis`, returning a
+  `StageOneAnalysis` that bundles `ChunkFactAnalysis` (facts +
+  top-level-await detection + redundant-hint warnings) with the
+  `OwnerGraphAndUnits` derived from those facts.
+- **Stage B** (spec-dependent): assemble the partition from the
+  spec's binding claims, run the realizability gate, lower to ESM.
+  Today this lives inline in `lowering::materialize_logical_chunk`.
+
+The materializer is the composition of both. v1 (current code)
+materializes Stage A only in-memory: the composer is a single named
+call site, so future work can pull Stage A out into its own Bazel
+action with a cacheable on-disk artifact (per-concept JSON sidecars:
+`facts.json`, `owner_graph_structural.json`, `atomic_units.json`,
+`ast.json`) without touching the materializer's interior. The
+proposal at `PIPELINE_SPLIT.md` covers the planned split into
+separate cacheable Bazel actions.
+
+The reason to call this out: every diagnostic in §"Two classes of
+atom" lives in Stage B (it depends on the spec's quotient), but its
+inputs all come from Stage A. Refactors that move work between the
+two halves must respect the boundary — anything spec-dependent
+cannot move into Stage A; anything that only depends on source bytes
+should not stay in Stage B.
+
+### Two classes of atom
+
+A spec is unrealizable when its assignment forces a *constraining
+cycle* somewhere — but constraints live at two different levels of
+the graph, and the validator surfaces them through two separate
+diagnostic paths. They differ only in *where* the cycle appears
+(owner level vs module-quotient level), not in *what* the proof
+requires. Both reject the same broad property: "some pair (or set)
+of bindings is forced to co-locate, and the spec splits them."
+
+| Atom class | Where the cycle lives | Detector | Diagnostic |
+|---|---|---|---|
+| **Structural** | SCC of `G_atomic` on the **owner graph** — independent of any spec | `compute_atomic_units` | `AtomicUnitConflict` — names the unit's owners + the modules the spec routes them to + the `DepKind` causes |
+| **Spec-induced** | SCC of `I ∪ S` on the **module quotient** under the spec's assignment | `check_realizability` + `validate_factorization` | `CycleReport` — names the binding pair(s) on each cut edge, the source and target modules, and the edge kind |
+
+`G_atomic` over owners is acyclic-by-quotient on the chunker's
+original output: bundlers can't emit JavaScript that TDZs at runtime
+(the bundle ran for someone). So every owner-level SCC of
+constraining edges (`EagerUse`, `Sequenced`, `EagerRebind`,
+`LazyRebind`, `LocalEffect`) reflects a *colocation invariant the
+bundler relied on*. Any spec assignment that routes the unit's
+owners to different modules is invalid — `assemble_partition`
+detects this before the materializer touches the quotient. **No
+information about the spec is required to identify a structural
+atom**: it is a property of the source bytes plus the analyzer's
+edge classification.
+
+A **spec-induced atom** is one level up. Each owner may be in its
+own structural atom (singleton), and the *module quotient under the
+spec's assignment* may still close a cycle through them. The
+worked example in §"Worked example: cycle through a lazy back-edge"
+is exactly this shape: the binding-level read graph is a DAG, but
+the spec's choice to put `B` and `readB` in different modules makes
+the module-level `I ∪ S` graph cyclic. The fix is identical in
+*shape* — co-locate the bindings — but the *unit being preserved* is
+defined by the spec's quotient, not the source bytes.
+
+Why two paths in the implementation: structural conflicts can be
+caught with no module quotient ever built — it's an `O(|V| + |E|)`
+SCC computation on the owner graph that produces a clean blame
+("these owners can never split"). Spec-induced cycles require the
+quotient (because they're about the assignment) and produce a more
+nuanced blame (which *binding pairs* on which *cut edges* close the
+cycle, after `petgraph::algo::greedy_feedback_arc_set` picks the
+cheapest cut to break).
+
+Both diagnostics name the implicated bindings at the source level,
+not the module level. A 1300-module SCC closing through one
+constraining `(mod_A, mod_B)` edge surfaces as "binding `iRe` in
+`mod_A` reads binding `Y` in `mod_B` at-init; move them together,"
+not "you have a cycle of 1300 modules." See
+[validation.rs::render_cycle_summary](validation.rs) for the
+binding-pair blame format.
+
 ### Corollary: the role of the validator
 
 The pipeline runs:
@@ -1204,21 +1298,27 @@ analyze per-statement facts
 build owner graph
   (owners, read edges, potential side-effect-order edges)
   ↓
-apply spec assignment
-  (dest(owner), unowned bindings → ResidualEntry)
+compute structural atoms = SCC(G_atomic over owners)
   ↓
-quotient owner graph by dest(owner)
+apply spec assignment + assemble_partition
   ↓
-derive I, R, S
+  ├── if any structural atom is split across modules:
+  │   reject with AtomicUnitConflict (owner-level blame)
+  ↓
+quotient owner graph by dest(owner) → I, R, S
   ↓
 validate: realizability gate over I ∪ S
-  ↓        ↓ no                       (sidecar)
-  ↓        ↓                  owner-level diagnostics, cycle cuts,
-  ↓        ↓                  atomic-unit conflict reports
+  ↓
+  ├── if any quotient SCC contains a constraining (R/S) edge:
+  │   reject with CycleReport (binding-pair blame from cut edges)
+  ↓
 emit (source-order)
-  ↓ no
-reject with cycle evidence
 ```
+
+Both rejections write the same kind of sidecar evidence — the owner
+graph and the conflicts/cycles report under `reports/tree/<chunk>/`
+— so spec authors can drill down to specific bindings + statements
+regardless of which atom class caught the spec.
 
 A spec that passes validation is _guaranteed_ to emit correctly
 under the source-order strategy described in the proof. There is

@@ -19,7 +19,7 @@
 //!   another constraining edge runs the reverse direction —
 //!   Tarjan's SCC handles that automatically.
 
-use std::collections::{BTreeSet, HashSet};
+use std::collections::BTreeSet;
 
 use petgraph::algo::tarjan_scc;
 use petgraph::graphmap::DiGraphMap;
@@ -33,10 +33,14 @@ use crate::graph::{DepKind, OwnerGraph, OwnerGraphOptions, OwnerId, build_owner_
 /// constraining edges *inside* the unit (everything except
 /// `LazyUse`) — used by [`crate::factor_assembly`] to explain *why*
 /// a unit is forced together when its claims conflict.
+///
+/// `causes` is a `BTreeSet<DepKind>` so iteration order is the
+/// `DepKind` `Ord` order — consumers that serialise the field can
+/// drop their own post-collection sort.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct AtomicUnit {
     pub members: BTreeSet<OwnerId>,
-    pub causes: HashSet<DepKind>,
+    pub causes: BTreeSet<DepKind>,
 }
 
 /// Owner graph plus its precomputed atomic units. Bundled so a single
@@ -108,7 +112,7 @@ pub fn compute_atomic_units(owner_graph: &OwnerGraph) -> Vec<AtomicUnit> {
             }
             AtomicUnit {
                 members,
-                causes: HashSet::new(),
+                causes: BTreeSet::new(),
             }
         })
         .collect();

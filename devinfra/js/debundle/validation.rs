@@ -64,8 +64,19 @@ pub struct CycleEdge {
     pub from: String,
     pub to: String,
     pub statement_ordinal: StatementOrdinal,
+    /// Target binding being read (declared in `to`'s module). `None`
+    /// for sequenced edges (no symbol).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub binding: Option<Atom>,
+    /// Source-side binding (the first declared binding of the owner
+    /// that issued the read). `None` when the source owner is an
+    /// anonymous statement with no declared bindings — diagnostics
+    /// fall back to `<anon stmt #{statement_ordinal}>` in that case.
+    /// Populated by [`validate_factorization`] from the owner graph,
+    /// so cycle reports name *both* ends of each cut edge by binding,
+    /// not only the module pair.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub from_binding: Option<Atom>,
     /// Edge kind. Lets
     /// downstream consumers (cycle-evidence visualizers, spec
     /// authors triaging which edges to break) tell at a glance
@@ -75,58 +86,128 @@ pub struct CycleEdge {
     pub kind: DepKind,
 }
 
-/// Render a compact human-readable summary of cycle reports for the
-/// bail message. The full per-cycle evidence + cut goes to a side-
-/// output file (`<chunk_id>/cycles.json`); the summary stays under
-/// the typical CI log-tail threshold so the bail-message version
-/// fits in stderr without truncation.
+/// Render the per-cycle summary used in the materializer's bail
+/// message. Each cycle is a spec-induced module-quotient SCC carrying
+/// realizability-constraining (R/S) edges; the renderer blames
+/// **binding pairs**, not just module pairs, so spec authors can act
+/// directly: "move `X` (mod_A) and `Y` (mod_B) into one module."
 ///
-/// Per cycle, the summary lists:
-/// - SCC size (modules) and total evidence-edge count.
-/// - Top-5 modules by in-degree within the SCC — these are the
-///   hubs whose incoming edges drive most of the cycle weight.
-/// - Top-5 cut edges by reason count — the highest-leverage
-///   `(from, to)` pairs to break.
-/// - Cut total size (number of constraining reasons selected by
-///   the FAS heuristic).
+/// Full per-cycle evidence + cut still goes to
+/// `reports/tree/<chunk_id>/cycles.json`. This summary keeps the
+/// inline bail message terse: one header line per SCC plus the top-K
+/// binding-pair blame rows.
+///
+/// Each binding-pair row groups cut entries by
+/// `(from_binding_label, from_module, to_module, to_binding_label, kind)`
+/// and counts the underlying R/S reasons. Anonymous source/target
+/// bindings render as `<anon stmt #ord>` so every row has a stable
+/// human-readable label even when the source statement declares no
+/// binding (top-level `console.log`, side-effecting expressions).
+///
+/// The text retains the words "unrealizable" and "cycle" so existing
+/// rejection-keyword tests (`expect_rejection` in the e2e harness)
+/// keep working — the format change is additive: more actionable
+/// blame, same trigger keywords.
 pub fn render_cycle_summary(cycles: &[CycleReport]) -> String {
     let mut out = String::new();
+    const TOP_K: usize = 10;
     for (i, cycle) in cycles.iter().enumerate() {
-        let mut in_degree: HashMap<&str, usize> = HashMap::new();
-        for edge in &cycle.evidence {
-            *in_degree.entry(edge.to.as_str()).or_insert(0) += 1;
-        }
-        let mut top_in: Vec<(&str, usize)> = in_degree.into_iter().collect();
-        top_in.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(b.0)));
-        top_in.truncate(5);
-
-        let mut cut_pairs: HashMap<(&str, &str), usize> = HashMap::new();
-        for edge in &cycle.cut {
-            *cut_pairs
-                .entry((edge.from.as_str(), edge.to.as_str()))
-                .or_insert(0) += 1;
-        }
-        let mut top_cut: Vec<((&str, &str), usize)> = cut_pairs.into_iter().collect();
-        top_cut.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
-        top_cut.truncate(5);
-
         out.push_str(&format!(
-            "Cycle #{i}: {} modules, {} evidence edges, cut {} reasons across {} (from, to) pairs.\n",
+            "Cycle #{i}: {} module(s) in unrealizable SCC, {} R/S edge(s) across {} (from-module, to-module) pair(s).\n",
             cycle.modules.len(),
-            cycle.evidence.len(),
             cycle.cut.len(),
             cut_pairs_count(&cycle.cut),
         ));
-        out.push_str("  Top in-degree hubs (incoming evidence edges):\n");
-        for (m, n) in &top_in {
-            out.push_str(&format!("    {n:>6}  {m}\n"));
+
+        // Group cut edges by binding-pair blame key. Each group is
+        // one (reader, target) atom split the spec author can fix.
+        let mut groups: HashMap<BindingPairKey<'_>, BindingPairAgg> = HashMap::new();
+        for edge in &cycle.cut {
+            let key = BindingPairKey::of(edge);
+            let agg = groups.entry(key).or_insert_with(|| BindingPairAgg {
+                kind: edge.kind,
+                count: 0,
+            });
+            agg.count += 1;
         }
-        out.push_str("  Top cut edges (R/S reasons to break):\n");
-        for ((f, t), n) in &top_cut {
-            out.push_str(&format!("    {n:>6}  {f}  ->  {t}\n"));
+        let mut ranked: Vec<(BindingPairKey<'_>, BindingPairAgg)> = groups.into_iter().collect();
+        ranked.sort_by(|a, b| b.1.count.cmp(&a.1.count).then((&a.0).cmp(&b.0)));
+
+        if ranked.is_empty() {
+            // Defensive — the SCC is rejected because at least one
+            // R/S edge exists, so the cut should be non-empty.
+            continue;
         }
+
+        out.push_str(
+            "  Binding pairs forcing the cycle (count: source binding (module) → kind → target binding (module)):\n",
+        );
+        for (key, agg) in ranked.iter().take(TOP_K) {
+            out.push_str(&format!(
+                "    {n:>4}x  {from_b} ({from_m})  --{kind}-->  {to_b} ({to_m})\n",
+                n = agg.count,
+                from_b = key.from_label,
+                from_m = key.from,
+                kind = dep_kind_short(agg.kind),
+                to_b = key.to_label,
+                to_m = key.to,
+            ));
+        }
+        if ranked.len() > TOP_K {
+            out.push_str(&format!(
+                "    … +{} more binding pair(s)\n",
+                ranked.len() - TOP_K,
+            ));
+        }
+        out.push_str(
+            "  Fix: co-locate each (source, target) binding pair above into one logical module, or break the SCC's back-edges in the spec.\n",
+        );
     }
     out
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
+struct BindingPairKey<'a> {
+    from_label: std::borrow::Cow<'a, str>,
+    from: &'a str,
+    to: &'a str,
+    to_label: std::borrow::Cow<'a, str>,
+}
+
+impl<'a> BindingPairKey<'a> {
+    fn of(edge: &'a CycleEdge) -> Self {
+        let from_label = match &edge.from_binding {
+            Some(atom) => std::borrow::Cow::Borrowed(atom.as_ref()),
+            None => std::borrow::Cow::Owned(format!("<anon stmt #{}>", edge.statement_ordinal.0)),
+        };
+        let to_label = match &edge.binding {
+            Some(atom) => std::borrow::Cow::Borrowed(atom.as_ref()),
+            None => std::borrow::Cow::Borrowed("<side-effect>"),
+        };
+        BindingPairKey {
+            from_label,
+            from: edge.from.as_str(),
+            to: edge.to.as_str(),
+            to_label,
+        }
+    }
+}
+
+#[derive(Debug)]
+struct BindingPairAgg {
+    kind: DepKind,
+    count: usize,
+}
+
+fn dep_kind_short(kind: DepKind) -> &'static str {
+    match kind {
+        DepKind::EagerUse => "at-init",
+        DepKind::LazyUse => "lazy",
+        DepKind::EagerRebind => "at-init rebind",
+        DepKind::LazyRebind => "lazy rebind",
+        DepKind::Sequenced => "side-effect",
+        DepKind::LocalEffect => "local-effect",
+    }
 }
 
 fn cut_pairs_count(cut: &[CycleEdge]) -> usize {
@@ -170,6 +251,21 @@ pub fn validate_factorization(
             linker_order: Vec::new(),
         };
     }
+    // statement_ordinal → first declared binding of the owner that
+    // owns that statement. Used to label the source side of every
+    // CycleEdge so diagnostics blame binding pairs, not just module
+    // pairs. An owner may have no declared bindings (anonymous
+    // statement); we leave `from_binding = None` in that case and let
+    // the renderer fall back to a statement-ordinal placeholder.
+    let from_binding_by_ordinal: HashMap<StatementOrdinal, Atom> = owner_graph
+        .iter_nodes()
+        .filter_map(|node| {
+            node.declared
+                .iter()
+                .next()
+                .map(|id| (node.statement_ordinal, id.0.clone()))
+        })
+        .collect();
     let graph = &build_module_quotient(owner_graph, partition);
     let sccs = tarjan_scc(&graph.0);
     let mut cycles = Vec::new();
@@ -205,11 +301,14 @@ pub fn validate_factorization(
                     to: module_name(to),
                     statement_ordinal: reason.statement_ordinal,
                     binding: reason.binding.as_ref().map(|id| id.0.clone()),
+                    from_binding: from_binding_by_ordinal
+                        .get(&reason.statement_ordinal)
+                        .cloned(),
                     kind: reason.kind,
                 });
             }
         }
-        let cut = compute_realizability_cut(graph, &scc, module_name);
+        let cut = compute_realizability_cut(graph, &scc, module_name, &from_binding_by_ordinal);
         cycles.push(CycleReport {
             modules: scc.iter().copied().map(module_name).collect(),
             evidence,
@@ -311,6 +410,7 @@ fn compute_realizability_cut(
     graph: &ModuleQuotient,
     scc: &[ModuleId],
     module_name: &dyn Fn(ModuleId) -> String,
+    from_binding_by_ordinal: &HashMap<StatementOrdinal, Atom>,
 ) -> Vec<CycleEdge> {
     if scc.len() < 2 {
         return Vec::new();
@@ -407,6 +507,9 @@ fn compute_realizability_cut(
                 to: module_name(v),
                 statement_ordinal: reason.statement_ordinal,
                 binding: reason.binding.as_ref().map(|id| id.0.clone()),
+                from_binding: from_binding_by_ordinal
+                    .get(&reason.statement_ordinal)
+                    .cloned(),
                 kind: reason.kind,
             });
         }

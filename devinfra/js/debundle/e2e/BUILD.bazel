@@ -82,6 +82,7 @@ rust_library(
         "accepted_spec_runs_under_node_test",
         "lemma_two_rescued_asymmetric_cycle_test",
         "mediator_reaches_asymmetric_cycle_test",
+        "namespace_aggregator_split_tdz_test",
     ]
 ]
 
