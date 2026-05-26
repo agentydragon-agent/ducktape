@@ -116,25 +116,8 @@ class CompiledSimulation:
     tax: TaxCompileOutput
     capital_gain_agent_codes: NDArray[np.int64]
     tax_profile_capital_gain_index: NDArray[np.int64]
-    # tax_link × liability matrix; entry (link, lia) is the pro-rata MID ratio
-    # `min(1, principal_cap[jurisdiction] / liabilities.principal[lia])` for liabilities
-    # owned by the link's profile agent and listed in a MortgageInterestDeductionPolicy;
-    # 0.0 otherwise. Engine does `interest_ytd @ ratio[link]` per link to get MID per rollout.
-    tax_link_mid_principal_ratio: NDArray[np.float64]
-    # Per-link boolean: true iff that link has at least one non-zero MID ratio. Lets the
-    # engine skip the matmul + max for jurisdictions or scenarios without MID-eligible debt.
-    tax_link_mid_active: NDArray[np.bool_]
-    # Per-link boolean: true iff this link is the federal jurisdiction of a profile that has a
-    # FederalSaltDeductionPolicy. Federal SALT deduction is only computed for these links.
-    tax_link_salt_active: NDArray[np.bool_]
-    # tax_link × calendar-year matrix of SALT-cap-in-USD. Only populated for SALT-active links;
-    # 0.0 elsewhere (and unread on the engine side). Year index 0 = first horizon year.
-    tax_link_salt_cap_by_year: NDArray[np.float64]
-    # tax_link × tax_link mask. For each SALT-active federal link L, the row identifies the
-    # state-jurisdiction sibling links of the same profile whose accrued annual tax flows into
-    # L's SALT total. Engine uses this to gather state taxes after the first-pass non-SALT
-    # tax computation.
-    tax_link_salt_contributing_mask: NDArray[np.bool_]
+    mid: MIDCompileOutput
+    salt: SaltCompileOutput
     tax_liabilities: TaxLiabilityCompileOutput
     transfers: TransferCompileOutput
     properties: PropertyCompileOutput
@@ -279,13 +262,8 @@ def compile_simulation(
         dtype=np.int64,
     )
 
-    (tax_link_mid_principal_ratio, tax_link_mid_active) = _compile_mortgage_interest_deductions(
-        scenario, strings, tax=tax, liabilities=liabilities
-    )
-
-    (tax_link_salt_active, tax_link_salt_cap_by_year, tax_link_salt_contributing_mask) = (
-        _compile_federal_salt_deductions(scenario, strings, tax=tax)
-    )
+    mid = _compile_mortgage_interest_deductions(scenario, strings, tax=tax, liabilities=liabilities)
+    salt = _compile_federal_salt_deductions(scenario, strings, tax=tax)
 
     sales = _compile_sales(scenario, strings, account_slot_by_key, series_index_by_id)
 
@@ -375,11 +353,8 @@ def compile_simulation(
         tax=tax,
         capital_gain_agent_codes=capital_gain_agent_codes,
         tax_profile_capital_gain_index=tax_profile_capital_gain_index,
-        tax_link_mid_principal_ratio=tax_link_mid_principal_ratio,
-        tax_link_mid_active=tax_link_mid_active,
-        tax_link_salt_active=tax_link_salt_active,
-        tax_link_salt_cap_by_year=tax_link_salt_cap_by_year,
-        tax_link_salt_contributing_mask=tax_link_salt_contributing_mask,
+        mid=mid,
+        salt=salt,
         tax_liabilities=tax_liabilities,
         transfers=transfers,
         properties=properties,
@@ -926,7 +901,7 @@ def _compile_mortgage_interest_deductions(
     *,
     tax: TaxCompileOutput,
     liabilities: LiabilityCompileOutput,
-) -> tuple[np.ndarray, np.ndarray]:
+) -> MIDCompileOutput:
     """Compile the precomputed per-(tax_link, liability) MID ratio matrix.
 
     For each (link, liability) pair, the ratio is the pro-rata
@@ -944,7 +919,7 @@ def _compile_mortgage_interest_deductions(
     active = np.zeros(max(1, link_count), dtype=np.bool_)
 
     if link_count == 0 or liability_count == 0 or not scenario.mortgage_interest_deduction_policies:
-        return ratio, active
+        return MIDCompileOutput(principal_ratio=ratio, link_active=active)
 
     liability_slot_by_code = {int(liabilities.codes[lia]): lia for lia in range(liability_count)}
     policies_by_liability_slot: dict[int, MortgageInterestDeductionPolicy] = {}
@@ -990,12 +965,45 @@ def _compile_mortgage_interest_deductions(
             ratio[link, lia_slot] = min(1.0, float(cap) / principal)
         active[link] = bool(np.any(ratio[link] > 0.0))
 
-    return ratio, active
+    return MIDCompileOutput(principal_ratio=ratio, link_active=active)
+
+
+@dataclass(frozen=True)
+class MIDCompileOutput:
+    """Per-(tax_link, liability) Mortgage Interest Deduction (§163(h)(3)) plumbing.
+
+    - `principal_ratio[link, lia]` = pro-rata `min(1, principal_cap[jurisdiction] /
+      liability_principal[lia])` for liabilities owned by the link's profile agent and
+      listed in a MortgageInterestDeductionPolicy; 0.0 otherwise. Engine does
+      `interest_ytd @ principal_ratio[link]` per link to get MID per rollout.
+    - `link_active[link]`: True iff that link has at least one non-zero principal_ratio
+      entry; lets the engine skip the matmul + max for jurisdictions or scenarios
+      without MID-eligible debt."""
+
+    principal_ratio: NDArray[np.float64]
+    link_active: NDArray[np.bool_]
+
+
+@dataclass(frozen=True)
+class SaltCompileOutput:
+    """Per-tax-link federal SALT-deduction plumbing.
+
+    - `link_active[link]`: True iff `link` is the federal jurisdiction of a profile with a
+      FederalSaltDeductionPolicy. Federal SALT deduction is only computed for these links.
+    - `cap_by_year[link, year]`: per-calendar-year SALT cap in USD for SALT-active links;
+      0.0 elsewhere (and unread on the engine side). Year index 0 = first horizon year.
+    - `contributing_mask[link, other_link]`: True iff `other_link` is a non-federal sibling
+      (same profile) of the SALT-active federal `link`. Engine sums the first-pass annual
+      tax of these state links into the federal SALT total."""
+
+    link_active: NDArray[np.bool_]
+    cap_by_year: NDArray[np.float64]
+    contributing_mask: NDArray[np.bool_]
 
 
 def _compile_federal_salt_deductions(
     scenario: Scenario, strings: StringTable, *, tax: TaxCompileOutput
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+) -> SaltCompileOutput:
     """Compile federal SALT-deduction plumbing.
 
     Returns three arrays sized to the tax-link grid:
@@ -1017,7 +1025,7 @@ def _compile_federal_salt_deductions(
     contributing_mask = np.zeros((max(1, link_count), max(1, link_count)), dtype=np.bool_)
 
     if link_count == 0 or not scenario.federal_salt_deduction_policies:
-        return salt_active, salt_cap_by_year, contributing_mask
+        return SaltCompileOutput(link_active=salt_active, cap_by_year=salt_cap_by_year, contributing_mask=contributing_mask)
 
     # Map (profile_index, jurisdiction_code) -> link_index for cross-link lookups.
     link_by_profile_jurisdiction: dict[tuple[int, int], int] = {}
@@ -1069,7 +1077,7 @@ def _compile_federal_salt_deductions(
             else:
                 salt_cap_by_year[federal_link, year] = float(applicable[-1].cap_usd)
 
-    return salt_active, salt_cap_by_year, contributing_mask
+    return SaltCompileOutput(link_active=salt_active, cap_by_year=salt_cap_by_year, contributing_mask=contributing_mask)
 
 
 def _compile_capital_gain_agents(scenario: Scenario, strings: StringTable) -> tuple[np.ndarray, np.ndarray]:

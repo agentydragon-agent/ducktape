@@ -1077,11 +1077,11 @@ def _compute_tax_for_link(
     recapture = current.recapture_section_1250_ytd[:, profile]
     section_1250_rate = float(plan.tax.link_section_1250_rate[link])
     standard_deduction = float(plan.tax.link_standard_deduction[link])
-    if bool(plan.tax_link_mid_active[link]):
+    if bool(plan.mid.link_active[link]):
         # MID applies only to the owner-occupied share of interest. Rented-share interest
         # is deducted via the Schedule E hook at the top of `_apply_tax_accruals`.
         owner_interest_ytd = current.liability_interest_ytd - current.liability_rental_interest_ytd
-        mortgage_interest_deduction = owner_interest_ytd @ plan.tax_link_mid_principal_ratio[link]
+        mortgage_interest_deduction = owner_interest_ytd @ plan.mid.principal_ratio[link]
     else:
         mortgage_interest_deduction = np.zeros(plan.rollout_count, dtype=np.float64)
     itemized_deduction = mortgage_interest_deduction + salt_deduction
@@ -1564,7 +1564,7 @@ def _apply_tax_accruals(
     annual_tax_by_link = np.zeros((plan.rollout_count, max(1, link_count)), dtype=np.float64)
     zero_salt = np.zeros(plan.rollout_count, dtype=np.float64)
     for link in range(link_count):
-        if bool(plan.tax_link_salt_active[link]):
+        if bool(plan.salt.link_active[link]):
             continue
         standard_deduction = float(plan.tax.link_standard_deduction[link])
         (
@@ -1596,14 +1596,14 @@ def _apply_tax_accruals(
     # Second pass: SALT-active federal links. SALT = property tax YTD for this profile + sum of
     # contributing-state-link annual tax, all capped per the year's schedule entry.
     year_index = month // 12
-    cap_year_index = min(year_index, plan.tax_link_salt_cap_by_year.shape[1] - 1)
+    cap_year_index = min(year_index, plan.salt.cap_by_year.shape[1] - 1)
     for link in range(link_count):
-        if not bool(plan.tax_link_salt_active[link]):
+        if not bool(plan.salt.link_active[link]):
             continue
         profile = int(plan.tax.link_profile[link])
-        state_tax_total = annual_tax_by_link @ plan.tax_link_salt_contributing_mask[link].astype(np.float64)
+        state_tax_total = annual_tax_by_link @ plan.salt.contributing_mask[link].astype(np.float64)
         salt_total = current.property_tax_ytd[:, profile] + state_tax_total
-        cap = float(plan.tax_link_salt_cap_by_year[link, cap_year_index])
+        cap = float(plan.salt.cap_by_year[link, cap_year_index])
         salt_deduction = np.minimum(salt_total, cap)
         standard_deduction = float(plan.tax.link_standard_deduction[link])
         (
