@@ -353,27 +353,52 @@ impl OwnerGraph {
     /// gate does, instead of re-deriving cycle detection over the
     /// JSON-flattened edge list.
     ///
+    /// `facts` is the per-statement fact slice from a
+    /// `ChunkFactsReport` (see `facts/wire.rs`); when supplied, the
+    /// reconstructed nodes' [`OwnerNode::declared`] sets are
+    /// populated by joining each node's `statement_ordinal` against
+    /// the matching `StatementFactsReport.declared`. Pass `&[]` to
+    /// opt out — `declared` stays empty, which is appropriate for
+    /// gate-only consumers that never call
+    /// [`crate::factor_assembly::assemble_partition`] on the
+    /// reconstructed graph.
+    ///
     /// The result is "gate-grade": the returned graph carries enough
     /// information for `check_realizability` (edge endpoints,
-    /// `DepKind`, residual marker) but **not** every field
-    /// `build_owner_graph` populates from `StatementFacts`. Per-owner
-    /// `declared`, `kind`, `purity`, and per-edge `binding` are
-    /// stubbed with their default / synthetic shapes because the
-    /// JSON wire format doesn't carry the hygienic `Id` atoms the
-    /// source-of-truth constructor uses. Callers that need those
-    /// fields must build the graph from facts, not from the report.
+    /// `DepKind`, residual marker) and — with `facts` supplied — the
+    /// per-owner declared-binding set
+    /// `factor_assembly::compute_owner_claims` walks. Per-edge
+    /// `binding` and per-node `kind` / `purity` mirror the JSON wire
+    /// shape; the hygienic `SyntaxContext` carried by `IdReport` is
+    /// only meaningful within a single SWC `Globals` scope, so
+    /// reconstructed `Id`s round-trip *within one process* but
+    /// **must not** be compared against re-parsed AST identifiers
+    /// from a different `Globals` (see `stage_one_sidecars.rs` →
+    /// "`facts.json` is debug-only").
     ///
     /// `OwnerEdgeId`s in the reconstructed graph are assigned in the
     /// order edges appear in `report.edges`; they don't necessarily
     /// match the original `OwnerEdgeId`s that produced the report.
     /// The gate only uses them as opaque identifiers in its evidence
     /// listing.
-    pub fn from_report(report: &crate::OwnerGraphReport) -> (Self, OwnerReportIndex) {
+    pub fn from_report(
+        report: &crate::OwnerGraphReport,
+        facts: &[crate::StatementFactsReport],
+    ) -> (Self, OwnerReportIndex) {
         let owner_ids: Vec<String> = report.nodes.iter().map(|n| n.id.clone()).collect();
         let by_id: HashMap<String, OwnerId> = owner_ids
             .iter()
             .enumerate()
             .map(|(i, id)| (id.clone(), OwnerId(i)))
+            .collect();
+
+        // Join key: a statement's ordinal is its identity across both
+        // wire shapes — `OwnerGraphNodeReport.statement_ordinal` and
+        // `StatementFactsReport.ordinal`. Build a lookup table once
+        // so the per-node hydration below is O(1) per node.
+        let declared_by_ordinal: HashMap<StatementOrdinal, &Vec<crate::IdReport>> = facts
+            .iter()
+            .map(|f| (f.ordinal, &f.declared))
             .collect();
 
         let nodes: Vec<OwnerNode> = report
@@ -384,7 +409,10 @@ impl OwnerGraph {
                 id: OwnerId(i),
                 statement_ordinal: n.statement_ordinal,
                 source_location: n.source_location.clone(),
-                declared: BTreeSet::new(),
+                declared: declared_by_ordinal
+                    .get(&n.statement_ordinal)
+                    .map(|ids| ids.iter().map(crate::IdReport::to_id).collect())
+                    .unwrap_or_default(),
                 kind: n.statement_kind,
                 purity: n.purity.clone(),
             })
@@ -1656,7 +1684,7 @@ mod edge_role_wire_format_tests {
                 edges: Vec::new(),
             },
         };
-        let (graph, _) = OwnerGraph::from_report(&report);
+        let (graph, _) = OwnerGraph::from_report(&report, &[]);
         assert_eq!(graph.edges.len(), 1);
         assert_eq!(graph.edges[0].reason.role(), EdgeRole::Direct);
     }
@@ -1697,7 +1725,7 @@ mod edge_role_wire_format_tests {
                 edges: Vec::new(),
             },
         };
-        let (graph, _) = OwnerGraph::from_report(&report);
+        let (graph, _) = OwnerGraph::from_report(&report, &[]);
         assert_eq!(graph.edges.len(), 1);
         assert_eq!(
             graph.edges[0].reason.role(),
@@ -1755,5 +1783,234 @@ mod edge_role_wire_format_tests {
         // Round-trip via JSON.
         let parsed: OwnerGraphEdgeReport = serde_json::from_str(&promoted_json).unwrap();
         assert_eq!(parsed.role, promoted_report.role);
+    }
+}
+
+#[cfg(test)]
+mod declared_round_trip_tests {
+    //! Round-trip the per-owner `declared: BTreeSet<Id>` set through
+    //! the JSON wire shape. `OwnerGraphNodeReport` itself doesn't
+    //! carry hygienic `Id` atoms (its `declared_bindings: Vec<BindingReport>`
+    //! is `Atom`-only), so `OwnerGraph::from_report` joins each node's
+    //! `statement_ordinal` against the matching
+    //! `StatementFactsReport.declared` (which does carry the
+    //! `(name, ctxt)` pair via `IdReport`). The tests below pin both
+    //! the syntactic round-trip (declared sets match) and the
+    //! semantic round-trip (`compute_owner_claims` returns the same
+    //! ModuleId verdict on the reconstructed graph as on the
+    //! in-memory original).
+    use std::collections::HashMap;
+
+    use crate::facts::analyze_chunk;
+    use crate::factor_assembly::assemble_partition;
+    use crate::graph::{OwnerGraph, build_owner_graph};
+    use crate::ids::{BindingKind, LogicalModule, LogicalModuleIndex, ModuleId};
+    use crate::partition::Partition;
+    use crate::report_schema::{
+        AtomicGraphReport, OwnerGraphEdgeReport, OwnerGraphNodeReport, OwnerGraphQuotientReport,
+        OwnerGraphReport,
+    };
+    use crate::reports::owner_key;
+    use crate::{AnalysisHints, BindingReport, StatementFactsReport};
+
+    use swc_common::{FileName, SourceMap, sync::Lrc};
+    use swc_ecma_parser::{Parser, StringInput, Syntax, lexer::Lexer};
+
+    /// Build a real owner graph from JS source, then synthesize the
+    /// JSON-shaped reports (owner graph + per-statement facts) that
+    /// `OwnerGraph::from_report` consumes. The synthesized reports
+    /// re-encode the in-memory graph faithfully (modulo what the
+    /// wire format intentionally drops, e.g. per-edge `EdgeReason`
+    /// metadata beyond `kind` + `role`).
+    fn build_and_serialize(
+        source: &str,
+    ) -> (
+        OwnerGraph,
+        Vec<StatementFactsReport>,
+        OwnerGraphReport,
+        HashMap<swc_ecma_ast::Id, BindingKind>,
+        Vec<LogicalModule>,
+    ) {
+        let cm: Lrc<SourceMap> = Default::default();
+        let fm = cm.new_source_file(
+            FileName::Custom("test.js".into()).into(),
+            source.to_string(),
+        );
+        let lexer = Lexer::new(
+            Syntax::Es(Default::default()),
+            Default::default(),
+            StringInput::from(&*fm),
+            None,
+        );
+        let module = Parser::new_from(lexer)
+            .parse_module()
+            .expect("parse module");
+        let analysis = analyze_chunk(&module, &AnalysisHints::default(), None, |_| None);
+        let owner_graph = build_owner_graph(&analysis.facts);
+        let facts_reports: Vec<StatementFactsReport> = analysis
+            .facts
+            .iter()
+            .map(StatementFactsReport::from_facts)
+            .collect();
+        let nodes = owner_graph
+            .iter_nodes()
+            .map(|n| OwnerGraphNodeReport {
+                id: owner_key(n.id),
+                statement_ordinal: n.statement_ordinal,
+                source_location: n.source_location.clone(),
+                declared_bindings: n
+                    .declared
+                    .iter()
+                    .map(|id| BindingReport {
+                        binding: id.0.clone(),
+                        export_name: id.0.clone(),
+                    })
+                    .collect(),
+                statement_kind: n.kind,
+                purity: n.purity.clone(),
+                destination: crate::ModuleReportRef {
+                    id: "logical:0".to_string(),
+                    label: String::new(),
+                    residual: false,
+                    index: None,
+                    target_file: None,
+                },
+            })
+            .collect();
+        let edges: Vec<OwnerGraphEdgeReport> = owner_graph
+            .iter_edges()
+            .map(|edge| OwnerGraphEdgeReport {
+                id: edge.id.report_key(),
+                source: owner_key(edge.from),
+                target: owner_key(edge.to),
+                edge_kind: edge.reason.kind,
+                binding: edge.reason.binding.as_ref().map(|id| id.0.clone()),
+                statement_ordinal: edge.reason.statement_ordinal,
+                constrains_init_order: edge.reason.constrains_init_order(),
+                role: None,
+            })
+            .collect();
+        let report = OwnerGraphReport {
+            chunk_id: "test".into(),
+            nodes,
+            edges,
+            quotient: OwnerGraphQuotientReport {
+                nodes: Vec::new(),
+                edges: Vec::new(),
+                sccs: Vec::new(),
+            },
+            atomic_graph: AtomicGraphReport {
+                nodes: Vec::new(),
+                edges: Vec::new(),
+            },
+        };
+        // Build a `bindings` table mapping each declared Id → owner.
+        // This is the standard input to `compute_owner_claims` /
+        // `assemble_partition`.
+        let mut bindings: HashMap<swc_ecma_ast::Id, BindingKind> = HashMap::new();
+        for (idx, node) in owner_graph.iter_nodes().enumerate() {
+            // Round-robin owners to alternating modules so the
+            // semantic test below sees a non-trivial partition.
+            let dest = ModuleId(LogicalModuleIndex(idx % 2));
+            for id in &node.declared {
+                bindings.insert(id.clone(), BindingKind::Owned { owner: dest });
+            }
+        }
+        let logical_modules = vec![
+            LogicalModule {
+                id: "m0".into(),
+                target_file: "m0.js".into(),
+                anonymous_statement_ordinals: Vec::new(),
+                residual: false,
+                rename_map: HashMap::new(),
+            },
+            LogicalModule {
+                id: "m1".into(),
+                target_file: "m1.js".into(),
+                anonymous_statement_ordinals: Vec::new(),
+                residual: true,
+                rename_map: HashMap::new(),
+            },
+        ];
+        (owner_graph, facts_reports, report, bindings, logical_modules)
+    }
+
+    /// Serialize a graph with non-empty `declared`, deserialize, and
+    /// assert each owner's `declared` set matches the original.
+    ///
+    /// This is the syntactic round-trip — it pins that
+    /// `OwnerGraph::from_report` no longer silently drops the
+    /// per-owner declared binding set.
+    #[test]
+    fn declared_round_trips_through_owner_graph_report() {
+        let source = "const a = 1;\nconst b = a + 1;\nlet c = 0;\n";
+        let (original, facts, report, _bindings, _logical) = build_and_serialize(source);
+        assert!(
+            original.iter_nodes().any(|n| !n.declared.is_empty()),
+            "fixture must have at least one declared-binding owner",
+        );
+
+        let (round_tripped, _) = OwnerGraph::from_report(&report, &facts);
+
+        assert_eq!(
+            round_tripped.nodes.len(),
+            original.nodes.len(),
+            "node count must match"
+        );
+        for (orig, restored) in original.iter_nodes().zip(round_tripped.iter_nodes()) {
+            assert_eq!(
+                orig.statement_ordinal, restored.statement_ordinal,
+                "statement ordinals must align (join key)"
+            );
+            assert_eq!(
+                orig.declared, restored.declared,
+                "declared sets must round-trip via StatementFactsReport.declared"
+            );
+        }
+    }
+
+    /// Semantic round-trip: rebuild the graph from the wire shape,
+    /// then run `assemble_partition` (which internally calls
+    /// `compute_owner_claims`) against the reconstructed graph and
+    /// assert the resulting `Partition` matches the partition
+    /// obtained by running the same call on the in-memory original.
+    ///
+    /// This is what distinguishes "round-trip works syntactically"
+    /// from "round-trip works semantically": the planner-side gate
+    /// reconstructs a graph and feeds it to `assemble_partition` to
+    /// derive the post-edit partition; if `compute_owner_claims`
+    /// silently returns `None` for every owner (because
+    /// `nodes[].declared` is empty), the partition reduces to the
+    /// residual fallback and the gate's verdict is meaningless.
+    #[test]
+    fn compute_owner_claims_round_trips_via_reconstructed_graph() {
+        let source = "const a = 1;\nconst b = a + 1;\nlet c = 0;\n";
+        let (original, facts, report, bindings, logical_modules) = build_and_serialize(source);
+        let residual = ModuleId(LogicalModuleIndex(1));
+        let atomic_units = crate::atomic_units::compute_atomic_units(&original);
+        let original_outcome =
+            assemble_partition(&original, &atomic_units, &bindings, &logical_modules, residual);
+
+        let (round_tripped, _) = OwnerGraph::from_report(&report, &facts);
+        let restored_units = crate::atomic_units::compute_atomic_units(&round_tripped);
+        let restored_outcome = assemble_partition(
+            &round_tripped,
+            &restored_units,
+            &bindings,
+            &logical_modules,
+            residual,
+        );
+
+        assert_eq!(
+            partition_destinations(&original_outcome.partition, original.nodes.len()),
+            partition_destinations(&restored_outcome.partition, round_tripped.nodes.len()),
+            "compute_owner_claims must derive the same partition on the round-tripped graph",
+        );
+    }
+
+    fn partition_destinations(partition: &Partition, owner_count: usize) -> Vec<ModuleId> {
+        (0..owner_count)
+            .map(|i| partition.of(crate::OwnerId(i)))
+            .collect()
     }
 }

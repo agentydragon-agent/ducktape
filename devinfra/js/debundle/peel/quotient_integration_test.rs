@@ -1969,7 +1969,7 @@ fn owner_graph_and_partition_from_spec(
     spec: &[peel::quotient::SpecModuleGroup],
 ) -> (analysis::OwnerGraph, analysis::Partition) {
     use std::collections::HashMap;
-    let (owner_graph, index) = analysis::OwnerGraph::from_report(report);
+    let (owner_graph, index) = analysis::OwnerGraph::from_report(report, &[]);
     // Module-id assignment: residual goes to ModuleId(0). Every
     // distinct spec module gets its own ModuleId starting at 1.
     let residual = analysis::ModuleId::logical(0);
