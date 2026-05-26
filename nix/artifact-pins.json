@@ -33,20 +33,20 @@
       "sha256": "nZmSwtodI8AoCJKSmoy/KaCkds+23SdSw9Hy/PS4tZY="
     },
     "skills": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skills-6fb013516b22/all_skills_tar.tar",
-      "sha256": "b7ATUWsiZYfVGsTJitk5wuufYB1jDI//OytrYDQrywM="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skills-0715bc0ed018/all_skills_tar.tar",
+      "sha256": "BxW8DtAYg8M40U6kwaA0WuqDCp5WmBFAwR3ccOtBCDA="
     },
     "claude-hook-rs": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hook-rs-3b36081f92b5/claude_hook",
       "sha256": "OzYIH5K1bl6cfZJjiuv8l5O/EjxusgMAc1J85UZyN5I="
     },
     "aiquota-extension": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-9ce6747c0a90/aiquota.zip",
+      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-310fd0b0c2f9/aiquota.zip",
       "sha256": "sTHot0SSV7bf7hU4YEsMWN2JMgqrUZcHaqciR/Rjhv4="
     },
     "aiquota": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-9ce6747c0a90/aiquota-0.1.0-py3-none-any.whl",
-      "sha256": "nOZ0fAqQs99SEZ24LSwfMScNyZpz8CHOXieusc6KW+8="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-310fd0b0c2f9/aiquota-0.1.0-py3-none-any.whl",
+      "sha256": "MQ/QsML5JXmWsRnakb8+qZpiH+dUcy0NUyZPajS3n14="
     },
     "debundle": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-6f9a526f5d92/debundle",
