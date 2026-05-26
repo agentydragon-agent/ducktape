@@ -1331,7 +1331,7 @@ def _apply_lifecycle_events(
             current.property_rented_fraction[active_rollout, prop] = new_fraction
         elif kind == LIFECYCLE_KIND_CAPITAL_IMPROVEMENT:
             amount = float(plan.lifecycle_event_amount[i])
-            owner_cash_slot = int(plan.property_buyer_cash_slot[prop])
+            owner_cash_slot = int(plan.properties.buyer_slot[prop])
             if owner_cash_slot >= 0:
                 current.cash[active_rollout, owner_cash_slot] -= amount
             current.property_building_basis[active_rollout, prop] += amount
@@ -1403,7 +1403,7 @@ def _apply_property_sale(
         return
     base_value = plan.external_values[series_idx, :, 0]  # per-rollout, base month
     sale_value_series = plan.external_values[series_idx, :, month]  # per-rollout, sale month
-    purchase_price = float(plan.property_purchase_price[prop])
+    purchase_price = float(plan.properties.purchase_price[prop])
     market_value = purchase_price * sale_value_series / base_value  # (R,)
     gross_proceeds = market_value * (1.0 - closing_cost_pct / 100.0)
 
@@ -1433,11 +1433,11 @@ def _apply_property_sale(
     section_121_exclusion = np.where(qualifies, np.minimum(post_recapture_gain, exclusion_cap), 0.0)
     ltcg = post_recapture_gain - section_121_exclusion
 
-    owner_cash_slot = int(plan.property_buyer_cash_slot[prop])
+    owner_cash_slot = int(plan.properties.buyer_slot[prop])
     # Pay off any outstanding mortgage on this property; net cash to owner = gross - payoff.
     mortgage_payoff = np.zeros(rollout_count, dtype=np.float64)
-    for lia in range(int(plan.liability_property_slot.shape[0])):
-        if int(plan.liability_property_slot[lia]) == prop:
+    for lia in range(int(plan.liabilities.property_slot.shape[0])):
+        if int(plan.liabilities.property_slot[lia]) == prop:
             mortgage_payoff += current.liability_principal[:, lia]
             current.liability_principal[:, lia] = 0.0
             current.liability_active[:, lia] = False
@@ -1695,32 +1695,32 @@ def _apply_property_purchases(
     active_rollout = ~current.failed
     if not active_rollout.any():
         return
-    for prop in range(plan.property_month.shape[0]):
-        if plan.property_month[prop] != month:
+    for prop in range(plan.properties.month.shape[0]):
+        if plan.properties.month[prop] != month:
             continue
         buffers.property_purchase_active[month, prop, active_rollout] = True
         current.property_active[active_rollout, prop] = True
-        current.property_basis[active_rollout, prop] = plan.property_adjusted_basis[prop]
-        current.property_ownership[active_rollout, prop] = plan.property_ownership_pct[prop]
-        current.property_contribution[active_rollout, prop] = plan.property_stake_contribution[prop]
-        current.property_equity[active_rollout, prop] = plan.property_equity_ledger[prop]
+        current.property_basis[active_rollout, prop] = plan.properties.adjusted_basis[prop]
+        current.property_ownership[active_rollout, prop] = plan.properties.ownership[prop]
+        current.property_contribution[active_rollout, prop] = plan.properties.stake_contribution[prop]
+        current.property_equity[active_rollout, prop] = plan.properties.equity_ledger[prop]
 
-        buyer_cash = float(plan.property_stake_contribution[prop])
+        buyer_cash = float(plan.properties.stake_contribution[prop])
         if buyer_cash > 0.0:
             buffers.property_transfer_active[month, prop, active_rollout] = True
-            buyer_slot = int(plan.property_buyer_cash_slot[prop])
+            buyer_slot = int(plan.properties.buyer_slot[prop])
             if buyer_slot >= 0:
                 current.cash[active_rollout, buyer_slot] -= buyer_cash
-            seller_slot = int(plan.property_seller_cash_slot[prop])
+            seller_slot = int(plan.properties.seller_slot[prop])
             if seller_slot >= 0:
                 current.cash[active_rollout, seller_slot] += buyer_cash
 
-        liability_slot = int(plan.property_mortgage_slot[prop])
+        liability_slot = int(plan.properties.mortgage_slot[prop])
         if liability_slot >= 0:
             buffers.mortgage_origination_active[month, liability_slot, active_rollout] = True
             current.liability_active[active_rollout, liability_slot] = True
-            current.liability_principal[active_rollout, liability_slot] = plan.liability_principal[liability_slot]
-            current.liability_monthly_payment[active_rollout, liability_slot] = plan.liability_monthly_payment[
+            current.liability_principal[active_rollout, liability_slot] = plan.liabilities.principal[liability_slot]
+            current.liability_monthly_payment[active_rollout, liability_slot] = plan.liabilities.monthly_payment[
                 liability_slot
             ]
             current.liability_interest_ytd[active_rollout, liability_slot] = 0.0
@@ -1931,24 +1931,24 @@ def _apply_obligation_accruals(
             )
         elif source_kind == SOURCE_MORTGAGE_PAYMENT:
             liab = source_index
-            prop = int(plan.liability_property_slot[liab])
+            prop = int(plan.liabilities.property_slot[liab])
             active &= (
                 current.liability_active[:, liab]
-                & (plan.property_month[prop] < month)
+                & (plan.properties.month[prop] < month)
                 & (current.liability_principal[:, liab] > 0.0)
             )
-            interest = current.liability_principal[:, liab] * float(plan.liability_annual_rate[liab]) / 12.0
+            interest = current.liability_principal[:, liab] * float(plan.liabilities.annual_rate[liab]) / 12.0
             amount = np.minimum(
                 current.liability_monthly_payment[:, liab], current.liability_principal[:, liab] + interest
             )
         elif source_kind == SOURCE_PROPERTY_TAX:
             prop = source_index
-            active &= current.property_active[:, prop] & (plan.property_month[prop] < month)
+            active &= current.property_active[:, prop] & (plan.properties.month[prop] < month)
             rate = float(plan.obligation_amount_fixed[month, slot])
             if np.isnan(rate):
-                rate = float(plan.property_location_tax_rate[prop])
-            ad_valorem_monthly = plan.property_initial_assessed_value[prop] * rate / 12.0
-            non_ad_valorem_monthly = plan.property_special_assessment_annual_usd[prop] / 12.0
+                rate = float(plan.properties.location_tax_rate[prop])
+            ad_valorem_monthly = plan.properties.initial_assessed_value[prop] * rate / 12.0
+            non_ad_valorem_monthly = plan.properties.special_assessment_annual_usd[prop] / 12.0
             amount = np.full(plan.rollout_count, ad_valorem_monthly + non_ad_valorem_monthly)
         elif source_kind == SOURCE_ESTIMATED_TAX:
             amount = np.full(plan.rollout_count, float(plan.tax.profile_prior_year_tax[source_index]) / 4.0)
@@ -2088,7 +2088,7 @@ def _apply_mortgage_payment(
     amount: np.ndarray,
 ) -> None:
     principal_before = current.liability_principal[:, liability_slot]
-    interest = np.minimum(principal_before * float(plan.liability_annual_rate[liability_slot]) / 12.0, amount)
+    interest = np.minimum(principal_before * float(plan.liabilities.annual_rate[liability_slot]) / 12.0, amount)
     principal = np.minimum(np.maximum(amount - interest, 0.0), principal_before)
 
     buffers.mortgage_payment_active[month, liability_slot, paid] = True
@@ -2100,7 +2100,7 @@ def _apply_mortgage_payment(
     current.liability_principal_ytd[paid, liability_slot] += principal[paid]
     # Per-month rented share of interest, indexed by runtime property_rented_fraction so that
     # mid-horizon lifecycle transitions take effect immediately for MID + Schedule E.
-    prop_slot = int(plan.liability_property_slot[liability_slot])
+    prop_slot = int(plan.liabilities.property_slot[liability_slot])
     if prop_slot >= 0:
         rented = current.property_rented_fraction[:, prop_slot]
         current.liability_rental_interest_ytd[paid, liability_slot] += interest[paid] * rented[paid]
@@ -2520,15 +2520,15 @@ def _decode_property_state(plan: CompiledSimulation, buffers: SimulationBuffers)
     h1, r, p = basis.shape
     months, rollouts, props = _state_axes(h1, r, p)
     mask = active.reshape(-1)
-    property_ids = _codes_to_strings(plan, plan.property_id_codes)
-    location_ids = _codes_to_strings(plan, plan.property_location_codes)
+    property_ids = _codes_to_strings(plan, plan.properties.id)
+    location_ids = _codes_to_strings(plan, plan.properties.location_id)
     return _state_history_frame_from_columns(
         {
             "rollout_index": rollouts[mask],
             "month_index": months[mask],
             "property_id": property_ids[props[mask]],
             "location_id": location_ids[props[mask]],
-            "purchase_month_index": plan.property_month.astype(np.int64)[props[mask]],
+            "purchase_month_index": plan.properties.month.astype(np.int64)[props[mask]],
             "adjusted_basis_usd": basis.reshape(-1)[mask],
         },
         PROPERTY_STATE_FRAME,
@@ -2540,8 +2540,8 @@ def _decode_property_stakes(plan: CompiledSimulation, buffers: SimulationBuffers
     h1, r, p = active.shape
     months, rollouts, props = _state_axes(h1, r, p)
     mask = active.reshape(-1)
-    property_ids = _codes_to_strings(plan, plan.property_id_codes)
-    buyer_ids = _codes_to_strings(plan, plan.property_buyer_agent_codes)
+    property_ids = _codes_to_strings(plan, plan.properties.id)
+    buyer_ids = _codes_to_strings(plan, plan.properties.buyer_agent)
     return _state_history_frame_from_columns(
         {
             "rollout_index": rollouts[mask],
@@ -2562,15 +2562,15 @@ def _decode_liabilities(plan: CompiledSimulation, buffers: SimulationBuffers) ->
     h1, r, n_liab = principal.shape
     months, rollouts, liabs = _state_axes(h1, r, n_liab)
     mask = active.reshape(-1)
-    liability_ids = _codes_to_strings(plan, plan.liability_codes)
-    agent_ids = _codes_to_strings(plan, plan.liability_agent_codes)
-    payment_account_ids = _codes_to_strings(plan, plan.liability_payment_account_codes)
-    counterparty_agent_ids = _codes_to_strings(plan, plan.liability_counterparty_agent_codes)
-    counterparty_account_ids = _codes_to_strings(plan, plan.liability_counterparty_account_codes)
-    property_ids_per_liab = _codes_to_strings(plan, plan.property_id_codes)[
-        plan.liability_property_slot.astype(np.int64)
+    liability_ids = _codes_to_strings(plan, plan.liabilities.codes)
+    agent_ids = _codes_to_strings(plan, plan.liabilities.agent)
+    payment_account_ids = _codes_to_strings(plan, plan.liabilities.payment_account)
+    counterparty_agent_ids = _codes_to_strings(plan, plan.liabilities.counterparty_agent)
+    counterparty_account_ids = _codes_to_strings(plan, plan.liabilities.counterparty_account)
+    property_ids_per_liab = _codes_to_strings(plan, plan.properties.id)[
+        plan.liabilities.property_slot.astype(np.int64)
     ]
-    origination_per_liab = plan.property_month.astype(np.int64)[plan.liability_property_slot.astype(np.int64)]
+    origination_per_liab = plan.properties.month.astype(np.int64)[plan.liabilities.property_slot.astype(np.int64)]
     return _state_history_frame_from_columns(
         {
             "rollout_index": rollouts[mask],
@@ -2582,8 +2582,8 @@ def _decode_liabilities(plan: CompiledSimulation, buffers: SimulationBuffers) ->
             "counterparty_account_id": counterparty_account_ids[liabs[mask]],
             "property_id": property_ids_per_liab[liabs[mask]],
             "principal_usd": principal.reshape(-1)[mask],
-            "annual_interest_rate": plan.liability_annual_rate.astype(np.float64)[liabs[mask]],
-            "term_months": plan.liability_term_months.astype(np.int64)[liabs[mask]],
+            "annual_interest_rate": plan.liabilities.annual_rate.astype(np.float64)[liabs[mask]],
+            "term_months": plan.liabilities.term_months.astype(np.int64)[liabs[mask]],
             "origination_month_index": origination_per_liab[liabs[mask]],
             "monthly_payment_usd": buffers.liability_monthly_payment_state.reshape(-1)[mask],
             "interest_paid_ytd_usd": buffers.liability_interest_ytd_state.reshape(-1)[mask],
@@ -2695,7 +2695,7 @@ def _decode_lifecycle_events(
         )
     months = plan.lifecycle_event_month.astype(np.int64)[events_idx]
     property_slots = plan.lifecycle_event_property.astype(np.int64)[events_idx]
-    property_ids = _codes_to_strings(plan, plan.property_id_codes)[property_slots]
+    property_ids = _codes_to_strings(plan, plan.properties.id)[property_slots]
     kinds = plan.lifecycle_event_kind.astype(np.int64)[events_idx]
     fraction_mask = kinds == LIFECYCLE_KIND_FRACTION
     capital_mask = kinds == LIFECYCLE_KIND_CAPITAL_IMPROVEMENT
@@ -2774,13 +2774,13 @@ def _decode_property_purchases(
         months, props, rollouts = np.argwhere(active).T
     else:
         months = props = rollouts = np.array([], dtype=np.int64)
-    cause_ids = _codes_to_strings(plan, plan.property_cause_codes)[months, props]
-    property_ids = _codes_to_strings(plan, plan.property_id_codes)[props]
-    location_ids = _codes_to_strings(plan, plan.property_location_codes)[props]
-    buyer_agents = _codes_to_strings(plan, plan.property_buyer_agent_codes)[props]
-    buyer_accounts = _codes_to_strings(plan, plan.property_buyer_account_codes)[props]
-    seller_agents = _codes_to_strings(plan, plan.property_seller_agent_codes)[props]
-    seller_accounts = _codes_to_strings(plan, plan.property_seller_account_codes)[props]
+    cause_ids = _codes_to_strings(plan, plan.properties.cause)[months, props]
+    property_ids = _codes_to_strings(plan, plan.properties.id)[props]
+    location_ids = _codes_to_strings(plan, plan.properties.location_id)[props]
+    buyer_agents = _codes_to_strings(plan, plan.properties.buyer_agent)[props]
+    buyer_accounts = _codes_to_strings(plan, plan.properties.buyer_account)[props]
+    seller_agents = _codes_to_strings(plan, plan.properties.seller_agent)[props]
+    seller_accounts = _codes_to_strings(plan, plan.properties.seller_account)[props]
     purchases = _frame_from_columns(
         EVENT_FRAMES.property_purchases,
         rollout_index=rollouts,
@@ -2789,12 +2789,12 @@ def _decode_property_purchases(
         property_id=property_ids,
         location_id=location_ids,
         buyer_agent_id=buyer_agents,
-        purchase_price_usd=plan.property_purchase_price.astype(np.float64)[props],
-        closing_cost_usd=plan.property_closing_cost.astype(np.float64)[props],
-        adjusted_basis_usd=plan.property_adjusted_basis.astype(np.float64)[props],
-        ownership_pct=plan.property_ownership_pct.astype(np.float64)[props],
-        stake_contribution_usd=plan.property_stake_contribution.astype(np.float64)[props],
-        equity_ledger_usd=plan.property_equity_ledger.astype(np.float64)[props],
+        purchase_price_usd=plan.properties.purchase_price.astype(np.float64)[props],
+        closing_cost_usd=plan.properties.closing_cost.astype(np.float64)[props],
+        adjusted_basis_usd=plan.properties.adjusted_basis.astype(np.float64)[props],
+        ownership_pct=plan.properties.ownership.astype(np.float64)[props],
+        stake_contribution_usd=plan.properties.stake_contribution.astype(np.float64)[props],
+        equity_ledger_usd=plan.properties.equity_ledger.astype(np.float64)[props],
     )
     # Derived buyer-cash transfers: subset where `property_transfer_active` also holds.
     transfer_mask = buffers.property_transfer_active[months, props, rollouts]
@@ -2812,7 +2812,7 @@ def _decode_property_purchases(
             from_account_id=buyer_accounts[transfer_mask],
             to_agent_id=seller_agents[transfer_mask],
             to_account_id=seller_accounts[transfer_mask],
-            amount_usd=plan.property_stake_contribution.astype(np.float64)[p_t],
+            amount_usd=plan.properties.stake_contribution.astype(np.float64)[p_t],
             income_category=np.full(p_t.size, None, dtype=object),
         )
     else:
@@ -3078,8 +3078,8 @@ def _decode_mortgage_originations(plan: CompiledSimulation, buffers: SimulationB
         months, liabs, rollouts = np.argwhere(active).T
     else:
         months = liabs = rollouts = np.array([], dtype=np.int64)
-    props = plan.liability_property_slot.astype(np.int64)[liabs]
-    cause_codes_per_event = plan.property_cause_codes[months, props]
+    props = plan.liabilities.property_slot.astype(np.int64)[liabs]
+    cause_codes_per_event = plan.properties.cause[months, props]
     cause_text = _codes_to_strings(plan, cause_codes_per_event)
     cause_ids = np.array([f"{c}_mortgage_origination" for c in cause_text], dtype=object)
     return _frame_from_columns(
@@ -3087,16 +3087,16 @@ def _decode_mortgage_originations(plan: CompiledSimulation, buffers: SimulationB
         rollout_index=rollouts,
         month_index=months,
         cause_id=cause_ids,
-        liability_id=_codes_to_strings(plan, plan.liability_codes)[liabs],
-        agent_id=_codes_to_strings(plan, plan.liability_agent_codes)[liabs],
-        payment_account_id=_codes_to_strings(plan, plan.liability_payment_account_codes)[liabs],
-        counterparty_agent_id=_codes_to_strings(plan, plan.liability_counterparty_agent_codes)[liabs],
-        counterparty_account_id=_codes_to_strings(plan, plan.liability_counterparty_account_codes)[liabs],
-        property_id=_codes_to_strings(plan, plan.property_id_codes)[props],
-        principal_usd=plan.liability_principal.astype(np.float64)[liabs],
-        annual_interest_rate=plan.liability_annual_rate.astype(np.float64)[liabs],
-        term_months=plan.liability_term_months.astype(np.int64)[liabs],
-        monthly_payment_usd=plan.liability_monthly_payment.astype(np.float64)[liabs],
+        liability_id=_codes_to_strings(plan, plan.liabilities.codes)[liabs],
+        agent_id=_codes_to_strings(plan, plan.liabilities.agent)[liabs],
+        payment_account_id=_codes_to_strings(plan, plan.liabilities.payment_account)[liabs],
+        counterparty_agent_id=_codes_to_strings(plan, plan.liabilities.counterparty_agent)[liabs],
+        counterparty_account_id=_codes_to_strings(plan, plan.liabilities.counterparty_account)[liabs],
+        property_id=_codes_to_strings(plan, plan.properties.id)[props],
+        principal_usd=plan.liabilities.principal.astype(np.float64)[liabs],
+        annual_interest_rate=plan.liabilities.annual_rate.astype(np.float64)[liabs],
+        term_months=plan.liabilities.term_months.astype(np.int64)[liabs],
+        monthly_payment_usd=plan.liabilities.monthly_payment.astype(np.float64)[liabs],
     )
 
 
@@ -3106,8 +3106,8 @@ def _decode_mortgage_payments(plan: CompiledSimulation, buffers: SimulationBuffe
         months, liabs, rollouts = np.argwhere(active).T
     else:
         months = liabs = rollouts = np.array([], dtype=np.int64)
-    props = plan.liability_property_slot.astype(np.int64)[liabs]
-    liability_ids = _codes_to_strings(plan, plan.liability_codes)[liabs]
+    props = plan.liabilities.property_slot.astype(np.int64)[liabs]
+    liability_ids = _codes_to_strings(plan, plan.liabilities.codes)[liabs]
     cause_ids = np.array([f"{lid}_payment_m{m}" for lid, m in zip(liability_ids, months, strict=True)], dtype=object)
     return _frame_from_columns(
         EVENT_FRAMES.mortgage_payments,
@@ -3115,11 +3115,11 @@ def _decode_mortgage_payments(plan: CompiledSimulation, buffers: SimulationBuffe
         month_index=months,
         cause_id=cause_ids,
         liability_id=liability_ids,
-        agent_id=_codes_to_strings(plan, plan.liability_agent_codes)[liabs],
-        counterparty_agent_id=_codes_to_strings(plan, plan.liability_counterparty_agent_codes)[liabs],
-        property_id=_codes_to_strings(plan, plan.property_id_codes)[props],
-        from_account_id=_codes_to_strings(plan, plan.liability_payment_account_codes)[liabs],
-        to_account_id=_codes_to_strings(plan, plan.liability_counterparty_account_codes)[liabs],
+        agent_id=_codes_to_strings(plan, plan.liabilities.agent)[liabs],
+        counterparty_agent_id=_codes_to_strings(plan, plan.liabilities.counterparty_agent)[liabs],
+        property_id=_codes_to_strings(plan, plan.properties.id)[props],
+        from_account_id=_codes_to_strings(plan, plan.liabilities.payment_account)[liabs],
+        to_account_id=_codes_to_strings(plan, plan.liabilities.counterparty_account)[liabs],
         interest_usd=buffers.mortgage_payment_interest[months, liabs, rollouts],
         principal_usd=buffers.mortgage_payment_principal[months, liabs, rollouts],
         total_payment_usd=buffers.mortgage_payment_total[months, liabs, rollouts],

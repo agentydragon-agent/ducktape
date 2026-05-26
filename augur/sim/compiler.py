@@ -117,7 +117,7 @@ class CompiledSimulation:
     capital_gain_agent_codes: NDArray[np.int64]
     tax_profile_capital_gain_index: NDArray[np.int64]
     # tax_link × liability matrix; entry (link, lia) is the pro-rata MID ratio
-    # `min(1, principal_cap[jurisdiction] / liability_principal[lia])` for liabilities
+    # `min(1, principal_cap[jurisdiction] / liabilities.principal[lia])` for liabilities
     # owned by the link's profile agent and listed in a MortgageInterestDeductionPolicy;
     # 0.0 otherwise. Engine does `interest_ytd @ ratio[link]` per link to get MID per rollout.
     tax_link_mid_principal_ratio: NDArray[np.float64]
@@ -137,27 +137,7 @@ class CompiledSimulation:
     tax_link_salt_contributing_mask: NDArray[np.bool_]
     tax_liabilities: TaxLiabilityCompileOutput
     transfers: TransferCompileOutput
-    property_cause_codes: NDArray[np.int64]
-    property_id_codes: NDArray[np.int64]
-    property_location_codes: NDArray[np.int64]
-    property_location_tax_rate: NDArray[np.float64]
-    property_special_assessment_annual_usd: NDArray[np.float64]
-    property_initial_assessed_value: NDArray[np.float64]
-    property_month: NDArray[np.int64]
-    property_buyer_agent_codes: NDArray[np.int64]
-    property_buyer_account_codes: NDArray[np.int64]
-    property_buyer_cash_slot: NDArray[np.int64]
-    property_seller_agent_codes: NDArray[np.int64]
-    property_seller_account_codes: NDArray[np.int64]
-    property_seller_cash_slot: NDArray[np.int64]
-    property_purchase_price: NDArray[np.float64]
-    property_closing_cost: NDArray[np.float64]
-    property_down_payment: NDArray[np.float64]
-    property_adjusted_basis: NDArray[np.float64]
-    property_ownership_pct: NDArray[np.float64]
-    property_stake_contribution: NDArray[np.float64]
-    property_equity_ledger: NDArray[np.float64]
-    property_mortgage_slot: NDArray[np.int64]
+    properties: PropertyCompileOutput
     # Per-property rented_fraction (0..1). 0 = pure owner-occupied/off; 1 = pure investment.
     # Drives MID/SALT/Schedule E splits + monthly depreciation accrual.
     property_rented_fraction: NDArray[np.float64]
@@ -189,20 +169,9 @@ class CompiledSimulation:
     # Per-month start index (length horizon_months + 1). Events for month M live at slots
     # [lifecycle_event_month_starts[M], lifecycle_event_month_starts[M+1]).
     lifecycle_event_month_starts: NDArray[np.int64]
-    liability_codes: NDArray[np.int64]
-    liability_property_slot: NDArray[np.int64]
+    liabilities: LiabilityCompileOutput
     # Profile index of each liability's owner. NO_CODE if the owner has no tax profile.
     liability_owner_profile_index: NDArray[np.int64]
-    liability_agent_codes: NDArray[np.int64]
-    liability_payment_account_codes: NDArray[np.int64]
-    liability_payment_cash_slot: NDArray[np.int64]
-    liability_counterparty_agent_codes: NDArray[np.int64]
-    liability_counterparty_account_codes: NDArray[np.int64]
-    liability_counterparty_cash_slot: NDArray[np.int64]
-    liability_principal: NDArray[np.float64]
-    liability_annual_rate: NDArray[np.float64]
-    liability_term_months: NDArray[np.int64]
-    liability_monthly_payment: NDArray[np.float64]
     sale_cause_codes: NDArray[np.int64]
     sale_month: NDArray[np.int64]
     sale_agent_codes: NDArray[np.int64]
@@ -357,44 +326,10 @@ def compile_simulation(
 
     transfers = _compile_transfer_slots(scenario, strings, account_slot_by_key, profile_index_by_agent, series_index_by_id)
 
-    (
-        property_cause_codes,
-        property_id_codes,
-        property_location_codes,
-        property_location_tax_rate,
-        property_special_assessment_annual_usd,
-        property_initial_assessed_value,
-        property_month,
-        property_buyer_agent_codes,
-        property_buyer_account_codes,
-        property_buyer_cash_slot,
-        property_seller_agent_codes,
-        property_seller_account_codes,
-        property_seller_cash_slot,
-        property_purchase_price,
-        property_closing_cost,
-        property_down_payment,
-        property_adjusted_basis,
-        property_ownership_pct,
-        property_stake_contribution,
-        property_equity_ledger,
-        property_mortgage_slot,
-        liability_codes,
-        liability_property_slot,
-        liability_agent_codes,
-        liability_payment_account_codes,
-        liability_payment_cash_slot,
-        liability_counterparty_agent_codes,
-        liability_counterparty_account_codes,
-        liability_counterparty_cash_slot,
-        liability_principal,
-        liability_annual_rate,
-        liability_term_months,
-        liability_monthly_payment,
-    ) = _compile_properties_and_liabilities(scenario, strings, account_slot_by_key, locations)
+    properties, liabilities = _compile_properties_and_liabilities(scenario, strings, account_slot_by_key, locations)
 
     # Per-liability rented_fraction: each liability is tied to one property via
-    # liability_property_slot; the property's rented_fraction (0..1) drives both the MID
+    # liabilities.property_slot; the property's rented_fraction (0..1) drives both the MID
     # scale-down (MID applies only to owner-use share = 1 - rented_fraction) and the
     # Schedule E rental-interest deduction (= rented_fraction × interest_ytd).
     property_count = len(scenario.scheduled_property_purchases)
@@ -479,19 +414,14 @@ def compile_simulation(
 
     liability_owner_profile_index = np.array(
         [
-            profile_index_by_agent.get(strings.values[int(liability_agent_codes[lia])], NO_CODE)
-            for lia in range(liability_codes.shape[0])
+            profile_index_by_agent.get(strings.values[int(liabilities.agent[lia])], NO_CODE)
+            for lia in range(liabilities.codes.shape[0])
         ],
         dtype=np.int64,
     )
 
     (tax_link_mid_principal_ratio, tax_link_mid_active) = _compile_mortgage_interest_deductions(
-        scenario,
-        strings,
-        tax=tax,
-        liability_codes=liability_codes,
-        liability_agent_codes=liability_agent_codes,
-        liability_principal=liability_principal,
+        scenario, strings, tax=tax, liabilities=liabilities
     )
 
     (tax_link_salt_active, tax_link_salt_cap_by_year, tax_link_salt_contributing_mask) = (
@@ -538,11 +468,9 @@ def compile_simulation(
         strings,
         account_slot_by_key,
         series_index_by_id,
-        property_id_codes,
-        property_month,
+        properties,
         property_slot_by_id,
-        liability_codes,
-        liability_property_slot,
+        liabilities,
         tax,
     )
 
@@ -625,8 +553,8 @@ def compile_simulation(
         capital_gain_agent_count=capital_gain_agent_codes.shape[0],
         tax_link_count=max(1, tax.link_profile.shape[0]),
         tax_liability_count=tax_liabilities.profile_index.shape[0],
-        property_count=property_month.shape[0],
-        liability_count=liability_codes.shape[0],
+        property_count=properties.month.shape[0],
+        liability_count=liabilities.codes.shape[0],
         max_transfer_slots=transfers.cause.shape[1],
         max_obligation_slots=obligation_cause_codes.shape[1],
         scheduled_sale_count=sale_month.shape[0],
@@ -663,29 +591,8 @@ def compile_simulation(
         tax_link_salt_contributing_mask=tax_link_salt_contributing_mask,
         tax_liabilities=tax_liabilities,
         transfers=transfers,
-        property_cause_codes=property_cause_codes,
-        property_id_codes=property_id_codes,
-        property_location_codes=property_location_codes,
-        property_location_tax_rate=property_location_tax_rate,
-        property_special_assessment_annual_usd=property_special_assessment_annual_usd,
-        property_initial_assessed_value=property_initial_assessed_value,
-        property_month=property_month,
-        property_buyer_agent_codes=property_buyer_agent_codes,
-        property_buyer_account_codes=property_buyer_account_codes,
-        property_buyer_cash_slot=property_buyer_cash_slot,
-        property_seller_agent_codes=property_seller_agent_codes,
-        property_seller_account_codes=property_seller_account_codes,
-        property_seller_cash_slot=property_seller_cash_slot,
-        property_purchase_price=property_purchase_price,
-        property_closing_cost=property_closing_cost,
-        property_down_payment=property_down_payment,
-        property_adjusted_basis=property_adjusted_basis,
-        property_ownership_pct=property_ownership_pct,
-        property_stake_contribution=property_stake_contribution,
-        property_equity_ledger=property_equity_ledger,
-        property_mortgage_slot=property_mortgage_slot,
-        liability_codes=liability_codes,
-        liability_property_slot=liability_property_slot,
+        properties=properties,
+        liabilities=liabilities,
         liability_owner_profile_index=liability_owner_profile_index,
         property_rented_fraction=property_rented_fraction,
         property_building_basis=property_building_basis,
@@ -697,16 +604,6 @@ def compile_simulation(
         lifecycle_event_rented_fraction=lifecycle_event_rented_fraction,
         lifecycle_event_amount=lifecycle_event_amount,
         lifecycle_event_month_starts=lifecycle_event_month_starts,
-        liability_agent_codes=liability_agent_codes,
-        liability_payment_account_codes=liability_payment_account_codes,
-        liability_payment_cash_slot=liability_payment_cash_slot,
-        liability_counterparty_agent_codes=liability_counterparty_agent_codes,
-        liability_counterparty_account_codes=liability_counterparty_account_codes,
-        liability_counterparty_cash_slot=liability_counterparty_cash_slot,
-        liability_principal=liability_principal,
-        liability_annual_rate=liability_annual_rate,
-        liability_term_months=liability_term_months,
-        liability_monthly_payment=liability_monthly_payment,
         sale_cause_codes=sale_cause_codes,
         sale_month=sale_month,
         sale_agent_codes=sale_agent_codes,
@@ -1271,9 +1168,7 @@ def _compile_mortgage_interest_deductions(
     strings: StringTable,
     *,
     tax: TaxCompileOutput,
-    liability_codes: np.ndarray,
-    liability_agent_codes: np.ndarray,
-    liability_principal: np.ndarray,
+    liabilities: LiabilityCompileOutput,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Compile the precomputed per-(tax_link, liability) MID ratio matrix.
 
@@ -1287,25 +1182,25 @@ def _compile_mortgage_interest_deductions(
     """
 
     link_count = tax.link_profile.shape[0]
-    liability_count = liability_codes.shape[0]
+    liability_count = liabilities.codes.shape[0]
     ratio = np.zeros((max(1, link_count), max(1, liability_count)), dtype=np.float64)
     active = np.zeros(max(1, link_count), dtype=np.bool_)
 
     if link_count == 0 or liability_count == 0 or not scenario.mortgage_interest_deduction_policies:
         return ratio, active
 
-    liability_slot_by_code = {int(liability_codes[lia]): lia for lia in range(liability_count)}
+    liability_slot_by_code = {int(liabilities.codes[lia]): lia for lia in range(liability_count)}
     policies_by_liability_slot: dict[int, MortgageInterestDeductionPolicy] = {}
     for policy in scenario.mortgage_interest_deduction_policies:
         liability_code = strings.require(policy.liability_id)
         if liability_code not in liability_slot_by_code:
             raise ValueError(
                 f"mortgage_interest_deduction_policies references unknown liability_id "
-                f"{policy.liability_id!r}; known liabilities: {sorted(strings.values[int(c)] for c in liability_codes)}"
+                f"{policy.liability_id!r}; known liabilities: {sorted(strings.values[int(c)] for c in liabilities.codes)}"
             )
         lia_slot = liability_slot_by_code[liability_code]
         owner_code = strings.require(policy.owner_agent_id)
-        if int(liability_agent_codes[lia_slot]) != owner_code:
+        if int(liabilities.agent[lia_slot]) != owner_code:
             raise ValueError(
                 f"mortgage_interest_deduction_policies owner_agent_id={policy.owner_agent_id!r} does not match "
                 f"the liability's owner for liability_id={policy.liability_id!r}"
@@ -1317,7 +1212,7 @@ def _compile_mortgage_interest_deductions(
         link_agent_code = int(tax.profile_agent[profile_index])
         jurisdiction_id = strings.values[int(tax.link_jurisdiction[link])]
         for lia_slot, policy in policies_by_liability_slot.items():
-            if int(liability_agent_codes[lia_slot]) != link_agent_code:
+            if int(liabilities.agent[lia_slot]) != link_agent_code:
                 continue
             if policy.debt_class == "home_equity":
                 # TCJA (§163(h)(3), 2018-2025): home-equity-debt interest is not deductible.
@@ -1328,7 +1223,7 @@ def _compile_mortgage_interest_deductions(
             cap = policy.per_jurisdiction_principal_cap_usd.get(jurisdiction_id)
             if cap is None:
                 continue
-            principal = float(liability_principal[lia_slot])
+            principal = float(liabilities.principal[lia_slot])
             if principal <= 0.0:
                 continue
             # Principal-cap ratio only. The owner-vs-rented split is now applied at runtime
@@ -1475,12 +1370,62 @@ def _compile_tax_liability_slots(horizon: int, tax: TaxCompileOutput) -> TaxLiab
     )
 
 
+@dataclass(frozen=True)
+class PropertyCompileOutput:
+    """Per-(month, slot) property-purchase plumbing produced alongside liabilities.
+    `cause` is the (month × slot) event log; everything else is per-slot scalar shape.
+    `mortgage_slot[idx]` is NO_CODE for cash purchases; otherwise the index into the
+    parallel `LiabilityCompileOutput` arrays."""
+
+    cause: NDArray[np.int64]
+    id: NDArray[np.int64]
+    location_id: NDArray[np.int64]
+    location_tax_rate: NDArray[np.float64]
+    special_assessment_annual_usd: NDArray[np.float64]
+    initial_assessed_value: NDArray[np.float64]
+    month: NDArray[np.int64]
+    buyer_agent: NDArray[np.int64]
+    buyer_account: NDArray[np.int64]
+    buyer_slot: NDArray[np.int64]
+    seller_agent: NDArray[np.int64]
+    seller_account: NDArray[np.int64]
+    seller_slot: NDArray[np.int64]
+    purchase_price: NDArray[np.float64]
+    closing_cost: NDArray[np.float64]
+    down_payment: NDArray[np.float64]
+    adjusted_basis: NDArray[np.float64]
+    ownership: NDArray[np.float64]
+    stake_contribution: NDArray[np.float64]
+    equity_ledger: NDArray[np.float64]
+    mortgage_slot: NDArray[np.int64]
+
+
+@dataclass(frozen=True)
+class LiabilityCompileOutput:
+    """Per-liability arrays (one row per scheduled-purchase mortgage). `property_slot[i]`
+    points back into `PropertyCompileOutput` so the engine can look up the underlying
+    property when settling a mortgage payment or computing MID."""
+
+    codes: NDArray[np.int64]
+    property_slot: NDArray[np.int64]
+    agent: NDArray[np.int64]
+    payment_account: NDArray[np.int64]
+    payment_slot: NDArray[np.int64]
+    counterparty_agent: NDArray[np.int64]
+    counterparty_account: NDArray[np.int64]
+    counterparty_slot: NDArray[np.int64]
+    principal: NDArray[np.float64]
+    annual_rate: NDArray[np.float64]
+    term_months: NDArray[np.int64]
+    monthly_payment: NDArray[np.float64]
+
+
 def _compile_properties_and_liabilities(
     scenario: Scenario,
     strings: StringTable,
     account_slot_by_key: dict[tuple[str, str], int],
     locations: dict[str, Location],
-) -> tuple[np.ndarray, ...]:
+) -> tuple[PropertyCompileOutput, LiabilityCompileOutput]:
     prop_count = len(scenario.scheduled_property_purchases)
     cause = np.full((int(scenario.horizon_months), max(1, prop_count)), NO_CODE, dtype=np.int64)
     prop_id = np.zeros(max(1, prop_count), dtype=np.int64)
@@ -1566,39 +1511,43 @@ def _compile_properties_and_liabilities(
             )
 
     return (
-        cause,
-        prop_id,
-        location_id,
-        location_tax_rate,
-        special_assessment_annual_usd,
-        initial_assessed_value,
-        month_array,
-        buyer_agent,
-        buyer_account,
-        buyer_slot,
-        seller_agent,
-        seller_account,
-        seller_slot,
-        purchase_price,
-        closing_cost,
-        down_payment,
-        adjusted_basis,
-        ownership,
-        stake_contribution,
-        equity_ledger,
-        mortgage_slot,
-        np.asarray(liability_codes, dtype=np.int64),
-        np.asarray(liability_property_slot, dtype=np.int64),
-        np.asarray(liability_agent, dtype=np.int64),
-        np.asarray(liability_payment_account, dtype=np.int64),
-        np.asarray(liability_payment_slot, dtype=np.int64),
-        np.asarray(liability_counterparty_agent, dtype=np.int64),
-        np.asarray(liability_counterparty_account, dtype=np.int64),
-        np.asarray(liability_counterparty_slot, dtype=np.int64),
-        np.asarray(liability_principal, dtype=np.float64),
-        np.asarray(liability_rate, dtype=np.float64),
-        np.asarray(liability_term, dtype=np.int64),
-        np.asarray(liability_payment, dtype=np.float64),
+        PropertyCompileOutput(
+            cause=cause,
+            id=prop_id,
+            location_id=location_id,
+            location_tax_rate=location_tax_rate,
+            special_assessment_annual_usd=special_assessment_annual_usd,
+            initial_assessed_value=initial_assessed_value,
+            month=month_array,
+            buyer_agent=buyer_agent,
+            buyer_account=buyer_account,
+            buyer_slot=buyer_slot,
+            seller_agent=seller_agent,
+            seller_account=seller_account,
+            seller_slot=seller_slot,
+            purchase_price=purchase_price,
+            closing_cost=closing_cost,
+            down_payment=down_payment,
+            adjusted_basis=adjusted_basis,
+            ownership=ownership,
+            stake_contribution=stake_contribution,
+            equity_ledger=equity_ledger,
+            mortgage_slot=mortgage_slot,
+        ),
+        LiabilityCompileOutput(
+            codes=np.asarray(liability_codes, dtype=np.int64),
+            property_slot=np.asarray(liability_property_slot, dtype=np.int64),
+            agent=np.asarray(liability_agent, dtype=np.int64),
+            payment_account=np.asarray(liability_payment_account, dtype=np.int64),
+            payment_slot=np.asarray(liability_payment_slot, dtype=np.int64),
+            counterparty_agent=np.asarray(liability_counterparty_agent, dtype=np.int64),
+            counterparty_account=np.asarray(liability_counterparty_account, dtype=np.int64),
+            counterparty_slot=np.asarray(liability_counterparty_slot, dtype=np.int64),
+            principal=np.asarray(liability_principal, dtype=np.float64),
+            annual_rate=np.asarray(liability_rate, dtype=np.float64),
+            term_months=np.asarray(liability_term, dtype=np.int64),
+            monthly_payment=np.asarray(liability_payment, dtype=np.float64),
+        ),
     )
 
 
@@ -1651,11 +1600,9 @@ def _compile_obligation_slots(
     strings: StringTable,
     account_slot_by_key: dict[tuple[str, str], int],
     series_index_by_id: dict[str, int],
-    property_id_codes: np.ndarray,
-    property_month: np.ndarray,
+    properties: PropertyCompileOutput,
     property_slot_by_id: dict[str, int],
-    liability_codes: np.ndarray,
-    liability_property_slot: np.ndarray,
+    liabilities: LiabilityCompileOutput,
     tax: TaxCompileOutput,
 ) -> tuple[np.ndarray, ...]:
     horizon = int(scenario.horizon_months)
@@ -1670,15 +1617,15 @@ def _compile_obligation_slots(
                 monthly_specs[month].append({"kind": 0, "source": NO_CODE, "config": obligation})
 
     for month in range(horizon):
-        for liability_slot, liability_code in enumerate(liability_codes.tolist()):
-            prop_slot = int(liability_property_slot[liability_slot])
+        for liability_slot, liability_code in enumerate(liabilities.codes.tolist()):
+            prop_slot = int(liabilities.property_slot[liability_slot])
             monthly_specs[month].append(
                 {"kind": 1, "source": liability_slot, "liability_code": liability_code, "prop_slot": prop_slot}
             )
 
     for month in range(horizon):
-        for prop_slot, prop_code in enumerate(property_id_codes.tolist()):
-            if prop_slot < property_month.shape[0]:
+        for prop_slot, prop_code in enumerate(properties.id.tolist()):
+            if prop_slot < properties.month.shape[0]:
                 monthly_specs[month].append({"kind": 2, "source": prop_slot, "property_code": prop_code})
 
     for month in range(horizon):
@@ -1774,9 +1721,9 @@ def _compile_obligation_slots(
             kind = int(spec["kind"])
             if kind == 1:
                 liability_slot = int(spec["source"])
-                if liability_slot >= liability_property_slot.shape[0]:
+                if liability_slot >= liabilities.property_slot.shape[0]:
                     continue
-                purchase = scenario.scheduled_property_purchases[int(liability_property_slot[liability_slot])]
+                purchase = scenario.scheduled_property_purchases[int(liabilities.property_slot[liability_slot])]
                 if purchase.mortgage is None:
                     continue
                 cause_text = f"{purchase.mortgage.liability_id}_payment_m{month}"
