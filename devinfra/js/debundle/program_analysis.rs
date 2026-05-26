@@ -136,6 +136,15 @@ pub struct SideEffectRecord {
     pub replayable: bool,
 }
 
+/// Result of one fused per-statement walk: the identifier-access
+/// sets the previous `IdentifierAccessCollector` produced, plus the
+/// `runtime_sensitive` flag the previous `RuntimeSensitiveCollector`
+/// produced. Both used to walk the same item AST independently.
+struct ItemFacts {
+    accesses: IdentifierAccesses,
+    runtime_sensitive: bool,
+}
+
 #[derive(Default, Clone)]
 pub struct IdentifierAccesses {
     eager_reads: HashSet<String>,
@@ -218,25 +227,29 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
         }
 
         if let Some((kind, names)) = classify_top_level_decl(item) {
-            let accesses = identifier_accesses_in_module_item(item, kind.into());
+            // Owners never read `runtime_sensitive`; we still let the
+            // fused collector compute it (essentially free — one bool
+            // write inside the same walk) so the per-item walk count
+            // stays at one for every item.
+            let facts = collect_item_facts(item, kind.into());
             owners.push(OwnerRecord {
                 id: format!("owner_{:05}", owners.len()),
                 line: item_line(&line_index, item),
                 names,
                 ordinal,
                 kind,
-                accesses,
+                accesses: facts.accesses,
             });
             continue;
         }
 
-        let accesses = identifier_accesses_in_module_item(item, AccessSourceKind::SideEffect);
+        let facts = collect_item_facts(item, AccessSourceKind::SideEffect);
         side_effects.push(SideEffectRecord {
             id: format!("side_effect_{:05}", side_effects.len()),
             ordinal,
-            runtime_sensitive: runtime_sensitive_module_item(item),
+            runtime_sensitive: facts.runtime_sensitive,
             replayable: matches!(item, ModuleItem::Stmt(Stmt::Expr(_))),
-            accesses,
+            accesses: facts.accesses,
         });
     }
 
@@ -375,19 +388,13 @@ enum AccessSourceKind {
     SideEffect,
 }
 
-fn identifier_accesses_in_module_item(
-    item: &ModuleItem,
-    source_kind: AccessSourceKind,
-) -> IdentifierAccesses {
-    let mut collector = IdentifierAccessCollector::new(source_kind);
+fn collect_item_facts(item: &ModuleItem, source_kind: AccessSourceKind) -> ItemFacts {
+    let mut collector = StatementItemCollector::new(source_kind);
     item.visit_with(&mut collector);
-    collector.accesses
-}
-
-fn runtime_sensitive_module_item(item: &ModuleItem) -> bool {
-    let mut collector = RuntimeSensitiveCollector::default();
-    item.visit_with(&mut collector);
-    collector.sensitive
+    ItemFacts {
+        accesses: collector.accesses,
+        runtime_sensitive: collector.runtime_sensitive,
+    }
 }
 
 /// Single-pass module-level walk producing every fact set the
@@ -472,37 +479,19 @@ impl Visit for ModuleScanVisitor {
     }
 }
 
-#[derive(Default)]
-struct RuntimeSensitiveCollector {
-    sensitive: bool,
-}
-
-impl Visit for RuntimeSensitiveCollector {
-    fn visit_call_expr(&mut self, node: &CallExpr) {
-        if matches!(node.callee, Callee::Import(_))
-            || matches!(&node.callee, Callee::Expr(expr) if matches!(&**expr, Expr::Ident(ident) if ident.sym == *"eval"))
-        {
-            self.sensitive = true;
-        }
-        node.visit_children_with(self);
-    }
-
-    fn visit_meta_prop_expr(&mut self, _node: &MetaPropExpr) {
-        self.sensitive = true;
-    }
-
-    fn visit_await_expr(&mut self, node: &AwaitExpr) {
-        self.sensitive = true;
-        node.visit_children_with(self);
-    }
-}
-
-struct IdentifierAccessCollector {
+/// Fused per-statement collector. Walks one `ModuleItem` once and
+/// produces both `IdentifierAccesses` (phase-bucketed reads/writes)
+/// and the `runtime_sensitive` flag (true on `import(...)`,
+/// `eval(...)`, `import.meta`, `await`). Replaces the previous
+/// `IdentifierAccessCollector` + `RuntimeSensitiveCollector` pair
+/// that each ran a separate `visit_with` over the same item.
+struct StatementItemCollector {
     accesses: IdentifierAccesses,
     phase: AccessPhase,
+    runtime_sensitive: bool,
 }
 
-impl Visit for IdentifierAccessCollector {
+impl Visit for StatementItemCollector {
     fn visit_ident(&mut self, node: &Ident) {
         self.record_read(node.sym.as_ref());
     }
@@ -577,9 +566,33 @@ impl Visit for IdentifierAccessCollector {
     fn visit_update_expr(&mut self, node: &UpdateExpr) {
         record_update_target(&node.arg, self);
     }
+
+    // Runtime-sensitivity hooks (previously `RuntimeSensitiveCollector`).
+    // These set `runtime_sensitive` and otherwise continue the default
+    // traversal so the access-collection logic above keeps seeing
+    // identifiers nested inside the trigger.
+
+    fn visit_call_expr(&mut self, node: &CallExpr) {
+        if !self.runtime_sensitive
+            && (matches!(node.callee, Callee::Import(_))
+                || matches!(&node.callee, Callee::Expr(expr) if matches!(&**expr, Expr::Ident(ident) if ident.sym == *"eval")))
+        {
+            self.runtime_sensitive = true;
+        }
+        node.visit_children_with(self);
+    }
+
+    fn visit_meta_prop_expr(&mut self, _node: &MetaPropExpr) {
+        self.runtime_sensitive = true;
+    }
+
+    fn visit_await_expr(&mut self, node: &AwaitExpr) {
+        self.runtime_sensitive = true;
+        node.visit_children_with(self);
+    }
 }
 
-impl IdentifierAccessCollector {
+impl StatementItemCollector {
     fn new(source_kind: AccessSourceKind) -> Self {
         Self {
             accesses: IdentifierAccesses::default(),
@@ -587,6 +600,7 @@ impl IdentifierAccessCollector {
                 AccessSourceKind::Function => AccessPhase::Lazy,
                 _ => AccessPhase::Eager,
             },
+            runtime_sensitive: false,
         }
     }
 
@@ -619,7 +633,7 @@ impl IdentifierAccessCollector {
     }
 }
 
-impl TargetAccessRecorder for IdentifierAccessCollector {
+impl TargetAccessRecorder for StatementItemCollector {
     fn record_binding_read(&mut self, id: &Id) {
         self.record_read(id.0.as_ref());
     }
@@ -629,6 +643,6 @@ impl TargetAccessRecorder for IdentifierAccessCollector {
     }
 
     fn record_member_write(&mut self, id: &Id) {
-        IdentifierAccessCollector::record_member_write(self, id.0.as_ref());
+        StatementItemCollector::record_member_write(self, id.0.as_ref());
     }
 }
