@@ -186,6 +186,7 @@ py_library(
 py_library(
     name = "engine",
     srcs = [
+        "buffers.py",
         "compiler.py",
         "engine.py",
     ],
