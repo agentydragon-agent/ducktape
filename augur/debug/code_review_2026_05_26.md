@@ -17,21 +17,20 @@ and lifecycle-state extras (`property_rented_fraction`, `property_building_basis
 
 Listed in recommended execution order — each row sets up the next.
 
-### B0. Unify rollout axis to R-last on state buffers
+### B0. Unify rollout axis to R-last on state buffers — landed
 
-Landed for `CurrentStateBuffers` (`579d7bdf5` + `77ab5bd1a`): every
-field flipped from `(R, count)` / `(R, count_a, count_b)` to
-`(count, R)` / `(count_a, count_b, R)`. Engine reads + writes were
-mechanically rewritten (axis rotate) and ~10 derived ops were fixed
-by hand (matmul order, `sum(axis=…)`, `shape[1]` → `[0]`, fifo-seam
-transposes). All sim/api/product tests numerically identical.
-
-**Follow-up still pending**: `StateHistoryBuffers` is still
-`(snapshot, R, count)`, so `_snapshot_current_state` writes a `.T` per
-field per snapshot. Flipping that arena to `(snapshot, count, R)`
-would close the loop, but it requires updating the decode pass in
-`engine.py` and the `augur/product/decode.py` consumers. Defer
-until/unless the snapshot transpose shows up in profiles.
+`CurrentStateBuffers` (`579d7bdf5` + `77ab5bd1a`) and
+`StateHistoryBuffers` (`8c3420303` + `135f6ecb0` + `7bbb89b0e`): every
+rollout-dimensioned field is now `(…, R)`. `_snapshot_current_state`
+copies directly with no per-field `.T`; the decode pass reads each state
+arena through an `_r_first_view` helper that does a single
+`np.moveaxis(state, -1, 1)` view so downstream row-major iteration
+keeps working. `augur/product/decode.py` consumers updated to
+`buffers.X_state[:, slot, _SINGLE_ROLLOUT_INDEX]`.
+Manual fixups after the axis rotate covered ~12 derived ops (matmul
+order, `sum(axis=…)`, `shape[1]` → `[0]`, fifo-seam transposes,
+`slice_dense_result` axis, tax-liability settlement broadcasts).
+All sim/api/product/visual tests numerically identical on RBE.
 
 ### B1. Finish remaining `CompiledSimulation` arenas (medium remaining)
 
@@ -128,9 +127,8 @@ current action:
 
 ## Open items, ranked
 
-| #  | Area                                                                | Impact     | Effort |
-| -- | ------------------------------------------------------------------- | ---------- | ------ |
-| B0b | Flip `StateHistoryBuffers` to (snapshot, count, R) — finish B0     | DX         | medium |
-| B5 | Bundle lifecycle/obligation discriminators into typed views         | DX         | medium |
-| B4 | Split compiler.py + engine.py                                       | DX         | large  |
-| X1 | GitHub Actions blocked: account suspension blocks all push-images   | cross-repo | external |
+| #   | Area                                                              | Impact     | Effort   |
+| --- | ----------------------------------------------------------------- | ---------- | -------- |
+| B5  | Bundle lifecycle/obligation discriminators into typed views       | DX         | medium   |
+| B4  | Split compiler.py + engine.py                                     | DX         | large    |
+| X1  | GitHub Actions blocked: account suspension blocks all push-images | cross-repo | external |
