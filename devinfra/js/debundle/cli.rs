@@ -9,7 +9,7 @@ use binding_ops::{
 use comment_cli::{
     BindingCommentArgs, ModuleCommentArgs, run_binding_comment_cmd, run_module_comment_cmd,
 };
-use module_cli::{MergeArgs, ModuleArgs, run_merge, run_module_cli};
+use module_cli::{DeleteArgs, MergeArgs, ModuleArgs, run_delete, run_merge, run_module_cli};
 use peel::{
     CommonArgs as PeelCommonArgs, ExplainArgs, GraphSummaryArgs, OutputFormat, PatchPlanArgs,
     PeelArgs, PlanWorkArgs, SelectionArgs, SourceSliceArgs, UnitsArgs, print_report,
@@ -128,8 +128,8 @@ pub struct ClusterReport {
 
 /// Args for `debundle modules ...`. Aggregates the existing
 /// comment-edit verb (kept in `comment_cli`) with the new
-/// `merge` / `propose` verbs lifted from `module merge` and
-/// `peel plan-work`.
+/// `merge` / `delete` / `propose` verbs lifted from `module merge`
+/// and `peel plan-work`.
 #[derive(Debug, ClapArgs)]
 pub struct ModulesNs {
     #[command(subcommand)]
@@ -142,6 +142,8 @@ enum ModulesNsCommand {
     Comment(ModuleCommentArgs),
     /// Splice source module YAMLs into a target YAML and delete the sources.
     Merge(MergeArgs),
+    /// Delete one or more module YAML files. Refuses non-empty modules unless `--force`.
+    Delete(DeleteArgs),
     /// Emit module-assignment proposals derived from the atomic DAG.
     Propose(PlanWorkArgs),
     /// List all modules in the spec with summary stats.
@@ -335,6 +337,7 @@ pub fn run_debundle_cli(args: DebundleArgs) -> Result<()> {
         DebundleCommand::Modules(args) => match args.command {
             ModulesNsCommand::Comment(c) => run_module_comment_cmd(c),
             ModulesNsCommand::Merge(m) => run_merge(m),
+            ModulesNsCommand::Delete(d) => run_delete(d),
             ModulesNsCommand::Propose(p) => {
                 let format = OutputFormat::resolve(p.format);
                 let report = run_plan_work_report(&p)?;

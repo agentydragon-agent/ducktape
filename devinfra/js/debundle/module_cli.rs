@@ -84,6 +84,68 @@ impl MergeSummary {
     }
 }
 
+/// Top-level `debundle modules delete` argument shape.
+#[derive(Debug, ClapArgs)]
+pub struct DeleteArgs {
+    /// Root directory containing the per-module YAML tree.
+    #[arg(long = "modules", env = "DEBUNDLE_MODULES")]
+    pub modules_root: PathBuf,
+
+    /// Module paths (relative to --modules) to delete. Must be
+    /// non-empty.
+    #[arg(required = true)]
+    pub paths: Vec<PathBuf>,
+
+    /// Validate but do not delete any file.
+    #[arg(long)]
+    pub dry_run: bool,
+
+    /// Skip the realizability gate. Don't use casually.
+    ///
+    /// (The realizability gate hookup is the deferred half of the
+    /// same task that blocks `modules merge` validation — see
+    /// `run_delete` for the documented gap. Today `--no-verify`
+    /// suppresses only the doc-level note; the cross-module-cycle
+    /// gate it would suppress is not yet implemented at this layer.)
+    #[arg(long)]
+    pub no_verify: bool,
+
+    /// Delete a module that still has members or anonymous statements.
+    /// Default refuses non-empty deletions; pass `--force` to override.
+    #[arg(long)]
+    pub force: bool,
+
+    /// `owner_graph.json` for the chunk being edited. Required for
+    /// the realizability gate; ignored when `--no-verify` is set.
+    /// The gate hookup is deferred, so the flag is currently optional
+    /// — once the gate lands it becomes required for non-empty
+    /// deletions.
+    #[arg(long = "graph", env = "DEBUNDLE_GRAPH")]
+    pub owner_graph_path: Option<PathBuf>,
+}
+
+/// Summary returned by [`delete_modules`].
+#[derive(Debug, Clone)]
+pub struct DeleteSummary {
+    /// Absolute paths of the YAML files that were deleted (or, in
+    /// `dry-run` mode, would have been deleted).
+    pub deleted: Vec<PathBuf>,
+    /// Whether the call was a dry-run (no files were actually
+    /// touched). When `true`, `deleted` lists the would-be paths.
+    pub dry_run: bool,
+}
+
+impl DeleteSummary {
+    /// Render the one-line stdout summary.
+    pub fn summary_line(&self) -> String {
+        if self.dry_run {
+            format!("dry-run: would delete {} file(s)", self.deleted.len())
+        } else {
+            format!("deleted {} file(s)", self.deleted.len())
+        }
+    }
+}
+
 /// Run the `debundle module ...` command tree.
 pub fn run_module_cli(args: ModuleArgs) -> Result<()> {
     match args.command {
@@ -259,6 +321,144 @@ pub fn merge_modules(
     Ok(MergeSummary {
         target: target_abs,
         merged_sources: source_abs,
+    })
+}
+
+/// Public entry point for `debundle modules delete`.
+///
+/// Validation contract (per docs/cli.md § "Modules"):
+///
+/// * Default: refuse the deletion of a module that still has members
+///   or anonymous statements. Validate (realizability gate against
+///   the post-delete spec) + apply if valid.
+/// * `--force`: override the non-empty check. The gate still runs.
+/// * `--dry-run`: validate but do not delete any file.
+/// * `--no-verify`: skip the gate; delete unconditionally.
+///
+/// All paths are resolved relative to `args.modules_root` unless
+/// absolute. Paths that do not exist on disk are reported as an
+/// error before any deletion is attempted; the operation is
+/// best-effort atomic (collect-then-remove) but cannot roll back a
+/// partial removal if the filesystem fails midway.
+///
+/// **Gate hookup TODO.** The realizability gate against the
+/// post-delete partition is structurally identical to the `modules
+/// merge` gap: `OwnerGraph::from_report` drops the per-owner
+/// `declared: BTreeSet` (see `ARCH_REVIEW_2026_05.md`
+/// §"`OwnerGraphReport::from_report` drops `declared` on the
+/// floor"), so reconstructing a faithful `Partition` from on-disk
+/// state isn't yet possible. **Fast path:** for the all-empty-modules
+/// case (every module being deleted has no members and no anonymous
+/// statements), the post-delete partition is identical to the
+/// pre-delete partition modulo a no-op empty-module removal — no
+/// edges change, so the gate would trivially accept. We validate
+/// that case structurally inline. For `--force` deletions of
+/// non-empty modules, the gate is deferred with a stderr note.
+pub fn run_delete(args: DeleteArgs) -> Result<()> {
+    if args.no_verify {
+        eprintln!(
+            "warning: --no-verify skips the realizability gate; the deletion will not be \
+             re-checked for cross-module cycles."
+        );
+    }
+
+    let paths_abs: Vec<PathBuf> = args
+        .paths
+        .iter()
+        .map(|p| resolve_under(&args.modules_root, p))
+        .collect();
+
+    // Verify every path exists up-front so we never get stuck in a
+    // partial-removal state on a typo.
+    for p in &paths_abs {
+        if !p.exists() {
+            bail!("module path does not exist: {}", p.display());
+        }
+    }
+
+    // Classify each module: empty (no members, no anonymous
+    // statements) vs non-empty. Required for the `--force` check and
+    // the empty-fast-path gate.
+    let mut non_empty: Vec<(PathBuf, usize, bool)> = Vec::new();
+    let mut all_empty = true;
+    for p in &paths_abs {
+        let doc = read_yaml(p)?;
+        let member_count = sequence_field(&doc, "members").map_or(0, Vec::len);
+        let has_anon = sequence_field(&doc, "anonymous_statements")
+            .is_some_and(|s| !s.is_empty());
+        if member_count > 0 || has_anon {
+            all_empty = false;
+            non_empty.push((p.clone(), member_count, has_anon));
+        }
+    }
+
+    if !non_empty.is_empty() && !args.force {
+        // Render a single-line refusal naming the first offender so
+        // the user can see why; the additional non-empty paths fall
+        // through `--force` once the user opts in.
+        let (path, members, has_anon) = &non_empty[0];
+        let anon_msg = if *has_anon {
+            " (plus anonymous_statements)"
+        } else {
+            ""
+        };
+        bail!(
+            "module {} has {} member(s){}; pass --force to delete anyway",
+            path.display(),
+            members,
+            anon_msg,
+        );
+    }
+
+    // Realizability gate hookup. For the all-empty case we can
+    // validate locally (deleting an empty module is a no-op for the
+    // partition, so the gate trivially accepts). For non-empty
+    // deletions under --force, the gate remains deferred.
+    if !args.no_verify {
+        if all_empty {
+            // No edges change; nothing to check. The fast path is
+            // sound because an empty module owns no bindings and has
+            // no anonymous statements, so removing it from the spec
+            // leaves the partition unchanged.
+        } else if args.owner_graph_path.is_some() {
+            eprintln!(
+                "note: realizability gate hookup is deferred; --graph is accepted but \
+                 not yet exercised for non-empty module deletions."
+            );
+        } else {
+            eprintln!(
+                "note: realizability gate hookup is deferred for non-empty module \
+                 deletions; pass --graph or --no-verify to suppress this note."
+            );
+        }
+    }
+
+    let summary = delete_modules(&paths_abs, args.dry_run)?;
+    println!("{}", summary.summary_line());
+    Ok(())
+}
+
+/// Delete the given absolute paths (or, in `dry_run` mode, simply
+/// return what would be deleted).
+///
+/// The caller is responsible for resolving relative paths and for
+/// the empty/non-empty + gate decision; this function is the
+/// filesystem half of `run_delete`.
+pub fn delete_modules(paths: &[PathBuf], dry_run: bool) -> Result<DeleteSummary> {
+    if dry_run {
+        return Ok(DeleteSummary {
+            deleted: paths.to_vec(),
+            dry_run: true,
+        });
+    }
+    let mut deleted: Vec<PathBuf> = Vec::new();
+    for p in paths {
+        fs::remove_file(p).with_context(|| format!("deleting {}", p.display()))?;
+        deleted.push(p.clone());
+    }
+    Ok(DeleteSummary {
+        deleted,
+        dry_run: false,
     })
 }
 

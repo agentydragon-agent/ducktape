@@ -147,6 +147,21 @@ rust_test(
     ],
 )
 
+# CLI verb `debundle modules delete`: validate-by-default deletion
+# of module YAML files with `--force` (non-empty override),
+# `--dry-run`, `--no-verify`, and the batch atomicity contract.
+rust_test(
+    name = "modules_delete_cli_test",
+    srcs = ["modules_delete_cli_test.rs"],
+    crate_root = "modules_delete_cli_test.rs",
+    data = ["//devinfra/js/debundle"],
+    edition = "2024",
+    deps = [
+        "//devinfra/js/debundle:module_cli",
+        "@crates//:tempfile",
+    ],
+)
+
 # CLI verbs `debundle bindings comment` + `debundle modules comment`:
 # YAML `comment:` field edits including a fake-`$EDITOR` flow. Calls
 # the library's public Rust entry points directly.
