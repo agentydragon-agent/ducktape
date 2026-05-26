@@ -170,238 +170,212 @@ pub(super) fn materialize_logical_chunk(
     })?
     .unwrap_or_default();
 
-    let (
-        factorization,
-        redundant_purity_hints,
+    // Spec annotations carried on any member form (logical-module
+    // member, chunk_renames member) propagate the same way: collect
+    // them by local binding name and feed them into fact analysis.
+    // They are semantic trust assertions, not ownership claims;
+    // binding patches routed through chunk_renames still do not force
+    // factorizer grouping.
+    let analysis_hints: AnalysisHints = time_phase!(timings, "collect_analysis_hints", {
+        let mut hints = AnalysisHints::default();
+        for req in &explicit_requests {
+            for m in &req.members {
+                apply_member_hints(&mut hints, &m.binding, m.purity, &m.pure_members, m.effect);
+            }
+        }
+        if let Some(cr) = chunk_renames.get(chunk_id) {
+            for m in &cr.members {
+                apply_member_hints(
+                    &mut hints,
+                    &m.selector.binding.name,
+                    m.purity,
+                    &m.pure_members,
+                    m.effect,
+                );
+            }
+        }
+        hints
+    });
+    let line_index = time_phase!(timings, "build_source_line_index", {
+        runtime_ast.line_index()
+    });
+    // Stage A: spec-independent analysis (facts + owner graph +
+    // structural atomic units). See `stage_one.rs` for the composer;
+    // DESIGN.md §"Pipeline split (Stage A / Stage B)" for the
+    // boundary's role. v1 keeps Stage A in memory; v2 adds
+    // per-concept JSON sidecars + a `materialize_from_*` entry point
+    // so a Bazel rule can split into two cacheable actions.
+    let owner_graph_options = OwnerGraphOptions {
+        dataflow_aware_s_chain: chunk_analysis_options
+            .get(chunk_id)
+            .is_some_and(|opts| opts.dataflow_aware_s_chain),
+    };
+    let stage_one = time_phase!(timings, "compute_stage_one_analysis", {
+        compute_stage_one_analysis(
+            &runtime_ast.module,
+            &analysis_hints,
+            Some(&source_path),
+            |span| line_index.line_range_for_span(span),
+            owner_graph_options,
+        )
+    });
+    // Stage A on-disk sidecars: snapshot the spec-independent analysis
+    // (AST + facts + atomic units + manifest) under
+    // `<chunk_id>/chunk_analysis/` so a future `materialize_from_analysis`
+    // reader (task #78) can pick up Stage B from a cached Stage A
+    // action. Conditional on `report_out_dir`: the in-memory pipeline
+    // still works without them, and the e2e suites that don't request
+    // a report dir shouldn't pay the I/O cost. See `stage_one_sidecars.rs`.
+    if let Some(report_out_dir) = report_out_dir {
+        time_phase!(timings, "write_stage_one_sidecars", {
+            write_stage_one_sidecars(report_out_dir, chunk_id, &stage_one)
+        })?;
+    }
+    let StageOneAnalysis {
+        fact_analysis: analysis,
+        owner_graph_and_units: precomputed,
+    } = stage_one;
+    // Per-hint warnings on stderr: each `purity: pure` spec hint the
+    // analyzer infers automatically (binding's body classifies Pure
+    // without the override, or admits as PlainData). Surfaced every
+    // build so spec authors are nudged to prune load-free hints —
+    // every such hint is an extra trust assertion the validator can't
+    // re-verify, and the shrinking trust surface is the point of
+    // recursive purity inference.
+    for hint in &analysis.redundant_purity_hints {
+        eprintln!(
+            "warning: chunk {chunk_id}: `purity: pure` hint on binding `{binding}` is redundant — \
+             the analyzer infers {reason} for this binding without the hint and the override is a no-op. \
+             Remove the hint from the spec.",
+            binding = hint.binding_name,
+            reason = match hint.reason {
+                RedundantPurityReason::InferredPureFunction =>
+                    "pure (the function body classifies Pure by recursive analysis)",
+                RedundantPurityReason::InferredPlainDataBinding =>
+                    "PlainData (chunk-local const/let plain literal with no chunk-wide writes through the binding)",
+            },
+        );
+    }
+    for hint in &analysis.redundant_pure_member_hints {
+        eprintln!(
+            "warning: chunk {chunk_id}: `pure_members: [{property}]` on binding `{binding}` \
+             is redundant — the analyzer infers {reason} without the hint. \
+             Remove the entry from the spec.",
+            binding = hint.binding_name,
+            property = hint.property,
+            reason = match hint.reason {
+                RedundantPureMemberReason::WhitelistedStaticCall =>
+                    "pure via PURE_STATIC_CALLS (already on the global-receiver whitelist)",
+            },
+        );
+    }
+    if let Some(ord) = analysis.top_level_await {
+        anyhow::bail!(
+            "materialize_logical_modules: chunk {chunk_id} has top-level `await` \
+             at statement #{ordinal} (TLA); the debundler's realizability theorem \
+             does not cover async modules (DESIGN.md A2). Wrap the awaited code \
+             in an async function or rewrite as a synchronous initialization.",
+            ordinal = ord.0,
+        );
+    }
+    time_phase!(timings, "fold_rebind_atomic_units", {
+        builder.fold_rebind_units(&precomputed);
+    });
+    if matches!(chunk_unassigned_mode, UnassignedMode::MiniFactors) {
+        time_phase!(timings, "synthesize_mini_factor_plans", {
+            builder.synthesize_mini_factors(&precomputed, &runtime_ast.module.body, target_dir)
+        })?;
+    }
+    // Plan construction is finished — consume the builder and use
+    // owned state from here on.
+    let ChunkPlan {
         module_plans,
         binding_assignment,
+        bindings_catalogue,
         anonymous_ordinal_assignment,
         unmatched_spec_claims,
-    ) = {
-        // Spec annotations carried on any member form (logical-module
-        // member, chunk_renames member) propagate the same way:
-        // collect them by local binding name and feed them into fact
-        // analysis. They are semantic trust assertions, not ownership
-        // claims; binding patches routed through chunk_renames still
-        // do not force factorizer grouping.
-        let analysis_hints: AnalysisHints = time_phase!(timings, "collect_analysis_hints", {
-            let mut hints = AnalysisHints::default();
-            for req in &explicit_requests {
-                for m in &req.members {
-                    apply_member_hints(&mut hints, &m.binding, m.purity, &m.pure_members, m.effect);
-                }
-            }
-            if let Some(cr) = chunk_renames.get(chunk_id) {
-                for m in &cr.members {
-                    apply_member_hints(
-                        &mut hints,
-                        &m.selector.binding.name,
-                        m.purity,
-                        &m.pure_members,
-                        m.effect,
-                    );
-                }
-            }
-            hints
+    } = builder.finalize();
+    let mut logical_modules: Vec<FactorizationLogicalModule> =
+        time_phase!(timings, "project_factorization_modules", {
+            module_plans
+                .iter()
+                .map(|plan| FactorizationLogicalModule {
+                    id: plan.id.clone(),
+                    target_file: plan.target_file.clone(),
+                    residual: !plan.explicit,
+                    rename_map: plan
+                        .bindings
+                        .iter()
+                        .map(|(local, exported)| {
+                            (
+                                top_level_id(local, chunk_top_level_mark),
+                                exported.as_str().into(),
+                            )
+                        })
+                        .collect(),
+                    // ChunkFactorization's owner graph uses post-comma-list-split
+                    // `StatementOrdinal`s; convert body indices here so
+                    // the destination override targets the right owner
+                    // node (an anon body item is always a single
+                    // post-split position, but earlier comma-list
+                    // var-decls in the chunk shift the count).
+                    anonymous_statement_ordinals: plan
+                        .anonymous_statement_ordinals
+                        .iter()
+                        .map(|body_idx| {
+                            statement_ordinal_for_body_index(&runtime_ast.module.body, *body_idx)
+                        })
+                        .collect(),
+                })
+                .collect()
         });
-        let line_index = time_phase!(timings, "build_source_line_index", {
-            runtime_ast.line_index()
-        });
-        // Stage A: spec-independent analysis (facts + owner graph +
-        // structural atomic units). See `stage_one.rs` for the
-        // composer; DESIGN.md §"Pipeline split (Stage A / Stage B)"
-        // for the boundary's role. v1 keeps Stage A in memory; v2
-        // adds per-concept JSON sidecars + a `materialize_from_*`
-        // entry point so a Bazel rule can split into two cacheable
-        // actions.
-        let owner_graph_options = OwnerGraphOptions {
-            dataflow_aware_s_chain: chunk_analysis_options
-                .get(chunk_id)
-                .is_some_and(|opts| opts.dataflow_aware_s_chain),
-        };
-        let stage_one = time_phase!(timings, "compute_stage_one_analysis", {
-            compute_stage_one_analysis(
-                &runtime_ast.module,
-                &analysis_hints,
-                Some(&source_path),
-                |span| line_index.line_range_for_span(span),
-                owner_graph_options,
+    // Commit 1 transitional behavior: the partition's "default
+    // destination" — the module owners with no claim fall back to —
+    // is a factorization-only sentinel logical module appended past
+    // `module_plans.len()`. The emit loop iterates `module_plans`,
+    // so the sentinel never gets emitted as a file. Anonymous
+    // statements without an explicit logical-module
+    // `anonymous_statements` match thus stay in the sentinel,
+    // preserving the pre-refactor split where anon-fallback was a
+    // distinct destination from the residual logical module (which
+    // only held named-unclaimed bindings). Commit 2 collapses this
+    // sentinel back into the residual module via explicit
+    // `anonymous_statement_ordinals` routing.
+    let sentinel_residual_target = chunk_unassigned_mode
+        .catchall_file_target()
+        .map(|t| target_file_for_request(target_dir, t))
+        .transpose()?
+        .unwrap_or_else(|| target_file.clone());
+    let sentinel_idx = logical_modules.len();
+    logical_modules.push(FactorizationLogicalModule {
+        id: format!("{chunk_id}::anon_residual_sentinel"),
+        target_file: sentinel_residual_target,
+        residual: true,
+        rename_map: HashMap::new(),
+        anonymous_statement_ordinals: Vec::new(),
+    });
+    let default_destination = ModuleId(LogicalModuleIndex(sentinel_idx));
+    let redundant_purity_hints = analysis.redundant_purity_hints;
+    let factorization_chunk_renames: HashMap<Id, swc_atoms::Atom> = chunk_renames_map
+        .iter()
+        .map(|(local, exported)| {
+            (
+                top_level_id(local, chunk_top_level_mark),
+                exported.as_str().into(),
             )
-        });
-        // Stage A on-disk sidecars: snapshot the spec-independent
-        // analysis (AST + facts + atomic units + manifest) under
-        // `<chunk_id>/chunk_analysis/` so a future
-        // `materialize_from_analysis` reader (task #78) can pick up
-        // Stage B from a cached Stage A action. Conditional on
-        // `report_out_dir`: the in-memory pipeline still works without
-        // them, and the e2e suites that don't request a report dir
-        // shouldn't pay the I/O cost. See `stage_one_sidecars.rs`.
-        if let Some(report_out_dir) = report_out_dir {
-            time_phase!(timings, "write_stage_one_sidecars", {
-                write_stage_one_sidecars(report_out_dir, chunk_id, &stage_one)
-            })?;
-        }
-        let StageOneAnalysis {
-            fact_analysis: analysis,
-            owner_graph_and_units: precomputed,
-        } = stage_one;
-        // Per-hint warnings on stderr: each `purity: pure` spec hint
-        // the analyzer infers automatically (binding's body classifies
-        // Pure without the override, or admits as PlainData). Surfaced
-        // every build so spec authors are nudged to prune load-free
-        // hints — every such hint is an extra trust assertion the
-        // validator can't re-verify, and the shrinking trust surface
-        // is the point of recursive purity inference.
-        for hint in &analysis.redundant_purity_hints {
-            eprintln!(
-                "warning: chunk {chunk_id}: `purity: pure` hint on binding `{binding}` is redundant — \
-                 the analyzer infers {reason} for this binding without the hint and the override is a no-op. \
-                 Remove the hint from the spec.",
-                binding = hint.binding_name,
-                reason = match hint.reason {
-                    RedundantPurityReason::InferredPureFunction =>
-                        "pure (the function body classifies Pure by recursive analysis)",
-                    RedundantPurityReason::InferredPlainDataBinding =>
-                        "PlainData (chunk-local const/let plain literal with no chunk-wide writes through the binding)",
-                },
-            );
-        }
-        for hint in &analysis.redundant_pure_member_hints {
-            eprintln!(
-                "warning: chunk {chunk_id}: `pure_members: [{property}]` on binding `{binding}` \
-                 is redundant — the analyzer infers {reason} without the hint. \
-                 Remove the entry from the spec.",
-                binding = hint.binding_name,
-                property = hint.property,
-                reason = match hint.reason {
-                    RedundantPureMemberReason::WhitelistedStaticCall =>
-                        "pure via PURE_STATIC_CALLS (already on the global-receiver whitelist)",
-                },
-            );
-        }
-        if let Some(ord) = analysis.top_level_await {
-            anyhow::bail!(
-                "materialize_logical_modules: chunk {chunk_id} has top-level `await` \
-                 at statement #{ordinal} (TLA); the debundler's realizability theorem \
-                 does not cover async modules (DESIGN.md A2). Wrap the awaited code \
-                 in an async function or rewrite as a synchronous initialization.",
-                ordinal = ord.0,
-            );
-        }
-        time_phase!(timings, "fold_rebind_atomic_units", {
-            builder.fold_rebind_units(&precomputed);
-        });
-        if matches!(chunk_unassigned_mode, UnassignedMode::MiniFactors) {
-            time_phase!(timings, "synthesize_mini_factor_plans", {
-                builder.synthesize_mini_factors(
-                    &precomputed,
-                    &runtime_ast.module.body,
-                    target_dir,
-                )
-            })?;
-        }
-        // Release the `parts_mut` borrow before consuming the builder.
-        // From here on, plan state is owned by the returned `ChunkPlan`.
-        let ChunkPlan {
-            module_plans,
-            binding_assignment,
+        })
+        .collect();
+    let factorization = time_phase!(timings, "build_factorization", {
+        ChunkFactorization::build_with(
+            chunk_id.to_string(),
+            analysis.facts,
+            precomputed,
             bindings_catalogue,
-            anonymous_ordinal_assignment,
-            unmatched_spec_claims,
-        } = builder.finalize();
-        let mut logical_modules: Vec<FactorizationLogicalModule> =
-            time_phase!(timings, "project_factorization_modules", {
-                module_plans
-                    .iter()
-                    .map(|plan| FactorizationLogicalModule {
-                        id: plan.id.clone(),
-                        target_file: plan.target_file.clone(),
-                        residual: !plan.explicit,
-                        rename_map: plan
-                            .bindings
-                            .iter()
-                            .map(|(local, exported)| {
-                                (
-                                    top_level_id(local, chunk_top_level_mark),
-                                    exported.as_str().into(),
-                                )
-                            })
-                            .collect(),
-                        // ChunkFactorization's owner graph uses post-comma-list-split
-                        // `StatementOrdinal`s; convert body indices here so
-                        // the destination override targets the right owner
-                        // node (an anon body item is always a single
-                        // post-split position, but earlier comma-list
-                        // var-decls in the chunk shift the count).
-                        anonymous_statement_ordinals: plan
-                            .anonymous_statement_ordinals
-                            .iter()
-                            .map(|body_idx| {
-                                statement_ordinal_for_body_index(
-                                    &runtime_ast.module.body,
-                                    *body_idx,
-                                )
-                            })
-                            .collect(),
-                    })
-                    .collect()
-            });
-        // Commit 1 transitional behavior: the partition's "default
-        // destination" — the module owners with no claim fall back to —
-        // is a factorization-only sentinel logical module appended past
-        // `module_plans.len()`. The emit loop iterates `module_plans`,
-        // so the sentinel never gets emitted as a file. Anonymous
-        // statements without an explicit logical-module
-        // `anonymous_statements` match thus stay in the sentinel,
-        // preserving the pre-refactor split where anon-fallback was a
-        // distinct destination from the residual logical module (which
-        // only held named-unclaimed bindings). Commit 2 collapses this
-        // sentinel back into the residual module via explicit
-        // `anonymous_statement_ordinals` routing.
-        let sentinel_residual_target = chunk_unassigned_mode
-            .catchall_file_target()
-            .map(|t| target_file_for_request(target_dir, t))
-            .transpose()?
-            .unwrap_or_else(|| target_file.clone());
-        let sentinel_idx = logical_modules.len();
-        logical_modules.push(FactorizationLogicalModule {
-            id: format!("{chunk_id}::anon_residual_sentinel"),
-            target_file: sentinel_residual_target,
-            residual: true,
-            rename_map: HashMap::new(),
-            anonymous_statement_ordinals: Vec::new(),
-        });
-        let default_destination = ModuleId(LogicalModuleIndex(sentinel_idx));
-        let redundant_purity_hints = analysis.redundant_purity_hints;
-        let factorization_chunk_renames: HashMap<Id, swc_atoms::Atom> = chunk_renames_map
-            .iter()
-            .map(|(local, exported)| {
-                (
-                    top_level_id(local, chunk_top_level_mark),
-                    exported.as_str().into(),
-                )
-            })
-            .collect();
-        let factorization = time_phase!(timings, "build_factorization", {
-            ChunkFactorization::build_with(
-                chunk_id.to_string(),
-                analysis.facts,
-                precomputed,
-                bindings_catalogue,
-                logical_modules,
-                factorization_chunk_renames,
-                default_destination,
-            )
-        });
-        (
-            factorization,
-            redundant_purity_hints,
-            module_plans,
-            binding_assignment,
-            anonymous_ordinal_assignment,
-            unmatched_spec_claims,
+            logical_modules,
+            factorization_chunk_renames,
+            default_destination,
         )
-    };
+    });
     let factorization_report = time_phase!(timings, "validate_factorization", {
         factorization.validate()
     });
