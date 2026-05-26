@@ -309,14 +309,30 @@ as a structured object so machine readers can parse it.
   YAML preview) is a documented TODO in the codebase but not in
   v1.
 - **Tab completion.** Not in v1.
-- **Per-member `comment:` field in the spec** that the lowering
-  pass emits as a JS comment immediately above the binding's owner
-  statement. Tracked separately (#88) — pure planning today, no
-  CLI involvement beyond eventually exposing it through `bindings
-  describe`-style outputs. The point is to give RE annotations a
-  home that survives re-runs of the pipeline; the comment is
-  authored once in YAML and propagates to the emitted JS on every
-  rebuild.
+- **Per-member and module-level `comment:` fields in the spec**
+  that the lowering pass emits as JS comments. Tracked separately
+  (#88 spec/lowering, #89 CLI editing). Surface today (in v1):
+  - Each `members[]` entry may carry an optional `comment:` field;
+    emitted as a `// ...` block above the binding's owner statement.
+  - Module YAMLs may carry a top-level `comment:` field; emitted as
+    a `// ...` block at the top of the generated `.js` file.
+  - `bindings assign` carries member comments with the member as
+    bindings move between modules (the comment is part of the
+    member entry; the move is a YAML splice).
+  - `bindings assign` will only auto-delete a drained module if the
+    module-level `comment:` is empty/absent. Modules whose bindings
+    all moved away but that still carry a module-level doc are
+    kept as empty `members: []` files.
+  - `modules merge` concatenates source-module comments into the
+    target's module-level `comment:` (with a `--- from <source>:`
+    divider) when sources have non-empty comments.
+  - CLI edits via `debundle bindings comment <sym>` and
+    `debundle modules comment <module>` (set / `--edit` /
+    `--clear`).
+
+  The point is to give RE annotations a home that survives re-runs
+  of the pipeline; the comments are authored once in YAML and
+  propagate to the emitted JS on every rebuild.
 
 ## See also
 
