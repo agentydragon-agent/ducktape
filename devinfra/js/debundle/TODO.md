@@ -451,12 +451,6 @@ Rough edges hit during a real-corpus survey (2026-05-26, gaffer's tana
 web spec via the new top-level CLI). Each is a small `bindings ...` /
 `modules ...` addition; nothing structural.
 
-- **No `debundle spec stats` one-shot.** Common first-question — "how
-  many modules / bindings / orphans / residual?" — requires
-  `modules list --format json | jq` + `bindings list --format json | jq`
-  manual aggregation. A `spec stats` (or `modules stats` /
-  `bindings stats`) command that emits the totals + the singleton/tiny/medium/large
-  member-count buckets in one pass would be the natural shape.
 - **`modules list --empty` shows every empty module, including ones
   preserved by a `comment:`.** The actually-actionable subset is
   "empty AND no comment" — i.e. the auto-deletable set. Add a

@@ -105,6 +105,12 @@ split as a gate diagnostic. No dedicated `modules rename` /
 `modules disable` subcommand — the filesystem operation is already
 the right primitive.
 
+### Spec-wide
+
+| Command              | Mutates? | Function                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Status  |
+| -------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| `debundle spec stats` | no       | Emit spec-wide summary in JSON (or text/ndjson). One pass over the modules tree: `modules` totals (`total`, `residual`, `empty`, `with_comment`) + `member_count` buckets (`min`, `max`, `singletons` = exactly 1 member, `tiny_2_to_5` = 2..=5, `medium_6_to_20` = 6..=20, `large_21_plus` = 21+), plus `bindings` totals (`total`, `renamed`, `unrenamed`, `orphan`, `with_comment`). Same per-row counters as `debundle modules list` / `debundle bindings list`; spec stats just folds them into one report so callers don't `jq`. | shipped |
+
 ### Quotient queries
 
 | Command                                                                                | Mutates? | Function                                                                                                                                                               | Status            |
