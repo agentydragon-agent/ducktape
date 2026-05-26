@@ -1,5 +1,6 @@
 pub mod binding;
 pub mod comment;
+pub mod gate;
 pub mod module;
 
 use std::path::PathBuf;
@@ -13,6 +14,7 @@ use crate::binding::{
 use crate::comment::{
     BindingCommentArgs, ModuleCommentArgs, run_binding_comment_cmd, run_module_comment_cmd,
 };
+use crate::cli::gate::{GateArgs, run_gate_cli};
 use crate::module::{DeleteArgs, MergeArgs, ModuleArgs, run_delete, run_merge, run_module_cli};
 use peel::{
     CommonArgs as PeelCommonArgs, ExplainArgs, GraphSummaryArgs, OutputFormat, PatchPlanArgs,
@@ -68,6 +70,8 @@ enum DebundleCommand {
     Cluster(ClusterArgs),
     /// Spec-wide queries (e.g. `spec stats`).
     Spec(SpecNs),
+    /// Query the realizability gate's rejected SCCs (list / describe / cut).
+    Gate(GateArgs),
 }
 
 /// Args for `debundle spec ...`.
@@ -405,6 +409,7 @@ pub fn run_debundle_cli(args: DebundleArgs) -> Result<()> {
         DebundleCommand::Spec(args) => match args.command {
             SpecNsCommand::Stats(s) => run_spec_stats_cmd(s),
         },
+        DebundleCommand::Gate(args) => run_gate_cli(args).context("running gate subcommand"),
     }
 }
 
@@ -1334,5 +1339,56 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let sel = super::dispatch_id_selection("XOe", tmp.path()).unwrap();
         assert_eq!(sel.binding_id.as_deref(), Some("XOe"));
+    }
+
+    #[test]
+    fn parse_top_level_gate_list_command() {
+        let parsed = DebundleArgs::try_parse_from([
+            "debundle",
+            "gate",
+            "list",
+            "--graph",
+            "owner_graph.json",
+            "--modules",
+            "modules",
+        ])
+        .expect("parse cli");
+        assert!(matches!(parsed.command, super::DebundleCommand::Gate(_)));
+    }
+
+    #[test]
+    fn parse_top_level_gate_describe_command() {
+        let parsed = DebundleArgs::try_parse_from([
+            "debundle",
+            "gate",
+            "describe",
+            "0",
+            "--graph",
+            "owner_graph.json",
+            "--modules",
+            "modules",
+            "--binding",
+            "XOe",
+        ])
+        .expect("parse cli");
+        assert!(matches!(parsed.command, super::DebundleCommand::Gate(_)));
+    }
+
+    #[test]
+    fn parse_top_level_gate_cut_command_with_cycles_override() {
+        let parsed = DebundleArgs::try_parse_from([
+            "debundle",
+            "gate",
+            "cut",
+            "3",
+            "--graph",
+            "owner_graph.json",
+            "--modules",
+            "modules",
+            "--cycles",
+            "/other/cycles.json",
+        ])
+        .expect("parse cli");
+        assert!(matches!(parsed.command, super::DebundleCommand::Gate(_)));
     }
 }
