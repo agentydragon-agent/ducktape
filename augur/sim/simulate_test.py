@@ -2954,6 +2954,115 @@ def test_year_end_tax_accrual_with_mortgage_interest_deduction_above_standard() 
     assert california_savings == pytest.approx((year_1_interest - 5_363.0) * 0.093, abs=0.5)
 
 
+def test_home_equity_debt_class_zeros_out_mid_under_tcja() -> None:
+    """A MID policy tagged `debt_class="home_equity"` contributes nothing to MID (§163(h)(3)
+    TCJA disallow). The simulated tax accruals must match the no-policy baseline exactly
+    — otherwise A5 (HELOC over-estimate) would resurface.
+
+    Same scenario as `test_year_end_tax_accrual_with_mortgage_interest_deduction_above_standard`,
+    but the policy is tagged `home_equity` instead of the default `acquisition`. Without the
+    A5 fix, the compiler would still allocate the full first-year interest into MID.
+    """
+    home_equity_policies = [
+        MortgageInterestDeductionPolicy(
+            liability_id="sf_home_mortgage", owner_agent_id="alice", debt_class="home_equity"
+        )
+    ]
+    baseline = simulate(
+        _mid_scenario(purchase_price_usd=900_000.0, down_payment_usd=180_000.0, annual_rate=0.07, term_months=360),
+        rollout_count=1,
+    )
+    home_equity = simulate(
+        _mid_scenario(
+            purchase_price_usd=900_000.0,
+            down_payment_usd=180_000.0,
+            annual_rate=0.07,
+            term_months=360,
+            mortgage_interest_deduction_policies=home_equity_policies,
+        ),
+        rollout_count=1,
+    )
+
+    federal_baseline = _accrual_breakdown(baseline, jurisdiction_id="federal_us")
+    federal_home_equity = _accrual_breakdown(home_equity, jurisdiction_id="federal_us")
+    california_baseline = _accrual_breakdown(baseline, jurisdiction_id="california")
+    california_home_equity = _accrual_breakdown(home_equity, jurisdiction_id="california")
+    # Both jurisdictions: the home-equity policy must produce zero MID.
+    assert federal_home_equity["mortgage_interest_deduction_usd"] == pytest.approx(0.0, abs=1e-9)
+    assert california_home_equity["mortgage_interest_deduction_usd"] == pytest.approx(0.0, abs=1e-9)
+    # Standard deduction wins (same as baseline), and total tax matches the no-policy baseline.
+    assert federal_home_equity["total_tax_usd"] == pytest.approx(federal_baseline["total_tax_usd"], abs=1e-6)
+    assert california_home_equity["total_tax_usd"] == pytest.approx(california_baseline["total_tax_usd"], abs=1e-6)
+
+
+def test_home_equity_and_acquisition_mortgages_split_mid_contribution() -> None:
+    """Two-liability scenario: an acquisition mortgage on the home and a separate `home_equity`
+    liability. Only the acquisition interest must reach MID; the home-equity interest stays
+    out. Locks the per-(link, liability) classification path so a future regression that
+    re-mixes them surfaces here.
+    """
+    purchase_price_usd = 900_000.0
+    down_payment_usd = 180_000.0
+    mortgage_principal = purchase_price_usd - down_payment_usd
+    heloc_principal = 60_000.0
+    heloc_rate = 0.08
+    base = _mid_scenario(
+        purchase_price_usd=purchase_price_usd,
+        down_payment_usd=down_payment_usd,
+        annual_rate=0.07,
+        term_months=360,
+        mortgage_interest_deduction_policies=[
+            MortgageInterestDeductionPolicy(
+                liability_id="sf_home_mortgage", owner_agent_id="alice", debt_class="acquisition"
+            ),
+            MortgageInterestDeductionPolicy(
+                liability_id="alice_heloc", owner_agent_id="alice", debt_class="home_equity"
+            ),
+        ],
+    )
+    # Layer a second property purchase carrying the HELOC liability. The compiler treats this
+    # like any second mortgage — only the MID policy's `debt_class` keeps its interest out of
+    # the deduction. (Modeling a true HELOC against the same property is out of scope; the
+    # liability bookkeeping is identical.)
+    scenario = base.model_copy(
+        update={
+            "scheduled_property_purchases": [
+                *base.scheduled_property_purchases,
+                ScheduledPropertyPurchase(
+                    month=0,
+                    cause_id="alice_opens_heloc",
+                    property_id="alice_heloc_collateral",
+                    location_id="san_francisco",
+                    buyer_agent_id="alice",
+                    buyer_account_id="checking",
+                    seller_agent_id="seller",
+                    purchase_price_usd=heloc_principal,
+                    down_payment_usd=0.0,
+                    buyer_closing_cost_usd=0.0,
+                    mortgage=MortgageFinancing(
+                        liability_id="alice_heloc",
+                        lender_agent_id="bank",
+                        principal_usd=heloc_principal,
+                        annual_interest_rate=heloc_rate,
+                        term_months=360,
+                    ),
+                ),
+            ]
+        }
+    )
+    result = simulate(scenario, rollout_count=1)
+
+    acquisition_interest = _liability_year_interest(result, liability_id="sf_home_mortgage", through_month=11)
+    heloc_interest = _liability_year_interest(result, liability_id="alice_heloc", through_month=11)
+    federal = _accrual_breakdown(result, jurisdiction_id="federal_us")
+    # MID = acquisition interest only; the HELOC interest is real (sanity check it's non-zero)
+    # but must not contribute to the deduction.
+    assert heloc_interest > 0.0
+    assert mortgage_principal > 0.0  # the helper sized the acquisition mortgage as expected
+    assert federal["mortgage_interest_deduction_usd"] == pytest.approx(acquisition_interest, rel=1e-9)
+    assert federal["mortgage_interest_deduction_usd"] < acquisition_interest + heloc_interest
+
+
 def test_mortgage_interest_deduction_inactive_when_policy_empty() -> None:
     """Without a MortgageInterestDeductionPolicy, tax accruals match the no-mortgage baseline.
 

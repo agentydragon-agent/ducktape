@@ -1351,8 +1351,9 @@ def _compile_mortgage_interest_deductions(
     `min(1, principal_cap / origination_principal)` factor applied to YTD interest
     when the engine sums MID at year-end. Zero where: (a) the liability isn't
     owned by the link's profile agent, (b) the liability has no
-    MortgageInterestDeductionPolicy entry, or (c) the policy's
-    per_jurisdiction_principal_cap_usd map omits the link's jurisdiction.
+    MortgageInterestDeductionPolicy entry, (c) the policy's
+    per_jurisdiction_principal_cap_usd map omits the link's jurisdiction, or
+    (d) the policy's `debt_class == "home_equity"` (TCJA disallow §163(h)(3)).
     """
 
     link_count = tax_link_profile_index.shape[0]
@@ -1387,6 +1388,12 @@ def _compile_mortgage_interest_deductions(
         jurisdiction_id = strings.values[int(tax_link_jurisdiction_codes[link])]
         for lia_slot, policy in policies_by_liability_slot.items():
             if int(liability_agent_codes[lia_slot]) != link_agent_code:
+                continue
+            if policy.debt_class == "home_equity":
+                # TCJA (§163(h)(3), 2018-2025): home-equity-debt interest is not deductible.
+                # Leave ratio[link, lia_slot] at 0.0 so the engine sums in nothing for this
+                # liability. Callers who layer a HELOC-for-improvement should tag it
+                # "acquisition" — we do not model the substantial-improvement carve-out.
                 continue
             cap = policy.per_jurisdiction_principal_cap_usd.get(jurisdiction_id)
             if cap is None:

@@ -47,9 +47,13 @@ class Property(ApiModel):
     annual_tax_on_list_usd: float | None = None
     source_url: str | None = None
     image_url: str | None = None
-    # Free-text human note shown in the property panel; empty string when nothing to say.
-    # Frontend renders this with `whitespace-pre-line` so authors can use newlines.
-    notes: str = ""
+    notes: str = Field(
+        default="",
+        description=(
+            "Free-text human note shown in the property panel; empty string when nothing "
+            "to say. Frontend renders with `whitespace-pre-line` so authors can use newlines."
+        ),
+    )
 
     @field_validator("notes", mode="before")
     @classmethod

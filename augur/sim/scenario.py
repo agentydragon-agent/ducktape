@@ -283,29 +283,31 @@ class LiquidityPolicy(BaseModel):
 
 
 class TaxProfile(BaseModel):
-    """A taxed agent's tax-time configuration. At spike 1 only
-    single filers are modeled; later layers add MFJ / HoH and any
-    filing-status-driven branching. `jurisdiction_ids` is the
-    ordered list of taxing authorities — typically
-    `["federal_us", "california"]` for a CA resident.
-
-    `tax_authority_agent_id` is the destination of tax-payment
-    transfers — a bookkeeping sink, not a taxed agent itself.
-    `payment_account_id` is the agent's account that the engine
-    debits for estimated-tax and true-up payments;
-    `tax_authority_account_id` is the matching credit account on
-    the authority side. `prior_year_tax_usd` is the aggregate
-    safe-harbor target used to size quarterly estimated payments.
-    If left at zero, no quarterly estimates are emitted and the
-    January true-up pays the full accrued tax."""
+    """A taxed agent's tax-time configuration. At spike 1 only single filers are modeled;
+    later layers add MFJ / HoH and any filing-status-driven branching."""
 
     agent_id: str
     filing_status: FilingStatus = FilingStatus.SINGLE
-    jurisdiction_ids: list[str]
-    tax_authority_agent_id: str
-    payment_account_id: str = "checking"
-    tax_authority_account_id: str = "checking"
-    prior_year_tax_usd: float = 0.0
+    jurisdiction_ids: list[str] = Field(
+        description='Ordered list of taxing authorities — typically `["federal_us", "california"]` for a CA resident.'
+    )
+    tax_authority_agent_id: str = Field(
+        description="Destination of tax-payment transfers — a bookkeeping sink, not a taxed agent itself."
+    )
+    payment_account_id: str = Field(
+        default="checking", description="The agent's account the engine debits for estimated-tax and true-up payments."
+    )
+    tax_authority_account_id: str = Field(
+        default="checking", description="The matching credit account on the tax authority's side."
+    )
+    prior_year_tax_usd: float = Field(
+        default=0.0,
+        description=(
+            "Aggregate safe-harbor target used to size quarterly estimated payments. If "
+            "0, no quarterly estimates are emitted and the January true-up pays the full "
+            "accrued tax."
+        ),
+    )
 
 
 class MortgageFinancing(BaseModel):
@@ -547,21 +549,33 @@ class MortgageInterestDeductionPolicy(BaseModel):
 
     At each tax-year-end, deductible interest =
     `liability_interest_ytd * min(1, principal_cap / origination_principal)`
-    per jurisdiction listed in `per_jurisdiction_principal_cap_usd`.
-    The qualifying interest from this policy is summed across all
-    qualifying liabilities owned by the profile's agent and compared
-    against the standard deduction; the engine uses
+    per jurisdiction. The qualifying interest from this policy is summed
+    across all qualifying liabilities owned by the profile's agent and
+    compared against the standard deduction; the engine uses
     `max(itemized, standard)` before bracket-walking.
-
-    Federal (post-TCJA) caps acquisition debt at $750k. California's
-    pre-TCJA $1M cap was preserved, so the two diverge for moderately-
-    large mortgages.
     """
 
     liability_id: str
     owner_agent_id: str
+    debt_class: Literal["acquisition", "home_equity"] = Field(
+        default="acquisition",
+        description=(
+            "§163(h)(3) classification. `acquisition` = loan used to buy, build, or "
+            "substantially improve the secured home; interest is deductible up to the "
+            "principal cap. `home_equity` = TCJA-period HELOC / second mortgage used "
+            "for non-housing purposes; interest is not deductible (2018-2025) and the "
+            "compiler holds this policy's MID ratio at 0. The IRS carve-out that "
+            "re-classifies improvement-tied HELOCs back to acquisition is not modeled — "
+            "tag improvement-tied HELOCs as `acquisition` if you want them deducted."
+        ),
+    )
     per_jurisdiction_principal_cap_usd: dict[str, float] = Field(
-        default_factory=lambda: {"federal_us": 750_000.0, "california": 1_000_000.0}
+        default_factory=lambda: {"federal_us": 750_000.0, "california": 1_000_000.0},
+        description=(
+            "Per-jurisdiction principal cap in USD. Federal post-TCJA caps acquisition "
+            "debt at $750k; California's pre-TCJA $1M cap was preserved, so the two "
+            "diverge for moderately-large mortgages."
+        ),
     )
 
 
