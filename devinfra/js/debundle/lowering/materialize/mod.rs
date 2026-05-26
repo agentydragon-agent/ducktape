@@ -423,18 +423,12 @@ fn collect_analysis_hints(
     let mut hints = AnalysisHints::default();
     for req in explicit_requests {
         for m in &req.members {
-            apply_member_hints(&mut hints, &m.binding, m.purity, &m.pure_members, m.effect);
+            m.collect_hints(&mut hints);
         }
     }
     if let Some(cr) = chunk_renames {
-        for m in &cr.members {
-            apply_member_hints(
-                &mut hints,
-                &m.selector.binding.name,
-                m.purity,
-                &m.pure_members,
-                m.effect,
-            );
+        for m in super::plans::build_members(&cr.members) {
+            m.collect_hints(&mut hints);
         }
     }
     hints
@@ -574,31 +568,6 @@ fn report_redundant_hints_to_stderr(chunk_id: &str, analysis: &::analysis::Chunk
                     "pure via PURE_STATIC_CALLS (already on the global-receiver whitelist)",
             },
         );
-    }
-}
-
-fn apply_member_hints(
-    hints: &mut AnalysisHints,
-    binding_name: &str,
-    purity: MemberPurity,
-    pure_members: &[String],
-    effect: MemberEffect,
-) {
-    if purity == MemberPurity::Pure {
-        hints.declared_pure.insert(binding_name.to_string());
-    }
-    if purity == MemberPurity::PureNew {
-        hints.declared_pure_new.insert(binding_name.to_string());
-    }
-    if !pure_members.is_empty() {
-        hints
-            .declared_pure_members
-            .entry(binding_name.to_string())
-            .or_default()
-            .extend(pure_members.iter().cloned());
-    }
-    if let Some(effect) = known_effect_from_member_effect(effect) {
-        hints.known_effects.insert(binding_name.to_string(), effect);
     }
 }
 

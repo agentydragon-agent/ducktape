@@ -54,6 +54,33 @@ pub(super) struct MemberRequest {
     pub(super) comment: Option<String>,
 }
 
+impl MemberRequest {
+    /// Extend `hints` with this member's spec-level trust assertions
+    /// (purity, pure_members, effect). Spec annotations carried on any
+    /// member form (logical-module member, chunk_renames member)
+    /// propagate the same way — they are semantic trust assertions,
+    /// not ownership claims; binding patches routed through
+    /// chunk_renames still do not force factorizer grouping.
+    pub(super) fn collect_hints(&self, hints: &mut AnalysisHints) {
+        if self.purity == MemberPurity::Pure {
+            hints.declared_pure.insert(self.binding.clone());
+        }
+        if self.purity == MemberPurity::PureNew {
+            hints.declared_pure_new.insert(self.binding.clone());
+        }
+        if !self.pure_members.is_empty() {
+            hints
+                .declared_pure_members
+                .entry(self.binding.clone())
+                .or_default()
+                .extend(self.pure_members.iter().cloned());
+        }
+        if let Some(effect) = known_effect_from_member_effect(self.effect) {
+            hints.known_effects.insert(self.binding.clone(), effect);
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(super) struct ModulePlan {
     pub(super) id: String,

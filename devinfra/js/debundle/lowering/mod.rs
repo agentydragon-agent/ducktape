@@ -80,10 +80,7 @@ use plan_references::{
     ArtifactSourceImportResolutionCache, EntryExport, ModuleReferenceNeeds, RuntimeImportLookup,
     collect_imported_reexports_by_module, plan_module_reference_needs,
 };
-use plans::{
-    LogicalRequest, MemberRequest, ModulePlan, known_effect_from_member_effect,
-    logical_requests_for_chunk,
-};
+use plans::{LogicalRequest, MemberRequest, ModulePlan, logical_requests_for_chunk};
 use rewrite_runtime::rewrite_runtime_sources_for_target;
 use runtime_imports::{
     RuntimeImportFacts, RuntimeImportInfo, RuntimeImportKind, imported_binding_named_specifier,
