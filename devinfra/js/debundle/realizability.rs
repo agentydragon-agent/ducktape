@@ -38,7 +38,8 @@ use petgraph::graphmap::DiGraphMap;
 use crate::OwnerId;
 use crate::graph::{
     ChunkConstrainingEdgeSet, OwnerEdge, OwnerEdgeId, OwnerGraph, build_module_quotient,
-    chunk_constraining_module_edges, chunk_linker_order, chunk_source_import_order,
+    chunk_constraining_module_edges, chunk_linker_order_from_pairs,
+    chunk_source_import_order_from_adjacency,
 };
 use crate::ids::ModuleId;
 use crate::partition::Partition;
@@ -235,8 +236,12 @@ pub fn check_realizability(
         .collect();
 
     if !candidate_sccs.is_empty() {
-        let simulation = EsmEvaluationSimulator::build(&canonical, partition.residual());
         let constraining_pairs: BTreeSet<(ModuleId, ModuleId)> = canonical.pairs().collect();
+        let simulation = EsmEvaluationSimulator::build(
+            &canonical.i_successors,
+            &constraining_pairs,
+            partition.residual(),
+        );
         for modules in candidate_sccs {
             let tdz_pairs: Vec<(ModuleId, ModuleId)> = simulation
                 .tdz_pairs(&modules, &constraining_pairs)
@@ -292,14 +297,27 @@ struct EsmEvaluationSimulator {
 }
 
 impl EsmEvaluationSimulator {
-    /// Build from the canonical edge set. Main entry point — both
-    /// `check_realizability` and the IncrementalQuotient overlay
-    /// path land here once they've materialised their I-graph view.
-    fn build(edges: &ChunkConstrainingEdgeSet, residual: ModuleId) -> Self {
+    /// Build from precomputed adjacency. Used by both the gate's
+    /// canonical-edge-set path (`check_realizability` extracts the
+    /// pairs from a [`ChunkConstrainingEdgeSet`]) and the overlay
+    /// path (`IncrementalQuotient::build_simulator_from_scratch`
+    /// materialises pairs from its own `(i_graph,
+    /// constraining_buckets)` shape). The runtime DFS only needs
+    /// the adjacency map; both callers thread their pairs in
+    /// directly.
+    fn build(
+        i_successors: &BTreeMap<ModuleId, BTreeSet<ModuleId>>,
+        constraining_pairs: &BTreeSet<(ModuleId, ModuleId)>,
+        residual: ModuleId,
+    ) -> Self {
         let mut extra = BTreeSet::new();
         extra.insert(residual);
-        let linker_position = chunk_linker_order(edges);
-        let source_import_order = chunk_source_import_order(edges, &extra);
+        let linker_position = chunk_linker_order_from_pairs(constraining_pairs.iter().copied());
+        let source_import_order = chunk_source_import_order_from_adjacency(
+            constraining_pairs.iter().copied(),
+            i_successors,
+            &extra,
+        );
         let source_import_position: BTreeMap<ModuleId, usize> = source_import_order
             .into_iter()
             .enumerate()
@@ -307,36 +325,11 @@ impl EsmEvaluationSimulator {
             .collect();
         let post_order = simulate_esm_post_order(
             residual,
-            &edges.i_successors,
+            i_successors,
             &linker_position,
             &source_import_position,
         );
         Self { post_order }
-    }
-
-    /// Build from precomputed adjacency. Used by the
-    /// `IncrementalQuotient` overlay path: it stores edges in its
-    /// own `(i_graph, constraining_buckets)` shape, applies a small
-    /// overlay delta, and materialises an `(i_successors,
-    /// constraining_pairs)` pair without going through the canonical
-    /// `OwnerGraph` projection. The runtime DFS only needs the
-    /// adjacency map; the canonical `ChunkConstrainingEdgeSet` would
-    /// be reconstructable but pointless to allocate when the caller
-    /// already has the parts.
-    fn from_adjacency(
-        i_successors: BTreeMap<ModuleId, BTreeSet<ModuleId>>,
-        constraining_pairs: &BTreeSet<(ModuleId, ModuleId)>,
-        residual: ModuleId,
-    ) -> Self {
-        let mut edges_map: BTreeMap<(ModuleId, ModuleId), Vec<OwnerEdgeId>> = BTreeMap::new();
-        for &(from, to) in constraining_pairs {
-            edges_map.entry((from, to)).or_default();
-        }
-        let canonical = ChunkConstrainingEdgeSet {
-            edges: edges_map,
-            i_successors,
-        };
-        Self::build(&canonical, residual)
     }
 
     /// Yields the `(from, to)` constraining pairs inside `modules`
@@ -862,8 +855,8 @@ impl IncrementalQuotient {
             let mut slot = self.cached_base_simulator.borrow_mut();
             if slot.is_none() {
                 let (i_successors, constraining_pairs) = self.effective_simulator_inputs(None);
-                *slot = Some(EsmEvaluationSimulator::from_adjacency(
-                    i_successors,
+                *slot = Some(EsmEvaluationSimulator::build(
+                    &i_successors,
                     &constraining_pairs,
                     self.residual,
                 ));
@@ -1224,7 +1217,7 @@ impl IncrementalQuotient {
         overlay: Option<&QuotientOverlay>,
     ) -> EsmEvaluationSimulator {
         let (i_successors, constraining_pairs) = self.effective_simulator_inputs(overlay);
-        EsmEvaluationSimulator::from_adjacency(i_successors, &constraining_pairs, self.residual)
+        EsmEvaluationSimulator::build(&i_successors, &constraining_pairs, self.residual)
     }
 
     /// Materialize `(i_successors, constraining_pairs)` — the inputs
@@ -2392,8 +2385,8 @@ mod tests {
         }
         let constraining_pairs: BTreeSet<(ModuleId, ModuleId)> =
             quotient.constraining_buckets.keys().copied().collect();
-        let rebuilt = EsmEvaluationSimulator::from_adjacency(
-            i_successors,
+        let rebuilt = EsmEvaluationSimulator::build(
+            &i_successors,
             &constraining_pairs,
             quotient.residual,
         );

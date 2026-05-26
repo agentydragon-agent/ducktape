@@ -1304,9 +1304,20 @@ impl ChunkConstrainingEdgeSet {
 /// constraining-only cycle (Pass 1 reports it as unrealizable),
 /// `toposort` returns `Err`; this function returns the empty map.
 pub fn chunk_linker_order(edges: &ChunkConstrainingEdgeSet) -> BTreeMap<ModuleId, usize> {
+    chunk_linker_order_from_pairs(edges.pairs())
+}
+
+/// Adjacency-only variant of [`chunk_linker_order`]. Same toposort,
+/// same return shape; differs only in input — used by the overlay
+/// realizability path (`EsmEvaluationSimulator::build`) whose
+/// `IncrementalQuotient` materializes constraining pairs without
+/// reaching for the full canonical edge map.
+pub fn chunk_linker_order_from_pairs(
+    pairs: impl IntoIterator<Item = (ModuleId, ModuleId)>,
+) -> BTreeMap<ModuleId, usize> {
     use petgraph::algo::toposort;
     let mut graph: DiGraphMap<ModuleId, ()> = DiGraphMap::new();
-    for (from, to) in edges.pairs() {
+    for (from, to) in pairs {
         graph.add_node(from);
         graph.add_node(to);
         graph.add_edge(from, to, ());
@@ -1346,8 +1357,25 @@ pub fn chunk_source_import_order(
     edges: &ChunkConstrainingEdgeSet,
     extra_nodes: &BTreeSet<ModuleId>,
 ) -> Vec<ModuleId> {
+    chunk_source_import_order_from_adjacency(
+        edges.pairs(),
+        &edges.i_successors,
+        extra_nodes,
+    )
+}
+
+/// Adjacency-only variant of [`chunk_source_import_order`]. The
+/// constraining pairs drive the toposort (linker_position) while
+/// `i_successors` drives the SCC computation. Used by the overlay
+/// realizability path; see [`chunk_linker_order_from_pairs`] for
+/// the matching motivation.
+pub fn chunk_source_import_order_from_adjacency(
+    constraining_pairs: impl IntoIterator<Item = (ModuleId, ModuleId)>,
+    i_successors: &BTreeMap<ModuleId, BTreeSet<ModuleId>>,
+    extra_nodes: &BTreeSet<ModuleId>,
+) -> Vec<ModuleId> {
     use petgraph::algo::tarjan_scc;
-    let linker_position = chunk_linker_order(edges);
+    let linker_position = chunk_linker_order_from_pairs(constraining_pairs);
     // SCCs are computed over the FULL I-graph (constraining + lazy
     // back-edges) so Lemma 2's intra-SCC `linker_position`-DESC
     // reversal catches asymmetric cycles. The constraining-only
@@ -1355,12 +1383,14 @@ pub fn chunk_source_import_order(
     // shapes into singleton SCCs and miss the rescue.
     let mut graph: DiGraphMap<ModuleId, ()> = DiGraphMap::new();
     let mut nodes: BTreeSet<ModuleId> = extra_nodes.iter().copied().collect();
-    for (from, to) in edges.i_pairs() {
-        graph.add_node(from);
-        graph.add_node(to);
-        graph.add_edge(from, to, ());
-        nodes.insert(from);
-        nodes.insert(to);
+    for (from, succs) in i_successors {
+        for to in succs {
+            graph.add_node(*from);
+            graph.add_node(*to);
+            graph.add_edge(*from, *to, ());
+            nodes.insert(*from);
+            nodes.insert(*to);
+        }
     }
     for &n in &nodes {
         graph.add_node(n);
