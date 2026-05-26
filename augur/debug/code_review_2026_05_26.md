@@ -215,12 +215,12 @@ Tracked in `augur/sim/TODO.md`; gaps noted:
 
 ## Cross-repo follow-ups
 
-- **`gaffer-private` properties.yaml migration** — local commits
-  `d5ab98b5d` (notes lists → single literal-block scalar) and `e1a1435e0`
-  (drop legacy `flags` lists) on `gaffer-private/main`. Both awaiting
-  push. Once reconciled in cluster:
-  - Drop `_collapse_list_notes` (`CLEANUP(2026-05-25)`).
-  - Drop `_drop_legacy_flags` (`CLEANUP(2026-05-26)`).
+- **`gaffer-private` properties.yaml migration** — local commit
+  `d5ab98b5d` (notes lists → single literal-block scalar) on
+  `gaffer-private/main`. Awaiting push. Once reconciled in cluster,
+  drop `_collapse_list_notes` (`CLEANUP(2026-05-25)`). The flags
+  shim has already been dropped; gaffer commit `e1a1435e0` is pushed
+  alongside the ducktape removal.
 
 ## Remaining open items, ranked
 

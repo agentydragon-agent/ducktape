@@ -3,7 +3,7 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import Field, PositiveInt, field_validator, model_validator
+from pydantic import Field, PositiveInt, field_validator
 
 from augur.api.local_regulation import LocalRegulation
 from augur.api.schemas import ApiModel
@@ -60,16 +60,6 @@ class Property(ApiModel):
         if isinstance(value, (list, tuple)):
             return "\n\n".join(value)
         return value
-
-    @model_validator(mode="before")
-    @classmethod
-    def _drop_legacy_flags(cls, data: object) -> object:
-        # CLEANUP(2026-05-26): Drop once gaffer-private/k8s/augur/properties.yaml
-        #   has shed the legacy `flags:` lists. Field was never consumed by the
-        #   frontend; ApiModel's `extra="forbid"` would otherwise reject the key.
-        if isinstance(data, dict) and "flags" in data:
-            data = {k: v for k, v in data.items() if k != "flags"}
-        return data
 
 
 class ProductInputDefaults(ApiModel):
