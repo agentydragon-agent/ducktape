@@ -9,11 +9,11 @@ import numpy as np
 
 from augur.sim.buffers import CurrentStateBuffers, SimulationBuffers
 from augur.sim.codec.helpers import text
-from augur.sim.compiler import (
+from augur.sim.compiler import CompiledSimulation
+from augur.sim.compiler.lifecycle import (
     LIFECYCLE_KIND_CAPITAL_IMPROVEMENT,
     LIFECYCLE_KIND_FRACTION,
     LIFECYCLE_KIND_SALE,
-    CompiledSimulation,
 )
 from augur.sim.tensor_fifo import fifo_sell_dollars, fifo_sell_units, lot_order_for_pool
 

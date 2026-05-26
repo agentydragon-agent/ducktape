@@ -8,11 +8,11 @@ import polars as pl
 
 from augur.sim.buffers import SimulationBuffers
 from augur.sim.codec.helpers import codes_to_strings, frame_from_columns
-from augur.sim.compiler import (
+from augur.sim.compiler import CompiledSimulation
+from augur.sim.compiler.lifecycle import (
     LIFECYCLE_KIND_CAPITAL_IMPROVEMENT,
     LIFECYCLE_KIND_FRACTION,
     LIFECYCLE_KIND_SALE,
-    CompiledSimulation,
 )
 from augur.sim.events import EVENT_FRAMES
 

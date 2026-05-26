@@ -14,23 +14,21 @@ import numpy as np
 from numpy.typing import NDArray
 
 from augur.model.series import PRIVATE_EQUITY_SERIES_PREFIX, home_value_series_id, private_equity_sale_event_id
+from augur.sim.compiler.lifecycle import LifecycleEventCompileOutput, compile_lifecycle_events
 from augur.sim.external_series import ExternalSeriesContext
 from augur.sim.jurisdictions import Jurisdiction
 from augur.sim.locations import Location
 from augur.sim.runtime import mortgage_monthly_payment_usd
 from augur.sim.scenario import (
-    CapitalImprovementEvent,
     FilingStatus,
     FixedAmount,
     MortgageInterestDeductionPolicy,
-    PropertySaleEvent,
     RecurringObligation,
     RecurringTransfer,
     Scenario,
     ScheduledObligation,
     ScheduledTransfer,
     SeriesIndexedAmount,
-    SetRentedFractionEvent,
 )
 
 NO_CODE = -1
@@ -38,9 +36,6 @@ AMOUNT_FIXED = 0
 AMOUNT_SERIES_INDEXED = 1
 ORDINARY_INCOME_CATEGORY = "ordinary"
 ORDINARY_DEDUCTION_CATEGORY = "ordinary"
-LIFECYCLE_KIND_FRACTION = 0
-LIFECYCLE_KIND_CAPITAL_IMPROVEMENT = 1
-LIFECYCLE_KIND_SALE = 2
 
 
 class StringTable:
@@ -208,7 +203,9 @@ def compile_simulation(
 
     tax_liabilities = _compile_tax_liability_slots(horizon, tax)
 
-    transfers = _compile_transfer_slots(scenario, strings, account_slot_by_key, profile_index_by_agent, series_index_by_id)
+    transfers = _compile_transfer_slots(
+        scenario, strings, account_slot_by_key, profile_index_by_agent, series_index_by_id
+    )
 
     properties, liabilities = _compile_properties_and_liabilities(scenario, strings, account_slot_by_key, locations)
 
@@ -252,7 +249,7 @@ def compile_simulation(
         property_owner_profile_index = np.full(1, NO_CODE, dtype=np.int64)
         property_home_value_series_index = np.full(1, NO_CODE, dtype=np.int64)
 
-    lifecycle_events = _compile_lifecycle_events(scenario, property_slot_by_id)
+    lifecycle_events = compile_lifecycle_events(scenario, property_slot_by_id)
 
     liability_owner_profile_index = np.array(
         [
@@ -268,14 +265,7 @@ def compile_simulation(
     sales = _compile_sales(scenario, strings, account_slot_by_key, series_index_by_id)
 
     obligations = _compile_obligation_slots(
-        scenario,
-        strings,
-        account_slot_by_key,
-        series_index_by_id,
-        properties,
-        property_slot_by_id,
-        liabilities,
-        tax,
+        scenario, strings, account_slot_by_key, series_index_by_id, properties, property_slot_by_id, liabilities, tax
     )
 
     liquidity_policies = _compile_liquidity_policies(scenario, strings, account_slot_by_key, series_index_by_id)
@@ -896,11 +886,7 @@ def _compile_tax(
 
 
 def _compile_mortgage_interest_deductions(
-    scenario: Scenario,
-    strings: StringTable,
-    *,
-    tax: TaxCompileOutput,
-    liabilities: LiabilityCompileOutput,
+    scenario: Scenario, strings: StringTable, *, tax: TaxCompileOutput, liabilities: LiabilityCompileOutput
 ) -> MIDCompileOutput:
     """Compile the precomputed per-(tax_link, liability) MID ratio matrix.
 
@@ -1025,7 +1011,9 @@ def _compile_federal_salt_deductions(
     contributing_mask = np.zeros((max(1, link_count), max(1, link_count)), dtype=np.bool_)
 
     if link_count == 0 or not scenario.federal_salt_deduction_policies:
-        return SaltCompileOutput(link_active=salt_active, cap_by_year=salt_cap_by_year, contributing_mask=contributing_mask)
+        return SaltCompileOutput(
+            link_active=salt_active, cap_by_year=salt_cap_by_year, contributing_mask=contributing_mask
+        )
 
     # Map (profile_index, jurisdiction_code) -> link_index for cross-link lookups.
     link_by_profile_jurisdiction: dict[tuple[int, int], int] = {}
@@ -1332,77 +1320,6 @@ class SaleCompileOutput:
     proceeds_slot: NDArray[np.int64]
     price_fixed: NDArray[np.float64]
     price_series: NDArray[np.int64]
-
-
-@dataclass(frozen=True)
-class LifecycleEventCompileOutput:
-    """PropertyLifecycleEvent rows compiled into per-month sparse storage. Sorted by
-    month so the engine scans a per-month index range via `month_starts`:
-    `events_for_month_M = events[month_starts[M]:month_starts[M+1]]`. `kind[i]` is
-    `LIFECYCLE_KIND_FRACTION` (0) for rented-fraction change (start/stop/change-rental
-    -plan), `LIFECYCLE_KIND_CAPITAL_IMPROVEMENT` (1) for cash + basis bump, or
-    `LIFECYCLE_KIND_SALE` (2). `rented_fraction[i]` is the new value (kind 0; 0.0
-    otherwise). `amount[i]` is the USD spend (kind 1), the closing-cost percentage
-    (kind 2; 0..100), or 0.0 (kind 0). `month_starts` has length `horizon_months + 1`
-    so the engine can do `events[starts[M]:starts[M+1]]` for any month M."""
-
-    month: NDArray[np.int64]
-    property_slot: NDArray[np.int64]
-    kind: NDArray[np.int64]
-    rented_fraction: NDArray[np.float64]
-    amount: NDArray[np.float64]
-    month_starts: NDArray[np.int64]
-
-
-def _compile_lifecycle_events(
-    scenario: Scenario, property_slot_by_id: dict[str, int]
-) -> LifecycleEventCompileOutput:
-    events_sorted = sorted(scenario.property_lifecycle_events, key=lambda e: (int(e.month), e.property_id))
-    count = len(events_sorted)
-    month = np.empty(count, dtype=np.int64)
-    property_slot = np.empty(count, dtype=np.int64)
-    kind = np.empty(count, dtype=np.int64)
-    rented_fraction = np.zeros(count, dtype=np.float64)
-    amount = np.zeros(count, dtype=np.float64)
-    for i, event in enumerate(events_sorted):
-        if event.property_id not in property_slot_by_id:
-            raise ValueError(
-                f"PropertyLifecycleEvent at month {event.month} references unknown property_id "
-                f"{event.property_id!r}; known: {sorted(property_slot_by_id)}"
-            )
-        slot = property_slot_by_id[event.property_id]
-        purchase_month = int(scenario.scheduled_property_purchases[slot].month)
-        if int(event.month) <= purchase_month:
-            raise ValueError(
-                f"PropertyLifecycleEvent for {event.property_id!r} fires at month {event.month} "
-                f"but the property's purchase month is {purchase_month}; lifecycle events must "
-                "fire strictly after purchase."
-            )
-        month[i] = int(event.month)
-        property_slot[i] = slot
-        if isinstance(event, SetRentedFractionEvent):
-            kind[i] = LIFECYCLE_KIND_FRACTION
-            rented_fraction[i] = float(event.rented_fraction)
-        elif isinstance(event, CapitalImprovementEvent):
-            kind[i] = LIFECYCLE_KIND_CAPITAL_IMPROVEMENT
-            amount[i] = float(event.amount_usd)
-        elif isinstance(event, PropertySaleEvent):
-            kind[i] = LIFECYCLE_KIND_SALE
-            # Reuse `amount` as closing_cost_pct for sale events (different semantic per kind,
-            # but storing in the same dense column avoids another array).
-            amount[i] = float(event.closing_cost_pct)
-        else:
-            raise TypeError(f"unknown PropertyLifecycleEvent variant: {type(event).__name__}")
-    # `starts[M]` = first event index for month >= M; `starts[H]` = count.
-    month_starts = np.searchsorted(month, np.arange(int(scenario.horizon_months) + 1), side="left").astype(np.int64)
-    return LifecycleEventCompileOutput(
-        month=month,
-        property_slot=property_slot,
-        kind=kind,
-        rented_fraction=rented_fraction,
-        amount=amount,
-        month_starts=month_starts,
-    )
 
 
 def _compile_sales(
