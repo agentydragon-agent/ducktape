@@ -570,7 +570,7 @@ class SimulationBuffers:
         self.lot_dispositions.validate(slot_plan)
         self.taxes.validate(slot_plan)
         self.obligations.validate(slot_plan)
-        self.lifecycle.validate(slot_plan, event_count=int(plan.lifecycle_event_month.shape[0]))
+        self.lifecycle.validate(slot_plan, event_count=int(plan.lifecycle_events.month.shape[0]))
 
     @property
     def cash_state(self) -> np.ndarray:
@@ -1312,7 +1312,7 @@ def _apply_lifecycle_events(
     subset.
     """
 
-    starts = plan.lifecycle_event_month_starts
+    starts = plan.lifecycle_events.month_starts
     if month + 1 >= starts.shape[0]:
         return
     begin = int(starts[month])
@@ -1323,14 +1323,14 @@ def _apply_lifecycle_events(
     if not active_rollout.any():
         return
     for i in range(begin, end):
-        prop = int(plan.lifecycle_event_property[i])
-        kind = int(plan.lifecycle_event_kind[i])
+        prop = int(plan.lifecycle_events.property_slot[i])
+        kind = int(plan.lifecycle_events.kind[i])
         buffers.lifecycle_fired[i, active_rollout] = True
         if kind == LIFECYCLE_KIND_FRACTION:
-            new_fraction = float(plan.lifecycle_event_rented_fraction[i])
+            new_fraction = float(plan.lifecycle_events.rented_fraction[i])
             current.property_rented_fraction[active_rollout, prop] = new_fraction
         elif kind == LIFECYCLE_KIND_CAPITAL_IMPROVEMENT:
-            amount = float(plan.lifecycle_event_amount[i])
+            amount = float(plan.lifecycle_events.amount[i])
             owner_cash_slot = int(plan.properties.buyer_slot[prop])
             if owner_cash_slot >= 0:
                 current.cash[active_rollout, owner_cash_slot] -= amount
@@ -1343,7 +1343,7 @@ def _apply_lifecycle_events(
                 month=month,
                 event_index=i,
                 prop=prop,
-                closing_cost_pct=float(plan.lifecycle_event_amount[i]),
+                closing_cost_pct=float(plan.lifecycle_events.amount[i]),
                 active_rollout=active_rollout,
             )
 
@@ -2317,16 +2317,16 @@ def _allocate_buffers(plan: CompiledSimulation) -> SimulationBuffers:
             obligation_failure_active=np.zeros((h, p.max_obligation_slots, r), dtype=np.bool_),
         ),
         lifecycle=LifecycleEventBuffers(
-            fired=np.zeros((max(1, int(plan.lifecycle_event_month.shape[0])), r), dtype=np.bool_),
-            sale_gross_proceeds=np.zeros((max(1, int(plan.lifecycle_event_month.shape[0])), r), dtype=np.float64),
-            sale_mortgage_payoff=np.zeros((max(1, int(plan.lifecycle_event_month.shape[0])), r), dtype=np.float64),
-            sale_net_cash=np.zeros((max(1, int(plan.lifecycle_event_month.shape[0])), r), dtype=np.float64),
-            sale_realized_gain=np.zeros((max(1, int(plan.lifecycle_event_month.shape[0])), r), dtype=np.float64),
-            sale_recapture=np.zeros((max(1, int(plan.lifecycle_event_month.shape[0])), r), dtype=np.float64),
+            fired=np.zeros((max(1, int(plan.lifecycle_events.month.shape[0])), r), dtype=np.bool_),
+            sale_gross_proceeds=np.zeros((max(1, int(plan.lifecycle_events.month.shape[0])), r), dtype=np.float64),
+            sale_mortgage_payoff=np.zeros((max(1, int(plan.lifecycle_events.month.shape[0])), r), dtype=np.float64),
+            sale_net_cash=np.zeros((max(1, int(plan.lifecycle_events.month.shape[0])), r), dtype=np.float64),
+            sale_realized_gain=np.zeros((max(1, int(plan.lifecycle_events.month.shape[0])), r), dtype=np.float64),
+            sale_recapture=np.zeros((max(1, int(plan.lifecycle_events.month.shape[0])), r), dtype=np.float64),
             sale_section_121_exclusion=np.zeros(
-                (max(1, int(plan.lifecycle_event_month.shape[0])), r), dtype=np.float64
+                (max(1, int(plan.lifecycle_events.month.shape[0])), r), dtype=np.float64
             ),
-            sale_long_term_gain=np.zeros((max(1, int(plan.lifecycle_event_month.shape[0])), r), dtype=np.float64),
+            sale_long_term_gain=np.zeros((max(1, int(plan.lifecycle_events.month.shape[0])), r), dtype=np.float64),
         ),
     )
     buffers.validate(plan)
@@ -2678,7 +2678,7 @@ def _decode_lifecycle_events(
     `sale_*` arrays.
     """
 
-    event_count = int(plan.lifecycle_event_month.shape[0])
+    event_count = int(plan.lifecycle_events.month.shape[0])
     if event_count == 0:
         return (
             EVENT_FRAMES.set_rented_fraction_events.empty(),
@@ -2693,10 +2693,10 @@ def _decode_lifecycle_events(
             EVENT_FRAMES.capital_improvement_events.empty(),
             EVENT_FRAMES.property_sale_events.empty(),
         )
-    months = plan.lifecycle_event_month.astype(np.int64)[events_idx]
-    property_slots = plan.lifecycle_event_property.astype(np.int64)[events_idx]
+    months = plan.lifecycle_events.month.astype(np.int64)[events_idx]
+    property_slots = plan.lifecycle_events.property_slot.astype(np.int64)[events_idx]
     property_ids = _codes_to_strings(plan, plan.properties.id)[property_slots]
-    kinds = plan.lifecycle_event_kind.astype(np.int64)[events_idx]
+    kinds = plan.lifecycle_events.kind.astype(np.int64)[events_idx]
     fraction_mask = kinds == LIFECYCLE_KIND_FRACTION
     capital_mask = kinds == LIFECYCLE_KIND_CAPITAL_IMPROVEMENT
     sale_mask = kinds == LIFECYCLE_KIND_SALE
@@ -2706,14 +2706,14 @@ def _decode_lifecycle_events(
         rollout_index=rollouts[fraction_mask],
         month_index=months[fraction_mask],
         property_id=property_ids[fraction_mask],
-        rented_fraction=plan.lifecycle_event_rented_fraction.astype(np.float64)[events_idx[fraction_mask]],
+        rented_fraction=plan.lifecycle_events.rented_fraction.astype(np.float64)[events_idx[fraction_mask]],
     )
     capital_improvement_frame = _frame_from_columns(
         EVENT_FRAMES.capital_improvement_events,
         rollout_index=rollouts[capital_mask],
         month_index=months[capital_mask],
         property_id=property_ids[capital_mask],
-        amount_usd=plan.lifecycle_event_amount.astype(np.float64)[events_idx[capital_mask]],
+        amount_usd=plan.lifecycle_events.amount.astype(np.float64)[events_idx[capital_mask]],
         description=np.full(int(capital_mask.sum()), "", dtype=object),
     )
     property_sale_frame = _frame_from_columns(

@@ -152,23 +152,7 @@ class CompiledSimulation:
     # value. NO_CODE if the series wasn't configured in the scenario.
     property_home_value_series_index: NDArray[np.int64]
     # PropertyLifecycleEvent rows compiled into per-month sparse storage. Sorted by month so
-    # the engine can scan a per-month index range in O(1) lookup via
-    # `lifecycle_event_month_starts`.
-    #   lifecycle_event_month[i]: the month the event fires.
-    #   lifecycle_event_property[i]: the property slot.
-    #   lifecycle_event_kind[i]: LIFECYCLE_KIND_FRACTION (0) for rented_fraction change
-    #                            (start/stop/change-rental-plan);
-    #                            LIFECYCLE_KIND_CAPITAL_IMPROVEMENT (1) for cash + basis bump.
-    #   lifecycle_event_rented_fraction[i]: new rented_fraction (kind 0); 0.0 (kind 1).
-    #   lifecycle_event_amount[i]: USD amount for capital improvement (kind 1); 0.0 (kind 0).
-    lifecycle_event_month: NDArray[np.int64]
-    lifecycle_event_property: NDArray[np.int64]
-    lifecycle_event_kind: NDArray[np.int64]
-    lifecycle_event_rented_fraction: NDArray[np.float64]
-    lifecycle_event_amount: NDArray[np.float64]
-    # Per-month start index (length horizon_months + 1). Events for month M live at slots
-    # [lifecycle_event_month_starts[M], lifecycle_event_month_starts[M+1]).
-    lifecycle_event_month_starts: NDArray[np.int64]
+    lifecycle_events: LifecycleEventCompileOutput
     liabilities: LiabilityCompileOutput
     # Profile index of each liability's owner. NO_CODE if the owner has no tax profile.
     liability_owner_profile_index: NDArray[np.int64]
@@ -310,49 +294,7 @@ def compile_simulation(
         property_owner_profile_index = np.full(1, NO_CODE, dtype=np.int64)
         property_home_value_series_index = np.full(1, NO_CODE, dtype=np.int64)
 
-    # Compile PropertyLifecycleEvent rows. Sort by month so we can build per-month index ranges.
-    lifecycle_events_sorted = sorted(scenario.property_lifecycle_events, key=lambda e: (int(e.month), e.property_id))
-    lifecycle_event_count = len(lifecycle_events_sorted)
-    lifecycle_event_month = np.empty(lifecycle_event_count, dtype=np.int64)
-    lifecycle_event_property = np.empty(lifecycle_event_count, dtype=np.int64)
-    lifecycle_event_kind = np.empty(lifecycle_event_count, dtype=np.int64)
-    lifecycle_event_rented_fraction = np.zeros(lifecycle_event_count, dtype=np.float64)
-    lifecycle_event_amount = np.zeros(lifecycle_event_count, dtype=np.float64)
-    for i, event in enumerate(lifecycle_events_sorted):
-        if event.property_id not in property_slot_by_id:
-            raise ValueError(
-                f"PropertyLifecycleEvent at month {event.month} references unknown property_id "
-                f"{event.property_id!r}; known: {sorted(property_slot_by_id)}"
-            )
-        slot = property_slot_by_id[event.property_id]
-        purchase_month = int(scenario.scheduled_property_purchases[slot].month)
-        if int(event.month) <= purchase_month:
-            raise ValueError(
-                f"PropertyLifecycleEvent for {event.property_id!r} fires at month {event.month} "
-                f"but the property's purchase month is {purchase_month}; lifecycle events must "
-                "fire strictly after purchase."
-            )
-        lifecycle_event_month[i] = int(event.month)
-        lifecycle_event_property[i] = slot
-        if isinstance(event, SetRentedFractionEvent):
-            lifecycle_event_kind[i] = LIFECYCLE_KIND_FRACTION
-            lifecycle_event_rented_fraction[i] = float(event.rented_fraction)
-        elif isinstance(event, CapitalImprovementEvent):
-            lifecycle_event_kind[i] = LIFECYCLE_KIND_CAPITAL_IMPROVEMENT
-            lifecycle_event_amount[i] = float(event.amount_usd)
-        elif isinstance(event, PropertySaleEvent):
-            lifecycle_event_kind[i] = LIFECYCLE_KIND_SALE
-            # Reuse `lifecycle_event_amount` as the closing_cost_pct (0..100). Different field
-            # semantic per kind, but storing in the same dense column avoids another array.
-            lifecycle_event_amount[i] = float(event.closing_cost_pct)
-        else:
-            raise TypeError(f"unknown PropertyLifecycleEvent variant: {type(event).__name__}")
-    # Build per-month start indices, length horizon + 1. `starts[M]` = first event index for
-    # month >= M; `starts[H]` = lifecycle_event_count so the apply loop can do
-    # `events_for_month_M = events[starts[M]:starts[M+1]]`.
-    lifecycle_event_month_starts = np.searchsorted(
-        lifecycle_event_month, np.arange(int(scenario.horizon_months) + 1), side="left"
-    ).astype(np.int64)
+    lifecycle_events = _compile_lifecycle_events(scenario, property_slot_by_id)
 
     liability_owner_profile_index = np.array(
         [
@@ -488,12 +430,7 @@ def compile_simulation(
         property_building_basis=property_building_basis,
         property_owner_profile_index=property_owner_profile_index,
         property_home_value_series_index=property_home_value_series_index,
-        lifecycle_event_month=lifecycle_event_month,
-        lifecycle_event_property=lifecycle_event_property,
-        lifecycle_event_kind=lifecycle_event_kind,
-        lifecycle_event_rented_fraction=lifecycle_event_rented_fraction,
-        lifecycle_event_amount=lifecycle_event_amount,
-        lifecycle_event_month_starts=lifecycle_event_month_starts,
+        lifecycle_events=lifecycle_events,
         sales=sales,
         obligations=obligations,
         external_event_ids=external_event_ids,
@@ -1411,6 +1348,74 @@ class SaleCompileOutput:
     proceeds_slot: NDArray[np.int64]
     price_fixed: NDArray[np.float64]
     price_series: NDArray[np.int64]
+
+
+@dataclass(frozen=True)
+class LifecycleEventCompileOutput:
+    """PropertyLifecycleEvent rows compiled into per-month sparse storage. Sorted by
+    month so the engine scans a per-month index range via `month_starts`:
+    `events_for_month_M = events[month_starts[M]:month_starts[M+1]]`. `kind[i]` is
+    LIFECYCLE_KIND_FRACTION (0) for rented-fraction change, LIFECYCLE_KIND_CAPITAL_IMPROVEMENT
+    (1) for cash + basis bump, or LIFECYCLE_KIND_SALE (2). `rented_fraction[i]` is the new
+    value (kind 0); `amount[i]` is the USD spend (kind 1) or the closing-cost % (kind 2)."""
+
+    month: NDArray[np.int64]
+    property_slot: NDArray[np.int64]
+    kind: NDArray[np.int64]
+    rented_fraction: NDArray[np.float64]
+    amount: NDArray[np.float64]
+    month_starts: NDArray[np.int64]
+
+
+def _compile_lifecycle_events(
+    scenario: Scenario, property_slot_by_id: dict[str, int]
+) -> LifecycleEventCompileOutput:
+    events_sorted = sorted(scenario.property_lifecycle_events, key=lambda e: (int(e.month), e.property_id))
+    count = len(events_sorted)
+    month = np.empty(count, dtype=np.int64)
+    property_slot = np.empty(count, dtype=np.int64)
+    kind = np.empty(count, dtype=np.int64)
+    rented_fraction = np.zeros(count, dtype=np.float64)
+    amount = np.zeros(count, dtype=np.float64)
+    for i, event in enumerate(events_sorted):
+        if event.property_id not in property_slot_by_id:
+            raise ValueError(
+                f"PropertyLifecycleEvent at month {event.month} references unknown property_id "
+                f"{event.property_id!r}; known: {sorted(property_slot_by_id)}"
+            )
+        slot = property_slot_by_id[event.property_id]
+        purchase_month = int(scenario.scheduled_property_purchases[slot].month)
+        if int(event.month) <= purchase_month:
+            raise ValueError(
+                f"PropertyLifecycleEvent for {event.property_id!r} fires at month {event.month} "
+                f"but the property's purchase month is {purchase_month}; lifecycle events must "
+                "fire strictly after purchase."
+            )
+        month[i] = int(event.month)
+        property_slot[i] = slot
+        if isinstance(event, SetRentedFractionEvent):
+            kind[i] = LIFECYCLE_KIND_FRACTION
+            rented_fraction[i] = float(event.rented_fraction)
+        elif isinstance(event, CapitalImprovementEvent):
+            kind[i] = LIFECYCLE_KIND_CAPITAL_IMPROVEMENT
+            amount[i] = float(event.amount_usd)
+        elif isinstance(event, PropertySaleEvent):
+            kind[i] = LIFECYCLE_KIND_SALE
+            # Reuse `amount` as closing_cost_pct for sale events (different semantic per kind,
+            # but storing in the same dense column avoids another array).
+            amount[i] = float(event.closing_cost_pct)
+        else:
+            raise TypeError(f"unknown PropertyLifecycleEvent variant: {type(event).__name__}")
+    # `starts[M]` = first event index for month >= M; `starts[H]` = count.
+    month_starts = np.searchsorted(month, np.arange(int(scenario.horizon_months) + 1), side="left").astype(np.int64)
+    return LifecycleEventCompileOutput(
+        month=month,
+        property_slot=property_slot,
+        kind=kind,
+        rented_fraction=rented_fraction,
+        amount=amount,
+        month_starts=month_starts,
+    )
 
 
 def _compile_sales(
