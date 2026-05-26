@@ -7,9 +7,10 @@ with automatic token refresh via the platform token endpoint.
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Annotated, Literal
 
 import httpx
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 from aiquota.models import ExtraUsage, FetchError, FetchSuccess, ProviderFetch, QuotaWindow
@@ -59,13 +60,25 @@ class _UsageBucket(BaseModel):
     resets_at: str | None = None
 
 
-class _ExtraUsage(BaseModel):
+# Discriminated union: the API returns explicit `null` for the numeric
+# fields when extra-usage isn't entitled on the plan, so the only sane
+# representation gates them behind `is_enabled`.
+class _ExtraUsageDisabled(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
-    is_enabled: bool = False
-    monthly_limit: float = 0
-    used_credits: float = 0
-    utilization: float = 0
+    is_enabled: Literal[False] = False
+
+
+class _ExtraUsageEnabled(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    is_enabled: Literal[True]
+    monthly_limit: float
+    used_credits: float
+    utilization: float
+
+
+_ExtraUsage = Annotated[_ExtraUsageEnabled | _ExtraUsageDisabled, Field(discriminator="is_enabled")]
 
 
 class _UsageResponse(BaseModel):
@@ -185,7 +198,7 @@ class ClaudeProvider(Provider):
         short = _to_window(usage.five_hour, SHORT_WINDOW_SECS)
         long = _to_window(usage.seven_day, LONG_WINDOW_SECS)
         extra: ExtraUsage | None = None
-        if usage.extra_usage and usage.extra_usage.is_enabled:
+        if isinstance(usage.extra_usage, _ExtraUsageEnabled):
             eu = usage.extra_usage
             extra = ExtraUsage(
                 is_enabled=True,

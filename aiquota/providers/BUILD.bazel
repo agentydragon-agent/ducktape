@@ -49,6 +49,18 @@ py_library(
 )
 
 py_test(
+    name = "test_claude",
+    srcs = ["test_claude.py"],
+    imports = ["../.."],
+    deps = [
+        ":claude_lib",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_codex",
     srcs = ["test_codex.py"],
     imports = ["../.."],
