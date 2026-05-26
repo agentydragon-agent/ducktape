@@ -7,12 +7,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs;
+use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 
 use super::factorize::{FactorizeDiagnosticReport, FactorizeProposal, PeelFactorizeOptions};
 use super::factorize::{PeelFactorizeReport, analyze_peel_factorize};
 use anyhow::{Context, Result, bail};
-use clap::{Args as ClapArgs, Subcommand};
+use clap::{Args as ClapArgs, Subcommand, ValueEnum};
 use serde::Serialize;
 
 use analysis::{
@@ -73,6 +74,10 @@ pub struct PlanWorkArgs {
     /// Maximum number of proposals and diagnostics to emit. Zero means unlimited.
     #[arg(long, default_value_t = 0)]
     pub limit: usize,
+
+    /// Output format. Default `text` on tty, `json` on pipe.
+    #[arg(long, value_enum)]
+    pub format: Option<OutputFormat>,
 }
 
 #[derive(Debug, Clone, ClapArgs)]
@@ -95,6 +100,10 @@ pub struct UnitsArgs {
     /// Also group emitted units by current destination.
     #[arg(long = "by-destination")]
     pub by_destination: bool,
+
+    /// Output format. Default `text` on tty, `json` on pipe.
+    #[arg(long, value_enum)]
+    pub format: Option<OutputFormat>,
 }
 
 #[derive(Debug, Clone, ClapArgs)]
@@ -105,6 +114,10 @@ pub struct PatchPlanArgs {
     /// Maximum number of rows to keep. Zero means unlimited.
     #[arg(long, default_value_t = 0)]
     pub limit: usize,
+
+    /// Output format. Default `text` on tty, `json` on pipe.
+    #[arg(long, value_enum)]
+    pub format: Option<OutputFormat>,
 }
 
 #[derive(Debug, Clone, ClapArgs)]
@@ -119,6 +132,10 @@ pub struct GraphSummaryArgs {
     /// Maximum number of largest residual units to emit. Zero means unlimited.
     #[arg(long, default_value_t = 10)]
     pub limit: usize,
+
+    /// Output format. Default `text` on tty, `json` on pipe.
+    #[arg(long, value_enum)]
+    pub format: Option<OutputFormat>,
 }
 
 #[derive(Debug, Clone, ClapArgs)]
@@ -136,6 +153,10 @@ pub struct ExplainArgs {
     /// Maximum number of rows to emit per report section. Zero means unlimited.
     #[arg(long, default_value_t = 0)]
     pub limit: usize,
+
+    /// Output format. Default `text` on tty, `json` on pipe.
+    #[arg(long, value_enum)]
+    pub format: Option<OutputFormat>,
 }
 
 #[derive(Debug, Clone, ClapArgs)]
@@ -157,6 +178,10 @@ pub struct SourceSliceArgs {
     /// Root used to resolve relative `source_location.source_path` values.
     #[arg(long = "source-root", env = "DEBUNDLE_SOURCE_ROOT")]
     pub source_root: Option<PathBuf>,
+
+    /// Output format. Default `text` on tty, `json` on pipe.
+    #[arg(long, value_enum)]
+    pub format: Option<OutputFormat>,
 }
 
 #[derive(Debug, Clone, ClapArgs)]
@@ -415,6 +440,76 @@ fn deprecation_notice(old: &str, new: &str) {
 
 pub fn print_json<T: Serialize>(value: &T) -> Result<()> {
     println!("{}", serde_json::to_string_pretty(value)?);
+    Ok(())
+}
+
+/// Uniform output format selector for every read-only query command,
+/// per docs/cli.md § "Output format". `text` is the default when
+/// stdout is a tty; `json` is the default when stdout is piped.
+/// `ndjson` emits one JSON value per line so streaming consumers
+/// (`jq -c`, downstream pipes) don't have to buffer.
+#[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
+#[value(rename_all = "lowercase")]
+pub enum OutputFormat {
+    Text,
+    Json,
+    Ndjson,
+}
+
+impl OutputFormat {
+    /// Resolve a user-supplied `--format` against the tty default.
+    pub fn resolve(opt: Option<Self>) -> Self {
+        if let Some(f) = opt {
+            return f;
+        }
+        if std::io::stdout().is_terminal() {
+            Self::Text
+        } else {
+            Self::Json
+        }
+    }
+}
+
+/// Emit `value` in the requested `format`. `text_render` produces the
+/// human-readable rendering when `format` resolves to text.
+pub fn print_report<T, F>(value: &T, format: OutputFormat, text_render: F) -> Result<()>
+where
+    T: Serialize,
+    F: FnOnce(&T, &mut String),
+{
+    match format {
+        OutputFormat::Text => {
+            let mut buf = String::new();
+            text_render(value, &mut buf);
+            if !buf.is_empty() && !buf.ends_with('\n') {
+                buf.push('\n');
+            }
+            print!("{buf}");
+            Ok(())
+        }
+        OutputFormat::Json => {
+            println!("{}", serde_json::to_string_pretty(value)?);
+            Ok(())
+        }
+        OutputFormat::Ndjson => {
+            // For ndjson on a non-array shape, fall back to one
+            // compact JSON document per call. Commands whose primary
+            // output is an array (atoms, scc, modules list) override
+            // and emit one line per item.
+            println!("{}", serde_json::to_string(value)?);
+            Ok(())
+        }
+    }
+}
+
+/// Emit a vec of items as ndjson when `format == Ndjson`, or as a
+/// single pretty JSON / text-rendered document otherwise. Most query
+/// commands wrap a `Vec<T>` (with optional summary) so this is the
+/// shape the streaming format helps with.
+pub fn print_ndjson_items<T: Serialize>(items: &[T]) -> Result<()> {
+    for item in items {
+        println!("{}", serde_json::to_string(item)?);
+    }
     Ok(())
 }
 
@@ -1422,6 +1517,7 @@ mod tests {
             common,
             size_cap_lines: 10_000,
             limit: 1,
+            format: None,
         })
         .unwrap();
 
@@ -1443,6 +1539,7 @@ mod tests {
             residual_only: true,
             readable_only: true,
             by_destination: true,
+            format: None,
         })
         .unwrap();
         assert_eq!(report.units.len(), 1);
@@ -1453,7 +1550,12 @@ mod tests {
     #[test]
     fn patch_plan_reports_split_atomic_units() {
         let (_temp, common) = fixture();
-        let report = run_patch_plan_report(&PatchPlanArgs { common, limit: 0 }).unwrap();
+        let report = run_patch_plan_report(&PatchPlanArgs {
+            common,
+            limit: 0,
+            format: None,
+        })
+        .unwrap();
         let row = report
             .rows
             .iter()
@@ -1477,6 +1579,7 @@ mod tests {
             },
             size_cap_lines: 10_000,
             limit: 0,
+            format: None,
         })
         .unwrap();
         assert_eq!(report.owner_ids, vec!["owner:0"]);
@@ -1531,6 +1634,7 @@ mod tests {
             },
             size_cap_lines: 10_000,
             limit: 1,
+            format: None,
         })
         .unwrap();
 
@@ -1562,6 +1666,7 @@ mod tests {
             size_cap_lines: 10_000,
             context_lines: 1,
             source_root: Some(temp.path().to_path_buf()),
+            format: None,
         })
         .unwrap();
         assert_eq!(report.slices.len(), 1);

@@ -56,10 +56,10 @@ pub struct TransformArgs {
     #[arg(long = "tree-vendor-marks")]
     pub tree_vendor_marks: Option<PathBuf>,
     /// Root for source-relative paths embedded in the tree-shaped config YAML.
-    #[arg(long = "tree-source-root")]
+    #[arg(long = "tree-source-root", env = "DEBUNDLE_SOURCE_ROOT")]
     pub tree_source_root: Option<PathBuf>,
     /// Output root used when compiling tree-shaped authoring sources.
-    #[arg(long = "out-root")]
+    #[arg(long = "out-root", env = "DEBUNDLE_OUT")]
     pub out_root: Option<PathBuf>,
     /// Map a package name to its source directory: `<pkg>=<dir>`. May be repeated.
     #[arg(long = "package-root", value_parser = parse_package_root_kv)]

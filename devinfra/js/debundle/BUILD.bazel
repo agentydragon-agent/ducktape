@@ -564,6 +564,7 @@ rust_library(
         ":spec_modules",
         "@crates//:anyhow",
         "@crates//:clap",
+        "@crates//:serde",
         "@crates//:serde_json",
     ],
 )

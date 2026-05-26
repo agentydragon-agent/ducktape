@@ -175,3 +175,18 @@ rust_test(
         "@crates//:tempfile",
     ],
 )
+
+# `debundle modules list` filters + the env-var plumbing for
+# DEBUNDLE_MODULES. Shells out to the built binary so the env var
+# resolution is exercised.
+rust_test(
+    name = "modules_list_cli_test",
+    srcs = ["modules_list_cli_test.rs"],
+    crate_root = "modules_list_cli_test.rs",
+    data = ["//devinfra/js/debundle"],
+    edition = "2024",
+    deps = [
+        "@crates//:serde_json",
+        "@crates//:tempfile",
+    ],
+)

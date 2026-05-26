@@ -136,6 +136,7 @@ fn atoms_lists_units() {
         residual_only: false,
         readable_only: false,
         by_destination: false,
+        format: None,
     })
     .unwrap();
     assert_eq!(report.units.len(), 2);
@@ -144,7 +145,12 @@ fn atoms_lists_units() {
 #[test]
 fn coverage_reports_summary() {
     let (_dir, common) = fixture();
-    let report = run_patch_plan_report(&PatchPlanArgs { common, limit: 0 }).unwrap();
+    let report = run_patch_plan_report(&PatchPlanArgs {
+        common,
+        limit: 0,
+        format: None,
+    })
+    .unwrap();
     // With no claimed modules, every atom shows up as a missing patch
     // set. Smoke-test that the summary has counts and the rows vector
     // is well-formed.
@@ -158,6 +164,7 @@ fn graph_summary_reports_counts() {
         common,
         size_cap_lines: 10_000,
         limit: 10,
+        format: None,
     })
     .unwrap();
     assert_eq!(report.owner_count, 2);
@@ -171,6 +178,7 @@ fn modules_propose_emits_plan_work_report() {
         common,
         size_cap_lines: 10_000,
         limit: 0,
+        format: None,
     })
     .unwrap();
     // Smoke-test: a fresh fixture with two atoms and a single edge
@@ -192,6 +200,7 @@ fn describe_binding_resolves_via_selection() {
         },
         size_cap_lines: 10_000,
         limit: 0,
+        format: None,
     })
     .unwrap();
     assert_eq!(report.owner_ids, vec!["owner:0"]);
@@ -213,6 +222,7 @@ fn show_source_binding_resolves_via_selection() {
         size_cap_lines: 10_000,
         context_lines: 1,
         source_root: Some(dir.path().to_path_buf()),
+        format: None,
     })
     .unwrap();
     assert_eq!(report.slices.len(), 1);

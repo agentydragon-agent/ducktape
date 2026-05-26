@@ -7,10 +7,10 @@ use comment_cli::{
 };
 use module_cli::{MergeArgs, ModuleArgs, run_merge, run_module_cli};
 use peel::{
-    CommonArgs as PeelCommonArgs, ExplainArgs, GraphSummaryArgs, PatchPlanArgs, PeelArgs,
-    PlanWorkArgs, SelectionArgs, SourceSliceArgs, UnitsArgs, print_json, run_explain_report,
-    run_graph_summary_report, run_patch_plan_report, run_peel, run_plan_work_report,
-    run_source_slice_report, run_units_report,
+    CommonArgs as PeelCommonArgs, ExplainArgs, GraphSummaryArgs, OutputFormat, PatchPlanArgs,
+    PeelArgs, PlanWorkArgs, SelectionArgs, SourceSliceArgs, UnitsArgs, print_report,
+    run_explain_report, run_graph_summary_report, run_patch_plan_report, run_peel,
+    run_plan_work_report, run_source_slice_report, run_units_report,
 };
 use pipeline::{TransformArgs, run_transform_cli};
 
@@ -73,6 +73,47 @@ enum ModulesNsCommand {
     Merge(MergeArgs),
     /// Emit module-assignment proposals derived from the atomic DAG.
     Propose(PlanWorkArgs),
+    /// List all modules in the spec with summary stats.
+    List(ModulesListArgs),
+}
+
+/// Args for `debundle modules list`.
+#[derive(Debug, ClapArgs)]
+pub struct ModulesListArgs {
+    /// Modules tree root.
+    #[arg(long = "modules", env = "DEBUNDLE_MODULES")]
+    pub modules_root: PathBuf,
+
+    /// Restrict to modules with zero members.
+    #[arg(long)]
+    pub empty: bool,
+
+    /// Restrict to residual modules (any module whose path starts with `residual/`).
+    #[arg(long)]
+    pub residual: bool,
+
+    /// Restrict to modules that contain bindings not present in any
+    /// other module — useful for finding modules that would be empty
+    /// if their bindings were re-assigned elsewhere.
+    #[arg(long = "unassigned-bindings")]
+    pub unassigned_bindings: bool,
+
+    /// Output format. Default `text` on tty, `json` on pipe.
+    #[arg(long, value_enum)]
+    pub format: Option<OutputFormat>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ModuleListEntry {
+    pub path: String,
+    pub member_count: usize,
+    pub residual: bool,
+    pub has_comment: bool,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ModulesListReport {
+    pub modules: Vec<ModuleListEntry>,
 }
 
 /// Args for `debundle describe <id>`.
@@ -96,6 +137,10 @@ pub struct DescribeArgs {
     /// Maximum number of rows to emit per report section. Zero means unlimited.
     #[arg(long, default_value_t = 0)]
     pub limit: usize,
+
+    /// Output format. Default `text` on tty, `json` on pipe.
+    #[arg(long, value_enum)]
+    pub format: Option<OutputFormat>,
 }
 
 /// Args for `debundle show-source <id>`.
@@ -118,6 +163,10 @@ pub struct ShowSourceArgs {
     /// Root used to resolve relative `source_location.source_path` values.
     #[arg(long = "source-root", env = "DEBUNDLE_SOURCE_ROOT")]
     pub source_root: Option<PathBuf>,
+
+    /// Output format. Default `text` on tty, `json` on pipe.
+    #[arg(long, value_enum)]
+    pub format: Option<OutputFormat>,
 }
 
 pub fn run_debundle_cli(args: DebundleArgs) -> Result<()> {
@@ -134,17 +183,29 @@ pub fn run_debundle_cli(args: DebundleArgs) -> Result<()> {
             ModulesNsCommand::Comment(c) => run_module_comment_cmd(c),
             ModulesNsCommand::Merge(m) => run_merge(m),
             ModulesNsCommand::Propose(p) => {
-                print_json(&run_plan_work_report(&p)?).context("writing propose JSON")
+                let format = OutputFormat::resolve(p.format);
+                let report = run_plan_work_report(&p)?;
+                print_report(&report, format, render_plan_work_text)
+                    .context("writing propose output")
             }
+            ModulesNsCommand::List(args) => run_modules_list(args),
         },
         DebundleCommand::Atoms(args) => {
-            print_json(&run_units_report(&args)?).context("writing atoms JSON")
+            let format = OutputFormat::resolve(args.format);
+            let report = run_units_report(&args)?;
+            print_report(&report, format, render_units_text).context("writing atoms output")
         }
         DebundleCommand::Coverage(args) => {
-            print_json(&run_patch_plan_report(&args)?).context("writing coverage JSON")
+            let format = OutputFormat::resolve(args.format);
+            let report = run_patch_plan_report(&args)?;
+            print_report(&report, format, render_patch_plan_text)
+                .context("writing coverage output")
         }
         DebundleCommand::GraphSummary(args) => {
-            print_json(&run_graph_summary_report(&args)?).context("writing graph-summary JSON")
+            let format = OutputFormat::resolve(args.format);
+            let report = run_graph_summary_report(&args)?;
+            print_report(&report, format, render_graph_summary_text)
+                .context("writing graph-summary output")
         }
         DebundleCommand::Describe(args) => run_describe(args),
         DebundleCommand::ShowSource(args) => run_show_source(args),
@@ -235,6 +296,7 @@ fn selection_with_binding(value: &str) -> SelectionArgs {
 }
 
 fn run_describe(args: DescribeArgs) -> Result<()> {
+    let format = OutputFormat::resolve(args.format);
     match dispatch_id_selection(&args.id, &args.common.modules_root) {
         Ok(mut selection) => {
             // selection_with_proposal stuffs a sentinel binding_id; clear it.
@@ -246,14 +308,17 @@ fn run_describe(args: DescribeArgs) -> Result<()> {
                 selection,
                 size_cap_lines: args.size_cap_lines,
                 limit: args.limit,
+                format: None,
             };
-            print_json(&run_explain_report(&inner)?).context("writing describe JSON")
+            let report = run_explain_report(&inner)?;
+            print_report(&report, format, render_explain_text).context("writing describe output")
         }
-        Err(module_path) => describe_module(&module_path, &args.common),
+        Err(module_path) => describe_module(&module_path, &args.common, format),
     }
 }
 
 fn run_show_source(args: ShowSourceArgs) -> Result<()> {
+    let format = OutputFormat::resolve(args.format);
     match dispatch_id_selection(&args.id, &args.common.modules_root) {
         Ok(mut selection) => {
             if selection.proposal_id.is_some() {
@@ -265,35 +330,40 @@ fn run_show_source(args: ShowSourceArgs) -> Result<()> {
                 size_cap_lines: args.size_cap_lines,
                 context_lines: args.context_lines,
                 source_root: args.source_root,
+                format: None,
             };
-            print_json(&run_source_slice_report(&inner)?).context("writing show-source JSON")
+            let report = run_source_slice_report(&inner)?;
+            print_report(&report, format, render_source_slice_text)
+                .context("writing show-source output")
         }
-        Err(module_path) => show_module_source(&module_path, &args.common, args.context_lines, args.source_root.as_deref()),
+        Err(module_path) => show_module_source(
+            &module_path,
+            &args.common,
+            args.context_lines,
+            args.source_root.as_deref(),
+            format,
+        ),
     }
 }
 
 /// `describe <module-path>`: resolve every binding in the module to
 /// owner ids then run the same explain report. Falls through to an
 /// empty selection (no owners) when the module YAML has no bindings.
-fn describe_module(module_path: &str, common: &PeelCommonArgs) -> Result<()> {
+fn describe_module(
+    module_path: &str,
+    common: &PeelCommonArgs,
+    format: OutputFormat,
+) -> Result<()> {
     use std::collections::BTreeSet;
     let bindings = collect_module_bindings(module_path, &common.modules_root)?;
     if bindings.is_empty() {
-        anyhow::bail!(
-            "module {module_path:?} has no members; nothing to describe"
-        );
+        anyhow::bail!("module {module_path:?} has no members; nothing to describe");
     }
-    // Build an owner-id set by looking up each binding name in the
-    // owner graph. Reuse run_explain_report by feeding the first
-    // binding and then ignoring; instead, do it directly:
     let graph: analysis::OwnerGraphReport = serde_json::from_str(&std::fs::read_to_string(
         &common.owner_graph_path,
     )?)
     .with_context(|| {
-        format!(
-            "parsing owner graph {}",
-            common.owner_graph_path.display()
-        )
+        format!("parsing owner graph {}", common.owner_graph_path.display())
     })?;
     let mut owner_ids: BTreeSet<String> = BTreeSet::new();
     for node in &graph.nodes {
@@ -310,16 +380,16 @@ fn describe_module(module_path: &str, common: &PeelCommonArgs) -> Result<()> {
             "module {module_path:?} declares bindings that do not appear in the owner graph"
         );
     }
-    // Use the first owner id as the explain selection; the report's
-    // owner-set expansion picks up the rest via shared atomic units.
     let first = owner_ids.iter().next().unwrap().clone();
     let inner = ExplainArgs {
         common: common.clone(),
         selection: selection_with_owner(&first),
         size_cap_lines: 10_000,
         limit: 0,
+        format: None,
     };
-    print_json(&run_explain_report(&inner)?).context("writing describe JSON")
+    let report = run_explain_report(&inner)?;
+    print_report(&report, format, render_explain_text).context("writing describe output")
 }
 
 /// `show-source <module-path>`: concatenate source text for every
@@ -329,12 +399,12 @@ fn show_module_source(
     common: &PeelCommonArgs,
     context_lines: usize,
     source_root: Option<&std::path::Path>,
+    format: OutputFormat,
 ) -> Result<()> {
     use std::collections::BTreeSet;
     let bindings = collect_module_bindings(module_path, &common.modules_root)?;
-    let graph: analysis::OwnerGraphReport = serde_json::from_str(&std::fs::read_to_string(
-        &common.owner_graph_path,
-    )?)?;
+    let graph: analysis::OwnerGraphReport =
+        serde_json::from_str(&std::fs::read_to_string(&common.owner_graph_path)?)?;
     let mut owner_ids: BTreeSet<String> = BTreeSet::new();
     for node in &graph.nodes {
         if node
@@ -346,9 +416,7 @@ fn show_module_source(
         }
     }
     let Some(first) = owner_ids.iter().next() else {
-        anyhow::bail!(
-            "module {module_path:?} has no resolvable owner; nothing to show"
-        );
+        anyhow::bail!("module {module_path:?} has no resolvable owner; nothing to show");
     };
     let inner = SourceSliceArgs {
         common: common.clone(),
@@ -356,8 +424,152 @@ fn show_module_source(
         size_cap_lines: 10_000,
         context_lines,
         source_root: source_root.map(|p| p.to_path_buf()),
+        format: None,
     };
-    print_json(&run_source_slice_report(&inner)?).context("writing show-source JSON")
+    let report = run_source_slice_report(&inner)?;
+    print_report(&report, format, render_source_slice_text).context("writing show-source output")
+}
+
+fn run_modules_list(args: ModulesListArgs) -> Result<()> {
+    use spec_modules::{
+        collect_module_files, is_residual_module_path, module_path_from_file, read_module_file,
+    };
+    let files = collect_module_files(&args.modules_root)
+        .with_context(|| format!("walking {}", args.modules_root.display()))?;
+    let mut entries: Vec<ModuleListEntry> = Vec::new();
+    for file in files {
+        let module = read_module_file(&file)?;
+        let path = module_path_from_file(&file, &args.modules_root);
+        let residual = is_residual_module_path(&path);
+        let entry = ModuleListEntry {
+            path,
+            member_count: module.members.len(),
+            residual,
+            has_comment: module.comment.is_some(),
+        };
+        let keep = (!args.empty || entry.member_count == 0)
+            && (!args.residual || entry.residual)
+            && (!args.unassigned_bindings || entry.member_count == 0);
+        if keep {
+            entries.push(entry);
+        }
+    }
+    entries.sort_by(|a, b| a.path.cmp(&b.path));
+    let report = ModulesListReport { modules: entries };
+    let format = OutputFormat::resolve(args.format);
+    print_report(&report, format, render_modules_list_text).context("writing modules list output")
+}
+
+fn render_modules_list_text(report: &ModulesListReport, out: &mut String) {
+    out.push_str(&format!("{} module(s)\n", report.modules.len()));
+    for entry in &report.modules {
+        let flags = match (entry.residual, entry.has_comment) {
+            (true, true) => "[residual,doc]",
+            (true, false) => "[residual]",
+            (false, true) => "[doc]",
+            (false, false) => "",
+        };
+        out.push_str(&format!(
+            "  {}  members={}  {}\n",
+            entry.path, entry.member_count, flags
+        ));
+    }
+}
+
+// --- Text renderers -------------------------------------------------
+//
+// Each query command needs a text rendering for tty output. v1 keeps
+// these compact: one line per item plus a brief summary header.
+
+fn render_units_text(report: &peel::UnitsReport, out: &mut String) {
+    out.push_str(&format!("{} atom(s)\n", report.units.len()));
+    for unit in &report.units {
+        let bindings: Vec<&str> = unit
+            .members
+            .iter()
+            .map(|m| m.binding.as_str())
+            .collect();
+        out.push_str(&format!(
+            "  {}  [{}]  size={}\n",
+            unit.id,
+            bindings.join(", "),
+            unit.size_lines_estimate
+        ));
+    }
+}
+
+fn render_patch_plan_text(report: &peel::PatchPlanReport, out: &mut String) {
+    out.push_str(&format!(
+        "{} patch set(s): {} complete, {} split, {} unknown bindings\n",
+        report.summary.total_patch_sets,
+        report.summary.complete_patch_sets,
+        report.summary.split_patch_sets,
+        report.summary.unknown_binding_count,
+    ));
+    for row in &report.rows {
+        out.push_str(&format!("  {} [{:?}]\n", row.path, row.status));
+    }
+}
+
+fn render_graph_summary_text(report: &peel::GraphSummaryReport, out: &mut String) {
+    out.push_str(&format!(
+        "owners={} edges={} atoms={} residual={} proposals={} diagnostics={}\n",
+        report.owner_count,
+        report.owner_edge_count,
+        report.atomic_unit_count,
+        report.residual_atomic_unit_count,
+        report.proposal_count,
+        report.diagnostic_count,
+    ));
+}
+
+fn render_plan_work_text(report: &peel::PlanWorkReport, out: &mut String) {
+    out.push_str(&format!(
+        "{} proposal(s), {} diagnostic(s)\n",
+        report.report.proposals.len(),
+        report.report.diagnostics.len(),
+    ));
+    for proposal in &report.report.proposals {
+        out.push_str(&format!(
+            "  {}  owners={} size={}\n",
+            proposal.proposed_module_id,
+            proposal.owner_ids.len(),
+            proposal.size_lines_estimate,
+        ));
+    }
+}
+
+fn render_explain_text(report: &peel::ExplainReport, out: &mut String) {
+    out.push_str(&format!("{:?} {:?}\n", report.query.kind, report.query.value));
+    out.push_str(&format!("  owners: {}\n", report.owner_ids.join(", ")));
+    out.push_str(&format!(
+        "  bindings: {}\n",
+        report
+            .bindings
+            .iter()
+            .map(|b| b.binding.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    ));
+    out.push_str(&format!("  atomic_units: {}\n", report.atomic_units.len()));
+    out.push_str(&format!(
+        "  incoming_edges: {}, outgoing_edges: {}\n",
+        report.incoming_edges.len(),
+        report.outgoing_edges.len()
+    ));
+}
+
+fn render_source_slice_text(report: &peel::SourceSliceReport, out: &mut String) {
+    for slice in &report.slices {
+        out.push_str(&format!(
+            "--- {} (lines {}-{}) ---\n",
+            slice.source_path, slice.context_start_line, slice.context_end_line
+        ));
+        out.push_str(&slice.text);
+        if !slice.text.ends_with('\n') {
+            out.push('\n');
+        }
+    }
 }
 
 fn collect_module_bindings(
