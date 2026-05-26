@@ -3,7 +3,7 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import Field, PositiveInt
+from pydantic import Field, PositiveInt, field_validator
 
 from augur.api.local_regulation import LocalRegulation
 from augur.api.schemas import ApiModel
@@ -47,8 +47,20 @@ class Property(ApiModel):
     annual_tax_on_list_usd: float | None = None
     source_url: str | None = None
     image_url: str | None = None
-    notes: tuple[str, ...] = ()
+    # Free-text human note shown in the property panel; empty string when nothing to say.
+    # Frontend renders this with `whitespace-pre-line` so authors can use newlines.
+    notes: str = ""
     flags: tuple[str, ...] = ()
+
+    @field_validator("notes", mode="before")
+    @classmethod
+    def _collapse_list_notes(cls, value: object) -> object:
+        # CLEANUP(2026-05-25): Drop once gaffer-private/k8s/augur/properties.yaml
+        #   has been migrated to single-string `notes:` (deploy currently authors
+        #   per-paragraph YAML lists). Until then, fold the list into one blob.
+        if isinstance(value, (list, tuple)):
+            return "\n\n".join(value)
+        return value
 
 
 class ProductInputDefaults(ApiModel):

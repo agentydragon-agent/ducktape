@@ -16,7 +16,7 @@
     "hoa_monthly_usd": 0.0,
     "annual_tax_on_list_usd": 10800.0,
     "source_url": "https://example.invalid/location-a-property",
-    "notes": ["Synthetic public fixture property."],
+    "notes": "Synthetic public fixture property.",
     "flags": ["fixture"]
   },
   {
@@ -36,7 +36,7 @@
     "hoa_monthly_usd": 150.0,
     "annual_tax_on_list_usd": 5720.0,
     "source_url": "https://example.invalid/location-b-property",
-    "notes": ["Synthetic public fixture property."],
+    "notes": "Synthetic public fixture property.",
     "flags": ["fixture"]
   }
 ]

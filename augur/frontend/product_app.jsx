@@ -1492,15 +1492,28 @@ function PropertyPurchasePanel({ bootstrap, input, onChange }) {
           onChange={(event) => onChange({ propertyId: event.target.value || null })}
         />
         {selected && (
-          <div className="text-xs augur-muted">
-            {[
-              selected.neighborhood,
-              `${fmtNumber(selected.beds)} bd / ${fmtNumber(selected.baths)} ba`,
-              Number(selected.hoaMonthlyUsd) > 0 ? `HOA ${fmtUsd(selected.hoaMonthlyUsd)}/mo` : null,
-            ]
-              .filter(Boolean)
-              .join(" · ")}
-          </div>
+          <>
+            <div className="text-xs augur-muted">
+              {[
+                selected.neighborhood,
+                `${fmtNumber(selected.beds)} bd / ${fmtNumber(selected.baths)} ba`,
+                Number(selected.hoaMonthlyUsd) > 0 ? `HOA ${fmtUsd(selected.hoaMonthlyUsd)}/mo` : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </div>
+            {selected.sourceUrl && (
+              <a
+                href={selected.sourceUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs font-semibold text-blue-700 hover:text-blue-900 dark:text-blue-300 dark:hover:text-blue-200"
+              >
+                Source listing ↗
+              </a>
+            )}
+            {selected.notes && <div className="text-xs augur-muted whitespace-pre-line">{selected.notes}</div>}
+          </>
         )}
         {input.propertyId != null && (
           <>
