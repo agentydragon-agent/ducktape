@@ -28,8 +28,8 @@ fn read_sidecar<T: serde::de::DeserializeOwned>(
     name: &str,
 ) -> T {
     let path = chunk_analysis_dir.join(name);
-    let body = fs::read_to_string(&path)
-        .unwrap_or_else(|err| panic!("read {}: {err}", path.display()));
+    let body =
+        fs::read_to_string(&path).unwrap_or_else(|err| panic!("read {}: {err}", path.display()));
     serde_json::from_str(&body).unwrap_or_else(|err| {
         let preview: String = body.chars().take(400).collect();
         panic!(
@@ -60,9 +60,7 @@ export { A, B, readA, readB };
     ));
     assert_entry_output(&fixture, "a-value b-value\n");
 
-    let chunk_analysis_dir = fixture
-        .report_root
-        .join("static/app/chunk_analysis");
+    let chunk_analysis_dir = fixture.report_root.join("static/app/chunk_analysis");
     assert!(
         chunk_analysis_dir.is_dir(),
         "chunk_analysis directory should be created at {}",

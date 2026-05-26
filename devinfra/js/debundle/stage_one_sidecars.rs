@@ -192,7 +192,11 @@ mod tests {
         write_stage_one_sidecars(tmp.path(), "static/app", &stage_one).expect("write sidecars");
 
         let dir = tmp.path().join("static/app/chunk_analysis");
-        assert!(dir.is_dir(), "chunk_analysis dir created: {}", dir.display());
+        assert!(
+            dir.is_dir(),
+            "chunk_analysis dir created: {}",
+            dir.display()
+        );
         for name in [
             CHUNK_ANALYSIS_FACTS_REPORT,
             CHUNK_ANALYSIS_ATOMIC_UNITS_REPORT,
@@ -215,7 +219,10 @@ mod tests {
             fs::read_to_string(dir.join(CHUNK_ANALYSIS_MANIFEST_REPORT)).expect("read manifest");
         let manifest: ChunkAnalysisManifest =
             serde_json::from_str(&manifest_body).expect("parse manifest");
-        assert_eq!(manifest.schema_version, CHUNK_ANALYSIS_MANIFEST_SCHEMA_VERSION);
+        assert_eq!(
+            manifest.schema_version,
+            CHUNK_ANALYSIS_MANIFEST_SCHEMA_VERSION
+        );
         assert_eq!(manifest.chunk_id, "static/app");
         assert_eq!(manifest.paths.len(), 2);
     }

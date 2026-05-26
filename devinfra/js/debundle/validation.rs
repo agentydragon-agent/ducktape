@@ -131,7 +131,7 @@ pub fn render_cycle_summary(cycles: &[CycleReport]) -> String {
             agg.count += 1;
         }
         let mut ranked: Vec<(BindingPairKey<'_>, BindingPairAgg)> = groups.into_iter().collect();
-        ranked.sort_by(|a, b| b.1.count.cmp(&a.1.count).then((&a.0).cmp(&b.0)));
+        ranked.sort_by(|a, b| b.1.count.cmp(&a.1.count).then(a.0.cmp(&b.0)));
 
         if ranked.is_empty() {
             // Defensive — the SCC is rejected because at least one
