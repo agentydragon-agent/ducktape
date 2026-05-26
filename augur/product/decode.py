@@ -198,7 +198,7 @@ def _lot_value_by_month(dense: DenseSimulationResult, *, primary_agent_code: int
 def _shortfall_by_month(dense: DenseSimulationResult, *, primary_agent_code: int) -> np.ndarray:
     plan = dense.plan
     shortfall = np.zeros(plan.horizon_months + 1, dtype=np.float64)
-    primary_obligations = plan.obligation_agent_codes == primary_agent_code  # [H, O]
+    primary_obligations = plan.obligations.agent == primary_agent_code  # [H, O]
     shortfall[1:] = (
         dense.buffers.obligation_shortfall[:, :, _SINGLE_ROLLOUT_INDEX] * primary_obligations.astype(np.float64)
     ).sum(axis=1)

@@ -172,47 +172,8 @@ class CompiledSimulation:
     liabilities: LiabilityCompileOutput
     # Profile index of each liability's owner. NO_CODE if the owner has no tax profile.
     liability_owner_profile_index: NDArray[np.int64]
-    sale_cause_codes: NDArray[np.int64]
-    sale_month: NDArray[np.int64]
-    sale_agent_codes: NDArray[np.int64]
-    sale_source_account_codes: NDArray[np.int64]
-    sale_asset_codes: NDArray[np.int64]
-    sale_quantity: NDArray[np.float64]
-    sale_proceeds_account_codes: NDArray[np.int64]
-    sale_proceeds_cash_slot: NDArray[np.int64]
-    sale_price_fixed: NDArray[np.float64]
-    sale_price_series_index: NDArray[np.int64]
-    obligation_cause_codes: NDArray[np.int64]
-    obligation_id_codes: NDArray[np.int64]
-    obligation_type_codes: NDArray[np.int64]
-    obligation_agent_codes: NDArray[np.int64]
-    obligation_from_account_codes: NDArray[np.int64]
-    obligation_from_cash_slot: NDArray[np.int64]
-    obligation_to_agent_codes: NDArray[np.int64]
-    obligation_to_account_codes: NDArray[np.int64]
-    obligation_to_cash_slot: NDArray[np.int64]
-    obligation_amount_kind: NDArray[np.int64]
-    obligation_amount_fixed: NDArray[np.float64]
-    obligation_amount_base: NDArray[np.float64]
-    obligation_amount_series_index: NDArray[np.int64]
-    obligation_amount_base_month: NDArray[np.int64]
-    obligation_amount_adjustment_period: NDArray[np.int64]
-    # NO_CODE if the obligation is not tax-deductible for the payer; otherwise the profile
-    # index whose ordinary_income_ytd should decrement when the obligation settles.
-    obligation_deduction_profile_index: NDArray[np.int64]
-    # Fraction of the paid amount that is tax-deductible (e.g. 1.0 = fully deductible Schedule E
-    # expense, 0.4 = 40% of the obligation is deductible because the property is 40% rented).
-    obligation_deductible_fraction: NDArray[np.float64]
-    # For property-tax obligations: the property slot the obligation is tied to so the engine
-    # can look up `current.property_rented_fraction[r, slot]` at settlement time. NO_CODE for
-    # non-property-tax obligations.
-    obligation_property_slot: NDArray[np.int64]
-    obligation_source_kind: NDArray[np.int64]
-    obligation_source_index: NDArray[np.int64]
-    # For property-tax obligations, the tax-profile index whose SALT total should be credited
-    # when the payment settles. NO_CODE for non-property-tax obligations and for property-tax
-    # obligations whose owner doesn't have a TaxProfile.
-    obligation_property_tax_profile: NDArray[np.int64]
+    sales: SaleCompileOutput
+    obligations: ObligationCompileOutput
     # External event-series tables, parallel to `series_ids` / `external_values` but for
     # boolean event paths (private-equity tender opportunities, future regime-change events).
     external_event_ids: tuple[str, ...]
@@ -428,42 +389,9 @@ def compile_simulation(
         _compile_federal_salt_deductions(scenario, strings, tax=tax)
     )
 
-    (
-        sale_cause_codes,
-        sale_month,
-        sale_agent_codes,
-        sale_source_account_codes,
-        sale_asset_codes,
-        sale_quantity,
-        sale_proceeds_account_codes,
-        sale_proceeds_cash_slot,
-        sale_price_fixed,
-        sale_price_series_index,
-    ) = _compile_sales(scenario, strings, account_slot_by_key, series_index_by_id)
+    sales = _compile_sales(scenario, strings, account_slot_by_key, series_index_by_id)
 
-    (
-        obligation_cause_codes,
-        obligation_id_codes,
-        obligation_type_codes,
-        obligation_agent_codes,
-        obligation_from_account_codes,
-        obligation_from_cash_slot,
-        obligation_to_agent_codes,
-        obligation_to_account_codes,
-        obligation_to_cash_slot,
-        obligation_amount_kind,
-        obligation_amount_fixed,
-        obligation_amount_base,
-        obligation_amount_series_index,
-        obligation_amount_base_month,
-        obligation_amount_adjustment_period,
-        obligation_source_kind,
-        obligation_source_index,
-        obligation_property_tax_profile,
-        obligation_property_slot,
-        obligation_deduction_profile_index,
-        obligation_deductible_fraction,
-    ) = _compile_obligation_slots(
+    obligations = _compile_obligation_slots(
         scenario,
         strings,
         account_slot_by_key,
@@ -556,8 +484,8 @@ def compile_simulation(
         property_count=properties.month.shape[0],
         liability_count=liabilities.codes.shape[0],
         max_transfer_slots=transfers.cause.shape[1],
-        max_obligation_slots=obligation_cause_codes.shape[1],
-        scheduled_sale_count=sale_month.shape[0],
+        max_obligation_slots=obligations.cause.shape[1],
+        scheduled_sale_count=sales.month.shape[0],
         liquidity_policy_count=liquidity_policy_asset_codes.shape[0],
         max_liquidity_policy_assets=liquidity_policy_asset_codes.shape[1],
         max_tax_settlement_slots=max(1, len(scenario.tax_profiles)),
@@ -604,37 +532,8 @@ def compile_simulation(
         lifecycle_event_rented_fraction=lifecycle_event_rented_fraction,
         lifecycle_event_amount=lifecycle_event_amount,
         lifecycle_event_month_starts=lifecycle_event_month_starts,
-        sale_cause_codes=sale_cause_codes,
-        sale_month=sale_month,
-        sale_agent_codes=sale_agent_codes,
-        sale_source_account_codes=sale_source_account_codes,
-        sale_asset_codes=sale_asset_codes,
-        sale_quantity=sale_quantity,
-        sale_proceeds_account_codes=sale_proceeds_account_codes,
-        sale_proceeds_cash_slot=sale_proceeds_cash_slot,
-        sale_price_fixed=sale_price_fixed,
-        sale_price_series_index=sale_price_series_index,
-        obligation_cause_codes=obligation_cause_codes,
-        obligation_id_codes=obligation_id_codes,
-        obligation_type_codes=obligation_type_codes,
-        obligation_agent_codes=obligation_agent_codes,
-        obligation_from_account_codes=obligation_from_account_codes,
-        obligation_from_cash_slot=obligation_from_cash_slot,
-        obligation_to_agent_codes=obligation_to_agent_codes,
-        obligation_to_account_codes=obligation_to_account_codes,
-        obligation_to_cash_slot=obligation_to_cash_slot,
-        obligation_amount_kind=obligation_amount_kind,
-        obligation_amount_fixed=obligation_amount_fixed,
-        obligation_amount_base=obligation_amount_base,
-        obligation_amount_series_index=obligation_amount_series_index,
-        obligation_amount_base_month=obligation_amount_base_month,
-        obligation_amount_adjustment_period=obligation_amount_adjustment_period,
-        obligation_source_kind=obligation_source_kind,
-        obligation_source_index=obligation_source_index,
-        obligation_property_tax_profile=obligation_property_tax_profile,
-        obligation_deduction_profile_index=obligation_deduction_profile_index,
-        obligation_deductible_fraction=obligation_deductible_fraction,
-        obligation_property_slot=obligation_property_slot,
+        sales=sales,
+        obligations=obligations,
         external_event_ids=external_event_ids,
         external_event_values=external_event_values,
         pe_issuer_codes=pe_issuer_codes,
@@ -1551,12 +1450,30 @@ def _compile_properties_and_liabilities(
     )
 
 
+@dataclass(frozen=True)
+class SaleCompileOutput:
+    """Scheduled asset-sale plumbing. One row per scheduled sale. `price_fixed[i]` is
+    NaN when the sale price comes from a sampled series — `price_series[i]` is that
+    series index, NO_CODE otherwise."""
+
+    cause: NDArray[np.int64]
+    month: NDArray[np.int64]
+    agent: NDArray[np.int64]
+    source_account: NDArray[np.int64]
+    asset: NDArray[np.int64]
+    quantity: NDArray[np.float64]
+    proceeds_account: NDArray[np.int64]
+    proceeds_slot: NDArray[np.int64]
+    price_fixed: NDArray[np.float64]
+    price_series: NDArray[np.int64]
+
+
 def _compile_sales(
     scenario: Scenario,
     strings: StringTable,
     account_slot_by_key: dict[tuple[str, str], int],
     series_index_by_id: dict[str, int],
-) -> tuple[np.ndarray, ...]:
+) -> SaleCompileOutput:
     count = len(scenario.scheduled_asset_sales)
     cause = np.full((int(scenario.horizon_months), max(1, count)), NO_CODE, dtype=np.int64)
     month = np.full(max(1, count), NO_CODE, dtype=np.int64)
@@ -1581,18 +1498,52 @@ def _compile_sales(
             price_fixed[idx] = float(sale.price_per_unit_usd)
         else:
             price_series[idx] = series_index_by_id[sale.asset_id]
-    return (
-        cause,
-        month,
-        agent,
-        source_account,
-        asset,
-        quantity,
-        proceeds_account,
-        proceeds_slot,
-        price_fixed,
-        price_series,
+    return SaleCompileOutput(
+        cause=cause,
+        month=month,
+        agent=agent,
+        source_account=source_account,
+        asset=asset,
+        quantity=quantity,
+        proceeds_account=proceeds_account,
+        proceeds_slot=proceeds_slot,
+        price_fixed=price_fixed,
+        price_series=price_series,
     )
+
+
+@dataclass(frozen=True)
+class ObligationCompileOutput:
+    """Per-(month, slot) obligation plumbing covering scheduled/recurring
+    obligations + mortgage payments + property-tax accruals + estimated-tax/
+    true-up payments. `source_kind`/`source_index` discriminate which subsystem
+    drives this slot (kind 0 = scenario obligation, 1 = mortgage, 2 = property
+    tax, 3 = quarterly estimated tax, 4 = Q4 estimate, 5 = year-end true-up).
+    `property_tax_profile` + `property_slot` are populated for kind==2 only
+    (NO_CODE elsewhere). `deduction_profile`/`deductible_fraction` route
+    Schedule-E deductions for obligations whose `deduction_category` was set."""
+
+    cause: NDArray[np.int64]
+    id: NDArray[np.int64]
+    type: NDArray[np.int64]
+    agent: NDArray[np.int64]
+    from_account: NDArray[np.int64]
+    from_slot: NDArray[np.int64]
+    to_agent: NDArray[np.int64]
+    to_account: NDArray[np.int64]
+    to_slot: NDArray[np.int64]
+    amount_kind: NDArray[np.int64]
+    amount_fixed: NDArray[np.float64]
+    amount_base: NDArray[np.float64]
+    amount_series: NDArray[np.int64]
+    amount_base_month: NDArray[np.int64]
+    amount_period: NDArray[np.int64]
+    source_kind: NDArray[np.int64]
+    source_index: NDArray[np.int64]
+    property_tax_profile: NDArray[np.int64]
+    property_slot: NDArray[np.int64]
+    deduction_profile: NDArray[np.int64]
+    deductible_fraction: NDArray[np.float64]
 
 
 def _compile_obligation_slots(
@@ -1604,7 +1555,7 @@ def _compile_obligation_slots(
     property_slot_by_id: dict[str, int],
     liabilities: LiabilityCompileOutput,
     tax: TaxCompileOutput,
-) -> tuple[np.ndarray, ...]:
+) -> ObligationCompileOutput:
     horizon = int(scenario.horizon_months)
     monthly_specs: list[list[dict[str, Any]]] = [[] for _ in range(horizon)]
 
@@ -1806,28 +1757,28 @@ def _compile_obligation_slots(
                 to_slot[month, idx] = _slot(
                     account_slot_by_key, profile.tax_authority_agent_id, profile.tax_authority_account_id
                 )
-    return (
-        cause,
-        obligation_id,
-        obligation_type,
-        agent,
-        from_account,
-        from_slot,
-        to_agent,
-        to_account,
-        to_slot,
-        amount_kind,
-        amount_fixed,
-        amount_base,
-        amount_series,
-        amount_base_month,
-        amount_period,
-        source_kind,
-        source_index,
-        property_tax_profile,
-        property_slot_matrix,
-        deduction_profile,
-        deductible_fraction,
+    return ObligationCompileOutput(
+        cause=cause,
+        id=obligation_id,
+        type=obligation_type,
+        agent=agent,
+        from_account=from_account,
+        from_slot=from_slot,
+        to_agent=to_agent,
+        to_account=to_account,
+        to_slot=to_slot,
+        amount_kind=amount_kind,
+        amount_fixed=amount_fixed,
+        amount_base=amount_base,
+        amount_series=amount_series,
+        amount_base_month=amount_base_month,
+        amount_period=amount_period,
+        source_kind=source_kind,
+        source_index=source_index,
+        property_tax_profile=property_tax_profile,
+        property_slot=property_slot_matrix,
+        deduction_profile=deduction_profile,
+        deductible_fraction=deductible_fraction,
     )
 
 

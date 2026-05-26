@@ -1733,8 +1733,8 @@ def _apply_scheduled_asset_sales(
     active_rollout = ~current.failed
     if not active_rollout.any():
         return
-    for sale in range(plan.sale_month.shape[0]):
-        if plan.sale_month[sale] != month:
+    for sale in range(plan.sales.month.shape[0]):
+        if plan.sales.month[sale] != month:
             continue
         ordered_lots = lot_order_for_pool(
             lot_agent_codes=plan.lot_agent_codes,
@@ -1742,11 +1742,11 @@ def _apply_scheduled_asset_sales(
             lot_asset_codes=plan.lot_asset_codes,
             lot_purchase_month=plan.lot_purchase_month,
             lot_id_codes=plan.lot_id_codes,
-            agent_code=int(plan.sale_agent_codes[sale]),
-            account_code=int(plan.sale_source_account_codes[sale]),
-            asset_code=int(plan.sale_asset_codes[sale]),
+            agent_code=int(plan.sales.agent[sale]),
+            account_code=int(plan.sales.source_account[sale]),
+            asset_code=int(plan.sales.asset[sale]),
         )
-        target_units = np.where(active_rollout, float(plan.sale_quantity[sale]), 0.0)
+        target_units = np.where(active_rollout, float(plan.sales.quantity[sale]), 0.0)
         price = _sale_unit_price(plan, month=month, sale=sale)
         result = fifo_sell_units(
             lot_remaining=current.lot_remaining,
@@ -1757,18 +1757,18 @@ def _apply_scheduled_asset_sales(
         )
         if result.oversell.any():
             raise ValueError(
-                f"scheduled asset sale exceeds available lots: {_text(plan, plan.sale_cause_codes[month, sale])}"
+                f"scheduled asset sale exceeds available lots: {_text(plan, plan.sales.cause[month, sale])}"
             )
 
         current.lot_remaining -= result.sold_units
-        proceeds_slot = int(plan.sale_proceeds_cash_slot[sale])
+        proceeds_slot = int(plan.sales.proceeds_slot[sale])
         if proceeds_slot >= 0:
             current.cash[:, proceeds_slot] += result.total_proceeds
         _record_capital_gains(
             plan,
             current,
             month=month,
-            agent_code=int(plan.sale_agent_codes[sale]),
+            agent_code=int(plan.sales.agent[sale]),
             sold_units=result.sold_units,
             gains=result.proceeds - result.cost_basis_consumed,
         )
@@ -1794,8 +1794,8 @@ def _apply_liquidity_policy_sales(
         policy_cash_slot = int(plan.liquidity_policy_cash_slot[policy])
 
         matching_obligations = np.flatnonzero(
-            (plan.obligation_agent_codes[month] == policy_agent)
-            & (plan.obligation_from_cash_slot[month] == policy_cash_slot)
+            (plan.obligations.agent[month] == policy_agent)
+            & (plan.obligations.from_slot[month] == policy_cash_slot)
         )
         if matching_obligations.size:
             matching_active = obligation_active[matching_obligations]
@@ -1910,23 +1910,23 @@ def _apply_obligation_accruals(
     active_rollout = ~current.failed
     if not active_rollout.any():
         return
-    for slot in range(plan.obligation_cause_codes.shape[1]):
-        if plan.obligation_cause_codes[month, slot] < 0 or plan.obligation_source_kind[month, slot] < 0:
+    for slot in range(plan.obligations.cause.shape[1]):
+        if plan.obligations.cause[month, slot] < 0 or plan.obligations.source_kind[month, slot] < 0:
             continue
-        source_kind = int(plan.obligation_source_kind[month, slot])
-        source_index = int(plan.obligation_source_index[month, slot])
+        source_kind = int(plan.obligations.source_kind[month, slot])
+        source_index = int(plan.obligations.source_index[month, slot])
         amount = np.zeros(plan.rollout_count, dtype=np.float64)
         active = active_rollout.copy()
 
         if source_kind == SOURCE_CONFIGURED_OBLIGATION:
             amount = _amount_values(
                 plan,
-                kind=int(plan.obligation_amount_kind[month, slot]),
-                fixed=float(plan.obligation_amount_fixed[month, slot]),
-                base=float(plan.obligation_amount_base[month, slot]),
-                series_index=int(plan.obligation_amount_series_index[month, slot]),
-                base_month=int(plan.obligation_amount_base_month[month, slot]),
-                adjustment_period=int(plan.obligation_amount_adjustment_period[month, slot]),
+                kind=int(plan.obligations.amount_kind[month, slot]),
+                fixed=float(plan.obligations.amount_fixed[month, slot]),
+                base=float(plan.obligations.amount_base[month, slot]),
+                series_index=int(plan.obligations.amount_series[month, slot]),
+                base_month=int(plan.obligations.amount_base_month[month, slot]),
+                adjustment_period=int(plan.obligations.amount_period[month, slot]),
                 month=month,
             )
         elif source_kind == SOURCE_MORTGAGE_PAYMENT:
@@ -1944,7 +1944,7 @@ def _apply_obligation_accruals(
         elif source_kind == SOURCE_PROPERTY_TAX:
             prop = source_index
             active &= current.property_active[:, prop] & (plan.properties.month[prop] < month)
-            rate = float(plan.obligation_amount_fixed[month, slot])
+            rate = float(plan.obligations.amount_fixed[month, slot])
             if np.isnan(rate):
                 rate = float(plan.properties.location_tax_rate[prop])
             ad_valorem_monthly = plan.properties.initial_assessed_value[prop] * rate / 12.0
@@ -1990,8 +1990,8 @@ def _apply_obligation_settlement(
         active_slot = active[slot]
         if not active_slot.any():
             continue
-        source_kind = int(plan.obligation_source_kind[month, slot])
-        source_index = int(plan.obligation_source_index[month, slot])
+        source_kind = int(plan.obligations.source_kind[month, slot])
+        source_index = int(plan.obligations.source_index[month, slot])
 
         if source_kind == SOURCE_TAX_TRUE_UP:
             profile = source_index
@@ -2004,10 +2004,10 @@ def _apply_obligation_settlement(
         paid = active_slot & funded[slot]
         if paid.any():
             buffers.obligation_paid[month, slot, paid] = amount[paid]
-            from_slot = int(plan.obligation_from_cash_slot[month, slot])
+            from_slot = int(plan.obligations.from_slot[month, slot])
             if from_slot >= 0:
                 current.cash[paid, from_slot] -= amount[paid]
-            to_slot = int(plan.obligation_to_cash_slot[month, slot])
+            to_slot = int(plan.obligations.to_slot[month, slot])
             if to_slot >= 0:
                 current.cash[paid, to_slot] += amount[paid]
             if source_kind == SOURCE_MORTGAGE_PAYMENT:
@@ -2020,8 +2020,8 @@ def _apply_obligation_settlement(
             # compiler ties every property-tax obligation to a property_slot (kind==2 branch),
             # so the engine always reads runtime `current.property_rented_fraction` —
             # mid-horizon lifecycle events take effect without any compile-time fallback.
-            property_tax_profile = int(plan.obligation_property_tax_profile[month, slot])
-            property_slot = int(plan.obligation_property_slot[month, slot])
+            property_tax_profile = int(plan.obligations.property_tax_profile[month, slot])
+            property_slot = int(plan.obligations.property_slot[month, slot])
             if property_tax_profile >= 0:
                 assert property_slot >= 0, "property-tax obligation must be tied to a property slot"
                 rented_per_rollout = current.property_rented_fraction[:, property_slot]
@@ -2030,13 +2030,13 @@ def _apply_obligation_settlement(
             # Schedule E deduction: decrement payer's ordinary_ytd. For property-tax
             # obligations the deductible_fraction comes from runtime state; for other
             # deductible obligations it comes from the compile-time value.
-            deduction_profile = int(plan.obligation_deduction_profile_index[month, slot])
+            deduction_profile = int(plan.obligations.deduction_profile[month, slot])
             if deduction_profile >= 0:
                 if property_slot >= 0:
                     rented_per_rollout = current.property_rented_fraction[:, property_slot]
                     current.ordinary_ytd[paid, deduction_profile] -= amount[paid] * rented_per_rollout[paid]
                 else:
-                    deductible_fraction = float(plan.obligation_deductible_fraction[month, slot])
+                    deductible_fraction = float(plan.obligations.deductible_fraction[month, slot])
                     current.ordinary_ytd[paid, deduction_profile] -= amount[paid] * deductible_fraction
 
         failed = active_slot & ~funded[slot]
@@ -2068,9 +2068,9 @@ def _obligation_group_funded(
         active_slot = active[slot]
         if not active_slot.any():
             continue
-        agent = int(plan.obligation_agent_codes[month, slot])
-        from_slot = int(plan.obligation_from_cash_slot[month, slot])
-        group = (plan.obligation_agent_codes[month] == agent) & (plan.obligation_from_cash_slot[month] == from_slot)
+        agent = int(plan.obligations.agent[month, slot])
+        from_slot = int(plan.obligations.from_slot[month, slot])
+        group = (plan.obligations.agent[month] == agent) & (plan.obligations.from_slot[month] == from_slot)
         group_due = np.where(active[group], due[group], 0.0).sum(axis=0)
         available = current.cash[:, from_slot] if from_slot >= 0 else np.zeros(plan.rollout_count, dtype=np.float64)
         funded[slot] = active_slot & (available >= group_due - 1e-9)
@@ -2178,10 +2178,10 @@ def _actual_tax_for_profile_year(
 
 
 def _sale_unit_price(plan: CompiledSimulation, *, month: int, sale: int) -> np.ndarray:
-    fixed_price = float(plan.sale_price_fixed[sale])
+    fixed_price = float(plan.sales.price_fixed[sale])
     if not np.isnan(fixed_price):
         return np.full(plan.rollout_count, fixed_price, dtype=np.float64)
-    series_index = int(plan.sale_price_series_index[sale])
+    series_index = int(plan.sales.price_series[sale])
     return plan.external_values[series_index, :, month]
 
 
@@ -2826,20 +2826,20 @@ def _decode_sched_dispositions(plan: CompiledSimulation, buffers: SimulationBuff
         months, sales, lots, rollouts = np.argwhere(active).T
     else:
         months = sales = lots = rollouts = np.array([], dtype=np.int64)
-    cause_ids = _codes_to_strings(plan, plan.sale_cause_codes)[months, sales]
+    cause_ids = _codes_to_strings(plan, plan.sales.cause)[months, sales]
     return _lot_disposition_frame(
         plan=plan,
         rollouts=rollouts,
         months=months,
         cause_ids=cause_ids,
-        agent_codes=plan.sale_agent_codes[sales],
-        source_account_codes=plan.sale_source_account_codes[sales],
-        asset_codes=plan.sale_asset_codes[sales],
+        agent_codes=plan.sales.agent[sales],
+        source_account_codes=plan.sales.source_account[sales],
+        asset_codes=plan.sales.asset[sales],
         lots=lots,
         units=buffers.sched_disp_units[months, sales, lots, rollouts],
         basis=buffers.sched_disp_basis[months, sales, lots, rollouts],
         proceeds=buffers.sched_disp_proceeds[months, sales, lots, rollouts],
-        proceeds_account_codes=plan.sale_proceeds_account_codes[sales],
+        proceeds_account_codes=plan.sales.proceeds_account[sales],
     )
 
 
@@ -2976,13 +2976,13 @@ def _decode_obligations(
         months, slots, rollouts = np.argwhere(active).T
     else:
         months = slots = rollouts = np.array([], dtype=np.int64)
-    cause_ids = _codes_to_strings(plan, plan.obligation_cause_codes)[months, slots]
-    obligation_ids = _codes_to_strings(plan, plan.obligation_id_codes)[months, slots]
-    obligation_types = _codes_to_strings(plan, plan.obligation_type_codes)[months, slots]
-    agent_ids = _codes_to_strings(plan, plan.obligation_agent_codes)[months, slots]
-    from_account_ids = _codes_to_strings(plan, plan.obligation_from_account_codes)[months, slots]
-    to_agent_ids = _codes_to_strings(plan, plan.obligation_to_agent_codes)[months, slots]
-    to_account_ids = _codes_to_strings(plan, plan.obligation_to_account_codes)[months, slots]
+    cause_ids = _codes_to_strings(plan, plan.obligations.cause)[months, slots]
+    obligation_ids = _codes_to_strings(plan, plan.obligations.id)[months, slots]
+    obligation_types = _codes_to_strings(plan, plan.obligations.type)[months, slots]
+    agent_ids = _codes_to_strings(plan, plan.obligations.agent)[months, slots]
+    from_account_ids = _codes_to_strings(plan, plan.obligations.from_account)[months, slots]
+    to_agent_ids = _codes_to_strings(plan, plan.obligations.to_agent)[months, slots]
+    to_account_ids = _codes_to_strings(plan, plan.obligations.to_account)[months, slots]
     amount_due = buffers.obligation_due[months, slots, rollouts]
     amount_paid = buffers.obligation_paid[months, slots, rollouts]
     shortfall = buffers.obligation_shortfall[months, slots, rollouts]
