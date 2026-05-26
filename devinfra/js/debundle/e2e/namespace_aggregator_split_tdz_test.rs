@@ -97,3 +97,28 @@ fn namespace_aggregator_split_rejects_tdz_cycle() {
         &["unrealizable", "cycle", "tdz", "cannot access"],
     );
 }
+
+/// Stricter sibling of the test above: assert the diagnostic does
+/// binding-pair blame, not just module-list rendering. The new
+/// `render_cycle_summary` must name the implicated bindings (`ids`,
+/// `sub1`, `helperFromResidual`) and the `at-init` edge kind so spec
+/// authors can act directly: "move {X, Y} into one module."
+#[test]
+fn namespace_aggregator_diagnostic_blames_binding_pairs() {
+    expect_rejection_containing_all(
+        opts_for_fixture(),
+        &[
+            "unrealizable",
+            "cycle",
+            // every binding on the cycle path appears as either source
+            // or target of an R/S edge in the rendered cut.
+            "ids",
+            "sub1",
+            "helperFromResidual",
+            // the renderer labels edge kinds in human-readable form.
+            "at-init",
+            // the renderer prints actionable guidance.
+            "co-locate",
+        ],
+    );
+}

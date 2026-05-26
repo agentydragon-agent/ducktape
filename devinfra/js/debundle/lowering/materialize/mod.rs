@@ -646,8 +646,8 @@ pub(super) fn materialize_logical_chunk(
         }
         let summary = render_cycle_summary(&factorization_report.cycles);
         bail!(
-            "materialize_logical_modules: chunk {chunk_id} has {} cycle(s) in the imports + side-effect module dep graph; spec is unrealizable. Resolve by colocating cyclically-coupled bindings or moving the constraining owner endpoints. Full cycle evidence written to reports/tree/{chunk_id}/cycles.json; owner graph written to reports/tree/{chunk_id}/owner_graph.json. Summary:\n{summary}",
-            factorization_report.cycles.len(),
+            "materialize_logical_modules: chunk {chunk_id} — spec is unrealizable: {n} module-quotient SCC(s) with at-init / side-effect edges between members. Each SCC names the binding pairs whose split forced the cycle; co-locate them or break a back-edge. Full per-cycle evidence at reports/tree/{chunk_id}/cycles.json; owner graph at reports/tree/{chunk_id}/owner_graph.json. Summary:\n{summary}",
+            n = factorization_report.cycles.len(),
         );
     }
 

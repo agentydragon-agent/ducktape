@@ -563,7 +563,7 @@ export { a1, a2, b1 };
         ],
     ));
     assert!(
-        rejected.stderr.contains("owner graph written"),
+        rejected.stderr.contains("owner graph at"),
         "stderr should point at the owner graph report:\n{}",
         rejected.stderr,
     );
