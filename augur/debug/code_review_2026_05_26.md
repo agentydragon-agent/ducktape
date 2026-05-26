@@ -17,22 +17,21 @@ and lifecycle-state extras (`property_rented_fraction`, `property_building_basis
 
 Listed in recommended execution order — each row sets up the next.
 
-### B0. Unify rollout axis to R-last (medium; precursor to B1 nesting completion)
+### B0. Unify rollout axis to R-last on state buffers
 
-`CurrentStateBuffers` fields are shaped `(R, *)` (rollout-first);
-`SimulationBuffers` fields are shaped `(*, R)` (rollout-last). Plan
-arrays in `CompiledSimulation` have no R axis. Unify on **R-last** —
-NumPy convention, trailing-axis-fastest broadcasting, contiguous
-`state[..., r]` per-rollout views, and makes the per-step write
-patterns `current.foo[profile, :] += amount` contiguous (currently
-strided as `current.foo[:, profile]`).
+Landed for `CurrentStateBuffers` (`579d7bdf5` + `77ab5bd1a`): every
+field flipped from `(R, count)` / `(R, count_a, count_b)` to
+`(count, R)` / `(count_a, count_b, R)`. Engine reads + writes were
+mechanically rewritten (axis rotate) and ~10 derived ops were fixed
+by hand (matmul order, `sum(axis=…)`, `shape[1]` → `[0]`, fifo-seam
+transposes). All sim/api/product tests numerically identical.
 
-Mechanical change:
-
-- Transpose every `CurrentStateBuffers` field at allocation time.
-- Swap index order at every engine read/write site.
-- Sanity-check with `bbr test //augur/sim/...` (numerical results must
-  be identical — this is a pure layout change).
+**Follow-up still pending**: `StateHistoryBuffers` is still
+`(snapshot, R, count)`, so `_snapshot_current_state` writes a `.T` per
+field per snapshot. Flipping that arena to `(snapshot, count, R)`
+would close the loop, but it requires updating the decode pass in
+`engine.py` and the `augur/product/decode.py` consumers. Defer
+until/unless the snapshot transpose shows up in profiles.
 
 ### B1. Finish remaining `CompiledSimulation` arenas (medium remaining)
 
@@ -93,14 +92,19 @@ have to remember kind-specific field reuse.
 
 ## X. Cross-repo follow-ups
 
-### X1. Drop `Property._collapse_list_notes` shim (small)
+### X1. Drop `Property._collapse_list_notes` shim — **blocked externally**
 
 `gaffer-private` properties.yaml migration is pushed
-(`ecdaf9ae9` notes lists → string, `c64df0c27` drop flags). Currently
-blocked by an unrelated `LocalRegulation.notes` startup crash keeping
-the new augur image in CrashLoopBackOff. Once that's resolved and the
-new pod serves, the `CLEANUP(2026-05-25)` validator on
-`augur.api.bootstrap.Property._collapse_list_notes` can go.
+(`ecdaf9ae9` notes lists → string, `c64df0c27` drop flags). Ducktape
+fix for `LocalRegulation.notes` (`82a62e419`) is on devel but
+**GitHub Actions has suspended the `agentydragon` account** —
+`push-images / Push augur` (and every other release/push-images job)
+errors with `remote: Your account is suspended. Please visit
+https://support.github.com for more information.` from `actions/checkout`.
+No new augur image gets built; the cluster pod stays on the broken
+pre-fix image (~70+ restarts as of 2026-05-26). The old pod still
+serves. Unblock by contacting GitHub support; until then nothing
+ducktape-side can move this forward.
 
 ## F. Deferred modeling realism (Phase 5)
 
@@ -126,8 +130,7 @@ current action:
 
 | #  | Area                                                                | Impact     | Effort |
 | -- | ------------------------------------------------------------------- | ---------- | ------ |
-| B1 | Finish remaining `CompiledSimulation` arenas (PE, MID/SALT, lot/cash) | DX win    | medium |
-| B0 | Unify rollout axis to R-last on `current` buffers                   | DX         | medium |
+| B0b | Flip `StateHistoryBuffers` to (snapshot, count, R) — finish B0     | DX         | medium |
 | B5 | Bundle lifecycle/obligation discriminators into typed views         | DX         | medium |
 | B4 | Split compiler.py + engine.py                                       | DX         | large  |
-| X1 | After Flux reconcile: drop `_collapse_list_notes` shim              | cross-repo | small  |
+| X1 | GitHub Actions blocked: account suspension blocks all push-images   | cross-repo | external |
