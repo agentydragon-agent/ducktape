@@ -154,6 +154,7 @@ pub(super) fn materialize_logical_chunk(
     }
     drop(imported_binding_resolver);
     builder.drop_explicit_request_scratch();
+    builder.pull_destructure_siblings(&destructure_siblings, chunk_top_level_mark)?;
 
     let (
         binding_assignment,
@@ -163,54 +164,6 @@ pub(super) fn materialize_logical_chunk(
         residual_plan_index,
         _unmatched_spec_claims,
     ) = builder.parts_mut();
-
-    // Destructure-atomicity: a destructuring declarator like
-    // `const { x, y } = obj` binds multiple names from a single
-    // pattern that the lowerer's `split_var_decl` moves as one
-    // unit. If the spec claims any one binding from such a
-    // pattern, every sibling binding must travel to the same
-    // module — otherwise the residual's export list would list a
-    // name whose declarator has already moved away, and `node`
-    // would reject the resulting module with
-    // `SyntaxError: Export 'y' is not defined in module`.
-    //
-    // Implicitly-pulled siblings join the claimed module with
-    // their own binding name as the export name. They aren't
-    // separately spec'd, but the destructure pattern must keep
-    // its full name set together regardless. Conflicting claims
-    // (two siblings claimed by different modules) are rejected.
-    for (claimed_name, sibling_set) in &destructure_siblings {
-        let claimed_id = top_level_id(claimed_name, chunk_top_level_mark);
-        let Some(&owner_index) = binding_assignment.get(&claimed_id) else {
-            continue;
-        };
-        let owner_id = ModuleId(LogicalModuleIndex(owner_index));
-        for sibling in sibling_set {
-            if sibling == claimed_name {
-                continue;
-            }
-            let sibling_id = top_level_id(sibling, chunk_top_level_mark);
-            match binding_assignment.get(&sibling_id).copied() {
-                None => {
-                    binding_assignment.insert(sibling_id.clone(), owner_index);
-                    bindings_catalogue.insert(sibling_id, BindingKind::Owned { owner: owner_id });
-                    let plan = &mut module_plans[owner_index];
-                    plan.bindings.insert(sibling.clone(), sibling.clone());
-                }
-                Some(other_index) if other_index != owner_index => {
-                    let owner_plan_id = module_plans[owner_index].id.clone();
-                    let other_plan_id = module_plans[other_index].id.clone();
-                    bail!(
-                        "destructure declarator binds {claimed_name} (claimed by module \
-                         {owner_plan_id}) and {sibling} (claimed by module {other_plan_id}); \
-                         destructuring declarators must move atomically — claim both \
-                         bindings from the same module or claim neither.",
-                    );
-                }
-                Some(_) => {}
-            }
-        }
-    }
 
     // The catchall destination index (`residual_plan_index`) lives
     // on the builder. When set, it points either to a synthesized

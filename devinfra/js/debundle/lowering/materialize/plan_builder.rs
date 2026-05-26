@@ -249,6 +249,62 @@ impl ChunkPlanBuilder {
         self.catalogue_index_by_name = HashMap::new();
     }
 
+    /// Destructure-atomicity: a destructuring declarator like
+    /// `const { x, y } = obj` binds multiple names from a single
+    /// pattern that the lowerer's `split_var_decl` moves as one
+    /// unit. If the spec claims any one binding from such a pattern,
+    /// every sibling binding must travel to the same module —
+    /// otherwise the residual's export list would list a name whose
+    /// declarator has already moved away, and `node` would reject the
+    /// resulting module with `SyntaxError: Export 'y' is not defined
+    /// in module`.
+    ///
+    /// Implicitly-pulled siblings join the claimed module with their
+    /// own binding name as the export name. They aren't separately
+    /// spec'd, but the destructure pattern must keep its full name
+    /// set together regardless. Conflicting claims (two siblings
+    /// claimed by different modules) are rejected.
+    pub(super) fn pull_destructure_siblings(
+        &mut self,
+        destructure_siblings: &BTreeMap<String, BTreeSet<String>>,
+        chunk_top_level_mark: swc_common::Mark,
+    ) -> Result<()> {
+        for (claimed_name, sibling_set) in destructure_siblings {
+            let claimed_id = top_level_id(claimed_name, chunk_top_level_mark);
+            let Some(&owner_index) = self.binding_assignment.get(&claimed_id) else {
+                continue;
+            };
+            let owner_id = ModuleId(LogicalModuleIndex(owner_index));
+            for sibling in sibling_set {
+                if sibling == claimed_name {
+                    continue;
+                }
+                let sibling_id = top_level_id(sibling, chunk_top_level_mark);
+                match self.binding_assignment.get(&sibling_id).copied() {
+                    None => {
+                        self.binding_assignment.insert(sibling_id.clone(), owner_index);
+                        self.bindings_catalogue
+                            .insert(sibling_id, BindingKind::Owned { owner: owner_id });
+                        let plan = &mut self.module_plans[owner_index];
+                        plan.bindings.insert(sibling.clone(), sibling.clone());
+                    }
+                    Some(other_index) if other_index != owner_index => {
+                        let owner_plan_id = self.module_plans[owner_index].id.clone();
+                        let other_plan_id = self.module_plans[other_index].id.clone();
+                        bail!(
+                            "destructure declarator binds {claimed_name} (claimed by module \
+                             {owner_plan_id}) and {sibling} (claimed by module {other_plan_id}); \
+                             destructuring declarators must move atomically — claim both \
+                             bindings from the same module or claim neither.",
+                        );
+                    }
+                    Some(_) => {}
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub(super) fn finalize(self) -> ChunkPlan {
         ChunkPlan {
             module_plans: self.module_plans,
