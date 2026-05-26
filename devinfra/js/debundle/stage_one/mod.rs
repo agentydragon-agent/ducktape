@@ -38,6 +38,8 @@
 //! gives the boundary a single named call site without that wider
 //! refactor.
 
+pub mod sidecars;
+
 use swc_common::Span;
 use swc_ecma_ast::Module;
 

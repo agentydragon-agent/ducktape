@@ -28,7 +28,6 @@ mod report_schema;
 mod reports;
 mod rollback_graph;
 mod stage_one;
-mod stage_one_sidecars;
 mod validation;
 
 pub use atomic_units::{
@@ -73,7 +72,7 @@ pub use report_schema::{
     SourceLocation,
 };
 pub use stage_one::{StageOneAnalysis, compute_stage_one_analysis};
-pub use stage_one_sidecars::{
+pub use stage_one::sidecars::{
     CHUNK_ANALYSIS_MANIFEST_SCHEMA_VERSION, ChunkAnalysisManifest, write_stage_one_sidecars,
 };
 pub use validation::{
