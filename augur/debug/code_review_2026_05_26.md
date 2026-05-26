@@ -22,17 +22,14 @@ Items checked off are **landed**; the rest remain open.
   `defaultLifecycleEvent` / `parseLifecycleEntry`). Histogram bins keyed on
   `bin.lo`; axis ticks keyed on value.
 
-### A4. §1250 simplification ≠ IRS rule (open)
-
-**engine.py** routes recapture via `current.recapture_section_1250_ytd` and
-**compiler.py** taxes it at a flat 25% federal rate. Real §1250 caps
-_unrecaptured_ depreciation at the **lower** of the marginal ordinary rate or
-25%. For high-bracket taxpayers the cap binds, so our number is right; for
-sub-25%-bracket taxpayers we overestimate. Personal-property and pre-1997
-real-property recapture (the "ordinary" §1250 portion) is also not modeled.
-
-**Severity:** real over-estimate at low marginal rates; documented v1
-simplification.
+- **A4. §1250 marginal-rate floor.** ✅ Landed in `7e71857ba`.
+  `_compute_tax_for_link` now applies the IRS Unrecaptured §1250 Gain
+  Worksheet rule: the recapture is taxed at the LESSER of (a) the implied
+  marginal ordinary rate (stack recapture on top of `ordinary_taxable` and
+  diff against `ordinary_tax`) or (b) the flat federal cap. High-bracket
+  taxpayers unchanged (25% cap binds); sub-25%-bracket taxpayers now pay
+  the lower marginal walk. Personal-property and pre-1997 real-property
+  recapture (the "ordinary" §1250 portion) is still not modeled — deferred.
 
 ### A5. MID lumps acquisition + home-equity debt (open)
 
@@ -202,7 +199,7 @@ Tracked in `augur/sim/TODO.md`; gaps noted:
 
 ## Phase plan
 
-- **Phase 1 (correctness)** — ✅ A1, A2, A3 landed.
+- **Phase 1 (correctness)** — ✅ A1, A2, A3, A4 landed. **A5 still open.**
 - **Phase 2 (dead-code sweep)** — ✅ all closed. C3, C4, C5 landed;
   C1/C2/C6 were false positives.
 - **Phase 3 (structural refactor)** — open. B1 grouping
@@ -215,21 +212,18 @@ Tracked in `augur/sim/TODO.md`; gaps noted:
 
 ## Cross-repo follow-ups
 
-- **`gaffer-private` properties.yaml migration** — local commit
-  `d5ab98b5d` (notes lists → single literal-block scalar) on
-  `gaffer-private/main`. Awaiting push. Once reconciled in cluster,
-  drop `_collapse_list_notes` (`CLEANUP(2026-05-25)`). The flags
-  shim has already been dropped; gaffer commit `e1a1435e0` is pushed
-  alongside the ducktape removal.
+- **`gaffer-private` properties.yaml migration** — pushed (`ecdaf9ae9`
+  notes lists → string, `c64df0c27` drop flags). Once Flux reconciles
+  the next augur image, drop the last transitional shim
+  `Property._collapse_list_notes` (`CLEANUP(2026-05-25)`).
 
 ## Remaining open items, ranked
 
-| #   | Area                                                                | Impact                         | Effort |
-| --- | ------------------------------------------------------------------- | ------------------------------ | ------ |
-| A4  | §1250 marginal-rate floor                                           | over-estimate for low brackets | small  |
-| A5  | MID acquisition-vs-HELOC                                            | over-estimate w/ HELOC         | medium |
-| B1  | CompiledSimulation 170 → 8 nested arenas                            | big DX win                     | large  |
-| B2  | Compile-helpers tuple→dataclass                                     | DX                             | medium |
-| B3  | `_wire_landlord_rental` return instead of mutate                    | DX                             | small  |
-| B4  | Split compiler.py + engine.py                                       | DX                             | large  |
-| X1  | Push gaffer-private notes+flags migration + drop transitional shims | cross-repo                     | small  |
+| #   | Area                                                   | Impact                 | Effort |
+| --- | ------------------------------------------------------ | ---------------------- | ------ |
+| A5  | MID acquisition-vs-HELOC                               | over-estimate w/ HELOC | medium |
+| B1  | CompiledSimulation 170 → 8 nested arenas               | big DX win             | large  |
+| B2  | Compile-helpers tuple→dataclass                        | DX                     | medium |
+| B3  | `_wire_landlord_rental` return instead of mutate       | DX                     | small  |
+| B4  | Split compiler.py + engine.py                          | DX                     | large  |
+| X1  | After Flux reconcile: drop `_collapse_list_notes` shim | cross-repo             | small  |
