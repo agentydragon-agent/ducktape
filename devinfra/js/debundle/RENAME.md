@@ -75,7 +75,6 @@ Plus one mapping and one heuristic:
 - ~~`FACTORIZE.md`~~: deleted; conceptual content folded into `docs/design.md` §"Layered mental model" + §"Factor assembly inside `debundle run`".
 - `TODO.md`: `peel/factorize.rs` reference
 - `README.md`: any `ChunkFactorization` references
-- `debug/perf/2026_05_20_large_web_corpus/README.md`: `ChunkFactorization` reference
 - `x/graph_planner_factorization.md`: rename or update
 - `x/peel_cli_ux_notes.md`: any factorize references
 
