@@ -61,7 +61,7 @@ first.
 |---|---|---|---|
 | `debundle binding describe <sym>` | no | Look up a binding by minimized name. Prints: home module, owner statement, declared bindings on the same owner, structural-atom membership, edges in/out at owner level, edges in/out at module-quotient level. | **planned** (#80) |
 | `debundle binding show-code <sym>` | no | Print the source text for the binding's owner statement (reads `owner_graph.json` for the SourceLocation; slices the original chunk bytes). | **planned** (#81) |
-| `debundle binding assign <sym> <module>` | yes (spec) | Move a binding into the named logical module. Optional `--rename <NewName>` for a readable-name change in the same operation. Default: validate + apply. `--no-verify` / `--dry-run` available. | **planned** (#82) |
+| `debundle binding assign …` | yes (spec) | Move one or more bindings into named logical modules **atomically**. The validation gate runs on the whole batch's *post-state*, so refactors whose intermediate (after some-but-not-all moves) states would be invalid land in one shot. Input shapes (any combination): positional `<sym> <module>` pair for the trivial single-binding case; repeated `--move <sym>=<module>` flags for inline batches; `--batch <file.tsv>` for large refactors. Optional repeatable `--rename <sym>=<new-name>` for readable-name changes paired by binding name. Default: validate + apply atomically; refuse the entire batch if invalid. `--no-verify` / `--dry-run` available. See "Batch atomicity" below for the contract. | **planned** (#82) |
 
 ### Module-scoped
 
@@ -102,6 +102,73 @@ For commands that target a specific binding, `<sym>` is the
 *minimized* name (e.g. `XOe`) — the local binding identifier in
 the chunk's source. To look up by readable name, use
 `debundle peel explain` which accepts both.
+
+## Batch atomicity (`binding assign`)
+
+`binding assign` accepts multiple binding-to-module moves in one
+invocation. **Validation runs on the post-batch spec**, not after
+each individual move. This matters because some refactors cross an
+intermediate invalid state: moving binding `A` alone splits an
+atom; moving `A` *and* `B` together preserves the atom (because
+both move to the same destination). A per-move validation would
+reject the same operation a per-batch validation accepts.
+
+### Input shapes
+
+Any combination of the following is allowed:
+
+```bash
+# 1. Single positional pair — the trivial case.
+debundle binding assign --modules $MOD XOe runtime/plugins
+
+# 2. Repeated --move flags — inline small batch.
+debundle binding assign --modules $MOD \
+    --move XOe=runtime/plugins \
+    --move YOe=runtime/plugins
+
+# 3. --batch TSV file — for refactors moving dozens of bindings.
+#    Each line: <binding>\t<destination-module>\t[optional-rename]
+debundle binding assign --modules $MOD --batch moves.tsv
+
+# 4. Mixed: positional + flags is allowed.
+debundle binding assign --modules $MOD ROOT runtime/main \
+    --move CHILD=runtime/main \
+    --rename ROOT=AppRoot
+```
+
+`--rename <sym>=<new-name>` is repeatable; each rename pairs by
+binding name with whichever move it matches. A `--rename` for a
+binding that isn't being moved in the same batch is allowed
+(rename in place); a `--rename` for a binding that doesn't exist
+is an error before any change applies.
+
+### Atomicity contract
+
+1. Parse all moves + renames from positional, `--move`, `--batch`,
+   `--rename`. Dedupe; the *last* assignment for a binding wins
+   (so `--move A=X --move A=Y` reduces to `A=Y` with a warning on
+   stderr).
+2. Read the current spec. Compute the post-batch spec in memory.
+3. Run the realizability gate on the post-batch spec.
+4. If invalid (or any duplicate-binding-claim from the simulated
+   move would surface): print binding-pair blame, exit non-zero,
+   **do not modify any file**.
+5. If valid: write every affected YAML in one pass. The output is
+   atomic from the consumer's perspective — every file that
+   changes does so together.
+
+`--dry-run` runs steps 1–4 and stops; reports the validation
+result + the planned diff. `--no-verify` skips step 3 (still does
+duplicate-claim detection — that's a structural error, not a
+validation one).
+
+### Why no per-move validation
+
+If you want per-move validation (refuse intermediate-invalid
+states), invoke `binding assign` once per move. Per-batch is the
+default because the common case for batch is "this refactor needs
+all-or-nothing application." Per-move semantics is the surprising
+case.
 
 ## Out of scope
 
