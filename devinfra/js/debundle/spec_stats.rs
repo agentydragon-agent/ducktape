@@ -114,7 +114,11 @@ pub fn compute_spec_stats(modules_root: &Path) -> Result<SpecStats> {
         if is_residual {
             modules.residual += 1;
         }
-        if member_count == 0 {
+        // "Empty" matches the `modules delete` predicate: no
+        // members AND no anonymous_statements. A module with
+        // anonymous_statements only is not deletable without
+        // `--force` and not "empty" in any meaningful sense.
+        if member_count == 0 && module.anonymous_statements.is_empty() {
             modules.empty += 1;
         }
         if module.comment.is_some() {

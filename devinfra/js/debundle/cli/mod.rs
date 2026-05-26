@@ -296,6 +296,12 @@ pub struct ModulesListArgs {
 pub struct ModuleListEntry {
     pub path: String,
     pub member_count: usize,
+    /// Count of `anonymous_statements:` entries — side-effecting
+    /// statements the module claims but that declare no binding.
+    /// A module with `member_count == 0` and
+    /// `anonymous_statement_count > 0` carries side effects on
+    /// every rebuild even though it owns no named bindings.
+    pub anonymous_statement_count: usize,
     pub residual: bool,
     pub has_comment: bool,
 }
@@ -882,12 +888,20 @@ fn run_modules_list(args: ModulesListArgs) -> Result<()> {
         let entry = ModuleListEntry {
             path,
             member_count: module.members.len(),
+            anonymous_statement_count: module.anonymous_statements.len(),
             residual,
             has_comment: module.comment.is_some(),
         };
-        let keep = (!args.empty || entry.member_count == 0)
+        // `--empty` matches the `modules delete` definition: no
+        // members AND no anonymous_statements. A module that carries
+        // anonymous statements is not deletable-without-`--force`
+        // and isn't empty in any meaningful sense — its rebuild
+        // side-effects are still part of the spec.
+        let is_truly_empty =
+            entry.member_count == 0 && entry.anonymous_statement_count == 0;
+        let keep = (!args.empty || is_truly_empty)
             && (!args.residual || entry.residual)
-            && (!args.unassigned_bindings || entry.member_count == 0);
+            && (!args.unassigned_bindings || is_truly_empty);
         if keep {
             entries.push(entry);
         }
