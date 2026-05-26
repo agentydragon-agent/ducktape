@@ -71,7 +71,22 @@ const DEFAULT_PRODUCT_INPUT_BASE = {
   managementFeePct: 8,
   leasingFeeMonths: 1.0,
   avgTenancyMonths: 24,
+  // Mid-horizon lifecycle events for the purchased property. Each row is
+  // `{ kind, month, ...kind-specific }`. Persisted to the URL as a separate `lc` param
+  // (a flat-positional `s=` packing can't represent variable-length structured lists).
+  propertyLifecycleEvents: [],
 };
+
+const LIFECYCLE_KINDS = [
+  { value: "set_rented_fraction", label: "Change rented %" },
+  { value: "capital_improvement", label: "Capital improvement" },
+  { value: "property_sale", label: "Sell property" },
+];
+const LIFECYCLE_KINDS_BY_VALUE = new Map(LIFECYCLE_KINDS.map((kind) => [kind.value, kind]));
+const LIFECYCLE_URL_KEY = "lc";
+// Single-letter codes for the `?lc=` URL packing.
+const LIFECYCLE_KIND_CODES = { set_rented_fraction: "r", capital_improvement: "c", property_sale: "s" };
+const LIFECYCLE_KIND_FROM_CODE = { r: "set_rented_fraction", c: "capital_improvement", s: "property_sale" };
 
 const FAN_PERCENTILES = [5, 25, 50, 75, 95];
 const SELECTED_ROLLOUT_COLOR = "#0f766e";
@@ -204,24 +219,98 @@ function productInputToSearch(input, bootstrap) {
     return encodeInputValue(input[field.key], field);
   });
   while (encoded.length > 0 && encoded[encoded.length - 1] === "") encoded.pop();
-  if (encoded.length === 0) return `s=${INPUT_SCHEMA_VERSION}`;
-  return `s=${INPUT_SCHEMA_VERSION}.${encoded.join(".")}`;
+  const parts =
+    encoded.length === 0 ? [`s=${INPUT_SCHEMA_VERSION}`] : [`s=${INPUT_SCHEMA_VERSION}.${encoded.join(".")}`];
+  const lifecycle = lifecycleEventsToUrl(input.propertyLifecycleEvents);
+  if (lifecycle) parts.push(`${LIFECYCLE_URL_KEY}=${lifecycle}`);
+  return parts.join("&");
 }
 
 function productInputFromSearch(searchString, bootstrap) {
   const defaults = productInputDefaults(bootstrap);
   const params = new URLSearchParams(searchString);
   const packed = params.get("s");
-  if (!packed) return defaults;
-  const [version, ...values] = packed.split(".");
-  if (version !== INPUT_SCHEMA_VERSION) return defaults;
   const parsed = { ...defaults };
-  values.forEach((rawValue, index) => {
-    if (index >= INPUT_FIELDS.length) return;
-    const field = INPUT_FIELDS[index];
-    parsed[field.key] = decodeInputValue(rawValue, field, defaults[field.key]);
-  });
+  if (packed) {
+    const [version, ...values] = packed.split(".");
+    if (version === INPUT_SCHEMA_VERSION) {
+      values.forEach((rawValue, index) => {
+        if (index >= INPUT_FIELDS.length) return;
+        const field = INPUT_FIELDS[index];
+        parsed[field.key] = decodeInputValue(rawValue, field, defaults[field.key]);
+      });
+    }
+  }
+  parsed.propertyLifecycleEvents = lifecycleEventsFromUrl(params.get(LIFECYCLE_URL_KEY));
   return parsed;
+}
+
+// `?lc=` packing: each event is `<kind-code><month>:<value>` joined by `~`. Examples:
+//   r24:50  → set rented to 50% at month 24
+//   c12:50000  → $50k capex at month 12
+//   s120:6  → sell at month 120 with 6% closing cost
+function lifecycleEventsToUrl(events) {
+  if (!Array.isArray(events) || events.length === 0) return "";
+  return events
+    .map((event) => {
+      const code = LIFECYCLE_KIND_CODES[event.kind];
+      if (!code) return "";
+      const month = Number(event.month) || 0;
+      const value = lifecycleEventUrlValue(event);
+      return `${code}${month}:${value}`;
+    })
+    .filter(Boolean)
+    .join("~");
+}
+
+function lifecycleEventUrlValue(event) {
+  if (event.kind === "set_rented_fraction") return String(Math.round(Number(event.rentedFractionPct) || 0));
+  if (event.kind === "capital_improvement") return String(Math.round(Number(event.amountUsd) || 0));
+  if (event.kind === "property_sale") return String(Number(event.closingCostPct) || 0);
+  return "";
+}
+
+function lifecycleEventsFromUrl(packed) {
+  if (!packed) return [];
+  return packed
+    .split("~")
+    .map((entry) => parseLifecycleEntry(entry))
+    .filter(Boolean);
+}
+
+function parseLifecycleEntry(entry) {
+  if (!entry || entry.length < 2) return null;
+  const kind = LIFECYCLE_KIND_FROM_CODE[entry[0]];
+  if (!kind) return null;
+  const colonIdx = entry.indexOf(":");
+  if (colonIdx < 0) return null;
+  const month = Number(entry.slice(1, colonIdx));
+  const raw = entry.slice(colonIdx + 1);
+  if (!Number.isFinite(month) || month < 1) return null;
+  if (kind === "set_rented_fraction") {
+    const pct = Number(raw);
+    if (!Number.isFinite(pct)) return null;
+    return { kind, month, rentedFractionPct: Math.min(100, Math.max(0, pct)) };
+  }
+  if (kind === "capital_improvement") {
+    const amount = Number(raw);
+    if (!Number.isFinite(amount) || amount <= 0) return null;
+    return { kind, month, amountUsd: amount };
+  }
+  if (kind === "property_sale") {
+    const pct = Number(raw);
+    if (!Number.isFinite(pct) || pct < 0 || pct > 100) return null;
+    return { kind, month, closingCostPct: pct };
+  }
+  return null;
+}
+
+function defaultLifecycleEvent(kind, suggestedMonth) {
+  const base = { kind, month: Math.max(1, suggestedMonth || 12) };
+  if (kind === "set_rented_fraction") return { ...base, rentedFractionPct: 0 };
+  if (kind === "capital_improvement") return { ...base, amountUsd: 25000 };
+  if (kind === "property_sale") return { ...base, closingCostPct: 6 };
+  throw new Error(`unknown lifecycle event kind ${kind}`);
 }
 
 function buildPropertyFinancing(input) {
@@ -268,7 +357,36 @@ function buildPropertyPurchase(input) {
     isPrimaryResidence,
     initialRental,
     rentalManagement: buildRentalManagement(input),
+    lifecycleEvents: buildLifecycleEvents(input.propertyLifecycleEvents),
   };
+}
+
+function buildLifecycleEvents(events) {
+  if (!Array.isArray(events) || events.length === 0) return [];
+  return events
+    .slice()
+    .sort((a, b) => a.month - b.month)
+    .map((event) => {
+      if (event.kind === "set_rented_fraction") {
+        return {
+          kind: "set_rented_fraction",
+          month: event.month,
+          rentedFraction: (Number(event.rentedFractionPct) || 0) / 100,
+        };
+      }
+      if (event.kind === "capital_improvement") {
+        return {
+          kind: "capital_improvement",
+          month: event.month,
+          amountUsd: Number(event.amountUsd) || 0,
+          description: "",
+        };
+      }
+      if (event.kind === "property_sale") {
+        return { kind: "property_sale", month: event.month, closingCostPct: Number(event.closingCostPct) || 0 };
+      }
+      throw new Error(`unknown lifecycle event kind ${event.kind}`);
+    });
 }
 
 function sellOrderBuckets(sellOrderCodes) {
@@ -1323,11 +1441,125 @@ function PropertyPurchasePanel({ bootstrap, input, onChange }) {
               onChange={(event) => onChange({ rentItOut: event.currentTarget.checked })}
             />
             {input.rentItOut && <RentalPanel input={input} property={selected} onChange={onChange} />}
+            <LifecycleEventsEditor
+              events={input.propertyLifecycleEvents ?? []}
+              horizonMonths={input.horizonMonths}
+              onChange={(propertyLifecycleEvents) => onChange({ propertyLifecycleEvents })}
+            />
           </>
         )}
       </div>
     </div>
   );
+}
+
+function LifecycleEventsEditor({ events, horizonMonths, onChange }) {
+  const maxMonth = Math.max(1, Number(horizonMonths) - 1);
+  const addEvent = (kind) => {
+    const last = events[events.length - 1];
+    const suggestedMonth = Math.min(maxMonth, last ? Math.min(maxMonth, last.month + 12) : 12);
+    onChange([...events, defaultLifecycleEvent(kind, suggestedMonth)]);
+  };
+  const updateEvent = (index, patch) => {
+    onChange(events.map((event, idx) => (idx === index ? { ...event, ...patch } : event)));
+  };
+  const removeEvent = (index) => {
+    onChange(events.filter((_, idx) => idx !== index));
+  };
+  return (
+    <div className="mt-3 grid gap-2">
+      <div className="augur-field-label">Timeline (mid-horizon changes)</div>
+      {events.length === 0 && (
+        <div className="text-xs augur-muted">
+          Add events to change the property's rented %, fund a capital improvement, or sell mid-horizon.
+        </div>
+      )}
+      {events.map((event, index) => (
+        <LifecycleEventRow
+          key={index}
+          event={event}
+          maxMonth={maxMonth}
+          onChange={(patch) => updateEvent(index, patch)}
+          onRemove={() => removeEvent(index)}
+        />
+      ))}
+      <div className="flex flex-wrap gap-2">
+        {LIFECYCLE_KINDS.map((kind) => (
+          <Button key={kind.value} size="xs" variant="default" onClick={() => addEvent(kind.value)}>
+            + {kind.label}
+          </Button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function LifecycleEventRow({ event, maxMonth, onChange, onRemove }) {
+  return (
+    <div className="grid items-end gap-2 rounded border border-slate-300 p-2 dark:border-slate-600 sm:grid-cols-[7rem_10rem_1fr_auto]">
+      <NumberField
+        label="Month"
+        value={event.month}
+        min={1}
+        max={maxMonth}
+        step={1}
+        onChange={(month) => onChange({ month: clampInteger(month, 1, maxMonth) })}
+      />
+      <NativeSelectField
+        label="Kind"
+        aria-label="Lifecycle event kind"
+        value={event.kind}
+        data={LIFECYCLE_KINDS}
+        onChange={(domEvent) => onChange(defaultLifecycleEvent(domEvent.target.value, event.month))}
+      />
+      <LifecycleEventValueField event={event} onChange={onChange} />
+      <Button size="xs" variant="subtle" color="red" onClick={onRemove} aria-label="Remove event">
+        ×
+      </Button>
+    </div>
+  );
+}
+
+function LifecycleEventValueField({ event, onChange }) {
+  if (event.kind === "set_rented_fraction") {
+    return (
+      <NumberField
+        label="Rented %"
+        value={event.rentedFractionPct}
+        min={0}
+        max={100}
+        step={5}
+        suffix="%"
+        onChange={(rentedFractionPct) => onChange({ rentedFractionPct })}
+      />
+    );
+  }
+  if (event.kind === "capital_improvement") {
+    return (
+      <NumberField
+        label="Amount"
+        value={event.amountUsd}
+        min={0}
+        step={1000}
+        suffix="$"
+        onChange={(amountUsd) => onChange({ amountUsd })}
+      />
+    );
+  }
+  if (event.kind === "property_sale") {
+    return (
+      <NumberField
+        label="Closing cost"
+        value={event.closingCostPct}
+        min={0}
+        max={100}
+        step={0.5}
+        suffix="%"
+        onChange={(closingCostPct) => onChange({ closingCostPct })}
+      />
+    );
+  }
+  return null;
 }
 
 function RentalPanel({ input, property, onChange }) {
