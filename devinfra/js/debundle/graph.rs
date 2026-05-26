@@ -493,7 +493,7 @@ impl EdgeMetadata {
 /// inference doesn't trigger `Deref` coercion), callers reach for
 /// the inner graph with `&dep_graph.0` or `&*dep_graph`.
 #[derive(Debug, Clone, Default)]
-pub struct ModuleQuotient(pub DiGraphMap<ModuleId, EdgeMetadata>);
+pub struct ModuleQuotient(pub(crate) DiGraphMap<ModuleId, EdgeMetadata>);
 
 impl std::ops::Deref for ModuleQuotient {
     type Target = DiGraphMap<ModuleId, EdgeMetadata>;
