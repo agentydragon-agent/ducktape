@@ -295,9 +295,14 @@ py_package(
         "skills.proxmox_vm",
     ],
     deps = [
-        # CLI tool entry points
+        # CLI tool entry points. Each dep must transitively reach the module
+        # named in the console_scripts entry below — adding a name to the
+        # `packages` list above does not pull in any source files; py_package
+        # only collects files reachable from `deps`. The imports check in
+        # nix/packages/default.nix guards against this regressing again.
         "//difftree:cli",
         "//git_commit_ai:git_commit_ai_lib",
+        "//gmail_archiver:main",
         "//skills/hetzner_vnc_screenshot:vnc_screenshot",
         "//skills/proxmox_vm:vm_interact",
     ],

@@ -13,11 +13,13 @@ pkgs.python3Packages.buildPythonApplication {
   format = "wheel";
   src = wheel;
   propagatedBuildInputs = with pkgs.python3Packages; [
+    atomicwrites
     httpx
     platformdirs
     pydantic
     typer
   ];
+  pythonImportsCheck = [ "aiquota.cli" ];
   doCheck = false;
   dontUsePytestCheck = true;
 

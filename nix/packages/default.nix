@@ -15,10 +15,16 @@ let
 
   # All ducktape wheels follow the same pattern: pname maps to an artifact-pin
   # artifact, wheel filename is <pname_underscored>-0.1.0-py3-none-any.whl.
+  #
+  # `importsCheck` is required — at minimum list the modules backing each
+  # console-script entry point. buildPythonApplication imports them at build
+  # time, so a missing propagatedBuildInputs surfaces as a build failure
+  # instead of a runtime crash. See debug/aiquota-missing-atomicwrites.md.
   mkWheel =
     {
       pname,
       description,
+      importsCheck,
       propagatedBuildInputs ? [ ],
       nativeBuildInputs ? [ ],
       buildInputs ? [ ],
@@ -31,11 +37,26 @@ let
       src = renameWheel "${
         builtins.replaceStrings [ "-" ] [ "_" ] pname
       }-0.1.0-py3-none-any.whl" artifacts.${pname};
-      inherit
-        propagatedBuildInputs
-        nativeBuildInputs
-        buildInputs
-        ;
+      inherit propagatedBuildInputs buildInputs;
+      nativeBuildInputs = nativeBuildInputs ++ [ pkgs.cacert ];
+      # pygit2 (and anything else that calls OpenSSL at module import) needs
+      # a CA bundle visible during the imports-check phase, otherwise libgit2
+      # fails with "failed to load certificates" inside the sealed build env.
+      # stdenv pins SSL_CERT_FILE to /no-cert-file.crt when unset, AND nixpkgs'
+      # python3Packages.httpx ships a postHook that runs `unset SSL_CERT_FILE`
+      # after every build phase — so neither `env.SSL_CERT_FILE` nor cacert's
+      # own setup-hook survive long enough. Override the stock phase with one
+      # that sets the env var inside the same shell invocation.
+      dontUsePythonImportsCheck = true;
+      preDistPhases = [ "ducktapePythonImportsCheck" ];
+      ducktapePythonImportsCheck = ''
+        export SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt
+        echo "Check imports (SSL_CERT_FILE pinned): ${builtins.concatStringsSep " " importsCheck}"
+        export PYTHONPATH="$out/lib/${pkgs.python3.libPrefix}/site-packages:$PYTHONPATH"
+        (cd "$out" && ${pkgs.python3.interpreter} -c \
+          'import sys, importlib; [importlib.import_module(m) for m in sys.argv[1:]]' \
+          ${builtins.concatStringsSep " " importsCheck})
+      '';
       doCheck = false;
       dontUsePytestCheck = true;
       meta = {
@@ -54,6 +75,7 @@ let
   ducktape-util = mkWheel {
     pname = "ducktape-util";
     description = "Shared utility library (util.bazel, util.fs, etc.)";
+    importsCheck = [ "util" ];
     propagatedBuildInputs = with pkgs.python3Packages; [
       opentelemetry-api
       opentelemetry-sdk
@@ -65,6 +87,7 @@ let
     pname = "ducktape-git-hooks";
     description = "Git hooks: ducktape-precommit, ducktape-commit-msg, cluster validation";
     mainProgram = "ducktape-precommit";
+    importsCheck = [ "devinfra.precommit.git_hook" ];
     # SYNC: This list must match `requires` in //:ducktape_git_hooks_wheel (BUILD.bazel).
     # When adding a dependency, update BOTH places.
     propagatedBuildInputs =
@@ -126,6 +149,7 @@ rec {
     pname = "bbr";
     description = "bb remote wrapper with repo-level config from devinfra/bbr.json";
     mainProgram = "bbr";
+    importsCheck = [ "devinfra.bbr" ];
     propagatedBuildInputs = with pkgs.python3Packages; [ pygit2 ];
   };
 
@@ -133,6 +157,16 @@ rec {
     pname = "ducktape";
     description = "CLI tools (git-commit-ai, difftree, gmail-archiver)";
     mainProgram = "git-commit-ai";
+    # CLEANUP(2026-05-25): add `git_commit_ai.cli` and `gmail_archiver.main`
+    #   here once the artifact-pin refreshes. The BUILD fix that makes them
+    #   reach the umbrella has landed (see //:ducktape_pkg and
+    #   //git_commit_ai:cli), but the pinned wheel was built before that
+    #   fix — leaving them in `importsCheck` now would fail the Nix build.
+    importsCheck = [
+      "difftree.cli"
+      "skills.hetzner_vnc_screenshot.vnc_screenshot"
+      "skills.proxmox_vm.vm_interact"
+    ];
     propagatedBuildInputs = with pkgs.python3Packages; [
       aiodocker
       anyio
@@ -140,6 +174,7 @@ rec {
       jinja2
       mako
       openai
+      platformdirs
       pydantic
       pygit2
       rich
@@ -159,7 +194,7 @@ rec {
       python-dateutil
       pyyaml
       compact-json
-      # skills deps (hetzner-vnc-screenshot)
+      # skills deps (hetzner-vnc-screenshot, proxmox_vm)
       hcloud
       pillow
       websockets
@@ -172,6 +207,7 @@ rec {
     pname = "claude-hooks";
     description = "Python Claude Code statusline";
     mainProgram = "claude-statusline";
+    importsCheck = [ "devinfra.claude.statusline.statusline" ];
     # SYNC: This list must match `requires` in //:claude_hooks_wheel (BUILD.bazel).
     # The wheel declares pip-level deps; this list provides Nix-level equivalents.
     # When adding a dependency, update BOTH places.
@@ -213,6 +249,7 @@ rec {
     pname = "gterm-theme";
     description = "GNOME Terminal theme follower";
     mainProgram = "gterm-theme";
+    importsCheck = [ "gnome.gterm_theme.main" ];
     nativeBuildInputs = with pkgs; [
       gobject-introspection
       wrapGAppsHook3
