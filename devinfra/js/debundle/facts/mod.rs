@@ -1,8 +1,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 mod local_effects;
+pub mod wire;
 
 pub use local_effects::local_namespace_iife_target;
+pub use wire::{
+    ChunkFactsReport, EffectCellReport, IdReport, SCHEMA_VERSION, StatementEffectSummaryReport,
+    StatementFactsReport,
+};
 
 use binding_targets::{
     TargetAccessRecorder, declaration_ids, record_assign_target, record_pat_write,

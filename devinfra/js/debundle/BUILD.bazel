@@ -217,6 +217,7 @@ rust_library(
         "factor_assembly.rs",
         "facts/local_effects.rs",
         "facts/mod.rs",
+        "facts/wire.rs",
         "graph.rs",
         "ids.rs",
         "lib.rs",
