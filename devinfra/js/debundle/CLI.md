@@ -73,7 +73,7 @@ with a list. Use the minified form to disambiguate.
 |---|---|---|---|
 | `debundle binding describe <sym>` | no | Look up a binding: home module, owner statement, declared bindings on the same owner, structural-atom membership, edges in/out at owner level + module-quotient level. Accepts minified or readable name. | **planned** (#80) |
 | `debundle binding show-source <sym>` | no | Print the source text for the binding's owner statement. (Same renderer as the top-level `show-source <id>` when the ID is a binding.) | **planned** (#81) |
-| `debundle binding assign <sym>:<module>[:<readable>] …` | yes (spec) | Move one or more bindings into named logical modules **atomically**. Each positional argument is colon-separated: `<sym>:<module>` to move and keep the current name, `<sym>:<module>:<readable>` to move and rename in the same step. `<sym>` accepts minified or readable form; the optional third field always sets the new readable `name:`. Validation runs on the *whole batch's* post-state. Default: validate + apply atomically. `--no-verify` / `--dry-run` available. See "Batch atomicity" below. | **planned** (#82) |
+| `debundle binding assign <sym>:<module>[:<readable>] …` | yes (spec) | Move one or more bindings into named logical modules **atomically**. Each positional argument is colon-separated: `<sym>:<module>` to move and keep the current name, `<sym>:<module>:<readable>` to move and rename in the same step. `<sym>` accepts minified or readable form; the optional third field always sets the new readable `name:`. `--batch <file.json>` (or `--batch -` for stdin) reads moves as a JSON array of `{sym, module, readable?}` objects. Validation runs on the *whole batch's* post-state. Default: validate + apply atomically. `--no-verify` / `--dry-run` available. See "Batch atomicity" below. | **planned** (#82) |
 | `debundle binding rename <original> <readable>` | yes (spec) | Rename a binding's readable `name:` without moving it. `<original>` accepts minified or current readable form. Validation here is name-collision detection (no two bindings in the chunk get the same readable name). Mostly a convenience over `binding assign` for the rename-without-move case. `--no-verify` / `--dry-run` available. | **planned** (#82) |
 
 ### Module-scoped
@@ -158,15 +158,37 @@ debundle binding assign --modules $MOD \
     YOe:runtime/plugins \
     ZOe:runtime/widgets:WidgetRegistry
 
-# 4. Large refactors: --batch reads TSV from a file.
-#    Each line: <sym>\t<module>\t[optional-readable]
-debundle binding assign --modules $MOD --batch moves.tsv
+# 4. Large refactors: --batch reads JSON from a file (or `-` for stdin).
+debundle binding assign --modules $MOD --batch moves.json
+debundle binding assign --modules $MOD --batch -  < moves.json
 ```
 
 `<sym>` accepts either the minified name (`XOe`) or the current
 readable name (`PluginSettingsAccessor`). The optional third field
 sets the **new** readable name; omitting it preserves whatever
 readable name is currently in the spec.
+
+### `--batch` JSON format
+
+A top-level JSON array of move objects:
+
+```json
+[
+  {"sym": "XOe", "module": "runtime/plugins", "readable": "PluginSettingsAccessor"},
+  {"sym": "YOe", "module": "runtime/plugins"},
+  {"sym": "ZOe", "module": "runtime/widgets", "readable": "WidgetRegistry"}
+]
+```
+
+- `sym` and `module` are required.
+- `readable` is optional; omitting it preserves the binding's current readable name.
+- Array order is preserved for dedupe semantics (last-wins when the same `sym` appears more than once).
+
+JSON over TSV because: schema-validated, queryable with `jq`,
+composable with the other JSON outputs from the same CLI
+(`scc --ndjson`, `propose modules`, etc.), and lets `--batch -`
+pipe directly from those producers without a TSV conversion step
+in between.
 
 ### Atomicity contract
 
