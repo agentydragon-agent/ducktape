@@ -41,10 +41,10 @@
 use swc_common::Span;
 use swc_ecma_ast::Module;
 
+use crate::AnalysisHints;
 use crate::atomic_units::{OwnerGraphAndUnits, compute_owner_graph_and_units_with};
 use crate::facts::{ChunkFactAnalysis, analyze_chunk};
 use crate::graph::OwnerGraphOptions;
-use crate::AnalysisHints;
 
 /// Output of Stage A: the per-chunk analysis that does not depend on
 /// the spec.

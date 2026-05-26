@@ -40,9 +40,10 @@ pub use factor_assembly::{
     AssemblyOutcome, AtomicUnitConflict, ConflictingClaim, assemble_partition,
 };
 pub use facts::{
-    AnalysisHints, ChunkFactAnalysis, EffectCell, KnownEffect, LocalEffectPolicy,
-    StatementEffectSummary, StatementFacts, StatementKind, analyze_chunk, find_top_level_await,
-    local_namespace_iife_target,
+    AnalysisHints, ChunkFactAnalysis, ChunkFactsReport, EffectCell, EffectCellReport, IdReport,
+    KnownEffect, LocalEffectPolicy, SCHEMA_VERSION as CHUNK_FACTS_SCHEMA_VERSION,
+    StatementEffectSummary, StatementEffectSummaryReport, StatementFacts, StatementFactsReport,
+    StatementKind, analyze_chunk, find_top_level_await, local_namespace_iife_target,
 };
 pub use graph::{
     ChunkConstrainingEdgeSet, DepKind, EdgeMetadata, EdgeReason, ModuleQuotient, OwnerEdge,
@@ -50,7 +51,6 @@ pub use graph::{
     build_module_quotient, build_owner_graph, build_owner_graph_with,
     chunk_constraining_module_edges, chunk_linker_order, chunk_source_import_order,
 };
-pub use stage_one::{StageOneAnalysis, compute_stage_one_analysis};
 pub use ids::{
     BindingKind, ChunkId, ChunkTable, LogicalModule, LogicalModuleIndex, ModuleId,
     StatementOrdinal, top_level_id,
@@ -71,6 +71,7 @@ pub use report_schema::{
     QuotientEdgeReport, QuotientSccReport, RESIDUAL_ENTRY_LABEL, RESIDUAL_ENTRY_MODULE_ID,
     SourceLocation,
 };
+pub use stage_one::{StageOneAnalysis, compute_stage_one_analysis};
 pub use validation::{
     CycleEdge, CycleReport, FactorizationReport, render_atomic_unit_conflict_summary,
     render_cycle_summary, validate_factorization,
