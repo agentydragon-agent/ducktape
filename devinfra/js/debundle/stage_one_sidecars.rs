@@ -1,4 +1,4 @@
-//! On-disk sidecar writers for Stage A artifacts (v1, in-process).
+//! On-disk sidecar writers for Stage A artifacts (in-process debug).
 //!
 //! Stage A (see `stage_one.rs` and DESIGN.md §"Pipeline split (Stage A /
 //! Stage B)") is the spec-independent half of the per-chunk pipeline.
@@ -6,29 +6,29 @@
 //! the structural atomic units, plus a manifest — as sibling JSON
 //! files under `reports/tree/<chunk_id>/chunk_analysis/`. The sidecars
 //! are emitted from inside the materializer alongside the other
-//! per-chunk reports; they're consumed by `peel`-family CLI tooling
-//! and by humans inspecting the pipeline.
+//! per-chunk reports; they're consumed by humans inspecting the pipeline.
 //!
-//! ## Out of scope for v1
+//! ## Scope: in-process inspection only
 //!
-//! **No `ast.json`.** Serializing the SWC `Module` requires the
-//! `swc_ecma_ast/serde-impl` feature (enabled in MODULE.bazel) and
-//! round-trips through `serde_json`, but `Id = (Atom, SyntaxContext)`
-//! values carry a `SyntaxContext` whose `u32` is meaningful only within
-//! the SWC `Globals` instance that produced it. A reader in a *separate
-//! process* — the cacheable-action target the full pipeline split is
-//! aiming for — cannot make those identities line up with its own
-//! `top_level_id`-resolved bindings without a structural change to the
-//! wire format (drop `ctxt`, carry a scope discriminator, reconstruct
-//! `Id`s post-resolver in the reader). That redesign is deferred. See
-//! `ARCH_REVIEW_2026_05.md` §"Pipeline-split risks" for the analysis.
+//! **No `ast.json`.** Serializing the SWC `Module` would require
+//! cross-process `SyntaxContext`/`Mark` portability, which is
+//! structurally hard (see `WIRE_FORMAT.md`). The `swc_ecma_ast/serde-impl`
+//! feature is enabled in MODULE.bazel as plumbing but not used.
 //!
-//! Until that redesign lands, v1's sidecars are designed for **in-
-//! process inspection**: a CLI tool or a debugging human reads them
-//! during the same materializer run that produced them, where the
-//! shared `Globals` makes the `Id` identities valid. A separate-process
-//! `materialize_from_analysis` reader (task #78) is blocked on the wire
-//! format redesign.
+//! **No separate-process materializer reader.** Earlier drafts
+//! framed this as the next step (`materialize_from_analysis`); on
+//! analysis, the cache value it would deliver doesn't justify the
+//! SWC hygiene surgery required. The materializer stays in-process.
+//! See `PIPELINE_SPLIT.md` §"Scope cut: no cross-process materializer".
+//!
+//! **`facts.json` is debug-only.** Carries `IdReport { name, ctxt: u32 }`
+//! where `ctxt` is `Globals`-local. Same-process consumers (humans
+//! inspecting during a materializer run) work; separate-process
+//! consumers never read this file. Cross-process query CLIs (the
+//! `peel` family, future `binding describe` / top-level `scc` /
+//! `cluster` / `binding show-code`) read the Atom-only files
+//! (`owner_graph.json`, `cycles.json`, `atomic_unit_conflicts.json`,
+//! `atomic_units.json`) instead.
 //!
 //! ## File layout
 //!

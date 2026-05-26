@@ -25,28 +25,34 @@
 //! is the wire mirror of `Xxx`, with `to_wire()` / `from_wire()`
 //! pairs hung off the original types.
 //!
-//! # Cross-process portability
+//! # Scope: in-process debug artifact only
 //!
-//! `IdReport` carries `ctxt: u32` (a `SyntaxContext`'s raw value).
-//! Unlike the rest of the per-chunk wire formats — `owner_graph.json`,
-//! `cycles.json`, `atomic_unit_conflicts.json`, all of which are
-//! `Atom`-only — this module's wire types are **not** straightforwardly
-//! portable across SWC `Globals` instances. The reason is fundamental:
-//! `StatementFacts` is *pre-filter* analyzer output that includes
-//! closure-local reads carrying inner-scope contexts, and dropping
-//! those contexts is unsound on shadowing (would produce spurious
-//! at-init edges).
+//! `IdReport` carries `ctxt: u32` (a `SyntaxContext`'s raw value),
+//! which is meaningful only within the SWC `Globals` instance that
+//! allocated it. Unlike `owner_graph.json` / `cycles.json` /
+//! `atomic_unit_conflicts.json` (Atom-only, cross-process safe),
+//! `facts.json` is **not** cross-process portable.
 //!
-//! Whether a cross-process Stage B reader (task #78) can consume
-//! these files at all reduces to a determinism contract on SWC's
-//! resolver — Stage B must run in a fresh `Globals` with no prior
-//! mark activity, same SWC version, same chunk source bytes.
+//! That's by design. `StatementFacts` is *pre-filter* analyzer
+//! output: it includes closure-local reads carrying inner-scope
+//! contexts. The downstream `binding_owner.get(binding)` filter at
+//! `graph.rs:598` uses the `ctxt` to distinguish a closure-local
+//! `counter` from a shadowed top-level `counter` and drops the
+//! former. Stripping `ctxt` and reconstructing via `top_level_id`
+//! in a separate process would produce **spurious at-init edges**
+//! on every closure-local shadow of a top-level binding name
+//! (worked example in `WIRE_FORMAT.md`).
 //!
-//! See `WIRE_FORMAT.md` for the full analysis, the verified failure
-//! mode (the shadowing counterexample), and the contract a Stage B
-//! reader would need to honor. Until the determinism regression test
-//! lands, treat `facts.json` as an **in-process inspection artifact**
-//! rather than a Stage B input.
+//! Consequence: `facts.json` is an **in-process debug artifact** —
+//! humans inspecting it during a materializer run, same-process
+//! CLI tools (none in flight). Separate-process consumers (the
+//! `peel` family, future `binding describe` / top-level `scc` /
+//! `cluster` / `binding show-code` CLIs) read `owner_graph.json`
+//! and friends, which are Atom-only and post-filter.
+//!
+//! No cross-process materializer reader is planned. See
+//! `WIRE_FORMAT.md` §"Cross-process scope: not a goal" for the
+//! full reasoning and rejected alternatives.
 
 use std::collections::BTreeSet;
 

@@ -116,58 +116,59 @@ The originally-considered "serialize the SWC AST in Stage A" path is structurall
 
 The implications:
 
-- v1 Stage A sidecars (in `stage_one_sidecars.rs`) write `facts.json`, `atomic_units.json`, and `manifest.json`. They do **not** write `ast.json`. The `swc_ecma_ast/serde-impl` feature is enabled in MODULE.bazel and ready for a future redesign, but unused in v1.
+- v1 Stage A sidecars (in `stage_one_sidecars.rs`) write `facts.json`, `atomic_units.json`, and `manifest.json`. They do **not** write `ast.json`.
 - v1 sidecars are designed for **in-process inspection** (CLI tooling, human debugging) within the same materializer run that produced them, where the `Globals` is shared.
-- A separate-process `materialize_from_analysis` reader (task #78) is **blocked on a wire-format redesign** that drops `SyntaxContext::u32` and reconstructs `Id`s post-resolver in the reader. The redesign needs Stage A to serialize a scope discriminator (`TopLevel` / `Global`) per `Id` and Stage B to call `top_level_id(name, fresh_mark)` after running its own resolver. That work is deferred.
+- **A separate-process materializer reader is out of scope.** Earlier drafts framed `materialize_from_analysis` as the natural next step; on closer analysis (see `WIRE_FORMAT.md`), the cache value it would deliver doesn't justify the SWC hygiene surgery required to make `Id` portable. The materializer stays in-process. See "Scope cut" below.
 
-When the redesign lands, re-parse-in-Stage-B remains the recommendation: parsing minified Tana is cheap (~1-2s) and avoids parser-version coupling on the Stage A cache key. The redesign is purely about *what shape the wire format should be*, not whether the AST itself is on disk.
+## Scope cut: no cross-process materializer
 
-## Bazel action shape
+The original framing was "Stage A produces a cacheable artifact;
+Stage B reads it as a separate Bazel action; spec edits hit only
+Stage B." That part of the plan is **abandoned**.
 
-Today:
+Reason: cross-process `Id` portability is structurally hard — the
+honest path is a SWC hygiene-snapshot replay (serialize the sequence
+of `Mark::fresh(parent)` + `apply_mark(prev, mark)` ops, replay them
+in Stage B's fresh `Globals` before deserializing any `Id`s). That
+path is real (`Mark::parent()`, `SyntaxContext::outer()`,
+`SyntaxContext::remove_mark()` are all public; no swc_common fork
+required) but it's a non-trivial implementation, and the cache
+value it delivers (~5–10s saved on gaffer-scale spec edits) doesn't
+justify it. The materializer stays in-process. Bazel-level caching
+at the rule's coarser granularity covers the same ground without
+the surgery.
 
-```
-debundle_pipeline(
-  inputs: { chunk_bytes, spec_yamls, options },
-  outputs: { tree, reports },
-)
-```
+The cache value users will actually feel comes from a **different**
+direction: a rich query-CLI surface that operates on the existing
+Atom-only JSON reports (`owner_graph.json`, `atomic_units.json`,
+`cycles.json`, `atomic_unit_conflicts.json`). That surface is
+already cross-process safe today (the `peel` family proves it),
+and the next step is building out `binding describe`, top-level
+`scc`, `cluster`, `binding show-code` as readers of those files.
 
-After the split:
+See `WIRE_FORMAT.md` §"Cross-process scope: not a goal" for the
+full reasoning and the rejected-alternatives list.
 
-```
-chunk_analyze(
-  inputs: { chunk_bytes, options },
-  outputs: { chunk_analysis.json },
-)
+## Implementation sequencing (revised)
 
-debundle_materialize(
-  inputs: { chunk_analysis.json, spec_yamls, options },
-  outputs: { tree, reports },
-)
-```
+In flight / done:
+1. **`chunk_analysis/{facts.json, atomic_units.json, manifest.json}` writers** — landed (`stage_one_sidecars.rs`).
+2. **`facts.json` is debug-only**: human inspection, same-process tooling. Documented in `WIRE_FORMAT.md`.
+3. **Query CLIs build on the existing Atom-only reports**, not on a cross-process Stage A artifact.
 
-The `chunk_analyze` cache key includes the source bytes + ducktape version. Editing spec doesn't re-trigger it. RBE cache hits cleanly across spec-only edits.
+Followups (separate tasks):
+- `binding describe <symbol>` — reads `owner_graph.json` + spec.
+- Top-level `debundle scc` — surfaces the same data as `peel scc` from the CLI's top level.
+- `cluster <binding>` — quotient neighbors.
+- `binding show-code <symbol>` — reads source bytes + source locations from `owner_graph.json`.
+- `module merge --validate` — wires the realizability gate into the existing splice path.
 
-## Implementation sequencing
-
-1. **Add `chunk_analysis.json` serialization.** Extend the existing `owner_graph.json` reports infrastructure: same writer, broader content (owner graph + atomic units + chunk metadata + facts subset needed for Stage B). One schema-versioned file per chunk. Land additively — current pipeline still writes everything it does today.
-2. **Add a Stage-A-only entry point.** `pipeline::analyze_chunk_only(inputs) → chunk_analysis.json`. Doesn't yet replace anything.
-3. **Add a Stage B entry point that reads Stage A.** `pipeline::materialize_from_analysis(chunk_analysis.json, spec, opts)`. Behaves identically to today's `materialize_logical_modules` but takes the artifact instead of chunk bytes.
-4. **Make Stage B the production path inside the Bazel rule.** `debundle` rule emits a separate `chunk_analyze` action per chunk, then `materialize` consumes it.
-5. **Wire CLIs.** `peel`-family commands take `--chunk-analysis` instead of re-running analysis. Backward-compat: if `--chunk-analysis` absent, fall back to running analysis (slow path).
-6. **Optional follow-up.** Add a `debundle inspect` CLI for ad-hoc queries (this is also the foundation for tasks #73 `module merge` and the planned `binding describe`/`scc`/`cluster` surface in AGENTS.md).
-
-Steps 1–4 are the structural split. Steps 5–6 unlock the consumer ergonomics. Either can land independently after the structural split is in.
+The Bazel rule split into separate analyze + materialize actions is **not** on this roadmap; the materializer stays as one action.
 
 ## Resolved decisions
 
 - **JSON first**: per-concept JSON files (the `chunk_analysis/` directory). Revisit proto only if measurement says JSON load-time is a hot spot.
-- **Re-parse in Stage B**: AST is not serialized in v1. The `Id` round-trip across `Globals` is structurally broken; sidestepping it by re-parsing is cleaner than threading a scope discriminator through every Stage-A consumer. See §"What about the AST?" for the full rationale.
-- **Full per-statement facts**: `ChunkFactsReport` carries everything `analyze_chunk` produces (already implemented on `feat-facts-wire-format`).
-
-## Remaining open question
-
-- Should `materialize_from_analysis` (task #78) be implemented at all, or rolled into a future wire-format redesign that handles `Id` cross-process portability? Today's sidecars work in-process; a separate-process reader is what motivates the redesign. The structural answer is: don't build #78 on top of today's wire format — wait for the redesign so the reader operates on a structurally-portable artifact from the start.
-
-  See `WIRE_FORMAT.md` for the full analysis of *why* the current `facts.json` carries `SyntaxContext` (it has to — closure-local shadowing makes Atom-only unsound on the pre-filter facts), and the four-condition contract under which a cross-process Stage B reader could in principle still consume it (resolver determinism). The "drop ctxt, reconstruct via top_level_id" path that looked attractive in earlier discussion turns out to be **unsound** for `facts.json` — it'd produce spurious at-init edges whenever a closure-local shadows a top-level binding name.
+- **No AST serde**: AST is not serialized. `swc_ecma_ast/serde-impl` is enabled in MODULE.bazel as plumbing but currently unused.
+- **`facts.json` is debug-only**: see `WIRE_FORMAT.md` §"Cross-process scope: not a goal". The `IdReport { name, ctxt: u32 }` shape is correct for same-process consumers and is the only sound option (Atom-only would be unsound under closure shadowing).
+- **Materializer stays in-process**: no `materialize_from_analysis` reader, no Bazel rule split, no cross-process Stage B.
+- **Full per-statement facts** in `facts.json`: `ChunkFactsReport` carries everything `analyze_chunk` produces. Useful for debug inspection.

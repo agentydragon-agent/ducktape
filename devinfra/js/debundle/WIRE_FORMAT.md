@@ -138,110 +138,98 @@ time).
 `facts.json` carries `IdReport` precisely so the owner-graph build
 can do its `SyntaxContext`-aware filter correctly downstream.
 
-## Open: cross-process Stage A artifact
+## Cross-process scope: not a goal
 
-The cost: `IdReport.ctxt` is a `u32` that's only meaningful within
-the SWC `Globals` instance that allocated it (per
-`swc_common::syntax_pos::hygiene::apply_mark_internal` — interns
-`(prev_ctxt, mark)` into a `Vec<SyntaxContextData>` and returns
-`SyntaxContext(vec.len())`). Across processes, the indices align only
-if both `Globals` allocated marks in exactly the same order.
+Earlier drafts of `PIPELINE_SPLIT.md` and `ARCH_REVIEW_2026_05.md`
+treated cross-process Stage B (a separate Bazel action consuming
+Stage A's cached output for the materializer) as the load-bearing
+motivation for the Stage A on-disk artifact. **It is no longer.**
 
-Empirical demonstration (test on branch `test-id-cross-globals`, now
-discarded but reproducible from `ARCH_REVIEW_2026_05.md` §"Pipeline-
-split risks"):
+The reasoning: every realistic Stage B reader either (a) doesn't
+need `facts.json` (the query-CLI surface — see "Reader audiences"
+below — reads only the Atom-only files and is already cross-process
+safe today) or (b) needs the full SWC AST + hygiene state (the
+materializer lowering pass), which requires either re-parsing or a
+SWC-internal hygiene snapshot replay (substantially more
+implementation surface than the cache is worth at gaffer scale).
 
-```rust
-// Globals A, fresh:    Mark::new() → mark_a (#1); top_level_id("foo", mark_a) → ctxt=#1
-// Globals B, fresh:    Mark::new() → mark_b (#1); top_level_id("foo", mark_b) → ctxt=#1
-//   → ctxts agree (both at SyntaxContext(1)).
-// Globals B', primed with one apply_mark before mark_b:
-//                       intern table is non-empty; top_level_id("foo", new_mark) → ctxt=#2
-//   → ctxts disagree (#1 from A, #2 from B').
-```
+So the design splits into two scopes:
 
-So whether `facts.json` is cross-process-portable reduces to whether
-the SWC resolver is *deterministic enough* that a Stage B process,
-starting from a fresh `Globals` with no prior `apply_mark` activity
-and running the same resolver on the same chunk in the same SWC
-version, produces an intern table identical to Stage A's.
+- The **query surface** (`peel scc`, `peel units`, `peel patch-plan`,
+  `peel graph-summary`, future `binding describe` / `scc` /
+  `cluster` / `binding show-code`) reads the existing Atom-only
+  files. Already works cross-process; the existing `peel` family is
+  the working proof. No `SyntaxContext` ever leaves a process
+  boundary.
+- The **materializer** stays in-process. Editing a spec re-runs the
+  full pipeline (parse → facts → owner_graph → assemble → validate →
+  lower). At gaffer scale that's ~5–10s; most of it is parse, which
+  Bazel can cache at coarser granularity if it ever becomes a hot
+  spot.
+- `facts.json` stays as an **in-process debug artifact** — humans
+  inspecting it during a materializer run, CLI tools that share the
+  same `Globals` (none today). **Not** for separate-process consumers.
 
-### Conditions for cross-process portability
+If a future use case ever demands a cross-process materializer
+reader, the structurally honest path is a SWC hygiene replay
+snapshot (serialize the sequence of `Mark::fresh(parent)` and
+`apply_mark(prev, mark)` ops, replay them in Stage B's fresh
+`Globals` before deserializing any `Id`s). That requires no fork of
+swc_common — `Mark::parent()`, `SyntaxContext::outer()`,
+`SyntaxContext::remove_mark()` are all public — but it's substantial
+implementation. Defer until there's a concrete use case that
+justifies it.
 
-If Stage B honors these contracts, the `IdReport.ctxt` u32 in
-`facts.json` deserializes into an `Id` that compares equal to the
-`Id`s Stage B's own resolver pass produces, and `binding_owner`
-lookups succeed:
+The alternatives that came up in earlier drafts are documented as
+rejected:
 
-1. **Fresh `Globals` per chunk.** Stage B opens a new
-   `swc_common::Globals` for each chunk it materializes. It runs
-   `GLOBALS.set(&globals, …)` once, around all chunk-related work,
-   without sharing or reusing the `Globals` across chunks.
+- **Drop ctxt, reconstruct via `top_level_id`**: **unsound** on
+  shadowing — produces spurious at-init edges when a closure-local
+  shadows a top-level binding name. See the `let counter = 1`
+  worked example above.
+- **Pre-filter `facts.json`** (drop inner-scope Ids before
+  serialization): would keep the Atom-only convention pure but lose
+  the closure-local read records humans inspecting the artifact may
+  want. Not worth the loss when nothing else needs the change.
+- **Rely on SWC resolver determinism + re-parse in Stage B**: Stage
+  A's cache becomes value-less to Stage B (Stage B re-parses,
+  re-runs `analyze_chunk`, throws away the cached facts). At that
+  point Stage A cache only proves "did Stage A succeed", which is
+  not why we'd build it.
 
-2. **No prior `apply_mark` / `Mark::new` calls.** Stage B does not
-   resolve any other AST, allocate any marks, or apply any marks
-   *before* re-parsing and re-resolving the chunk under study. In
-   particular: no shared resolver workspace, no warm-up pass.
+For the empirical demonstration that the cross-process round-trip
+breaks under non-trivial `Globals` state, see
+`ARCH_REVIEW_2026_05.md` §"Pipeline-split risks" — the
+two-`Globals` test where Stage A produces `SyntaxContext(1)` and a
+prior-`apply_mark`-warmed Stage B produces `SyntaxContext(2)` for
+the same conceptual binding.
 
-3. **Same SWC version, same chunk source bytes.** The resolver
-   algorithm and its visit order must match what Stage A used. Cache
-   key for the Stage A artifact must include the ducktape (and
-   thereby SWC) version.
+## Reader audiences
 
-4. **The resolver's per-Globals state is deterministic.** This is the
-   open one. SWC's resolver is a sequential `Visit` over the AST;
-   `Mark::new()` is a counter, `apply_mark` interns into a `Vec` in
-   call order. None of this is overtly nondeterministic. But the
-   resolver is implemented in `swc_ecma_transforms_base::resolver`
-   and could in principle introduce thread-local randomness,
-   parallelism, or HashMap iteration order in some future version.
-   We haven't pinned a regression test that catches such a change.
+| Consumer | Reads | Cross-process? |
+|---|---|---|
+| Spec author with `jq` | `owner_graph.json`, `cycles.json`, `atomic_unit_conflicts.json` | yes (Atom-only) |
+| `peel scc` / `peel units` / `peel patch-plan` / `peel graph-summary` | `owner_graph.json` + spec | yes (Atom-only) |
+| `peel plan-work` | `owner_graph.json` + spec | yes (Atom-only) |
+| `debundle module merge` (today) | spec YAMLs only | yes |
+| Future `binding describe` / top-level `scc` / `cluster` / `binding show-code` | `owner_graph.json`, `atomic_units.json`, source bytes | yes (Atom-only; planned) |
+| Debugging human inspecting `facts.json` | `facts.json` | NO — same-process only |
+| Materializer (`debundle run`) | spec + chunk bytes + everything in-process | N/A — always in-process |
 
-### What needs to land before relying on this
+## Status of related tasks
 
-Before building `materialize_from_analysis` (task #78) — the
-cross-process Stage B reader — on top of the current wire format:
-
-1. **A determinism regression test.** Round-trip an `Id` through
-   `facts.json` across two fresh `Globals` (in the same process, sequenced)
-   and assert equality. Repeat across a non-trivial fixture (every
-   `StatementFacts` field, every `IdReport`-bearing position, both the
-   chunk-top-level case and the shadowed-closure-local case described
-   above). If this passes, point future readers at the test as the
-   load-bearing contract.
-
-2. **A doc-comment in `facts/wire.rs`** stating the four conditions
-   above as the Stage B reader's contract.
-
-3. **A `swc` version pin** in the Stage A manifest. The current
-   `manifest.json` already carries `schema_version`; add a
-   `swc_ecma_ast_version` (or `ducktape_version`) field so a reader
-   refusing to honor it fails fast rather than silently corrupting.
-
-If the determinism test fails (or proves too brittle to commit to), the
-alternatives are:
-
-- **Pre-filter facts.json**: drop any `Id` from `StatementFacts`
-  whose ctxt isn't in `{empty, top_level_ctxt}` before serialization.
-  Then the Atom-only convention applies, downstream sees no semantic
-  difference (owner-graph build already drops these), and the wire
-  format becomes portable. **Cost**: facts.json stops being a faithful
-  mirror of `StatementFacts` — closure-local reads silently disappear.
-  Inspection tooling that wants closure-local detail (does any exist?)
-  would need a separate raw artifact.
-
-- **Don't put facts.json on the cross-process path**: keep it as an
-  in-process inspection artifact (CLI tooling, debugging humans),
-  have cross-process Stage B re-run `analyze_chunk` from its own
-  re-parsed AST. Parsing is cheap (~1-2s for the gaffer chunk);
-  re-running analyze_chunk on a parsed module is cheaper still. Stage
-  A's cacheable value shrinks accordingly.
-
-The right choice depends on what value Stage B actually extracts from
-a cached `facts.json`. If it's only the structural conclusions
-(atomic units, owner graph), Stage A's cache could omit the facts
-entirely. If Stage B uses facts.json to skip `analyze_chunk` itself,
-the determinism path is the only one that preserves that benefit.
+- ~~Task #78 (`materialize_from_analysis` read-from-disk entry
+  point)~~ — **dropped**. The use case it served (cross-process
+  Stage B for the materializer) is no longer a goal. The cache
+  value users will actually feel comes from the query CLIs, not
+  from caching Stage B's inputs.
+- ~~Task #79 (Wire format redesign: drop SyntaxContext)~~ —
+  **dropped**. The redesign was a prerequisite for #78; with #78
+  dropped, the `IdReport { name, ctxt: u32 }` shape stays as the
+  debug-only artifact format it is today.
+- New work tracked as separate tasks: `binding describe`,
+  top-level `scc`, `cluster`, `binding show-code` — all readers of
+  the existing Atom-only artifacts.
 
 ## Reconstruction recipe (current state)
 
