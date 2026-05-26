@@ -75,6 +75,7 @@ with a list. Use the minified form to disambiguate.
 | `debundle bindings list [--in <module>] [--unrenamed] [--orphan]` | no         | List bindings in the chunk with summary stats (home module, current readable name if any, atom-membership flag). Filters available for the common reverse-lookup cases (e.g. `--unrenamed` to find bindings still using the minified name).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | **planned**       |
 | `debundle bindings assign <sym>:<module>[:<readable>] …`          | yes (spec) | Move one or more bindings into named logical modules **atomically**. Each positional argument is colon-separated: `<sym>:<module>` to move and keep the current name, `<sym>:<module>:<readable>` to move and rename in the same step. `<sym>` accepts minified or readable form; the optional third field always sets the new readable `name:`. **Neither `<sym>` nor `<readable>` may contain `:`** — use `--batch` JSON for any edge case where they do. `--batch <file.json>` (or `--batch -` for stdin) reads moves as a JSON array of `{sym, module, readable?}` objects (or `modules propose`'s native output shape). Validation runs on the _whole batch's_ post-state. Destination modules are auto-created if they don't yet exist; source modules that become empty after the move are deleted. Default: validate + apply atomically. `--no-verify` / `--dry-run` available. See "Batch atomicity" below. | **planned** (#82) |
 | `debundle bindings rename <original> <readable>`                  | yes (spec) | Rename a binding's readable `name:` without moving it. `<original>` accepts minified or current readable form. Neither `<original>` nor `<readable>` may contain `:`. Validation here is name-collision detection (no two bindings in the chunk get the same readable name). Mostly a convenience over `bindings assign` for the rename-without-move case. `--no-verify` / `--dry-run` available.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | **planned** (#82) |
+| `debundle bindings comment <sym> [text] [--edit] [--clear]`       | yes (spec) | Set, read, or clear a binding's `comment:` field. Positional `"text"` replaces the comment with the literal arg. `--edit` opens `$EDITOR` (fallback `$VISUAL`, then `vi`) on a temp file pre-populated with the current comment. `--clear` removes the field. With no extra args, prints the current comment (empty if none; plain text on tty, JSON on pipe). `<sym>` accepts minified or readable. Validation is shape-preservation (YAML still parses); comments don't affect factorization, so `--no-verify` is a no-op. `--dry-run` previews without writing. JS emission of comments lands with #88.                                                                                                                                                                                                                                                                                                              | shipped (#89)     |
 
 ### Modules
 
@@ -83,6 +84,7 @@ with a list. Use the minified form to disambiguate.
 | `debundle modules list [--empty] [--residual] [--unassigned-bindings]` | no         | List all modules in the spec with summary stats (member count, atom membership, residual flag). Filters available for the common reverse-lookup cases.                                                                                                                                                                                             | **planned**                                                                                |
 | `debundle modules merge --target <T> <sources...>`                     | yes (spec) | Splice `members:` + `anonymous_statements:` from each source YAML into `<T>`; delete the sources. Default: validate + apply. `--no-verify` / `--dry-run` available.                                                                                                                                                                                | shipped (as `module merge`; **planned rename** to `modules merge` + validation hookup #84) |
 | `debundle modules propose`                                             | no         | Emit factorizer proposals (binding → module assignment recommendations) + diagnostics derived from the atomic DAG. Read-only — surfaces _suggested_ assignments; applying them requires `bindings assign`. The JSON output shape is one of the input shapes `bindings assign --batch` accepts (see "Batch atomicity" below). Was `peel plan-work`. | shipped (as `peel plan-work`; **planned rename**)                                          |
+| `debundle modules comment <module> [text] [--edit] [--clear]`          | yes (spec) | Set, read, or clear a module's top-level `comment:` field. Same three modes as `bindings comment` (positional text / `--edit` / `--clear`; bare invocation reads). `<module>` is the module path relative to `$MODULES` (e.g. `runtime/plugins`). Module-level comments protect a module from auto-delete when `bindings assign` drains its members. `--no-verify` is a no-op; `--dry-run` previews without writing. JS emission lands with #88.                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | shipped (#89)                                                                              |
 
 Renaming or disabling a module is **not** a CLI operation — it's a
 plain `mv` on the YAML file. The spec compiler infers the module
@@ -309,30 +311,39 @@ as a structured object so machine readers can parse it.
   YAML preview) is a documented TODO in the codebase but not in
   v1.
 - **Tab completion.** Not in v1.
-- **Per-member and module-level `comment:` fields in the spec**
-  that the lowering pass emits as JS comments. Tracked separately
-  (#88 spec/lowering, #89 CLI editing). Surface today (in v1):
-  - Each `members[]` entry may carry an optional `comment:` field;
-    emitted as a `// ...` block above the binding's owner statement.
-  - Module YAMLs may carry a top-level `comment:` field; emitted as
-    a `// ...` block at the top of the generated `.js` file.
-  - `bindings assign` carries member comments with the member as
-    bindings move between modules (the comment is part of the
-    member entry; the move is a YAML splice).
-  - `bindings assign` will only auto-delete a drained module if the
-    module-level `comment:` is empty/absent. Modules whose bindings
-    all moved away but that still carry a module-level doc are
-    kept as empty `members: []` files.
-  - `modules merge` concatenates source-module comments into the
-    target's module-level `comment:` (with a `--- from <source>:`
-    divider) when sources have non-empty comments.
-  - CLI edits via `debundle bindings comment <sym>` and
-    `debundle modules comment <module>` (set / `--edit` /
-    `--clear`).
+## Comments
 
-  The point is to give RE annotations a home that survives re-runs
-  of the pipeline; the comments are authored once in YAML and
-  propagate to the emitted JS on every rebuild.
+The spec carries reverse-engineering annotations as `comment:`
+fields on members and modules. They survive `debundle run` because
+they live in the spec, not the generated JS — so RE notes accumulate
+in YAML and propagate to the emitted output on every rebuild.
+
+State of the feature (2026-05):
+
+- **CLI editing**: shipped (#89). `debundle bindings comment <sym>`
+  and `debundle modules comment <module>` set / read / `--edit` /
+  `--clear` the field.
+- **Spec + lowering**: planned (#88). The `comment:` field is
+  parsed in the spec today (CLI editing relies on that) but the
+  lowering pass does not yet emit it as a JS comment block. Until
+  #88 lands, comments live in YAML only.
+
+Move semantics (these are properties of the existing CLI surface,
+not separate features):
+
+- `bindings assign` carries member comments with the member as it
+  moves between modules. The comment is part of the member entry;
+  the move is a YAML splice, so it round-trips.
+- `bindings assign` auto-deletes a drained source module only when
+  its module-level `comment:` is empty/absent. A module with a
+  module-level doc but no remaining members is kept as a
+  `members: []` shell.
+- `modules merge` concatenates source-module comments into the
+  target's module-level `comment:` (with a `--- from <source>:`
+  divider) when sources have non-empty comments.
+
+See README.md → "Comments" for the YAML schema and worked CLI
+examples.
 
 ## See also
 

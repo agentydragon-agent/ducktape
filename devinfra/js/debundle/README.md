@@ -4,11 +4,20 @@
 spec, emits a decomposed module tree, and writes analysis artifacts that help
 drive later module peel and naming work.
 
-The command has two public surfaces:
+The command surfaces:
 
 - `debundle run`: execute the transform pipeline.
-- `debundle peel`: query generated owner graphs and spec modules for planning
-  module extraction work.
+- `debundle peel <…>`: query generated owner graphs and spec modules for
+  planning module extraction work. (Being lifted to top-level
+  `debundle atoms` / `coverage` / `describe` / `show-source` /
+  `graph-summary` / `modules propose` — see `docs/cli.md`.)
+- `debundle module merge`: splice module YAMLs (will become
+  `modules merge`).
+- `debundle bindings comment <sym>` / `debundle modules comment <module>`:
+  set, read, or clear the `comment:` field on a binding or module — see
+  "Comments" below.
+
+For the full command surface (shipped + planned), see `docs/cli.md`.
 
 ## CLI
 
@@ -177,3 +186,85 @@ MODULES=<spec-root>/modules
 SOURCE_ROOT=<debundle-output>/app
 DEBUNDLE_OUT=<debundle-output-root>
 ```
+
+## Comments
+
+Both members and module YAMLs may carry an optional `comment:`
+field for reverse-engineering annotations. The fields are authored
+once and propagate to the emitted JS on every rebuild, so RE notes
+survive `debundle run` invocations.
+
+```yaml
+# Module YAML
+comment: |
+  Plugin settings registry. Top-level home for state related to the
+  plugin extension surface.
+
+members:
+  - name: PluginSettingsAccessor
+    selector:
+      binding: { name: XOe, kind: variable_declarator }
+    comment: |
+      Accessor for plugin settings registered via the plugin
+      system's register() hook. Side-effect free.
+```
+
+Edit them via the CLI:
+
+```sh
+# Set a member's comment from a positional arg.
+debundle bindings comment XOe "Accessor for plugin settings..." \
+  --modules "$MODULES"
+
+# Open $EDITOR pre-populated with the current comment.
+debundle bindings comment XOe --edit --modules "$MODULES"
+
+# Remove the comment entirely.
+debundle bindings comment XOe --clear --modules "$MODULES"
+
+# Read the current comment (plain text on tty, JSON on pipe).
+debundle bindings comment XOe --modules "$MODULES"
+
+# Same three modes for module-level comments.
+debundle modules comment runtime/plugins --edit --modules "$MODULES"
+```
+
+`bindings comment` accepts minified (`XOe`) or readable
+(`PluginSettingsAccessor`) names. `modules comment` takes the
+module path (`runtime/plugins`) relative to `$MODULES`.
+
+JS emission of these comments is on the roadmap (#88); CLI editing
+is live today (#89).
+
+## Conditionally-correct optimizations
+
+Some analyses in this crate are **conditionally correct**: they are sound
+only when the input bundle avoids a small set of dynamic-dispatch shapes
+that defeat static reasoning. Each such pass checks the precondition on
+the statements it would fire on and falls back to a strictly-conservative
+path when the check fails — see AGENTS.md → "Conditionally-correct
+optimizations" for the soundness rule.
+
+The first such pass is the dataflow-aware S-chain in `graph.rs`, opted
+into per chunk via
+`chunk_analysis_options.<chunk_id>.dataflow_aware_s_chain` in the spec.
+It is sound when no top-level statement contains:
+
+- direct `eval(...)` / `(0, eval)(...)`
+- `with (obj) { ... }`
+- `new Function(...)` / `Function(...)`
+- computed-key `globalThis[<expr>]` / `window[<expr>]` / `self[<expr>]`
+- `Object.defineProperty` / `Reflect.defineProperty` on a global
+- `new Proxy(<global>, ...)`
+- dynamic member-key reads/writes on outer-scope bindings the pass
+  would otherwise track
+
+Each impure top-level statement carries a `dataflow_summarizable` bit
+(`facts/wire.rs`). Statements that fail the check fall back to the
+strictly-conservative S-chain (every adjacent impure pair gets an
+edge), so the optimization is safe to enable even on bundles that
+mix audited and unaudited code — only the unsummarizable statements
+pay the conservative cost.
+
+See `DESIGN.md` → "Emission modes" for the precise dataflow-aware
+emission rule.

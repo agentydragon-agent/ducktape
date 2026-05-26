@@ -12,6 +12,8 @@ Read bundled references as needed:
 
 - `references/workflow.md` for handoffs and scratch-state conventions
 - `references/guide.md` for common graph/source query surfaces
+- `references/cli.md` for the full `debundle` command surface
+- `references/README.md` for the crate pitch + Comments
 - `references/module_shape.md` for destination and cohesion heuristics
 
 ## Inputs

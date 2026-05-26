@@ -12,6 +12,8 @@ Read bundled references as needed:
 
 - `references/workflow.md` for the shared multi-agent workflow
 - `references/guide.md` for common CLI evidence surfaces
+- `references/cli.md` for the full `debundle` command surface
+- `references/README.md` for the crate pitch + Bazel integration + Comments
 - `references/module_shape.md` for when to route to architect or lane workers
 
 ## Adapter Contract

@@ -13,6 +13,8 @@ Read bundled references as needed:
 
 - `references/workflow.md` for role boundaries and failure routing
 - `references/guide.md` for graph/source/gate evidence conventions
+- `references/cli.md` for the full `debundle` command surface
+- `references/README.md` for the crate pitch + Comments
 - `references/module_shape.md` for seam and layer-ownership heuristics
 
 ## Inputs

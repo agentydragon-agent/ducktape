@@ -6,9 +6,12 @@ This guide describes the shared `debundle` command surface.
   tree-shaped spec.
 - `debundle peel ...` runs read-only graph/spec/source queries for AI
   workflow roles planning module peel work.
+- `debundle bindings comment <sym>` / `debundle modules comment <module>`
+  manage `comment:` fields on members and modules — see "Comments"
+  below.
 
-Use this with `debundle_plan_work`, which is the detailed command guide for
-`debundle peel`.
+For the full command surface (shipped + planned), see the companion
+`cli.md` and `README.md` in this skill bundle.
 
 ## Common Inputs
 
@@ -96,6 +99,27 @@ semantic dependency counts by kind, and full symbol/file attribution for the
 boundary crossings that make a directory leaky or well-encapsulated. Treat
 them as graph evidence to pair with source reading, not as a substitute for
 understanding the implementation.
+
+## Comments
+
+Members and module YAMLs may carry `comment:` fields for RE notes.
+Set / read / `--edit` / `--clear` them via:
+
+```bash
+# Member comment (binding can be minified or readable name).
+debundle bindings comment XOe "Plugin settings accessor..." \
+  --modules "$MODULES"
+debundle bindings comment XOe --edit  --modules "$MODULES"
+debundle bindings comment XOe --clear --modules "$MODULES"
+debundle bindings comment XOe         --modules "$MODULES"  # read
+
+# Module comment (path relative to $MODULES).
+debundle modules comment runtime/plugins --edit --modules "$MODULES"
+```
+
+CLI editing is live today; JS emission of the comments lands with
+#88. See `README.md` and `cli.md` for the full schema and move
+semantics (auto-delete protection, merge concatenation, etc.).
 
 ## Gate Discipline
 
