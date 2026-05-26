@@ -8,7 +8,8 @@ B5 follow-up that tracks bundling this into typed views."""
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
@@ -23,12 +24,8 @@ from augur.sim.compiler.helpers import (
     slot,
 )
 from augur.sim.compiler.properties import LiabilityCompileOutput, PropertyCompileOutput
+from augur.sim.compiler.tax import TaxCompileOutput
 from augur.sim.scenario import RecurringObligation, Scenario, ScheduledObligation
-
-if TYPE_CHECKING:
-    from augur.sim.compiler import TaxCompileOutput
-
-from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
