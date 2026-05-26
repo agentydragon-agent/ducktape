@@ -1570,6 +1570,21 @@ function LifecycleEventValueField({ event, onChange }) {
   return null;
 }
 
+// Shared control for any "this amount should track inflation" toggle. Centralizing the wording
+// + styling here keeps the spend / cash-buffer / PE-floor / future indexing flags consistent —
+// when we later swap inflation for a multi-series picker, only this component changes.
+function IndexToInflationToggle({ checked, disabled = false, onChange, className = "" }) {
+  return (
+    <Checkbox
+      className={className}
+      label="Index to inflation"
+      checked={Boolean(checked)}
+      disabled={disabled}
+      onChange={(event) => onChange(event.currentTarget.checked)}
+    />
+  );
+}
+
 function RentalPanel({ input, property, onChange }) {
   const propertyRentEstimate = property?.rentEstimateUsd ?? null;
   const rentPlaceholder =
@@ -1990,11 +2005,10 @@ function ProductProjectionWorkspace({ bootstrap }) {
                   prefix="$"
                   onChange={(monthlySpendUsd) => updateInput({ monthlySpendUsd })}
                 />
-                <Checkbox
+                <IndexToInflationToggle
                   className="mt-2"
-                  label="Index to inflation"
                   checked={input.spendIndex === "inflation"}
-                  onChange={(event) => updateInput({ spendIndex: event.currentTarget.checked ? "inflation" : "none" })}
+                  onChange={(checked) => updateInput({ spendIndex: checked ? "inflation" : "none" })}
                 />
               </div>
               <div className="grid gap-3 px-4 py-3 sm:grid-cols-2">
@@ -2048,12 +2062,11 @@ function ProductProjectionWorkspace({ bootstrap }) {
                     onChange={(cashBufferSaleUsd) => updateInput({ cashBufferSaleUsd })}
                   />
                 </div>
-                <Checkbox
+                <IndexToInflationToggle
                   className="mt-2"
-                  label="Index to inflation"
-                  checked={Boolean(input.cashBufferIndexToInflation)}
+                  checked={input.cashBufferIndexToInflation}
                   disabled={!input.sellOrder}
-                  onChange={(event) => updateInput({ cashBufferIndexToInflation: event.currentTarget.checked })}
+                  onChange={(checked) => updateInput({ cashBufferIndexToInflation: checked })}
                 />
                 <div className="mt-3 text-xs augur-muted">
                   PE tenders: sell enough at each modeled tender event to lift liquid net worth (cash + non-PE holdings)
@@ -2068,11 +2081,10 @@ function ProductProjectionWorkspace({ bootstrap }) {
                     prefix="$"
                     onChange={(peLnwFloorUsd) => updateInput({ peLnwFloorUsd })}
                   />
-                  <Checkbox
-                    label="Index to inflation"
-                    checked={Boolean(input.peIndexFloorToInflation)}
+                  <IndexToInflationToggle
+                    checked={input.peIndexFloorToInflation}
                     disabled={Number(input.peLnwFloorUsd) <= 0}
-                    onChange={(event) => updateInput({ peIndexFloorToInflation: event.currentTarget.checked })}
+                    onChange={(checked) => updateInput({ peIndexFloorToInflation: checked })}
                   />
                 </div>
               </div>
