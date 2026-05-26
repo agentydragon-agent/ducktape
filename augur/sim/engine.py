@@ -7,6 +7,7 @@ from typing import Any
 
 import numpy as np
 import polars as pl
+from numpy.typing import NDArray
 
 from augur.sim.compiler import (
     LIFECYCLE_KIND_CAPITAL_IMPROVEMENT,
@@ -55,35 +56,35 @@ def _expect_array(name: str, array: np.ndarray, *, shape: tuple[int, ...], dtype
 
 @dataclass
 class StateHistoryBuffers:
-    cash_state: np.ndarray
-    lot_state: np.ndarray
-    ordinary_state: np.ndarray
-    capital_gain_active_state: np.ndarray
-    capital_gain_state: np.ndarray
-    tax_liability_active_state: np.ndarray
-    tax_liability_state: np.ndarray
-    property_active_state: np.ndarray
-    property_basis_state: np.ndarray
-    property_ownership_state: np.ndarray
-    property_contribution_state: np.ndarray
-    property_equity_state: np.ndarray
-    liability_active_state: np.ndarray
-    liability_principal_state: np.ndarray
-    liability_monthly_payment_state: np.ndarray
-    liability_interest_ytd_state: np.ndarray
-    liability_principal_ytd_state: np.ndarray
+    cash_state: NDArray[np.float64]
+    lot_state: NDArray[np.float64]
+    ordinary_state: NDArray[np.float64]
+    capital_gain_active_state: NDArray[np.bool_]
+    capital_gain_state: NDArray[np.float64]
+    tax_liability_active_state: NDArray[np.bool_]
+    tax_liability_state: NDArray[np.float64]
+    property_active_state: NDArray[np.bool_]
+    property_basis_state: NDArray[np.float64]
+    property_ownership_state: NDArray[np.float64]
+    property_contribution_state: NDArray[np.float64]
+    property_equity_state: NDArray[np.float64]
+    liability_active_state: NDArray[np.bool_]
+    liability_principal_state: NDArray[np.float64]
+    liability_monthly_payment_state: NDArray[np.float64]
+    liability_interest_ytd_state: NDArray[np.float64]
+    liability_principal_ytd_state: NDArray[np.float64]
     # Cumulative §168 depreciation USD per (snapshot_month, rollout, property). Monotone
     # non-decreasing; accrues monthly while a property has rented_fraction > 0. Used at sale
     # time for §1250 unrecaptured-depreciation recapture (phase 4) and at year-end for the
     # Schedule E depreciation deduction (the YTD slice is computed from the delta between
     # consecutive snapshots).
-    property_cumulative_depreciation_state: np.ndarray
+    property_cumulative_depreciation_state: NDArray[np.float64]
     # Cumulative count of owner-occupied months per (snapshot_month, rollout, property). Used
     # at sale time to compute the §121 24-of-last-60-months test by subtracting the 60-mo-ago
     # snapshot from the current cumulative count.
-    property_owner_occupied_months_state: np.ndarray
-    rollout_failed_state: np.ndarray
-    rollout_failed_month_state: np.ndarray
+    property_owner_occupied_months_state: NDArray[np.int64]
+    rollout_failed_state: NDArray[np.bool_]
+    rollout_failed_month_state: NDArray[np.int64]
 
     def validate(self, plan: SlotPlan) -> None:
         s = plan.snapshot_months
@@ -178,61 +179,61 @@ class StateHistoryBuffers:
 
 @dataclass
 class CurrentStateBuffers:
-    cash: np.ndarray
-    lot_remaining: np.ndarray
-    ordinary_ytd: np.ndarray
-    capital_gain_active: np.ndarray
-    capital_gain_ytd: np.ndarray
-    tax_liability_active: np.ndarray
-    tax_liability_amount: np.ndarray
-    property_active: np.ndarray
-    property_basis: np.ndarray
-    property_ownership: np.ndarray
-    property_contribution: np.ndarray
-    property_equity: np.ndarray
-    liability_active: np.ndarray
-    liability_principal: np.ndarray
-    liability_monthly_payment: np.ndarray
-    liability_interest_ytd: np.ndarray
-    liability_principal_ytd: np.ndarray
+    cash: NDArray[np.float64]
+    lot_remaining: NDArray[np.float64]
+    ordinary_ytd: NDArray[np.float64]
+    capital_gain_active: NDArray[np.bool_]
+    capital_gain_ytd: NDArray[np.float64]
+    tax_liability_active: NDArray[np.bool_]
+    tax_liability_amount: NDArray[np.float64]
+    property_active: NDArray[np.bool_]
+    property_basis: NDArray[np.float64]
+    property_ownership: NDArray[np.float64]
+    property_contribution: NDArray[np.float64]
+    property_equity: NDArray[np.float64]
+    liability_active: NDArray[np.bool_]
+    liability_principal: NDArray[np.float64]
+    liability_monthly_payment: NDArray[np.float64]
+    liability_interest_ytd: NDArray[np.float64]
+    liability_principal_ytd: NDArray[np.float64]
     # Property-tax USD paid this calendar year, per (rollout, profile). Property-tax obligation
     # settlements add to this so the federal SALT pass at year-end can read accumulated SALT.
     # Zeroed in the year-end accrual after federal SALT has been consumed.
-    property_tax_ytd: np.ndarray
+    property_tax_ytd: NDArray[np.float64]
     # Cumulative §168 depreciation per (rollout, property). Monotone non-decreasing; accrues
     # monthly while rented_fraction > 0. Used for Schedule E deduction (delta-vs-prior-year-end)
     # and §1250 recapture at sale (phase 4).
-    property_cumulative_depreciation: np.ndarray
+    property_cumulative_depreciation: NDArray[np.float64]
     # YTD depreciation accrued this calendar year per (rollout, property). Used at year-end to
     # deduct Schedule E depreciation from the owner's ordinary_ytd; zeroed after.
-    property_depreciation_ytd: np.ndarray
+    property_depreciation_ytd: NDArray[np.float64]
     # Runtime rented_fraction per (rollout, property) (0..1). Initialized at scenario start from
     # `plan.property_rented_fraction[prop]` and mutated by `_apply_lifecycle_events` when
     # PropertyLifecycleEvent rows fire mid-horizon. Depreciation accrual, MID computation, and
     # Schedule E rental interest all read this each month.
-    property_rented_fraction: np.ndarray
+    property_rented_fraction: NDArray[np.float64]
     # Runtime depreciable building basis per (rollout, property). Initialized from
     # `plan.property_building_basis[prop]` and bumped by `CapitalImprovementEvent`. Depreciation
     # accrual multiplies this by `current.property_rented_fraction[r, p] / (27.5 × 12)` monthly.
-    property_building_basis: np.ndarray
+    property_building_basis: NDArray[np.float64]
     # Cumulative count of owner-occupied months per (rollout, property). Increments by 1 each
     # month while `property_active[:, p] AND property_rented_fraction[:, p] < 1.0`. At sale
     # time the engine looks back 60 months by subtracting the 60-mo-ago snapshot — qualifies
     # for §121 if the difference is ≥ 24.
-    property_owner_occupied_months: np.ndarray
+    property_owner_occupied_months: NDArray[np.int64]
     # YTD §1250 unrecaptured-depreciation gain per (rollout, tax_profile). Populated by
     # PropertySaleEvent. At year-end, federal taxes this at min(25%, marginal); CA taxes as
     # ordinary (added back to bracket input). Zeroed at year-end.
-    recapture_section_1250_ytd: np.ndarray
+    recapture_section_1250_ytd: NDArray[np.float64]
     # Rented-share of YTD mortgage interest per (rollout, liability). Each mortgage payment
     # accrues `interest × current.property_rented_fraction[r, prop_of_lia]` into this buffer.
     # At year-end:
     #   MID owner-share interest = liability_interest_ytd - liability_rental_interest_ytd
     #   Schedule E rental interest = liability_rental_interest_ytd (deducted from ordinary_ytd).
     # Reset annually.
-    liability_rental_interest_ytd: np.ndarray
-    failed: np.ndarray
-    failed_month: np.ndarray
+    liability_rental_interest_ytd: NDArray[np.float64]
+    failed: NDArray[np.bool_]
+    failed_month: NDArray[np.int64]
 
     def validate(self, plan: SlotPlan) -> None:
         r = plan.rollout_count
@@ -357,14 +358,14 @@ class LifecycleEventBuffers:
     moment of the sale; for non-sale kinds those arrays stay zero.
     """
 
-    fired: np.ndarray
-    sale_gross_proceeds: np.ndarray
-    sale_mortgage_payoff: np.ndarray
-    sale_net_cash: np.ndarray
-    sale_realized_gain: np.ndarray
-    sale_recapture: np.ndarray
-    sale_section_121_exclusion: np.ndarray
-    sale_long_term_gain: np.ndarray
+    fired: NDArray[np.bool_]
+    sale_gross_proceeds: NDArray[np.float64]
+    sale_mortgage_payoff: NDArray[np.float64]
+    sale_net_cash: NDArray[np.float64]
+    sale_realized_gain: NDArray[np.float64]
+    sale_recapture: NDArray[np.float64]
+    sale_section_121_exclusion: NDArray[np.float64]
+    sale_long_term_gain: NDArray[np.float64]
 
     def validate(self, plan: SlotPlan, event_count: int) -> None:
         shape = (max(1, event_count), plan.rollout_count)
@@ -383,8 +384,8 @@ class LifecycleEventBuffers:
 
 @dataclass
 class TransferEventBuffers:
-    transfer_active: np.ndarray
-    transfer_amount: np.ndarray
+    transfer_active: NDArray[np.bool_]
+    transfer_amount: NDArray[np.float64]
 
     def validate(self, plan: SlotPlan) -> None:
         shape = (plan.event_months, plan.max_transfer_slots, plan.rollout_count)
@@ -394,13 +395,13 @@ class TransferEventBuffers:
 
 @dataclass
 class PropertyEventBuffers:
-    property_transfer_active: np.ndarray
-    property_purchase_active: np.ndarray
-    mortgage_origination_active: np.ndarray
-    mortgage_payment_active: np.ndarray
-    mortgage_payment_interest: np.ndarray
-    mortgage_payment_principal: np.ndarray
-    mortgage_payment_total: np.ndarray
+    property_transfer_active: NDArray[np.bool_]
+    property_purchase_active: NDArray[np.bool_]
+    mortgage_origination_active: NDArray[np.bool_]
+    mortgage_payment_active: NDArray[np.bool_]
+    mortgage_payment_interest: NDArray[np.float64]
+    mortgage_payment_principal: NDArray[np.float64]
+    mortgage_payment_total: NDArray[np.float64]
 
     def validate(self, plan: SlotPlan) -> None:
         h = plan.event_months
@@ -428,14 +429,14 @@ class PropertyEventBuffers:
 
 @dataclass
 class LotDispositionEventBuffers:
-    sched_disp_active: np.ndarray
-    sched_disp_units: np.ndarray
-    sched_disp_basis: np.ndarray
-    sched_disp_proceeds: np.ndarray
-    liq_disp_active: np.ndarray
-    liq_disp_units: np.ndarray
-    liq_disp_basis: np.ndarray
-    liq_disp_proceeds: np.ndarray
+    sched_disp_active: NDArray[np.bool_]
+    sched_disp_units: NDArray[np.float64]
+    sched_disp_basis: NDArray[np.float64]
+    sched_disp_proceeds: NDArray[np.float64]
+    liq_disp_active: NDArray[np.bool_]
+    liq_disp_units: NDArray[np.float64]
+    liq_disp_basis: NDArray[np.float64]
+    liq_disp_proceeds: NDArray[np.float64]
 
     def validate(self, plan: SlotPlan) -> None:
         h = plan.event_months
@@ -455,22 +456,22 @@ class LotDispositionEventBuffers:
 
 @dataclass
 class TaxEventBuffers:
-    tax_accrual_active: np.ndarray
-    tax_accrual_amount: np.ndarray
-    tax_breakdown_ordinary: np.ndarray
-    tax_breakdown_ltcg: np.ndarray
-    tax_breakdown_stcg: np.ndarray
-    tax_breakdown_standard_deduction: np.ndarray
-    tax_breakdown_mortgage_interest_deduction: np.ndarray
-    tax_breakdown_salt_deduction: np.ndarray
-    tax_breakdown_itemized_deduction: np.ndarray
-    tax_breakdown_ordinary_taxable: np.ndarray
-    tax_breakdown_capital_taxable: np.ndarray
-    tax_breakdown_ordinary_tax: np.ndarray
-    tax_breakdown_capital_tax: np.ndarray
-    tax_settlement_active: np.ndarray
-    tax_settlement_amount: np.ndarray
-    tax_settlement_year_end_month: np.ndarray
+    tax_accrual_active: NDArray[np.bool_]
+    tax_accrual_amount: NDArray[np.float64]
+    tax_breakdown_ordinary: NDArray[np.float64]
+    tax_breakdown_ltcg: NDArray[np.float64]
+    tax_breakdown_stcg: NDArray[np.float64]
+    tax_breakdown_standard_deduction: NDArray[np.float64]
+    tax_breakdown_mortgage_interest_deduction: NDArray[np.float64]
+    tax_breakdown_salt_deduction: NDArray[np.float64]
+    tax_breakdown_itemized_deduction: NDArray[np.float64]
+    tax_breakdown_ordinary_taxable: NDArray[np.float64]
+    tax_breakdown_capital_taxable: NDArray[np.float64]
+    tax_breakdown_ordinary_tax: NDArray[np.float64]
+    tax_breakdown_capital_tax: NDArray[np.float64]
+    tax_settlement_active: NDArray[np.bool_]
+    tax_settlement_amount: NDArray[np.float64]
+    tax_settlement_year_end_month: NDArray[np.int64]
 
     def validate(self, plan: SlotPlan) -> None:
         h = plan.event_months
@@ -530,12 +531,12 @@ class TaxEventBuffers:
 
 @dataclass
 class ObligationEventBuffers:
-    obligation_active: np.ndarray
-    obligation_due: np.ndarray
-    obligation_paid: np.ndarray
-    obligation_shortfall: np.ndarray
-    obligation_attempt_policy: np.ndarray
-    obligation_failure_active: np.ndarray
+    obligation_active: NDArray[np.bool_]
+    obligation_due: NDArray[np.float64]
+    obligation_paid: NDArray[np.float64]
+    obligation_shortfall: NDArray[np.float64]
+    obligation_attempt_policy: NDArray[np.int64]
+    obligation_failure_active: NDArray[np.bool_]
 
     def validate(self, plan: SlotPlan) -> None:
         shape = (plan.event_months, plan.max_obligation_slots, plan.rollout_count)
