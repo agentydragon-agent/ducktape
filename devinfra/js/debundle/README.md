@@ -2,30 +2,41 @@
 
 `debundle` is a JavaScript bundle restructuring tool. It reads a transform
 spec, emits a decomposed module tree, and writes analysis artifacts that help
-drive later module peel and naming work.
-
-The command surfaces:
-
-- `debundle run`: execute the transform pipeline.
-- `debundle peel <…>`: query generated owner graphs and spec modules for
-  planning module extraction work. (Being lifted to top-level
-  `debundle atoms` / `coverage` / `describe` / `show-source` /
-  `graph-summary` / `modules propose` — see `docs/cli.md`.)
-- `debundle module merge`: splice module YAMLs (will become
-  `modules merge`).
-- `debundle bindings comment <sym>` / `debundle modules comment <module>`:
-  set, read, or clear the `comment:` field on a binding or module — see
-  "Comments" below.
-
-For the full command surface (shipped + planned), see `docs/cli.md`.
+drive later module extraction and naming work.
 
 ## CLI
 
-Run a flat spec:
+See `docs/cli.md` for the full command reference (shipped + planned).
+See `docs/guide.md` for step-by-step workflows.
 
-```sh
-debundle run --spec transform-spec.yaml
-```
+Cheat sheet of the most-used commands:
+
+- `debundle run` — execute the transform pipeline (parse + facts +
+  owner_graph + realizability gate + lower + emit).
+- `debundle bindings assign <sym>:<module>[:<readable>]` — move a
+  binding (single, multi-positional, or `--batch <file.json>`).
+- `debundle bindings rename <original> <readable>` — rename without
+  moving.
+- `debundle modules propose` — factorizer-derived move proposals;
+  JSON output composes directly into `bindings assign --batch -`.
+- `debundle modules merge --target <T> <sources...>` — splice module
+  YAMLs.
+- `debundle describe <id>` / `debundle show-source <id>` — graph +
+  source context for any binding / module / atom / owner / proposal /
+  diagnostic ID.
+- `debundle bindings comment <sym>` / `debundle modules comment <module>` —
+  edit `comment:` fields (see "Comments" below).
+
+Mutating commands (`bindings assign`, `bindings rename`, `modules
+merge`) run the realizability gate by default; `--dry-run` previews,
+`--no-verify` skips. Read-only commands accept `--format
+text|json|ndjson` (default `text` on tty, `json` on pipe).
+
+Common arg paths accept env-var defaults (`DEBUNDLE_GRAPH`,
+`DEBUNDLE_MODULES`, `DEBUNDLE_SOURCE_ROOT`, `DEBUNDLE_OUT`). Set them
+once per session.
+
+## Getting started
 
 Run a tree-shaped authoring spec:
 
@@ -38,22 +49,8 @@ debundle run \
   --out-root bazel-bin/example/debundle.out
 ```
 
-Vendor-package source lookup can be supplied either as repeated explicit roots:
-
-```sh
-debundle run ... \
-  --package-root react=/path/to/node_modules/react \
-  --package-root zod=/path/to/node_modules/zod
-```
-
-or as a package tree:
-
-```sh
-debundle run ... --packages-root /path/to/node_modules
-```
-
-The package-tree form resolves package names as paths under `node_modules`,
-including scoped names such as `@scope/pkg`.
+(For other invocation shapes — flat spec, vendor package roots, etc. —
+see `docs/cli.md`.)
 
 ## Bazel Integration
 
@@ -157,36 +154,6 @@ If `perf` is blocked by host kernel settings, use `time`, `massif_heap`, or
 `heaptrack` first and rerun `perf` on a host where userspace sampling is
 available.
 
-## Peel Queries
-
-Generated owner graphs can be queried with `debundle peel`:
-
-```sh
-debundle peel plan-work --graph "$GRAPH" --modules "$MODULES" --limit 25
-debundle peel patch-plan --graph "$GRAPH" --modules "$MODULES" --limit 50
-debundle peel units --graph "$GRAPH" --modules "$MODULES" --readable-only --limit 100
-debundle peel graph-summary --graph "$GRAPH" --modules "$MODULES" --limit 25
-debundle peel explain --graph "$GRAPH" --modules "$MODULES" --proposal-id <id>
-debundle peel explain --graph "$GRAPH" --modules "$MODULES" --unit-id <id>
-debundle peel explain --graph "$GRAPH" --modules "$MODULES" --binding-id <binding>
-debundle peel explain --graph "$GRAPH" --modules "$MODULES" --owner-id <owner>
-debundle peel source-slice --graph "$GRAPH" --modules "$MODULES" \
-  --proposal-id <id> --source-root "$SOURCE_ROOT" --context-lines 40
-```
-
-`explain` and `source-slice` select exactly one object with `--proposal-id`,
-`--unit-id`, `--diagnostic-id`, `--owner-id`, or `--binding-id`; there is no
-`--binding` shorthand.
-
-Typical adapter bindings:
-
-```sh
-GRAPH=<debundle-output>/reports/tree/<chunk-id>/owner_graph.json
-MODULES=<spec-root>/modules
-SOURCE_ROOT=<debundle-output>/app
-DEBUNDLE_OUT=<debundle-output-root>
-```
-
 ## Comments
 
 Both members and module YAMLs may carry an optional `comment:`
@@ -209,29 +176,29 @@ members:
       system's register() hook. Side-effect free.
 ```
 
-Edit them via the CLI:
+Edit them via the CLI (assumes `DEBUNDLE_MODULES` is exported; pass
+`--modules <dir>` otherwise):
 
 ```sh
 # Set a member's comment from a positional arg.
-debundle bindings comment XOe "Accessor for plugin settings..." \
-  --modules "$MODULES"
+debundle bindings comment XOe "Accessor for plugin settings..."
 
 # Open $EDITOR pre-populated with the current comment.
-debundle bindings comment XOe --edit --modules "$MODULES"
+debundle bindings comment XOe --edit
 
 # Remove the comment entirely.
-debundle bindings comment XOe --clear --modules "$MODULES"
+debundle bindings comment XOe --clear
 
 # Read the current comment (plain text on tty, JSON on pipe).
-debundle bindings comment XOe --modules "$MODULES"
+debundle bindings comment XOe
 
 # Same three modes for module-level comments.
-debundle modules comment runtime/plugins --edit --modules "$MODULES"
+debundle modules comment runtime/plugins --edit
 ```
 
 `bindings comment` accepts minified (`XOe`) or readable
 (`PluginSettingsAccessor`) names. `modules comment` takes the
-module path (`runtime/plugins`) relative to `$MODULES`.
+module path (`runtime/plugins`) relative to `$DEBUNDLE_MODULES`.
 
 JS emission of these comments is on the roadmap (#88); CLI editing
 is live today (#89).
