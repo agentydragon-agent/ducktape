@@ -919,7 +919,7 @@ mod tests {
             binding: binding.map(Atom::from),
             statement_ordinal: StatementOrdinal(0),
             constrains_init_order: constrains,
-            at_init_callee_owner: None,
+            role: None,
         }
     }
 

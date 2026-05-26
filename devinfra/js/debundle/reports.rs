@@ -3,11 +3,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use rayon::prelude::*;
 use swc_ecma_ast::Id;
 
-use crate::graph::OwnerEdge;
+use crate::graph::{EdgeRole, OwnerEdge};
 use crate::report_schema::LineRange;
 use crate::{
     AtomicGraphReport, AtomicUnitEdgeReport, AtomicUnitReport, BindingReport, ChunkFactorization,
-    DepKind, LogicalModuleIndex, ModuleId, ModuleReportRef, OwnerGraphEdgeReport,
+    DepKind, EdgeRoleReport, LogicalModuleIndex, ModuleId, ModuleReportRef, OwnerGraphEdgeReport,
     OwnerGraphNodeReport, OwnerGraphQuotientReport, OwnerGraphReport, OwnerId, QuotientEdgeReport,
     QuotientSccReport,
 };
@@ -92,7 +92,7 @@ fn build_owner_nodes_and_edges(
             binding: edge.reason.binding.as_ref().map(|id| id.0.clone()),
             statement_ordinal: edge.reason.statement_ordinal,
             constrains_init_order: edge.reason.constrains_init_order(),
-            at_init_callee_owner: edge.reason.at_init_callee_owner().map(owner_key),
+            role: edge_role_report(edge.reason.role()),
         })
         .collect();
     (nodes, edges)
@@ -401,6 +401,19 @@ pub(crate) fn is_residual_destination(factorization: &ChunkFactorization, id: Mo
 
 pub(crate) fn owner_key(id: OwnerId) -> String {
     format!("owner:{}", id.0)
+}
+
+/// Map a typed [`EdgeRole`] to its wire-format projection. `None`
+/// is shorthand for `EdgeRole::Direct` (skipped from the JSON wire
+/// shape via `skip_serializing_if = Option::is_none`); promoted
+/// edges round-trip through [`EdgeRoleReport::PromotedAtInit`].
+fn edge_role_report(role: EdgeRole) -> Option<EdgeRoleReport> {
+    match role {
+        EdgeRole::Direct => None,
+        EdgeRole::PromotedAtInit { callee_owner } => Some(EdgeRoleReport::PromotedAtInit {
+            callee_owner: owner_key(callee_owner),
+        }),
+    }
 }
 
 pub(crate) fn module_key(id: ModuleId) -> String {

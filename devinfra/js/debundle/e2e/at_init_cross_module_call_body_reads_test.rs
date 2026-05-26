@@ -173,10 +173,17 @@ fn at_init_call_keeps_owner_edge_marked_with_callee() {
          from `triggerInit` ({trigger_owner}) to `crossModBinding` \
          ({target_owner}); got {promoted:#?}\n\nFull owner graph: {graph:#?}",
     );
+    let callee = match promoted[0].role.as_ref() {
+        Some(analysis::EdgeRoleReport::PromotedAtInit { callee_owner }) => callee_owner.as_str(),
+        _ => panic!(
+            "promoted owner edge must carry an `EdgeRole::PromotedAtInit` role \
+             (callee_owner = {gr_owner}); got {:#?}",
+            promoted[0],
+        ),
+    };
     assert_eq!(
-        promoted[0].at_init_callee_owner.as_deref(),
-        Some(gr_owner),
-        "promoted owner edge must carry the at-init callee owner \
+        callee, gr_owner,
+        "promoted owner edge's at-init callee owner must point at gR \
          ({gr_owner}) so the quotient and realizability gates can \
          drop it under cross-module assignment; got {:#?}",
         promoted[0],

@@ -47,8 +47,8 @@ pub use facts::{
     StatementKind, analyze_chunk, find_top_level_await, local_namespace_iife_target,
 };
 pub use graph::{
-    ChunkConstrainingEdgeSet, DepKind, EdgeMetadata, EdgeReason, ModuleQuotient, OwnerEdge,
-    OwnerEdgeId, OwnerGraph, OwnerGraphOptions, OwnerId, OwnerNode, OwnerReportIndex,
+    ChunkConstrainingEdgeSet, DepKind, EdgeMetadata, EdgeReason, EdgeRole, ModuleQuotient,
+    OwnerEdge, OwnerEdgeId, OwnerGraph, OwnerGraphOptions, OwnerId, OwnerNode, OwnerReportIndex,
     build_module_quotient, build_owner_graph, build_owner_graph_with,
     chunk_constraining_module_edges, chunk_linker_order, chunk_source_import_order,
 };
@@ -66,7 +66,7 @@ pub use realizability::{
     UnrealizableScc, check_realizability,
 };
 pub use report_schema::{
-    AtomicGraphReport, AtomicUnitEdgeReport, AtomicUnitReport, BindingReport,
+    AtomicGraphReport, AtomicUnitEdgeReport, AtomicUnitReport, BindingReport, EdgeRoleReport,
     FactorizeDiagnosticReason, LineRange, ModuleReportRef, OwnerGraphEdgeReport,
     OwnerGraphNodeReport, OwnerGraphQuotientReport, OwnerGraphReport, PeelCandidateStatus,
     QuotientEdgeReport, QuotientSccReport, RESIDUAL_ENTRY_LABEL, RESIDUAL_ENTRY_MODULE_ID,

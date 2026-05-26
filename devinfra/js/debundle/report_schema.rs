@@ -104,16 +104,47 @@ pub struct OwnerGraphEdgeReport {
     pub binding: Option<Atom>,
     pub statement_ordinal: StatementOrdinal,
     pub constrains_init_order: bool,
-    /// Owner id (e.g. `"owner:42"`) of the at-init callee whose body
-    /// produced this edge. `Some(...)` iff the edge was emitted by
-    /// `graph::promote_at_init_calls`; mirrors
-    /// `EdgeReason::at_init_callee_owner` through the wire format so
-    /// the peel planner's `from_report` can reapply the same
+    /// Role the edge was emitted with. Mirrors `EdgeReason::role`
+    /// (see `crate::EdgeRole`) through the wire format so the peel
+    /// planner's `OwnerGraph::from_report` reapplies the same
     /// cross-module at-init promotion filter the materializer's gate
-    /// does. See `EdgeReason::at_init_callee_owner` for the ESM-
-    /// semantics justification.
+    /// does. `None` is shorthand for `EdgeRole::Direct` (omitted when
+    /// serializing to keep direct edges compact).
     #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub at_init_callee_owner: Option<String>,
+    pub role: Option<EdgeRoleReport>,
+}
+
+/// Wire-format projection of [`crate::EdgeRole`]. The typed variant
+/// avoids the previous `at_init_callee_owner: Option<String>`
+/// side-channel by routing the same data through a tagged enum, so
+/// adding new edge roles is a single-source-of-truth change.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum EdgeRoleReport {
+    /// Owner id (e.g. `"owner:42"`) of the at-init callee whose body
+    /// produced this edge.
+    PromotedAtInit { callee_owner: String },
+}
+
+impl EdgeRoleReport {
+    /// Resolve back to a [`crate::EdgeRole`] using a `report-id ->
+    /// OwnerId` lookup table. Unknown owner ids fall back to
+    /// `EdgeRole::Direct` (the lenient view treats the edge as a
+    /// normal direct edge) — same shape as the pre-refactor
+    /// `at_init_callee_owner.and_then(by_id.get)` fallback.
+    pub fn resolve(
+        &self,
+        by_id: &std::collections::HashMap<String, crate::OwnerId>,
+    ) -> crate::EdgeRole {
+        match self {
+            EdgeRoleReport::PromotedAtInit { callee_owner } => match by_id.get(callee_owner) {
+                Some(&owner) => crate::EdgeRole::PromotedAtInit {
+                    callee_owner: owner,
+                },
+                None => crate::EdgeRole::Direct,
+            },
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

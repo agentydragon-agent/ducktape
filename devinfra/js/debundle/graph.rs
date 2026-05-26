@@ -27,6 +27,65 @@ pub struct OwnerGraphOptions {
     pub dataflow_aware_s_chain: bool,
 }
 
+/// How an edge was emitted. Determines whether the gate / quotient /
+/// reports consumers project the edge through the lenient (drop
+/// cross-module promotions) or strict (keep them for soundness) view.
+///
+/// Variants:
+/// - `Direct` — the edge was emitted by direct binding lookup in
+///   `build_owner_graph_with` (eager/lazy reads, rebinds, sequenced
+///   side effects, local effects). The quotient drops same-module
+///   edges (`from == to`) but never drops a `Direct` edge by role.
+/// - `PromotedAtInit { callee_owner }` — `promote_at_init_calls`
+///   manufactured the edge by lifting a function-body lazy read/rebind
+///   into a caller's eager read. The lenient view (quotient, reports)
+///   drops these when `partition.of(callee_owner) != partition.of(from)`
+///   — the body read fires inside a call into a *different* module,
+///   so by ESM DFS post-order the callee module (and its transitive
+///   imports) are fully evaluated before the call returns; the
+///   manufactured `R -> target-module` constraint is redundant with
+///   the already-recorded `R -> callee-module` edge. The gate
+///   (`check_realizability`, `IncrementalQuotient`) keeps these for
+///   soundness: the emitter's phantom side-effect importer can reorder
+///   ESM's link DFS so the target evaluates while the caller is still
+///   on the stack, closing a TDZ cycle the lenient view would hide.
+///   See
+///   `realizability::tests::promoted_edge_in_aggregator_cycle_is_unrealizable`
+///   for the regression fixture.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum EdgeRole {
+    Direct,
+    PromotedAtInit { callee_owner: OwnerId },
+}
+
+impl EdgeRole {
+    /// `Some(callee_owner)` iff this is a `PromotedAtInit` role.
+    /// Read by the CSR-builder in `OwnerGraph::from_report` /
+    /// `build_owner_graph_with` to populate `callee_edges`, and by
+    /// `reports::edge_role_report` to serialize the callee through
+    /// `OwnerGraphEdgeReport.role`.
+    pub fn promoted_callee(self) -> Option<OwnerId> {
+        match self {
+            EdgeRole::Direct => None,
+            EdgeRole::PromotedAtInit { callee_owner } => Some(callee_owner),
+        }
+    }
+
+    /// `true` if this is a `PromotedAtInit` role and the callee owner
+    /// lives in a different module than the caller per `partition`.
+    /// The lenient projection view (quotient, reports) drops such
+    /// edges; the gate view keeps them.
+    pub fn is_cross_module_promotion(self, from: OwnerId, partition: &Partition) -> bool {
+        match self {
+            EdgeRole::Direct => false,
+            EdgeRole::PromotedAtInit { callee_owner } => {
+                partition.of(callee_owner) != partition.of(from)
+            }
+        }
+    }
+}
+
 /// One reason an edge `(from, to)` exists, with the source
 /// statement ordinal that produced it. This is the single source of
 /// truth for edge semantics:
@@ -48,32 +107,15 @@ pub struct OwnerGraphOptions {
 ///   a TypeScript `__decorate` helper application) that must
 ///   co-locate with the target owner but should not impose global
 ///   side-effect ordering on unrelated owners.
+///
+/// `role` (see [`EdgeRole`]) selects which projection rule the
+/// quotient/gate/reports consumers apply to the edge.
 #[derive(Debug, Clone)]
 pub struct EdgeReason {
     pub(crate) kind: DepKind,
     pub(crate) statement_ordinal: StatementOrdinal,
     pub(crate) binding: Option<Id>,
-    /// `Some(callee_owner)` iff this reason was emitted by
-    /// `promote_at_init_calls` to propagate a function-body lazy
-    /// read/rebind from the at-init callee `callee_owner` up to its
-    /// caller (`edge.from`). Two consumers use this:
-    ///
-    /// - `build_module_quotient` and `check_realizability` drop the
-    ///   edge when `partition.of(callee_owner) != partition.of(edge.from)`
-    ///   — the body read fires inside a call into a *different* module,
-    ///   so by ESM DFS post-order the callee's module (and all of its
-    ///   transitive imports, including the target's module) are fully
-    ///   evaluated before the call returns. The R -> target-module
-    ///   constraint the promotion manufactures is redundant given the
-    ///   already-recorded R -> callee-module edge and the callee-module's
-    ///   own eval-time reads.
-    /// - The wire format (`OwnerGraphEdgeReport`) carries the callee
-    ///   owner ID so the planner's `OwnerGraph::from_report` can
-    ///   reapply the same filter against the planner-side partition.
-    ///
-    /// `None` for every non-promoted edge (direct eager/lazy reads,
-    /// rebinds, sequenced, local-effect).
-    pub(crate) at_init_callee_owner: Option<OwnerId>,
+    pub(crate) role: EdgeRole,
 }
 
 impl EdgeReason {
@@ -82,7 +124,7 @@ impl EdgeReason {
             kind: DepKind::EagerUse,
             statement_ordinal: so,
             binding: Some(b),
-            at_init_callee_owner: None,
+            role: EdgeRole::Direct,
         }
     }
     pub(crate) fn lazy_use(so: StatementOrdinal, b: Id) -> Self {
@@ -90,7 +132,7 @@ impl EdgeReason {
             kind: DepKind::LazyUse,
             statement_ordinal: so,
             binding: Some(b),
-            at_init_callee_owner: None,
+            role: EdgeRole::Direct,
         }
     }
     pub(crate) fn eager_rebind(so: StatementOrdinal, b: Id) -> Self {
@@ -98,7 +140,7 @@ impl EdgeReason {
             kind: DepKind::EagerRebind,
             statement_ordinal: so,
             binding: Some(b),
-            at_init_callee_owner: None,
+            role: EdgeRole::Direct,
         }
     }
     pub(crate) fn lazy_rebind(so: StatementOrdinal, b: Id) -> Self {
@@ -106,7 +148,7 @@ impl EdgeReason {
             kind: DepKind::LazyRebind,
             statement_ordinal: so,
             binding: Some(b),
-            at_init_callee_owner: None,
+            role: EdgeRole::Direct,
         }
     }
     pub(crate) fn sequenced(so: StatementOrdinal) -> Self {
@@ -114,7 +156,7 @@ impl EdgeReason {
             kind: DepKind::Sequenced,
             statement_ordinal: so,
             binding: None,
-            at_init_callee_owner: None,
+            role: EdgeRole::Direct,
         }
     }
     pub(crate) fn local_effect(so: StatementOrdinal, b: Id) -> Self {
@@ -122,58 +164,40 @@ impl EdgeReason {
             kind: DepKind::LocalEffect,
             statement_ordinal: so,
             binding: Some(b),
-            at_init_callee_owner: None,
+            role: EdgeRole::Direct,
         }
     }
 
-    /// Set the at-init callee owner for a promoted reason. Used by
-    /// `promote_at_init_calls`; downstream gate code consults
-    /// `at_init_callee_owner` to skip the edge when caller and callee
-    /// land in different partition slots.
-    pub(crate) fn with_at_init_callee(mut self, callee_owner: OwnerId) -> Self {
-        self.at_init_callee_owner = Some(callee_owner);
+    /// Promote this reason to `EdgeRole::PromotedAtInit`. Used by
+    /// `promote_at_init_calls`; downstream gate/lenient projection
+    /// helpers consult `role` to decide whether to drop the edge when
+    /// caller and callee land in different partition slots.
+    pub(crate) fn promoted_at_init(mut self, callee_owner: OwnerId) -> Self {
+        self.role = EdgeRole::PromotedAtInit { callee_owner };
         self
     }
 
     /// Construct a synthetic edge reason from raw fields. Used by
     /// `OwnerGraph::from_report` and similar JSON-recovery paths that
     /// don't carry an `Id` atom for the binding. The realizability
-    /// gate (`check_realizability`) consults only `kind` and the
-    /// at-init-callee owner — every `is_*` and `constrains_init_order`
-    /// predicate above delegates to `kind` — so a synthetic reason
-    /// without a binding is sufficient for the gate. Source-of-truth
-    /// construction from `StatementFacts` still goes through the
-    /// kind-specific helpers above.
-    pub fn synthetic(kind: DepKind, statement_ordinal: StatementOrdinal) -> Self {
+    /// gate (`check_realizability`) consults only `kind` and the role
+    /// — every `is_*` and `constrains_init_order` predicate delegates
+    /// to `kind` — so a synthetic reason without a binding is
+    /// sufficient for the gate. Source-of-truth construction from
+    /// `StatementFacts` still goes through the kind-specific helpers
+    /// above.
+    pub fn synthetic(kind: DepKind, statement_ordinal: StatementOrdinal, role: EdgeRole) -> Self {
         Self {
             kind,
             statement_ordinal,
             binding: None,
-            at_init_callee_owner: None,
+            role,
         }
     }
 
-    /// Like [`synthetic`] but also carries the at-init callee owner.
-    /// Used by `OwnerGraph::from_report` to round-trip the
-    /// cross-module-promotion filter through the wire format so the
-    /// peel planner runs the same edge-set the materializer does.
-    pub fn synthetic_with_callee(
-        kind: DepKind,
-        statement_ordinal: StatementOrdinal,
-        callee_owner: Option<OwnerId>,
-    ) -> Self {
-        Self {
-            kind,
-            statement_ordinal,
-            binding: None,
-            at_init_callee_owner: callee_owner,
-        }
-    }
-
-    /// `Some(callee_owner)` iff this edge was emitted by
-    /// `promote_at_init_calls` (see [`EdgeReason::at_init_callee_owner`]).
-    pub fn at_init_callee_owner(&self) -> Option<OwnerId> {
-        self.at_init_callee_owner
+    /// The role this reason was emitted with. See [`EdgeRole`].
+    pub fn role(&self) -> EdgeRole {
+        self.role
     }
 
     pub fn is_eager_use(&self) -> bool {
@@ -243,7 +267,7 @@ pub struct OwnerGraph {
     pub in_edges: Vec<Vec<OwnerEdgeId>>,
     /// CSR-style "edges referencing this owner as their at-init
     /// callee", indexed by owner index. Empty for owners that no edge
-    /// references via `EdgeReason::at_init_callee_owner`. Lets
+    /// references via [`EdgeRole::PromotedAtInit`]. Lets
     /// `impacted_owner_edges` look up callee-referencing edges in
     /// `O(|edges of that callee|)` instead of scanning the full edge
     /// list per call (a `verdict_with_overlay_touching` per-candidate
@@ -372,19 +396,14 @@ impl OwnerGraph {
             else {
                 continue;
             };
-            // Round-trip the at-init callee owner so the planner-side
-            // gate runs the same cross-module-promotion filter as the
+            // Round-trip the edge role so the planner-side gate runs
+            // the same cross-module-promotion filter as the
             // materializer.
-            let callee_owner = edge
-                .at_init_callee_owner
-                .as_ref()
-                .and_then(|id| by_id.get(id))
-                .copied();
-            let reason = EdgeReason::synthetic_with_callee(
-                edge.edge_kind,
-                edge.statement_ordinal,
-                callee_owner,
-            );
+            let role = match &edge.role {
+                Some(role) => role.resolve(&by_id),
+                None => EdgeRole::Direct,
+            };
+            let reason = EdgeReason::synthetic(edge.edge_kind, edge.statement_ordinal, role);
             let id = OwnerEdgeId(edges.len());
             edges.push(OwnerEdge {
                 id,
@@ -404,7 +423,7 @@ impl OwnerGraph {
             if let Some(slot) = in_edges.get_mut(edge.to.0) {
                 slot.push(edge.id);
             }
-            if let Some(callee) = edge.reason.at_init_callee_owner()
+            if let Some(callee) = edge.reason.role.promoted_callee()
                 && let Some(slot) = callee_edges.get_mut(callee.0)
             {
                 slot.push(edge.id);
@@ -720,7 +739,7 @@ pub fn build_owner_graph_with(facts: &[StatementFacts], options: OwnerGraphOptio
         if let Some(slot) = in_edges.get_mut(edge.to.0) {
             slot.push(edge.id);
         }
-        if let Some(callee) = edge.reason.at_init_callee_owner()
+        if let Some(callee) = edge.reason.role.promoted_callee()
             && let Some(slot) = callee_edges.get_mut(callee.0)
         {
             slot.push(edge.id);
@@ -959,14 +978,14 @@ fn promote_at_init_calls(
     }
 
     // 5. Emit promoted edges with per-statement, per-kind dedup.
-    //    Each emitted reason carries `at_init_callee_owner =
-    //    Some(callee_owner)` so the realizability gate can drop the
-    //    edge when caller and callee land in different partition
-    //    slots — the body read fires inside a call into a different
-    //    module, after that callee module (and its imports) have
-    //    already evaluated, so the manufactured constraint from R to
-    //    the target's module is redundant with the already-recorded
-    //    R -> callee-module edge. See `EdgeReason::at_init_callee_owner`.
+    //    Each emitted reason carries `EdgeRole::PromotedAtInit {
+    //    callee_owner }` so the realizability gate can drop the edge
+    //    when caller and callee land in different partition slots —
+    //    the body read fires inside a call into a different module,
+    //    after that callee module (and its imports) have already
+    //    evaluated, so the manufactured constraint from R to the
+    //    target's module is redundant with the already-recorded
+    //    R -> callee-module edge. See [`EdgeRole`].
     for stmt in facts {
         if stmt.at_init_calls.is_empty() {
             continue;
@@ -995,7 +1014,7 @@ fn promote_at_init_calls(
                     caller,
                     *target_owner,
                     EdgeReason::eager_use(stmt.ordinal, target_binding.clone())
-                        .with_at_init_callee(*callee_owner),
+                        .promoted_at_init(*callee_owner),
                 ));
             }
             for target_binding in &scc_rebinds[scc_idx] {
@@ -1012,7 +1031,7 @@ fn promote_at_init_calls(
                     caller,
                     *target_owner,
                     EdgeReason::eager_rebind(stmt.ordinal, target_binding.clone())
-                        .with_at_init_callee(*callee_owner),
+                        .promoted_at_init(*callee_owner),
                 ));
             }
         }
@@ -1034,13 +1053,10 @@ fn promote_at_init_calls(
 /// keep their promoted body reads: there the body's reads ARE the
 /// caller module's eager reads (same evaluation context).
 ///
-/// Direct (non-promoted) eager reads — `at_init_callee_owner` is
-/// `None` — always pass through.
+/// Direct (non-promoted) eager reads — [`EdgeRole::Direct`] —
+/// always pass through.
 pub(crate) fn is_cross_module_at_init_promotion(edge: &OwnerEdge, partition: &Partition) -> bool {
-    let Some(callee_owner) = edge.reason.at_init_callee_owner else {
-        return false;
-    };
-    partition.of(callee_owner) != partition.of(edge.from)
+    edge.reason.role.is_cross_module_promotion(edge.from, partition)
 }
 
 /// Partition-projected endpoints of `edge` when it participates in the

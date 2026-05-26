@@ -77,7 +77,7 @@ fn fixture() -> (TempDir, CommonArgs) {
             binding: Some("ZZ".into()),
             statement_ordinal: StatementOrdinal(2),
             constrains_init_order: true,
-            at_init_callee_owner: None,
+            role: None,
         }],
         quotient: OwnerGraphQuotientReport {
             nodes: Vec::new(),
