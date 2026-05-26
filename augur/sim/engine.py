@@ -909,12 +909,8 @@ def _allocate_current_state(plan: CompiledSimulation) -> CurrentStateBuffers:
         property_depreciation_ytd=np.zeros((p.property_count, r), dtype=np.float64),
         # Broadcast the compile-time initial rented_fraction across rollouts. Lifecycle events
         # may then mutate per-(property, rollout) state at runtime.
-        property_rented_fraction=np.broadcast_to(
-            plan.property_rented_fraction[:, None], (p.property_count, r)
-        ).copy(),
-        property_building_basis=np.broadcast_to(
-            plan.property_building_basis[:, None], (p.property_count, r)
-        ).copy(),
+        property_rented_fraction=np.broadcast_to(plan.property_rented_fraction[:, None], (p.property_count, r)).copy(),
+        property_building_basis=np.broadcast_to(plan.property_building_basis[:, None], (p.property_count, r)).copy(),
         property_owner_occupied_months=np.zeros((p.property_count, r), dtype=np.int64),
         recapture_section_1250_ytd=np.zeros((p.tax_profile_count, r), dtype=np.float64),
         liability_rental_interest_ytd=np.zeros((p.liability_count, r), dtype=np.float64),
@@ -1803,8 +1799,7 @@ def _apply_liquidity_policy_sales(
         policy_cash_slot = int(plan.liquidity_policies.cash_slot[policy])
 
         matching_obligations = np.flatnonzero(
-            (plan.obligations.agent[month] == policy_agent)
-            & (plan.obligations.from_slot[month] == policy_cash_slot)
+            (plan.obligations.agent[month] == policy_agent) & (plan.obligations.from_slot[month] == policy_cash_slot)
         )
         if matching_obligations.size:
             matching_active = obligation_active[matching_obligations]
@@ -2166,12 +2161,12 @@ def _settle_tax_liabilities_for_profile_year(
         return
     slot_amounts = current.tax_liability_amount[slots, :]
     eligible_amounts = np.where(current.tax_liability_active[slots, :], slot_amounts, 0.0)
-    outstanding = eligible_amounts.sum(axis=1)
+    outstanding = eligible_amounts.sum(axis=0)
     settlement = np.where(active, settlement_amount, 0.0)
     weights = np.divide(
-        eligible_amounts, outstanding[:, None], out=np.zeros_like(eligible_amounts), where=outstanding[:, None] > 0.0
+        eligible_amounts, outstanding[None, :], out=np.zeros_like(eligible_amounts), where=outstanding[None, :] > 0.0
     )
-    settled = np.minimum(eligible_amounts, weights * settlement[:, None])
+    settled = np.minimum(eligible_amounts, weights * settlement[None, :])
     current.tax_liability_amount[slots, :] = np.maximum(0.0, slot_amounts - settled)
 
 
@@ -2585,9 +2580,7 @@ def _decode_liabilities(plan: CompiledSimulation, buffers: SimulationBuffers) ->
     payment_account_ids = _codes_to_strings(plan, plan.liabilities.payment_account)
     counterparty_agent_ids = _codes_to_strings(plan, plan.liabilities.counterparty_agent)
     counterparty_account_ids = _codes_to_strings(plan, plan.liabilities.counterparty_account)
-    property_ids_per_liab = _codes_to_strings(plan, plan.properties.id)[
-        plan.liabilities.property_slot.astype(np.int64)
-    ]
+    property_ids_per_liab = _codes_to_strings(plan, plan.properties.id)[plan.liabilities.property_slot.astype(np.int64)]
     origination_per_liab = plan.properties.month.astype(np.int64)[plan.liabilities.property_slot.astype(np.int64)]
     return _state_history_frame_from_columns(
         {
@@ -2761,9 +2754,7 @@ def _decode_transfers(plan: CompiledSimulation, buffers: SimulationBuffers) -> p
     to_agents = _codes_to_strings(plan, plan.transfers.to_agent)[months, slots]
     to_accounts = _codes_to_strings(plan, plan.transfers.to_account)[months, slots]
     amounts = buffers.transfer_amount[months, slots, rollouts]
-    income_categories = np.where(plan.transfers.income_profile[months, slots] >= 0, "ordinary", None).astype(
-        object
-    )
+    income_categories = np.where(plan.transfers.income_profile[months, slots] >= 0, "ordinary", None).astype(object)
     return _frame_from_columns(
         EVENT_FRAMES.transfers,
         rollout_index=rollouts,
