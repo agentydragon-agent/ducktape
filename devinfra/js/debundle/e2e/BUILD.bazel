@@ -127,3 +127,18 @@ rust_test(
         "@rules_rust//tools/runfiles",
     ],
 )
+
+# CLI verb `debundle module merge`: pure YAML splice. Calls the
+# library's public Rust entry point directly, no debundle binary
+# dependency.
+rust_test(
+    name = "module_merge_test",
+    srcs = ["module_merge_test.rs"],
+    crate_root = "module_merge_test.rs",
+    edition = "2024",
+    deps = [
+        "//devinfra/js/debundle:module_cli",
+        "@crates//:serde_yaml",
+        "@crates//:tempfile",
+    ],
+)

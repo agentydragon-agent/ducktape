@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
+use module_cli::{ModuleArgs, run_module_cli};
 use peel::{PeelArgs, run_peel};
 use pipeline::{TransformArgs, run_transform_cli};
 
@@ -21,6 +22,8 @@ enum DebundleCommand {
     Run(TransformArgs),
     /// Inspect peel-planning evidence from an owner graph and spec modules tree.
     Peel(PeelArgs),
+    /// Operate on debundle spec module YAML files (merge, etc.).
+    Module(ModuleArgs),
 }
 
 pub fn run_debundle_cli(args: DebundleArgs) -> Result<()> {
@@ -31,6 +34,7 @@ pub fn run_debundle_cli(args: DebundleArgs) -> Result<()> {
             Ok(())
         }
         DebundleCommand::Peel(args) => run_peel(args).context("running peel query"),
+        DebundleCommand::Module(args) => run_module_cli(args).context("running module subcommand"),
     }
 }
 
@@ -47,7 +51,7 @@ mod tests {
         let parsed = DebundleArgs::try_parse_from(argv).expect("parse cli");
         match parsed.command {
             super::DebundleCommand::Run(args) => args,
-            super::DebundleCommand::Peel(_) => panic!("expected run command"),
+            other => panic!("expected run command, got {other:?}"),
         }
     }
 
@@ -123,5 +127,22 @@ mod tests {
         ])
         .expect("parse cli");
         assert!(matches!(parsed.command, super::DebundleCommand::Peel(_)));
+    }
+
+    #[test]
+    fn parse_module_merge_command() {
+        let parsed = DebundleArgs::try_parse_from([
+            "debundle",
+            "module",
+            "merge",
+            "--modules",
+            "modules",
+            "--target",
+            "ui/target.yaml",
+            "ui/src1.yaml",
+            "ui/src2.yaml",
+        ])
+        .expect("parse cli");
+        assert!(matches!(parsed.command, super::DebundleCommand::Module(_)));
     }
 }

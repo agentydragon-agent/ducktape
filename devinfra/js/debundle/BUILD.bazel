@@ -505,12 +505,32 @@ rust_test(
 )
 
 rust_library(
+    name = "module_cli",
+    srcs = ["module_cli.rs"],
+    crate_root = "module_cli.rs",
+    edition = "2024",
+    deps = [
+        "@crates//:anyhow",
+        "@crates//:clap",
+        "@crates//:serde_yaml",
+    ],
+)
+
+rust_test(
+    name = "module_cli_test",
+    crate = ":module_cli",
+    edition = "2024",
+    deps = ["@crates//:tempfile"],
+)
+
+rust_library(
     name = "cli",
     srcs = ["cli.rs"],
     crate_name = "debundle_cli",
     crate_root = "cli.rs",
     edition = "2024",
     deps = [
+        ":module_cli",
         ":peel",
         ":pipeline",
         "@crates//:anyhow",
