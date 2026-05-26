@@ -1,9 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
-use petgraph::algo::{greedy_feedback_arc_set, tarjan_scc};
+use petgraph::algo::{condensation, greedy_feedback_arc_set};
 use petgraph::graph::DiGraph;
-use petgraph::graphmap::DiGraphMap;
-use petgraph::visit::EdgeRef;
 use serde::Serialize;
 
 use crate::factor_assembly::AtomicUnitConflict;
@@ -12,7 +10,7 @@ use crate::partition::Partition;
 use crate::realizability::check_realizability;
 use swc_atoms::Atom;
 
-use crate::{DepKind, EdgeMetadata, ModuleId, ModuleQuotient, OwnerGraph, StatementOrdinal};
+use crate::{DepKind, ModuleId, ModuleQuotient, OwnerGraph, StatementOrdinal};
 
 /// Result of validating a module dep graph.
 #[derive(Debug, Clone, Serialize)]
@@ -45,17 +43,17 @@ pub struct CycleReport {
     /// fix a cycle. Each entry corresponds to (and shares its
     /// shape with) a row in `evidence`.
     ///
-    /// The algorithm is iterative: while the working subgraph
-    /// still has an SCC carrying a cross-module
-    /// realizability-constraining edge, run petgraph's
-    /// `greedy_feedback_arc_set` (Eades-Lin-Smyth, 1993,
-    /// `O(V + E)`) on the offending sub-SCC, pick the first FAS
-    /// edge with an `R` or `S` reason, append its constraining
-    /// reasons to the cut, remove it from the working graph, and
-    /// repeat. Sound (every iteration removes one constraining
-    /// edge from a problematic SCC) and heuristic-minimum
-    /// (petgraph's FAS approximates within a constant factor on
-    /// dense instances).
+    /// The algorithm builds a `DiGraph` containing only the
+    /// constraining (`R`/`S`) cross-module edges induced by `scc`,
+    /// then runs `petgraph::algo::condensation` once to find the
+    /// constraining-subgraph SCCs. Each non-trivial SCC is fed to
+    /// `petgraph::algo::greedy_feedback_arc_set` (Eades-Lin-Smyth,
+    /// 1993, `O(V + E)`); the returned FAS edges name the cut
+    /// (one cut entry per constraining reason on each picked edge).
+    /// Sound (removing every FAS edge breaks every cycle in the
+    /// constraining subgraph) and heuristic-minimum (petgraph's
+    /// FAS approximates within a constant factor on dense
+    /// instances).
     pub cut: Vec<CycleEdge>,
 }
 
@@ -383,28 +381,29 @@ pub fn render_atomic_unit_conflict_summary(
 /// Compute a near-minimum cut of realizability-constraining edges
 /// inside `scc` whose removal makes the SCC realizable.
 ///
-/// Each iteration:
-/// 1. Tarjan-SCC the working graph (initially the induced subgraph
-///    on `scc` from `graph`).
-/// 2. If no SCC of size ≥ 2 carries a cross-module
-///    realizability-constraining edge, return the accumulated cut.
-/// 3. Otherwise, pick the first such SCC, run
-///    `petgraph::algo::greedy_feedback_arc_set` (Eades-Lin-Smyth)
-///    on its induced subgraph, and pick the first FAS edge whose
-///    metadata has an `EagerUse` or `Sequenced` reason.
-/// 4. Fall back to scanning the SCC's edges if the FAS only
-///    yielded lazy edges (rare; happens when tie-breaking biases
-///    the order toward picking lazy edges as back-edges).
-/// 5. Append the picked edge's R/S reasons to the cut and remove
-///    it from the working graph.
+/// One-shot algorithm:
+/// 1. Build a `DiGraph<ModuleId, ()>` containing only the
+///    realizability-constraining (`R`/`S`) cross-module edges
+///    between members of `scc`. `LazyUse`-only edges are dropped
+///    up front — they don't constrain ESM evaluation order, so no
+///    cut entry can be a lazy edge by construction. This replaces
+///    the old loop's post-FAS "fallback scan for an R/S edge"
+///    hack: FAS now sees only edges that could legitimately be in
+///    the cut.
+/// 2. Run `petgraph::algo::condensation` once to partition the
+///    constraining subgraph into SCCs.
+/// 3. For each non-trivial condensation node (a real SCC of the
+///    constraining subgraph), induce its subgraph and run
+///    `petgraph::algo::greedy_feedback_arc_set` (Eades-Lin-Smyth,
+///    1993, `O(V + E)`). Every FAS edge contributes its R/S
+///    reasons to the cut.
 ///
-/// Termination: each iteration removes at least one R/S edge from
-/// the working graph, and the count of R/S edges is finite.
-/// Soundness: when the loop exits, every remaining SCC has only
-/// lazy cross-module edges between members — realizable per the
-/// DESIGN.md realizability theorem. Cuts are sorted
-/// deterministically `(from, to, statement_ordinal, binding, kind)`
-/// so test snapshots compare cleanly.
+/// Soundness: removing every FAS edge makes the constraining
+/// subgraph of `scc` acyclic, so the surviving cross-module edges
+/// have a valid evaluation order — realizable per the DESIGN.md
+/// realizability theorem. Cuts are sorted deterministically
+/// `(from, to, statement_ordinal, binding, kind)` so test
+/// snapshots compare cleanly.
 fn compute_realizability_cut(
     graph: &ModuleQuotient,
     scc: &[ModuleId],
@@ -414,103 +413,78 @@ fn compute_realizability_cut(
     if scc.len() < 2 {
         return Vec::new();
     }
-    // Working copy: induced subgraph on `scc`. Edge weight is the
-    // full `EdgeMetadata` so we can read reasons when adding to
-    // the cut. Cloning is cheap — petgraph's `DiGraphMap` clone
-    // is per-edge, and an SCC is at most a few thousand edges in
-    // practice.
+    // Constraining-only induced subgraph on `scc`, as a `DiGraph`
+    // (index-based node ids required by `greedy_feedback_arc_set`).
+    // Node weight carries the original `ModuleId`; edge weight
+    // carries the `(from, to)` pair so we can recover the
+    // underlying `EdgeMetadata` from `graph` after FAS.
     let in_scc: HashSet<ModuleId> = scc.iter().copied().collect();
-    let mut working = DiGraphMap::<ModuleId, EdgeMetadata>::new();
+    let mut constraining: DiGraph<ModuleId, (ModuleId, ModuleId)> = DiGraph::new();
+    let mut idx_of: HashMap<ModuleId, _> = HashMap::with_capacity(scc.len());
     for &m in scc {
-        working.add_node(m);
+        idx_of.insert(m, constraining.add_node(m));
     }
     for (from, to, weight) in graph.all_edges() {
-        if !in_scc.contains(&from) || !in_scc.contains(&to) || from == to {
+        if from == to || !in_scc.contains(&from) || !in_scc.contains(&to) {
             continue;
         }
-        working.add_edge(from, to, weight.clone());
+        if !weight.constrains_init_order() {
+            continue;
+        }
+        constraining.add_edge(idx_of[&from], idx_of[&to], (from, to));
     }
 
+    // Condense once to the SCC DAG. `make_acyclic = true` drops
+    // self-loops and parallel edges between condensation nodes;
+    // we only need the membership lists (each condensation node's
+    // `Vec<ModuleId>` weight) to find non-trivial SCCs.
+    let condensed = condensation(constraining, true);
+
     let mut cut: Vec<CycleEdge> = Vec::new();
-    loop {
-        let sub_sccs = tarjan_scc(&working);
-        let problematic = sub_sccs.into_iter().find(|s| {
-            if s.len() < 2 {
-                return false;
-            }
-            let in_s: HashSet<ModuleId> = s.iter().copied().collect();
-            s.iter().any(|&from| {
-                working
-                    .edges(from)
-                    .any(|(_, to, w)| from != to && in_s.contains(&to) && w.constrains_init_order())
-            })
-        });
-        let Some(s) = problematic else { break };
-        let in_s: HashSet<ModuleId> = s.iter().copied().collect();
-
-        // Induce a sub-SCC subgraph as an index-based `DiGraph`.
-        // petgraph's `greedy_feedback_arc_set` requires
-        // `NodeId: GraphIndex`, which `DiGraphMap`'s arbitrary key
-        // type doesn't satisfy — `DiGraph` indexes nodes by
-        // contiguous `NodeIndex`. Carry `ModuleId` as the node
-        // weight so we can map FAS endpoints back.
-        let mut induced: DiGraph<ModuleId, ()> = DiGraph::new();
-        let mut idx_of: HashMap<ModuleId, _> = HashMap::new();
-        for &m in &s {
-            let ix = induced.add_node(m);
-            idx_of.insert(m, ix);
+    for node in condensed.node_indices() {
+        let members: &Vec<ModuleId> = &condensed[node];
+        if members.len() < 2 {
+            continue;
         }
-        for &from in &s {
-            for (_, to, _) in working.edges(from) {
-                if from != to && in_s.contains(&to) {
-                    induced.add_edge(idx_of[&from], idx_of[&to], ());
-                }
-            }
+        let in_s: HashSet<ModuleId> = members.iter().copied().collect();
+
+        // Sub-SCC subgraph rebuilt from the original quotient,
+        // restricted to constraining edges between members.
+        let mut induced: DiGraph<ModuleId, (ModuleId, ModuleId)> = DiGraph::new();
+        let mut sub_idx_of: HashMap<ModuleId, _> = HashMap::with_capacity(members.len());
+        for &m in members {
+            sub_idx_of.insert(m, induced.add_node(m));
         }
-        let fas: Vec<(ModuleId, ModuleId)> = greedy_feedback_arc_set(&induced)
-            .map(|e| (induced[e.source()], induced[e.target()]))
-            .collect();
-
-        // Prefer R/S FAS edges; fall back to scanning the sub-SCC
-        // for any R/S edge if FAS only flagged lazy edges (rare).
-        let pick_in_fas = fas.iter().copied().find(|&(u, v)| {
-            working
-                .edge_weight(u, v)
-                .is_some_and(EdgeMetadata::constrains_init_order)
-        });
-        let pick = pick_in_fas.or_else(|| {
-            for &from in &s {
-                for (_, to, w) in working.edges(from) {
-                    if from != to && in_s.contains(&to) && w.constrains_init_order() {
-                        return Some((from, to));
-                    }
-                }
-            }
-            None
-        });
-        let Some((u, v)) = pick else {
-            // Should be unreachable — `problematic` confirmed at
-            // least one constraining cross-module edge in `s`.
-            break;
-        };
-
-        let weight = working
-            .remove_edge(u, v)
-            .expect("edge picked from working graph just above");
-        for reason in &weight.reasons {
-            if !reason.constrains_init_order() {
+        for (from, to, weight) in graph.all_edges() {
+            if from == to || !in_s.contains(&from) || !in_s.contains(&to) {
                 continue;
             }
-            cut.push(CycleEdge {
-                from: module_name(u),
-                to: module_name(v),
-                statement_ordinal: reason.statement_ordinal,
-                binding: reason.binding.as_ref().map(|id| id.0.clone()),
-                from_binding: from_binding_by_ordinal
-                    .get(&reason.statement_ordinal)
-                    .cloned(),
-                kind: reason.kind,
-            });
+            if !weight.constrains_init_order() {
+                continue;
+            }
+            induced.add_edge(sub_idx_of[&from], sub_idx_of[&to], (from, to));
+        }
+
+        for fas_edge in greedy_feedback_arc_set(&induced) {
+            let (u, v) = *fas_edge.weight();
+            let weight = graph
+                .edge_weight(u, v)
+                .expect("FAS edge endpoints came from the module quotient");
+            for reason in &weight.reasons {
+                if !reason.constrains_init_order() {
+                    continue;
+                }
+                cut.push(CycleEdge {
+                    from: module_name(u),
+                    to: module_name(v),
+                    statement_ordinal: reason.statement_ordinal,
+                    binding: reason.binding.as_ref().map(|id| id.0.clone()),
+                    from_binding: from_binding_by_ordinal
+                        .get(&reason.statement_ordinal)
+                        .cloned(),
+                    kind: reason.kind,
+                });
+            }
         }
     }
 

@@ -99,10 +99,19 @@ fn namespace_aggregator_split_rejects_tdz_cycle() {
 }
 
 /// Stricter sibling of the test above: assert the diagnostic does
-/// binding-pair blame, not just module-list rendering. The new
-/// `render_cycle_summary` must name the implicated bindings (`ids`,
-/// `sub1`, `helperFromResidual`) and the `at-init` edge kind so spec
-/// authors can act directly: "move {X, Y} into one module."
+/// binding-pair blame, not just module-list rendering. The
+/// `render_cycle_summary` must name the implicated bindings as
+/// `from_binding (from_module) --kind--> to_binding (to_module)`
+/// rows with the `at-init` edge kind so spec authors can act
+/// directly: "move {X, Y} into one module."
+///
+/// The cut is a minimum feedback arc set over the constraining-edge
+/// view, so only the bindings on the edges FAS picks as back-edges
+/// are guaranteed to appear; for this fixture FAS picks the
+/// `consumed → ids` back-edge from residual into the aggregator
+/// (it breaks both `…→sub1→residual` and `…→sub2→residual`
+/// cycles with a single arc). Assert the binding-pair format and
+/// the `ids` aggregator name; the smaller cut is by design.
 #[test]
 fn namespace_aggregator_diagnostic_blames_binding_pairs() {
     expect_rejection_containing_all(
@@ -110,13 +119,13 @@ fn namespace_aggregator_diagnostic_blames_binding_pairs() {
         &[
             "unrealizable",
             "cycle",
-            // every binding on the cycle path appears as either source
-            // or target of an R/S edge in the rendered cut.
+            // the aggregator binding is the target of the cut's
+            // back-edge, so it must appear in the rendered cut.
             "ids",
-            "sub1",
-            "helperFromResidual",
             // the renderer labels edge kinds in human-readable form.
             "at-init",
+            // binding-pair rendering uses the arrow syntax.
+            "-->",
             // the renderer prints actionable guidance.
             "co-locate",
         ],
