@@ -1,14 +1,14 @@
 # Wire format conventions (per-chunk JSON sidecars)
 
 Verified at HEAD `ecef8acf5` (integration of `feat-facts-wire-format`,
-`drop-ast-sidecar`, etc. into `devel`). Section "Open: cross-process
-Stage A artifact" tracks a known unresolved question and the empirical
-work needed to settle it.
+`drop-ast-sidecar`, etc. into `devel`). The cross-process Stage B
+materializer reader the original artifact design was meant to feed
+was dropped — see §"Cross-process scope: not a goal" below.
 
 ## What this doc covers
 
 The per-chunk JSON files debundle writes under
-`reports/tree/<chunk_id>/` (and the new `chunk_analysis/` subdirectory)
+`reports/tree/<chunk_id>/` (and the `chunk_analysis/` subdirectory)
 are consumed by:
 
 - spec authors with `jq` poking at cycle / owner-graph / atomic-unit reports;
@@ -16,9 +16,6 @@ are consumed by:
   `coverage` / `describe` / `show-source` / `scc` / `cluster` /
   `graph-summary` — the legacy `debundle peel <…>` spellings still
   work as deprecated aliases);
-- a planned cross-process Stage B reader (`materialize_from_analysis`,
-  task #78) that re-runs the materializer from a cached Stage A
-  artifact;
 - humans reading the files during debugging.
 
 This doc states the convention these files follow, **and the one
@@ -32,13 +29,13 @@ SyntaxContext)`. The `SyntaxContext` half is dropped at serialization.
 
 Files following the convention:
 
-| File                               | Field carrying binding identity                                                                              |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `owner_graph.json`                 | `nodes[].declared_bindings[].binding: Atom`, `edges[].binding: Option<Atom>`                                 |
-| `cycles.json`                      | `cut[].binding: Option<Atom>`, `cut[].from_binding: Option<Atom>` (evidence is recomputed on demand by `debundle gate describe`)               |
-| `atomic_unit_conflicts.json`       | `claims[].binding_names: Vec<Atom>`                                                                          |
-| `chunk_analysis/atomic_units.json` | members are `OwnerId` integers, not `Id`s — no `Atom` and no `SyntaxContext`                                 |
-| `chunk_analysis/manifest.json`     | no binding identities                                                                                        |
+| File                               | Field carrying binding identity                                                                                                  |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `owner_graph.json`                 | `nodes[].declared_bindings[].binding: Atom`, `edges[].binding: Option<Atom>`                                                     |
+| `cycles.json`                      | `cut[].binding: Option<Atom>`, `cut[].from_binding: Option<Atom>` (evidence is recomputed on demand by `debundle gate describe`) |
+| `atomic_unit_conflicts.json`       | `claims[].binding_names: Vec<Atom>`                                                                                              |
+| `chunk_analysis/atomic_units.json` | members are `OwnerId` integers, not `Id`s — no `Atom` and no `SyntaxContext`                                                     |
+| `chunk_analysis/manifest.json`     | no binding identities                                                                                                            |
 
 `Atom` serializes as a plain JSON string via `swc_atoms`'s own
 `Serialize` impl. That impl writes the **string content** — interned
@@ -159,7 +156,7 @@ So the design splits into two scopes:
 
 - The **query surface** (top-level `scc`, `atoms`, `coverage`,
   `graph-summary`, `describe`, `show-source`, `cluster`, `modules
-  propose`) reads the existing Atom-only files. Already works
+propose`) reads the existing Atom-only files. Already works
   cross-process; the surface is the working proof. No `SyntaxContext`
   ever leaves a process boundary.
 - The **materializer** stays in-process. Editing a spec re-runs the
@@ -198,22 +195,22 @@ rejected:
   point Stage A cache only proves "did Stage A succeed", which is
   not why we'd build it.
 
-For the empirical demonstration that the cross-process round-trip
-breaks under non-trivial `Globals` state, see
-`ARCH_REVIEW_2026_05.md` §"Pipeline-split risks" — the
-two-`Globals` test where Stage A produces `SyntaxContext(1)` and a
-prior-`apply_mark`-warmed Stage B produces `SyntaxContext(2)` for
-the same conceptual binding.
+A two-`Globals` empirical demonstration (Stage A produces
+`SyntaxContext(1)`, a prior-`apply_mark`-warmed Stage B produces
+`SyntaxContext(2)` for the same conceptual binding) is the smoking
+gun if anyone ever wants to revisit the design — but until a
+concrete use case justifies the implementation, the convention
+documented above is the contract.
 
 ## Reader audiences
 
-| Consumer                                                                                                              | Reads                                                           | Cross-process?          |
-| --------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | ----------------------- |
-| Spec author with `jq`                                                                                                 | `owner_graph.json`, `cycles.json`, `atomic_unit_conflicts.json` | yes (Atom-only)         |
-| `debundle atoms` / `coverage` / `graph-summary` / `scc` / `cluster` / `describe` / `show-source` / `modules propose`  | `owner_graph.json`, `atomic_units.json`, source bytes + spec    | yes (Atom-only)         |
-| `debundle bindings assign` / `bindings rename` / `modules merge`                                                      | spec YAMLs + `owner_graph.json` (gate)                          | yes                     |
-| Debugging human inspecting `facts.json`                                                                               | `facts.json`                                                    | NO — same-process only  |
-| Materializer (`debundle run`)                                                                                         | spec + chunk bytes + everything in-process                      | N/A — always in-process |
+| Consumer                                                                                                             | Reads                                                           | Cross-process?          |
+| -------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | ----------------------- |
+| Spec author with `jq`                                                                                                | `owner_graph.json`, `cycles.json`, `atomic_unit_conflicts.json` | yes (Atom-only)         |
+| `debundle atoms` / `coverage` / `graph-summary` / `scc` / `cluster` / `describe` / `show-source` / `modules propose` | `owner_graph.json`, `atomic_units.json`, source bytes + spec    | yes (Atom-only)         |
+| `debundle bindings assign` / `bindings rename` / `modules merge`                                                     | spec YAMLs + `owner_graph.json` (gate)                          | yes                     |
+| Debugging human inspecting `facts.json`                                                                              | `facts.json`                                                    | NO — same-process only  |
+| Materializer (`debundle run`)                                                                                        | spec + chunk bytes + everything in-process                      | N/A — always in-process |
 
 ## Status of related tasks
 
@@ -255,7 +252,6 @@ consumption.
 
 - `DESIGN.md` §"Two classes of atom" — the realizability theorem
   these wire formats serialize evidence for.
-- `PIPELINE_SPLIT.md` — the broader design of the Stage A / Stage B
-  split this wire-format work supports.
-- `ARCH_REVIEW_2026_05.md` §"Pipeline-split risks" — the original
-  flag of the cross-process problem.
+- `ARCH_REVIEW_2026_05.md` — the project's open architectural
+  backlog. (The cross-process Stage B residuals it used to track
+  were dropped along with the design.)

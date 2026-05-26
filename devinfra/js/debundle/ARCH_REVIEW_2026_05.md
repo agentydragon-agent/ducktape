@@ -2,15 +2,13 @@
 
 Reviewed against `01c149496` on branch `feat-arch-review-2026-05`. Read on top of `DESIGN.md`, `PIPELINE_SPLIT.md`, `CODE_REVIEW.md`, `AGENTS.md`. Findings are at the design/architecture level; small style points already covered by `CODE_REVIEW.md` are not repeated.
 
-> **Progress note.** Items handled since the original review have been removed; remaining items are the open backlog. Done so far: Lemma-2 ordering unified on `graph.rs` (`da7e928e2`); `RollbackDiGraph` SCC delegated to petgraph (`b62c9996f`); `artifact::ChunkAnalysis` renamed to `ChunkAnalysisReport`, `ModuleQuotient` inner field tightened to `pub(crate)`, `RealizabilityVerdict::scc_partition()` introduced (3 dep-graph SCC walks merged; 2 remain — see §"`tarjan_scc` over the module quotient" below) (`af45fccdc`, `7d2d79bc9`, `073493e6d`).
+> **Progress note.** Items handled since the original review have been removed; remaining items are the open backlog. Done so far: Lemma-2 ordering unified on `graph.rs` (`da7e928e2`); `RollbackDiGraph` SCC delegated to petgraph (`b62c9996f`); `artifact::ChunkAnalysis` renamed to `ChunkAnalysisReport`, `ModuleQuotient` inner field tightened to `pub(crate)`, `RealizabilityVerdict::scc_partition()` introduced (3 dep-graph SCC walks merged; 2 remain — see §"`tarjan_scc` over the module quotient" below) (`af45fccdc`, `7d2d79bc9`, `073493e6d`). The cross-process Stage B plan was also abandoned — see `WIRE_FORMAT.md` §"Cross-process scope: not a goal"; the items in this review that assumed cross-process caching of Stage A artifacts have been dropped.
 
 ## Executive summary
 
 1. **The Stage A boundary is real but the rest of the per-chunk pipeline is still patch-driven.** `lowering/materialize/mod.rs::materialize_logical_chunk` is 750 lines that thread _five_ loose mutable maps (`binding_assignment`, `bindings_catalogue`, `anonymous_ordinal_assignment`, `module_plans`, `residual_plan_index`) through eight phases of inline + helper-call mutation. There is no `ModulePlanBuilder` type encapsulating these; each helper takes `&mut` to four or five of them. This is the patch-on-patch shape the maintainer suspected.
 
 2. **The dual `cross_module_partition_endpoints` / `gate_constraining_partition_endpoints` is the most concrete example of patch-on-patch architecture.** The same projection helper has two versions that differ only in whether they drop cross-module at-init-promoted edges, with the difference documented in a doc-comment "history" log naming three commit SHAs and a regression test ("`12ce3884b` removed the drop … `2d6be2473` silently re-introduced the drop … this sibling helper exists so the gate paths preserve `12ce3884b`'s fix"). The right fix is to push the distinction into the edge itself (an `EdgeRole` enum) so there is one projection helper that consults the role; the current shape encodes a 12-month bug-fix history into two near-identical function names.
-
-3. **Stage A on-disk serialization (in-flight on three sibling branches) currently loses the `Id` hygiene identity across the Stage A/B boundary.** `facts/wire.rs::IdReport` round-trips `(name, ctxt: u32)`, but `SyntaxContext`'s `u32` value is meaningful only within one SWC `Globals` instance. If Stage B re-parses (per `PIPELINE_SPLIT.md`'s recommendation), the freshly-resolved `top_level_id` will have a different `Mark` and the deserialized `Id`s won't compare equal. Same problem hits `OwnerGraph::from_report`, which today already drops `declared: BTreeSet::new()` on round-trip (`graph.rs:362`) — i.e. the existing JSON wire shape already loses the binding identities every downstream `compute_owner_claims`-style consumer needs.
 
 ## Ad-hoc wiring + pipeline-state passing
 
@@ -57,7 +55,7 @@ The `lowering/plans.rs::synthesize_mini_factor_plans` 10-arg signature in partic
 
 `stage_one/mod.rs:72` is a genuinely clean composer. The reason it works is that **the boundary at Stage A is well-defined**: the inputs and outputs are clear, the composer's only job is to call `analyze_chunk` then `compute_owner_graph_and_units_with`. The Stage A composer is exactly the shape every other composite operation in this crate should look like, and is the strongest design point in the recent refactor.
 
-That said, `stage_one/mod.rs:46` notes "Why a free function with no struct fanout" — but the doc-string concedes that the side-effecting interleaving (redundant-hint stderr, top-level-await `bail!`, atomic-unit-rebind folding) **still happens inline at the materializer**. Stage A _separation_ isn't done; the composer is a function-level renaming. The next refactor (post-sidecar) needs to move those side-effecting paths into the composer's owners.
+That said, `stage_one/mod.rs:46` notes "Why a free function with no struct fanout" — but the doc-string concedes that the side-effecting interleaving (redundant-hint stderr, top-level-await `bail!`, atomic-unit-rebind folding) **still happens inline at the materializer**. Stage A _separation_ isn't done; the composer is a function-level renaming. Folding those paths into the composer's owners is the next refactor in this area; it cleans up the materializer body even though there's no longer a cross-process consumer waiting on the boundary.
 
 ## Duplicated calculations
 
@@ -72,11 +70,11 @@ Remaining legitimate walks (different graphs): `validation.rs:437` (FAS iteratio
 
 **Open follow-up.** The two surviving module-quotient walks (verdict-time + factorization-build-time) compute the same partition for different consumers; structurally consolidatable behind a wider API change, but not urgent and not on a hot path.
 
-### `OwnerGraphReport::from_report` drops `declared` on the floor
+### `OwnerGraph::from_report` is reconstruction-only — no production caller
 
-`graph.rs:362`. The reconstructed `OwnerNode` has `declared: BTreeSet::new()` because the JSON wire shape (`OwnerGraphNodeReport`) doesn't carry the per-node binding set — declared bindings are reported separately on the `BindingReport` rows. The planner side that reconstructs the graph from JSON can therefore not answer "which bindings does this node declare?" — `factor_assembly::compute_owner_claims` (called from `assemble_partition`) walks `owner_graph.nodes[].declared`, so the planner is structurally unable to call it on a reconstructed graph.
+`graph.rs:362`. `OwnerGraph::from_report` rehydrates an `OwnerGraph` from its JSON wire shape (`OwnerGraphReport`), but with `declared: BTreeSet::new()` because the report doesn't carry per-node binding sets. The intended consumer was Stage B in a cross-process world, where the planner would reconstruct the graph from the cached Stage A artifact. With cross-process Stage B dropped, there is no production caller — only the in-crate round-trip tests at `graph.rs:1714, 1751, 1982`.
 
-In the Stage A sidecar plan, this matters: every Stage B consumer that runs `assemble_partition` against a hydrated graph needs the binding set. The wire format currently in flight on `feat-facts-wire-format` does carry per-statement `declared` via `StatementFactsReport.declared`, which means the Stage A artifact would carry the data and Stage B would have to merge it back into the reconstructed `OwnerGraph`. That merge is invisible to today's `OwnerGraph::from_report` and is itself a duplicated piece of work.
+The function is dead code that the tests keep alive. Either delete `from_report` (and the test scaffolding it supports) or keep it as a future-proofed hydration path with a doc-comment explaining that no one calls it. The current state — a "the planner is structurally unable to call this" hazard with no planner — is worth resolving in a small cleanup pass.
 
 ## Library-vs-hand-rolled
 
@@ -142,10 +140,10 @@ Six distinct types in the orbit of "stuff a chunk analysis produced" (after the 
 Watch out for:
 
 - **`ChunkFactorization` vs `ChunkAnalysis`**: both are per-chunk IR; the difference is whether the partition is applied. Could be `ChunkAnalysis` (no partition) vs `FactorizedChunk` (partition applied) and the meaning would be more obvious.
-- **`ChunkAnalysisOptions`** (`spec.rs:104`) is a _spec-side_ per-chunk knob holder; **`OwnerGraphOptions`** (`graph.rs:21`) is the _graph-build-side_ knob holder; the materializer copies one field from the former into the latter (`lowering/materialize/mod.rs:435–439`). The duplication of "options" types with the same one field (`dataflow_aware_s_chain`) is a sign that the type is doing too little — fold them together once Stage A is genuinely cacheable (Stage A's cache key needs `OwnerGraphOptions`, so the spec/graph boundary forces a copy today).
+- **`ChunkAnalysisOptions`** (`spec.rs:104`) is a _spec-side_ per-chunk knob holder; **`OwnerGraphOptions`** (`graph.rs:21`) is the _graph-build-side_ knob holder; the materializer copies one field from the former into the latter (`lowering/materialize/mod.rs:435–439`). The duplication of "options" types with the same one field (`dataflow_aware_s_chain`) is a sign that the type is doing too little — fold them together. (The original motivation for keeping them separate — Stage A cache-key independence — went away when cross-process Stage B was dropped.)
 - **`linker_order` (`Vec<String>` in `FactorizationReport`)** vs **`linker_order` (`Vec<ModuleId>` in `ChunkFactorization`)** vs **`chunk_linker_order` (`BTreeMap<ModuleId, usize>` in `graph.rs`)** — three different shapes for "the toposort of the constraining-edge graph", differing in element type and whether it's "list" or "map (position lookup)". Pick one canonical type, derive the others.
 - **`UnrealizableScc` (`realizability.rs:50`)** vs **`CycleReport` (`validation.rs:35`)** vs **`QuotientSccReport` (`reports/schema.rs`)** vs **`AtomicUnitConflict` (`factor_assembly.rs:35`)** — four representations of "the spec is unrealizable, here's why" with subtly different fields. `UnrealizableScc` carries `constraining_owner_edges`; `CycleReport` carries `cut` (a minimum cut) + `evidence`; `QuotientSccReport` carries `module_edge_ids` + `constraining_module_edge_ids`. Two of these contain the same data ("the modules in the SCC + the edges in the SCC"), with the cut/evidence/min decoration added by the validator. The right shape is one core type with optional decorations, not four parallel structs.
-- **`AnalysisHints`** (`facts/mod.rs`-exported) lives in `facts`, but holds spec-derived data (`declared_pure`, `declared_pure_new`, `declared_pure_members`, `known_effects`). The data is spec-shaped, the type is in facts. This becomes a problem at Stage A serialization time: Stage A _needs_ the hints (purity inference reads them) but the hints come from the spec which is Stage B's input. Today's pipeline collects them before Stage A runs — fine — but the Stage A cache key has to include the hints, which violates the "Stage A is spec-independent" framing in `PIPELINE_SPLIT.md`.
+- **`AnalysisHints`** (`facts/mod.rs`-exported) lives in `facts`, but holds spec-derived data (`declared_pure`, `declared_pure_new`, `declared_pure_members`, `known_effects`). The data is spec-shaped, the type is in facts. Today's pipeline collects the hints before the Stage A composer runs — fine for the in-process flow — but the "Stage A is spec-independent" framing in `PIPELINE_SPLIT.md` always rested on `AnalysisHints` magically not counting as spec. With cross-process Stage B dropped, the framing is no longer load-bearing, but the module-vs-data-shape mismatch (spec-shaped data living in the facts module) is still ugly and worth a re-home.
 
 ## Algorithmic clarity (realizability gate, atom detection)
 
@@ -173,22 +171,6 @@ Spec-induced atoms (the SCCs of `I ∪ S` under the quotient) are NOT precompute
 
 `realizability.rs:1986` (`promoted_edge_in_aggregator_cycle_is_unrealizable`) is a test that exists to pin the _re-introduction_ of a previously-fixed bug. The doc-comment narrates the SHA-by-SHA history. Reading that doc-comment is what a regression test should _avoid_ requiring — the structural fix is to make the bug structurally impossible. Today the gate-side / lenient endpoints split is doc-and-test-pinned; an `EdgeRole`-typed solution would let the type checker carry the invariant.
 
-## Pipeline-split residuals
-
-The three branches in flight at review time (`feat-cli-module-merge`, `feat-facts-wire-format`, `feat-stage-a-sidecars`) have all landed. The remaining concerns are:
-
-### `Id` round-trip is still `Globals`-bound
-
-`facts/wire.rs::IdReport` serializes `(name: Atom, ctxt: u32)`. The `u32` is the `SyntaxContext`'s internal representation. **`SyntaxContext` values are meaningful only within the same SWC `Globals` instance.** If Stage B re-parses the chunk in a fresh `Globals`, the resolver issues fresh `Mark`s and the `top_level_id`-produced `Id`s won't compare equal to deserialized ones with the old `u32`.
-
-The `facts_round_trip_unit` test covers same-process round-trip where the `Globals` is the same. The test the wire format actually needs is the **cross-`Globals` test**: parse → serialize → drop `Globals` → re-parse in fresh `Globals` → deserialize → assert `top_level_id` matches. Until that test exists and passes, cross-process Stage B is unsound.
-
-The fix: don't serialize `SyntaxContext`. Carry the binding `Atom` plus an enum tag (`TopLevel | ImportedFromChunk(...) | Global`). Stage B reconstructs `Id`s via `top_level_id(name, chunk_top_level_mark)` from its own re-parse.
-
-### Stage A side effects are still in the materializer's process
-
-Today the pipeline runs everything inline in `materialize_logical_chunk`, including side-effecting actions (top-level-await `bail!`, redundant-hint stderr). When Stage A becomes its own Bazel action, those side effects need to move out of the materializer's process: produce a Stage A artifact + log warnings as part of that action; the materializer loads the artifact and doesn't re-emit. Today the warnings are stderr from the materializer; that has to change. Worth pinning a TODO in `stage_one/mod.rs` so the reader knows the next step.
-
 ## Test-vs-spec drift
 
 ### `#[ignore]`d tests are clean
@@ -205,7 +187,7 @@ Today the pipeline runs everything inline in `materialize_logical_chunk`, includ
 
 ### The DESIGN.md vs CODE_REVIEW.md vs README.md vs guide.md split
 
-These four files plus AGENTS.md plus RENAME.md plus PIPELINE_SPLIT.md document the same project from multiple perspectives. Skimming them, I find:
+These files plus AGENTS.md plus RENAME.md document the same project from multiple perspectives. Skimming them, I find:
 
 - DESIGN.md is the canonical theorem + algorithm document.
 - AGENTS.md is the canonical "how to work on this crate" document.
@@ -214,9 +196,8 @@ These four files plus AGENTS.md plus RENAME.md plus PIPELINE_SPLIT.md document t
 - guide.md is shorter intro material.
 - TODO.md is a 21K-byte backlog.
 - ~~FACTORIZE.md~~ — deleted; folded into DESIGN.md (May 2026).
+- ~~PIPELINE_SPLIT.md~~ — the cross-process Stage B plan it described was abandoned; see `WIRE_FORMAT.md` §"Cross-process scope: not a goal".
 - RENAME.md is a focused doc on the readability rename pass.
-
-This is a lot. There is one bit of genuine drift: `PIPELINE_SPLIT.md` describes `factor_assembly::compute_owner_claims` as a public API ("apply spec → claims (factor*assembly::compute_owner_claims)") but `factor_assembly.rs:90` has it as `fn compute_owner_claims` — \_private*. Minor, but evidence that PIPELINE_SPLIT.md was written before the implementation it describes.
 
 ## Quick wins (≤30 min each)
 
@@ -250,20 +231,6 @@ Entry point: introduce `enum EdgeRole`; thread it through edge construction in `
 
 ## Concerns to discuss before deciding
 
-### Should Stage A be one file or many?
-
-`PIPELINE_SPLIT.md` recommends one (Option 1 JSON pretty). `feat-stage-a-sidecars` is heading for three or four. Per §"Pipeline-split risks" above, the file split needs justification by per-CLI consumption patterns. If none of the read-only CLIs (`scc`, `atoms`, `coverage`, `describe`, `cluster`, `modules merge`) actually need partial loads, collapse to one. If yes, document the load pattern.
-
-**Decision needed before**: `feat-stage-a-sidecars` lands.
-
-### Does the wire format really need to round-trip `SyntaxContext`?
-
-`facts/wire.rs::IdReport` carries `ctxt: u32`. Per §"Pipeline-split risks", this round-trip is `Globals`-bound and breaks cross-process. The fix may be to **drop the field** and have Stage B reconstruct `Id`s via `top_level_id(name, chunk_top_level_mark)` from a re-parsed AST. But that assumes every `Id` Stage A serializes is chunk-top-level; if any lazy_reads carry non-top-level `Id`s, this assumption fails.
-
-**Decision needed before**: `feat-facts-wire-format` lands.
-
-This is the single biggest correctness risk in the in-flight work. A unit test that round-trips through two `Globals` instances would settle it conclusively — recommend adding one immediately on `feat-facts-wire-format` before merging.
-
 ### Should `ChunkAnalysisReport` be auto-derived from the IR?
 
 After the rename, `chunk_analysis::ChunkAnalysis` (IR) and `artifact::ChunkAnalysisReport` (JSON wire) still coexist as parallel definitions. The longer-term question is whether the report shape should be derived from the IR shape via a wire-format adapter (the way `OwnerGraph` ↔ `OwnerGraphReport` works). If yes, the two types collapse into one IR + one auto-derived report.
@@ -280,4 +247,4 @@ Today an "anonymous statement" is just an `OwnerNode` with empty `declared`. The
 
 ---
 
-**Reviewer note.** All file/line references are at HEAD = `01c149496`. The maintainer should treat this report as a backlog input, not a definitive ordering. The most valuable single change is probably the `ChunkPlanBuilder` extraction (Multi-session refactor #1) — it removes the most code, eliminates the most state-passing, and makes the materializer readable in one sitting. The most urgent before any other change is settling the `Id` round-trip question in `feat-facts-wire-format` before that branch lands.
+**Reviewer note.** All file/line references are at HEAD = `01c149496`. The maintainer should treat this report as a backlog input, not a definitive ordering. The most valuable single change is probably the `ChunkPlanBuilder` extraction (Multi-session refactor #1) — it removes the most code, eliminates the most state-passing, and makes the materializer readable in one sitting.
