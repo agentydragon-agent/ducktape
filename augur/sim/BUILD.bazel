@@ -198,7 +198,8 @@ py_library(
         "codec/tax.py",
         "codec/transfers.py",
         "compiler.py",
-        "engine.py",
+        "engine/__init__.py",
+        "engine/phases.py",
     ],
     tags = ["no-mypy"],
     deps = [
