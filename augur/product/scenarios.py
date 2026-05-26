@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
+
 from more_itertools import one
 
 from augur.api.bootstrap import ActorRole, Property
@@ -348,16 +350,16 @@ def build_scenario(
                     property_id=property_.id,
                 )
             )
-        _wire_landlord_rental(
+        rental_wiring = _wire_landlord_rental(
             scenario_key.property_purchase,
             property_=property_,
             primary_agent_id=primary_agent_id,
             horizon_months=horizon_months,
-            agents=agents,
-            initial_cash=initial_cash,
-            recurring_transfers=recurring_transfers,
-            scheduled_transfers=scheduled_transfers,
         )
+        agents.extend(rental_wiring.agents)
+        initial_cash.extend(rental_wiring.initial_cash)
+        recurring_transfers.extend(rental_wiring.recurring_transfers)
+        scheduled_transfers.extend(rental_wiring.scheduled_transfers)
 
     private_equity_tender_policies = _build_private_equity_tender_policies(
         scenario_key=scenario_key, initial_lots=initial_lots, primary_agent_id=primary_agent_id
@@ -463,17 +465,22 @@ def _initial_occupancy(purchase: PropertyPurchase) -> tuple[OccupancyMode, float
     return OccupancyMode.RENTED_PARTIAL, fraction
 
 
+@dataclass
+class LandlordRentalWiring:
+    """Per-property landlord rental wiring produced by `_wire_landlord_rental`. Caller
+    extends its parallel `agents`/`initial_cash`/`recurring_transfers`/
+    `scheduled_transfers` lists with these four — one merge site per property, instead
+    of mutating caller-owned lists threaded through the helper as kwargs."""
+
+    agents: list[Agent] = field(default_factory=list)
+    initial_cash: list[InitialAccountBalance] = field(default_factory=list)
+    recurring_transfers: list[RecurringTransfer] = field(default_factory=list)
+    scheduled_transfers: list[ScheduledTransfer] = field(default_factory=list)
+
+
 def _wire_landlord_rental(
-    purchase: PropertyPurchase,
-    *,
-    property_: Property,
-    primary_agent_id: str,
-    horizon_months: int,
-    agents: list[Agent],
-    initial_cash: list[InitialAccountBalance],
-    recurring_transfers: list[RecurringTransfer],
-    scheduled_transfers: list[ScheduledTransfer],
-) -> None:
+    purchase: PropertyPurchase, *, property_: Property, primary_agent_id: str, horizon_months: int
+) -> LandlordRentalWiring:
     """Wire up tenant→owner rent + owner→agency management/leasing fees.
 
     Phase 1: rental is constant from month 0 through end-of-horizon. The tenant→owner
@@ -483,17 +490,20 @@ def _wire_landlord_rental(
     while the property is in a rental status.
     """
 
+    wiring = LandlordRentalWiring()
     rental = purchase.initial_rental
     if rental is None:
-        return
+        return wiring
     end_month = horizon_months - 1
     rent_series = rent_series_id(property_.location_id)
     base_monthly_rent = _resolve_monthly_rent(rental, property_=property_)
     base_monthly_collected = base_monthly_rent * float(rental.fraction_rented) * (1.0 - float(rental.vacancy_pct))
 
-    agents.append(Agent(agent_id=TENANT_AGENT_ID))
-    initial_cash.append(InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id=TENANT_ACCOUNT_ID, balance_usd=0.0))
-    recurring_transfers.append(
+    wiring.agents.append(Agent(agent_id=TENANT_AGENT_ID))
+    wiring.initial_cash.append(
+        InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id=TENANT_ACCOUNT_ID, balance_usd=0.0)
+    )
+    wiring.recurring_transfers.append(
         RecurringTransfer(
             start_month=0,
             end_month=end_month,
@@ -516,16 +526,16 @@ def _wire_landlord_rental(
 
     management = purchase.rental_management
     if management is None:
-        return
-    agents.append(Agent(agent_id=PROPERTY_MANAGEMENT_AGENT_ID))
-    initial_cash.append(
+        return wiring
+    wiring.agents.append(Agent(agent_id=PROPERTY_MANAGEMENT_AGENT_ID))
+    wiring.initial_cash.append(
         InitialAccountBalance(
             agent_id=PROPERTY_MANAGEMENT_AGENT_ID, account_id=PROPERTY_MANAGEMENT_ACCOUNT_ID, balance_usd=0.0
         )
     )
     management_fee_fraction = float(management.management_fee_pct) / 100.0
     if management_fee_fraction > 0:
-        recurring_transfers.append(
+        wiring.recurring_transfers.append(
             RecurringTransfer(
                 start_month=0,
                 end_month=end_month,
@@ -546,7 +556,7 @@ def _wire_landlord_rental(
     leasing_fee_months_val = float(management.leasing_fee_months)
     if leasing_fee_months_val > 0:
         leasing_fee_base = base_monthly_rent * leasing_fee_months_val
-        scheduled_transfers.extend(
+        wiring.scheduled_transfers.extend(
             ScheduledTransfer(
                 month=fire_month,
                 cause_id=f"{LEASING_FEE_CAUSE_ID}:{property_.id}:m{fire_month}",
@@ -562,6 +572,7 @@ def _wire_landlord_rental(
             )
             for fire_month in range(0, horizon_months, int(management.avg_tenancy_months))
         )
+    return wiring
 
 
 def _sim_mortgage_for(purchase: PropertyPurchase, property_: Property) -> SimMortgageFinancing | None:
