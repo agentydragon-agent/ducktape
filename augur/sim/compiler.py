@@ -330,7 +330,6 @@ class CompiledSimulation:
     pe_policy_floor_adjustment_period: np.ndarray
     pe_policy_owner_cash_mask: np.ndarray
     pe_policy_owner_non_pe_lot_mask: np.ndarray
-    tax_settlement_profile_index: np.ndarray
     liquidity_policy_agent_codes: np.ndarray
     liquidity_policy_account_codes: np.ndarray
     liquidity_policy_cash_slot: np.ndarray
@@ -621,7 +620,6 @@ def compile_simulation(
         obligation_amount_adjustment_period,
         obligation_source_kind,
         obligation_source_index,
-        tax_settlement_profile_index,
         obligation_property_tax_profile,
         obligation_property_tax_owner_fraction,
         obligation_property_slot,
@@ -883,7 +881,6 @@ def compile_simulation(
         pe_policy_floor_adjustment_period=pe_policy_floor_adjustment_period,
         pe_policy_owner_cash_mask=pe_policy_owner_cash_mask,
         pe_policy_owner_non_pe_lot_mask=pe_policy_owner_non_pe_lot_mask,
-        tax_settlement_profile_index=tax_settlement_profile_index,
         liquidity_policy_agent_codes=liquidity_policy_agent_codes,
         liquidity_policy_account_codes=liquidity_policy_account_codes,
         liquidity_policy_cash_slot=liquidity_policy_cash_slot,
@@ -1778,7 +1775,6 @@ def _compile_obligation_slots(
     amount_period = _empty_month_matrix(horizon, max_slots, np.int64, 1)
     source_kind = _empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
     source_index = _empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
-    tax_settlement_profile = _empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
     # Default NO_CODE; populated only for property-tax obligations whose owner has a TaxProfile.
     property_tax_profile = _empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
     # Fraction of paid property tax that contributes to SALT (initial value for no-lifecycle
@@ -1922,7 +1918,6 @@ def _compile_obligation_slots(
                     tax_year = int(spec["tax_year"])
                     cause_text = f"{profile.agent_id}_tax_true_up_y{tax_year}"
                     obligation_type_text = "tax_true_up"
-                    tax_settlement_profile[month, idx] = profile_index
                 cause[month, idx] = strings.require(cause_text)
                 obligation_id[month, idx] = strings.require(cause_text)
                 obligation_type[month, idx] = strings.require(obligation_type_text)
@@ -1952,7 +1947,6 @@ def _compile_obligation_slots(
         amount_period,
         source_kind,
         source_index,
-        tax_settlement_profile,
         property_tax_profile,
         property_tax_owner_fraction,
         property_slot_matrix,
