@@ -8,6 +8,7 @@ The cache stores per-rollout R=1 DenseSimulationResult primitives keyed by
 
 from __future__ import annotations
 
+import threading
 from collections import OrderedDict
 from dataclasses import dataclass
 from typing import cast
@@ -94,6 +95,13 @@ class ProductService:
         self._initial_lots = initial_lots_from_portfolio(portfolio, primary_agent_id=primary_agent_id)
         self._asset_label_by_id = asset_label_by_series_id(portfolio)
         self._cache: OrderedDict[tuple[ScenarioKey, int], _CachedRollout] = OrderedDict()
+        # FastAPI + uvicorn dispatches request handlers concurrently. The cache's get→miss→
+        # simulate→put sequence is not atomic; without a lock two simultaneous metric-fan
+        # requests on the same scenario+seed can both run the simulation. The lock is held
+        # only across the OrderedDict ops (which are O(1) plus the move_to_end / popitem
+        # bookkeeping) — `_simulate_missing` runs outside the lock so we don't serialize
+        # CPU-bound simulations.
+        self._cache_lock = threading.Lock()
 
     def metric_fan(self, request: MetricFanRequest) -> MetricFanResponse:
         if request.rollout_count > self._max_rollout_samples:
@@ -203,18 +211,20 @@ class ProductService:
 
     def _cache_get(self, scenario_key: ScenarioKey, seed: int) -> _CachedRollout | None:
         key = (scenario_key, seed)
-        entry = self._cache.get(key)
-        if entry is None:
-            return None
-        self._cache.move_to_end(key)
-        return entry
+        with self._cache_lock:
+            entry = self._cache.get(key)
+            if entry is None:
+                return None
+            self._cache.move_to_end(key)
+            return entry
 
     def _cache_put(self, scenario_key: ScenarioKey, seed: int, entry: _CachedRollout) -> None:
         key = (scenario_key, seed)
-        self._cache[key] = entry
-        self._cache.move_to_end(key)
-        while len(self._cache) > self._max_cache_rollouts:
-            self._cache.popitem(last=False)
+        with self._cache_lock:
+            self._cache[key] = entry
+            self._cache.move_to_end(key)
+            while len(self._cache) > self._max_cache_rollouts:
+                self._cache.popitem(last=False)
 
 
 def _monthly_metric_fan(
