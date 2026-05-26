@@ -12,8 +12,10 @@ The per-chunk JSON files debundle writes under
 are consumed by:
 
 - spec authors with `jq` poking at cycle / owner-graph / atomic-unit reports;
-- CLI tooling (`debundle peel`, future `binding describe` / `scc` /
-  `cluster` / etc.);
+- CLI tooling (top-level `debundle modules propose` / `atoms` /
+  `coverage` / `describe` / `show-source` / `scc` / `cluster` /
+  `graph-summary` — the legacy `debundle peel <…>` spellings still
+  work as deprecated aliases);
 - a planned cross-process Stage B reader (`materialize_from_analysis`,
   task #78) that re-runs the materializer from a cached Stage A
   artifact;
@@ -155,12 +157,11 @@ implementation surface than the cache is worth at gaffer scale).
 
 So the design splits into two scopes:
 
-- The **query surface** (`peel scc`, `peel units`, `peel patch-plan`,
-  `peel graph-summary`, future `binding describe` / `scc` /
-  `cluster` / `binding show-code`) reads the existing Atom-only
-  files. Already works cross-process; the existing `peel` family is
-  the working proof. No `SyntaxContext` ever leaves a process
-  boundary.
+- The **query surface** (top-level `scc`, `atoms`, `coverage`,
+  `graph-summary`, `describe`, `show-source`, `cluster`, `modules
+  propose`) reads the existing Atom-only files. Already works
+  cross-process; the surface is the working proof. No `SyntaxContext`
+  ever leaves a process boundary.
 - The **materializer** stays in-process. Editing a spec re-runs the
   full pipeline (parse → facts → owner_graph → assemble → validate →
   lower). At gaffer scale that's ~5–10s; most of it is parse, which
@@ -206,15 +207,13 @@ the same conceptual binding.
 
 ## Reader audiences
 
-| Consumer                                                                      | Reads                                                           | Cross-process?           |
-| ----------------------------------------------------------------------------- | --------------------------------------------------------------- | ------------------------ |
-| Spec author with `jq`                                                         | `owner_graph.json`, `cycles.json`, `atomic_unit_conflicts.json` | yes (Atom-only)          |
-| `peel scc` / `peel units` / `peel patch-plan` / `peel graph-summary`          | `owner_graph.json` + spec                                       | yes (Atom-only)          |
-| `peel plan-work`                                                              | `owner_graph.json` + spec                                       | yes (Atom-only)          |
-| `debundle module merge` (today)                                               | spec YAMLs only                                                 | yes                      |
-| Future `binding describe` / top-level `scc` / `cluster` / `binding show-code` | `owner_graph.json`, `atomic_units.json`, source bytes           | yes (Atom-only; planned) |
-| Debugging human inspecting `facts.json`                                       | `facts.json`                                                    | NO — same-process only   |
-| Materializer (`debundle run`)                                                 | spec + chunk bytes + everything in-process                      | N/A — always in-process  |
+| Consumer                                                                                                              | Reads                                                           | Cross-process?          |
+| --------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | ----------------------- |
+| Spec author with `jq`                                                                                                 | `owner_graph.json`, `cycles.json`, `atomic_unit_conflicts.json` | yes (Atom-only)         |
+| `debundle atoms` / `coverage` / `graph-summary` / `scc` / `cluster` / `describe` / `show-source` / `modules propose`  | `owner_graph.json`, `atomic_units.json`, source bytes + spec    | yes (Atom-only)         |
+| `debundle bindings assign` / `bindings rename` / `modules merge`                                                      | spec YAMLs + `owner_graph.json` (gate)                          | yes                     |
+| Debugging human inspecting `facts.json`                                                                               | `facts.json`                                                    | NO — same-process only  |
+| Materializer (`debundle run`)                                                                                         | spec + chunk bytes + everything in-process                      | N/A — always in-process |
 
 ## Status of related tasks
 

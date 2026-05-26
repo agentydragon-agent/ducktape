@@ -1422,8 +1422,9 @@ records the fine-grained "this owner uses that owner" relation before
 any module-level quotienting. Diagnostics are projections of that
 graph: validation cycles explain why the current explicit assignment
 is not realizable, `atomic_graph` records which owner sets are
-indivisible, and `debundle peel` can rank or annotate DAG-derived
-proposals. None of those projections silently assign bindings on
+indivisible, and the read-only query surface (`debundle modules
+propose`, `atoms`, `coverage`, `describe`, `show-source`, `scc`,
+`cluster`, `graph-summary`) can rank or annotate DAG-derived proposals. None of those projections silently assign bindings on
 behalf of the spec author.
 
 Each materialized chunk has reports under `reports/tree/<chunk_id>/`.
@@ -1459,9 +1460,9 @@ use the owner graph and source bodies for drill-down.
    - **Atomic-unit conflicts** when the spec splits an indivisible unit.
    - **Atomic DAG facts** in `owner_graph.json` for planning the next peel.
 3. Spec author resolves: first fix any validation cycles or atomic-unit
-   conflicts; then use `debundle peel plan-work`, `units`, `patch-plan`,
-   `explain`, and `source-slice` to choose explicit owner sets for new spec
-   modules with good public names.
+   conflicts; then use `debundle modules propose`, `atoms`, `coverage`,
+   `describe`, and `show-source` to choose explicit owner sets for new
+   spec modules with good public names.
 4. Re-run validator. Iterate until validation is green and the
    residual contains only intentionally generated or low-value noise.
 
@@ -1474,10 +1475,12 @@ implicit transformation in the middle.
 The same owner graph drives the next-spec workflow. A pipeline that
 only reports whether the current spec passed forces spec authors into
 speculative edit/build/test loops. `debundle run` therefore emits the
-atomic-unit DAG in `owner_graph.json`, and `debundle peel` computes
-advisory proposal views from that stable graph.
+atomic-unit DAG in `owner_graph.json`, and the top-level read-only
+queries (`debundle modules propose`, `atoms`, `coverage`, `describe`,
+`show-source`, `scc`, `cluster`, `graph-summary`) compute advisory
+views from that stable graph.
 
-`debundle peel plan-work` computes proposal owner sets with three statuses:
+`debundle modules propose` computes proposal owner sets with three statuses:
 
 - **`peelable_now`** — this closed atomic-DAG owner set is currently usable
   as an authoring proposal.
@@ -1489,8 +1492,8 @@ advisory proposal views from that stable graph.
 The important invariant is that the proposal queue is a projection over
 `atomic_graph`, not a separate fact emitted by the transform pipeline.
 Ordinary `debundle run` emits owner facts, module quotient facts, and the
-atomic DAG; `debundle peel` ranks and groups those facts for authoring
-workflows.
+atomic DAG; the read-only query surface ranks and groups those facts for
+authoring workflows.
 
 ### Residual Proposal Closures
 
@@ -1506,8 +1509,8 @@ they are represented by a constraining atomic edge.
 
 This makes larger peel sets unambiguous: a proposal is "minimal" only with
 respect to the current closure heuristic. The authoritative graph fact is
-the atomic DAG; agents should use `units`, `explain`, and `source-slice` to
-decide whether the recommendation is a good module shape.
+the atomic DAG; agents should use `atoms`, `describe`, and `show-source`
+to decide whether the recommendation is a good module shape.
 
 ### Detailed graph side output
 

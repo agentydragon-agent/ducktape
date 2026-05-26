@@ -252,7 +252,7 @@ Entry point: introduce `enum EdgeRole`; thread it through edge construction in `
 
 ### Should Stage A be one file or many?
 
-`PIPELINE_SPLIT.md` recommends one (Option 1 JSON pretty). `feat-stage-a-sidecars` is heading for three or four. Per §"Pipeline-split risks" above, the file split needs justification by per-CLI consumption patterns. If none of the planned CLIs (`peel scc`, `peel units`, `peel patch-plan`, `binding describe`, `cluster`, `module merge`) actually need partial loads, collapse to one. If yes, document the load pattern.
+`PIPELINE_SPLIT.md` recommends one (Option 1 JSON pretty). `feat-stage-a-sidecars` is heading for three or four. Per §"Pipeline-split risks" above, the file split needs justification by per-CLI consumption patterns. If none of the read-only CLIs (`scc`, `atoms`, `coverage`, `describe`, `cluster`, `modules merge`) actually need partial loads, collapse to one. If yes, document the load pattern.
 
 **Decision needed before**: `feat-stage-a-sidecars` lands.
 
