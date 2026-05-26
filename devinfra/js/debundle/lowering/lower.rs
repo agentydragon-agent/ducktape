@@ -348,6 +348,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
             top_level_mark: runtime_ast.top_level_mark,
         }),
         header_lines: header_lines.to_vec(),
+        binding_comments: BTreeMap::new(),
         metadata: FileMetadata {
             chunk_id: chunk_id.to_string(),
             chunk_file: entry_file.to_string(),
@@ -680,7 +681,17 @@ fn build_module_output(
         .factorization
         .analysis
         .owner_report_ids_for_bindings(binding_ids.iter());
-    let header = vec![
+    // Module-level `comment:` from the spec lands at the very top of
+    // the emitted file (above the lowerer's pragma block), separated
+    // from the pragmas by a blank `//` line so the human-readable
+    // text stays visually distinct from generator metadata. Empty /
+    // absent comment emits nothing.
+    let mut header: Vec<String> = Vec::new();
+    if let Some(comment) = plan.comment.as_deref().filter(|c| !c.is_empty()) {
+        header.extend(format_comment_block_lines(comment));
+        header.push(String::new());
+    }
+    header.extend([
         LOWERING_FILE_PRAGMA.to_string(),
         LOWERING_GENERATOR_HEADER.to_string(),
         format!(
@@ -691,7 +702,7 @@ fn build_module_output(
             "// Selected-module lowered region; source bindings: {}.",
             binding_names.join(", ")
         ),
-    ];
+    ]);
     let file = JsFile {
         path: plan.target_file.clone(),
         body: JsFileBody::Ast(ParsedJsModule {
@@ -705,6 +716,7 @@ fn build_module_output(
             top_level_mark: context.runtime_ast.top_level_mark,
         }),
         header_lines: header,
+        binding_comments: plan.binding_comments.clone(),
         metadata: FileMetadata {
             chunk_id: context.chunk_id.to_string(),
             chunk_file: plan.target_file.clone(),

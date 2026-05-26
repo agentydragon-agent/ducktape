@@ -471,6 +471,12 @@ pub struct LogicalModule {
     /// match per entry.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub anonymous_statements: Vec<AnonymousStatement>,
+    /// Optional human-readable comment emitted at the top of the
+    /// generated module file, before any imports. Per-line literal
+    /// `// ` prefix; empty input lines emit as `//`. See
+    /// `CLI.md` § "per-member and module-level `comment:` fields".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub comment: Option<String>,
 }
 
 /// Co-mover spec for a top-level anonymous side-effect statement.
@@ -530,6 +536,13 @@ pub struct Member {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     #[serde(default)]
     pub pure_members: Vec<String>,
+    /// Optional human-readable comment emitted as a `// ...` block
+    /// immediately above the binding's owner statement in the
+    /// generated JS. Per-line literal `// ` prefix; empty input
+    /// lines emit as `//`. See `CLI.md` § "per-member and
+    /// module-level `comment:` fields".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub comment: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

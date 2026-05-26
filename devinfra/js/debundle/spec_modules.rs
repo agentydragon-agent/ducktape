@@ -27,6 +27,11 @@ use spec::{AnonymousStatement, BindingSourceKind, Member};
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ModuleFile {
+    /// Optional module-level human-readable comment. Emitted at the
+    /// top of the generated module file, before any imports. See
+    /// [`spec::LogicalModule::comment`].
+    #[serde(default)]
+    pub comment: Option<String>,
     #[serde(default)]
     pub members: Vec<Member>,
     #[serde(default)]
@@ -211,6 +216,33 @@ mod tests {
         let module = read_module_file(&path).unwrap();
         assert_eq!(module.members.len(), 1);
         assert_eq!(module.members[0].selector.binding.name, "a");
+    }
+
+    #[test]
+    fn read_module_file_round_trips_comment_fields_on_module_and_member() {
+        // Module-level `comment:` and per-member `comment:` both
+        // deserialize via the optional `Option<String>` fields. The
+        // lowering pass renders them as JS `// ...` blocks; here we
+        // only assert the parser round-trips the YAML shape.
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("x.yaml");
+        fs::write(
+            &path,
+            "comment: |\n  Module overview\n  spans two lines.\nmembers:\n  - \
+             selector: { binding: { name: a } }\n    comment: |\n      Per-member comment\n      \
+             across two lines.\n",
+        )
+        .unwrap();
+        let module = read_module_file(&path).unwrap();
+        assert_eq!(
+            module.comment.as_deref(),
+            Some("Module overview\nspans two lines.\n"),
+        );
+        assert_eq!(module.members.len(), 1);
+        assert_eq!(
+            module.members[0].comment.as_deref(),
+            Some("Per-member comment\nacross two lines.\n"),
+        );
     }
 
     #[test]

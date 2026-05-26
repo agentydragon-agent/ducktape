@@ -283,6 +283,7 @@ fn canonical_parsed_file(chunk_id: &str, source_path: &str, parsed: ParsedJsModu
             .iter()
             .map(|line| (*line).to_string())
             .collect(),
+        binding_comments: std::collections::BTreeMap::new(),
         metadata: FileMetadata {
             chunk_id: chunk_id.to_string(),
             chunk_file: CANONICAL_CHUNK_ENTRY_FILE.to_string(),

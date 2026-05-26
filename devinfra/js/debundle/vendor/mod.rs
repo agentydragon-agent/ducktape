@@ -2555,6 +2555,7 @@ export { b as beta };
                         parse_js_module(&format!("{chunk_id}/{entry_file}"), source).unwrap(),
                     ),
                     header_lines: Vec::new(),
+                    binding_comments: std::collections::BTreeMap::new(),
                     metadata: FileMetadata {
                         chunk_id: chunk_id.to_string(),
                         chunk_file: entry_file.clone(),

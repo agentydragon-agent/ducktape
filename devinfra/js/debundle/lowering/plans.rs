@@ -16,6 +16,10 @@ pub(super) struct LogicalRequest {
     /// asked to co-move into this module. Resolved later (after AST
     /// analysis) into [`ModulePlan::anonymous_statement_ordinals`].
     pub(super) anonymous_match_sources: Vec<String>,
+    /// Module-level human-readable comment from the spec. Emitted
+    /// at the top of the generated module file, before any imports.
+    /// See [`spec::LogicalModule::comment`].
+    pub(super) comment: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -46,6 +50,10 @@ pub(super) struct MemberRequest {
     /// AGENTS.md "Declared purity". Empty when the spec doesn't carry a
     /// `pure_members` entry for this member.
     pub(super) pure_members: Vec<String>,
+    /// Per-member human-readable comment from the spec. Emitted as a
+    /// `// ...` block above the binding's owner statement in the
+    /// generated module body. See [`spec::Member::comment`].
+    pub(super) comment: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -73,6 +81,15 @@ pub(super) struct ModulePlan {
     /// materializer routes each such statement into this module's
     /// body in source order, alongside the named members.
     pub(super) anonymous_statement_ordinals: Vec<usize>,
+    /// Module-level human-readable comment from the spec, if any.
+    /// Emitted at the top of the generated module file, before
+    /// imports. See [`spec::LogicalModule::comment`].
+    pub(super) comment: Option<String>,
+    /// Local-name → per-member comment text from the spec, for the
+    /// bindings this plan claims. Emitted as a `// ...` block above
+    /// the binding's owner statement in the generated module body.
+    /// See [`spec::Member::comment`].
+    pub(super) binding_comments: BTreeMap<String, String>,
 }
 
 pub(super) fn logical_requests_for_chunk(
@@ -107,6 +124,7 @@ pub(super) fn logical_requests_for_chunk(
                 residual: false,
                 members,
                 anonymous_match_sources,
+                comment: module.comment.clone(),
             });
         }
     }
@@ -125,6 +143,7 @@ pub(super) fn logical_requests_for_chunk(
             residual: true,
             members: Vec::new(),
             anonymous_match_sources: Vec::new(),
+            comment: None,
         });
     }
     // Fallback: when the spec is silent about this chunk (no
@@ -148,6 +167,7 @@ pub(super) fn logical_requests_for_chunk(
             residual: true,
             members: Vec::new(),
             anonymous_match_sources: Vec::new(),
+            comment: None,
         });
     }
     Ok(requests)
@@ -272,6 +292,8 @@ pub(super) fn synthesize_mini_factor_plans(
             explicit: false,
             bindings,
             anonymous_statement_ordinals,
+            comment: None,
+            binding_comments: BTreeMap::new(),
         });
     }
     Ok(())
@@ -293,6 +315,7 @@ pub(super) fn build_members(members: &[spec::Member]) -> Vec<MemberRequest> {
                 purity: m.purity,
                 effect: m.effect,
                 pure_members: m.pure_members.clone(),
+                comment: m.comment.clone(),
             }
         })
         .collect()

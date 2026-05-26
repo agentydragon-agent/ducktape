@@ -250,6 +250,16 @@ pub(super) fn materialize_logical_chunk(
                 });
             }
         }
+        let binding_comments: BTreeMap<String, String> = request
+            .members
+            .iter()
+            .filter_map(|member| {
+                member
+                    .comment
+                    .as_ref()
+                    .map(|c| (member.binding.clone(), c.clone()))
+            })
+            .collect();
         module_plans.push(ModulePlan {
             id: request.id.clone(),
             target_file: dest_target_file,
@@ -257,6 +267,8 @@ pub(super) fn materialize_logical_chunk(
             explicit: true,
             bindings,
             anonymous_statement_ordinals,
+            comment: request.comment.clone(),
+            binding_comments,
         });
     }
     drop(imported_binding_resolver);
@@ -350,6 +362,8 @@ pub(super) fn materialize_logical_chunk(
                 explicit: false,
                 bindings: residual_bindings,
                 anonymous_statement_ordinals: Vec::new(),
+                comment: None,
+                binding_comments: BTreeMap::new(),
             });
             residual_plan_index = Some(residual_index);
         }

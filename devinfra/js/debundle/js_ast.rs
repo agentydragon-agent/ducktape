@@ -1,7 +1,11 @@
+use std::collections::BTreeMap;
+
 use anyhow::{Result, bail};
+use swc_atoms::Atom;
+use swc_common::comments::{Comment, CommentKind, Comments, SingleThreadedComments};
 use swc_common::sync::Lrc;
-use swc_common::{BytePos, FileName, GLOBALS, Globals, Mark, SourceMap};
-use swc_ecma_ast::{Module, Str};
+use swc_common::{BytePos, DUMMY_SP, FileName, GLOBALS, Globals, Mark, SourceMap, Spanned};
+use swc_ecma_ast::{Decl, ModuleDecl, ModuleItem, Module, Pat, Stmt, Str};
 use swc_ecma_codegen::text_writer::JsWriter;
 use swc_ecma_codegen::{Config, Emitter};
 use swc_ecma_parser::{Parser, StringInput, Syntax, TsSyntax, lexer::Lexer};
@@ -238,12 +242,42 @@ fn parse_module_from_source_file(source_name: &str, fm: &swc_common::SourceFile)
 }
 
 pub fn emit_js_module(parsed: &ParsedJsModule, header_lines: &[String]) -> Result<String> {
+    emit_js_module_with_comments(parsed, header_lines, &BTreeMap::new())
+}
+
+/// Emit a JS module with optional per-binding leading line comments.
+///
+/// `binding_comments` maps a top-level binding name to a human-readable
+/// comment block (verbatim spec text — newlines preserved). For each
+/// top-level item in `parsed.module.body` whose declared binding names
+/// intersect the map, the comment text is split on `\n` and emitted as
+/// one `// <line>` per source line immediately before the statement,
+/// using SWC's leading-comment machinery. Empty input lines emit as a
+/// bare `//`. Trailing whitespace on each line is trimmed.
+///
+/// `binding_comments` keys that match no top-level statement are
+/// silently ignored — the lowerer routes its own member set into each
+/// module body, so a comment-but-no-statement state isn't reachable in
+/// the normal pipeline, and a test fixture that exercises it shouldn't
+/// fail emission.
+pub fn emit_js_module_with_comments(
+    parsed: &ParsedJsModule,
+    header_lines: &[String],
+    binding_comments: &BTreeMap<String, String>,
+) -> Result<String> {
+    let comments_storage = SingleThreadedComments::default();
+    let comments_handle: Option<&dyn Comments> = if binding_comments.is_empty() {
+        None
+    } else {
+        attach_binding_comments(&parsed.module, binding_comments, &comments_storage);
+        Some(&comments_storage)
+    };
     let mut buf = Vec::new();
     {
         let mut emitter = Emitter {
             cfg: Config::default(),
             cm: parsed.cm.clone(),
-            comments: None,
+            comments: comments_handle,
             wr: JsWriter::new(parsed.cm.clone(), "\n", &mut buf, None),
         };
         emitter.emit_module(&parsed.module)?;
@@ -261,6 +295,153 @@ pub fn emit_js_module(parsed: &ParsedJsModule, header_lines: &[String]) -> Resul
     out.push_str(code);
     out.push('\n');
     Ok(out)
+}
+
+/// Walk `module.body` and, for each top-level item whose declared
+/// binding names overlap `binding_comments`, attach one `Line` comment
+/// per source line of the comment text to the item's span lo position.
+///
+/// Each source-text line is trimmed of trailing whitespace and emitted
+/// as `// <text>`; empty lines emit as `//` so paragraph structure
+/// survives. Items with `DUMMY_SP` (synthesized statements with no
+/// source-anchor lo) are skipped — the lowerer always carries the
+/// declaration's original span through, so this is a defensive guard,
+/// not an expected case.
+fn attach_binding_comments(
+    module: &Module,
+    binding_comments: &BTreeMap<String, String>,
+    storage: &SingleThreadedComments,
+) {
+    for item in &module.body {
+        let names = item_declared_names(item);
+        let comment_text = names
+            .iter()
+            .find_map(|name| binding_comments.get(name.as_str()));
+        let Some(comment_text) = comment_text else {
+            continue;
+        };
+        // Empty `comment:` text emits nothing — matches the spec's
+        // "absent / empty string emit nothing" rule.
+        if comment_text.is_empty() {
+            continue;
+        }
+        let span = item.span();
+        if span.lo() == BytePos(0) {
+            // Synthesized item without a source-anchored lo (e.g. an
+            // injected import). SWC keys comments by span lo, so we
+            // cannot anchor here. Skip rather than corrupt the map.
+            continue;
+        }
+        for line in format_member_comment_line_texts(comment_text) {
+            storage.add_leading(
+                span.lo(),
+                Comment {
+                    kind: CommentKind::Line,
+                    span: DUMMY_SP,
+                    text: Atom::from(line),
+                },
+            );
+        }
+    }
+}
+
+/// Format spec comment text into a sequence of `//`-prefixed lines.
+///
+/// Each input line is trimmed of trailing whitespace. Empty input
+/// lines emit as `//` (no trailing space) so paragraph structure in
+/// the source survives the round trip. Non-empty lines emit as
+/// `// <text>`. The output is a `Vec<String>`, one entry per emitted
+/// line, ready to be joined by `\n` callers.
+pub fn format_comment_block_lines(text: &str) -> Vec<String> {
+    text.split('\n')
+        .map(|line| {
+            let trimmed = line.trim_end();
+            if trimmed.is_empty() {
+                "//".to_string()
+            } else {
+                format!("// {trimmed}")
+            }
+        })
+        .collect()
+}
+
+/// Format spec comment text into the per-line texts SWC's `Line`-kind
+/// Comment expects (the prefix `//` is added by the emitter, so each
+/// entry is the *body* of one line comment, including any leading
+/// space).
+///
+/// Mirrors [`format_comment_block_lines`] but returns the bare body
+/// for each line (`" foo"` vs `"// foo"`), since SWC emits the `//`
+/// itself.
+fn format_member_comment_line_texts(text: &str) -> Vec<String> {
+    text.split('\n')
+        .map(|line| {
+            let trimmed = line.trim_end();
+            if trimmed.is_empty() {
+                String::new()
+            } else {
+                format!(" {trimmed}")
+            }
+        })
+        .collect()
+}
+
+/// Collect every top-level binding name a `ModuleItem` declares.
+///
+/// Covers the top-level declaration shapes the debundler lowerer
+/// emits: `function`, `class`, `var`/`let`/`const` (named patterns
+/// only — destructured names are also returned so a `comment:` on
+/// any one binding of a destructure anchors above the whole
+/// statement), and the matching `export` variants. Returns an empty
+/// vec for statements that bind no top-level name (expression
+/// statements, side-effect calls, etc.).
+fn item_declared_names(item: &ModuleItem) -> Vec<String> {
+    let decl = match item {
+        ModuleItem::Stmt(Stmt::Decl(decl)) => decl,
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => &export.decl,
+        _ => return Vec::new(),
+    };
+    decl_declared_names(decl)
+}
+
+fn decl_declared_names(decl: &Decl) -> Vec<String> {
+    match decl {
+        Decl::Fn(f) => vec![f.ident.sym.to_string()],
+        Decl::Class(c) => vec![c.ident.sym.to_string()],
+        Decl::Var(var) => {
+            let mut names = Vec::new();
+            for declarator in &var.decls {
+                pat_names_into(&declarator.name, &mut names);
+            }
+            names
+        }
+        _ => Vec::new(),
+    }
+}
+
+fn pat_names_into(pat: &Pat, out: &mut Vec<String>) {
+    match pat {
+        Pat::Ident(ident) => out.push(ident.id.sym.to_string()),
+        Pat::Array(arr) => {
+            for elem in arr.elems.iter().flatten() {
+                pat_names_into(elem, out);
+            }
+        }
+        Pat::Object(obj) => {
+            for prop in &obj.props {
+                match prop {
+                    swc_ecma_ast::ObjectPatProp::KeyValue(kv) => pat_names_into(&kv.value, out),
+                    swc_ecma_ast::ObjectPatProp::Assign(assign) => {
+                        out.push(assign.key.id.sym.to_string());
+                    }
+                    swc_ecma_ast::ObjectPatProp::Rest(rest) => pat_names_into(&rest.arg, out),
+                }
+            }
+        }
+        Pat::Rest(rest) => pat_names_into(&rest.arg, out),
+        Pat::Assign(assign) => pat_names_into(&assign.left, out),
+        Pat::Invalid(_) | Pat::Expr(_) => {}
+    }
 }
 
 pub fn line_for_span(parsed: &ParsedJsModule, span: swc_common::Span) -> Option<usize> {
@@ -334,6 +515,90 @@ mod tests {
             assert_eq!(line_range_for_span(&parsed, DUMMY_SP), None);
             assert_eq!(line_index.line_for_span(DUMMY_SP), None);
             assert_eq!(line_index.line_range_for_span(DUMMY_SP), None);
+        });
+    }
+
+    #[test]
+    fn format_comment_block_lines_handles_multi_line_paragraph_structure() {
+        // Each input line trims trailing whitespace; empty lines emit
+        // as a bare `//` so paragraph breaks survive the round trip.
+        assert_eq!(
+            format_comment_block_lines("Line one.\n\nLine three.   \nLine four."),
+            vec![
+                "// Line one.".to_string(),
+                "//".to_string(),
+                "// Line three.".to_string(),
+                "// Line four.".to_string(),
+            ],
+        );
+    }
+
+    #[test]
+    fn format_comment_block_lines_single_line_is_a_single_entry() {
+        assert_eq!(
+            format_comment_block_lines("just one line"),
+            vec!["// just one line".to_string()],
+        );
+    }
+
+    #[test]
+    fn format_comment_block_lines_empty_input_is_a_single_empty_marker() {
+        // An empty `comment:` block ("") still produces one
+        // line — the caller decides whether to emit it at all (the
+        // lowerer skips on `Option::is_none` / empty string).
+        assert_eq!(format_comment_block_lines(""), vec!["//".to_string()]);
+    }
+
+    #[test]
+    fn emit_js_module_with_comments_attaches_leading_lines_above_decl() {
+        with_swc_globals(|| {
+            let parsed = parse_js_module(
+                "test.js",
+                "const a = 1;\nfunction b() { return 2; }\nexport { a, b };\n",
+            )
+            .unwrap();
+            let mut binding_comments = BTreeMap::new();
+            binding_comments.insert(
+                "a".to_string(),
+                "doc for a.\nsecond line.".to_string(),
+            );
+            binding_comments.insert("b".to_string(), "doc for b.".to_string());
+            let source = emit_js_module_with_comments(&parsed, &[], &binding_comments).unwrap();
+            // Each binding's comment lands above its declaration; SWC
+            // emits one `// <text>` per `Line` comment in the map.
+            let a_pos = source.find("const a = 1").expect("must contain const a = 1");
+            let comment_a_pos = source
+                .find("// doc for a.")
+                .expect("must contain doc for a");
+            let comment_a2_pos = source
+                .find("// second line.")
+                .expect("must contain second line");
+            assert!(
+                comment_a_pos < comment_a2_pos && comment_a2_pos < a_pos,
+                "both lines of a's comment must precede `const a = 1`:\n{source}",
+            );
+            let b_pos = source.find("function b").expect("must contain function b");
+            let comment_b_pos = source
+                .find("// doc for b.")
+                .expect("must contain doc for b");
+            assert!(
+                comment_b_pos < b_pos && comment_b_pos > a_pos,
+                "b's comment must precede `function b` and follow a:\n{source}",
+            );
+        });
+    }
+
+    #[test]
+    fn emit_js_module_with_comments_drops_unmatched_binding_keys() {
+        with_swc_globals(|| {
+            let parsed = parse_js_module("test.js", "const a = 1;\nexport { a };\n").unwrap();
+            let mut binding_comments = BTreeMap::new();
+            binding_comments.insert("not_here".to_string(), "noise".to_string());
+            let source = emit_js_module_with_comments(&parsed, &[], &binding_comments).unwrap();
+            assert!(
+                !source.contains("// noise"),
+                "unmatched binding keys must emit no comment:\n{source}",
+            );
         });
     }
 

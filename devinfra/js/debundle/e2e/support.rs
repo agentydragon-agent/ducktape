@@ -36,6 +36,7 @@ static GENERATED_MODULE_SCRIPT_COUNTER: AtomicUsize = AtomicUsize::new(0);
 pub struct Member {
     pub name: &'static str,
     pub binding: Option<&'static str>,
+    pub comment: Option<String>,
 }
 
 impl Member {
@@ -44,6 +45,7 @@ impl Member {
         Self {
             name,
             binding: None,
+            comment: None,
         }
     }
 
@@ -52,7 +54,15 @@ impl Member {
         Self {
             name,
             binding: Some(binding),
+            comment: None,
         }
+    }
+
+    /// Attach an author comment to be emitted above the binding's owner
+    /// statement in the lowered module body. See `spec::Member::comment`.
+    pub fn with_comment(mut self, comment: impl Into<String>) -> Self {
+        self.comment = Some(comment.into());
+        self
     }
 }
 
@@ -60,6 +70,8 @@ impl Member {
 struct FixtureMember {
     name: &'static str,
     selector: FixtureMemberSelector,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    comment: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -74,6 +86,8 @@ struct FixtureBindingSelector {
 
 #[derive(Serialize)]
 struct LogicalModuleBody {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    comment: Option<String>,
     members: Vec<FixtureMember>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     anonymous_statements: Vec<FixtureAnonymousStatement>,
@@ -132,6 +146,7 @@ fn fixture_members(members: &[Member]) -> Vec<FixtureMember> {
                     name: m.binding.unwrap_or(m.name),
                 },
             },
+            comment: m.comment.clone(),
         })
         .collect()
 }
@@ -144,6 +159,26 @@ pub fn logical_module(path: &str, members: &[Member]) -> LogicalModuleEntry {
     (
         path.to_string(),
         serde_json::to_value(LogicalModuleBody {
+            comment: None,
+            members: fixture_members(members),
+            anonymous_statements: Vec::new(),
+        })
+        .expect("logical module fixture must serialize"),
+    )
+}
+
+/// Like [`logical_module`] but attaches a module-level `comment:` block,
+/// emitted at the top of the generated module file (above the lowerer's
+/// pragma block). See `spec::LogicalModule::comment`.
+pub fn logical_module_with_comment(
+    path: &str,
+    members: &[Member],
+    comment: impl Into<String>,
+) -> LogicalModuleEntry {
+    (
+        path.to_string(),
+        serde_json::to_value(LogicalModuleBody {
+            comment: Some(comment.into()),
             members: fixture_members(members),
             anonymous_statements: Vec::new(),
         })
@@ -166,6 +201,7 @@ pub fn logical_module_with_anon(
     (
         path.to_string(),
         serde_json::to_value(LogicalModuleBody {
+            comment: None,
             members: fixture_members(members),
             anonymous_statements: anon_matches
                 .iter()

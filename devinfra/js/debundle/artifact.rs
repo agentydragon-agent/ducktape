@@ -9,7 +9,7 @@ use serde::Serialize;
 
 use analysis::DepKind;
 pub use analysis::{ChunkId, ChunkTable};
-use js_ast::{ParsedJsModule, emit_js_module};
+use js_ast::{ParsedJsModule, emit_js_module_with_comments};
 use output_layout::{CHUNK_REPORT, report_path_for_directory, report_path_for_file};
 
 pub const CANONICAL_CHUNK_ENTRY_FILE: &str = "entry.js";
@@ -72,12 +72,20 @@ pub struct JsFile {
     pub path: String,
     pub body: JsFileBody,
     pub header_lines: Vec<String>,
+    /// Per-binding leading comments to emit above each top-level
+    /// statement that declares one of these binding names. Populated
+    /// by the lowerer from `spec::Member::comment`; empty for files
+    /// the spec doesn't annotate. Keys that don't match any
+    /// top-level statement in the body are silently dropped at emit
+    /// time. See `emit_js_module_with_comments`.
+    pub binding_comments: BTreeMap<String, String>,
     pub metadata: FileMetadata,
 }
 
 pub struct JsFileAstParts {
     pub path: String,
     pub header_lines: Vec<String>,
+    pub binding_comments: BTreeMap<String, String>,
     pub metadata: FileMetadata,
 }
 
@@ -114,6 +122,7 @@ impl JsFile {
                 JsFileAstParts {
                     path: self.path,
                     header_lines: self.header_lines,
+                    binding_comments: self.binding_comments,
                     metadata: self.metadata,
                 },
                 ast,
@@ -127,6 +136,7 @@ impl JsFile {
             path: parts.path,
             body: JsFileBody::Ast(ast),
             header_lines: parts.header_lines,
+            binding_comments: parts.binding_comments,
             metadata: parts.metadata,
         }
     }
@@ -141,6 +151,7 @@ impl JsFile {
             body: JsFileBody::Source(parsed.source_text()),
             path: self.path,
             header_lines: self.header_lines,
+            binding_comments: self.binding_comments,
             metadata: self.metadata,
         })
     }
@@ -152,7 +163,9 @@ impl JsFile {
     pub fn render_source(&self) -> Result<String> {
         match &self.body {
             JsFileBody::Source(source) => Ok(source.clone()),
-            JsFileBody::Ast(ast) => emit_js_module(ast, &self.header_lines),
+            JsFileBody::Ast(ast) => {
+                emit_js_module_with_comments(ast, &self.header_lines, &self.binding_comments)
+            }
         }
     }
 }
@@ -1074,6 +1087,7 @@ pub fn load_js_chunks(
             path: entry_file.clone(),
             body: JsFileBody::Source(content),
             header_lines: Vec::new(),
+            binding_comments: BTreeMap::new(),
             metadata: FileMetadata {
                 chunk_id: chunk_name,
                 chunk_file: entry_file.clone(),

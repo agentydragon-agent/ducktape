@@ -25,7 +25,7 @@ use artifact::{
     module_path_dirname, normalize_module_path, normalize_relative_module_specifier,
     relative_module_path,
 };
-use js_ast::{ParsedJsModule, set_str_value, str_value};
+use js_ast::{ParsedJsModule, format_comment_block_lines, set_str_value, str_value};
 use output_layout::MODULES_REPORT;
 use spec::{
     BindingSourceKind, ChunkAnalysisOptions, ChunkRenames, LogicalModule, MemberEffect,

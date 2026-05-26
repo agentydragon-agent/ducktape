@@ -126,6 +126,8 @@ struct ModuleSource {
     members: Vec<Member>,
     #[serde(default)]
     anonymous_statements: Vec<AnonymousStatement>,
+    #[serde(default)]
+    comment: Option<String>,
 }
 
 pub fn compile_spec_tree(options: &CompileSpecTreeOptions) -> Result<TransformSpec> {
@@ -221,6 +223,7 @@ fn load_main_chunk_modules(modules_root: &Path, main_chunk_id: &str) -> Result<V
             path: module_path,
             members: data.members,
             anonymous_statements: data.anonymous_statements,
+            comment: data.comment,
         });
     }
     active.sort_by(|left, right| left.path.cmp(&right.path));
@@ -457,6 +460,7 @@ fn logical_modules_map(
                 LogicalModule {
                     members: source.members,
                     anonymous_statements: source.anonymous_statements,
+                    comment: source.comment,
                 },
             );
         if previous.is_some() {
