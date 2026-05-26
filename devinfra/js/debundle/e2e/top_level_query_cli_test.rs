@@ -183,7 +183,7 @@ fn modules_propose_emits_plan_work_report() {
     .unwrap();
     // Smoke-test: a fresh fixture with two atoms and a single edge
     // should produce at least one proposal.
-    assert!(report.report.proposals.len() >= 1);
+    assert!(!report.report.proposals.is_empty());
 }
 
 #[test]
