@@ -6,50 +6,15 @@ Reviewed against `01c149496` on branch `feat-arch-review-2026-05`. Read on top o
 
 ## Executive summary
 
-1. **The Stage A boundary is real but the rest of the per-chunk pipeline is still patch-driven.** `lowering/materialize/mod.rs::materialize_logical_chunk` is 750 lines that thread _five_ loose mutable maps (`binding_assignment`, `bindings_catalogue`, `anonymous_ordinal_assignment`, `module_plans`, `residual_plan_index`) through eight phases of inline + helper-call mutation. There is no `ModulePlanBuilder` type encapsulating these; each helper takes `&mut` to four or five of them. This is the patch-on-patch shape the maintainer suspected.
+1. **`MaterializeLogicalChunkInputs` is still a 9-field bag of `&` references** (with `LowerChunkInputs` at 16). `materialize_logical_chunk` itself is now ~306 lines (down from 750 after the `ChunkPlanBuilder` extraction) and the five mutable maps that used to thread through eight inline phases are now encapsulated. What remains is the inputs bag: same encapsulation move at one level higher. Split into `ChunkContext` + `ChunkSpec` + `ChunkAnalysisInputs`. Mechanical.
 
 2. **The dual `cross_module_partition_endpoints` / `gate_constraining_partition_endpoints` is the most concrete example of patch-on-patch architecture.** The same projection helper has two versions that differ only in whether they drop cross-module at-init-promoted edges, with the difference documented in a doc-comment "history" log naming three commit SHAs and a regression test ("`12ce3884b` removed the drop … `2d6be2473` silently re-introduced the drop … this sibling helper exists so the gate paths preserve `12ce3884b`'s fix"). The right fix is to push the distinction into the edge itself (an `EdgeRole` enum) so there is one projection helper that consults the role; the current shape encodes a 12-month bug-fix history into two near-identical function names.
 
 ## Ad-hoc wiring + pipeline-state passing
 
-### `materialize_logical_chunk` is a 750-line god function with parallel mutable state
-
-`lowering/materialize/mod.rs:51` onwards. The function builds these mutable maps in interleaved order:
-
-```rust
-let mut binding_assignment       = HashMap::<Id, usize>::new();          // line 131
-let mut anonymous_ordinal_assignment = BTreeMap::<usize, usize>::new(); // line 132
-let mut module_plans             = Vec::new();                           // line 133
-let mut bindings_catalogue       = HashMap::<Id, BindingKind>::new();    // line 134
-let mut catalogue_index_by_name  = HashMap::<String, BindingKind>::new();// line 146
-let mut imported_from_by_src     = BTreeMap::<String, String>::new();    // line 149
-let mut unmatched_spec_claims    = Vec::<crate::UnmatchedSpecClaim>::new(); // line 150
-let mut residual_plan_index: Option<usize> = None;                       // line 325
-```
-
-These get mutated by:
-
-- The `for request in explicit_requests` loop (130 lines, lines 151–261).
-- The `for (claimed_name, sibling_set) in &destructure_siblings` loop (lines 285–316).
-- The two residual-fallback branches (lines 327–387).
-- `fold_rebind_atomic_units(precomputed, &mut binding_assignment, &mut bindings_catalogue, &mut module_plans, residual_plan_index)` (line 497, signature in `rebind_folding.rs:31`).
-- `synthesize_mini_factor_plans` (signature in `lowering/plans.rs:157`, ten arguments including _five_ `&mut` references).
-- The `project_factorization_modules` map (lines 520–556).
-- The "anon_residual_sentinel" appender that pushes a fake module index past `module_plans.len()` (lines 569–582) for transitional behavior.
-
-This is the textbook shape of "each new feature added one parameter and one mutation site". There is no underlying domain object encapsulating "the plan being constructed". A `PlanBuilder` would own those maps and expose three or four methods (`claim_owned_binding`, `claim_imported_binding`, `claim_anonymous_statement`, `pull_destructure_sibling`, `finalize_residual`); every duplicate-claim / cross-claim check, every binding-kind insertion, and every residual sweep would live behind the encapsulation. Today the same lookup `bindings_catalogue` + `binding_assignment` is done in eight different places with subtly different invariants (sometimes the catalogue is keyed by `Id`, sometimes by name string in `catalogue_index_by_name`; `binding_assignment` is `HashMap<Id, usize>` but `bindings_catalogue` is `HashMap<Id, BindingKind>` carrying the same module identity wrapped differently).
-
-**Concrete fix.** Introduce `lowering/materialize/plan_builder.rs` with `struct ChunkPlanBuilder { ... }` and methods. `materialize_logical_chunk` becomes the orchestrator that calls `builder.add_explicit_request(...)`, `builder.pull_destructure_siblings(...)`, `builder.fold_rebind_units(precomputed)`, etc. The body shrinks to maybe 200 lines of straightforward sequencing.
-
-The `lowering/plans.rs::synthesize_mini_factor_plans` 10-arg signature in particular should become a method on the builder.
-
 ### `MaterializeLogicalChunkInputs` is a 9-field bag of `&` references
 
 `lowering/materialize/mod.rs:19`. The struct exists only as an argument-list workaround for a 9-arg function call — it doesn't encapsulate anything. Same applies to the next-stage `LowerChunkInputs` (lines 664–683 spell out 16 fields when constructing it). These should be split into smaller domain types: `ChunkContext` (`artifact`, `artifact_indexes`, `chunk_id`, `target_dir`, `report_out_dir`), `ChunkSpec` (`logical_modules`, `chunk_renames`, `unassigned_mode`, `chunk_analysis_options`), and `ChunkAnalysisInputs` (the AST + facts + owner graph). The current bags conceal that `materialize_logical_chunk` actually wants three distinct inputs.
-
-### `apply_member_hints(&mut hints, &m.binding, m.purity, &m.pure_members, m.effect)`
-
-`lowering/materialize/mod.rs:761`. The helper takes five arguments because each was added by a different feature; the natural shape is `hints.absorb_member(&Member)` where `Member` is a typed view over `MemberRequest`. Today's call sites (lines 405–423) destructure `MemberRequest` member-by-member into the helper's loose argument list. Trivial fix.
 
 ### `compute_stage_one_analysis` is itself an example of the right direction
 
@@ -90,10 +55,6 @@ The function is dead code that the tests keep alive. Either delete `from_report`
 6. Removes one edge, loops.
 
 The Tarjan-SCC + FAS + remove-edge loop is itself a known algorithm shape (iterative FAS-by-SCC). `petgraph` has it built in via `condensation`: condense to a DAG of SCCs, walk the condensation top-down. The current loop is correct but `O(|cycles| · |V| + |E|)` per chunk, when a single condensation pass + FAS-per-condensation-node would be `O(|V| + |E|)`. More importantly, the loop's "fallback to scanning the SCC's edges if FAS only flagged lazy edges" branch (`validation.rs:482`) papers over what looks like a soundness/precision issue in how FAS is being used: FAS doesn't know about edge labels, so it picks whatever it picks; trying to make it pick R/S edges by post-filtering its result is a hack. The right fix is to filter the edge set down to constraining edges _before_ calling FAS, then map the result back. (`greedy_feedback_arc_set` accepts arbitrary graphs; nothing stops the caller from omitting `LazyUse` edges from the working `DiGraph`.) Simpler, faster, no fallback needed.
-
-### Hand-rolled cycle-no-op DFS in `simulate_esm_post_order`
-
-`realizability.rs:366–428`. The simulator implements a DFS-with-cycle-no-op manually, with explicit `Frame::Enter` / `Frame::Finish` work-stack frames. The simulator is the right algorithm — the ECMA-262 spec is explicitly post-order DFS — but the implementation could use `petgraph::visit::DfsPostOrder` if we built a small wrapper that respects the `sorted_successors` ordering decision. Today's hand-rolled stack is fine in isolation, but it's another instance of "we built a custom traversal because the existing one didn't take a sort-key parameter." A `petgraph::visit::DfsPostOrder` over a graph wrapper that lazily reorders neighbors would let the simulator focus on the _semantic_ check (post-order indices) rather than the DFS bookkeeping.
 
 ### `swc_ecma_visit` usage is reasonable
 
@@ -203,29 +164,13 @@ These files plus AGENTS.md plus RENAME.md document the same project from multipl
 
 1. **Carry chunk-top-level `Mark` on the typed `Partition`** (or on a `ChunkContext` wrapper) so `top_level_id` lookups don't have to be threaded through every materialize-side function as a separate parameter. Today `lowering/materialize/mod.rs:100` reads it from the AST and threads it through eight call sites.
 
-2. **Pull `apply_member_hints`'s five arguments into `Member::collect_hints(&self, hints: &mut AnalysisHints)`**. Five-arg helper goes away; call site (`lowering/materialize/mod.rs:405–423`) becomes `for m in &req.members { m.collect_hints(&mut hints); }`.
-
-3. **Add a single `EdgeRole` enum** as a field of `EdgeReason` (variants `Direct` / `PromotedAtInit { callee_owner }`) so the gate/lenient projection helpers can fold into one helper that consults the role. Removes the dual `*_partition_endpoints` helpers + their commit-SHA history doc-comments.
-
-4. **`lowering/plans.rs::synthesize_mini_factor_plans` → method on a builder**. Ten-arg function with five `&mut` references becomes `builder.synthesize_mini_factors(precomputed, body, target_dir)`.
+2. **Add a single `EdgeRole` enum** as a field of `EdgeReason` (variants `Direct` / `PromotedAtInit { callee_owner }`) so the gate/lenient projection helpers can fold into one helper that consults the role. Removes the dual `*_partition_endpoints` helpers + their commit-SHA history doc-comments.
 
 ## Multi-session refactors (1–3 day projects)
 
-### 1. `ChunkPlanBuilder` extraction
+### `MaterializeLogicalChunkInputs` split
 
-`lowering/materialize/mod.rs::materialize_logical_chunk` (~750 lines) should be split into:
-
-- `ChunkPlanBuilder` (~200 lines) owning the five mutable maps, with methods `add_explicit_request`, `pull_destructure_siblings`, `add_residual_sweep`, `fold_rebind_units`, `synthesize_mini_factors`, `finalize() -> ChunkPlan`.
-- `materialize_logical_chunk` shrunk to ~150 lines of sequencing: parse → analyze → build plan → factorize → validate → lower.
-- The `MaterializeLogicalChunkInputs` 9-field bag split into `ChunkContext` + `ChunkSpec` + `ChunkAnalysisInputs`.
-
-Entry point: extract `ChunkPlanBuilder` first (its construction lives in lines 130–387 of `materialize/mod.rs`); the rest follows naturally.
-
-### 2. `EdgeRole` enum on `EdgeReason`
-
-Folds the dual `cross_module_partition_endpoints` / `gate_constraining_partition_endpoints` into one. Once added, the projection helper consults `edge.reason.role` and applies the correct rule per consumer (gate vs emitter vs reports). The `at_init_callee_owner: Option<OwnerId>` field becomes an `EdgeRole::PromotedAtInit { callee_owner }` variant. The cross-grep-test `no_consumer_calls_is_cross_module_at_init_promotion_directly` (`graph.rs:1637`) goes away — it was a workaround for not having the enum.
-
-Entry point: introduce `enum EdgeRole`; thread it through edge construction in `build_owner_graph_with` + `promote_at_init_calls`; replace the two endpoint helpers with one that takes an `EdgeRole`-aware consumer policy.
+The 9-field `&`-references bag in `lowering/materialize/mod.rs` is the natural follow-up to the ChunkPlanBuilder extraction: split into `ChunkContext` (`artifact`, `artifact_indexes`, `chunk_id`, `target_dir`, `report_out_dir`), `ChunkSpec` (`logical_modules`, `chunk_renames`, `unassigned_mode`, `chunk_analysis_options`), and `ChunkAnalysisInputs` (the AST + facts + owner graph). Same shape applies to `LowerChunkInputs` (16 fields). Mechanical encapsulation cleanup.
 
 ## Concerns to discuss before deciding
 
