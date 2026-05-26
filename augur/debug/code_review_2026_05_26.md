@@ -94,31 +94,41 @@ package with two modules:
   cross-phase helpers (`_sale_unit_price`, `_record_capital_gains`,
   tax-bracket helpers, mortgage-payment helpers, etc.).
 
-**Step 5 landed** (`augur/sim/compiler/`): compiler.py converted to a
-package, with lifecycle extracted as the pilot domain:
+**Steps 5-7 landed** (`augur/sim/compiler/`): compiler.py converted to
+a package, with shared helpers + 4 domains extracted:
 
-- `compiler/__init__.py` (~1760 LOC): orchestration `compile_simulation`,
-  `StringTable`, `SlotPlan`, `CompiledSimulation`, and the remaining 12
-  CompileOutput classes + their helpers.
-- `compiler/lifecycle.py`: `LifecycleEventCompileOutput`,
-  `compile_lifecycle_events`, `LIFECYCLE_KIND_*` constants. Pairs with
-  `codec/lifecycle.py`. Cross-module consumers (codec, engine.phases)
-  now import the kind constants from `compiler.lifecycle` directly.
+- `compiler/__init__.py` (~1430 LOC, down from 1833): orchestration
+  `compile_simulation`, `SlotPlan`, `CompiledSimulation`, and the
+  remaining un-extracted CompileOutputs.
+- `compiler/helpers.py`: `StringTable`, `slot`, `amount_arrays`,
+  `empty_month_matrix`, plus `NO_CODE` / `AMOUNT_*` / `ORDINARY_*`
+  constants (leading `_` dropped since they're imported cross-module).
+- `compiler/lifecycle.py`: `LifecycleEventCompileOutput` ↔
+  `codec/lifecycle.py`. Owns `LIFECYCLE_KIND_*` constants.
+- `compiler/transfers.py`: `TransferCompileOutput` ↔ `codec/transfers.py`.
+- `compiler/assets.py`: `SaleCompileOutput` ↔ `codec/assets.py` (sales
+  - lot-disposition events).
+- `compiler/liquidity.py`: `LiquidityPolicyCompileOutput` (decode side
+  flows through `codec/assets.py` as lot dispositions).
 
 **Remaining work**:
 
 - Optional finer subdivision of `engine/phases.py` into
   `engine/phases/{transfers,purchases,obligations,taxes,pe_tenders,
 lifecycle}.py` — defer until phases.py becomes a pain point.
-- Lift the remaining 12 compiler domains into
-  `compiler/{tax,properties,liabilities,transfers,obligations,assets,
-pe,liquidity,deductions,plan}.py`. Each follows the lifecycle
-  pattern but most depend on shared helpers (`StringTable`,
-  `_amount_arrays`, `_slot`, `NO_CODE`, `AMOUNT_FIXED`,
-  `AMOUNT_SERIES_INDEXED`) — extract those to `compiler/helpers.py`
-  first, then proceed per-domain. Shared maps built during
-  orchestration (`profile_index_by_agent`, `slot_by_id`) go to
-  `compiler/indices.py`.
+- Lift remaining compiler domains:
+  - `compiler/obligations.py`: `ObligationCompileOutput` (~230 LOC).
+  - `compiler/properties.py` + `compiler/liabilities.py`:
+    `PropertyCompileOutput` + `LiabilityCompileOutput` (currently
+    produced by one combined `_compile_properties_and_liabilities`;
+    split into two when extracted).
+  - `compiler/tax.py`: `TaxCompileOutput` + `_compile_tax` + sibling
+    helpers (`_compile_capital_gain_agents`, `_section_121_exclusion_for`,
+    `_estimated_tax_quarter`, `TaxLiabilityCompileOutput`).
+  - `compiler/deductions.py`: `MIDCompileOutput` + `SaltCompileOutput`
+    - their compile helpers.
+  - `compiler/pe.py`: `PEIssuerCompileOutput` + `PEPolicyCompileOutput`
+    - `_compile_private_equity_tenders`.
 
 ### B5. Bundle lifecycle-event discriminators into per-event-kind dataclasses (small to medium; new)
 
