@@ -1,20 +1,34 @@
-//! CLI verb `debundle module merge`: splice source YAML modules into a
-//! target YAML module and delete the sources.
+//! CLI verb `debundle modules merge`: splice source YAML modules into a
+//! target YAML module and delete the sources. The companion
+//! `debundle modules delete --force` verb removes a non-empty module.
 //!
-//! v1 scope is a pure YAML splice. There is no realizability or
-//! factorization gate (see followup task #79 for `--validate`). The
-//! splice operates on the generic `serde_yaml::Value` shape so the
-//! operation never has to understand binding semantics, only the
-//! `members:` and `anonymous_statements:` sequences that the spec
-//! authoring format publishes.
+//! Both verbs run a realizability gate against the **post-edit**
+//! partition before touching the filesystem. The gate reconstructs
+//! the chunk's `OwnerGraph` from `owner_graph.json` (via
+//! `OwnerGraph::from_report`), builds the post-edit `Partition` by
+//! mapping each surviving spec module's bindings to a fresh
+//! `ModuleId`, and runs `validate_factorization`. An unrealizable
+//! verdict prints the cycle summary via `render_cycle_summary` and
+//! the command exits non-zero without writing any file. `--no-verify`
+//! skips the gate; `--dry-run` runs the gate but doesn't write.
+//!
+//! The YAML splice itself operates on the generic `serde_yaml::Value`
+//! shape so the operation never has to understand binding semantics,
+//! only the `members:` and `anonymous_statements:` sequences that the
+//! spec authoring format publishes.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use analysis::{
+    ModuleId, OwnerGraph, OwnerGraphReport, OwnerId, Partition, render_cycle_summary,
+    validate_factorization,
+};
 use anyhow::{Context, Result, anyhow, bail};
 use clap::{Args as ClapArgs, Subcommand};
 use serde_yaml::{Mapping, Value};
+use spec_modules::{collect_module_files, is_module_yaml, read_module_file};
 
 /// Top-level `debundle module ...` argument shape.
 #[derive(Debug, ClapArgs)]
@@ -47,19 +61,13 @@ pub struct MergeArgs {
     #[arg(long)]
     pub dry_run: bool,
 
-    /// Skip the realizability gate. Don't use casually.
-    ///
-    /// (The realizability gate hookup is the deferred half of task
-    /// #84 — see `run_merge` for the documented gap. Today
-    /// `--no-verify` is structural-only; the cross-module-cycle gate
-    /// it would suppress is not yet implemented at this layer.)
+    /// Skip the realizability gate. Don't use casually — bypassing
+    /// it can let an unrealizable spec ship.
     #[arg(long)]
     pub no_verify: bool,
 
     /// `owner_graph.json` for the chunk being merged. Required for
     /// the realizability gate; ignored when `--no-verify` is set.
-    /// The gate hookup is deferred (#84), so the flag is currently
-    /// optional — once the gate lands it becomes required.
     #[arg(long = "graph", env = "DEBUNDLE_GRAPH")]
     pub owner_graph_path: Option<PathBuf>,
 }
@@ -100,13 +108,8 @@ pub struct DeleteArgs {
     #[arg(long)]
     pub dry_run: bool,
 
-    /// Skip the realizability gate. Don't use casually.
-    ///
-    /// (The realizability gate hookup is the deferred half of the
-    /// same task that blocks `modules merge` validation — see
-    /// `run_delete` for the documented gap. Today `--no-verify`
-    /// suppresses only the doc-level note; the cross-module-cycle
-    /// gate it would suppress is not yet implemented at this layer.)
+    /// Skip the realizability gate. Don't use casually — bypassing
+    /// it on a non-empty deletion can let an unrealizable spec ship.
     #[arg(long)]
     pub no_verify: bool,
 
@@ -116,10 +119,9 @@ pub struct DeleteArgs {
     pub force: bool,
 
     /// `owner_graph.json` for the chunk being edited. Required for
-    /// the realizability gate; ignored when `--no-verify` is set.
-    /// The gate hookup is deferred, so the flag is currently optional
-    /// — once the gate lands it becomes required for non-empty
-    /// deletions.
+    /// the realizability gate on non-empty `--force` deletions;
+    /// ignored when `--no-verify` is set or when every target module
+    /// is structurally empty (no-op gate).
     #[arg(long = "graph", env = "DEBUNDLE_GRAPH")]
     pub owner_graph_path: Option<PathBuf>,
 }
@@ -165,46 +167,35 @@ pub fn run_module_cli(args: ModuleArgs) -> Result<()> {
 ///
 /// Validation contract (per docs/cli.md § "Modules"):
 ///
-/// * Default: validate (realizability gate against the post-merge
-///   spec) + apply if valid.
-/// * `--dry-run`: validate but do not modify any file.
-/// * `--no-verify`: skip validation; apply the merge regardless.
-///
-/// **Gate hookup TODO (#84, deferred).** The realizability gate
-/// against the post-merge partition is not yet implemented at this
-/// layer; the YAML splice happens unconditionally today.
-/// `OwnerGraph::from_report` drops the `declared: BTreeSet` per-owner
-/// binding set (see `ARCH_REVIEW_2026_05.md` §"`OwnerGraphReport::
-/// from_report` drops `declared` on the floor"), so reconstructing a
-/// faithful `Partition` from the on-disk JSON + spec tree requires
-/// either:
-///   1. Round-tripping `declared` through the wire format (in-flight
-///      on the `feat-facts-wire-format` branch per the same review),
-///      or
-///   2. Re-running Stage A inside the merge command to recompute the
-///      partition from sources, which conflicts with the
-///      cross-process scope note in `WIRE_FORMAT.md`.
-///
-/// Until then, the gate args (`--graph`, `--no-verify`, `--dry-run`)
-/// are accepted for forward compatibility but the gate itself is a
-/// no-op. `--dry-run` still skips the YAML write.
+/// * Default: run the realizability gate against the post-merge
+///   partition. Accept and splice if `Verdict::Realizable`; reject
+///   and exit non-zero with the same `render_cycle_summary`
+///   diagnostic the pipeline prints if `Verdict::Unrealizable`.
+/// * `--dry-run`: run the gate but do not modify any file.
+/// * `--no-verify`: skip the gate; apply the merge regardless.
 pub fn run_merge(merge: MergeArgs) -> Result<()> {
     if merge.no_verify {
         eprintln!(
             "warning: --no-verify skips the realizability gate; the merge YAML splice will \
              not be re-checked for cross-module cycles."
         );
+    } else {
+        let owner_graph_path = merge.owner_graph_path.as_deref().ok_or_else(|| {
+            anyhow!(
+                "realizability gate requires --graph (path to owner_graph.json) or \
+                 --no-verify"
+            )
+        })?;
+        let target_abs = resolve_under(&merge.modules_root, &merge.target);
+        let source_abs: Vec<PathBuf> = merge
+            .sources
+            .iter()
+            .map(|p| resolve_under(&merge.modules_root, p))
+            .collect();
+        let post_spec = post_merge_spec(&merge.modules_root, &target_abs, &source_abs)?;
+        gate_post_edit_partition(owner_graph_path, &post_spec)?;
     }
-    // The gate is currently unwired (see docstring). When it lands,
-    // expect a check_realizability call here against the post-merge
-    // partition built from `merge.owner_graph_path` + the modules
-    // tree state after the in-memory splice but before writing.
-    if !merge.no_verify && merge.owner_graph_path.is_some() {
-        eprintln!(
-            "note: realizability gate hookup is deferred (task #84); --graph is accepted \
-             but not yet exercised."
-        );
-    }
+
     let sources: Vec<&Path> = merge.sources.iter().map(PathBuf::as_path).collect();
     if merge.dry_run {
         // Dry-run shape preview: load each file to confirm shape
@@ -329,10 +320,14 @@ pub fn merge_modules(
 /// Validation contract (per docs/cli.md § "Modules"):
 ///
 /// * Default: refuse the deletion of a module that still has members
-///   or anonymous statements. Validate (realizability gate against
-///   the post-delete spec) + apply if valid.
-/// * `--force`: override the non-empty check. The gate still runs.
-/// * `--dry-run`: validate but do not delete any file.
+///   or anonymous statements. For empty deletions, no gate run is
+///   needed — the partition doesn't change.
+/// * `--force`: override the non-empty check. For non-empty
+///   deletions the realizability gate runs against the post-delete
+///   partition (every binding previously owned by a deleted module
+///   falls back to residual); an `Unrealizable` verdict rejects the
+///   deletion.
+/// * `--dry-run`: run the gate but do not delete any file.
 /// * `--no-verify`: skip the gate; delete unconditionally.
 ///
 /// All paths are resolved relative to `args.modules_root` unless
@@ -340,20 +335,6 @@ pub fn merge_modules(
 /// error before any deletion is attempted; the operation is
 /// best-effort atomic (collect-then-remove) but cannot roll back a
 /// partial removal if the filesystem fails midway.
-///
-/// **Gate hookup TODO.** The realizability gate against the
-/// post-delete partition is structurally identical to the `modules
-/// merge` gap: `OwnerGraph::from_report` drops the per-owner
-/// `declared: BTreeSet` (see `ARCH_REVIEW_2026_05.md`
-/// §"`OwnerGraphReport::from_report` drops `declared` on the
-/// floor"), so reconstructing a faithful `Partition` from on-disk
-/// state isn't yet possible. **Fast path:** for the all-empty-modules
-/// case (every module being deleted has no members and no anonymous
-/// statements), the post-delete partition is identical to the
-/// pre-delete partition modulo a no-op empty-module removal — no
-/// edges change, so the gate would trivially accept. We validate
-/// that case structurally inline. For `--force` deletions of
-/// non-empty modules, the gate is deferred with a stderr note.
 pub fn run_delete(args: DeleteArgs) -> Result<()> {
     if args.no_verify {
         eprintln!(
@@ -410,27 +391,20 @@ pub fn run_delete(args: DeleteArgs) -> Result<()> {
         );
     }
 
-    // Realizability gate hookup. For the all-empty case we can
-    // validate locally (deleting an empty module is a no-op for the
-    // partition, so the gate trivially accepts). For non-empty
-    // deletions under --force, the gate remains deferred.
-    if !args.no_verify {
-        if all_empty {
-            // No edges change; nothing to check. The fast path is
-            // sound because an empty module owns no bindings and has
-            // no anonymous statements, so removing it from the spec
-            // leaves the partition unchanged.
-        } else if args.owner_graph_path.is_some() {
-            eprintln!(
-                "note: realizability gate hookup is deferred; --graph is accepted but \
-                 not yet exercised for non-empty module deletions."
-            );
-        } else {
-            eprintln!(
-                "note: realizability gate hookup is deferred for non-empty module \
-                 deletions; pass --graph or --no-verify to suppress this note."
-            );
-        }
+    // Realizability gate. The all-empty fast path is a structural
+    // no-op (an empty module owns no bindings and contributes no
+    // anonymous statements, so removing it leaves the partition
+    // unchanged). For non-empty `--force` deletions we run the full
+    // gate against the post-delete partition.
+    if !args.no_verify && !all_empty {
+        let owner_graph_path = args.owner_graph_path.as_deref().ok_or_else(|| {
+            anyhow!(
+                "realizability gate requires --graph (path to owner_graph.json) for \
+                 non-empty module deletion, or pass --no-verify"
+            )
+        })?;
+        let post_spec = post_delete_spec(&args.modules_root, &paths_abs)?;
+        gate_post_edit_partition(owner_graph_path, &post_spec)?;
     }
 
     let summary = delete_modules(&paths_abs, args.dry_run)?;
@@ -561,6 +535,157 @@ fn splice_sequence(
     })?;
     seq.extend(extra);
     Ok(())
+}
+
+// ---------------------------------------------------------------------
+// Realizability gate hookup (task #84).
+// ---------------------------------------------------------------------
+
+/// Simulated post-edit spec state — one entry per surviving module,
+/// each listing the binding names declared by its `members:` array.
+/// `modules` is keyed by absolute YAML path so the gate's
+/// module-id assignment is deterministic across runs.
+#[derive(Debug, Clone)]
+struct PostEditSpec {
+    /// Surviving module YAML paths (absolute), each with the set of
+    /// binding names it declares after the edit.
+    modules: Vec<(PathBuf, BTreeSet<String>)>,
+}
+
+/// Build the post-merge spec view in memory without touching the
+/// filesystem. Starts from the on-disk modules tree, drops the source
+/// files, and folds their `members:` binding names into the target.
+fn post_merge_spec(
+    modules_root: &Path,
+    target_abs: &Path,
+    source_abs: &[PathBuf],
+) -> Result<PostEditSpec> {
+    let removed: BTreeSet<PathBuf> = source_abs.iter().cloned().collect();
+    let mut modules: Vec<(PathBuf, BTreeSet<String>)> = Vec::new();
+    for file in collect_module_files(modules_root)? {
+        if removed.contains(&file) {
+            continue;
+        }
+        let bindings = if file == target_abs {
+            let mut combined = read_member_bindings(&file)?;
+            for src in source_abs {
+                combined.extend(read_member_bindings(src)?);
+            }
+            combined
+        } else {
+            read_member_bindings(&file)?
+        };
+        modules.push((file, bindings));
+    }
+    Ok(PostEditSpec { modules })
+}
+
+/// Build the post-delete spec view in memory. Drops the deleted YAML
+/// paths from the modules tree; bindings they used to declare are
+/// implicitly unclaimed in the resulting partition (i.e. fall back to
+/// residual).
+fn post_delete_spec(modules_root: &Path, deleted_abs: &[PathBuf]) -> Result<PostEditSpec> {
+    let removed: BTreeSet<PathBuf> = deleted_abs.iter().cloned().collect();
+    let mut modules: Vec<(PathBuf, BTreeSet<String>)> = Vec::new();
+    for file in collect_module_files(modules_root)? {
+        if removed.contains(&file) {
+            continue;
+        }
+        modules.push((file.clone(), read_member_bindings(&file)?));
+    }
+    Ok(PostEditSpec { modules })
+}
+
+/// Parse a spec module YAML and return the set of `members[].selector.binding.name`
+/// values it declares. Unparseable members are skipped (the gate
+/// tolerates author noise so its rejection signal is "the partition
+/// is unrealizable", not "your YAML is malformed").
+fn read_member_bindings(path: &Path) -> Result<BTreeSet<String>> {
+    if !is_module_yaml(path) {
+        return Ok(BTreeSet::new());
+    }
+    let module = read_module_file(path)
+        .with_context(|| format!("reading module {}", path.display()))?;
+    let mut names: BTreeSet<String> = BTreeSet::new();
+    for member in module.members {
+        names.insert(member.selector.binding.name);
+    }
+    Ok(names)
+}
+
+/// Reconstruct the `OwnerGraph` from `owner_graph_path`, build the
+/// `Partition` implied by `post_spec`, and run the realizability gate.
+/// Returns `Ok(())` when the verdict is realizable. Prints the
+/// `render_cycle_summary` blame report to stderr and returns an
+/// `anyhow::Error` when unrealizable, so the CLI exit code is
+/// non-zero and the caller bails before writing.
+fn gate_post_edit_partition(owner_graph_path: &Path, post_spec: &PostEditSpec) -> Result<()> {
+    let owner_graph_report: OwnerGraphReport = serde_json::from_str(
+        &fs::read_to_string(owner_graph_path)
+            .with_context(|| format!("reading {}", owner_graph_path.display()))?,
+    )
+    .with_context(|| {
+        format!("parsing owner graph {}", owner_graph_path.display())
+    })?;
+
+    // The gate algorithm walks edges + partition, not declared sets.
+    // Pass `&[]` for facts — `from_report` leaves `declared` empty,
+    // which is fine for `check_realizability`/`validate_factorization`
+    // (both consume the partition we build below, not the per-owner
+    // declared field).
+    let (owner_graph, _index) = OwnerGraph::from_report(&owner_graph_report, &[]);
+
+    // owner_by_binding_name uses the Atom-only declared_bindings the
+    // wire shape carries; that's enough because the spec author also
+    // references bindings by name (no hygienic context). When a
+    // declared binding name is ambiguous across owners the first one
+    // wins — the materializer's spec validator catches that
+    // separately as a duplicate-binding diagnostic.
+    let mut owner_by_binding_name: HashMap<String, OwnerId> = HashMap::new();
+    for (idx, node) in owner_graph_report.nodes.iter().enumerate() {
+        let owner = OwnerId(idx);
+        for b in &node.declared_bindings {
+            owner_by_binding_name
+                .entry(b.binding.to_string())
+                .or_insert(owner);
+        }
+    }
+
+    // ModuleId assignment: residual at logical:0, every surviving
+    // spec module gets a fresh logical:N starting at 1. The label
+    // map keeps the renderer's diagnostic readable — we use each
+    // module's chunk-relative path as its `module_name` callback
+    // output.
+    let residual = ModuleId::logical(0);
+    let mut of: Vec<ModuleId> = vec![residual; owner_graph.nodes.len()];
+    let mut module_label_by_id: HashMap<ModuleId, String> =
+        [(residual, "<residual>".to_string())].into_iter().collect();
+    let mut next_idx = 1usize;
+    for (path, bindings) in &post_spec.modules {
+        let mid = ModuleId::logical(next_idx);
+        next_idx += 1;
+        module_label_by_id.insert(mid, path.to_string_lossy().into_owned());
+        for name in bindings {
+            if let Some(&owner) = owner_by_binding_name.get(name) {
+                of[owner.0] = mid;
+            }
+        }
+    }
+    let partition = Partition::from_assignments(of, residual);
+
+    let module_name = |m: ModuleId| {
+        module_label_by_id
+            .get(&m)
+            .cloned()
+            .unwrap_or_else(|| format!("logical:{}", m.0.0))
+    };
+    let report = validate_factorization(&owner_graph, &partition, &module_name);
+    if report.cycles.is_empty() {
+        return Ok(());
+    }
+    let summary = render_cycle_summary(&report.cycles);
+    eprintln!("error: post-edit spec is unrealizable:\n{}", summary);
+    bail!("realizability gate rejected the edit");
 }
 
 #[cfg(test)]

@@ -149,6 +149,9 @@ fn modules_merge_new_subcommand_path_works_through_binary() {
             "--target",
             "target.yaml",
             "src.yaml",
+            // Skip the gate: this test only exercises the YAML
+            // splice surface, not the realizability gate.
+            "--no-verify",
         ])
         .output()
         .expect("spawn debundle");
@@ -182,6 +185,9 @@ fn modules_merge_dry_run_does_not_modify_files() {
             "target.yaml",
             "src.yaml",
             "--dry-run",
+            // Skip the gate: this test only exercises the YAML
+            // splice surface.
+            "--no-verify",
         ])
         .output()
         .expect("spawn debundle");
@@ -223,6 +229,9 @@ fn deprecated_module_merge_alias_still_works_with_warning() {
             "--target",
             "target.yaml",
             "src.yaml",
+            // Skip the gate: this test only exercises the
+            // deprecated alias path.
+            "--no-verify",
         ])
         .output()
         .expect("spawn debundle");

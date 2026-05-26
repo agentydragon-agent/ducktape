@@ -102,6 +102,9 @@ fn delete_non_empty_module_with_force_succeeds() {
             root.to_str().unwrap(),
             "ui/full.yaml",
             "--force",
+            // Skip the gate: this test only exercises the
+            // --force filesystem path, not the gate verdict.
+            "--no-verify",
         ])
         .output()
         .expect("spawn debundle");

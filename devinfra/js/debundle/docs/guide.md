@@ -252,11 +252,12 @@ Source-module `comment:` content is concatenated into the target's
 module-level `comment:` with a `--- from <source>:` divider when
 sources have non-empty comments.
 
-**Caveat:** the realizability gate hookup for `modules merge` is still
-TODO. A passing merge today does **not** yet imply the result is
-realizable — re-run `debundle run` after the merge to catch any
-introduced atom split. `--dry-run` reports the splice would succeed,
-not that the gate would accept.
+The realizability gate runs against the post-merge partition before
+the YAML splice fires — pass `--graph <owner_graph.json>` so the
+gate has the chunk's edge topology. The gate rejects merges that
+would create cross-module cycles; `--dry-run` runs the gate without
+writing. Use `--no-verify` to skip the gate (e.g. during multi-step
+refactors where an intermediate state is intentionally invalid).
 
 ## Workflow: authoring `comment:` fields
 
