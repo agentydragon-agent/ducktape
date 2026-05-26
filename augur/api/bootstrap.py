@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import Field, PositiveInt
 
@@ -88,6 +89,45 @@ class Property(ApiModel):
     flags: tuple[str, ...] = ()
 
 
+class ProductInputDefaults(ApiModel):
+    """Server-driven overrides for the product input panel's starting values.
+
+    Each field is optional: `None` means "use the frontend's hard-coded base default".
+    Deployments (e.g. `gaffer-private`) drop a `product_input_defaults` block into their
+    augur YAML to bias the UI toward sensible starting values for their real portfolio
+    without touching frontend code. `extra="forbid"` on `ApiModel` catches typos.
+    """
+
+    horizon_months: PositiveInt | None = None
+    rollout_count: PositiveInt | None = None
+    first_seed: int | None = None
+    monthly_spend_usd: float | None = None
+    spend_index: Literal["inflation", "none"] | None = None
+    sell_order: str | None = None
+    cash_buffer_trigger_below_usd: float | None = None
+    cash_buffer_sale_usd: float | None = None
+    cash_buffer_index_to_inflation: bool | None = None
+    pe_lnw_floor_usd: float | None = None
+    pe_index_floor_to_inflation: bool | None = None
+    monthly_rent_usd: float | None = None
+    rental_location_id: str | None = None
+    property_id: str | None = None
+    lives_here: bool | None = None
+    financing_kind: Literal["cash", "mortgage"] | None = None
+    down_payment_pct: float | None = None
+    mortgage_term_months: Literal[180, 360] | None = None
+    annual_rate_pct: float | None = None
+    annual_insurance_pct: float | None = None
+    annual_maintenance_pct: float | None = None
+    rental_monthly_usd: float | None = None
+    rental_fraction_rented_pct: float | None = None
+    rental_vacancy_pct: float | None = None
+    use_rental_management: bool | None = None
+    management_fee_pct: float | None = None
+    leasing_fee_months: float | None = None
+    avg_tenancy_months: PositiveInt | None = None
+
+
 class BootstrapResponse(ApiModel):
     locations: list[Location]
     properties: list[Property]
@@ -107,3 +147,4 @@ class BootstrapResponse(ApiModel):
     rental_use_policy_options: list[RentalUsePolicyOption]
     agents: list[AgentOption]
     finance_snapshot: FinanceSnapshot
+    product_input_defaults: ProductInputDefaults = Field(default_factory=ProductInputDefaults)

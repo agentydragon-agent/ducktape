@@ -211,4 +211,5 @@ def build_bootstrap_payload(config: Config) -> BootstrapResponse:
         rental_use_policy_options=_rental_use_policy_options(primary),
         agents=[AgentOption(actor_id=agent.actor_id, label=agent.label, role=agent.role) for agent in config.agents],
         finance_snapshot=config.snapshot,
+        product_input_defaults=config.product_input_defaults,
     )

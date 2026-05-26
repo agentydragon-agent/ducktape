@@ -24,7 +24,7 @@ from pathlib import Path
 import yaml
 from pydantic import Field, HttpUrl, NonNegativeFloat, NonNegativeInt, PositiveInt, model_validator
 
-from augur.api.bootstrap import ActorRole, DefaultScenario
+from augur.api.bootstrap import ActorRole, DefaultScenario, ProductInputDefaults
 from augur.api.finance import FinanceSnapshot
 from augur.api.local_regulation import LocalRegulation
 from augur.api.portfolio import PortfolioConfig
@@ -128,6 +128,10 @@ class Config(ApiModel):
     default_rollout_samples: PositiveInt
     max_rollout_samples: PositiveInt
     bootstrap_default_scenarios: tuple[DefaultScenario, ...] = ()
+    # User-overridable starting values for the product input panel. Optional per-field; the
+    # frontend layers these over its hard-coded base defaults at bootstrap time so deployments
+    # (e.g. `gaffer-private`) can bias the UI without code changes.
+    product_input_defaults: ProductInputDefaults = Field(default_factory=ProductInputDefaults)
     exogenous_provider: ExogenousProviderConfig = Field(
         description=(
             "Deployment's exogenous-bundle provider choice (discriminated by `type`: simple / vecm). "

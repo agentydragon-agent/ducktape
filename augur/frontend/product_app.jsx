@@ -133,12 +133,23 @@ const SELECTED_COL_HEADER = "px-3 py-2 text-right font-semibold text-teal-700 da
 const SELECTED_COL_CELL = "px-3 py-2 text-right font-semibold text-teal-700 augur-tabular dark:text-teal-300";
 
 function productInputDefaults(bootstrap) {
-  const defaultRolloutCount = bootstrap.defaultRolloutSamples ?? DEFAULT_PRODUCT_INPUT_BASE.rolloutCount;
+  // Server-provided overrides (from the deployment's augur YAML's `product_input_defaults`).
+  // Each field is `null` when the deployment didn't set it; we drop those entries so the
+  // frontend's hard-coded base value stays. The decamelize layer in `client.js` already
+  // converted snake_case keys, so `cash_buffer_index_to_inflation` arrives as `cashBufferIndexToInflation`.
+  const overrides = bootstrap.productInputDefaults ?? {};
+  const overridesNotNull = Object.fromEntries(Object.entries(overrides).filter(([, value]) => value != null));
+  const base = { ...DEFAULT_PRODUCT_INPUT_BASE, ...overridesNotNull };
+  // Per-bootstrap derived clamps + fallbacks. These take effect after both base and YAML so
+  // we always respect `max_*_samples` and only fall back to the first location when YAML
+  // didn't pin a `rental_location_id`.
+  const defaultRolloutCount =
+    base.rolloutCount ?? bootstrap.defaultRolloutSamples ?? DEFAULT_PRODUCT_INPUT_BASE.rolloutCount;
   return {
-    ...DEFAULT_PRODUCT_INPUT_BASE,
-    horizonMonths: clampInteger(DEFAULT_PRODUCT_INPUT_BASE.horizonMonths, 1, bootstrap.maxHorizonMonths),
+    ...base,
+    horizonMonths: clampInteger(base.horizonMonths, 1, bootstrap.maxHorizonMonths),
     rolloutCount: clampInteger(defaultRolloutCount, 1, bootstrap.maxRolloutSamples),
-    rentalLocationId: bootstrap.locations[0]?.id ?? null,
+    rentalLocationId: base.rentalLocationId ?? bootstrap.locations[0]?.id ?? null,
   };
 }
 
@@ -1554,14 +1565,7 @@ function LifecycleEventRow({ event, maxMonth, postSale, onChange, onReplaceKind,
         onChange={(domEvent) => onReplaceKind(domEvent.target.value)}
       />
       <LifecycleEventValueField event={event} onChange={onChange} />
-      <Button
-        size="xs"
-        variant="outline"
-        color="red"
-        onClick={onRemove}
-        aria-label="Remove event"
-        className="self-center"
-      >
+      <Button size="xs" variant="outline" color="red" onClick={onRemove} aria-label="Remove event">
         Remove
       </Button>
       {postSale && (
