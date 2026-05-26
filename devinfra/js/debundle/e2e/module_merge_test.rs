@@ -4,10 +4,19 @@
 
 use std::fs;
 use std::path::Path;
+use std::process::Command;
 
 use module_cli::merge_modules;
 use serde_yaml::Value;
 use tempfile::TempDir;
+
+fn debundle_binary() -> std::path::PathBuf {
+    let runfiles_path = std::env::var("RUNFILES_DIR")
+        .or_else(|_| std::env::var("TEST_SRCDIR"))
+        .expect("runfiles env var");
+    Path::new(&runfiles_path)
+        .join("_main/devinfra/js/debundle/debundle")
+}
 
 fn write(root: &Path, rel: &str, body: &str) {
     let path = root.join(rel);
@@ -114,4 +123,113 @@ fn duplicate_member_name_across_sources_errors_and_keeps_sources() {
     // can fix the conflict and re-run.
     assert!(root.join("a.yaml").exists());
     assert!(root.join("b.yaml").exists());
+}
+
+#[test]
+fn modules_merge_new_subcommand_path_works_through_binary() {
+    let dir = TempDir::new().unwrap();
+    let root = dir.path();
+    write(
+        root,
+        "target.yaml",
+        "members:\n  - selector: { binding: { name: a } }\n",
+    );
+    write(
+        root,
+        "src.yaml",
+        "members:\n  - selector: { binding: { name: b } }\n",
+    );
+
+    let out = Command::new(debundle_binary())
+        .args([
+            "modules",
+            "merge",
+            "--modules",
+            root.to_str().unwrap(),
+            "--target",
+            "target.yaml",
+            "src.yaml",
+        ])
+        .output()
+        .expect("spawn debundle");
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(!root.join("src.yaml").exists());
+    let merged = fs::read_to_string(root.join("target.yaml")).unwrap();
+    let doc: Value = serde_yaml::from_str(&merged).unwrap();
+    assert_eq!(member_names(&doc), vec!["a", "b"]);
+}
+
+#[test]
+fn modules_merge_dry_run_does_not_modify_files() {
+    let dir = TempDir::new().unwrap();
+    let root = dir.path();
+    let src_body = "members:\n  - selector: { binding: { name: b } }\n";
+    let target_body = "members:\n  - selector: { binding: { name: a } }\n";
+    write(root, "target.yaml", target_body);
+    write(root, "src.yaml", src_body);
+
+    let out = Command::new(debundle_binary())
+        .args([
+            "modules",
+            "merge",
+            "--modules",
+            root.to_str().unwrap(),
+            "--target",
+            "target.yaml",
+            "src.yaml",
+            "--dry-run",
+        ])
+        .output()
+        .expect("spawn debundle");
+    assert!(out.status.success());
+    assert!(
+        String::from_utf8_lossy(&out.stdout).contains("dry-run"),
+        "expected dry-run verdict on stdout, got {:?}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    assert!(root.join("src.yaml").exists(), "src must not be deleted");
+    assert_eq!(fs::read_to_string(root.join("src.yaml")).unwrap(), src_body);
+    assert_eq!(
+        fs::read_to_string(root.join("target.yaml")).unwrap(),
+        target_body
+    );
+}
+
+#[test]
+fn deprecated_module_merge_alias_still_works_with_warning() {
+    let dir = TempDir::new().unwrap();
+    let root = dir.path();
+    write(
+        root,
+        "target.yaml",
+        "members:\n  - selector: { binding: { name: a } }\n",
+    );
+    write(
+        root,
+        "src.yaml",
+        "members:\n  - selector: { binding: { name: b } }\n",
+    );
+
+    let out = Command::new(debundle_binary())
+        .args([
+            "module",
+            "merge",
+            "--modules",
+            root.to_str().unwrap(),
+            "--target",
+            "target.yaml",
+            "src.yaml",
+        ])
+        .output()
+        .expect("spawn debundle");
+    assert!(out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("deprecated"),
+        "expected deprecation warning, got stderr: {stderr}"
+    );
 }

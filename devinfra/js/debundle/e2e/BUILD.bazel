@@ -130,13 +130,15 @@ rust_test(
     ],
 )
 
-# CLI verb `debundle module merge`: pure YAML splice. Calls the
-# library's public Rust entry point directly, no debundle binary
-# dependency.
+# CLI verb `debundle modules merge` (+ deprecated `debundle module
+# merge`): pure YAML splice with the new `--dry-run` flag. The
+# binary-shelling tests cover the new clap top-level node and the
+# deprecation-alias path.
 rust_test(
     name = "module_merge_test",
     srcs = ["module_merge_test.rs"],
     crate_root = "module_merge_test.rs",
+    data = ["//devinfra/js/debundle"],
     edition = "2024",
     deps = [
         "//devinfra/js/debundle:module_cli",

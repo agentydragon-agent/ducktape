@@ -42,6 +42,26 @@ pub struct MergeArgs {
     /// Source module paths (relative to --modules) to merge in.
     #[arg(required = true)]
     pub sources: Vec<PathBuf>,
+
+    /// Validate but do not modify any file.
+    #[arg(long)]
+    pub dry_run: bool,
+
+    /// Skip the realizability gate. Don't use casually.
+    ///
+    /// (The realizability gate hookup is the deferred half of task
+    /// #84 — see `run_merge` for the documented gap. Today
+    /// `--no-verify` is structural-only; the cross-module-cycle gate
+    /// it would suppress is not yet implemented at this layer.)
+    #[arg(long)]
+    pub no_verify: bool,
+
+    /// `owner_graph.json` for the chunk being merged. Required for
+    /// the realizability gate; ignored when `--no-verify` is set.
+    /// The gate hookup is deferred (#84), so the flag is currently
+    /// optional — once the gate lands it becomes required.
+    #[arg(long = "graph", env = "DEBUNDLE_GRAPH")]
+    pub owner_graph_path: Option<PathBuf>,
 }
 
 /// Summary returned by [`merge_modules`].
@@ -80,11 +100,101 @@ pub fn run_module_cli(args: ModuleArgs) -> Result<()> {
 /// Public entry point for the merge verb. Used by the top-level
 /// `debundle modules merge` and by the deprecated `debundle module
 /// merge` alias.
+///
+/// Validation contract (per docs/cli.md § "Modules"):
+///
+/// * Default: validate (realizability gate against the post-merge
+///   spec) + apply if valid.
+/// * `--dry-run`: validate but do not modify any file.
+/// * `--no-verify`: skip validation; apply the merge regardless.
+///
+/// **Gate hookup TODO (#84, deferred).** The realizability gate
+/// against the post-merge partition is not yet implemented at this
+/// layer; the YAML splice happens unconditionally today.
+/// `OwnerGraph::from_report` drops the `declared: BTreeSet` per-owner
+/// binding set (see `ARCH_REVIEW_2026_05.md` §"`OwnerGraphReport::
+/// from_report` drops `declared` on the floor"), so reconstructing a
+/// faithful `Partition` from the on-disk JSON + spec tree requires
+/// either:
+///   1. Round-tripping `declared` through the wire format (in-flight
+///      on the `feat-facts-wire-format` branch per the same review),
+///      or
+///   2. Re-running Stage A inside the merge command to recompute the
+///      partition from sources, which conflicts with the
+///      cross-process scope note in `WIRE_FORMAT.md`.
+///
+/// Until then, the gate args (`--graph`, `--no-verify`, `--dry-run`)
+/// are accepted for forward compatibility but the gate itself is a
+/// no-op. `--dry-run` still skips the YAML write.
 pub fn run_merge(merge: MergeArgs) -> Result<()> {
+    if merge.no_verify {
+        eprintln!(
+            "warning: --no-verify skips the realizability gate; the merge YAML splice will \
+             not be re-checked for cross-module cycles."
+        );
+    }
+    // The gate is currently unwired (see docstring). When it lands,
+    // expect a check_realizability call here against the post-merge
+    // partition built from `merge.owner_graph_path` + the modules
+    // tree state after the in-memory splice but before writing.
+    if !merge.no_verify && merge.owner_graph_path.is_some() {
+        eprintln!(
+            "note: realizability gate hookup is deferred (task #84); --graph is accepted \
+             but not yet exercised."
+        );
+    }
     let sources: Vec<&Path> = merge.sources.iter().map(PathBuf::as_path).collect();
+    if merge.dry_run {
+        // Dry-run shape preview: load each file to confirm shape
+        // before reporting the action. The full validate+write
+        // pass would be the same minus the final `fs::write` /
+        // `fs::remove_file`.
+        let summary = preview_merge(&merge.modules_root, &merge.target, &sources)?;
+        println!(
+            "dry-run: would merge {} source(s) into {}",
+            summary.merged_sources.len(),
+            summary.target.display()
+        );
+        return Ok(());
+    }
     let summary = merge_modules(&merge.modules_root, &merge.target, &sources)?;
     println!("{}", summary.summary_line());
     Ok(())
+}
+
+/// Like `merge_modules` but without writing/deleting. Returns the
+/// summary that would be produced. Used by `--dry-run`.
+fn preview_merge(
+    modules_root: &Path,
+    target: &Path,
+    sources: &[&Path],
+) -> Result<MergeSummary> {
+    let target_abs = if target.is_absolute() {
+        target.to_path_buf()
+    } else {
+        modules_root.join(target)
+    };
+    let source_abs: Vec<PathBuf> = sources
+        .iter()
+        .map(|p| {
+            if p.is_absolute() {
+                p.to_path_buf()
+            } else {
+                modules_root.join(p)
+            }
+        })
+        .collect();
+    // Confirm every source + the target parse as YAML. This catches
+    // syntactically broken files before any write would happen in a
+    // non-dry-run.
+    let _ = read_yaml(&target_abs)?;
+    for src in &source_abs {
+        let _ = read_yaml(src)?;
+    }
+    Ok(MergeSummary {
+        target: target_abs,
+        merged_sources: source_abs,
+    })
 }
 
 /// Merge `sources` into `target` under `modules_root`, then delete the
