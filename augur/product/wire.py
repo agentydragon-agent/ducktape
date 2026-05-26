@@ -28,6 +28,10 @@ DEFAULT_SELL_ORDER: tuple[SellableBucket, ...] = ("stocks", "crypto")
 class FundingPolicy(ApiModel):
     cash_buffer_trigger_below_usd: NonNegativeFloat = 0.0
     cash_buffer_sale_usd: NonNegativeFloat = 0.0
+    # `cash_buffer_index_to_inflation` matches PrivateEquityTenderPolicyWire.index_floor_to_inflation:
+    # when true, the trigger + sale amounts are interpreted as today-dollar real-terms targets and
+    # inflated by CPI each month. When false, they stay nominal.
+    cash_buffer_index_to_inflation: bool = True
     sell_order: tuple[SellableBucket, ...] = DEFAULT_SELL_ORDER
 
 

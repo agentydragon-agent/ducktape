@@ -265,8 +265,10 @@ class LiquidityPolicy(BaseModel):
     agent_id: str
     account_id: str
     asset_preference_chain: list[str]
-    cash_buffer_trigger_below_usd: float = 0.0
-    cash_buffer_sale_usd: float = 0.0
+    # `AmountSpec = float | AmountSchedule` — pass a raw float for a constant buffer, or a
+    # `SeriesIndexedAmount` (e.g. `series_id="inflation"`) to keep the buffer in real terms.
+    cash_buffer_trigger_below_usd: AmountSpec = 0.0
+    cash_buffer_sale_usd: AmountSpec = 0.0
     cause_id_prefix: str = "liquidity_sale"
 
 

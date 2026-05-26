@@ -125,6 +125,12 @@ def required_level_series(
         and scenario_key.pe_tender_policy.index_floor_to_inflation
     ):
         series_ids.add(INFLATION_SERIES_ID)
+    # Cash-buffer trigger / sale, when inflation-indexed, also need the CPI series.
+    funding_policy = scenario_key.funding_policy
+    if funding_policy.cash_buffer_index_to_inflation and (
+        funding_policy.cash_buffer_trigger_below_usd > 0 or funding_policy.cash_buffer_sale_usd > 0
+    ):
+        series_ids.add(INFLATION_SERIES_ID)
     return frozenset(series_ids)
 
 
@@ -619,16 +625,33 @@ def _liquidity_policies_from_funding_policy(
     asset_preference_chain = _asset_preference_chain_from_sell_order(funding_policy, initial_lots=initial_lots)
     if not asset_preference_chain:
         return []
+    trigger_amount = _cash_buffer_amount(
+        float(funding_policy.cash_buffer_trigger_below_usd),
+        index_to_inflation=funding_policy.cash_buffer_index_to_inflation,
+    )
+    sale_amount = _cash_buffer_amount(
+        float(funding_policy.cash_buffer_sale_usd), index_to_inflation=funding_policy.cash_buffer_index_to_inflation
+    )
     return [
         LiquidityPolicy(
             agent_id=primary_agent_id,
             account_id=PRIMARY_ACCOUNT_ID,
             asset_preference_chain=asset_preference_chain,
-            cash_buffer_trigger_below_usd=float(funding_policy.cash_buffer_trigger_below_usd),
-            cash_buffer_sale_usd=float(funding_policy.cash_buffer_sale_usd),
+            cash_buffer_trigger_below_usd=trigger_amount,
+            cash_buffer_sale_usd=sale_amount,
             cause_id_prefix="product_funding_sale",
         )
     ]
+
+
+def _cash_buffer_amount(usd: float, *, index_to_inflation: bool) -> FixedAmount | SeriesIndexedAmount | float:
+    """Translate a UI scalar + index flag into the sim `AmountSpec`. Indexed buffers track CPI
+    monthly (period=1) so the real-terms target stays constant; nominal buffers stay as the raw
+    float."""
+
+    if not index_to_inflation or usd <= 0:
+        return usd
+    return SeriesIndexedAmount(base_amount_usd=usd, series_id=INFLATION_SERIES_ID, adjustment_period_months=1)
 
 
 def _asset_preference_chain_from_sell_order(

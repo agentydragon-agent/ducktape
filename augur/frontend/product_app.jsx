@@ -49,6 +49,7 @@ const DEFAULT_PRODUCT_INPUT_BASE = {
   sellOrder: DEFAULT_SELL_ORDER_CODES,
   cashBufferTriggerBelowUsd: 4000,
   cashBufferSaleUsd: 10000,
+  cashBufferIndexToInflation: true,
   peLnwFloorUsd: 0,
   peIndexFloorToInflation: true,
   monthlyRentUsd: 0,
@@ -185,6 +186,9 @@ const INPUT_FIELDS = [
   { key: "managementFeePct", type: "number" },
   { key: "leasingFeeMonths", type: "number" },
   { key: "avgTenancyMonths", type: "number" },
+  // Appended after existing positions so older `?s=` URLs continue to decode without shifting
+  // their downstream slots. New optional fields go at the tail.
+  { key: "cashBufferIndexToInflation", type: "bool" },
 ];
 
 function encodeInputValue(value, field) {
@@ -413,6 +417,7 @@ function productScenario(input, bootstrap) {
     fundingPolicy: {
       cashBufferTriggerBelowUsd: autoSellEnabled ? Math.max(0, Number(input.cashBufferTriggerBelowUsd) || 0) : 0,
       cashBufferSaleUsd: autoSellEnabled ? Math.max(0, Number(input.cashBufferSaleUsd) || 0) : 0,
+      cashBufferIndexToInflation: Boolean(input.cashBufferIndexToInflation),
       sellOrder,
     },
     peTenderPolicy: {
@@ -2045,6 +2050,13 @@ function ProductProjectionWorkspace({ bootstrap }) {
                     onChange={(cashBufferSaleUsd) => updateInput({ cashBufferSaleUsd })}
                   />
                 </div>
+                <Checkbox
+                  className="mt-2"
+                  label="Index trigger + sell amount to inflation"
+                  checked={Boolean(input.cashBufferIndexToInflation)}
+                  disabled={!input.sellOrder}
+                  onChange={(event) => updateInput({ cashBufferIndexToInflation: event.currentTarget.checked })}
+                />
                 <div className="mt-3 text-xs augur-muted">
                   PE tenders: sell enough at each modeled tender event to lift liquid net worth (cash + non-PE holdings)
                   to this floor. Zero disables PE sales.

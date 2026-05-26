@@ -1804,11 +1804,31 @@ def _apply_liquidity_policy_sales(
         )
         required_sale = np.maximum(hard_demand - cash_balance, 0.0)
         post_required_cash = cash_balance + required_sale - hard_demand
+        # Indexed amounts: per-rollout this-month values from compile-time amount arrays. Lets
+        # the buffer track CPI when the wire emits a SeriesIndexedAmount; a `FixedAmount` (or
+        # raw float) gives a constant vector with no work.
+        buffer_trigger_values = _amount_values(
+            plan,
+            kind=int(plan.liquidity_policy_trigger_kind[policy]),
+            fixed=float(plan.liquidity_policy_trigger_fixed[policy]),
+            base=float(plan.liquidity_policy_trigger_base[policy]),
+            series_index=int(plan.liquidity_policy_trigger_series_index[policy]),
+            base_month=int(plan.liquidity_policy_trigger_base_month[policy]),
+            adjustment_period=int(plan.liquidity_policy_trigger_adjustment_period[policy]),
+            month=month,
+        )
+        buffer_sale_values = _amount_values(
+            plan,
+            kind=int(plan.liquidity_policy_sale_kind[policy]),
+            fixed=float(plan.liquidity_policy_sale_fixed[policy]),
+            base=float(plan.liquidity_policy_sale_base[policy]),
+            series_index=int(plan.liquidity_policy_sale_series_index[policy]),
+            base_month=int(plan.liquidity_policy_sale_base_month[policy]),
+            adjustment_period=int(plan.liquidity_policy_sale_adjustment_period[policy]),
+            month=month,
+        )
         buffer_sale = np.where(
-            (float(plan.liquidity_policy_buffer_sale[policy]) > 0.0)
-            & (post_required_cash < float(plan.liquidity_policy_buffer_trigger[policy])),
-            float(plan.liquidity_policy_buffer_sale[policy]),
-            0.0,
+            (buffer_sale_values > 0.0) & (post_required_cash < buffer_trigger_values), buffer_sale_values, 0.0
         )
         remaining_target = np.where(active_rollout, required_sale + buffer_sale, 0.0)
         if not np.any((hard_demand > 0.0) | (remaining_target > 0.0)):
