@@ -581,6 +581,31 @@ export { a1, a2, b1 };
         rejected.report_root.join("static/app/cycles.json").exists(),
         "cycle report should be written before rejection",
     );
+    // Wire-shape check: `cycles.json` is now the trimmed
+    // `BlockingSccEntry` array — each entry has `id`, `modules`, and
+    // `cut` and **no `evidence` block** (recoverable on demand via
+    // `debundle gate describe`). See `validation.rs::BlockingSccEntry`
+    // and `WIRE_FORMAT.md`.
+    let cycles: Vec<serde_json::Value> =
+        read_json(&rejected.report_root.join("static/app/cycles.json"));
+    assert!(!cycles.is_empty(), "at least one blocking SCC");
+    for (i, entry) in cycles.iter().enumerate() {
+        let obj = entry.as_object().expect("blocking-SCC entry is an object");
+        let mut keys: Vec<&str> = obj.keys().map(String::as_str).collect();
+        keys.sort();
+        assert_eq!(
+            keys,
+            vec!["cut", "id", "modules"],
+            "trimmed cycles.json entry should have only id/modules/cut; got {keys:?}",
+        );
+        assert_eq!(
+            obj["id"].as_u64().expect("id is u64"),
+            i as u64,
+            "id should be the entry's index in cycles.json",
+        );
+        assert!(!obj.contains_key("evidence"),
+            "evidence is recomputed on demand by `debundle gate describe`, not on disk");
+    }
     assert!(
         graph.quotient.sccs.iter().any(|scc| {
             scc.is_cycle && !scc.realizable && !scc.constraining_module_edge_ids.is_empty()

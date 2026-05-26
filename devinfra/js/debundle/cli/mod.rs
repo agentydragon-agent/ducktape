@@ -409,7 +409,11 @@ pub fn run_debundle_cli(args: DebundleArgs) -> Result<()> {
         DebundleCommand::Spec(args) => match args.command {
             SpecNsCommand::Stats(s) => run_spec_stats_cmd(s),
         },
-        DebundleCommand::Gate(args) => run_gate_cli(args).context("running gate subcommand"),
+        // Don't wrap with a generic context — `gate` subcommands
+        // already carry enough context in their bail messages (e.g.
+        // "no blocking SCC with id ..."), and an outer wrap would
+        // hide them since `main.rs` prints only the top context.
+        DebundleCommand::Gate(args) => run_gate_cli(args),
     }
 }
 
