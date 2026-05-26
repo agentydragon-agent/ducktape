@@ -89,88 +89,88 @@ class StateHistoryBuffers:
     def validate(self, plan: SlotPlan) -> None:
         s = plan.snapshot_months
         r = plan.rollout_count
-        _expect_array("cash_state", self.cash_state, shape=(s, r, plan.cash_count), dtype=np.float64)
-        _expect_array("lot_state", self.lot_state, shape=(s, r, plan.lot_count), dtype=np.float64)
-        _expect_array("ordinary_state", self.ordinary_state, shape=(s, r, plan.tax_profile_count), dtype=np.float64)
+        _expect_array("cash_state", self.cash_state, shape=(s, plan.cash_count, r), dtype=np.float64)
+        _expect_array("lot_state", self.lot_state, shape=(s, plan.lot_count, r), dtype=np.float64)
+        _expect_array("ordinary_state", self.ordinary_state, shape=(s, plan.tax_profile_count, r), dtype=np.float64)
         _expect_array(
             "capital_gain_active_state",
             self.capital_gain_active_state,
-            shape=(s, r, plan.capital_gain_agent_count, 2),
+            shape=(s, plan.capital_gain_agent_count, 2, r),
             dtype=np.bool_,
         )
         _expect_array(
             "capital_gain_state",
             self.capital_gain_state,
-            shape=(s, r, plan.capital_gain_agent_count, 2),
+            shape=(s, plan.capital_gain_agent_count, 2, r),
             dtype=np.float64,
         )
         _expect_array(
             "tax_liability_active_state",
             self.tax_liability_active_state,
-            shape=(s, r, plan.tax_liability_count),
+            shape=(s, plan.tax_liability_count, r),
             dtype=np.bool_,
         )
         _expect_array(
-            "tax_liability_state", self.tax_liability_state, shape=(s, r, plan.tax_liability_count), dtype=np.float64
+            "tax_liability_state", self.tax_liability_state, shape=(s, plan.tax_liability_count, r), dtype=np.float64
         )
         _expect_array(
-            "property_active_state", self.property_active_state, shape=(s, r, plan.property_count), dtype=np.bool_
+            "property_active_state", self.property_active_state, shape=(s, plan.property_count, r), dtype=np.bool_
         )
         _expect_array(
-            "property_basis_state", self.property_basis_state, shape=(s, r, plan.property_count), dtype=np.float64
+            "property_basis_state", self.property_basis_state, shape=(s, plan.property_count, r), dtype=np.float64
         )
         _expect_array(
             "property_ownership_state",
             self.property_ownership_state,
-            shape=(s, r, plan.property_count),
+            shape=(s, plan.property_count, r),
             dtype=np.float64,
         )
         _expect_array(
             "property_contribution_state",
             self.property_contribution_state,
-            shape=(s, r, plan.property_count),
+            shape=(s, plan.property_count, r),
             dtype=np.float64,
         )
         _expect_array(
-            "property_equity_state", self.property_equity_state, shape=(s, r, plan.property_count), dtype=np.float64
+            "property_equity_state", self.property_equity_state, shape=(s, plan.property_count, r), dtype=np.float64
         )
         _expect_array(
-            "liability_active_state", self.liability_active_state, shape=(s, r, plan.liability_count), dtype=np.bool_
+            "liability_active_state", self.liability_active_state, shape=(s, plan.liability_count, r), dtype=np.bool_
         )
         _expect_array(
             "liability_principal_state",
             self.liability_principal_state,
-            shape=(s, r, plan.liability_count),
+            shape=(s, plan.liability_count, r),
             dtype=np.float64,
         )
         _expect_array(
             "liability_monthly_payment_state",
             self.liability_monthly_payment_state,
-            shape=(s, r, plan.liability_count),
+            shape=(s, plan.liability_count, r),
             dtype=np.float64,
         )
         _expect_array(
             "liability_interest_ytd_state",
             self.liability_interest_ytd_state,
-            shape=(s, r, plan.liability_count),
+            shape=(s, plan.liability_count, r),
             dtype=np.float64,
         )
         _expect_array(
             "liability_principal_ytd_state",
             self.liability_principal_ytd_state,
-            shape=(s, r, plan.liability_count),
+            shape=(s, plan.liability_count, r),
             dtype=np.float64,
         )
         _expect_array(
             "property_cumulative_depreciation_state",
             self.property_cumulative_depreciation_state,
-            shape=(s, r, plan.property_count),
+            shape=(s, plan.property_count, r),
             dtype=np.float64,
         )
         _expect_array(
             "property_owner_occupied_months_state",
             self.property_owner_occupied_months_state,
-            shape=(s, r, plan.property_count),
+            shape=(s, plan.property_count, r),
             dtype=np.int64,
         )
         _expect_array("rollout_failed_state", self.rollout_failed_state, shape=(s, r), dtype=np.bool_)
@@ -930,28 +930,26 @@ def _snapshot_initial_state(buffers: SimulationBuffers, current: CurrentStateBuf
 
 
 def _snapshot_current_state(buffers: SimulationBuffers, current: CurrentStateBuffers, *, snapshot_index: int) -> None:
-    # `current.*` is R-last per B0; StateHistoryBuffers is still (s, r, count) — transpose
-    # to (s, count, r) becomes a follow-up step. For now, write the transpose at the seam.
-    buffers.cash_state[snapshot_index] = current.cash.T
-    buffers.lot_state[snapshot_index] = current.lot_remaining.T
-    buffers.ordinary_state[snapshot_index] = current.ordinary_ytd.T
-    # 3D (count_a, count_b, R) → (R, count_a, count_b): move axis 2 to axis 0.
-    buffers.capital_gain_active_state[snapshot_index] = np.moveaxis(current.capital_gain_active, -1, 0)
-    buffers.capital_gain_state[snapshot_index] = np.moveaxis(current.capital_gain_ytd, -1, 0)
-    buffers.tax_liability_active_state[snapshot_index] = current.tax_liability_active.T
-    buffers.tax_liability_state[snapshot_index] = current.tax_liability_amount.T
-    buffers.property_active_state[snapshot_index] = current.property_active.T
-    buffers.property_basis_state[snapshot_index] = current.property_basis.T
-    buffers.property_ownership_state[snapshot_index] = current.property_ownership.T
-    buffers.property_contribution_state[snapshot_index] = current.property_contribution.T
-    buffers.property_equity_state[snapshot_index] = current.property_equity.T
-    buffers.liability_active_state[snapshot_index] = current.liability_active.T
-    buffers.liability_principal_state[snapshot_index] = current.liability_principal.T
-    buffers.liability_monthly_payment_state[snapshot_index] = current.liability_monthly_payment.T
-    buffers.liability_interest_ytd_state[snapshot_index] = current.liability_interest_ytd.T
-    buffers.liability_principal_ytd_state[snapshot_index] = current.liability_principal_ytd.T
-    buffers.property_cumulative_depreciation_state[snapshot_index] = current.property_cumulative_depreciation.T
-    buffers.property_owner_occupied_months_state[snapshot_index] = current.property_owner_occupied_months.T
+    # Both `current.*` and `buffers.*_state[s]` are R-last; no transpose needed.
+    buffers.cash_state[snapshot_index] = current.cash
+    buffers.lot_state[snapshot_index] = current.lot_remaining
+    buffers.ordinary_state[snapshot_index] = current.ordinary_ytd
+    buffers.capital_gain_active_state[snapshot_index] = current.capital_gain_active
+    buffers.capital_gain_state[snapshot_index] = current.capital_gain_ytd
+    buffers.tax_liability_active_state[snapshot_index] = current.tax_liability_active
+    buffers.tax_liability_state[snapshot_index] = current.tax_liability_amount
+    buffers.property_active_state[snapshot_index] = current.property_active
+    buffers.property_basis_state[snapshot_index] = current.property_basis
+    buffers.property_ownership_state[snapshot_index] = current.property_ownership
+    buffers.property_contribution_state[snapshot_index] = current.property_contribution
+    buffers.property_equity_state[snapshot_index] = current.property_equity
+    buffers.liability_active_state[snapshot_index] = current.liability_active
+    buffers.liability_principal_state[snapshot_index] = current.liability_principal
+    buffers.liability_monthly_payment_state[snapshot_index] = current.liability_monthly_payment
+    buffers.liability_interest_ytd_state[snapshot_index] = current.liability_interest_ytd
+    buffers.liability_principal_ytd_state[snapshot_index] = current.liability_principal_ytd
+    buffers.property_cumulative_depreciation_state[snapshot_index] = current.property_cumulative_depreciation
+    buffers.property_owner_occupied_months_state[snapshot_index] = current.property_owner_occupied_months
     buffers.rollout_failed_state[snapshot_index] = current.failed
     buffers.rollout_failed_month_state[snapshot_index] = current.failed_month
 
@@ -1434,7 +1432,7 @@ def _apply_property_sale(
     # the lookback snapshot gives the count of qualifying months strictly inside the window.
     current_cum = current.property_owner_occupied_months[prop, :].astype(np.int64)
     lookback_snapshot_index = max(0, month - SECTION_121_LOOKBACK_MONTHS)
-    snapshot_cum = buffers.property_owner_occupied_months_state[lookback_snapshot_index, :, prop].astype(np.int64)
+    snapshot_cum = buffers.property_owner_occupied_months_state[lookback_snapshot_index, prop, :].astype(np.int64)
     months_in_window = current_cum - snapshot_cum
     qualifies = months_in_window >= SECTION_121_MIN_QUALIFYING_MONTHS
     owner_profile = int(plan.property_owner_profile_index[prop])
@@ -2230,35 +2228,37 @@ def _allocate_buffers(plan: CompiledSimulation) -> SimulationBuffers:
     liability_event_axis = max(1, p.liability_count)
     buffers = SimulationBuffers(
         state=StateHistoryBuffers(
-            # cash_state[S, R, C]
-            cash_state=np.zeros((s, r, p.cash_count), dtype=np.float64),
-            # lot_state[S, R, L]
-            lot_state=np.zeros((s, r, p.lot_count), dtype=np.float64),
-            # ordinary_state[S, R, tax_profile_count]
-            ordinary_state=np.zeros((s, r, p.tax_profile_count), dtype=np.float64),
-            # capital_gain_*_state[S, R, G, classification]
-            capital_gain_active_state=np.zeros((s, r, p.capital_gain_agent_count, 2), dtype=np.bool_),
-            capital_gain_state=np.zeros((s, r, p.capital_gain_agent_count, 2), dtype=np.float64),
-            # tax_liability_*_state[S, R, tax_liability_count]
-            tax_liability_active_state=np.zeros((s, r, p.tax_liability_count), dtype=np.bool_),
-            tax_liability_state=np.zeros((s, r, p.tax_liability_count), dtype=np.float64),
-            # property_*_state[S, R, property_count]
-            property_active_state=np.zeros((s, r, p.property_count), dtype=np.bool_),
-            property_basis_state=np.zeros((s, r, p.property_count), dtype=np.float64),
-            property_ownership_state=np.zeros((s, r, p.property_count), dtype=np.float64),
-            property_contribution_state=np.zeros((s, r, p.property_count), dtype=np.float64),
-            property_equity_state=np.zeros((s, r, p.property_count), dtype=np.float64),
-            # liability_*_state[S, R, liability_count]
-            liability_active_state=np.zeros((s, r, p.liability_count), dtype=np.bool_),
-            liability_principal_state=np.zeros((s, r, p.liability_count), dtype=np.float64),
-            liability_monthly_payment_state=np.zeros((s, r, p.liability_count), dtype=np.float64),
-            liability_interest_ytd_state=np.zeros((s, r, p.liability_count), dtype=np.float64),
-            liability_principal_ytd_state=np.zeros((s, r, p.liability_count), dtype=np.float64),
-            # property_cumulative_depreciation_state[S, R, P]
-            property_cumulative_depreciation_state=np.zeros((s, r, p.property_count), dtype=np.float64),
-            # property_owner_occupied_months_state[S, R, P]
-            property_owner_occupied_months_state=np.zeros((s, r, p.property_count), dtype=np.int64),
-            # rollout failure state[S, R]
+            # All state-history buffers are R-last per B0: (snapshot, count, R) for 2-axis
+            # state, (snapshot, count_a, count_b, R) for the 3-axis capital-gain split.
+            # cash_state[S, C, R]
+            cash_state=np.zeros((s, p.cash_count, r), dtype=np.float64),
+            # lot_state[S, L, R]
+            lot_state=np.zeros((s, p.lot_count, r), dtype=np.float64),
+            # ordinary_state[S, P, R]
+            ordinary_state=np.zeros((s, p.tax_profile_count, r), dtype=np.float64),
+            # capital_gain_*_state[S, G, classification, R]
+            capital_gain_active_state=np.zeros((s, p.capital_gain_agent_count, 2, r), dtype=np.bool_),
+            capital_gain_state=np.zeros((s, p.capital_gain_agent_count, 2, r), dtype=np.float64),
+            # tax_liability_*_state[S, T, R]
+            tax_liability_active_state=np.zeros((s, p.tax_liability_count, r), dtype=np.bool_),
+            tax_liability_state=np.zeros((s, p.tax_liability_count, r), dtype=np.float64),
+            # property_*_state[S, P, R]
+            property_active_state=np.zeros((s, p.property_count, r), dtype=np.bool_),
+            property_basis_state=np.zeros((s, p.property_count, r), dtype=np.float64),
+            property_ownership_state=np.zeros((s, p.property_count, r), dtype=np.float64),
+            property_contribution_state=np.zeros((s, p.property_count, r), dtype=np.float64),
+            property_equity_state=np.zeros((s, p.property_count, r), dtype=np.float64),
+            # liability_*_state[S, B, R]
+            liability_active_state=np.zeros((s, p.liability_count, r), dtype=np.bool_),
+            liability_principal_state=np.zeros((s, p.liability_count, r), dtype=np.float64),
+            liability_monthly_payment_state=np.zeros((s, p.liability_count, r), dtype=np.float64),
+            liability_interest_ytd_state=np.zeros((s, p.liability_count, r), dtype=np.float64),
+            liability_principal_ytd_state=np.zeros((s, p.liability_count, r), dtype=np.float64),
+            # property_cumulative_depreciation_state[S, P, R]
+            property_cumulative_depreciation_state=np.zeros((s, p.property_count, r), dtype=np.float64),
+            # property_owner_occupied_months_state[S, P, R]
+            property_owner_occupied_months_state=np.zeros((s, p.property_count, r), dtype=np.int64),
+            # rollout failure state[S, R] (1D R retained on trailing axis)
             rollout_failed_state=np.zeros((s, r), dtype=np.bool_),
             rollout_failed_month_state=np.full((s, r), NO_CODE, dtype=np.int64),
         ),
@@ -2385,6 +2385,13 @@ def _codes_to_strings(plan: CompiledSimulation, codes: np.ndarray) -> np.ndarray
     return out.reshape(np.asarray(codes).shape)
 
 
+def _r_first_view(state: np.ndarray) -> np.ndarray:
+    """Move R (trailing axis per B0) to axis 1 so the decoders can keep using their
+    (h1, r, count[, ...]) row-major iteration order over the resulting flat buffer."""
+
+    return np.moveaxis(state, -1, 1)
+
+
 def _state_axes(h1: int, r: int, s: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Ravelled (month, rollout, slot) index columns for a state buffer of shape `(h1, r, s)`.
 
@@ -2419,7 +2426,7 @@ def _state_history_frame_from_columns(columns: dict[str, np.ndarray], spec: Any)
 
 
 def _decode_cash(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
-    state = buffers.cash_state  # (H+1, r, s)
+    state = _r_first_view(buffers.cash_state)  # (H+1, r, s)
     h1, r, s = state.shape
     months, rollouts, slots = _state_axes(h1, r, s)
     agent_ids = _codes_to_strings(plan, plan.cash_agent_codes)
@@ -2437,7 +2444,7 @@ def _decode_cash(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.Dat
 
 
 def _decode_asset_lots(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
-    state = buffers.lot_state  # (H+1, r, s)
+    state = _r_first_view(buffers.lot_state)  # (H+1, r, s)
     h1, r, s = state.shape
     months, rollouts, slots = _state_axes(h1, r, s)
     return _state_history_frame_from_columns(
@@ -2457,7 +2464,7 @@ def _decode_asset_lots(plan: CompiledSimulation, buffers: SimulationBuffers) -> 
 
 
 def _decode_ordinary_income(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
-    state = buffers.ordinary_state  # (H+1, r, p)
+    state = _r_first_view(buffers.ordinary_state)  # (H+1, r, p)
     h1, r, p = state.shape
     months, rollouts, profiles = _state_axes(h1, r, p)
     return _state_history_frame_from_columns(
@@ -2476,8 +2483,8 @@ def _decode_capital_gains(plan: CompiledSimulation, buffers: SimulationBuffers) 
     # Mask-filter keeps only `active_state[m, r, p, cls]` rows. The two `cls` codes happen to be
     # 0 and 1, with LTCG = LONG_TERM... = 0, STCG = SHORT_TERM... = 1, but iterate explicitly so
     # the classification column matches the legacy decoder's row order ((profile, ltcg, stcg)).
-    state = buffers.capital_gain_state
-    active = buffers.capital_gain_active_state
+    state = _r_first_view(buffers.capital_gain_state)
+    active = _r_first_view(buffers.capital_gain_active_state)
     h1, r, p, _c = state.shape
     months = np.broadcast_to(np.arange(h1, dtype=np.int64)[:, None, None, None], (h1, r, p, 2))
     rollouts = np.broadcast_to(np.arange(r, dtype=np.int64)[None, :, None, None], (h1, r, p, 2))
@@ -2503,8 +2510,8 @@ def _decode_capital_gains(plan: CompiledSimulation, buffers: SimulationBuffers) 
 
 
 def _decode_tax_liabilities(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
-    state = buffers.tax_liability_state  # (H+1, r, s)
-    active = buffers.tax_liability_active_state
+    state = _r_first_view(buffers.tax_liability_state)  # (H+1, r, s)
+    active = _r_first_view(buffers.tax_liability_active_state)
     h1, r, s = state.shape
     months, rollouts, slots = _state_axes(h1, r, s)
     mask = active.reshape(-1)
@@ -2526,8 +2533,8 @@ def _decode_tax_liabilities(plan: CompiledSimulation, buffers: SimulationBuffers
 
 
 def _decode_property_state(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
-    basis = buffers.property_basis_state  # (H+1, r, p)
-    active = buffers.property_active_state
+    basis = _r_first_view(buffers.property_basis_state)  # (H+1, r, p)
+    active = _r_first_view(buffers.property_active_state)
     h1, r, p = basis.shape
     months, rollouts, props = _state_axes(h1, r, p)
     mask = active.reshape(-1)
@@ -2547,7 +2554,7 @@ def _decode_property_state(plan: CompiledSimulation, buffers: SimulationBuffers)
 
 
 def _decode_property_stakes(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
-    active = buffers.property_active_state  # (H+1, r, p)
+    active = _r_first_view(buffers.property_active_state)  # (H+1, r, p)
     h1, r, p = active.shape
     months, rollouts, props = _state_axes(h1, r, p)
     mask = active.reshape(-1)
@@ -2568,8 +2575,8 @@ def _decode_property_stakes(plan: CompiledSimulation, buffers: SimulationBuffers
 
 
 def _decode_liabilities(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
-    principal = buffers.liability_principal_state  # (H+1, R, n_liab)
-    active = buffers.liability_active_state
+    principal = _r_first_view(buffers.liability_principal_state)  # (H+1, R, n_liab)
+    active = _r_first_view(buffers.liability_active_state)
     h1, r, n_liab = principal.shape
     months, rollouts, liabs = _state_axes(h1, r, n_liab)
     mask = active.reshape(-1)

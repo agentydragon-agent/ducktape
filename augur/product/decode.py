@@ -146,7 +146,7 @@ def _check_r1(dense: DenseSimulationResult) -> None:
 
 def _cash_by_month(dense: DenseSimulationResult, *, primary_agent_code: int) -> np.ndarray:
     cash_slots = np.flatnonzero(dense.plan.cash_agent_codes == primary_agent_code)
-    return cast(np.ndarray, dense.buffers.cash_state[:, _SINGLE_ROLLOUT_INDEX, :][:, cash_slots].sum(axis=1))
+    return cast(np.ndarray, dense.buffers.cash_state[:, cash_slots, _SINGLE_ROLLOUT_INDEX].sum(axis=1))
 
 
 _PRIVATE_EQUITY_ASSET_PREFIX = "private_equity:"
@@ -191,7 +191,7 @@ def _lot_value_by_month(dense: DenseSimulationResult, *, primary_agent_code: int
         if series_index is None:
             continue
         price = np.nan_to_num(plan.external_values[series_index, _SINGLE_ROLLOUT_INDEX, :], nan=0.0)
-        values += dense.buffers.lot_state[:, _SINGLE_ROLLOUT_INDEX, lot] * price
+        values += dense.buffers.lot_state[:, lot, _SINGLE_ROLLOUT_INDEX] * price
     return values
 
 
@@ -359,7 +359,7 @@ def _property_value_by_month(dense: DenseSimulationResult, *, primary_agent_code
     for prop in range(plan.properties.id.shape[0]):
         if int(plan.properties.buyer_agent[prop]) != primary_agent_code:
             continue
-        active = dense.buffers.property_active_state[:, _SINGLE_ROLLOUT_INDEX, prop]
+        active = dense.buffers.property_active_state[:, prop, _SINGLE_ROLLOUT_INDEX]
         purchase_month = int(plan.properties.month[prop])
         if purchase_month < 0:
             continue
@@ -386,7 +386,7 @@ def _mortgage_balance_by_month(dense: DenseSimulationResult, *, primary_agent_co
     for lia in range(plan.liabilities.codes.shape[0]):
         if int(plan.liabilities.agent[lia]) != primary_agent_code:
             continue
-        balance += dense.buffers.liability_principal_state[:, _SINGLE_ROLLOUT_INDEX, lia]
+        balance += dense.buffers.liability_principal_state[:, lia, _SINGLE_ROLLOUT_INDEX]
     return balance
 
 
