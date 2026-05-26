@@ -40,7 +40,13 @@ class LocalRegulation(ApiModel):
     special_assessment_annual_usd: NonNegativeFloat = Field(
         default=0, description="Fixed annual local special assessment added to property-tax cash flow."
     )
-    notes: str = Field(description="Human-readable source and modeling notes for this location.")
+    notes: str = Field(
+        default="",
+        description=(
+            "Human-readable source and modeling notes for this location. Empty string is "
+            "fine when the deployment yaml omits the field; it's metadata, not load-bearing."
+        ),
+    )
 
     @model_validator(mode="after")
     def _validate_tax_regime_defaults(self) -> LocalRegulation:
