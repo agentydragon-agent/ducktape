@@ -18,6 +18,12 @@ pub(super) fn trim_dead_named_specifiers(
     // `Id = (Atom, SyntaxContext)`; we collect refs by sym for the
     // claimed-and-unused filter below.
     let refs: HashSet<_> = collector.ids.iter().map(|id| &id.0).collect();
+    // Precompute the set of claimed binding syms once — turns the
+    // inner `bindings.iter().any(...)` (O(N) per specifier; the top
+    // non-materialize hotspot in the 2026-05-26 profile at 12.62%
+    // Children%) into an O(1) HashSet lookup. Top-level names are
+    // unique within a chunk, so syms are sufficient to discriminate.
+    let claimed_syms: HashSet<_> = bindings.keys().map(|id| &id.0).collect();
     for item in body.iter_mut() {
         let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
             continue;
@@ -30,10 +36,7 @@ pub(super) fn trim_dead_named_specifiers(
         import.specifiers.retain(|spec| match spec {
             ImportSpecifier::Default(_) | ImportSpecifier::Namespace(_) => true,
             ImportSpecifier::Named(named) => {
-                // bindings is Id-keyed; match by sym (top-level
-                // names are unique within a chunk).
-                let local = named.local.sym.as_ref();
-                let claimed = bindings.iter().any(|(id, _)| id.0.as_ref() == local);
+                let claimed = claimed_syms.contains(&named.local.sym);
                 let unused = !refs.contains(&named.local.sym);
                 !(claimed && unused)
             }
