@@ -823,7 +823,17 @@ class TaxCompileOutput:
     """Tax-profile + tax-link arrays produced by `_compile_tax`. Each row of
     `profile_*` is one TaxProfile; each row of `link_*` is one (profile, jurisdiction)
     pair. `*_upper/*_rate/*_count` are rectangular bracket tables — `count[link]` is
-    the active prefix length for that link's brackets (zero-padded beyond)."""
+    the active prefix length for that link's brackets (zero-padded beyond).
+
+    Notable fields:
+
+    - `profile_section_121_exclusion`: §121 primary-residence exclusion cap, USD.
+      Looked up by filing status at compile time
+      (`_SECTION_121_EXCLUSION_USD_BY_FILING_STATUS`); only `single` is wired today
+      ($250k). Engine reads on every property sale to compute the exclusion ceiling.
+    - `link_section_1250_rate`: §1250 unrecaptured-depreciation rate cap. Positive ⇒
+      federal-style flat rate (0.25 for `federal_us`); 0.0 ⇒ no separate cap, recapture
+      is taxed as ordinary inside the standard bracket walk (state-style, e.g. CA)."""
 
     profile_agent: NDArray[np.int64]
     profile_payment_slot: NDArray[np.int64]
@@ -1355,9 +1365,12 @@ class LifecycleEventCompileOutput:
     """PropertyLifecycleEvent rows compiled into per-month sparse storage. Sorted by
     month so the engine scans a per-month index range via `month_starts`:
     `events_for_month_M = events[month_starts[M]:month_starts[M+1]]`. `kind[i]` is
-    LIFECYCLE_KIND_FRACTION (0) for rented-fraction change, LIFECYCLE_KIND_CAPITAL_IMPROVEMENT
-    (1) for cash + basis bump, or LIFECYCLE_KIND_SALE (2). `rented_fraction[i]` is the new
-    value (kind 0); `amount[i]` is the USD spend (kind 1) or the closing-cost % (kind 2)."""
+    `LIFECYCLE_KIND_FRACTION` (0) for rented-fraction change (start/stop/change-rental
+    -plan), `LIFECYCLE_KIND_CAPITAL_IMPROVEMENT` (1) for cash + basis bump, or
+    `LIFECYCLE_KIND_SALE` (2). `rented_fraction[i]` is the new value (kind 0; 0.0
+    otherwise). `amount[i]` is the USD spend (kind 1), the closing-cost percentage
+    (kind 2; 0..100), or 0.0 (kind 0). `month_starts` has length `horizon_months + 1`
+    so the engine can do `events[starts[M]:starts[M+1]]` for any month M."""
 
     month: NDArray[np.int64]
     property_slot: NDArray[np.int64]
