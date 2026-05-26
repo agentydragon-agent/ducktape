@@ -853,9 +853,7 @@ class TestRentalIncomeTaxation:
         Realized gain = $470k - $485,454.55 = -$15,454.55 (loss).
         Loss → no recapture, no LTCG."""
 
-        scenario = self._sale_scenario(
-            horizon=13, sale_month=12, home_value_at_sale=1.0, cumulative_depreciation_eligible=True
-        )
+        scenario = self._sale_scenario(horizon=13, sale_month=12, cumulative_depreciation_eligible=True)
         ctx = _multi_series(
             levels_by_series={RENT_SERIES_ID: {0: [1.0] * 14}, "home_value:san_francisco": {0: [1.0] * 14}}
         )
@@ -879,7 +877,7 @@ class TestRentalIncomeTaxation:
         Recapture = min(gain, $14,545.45) = $14,545.45 → §1250 (federal 25%, CA ordinary).
         LTCG = $219,545.45 - $14,545.45 = $205,000 → long_term_capital_gain_ytd."""
 
-        scenario = self._sale_scenario(horizon=24, sale_month=12, home_value_at_sale=1.5)
+        scenario = self._sale_scenario(horizon=24, sale_month=12)
         # Home value series steps up at month 12.
         levels = [1.0] * 12 + [1.5] * 13
         ctx = _multi_series(levels_by_series={RENT_SERIES_ID: {0: [1.0] * 25}, "home_value:san_francisco": {0: levels}})
@@ -906,7 +904,7 @@ class TestRentalIncomeTaxation:
         California still has no §1250 cap → recapture is added to ordinary brackets.
         """
 
-        scenario = self._sale_scenario(horizon=24, sale_month=12, home_value_at_sale=1.5)
+        scenario = self._sale_scenario(horizon=24, sale_month=12)
         levels = [1.0] * 12 + [1.5] * 13
         ctx = _multi_series(levels_by_series={RENT_SERIES_ID: {0: [1.0] * 25}, "home_value:san_francisco": {0: levels}})
         run = simulate_with_external_series(scenario, external_series=ctx, rollout_count=1)
@@ -948,7 +946,7 @@ class TestRentalIncomeTaxation:
         cap holds it to 25%. Capital-gain tax = LTCG tax + 25% × recapture.
         """
 
-        scenario = self._sale_scenario(horizon=24, sale_month=12, home_value_at_sale=1.5, year2_wage_usd=250_000.0)
+        scenario = self._sale_scenario(horizon=24, sale_month=12, year2_wage_usd=250_000.0)
         levels = [1.0] * 12 + [1.5] * 13
         ctx = _multi_series(levels_by_series={RENT_SERIES_ID: {0: [1.0] * 25}, "home_value:san_francisco": {0: levels}})
         run = simulate_with_external_series(scenario, external_series=ctx, rollout_count=1)
@@ -1038,7 +1036,7 @@ class TestRentalIncomeTaxation:
         Owner-occupied months = 0, so §121 does not apply. The depreciation recapture +
         LTCG flow remains intact."""
 
-        scenario = self._sale_scenario(horizon=36, sale_month=30, home_value_at_sale=1.4)
+        scenario = self._sale_scenario(horizon=36, sale_month=30)
         home_values = [1.0] * 30 + [1.4] * 7
         ctx = _multi_series(
             levels_by_series={RENT_SERIES_ID: {0: [1.0] * 37}, "home_value:san_francisco": {0: home_values}}
@@ -1122,7 +1120,6 @@ class TestRentalIncomeTaxation:
         sale_month: int,
         cumulative_depreciation_eligible: bool = True,
         year2_wage_usd: float = 0.0,
-        **_unused: object,
     ) -> Scenario:
         purchase_price = 500_000.0
         agents = [
