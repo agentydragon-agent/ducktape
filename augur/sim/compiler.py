@@ -393,30 +393,11 @@ def compile_simulation(
     )
 
     profile_index_by_agent = {profile.agent_id: idx for idx, profile in enumerate(scenario.tax_profiles)}
-    (
-        tax_profile_agent_codes,
-        tax_profile_payment_slot,
-        tax_profile_payment_account_codes,
-        tax_profile_authority_agent_codes,
-        tax_profile_authority_account_codes,
-        tax_profile_prior_year_tax,
-        tax_profile_section_121_exclusion_usd,
-        tax_link_profile_index,
-        tax_link_jurisdiction_codes,
-        tax_link_standard_deduction,
-        tax_link_has_ltcg,
-        tax_link_section_1250_rate,
-        tax_link_ordinary_upper,
-        tax_link_ordinary_rate,
-        tax_link_ordinary_count,
-        tax_link_ltcg_upper,
-        tax_link_ltcg_rate,
-        tax_link_ltcg_count,
-    ) = _compile_tax(scenario, strings, account_slot_by_key, jurisdictions)
+    tax = _compile_tax(scenario, strings, account_slot_by_key, jurisdictions)
     (capital_gain_agent_codes, tax_profile_capital_gain_index) = _compile_capital_gain_agents(scenario, strings)
 
     (tax_liability_profile_index, tax_liability_link_index, tax_liability_year_end_month) = (
-        _compile_tax_liability_slots(horizon, tax_link_profile_index)
+        _compile_tax_liability_slots(horizon, tax.link_profile)
     )
 
     (
@@ -568,9 +549,9 @@ def compile_simulation(
     (tax_link_mid_principal_ratio, tax_link_mid_active) = _compile_mortgage_interest_deductions(
         scenario,
         strings,
-        tax_link_profile_index=tax_link_profile_index,
-        tax_link_jurisdiction_codes=tax_link_jurisdiction_codes,
-        tax_profile_agent_codes=tax_profile_agent_codes,
+        tax_link_profile_index=tax.link_profile,
+        tax_link_jurisdiction_codes=tax.link_jurisdiction,
+        tax_profile_agent_codes=tax.profile_agent,
         liability_codes=liability_codes,
         liability_agent_codes=liability_agent_codes,
         liability_principal=liability_principal,
@@ -580,8 +561,8 @@ def compile_simulation(
         _compile_federal_salt_deductions(
             scenario,
             strings,
-            tax_link_profile_index=tax_link_profile_index,
-            tax_link_jurisdiction_codes=tax_link_jurisdiction_codes,
+            tax_link_profile_index=tax.link_profile,
+            tax_link_jurisdiction_codes=tax.link_jurisdiction,
         )
     )
 
@@ -630,7 +611,7 @@ def compile_simulation(
         property_slot_by_id,
         liability_codes,
         liability_property_slot,
-        tax_profile_prior_year_tax,
+        tax.profile_prior_year_tax,
     )
 
     (
@@ -708,9 +689,9 @@ def compile_simulation(
         rollout_count=rollout_count,
         cash_count=len(cash_initial_balance),
         lot_count=len(lot_id_codes),
-        tax_profile_count=tax_profile_agent_codes.shape[0],
+        tax_profile_count=tax.profile_agent.shape[0],
         capital_gain_agent_count=capital_gain_agent_codes.shape[0],
-        tax_link_count=max(1, tax_link_profile_index.shape[0]),
+        tax_link_count=max(1, tax.link_profile.shape[0]),
         tax_liability_count=tax_liability_profile_index.shape[0],
         property_count=property_month.shape[0],
         liability_count=liability_codes.shape[0],
@@ -740,26 +721,26 @@ def compile_simulation(
         lot_purchase_month=np.asarray(lot_purchase_month, dtype=np.int64),
         lot_cost_basis_per_unit=np.asarray(lot_cost_basis_per_unit, dtype=np.float64),
         lot_initial_quantity=np.asarray(lot_initial_quantity, dtype=np.float64),
-        tax_profile_agent_codes=tax_profile_agent_codes,
-        tax_profile_payment_slot=tax_profile_payment_slot,
-        tax_profile_payment_account_codes=tax_profile_payment_account_codes,
-        tax_profile_authority_agent_codes=tax_profile_authority_agent_codes,
-        tax_profile_authority_account_codes=tax_profile_authority_account_codes,
-        tax_profile_prior_year_tax=tax_profile_prior_year_tax,
-        tax_profile_section_121_exclusion_usd=tax_profile_section_121_exclusion_usd,
+        tax_profile_agent_codes=tax.profile_agent,
+        tax_profile_payment_slot=tax.profile_payment_slot,
+        tax_profile_payment_account_codes=tax.profile_payment_account,
+        tax_profile_authority_agent_codes=tax.profile_authority_agent,
+        tax_profile_authority_account_codes=tax.profile_authority_account,
+        tax_profile_prior_year_tax=tax.profile_prior_year_tax,
+        tax_profile_section_121_exclusion_usd=tax.profile_section_121_exclusion,
         capital_gain_agent_codes=capital_gain_agent_codes,
         tax_profile_capital_gain_index=tax_profile_capital_gain_index,
-        tax_link_profile_index=tax_link_profile_index,
-        tax_link_jurisdiction_codes=tax_link_jurisdiction_codes,
-        tax_link_standard_deduction=tax_link_standard_deduction,
-        tax_link_has_ltcg=tax_link_has_ltcg,
-        tax_link_section_1250_rate=tax_link_section_1250_rate,
-        tax_link_ordinary_upper=tax_link_ordinary_upper,
-        tax_link_ordinary_rate=tax_link_ordinary_rate,
-        tax_link_ordinary_count=tax_link_ordinary_count,
-        tax_link_ltcg_upper=tax_link_ltcg_upper,
-        tax_link_ltcg_rate=tax_link_ltcg_rate,
-        tax_link_ltcg_count=tax_link_ltcg_count,
+        tax_link_profile_index=tax.link_profile,
+        tax_link_jurisdiction_codes=tax.link_jurisdiction,
+        tax_link_standard_deduction=tax.link_standard_deduction,
+        tax_link_has_ltcg=tax.link_has_ltcg,
+        tax_link_section_1250_rate=tax.link_section_1250_rate,
+        tax_link_ordinary_upper=tax.link_ordinary_upper,
+        tax_link_ordinary_rate=tax.link_ordinary_rate,
+        tax_link_ordinary_count=tax.link_ordinary_count,
+        tax_link_ltcg_upper=tax.link_ltcg_upper,
+        tax_link_ltcg_rate=tax.link_ltcg_rate,
+        tax_link_ltcg_count=tax.link_ltcg_count,
         tax_link_mid_principal_ratio=tax_link_mid_principal_ratio,
         tax_link_mid_active=tax_link_mid_active,
         tax_link_salt_active=tax_link_salt_active,
@@ -1236,12 +1217,39 @@ def _section_121_exclusion_for(filing_status: FilingStatus) -> float:
     return _SECTION_121_EXCLUSION_USD_BY_FILING_STATUS[filing_status]
 
 
+@dataclass(frozen=True)
+class TaxCompileOutput:
+    """Tax-profile + tax-link arrays produced by `_compile_tax`. Each row of
+    `profile_*` is one TaxProfile; each row of `link_*` is one (profile, jurisdiction)
+    pair. `*_upper/*_rate/*_count` are rectangular bracket tables — `count[link]` is
+    the active prefix length for that link's brackets (zero-padded beyond)."""
+
+    profile_agent: NDArray[np.int64]
+    profile_payment_slot: NDArray[np.int64]
+    profile_payment_account: NDArray[np.int64]
+    profile_authority_agent: NDArray[np.int64]
+    profile_authority_account: NDArray[np.int64]
+    profile_prior_year_tax: NDArray[np.float64]
+    profile_section_121_exclusion: NDArray[np.float64]
+    link_profile: NDArray[np.int64]
+    link_jurisdiction: NDArray[np.int64]
+    link_standard_deduction: NDArray[np.float64]
+    link_has_ltcg: NDArray[np.int64]
+    link_section_1250_rate: NDArray[np.float64]
+    link_ordinary_upper: NDArray[np.float64]
+    link_ordinary_rate: NDArray[np.float64]
+    link_ordinary_count: NDArray[np.int64]
+    link_ltcg_upper: NDArray[np.float64]
+    link_ltcg_rate: NDArray[np.float64]
+    link_ltcg_count: NDArray[np.int64]
+
+
 def _compile_tax(
     scenario: Scenario,
     strings: StringTable,
     account_slot_by_key: dict[tuple[str, str], int],
     jurisdictions: dict[str, Jurisdiction],
-) -> tuple[np.ndarray, ...]:
+) -> TaxCompileOutput:
     profile_agent = []
     payment_slot = []
     payment_account = []
@@ -1313,25 +1321,25 @@ def _compile_tax(
             ltcg_upper[idx, bracket_idx] = upper
             ltcg_rate[idx, bracket_idx] = rate
 
-    return (
-        np.asarray(profile_agent, dtype=np.int64),
-        np.asarray(payment_slot, dtype=np.int64),
-        np.asarray(payment_account, dtype=np.int64),
-        np.asarray(authority_agent, dtype=np.int64),
-        np.asarray(authority_account, dtype=np.int64),
-        np.asarray(prior_year_tax, dtype=np.float64),
-        np.asarray(section_121_exclusion, dtype=np.float64),
-        np.asarray(link_profile, dtype=np.int64),
-        np.asarray(link_jurisdiction, dtype=np.int64),
-        np.asarray(standard_deduction, dtype=np.float64),
-        np.asarray(has_ltcg, dtype=np.int64),
-        np.asarray(section_1250_rate, dtype=np.float64),
-        ordinary_upper,
-        ordinary_rate,
-        ordinary_count,
-        ltcg_upper,
-        ltcg_rate,
-        ltcg_count,
+    return TaxCompileOutput(
+        profile_agent=np.asarray(profile_agent, dtype=np.int64),
+        profile_payment_slot=np.asarray(payment_slot, dtype=np.int64),
+        profile_payment_account=np.asarray(payment_account, dtype=np.int64),
+        profile_authority_agent=np.asarray(authority_agent, dtype=np.int64),
+        profile_authority_account=np.asarray(authority_account, dtype=np.int64),
+        profile_prior_year_tax=np.asarray(prior_year_tax, dtype=np.float64),
+        profile_section_121_exclusion=np.asarray(section_121_exclusion, dtype=np.float64),
+        link_profile=np.asarray(link_profile, dtype=np.int64),
+        link_jurisdiction=np.asarray(link_jurisdiction, dtype=np.int64),
+        link_standard_deduction=np.asarray(standard_deduction, dtype=np.float64),
+        link_has_ltcg=np.asarray(has_ltcg, dtype=np.int64),
+        link_section_1250_rate=np.asarray(section_1250_rate, dtype=np.float64),
+        link_ordinary_upper=ordinary_upper,
+        link_ordinary_rate=ordinary_rate,
+        link_ordinary_count=ordinary_count,
+        link_ltcg_upper=ltcg_upper,
+        link_ltcg_rate=ltcg_rate,
+        link_ltcg_count=ltcg_count,
     )
 
 
@@ -1357,7 +1365,7 @@ def _compile_mortgage_interest_deductions(
     (d) the policy's `debt_class == "home_equity"` (TCJA disallow §163(h)(3)).
     """
 
-    link_count = tax_link_profile_index.shape[0]
+    link_count = tax.link_profile.shape[0]
     liability_count = liability_codes.shape[0]
     ratio = np.zeros((max(1, link_count), max(1, liability_count)), dtype=np.float64)
     active = np.zeros(max(1, link_count), dtype=np.bool_)
@@ -1384,9 +1392,9 @@ def _compile_mortgage_interest_deductions(
         policies_by_liability_slot[lia_slot] = policy
 
     for link in range(link_count):
-        profile_index = int(tax_link_profile_index[link])
-        link_agent_code = int(tax_profile_agent_codes[profile_index])
-        jurisdiction_id = strings.values[int(tax_link_jurisdiction_codes[link])]
+        profile_index = int(tax.link_profile[link])
+        link_agent_code = int(tax.profile_agent[profile_index])
+        jurisdiction_id = strings.values[int(tax.link_jurisdiction[link])]
         for lia_slot, policy in policies_by_liability_slot.items():
             if int(liability_agent_codes[lia_slot]) != link_agent_code:
                 continue
@@ -1432,7 +1440,7 @@ def _compile_federal_salt_deductions(
       first-pass annual tax of these state links into the federal SALT total.
     """
 
-    link_count = tax_link_profile_index.shape[0]
+    link_count = tax.link_profile.shape[0]
     horizon = int(scenario.horizon_months)
     year_count = max(1, (horizon + 11) // 12)
     salt_active = np.zeros(max(1, link_count), dtype=np.bool_)
@@ -1445,8 +1453,8 @@ def _compile_federal_salt_deductions(
     # Map (profile_index, jurisdiction_code) -> link_index for cross-link lookups.
     link_by_profile_jurisdiction: dict[tuple[int, int], int] = {}
     for link in range(link_count):
-        profile_idx = int(tax_link_profile_index[link])
-        jur_code = int(tax_link_jurisdiction_codes[link])
+        profile_idx = int(tax.link_profile[link])
+        jur_code = int(tax.link_jurisdiction[link])
         link_by_profile_jurisdiction[(profile_idx, jur_code)] = link
 
     profile_index_by_agent: dict[int, int] = {
@@ -1472,7 +1480,7 @@ def _compile_federal_salt_deductions(
         for sibling in range(link_count):
             if sibling == federal_link:
                 continue
-            if int(tax_link_profile_index[sibling]) != profile_index:
+            if int(tax.link_profile[sibling]) != profile_index:
                 continue
             contributing_mask[federal_link, sibling] = True
 
@@ -1528,7 +1536,7 @@ def _compile_tax_liability_slots(horizon: int, tax_link_profile_index: np.ndarra
     for month in range(horizon):
         if month % 12 != 11:
             continue
-        for link_index, profile_index in enumerate(tax_link_profile_index.tolist()):
+        for link_index, profile_index in enumerate(tax.link_profile.tolist()):
             profile_indices.append(profile_index)
             link_indices.append(link_index)
             end_months.append(month)
@@ -1748,13 +1756,13 @@ def _compile_obligation_slots(
     for month in range(horizon):
         quarter = _estimated_tax_quarter(month)
         if quarter in {1, 2, 3}:
-            for profile_index, prior_year_tax in enumerate(tax_profile_prior_year_tax.tolist()):
+            for profile_index, prior_year_tax in enumerate(tax.profile_prior_year_tax.tolist()):
                 if prior_year_tax > 0:
                     monthly_specs[month].append({"kind": 3, "source": profile_index, "quarter": quarter})
         elif quarter == 4:
             tax_year = month // 12 - 1
             if tax_year >= 0:
-                for profile_index in range(len(tax_profile_prior_year_tax)):
+                for profile_index in range(len(tax.profile_prior_year_tax)):
                     monthly_specs[month].append({"kind": 4, "source": profile_index, "tax_year": tax_year})
                     monthly_specs[month].append({"kind": 5, "source": profile_index, "tax_year": tax_year})
 
