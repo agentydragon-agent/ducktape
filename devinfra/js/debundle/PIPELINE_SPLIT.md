@@ -42,7 +42,7 @@ The exact cut: `OwnerGraphAndUnits` is what Stage A emits and Stage B consumes. 
 - Per-owner anonymous-statement ordinals (needed for `compute_owner_claims`)
 - Chunk metadata (chunk_id, module_path, ChunkAnalysisOptions echo for verification)
 
-Stage A also emits a sidecar with the SWC AST or a serialized form for the lowering pass — *or* we re-parse in Stage B if the AST isn't worth shipping. (Open question; see "What about the AST" below.)
+Stage B re-parses for the SWC AST. The AST is intentionally not serialized in v1; see §"What about the AST?" below.
 
 ## What to do for the artifact format
 
@@ -110,13 +110,17 @@ The thing I'd *not* do is jump directly to proto. The format isn't broken — JS
 
 ## What about the AST?
 
-Stage B's lowering pass needs the SWC AST to emit JS. Three options:
+Stage B's lowering pass needs the SWC AST to emit JS. **Decision: Stage B re-parses.** Option 1.
 
-1. **Re-parse in Stage B.** Cheap; parsing minified Tana is ~1-2s. Cache key for Stage A no longer includes parser version; cache key for Stage B does. This keeps Stage A genuinely spec-independent and small.
-2. **Serialize the SWC AST in Stage A.** Bigger artifact (~6 MB pretty JSON / 1.5 MB proto for gaffer-scale chunk). Adds parser-version coupling to Stage A. Stage B becomes pure data.
-3. **Sidecar `chunk.swc.bin` next to `chunk_analysis.pb`.** Compromise: artifact loader chooses to read AST or not.
+The originally-considered "serialize the SWC AST in Stage A" path is structurally blocked by SWC's hygiene model. `Id = (Atom, SyntaxContext)` carries a `SyntaxContext` index that is meaningful only within one SWC `Globals` instance. A separate-process Stage B would see deserialized `SyntaxContext` values that point at entries in *its own* intern table — which were created by its own `apply_mark` calls — and the freshly-resolved `top_level_id` would not agree with the wire-loaded one. See `ARCH_REVIEW_2026_05.md` §"Pipeline-split risks" for the empirical demonstration and `stage_one_sidecars.rs` for the corresponding scope decision.
 
-Recommendation: **Option 1 (re-parse in Stage B).** The work is small and it keeps Stage A's surface tight. Stage B's bazel action key still hits the spec, so it re-runs anyway when the spec changes; one re-parse is in the noise.
+The implications:
+
+- v1 Stage A sidecars (in `stage_one_sidecars.rs`) write `facts.json`, `atomic_units.json`, and `manifest.json`. They do **not** write `ast.json`. The `swc_ecma_ast/serde-impl` feature is enabled in MODULE.bazel and ready for a future redesign, but unused in v1.
+- v1 sidecars are designed for **in-process inspection** (CLI tooling, human debugging) within the same materializer run that produced them, where the `Globals` is shared.
+- A separate-process `materialize_from_analysis` reader (task #78) is **blocked on a wire-format redesign** that drops `SyntaxContext::u32` and reconstructs `Id`s post-resolver in the reader. The redesign needs Stage A to serialize a scope discriminator (`TopLevel` / `Global`) per `Id` and Stage B to call `top_level_id(name, fresh_mark)` after running its own resolver. That work is deferred.
+
+When the redesign lands, re-parse-in-Stage-B remains the recommendation: parsing minified Tana is cheap (~1-2s) and avoids parser-version coupling on the Stage A cache key. The redesign is purely about *what shape the wire format should be*, not whether the AST itself is on disk.
 
 ## Bazel action shape
 
@@ -156,8 +160,12 @@ The `chunk_analyze` cache key includes the source bytes + ducktape version. Edit
 
 Steps 1–4 are the structural split. Steps 5–6 unlock the consumer ergonomics. Either can land independently after the structural split is in.
 
-## Open questions for the user
+## Resolved decisions
 
-- Is "Option 1 first, measure, migrate to Option 4 later if needed" the right gradient, or do you want to pay the proto cost up front?
-- Re-parse in Stage B vs serialize the AST — preference?
-- Should `chunk_analysis.json` carry the full statement facts (`reads_at_init`, `reads_lazy`, `has_side_effect`) per statement, or only what Stage B + the CLIs need? Full facts are larger but make Stage A a more complete artifact; subset is leaner.
+- **JSON first**: per-concept JSON files (the `chunk_analysis/` directory). Revisit proto only if measurement says JSON load-time is a hot spot.
+- **Re-parse in Stage B**: AST is not serialized in v1. The `Id` round-trip across `Globals` is structurally broken; sidestepping it by re-parsing is cleaner than threading a scope discriminator through every Stage-A consumer. See §"What about the AST?" for the full rationale.
+- **Full per-statement facts**: `ChunkFactsReport` carries everything `analyze_chunk` produces (already implemented on `feat-facts-wire-format`).
+
+## Remaining open question
+
+- Should `materialize_from_analysis` (task #78) be implemented at all, or rolled into a future wire-format redesign that handles `Id` cross-process portability? Today's sidecars work in-process; a separate-process reader is what motivates the redesign. The structural answer is: don't build #78 on top of today's wire format — wait for the redesign so the reader operates on a structurally-portable artifact from the start.
