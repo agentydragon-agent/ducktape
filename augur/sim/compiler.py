@@ -159,9 +159,7 @@ class CompiledSimulation:
     # L's SALT total. Engine uses this to gather state taxes after the first-pass non-SALT
     # tax computation.
     tax_link_salt_contributing_mask: NDArray[np.bool_]
-    tax_liability_profile_index: NDArray[np.int64]
-    tax_liability_link_index: NDArray[np.int64]
-    tax_liability_year_end_month: NDArray[np.int64]
+    tax_liabilities: TaxLiabilityCompileOutput
     transfer_cause_codes: NDArray[np.int64]
     transfer_from_agent_codes: NDArray[np.int64]
     transfer_from_account_codes: NDArray[np.int64]
@@ -721,9 +719,7 @@ def compile_simulation(
         tax_link_salt_active=tax_link_salt_active,
         tax_link_salt_cap_by_year=tax_link_salt_cap_by_year,
         tax_link_salt_contributing_mask=tax_link_salt_contributing_mask,
-        tax_liability_profile_index=tax_liabilities.profile_index,
-        tax_liability_link_index=tax_liabilities.link_index,
-        tax_liability_year_end_month=tax_liabilities.year_end_month,
+        tax_liabilities=tax_liabilities,
         transfer_cause_codes=transfers.cause,
         transfer_from_agent_codes=transfers.from_agent,
         transfer_from_account_codes=transfers.from_account,

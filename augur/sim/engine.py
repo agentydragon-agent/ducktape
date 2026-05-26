@@ -1680,9 +1680,9 @@ def _tax_liability_slot_for(
     plan: CompiledSimulation, *, profile_index: int, link_index: int, year_end_month: int
 ) -> int:
     slots = np.flatnonzero(
-        (plan.tax_liability_profile_index == profile_index)
-        & (plan.tax_liability_link_index == link_index)
-        & (plan.tax_liability_year_end_month == year_end_month)
+        (plan.tax_liabilities.profile_index == profile_index)
+        & (plan.tax_liabilities.link_index == link_index)
+        & (plan.tax_liabilities.year_end_month == year_end_month)
     )
     if slots.size == 0:
         return NO_CODE
@@ -2151,7 +2151,7 @@ def _settle_tax_liabilities_for_profile_year(
     if not active.any():
         return
     slots = np.flatnonzero(
-        (plan.tax_liability_profile_index == profile_index) & (plan.tax_liability_year_end_month == year_end_month)
+        (plan.tax_liabilities.profile_index == profile_index) & (plan.tax_liabilities.year_end_month == year_end_month)
     )
     if slots.size == 0:
         return
@@ -2170,7 +2170,7 @@ def _actual_tax_for_profile_year(
     plan: CompiledSimulation, current: CurrentStateBuffers, *, profile_index: int, year_end_month: int
 ) -> np.ndarray:
     slots = np.flatnonzero(
-        (plan.tax_liability_profile_index == profile_index) & (plan.tax_liability_year_end_month == year_end_month)
+        (plan.tax_liabilities.profile_index == profile_index) & (plan.tax_liabilities.year_end_month == year_end_month)
     )
     if slots.size == 0:
         return np.zeros(plan.rollout_count, dtype=np.float64)
@@ -2497,8 +2497,8 @@ def _decode_tax_liabilities(plan: CompiledSimulation, buffers: SimulationBuffers
     h1, r, s = state.shape
     months, rollouts, slots = _state_axes(h1, r, s)
     mask = active.reshape(-1)
-    profile_per_slot = plan.tax_liability_profile_index.astype(np.int64)
-    link_per_slot = plan.tax_liability_link_index.astype(np.int64)
+    profile_per_slot = plan.tax_liabilities.profile_index.astype(np.int64)
+    link_per_slot = plan.tax_liabilities.link_index.astype(np.int64)
     agent_per_profile = _codes_to_strings(plan, plan.tax_profile_agent_codes)
     juris_per_link = _codes_to_strings(plan, plan.tax_link_jurisdiction_codes)
     return _state_history_frame_from_columns(
@@ -2507,7 +2507,7 @@ def _decode_tax_liabilities(plan: CompiledSimulation, buffers: SimulationBuffers
             "month_index": months[mask],
             "agent_id": agent_per_profile[profile_per_slot[slots[mask]]],
             "jurisdiction_id": juris_per_link[link_per_slot[slots[mask]]],
-            "tax_year_end_month": plan.tax_liability_year_end_month.astype(np.int64)[slots[mask]],
+            "tax_year_end_month": plan.tax_liabilities.year_end_month.astype(np.int64)[slots[mask]],
             "amount_owed_usd": state.reshape(-1)[mask],
         },
         TAX_LIABILITIES_FRAME,
