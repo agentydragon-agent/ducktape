@@ -356,14 +356,14 @@ def _property_value_by_month(dense: DenseSimulationResult, *, primary_agent_code
     plan = dense.plan
     values = np.zeros(plan.horizon_months + 1, dtype=np.float64)
     series_index_by_id = {series_id: index for index, series_id in enumerate(plan.series_ids)}
-    for prop in range(plan.property_id_codes.shape[0]):
-        if int(plan.property_buyer_agent_codes[prop]) != primary_agent_code:
+    for prop in range(plan.properties.id.shape[0]):
+        if int(plan.properties.buyer_agent[prop]) != primary_agent_code:
             continue
         active = dense.buffers.property_active_state[:, _SINGLE_ROLLOUT_INDEX, prop]
-        purchase_month = int(plan.property_month[prop])
+        purchase_month = int(plan.properties.month[prop])
         if purchase_month < 0:
             continue
-        location_id = plan.strings[int(plan.property_location_codes[prop])]
+        location_id = plan.strings[int(plan.properties.location_id[prop])]
         series_index = series_index_by_id.get(home_value_series_id(location_id))
         if series_index is None:
             continue
@@ -373,7 +373,7 @@ def _property_value_by_month(dense: DenseSimulationResult, *, primary_agent_code
         base_level = float(levels[purchase_month])
         if base_level == 0.0:
             continue
-        purchase_price = float(plan.property_purchase_price[prop])
+        purchase_price = float(plan.properties.purchase_price[prop])
         # snapshot s corresponds to month index s-1 for s >= 1; clamp s=0 to month 0 for the base.
         market = purchase_price * levels / base_level
         values += np.where(active, market, 0.0)
@@ -383,8 +383,8 @@ def _property_value_by_month(dense: DenseSimulationResult, *, primary_agent_code
 def _mortgage_balance_by_month(dense: DenseSimulationResult, *, primary_agent_code: int) -> np.ndarray:
     plan = dense.plan
     balance = np.zeros(plan.horizon_months + 1, dtype=np.float64)
-    for lia in range(plan.liability_codes.shape[0]):
-        if int(plan.liability_agent_codes[lia]) != primary_agent_code:
+    for lia in range(plan.liabilities.codes.shape[0]):
+        if int(plan.liabilities.agent[lia]) != primary_agent_code:
             continue
         balance += dense.buffers.liability_principal_state[:, _SINGLE_ROLLOUT_INDEX, lia]
     return balance
