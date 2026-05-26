@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use petgraph::algo::{condensation, greedy_feedback_arc_set};
 use petgraph::graph::DiGraph;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::factor_assembly::AtomicUnitConflict;
 use crate::graph::build_module_quotient;
@@ -57,7 +57,56 @@ pub struct CycleReport {
     pub cut: Vec<CycleEdge>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+/// Trimmed wire shape for `cycles.json` (one entry per blocking SCC).
+///
+/// The materializer's in-memory `CycleReport` also carries an
+/// `evidence` field — the full list of constraining cross-module
+/// edges inside the SCC, keyed by ordinal — but that list is
+/// recomputable from `owner_graph.json` + this entry's `modules`
+/// set, so it's stripped before serializing to keep the on-disk
+/// shape small (a 1335-module SCC's evidence is multi-MB; the
+/// trimmed entry is ~100 KB).
+///
+/// Consumers that need the per-edge evidence re-derive it via
+/// `debundle gate describe <id>` (see `devinfra/js/debundle/docs/cli.md`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BlockingSccEntry {
+    /// Position of the entry in `cycles.json`. Stable per build —
+    /// the CLI `gate describe`/`cut` commands resolve `<id>` against
+    /// this index.
+    pub id: usize,
+    /// Every module in the unrealizable SCC.
+    pub modules: Vec<String>,
+    /// Near-minimum feedback-arc-set over the SCC's constraining
+    /// (`at-init` / `side-effect`) edges. The actionable subset for
+    /// spec authors: removing any of these edges (by co-locating
+    /// the binding pair into one module) would break the SCC.
+    pub cut: Vec<CycleEdge>,
+}
+
+impl BlockingSccEntry {
+    /// Project a rich [`CycleReport`] onto the trimmed wire shape.
+    /// `id` is the entry's index in the `cycles.json` array.
+    pub fn from_cycle_report(id: usize, cycle: &CycleReport) -> Self {
+        Self {
+            id,
+            modules: cycle.modules.clone(),
+            cut: cycle.cut.clone(),
+        }
+    }
+
+    /// Build the on-disk `cycles.json` payload (`Vec<BlockingSccEntry>`)
+    /// from the materializer's in-memory cycle reports.
+    pub fn from_cycle_reports(cycles: &[CycleReport]) -> Vec<Self> {
+        cycles
+            .iter()
+            .enumerate()
+            .map(|(idx, cycle)| Self::from_cycle_report(idx, cycle))
+            .collect()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CycleEdge {
     pub from: String,
     pub to: String,

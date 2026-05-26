@@ -75,8 +75,8 @@ pub use stage_one::sidecars::{
     CHUNK_ANALYSIS_MANIFEST_SCHEMA_VERSION, ChunkAnalysisManifest, write_stage_one_sidecars,
 };
 pub use validation::{
-    CycleEdge, CycleReport, FactorizationReport, render_atomic_unit_conflict_summary,
-    render_cycle_summary, validate_factorization,
+    BlockingSccEntry, CycleEdge, CycleReport, FactorizationReport,
+    render_atomic_unit_conflict_summary, render_cycle_summary, validate_factorization,
 };
 
 #[cfg(test)]

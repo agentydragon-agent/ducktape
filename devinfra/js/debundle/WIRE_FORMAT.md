@@ -35,7 +35,7 @@ Files following the convention:
 | File                               | Field carrying binding identity                                                                              |
 | ---------------------------------- | ------------------------------------------------------------------------------------------------------------ |
 | `owner_graph.json`                 | `nodes[].declared_bindings[].binding: Atom`, `edges[].binding: Option<Atom>`                                 |
-| `cycles.json`                      | `evidence[].binding: Option<Atom>`, `evidence[].from_binding: Option<Atom>`, `cut[].{binding, from_binding}` |
+| `cycles.json`                      | `cut[].binding: Option<Atom>`, `cut[].from_binding: Option<Atom>` (evidence is recomputed on demand by `debundle gate describe`)               |
 | `atomic_unit_conflicts.json`       | `claims[].binding_names: Vec<Atom>`                                                                          |
 | `chunk_analysis/atomic_units.json` | members are `OwnerId` integers, not `Id`s — no `Atom` and no `SyntaxContext`                                 |
 | `chunk_analysis/manifest.json`     | no binding identities                                                                                        |

@@ -502,13 +502,17 @@ fn validate_and_emit_reports(
     }
     if !factorization_report.cycles.is_empty() {
         if let Some(report_out_dir) = report_out_dir {
+            // Trim the wire shape before writing: drop `evidence`,
+            // keep `id` (array index), `modules`, `cut`. Evidence is
+            // recomputable from `owner_graph.json` + this entry's
+            // `modules` set via `debundle gate describe <id>`. See
+            // `validation.rs` `BlockingSccEntry` for the schema and
+            // `docs/cli.md` § "Gate queries" for the CLI surface.
+            let wire = ::analysis::BlockingSccEntry::from_cycle_reports(
+                &factorization_report.cycles,
+            );
             time_phase!(timings, "write_cycles_report", {
-                write_chunk_report_json(
-                    report_out_dir,
-                    chunk_id,
-                    CYCLES_REPORT,
-                    &factorization_report.cycles,
-                )
+                write_chunk_report_json(report_out_dir, chunk_id, CYCLES_REPORT, &wire)
             })?;
         }
         let summary = render_cycle_summary(&factorization_report.cycles);
