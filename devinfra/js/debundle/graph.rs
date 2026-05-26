@@ -1806,7 +1806,7 @@ mod declared_round_trip_tests {
     use crate::graph::{OwnerGraph, build_owner_graph};
     use crate::ids::{BindingKind, LogicalModule, LogicalModuleIndex, ModuleId};
     use crate::partition::Partition;
-    use crate::report_schema::{
+    use crate::reports::schema::{
         AtomicGraphReport, OwnerGraphEdgeReport, OwnerGraphNodeReport, OwnerGraphQuotientReport,
         OwnerGraphReport,
     };
