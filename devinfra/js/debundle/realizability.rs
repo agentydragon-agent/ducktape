@@ -134,7 +134,7 @@ pub fn check_realizability(
         if !edge.reason.is_rebind() {
             continue;
         }
-        let Some((from, to)) = crate::graph::gate_constraining_partition_endpoints(edge, partition)
+        let Some((from, to)) = crate::graph::partition_endpoints(edge, partition, crate::graph::EndpointView::Gate)
         else {
             continue;
         };
@@ -637,8 +637,9 @@ fn edge_contribution(
     }
     // NOTE: cross-module at-init promoted edges are intentionally NOT
     // filtered here — the matching gate-side view in
-    // `gate_constraining_partition_endpoints` keeps them for soundness
-    // (see `tests::promoted_edge_in_aggregator_cycle_is_unrealizable`).
+    // `partition_endpoints(.., EndpointView::Gate)` keeps them for
+    // soundness (see
+    // `tests::promoted_edge_in_aggregator_cycle_is_unrealizable`).
 
     let kind = if edge.reason.is_rebind() {
         EdgeContributionKind::Rebind
@@ -933,10 +934,10 @@ impl IncrementalQuotient {
         update_graphs: bool,
     ) {
         // Gate-side view: keep cross-module at-init promoted edges.
-        // See `gate_constraining_partition_endpoints` for why and
+        // See [`crate::graph::partition_endpoints`] for why and
         // `tests::promoted_edge_in_aggregator_cycle_is_unrealizable`
         // for the regression fixture.
-        let Some((from, to)) = crate::graph::gate_constraining_partition_endpoints(edge, partition)
+        let Some((from, to)) = crate::graph::partition_endpoints(edge, partition, crate::graph::EndpointView::Gate)
         else {
             return;
         };
@@ -976,8 +977,8 @@ impl IncrementalQuotient {
     ) {
         // Gate-side view: keep cross-module at-init promoted edges.
         // Must mirror `add_current_edge` (see
-        // `gate_constraining_partition_endpoints`).
-        let Some((from, to)) = crate::graph::gate_constraining_partition_endpoints(edge, partition)
+        // [`crate::graph::partition_endpoints`]).
+        let Some((from, to)) = crate::graph::partition_endpoints(edge, partition, crate::graph::EndpointView::Gate)
         else {
             return;
         };
@@ -1614,12 +1615,13 @@ fn impacted_owner_edges(owner_graph: &OwnerGraph, owners: &[OwnerId]) -> Vec<Own
     for owner in owners {
         impacted.extend(owner_graph.out_edges_of(*owner).iter().copied());
         impacted.extend(owner_graph.in_edges_of(*owner).iter().copied());
-        // Edges whose `at_init_callee_owner` is in the move set —
-        // `is_cross_module_at_init_promotion`'s verdict depends on
-        // `partition.of(callee_owner)`, so moving a callee owner can
-        // flip an edge's contribution between "skipped
-        // (intra-callee-module)" and "counted (cross-callee-module)"
-        // without the callee owner appearing on `from`/`to`.
+        // Edges whose [`EdgeRole::PromotedAtInit`] callee_owner is in
+        // the move set — `EdgeRole::is_cross_module_promotion`'s
+        // verdict depends on `partition.of(callee_owner)`, so moving
+        // a callee owner can flip an edge's contribution between
+        // "skipped (intra-callee-module)" and "counted
+        // (cross-callee-module)" without the callee owner appearing
+        // on `from`/`to`.
         // Resolved via the precomputed `callee_edges` CSR instead of
         // a per-call full-edge-list scan.
         impacted.extend(owner_graph.callee_edges_of(*owner).iter().copied());
@@ -1964,10 +1966,11 @@ mod tests {
     ///
     /// The cycle goes through a *promoted* edge — the sub-module's at-init
     /// `readSeed()` call has its body's read of `seed` (in residual) promoted
-    /// to a sub→residual eager edge. `cross_module_partition_endpoints` drops
-    /// it under `is_cross_module_at_init_promotion` because the call target
-    /// `readSeed` lives in `mod_helpers`, not `mod_sub1`. With the drop, the
-    /// gate sees no cycle. Without the drop, the cycle
+    /// to a sub→residual eager edge. The lenient projection view
+    /// (`EndpointView::Lenient`) drops it under
+    /// `EdgeRole::is_cross_module_promotion` because the call target
+    /// `readSeed` lives in `mod_helpers`, not `mod_sub1`. With the
+    /// drop, the gate sees no cycle. Without the drop, the cycle
     /// `residual→mod_ids→mod_sub1→residual` is closed.
     ///
     /// ESM runtime DFS from residual:
@@ -1978,11 +1981,8 @@ mod tests {
     ///   `seed` from residual — residual is mid-DFS, `seed` is TDZ-locked.
     ///   ⇒ `ReferenceError: Cannot access 'seed' before initialization`.
     ///
-    /// `at_init_promotion_drop_unsound_in_cycle_test` (the 12ce3884b
-    /// fixture) is the prior incarnation of this case; that fix was
-    /// silently reverted by commit 2d6be2473 when
-    /// `cross_module_partition_endpoints` was extracted (the helper
-    /// re-introduced the drop the prior commit removed).
+    /// The gate-side view (`EndpointView::Gate`) keeps the promoted
+    /// edge so the cycle is detected; the test pins that behaviour.
     #[test]
     fn promoted_edge_in_aggregator_cycle_is_unrealizable() {
         // owner_0: const seed = "S"                  (residual)

@@ -151,9 +151,12 @@ pub(crate) fn build_quotient_edge_reports(
         std::collections::HashSet::new();
     for edge in owner_edges {
         // Same partition view every other quotient consumer uses; see
-        // `cross_module_partition_endpoints` invariant doc.
-        let Some((from, to)) = crate::graph::cross_module_partition_endpoints(edge, partition)
-        else {
+        // `partition_endpoints` invariant doc.
+        let Some((from, to)) = crate::graph::partition_endpoints(
+            edge,
+            partition,
+            crate::graph::EndpointView::Lenient,
+        ) else {
             continue;
         };
         if edge.reason.is_sequenced() && !seen_side_effect_module_pairs.insert((from, to)) {

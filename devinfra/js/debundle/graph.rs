@@ -1038,92 +1038,62 @@ fn promote_at_init_calls(
     }
 }
 
-/// `true` if `edge` was emitted by `promote_at_init_calls` *and* the
-/// at-init callee lives in a different module than the caller per
-/// `partition`. In that case the body read fires synchronously inside
-/// a call into a different module, after that callee module (and its
-/// transitive imports) have already evaluated under ESM DFS
-/// post-order. The R -> target-module constraint the promotion
-/// records is therefore redundant with the already-recorded
-/// R -> callee-module edge and the callee module's own eval-time
-/// reads — and worse, it can manufacture a cross-module cycle that
-/// no realizable evaluation order actually demands.
+/// Selects between the gate and lenient views in
+/// [`partition_endpoints`].
 ///
-/// Intra-module at-init calls (caller and callee in the same module)
-/// keep their promoted body reads: there the body's reads ARE the
-/// caller module's eager reads (same evaluation context).
-///
-/// Direct (non-promoted) eager reads — [`EdgeRole::Direct`] —
-/// always pass through.
-pub(crate) fn is_cross_module_at_init_promotion(edge: &OwnerEdge, partition: &Partition) -> bool {
-    edge.reason.role.is_cross_module_promotion(edge.from, partition)
+/// `Lenient` drops cross-module `PromotedAtInit` edges (the quotient
+/// builder and reports view); `Gate` keeps them (the realizability
+/// gate, incremental simulator, and canonical chunk-edge set). See
+/// [`EdgeRole`] for the ESM-semantics justification.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum EndpointView {
+    Lenient,
+    Gate,
 }
 
-/// Partition-projected endpoints of `edge` when it participates in the
-/// module quotient view; `None` means "skip this edge."
+/// Partition-projected endpoints of `edge` when it participates in
+/// the module quotient view; `None` means "skip this edge."
 ///
-/// Invariant: this is the single function any consumer building a
-/// quotient view of the owner graph MUST consult so they agree on the
-/// same partition view of every edge. Two filters are folded in here:
+/// `view` selects which projection rule the caller wants:
 ///
-/// 1. Same-module edges (`from == to` after partition projection) are
-///    intra-module and never appear in the module quotient.
-/// 2. Cross-module at-init promotions are dropped per
-///    [`is_cross_module_at_init_promotion`]'s ESM-semantics
-///    justification.
+/// - [`EndpointView::Lenient`] — used by `build_module_quotient` and
+///   `reports::build_quotient_edge_reports`. Drops same-module edges
+///   AND drops cross-module [`EdgeRole::PromotedAtInit`] edges when
+///   the callee module differs from the caller module. ESM
+///   justification: the body read fires inside a call into a
+///   *different* module, so by ESM DFS post-order the callee module
+///   (and its transitive imports) are fully evaluated before the
+///   call returns; the manufactured `R -> target-module` constraint
+///   is redundant with the already-recorded `R -> callee-module`
+///   edge.
+/// - [`EndpointView::Gate`] — used by `check_realizability`,
+///   `IncrementalQuotient::{add,remove}_current_edge`, and
+///   `chunk_constraining_module_edges`. Drops same-module edges but
+///   KEEPS cross-module `PromotedAtInit` edges. The emitter's
+///   `collect_phantom_side_effect_providers` adds phantom
+///   side-effect imports for these edges, which can reorder ESM's
+///   link DFS so the target module evaluates while the caller module
+///   is still on the stack — closing a TDZ cycle the lenient view
+///   would hide. See
+///   `realizability::tests::promoted_edge_in_aggregator_cycle_is_unrealizable`
+///   for the regression fixture.
 ///
-/// History: the same `from == to` + `is_cross_module_at_init_promotion`
-/// filter pair was previously open-coded at five sites
-/// (`build_module_quotient`, `check_realizability`,
-/// `OwnerGraph::from_report`-derived gate use,
-/// `IncrementalQuotient::{add,remove}_current_edge`,
-/// `reports::build_quotient_edge_reports`). A TDZ-class soundness hole
-/// reopens any time one of those sites omits or reorders the
-/// projection — the per-edge filter pair must stay identical at every
-/// call site, because the module-level cycle gate's verdict depends on
-/// it. Centralise here.
-pub(crate) fn cross_module_partition_endpoints(
+/// Invariant: every quotient-projecting consumer of the owner graph
+/// MUST route through this function so the lenient-vs-gate decision
+/// stays welded to the edge's [`EdgeRole`] at one source-level point.
+pub(crate) fn partition_endpoints(
     edge: &OwnerEdge,
     partition: &Partition,
+    view: EndpointView,
 ) -> Option<(ModuleId, ModuleId)> {
     let from = partition.of(edge.from);
     let to = partition.of(edge.to);
     if from == to {
         return None;
     }
-    if is_cross_module_at_init_promotion(edge, partition) {
-        return None;
-    }
-    Some((from, to))
-}
-
-/// Gate-side counterpart of [`cross_module_partition_endpoints`] that
-/// keeps cross-module at-init promoted edges. The emitter's
-/// `collect_phantom_side_effect_providers` adds phantom side-effect
-/// imports for these edges, which can reorder ESM's link DFS so the
-/// target module evaluates while the caller module is still on the
-/// stack — closing a TDZ cycle that
-/// [`is_cross_module_at_init_promotion`]'s "callee module is fully
-/// evaluated by the time the body call fires" claim hides.
-///
-/// History: the prior fix in commit `12ce3884b` removed the
-/// promoted-edge drop from `check_realizability`,
-/// `edge_contribution`, and `IncrementalQuotient::{insert,remove}_current_edge`.
-/// Commit `2d6be2473` ("extract `cross_module_partition_endpoints`
-/// helper") silently re-introduced the drop by routing those call
-/// sites through the same helper as `build_module_quotient` and
-/// `reports.rs`. This sibling helper exists so the gate paths
-/// preserve `12ce3884b`'s fix while leaving the emit-side and
-/// reports view (where the drop is intentional) untouched. See
-/// `realizability::tests::promoted_edge_in_aggregator_cycle_is_unrealizable`
-/// for the regression fixture.
-pub(crate) fn gate_constraining_partition_endpoints(
-    edge: &OwnerEdge,
-    partition: &Partition,
-) -> Option<(ModuleId, ModuleId)> {
-    let from = partition.of(edge.from);
-    let to = partition.of(edge.to);
-    if from == to {
+    if view == EndpointView::Lenient
+        && edge.reason.role.is_cross_module_promotion(edge.from, partition)
+    {
         return None;
     }
     Some((from, to))
@@ -1137,7 +1107,7 @@ pub fn build_module_quotient(owner_graph: &OwnerGraph, partition: &Partition) ->
     let mut graph = ModuleQuotient(DiGraphMap::new());
     let mut seen_side_effect_module_pairs = BTreeSet::<(ModuleId, ModuleId)>::new();
     for edge in &owner_graph.edges {
-        let Some((from, to)) = cross_module_partition_endpoints(edge, partition) else {
+        let Some((from, to)) = partition_endpoints(edge, partition, EndpointView::Lenient) else {
             continue;
         };
         if edge.reason.is_sequenced() && !seen_side_effect_module_pairs.insert((from, to)) {
@@ -1175,9 +1145,8 @@ pub fn build_module_quotient(owner_graph: &OwnerGraph, partition: &Partition) ->
 ///     surface as `cross_rebinds` in the realizability verdict, not
 ///     as I-graph nodes; the emitter never emits them as imports.
 ///   * Keep cross-module at-init promoted edges (see
-///     [`gate_constraining_partition_endpoints`]) — the emitter's
-///     phantom side-effect importer also keeps them, so the gate
-///     must too.
+///     [`EndpointView::Gate`]) — the emitter's phantom side-effect
+///     importer also keeps them, so the gate must too.
 ///
 /// Sequenced edges are deduped per `(from, to)` pair to mirror the
 /// dedup `build_module_quotient` performs: multiple sequenced
@@ -1198,10 +1167,10 @@ pub fn chunk_constraining_module_edges(
             continue;
         }
         // Gate-side view: keep cross-module at-init promoted edges.
-        // The matching `cross_module_partition_endpoints` lenient
-        // view would drop them; the canonical edge set is the
-        // strict view (see `gate_constraining_partition_endpoints`).
-        let Some((from, to)) = gate_constraining_partition_endpoints(edge, partition) else {
+        // The matching `EndpointView::Lenient` view would drop them;
+        // the canonical edge set is the strict view (see
+        // [`partition_endpoints`]).
+        let Some((from, to)) = partition_endpoints(edge, partition, EndpointView::Gate) else {
             continue;
         };
         if edge.reason.is_rebind() {
@@ -1629,47 +1598,162 @@ mod chunk_constraining_module_edges_tests {
 }
 
 #[cfg(test)]
-mod partition_view_invariant_tests {
-    //! Regression coverage for the
-    //! [`cross_module_partition_endpoints`] invariant: every consumer
-    //! that builds a quotient view of the owner graph must agree on
-    //! the same filter (skip `from == to` AND skip cross-module
-    //! at-init promotions). A past TDZ-class soundness hole reopened
-    //! the moment one site forgot one half of the filter. This test
-    //! is a static guard that no consumer outside `graph.rs` may call
-    //! [`is_cross_module_at_init_promotion`] directly — they must go
-    //! through `cross_module_partition_endpoints` so the two checks
-    //! stay welded together at the source level.
-    //!
-    //! Files scanned are the four other partition-quotient consumers
-    //! the helper was extracted from: realizability check, the two
-    //! incremental-simulator edge mutators (same file), and the
-    //! reports quotient builder. Add new sibling consumers to the
-    //! `INCLUDE_STR_CALL_SITES` array below as they appear.
-    const INCLUDE_STR_CALL_SITES: &[(&str, &str)] = &[
-        ("realizability.rs", include_str!("realizability.rs")),
-        ("reports.rs", include_str!("reports.rs")),
-    ];
+mod edge_role_wire_format_tests {
+    //! Wire-format round-trip for [`EdgeRole`]. The materializer
+    //! emits the role through `OwnerGraphEdgeReport.role`; the peel
+    //! planner reconstructs it via `OwnerGraph::from_report`. Both
+    //! ends must agree so the planner's gate runs the same
+    //! cross-module-at-init filter the materializer's gate does.
+    use crate::purity::Purity;
+    use crate::report_schema::{
+        AtomicGraphReport, EdgeRoleReport, OwnerGraphEdgeReport, OwnerGraphNodeReport,
+        OwnerGraphQuotientReport, OwnerGraphReport,
+    };
+    use crate::{DepKind, EdgeRole, OwnerGraph, OwnerId, StatementKind, StatementOrdinal};
 
-    #[test]
-    fn no_consumer_calls_is_cross_module_at_init_promotion_directly() {
-        for (path, source) in INCLUDE_STR_CALL_SITES {
-            for (lineno, line) in source.lines().enumerate() {
-                // Skip the doc-comment references that exist only to
-                // name-drop the helper in prose.
-                if line.trim_start().starts_with("//") {
-                    continue;
-                }
-                assert!(
-                    !line.contains("is_cross_module_at_init_promotion"),
-                    "{path}:{} calls `is_cross_module_at_init_promotion` directly. \
-                     Route through `cross_module_partition_endpoints` so the \
-                     `from == to` and promoted-edge filters stay welded together \
-                     across consumers (see invariant doc on \
-                     `cross_module_partition_endpoints`).\nline: {line}",
-                    lineno + 1,
-                );
-            }
+    fn node(id: &str, ordinal: usize) -> OwnerGraphNodeReport {
+        OwnerGraphNodeReport {
+            id: id.to_string(),
+            statement_ordinal: StatementOrdinal(ordinal),
+            source_location: None,
+            declared_bindings: Vec::new(),
+            statement_kind: StatementKind::VarDecl,
+            purity: Purity::Pure,
+            destination: crate::ModuleReportRef {
+                id: "logical:0".to_string(),
+                label: String::new(),
+                residual: true,
+                index: None,
+                target_file: None,
+            },
         }
+    }
+
+    /// Direct edges serialize with `role = None`; on the way back in
+    /// they reconstruct as `EdgeRole::Direct`.
+    #[test]
+    fn direct_role_round_trips_via_none() {
+        let report = OwnerGraphReport {
+            chunk_id: "chunk".into(),
+            nodes: vec![node("owner:0", 0), node("owner:1", 1)],
+            edges: vec![OwnerGraphEdgeReport {
+                id: "owner_edge:0".to_string(),
+                source: "owner:1".to_string(),
+                target: "owner:0".to_string(),
+                edge_kind: DepKind::EagerUse,
+                binding: None,
+                statement_ordinal: StatementOrdinal(1),
+                constrains_init_order: true,
+                role: None,
+            }],
+            quotient: OwnerGraphQuotientReport {
+                nodes: Vec::new(),
+                edges: Vec::new(),
+                sccs: Vec::new(),
+            },
+            atomic_graph: AtomicGraphReport {
+                nodes: Vec::new(),
+                edges: Vec::new(),
+            },
+        };
+        let (graph, _) = OwnerGraph::from_report(&report);
+        assert_eq!(graph.edges.len(), 1);
+        assert_eq!(graph.edges[0].reason.role(), EdgeRole::Direct);
+    }
+
+    /// Promoted edges carry an `EdgeRoleReport::PromotedAtInit` on
+    /// the wire and reconstruct as `EdgeRole::PromotedAtInit` with
+    /// the resolved `OwnerId`. The CSR `callee_edges` adjacency must
+    /// also populate so `impacted_owner_edges` can find the edge by
+    /// callee owner.
+    #[test]
+    fn promoted_at_init_role_round_trips_with_callee_owner() {
+        let report = OwnerGraphReport {
+            chunk_id: "chunk".into(),
+            nodes: vec![
+                node("owner:0", 0),
+                node("owner:1", 1),
+                node("owner:2", 2),
+            ],
+            edges: vec![OwnerGraphEdgeReport {
+                id: "owner_edge:0".to_string(),
+                source: "owner:1".to_string(),
+                target: "owner:0".to_string(),
+                edge_kind: DepKind::EagerUse,
+                binding: None,
+                statement_ordinal: StatementOrdinal(1),
+                constrains_init_order: true,
+                role: Some(EdgeRoleReport::PromotedAtInit {
+                    callee_owner: "owner:2".to_string(),
+                }),
+            }],
+            quotient: OwnerGraphQuotientReport {
+                nodes: Vec::new(),
+                edges: Vec::new(),
+                sccs: Vec::new(),
+            },
+            atomic_graph: AtomicGraphReport {
+                nodes: Vec::new(),
+                edges: Vec::new(),
+            },
+        };
+        let (graph, _) = OwnerGraph::from_report(&report);
+        assert_eq!(graph.edges.len(), 1);
+        assert_eq!(
+            graph.edges[0].reason.role(),
+            EdgeRole::PromotedAtInit {
+                callee_owner: OwnerId(2),
+            }
+        );
+        // CSR by-callee adjacency populated for owner:2.
+        assert_eq!(graph.callee_edges_of(OwnerId(2)).len(), 1);
+        assert_eq!(graph.callee_edges_of(OwnerId(0)).len(), 0);
+    }
+
+    /// JSON serialization shape: a `Direct` role omits the `role`
+    /// field; a `PromotedAtInit` role nests `{kind: "promoted_at_init",
+    /// callee_owner: "owner:N"}`. This pins the wire encoding so
+    /// callers (Stage A artifact readers) don't drift.
+    #[test]
+    fn role_json_shape_pinned() {
+        let direct_report = OwnerGraphEdgeReport {
+            id: "owner_edge:0".to_string(),
+            source: "owner:1".to_string(),
+            target: "owner:0".to_string(),
+            edge_kind: DepKind::EagerUse,
+            binding: None,
+            statement_ordinal: StatementOrdinal(1),
+            constrains_init_order: true,
+            role: None,
+        };
+        let direct_json = serde_json::to_string(&direct_report).unwrap();
+        assert!(
+            !direct_json.contains("\"role\""),
+            "Direct edges omit the role field; got {direct_json}",
+        );
+
+        let promoted_report = OwnerGraphEdgeReport {
+            role: Some(EdgeRoleReport::PromotedAtInit {
+                callee_owner: "owner:7".to_string(),
+            }),
+            ..direct_report
+        };
+        let promoted_json = serde_json::to_string(&promoted_report).unwrap();
+        assert!(
+            promoted_json.contains("\"role\""),
+            "PromotedAtInit edges carry a role field; got {promoted_json}",
+        );
+        assert!(
+            promoted_json.contains("\"kind\":\"promoted_at_init\""),
+            "role tag must be `promoted_at_init`; got {promoted_json}",
+        );
+        assert!(
+            promoted_json.contains("\"callee_owner\":\"owner:7\""),
+            "callee_owner must round-trip; got {promoted_json}",
+        );
+
+        // Round-trip via JSON.
+        let parsed: OwnerGraphEdgeReport = serde_json::from_str(&promoted_json).unwrap();
+        assert_eq!(parsed.role, promoted_report.role);
     }
 }
