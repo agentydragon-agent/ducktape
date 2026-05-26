@@ -2012,20 +2012,18 @@ def _apply_obligation_settlement(
                     plan, buffers, current, month=month, liability_slot=source_index, paid=paid, amount=amount
                 )
             # Accumulate property-tax payments into the owner's per-profile YTD bucket so the
-            # year-end federal SALT pass can read them. For property-tax obligations
-            # (obligation_property_slot >= 0), use runtime `current.property_rented_fraction`
-            # so mid-horizon lifecycle events take effect. Only the owner-use share
-            # contributes to SALT; the rented share routes to Schedule E via deduction_profile.
+            # year-end federal SALT pass can read them. Only the owner-use share contributes
+            # to SALT; the rented share routes to Schedule E via deduction_profile. The
+            # compiler ties every property-tax obligation to a property_slot (kind==2 branch),
+            # so the engine always reads runtime `current.property_rented_fraction` —
+            # mid-horizon lifecycle events take effect without any compile-time fallback.
             property_tax_profile = int(plan.obligation_property_tax_profile[month, slot])
             property_slot = int(plan.obligation_property_slot[month, slot])
             if property_tax_profile >= 0:
-                if property_slot >= 0:
-                    rented_per_rollout = current.property_rented_fraction[:, property_slot]
-                    owner_per_rollout = 1.0 - rented_per_rollout
-                    current.property_tax_ytd[paid, property_tax_profile] += amount[paid] * owner_per_rollout[paid]
-                else:
-                    owner_fraction = float(plan.obligation_property_tax_owner_fraction[month, slot])
-                    current.property_tax_ytd[paid, property_tax_profile] += amount[paid] * owner_fraction
+                assert property_slot >= 0, "property-tax obligation must be tied to a property slot"
+                rented_per_rollout = current.property_rented_fraction[:, property_slot]
+                owner_per_rollout = 1.0 - rented_per_rollout
+                current.property_tax_ytd[paid, property_tax_profile] += amount[paid] * owner_per_rollout[paid]
             # Schedule E deduction: decrement payer's ordinary_ytd. For property-tax
             # obligations the deductible_fraction comes from runtime state; for other
             # deductible obligations it comes from the compile-time value.

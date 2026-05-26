@@ -276,11 +276,6 @@ class CompiledSimulation:
     # Fraction of the paid amount that is tax-deductible (e.g. 1.0 = fully deductible Schedule E
     # expense, 0.4 = 40% of the obligation is deductible because the property is 40% rented).
     obligation_deductible_fraction: np.ndarray
-    # For property-tax obligations: fraction of the paid amount that contributes to SALT
-    # (= 1 - rented_fraction). Defaults to 1.0 for non-property-tax obligations. Deprecated:
-    # `obligation_property_slot` lets the engine look up runtime rented_fraction instead;
-    # the compile-time value here is just an initial value for the no-lifecycle case.
-    obligation_property_tax_owner_fraction: np.ndarray
     # For property-tax obligations: the property slot the obligation is tied to so the engine
     # can look up `current.property_rented_fraction[r, slot]` at settlement time. NO_CODE for
     # non-property-tax obligations.
@@ -621,7 +616,6 @@ def compile_simulation(
         obligation_source_kind,
         obligation_source_index,
         obligation_property_tax_profile,
-        obligation_property_tax_owner_fraction,
         obligation_property_slot,
         obligation_deduction_profile_index,
         obligation_deductible_fraction,
@@ -862,7 +856,6 @@ def compile_simulation(
         obligation_property_tax_profile=obligation_property_tax_profile,
         obligation_deduction_profile_index=obligation_deduction_profile_index,
         obligation_deductible_fraction=obligation_deductible_fraction,
-        obligation_property_tax_owner_fraction=obligation_property_tax_owner_fraction,
         obligation_property_slot=obligation_property_slot,
         external_event_ids=external_event_ids,
         external_event_values=external_event_values,
@@ -1777,10 +1770,6 @@ def _compile_obligation_slots(
     source_index = _empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
     # Default NO_CODE; populated only for property-tax obligations whose owner has a TaxProfile.
     property_tax_profile = _empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
-    # Fraction of paid property tax that contributes to SALT (initial value for no-lifecycle
-    # scenarios; engine reads runtime `current.property_rented_fraction` when
-    # `obligation_property_slot[month, slot] >= 0`).
-    property_tax_owner_fraction = _empty_month_matrix(horizon, max_slots, np.float64, 1.0)
     # Property slot for property-tax obligations. NO_CODE elsewhere.
     property_slot_matrix = _empty_month_matrix(horizon, max_slots, np.int64, NO_CODE)
     # Schedule E deduction wiring: NO_CODE / 0.0 unless the obligation declares
@@ -1895,10 +1884,7 @@ def _compile_obligation_slots(
                 # Wire the property slot so the engine can look up runtime rented_fraction at
                 # settlement time. SALT/Schedule E split moves with mid-horizon lifecycle events.
                 property_slot_matrix[month, idx] = prop_slot
-                # Compile-time initial values used only when property_slot is NO_CODE (i.e.
-                # this branch is skipped) or as a no-lifecycle fallback.
                 rented_fraction_val = float(purchase.rented_fraction)
-                property_tax_owner_fraction[month, idx] = 1.0 - rented_fraction_val
                 if owner_profile >= 0:
                     deduction_profile[month, idx] = owner_profile
                     deductible_fraction[month, idx] = rented_fraction_val
@@ -1948,7 +1934,6 @@ def _compile_obligation_slots(
         source_kind,
         source_index,
         property_tax_profile,
-        property_tax_owner_fraction,
         property_slot_matrix,
         deduction_profile,
         deductible_fraction,
