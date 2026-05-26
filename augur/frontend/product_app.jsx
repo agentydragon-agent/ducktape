@@ -1570,17 +1570,25 @@ function LifecycleEventValueField({ event, onChange }) {
   return null;
 }
 
-// Shared control for any "this amount should track inflation" toggle. Centralizing the wording
-// + styling here keeps the spend / cash-buffer / PE-floor / future indexing flags consistent —
-// when we later swap inflation for a multi-series picker, only this component changes.
-function IndexToInflationToggle({ checked, disabled = false, onChange, className = "" }) {
+// Shared control for any "this amount should track a price series" picker. Today the only
+// options are "inflation" (CPI) and "none" (nominal); modeled as a select rather than a
+// checkbox so the catalog can extend to additional indexes (asset-class series, custom
+// composites) without each callsite needing UI churn.
+const INDEX_OPTIONS = [
+  { value: "inflation", label: "Inflation" },
+  { value: "none", label: "None" },
+];
+
+function IndexPicker({ value, disabled = false, onChange, className = "" }) {
   return (
-    <Checkbox
+    <NativeSelectField
       className={className}
-      label="Index to inflation"
-      checked={Boolean(checked)}
+      label="Index"
+      aria-label="Index amount to"
+      value={value}
       disabled={disabled}
-      onChange={(event) => onChange(event.currentTarget.checked)}
+      data={INDEX_OPTIONS}
+      onChange={(event) => onChange(event.target.value)}
     />
   );
 }
@@ -2005,10 +2013,10 @@ function ProductProjectionWorkspace({ bootstrap }) {
                   prefix="$"
                   onChange={(monthlySpendUsd) => updateInput({ monthlySpendUsd })}
                 />
-                <IndexToInflationToggle
+                <IndexPicker
                   className="mt-2"
-                  checked={input.spendIndex === "inflation"}
-                  onChange={(checked) => updateInput({ spendIndex: checked ? "inflation" : "none" })}
+                  value={input.spendIndex}
+                  onChange={(spendIndex) => updateInput({ spendIndex })}
                 />
               </div>
               <div className="grid gap-3 px-4 py-3 sm:grid-cols-2">
@@ -2062,11 +2070,11 @@ function ProductProjectionWorkspace({ bootstrap }) {
                     onChange={(cashBufferSaleUsd) => updateInput({ cashBufferSaleUsd })}
                   />
                 </div>
-                <IndexToInflationToggle
+                <IndexPicker
                   className="mt-2"
-                  checked={input.cashBufferIndexToInflation}
+                  value={input.cashBufferIndexToInflation ? "inflation" : "none"}
                   disabled={!input.sellOrder}
-                  onChange={(checked) => updateInput({ cashBufferIndexToInflation: checked })}
+                  onChange={(choice) => updateInput({ cashBufferIndexToInflation: choice === "inflation" })}
                 />
                 <div className="mt-3 text-xs augur-muted">
                   PE tenders: sell enough at each modeled tender event to lift liquid net worth (cash + non-PE holdings)
@@ -2081,10 +2089,10 @@ function ProductProjectionWorkspace({ bootstrap }) {
                     prefix="$"
                     onChange={(peLnwFloorUsd) => updateInput({ peLnwFloorUsd })}
                   />
-                  <IndexToInflationToggle
-                    checked={input.peIndexFloorToInflation}
+                  <IndexPicker
+                    value={input.peIndexFloorToInflation ? "inflation" : "none"}
                     disabled={Number(input.peLnwFloorUsd) <= 0}
-                    onChange={(checked) => updateInput({ peIndexFloorToInflation: checked })}
+                    onChange={(choice) => updateInput({ peIndexFloorToInflation: choice === "inflation" })}
                   />
                 </div>
               </div>
