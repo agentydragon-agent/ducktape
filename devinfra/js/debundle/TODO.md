@@ -473,14 +473,6 @@ web spec via the new top-level CLI). Each is a small `bindings ...` /
   `debundle modules list --auto-deletable --format json | jq -r
   '.modules[].path' | xargs rm` is the safe one-liner for sweeping
   drained cruft.
-- **No `debundle modules delete` subcommand.** Today the workflow is
-  plain `rm` on the YAML file (the spec compiler infers the module
-  path from the file location). Documented in `docs/cli.md`, but it
-  trips up readers who expect the `modules` namespace to be complete.
-  Either add a thin wrapper (`modules delete <path>`, optionally with
-  realizability check + `--force` for non-empty) or surface the `rm`
-  recipe in `modules list --empty`'s output so the next step is
-  obvious.
 - **`modules list` member-count is the only signal of module size**;
   there's no quick way to spot a module whose member count is right
   but whose `anonymous_statements:` count is huge (the residual case).
@@ -488,3 +480,14 @@ web spec via the new top-level CLI). Each is a small `bindings ...` /
   `member_count` would let `debundle modules list --residual
   --with-anonymous` surface the residual sentinel's anonymous-statement
   drift over time.
+- **No `debundle cycles ...` namespace.** Today cycle evidence lives
+  in `reports/tree/<chunk>/cycles.json` and consumers query it with
+  `jq`. The data is rich (cut edges, evidence per cycle, modules-in-
+  SCC) and worth a first-class CLI surface: `debundle cycles list`
+  (one line per cycle: id, size, cut count), `debundle cycles
+  describe <id>` (full cut + evidence + module list, formatted),
+  `debundle cycles cut <id>` (just the back-edges — the actionable
+  set). The cycle ID could be the cycle's index in `cycles.json` or
+  a stable hash of the SCC's module set. Reuses the same JSON inputs
+  `scc` already consumes (`$GRAPH` + the chunk's `cycles.json`),
+  so it's plumbing only.
