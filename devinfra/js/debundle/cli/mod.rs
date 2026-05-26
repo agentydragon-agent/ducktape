@@ -14,7 +14,7 @@ use crate::binding::{
 use crate::comment::{
     BindingCommentArgs, ModuleCommentArgs, run_binding_comment_cmd, run_module_comment_cmd,
 };
-use crate::cli::gate::{GateArgs, run_gate_cli};
+use crate::gate::{GateArgs, run_gate_cli};
 use crate::module::{DeleteArgs, MergeArgs, ModuleArgs, run_delete, run_merge, run_module_cli};
 use peel::{
     CommonArgs as PeelCommonArgs, ExplainArgs, GraphSummaryArgs, OutputFormat, PatchPlanArgs,
