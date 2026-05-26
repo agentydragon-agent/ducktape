@@ -677,7 +677,7 @@ fn gate_post_edit_partition(owner_graph_path: &Path, post_spec: &PostEditSpec) -
         return Ok(());
     }
     let summary = render_cycle_summary(&report.cycles);
-    eprintln!("error: post-edit spec is unrealizable:\n{}", summary);
+    eprintln!("error: post-edit spec is unrealizable:\n{summary}");
     bail!("realizability gate rejected the edit");
 }
 

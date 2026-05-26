@@ -412,8 +412,7 @@ fn recompute_evidence(graph: &OwnerGraphReport, modules: &[String]) -> Vec<Cycle
         .iter()
         .filter_map(|n| {
             n.declared_bindings
-                .iter()
-                .next()
+                .first()
                 .map(|b| (n.id.as_str(), b.binding.clone()))
         })
         .collect();
@@ -425,8 +424,7 @@ fn recompute_evidence(graph: &OwnerGraphReport, modules: &[String]) -> Vec<Cycle
         .iter()
         .filter_map(|n| {
             n.declared_bindings
-                .iter()
-                .next()
+                .first()
                 .map(|b| (n.statement_ordinal, b.binding.clone()))
         })
         .collect();
