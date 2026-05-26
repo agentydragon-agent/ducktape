@@ -22,6 +22,17 @@ pub(super) struct ChunkPlan {
     pub(super) unmatched_spec_claims: Vec<crate::UnmatchedSpecClaim>,
 }
 
+/// Per-explicit-request inputs the builder reads but does not own.
+pub(super) struct ExplicitRequestContext<'a> {
+    pub(super) runtime_module: &'a Module,
+    pub(super) declaration_by_name: &'a HashMap<Id, usize>,
+    pub(super) chunk_top_level_mark: swc_common::Mark,
+    pub(super) target_dir: &'a str,
+    pub(super) chunk_id: &'a str,
+    pub(super) target_file: &'a str,
+    pub(super) runtime_import_facts: &'a RuntimeImportFacts,
+}
+
 /// Builds a `ChunkPlan` from spec requests and chunk AST analysis.
 ///
 /// Owns the five mutable maps (`binding_assignment`,
@@ -56,6 +67,23 @@ pub(super) struct ChunkPlanBuilder {
     /// running with the missing claim treated as if absent; the
     /// caller fails the pipeline at the end with the rolled-up list.
     unmatched_spec_claims: Vec<crate::UnmatchedSpecClaim>,
+    /// Name-keyed index into `bindings_catalogue` for the
+    /// duplicate-claim check inside `add_explicit_request`. The
+    /// previous shape — a linear scan of the entire `bindings_catalogue`
+    /// HashMap on every member of every request — was the dominant
+    /// cost in `build_module_plans` on chunks with thousands of spec
+    /// modules (O(N^2) over the growing catalogue). Every catalogue
+    /// key is constructed via `top_level_id(name,
+    /// chunk_top_level_mark)`, so the `name` alone uniquely
+    /// identifies the catalogue entry within a chunk; we mirror
+    /// inserts into this index and look up by `&str` to keep
+    /// duplicate detection O(1) per member.
+    ///
+    /// Only consulted during `add_explicit_request`; later phases
+    /// (destructure siblings, residual sweep) append without
+    /// name-collision checks. The map is dropped by
+    /// `drop_explicit_request_scratch`.
+    catalogue_index_by_name: HashMap<String, BindingKind>,
 }
 
 impl ChunkPlanBuilder {
@@ -67,7 +95,158 @@ impl ChunkPlanBuilder {
             bindings_catalogue: HashMap::new(),
             residual_plan_index: None,
             unmatched_spec_claims: Vec::new(),
+            catalogue_index_by_name: HashMap::new(),
         }
+    }
+
+    /// Process one explicit (non-residual) logical-module request:
+    /// resolve its anonymous-statement matches, claim each named
+    /// member, and append a `ModulePlan`. Duplicate-claim detection
+    /// across all explicit requests is keyed by binding-name via the
+    /// builder's `catalogue_index_by_name` scratch index.
+    pub(super) fn add_explicit_request(
+        &mut self,
+        index: usize,
+        request: &mut LogicalRequest,
+        ctx: &ExplicitRequestContext<'_>,
+        imported_binding_resolver: &mut ArtifactSourceImportResolutionCache<'_>,
+        imported_from_by_src: &mut BTreeMap<String, String>,
+    ) -> Result<()> {
+        let mut bindings = HashMap::<String, String>::new();
+        let anonymous_statement_ordinals =
+            resolve_anonymous_statement_ordinals(request, ctx.runtime_module)?;
+        for ordinal in &anonymous_statement_ordinals {
+            if let Some(existing) = self.anonymous_ordinal_assignment.get(ordinal).copied() {
+                let existing_id: String = self
+                    .module_plans
+                    .get(existing)
+                    .map(|plan: &ModulePlan| plan.id.clone())
+                    .unwrap_or_else(|| format!("<plan#{existing}>"));
+                bail!(
+                    "anonymous_statements[].match in module {} also matches the \
+                     top-level statement at ordinal {} already claimed by module {}; \
+                     each anonymous statement may belong to at most one logical \
+                     module.",
+                    request.id,
+                    ordinal,
+                    existing_id,
+                );
+            }
+            self.anonymous_ordinal_assignment.insert(*ordinal, index);
+        }
+        let dest_target_file = target_file_for_request(ctx.target_dir, &request.target_path)?;
+        let module_id = ModuleId(LogicalModuleIndex(index));
+        for member in &request.members {
+            if let Some(existing_kind) = self.catalogue_index_by_name.get(member.binding.as_str()) {
+                let existing_id = match existing_kind {
+                    BindingKind::Owned {
+                        owner: ModuleId(LogicalModuleIndex(owner_index)),
+                    } => self
+                        .module_plans
+                        .get(*owner_index)
+                        .map(|plan| plan.id.clone())
+                        .unwrap_or_else(|| format!("<plan#{owner_index}>")),
+                    BindingKind::Imported {
+                        re_exporter: ModuleId(LogicalModuleIndex(re_index)),
+                        ..
+                    } => self
+                        .module_plans
+                        .get(*re_index)
+                        .map(|plan| plan.id.clone())
+                        .unwrap_or_else(|| format!("<plan#{re_index}>")),
+                };
+                bail!(
+                    "Duplicate binding claim for {:?} in chunk {:?}: already \
+                     claimed by module {existing_id} and now also claimed by module \
+                     {}. Each binding may belong to exactly one logical module. \
+                     Different selector forms (`{{name: foo}}` vs \
+                     `{{name: foo, kind: class_declaration}}`) that resolve to the \
+                     same source declaration still count as duplicates. To expose a \
+                     binding under multiple readable names, list all the renames in \
+                     one module.",
+                    member.binding,
+                    ctx.chunk_id,
+                    request.id,
+                );
+            }
+            if member.is_import_specifier {
+                let (imported_name, imported_from) = resolve_imported_binding(
+                    imported_binding_resolver,
+                    ctx.runtime_import_facts,
+                    ctx.chunk_id,
+                    ctx.target_file,
+                    &member.binding,
+                    imported_from_by_src,
+                )?;
+                let kind = BindingKind::Imported {
+                    imported_name: imported_name.into(),
+                    imported_from,
+                    re_exporter: module_id,
+                    public_name: member.export_name.as_str().into(),
+                };
+                self.catalogue_index_by_name
+                    .insert(member.binding.clone(), kind.clone());
+                self.bindings_catalogue
+                    .insert(top_level_id(&member.binding, ctx.chunk_top_level_mark), kind);
+            } else {
+                bindings.insert(member.binding.clone(), member.export_name.clone());
+            }
+        }
+        for (binding, export_name) in &bindings {
+            let binding_id = top_level_id(binding, ctx.chunk_top_level_mark);
+            if ctx.declaration_by_name.contains_key(&binding_id) {
+                self.binding_assignment.insert(binding_id.clone(), index);
+                let kind = BindingKind::Owned { owner: module_id };
+                self.catalogue_index_by_name
+                    .insert(binding.clone(), kind.clone());
+                self.bindings_catalogue.insert(binding_id, kind);
+            } else {
+                // The spec claimed a binding name that does not
+                // appear as a top-level declaration in this chunk —
+                // the previous behavior silently dropped the claim,
+                // leaving the destination module short one export
+                // and the binding falling into the residual sweep.
+                // Record it so the pipeline can fail at the end
+                // with the full list across every chunk; meanwhile
+                // keep lowering as if the spec had not claimed the
+                // name (lower_chunk only touches binding ids it can
+                // resolve, so the missing claim is a no-op here).
+                self.unmatched_spec_claims.push(crate::UnmatchedSpecClaim {
+                    chunk_id: ctx.chunk_id.to_string(),
+                    module_id: request.id.clone(),
+                    binding_name: binding.clone(),
+                    export_name: export_name.clone(),
+                });
+            }
+        }
+        let binding_comments: BTreeMap<String, String> = request
+            .members
+            .iter()
+            .filter_map(|member| {
+                member
+                    .comment
+                    .as_ref()
+                    .map(|c| (member.binding.clone(), c.clone()))
+            })
+            .collect();
+        self.module_plans.push(ModulePlan {
+            id: request.id.clone(),
+            target_file: dest_target_file,
+            target_path: request.target_path.clone(),
+            explicit: true,
+            bindings,
+            anonymous_statement_ordinals,
+            comment: request.comment.clone(),
+            binding_comments,
+        });
+        Ok(())
+    }
+
+    /// Drop the name-keyed catalogue scratch index now that the
+    /// explicit-requests loop is finished. Destructure siblings and
+    /// the residual sweep don't consult this index.
+    pub(super) fn drop_explicit_request_scratch(&mut self) {
+        self.catalogue_index_by_name = HashMap::new();
     }
 
     pub(super) fn finalize(self) -> ChunkPlan {
