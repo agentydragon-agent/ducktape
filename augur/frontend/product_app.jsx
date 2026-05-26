@@ -42,7 +42,7 @@ const DEFAULT_SELL_ORDER_CODES = SELL_BUCKETS.map((bucket) => bucket.code).join(
 
 const DEFAULT_PRODUCT_INPUT_BASE = {
   horizonMonths: 48,
-  rolloutCount: 100,
+  rolloutCount: 500,
   firstSeed: 1301,
   monthlySpendUsd: 1400,
   spendIndex: "inflation",
@@ -62,10 +62,10 @@ const DEFAULT_PRODUCT_INPUT_BASE = {
   annualInsurancePct: 0.4,
   annualMaintenancePct: 1.0,
   rentItOut: false,
-  // Rental monthly rent: 0 means "use the property's rent_estimate_usd". Any positive value
-  // overrides the property record.
-  rentalMonthlyUsd: 0,
-  rentalFractionRented: 1.0,
+  // Rental monthly rent override: null means "use the property's rent_estimate_usd";
+  // 0 means "no rent collected"; any positive value overrides the property record.
+  rentalMonthlyUsd: null,
+  rentalFractionRentedPct: 100,
   rentalVacancyPct: 5,
   useRentalManagement: false,
   managementFeePct: 8,
@@ -143,12 +143,15 @@ function productInputDefaults(bootstrap) {
 // URL serialization: a single `?s=` query param carries all scenario inputs as a positional dot-
 // separated string. A version letter prefix gates schema changes; trailing default values are
 // trimmed; enums use one-letter codes. Examples:
-//   ?s=1                                                  → all defaults
-//   ?s=1.120...5000.n..200000.100000...location_a_property..m.10
+//   ?s=2                                                  → all defaults
+//   ?s=2.120...5000.n..200000.100000...location_a_property..m.10
 //
 // The ordering, encoding, and code maps live here in INPUT_FIELDS. Adding a new input means
 // appending to INPUT_FIELDS; old URLs continue to decode (missing positions = defaults).
-const INPUT_SCHEMA_VERSION = "1";
+// Bump SCHEMA_VERSION when a field's semantic encoding changes — old URLs then fall back to
+// defaults rather than reinterpreting (e.g. v1 stored rentalFractionRented as a 0..1 fraction,
+// v2 stores rentalFractionRentedPct as a 0..100 percentage).
+const INPUT_SCHEMA_VERSION = "2";
 
 const INPUT_FIELDS = [
   { key: "horizonMonths", type: "number" },
@@ -176,7 +179,7 @@ const INPUT_FIELDS = [
   { key: "annualMaintenancePct", type: "number" },
   { key: "rentItOut", type: "bool" },
   { key: "rentalMonthlyUsd", type: "number" },
-  { key: "rentalFractionRented", type: "number" },
+  { key: "rentalFractionRentedPct", type: "number" },
   { key: "rentalVacancyPct", type: "number" },
   { key: "useRentalManagement", type: "bool" },
   { key: "managementFeePct", type: "number" },
@@ -325,15 +328,12 @@ function buildPropertyFinancing(input) {
 
 function buildRentalIncomePlan(input) {
   if (!input.rentItOut) return null;
-  const userOverride = Math.max(0, Number(input.rentalMonthlyUsd) || 0);
-  const fraction = Math.min(1, Math.max(0.01, Number(input.rentalFractionRented) || 1.0));
+  // `rentalMonthlyUsd` is null → use property default; numeric → explicit override (incl. 0).
+  const override = input.rentalMonthlyUsd;
+  const monthlyRentCollectedUsd = override == null ? null : Math.max(0, Number(override) || 0);
+  const fraction = Math.min(1, Math.max(0.01, (Number(input.rentalFractionRentedPct) || 100) / 100));
   const vacancyPct = Math.min(1, Math.max(0, (Number(input.rentalVacancyPct) || 0) / 100));
-  return {
-    // null lets the backend fall back to property.rent_estimate_usd.
-    monthlyRentCollectedUsd: userOverride > 0 ? userOverride : null,
-    fractionRented: fraction,
-    vacancyPct,
-  };
+  return { monthlyRentCollectedUsd, fractionRented: fraction, vacancyPct };
 }
 
 function buildRentalManagement(input) {
@@ -349,7 +349,8 @@ function buildPropertyPurchase(input) {
   if (!input.propertyId) return null;
   const initialRental = buildRentalIncomePlan(input);
   // Wire enforces is_primary_residence=False when fraction_rented=1.0; mirror that here
-  // so the user can't submit an inconsistent ScenarioKey from the UI.
+  // so the user can't submit an inconsistent ScenarioKey from the UI. The check is on the
+  // normalized 0..1 fraction the builder just emitted (UI keeps the percentage form).
   const isPrimaryResidence = initialRental?.fractionRented === 1.0 ? false : Boolean(input.livesHere);
   return {
     propertyId: input.propertyId,
@@ -1405,9 +1406,10 @@ function PropertyPurchasePanel({ bootstrap, input, onChange }) {
                 />
               </div>
             )}
+            <div className="text-xs augur-muted">Insurance and maintenance are annual % of purchase price.</div>
             <div className="grid gap-3 sm:grid-cols-2">
               <NumberField
-                label="Insurance (% of price / yr)"
+                label="Insurance"
                 value={input.annualInsurancePct}
                 min={0}
                 max={10}
@@ -1416,7 +1418,7 @@ function PropertyPurchasePanel({ bootstrap, input, onChange }) {
                 onChange={(annualInsurancePct) => onChange({ annualInsurancePct })}
               />
               <NumberField
-                label="Maintenance (% of price / yr)"
+                label="Maintenance"
                 value={input.annualMaintenancePct}
                 min={0}
                 max={10}
@@ -1429,7 +1431,7 @@ function PropertyPurchasePanel({ bootstrap, input, onChange }) {
               label="Owner lives in this property"
               aria-label="Owner lives in this property"
               checked={Boolean(input.livesHere)}
-              disabled={input.rentItOut && Number(input.rentalFractionRented) >= 1.0}
+              disabled={input.rentItOut && Number(input.rentalFractionRentedPct) >= 100}
               classNames={{ label: "text-sm font-semibold augur-strong" }}
               onChange={(event) => onChange({ livesHere: event.currentTarget.checked })}
             />
@@ -1455,9 +1457,10 @@ function PropertyPurchasePanel({ bootstrap, input, onChange }) {
 
 function LifecycleEventsEditor({ events, horizonMonths, onChange }) {
   const maxMonth = Math.max(1, Number(horizonMonths) - 1);
-  const addEvent = (kind) => {
+  const addEvent = () => {
     const last = events[events.length - 1];
     const suggestedMonth = Math.min(maxMonth, last ? Math.min(maxMonth, last.month + 12) : 12);
+    const kind = last ? last.kind : LIFECYCLE_KINDS[0].value;
     onChange([...events, defaultLifecycleEvent(kind, suggestedMonth)]);
   };
   const updateEvent = (index, patch) => {
@@ -1480,21 +1483,20 @@ function LifecycleEventsEditor({ events, horizonMonths, onChange }) {
           event={event}
           maxMonth={maxMonth}
           onChange={(patch) => updateEvent(index, patch)}
+          onReplaceKind={(kind) => updateEvent(index, defaultLifecycleEvent(kind, event.month))}
           onRemove={() => removeEvent(index)}
         />
       ))}
-      <div className="flex flex-wrap gap-2">
-        {LIFECYCLE_KINDS.map((kind) => (
-          <Button key={kind.value} size="xs" variant="default" onClick={() => addEvent(kind.value)}>
-            + {kind.label}
-          </Button>
-        ))}
+      <div>
+        <Button size="xs" variant="default" onClick={addEvent}>
+          + Add event
+        </Button>
       </div>
     </div>
   );
 }
 
-function LifecycleEventRow({ event, maxMonth, onChange, onRemove }) {
+function LifecycleEventRow({ event, maxMonth, onChange, onReplaceKind, onRemove }) {
   return (
     <div className="grid items-end gap-2 rounded border border-slate-300 p-2 dark:border-slate-600 sm:grid-cols-[7rem_10rem_1fr_auto]">
       <NumberField
@@ -1503,6 +1505,7 @@ function LifecycleEventRow({ event, maxMonth, onChange, onRemove }) {
         min={1}
         max={maxMonth}
         step={1}
+        suffix="mo"
         onChange={(month) => onChange({ month: clampInteger(month, 1, maxMonth) })}
       />
       <NativeSelectField
@@ -1510,7 +1513,7 @@ function LifecycleEventRow({ event, maxMonth, onChange, onRemove }) {
         aria-label="Lifecycle event kind"
         value={event.kind}
         data={LIFECYCLE_KINDS}
-        onChange={(domEvent) => onChange(defaultLifecycleEvent(domEvent.target.value, event.month))}
+        onChange={(domEvent) => onReplaceKind(domEvent.target.value)}
       />
       <LifecycleEventValueField event={event} onChange={onChange} />
       <Button size="xs" variant="subtle" color="red" onClick={onRemove} aria-label="Remove event">
@@ -1524,7 +1527,7 @@ function LifecycleEventValueField({ event, onChange }) {
   if (event.kind === "set_rented_fraction") {
     return (
       <NumberField
-        label="Rented %"
+        label="Rented"
         value={event.rentedFractionPct}
         min={0}
         max={100}
@@ -1541,7 +1544,7 @@ function LifecycleEventValueField({ event, onChange }) {
         value={event.amountUsd}
         min={0}
         step={1000}
-        suffix="$"
+        prefix="$"
         onChange={(amountUsd) => onChange({ amountUsd })}
       />
     );
@@ -1571,22 +1574,23 @@ function RentalPanel({ input, property, onChange }) {
   return (
     <div className="mt-1 ml-4 grid gap-3 border-l-2 border-slate-300 pl-3 dark:border-slate-600">
       <NumberField
-        label="Monthly rent collected (0 = use property default)"
+        label="Monthly rent collected"
         value={input.rentalMonthlyUsd}
         min={0}
         step={50}
-        suffix="$"
+        prefix="$"
         placeholder={rentPlaceholder}
         onChange={(rentalMonthlyUsd) => onChange({ rentalMonthlyUsd })}
       />
       <div className="grid gap-3 sm:grid-cols-2">
         <NumberField
           label="Fraction rented"
-          value={input.rentalFractionRented}
-          min={0.01}
-          max={1.0}
-          step={0.05}
-          onChange={(rentalFractionRented) => onChange({ rentalFractionRented })}
+          value={input.rentalFractionRentedPct}
+          min={1}
+          max={100}
+          step={5}
+          suffix="%"
+          onChange={(rentalFractionRentedPct) => onChange({ rentalFractionRentedPct })}
         />
         <NumberField
           label="Vacancy"
@@ -1617,19 +1621,21 @@ function RentalPanel({ input, property, onChange }) {
             onChange={(managementFeePct) => onChange({ managementFeePct })}
           />
           <NumberField
-            label="Leasing fee (months)"
+            label="Leasing fee"
             value={input.leasingFeeMonths}
             min={0}
             max={3}
             step={0.25}
+            suffix="mo"
             onChange={(leasingFeeMonths) => onChange({ leasingFeeMonths })}
           />
           <NumberField
-            label="Avg tenancy (mo)"
+            label="Avg tenancy"
             value={input.avgTenancyMonths}
             min={1}
             max={120}
             step={1}
+            suffix="mo"
             onChange={(avgTenancyMonths) => onChange({ avgTenancyMonths })}
           />
         </div>
@@ -1643,7 +1649,10 @@ function portfolioHasBucket(portfolio, bucketName) {
   if (bucketName === "crypto") {
     return holdings.some((position) => position.securityKind === "cryptocurrency");
   }
-  if (bucketName === "holdings") {
+  // The non-crypto bucket is labeled "stocks" in `SELL_BUCKETS`; match that name (the earlier
+  // "holdings" string was a rename that left this filter stale, hiding the stocks row whenever
+  // the portfolio had any non-crypto holdings).
+  if (bucketName === "stocks") {
     return holdings.some((position) => position.securityKind !== "cryptocurrency");
   }
   return false;
