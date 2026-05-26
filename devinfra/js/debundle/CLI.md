@@ -309,6 +309,14 @@ as a structured object so machine readers can parse it.
   YAML preview) is a documented TODO in the codebase but not in
   v1.
 - **Tab completion.** Not in v1.
+- **Per-member `comment:` field in the spec** that the lowering
+  pass emits as a JS comment immediately above the binding's owner
+  statement. Tracked separately (#88) — pure planning today, no
+  CLI involvement beyond eventually exposing it through `bindings
+  describe`-style outputs. The point is to give RE annotations a
+  home that survives re-runs of the pipeline; the comment is
+  authored once in YAML and propagates to the emitted JS on every
+  rebuild.
 
 ## See also
 
