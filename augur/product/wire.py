@@ -152,6 +152,22 @@ class PropertyPurchase(ApiModel):
         # Pure investment property must not also claim primary-residence MID treatment.
         if self.initial_rental is not None and self.initial_rental.fraction_rented >= 1.0 and self.is_primary_residence:
             raise ValueError("is_primary_residence must be False when fraction_rented == 1.0")
+        # Lifecycle events past the sale are meaningless — the property is frozen on sale.
+        # Reject any event at or after the first sale's month (a sale event itself is its own
+        # endpoint, so we compare strictly).
+        sale_month: int | None = None
+        for event in self.lifecycle_events:
+            if isinstance(event, PropertySaleEventWire) and (sale_month is None or event.month < sale_month):
+                sale_month = event.month
+        if sale_month is not None:
+            for event in self.lifecycle_events:
+                if event.month > sale_month or (
+                    event.month == sale_month and not isinstance(event, PropertySaleEventWire)
+                ):
+                    raise ValueError(
+                        f"lifecycle event at month {event.month} fires after sale at month {sale_month}; "
+                        f"the property is frozen after sale"
+                    )
         return self
 
 

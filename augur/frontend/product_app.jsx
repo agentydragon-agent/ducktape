@@ -1462,11 +1462,17 @@ function PropertyPurchasePanel({ bootstrap, input, onChange }) {
 
 function LifecycleEventsEditor({ events, horizonMonths, onChange }) {
   const maxMonth = Math.max(1, Number(horizonMonths) - 1);
+  const saleMonth = firstSaleMonth(events);
+  // After a sale, the property is frozen: the wire validator rejects any other lifecycle event
+  // at or after that month. Clamp new events to <sale_month so adding via the button is always
+  // a legal placement.
+  const addCeiling = saleMonth != null ? saleMonth - 1 : maxMonth;
+  const canAdd = addCeiling >= 1;
   const addEvent = () => {
     const last = events[events.length - 1];
-    const suggestedMonth = Math.min(maxMonth, last ? Math.min(maxMonth, last.month + 12) : 12);
+    const suggested = last ? Math.min(addCeiling, last.month + 12) : Math.min(addCeiling, 12);
     const kind = last ? last.kind : LIFECYCLE_KINDS[0].value;
-    onChange([...events, defaultLifecycleEvent(kind, suggestedMonth)]);
+    onChange([...events, defaultLifecycleEvent(kind, Math.max(1, suggested))]);
   };
   const updateEvent = (index, patch) => {
     onChange(events.map((event, idx) => (idx === index ? { ...event, ...patch } : event)));
@@ -1487,23 +1493,44 @@ function LifecycleEventsEditor({ events, horizonMonths, onChange }) {
           key={index}
           event={event}
           maxMonth={maxMonth}
+          postSale={
+            saleMonth != null &&
+            (event.month > saleMonth || (event.month === saleMonth && event.kind !== "property_sale"))
+          }
           onChange={(patch) => updateEvent(index, patch)}
           onReplaceKind={(kind) => updateEvent(index, defaultLifecycleEvent(kind, event.month))}
           onRemove={() => removeEvent(index)}
         />
       ))}
       <div>
-        <Button size="xs" variant="default" onClick={addEvent}>
+        <Button size="xs" variant="default" disabled={!canAdd} onClick={addEvent}>
           + Add event
         </Button>
+        {!canAdd && (
+          <span className="ml-2 text-xs augur-muted">No room before the existing sale at month {saleMonth}.</span>
+        )}
       </div>
     </div>
   );
 }
 
-function LifecycleEventRow({ event, maxMonth, onChange, onReplaceKind, onRemove }) {
+function firstSaleMonth(events) {
+  let earliest = null;
+  for (const event of events) {
+    if (event.kind === "property_sale" && (earliest == null || event.month < earliest)) {
+      earliest = event.month;
+    }
+  }
+  return earliest;
+}
+
+function LifecycleEventRow({ event, maxMonth, postSale, onChange, onReplaceKind, onRemove }) {
   return (
-    <div className="grid items-end gap-2 rounded border border-slate-300 p-2 dark:border-slate-600 sm:grid-cols-[7rem_10rem_1fr_auto]">
+    <div
+      className={`grid items-end gap-2 rounded border p-2 dark:border-slate-600 sm:grid-cols-[7rem_10rem_1fr_auto] ${
+        postSale ? "border-rose-500 bg-rose-50 dark:bg-rose-950/30" : "border-slate-300"
+      }`}
+    >
       <NumberField
         label="Month"
         value={event.month}
@@ -1524,6 +1551,11 @@ function LifecycleEventRow({ event, maxMonth, onChange, onReplaceKind, onRemove 
       <Button size="xs" variant="subtle" color="red" onClick={onRemove} aria-label="Remove event">
         ×
       </Button>
+      {postSale && (
+        <div className="col-span-full text-xs text-rose-700 dark:text-rose-300">
+          This event fires after the property is sold — the backend will reject the scenario.
+        </div>
+      )}
     </div>
   );
 }
