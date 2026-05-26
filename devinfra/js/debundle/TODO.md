@@ -354,15 +354,6 @@ propKeyA` and `collect_naturalization_renames_from_function` says
      requires reordering the materializer to compute a final body
      order before any rename intents are submitted).
 
-<!--
-The "Migrate BindingName = String → swc's hygiene-preserving Id"
-entry that used to live here was done by the Id migration PR.
-StatementFacts now carries `BTreeSet<Id>` everywhere; `BindingTable`
-is gone; `graph.rs` keys binding ownership with `HashMap<Id, OwnerId>`;
-reports keep their wire shape via `Atom: Serialize` (atom-only,
-SyntaxContext dropped at the JSON boundary).
--->
-
 ## Reinvented-wheel audit findings (recorded, no immediate action)
 
 A high-level audit (see chat session
@@ -463,31 +454,30 @@ web spec via the new top-level CLI). Each is a small `bindings ...` /
 - **No `debundle spec stats` one-shot.** Common first-question — "how
   many modules / bindings / orphans / residual?" — requires
   `modules list --format json | jq` + `bindings list --format json | jq`
-  + manual aggregation. A `spec stats` (or `modules stats` / `bindings
-  stats`) command that emits the totals + the singleton/tiny/medium/large
+  manual aggregation. A `spec stats` (or `modules stats` /
+  `bindings stats`) command that emits the totals + the singleton/tiny/medium/large
   member-count buckets in one pass would be the natural shape.
 - **`modules list --empty` shows every empty module, including ones
   preserved by a `comment:`.** The actually-actionable subset is
   "empty AND no comment" — i.e. the auto-deletable set. Add a
   `--auto-deletable` filter (or expose `--empty --no-comment`) so
-  `debundle modules list --auto-deletable --format json | jq -r
-  '.modules[].path' | xargs rm` is the safe one-liner for sweeping
-  drained cruft.
+  `debundle modules list --auto-deletable --format json | jq -r '.modules[].path' | xargs rm`
+  is the safe one-liner for sweeping drained cruft.
 - **`modules list` member-count is the only signal of module size**;
   there's no quick way to spot a module whose member count is right
   but whose `anonymous_statements:` count is huge (the residual case).
   An optional `--with-anonymous` flag exposing that count alongside
-  `member_count` would let `debundle modules list --residual
-  --with-anonymous` surface the residual sentinel's anonymous-statement
-  drift over time.
+  `member_count` would let `debundle modules list --residual --with-anonymous`
+  surface the residual sentinel's anonymous-statement drift over time.
 - **No `debundle cycles ...` namespace.** Today cycle evidence lives
   in `reports/tree/<chunk>/cycles.json` and consumers query it with
   `jq`. The data is rich (cut edges, evidence per cycle, modules-in-
-  SCC) and worth a first-class CLI surface: `debundle cycles list`
-  (one line per cycle: id, size, cut count), `debundle cycles
-  describe <id>` (full cut + evidence + module list, formatted),
-  `debundle cycles cut <id>` (just the back-edges — the actionable
-  set). The cycle ID could be the cycle's index in `cycles.json` or
+  SCC) and worth a first-class CLI surface:
+  - `debundle cycles list` (one line per cycle: id, size, cut count)
+  - `debundle cycles describe <id>` (full cut + evidence + module list, formatted)
+  - `debundle cycles cut <id>` (just the back-edges — the actionable set).
+
+  The cycle ID could be the cycle's index in `cycles.json` or
   a stable hash of the SCC's module set. Reuses the same JSON inputs
   `scc` already consumes (`$GRAPH` + the chunk's `cycles.json`),
   so it's plumbing only.
