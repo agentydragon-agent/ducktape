@@ -453,27 +453,3 @@ Most sites are one-shot init / report generation (not hot path);
 worth converting a few specific report-generation sites to
 `BTreeMap` for semantic clarity (the sorted order is the point,
 not an afterthought), but no urgent action.
-
-## Release pipeline: Nix Attic push CI is failing
-
-Every recent `devel` commit's `Nix Attic push` GitHub Actions job has
-failed (15+ in a row as of 2026-05-26). GitHub releases continue to
-publish the binary asset (some other job uploads it), so consumers can
-still repin against `https://github.com/agentydragon/ducktape/releases/download/debundle-<tag>/debundle`,
-but the Attic cache is no longer being populated. Investigate the
-failing workflow step under `.github/workflows/`, fix or remove if
-vestigial. Blocks no _downstream code_, but the cache miss makes every
-Nix build of debundle slower than it needs to be and erodes confidence
-in the release pipeline overall.
-
-## OwnerGraph::from_report should round-trip `declared`
-
-`graph.rs:362` reconstructs each `OwnerNode` with `declared: BTreeSet::new()`
-because the JSON wire shape (`OwnerGraphNodeReport`) doesn't carry the
-per-node binding set. Downstream `factor_assembly::compute_owner_claims`
-walks `owner_graph.nodes[].declared`, so the planner can't run against a
-graph reconstructed from disk. The wire format already carries per-statement
-`declared` via `StatementFactsReport.declared`; wire it back into the
-reconstructed `OwnerGraph` and add a test. **Unblocks the `modules merge`
-realizability gate hookup** (#84 deferred half) — that gate needs a
-faithful `Partition` from on-disk state to run.
