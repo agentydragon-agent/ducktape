@@ -82,18 +82,30 @@ with their compile-side twins:
 engine.py is now 1.5k LOC of pure runtime: phase functions, buffer
 allocators, `_run_month_step`, `simulate_with_external_series_dense*`.
 
+**Step 4 landed** (`augur/sim/engine/`): engine.py converted to a
+package with two modules:
+
+- `engine/__init__.py` (~310 LOC): `simulate_*` entrypoints,
+  `_run_month_step` orchestrator, buffer allocators, snapshot helpers,
+  constants. Re-exports `DenseSimulationResult` from `codec.plan` so
+  existing consumers (`product/{decode,service}.py`, `sim/slice.py`,
+  `sim/simulate.py`) keep their imports unchanged.
+- `engine/phases.py` (~1245 LOC): every `_apply_*` phase function plus
+  cross-phase helpers (`_sale_unit_price`, `_record_capital_gains`,
+  tax-bracket helpers, mortgage-payment helpers, etc.).
+
 **Remaining work**:
 
-- Split engine.py's phase functions into `engine/phases/{transfers,
-purchases,obligations,taxes,pe_tenders,lifecycle,settlement}.py`,
-  with `engine/loop.py` keeping `_run_month_step` orchestration and
-  `engine/__init__.py` re-exporting `simulate_*` + `DenseSimulationResult`.
+- Optional finer subdivision of `engine/phases.py` into
+  `engine/phases/{transfers,purchases,obligations,taxes,pe_tenders,
+lifecycle}.py` — defer until phases.py becomes a pain point.
 - Split compiler.py (1.8k LOC) per domain into
   `compiler/{tax,properties,liabilities,transfers,obligations,assets,
-pe,lifecycle,liquidity,plan,indices}.py` mirroring the codec layout
-  (so `codec/<X>.py` and `compiler/<X>.py` are literal siblings).
-  Shared `profile_index_by_agent` / `slot_by_id` maps go to
-  `compiler/indices.py`.
+pe,lifecycle,liquidity,deductions,plan,indices,series}.py` mirroring
+  the codec layout (so `codec/<X>.py` and `compiler/<X>.py` are
+  literal siblings). Shared maps (`profile_index_by_agent`,
+  `slot_by_id`, the string-table builder) go to
+  `compiler/{indices,strings}.py`.
 
 ### B5. Bundle lifecycle-event discriminators into per-event-kind dataclasses (small to medium; new)
 
