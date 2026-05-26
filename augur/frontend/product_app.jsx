@@ -306,26 +306,37 @@ function parseLifecycleEntry(entry) {
   const month = Number(entry.slice(1, colonIdx));
   const raw = entry.slice(colonIdx + 1);
   if (!Number.isFinite(month) || month < 1) return null;
+  const base = { _id: nextLifecycleEventId(), kind, month };
   if (kind === "set_rented_fraction") {
     const pct = Number(raw);
     if (!Number.isFinite(pct)) return null;
-    return { kind, month, rentedFractionPct: Math.min(100, Math.max(0, pct)) };
+    return { ...base, rentedFractionPct: Math.min(100, Math.max(0, pct)) };
   }
   if (kind === "capital_improvement") {
     const amount = Number(raw);
     if (!Number.isFinite(amount) || amount <= 0) return null;
-    return { kind, month, amountUsd: amount };
+    return { ...base, amountUsd: amount };
   }
   if (kind === "property_sale") {
     const pct = Number(raw);
     if (!Number.isFinite(pct) || pct < 0 || pct > 100) return null;
-    return { kind, month, closingCostPct: pct };
+    return { ...base, closingCostPct: pct };
   }
   return null;
 }
 
+// Stable per-event id used as the React key so editing/reordering preserves DOM identity
+// (NumberInput focus state, mid-edit values). The id is purely UI state — `lifecycleEventsToUrl`
+// reads only `kind`/`month`/value fields, so it isn't persisted in the URL. Events parsed back
+// from the URL get a fresh id assigned in `lifecycleEventsFromUrl`.
+let _nextLifecycleEventId = 0;
+function nextLifecycleEventId() {
+  _nextLifecycleEventId += 1;
+  return `lc-${_nextLifecycleEventId}`;
+}
+
 function defaultLifecycleEvent(kind, suggestedMonth) {
-  const base = { kind, month: Math.max(1, suggestedMonth || 12) };
+  const base = { _id: nextLifecycleEventId(), kind, month: Math.max(1, suggestedMonth || 12) };
   if (kind === "set_rented_fraction") return { ...base, rentedFractionPct: 0 };
   if (kind === "capital_improvement") return { ...base, amountUsd: 25000 };
   if (kind === "property_sale") return { ...base, closingCostPct: 6 };
@@ -1024,9 +1035,9 @@ function TerminalDistributionHistogram({ summaries, selectedSeed, loadingSeed, o
             aria-label="Select rollout to inspect"
             style={{ height: containerHeight }}
           >
-            {bins.map((bin, index) => (
+            {bins.map((bin) => (
               <TerminalHistogramColumn
-                key={index}
+                key={bin.lo}
                 rollouts={bin.rollouts}
                 cellHeight={cellHeight}
                 containerHeight={containerHeight}
@@ -1061,12 +1072,12 @@ function TerminalDistributionHistogram({ summaries, selectedSeed, loadingSeed, o
             );
           })}
           <div className="relative mt-1 h-4 text-[10px] augur-tabular augur-muted" aria-hidden="true">
-            {xTicks.map((value, index) => {
+            {xTicks.map((value) => {
               const leftPct = axisLeftPct(value);
               if (leftPct == null || leftPct < -1 || leftPct > 101) return null;
               return (
                 <span
-                  key={index}
+                  key={value}
                   className="absolute -translate-x-1/2 whitespace-nowrap"
                   style={{ left: `${leftPct}%` }}
                 >
@@ -1502,7 +1513,7 @@ function LifecycleEventsEditor({ events, horizonMonths, onChange }) {
         <div className="overflow-hidden rounded border border-slate-300 divide-y divide-slate-300 dark:border-slate-600 dark:divide-slate-600">
           {events.map((event, index) => (
             <LifecycleEventRow
-              key={index}
+              key={event._id ?? index}
               event={event}
               maxMonth={maxMonth}
               postSale={
