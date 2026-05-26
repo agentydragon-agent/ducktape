@@ -397,7 +397,7 @@ def compile_simulation(
     (capital_gain_agent_codes, tax_profile_capital_gain_index) = _compile_capital_gain_agents(scenario, strings)
 
     (tax_liability_profile_index, tax_liability_link_index, tax_liability_year_end_month) = (
-        _compile_tax_liability_slots(horizon, tax.link_profile)
+        _compile_tax_liability_slots(horizon, tax)
     )
 
     (
@@ -549,21 +549,14 @@ def compile_simulation(
     (tax_link_mid_principal_ratio, tax_link_mid_active) = _compile_mortgage_interest_deductions(
         scenario,
         strings,
-        tax_link_profile_index=tax.link_profile,
-        tax_link_jurisdiction_codes=tax.link_jurisdiction,
-        tax_profile_agent_codes=tax.profile_agent,
+        tax=tax,
         liability_codes=liability_codes,
         liability_agent_codes=liability_agent_codes,
         liability_principal=liability_principal,
     )
 
     (tax_link_salt_active, tax_link_salt_cap_by_year, tax_link_salt_contributing_mask) = (
-        _compile_federal_salt_deductions(
-            scenario,
-            strings,
-            tax_link_profile_index=tax.link_profile,
-            tax_link_jurisdiction_codes=tax.link_jurisdiction,
-        )
+        _compile_federal_salt_deductions(scenario, strings, tax=tax)
     )
 
     (
@@ -611,7 +604,7 @@ def compile_simulation(
         property_slot_by_id,
         liability_codes,
         liability_property_slot,
-        tax.profile_prior_year_tax,
+        tax,
     )
 
     (
@@ -1347,9 +1340,7 @@ def _compile_mortgage_interest_deductions(
     scenario: Scenario,
     strings: StringTable,
     *,
-    tax_link_profile_index: np.ndarray,
-    tax_link_jurisdiction_codes: np.ndarray,
-    tax_profile_agent_codes: np.ndarray,
+    tax: TaxCompileOutput,
     liability_codes: np.ndarray,
     liability_agent_codes: np.ndarray,
     liability_principal: np.ndarray,
@@ -1421,11 +1412,7 @@ def _compile_mortgage_interest_deductions(
 
 
 def _compile_federal_salt_deductions(
-    scenario: Scenario,
-    strings: StringTable,
-    *,
-    tax_link_profile_index: np.ndarray,
-    tax_link_jurisdiction_codes: np.ndarray,
+    scenario: Scenario, strings: StringTable, *, tax: TaxCompileOutput
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Compile federal SALT-deduction plumbing.
 
@@ -1529,7 +1516,7 @@ def _compile_capital_gain_agents(scenario: Scenario, strings: StringTable) -> tu
     )
 
 
-def _compile_tax_liability_slots(horizon: int, tax_link_profile_index: np.ndarray) -> tuple[np.ndarray, ...]:
+def _compile_tax_liability_slots(horizon: int, tax: TaxCompileOutput) -> tuple[np.ndarray, ...]:
     profile_indices = []
     link_indices = []
     end_months = []
@@ -1728,7 +1715,7 @@ def _compile_obligation_slots(
     property_slot_by_id: dict[str, int],
     liability_codes: np.ndarray,
     liability_property_slot: np.ndarray,
-    tax_profile_prior_year_tax: np.ndarray,
+    tax: TaxCompileOutput,
 ) -> tuple[np.ndarray, ...]:
     horizon = int(scenario.horizon_months)
     monthly_specs: list[list[dict[str, Any]]] = [[] for _ in range(horizon)]
