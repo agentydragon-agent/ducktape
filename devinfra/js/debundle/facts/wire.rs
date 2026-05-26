@@ -24,6 +24,29 @@
 //! Naming convention follows `report_schema.rs`: each `XxxReport`
 //! is the wire mirror of `Xxx`, with `to_wire()` / `from_wire()`
 //! pairs hung off the original types.
+//!
+//! # Cross-process portability
+//!
+//! `IdReport` carries `ctxt: u32` (a `SyntaxContext`'s raw value).
+//! Unlike the rest of the per-chunk wire formats — `owner_graph.json`,
+//! `cycles.json`, `atomic_unit_conflicts.json`, all of which are
+//! `Atom`-only — this module's wire types are **not** straightforwardly
+//! portable across SWC `Globals` instances. The reason is fundamental:
+//! `StatementFacts` is *pre-filter* analyzer output that includes
+//! closure-local reads carrying inner-scope contexts, and dropping
+//! those contexts is unsound on shadowing (would produce spurious
+//! at-init edges).
+//!
+//! Whether a cross-process Stage B reader (task #78) can consume
+//! these files at all reduces to a determinism contract on SWC's
+//! resolver — Stage B must run in a fresh `Globals` with no prior
+//! mark activity, same SWC version, same chunk source bytes.
+//!
+//! See `WIRE_FORMAT.md` for the full analysis, the verified failure
+//! mode (the shadowing counterexample), and the contract a Stage B
+//! reader would need to honor. Until the determinism regression test
+//! lands, treat `facts.json` as an **in-process inspection artifact**
+//! rather than a Stage B input.
 
 use std::collections::BTreeSet;
 

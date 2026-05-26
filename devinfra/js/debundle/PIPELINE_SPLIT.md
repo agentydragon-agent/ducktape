@@ -169,3 +169,5 @@ Steps 1–4 are the structural split. Steps 5–6 unlock the consumer ergonomics
 ## Remaining open question
 
 - Should `materialize_from_analysis` (task #78) be implemented at all, or rolled into a future wire-format redesign that handles `Id` cross-process portability? Today's sidecars work in-process; a separate-process reader is what motivates the redesign. The structural answer is: don't build #78 on top of today's wire format — wait for the redesign so the reader operates on a structurally-portable artifact from the start.
+
+  See `WIRE_FORMAT.md` for the full analysis of *why* the current `facts.json` carries `SyntaxContext` (it has to — closure-local shadowing makes Atom-only unsound on the pre-filter facts), and the four-condition contract under which a cross-process Stage B reader could in principle still consume it (resolver determinism). The "drop ctxt, reconstruct via top_level_id" path that looked attractive in earlier discussion turns out to be **unsound** for `facts.json` — it'd produce spurious at-init edges whenever a closure-local shadows a top-level binding name.
