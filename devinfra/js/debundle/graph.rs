@@ -1633,7 +1633,7 @@ mod edge_role_wire_format_tests {
     //! ends must agree so the planner's gate runs the same
     //! cross-module-at-init filter the materializer's gate does.
     use crate::purity::Purity;
-    use crate::report_schema::{
+    use crate::reports::schema::{
         AtomicGraphReport, EdgeRoleReport, OwnerGraphEdgeReport, OwnerGraphNodeReport,
         OwnerGraphQuotientReport, OwnerGraphReport,
     };

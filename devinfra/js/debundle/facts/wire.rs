@@ -21,7 +21,7 @@
 //!   `schema_version: u32`. Bump it whenever the on-disk shape changes in a
 //!   way that older readers can't accept.
 //!
-//! Naming convention follows `report_schema.rs`: each `XxxReport`
+//! Naming convention follows `reports/schema.rs`: each `XxxReport`
 //! is the wire mirror of `Xxx`, with `to_wire()` / `from_wire()`
 //! pairs hung off the original types.
 //!

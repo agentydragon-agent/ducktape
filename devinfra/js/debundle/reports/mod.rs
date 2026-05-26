@@ -1,10 +1,12 @@
+pub mod schema;
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use rayon::prelude::*;
 use swc_ecma_ast::Id;
 
 use crate::graph::{EdgeRole, OwnerEdge};
-use crate::report_schema::LineRange;
+use crate::reports::schema::LineRange;
 use crate::{
     AtomicGraphReport, AtomicUnitEdgeReport, AtomicUnitReport, BindingReport, ChunkFactorization,
     DepKind, EdgeRoleReport, LogicalModuleIndex, ModuleId, ModuleReportRef, OwnerGraphEdgeReport,

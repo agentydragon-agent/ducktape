@@ -24,7 +24,6 @@ mod ids;
 mod partition;
 mod purity;
 mod realizability;
-mod report_schema;
 mod reports;
 mod rollback_graph;
 mod stage_one;
@@ -64,7 +63,7 @@ pub use realizability::{
     CrossRebindEdge, DeltaHandle, PartitionDelta, RealizabilityIndex, RealizabilityVerdict,
     UnrealizableScc, check_realizability,
 };
-pub use report_schema::{
+pub use reports::schema::{
     AtomicGraphReport, AtomicUnitEdgeReport, AtomicUnitReport, BindingReport, EdgeRoleReport,
     FactorizeDiagnosticReason, LineRange, ModuleReportRef, OwnerGraphEdgeReport,
     OwnerGraphNodeReport, OwnerGraphQuotientReport, OwnerGraphReport, PeelCandidateStatus,
