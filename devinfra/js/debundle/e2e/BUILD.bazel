@@ -190,3 +190,17 @@ rust_test(
         "@crates//:tempfile",
     ],
 )
+
+# `debundle scc` filters + `debundle cluster` neighbors against a
+# synthetic quotient-graph fixture.
+rust_test(
+    name = "scc_cluster_cli_test",
+    srcs = ["scc_cluster_cli_test.rs"],
+    crate_root = "scc_cluster_cli_test.rs",
+    data = ["//devinfra/js/debundle"],
+    edition = "2024",
+    deps = [
+        "@crates//:serde_json",
+        "@crates//:tempfile",
+    ],
+)

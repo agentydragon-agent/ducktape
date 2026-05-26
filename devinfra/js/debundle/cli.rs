@@ -53,6 +53,73 @@ enum DebundleCommand {
     /// Print the source text for any identifier.
     #[command(name = "show-source")]
     ShowSource(ShowSourceArgs),
+    /// List SCCs in the module-quotient graph.
+    Scc(SccArgs),
+    /// List the module-quotient neighbors of a binding's owner.
+    Cluster(ClusterArgs),
+}
+
+/// Args for `debundle scc`.
+#[derive(Debug, ClapArgs)]
+pub struct SccArgs {
+    #[command(flatten)]
+    pub common: PeelCommonArgs,
+
+    /// Restrict output to the SCC containing this binding's home module.
+    #[arg(long = "binding")]
+    pub binding: Option<String>,
+
+    /// Restrict to SCCs that are true cycles (≥2 modules in a loop).
+    #[arg(long = "cycles-only")]
+    pub cycles_only: bool,
+
+    /// Restrict to SCCs containing the residual catch-all module.
+    #[arg(long = "residual-only")]
+    pub residual_only: bool,
+
+    /// Restrict to singleton (size-1) SCCs.
+    #[arg(long = "singletons-only")]
+    pub singletons_only: bool,
+
+    /// Output format. Default `text` on tty, `json` on pipe.
+    #[arg(long, value_enum)]
+    pub format: Option<OutputFormat>,
+}
+
+/// Args for `debundle cluster <sym>`.
+#[derive(Debug, ClapArgs)]
+pub struct ClusterArgs {
+    /// Binding identifier (minified or readable).
+    pub sym: String,
+
+    #[command(flatten)]
+    pub common: PeelCommonArgs,
+
+    /// Output format. Default `text` on tty, `json` on pipe.
+    #[arg(long, value_enum)]
+    pub format: Option<OutputFormat>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SccReport {
+    pub sccs: Vec<SccEntry>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SccEntry {
+    pub id: String,
+    pub modules: Vec<String>,
+    pub labels: Vec<String>,
+    pub is_cycle: bool,
+    pub realizable: bool,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ClusterReport {
+    pub binding: String,
+    pub home_module: String,
+    pub incoming_modules: Vec<String>,
+    pub outgoing_modules: Vec<String>,
 }
 
 /// Args for `debundle modules ...`. Aggregates the existing
@@ -209,6 +276,8 @@ pub fn run_debundle_cli(args: DebundleArgs) -> Result<()> {
         }
         DebundleCommand::Describe(args) => run_describe(args),
         DebundleCommand::ShowSource(args) => run_show_source(args),
+        DebundleCommand::Scc(args) => run_scc(args),
+        DebundleCommand::Cluster(args) => run_cluster(args),
     }
 }
 
@@ -428,6 +497,141 @@ fn show_module_source(
     };
     let report = run_source_slice_report(&inner)?;
     print_report(&report, format, render_source_slice_text).context("writing show-source output")
+}
+
+fn run_scc(args: SccArgs) -> Result<()> {
+    let graph: analysis::OwnerGraphReport = serde_json::from_str(
+        &std::fs::read_to_string(&args.common.owner_graph_path).with_context(|| {
+            format!("reading {}", args.common.owner_graph_path.display())
+        })?,
+    )
+    .with_context(|| {
+        format!("parsing owner graph {}", args.common.owner_graph_path.display())
+    })?;
+    // If a binding was supplied, find its owner -> destination module
+    // first; we restrict SCCs to ones containing that destination.
+    let restrict_to_module: Option<String> = if let Some(sym) = &args.binding {
+        let owner = graph
+            .nodes
+            .iter()
+            .find(|node| {
+                node.declared_bindings
+                    .iter()
+                    .any(|b| b.binding == *sym || b.export_name == *sym)
+            })
+            .ok_or_else(|| anyhow::anyhow!("no owner declares binding {sym:?}"))?;
+        Some(owner.destination.id.clone())
+    } else {
+        None
+    };
+
+    let mut entries: Vec<SccEntry> = Vec::new();
+    for scc in &graph.quotient.sccs {
+        let is_cycle = scc.is_cycle;
+        let is_singleton = scc.modules.len() == 1;
+        let touches_residual = scc
+            .modules
+            .iter()
+            .any(|m| m.contains("residual") || m.ends_with(":residual"));
+        if args.cycles_only && !is_cycle {
+            continue;
+        }
+        if args.singletons_only && !is_singleton {
+            continue;
+        }
+        if args.residual_only && !touches_residual {
+            continue;
+        }
+        if let Some(want) = &restrict_to_module {
+            if !scc.modules.contains(want) {
+                continue;
+            }
+        }
+        entries.push(SccEntry {
+            id: scc.id.clone(),
+            modules: scc.modules.clone(),
+            labels: scc.labels.clone(),
+            is_cycle,
+            realizable: scc.realizable,
+        });
+    }
+    let report = SccReport { sccs: entries };
+    let format = OutputFormat::resolve(args.format);
+    if format == OutputFormat::Ndjson {
+        for entry in &report.sccs {
+            println!("{}", serde_json::to_string(entry)?);
+        }
+        return Ok(());
+    }
+    print_report(&report, format, render_scc_text).context("writing scc output")
+}
+
+fn render_scc_text(report: &SccReport, out: &mut String) {
+    out.push_str(&format!("{} scc(s)\n", report.sccs.len()));
+    for scc in &report.sccs {
+        let flags = match (scc.is_cycle, scc.realizable) {
+            (true, true) => "[cycle,realizable]",
+            (true, false) => "[cycle,UNREALIZABLE]",
+            (false, _) => "",
+        };
+        out.push_str(&format!(
+            "  {}  modules=[{}]  {}\n",
+            scc.id,
+            scc.modules.join(", "),
+            flags
+        ));
+    }
+}
+
+fn run_cluster(args: ClusterArgs) -> Result<()> {
+    let graph: analysis::OwnerGraphReport = serde_json::from_str(
+        &std::fs::read_to_string(&args.common.owner_graph_path).with_context(|| {
+            format!("reading {}", args.common.owner_graph_path.display())
+        })?,
+    )?;
+    let owner = graph
+        .nodes
+        .iter()
+        .find(|node| {
+            node.declared_bindings
+                .iter()
+                .any(|b| b.binding == args.sym || b.export_name == args.sym)
+        })
+        .ok_or_else(|| anyhow::anyhow!("no owner declares binding {:?}", args.sym))?;
+    let home_module = owner.destination.id.clone();
+    let mut incoming: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    let mut outgoing: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for edge in &graph.quotient.edges {
+        if edge.target == home_module && edge.source != home_module {
+            incoming.insert(edge.source.clone());
+        }
+        if edge.source == home_module && edge.target != home_module {
+            outgoing.insert(edge.target.clone());
+        }
+    }
+    let report = ClusterReport {
+        binding: args.sym.clone(),
+        home_module,
+        incoming_modules: incoming.into_iter().collect(),
+        outgoing_modules: outgoing.into_iter().collect(),
+    };
+    let format = OutputFormat::resolve(args.format);
+    print_report(&report, format, render_cluster_text).context("writing cluster output")
+}
+
+fn render_cluster_text(report: &ClusterReport, out: &mut String) {
+    out.push_str(&format!(
+        "binding={} home={}\n",
+        report.binding, report.home_module
+    ));
+    out.push_str(&format!(
+        "  incoming: {}\n",
+        report.incoming_modules.join(", ")
+    ));
+    out.push_str(&format!(
+        "  outgoing: {}\n",
+        report.outgoing_modules.join(", ")
+    ));
 }
 
 fn run_modules_list(args: ModulesListArgs) -> Result<()> {
