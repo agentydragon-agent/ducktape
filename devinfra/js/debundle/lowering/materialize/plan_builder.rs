@@ -305,6 +305,96 @@ impl ChunkPlanBuilder {
         Ok(())
     }
 
+    /// Residual sweep: route every chunk top-level binding the spec
+    /// did not claim to the chunk's catchall destination.
+    ///
+    /// Two shapes:
+    ///
+    /// 1. A memberless residual request was synthesized (or supplied
+    ///    by the spec) — build a new residual plan, append it, and
+    ///    point `residual_plan_index` at it.
+    /// 2. An explicit `logical_modules` entry already pins itself at
+    ///    the catchall target — repurpose that plan: flip its
+    ///    `explicit` flag and append unclaimed bindings to its
+    ///    members.
+    ///
+    /// `None` for both `residual_request` and `catchall_target`
+    /// leaves `residual_plan_index` unset, which is the
+    /// `InlineInEntry` / `MiniFactors` shape.
+    pub(super) fn add_residual_sweep(
+        &mut self,
+        residual_request: Option<&LogicalRequest>,
+        catchall_target_for_overflow: Option<&str>,
+        declarations: &[TopLevelDecl],
+        target_dir: &str,
+    ) -> Result<()> {
+        if let Some(residual) = residual_request {
+            let residual_index = self.module_plans.len();
+            let residual_module_id = ModuleId(LogicalModuleIndex(residual_index));
+            let mut residual_bindings = HashMap::<String, String>::new();
+            for decl in declarations {
+                for (name, id) in &decl.bindings {
+                    if !self.binding_assignment.contains_key(id) {
+                        self.binding_assignment.insert(id.clone(), residual_index);
+                        residual_bindings.insert(name.clone(), name.clone());
+                        self.bindings_catalogue.insert(
+                            id.clone(),
+                            BindingKind::Owned {
+                                owner: residual_module_id,
+                            },
+                        );
+                    }
+                }
+            }
+            if !residual_bindings.is_empty() {
+                self.module_plans.push(ModulePlan {
+                    id: residual.id.clone(),
+                    target_file: target_file_for_request(target_dir, &residual.target_path)?,
+                    target_path: residual.target_path.clone(),
+                    explicit: false,
+                    bindings: residual_bindings,
+                    anonymous_statement_ordinals: Vec::new(),
+                    comment: None,
+                    binding_comments: BTreeMap::new(),
+                });
+                self.residual_plan_index = Some(residual_index);
+            }
+        } else if let Some(catchall_target) = catchall_target_for_overflow {
+            // No memberless residual request was synthesized — an
+            // explicit `logical_modules` entry already pinned itself at
+            // the catchall target. Append unclaimed bindings to that
+            // plan so the residual sweep still has a home, and flip
+            // its `explicit` flag so downstream consumers see it as
+            // the residual destination (residual flag on the factorization
+            // module, OutputRole::ResidualModule in artifact metadata, and
+            // `residual: true` in modules.json).
+            let owner_index = self
+                .module_plans
+                .iter()
+                .position(|plan| plan.target_path == catchall_target);
+            if let Some(owner_index) = owner_index {
+                let owner_id = ModuleId(LogicalModuleIndex(owner_index));
+                let owner_plan = &mut self.module_plans[owner_index];
+                owner_plan.explicit = false;
+                for decl in declarations {
+                    for (name, id) in &decl.bindings {
+                        if !self.binding_assignment.contains_key(id) {
+                            self.binding_assignment.insert(id.clone(), owner_index);
+                            owner_plan
+                                .bindings
+                                .entry(name.clone())
+                                .or_insert_with(|| name.clone());
+                            self.bindings_catalogue
+                                .insert(id.clone(), BindingKind::Owned { owner: owner_id });
+                        }
+                    }
+                }
+                self.residual_plan_index = Some(owner_index);
+            }
+        }
+        Ok(())
+    }
+
     pub(super) fn finalize(self) -> ChunkPlan {
         ChunkPlan {
             module_plans: self.module_plans,

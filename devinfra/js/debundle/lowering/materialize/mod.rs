@@ -155,88 +155,12 @@ pub(super) fn materialize_logical_chunk(
     drop(imported_binding_resolver);
     builder.drop_explicit_request_scratch();
     builder.pull_destructure_siblings(&destructure_siblings, chunk_top_level_mark)?;
-
-    let (
-        binding_assignment,
-        anonymous_ordinal_assignment,
-        module_plans,
-        bindings_catalogue,
-        residual_plan_index,
-        _unmatched_spec_claims,
-    ) = builder.parts_mut();
-
-    // The catchall destination index (`residual_plan_index`) lives
-    // on the builder. When set, it points either to a synthesized
-    // memberless residual plan (built below) or to an explicit
-    // logical-module plan whose target matches `unassigned_mode:
-    // catchall_file { target }` and which is therefore the
-    // designated overflow destination. `None` means the chunk has no
-    // residual landing site (default `InlineInEntry` mode with no
-    // fallback request, or `MiniFactors` mode).
-    let catchall_target_for_overflow = chunk_unassigned_mode.catchall_file_target();
-    if let Some(residual) = &residual_request {
-        let residual_index = module_plans.len();
-        let residual_module_id = ModuleId(LogicalModuleIndex(residual_index));
-        let mut residual_bindings = HashMap::<String, String>::new();
-        for decl in &declarations {
-            for (name, id) in &decl.bindings {
-                if !binding_assignment.contains_key(id) {
-                    binding_assignment.insert(id.clone(), residual_index);
-                    residual_bindings.insert(name.clone(), name.clone());
-                    bindings_catalogue.insert(
-                        id.clone(),
-                        BindingKind::Owned {
-                            owner: residual_module_id,
-                        },
-                    );
-                }
-            }
-        }
-        if !residual_bindings.is_empty() {
-            module_plans.push(ModulePlan {
-                id: residual.id.clone(),
-                target_file: target_file_for_request(target_dir, &residual.target_path)?,
-                target_path: residual.target_path.clone(),
-                explicit: false,
-                bindings: residual_bindings,
-                anonymous_statement_ordinals: Vec::new(),
-                comment: None,
-                binding_comments: BTreeMap::new(),
-            });
-            *residual_plan_index = Some(residual_index);
-        }
-    } else if let Some(catchall_target) = catchall_target_for_overflow {
-        // No memberless residual request was synthesized — an
-        // explicit `logical_modules` entry already pinned itself at
-        // the catchall target. Append unclaimed bindings to that
-        // plan so the residual sweep still has a home, and flip
-        // its `explicit` flag so downstream consumers see it as
-        // the residual destination (residual flag on the factorization
-        // module, OutputRole::ResidualModule in artifact metadata, and
-        // `residual: true` in modules.json).
-        let owner_index = module_plans
-            .iter()
-            .position(|plan| plan.target_path == catchall_target);
-        if let Some(owner_index) = owner_index {
-            let owner_id = ModuleId(LogicalModuleIndex(owner_index));
-            let owner_plan = &mut module_plans[owner_index];
-            owner_plan.explicit = false;
-            for decl in &declarations {
-                for (name, id) in &decl.bindings {
-                    if !binding_assignment.contains_key(id) {
-                        binding_assignment.insert(id.clone(), owner_index);
-                        owner_plan
-                            .bindings
-                            .entry(name.clone())
-                            .or_insert_with(|| name.clone());
-                        bindings_catalogue
-                            .insert(id.clone(), BindingKind::Owned { owner: owner_id });
-                    }
-                }
-            }
-            *residual_plan_index = Some(owner_index);
-        }
-    }
+    builder.add_residual_sweep(
+        residual_request.as_ref(),
+        chunk_unassigned_mode.catchall_file_target(),
+        &declarations,
+        target_dir,
+    )?;
     timings.add("build_module_plans", build_module_plans_started.elapsed());
 
     let chunk_renames_map = time_phase!(timings, "collect_chunk_renames", {
@@ -365,6 +289,14 @@ pub(super) fn materialize_logical_chunk(
                 ordinal = ord.0,
             );
         }
+        let (
+            binding_assignment,
+            anonymous_ordinal_assignment,
+            module_plans,
+            bindings_catalogue,
+            residual_plan_index,
+            _unmatched_spec_claims,
+        ) = builder.parts_mut();
         time_phase!(timings, "fold_rebind_atomic_units", {
             fold_rebind_atomic_units(
                 &precomputed,
