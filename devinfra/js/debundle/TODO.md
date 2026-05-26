@@ -114,50 +114,70 @@ Still to do:
 
 ## Materialize-stage hot-loop optimizations
 
-A 2026-05-10 profile (consumer
-`<spec>/profile_reports/2026-05-10-debundle.md`) showed
-`materialize_logical_modules` at 89% of total transform time. The
-per-candidate hot-loop wins (binding caches, `BTreeMap → HashMap`,
-typed edge IDs, IR cleanup) have landed; reprofile before
-picking the next item. Remaining priorities, ordered by leverage:
+A 2026-05-26 profile (consumer
+`<spec>/profile_reports/2026-05-26-post-arch-cleanup/README.md`)
+moves the picture forward from the 2026-05-10 / 2026-05-20 reports.
+Headline shift: post-arch-cleanup (A–F + ChunkPlanBuilder
+extraction + overlay realizability + prepare-chunks visit fusion +
+ESM simulator kludge fix), `materialize_logical_chunk` is down
+from 41.63% Children % (2026-05-10) to **8.93%**, and the
+`build_owner_graph_report` 22.54 s hotspot is gone from the top
+hits. The per-candidate hot-loop wins (binding caches, BTreeMap →
+HashMap, typed edge IDs, realizability overlay, IR cleanup) are
+visibly landed.
 
-The 2026-05-20 source-built large-web-corpus profile moved the
-current remaining plan:
+The current remaining plan, ordered by leverage:
 
-1. **Use the overlay realizability fast path where hypothetical moves remain.**
+1. **Replace the inner scan in
+   `lowering::exports::trim_dead_named_specifiers`.**
+   This is the new top hot loop: **12.62% Children %** under
+   `lower_chunk` (>20% of `lower_chunk`'s own time). The shape is
+   `Vec<NamedSpecifier>::retain(|spec| consumers.any(|c| c.name ==
+   spec.name))` — O(N×M) scan, with each comparison going through
+   `swc_atoms::Atom::as_str` → `hstr::Atom::as_str` /
+   `TaggedValue::data` (`Iterator::any::check::{{closure}}` was
+   5.93% self, 9.63% Children %). Convert the inner `any` to a
+   precomputed `HashSet<&Atom>` (or `HashSet<JsWord>`) of live
+   consumer names materialized once per chunk before the retain.
+
+2. **Stream / shrink `artifact::write_tree_reports`.**
+   6.42% Children %; the deepest cost is serde_json pretty-print
+   of `DirectoryManifestIndex` / `DirectoryBoundarySummary` under
+   `artifact::write_json` (2.79% Children %). Same shape as the
+   previously-tracked "compact owner_graph.json writes" item —
+   stream JSON directly to disk or shrink the on-wire shape.
+
+3. **`vendor::strip::sweep_unreachable_top_level`.**
+   6.40% Children %, newly visible in the top tier. Likely
+   amenable to indexed reachability or per-chunk caching, on the
+   same theme as item 2 from the older plan
+   (reachability allocation).
+
+4. **Use the overlay realizability fast path where hypothetical moves remain.**
    Candidate-style evaluation should use `RealizabilityIndex`'
    `verdict_after_moving_owners_touching` where possible instead of the
    rollbacking push/scope path. This avoids mutating the maintained quotient
-   during repeated what-if checks.
+   during repeated what-if checks. (Carried forward from
+   2026-05-20; still applies wherever push/scope rollbacks are
+   reachable.)
 
-2. **Reduce repeated graph reachability allocation.** If item 1 is
-   still hot, replace repeated `BTreeSet`-based
-   `scc_containing -> reachable_from` work with dense module-index
-   bitsets or cached reachability for the current quotient.
-
-3. **Keep harness emission out of the critical path when possible.**
-   `emit_browser_harness` was the largest wall-clock stage
-   (18.78 s / 35.15 s), but not the largest CPU hotspot. The output
-   tree was about 98 MiB across 4,991 files, with reports larger than
-   app output. Split browser-harness generation from non-browser
-   runs where practical, parallelize script/report writes, and avoid
-   recopying unchanged non-JS assets.
+5. **Keep harness emission proportional to the work.**
+   `emit_browser_harness` is at 11.15% Children % — down from
+   ~53% wall (18.78 s / 35.15 s) in the 2026-05-20 baseline. Most
+   of what remains (7.50% Children %) is `materialize_artifact_scripts`
+   → `write_tree_reports`, i.e. report writes (item 2), not the
+   harness JS emission itself. Split browser-harness generation
+   from non-browser runs where practical, and avoid recopying
+   unchanged non-JS assets.
 
 Older profile follow-ups that still apply:
 
-1. **Compact / stream `owner_graph.json` writes.**
-   `write_owner_graph_report` was 6.55 s. The JSON tree gets fully
-   allocated before serialization;
-   `serde_json::ser::format_escaped_str` was at 5.58% self from
-   string-field escaping. Either stream the JSON directly to disk
-   (skip the intermediate report tree), or shrink the wire shape.
-   The per-owner `purity.reasons[]` arrays added in `a7b3e490`
-   add per-non-pure-owner JSON weight that may be opt-in-able.
-
-2. **AST visit churn in `prepare_js_chunks`.** The stage is small
-   (~4.5% of total) but `swc_ecma_ast::expr::Expr::visit_children_with`
-   shows up repeatedly (~3–4% across entries). Backlog item once
-   item 1 lands.
+1. **AST visit churn in `prepare_js_chunks`.** SWC parser / lexer /
+   `visit_children_with` still occupy ~10–15% summed across many
+   sub-2.5%-self entries (`parse_member_expr_or_new_expr_inner`
+   2.19% self; `parse_subscript` 1.80%; `Expr::visit_children_with`
+   1.57%; etc.). No single parser symbol is over the priority
+   threshold; revisit after items 1–3.
 
 ## Graph pass performance and module boundaries
 
