@@ -109,21 +109,30 @@ The original review flagged these as dead but `scenarios.py:459,463`
 _does_ emit them (investment property not yet rented; partial rental). All
 four variants are real states. **No action.**
 
-### C3. `obligation_property_tax_owner_fraction` (open)
-
-Self-documented as deprecated; still read by `engine.py:2022` as a fallback.
-Either delete (and the fallback) or document the formal retention plan.
+- **C3.** `obligation_property_tax_owner_fraction` — ✅ Landed in
+  `aca396f01`. The compile-time array was a fallback for the
+  SALT/Schedule E split when a property-tax obligation wasn't tied to a
+  property slot. In practice the kind==2 branch of
+  `_compile_obligation_slots` is the only place that ever populates
+  `obligation_property_tax_profile`, and it always sets
+  `obligation_property_slot` for the same slot — so the engine's `else`
+  fallback at the read site was unreachable. Removed the field from
+  `CompiledSimulation`, its populate site, the tuple return + caller
+  deconstruction, and the unreachable engine branch. Runtime
+  `current.property_rented_fraction` is the single source of truth and
+  already respects mid-horizon lifecycle events.
 
 - **C4.** `tax_settlement_profile_index` — ✅ Landed in `eaf46b5bd`. Dropped
   from `CompiledSimulation`, `_compile_obligation_slots` return, and the
   populate site.
 
-- **C5.** `Property.{notes, source_url}` — ✅ surfaced in `a8e6aee5a`.
-  PropertyPurchasePanel now renders a "Source listing ↗" link and a
-  `whitespace-pre-line` notes block. `notes` collapsed from `tuple[str,
-...]` to `str` (transitional list→str validator with CLEANUP tombstone
-  while gaffer-private migrates to single-string yaml). `flags` is
-  still unused on the frontend — leaves as the only remaining C5 item.
+- **C5.** `Property.{notes, source_url, flags}` — ✅ fully resolved. Notes
+  - source_url surfaced in `a8e6aee5a` (PropertyPurchasePanel renders a
+    "Source listing ↗" link and a `whitespace-pre-line` notes block;
+    `notes` is now `str`, transitional list→str validator with CLEANUP
+    tombstone). `flags` dropped from the schema + fixture in `c3d662a34`,
+    with a transitional `model_validator` that strips the legacy key
+    during the gaffer-private migration window.
 
 ### C6. Frontend `quantile()` — false positive
 
@@ -142,10 +151,10 @@ onReset}`. Workspace shrank by ~145 lines.
   `selected/hovered month + toggle + clear`; consumers spread
   `eventSelection.*` instead of 4-prop drilling.
 
-### D3. Lifecycle "is post-sale" predicate (open)
-
-`product_app.jsx` inlines the post-sale check twice. Extract to
-`isEventPostSale(event, saleMonth)`.
+- **D3. Lifecycle "is post-sale" predicate.** ✅ Landed in `e89b88ede`.
+  Pulled the inline check at `LifecycleEventsEditor` into a documented
+  helper `isEventPostSale(event, saleMonth)` that mirrors the wire
+  validator's rule (event strictly after sale, or same-month non-sale).
 
 - **D4. MetricFanChart subcomponents.** ✅ Landed in the same commit. Pulled
   the y-axis + x-tick loops into `FanAxes`, and the per-event SVG group into
@@ -171,10 +180,11 @@ onReset}`. Workspace shrank by ~145 lines.
   `EVENT_MARKER_STACK_PITCH_PX`, so markers no longer overlap when a
   month has 3+ events.
 
-### E2. Escape key doesn't clear event selection (open)
-
-Mouse leave clears hover; keyboard has Enter/Space to select but no Escape
-to deselect.
+- **E2. Escape clears event selection.** ✅ Landed in `e89b88ede`.
+  `useEventSelection` registers a global `keydown` listener while a
+  marker is selected; pressing Escape calls `clear()` and detaches the
+  listener. The effect short-circuits when nothing is selected so other
+  Escape consumers (modals, menus) keep priority.
 
 ## F. Modeling realism limitations (acceptable v1; deferred)
 
@@ -193,37 +203,33 @@ Tracked in `augur/sim/TODO.md`; gaps noted:
 ## Phase plan
 
 - **Phase 1 (correctness)** — ✅ A1, A2, A3 landed.
-- **Phase 2 (dead-code sweep)** — C4 landed; C5 partially landed
-  (`notes`/`source_url` surfaced, `flags` still unused); C1/C2/C6 turned out to
-  be false positives; **C3 still open, C5 `flags` still open.**
+- **Phase 2 (dead-code sweep)** — ✅ all closed. C3, C4, C5 landed;
+  C1/C2/C6 were false positives.
 - **Phase 3 (structural refactor)** — open. B1 grouping
   `CompiledSimulation` into nested arenas is the biggest lever; B2, B3, B4
   follow naturally.
-- **Phase 4 (frontend reorg)** — D1, D2, D4, D5, E1 landed. **D3, E2 still open.**
+- **Phase 4 (frontend reorg)** — ✅ all closed. D1, D2, D3, D4, D5, E1, E2
+  landed.
 - **Phase 5 (modeling realism)** — deferred, tracked in
   `augur/sim/TODO.md`.
 
 ## Cross-repo follow-ups
 
-- **`gaffer-private` notes migration** — local commit `d5ab98b5d` on
-  `gaffer-private/main` converts every property's `notes:` from per-paragraph
-  YAML list to a single literal-block scalar. Awaiting push. Once that's live
-  in cluster, drop the transitional list→str validator on
-  `augur.api.bootstrap.Property._collapse_list_notes` (tagged
-  `CLEANUP(2026-05-25)`).
+- **`gaffer-private` properties.yaml migration** — local commits
+  `d5ab98b5d` (notes lists → single literal-block scalar) and `e1a1435e0`
+  (drop legacy `flags` lists) on `gaffer-private/main`. Both awaiting
+  push. Once reconciled in cluster:
+  - Drop `_collapse_list_notes` (`CLEANUP(2026-05-25)`).
+  - Drop `_drop_legacy_flags` (`CLEANUP(2026-05-26)`).
 
 ## Remaining open items, ranked
 
-| #    | Area                                                          | Impact                         | Effort |
-| ---- | ------------------------------------------------------------- | ------------------------------ | ------ |
-| A4   | §1250 marginal-rate floor                                     | over-estimate for low brackets | small  |
-| A5   | MID acquisition-vs-HELOC                                      | over-estimate w/ HELOC         | medium |
-| B1   | CompiledSimulation 170 → 8 nested arenas                      | big DX win                     | large  |
-| B2   | Compile-helpers tuple→dataclass                               | DX                             | medium |
-| B3   | `_wire_landlord_rental` return instead of mutate              | DX                             | small  |
-| B4   | Split compiler.py + engine.py                                 | DX                             | large  |
-| C3   | Drop `obligation_property_tax_owner_fraction`                 | tiny                           | small  |
-| C5\* | Drop unused `Property.flags`                                  | tiny                           | small  |
-| D3   | `isEventPostSale` helper                                      | tiny                           | small  |
-| E2   | Escape clears selection                                       | minor UX                       | small  |
-| X1   | Push gaffer-private notes migration + drop list→str validator | cross-repo                     | small  |
+| #   | Area                                                                | Impact                         | Effort |
+| --- | ------------------------------------------------------------------- | ------------------------------ | ------ |
+| A4  | §1250 marginal-rate floor                                           | over-estimate for low brackets | small  |
+| A5  | MID acquisition-vs-HELOC                                            | over-estimate w/ HELOC         | medium |
+| B1  | CompiledSimulation 170 → 8 nested arenas                            | big DX win                     | large  |
+| B2  | Compile-helpers tuple→dataclass                                     | DX                             | medium |
+| B3  | `_wire_landlord_rental` return instead of mutate                    | DX                             | small  |
+| B4  | Split compiler.py + engine.py                                       | DX                             | large  |
+| X1  | Push gaffer-private notes+flags migration + drop transitional shims | cross-repo                     | small  |
