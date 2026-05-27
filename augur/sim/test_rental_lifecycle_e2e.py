@@ -451,7 +451,7 @@ class TestRentalIncomeTaxation:
         breakdowns = {row["jurisdiction_id"]: row for row in run.events_log.tax_breakdowns.iter_rows(named=True)}
         assert breakdowns["federal_us"]["ordinary_income_usd"] == pytest.approx(67_200.0, abs=1e-6)
 
-    def test_depreciation_accrues_monthly_and_deducts_as_schedule_e(self):
+    def test_depreciation_accrues_monthly_and_deducts_as_schedule_e(self, san_francisco_location: Location):
         """§168 monthly depreciation accrues for rented property and reduces taxable ordinary
         income at year-end. Building basis = $500k × 0.80 = $400k; rented_fraction = 1.0;
         annual depreciation = $400k / 27.5 ≈ $14,545.45."""
@@ -516,7 +516,9 @@ class TestRentalIncomeTaxation:
         ctx = _multi_series(
             levels_by_series={RENT_SERIES_ID: {0: [1.0] * 13}, "home_value:san_francisco": {0: [1.0] * 13}}
         )
-        run = simulate_with_external_series(scenario, external_series=ctx, rollout_count=1, locations={})
+        run = simulate_with_external_series(
+            scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
+        )
         # Cumulative depreciation grows monotonically; at month 12 (post-horizon snapshot) it's
         # accrued 12 months worth = $400,000 / 27.5 = $14,545.45.
         terminal_dep = run.property_state.filter(pl.col("month_index") == 12)

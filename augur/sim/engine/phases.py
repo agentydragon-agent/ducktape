@@ -334,8 +334,9 @@ def _apply_lifecycle_events(
     - `LifecycleKind.SALE`: dispatch to `_apply_property_sale` which also fills the per-event
       `sale_*` arrays on `buffers.lifecycle`.
 
-    For each event that fires for an active rollout, `buffers.lifecycle.fired[event_index, r]`
-    is set. The decoder turns this into a polars frame so the frontend can render markers.
+    For each event that fires for an active rollout/property pair,
+    `buffers.lifecycle.fired[event_index, r]` is set. The decoder turns this into a
+    polars frame so the frontend can render markers.
 
     Phase 3 lifecycle events are deterministic per rollout. Future policy-driven decisions
     would emit per-rollout records; this apply machinery handles them by indexing the rollout
@@ -355,16 +356,19 @@ def _apply_lifecycle_events(
     for i in range(begin, end):
         prop = int(plan.lifecycle_events.property_slot[i])
         kind = int(plan.lifecycle_events.kind[i])
-        buffers.lifecycle.fired[i, active_rollout] = True
+        active_property_rollout = active_rollout & current.property_active[prop, :]
+        if not active_property_rollout.any():
+            continue
+        buffers.lifecycle.fired[i, active_property_rollout] = True
         if kind == LifecycleKind.FRACTION:
             new_fraction = float(plan.lifecycle_events.rented_fraction[i])
-            current.property_rented_fraction[prop, active_rollout] = new_fraction
+            current.property_rented_fraction[prop, active_property_rollout] = new_fraction
         elif kind == LifecycleKind.CAPITAL_IMPROVEMENT:
             amount = float(plan.lifecycle_events.amount[i])
             owner_cash_slot = int(plan.properties.buyer_slot[prop])
             if owner_cash_slot >= 0:
-                current.cash[owner_cash_slot, active_rollout] -= amount
-            current.property_building_basis[prop, active_rollout] += amount
+                current.cash[owner_cash_slot, active_property_rollout] -= amount
+            current.property_building_basis[prop, active_property_rollout] += amount
         elif kind == LifecycleKind.SALE:
             _apply_property_sale(
                 plan,
@@ -374,7 +378,7 @@ def _apply_lifecycle_events(
                 event_index=i,
                 prop=prop,
                 closing_cost_pct=float(plan.lifecycle_events.amount[i]),
-                active_rollout=active_rollout,
+                active_rollout=active_property_rollout,
             )
 
 

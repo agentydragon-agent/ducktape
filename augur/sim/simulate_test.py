@@ -27,6 +27,7 @@ from augur.sim.scenario import (
     MortgageFinancing,
     MortgageInterestDeductionPolicy,
     PrivateEquityTenderPolicy,
+    PropertySaleEvent,
     PropertyTaxPolicy,
     RecurringObligation,
     RecurringTransfer,
@@ -36,6 +37,7 @@ from augur.sim.scenario import (
     ScheduledPropertyPurchase,
     ScheduledTransfer,
     SeriesIndexedAmount,
+    SetRentedFractionEvent,
     TaxProfile,
 )
 from augur.sim.simulate import simulate, simulate_with_external_series
@@ -390,6 +392,76 @@ def test_scenario_rejects_out_of_horizon_scheduled_property_purchases() -> None:
             ],
             tax_profiles=[],
             horizon_months=2,
+        )
+
+
+def _property_lifecycle_validation_scenario(
+    *, property_lifecycle_events: list[SetRentedFractionEvent | PropertySaleEvent], horizon_months: int = 3
+) -> Scenario:
+    return Scenario(
+        agents=[Agent(agent_id="alice"), Agent(agent_id="seller")],
+        initial_cash=[
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=600_000.0),
+            InitialAccountBalance(agent_id="seller", account_id="checking", balance_usd=0.0),
+        ],
+        scheduled_property_purchases=[
+            ScheduledPropertyPurchase(
+                month=0,
+                cause_id="alice_buys_home",
+                property_id="home",
+                location_id="san_francisco",
+                buyer_agent_id="alice",
+                buyer_account_id="checking",
+                seller_agent_id="seller",
+                purchase_price_usd=500_000.0,
+                down_payment_usd=500_000.0,
+            )
+        ],
+        property_lifecycle_events=property_lifecycle_events,
+        tax_profiles=[],
+        horizon_months=horizon_months,
+    )
+
+
+def test_scenario_rejects_out_of_horizon_property_lifecycle_events() -> None:
+    with pytest.raises(ValidationError, match=r"property lifecycle event for 'home'.*outside scenario horizon"):
+        _property_lifecycle_validation_scenario(
+            property_lifecycle_events=[SetRentedFractionEvent(month=2, property_id="home", rented_fraction=1.0)],
+            horizon_months=2,
+        )
+
+
+def test_scenario_rejects_lifecycle_events_for_unknown_property() -> None:
+    with pytest.raises(ValidationError, match=r"unknown property_id 'other'; known: 'home'"):
+        _property_lifecycle_validation_scenario(
+            property_lifecycle_events=[SetRentedFractionEvent(month=1, property_id="other", rented_fraction=1.0)]
+        )
+
+
+def test_scenario_rejects_lifecycle_events_at_or_before_purchase_month() -> None:
+    with pytest.raises(ValidationError, match=r"purchase month is 0.*strictly after purchase"):
+        _property_lifecycle_validation_scenario(
+            property_lifecycle_events=[SetRentedFractionEvent(month=0, property_id="home", rented_fraction=1.0)]
+        )
+
+
+def test_scenario_rejects_multiple_property_sale_lifecycle_events() -> None:
+    with pytest.raises(ValidationError, match=r"multiple property sale lifecycle events for 'home': months 1 and 2"):
+        _property_lifecycle_validation_scenario(
+            property_lifecycle_events=[
+                PropertySaleEvent(month=1, property_id="home", closing_cost_pct=6.0),
+                PropertySaleEvent(month=2, property_id="home", closing_cost_pct=6.0),
+            ]
+        )
+
+
+def test_scenario_rejects_lifecycle_events_after_property_sale() -> None:
+    with pytest.raises(ValidationError, match=r"event for 'home' at month 2 fires after sale at month 1"):
+        _property_lifecycle_validation_scenario(
+            property_lifecycle_events=[
+                PropertySaleEvent(month=1, property_id="home", closing_cost_pct=6.0),
+                SetRentedFractionEvent(month=2, property_id="home", rented_fraction=1.0),
+            ]
         )
 
 

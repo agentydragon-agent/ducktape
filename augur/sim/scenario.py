@@ -645,6 +645,61 @@ class Scenario(BaseModel):
         return self
 
     @model_validator(mode="after")
+    def _reject_invalid_property_lifecycle_events(self) -> Scenario:
+        horizon = int(self.horizon_months)
+        purchase_month_by_property_id: dict[str, int] = {}
+        duplicate_property_ids: set[str] = set()
+        for purchase in self.scheduled_property_purchases:
+            if purchase.property_id in purchase_month_by_property_id:
+                duplicate_property_ids.add(purchase.property_id)
+            purchase_month_by_property_id[purchase.property_id] = int(purchase.month)
+        if duplicate_property_ids:
+            duplicate_list = ", ".join(repr(property_id) for property_id in sorted(duplicate_property_ids))
+            raise ValueError(f"duplicate scheduled property purchase property_id(s): {duplicate_list}")
+
+        sale_month_by_property_id: dict[str, int] = {}
+        for event in self.property_lifecycle_events:
+            event_month = int(event.month)
+            if not 0 <= event_month < horizon:
+                raise ValueError(
+                    f"property lifecycle event for {event.property_id!r} has month {event.month}, "
+                    f"outside scenario horizon [0, {horizon})"
+                )
+            purchase_month = purchase_month_by_property_id.get(event.property_id)
+            if purchase_month is None:
+                known = ", ".join(repr(property_id) for property_id in sorted(purchase_month_by_property_id))
+                raise ValueError(
+                    f"property lifecycle event at month {event.month} references unknown property_id "
+                    f"{event.property_id!r}; known: {known or '<none>'}"
+                )
+            if event_month <= purchase_month:
+                raise ValueError(
+                    f"property lifecycle event for {event.property_id!r} fires at month {event.month} "
+                    f"but the property's purchase month is {purchase_month}; lifecycle events must "
+                    "fire strictly after purchase."
+                )
+            if isinstance(event, PropertySaleEvent):
+                previous_sale_month = sale_month_by_property_id.get(event.property_id)
+                if previous_sale_month is not None:
+                    raise ValueError(
+                        f"multiple property sale lifecycle events for {event.property_id!r}: "
+                        f"months {previous_sale_month} and {event.month}"
+                    )
+                sale_month_by_property_id[event.property_id] = event_month
+
+        for event in self.property_lifecycle_events:
+            sale_month = sale_month_by_property_id.get(event.property_id)
+            if sale_month is None:
+                continue
+            event_month = int(event.month)
+            if event_month > sale_month or (event_month == sale_month and not isinstance(event, PropertySaleEvent)):
+                raise ValueError(
+                    f"property lifecycle event for {event.property_id!r} at month {event.month} "
+                    f"fires after sale at month {sale_month}; the property is frozen after sale"
+                )
+        return self
+
+    @model_validator(mode="after")
     def _reject_duplicate_liquidity_policy_accounts(self) -> Scenario:
         seen: set[tuple[str, str]] = set()
         duplicates: set[tuple[str, str]] = set()

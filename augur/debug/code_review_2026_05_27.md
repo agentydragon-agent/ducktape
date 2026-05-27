@@ -14,44 +14,6 @@ Severity guide:
 
 ## Findings
 
-### P1: Lifecycle event invariants are split between product wire and sim internals
-
-Evidence:
-
-- `Scenario._reject_out_of_horizon_scheduled_events` only validates
-  `scheduled_asset_sales` and `scheduled_property_purchases`; it does not validate
-  `property_lifecycle_events`, `scheduled_transfers`, or `scheduled_obligations`
-  (`augur/sim/scenario.py:630-645`).
-- `compile_lifecycle_events` checks only "known property" and "strictly after
-  purchase"; it does not reject events outside the horizon, multiple sales for the
-  same property, or events after a sale (`augur/sim/compiler/lifecycle.py:47-77`).
-- Product wire rejects lifecycle events after the first sale
-  (`augur/product/wire.py:155-170`), but callers can construct `Scenario`
-  directly and bypass this guard.
-- `_apply_lifecycle_events` marks an event as fired for every non-failed rollout
-  before dispatching it, and passes only the rollout-active mask into sale handling
-  (`augur/sim/engine/phases.py:352-378`). `_apply_property_sale` does not include
-  `current.property_active[prop, :]` in its mask (`augur/sim/engine/phases.py:466-503`).
-
-Impact:
-
-- A lifecycle event at `month >= horizon` is silently unreachable because
-  `month_starts` has only `horizon + 1` entries.
-- Two `PropertySaleEvent`s for the same property can credit gross sale proceeds
-  twice. The first sale freezes the property and pays off the mortgage; the second
-  sale still computes market value from purchase price and home-value series, with
-  mortgage payoff now zero, then credits cash again.
-- A post-sale `SetRentedFractionEvent` or `CapitalImprovementEvent` can mutate an
-  inactive property if the scenario is built at the sim layer.
-
-Recommendation:
-
-Move lifecycle invariants into the sim-owned schema/compiler: reject lifecycle
-months outside `[0, horizon)`, enforce at most one sale per property, reject any
-non-sale at or after the sale month, and have the engine mask lifecycle effects
-by `active_rollout & current.property_active[prop, :]`. Set `fired` only after
-the event actually applies.
-
 ### P1: Missing home-value series makes property sales look like zero-value events
 
 Evidence:
