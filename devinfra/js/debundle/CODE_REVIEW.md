@@ -129,14 +129,6 @@ Identical to `CommandResult` (line 660). Only used in `assert_node_output` which
 
 Uses inline comment markers instead of `#[ignore]` with reason strings (like `purity_test.rs` does). Inconsistent.
 
-### `realizability_test.rs` — inconsistent JSON construction
-
-Some tests use `logical_module()` helper, others use raw JSON for identical structures (`cyclic_spec_is_rejected_with_clear_error` has no non-standard fields that would justify raw JSON).
-
-### `realizability_test.rs:assert_fraction_metric` — float equality via `assert_eq!`
-
-Fragile for computed fractions. Use `assert!((a - b).abs() < 1e-10)` or approx comparison.
-
 ### `vendor_swap_test.rs` — 4 bundled_partial_swap tests duplicate inline fixture setup
 
 Lines 1030–1617 are four tests each manually creating the entire fixture inline (155 lines per test). Extract `run_bundled_partial_swap_fixture`.

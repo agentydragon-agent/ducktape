@@ -89,24 +89,8 @@ console.log(B.ref, D.ref);
 export { A, B, C, D };
 "#,
         vec![
-            (
-                "mod_x".to_string(),
-                json!({
-                    "members": [
-                        { "name": "A", "selector": { "binding": { "name": "A" } } },
-                        { "name": "D", "selector": { "binding": { "name": "D" } } },
-                    ],
-                }),
-            ),
-            (
-                "mod_y".to_string(),
-                json!({
-                    "members": [
-                        { "name": "B", "selector": { "binding": { "name": "B" } } },
-                        { "name": "C", "selector": { "binding": { "name": "C" } } },
-                    ],
-                }),
-            ),
+            logical_module("mod_x", &[Member::new("A"), Member::new("D")]),
+            logical_module("mod_y", &[Member::new("B"), Member::new("C")]),
         ],
     );
     expect_rejection(opts, &["cycle", "mod_x", "mod_y"]);
@@ -669,23 +653,8 @@ console.log(x1.id, y.id, x2[y.id]);
 export { x1, y, x2 };
 "#,
         vec![
-            (
-                "mod_a".to_string(),
-                json!({
-                    "members": [
-                        { "name": "x1", "selector": { "binding": { "name": "x1" } } },
-                        { "name": "x2", "selector": { "binding": { "name": "x2" } } },
-                    ],
-                }),
-            ),
-            (
-                "mod_b".to_string(),
-                json!({
-                    "members": [
-                        { "name": "y", "selector": { "binding": { "name": "y" } } },
-                    ],
-                }),
-            ),
+            logical_module("mod_a", &[Member::new("x1"), Member::new("x2")]),
+            logical_module("mod_b", &[Member::new("y")]),
         ],
     ));
     assert_entry_output(&fixture, "x1 k v\n");
