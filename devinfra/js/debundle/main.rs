@@ -15,7 +15,14 @@ fn main() -> ExitCode {
     GLOBALS.set(&globals, || match real_main() {
         Ok(code) => code,
         Err(error) => {
-            eprintln!("{error}");
+            // `{error:#}` prints the full anyhow context chain inline
+            // (top + every `with_context` cause separated by `: `).
+            // Plain `{error}` only shows the topmost context, which
+            // silently hides the actionable cause — e.g. parsing a
+            // module YAML with an unknown field would report only
+            // `parsing path/to/file.yaml` with no hint of the bad
+            // field name.
+            eprintln!("{error:#}");
             ExitCode::from(1)
         }
     })

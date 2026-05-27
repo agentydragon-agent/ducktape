@@ -277,6 +277,40 @@ mod tests {
     }
 
     #[test]
+    fn read_module_file_unknown_field_error_names_the_field_and_file() {
+        // `ModuleFile` and the nested `AnonymousStatement` both carry
+        // `#[serde(deny_unknown_fields)]`, so a typo on an entry must
+        // surface in the error. The `with_context` wrapper at the
+        // call site adds the file path on top, and `anyhow::Error`'s
+        // Display alternate (`{:#}`) flattens the whole chain.
+        // Without the alternate formatter the CLI silently drops
+        // everything below `parsing <path>`.
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("bad.yaml");
+        fs::write(
+            &path,
+            "anonymous_statements:\n  - match: \"foo();\"\n    bogus_field: oops\n",
+        )
+        .unwrap();
+
+        let err = read_module_file(&path).expect_err("must reject unknown field");
+        let msg = format!("{err:#}");
+
+        assert!(
+            msg.contains("bogus_field"),
+            "error should name the bad field, got: {msg}",
+        );
+        assert!(
+            msg.contains("unknown field") || msg.contains("expected one of"),
+            "error should explain the deny_unknown_fields rejection, got: {msg}",
+        );
+        assert!(
+            msg.contains("bad.yaml"),
+            "error should include the offending file path, got: {msg}",
+        );
+    }
+
+    #[test]
     fn is_residual_module_path_matches_residual_subtree_only() {
         assert!(is_residual_module_path("residual"));
         assert!(is_residual_module_path("residual/unhandled"));
