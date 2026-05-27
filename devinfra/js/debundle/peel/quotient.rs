@@ -1263,6 +1263,22 @@ impl QuotientGraph {
     /// per-owner ModuleId vector. Used by speculative queries that
     /// read the post-push verdict but commit the undo before the
     /// translation runs.
+    ///
+    /// Perf (#12prime): the naive translation iterated all
+    /// `self.owner_ids` per SCC — O(K * num_owners), ~10% self in
+    /// `modules propose` profiles on tana (9709 owners, many tiny
+    /// SCCs per call). We instead build a per-call inverse index
+    /// `module_to_owners: FxHashMap<ModuleId, Vec<OwnerIdx>>` from
+    /// `owner_modules` in one O(num_owners) pass, then visit only
+    /// the owners actually in each SCC's modules. New cost is
+    /// `num_owners + sum_scc(|scc.modules| * owners_in_those_modules)`,
+    /// which is a strict win whenever the SCCs don't cover most
+    /// owners — the common case for the proposer. We chose the
+    /// per-call inverse over a kernel-maintained `class_to_owners`
+    /// to keep the surface contained: maintaining a kernel field
+    /// would touch every `owner_to_class` write site
+    /// (rebuild_class_adjacency, contract, merge_classes_unchecked,
+    /// etc.) for marginal additional savings.
     fn translate_verdict_with_owner_modules(
         &self,
         verdict: &RealizabilityVerdict,
@@ -1280,22 +1296,28 @@ impl QuotientGraph {
             }
             c
         };
+        // One pass over owner_modules to build the inverse index.
+        // Bounded length: we only consider owner indices that exist
+        // in BOTH self.owner_ids and owner_modules — the old code
+        // also skipped `owner_idx >= owner_modules.len()`.
+        let max_idx = self.owner_ids.len().min(owner_modules.len());
+        let mut module_to_owners: FxHashMap<ModuleId, Vec<usize>> = FxHashMap::default();
+        for (owner_idx, &module) in owner_modules.iter().enumerate().take(max_idx) {
+            module_to_owners.entry(module).or_default().push(owner_idx);
+        }
         let mut cycles: Vec<CycleClassSet> = Vec::new();
         for scc in &verdict.unrealizable_sccs {
-            let modules_in_scc: BTreeSet<ModuleId> = scc.modules.iter().copied().collect();
             let mut owner_ids: BTreeSet<String> = BTreeSet::new();
             let mut class_set: BTreeSet<ClassId> = BTreeSet::new();
-            for (owner_idx, owner_id_str) in self.owner_ids.iter().enumerate() {
-                if owner_idx >= owner_modules.len() {
+            for module in &scc.modules {
+                let Some(idxs) = module_to_owners.get(module) else {
                     continue;
+                };
+                for &owner_idx in idxs {
+                    owner_ids.insert(self.owner_ids[owner_idx].clone());
+                    let c = self.owner_to_class[owner_idx];
+                    class_set.insert(project(c));
                 }
-                let module = owner_modules[owner_idx];
-                if !modules_in_scc.contains(&module) {
-                    continue;
-                }
-                owner_ids.insert(owner_id_str.clone());
-                let c = self.owner_to_class[owner_idx];
-                class_set.insert(project(c));
             }
             if class_set.len() < 2 {
                 continue;
