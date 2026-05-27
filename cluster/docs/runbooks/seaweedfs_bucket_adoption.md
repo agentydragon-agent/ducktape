@@ -1,9 +1,9 @@
 # Runbook: SeaweedFS Bucket CR adoption
 
-**Status (2026-05-27)**: Resolved by upgrading SeaweedFS to 4.x. 5 of 6
-existing Bucket CRs (attic, augur-assets, mimir-blocks, mimir-ruler,
-tempo) adopted automatically when the filer rolled to 4.29. Only
-`loki` stayed Failed due to a non-default filer mode (see below).
+**Status (2026-05-27)**: Resolved. SeaweedFS 4.x upgrade fixed 5 of 6
+Bucket CRs (attic, augur-assets, mimir-blocks, mimir-ruler, tempo) by
+registering the IAM gRPC service the operator needs. The remaining
+`loki` CR was fixed by patching its `status.bucketName` (see below).
 
 ## Root cause
 
@@ -43,33 +43,31 @@ After the rollout, existing Bucket CRs that aren't `Ready` get
 re-reconciled automatically on the operator's standard interval. Most
 adopt within ~30s.
 
-## Leftover: `loki` stuck Failed
+## Adopting a pre-existing bucket (e.g. `loki`)
 
-Loki's CR stays `Failed/BucketAlreadyExists` after the upgrade because
-its filer directory `/buckets/loki/` has Mode `0o471` instead of the
-operator's default `0o777`. The operator interprets the non-default
-mode as "this is someone else's bucket, refuse to adopt."
+If `/buckets/<name>/` already exists on the filer but the Bucket CR
+was never marked as having created it, the operator refuses adoption.
+The check in `bucket_controller.go:174` is:
 
-The 5 other buckets all have `Mode: 0o777` in their filer metadata, so
-they adopted cleanly.
-
-The mode is metadata only — loki keeps reading and writing logs fine
-on 0o471. The Failed CR status is cosmetic.
-
-Fix when convenient: chmod the bucket via `weed shell` (run inside a
-filer pod or with port-forward + the `weed shell` binary):
-
-```sh
-kubectl -n seaweedfs exec -it sts/seaweedfs-filer -- weed shell -master=seaweedfs-master-0.seaweedfs-master-peer.seaweedfs:9333 <<EOF
-fs.chmod -mode=0777 /buckets/loki
-EOF
+```go
+if exists && bucket.Status.BucketName == "" {
+    // BucketAlreadyExists / refusing to adopt
+}
 ```
 
-(Or `fs.chmod /buckets/loki 0777` depending on the shell command's
-argument shape — check `fs.chmod help` first.)
+So the issue is not the filer directory mode — it's that the CR's
+`status.bucketName` was never populated. Fix by patching the status
+subresource:
 
-Force a Bucket CR reconcile after the chmod and it should move to
-`Ready`.
+```sh
+kubectl -n seaweedfs patch bucket.seaweed.seaweedfs.com <name> \
+  --subresource=status --type=merge \
+  -p '{"status":{"bucketName":"<name>"}}'
+```
+
+The operator's next reconcile (≤30 s) skips the adoption check and
+applies the rest of the spec (versioning, object lock, access). The
+CR moves to `Ready`. No filer-side changes needed.
 
 ## How to verify iam_pb is registered
 
@@ -98,13 +96,23 @@ This line appears in the filer's stdout on 4.x startup when
 
 ## Notes that turned out to be wrong (kept for the record)
 
-An earlier version of this runbook attributed the failure to an
-operator bug ("creates buckets with `owner: ""` and can't recognize
-its own creates"). The actual issue was simpler: the filer just wasn't
-running the IAM gRPC service at all, so every operator call returned
+**Misdiagnosis 1 — "operator bug stamping owner=''":** an earlier
+version of this runbook attributed the failure to an operator bug
+that "creates buckets with `owner: ""` and can't recognize its own
+creates." The actual issue was simpler: the filer just wasn't running
+the IAM gRPC service at all, so every operator call returned
 `Unimplemented`. The "BucketAlreadyExists" was a downstream symptom,
-not an adoption-logic bug. Confirmed by reading both the
-seaweedfs-operator 1.0.19 source (`internal/controller/swadmin/`,
-`internal/controller/bucket_admin.go`) and the seaweedfs 3.93 vs 4.29
-source (`weed/command/filer.go`, `weed/pb/iam_pb/iam_grpc.pb.go`)
+not an adoption-logic bug.
+
+**Misdiagnosis 2 — "loki failed because of 0o471 mode":** the next
+revision claimed the operator refused adoption because of a
+non-default filer dir mode. The operator code makes no such check;
+`bucket_controller.go:174` only looks at `bucket.Status.BucketName`.
+The 0o471 vs 0o777 mode difference was a red herring — the real cause
+was the empty `status.bucketName`.
+
+Both were resolved by reading the seaweedfs-operator 1.0.19 source
+(`internal/controller/swadmin/`, `internal/controller/bucket_admin.go`,
+`internal/controller/bucket_controller.go`) and the seaweedfs 3.93 vs
+4.29 source (`weed/command/filer.go`, `weed/pb/iam_pb/iam_grpc.pb.go`)
 locally cloned at `~/code/seaweedfs-operator` and `~/code/seaweedfs`.
