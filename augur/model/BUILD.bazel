@@ -130,6 +130,7 @@ py_test(
         ":series",
         ":series_model",
         ":testing",
+        "@pypi//numpy",
         "@pypi//polars",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

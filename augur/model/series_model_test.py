@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import numpy as np
 import polars as pl
 import pytest
 import pytest_bazel
@@ -10,6 +11,10 @@ from augur.model.exogenous import (
     SERIES_LEVELS_SCHEMA,
     SERIES_VALUES_SCHEMA,
     ExogenousSamplingRequest,
+    SampledExogenousBundle,
+    series_events_frame,
+    series_levels_frame,
+    validate_sample_satisfies_request,
 )
 from augur.model.gbm import GeometricBrownian
 from augur.model.series_model import IndependentSeriesModels, SeriesModelBundle, materialize_series_values
@@ -115,6 +120,52 @@ def test_deterministic_fixture_samples_requested_constant_series_and_events() ->
     assert sampled.event_matrix(
         "private_equity_sale_opportunity:openai", rollout_count=2, horizon_months=2
     ).tolist() == [[False, True, False], [False, True, False]]
+
+
+def test_sample_compatibility_accepts_required_subset_and_extra_series() -> None:
+    request = ExogenousSamplingRequest(
+        horizon_months=2,
+        rollout_seeds=(101,),
+        required_level_series=frozenset({"sp500"}),
+        required_event_series=frozenset({"private_equity_sale_opportunity:openai"}),
+    )
+    sampled = SampledExogenousBundle(
+        levels=pl.concat(
+            [
+                series_levels_frame("sp500", np.ones((1, 3)), rollout_count=1, horizon_months=2),
+                series_levels_frame("extra_level", np.ones((1, 3)), rollout_count=1, horizon_months=2),
+            ]
+        ),
+        events=pl.concat(
+            [
+                series_events_frame(
+                    "private_equity_sale_opportunity:openai",
+                    np.zeros((1, 3), dtype=np.bool_),
+                    rollout_count=1,
+                    horizon_months=2,
+                ),
+                series_events_frame("extra_event", np.zeros((1, 3), dtype=np.bool_), rollout_count=1, horizon_months=2),
+            ]
+        ),
+    )
+
+    validate_sample_satisfies_request(request, sampled)
+
+
+def test_sample_compatibility_rejects_missing_required_level_and_event_series() -> None:
+    request = ExogenousSamplingRequest(
+        horizon_months=2,
+        rollout_seeds=(101,),
+        required_level_series=frozenset({"prices_of_tea:china"}),
+        required_event_series=frozenset({"event:tea_shock"}),
+    )
+    sampled = SampledExogenousBundle(levels=SERIES_LEVELS_SCHEMA.to_frame(), events=SERIES_EVENTS_SCHEMA.to_frame())
+
+    with pytest.raises(ValueError, match="missing required level series") as exc_info:
+        validate_sample_satisfies_request(request, sampled)
+
+    assert "missing required level series: ['prices_of_tea:china']" in str(exc_info.value)
+    assert "missing required event series: ['event:tea_shock']" in str(exc_info.value)
 
 
 if __name__ == "__main__":

@@ -8,7 +8,13 @@ from more_itertools import one
 
 from augur.api.catalog import build_bootstrap_payload
 from augur.api.config import Config, load_augur_config
-from augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle, Sampler
+from augur.model.exogenous import (
+    SERIES_EVENTS_SCHEMA,
+    SERIES_LEVELS_SCHEMA,
+    ExogenousSamplingRequest,
+    SampledExogenousBundle,
+    Sampler,
+)
 from augur.model.series import INFLATION_SERIES_ID, SP500_SERIES_ID
 from augur.product import decode, service
 from augur.product.scenarios import build_scenario, resolve_primary_agent_id, sim_locations_from_config
@@ -52,6 +58,15 @@ class CountingExogenousModel:
         return self.inner.sample(request)
 
 
+@dataclass
+class MissingRequiredExogenousModel:
+    sample_requests: list[ExogenousSamplingRequest] = field(default_factory=list)
+
+    def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
+        self.sample_requests.append(request)
+        return SampledExogenousBundle(levels=SERIES_LEVELS_SCHEMA.to_frame(), events=SERIES_EVENTS_SCHEMA.to_frame())
+
+
 def _augur_config() -> Config:
     return load_augur_config(get_required_path("_main/augur/api/testdata/config.yaml"))
 
@@ -61,7 +76,7 @@ def counting_exogenous_model() -> CountingExogenousModel:
     return CountingExogenousModel(inner=_augur_config().exogenous_provider.realize_model())
 
 
-def _service(model: CountingExogenousModel, *, augur_config: Config | None = None) -> ProductService:
+def _service(model: Sampler, *, augur_config: Config | None = None) -> ProductService:
     config = augur_config or _augur_config()
     bootstrap = build_bootstrap_payload(config)
     return ProductService(
@@ -81,6 +96,16 @@ def _scenario_key() -> ScenarioKey:
     return ScenarioKey(
         exogenous_model_id="current_exogenous_model", horizon_months=3, monthly_spend_usd=1_000.0, spend_index="none"
     )
+
+
+def test_product_fails_when_sample_is_missing_required_exogenous_series() -> None:
+    model = MissingRequiredExogenousModel()
+    product = _service(model)
+
+    with pytest.raises(ValueError, match=f"missing required level series: .*{SP500_SERIES_ID}"):
+        product.rollout(RolloutRequest(scenario=_scenario_key(), seed=7))
+
+    assert model.sample_requests[0].required_level_series
 
 
 def test_metric_fan_and_rollout_detail_share_cached_sim_rollouts(

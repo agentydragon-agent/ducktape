@@ -18,7 +18,12 @@ import numpy as np
 from augur.api.bootstrap import Property
 from augur.api.portfolio import PortfolioConfig
 from augur.api.schemas import Frame
-from augur.model.exogenous import ExogenousSamplingRequest, Sampler, anchor_sampled_series_levels
+from augur.model.exogenous import (
+    ExogenousSamplingRequest,
+    Sampler,
+    anchor_sampled_series_levels,
+    validate_sample_satisfies_request,
+)
 from augur.product.decode import (
     failed_month_index_for_rollout,
     monthly_metric_arrays,
@@ -190,16 +195,16 @@ class ProductService:
             initial_lots=self._initial_lots,
             properties_by_id=self._properties_by_id,
         )
-        sampled = self._exogenous_model.sample(
-            ExogenousSamplingRequest(
-                horizon_months=int(scenario_key.horizon_months),
-                rollout_seeds=seeds,
-                required_level_series=required_level_series(
-                    scenario_key, initial_lots=self._initial_lots, properties_by_id=self._properties_by_id
-                ),
-                required_event_series=required_event_series(self._initial_lots),
-            )
+        sampling_request = ExogenousSamplingRequest(
+            horizon_months=int(scenario_key.horizon_months),
+            rollout_seeds=seeds,
+            required_level_series=required_level_series(
+                scenario_key, initial_lots=self._initial_lots, properties_by_id=self._properties_by_id
+            ),
+            required_event_series=required_event_series(self._initial_lots),
         )
+        sampled = self._exogenous_model.sample(sampling_request)
+        validate_sample_satisfies_request(sampling_request, sampled)
         sampled = anchor_sampled_series_levels(sampled, self._portfolio.level_anchors)
         dense = simulate_dense_with_external_series(
             scenario,

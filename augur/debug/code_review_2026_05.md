@@ -17,30 +17,6 @@ Severity guide:
 
 ## Findings
 
-### P2: Independent exogenous models ignore required series and event ids
-
-`ProductService._simulate_missing` asks the sampler for specific
-`required_level_series` and `required_event_series`, but
-`IndependentSeriesModels.sample` ignores those sets and samples every configured
-series/event.
-
-Impact:
-
-The product can request a required home-value, rent, inflation, or PE event
-series and discover missing coverage later in the sim path. It can also sample
-irrelevant configured streams once catalogs grow.
-
-Current evidence:
-
-- `augur/product/service.py`: `ProductService._simulate_missing`.
-- `augur/model/series_model.py`: `IndependentSeriesModels.sample`.
-
-Recommendation:
-
-Make the independent sampler validate all required ids and sample only requested
-ids, or explicitly keep "sample all configured streams" while still raising
-early for missing required ids.
-
 ### P2: External-series cubes use serial row loops and uneven coverage checks
 
 `simulate._validate_series_indexed_amounts` builds a Python dict from long Polars

@@ -147,6 +147,27 @@ def series_values_from_bundle(bundle: SampledExogenousBundle) -> pl.DataFrame:
     return bundle.levels.select(SERIES_VALUES_SCHEMA.names())
 
 
+def validate_sample_satisfies_request(request: ExogenousSamplingRequest, sampled: SampledExogenousBundle) -> None:
+    """Validate that a sampled bundle covers the consumer-requested series ids.
+
+    Providers are free to sample extra series. The request's required ids are a
+    consumer compatibility contract, enforced at the boundary that consumes the
+    provider.
+    """
+
+    missing_level_series = sorted(request.required_level_series - _string_values(sampled.levels, "series_id"))
+    missing_event_series = sorted(request.required_event_series - _string_values(sampled.events, "event_id"))
+    if not missing_level_series and not missing_event_series:
+        return
+
+    details: list[str] = []
+    if missing_level_series:
+        details.append(f"missing required level series: {missing_level_series}")
+    if missing_event_series:
+        details.append(f"missing required event series: {missing_event_series}")
+    raise ValueError("sampled exogenous bundle " + "; ".join(details))
+
+
 def anchor_sampled_series_levels(
     sampled: SampledExogenousBundle, level_anchors: Mapping[str, float]
 ) -> SampledExogenousBundle:
@@ -199,6 +220,12 @@ def _long_indices(*, rollout_count: int, horizon_months: int) -> tuple[np.ndarra
 def _require_schema(frame: pl.DataFrame, expected: pl.Schema, *, frame_name: str) -> None:
     if frame.schema != expected:
         raise ValueError(f"{frame_name} schema must be {expected}, got {frame.schema}")
+
+
+def _string_values(frame: pl.DataFrame, column: str) -> frozenset[str]:
+    if frame.is_empty():
+        return frozenset()
+    return frozenset(str(value) for value in frame.get_column(column).unique().to_list())
 
 
 def _matrix_from_long_frame(
