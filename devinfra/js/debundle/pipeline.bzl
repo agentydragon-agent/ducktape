@@ -37,43 +37,6 @@ def _debundle_pipeline_impl(ctx):
 
     return [DefaultInfo(files = depset([out_dir]))]
 
-def _debundle_pipeline_profile_impl(ctx):
-    profile_dir = ctx.actions.declare_directory(ctx.label.name + ".profile")
-    bin_dir = ctx.bin_dir.path
-    plan = _debundle_pipeline_plan(
-        ctx,
-        paths.join(profile_dir.short_path, "debundle.out"),
-    )
-
-    # The perf wrapper is a source script consumed by the action. The other
-    # profile modes don't need it, but declaring it unconditionally keeps the
-    # action graph uniform across profile values.
-    perf_wrapper = ctx.file._perf_wrapper
-
-    ctx.actions.run_shell(
-        inputs = depset(direct = [perf_wrapper], transitive = [plan.inputs]),
-        tools = [ctx.executable.debundler],
-        outputs = [profile_dir],
-        command = _profile_command(
-            ctx.attr.profile,
-            shell.quote(profile_dir.short_path),
-            plan.command,
-            _shell_source_path(perf_wrapper.path),
-        ),
-        env = {"BAZEL_BINDIR": bin_dir},
-        execution_requirements = {
-            "local": "1",
-            "no-cache": "1",
-            "no-remote": "1",
-            "no-sandbox": "1",
-        },
-        progress_message = "Profiling debundle pipeline for %{{label}} with {}".format(ctx.attr.profile),
-        mnemonic = "DebundlePipelineProfile",
-        use_default_shell_env = True,
-    )
-
-    return [DefaultInfo(files = depset([profile_dir]))]
-
 def _debundle_pipeline_plan(ctx, out_root):
     bin_dir = ctx.bin_dir.path
 
@@ -136,61 +99,6 @@ def _debundle_pipeline_plan(ctx, out_root):
         inputs = inputs,
     )
 
-def _profile_command(profile, profile_dir_token, debundler_command, perf_wrapper_token = None):
-    common = [
-        "set -euo pipefail",
-        "cd \"${BAZEL_BINDIR}\"",
-        "profile_dir={}".format(profile_dir_token),
-        "mkdir -p \"${profile_dir}\"",
-    ]
-
-    # The perf profile mode writes its own rerunner stub inside the wrapper
-    # script (the recorded argv lines up with what `perf record` consumed);
-    # the other modes still emit it inline here.
-    if profile != "perf":
-        common += [
-            "cat > \"${profile_dir}/command.sh\" <<'EOF'",
-            "#!/usr/bin/env bash",
-            "set -euo pipefail",
-            "cd \"${BAZEL_BINDIR}\"",
-            "exec {}".format(debundler_command),
-            "EOF",
-            "chmod +x \"${profile_dir}/command.sh\"",
-        ]
-
-    if profile == "time":
-        profile_lines = [
-            "/usr/bin/time -v {} > \"${{profile_dir}}/stdout.txt\" 2> \"${{profile_dir}}/stderr_time.txt\"".format(debundler_command),
-        ]
-    elif profile == "perf":
-        # The bash logic (addr2line shim, nix-perf-wrapper bypass, and six
-        # perf invocations) lives in perf_wrapper.sh — see that file for the
-        # commentary on why each shim is needed.
-        if perf_wrapper_token == None:
-            fail("perf profile mode requires perf_wrapper_token")
-        profile_lines = [
-            "bash {wrapper} --output-dir \"${{profile_dir}}\" -- {cmd}".format(
-                wrapper = perf_wrapper_token,
-                cmd = debundler_command,
-            ),
-        ]
-    elif profile == "massif_heap":
-        profile_lines = [
-            "command -v valgrind >/dev/null || { echo 'valgrind not found on PATH' >&2; exit 127; }",
-            "valgrind --tool=massif --time-unit=ms --max-snapshots=100 --detailed-freq=1 --threshold=0.5 --massif-out-file=\"${{profile_dir}}/massif_heap.out\" {} > \"${{profile_dir}}/stdout.txt\" 2> \"${{profile_dir}}/massif_heap_stderr.txt\"".format(debundler_command),
-            "if command -v ms_print >/dev/null; then ms_print \"${profile_dir}/massif_heap.out\" > \"${profile_dir}/ms_print_heap.txt\"; fi",
-        ]
-    elif profile == "heaptrack":
-        profile_lines = [
-            "command -v heaptrack >/dev/null || { echo 'heaptrack not found on PATH' >&2; exit 127; }",
-            "heaptrack -o \"${{profile_dir}}/heaptrack\" {} > \"${{profile_dir}}/stdout.txt\" 2> \"${{profile_dir}}/heaptrack_stderr.txt\"".format(debundler_command),
-            "if command -v heaptrack_print >/dev/null; then for heaptrack_file in \"${profile_dir}\"/heaptrack*; do [ -f \"${heaptrack_file}\" ] || continue; heaptrack_print \"${heaptrack_file}\" > \"${profile_dir}/heaptrack_print.txt\"; break; done; fi",
-        ]
-    else:
-        fail("unsupported debundle profile mode: {}".format(profile))
-
-    return "\n".join(common + profile_lines)
-
 def _shell_source_path(workspace_relative):
     """Shell expression referencing a workspace-root-relative source path.
 
@@ -235,57 +143,7 @@ _DEBUNDLE_PIPELINE_ATTRS = {
     ),
 }
 
-def _debundle_profile_attrs():
-    attrs = dict(_DEBUNDLE_PIPELINE_ATTRS)
-    attrs.update({
-        "profile": attr.string(
-            default = "perf",
-            values = ["time", "perf", "massif_heap", "heaptrack"],
-            doc = "Local profiling wrapper to run around the debundle action command.",
-        ),
-        "_perf_wrapper": attr.label(
-            allow_single_file = True,
-            default = Label("//devinfra/js/debundle:perf_wrapper.sh"),
-            doc = "Bash script that runs `perf record` plus the per-report invocations. Only consumed when profile = \"perf\".",
-        ),
-    })
-    return attrs
-
 debundle_pipeline = rule(
     implementation = _debundle_pipeline_impl,
     attrs = _DEBUNDLE_PIPELINE_ATTRS,
 )
-
-debundle_pipeline_profile = rule(
-    implementation = _debundle_pipeline_profile_impl,
-    attrs = _debundle_profile_attrs(),
-)
-
-def debundle_pipeline_with_profiles(
-        name,
-        profile_modes = ("time", "perf", "massif_heap", "heaptrack"),
-        **kwargs):
-    """Create a debundle pipeline plus local profiling sibling targets.
-
-    The regular target keeps `name`. For each entry in `profile_modes`, this
-    creates `<name>_profile_<mode>` with the same inputs, package roots, cwd,
-    and debundler command, but with a local profiling wrapper and a `.profile`
-    tree output.
-    """
-
-    debundle_pipeline(
-        name = name,
-        **kwargs
-    )
-
-    for mode in profile_modes:
-        profile_kwargs = dict(kwargs)
-        profile_tags = list(profile_kwargs.get("tags", []))
-        if "manual" not in profile_tags:
-            profile_tags.append("manual")
-        profile_kwargs["tags"] = profile_tags
-        debundle_pipeline_profile(
-            name = "{}_profile_{}".format(name, mode),
-            profile = mode,
-            **profile_kwargs
-        )

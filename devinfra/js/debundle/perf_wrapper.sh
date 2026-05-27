@@ -3,10 +3,10 @@
 # perf_wrapper.sh — run the debundler under `perf record` and emit a tree of
 # perf reports next to a rerunnable command stub.
 #
-# Invoked by the `debundle_pipeline_profile` Bazel rule (profile = "perf"). The
-# caller is expected to have cd'd into ${BAZEL_BINDIR} so that the debundler
-# command (passed after `--`) resolves the same way it would for the
-# non-profiling action.
+# Standalone tool. Invoke directly with the debundler binary + args; the
+# wrapper handles the `perf record` invocation, the addr2line shim, and
+# the nix-perf-wrapper bypass. Suitable for ad-hoc profiling on a
+# rebuilt opt binary against a pre-staged input set.
 #
 # Usage:
 #     perf_wrapper.sh --output-dir <dir> -- <debundler> [args...]
