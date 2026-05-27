@@ -117,39 +117,49 @@ on the Bazel client, not on RBE.
 
 ### Category 3: Snapshot tests with syrupy
 
-**Current docs say**:
+**How it works**: The `py_test` macro with `uses_syrupy = True` wires
+`BazelAmberExtension` (<util/testing/bazel_snapshot_extension.py>). This extension
+overrides `write_snapshot_collection` to copy each written `.ambr` file to
+`TEST_UNDECLARED_OUTPUTS_DIR` when that env var is set (i.e. inside Bazel's test
+sandbox). Bazel automatically uploads undeclared outputs from RBE runners.
+
+**RBE workflow** (already works):
 ```bash
-# Local (simpler, no copy step):
-bb test //path/to:snapshot_test \
-  --test_arg=--snapshot-update --nocache_test_results \
-  --remote_executor="" --config=nolint
+bbr test //path/to:snapshot_test \
+  --test_arg=--snapshot-update --nocache_test_results
+
+# Fetch updated snapshot from undeclared outputs:
+cp bazel-testlogs/path/to/snapshot_test/test.outputs/snapshot_test.ambr \
+   path/to/__snapshots__/snapshot_test.ambr
 ```
 
-**Does `--remote_executor=""` help?**: Yes, specifically for the `--snapshot-update`
-case. When syrupy updates snapshots on RBE, the updated `.ambr` files are written
-to undeclared test outputs on the runner, not the local source tree. You have to
-fetch them via `bbapi artifact download` and copy them back. With `--remote_executor=""`,
-syrupy writes directly through runfiles symlinks to the source tree.
+**Local workflow** (DX shortcut, one fewer copy step):
+```bash
+bazelisk test //path/to:snapshot_test \
+  --test_arg=--snapshot-update --nocache_test_results \
+  --remote_executor="" --config=nolint
+# .ambr files written directly to source tree via runfiles symlinks
+```
 
-However, this is a DX convenience, not a correctness requirement. The RBE workflow
-works; the local workflow is just fewer steps.
+**Does `--remote_executor=""` help?**: It saves one copy step. When the test runs
+locally, syrupy writes `.ambr` files through runfiles symlinks directly to the
+source tree. On RBE, `BazelAmberExtension` copies them to undeclared outputs, which
+Bazel downloads to `bazel-testlogs/` after the test completes — requiring a manual
+`cp` back to the source tree.
 
-**Verdict**: For snapshot updates only, `--remote_executor=""` is a valid DX
-shortcut. For all other test runs, always use RBE.
+This is purely a DX convenience. The RBE workflow is fully functional and correct.
 
-## Summary: Precise Guardrail
+**Verdict**: `--remote_executor=""` is never **required** for snapshot updates.
+It's an optional shortcut. Both workflows produce identical results.
 
-`--remote_executor=""` is legitimate ONLY for:
+## Summary: Final Verdict
 
-1. **Syrupy snapshot updates** (`--test_arg=--snapshot-update`): so syrupy writes
-   `.ambr` files directly to the source tree instead of undeclared outputs on the
-   runner. This is a convenience, not a necessity — the RBE workflow (build on RBE,
-   download outputs, copy) also works.
+`--remote_executor=""` is **never required for correctness**. Every workflow in
+this repo can run with RBE. The flag is at most a DX convenience for syrupy
+snapshot updates (saves one `cp` step), and even that has a fully functional RBE
+alternative via `BazelAmberExtension` + undeclared outputs.
 
-That's it. Everything else — Gazelle, requirements, Rust repin, pnpm lock, normal
-builds, normal tests — can and should use RBE.
-
-### Why the other cases don't need it
+### Why no workflow needs it
 
 | Workflow | Why `--remote_executor=""` is NOT needed |
 |----------|------------------------------------------|
@@ -158,4 +168,5 @@ builds, normal tests — can and should use RBE.
 | `//:requirements` | Already documented to use RBE + download |
 | `CARGO_BAZEL_REPIN=1` | Module extension runs locally regardless; build actions use RBE |
 | `update_pnpm_lock` | Module extension runs locally regardless |
+| Syrupy snapshot updates | `BazelAmberExtension` copies to undeclared outputs; fetch + cp works on RBE |
 | Normal builds/tests | RBE is the default and correct choice |
