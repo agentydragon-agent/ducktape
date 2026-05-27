@@ -47,10 +47,10 @@ import time
 import uuid
 from collections import defaultdict
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import uvicorn
-from fastapi import Depends, FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, HTTPException, Query, Response, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -142,6 +142,28 @@ class _WSManager:
                 dead.append(ws)
         for ws in dead:
             self._connections[username].discard(ws)
+
+
+class _CasinoStaticFiles(StaticFiles):
+    """Static serving with an uncacheable SPA shell.
+
+    Bazel normalizes output mtimes, and Vite's `index.html` can keep the same
+    byte size when only the hashed bundle name changes. Serving the shell
+    without validators avoids false 304s that keep an old bundle URL alive.
+    """
+
+    def file_response(
+        self, full_path: str, stat_result: object, scope: dict[str, Any], status_code: int = 200
+    ) -> Response:
+        path = Path(full_path)
+        if path.name == "index.html":
+            return Response(
+                content=path.read_bytes(),
+                headers={"Cache-Control": "no-store"},
+                media_type="text/html",
+                status_code=status_code,
+            )
+        return super().file_response(full_path, stat_result, scope, status_code=status_code)
 
 
 def _balance(s: Session, username: str) -> BalanceRow:
@@ -823,7 +845,7 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
             logger.info("ws disconnected: user=%s", username)
 
     if frontend_dist.exists():
-        app.mount("/", StaticFiles(directory=str(frontend_dist), html=True), name="frontend")
+        app.mount("/", _CasinoStaticFiles(directory=str(frontend_dist), html=True), name="frontend")
     else:
         logger.warning("frontend dist dir %s not found — serving API only", frontend_dist)
 

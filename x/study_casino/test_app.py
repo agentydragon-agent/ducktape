@@ -100,6 +100,20 @@ def test_deployment_reports_commit_from_runtime_image_tag(
     }
 
 
+def test_index_html_bypasses_conditional_static_cache(tmp_path: Path, db_url: str) -> None:
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text("<!doctype html><div id='root'></div>", encoding="utf-8")
+    settings = Settings(database_url=db_url, frontend_dist_dir=dist, rng_secret=_TEST_RNG_SECRET)
+    with TestClient(create_app(settings)) as c:
+        r = c.get("/", headers={"If-None-Match": '"stale"', "If-Modified-Since": "Sun, 01 Jan 2099 00:00:00 GMT"})
+    assert r.status_code == 200
+    assert r.headers["cache-control"] == "no-store"
+    assert "etag" not in r.headers
+    assert "last-modified" not in r.headers
+    assert r.text == "<!doctype html><div id='root'></div>"
+
+
 def test_me_returns_default_user_without_oidc(client: TestClient) -> None:
     r = client.get("/me")
     assert r.status_code == 200

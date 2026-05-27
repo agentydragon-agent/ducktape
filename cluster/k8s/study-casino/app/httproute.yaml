@@ -41,8 +41,9 @@ spec:
         - name: study-casino
           port: 8080
     # Everything else (index.html, sw.js, manifest, icon, current /main.js,
-    # API endpoints): force revalidation. The ETag StaticFiles emits returns
-    # 304 when unchanged, so only changed bytes cross the wire.
+    # API endpoints): do not store. Bazel-normalized mtimes can make app-shell
+    # validators lie across deploys, while hashed /assets/ remain immutable
+    # above.
     - matches:
         - path:
             type: PathPrefix
@@ -52,7 +53,7 @@ spec:
           responseHeaderModifier:
             set:
               - name: Cache-Control
-                value: "no-cache, must-revalidate"
+                value: "no-store"
       backendRefs:
         - name: study-casino
           port: 8080
