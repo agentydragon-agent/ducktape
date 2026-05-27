@@ -17,33 +17,6 @@ Severity guide:
 
 ## Findings
 
-### P2: Out-of-horizon transfers and obligations are silently ignored
-
-`Scenario._reject_out_of_horizon_scheduled_events` validates scheduled asset
-sales and scheduled property purchases, but not scheduled transfers or scheduled
-obligations. The compilers then select scheduled transfers by scanning
-`range(horizon)` and only append scheduled obligations when
-`0 <= scheduled.month < horizon`.
-
-Impact:
-
-One-time user intent can disappear rather than fail. That is especially risky for
-tax, expense, rent, or transfer rows expected to explain a cash-flow event near
-the end of a scenario.
-
-Current evidence:
-
-- `augur/sim/scenario.py`: `_reject_out_of_horizon_scheduled_events`.
-- `augur/sim/compiler/transfers.py`: `compile_transfer_slots`.
-- `augur/sim/compiler/obligations.py`: `compile_obligation_slots`.
-
-Recommendation:
-
-Generalize scenario-level horizon validation across every month-bearing
-scheduled object. For recurring objects, validate `start_month <= end_month` and
-decide explicitly whether a window with no horizon overlap should fail or be an
-intentional no-op.
-
 ### P2: Independent exogenous models ignore required series and event ids
 
 `ProductService._simulate_missing` asks the sampler for specific

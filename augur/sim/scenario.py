@@ -665,10 +665,22 @@ class Scenario(BaseModel):
     @model_validator(mode="after")
     def _reject_out_of_horizon_scheduled_events(self) -> Scenario:
         horizon = int(self.horizon_months)
+        for transfer in self.scheduled_transfers:
+            if not 0 <= transfer.month < horizon:
+                raise ValueError(
+                    f"scheduled transfer {transfer.cause_id!r} has month {transfer.month}, "
+                    f"outside scenario horizon [0, {horizon})"
+                )
         for sale in self.scheduled_asset_sales:
             if not 0 <= sale.month < horizon:
                 raise ValueError(
                     f"scheduled asset sale {sale.cause_id!r} has month {sale.month}, "
+                    f"outside scenario horizon [0, {horizon})"
+                )
+        for obligation in self.scheduled_obligations:
+            if not 0 <= obligation.month < horizon:
+                raise ValueError(
+                    f"scheduled obligation {obligation.obligation_id!r} has month {obligation.month}, "
                     f"outside scenario horizon [0, {horizon})"
                 )
         for purchase in self.scheduled_property_purchases:
@@ -676,6 +688,18 @@ class Scenario(BaseModel):
                 raise ValueError(
                     f"scheduled property purchase {purchase.cause_id!r} has month {purchase.month}, "
                     f"outside scenario horizon [0, {horizon})"
+                )
+        for transfer in self.recurring_transfers:
+            if transfer.end_month is not None and transfer.end_month < transfer.start_month:
+                raise ValueError(
+                    f"recurring transfer {transfer.cause_id!r} has end_month {transfer.end_month} "
+                    f"before start_month {transfer.start_month}"
+                )
+        for obligation in self.recurring_obligations:
+            if obligation.end_month is not None and obligation.end_month < obligation.start_month:
+                raise ValueError(
+                    f"recurring obligation {obligation.obligation_id!r} has end_month {obligation.end_month} "
+                    f"before start_month {obligation.start_month}"
                 )
         return self
 

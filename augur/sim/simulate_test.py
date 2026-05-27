@@ -397,6 +397,187 @@ def test_scenario_rejects_out_of_horizon_scheduled_property_purchases() -> None:
         )
 
 
+def test_scenario_rejects_out_of_horizon_scheduled_transfers() -> None:
+    with pytest.raises(ValidationError, match=r"scheduled transfer 'late_transfer'.*outside scenario horizon"):
+        Scenario(
+            agents=[Agent(agent_id="alice"), Agent(agent_id="bob")],
+            initial_cash=[
+                InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id="bob", account_id="checking", balance_usd=10.0),
+            ],
+            scheduled_transfers=[
+                ScheduledTransfer(
+                    month=2,
+                    cause_id="late_transfer",
+                    from_agent_id="bob",
+                    from_account_id="checking",
+                    to_agent_id="alice",
+                    to_account_id="checking",
+                    amount_usd=5.0,
+                )
+            ],
+            tax_profiles=[],
+            horizon_months=2,
+        )
+
+    with pytest.raises(ValidationError, match=r"scheduled transfer 'pre_transfer'.*outside scenario horizon"):
+        Scenario(
+            agents=[Agent(agent_id="alice"), Agent(agent_id="bob")],
+            initial_cash=[
+                InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id="bob", account_id="checking", balance_usd=10.0),
+            ],
+            scheduled_transfers=[
+                ScheduledTransfer(
+                    month=-1,
+                    cause_id="pre_transfer",
+                    from_agent_id="bob",
+                    from_account_id="checking",
+                    to_agent_id="alice",
+                    to_account_id="checking",
+                    amount_usd=5.0,
+                )
+            ],
+            tax_profiles=[],
+            horizon_months=2,
+        )
+
+
+def test_scenario_rejects_out_of_horizon_scheduled_obligations() -> None:
+    with pytest.raises(ValidationError, match=r"scheduled obligation 'late_obligation'.*outside scenario horizon"):
+        Scenario(
+            agents=[Agent(agent_id="alice"), Agent(agent_id="vendor")],
+            initial_cash=[
+                InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=10.0),
+                InitialAccountBalance(agent_id="vendor", account_id="checking", balance_usd=0.0),
+            ],
+            scheduled_obligations=[
+                ScheduledObligation(
+                    month=2,
+                    obligation_id="late_obligation",
+                    obligation_type="cash_spend",
+                    agent_id="alice",
+                    from_account_id="checking",
+                    to_agent_id="vendor",
+                    to_account_id="checking",
+                    amount_due_usd=5.0,
+                )
+            ],
+            tax_profiles=[],
+            horizon_months=2,
+        )
+
+    with pytest.raises(ValidationError, match=r"scheduled obligation 'pre_obligation'.*outside scenario horizon"):
+        Scenario(
+            agents=[Agent(agent_id="alice"), Agent(agent_id="vendor")],
+            initial_cash=[
+                InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=10.0),
+                InitialAccountBalance(agent_id="vendor", account_id="checking", balance_usd=0.0),
+            ],
+            scheduled_obligations=[
+                ScheduledObligation(
+                    month=-1,
+                    obligation_id="pre_obligation",
+                    obligation_type="cash_spend",
+                    agent_id="alice",
+                    from_account_id="checking",
+                    to_agent_id="vendor",
+                    to_account_id="checking",
+                    amount_due_usd=5.0,
+                )
+            ],
+            tax_profiles=[],
+            horizon_months=2,
+        )
+
+
+def test_scenario_rejects_reversed_recurring_windows() -> None:
+    with pytest.raises(ValidationError, match=r"recurring transfer 'bad_recurring_transfer'.*before start_month 3"):
+        Scenario(
+            agents=[Agent(agent_id="alice"), Agent(agent_id="bob")],
+            initial_cash=[
+                InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id="bob", account_id="checking", balance_usd=10.0),
+            ],
+            recurring_transfers=[
+                RecurringTransfer(
+                    start_month=3,
+                    end_month=2,
+                    cause_id="bad_recurring_transfer",
+                    from_agent_id="bob",
+                    from_account_id="checking",
+                    to_agent_id="alice",
+                    to_account_id="checking",
+                    amount_usd=5.0,
+                )
+            ],
+            tax_profiles=[],
+            horizon_months=4,
+        )
+
+    with pytest.raises(ValidationError, match=r"recurring obligation 'bad_recurring_obligation'.*before start_month 3"):
+        Scenario(
+            agents=[Agent(agent_id="alice"), Agent(agent_id="vendor")],
+            initial_cash=[
+                InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=10.0),
+                InitialAccountBalance(agent_id="vendor", account_id="checking", balance_usd=0.0),
+            ],
+            recurring_obligations=[
+                RecurringObligation(
+                    start_month=3,
+                    end_month=2,
+                    obligation_id="bad_recurring_obligation",
+                    obligation_type="cash_spend",
+                    agent_id="alice",
+                    from_account_id="checking",
+                    to_agent_id="vendor",
+                    to_account_id="checking",
+                    amount_due_usd=5.0,
+                )
+            ],
+            tax_profiles=[],
+            horizon_months=4,
+        )
+
+
+def test_scenario_allows_noop_recurring_windows_outside_horizon() -> None:
+    Scenario(
+        agents=[Agent(agent_id="alice"), Agent(agent_id="bob"), Agent(agent_id="vendor")],
+        initial_cash=[
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=10.0),
+            InitialAccountBalance(agent_id="bob", account_id="checking", balance_usd=10.0),
+            InitialAccountBalance(agent_id="vendor", account_id="checking", balance_usd=0.0),
+        ],
+        recurring_transfers=[
+            RecurringTransfer(
+                start_month=2,
+                end_month=3,
+                cause_id="future_transfer",
+                from_agent_id="bob",
+                from_account_id="checking",
+                to_agent_id="alice",
+                to_account_id="checking",
+                amount_usd=5.0,
+            )
+        ],
+        recurring_obligations=[
+            RecurringObligation(
+                start_month=2,
+                end_month=3,
+                obligation_id="future_obligation",
+                obligation_type="cash_spend",
+                agent_id="alice",
+                from_account_id="checking",
+                to_agent_id="vendor",
+                to_account_id="checking",
+                amount_due_usd=5.0,
+            )
+        ],
+        tax_profiles=[],
+        horizon_months=2,
+    )
+
+
 def _property_lifecycle_validation_scenario(
     *, property_lifecycle_events: list[SetRentedFractionEvent | PropertySaleEvent], horizon_months: int = 3
 ) -> Scenario:
