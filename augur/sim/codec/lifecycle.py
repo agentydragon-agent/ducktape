@@ -9,11 +9,7 @@ import polars as pl
 from augur.sim.buffers import SimulationBuffers
 from augur.sim.codec.helpers import codes_to_strings, frame_from_columns
 from augur.sim.compiler import CompiledSimulation
-from augur.sim.compiler.lifecycle import (
-    LIFECYCLE_KIND_CAPITAL_IMPROVEMENT,
-    LIFECYCLE_KIND_FRACTION,
-    LIFECYCLE_KIND_SALE,
-)
+from augur.sim.enums import LifecycleKind
 from augur.sim.events import EVENT_FRAMES
 
 
@@ -47,9 +43,9 @@ def decode_lifecycle_events(
     property_slots = plan.lifecycle_events.property_slot.astype(np.int64)[events_idx]
     property_ids = codes_to_strings(plan, plan.properties.id)[property_slots]
     kinds = plan.lifecycle_events.kind.astype(np.int64)[events_idx]
-    fraction_mask = kinds == LIFECYCLE_KIND_FRACTION
-    capital_mask = kinds == LIFECYCLE_KIND_CAPITAL_IMPROVEMENT
-    sale_mask = kinds == LIFECYCLE_KIND_SALE
+    fraction_mask = kinds == LifecycleKind.FRACTION
+    capital_mask = kinds == LifecycleKind.CAPITAL_IMPROVEMENT
+    sale_mask = kinds == LifecycleKind.SALE
 
     set_rented_fraction_frame = frame_from_columns(
         EVENT_FRAMES.set_rented_fraction_events,

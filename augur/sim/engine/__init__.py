@@ -18,6 +18,7 @@ from augur.sim.buffers import (
 )
 from augur.sim.codec.plan import DenseSimulationResult
 from augur.sim.compiler import CompiledSimulation, compile_simulation
+from augur.sim.compiler.helpers import NO_CODE
 from augur.sim.engine.phases import (
     _apply_depreciation_accrual,
     _apply_lifecycle_events,
@@ -35,17 +36,6 @@ from augur.sim.external_series import ExternalSeriesContext
 from augur.sim.run import SimulationRun
 from augur.sim.runtime import load_jurisdictions_for, load_locations_for
 from augur.sim.scenario import Scenario
-
-NO_CODE = -1
-AMOUNT_FIXED = 0
-LONG_TERM_CAPITAL_GAIN_CODE = 0
-SHORT_TERM_CAPITAL_GAIN_CODE = 1
-SOURCE_CONFIGURED_OBLIGATION = 0
-SOURCE_MORTGAGE_PAYMENT = 1
-SOURCE_PROPERTY_TAX = 2
-SOURCE_ESTIMATED_TAX = 3
-SOURCE_ESTIMATED_TAX_Q4 = 4
-SOURCE_TAX_TRUE_UP = 5
 
 
 def simulate_with_external_series_dense(
@@ -68,7 +58,7 @@ def simulate_with_external_series_dense_result(
     )
     buffers = _allocate_buffers(plan)
     current = _allocate_current_state(plan)
-    _snapshot_initial_state(buffers, current)
+    _snapshot_current_state(buffers.state, current, snapshot_index=0)
     for month in range(plan.horizon_months):
         _run_month_step(plan, buffers, current, month)
     return DenseSimulationResult(plan=plan, buffers=buffers, external_series=external_series)
@@ -114,33 +104,29 @@ def _allocate_current_state(plan: CompiledSimulation) -> CurrentStateBuffers:
     return current
 
 
-def _snapshot_initial_state(buffers: SimulationBuffers, current: CurrentStateBuffers) -> None:
-    _snapshot_current_state(buffers, current, snapshot_index=0)
-
-
-def _snapshot_current_state(buffers: SimulationBuffers, current: CurrentStateBuffers, *, snapshot_index: int) -> None:
-    # Both `current.*` and `buffers.state.*[s]` are R-last; no transpose needed.
-    buffers.state.cash_state[snapshot_index] = current.cash
-    buffers.state.lot_state[snapshot_index] = current.lot_remaining
-    buffers.state.ordinary_state[snapshot_index] = current.ordinary_ytd
-    buffers.state.capital_gain_active_state[snapshot_index] = current.capital_gain_active
-    buffers.state.capital_gain_state[snapshot_index] = current.capital_gain_ytd
-    buffers.state.tax_liability_active_state[snapshot_index] = current.tax_liability_active
-    buffers.state.tax_liability_state[snapshot_index] = current.tax_liability_amount
-    buffers.state.property_active_state[snapshot_index] = current.property_active
-    buffers.state.property_basis_state[snapshot_index] = current.property_basis
-    buffers.state.property_ownership_state[snapshot_index] = current.property_ownership
-    buffers.state.property_contribution_state[snapshot_index] = current.property_contribution
-    buffers.state.property_equity_state[snapshot_index] = current.property_equity
-    buffers.state.liability_active_state[snapshot_index] = current.liability_active
-    buffers.state.liability_principal_state[snapshot_index] = current.liability_principal
-    buffers.state.liability_monthly_payment_state[snapshot_index] = current.liability_monthly_payment
-    buffers.state.liability_interest_ytd_state[snapshot_index] = current.liability_interest_ytd
-    buffers.state.liability_principal_ytd_state[snapshot_index] = current.liability_principal_ytd
-    buffers.state.property_cumulative_depreciation_state[snapshot_index] = current.property_cumulative_depreciation
-    buffers.state.property_owner_occupied_months_state[snapshot_index] = current.property_owner_occupied_months
-    buffers.state.rollout_failed_state[snapshot_index] = current.failed
-    buffers.state.rollout_failed_month_state[snapshot_index] = current.failed_month
+def _snapshot_current_state(state: StateHistoryBuffers, current: CurrentStateBuffers, *, snapshot_index: int) -> None:
+    # Both `current.*` and `state.*[s]` are R-last; no transpose needed.
+    state.cash_state[snapshot_index] = current.cash
+    state.lot_state[snapshot_index] = current.lot_remaining
+    state.ordinary_state[snapshot_index] = current.ordinary_ytd
+    state.capital_gain_active_state[snapshot_index] = current.capital_gain_active
+    state.capital_gain_state[snapshot_index] = current.capital_gain_ytd
+    state.tax_liability_active_state[snapshot_index] = current.tax_liability_active
+    state.tax_liability_state[snapshot_index] = current.tax_liability_amount
+    state.property_active_state[snapshot_index] = current.property_active
+    state.property_basis_state[snapshot_index] = current.property_basis
+    state.property_ownership_state[snapshot_index] = current.property_ownership
+    state.property_contribution_state[snapshot_index] = current.property_contribution
+    state.property_equity_state[snapshot_index] = current.property_equity
+    state.liability_active_state[snapshot_index] = current.liability_active
+    state.liability_principal_state[snapshot_index] = current.liability_principal
+    state.liability_monthly_payment_state[snapshot_index] = current.liability_monthly_payment
+    state.liability_interest_ytd_state[snapshot_index] = current.liability_interest_ytd
+    state.liability_principal_ytd_state[snapshot_index] = current.liability_principal_ytd
+    state.property_cumulative_depreciation_state[snapshot_index] = current.property_cumulative_depreciation
+    state.property_owner_occupied_months_state[snapshot_index] = current.property_owner_occupied_months
+    state.rollout_failed_state[snapshot_index] = current.failed
+    state.rollout_failed_month_state[snapshot_index] = current.failed_month
 
 
 def _zero_failed_state(current: CurrentStateBuffers) -> None:
@@ -187,7 +173,7 @@ def _run_month_step(
     # `liability_interest_ytd` before the year-end MID computation reads it.
     _apply_tax_accruals(plan, buffers, current, month)
     _zero_failed_state(current)
-    _snapshot_current_state(buffers, current, snapshot_index=month + 1)
+    _snapshot_current_state(buffers.state, current, snapshot_index=month + 1)
 
 
 def _allocate_buffers(plan: CompiledSimulation) -> SimulationBuffers:

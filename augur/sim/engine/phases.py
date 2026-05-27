@@ -10,23 +10,9 @@ import numpy as np
 from augur.sim.buffers import CurrentStateBuffers, SimulationBuffers
 from augur.sim.codec.helpers import text
 from augur.sim.compiler import CompiledSimulation
-from augur.sim.compiler.lifecycle import (
-    LIFECYCLE_KIND_CAPITAL_IMPROVEMENT,
-    LIFECYCLE_KIND_FRACTION,
-    LIFECYCLE_KIND_SALE,
-)
+from augur.sim.compiler.helpers import AMOUNT_FIXED, NO_CODE
+from augur.sim.enums import CapitalGainClassification, LifecycleKind, ObligationSource
 from augur.sim.tensor_fifo import fifo_sell_dollars, fifo_sell_units, lot_order_for_pool
-
-NO_CODE = -1
-AMOUNT_FIXED = 0
-LONG_TERM_CAPITAL_GAIN_CODE = 0
-SHORT_TERM_CAPITAL_GAIN_CODE = 1
-SOURCE_CONFIGURED_OBLIGATION = 0
-SOURCE_MORTGAGE_PAYMENT = 1
-SOURCE_PROPERTY_TAX = 2
-SOURCE_ESTIMATED_TAX = 3
-SOURCE_ESTIMATED_TAX_Q4 = 4
-SOURCE_TAX_TRUE_UP = 5
 
 
 def _apply_scheduled_transfers(
@@ -107,8 +93,8 @@ def _compute_tax_for_link(
     profile = int(plan.tax.link_profile[link])
     gain_profile = int(plan.tax_profile_capital_gain_index[profile])
     ordinary = current.ordinary_ytd[profile, :]
-    ltcg = current.capital_gain_ytd[gain_profile, LONG_TERM_CAPITAL_GAIN_CODE, :]
-    stcg = current.capital_gain_ytd[gain_profile, SHORT_TERM_CAPITAL_GAIN_CODE, :]
+    ltcg = current.capital_gain_ytd[gain_profile, CapitalGainClassification.LONG_TERM, :]
+    stcg = current.capital_gain_ytd[gain_profile, CapitalGainClassification.SHORT_TERM, :]
     recapture = current.recapture_section_1250_ytd[profile, :]
     section_1250_rate = float(plan.tax.link_section_1250_rate[link])
     standard_deduction = float(plan.tax.link_standard_deduction[link])
@@ -184,8 +170,8 @@ def _write_tax_link_buffers(
     profile = int(plan.tax.link_profile[link])
     gain_profile = int(plan.tax_profile_capital_gain_index[profile])
     ordinary = current.ordinary_ytd[profile, :]
-    ltcg = current.capital_gain_ytd[gain_profile, LONG_TERM_CAPITAL_GAIN_CODE, :]
-    stcg = current.capital_gain_ytd[gain_profile, SHORT_TERM_CAPITAL_GAIN_CODE, :]
+    ltcg = current.capital_gain_ytd[gain_profile, CapitalGainClassification.LONG_TERM, :]
+    stcg = current.capital_gain_ytd[gain_profile, CapitalGainClassification.SHORT_TERM, :]
     tax = ordinary_tax + capital_tax
     buffers.taxes.accrual_active[month, link, active_rollout] = True
     buffers.taxes.accrual_amount[month, link, active_rollout] = tax[active_rollout]
@@ -340,11 +326,11 @@ def _apply_lifecycle_events(
     """Apply this month's PropertyLifecycleEvent rows to per-rollout runtime state.
 
     Three kinds share the same machinery:
-    - `LIFECYCLE_KIND_FRACTION`: mutate `current.property_rented_fraction[prop, :]` to the
+    - `LifecycleKind.FRACTION`: mutate `current.property_rented_fraction[prop, :]` to the
       event's new value.
-    - `LIFECYCLE_KIND_CAPITAL_IMPROVEMENT`: debit owner's cash by `amount_usd` and increase
+    - `LifecycleKind.CAPITAL_IMPROVEMENT`: debit owner's cash by `amount_usd` and increase
       `current.property_building_basis[prop, :]` by the same amount.
-    - `LIFECYCLE_KIND_SALE`: dispatch to `_apply_property_sale` which also fills the per-event
+    - `LifecycleKind.SALE`: dispatch to `_apply_property_sale` which also fills the per-event
       `sale_*` arrays on `buffers.lifecycle`.
 
     For each event that fires for an active rollout, `buffers.lifecycle.fired[event_index, r]`
@@ -369,16 +355,16 @@ def _apply_lifecycle_events(
         prop = int(plan.lifecycle_events.property_slot[i])
         kind = int(plan.lifecycle_events.kind[i])
         buffers.lifecycle.fired[i, active_rollout] = True
-        if kind == LIFECYCLE_KIND_FRACTION:
+        if kind == LifecycleKind.FRACTION:
             new_fraction = float(plan.lifecycle_events.rented_fraction[i])
             current.property_rented_fraction[prop, active_rollout] = new_fraction
-        elif kind == LIFECYCLE_KIND_CAPITAL_IMPROVEMENT:
+        elif kind == LifecycleKind.CAPITAL_IMPROVEMENT:
             amount = float(plan.lifecycle_events.amount[i])
             owner_cash_slot = int(plan.properties.buyer_slot[prop])
             if owner_cash_slot >= 0:
                 current.cash[owner_cash_slot, active_rollout] -= amount
             current.property_building_basis[prop, active_rollout] += amount
-        elif kind == LIFECYCLE_KIND_SALE:
+        elif kind == LifecycleKind.SALE:
             _apply_property_sale(
                 plan,
                 buffers,
@@ -496,8 +482,10 @@ def _apply_property_sale(
         current.recapture_section_1250_ytd[owner_profile, active_rollout] += recapture[active_rollout]
         gain_profile = int(plan.tax_profile_capital_gain_index[owner_profile])
         if gain_profile >= 0:
-            current.capital_gain_ytd[gain_profile, LONG_TERM_CAPITAL_GAIN_CODE, active_rollout] += ltcg[active_rollout]
-            current.capital_gain_active[gain_profile, LONG_TERM_CAPITAL_GAIN_CODE, active_rollout] = True
+            current.capital_gain_ytd[gain_profile, CapitalGainClassification.LONG_TERM, active_rollout] += ltcg[
+                active_rollout
+            ]
+            current.capital_gain_active[gain_profile, CapitalGainClassification.LONG_TERM, active_rollout] = True
 
     # Freeze property state. cumulative_depreciation preserved as a historical record.
     current.property_active[prop, active_rollout] = False
@@ -678,10 +666,12 @@ def _apply_tax_accruals(
     for profile in range(current.ordinary_ytd.shape[0]):
         current.ordinary_ytd[profile, active_rollout] = 0.0
         gain_profile = int(plan.tax_profile_capital_gain_index[profile])
-        ltcg_active = active_rollout & current.capital_gain_active[gain_profile, LONG_TERM_CAPITAL_GAIN_CODE, :]
-        stcg_active = active_rollout & current.capital_gain_active[gain_profile, SHORT_TERM_CAPITAL_GAIN_CODE, :]
-        current.capital_gain_ytd[gain_profile, LONG_TERM_CAPITAL_GAIN_CODE, ltcg_active] = 0.0
-        current.capital_gain_ytd[gain_profile, SHORT_TERM_CAPITAL_GAIN_CODE, stcg_active] = 0.0
+        ltcg_active = active_rollout & current.capital_gain_active[gain_profile, CapitalGainClassification.LONG_TERM, :]
+        stcg_active = (
+            active_rollout & current.capital_gain_active[gain_profile, CapitalGainClassification.SHORT_TERM, :]
+        )
+        current.capital_gain_ytd[gain_profile, CapitalGainClassification.LONG_TERM, ltcg_active] = 0.0
+        current.capital_gain_ytd[gain_profile, CapitalGainClassification.SHORT_TERM, stcg_active] = 0.0
     # Zero YTD interest at year-end so next year's MID accumulation starts fresh. Mirrors the
     # ordinary/capital-gain YTD resets above.
     current.liability_interest_ytd[:, active_rollout] = 0.0
@@ -960,7 +950,7 @@ def _apply_obligation_accruals(
         amount = np.zeros(plan.rollout_count, dtype=np.float64)
         active = active_rollout.copy()
 
-        if source_kind == SOURCE_CONFIGURED_OBLIGATION:
+        if source_kind == ObligationSource.CONFIGURED_OBLIGATION:
             amount = _amount_values(
                 plan,
                 kind=int(plan.obligations.amount_kind[month, slot]),
@@ -971,7 +961,7 @@ def _apply_obligation_accruals(
                 adjustment_period=int(plan.obligations.amount_period[month, slot]),
                 month=month,
             )
-        elif source_kind == SOURCE_MORTGAGE_PAYMENT:
+        elif source_kind == ObligationSource.MORTGAGE_PAYMENT:
             liab = source_index
             prop = int(plan.liabilities.property_slot[liab])
             active &= (
@@ -983,7 +973,7 @@ def _apply_obligation_accruals(
             amount = np.minimum(
                 current.liability_monthly_payment[liab, :], current.liability_principal[liab, :] + interest
             )
-        elif source_kind == SOURCE_PROPERTY_TAX:
+        elif source_kind == ObligationSource.PROPERTY_TAX:
             prop = source_index
             active &= current.property_active[prop, :] & (plan.properties.month[prop] < month)
             rate = float(plan.obligations.amount_fixed[month, slot])
@@ -992,15 +982,15 @@ def _apply_obligation_accruals(
             ad_valorem_monthly = plan.properties.initial_assessed_value[prop] * rate / 12.0
             non_ad_valorem_monthly = plan.properties.special_assessment_annual_usd[prop] / 12.0
             amount = np.full(plan.rollout_count, ad_valorem_monthly + non_ad_valorem_monthly)
-        elif source_kind == SOURCE_ESTIMATED_TAX:
+        elif source_kind == ObligationSource.ESTIMATED_TAX:
             amount = np.full(plan.rollout_count, float(plan.tax.profile_prior_year_tax[source_index]) / 4.0)
-        elif source_kind in (SOURCE_ESTIMATED_TAX_Q4, SOURCE_TAX_TRUE_UP):
+        elif source_kind in (ObligationSource.ESTIMATED_TAX_Q4, ObligationSource.TAX_TRUE_UP):
             profile = source_index
             tax_year_end = (month // 12 - 1) * 12 + 11
             actual = _actual_tax_for_profile_year(plan, current, profile_index=profile, year_end_month=tax_year_end)
             safe_harbor = np.minimum(float(plan.tax.profile_prior_year_tax[profile]), actual)
             paid_before_q4 = float(plan.tax.profile_prior_year_tax[profile]) * 0.75
-            if source_kind == SOURCE_ESTIMATED_TAX_Q4:
+            if source_kind == ObligationSource.ESTIMATED_TAX_Q4:
                 amount = np.maximum(safe_harbor - paid_before_q4, 0.0)
             else:
                 amount = np.maximum(actual - safe_harbor, 0.0)
@@ -1035,7 +1025,7 @@ def _apply_obligation_settlement(
         source_kind = int(plan.obligations.source_kind[month, slot])
         source_index = int(plan.obligations.source_index[month, slot])
 
-        if source_kind == SOURCE_TAX_TRUE_UP:
+        if source_kind == ObligationSource.TAX_TRUE_UP:
             profile = source_index
             tax_year_end = (month // 12 - 1) * 12 + 11
             actual = _actual_tax_for_profile_year(plan, current, profile_index=profile, year_end_month=tax_year_end)
@@ -1052,7 +1042,7 @@ def _apply_obligation_settlement(
             to_slot = int(plan.obligations.to_slot[month, slot])
             if to_slot >= 0:
                 current.cash[to_slot, paid] += amount[paid]
-            if source_kind == SOURCE_MORTGAGE_PAYMENT:
+            if source_kind == ObligationSource.MORTGAGE_PAYMENT:
                 _apply_mortgage_payment(
                     plan, buffers, current, month=month, liability_slot=source_index, paid=paid, amount=amount
                 )
@@ -1088,7 +1078,11 @@ def _apply_obligation_settlement(
             first_failure = failed & (current.failed_month < 0)
             current.failed[failed] = True
             current.failed_month[first_failure] = month
-            if source_kind in (SOURCE_ESTIMATED_TAX, SOURCE_ESTIMATED_TAX_Q4, SOURCE_TAX_TRUE_UP):
+            if source_kind in (
+                ObligationSource.ESTIMATED_TAX,
+                ObligationSource.ESTIMATED_TAX_Q4,
+                ObligationSource.TAX_TRUE_UP,
+            ):
                 tax_payment_failed[source_index, failed] = True
 
     _apply_tax_settlements(
@@ -1243,9 +1237,9 @@ def _record_capital_gains(
             continue
         for lot in range(plan.lot_id_codes.shape[0]):
             cls = (
-                LONG_TERM_CAPITAL_GAIN_CODE
+                CapitalGainClassification.LONG_TERM
                 if month - int(plan.lot_purchase_month[lot]) >= 12
-                else SHORT_TERM_CAPITAL_GAIN_CODE
+                else CapitalGainClassification.SHORT_TERM
             )
             active = sold_units[:, lot] > 0.0
             current.capital_gain_active[profile, cls, active] = True

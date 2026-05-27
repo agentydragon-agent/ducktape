@@ -24,7 +24,11 @@ from augur.sim.compiler.helpers import NO_CODE, StringTable
 from augur.sim.compiler.lifecycle import LifecycleEventCompileOutput, compile_lifecycle_events
 from augur.sim.compiler.liquidity import LiquidityPolicyCompileOutput, compile_liquidity_policies
 from augur.sim.compiler.obligations import ObligationCompileOutput, compile_obligation_slots
-from augur.sim.compiler.pe import PEIssuerCompileOutput, PEPolicyCompileOutput, compile_private_equity_tenders
+from augur.sim.compiler.private_equity import (
+    PEIssuerCompileOutput,
+    PEPolicyCompileOutput,
+    compile_private_equity_tenders,
+)
 from augur.sim.compiler.properties import (
     LiabilityCompileOutput,
     PropertyCompileOutput,

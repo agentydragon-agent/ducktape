@@ -17,11 +17,9 @@ from augur.sim.codec.helpers import (
     state_history_frame_from_columns,
 )
 from augur.sim.compiler import CompiledSimulation
+from augur.sim.enums import CapitalGainClassification
 from augur.sim.events import EVENT_FRAMES
 from augur.sim.state import CAPITAL_GAINS_YTD_FRAME, ORDINARY_INCOME_YTD_FRAME, TAX_LIABILITIES_FRAME
-
-LONG_TERM_CAPITAL_GAIN_CODE = 0
-SHORT_TERM_CAPITAL_GAIN_CODE = 1
 
 
 def decode_ordinary_income(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
@@ -50,8 +48,8 @@ def decode_capital_gains(plan: CompiledSimulation, buffers: SimulationBuffers) -
     months = np.broadcast_to(np.arange(h1, dtype=np.int64)[:, None, None, None], (h1, r, p, 2))
     rollouts = np.broadcast_to(np.arange(r, dtype=np.int64)[None, :, None, None], (h1, r, p, 2))
     profiles = np.broadcast_to(np.arange(p, dtype=np.int64)[None, None, :, None], (h1, r, p, 2))
-    # Order class slots so LTCG (index LONG_TERM_CAPITAL_GAIN_CODE) comes first within each profile.
-    cls_order = np.array([LONG_TERM_CAPITAL_GAIN_CODE, SHORT_TERM_CAPITAL_GAIN_CODE], dtype=np.int64)
+    # Order class slots so LTCG (index CapitalGainClassification.LONG_TERM) comes first within each profile.
+    cls_order = np.array([CapitalGainClassification.LONG_TERM, CapitalGainClassification.SHORT_TERM], dtype=np.int64)
     classification_labels = np.array(["ltcg", "stcg"], dtype=object)
     state_o = state[:, :, :, cls_order]
     active_o = active[:, :, :, cls_order]

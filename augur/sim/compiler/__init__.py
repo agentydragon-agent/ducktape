@@ -13,28 +13,22 @@ from __future__ import annotations
 from augur.sim.compiler.assets import SaleCompileOutput
 from augur.sim.compiler.deductions import MIDCompileOutput, SaltCompileOutput
 from augur.sim.compiler.helpers import NO_CODE, StringTable
-from augur.sim.compiler.lifecycle import (
-    LIFECYCLE_KIND_CAPITAL_IMPROVEMENT,
-    LIFECYCLE_KIND_FRACTION,
-    LIFECYCLE_KIND_SALE,
-    LifecycleEventCompileOutput,
-)
+from augur.sim.compiler.lifecycle import LifecycleEventCompileOutput
 from augur.sim.compiler.liquidity import LiquidityPolicyCompileOutput
 from augur.sim.compiler.obligations import ObligationCompileOutput
-from augur.sim.compiler.pe import PEIssuerCompileOutput, PEPolicyCompileOutput
 from augur.sim.compiler.plan import CompiledSimulation, SlotPlan, compile_simulation
+from augur.sim.compiler.private_equity import PEIssuerCompileOutput, PEPolicyCompileOutput
 from augur.sim.compiler.properties import LiabilityCompileOutput, PropertyCompileOutput
 from augur.sim.compiler.tax import TaxCompileOutput, TaxLiabilityCompileOutput
 from augur.sim.compiler.transfers import TransferCompileOutput
+from augur.sim.enums import LifecycleKind
 
 __all__ = [
-    "LIFECYCLE_KIND_CAPITAL_IMPROVEMENT",
-    "LIFECYCLE_KIND_FRACTION",
-    "LIFECYCLE_KIND_SALE",
     "NO_CODE",
     "CompiledSimulation",
     "LiabilityCompileOutput",
     "LifecycleEventCompileOutput",
+    "LifecycleKind",
     "LiquidityPolicyCompileOutput",
     "MIDCompileOutput",
     "ObligationCompileOutput",

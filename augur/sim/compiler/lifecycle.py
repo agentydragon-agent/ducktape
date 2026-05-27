@@ -12,11 +12,8 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
+from augur.sim.enums import LifecycleKind
 from augur.sim.scenario import CapitalImprovementEvent, PropertySaleEvent, Scenario, SetRentedFractionEvent
-
-LIFECYCLE_KIND_FRACTION = 0
-LIFECYCLE_KIND_CAPITAL_IMPROVEMENT = 1
-LIFECYCLE_KIND_SALE = 2
 
 
 @dataclass(frozen=True)
@@ -24,9 +21,9 @@ class LifecycleEventCompileOutput:
     """PropertyLifecycleEvent rows compiled into per-month sparse storage. Sorted by
     month so the engine scans a per-month index range via `month_starts`:
     `events_for_month_M = events[month_starts[M]:month_starts[M+1]]`. `kind[i]` is
-    `LIFECYCLE_KIND_FRACTION` (0) for rented-fraction change (start/stop/change-rental
-    -plan), `LIFECYCLE_KIND_CAPITAL_IMPROVEMENT` (1) for cash + basis bump, or
-    `LIFECYCLE_KIND_SALE` (2). `rented_fraction[i]` is the new value (kind 0; 0.0
+    `LifecycleKind.FRACTION` (0) for rented-fraction change (start/stop/change-rental
+    -plan), `LifecycleKind.CAPITAL_IMPROVEMENT` (1) for cash + basis bump, or
+    `LifecycleKind.SALE` (2). `rented_fraction[i]` is the new value (kind 0; 0.0
     otherwise). `amount[i]` is the USD spend (kind 1), the closing-cost percentage
     (kind 2; 0..100), or 0.0 (kind 0). `month_starts` has length `horizon_months + 1`
     so the engine can do `events[starts[M]:starts[M+1]]` for any month M."""
@@ -64,13 +61,13 @@ def compile_lifecycle_events(scenario: Scenario, property_slot_by_id: dict[str, 
         month[i] = int(event.month)
         property_slot[i] = slot
         if isinstance(event, SetRentedFractionEvent):
-            kind[i] = LIFECYCLE_KIND_FRACTION
+            kind[i] = LifecycleKind.FRACTION
             rented_fraction[i] = float(event.rented_fraction)
         elif isinstance(event, CapitalImprovementEvent):
-            kind[i] = LIFECYCLE_KIND_CAPITAL_IMPROVEMENT
+            kind[i] = LifecycleKind.CAPITAL_IMPROVEMENT
             amount[i] = float(event.amount_usd)
         elif isinstance(event, PropertySaleEvent):
-            kind[i] = LIFECYCLE_KIND_SALE
+            kind[i] = LifecycleKind.SALE
             # Reuse `amount` as closing_cost_pct for sale events (different semantic per kind,
             # but storing in the same dense column avoids another array).
             amount[i] = float(event.closing_cost_pct)
