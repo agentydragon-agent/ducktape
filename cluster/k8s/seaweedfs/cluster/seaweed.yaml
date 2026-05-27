@@ -38,12 +38,29 @@ spec:
   volumeServerDiskCount: 1
 
   master:
-    replicas: 1 # raft singleton — bump to 3 after the trial proves stable
+    # 3-instance raft, one per kimsufi host (workers + CP). Quorum 2/3 →
+    # cluster survives any single-node outage. Tolerate the CP taint
+    # matching volume + s3.
+    replicas: 3
     volumeSizeLimitMB: 30000
     defaultReplication: "001"
     metricsPort: 9321
     nodeSelector:
       topology.kubernetes.io/zone: hil-ovh
+    tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+    # Hard anti-affinity — each master on a different host so raft quorum
+    # can actually survive a node loss.
+    affinity:
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app.kubernetes.io/component: master
+                app.kubernetes.io/name: seaweedfs
+            topologyKey: kubernetes.io/hostname
 
   volume:
     # One per kimsufi host: 2 workers + 1 CP. The CP has the same KS-5
