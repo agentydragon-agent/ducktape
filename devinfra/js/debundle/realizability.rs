@@ -1497,9 +1497,17 @@ impl RealizabilityIndex {
     ///
     /// Prefer [`Self::scoped`] when the delta lifetime is lexical —
     /// the `push`/`undo` pair is then guaranteed to be balanced and
-    /// LIFO-ordered without manual bookkeeping. Use raw `push`/`undo`
-    /// only when the lifetime crosses control-flow boundaries that
-    /// `scoped` can't span.
+    /// LIFO-ordered without manual bookkeeping. The raw `push`/`undo`
+    /// surface exists only for the `peel/quotient.rs` cases that
+    /// `scoped` cannot express:
+    /// * `commit_merge`: a batch of deltas lands permanently with no
+    ///   matching undo.
+    /// * `verdict_after_chained_deltas`: push a batch, read the post-
+    ///   push verdict, then undo every handle in reverse order.
+    ///
+    /// All other callers must use [`Self::scoped`]; the
+    /// `unbalanced_journal_push_undo_should_not_compile` doctest below
+    /// is the contract.
     pub fn push(&mut self, owner_graph: &OwnerGraph, delta: PartitionDelta) -> DeltaHandle {
         let entry = match delta {
             PartitionDelta::MoveOwners { owners, to } => {
@@ -1542,7 +1550,8 @@ impl RealizabilityIndex {
     }
 
     /// Roll back the delta identified by `handle`. Must be the top of
-    /// the journal; debug builds panic otherwise.
+    /// the journal; debug builds panic otherwise. `pub` for the same
+    /// peel-internal reasons as [`Self::push`] — prefer [`Self::scoped`].
     pub fn undo(&mut self, owner_graph: &OwnerGraph, handle: DeltaHandle) {
         debug_assert_eq!(
             handle.0 + 1,

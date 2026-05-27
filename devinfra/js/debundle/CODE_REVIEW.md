@@ -73,10 +73,6 @@ Newtype over `DiGraphMap` with `Deref`/`DerefMut` to inner type. Exposes full pe
 
 `flat_edges`, `nodes`, `edges`, `out_edges`, `in_edges` all `pub(crate)`. Any module can corrupt graph invariants. Reduce to explicit query methods.
 
-### `RealizabilityIndex` — raw `push`/`undo` should be private (`realizability.rs`)
-
-The `scoped` guard API is good, but `push` and `undo` are also `pub(crate)`, allowing callers to bypass the guard and corrupt the journal. Make them private unless a specific caller needs manual control (documented).
-
 ### `BTreeMap`/`BTreeSet` as default collection in hot-path graph structures
 
 `rollback_graph.rs`, `artifact.rs`, `realizability.rs` all use BTree collections exclusively. For structures with many lookups, `HashMap`/`HashSet` would be faster. If deterministic iteration is needed, document it at the struct level. `RollbackDiGraph` in particular does many lookups per operation where hash-based would be measurably faster.
