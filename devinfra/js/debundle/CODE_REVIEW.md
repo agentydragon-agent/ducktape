@@ -133,10 +133,6 @@ Uses inline comment markers instead of `#[ignore]` with reason strings (like `pu
 
 Lines 1030–1617 are four tests each manually creating the entire fixture inline (155 lines per test). Extract `run_bundled_partial_swap_fixture`.
 
-### `chunk_renames_test.rs` — verbose `FixtureOpts` construction repeated 4x
-
-8-field struct literal repeated. Add `FixtureOpts::new(...).with_chunk_renames(renames)` builder.
-
 ### `pure_members_test.rs` — 3 identical fixture shapes with different `pure_members` values
 
 Table-driven test candidate.

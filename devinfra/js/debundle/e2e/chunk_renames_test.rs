@@ -32,39 +32,43 @@
 //! unowned decls share `ResidualEntry` ownership; no cycle.
 
 use debundle_e2e_support::*;
-use serde_json::json;
+use serde_json::{Value, json};
+
+/// Build a `chunk_renames` spec entry that renames a single residual
+/// binding to a new export name. All tests in this file rename a
+/// single binding; the helper hides the wire shape.
+fn chunk_rename(rename_to: &str, from_binding: &str) -> Value {
+    json!({
+        "id": "chunk_renames__static_app",
+        "members": [
+            {
+                "name": rename_to,
+                "selector": { "binding": { "name": from_binding } },
+            },
+        ],
+    })
+}
 
 #[test]
 fn chunk_renames_renames_residual_bindings_in_entry() {
-    let opts = FixtureOpts {
-        // S1 (orphan-S):       console.log("before")
-        // S2 (decl with S):    let x = (..., "x-value")  -- stays in entry
-        // S3 (orphan-R+S):     console.log(x)            -- reads x at-init
-        //
-        // Default `unassigned_mode`: `x` stays in `ResidualEntry`-land.
-        // `chunk_renames` renames `x` -> `payload`. The lowerer rewrites
-        // the in-entry references; the export statement carries the
-        // new name.
-        source: r#"console.log("before");
+    // S1 (orphan-S):       console.log("before")
+    // S2 (decl with S):    let x = (..., "x-value")  -- stays in entry
+    // S3 (orphan-R+S):     console.log(x)            -- reads x at-init
+    //
+    // Default `unassigned_mode`: `x` stays in `ResidualEntry`-land.
+    // `chunk_renames` renames `x` -> `payload`. The lowerer rewrites
+    // the in-entry references; the export statement carries the
+    // new name.
+    let opts = FixtureOpts::new(
+        r#"console.log("before");
 let x = (globalThis.__touched = true, "x-value");
 console.log(x);
 export { x };
 "#,
-        logical_modules: vec![],
-        chunk_renames: Some(json!({
-            "id": "chunk_renames__static_app",
-            "members": [
-                {
-                    "name": "payload",
-                    "selector": { "binding": { "name": "x" } },
-                },
-            ],
-        })),
-        chunk_id: "static/app",
-        unassigned_mode: unassigned_mode_inline(),
-        dataflow_aware_s_chain: false,
-        extra_files: &[],
-    };
+        vec![],
+    )
+    .with_chunk_renames(chunk_rename("payload", "x"))
+    .with_unassigned_mode(unassigned_mode_inline());
     let fixture = run_fixture(opts);
     // The chunk evaluates: orphan logs "before", x's init runs (sets
     // globalThis.__touched and binds "x-value"), orphan logs the
@@ -88,32 +92,22 @@ export { x };
 
 #[test]
 fn chunk_renames_preserve_named_import_exported_names() {
-    let opts = FixtureOpts {
-        source: r#"import { x as importedThing, y } from "../vendor/entry.js";
+    let opts = FixtureOpts::new(
+        r#"import { x as importedThing, y } from "../vendor/entry.js";
 let x = "local";
 console.log(x, importedThing, y);
 export { x };
 "#,
-        logical_modules: vec![],
-        chunk_renames: Some(json!({
-            "id": "chunk_renames__static_app",
-            "members": [
-                {
-                    "name": "payload",
-                    "selector": { "binding": { "name": "x" } },
-                },
-            ],
-        })),
-        chunk_id: "static/app",
-        unassigned_mode: unassigned_mode_inline(),
-        dataflow_aware_s_chain: false,
-        extra_files: &[(
-            "static/vendor/entry.js",
-            r#"export const x = "dep-x";
+        vec![],
+    )
+    .with_chunk_renames(chunk_rename("payload", "x"))
+    .with_unassigned_mode(unassigned_mode_inline())
+    .with_extra_files(&[(
+        "static/vendor/entry.js",
+        r#"export const x = "dep-x";
 export const y = "dep-y";
 "#,
-        )],
-    };
+    )]);
     let fixture = run_fixture(opts);
 
     assert_entry_output(&fixture, "local dep-x dep-y\n");
@@ -136,8 +130,8 @@ export const y = "dep-y";
 
 #[test]
 fn extracted_module_imports_chunk_renamed_residual_helper_for_execution() {
-    let opts = FixtureOpts {
-        source: r#"function helper() {
+    let opts = FixtureOpts::new(
+        r#"function helper() {
   return "ok";
 }
 function run() {
@@ -146,21 +140,10 @@ function run() {
 console.log("entry");
 export { helper, run };
 "#,
-        logical_modules: vec![logical_module("mod_run", &[Member::new("run")])],
-        chunk_renames: Some(json!({
-            "id": "chunk_renames__static_app",
-            "members": [
-                {
-                    "name": "readableHelper",
-                    "selector": { "binding": { "name": "helper" } },
-                },
-            ],
-        })),
-        chunk_id: "static/app",
-        unassigned_mode: unassigned_mode_inline(),
-        dataflow_aware_s_chain: false,
-        extra_files: &[],
-    };
+        vec![logical_module("mod_run", &[Member::new("run")])],
+    )
+    .with_chunk_renames(chunk_rename("readableHelper", "helper"))
+    .with_unassigned_mode(unassigned_mode_inline());
     let fixture = run_fixture(opts);
 
     assert_entry_output(&fixture, "entry\n");
@@ -203,8 +186,8 @@ fn private_chunk_renamed_residual_helper_used_by_extracted_module_auto_grows_ent
     // residual entry bindings are importable because the emitter
     // auto-exports them on demand; "private to entry" is not a
     // first-class spec contract.
-    let opts = FixtureOpts {
-        source: r#"function helper() {
+    let opts = FixtureOpts::new(
+        r#"function helper() {
   return "ok";
 }
 function run() {
@@ -212,21 +195,10 @@ function run() {
 }
 export { run };
 "#,
-        logical_modules: vec![logical_module("mod_run", &[Member::new("run")])],
-        chunk_renames: Some(json!({
-            "id": "chunk_renames__static_app",
-            "members": [
-                {
-                    "name": "readableHelper",
-                    "selector": { "binding": { "name": "helper" } },
-                },
-            ],
-        })),
-        chunk_id: "static/app",
-        unassigned_mode: unassigned_mode_inline(),
-        dataflow_aware_s_chain: false,
-        extra_files: &[],
-    };
+        vec![logical_module("mod_run", &[Member::new("run")])],
+    )
+    .with_chunk_renames(chunk_rename("readableHelper", "helper"))
+    .with_unassigned_mode(unassigned_mode_inline());
 
     let fixture = run_fixture(opts);
     assert_module_source(
@@ -253,32 +225,29 @@ console.log(run());
 /// error.
 #[test]
 fn surfaces_every_chunk_rename_violation_at_once() {
-    let opts = FixtureOpts {
-        source: r#"let alpha = "alpha-value";
+    let opts = FixtureOpts::new(
+        r#"let alpha = "alpha-value";
 let bravo = "bravo-value";
 let charlie = "charlie-value";
 let delta = "delta-value";
 console.log(alpha, bravo, charlie, delta);
 export { alpha, bravo, charlie, delta };
 "#,
-        logical_modules: vec![],
-        chunk_renames: Some(json!({
-            "id": "chunk_renames__static_app",
-            "members": [
-                // Invalid JS identifier — should report a "not a valid JS identifier" error.
-                { "name": "1-bad-ident", "selector": { "binding": { "name": "alpha" } } },
-                // Collides with the existing body local `delta`.
-                { "name": "delta",        "selector": { "binding": { "name": "bravo" } } },
-                // Duplicate target — both `charlie` and `delta` would rename to the same name.
-                { "name": "shared_target", "selector": { "binding": { "name": "charlie" } } },
-                { "name": "shared_target", "selector": { "binding": { "name": "delta" } } },
-            ],
-        })),
-        chunk_id: "static/app",
-        unassigned_mode: unassigned_mode_inline(),
-        dataflow_aware_s_chain: false,
-        extra_files: &[],
-    };
+        vec![],
+    )
+    .with_chunk_renames(json!({
+        "id": "chunk_renames__static_app",
+        "members": [
+            // Invalid JS identifier — should report a "not a valid JS identifier" error.
+            { "name": "1-bad-ident", "selector": { "binding": { "name": "alpha" } } },
+            // Collides with the existing body local `delta`.
+            { "name": "delta",        "selector": { "binding": { "name": "bravo" } } },
+            // Duplicate target — both `charlie` and `delta` would rename to the same name.
+            { "name": "shared_target", "selector": { "binding": { "name": "charlie" } } },
+            { "name": "shared_target", "selector": { "binding": { "name": "delta" } } },
+        ],
+    }))
+    .with_unassigned_mode(unassigned_mode_inline());
 
     expect_rejection_containing_all(
         opts,

@@ -266,6 +266,30 @@ impl<'a> FixtureOpts<'a> {
         self.dataflow_aware_s_chain = true;
         self
     }
+
+    /// Attach a `TransformSpec.chunk_renames` entry for this chunk.
+    pub fn with_chunk_renames(mut self, chunk_renames: Value) -> Self {
+        self.chunk_renames = Some(chunk_renames);
+        self
+    }
+
+    /// Override the default `chunk_id` of `static/app`.
+    pub fn with_chunk_id(mut self, chunk_id: &'a str) -> Self {
+        self.chunk_id = chunk_id;
+        self
+    }
+
+    /// Override the default `unassigned_mode` of `catchall_file`.
+    pub fn with_unassigned_mode(mut self, mode: Value) -> Self {
+        self.unassigned_mode = mode;
+        self
+    }
+
+    /// Extra files to mirror into the materialized app root post-run.
+    pub fn with_extra_files(mut self, extra_files: &'a [(&'a str, &'a str)]) -> Self {
+        self.extra_files = extra_files;
+        self
+    }
 }
 
 /// Build the JSON body for an `unassigned_mode: inline_in_entry`
