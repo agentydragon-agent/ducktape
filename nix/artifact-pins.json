@@ -9,8 +9,8 @@
       "sha256": "TgfSB1u2oIO519Ew320bvQGBBurJ9hp8xmdyM7QEXCE="
     },
     "bbapi": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/bbapi-40325ad5adbf/bbapi",
-      "sha256": "QDJa1a2/DQGKrSGgv2/wsYMngJR4Ch19VdQOWjd+fg8="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/bbapi-ff68b5419a1b/bbapi",
+      "sha256": "/2i1QZobYQqWXHTYqzpFb4m33h9eiAUt3gjM9l6wdR4="
     },
     "claude-hooks": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hooks-745438a78f3f/claude_hooks-0.1.0-py3-none-any.whl",
@@ -33,12 +33,12 @@
       "sha256": "nZmSwtodI8AoCJKSmoy/KaCkds+23SdSw9Hy/PS4tZY="
     },
     "skills": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skills-3ca4e463e8b7/all_skills_tar.tar",
-      "sha256": "PKTkY+i38AfhVhMzdgCF0zYY9FCgdGlZnKdlafAJtD4="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skills-f355ab0d26c2/all_skills_tar.tar",
+      "sha256": "81WrDSbCDQuT3VVCSjY2fekGb+e+hFRLtaHr/DTtbMQ="
     },
     "claude-hook-rs": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hook-rs-3b36081f92b5/claude_hook",
-      "sha256": "OzYIH5K1bl6cfZJjiuv8l5O/EjxusgMAc1J85UZyN5I="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hook-rs-0ad0e0d06bbc/claude_hook",
+      "sha256": "CtDg0Gu8X7hKNYxCsV92ln1mKct2IRVaPHl5DyyVNRg="
     },
     "aiquota-extension": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/aiquota-310fd0b0c2f9/aiquota.zip",
@@ -49,8 +49,8 @@
       "sha256": "MQ/QsML5JXmWsRnakb8+qZpiH+dUcy0NUyZPajS3n14="
     },
     "debundle": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-f599b9f6d417/debundle",
-      "sha256": "9Zm59tQXeU7MTHESjZXZ17XqIeL1cvjkwWEcnU6Aa64="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-bdf15c711511/debundle",
+      "sha256": "vfFccRURa4Y3veZ1XbLNC/DDLqsVnPXsRXABmWF1bZk="
     }
   }
 }
