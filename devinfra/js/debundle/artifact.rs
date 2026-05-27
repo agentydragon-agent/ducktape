@@ -5,8 +5,10 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
+use rayon::prelude::*;
 use relative_path::RelativePath;
 use serde::Serialize;
+use swc_common::GLOBALS;
 
 use analysis::DepKind;
 pub use analysis::{ChunkId, ChunkTable};
@@ -1161,20 +1163,40 @@ pub fn materialize_artifact_scripts(
     decomposition_by_chunk: &HashMap<ChunkId, ChunkDecompositionOutput>,
 ) -> Result<MaterializedScripts> {
     let selected_module_by_chunk_file = selected_module_by_chunk_file(decomposition_by_chunk);
-    let file_metrics: Vec<OutputFileMetric> = artifact
-        .list_chunk_ids()
-        .into_iter()
-        .map(|chunk_id| {
-            materialize_chunk_scripts(
-                artifact,
-                app_root,
-                report_tree_root,
-                &selected_module_by_chunk_file,
-                decomposition_by_chunk,
-                chunk_id,
-            )
-        })
-        .collect::<Result<Vec<_>>>()?
+    // Per-chunk materialization is pure data-parallel: each call reads
+    // `artifact`/`decomposition_by_chunk`/`selected_module_by_chunk_file`
+    // immutably, writes only into its own per-chunk output directory
+    // (`app_root/<chunk_name>/...`) and its own per-chunk report path
+    // under `report_tree_root`. No two chunk ids share a chunk_name (the
+    // chunk_table maps each id to a unique name), so the filesystem writes
+    // can't collide. `write_tree_reports` below is a separate sequential
+    // phase that consumes the collected `file_metrics`.
+    //
+    // `swc_common::GLOBALS` is a `scoped_tls` thread-local that does NOT
+    // carry into rayon worker threads, and `render_source()` on
+    // `JsFileBody::Ast` calls `emit_js_module_with_comments`, which drives
+    // the swc emitter. Capture the parent thread's globals and re-set
+    // inside each worker closure — mirrors `lower_chunk` and
+    // `vendor::strip::strip_swapped_vendor_exports_with_options`.
+    let file_metrics: Vec<OutputFileMetric> = GLOBALS
+        .with(|globals| -> Result<Vec<_>> {
+            artifact
+                .list_chunk_ids()
+                .into_par_iter()
+                .map(|chunk_id| {
+                    GLOBALS.set(globals, || {
+                        materialize_chunk_scripts(
+                            artifact,
+                            app_root,
+                            report_tree_root,
+                            &selected_module_by_chunk_file,
+                            decomposition_by_chunk,
+                            chunk_id,
+                        )
+                    })
+                })
+                .collect::<Result<Vec<_>>>()
+        })?
         .into_iter()
         .flatten()
         .collect();

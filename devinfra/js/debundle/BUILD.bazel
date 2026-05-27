@@ -47,9 +47,11 @@ rust_library(
         ":js_ast",
         ":output_layout",
         "@crates//:anyhow",
+        "@crates//:rayon",
         "@crates//:relative-path",
         "@crates//:serde",
         "@crates//:serde_json",
+        "@crates//:swc_common",
         "@crates//:swc_ecma_ast",
     ],
 )
