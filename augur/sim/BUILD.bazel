@@ -154,19 +154,10 @@ py_test(
 )
 
 py_library(
-    name = "run",
-    srcs = ["run.py"],
-    deps = [
-        ":events",
-        "@pypi//polars",
-    ],
-)
-
-py_library(
     name = "projections",
     srcs = ["projections.py"],
     deps = [
-        ":run",
+        ":codec",
         "//augur:frames",
         "@pypi//polars",
     ],
@@ -176,9 +167,9 @@ py_library(
     name = "simulate",
     srcs = ["simulate.py"],
     deps = [
+        ":codec",
         ":engine",
         ":external_series",
-        ":run",
         ":scenario",
     ],
 )
@@ -247,7 +238,6 @@ py_library(
         ":enums",
         ":events",
         ":external_series",
-        ":run",
         ":state",
         "@pypi//numpy",
         "@pypi//polars",
@@ -266,7 +256,6 @@ py_library(
         ":compiler",
         ":enums",
         ":external_series",
-        ":run",
         ":runtime",
         ":scenario",
         ":tensor_fifo",

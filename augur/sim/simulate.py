@@ -8,13 +8,13 @@ DataFrames for API and product projection code.
 
 from __future__ import annotations
 
+from augur.sim.codec.plan import SimulationRun
 from augur.sim.engine import (
     DenseSimulationResult,
     simulate_with_external_series_dense,
     simulate_with_external_series_dense_result,
 )
 from augur.sim.external_series import ExternalSeriesContext, materialize_external_series
-from augur.sim.run import SimulationRun
 from augur.sim.scenario import Scenario, SeriesIndexedAmount
 
 

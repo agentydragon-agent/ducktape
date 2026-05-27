@@ -28,8 +28,8 @@ from augur.product.wire import (
     TaxPaymentEvent,
     TerminalMetrics,
 )
+from augur.sim.codec.plan import SimulationRun
 from augur.sim.engine import DenseSimulationResult
-from augur.sim.run import SimulationRun
 from augur.sim.scenario import ObligationType
 
 _SINGLE_ROLLOUT_INDEX = 0

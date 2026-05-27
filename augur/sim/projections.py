@@ -12,7 +12,7 @@ from dataclasses import dataclass
 import polars as pl
 
 from augur.frames import FrameSpec
-from augur.sim.run import SimulationRun
+from augur.sim.codec.plan import SimulationRun
 
 NET_WORTH_SCHEMA = pl.Schema(
     {

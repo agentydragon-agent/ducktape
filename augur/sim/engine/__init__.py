@@ -16,7 +16,7 @@ from augur.sim.buffers import (
     TaxEventBuffers,
     TransferEventBuffers,
 )
-from augur.sim.codec.plan import DenseSimulationResult
+from augur.sim.codec.plan import DenseSimulationResult, SimulationRun
 from augur.sim.compiler import CompiledSimulation, compile_simulation
 from augur.sim.compiler.helpers import NO_CODE
 from augur.sim.engine.phases import (
@@ -33,7 +33,6 @@ from augur.sim.engine.phases import (
     _apply_tax_accruals,
 )
 from augur.sim.external_series import ExternalSeriesContext
-from augur.sim.run import SimulationRun
 from augur.sim.runtime import load_jurisdictions_for, load_locations_for
 from augur.sim.scenario import Scenario
 

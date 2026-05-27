@@ -33,7 +33,6 @@ py_library(
         ":wire",
         "//augur/model:series",
         "//augur/sim:engine",
-        "//augur/sim:run",
         "//augur/sim:scenario",
         "@pypi//numpy",
         "@pypi//polars",

@@ -33,8 +33,26 @@ from augur.sim.codec.transfers import decode_transfers
 from augur.sim.compiler import CompiledSimulation
 from augur.sim.events import EVENT_FRAMES, EventLog
 from augur.sim.external_series import ExternalSeriesContext
-from augur.sim.run import SimulationRun
 from augur.sim.state import ROLLOUT_STATUS_FRAME
+
+
+@dataclass(frozen=True)
+class SimulationRun:
+    """Outputs of a simulation. Long-form polars frames keyed by
+    `(rollout_index, month_index, ...)` plus the event log."""
+
+    cash_balances: pl.DataFrame
+    asset_lots: pl.DataFrame
+    ordinary_income_ytd: pl.DataFrame
+    capital_gains_ytd: pl.DataFrame
+    tax_liabilities: pl.DataFrame
+    property_state: pl.DataFrame
+    property_stakes: pl.DataFrame
+    liabilities: pl.DataFrame
+    rollout_status_history: pl.DataFrame
+    rollout_status: pl.DataFrame
+    series_values: pl.DataFrame
+    events_log: EventLog
 
 
 @dataclass
