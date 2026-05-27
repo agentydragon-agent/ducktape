@@ -26,8 +26,7 @@ use artifact::{
 use js_ast::{ParsedJsModule, format_comment_block_lines, set_str_value, str_value};
 use output_layout::MODULES_REPORT;
 use spec::{
-    BindingSourceKind, ChunkAnalysisOptions, ChunkRenames, LogicalModule, MemberEffect,
-    MemberPurity, UnassignedMode,
+    BindingSourceKind, ChunkRenames, LogicalModule, MemberEffect, MemberPurity, UnassignedMode,
 };
 
 mod anonymous;
@@ -204,7 +203,7 @@ pub fn materialize_logical_modules(
     logical_modules: &BTreeMap<String, BTreeMap<String, LogicalModule>>,
     chunk_renames: &BTreeMap<String, ChunkRenames>,
     unassigned_mode: &BTreeMap<String, UnassignedMode>,
-    chunk_analysis_options: &BTreeMap<String, ChunkAnalysisOptions>,
+    chunk_analysis_options: &BTreeMap<String, OwnerGraphOptions>,
     options: MaterializeLogicalModulesOptions,
 ) -> Result<MaterializeLogicalModulesResult> {
     if options.chunk_ids.is_empty() {

@@ -8,9 +8,9 @@ use serde::Deserialize;
 use output_layout::DebundleOutputLayout;
 use spec::{
     AnonymousStatement, BundledPartialSwapBundle, BundledPartialSwapMark,
-    BundledPartialSwapPackage, ChunkAnalysisOptions, ChunkRenames, EmitBrowserHarnessConfig,
-    LoadJsChunksArgs, LogicalModule, MaterializeLogicalModulesConfig, Member, MemberEffect,
-    MemberPurity, PartialSwapMark, PartialSwapPackage, PartialSwapSymbol, SwapMark,
+    BundledPartialSwapPackage, ChunkRenames, EmitBrowserHarnessConfig, LoadJsChunksArgs,
+    LogicalModule, MaterializeLogicalModulesConfig, Member, MemberEffect, MemberPurity,
+    OwnerGraphOptions, PartialSwapMark, PartialSwapPackage, PartialSwapSymbol, SwapMark,
     SwapVendorChunksConfig, TransformSpec, UnassignedMode, VendorLevel, VendorMark, VendorRole,
     WrapperShape,
 };
@@ -44,7 +44,7 @@ struct AuthoringConfig {
     /// optimizations"). Default empty — each chunk uses the
     /// strictly-conservative analysis path unless it opts in here.
     #[serde(default)]
-    chunk_analysis_options: BTreeMap<String, ChunkAnalysisOptions>,
+    chunk_analysis_options: BTreeMap<String, OwnerGraphOptions>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

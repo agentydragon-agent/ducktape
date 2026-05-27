@@ -70,7 +70,7 @@ pub struct TransformSpec {
     /// chunk uses the strictly-conservative analysis paths unless the
     /// spec explicitly opts in.
     #[serde(default)]
-    pub chunk_analysis_options: BTreeMap<String, ChunkAnalysisOptions>,
+    pub chunk_analysis_options: BTreeMap<String, OwnerGraphOptions>,
 
     // --- per-stage configuration ---
     /// Output configuration for `swap_vendor_chunks`. The stage runs
@@ -96,24 +96,33 @@ pub struct TransformSpec {
     pub emit_browser_harness: Option<EmitBrowserHarnessConfig>,
 }
 
-/// Per-chunk opt-ins for conditionally-correct analyses. Each field
-/// defaults `false` — chunks must explicitly opt in. See
-/// `devinfra/js/debundle/README.md` →
-/// "Conditionally-correct optimizations" for the precondition each
-/// opt-in requires.
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+/// Per-chunk owner-graph build options. Each field defaults to the
+/// strictly-conservative behavior; opt-ins enable conditionally-correct
+/// inferences that hold only when the input satisfies a checkable
+/// precondition (see `devinfra/js/debundle/AGENTS.md` →
+/// "Conditionally-correct optimizations").
+///
+/// Serves two roles with one type: it's the YAML surface for
+/// `TransformSpec::chunk_analysis_options` (each per-chunk entry
+/// deserializes into this), and it's the input to
+/// `analysis::build_owner_graph_with`. The materializer threads it
+/// straight through — no per-chunk copy.
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct ChunkAnalysisOptions {
-    /// Emit the side-effect ordering chain in `graph.rs` using
-    /// per-statement (writes, reads) summaries instead of the
-    /// adjacent-impure transitive reduction. Only sound when the chunk
-    /// is free of dynamic dispatch shapes (direct `eval`, `with`,
-    /// `Function(...)` constructor, computed `globalThis[<expr>]`
-    /// access, `Object.defineProperty` on globals, `Proxy` on globals).
-    /// Individual statements that contain a non-summarizable shape
-    /// fall back to the conservative path automatically; this flag
-    /// only enables the dataflow path for statements that pass the
-    /// per-statement check.
+pub struct OwnerGraphOptions {
+    /// Emit the side-effect ordering chain using per-statement
+    /// (writes, reads) summaries instead of the adjacent-impure
+    /// transitive reduction. See the S-chain block in
+    /// `build_owner_graph_with` and `README.md` →
+    /// "Conditionally-correct optimizations". Only sound when the
+    /// chunk is free of dynamic dispatch shapes (direct `eval`,
+    /// `with`, `Function(...)` constructor, computed
+    /// `globalThis[<expr>]` access, `Object.defineProperty` on
+    /// globals, `Proxy` on globals). Individual statements that
+    /// contain a non-summarizable shape fall back to the
+    /// conservative path automatically; this flag only enables the
+    /// dataflow path for statements that pass the per-statement
+    /// check.
     #[serde(default)]
     pub dataflow_aware_s_chain: bool,
 }

@@ -35,7 +35,7 @@ pub(super) struct ChunkSpec<'a> {
     pub(super) logical_modules: &'a BTreeMap<String, BTreeMap<String, LogicalModule>>,
     pub(super) chunk_renames: &'a BTreeMap<String, ChunkRenames>,
     pub(super) unassigned_mode: &'a BTreeMap<String, UnassignedMode>,
-    pub(super) chunk_analysis_options: &'a BTreeMap<String, ChunkAnalysisOptions>,
+    pub(super) chunk_analysis_options: &'a BTreeMap<String, OwnerGraphOptions>,
 }
 
 pub(super) struct MaterializeLogicalChunkInputs<'a> {
@@ -194,11 +194,10 @@ pub(super) fn materialize_logical_chunk(
     });
     // Stage A: spec-independent analysis (facts + owner graph +
     // structural atomic units). See `stage_one/mod.rs` for the composer.
-    let owner_graph_options = OwnerGraphOptions {
-        dataflow_aware_s_chain: chunk_analysis_options
-            .get(chunk_id)
-            .is_some_and(|opts| opts.dataflow_aware_s_chain),
-    };
+    let owner_graph_options = chunk_analysis_options
+        .get(chunk_id)
+        .copied()
+        .unwrap_or_default();
     let stage_one = time_phase!(timings, "compute_stage_one_analysis", {
         compute_stage_one_analysis(
             chunk_id,

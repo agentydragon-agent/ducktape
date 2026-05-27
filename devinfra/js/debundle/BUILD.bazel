@@ -246,6 +246,7 @@ rust_library(
     deps = [
         ":binding_targets",
         ":output_layout",
+        ":spec",
         "@crates//:anyhow",
         "@crates//:petgraph",
         "@crates//:rayon",

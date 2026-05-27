@@ -10,22 +10,11 @@ use crate::partition::Partition;
 use crate::purity::Purity;
 use crate::{ModuleId, SourceLocation, StatementFacts, StatementKind, StatementOrdinal};
 
-/// Per-chunk owner-graph build options. Each field defaults to the
-/// strictly-conservative behavior; opt-ins enable conditionally-correct
-/// inferences that hold only when the input satisfies a checkable
-/// precondition (see `devinfra/js/debundle/AGENTS.md` →
-/// "Conditionally-correct optimizations"). The materializer reads
-/// these from the per-chunk spec entry in
-/// `TransformSpec::chunk_analysis_options`.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct OwnerGraphOptions {
-    /// Emit the side-effect ordering chain using per-statement
-    /// (writes, reads) summaries instead of the adjacent-impure
-    /// transitive reduction. See the S-chain block in
-    /// `build_owner_graph_with` and `README.md` →
-    /// "Conditionally-correct optimizations".
-    pub dataflow_aware_s_chain: bool,
-}
+// `OwnerGraphOptions` lives in `spec.rs` — both the spec YAML surface
+// and the graph-build API consume the same type. Re-exported from
+// crate root via `lib.rs` so `analysis::OwnerGraphOptions` continues
+// to be the canonical path for external callers.
+pub use spec::OwnerGraphOptions;
 
 /// How an edge was emitted. Determines whether the gate / quotient /
 /// reports consumers project the edge through the lenient (drop
