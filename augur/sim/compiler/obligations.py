@@ -88,13 +88,13 @@ def compile_obligation_slots(
     horizon = int(scenario.horizon_months)
     monthly_specs: list[list[dict[str, Any]]] = [[] for _ in range(horizon)]
 
-    for obligation in scenario.scheduled_obligations:
-        if 0 <= obligation.month < horizon:
-            monthly_specs[obligation.month].append({"kind": 0, "source": NO_CODE, "config": obligation})
+    for scheduled in scenario.scheduled_obligations:
+        if 0 <= scheduled.month < horizon:
+            monthly_specs[scheduled.month].append({"kind": 0, "source": NO_CODE, "config": scheduled})
     for month in range(horizon):
-        for obligation in scenario.recurring_obligations:
-            if obligation.is_active_at(month):
-                monthly_specs[month].append({"kind": 0, "source": NO_CODE, "config": obligation})
+        for recurring in scenario.recurring_obligations:
+            if recurring.is_active_at(month):
+                monthly_specs[month].append({"kind": 0, "source": NO_CODE, "config": recurring})
 
     for month in range(horizon):
         for liability_slot, liability_code in enumerate(liabilities.codes.tolist()):
@@ -259,30 +259,30 @@ def compile_obligation_slots(
                     deductible_fraction[month, idx] = rented_fraction_val
             elif kind in {3, 4, 5}:
                 profile_index = int(spec["source"])
-                profile = profile_by_index[profile_index]
+                tax_profile = profile_by_index[profile_index]
                 if kind == 3:
                     quarter = int(spec["quarter"])
                     tax_year = month // 12
-                    cause_text = f"{profile.agent_id}_estimated_tax_q{quarter}_y{tax_year}"
+                    cause_text = f"{tax_profile.agent_id}_estimated_tax_q{quarter}_y{tax_year}"
                     obligation_type_text = "estimated_tax"
                 elif kind == 4:
                     tax_year = int(spec["tax_year"])
-                    cause_text = f"{profile.agent_id}_estimated_tax_q4_y{tax_year}"
+                    cause_text = f"{tax_profile.agent_id}_estimated_tax_q4_y{tax_year}"
                     obligation_type_text = "estimated_tax"
                 else:
                     tax_year = int(spec["tax_year"])
-                    cause_text = f"{profile.agent_id}_tax_true_up_y{tax_year}"
+                    cause_text = f"{tax_profile.agent_id}_tax_true_up_y{tax_year}"
                     obligation_type_text = "tax_true_up"
                 cause[month, idx] = strings.require(cause_text)
                 obligation_id[month, idx] = strings.require(cause_text)
                 obligation_type[month, idx] = strings.require(obligation_type_text)
-                agent[month, idx] = strings.require(profile.agent_id)
-                from_account[month, idx] = strings.require(profile.payment_account_id)
-                from_slot[month, idx] = slot(account_slot_by_key, profile.agent_id, profile.payment_account_id)
-                to_agent[month, idx] = strings.require(profile.tax_authority_agent_id)
-                to_account[month, idx] = strings.require(profile.tax_authority_account_id)
+                agent[month, idx] = strings.require(tax_profile.agent_id)
+                from_account[month, idx] = strings.require(tax_profile.payment_account_id)
+                from_slot[month, idx] = slot(account_slot_by_key, tax_profile.agent_id, tax_profile.payment_account_id)
+                to_agent[month, idx] = strings.require(tax_profile.tax_authority_agent_id)
+                to_account[month, idx] = strings.require(tax_profile.tax_authority_account_id)
                 to_slot[month, idx] = slot(
-                    account_slot_by_key, profile.tax_authority_agent_id, profile.tax_authority_account_id
+                    account_slot_by_key, tax_profile.tax_authority_agent_id, tax_profile.tax_authority_account_id
                 )
     return ObligationCompileOutput(
         cause=cause,

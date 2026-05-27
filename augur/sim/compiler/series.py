@@ -27,10 +27,14 @@ def collect_series_ids(scenario: Scenario, external_series: ExternalSeriesContex
 
     for value in external_series.series_values.select("series_id").unique().get_column("series_id").to_list():
         add(str(value))
-    for transfer in [*scenario.scheduled_transfers, *scenario.recurring_transfers]:
-        _add_amount_series_id(transfer.amount_usd, add)
-    for obligation in [*scenario.scheduled_obligations, *scenario.recurring_obligations]:
-        _add_amount_series_id(obligation.amount_due_usd, add)
+    for scheduled_transfer in scenario.scheduled_transfers:
+        _add_amount_series_id(scheduled_transfer.amount_usd, add)
+    for recurring_transfer in scenario.recurring_transfers:
+        _add_amount_series_id(recurring_transfer.amount_usd, add)
+    for scheduled_obligation in scenario.scheduled_obligations:
+        _add_amount_series_id(scheduled_obligation.amount_due_usd, add)
+    for recurring_obligation in scenario.recurring_obligations:
+        _add_amount_series_id(recurring_obligation.amount_due_usd, add)
     for sale in scenario.scheduled_asset_sales:
         if sale.price_per_unit_usd is None:
             add(sale.asset_id)

@@ -21,7 +21,8 @@ def decode_transfers(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl
     to_agents = codes_to_strings(plan, plan.transfers.to_agent)[months, slots]
     to_accounts = codes_to_strings(plan, plan.transfers.to_account)[months, slots]
     amounts = buffers.transfers.amount[months, slots, rollouts]
-    income_categories = np.where(plan.transfers.income_profile[months, slots] >= 0, "ordinary", None).astype(object)
+    income_categories = np.full(len(months), None, dtype=object)
+    income_categories[plan.transfers.income_profile[months, slots] >= 0] = "ordinary"
     return frame_from_columns(
         EVENT_FRAMES.transfers,
         rollout_index=rollouts,

@@ -24,7 +24,7 @@ def main() -> None:
     scenario = build_bench_scenario(horizon_months=args.horizon_months)
 
     t0 = time.perf_counter()
-    result = simulate(scenario, rollout_count=args.rollouts)
+    result = simulate(scenario, rollout_count=args.rollouts, locations={})
     elapsed = time.perf_counter() - t0
 
     print(f"rollouts: {args.rollouts}")

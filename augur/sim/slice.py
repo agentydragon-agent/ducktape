@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+from typing import Any
 
 import numpy as np
 import polars as pl
@@ -51,7 +52,7 @@ def slice_dense_result(dense: DenseSimulationResult, *, rollout_index: int) -> D
 
 def _take_dc[T](obj: T, rollout_index: int, *, axis: int) -> T:
     fields = dataclasses.fields(obj)  # type: ignore[arg-type]
-    sliced = {}
+    sliced: dict[str, Any] = {}
     for field in fields:
         val = getattr(obj, field.name)
         if dataclasses.is_dataclass(val) and not isinstance(val, type):

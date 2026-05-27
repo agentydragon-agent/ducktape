@@ -24,7 +24,7 @@ def test_bench_scenario_runs_at_low_rollout_count() -> None:
     on a small rollout count. Pins the structural facts but not
     the path-dependent numbers."""
     scenario = build_bench_scenario(horizon_months=24)
-    result = simulate(scenario, rollout_count=10)
+    result = simulate(scenario, rollout_count=10, locations={})
 
     # Two recurring transfers (paycheck + rent) x 24 months x 10
     # rollouts = 480 monthly transfer rows. Tax payment timing is
@@ -74,7 +74,7 @@ def test_dry_add_fourth_position_is_config_only() -> None:
         }
     )
 
-    result = simulate(extended, rollout_count=10)
+    result = simulate(extended, rollout_count=10, locations={})
 
     # The new asset shows up in lots:
     efv_lots = result.asset_lots.filter(pl.col("asset_id") == "efv")

@@ -4,6 +4,7 @@ import polars as pl
 import pytest
 import pytest_bazel
 
+from augur.sim.locations import Location
 from augur.sim.projections import project_simulation_run
 from augur.sim.scenario import (
     Agent,
@@ -58,7 +59,7 @@ def test_projection_due_now_obligation_sells_assets_and_settles(deterministic_se
         horizon_months=1,
     )
 
-    projection = project_simulation_run(simulate(scenario, rollout_count=1))
+    projection = project_simulation_run(simulate(scenario, rollout_count=1, locations={}))
 
     lifecycle = projection.obligation_lifecycle.row(0, named=True)
     assert lifecycle["obligation_id"] == "rent_due_m0"
@@ -111,7 +112,7 @@ def test_projection_due_now_obligation_failure_is_explicit() -> None:
         horizon_months=1,
     )
 
-    projection = project_simulation_run(simulate(scenario, rollout_count=1))
+    projection = project_simulation_run(simulate(scenario, rollout_count=1, locations={}))
 
     lifecycle = projection.obligation_lifecycle.row(0, named=True)
     assert lifecycle["status"] == "failed"
@@ -187,7 +188,7 @@ def test_projection_tax_safe_harbor_breakdown_and_payments() -> None:
         horizon_months=13,
     )
 
-    projection = project_simulation_run(simulate(scenario, rollout_count=1))
+    projection = project_simulation_run(simulate(scenario, rollout_count=1, locations={}))
 
     breakdowns = {
         row["jurisdiction_id"]: row for row in projection.tax_breakdowns.sort("jurisdiction_id").iter_rows(named=True)
@@ -240,7 +241,7 @@ def test_projection_tax_safe_harbor_breakdown_and_payments() -> None:
     assert alice_final["book_net_worth_usd"] == pytest.approx(71_015.39, abs=0.02)
 
 
-def test_projection_real_estate_book_net_worth_and_liability_balance() -> None:
+def test_projection_real_estate_book_net_worth_and_liability_balance(san_francisco_location: Location) -> None:
     scenario = Scenario(
         agents=[
             Agent(agent_id="alice"),
@@ -287,7 +288,9 @@ def test_projection_real_estate_book_net_worth_and_liability_balance() -> None:
         horizon_months=2,
     )
 
-    projection = project_simulation_run(simulate(scenario, rollout_count=1))
+    projection = project_simulation_run(
+        simulate(scenario, rollout_count=1, locations={"san_francisco": san_francisco_location})
+    )
 
     mortgage_payment = 400_000.0 * 0.005 / (1.0 - (1.005**-360))
     expected_cash = 120_000.0 - 110_000.0 - mortgage_payment - 500.0
@@ -318,7 +321,7 @@ def test_projection_trajectory_filters_one_rollout() -> None:
         horizon_months=1,
     )
 
-    projection = project_simulation_run(simulate(scenario, rollout_count=2))
+    projection = project_simulation_run(simulate(scenario, rollout_count=2, locations={}))
     trajectory = projection.trajectory(1)
 
     assert set(trajectory.net_worth.get_column("rollout_index").to_list()) == {1}

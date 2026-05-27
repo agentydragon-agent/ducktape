@@ -8,7 +8,7 @@ match the event/state-frame schemas declared in `augur.sim.state` + `augur.sim.e
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import polars as pl
@@ -85,5 +85,6 @@ def frame_from_columns(spec: Any, **columns: np.ndarray) -> pl.DataFrame:
 
     n = next(iter(columns.values())).size
     if n == 0:
-        return spec.empty()
-    return pl.DataFrame(columns, schema=spec.schema).select(spec.schema.names())
+        return cast(pl.DataFrame, spec.empty())
+    df: pl.DataFrame = pl.DataFrame(columns, schema=spec.schema)
+    return cast(pl.DataFrame, df.select(spec.schema.names()))

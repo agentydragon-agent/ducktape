@@ -6,6 +6,7 @@ multiple phase functions invoke them."""
 from __future__ import annotations
 
 import numpy as np
+import numpy.typing as npt
 
 from augur.sim.buffers import CurrentStateBuffers, SimulationBuffers
 from augur.sim.codec.helpers import text
@@ -164,15 +165,15 @@ def _write_tax_link_buffers(
     itemized_deduction: np.ndarray,
     ordinary_taxable: np.ndarray,
     capital_taxable: np.ndarray,
-    ordinary_tax: np.ndarray,
-    capital_tax: np.ndarray,
-) -> np.ndarray:
+    ordinary_tax: npt.NDArray[np.float64],
+    capital_tax: npt.NDArray[np.float64],
+) -> npt.NDArray[np.float64]:
     profile = int(plan.tax.link_profile[link])
     gain_profile = int(plan.tax_profile_capital_gain_index[profile])
     ordinary = current.ordinary_ytd[profile, :]
     ltcg = current.capital_gain_ytd[gain_profile, CapitalGainClassification.LONG_TERM, :]
     stcg = current.capital_gain_ytd[gain_profile, CapitalGainClassification.SHORT_TERM, :]
-    tax = ordinary_tax + capital_tax
+    tax: npt.NDArray[np.float64] = ordinary_tax + capital_tax
     buffers.taxes.accrual_active[month, link, active_rollout] = True
     buffers.taxes.accrual_amount[month, link, active_rollout] = tax[active_rollout]
     buffers.taxes.breakdown_ordinary[month, link, active_rollout] = ordinary[active_rollout]
@@ -300,14 +301,14 @@ def _apply_pe_tenders(
 
 def _compute_liquid_net_worth(
     plan: CompiledSimulation, current: CurrentStateBuffers, *, policy_idx: int, month: int
-) -> np.ndarray:
+) -> npt.NDArray[np.float64]:
     """Per-rollout LNW = cash in policy-owner accounts + non-PE-lot value at current prices."""
 
     owner_cash_mask = plan.pe_policies.owner_cash_mask[policy_idx]
     cash_total = (current.cash * owner_cash_mask[:, None]).sum(axis=0)
     lot_mask = plan.pe_policies.owner_non_pe_lot_mask[policy_idx]
     if not lot_mask.any():
-        return cash_total
+        return np.asarray(cash_total, dtype=np.float64)
     lot_indices = np.flatnonzero(lot_mask)
     series_indices = plan.lot_asset_series_index[lot_indices]
     valid = series_indices >= 0
@@ -317,7 +318,7 @@ def _compute_liquid_net_worth(
     prices = np.nan_to_num(prices, nan=0.0)
     quantities = current.lot_remaining[lot_indices, :]  # (lot, rollout)
     lot_value = (quantities * prices).sum(axis=0)
-    return cash_total + lot_value
+    return np.asarray(cash_total + lot_value, dtype=np.float64)
 
 
 def _apply_lifecycle_events(
@@ -683,7 +684,9 @@ def _apply_tax_accruals(
     current.recapture_section_1250_ytd[:, active_rollout] = 0.0
 
 
-def _apply_brackets(amount: np.ndarray, *, upper: np.ndarray, rate: np.ndarray, count: int) -> np.ndarray:
+def _apply_brackets(
+    amount: npt.NDArray[np.float64], *, upper: np.ndarray, rate: np.ndarray, count: int
+) -> npt.NDArray[np.float64]:
     if count <= 0:
         return np.zeros(amount.shape, dtype=np.float64)
     upper = upper[:count]
@@ -691,12 +694,17 @@ def _apply_brackets(amount: np.ndarray, *, upper: np.ndarray, rate: np.ndarray, 
     previous_upper = np.concatenate((np.array([0.0], dtype=np.float64), upper[:-1]))
     slice_top = np.minimum(amount[:, None], upper[None, :])
     in_bracket = np.maximum(slice_top - previous_upper[None, :], 0.0)
-    return (in_bracket * rate[None, :]).sum(axis=1)
+    return np.asarray((in_bracket * rate[None, :]).sum(axis=1), dtype=np.float64)
 
 
 def _apply_ltcg_brackets(
-    ltcg_amount: np.ndarray, ordinary_taxable: np.ndarray, *, upper: np.ndarray, rate: np.ndarray, count: int
-) -> np.ndarray:
+    ltcg_amount: npt.NDArray[np.float64],
+    ordinary_taxable: npt.NDArray[np.float64],
+    *,
+    upper: np.ndarray,
+    rate: np.ndarray,
+    count: int,
+) -> npt.NDArray[np.float64]:
     if count <= 0:
         return np.zeros(ltcg_amount.shape, dtype=np.float64)
     upper = upper[:count]
@@ -706,7 +714,7 @@ def _apply_ltcg_brackets(
     slice_top = np.minimum(total_taxable[:, None], upper[None, :])
     slice_bottom = np.maximum(ordinary_taxable[:, None], previous_upper[None, :])
     in_bracket = np.maximum(slice_top - slice_bottom, 0.0)
-    return (in_bracket * rate[None, :]).sum(axis=1)
+    return np.asarray((in_bracket * rate[None, :]).sum(axis=1), dtype=np.float64)
 
 
 def _tax_liability_slot_for(
@@ -1204,13 +1212,16 @@ def _settle_tax_liabilities_for_profile_year(
 
 def _actual_tax_for_profile_year(
     plan: CompiledSimulation, current: CurrentStateBuffers, *, profile_index: int, year_end_month: int
-) -> np.ndarray:
+) -> npt.NDArray[np.float64]:
     slots = np.flatnonzero(
         (plan.tax_liabilities.profile_index == profile_index) & (plan.tax_liabilities.year_end_month == year_end_month)
     )
     if slots.size == 0:
         return np.zeros(plan.rollout_count, dtype=np.float64)
-    return np.where(current.tax_liability_active[slots, :], current.tax_liability_amount[slots, :], 0.0).sum(axis=0)
+    return np.asarray(
+        np.where(current.tax_liability_active[slots, :], current.tax_liability_amount[slots, :], 0.0).sum(axis=0),
+        dtype=np.float64,
+    )
 
 
 def _sale_unit_price(plan: CompiledSimulation, *, month: int, sale: int) -> np.ndarray:

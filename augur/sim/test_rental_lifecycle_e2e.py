@@ -16,6 +16,7 @@ import pytest
 import pytest_bazel
 
 from augur.sim.external_series import EXTERNAL_SERIES_EVENTS_FRAME, EXTERNAL_SERIES_VALUES_FRAME, ExternalSeriesContext
+from augur.sim.locations import Location
 from augur.sim.scenario import (
     Agent,
     CapitalImprovementEvent,
@@ -210,7 +211,7 @@ class TestRentalIncome:
         # Build a per-month rent series: 1.0 for months 0..11, 2.0 for months 12..24.
         levels = [1.0] * 12 + [2.0] * 13
         ctx = _multi_series(levels_by_series={RENT_SERIES_ID: {0: levels}})
-        run = simulate_with_external_series(scenario, external_series=ctx, rollout_count=1)
+        run = simulate_with_external_series(scenario, external_series=ctx, rollout_count=1, locations={})
         transfers = (
             run.events_log.transfers.filter(pl.col("cause_id") == "rental_income:p1")
             .sort("month_index")
@@ -524,7 +525,7 @@ class TestRentalIncomeTaxation:
         breakdowns = {row["jurisdiction_id"]: row for row in run.events_log.tax_breakdowns.iter_rows(named=True)}
         assert breakdowns["federal_us"]["ordinary_income_usd"] == pytest.approx(45_454.55, abs=0.02)
 
-    def test_lifecycle_start_renting_starts_depreciation_accrual_mid_horizon(self):
+    def test_lifecycle_start_renting_starts_depreciation_accrual_mid_horizon(self, san_francisco_location: Location):
         """StartRentingEvent at month 12 → depreciation accrues only from month 12 onward.
         24-month horizon, $400k building basis, 12 months of rental → annual depreciation
         in year 1 = 0; in year 2 (after start) = $400k / 27.5 = $14,545.45."""
@@ -591,7 +592,9 @@ class TestRentalIncomeTaxation:
         ctx = _multi_series(
             levels_by_series={RENT_SERIES_ID: {0: [1.0] * 25}, "home_value:san_francisco": {0: [1.0] * 25}}
         )
-        run = simulate_with_external_series(scenario, external_series=ctx, rollout_count=1)
+        run = simulate_with_external_series(
+            scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
+        )
         breakdowns = list(run.events_log.tax_breakdowns.sort("month_index", "jurisdiction_id").iter_rows(named=True))
         # Year 0 (month 11) federal_us: rented_fraction=0 the whole year, no rental income, no
         # depreciation → ordinary_income = $0.
@@ -602,15 +605,21 @@ class TestRentalIncomeTaxation:
         year_1_federal = next(b for b in breakdowns if b["month_index"] == 23 and b["jurisdiction_id"] == "federal_us")
         assert year_1_federal["ordinary_income_usd"] == pytest.approx(45_454.55, abs=0.05)
 
-    def test_lifecycle_start_renting_redirects_mortgage_interest_from_mid_to_schedule_e(self):
+    def test_lifecycle_start_renting_redirects_mortgage_interest_from_mid_to_schedule_e(
+        self, san_francisco_location: Location
+    ):
         """At start-of-rental, MID drops to 0 for the now-rented portion of mortgage interest,
         and Schedule E picks it up. Comparison: same scenario with rented_fraction=0 throughout
         vs. with StartRentingEvent at month 0 setting rented_fraction=1.0 — the second case
         should yield zero MID line."""
 
-        breakdowns_owner = self._mortgage_lifecycle_breakdown(start_renting_at=None)
+        breakdowns_owner = self._mortgage_lifecycle_breakdown(
+            start_renting_at=None, locations={"san_francisco": san_francisco_location}
+        )
         # NOTE: StartRentingEvent must fire strictly after purchase (month 0), so use month 1.
-        breakdowns_rent = self._mortgage_lifecycle_breakdown(start_renting_at=1)
+        breakdowns_rent = self._mortgage_lifecycle_breakdown(
+            start_renting_at=1, locations={"san_francisco": san_francisco_location}
+        )
         # Owner-occupied: positive MID
         assert breakdowns_owner["federal_us"]["mortgage_interest_deduction_usd"] > 0
         # Rented from month 1: MID for year 0 is the month-0 interest only (a tiny first-month
@@ -620,7 +629,7 @@ class TestRentalIncomeTaxation:
             < breakdowns_owner["federal_us"]["mortgage_interest_deduction_usd"] * 0.15
         )
 
-    def _mortgage_lifecycle_breakdown(self, *, start_renting_at: int | None) -> dict:
+    def _mortgage_lifecycle_breakdown(self, *, start_renting_at: int | None, locations: dict[str, Location]) -> dict:
         end_month = 11
         purchase_price = 500_000.0
         lifecycle_events = (
@@ -695,10 +704,10 @@ class TestRentalIncomeTaxation:
             horizon_months=12,
         )
         ctx = _multi_series(levels_by_series={"home_value:san_francisco": {0: [1.0] * 13}})
-        run = simulate_with_external_series(scenario, external_series=ctx, rollout_count=1)
+        run = simulate_with_external_series(scenario, external_series=ctx, rollout_count=1, locations=locations)
         return {row["jurisdiction_id"]: row for row in run.events_log.tax_breakdowns.iter_rows(named=True)}
 
-    def test_lifecycle_stop_renting_halts_depreciation(self):
+    def test_lifecycle_stop_renting_halts_depreciation(self, san_francisco_location: Location):
         """StopRentingEvent at month 12 → depreciation accrues months 0-11 only.
         Year 0 ordinary: $60k rent - $14.5k dep = $45.5k.
         Year 1 ordinary: $0 rent (no more rental income), no dep → $0.
@@ -764,14 +773,16 @@ class TestRentalIncomeTaxation:
         ctx = _multi_series(
             levels_by_series={RENT_SERIES_ID: {0: [1.0] * 25}, "home_value:san_francisco": {0: [1.0] * 25}}
         )
-        run = simulate_with_external_series(scenario, external_series=ctx, rollout_count=1)
+        run = simulate_with_external_series(
+            scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
+        )
         breakdowns = list(run.events_log.tax_breakdowns.sort("month_index", "jurisdiction_id").iter_rows(named=True))
         year_0_federal = next(b for b in breakdowns if b["month_index"] == 11 and b["jurisdiction_id"] == "federal_us")
         assert year_0_federal["ordinary_income_usd"] == pytest.approx(45_454.55, abs=0.05)
         year_1_federal = next(b for b in breakdowns if b["month_index"] == 23 and b["jurisdiction_id"] == "federal_us")
         assert year_1_federal["ordinary_income_usd"] == pytest.approx(0.0, abs=1e-6)
 
-    def test_capital_improvement_bumps_basis_and_accelerates_depreciation(self):
+    def test_capital_improvement_bumps_basis_and_accelerates_depreciation(self, san_francisco_location: Location):
         """CapitalImprovementEvent at month 6 bumps building basis by $100k.
         Building basis after improvement = $400k + $100k = $500k.
         Monthly depreciation after month 6 = $500k / 27.5 / 12 ≈ $1,515.15
@@ -835,7 +846,9 @@ class TestRentalIncomeTaxation:
             horizon_months=12,
         )
         ctx = _multi_series(levels_by_series={"home_value:san_francisco": {0: [1.0] * 13}})
-        run = simulate_with_external_series(scenario, external_series=ctx, rollout_count=1)
+        run = simulate_with_external_series(
+            scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
+        )
         breakdowns = {row["jurisdiction_id"]: row for row in run.events_log.tax_breakdowns.iter_rows(named=True)}
         # 6 months at $400k/27.5/12 + 6 months at $500k/27.5/12
         # = 6 × 1212.12 + 6 × 1515.15 = 7272.73 + 9090.91 = 16363.64
@@ -843,7 +856,9 @@ class TestRentalIncomeTaxation:
         expected_ordinary = 60_000.0 - expected_depreciation
         assert breakdowns["federal_us"]["ordinary_income_usd"] == pytest.approx(expected_ordinary, abs=0.05)
 
-    def test_property_sale_recaptures_depreciation_and_routes_remaining_gain_to_ltcg(self):
+    def test_property_sale_recaptures_depreciation_and_routes_remaining_gain_to_ltcg(
+        self, san_francisco_location: Location
+    ):
         """Sale of a fully-rented property after 12 months of depreciation.
         Building basis $400k → $400k / 27.5 ≈ $14,545.45/yr depreciation.
         After 12mo cumulative depreciation = $14,545.45.
@@ -857,7 +872,9 @@ class TestRentalIncomeTaxation:
         ctx = _multi_series(
             levels_by_series={RENT_SERIES_ID: {0: [1.0] * 14}, "home_value:san_francisco": {0: [1.0] * 14}}
         )
-        run = simulate_with_external_series(scenario, external_series=ctx, rollout_count=1)
+        run = simulate_with_external_series(
+            scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
+        )
         # Verify the sale fired: capital_gain_ytd has zero LTCG, ordinary_ytd has zero recapture
         # because the property sold for less than adjusted basis (loss). No gain to recapture.
         breakdowns = {row["jurisdiction_id"]: row for row in run.events_log.tax_breakdowns.iter_rows(named=True)}
@@ -866,7 +883,7 @@ class TestRentalIncomeTaxation:
         # Property is frozen after sale - the next year's depreciation should not accrue.
         # Verify by counting depreciation accruals: only 12 months should have happened.
 
-    def test_property_sale_at_gain_routes_recapture_and_ltcg(self):
+    def test_property_sale_at_gain_routes_recapture_and_ltcg(self, san_francisco_location: Location):
         """Sale at month 12 with home value appreciation. Horizon 24mo so year 1 tax accrual
         (month 23) captures the sale-year LTCG.
 
@@ -881,7 +898,9 @@ class TestRentalIncomeTaxation:
         # Home value series steps up at month 12.
         levels = [1.0] * 12 + [1.5] * 13
         ctx = _multi_series(levels_by_series={RENT_SERIES_ID: {0: [1.0] * 25}, "home_value:san_francisco": {0: levels}})
-        run = simulate_with_external_series(scenario, external_series=ctx, rollout_count=1)
+        run = simulate_with_external_series(
+            scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
+        )
         # Year 1 tax breakdown (month 23) captures the LTCG.
         breakdowns_y1 = [
             row
@@ -892,7 +911,9 @@ class TestRentalIncomeTaxation:
         b = breakdowns_y1[0]
         assert b["ltcg_usd"] == pytest.approx(205_000.0, abs=1.0)
 
-    def test_section_1250_recapture_taxed_at_lesser_of_marginal_or_cap_low_bracket(self):
+    def test_section_1250_recapture_taxed_at_lesser_of_marginal_or_cap_low_bracket(
+        self, san_francisco_location: Location
+    ):
         """IRS Unrecaptured §1250 Gain Worksheet rule (low-bracket case).
 
         Sale at month 12 (year 2). The recapture lands in year 2 tax accruals; year 2
@@ -907,7 +928,9 @@ class TestRentalIncomeTaxation:
         scenario = self._sale_scenario(horizon=24, sale_month=12)
         levels = [1.0] * 12 + [1.5] * 13
         ctx = _multi_series(levels_by_series={RENT_SERIES_ID: {0: [1.0] * 25}, "home_value:san_francisco": {0: levels}})
-        run = simulate_with_external_series(scenario, external_series=ctx, rollout_count=1)
+        run = simulate_with_external_series(
+            scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
+        )
         federal_y2 = next(
             row
             for row in run.events_log.tax_breakdowns.iter_rows(named=True)
@@ -937,7 +960,7 @@ class TestRentalIncomeTaxation:
             205_000.0 + recapture - california_y2["standard_deduction_usd"], abs=1.0
         )
 
-    def test_section_1250_recapture_caps_at_25pct_when_marginal_exceeds(self):
+    def test_section_1250_recapture_caps_at_25pct_when_marginal_exceeds(self, san_francisco_location: Location):
         """High-bracket case: federal 25% §1250 cap binds when marginal ≥ 25%.
 
         Same sale scenario, but the owner also earns enough wage income in year 2 to
@@ -949,7 +972,9 @@ class TestRentalIncomeTaxation:
         scenario = self._sale_scenario(horizon=24, sale_month=12, year2_wage_usd=250_000.0)
         levels = [1.0] * 12 + [1.5] * 13
         ctx = _multi_series(levels_by_series={RENT_SERIES_ID: {0: [1.0] * 25}, "home_value:san_francisco": {0: levels}})
-        run = simulate_with_external_series(scenario, external_series=ctx, rollout_count=1)
+        run = simulate_with_external_series(
+            scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
+        )
         federal_y2 = next(
             row
             for row in run.events_log.tax_breakdowns.iter_rows(named=True)
@@ -966,7 +991,7 @@ class TestRentalIncomeTaxation:
         # the 25% cap — the LTCG arithmetic is exercised elsewhere.
         assert federal_y2["capital_gain_tax_usd"] >= section_1250_tax + 0.20 * 100_000.0  # rough lower bound
 
-    def test_section_121_exclusion_after_24_owner_occupied_months(self):
+    def test_section_121_exclusion_after_24_owner_occupied_months(self, san_francisco_location: Location):
         """Owner-occupied for ≥ 24 of the last 60 months → up to $250k of post-recapture
         gain is excluded from LTCG (single-filer cap).
 
@@ -1018,7 +1043,9 @@ class TestRentalIncomeTaxation:
         ctx = _multi_series(
             levels_by_series={RENT_SERIES_ID: {0: [1.0] * (horizon + 1)}, "home_value:san_francisco": {0: home_values}}
         )
-        run = simulate_with_external_series(scenario, external_series=ctx, rollout_count=1)
+        run = simulate_with_external_series(
+            scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
+        )
         # Sale event surfaces in property_sale_events frame.
         sale_rows = run.events_log.property_sale_events.to_dicts()
         assert len(sale_rows) == 1
@@ -1031,7 +1058,7 @@ class TestRentalIncomeTaxation:
         assert sale["section_121_exclusion_usd"] == pytest.approx(158_000.0, abs=1.0)
         assert sale["long_term_capital_gain_usd"] == pytest.approx(0.0, abs=1e-6)
 
-    def test_section_121_does_not_apply_without_owner_occupied_months(self):
+    def test_section_121_does_not_apply_without_owner_occupied_months(self, san_francisco_location: Location):
         """Same sale at month 30, but the property has been 100% rented the entire time.
         Owner-occupied months = 0, so §121 does not apply. The depreciation recapture +
         LTCG flow remains intact."""
@@ -1041,14 +1068,16 @@ class TestRentalIncomeTaxation:
         ctx = _multi_series(
             levels_by_series={RENT_SERIES_ID: {0: [1.0] * 37}, "home_value:san_francisco": {0: home_values}}
         )
-        run = simulate_with_external_series(scenario, external_series=ctx, rollout_count=1)
+        run = simulate_with_external_series(
+            scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
+        )
         sale = run.events_log.property_sale_events.to_dicts()[0]
         # §121 should be exactly zero — never owner-occupied.
         assert sale["section_121_exclusion_usd"] == pytest.approx(0.0, abs=1e-6)
         # Recapture should be positive (30 months of depreciation × $400k / 27.5 / 12 ≈ $36,363).
         assert sale["depreciation_recapture_usd"] == pytest.approx(36_363.64, abs=1.0)
 
-    def test_lifecycle_event_frames_logged_for_each_kind(self):
+    def test_lifecycle_event_frames_logged_for_each_kind(self, san_francisco_location: Location):
         """All three lifecycle event kinds appear in their respective frames, one row per
         (rollout, event)."""
 
@@ -1094,7 +1123,9 @@ class TestRentalIncomeTaxation:
         ctx = _multi_series(
             levels_by_series={RENT_SERIES_ID: {0: [1.0] * 25}, "home_value:san_francisco": {0: [1.0] * 25}}
         )
-        run = simulate_with_external_series(scenario, external_series=ctx, rollout_count=1)
+        run = simulate_with_external_series(
+            scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
+        )
 
         rented_rows = run.events_log.set_rented_fraction_events.to_dicts()
         assert len(rented_rows) == 1
@@ -1195,7 +1226,7 @@ class TestRentalIncomeTaxation:
             horizon_months=horizon,
         )
 
-    def test_depreciation_does_not_accrue_when_not_rented(self):
+    def test_depreciation_does_not_accrue_when_not_rented(self, san_francisco_location: Location):
         """No rental → no depreciation accrual → no Schedule E deduction."""
 
         end_month = 11
@@ -1253,19 +1284,27 @@ class TestRentalIncomeTaxation:
             horizon_months=12,
         )
         ctx = _multi_series(levels_by_series={"home_value:san_francisco": {0: [1.0] * 13}})
-        run = simulate_with_external_series(scenario, external_series=ctx, rollout_count=1)
+        run = simulate_with_external_series(
+            scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
+        )
         breakdowns = {row["jurisdiction_id"]: row for row in run.events_log.tax_breakdowns.iter_rows(named=True)}
         # No depreciation → ordinary income equals gross paycheck income: $60,000.
         assert breakdowns["federal_us"]["ordinary_income_usd"] == pytest.approx(60_000.0, abs=1e-6)
 
-    def test_mortgage_interest_deducts_full_for_owner_occupied_and_scales_for_partial_rental(self):
+    def test_mortgage_interest_deducts_full_for_owner_occupied_and_scales_for_partial_rental(
+        self, san_francisco_location: Location
+    ):
         """MID applies to the owner-fraction of mortgage interest; the rented-fraction share
         deducts as Schedule E rental interest. The MID compile-time scaling and the engine's
         year-end Schedule E rental-interest hook combine to make rented_fraction × interest
         deductible under either MID or Schedule E depending on which yields the better total."""
 
-        owner_breakdown = self._mortgage_scenario_breakdown(rented_fraction=0.0)
-        rented_breakdown = self._mortgage_scenario_breakdown(rented_fraction=1.0)
+        owner_breakdown = self._mortgage_scenario_breakdown(
+            rented_fraction=0.0, locations={"san_francisco": san_francisco_location}
+        )
+        rented_breakdown = self._mortgage_scenario_breakdown(
+            rented_fraction=1.0, locations={"san_francisco": san_francisco_location}
+        )
         # Whether the property is fully owner-occupied or fully rented, the same dollar amount
         # of mortgage interest reduces ordinary income — just via different mechanisms (MID +
         # itemized vs. Schedule E direct subtraction). The federal final tax should match.
@@ -1273,7 +1312,7 @@ class TestRentalIncomeTaxation:
         assert owner_breakdown["federal_us"]["mortgage_interest_deduction_usd"] > 0
         assert rented_breakdown["federal_us"]["mortgage_interest_deduction_usd"] == pytest.approx(0.0, abs=1e-6)
 
-    def _mortgage_scenario_breakdown(self, *, rented_fraction: float) -> dict:
+    def _mortgage_scenario_breakdown(self, *, rented_fraction: float, locations: dict[str, Location]) -> dict:
         end_month = 11
         purchase_price = 600_000.0
         scenario = Scenario(
@@ -1347,10 +1386,12 @@ class TestRentalIncomeTaxation:
         ctx = _multi_series(
             levels_by_series={RENT_SERIES_ID: {0: [1.0] * 13}, "home_value:san_francisco": {0: [1.0] * 13}}
         )
-        run = simulate_with_external_series(scenario, external_series=ctx, rollout_count=1)
+        run = simulate_with_external_series(scenario, external_series=ctx, rollout_count=1, locations=locations)
         return {row["jurisdiction_id"]: row for row in run.events_log.tax_breakdowns.iter_rows(named=True)}
 
-    def test_property_tax_routes_owner_fraction_to_salt_and_rented_fraction_to_schedule_e(self):
+    def test_property_tax_routes_owner_fraction_to_salt_and_rented_fraction_to_schedule_e(
+        self, san_francisco_location: Location
+    ):
         """Per-property `rented_fraction=0.75` should:
         - route 25% of property tax to SALT (owner-use portion)
         - route 75% of property tax to Schedule E (rented-use portion deduction).
@@ -1443,7 +1484,9 @@ class TestRentalIncomeTaxation:
         ctx = _multi_series(
             levels_by_series={RENT_SERIES_ID: {0: [1.0] * 13}, "home_value:san_francisco": {0: [1.0] * 13}}
         )
-        run = simulate_with_external_series(scenario, external_series=ctx, rollout_count=1)
+        run = simulate_with_external_series(
+            scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
+        )
         # Debug: surface any rollout failure before asserting on tax flows.
         status = run.rollout_status
         assert status["status"][0] != "failed", (

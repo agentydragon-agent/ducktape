@@ -311,7 +311,9 @@ py_test(
     size = "medium",
     srcs = ["test_rental_lifecycle_e2e.py"],
     deps = [
+        ":conftest",
         ":external_series",
+        ":locations",
         ":scenario",
         ":simulate",
         "@pypi//polars",
