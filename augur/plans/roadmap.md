@@ -164,17 +164,18 @@ Shipped:
 - Ordinary-income rental taxation, Schedule E deductions, §168 depreciation,
   runtime rented-fraction splits for Schedule E / MID / SALT, and §1250
   recapture on sale.
+- Dynamic tenant-rent and agency-fee streams for mid-horizon
+  `set_rented_fraction`.
 - Primary-residence assignment and clear events for §121 eligibility.
 - Property sale with market-value proceeds, mortgage payoff, closing costs,
   §1250 recapture, §121 exclusion, and remaining LTCG routing.
 
 Remaining work:
 
-- Dynamic tenant-rent and agency-fee streams for mid-horizon
-  `set_rented_fraction`; today those streams are created from month-0 rental
-  state and do not resize/stop/start later.
-- Product-level residence timeline that switches between outside-rent
-  obligations and owned-property residence.
+- Product-level outside-rent timeline events. Outside rent is user
+  housing-cost state, not owned-property lifecycle state, so changing or ending
+  it should be explicit rather than inferred solely from primary-home
+  assignment.
 - Product-level mid-horizon property purchase.
 - §121 nonqualified-use proration, one-sale-per-24-months tracking, and filing
   statuses beyond single.
@@ -209,8 +210,8 @@ the wrong structure.
   current product control is `rentalFullPropertyMonthlyUsd`: full-property rent
   before fraction/vacancy/management scaling.
 - Property lifecycle controls are now present for rented %, primary-home
-  assignment, capital improvements, and sale. The next product gap is dynamic
-  lifecycle semantics, not adding more parallel boolean toggles.
+  assignment, capital improvements, and sale. The next product gap is
+  outside-rent timeline semantics, not adding more parallel boolean toggles.
 - Continue the Mantine migration. `MantineProvider` wraps the product shell;
   controls are mixed Tailwind + Mantine. Standard controls (selects, number
   inputs, buttons, prefix/suffix adornments) should move to Mantine unless
@@ -232,10 +233,8 @@ the wrong structure.
   `SimulationRun` event extraction with native `ProjectionRun` or direct
   dense-buffer read models, then expand `//augur/api:server_test` assertions
   over event streams.
-- **Dynamic rental/residence lifecycle cashflows** — make
-  `set_rented_fraction` start/stop/resize tenant rent and agency-fee streams;
-  add a product residence timeline so outside-rent obligations end/start when
-  the primary home changes.
+- **Outside-rent timeline events** — add product events for changing, starting,
+  or ending outside rent so housing-cost cashflows are explicit scenario state.
 - **Multi-scenario comparison** — reintroduce product comparison as a set of
   paired `ScenarioKey`s sharing one sampled exogenous bundle, with matched
   percentile fans and per-scenario controls.

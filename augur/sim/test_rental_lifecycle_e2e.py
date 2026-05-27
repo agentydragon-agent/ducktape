@@ -241,6 +241,181 @@ class TestManagementFee:
         assert mgmt.height == 0
 
 
+class TestRentalLifecycleCashflows:
+    def test_lifecycle_rented_fraction_timeline_resizes_rent_and_management_fees(self):
+        end_month = 11
+        monthly_rent = 6_000.0
+        vacancy_multiplier = 0.90
+        scenario = Scenario(
+            agents=[
+                Agent(agent_id=OWNER_AGENT_ID),
+                Agent(agent_id=TENANT_AGENT_ID),
+                Agent(agent_id=MGMT_AGENT_ID),
+                Agent(agent_id="property_seller"),
+            ],
+            initial_cash=[
+                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance_usd=700_000.0),
+                InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id=MGMT_AGENT_ID, account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id="property_seller", account_id="checking", balance_usd=0.0),
+            ],
+            recurring_transfers=[
+                RecurringTransfer(
+                    start_month=0,
+                    end_month=2,
+                    cause_id="rental_income:p1",
+                    from_agent_id=TENANT_AGENT_ID,
+                    from_account_id="checking",
+                    to_agent_id=OWNER_AGENT_ID,
+                    to_account_id="checking",
+                    amount_usd=SeriesIndexedAmount(
+                        base_amount_usd=monthly_rent * 0.25 * vacancy_multiplier,
+                        series_id=RENT_SERIES_ID,
+                        adjustment_period_months=12,
+                    ),
+                    income_category="ordinary",
+                ),
+                RecurringTransfer(
+                    start_month=3,
+                    end_month=5,
+                    cause_id="rental_income:p1",
+                    from_agent_id=TENANT_AGENT_ID,
+                    from_account_id="checking",
+                    to_agent_id=OWNER_AGENT_ID,
+                    to_account_id="checking",
+                    amount_usd=SeriesIndexedAmount(
+                        base_amount_usd=monthly_rent * 0.75 * vacancy_multiplier,
+                        series_id=RENT_SERIES_ID,
+                        adjustment_period_months=12,
+                    ),
+                    income_category="ordinary",
+                ),
+                RecurringTransfer(
+                    start_month=8,
+                    end_month=end_month,
+                    cause_id="rental_income:p1",
+                    from_agent_id=TENANT_AGENT_ID,
+                    from_account_id="checking",
+                    to_agent_id=OWNER_AGENT_ID,
+                    to_account_id="checking",
+                    amount_usd=SeriesIndexedAmount(
+                        base_amount_usd=monthly_rent * 0.5 * vacancy_multiplier,
+                        series_id=RENT_SERIES_ID,
+                        adjustment_period_months=12,
+                    ),
+                    income_category="ordinary",
+                ),
+                RecurringTransfer(
+                    start_month=0,
+                    end_month=2,
+                    cause_id="management_fee:p1",
+                    from_agent_id=OWNER_AGENT_ID,
+                    from_account_id="checking",
+                    to_agent_id=MGMT_AGENT_ID,
+                    to_account_id="checking",
+                    amount_usd=SeriesIndexedAmount(
+                        base_amount_usd=monthly_rent * 0.25 * vacancy_multiplier * 0.08,
+                        series_id=RENT_SERIES_ID,
+                        adjustment_period_months=12,
+                    ),
+                    deduction_category="ordinary",
+                ),
+                RecurringTransfer(
+                    start_month=3,
+                    end_month=5,
+                    cause_id="management_fee:p1",
+                    from_agent_id=OWNER_AGENT_ID,
+                    from_account_id="checking",
+                    to_agent_id=MGMT_AGENT_ID,
+                    to_account_id="checking",
+                    amount_usd=SeriesIndexedAmount(
+                        base_amount_usd=monthly_rent * 0.75 * vacancy_multiplier * 0.08,
+                        series_id=RENT_SERIES_ID,
+                        adjustment_period_months=12,
+                    ),
+                    deduction_category="ordinary",
+                ),
+                RecurringTransfer(
+                    start_month=8,
+                    end_month=end_month,
+                    cause_id="management_fee:p1",
+                    from_agent_id=OWNER_AGENT_ID,
+                    from_account_id="checking",
+                    to_agent_id=MGMT_AGENT_ID,
+                    to_account_id="checking",
+                    amount_usd=SeriesIndexedAmount(
+                        base_amount_usd=monthly_rent * 0.5 * vacancy_multiplier * 0.08,
+                        series_id=RENT_SERIES_ID,
+                        adjustment_period_months=12,
+                    ),
+                    deduction_category="ordinary",
+                ),
+            ],
+            scheduled_property_purchases=[
+                ScheduledPropertyPurchase(
+                    month=0,
+                    cause_id="p1_purchase",
+                    property_id="p1",
+                    location_id="test_location",
+                    buyer_agent_id=OWNER_AGENT_ID,
+                    buyer_account_id="checking",
+                    seller_agent_id="property_seller",
+                    seller_account_id="checking",
+                    purchase_price_usd=500_000.0,
+                    down_payment_usd=500_000.0,
+                    buyer_closing_cost_usd=0.0,
+                    ownership_pct=1.0,
+                    rented_fraction=0.25,
+                )
+            ],
+            property_lifecycle_events=[
+                SetRentedFractionEvent(month=3, property_id="p1", rented_fraction=0.75),
+                SetRentedFractionEvent(month=6, property_id="p1", rented_fraction=0.0),
+                SetRentedFractionEvent(month=8, property_id="p1", rented_fraction=0.5),
+            ],
+            tax_profiles=[],
+            horizon_months=12,
+        )
+        run = simulate_with_external_series(
+            scenario,
+            external_series=_flat_series(series_id=RENT_SERIES_ID, value=1.0, months=13, rollouts=1),
+            rollout_count=1,
+            locations={
+                "test_location": Location(
+                    location_id="test_location",
+                    display_name="Test Location",
+                    jurisdiction_ids=[],
+                    annual_property_tax_rate=0.0,
+                    annual_special_assessment_usd=0.0,
+                )
+            },
+        )
+
+        rent = (
+            run.events_log.transfers.filter(pl.col("cause_id") == "rental_income:p1")
+            .sort("month_index")
+            .select("month_index", "amount_usd")
+        )
+        assert rent["month_index"].to_list() == [0, 1, 2, 3, 4, 5, 8, 9, 10, 11]
+        assert rent["amount_usd"].to_list() == pytest.approx(
+            [monthly_rent * 0.25 * vacancy_multiplier] * 3
+            + [monthly_rent * 0.75 * vacancy_multiplier] * 3
+            + [monthly_rent * 0.5 * vacancy_multiplier] * 4
+        )
+
+        management_fee = (
+            run.events_log.transfers.filter(pl.col("cause_id") == "management_fee:p1")
+            .sort("month_index")
+            .select("month_index", "amount_usd")
+        )
+        assert management_fee["month_index"].to_list() == [0, 1, 2, 3, 4, 5, 8, 9, 10, 11]
+        assert management_fee["amount_usd"].to_list() == pytest.approx(
+            [monthly_rent * 0.25 * vacancy_multiplier * 0.08] * 3
+            + [monthly_rent * 0.75 * vacancy_multiplier * 0.08] * 3
+            + [monthly_rent * 0.5 * vacancy_multiplier * 0.08] * 4
+        )
+
+
 class TestLeasingFee:
     def test_leasing_fee_fires_at_rent_start_and_every_avg_tenancy_months(self):
         scenario = _rental_scenario(

@@ -7,7 +7,9 @@ mostly shipped, so this doc keeps only behavior and remaining gotchas.
 ## Product Surface
 
 Owned-property rental starts at purchase through `PropertyPurchase.initial_rental`.
-If it is unset, the property has no tenant rent stream.
+If it is unset, the property has no tenant rent stream; a later
+`set_rented_fraction` event with a positive fraction is rejected because the
+scenario has no rent/vacancy terms to resize.
 
 `RentalIncomePlan.full_property_monthly_rent_usd` is full-property market rent before
 vacancy and management fees. If it is `None`, product lowering uses the selected
@@ -43,6 +45,11 @@ Mid-horizon lifecycle events are scoped to the purchased property in product wir
 - `capital_improvement`: debits cash and increases depreciable building basis;
 - `property_sale`: sells the property, pays off mortgage debt, and freezes later
   property activity.
+
+Product lowering turns the effective rented-fraction timeline into tenant-rent and
+agency-fee transfer segments. `set_rented_fraction` events resize, stop, or restart
+those cashflows at the start of their event month. Sale stops rental cashflows in
+the sale month.
 
 ## Simulator Behavior
 
@@ -101,14 +108,11 @@ improvements, and property sales.
 
 ## Known Gaps
 
-Initial tenant rent and management/leasing cashflows are wired from month 0 through the
-horizon. A later `set_rented_fraction` event updates tax splits, depreciation, MID/SALT
-owner-share calculations, and Section 121 eligibility, but it does not yet create, stop,
-or resize tenant rent and agency-fee transfer streams.
-
 The user's outside-rent obligation is still flat for the horizon:
 `ScenarioKey.monthly_rent_usd` plus `rental_location_id`. There is no product-level
-residence timeline that switches between outside rent and owned-property residence.
+timeline event for changing outside rent. That should be explicit housing-cost state
+for the user, not implicit behavior derived only from owned-property primary-residence
+assignment.
 
 Section 121 still lacks non-qualified-use proration and one-sale-per-24-months tracking.
 Only the single-filer exclusion cap is configured.

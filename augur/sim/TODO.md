@@ -100,31 +100,18 @@ Landed end-to-end: rental income taxed as ordinary; Schedule E deductions for ma
 
 The product surface handles month-0 property purchase, mortgage
 origination (180/360-term fixed-rate), property tax, HOA, insurance,
-maintenance, MID, SALT, and landlord rental income (Phase 1). Still
-missing:
+maintenance, MID, SALT, landlord rental income, and mid-horizon
+rented-fraction / primary-residence / capital-improvement / sale events.
+Still missing:
 
-- **Mid-horizon property lifecycle events** for owned property. A typed
-  event timeline on `PropertyPurchase` (or a parallel
-  `PropertyTimeline`) lets the user model role changes during the
-  horizon. Events:
-  - **Move into the property in year N** (off → owner-occupied;
-    triggers §163(h)(3) MID eligibility, §121 clock start, ends the
-    outside-rent obligation if applicable).
-  - **Move out of the property in year N** (owner-occupied → not
-    owner-occupied; opposite transitions).
-  - **Start renting it out in year N** (off / owner-occupied → rental;
-    enables landlord rental income from the item above; triggers
-    depreciation basis allocation when supported).
-  - **Stop renting in year N** (rental → off / owner-occupied).
-  - **Mid-horizon property purchase** in year N (today the product knob
-    is locked to "buy at month 0 or don't"; same `PropertyPurchase`
-    plumbed to fire at a configurable month).
-  - **Property sale** in year N or at end-of-horizon. Needs
-    closing-cost schedule, mortgage payoff, §121 primary-residence
-    exclusion, §1250 unrecaptured-depreciation recapture on rentals,
-    and proceeds split when partner stakes exist.
-    Engine support: occupancy / rental-status state machines and the
-    MID/§121/depreciation rules that respect them.
+- **Product outside-rent timeline events.** Primary-residence assignment
+  already affects §121 qualifying-use state, but outside rent is still one
+  flat horizon-long obligation. Changing, ending, or restarting the user's
+  outside rent should be explicit scenario state, not implicit behavior derived
+  only from owned-property primary-residence assignment.
+- **Mid-horizon property purchase** in year N. Today the product knob is
+  locked to "buy at month 0 or don't"; the same `PropertyPurchase`
+  should eventually plumb to a configurable purchase month.
 - **Property-tax: Proposition-13-style 2%/yr assessed-value escalation
   cap.** `property_initial_assessed_value` is set at purchase and never
   escalates. Long horizons (20-30y) progressively understate tax — by

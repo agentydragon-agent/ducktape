@@ -36,6 +36,7 @@ from augur.product.wire import (
     ScenarioKey,
     SetPrimaryResidenceEventWire,
     SetPrimaryResidenceMarkerEvent,
+    SetRentedFractionEventWire,
 )
 from augur.sim.scenario import SeriesIndexedAmount
 from util.bazel.runfiles import get_required_path
@@ -582,6 +583,83 @@ def test_product_full_property_rent_scales_by_fraction_vacancy_and_rent_denomina
     )
     assert isinstance(leasing_fee.amount_usd, SeriesIndexedAmount)
     assert leasing_fee.amount_usd.base_amount_usd == pytest.approx(6_000.0 * 0.5)
+
+
+def test_product_rental_lifecycle_resizes_tenant_rent_and_management_fees() -> None:
+    config = _augur_config()
+    bootstrap = build_bootstrap_payload(config)
+    primary_agent_id = resolve_primary_agent_id(config)
+    scenario = ScenarioKey(
+        exogenous_model_id="current_exogenous_model",
+        horizon_months=12,
+        monthly_spend_usd=1_000.0,
+        spend_index="none",
+        funding_policy=FundingPolicy(sell_order=()),
+        property_purchase=PropertyPurchase(
+            property_id="location_a_property",
+            financing=CashFinancing(),
+            is_primary_residence=True,
+            initial_rental=RentalIncomePlan(
+                full_property_monthly_rent_usd=6_000.0, fraction_rented=0.25, vacancy_pct=0.10
+            ),
+            rental_management=RentalManagement(management_fee_pct=8.0, leasing_fee_months=1.0, avg_tenancy_months=24),
+            lifecycle_events=(
+                SetRentedFractionEventWire(month=3, rented_fraction=0.75),
+                SetRentedFractionEventWire(month=6, rented_fraction=0.0),
+                SetRentedFractionEventWire(month=8, rented_fraction=0.5),
+            ),
+        ),
+    )
+
+    sim_scenario = build_scenario(
+        scenario,
+        primary_agent_id=primary_agent_id,
+        initial_cash_usd=1_200_000.0,
+        initial_lots=(),
+        properties_by_id={property_.id: property_ for property_ in bootstrap.properties},
+    )
+
+    rent_transfers = [
+        transfer
+        for transfer in sim_scenario.recurring_transfers
+        if transfer.cause_id == "rental_income:location_a_property"
+    ]
+    assert [(transfer.start_month, transfer.end_month) for transfer in rent_transfers] == [(0, 2), (3, 5), (8, 11)]
+    rent_amounts = []
+    for rent_transfer in rent_transfers:
+        assert isinstance(rent_transfer.amount_usd, SeriesIndexedAmount)
+        rent_amounts.append(rent_transfer.amount_usd.base_amount_usd)
+        assert rent_transfer.amount_usd.series_id == "rent:location_a"
+    assert rent_amounts == pytest.approx([6_000.0 * 0.25 * 0.90, 6_000.0 * 0.75 * 0.90, 6_000.0 * 0.5 * 0.90])
+
+    management_fees = [
+        transfer
+        for transfer in sim_scenario.recurring_transfers
+        if transfer.cause_id == "management_fee:location_a_property"
+    ]
+    assert [(transfer.start_month, transfer.end_month) for transfer in management_fees] == [(0, 2), (3, 5), (8, 11)]
+    fee_amounts = []
+    for management_fee in management_fees:
+        assert isinstance(management_fee.amount_usd, SeriesIndexedAmount)
+        fee_amounts.append(management_fee.amount_usd.base_amount_usd)
+    assert fee_amounts == pytest.approx(
+        [6_000.0 * 0.25 * 0.90 * 0.08, 6_000.0 * 0.75 * 0.90 * 0.08, 6_000.0 * 0.5 * 0.90 * 0.08]
+    )
+
+    leasing_fees = sorted(
+        (
+            transfer
+            for transfer in sim_scenario.scheduled_transfers
+            if transfer.cause_id.startswith("leasing_fee:location_a_property:")
+        ),
+        key=lambda transfer: transfer.month,
+    )
+    assert [transfer.month for transfer in leasing_fees] == [0, 3, 8]
+    leasing_amounts = []
+    for leasing_fee in leasing_fees:
+        assert isinstance(leasing_fee.amount_usd, SeriesIndexedAmount)
+        leasing_amounts.append(leasing_fee.amount_usd.base_amount_usd)
+    assert leasing_amounts == pytest.approx([6_000.0 * 0.25, 6_000.0 * 0.75, 6_000.0 * 0.5])
 
 
 def test_primary_residence_event_emits_rollout_marker(counting_exogenous_model: CountingExogenousModel) -> None:

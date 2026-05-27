@@ -292,8 +292,9 @@ def build_scenario(
         )
         initial_occupancy_mode, initial_rented_fraction = _initial_occupancy(scenario_key.property_purchase)
         # Schedule E for property expenses: the rented fraction of HOA / insurance / maintenance /
-        # property tax is deductible against rental income. For Phase 1 with constant occupancy,
-        # this fraction is set once at compile time and applied at every monthly settlement.
+        # property tax is deductible against rental income. When these obligations carry
+        # `property_id`, the sim reads the runtime rented fraction at settlement time so
+        # mid-horizon stop/restart events resize the Schedule E share.
         property_deduction_category, property_deductible_fraction = _schedule_e_split(initial_rented_fraction)
         if property_.hoa_monthly_usd > 0:
             agents.append(Agent(agent_id=HOA_AGENT_ID))
@@ -519,52 +520,63 @@ _EMPTY_LANDLORD_RENTAL_WIRING = LandlordRentalWiring(
 )
 
 
+@dataclass(frozen=True)
+class _RentalCashflowSegment:
+    start_month: int
+    end_month: int
+    fraction_rented: float
+
+
 def _wire_landlord_rental(
     purchase: PropertyPurchase, *, property_: Property, primary_agent_id: str, horizon_months: int
 ) -> LandlordRentalWiring:
     """Wire up tenant→owner rent + owner→agency management/leasing fees.
 
-    Phase 1: rental is constant from month 0 through end-of-horizon. The tenant→owner
-    transfer is gross-of-management but net-of-vacancy (vacancy is "lost income", not paid
-    to anyone). The management fee is a separate outbound transfer to the management
-    agency. Leasing fee fires at month 0 and every `avg_tenancy_months` thereafter
-    while the property is in a rental status.
+    Tenant rent and agency fees follow the property's effective rented-fraction timeline:
+    the initial fraction comes from `initial_rental`, later `set_rented_fraction` events
+    resize/stop/restart the cashflows, and sale stops rental cashflows in the sale month.
+    Tenant rent is gross-of-management but net-of-vacancy (vacancy is "lost income", not
+    paid to anyone). Management fee is a separate outbound transfer to the agency. Leasing
+    fee fires when each rental segment starts and every `avg_tenancy_months` while active.
     """
 
     rental = purchase.initial_rental
     if rental is None:
+        _reject_dynamic_rental_without_terms(purchase, property_id=property_.id)
         return _EMPTY_LANDLORD_RENTAL_WIRING
-    end_month = horizon_months - 1
     rent_series = rent_series_id(property_.location_id)
     base_monthly_rent = _resolve_monthly_rent(rental, property_=property_)
-    leased_monthly_rent = base_monthly_rent * float(rental.fraction_rented)
-    base_monthly_collected = leased_monthly_rent * (1.0 - float(rental.vacancy_pct))
+    vacancy_multiplier = 1.0 - float(rental.vacancy_pct)
+    rental_segments = _rental_cashflow_segments(purchase, horizon_months=horizon_months)
+    if not rental_segments:
+        return _EMPTY_LANDLORD_RENTAL_WIRING
 
     agents: list[Agent] = [Agent(agent_id=TENANT_AGENT_ID)]
     initial_cash: list[InitialAccountBalance] = [
         InitialAccountBalance(agent_id=TENANT_AGENT_ID, account_id=TENANT_ACCOUNT_ID, balance_usd=0.0)
     ]
-    recurring_transfers: list[RecurringTransfer] = [
-        RecurringTransfer(
-            start_month=0,
-            end_month=end_month,
-            cause_id=f"{RENTAL_INCOME_CAUSE_ID}:{property_.id}",
-            from_agent_id=TENANT_AGENT_ID,
-            from_account_id=TENANT_ACCOUNT_ID,
-            to_agent_id=primary_agent_id,
-            to_account_id=PRIMARY_ACCOUNT_ID,
-            amount_usd=SeriesIndexedAmount(
-                base_amount_usd=base_monthly_collected, series_id=rent_series, adjustment_period_months=12
-            ),
-            # Rental income is ordinary income (taxed at owner's marginal bracket).
-            # Schedule E deductions for rented-share property expenses + depreciation +
-            # MID/SALT scaling by rented_fraction are not yet wired (deferred follow-ups);
-            # rental income is currently over-taxed by that amount. §469 passive-loss
-            # limitation is explicitly deferred per the plan.
-            income_category="ordinary",
-        )
-    ]
+    recurring_transfers: list[RecurringTransfer] = []
     scheduled_transfers: list[ScheduledTransfer] = []
+    for segment in rental_segments:
+        leased_monthly_rent = base_monthly_rent * segment.fraction_rented
+        base_monthly_collected = leased_monthly_rent * vacancy_multiplier
+        recurring_transfers.append(
+            RecurringTransfer(
+                start_month=segment.start_month,
+                end_month=segment.end_month,
+                cause_id=f"{RENTAL_INCOME_CAUSE_ID}:{property_.id}",
+                from_agent_id=TENANT_AGENT_ID,
+                from_account_id=TENANT_ACCOUNT_ID,
+                to_agent_id=primary_agent_id,
+                to_account_id=PRIMARY_ACCOUNT_ID,
+                amount_usd=SeriesIndexedAmount(
+                    base_amount_usd=base_monthly_collected, series_id=rent_series, adjustment_period_months=12
+                ),
+                # Rental income is ordinary income (taxed at owner's marginal bracket).
+                # §469 passive-loss limitation is explicitly deferred per the plan.
+                income_category="ordinary",
+            )
+        )
 
     management = purchase.rental_management
     if management is not None:
@@ -576,49 +588,101 @@ def _wire_landlord_rental(
         )
         management_fee_fraction = float(management.management_fee_pct) / 100.0
         if management_fee_fraction > 0:
-            recurring_transfers.append(
-                RecurringTransfer(
-                    start_month=0,
-                    end_month=end_month,
-                    cause_id=f"{MANAGEMENT_FEE_CAUSE_ID}:{property_.id}",
-                    from_agent_id=primary_agent_id,
-                    from_account_id=PRIMARY_ACCOUNT_ID,
-                    to_agent_id=PROPERTY_MANAGEMENT_AGENT_ID,
-                    to_account_id=PROPERTY_MANAGEMENT_ACCOUNT_ID,
-                    amount_usd=SeriesIndexedAmount(
-                        base_amount_usd=base_monthly_collected * management_fee_fraction,
-                        series_id=rent_series,
-                        adjustment_period_months=12,
-                    ),
-                    # Management fee is a Schedule E deduction against rental income.
-                    deduction_category="ordinary",
+            for segment in rental_segments:
+                base_monthly_collected = base_monthly_rent * segment.fraction_rented * vacancy_multiplier
+                recurring_transfers.append(
+                    RecurringTransfer(
+                        start_month=segment.start_month,
+                        end_month=segment.end_month,
+                        cause_id=f"{MANAGEMENT_FEE_CAUSE_ID}:{property_.id}",
+                        from_agent_id=primary_agent_id,
+                        from_account_id=PRIMARY_ACCOUNT_ID,
+                        to_agent_id=PROPERTY_MANAGEMENT_AGENT_ID,
+                        to_account_id=PROPERTY_MANAGEMENT_ACCOUNT_ID,
+                        amount_usd=SeriesIndexedAmount(
+                            base_amount_usd=base_monthly_collected * management_fee_fraction,
+                            series_id=rent_series,
+                            adjustment_period_months=12,
+                        ),
+                        # Management fee is a Schedule E deduction against rental income.
+                        deduction_category="ordinary",
+                    )
                 )
-            )
         leasing_fee_months_val = float(management.leasing_fee_months)
         if leasing_fee_months_val > 0:
-            leasing_fee_base = leased_monthly_rent * leasing_fee_months_val
-            scheduled_transfers.extend(
-                ScheduledTransfer(
-                    month=fire_month,
-                    cause_id=f"{LEASING_FEE_CAUSE_ID}:{property_.id}:m{fire_month}",
-                    from_agent_id=primary_agent_id,
-                    from_account_id=PRIMARY_ACCOUNT_ID,
-                    to_agent_id=PROPERTY_MANAGEMENT_AGENT_ID,
-                    to_account_id=PROPERTY_MANAGEMENT_ACCOUNT_ID,
-                    amount_usd=SeriesIndexedAmount(
-                        base_amount_usd=leasing_fee_base, series_id=rent_series, adjustment_period_months=12
-                    ),
-                    # Leasing fee is a Schedule E deduction against rental income.
-                    deduction_category="ordinary",
+            for segment in rental_segments:
+                leasing_fee_base = base_monthly_rent * segment.fraction_rented * leasing_fee_months_val
+                scheduled_transfers.extend(
+                    ScheduledTransfer(
+                        month=fire_month,
+                        cause_id=f"{LEASING_FEE_CAUSE_ID}:{property_.id}:m{fire_month}",
+                        from_agent_id=primary_agent_id,
+                        from_account_id=PRIMARY_ACCOUNT_ID,
+                        to_agent_id=PROPERTY_MANAGEMENT_AGENT_ID,
+                        to_account_id=PROPERTY_MANAGEMENT_ACCOUNT_ID,
+                        amount_usd=SeriesIndexedAmount(
+                            base_amount_usd=leasing_fee_base, series_id=rent_series, adjustment_period_months=12
+                        ),
+                        # Leasing fee is a Schedule E deduction against rental income.
+                        deduction_category="ordinary",
+                    )
+                    for fire_month in range(
+                        segment.start_month, segment.end_month + 1, int(management.avg_tenancy_months)
+                    )
                 )
-                for fire_month in range(0, horizon_months, int(management.avg_tenancy_months))
-            )
     return LandlordRentalWiring(
         agents=tuple(agents),
         initial_cash=tuple(initial_cash),
         recurring_transfers=tuple(recurring_transfers),
         scheduled_transfers=tuple(scheduled_transfers),
     )
+
+
+def _reject_dynamic_rental_without_terms(purchase: PropertyPurchase, *, property_id: str) -> None:
+    for event in purchase.lifecycle_events:
+        if isinstance(event, SetRentedFractionEventWire) and event.rented_fraction > 0:
+            raise ValueError(
+                f"property {property_id!r} has set_rented_fraction={float(event.rented_fraction):g} at month "
+                f"{event.month}, but no initial_rental terms; set initial_rental so product lowering knows "
+                "full-property rent and vacancy assumptions"
+            )
+
+
+def _rental_cashflow_segments(purchase: PropertyPurchase, *, horizon_months: int) -> tuple[_RentalCashflowSegment, ...]:
+    rental = purchase.initial_rental
+    if rental is None:
+        return ()
+    end_month = horizon_months - 1
+    current_start = 0
+    current_fraction = float(rental.fraction_rented)
+    segments: list[_RentalCashflowSegment] = []
+    for event in sorted(
+        (
+            event
+            for event in purchase.lifecycle_events
+            if isinstance(event, SetRentedFractionEventWire | PropertySaleEventWire)
+        ),
+        key=lambda event: int(event.month),
+    ):
+        event_month = int(event.month)
+        segment_end = min(event_month - 1, end_month)
+        if current_start <= segment_end and current_fraction > 0:
+            segments.append(
+                _RentalCashflowSegment(
+                    start_month=current_start, end_month=segment_end, fraction_rented=current_fraction
+                )
+            )
+        if event_month > end_month:
+            return tuple(segments)
+        if isinstance(event, PropertySaleEventWire):
+            return tuple(segments)
+        current_start = event_month
+        current_fraction = float(event.rented_fraction)
+    if current_start <= end_month and current_fraction > 0:
+        segments.append(
+            _RentalCashflowSegment(start_month=current_start, end_month=end_month, fraction_rented=current_fraction)
+        )
+    return tuple(segments)
 
 
 def _sim_mortgage_for(purchase: PropertyPurchase, property_: Property) -> SimMortgageFinancing | None:
