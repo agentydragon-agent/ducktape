@@ -22,7 +22,7 @@ def decode_obligations(
     `obligation_paid > 0`, the failure-row subset on `obligation_failure_active`.
     """
 
-    active = buffers.obligation_active  # (M, S, R)
+    active = buffers.obligations.active  # (M, S, R)
     if active.any():
         months, slots, rollouts = np.argwhere(active).T
     else:
@@ -34,10 +34,10 @@ def decode_obligations(
     from_account_ids = codes_to_strings(plan, plan.obligations.from_account)[months, slots]
     to_agent_ids = codes_to_strings(plan, plan.obligations.to_agent)[months, slots]
     to_account_ids = codes_to_strings(plan, plan.obligations.to_account)[months, slots]
-    amount_due = buffers.obligation_due[months, slots, rollouts]
-    amount_paid = buffers.obligation_paid[months, slots, rollouts]
-    shortfall = buffers.obligation_shortfall[months, slots, rollouts]
-    attempt_policy = buffers.obligation_attempt_policy[months, slots, rollouts]
+    amount_due = buffers.obligations.due[months, slots, rollouts]
+    amount_paid = buffers.obligations.paid[months, slots, rollouts]
+    shortfall = buffers.obligations.shortfall[months, slots, rollouts]
+    attempt_policy = buffers.obligations.attempt_policy[months, slots, rollouts]
     attempted_sources_per_event = attempted_sources_for_policy_indices(plan, attempt_policy)
 
     accruals = frame_from_columns(
@@ -85,7 +85,7 @@ def decode_obligations(
     else:
         transfers = EVENT_FRAMES.transfers.empty()
     # Subset 2: obligations whose failure flag fired emit a failure row.
-    failure_mask = buffers.obligation_failure_active[months, slots, rollouts]
+    failure_mask = buffers.obligations.failure_active[months, slots, rollouts]
     if failure_mask.any():
         failure_cause_ids = np.array([f"{oid}_failure" for oid in obligation_ids[failure_mask]], dtype=object)
         failures = frame_from_columns(

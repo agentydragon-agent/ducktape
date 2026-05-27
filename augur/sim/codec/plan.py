@@ -103,8 +103,8 @@ def decode_events(plan: CompiledSimulation, buffers: SimulationBuffers) -> Event
 
 
 def decode_rollout_status_history(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
-    failed_state = buffers.rollout_failed_state  # (H+1, r) bool
-    failed_month_state = buffers.rollout_failed_month_state.astype(np.int64)  # (H+1, r) int
+    failed_state = buffers.state.rollout_failed_state  # (H+1, r) bool
+    failed_month_state = buffers.state.rollout_failed_month_state.astype(np.int64)  # (H+1, r) int
     h1, r = failed_state.shape
     months = np.broadcast_to(np.arange(h1, dtype=np.int64)[:, None], (h1, r)).ravel()
     rollouts = np.broadcast_to(np.arange(r, dtype=np.int64)[None, :], (h1, r)).ravel()
@@ -126,8 +126,8 @@ def decode_rollout_status_history(plan: CompiledSimulation, buffers: SimulationB
 
 def decode_final_rollout_status(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
     month = plan.horizon_months
-    failed = buffers.rollout_failed_state[month]  # (r,) bool
-    failed_month = buffers.rollout_failed_month_state[month].astype(np.int64)  # (r,) int
+    failed = buffers.state.rollout_failed_state[month]  # (r,) bool
+    failed_month = buffers.state.rollout_failed_month_state[month].astype(np.int64)  # (r,) int
     r = failed.shape[0]
     if r == 0:
         return ROLLOUT_STATUS_FRAME.empty()

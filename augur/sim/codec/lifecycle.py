@@ -23,7 +23,7 @@ def decode_lifecycle_events(
     """Decode `buffers.lifecycle` into per-kind polars frames.
 
     Each lifecycle event is fanned out to one row per active (rollout, event) pair using
-    `buffers.lifecycle_fired`. The compile-time `lifecycle_event_kind` selects which schema
+    `buffers.lifecycle.fired`. The compile-time `lifecycle_event_kind` selects which schema
     each event belongs to; sale events additionally pull per-rollout dollar figures from the
     `sale_*` arrays.
     """
@@ -35,7 +35,7 @@ def decode_lifecycle_events(
             EVENT_FRAMES.capital_improvement_events.empty(),
             EVENT_FRAMES.property_sale_events.empty(),
         )
-    fired = buffers.lifecycle_fired[:event_count]  # (E, R)
+    fired = buffers.lifecycle.fired[:event_count]  # (E, R)
     events_idx, rollouts = np.argwhere(fired).T if fired.any() else (np.array([], dtype=np.int64),) * 2
     if events_idx.size == 0:
         return (
@@ -71,14 +71,14 @@ def decode_lifecycle_events(
         rollout_index=rollouts[sale_mask],
         month_index=months[sale_mask],
         property_id=property_ids[sale_mask],
-        gross_proceeds_usd=buffers.lifecycle_sale_gross_proceeds[events_idx[sale_mask], rollouts[sale_mask]],
-        mortgage_payoff_usd=buffers.lifecycle_sale_mortgage_payoff[events_idx[sale_mask], rollouts[sale_mask]],
-        net_cash_to_owner_usd=buffers.lifecycle_sale_net_cash[events_idx[sale_mask], rollouts[sale_mask]],
-        realized_gain_usd=buffers.lifecycle_sale_realized_gain[events_idx[sale_mask], rollouts[sale_mask]],
-        depreciation_recapture_usd=buffers.lifecycle_sale_recapture[events_idx[sale_mask], rollouts[sale_mask]],
-        section_121_exclusion_usd=buffers.lifecycle_sale_section_121_exclusion[
+        gross_proceeds_usd=buffers.lifecycle.sale_gross_proceeds[events_idx[sale_mask], rollouts[sale_mask]],
+        mortgage_payoff_usd=buffers.lifecycle.sale_mortgage_payoff[events_idx[sale_mask], rollouts[sale_mask]],
+        net_cash_to_owner_usd=buffers.lifecycle.sale_net_cash[events_idx[sale_mask], rollouts[sale_mask]],
+        realized_gain_usd=buffers.lifecycle.sale_realized_gain[events_idx[sale_mask], rollouts[sale_mask]],
+        depreciation_recapture_usd=buffers.lifecycle.sale_recapture[events_idx[sale_mask], rollouts[sale_mask]],
+        section_121_exclusion_usd=buffers.lifecycle.sale_section_121_exclusion[
             events_idx[sale_mask], rollouts[sale_mask]
         ],
-        long_term_capital_gain_usd=buffers.lifecycle_sale_long_term_gain[events_idx[sale_mask], rollouts[sale_mask]],
+        long_term_capital_gain_usd=buffers.lifecycle.sale_long_term_gain[events_idx[sale_mask], rollouts[sale_mask]],
     )
     return set_rented_fraction_frame, capital_improvement_frame, property_sale_frame

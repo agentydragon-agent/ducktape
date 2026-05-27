@@ -6,6 +6,7 @@ import numpy as np
 
 from augur.sim.buffers import (
     CurrentStateBuffers,
+    DispositionGroup,
     LifecycleEventBuffers,
     LotDispositionEventBuffers,
     ObligationEventBuffers,
@@ -118,28 +119,28 @@ def _snapshot_initial_state(buffers: SimulationBuffers, current: CurrentStateBuf
 
 
 def _snapshot_current_state(buffers: SimulationBuffers, current: CurrentStateBuffers, *, snapshot_index: int) -> None:
-    # Both `current.*` and `buffers.*_state[s]` are R-last; no transpose needed.
-    buffers.cash_state[snapshot_index] = current.cash
-    buffers.lot_state[snapshot_index] = current.lot_remaining
-    buffers.ordinary_state[snapshot_index] = current.ordinary_ytd
-    buffers.capital_gain_active_state[snapshot_index] = current.capital_gain_active
-    buffers.capital_gain_state[snapshot_index] = current.capital_gain_ytd
-    buffers.tax_liability_active_state[snapshot_index] = current.tax_liability_active
-    buffers.tax_liability_state[snapshot_index] = current.tax_liability_amount
-    buffers.property_active_state[snapshot_index] = current.property_active
-    buffers.property_basis_state[snapshot_index] = current.property_basis
-    buffers.property_ownership_state[snapshot_index] = current.property_ownership
-    buffers.property_contribution_state[snapshot_index] = current.property_contribution
-    buffers.property_equity_state[snapshot_index] = current.property_equity
-    buffers.liability_active_state[snapshot_index] = current.liability_active
-    buffers.liability_principal_state[snapshot_index] = current.liability_principal
-    buffers.liability_monthly_payment_state[snapshot_index] = current.liability_monthly_payment
-    buffers.liability_interest_ytd_state[snapshot_index] = current.liability_interest_ytd
-    buffers.liability_principal_ytd_state[snapshot_index] = current.liability_principal_ytd
-    buffers.property_cumulative_depreciation_state[snapshot_index] = current.property_cumulative_depreciation
-    buffers.property_owner_occupied_months_state[snapshot_index] = current.property_owner_occupied_months
-    buffers.rollout_failed_state[snapshot_index] = current.failed
-    buffers.rollout_failed_month_state[snapshot_index] = current.failed_month
+    # Both `current.*` and `buffers.state.*[s]` are R-last; no transpose needed.
+    buffers.state.cash_state[snapshot_index] = current.cash
+    buffers.state.lot_state[snapshot_index] = current.lot_remaining
+    buffers.state.ordinary_state[snapshot_index] = current.ordinary_ytd
+    buffers.state.capital_gain_active_state[snapshot_index] = current.capital_gain_active
+    buffers.state.capital_gain_state[snapshot_index] = current.capital_gain_ytd
+    buffers.state.tax_liability_active_state[snapshot_index] = current.tax_liability_active
+    buffers.state.tax_liability_state[snapshot_index] = current.tax_liability_amount
+    buffers.state.property_active_state[snapshot_index] = current.property_active
+    buffers.state.property_basis_state[snapshot_index] = current.property_basis
+    buffers.state.property_ownership_state[snapshot_index] = current.property_ownership
+    buffers.state.property_contribution_state[snapshot_index] = current.property_contribution
+    buffers.state.property_equity_state[snapshot_index] = current.property_equity
+    buffers.state.liability_active_state[snapshot_index] = current.liability_active
+    buffers.state.liability_principal_state[snapshot_index] = current.liability_principal
+    buffers.state.liability_monthly_payment_state[snapshot_index] = current.liability_monthly_payment
+    buffers.state.liability_interest_ytd_state[snapshot_index] = current.liability_interest_ytd
+    buffers.state.liability_principal_ytd_state[snapshot_index] = current.liability_principal_ytd
+    buffers.state.property_cumulative_depreciation_state[snapshot_index] = current.property_cumulative_depreciation
+    buffers.state.property_owner_occupied_months_state[snapshot_index] = current.property_owner_occupied_months
+    buffers.state.rollout_failed_state[snapshot_index] = current.failed
+    buffers.state.rollout_failed_month_state[snapshot_index] = current.failed_month
 
 
 def _zero_failed_state(current: CurrentStateBuffers) -> None:
@@ -234,13 +235,13 @@ def _allocate_buffers(plan: CompiledSimulation) -> SimulationBuffers:
         ),
         transfers=TransferEventBuffers(
             # transfer_*[H, T, R]
-            transfer_active=np.zeros((h, p.max_transfer_slots, r), dtype=np.bool_),
-            transfer_amount=np.zeros((h, p.max_transfer_slots, r), dtype=np.float64),
+            active=np.zeros((h, p.max_transfer_slots, r), dtype=np.bool_),
+            amount=np.zeros((h, p.max_transfer_slots, r), dtype=np.float64),
         ),
         properties=PropertyEventBuffers(
             # property_*_active[H, P, R]
-            property_transfer_active=np.zeros((h, p.property_count, r), dtype=np.bool_),
-            property_purchase_active=np.zeros((h, p.property_count, r), dtype=np.bool_),
+            transfer_active=np.zeros((h, p.property_count, r), dtype=np.bool_),
+            purchase_active=np.zeros((h, p.property_count, r), dtype=np.bool_),
             # mortgage_*[H, max(1, B), R]
             mortgage_origination_active=np.zeros((h, liability_event_axis, r), dtype=np.bool_),
             mortgage_payment_active=np.zeros((h, liability_event_axis, r), dtype=np.bool_),
@@ -250,57 +251,63 @@ def _allocate_buffers(plan: CompiledSimulation) -> SimulationBuffers:
         ),
         lot_dispositions=LotDispositionEventBuffers(
             # scheduled disposition buffers[H, D, max(1, L), R]
-            sched_disp_active=np.zeros((h, p.scheduled_sale_count, lot_axis, r), dtype=np.bool_),
-            sched_disp_units=np.zeros((h, p.scheduled_sale_count, lot_axis, r), dtype=np.float64),
-            sched_disp_basis=np.zeros((h, p.scheduled_sale_count, lot_axis, r), dtype=np.float64),
-            sched_disp_proceeds=np.zeros((h, p.scheduled_sale_count, lot_axis, r), dtype=np.float64),
+            scheduled=DispositionGroup(
+                active=np.zeros((h, p.scheduled_sale_count, lot_axis, r), dtype=np.bool_),
+                units=np.zeros((h, p.scheduled_sale_count, lot_axis, r), dtype=np.float64),
+                basis=np.zeros((h, p.scheduled_sale_count, lot_axis, r), dtype=np.float64),
+                proceeds=np.zeros((h, p.scheduled_sale_count, lot_axis, r), dtype=np.float64),
+            ),
             # liquidity disposition buffers[H, Q, A, max(1, L), R]
-            liq_disp_active=np.zeros(
-                (h, p.liquidity_policy_count, p.max_liquidity_policy_assets, lot_axis, r), dtype=np.bool_
-            ),
-            liq_disp_units=np.zeros(
-                (h, p.liquidity_policy_count, p.max_liquidity_policy_assets, lot_axis, r), dtype=np.float64
-            ),
-            liq_disp_basis=np.zeros(
-                (h, p.liquidity_policy_count, p.max_liquidity_policy_assets, lot_axis, r), dtype=np.float64
-            ),
-            liq_disp_proceeds=np.zeros(
-                (h, p.liquidity_policy_count, p.max_liquidity_policy_assets, lot_axis, r), dtype=np.float64
+            liquidity=DispositionGroup(
+                active=np.zeros(
+                    (h, p.liquidity_policy_count, p.max_liquidity_policy_assets, lot_axis, r), dtype=np.bool_
+                ),
+                units=np.zeros(
+                    (h, p.liquidity_policy_count, p.max_liquidity_policy_assets, lot_axis, r), dtype=np.float64
+                ),
+                basis=np.zeros(
+                    (h, p.liquidity_policy_count, p.max_liquidity_policy_assets, lot_axis, r), dtype=np.float64
+                ),
+                proceeds=np.zeros(
+                    (h, p.liquidity_policy_count, p.max_liquidity_policy_assets, lot_axis, r), dtype=np.float64
+                ),
             ),
             # PE tender disposition buffers[H, PE_issuer, max(1, L), R]
-            pe_disp_active=np.zeros((h, p.pe_issuer_count, lot_axis, r), dtype=np.bool_),
-            pe_disp_units=np.zeros((h, p.pe_issuer_count, lot_axis, r), dtype=np.float64),
-            pe_disp_basis=np.zeros((h, p.pe_issuer_count, lot_axis, r), dtype=np.float64),
-            pe_disp_proceeds=np.zeros((h, p.pe_issuer_count, lot_axis, r), dtype=np.float64),
+            pe=DispositionGroup(
+                active=np.zeros((h, p.pe_issuer_count, lot_axis, r), dtype=np.bool_),
+                units=np.zeros((h, p.pe_issuer_count, lot_axis, r), dtype=np.float64),
+                basis=np.zeros((h, p.pe_issuer_count, lot_axis, r), dtype=np.float64),
+                proceeds=np.zeros((h, p.pe_issuer_count, lot_axis, r), dtype=np.float64),
+            ),
         ),
         taxes=TaxEventBuffers(
             # tax accrual/breakdown buffers[H, max(1, J), R]
-            tax_accrual_active=np.zeros((h, p.tax_link_count, r), dtype=np.bool_),
-            tax_accrual_amount=np.zeros((h, p.tax_link_count, r), dtype=np.float64),
-            tax_breakdown_ordinary=np.zeros((h, p.tax_link_count, r), dtype=np.float64),
-            tax_breakdown_ltcg=np.zeros((h, p.tax_link_count, r), dtype=np.float64),
-            tax_breakdown_stcg=np.zeros((h, p.tax_link_count, r), dtype=np.float64),
-            tax_breakdown_standard_deduction=np.zeros((h, p.tax_link_count, r), dtype=np.float64),
-            tax_breakdown_mortgage_interest_deduction=np.zeros((h, p.tax_link_count, r), dtype=np.float64),
-            tax_breakdown_salt_deduction=np.zeros((h, p.tax_link_count, r), dtype=np.float64),
-            tax_breakdown_itemized_deduction=np.zeros((h, p.tax_link_count, r), dtype=np.float64),
-            tax_breakdown_ordinary_taxable=np.zeros((h, p.tax_link_count, r), dtype=np.float64),
-            tax_breakdown_capital_taxable=np.zeros((h, p.tax_link_count, r), dtype=np.float64),
-            tax_breakdown_ordinary_tax=np.zeros((h, p.tax_link_count, r), dtype=np.float64),
-            tax_breakdown_capital_tax=np.zeros((h, p.tax_link_count, r), dtype=np.float64),
+            accrual_active=np.zeros((h, p.tax_link_count, r), dtype=np.bool_),
+            accrual_amount=np.zeros((h, p.tax_link_count, r), dtype=np.float64),
+            breakdown_ordinary=np.zeros((h, p.tax_link_count, r), dtype=np.float64),
+            breakdown_ltcg=np.zeros((h, p.tax_link_count, r), dtype=np.float64),
+            breakdown_stcg=np.zeros((h, p.tax_link_count, r), dtype=np.float64),
+            breakdown_standard_deduction=np.zeros((h, p.tax_link_count, r), dtype=np.float64),
+            breakdown_mortgage_interest_deduction=np.zeros((h, p.tax_link_count, r), dtype=np.float64),
+            breakdown_salt_deduction=np.zeros((h, p.tax_link_count, r), dtype=np.float64),
+            breakdown_itemized_deduction=np.zeros((h, p.tax_link_count, r), dtype=np.float64),
+            breakdown_ordinary_taxable=np.zeros((h, p.tax_link_count, r), dtype=np.float64),
+            breakdown_capital_taxable=np.zeros((h, p.tax_link_count, r), dtype=np.float64),
+            breakdown_ordinary_tax=np.zeros((h, p.tax_link_count, r), dtype=np.float64),
+            breakdown_capital_tax=np.zeros((h, p.tax_link_count, r), dtype=np.float64),
             # tax settlement buffers[H, max(1, tax_profile_count), R]
-            tax_settlement_active=np.zeros((h, p.max_tax_settlement_slots, r), dtype=np.bool_),
-            tax_settlement_amount=np.zeros((h, p.max_tax_settlement_slots, r), dtype=np.float64),
-            tax_settlement_year_end_month=np.full((h, p.max_tax_settlement_slots, r), NO_CODE, dtype=np.int64),
+            settlement_active=np.zeros((h, p.max_tax_settlement_slots, r), dtype=np.bool_),
+            settlement_amount=np.zeros((h, p.max_tax_settlement_slots, r), dtype=np.float64),
+            settlement_year_end_month=np.full((h, p.max_tax_settlement_slots, r), NO_CODE, dtype=np.int64),
         ),
         obligations=ObligationEventBuffers(
             # obligation buffers[H, O, R]
-            obligation_active=np.zeros((h, p.max_obligation_slots, r), dtype=np.bool_),
-            obligation_due=np.zeros((h, p.max_obligation_slots, r), dtype=np.float64),
-            obligation_paid=np.zeros((h, p.max_obligation_slots, r), dtype=np.float64),
-            obligation_shortfall=np.zeros((h, p.max_obligation_slots, r), dtype=np.float64),
-            obligation_attempt_policy=np.full((h, p.max_obligation_slots, r), NO_CODE, dtype=np.int64),
-            obligation_failure_active=np.zeros((h, p.max_obligation_slots, r), dtype=np.bool_),
+            active=np.zeros((h, p.max_obligation_slots, r), dtype=np.bool_),
+            due=np.zeros((h, p.max_obligation_slots, r), dtype=np.float64),
+            paid=np.zeros((h, p.max_obligation_slots, r), dtype=np.float64),
+            shortfall=np.zeros((h, p.max_obligation_slots, r), dtype=np.float64),
+            attempt_policy=np.full((h, p.max_obligation_slots, r), NO_CODE, dtype=np.int64),
+            failure_active=np.zeros((h, p.max_obligation_slots, r), dtype=np.bool_),
         ),
         lifecycle=LifecycleEventBuffers(
             fired=np.zeros((max(1, int(plan.lifecycle_events.month.shape[0])), r), dtype=np.bool_),

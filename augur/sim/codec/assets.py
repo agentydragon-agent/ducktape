@@ -21,7 +21,7 @@ from augur.sim.state import ASSET_LOT_FRAME, CASH_BALANCES_FRAME
 
 
 def decode_cash(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
-    state = r_first_view(buffers.cash_state)  # (H+1, r, s)
+    state = r_first_view(buffers.state.cash_state)  # (H+1, r, s)
     h1, r, s = state.shape
     months, rollouts, slots = state_axes(h1, r, s)
     agent_ids = codes_to_strings(plan, plan.cash_agent_codes)
@@ -39,7 +39,7 @@ def decode_cash(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.Data
 
 
 def decode_asset_lots(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
-    state = r_first_view(buffers.lot_state)  # (H+1, r, s)
+    state = r_first_view(buffers.state.lot_state)  # (H+1, r, s)
     h1, r, s = state.shape
     months, rollouts, slots = state_axes(h1, r, s)
     return state_history_frame_from_columns(
@@ -59,7 +59,7 @@ def decode_asset_lots(plan: CompiledSimulation, buffers: SimulationBuffers) -> p
 
 
 def decode_sched_dispositions(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
-    active = buffers.sched_disp_active  # (M, sale, lot, R)
+    active = buffers.lot_dispositions.scheduled.active  # (M, sale, lot, R)
     if active.any():
         months, sales, lots, rollouts = np.argwhere(active).T
     else:
@@ -74,15 +74,15 @@ def decode_sched_dispositions(plan: CompiledSimulation, buffers: SimulationBuffe
         source_account_codes=plan.sales.source_account[sales],
         asset_codes=plan.sales.asset[sales],
         lots=lots,
-        units=buffers.sched_disp_units[months, sales, lots, rollouts],
-        basis=buffers.sched_disp_basis[months, sales, lots, rollouts],
-        proceeds=buffers.sched_disp_proceeds[months, sales, lots, rollouts],
+        units=buffers.lot_dispositions.scheduled.units[months, sales, lots, rollouts],
+        basis=buffers.lot_dispositions.scheduled.basis[months, sales, lots, rollouts],
+        proceeds=buffers.lot_dispositions.scheduled.proceeds[months, sales, lots, rollouts],
         proceeds_account_codes=plan.sales.proceeds_account[sales],
     )
 
 
 def decode_liquidity_dispositions(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
-    active = buffers.liq_disp_active  # (M, policy, asset_idx, lot, R)
+    active = buffers.lot_dispositions.liquidity.active  # (M, policy, asset_idx, lot, R)
     # Pre-filter inactive asset slots (asset_code < 0). The plan's liquidity_policy_asset_codes
     # is (policy, asset_idx); a negative entry means that asset slot isn't used by the policy.
     asset_valid = plan.liquidity_policies.assets >= 0  # (policy, asset_idx)
@@ -110,15 +110,15 @@ def decode_liquidity_dispositions(plan: CompiledSimulation, buffers: SimulationB
         source_account_codes=plan.liquidity_policies.account[policies],
         asset_codes=asset_codes,
         lots=lots,
-        units=buffers.liq_disp_units[months, policies, asset_idxs, lots, rollouts],
-        basis=buffers.liq_disp_basis[months, policies, asset_idxs, lots, rollouts],
-        proceeds=buffers.liq_disp_proceeds[months, policies, asset_idxs, lots, rollouts],
+        units=buffers.lot_dispositions.liquidity.units[months, policies, asset_idxs, lots, rollouts],
+        basis=buffers.lot_dispositions.liquidity.basis[months, policies, asset_idxs, lots, rollouts],
+        proceeds=buffers.lot_dispositions.liquidity.proceeds[months, policies, asset_idxs, lots, rollouts],
         proceeds_account_codes=plan.liquidity_policies.account[policies],
     )
 
 
 def decode_pe_dispositions(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
-    active = buffers.pe_disp_active  # (M, issuer, lot, R)
+    active = buffers.lot_dispositions.pe.active  # (M, issuer, lot, R)
     if active.any():
         months, issuers, lots, rollouts = np.argwhere(active).T
     else:
@@ -138,9 +138,9 @@ def decode_pe_dispositions(plan: CompiledSimulation, buffers: SimulationBuffers)
         source_account_codes=plan.pe_policies.proceeds_cash_slot[policy_idxs],
         asset_codes=asset_codes,
         lots=lots,
-        units=buffers.pe_disp_units[months, issuers, lots, rollouts],
-        basis=buffers.pe_disp_basis[months, issuers, lots, rollouts],
-        proceeds=buffers.pe_disp_proceeds[months, issuers, lots, rollouts],
+        units=buffers.lot_dispositions.pe.units[months, issuers, lots, rollouts],
+        basis=buffers.lot_dispositions.pe.basis[months, issuers, lots, rollouts],
+        proceeds=buffers.lot_dispositions.pe.proceeds[months, issuers, lots, rollouts],
         proceeds_account_codes=plan.pe_policies.proceeds_cash_slot[policy_idxs],
     )
 

@@ -20,8 +20,8 @@ from augur.sim.state import PROPERTY_STAKE_FRAME, PROPERTY_STATE_FRAME
 
 
 def decode_property_state(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
-    basis = r_first_view(buffers.property_basis_state)  # (H+1, r, p)
-    active = r_first_view(buffers.property_active_state)
+    basis = r_first_view(buffers.state.property_basis_state)  # (H+1, r, p)
+    active = r_first_view(buffers.state.property_active_state)
     h1, r, p = basis.shape
     months, rollouts, props = state_axes(h1, r, p)
     mask = active.reshape(-1)
@@ -41,7 +41,7 @@ def decode_property_state(plan: CompiledSimulation, buffers: SimulationBuffers) 
 
 
 def decode_property_stakes(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
-    active = r_first_view(buffers.property_active_state)  # (H+1, r, p)
+    active = r_first_view(buffers.state.property_active_state)  # (H+1, r, p)
     h1, r, p = active.shape
     months, rollouts, props = state_axes(h1, r, p)
     mask = active.reshape(-1)
@@ -53,9 +53,9 @@ def decode_property_stakes(plan: CompiledSimulation, buffers: SimulationBuffers)
             "month_index": months[mask],
             "property_id": property_ids[props[mask]],
             "agent_id": buyer_ids[props[mask]],
-            "ownership_pct": buffers.property_ownership_state.reshape(-1)[mask],
-            "contribution_used_usd": buffers.property_contribution_state.reshape(-1)[mask],
-            "equity_ledger_usd": buffers.property_equity_state.reshape(-1)[mask],
+            "ownership_pct": buffers.state.property_ownership_state.reshape(-1)[mask],
+            "contribution_used_usd": buffers.state.property_contribution_state.reshape(-1)[mask],
+            "equity_ledger_usd": buffers.state.property_equity_state.reshape(-1)[mask],
         },
         PROPERTY_STAKE_FRAME,
     )
@@ -70,7 +70,7 @@ def decode_property_purchases(
     set — the buyer-cash transfer that goes alongside the purchase event.
     """
 
-    active = buffers.property_purchase_active  # (M, P, R)
+    active = buffers.properties.purchase_active  # (M, P, R)
     if active.any():
         months, props, rollouts = np.argwhere(active).T
     else:
@@ -98,7 +98,7 @@ def decode_property_purchases(
         equity_ledger_usd=plan.properties.equity_ledger.astype(np.float64)[props],
     )
     # Derived buyer-cash transfers: subset where `property_transfer_active` also holds.
-    transfer_mask = buffers.property_transfer_active[months, props, rollouts]
+    transfer_mask = buffers.properties.transfer_active[months, props, rollouts]
     if transfer_mask.any():
         m_t = months[transfer_mask]
         p_t = props[transfer_mask]

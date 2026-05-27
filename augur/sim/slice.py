@@ -50,5 +50,11 @@ def slice_dense_result(dense: DenseSimulationResult, *, rollout_index: int) -> D
 
 def _take_dc[T](obj: T, rollout_index: int, *, axis: int) -> T:
     fields = dataclasses.fields(obj)  # type: ignore[arg-type]
-    sliced = {field.name: np.take(getattr(obj, field.name), [rollout_index], axis=axis).copy() for field in fields}
+    sliced = {}
+    for field in fields:
+        val = getattr(obj, field.name)
+        if dataclasses.is_dataclass(val) and not isinstance(val, type):
+            sliced[field.name] = _take_dc(val, rollout_index, axis=axis)
+        else:
+            sliced[field.name] = np.take(val, [rollout_index], axis=axis).copy()
     return type(obj)(**sliced)

@@ -21,8 +21,8 @@ from augur.sim.state import LIABILITY_FRAME
 
 
 def decode_liabilities(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
-    principal = r_first_view(buffers.liability_principal_state)  # (H+1, R, n_liab)
-    active = r_first_view(buffers.liability_active_state)
+    principal = r_first_view(buffers.state.liability_principal_state)  # (H+1, R, n_liab)
+    active = r_first_view(buffers.state.liability_active_state)
     h1, r, n_liab = principal.shape
     months, rollouts, liabs = state_axes(h1, r, n_liab)
     mask = active.reshape(-1)
@@ -47,16 +47,16 @@ def decode_liabilities(plan: CompiledSimulation, buffers: SimulationBuffers) -> 
             "annual_interest_rate": plan.liabilities.annual_rate.astype(np.float64)[liabs[mask]],
             "term_months": plan.liabilities.term_months.astype(np.int64)[liabs[mask]],
             "origination_month_index": origination_per_liab[liabs[mask]],
-            "monthly_payment_usd": buffers.liability_monthly_payment_state.reshape(-1)[mask],
-            "interest_paid_ytd_usd": buffers.liability_interest_ytd_state.reshape(-1)[mask],
-            "principal_paid_ytd_usd": buffers.liability_principal_ytd_state.reshape(-1)[mask],
+            "monthly_payment_usd": buffers.state.liability_monthly_payment_state.reshape(-1)[mask],
+            "interest_paid_ytd_usd": buffers.state.liability_interest_ytd_state.reshape(-1)[mask],
+            "principal_paid_ytd_usd": buffers.state.liability_principal_ytd_state.reshape(-1)[mask],
         },
         LIABILITY_FRAME,
     )
 
 
 def decode_mortgage_originations(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
-    active = buffers.mortgage_origination_active  # (M, liab, R)
+    active = buffers.properties.mortgage_origination_active  # (M, liab, R)
     if active.any():
         months, liabs, rollouts = np.argwhere(active).T
     else:
@@ -84,7 +84,7 @@ def decode_mortgage_originations(plan: CompiledSimulation, buffers: SimulationBu
 
 
 def decode_mortgage_payments(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
-    active = buffers.mortgage_payment_active  # (M, liab, R)
+    active = buffers.properties.mortgage_payment_active  # (M, liab, R)
     if active.any():
         months, liabs, rollouts = np.argwhere(active).T
     else:
@@ -103,7 +103,7 @@ def decode_mortgage_payments(plan: CompiledSimulation, buffers: SimulationBuffer
         property_id=codes_to_strings(plan, plan.properties.id)[props],
         from_account_id=codes_to_strings(plan, plan.liabilities.payment_account)[liabs],
         to_account_id=codes_to_strings(plan, plan.liabilities.counterparty_account)[liabs],
-        interest_usd=buffers.mortgage_payment_interest[months, liabs, rollouts],
-        principal_usd=buffers.mortgage_payment_principal[months, liabs, rollouts],
-        total_payment_usd=buffers.mortgage_payment_total[months, liabs, rollouts],
+        interest_usd=buffers.properties.mortgage_payment_interest[months, liabs, rollouts],
+        principal_usd=buffers.properties.mortgage_payment_principal[months, liabs, rollouts],
+        total_payment_usd=buffers.properties.mortgage_payment_total[months, liabs, rollouts],
     )

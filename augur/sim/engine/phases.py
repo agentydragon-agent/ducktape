@@ -48,8 +48,8 @@ def _apply_scheduled_transfers(
             adjustment_period=int(plan.transfers.amount_period[month, slot]),
             month=month,
         )
-        buffers.transfer_active[month, slot, active_rollout] = True
-        buffers.transfer_amount[month, slot, active_rollout] = amount[active_rollout]
+        buffers.transfers.active[month, slot, active_rollout] = True
+        buffers.transfers.amount[month, slot, active_rollout] = amount[active_rollout]
         from_slot = int(plan.transfers.from_slot[month, slot])
         if from_slot >= 0:
             current.cash[from_slot, active_rollout] -= amount[active_rollout]
@@ -187,21 +187,21 @@ def _write_tax_link_buffers(
     ltcg = current.capital_gain_ytd[gain_profile, LONG_TERM_CAPITAL_GAIN_CODE, :]
     stcg = current.capital_gain_ytd[gain_profile, SHORT_TERM_CAPITAL_GAIN_CODE, :]
     tax = ordinary_tax + capital_tax
-    buffers.tax_accrual_active[month, link, active_rollout] = True
-    buffers.tax_accrual_amount[month, link, active_rollout] = tax[active_rollout]
-    buffers.tax_breakdown_ordinary[month, link, active_rollout] = ordinary[active_rollout]
-    buffers.tax_breakdown_ltcg[month, link, active_rollout] = ltcg[active_rollout]
-    buffers.tax_breakdown_stcg[month, link, active_rollout] = stcg[active_rollout]
-    buffers.tax_breakdown_standard_deduction[month, link, active_rollout] = standard_deduction
-    buffers.tax_breakdown_mortgage_interest_deduction[month, link, active_rollout] = mortgage_interest_deduction[
+    buffers.taxes.accrual_active[month, link, active_rollout] = True
+    buffers.taxes.accrual_amount[month, link, active_rollout] = tax[active_rollout]
+    buffers.taxes.breakdown_ordinary[month, link, active_rollout] = ordinary[active_rollout]
+    buffers.taxes.breakdown_ltcg[month, link, active_rollout] = ltcg[active_rollout]
+    buffers.taxes.breakdown_stcg[month, link, active_rollout] = stcg[active_rollout]
+    buffers.taxes.breakdown_standard_deduction[month, link, active_rollout] = standard_deduction
+    buffers.taxes.breakdown_mortgage_interest_deduction[month, link, active_rollout] = mortgage_interest_deduction[
         active_rollout
     ]
-    buffers.tax_breakdown_salt_deduction[month, link, active_rollout] = salt_deduction[active_rollout]
-    buffers.tax_breakdown_itemized_deduction[month, link, active_rollout] = itemized_deduction[active_rollout]
-    buffers.tax_breakdown_ordinary_taxable[month, link, active_rollout] = ordinary_taxable[active_rollout]
-    buffers.tax_breakdown_capital_taxable[month, link, active_rollout] = capital_taxable[active_rollout]
-    buffers.tax_breakdown_ordinary_tax[month, link, active_rollout] = ordinary_tax[active_rollout]
-    buffers.tax_breakdown_capital_tax[month, link, active_rollout] = capital_tax[active_rollout]
+    buffers.taxes.breakdown_salt_deduction[month, link, active_rollout] = salt_deduction[active_rollout]
+    buffers.taxes.breakdown_itemized_deduction[month, link, active_rollout] = itemized_deduction[active_rollout]
+    buffers.taxes.breakdown_ordinary_taxable[month, link, active_rollout] = ordinary_taxable[active_rollout]
+    buffers.taxes.breakdown_capital_taxable[month, link, active_rollout] = capital_taxable[active_rollout]
+    buffers.taxes.breakdown_ordinary_tax[month, link, active_rollout] = ordinary_tax[active_rollout]
+    buffers.taxes.breakdown_capital_tax[month, link, active_rollout] = capital_tax[active_rollout]
 
     tax_slot = _tax_liability_slot_for(plan, profile_index=profile, link_index=link, year_end_month=month)
     if tax_slot >= 0:
@@ -306,10 +306,10 @@ def _apply_pe_tenders(
         )
         # Record disposition for downstream event decoding.
         sale_active = result.sold_units > 0.0  # (L, R)
-        buffers.pe_disp_active[month, issuer_idx] |= sale_active.T  # (L, R) → (lot, R)
-        buffers.pe_disp_units[month, issuer_idx] += result.sold_units.T
-        buffers.pe_disp_basis[month, issuer_idx] += result.cost_basis_consumed.T
-        buffers.pe_disp_proceeds[month, issuer_idx] += result.proceeds.T
+        buffers.lot_dispositions.pe.active[month, issuer_idx] |= sale_active.T  # (L, R) → (lot, R)
+        buffers.lot_dispositions.pe.units[month, issuer_idx] += result.sold_units.T
+        buffers.lot_dispositions.pe.basis[month, issuer_idx] += result.cost_basis_consumed.T
+        buffers.lot_dispositions.pe.proceeds[month, issuer_idx] += result.proceeds.T
 
 
 def _compute_liquid_net_worth(
@@ -368,7 +368,7 @@ def _apply_lifecycle_events(
     for i in range(begin, end):
         prop = int(plan.lifecycle_events.property_slot[i])
         kind = int(plan.lifecycle_events.kind[i])
-        buffers.lifecycle_fired[i, active_rollout] = True
+        buffers.lifecycle.fired[i, active_rollout] = True
         if kind == LIFECYCLE_KIND_FRACTION:
             new_fraction = float(plan.lifecycle_events.rented_fraction[i])
             current.property_rented_fraction[prop, active_rollout] = new_fraction
@@ -466,7 +466,7 @@ def _apply_property_sale(
     # the lookback snapshot gives the count of qualifying months strictly inside the window.
     current_cum = current.property_owner_occupied_months[prop, :].astype(np.int64)
     lookback_snapshot_index = max(0, month - SECTION_121_LOOKBACK_MONTHS)
-    snapshot_cum = buffers.property_owner_occupied_months_state[lookback_snapshot_index, prop, :].astype(np.int64)
+    snapshot_cum = buffers.state.property_owner_occupied_months_state[lookback_snapshot_index, prop, :].astype(np.int64)
     months_in_window = current_cum - snapshot_cum
     qualifies = months_in_window >= SECTION_121_MIN_QUALIFYING_MONTHS
     owner_profile = int(plan.property_owner_profile_index[prop])
@@ -512,13 +512,13 @@ def _apply_property_sale(
     sale_recapture[active_rollout] = recapture[active_rollout]
     sale_section_121[active_rollout] = section_121_exclusion[active_rollout]
     sale_long_term_gain[active_rollout] = ltcg[active_rollout]
-    buffers.lifecycle_sale_gross_proceeds[event_index] = sale_gross_proceeds
-    buffers.lifecycle_sale_mortgage_payoff[event_index] = sale_mortgage_payoff
-    buffers.lifecycle_sale_net_cash[event_index] = sale_net_cash
-    buffers.lifecycle_sale_realized_gain[event_index] = sale_realized_gain
-    buffers.lifecycle_sale_recapture[event_index] = sale_recapture
-    buffers.lifecycle_sale_section_121_exclusion[event_index] = sale_section_121
-    buffers.lifecycle_sale_long_term_gain[event_index] = sale_long_term_gain
+    buffers.lifecycle.sale_gross_proceeds[event_index] = sale_gross_proceeds
+    buffers.lifecycle.sale_mortgage_payoff[event_index] = sale_mortgage_payoff
+    buffers.lifecycle.sale_net_cash[event_index] = sale_net_cash
+    buffers.lifecycle.sale_realized_gain[event_index] = sale_realized_gain
+    buffers.lifecycle.sale_recapture[event_index] = sale_recapture
+    buffers.lifecycle.sale_section_121_exclusion[event_index] = sale_section_121
+    buffers.lifecycle.sale_long_term_gain[event_index] = sale_long_term_gain
 
 
 def _apply_owner_occupied_month(current: CurrentStateBuffers) -> None:
@@ -741,7 +741,7 @@ def _apply_property_purchases(
     for prop in range(plan.properties.month.shape[0]):
         if plan.properties.month[prop] != month:
             continue
-        buffers.property_purchase_active[month, prop, active_rollout] = True
+        buffers.properties.purchase_active[month, prop, active_rollout] = True
         current.property_active[prop, active_rollout] = True
         current.property_basis[prop, active_rollout] = plan.properties.adjusted_basis[prop]
         current.property_ownership[prop, active_rollout] = plan.properties.ownership[prop]
@@ -750,7 +750,7 @@ def _apply_property_purchases(
 
         buyer_cash = float(plan.properties.stake_contribution[prop])
         if buyer_cash > 0.0:
-            buffers.property_transfer_active[month, prop, active_rollout] = True
+            buffers.properties.transfer_active[month, prop, active_rollout] = True
             buyer_slot = int(plan.properties.buyer_slot[prop])
             if buyer_slot >= 0:
                 current.cash[buyer_slot, active_rollout] -= buyer_cash
@@ -760,7 +760,7 @@ def _apply_property_purchases(
 
         liability_slot = int(plan.properties.mortgage_slot[prop])
         if liability_slot >= 0:
-            buffers.mortgage_origination_active[month, liability_slot, active_rollout] = True
+            buffers.properties.mortgage_origination_active[month, liability_slot, active_rollout] = True
             current.liability_active[liability_slot, active_rollout] = True
             current.liability_principal[liability_slot, active_rollout] = plan.liabilities.principal[liability_slot]
             current.liability_monthly_payment[liability_slot, active_rollout] = plan.liabilities.monthly_payment[
@@ -816,10 +816,10 @@ def _apply_scheduled_asset_sales(
             gains=result.proceeds - result.cost_basis_consumed,
         )
         sale_active = result.sold_units > 0.0
-        buffers.sched_disp_active[month, sale] = sale_active.T
-        buffers.sched_disp_units[month, sale] += result.sold_units.T
-        buffers.sched_disp_basis[month, sale] += result.cost_basis_consumed.T
-        buffers.sched_disp_proceeds[month, sale] += result.proceeds.T
+        buffers.lot_dispositions.scheduled.active[month, sale] = sale_active.T
+        buffers.lot_dispositions.scheduled.units[month, sale] += result.sold_units.T
+        buffers.lot_dispositions.scheduled.basis[month, sale] += result.cost_basis_consumed.T
+        buffers.lot_dispositions.scheduled.proceeds[month, sale] += result.proceeds.T
 
 
 def _apply_liquidity_policy_sales(
@@ -829,8 +829,8 @@ def _apply_liquidity_policy_sales(
     if not active_rollout.any():
         return
 
-    obligation_active = buffers.obligation_active[month]
-    obligation_due = buffers.obligation_due[month]
+    obligation_active = buffers.obligations.active[month]
+    obligation_due = buffers.obligations.due[month]
     for policy in range(plan.liquidity_policies.agent.shape[0]):
         policy_agent = int(plan.liquidity_policies.agent[policy])
         policy_account = int(plan.liquidity_policies.account[policy])
@@ -843,7 +843,7 @@ def _apply_liquidity_policy_sales(
             matching_active = obligation_active[matching_obligations]
             hard_demand = np.where(matching_active, obligation_due[matching_obligations], 0.0).sum(axis=0)
             for row, slot in enumerate(matching_obligations):
-                buffers.obligation_attempt_policy[month, slot, matching_active[row]] = policy
+                buffers.obligations.attempt_policy[month, slot, matching_active[row]] = policy
         else:
             hard_demand = np.zeros(plan.rollout_count, dtype=np.float64)
 
@@ -939,10 +939,10 @@ def _apply_liquidity_policy_sales(
                 gains=result.proceeds - result.cost_basis_consumed,
             )
             sale_active = result.sold_units > 0.0
-            buffers.liq_disp_active[month, policy, asset_idx] |= sale_active.T
-            buffers.liq_disp_units[month, policy, asset_idx] += result.sold_units.T
-            buffers.liq_disp_basis[month, policy, asset_idx] += result.cost_basis_consumed.T
-            buffers.liq_disp_proceeds[month, policy, asset_idx] += result.proceeds.T
+            buffers.lot_dispositions.liquidity.active[month, policy, asset_idx] |= sale_active.T
+            buffers.lot_dispositions.liquidity.units[month, policy, asset_idx] += result.sold_units.T
+            buffers.lot_dispositions.liquidity.basis[month, policy, asset_idx] += result.cost_basis_consumed.T
+            buffers.lot_dispositions.liquidity.proceeds[month, policy, asset_idx] += result.proceeds.T
             remaining_target = np.maximum(remaining_target - result.total_proceeds, 0.0)
 
 
@@ -1010,18 +1010,18 @@ def _apply_obligation_accruals(
         active &= amount > 0.0
         if not active.any():
             continue
-        buffers.obligation_active[month, slot, active] = True
-        buffers.obligation_due[month, slot, active] = amount[active]
+        buffers.obligations.active[month, slot, active] = True
+        buffers.obligations.due[month, slot, active] = amount[active]
 
 
 def _apply_obligation_settlement(
     plan: CompiledSimulation, buffers: SimulationBuffers, current: CurrentStateBuffers, month: int
 ) -> None:
-    active = buffers.obligation_active[month]
+    active = buffers.obligations.active[month]
     if not active.any():
         return
 
-    due = buffers.obligation_due[month]
+    due = buffers.obligations.due[month]
     funded = _obligation_group_funded(plan, current, month=month, active=active, due=due)
     tax_profile_count = plan.tax.profile_agent.shape[0]
     tax_payment_failed = np.zeros((tax_profile_count, plan.rollout_count), dtype=np.bool_)
@@ -1045,7 +1045,7 @@ def _apply_obligation_settlement(
         amount = due[slot]
         paid = active_slot & funded[slot]
         if paid.any():
-            buffers.obligation_paid[month, slot, paid] = amount[paid]
+            buffers.obligations.paid[month, slot, paid] = amount[paid]
             from_slot = int(plan.obligations.from_slot[month, slot])
             if from_slot >= 0:
                 current.cash[from_slot, paid] -= amount[paid]
@@ -1083,8 +1083,8 @@ def _apply_obligation_settlement(
 
         failed = active_slot & ~funded[slot]
         if failed.any():
-            buffers.obligation_shortfall[month, slot, failed] = amount[failed]
-            buffers.obligation_failure_active[month, slot, failed] = True
+            buffers.obligations.shortfall[month, slot, failed] = amount[failed]
+            buffers.obligations.failure_active[month, slot, failed] = True
             first_failure = failed & (current.failed_month < 0)
             current.failed[failed] = True
             current.failed_month[first_failure] = month
@@ -1133,10 +1133,10 @@ def _apply_mortgage_payment(
     interest = np.minimum(principal_before * float(plan.liabilities.annual_rate[liability_slot]) / 12.0, amount)
     principal = np.minimum(np.maximum(amount - interest, 0.0), principal_before)
 
-    buffers.mortgage_payment_active[month, liability_slot, paid] = True
-    buffers.mortgage_payment_interest[month, liability_slot, paid] = interest[paid]
-    buffers.mortgage_payment_principal[month, liability_slot, paid] = principal[paid]
-    buffers.mortgage_payment_total[month, liability_slot, paid] = amount[paid]
+    buffers.properties.mortgage_payment_active[month, liability_slot, paid] = True
+    buffers.properties.mortgage_payment_interest[month, liability_slot, paid] = interest[paid]
+    buffers.properties.mortgage_payment_principal[month, liability_slot, paid] = principal[paid]
+    buffers.properties.mortgage_payment_total[month, liability_slot, paid] = amount[paid]
     current.liability_principal[liability_slot, paid] = np.maximum(0.0, principal_before[paid] - principal[paid])
     current.liability_interest_ytd[liability_slot, paid] += interest[paid]
     current.liability_principal_ytd[liability_slot, paid] += principal[paid]
@@ -1162,9 +1162,9 @@ def _apply_tax_settlements(
         active = (tax_settlement_candidate[profile] > 0.0) & ~tax_payment_failed[profile]
         if not active.any():
             continue
-        buffers.tax_settlement_active[month, profile, active] = True
-        buffers.tax_settlement_amount[month, profile, active] = tax_settlement_candidate[profile, active]
-        buffers.tax_settlement_year_end_month[month, profile, active] = tax_settlement_candidate_year_end[
+        buffers.taxes.settlement_active[month, profile, active] = True
+        buffers.taxes.settlement_amount[month, profile, active] = tax_settlement_candidate[profile, active]
+        buffers.taxes.settlement_year_end_month[month, profile, active] = tax_settlement_candidate_year_end[
             profile, active
         ]
         for year_end_month in np.unique(tax_settlement_candidate_year_end[profile, active]):
