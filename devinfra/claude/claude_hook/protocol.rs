@@ -27,6 +27,13 @@ pub struct HookResponse {
 /// notification callback, not into the model conversation. Matches Python's
 /// `_NON_REPL_HOOK_TYPES` in `server.py`. Used as a fallback for hooks that
 /// aren't explicitly modeled (fall through to `Unknown`).
+///
+/// WorktreeCreate / WorktreeRemove are intentionally excluded: the daemon
+/// does not implement worktree management (Claude Code expects the hook to
+/// run `git worktree add` and print the path on stdout — a plain-text
+/// contract incompatible with the daemon's JSON-in/JSON-out architecture).
+/// Not registering these hooks in settings.json avoids the no-op stub that
+/// previously caused "returned a path that is not a directory: {}" errors.
 pub const NON_REPL_HOOK_NAMES: &[&str] = &[
     "SessionStart",
     "SessionEnd",
@@ -34,8 +41,6 @@ pub const NON_REPL_HOOK_NAMES: &[&str] = &[
     "CwdChanged",
     "FileChanged",
     "InstructionsLoaded",
-    "WorktreeCreate",
-    "WorktreeRemove",
     "ConfigChange",
 ];
 
@@ -60,9 +65,7 @@ pub enum AnyHookInput {
 
     // --- Non-REPL hooks (systemMessage shown only in UI, not to model) ---
     SessionStart(SessionStartInput),
-    WorktreeCreate(WorktreeCreateInput),
     SessionEnd(SessionEndInput),
-    WorktreeRemove(WorktreeRemoveInput),
     Setup(SetupInput),
     CwdChanged(CwdChangedInput),
     FileChanged(FileChangedInput),
@@ -110,9 +113,7 @@ impl<'de> Deserialize<'de> for AnyHookInput {
             "TeammateIdle" => parse!(AnyHookInput::TeammateIdle, TeammateIdleInput),
             "TaskCompleted" => parse!(AnyHookInput::TaskCompleted, TaskCompletedInput),
             "SessionStart" => parse!(AnyHookInput::SessionStart, SessionStartInput),
-            "WorktreeCreate" => parse!(AnyHookInput::WorktreeCreate, WorktreeCreateInput),
             "SessionEnd" => parse!(AnyHookInput::SessionEnd, SessionEndInput),
-            "WorktreeRemove" => parse!(AnyHookInput::WorktreeRemove, WorktreeRemoveInput),
             "Setup" => parse!(AnyHookInput::Setup, SetupInput),
             "CwdChanged" => parse!(AnyHookInput::CwdChanged, CwdChangedInput),
             "FileChanged" => parse!(AnyHookInput::FileChanged, FileChangedInput),
@@ -164,9 +165,7 @@ impl Serialize for AnyHookInput {
             AnyHookInput::TeammateIdle(h) => tagged!(h, "TeammateIdle"),
             AnyHookInput::TaskCompleted(h) => tagged!(h, "TaskCompleted"),
             AnyHookInput::SessionStart(h) => tagged!(h, "SessionStart"),
-            AnyHookInput::WorktreeCreate(h) => tagged!(h, "WorktreeCreate"),
             AnyHookInput::SessionEnd(h) => tagged!(h, "SessionEnd"),
-            AnyHookInput::WorktreeRemove(h) => tagged!(h, "WorktreeRemove"),
             AnyHookInput::Setup(h) => tagged!(h, "Setup"),
             AnyHookInput::CwdChanged(h) => tagged!(h, "CwdChanged"),
             AnyHookInput::FileChanged(h) => tagged!(h, "FileChanged"),
@@ -197,9 +196,7 @@ impl AnyHookInput {
         }
         match self {
             AnyHookInput::SessionStart(h) => sid!(h),
-            AnyHookInput::WorktreeCreate(h) => sid!(h),
             AnyHookInput::SessionEnd(h) => sid!(h),
-            AnyHookInput::WorktreeRemove(h) => sid!(h),
             AnyHookInput::Setup(h) => sid!(h),
             AnyHookInput::CwdChanged(h) => sid!(h),
             AnyHookInput::FileChanged(h) => sid!(h),
@@ -232,8 +229,6 @@ impl AnyHookInput {
         match self {
             AnyHookInput::SessionStart(_)
             | AnyHookInput::SessionEnd(_)
-            | AnyHookInput::WorktreeCreate(_)
-            | AnyHookInput::WorktreeRemove(_)
             | AnyHookInput::Setup(_)
             | AnyHookInput::CwdChanged(_)
             | AnyHookInput::FileChanged(_)
@@ -272,23 +267,10 @@ pub struct SessionStartInput {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-pub struct WorktreeCreateInput {
-    #[serde(flatten)]
-    pub base: HookInputBase,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
 pub struct SessionEndInput {
     #[serde(flatten)]
     pub base: HookInputBase,
     pub reason: String,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct WorktreeRemoveInput {
-    #[serde(flatten)]
-    pub base: HookInputBase,
-    pub worktree_path: PathBuf,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
