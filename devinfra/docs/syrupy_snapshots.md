@@ -45,14 +45,14 @@ Use `bb test --config=rbe` directly for flag ordering control.
 
 ### Local (simpler, no copy step)
 
+Local execution creates runfiles as symlinks into the source tree. Syrupy
+writes through the symlink directly — no copy step needed. Use `bb test`
+(the binary runs locally, build actions use RBE):
+
 ```bash
 bb test //path/to:snapshot_test \
-  --test_arg=--snapshot-update --nocache_test_results \
-  --remote_executor="" --config=nolint
+  --test_arg=--snapshot-update --nocache_test_results
 ```
-
-Local execution creates runfiles as symlinks into the source tree. Syrupy
-writes through the symlink directly — no copy step needed.
 
 ## How it works
 

@@ -48,7 +48,7 @@ bb run //devinfra:gazelle -- --mode=diff  # Preview changes
 
 ```bash
 # Add to root Cargo.toml, then:
-CARGO_BAZEL_REPIN=1 bb build --remote_executor="" @crates//:all  # Update Cargo.Bazel.lock
+CARGO_BAZEL_REPIN=1 bazelisk build @crates//:all  # Update Cargo.Bazel.lock
 # Use @crates//crate_name in BUILD.bazel deps
 ```
 
@@ -58,7 +58,6 @@ BuildBuddy provides remote caching and remote build execution (RBE). Build actio
 
 - `bbr` — convenience wrapper around `bb remote`; runs the entire Bazel invocation on a BuildBuddy runner with RBE enabled. Default for builds, tests, and queries.
 - `bb run //target` — Bazel runs locally, build actions dispatched to RBE, binary always executed locally.
-- `bb run --remote_executor="" //target` — builds and runs entirely locally (only needed when a target is known to fail on RBE).
 
 RBE worker image: `ghcr.io/agentydragon/rbe-worker` from <devinfra/rbe_image/Dockerfile>. Setup: <devinfra/setup_buildbuddy.sh>.
 

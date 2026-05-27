@@ -90,7 +90,7 @@ Run `bb`, `bazel`, `bazelisk`, `bbr`, `terraform`/`tofu`, `kubectl`, `systemctl`
 
 **Prefer `bbr` for almost everything.** Use `bb run` for targets that need to execute on the local machine (Gazelle, manifest updates, formatters). Use `bazelisk` for local runs that need the session bazelrc (cert injection, new external repo fetches).
 
-`bb run` always executes the binary locally — `--remote_executor=""` only controls whether _build actions_ use RBE, not where the binary runs. Omit it unless the target is known to fail when built on RBE.
+`bb run` always executes the binary locally — build actions use RBE by default.
 
 ```bash
 bbr test //path/to:target
@@ -106,13 +106,12 @@ bb run //devinfra:gazelle
 Remote execution (RBE) and remote caching are the **expected defaults** — do not disable them. In particular:
 
 - **Browser/visual tests must run with remote execution.** RBE runner VMs have the required Docker and display stack; local machines typically do not. Never skip or stub these tests to avoid needing RBE.
-- `--remote_executor=""` disables remote build actions. Only add it when a target is documented as failing on RBE (e.g. needs `/bin/bash` not present on the runner).
 - `--noremote_cache` / `--noremote_accept_cached` are fine for forcing a fresh run; they don't break correctness.
 
 **If any Bazel-family command (`bazel`, `bazelisk`, `bb`, `bbr`) cannot reach BuildBuddy** (connection refused, DNS failure, cert error):
 
 1. First, retry the Bash tool call with `dangerouslyDisableSandbox: true` — the Claude Code sandbox's `--unshare-net` breaks Bazel's gRPC DNS resolution even when the host is listed in the domain allowlist (see <docs/claude_code_sandbox.md>).
-2. If it still fails, **stop and report the connectivity issue to the user** before resorting to `--remote_executor=""`. The user may need to recover the session start hook or check VPN/firewall state.
+2. If it still fails, **stop and report the connectivity issue to the user**. The user may need to recover the session start hook or check VPN/firewall state.
 
 ### Downloading remote build outputs
 
@@ -322,7 +321,7 @@ if __name__ == "__main__":
 
 **No test skips for missing tools**: let the test fail. Tools come from Bazel runfiles or the RBE worker image.
 
-**Docker tests run on RBE, never locally**: Tests that use Docker (e.g., container E2E tests, proxy integration tests with mitmproxy testcontainers) are designed to run on BuildBuddy RBE workers, which have Docker available. **Never** skip these tests because Docker is unavailable locally, disable them, or claim they are "not runnable." They work on RBE — that is the intended execution environment. If RBE is not working, recover it by following the "Recovering from a Broken Session Start Hook" section above. Every environment in which agents operate will have BuildBuddy accessible, either automatically (session start hook) or through manual recovery. If you cannot restore BuildBuddy remote execution after following recovery steps, **abort and report the issue to the user** rather than working around it with `--remote_executor=""` or local-only execution for tests that assume RBE.
+**Docker tests run on RBE, never locally**: Tests that use Docker (e.g., container E2E tests, proxy integration tests with mitmproxy testcontainers) are designed to run on BuildBuddy RBE workers, which have Docker available. **Never** skip these tests because Docker is unavailable locally, disable them, or claim they are "not runnable." They work on RBE — that is the intended execution environment. If RBE is not working, recover it by following the "Recovering from a Broken Session Start Hook" section above. Every environment in which agents operate will have BuildBuddy accessible, either automatically (session start hook) or through manual recovery. If you cannot restore BuildBuddy remote execution after following recovery steps, **abort and report the issue to the user** rather than working around it with local-only execution for tests that assume RBE.
 
 Use `py_test` macro from `//devinfra/python:defs.bzl` (not the raw `@rules_python` `py_test`) and set `requires_docker = True`. The macro handles `env_inherit`, tags, and Docker exec properties automatically. Do not add `env_inherit = ["DUCKTAPE_DOCKER_CLIENT_KEY"]` or `tags = ["requires_docker"]` manually.
 
@@ -372,14 +371,6 @@ bb test --config=rbe --remote_download_outputs=toplevel \
 # Copy updated snapshot from undeclared outputs back to source tree
 cp bazel-testlogs/path/to/snapshot_test/test.outputs/snapshot_test.ambr \
    path/to/__snapshots__/snapshot_test.ambr
-```
-
-**Local** (simpler, no copy step — syrupy writes through runfiles symlinks):
-
-```bash
-bb test //path/to:snapshot_test \
-  --test_arg=--snapshot-update --nocache_test_results \
-  --remote_executor="" --config=nolint
 ```
 
 Then commit the updated `.ambr` files. See <devinfra/docs/syrupy_snapshots.md> for details.

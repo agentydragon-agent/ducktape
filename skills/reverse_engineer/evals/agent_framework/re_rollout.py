@@ -19,7 +19,7 @@ harness. Outputs:
   <output-dir>/summary_<variant>.json        — end_reason, wall_seconds, submit text
 
 Run with:
-  bb run --remote_executor="" \\
+  bb run \\
     //skills/reverse_engineer/evals/agent_framework:re_rollout -- \\
     --skill on --output-dir /tmp/re_eval/$(date -u +%Y%m%dT%H%M%SZ)
 """

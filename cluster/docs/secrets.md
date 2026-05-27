@@ -187,7 +187,7 @@ keystore after import. Generate the plaintext file locally from the repo's SOPS
 key and shared lighthouse topology:
 
 ```bash
-bb run --remote_executor="" //cluster/scripts:render_mobile_nebula_config -- \
+bb run //cluster/scripts:render_mobile_nebula_config -- \
   pixel6 \
   --output /tmp/pixel6.mobile-nebula.yaml
 ```

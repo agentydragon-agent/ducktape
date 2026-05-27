@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, Checkbox, NativeSelect } from "@mantine/core";
 
 import { fetchAugurBootstrap, fetchProductMetricFan, fetchProductPortfolio, fetchProductRollout } from "./client.js";
@@ -617,6 +617,16 @@ function rolloutSliverColor(rankPercentile) {
   return `rgba(37, 99, 235, ${alpha.toFixed(3)})`;
 }
 
+function blendWithTeal(color) {
+  const teal = { r: 15, g: 118, b: 110 };
+  const m = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+  if (!m) return SELECTED_ROLLOUT_COLOR;
+  const r = Math.round(+m[1] * 0.55 + teal.r * 0.45);
+  const g = Math.round(+m[2] * 0.55 + teal.g * 0.45);
+  const b = Math.round(+m[3] * 0.55 + teal.b * 0.45);
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
 function selectedRolloutMetricRows(detail, metric) {
   if (!detail?.rollout?.monthlyMetrics) return [];
   return rowsFrom(detail.rollout.monthlyMetrics)
@@ -938,6 +948,9 @@ function MetricFanChart({
   onSelectEventMonth,
   onHoverEventMonth,
 }) {
+  const [hoveredMonth, setHoveredMonth] = useState(null);
+  const svgRef = useRef(null);
+
   if (rows.length === 0) return null;
   const sortedPercentiles = percentiles.slice().sort((left, right) => left - right);
   const outerLow = sortedPercentiles[0];
@@ -947,29 +960,22 @@ function MetricFanChart({
   const median = sortedPercentiles.includes(50) ? 50 : sortedPercentiles[Math.floor(sortedPercentiles.length / 2)];
   const maxYear = Math.max(...rows.map((row) => row.year), 1);
   const values = rows
-    .flatMap((row) => sortedPercentiles.map((percentile) => row.values.get(percentile)))
+    .flatMap((row) => sortedPercentiles.map((pct) => row.values.get(pct)))
     .concat(selectedRows.map((row) => row.value))
     .filter(Number.isFinite);
   const yAxis = fanChartAxis(metric.chartValue, values);
-  const width = 760;
-  const height = 300;
-  const left = 82;
-  const right = 24;
-  const top = 18;
-  const bottom = 42;
-  const plotWidth = width - left - right;
-  const plotHeight = height - top - bottom;
-  const x = (row) => left + (row.year / maxYear) * plotWidth;
-  const y = (value) => top + (1 - (value - yAxis.min) / yAxis.range) * plotHeight;
-  const valueAt = (row, percentile) => row.values.get(percentile);
-  const line = (percentile) => rows.map((row) => `${x(row)},${y(valueAt(row, percentile))}`).join(" ");
+  const svgWidth = 760;
+  const svgHeight = 300;
+  const margin = { left: 82, right: 24, top: 18, bottom: 42 };
+  const plotWidth = svgWidth - margin.left - margin.right;
+  const plotHeight = svgHeight - margin.top - margin.bottom;
+  const x = (row) => margin.left + (row.year / maxYear) * plotWidth;
+  const y = (value) => margin.top + (1 - (value - yAxis.min) / yAxis.range) * plotHeight;
+  const valueAt = (row, pct) => row.values.get(pct);
+  const line = (pct) => rows.map((row) => `${x(row)},${y(valueAt(row, pct))}`).join(" ");
   const selectedLine = selectedRows.map((row) => `${x(row)},${y(row.value)}`).join(" ");
   const selectedColor = selectedFailed ? FAILED_ROLLOUT_COLOR : SELECTED_ROLLOUT_COLOR;
   const selectedRowByMonth = new Map(selectedRows.map((row) => [row.monthIndex, row]));
-  // Filter by user-selected visibility, then bucket by month so the renderer can stack
-  // multiple kinds at the same month index instead of overlapping them at a fixed Y.
-  // `selectedEvents` already arrives sorted by (month_index, priority[kind]) from
-  // `decode.py:rollout_events_from`, so within-month iteration order is canonical.
   const monthBuckets = new Map();
   for (let index = 0; index < selectedEvents.length; index += 1) {
     const event = selectedEvents[index];
@@ -996,31 +1002,64 @@ function MetricFanChart({
       });
     }
   }
-  const band = (upperPercentile, lowerPercentile) => {
-    const upper = rows.map((row) => `${x(row)},${y(valueAt(row, upperPercentile))}`).join(" ");
+  const band = (upperPct, lowerPct) => {
+    const upper = rows.map((row) => `${x(row)},${y(valueAt(row, upperPct))}`).join(" ");
     const lower = rows
       .slice()
       .reverse()
-      .map((row) => `${x(row)},${y(valueAt(row, lowerPercentile))}`)
+      .map((row) => `${x(row)},${y(valueAt(row, lowerPct))}`)
       .join(" ");
     return `${upper} ${lower}`;
   };
 
+  const handleMouseMove = useCallback(
+    (event) => {
+      const svg = svgRef.current;
+      if (!svg) return;
+      const rect = svg.getBoundingClientRect();
+      const scaleX = svgWidth / rect.width;
+      const svgX = (event.clientX - rect.left) * scaleX;
+      if (svgX < margin.left || svgX > margin.left + plotWidth) {
+        setHoveredMonth(null);
+        return;
+      }
+      const targetYear = ((svgX - margin.left) / plotWidth) * maxYear;
+      let closest = null;
+      let closestDist = Infinity;
+      for (const row of rows) {
+        const dist = Math.abs(row.year - targetYear);
+        if (dist < closestDist) {
+          closestDist = dist;
+          closest = row;
+        }
+      }
+      setHoveredMonth(closest);
+    },
+    [rows, maxYear, plotWidth, margin.left]
+  );
+
+  const handleMouseLeave = useCallback(() => setHoveredMonth(null), []);
+
+  const hoveredRow = hoveredMonth;
+
   return (
     <div className="overflow-x-auto p-4" data-product-fan-chart={metric.chartValue}>
       <svg
+        ref={svgRef}
         role="img"
         aria-label={`${metric.label} probability fan chart`}
-        viewBox={`0 0 ${width} ${height}`}
+        viewBox={`0 0 ${svgWidth} ${svgHeight}`}
         className="min-w-[42rem] w-full"
+        onMouseMove={handleMouseMove}
+        onMouseLeave={handleMouseLeave}
       >
-        <rect x={left} y={top} width={plotWidth} height={plotHeight} fill="transparent" />
+        <rect x={margin.left} y={margin.top} width={plotWidth} height={plotHeight} fill="transparent" />
         <FanAxes
-          left={left}
-          top={top}
+          left={margin.left}
+          top={margin.top}
           plotWidth={plotWidth}
           plotHeight={plotHeight}
-          height={height}
+          height={svgHeight}
           x={x}
           y={y}
           yAxis={yAxis}
@@ -1059,7 +1098,7 @@ function MetricFanChart({
             {...markerProps}
             x={x}
             y={y}
-            top={top}
+            top={margin.top}
             plotHeight={plotHeight}
             selectedEventMonthIndex={selectedEventMonthIndex}
             hoveredEventMonthIndex={hoveredEventMonthIndex}
@@ -1067,6 +1106,59 @@ function MetricFanChart({
             onHoverEventMonth={onHoverEventMonth}
           />
         ))}
+        {hoveredRow &&
+          (() => {
+            const tipW = 140;
+            const tipH = 26 + sortedPercentiles.length * 14;
+            const tipPad = 8;
+            const tipX =
+              x(hoveredRow) + tipPad + tipW <= svgWidth
+                ? tipPad
+                : x(hoveredRow) - tipPad - tipW >= 0
+                  ? -tipPad - tipW
+                  : Math.max(0, svgWidth - tipW - x(hoveredRow));
+            const tipY = margin.top + plotHeight - tipH >= 0 ? 0 : margin.top + plotHeight - tipH;
+            return (
+              <>
+                <line
+                  x1={x(hoveredRow)}
+                  y1={margin.top}
+                  x2={x(hoveredRow)}
+                  y2={margin.top + plotHeight}
+                  stroke="rgba(100,116,139,0.5)"
+                  strokeWidth="1"
+                  strokeDasharray="3 2"
+                />
+                <g
+                  transform={`translate(${x(hoveredRow) + tipX}, ${margin.top + tipY})`}
+                  className="pointer-events-none"
+                >
+                  <rect
+                    x={0}
+                    y={0}
+                    width={tipW}
+                    height={tipH}
+                    rx={4}
+                    fill="white"
+                    fillOpacity="0.92"
+                    stroke="rgba(15,23,42,0.15)"
+                    strokeWidth="1"
+                  />
+                  <text x={8} y={14} fontSize="10" fontWeight="600" fill="#334155">
+                    Month {hoveredRow.monthIndex}
+                  </text>
+                  {sortedPercentiles.map((pct, i) => {
+                    const val = hoveredRow.values.get(pct);
+                    return (
+                      <text key={pct} x={8} y={28 + i * 14} fontSize="10" fill="#64748b">
+                        P{pct}: {Number.isFinite(val) ? fmtMetricValue(metric.chartValue, val) : "n/a"}
+                      </text>
+                    );
+                  })}
+                </g>
+              </>
+            );
+          })()}
       </svg>
     </div>
   );
@@ -1242,8 +1334,8 @@ function TerminalHistogramColumn({
             onClick={() => onSelect(isSelected ? null : seed)}
             style={{
               height: cellHeight,
-              backgroundColor: cellColor(entry),
-              border: isSelected ? `2px solid ${SELECTED_ROLLOUT_COLOR}` : "1px solid rgba(15, 23, 42, 0.12)",
+              backgroundColor: isSelected ? blendWithTeal(cellColor(entry)) : cellColor(entry),
+              border: "1px solid rgba(15, 23, 42, 0.12)",
             }}
             title={titleParts.join(" - ")}
           >

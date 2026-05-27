@@ -82,6 +82,6 @@ The simulator runs through the NumPy dense-array engine. Collect a profile for
 the target request shape directly:
 
 ```bash
-bazelisk run --config=nolint --remote_executor= //augur/api:profile_metric_fan -- \
+bazelisk run --config=nolint //augur/api:profile_metric_fan -- \
   --profile-output=/tmp/augur_metric_fan_numpy.prof
 ```

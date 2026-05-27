@@ -260,9 +260,8 @@ Run `bazel build //... && bazel test //...` to verify. If something breaks:
 If snapshot tests fail due to intentional output changes:
 
 ```bash
-bazel test //path/to:snapshot_test \
+bbr test //path/to:snapshot_test \
   --test_arg=--snapshot-update \
-  --remote_executor="" \
   --nocache_test_results
 ```
 

@@ -40,11 +40,9 @@ bb run //skills/reverse_engineer/evals/x:validate_empty
 bb run //skills/reverse_engineer/evals/x:validate_reference
 ```
 
-`bb run` (BuildBuddy RBE) builds remotely and runs the binary on the
-host. The Python process needs to talk to a local docker daemon, which
-is why we don't run on RBE. `bb run --remote_executor=""` fails on
-NixOS with `execvp(/bin/bash): No such file or directory` (Ruff lint
-aspect using `/bin/bash`); use plain `bb run`.
+`bb run` builds on RBE and runs the binary locally. The Python process
+needs to talk to a local docker daemon, which is why we use `bb run`
+(not `bbr`) — the binary runs on the host where Docker is available.
 
 Eval logs land in `./eval_logs/<utc-stamp>/`; judge-validation logs in
 `./validate_judge_logs/<case>/<utc-stamp>/`. Both relative to

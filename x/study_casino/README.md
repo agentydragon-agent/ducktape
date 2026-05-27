@@ -154,5 +154,5 @@ cd x/study_casino/frontend && pnpm exec vite
 cd x/study_casino/frontend && pnpm exec vite build
 
 # Run the backend against the local dist:
-bb run --remote_executor="" //x/study_casino:server
+bb run //x/study_casino:server
 ```
