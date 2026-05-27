@@ -345,6 +345,15 @@ pub struct QuotientGraph {
     /// residual class transitions to non-residual via a contract
     /// that brings in a non-gate-residual member.
     next_module_idx: usize,
+    /// Incremental topological order over the live classes,
+    /// maintained across contractions via the Pearce-Kelly 2007
+    /// algorithm. Replaces the per-pop cone-DFS that was the
+    /// dominant inner cost — `merge_creates_new_constraining_cycle`
+    /// now reduces to an `O(|Δ|)` window-restricted reachability
+    /// check, and `apply_contract` runs a local Kahn over the
+    /// affected window `[ord[lo], ord[hi]]`. See
+    /// `peel/topo_order.rs` for the algorithm + invariants.
+    topo_ord: super::topo_order::TopoOrder,
 }
 
 /// One owner-edge with its `DepKind`-derived weight. Stored on the
@@ -374,15 +383,15 @@ fn edge_weight(kind: DepKind) -> u32 {
 /// present iff `weighted_count > 0`; the empty default is never
 /// stored.
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq)]
-struct EdgeState {
+pub(super) struct EdgeState {
     /// Number of underlying owner edges from members of the source
     /// class to members of the target class whose
     /// `constrains_init_order` is true. Was `class_edge_multiplicity`.
-    constraining_count: u32,
+    pub(super) constraining_count: u32,
     /// Total underlying owner edges (constraining or not) from
     /// members of the source class to members of the target class.
     /// Always `>= constraining_count`. Was `class_weighted_edge_count`.
-    weighted_count: u32,
+    pub(super) weighted_count: u32,
     /// Sum of `edge_weight` over all underlying owner edges. Was
     /// `class_edge_weight`.
     weighted_sum: u64,
@@ -526,9 +535,11 @@ impl QuotientGraph {
             realizability_index,
             class_module_id,
             next_module_idx,
+            topo_ord: super::topo_order::TopoOrder::empty(),
         };
         q.rebuild_class_adjacency();
         q.rebuild_cycle_cache();
+        q.rebuild_topo_ord();
         q
     }
 
@@ -606,6 +617,7 @@ impl QuotientGraph {
         q.rebuild_class_adjacency();
         q.rebuild_cycle_cache();
         q.rebuild_realizability_index();
+        q.rebuild_topo_ord();
         (q, group_class_ids)
     }
 
@@ -793,21 +805,44 @@ impl QuotientGraph {
         None
     }
 
-    /// Fast check: does merging c1 and c2 introduce a new
+    /// Fast check: does merging `c1` and `c2` introduce a new
     /// constraining-only multi-class SCC through the merged class?
-    /// Walks the class-level adjacency in the projected (post-merge)
-    /// graph from the merged class's out-neighbors; returns true if
-    /// any of them can reach the merged class. Mirrors the
-    /// pre-Track-A kernel's localized BFS.
+    ///
+    /// Reduces to ordinary node-pair reachability in the pre-merge
+    /// DAG: a new cycle through the merged class exists iff there is
+    /// a path `c1 → ... → c2` (or reverse) through **at least one
+    /// intermediate class**. A direct edge `c1 → c2` just becomes a
+    /// self-loop after merge and is NOT a new cycle. (See the proof
+    /// sketch in `peel/topo_order.rs`.)
     ///
     /// Uses the persistently-maintained `out_edges` adjacency
     /// (refreshed every contract by `update_class_adjacency_after_merge`);
-    /// the post-merge view is materialized lazily by treating any
-    /// successor equal to `loser` as `target`. No O(|E|) scratch
-    /// rebuild per call. Only constraining edges
-    /// (`constraining_count > 0`) participate in the DFS — the cycle
-    /// gate is constraining-only.
+    /// only constraining edges (`constraining_count > 0`) participate
+    /// in the DFS — the cycle gate is constraining-only.
+    ///
+    /// When the class graph is a DAG, the maintained Pearce-Kelly
+    /// topological order answers this in `O(|Δ|)` per check, bounded
+    /// by the affected region — typically much smaller than the
+    /// reachable cone the pre-PK kernel walked. When the graph
+    /// contains pre-existing cycles (`!topo_ord.is_dag()`), no valid
+    /// topo order exists, and we fall back to the original localized
+    /// cone-DFS over the projected post-merge graph. The fallback
+    /// matches the pre-PK behavior bit-for-bit and is only taken
+    /// when the seed produces a non-realizable partition (rare on
+    /// well-formed corpora).
     fn merge_creates_new_constraining_cycle(&self, c1: ClassId, c2: ClassId) -> bool {
+        if self.topo_ord.is_dag() {
+            return self.topo_ord.would_create_cycle(c1, c2, &self.out_edges);
+        }
+        self.cone_dfs_creates_new_cycle(c1, c2)
+    }
+
+    /// Original cone-DFS cycle check. Kept as a fallback for the
+    /// rare case where the class graph contains pre-existing cycles
+    /// — in that case the maintained Pearce-Kelly topological order
+    /// is not a valid ordering, so we cannot use the fast PK path.
+    /// See `merge_creates_new_constraining_cycle` for context.
+    fn cone_dfs_creates_new_cycle(&self, c1: ClassId, c2: ClassId) -> bool {
         if c1 == c2 {
             return false;
         }
@@ -819,9 +854,7 @@ impl QuotientGraph {
         let mut seen: BTreeSet<ClassId> = BTreeSet::new();
         let mut stack: Vec<ClassId> = Vec::new();
         let push_succ = |succ: ClassId, seen: &mut BTreeSet<ClassId>, stack: &mut Vec<ClassId>| {
-            // Relabel loser → target.
             let mapped = if succ == loser { target } else { succ };
-            // Drop the self-loop the merge creates.
             if mapped == target {
                 return;
             }
@@ -844,12 +877,7 @@ impl QuotientGraph {
         if stack.is_empty() {
             return false;
         }
-        // DFS in the projected post-merge graph: any successor equal
-        // to `loser` is treated as `target`. A path that reaches
-        // `target` closes a new cycle through the merged class.
         while let Some(node) = stack.pop() {
-            // `node` was already canonicalized (loser → target) before
-            // push; check against target only.
             debug_assert_ne!(node, loser);
             for (&next, edge) in &self.out_edges[node.0] {
                 if edge.constraining_count == 0 {
@@ -921,6 +949,13 @@ impl QuotientGraph {
             self.classes[winner.0].is_pre_existing_module = true;
         }
         self.update_class_adjacency_after_merge(winner, loser);
+        // Maintain the Pearce-Kelly topological order. `out_edges` /
+        // `in_neighbors` already reflect the post-merge adjacency;
+        // the PK reorder runs over the affected window only.
+        self.topo_ord
+            .apply_contract(winner, loser, &self.out_edges, &self.in_neighbors);
+        #[cfg(debug_assertions)]
+        debug_assert!(self.topo_ord.validate(&self.out_edges).is_ok());
         self.update_cycle_cache_after_merge(winner, loser);
         // Commit the realizability-index deltas. These are pushed
         // permanently (no undo) because the kernel mutation just
@@ -1363,6 +1398,29 @@ impl QuotientGraph {
                 );
             }
         }
+    }
+
+    /// Rebuild the topological-order index from scratch by running
+    /// Kahn's over the current `out_edges` / `in_neighbors` adjacency.
+    /// Called in `from_report*` after `rebuild_class_adjacency`, and
+    /// as a defensive fallback if a partition-driven mutation
+    /// bypasses the incremental `apply_contract` path.
+    ///
+    /// O(|V| + |E|) — same cost as the adjacency walk it covers.
+    /// Incremental updates (`apply_contract`) keep the order valid
+    /// across `contract` calls, so the rebuild is one-shot per
+    /// quotient construction.
+    fn rebuild_topo_ord(&mut self) {
+        let num_classes = self.classes.len();
+        let live: Vec<ClassId> = self.iter_classes().collect();
+        self.topo_ord.init_from_dag(
+            num_classes,
+            live.into_iter(),
+            &self.out_edges,
+            &self.in_neighbors,
+        );
+        #[cfg(debug_assertions)]
+        debug_assert!(self.topo_ord.validate(&self.out_edges).is_ok());
     }
 
     /// Rebuild the cycle-set cache from scratch by reading the
