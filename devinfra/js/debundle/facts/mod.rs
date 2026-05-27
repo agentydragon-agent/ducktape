@@ -213,8 +213,139 @@ impl Visit for TopLevelAwaitFinder {
     }
 }
 
-pub fn analyze_chunk<F>(
-    module: &Module,
+/// Policy-independent per-statement facts: everything the analyzer
+/// can compute about a top-level statement from the module text alone,
+/// without consulting `AnalysisHints`. Produced by
+/// [`analyze_chunk_structural`] and consumed by
+/// [`analyze_chunk_with_policy`] to assemble the full
+/// [`StatementFacts`]. See the doc comment on
+/// [`analyze_chunk_structural`] for why this layer exists.
+#[derive(Debug, Clone)]
+pub(crate) struct StructuralStatementFacts {
+    ordinal: StatementOrdinal,
+    source_location: Option<SourceLocation>,
+    kind: StatementKind,
+    declared: BTreeSet<Id>,
+    at_init_reads: BTreeSet<Id>,
+    lazy_reads: BTreeSet<Id>,
+    first_order_lazy_reads: BTreeSet<Id>,
+    at_init_writes: BTreeSet<Id>,
+    lazy_writes: BTreeSet<Id>,
+    first_order_lazy_writes: BTreeSet<Id>,
+    at_init_calls: BTreeSet<Id>,
+    lazy_calls: BTreeSet<Id>,
+    first_order_lazy_calls: BTreeSet<Id>,
+    global_writes: BTreeSet<String>,
+    global_reads: BTreeSet<String>,
+    dataflow_summarizable: bool,
+}
+
+/// The policy-independent half of [`analyze_chunk`]'s output: the
+/// top-level item view, the shadowed-globals set, the top-level-await
+/// scan, and the per-statement static facts that depend only on the
+/// module text (not on `AnalysisHints`).
+///
+/// Owns its top-level item view by lifetime-tying to the source
+/// module, so the policy-dependent pass can re-traverse the same views
+/// without re-running the multi-declarator split.
+pub(crate) struct StructuralChunkAnalysis<'a> {
+    body: Vec<TopLevelItemView<'a>>,
+    shadowed: BTreeSet<&'static str>,
+    per_statement: Vec<StructuralStatementFacts>,
+    top_level_await: Option<StatementOrdinal>,
+}
+
+/// Compute the policy-independent layer of the chunk analysis: item
+/// views, shadowed globals, per-statement static facts, and the
+/// top-level-await scan. None of these depend on `AnalysisHints`
+/// (declared-pure hints, known effects, or local-effect policy).
+///
+/// The policy-dependent half — [`ChunkCodeGraph::build_full`],
+/// local-effect detection, per-statement purity classification, and
+/// the redundant-hint diagnostics — runs in
+/// [`analyze_chunk_with_policy`].
+///
+/// **Cross-pass sharing**: this layer is NOT shareable across the two
+/// `analyze_chunk` call sites (Stage A composer vs `vendor::strip`)
+/// because they analyze different `Module` values. Vendor strip
+/// reparses the emitted chunk file from disk and then mutates it
+/// (`split_top_level_var_decls`, `strip_export_specifiers`) before
+/// analyzing; Stage A analyzes the in-memory lowered runtime AST.
+/// Even ignoring the reparse, `strip_export_specifiers` rewrites
+/// `ExportNamed` items and folds `ExportDecl` into `Stmt::Decl`, which
+/// changes the body view that `top_level_item_views` produces. So this
+/// split exists for code-shape clarity, not as a perf optimization.
+pub(crate) fn analyze_chunk_structural<'a, F>(
+    module: &'a Module,
+    source_path: Option<&str>,
+    mut line_range_for_span: F,
+) -> StructuralChunkAnalysis<'a>
+where
+    F: FnMut(Span) -> Option<(usize, usize)>,
+{
+    let body = top_level_item_views(&module.body);
+    let shadowed = compute_shadowed_globals(&body);
+    let mut top_level_await = None;
+    let per_statement = body
+        .iter()
+        .enumerate()
+        .map(|(ordinal, item)| {
+            let item = item.as_module_item();
+            if top_level_await.is_none() {
+                let mut finder = TopLevelAwaitFinder::default();
+                item.visit_with(&mut finder);
+                if finder.found {
+                    top_level_await = Some(StatementOrdinal(ordinal));
+                }
+            }
+            let kind = classify_item(item);
+            let declared = collect_declared_names(item);
+            let mut collector = StatementFactsCollector::new();
+            item.visit_with(&mut collector);
+            let source_location = source_path.and_then(|source_path| {
+                line_range_for_span(item.span()).map(|(start_line, end_line)| SourceLocation {
+                    source_path: source_path.to_string(),
+                    start_line,
+                    end_line,
+                })
+            });
+            StructuralStatementFacts {
+                ordinal: StatementOrdinal(ordinal),
+                source_location,
+                kind,
+                declared,
+                at_init_reads: collector.at_init_reads,
+                lazy_reads: collector.lazy_reads,
+                first_order_lazy_reads: collector.first_order_lazy_reads,
+                at_init_writes: collector.at_init_writes,
+                lazy_writes: collector.lazy_writes,
+                first_order_lazy_writes: collector.first_order_lazy_writes,
+                at_init_calls: collector.at_init_calls,
+                lazy_calls: collector.lazy_calls,
+                first_order_lazy_calls: collector.first_order_lazy_calls,
+                global_writes: collector.global_writes,
+                global_reads: collector.global_reads,
+                dataflow_summarizable: collector.dataflow_summarizable,
+            }
+        })
+        .collect();
+    StructuralChunkAnalysis {
+        body,
+        shadowed,
+        per_statement,
+        top_level_await,
+    }
+}
+
+/// Compute the policy-dependent half of the chunk analysis from the
+/// pre-computed structural layer and a set of `AnalysisHints`. Builds
+/// the chunk code graph (hint-gated purity propagation), the
+/// local-effect context (gated by `hints.local_effect_policy`), the
+/// per-statement purity classification, and the redundant-hint
+/// diagnostics. Folds the policy-independent facts in to produce the
+/// full [`ChunkFactAnalysis`].
+pub(crate) fn analyze_chunk_with_policy<F>(
+    structural: StructuralChunkAnalysis<'_>,
     hints: &AnalysisHints,
     source_path: Option<&str>,
     mut line_range_for_span: F,
@@ -222,8 +353,12 @@ pub fn analyze_chunk<F>(
 where
     F: FnMut(Span) -> Option<(usize, usize)>,
 {
-    let body = top_level_item_views(&module.body);
-    let shadowed = compute_shadowed_globals(&body);
+    let StructuralChunkAnalysis {
+        body,
+        shadowed,
+        per_statement,
+        top_level_await,
+    } = structural;
     let graph = ChunkCodeGraph::build_full(
         &body,
         &shadowed,
@@ -237,34 +372,19 @@ where
         detect_redundant_purity_hints(&body, &shadowed, &hints.declared_pure);
     let redundant_pure_member_hints =
         detect_redundant_pure_member_hints(&hints.declared_pure_members);
-    let mut top_level_await = None;
     let facts = body
         .iter()
-        .enumerate()
-        .map(|(ordinal, item)| {
-            let item = item.as_module_item();
-            if top_level_await.is_none() {
-                let mut finder = TopLevelAwaitFinder::default();
-                item.visit_with(&mut finder);
-                if finder.found {
-                    top_level_await = Some(StatementOrdinal(ordinal));
-                }
-            }
-            let mut fact = analyze_item(
-                StatementOrdinal(ordinal),
+        .zip(per_statement)
+        .map(|(item_view, structural_facts)| {
+            let item = item_view.as_module_item();
+            let mut fact = assemble_statement_facts(
                 item,
+                structural_facts,
                 &shadowed,
                 hints,
                 &graph,
                 &local_effect_context,
             );
-            fact.source_location = source_path.and_then(|source_path| {
-                line_range_for_span(item.span()).map(|(start_line, end_line)| SourceLocation {
-                    source_path: source_path.to_string(),
-                    start_line,
-                    end_line,
-                })
-            });
             // Resolve any reason spans on `fact.purity` to
             // SourceLocations using the same per-chunk line index.
             // Done after fact construction because the classifier
@@ -292,6 +412,19 @@ where
         redundant_purity_hints,
         redundant_pure_member_hints,
     }
+}
+
+pub fn analyze_chunk<F>(
+    module: &Module,
+    hints: &AnalysisHints,
+    source_path: Option<&str>,
+    mut line_range_for_span: F,
+) -> ChunkFactAnalysis
+where
+    F: FnMut(Span) -> Option<(usize, usize)>,
+{
+    let structural = analyze_chunk_structural(module, source_path, &mut line_range_for_span);
+    analyze_chunk_with_policy(structural, hints, source_path, line_range_for_span)
 }
 
 pub(crate) enum TopLevelItemView<'a> {
@@ -393,18 +526,37 @@ pub(crate) fn compute_shadowed_globals(body: &[TopLevelItemView<'_>]) -> BTreeSe
     shadowed
 }
 
-fn analyze_item(
-    ordinal: StatementOrdinal,
+/// Fold the policy-independent per-statement facts together with the
+/// policy-dependent local-effect and purity classifications into a
+/// complete [`StatementFacts`] record. Called once per statement by
+/// [`analyze_chunk_with_policy`] after the policy-independent layer
+/// has already walked the AST.
+fn assemble_statement_facts(
     item: &ModuleItem,
+    structural: StructuralStatementFacts,
     shadowed: &BTreeSet<&'static str>,
     hints: &AnalysisHints,
     graph: &ChunkCodeGraph,
     local_effect_context: &local_effects::LocalEffectContext,
 ) -> StatementFacts {
-    let kind = classify_item(item);
-    let declared = collect_declared_names(item);
-    let mut collector = StatementFactsCollector::new();
-    item.visit_with(&mut collector);
+    let StructuralStatementFacts {
+        ordinal,
+        source_location,
+        kind,
+        declared,
+        at_init_reads,
+        lazy_reads,
+        first_order_lazy_reads,
+        at_init_writes,
+        lazy_writes,
+        first_order_lazy_writes,
+        at_init_calls,
+        lazy_calls,
+        first_order_lazy_calls,
+        global_writes,
+        global_reads,
+        dataflow_summarizable,
+    } = structural;
     let local_effects = collect_local_effects(
         item,
         &hints.known_effects,
@@ -420,38 +572,38 @@ fn analyze_item(
         !local_effects.is_empty(),
     );
     let mut effects_writes = BTreeSet::<EffectCell>::new();
-    for name in declared.iter().chain(collector.at_init_writes.iter()) {
+    for name in declared.iter().chain(at_init_writes.iter()) {
         effects_writes.insert(EffectCell::Binding(name.clone()));
     }
-    for key in &collector.global_writes {
+    for key in &global_writes {
         effects_writes.insert(EffectCell::GlobalProp(key.clone()));
     }
     let mut effects_reads = BTreeSet::<EffectCell>::new();
-    for name in &collector.at_init_reads {
+    for name in &at_init_reads {
         effects_reads.insert(EffectCell::Binding(name.clone()));
     }
-    for key in &collector.global_reads {
+    for key in &global_reads {
         effects_reads.insert(EffectCell::GlobalProp(key.clone()));
     }
     let effects = StatementEffectSummary {
         writes: effects_writes,
         reads: effects_reads,
-        dataflow_summarizable: collector.dataflow_summarizable,
+        dataflow_summarizable,
     };
     StatementFacts {
         ordinal,
-        source_location: None,
+        source_location,
         declared,
-        eager_reads: collector.at_init_reads,
-        eager_rebinds: collector.at_init_writes,
-        lazy_reads: collector.lazy_reads,
-        lazy_rebinds: collector.lazy_writes,
-        first_order_lazy_reads: collector.first_order_lazy_reads,
-        first_order_lazy_rebinds: collector.first_order_lazy_writes,
+        eager_reads: at_init_reads,
+        eager_rebinds: at_init_writes,
+        lazy_reads,
+        lazy_rebinds: lazy_writes,
+        first_order_lazy_reads,
+        first_order_lazy_rebinds: first_order_lazy_writes,
         local_effects,
-        at_init_calls: collector.at_init_calls,
-        body_calls: collector.lazy_calls,
-        first_order_body_calls: collector.first_order_lazy_calls,
+        at_init_calls,
+        body_calls: lazy_calls,
+        first_order_body_calls: first_order_lazy_calls,
         effects,
         purity,
         kind,

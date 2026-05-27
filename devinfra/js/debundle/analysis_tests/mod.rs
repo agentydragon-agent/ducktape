@@ -631,3 +631,69 @@ target.exports ? ((clsx.default = clsx), (target.exports = clsx)) : (window.clas
     assert_eq!(facts[1].local_effects, BTreeSet::from([test_id("module")]));
     assert!(facts[1].purity.is_pure());
 }
+
+/// The policy-independent layer of `analyze_chunk` produces identical
+/// per-statement structural facts (declared names, at-init/lazy reads,
+/// writes, calls, global accesses, dataflow_summarizable, kind) and
+/// top-level-await ordinal regardless of `AnalysisHints`. This is the
+/// whole point of the structural-vs-policy split: the structural pass
+/// looks at the module text only.
+///
+/// We exercise this by running the full `analyze_chunk` under two
+/// distinct hint sets and comparing the policy-independent subset of
+/// each resulting `StatementFacts` row.
+#[test]
+fn structural_layer_is_policy_independent() {
+    let module = parse(
+        r#"
+import { x } from "./a";
+function f() { return g(x); }
+function g(z) { return z + 1; }
+class C { static m = f(); }
+const A = 1, B = 2;
+export const E = A + B;
+sideEffect(C, E);
+"#,
+    );
+
+    let hints_default = AnalysisHints::default();
+    let hints_decorate = AnalysisHints {
+        local_effect_policy: LocalEffectPolicy::VendorPrune,
+        declared_pure: BTreeSet::from(["sideEffect".to_string()]),
+        declared_pure_new: BTreeSet::from(["C".to_string()]),
+        known_effects: BTreeMap::from([(
+            "sideEffect".to_string(),
+            KnownEffect::TypescriptDecorateHelper,
+        )]),
+        ..AnalysisHints::default()
+    };
+
+    let a = analyze_chunk(&module, &hints_default, None, |_| None);
+    let b = analyze_chunk(&module, &hints_decorate, None, |_| None);
+    assert_eq!(a.facts.len(), b.facts.len());
+    assert_eq!(a.top_level_await, b.top_level_await);
+
+    // The structural fields must be identical across the two hint sets.
+    // The policy-dependent fields (local_effects, purity) may differ
+    // and are deliberately not compared.
+    for (af, bf) in a.facts.iter().zip(b.facts.iter()) {
+        assert_eq!(af.ordinal, bf.ordinal);
+        assert_eq!(af.kind, bf.kind);
+        assert_eq!(af.declared, bf.declared);
+        assert_eq!(af.eager_reads, bf.eager_reads);
+        assert_eq!(af.eager_rebinds, bf.eager_rebinds);
+        assert_eq!(af.lazy_reads, bf.lazy_reads);
+        assert_eq!(af.lazy_rebinds, bf.lazy_rebinds);
+        assert_eq!(af.first_order_lazy_reads, bf.first_order_lazy_reads);
+        assert_eq!(af.first_order_lazy_rebinds, bf.first_order_lazy_rebinds);
+        assert_eq!(af.at_init_calls, bf.at_init_calls);
+        assert_eq!(af.body_calls, bf.body_calls);
+        assert_eq!(af.first_order_body_calls, bf.first_order_body_calls);
+        assert_eq!(af.effects.reads, bf.effects.reads);
+        assert_eq!(af.effects.writes, bf.effects.writes);
+        assert_eq!(
+            af.effects.dataflow_summarizable,
+            bf.effects.dataflow_summarizable
+        );
+    }
+}
