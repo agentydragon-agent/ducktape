@@ -29,11 +29,14 @@ Remaining legitimate walks (different graphs): `validation.rs:437` (FAS iteratio
 
 **Open follow-up.** The two surviving module-quotient walks (verdict-time + factorization-build-time) compute the same partition for different consumers; structurally consolidatable behind a wider API change, but not urgent and not on a hot path.
 
-### `OwnerGraph::from_report` is reconstruction-only — no production caller
+### `OwnerGraph::from_report` rehydration carries `declared: BTreeSet::new()`
 
-`graph.rs:362`. `OwnerGraph::from_report` rehydrates an `OwnerGraph` from its JSON wire shape (`OwnerGraphReport`), but with `declared: BTreeSet::new()` because the report doesn't carry per-node binding sets. The intended consumer was Stage B in a cross-process world, where the planner would reconstruct the graph from the cached Stage A artifact. With cross-process Stage B dropped, there is no production caller — only the in-crate round-trip tests at `graph.rs:1714, 1751, 1982`.
+`graph.rs::OwnerGraph::from_report` rehydrates an `OwnerGraph` from its JSON wire shape (`OwnerGraphReport`), but with `declared: BTreeSet::new()` because the report doesn't carry per-node binding sets. The original ARCH_REVIEW note assumed this function was dead — the intended consumer was a hypothetical cross-process Stage B planner — but two production callers ship today:
 
-The function is dead code that the tests keep alive. Either delete `from_report` (and the test scaffolding it supports) or keep it as a future-proofed hydration path with a doc-comment explaining that no one calls it. The current state — a "the planner is structurally unable to call this" hazard with no planner — is worth resolving in a small cleanup pass.
+1. `cli/module.rs::gate_post_edit_partition` — the CLI realizability gate that runs after every spec edit. It deserializes `OwnerGraphReport` from disk, rehydrates via `OwnerGraph::from_report`, then runs the cycle check before letting the edit land. This is the cross-process Stage B in everything but name — just synchronously inside the CLI process rather than as a separate daemon.
+2. `peel/quotient.rs::QuotientGraph::from_report` — kernel constructor used by every `from_report_with_partition*` entrypoint and the quotient integration tests.
+
+What's actually worth resolving here is the structural shape: callers re-hydrate with an empty `declared`, which means downstream code that touches `OwnerNode::declared` will silently see "no bindings" instead of the truth. The right fix is either (a) extend `OwnerGraphReport` to carry per-node `declared`, or (b) split into a thin reconstruct-from-graph-shape function that doesn't pretend `declared` is meaningful. Today's signature is a hazard — callers can ask for binding sets and get an empty answer. See also `docs/lessons_learned/cross_process_stage_b.md` — the cross-process variant didn't ship, but the in-process rehydration path did.
 
 ## Library-vs-hand-rolled
 

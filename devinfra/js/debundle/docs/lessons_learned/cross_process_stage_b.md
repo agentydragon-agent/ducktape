@@ -119,9 +119,16 @@ caching.
 
 - **`OwnerGraph::from_report`** in `graph.rs` rehydrates an
   `OwnerGraph` from its JSON wire shape with `declared:
-BTreeSet::new()`. No production caller — only in-crate round-trip
-  tests. Kept as future-proofed hydration; can go along with the
-  tests in a sweep.
+BTreeSet::new()`. **Update 2026-05:** an in-process cross-process-style
+  consumer shipped after all — `cli/module.rs::gate_post_edit_partition`
+  reads `owner_graph.json` from a prior pipeline run and rehydrates via
+  `OwnerGraph::from_report` to run the realizability gate after a spec
+  edit. `peel/quotient.rs::QuotientGraph::from_report` is the kernel
+  constructor used by all `from_report_with_partition*` entrypoints.
+  So the function is no longer dead code, but the structural hazard
+  remains: the rehydrated graph has empty `declared` sets, and any
+  downstream code that asks for per-node binding sets gets a silent
+  empty answer. See ARCH_REVIEW for the open shape question.
 - **`StatementFactsReport` / `IdReport` etc.** in `facts/wire.rs`
   are used by `graph.rs::build_owner_graph_with` as in-memory
   carriers (the report form converts back via `IdReport::to_id`),
