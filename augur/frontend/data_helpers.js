@@ -11,6 +11,7 @@ export const FAILED_ROLLOUT_COLOR = "#ef4444";
 export const ROLLOUT_EVENT_KIND_ORDER = [
   "property_purchase",
   "closing_cost_payment",
+  "set_primary_residence",
   "set_rented_fraction",
   "capital_improvement",
   "property_sale",
@@ -30,6 +31,7 @@ export const ROLLOUT_EVENT_KIND_ORDER = [
 export const ROLLOUT_EVENT_KIND_LABELS = {
   property_purchase: "Property purchase",
   closing_cost_payment: "Closing cost",
+  set_primary_residence: "Set primary home",
   set_rented_fraction: "Set rented %",
   capital_improvement: "Capital improvement",
   property_sale: "Property sale",
@@ -65,6 +67,7 @@ export const ROLLOUT_EVENT_COLORS = {
   tax_accrual: "#b45309",
   tax_payment: "#7c3aed",
   failure: "#dc2626",
+  set_primary_residence: "#2563eb",
   set_rented_fraction: "#0ea5e9",
   capital_improvement: "#15803d",
   property_sale: "#be123c",
@@ -330,6 +333,10 @@ export const EVENT_FORMATTERS = {
       return `Set rented to ${(fraction * 100).toFixed(0)}%`;
     },
     detail: (event) => `${event.propertyId}`,
+  },
+  set_primary_residence: {
+    label: (event) => (event.isPrimaryResidence ? "Set primary home" : "Cleared primary home"),
+    detail: (event) => event.propertyId ?? event.agentId ?? "",
   },
   capital_improvement: {
     label: () => "Capital improvement",

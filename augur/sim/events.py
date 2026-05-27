@@ -260,6 +260,16 @@ SET_RENTED_FRACTION_EVENT_SCHEMA = pl.Schema(
     {"rollout_index": pl.Int64(), "month_index": pl.Int64(), "property_id": pl.Utf8(), "rented_fraction": pl.Float64()}
 )
 
+SET_PRIMARY_RESIDENCE_EVENT_SCHEMA = pl.Schema(
+    {
+        "rollout_index": pl.Int64(),
+        "month_index": pl.Int64(),
+        "agent_id": pl.Utf8(),
+        "property_id": pl.Utf8(),
+        "is_primary_residence": pl.Boolean(),
+    }
+)
+
 CAPITAL_IMPROVEMENT_EVENT_SCHEMA = pl.Schema(
     {
         "rollout_index": pl.Int64(),
@@ -303,6 +313,7 @@ class EventFrameCatalog:
     mortgage_payments: FrameSpec
     rollout_failures: FrameSpec
     set_rented_fraction_events: FrameSpec
+    set_primary_residence_events: FrameSpec
     capital_improvement_events: FrameSpec
     property_sale_events: FrameSpec
 
@@ -321,6 +332,7 @@ class EventFrameCatalog:
             self.mortgage_payments,
             self.rollout_failures,
             self.set_rented_fraction_events,
+            self.set_primary_residence_events,
             self.capital_improvement_events,
             self.property_sale_events,
         )
@@ -340,6 +352,7 @@ EVENT_FRAMES = EventFrameCatalog(
     mortgage_payments=FrameSpec("mortgage_payments", MORTGAGE_PAYMENT_EVENT_SCHEMA),
     rollout_failures=FrameSpec("rollout_failures", ROLLOUT_FAILURE_EVENT_SCHEMA),
     set_rented_fraction_events=FrameSpec("set_rented_fraction_events", SET_RENTED_FRACTION_EVENT_SCHEMA),
+    set_primary_residence_events=FrameSpec("set_primary_residence_events", SET_PRIMARY_RESIDENCE_EVENT_SCHEMA),
     capital_improvement_events=FrameSpec("capital_improvement_events", CAPITAL_IMPROVEMENT_EVENT_SCHEMA),
     property_sale_events=FrameSpec("property_sale_events", PROPERTY_SALE_EVENT_SCHEMA),
 )
@@ -437,6 +450,10 @@ class EventLog:
     @property
     def set_rented_fraction_events(self) -> pl.DataFrame:
         return self.frame(EVENT_FRAMES.set_rented_fraction_events)
+
+    @property
+    def set_primary_residence_events(self) -> pl.DataFrame:
+        return self.frame(EVENT_FRAMES.set_primary_residence_events)
 
     @property
     def capital_improvement_events(self) -> pl.DataFrame:

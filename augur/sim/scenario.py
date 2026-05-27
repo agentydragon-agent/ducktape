@@ -335,24 +335,46 @@ class SetRentedFractionEvent(BaseModel):
     rented_fraction: float = Field(ge=0.0, le=1.0)
 
 
+class PrimaryResidenceAssignment(BaseModel):
+    """Initial main-home assignment for one agent.
+
+    Absence means the agent has no primary residence at scenario start. This is agent-scoped
+    rather than property-scoped so the schema cannot represent two simultaneous primary
+    residences for the same taxpayer.
+    """
+
+    agent_id: str
+    property_id: str
+
+
+class SetPrimaryResidenceEvent(BaseModel):
+    """Mid-horizon transition: assign or clear an agent's primary residence."""
+
+    kind: Literal["set_primary_residence"] = "set_primary_residence"
+    month: int
+    agent_id: str
+    property_id: str | None
+
+
 class PropertySaleEvent(BaseModel):
     """Mid-horizon sale of a property.
 
     At `month`:
-    - gross proceeds = `property_market_value_at_month × (1 - closing_cost_pct)` where
+    - gross proceeds = `property_market_value_at_month × (1 - closing_cost_pct / 100)` where
       market value is derived from the home_value series for the property's location.
     - any outstanding mortgage on this property is paid off from the proceeds.
     - net cash to owner = gross_proceeds - mortgage_balance.
     - realized gain = gross_proceeds - (purchase_price + capex - cumulative_depreciation).
     - depreciation recapture (§1250 unrecaptured) = min(realized_gain, cumulative_dep).
-      Recapture is added to ordinary income (approximation — real federal §1250 caps at
-      25%, CA taxes as ordinary; we use marginal-ordinary for both for first-cut accuracy).
-    - long-term capital gain on the post-recapture remainder.
+      Federal taxes this through the lesser-of-marginal-or-25%-cap path; CA-style links
+      treat it as ordinary income inside their standard bracket walk.
+    - long-term capital gain on the post-recapture, post-§121-exclusion remainder.
     - property is marked sold; rented_fraction → 0; no further depreciation, MID, SALT,
       Schedule E, or rental income for this property.
 
-    §121 primary-residence exclusion (24-of-60 owner-occupied months test) is a phase-4
-    follow-up — for now sales are taxed without the exclusion.
+    §121 primary-residence exclusion uses the owning agent's primary-residence assignment:
+    24 qualifying months in the last 60 excludes up to the filing-status cap from
+    post-recapture gain.
     """
 
     kind: Literal["property_sale"] = "property_sale"
@@ -392,12 +414,10 @@ class ScheduledPropertyPurchase(BaseModel):
     buyer's cash account in this first slice; the purchase is booked
     net, with the debt appearing as a liability.
 
-    `rented_fraction` (0..1) is the share of the property that is
-    rented out at purchase month. 0.0 = pure owner-occupied / off
-    (no Schedule E); 1.0 = pure investment (full Schedule E + no
-    MID/SALT); values in between = mixed-use (proportional Schedule E
-    + reduced MID/SALT). Phase 3 lifecycle events will replace this
-    constant-for-horizon value with a runtime-mutated state buffer.
+    `rented_fraction` (0..1) is the share of the property that is rented out at purchase
+    month. 0.0 = not rented; 1.0 = fully rented; values in between = mixed-use
+    (proportional Schedule E + reduced MID/SALT). Primary-residence use is modeled
+    separately via agent-level primary-residence assignments and events.
     """
 
     month: int
@@ -594,6 +614,8 @@ class Scenario(BaseModel):
     recurring_obligations: list[RecurringObligation] = Field(default_factory=list)
     scheduled_asset_sales: list[ScheduledAssetSale] = Field(default_factory=list)
     scheduled_property_purchases: list[ScheduledPropertyPurchase] = Field(default_factory=list)
+    initial_primary_residences: list[PrimaryResidenceAssignment] = Field(default_factory=list)
+    primary_residence_events: list[SetPrimaryResidenceEvent] = Field(default_factory=list)
     # Mid-horizon transitions that mutate per-property rented_fraction at runtime. Each event
     # must reference an existing property_id from scheduled_property_purchases and fire after
     # that property's purchase month.
@@ -607,6 +629,19 @@ class Scenario(BaseModel):
     tax_profiles: list[TaxProfile]
     liquidity_policies: list[LiquidityPolicy] = Field(default_factory=list)
     horizon_months: PositiveInt
+
+    @model_validator(mode="after")
+    def _reject_duplicate_agent_ids(self) -> Scenario:
+        seen: set[str] = set()
+        duplicates: set[str] = set()
+        for agent in self.agents:
+            if agent.agent_id in seen:
+                duplicates.add(agent.agent_id)
+            seen.add(agent.agent_id)
+        if duplicates:
+            duplicate_list = ", ".join(repr(agent_id) for agent_id in sorted(duplicates))
+            raise ValueError(f"duplicate agent_id(s): {duplicate_list}")
+        return self
 
     @model_validator(mode="after")
     def _reject_duplicate_initial_lot_purchase_months(self) -> Scenario:
@@ -698,6 +733,106 @@ class Scenario(BaseModel):
                     f"fires after sale at month {sale_month}; the property is frozen after sale"
                 )
         return self
+
+    @model_validator(mode="after")
+    def _reject_invalid_primary_residence_assignments(self) -> Scenario:
+        horizon = int(self.horizon_months)
+        agent_ids = {agent.agent_id for agent in self.agents}
+        purchase_by_property_id: dict[str, ScheduledPropertyPurchase] = {}
+        for purchase in self.scheduled_property_purchases:
+            purchase_by_property_id[purchase.property_id] = purchase
+
+        sale_month_by_property_id: dict[str, int] = {}
+        for event in self.property_lifecycle_events:
+            if isinstance(event, PropertySaleEvent):
+                sale_month_by_property_id[event.property_id] = int(event.month)
+
+        seen_initial_agents: set[str] = set()
+        for assignment in self.initial_primary_residences:
+            if assignment.agent_id in seen_initial_agents:
+                raise ValueError(f"multiple initial primary residences for agent_id {assignment.agent_id!r}")
+            seen_initial_agents.add(assignment.agent_id)
+            self._validate_primary_residence_property_assignment(
+                label="initial primary residence",
+                agent_id=assignment.agent_id,
+                property_id=assignment.property_id,
+                month=0,
+                agent_ids=agent_ids,
+                purchase_by_property_id=purchase_by_property_id,
+                sale_month_by_property_id=sale_month_by_property_id,
+                allow_same_month_purchase=True,
+            )
+
+        seen_event_keys: set[tuple[str, int]] = set()
+        for event in self.primary_residence_events:
+            event_month = int(event.month)
+            if not 0 <= event_month < horizon:
+                raise ValueError(
+                    f"primary residence event for agent_id {event.agent_id!r} has month {event.month}, "
+                    f"outside scenario horizon [0, {horizon})"
+                )
+            key = (event.agent_id, event_month)
+            if key in seen_event_keys:
+                raise ValueError(
+                    f"multiple primary residence events for agent_id {event.agent_id!r} at month {event.month}"
+                )
+            seen_event_keys.add(key)
+            if event.property_id is None:
+                if event.agent_id not in agent_ids:
+                    known = ", ".join(repr(agent_id) for agent_id in sorted(agent_ids))
+                    raise ValueError(
+                        f"primary residence event at month {event.month} references unknown agent_id "
+                        f"{event.agent_id!r}; known: {known or '<none>'}"
+                    )
+                continue
+            self._validate_primary_residence_property_assignment(
+                label="primary residence event",
+                agent_id=event.agent_id,
+                property_id=event.property_id,
+                month=event_month,
+                agent_ids=agent_ids,
+                purchase_by_property_id=purchase_by_property_id,
+                sale_month_by_property_id=sale_month_by_property_id,
+                allow_same_month_purchase=True,
+            )
+        return self
+
+    def _validate_primary_residence_property_assignment(
+        self,
+        *,
+        label: str,
+        agent_id: str,
+        property_id: str,
+        month: int,
+        agent_ids: set[str],
+        purchase_by_property_id: dict[str, ScheduledPropertyPurchase],
+        sale_month_by_property_id: dict[str, int],
+        allow_same_month_purchase: bool,
+    ) -> None:
+        if agent_id not in agent_ids:
+            known = ", ".join(repr(agent) for agent in sorted(agent_ids))
+            raise ValueError(f"{label} references unknown agent_id {agent_id!r}; known: {known or '<none>'}")
+        purchase = purchase_by_property_id.get(property_id)
+        if purchase is None:
+            known = ", ".join(repr(property_id) for property_id in sorted(purchase_by_property_id))
+            raise ValueError(f"{label} references unknown property_id {property_id!r}; known: {known or '<none>'}")
+        if purchase.buyer_agent_id != agent_id:
+            raise ValueError(
+                f"{label} assigns property_id {property_id!r} to agent_id {agent_id!r}, "
+                f"but the property's buyer_agent_id is {purchase.buyer_agent_id!r}"
+            )
+        purchase_month = int(purchase.month)
+        if month < purchase_month or (month == purchase_month and not allow_same_month_purchase):
+            raise ValueError(
+                f"{label} assigns property_id {property_id!r} at month {month}, "
+                f"before its purchase month {purchase_month}"
+            )
+        sale_month = sale_month_by_property_id.get(property_id)
+        if sale_month is not None and month >= sale_month:
+            raise ValueError(
+                f"{label} assigns property_id {property_id!r} at month {month}, "
+                f"but the property is sold at month {sale_month}"
+            )
 
     @model_validator(mode="after")
     def _reject_duplicate_liquidity_policy_accounts(self) -> Scenario:

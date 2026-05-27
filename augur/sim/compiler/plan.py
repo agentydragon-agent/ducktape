@@ -24,6 +24,7 @@ from augur.sim.compiler.helpers import NO_CODE, StringTable
 from augur.sim.compiler.lifecycle import LifecycleEventCompileOutput, compile_lifecycle_events
 from augur.sim.compiler.liquidity import LiquidityPolicyCompileOutput, compile_liquidity_policies
 from augur.sim.compiler.obligations import ObligationCompileOutput, compile_obligation_slots
+from augur.sim.compiler.primary_residence import PrimaryResidenceEventCompileOutput, compile_primary_residences
 from augur.sim.compiler.private_equity import (
     PEIssuerCompileOutput,
     PEPolicyCompileOutput,
@@ -61,6 +62,7 @@ class SlotPlan:
     event_months: int
     snapshot_months: int
     rollout_count: int
+    agent_count: int
     cash_count: int
     lot_count: int
     tax_profile_count: int
@@ -86,6 +88,7 @@ class CompiledSimulation:
     strings: tuple[str, ...]
     series_ids: tuple[str, ...]
     external_values: NDArray[np.float64]
+    agent_codes: NDArray[np.int64]
     cash_agent_codes: NDArray[np.int64]
     cash_account_codes: NDArray[np.int64]
     cash_initial_balance: NDArray[np.float64]
@@ -108,7 +111,7 @@ class CompiledSimulation:
     tax_liabilities: TaxLiabilityCompileOutput
     transfers: TransferCompileOutput
     properties: PropertyCompileOutput
-    # Per-property rented_fraction (0..1). 0 = pure owner-occupied/off; 1 = pure investment.
+    # Per-property rented_fraction (0..1). Primary-residence use is tracked separately per agent.
     # Drives MID/SALT/Schedule E splits + monthly depreciation accrual.
     property_rented_fraction: NDArray[np.float64]
     # Per-property depreciable building basis = purchase_price × (1 - land_value_fraction) +
@@ -118,9 +121,14 @@ class CompiledSimulation:
     # Profile index of each property's owner (buyer_agent_id → tax profile). NO_CODE if the
     # owner has no tax profile. Used to route Schedule E depreciation deductions.
     property_owner_profile_index: NDArray[np.int64]
+    # Agent slot of each property's owner/buyer. Used to resolve the agent's current
+    # primary-residence assignment for Section 121 qualifying-use accrual.
+    property_owner_agent_index: NDArray[np.int64]
     # Series index of each property's home_value series, used at sale time to compute market
     # value. NO_CODE only for properties without sale events whose series was not supplied.
     property_home_value_series_index: NDArray[np.int64]
+    initial_primary_residence_property_index: NDArray[np.int64]
+    primary_residence_events: PrimaryResidenceEventCompileOutput
     lifecycle_events: LifecycleEventCompileOutput
     liabilities: LiabilityCompileOutput
     # Profile index of each liability's owner. NO_CODE if the owner has no tax profile.
@@ -168,8 +176,11 @@ def compile_simulation(
         cash_account_codes.append(strings.require(entry.account_id))
         cash_initial_balance.append(float(entry.balance_usd))
 
+    agent_slot_by_id: dict[str, int] = {}
+    agent_codes: list[int] = []
     for agent in scenario.agents:
-        strings.require(agent.agent_id)
+        agent_slot_by_id[agent.agent_id] = len(agent_codes)
+        agent_codes.append(strings.require(agent.agent_id))
 
     series_ids = collect_series_ids(scenario, external_series)
     series_index_by_id = {series_id: idx for idx, series_id in enumerate(series_ids)}
@@ -224,6 +235,9 @@ def compile_simulation(
         [profile_index_by_agent.get(p.buyer_agent_id, NO_CODE) for p in scenario.scheduled_property_purchases],
         dtype=np.int64,
     )
+    property_owner_agent_index = np.array(
+        [agent_slot_by_id.get(p.buyer_agent_id, NO_CODE) for p in scenario.scheduled_property_purchases], dtype=np.int64
+    )
     property_home_value_series_index = np.array(
         [
             series_index_by_id.get(home_value_series_id(p.location_id), NO_CODE)
@@ -231,12 +245,16 @@ def compile_simulation(
         ],
         dtype=np.int64,
     )
+    initial_primary_residence_property_index, primary_residence_events = compile_primary_residences(
+        scenario, agent_slot_by_id=agent_slot_by_id, property_slot_by_id=property_slot_by_id
+    )
     # Allocate min-shape arrays for the no-property scenario so downstream callers can index
     # `property_building_basis[max(1, property_count)]` without special-casing.
     if property_count == 0:
         property_rented_fraction = np.zeros(1, dtype=np.float64)
         property_building_basis = np.zeros(1, dtype=np.float64)
         property_owner_profile_index = np.full(1, NO_CODE, dtype=np.int64)
+        property_owner_agent_index = np.full(1, NO_CODE, dtype=np.int64)
         property_home_value_series_index = np.full(1, NO_CODE, dtype=np.int64)
 
     lifecycle_events = compile_lifecycle_events(scenario, property_slot_by_id)
@@ -296,6 +314,7 @@ def compile_simulation(
         event_months=horizon,
         snapshot_months=horizon + 1,
         rollout_count=rollout_count,
+        agent_count=len(agent_codes),
         cash_count=len(cash_initial_balance),
         lot_count=len(lot_id_codes),
         tax_profile_count=tax.profile_agent.shape[0],
@@ -320,6 +339,7 @@ def compile_simulation(
         strings=tuple(strings.values),
         series_ids=series_ids,
         external_values=external_values,
+        agent_codes=np.asarray(agent_codes, dtype=np.int64),
         cash_agent_codes=np.asarray(cash_agent_codes, dtype=np.int64),
         cash_account_codes=np.asarray(cash_account_codes, dtype=np.int64),
         cash_initial_balance=np.asarray(cash_initial_balance, dtype=np.float64),
@@ -344,7 +364,10 @@ def compile_simulation(
         property_rented_fraction=property_rented_fraction,
         property_building_basis=property_building_basis,
         property_owner_profile_index=property_owner_profile_index,
+        property_owner_agent_index=property_owner_agent_index,
         property_home_value_series_index=property_home_value_series_index,
+        initial_primary_residence_property_index=initial_primary_residence_property_index,
+        primary_residence_events=primary_residence_events,
         lifecycle_events=lifecycle_events,
         sales=sales,
         obligations=obligations,

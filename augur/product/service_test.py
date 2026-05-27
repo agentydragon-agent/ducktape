@@ -11,7 +11,7 @@ from augur.api.config import Config, load_augur_config
 from augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle, Sampler
 from augur.model.series import INFLATION_SERIES_ID, SP500_SERIES_ID
 from augur.product import decode, service
-from augur.product.scenarios import resolve_primary_agent_id, sim_locations_from_config
+from augur.product.scenarios import build_scenario, resolve_primary_agent_id, sim_locations_from_config
 from augur.product.service import ProductService
 from augur.product.wire import (
     CashFinancing,
@@ -32,6 +32,8 @@ from augur.product.wire import (
     RolloutFailureEvent,
     RolloutRequest,
     ScenarioKey,
+    SetPrimaryResidenceEventWire,
+    SetPrimaryResidenceMarkerEvent,
 )
 from util.bazel.runfiles import get_required_path
 
@@ -484,6 +486,74 @@ def test_property_purchase_emits_purchase_mortgage_and_property_tax_events(
         assert tax_event.amount_due_usd == pytest.approx(monthly_property_tax)
         assert tax_event.amount_paid_usd == pytest.approx(monthly_property_tax)
         assert tax_event.shortfall_usd == 0.0
+
+
+def test_product_lowers_primary_residence_assignments_to_sim_scenario() -> None:
+    config = _augur_config()
+    bootstrap = build_bootstrap_payload(config)
+    primary_agent_id = resolve_primary_agent_id(config)
+    scenario = ScenarioKey(
+        exogenous_model_id="current_exogenous_model",
+        horizon_months=36,
+        monthly_spend_usd=1_000.0,
+        spend_index="none",
+        funding_policy=FundingPolicy(sell_order=()),
+        property_purchase=PropertyPurchase(
+            property_id="location_a_property",
+            financing=CashFinancing(),
+            is_primary_residence=True,
+            lifecycle_events=(
+                SetPrimaryResidenceEventWire(month=12, is_primary_residence=False),
+                SetPrimaryResidenceEventWire(month=24, is_primary_residence=True),
+            ),
+        ),
+    )
+
+    sim_scenario = build_scenario(
+        scenario,
+        primary_agent_id=primary_agent_id,
+        initial_cash_usd=1_200_000.0,
+        initial_lots=(),
+        properties_by_id={property_.id: property_ for property_ in bootstrap.properties},
+    )
+
+    assert [(row.agent_id, row.property_id) for row in sim_scenario.initial_primary_residences] == [
+        (primary_agent_id, "location_a_property")
+    ]
+    assert [(row.month, row.agent_id, row.property_id) for row in sim_scenario.primary_residence_events] == [
+        (12, primary_agent_id, None),
+        (24, primary_agent_id, "location_a_property"),
+    ]
+
+
+def test_primary_residence_event_emits_rollout_marker(counting_exogenous_model: CountingExogenousModel) -> None:
+    augur_config = _augur_config()
+    augur_config = augur_config.model_copy(
+        update={"snapshot": augur_config.snapshot.model_copy(update={"cash_usd": 1_200_000.0})}
+    )
+    product = _service(counting_exogenous_model, augur_config=augur_config)
+    scenario = ScenarioKey(
+        exogenous_model_id="current_exogenous_model",
+        horizon_months=3,
+        monthly_spend_usd=1_000.0,
+        spend_index="none",
+        funding_policy=FundingPolicy(sell_order=()),
+        property_purchase=PropertyPurchase(
+            property_id="location_a_property",
+            financing=CashFinancing(),
+            is_primary_residence=True,
+            lifecycle_events=(SetPrimaryResidenceEventWire(month=1, is_primary_residence=False),),
+        ),
+    )
+
+    detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
+
+    [event] = [event for event in detail.rollout.events if event.kind == "set_primary_residence"]
+    assert isinstance(event, SetPrimaryResidenceMarkerEvent)
+    assert event.month_index == 1
+    assert event.agent_id == resolve_primary_agent_id(augur_config)
+    assert event.property_id is None
+    assert event.is_primary_residence is False
 
 
 def test_property_purchase_metrics_track_value_balance_and_equity(

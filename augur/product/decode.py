@@ -23,6 +23,7 @@ from augur.product.wire import (
     PropertyTaxPaymentEvent,
     RolloutEvent,
     RolloutFailureEvent,
+    SetPrimaryResidenceMarkerEvent,
     SetRentedFractionMarkerEvent,
     TaxAccrualEvent,
     TaxPaymentEvent,
@@ -115,26 +116,28 @@ def rollout_events_from(
         *_outside_rent_events(run, primary_agent_id=primary_agent_id),
         *_failure_events(run, primary_agent_id=primary_agent_id),
         *_set_rented_fraction_events(run),
+        *_set_primary_residence_events(run, primary_agent_id=primary_agent_id),
         *_capital_improvement_events(run),
         *_property_sale_events(run),
     ]
     priority = {
         "property_purchase": 0,
         "closing_cost_payment": 1,
-        "set_rented_fraction": 2,
-        "capital_improvement": 3,
-        "property_sale": 4,
-        "holding_sale": 5,
-        "tax_accrual": 6,
-        "tax_payment": 7,
-        "property_tax_payment": 8,
-        "hoa_dues_payment": 9,
-        "homeowners_insurance_payment": 10,
-        "property_maintenance_payment": 11,
-        "mortgage_payment": 12,
-        "monthly_expense": 13,
-        "outside_rent": 14,
-        "failure": 15,
+        "set_primary_residence": 2,
+        "set_rented_fraction": 3,
+        "capital_improvement": 4,
+        "property_sale": 5,
+        "holding_sale": 6,
+        "tax_accrual": 7,
+        "tax_payment": 8,
+        "property_tax_payment": 9,
+        "hoa_dues_payment": 10,
+        "homeowners_insurance_payment": 11,
+        "property_maintenance_payment": 12,
+        "mortgage_payment": 13,
+        "monthly_expense": 14,
+        "outside_rent": 15,
+        "failure": 16,
     }
     return tuple(sorted(events, key=lambda event: (event.month_index, priority[event.kind])))
 
@@ -515,6 +518,22 @@ def _set_rented_fraction_events(run: SimulationRun) -> tuple[RolloutEvent, ...]:
             amount_usd=0.0,
             property_id=str(row["property_id"]),
             rented_fraction=float(row["rented_fraction"]),
+        )
+        for row in rows.iter_rows(named=True)
+    )
+
+
+def _set_primary_residence_events(run: SimulationRun, *, primary_agent_id: str) -> tuple[RolloutEvent, ...]:
+    rows = run.events_log.set_primary_residence_events.filter(pl.col("agent_id") == primary_agent_id).sort(
+        "month_index", "agent_id"
+    )
+    return tuple(
+        SetPrimaryResidenceMarkerEvent(
+            month_index=int(row["month_index"]),
+            amount_usd=0.0,
+            agent_id=str(row["agent_id"]),
+            property_id=None if row["property_id"] is None else str(row["property_id"]),
+            is_primary_residence=bool(row["is_primary_residence"]),
         )
         for row in rows.iter_rows(named=True)
     )

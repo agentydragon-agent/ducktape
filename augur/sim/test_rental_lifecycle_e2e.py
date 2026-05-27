@@ -26,6 +26,7 @@ from augur.sim.scenario import (
     InitialAccountBalance,
     MortgageFinancing,
     MortgageInterestDeductionPolicy,
+    PrimaryResidenceAssignment,
     PropertySaleEvent,
     PropertyTaxPolicy,
     RecurringObligation,
@@ -34,6 +35,7 @@ from augur.sim.scenario import (
     ScheduledPropertyPurchase,
     ScheduledTransfer,
     SeriesIndexedAmount,
+    SetPrimaryResidenceEvent,
     SetRentedFractionEvent,
     TaxProfile,
 )
@@ -1042,6 +1044,7 @@ class TestRentalIncomeTaxation:
                     land_value_fraction=0.20,
                 )
             ],
+            initial_primary_residences=[PrimaryResidenceAssignment(agent_id=OWNER_AGENT_ID, property_id="p1")],
             property_lifecycle_events=[PropertySaleEvent(month=sale_month, property_id="p1", closing_cost_pct=6.0)],
             tax_profiles=[
                 TaxProfile(
@@ -1070,6 +1073,118 @@ class TestRentalIncomeTaxation:
         assert sale["realized_gain_usd"] == pytest.approx(158_000.0, abs=1.0)
         assert sale["depreciation_recapture_usd"] == pytest.approx(0.0, abs=1e-6)
         # §121 fully excludes the $158k gain (well under $250k single-filer cap).
+        assert sale["section_121_exclusion_usd"] == pytest.approx(158_000.0, abs=1.0)
+        assert sale["long_term_capital_gain_usd"] == pytest.approx(0.0, abs=1e-6)
+
+    def test_section_121_does_not_apply_to_unassigned_non_rented_property(self, san_francisco_location: Location):
+        purchase_price = 500_000.0
+        sale_month = 30
+        horizon = 36
+        scenario = Scenario(
+            agents=[Agent(agent_id=OWNER_AGENT_ID), Agent(agent_id="property_seller"), Agent(agent_id="irs")],
+            initial_cash=[
+                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance_usd=600_000.0),
+                InitialAccountBalance(agent_id="property_seller", account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+            ],
+            scheduled_property_purchases=[
+                ScheduledPropertyPurchase(
+                    month=0,
+                    cause_id="p1_purchase",
+                    property_id="p1",
+                    location_id="san_francisco",
+                    buyer_agent_id=OWNER_AGENT_ID,
+                    buyer_account_id="checking",
+                    seller_agent_id="property_seller",
+                    purchase_price_usd=purchase_price,
+                    down_payment_usd=purchase_price,
+                    ownership_pct=1.0,
+                    rented_fraction=0.0,
+                    land_value_fraction=0.20,
+                )
+            ],
+            property_lifecycle_events=[PropertySaleEvent(month=sale_month, property_id="p1", closing_cost_pct=6.0)],
+            tax_profiles=[
+                TaxProfile(
+                    agent_id=OWNER_AGENT_ID,
+                    filing_status=FilingStatus.SINGLE,
+                    jurisdiction_ids=["federal_us", "california"],
+                    tax_authority_agent_id="irs",
+                )
+            ],
+            horizon_months=horizon,
+        )
+        home_values = [1.0] * sale_month + [1.4] * (horizon + 1 - sale_month)
+        ctx = _multi_series(
+            levels_by_series={RENT_SERIES_ID: {0: [1.0] * (horizon + 1)}, "home_value:san_francisco": {0: home_values}}
+        )
+        run = simulate_with_external_series(
+            scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
+        )
+
+        sale = run.events_log.property_sale_events.to_dicts()[0]
+        assert sale["realized_gain_usd"] == pytest.approx(158_000.0, abs=1.0)
+        assert sale["section_121_exclusion_usd"] == pytest.approx(0.0, abs=1e-6)
+        assert sale["long_term_capital_gain_usd"] == pytest.approx(158_000.0, abs=1.0)
+
+    def test_primary_residence_event_starts_section_121_qualifying_months(self, san_francisco_location: Location):
+        purchase_price = 500_000.0
+        sale_month = 30
+        horizon = 36
+        scenario = Scenario(
+            agents=[Agent(agent_id=OWNER_AGENT_ID), Agent(agent_id="property_seller"), Agent(agent_id="irs")],
+            initial_cash=[
+                InitialAccountBalance(agent_id=OWNER_AGENT_ID, account_id="checking", balance_usd=600_000.0),
+                InitialAccountBalance(agent_id="property_seller", account_id="checking", balance_usd=0.0),
+                InitialAccountBalance(agent_id="irs", account_id="checking", balance_usd=0.0),
+            ],
+            scheduled_property_purchases=[
+                ScheduledPropertyPurchase(
+                    month=0,
+                    cause_id="p1_purchase",
+                    property_id="p1",
+                    location_id="san_francisco",
+                    buyer_agent_id=OWNER_AGENT_ID,
+                    buyer_account_id="checking",
+                    seller_agent_id="property_seller",
+                    purchase_price_usd=purchase_price,
+                    down_payment_usd=purchase_price,
+                    ownership_pct=1.0,
+                    rented_fraction=0.0,
+                    land_value_fraction=0.20,
+                )
+            ],
+            primary_residence_events=[SetPrimaryResidenceEvent(month=6, agent_id=OWNER_AGENT_ID, property_id="p1")],
+            property_lifecycle_events=[PropertySaleEvent(month=sale_month, property_id="p1", closing_cost_pct=6.0)],
+            tax_profiles=[
+                TaxProfile(
+                    agent_id=OWNER_AGENT_ID,
+                    filing_status=FilingStatus.SINGLE,
+                    jurisdiction_ids=["federal_us", "california"],
+                    tax_authority_agent_id="irs",
+                )
+            ],
+            horizon_months=horizon,
+        )
+        home_values = [1.0] * sale_month + [1.4] * (horizon + 1 - sale_month)
+        ctx = _multi_series(
+            levels_by_series={RENT_SERIES_ID: {0: [1.0] * (horizon + 1)}, "home_value:san_francisco": {0: home_values}}
+        )
+        run = simulate_with_external_series(
+            scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
+        )
+
+        primary_rows = run.events_log.set_primary_residence_events.to_dicts()
+        assert primary_rows == [
+            {
+                "rollout_index": 0,
+                "month_index": 6,
+                "agent_id": OWNER_AGENT_ID,
+                "property_id": "p1",
+                "is_primary_residence": True,
+            }
+        ]
+        sale = run.events_log.property_sale_events.to_dicts()[0]
         assert sale["section_121_exclusion_usd"] == pytest.approx(158_000.0, abs=1.0)
         assert sale["long_term_capital_gain_usd"] == pytest.approx(0.0, abs=1e-6)
 

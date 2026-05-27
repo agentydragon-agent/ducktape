@@ -31,6 +31,7 @@ def slice_dense_result(dense: DenseSimulationResult, *, rollout_index: int) -> D
         lot_dispositions=_take_dc(dense.buffers.lot_dispositions, rollout_index, axis=-1),
         taxes=_take_dc(dense.buffers.taxes, rollout_index, axis=-1),
         obligations=_take_dc(dense.buffers.obligations, rollout_index, axis=-1),
+        primary_residence=_take_dc(dense.buffers.primary_residence, rollout_index, axis=-1),
         lifecycle=_take_dc(dense.buffers.lifecycle, rollout_index, axis=-1),
     )
     external_series = ExternalSeriesContext(

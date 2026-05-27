@@ -208,7 +208,8 @@ export function LifecycleEventsEditor({ events, horizonMonths, onChange }) {
       <div className="augur-field-label">Timeline (mid-horizon changes)</div>
       {events.length === 0 && (
         <div className="text-xs augur-muted">
-          Add events to change the property's rented %, fund a capital improvement, or sell mid-horizon.
+          Add events to change the property's rented %, primary-home status, fund a capital improvement, or sell
+          mid-horizon.
         </div>
       )}
       {events.length > 0 && (
@@ -288,6 +289,17 @@ function LifecycleEventValueField({ event, onChange }) {
         step={5}
         suffix="%"
         onChange={(rentedFractionPct) => onChange({ rentedFractionPct })}
+      />
+    );
+  }
+  if (event.kind === "set_primary_residence") {
+    return (
+      <Checkbox
+        label="Primary home"
+        aria-label="Primary home after this event"
+        checked={Boolean(event.livesHere)}
+        classNames={{ label: "text-sm font-semibold augur-strong" }}
+        onChange={(domEvent) => onChange({ livesHere: domEvent.currentTarget.checked })}
       />
     );
   }

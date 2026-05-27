@@ -55,14 +55,25 @@ export const DEFAULT_PRODUCT_INPUT_BASE = {
 
 export const LIFECYCLE_KINDS = [
   { value: "set_rented_fraction", label: "Change rented %" },
+  { value: "set_primary_residence", label: "Set primary home" },
   { value: "capital_improvement", label: "Capital improvement" },
   { value: "property_sale", label: "Sell property" },
 ];
 export const LIFECYCLE_KINDS_BY_VALUE = new Map(LIFECYCLE_KINDS.map((kind) => [kind.value, kind]));
 export const LIFECYCLE_URL_KEY = "lc";
 // Single-letter codes for the `?lc=` URL packing.
-export const LIFECYCLE_KIND_CODES = { set_rented_fraction: "r", capital_improvement: "c", property_sale: "s" };
-export const LIFECYCLE_KIND_FROM_CODE = { r: "set_rented_fraction", c: "capital_improvement", s: "property_sale" };
+export const LIFECYCLE_KIND_CODES = {
+  set_rented_fraction: "r",
+  set_primary_residence: "p",
+  capital_improvement: "c",
+  property_sale: "s",
+};
+export const LIFECYCLE_KIND_FROM_CODE = {
+  r: "set_rented_fraction",
+  p: "set_primary_residence",
+  c: "capital_improvement",
+  s: "property_sale",
+};
 
 export const FAN_PERCENTILES = [5, 25, 50, 75, 95];
 
@@ -214,6 +225,7 @@ export function productInputFromSearch(searchString, bootstrap) {
 
 // `?lc=` packing: each event is `<kind-code><month>:<value>` joined by `~`. Examples:
 //   r24:50  → set rented to 50% at month 24
+//   p12:0  → clear primary-residence assignment at month 12
 //   c12:50000  → $50k capex at month 12
 //   s120:6  → sell at month 120 with 6% closing cost
 export function lifecycleEventsToUrl(events) {
@@ -232,6 +244,7 @@ export function lifecycleEventsToUrl(events) {
 
 export function lifecycleEventUrlValue(event) {
   if (event.kind === "set_rented_fraction") return String(Math.round(Number(event.rentedFractionPct) || 0));
+  if (event.kind === "set_primary_residence") return event.livesHere ? "1" : "0";
   if (event.kind === "capital_improvement") return String(Math.round(Number(event.amountUsd) || 0));
   if (event.kind === "property_sale") return String(Number(event.closingCostPct) || 0);
   return "";
@@ -260,6 +273,9 @@ export function parseLifecycleEntry(entry) {
     if (!Number.isFinite(pct)) return null;
     return { ...base, rentedFractionPct: Math.min(100, Math.max(0, pct)) };
   }
+  if (kind === "set_primary_residence") {
+    return { ...base, livesHere: raw === "1" };
+  }
   if (kind === "capital_improvement") {
     const amount = Number(raw);
     if (!Number.isFinite(amount) || amount <= 0) return null;
@@ -286,6 +302,7 @@ export function nextLifecycleEventId() {
 export function defaultLifecycleEvent(kind, suggestedMonth) {
   const base = { _id: nextLifecycleEventId(), kind, month: Math.max(1, suggestedMonth || 12) };
   if (kind === "set_rented_fraction") return { ...base, rentedFractionPct: 0 };
+  if (kind === "set_primary_residence") return { ...base, livesHere: false };
   if (kind === "capital_improvement") return { ...base, amountUsd: 25000 };
   if (kind === "property_sale") return { ...base, closingCostPct: 6 };
   throw new Error(`unknown lifecycle event kind ${kind}`);
@@ -351,6 +368,13 @@ export function buildLifecycleEvents(events) {
           kind: "set_rented_fraction",
           month: event.month,
           rentedFraction: (Number(event.rentedFractionPct) || 0) / 100,
+        };
+      }
+      if (event.kind === "set_primary_residence") {
+        return {
+          kind: "set_primary_residence",
+          month: event.month,
+          isPrimaryResidence: Boolean(event.livesHere),
         };
       }
       if (event.kind === "capital_improvement") {

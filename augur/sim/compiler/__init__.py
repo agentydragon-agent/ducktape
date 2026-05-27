@@ -17,6 +17,7 @@ from augur.sim.compiler.lifecycle import LifecycleEventCompileOutput
 from augur.sim.compiler.liquidity import LiquidityPolicyCompileOutput
 from augur.sim.compiler.obligations import ObligationCompileOutput
 from augur.sim.compiler.plan import CompiledSimulation, SlotPlan, compile_simulation
+from augur.sim.compiler.primary_residence import PrimaryResidenceEventCompileOutput
 from augur.sim.compiler.private_equity import PEIssuerCompileOutput, PEPolicyCompileOutput
 from augur.sim.compiler.properties import LiabilityCompileOutput, PropertyCompileOutput
 from augur.sim.compiler.tax import TaxCompileOutput, TaxLiabilityCompileOutput
@@ -34,6 +35,7 @@ __all__ = [
     "ObligationCompileOutput",
     "PEIssuerCompileOutput",
     "PEPolicyCompileOutput",
+    "PrimaryResidenceEventCompileOutput",
     "PropertyCompileOutput",
     "SaleCompileOutput",
     "SaltCompileOutput",

@@ -10,6 +10,7 @@ from augur.sim.buffers import (
     LifecycleEventBuffers,
     LotDispositionEventBuffers,
     ObligationEventBuffers,
+    PrimaryResidenceEventBuffers,
     PropertyEventBuffers,
     SimulationBuffers,
     StateHistoryBuffers,
@@ -27,6 +28,7 @@ from augur.sim.engine.phases import (
     _apply_obligation_settlement,
     _apply_owner_occupied_month,
     _apply_pe_tenders,
+    _apply_primary_residence_events,
     _apply_property_purchases,
     _apply_scheduled_asset_sales,
     _apply_scheduled_transfers,
@@ -87,6 +89,7 @@ def _allocate_current_state(plan: CompiledSimulation) -> CurrentStateBuffers:
         property_rented_fraction=np.broadcast_to(plan.property_rented_fraction[:, None], (p.property_count, r)).copy(),
         property_building_basis=np.broadcast_to(plan.property_building_basis[:, None], (p.property_count, r)).copy(),
         property_owner_occupied_months=np.zeros((p.property_count, r), dtype=np.int64),
+        agent_primary_residence_property=plan.initial_primary_residence_property_index.copy(),
         recapture_section_1250_ytd=np.zeros((p.tax_profile_count, r), dtype=np.float64),
         liability_rental_interest_ytd=np.zeros((p.liability_count, r), dtype=np.float64),
         failed=np.zeros(r, dtype=np.bool_),
@@ -143,6 +146,7 @@ def _zero_failed_state(current: CurrentStateBuffers) -> None:
 def _run_month_step(
     plan: CompiledSimulation, buffers: SimulationBuffers, current: CurrentStateBuffers, month: int
 ) -> None:
+    _apply_primary_residence_events(plan, buffers, current, month)
     _apply_lifecycle_events(plan, buffers, current, month)
     _apply_scheduled_transfers(plan, buffers, current, month)
     _apply_property_purchases(plan, buffers, current, month)
@@ -154,10 +158,9 @@ def _run_month_step(
     # post-settlement liquid net worth (cash already moved out for this month's bills) and the
     # cap-gain accrual from any tender is captured by the year-end tax pass below.
     _apply_pe_tenders(plan, buffers, current, month)
-    # Owner-occupied month counter: §121 24-of-60 window machinery. Increments before
-    # depreciation accrual so a SetRentedFractionEvent firing this month is correctly
-    # reflected (e.g., a conversion to 100% rental this month does NOT count toward §121).
-    _apply_owner_occupied_month(current)
+    # Primary-residence month counter: §121 24-of-60 window machinery. Increments before
+    # depreciation accrual so same-month primary-residence/rental events are reflected.
+    _apply_owner_occupied_month(plan, current)
     # §168 monthly depreciation accrual for rented properties; must run before tax accruals so
     # the year-end pass sees this month's contribution in property_depreciation_ytd.
     _apply_depreciation_accrual(plan, current)
@@ -286,6 +289,9 @@ def _allocate_buffers(plan: CompiledSimulation) -> SimulationBuffers:
             shortfall=np.zeros((h, p.max_obligation_slots, r), dtype=np.float64),
             attempt_policy=np.full((h, p.max_obligation_slots, r), NO_CODE, dtype=np.int64),
             failure_active=np.zeros((h, p.max_obligation_slots, r), dtype=np.bool_),
+        ),
+        primary_residence=PrimaryResidenceEventBuffers(
+            fired=np.zeros((max(1, int(plan.primary_residence_events.month.shape[0])), r), dtype=np.bool_)
         ),
         lifecycle=LifecycleEventBuffers(
             fired=np.zeros((max(1, int(plan.lifecycle_events.month.shape[0])), r), dtype=np.bool_),

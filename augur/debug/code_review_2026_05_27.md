@@ -14,35 +14,6 @@ Severity guide:
 
 ## Findings
 
-### P1: Section 121 occupancy uses rented fraction as a proxy for primary residence
-
-Evidence:
-
-- `ScheduledPropertyPurchase` has `rented_fraction` but no sim-side field for
-  primary residence, owner occupancy, or actual use (`augur/sim/scenario.py:386-423`).
-- The product API has `is_primary_residence`, but build wiring only uses it to add
-  a mortgage-interest deduction policy (`augur/product/wire.py:131-146`,
-  `augur/product/scenarios.py:252-255`).
-- `_apply_owner_occupied_month` treats every active property with
-  `rented_fraction < 1.0` as owner occupied (`augur/sim/engine/phases.py:513-529`).
-- `_apply_property_sale` uses those months for the Section 121 exclusion
-  (`augur/sim/engine/phases.py:450-464`).
-
-Impact:
-
-A second home, vacant investment property, or "off" property with
-`rented_fraction=0.0` accrues owner-occupied months and can receive the Section
-121 primary-residence exclusion on sale. This is a factual tax correctness bug,
-not just an approximation.
-
-Recommendation:
-
-Add explicit sim-side occupancy/use state. At minimum, distinguish
-`primary_residence`, `non_primary_owner_use`, `off/vacant`, and `rented`, then
-make Section 121 count only qualifying primary-residence occupancy. Product
-`is_primary_residence` should be lowered into that sim state rather than only
-into MID policy wiring.
-
 ### P1: Product rental lifecycle events do not wire dynamic rent or management fees
 
 Evidence:
@@ -224,33 +195,6 @@ Recommendation:
 Precompute per-month group ids for `(agent, from_slot)` at compile time, or derive
 them once per month. Then compute group due as a vectorized scatter/add or a
 small loop over unique groups and broadcast the funded result back to slots.
-
-### P3: Sale-event documentation is stale and contradicts the engine
-
-Evidence:
-
-- `PropertySaleEvent` docs say gross proceeds use
-  `market_value * (1 - closing_cost_pct)` even though the field is `0..100` and
-  the engine divides by 100 (`augur/sim/scenario.py:338-361`,
-  `augur/sim/engine/phases.py:402-438`).
-- The same docs say Section 1250 recapture is added to ordinary income for both
-  federal and CA, and that Section 121 is a phase-4 follow-up
-  (`augur/sim/scenario.py:347-355`).
-- Engine/tax code now routes Section 1250 through federal cap handling and
-  applies Section 121 exclusion logic (`augur/sim/engine/phases.py:84-150`,
-  `augur/sim/engine/phases.py:406-413`, `augur/sim/engine/phases.py:450-464`).
-
-Impact:
-
-The schema-level comments are now misleading enough to cause future scenario
-authors or reviewers to misunderstand the implemented tax behavior.
-
-Recommendation:
-
-Update `PropertySaleEvent` docs to match current behavior: `closing_cost_pct` is
-a percent, federal Section 1250 uses the lesser-of marginal/cap rule, CA-style
-links can treat recapture as ordinary, and Section 121 is implemented with the
-current occupancy caveat from the P1 finding above.
 
 ### P3: Product rental comments and sim TODO still describe shipped or contradicted work
 

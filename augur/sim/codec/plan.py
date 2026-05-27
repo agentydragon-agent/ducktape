@@ -21,6 +21,7 @@ from augur.sim.codec.assets import (
 from augur.sim.codec.liabilities import decode_liabilities, decode_mortgage_originations, decode_mortgage_payments
 from augur.sim.codec.lifecycle import decode_lifecycle_events
 from augur.sim.codec.obligations import decode_obligations
+from augur.sim.codec.primary_residence import decode_primary_residence_events
 from augur.sim.codec.properties import decode_property_purchases, decode_property_stakes, decode_property_state
 from augur.sim.codec.tax import (
     decode_capital_gains,
@@ -114,6 +115,7 @@ def decode_events(plan: CompiledSimulation, buffers: SimulationBuffers) -> Event
             "mortgage_payments": decode_mortgage_payments(plan, buffers),
             "rollout_failures": failure_frame,
             "set_rented_fraction_events": set_rented_fraction_frame,
+            "set_primary_residence_events": decode_primary_residence_events(plan, buffers),
             "capital_improvement_events": capital_improvement_frame,
             "property_sale_events": property_sale_frame,
         }

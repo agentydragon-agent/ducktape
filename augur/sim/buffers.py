@@ -193,11 +193,15 @@ class CurrentStateBuffers:
     # `plan.property_building_basis[prop]` and bumped by `CapitalImprovementEvent`. Depreciation
     # accrual multiplies this by `current.property_rented_fraction[p, r] / (27.5 × 12)` monthly.
     property_building_basis: NDArray[np.float64]
-    # Cumulative count of owner-occupied months per (rollout, property). Increments by 1 each
-    # month while `property_active[:, p] AND property_rented_fraction[:, p] < 1.0`. At sale
-    # time the engine looks back 60 months by subtracting the 60-mo-ago snapshot — qualifies
-    # for §121 if the difference is ≥ 24.
+    # Cumulative count of §121 qualifying-use months per (rollout, property). Increments by 1
+    # each month while the property is active, assigned as the owning agent's primary residence,
+    # and not fully rented. At sale time the engine looks back 60 months by subtracting the
+    # 60-mo-ago snapshot — qualifies for §121 if the difference is ≥ 24.
     property_owner_occupied_months: NDArray[np.int64]
+    # Current primary-residence assignment per agent. Value is a property slot or NO_CODE when
+    # the agent has no assigned primary residence. This is agent-scoped so the runtime cannot
+    # represent two simultaneous primary residences for one agent.
+    agent_primary_residence_property: NDArray[np.int64]
     # YTD §1250 unrecaptured-depreciation gain per (rollout, tax_profile). Populated by
     # PropertySaleEvent. At year-end, federal taxes this at min(25%, marginal); CA taxes as
     # ordinary (added back to bracket input). Zeroed at year-end.
@@ -311,6 +315,12 @@ class CurrentStateBuffers:
             dtype=np.int64,
         )
         _expect_array(
+            "current agent_primary_residence_property",
+            self.agent_primary_residence_property,
+            shape=(plan.agent_count,),
+            dtype=np.int64,
+        )
+        _expect_array(
             "current recapture_section_1250_ytd",
             self.recapture_section_1250_ytd,
             shape=(plan.tax_profile_count, r),
@@ -357,6 +367,18 @@ class LifecycleEventBuffers:
             ("sale_long_term_gain", self.sale_long_term_gain),
         ]:
             _expect_array(name, arr, shape=shape, dtype=np.float64)
+
+
+@dataclass
+class PrimaryResidenceEventBuffers:
+    """Per-(primary_residence_event_index, rollout) fired markers."""
+
+    fired: NDArray[np.bool_]
+
+    def validate(self, plan: SlotPlan, event_count: int) -> None:
+        _expect_array(
+            "primary_residence_fired", self.fired, shape=(max(1, event_count), plan.rollout_count), dtype=np.bool_
+        )
 
 
 @dataclass
@@ -515,6 +537,7 @@ class SimulationBuffers:
     lot_dispositions: LotDispositionEventBuffers
     taxes: TaxEventBuffers
     obligations: ObligationEventBuffers
+    primary_residence: PrimaryResidenceEventBuffers
     lifecycle: LifecycleEventBuffers
 
     def validate(self, plan: CompiledSimulation) -> None:
@@ -529,4 +552,5 @@ class SimulationBuffers:
         self.lot_dispositions.validate(slot_plan)
         self.taxes.validate(slot_plan)
         self.obligations.validate(slot_plan)
+        self.primary_residence.validate(slot_plan, event_count=int(plan.primary_residence_events.month.shape[0]))
         self.lifecycle.validate(slot_plan, event_count=int(plan.lifecycle_events.month.shape[0]))

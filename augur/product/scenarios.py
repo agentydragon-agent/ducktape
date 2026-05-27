@@ -20,6 +20,7 @@ from augur.product.wire import (
     PropertySaleEventWire,
     RentalIncomePlan,
     ScenarioKey,
+    SetPrimaryResidenceEventWire,
     SetRentedFractionEventWire,
 )
 from augur.sim.locations import Location
@@ -35,6 +36,7 @@ from augur.sim.scenario import (
     MortgageFinancing as SimMortgageFinancing,
     MortgageInterestDeductionPolicy,
     ObligationType,
+    PrimaryResidenceAssignment,
     PrivateEquityTenderPolicy,
     PropertyLifecycleEvent,
     PropertySaleEvent,
@@ -45,6 +47,7 @@ from augur.sim.scenario import (
     ScheduledPropertyPurchase,
     ScheduledTransfer,
     SeriesIndexedAmount,
+    SetPrimaryResidenceEvent,
     SetRentedFractionEvent,
     TaxProfile,
     TransferDeductionCategory,
@@ -230,6 +233,8 @@ def build_scenario(
         )
 
     scheduled_property_purchases: list[ScheduledPropertyPurchase] = []
+    initial_primary_residences: list[PrimaryResidenceAssignment] = []
+    primary_residence_events: list[SetPrimaryResidenceEvent] = []
     property_lifecycle_events: list[PropertyLifecycleEvent] = []
     property_tax_policies: list[PropertyTaxPolicy] = []
     mortgage_interest_deduction_policies: list[MortgageInterestDeductionPolicy] = []
@@ -258,10 +263,21 @@ def build_scenario(
                 scenario_key.property_purchase, property_, primary_agent_id=primary_agent_id, mortgage=mortgage
             )
         )
-        property_lifecycle_events.extend(
-            _sim_lifecycle_event(event, property_id=property_.id)
-            for event in scenario_key.property_purchase.lifecycle_events
-        )
+        if scenario_key.property_purchase.is_primary_residence:
+            initial_primary_residences.append(
+                PrimaryResidenceAssignment(agent_id=primary_agent_id, property_id=property_.id)
+            )
+        for event in scenario_key.property_purchase.lifecycle_events:
+            if isinstance(event, SetPrimaryResidenceEventWire):
+                primary_residence_events.append(
+                    SetPrimaryResidenceEvent(
+                        month=int(event.month),
+                        agent_id=primary_agent_id,
+                        property_id=property_.id if event.is_primary_residence else None,
+                    )
+                )
+            else:
+                property_lifecycle_events.append(_sim_lifecycle_event(event, property_id=property_.id))
         property_tax_policies.append(
             PropertyTaxPolicy(
                 property_id=property_.id,
@@ -388,6 +404,8 @@ def build_scenario(
         recurring_transfers=recurring_transfers,
         scheduled_transfers=scheduled_transfers,
         scheduled_property_purchases=scheduled_property_purchases,
+        initial_primary_residences=initial_primary_residences,
+        primary_residence_events=primary_residence_events,
         property_lifecycle_events=property_lifecycle_events,
         property_tax_policies=property_tax_policies,
         mortgage_interest_deduction_policies=mortgage_interest_deduction_policies,
@@ -456,6 +474,8 @@ def _sim_lifecycle_event(event: PropertyLifecycleEventWire, *, property_id: str)
         return SetRentedFractionEvent(
             month=month, property_id=property_id, rented_fraction=float(event.rented_fraction)
         )
+    if isinstance(event, SetPrimaryResidenceEventWire):
+        raise TypeError("SetPrimaryResidenceEventWire is lowered separately from property lifecycle events")
     if isinstance(event, CapitalImprovementEventWire):
         return CapitalImprovementEvent(
             month=month, property_id=property_id, amount_usd=float(event.amount_usd), description=event.description
@@ -468,9 +488,8 @@ def _sim_lifecycle_event(event: PropertyLifecycleEventWire, *, property_id: str)
 def _initial_occupancy(purchase: PropertyPurchase) -> tuple[OccupancyMode, float]:
     """Initial-month (occupancy_mode, rented_fraction) implied by the purchase.
 
-    Phase 1: occupancy is constant for the horizon and derived purely from `initial_rental`
-    + `is_primary_residence`. Phase 3 will replace this with a runtime state machine driven
-    by lifecycle events.
+    Expense pricing still uses the initial state. Section 121 primary-residence use is now
+    tracked separately by sim-side agent assignment events.
     """
 
     if purchase.initial_rental is None:

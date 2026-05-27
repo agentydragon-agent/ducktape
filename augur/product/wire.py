@@ -106,6 +106,14 @@ class SetRentedFractionEventWire(ApiModel):
     rented_fraction: NonNegativeFloat = Field(le=1.0)
 
 
+class SetPrimaryResidenceEventWire(ApiModel):
+    """Lifecycle event: make the purchased property the owner's primary residence, or clear it."""
+
+    kind: Literal["set_primary_residence"] = "set_primary_residence"
+    month: PositiveInt
+    is_primary_residence: bool
+
+
 class CapitalImprovementEventWire(ApiModel):
     """Lifecycle event: cash debit + building basis bump (e.g. new roof, kitchen remodel)."""
 
@@ -124,7 +132,8 @@ class PropertySaleEventWire(ApiModel):
 
 
 type PropertyLifecycleEventWire = Annotated[
-    SetRentedFractionEventWire | CapitalImprovementEventWire | PropertySaleEventWire, Field(discriminator="kind")
+    SetRentedFractionEventWire | SetPrimaryResidenceEventWire | CapitalImprovementEventWire | PropertySaleEventWire,
+    Field(discriminator="kind"),
 ]
 
 
@@ -343,6 +352,15 @@ class SetRentedFractionMarkerEvent(_RolloutEventBase):
     rented_fraction: float
 
 
+class SetPrimaryResidenceMarkerEvent(_RolloutEventBase):
+    """A primary-residence assignment event fired this month."""
+
+    kind: Literal["set_primary_residence"] = "set_primary_residence"
+    agent_id: str
+    property_id: str | None
+    is_primary_residence: bool
+
+
 class CapitalImprovementMarkerEvent(_RolloutEventBase):
     """A `PropertyLifecycleEvent.CapitalImprovement` fired this month: cash debit and basis
     bump on the named property."""
@@ -381,6 +399,7 @@ type RolloutEvent = Annotated[
     | TaxPaymentEvent
     | RolloutFailureEvent
     | SetRentedFractionMarkerEvent
+    | SetPrimaryResidenceMarkerEvent
     | CapitalImprovementMarkerEvent
     | PropertySaleMarkerEvent,
     Field(discriminator="kind"),

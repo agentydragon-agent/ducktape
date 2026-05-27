@@ -26,6 +26,7 @@ from augur.sim.scenario import (
     LiquidityPolicy,
     MortgageFinancing,
     MortgageInterestDeductionPolicy,
+    PrimaryResidenceAssignment,
     PrivateEquityTenderPolicy,
     PropertySaleEvent,
     PropertyTaxPolicy,
@@ -37,6 +38,7 @@ from augur.sim.scenario import (
     ScheduledPropertyPurchase,
     ScheduledTransfer,
     SeriesIndexedAmount,
+    SetPrimaryResidenceEvent,
     SetRentedFractionEvent,
     TaxProfile,
 )
@@ -462,6 +464,67 @@ def test_scenario_rejects_lifecycle_events_after_property_sale() -> None:
                 PropertySaleEvent(month=1, property_id="home", closing_cost_pct=6.0),
                 SetRentedFractionEvent(month=2, property_id="home", rented_fraction=1.0),
             ]
+        )
+
+
+def _primary_residence_validation_scenario(
+    *,
+    initial_primary_residences: list[PrimaryResidenceAssignment] | None = None,
+    primary_residence_events: list[SetPrimaryResidenceEvent] | None = None,
+    property_lifecycle_events: list[PropertySaleEvent] | None = None,
+    purchase_month: int = 0,
+    horizon_months: int = 4,
+) -> Scenario:
+    return Scenario(
+        agents=[Agent(agent_id="alice"), Agent(agent_id="seller")],
+        initial_cash=[
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=600_000.0),
+            InitialAccountBalance(agent_id="seller", account_id="checking", balance_usd=0.0),
+        ],
+        scheduled_property_purchases=[
+            ScheduledPropertyPurchase(
+                month=purchase_month,
+                cause_id="alice_buys_home",
+                property_id="home",
+                location_id="san_francisco",
+                buyer_agent_id="alice",
+                buyer_account_id="checking",
+                seller_agent_id="seller",
+                purchase_price_usd=500_000.0,
+                down_payment_usd=500_000.0,
+            )
+        ],
+        initial_primary_residences=initial_primary_residences or [],
+        primary_residence_events=primary_residence_events or [],
+        property_lifecycle_events=property_lifecycle_events or [],
+        tax_profiles=[],
+        horizon_months=horizon_months,
+    )
+
+
+def test_scenario_rejects_multiple_initial_primary_residences_for_one_agent() -> None:
+    with pytest.raises(ValidationError, match=r"multiple initial primary residences for agent_id 'alice'"):
+        _primary_residence_validation_scenario(
+            initial_primary_residences=[
+                PrimaryResidenceAssignment(agent_id="alice", property_id="home"),
+                PrimaryResidenceAssignment(agent_id="alice", property_id="home"),
+            ]
+        )
+
+
+def test_scenario_rejects_primary_residence_assignment_before_purchase() -> None:
+    with pytest.raises(ValidationError, match=r"before its purchase month 2"):
+        _primary_residence_validation_scenario(
+            primary_residence_events=[SetPrimaryResidenceEvent(month=1, agent_id="alice", property_id="home")],
+            purchase_month=2,
+        )
+
+
+def test_scenario_rejects_primary_residence_assignment_at_or_after_sale() -> None:
+    with pytest.raises(ValidationError, match=r"property is sold at month 2"):
+        _primary_residence_validation_scenario(
+            primary_residence_events=[SetPrimaryResidenceEvent(month=2, agent_id="alice", property_id="home")],
+            property_lifecycle_events=[PropertySaleEvent(month=2, property_id="home", closing_cost_pct=6.0)],
         )
 
 

@@ -384,6 +384,28 @@ def _apply_lifecycle_events(
             buffers.lifecycle.fired[i, active_property_rollout] = True
 
 
+def _apply_primary_residence_events(
+    plan: CompiledSimulation, buffers: SimulationBuffers, current: CurrentStateBuffers, month: int
+) -> None:
+    """Apply this month's agent-level primary-residence assignment events."""
+
+    starts = plan.primary_residence_events.month_starts
+    if month + 1 >= starts.shape[0]:
+        return
+    begin = int(starts[month])
+    end = int(starts[month + 1])
+    if begin == end:
+        return
+    active_rollout = ~current.failed
+    if not active_rollout.any():
+        return
+    for event_index in range(begin, end):
+        agent_slot = int(plan.primary_residence_events.agent_slot[event_index])
+        property_slot = int(plan.primary_residence_events.property_slot[event_index])
+        current.agent_primary_residence_property[agent_slot] = property_slot
+        buffers.primary_residence.fired[event_index, active_rollout] = True
+
+
 SECTION_121_LOOKBACK_MONTHS = 60
 SECTION_121_MIN_QUALIFYING_MONTHS = 24
 # Per-profile cap lives on the plan: `plan.tax.profile_section_121_exclusion[owner_profile]`.
@@ -498,6 +520,9 @@ def _apply_property_sale(
     current.property_active[prop, active_rollout] = False
     current.property_rented_fraction[prop, active_rollout] = 0.0
     current.property_building_basis[prop, active_rollout] = 0.0
+    owner_agent_slot = int(plan.property_owner_agent_index[prop])
+    if owner_agent_slot >= 0 and int(current.agent_primary_residence_property[owner_agent_slot]) == prop:
+        current.agent_primary_residence_property[owner_agent_slot] = NO_CODE
 
     # Log per-rollout amounts (zero on failed rollouts).
     sale_gross_proceeds[active_rollout] = gross_proceeds[active_rollout]
@@ -516,11 +541,11 @@ def _apply_property_sale(
     buffers.lifecycle.sale_long_term_gain[event_index] = sale_long_term_gain
 
 
-def _apply_owner_occupied_month(current: CurrentStateBuffers) -> None:
+def _apply_owner_occupied_month(plan: CompiledSimulation, current: CurrentStateBuffers) -> None:
     """Increment per-property owner-occupied-month counters for §121 tracking.
 
-    A property is "owner-occupied this month" if it's active and rented_fraction < 1.0 (at
-    least partial owner residence). The cumulative count is the §121 base; the
+    A property is "owner-occupied this month" if it is active, assigned as the owning
+    agent's primary residence, and not fully rented. The cumulative count is the §121 base; the
     snapshot history lets the sale handler compute the 24-of-last-60-months window.
     """
 
@@ -529,6 +554,9 @@ def _apply_owner_occupied_month(current: CurrentStateBuffers) -> None:
         return
     property_count = current.property_rented_fraction.shape[0]
     for prop in range(property_count):
+        owner_agent_slot = int(plan.property_owner_agent_index[prop])
+        if owner_agent_slot < 0 or int(current.agent_primary_residence_property[owner_agent_slot]) != prop:
+            continue
         owner_occupied = (
             active_rollout & current.property_active[prop, :] & (current.property_rented_fraction[prop, :] < 1.0)
         )
