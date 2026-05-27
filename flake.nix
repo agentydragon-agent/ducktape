@@ -258,6 +258,13 @@
       localOnlyPackages = [
         pkgs.rustfmt # 1GB (pulls full rustc via RPATH)
         pkgs.ansible # 650MB
+        # llvm-addr2line: drop-in for GNU addr2line used by `perf report` for
+        # inline-frame symbolization. 10-50x faster on Rust DWARF and keeps a
+        # persistent symbol cache across queries from the same process; the
+        # debundle perf-profile wrapper (devinfra/js/debundle/pipeline.bzl)
+        # prepends a shim that aliases addr2line -> llvm-addr2line when it is
+        # on PATH.
+        pkgs.llvmPackages.bintools-unwrapped
       ];
       # System libraries matching RBE worker image (devinfra/rbe_image/Dockerfile).
       systemLibs = import ./nix/packages/system-libs.nix { inherit pkgs; };

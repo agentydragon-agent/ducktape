@@ -150,8 +150,18 @@ def _profile_command(profile, profile_dir_token, debundler_command):
             "/usr/bin/time -v {} > \"${{profile_dir}}/stdout.txt\" 2> \"${{profile_dir}}/stderr_time.txt\"".format(debundler_command),
         ]
     elif profile == "perf":
+        # `perf report` shells out to whatever `addr2line` it finds on $PATH
+        # for inlined-frame resolution. On Rust binaries with deep DWARF, the
+        # GNU addr2line is single-threaded and has no inter-invocation cache,
+        # so symbolization can dominate wall time (30+ minutes observed).
+        # LLVM's llvm-addr2line is command-line compatible with the flags
+        # perf uses (-e/-a/-i/-f) and is typically 10-50x faster on Rust DWARF
+        # thanks to a persistent in-process symbol cache. Prepend a shim dir
+        # that aliases `addr2line` to `llvm-addr2line` when the latter is
+        # available; fall back silently to GNU addr2line otherwise.
         profile_lines = [
             "command -v perf >/dev/null || { echo 'perf not found on PATH' >&2; exit 127; }",
+            "if command -v llvm-addr2line >/dev/null; then shim_dir=\"${profile_dir}/.symbolizer-shim\"; mkdir -p \"${shim_dir}\"; ln -sf \"$(command -v llvm-addr2line)\" \"${shim_dir}/addr2line\"; export PATH=\"${shim_dir}:${PATH}\"; fi",
             "perf record -F 99 -e cycles:u --call-graph dwarf,8192 -o \"${{profile_dir}}/perf.data\" -- {} > \"${{profile_dir}}/stdout.txt\" 2> \"${{profile_dir}}/perf_record_stderr.txt\"".format(debundler_command),
             "perf report --stdio --input \"${profile_dir}/perf.data\" --children --sort comm,dso,symbol > \"${profile_dir}/perf_report_children.txt\"",
             "perf report --stdio --input \"${profile_dir}/perf.data\" --no-children --sort comm,dso,symbol > \"${profile_dir}/perf_report_no_children.txt\"",
