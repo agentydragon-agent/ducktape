@@ -1218,26 +1218,26 @@ fn write_tree_reports(
     fs::create_dir_all(report_tree_root)?;
 
     let file_manifests = build_file_dependency_manifests(decomposition_by_chunk, file_metrics);
-    for manifest in file_manifests {
+    file_manifests.into_par_iter().try_for_each(|manifest| {
         let path = report_path_for_file(report_tree_root, &manifest.path);
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
         // Per-file FileDependencyManifest is pipeline-consumed (boundary +
         // dependency facts); emit compact JSON to keep this hot path cheap.
-        write_json_compact(path, &manifest)?;
-    }
+        write_json_compact(path, &manifest)
+    })?;
 
     let manifests = build_directory_dependency_manifests(decomposition_by_chunk, file_metrics);
-    for manifest in manifests {
+    manifests.into_par_iter().try_for_each(|manifest| {
         let manifest_path = report_path_for_directory(report_tree_root, &manifest.path);
         if let Some(parent) = manifest_path.parent() {
             fs::create_dir_all(parent)?;
         }
         // Per-directory DirectoryManifestIndex is pipeline-consumed; emit
         // compact JSON.
-        write_json_compact(&manifest_path, &manifest)?;
-    }
+        write_json_compact(&manifest_path, &manifest)
+    })?;
     Ok(())
 }
 
