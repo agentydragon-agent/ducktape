@@ -40,19 +40,6 @@ What's actually worth resolving here is the structural shape: callers re-hydrate
 
 ## Library-vs-hand-rolled
 
-### `petgraph::algo::greedy_feedback_arc_set` is used correctly; the surrounding loop is not
-
-`validation.rs:437` runs a while-loop that:
-
-1. Tarjan-SCCs the working graph.
-2. Finds a "problematic" SCC.
-3. Builds a fresh `petgraph::DiGraph` for that sub-SCC.
-4. Runs `greedy_feedback_arc_set` on the sub-graph.
-5. Falls back to a manual scan if FAS only flagged lazy edges.
-6. Removes one edge, loops.
-
-The Tarjan-SCC + FAS + remove-edge loop is itself a known algorithm shape (iterative FAS-by-SCC). `petgraph` has it built in via `condensation`: condense to a DAG of SCCs, walk the condensation top-down. The current loop is correct but `O(|cycles| · |V| + |E|)` per chunk, when a single condensation pass + FAS-per-condensation-node would be `O(|V| + |E|)`. More importantly, the loop's "fallback to scanning the SCC's edges if FAS only flagged lazy edges" branch (`validation.rs:482`) papers over what looks like a soundness/precision issue in how FAS is being used: FAS doesn't know about edge labels, so it picks whatever it picks; trying to make it pick R/S edges by post-filtering its result is a hack. The right fix is to filter the edge set down to constraining edges _before_ calling FAS, then map the result back. (`greedy_feedback_arc_set` accepts arbitrary graphs; nothing stops the caller from omitting `LazyUse` edges from the working `DiGraph`.) Simpler, faster, no fallback needed.
-
 ### `swc_ecma_visit` usage is reasonable
 
 Searched for hand-rolled AST walks that should have been visitors. Found only the explicit top-level iteration in `facts/mod.rs` (`match ModuleItem::Stmt(Stmt::Decl(...))` etc.) which is appropriate because the analysis is fundamentally a top-level-only iteration with structured per-statement output. Subordinate visits (binding-target recording, reference collection, identifier scanning, body-purity) all use `Visit` / `VisitWith` correctly. No fix needed here.
