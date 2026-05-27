@@ -17,19 +17,76 @@
 use debundle_e2e_support::*;
 use serde_json::json;
 
+const VENDOR_FILE: &[(&str, &str)] = &[(
+    "static/app/vendor.js",
+    "export function makePure(arg) { return arg; }\n",
+)];
+
+/// Cycle-forcing fixture body parameterized by the per-case knobs.
+///
+/// Shared layout across every test:
+///   * `import * as ns from "./vendor.js"` — vendor namespace.
+///   * `const a = (() => 1)()` — SE, stays in residual.
+///   * `const b = ns.makePure(<arg>)` — the call site under test.
+///   * `const c = <expr> + a` — reads `b` at init.
+///   * `console.log(c)`.
+///
+/// Tests vary only the call argument, the `c` expression (which
+/// determines whether the cycle is "real"), and the `pure_members`
+/// list. The fixture must be a `FixtureOpts` borrowed from caller-
+/// owned strings to satisfy `FixtureOpts<'a>`'s lifetime.
+struct PureMembersCase {
+    source: String,
+    pure_members: serde_json::Value,
+}
+
+impl PureMembersCase {
+    fn new(makepure_arg: &str, c_expr: &str, pure_members: &[&str]) -> Self {
+        let source = format!(
+            r#"import * as ns from "./vendor.js";
+const a = (() => 1)();
+const b = ns.makePure({makepure_arg});
+const c = {c_expr} + a;
+console.log(c);
+export {{ a, b, c }};
+"#,
+        );
+        Self {
+            source,
+            pure_members: json!({
+                "id": "chunk_renames__static_app",
+                "members": [
+                    {
+                        "name": "React",
+                        "selector": {
+                            "binding": {
+                                "name": "ns",
+                                "kind": "import_specifier",
+                            },
+                        },
+                        "pure_members": pure_members,
+                    },
+                ],
+            }),
+        }
+    }
+
+    fn opts(&self) -> FixtureOpts<'_> {
+        FixtureOpts::new(
+            &self.source,
+            vec![logical_module("b_module", &[Member::new("b")])],
+        )
+        .with_chunk_renames(self.pure_members.clone())
+        .with_extra_files(VENDOR_FILE)
+    }
+}
+
 /// Vendor-namespace fixture: a star-import binding `ns` whose
 /// `ns.makePure(...)` call site would force a side-effect-order
 /// edge under default classification (`ns.makePure` is a member call
 /// on an unknown receiver). With `pure_members: [makePure]` on the
 /// `ns` member, the analyzer admits the call as pure, drops the
 /// `S` edge, and the cycle-forcing fixture accepts.
-///
-/// Cycle-forcing layout:
-///   1. `const a = (() => 1)();` — SE; stays in residual
-///   2. `const b = ns.makePure({ value: 1 });` — would be SE
-///      without the rule; peeled to b_module
-///   3. `const c = b.value + a;` — reads b at init
-///   4. `console.log(c);`
 ///
 /// Without the rule: `ns.makePure(...)` is Unknown → `b` is SE →
 /// `b → a` s-edge → after peeling `b` to b_module, that crosses
@@ -40,39 +97,8 @@ use serde_json::json;
 /// no `b → a` s-edge. Only `residual → b_module` remains. DAG.
 #[test]
 fn pure_members_admits_namespace_member_call() {
-    let opts = FixtureOpts {
-        source: r#"import * as ns from "./vendor.js";
-const a = (() => 1)();
-const b = ns.makePure({ value: 1 });
-const c = b.value + a;
-console.log(c);
-export { a, b, c };
-"#,
-        logical_modules: vec![logical_module("b_module", &[Member::new("b")])],
-        chunk_renames: Some(json!({
-            "id": "chunk_renames__static_app",
-            "members": [
-                {
-                    "name": "React",
-                    "selector": {
-                        "binding": {
-                            "name": "ns",
-                            "kind": "import_specifier",
-                        },
-                    },
-                    "pure_members": ["makePure"],
-                },
-            ],
-        })),
-        chunk_id: "static/app",
-        unassigned_mode: unassigned_mode_catchall_file(None),
-        dataflow_aware_s_chain: false,
-        extra_files: &[(
-            "static/app/vendor.js",
-            "export function makePure(arg) { return arg; }\n",
-        )],
-    };
-    let fixture = run_fixture(opts);
+    let case = PureMembersCase::new("{ value: 1 }", "b.value", &["makePure"]);
+    let fixture = run_fixture(case.opts());
 
     // Peel succeeded: b is in b_module without dragging a.
     // The fact that the build didn't error on a cycle proves
@@ -95,42 +121,9 @@ export { a, b, c };
 /// the annotation doesn't bleed onto sibling properties.
 #[test]
 fn pure_members_does_not_bleed_to_other_props() {
-    expect_rejection_containing_all(
-        FixtureOpts {
-            source: r#"import * as ns from "./vendor.js";
-const a = (() => 1)();
-const b = ns.makePure({ value: 1 });
-const c = b.value + a;
-console.log(c);
-export { a, b, c };
-"#,
-            logical_modules: vec![logical_module("b_module", &[Member::new("b")])],
-            chunk_renames: Some(json!({
-                "id": "chunk_renames__static_app",
-                "members": [
-                    {
-                        "name": "React",
-                        "selector": {
-                            "binding": {
-                                "name": "ns",
-                                "kind": "import_specifier",
-                            },
-                        },
-                        // Annotated property is not the one called.
-                        "pure_members": ["somethingElse"],
-                    },
-                ],
-            })),
-            chunk_id: "static/app",
-            unassigned_mode: unassigned_mode_catchall_file(None),
-            dataflow_aware_s_chain: false,
-            extra_files: &[(
-                "static/app/vendor.js",
-                "export function makePure(arg) { return arg; }\n",
-            )],
-        },
-        &["cycle", "b_module", "residual"],
-    );
+    // Annotated property is not the one called.
+    let case = PureMembersCase::new("{ value: 1 }", "b.value", &["somethingElse"]);
+    expect_rejection_containing_all(case.opts(), &["cycle", "b_module", "residual"]);
 }
 
 /// Args are still classified independently of the spec hint — the
@@ -139,39 +132,10 @@ export { a, b, c };
 /// classified impure, the cycle closes, and the validator rejects.
 #[test]
 fn pure_members_call_with_impure_arg_does_not_admit() {
-    expect_rejection_containing_all(
-        FixtureOpts {
-            source: r#"import * as ns from "./vendor.js";
-const a = (() => 1)();
-const b = ns.makePure((() => globalThis.touched = 1)());
-const c = (b ? 1 : 0) + a;
-console.log(c);
-export { a, b, c };
-"#,
-            logical_modules: vec![logical_module("b_module", &[Member::new("b")])],
-            chunk_renames: Some(json!({
-                "id": "chunk_renames__static_app",
-                "members": [
-                    {
-                        "name": "React",
-                        "selector": {
-                            "binding": {
-                                "name": "ns",
-                                "kind": "import_specifier",
-                            },
-                        },
-                        "pure_members": ["makePure"],
-                    },
-                ],
-            })),
-            chunk_id: "static/app",
-            unassigned_mode: unassigned_mode_catchall_file(None),
-            dataflow_aware_s_chain: false,
-            extra_files: &[(
-                "static/app/vendor.js",
-                "export function makePure(arg) { return arg; }\n",
-            )],
-        },
-        &["cycle", "b_module", "residual"],
+    let case = PureMembersCase::new(
+        "(() => globalThis.touched = 1)()",
+        "(b ? 1 : 0)",
+        &["makePure"],
     );
+    expect_rejection_containing_all(case.opts(), &["cycle", "b_module", "residual"]);
 }

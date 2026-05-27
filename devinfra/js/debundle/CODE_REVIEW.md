@@ -133,10 +133,6 @@ Uses inline comment markers instead of `#[ignore]` with reason strings (like `pu
 
 Lines 1030–1617 are four tests each manually creating the entire fixture inline (155 lines per test). Extract `run_bundled_partial_swap_fixture`.
 
-### `pure_members_test.rs` — 3 identical fixture shapes with different `pure_members` values
-
-Table-driven test candidate.
-
 ### BUILD.bazel — all e2e tests depend on `:analysis` unconditionally
 
 Most tests don't need it. Split into two list comprehensions: one with standard deps, one for tests needing `:analysis`.
