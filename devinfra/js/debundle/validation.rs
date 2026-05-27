@@ -29,6 +29,11 @@ pub struct FactorizationReport {
     pub linker_order: Vec<String>,
 }
 
+/// Validator's rendered projection of one unrealizable SCC. The
+/// in-memory primitive is [`crate::realizability::SccDiagnosis`]
+/// (typed `ModuleId`s + `OwnerEdgeId` evidence); this shape adds
+/// stringified module names plus the `evidence` and FAS `cut`
+/// decorations the bail-message renderer consumes.
 #[derive(Debug, Clone, Serialize)]
 pub struct CycleReport {
     pub modules: Vec<String>,

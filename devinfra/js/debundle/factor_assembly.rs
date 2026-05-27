@@ -31,6 +31,13 @@ pub struct ConflictingClaim {
 
 /// An atomic factor unit whose members the spec routes to two or
 /// more distinct destinations — unrealizable by construction.
+///
+/// Atom-level (binding members claimed across distinct destinations),
+/// not SCC-level. The module-quotient-SCC counterpart is
+/// [`crate::realizability::SccDiagnosis`]; the two share the
+/// "unrealizable, here's why" framing but operate on different
+/// domains (atomic unit membership vs. inter-module constraining
+/// cycles) and intentionally remain separate types.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize)]
 pub struct AtomicUnitConflict {
     /// Members sorted by `OwnerId`.

@@ -45,10 +45,24 @@ use crate::ids::ModuleId;
 use crate::partition::Partition;
 use crate::rollback_graph::{GraphMark, RollbackDiGraph};
 
-/// Multi-module SCC of the constraining-edge subgraph of the
-/// quotient. The presence of any such SCC violates clause 3.
+/// Canonical in-memory diagnosis of one offending module-quotient
+/// SCC. The presence of any such diagnosis on a
+/// [`RealizabilityVerdict`] violates clause 3 (multi-module SCC in
+/// the constraining-edge subgraph of the quotient).
+///
+/// This is the **primitive** shape: typed `ModuleId`s and typed
+/// `OwnerEdgeId` evidence, no rendering. Downstream projection types
+/// derive their fields from this:
+///
+/// - [`crate::validation::CycleReport`] — validator's rendered
+///   projection: stringified module names + `evidence` and FAS `cut`
+///   decorations.
+/// - [`crate::reports::schema::QuotientSccReport`] — wire-format
+///   projection: stringified module ids + edge ids. Covers every
+///   SCC of the dep graph (including realizable single-module ones),
+///   not only the offending diagnoses listed here.
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub struct UnrealizableScc {
+pub struct SccDiagnosis {
     /// Modules participating in the cycle.
     pub modules: BTreeSet<ModuleId>,
     /// Every constraining owner-edge whose endpoints both fall inside
@@ -73,7 +87,7 @@ pub struct CrossRebindEdge {
 /// clauses 2 and 3.
 #[derive(Debug, Clone, Default, Eq, PartialEq)]
 pub struct RealizabilityVerdict {
-    pub unrealizable_sccs: Vec<UnrealizableScc>,
+    pub unrealizable_sccs: Vec<SccDiagnosis>,
     pub cross_rebinds: Vec<CrossRebindEdge>,
     /// SCCs of the module-quotient graph (`build_module_quotient`),
     /// in `tarjan_scc` reverse-topological order. Populated only by
@@ -187,7 +201,7 @@ pub fn check_realizability(
         }
         owner_edges.sort();
         reported.insert(modules.clone());
-        verdict.unrealizable_sccs.push(UnrealizableScc {
+        verdict.unrealizable_sccs.push(SccDiagnosis {
             modules,
             constraining_owner_edges: owner_edges,
         });
@@ -254,7 +268,7 @@ pub fn check_realizability(
                 owner_edges.extend_from_slice(canonical.edges_for(*from, *to));
             }
             owner_edges.sort();
-            verdict.unrealizable_sccs.push(UnrealizableScc {
+            verdict.unrealizable_sccs.push(SccDiagnosis {
                 modules,
                 constraining_owner_edges: owner_edges,
             });
@@ -1034,7 +1048,7 @@ impl IncrementalQuotient {
             }
             let constraining_owner_edges = self.constraining_edges_inside(&modules);
             reported.insert(modules.clone());
-            verdict.unrealizable_sccs.push(UnrealizableScc {
+            verdict.unrealizable_sccs.push(SccDiagnosis {
                 modules,
                 constraining_owner_edges,
             });
@@ -1063,7 +1077,7 @@ impl IncrementalQuotient {
                     continue;
                 }
                 let constraining_owner_edges = self.tdz_constraining_edges(&tdz_pairs, None);
-                verdict.unrealizable_sccs.push(UnrealizableScc {
+                verdict.unrealizable_sccs.push(SccDiagnosis {
                     modules,
                     constraining_owner_edges,
                 });
@@ -1085,7 +1099,7 @@ impl IncrementalQuotient {
         if constraining_modules.len() >= 2 {
             let constraining_owner_edges = self.constraining_edges_inside(&constraining_modules);
             reported.insert(constraining_modules.clone());
-            verdict.unrealizable_sccs.push(UnrealizableScc {
+            verdict.unrealizable_sccs.push(SccDiagnosis {
                 modules: constraining_modules,
                 constraining_owner_edges,
             });
@@ -1106,7 +1120,7 @@ impl IncrementalQuotient {
                     .collect();
                 if !tdz_pairs.is_empty() {
                     let constraining_owner_edges = self.tdz_constraining_edges(&tdz_pairs, None);
-                    verdict.unrealizable_sccs.push(UnrealizableScc {
+                    verdict.unrealizable_sccs.push(SccDiagnosis {
                         modules: i_modules,
                         constraining_owner_edges,
                     });
@@ -1136,7 +1150,7 @@ impl IncrementalQuotient {
             let constraining_owner_edges =
                 self.constraining_edges_inside_with_overlay(&constraining_modules, overlay);
             reported.insert(constraining_modules.clone());
-            verdict.unrealizable_sccs.push(UnrealizableScc {
+            verdict.unrealizable_sccs.push(SccDiagnosis {
                 modules: constraining_modules,
                 constraining_owner_edges,
             });
@@ -1168,7 +1182,7 @@ impl IncrementalQuotient {
                 if !tdz_pairs.is_empty() {
                     let constraining_owner_edges =
                         self.tdz_constraining_edges(&tdz_pairs, Some(overlay));
-                    verdict.unrealizable_sccs.push(UnrealizableScc {
+                    verdict.unrealizable_sccs.push(SccDiagnosis {
                         modules: i_modules,
                         constraining_owner_edges,
                     });
