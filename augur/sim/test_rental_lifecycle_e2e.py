@@ -885,6 +885,19 @@ class TestRentalIncomeTaxation:
         # Property is frozen after sale - the next year's depreciation should not accrue.
         # Verify by counting depreciation accruals: only 12 months should have happened.
 
+    def test_property_sale_requires_home_value_series(self, san_francisco_location: Location):
+        scenario = self._sale_scenario(horizon=13, sale_month=12, cumulative_depreciation_eligible=True)
+        ctx = ExternalSeriesContext(
+            series_values=EXTERNAL_SERIES_VALUES_FRAME.empty(), series_events=EXTERNAL_SERIES_EVENTS_FRAME.empty()
+        )
+
+        with pytest.raises(
+            KeyError, match=r"property sale for property_id 'p1'.*home-value series 'home_value:san_francisco'"
+        ):
+            simulate_with_external_series(
+                scenario, external_series=ctx, rollout_count=1, locations={"san_francisco": san_francisco_location}
+            )
+
     def test_property_sale_at_gain_routes_recapture_and_ltcg(self, san_francisco_location: Location):
         """Sale at month 12 with home value appreciation. Horizon 24mo so year 1 tax accrual
         (month 23) captures the sale-year LTCG.

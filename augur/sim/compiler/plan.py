@@ -46,7 +46,7 @@ from augur.sim.compiler.transfers import TransferCompileOutput, compile_transfer
 from augur.sim.external_series import ExternalSeriesContext
 from augur.sim.jurisdictions import Jurisdiction
 from augur.sim.locations import Location
-from augur.sim.scenario import Scenario
+from augur.sim.scenario import PropertySaleEvent, Scenario
 
 
 @dataclass(frozen=True)
@@ -119,7 +119,7 @@ class CompiledSimulation:
     # owner has no tax profile. Used to route Schedule E depreciation deductions.
     property_owner_profile_index: NDArray[np.int64]
     # Series index of each property's home_value series, used at sale time to compute market
-    # value. NO_CODE if the series wasn't configured in the scenario.
+    # value. NO_CODE only for properties without sale events whose series was not supplied.
     property_home_value_series_index: NDArray[np.int64]
     lifecycle_events: LifecycleEventCompileOutput
     liabilities: LiabilityCompileOutput
@@ -173,6 +173,7 @@ def compile_simulation(
 
     series_ids = collect_series_ids(scenario, external_series)
     series_index_by_id = {series_id: idx for idx, series_id in enumerate(series_ids)}
+    _reject_missing_property_sale_home_values(scenario, external_series)
     external_values = external_values_cube(
         external_series, series_index_by_id=series_index_by_id, rollout_count=rollout_count, horizon_months=horizon
     )
@@ -353,3 +354,27 @@ def compile_simulation(
         pe_policies=pe_policies,
         liquidity_policies=liquidity_policies,
     )
+
+
+def _reject_missing_property_sale_home_values(scenario: Scenario, external_series: ExternalSeriesContext) -> None:
+    """Property sales need an explicit external home-value path for their location."""
+
+    if not scenario.property_lifecycle_events:
+        return
+    property_by_id = {property_.property_id: property_ for property_ in scenario.scheduled_property_purchases}
+    available_series_ids = {
+        str(series_id)
+        for series_id in external_series.series_values.select("series_id").unique().get_column("series_id").to_list()
+    }
+    for event in scenario.property_lifecycle_events:
+        if not isinstance(event, PropertySaleEvent):
+            continue
+        property_ = property_by_id[event.property_id]
+        required_series_id = home_value_series_id(property_.location_id)
+        if required_series_id in available_series_ids:
+            continue
+        msg = (
+            f"property sale for property_id {event.property_id!r} at month {event.month} requires external "
+            f"home-value series {required_series_id!r}"
+        )
+        raise KeyError(msg)

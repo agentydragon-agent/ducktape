@@ -14,36 +14,6 @@ Severity guide:
 
 ## Findings
 
-### P1: Missing home-value series makes property sales look like zero-value events
-
-Evidence:
-
-- `CompiledSimulation.property_home_value_series_index` falls back to `NO_CODE`
-  when the home-value series id is not present
-  (`augur/sim/compiler/plan.py:226-231`).
-- `_apply_lifecycle_events` sets `buffers.lifecycle.fired` before sale dispatch
-  (`augur/sim/engine/phases.py:352-358`).
-- `_apply_property_sale` returns early when the series index is missing, leaving
-  all sale amount buffers at zero and leaving the property active
-  (`augur/sim/engine/phases.py:429-433`).
-- The decoder turns every fired sale event into a property-sale row and reads the
-  zero-filled sale amount buffers (`augur/sim/codec/lifecycle.py:34-79`).
-
-Impact:
-
-A scenario can produce a sale marker with zero proceeds, zero payoff, zero gain,
-and no frozen property state rather than failing fast. That is especially easy
-for direct sim callers because generic series collection does not require
-`home_value:<location>` for property purchases/sales the way the product layer
-does (`augur/product/scenarios.py:128-138`).
-
-Recommendation:
-
-Make home-value series availability a compile-time requirement for every owned
-property that can be valued or sold. Raise a clear `KeyError`/`ValueError` with
-the expected series id instead of silently using `NO_CODE`. As a secondary guard,
-do not mark sale events fired until sale application succeeds.
-
 ### P1: Section 121 occupancy uses rented fraction as a proxy for primary residence
 
 Evidence:

@@ -359,16 +359,17 @@ def _apply_lifecycle_events(
         active_property_rollout = active_rollout & current.property_active[prop, :]
         if not active_property_rollout.any():
             continue
-        buffers.lifecycle.fired[i, active_property_rollout] = True
         if kind == LifecycleKind.FRACTION:
             new_fraction = float(plan.lifecycle_events.rented_fraction[i])
             current.property_rented_fraction[prop, active_property_rollout] = new_fraction
+            buffers.lifecycle.fired[i, active_property_rollout] = True
         elif kind == LifecycleKind.CAPITAL_IMPROVEMENT:
             amount = float(plan.lifecycle_events.amount[i])
             owner_cash_slot = int(plan.properties.buyer_slot[prop])
             if owner_cash_slot >= 0:
                 current.cash[owner_cash_slot, active_property_rollout] -= amount
             current.property_building_basis[prop, active_property_rollout] += amount
+            buffers.lifecycle.fired[i, active_property_rollout] = True
         elif kind == LifecycleKind.SALE:
             _apply_property_sale(
                 plan,
@@ -380,6 +381,7 @@ def _apply_lifecycle_events(
                 closing_cost_pct=float(plan.lifecycle_events.amount[i]),
                 active_rollout=active_property_rollout,
             )
+            buffers.lifecycle.fired[i, active_property_rollout] = True
 
 
 SECTION_121_LOOKBACK_MONTHS = 60
@@ -432,9 +434,9 @@ def _apply_property_sale(
 
     series_idx = int(plan.property_home_value_series_index[prop])
     if series_idx < 0:
-        # No home_value series available — skip sale (engineer error in scenario; should be
-        # surfaced at compile time but we tolerate gracefully here).
-        return
+        property_id = plan.strings[int(plan.properties.codes[prop])]
+        msg = f"property sale for property_id {property_id!r} reached engine without a home-value series"
+        raise RuntimeError(msg)
     base_value = plan.external_values[series_idx, :, 0]  # per-rollout, base month
     sale_value_series = plan.external_values[series_idx, :, month]  # per-rollout, sale month
     purchase_price = float(plan.properties.purchase_price[prop])
