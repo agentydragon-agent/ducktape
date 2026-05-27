@@ -184,19 +184,14 @@ py_library(
 )
 
 py_library(
-    name = "engine",
+    name = "enums",
+    srcs = ["enums.py"],
+    deps = ["@pypi//numpy"],
+)
+
+py_library(
+    name = "compiler",
     srcs = [
-        "buffers.py",
-        "codec/__init__.py",
-        "codec/assets.py",
-        "codec/helpers.py",
-        "codec/liabilities.py",
-        "codec/lifecycle.py",
-        "codec/obligations.py",
-        "codec/plan.py",
-        "codec/properties.py",
-        "codec/tax.py",
-        "codec/transfers.py",
         "compiler/__init__.py",
         "compiler/assets.py",
         "compiler/deductions.py",
@@ -210,24 +205,72 @@ py_library(
         "compiler/series.py",
         "compiler/tax.py",
         "compiler/transfers.py",
-        "engine/__init__.py",
-        "engine/phases.py",
-        "enums.py",
     ],
-    tags = ["no-mypy"],
     deps = [
-        ":events",
+        ":enums",
         ":external_series",
         ":jurisdictions",
         ":locations",
+        ":runtime",
+        ":scenario",
+        "//augur/model:series",
+        "@pypi//numpy",
+    ],
+)
+
+py_library(
+    name = "buffers",
+    srcs = ["buffers.py"],
+    deps = [
+        ":compiler",
+        "@pypi//numpy",
+    ],
+)
+
+py_library(
+    name = "codec",
+    srcs = [
+        "codec/__init__.py",
+        "codec/assets.py",
+        "codec/helpers.py",
+        "codec/liabilities.py",
+        "codec/lifecycle.py",
+        "codec/obligations.py",
+        "codec/plan.py",
+        "codec/properties.py",
+        "codec/tax.py",
+        "codec/transfers.py",
+    ],
+    deps = [
+        ":buffers",
+        ":compiler",
+        ":enums",
+        ":events",
+        ":external_series",
+        ":run",
+        ":state",
+        "@pypi//numpy",
+        "@pypi//polars",
+    ],
+)
+
+py_library(
+    name = "engine",
+    srcs = [
+        "engine/__init__.py",
+        "engine/phases.py",
+    ],
+    deps = [
+        ":buffers",
+        ":codec",
+        ":compiler",
+        ":enums",
+        ":external_series",
         ":run",
         ":runtime",
         ":scenario",
-        ":state",
         ":tensor_fifo",
-        "//augur/model:series",
         "@pypi//numpy",
-        "@pypi//polars",
     ],
 )
 
