@@ -201,27 +201,18 @@ pub(super) fn materialize_logical_chunk(
     };
     let stage_one = time_phase!(timings, "compute_stage_one_analysis", {
         compute_stage_one_analysis(
+            chunk_id,
             &runtime_ast.module,
             &analysis_hints,
             Some(&source_path),
             |span| line_index.line_range_for_span(span),
             owner_graph_options,
-        )
+        )?
     });
     let StageOneAnalysis {
         fact_analysis: analysis,
         owner_graph_and_units: precomputed,
     } = stage_one;
-    report_redundant_hints_to_stderr(chunk_id, &analysis);
-    if let Some(ord) = analysis.top_level_await {
-        anyhow::bail!(
-            "materialize_logical_modules: chunk {chunk_id} has top-level `await` \
-             at statement #{ordinal} (TLA); the debundler's realizability theorem \
-             does not cover async modules (docs/design.md A2). Wrap the awaited code \
-             in an async function or rewrite as a synchronous initialization.",
-            ordinal = ord.0,
-        );
-    }
     time_phase!(timings, "fold_rebind_atomic_units", {
         builder.fold_rebind_units(&precomputed);
     });
@@ -558,41 +549,6 @@ fn build_final_module_report(
             }
         })
         .collect()
-}
-
-/// Emit one stderr warning per spec hint the analyzer inferred
-/// automatically. Surfaced every build so spec authors are nudged to
-/// prune load-free hints — every such hint is an extra trust
-/// assertion the validator can't re-verify, and the shrinking trust
-/// surface is the point of recursive purity inference.
-fn report_redundant_hints_to_stderr(chunk_id: &str, analysis: &::analysis::ChunkFactAnalysis) {
-    for hint in &analysis.redundant_purity_hints {
-        eprintln!(
-            "warning: chunk {chunk_id}: `purity: pure` hint on binding `{binding}` is redundant — \
-             the analyzer infers {reason} for this binding without the hint and the override is a no-op. \
-             Remove the hint from the spec.",
-            binding = hint.binding_name,
-            reason = match hint.reason {
-                RedundantPurityReason::InferredPureFunction =>
-                    "pure (the function body classifies Pure by recursive analysis)",
-                RedundantPurityReason::InferredPlainDataBinding =>
-                    "PlainData (chunk-local const/let plain literal with no chunk-wide writes through the binding)",
-            },
-        );
-    }
-    for hint in &analysis.redundant_pure_member_hints {
-        eprintln!(
-            "warning: chunk {chunk_id}: `pure_members: [{property}]` on binding `{binding}` \
-             is redundant — the analyzer infers {reason} without the hint. \
-             Remove the entry from the spec.",
-            binding = hint.binding_name,
-            property = hint.property,
-            reason = match hint.reason {
-                RedundantPureMemberReason::WhitelistedStaticCall =>
-                    "pure via PURE_STATIC_CALLS (already on the global-receiver whitelist)",
-            },
-        );
-    }
 }
 
 fn build_directory_dependency_facts(
