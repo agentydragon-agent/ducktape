@@ -2530,6 +2530,40 @@ def test_real_estate_purchase_mortgage_and_property_tax_numerics(san_francisco_l
     assert result.events_log.transfers.filter(pl.col("cause_id") == "sf_home_property_tax_m1").height == 1
 
 
+def test_real_estate_purchase_requires_known_location(san_francisco_location: Location) -> None:
+    scenario = Scenario(
+        agents=[Agent(agent_id="alice"), Agent(agent_id="seller")],
+        initial_cash=[
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=600_000.0),
+            InitialAccountBalance(agent_id="seller", account_id="checking", balance_usd=0.0),
+        ],
+        scheduled_property_purchases=[
+            ScheduledPropertyPurchase(
+                month=0,
+                cause_id="alice_buys_typo_home",
+                property_id="typo_home",
+                location_id="san_francsico",
+                buyer_agent_id="alice",
+                buyer_account_id="checking",
+                seller_agent_id="seller",
+                purchase_price_usd=500_000.0,
+                down_payment_usd=500_000.0,
+            )
+        ],
+        tax_profiles=[],
+        horizon_months=1,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            "scheduled property purchase 'alice_buys_typo_home' references unknown location_id "
+            "'san_francsico'; known location ids: 'san_francisco'"
+        ),
+    ):
+        simulate(scenario, rollout_count=1, locations={"san_francisco": san_francisco_location})
+
+
 def test_property_tax_falls_back_to_location_rate_when_policy_rate_unset(san_francisco_location: Location) -> None:
     """When PropertyTaxPolicy.annual_tax_rate is None the engine reads the
     rate from the location passed to simulate(). Verifies the location-fallback path."""

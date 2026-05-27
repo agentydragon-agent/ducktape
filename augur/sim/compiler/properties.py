@@ -117,8 +117,14 @@ def compile_properties_and_liabilities(
         prop_id[idx] = strings.require(purchase.property_id)
         location_id[idx] = strings.require(purchase.location_id)
         location = locations.get(purchase.location_id)
-        location_tax_rate[idx] = 0.0 if location is None else float(location.annual_property_tax_rate)
-        special_assessment_annual_usd[idx] = 0.0 if location is None else float(location.annual_special_assessment_usd)
+        if location is None:
+            known_location_ids = ", ".join(repr(location_id) for location_id in sorted(locations)) or "<none>"
+            raise ValueError(
+                f"scheduled property purchase {purchase.cause_id!r} references unknown location_id "
+                f"{purchase.location_id!r}; known location ids: {known_location_ids}"
+            )
+        location_tax_rate[idx] = float(location.annual_property_tax_rate)
+        special_assessment_annual_usd[idx] = float(location.annual_special_assessment_usd)
         initial_assessed_value[idx] = float(purchase.purchase_price_usd)
         month_array[idx] = int(purchase.month)
         buyer_agent[idx] = strings.require(purchase.buyer_agent_id)
