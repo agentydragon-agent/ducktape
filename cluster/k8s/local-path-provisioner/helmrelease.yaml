@@ -37,15 +37,23 @@ spec:
       - node: DEFAULT_PATH_FOR_NON_LISTED_NODES
         paths:
           - /var/local-path-provisioner
-      # OVH Kimsufi workers carve a dedicated XFS partition on /dev/sdb via
+      # OVH Kimsufi nodes carve a dedicated XFS partition on /dev/sdb via
       # Talos UserVolumeConfig (cluster/terraform/main/ovh-nodes.tf), mounted
       # at /var/mnt/seaweedfs-data. The local-path-ovh StorageClass
       # (allowedTopologies zone=hil-ovh) is what routes SeaweedFS volume
       # server PVCs here.
+      #
+      # The kimsufi CP gets the same UserVolumeConfig as the workers, so its
+      # /dev/sdb is available too — list it here so its 2TB HDD becomes a
+      # third candidate node for the volume servers (replication=001 across
+      # 3 hosts instead of 2).
       - node: talos-kimsufi-worker-0
         paths:
           - /var/mnt/seaweedfs-data/local-path
       - node: talos-kimsufi-worker-1
+        paths:
+          - /var/mnt/seaweedfs-data/local-path
+      - node: talos-kimsufi-cp-0
         paths:
           - /var/mnt/seaweedfs-data/local-path
     # Configure helper pods to run in local-path-storage namespace (privileged)

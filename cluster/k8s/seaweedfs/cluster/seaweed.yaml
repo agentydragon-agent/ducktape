@@ -46,7 +46,12 @@ spec:
       topology.kubernetes.io/zone: hil-ovh
 
   volume:
-    replicas: 2 # one per kimsufi node
+    # One per kimsufi host: 2 workers + 1 CP. The CP has the same KS-5
+    # hardware (8 CPU, 32 GiB, 2x 2TB HDD in JBOD) and its /dev/sdb is
+    # already mounted at /var/mnt/seaweedfs-data via Talos UserVolumeConfig
+    # (cluster/terraform/main/ovh-nodes.tf). With replication=001 across
+    # 3 hosts we can lose one node and still have 2 surviving copies.
+    replicas: 3
     requests:
       storage: 1800Gi # leaves headroom on the 2 TB /dev/sdb
     storageClassName: local-path-ovh
@@ -55,10 +60,17 @@ spec:
     metricsPort: 9325
     nodeSelector:
       topology.kubernetes.io/zone: hil-ovh
-    # Hard anti-affinity so the two volume servers always sit on different
-    # kimsufi nodes — that's what makes replication=001 actually no-SPOF.
-    # The StatefulSet would otherwise co-locate both volumes on whichever
-    # node the scheduler picks first (verified live).
+    # Tolerate the CP taint so one volume server can land on the kimsufi
+    # CP. Volume I/O is sequential and on a separate disk (sdb) from etcd
+    # (sda), so contention with the control plane is minimal.
+    tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+    # Hard anti-affinity so each volume server sits on a different kimsufi
+    # node — that's what makes replication=001 actually no-SPOF. The
+    # StatefulSet would otherwise co-locate replicas on whichever node the
+    # scheduler picks first (verified live).
     affinity:
       podAntiAffinity:
         requiredDuringSchedulingIgnoredDuringExecution:
@@ -97,7 +109,7 @@ spec:
       topology.kubernetes.io/zone: hil-ovh
 
   s3:
-    replicas: 2 # stateless S3 gateway — safe to scale across both kimsufi nodes
+    replicas: 2 # stateless S3 gateway — scales freely across the 3 kimsufi hosts
     configSecret:
       name: seaweedfs-s3-config
       key: seaweedfs_s3_config.json
@@ -114,3 +126,9 @@ spec:
       - "-ip.bind=0.0.0.0"
     nodeSelector:
       topology.kubernetes.io/zone: hil-ovh
+    # Allow the kimsufi CP as a scheduling target so s3 can spread across
+    # all 3 hosts when desirable. Stateless gateway — no I/O contention.
+    tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
