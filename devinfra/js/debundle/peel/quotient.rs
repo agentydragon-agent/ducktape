@@ -830,7 +830,7 @@ impl QuotientGraph {
     /// matches the pre-PK behavior bit-for-bit and is only taken
     /// when the seed produces a non-realizable partition (rare on
     /// well-formed corpora).
-    fn merge_creates_new_constraining_cycle(&self, c1: ClassId, c2: ClassId) -> bool {
+    fn merge_creates_new_constraining_cycle(&mut self, c1: ClassId, c2: ClassId) -> bool {
         if self.topo_ord.is_dag() {
             return self.topo_ord.would_create_cycle(c1, c2, &self.out_edges);
         }

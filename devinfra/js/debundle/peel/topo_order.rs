@@ -162,6 +162,22 @@ pub(super) struct TopoOrder {
     /// driven mutations that bypass `apply_contract`). Cleared back
     /// to `true` by a successful re-init.
     is_dag: bool,
+    /// Per-DFS visited marker. `visited_epoch[c.0] == current_epoch`
+    /// iff `c` was reached in the current `would_create_cycle` call.
+    /// Bump `current_epoch` on each call instead of clearing this
+    /// vector — that turns the per-call visited-set allocation into
+    /// a single u32 bump.
+    ///
+    /// Sized to `ord.len()` (the `ClassId` index space) at
+    /// `init_from_dag`; never grows after that (the index space is
+    /// fixed by the kernel construction).
+    visited_epoch: Vec<u32>,
+    /// Monotonically increasing epoch counter for `visited_epoch`.
+    /// Bumped at the top of every `would_create_cycle`. When it would
+    /// overflow `u32::MAX`, the vector is zeroed and the counter is
+    /// reset to 1 (a class with `visited_epoch == 0` and
+    /// `current_epoch == 1` is unvisited, preserving the invariant).
+    current_epoch: u32,
 }
 
 impl TopoOrder {
@@ -172,6 +188,8 @@ impl TopoOrder {
             ord: Vec::new(),
             pos_to_class: Vec::new(),
             is_dag: false,
+            visited_epoch: Vec::new(),
+            current_epoch: 0,
         }
     }
 
@@ -203,6 +221,13 @@ impl TopoOrder {
     ) {
         self.ord = vec![DEAD; num_classes];
         self.pos_to_class = Vec::new();
+        // Resize the epoch buffer to match the ClassId index space
+        // and zero it. Resetting the epoch to 0 means the next
+        // would_create_cycle call bumps to 1 and any class that still
+        // carries 0 reads as unvisited, which is what we want.
+        self.visited_epoch.clear();
+        self.visited_epoch.resize(num_classes, 0);
+        self.current_epoch = 0;
         // Kahn's: start with nodes that have in-degree 0 (among live
         // classes), pop in any order, decrement successors' in-degree.
         let live: Vec<ClassId> = live.collect();
@@ -292,7 +317,7 @@ impl TopoOrder {
     /// skip the direct edge), pruned to nodes with `ord ≤ ord[hi]`.
     /// If `hi` is reached, the merge would create a cycle.
     pub(super) fn would_create_cycle(
-        &self,
+        &mut self,
         c1: ClassId,
         c2: ClassId,
         out_edges: &[FxHashMap<ClassId, EdgeState>],
@@ -306,17 +331,30 @@ impl TopoOrder {
             return false;
         }
         let (lo, hi, hi_ord) = if o1 < o2 { (c1, c2, o2) } else { (c2, c1, o1) };
+        // Bump the epoch. The visited check is "is
+        // visited_epoch[c.0] == current_epoch?". On wraparound, zero
+        // the buffer and reset to 1 so the invariant ("0 means
+        // unvisited") still holds.
+        if self.current_epoch == u32::MAX {
+            for slot in &mut self.visited_epoch {
+                *slot = 0;
+            }
+            self.current_epoch = 1;
+        } else {
+            self.current_epoch += 1;
+        }
+        let epoch = self.current_epoch;
         // Seed the DFS with `lo`'s out-neighbors, EXCLUDING `hi`
         // itself. A direct edge `lo → hi` is just a self-loop after
         // merge, not a new cycle.
-        let mut visited: BTreeSet<ClassId> = BTreeSet::new();
         let mut stack: Vec<ClassId> = Vec::new();
         for n in constraining_outs(out_edges, lo) {
             if n == lo || n == hi {
                 continue;
             }
             let on = self.ord_of(n);
-            if on <= hi_ord && visited.insert(n) {
+            if on <= hi_ord && self.visited_epoch[n.0] != epoch {
+                self.visited_epoch[n.0] = epoch;
                 stack.push(n);
             }
         }
@@ -331,7 +369,8 @@ impl TopoOrder {
                     return true;
                 }
                 let on = self.ord_of(n);
-                if on <= hi_ord && visited.insert(n) {
+                if on <= hi_ord && self.visited_epoch[n.0] != epoch {
+                    self.visited_epoch[n.0] = epoch;
                     stack.push(n);
                 }
             }
@@ -1085,6 +1124,44 @@ mod tests {
                 assert_pos_to_class_inverse(&t, &alive);
             }
         }
+    }
+
+    #[test]
+    fn epoch_wraparound_resets_visited_buffer() {
+        // Drive `would_create_cycle` across the u32::MAX boundary by
+        // injecting `current_epoch = u32::MAX - 1` and calling twice.
+        // The first call sets the epoch to u32::MAX; the second
+        // triggers the wraparound branch (zero the buffer, reset to
+        // 1).
+        //
+        // The wraparound branch is the only one that can produce
+        // wrong answers if implemented incorrectly: without zeroing,
+        // any class whose visited_epoch happens to equal 1 (the post-
+        // wrap epoch) from a long-ago DFS would be erroneously pruned.
+        // We pre-seed a stale "epoch 1" marker on an intermediate
+        // class and verify the post-wrap call still walks through it.
+        let (out, in_) = adj(5, &[(0, 1), (1, 2), (2, 3), (0, 4)]);
+        let mut t = TopoOrder::empty();
+        t.init_from_dag(5, (0..5).map(cid), &out, &in_);
+        // Pre-seed: stale "epoch 1" marker on class 1 (an
+        // intermediate on the 0→1→2→3 path). After wraparound the
+        // buffer must be zeroed, otherwise the DFS for
+        // would_create_cycle(0, 3) at post-wrap epoch=1 would
+        // wrongly prune class 1 and miss the cycle.
+        t.current_epoch = u32::MAX - 1;
+        t.visited_epoch[cid(1).0] = 1;
+        // First call (epoch bumps to u32::MAX): merge 0 and 3 is a
+        // cycle via 0→1→2→3.
+        assert!(t.would_create_cycle(cid(0), cid(3), &out));
+        assert_eq!(t.current_epoch, u32::MAX);
+        // Second call triggers wraparound. The stale "epoch 1"
+        // marker on class 1 from the pre-seed must be cleared,
+        // otherwise the answer would flip to false (incorrect).
+        assert!(t.would_create_cycle(cid(0), cid(3), &out));
+        assert_eq!(t.current_epoch, 1);
+        // And the answer for a known-safe pair stays false (class 4
+        // is isolated except for the direct 0→4 edge).
+        assert!(!t.would_create_cycle(cid(1), cid(4), &out));
     }
 
     /// Reachable through at least one intermediate node (path length
