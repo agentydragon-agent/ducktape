@@ -182,7 +182,7 @@ mod tests {
         assert_eq!(stage_one.fact_analysis.facts.len(), 3);
         assert!(stage_one.fact_analysis.top_level_await.is_none());
 
-        let owner_count = stage_one.owner_graph_and_units.owner_graph.nodes.len();
+        let owner_count = stage_one.owner_graph_and_units.owner_graph.num_nodes();
         assert!(
             owner_count >= 2,
             "owner graph must hold at least one node per declared \

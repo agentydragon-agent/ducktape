@@ -258,13 +258,13 @@ pub struct OwnerId(pub usize);
 /// stable indices into edges; this collapses them.
 #[derive(Debug, Clone, Default)]
 pub struct OwnerGraph {
-    pub nodes: Vec<OwnerNode>,
-    pub edges: Vec<OwnerEdge>,
+    nodes: Vec<OwnerNode>,
+    edges: Vec<OwnerEdge>,
     /// CSR adjacency by source owner. `out_edges[owner.0]` is a list
     /// of `OwnerEdgeId` indices into `edges`.
-    pub out_edges: Vec<Vec<OwnerEdgeId>>,
+    out_edges: Vec<Vec<OwnerEdgeId>>,
     /// CSR adjacency by target owner.
-    pub in_edges: Vec<Vec<OwnerEdgeId>>,
+    in_edges: Vec<Vec<OwnerEdgeId>>,
     /// CSR-style "edges referencing this owner as their at-init
     /// callee", indexed by owner index. Empty for owners that no edge
     /// references via [`EdgeRole::PromotedAtInit`]. Lets
@@ -272,7 +272,7 @@ pub struct OwnerGraph {
     /// `O(|edges of that callee|)` instead of scanning the full edge
     /// list per call (a `verdict_with_overlay_touching` per-candidate
     /// hot path on gaffer-scale inputs).
-    pub callee_edges: Vec<Vec<OwnerEdgeId>>,
+    callee_edges: Vec<Vec<OwnerEdgeId>>,
 }
 
 #[derive(Debug, Clone)]
@@ -299,6 +299,27 @@ impl OwnerGraph {
 
     pub fn iter_nodes(&self) -> impl Iterator<Item = &OwnerNode> {
         self.nodes.iter()
+    }
+
+    /// Total owner-node count. Callers that need to size a per-owner
+    /// vector (e.g. partition slots, unit assignments) should use this
+    /// instead of reaching into a private field.
+    pub fn num_nodes(&self) -> usize {
+        self.nodes.len()
+    }
+
+    /// Total owner-edge count.
+    pub fn num_edges(&self) -> usize {
+        self.edges.len()
+    }
+
+    /// Owner-edge row by `OwnerEdgeId`. The CSR adjacency the graph
+    /// exposes (`out_edges_of` / `in_edges_of` / `callee_edges_of`)
+    /// returns ids; callers dereference those ids back to rows
+    /// through this accessor instead of indexing the private edge
+    /// table directly.
+    pub fn edge(&self, id: OwnerEdgeId) -> &OwnerEdge {
+        &self.edges[id.0]
     }
 
     /// Edges originating at `owner`.
@@ -1135,7 +1156,7 @@ pub(crate) fn partition_endpoints(
 pub fn build_module_quotient(owner_graph: &OwnerGraph, partition: &Partition) -> ModuleQuotient {
     let mut graph = ModuleQuotient(DiGraphMap::new());
     let mut seen_side_effect_module_pairs = BTreeSet::<(ModuleId, ModuleId)>::new();
-    for edge in &owner_graph.edges {
+    for edge in owner_graph.iter_edges() {
         let Some((from, to)) = partition_endpoints(edge, partition, EndpointView::Lenient) else {
             continue;
         };
@@ -1191,7 +1212,7 @@ pub fn chunk_constraining_module_edges(
     let mut edges: BTreeMap<(ModuleId, ModuleId), Vec<OwnerEdgeId>> = BTreeMap::new();
     let mut i_successors: BTreeMap<ModuleId, BTreeSet<ModuleId>> = BTreeMap::new();
     let mut seen_sequenced_pairs: BTreeSet<(ModuleId, ModuleId)> = BTreeSet::new();
-    for edge in &owner_graph.edges {
+    for edge in owner_graph.iter_edges() {
         if owner_graph.node(edge.from).is_none() || owner_graph.node(edge.to).is_none() {
             continue;
         }
@@ -1664,7 +1685,9 @@ mod edge_role_wire_format_tests {
         AtomicGraphReport, EdgeRoleReport, OwnerGraphEdgeReport, OwnerGraphNodeReport,
         OwnerGraphQuotientReport, OwnerGraphReport,
     };
-    use crate::{DepKind, EdgeRole, OwnerGraph, OwnerId, StatementKind, StatementOrdinal};
+    use crate::{
+        DepKind, EdgeRole, OwnerEdgeId, OwnerGraph, OwnerId, StatementKind, StatementOrdinal,
+    };
 
     fn node(id: &str, ordinal: usize) -> OwnerGraphNodeReport {
         OwnerGraphNodeReport {
@@ -1712,8 +1735,8 @@ mod edge_role_wire_format_tests {
             },
         };
         let (graph, _) = OwnerGraph::from_report(&report, &[]);
-        assert_eq!(graph.edges.len(), 1);
-        assert_eq!(graph.edges[0].reason.role(), EdgeRole::Direct);
+        assert_eq!(graph.num_edges(), 1);
+        assert_eq!(graph.edge(OwnerEdgeId(0)).reason.role(), EdgeRole::Direct);
     }
 
     /// Promoted edges carry an `EdgeRoleReport::PromotedAtInit` on
@@ -1749,9 +1772,9 @@ mod edge_role_wire_format_tests {
             },
         };
         let (graph, _) = OwnerGraph::from_report(&report, &[]);
-        assert_eq!(graph.edges.len(), 1);
+        assert_eq!(graph.num_edges(), 1);
         assert_eq!(
-            graph.edges[0].reason.role(),
+            graph.edge(OwnerEdgeId(0)).reason.role(),
             EdgeRole::PromotedAtInit {
                 callee_owner: OwnerId(2),
             }

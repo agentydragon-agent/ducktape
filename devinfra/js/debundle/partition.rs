@@ -29,7 +29,7 @@ pub struct Partition {
 }
 
 impl Partition {
-    /// Build a partition keyed by `owner_graph.nodes.len()` slots,
+    /// Build a partition keyed by `owner_graph.num_nodes()` slots,
     /// each defaulting to `default_destination`. Callers pass the
     /// chunk's residual logical-module id (synthesized by the
     /// materializer); MiniFactors callers can pass any placeholder
@@ -37,7 +37,7 @@ impl Partition {
     /// synthesizer before the partition is consulted.
     pub fn new(owner_graph: &OwnerGraph, default_destination: ModuleId) -> Self {
         Self {
-            of: vec![default_destination; owner_graph.nodes.len()],
+            of: vec![default_destination; owner_graph.num_nodes()],
             residual: default_destination,
         }
     }
@@ -65,7 +65,7 @@ impl Partition {
         default_destination: ModuleId,
     ) -> Self {
         let mut p = Self::new(owner_graph, default_destination);
-        for node in &owner_graph.nodes {
+        for node in owner_graph.iter_nodes() {
             for binding_id in &node.declared {
                 if let Some(module) = binding_assignment.get(binding_id) {
                     p.of[node.id.0] = *module;

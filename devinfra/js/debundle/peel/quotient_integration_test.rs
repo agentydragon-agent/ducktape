@@ -1985,7 +1985,7 @@ fn owner_graph_and_partition_from_spec(
             });
     }
     // Owner→ModuleId: by default residual; spec modules override.
-    let mut of: Vec<analysis::ModuleId> = vec![residual; owner_graph.nodes.len()];
+    let mut of: Vec<analysis::ModuleId> = vec![residual; owner_graph.num_nodes()];
     for module in spec {
         let mid = spec_module_ids[module.module_id.as_str()];
         for owner_id in &module.owner_ids {

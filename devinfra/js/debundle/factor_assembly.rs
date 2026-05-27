@@ -99,8 +99,8 @@ fn compute_owner_claims(
     bindings: &HashMap<Id, BindingKind>,
     logical_modules: &[LogicalModule],
 ) -> Vec<Option<ModuleId>> {
-    let mut claims = vec![None; owner_graph.nodes.len()];
-    for node in &owner_graph.nodes {
+    let mut claims = vec![None; owner_graph.num_nodes()];
+    for node in owner_graph.iter_nodes() {
         for binding_id in &node.declared {
             let claim = bindings.get(binding_id).and_then(|kind| match kind {
                 BindingKind::Owned { owner: dest } => Some(*dest),
@@ -116,8 +116,7 @@ fn compute_owner_claims(
         let dest = ModuleId(LogicalModuleIndex(idx));
         for ordinal in &module.anonymous_statement_ordinals {
             if let Some(node) = owner_graph
-                .nodes
-                .iter()
+                .iter_nodes()
                 .find(|n| n.statement_ordinal.0 == *ordinal)
             {
                 claims[node.id.0] = Some(dest);

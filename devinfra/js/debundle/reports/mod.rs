@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use rayon::prelude::*;
 use swc_ecma_ast::Id;
 
-use crate::graph::{EdgeRole, OwnerEdge};
+use crate::graph::EdgeRole;
 use crate::reports::schema::LineRange;
 use crate::{
     AtomicGraphReport, AtomicUnitEdgeReport, AtomicUnitReport, BindingReport, ChunkFactorization,
@@ -22,8 +22,6 @@ struct AtomicEdgeAccumulator {
 }
 
 pub(crate) fn build_owner_graph_report(factorization: &ChunkFactorization) -> OwnerGraphReport {
-    let owner_edges = &factorization.analysis.owner_graph.edges;
-
     // The three sub-reports below — `(quotient_nodes, quotient_edges)`,
     // `nodes` + `edges`, and `atomic_graph` — share no mutable state
     // and individually account for tens of seconds on chunks with
@@ -35,13 +33,13 @@ pub(crate) fn build_owner_graph_report(factorization: &ChunkFactorization) -> Ow
         || {
             rayon::join(
                 || build_quotient_node_reports(factorization),
-                || build_quotient_edge_reports(factorization, owner_edges),
+                || build_quotient_edge_reports(factorization),
             )
         },
         || {
             rayon::join(
-                || build_owner_nodes_and_edges(factorization, owner_edges),
-                || build_atomic_graph_report(factorization, owner_edges),
+                || build_owner_nodes_and_edges(factorization),
+                || build_atomic_graph_report(factorization),
             )
         },
     );
@@ -67,12 +65,10 @@ pub(crate) fn build_owner_graph_report(factorization: &ChunkFactorization) -> Ow
 /// the partition-of()/export-name-for()/etc.\ touches paired in cache.
 fn build_owner_nodes_and_edges(
     factorization: &ChunkFactorization,
-    owner_edges: &[OwnerEdge],
 ) -> (Vec<OwnerGraphNodeReport>, Vec<OwnerGraphEdgeReport>) {
     let partition = &factorization.partition;
-    let nodes = factorization
-        .analysis
-        .owner_graph
+    let owner_graph = &factorization.analysis.owner_graph;
+    let nodes = owner_graph
         .iter_nodes()
         .map(|node| OwnerGraphNodeReport {
             id: owner_key(node.id),
@@ -84,8 +80,8 @@ fn build_owner_nodes_and_edges(
             destination: module_report_ref(factorization, partition.of(node.id)),
         })
         .collect();
-    let edges = owner_edges
-        .iter()
+    let edges = owner_graph
+        .iter_edges()
         .map(|edge| OwnerGraphEdgeReport {
             id: edge.id.report_key(),
             source: owner_key(edge.from),
@@ -136,7 +132,6 @@ fn build_quotient_node_reports(factorization: &ChunkFactorization) -> Vec<Module
 
 pub(crate) fn build_quotient_edge_reports(
     factorization: &ChunkFactorization,
-    owner_edges: &[OwnerEdge],
 ) -> Vec<QuotientEdgeReport> {
     // Use a `HashMap` for the per-(from,to) accumulator — quotient
     // edges count in the tens of thousands and `BTreeMap::entry` is
@@ -147,11 +142,12 @@ pub(crate) fn build_quotient_edge_reports(
     // variant) so the final `edge_kinds: Vec<DepKind>` stays sorted
     // without a per-pair sort.
     let partition = &factorization.partition;
+    let owner_graph = &factorization.analysis.owner_graph;
     let mut accum: std::collections::HashMap<(ModuleId, ModuleId), QuotientEdgeAccumulator> =
-        std::collections::HashMap::with_capacity(owner_edges.len());
+        std::collections::HashMap::with_capacity(owner_graph.num_edges());
     let mut seen_side_effect_module_pairs: std::collections::HashSet<(ModuleId, ModuleId)> =
         std::collections::HashSet::new();
-    for edge in owner_edges {
+    for edge in owner_graph.iter_edges() {
         // Same partition view every other quotient consumer uses; see
         // `partition_endpoints` invariant doc.
         let Some((from, to)) =
@@ -242,16 +238,14 @@ fn build_atomic_unit_report(
     }
 }
 
-fn build_atomic_graph_report(
-    factorization: &ChunkFactorization,
-    owner_edges: &[OwnerEdge],
-) -> AtomicGraphReport {
+fn build_atomic_graph_report(factorization: &ChunkFactorization) -> AtomicGraphReport {
+    let owner_graph = &factorization.analysis.owner_graph;
     let mut units = factorization.atomic_units.clone();
     units.sort_by_key(|unit| unit.members.iter().copied().min().map(|owner| owner.0));
     // `unit_by_owner` is lookup-only after construction — a `HashMap`
     // is O(1) per get vs `BTreeMap`'s O(log n) and the per-edge loop
     // below hits it 2× per edge across ~26K edges on big chunks.
-    let owner_count = factorization.analysis.owner_graph.nodes.len();
+    let owner_count = owner_graph.num_nodes();
     let mut unit_by_owner: Vec<Option<usize>> = vec![None; owner_count];
     for (unit_idx, unit) in units.iter().enumerate() {
         for owner in &unit.members {
@@ -277,7 +271,7 @@ fn build_atomic_graph_report(
     // sort.
     let mut accum: std::collections::HashMap<(usize, usize), AtomicEdgeAccumulator> =
         std::collections::HashMap::new();
-    for edge in owner_edges {
+    for edge in owner_graph.iter_edges() {
         if edge.reason.kind == DepKind::LazyUse {
             continue;
         }

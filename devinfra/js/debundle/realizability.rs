@@ -142,7 +142,7 @@ pub fn check_realizability(
     // Cross-destination rebinds are a separate clause-2 violation and
     // not part of the I-graph. Collect them in a single pass over
     // owner edges; the canonical edge set handles everything else.
-    for edge in &owner_graph.edges {
+    for edge in owner_graph.iter_edges() {
         if owner_graph.node(edge.from).is_none() || owner_graph.node(edge.to).is_none() {
             continue;
         }
@@ -861,7 +861,7 @@ impl IncrementalQuotient {
             cached_base_i_successors: RefCell::new(None),
             cached_base_constraining_pairs: RefCell::new(None),
         };
-        for edge in &owner_graph.edges {
+        for edge in owner_graph.iter_edges() {
             quotient.add_current_edge(edge, partition, true);
         }
         quotient
@@ -1331,7 +1331,7 @@ impl IncrementalQuotient {
         let impacted_edges = impacted_owner_edges(owner_graph, &impacted_owners);
         let mut overlay = QuotientOverlay::default();
         for edge_id in impacted_edges {
-            let edge = &owner_graph.edges[edge_id.0];
+            let edge = owner_graph.edge(edge_id);
             let current = edge_contribution(edge, partition.of(edge.from), partition.of(edge.to));
             let next_from = if owners.contains(&edge.from) {
                 to
@@ -1511,7 +1511,7 @@ impl RealizabilityIndex {
                 let impacted_edges = impacted_owner_edges(owner_graph, &owners);
                 let (i_graph_mark, constraining_graph_mark) = self.quotient.marks();
                 for edge_id in &impacted_edges {
-                    let edge = &owner_graph.edges[edge_id.0];
+                    let edge = owner_graph.edge(*edge_id);
                     self.quotient
                         .remove_current_edge(edge, &self.partition, true);
                 }
@@ -1525,7 +1525,7 @@ impl RealizabilityIndex {
                     prior.push((owner, was));
                 }
                 for edge_id in &impacted_edges {
-                    let edge = &owner_graph.edges[edge_id.0];
+                    let edge = owner_graph.edge(*edge_id);
                     self.quotient.add_current_edge(edge, &self.partition, true);
                 }
                 JournalEntry {
@@ -1557,7 +1557,7 @@ impl RealizabilityIndex {
             .pop()
             .expect("journal must be non-empty for undo");
         for edge_id in &entry.impacted_edges {
-            let edge = &owner_graph.edges[edge_id.0];
+            let edge = owner_graph.edge(*edge_id);
             self.quotient
                 .remove_current_edge(edge, &self.partition, false);
         }
@@ -1565,7 +1565,7 @@ impl RealizabilityIndex {
             self.partition.set(owner, prior);
         }
         for edge_id in &entry.impacted_edges {
-            let edge = &owner_graph.edges[edge_id.0];
+            let edge = owner_graph.edge(*edge_id);
             self.quotient.add_current_edge(edge, &self.partition, false);
         }
         self.quotient
@@ -2074,7 +2074,7 @@ mod tests {
         index.undo(&owner_graph, handle);
         // After undo: matches the baseline exactly.
         assert!(index.verdict().is_realizable());
-        for owner_id in 0..owner_graph.nodes.len() {
+        for owner_id in 0..owner_graph.num_nodes() {
             assert_eq!(
                 index.partition().of(OwnerId(owner_id)),
                 baseline.of(OwnerId(owner_id)),
@@ -2274,7 +2274,7 @@ mod tests {
             normalize_verdict(index.verdict()),
             normalize_verdict(check_realizability(&owner_graph, &explicit)),
         );
-        for owner in 0..owner_graph.nodes.len() {
+        for owner in 0..owner_graph.num_nodes() {
             assert_eq!(
                 index.partition().of(OwnerId(owner)),
                 baseline.of(OwnerId(owner))

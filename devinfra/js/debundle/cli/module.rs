@@ -650,7 +650,7 @@ fn gate_post_edit_partition(owner_graph_path: &Path, post_spec: &PostEditSpec) -
     // module's chunk-relative path as its `module_name` callback
     // output.
     let residual = ModuleId::logical(0);
-    let mut of: Vec<ModuleId> = vec![residual; owner_graph.nodes.len()];
+    let mut of: Vec<ModuleId> = vec![residual; owner_graph.num_nodes()];
     let mut module_label_by_id: HashMap<ModuleId, String> =
         [(residual, "<residual>".to_string())].into_iter().collect();
     let mut next_idx = 1usize;

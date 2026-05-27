@@ -102,7 +102,7 @@ pub fn compute_atomic_units(owner_graph: &OwnerGraph) -> Vec<AtomicUnit> {
         }
     }
     let sccs = tarjan_scc(&g_atomic);
-    let mut unit_of = vec![None::<usize>; owner_graph.nodes.len()];
+    let mut unit_of = vec![None::<usize>; owner_graph.num_nodes()];
     let mut units: Vec<AtomicUnit> = sccs
         .into_iter()
         .enumerate()

@@ -340,7 +340,7 @@ console.log("tail");"#,
                 || (edge.from != OwnerId(4) && edge.to != OwnerId(4))
         }),
         "recognized decorate helper must not participate in unrelated global S edges: {:#?}",
-        graph.edges,
+        graph.iter_edges().collect::<Vec<_>>(),
     );
 }
 

@@ -1030,7 +1030,7 @@ impl QuotientGraph {
         // mapped (e.g., owners that ended up in an empty class via
         // overlay) land in residual. Then overwrite per owner with
         // its projected class's ModuleId.
-        let mut of: Vec<ModuleId> = vec![residual; self.owner_graph.nodes.len()];
+        let mut of: Vec<ModuleId> = vec![residual; self.owner_graph.num_nodes()];
         for (owner_idx, slot) in of.iter_mut().enumerate() {
             if owner_idx >= self.owner_to_class.len() {
                 continue;
@@ -1126,7 +1126,7 @@ impl QuotientGraph {
             let mut owner_ids: BTreeSet<String> = BTreeSet::new();
             let mut class_set: BTreeSet<ClassId> = BTreeSet::new();
             for (owner_idx, owner_id_str) in self.owner_ids.iter().enumerate() {
-                if owner_idx >= self.owner_graph.nodes.len() {
+                if owner_idx >= self.owner_graph.num_nodes() {
                     continue;
                 }
                 let module = partition.of(OwnerId(owner_idx));
@@ -1179,7 +1179,7 @@ impl QuotientGraph {
             let verdict = self
                 .realizability_index
                 .verdict_after_moving_owners_touching(&self.owner_graph, &owners, post_module);
-            let owner_count = self.owner_ids.len().min(self.owner_graph.nodes.len());
+            let owner_count = self.owner_ids.len().min(self.owner_graph.num_nodes());
             let owners_set: BTreeSet<OwnerId> = owners.iter().copied().collect();
             let owner_modules: Vec<ModuleId> = (0..owner_count)
                 .map(|i| {
@@ -1204,7 +1204,7 @@ impl QuotientGraph {
             handles.push(self.realizability_index.push(&self.owner_graph, delta));
         }
         let verdict = self.realizability_index.verdict();
-        let owner_count = self.owner_ids.len().min(self.owner_graph.nodes.len());
+        let owner_count = self.owner_ids.len().min(self.owner_graph.num_nodes());
         let post_push_modules: Vec<ModuleId> = (0..owner_count)
             .map(|owner_idx| self.realizability_index.partition().of(OwnerId(owner_idx)))
             .collect();
@@ -1356,7 +1356,7 @@ impl QuotientGraph {
             };
             class_module_id.insert(c, module);
         }
-        let partition_assignments: Vec<ModuleId> = (0..self.owner_graph.nodes.len())
+        let partition_assignments: Vec<ModuleId> = (0..self.owner_graph.num_nodes())
             .map(|owner_idx| {
                 let c = self.owner_to_class[owner_idx];
                 class_module_id.get(&c).copied().unwrap_or(residual_module)
@@ -2572,7 +2572,7 @@ pub fn build_seed_quotient(
             let mut owners: BTreeSet<String> = BTreeSet::new();
             let mut class_set: BTreeSet<ClassId> = BTreeSet::new();
             for (owner_idx, owner_id) in q.owner_ids.iter().enumerate() {
-                if owner_idx >= q.owner_graph.nodes.len() {
+                if owner_idx >= q.owner_graph.num_nodes() {
                     continue;
                 }
                 let module = partition.of(analysis::OwnerId(owner_idx));

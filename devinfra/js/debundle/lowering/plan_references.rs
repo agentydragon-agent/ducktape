@@ -266,7 +266,7 @@ fn collect_phantom_side_effect_providers(
             continue;
         }
         for &edge_id in owner_graph.out_edges_of(owner_id) {
-            let edge = &owner_graph.edges[edge_id.0];
+            let edge = owner_graph.edge(edge_id);
             if !edge.reason.constrains_init_order() {
                 continue;
             }

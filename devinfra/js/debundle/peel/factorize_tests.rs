@@ -438,7 +438,7 @@ fn owner_graph_retains_reads_to_unassigned_declared_bindings() {
     let factorization = factorization_for("const A = X + 1; const X = 42;", &[("A", logical(0))]);
 
     assert!(
-        factorization.analysis.owner_graph.edges.iter().any(|edge| {
+        factorization.analysis.owner_graph.iter_edges().any(|edge| {
             edge.from == OwnerId(0)
                 && edge.to == OwnerId(1)
                 && edge.reason.kind() == DepKind::EagerUse
