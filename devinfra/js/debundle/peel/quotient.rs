@@ -1813,18 +1813,24 @@ impl QuotientGraph {
         self.class_out_edge_count.get(&c).copied().unwrap_or(0) as u64
     }
 
-    /// All neighboring classes of `c` (out + in directions). Used by
-    /// the greedy to enumerate candidate merge partners restricted to
-    /// classes connected by a cross-edge.
-    fn class_neighbors(&self, c: ClassId) -> BTreeSet<ClassId> {
-        let mut out: BTreeSet<ClassId> = BTreeSet::new();
-        if let Some(s) = self.class_out.get(&c) {
-            out.extend(s.iter().copied());
-        }
-        if let Some(s) = self.class_in.get(&c) {
-            out.extend(s.iter().copied());
-        }
-        out
+    /// All neighboring classes of `c` (out + in directions, deduplicated).
+    /// Used by the greedy to enumerate candidate merge partners
+    /// restricted to classes connected by a cross-edge.
+    ///
+    /// Returns a borrowed iterator — no allocation. `class_out` is yielded
+    /// first in BTreeSet order, then `class_in` entries that are not
+    /// already in `class_out` are yielded in BTreeSet order. Per-element
+    /// dedup is `O(log d)` via `BTreeSet::contains` on the out set, which
+    /// is cheap for typical class adjacency (degree ≤ a few dozen).
+    fn class_neighbors(&self, c: ClassId) -> impl Iterator<Item = ClassId> + '_ {
+        let out_set = self.class_out.get(&c);
+        let in_set = self.class_in.get(&c);
+        let out_iter = out_set.into_iter().flat_map(|s| s.iter().copied());
+        let in_iter = in_set
+            .into_iter()
+            .flat_map(|s| s.iter().copied())
+            .filter(move |n| out_set.map_or(true, |s| !s.contains(n)));
+        out_iter.chain(in_iter)
     }
 }
 
@@ -2207,7 +2213,12 @@ fn pick_best_candidate(q: &mut QuotientGraph) -> Option<RankedCandidate> {
         .collect();
     let mut best: Option<RankedCandidate> = None;
     for c in anchors {
-        let neighbors: Vec<ClassId> = q.class_neighbors(c).into_iter().collect();
+        // Materialize before the loop body: `mergeable_commit2` borrows
+        // `q` mutably, so we can't iterate `class_neighbors(c)` (which
+        // holds an immutable borrow of `q`) concurrently. This driver
+        // is the reference-impl correctness gate (not the production
+        // path), so the per-anchor Vec allocation is acceptable.
+        let neighbors: Vec<ClassId> = q.class_neighbors(c).collect();
         for n in neighbors {
             if n == c {
                 continue;
