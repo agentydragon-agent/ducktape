@@ -23,7 +23,7 @@ After the Lemma-2 unification (`da7e928e2`) and `RealizabilityVerdict::scc_parti
 1. `check_realizability` materialises one SCC partition and exposes it on the verdict; `validate_factorization` and `reports::build_quotient_scc_reports` consume it instead of re-walking.
 2. `ChunkFactorization::build_with` caches a `dep_graph_sccs` field used by the materializer/emitter path.
 
-Remaining legitimate walks (different graphs): `validation.rs:437` (FAS iteration, intrinsic), `graph.rs:884` (`promote_at_init_calls` closure fixpoint), `atomic_units.rs:103` (constraining-edge owner SCC).
+Remaining legitimate walks (different graphs): `validation.rs::compute_realizability_cut` (FAS iteration, intrinsic), `graph.rs::promote_at_init_calls` (closure fixpoint), `atomic_units.rs::compute_atomic_units` (constraining-edge owner SCC).
 
 **Open follow-up.** The two surviving module-quotient walks (verdict-time + factorization-build-time) compute the same partition for different consumers; structurally consolidatable behind a wider API change, but not urgent and not on a hot path.
 
@@ -40,7 +40,7 @@ What's actually worth resolving here is the structural shape: callers re-hydrate
 
 ### `ChunkFactorization` is yet another per-chunk IR/report layer
 
-`chunk_factorization.rs:30`. `ChunkFactorization` holds `analysis: Arc<ChunkAnalysis>` plus partition + dep_graph + linker_order + maps. Then `validate()` returns a `FactorizationReport` (`chunk_factorization.rs:180`) which is yet a third "report" type alongside `ChunkAnalysisReport` and the IR `ChunkAnalysis`. The naming hierarchy is:
+`chunk_factorization.rs::ChunkFactorization` holds `analysis: Arc<ChunkAnalysis>` plus partition + dep_graph + linker_order + maps. Then `validate()` returns a `FactorizationReport` which is yet a third "report" type alongside `ChunkAnalysisReport` and the IR `ChunkAnalysis`. The naming hierarchy is:
 
 ```
 ChunkAnalysis (IR)     // chunk_analysis.rs
@@ -67,7 +67,6 @@ Six distinct types in the orbit of "stuff a chunk analysis produced" (after the 
 Watch out for:
 
 - **`ChunkFactorization` vs `ChunkAnalysis`**: both are per-chunk IR; the difference is whether the partition is applied. Could be `ChunkAnalysis` (no partition) vs `FactorizedChunk` (partition applied) and the meaning would be more obvious.
-- **`ChunkAnalysisOptions`** (`spec.rs:104`) is a _spec-side_ per-chunk knob holder; **`OwnerGraphOptions`** (`graph.rs:21`) is the _graph-build-side_ knob holder; the materializer copies one field from the former into the latter (`lowering/materialize/mod.rs:435–439`). The duplication of "options" types with the same one field (`dataflow_aware_s_chain`) is a sign that the type is doing too little — fold them together. (The original motivation for keeping them separate — Stage A cache-key independence — went away when cross-process Stage B was dropped.)
 - **`linker_order` (`Vec<String>` in `FactorizationReport`)** vs **`linker_order` (`Vec<ModuleId>` in `ChunkFactorization`)** vs **`chunk_linker_order` (`BTreeMap<ModuleId, usize>` in `graph.rs`)** — three different shapes for "the toposort of the constraining-edge graph", differing in element type and whether it's "list" or "map (position lookup)". Pick one canonical type, derive the others.
 - **`SccDiagnosis` (`realizability.rs:65`, renamed from `UnrealizableScc` in `3dbaf1037`)** vs **`CycleReport` (`validation.rs:38`)** vs **`QuotientSccReport` (`reports/schema.rs:174`)** vs **`AtomicUnitConflict` (`factor_assembly.rs:42`)** — four representations of "the spec is unrealizable, here's why" with subtly different fields. `SccDiagnosis` carries `constraining_owner_edges`; `CycleReport` carries `cut` (a minimum cut) + `evidence`; `QuotientSccReport` carries `module_edge_ids` + `constraining_module_edge_ids`. Two of these contain the same data ("the modules in the SCC + the edges in the SCC"), with the cut/evidence/min decoration added by the validator. The right shape is one core type with optional decorations, not four parallel structs.
 
@@ -95,11 +94,7 @@ Spec-induced atoms (the SCCs of `I ∪ S` under the quotient) are NOT precompute
 
 ### "v2 hypothesis was wrong" — found one comment
 
-`graph.rs:1322` documents that `chunk_source_import_order`'s `None`-after-`Some` clause is "kept for robustness against future filter changes that might admit non-constraining members" — i.e. defensive code for a hypothesis that hasn't been validated. That's mild; not real drift.
-
-### One TODO mismatch
-
-`TODO.md` mentions a `module merge` task (task #73). The `feat-cli-module-merge` branch is in flight. No drift.
+`graph.rs::chunk_source_import_order`'s `None`-after-`Some` clause is "kept for robustness against future filter changes that might admit non-constraining members" — i.e. defensive code for a hypothesis that hasn't been validated. That's mild; not real drift.
 
 ### The docs/design.md vs CODE_REVIEW.md vs README.md vs guide.md split
 
@@ -110,9 +105,8 @@ These files plus AGENTS.md plus RENAME.md document the same project from multipl
 - CODE_REVIEW.md is a prior code-review backlog (clearly marked, useful).
 - README.md is a marketing-shaped pitch with usage.
 - guide.md is shorter intro material.
-- TODO.md is a 21K-byte backlog.
-- ~~FACTORIZE.md~~ — deleted; folded into docs/design.md (May 2026).
-- ~~docs/lessons_learned/cross_process_stage_b.md~~ — tombstone; the cross-process Stage B plan it described was abandoned. See `docs/lessons_learned/cross_process_stage_b.md`.
+- TODO.md is a ~24K-byte backlog.
+- docs/lessons_learned/cross_process_stage_b.md is the post-mortem for the abandoned cross-process Stage B plan.
 - RENAME.md is a focused doc on the readability rename pass.
 
 ## Quick wins (≤30 min each)
@@ -133,7 +127,7 @@ Today the simulator in `realizability.rs` is the gate's `cross-checks the materi
 
 ### Do anonymous statements deserve a first-class `OwnerKind`?
 
-Today an "anonymous statement" is just an `OwnerNode` with empty `declared`. The materializer (`lowering/materialize/mod.rs`) special-cases them via `anonymous_statement_ordinals` + an explicit `anon_residual_sentinel` ModuleId (line 569). The realizability gate doesn't distinguish them. Several diagnostics use the placeholder `<anon stmt #ord>` (`validation.rs:181`). This is a coherent piece of vocabulary that should perhaps be an `OwnerNode::kind` variant rather than a sentinel "empty declared bindings". Worth thinking about at the next refactor — not blocking.
+Today an "anonymous statement" is just an `OwnerNode` with empty `declared`. The materializer (`lowering/materialize/mod.rs`) special-cases them via `anonymous_statement_ordinals` + an explicit `anon_residual_sentinel` ModuleId. The realizability gate doesn't distinguish them. Several diagnostics use the placeholder `<anon stmt #ord>` in `validation.rs`. This is a coherent piece of vocabulary that should perhaps be an `OwnerNode::kind` variant rather than a sentinel "empty declared bindings". Worth thinking about at the next refactor — not blocking.
 
 ---
 
