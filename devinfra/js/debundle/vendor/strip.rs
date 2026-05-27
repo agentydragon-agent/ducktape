@@ -1,20 +1,22 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
-use analysis::{AnalysisHints, LocalEffectPolicy, StatementFacts, analyze_chunk};
+use analysis::{AnalysisHints, ChunkId, LocalEffectPolicy, StatementFacts, analyze_chunk};
 use anyhow::{Context, Result, bail};
 use binding_targets::{
     binding_name_strings, declaration_ids, declaration_name_strings, module_export_name,
 };
+use rayon::prelude::*;
 use serde::Serialize;
 use swc_common::sync::Lrc;
-use swc_common::{DUMMY_SP, SourceMap};
+use swc_common::{DUMMY_SP, GLOBALS, SourceMap};
 use swc_ecma_ast::*;
 use swc_ecma_codegen::text_writer::JsWriter;
 use swc_ecma_codegen::{Config, Emitter};
 use swc_ecma_visit::{Visit, VisitWith};
 
-use artifact::{ChunkBundle, JsFile, get_chunk_entry_path};
+use artifact::{ChunkBundle, JsFile, JsFileAstParts, get_chunk_entry_path};
+use js_ast::ParsedJsModule;
 use spec::{PartialSwapSymbol, VendorLevel, VendorMark};
 
 pub struct StripSwappedVendorExportsResult {
@@ -56,8 +58,13 @@ pub fn strip_swapped_vendor_exports_with_options(
     options: StripSwappedVendorExportsOptions,
 ) -> Result<StripSwappedVendorExportsResult> {
     let chunk_table = artifact.chunk_table.clone();
-    let mut per_chunk = BTreeMap::new();
 
+    // Phase 1 (sequential): pull every vendor entry's entry-file AST
+    // out of the artifact and bundle the per-chunk inputs into a
+    // `StripJob`. `remove_file`/`insert_file` on `ChunkBundle` need
+    // `&mut artifact`; doing the round-trip here means the actual
+    // strip work can borrow only owned data and run in parallel.
+    let mut jobs: Vec<StripJob<'_>> = Vec::new();
     for (chunk_path, mark) in vendor {
         let symbols = match &mark.level {
             VendorLevel::PartialSwap(partial) => &partial.symbols,
@@ -83,7 +90,7 @@ pub fn strip_swapped_vendor_exports_with_options(
                 "strip_swapped_vendor_exports vendor entry {chunk_path}: entry file {entry_relative_file} missing from chunk {chunk_name}"
             )
         })?;
-        let (parts, mut ast) = file.into_ast_parts().with_context(|| {
+        let (parts, ast) = file.into_ast_parts().with_context(|| {
             format!(
                 "strip_swapped_vendor_exports vendor entry {chunk_path}: chunk {chunk_name} entry has no AST"
             )
@@ -94,20 +101,97 @@ pub fn strip_swapped_vendor_exports_with_options(
             .get(chunk_path)
             .cloned()
             .unwrap_or_default();
-        let stats = strip_one_chunk_with_replacement_imports(
-            &mut ast.module,
-            symbols,
-            chunk_path,
-            &replacement_import_locals,
-        )?;
-        per_chunk.insert(chunk_path.clone(), stats);
 
+        jobs.push(StripJob {
+            chunk_path,
+            chunk_id,
+            symbols,
+            replacement_import_locals,
+            parts,
+            ast,
+        });
+    }
+
+    // Phase 2 (parallel): per-job strip work is pure data transformation —
+    // each job owns its `parts`/`ast` and reads only its own `symbols` and
+    // `replacement_import_locals`. No two jobs target the same chunk_id
+    // (vendor is a BTreeMap keyed by chunk_path, and chunk_path -> chunk_id
+    // is injective via `chunk_id_from_chunk_path`), so collecting outputs
+    // back into the artifact in Phase 3 doesn't risk write-write races.
+    //
+    // `swc_common::GLOBALS` is a `scoped_tls` thread-local that does NOT
+    // carry into rayon worker threads. The strip path currently doesn't
+    // mint fresh marks, but `Id` comparisons and any future swc work
+    // expect a live `Globals`; capture the parent thread's globals and
+    // re-set inside each worker, mirroring `lowering/mod.rs` and
+    // `lower_chunk`.
+    let outputs: Vec<StripOutput> = GLOBALS.with(|globals| -> Result<Vec<StripOutput>> {
+        jobs.into_par_iter()
+            .map(|job| GLOBALS.set(globals, || strip_one_job(job)))
+            .collect()
+    })?;
+
+    // Phase 3 (sequential): re-insert the stripped entry files and
+    // collect per-chunk stats in `vendor` iteration order (preserved by
+    // `Vec::into_par_iter().collect()`).
+    let mut per_chunk = BTreeMap::new();
+    for output in outputs {
+        let StripOutput {
+            chunk_path,
+            chunk_id,
+            parts,
+            ast,
+            stats,
+        } = output;
+        let js_chunk = artifact.js_chunk_mut(chunk_id)?;
         js_chunk.insert_file(JsFile::from_ast_parts(parts, ast));
+        per_chunk.insert(chunk_path, stats);
     }
 
     Ok(StripSwappedVendorExportsResult {
         artifact,
         manifest: StripSwappedVendorExportsManifest { per_chunk },
+    })
+}
+
+struct StripJob<'a> {
+    chunk_path: &'a str,
+    chunk_id: ChunkId,
+    symbols: &'a BTreeMap<String, PartialSwapSymbol>,
+    replacement_import_locals: BTreeSet<Id>,
+    parts: JsFileAstParts,
+    ast: ParsedJsModule,
+}
+
+struct StripOutput {
+    chunk_path: String,
+    chunk_id: ChunkId,
+    parts: JsFileAstParts,
+    ast: ParsedJsModule,
+    stats: ChunkStripStats,
+}
+
+fn strip_one_job(job: StripJob<'_>) -> Result<StripOutput> {
+    let StripJob {
+        chunk_path,
+        chunk_id,
+        symbols,
+        replacement_import_locals,
+        parts,
+        mut ast,
+    } = job;
+    let stats = strip_one_chunk_with_replacement_imports(
+        &mut ast.module,
+        symbols,
+        chunk_path,
+        &replacement_import_locals,
+    )?;
+    Ok(StripOutput {
+        chunk_path: chunk_path.to_string(),
+        chunk_id,
+        parts,
+        ast,
+        stats,
     })
 }
 
