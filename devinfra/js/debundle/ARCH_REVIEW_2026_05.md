@@ -4,9 +4,9 @@ Reviewed against `01c149496` on branch `feat-arch-review-2026-05`. Read on top o
 
 > **Status.** Items handled since the original review have been removed; what remains is the open backlog. The cross-process Stage B plan was also abandoned — items in this review that assumed cross-process caching of Stage A artifacts have been dropped along with it. Narrative + rejected alternatives: `docs/lessons_learned/cross_process_stage_b.md`.
 
-## Executive summary
+## Open backlog
 
-1. **The dual `cross_module_partition_endpoints` / `gate_constraining_partition_endpoints` is the most concrete example of patch-on-patch architecture.** The same projection helper has two versions that differ only in whether they drop cross-module at-init-promoted edges, with the difference documented in a doc-comment "history" log naming three commit SHAs and a regression test ("`12ce3884b` removed the drop … `2d6be2473` silently re-introduced the drop … this sibling helper exists so the gate paths preserve `12ce3884b`'s fix"). The right fix is to push the distinction into the edge itself (an `EdgeRole` enum) so there is one projection helper that consults the role; the current shape encodes a 12-month bug-fix history into two near-identical function names.
+The original executive-summary item resolved with the `EdgeRole` enum. Remaining work is the section-by-section backlog below.
 
 ## Ad-hoc wiring + pipeline-state passing
 
@@ -110,21 +110,13 @@ The realizability gate's actual algorithm, read carefully, is:
 
 That's one algorithm with two passes. Pass 1 is a cheap necessary condition (mutual at-init cycles can never be rescued by reordering); Pass 2 is the precise condition (the runtime DFS-simulator decides asymmetric cycles). The 2× Tarjan is structural to the algorithm, not patchy. **This is fine.** The docs/design.md theorem reads cleanly.
 
-What's _patchy_ is:
-
-1. The `gate_constraining_partition_endpoints` / `cross_module_partition_endpoints` split (covered in Executive summary #2).
-2. The promoted-edge logic. `EdgeReason::at_init_callee_owner` (`graph.rs:75`) is a side channel on every edge that exists _only_ to decide whether `is_cross_module_at_init_promotion` drops the edge in the lenient view. The data flows through serialization (`EdgeReason::synthetic_with_callee`), through the canonical edge set, through the gate-side endpoints helper. It's loadbearing for soundness (per the `promoted_edge_in_aggregator_cycle_is_unrealizable` regression), but the _concept_ "this is a promoted edge, the gate sees it differently from the emitter" is encoded as a flag on every edge plus a pair of projection helpers plus a documentation history log. Cleaner: an explicit `EdgeRole { Direct, PromotedAtInit { callee_owner: OwnerId } }` enum, with the projection helper consulting the role and the gate/emitter rules being a single `match`.
-3. The `EsmEvaluationSimulator::from_adjacency` (`realizability.rs:306`) constructor exists only because the overlay path (`IncrementalQuotient`) has its edges in a different shape than the canonical edge set. So `from_adjacency` rebuilds a fake `ChunkConstrainingEdgeSet { edges: empty_map_for_each_constraining_pair, i_successors }` and feeds it to `build`. This is two structurally identical inputs that diverged because two callers had different sources; the right shape is for `build` to take the two adjacency maps directly. Today's "construct fake edges map" is a kludge to fit the constructor.
+What's _patchy_ is the `EsmEvaluationSimulator::from_adjacency` (`realizability.rs:306`) constructor: it exists only because the overlay path (`IncrementalQuotient`) has its edges in a different shape than the canonical edge set, so `from_adjacency` rebuilds a fake `ChunkConstrainingEdgeSet { edges: empty_map_for_each_constraining_pair, i_successors }` and feeds it to `build`. This is two structurally identical inputs that diverged because two callers had different sources; the right shape is for `build` to take the two adjacency maps directly. Today's "construct fake edges map" is a kludge to fit the constructor.
 
 ### Atomic-units classification has two paths but only one is wired
 
 `atomic_units.rs::compute_atomic_units` is the structural-atom detector (SCCs of the constraining-edge owner graph). `factor_assembly::detect_unit_conflict` is the "did the spec split a unit?" detector. The structural atoms are computed once per chunk (in `compute_owner_graph_and_units_with`), passed through `OwnerGraphAndUnits` to the materializer and into `ChunkFactorization`. Clean — this is the right shape.
 
 Spec-induced atoms (the SCCs of `I ∪ S` under the quotient) are NOT precomputed; they emerge from the realizability primitive. docs/design.md §"Two classes of atom" labels them as a distinct concept. After `7d2d79bc9` the verdict exposes the SCC partition and `validate_factorization` consumes it instead of re-walking; the residual walk lives on `ChunkFactorization::dep_graph_sccs` for the materializer/emitter path (see §"Duplicated calculations" for the open consolidation).
-
-### Tests for `at_init_promotion_drop_unsound_in_cycle` flag exactly the right kind of pattern
-
-`realizability.rs:1986` (`promoted_edge_in_aggregator_cycle_is_unrealizable`) is a test that exists to pin the _re-introduction_ of a previously-fixed bug. The doc-comment narrates the SHA-by-SHA history. Reading that doc-comment is what a regression test should _avoid_ requiring — the structural fix is to make the bug structurally impossible. Today the gate-side / lenient endpoints split is doc-and-test-pinned; an `EdgeRole`-typed solution would let the type checker carry the invariant.
 
 ## Test-vs-spec drift
 
@@ -156,9 +148,7 @@ These files plus AGENTS.md plus RENAME.md document the same project from multipl
 
 ## Quick wins (≤30 min each)
 
-1. **Carry chunk-top-level `Mark` on the typed `Partition`** (or on a `ChunkContext` wrapper) so `top_level_id` lookups don't have to be threaded through every materialize-side function as a separate parameter. Today `lowering/materialize/mod.rs:100` reads it from the AST and threads it through eight call sites.
-
-2. **Add a single `EdgeRole` enum** as a field of `EdgeReason` (variants `Direct` / `PromotedAtInit { callee_owner }`) so the gate/lenient projection helpers can fold into one helper that consults the role. Removes the dual `*_partition_endpoints` helpers + their commit-SHA history doc-comments.
+1. **Carry chunk-top-level `Mark` on `ChunkContext`** so `top_level_id` lookups don't have to be threaded through every materialize-side function as a separate parameter. With the MLCI split landed the `Mark` now lives on `LowerChunkAst`, but it's still threaded through ~8 helpers below `lower_chunk`. Folding the `top_level_id` helper onto a small `ChunkContext` accessor would let helpers take just that context instead.
 
 ## Concerns to discuss before deciding
 
@@ -178,4 +168,4 @@ Today an "anonymous statement" is just an `OwnerNode` with empty `declared`. The
 
 ---
 
-**Reviewer note.** All file/line references are at HEAD = `01c149496`. The maintainer should treat this report as a backlog input, not a definitive ordering. The most valuable single change is probably the `ChunkPlanBuilder` extraction (Multi-session refactor #1) — it removes the most code, eliminates the most state-passing, and makes the materializer readable in one sitting.
+**Reviewer note.** This file is a living backlog; resolved items get deleted, not struck through. The original HEAD reference (`01c149496`) is historical — line numbers in remaining items may drift and should be re-resolved against current HEAD before acting.
