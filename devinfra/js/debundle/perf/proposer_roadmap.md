@@ -182,12 +182,106 @@ spec_slice, ducktape_version)` per chunk; skip lowering + codegen
   peel_candidates JSON. Most consumers want a subset. `--reports=<list>`
   flag, default to current set. 5-15% cold wall.
 
+## 2026-05-27 re-profile after P0–P1 landed
+
+Re-profiled `modules propose --format json` against the tana
+`78d928dca7` fixture on the post-P0–P1 devel head (PK + reverse
+index + EdgeState + class_neighbors iter + FxHash on owner_id_to_idx
+
+- rank_candidate linear merge + epoch buffer for would_create_cycle
+- quotient-share, opt build with `-Cdebuginfo=1`).
+
+**Wall time:** ~46.5 s (3 runs: 46.4 / 46.4 / 46.6). Within noise of
+the PK-baseline 46.27 s. Output md5 `1fda9b1bab7bdf706cd4a63106a0554e`,
+byte-identical across runs and against every prior measurement.
+
+The per-pop constant-factor work landed correctly but **didn't move
+the wall** — it removed allocator round-trips on a code path that
+isn't the bottleneck.
+
+### New top symbols (4K cpu_core samples)
+
+| Self % | Symbol                                                                |
+| -----: | --------------------------------------------------------------------- |
+| 16.03% | `analysis::realizability::OverlayGraphView::reachable_from`           |
+|  9.82% | `peel::quotient::QuotientGraph::translate_verdict_with_owner_modules` |
+|  9.76% | `analysis::graph::chunk_source_import_order_from_adjacency`           |
+|  8.09% | `core::hash::BuildHasher::hash_one`                                   |
+
+### Why P1 missed
+
+The bottleneck is the **realizability gate's ESM evaluation
+simulator**, not the constraining-only cycle check we optimized.
+Callgraph excerpt:
+
+```
+greedy_merge_to_convergence
+└── merge_preserves_invariants
+    └── would_be_cycles_after_contract              ← PK-optimized path (fast)
+        └── realizability_index::verdict_after_moving_owners_touching
+            └── IncrementalQuotient::build_simulator   ← actually expensive
+                └── EsmEvaluationSimulator::build
+                    └── OverlayGraphView::reachable_from   ← 16% self
+```
+
+PK + epoch buffer made `would_create_cycle` (the constraining-only
+check) very fast. But for every successful `merge_preserves_invariants`
+the gate also runs the full ESM Phase-2 simulator, which is doing
+DFS reachability walks. That's where the cycles go now.
+
+Item #2's instrumentation also revealed: on tana the
+`rank_candidate` cycle-reduction-byte inner branch is hit 0 / 59,663
+calls. The corpus has no pre-existing constraining cycles so
+`cached_cycles` stays empty and the alloc removal is dead on this
+input. The fix is sound; just unhelpful here.
+
+## P1' (revised, post-2026-05-27 profile)
+
+The actual targets for the next wall reduction.
+
+### #11 — Cache `OverlayGraphView::reachable_from` results within a single simulator run
+
+The simulator runs many DFS reachability queries during ECMA Phase-2
+ordering. Many of them re-walk the same nodes. A per-simulator-run
+reachability memo (`from → reachable_set`, computed once and
+indexed) would amortize the walk across queries.
+
+Need to read `realizability.rs::OverlayGraphView` first to understand
+exactly which queries get re-issued and what the dominant pattern
+is.
+
+### #12 — Eliminate `translate_verdict_with_owner_modules` per-call cost
+
+The kernel speaks `ClassId`; the realizability gate speaks
+`ModuleId`. Today `translate_verdict_with_owner_modules` translates
+per `would_be_cycles_after_contract` call. If the gate's incremental
+state were stored ClassId-native (or the translation result were
+cached as long as the partition is unchanged), this 10% self
+disappears.
+
+### #13 — Maintain simulator state incrementally instead of rebuilding per check
+
+`IncrementalQuotient::build_simulator` rebuilds the ESM simulator
+each `would_be_cycles_after_contract` call. The simulator is
+deterministic in `(constraining_pairs, source_import_order)`, both
+of which change incrementally per merge. Maintaining the simulator
+across calls (with rollback on rejection) would skip the rebuild.
+
+This is the highest-impact + highest-complexity item. Probably
+warrants a design doc before implementation.
+
 ## Hold / done
 
-- ✅ `class_neighbors` non-allocating iter (commit `641d6d9d3`).
-- 🔄 Unified EdgeState (PR `debundle-unified-edge-state` in flight).
-- ✅ Pearce-Kelly + reverse index (PR #1700, commit `5bcc77279`).
-- ✅ `write_tree_reports` rayon (commit `7b69a8c0f`).
-- ✅ `lower_chunk` rayon (commit `951957122`).
-- ✅ `vendor::strip` rayon.
-- ✅ `materialize_artifact_scripts` rayon.
+- ✅ #0 release-mode opt build (`916cee026`, in gaffer via `4d292ae94`)
+- ✅ #1 FxHash on `owner_id_to_idx` (in `febf8f76f`)
+- ✅ #2 rank_candidate linear merge (in `febf8f76f`; instrumented dead on tana, ceiling removed)
+- ✅ #3 epoch buffer for `would_create_cycle` (`d94d29766`)
+- ✅ `class_neighbors` non-allocating iter (`641d6d9d3`)
+- ✅ EdgeState — 7 BTree fields → 2 (`6effc3356`)
+- ✅ Pearce-Kelly + reverse-index (`40182528f`)
+- ✅ Quotient-share — 3 redundant `build_module_quotient` calls eliminated (`7fb703299`)
+- ✅ Options-fold — ChunkAnalysisOptions + OwnerGraphOptions (`6f5eaa619`)
+- ✅ `write_tree_reports` rayon (`7b69a8c0f`)
+- ✅ `lower_chunk` rayon (`951957122`)
+- ✅ `vendor::strip` rayon
+- ✅ `materialize_artifact_scripts` rayon
