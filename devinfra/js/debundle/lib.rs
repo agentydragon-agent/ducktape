@@ -42,9 +42,8 @@ pub use factor_assembly::{
 };
 pub use facts::{
     ChunkFactAnalysis, ChunkFactsReport, EffectCell, EffectCellReport, IdReport,
-    SCHEMA_VERSION as CHUNK_FACTS_SCHEMA_VERSION, StatementEffectSummary,
-    StatementEffectSummaryReport, StatementFacts, StatementFactsReport, StatementKind,
-    analyze_chunk, find_top_level_await, local_namespace_iife_target,
+    StatementEffectSummary, StatementEffectSummaryReport, StatementFacts, StatementFactsReport,
+    StatementKind, analyze_chunk, find_top_level_await, local_namespace_iife_target,
 };
 pub use graph::{
     ChunkConstrainingEdgeSet, DepKind, EdgeMetadata, EdgeReason, EdgeRole, ModuleQuotient,

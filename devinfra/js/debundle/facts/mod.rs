@@ -5,7 +5,7 @@ pub mod wire;
 
 pub use local_effects::local_namespace_iife_target;
 pub use wire::{
-    ChunkFactsReport, EffectCellReport, IdReport, SCHEMA_VERSION, StatementEffectSummaryReport,
+    ChunkFactsReport, EffectCellReport, IdReport, StatementEffectSummaryReport,
     StatementFactsReport,
 };
 
