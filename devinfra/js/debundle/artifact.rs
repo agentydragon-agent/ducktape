@@ -1226,8 +1226,17 @@ fn build_directory_dependency_manifests(
         .collect();
     let mut directories = BTreeMap::<String, DirectoryAccumulator>::new();
 
+    // Per-edge invocations of `module_path_dirname` and
+    // `directory_ancestors_for_file` recompute the same path manipulations
+    // many times — the same source/target files recur across many
+    // facts. Memoize both keyed on the input path so each unique path
+    // pays the path-parsing cost exactly once per call to this function.
+    let mut dirname_cache: HashMap<String, String> = HashMap::new();
+    let mut ancestors_cache: HashMap<String, Vec<String>> = HashMap::new();
+
     for metric in file_metrics {
-        for dir in directory_ancestors_for_file(&metric.file) {
+        let ancestors = memoize_ancestors(&mut ancestors_cache, &metric.file).to_vec();
+        for dir in ancestors {
             directories
                 .entry(dir.clone())
                 .or_default()
@@ -1242,7 +1251,8 @@ fn build_directory_dependency_manifests(
                 .get(lowering.id.as_str())
                 .copied()
                 .unwrap_or(0);
-            for dir in directory_ancestors_for_file(&file) {
+            let ancestors = memoize_ancestors(&mut ancestors_cache, &file).to_vec();
+            for dir in ancestors {
                 let accumulator = directories.entry(dir).or_default();
                 accumulator.module_ids.insert(lowering.id.clone());
                 for binding_name in &lowering.binding_names {
@@ -1256,9 +1266,11 @@ fn build_directory_dependency_manifests(
 
     for decomposition in decomposition_by_chunk.values() {
         for fact in &decomposition.directory_dependency_facts {
-            let source_dir = module_path_dirname(&fact.source_file);
-            let target_dir = module_path_dirname(&fact.target_file);
-            for dir in directory_ancestors_for_file(&fact.source_file) {
+            let source_dir = memoize_dirname(&mut dirname_cache, &fact.source_file).clone();
+            let target_dir = memoize_dirname(&mut dirname_cache, &fact.target_file).clone();
+            let source_ancestors =
+                memoize_ancestors(&mut ancestors_cache, &fact.source_file).to_vec();
+            for dir in source_ancestors {
                 if path_is_in_directory(&fact.target_file, &dir) {
                     continue;
                 }
@@ -1273,7 +1285,9 @@ fn build_directory_dependency_manifests(
                     symbol: fact.symbol.as_deref(),
                 });
             }
-            for dir in directory_ancestors_for_file(&fact.target_file) {
+            let target_ancestors =
+                memoize_ancestors(&mut ancestors_cache, &fact.target_file).to_vec();
+            for dir in target_ancestors {
                 if path_is_in_directory(&fact.source_file, &dir) {
                     continue;
                 }
@@ -1295,6 +1309,26 @@ fn build_directory_dependency_manifests(
         .into_iter()
         .map(|(directory, accumulator)| accumulator.into_manifest(directory))
         .collect()
+}
+
+fn memoize_dirname<'cache>(
+    cache: &'cache mut HashMap<String, String>,
+    file: &str,
+) -> &'cache String {
+    if !cache.contains_key(file) {
+        cache.insert(file.to_string(), module_path_dirname(file));
+    }
+    cache.get(file).expect("just inserted")
+}
+
+fn memoize_ancestors<'cache>(
+    cache: &'cache mut HashMap<String, Vec<String>>,
+    file: &str,
+) -> &'cache [String] {
+    if !cache.contains_key(file) {
+        cache.insert(file.to_string(), directory_ancestors_for_file(file));
+    }
+    cache.get(file).expect("just inserted")
 }
 
 fn build_file_dependency_manifests(
