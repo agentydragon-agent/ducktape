@@ -192,7 +192,9 @@ def _lot_value_by_month(dense: DenseSimulationResult, *, primary_agent_code: int
             continue
         price = np.nan_to_num(plan.external_values[series_index, _SINGLE_ROLLOUT_INDEX, :], nan=0.0)
         values += dense.buffers.state.lot_state[:, lot, _SINGLE_ROLLOUT_INDEX] * price
-    return values
+    # Clamp: floating-point rounding in FIFO dollar-sells (sold_units = sold_value / price)
+    # can leave lot quantities at ~-1e-10, producing a tiny negative value here.
+    return np.maximum(values, 0.0)
 
 
 def _shortfall_by_month(dense: DenseSimulationResult, *, primary_agent_code: int) -> np.ndarray:

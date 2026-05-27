@@ -1762,11 +1762,13 @@ def test_e2e_pinned_tax_payments_force_asset_liquidation_and_settle_liability(de
     assert result.events_log.tax_settlements.get_column("amount_usd").sum() == pytest.approx(4_016.0, abs=0.01)
 
     policy_sales = result.events_log.lot_dispositions.filter(pl.col("cause_id").str.starts_with("liquidity_sale"))
+    # Ceiling-unit FIFO: month-12 needs $2,516 at $100/unit → ceil(25.16) = 26 whole units → $2,600.
+    # The $84 excess stays in Alice's checking account.
     assert policy_sales.sort("month_index").select("month_index", "units_sold", "proceeds_usd").to_dicts() == [
         {"month_index": 3, "units_sold": pytest.approx(5.0), "proceeds_usd": pytest.approx(500.0)},
         {"month_index": 5, "units_sold": pytest.approx(5.0), "proceeds_usd": pytest.approx(500.0)},
         {"month_index": 8, "units_sold": pytest.approx(5.0), "proceeds_usd": pytest.approx(500.0)},
-        {"month_index": 12, "units_sold": pytest.approx(25.16), "proceeds_usd": pytest.approx(2_516.0)},
+        {"month_index": 12, "units_sold": pytest.approx(26.0), "proceeds_usd": pytest.approx(2_600.0)},
     ]
 
     final_cash = (
@@ -1774,13 +1776,15 @@ def test_e2e_pinned_tax_payments_force_asset_liquidation_and_settle_liability(de
         .get_column("balance_usd")
         .item()
     )
-    assert final_cash == pytest.approx(0.0, abs=1e-6)
+    # $2,600 proceeds - $2,516 taxes paid = $84 leftover from ceiling rounding.
+    assert final_cash == pytest.approx(84.0, abs=1e-6)
     remaining_vti = (
         result.asset_lots.filter((pl.col("lot_id") == "alice_vti_seed") & (pl.col("month_index") == 13))
         .get_column("remaining_quantity")
         .item()
     )
-    assert remaining_vti == pytest.approx(59.84, abs=1e-6)
+    # 100 - (5+5+5+26) = 59 units remaining.
+    assert remaining_vti == pytest.approx(59.0, abs=1e-6)
     final_due = result.tax_liabilities.filter(pl.col("month_index") == 13).get_column("amount_owed_usd").sum()
     assert final_due == pytest.approx(0.0, abs=1e-6)
     assert result.rollout_status.row(0, named=True)["status"] == "active"
@@ -2049,9 +2053,11 @@ def test_liquidity_policy_sale_uses_rollout_specific_prices() -> None:
     result = simulate_with_external_series(scenario, rollout_count=2, external_series=external_series, locations={})
 
     sales = result.events_log.lot_dispositions.sort("rollout_index")
+    # Ceiling-unit FIFO: rollout 0 needs $500 at $100 → ceil(5.0) = 5 units → $500 (exact).
+    # Rollout 1 needs $500 at $200 → ceil(2.5) = 3 whole units → $600 proceeds; $100 stays in cash.
     assert sales.select("rollout_index", "units_sold", "proceeds_usd").to_dicts() == [
         {"rollout_index": 0, "units_sold": pytest.approx(5.0), "proceeds_usd": pytest.approx(500.0)},
-        {"rollout_index": 1, "units_sold": pytest.approx(2.5), "proceeds_usd": pytest.approx(500.0)},
+        {"rollout_index": 1, "units_sold": pytest.approx(3.0), "proceeds_usd": pytest.approx(600.0)},
     ]
     assert result.events_log.rollout_failures.is_empty()
 

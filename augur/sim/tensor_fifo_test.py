@@ -72,6 +72,10 @@ def test_fifo_sell_units_with_empty_pool_marks_oversell_without_sale() -> None:
 
 
 def test_fifo_sell_dollars_uses_rollout_specific_prices_and_targets() -> None:
+    # Rollout 0: target $250, price $100. Lot0 covers $200 (2 units); lot1 needs
+    # $50 more → ceil($50/$100)=1 whole unit sold ($100). Total proceeds $300, units [2,1].
+    # Rollout 1: target $450, price $150. Lot0 covers $300 (2 units); lot1 needs
+    # $150 → ceil($150/$150)=1 unit ($150). Total proceeds $450, units [2,1].
     result = fifo_sell_dollars(
         lot_remaining=np.array([[2.0, 3.0], [2.0, 3.0]], dtype=np.float64),
         ordered_lots=np.array([0, 1], dtype=np.int64),
@@ -80,9 +84,9 @@ def test_fifo_sell_dollars_uses_rollout_specific_prices_and_targets() -> None:
         cost_basis_per_unit=np.array([40.0, 50.0], dtype=np.float64),
     )
 
-    np.testing.assert_allclose(result.sold_units, np.array([[2.0, 0.5], [2.0, 1.0]], dtype=np.float64))
-    np.testing.assert_allclose(result.proceeds.sum(axis=1), np.array([250.0, 450.0]))
-    np.testing.assert_allclose(result.cost_basis_consumed.sum(axis=1), np.array([105.0, 130.0]))
+    np.testing.assert_allclose(result.sold_units, np.array([[2.0, 1.0], [2.0, 1.0]], dtype=np.float64))
+    np.testing.assert_allclose(result.proceeds.sum(axis=1), np.array([300.0, 450.0]))
+    np.testing.assert_allclose(result.cost_basis_consumed.sum(axis=1), np.array([130.0, 130.0]))
 
 
 def test_fifo_sell_dollars_oversell_and_zero_price_do_not_partial_fill() -> None:

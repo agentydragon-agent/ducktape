@@ -103,9 +103,22 @@ def fifo_sell_dollars(
 
     before_value = np.cumsum(available_value, axis=1) - available_value
     sold_value_ordered = np.clip(effective_target[:, None] - before_value, 0.0, available_value)
-    sold_units_ordered = np.divide(
-        sold_value_ordered, unit_price[:, None], out=np.zeros_like(sold_value_ordered), where=unit_price[:, None] > 0.0
+    # Ceiling-round units: selling $750 from a lot priced at $100/unit means selling
+    # 8 whole units (not 7.5). Clip to ordered_quantity so we never sell more than held.
+    # Proceeds reflect the actual whole-unit sale (may slightly exceed effective_target).
+    sold_units_ordered = np.clip(
+        np.ceil(
+            np.divide(
+                sold_value_ordered,
+                unit_price[:, None],
+                out=np.zeros_like(sold_value_ordered),
+                where=unit_price[:, None] > 0.0,
+            )
+        ),
+        0.0,
+        ordered_quantity,
     )
+    proceeds_ordered = sold_units_ordered * unit_price[:, None]
     basis_ordered = sold_units_ordered * cost_basis_per_unit[ordered_lots][None, :]
 
     return _scatter_ordered_result(
@@ -113,7 +126,7 @@ def fifo_sell_dollars(
         ordered_lots=ordered_lots,
         sold_units_ordered=sold_units_ordered,
         basis_ordered=basis_ordered,
-        proceeds_ordered=sold_value_ordered,
+        proceeds_ordered=proceeds_ordered,
         oversell=oversell,
     )
 
