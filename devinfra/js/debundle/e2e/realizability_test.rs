@@ -57,6 +57,21 @@ fn assert_fraction_metric(
     );
 }
 
+/// Look up `key` in a JSON pair-list (`[[k, v], …]`), returning the value.
+/// Used for `DirectoryBoundarySummary` / `FileBoundarySummary` histograms
+/// (`edge_count_by_kind`, `symbols`, `files`), which serialize as
+/// `Vec<(String, usize)>` for perf but are conceptually maps in tests.
+fn pair_list_get<'a>(array: &'a serde_json::Value, key: &str) -> Option<&'a serde_json::Value> {
+    array.as_array()?.iter().find_map(|entry| {
+        let pair = entry.as_array()?;
+        if pair.first()?.as_str()? == key {
+            pair.get(1)
+        } else {
+            None
+        }
+    })
+}
+
 // --- R cycles (both back-edges at-init) ----------------------------------
 
 #[test]
@@ -506,14 +521,26 @@ export { consume };
     assert_eq!(feature["path"], "static/app/modules/feature");
     assert_eq!(feature["outgoing"]["edge_count"], 1);
     assert_eq!(
-        feature["outgoing"]["symbols"]["static/app/modules/domain/value.js#Value"],
+        pair_list_get(
+            &feature["outgoing"]["symbols"],
+            "static/app/modules/domain/value.js#Value",
+        )
+        .expect("outgoing symbols entry"),
         1,
     );
     assert_eq!(
-        feature["outgoing"]["files"]["static/app/modules/domain/value.js"],
-        1
+        pair_list_get(
+            &feature["outgoing"]["files"],
+            "static/app/modules/domain/value.js",
+        )
+        .expect("outgoing files entry"),
+        1,
     );
-    assert_eq!(feature["outgoing"]["edge_count_by_kind"]["lazy_use"], 1);
+    assert_eq!(
+        pair_list_get(&feature["outgoing"]["edge_count_by_kind"], "lazy_use")
+            .expect("outgoing edge_count_by_kind entry"),
+        1,
+    );
     assert_eq!(
         feature["outgoing"]["edges"][0]["target_dir"],
         "static/app/modules/domain",
@@ -526,15 +553,27 @@ export { consume };
     );
     assert_eq!(domain["incoming"]["edge_count"], 2);
     assert_eq!(
-        domain["incoming"]["symbols"]["static/app/modules/domain/value.js#Value"],
+        pair_list_get(
+            &domain["incoming"]["symbols"],
+            "static/app/modules/domain/value.js#Value",
+        )
+        .expect("incoming symbols entry"),
         2,
     );
     assert_eq!(
-        domain["incoming"]["files"]["static/app/modules/feature/consumer.js"],
-        1
+        pair_list_get(
+            &domain["incoming"]["files"],
+            "static/app/modules/feature/consumer.js",
+        )
+        .expect("incoming files consumer entry"),
+        1,
     );
     assert_eq!(
-        domain["incoming"]["files"]["static/app/modules/residual/unhandled.js"],
+        pair_list_get(
+            &domain["incoming"]["files"],
+            "static/app/modules/residual/unhandled.js",
+        )
+        .expect("incoming files unhandled entry"),
         1,
     );
 

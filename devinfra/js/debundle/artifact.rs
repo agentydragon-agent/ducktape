@@ -470,9 +470,9 @@ pub struct DirectoryManifestIndex {
 #[derive(Debug, Clone, Serialize)]
 pub struct DirectoryBoundarySummary {
     pub edge_count: usize,
-    pub edge_count_by_kind: BTreeMap<String, usize>,
-    pub symbols: BTreeMap<String, usize>,
-    pub files: BTreeMap<String, usize>,
+    pub edge_count_by_kind: EdgeHistogram,
+    pub symbols: EdgeHistogram,
+    pub files: EdgeHistogram,
     pub edges: Vec<DirectoryDependencyEdgeManifest>,
 }
 
@@ -495,14 +495,17 @@ pub struct FileDependencyManifest {
 #[derive(Debug, Clone, Serialize)]
 pub struct FileBoundarySummary {
     pub edge_count: usize,
-    pub edge_count_by_kind: BTreeMap<String, usize>,
-    pub symbols: BTreeMap<String, usize>,
-    pub files: BTreeMap<String, usize>,
+    pub edge_count_by_kind: EdgeHistogram,
+    pub symbols: EdgeHistogram,
+    pub files: EdgeHistogram,
 }
 
-/// Per-edge histogram. Emitted as a JSON array of `[key, count]` pairs to
-/// skip serde's per-edge `BTreeMap` machinery — this was the 1.51% hotspot
-/// inside `write_tree_reports` (`perf/2026_05_26.md`). Pairs are
+/// Histogram of counts keyed by a string label (kind, symbol, or file).
+/// Emitted as a JSON array of `[key, count]` pairs to skip serde's
+/// `BTreeMap` machinery — `DirectoryDependencyEdgeManifest`'s per-edge
+/// maps were the 1.51% hotspot inside `write_tree_reports`
+/// (`perf/2026_05_26.md`), and the same shape is shared by
+/// `DirectoryBoundarySummary` and `FileBoundarySummary`. Pairs are
 /// lexicographically sorted by key so the output is stable for diffing.
 pub type EdgeHistogram = Vec<(String, usize)>;
 
@@ -1553,9 +1556,9 @@ impl From<DirectionalSummary> for DirectoryBoundarySummary {
     fn from(summary: DirectionalSummary) -> Self {
         Self {
             edge_count: summary.edge_count,
-            edge_count_by_kind: summary.edge_count_by_kind,
-            symbols: summary.symbols,
-            files: summary.external_files,
+            edge_count_by_kind: histogram_into_pairs(summary.edge_count_by_kind),
+            symbols: histogram_into_pairs(summary.symbols),
+            files: histogram_into_pairs(summary.external_files),
             edges: summary.edges,
         }
     }
@@ -1589,9 +1592,9 @@ impl DirectionalFileAccumulator {
     fn into_file_summary(self) -> FileBoundarySummary {
         FileBoundarySummary {
             edge_count: self.edge_count,
-            edge_count_by_kind: self.edge_count_by_kind,
-            symbols: self.symbols,
-            files: self.files,
+            edge_count_by_kind: histogram_into_pairs(self.edge_count_by_kind),
+            symbols: histogram_into_pairs(self.symbols),
+            files: histogram_into_pairs(self.files),
         }
     }
 }
