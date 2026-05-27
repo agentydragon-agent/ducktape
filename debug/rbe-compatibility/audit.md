@@ -10,17 +10,17 @@ legitimate, and replace the vague guidance in AGENTS.md with a precise guardrail
 The RBE worker is `ghcr.io/agentydragon/rbe-worker` (devinfra/rbe_image/Dockerfile),
 based on Ubuntu 24.04. Available tools:
 
-| Tool | Available? | Details |
-|------|-----------|---------|
-| `/bin/bash` | Yes | Ubuntu 24.04 base |
-| Python 3 | Yes | Via Nix flake devtools package |
-| Node.js | Yes | Via Nix flake devtools package |
-| Rust/Cargo | Yes | Via Nix flake devtools package |
-| Docker | Yes | Docker CE v28.1.0 with custom dockerd wrapper |
-| Chromium deps | Yes | Full X11 + Chromium library stack |
-| Xvfb | Yes | Virtual framebuffer |
-| Nix | Yes | Single-user install |
-| git | Yes | Including git-lfs |
+| Tool          | Available? | Details                                       |
+| ------------- | ---------- | --------------------------------------------- |
+| `/bin/bash`   | Yes        | Ubuntu 24.04 base                             |
+| Python 3      | Yes        | Via Nix flake devtools package                |
+| Node.js       | Yes        | Via Nix flake devtools package                |
+| Rust/Cargo    | Yes        | Via Nix flake devtools package                |
+| Docker        | Yes        | Docker CE v28.1.0 with custom dockerd wrapper |
+| Chromium deps | Yes        | Full X11 + Chromium library stack             |
+| Xvfb          | Yes        | Virtual framebuffer                           |
+| Nix           | Yes        | Single-user install                           |
+| git           | Yes        | Including git-lfs                             |
 
 **Key**: The worker image is a superset of what NixOS provides for build actions.
 Any action that works locally on NixOS should also work on RBE. The worker has
@@ -73,6 +73,7 @@ binary locally regardless. The build of the Gazelle Go binary can and should use
 **What it does**: Builds a `requirements.out` file from `pyproject.toml`.
 
 **Current workflow** (from AGENTS.md):
+
 ```bash
 bbr build //:requirements --remote_download_regex='.*requirements\.out' --noremote_accept_cached
 cp bb-out/bazel-out/k8-fastbuild/bin/requirements.out requirements_bazel.txt
@@ -124,6 +125,7 @@ overrides `write_snapshot_collection` to copy each written `.ambr` file to
 sandbox). Bazel automatically uploads undeclared outputs from RBE runners.
 
 **RBE workflow** (already works):
+
 ```bash
 bbr test //path/to:snapshot_test \
   --test_arg=--snapshot-update --nocache_test_results
@@ -134,6 +136,7 @@ cp bazel-testlogs/path/to/snapshot_test/test.outputs/snapshot_test.ambr \
 ```
 
 **Local workflow** (DX shortcut, one fewer copy step):
+
 ```bash
 bazelisk test //path/to:snapshot_test \
   --test_arg=--snapshot-update --nocache_test_results \
@@ -161,12 +164,12 @@ alternative via `BazelAmberExtension` + undeclared outputs.
 
 ### Why no workflow needs it
 
-| Workflow | Why `--remote_executor=""` is NOT needed |
-|----------|------------------------------------------|
-| `bb run //devinfra:gazelle` | `bazel run` always executes locally; build uses RBE |
-| `bb run //devinfra:gazelle_python_manifest.update` | Same — binary runs locally |
-| `//:requirements` | Already documented to use RBE + download |
-| `CARGO_BAZEL_REPIN=1` | Module extension runs locally regardless; build actions use RBE |
-| `update_pnpm_lock` | Module extension runs locally regardless |
-| Syrupy snapshot updates | `BazelAmberExtension` copies to undeclared outputs; fetch + cp works on RBE |
-| Normal builds/tests | RBE is the default and correct choice |
+| Workflow                                           | Why `--remote_executor=""` is NOT needed                                    |
+| -------------------------------------------------- | --------------------------------------------------------------------------- |
+| `bb run //devinfra:gazelle`                        | `bazel run` always executes locally; build uses RBE                         |
+| `bb run //devinfra:gazelle_python_manifest.update` | Same — binary runs locally                                                  |
+| `//:requirements`                                  | Already documented to use RBE + download                                    |
+| `CARGO_BAZEL_REPIN=1`                              | Module extension runs locally regardless; build actions use RBE             |
+| `update_pnpm_lock`                                 | Module extension runs locally regardless                                    |
+| Syrupy snapshot updates                            | `BazelAmberExtension` copies to undeclared outputs; fetch + cp works on RBE |
+| Normal builds/tests                                | RBE is the default and correct choice                                       |
