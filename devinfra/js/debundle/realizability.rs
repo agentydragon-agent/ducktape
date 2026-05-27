@@ -30,11 +30,12 @@
 //! reachability around the hypothetical destination.
 
 use std::cell::RefCell;
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 
 use petgraph::algo::tarjan_scc;
 use petgraph::graphmap::DiGraphMap;
 use petgraph::visit::{DfsPostOrder, GraphBase, GraphRef, IntoNeighbors, Visitable};
+use rustc_hash::FxHashSet;
 
 use crate::OwnerId;
 use crate::graph::{
@@ -464,10 +465,16 @@ impl GraphBase for &EsmIGraph<'_> {
 impl GraphRef for &EsmIGraph<'_> {}
 
 impl Visitable for &EsmIGraph<'_> {
-    type Map = HashSet<ModuleId>;
+    // FxHash instead of std SipHash: the visit map is the per-node
+    // dedup set for the simulator's DFS, hit once per `simulate_esm_post_order`
+    // call (= once per `build_simulator` rebuild = once per gate
+    // `would_be_cycles_after_contract`). SipHash's DoS resistance is
+    // irrelevant on internal ModuleId data; FxHash is ~5× cheaper per
+    // probe.
+    type Map = FxHashSet<ModuleId>;
 
     fn visit_map(&self) -> Self::Map {
-        HashSet::new()
+        FxHashSet::default()
     }
 
     fn reset_map(&self, map: &mut Self::Map) {

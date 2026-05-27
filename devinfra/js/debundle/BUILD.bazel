@@ -250,6 +250,7 @@ rust_library(
         "@crates//:anyhow",
         "@crates//:petgraph",
         "@crates//:rayon",
+        "@crates//:rustc-hash",
         "@crates//:serde",
         "@crates//:serde_json",
         "@crates//:swc_atoms",
