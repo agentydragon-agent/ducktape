@@ -70,7 +70,7 @@
 //! block for the underlying literature.
 
 use std::cmp::Reverse;
-use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 
 use analysis::{
     DepKind, ModuleId, OwnerGraph, OwnerGraphReport, OwnerId, OwnerReportIndex, Partition,
@@ -277,7 +277,7 @@ pub struct QuotientGraph {
     /// that, so this stays in sync. Backs `owner_idx_of` so callers
     /// avoid an O(n) linear scan per lookup (hot on `peel plan-work`,
     /// 17.6% inclusive in the 2026-05-25 callgraph profile).
-    owner_id_to_idx: HashMap<String, OwnerIdx>,
+    owner_id_to_idx: FxHashMap<String, OwnerIdx>,
     /// Owner → current class. Dense, indexed by `OwnerIdx.0`.
     owner_to_class: Vec<ClassId>,
     /// Class metadata. Indexed by `ClassId.0`. Entries for emptied
@@ -418,7 +418,7 @@ impl QuotientGraph {
     pub fn from_report(report: &OwnerGraphReport, cap_lines: usize) -> Self {
         let (owner_graph, report_index) = OwnerGraph::from_report(report, &[]);
         let owner_ids: Vec<String> = report.nodes.iter().map(|n| n.id.clone()).collect();
-        let owner_id_to_idx: HashMap<String, OwnerIdx> = owner_ids
+        let owner_id_to_idx: FxHashMap<String, OwnerIdx> = owner_ids
             .iter()
             .enumerate()
             .map(|(i, id)| (id.clone(), OwnerIdx(i)))
@@ -628,7 +628,7 @@ impl QuotientGraph {
 
     /// Look up the owner index for a stable owner-id string. Returns
     /// `None` for ids not present in the source report. O(1) via the
-    /// `owner_id_to_idx` HashMap.
+    /// `owner_id_to_idx` FxHashMap.
     pub fn owner_idx_of(&self, owner_id: &str) -> Option<OwnerIdx> {
         self.owner_id_to_idx.get(owner_id).copied()
     }
@@ -2282,19 +2282,32 @@ fn rank_candidate(q: &QuotientGraph, a: ClassId, b: ClassId) -> RankedCandidate 
     // otherwise. Currently the cycle set is always preserved or
     // shrunk; a true "reduction" happens when low and high are in a
     // 2-class cycle. We check via the cached cycle index.
+    //
+    // Implementation note: on healthy corpora `cached_cycles` is
+    // empty, so both lookups return `None` and the inner branch is
+    // never entered (verified on the tana fixture: 59663 calls, 0
+    // entries into the inner branch). On corpora with pre-existing
+    // constraining cycles the per-class index lists are small —
+    // typically length ≤ 1-2 — so a nested
+    // `.iter().any(|a| other.contains(a))` is O(|la| · |lb|) with no
+    // allocation. This is strictly cheaper than the prior
+    // `BTreeSet::collect` + probe (one allocator round-trip per
+    // entry into the inner branch). Inner Vecs are produced by
+    // `rebuild_class_to_cycle_indices` via forward `enumerate()`
+    // pushes, so each is ascending — a sort-and-binary-search would
+    // be safe if profiling on a cyclic corpus later shows the lists
+    // growing.
     let mut reduces = false;
     if let (Some(la), Some(lb)) = (
         q.class_to_cycle_indices.get(&low),
         q.class_to_cycle_indices.get(&high),
     ) {
-        // Intersection of cycle indices.
-        let set_a: BTreeSet<usize> = la.iter().copied().collect();
-        for idx in lb {
-            if set_a.contains(idx) {
-                reduces = true;
-                break;
-            }
-        }
+        let (probe, other) = if la.len() <= lb.len() {
+            (la, lb)
+        } else {
+            (lb, la)
+        };
+        reduces = probe.iter().any(|idx| other.contains(idx));
     }
     key[0] = if reduces { 0 } else { 1 };
 
