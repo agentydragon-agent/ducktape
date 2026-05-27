@@ -149,7 +149,7 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
     assert holding_fan["metric"] == "holding_value_usd"
     assert holding_fan["monthly_metric_fan"]["month_index"] == [0, 1, 2, 3]
     assert holding_fan["monthly_metric_fan"]["percentile"] == [50.0] * 4
-    assert holding_fan["monthly_metric_fan"]["value"][0] == 750_000.0
+    assert holding_fan["monthly_metric_fan"]["value"][0] == 835_500.0
 
     detail = _post_json(server_url, "/api/product/projections/rollout", {"scenario": scenario, "seed": 7})
 
@@ -161,10 +161,10 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
     assert len(columns["month_index"]) == 4
     assert columns["month_index"] == [0, 1, 2, 3]
     assert columns["cash_usd"] == [250_000.0, 249_000.0, 248_000.0, 247_000.0]
-    assert columns["holding_value_usd"][0] == 750_000.0
-    assert columns["liquid_net_worth_usd"][0] == 1_000_000.0
+    assert columns["holding_value_usd"][0] == 835_500.0
+    assert columns["liquid_net_worth_usd"][0] == 1_085_500.0
     # +$25k for the PHA private-equity position (1000 units at $25 anchor).
-    assert columns["net_worth_usd"][0] == 1_025_000.0
+    assert columns["net_worth_usd"][0] == 1_110_500.0
     assert set(columns) == {
         "month_index",
         "cash_usd",
@@ -282,8 +282,8 @@ def test_backend_server_zeroes_failed_product_rollout_metrics(server_url: str) -
 
     assert fan["failed_count"] == 1
     assert fan["monthly_metric_fan"]["month_index"] == [0, 1, 2, 3]
-    # Month 0 = cash 250k + holdings 750k + PHA 25k; failure zeros subsequent months.
-    assert fan["monthly_metric_fan"]["value"] == [1_025_000.0, 0.0, 0.0, 0.0]
+    # Month 0 = cash 250k + holdings 835.5k + PHA 25k; failure zeros subsequent months.
+    assert fan["monthly_metric_fan"]["value"] == [1_110_500.0, 0.0, 0.0, 0.0]
     [summary] = fan["rollout_summaries"]
     assert summary["failed"] is True
     assert summary["terminal_metrics"]["failed_month_index"] == 0
@@ -299,8 +299,8 @@ def test_backend_server_zeroes_failed_product_rollout_metrics(server_url: str) -
     columns = detail["rollout"]["monthly_metrics"]
     assert columns["month_index"] == [0, 1, 2, 3]
     assert columns["cash_usd"] == [250_000.0, 0.0, 0.0, 0.0]
-    assert columns["holding_value_usd"] == [750_000.0, 0.0, 0.0, 0.0]
-    assert columns["net_worth_usd"] == [1_025_000.0, 0.0, 0.0, 0.0]
+    assert columns["holding_value_usd"] == [835_500.0, 0.0, 0.0, 0.0]
+    assert columns["net_worth_usd"] == [1_110_500.0, 0.0, 0.0, 0.0]
     expense, failure = detail["rollout"]["events"]
     assert expense == {
         "month_index": 0,
@@ -333,8 +333,8 @@ def test_backend_server_product_default_funding_sells_holding_for_required_spend
     assert detail["rollout"]["failed"] is False
     columns = detail["rollout"]["monthly_metrics"]
     assert columns["cash_usd"] == [250_000.0, 0.0]
-    assert columns["holding_value_usd"][0] == 750_000.0
-    assert 0.0 < columns["holding_value_usd"][1] < 750_000.0
+    assert columns["holding_value_usd"][0] == 835_500.0
+    assert 0.0 < columns["holding_value_usd"][1] < 835_500.0
     terminal = detail["rollout"]["terminal_metrics"]
     assert terminal["cash_usd"] == 0.0
     assert terminal["shortfall_usd"] == 0.0

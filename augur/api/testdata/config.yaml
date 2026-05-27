@@ -63,6 +63,12 @@ exogenous_provider:
       initial_value: 1.0
       monthly_log_return_mu: 0.0047666667
       monthly_log_return_sigma: 0.0461880215
+    "crypto:btc":
+      kind: constant
+      value: 75000.0
+    "crypto:eth":
+      kind: constant
+      value: 2100.0
     "home_value:location_a": # annual return 3.5%, vol 8%
       kind: gbm
       initial_value: 1.0

@@ -15,6 +15,7 @@ from augur.model.exogenous import (
     SampledExogenousBundle,
     Sampler,
 )
+from augur.model.independent_exogenous import IndependentExogenousProviderConfig
 from augur.model.series import INFLATION_SERIES_ID, SP500_SERIES_ID
 from augur.product import decode, service
 from augur.product.scenarios import build_scenario, resolve_primary_agent_id, sim_locations_from_config
@@ -44,7 +45,9 @@ from augur.product.wire import (
     SetPrimaryResidenceMarkerEvent,
     SetRentedFractionEventWire,
 )
-from augur.sim.scenario import SeriesIndexedAmount
+from augur.sim.external_series import EXTERNAL_SERIES_EVENTS_FRAME, EXTERNAL_SERIES_VALUES_FRAME, ExternalSeriesContext
+from augur.sim.scenario import Agent, InitialAccountBalance, InitialLot, Scenario, SeriesIndexedAmount
+from augur.sim.simulate import simulate_dense_with_external_series
 from util.bazel.runfiles import get_required_path
 
 
@@ -108,6 +111,49 @@ def test_product_fails_when_sample_is_missing_required_exogenous_series() -> Non
     assert model.sample_requests[0].required_level_series
 
 
+def test_product_fails_when_crypto_holding_price_is_not_modeled() -> None:
+    config = _augur_config()
+    provider = config.exogenous_provider
+    assert isinstance(provider, IndependentExogenousProviderConfig)
+    model = provider.model_copy(
+        update={"series": {series_id: spec for series_id, spec in provider.series.items() if series_id != "crypto:btc"}}
+    ).realize_model()
+    product = _service(model, augur_config=config)
+
+    with pytest.raises(ValueError, match=r"missing required level series: .*crypto:btc"):
+        product.rollout(RolloutRequest(scenario=_scenario_key(), seed=7))
+
+
+def test_monthly_metric_decode_fails_when_holding_price_series_is_missing() -> None:
+    scenario = Scenario(
+        agents=[Agent(agent_id="agent_a")],
+        initial_cash=[InitialAccountBalance(agent_id="agent_a", account_id="checking", balance_usd=0.0)],
+        initial_lots=[
+            InitialLot(
+                lot_id="unpriced_lot",
+                agent_id="agent_a",
+                asset_id="crypto:missing",
+                purchase_month_index=-1,
+                quantity=2.0,
+                cost_basis_per_unit_usd=1.0,
+            )
+        ],
+        tax_profiles=[],
+        horizon_months=1,
+    )
+    dense = simulate_dense_with_external_series(
+        scenario,
+        rollout_count=1,
+        external_series=ExternalSeriesContext(
+            series_values=EXTERNAL_SERIES_VALUES_FRAME.empty(), series_events=EXTERNAL_SERIES_EVENTS_FRAME.empty()
+        ),
+        locations={},
+    )
+
+    with pytest.raises(ValueError, match=r"holding asset 'crypto:missing' has no modeled price series"):
+        decode.monthly_metric_arrays(dense, primary_agent_id="agent_a")
+
+
 def test_metric_fan_and_rollout_detail_share_cached_sim_rollouts(
     counting_exogenous_model: CountingExogenousModel,
 ) -> None:
@@ -154,10 +200,10 @@ def test_metric_fan_and_rollout_detail_share_cached_sim_rollouts(
     assert detail.exogenous_model_id == "independent_exogenous_model"
     assert detail.rollout.seed == 7
     assert detail.rollout.monthly_metrics["cash_usd"] == [250_000.0, 249_000.0, 248_000.0, 247_000.0]
-    assert detail.rollout.monthly_metrics["holding_value_usd"][0] == 750_000.0
-    assert detail.rollout.monthly_metrics["liquid_net_worth_usd"][0] == 1_000_000.0
+    assert detail.rollout.monthly_metrics["holding_value_usd"][0] == 835_500.0
+    assert detail.rollout.monthly_metrics["liquid_net_worth_usd"][0] == 1_085_500.0
     # +$25k for the PHA private-equity position (1000 units at $25 anchor).
-    assert detail.rollout.monthly_metrics["net_worth_usd"][0] == 1_025_000.0
+    assert detail.rollout.monthly_metrics["net_worth_usd"][0] == 1_110_500.0
     assert [event.kind for event in detail.rollout.events] == ["monthly_expense"] * 3
     assert [event.amount_paid_usd for event in detail.rollout.events if event.kind == "monthly_expense"] == [
         1_000.0,
@@ -169,7 +215,7 @@ def test_metric_fan_and_rollout_detail_share_cached_sim_rollouts(
         MetricFanRequest(scenario=scenario, rollout_seeds=(7, 8), metric="holding_value_usd", percentiles=(50,))
     )
 
-    assert holding_fan.monthly_metric_fan["value"][0] == 750_000.0
+    assert holding_fan.monthly_metric_fan["value"][0] == 835_500.0
 
     fan_with_one_new_seed = product.metric_fan(
         MetricFanRequest(scenario=scenario, rollout_seeds=(7, 8, 9), metric="cash_usd", percentiles=(50,))
@@ -231,8 +277,8 @@ def test_failed_rollout_metrics_freeze_at_zero_after_failure(counting_exogenous_
 
     assert fan.failed_count == 1
     assert fan.monthly_metric_fan["month_index"] == [0, 1, 2, 3]
-    # Month 0 = cash 250k + holdings 750k + PHA 25k; failure zeros subsequent months.
-    assert fan.monthly_metric_fan["value"] == [1_025_000.0, 0.0, 0.0, 0.0]
+    # Month 0 = cash 250k + holdings 835.5k + PHA 25k; failure zeros subsequent months.
+    assert fan.monthly_metric_fan["value"] == [1_110_500.0, 0.0, 0.0, 0.0]
     [summary] = fan.rollout_summaries
     assert summary.failed is True
     assert summary.terminal_metrics.failed_month_index == 0
@@ -245,8 +291,8 @@ def test_failed_rollout_metrics_freeze_at_zero_after_failure(counting_exogenous_
 
     assert detail.rollout.failed is True
     assert detail.rollout.monthly_metrics["cash_usd"] == [250_000.0, 0.0, 0.0, 0.0]
-    assert detail.rollout.monthly_metrics["holding_value_usd"] == [750_000.0, 0.0, 0.0, 0.0]
-    assert detail.rollout.monthly_metrics["net_worth_usd"] == [1_025_000.0, 0.0, 0.0, 0.0]
+    assert detail.rollout.monthly_metrics["holding_value_usd"] == [835_500.0, 0.0, 0.0, 0.0]
+    assert detail.rollout.monthly_metrics["net_worth_usd"] == [1_110_500.0, 0.0, 0.0, 0.0]
     assert [event.kind for event in detail.rollout.events] == ["monthly_expense", "failure"]
     expense, failure = detail.rollout.events
     assert isinstance(expense, MonthlyExpenseEvent)
@@ -270,9 +316,9 @@ def test_default_funding_policy_sells_holdings_for_required_spend(
     columns = detail.rollout.monthly_metrics
     assert columns["cash_usd"] == [250_000.0, 0.0]
     holding_value_usd = columns["holding_value_usd"]
-    assert holding_value_usd[0] == 750_000.0
+    assert holding_value_usd[0] == 835_500.0
     terminal_holding_value_usd = float(holding_value_usd[1])  # type: ignore[arg-type]
-    assert 0.0 < terminal_holding_value_usd < 750_000.0
+    assert 0.0 < terminal_holding_value_usd < 835_500.0
     assert detail.rollout.terminal_metrics.cash_usd == 0.0
     assert detail.rollout.terminal_metrics.shortfall_usd == 0.0
     terminal_pe_value_usd = float(columns["private_equity_value_usd"][1])  # type: ignore[arg-type]

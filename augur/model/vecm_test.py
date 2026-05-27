@@ -166,6 +166,38 @@ class TestVecmModel:
                 )
             )
 
+    def test_offdiag_loadings_are_scaled_by_target_factor_volatility(self) -> None:
+        model = VecmModel(
+            factor_names=("sp500", "inflation"),
+            n_factors=2,
+            train_log_levels=np.zeros((1, 2), dtype=np.float64),
+            params={
+                "beta_tail_auto_loc": np.array([0.0], dtype=np.float64),
+                "alpha_auto_loc": np.array([0.0, 0.0], dtype=np.float64),
+                "const_coint_auto_loc": np.array(0.0, dtype=np.float64),
+                "log_diag_auto_loc": np.log(np.array([0.5, 0.005], dtype=np.float64)),
+                "offdiag_flat_auto_loc": np.array([0.9], dtype=np.float64),
+            },
+        )
+        model.latest_observations = {"sp500": 5500.0, "inflation": 320.0}
+        model.location_series_sources = LocationSeriesSources(home_value={}, rent={})
+        model._compute_provenance(evidence_source_id="test")
+
+        cov = model._cov_np()
+        assert cov[1, 1] == pytest.approx(0.005**2 * (1 + 0.9**2))
+
+        sampled = model.sample(
+            ExogenousSamplingRequest(
+                horizon_months=1,
+                rollout_seeds=tuple(range(512)),
+                required_level_series=frozenset({INFLATION_SERIES_ID}),
+            )
+        )
+
+        inflation = sampled.level_matrix(INFLATION_SERIES_ID, rollout_count=512, horizon_months=1)
+        monthly_log_return = np.log(inflation[:, 1] / inflation[:, 0])
+        assert float(np.std(monthly_log_return, ddof=1)) < 0.02
+
     def test_sample_anchors_crypto_factors_to_latest_close(self) -> None:
         rng = np.random.default_rng(456)
         base = np.cumsum(rng.normal(scale=0.02, size=200))

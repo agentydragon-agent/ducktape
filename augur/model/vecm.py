@@ -106,6 +106,11 @@ _CONST_COINT_PRIOR_SCALE = 5.0
 # softplus. The previous `chol_raw=Normal(0,1)` + softplus init started at
 # σ ≈ 0.7 (~70× too large) and softplus saturated as `chol_raw` decreased,
 # trapping SVI at the prior mode and tanking held-out log-density.
+#
+# Off-diagonal terms are relative row loadings, not raw log-return standard
+# deviations. This keeps a low-volatility target factor such as CPI from
+# inheriting 20-50% monthly residual volatility merely because it is correlated
+# with an earlier high-volatility factor like crypto.
 _LOG_DIAG_PRIOR_MEAN = -4.0
 _LOG_DIAG_PRIOR_STD = 2.0
 _OFFDIAG_PRIOR_STD = 0.1
@@ -153,14 +158,16 @@ def _build_cholesky(log_diag: jnp.ndarray, offdiag_flat: jnp.ndarray, n_factors:
     `jnp.tril_indices(n_factors, k=-1)` returns).
     """
     row_idx, col_idx = jnp.tril_indices(n_factors, k=-1)
-    chol = jnp.diag(jnp.exp(log_diag))
-    return chol.at[row_idx, col_idx].set(offdiag_flat)
+    diag = jnp.exp(log_diag)
+    chol = jnp.diag(diag)
+    return chol.at[row_idx, col_idx].set(offdiag_flat * diag[row_idx])
 
 
 def _build_cholesky_np(log_diag: np.ndarray, offdiag_flat: np.ndarray, n_factors: int) -> np.ndarray:
     row_idx, col_idx = np.tril_indices(n_factors, k=-1)
-    chol = np.diag(np.exp(log_diag))
-    chol[row_idx, col_idx] = offdiag_flat
+    diag = np.exp(log_diag)
+    chol = np.diag(diag)
+    chol[row_idx, col_idx] = offdiag_flat * diag[row_idx]
     return chol
 
 

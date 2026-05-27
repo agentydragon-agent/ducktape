@@ -192,9 +192,14 @@ def _lot_value_by_month(dense: DenseSimulationResult, *, primary_agent_code: int
             continue
         series_index = series_index_by_id.get(asset_id)
         if series_index is None:
-            continue
-        price = np.nan_to_num(plan.external_values[series_index, _SINGLE_ROLLOUT_INDEX, :], nan=0.0)
-        values += dense.buffers.state.lot_state[:, lot, _SINGLE_ROLLOUT_INDEX] * price
+            raise ValueError(f"holding asset {asset_id!r} has no modeled price series in the compiled simulation")
+        quantity = dense.buffers.state.lot_state[:, lot, _SINGLE_ROLLOUT_INDEX]
+        price = plan.external_values[series_index, _SINGLE_ROLLOUT_INDEX, :]
+        missing_price = (np.abs(quantity) > 1e-9) & ~np.isfinite(price)
+        if missing_price.any():
+            months = ", ".join(str(month) for month in np.flatnonzero(missing_price)[:5])
+            raise ValueError(f"holding asset {asset_id!r} has non-finite modeled price at month(s): {months}")
+        values += quantity * price
     # Clamp: floating-point rounding in FIFO dollar-sells (sold_units = sold_value / price)
     # can leave lot quantities at ~-1e-10, producing a tiny negative value here.
     return np.maximum(values, 0.0)
