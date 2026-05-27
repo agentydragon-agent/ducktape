@@ -503,8 +503,8 @@ pub struct FileBoundarySummary {
 /// Histogram of counts keyed by a string label (kind, symbol, or file).
 /// Emitted as a JSON array of `[key, count]` pairs to skip serde's
 /// `BTreeMap` machinery — `DirectoryDependencyEdgeManifest`'s per-edge
-/// maps were the 1.51% hotspot inside `write_tree_reports`
-/// (`perf/2026_05_26.md`), and the same shape is shared by
+/// maps were a measured hotspot inside `write_tree_reports` (see
+/// `perf/proposer_roadmap.md`), and the same shape is shared by
 /// `DirectoryBoundarySummary` and `FileBoundarySummary`. Pairs are
 /// lexicographically sorted by key so the output is stable for diffing.
 pub type EdgeHistogram = Vec<(String, usize)>;
