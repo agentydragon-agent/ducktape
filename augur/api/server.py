@@ -16,6 +16,7 @@ from pydantic import ValidationError
 from augur.api.casing import plain_json
 from augur.api.catalog import build_bootstrap_payload
 from augur.api.config import Config, load_augur_config, resolve_augur_config_path
+from augur.api.deployment import build_deployment_info
 from augur.model.exogenous import Sampler
 from augur.product.portfolio import product_portfolio_response
 from augur.product.scenarios import resolve_primary_agent_id, sim_locations_from_config
@@ -32,6 +33,7 @@ class ApiServerConfig:
 def create_app(config: ApiServerConfig) -> FastAPI:
     augur_config = config.augur_config
     bootstrap = build_bootstrap_payload(augur_config)
+    deployment_info = build_deployment_info()
     product_service = ProductService(
         portfolio=augur_config.portfolio,
         initial_cash_usd=float(augur_config.snapshot.cash_usd),
@@ -60,6 +62,10 @@ def create_app(config: ApiServerConfig) -> FastAPI:
     @app.get("/api/bootstrap")
     def bootstrap_house() -> JSONResponse:
         return payload(bootstrap)
+
+    @app.get("/api/deployment")
+    def deployment() -> JSONResponse:
+        return payload(deployment_info)
 
     @app.get("/api/product/portfolio")
     def product_portfolio_snapshot() -> JSONResponse:

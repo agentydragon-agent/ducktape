@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.responses import PlainTextResponse
 
 from augur.api.bootstrap import BootstrapResponse
+from augur.api.deployment import DeploymentInfo
 from augur.product.portfolio import ProductPortfolioResponse
 from augur.product.wire import MetricFanRequest, MetricFanResponse, RolloutRequest, RolloutResponse
 
@@ -17,6 +18,10 @@ def create_schema_app() -> FastAPI:
 
     @app.get("/api/bootstrap", response_model=BootstrapResponse)
     def bootstrap() -> BootstrapResponse:
+        raise RuntimeError("schema-only route")
+
+    @app.get("/api/deployment", response_model=DeploymentInfo)
+    def deployment() -> DeploymentInfo:
         raise RuntimeError("schema-only route")
 
     @app.get("/api/product/portfolio", response_model=ProductPortfolioResponse)

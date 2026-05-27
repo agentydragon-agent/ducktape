@@ -38,7 +38,9 @@ def server_url(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
         ],
         env={
             **os.environ,
+            "AUGUR_API_IMAGE_TAG": "devel-20260527220657-b86700d",
             "HOME": str(tmp_path / "home"),
+            "AUGUR_FRONTEND_IMAGE_TAG": "devel-20260527194755-6ec68c0",
             "MPLCONFIGDIR": str(tmp_path / "matplotlib"),
             "PYTHONUNBUFFERED": "1",
             "XDG_CACHE_HOME": str(tmp_path / "cache"),
@@ -245,6 +247,23 @@ def test_backend_server_product_portfolio_returns_configured_holdings(server_url
     assert pha["unit_value_usd"] == 25.0
     assert pha["current_value_usd"] == 25_000.0
     assert pha["total_cost_basis_usd"] == 5_000.0
+
+
+def test_backend_server_exposes_deployment_image_commits(server_url: str) -> None:
+    deployment = _get_json(server_url, "/api/deployment")
+
+    assert deployment == {
+        "api": {
+            "image_tag": "devel-20260527220657-b86700d",
+            "source_commit": "b86700d",
+            "source_commit_url": "https://github.com/agentydragon/ducktape/commit/b86700d",
+        },
+        "frontend": {
+            "image_tag": "devel-20260527194755-6ec68c0",
+            "source_commit": "6ec68c0",
+            "source_commit_url": "https://github.com/agentydragon/ducktape/commit/6ec68c0",
+        },
+    }
 
 
 def test_backend_server_zeroes_failed_product_rollout_metrics(server_url: str) -> None:

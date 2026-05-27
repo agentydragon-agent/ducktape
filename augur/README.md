@@ -40,9 +40,16 @@ company-/person-specific modeling assumptions.
 
 The production server is API-only: `//augur/api:server` reads a `Config`
 from `--config`, `$AUGUR_CONFIG_PATH`, or `/etc/augur/config.yaml`, then serves
-the `/api/*` routes and `/healthz`. Downstream deployments should serve the
-React bundle and private property assets separately, e.g. from an nginx
-sidecar.
+the `/api/*` routes and `/healthz`. `/api/deployment` reports the deployed
+API/frontend source commits when the runtime manifest provides image tags via
+`AUGUR_API_IMAGE_TAG` and `AUGUR_FRONTEND_IMAGE_TAG` (or explicit
+`AUGUR_API_SOURCE_COMMIT` / `AUGUR_FRONTEND_SOURCE_COMMIT`). Downstream
+deployments should pass those as ordinary environment values, typically with
+Flux ImagePolicy `:tag` markers, so commit visibility does not stamp the image
+contents or defeat digest-based release deduping.
+
+Downstream deployments should serve the React bundle and private property
+assets separately, e.g. from an nginx sidecar.
 
 Property media stays outside the generic frontend bundle. Deployments publish
 images through their own static host or CDN, then declare stable

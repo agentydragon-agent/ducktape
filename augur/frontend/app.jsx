@@ -1,7 +1,13 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { MantineProvider, NativeSelect } from "@mantine/core";
 
-import { fetchAugurBootstrap, fetchProductMetricFan, fetchProductPortfolio, fetchProductRollout } from "./client.js";
+import {
+  fetchAugurBootstrap,
+  fetchAugurDeployment,
+  fetchProductMetricFan,
+  fetchProductPortfolio,
+  fetchProductRollout,
+} from "./client.js";
 import { fmtNumber, fmtUsd } from "./lib/format.js";
 
 import { MetricFanChart } from "./fan_chart.jsx";
@@ -109,7 +115,46 @@ function RolloutResultsPanel({
   );
 }
 
-function ProductProjectionWorkspace({ bootstrap }) {
+function shortCommit(commit) {
+  if (!commit) return null;
+  return commit.slice(0, 12);
+}
+
+function DeploymentCommitItem({ label, image }) {
+  const commit = shortCommit(image?.sourceCommit);
+  if (!commit) return null;
+  const className = "mono font-semibold text-slate-700 dark:text-slate-200";
+  const title = image?.imageTag ? `${label}: ${image.imageTag}` : label;
+  return (
+    <span className="whitespace-nowrap" title={title}>
+      {label}{" "}
+      {image.sourceCommitUrl ? (
+        <a className={`${className} augur-link`} href={image.sourceCommitUrl}>
+          {commit}
+        </a>
+      ) : (
+        <span className={className}>{commit}</span>
+      )}
+    </span>
+  );
+}
+
+function DeploymentCommitSummary({ deployment }) {
+  const apiCommit = deployment?.api?.sourceCommit ?? null;
+  const frontendCommit = deployment?.frontend?.sourceCommit ?? null;
+  if (!apiCommit && !frontendCommit) return null;
+  if (apiCommit && frontendCommit && apiCommit === frontendCommit) {
+    return <DeploymentCommitItem label="Deployed" image={deployment.api} />;
+  }
+  return (
+    <>
+      <DeploymentCommitItem label="API" image={deployment?.api} />
+      <DeploymentCommitItem label="UI" image={deployment?.frontend} />
+    </>
+  );
+}
+
+function ProductProjectionWorkspace({ bootstrap, deployment }) {
   const [input, setInput] = useState(() => productInputFromSearch(window.location.search, bootstrap));
   const [selectedMetricValue, setSelectedMetricValue] = useState("net_worth_usd");
   const [result, setResult] = useState(null);
@@ -229,7 +274,12 @@ function ProductProjectionWorkspace({ bootstrap }) {
       className="min-h-screen bg-slate-100 text-slate-800 dark:bg-slate-950 dark:text-slate-100"
     >
       <AugurHeader
-        rightSlot={<span className="whitespace-nowrap">{fmtNumber(request.rolloutSeeds.length)} rollouts</span>}
+        rightSlot={
+          <>
+            <DeploymentCommitSummary deployment={deployment} />
+            <span className="whitespace-nowrap">{fmtNumber(request.rolloutSeeds.length)} rollouts</span>
+          </>
+        }
       />
 
       <main className="px-4 py-6 sm:px-6 lg:px-8">
@@ -298,6 +348,7 @@ function ProductProjectionWorkspace({ bootstrap }) {
 function ProductProjectionAppShell() {
   const [bootstrap, setBootstrap] = useState(null);
   const [bootstrapError, setBootstrapError] = useState(null);
+  const [deployment, setDeployment] = useState(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -314,9 +365,20 @@ function ProductProjectionAppShell() {
     return () => controller.abort();
   }, []);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchAugurDeployment({ signal: controller.signal })
+      .then((payload) => setDeployment(payload))
+      .catch((error) => {
+        if (error?.name === "AbortError") return;
+        setDeployment(null);
+      });
+    return () => controller.abort();
+  }, []);
+
   if (!bootstrap) return <ProductProjectionLoading error={bootstrapError} />;
 
-  return <ProductProjectionWorkspace bootstrap={bootstrap} />;
+  return <ProductProjectionWorkspace bootstrap={bootstrap} deployment={deployment} />;
 }
 
 export default function AugurApp() {

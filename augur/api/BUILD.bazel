@@ -135,6 +135,15 @@ py_library(
     ],
 )
 
+py_library(
+    name = "deployment",
+    srcs = ["deployment.py"],
+    deps = [
+        ":schemas",
+        "@pypi//pydantic",
+    ],
+)
+
 py_test(
     name = "catalog_test",
     srcs = ["catalog_test.py"],
@@ -176,6 +185,7 @@ py_library(
         ":casing",
         ":catalog",
         ":config",
+        ":deployment",
         "//augur/model:exogenous",
         "//augur/product:portfolio",
         "//augur/product:scenarios",
@@ -272,6 +282,7 @@ py_library(
     srcs = ["export_schema.py"],
     deps = [
         ":bootstrap",
+        ":deployment",
         "//augur/product:portfolio",
         "//augur/product:wire",
         "@pypi//fastapi",

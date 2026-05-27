@@ -1,6 +1,7 @@
 import { camelizeObjectKeys, decamelizeObjectKeys } from "./lib/casing.js";
 import {
   zBootstrapResponse,
+  zDeploymentInfo,
   zMetricFanRequest,
   zMetricFanResponse,
   zProductPortfolioResponse,
@@ -49,6 +50,10 @@ async function postJson(path, body, signal) {
 
 export async function fetchAugurBootstrap({ signal } = {}) {
   return camelizeObjectKeys(zBootstrapResponse.parse(await getJson("/api/bootstrap", signal)));
+}
+
+export async function fetchAugurDeployment({ signal } = {}) {
+  return camelizeObjectKeys(zDeploymentInfo.parse(await getJson("/api/deployment", signal)));
 }
 
 export async function fetchProductPortfolio({ signal } = {}) {
