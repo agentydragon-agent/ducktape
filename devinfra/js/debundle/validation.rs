@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::factor_assembly::AtomicUnitConflict;
 use crate::graph::build_module_quotient;
 use crate::partition::Partition;
-use crate::realizability::check_realizability;
+use crate::realizability::{RealizabilityVerdict, check_realizability_with_quotient};
 use swc_atoms::Atom;
 
 use crate::{DepKind, ModuleId, ModuleQuotient, OwnerGraph, StatementOrdinal};
@@ -295,7 +295,24 @@ pub fn validate_factorization(
     partition: &Partition,
     module_name: &dyn Fn(ModuleId) -> String,
 ) -> FactorizationReport {
-    let verdict = check_realizability(owner_graph, partition);
+    let quotient = build_module_quotient(owner_graph, partition);
+    validate_factorization_with_quotient(owner_graph, partition, &quotient, module_name)
+}
+
+/// Same as [`validate_factorization`] but takes a pre-built
+/// `ModuleQuotient` so callers that already constructed one (notably
+/// `ChunkFactorization::build_with`, which caches it as
+/// `self.dep_graph`) don't pay for a second
+/// `build_module_quotient` + `tarjan_scc` pass on the way through
+/// the realizability check.
+pub fn validate_factorization_with_quotient(
+    owner_graph: &OwnerGraph,
+    partition: &Partition,
+    quotient: &ModuleQuotient,
+    module_name: &dyn Fn(ModuleId) -> String,
+) -> FactorizationReport {
+    let verdict: RealizabilityVerdict =
+        check_realizability_with_quotient(owner_graph, partition, quotient);
     if verdict.unrealizable_sccs.is_empty() {
         return FactorizationReport {
             cycles: Vec::new(),
@@ -318,7 +335,7 @@ pub fn validate_factorization(
                 .map(|id| (node.statement_ordinal, id.0.clone()))
         })
         .collect();
-    let graph = &build_module_quotient(owner_graph, partition);
+    let graph = quotient;
     let mut cycles = Vec::new();
     for scc in verdict.scc_partition() {
         let in_scc: HashSet<ModuleId> = scc.iter().copied().collect();

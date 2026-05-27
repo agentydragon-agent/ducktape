@@ -62,7 +62,7 @@ pub use purity::{
 };
 pub use realizability::{
     CrossRebindEdge, DeltaHandle, PartitionDelta, RealizabilityIndex, RealizabilityVerdict,
-    SccDiagnosis, check_realizability,
+    SccDiagnosis, check_realizability, check_realizability_with_quotient,
 };
 pub use reports::schema::{
     AtomicGraphReport, AtomicUnitEdgeReport, AtomicUnitReport, BindingReport, EdgeRoleReport,
@@ -75,6 +75,7 @@ pub use stage_one::{StageOneAnalysis, compute_stage_one_analysis};
 pub use validation::{
     BlockingSccEntry, CycleEdge, CycleReport, FactorizationReport,
     render_atomic_unit_conflict_summary, render_cycle_summary, validate_factorization,
+    validate_factorization_with_quotient,
 };
 
 #[cfg(test)]

@@ -38,8 +38,9 @@ use petgraph::visit::{DfsPostOrder, GraphBase, GraphRef, IntoNeighbors, Visitabl
 
 use crate::OwnerId;
 use crate::graph::{
-    OwnerEdge, OwnerEdgeId, OwnerGraph, build_module_quotient, chunk_constraining_module_edges,
-    chunk_linker_order_from_pairs, chunk_source_import_order_from_adjacency,
+    ModuleQuotient, OwnerEdge, OwnerEdgeId, OwnerGraph, build_module_quotient,
+    chunk_constraining_module_edges, chunk_linker_order_from_pairs,
+    chunk_source_import_order_from_adjacency,
 };
 use crate::ids::ModuleId;
 use crate::partition::Partition;
@@ -130,12 +131,36 @@ impl RealizabilityVerdict {
 /// correctness reference for the `RealizabilityIndex`'s incremental
 /// backing (verified by differential test in the
 /// `RealizabilityIndex` step 1b follow-up).
+///
+/// Thin wrapper over [`check_realizability_with_quotient`] for callers
+/// that don't already have a built `ModuleQuotient`. If you do
+/// (e.g. `ChunkFactorization::build_with`, which materialises
+/// `dep_graph = build_module_quotient(...)` for its own use), pass it
+/// to the `_with_quotient` form to avoid a redundant
+/// `build_module_quotient` + `tarjan_scc` pass.
 pub fn check_realizability(
     owner_graph: &OwnerGraph,
     partition: &Partition,
 ) -> RealizabilityVerdict {
+    let quotient = build_module_quotient(owner_graph, partition);
+    check_realizability_with_quotient(owner_graph, partition, &quotient)
+}
+
+/// Same as [`check_realizability`], but takes a pre-built
+/// `ModuleQuotient` to read SCCs from instead of constructing one
+/// from `(owner_graph, partition)` internally. The quotient must be
+/// the one produced by `build_module_quotient(owner_graph, partition)`
+/// for the same arguments — `build_module_quotient` is deterministic,
+/// so any two `ModuleQuotient`s built that way are equivalent and
+/// `quotient.sccs()` is byte-identical to a fresh
+/// `build_module_quotient(...).sccs()`.
+pub fn check_realizability_with_quotient(
+    owner_graph: &OwnerGraph,
+    partition: &Partition,
+    quotient: &ModuleQuotient,
+) -> RealizabilityVerdict {
     let mut verdict = RealizabilityVerdict {
-        scc_partition: build_module_quotient(owner_graph, partition).sccs(),
+        scc_partition: quotient.sccs(),
         ..RealizabilityVerdict::default()
     };
 
@@ -1696,6 +1721,39 @@ mod tests {
             .expect("parse module");
         let facts = analyze_chunk(&module, &AnalysisHints::default(), None, |_| None).facts;
         build_owner_graph(&facts)
+    }
+
+    /// `check_realizability` is a thin wrapper around
+    /// `check_realizability_with_quotient` that builds the quotient
+    /// fresh. Both forms must produce byte-identical verdicts (incl.
+    /// `scc_partition`, `unrealizable_sccs`, `cross_rebinds`) on the
+    /// same `(owner_graph, partition, build_module_quotient(...))`
+    /// triple. This pins the wrapper-equivalence used by
+    /// `ChunkFactorization::build_with` to share its already-built
+    /// `dep_graph` instead of building a second quotient inside
+    /// validation.
+    #[test]
+    fn check_realizability_with_quotient_matches_pure_form() {
+        // A constraining cross-module cycle so every verdict field
+        // (incl. `unrealizable_sccs` and `scc_partition`) is populated
+        // — exercises more than just the empty-verdict happy path.
+        let source = "const a = b + 1; const b = a + 1;";
+        let owner_graph = parse_and_build(source);
+        let mut partition = Partition::new(&owner_graph, module_id(0));
+        partition.set(OwnerId(1), module_id(1));
+
+        let pure_form = check_realizability(&owner_graph, &partition);
+        let quotient = build_module_quotient(&owner_graph, &partition);
+        let threaded = check_realizability_with_quotient(&owner_graph, &partition, &quotient);
+
+        assert_eq!(
+            pure_form, threaded,
+            "wrapper-vs-threaded forms must yield byte-identical verdicts",
+        );
+        assert!(
+            !pure_form.is_realizable(),
+            "fixture should produce a non-empty verdict to exercise all fields",
+        );
     }
 
     /// Two top-level constants in different modules, with one reading

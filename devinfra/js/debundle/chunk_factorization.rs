@@ -10,7 +10,7 @@ use crate::graph::{
 };
 use crate::partition::Partition;
 use crate::reports::build_owner_graph_report;
-use crate::validation::validate_factorization;
+use crate::validation::validate_factorization_with_quotient;
 
 use crate::{
     FactorizationReport, LogicalModule, LogicalModuleIndex, ModuleId, ModuleQuotient,
@@ -213,10 +213,12 @@ impl ChunkFactorization {
     /// Run SCC analysis over the dep graph. Spec authors consume the
     /// resulting report to fix any cycles or atomic-unit conflicts.
     pub fn validate(&self) -> FactorizationReport {
-        let mut report =
-            validate_factorization(&self.analysis.owner_graph, &self.partition, &|id| {
-                self.analysis.module_name(id)
-            });
+        let mut report = validate_factorization_with_quotient(
+            &self.analysis.owner_graph,
+            &self.partition,
+            &self.dep_graph,
+            &|id| self.analysis.module_name(id),
+        );
         report.atomic_unit_conflicts = self.assembly_conflicts.clone();
         report.linker_order = self
             .linker_order
