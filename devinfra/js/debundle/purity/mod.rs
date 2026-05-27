@@ -48,55 +48,14 @@ enum ChunkBinding {
     /// `purity` is the worst purity reachable from the body, computed
     /// by fixed-point iteration over all chunk-top functions.
     Function { purity: Purity },
-    /// Chunk-top `const X = <plain literal>` (immutable cell) OR
-    /// `let X = <plain literal>` / `var X = <plain literal>` whose
-    /// only assignments anywhere in the chunk re-bind X to another
-    /// plain literal (whole-object replacement; no in-place
-    /// mutation). For `var`, multiple chunk-top `var X = init_n`
-    /// declarations are also admitted as long as every init is
-    /// plain-literal. Inits can additionally take the TS-enum-IIFE
-    /// shape `var X = ((p) => (p.A = "a", p.B = "b", p))(X || {})` where
-    /// the IIFE produces a plain object by parameter mutation; see
-    /// `is_ts_enum_iife_init_for_binding` for the syntactic shape
-    /// and soundness argument. Property reads `X.k` / `X[k]` (k pure) on such a
-    /// binding are pure regardless of when they fire:
-    ///
-    /// * **No accessor channels at any program point.** The initial
-    ///   init is a syntactic plain literal — no
-    ///   getters/setters/methods/computed keys/`__proto__`, so the
-    ///   value carries only data properties. Every re-bind (`let`
-    ///   case) writes another plain-literal value, so the post-write
-    ///   value still has only data properties. Object/array spread
-    ///   inside the literal (`{...src}`, `[...src]`) is permitted:
-    ///   `CopyDataProperties` copies values via
-    ///   `CreateDataPropertyOrThrow` regardless of the source's
-    ///   descriptor shape — the result is plain.
-    /// * **No post-init accessor installation.** The chunk-wide
-    ///   write scan rejects any member write (`X.k = …`,
-    ///   `X[k] = …`), member update, member delete, or call to
-    ///   `Object.{defineProperty,defineProperties,setPrototypeOf,assign}`
-    ///   / `Reflect.{defineProperty,set,setPrototypeOf,deleteProperty}`
-    ///   with `X` as first arg. Plain-ident writes whose RHS is not
-    ///   a plain-literal also disqualify.
-    /// * **Re-bind soundness for `let`.** Reads on `X` after a
-    ///   re-bind see the new plain-literal value; reads before still
-    ///   saw the old plain-literal value. At no program point does
-    ///   `X` hold an accessor-carrying value, so member reads fire
-    ///   no user code regardless of write/read interleaving. The
-    ///   re-bind statement itself is independently classified impure
-    ///   (the existing `AssignOrUpdate` rule on `Expr::Assign`), so
-    ///   it keeps its `S`-edge and the debundler cannot move it past
-    ///   sequenced points.
-    ///
-    /// Sound enabler for the recursive-purity claim "`x` reads on
-    /// `x.k` / `x[pure]` are pure iff `x` is bound to a plain-data
-    /// shape that has no accessor channels". Eliminates the
-    /// chain-of-hints needed when a chunk-local helper's body is
-    /// just a property read on a chunk-local config object —
-    /// including the `let envConfig = {...}` /
-    /// `envConfig = {...envConfig, ...n}` pattern that the
-    /// `runtime/environment/env_config.yaml` spec hints in
-    /// gaffer-private were a workaround for.
+    /// Chunk-top binding whose value is provably a plain object/array
+    /// — `const X = <plain literal>`, or `let`/`var` whose every
+    /// re-bind is also a plain literal, or the TS-enum-IIFE shape
+    /// (see `is_ts_enum_iife_init_for_binding`). The chunk-wide write
+    /// scan (`PlainDataWriteScanner`) rejects any post-init accessor
+    /// installation, so property reads `X.k` / `X[k]` are pure.
+    /// Full soundness write-up: <docs/purity_soundness.md> §
+    /// "ChunkBinding::PlainData".
     PlainData,
 }
 

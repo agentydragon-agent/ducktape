@@ -14,11 +14,6 @@ Remaining: strip-specific helpers, annotation/identity logic, wrapper generation
 
 Mixes graph construction (`ChunkCodeGraph`), whitelist constant tables (~400 lines of static data), expression classification, PlainData write scanning, and TS enum IIFE recognition.
 
-- Whitelist tables (`PURE_STATIC_PROPS` through `PLAIN_DATA_HOSTILE_BUILTINS`, lines ~1600–1750) should be in `purity/whitelists.rs` or a data file.
-- `classify_fresh_array_spread_source_purity` and `classify_fresh_array_spread_source_for_iterable` are near-identical recursive classifiers differing only in the result interpretation. Unify with a parameterized return.
-- ~80-line doc comment on `PURE_OBJECT_CALLS_ON_PLAIN_DATA` (lines 1657–1741) and ~55-line PlainData soundness comment (lines 37–91) are design-doc material. Keep 3–5 line summaries in code.
-- `ChunkCodeGraph` mixes SCC computation with classification state. The SCC computation could be a standalone function.
-
 ### `analysis_tests.rs` (4095 lines, 8+ subsystems)
 
 Tests 8+ distinct subsystems in one file: fact analysis, decorate helpers, cycle detection, atomic unit conflicts, purity classification, plain-data tracking, redundant hints, statement splitting, factor assembly. A test for purity must scroll past 600 lines of fact-analysis tests to find helpers.

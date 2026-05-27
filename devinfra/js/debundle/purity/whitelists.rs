@@ -196,82 +196,14 @@ pub(super) const PURE_STATIC_FUNCTION_REFS: &[(&str, &str)] = &[
 
 /// Static `Object` methods that are Pure when called with a single
 /// argument that is structurally a fresh plain-data object/array
-/// literal (no accessors / methods / `__proto__` / computed keys /
-/// spread of non-plain-data sources) OR a chunk-top binding that has
-/// admitted as `ChunkBinding::PlainData` (whose plain-data shape is
-/// enforced syntactically by `collect_plain_data_bindings` and whose
-/// post-init accessor-installation is rejected by
-/// `PlainDataWriteScanner`).
-///
-/// The contract is stricter than `PURE_STATIC_CALLS` because every
-/// member here either invokes `[[Get]]` on own keys (which fires user
-/// getters / Proxy traps on a general argument) or mutates descriptor
-/// state (`freeze`). Restricting the argument shape to a fresh plain-
-/// data receiver — verified syntactically at the call site — closes
-/// both holes: no own-key access can fire a user accessor (none
-/// exist), and the mutation in `freeze`'s case targets a value that
-/// is not aliased through any user-observable channel before the
-/// call.
-///
-/// Soundness contract per entry:
-///
-/// * `Object.keys(O)` — ECMA-262 §20.1.2.17 calls `ToObject(O)`
-///   (no coercion on an object), then `EnumerableOwnPropertyNames(O,
-///   "key")`. The latter calls `[[OwnPropertyKeys]]` (for an
-///   ordinary plain object: returns the integer-index keys then
-///   string keys in insertion order, no user code) and per-key
-///   `[[GetOwnProperty]]` to check `[[Enumerable]]` — also a
-///   structural read with no user code on a fresh plain literal /
-///   PlainData binding.
-/// * `Object.values(O)` / `Object.entries(O)` — same as `keys` but
-///   additionally call `[[Get]]` on each own key. For an ordinary
-///   plain-data receiver every own key resolves to a data property
-///   ($\Rightarrow$ no accessor fires). PlainData receivers carry
-///   the same guarantee by the chunk-wide write scan
-///   (`PlainDataWriteScanner` rejects any
-///   `Object.defineProperty(X, …)` /
-///   `Object.setPrototypeOf(X, …)` that could install an accessor
-///   post-init).
-/// * `Object.freeze(O)` — ECMA-262 §20.1.2.6 calls
-///   `SetIntegrityLevel(O, "frozen")` which sets `[[Extensible]]`
-///   to false and rewrites each own property descriptor to non-
-///   configurable (and non-writable for data properties). No
-///   `[[Get]]` is performed, no user code fires. The mutation is
-///   on the just-allocated literal (for the literal form) or on a
-///   binding whose only producer/consumer is the chunk being
-///   debundled (for the PlainData form), so it cannot perturb
-///   user-observable state outside the call.
-/// * `Object.fromEntries(I)` — ECMA-262 §20.1.2.7 invokes
-///   `I[@@iterator]()`. For a fresh `Array` literal with no spread,
-///   that resolves to the built-in Array iterator, which `[[Get]]`s
-///   indices `0..length` (own data properties on a fresh array,
-///   no user code) and stops. Each yielded entry must itself be a
-///   2-element Array literal whose [0]/[1] reads are own data
-///   properties (gated by `is_fresh_entry_array_for_from_entries`).
-///   Both gates together rule out the
-///   "non-iterable argument throws TypeError" path that breaks
-///   purity for arbitrary arg shapes (the throw is observable). For
-///   a PlainData Object binding the call would throw, so PlainData
-///   shapes are admitted only for the non-fromEntries methods.
-///
-/// Out of scope (not admitted here; flagged for follow-up review):
-///
-/// * `Object.assign(target, src)` — mutates `target` AND calls
-///   `[[OwnPropertyKeys]]`/`[[Get]]` on `src`. The target-mutation
-///   half rules out the literal-arg shortcut: even with two literal
-///   args, `Object.assign({}, …)` returns the first arg mutated,
-///   which is observable only if the result is captured — but the
-///   mutation itself is invisible without the capture, so this is
-///   safely pure-of-result. Skipped here to keep the rule tight;
-///   the `assign` path needs its own argument-count + result-shape
-///   analysis.
-/// * `Object.getOwnPropertyNames(O)` / `getPrototypeOf(O)` /
-///   `getOwnPropertyDescriptor(O, k)` — same shape as `keys` but
-///   produces a richer return value. Could ride on the same gate
-///   in a follow-up; out for v1 to minimize the audit surface.
-/// * `Array.from(I[, mapFn])` — sound only when `mapFn` is absent
-///   (a `mapFn` invokes user code per element). Skipped here to
-///   avoid the per-call argument-count gate.
+/// literal OR a chunk-top `ChunkBinding::PlainData` binding. Stricter
+/// than `PURE_STATIC_CALLS` because each entry either invokes
+/// `[[Get]]` on own keys (which fires user accessors on a general
+/// receiver) or mutates descriptor state (`freeze`); the plain-data
+/// receiver gate closes both holes. Per-entry ECMA-262 soundness +
+/// the excluded shortlist (`Object.assign`,
+/// `Object.getOwnPropertyNames`, `Array.from`) live in
+/// <docs/purity_soundness.md> § "PURE_OBJECT_CALLS_ON_PLAIN_DATA".
 pub(super) const PURE_OBJECT_CALLS_ON_PLAIN_DATA: &[(&str, &str)] = &[
     ("Object", "keys"),
     ("Object", "values"),
