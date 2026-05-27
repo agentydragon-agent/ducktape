@@ -10,11 +10,9 @@ The original executive-summary item resolved with the `EdgeRole` enum. Remaining
 
 ## Ad-hoc wiring + pipeline-state passing
 
-### `compute_stage_one_analysis` is itself an example of the right direction
+### `compute_stage_one_analysis` — only rebind-folding still leaks into the materializer
 
-`stage_one/mod.rs:72` is a genuinely clean composer. The reason it works is that **the boundary at Stage A is well-defined**: the inputs and outputs are clear, the composer's only job is to call `analyze_chunk` then `compute_owner_graph_and_units_with`. The Stage A composer is exactly the shape every other composite operation in this crate should look like, and is the strongest design point in the recent refactor.
-
-That said, `stage_one/mod.rs:46` notes "Why a free function with no struct fanout" — but the doc-string concedes that the side-effecting interleaving (redundant-hint stderr, top-level-await `bail!`, atomic-unit-rebind folding) **still happens inline at the materializer**. Stage A _separation_ isn't done; the composer is a function-level renaming. Folding those paths into the composer's owners is the next refactor in this area; it cleans up the materializer body even though there's no longer a cross-process consumer waiting on the boundary.
+`stage_one/mod.rs` is a clean composer. Redundant-hint stderr and the top-level-await `bail!` are now owned by the composer (`report_redundant_hints_to_stderr` + the explicit `top_level_await` check). The only side-effecting path still living inline at the materializer is `fold_rebind_atomic_units` (`lowering/materialize/mod.rs:216`), which folds atomic-unit rebinds into the partition. Moving that into the composer would finish the Stage A separation; the rebind path needs the post-seed partition, so it's plausibly a separate "Stage A.5" composer rather than an extension of `compute_stage_one_analysis` proper.
 
 ## Duplicated calculations
 
@@ -38,23 +36,7 @@ Remaining legitimate walks (different graphs): `validation.rs:437` (FAS iteratio
 
 What's actually worth resolving here is the structural shape: callers re-hydrate with an empty `declared`, which means downstream code that touches `OwnerNode::declared` will silently see "no bindings" instead of the truth. The right fix is either (a) extend `OwnerGraphReport` to carry per-node `declared`, or (b) split into a thin reconstruct-from-graph-shape function that doesn't pretend `declared` is meaningful. Today's signature is a hazard — callers can ask for binding sets and get an empty answer. See also `docs/lessons_learned/cross_process_stage_b.md` — the cross-process variant didn't ship, but the in-process rehydration path did.
 
-## Library-vs-hand-rolled
-
-### `swc_ecma_visit` usage is reasonable
-
-Searched for hand-rolled AST walks that should have been visitors. Found only the explicit top-level iteration in `facts/mod.rs` (`match ModuleItem::Stmt(Stmt::Decl(...))` etc.) which is appropriate because the analysis is fundamentally a top-level-only iteration with structured per-statement output. Subordinate visits (binding-target recording, reference collection, identifier scanning, body-purity) all use `Visit` / `VisitWith` correctly. No fix needed here.
-
 ## Encapsulation + module boundaries
-
-### `OwnerGraph` is a struct with public fields
-
-`graph.rs:234`. Five public fields: `nodes`, `edges`, `out_edges`, `in_edges`, `callee_edges`. Every consumer iterating the graph reaches `owner_graph.iter_nodes()` / `iter_edges()` (good), but the fields themselves are `pub` so consumers can also `for edge in &owner_graph.edges` or `for slot in &owner_graph.out_edges[id.0]` (and they do — `realizability.rs:111`, `validation.rs:260`, etc.). This makes the invariants on the CSR structure ("`out_edges[id.0]` lists every `OwnerEdgeId` whose `from == id`, in insertion order") implicit on every reader.
-
-`CODE_REVIEW.md` notes the same issue (P3 "OwnerGraph exposes internal CSR structures"). At architecture level: the right encapsulation is `OwnerGraph` exposing only `iter_nodes`, `iter_edges`, `successors(id) -> impl Iterator<&OwnerEdge>`, `predecessors(id) -> impl Iterator<&OwnerEdge>`, `node(id)`, `edge(eid)`. Today's `pub nodes: Vec<OwnerNode>` invites every consumer to write its own adjacency walk.
-
-### `ModuleQuotient` Derefs to `petgraph::DiGraphMap`
-
-`graph.rs:495`. The inner field is `pub(crate)` after `073493e6d`, but `Deref` and `DerefMut` still expose the full petgraph mutation API to every in-crate caller. No consumer needs the mutation surface (`validation.rs` and `reports.rs` only read). Replace the `DerefMut` impl with named accessors (`all_edges`, `edge_weight`, `contains_edge`, `has_init_order_constraining_edge`) and keep the explicit constructor `build_module_quotient` as the only mutation path. The `Deref` for read-only access can stay if it pulls its weight.
 
 ### `ChunkFactorization` is yet another per-chunk IR/report layer
 
@@ -78,7 +60,7 @@ Six distinct types in the orbit of "stuff a chunk analysis produced" (after the 
 
 ### `pub(crate)` on internals is broad
 
-`OwnerGraph` fields are `pub(crate)` not `pub`, which is the right scope; but `pub(crate)` means every module in the crate can mutate them. With `RealizabilityIndex` holding owner-edge references, `IncrementalQuotient` maintaining bucket state derived from the owner graph, and `OwnerGraph::from_report` reconstructing it from JSON, the _crate-internal_ invariant surface is large. The `no_consumer_calls_is_cross_module_at_init_promotion_directly` test (`graph.rs:1637`) is a tell — when a project starts adding _grep-based invariant tests_ to keep parallel call sites in sync, that's the signal that the type system isn't carrying the invariant.
+`OwnerGraph` fields are now private (encapsulation refactor done), but `RealizabilityIndex` holds owner-edge references, `IncrementalQuotient` maintains bucket state derived from the owner graph, and `OwnerGraph::from_report` reconstructs it from JSON. The _crate-internal_ invariant surface is still large. The grep-based parallel-call-site test (`no_consumer_calls_is_cross_module_at_init_promotion_directly`) that motivated this item has been deleted, but the underlying concern — that crate-internal invariants are encoded by convention rather than type — remains for these consumers.
 
 ## Name overloading
 
@@ -87,8 +69,7 @@ Watch out for:
 - **`ChunkFactorization` vs `ChunkAnalysis`**: both are per-chunk IR; the difference is whether the partition is applied. Could be `ChunkAnalysis` (no partition) vs `FactorizedChunk` (partition applied) and the meaning would be more obvious.
 - **`ChunkAnalysisOptions`** (`spec.rs:104`) is a _spec-side_ per-chunk knob holder; **`OwnerGraphOptions`** (`graph.rs:21`) is the _graph-build-side_ knob holder; the materializer copies one field from the former into the latter (`lowering/materialize/mod.rs:435–439`). The duplication of "options" types with the same one field (`dataflow_aware_s_chain`) is a sign that the type is doing too little — fold them together. (The original motivation for keeping them separate — Stage A cache-key independence — went away when cross-process Stage B was dropped.)
 - **`linker_order` (`Vec<String>` in `FactorizationReport`)** vs **`linker_order` (`Vec<ModuleId>` in `ChunkFactorization`)** vs **`chunk_linker_order` (`BTreeMap<ModuleId, usize>` in `graph.rs`)** — three different shapes for "the toposort of the constraining-edge graph", differing in element type and whether it's "list" or "map (position lookup)". Pick one canonical type, derive the others.
-- **`UnrealizableScc` (`realizability.rs:50`)** vs **`CycleReport` (`validation.rs:35`)** vs **`QuotientSccReport` (`reports/schema.rs`)** vs **`AtomicUnitConflict` (`factor_assembly.rs:35`)** — four representations of "the spec is unrealizable, here's why" with subtly different fields. `UnrealizableScc` carries `constraining_owner_edges`; `CycleReport` carries `cut` (a minimum cut) + `evidence`; `QuotientSccReport` carries `module_edge_ids` + `constraining_module_edge_ids`. Two of these contain the same data ("the modules in the SCC + the edges in the SCC"), with the cut/evidence/min decoration added by the validator. The right shape is one core type with optional decorations, not four parallel structs.
-- **`AnalysisHints`** (`facts/mod.rs`-exported) lives in `facts`, but holds spec-derived data (`declared_pure`, `declared_pure_new`, `declared_pure_members`, `known_effects`). The data is spec-shaped, the type is in facts. Today's pipeline collects the hints before the Stage A composer runs — fine for the in-process flow — but the "Stage A is spec-independent" framing in `docs/lessons_learned/cross_process_stage_b.md` always rested on `AnalysisHints` magically not counting as spec. With cross-process Stage B dropped, the framing is no longer load-bearing, but the module-vs-data-shape mismatch (spec-shaped data living in the facts module) is still ugly and worth a re-home.
+- **`SccDiagnosis` (`realizability.rs:65`, renamed from `UnrealizableScc` in `3dbaf1037`)** vs **`CycleReport` (`validation.rs:38`)** vs **`QuotientSccReport` (`reports/schema.rs:174`)** vs **`AtomicUnitConflict` (`factor_assembly.rs:42`)** — four representations of "the spec is unrealizable, here's why" with subtly different fields. `SccDiagnosis` carries `constraining_owner_edges`; `CycleReport` carries `cut` (a minimum cut) + `evidence`; `QuotientSccReport` carries `module_edge_ids` + `constraining_module_edge_ids`. Two of these contain the same data ("the modules in the SCC + the edges in the SCC"), with the cut/evidence/min decoration added by the validator. The right shape is one core type with optional decorations, not four parallel structs.
 
 ## Algorithmic clarity (realizability gate, atom detection)
 
@@ -99,8 +80,6 @@ The realizability gate's actual algorithm, read carefully, is:
 > Build the canonical constraining-edge view of the I-graph; the gate accepts iff (a) Tarjan on the constraining-edge view has no multi-module SCC, and (b) for every multi-module SCC in the full I-graph that has at least one constraining edge, the ECMA-262 Phase-2 simulator (rooted at residual, with residual's imports sorted by `source_import_position` and every other module's by `linker_position`) yields a post-order with `post_order[target] < post_order[source]` for every constraining edge.
 
 That's one algorithm with two passes. Pass 1 is a cheap necessary condition (mutual at-init cycles can never be rescued by reordering); Pass 2 is the precise condition (the runtime DFS-simulator decides asymmetric cycles). The 2× Tarjan is structural to the algorithm, not patchy. **This is fine.** The docs/design.md theorem reads cleanly.
-
-~~What's _patchy_ is the `EsmEvaluationSimulator::from_adjacency` (`realizability.rs:306`) constructor: it exists only because the overlay path (`IncrementalQuotient`) has its edges in a different shape than the canonical edge set, so `from_adjacency` rebuilds a fake `ChunkConstrainingEdgeSet { edges: empty_map_for_each_constraining_pair, i_successors }` and feeds it to `build`. This is two structurally identical inputs that diverged because two callers had different sources; the right shape is for `build` to take the two adjacency maps directly. Today's "construct fake edges map" is a kludge to fit the constructor.~~ **Resolved in `944631010`**: `EsmEvaluationSimulator::build` now takes `(i_successors, constraining_pairs, residual)` directly; `from_adjacency` and the fake `ChunkConstrainingEdgeSet` construction are gone. Both the canonical-edge-set path (`check_realizability`) and the overlay path (`IncrementalQuotient::build_simulator_from_scratch`) thread their adjacency maps in unchanged.
 
 ### Atomic-units classification has two paths but only one is wired
 
