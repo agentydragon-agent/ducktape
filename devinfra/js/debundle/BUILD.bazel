@@ -214,6 +214,7 @@ rust_library(
 rust_library(
     name = "analysis",
     srcs = [
+        "analysis_hints.rs",
         "analysis_tests/mod.rs",
         "atomic_units.rs",
         "chunk_analysis.rs",

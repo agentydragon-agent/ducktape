@@ -14,6 +14,7 @@
 //!    graph model. Agent-facing peel recommendation heuristics run from the
 //!    serialized graph via the `debundle peel` CLI.
 
+mod analysis_hints;
 mod atomic_units;
 mod chunk_analysis;
 mod chunk_factorization;
@@ -29,6 +30,7 @@ mod rollback_graph;
 mod stage_one;
 mod validation;
 
+pub use analysis_hints::{AnalysisHints, KnownEffect, LocalEffectPolicy};
 pub use atomic_units::{
     AtomicUnit, OwnerGraphAndUnits, compute_atomic_units, compute_owner_graph_and_units,
     compute_owner_graph_and_units_with,
@@ -39,10 +41,10 @@ pub use factor_assembly::{
     AssemblyOutcome, AtomicUnitConflict, ConflictingClaim, assemble_partition,
 };
 pub use facts::{
-    AnalysisHints, ChunkFactAnalysis, ChunkFactsReport, EffectCell, EffectCellReport, IdReport,
-    KnownEffect, LocalEffectPolicy, SCHEMA_VERSION as CHUNK_FACTS_SCHEMA_VERSION,
-    StatementEffectSummary, StatementEffectSummaryReport, StatementFacts, StatementFactsReport,
-    StatementKind, analyze_chunk, find_top_level_await, local_namespace_iife_target,
+    ChunkFactAnalysis, ChunkFactsReport, EffectCell, EffectCellReport, IdReport,
+    SCHEMA_VERSION as CHUNK_FACTS_SCHEMA_VERSION, StatementEffectSummary,
+    StatementEffectSummaryReport, StatementFacts, StatementFactsReport, StatementKind,
+    analyze_chunk, find_top_level_await, local_namespace_iife_target,
 };
 pub use graph::{
     ChunkConstrainingEdgeSet, DepKind, EdgeMetadata, EdgeReason, EdgeRole, ModuleQuotient,

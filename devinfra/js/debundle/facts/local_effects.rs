@@ -5,7 +5,8 @@ use binding_targets::{
 };
 use swc_ecma_ast::*;
 
-use super::{LocalEffectPolicy, TopLevelItemView, collect_declared_names, var_decl_of_item};
+use super::{TopLevelItemView, collect_declared_names, var_decl_of_item};
+use crate::analysis_hints::LocalEffectPolicy;
 
 #[derive(Debug, Default)]
 pub(crate) struct LocalEffectContext {

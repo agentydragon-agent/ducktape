@@ -18,6 +18,7 @@ use swc_common::{Span, Spanned};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
 
+use crate::analysis_hints::{AnalysisHints, KnownEffect, LocalEffectPolicy};
 use crate::purity::{
     ChunkCodeGraph, Purity, PurityReason, PurityRule, RedundantPureMemberHint, RedundantPurityHint,
     WHITELIST_RECEIVERS, class_has_static_observable, classify_expr_purity,
@@ -113,45 +114,6 @@ pub struct StatementEffectSummary {
     pub writes: BTreeSet<EffectCell>,
     pub reads: BTreeSet<EffectCell>,
     pub dataflow_summarizable: bool,
-}
-
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub enum KnownEffect {
-    TypescriptDecorateHelper,
-}
-
-#[derive(Debug, Clone, Copy, Default, Eq, PartialEq)]
-pub enum LocalEffectPolicy {
-    #[default]
-    KnownEffectsOnly,
-    VendorPrune,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct AnalysisHints {
-    pub declared_pure: BTreeSet<String>,
-    pub declared_pure_new: BTreeSet<String>,
-    /// Author-declared pure member properties — keyed by binding name,
-    /// value is the set of property names whose `<binding>.<prop>(args)`
-    /// calls the spec author asserts are pure. The classifier consults
-    /// this to admit `<recv>.<prop>(args)` as pure when `recv` is the
-    /// keyed binding and `<prop>` is in the value set.
-    /// See AGENTS.md "Declared purity".
-    pub declared_pure_members: BTreeMap<String, BTreeSet<String>>,
-    pub known_effects: BTreeMap<String, KnownEffect>,
-    pub local_effect_policy: LocalEffectPolicy,
-}
-
-impl AnalysisHints {
-    pub fn from_declared_pure(declared_pure: &BTreeSet<String>) -> Self {
-        Self {
-            declared_pure: declared_pure.clone(),
-            declared_pure_new: BTreeSet::new(),
-            declared_pure_members: BTreeMap::new(),
-            known_effects: BTreeMap::new(),
-            local_effect_policy: LocalEffectPolicy::KnownEffectsOnly,
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
