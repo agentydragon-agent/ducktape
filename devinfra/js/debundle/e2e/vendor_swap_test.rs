@@ -201,6 +201,70 @@ impl VendorTestWorkspace {
         let chunk_id = chunk_path.strip_suffix(".js").unwrap_or(chunk_path);
         self.wrapper_root.join(chunk_id).join("entry.js")
     }
+
+    /// Write `source` to `<root>/external-bundles/<filename>` and
+    /// return the absolute bundle path. Used by bundled_partial_swap
+    /// fixtures whose spec carries a `bundle: { path: ... }` block.
+    fn write_bundle(&self, filename: &str, source: &str) -> PathBuf {
+        let bundle_root = self.root.path().join("external-bundles");
+        fs::create_dir_all(&bundle_root).unwrap();
+        let bundle_path = bundle_root.join(filename);
+        write_text_file(&bundle_path, source);
+        bundle_path
+    }
+}
+
+/// Set up a workspace for a bundled_partial_swap fixture, writing the
+/// chunks (`snapshot_root/<path> = source`), the js-list, and the
+/// bundle file. The returned tuple `(ws, bundle_path)` is everything
+/// downstream wiring needs to compose the spec.
+fn setup_bundled_partial_swap(
+    tempdir_prefix: &str,
+    bundle_filename: &str,
+    bundle_source: &str,
+    chunks: &[(&str, &str)],
+) -> (VendorTestWorkspace, PathBuf) {
+    let ws = VendorTestWorkspace::new(tempdir_prefix);
+    for (chunk_path, source) in chunks {
+        ws.write_chunk(chunk_path, source);
+    }
+    let entries: String = chunks
+        .iter()
+        .map(|(p, _)| format!("{p}\n"))
+        .collect::<Vec<_>>()
+        .join("");
+    ws.write_js_list(&entries);
+    let bundle_path = ws.write_bundle(bundle_filename, bundle_source);
+    (ws, bundle_path)
+}
+
+/// Build the common `inputs` / `swap_vendor_chunks` / `write_js_tree`
+/// blocks for a bundled_partial_swap spec, given an outer `vendor:`
+/// block authored by the caller. `extra` is merged onto the top-level
+/// spec object — used by the materialization-rewrite test which adds
+/// `logical_modules` / `unassigned_mode` / `materialize_logical_modules`.
+fn build_bundled_partial_swap_spec(
+    ws: &VendorTestWorkspace,
+    vendor: Value,
+    extra: Option<Value>,
+) -> Value {
+    let mut spec = json!({
+        "vendor": vendor,
+        "inputs": { "input_root": &ws.snapshot_root, "js_list_path": &ws.js_list_path },
+        "swap_vendor_chunks": {
+            "output_manifest_path": &ws.manifest_path,
+            "output_wrapper_dir": &ws.wrapper_root,
+            "write": true,
+        },
+        "write_js_tree": { "out_dir": &ws.out_root },
+    });
+    if let Some(Value::Object(extras)) = extra {
+        let object = spec.as_object_mut().expect("spec is JSON object");
+        for (k, v) in extras {
+            object.insert(k, v);
+        }
+    }
+    spec
 }
 
 fn run_named_from_module_default_fixture(upstream_source: &str) -> VendorSwapFixture {
@@ -996,59 +1060,33 @@ fn bundled_partial_swap_replaces_react_cjs_family_with_singleton_esm_facade() {
     const JSX_RUNTIME_NAME: &str = "react/jsx-runtime";
     const PACKAGE_VERSION: &str = "18.3.1";
 
-    let root = TempDir::with_prefix("vendor-bundled-partial-swap-react-").expect("create tempdir");
-    let workspace_root = root.path().join("workspace");
-    let extracted_root = workspace_root.join("extracted");
-    let snapshot_root = workspace_root.join("snapshot");
-    let out_root = workspace_root.join("out");
-    let wrapper_root = out_root.join("app").join("vendors").join("generated");
-    let manifest_path = out_root.join("reports").join("vendor_swaps.json");
-    let bundle_root = root.path().join("external-bundles");
-    let bundle_path = bundle_root.join("react-family.esbuilt.js");
-    let package_root = root.path().join("upstream").join(PACKAGE_NAME);
-    fs::create_dir_all(&extracted_root).unwrap();
-    fs::create_dir_all(&snapshot_root).unwrap();
-    fs::create_dir_all(&out_root).unwrap();
-    fs::create_dir_all(&bundle_root).unwrap();
-    fs::create_dir_all(&package_root).unwrap();
-    fs::create_dir_all(snapshot_root.join("static")).unwrap();
-
-    write_text_file(
-        &snapshot_root.join(MEGACHUNK_PATH),
-        "const dispatcher = { current: \"vendor\" };\n\
-         const React = { dispatcher, useState: () => dispatcher.current };\n\
-         const jsxRuntime = { jsx: () => dispatcher.current };\n\
-         export { React as a, jsxRuntime as j };\n",
-    );
-    write_text_file(
-        &snapshot_root.join(CALLER_PATH),
-        "import { a as React, j as jsxRuntime } from \"../megachunk/entry.js\";\n\
-         console.log(`${React.useState()}:${jsxRuntime.jsx()}`);\n",
-    );
-    let js_list_path = extracted_root.join("js-files.txt");
-    write_text_file(&js_list_path, &format!("{MEGACHUNK_PATH}\n{CALLER_PATH}\n"));
-    write_text_file(
-        &bundle_path,
+    let (ws, bundle_path) = setup_bundled_partial_swap(
+        "vendor-bundled-partial-swap-react-",
+        "react-family.esbuilt.js",
         "const dispatcher = { current: \"package\" };\n\
          const React = { dispatcher, useState: () => dispatcher.current };\n\
          const jsxRuntime = { jsx: () => dispatcher.current };\n\
          export { React, jsxRuntime };\n",
+        &[
+            (
+                MEGACHUNK_PATH,
+                "const dispatcher = { current: \"vendor\" };\n\
+                 const React = { dispatcher, useState: () => dispatcher.current };\n\
+                 const jsxRuntime = { jsx: () => dispatcher.current };\n\
+                 export { React as a, jsxRuntime as j };\n",
+            ),
+            (
+                CALLER_PATH,
+                "import { a as React, j as jsxRuntime } from \"../megachunk/entry.js\";\n\
+                 console.log(`${React.useState()}:${jsxRuntime.jsx()}`);\n",
+            ),
+        ],
     );
-
-    write_text_file(
-        &package_root.join("package.json"),
-        &format!(
-            "{}\n",
-            serde_json::to_string_pretty(&json!({
-                "name": PACKAGE_NAME,
-                "version": PACKAGE_VERSION,
-                "main": "index.js",
-            }))
-            .unwrap(),
-        ),
-    );
-    write_text_file(
-        &package_root.join("index.js"),
+    let package_root = ws.write_upstream_package(
+        &format!("upstream/{PACKAGE_NAME}"),
+        PACKAGE_NAME,
+        PACKAGE_VERSION,
+        "index.js",
         "const dispatcher = { current: \"package\" };\n\
          exports.dispatcher = dispatcher;\n\
          exports.useState = () => dispatcher.current;\n",
@@ -1059,9 +1097,9 @@ fn bundled_partial_swap_replaces_react_cjs_family_with_singleton_esm_facade() {
          exports.jsx = () => React.dispatcher.current;\n",
     );
 
-    let spec_path = root.path().join("transform_spec.yaml");
-    let spec = json!({
-        "vendor": {
+    let spec = build_bundled_partial_swap_spec(
+        &ws,
+        json!({
             MEGACHUNK_PATH: {
                 "level": "bundled_partial_swap",
                 "identity": "React CJS family bundled partial swap fixture",
@@ -1083,15 +1121,10 @@ fn bundled_partial_swap_replaces_react_cjs_family_with_singleton_esm_facade() {
                     "j": { "package": JSX_RUNTIME_NAME, "kind": "namespace" },
                 },
             },
-        },
-        "inputs": { "input_root": &snapshot_root, "js_list_path": &js_list_path },
-        "swap_vendor_chunks": {
-            "output_manifest_path": &manifest_path,
-            "output_wrapper_dir": &wrapper_root,
-            "write": true,
-        },
-        "write_js_tree": { "out_dir": &out_root },
-    });
+        }),
+        None,
+    );
+    let spec_path = ws.root.path().join("transform_spec.yaml");
     write_yaml_file(&spec_path, &spec);
 
     let result = run_debundler(
@@ -1109,7 +1142,7 @@ fn bundled_partial_swap_replaces_react_cjs_family_with_singleton_esm_facade() {
         result.stderr,
     );
 
-    let caller_path = out_root.join("app/static/app").join("entry.js");
+    let caller_path = ws.out_root.join("app/static/app").join("entry.js");
     let caller = fs::read_to_string(&caller_path).expect("caller emitted");
     assert!(
         !caller.contains("from \"react\"") && !caller.contains("from \"react/jsx-runtime\""),
@@ -1120,15 +1153,15 @@ fn bundled_partial_swap_replaces_react_cjs_family_with_singleton_esm_facade() {
             && caller.contains("vendors/generated/static/megachunk/react_jsx-runtime.js"),
         "caller should import generated ESM facades:\n{caller}",
     );
-    assert!(wrapper_root.join("static/megachunk/bundle.js").exists());
-    assert!(wrapper_root.join("static/megachunk/react.js").exists());
+    assert!(ws.wrapper_root.join("static/megachunk/bundle.js").exists());
+    assert!(ws.wrapper_root.join("static/megachunk/react.js").exists());
     assert!(
-        wrapper_root
+        ws.wrapper_root
             .join("static/megachunk/react_jsx-runtime.js")
             .exists()
     );
 
-    let probe_path = out_root.join("__run_entry.mjs");
+    let probe_path = ws.out_root.join("__run_entry.mjs");
     write_text_file(
         &probe_path,
         "await import(\"./app/static/app/entry.js\");\n",
@@ -1152,51 +1185,9 @@ fn bundled_partial_swap_runtime_cannot_mix_swapped_client_with_residual_singleto
     const CLIENT_NAME: &str = "singleton-kit/client";
     const PACKAGE_VERSION: &str = "1.0.0";
 
-    let root =
-        TempDir::with_prefix("vendor-bundled-partial-swap-singleton-").expect("create tempdir");
-    let workspace_root = root.path().join("workspace");
-    let extracted_root = workspace_root.join("extracted");
-    let snapshot_root = workspace_root.join("snapshot");
-    let out_root = workspace_root.join("out");
-    let wrapper_root = out_root.join("app").join("vendors").join("generated");
-    let manifest_path = out_root.join("reports").join("vendor_swaps.json");
-    let bundle_root = root.path().join("external-bundles");
-    let bundle_path = bundle_root.join("singleton-kit.esbuilt.js");
-    let package_root = root.path().join("upstream").join(PACKAGE_NAME);
-    fs::create_dir_all(&extracted_root).unwrap();
-    fs::create_dir_all(&snapshot_root).unwrap();
-    fs::create_dir_all(&out_root).unwrap();
-    fs::create_dir_all(&bundle_root).unwrap();
-    fs::create_dir_all(&package_root).unwrap();
-    fs::create_dir_all(snapshot_root.join("static")).unwrap();
-
-    write_text_file(
-        &snapshot_root.join(VENDOR_PATH),
-        "const dispatcher = { current: null };\n\
-         const Hooks = {\n\
-           useCell() {\n\
-             if (dispatcher.current === null) throw new TypeError(\"residual dispatcher is null\");\n\
-             return dispatcher.current.cell;\n\
-           },\n\
-         };\n\
-         function Component() { return Hooks.useCell(); }\n\
-         const Client = {\n\
-           render(component) {\n\
-             dispatcher.current = { cell: \"vendor\" };\n\
-             try { return component(); } finally { dispatcher.current = null; }\n\
-           },\n\
-         };\n\
-         export { Hooks as a, Client as h, Component as c };\n",
-    );
-    write_text_file(
-        &snapshot_root.join(APP_PATH),
-        "import { h as Client, c as Component } from \"../vendor/entry.js\";\n\
-         console.log(Client.render(Component));\n",
-    );
-    let js_list_path = extracted_root.join("js-files.txt");
-    write_text_file(&js_list_path, &format!("{VENDOR_PATH}\n{APP_PATH}\n"));
-    write_text_file(
-        &bundle_path,
+    let (ws, bundle_path) = setup_bundled_partial_swap(
+        "vendor-bundled-partial-swap-singleton-",
+        "singleton-kit.esbuilt.js",
         "const dispatcher = { current: null };\n\
          const Hooks = {\n\
            useCell() {\n\
@@ -1211,22 +1202,37 @@ fn bundled_partial_swap_runtime_cannot_mix_swapped_client_with_residual_singleto
            },\n\
          };\n\
          export { Hooks, Client };\n",
+        &[
+            (
+                VENDOR_PATH,
+                "const dispatcher = { current: null };\n\
+                 const Hooks = {\n\
+                   useCell() {\n\
+                     if (dispatcher.current === null) throw new TypeError(\"residual dispatcher is null\");\n\
+                     return dispatcher.current.cell;\n\
+                   },\n\
+                 };\n\
+                 function Component() { return Hooks.useCell(); }\n\
+                 const Client = {\n\
+                   render(component) {\n\
+                     dispatcher.current = { cell: \"vendor\" };\n\
+                     try { return component(); } finally { dispatcher.current = null; }\n\
+                   },\n\
+                 };\n\
+                 export { Hooks as a, Client as h, Component as c };\n",
+            ),
+            (
+                APP_PATH,
+                "import { h as Client, c as Component } from \"../vendor/entry.js\";\n\
+                 console.log(Client.render(Component));\n",
+            ),
+        ],
     );
-
-    write_text_file(
-        &package_root.join("package.json"),
-        &format!(
-            "{}\n",
-            serde_json::to_string_pretty(&json!({
-                "name": PACKAGE_NAME,
-                "version": PACKAGE_VERSION,
-                "main": "index.js",
-            }))
-            .unwrap(),
-        ),
-    );
-    write_text_file(
-        &package_root.join("index.js"),
+    let package_root = ws.write_upstream_package(
+        &format!("upstream/{PACKAGE_NAME}"),
+        PACKAGE_NAME,
+        PACKAGE_VERSION,
+        "index.js",
         "exports.useCell = () => \"package\";\n",
     );
     write_text_file(
@@ -1234,9 +1240,9 @@ fn bundled_partial_swap_runtime_cannot_mix_swapped_client_with_residual_singleto
         "exports.render = component => component();\n",
     );
 
-    let spec_path = root.path().join("transform_spec.yaml");
-    let spec = json!({
-        "vendor": {
+    let spec = build_bundled_partial_swap_spec(
+        &ws,
+        json!({
             VENDOR_PATH: {
                 "level": "bundled_partial_swap",
                 "identity": "singleton runtime mixed-copy fixture",
@@ -1258,15 +1264,10 @@ fn bundled_partial_swap_runtime_cannot_mix_swapped_client_with_residual_singleto
                     "h": { "package": CLIENT_NAME, "kind": "namespace" },
                 },
             },
-        },
-        "inputs": { "input_root": &snapshot_root, "js_list_path": &js_list_path },
-        "swap_vendor_chunks": {
-            "output_manifest_path": &manifest_path,
-            "output_wrapper_dir": &wrapper_root,
-            "write": true,
-        },
-        "write_js_tree": { "out_dir": &out_root },
-    });
+        }),
+        None,
+    );
+    let spec_path = ws.root.path().join("transform_spec.yaml");
     write_yaml_file(&spec_path, &spec);
 
     let result = run_debundler(
@@ -1281,7 +1282,7 @@ fn bundled_partial_swap_runtime_cannot_mix_swapped_client_with_residual_singleto
         result.stderr,
     );
 
-    let probe_path = out_root.join("__run_entry.mjs");
+    let probe_path = ws.out_root.join("__run_entry.mjs");
     write_text_file(
         &probe_path,
         "await import(\"./app/static/app/entry.js\");\n",
@@ -1306,64 +1307,37 @@ fn bundled_partial_swap_rewrites_imports_created_by_logical_module_materializati
     const PACKAGE_NAME: &str = "observer-kit/observer";
     const PACKAGE_VERSION: &str = "1.0.0";
 
-    let root =
-        TempDir::with_prefix("vendor-bundled-partial-swap-materialized-").expect("create tempdir");
-    let workspace_root = root.path().join("workspace");
-    let extracted_root = workspace_root.join("extracted");
-    let snapshot_root = workspace_root.join("snapshot");
-    let out_root = workspace_root.join("out");
-    let report_root = out_root.join("reports").join("tree");
-    let wrapper_root = out_root.join("app").join("vendors").join("generated");
-    let manifest_path = out_root.join("reports").join("vendor_swaps.json");
-    let bundle_root = root.path().join("external-bundles");
-    let bundle_path = bundle_root.join("observer-kit.esbuilt.js");
-    let package_root = root.path().join("upstream").join("observer-kit");
-    fs::create_dir_all(&extracted_root).unwrap();
-    fs::create_dir_all(&snapshot_root).unwrap();
-    fs::create_dir_all(&out_root).unwrap();
-    fs::create_dir_all(&bundle_root).unwrap();
-    fs::create_dir_all(&package_root).unwrap();
-    fs::create_dir_all(snapshot_root.join("static")).unwrap();
-
-    write_text_file(
-        &snapshot_root.join(VENDOR_PATH),
-        "const observer = value => `vendor:${value}`;\n\
-         export { observer as o };\n",
-    );
-    write_text_file(
-        &snapshot_root.join(APP_PATH),
-        "import { o as observe } from \"../../vendor/entry.js\";\n\
-         const observed = observe(\"ok\");\n\
-         export { observed };\n",
-    );
-    let js_list_path = extracted_root.join("js-files.txt");
-    write_text_file(&js_list_path, &format!("{VENDOR_PATH}\n{APP_PATH}\n"));
-    write_text_file(
-        &bundle_path,
+    let (ws, bundle_path) = setup_bundled_partial_swap(
+        "vendor-bundled-partial-swap-materialized-",
+        "observer-kit.esbuilt.js",
         "const observe = value => `package:${value}`;\n\
          export { observe };\n",
+        &[
+            (
+                VENDOR_PATH,
+                "const observer = value => `vendor:${value}`;\n\
+                 export { observer as o };\n",
+            ),
+            (
+                APP_PATH,
+                "import { o as observe } from \"../../vendor/entry.js\";\n\
+                 const observed = observe(\"ok\");\n\
+                 export { observed };\n",
+            ),
+        ],
     );
-
-    write_text_file(
-        &package_root.join("package.json"),
-        &format!(
-            "{}\n",
-            serde_json::to_string_pretty(&json!({
-                "name": "observer-kit",
-                "version": PACKAGE_VERSION,
-                "main": "index.js",
-            }))
-            .unwrap(),
-        ),
-    );
-    write_text_file(
-        &package_root.join("observer.js"),
+    let report_root = ws.out_root.join("reports").join("tree");
+    let package_root = ws.write_upstream_package(
+        "upstream/observer-kit",
+        "observer-kit",
+        PACKAGE_VERSION,
+        "observer.js",
         "export default function observe(value) { return `package:${value}`; }\n",
     );
 
-    let spec_path = root.path().join("transform_spec.yaml");
-    let spec = json!({
-        "vendor": {
+    let spec = build_bundled_partial_swap_spec(
+        &ws,
+        json!({
             VENDOR_PATH: {
                 "level": "bundled_partial_swap",
                 "identity": "materialized import bundled partial swap fixture",
@@ -1379,35 +1353,31 @@ fn bundled_partial_swap_rewrites_imports_created_by_logical_module_materializati
                     "o": { "package": PACKAGE_NAME, "kind": "default" },
                 },
             },
-        },
-        "inputs": { "input_root": &snapshot_root, "js_list_path": &js_list_path },
-        "logical_modules": {
-            "static/app": {
-                "helpers/observer": {
-                    "members": [
-                        {
-                            "name": "observed",
-                            "selector": { "binding": { "name": "observed" } },
-                        },
-                    ],
+        }),
+        Some(json!({
+            "logical_modules": {
+                "static/app": {
+                    "helpers/observer": {
+                        "members": [
+                            {
+                                "name": "observed",
+                                "selector": { "binding": { "name": "observed" } },
+                            },
+                        ],
+                    },
                 },
             },
-        },
-        "unassigned_mode": {
-            "static/app": { "kind": "inline_in_entry" },
-        },
-        "materialize_logical_modules": {
-            "prune_other_chunks": false,
-            "report_out_dir": &report_root,
-            "target_dir": "modules",
-        },
-        "swap_vendor_chunks": {
-            "output_manifest_path": &manifest_path,
-            "output_wrapper_dir": &wrapper_root,
-            "write": true,
-        },
-        "write_js_tree": { "out_dir": &out_root },
-    });
+            "unassigned_mode": {
+                "static/app": { "kind": "inline_in_entry" },
+            },
+            "materialize_logical_modules": {
+                "prune_other_chunks": false,
+                "report_out_dir": &report_root,
+                "target_dir": "modules",
+            },
+        })),
+    );
+    let spec_path = ws.root.path().join("transform_spec.yaml");
     write_yaml_file(&spec_path, &spec);
 
     let result = run_debundler(&spec_path, &[(PACKAGE_NAME, &package_root)]);
@@ -1419,7 +1389,9 @@ fn bundled_partial_swap_rewrites_imports_created_by_logical_module_materializati
         result.stderr,
     );
 
-    let materialized_path = out_root.join("app/static/app/modules/helpers/observer.js");
+    let materialized_path = ws
+        .out_root
+        .join("app/static/app/modules/helpers/observer.js");
     let materialized = fs::read_to_string(&materialized_path).expect("materialized module emitted");
     assert!(
         !materialized.contains("vendor/entry.js"),
@@ -1430,7 +1402,7 @@ fn bundled_partial_swap_rewrites_imports_created_by_logical_module_materializati
         "materialized module should import the generated bundled facade:\n{materialized}",
     );
 
-    let probe_path = out_root.join("__run_materialized.mjs");
+    let probe_path = ws.out_root.join("__run_materialized.mjs");
     write_text_file(
         &probe_path,
         "const { observed } = await import(\"./app/static/app/modules/helpers/observer.js\");\n\
@@ -1451,63 +1423,36 @@ fn bundled_partial_swap_rewrites_non_exported_local_helper_in_vendor_chunk() {
     const PACKAGE_NAME: &str = "zod";
     const PACKAGE_VERSION: &str = "4.1.12";
 
-    let root =
-        TempDir::with_prefix("vendor-bundled-partial-swap-local-helper-").expect("create tempdir");
-    let workspace_root = root.path().join("workspace");
-    let extracted_root = workspace_root.join("extracted");
-    let snapshot_root = workspace_root.join("snapshot");
-    let out_root = workspace_root.join("out");
-    let wrapper_root = out_root.join("app").join("vendors").join("generated");
-    let manifest_path = out_root.join("reports").join("vendor_swaps.json");
-    let bundle_root = root.path().join("external-bundles");
-    let bundle_path = bundle_root.join("zod.esbuilt.js");
-    let package_root = root.path().join("upstream").join(PACKAGE_NAME);
-    fs::create_dir_all(&extracted_root).unwrap();
-    fs::create_dir_all(&snapshot_root).unwrap();
-    fs::create_dir_all(&out_root).unwrap();
-    fs::create_dir_all(&bundle_root).unwrap();
-    fs::create_dir_all(&package_root).unwrap();
-    fs::create_dir_all(snapshot_root.join("static")).unwrap();
-
-    write_text_file(
-        &snapshot_root.join(VENDOR_PATH),
-        "function nY(Ctor) { return `vendor:${Ctor.name}`; }\n\
-         const schema = nY(URL);\n\
-         export { schema as keep };\n",
-    );
-    write_text_file(
-        &snapshot_root.join(APP_PATH),
-        "import { keep } from \"../vendor/entry.js\";\n\
-         console.log(keep);\n",
-    );
-    let js_list_path = extracted_root.join("js-files.txt");
-    write_text_file(&js_list_path, &format!("{VENDOR_PATH}\n{APP_PATH}\n"));
-    write_text_file(
-        &bundle_path,
+    let (ws, bundle_path) = setup_bundled_partial_swap(
+        "vendor-bundled-partial-swap-local-helper-",
+        "zod.esbuilt.js",
         "const Zod = { instanceof: Ctor => `package:${Ctor.name}` };\n\
          export { Zod };\n",
+        &[
+            (
+                VENDOR_PATH,
+                "function nY(Ctor) { return `vendor:${Ctor.name}`; }\n\
+                 const schema = nY(URL);\n\
+                 export { schema as keep };\n",
+            ),
+            (
+                APP_PATH,
+                "import { keep } from \"../vendor/entry.js\";\n\
+                 console.log(keep);\n",
+            ),
+        ],
     );
-
-    write_text_file(
-        &package_root.join("package.json"),
-        &format!(
-            "{}\n",
-            serde_json::to_string_pretty(&json!({
-                "name": PACKAGE_NAME,
-                "version": PACKAGE_VERSION,
-                "main": "index.js",
-            }))
-            .unwrap(),
-        ),
-    );
-    write_text_file(
-        &package_root.join("index.js"),
+    let package_root = ws.write_upstream_package(
+        &format!("upstream/{PACKAGE_NAME}"),
+        PACKAGE_NAME,
+        PACKAGE_VERSION,
+        "index.js",
         "const inst = Ctor => `package:${Ctor.name}`;\nexport { inst as instanceof };\n",
     );
 
-    let spec_path = root.path().join("transform_spec.yaml");
-    let spec = json!({
-        "vendor": {
+    let spec = build_bundled_partial_swap_spec(
+        &ws,
+        json!({
             VENDOR_PATH: {
                 "level": "bundled_partial_swap",
                 "identity": "local helper bundled partial swap fixture",
@@ -1529,15 +1474,10 @@ fn bundled_partial_swap_rewrites_non_exported_local_helper_in_vendor_chunk() {
                     },
                 },
             },
-        },
-        "inputs": { "input_root": &snapshot_root, "js_list_path": &js_list_path },
-        "swap_vendor_chunks": {
-            "output_manifest_path": &manifest_path,
-            "output_wrapper_dir": &wrapper_root,
-            "write": true,
-        },
-        "write_js_tree": { "out_dir": &out_root },
-    });
+        }),
+        None,
+    );
+    let spec_path = ws.root.path().join("transform_spec.yaml");
     write_yaml_file(&spec_path, &spec);
 
     let result = run_debundler(&spec_path, &[(PACKAGE_NAME, &package_root)]);
@@ -1549,7 +1489,7 @@ fn bundled_partial_swap_rewrites_non_exported_local_helper_in_vendor_chunk() {
         result.stderr,
     );
 
-    let vendor = fs::read_to_string(out_root.join("app/static/vendor/entry.js"))
+    let vendor = fs::read_to_string(ws.out_root.join("app/static/vendor/entry.js"))
         .expect("vendor chunk emitted");
     assert!(
         !vendor.contains("function nY"),
@@ -1560,7 +1500,7 @@ fn bundled_partial_swap_rewrites_non_exported_local_helper_in_vendor_chunk() {
         "residual schema should call the bundled facade:\n{vendor}",
     );
 
-    let probe_path = out_root.join("__run_local_helper.mjs");
+    let probe_path = ws.out_root.join("__run_local_helper.mjs");
     write_text_file(
         &probe_path,
         "await import(\"./app/static/app/entry.js\");\n",

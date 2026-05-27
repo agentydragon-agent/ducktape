@@ -129,10 +129,6 @@ Identical to `CommandResult` (line 660). Only used in `assert_node_output` which
 
 Uses inline comment markers instead of `#[ignore]` with reason strings (like `purity_test.rs` does). Inconsistent.
 
-### `vendor_swap_test.rs` — 4 bundled_partial_swap tests duplicate inline fixture setup
-
-Lines 1030–1617 are four tests each manually creating the entire fixture inline (155 lines per test). Extract `run_bundled_partial_swap_fixture`.
-
 ---
 
 ## Live Proxy
