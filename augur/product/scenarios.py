@@ -428,19 +428,20 @@ def build_scenario(
 
 
 def _resolve_monthly_rent(rental: RentalIncomePlan, *, property_: Property) -> float:
-    """Resolve the gross monthly rent for a landlord rental.
+    """Resolve full-property gross monthly rent for a landlord rental.
 
-    User-supplied `monthly_rent_collected_usd` wins. Otherwise fall back to the
-    deployment's `Property.rent_estimate_usd`. If neither is set, reject the request —
+    User-supplied `full_property_monthly_rent_usd` wins. Otherwise fall back to the
+    deployment's `Property.rent_estimate_usd`. The caller scales the resulting full-property
+    rent by `fraction_rented` and vacancy. If neither rent source is set, reject the request —
     the deployment is missing data the scenario needs.
     """
 
-    if rental.monthly_rent_collected_usd is not None:
-        return float(rental.monthly_rent_collected_usd)
+    if rental.full_property_monthly_rent_usd is not None:
+        return float(rental.full_property_monthly_rent_usd)
     if property_.rent_estimate_usd is None:
         raise ValueError(
             f"property {property_.id!r} has no rent_estimate_usd and the scenario did not supply "
-            "monthly_rent_collected_usd; one or the other is required to model rental income"
+            "full_property_monthly_rent_usd; one or the other is required to model rental income"
         )
     return float(property_.rent_estimate_usd)
 
@@ -536,7 +537,8 @@ def _wire_landlord_rental(
     end_month = horizon_months - 1
     rent_series = rent_series_id(property_.location_id)
     base_monthly_rent = _resolve_monthly_rent(rental, property_=property_)
-    base_monthly_collected = base_monthly_rent * float(rental.fraction_rented) * (1.0 - float(rental.vacancy_pct))
+    leased_monthly_rent = base_monthly_rent * float(rental.fraction_rented)
+    base_monthly_collected = leased_monthly_rent * (1.0 - float(rental.vacancy_pct))
 
     agents: list[Agent] = [Agent(agent_id=TENANT_AGENT_ID)]
     initial_cash: list[InitialAccountBalance] = [
@@ -594,7 +596,7 @@ def _wire_landlord_rental(
             )
         leasing_fee_months_val = float(management.leasing_fee_months)
         if leasing_fee_months_val > 0:
-            leasing_fee_base = base_monthly_rent * leasing_fee_months_val
+            leasing_fee_base = leased_monthly_rent * leasing_fee_months_val
             scheduled_transfers.extend(
                 ScheduledTransfer(
                     month=fire_month,

@@ -36,9 +36,10 @@ export const DEFAULT_PRODUCT_INPUT_BASE = {
   annualRatePct: 7,
   annualInsurancePct: 0.4,
   annualMaintenancePct: 1.0,
-  // Rental monthly rent override: null means "use the property's rent_estimate_usd";
-  // 0 means "no rent collected"; any positive value overrides the property record.
-  rentalMonthlyUsd: null,
+  // Full-property monthly rent override before rented-fraction and vacancy scaling:
+  // null means "use the property's rent_estimate_usd"; 0 means "no rent collected";
+  // any positive value overrides the property record.
+  rentalFullPropertyMonthlyUsd: null,
   // 0 = not rented (pure primary residence); 100 = fully rented out; in between = partial
   // (e.g. owner-occupied + ADU). Drives whether `initial_rental` is emitted on the wire.
   rentalFractionRentedPct: 0,
@@ -150,7 +151,7 @@ const INPUT_FIELDS = [
   { key: "annualRatePct", type: "number" },
   { key: "annualInsurancePct", type: "number" },
   { key: "annualMaintenancePct", type: "number" },
-  { key: "rentalMonthlyUsd", type: "number" },
+  { key: "rentalFullPropertyMonthlyUsd", type: "number" },
   { key: "rentalFractionRentedPct", type: "number" },
   { key: "rentalVacancyPct", type: "number" },
   { key: "useRentalManagement", type: "bool" },
@@ -322,12 +323,12 @@ export function buildRentalIncomePlan(input) {
   // `rentalFractionRentedPct` = 0 → property isn't rented at all; no rental plan on the wire.
   const fractionPct = Number(input.rentalFractionRentedPct) || 0;
   if (fractionPct <= 0) return null;
-  // `rentalMonthlyUsd` is null → use property default; numeric → explicit override (incl. 0).
-  const override = input.rentalMonthlyUsd;
-  const monthlyRentCollectedUsd = override == null ? null : Math.max(0, Number(override) || 0);
+  // `rentalFullPropertyMonthlyUsd` is null → use property default; numeric → explicit override (incl. 0).
+  const override = input.rentalFullPropertyMonthlyUsd;
+  const fullPropertyMonthlyRentUsd = override == null ? null : Math.max(0, Number(override) || 0);
   const fraction = Math.min(1, Math.max(0.01, fractionPct / 100));
   const vacancyPct = Math.min(1, Math.max(0, (Number(input.rentalVacancyPct) || 0) / 100));
-  return { monthlyRentCollectedUsd, fractionRented: fraction, vacancyPct };
+  return { fullPropertyMonthlyRentUsd, fractionRented: fraction, vacancyPct };
 }
 
 export function buildRentalManagement(input) {

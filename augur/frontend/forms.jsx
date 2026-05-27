@@ -389,14 +389,14 @@ export function RentalPanel({ input, property, onChange }) {
         />
       </div>
       <NumberField
-        label="Monthly rent collected"
-        value={input.rentalMonthlyUsd}
+        label="Full-property monthly rent"
+        value={input.rentalFullPropertyMonthlyUsd}
         min={0}
         step={50}
         prefix="$"
         placeholder={rentPlaceholder}
         disabled={!rentalActive}
-        onChange={(rentalMonthlyUsd) => onChange({ rentalMonthlyUsd })}
+        onChange={(rentalFullPropertyMonthlyUsd) => onChange({ rentalFullPropertyMonthlyUsd })}
       />
       <Checkbox
         label="Use a property management agency"

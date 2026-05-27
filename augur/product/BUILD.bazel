@@ -99,6 +99,7 @@ py_test(
         "//augur/api:config",
         "//augur/model:exogenous",
         "//augur/model:series",
+        "//augur/sim:scenario",
         "//util/bazel:runfiles",
         "@pypi//more_itertools",
         "@pypi//pytest",

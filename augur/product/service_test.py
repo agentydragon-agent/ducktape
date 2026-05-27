@@ -29,12 +29,15 @@ from augur.product.wire import (
     PropertyPurchase,
     PropertyPurchaseEvent,
     PropertyTaxPaymentEvent,
+    RentalIncomePlan,
+    RentalManagement,
     RolloutFailureEvent,
     RolloutRequest,
     ScenarioKey,
     SetPrimaryResidenceEventWire,
     SetPrimaryResidenceMarkerEvent,
 )
+from augur.sim.scenario import SeriesIndexedAmount
 from util.bazel.runfiles import get_required_path
 
 
@@ -524,6 +527,61 @@ def test_product_lowers_primary_residence_assignments_to_sim_scenario() -> None:
         (12, primary_agent_id, None),
         (24, primary_agent_id, "location_a_property"),
     ]
+
+
+def test_product_full_property_rent_scales_by_fraction_vacancy_and_rent_denominated_fees() -> None:
+    config = _augur_config()
+    bootstrap = build_bootstrap_payload(config)
+    primary_agent_id = resolve_primary_agent_id(config)
+    scenario = ScenarioKey(
+        exogenous_model_id="current_exogenous_model",
+        horizon_months=12,
+        monthly_spend_usd=1_000.0,
+        spend_index="none",
+        funding_policy=FundingPolicy(sell_order=()),
+        property_purchase=PropertyPurchase(
+            property_id="location_a_property",
+            financing=CashFinancing(),
+            is_primary_residence=True,
+            initial_rental=RentalIncomePlan(
+                full_property_monthly_rent_usd=6_000.0, fraction_rented=0.5, vacancy_pct=0.10
+            ),
+            rental_management=RentalManagement(management_fee_pct=8.0, leasing_fee_months=1.0, avg_tenancy_months=24),
+        ),
+    )
+
+    sim_scenario = build_scenario(
+        scenario,
+        primary_agent_id=primary_agent_id,
+        initial_cash_usd=1_200_000.0,
+        initial_lots=(),
+        properties_by_id={property_.id: property_ for property_ in bootstrap.properties},
+    )
+
+    rent_transfer = one(
+        transfer
+        for transfer in sim_scenario.recurring_transfers
+        if transfer.cause_id == "rental_income:location_a_property"
+    )
+    assert isinstance(rent_transfer.amount_usd, SeriesIndexedAmount)
+    assert rent_transfer.amount_usd.base_amount_usd == pytest.approx(6_000.0 * 0.5 * 0.90)
+    assert rent_transfer.amount_usd.series_id == "rent:location_a"
+
+    management_fee = one(
+        transfer
+        for transfer in sim_scenario.recurring_transfers
+        if transfer.cause_id == "management_fee:location_a_property"
+    )
+    assert isinstance(management_fee.amount_usd, SeriesIndexedAmount)
+    assert management_fee.amount_usd.base_amount_usd == pytest.approx(6_000.0 * 0.5 * 0.90 * 0.08)
+
+    leasing_fee = one(
+        transfer
+        for transfer in sim_scenario.scheduled_transfers
+        if transfer.cause_id == "leasing_fee:location_a_property:m0"
+    )
+    assert isinstance(leasing_fee.amount_usd, SeriesIndexedAmount)
+    assert leasing_fee.amount_usd.base_amount_usd == pytest.approx(6_000.0 * 0.5)
 
 
 def test_primary_residence_event_emits_rollout_marker(counting_exogenous_model: CountingExogenousModel) -> None:

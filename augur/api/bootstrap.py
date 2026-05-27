@@ -96,7 +96,7 @@ class ProductInputDefaults(ApiModel):
     annual_rate_pct: float | None = None
     annual_insurance_pct: float | None = None
     annual_maintenance_pct: float | None = None
-    rental_monthly_usd: float | None = None
+    rental_full_property_monthly_usd: float | None = None
     rental_fraction_rented_pct: float | None = None
     rental_vacancy_pct: float | None = None
     use_rental_management: bool | None = None

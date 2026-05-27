@@ -69,12 +69,13 @@ class RentalIncomePlan(ApiModel):
     user lives elsewhere). `fraction_rented` < 1.0 means partial rental (e.g. owner
     occupies the main unit and rents the ADU / rents rooms).
 
-    `monthly_rent_collected_usd` is the gross monthly rent (before vacancy + management
-    fees). If `None`, the translator falls back to `Property.rent_estimate_usd` for the
-    purchased property; if that's also missing, the request is rejected.
+    `full_property_monthly_rent_usd` is the full-property market rent before vacancy and
+    management fees. Collected rent is this amount multiplied by `fraction_rented` and
+    `(1 - vacancy_pct)`. If `None`, the translator falls back to `Property.rent_estimate_usd`
+    for the purchased property; if that's also missing, the request is rejected.
     """
 
-    monthly_rent_collected_usd: PositiveFloat | None = None
+    full_property_monthly_rent_usd: NonNegativeFloat | None = None
     fraction_rented: PositiveFloat = Field(default=1.0, le=1.0)
     # 0..1 multiplier on collected rent. Captures marketing-time vacancy + tenant turnover
     # vacancy in a smoothed-average form; per-rollout stochastic vacancy is a future model.
