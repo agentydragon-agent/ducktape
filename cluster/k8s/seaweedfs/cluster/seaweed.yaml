@@ -73,24 +73,11 @@ spec:
     # the cluster has been operating on Postgres for a while and we've
     # established WAL/PITR backup is healthy, this can go to 2+.
     replicas: 1
-    config: |
-      [postgres2]
-      enabled = true
-      hostname = "seaweedfs-filer-db-rw.seaweedfs.svc"
-      port = 5432
-      database = "seaweedfs"
-      sslmode = "disable"
-      connection_max_idle = 100
-      connection_max_open = 100
-      connection_max_lifetime_seconds = 0
-      enableUpsert = true
-      upsertQuery = """
-        INSERT INTO "%[1]s" (dirhash, name, directory, meta)
-          VALUES($1, $2, $3, $4)
-          ON CONFLICT (dirhash, name) DO UPDATE SET
-            directory=EXCLUDED.directory,
-            meta=EXCLUDED.meta
-      """
+    # spec.filer.config is filled in from filer.toml via the kustomize
+    # configMapGenerator + replacement in kustomization.yaml. The TOML
+    # config lives in its own file so it can be syntax-checked and edited
+    # outside of YAML string escaping.
+    config: ""
     # Postgres credentials override filer.toml [postgres2] keys via viper's
     # env-var binding (WEED_<key>, dot→underscore). CNPG auto-generates the
     # Secret seaweedfs-filer-db-app at cluster bootstrap.
