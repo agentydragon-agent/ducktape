@@ -135,7 +135,7 @@ pub fn check_realizability(
     partition: &Partition,
 ) -> RealizabilityVerdict {
     let mut verdict = RealizabilityVerdict {
-        scc_partition: tarjan_scc(&build_module_quotient(owner_graph, partition).0),
+        scc_partition: build_module_quotient(owner_graph, partition).sccs(),
         ..RealizabilityVerdict::default()
     };
 

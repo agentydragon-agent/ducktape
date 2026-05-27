@@ -1,8 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
 
-use petgraph::algo::tarjan_scc;
-
 use crate::atomic_units::{AtomicUnit, OwnerGraphAndUnits, compute_owner_graph_and_units};
 use crate::chunk_analysis::ChunkAnalysis;
 use crate::factor_assembly::{AtomicUnitConflict, assemble_partition};
@@ -128,7 +126,7 @@ impl ChunkFactorization {
         // (`reports::build_quotient_scc_reports`, the validator's
         // verdict path) share one Tarjan walk instead of each
         // recomputing it.
-        let dep_graph_sccs = tarjan_scc(&dep_graph.0);
+        let dep_graph_sccs = dep_graph.sccs();
         // Drive Lemma-2 ordering through the canonical
         // `ChunkConstrainingEdgeSet` so the emitter and the gate's
         // simulator share one source of truth — see `graph.rs:

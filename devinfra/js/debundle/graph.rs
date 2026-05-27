@@ -547,43 +547,47 @@ impl EdgeMetadata {
 /// module) accumulate into the edge's reason list. Cycle detection
 /// runs through petgraph's `tarjan_scc`.
 ///
-/// `Deref` / `DerefMut` to the inner graph lets callers reach
-/// `petgraph` methods (`all_edges`, `edge_weight`, `nodes`,
-/// `contains_edge`, …) directly: `dep_graph.all_edges()` instead of
-/// `dep_graph.graph.all_edges()`. The newtype is kept (rather than a
-/// bare type alias) so the semantic name "the I∪S module-dep
-/// quotient" stays distinct from arbitrary
-/// `DiGraphMap<ModuleId, EdgeMetadata>` instances.
-///
-/// For `petgraph::algo::tarjan_scc` (a generic function whose
-/// inference doesn't trigger `Deref` coercion), callers reach for
-/// the inner graph with `&dep_graph.0` or `&*dep_graph`.
+/// The inner `DiGraphMap` is private. Mutation happens only inside
+/// [`build_module_quotient`] (and the constructor-private
+/// `record_reason` helper); callers go through the read-only
+/// accessors `all_edges`, `contains_edge`, `edge_weight`,
+/// `has_init_order_constraining_edge`, and the convenience
+/// `sccs` wrapper around `petgraph::algo::tarjan_scc`. The
+/// newtype keeps the semantic name "the I∪S module-dep quotient"
+/// distinct from arbitrary `DiGraphMap<ModuleId, EdgeMetadata>`
+/// instances.
 #[derive(Debug, Clone, Default)]
-pub struct ModuleQuotient(pub(crate) DiGraphMap<ModuleId, EdgeMetadata>);
-
-impl std::ops::Deref for ModuleQuotient {
-    type Target = DiGraphMap<ModuleId, EdgeMetadata>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl std::ops::DerefMut for ModuleQuotient {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
+pub struct ModuleQuotient(DiGraphMap<ModuleId, EdgeMetadata>);
 
 impl ModuleQuotient {
     fn record_reason(&mut self, from: ModuleId, to: ModuleId, reason: EdgeReason) {
         if from == to {
             return;
         }
-        if !self.contains_edge(from, to) {
-            self.add_edge(from, to, EdgeMetadata::default());
+        if !self.0.contains_edge(from, to) {
+            self.0.add_edge(from, to, EdgeMetadata::default());
         }
-        self.edge_weight_mut(from, to).unwrap().reasons.push(reason);
+        self.0
+            .edge_weight_mut(from, to)
+            .unwrap()
+            .reasons
+            .push(reason);
+    }
+
+    /// Iterate over every `(from, to, weight)` tuple in the quotient.
+    /// Forwards to `petgraph::DiGraphMap::all_edges`.
+    pub fn all_edges(&self) -> impl Iterator<Item = (ModuleId, ModuleId, &EdgeMetadata)> + '_ {
+        self.0.all_edges()
+    }
+
+    /// `true` iff the directed edge `(from, to)` is present.
+    pub fn contains_edge(&self, from: ModuleId, to: ModuleId) -> bool {
+        self.0.contains_edge(from, to)
+    }
+
+    /// The metadata for `(from, to)` if the edge exists, else `None`.
+    pub fn edge_weight(&self, from: ModuleId, to: ModuleId) -> Option<&EdgeMetadata> {
+        self.0.edge_weight(from, to)
     }
 
     /// `true` if the edge `(from, to)` exists and constrains
@@ -593,6 +597,12 @@ impl ModuleQuotient {
     pub fn has_init_order_constraining_edge(&self, from: ModuleId, to: ModuleId) -> bool {
         self.edge_weight(from, to)
             .is_some_and(EdgeMetadata::constrains_init_order)
+    }
+
+    /// Strongly-connected components of the quotient, via
+    /// `petgraph::algo::tarjan_scc`. Each inner `Vec` is one SCC.
+    pub fn sccs(&self) -> Vec<Vec<ModuleId>> {
+        tarjan_scc(&self.0)
     }
 }
 
