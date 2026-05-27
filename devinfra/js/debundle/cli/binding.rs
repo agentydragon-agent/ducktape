@@ -22,6 +22,8 @@ use serde_yaml::{Mapping, Value};
 
 use spec_modules::{collect_module_files, is_residual_module_path, module_path_from_file};
 
+use crate::edit_gate::{gate_post_edit_partition, post_assign_spec};
+
 /// A located member inside a module file. Returned by [`find_matches`]
 /// and is the unit `assign` / `rename` mutate.
 #[derive(Debug, Clone)]
@@ -360,25 +362,29 @@ pub fn parse_batch_json(text: &str) -> Result<Vec<Move>> {
 }
 
 /// Apply a sequence of moves atomically: read every module's YAML
-/// once, mutate in-memory, validate (collisions + future gate), then
-/// write back. Source modules drained of members are deleted unless
-/// they carry a module-level `comment:`.
+/// once, mutate in-memory, validate (collisions + realizability +
+/// atom-split), then write back. Source modules drained of members
+/// are deleted unless they carry a module-level `comment:`.
 ///
-/// v1 contract:
+/// Contract:
 ///   * Last-wins for duplicate `sym` in the batch (with a stderr warn).
 ///   * Destination modules are auto-created.
 ///   * Source modules drained are deleted iff they have no
 ///     module-level `comment:` AND no remaining
 ///     `anonymous_statements:`.
-///   * Realizability gate (proper post-state atom-split check) is
-///     wired into a separate step — out of scope for this commit
-///     beyond name-collision detection (see #84's "Atom split"
-///     diagnostic).
+///   * When `owner_graph_path` is `Some` and `no_verify` is `false`,
+///     the unified realizability gate
+///     ([`crate::edit_gate::gate_post_edit_partition`]) runs against
+///     the in-memory post-batch spec; cycle or atom-split rejections
+///     bail before any file is written. Pass `None` to skip the gate
+///     (collision detection still runs); the CLI dispatcher requires
+///     `--graph` unless `--no-verify` is set.
 pub fn run_bindings_assign(
     modules_root: &Path,
     moves: Vec<Move>,
     dry_run: bool,
     no_verify: bool,
+    owner_graph_path: Option<&Path>,
 ) -> Result<AssignOutcome> {
     // Step 1: dedupe moves (last-wins per sym).
     let mut by_sym: BTreeMap<String, Move> = BTreeMap::new();
@@ -508,6 +514,37 @@ pub fn run_bindings_assign(
                     pulled_hits
                 );
             }
+        }
+    }
+
+    // Step 6.5: realizability + atom-split gate against the
+    // post-batch spec. Runs the same check `debundle modules merge`
+    // / `debundle modules delete --force` use, so all three mutating
+    // verbs share one rejection signal (cycles + atom-split). Skip
+    // when `--no-verify` is set; bail when `owner_graph_path` is
+    // missing — the CLI dispatcher enforces "graph or no-verify".
+    if !no_verify {
+        if let Some(graph_path) = owner_graph_path {
+            let removals: Vec<(PathBuf, String)> = plan
+                .iter()
+                .map(|p| {
+                    (
+                        modules_root.join(format!("{}.yaml", p.source_module)),
+                        p.req.sym.clone(),
+                    )
+                })
+                .collect();
+            let insertions: Vec<(PathBuf, String)> = plan
+                .iter()
+                .map(|p| {
+                    (
+                        modules_root.join(format!("{}.yaml", p.req.module)),
+                        p.req.sym.clone(),
+                    )
+                })
+                .collect();
+            let post_spec = post_assign_spec(modules_root, &removals, &insertions)?;
+            gate_post_edit_partition(graph_path, &post_spec)?;
         }
     }
 
@@ -823,7 +860,7 @@ mod tests {
             module: "dest".into(),
             readable: None,
         }];
-        let out = run_bindings_assign(root, moves, false, false).unwrap();
+        let out = run_bindings_assign(root, moves, false, false, None).unwrap();
         assert_eq!(out.moves_applied, 1);
         assert!(!root.join("src.yaml").exists(), "source should be deleted");
         let dest = read(root, "dest.yaml");
@@ -852,7 +889,7 @@ mod tests {
             module: "dest".into(),
             readable: None,
         }];
-        run_bindings_assign(root, moves, false, false).unwrap();
+        run_bindings_assign(root, moves, false, false, None).unwrap();
         assert!(root.join("src.yaml").exists(), "src kept due to comment");
         let src = read(root, "src.yaml");
         let doc: Value = serde_yaml::from_str(&src).unwrap();
@@ -874,7 +911,7 @@ mod tests {
             module: "runtime/plugins".into(),
             readable: Some("PluginSettings".into()),
         }];
-        run_bindings_assign(root, moves, false, false).unwrap();
+        run_bindings_assign(root, moves, false, false, None).unwrap();
         assert!(root.join("runtime/plugins.yaml").exists());
         let body = read(root, "runtime/plugins.yaml");
         let doc: Value = serde_yaml::from_str(&body).unwrap();
@@ -896,7 +933,7 @@ mod tests {
             module: "dest".into(),
             readable: None,
         }];
-        let out = run_bindings_assign(root, moves, true, false).unwrap();
+        let out = run_bindings_assign(root, moves, true, false, None).unwrap();
         assert_eq!(out.action, "dry-run");
         assert!(root.join("src.yaml").exists(), "src not deleted");
         let original = read(root, "src.yaml");

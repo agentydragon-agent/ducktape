@@ -130,7 +130,7 @@ fn assign_atomic_batch_creates_destinations_and_drains_sources() {
             readable: None,
         },
     ];
-    let out = run_bindings_assign(root, moves, false, false).unwrap();
+    let out = run_bindings_assign(root, moves, false, false, None).unwrap();
     assert_eq!(out.moves_applied, 2);
     assert!(root.join("ui/widgets.yaml").exists());
     assert!(!root.join("src/old1.yaml").exists());
@@ -167,7 +167,7 @@ fn assign_keeps_source_with_module_comment() {
         module: "elsewhere".into(),
         readable: None,
     }];
-    run_bindings_assign(root, moves, false, false).unwrap();
+    run_bindings_assign(root, moves, false, false, None).unwrap();
     assert!(
         root.join("kept.yaml").exists(),
         "module-level comment should preserve drained source"
@@ -193,7 +193,7 @@ fn assign_rename_collision_rejects() {
         module: "dest".into(),
         readable: Some("Existing".into()),
     }];
-    let err = run_bindings_assign(root, moves, false, false).unwrap_err();
+    let err = run_bindings_assign(root, moves, false, false, None).unwrap_err();
     assert!(
         format!("{err}").contains("name collision"),
         "expected collision error: {err}"

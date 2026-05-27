@@ -356,9 +356,14 @@ fn modules_delete_force_rejects_when_post_state_unrealizable() {
         .expect("spawn debundle");
     assert!(!out.status.success(), "expected non-zero exit");
     let stderr = String::from_utf8_lossy(&out.stderr);
+    // The mutual-eager-reads fixture forms one atomic unit; deleting
+    // either module strands one member at residual while the other
+    // stays on its module, which the atom-split check rejects before
+    // the cycle check would. Either diagnostic is acceptable
+    // evidence the gate fired.
     assert!(
-        stderr.contains("unrealizable"),
-        "expected unrealizability diagnostic, got stderr:\n{stderr}",
+        stderr.contains("unrealizable") || stderr.contains("splits one or more atomic units"),
+        "expected unrealizability or atom-split diagnostic, got stderr:\n{stderr}",
     );
     assert!(modules.join("b.yaml").exists(), "b.yaml must survive");
 }

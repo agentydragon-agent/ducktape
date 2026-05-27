@@ -1,5 +1,6 @@
 pub mod binding;
 pub mod comment;
+pub mod edit_gate;
 pub mod gate;
 pub mod module;
 
@@ -261,6 +262,11 @@ pub struct BindingsAssignArgs {
     /// Skip realizability + collision validation. Don't use casually.
     #[arg(long)]
     pub no_verify: bool,
+    /// `owner_graph.json` for the chunk being edited. Required for
+    /// the realizability + atom-split gate; ignored when
+    /// `--no-verify` is set.
+    #[arg(long = "graph", env = "DEBUNDLE_GRAPH")]
+    pub owner_graph_path: Option<PathBuf>,
     /// Output format. Default `text` on tty, `json` on pipe.
     #[arg(long, value_enum)]
     pub format: Option<OutputFormat>,
@@ -851,7 +857,21 @@ fn run_bindings_assign_cmd(args: BindingsAssignArgs) -> Result<()> {
         };
         moves.extend(parse_batch_json(&text)?);
     }
-    let out = run_bindings_assign(&args.modules_root, moves, args.dry_run, args.no_verify)?;
+    // Enforce the same "graph or no-verify" policy `modules merge`
+    // / `modules delete --force` use, so all three mutating verbs
+    // refuse silently-skipping the realizability gate.
+    if !args.no_verify && args.owner_graph_path.is_none() {
+        anyhow::bail!(
+            "realizability gate requires --graph (path to owner_graph.json) or --no-verify"
+        );
+    }
+    let out = run_bindings_assign(
+        &args.modules_root,
+        moves,
+        args.dry_run,
+        args.no_verify,
+        args.owner_graph_path.as_deref(),
+    )?;
     let format = OutputFormat::resolve(args.format);
     print_assign_outcome(&out, format)
 }

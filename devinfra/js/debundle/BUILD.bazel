@@ -544,6 +544,7 @@ rust_library(
     srcs = [
         "cli/binding.rs",
         "cli/comment.rs",
+        "cli/edit_gate.rs",
         "cli/gate.rs",
         "cli/mod.rs",
         "cli/module.rs",

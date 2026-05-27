@@ -2,33 +2,32 @@
 //! target YAML module and delete the sources. The companion
 //! `debundle modules delete --force` verb removes a non-empty module.
 //!
-//! Both verbs run a realizability gate against the **post-edit**
-//! partition before touching the filesystem. The gate reconstructs
-//! the chunk's `OwnerGraph` from `owner_graph.json` (via
-//! `OwnerGraph::from_report`), builds the post-edit `Partition` by
-//! mapping each surviving spec module's bindings to a fresh
-//! `ModuleId`, and runs `validate_factorization`. An unrealizable
-//! verdict prints the cycle summary via `render_cycle_summary` and
-//! the command exits non-zero without writing any file. `--no-verify`
-//! skips the gate; `--dry-run` runs the gate but doesn't write.
+//! Both verbs run the unified realizability gate (see
+//! [`crate::edit_gate::gate_post_edit_partition`]) against the
+//! **post-edit** partition before touching the filesystem. The gate
+//! reconstructs the chunk's `OwnerGraph` from `owner_graph.json`
+//! (via `OwnerGraph::from_report`), builds the post-edit `Partition`
+//! by mapping each surviving spec module's bindings to a fresh
+//! `ModuleId`, and runs BOTH `validate_factorization` (cross-module
+//! cycles) AND atom-split detection (every `AtomicUnit`'s members
+//! must co-locate). Either rejection prints a diagnostic to stderr
+//! and exits non-zero without writing any file. `--no-verify` skips
+//! the gate; `--dry-run` runs the gate but doesn't write.
 //!
 //! The YAML splice itself operates on the generic `serde_yaml::Value`
 //! shape so the operation never has to understand binding semantics,
 //! only the `members:` and `anonymous_statements:` sequences that the
 //! spec authoring format publishes.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use analysis::{
-    ModuleId, OwnerGraph, OwnerGraphReport, OwnerId, Partition, render_cycle_summary,
-    validate_factorization,
-};
 use anyhow::{Context, Result, anyhow, bail};
 use clap::{Args as ClapArgs, Subcommand};
 use serde_yaml::{Mapping, Value};
-use spec_modules::{collect_module_files, is_module_yaml, read_module_file};
+
+use crate::edit_gate::{gate_post_edit_partition, post_delete_spec, post_merge_spec};
 
 /// Top-level `debundle module ...` argument shape.
 #[derive(Debug, ClapArgs)]
@@ -530,155 +529,6 @@ fn splice_sequence(
     })?;
     seq.extend(extra);
     Ok(())
-}
-
-// ---------------------------------------------------------------------
-// Realizability gate hookup (task #84).
-// ---------------------------------------------------------------------
-
-/// Simulated post-edit spec state — one entry per surviving module,
-/// each listing the binding names declared by its `members:` array.
-/// `modules` is keyed by absolute YAML path so the gate's
-/// module-id assignment is deterministic across runs.
-#[derive(Debug, Clone)]
-struct PostEditSpec {
-    /// Surviving module YAML paths (absolute), each with the set of
-    /// binding names it declares after the edit.
-    modules: Vec<(PathBuf, BTreeSet<String>)>,
-}
-
-/// Build the post-merge spec view in memory without touching the
-/// filesystem. Starts from the on-disk modules tree, drops the source
-/// files, and folds their `members:` binding names into the target.
-fn post_merge_spec(
-    modules_root: &Path,
-    target_abs: &Path,
-    source_abs: &[PathBuf],
-) -> Result<PostEditSpec> {
-    let removed: BTreeSet<PathBuf> = source_abs.iter().cloned().collect();
-    let mut modules: Vec<(PathBuf, BTreeSet<String>)> = Vec::new();
-    for file in collect_module_files(modules_root)? {
-        if removed.contains(&file) {
-            continue;
-        }
-        let bindings = if file == target_abs {
-            let mut combined = read_member_bindings(&file)?;
-            for src in source_abs {
-                combined.extend(read_member_bindings(src)?);
-            }
-            combined
-        } else {
-            read_member_bindings(&file)?
-        };
-        modules.push((file, bindings));
-    }
-    Ok(PostEditSpec { modules })
-}
-
-/// Build the post-delete spec view in memory. Drops the deleted YAML
-/// paths from the modules tree; bindings they used to declare are
-/// implicitly unclaimed in the resulting partition (i.e. fall back to
-/// residual).
-fn post_delete_spec(modules_root: &Path, deleted_abs: &[PathBuf]) -> Result<PostEditSpec> {
-    let removed: BTreeSet<PathBuf> = deleted_abs.iter().cloned().collect();
-    let mut modules: Vec<(PathBuf, BTreeSet<String>)> = Vec::new();
-    for file in collect_module_files(modules_root)? {
-        if removed.contains(&file) {
-            continue;
-        }
-        modules.push((file.clone(), read_member_bindings(&file)?));
-    }
-    Ok(PostEditSpec { modules })
-}
-
-/// Parse a spec module YAML and return the set of `members[].selector.binding.name`
-/// values it declares. Unparseable members are skipped (the gate
-/// tolerates author noise so its rejection signal is "the partition
-/// is unrealizable", not "your YAML is malformed").
-fn read_member_bindings(path: &Path) -> Result<BTreeSet<String>> {
-    if !is_module_yaml(path) {
-        return Ok(BTreeSet::new());
-    }
-    let module =
-        read_module_file(path).with_context(|| format!("reading module {}", path.display()))?;
-    let mut names: BTreeSet<String> = BTreeSet::new();
-    for member in module.members {
-        names.insert(member.selector.binding.name);
-    }
-    Ok(names)
-}
-
-/// Reconstruct the `OwnerGraph` from `owner_graph_path`, build the
-/// `Partition` implied by `post_spec`, and run the realizability gate.
-/// Returns `Ok(())` when the verdict is realizable. Prints the
-/// `render_cycle_summary` blame report to stderr and returns an
-/// `anyhow::Error` when unrealizable, so the CLI exit code is
-/// non-zero and the caller bails before writing.
-fn gate_post_edit_partition(owner_graph_path: &Path, post_spec: &PostEditSpec) -> Result<()> {
-    let owner_graph_report: OwnerGraphReport = serde_json::from_str(
-        &fs::read_to_string(owner_graph_path)
-            .with_context(|| format!("reading {}", owner_graph_path.display()))?,
-    )
-    .with_context(|| format!("parsing owner graph {}", owner_graph_path.display()))?;
-
-    // The gate algorithm walks edges + partition, not declared sets.
-    // Pass `&[]` for facts — `from_report` leaves `declared` empty,
-    // which is fine for `check_realizability`/`validate_factorization`
-    // (both consume the partition we build below, not the per-owner
-    // declared field).
-    let (owner_graph, _index) = OwnerGraph::from_report(&owner_graph_report, &[]);
-
-    // owner_by_binding_name uses the Atom-only declared_bindings the
-    // wire shape carries; that's enough because the spec author also
-    // references bindings by name (no hygienic context). When a
-    // declared binding name is ambiguous across owners the first one
-    // wins — the materializer's spec validator catches that
-    // separately as a duplicate-binding diagnostic.
-    let mut owner_by_binding_name: HashMap<String, OwnerId> = HashMap::new();
-    for (idx, node) in owner_graph_report.nodes.iter().enumerate() {
-        let owner = OwnerId(idx);
-        for b in &node.declared_bindings {
-            owner_by_binding_name
-                .entry(b.binding.to_string())
-                .or_insert(owner);
-        }
-    }
-
-    // ModuleId assignment: residual at logical:0, every surviving
-    // spec module gets a fresh logical:N starting at 1. The label
-    // map keeps the renderer's diagnostic readable — we use each
-    // module's chunk-relative path as its `module_name` callback
-    // output.
-    let residual = ModuleId::logical(0);
-    let mut of: Vec<ModuleId> = vec![residual; owner_graph.num_nodes()];
-    let mut module_label_by_id: HashMap<ModuleId, String> =
-        [(residual, "<residual>".to_string())].into_iter().collect();
-    let mut next_idx = 1usize;
-    for (path, bindings) in &post_spec.modules {
-        let mid = ModuleId::logical(next_idx);
-        next_idx += 1;
-        module_label_by_id.insert(mid, path.to_string_lossy().into_owned());
-        for name in bindings {
-            if let Some(&owner) = owner_by_binding_name.get(name) {
-                of[owner.0] = mid;
-            }
-        }
-    }
-    let partition = Partition::from_assignments(of, residual);
-
-    let module_name = |m: ModuleId| {
-        module_label_by_id
-            .get(&m)
-            .cloned()
-            .unwrap_or_else(|| format!("logical:{}", m.0.0))
-    };
-    let report = validate_factorization(&owner_graph, &partition, &module_name);
-    if report.cycles.is_empty() {
-        return Ok(());
-    }
-    let summary = render_cycle_summary(&report.cycles);
-    eprintln!("error: post-edit spec is unrealizable:\n{summary}");
-    bail!("realizability gate rejected the edit");
 }
 
 #[cfg(test)]
