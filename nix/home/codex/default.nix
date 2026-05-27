@@ -10,8 +10,11 @@
 let
   execPolicyRules = import ./execpolicy-rules.nix { inherit lib; };
   codexNpmCache = "${config.xdg.cacheHome}/codex/npm";
+  codexNixCache = "${config.xdg.cacheHome}/nix";
   codexBazelCache = "${config.xdg.cacheHome}/bazel";
   codexBazeliskCache = "${config.xdg.cacheHome}/bazelisk";
+  codexPreCommitCache = "${config.xdg.cacheHome}/pre-commit";
+  codexSccacheCache = "${config.xdg.cacheHome}/sccache";
 
   codexSettings = {
     # Local model providers for GPT-OSS
@@ -109,12 +112,20 @@ let
     sandbox_mode = "workspace-write";
     sandbox_workspace_write = {
       writable_roots = [
-        "/home/agentydragon/.cache/sccache"
-        "/home/agentydragon/.cache/nix"
-        "/nix"
-        "/home/agentydragon/.cache/pre-commit"
-        # Allow Codex sandboxed pre-commit runs to write their hook log.
-        "/home/agentydragon/.cache/pre-commit/pre-commit.log"
+        codexSccacheCache
+        codexNixCache
+        # Do not add /nix here. Codex/bubblewrap prepares synthetic mount
+        # blockers below writable roots, including .git sentinels such as
+        # /nix/.git, to keep repository metadata from leaking into the
+        # sandbox. /nix is root-owned, and /nix/store is immutable, so marking
+        # it writable makes sandbox startup fail before the requested command
+        # runs. Use the user-owned ~/.cache/nix cache for sandboxed Nix state;
+        # run real Nix store writes outside the sandbox.
+        codexPreCommitCache
+        # Writable roots must be directories. The pre-commit hook log is a file;
+        # listing it directly makes sandbox startup inspect
+        # ~/.cache/pre-commit/pre-commit.log/.codex and fail with ENOTDIR. The
+        # parent directory above is enough for pre-commit to update the log.
         codexNpmCache
         codexBazelCache
         codexBazeliskCache
@@ -165,6 +176,9 @@ let
 
     mkdir -p "$CODEX_HOME"
     mkdir -p '${codexNpmCache}'
+    mkdir -p '${codexNixCache}'
+    mkdir -p '${codexPreCommitCache}'
+    mkdir -p '${codexSccacheCache}'
     mkdir -p '${codexBazelCache}'
     mkdir -p '${codexBazeliskCache}'
 
