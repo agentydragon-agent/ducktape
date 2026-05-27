@@ -912,6 +912,7 @@ dependencies = [
  "rig-core",
  "rust_decimal",
  "rust_decimal_macros",
+ "rustc-hash",
  "rusty-money",
  "scraper",
  "serde",

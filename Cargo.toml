@@ -21,6 +21,7 @@ chrono = {features=["serde"], version="^0.4.43"}
 chrono-tz = "^0.10.4"
 serde-xml-rs = "^0.8.2"
 petgraph = "^0.8.3"
+rustc-hash = "^2.1.2"
 #tokio = { version = "*", features = ["full", "time"] }
 warp = "^0.4.2"
 futures = "^0.3.31"
