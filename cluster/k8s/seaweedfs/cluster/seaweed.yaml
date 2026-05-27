@@ -20,7 +20,21 @@ metadata:
   name: seaweedfs
   namespace: seaweedfs
 spec:
-  image: chrislusf/seaweedfs:3.93
+  # 4.x is required for the Bucket CR's access wiring: the filer's gRPC
+  # server unconditionally registers `iam_pb.SeaweedIdentityAccessManagement`
+  # starting at commit f41925b60 ("Embed IAM API into S3 server", in 4.03).
+  # Before that, the operator's BucketAdmin couldn't call the IAM gRPC
+  # service (Unimplemented), so every Bucket CR landed Failed regardless
+  # of whether the bucket was fresh or pre-existing. The seaweedfs-operator
+  # 1.0.19 image imports SeaweedFS at commit a1e5eb9da (between 4.23 and
+  # 4.24), so 4.29 matches the operator's expected wire surface.
+  #
+  # Upgrade safety: changelog scan from 3.93 to 4.29 found no on-disk
+  # format changes (leveldb2 filer store, volume .dat/.idx, s3-config.json
+  # all stable), no breaking gRPC changes (only additions to filer_pb /
+  # master_pb / iam_pb), and split-brain prevention via persistent
+  # ClusterID is single-master-friendly (auto-generates on first start).
+  image: chrislusf/seaweedfs:4.29
   volumeServerDiskCount: 1
 
   master:
@@ -60,6 +74,17 @@ spec:
       [leveldb2]
       enabled = true
       dir = "/data/filerldb2"
+    # Start the IAM gRPC service (iam_pb.SeaweedIdentityAccessManagement)
+    # so the seaweedfs-operator can wire Bucket CR access via gRPC. The
+    # operator's CRD has `filer.iam: bool (default true)`, but the operator
+    # only passes `-iam=false` when explicitly false — it never propagates
+    # `-iam=true` to the weed-filer command. Without this flag the IAM
+    # gRPC service is not registered (verified via grpcurl: filer's gRPC
+    # only exposes filer_pb.SeaweedFiler without it). Bucket CRs land in
+    # Failed/BucketAlreadyExists because the operator's iam_admin gRPC
+    # call returns Unimplemented.
+    extraArgs:
+      - "-iam=true"
     metricsPort: 9326
     nodeSelector:
       topology.kubernetes.io/zone: hil-ovh
