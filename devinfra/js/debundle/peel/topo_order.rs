@@ -142,6 +142,19 @@ pub(super) struct TopoOrder {
     /// come earlier in the topological order. Dead classes carry
     /// `DEAD = u32::MAX`.
     ord: Vec<u32>,
+    /// Inverse of `ord` over live classes. `pos_to_class[rank as
+    /// usize] == Some(c)` iff `ord[c.0] == rank` (i.e. class `c` is
+    /// live and sits at topological position `rank`). Positions that
+    /// belong to dead classes carry `None`. The vector's length
+    /// equals `next_rank` after a `Kahn` pass — i.e. the number of
+    /// ranks ever assigned. After `apply_contract` the length is
+    /// preserved (we leave a `None` hole where the loser was, and
+    /// overwrite the surviving slots in place during the window
+    /// re-rank).
+    ///
+    /// Maintained in lockstep with `ord`; the invariant is enforced
+    /// in `validate()`.
+    pos_to_class: Vec<Option<ClassId>>,
     /// `true` iff `ord` is a valid topological order over the live
     /// classes. Set by `init_from_dag` based on whether Kahn's
     /// visited every live node. Reset to `false` by
@@ -157,6 +170,7 @@ impl TopoOrder {
     pub(super) fn empty() -> Self {
         Self {
             ord: Vec::new(),
+            pos_to_class: Vec::new(),
             is_dag: false,
         }
     }
@@ -188,9 +202,11 @@ impl TopoOrder {
         in_neighbors: &[FxHashSet<ClassId>],
     ) {
         self.ord = vec![DEAD; num_classes];
+        self.pos_to_class = Vec::new();
         // Kahn's: start with nodes that have in-degree 0 (among live
         // classes), pop in any order, decrement successors' in-degree.
         let live: Vec<ClassId> = live.collect();
+        self.pos_to_class.reserve(live.len());
         let mut indegree: BTreeMap<ClassId, usize> = BTreeMap::new();
         for &c in &live {
             let deg = constraining_ins(out_edges, in_neighbors, c)
@@ -211,6 +227,8 @@ impl TopoOrder {
         let mut visited = 0usize;
         while let Some(c) = queue.pop() {
             self.ord[c.0] = rank;
+            self.pos_to_class.push(Some(c));
+            debug_assert_eq!(self.pos_to_class.len(), (rank as usize) + 1);
             rank = rank.checked_add(1).expect("topo rank exhausted u32::MAX");
             visited += 1;
             let mut new_zero: Vec<ClassId> = Vec::new();
@@ -249,6 +267,8 @@ impl TopoOrder {
             for c in live {
                 if self.ord[c.0] == DEAD {
                     self.ord[c.0] = rank;
+                    self.pos_to_class.push(Some(c));
+                    debug_assert_eq!(self.pos_to_class.len(), (rank as usize) + 1);
                     rank = rank.checked_add(1).expect("topo rank exhausted u32::MAX");
                 }
             }
@@ -366,42 +386,46 @@ impl TopoOrder {
             // One side wasn't tracked — fall back to leaving the
             // order untouched. The caller should re-init if it cares.
             self.ord[loser.0] = DEAD;
+            // Best-effort: drop loser from the reverse index if it's
+            // still there (it should be when ol != DEAD; but we
+            // handle both cases defensively).
+            if ol != DEAD && (ol as usize) < self.pos_to_class.len() {
+                self.pos_to_class[ol as usize] = None;
+            }
             return;
         }
         let (lo_ord, hi_ord) = if ow < ol { (ow, ol) } else { (ol, ow) };
         // Mark loser dead immediately so it doesn't show up in window
         // scans.
         self.ord[loser.0] = DEAD;
+        self.pos_to_class[ol as usize] = None;
         if lo_ord + 1 == hi_ord {
             // Empty interior. The two slots are loser (dead) and
             // winner (kept its lo_ord). If winner had hi_ord, move
             // it to lo_ord.
             if ow == hi_ord {
                 self.ord[winner.0] = lo_ord;
+                // hi_ord slot becomes empty; winner now occupies
+                // lo_ord. (lo_ord slot held loser, already cleared if
+                // ol == lo_ord; otherwise it held winner pre-move and
+                // we now move winner to it.)
+                self.pos_to_class[lo_ord as usize] = Some(winner);
+                self.pos_to_class[hi_ord as usize] = None;
             }
             return;
         }
-        // Collect window classes: every live class with current ord
-        // in [lo_ord, hi_ord], plus winner if it's not already in
-        // that set (ow == hi_ord, then winner currently at hi_ord
-        // which is in the window). We'll find them by scanning the
-        // whole ord vector — O(num_classes) — which is unavoidable
-        // without a reverse index. (For perf we maintain a
-        // `pos_to_class` array; see below.)
-        //
-        // To keep this O(|window|) rather than O(num_classes), use
-        // the maintained position->class inverse if available. For
-        // simplicity in this first cut we scan, then introduce the
-        // inverse in a follow-up if profiling shows it matters. (The
-        // scan is cheap relative to the BTreeMap walks the old code
-        // did.)
-        let mut window_classes: Vec<ClassId> = Vec::new();
-        for (idx, &o) in self.ord.iter().enumerate() {
-            if o == DEAD {
-                continue;
-            }
-            if o >= lo_ord && o <= hi_ord {
-                window_classes.push(ClassId(idx));
+        // Collect window classes via the reverse index — O(|window|)
+        // rather than O(num_classes). The slice
+        // `pos_to_class[lo_ord..=hi_ord]` gives every class currently
+        // at a rank in the window, in rank order; dead slots are
+        // `None` and skipped.
+        let lo_idx = lo_ord as usize;
+        let hi_idx = hi_ord as usize;
+        debug_assert!(hi_idx < self.pos_to_class.len());
+        let mut window_classes: Vec<ClassId> = Vec::with_capacity(hi_idx - lo_idx + 1);
+        for slot in &self.pos_to_class[lo_idx..=hi_idx] {
+            if let Some(c) = *slot {
+                window_classes.push(c);
             }
         }
         // Edge case: window_classes might or might not contain
@@ -435,8 +459,14 @@ impl TopoOrder {
         queue.reverse();
         let mut new_ord = lo_ord;
         let mut visited = 0usize;
+        // The window's pos_to_class slots will be overwritten in
+        // order. Any slot we don't overwrite (because the window
+        // shrunk by 1 — loser is dead) ends up holding the trailing
+        // hi_ord with `None`; we clear that explicitly after the
+        // loop.
         while let Some(c) = queue.pop() {
             self.ord[c.0] = new_ord;
+            self.pos_to_class[new_ord as usize] = Some(c);
             new_ord += 1;
             visited += 1;
             let mut new_zero: Vec<ClassId> = Vec::new();
@@ -468,6 +498,14 @@ impl TopoOrder {
             visited,
             window_classes.len()
         );
+        // The window had `hi_ord - lo_ord + 1` slots; we filled the
+        // first `window_classes.len()` (which equals `visited`),
+        // leaving one trailing slot (the loser's rank vacated the
+        // window) un-overwritten. Clear it so the reverse index
+        // stays consistent.
+        for slot_idx in (lo_idx + visited)..=hi_idx {
+            self.pos_to_class[slot_idx] = None;
+        }
     }
 
     /// Return `ord[c]`. Panics if `c` is out of bounds; returns
@@ -505,6 +543,56 @@ impl TopoOrder {
     ) -> Result<(), String> {
         if !self.is_dag {
             return Ok(());
+        }
+        // Invariant: pos_to_class is the inverse of ord over live
+        // classes.
+        //   - For every live class `c`,
+        //     `pos_to_class[ord[c.0] as usize] == Some(c)`.
+        //   - For every live position `i` (i.e. `pos_to_class[i] ==
+        //     Some(c)`), `ord[c.0] as usize == i`.
+        // Dead classes carry `ord == DEAD` and must not appear in
+        // `pos_to_class`; dead positions are `None`.
+        for (idx, &o) in self.ord.iter().enumerate() {
+            if o == DEAD {
+                continue;
+            }
+            let pos = o as usize;
+            if pos >= self.pos_to_class.len() {
+                return Err(format!(
+                    "TopoOrder: class {idx:?}@{o} but pos_to_class len {}",
+                    self.pos_to_class.len()
+                ));
+            }
+            match self.pos_to_class[pos] {
+                Some(c) if c.0 == idx => {}
+                Some(c) => {
+                    return Err(format!(
+                        "TopoOrder: ord[{idx}]={o} but pos_to_class[{pos}]={c:?}"
+                    ));
+                }
+                None => {
+                    return Err(format!(
+                        "TopoOrder: ord[{idx}]={o} but pos_to_class[{pos}]=None"
+                    ));
+                }
+            }
+        }
+        for (i, slot) in self.pos_to_class.iter().enumerate() {
+            if let Some(c) = *slot {
+                let o = self.ord[c.0];
+                if o == DEAD {
+                    return Err(format!(
+                        "TopoOrder: pos_to_class[{i}]={c:?} but ord[{}] is DEAD",
+                        c.0
+                    ));
+                }
+                if (o as usize) != i {
+                    return Err(format!(
+                        "TopoOrder: pos_to_class[{i}]={c:?} but ord[{}]={o}",
+                        c.0
+                    ));
+                }
+            }
         }
         for (s_idx, outs) in out_edges.iter().enumerate() {
             let from = ClassId(s_idx);
@@ -878,6 +966,123 @@ mod tests {
                 t.apply_contract(winner, loser, &out, &in_);
                 t.validate(&out).expect("post-merge topo valid");
                 alive.remove(&loser);
+            }
+        }
+    }
+
+    /// Assert the reverse-index invariant on a `TopoOrder`:
+    ///
+    /// - For every live class `c`,
+    ///   `pos_to_class[ord[c.0] as usize] == Some(c)`.
+    /// - For every live slot `i` (`pos_to_class[i] == Some(c)`),
+    ///   `ord[c.0] as usize == i`.
+    ///
+    /// Dead classes (`ord == DEAD`) must not appear in
+    /// `pos_to_class`; the corresponding positions are `None`.
+    fn assert_pos_to_class_inverse(t: &TopoOrder, alive: &BTreeSet<ClassId>) {
+        for &c in alive {
+            let o = t.ord[c.0];
+            assert_ne!(o, DEAD, "live class {c:?} has DEAD ord");
+            let pos = o as usize;
+            assert!(
+                pos < t.pos_to_class.len(),
+                "ord[{c:?}]={o} out of bounds (len={})",
+                t.pos_to_class.len()
+            );
+            assert_eq!(
+                t.pos_to_class[pos],
+                Some(c),
+                "pos_to_class[{pos}] != Some({c:?})"
+            );
+        }
+        for (i, slot) in t.pos_to_class.iter().enumerate() {
+            if let Some(c) = *slot {
+                assert!(alive.contains(&c), "pos_to_class[{i}]={c:?} not alive");
+                assert_eq!(
+                    t.ord[c.0] as usize, i,
+                    "pos_to_class[{i}]={c:?} but ord[{}]={}",
+                    c.0, t.ord[c.0]
+                );
+            }
+        }
+        // Dead classes must not appear in the reverse index.
+        for (idx, &o) in t.ord.iter().enumerate() {
+            if o == DEAD {
+                for slot in &t.pos_to_class {
+                    assert_ne!(
+                        *slot,
+                        Some(ClassId(idx)),
+                        "dead class {idx} appears in pos_to_class"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn pos_to_class_is_inverse_of_ord_after_many_contracts() {
+        // Build random DAGs, run a long sequence of safe contractions,
+        // and assert the reverse-index invariant holds throughout.
+        let seeds: &[u64] = &[
+            0xC0FFEE, 0xDEADBEEF, 0x1234, 0xABCD, 0xF00BA1, 0x5EED, 0xBADBEEF, 0xFEEDFACE,
+        ];
+        for &seed in seeds {
+            let mut rng = SimpleRng::new(seed);
+            let n = 14;
+            let mut edges: Vec<(usize, usize)> = Vec::new();
+            for i in 0..n {
+                for j in (i + 1)..n {
+                    if rng.next_u32() % 3 == 0 {
+                        edges.push((i, j));
+                    }
+                }
+            }
+            let (mut out, mut in_) = adj(n, &edges);
+            let mut t = TopoOrder::empty();
+            t.init_from_dag(n, (0..n).map(cid), &out, &in_);
+            t.validate(&out).expect("init valid");
+            let mut alive: BTreeSet<ClassId> = (0..n).map(cid).collect();
+            assert_pos_to_class_inverse(&t, &alive);
+
+            // Run up to 30 random merge attempts; skip cycles.
+            for _ in 0..30 {
+                if alive.len() < 2 {
+                    break;
+                }
+                let alive_vec: Vec<ClassId> = alive.iter().copied().collect();
+                let a_idx = (rng.next_u32() as usize) % alive_vec.len();
+                let b_idx = (rng.next_u32() as usize) % alive_vec.len();
+                if a_idx == b_idx {
+                    continue;
+                }
+                let a = alive_vec[a_idx];
+                let b = alive_vec[b_idx];
+                if t.would_create_cycle(a, b, &out) {
+                    continue;
+                }
+                let (winner, loser) = if a < b { (a, b) } else { (b, a) };
+                // Relabel loser's edges to winner (same as the
+                // sibling random test).
+                let loser_outs: Vec<ClassId> = out[loser.0].keys().copied().collect();
+                let loser_ins: Vec<ClassId> = in_[loser.0].iter().copied().collect();
+                for x in &loser_outs {
+                    remove_edge(&mut out, &mut in_, loser, *x);
+                    if *x == winner {
+                        continue;
+                    }
+                    add_edge(&mut out, &mut in_, winner, *x);
+                }
+                for x in &loser_ins {
+                    remove_edge(&mut out, &mut in_, *x, loser);
+                    if *x == winner {
+                        continue;
+                    }
+                    add_edge(&mut out, &mut in_, *x, winner);
+                }
+                t.apply_contract(winner, loser, &out, &in_);
+                t.validate(&out).expect("post-merge topo valid");
+                alive.remove(&loser);
+                assert_pos_to_class_inverse(&t, &alive);
             }
         }
     }
