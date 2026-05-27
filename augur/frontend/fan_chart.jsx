@@ -1,0 +1,382 @@
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { fanChartAxis, fanChartYearTicks, fmtAxisMetricValue, fmtMetricValue } from "./lib/chart.js";
+import { fmtUsd } from "./lib/format.js";
+import { FAN_PERCENTILES } from "./input_helpers.js";
+import {
+  SELECTED_ROLLOUT_COLOR,
+  FAILED_ROLLOUT_COLOR,
+  EVENT_MARKER_STACK_PITCH_PX,
+  EVENT_MARKER_STACK_BASE_OFFSET_PX,
+  eventMonthIndex,
+  eventColor,
+  eventAmount,
+  eventLabel,
+  eventDetailText,
+} from "./data_helpers.js";
+
+function eventStateMonthIndex(event) {
+  const monthIndex = eventMonthIndex(event);
+  return monthIndex == null ? null : monthIndex + 1;
+}
+
+function eventTitle(event) {
+  return `Month ${eventStateMonthIndex(event) ?? "n/a"}: ${eventLabel(event)} ${fmtUsd(eventAmount(event))}`;
+}
+
+function FanAxes({ left, top, plotWidth, plotHeight, height, x, y, yAxis, maxYear, metric }) {
+  return (
+    <>
+      {yAxis.ticks.map((value) => {
+        const yPos = y(value);
+        return (
+          <g key={value}>
+            <line x1={left} x2={left + plotWidth} y1={yPos} y2={yPos} stroke="var(--augur-chart-grid)" />
+            <text x={left - 8} y={yPos + 4} textAnchor="end" className="fill-slate-500 text-[11px] augur-tabular">
+              {fmtAxisMetricValue(metric.chartValue, value)}
+            </text>
+          </g>
+        );
+      })}
+      {fanChartYearTicks(maxYear).map((year) => {
+        const xPos = left + (year / maxYear) * plotWidth;
+        return (
+          <g key={year}>
+            <line x1={xPos} x2={xPos} y1={top} y2={top + plotHeight} stroke="var(--augur-chart-grid-subtle)" />
+            <text x={xPos} y={height - 15} textAnchor="middle" className="fill-slate-500 text-[11px]">
+              {year} yr
+            </text>
+          </g>
+        );
+      })}
+    </>
+  );
+}
+
+function FanEventMarker({
+  event,
+  index,
+  monthIndex,
+  row,
+  color,
+  stackIndex,
+  stackCount,
+  x,
+  y,
+  top,
+  plotHeight,
+  selectedEventMonthIndex,
+  hoveredEventMonthIndex,
+  onSelectEventMonth,
+  onHoverEventMonth,
+}) {
+  const isSelected = selectedEventMonthIndex === monthIndex;
+  const isHovered = hoveredEventMonthIndex === monthIndex;
+  const isActive = isSelected || isHovered;
+  const markerX = x(row);
+  // Stack the dots vertically *above* the rollout line, in the order the events arrive
+  // (which `decode.py:rollout_events_from` already sorts by `priority[kind]`). The vertical
+  // guide line still anchors at the row's value so the user can read the month at a glance.
+  const stackOffset = EVENT_MARKER_STACK_BASE_OFFSET_PX - stackIndex * EVENT_MARKER_STACK_PITCH_PX;
+  const markerY = Math.max(top + 6, Math.min(top + plotHeight - 6, y(row.value) + stackOffset));
+  const baseRadius = 4.5;
+  const radius = isActive ? baseRadius + 2.2 : baseRadius;
+  // Only the top-most marker in a stack draws the vertical guide line; otherwise every event
+  // would render an overlapping line at the same x. The line still appears whenever any
+  // member of the stack is hovered/selected because the activeness propagates per-month.
+  const drawsGuideLine = stackIndex === stackCount - 1;
+  return (
+    <g
+      key={`${event.kind}-${event.monthIndex}-${index}`}
+      role="button"
+      tabIndex={0}
+      aria-label={eventTitle(event)}
+      data-product-rollout-event-marker={event.kind}
+      data-product-rollout-event-marker-month={monthIndex}
+      data-product-rollout-event-marker-selected={isSelected ? "true" : "false"}
+      data-product-rollout-event-marker-hovered={isHovered ? "true" : "false"}
+      onClick={() => onSelectEventMonth?.(monthIndex)}
+      onKeyDown={(keyboardEvent) => {
+        if (keyboardEvent.key !== "Enter" && keyboardEvent.key !== " ") return;
+        keyboardEvent.preventDefault();
+        onSelectEventMonth?.(monthIndex);
+      }}
+      onMouseEnter={() => onHoverEventMonth?.(monthIndex)}
+      onMouseLeave={() => onHoverEventMonth?.(null)}
+      onFocus={() => onHoverEventMonth?.(monthIndex)}
+      onBlur={() => onHoverEventMonth?.(null)}
+      style={{ cursor: "pointer" }}
+    >
+      {drawsGuideLine && (
+        <line
+          x1={markerX}
+          x2={markerX}
+          y1={top}
+          y2={top + plotHeight}
+          stroke="var(--augur-chart-grid)"
+          opacity={isActive ? 0.46 : 0.2}
+          strokeWidth={isActive ? 1.6 : 1}
+        />
+      )}
+      {isActive && (
+        <circle
+          cx={markerX}
+          cy={markerY}
+          r={radius + 3}
+          fill="none"
+          stroke={isSelected ? SELECTED_ROLLOUT_COLOR : "#0891b2"}
+          strokeWidth="2"
+          opacity="0.72"
+        />
+      )}
+      <circle
+        cx={markerX}
+        cy={markerY}
+        r={radius}
+        fill={color}
+        opacity={0.98}
+        stroke="white"
+        strokeWidth={isActive ? 2 : 1.25}
+      >
+        <title>{eventTitle(event)}</title>
+      </circle>
+    </g>
+  );
+}
+
+export function MetricFanChart({
+  rows,
+  metric,
+  percentiles,
+  selectedRows,
+  selectedEvents,
+  selectedSeed,
+  selectedFailed,
+  visibleEventKinds,
+  selectedEventMonthIndex,
+  hoveredEventMonthIndex,
+  onSelectEventMonth,
+  onHoverEventMonth,
+}) {
+  const [hoveredMonth, setHoveredMonth] = useState(null);
+  const svgRef = useRef(null);
+  const [svgWidth, setSvgWidth] = useState(760);
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const update = () => setSvgWidth(svg.clientWidth || 760);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(svg);
+    return () => ro.disconnect();
+  }, []);
+
+  if (rows.length === 0) return null;
+  const sortedPercentiles = percentiles.slice().sort((left, right) => left - right);
+  const outerLow = sortedPercentiles[0];
+  const outerHigh = sortedPercentiles[sortedPercentiles.length - 1];
+  const innerLow = sortedPercentiles[Math.min(1, sortedPercentiles.length - 1)];
+  const innerHigh = sortedPercentiles[Math.max(0, sortedPercentiles.length - 2)];
+  const median = sortedPercentiles.includes(50) ? 50 : sortedPercentiles[Math.floor(sortedPercentiles.length / 2)];
+  const maxYear = Math.max(...rows.map((row) => row.year), 1);
+  const values = rows
+    .flatMap((row) => sortedPercentiles.map((pct) => row.values.get(pct)))
+    .concat(selectedRows.map((row) => row.value))
+    .filter(Number.isFinite);
+  const yAxis = fanChartAxis(metric.chartValue, values);
+  const svgHeight = 300;
+  const margin = { left: 82, right: 24, top: 18, bottom: 42 };
+  const plotHeight = svgHeight - margin.top - margin.bottom;
+  const plotWidth = svgWidth - margin.left - margin.right;
+  const x = (row) => margin.left + (row.year / maxYear) * plotWidth;
+  const y = (value) => margin.top + (1 - (value - yAxis.min) / yAxis.range) * plotHeight;
+  const valueAt = (row, pct) => row.values.get(pct);
+  const line = (pct) => rows.map((row) => `${x(row)},${y(valueAt(row, pct))}`).join(" ");
+  const selectedLine = selectedRows.map((row) => `${x(row)},${y(row.value)}`).join(" ");
+  const selectedColor = selectedFailed ? FAILED_ROLLOUT_COLOR : SELECTED_ROLLOUT_COLOR;
+  const selectedRowByMonth = new Map(selectedRows.map((row) => [row.monthIndex, row]));
+  const monthBuckets = new Map();
+  for (let index = 0; index < selectedEvents.length; index += 1) {
+    const event = selectedEvents[index];
+    if (!visibleEventKinds.has(event.kind)) continue;
+    const monthIndex = eventMonthIndex(event);
+    if (monthIndex == null) continue;
+    const row = selectedRowByMonth.get(monthIndex);
+    if (!row) continue;
+    if (!monthBuckets.has(monthIndex)) monthBuckets.set(monthIndex, []);
+    monthBuckets.get(monthIndex).push({ event, index, row });
+  }
+  const eventMarkers = [];
+  for (const [monthIndex, bucket] of monthBuckets) {
+    for (let stackIndex = 0; stackIndex < bucket.length; stackIndex += 1) {
+      const { event, index, row } = bucket[stackIndex];
+      eventMarkers.push({
+        event,
+        index,
+        monthIndex,
+        row,
+        color: eventColor(event),
+        stackIndex,
+        stackCount: bucket.length,
+      });
+    }
+  }
+  const band = (upperPct, lowerPct) => {
+    const upper = rows.map((row) => `${x(row)},${y(valueAt(row, upperPct))}`).join(" ");
+    const lower = rows
+      .slice()
+      .reverse()
+      .map((row) => `${x(row)},${y(valueAt(row, lowerPct))}`)
+      .join(" ");
+    return `${upper} ${lower}`;
+  };
+
+  const handleMouseMove = useCallback(
+    (event) => {
+      const svg = svgRef.current;
+      if (!svg) return;
+      const rect = svg.getBoundingClientRect();
+      const svgX = event.clientX - rect.left;
+      if (svgX < margin.left || svgX > margin.left + plotWidth) {
+        setHoveredMonth(null);
+        return;
+      }
+      const targetYear = ((svgX - margin.left) / plotWidth) * maxYear;
+      let closest = null;
+      let closestDist = Infinity;
+      for (const row of rows) {
+        const dist = Math.abs(row.year - targetYear);
+        if (dist < closestDist) {
+          closestDist = dist;
+          closest = row;
+        }
+      }
+      setHoveredMonth(closest);
+    },
+    [rows, maxYear, plotWidth, margin.left]
+  );
+
+  const handleMouseLeave = useCallback(() => setHoveredMonth(null), []);
+
+  const hoveredRow = hoveredMonth;
+
+  return (
+    <div className="overflow-x-auto p-4" data-product-fan-chart={metric.chartValue}>
+      <svg
+        ref={svgRef}
+        role="img"
+        aria-label={`${metric.label} probability fan chart`}
+        height={svgHeight}
+        className="w-full"
+        onMouseMove={handleMouseMove}
+        onMouseLeave={handleMouseLeave}
+      >
+        <rect x={margin.left} y={margin.top} width={plotWidth} height={plotHeight} fill="transparent" />
+        <FanAxes
+          left={margin.left}
+          top={margin.top}
+          plotWidth={plotWidth}
+          plotHeight={plotHeight}
+          height={svgHeight}
+          x={x}
+          y={y}
+          yAxis={yAxis}
+          maxYear={maxYear}
+          metric={metric}
+        />
+        <polygon points={band(outerHigh, outerLow)} fill="#2563eb" opacity="0.14" />
+        <polygon points={band(innerHigh, innerLow)} fill="#2563eb" opacity="0.22" />
+        <polyline points={line(median)} fill="none" stroke="#1d4ed8" strokeWidth="2.75" />
+        <polyline points={line(outerLow)} fill="none" stroke="#1d4ed8" strokeWidth="1" opacity="0.45" />
+        <polyline points={line(outerHigh)} fill="none" stroke="#1d4ed8" strokeWidth="1" opacity="0.45" />
+        {selectedRows.length > 0 && (
+          <>
+            <polyline
+              points={selectedLine}
+              fill="none"
+              stroke={selectedColor}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="3"
+              data-product-selected-rollout-line={selectedSeed}
+            />
+            <circle
+              cx={x(selectedRows[selectedRows.length - 1])}
+              cy={y(selectedRows[selectedRows.length - 1].value)}
+              r="4"
+              fill={selectedColor}
+              stroke="white"
+              strokeWidth="1.5"
+            />
+          </>
+        )}
+        {eventMarkers.map((markerProps) => (
+          <FanEventMarker
+            key={`${markerProps.event.kind}-${markerProps.event.monthIndex}-${markerProps.index}`}
+            {...markerProps}
+            x={x}
+            y={y}
+            top={margin.top}
+            plotHeight={plotHeight}
+            selectedEventMonthIndex={selectedEventMonthIndex}
+            hoveredEventMonthIndex={hoveredEventMonthIndex}
+            onSelectEventMonth={onSelectEventMonth}
+            onHoverEventMonth={onHoverEventMonth}
+          />
+        ))}
+        {hoveredRow &&
+          (() => {
+            const tipW = 140;
+            const tipH = 26 + sortedPercentiles.length * 14;
+            const tipPad = 8;
+            const tipX =
+              x(hoveredRow) + tipPad + tipW <= svgWidth
+                ? tipPad
+                : x(hoveredRow) - tipPad - tipW >= 0
+                  ? -tipPad - tipW
+                  : Math.max(0, svgWidth - tipW - x(hoveredRow));
+            const tipY = margin.top + plotHeight - tipH >= 0 ? 0 : margin.top + plotHeight - tipH;
+            return (
+              <>
+                <line
+                  x1={x(hoveredRow)}
+                  y1={margin.top}
+                  x2={x(hoveredRow)}
+                  y2={margin.top + plotHeight}
+                  stroke="rgba(100,116,139,0.5)"
+                  strokeWidth="1"
+                  strokeDasharray="3 2"
+                />
+                <g
+                  transform={`translate(${x(hoveredRow) + tipX}, ${margin.top + tipY})`}
+                  className="pointer-events-none"
+                >
+                  <rect
+                    x={0}
+                    y={0}
+                    width={tipW}
+                    height={tipH}
+                    rx={4}
+                    fill="white"
+                    fillOpacity="0.92"
+                    stroke="rgba(15,23,42,0.15)"
+                    strokeWidth="1"
+                  />
+                  <text x={8} y={14} fontSize="10" fontWeight="600" fill="#334155">
+                    Month {hoveredRow.monthIndex}
+                  </text>
+                  {sortedPercentiles.map((pct, i) => {
+                    const val = hoveredRow.values.get(pct);
+                    return (
+                      <text key={pct} x={8} y={28 + i * 14} fontSize="10" fill="#64748b">
+                        P{pct}: {Number.isFinite(val) ? fmtMetricValue(metric.chartValue, val) : "n/a"}
+                      </text>
+                    );
+                  })}
+                </g>
+              </>
+            );
+          })()}
+      </svg>
+    </div>
+  );
+}

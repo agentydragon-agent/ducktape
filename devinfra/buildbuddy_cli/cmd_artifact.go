@@ -13,6 +13,37 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
+// matchGlob reports whether s matches a simple glob pattern supporting '*' only.
+func matchGlob(pattern, s string) bool {
+	for {
+		star := strings.IndexByte(pattern, '*')
+		if star < 0 {
+			return pattern == s
+		}
+		prefix := pattern[:star]
+		if !strings.HasPrefix(s, prefix) {
+			return false
+		}
+		s = s[len(prefix):]
+		pattern = pattern[star+1:]
+		if pattern == "" {
+			// Trailing '*' matches the rest.
+			return true
+		}
+		// Find the earliest occurrence of the literal text before the next '*'.
+		nextStar := strings.IndexByte(pattern, '*')
+		nextLit := pattern
+		if nextStar >= 0 {
+			nextLit = pattern[:nextStar]
+		}
+		i := strings.Index(s, nextLit)
+		if i < 0 {
+			return false
+		}
+		s = s[i:]
+	}
+}
+
 type artifact struct {
 	Label string `json:"label"`
 	Name  string `json:"name"`
@@ -95,10 +126,20 @@ func artifactCatCmd() *cobra.Command {
 
 func artifactDownloadCmd() *cobra.Command {
 	var output string
+	var all bool
 	cmd := &cobra.Command{
-		Use:   "download <invocation-id> <name-substr>",
-		Short: "Download artifact to a file (defaults to the artifact filename)",
-		Args:  cobra.ExactArgs(2),
+		Use:   "download <invocation-id> [name-pattern]",
+		Short: "Download artifact(s) to file(s)",
+		Long: `Download artifact(s) from a BuildBuddy invocation.
+
+Patterns containing '*' use glob matching; otherwise substring match against
+"label/name". Without --all, downloads only the first match.
+
+  bbapi artifact download <id> .ambr          # first match containing .ambr
+  bbapi artifact download <id> '*.ambr'        # first glob match ending .ambr
+  bbapi artifact download <id> --all           # all undeclared test outputs
+  bbapi artifact download <id> '*.ambr' --all  # all glob matches`,
+		Args: cobra.RangeArgs(1, 2),
 		RunE: func(_ *cobra.Command, args []string) error {
 			c, err := newClient()
 			if err != nil {
@@ -108,10 +149,27 @@ func artifactDownloadCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if all && len(args) < 2 {
+				if len(artifacts) == 0 {
+					return fmt.Errorf("no artifacts found")
+				}
+				return downloadAllArtifacts(c, artifacts, output)
+			}
+			if len(args) < 2 {
+				return fmt.Errorf("requires a name-pattern (or use --all with no pattern)")
+			}
+			if all {
+				matches := filterArtifacts(artifacts, args[1])
+				if len(matches) == 0 {
+					return fmt.Errorf("no artifacts matching %q", args[1])
+				}
+				return downloadAllArtifacts(c, matches, output)
+			}
 			return downloadArtifactToFile(c, artifacts, args[1], output)
 		},
 	}
-	cmd.Flags().StringVarP(&output, "output", "o", "", "output file path (default: artifact filename)")
+	cmd.Flags().StringVarP(&output, "output", "o", "", "output directory for --all, or file path for single download")
+	cmd.Flags().BoolVar(&all, "all", false, "download all matching artifacts (default: first match only)")
 	return cmd
 }
 
@@ -134,17 +192,19 @@ func printArtifacts(artifacts []artifact) error {
 	return nil
 }
 
-func resolveArtifact(artifacts []artifact, substr string) (artifact, error) {
-	var matches []artifact
-	for _, a := range artifacts {
-		if strings.Contains(a.Label+"/"+a.Name, substr) {
-			matches = append(matches, a)
-		}
-	}
+// matchKey returns the string matched against: "label/name".
+func (a artifact) matchKey() string {
+	return a.Label + "/" + a.Name
+}
+
+// resolveArtifact finds a single artifact matching pattern (glob if it
+// contains '*', otherwise substring). Returns the first match.
+func resolveArtifact(artifacts []artifact, pattern string) (artifact, error) {
+	matches := filterArtifacts(artifacts, pattern)
 	if len(matches) == 0 {
 		seen := map[string]bool{}
 		count := 0
-		fmt.Fprintf(os.Stderr, "No artifacts matching %q\n", substr)
+		fmt.Fprintf(os.Stderr, "No artifacts matching %q\n", pattern)
 		if len(artifacts) > 0 {
 			fmt.Fprintf(os.Stderr, "\nAvailable labels (first 5):\n")
 			for _, a := range artifacts {
@@ -169,16 +229,36 @@ func resolveArtifact(artifacts []artifact, substr string) (artifact, error) {
 			}
 			fmt.Fprintf(os.Stderr, "\nHint: match is against \"label/name\" (e.g., \"test_handlers/test.log\")\n")
 		}
-		return artifact{}, fmt.Errorf("no artifacts matching %q", substr)
+		return artifact{}, fmt.Errorf("no artifacts matching %q", pattern)
 	}
 	if len(matches) > 1 {
-		fmt.Fprintf(os.Stderr, "Multiple matches for %q:\n", substr)
+		fmt.Fprintf(os.Stderr, "Multiple matches for %q:\n", pattern)
 		for _, a := range matches {
 			fmt.Fprintf(os.Stderr, "  %s  %s\n", a.Label, a.Name)
 		}
 		fmt.Fprintf(os.Stderr, "Using first match: %s %s\n", matches[0].Label, matches[0].Name)
 	}
 	return matches[0], nil
+}
+
+// filterArtifacts returns all artifacts matching pattern (glob if it contains
+// '*', otherwise substring match against "label/name").
+func filterArtifacts(artifacts []artifact, pattern string) []artifact {
+	var matches []artifact
+	if strings.Contains(pattern, "*") {
+		for _, a := range artifacts {
+			if matchGlob(pattern, a.matchKey()) {
+				matches = append(matches, a)
+			}
+		}
+	} else {
+		for _, a := range artifacts {
+			if strings.Contains(a.matchKey(), pattern) {
+				matches = append(matches, a)
+			}
+		}
+	}
+	return matches
 }
 
 func catArtifact(c *client, artifacts []artifact, substr string) error {
@@ -196,24 +276,44 @@ func catArtifact(c *client, artifacts []artifact, substr string) error {
 	return err
 }
 
-func downloadArtifactToFile(c *client, artifacts []artifact, substr string, output string) error {
-	match, err := resolveArtifact(artifacts, substr)
+func downloadArtifactToFile(c *client, artifacts []artifact, pattern string, output string) error {
+	match, err := resolveArtifact(artifacts, pattern)
 	if err != nil {
 		return err
 	}
 	if output == "" {
 		output = filepath.Base(match.Name)
 	}
+	return saveArtifact(c, match, output)
+}
+
+func downloadAllArtifacts(c *client, artifacts []artifact, dir string) error {
+	if dir == "" {
+		dir = "."
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("create output directory: %w", err)
+	}
+	for _, a := range artifacts {
+		dest := filepath.Join(dir, filepath.Base(a.Name))
+		if err := saveArtifact(c, a, dest); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to download %s: %v\n", a.Name, err)
+		}
+	}
+	return nil
+}
+
+func saveArtifact(c *client, a artifact, dest string) error {
 	downloadURL := fmt.Sprintf("%s/file/download?bytestream_url=%s",
-		c.baseURL, url.QueryEscape(match.URI))
+		c.baseURL, url.QueryEscape(a.URI))
 	data, err := c.fetchURL(downloadURL)
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(output, data, 0o644); err != nil {
+	if err := os.WriteFile(dest, data, 0o644); err != nil {
 		return err
 	}
-	fmt.Fprintf(os.Stderr, "Downloaded to %s (%d bytes)\n", output, len(data))
+	fmt.Fprintf(os.Stderr, "Downloaded to %s (%d bytes)\n", dest, len(data))
 	return nil
 }
 

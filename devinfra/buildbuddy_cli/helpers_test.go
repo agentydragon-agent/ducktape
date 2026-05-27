@@ -5,6 +5,61 @@ import (
 	"time"
 )
 
+func TestMatchGlob(t *testing.T) {
+	tests := []struct {
+		pattern string
+		s       string
+		want    bool
+	}{
+		{"*.ambr", "test_handlers/test.outputs/snapshot.ambr", true},
+		{"*.ambr", "test_handlers/test.outputs/log.txt", false},
+		{"*", "anything", true},
+		{"*.ambr", "snapshot.ambr", true},
+		{"test_*/*.ambr", "test_foo/snapshot.ambr", true},
+		{"test_*/*.ambr", "other/snapshot.ambr", false},
+		{"no-star", "no-star", true},
+		{"no-star", "no-stardust", false},
+		{"*.log", "foo/bar/test.log", true},
+		{"*test.outputs/*", "foo/test.outputs/snapshot.ambr", true},
+		{"test.outputs/*", "test.outputs/snapshot.ambr", true},
+		{"test.outputs/*", "foo/test.outputs/snapshot.ambr", false},
+		{"*.ambr", "", false},
+		{"", "", true},
+		{"", "nonempty", false},
+	}
+	for _, tt := range tests {
+		got := matchGlob(tt.pattern, tt.s)
+		if got != tt.want {
+			t.Errorf("matchGlob(%q, %q) = %v, want %v", tt.pattern, tt.s, got, tt.want)
+		}
+	}
+}
+
+func TestFilterArtifacts(t *testing.T) {
+	arts := []artifact{
+		{Label: "//foo:test", Name: "snapshot.ambr"},
+		{Label: "//foo:test", Name: "test.log"},
+		{Label: "//bar:test", Name: "other.ambr"},
+	}
+	tests := []struct {
+		pattern string
+		want    int
+	}{
+		{".ambr", 2},
+		{"*.ambr", 2},
+		{"snapshot.ambr", 1},
+		{"test.log", 1},
+		{"nonexistent", 0},
+		{"*", 3},
+	}
+	for _, tt := range tests {
+		matches := filterArtifacts(arts, tt.pattern)
+		if len(matches) != tt.want {
+			t.Errorf("filterArtifacts(%q) = %d matches, want %d", tt.pattern, len(matches), tt.want)
+		}
+	}
+}
+
 func TestNormalizeGitURL(t *testing.T) {
 	tests := []struct {
 		name string

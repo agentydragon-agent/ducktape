@@ -17,31 +17,152 @@ package(default_visibility = ["//visibility:public"])
 # (e.g. gaffer-private's property photos) can overlay `:image` or mount
 # additional files at runtime via a volume.
 
-REACT_DEPS = ["//:node_modules/react"]
+# -- Pure JS helpers (no React) -------------------------------------------------
 
 js_library(
-    name = "augur_app",
-    srcs = [
-        "app.jsx",
-        "client.js",
-        "product_app.jsx",
-    ],
-    deps = REACT_DEPS + [
-        "//:node_modules/@mantine/core",
-        "//augur/frontend/lib:casing",
-        "//augur/frontend/lib:chart",
-        "//augur/frontend/lib:controls",
+    name = "input_helpers",
+    srcs = ["input_helpers.js"],
+    deps = [
         "//augur/frontend/lib:format",
         "//augur/frontend/lib:frame",
+    ],
+)
+
+js_library(
+    name = "client",
+    srcs = ["client.js"],
+    deps = [
+        "//augur/frontend/lib:casing",
         "//augur/frontend/lib:schema_zod",
     ],
 )
 
 js_library(
+    name = "data_helpers",
+    srcs = ["data_helpers.js"],
+    deps = [
+        ":input_helpers",
+        "//augur/frontend/lib:format",
+        "//augur/frontend/lib:frame",
+    ],
+)
+
+js_library(
+    name = "hooks",
+    srcs = ["hooks.js"],
+    deps = [
+        ":data_helpers",
+        "//:node_modules/react",
+    ],
+)
+
+# -- React components -----------------------------------------------------------
+
+js_library(
+    name = "header",
+    srcs = ["header.jsx"],
+    deps = ["//:node_modules/react"],
+)
+
+js_library(
+    name = "skeleton",
+    srcs = ["skeleton.jsx"],
+    deps = [
+        ":header",
+        "//:node_modules/react",
+    ],
+)
+
+js_library(
+    name = "events_panel",
+    srcs = ["events_panel.jsx"],
+    deps = [
+        ":data_helpers",
+        "//:node_modules/react",
+        "//augur/frontend/lib:format",
+    ],
+)
+
+js_library(
+    name = "fan_chart",
+    srcs = ["fan_chart.jsx"],
+    deps = [
+        ":data_helpers",
+        ":input_helpers",
+        "//:node_modules/react",
+        "//augur/frontend/lib:chart",
+        "//augur/frontend/lib:format",
+    ],
+)
+
+js_library(
+    name = "histogram",
+    srcs = ["histogram.jsx"],
+    deps = [
+        ":data_helpers",
+        ":input_helpers",
+        "//:node_modules/react",
+        "//augur/frontend/lib:chart",
+        "//augur/frontend/lib:format",
+    ],
+)
+
+js_library(
+    name = "metric_table",
+    srcs = ["metric_table.jsx"],
+    deps = [
+        ":data_helpers",
+        ":input_helpers",
+        "//:node_modules/react",
+        "//augur/frontend/lib:chart",
+        "//augur/frontend/lib:format",
+    ],
+)
+
+js_library(
+    name = "forms",
+    srcs = ["forms.jsx"],
+    deps = [
+        ":data_helpers",
+        ":header",
+        ":input_helpers",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/react",
+        "//augur/frontend/lib:chart",
+        "//augur/frontend/lib:controls",
+        "//augur/frontend/lib:format",
+    ],
+)
+
+js_library(
+    name = "app",
+    srcs = ["app.jsx"],
+    deps = [
+        ":client",
+        ":data_helpers",
+        ":events_panel",
+        ":fan_chart",
+        ":forms",
+        ":header",
+        ":histogram",
+        ":hooks",
+        ":input_helpers",
+        ":metric_table",
+        ":skeleton",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/react",
+        "//augur/frontend/lib:format",
+    ],
+)
+
+# -- Bundle entry point ---------------------------------------------------------
+
+js_library(
     name = "main_lib",
     srcs = ["main.jsx"],
-    deps = REACT_DEPS + [
-        ":augur_app",
+    deps = [
+        ":app",
+        "//:node_modules/react",
         "//:node_modules/react-dom",
     ],
 )
@@ -68,9 +189,18 @@ filegroup(
     srcs = [
         "app.jsx",
         "client.js",
+        "data_helpers.js",
+        "events_panel.jsx",
+        "fan_chart.jsx",
+        "forms.jsx",
+        "header.jsx",
+        "histogram.jsx",
+        "hooks.js",
         "index.html",
+        "input_helpers.js",
         "main.jsx",
-        "product_app.jsx",
+        "metric_table.jsx",
+        "skeleton.jsx",
         "//augur/frontend/lib:casing",
         "//augur/frontend/lib:chart",
         "//augur/frontend/lib:controls",

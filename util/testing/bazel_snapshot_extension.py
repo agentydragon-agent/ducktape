@@ -51,10 +51,7 @@ def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter, exitstatu
     target = os.environ.get("TEST_TARGET", "//path/to:target")
     terminalreporter.write_line("")
     terminalreporter.write_line("To update snapshots:")
+    terminalreporter.write_line(f"  bbr test {target} --test_arg=--snapshot-update --nocache_test_results")
     terminalreporter.write_line(
-        f"  bb test --config=rbe --remote_download_outputs=toplevel {target}"
-        " --test_arg=--snapshot-update --nocache_test_results"
-    )
-    terminalreporter.write_line(
-        f"  cp bazel-testlogs/{target.lstrip('/').replace(':', '/')}/test.outputs/*.ambr <source>/__snapshots__/"
+        "  INV=$(cat ~/.cache/bbr/last_invocation_id) && bbapi artifact download $INV '*.ambr' --all"
     )
