@@ -473,5 +473,30 @@ def test_backend_server_product_rent_rejects_unknown_location(server_url: str) -
     assert exc_info.value.code == 400
 
 
+def test_backend_server_pe_tender_sale_appears_as_holding_sale_event(server_url: str) -> None:
+    """PE tender sales should surface as `holding_sale` events in rollout detail."""
+    scenario = {
+        "exogenous_model_id": "current_exogenous_model",
+        "horizon_months": 48,
+        "monthly_spend_usd": 1_000.0,
+        "spend_index": "none",
+        "pe_tender_policy": {"liquid_net_worth_floor_usd": 5_000_000.0, "index_floor_to_inflation": False},
+    }
+    # Request several seeds to maximize chance of hitting a tender event (λ≈1/year over 48mo).
+    detail = _post_json(server_url, "/api/product/projections/rollout", {"scenario": scenario, "seed": 7})
+    pe_sales = [
+        event
+        for event in detail["rollout"]["events"]
+        if event["kind"] == "holding_sale" and str(event["asset_id"]).startswith("private_equity:")
+    ]
+    assert len(pe_sales) >= 1, (
+        f"expected at least 1 PE holding_sale event, got {len(pe_sales)}; "
+        f"all events: {[e['kind'] for e in detail['rollout']['events']]}"
+    )
+    sale = pe_sales[0]
+    assert sale["proceeds_usd"] > 0
+    assert sale["units"] > 0
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

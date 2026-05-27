@@ -15,6 +15,7 @@ from augur.sim.codec.assets import (
     decode_asset_lots,
     decode_cash,
     decode_liquidity_dispositions,
+    decode_pe_dispositions,
     decode_sched_dispositions,
 )
 from augur.sim.codec.liabilities import decode_liabilities, decode_mortgage_originations, decode_mortgage_payments
@@ -74,6 +75,7 @@ def decode_events(plan: CompiledSimulation, buffers: SimulationBuffers) -> Event
     transfer_frames.append(property_transfer_frame)
     lot_frames.append(decode_sched_dispositions(plan, buffers))
     lot_frames.append(decode_liquidity_dispositions(plan, buffers))
+    lot_frames.append(decode_pe_dispositions(plan, buffers))
     tax_accruals_frame, tax_breakdowns_frame = decode_tax_accruals(plan, buffers)
     obligation_accruals_frame, obligation_settlements_frame, obligation_transfer_frame, failure_frame = (
         decode_obligations(plan, buffers)

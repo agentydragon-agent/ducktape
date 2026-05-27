@@ -70,6 +70,7 @@ class SlotPlan:
     scheduled_sale_count: int
     liquidity_policy_count: int
     max_liquidity_policy_assets: int
+    pe_issuer_count: int
     max_tax_settlement_slots: int
 
 
@@ -303,6 +304,7 @@ def compile_simulation(
         scheduled_sale_count=sales.month.shape[0],
         liquidity_policy_count=liquidity_policies.assets.shape[0],
         max_liquidity_policy_assets=liquidity_policies.assets.shape[1],
+        pe_issuer_count=pe_issuers.codes.shape[0],
         max_tax_settlement_slots=max(1, len(scenario.tax_profiles)),
     )
 

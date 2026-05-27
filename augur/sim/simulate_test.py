@@ -3550,6 +3550,17 @@ def test_pe_tender_fires_below_floor_sells_to_lift_lnw() -> None:
     assert _pe_lot_remaining_at(result, lot_id="acme_lot_a", month_index=snapshot) == pytest.approx(0.0, abs=1e-6)
     assert _alice_cash_at(result, month_index=snapshot) == pytest.approx(30_000.0, abs=1.0)
 
+    # Disposition event should be recorded.
+    disp = result.events_log.lot_dispositions.filter(
+        (pl.col("rollout_index") == 0) & (pl.col("month_index") == tender_month)
+    )
+    assert disp.height >= 1, f"expected PE disposition at month {tender_month}, got none"
+    row = disp.row(0, named=True)
+    assert row["asset_id"] == "private_equity:acme"
+    assert row["units_sold"] == pytest.approx(100.0, abs=1e-6)
+    assert row["proceeds_usd"] == pytest.approx(6_000.0, abs=1.0)
+    assert row["cause_id"].startswith("pe_tender_m5")
+
 
 def test_pe_tender_fires_above_floor_no_sale() -> None:
     """When LNW already exceeds the floor, a tender opportunity passes without a sale."""
@@ -3603,6 +3614,40 @@ def test_pe_tender_zero_floor_never_sells() -> None:
     external = _pe_external_series(initial_mark_usd=50.0, tender_month=5, tender_mark_usd=60.0, horizon_months=12)
     result = simulate_with_external_series(scenario, rollout_count=1, external_series=external)
     assert _pe_lot_remaining_at(result, lot_id="acme_lot_a", month_index=6) == pytest.approx(100.0)
+
+
+def test_pe_tender_disposition_recorded() -> None:
+    """PE tender sales produce lot_dispositions rows with correct fields."""
+
+    scenario = _pe_tender_scenario(
+        initial_cash_usd=10_000.0,
+        monthly_spend_usd=0.0,
+        pe_units=200.0,
+        pe_cost_basis_per_unit_usd=20.0,
+        pe_holding_period_months=24,
+        horizon_months=12,
+        lnw_floor_usd=100_000.0,
+    )
+    tender_month = 3
+    tender_mark = 80.0
+    external = _pe_external_series(
+        initial_mark_usd=50.0, tender_month=tender_month, tender_mark_usd=tender_mark, horizon_months=12
+    )
+    result = simulate_with_external_series(scenario, rollout_count=1, external_series=external)
+
+    disp = result.events_log.lot_dispositions.filter(
+        (pl.col("rollout_index") == 0) & (pl.col("month_index") == tender_month)
+    )
+    assert disp.height == 1, f"expected exactly 1 PE disposition, got {disp.height}"
+    row = disp.row(0, named=True)
+    # All 200 units sold at $80 → $16,000 proceeds, cost basis 200 * $20 = $4,000.
+    assert row["asset_id"] == "private_equity:acme"
+    assert row["lot_id"] == "acme_lot_a"
+    assert row["agent_id"] == "alice"
+    assert row["units_sold"] == pytest.approx(200.0, abs=1e-6)
+    assert row["cost_basis_consumed_usd"] == pytest.approx(4_000.0, abs=1.0)
+    assert row["proceeds_usd"] == pytest.approx(16_000.0, abs=1.0)
+    assert row["cause_id"] == f"pe_tender_m{tender_month}_acme"
 
 
 if __name__ == "__main__":

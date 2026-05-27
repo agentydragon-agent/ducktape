@@ -267,6 +267,11 @@ def _allocate_buffers(plan: CompiledSimulation) -> SimulationBuffers:
             liq_disp_proceeds=np.zeros(
                 (h, p.liquidity_policy_count, p.max_liquidity_policy_assets, lot_axis, r), dtype=np.float64
             ),
+            # PE tender disposition buffers[H, PE_issuer, max(1, L), R]
+            pe_disp_active=np.zeros((h, p.pe_issuer_count, lot_axis, r), dtype=np.bool_),
+            pe_disp_units=np.zeros((h, p.pe_issuer_count, lot_axis, r), dtype=np.float64),
+            pe_disp_basis=np.zeros((h, p.pe_issuer_count, lot_axis, r), dtype=np.float64),
+            pe_disp_proceeds=np.zeros((h, p.pe_issuer_count, lot_axis, r), dtype=np.float64),
         ),
         taxes=TaxEventBuffers(
             # tax accrual/breakdown buffers[H, max(1, J), R]

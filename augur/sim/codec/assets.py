@@ -117,6 +117,34 @@ def decode_liquidity_dispositions(plan: CompiledSimulation, buffers: SimulationB
     )
 
 
+def decode_pe_dispositions(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
+    active = buffers.pe_disp_active  # (M, issuer, lot, R)
+    if active.any():
+        months, issuers, lots, rollouts = np.argwhere(active).T
+    else:
+        months = issuers = lots = rollouts = np.array([], dtype=np.int64)
+    # pe_issuers.codes are issuer names (e.g. "acme"), not full asset_ids.
+    # Use lot_asset_codes to get the correct "private_equity:<issuer>" asset_id.
+    asset_codes = plan.lot_asset_codes[lots]
+    issuer_names = codes_to_strings(plan, plan.pe_issuers.codes)[issuers]
+    cause_ids = np.array([f"pe_tender_m{m}_{n}" for m, n in zip(months, issuer_names, strict=True)], dtype=object)
+    policy_idxs = plan.pe_issuers.policy_index[issuers]
+    return _lot_disposition_frame(
+        plan=plan,
+        rollouts=rollouts,
+        months=months,
+        cause_ids=cause_ids,
+        agent_codes=plan.pe_policies.owner_agent[policy_idxs],
+        source_account_codes=plan.pe_policies.proceeds_cash_slot[policy_idxs],
+        asset_codes=asset_codes,
+        lots=lots,
+        units=buffers.pe_disp_units[months, issuers, lots, rollouts],
+        basis=buffers.pe_disp_basis[months, issuers, lots, rollouts],
+        proceeds=buffers.pe_disp_proceeds[months, issuers, lots, rollouts],
+        proceeds_account_codes=plan.pe_policies.proceeds_cash_slot[policy_idxs],
+    )
+
+
 def _lot_disposition_frame(
     *,
     plan: CompiledSimulation,

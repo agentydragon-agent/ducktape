@@ -144,6 +144,8 @@ def required_event_series(initial_lots: tuple[InitialLot, ...]) -> frozenset[str
     provider knows which event streams to materialize for this scenario.
     """
 
+    # TODO: matching by asset_id.startswith("private_equity:") is fragile. An enum on
+    # the holding's `security_kind` field (e.g. `private_equity`) would be cleaner.
     event_ids: set[str] = set()
     for lot in initial_lots:
         if lot.asset_id.startswith("private_equity:"):

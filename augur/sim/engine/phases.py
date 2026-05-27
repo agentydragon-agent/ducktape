@@ -304,6 +304,12 @@ def _apply_pe_tenders(
             sold_units=result.sold_units,
             gains=result.proceeds - result.cost_basis_consumed,
         )
+        # Record disposition for downstream event decoding.
+        sale_active = result.sold_units > 0.0  # (L, R)
+        buffers.pe_disp_active[month, issuer_idx] |= sale_active.T  # (L, R) → (lot, R)
+        buffers.pe_disp_units[month, issuer_idx] += result.sold_units.T
+        buffers.pe_disp_basis[month, issuer_idx] += result.cost_basis_consumed.T
+        buffers.pe_disp_proceeds[month, issuer_idx] += result.proceeds.T
 
 
 def _compute_liquid_net_worth(

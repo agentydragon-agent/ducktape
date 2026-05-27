@@ -414,6 +414,10 @@ class LotDispositionEventBuffers:
     liq_disp_units: NDArray[np.float64]
     liq_disp_basis: NDArray[np.float64]
     liq_disp_proceeds: NDArray[np.float64]
+    pe_disp_active: NDArray[np.bool_]
+    pe_disp_units: NDArray[np.float64]
+    pe_disp_basis: NDArray[np.float64]
+    pe_disp_proceeds: NDArray[np.float64]
 
     def validate(self, plan: SlotPlan) -> None:
         h = plan.event_months
@@ -421,6 +425,7 @@ class LotDispositionEventBuffers:
         lot_axis = max(1, plan.lot_count)
         scheduled_shape = (h, plan.scheduled_sale_count, lot_axis, r)
         liquidity_shape = (h, plan.liquidity_policy_count, plan.max_liquidity_policy_assets, lot_axis, r)
+        pe_shape = (h, plan.pe_issuer_count, lot_axis, r)
         _expect_array("sched_disp_active", self.sched_disp_active, shape=scheduled_shape, dtype=np.bool_)
         _expect_array("sched_disp_units", self.sched_disp_units, shape=scheduled_shape, dtype=np.float64)
         _expect_array("sched_disp_basis", self.sched_disp_basis, shape=scheduled_shape, dtype=np.float64)
@@ -429,6 +434,10 @@ class LotDispositionEventBuffers:
         _expect_array("liq_disp_units", self.liq_disp_units, shape=liquidity_shape, dtype=np.float64)
         _expect_array("liq_disp_basis", self.liq_disp_basis, shape=liquidity_shape, dtype=np.float64)
         _expect_array("liq_disp_proceeds", self.liq_disp_proceeds, shape=liquidity_shape, dtype=np.float64)
+        _expect_array("pe_disp_active", self.pe_disp_active, shape=pe_shape, dtype=np.bool_)
+        _expect_array("pe_disp_units", self.pe_disp_units, shape=pe_shape, dtype=np.float64)
+        _expect_array("pe_disp_basis", self.pe_disp_basis, shape=pe_shape, dtype=np.float64)
+        _expect_array("pe_disp_proceeds", self.pe_disp_proceeds, shape=pe_shape, dtype=np.float64)
 
 
 @dataclass
@@ -700,6 +709,22 @@ class SimulationBuffers:
     @property
     def liq_disp_proceeds(self) -> np.ndarray:
         return self.lot_dispositions.liq_disp_proceeds
+
+    @property
+    def pe_disp_active(self) -> np.ndarray:
+        return self.lot_dispositions.pe_disp_active
+
+    @property
+    def pe_disp_units(self) -> np.ndarray:
+        return self.lot_dispositions.pe_disp_units
+
+    @property
+    def pe_disp_basis(self) -> np.ndarray:
+        return self.lot_dispositions.pe_disp_basis
+
+    @property
+    def pe_disp_proceeds(self) -> np.ndarray:
+        return self.lot_dispositions.pe_disp_proceeds
 
     @property
     def tax_accrual_active(self) -> np.ndarray:

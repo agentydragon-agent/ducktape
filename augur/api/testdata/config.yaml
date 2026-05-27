@@ -95,8 +95,8 @@ exogenous_provider:
   events:
     "private_equity_sale_opportunity:private_holding_a":
       kind: poisson
-      monthly_lambda: 0.0138888889 # 1/72
-      min_horizon_months: 12
+      monthly_lambda: 0.0833333333 # 1/12 (roughly once per year)
+      min_horizon_months: 6
 portfolio:
   accounts:
     - account_id: taxable_brokerage
