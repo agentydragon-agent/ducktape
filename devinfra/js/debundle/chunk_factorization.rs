@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 
 use crate::atomic_units::{AtomicUnit, OwnerGraphAndUnits, compute_owner_graph_and_units};
@@ -132,18 +132,17 @@ impl ChunkFactorization {
         // simulator share one source of truth — see `graph.rs:
         // chunk_constraining_module_edges` for the invariant doc.
         let canonical_edges = chunk_constraining_module_edges(&owner_graph, &partition);
-        let linker_position_btree: BTreeMap<ModuleId, usize> = chunk_linker_order(&canonical_edges);
-        // Recover the linker-order Vec by sorting modules by their
-        // assigned position. Modules absent from the canonical set
-        // are unconstrained relative to it and not present here.
-        let mut linker_order_pairs: Vec<(ModuleId, usize)> = linker_position_btree
+        // Canonical linker order (Vec<ModuleId>, dependency-first).
+        // Modules absent from the canonical set are not present here.
+        let linker_order: Vec<ModuleId> = chunk_linker_order(&canonical_edges);
+        // O(1) position-lookup cache for `linker_position(id)` queries
+        // — built once here so downstream code doesn't re-derive it.
+        let linker_position_by_module: HashMap<ModuleId, usize> = linker_order
             .iter()
-            .map(|(m, p)| (*m, *p))
+            .copied()
+            .enumerate()
+            .map(|(idx, id)| (id, idx))
             .collect();
-        linker_order_pairs.sort_by_key(|(_, p)| *p);
-        let linker_order: Vec<ModuleId> = linker_order_pairs.into_iter().map(|(m, _)| m).collect();
-        let linker_position_by_module: HashMap<ModuleId, usize> =
-            linker_position_btree.into_iter().collect();
         // Every logical module needs a deterministic source-order
         // slot for emit stability, even singletons that don't
         // participate in any canonical edge.

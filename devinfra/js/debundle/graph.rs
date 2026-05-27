@@ -1307,10 +1307,13 @@ impl ChunkConstrainingEdgeSet {
 }
 
 /// Toposort of the canonical edge set, deepest dependency first.
-/// The position of a module in the returned map is its
-/// "linker_position": the relative order ECMA-262's depth-first
-/// link traversal needs to evaluate this chunk so that every
-/// constraining edge `M → M'` has `M'` evaluating before `M`.
+/// The returned `Vec<ModuleId>` is the canonical "linker order":
+/// element 0 is the deepest dependency (must evaluate before
+/// everything else); the last element is the most-dependent module.
+/// Position in this vector is the module's "linker_position" — the
+/// relative order ECMA-262's depth-first link traversal needs to
+/// evaluate this chunk so that every constraining edge `M → M'` has
+/// `M'` evaluating before `M`.
 ///
 /// Modules that don't participate in any canonical edge are omitted
 /// from the result (they're absent from the constraining DAG, hence
@@ -1318,12 +1321,15 @@ impl ChunkConstrainingEdgeSet {
 /// when sorting by linker_position so unconstrained modules sort
 /// LAST.
 ///
+/// Callers that need O(1) position lookup should pipe the result
+/// through [`position_lookup`] once.
+///
 /// Note: every edge in the canonical set already satisfies
 /// `constrains_init_order()`, so the toposort runs on the full
 /// set — no extra filter needed. If the canonical edge set has a
 /// constraining-only cycle (Pass 1 reports it as unrealizable),
-/// `toposort` returns `Err`; this function returns the empty map.
-pub fn chunk_linker_order(edges: &ChunkConstrainingEdgeSet) -> BTreeMap<ModuleId, usize> {
+/// `toposort` returns `Err`; this function returns the empty vector.
+pub fn chunk_linker_order(edges: &ChunkConstrainingEdgeSet) -> Vec<ModuleId> {
     chunk_linker_order_from_pairs(edges.pairs())
 }
 
@@ -1334,7 +1340,7 @@ pub fn chunk_linker_order(edges: &ChunkConstrainingEdgeSet) -> BTreeMap<ModuleId
 /// reaching for the full canonical edge map.
 pub fn chunk_linker_order_from_pairs(
     pairs: impl IntoIterator<Item = (ModuleId, ModuleId)>,
-) -> BTreeMap<ModuleId, usize> {
+) -> Vec<ModuleId> {
     use petgraph::algo::toposort;
     let mut graph: DiGraphMap<ModuleId, ()> = DiGraphMap::new();
     for (from, to) in pairs {
@@ -1343,14 +1349,29 @@ pub fn chunk_linker_order_from_pairs(
         graph.add_edge(from, to, ());
     }
     match toposort(&graph, None) {
-        Ok(order) => order
-            .into_iter()
-            .rev()
-            .enumerate()
-            .map(|(idx, id)| (id, idx))
-            .collect(),
-        Err(_) => BTreeMap::new(),
+        // `toposort` yields dependents first (root → leaves); the
+        // canonical "linker order" is dependency-first, so reverse.
+        Ok(order) => order.into_iter().rev().collect(),
+        Err(_) => Vec::new(),
     }
+}
+
+/// Build an O(1) position lookup from a canonical linker-order slice.
+/// `result[id] = i` iff `id` is at index `i` in `order`. Modules
+/// absent from `order` are absent from the returned map; callers
+/// fall back to `usize::MAX` when sorting.
+///
+/// This is the one place that materializes the
+/// `BTreeMap<ModuleId, usize>` view of the linker order. Callers
+/// that only need to iterate in order should consume the
+/// `Vec<ModuleId>` directly instead of going through this helper.
+pub fn position_lookup(order: &[ModuleId]) -> BTreeMap<ModuleId, usize> {
+    order
+        .iter()
+        .copied()
+        .enumerate()
+        .map(|(idx, id)| (id, idx))
+        .collect()
 }
 
 /// Lemma 2 ordering: sort by `(SCC dep rank ASC, intra-SCC
@@ -1391,7 +1412,11 @@ pub fn chunk_source_import_order_from_adjacency(
     extra_nodes: &BTreeSet<ModuleId>,
 ) -> Vec<ModuleId> {
     use petgraph::algo::tarjan_scc;
-    let linker_position = chunk_linker_order_from_pairs(constraining_pairs);
+    // We need O(1) position lookups inside the sort comparator below,
+    // so materialize the linker order into the position-lookup map
+    // once. The canonical linker-order Vec is the toposort output;
+    // `position_lookup` is the small enumerate-collect adapter.
+    let linker_position = position_lookup(&chunk_linker_order_from_pairs(constraining_pairs));
     // SCCs are computed over the FULL I-graph (constraining + lazy
     // back-edges) so Lemma 2's intra-SCC `linker_position`-DESC
     // reversal catches asymmetric cycles. The constraining-only
@@ -1616,9 +1641,10 @@ mod chunk_constraining_module_edges_tests {
         partition.set(OwnerId(2), module_id(3)); // top
         let canonical = chunk_constraining_module_edges(&owner_graph, &partition);
         let linker = chunk_linker_order(&canonical);
+        let pos = position_lookup(&linker);
         // leaf (mod_1) must come before middle (mod_2) and top (mod_3).
-        assert!(linker[&module_id(1)] < linker[&module_id(2)]);
-        assert!(linker[&module_id(2)] < linker[&module_id(3)]);
+        assert!(pos[&module_id(1)] < pos[&module_id(2)]);
+        assert!(pos[&module_id(2)] < pos[&module_id(3)]);
     }
 
     /// `chunk_source_import_order` reverses within an SCC so the

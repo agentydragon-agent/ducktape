@@ -67,7 +67,6 @@ Six distinct types in the orbit of "stuff a chunk analysis produced" (after the 
 Watch out for:
 
 - **`ChunkFactorization` vs `ChunkAnalysis`**: both are per-chunk IR; the difference is whether the partition is applied. Could be `ChunkAnalysis` (no partition) vs `FactorizedChunk` (partition applied) and the meaning would be more obvious.
-- **`linker_order` (`Vec<String>` in `FactorizationReport`)** vs **`linker_order` (`Vec<ModuleId>` in `ChunkFactorization`)** vs **`chunk_linker_order` (`BTreeMap<ModuleId, usize>` in `graph.rs`)** — three different shapes for "the toposort of the constraining-edge graph", differing in element type and whether it's "list" or "map (position lookup)". Pick one canonical type, derive the others.
 - **`SccDiagnosis` (`realizability.rs:65`, renamed from `UnrealizableScc` in `3dbaf1037`)** vs **`CycleReport` (`validation.rs:38`)** vs **`QuotientSccReport` (`reports/schema.rs:174`)** vs **`AtomicUnitConflict` (`factor_assembly.rs:42`)** — four representations of "the spec is unrealizable, here's why" with subtly different fields. `SccDiagnosis` carries `constraining_owner_edges`; `CycleReport` carries `cut` (a minimum cut) + `evidence`; `QuotientSccReport` carries `module_edge_ids` + `constraining_module_edge_ids`. Two of these contain the same data ("the modules in the SCC + the edges in the SCC"), with the cut/evidence/min decoration added by the validator. The right shape is one core type with optional decorations, not four parallel structs.
 
 ## Algorithmic clarity (realizability gate, atom detection)

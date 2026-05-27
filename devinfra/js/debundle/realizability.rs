@@ -41,7 +41,7 @@ use crate::OwnerId;
 use crate::graph::{
     ModuleQuotient, OwnerEdge, OwnerEdgeId, OwnerGraph, build_module_quotient,
     chunk_constraining_module_edges, chunk_linker_order_from_pairs,
-    chunk_source_import_order_from_adjacency,
+    chunk_source_import_order_from_adjacency, position_lookup,
 };
 use crate::ids::ModuleId;
 use crate::partition::Partition;
@@ -352,7 +352,12 @@ impl EsmEvaluationSimulator {
     ) -> Self {
         let mut extra = BTreeSet::new();
         extra.insert(residual);
-        let linker_position = chunk_linker_order_from_pairs(constraining_pairs.iter().copied());
+        // Position-lookup view of the canonical linker order — the
+        // simulator's `EsmIGraph` resolves neighbor sort keys with
+        // O(1) per probe.
+        let linker_position = position_lookup(&chunk_linker_order_from_pairs(
+            constraining_pairs.iter().copied(),
+        ));
         let source_import_order = chunk_source_import_order_from_adjacency(
             constraining_pairs.iter().copied(),
             i_successors,
