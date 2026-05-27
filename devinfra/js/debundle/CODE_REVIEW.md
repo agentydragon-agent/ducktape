@@ -10,15 +10,14 @@ Full-package review of `devinfra/js/debundle/` (~47K lines). Findings prioritize
 
 Remaining: strip-specific helpers, annotation/identity logic, wrapper generation could each lift out into their own modules alongside the already-extracted `vendor/manifests.rs` and `vendor/strip.rs`.
 
-### `purity.rs` (2671 lines, 5 concerns)
+### `purity/mod.rs` (~2300 lines) — remaining concerns
 
-Mixes graph construction (`ChunkCodeGraph`), whitelist constant tables (~400 lines of static data), expression classification, PlainData write scanning, and TS enum IIFE recognition.
-
-### `analysis_tests.rs` (4095 lines, 8+ subsystems)
-
-Tests 8+ distinct subsystems in one file: fact analysis, decorate helpers, cycle detection, atomic unit conflicts, purity classification, plain-data tracking, redundant hints, statement splitting, factor assembly. A test for purity must scroll past 600 lines of fact-analysis tests to find helpers.
-
-Split into topic-aligned modules: `tests/facts.rs`, `tests/purity.rs`, `tests/plain_data.rs`, `tests/cycles.rs`, `tests/atomic_units.rs`, `tests/statement_splitting.rs`.
+Whitelist tables already in `purity/whitelists.rs`; long PlainData /
+`PURE_OBJECT_CALLS_ON_PLAIN_DATA` rustdocs already trimmed to
+`docs/purity_soundness.md`. Remaining: graph construction
+(`ChunkCodeGraph`), expression classification, PlainData write
+scanning, and TS enum IIFE recognition still live in `mod.rs` —
+could be sub-split further if it keeps growing.
 
 ### `facts.rs` (1213 lines, 2 concerns)
 
@@ -40,10 +39,6 @@ Split into topic-aligned modules: `tests/facts.rs`, `tests/purity.rs`, `tests/pl
 
 ## P2 — Structural Issues
 
-### `lowering/materialize.rs` (1026 lines) mixes 4 concerns
-
-Orchestration/plan resolution (lines 39–342), factorization wiring (344–579), rebind folding (914–1026), and artifact assembly (787–912) are unrelated. Extract `fold_rebind_atomic_units` into its own file and factor out the `analysis_hints` collection (lines 359–405 — two near-identical loops for `explicit_requests` and `chunk_renames`).
-
 ### `lower/lower.rs` — monolithic function (partially extracted)
 
 `lower_chunk` had 8 sequential phases inline. Four have been extracted into named functions (`compute_selected_ordinals`, `plan_selected_exports`, `split_entry_body`, `build_module_output`). Remaining inline phases (naturalization, disambiguation, import planning, the per-module loop) could be further extracted, though each requires substantial captured state from `LowerChunkInputs` (15–20 fields).
@@ -60,25 +55,9 @@ Each returns `self.root.join(CONSTANT)`. Replace with a data-driven approach: `r
 
 ## P3 — Encapsulation & Type Design
 
-### `ModuleQuotient` Deref/DerefMut leak (`graph.rs`)
-
-Newtype over `DiGraphMap` with `Deref`/`DerefMut` to inner type. Exposes full petgraph mutation API, defeating the newtype. `DerefMut` lets anyone add arbitrary edges. Expose only intended operations via explicit methods.
-
-### `OwnerGraph` exposes internal CSR structures (`graph.rs`)
-
-`flat_edges`, `nodes`, `edges`, `out_edges`, `in_edges` all `pub(crate)`. Any module can corrupt graph invariants. Reduce to explicit query methods.
-
 ### `BTreeMap`/`BTreeSet` as default collection in hot-path graph structures
 
 `rollback_graph.rs`, `artifact.rs`, `realizability.rs` all use BTree collections exclusively. For structures with many lookups, `HashMap`/`HashSet` would be faster. If deterministic iteration is needed, document it at the struct level. `RollbackDiGraph` in particular does many lookups per operation where hash-based would be measurably faster.
-
-### Hand-rolled Tarjan SCC (`rollback_graph.rs:119–191`)
-
-The file already depends on petgraph (used in tests). Implement petgraph's `GraphProp`/`IntoNeighbors` traits for `RollbackDiGraph` and use `petgraph::algo::tarjan_scc` instead of ~70 lines of hand-rolled Tarjan.
-
-### `RollbackDiGraph` allocates Vec per adjacency query
-
-`successors` and `predecessors` return `Vec<N>`, allocating on every call. Hot paths (SCC computation) call these in a loop. Return an iterator borrowing from the BTreeSet.
 
 ### `StatementFacts` (facts.rs) — 14 BTreeSet<Id> fields
 
