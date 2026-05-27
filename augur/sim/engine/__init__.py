@@ -16,7 +16,7 @@ from augur.sim.buffers import (
     TaxEventBuffers,
     TransferEventBuffers,
 )
-from augur.sim.codec.plan import DenseSimulationResult, SimulationRun
+from augur.sim.codec.plan import DenseSimulationResult
 from augur.sim.compiler import CompiledSimulation, compile_simulation
 from augur.sim.compiler.helpers import NO_CODE
 from augur.sim.engine.phases import (
@@ -33,27 +33,20 @@ from augur.sim.engine.phases import (
     _apply_tax_accruals,
 )
 from augur.sim.external_series import ExternalSeriesContext
-from augur.sim.runtime import load_jurisdictions_for, load_locations_for
+from augur.sim.locations import Location
+from augur.sim.runtime import load_jurisdictions_for
 from augur.sim.scenario import Scenario
 
 
-def simulate_with_external_series_dense(
-    scenario: Scenario, *, rollout_count: int, external_series: ExternalSeriesContext
-) -> SimulationRun:
-    return simulate_with_external_series_dense_result(
-        scenario, rollout_count=rollout_count, external_series=external_series
-    ).decode()
-
-
 def simulate_with_external_series_dense_result(
-    scenario: Scenario, *, rollout_count: int, external_series: ExternalSeriesContext
+    scenario: Scenario, *, rollout_count: int, external_series: ExternalSeriesContext, locations: dict[str, Location]
 ) -> DenseSimulationResult:
     plan = compile_simulation(
         scenario,
         rollout_count=rollout_count,
         external_series=external_series,
         jurisdictions=load_jurisdictions_for(scenario),
-        locations=load_locations_for(scenario),
+        locations=locations,
     )
     buffers = _allocate_buffers(plan)
     current = _allocate_current_state(plan)

@@ -44,20 +44,20 @@ filegroup(
 py_library(
     name = "locations",
     srcs = ["locations.py"],
-    data = [":location_data"],
     deps = [
         "@pypi//pydantic",
-        "@pypi//pyyaml",
     ],
 )
 
 py_test(
     name = "locations_test",
     srcs = ["locations_test.py"],
+    data = [":location_data"],
     deps = [
         ":locations",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )
 
@@ -279,6 +279,7 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     deps = [
+        ":locations",
         "//augur/model:deterministic",
         "//augur/model:series_model",
         "@pypi//pytest",

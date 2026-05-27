@@ -43,8 +43,9 @@ from augur.product.wire import (
     ScenarioKey,
     TerminalMetrics,
 )
-from augur.sim.engine import DenseSimulationResult
+from augur.sim.codec.plan import DenseSimulationResult
 from augur.sim.external_series import materialize_sampled_exogenous
+from augur.sim.locations import Location
 from augur.sim.simulate import simulate_dense_with_external_series
 from augur.sim.slice import slice_dense_result
 
@@ -77,6 +78,7 @@ class ProductService:
         initial_cash_usd: float,
         primary_agent_id: str,
         known_location_ids: frozenset[str],
+        locations: dict[str, Location],
         properties_by_id: dict[str, Property],
         exogenous_model: Sampler,
         max_rollout_samples: int,
@@ -88,6 +90,7 @@ class ProductService:
         self._initial_cash_usd = float(initial_cash_usd)
         self._primary_agent_id = primary_agent_id
         self._known_location_ids = known_location_ids
+        self._locations = locations
         self._properties_by_id = properties_by_id
         self._exogenous_model = exogenous_model
         self._max_rollout_samples = int(max_rollout_samples)
@@ -199,7 +202,10 @@ class ProductService:
         )
         sampled = anchor_sampled_series_levels(sampled, self._portfolio.level_anchors)
         dense = simulate_dense_with_external_series(
-            scenario, rollout_count=len(seeds), external_series=materialize_sampled_exogenous(sampled)
+            scenario,
+            rollout_count=len(seeds),
+            external_series=materialize_sampled_exogenous(sampled),
+            locations=self._locations,
         )
         exogenous_model_id = str(sampled.metadata.get("exogenous_model_id") or scenario_key.exogenous_model_id)
         return {

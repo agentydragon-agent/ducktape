@@ -167,7 +167,7 @@ def _run(scenario: Scenario, rollouts: int = 1, rent_level: float = 1.0):
     ctx = _flat_series(
         series_id=RENT_SERIES_ID, value=rent_level, months=scenario.horizon_months + 1, rollouts=rollouts
     )
-    return simulate_with_external_series(scenario, external_series=ctx, rollout_count=rollouts)
+    return simulate_with_external_series(scenario, external_series=ctx, rollout_count=rollouts, locations={})
 
 
 class TestRentalIncome:
@@ -515,7 +515,7 @@ class TestRentalIncomeTaxation:
         ctx = _multi_series(
             levels_by_series={RENT_SERIES_ID: {0: [1.0] * 13}, "home_value:san_francisco": {0: [1.0] * 13}}
         )
-        run = simulate_with_external_series(scenario, external_series=ctx, rollout_count=1)
+        run = simulate_with_external_series(scenario, external_series=ctx, rollout_count=1, locations={})
         # Cumulative depreciation grows monotonically; at month 12 (post-horizon snapshot) it's
         # accrued 12 months worth = $400,000 / 27.5 = $14,545.45.
         terminal_dep = run.property_state.filter(pl.col("month_index") == 12)

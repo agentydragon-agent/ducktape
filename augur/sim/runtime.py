@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from augur.sim.jurisdictions import Jurisdiction, load_jurisdiction
-from augur.sim.locations import Location, load_location
 from augur.sim.scenario import Scenario
 
 LONG_TERM_CAPITAL_GAIN = "ltcg"
@@ -15,20 +14,6 @@ def load_jurisdictions_for(scenario: Scenario) -> dict[str, Jurisdiction]:
 
     ids = {jurisdiction_id for profile in scenario.tax_profiles for jurisdiction_id in profile.jurisdiction_ids}
     return {jurisdiction_id: load_jurisdiction(jurisdiction_id) for jurisdiction_id in ids}
-
-
-def load_locations_for(scenario: Scenario) -> dict[str, Location]:
-    """Load locations needed to resolve configured property-tax policies."""
-
-    tax_policy_properties = {
-        policy.property_id for policy in scenario.property_tax_policies if policy.annual_tax_rate is None
-    }
-    ids = {
-        purchase.location_id
-        for purchase in scenario.scheduled_property_purchases
-        if purchase.property_id in tax_policy_properties
-    }
-    return {location_id: load_location(location_id) for location_id in ids}
 
 
 def mortgage_monthly_payment_usd(principal_usd: float, annual_interest_rate: float, term_months: int) -> float:

@@ -14,6 +14,7 @@ from pydantic import ValidationError
 from augur.model.gbm import GeometricBrownian
 from augur.model.series_model import SeriesModelBundle
 from augur.sim.external_series import EXTERNAL_SERIES_EVENTS_FRAME, EXTERNAL_SERIES_VALUES_FRAME, ExternalSeriesContext
+from augur.sim.locations import Location
 from augur.sim.scenario import (
     Agent,
     FederalSaltCapEntry,
@@ -125,7 +126,7 @@ def test_series_indexed_amount_cannot_fire_before_base_month() -> None:
     external_series = _external_series_context_for_levels(rent_series_id, levels_by_rollout=[[100.0, 110.0, 120.0]])
 
     with pytest.raises(ValueError, match="before base month 1"):
-        simulate_with_external_series(scenario, rollout_count=1, external_series=external_series)
+        simulate_with_external_series(scenario, rollout_count=1, external_series=external_series, locations={})
 
 
 def test_series_indexed_amount_requires_external_series_coverage() -> None:
@@ -139,7 +140,7 @@ def test_series_indexed_amount_requires_external_series_coverage() -> None:
     external_series = _external_series_context_for_levels(rent_series_id, levels_by_rollout=[[100.0] * 12])
 
     with pytest.raises(KeyError, match="missing rollout"):
-        simulate_with_external_series(scenario, rollout_count=1, external_series=external_series)
+        simulate_with_external_series(scenario, rollout_count=1, external_series=external_series, locations={})
 
 
 def test_series_indexed_amount_rejects_zero_base_level() -> None:
@@ -153,7 +154,7 @@ def test_series_indexed_amount_rejects_zero_base_level() -> None:
     external_series = _external_series_context_for_levels(rent_series_id, levels_by_rollout=[[0.0, 100.0]])
 
     with pytest.raises(ValueError, match="zero base level"):
-        simulate_with_external_series(scenario, rollout_count=1, external_series=external_series)
+        simulate_with_external_series(scenario, rollout_count=1, external_series=external_series, locations={})
 
 
 def _series_indexed_rent_obligation_scenario(amount: SeriesIndexedAmount, *, horizon_months: int) -> Scenario:
@@ -397,7 +398,7 @@ def test_alice_gives_bob_five_dollars_one_rollout() -> None:
     After month 0: Alice $15, Bob $15. The transfer is on the log;
     the post-step cross-section reflects it; total cash in the
     system is conserved at every month."""
-    result = simulate(_alice_bob_scenario(), rollout_count=1)
+    result = simulate(_alice_bob_scenario(), rollout_count=1, locations={})
 
     initial = result.cash_balances.filter(pl.col("month_index") == 0).sort("agent_id")
     assert initial.get_column("balance_usd").to_list() == [10.0, 20.0]
@@ -431,7 +432,7 @@ def test_no_scheduled_transfers_leaves_balances_unchanged() -> None:
         horizon_months=5,
     )
 
-    result = simulate(scenario, rollout_count=1)
+    result = simulate(scenario, rollout_count=1, locations={})
 
     # Six rows: initial month 0 through end-of-horizon month 5.
     assert result.cash_balances.height == 6
@@ -441,7 +442,7 @@ def test_no_scheduled_transfers_leaves_balances_unchanged() -> None:
 
 def test_rejects_zero_rollout_count() -> None:
     with pytest.raises(ValueError, match="rollout_count"):
-        simulate(_alice_bob_scenario(), rollout_count=0)
+        simulate(_alice_bob_scenario(), rollout_count=0, locations={})
 
 
 def test_recurring_paycheck_accrues_monthly() -> None:
@@ -470,7 +471,7 @@ def test_recurring_paycheck_accrues_monthly() -> None:
         horizon_months=12,
     )
 
-    result = simulate(scenario, rollout_count=1)
+    result = simulate(scenario, rollout_count=1, locations={})
 
     alice_final = (
         result.cash_balances.filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 12))
@@ -519,7 +520,7 @@ def test_recurring_transfer_bounded_by_end_month() -> None:
         horizon_months=10,
     )
 
-    result = simulate(scenario, rollout_count=1)
+    result = simulate(scenario, rollout_count=1, locations={})
     assert result.events_log.transfers.height == 5  # months 0..4
 
     # Alice's balance plateaus at 500.0 from month 5 onward.
@@ -560,7 +561,7 @@ def test_one_thousand_rollouts_identical_when_inputs_are() -> None:
     )
     rollout_count = 1000
 
-    result = simulate(scenario, rollout_count=rollout_count)
+    result = simulate(scenario, rollout_count=rollout_count, locations={})
 
     # Every rollout: Alice ends at 1000 + 24×2000 = 49000.
     alice_final = result.cash_balances.filter((pl.col("agent_id") == "alice") & (pl.col("month_index") == 24)).sort(
@@ -618,7 +619,7 @@ def test_combined_one_off_and_recurring() -> None:
         horizon_months=10,
     )
 
-    result = simulate(scenario, rollout_count=1)
+    result = simulate(scenario, rollout_count=1, locations={})
 
     # 10 paycheck events + 1 bonus = 11.
     assert result.events_log.transfers.height == 11
@@ -667,7 +668,7 @@ def test_initial_lot_partial_sale_consumes_units_credits_proceeds() -> None:
         horizon_months=6,
     )
 
-    result = simulate(scenario, rollout_count=1)
+    result = simulate(scenario, rollout_count=1, locations={})
 
     # Pre-sale: month 3 cross-section still has 100 units (apply for
     # month M produces the M+1 cross-section).
@@ -733,7 +734,7 @@ def test_initial_lot_full_sale_zeros_remaining_quantity() -> None:
         horizon_months=3,
     )
 
-    result = simulate(scenario, rollout_count=1)
+    result = simulate(scenario, rollout_count=1, locations={})
 
     remaining_after = result.asset_lots.filter(pl.col("month_index") == 3).get_column("remaining_quantity").item()
     assert remaining_after == 0.0
@@ -777,7 +778,7 @@ def test_asset_sale_scales_across_rollouts() -> None:
         horizon_months=2,
     )
     rollout_count = 100
-    result = simulate(scenario, rollout_count=rollout_count)
+    result = simulate(scenario, rollout_count=rollout_count, locations={})
 
     # Every rollout has one disposition.
     assert result.events_log.lot_dispositions.height == rollout_count
@@ -829,7 +830,7 @@ def test_fifo_sale_crossing_two_lots() -> None:
         horizon_months=10,
     )
 
-    result = simulate(scenario, rollout_count=1)
+    result = simulate(scenario, rollout_count=1, locations={})
 
     # Two disposition rows for one sale (FIFO crossed two lots).
     assert result.events_log.lot_dispositions.height == 2
@@ -911,7 +912,7 @@ def test_same_month_scheduled_sales_consume_lots_sequentially() -> None:
         horizon_months=2,
     )
 
-    result = simulate(scenario, rollout_count=1)
+    result = simulate(scenario, rollout_count=1, locations={})
 
     dispositions = result.events_log.lot_dispositions.sort(["cause_id", "purchase_month_index"])
     assert dispositions.select("cause_id", "lot_id", "units_sold").to_dicts() == [
@@ -971,7 +972,7 @@ def test_fifo_holding_period_classification_per_disposition() -> None:
         horizon_months=7,
     )
 
-    result = simulate(scenario, rollout_count=1)
+    result = simulate(scenario, rollout_count=1, locations={})
     dispositions = result.events_log.lot_dispositions.with_columns(
         holding_period_months=pl.col("month_index") - pl.col("purchase_month_index")
     ).sort("purchase_month_index")
@@ -1037,7 +1038,7 @@ def test_sales_of_two_different_assets_are_independent() -> None:
         horizon_months=6,
     )
 
-    result = simulate(scenario, rollout_count=1)
+    result = simulate(scenario, rollout_count=1, locations={})
     assert result.events_log.lot_dispositions.height == 2
 
     end_lots = result.asset_lots.filter(pl.col("month_index") == 6).sort("lot_id")
@@ -1093,7 +1094,7 @@ def test_scheduled_sale_consumes_only_source_account_fifo_pool() -> None:
         horizon_months=2,
     )
 
-    result = simulate(scenario, rollout_count=1)
+    result = simulate(scenario, rollout_count=1, locations={})
 
     disposition = result.events_log.lot_dispositions.row(0, named=True)
     assert disposition["source_account_id"] == "taxable"
@@ -1139,7 +1140,7 @@ def test_scheduled_sale_oversell_raises_without_partial_disposition() -> None:
     )
 
     with pytest.raises(ValueError, match="scheduled asset sale exceeds available lots"):
-        simulate(scenario, rollout_count=1)
+        simulate(scenario, rollout_count=1, locations={})
 
 
 def test_series_driven_sale_uses_deterministic_price_curve(deterministic_series_bundle) -> None:
@@ -1177,7 +1178,7 @@ def test_series_driven_sale_uses_deterministic_price_curve(deterministic_series_
         horizon_months=horizon,
     )
 
-    result = simulate(scenario, rollout_count=1)
+    result = simulate(scenario, rollout_count=1, locations={})
 
     # Sale at month 4 used the month-4 price of $150 → 4 × 150 = $600.
     assert result.events_log.lot_dispositions.height == 1
@@ -1225,8 +1226,8 @@ def test_gbm_series_diverges_across_rollouts_same_seed_is_reproducible() -> None
         horizon_months=6,
     )
 
-    result_a = simulate(scenario, rollout_count=200)
-    result_b = simulate(scenario, rollout_count=200)
+    result_a = simulate(scenario, rollout_count=200, locations={})
+    result_b = simulate(scenario, rollout_count=200, locations={})
 
     # Reproducibility: same seed -> same values across two runs.
     assert result_a.series_values.sort(["rollout_index", "month_index"]).equals(
@@ -1286,7 +1287,7 @@ def test_year_end_tax_accrual_federal_and_california_single_filer() -> None:
         horizon_months=12,
     )
 
-    result = simulate(scenario, rollout_count=1)
+    result = simulate(scenario, rollout_count=1, locations={})
 
     # 12 paycheck transfers fired (income_category = "ordinary").
     assert result.events_log.transfers.filter(pl.col("income_category") == "ordinary").height == 12
@@ -1389,7 +1390,7 @@ def test_year_end_tax_includes_long_term_capital_gain_under_federal_ltcg_schedul
         horizon_months=12,
     )
 
-    result = simulate(scenario, rollout_count=1)
+    result = simulate(scenario, rollout_count=1, locations={})
 
     accruals = {row["jurisdiction_id"]: row for row in result.events_log.tax_accruals.iter_rows(named=True)}
     assert accruals["federal_us"]["amount_usd"] == pytest.approx(5272.25, abs=0.01)
@@ -1474,7 +1475,7 @@ def test_e2e_pinned_ltcg_tax_safe_harbor_and_cash_numerics() -> None:
         horizon_months=13,
     )
 
-    result = simulate(scenario, rollout_count=1)
+    result = simulate(scenario, rollout_count=1, locations={})
 
     accruals = {row["jurisdiction_id"]: row for row in result.events_log.tax_accruals.iter_rows(named=True)}
     assert accruals["federal_us"]["amount_usd"] == pytest.approx(5272.25, abs=0.01)
@@ -1590,7 +1591,7 @@ def test_e2e_pinned_multi_asset_ltcg_stcg_tax_breakdown_numerics() -> None:
         horizon_months=12,
     )
 
-    result = simulate(scenario, rollout_count=1)
+    result = simulate(scenario, rollout_count=1, locations={})
 
     accrual = result.events_log.tax_accruals.row(0, named=True)
     assert accrual["amount_usd"] == pytest.approx(4_196.0, abs=0.01)
@@ -1674,7 +1675,7 @@ def test_e2e_pinned_tax_payments_force_asset_liquidation_and_settle_liability(de
         horizon_months=13,
     )
 
-    result = simulate(scenario, rollout_count=1)
+    result = simulate(scenario, rollout_count=1, locations={})
 
     tax_payments = result.events_log.transfers.filter(pl.col("cause_id").str.contains("tax")).sort(
         ["month_index", "cause_id"]
@@ -1737,7 +1738,7 @@ def test_explicit_empty_tax_profiles_means_no_year_end_accrual() -> None:
         horizon_months=12,
     )
 
-    result = simulate(scenario, rollout_count=1)
+    result = simulate(scenario, rollout_count=1, locations={})
     assert result.events_log.tax_accruals.is_empty()
     assert result.tax_liabilities.is_empty()
 
@@ -1778,7 +1779,7 @@ def test_year_end_tax_payment_debits_agent_cash() -> None:
         horizon_months=13,
     )
 
-    result = simulate(scenario, rollout_count=1)
+    result = simulate(scenario, rollout_count=1, locations={})
 
     # Year-end tax: $37538.50 federal + $14754.09 CA = $52292.59.
     tax_payments = result.events_log.transfers.filter(pl.col("cause_id").str.contains("tax"))
@@ -1867,7 +1868,7 @@ def test_tax_payment_can_trigger_rollout_failure_when_unfunded() -> None:
         horizon_months=13,
     )
 
-    result = simulate(scenario, rollout_count=1)
+    result = simulate(scenario, rollout_count=1, locations={})
     # Alice has $0 cash after year 0 (income == rent), no assets,
     # but the tax bill arrives in January. Failure fires at month 12.
     failures = result.events_log.rollout_failures
@@ -1913,7 +1914,7 @@ def test_due_now_obligation_sells_assets_and_settles(deterministic_series_bundle
         horizon_months=1,
     )
 
-    result = simulate(scenario, rollout_count=1)
+    result = simulate(scenario, rollout_count=1, locations={})
 
     accrual = result.events_log.obligation_accruals.row(0, named=True)
     assert accrual["obligation_id"] == "rent_due_m0"
@@ -1973,7 +1974,7 @@ def test_liquidity_policy_sale_uses_rollout_specific_prices() -> None:
     )
     external_series = _external_series_context_for_levels("vti", levels_by_rollout=[[100.0, 100.0], [200.0, 200.0]])
 
-    result = simulate_with_external_series(scenario, rollout_count=2, external_series=external_series)
+    result = simulate_with_external_series(scenario, rollout_count=2, external_series=external_series, locations={})
 
     sales = result.events_log.lot_dispositions.sort("rollout_index")
     assert sales.select("rollout_index", "units_sold", "proceeds_usd").to_dicts() == [
@@ -2028,7 +2029,7 @@ def test_liquidity_policy_consumes_only_policy_account_fifo_pool(deterministic_s
         horizon_months=1,
     )
 
-    result = simulate(scenario, rollout_count=1)
+    result = simulate(scenario, rollout_count=1, locations={})
 
     disposition = result.events_log.lot_dispositions.row(0, named=True)
     assert disposition["source_account_id"] == "taxable"
@@ -2074,7 +2075,7 @@ def test_series_indexed_recurring_rent_obligation_resets_yearly_by_rollout() -> 
         rent_series_id, levels_by_rollout=[[100.0] * 12 + [110.0], [100.0] * 12 + [90.0]]
     )
 
-    result = simulate_with_external_series(scenario, rollout_count=2, external_series=external_series)
+    result = simulate_with_external_series(scenario, rollout_count=2, external_series=external_series, locations={})
 
     accruals = result.events_log.obligation_accruals.sort(["rollout_index", "month_index"])
     for rollout_index in (0, 1):
@@ -2119,7 +2120,7 @@ def test_series_indexed_recurring_transfer_uses_same_amount_schedule() -> None:
     )
     external_series = _external_series_context_for_levels(rent_series_id, levels_by_rollout=[[200.0] * 12 + [240.0]])
 
-    result = simulate_with_external_series(scenario, rollout_count=1, external_series=external_series)
+    result = simulate_with_external_series(scenario, rollout_count=1, external_series=external_series, locations={})
 
     transfers = result.events_log.transfers.sort("month_index")
     assert transfers.filter(pl.col("month_index") < 12).get_column("amount_usd").to_list() == pytest.approx(
@@ -2157,7 +2158,7 @@ def test_due_now_obligation_failure_aborts_payment() -> None:
         horizon_months=1,
     )
 
-    result = simulate(scenario, rollout_count=1)
+    result = simulate(scenario, rollout_count=1, locations={})
 
     settlement = result.events_log.obligation_settlements.row(0, named=True)
     assert settlement["amount_due_usd"] == pytest.approx(500.0)
@@ -2210,7 +2211,7 @@ def test_policy_without_sale_orders_fails_hard_demand_even_with_assets(determini
         horizon_months=1,
     )
 
-    result = simulate(scenario, rollout_count=1)
+    result = simulate(scenario, rollout_count=1, locations={})
 
     assert result.events_log.lot_dispositions.is_empty()
     settlement = result.events_log.obligation_settlements.row(0, named=True)
@@ -2265,7 +2266,7 @@ def test_cash_buffer_sale_evaluates_after_hard_demands(deterministic_series_bund
         horizon_months=1,
     )
 
-    result = simulate(scenario, rollout_count=1)
+    result = simulate(scenario, rollout_count=1, locations={})
 
     sale = result.events_log.lot_dispositions.row(0, named=True)
     assert sale["units_sold"] == pytest.approx(50.0)
@@ -2322,7 +2323,7 @@ def test_cash_buffer_not_triggered_when_post_demand_cash_is_enough(deterministic
         horizon_months=1,
     )
 
-    result = simulate(scenario, rollout_count=1)
+    result = simulate(scenario, rollout_count=1, locations={})
 
     assert result.events_log.lot_dispositions.is_empty()
     alice_final = (
@@ -2351,7 +2352,7 @@ def test_unfilled_cash_buffer_sale_does_not_fail_without_hard_demand() -> None:
         horizon_months=1,
     )
 
-    result = simulate(scenario, rollout_count=1)
+    result = simulate(scenario, rollout_count=1, locations={})
 
     assert result.events_log.lot_dispositions.is_empty()
     assert result.events_log.rollout_failures.is_empty()
@@ -2392,7 +2393,7 @@ def test_same_account_hard_demands_settle_all_or_none() -> None:
         horizon_months=1,
     )
 
-    result = simulate(scenario, rollout_count=1)
+    result = simulate(scenario, rollout_count=1, locations={})
 
     settlements = result.events_log.obligation_settlements.sort("obligation_id")
     assert settlements.select("obligation_id", "amount_paid_usd", "shortfall_usd").to_dicts() == [
@@ -2441,11 +2442,11 @@ def test_explicit_sale_price_overrides_sampled_series(deterministic_series_bundl
         horizon_months=2,
     )
 
-    result = simulate(scenario, rollout_count=1)
+    result = simulate(scenario, rollout_count=1, locations={})
     assert result.events_log.lot_dispositions.get_column("proceeds_usd").item() == 3.0 * 99.0
 
 
-def test_real_estate_purchase_mortgage_and_property_tax_numerics() -> None:
+def test_real_estate_purchase_mortgage_and_property_tax_numerics(san_francisco_location: Location) -> None:
     """First real-estate slice: purchase creates property state,
     owner stake, mortgage liability, and monthly carrying-cost cash
     flows. Month 0 books purchase cash; month 1 books one mortgage
@@ -2496,7 +2497,7 @@ def test_real_estate_purchase_mortgage_and_property_tax_numerics() -> None:
         horizon_months=2,
     )
 
-    result = simulate(scenario, rollout_count=1)
+    result = simulate(scenario, rollout_count=1, locations={"san_francisco": san_francisco_location})
 
     final_property = result.property_state.filter(pl.col("month_index") == 2).row(0, named=True)
     assert final_property["location_id"] == "san_francisco"
@@ -2529,9 +2530,9 @@ def test_real_estate_purchase_mortgage_and_property_tax_numerics() -> None:
     assert result.events_log.transfers.filter(pl.col("cause_id") == "sf_home_property_tax_m1").height == 1
 
 
-def test_property_tax_falls_back_to_location_rate_when_policy_rate_unset() -> None:
+def test_property_tax_falls_back_to_location_rate_when_policy_rate_unset(san_francisco_location: Location) -> None:
     """When PropertyTaxPolicy.annual_tax_rate is None the engine reads the
-    rate from the location YAML fixture. Verifies the location-fallback path."""
+    rate from the location passed to simulate(). Verifies the location-fallback path."""
     scenario = Scenario(
         agents=[Agent(agent_id="alice"), Agent(agent_id="seller"), Agent(agent_id="sf_tax_collector")],
         initial_cash=[
@@ -2559,14 +2560,13 @@ def test_property_tax_falls_back_to_location_rate_when_policy_rate_unset() -> No
                 property_id="sf_home",
                 owner_agent_id="alice",
                 tax_authority_agent_id="sf_tax_collector",
-                annual_tax_rate=None,  # fall back to san_francisco.yaml: 0.01180
+                annual_tax_rate=None,  # fall back to location: 0.01180
             )
         ],
         tax_profiles=[],
         horizon_months=2,
     )
-
-    result = simulate(scenario, rollout_count=1)
+    result = simulate(scenario, rollout_count=1, locations={"san_francisco": san_francisco_location})
 
     # SF: 500_000 * 0.01180 / 12 = 491.6666...
     sf_tax = (
@@ -2577,7 +2577,7 @@ def test_property_tax_falls_back_to_location_rate_when_policy_rate_unset() -> No
     assert sf_tax == pytest.approx(500_000.0 * 0.01180 / 12.0)
 
 
-def test_property_tax_routes_flat_usd_special_assessment_from_location() -> None:
+def test_property_tax_routes_flat_usd_special_assessment_from_location(vallejo_mare_island_location: Location) -> None:
     """Mare Island (Vallejo) carries flat-USD CFD special assessments on top
     of the ad-valorem property tax. The engine should sum both into the
     monthly property-tax obligation: ad-valorem + special_usd / 12."""
@@ -2608,14 +2608,13 @@ def test_property_tax_routes_flat_usd_special_assessment_from_location() -> None
                 property_id="mare_island_home",
                 owner_agent_id="alice",
                 tax_authority_agent_id="vallejo_tax_collector",
-                annual_tax_rate=None,  # fall back to vallejo_mare_island.yaml
+                annual_tax_rate=None,  # fall back to location rate
             )
         ],
         tax_profiles=[],
         horizon_months=2,
     )
-
-    result = simulate(scenario, rollout_count=1)
+    result = simulate(scenario, rollout_count=1, locations={"vallejo_mare_island": vallejo_mare_island_location})
 
     # Mare Island: 500_000 * 0.0115 / 12 + 2300 / 12 per month.
     expected_monthly = 500_000.0 * 0.0115 / 12.0 + 2_300.0 / 12.0
@@ -2668,7 +2667,7 @@ def test_liquidity_policy_covers_monthly_spend_deficit(deterministic_series_bund
         horizon_months=3,
     )
 
-    result = simulate(scenario, rollout_count=1)
+    result = simulate(scenario, rollout_count=1, locations={})
 
     # Month-0 sale: deficit was 4000, sold 40 units at $100 = $4000.
     m0_dispositions = result.events_log.lot_dispositions.filter(pl.col("month_index") == 0)
@@ -2722,7 +2721,7 @@ def test_rollout_marked_failed_when_assets_exhausted(deterministic_series_bundle
         horizon_months=1,
     )
 
-    result = simulate(scenario, rollout_count=1)
+    result = simulate(scenario, rollout_count=1, locations={})
 
     # Failure event fired at month 0: rent demand was $1000, but
     # only $500 of VTI could be liquidated, so no rent payment fires.
@@ -2790,7 +2789,7 @@ def test_failed_rollout_skips_future_recurring_transfers(deterministic_series_bu
         horizon_months=2,
     )
 
-    result = simulate(scenario, rollout_count=1)
+    result = simulate(scenario, rollout_count=1, locations={})
 
     assert result.rollout_status.row(0, named=True)["status"] == "failed_insufficient_cash"
     assert result.events_log.transfers.is_empty()
@@ -2901,7 +2900,7 @@ def _liability_year_interest(result, *, liability_id: str, through_month: int) -
     return float(rows.get_column("interest_usd").sum())
 
 
-def test_year_end_tax_accrual_with_mortgage_interest_deduction_above_standard() -> None:
+def test_year_end_tax_accrual_with_mortgage_interest_deduction_above_standard(san_francisco_location: Location) -> None:
     """MID above the federal standard deduction; both federal and CA fully deduct it (no cap clip).
 
     $720k / 30y / 7% mortgage → first-year interest ≈ $46k > $14.6k federal standard. The deduction
@@ -2915,6 +2914,7 @@ def test_year_end_tax_accrual_with_mortgage_interest_deduction_above_standard() 
     baseline = simulate(
         _mid_scenario(purchase_price_usd=900_000.0, down_payment_usd=180_000.0, annual_rate=0.07, term_months=360),
         rollout_count=1,
+        locations={"san_francisco": san_francisco_location},
     )
     deducted = simulate(
         _mid_scenario(
@@ -2925,6 +2925,7 @@ def test_year_end_tax_accrual_with_mortgage_interest_deduction_above_standard() 
             mortgage_interest_deduction_policies=mid_policies,
         ),
         rollout_count=1,
+        locations={"san_francisco": san_francisco_location},
     )
 
     year_1_interest = _liability_year_interest(deducted, liability_id="sf_home_mortgage", through_month=11)
@@ -2954,7 +2955,7 @@ def test_year_end_tax_accrual_with_mortgage_interest_deduction_above_standard() 
     assert california_savings == pytest.approx((year_1_interest - 5_363.0) * 0.093, abs=0.5)
 
 
-def test_home_equity_debt_class_zeros_out_mid_under_tcja() -> None:
+def test_home_equity_debt_class_zeros_out_mid_under_tcja(san_francisco_location: Location) -> None:
     """A MID policy tagged `debt_class="home_equity"` contributes nothing to MID (§163(h)(3)
     TCJA disallow). The simulated tax accruals must match the no-policy baseline exactly
     — otherwise A5 (HELOC over-estimate) would resurface.
@@ -2971,6 +2972,7 @@ def test_home_equity_debt_class_zeros_out_mid_under_tcja() -> None:
     baseline = simulate(
         _mid_scenario(purchase_price_usd=900_000.0, down_payment_usd=180_000.0, annual_rate=0.07, term_months=360),
         rollout_count=1,
+        locations={"san_francisco": san_francisco_location},
     )
     home_equity = simulate(
         _mid_scenario(
@@ -2981,6 +2983,7 @@ def test_home_equity_debt_class_zeros_out_mid_under_tcja() -> None:
             mortgage_interest_deduction_policies=home_equity_policies,
         ),
         rollout_count=1,
+        locations={"san_francisco": san_francisco_location},
     )
 
     federal_baseline = _accrual_breakdown(baseline, jurisdiction_id="federal_us")
@@ -2995,7 +2998,7 @@ def test_home_equity_debt_class_zeros_out_mid_under_tcja() -> None:
     assert california_home_equity["total_tax_usd"] == pytest.approx(california_baseline["total_tax_usd"], abs=1e-6)
 
 
-def test_home_equity_and_acquisition_mortgages_split_mid_contribution() -> None:
+def test_home_equity_and_acquisition_mortgages_split_mid_contribution(san_francisco_location: Location) -> None:
     """Two-liability scenario: an acquisition mortgage on the home and a separate `home_equity`
     liability. Only the acquisition interest must reach MID; the home-equity interest stays
     out. Locks the per-(link, liability) classification path so a future regression that
@@ -3050,7 +3053,7 @@ def test_home_equity_and_acquisition_mortgages_split_mid_contribution() -> None:
             ]
         }
     )
-    result = simulate(scenario, rollout_count=1)
+    result = simulate(scenario, rollout_count=1, locations={"san_francisco": san_francisco_location})
 
     acquisition_interest = _liability_year_interest(result, liability_id="sf_home_mortgage", through_month=11)
     heloc_interest = _liability_year_interest(result, liability_id="alice_heloc", through_month=11)
@@ -3063,7 +3066,7 @@ def test_home_equity_and_acquisition_mortgages_split_mid_contribution() -> None:
     assert federal["mortgage_interest_deduction_usd"] < acquisition_interest + heloc_interest
 
 
-def test_mortgage_interest_deduction_inactive_when_policy_empty() -> None:
+def test_mortgage_interest_deduction_inactive_when_policy_empty(san_francisco_location: Location) -> None:
     """Without a MortgageInterestDeductionPolicy, tax accruals match the no-mortgage baseline.
 
     Same scenario as the test above but `mortgage_interest_deduction_policies=[]`. The new
@@ -3072,6 +3075,7 @@ def test_mortgage_interest_deduction_inactive_when_policy_empty() -> None:
     result = simulate(
         _mid_scenario(purchase_price_usd=900_000.0, down_payment_usd=180_000.0, annual_rate=0.07, term_months=360),
         rollout_count=1,
+        locations={"san_francisco": san_francisco_location},
     )
 
     federal = _accrual_breakdown(result, jurisdiction_id="federal_us")
@@ -3084,7 +3088,7 @@ def test_mortgage_interest_deduction_inactive_when_policy_empty() -> None:
     assert california["standard_deduction_usd"] == pytest.approx(5_363.0)
 
 
-def test_mid_federal_cap_clips_but_ca_cap_does_not() -> None:
+def test_mid_federal_cap_clips_but_ca_cap_does_not(san_francisco_location: Location) -> None:
     """$850k mortgage: federal cap ratio 750/850, CA cap ratio 1.0 → CA itemizes more."""
     mid_policies = [MortgageInterestDeductionPolicy(liability_id="sf_home_mortgage", owner_agent_id="alice")]
     result = simulate(
@@ -3096,6 +3100,7 @@ def test_mid_federal_cap_clips_but_ca_cap_does_not() -> None:
             mortgage_interest_deduction_policies=mid_policies,
         ),
         rollout_count=1,
+        locations={"san_francisco": san_francisco_location},
     )
 
     raw_interest = _liability_year_interest(result, liability_id="sf_home_mortgage", through_month=11)
@@ -3106,7 +3111,7 @@ def test_mid_federal_cap_clips_but_ca_cap_does_not() -> None:
     assert california["itemized_deduction_usd"] > federal["itemized_deduction_usd"]
 
 
-def test_mid_below_standard_falls_back_to_standard_deduction() -> None:
+def test_mid_below_standard_falls_back_to_standard_deduction(san_francisco_location: Location) -> None:
     """Small mortgage interest stays itemized in the breakdown but the standard deduction wins,
     so taxable income matches the no-MID baseline.
     """
@@ -3114,6 +3119,7 @@ def test_mid_below_standard_falls_back_to_standard_deduction() -> None:
     baseline = simulate(
         _mid_scenario(purchase_price_usd=200_000.0, down_payment_usd=120_000.0, annual_rate=0.05, term_months=360),
         rollout_count=1,
+        locations={"san_francisco": san_francisco_location},
     )
     with_policy = simulate(
         _mid_scenario(
@@ -3124,6 +3130,7 @@ def test_mid_below_standard_falls_back_to_standard_deduction() -> None:
             mortgage_interest_deduction_policies=mid_policies,
         ),
         rollout_count=1,
+        locations={"san_francisco": san_francisco_location},
     )
 
     interest = _liability_year_interest(with_policy, liability_id="sf_home_mortgage", through_month=11)
@@ -3141,7 +3148,7 @@ def test_mid_below_standard_falls_back_to_standard_deduction() -> None:
     assert federal["total_tax_usd"] == pytest.approx(federal_baseline["total_tax_usd"], abs=1e-6)
 
 
-def test_mid_year_to_year_resets_interest_ytd() -> None:
+def test_mid_year_to_year_resets_interest_ytd(san_francisco_location: Location) -> None:
     """A 25-month horizon fires two year-end accruals. Year-2 MID must reflect only year-2 interest,
     not the cumulative two-year sum — confirms the year-end `liability_interest_ytd` zeroing.
     """
@@ -3156,6 +3163,7 @@ def test_mid_year_to_year_resets_interest_ytd() -> None:
             mortgage_interest_deduction_policies=mid_policies,
         ),
         rollout_count=1,
+        locations={"san_francisco": san_francisco_location},
     )
 
     federal_rows = sorted(
@@ -3193,7 +3201,7 @@ def _accrual_breakdowns_in_year(result, *, jurisdiction_id: str, year_index: int
     return None
 
 
-def test_salt_deduction_under_cap_passes_through_in_full() -> None:
+def test_salt_deduction_under_cap_passes_through_in_full(san_francisco_location: Location) -> None:
     """SALT total under the year-0 $40k cap → full state+property tax flows into federal itemized.
 
     Single filer with $200k W-2 wages + $900k home. Year-1 property tax ≈ $10.8k; CA state tax
@@ -3212,6 +3220,7 @@ def test_salt_deduction_under_cap_passes_through_in_full() -> None:
             federal_salt_deduction_policies=salt_policies,
         ),
         rollout_count=1,
+        locations={"san_francisco": san_francisco_location},
     )
 
     fed = _accrual_breakdown(result, jurisdiction_id="federal_us")
@@ -3234,7 +3243,7 @@ def test_salt_deduction_under_cap_passes_through_in_full() -> None:
     assert float(ca["salt_deduction_usd"]) == 0.0
 
 
-def test_salt_cap_binds_for_high_income_high_property_tax() -> None:
+def test_salt_cap_binds_for_high_income_high_property_tax(san_francisco_location: Location) -> None:
     """Crank income high enough that property tax + CA state tax > $40k cap; deduction clips to cap.
 
     Use $1.5M home (≈ $18k/yr property tax) + $1M W-2 wages (CA state tax ≈ $90k+).
@@ -3253,6 +3262,7 @@ def test_salt_cap_binds_for_high_income_high_property_tax() -> None:
             federal_salt_deduction_policies=salt_policies,
         ),
         rollout_count=1,
+        locations={"san_francisco": san_francisco_location},
     )
 
     fed = _accrual_breakdown(result, jurisdiction_id="federal_us")
@@ -3272,7 +3282,7 @@ def test_salt_cap_binds_for_high_income_high_property_tax() -> None:
     )
 
 
-def test_salt_inactive_when_policy_empty_matches_no_salt_baseline() -> None:
+def test_salt_inactive_when_policy_empty_matches_no_salt_baseline(san_francisco_location: Location) -> None:
     """Regression: omitting FederalSaltDeductionPolicy leaves federal itemized at MID only."""
     mid_policies = [MortgageInterestDeductionPolicy(liability_id="sf_home_mortgage", owner_agent_id="alice")]
     result = simulate(
@@ -3284,6 +3294,7 @@ def test_salt_inactive_when_policy_empty_matches_no_salt_baseline() -> None:
             mortgage_interest_deduction_policies=mid_policies,
         ),
         rollout_count=1,
+        locations={"san_francisco": san_francisco_location},
     )
 
     fed = _accrual_breakdown(result, jurisdiction_id="federal_us")
@@ -3293,7 +3304,7 @@ def test_salt_inactive_when_policy_empty_matches_no_salt_baseline() -> None:
     )
 
 
-def test_salt_cap_schedule_tightens_from_year_zero_to_year_four() -> None:
+def test_salt_cap_schedule_tightens_from_year_zero_to_year_four(san_francisco_location: Location) -> None:
     """OBBBA $40k cap (years 0-3) tightens to TCJA $10k cap from year 4 onward.
 
     Run a 5-year horizon so we accrue at year-end month 11 (year 0, $40k cap) and
@@ -3314,6 +3325,7 @@ def test_salt_cap_schedule_tightens_from_year_zero_to_year_four() -> None:
             federal_salt_deduction_policies=salt_policies,
         ),
         rollout_count=1,
+        locations={"san_francisco": san_francisco_location},
     )
 
     year_0 = _accrual_breakdowns_in_year(result, jurisdiction_id="federal_us", year_index=0)
@@ -3326,7 +3338,7 @@ def test_salt_cap_schedule_tightens_from_year_zero_to_year_four() -> None:
     assert float(year_0["salt_deduction_usd"]) > float(year_4["salt_deduction_usd"])
 
 
-def test_salt_uncapped_when_cap_schedule_is_empty() -> None:
+def test_salt_uncapped_when_cap_schedule_is_empty(san_francisco_location: Location) -> None:
     """An empty cap_schedule models full TCJA sunset: SALT deduction = state + property tax, no cap.
 
     Useful for sensitivity runs that assume no SALT cap (pre-2018 / post-sunset world).
@@ -3344,6 +3356,7 @@ def test_salt_uncapped_when_cap_schedule_is_empty() -> None:
             federal_salt_deduction_policies=salt_policies,
         ),
         rollout_count=1,
+        locations={"san_francisco": san_francisco_location},
     )
 
     fed = _accrual_breakdown(result, jurisdiction_id="federal_us")
@@ -3361,7 +3374,7 @@ def test_salt_uncapped_when_cap_schedule_is_empty() -> None:
     assert float(fed["salt_deduction_usd"]) > 40_000.0
 
 
-def test_salt_cap_uses_overriding_schedule_first_year() -> None:
+def test_salt_cap_uses_overriding_schedule_first_year(san_francisco_location: Location) -> None:
     """Explicit schedule overrides the default; verify the engine reads cap from policy."""
     mid_policies = [MortgageInterestDeductionPolicy(liability_id="sf_home_mortgage", owner_agent_id="alice")]
     salt_policies = [
@@ -3379,6 +3392,7 @@ def test_salt_cap_uses_overriding_schedule_first_year() -> None:
             federal_salt_deduction_policies=salt_policies,
         ),
         rollout_count=1,
+        locations={"san_francisco": san_francisco_location},
     )
 
     fed = _accrual_breakdown(result, jurisdiction_id="federal_us")
@@ -3509,7 +3523,7 @@ def test_pe_tender_never_fires_leaves_position_intact() -> None:
         lnw_floor_usd=500_000.0,  # floor above LNW; would sell if a tender fired
     )
     external = _pe_external_series(initial_mark_usd=50.0, tender_month=None, tender_mark_usd=None, horizon_months=24)
-    result = simulate_with_external_series(scenario, rollout_count=1, external_series=external)
+    result = simulate_with_external_series(scenario, rollout_count=1, external_series=external, locations={})
     # Lot untouched at end of horizon.
     assert _pe_lot_remaining_at(result, lot_id="acme_lot_a", month_index=24) == pytest.approx(100.0)
     # Cash: starts at $100k, $0 spend → never changes.
@@ -3540,7 +3554,7 @@ def test_pe_tender_fires_below_floor_sells_to_lift_lnw() -> None:
     external = _pe_external_series(
         initial_mark_usd=initial_mark, tender_month=tender_month, tender_mark_usd=tender_mark, horizon_months=horizon
     )
-    result = simulate_with_external_series(scenario, rollout_count=1, external_series=external)
+    result = simulate_with_external_series(scenario, rollout_count=1, external_series=external, locations={})
 
     # Pre-tender cash after settling month-5 spend = 30k - 6*1k = 24k. (months 0..5 each pay $1k)
     # LNW pre-tender = 24k (no other holdings). Shortfall = 50k - 24k = 26k.
@@ -3575,7 +3589,7 @@ def test_pe_tender_fires_above_floor_no_sale() -> None:
         lnw_floor_usd=50_000.0,
     )
     external = _pe_external_series(initial_mark_usd=50.0, tender_month=5, tender_mark_usd=60.0, horizon_months=12)
-    result = simulate_with_external_series(scenario, rollout_count=1, external_series=external)
+    result = simulate_with_external_series(scenario, rollout_count=1, external_series=external, locations={})
     # Cash 200k > floor 50k → no sale at tender.
     assert _pe_lot_remaining_at(result, lot_id="acme_lot_a", month_index=6) == pytest.approx(100.0)
     assert _alice_cash_at(result, month_index=6) == pytest.approx(200_000.0)
@@ -3595,7 +3609,7 @@ def test_pe_tender_inactive_when_no_policy() -> None:
     )
     scenario_no_policy = scenario.model_copy(update={"private_equity_tender_policies": []})
     external = _pe_external_series(initial_mark_usd=50.0, tender_month=5, tender_mark_usd=60.0, horizon_months=12)
-    result = simulate_with_external_series(scenario_no_policy, rollout_count=1, external_series=external)
+    result = simulate_with_external_series(scenario_no_policy, rollout_count=1, external_series=external, locations={})
     assert _pe_lot_remaining_at(result, lot_id="acme_lot_a", month_index=6) == pytest.approx(100.0)
 
 
@@ -3612,7 +3626,7 @@ def test_pe_tender_zero_floor_never_sells() -> None:
         lnw_floor_usd=0.0,
     )
     external = _pe_external_series(initial_mark_usd=50.0, tender_month=5, tender_mark_usd=60.0, horizon_months=12)
-    result = simulate_with_external_series(scenario, rollout_count=1, external_series=external)
+    result = simulate_with_external_series(scenario, rollout_count=1, external_series=external, locations={})
     assert _pe_lot_remaining_at(result, lot_id="acme_lot_a", month_index=6) == pytest.approx(100.0)
 
 
@@ -3633,7 +3647,7 @@ def test_pe_tender_disposition_recorded() -> None:
     external = _pe_external_series(
         initial_mark_usd=50.0, tender_month=tender_month, tender_mark_usd=tender_mark, horizon_months=12
     )
-    result = simulate_with_external_series(scenario, rollout_count=1, external_series=external)
+    result = simulate_with_external_series(scenario, rollout_count=1, external_series=external, locations={})
 
     disp = result.events_log.lot_dispositions.filter(
         (pl.col("rollout_index") == 0) & (pl.col("month_index") == tender_month)

@@ -11,7 +11,7 @@ from augur.api.config import Config, load_augur_config
 from augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle, Sampler
 from augur.model.series import INFLATION_SERIES_ID, SP500_SERIES_ID
 from augur.product import decode, service
-from augur.product.scenarios import resolve_primary_agent_id
+from augur.product.scenarios import resolve_primary_agent_id, sim_locations_from_config
 from augur.product.service import ProductService
 from augur.product.wire import (
     CashFinancing,
@@ -63,6 +63,7 @@ def _service(model: CountingExogenousModel, *, augur_config: Config | None = Non
         initial_cash_usd=float(config.snapshot.cash_usd),
         primary_agent_id=resolve_primary_agent_id(config),
         known_location_ids=frozenset(location.id for location in bootstrap.locations),
+        locations=sim_locations_from_config(config.locations),
         properties_by_id={property_.id: property_ for property_ in bootstrap.properties},
         exogenous_model=model,
         max_rollout_samples=config.max_rollout_samples,

@@ -18,7 +18,7 @@ from augur.api.catalog import build_bootstrap_payload
 from augur.api.config import Config, load_augur_config, resolve_augur_config_path
 from augur.model.exogenous import Sampler
 from augur.product.portfolio import product_portfolio_response
-from augur.product.scenarios import resolve_primary_agent_id
+from augur.product.scenarios import resolve_primary_agent_id, sim_locations_from_config
 from augur.product.service import ProductService
 from augur.product.wire import MetricFanRequest, RolloutRequest
 
@@ -37,6 +37,7 @@ def create_app(config: ApiServerConfig) -> FastAPI:
         initial_cash_usd=float(augur_config.snapshot.cash_usd),
         primary_agent_id=resolve_primary_agent_id(augur_config),
         known_location_ids=frozenset(location.id for location in bootstrap.locations),
+        locations=sim_locations_from_config(augur_config.locations),
         properties_by_id={property_.id: property_ for property_ in bootstrap.properties},
         exogenous_model=config.exogenous_model,
         max_rollout_samples=augur_config.max_rollout_samples,

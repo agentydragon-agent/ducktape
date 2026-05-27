@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from more_itertools import one
 
 from augur.api.bootstrap import ActorRole, Property
-from augur.api.config import Config
+from augur.api.config import Config, LocationConfig
 from augur.api.portfolio import PortfolioConfig
 from augur.model.series import INFLATION_SERIES_ID, home_value_series_id, private_equity_sale_event_id, rent_series_id
 from augur.product.wire import (
@@ -22,6 +22,7 @@ from augur.product.wire import (
     ScenarioKey,
     SetRentedFractionEventWire,
 )
+from augur.sim.locations import Location
 from augur.sim.pricing import OccupancyMode, insurance_rate, maintenance_rate
 from augur.sim.scenario import (
     Agent,
@@ -78,6 +79,19 @@ PROPERTY_MANAGEMENT_AGENT_ID = "property_management_agency"
 PROPERTY_MANAGEMENT_ACCOUNT_ID = "checking"
 MANAGEMENT_FEE_CAUSE_ID = "management_fee"
 LEASING_FEE_CAUSE_ID = "leasing_fee"
+
+
+def sim_locations_from_config(locations: tuple[LocationConfig, ...]) -> dict[str, Location]:
+    return {
+        loc.location_id: Location(
+            location_id=loc.location_id,
+            display_name=loc.label,
+            jurisdiction_ids=[str(r) for r in loc.local_regulation.default_tax_regimes],
+            annual_property_tax_rate=float(loc.local_regulation.property_tax_annual_pct) / 100.0,
+            annual_special_assessment_usd=float(loc.local_regulation.special_assessment_annual_usd),
+        )
+        for loc in locations
+    }
 
 
 def resolve_primary_agent_id(augur_config: Config) -> str:

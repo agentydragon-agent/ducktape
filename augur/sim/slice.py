@@ -7,7 +7,8 @@ import dataclasses
 import numpy as np
 import polars as pl
 
-from augur.sim.engine import DenseSimulationResult, SimulationBuffers
+from augur.sim.buffers import SimulationBuffers
+from augur.sim.codec.plan import DenseSimulationResult
 from augur.sim.external_series import ExternalSeriesContext
 
 
