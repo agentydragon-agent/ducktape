@@ -45,14 +45,20 @@ def _debundle_pipeline_profile_impl(ctx):
         paths.join(profile_dir.short_path, "debundle.out"),
     )
 
+    # The perf wrapper is a source script consumed by the action. The other
+    # profile modes don't need it, but declaring it unconditionally keeps the
+    # action graph uniform across profile values.
+    perf_wrapper = ctx.file._perf_wrapper
+
     ctx.actions.run_shell(
-        inputs = plan.inputs,
+        inputs = depset(direct = [perf_wrapper], transitive = [plan.inputs]),
         tools = [ctx.executable.debundler],
         outputs = [profile_dir],
         command = _profile_command(
             ctx.attr.profile,
             shell.quote(profile_dir.short_path),
             plan.command,
+            _shell_source_path(perf_wrapper.path),
         ),
         env = {"BAZEL_BINDIR": bin_dir},
         execution_requirements = {
@@ -130,53 +136,43 @@ def _debundle_pipeline_plan(ctx, out_root):
         inputs = inputs,
     )
 
-def _profile_command(profile, profile_dir_token, debundler_command):
+def _profile_command(profile, profile_dir_token, debundler_command, perf_wrapper_token = None):
     common = [
         "set -euo pipefail",
         "cd \"${BAZEL_BINDIR}\"",
         "profile_dir={}".format(profile_dir_token),
         "mkdir -p \"${profile_dir}\"",
-        "cat > \"${profile_dir}/command.sh\" <<'EOF'",
-        "#!/usr/bin/env bash",
-        "set -euo pipefail",
-        "cd \"${BAZEL_BINDIR}\"",
-        "exec {}".format(debundler_command),
-        "EOF",
-        "chmod +x \"${profile_dir}/command.sh\"",
     ]
+
+    # The perf profile mode writes its own rerunner stub inside the wrapper
+    # script (the recorded argv lines up with what `perf record` consumed);
+    # the other modes still emit it inline here.
+    if profile != "perf":
+        common += [
+            "cat > \"${profile_dir}/command.sh\" <<'EOF'",
+            "#!/usr/bin/env bash",
+            "set -euo pipefail",
+            "cd \"${BAZEL_BINDIR}\"",
+            "exec {}".format(debundler_command),
+            "EOF",
+            "chmod +x \"${profile_dir}/command.sh\"",
+        ]
 
     if profile == "time":
         profile_lines = [
             "/usr/bin/time -v {} > \"${{profile_dir}}/stdout.txt\" 2> \"${{profile_dir}}/stderr_time.txt\"".format(debundler_command),
         ]
     elif profile == "perf":
-        # `perf report` shells out to whatever `addr2line` it finds on $PATH
-        # for inlined-frame resolution. On Rust binaries with deep DWARF, the
-        # GNU addr2line is single-threaded and has no inter-invocation cache,
-        # so symbolization can dominate wall time (30+ minutes observed).
-        # LLVM's llvm-addr2line is command-line compatible with the flags
-        # perf uses (-e/-a/-i/-f) and is typically 10-50x faster on Rust DWARF
-        # thanks to a persistent in-process symbol cache.
-        #
-        # Two interlocking hacks make this work on Nix:
-        #
-        # 1. A shim dir that aliases `addr2line` -> `llvm-addr2line` and is
-        #    prepended to PATH.
-        #
-        # 2. The `perf` binary on Nix is a wrapper shell script that itself
-        #    re-prepends GNU binutils to PATH before exec'ing the real perf,
-        #    which shadows our shim. Bypass the wrapper by invoking the
-        #    inner `.perf-wrapped` binary directly when present.
+        # The bash logic (addr2line shim, nix-perf-wrapper bypass, and six
+        # perf invocations) lives in perf_wrapper.sh — see that file for the
+        # commentary on why each shim is needed.
+        if perf_wrapper_token == None:
+            fail("perf profile mode requires perf_wrapper_token")
         profile_lines = [
-            "command -v perf >/dev/null || { echo 'perf not found on PATH' >&2; exit 127; }",
-            "if command -v llvm-addr2line >/dev/null; then shim_dir=\"${profile_dir}/.symbolizer-shim\"; mkdir -p \"${shim_dir}\"; ln -sf \"$(command -v llvm-addr2line)\" \"${shim_dir}/addr2line\"; export PATH=\"${shim_dir}:${PATH}\"; fi",
-            "perf_real=\"$(readlink -f \"$(command -v perf)\")\"; perf_wrapped=\"$(dirname \"${perf_real}\")/.perf-wrapped\"; if [ -x \"${perf_wrapped}\" ]; then perf_cmd=\"${perf_wrapped}\"; else perf_cmd=\"$(command -v perf)\"; fi",
-            "\"${{perf_cmd}}\" record -F 99 -e cycles:u --call-graph dwarf,8192 -o \"${{profile_dir}}/perf.data\" -- {} > \"${{profile_dir}}/stdout.txt\" 2> \"${{profile_dir}}/perf_record_stderr.txt\"".format(debundler_command),
-            "\"${perf_cmd}\" report --stdio --input \"${profile_dir}/perf.data\" --children --sort comm,dso,symbol > \"${profile_dir}/perf_report_children.txt\"",
-            "\"${perf_cmd}\" report --stdio --input \"${profile_dir}/perf.data\" --no-children --sort comm,dso,symbol > \"${profile_dir}/perf_report_no_children.txt\"",
-            "\"${perf_cmd}\" script --input \"${profile_dir}/perf.data\" > \"${profile_dir}/perf_script_stacks.txt\"",
-            "\"${perf_cmd}\" report --stdio --header-only --input \"${profile_dir}/perf.data\" > \"${profile_dir}/perf_header.txt\"",
-            "\"${perf_cmd}\" evlist --input \"${profile_dir}/perf.data\" > \"${profile_dir}/perf_evlist.txt\"",
+            "bash {wrapper} --output-dir \"${{profile_dir}}\" -- {cmd}".format(
+                wrapper = perf_wrapper_token,
+                cmd = debundler_command,
+            ),
         ]
     elif profile == "massif_heap":
         profile_lines = [
@@ -246,6 +242,11 @@ def _debundle_profile_attrs():
             default = "perf",
             values = ["time", "perf", "massif_heap", "heaptrack"],
             doc = "Local profiling wrapper to run around the debundle action command.",
+        ),
+        "_perf_wrapper": attr.label(
+            allow_single_file = True,
+            default = Label("//devinfra/js/debundle:perf_wrapper.sh"),
+            doc = "Bash script that runs `perf record` plus the per-report invocations. Only consumed when profile = \"perf\".",
         ),
     })
     return attrs
