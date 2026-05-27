@@ -29,8 +29,11 @@
 //! the maintained quotient; candidate verdicts use localized
 //! reachability around the hypothetical destination.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 use petgraph::algo::tarjan_scc;
 use petgraph::graphmap::DiGraphMap;
@@ -747,6 +750,46 @@ impl<'a> OverlayGraphView<'a> {
     }
 
     fn scc_containing(&self, node: ModuleId) -> BTreeSet<ModuleId> {
+        // `DEBUNDLE_TIMING=1` opt-in path: time this call + record
+        // overlay shape. The `enabled()` check is a single atomic load
+        // (`OnceLock<bool>`), so the disabled-path overhead is one
+        // predictable branch. See
+        // `realizability::gate_perf_counters` for the counter design.
+        let timing = gate_perf_counters::enabled();
+        let start = if timing { Some(Instant::now()) } else { None };
+
+        let result = self.scc_containing_inner(node);
+
+        if let Some(start) = start {
+            let elapsed = start.elapsed();
+            let nanos = gate_perf_counters::elapsed_to_u64(elapsed);
+            let overlay_empty = self.delta.is_empty();
+            // Classify each overlay entry as addition vs removal in
+            // the effective graph. Cheap: linear in `delta.len()`
+            // which is small by design (<50 in practice; see
+            // tana measurements in `perf/gate_perf_counters.md`).
+            let mut additions = 0usize;
+            let mut removals = 0usize;
+            for &(from, to) in self.delta.keys() {
+                if self.effective_count(from, to) > 0 {
+                    additions += 1;
+                } else {
+                    removals += 1;
+                }
+            }
+            gate_perf_counters::record_call(
+                nanos,
+                overlay_empty,
+                self.delta.len(),
+                additions,
+                removals,
+            );
+        }
+
+        result
+    }
+
+    fn scc_containing_inner(&self, node: ModuleId) -> BTreeSet<ModuleId> {
         if !self.has_neighbor(node, WalkDirection::Forward)
             || !self.has_neighbor(node, WalkDirection::Reverse)
         {
@@ -884,6 +927,15 @@ struct IncrementalQuotient {
     /// Lazily-computed snapshot of the constraining pairs set
     /// (`constraining_buckets.keys()`). See `ConstrainingPairs`.
     cached_base_constraining_pairs: RefCell<Option<ConstrainingPairs>>,
+    /// `DEBUNDLE_TIMING=1` shadow-state: did the committed graphs
+    /// change since the last time the gate path queried an SCC? Set
+    /// in every `invalidate_cached_simulator` (push/undo/commit
+    /// funnel) and cleared by `gate_perf_counters::shadow_snapshot_if_stale`
+    /// after emulating one base-tarjan-scc rebuild. Stays at `false`
+    /// when timing is disabled — no real cost in the normal path.
+    /// `Cell` (not `RefCell`) because the value is `Copy` and we only
+    /// read/write a single bool.
+    base_snapshot_stale: Cell<bool>,
 }
 
 impl IncrementalQuotient {
@@ -897,6 +949,10 @@ impl IncrementalQuotient {
             cached_base_simulator: RefCell::new(None),
             cached_base_i_successors: RefCell::new(None),
             cached_base_constraining_pairs: RefCell::new(None),
+            // Start dirty so the first gate query emulates a fresh
+            // base-snapshot rebuild — matches what a real
+            // snapshot-per-push design would do on startup.
+            base_snapshot_stale: Cell::new(true),
         };
         for edge in owner_graph.iter_edges() {
             quotient.add_current_edge(edge, partition, true);
@@ -912,6 +968,32 @@ impl IncrementalQuotient {
         *self.cached_base_simulator.borrow_mut() = None;
         *self.cached_base_i_successors.borrow_mut() = None;
         *self.cached_base_constraining_pairs.borrow_mut() = None;
+        // DEBUNDLE_TIMING=1 only: the next gate query will emulate a
+        // fresh base-SCC snapshot rebuild. The flag costs one
+        // unconditional store per invalidation (a few thousand per
+        // proposer run); cheap.
+        self.base_snapshot_stale.set(true);
+    }
+
+    /// `DEBUNDLE_TIMING=1` only: if the committed graphs changed since
+    /// the last gate query, run `tarjan_scc` on each base graph once
+    /// (constraining and I) and record shape + time. This emulates
+    /// the per-push cost a snapshot+clone design would pay. Cleared
+    /// after the emulated rebuild so subsequent queries within the
+    /// same delta window don't double-count.
+    ///
+    /// Disabled path: a single atomic-bool load followed by a
+    /// `Cell::get` branch. Negligible overhead.
+    fn maybe_record_base_snapshot(&self) {
+        if !gate_perf_counters::enabled() {
+            return;
+        }
+        if !self.base_snapshot_stale.get() {
+            return;
+        }
+        gate_perf_counters::record_base_snapshot(&self.constraining_graph);
+        gate_perf_counters::record_base_snapshot(&self.i_graph);
+        self.base_snapshot_stale.set(false);
     }
 
     /// Borrow the base simulator, building it on demand if the cache
@@ -1132,6 +1214,10 @@ impl IncrementalQuotient {
         };
         let mut reported = BTreeSet::<BTreeSet<ModuleId>>::new();
 
+        // `DEBUNDLE_TIMING=1` shadow path: see
+        // `verdict_with_overlay_touching` for the rationale.
+        self.maybe_record_base_snapshot();
+
         let constraining_modules = self.constraining_graph.scc_containing(module);
         if constraining_modules.len() >= 2 {
             let constraining_owner_edges = self.constraining_edges_inside(&constraining_modules);
@@ -1179,6 +1265,12 @@ impl IncrementalQuotient {
             ..RealizabilityVerdict::default()
         };
         let mut reported = BTreeSet::<BTreeSet<ModuleId>>::new();
+
+        // `DEBUNDLE_TIMING=1` shadow path: if the base graphs changed
+        // since the last gate query, emulate the snapshot-per-push
+        // design by running `tarjan_scc` on each base graph once and
+        // recording shape + time. Cleared after the emulated rebuild.
+        self.maybe_record_base_snapshot();
 
         let constraining_graph =
             OverlayGraphView::new(&self.constraining_graph, &overlay.constraining_delta);
@@ -1696,6 +1788,361 @@ fn impacted_owner_edges(owner_graph: &OwnerGraph, owners: &[OwnerId]) -> Vec<Own
         impacted.extend(owner_graph.callee_edges_of(*owner).iter().copied());
     }
     impacted.into_iter().collect()
+}
+
+// ---------------------------------------------------------------------------
+// Gate-path performance counters (DEBUNDLE_TIMING=1)
+//
+// Permanent diagnostics for `OverlayGraphView::scc_containing` and the
+// adjacent base-graph Tarjan cost. Gated entirely behind the
+// `DEBUNDLE_TIMING` environment variable (checked once per process at
+// startup via `OnceLock`). When disabled, every helper is a single
+// branch on a cached `bool` and no atomic / mutex / timing operations
+// run on the hot path.
+//
+// Records:
+//   * `scc_containing` call count, split overlay-empty vs overlay-non-empty.
+//   * Cumulative `scc_containing` wall time.
+//   * Overlay shape histograms per call: `delta.len()`, additions
+//     (edges whose effective count crosses 0 → positive),
+//     removals (edges whose effective count crosses positive → 0 or
+//     below).
+//   * Base graph shape recorded on each emulated "base SCC snapshot
+//     rebuild": `nodes_count`, `distinct_edges_count`, `sccs_count`,
+//     `condensation_edges_count`. One snapshot is built per
+//     stale→fresh transition (mirrors a snapshot-per-push design).
+//   * Base-graph `tarjan_scc` call count + cumulative wall time.
+//
+// Output: an RAII reporter (`SccTimingReporter`) installed early in
+// `main` prints the tally to stderr on drop.
+// ---------------------------------------------------------------------------
+pub mod gate_perf_counters {
+    use super::*;
+
+    /// One-time cached answer for "is `DEBUNDLE_TIMING` set in the
+    /// process env?" Resolved at first query. The first call is the
+    /// only one that touches `std::env::var_os`; every later call is
+    /// an atomic load.
+    static TIMING_ENABLED: OnceLock<bool> = OnceLock::new();
+
+    #[inline]
+    pub(super) fn enabled() -> bool {
+        *TIMING_ENABLED.get_or_init(|| std::env::var_os("DEBUNDLE_TIMING").is_some())
+    }
+
+    // -- scc_containing per-call counters ----------------------------------
+
+    pub(super) static SCC_CALLS_TOTAL: AtomicUsize = AtomicUsize::new(0);
+    pub(super) static SCC_CALLS_OVERLAY_EMPTY: AtomicUsize = AtomicUsize::new(0);
+    pub(super) static SCC_CALLS_OVERLAY_NONEMPTY: AtomicUsize = AtomicUsize::new(0);
+    /// Cumulative wall time of `OverlayGraphView::scc_containing` in
+    /// nanoseconds.
+    pub(super) static SCC_NANOS: AtomicU64 = AtomicU64::new(0);
+
+    // -- Base-graph tarjan_scc counters ------------------------------------
+
+    pub(super) static BASE_TARJAN_CALLS: AtomicUsize = AtomicUsize::new(0);
+    pub(super) static BASE_TARJAN_NANOS: AtomicU64 = AtomicU64::new(0);
+
+    // -- Reservoir-sampled histograms --------------------------------------
+    //
+    // Each histogram keeps at most `RESERVOIR_CAP` samples via
+    // Algorithm R (uniform reservoir sampling). That's enough resolution
+    // for stable median / p95 on the tana workload (~4400 calls; the
+    // reservoir holds 4096 entries and never trims). Storing the
+    // reservoir in a `Mutex<Vec<u32>>` is cheap under the proposer's
+    // single-threaded driver.
+    pub(super) const RESERVOIR_CAP: usize = 4096;
+
+    pub(super) struct Histogram {
+        samples: Mutex<Vec<u32>>,
+        count: AtomicU64,
+        sum: AtomicU64,
+        min: AtomicU64,
+        max: AtomicU64,
+    }
+
+    impl Histogram {
+        const fn new() -> Self {
+            Self {
+                samples: Mutex::new(Vec::new()),
+                count: AtomicU64::new(0),
+                sum: AtomicU64::new(0),
+                min: AtomicU64::new(u64::MAX),
+                max: AtomicU64::new(0),
+            }
+        }
+
+        pub(super) fn record(&self, value: u32) {
+            let v = value as u64;
+            let n = self.count.fetch_add(1, Ordering::Relaxed);
+            self.sum.fetch_add(v, Ordering::Relaxed);
+            // Lock-free min/max update via CAS.
+            let mut cur_min = self.min.load(Ordering::Relaxed);
+            while v < cur_min {
+                match self.min.compare_exchange_weak(
+                    cur_min,
+                    v,
+                    Ordering::Relaxed,
+                    Ordering::Relaxed,
+                ) {
+                    Ok(_) => break,
+                    Err(x) => cur_min = x,
+                }
+            }
+            let mut cur_max = self.max.load(Ordering::Relaxed);
+            while v > cur_max {
+                match self.max.compare_exchange_weak(
+                    cur_max,
+                    v,
+                    Ordering::Relaxed,
+                    Ordering::Relaxed,
+                ) {
+                    Ok(_) => break,
+                    Err(x) => cur_max = x,
+                }
+            }
+            // Reservoir sample. Single-threaded under the proposer,
+            // so contention here is zero; we keep the lock anyway so
+            // the reporter on Drop sees a consistent vec.
+            let mut samples = self.samples.lock().expect("Histogram mutex poisoned");
+            if samples.len() < RESERVOIR_CAP {
+                samples.push(value);
+            } else {
+                // Deterministic-ish: use n as the random index source.
+                // Not statistically perfect but adequate for proposer
+                // diagnostic purposes; we'll see the full call stream
+                // for tana (~4400 calls; cap is 4096, so we keep ~93%).
+                let idx = (n as usize).wrapping_mul(2654435761) % (n as usize + 1);
+                if idx < RESERVOIR_CAP {
+                    samples[idx] = value;
+                }
+            }
+        }
+
+        fn snapshot(&self) -> HistogramSnapshot {
+            let count = self.count.load(Ordering::Relaxed);
+            let sum = self.sum.load(Ordering::Relaxed);
+            let min = self.min.load(Ordering::Relaxed);
+            let max = self.max.load(Ordering::Relaxed);
+            let samples = self
+                .samples
+                .lock()
+                .expect("Histogram mutex poisoned")
+                .clone();
+            HistogramSnapshot {
+                count,
+                sum,
+                min: if count == 0 { 0 } else { min },
+                max,
+                samples,
+            }
+        }
+    }
+
+    pub(super) struct HistogramSnapshot {
+        pub count: u64,
+        pub sum: u64,
+        pub min: u64,
+        pub max: u64,
+        pub samples: Vec<u32>,
+    }
+
+    impl HistogramSnapshot {
+        pub(super) fn percentile(&self, p: f64) -> u32 {
+            if self.samples.is_empty() {
+                return 0;
+            }
+            let mut sorted = self.samples.clone();
+            sorted.sort_unstable();
+            let idx = ((sorted.len() as f64 - 1.0) * p).round() as usize;
+            sorted[idx.min(sorted.len() - 1)]
+        }
+
+        pub(super) fn mean(&self) -> f64 {
+            if self.count == 0 {
+                0.0
+            } else {
+                self.sum as f64 / self.count as f64
+            }
+        }
+    }
+
+    pub(super) static OVERLAY_DELTA_LEN: Histogram = Histogram::new();
+    pub(super) static OVERLAY_ADDITIONS: Histogram = Histogram::new();
+    pub(super) static OVERLAY_REMOVALS: Histogram = Histogram::new();
+    pub(super) static BASE_NODES: Histogram = Histogram::new();
+    pub(super) static BASE_EDGES: Histogram = Histogram::new();
+    pub(super) static BASE_SCCS: Histogram = Histogram::new();
+    pub(super) static BASE_COND_EDGES: Histogram = Histogram::new();
+
+    /// Record a single `scc_containing` call's per-call shape.
+    /// `delta_len` is `overlay.delta.len()`; `additions` is the number
+    /// of overlay edges whose effective count > 0 (i.e. they manifest
+    /// as a new edge in the effective graph relative to base);
+    /// `removals` is the number whose effective count is ≤ 0 (the
+    /// overlay zeroes out a base edge).
+    pub(super) fn record_call(
+        nanos: u64,
+        overlay_empty: bool,
+        delta_len: usize,
+        additions: usize,
+        removals: usize,
+    ) {
+        SCC_CALLS_TOTAL.fetch_add(1, Ordering::Relaxed);
+        if overlay_empty {
+            SCC_CALLS_OVERLAY_EMPTY.fetch_add(1, Ordering::Relaxed);
+        } else {
+            SCC_CALLS_OVERLAY_NONEMPTY.fetch_add(1, Ordering::Relaxed);
+        }
+        SCC_NANOS.fetch_add(nanos, Ordering::Relaxed);
+        OVERLAY_DELTA_LEN.record(delta_len.min(u32::MAX as usize) as u32);
+        OVERLAY_ADDITIONS.record(additions.min(u32::MAX as usize) as u32);
+        OVERLAY_REMOVALS.record(removals.min(u32::MAX as usize) as u32);
+    }
+
+    /// Record one emulated base-SCC snapshot rebuild. Runs `tarjan_scc`
+    /// on the base graph, records the call count + time + shape. Only
+    /// invoked when `DEBUNDLE_TIMING=1`.
+    pub(super) fn record_base_snapshot(graph: &RollbackDiGraph<ModuleId>) {
+        let nodes = graph.node_count();
+        let edges = graph.distinct_edge_count();
+        let start = Instant::now();
+        let sccs = graph.all_sccs();
+        let elapsed_nanos = elapsed_to_u64(start.elapsed());
+        BASE_TARJAN_CALLS.fetch_add(1, Ordering::Relaxed);
+        BASE_TARJAN_NANOS.fetch_add(elapsed_nanos, Ordering::Relaxed);
+        BASE_NODES.record(nodes.min(u32::MAX as usize) as u32);
+        BASE_EDGES.record(edges.min(u32::MAX as usize) as u32);
+        BASE_SCCS.record(sccs.len().min(u32::MAX as usize) as u32);
+        // Condensation edges: count distinct cross-SCC `(from, to)`
+        // pairs at the SCC level. Cheap pass over the base edge set
+        // using the SCC partition we just computed.
+        let mut scc_of: BTreeMap<ModuleId, usize> = BTreeMap::new();
+        for (i, scc) in sccs.iter().enumerate() {
+            for &m in scc {
+                scc_of.insert(m, i);
+            }
+        }
+        let mut cond_edges: BTreeSet<(usize, usize)> = BTreeSet::new();
+        for (from, to) in graph.edge_pairs() {
+            let a = scc_of.get(&from).copied().unwrap_or(usize::MAX);
+            let b = scc_of.get(&to).copied().unwrap_or(usize::MAX);
+            if a != b {
+                cond_edges.insert((a, b));
+            }
+        }
+        BASE_COND_EDGES.record(cond_edges.len().min(u32::MAX as usize) as u32);
+    }
+
+    pub(super) fn elapsed_to_u64(elapsed: Duration) -> u64 {
+        let nanos = elapsed.as_nanos();
+        if nanos > u64::MAX as u128 {
+            u64::MAX
+        } else {
+            nanos as u64
+        }
+    }
+
+    /// Print the gathered counter report to stderr.
+    pub(super) fn report_to_stderr() {
+        use std::io::Write;
+        let stderr = std::io::stderr();
+        let mut out = stderr.lock();
+        let _ = writeln!(
+            out,
+            "=== debundle gate perf counters (DEBUNDLE_TIMING=1) ==="
+        );
+
+        let calls = SCC_CALLS_TOTAL.load(Ordering::Relaxed);
+        let empty = SCC_CALLS_OVERLAY_EMPTY.load(Ordering::Relaxed);
+        let nonempty = SCC_CALLS_OVERLAY_NONEMPTY.load(Ordering::Relaxed);
+        let nanos = SCC_NANOS.load(Ordering::Relaxed);
+        let total_secs = nanos as f64 / 1e9;
+        let per_call_us = if calls > 0 {
+            (nanos as f64 / calls as f64) / 1e3
+        } else {
+            0.0
+        };
+        let _ = writeln!(
+            out,
+            "scc_containing: {calls} calls ({empty} overlay-empty, {nonempty} overlay-nonempty)"
+        );
+        let _ = writeln!(
+            out,
+            "  cumulative: {total_secs:.3}s, per-call avg: {per_call_us:.3} µs"
+        );
+
+        let base_calls = BASE_TARJAN_CALLS.load(Ordering::Relaxed);
+        let base_nanos = BASE_TARJAN_NANOS.load(Ordering::Relaxed);
+        let base_secs = base_nanos as f64 / 1e9;
+        let base_per_call_us = if base_calls > 0 {
+            (base_nanos as f64 / base_calls as f64) / 1e3
+        } else {
+            0.0
+        };
+        let _ = writeln!(
+            out,
+            "base tarjan_scc: {base_calls} calls, cumulative {base_secs:.3}s, per-call avg {base_per_call_us:.3} µs"
+        );
+
+        report_histogram(&mut out, "  overlay delta.len()", &OVERLAY_DELTA_LEN);
+        report_histogram(&mut out, "  overlay additions", &OVERLAY_ADDITIONS);
+        report_histogram(&mut out, "  overlay removals", &OVERLAY_REMOVALS);
+        report_histogram(&mut out, "  base nodes", &BASE_NODES);
+        report_histogram(&mut out, "  base edges (distinct)", &BASE_EDGES);
+        report_histogram(&mut out, "  base SCCs", &BASE_SCCS);
+        report_histogram(&mut out, "  base condensation edges", &BASE_COND_EDGES);
+    }
+
+    fn report_histogram<W: std::io::Write>(out: &mut W, label: &str, hist: &Histogram) {
+        let snap = hist.snapshot();
+        if snap.count == 0 {
+            let _ = writeln!(out, "{label}: (no samples)");
+            return;
+        }
+        let median = snap.percentile(0.50);
+        let p95 = snap.percentile(0.95);
+        let _ = writeln!(
+            out,
+            "{label}: count={count} min={min} median={median} p95={p95} max={max} mean={mean:.2}",
+            count = snap.count,
+            min = snap.min,
+            max = snap.max,
+            mean = snap.mean(),
+        );
+    }
+
+    /// RAII guard installed by `SccTimingReporter::install_if_enabled`.
+    /// Prints the counter summary on drop when timing is enabled.
+    pub struct InstalledGuard;
+
+    impl Drop for InstalledGuard {
+        fn drop(&mut self) {
+            report_to_stderr();
+        }
+    }
+}
+
+/// RAII guard that prints the gate-path perf counter summary on drop
+/// when `DEBUNDLE_TIMING=1` is set in the process environment.
+/// Construct one early in `main` (`SccTimingReporter::install_if_enabled`)
+/// to get a tally at program exit. When `DEBUNDLE_TIMING` is unset, the
+/// helper returns `None` and no counter work is done anywhere.
+///
+/// The counters themselves live in the private
+/// `realizability::gate_perf_counters` module; the guard is the only
+/// public surface, deliberately small.
+pub struct SccTimingReporter(gate_perf_counters::InstalledGuard);
+
+impl SccTimingReporter {
+    pub fn install_if_enabled() -> Option<Self> {
+        if gate_perf_counters::enabled() {
+            Some(Self(gate_perf_counters::InstalledGuard))
+        } else {
+            None
+        }
+    }
 }
 
 #[cfg(test)]

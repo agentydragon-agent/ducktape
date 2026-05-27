@@ -1,10 +1,18 @@
 use std::process::ExitCode;
 
+use analysis::SccTimingReporter;
 use clap::Parser;
 use debundle_cli::{DebundleArgs, run_debundle_cli};
 use swc_common::{GLOBALS, Globals};
 
 fn main() -> ExitCode {
+    // Install the realizability gate-path perf counter reporter when
+    // DEBUNDLE_TIMING=1 is set. Returns `None` when the env var is
+    // unset, so disabled-path overhead is zero. See
+    // `devinfra/js/debundle/perf/gate_perf_counters.md` for the
+    // counter list + example output.
+    let _gate_perf_guard = SccTimingReporter::install_if_enabled();
+
     // SWC hygiene (`Mark`, `SyntaxContext`) is stored in a thread-local
     // arena managed by `GLOBALS`. Every parse and AST-touching operation
     // in the debundler runs inside this closure so the `resolver` pass

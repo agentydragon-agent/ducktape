@@ -87,6 +87,24 @@ predictions.
 "Dead ends" below for the failed cache-short-circuit attempt and
 why this is the next mechanism).
 
+**Prerequisite — gate-path perf counters (landed).**
+[`gate_perf_counters.md`](gate_perf_counters.md) ships the permanent
+`DEBUNDLE_TIMING=1` counter suite measuring `scc_containing`
+calls/time/overlay-shape and base-graph Tarjan calls/time/shape.
+Before picking a specific incremental-SCC algorithm, **re-run with
+`DEBUNDLE_TIMING=1`** and verify the cost model matches the chosen
+design's assumptions:
+
+- Snapshot+clone design works iff `base SCCs ≤ ~1000` and overlay
+  `delta.len()` ≪ 50. Median on tana 2026-05-27 was 879 SCCs and 7
+  overlay edits — well inside the envelope.
+- Decremental incremental design (Pearce-style) is sensitive to the
+  fraction of overlay entries that zero out a base edge (`effective
+count ≤ 0`). Tana median: 4 of 7 entries (~57 %), so a
+  decremental-only algorithm would hit its fallback case often. Use
+  the snapshot+clone path or an algorithm with cheap decremental
+  edge maintenance.
+
 Maintain the SCC partition through edge add/remove in-place, with
 rollback for speculative overlays. Pearce 2003 ("Algorithms for
 Computing Strongly Connected Components") and follow-ups give
