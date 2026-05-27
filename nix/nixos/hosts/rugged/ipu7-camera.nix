@@ -26,10 +26,8 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    # Use 6.19 (IPU7 mainlined in 6.17). Pinned away from linuxPackages_latest
-    # which is 7.0 on 25.11 — linux 7.0 has aes_generic built-in, breaking
-    # the NixOS initrd module-shrink script.
-    boot.kernelPackages = pkgs.linuxPackages_6_19;
+    # IPU7 mainlined in 6.17; latest kernel includes it.
+    boot.kernelPackages = pkgs.linuxPackages_latest;
 
     # Firmware for IPU and Intel Visual Sensing Controller
     hardware.firmware = with pkgs; [
