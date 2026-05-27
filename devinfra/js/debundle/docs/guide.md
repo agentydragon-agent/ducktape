@@ -231,6 +231,61 @@ and the destinations each member would land in.
 
 The gate refuses; nothing on disk has changed.
 
+## Peel heuristics: patterns that should move together
+
+These patterns surface repeatedly when peeling minified bundles. Each
+one usually appears as a singleton or two-statement `auto_partition_*`
+shell whose source happens to live one line below a named binding;
+the factorizer can't always see the textual adjacency, so the human
+peeler (or a custom propose-side heuristic) makes the call.
+
+### TypeScript decorator wirings live with the class they decorate
+
+TypeScript / Babel emits class-field decorators as standalone
+top-level statements right after the class declaration. The shape
+varies by toolchain but the body is always
+`__decorate([…decorators], <Class>.prototype, "<member>"[, <kind>])`
+where the wrapping function name is minified (`t0`, `Q0`, `b0t`,
+`__decorate`, etc.). They surface as anonymous statements in the
+bundled output. Two reliable signals:
+
+1. The first positional argument is an array literal of decorator
+   references (`[Z]`, `[oe]`, `[ee, ie]`, …) — the bundler doesn't
+   inline that array for any other call shape, so this is a
+   high-precision fingerprint.
+2. The second argument is `<Class>.prototype` where `<Class>` is a
+   binding the spec already owns.
+
+When both hold, the statement belongs in `<Class>`'s module via
+`anonymous_statements:` — the chunker just happened to split it into a
+sibling shell. Absorbing them costs zero realizability headroom (the
+edges they carry already point at the class).
+
+### Adjacent-ordinal singletons referencing each other
+
+If owners at consecutive statement ordinals `N` and `N+1` are each
+the other's only edge target/source, they were lines next to each
+other in the source and the partitioner accidentally put them in
+sibling shells. Merge the two `auto_partition_*` modules into one.
+Detectable via `cluster(A).out == [B] && cluster(B).in == [A]` plus
+`|N+1 - N| == 1`.
+
+### `system_ids` + one heuristic
+
+Some modules are _ambient_ — every other module touches them but
+they don't constrain placement. When a singleton has exactly two
+neighbors and one is an ambient module (e.g. `domains/system/ids`
+holding chunk-wide enum constants, or `infra/vite/asset_map`
+holding the chunker's dynamic-import lookup), treat the singleton
+as effectively single-neighbor and absorb it into the _other_
+named home.
+
+### Lazy-loaded React wrappers fold into their consumer
+
+`const X = b.lazy(() => bt(() => import("./<chunk>-<hash>.js")))` is
+a one-liner. Its only non-`asset_map` neighbor is the module that
+mounts `<X />`. Move `X` into that consumer's YAML.
+
 ## Workflow: merging two modules
 
 ```bash
