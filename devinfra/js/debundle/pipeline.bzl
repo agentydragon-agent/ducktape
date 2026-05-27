@@ -156,18 +156,27 @@ def _profile_command(profile, profile_dir_token, debundler_command):
         # so symbolization can dominate wall time (30+ minutes observed).
         # LLVM's llvm-addr2line is command-line compatible with the flags
         # perf uses (-e/-a/-i/-f) and is typically 10-50x faster on Rust DWARF
-        # thanks to a persistent in-process symbol cache. Prepend a shim dir
-        # that aliases `addr2line` to `llvm-addr2line` when the latter is
-        # available; fall back silently to GNU addr2line otherwise.
+        # thanks to a persistent in-process symbol cache.
+        #
+        # Two interlocking hacks make this work on Nix:
+        #
+        # 1. A shim dir that aliases `addr2line` -> `llvm-addr2line` and is
+        #    prepended to PATH.
+        #
+        # 2. The `perf` binary on Nix is a wrapper shell script that itself
+        #    re-prepends GNU binutils to PATH before exec'ing the real perf,
+        #    which shadows our shim. Bypass the wrapper by invoking the
+        #    inner `.perf-wrapped` binary directly when present.
         profile_lines = [
             "command -v perf >/dev/null || { echo 'perf not found on PATH' >&2; exit 127; }",
             "if command -v llvm-addr2line >/dev/null; then shim_dir=\"${profile_dir}/.symbolizer-shim\"; mkdir -p \"${shim_dir}\"; ln -sf \"$(command -v llvm-addr2line)\" \"${shim_dir}/addr2line\"; export PATH=\"${shim_dir}:${PATH}\"; fi",
-            "perf record -F 99 -e cycles:u --call-graph dwarf,8192 -o \"${{profile_dir}}/perf.data\" -- {} > \"${{profile_dir}}/stdout.txt\" 2> \"${{profile_dir}}/perf_record_stderr.txt\"".format(debundler_command),
-            "perf report --stdio --input \"${profile_dir}/perf.data\" --children --sort comm,dso,symbol > \"${profile_dir}/perf_report_children.txt\"",
-            "perf report --stdio --input \"${profile_dir}/perf.data\" --no-children --sort comm,dso,symbol > \"${profile_dir}/perf_report_no_children.txt\"",
-            "perf script --input \"${profile_dir}/perf.data\" > \"${profile_dir}/perf_script_stacks.txt\"",
-            "perf report --stdio --header-only --input \"${profile_dir}/perf.data\" > \"${profile_dir}/perf_header.txt\"",
-            "perf evlist --input \"${profile_dir}/perf.data\" > \"${profile_dir}/perf_evlist.txt\"",
+            "perf_real=\"$(readlink -f \"$(command -v perf)\")\"; perf_wrapped=\"$(dirname \"${perf_real}\")/.perf-wrapped\"; if [ -x \"${perf_wrapped}\" ]; then perf_cmd=\"${perf_wrapped}\"; else perf_cmd=\"$(command -v perf)\"; fi",
+            "\"${{perf_cmd}}\" record -F 99 -e cycles:u --call-graph dwarf,8192 -o \"${{profile_dir}}/perf.data\" -- {} > \"${{profile_dir}}/stdout.txt\" 2> \"${{profile_dir}}/perf_record_stderr.txt\"".format(debundler_command),
+            "\"${perf_cmd}\" report --stdio --input \"${profile_dir}/perf.data\" --children --sort comm,dso,symbol > \"${profile_dir}/perf_report_children.txt\"",
+            "\"${perf_cmd}\" report --stdio --input \"${profile_dir}/perf.data\" --no-children --sort comm,dso,symbol > \"${profile_dir}/perf_report_no_children.txt\"",
+            "\"${perf_cmd}\" script --input \"${profile_dir}/perf.data\" > \"${profile_dir}/perf_script_stacks.txt\"",
+            "\"${perf_cmd}\" report --stdio --header-only --input \"${profile_dir}/perf.data\" > \"${profile_dir}/perf_header.txt\"",
+            "\"${perf_cmd}\" evlist --input \"${profile_dir}/perf.data\" > \"${profile_dir}/perf_evlist.txt\"",
         ]
     elif profile == "massif_heap":
         profile_lines = [
