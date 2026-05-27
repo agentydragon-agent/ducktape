@@ -31,6 +31,15 @@ inputs:
     description: "Delete releases older than this many days"
     required: false
     default: "30"
+  bazel_flags:
+    description: >
+      Extra bazel flags appended to both build invocations (unstamped and
+      stamped). Use for per-artifact compilation_mode or rustc_flags
+      overrides — e.g. `-c opt --@rules_rust//:extra_rustc_flag=-Cdebuginfo=1`
+      for an artifact that should ship as an optimized binary instead of
+      the workflow's default fastbuild.
+    required: false
+    default: ""
 
 runs:
   using: composite
@@ -39,7 +48,7 @@ runs:
     - name: Build artifact (unstamped)
       uses: ./.github/actions/bb-remote
       with:
-        args: build ${{ inputs.bazel_target }}
+        args: build ${{ inputs.bazel_target }} ${{ inputs.bazel_flags }}
         rbe_image: ${{ inputs.rbe_image }}
 
     - name: Check content hash
@@ -95,7 +104,7 @@ runs:
       if: steps.check.outputs.should_release == 'true'
       uses: ./.github/actions/bb-remote
       with:
-        args: build ${{ inputs.bazel_target }} --stamp
+        args: build ${{ inputs.bazel_target }} ${{ inputs.bazel_flags }} --stamp
         rbe_image: ${{ inputs.rbe_image }}
 
     - name: Upload release
