@@ -1,5 +1,6 @@
 //! Mutating + listing operations on the spec's per-module member
-//! entries: `bindings list`, `bindings rename`, `bindings assign`.
+//! entries: `bindings list`, `bindings rename`, `bindings assign`,
+//! `bindings unassign`.
 //!
 //! The shared invariants:
 //!
@@ -22,7 +23,7 @@ use serde_yaml::{Mapping, Value};
 
 use spec_modules::{collect_module_files, is_residual_module_path, module_path_from_file};
 
-use crate::edit_gate::{gate_post_edit_partition, post_assign_spec};
+use crate::edit_gate::{gate_post_edit_partition, post_assign_spec, post_unassign_spec};
 
 /// A located member inside a module file. Returned by [`find_matches`]
 /// and is the unit `assign` / `rename` mutate.
@@ -675,6 +676,174 @@ fn members_seq(doc: &Value) -> Option<&Vec<Value>> {
     doc.as_mapping()
         .and_then(|m| m.get(yk("members")))
         .and_then(Value::as_sequence)
+}
+
+// ---------------------------------------------------------------------
+// `bindings unassign`
+// ---------------------------------------------------------------------
+
+/// Outcome of an unassign batch. Mirrors [`AssignOutcome`] so the CLI
+/// printer can share a renderer if desired; the field set is
+/// deliberately the same shape.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct UnassignOutcome {
+    pub unassigned: usize,
+    pub files_written: Vec<String>,
+    pub files_deleted: Vec<String>,
+    pub action: &'static str,
+}
+
+/// Remove one or more bindings from their current modules atomically.
+/// Source modules drained of members are deleted unless they carry a
+/// module-level `comment:` or remaining `anonymous_statements:` —
+/// same drain rule as `run_bindings_assign`.
+///
+/// After unassign, the bindings fall through to residual (the default
+/// when an owner isn't claimed by any spec module's `members:`). The
+/// realizability + atom-split gate runs against the post-batch spec
+/// the same way `bindings assign` does. The CLI dispatcher enforces
+/// the "graph or no-verify" policy.
+///
+/// Contract:
+///   * Dedupe by sym (warn on duplicates; later wins).
+///   * Each sym must resolve to exactly one member via
+///     [`resolve_unambiguous`].
+///   * Source modules drained are deleted iff they have no
+///     module-level `comment:` AND no remaining
+///     `anonymous_statements:`.
+///   * When `owner_graph_path` is `Some` and `no_verify` is `false`,
+///     the gate runs against the in-memory post-batch spec; cycle or
+///     atom-split rejections bail before any file is written.
+pub fn run_bindings_unassign(
+    modules_root: &Path,
+    syms: Vec<String>,
+    dry_run: bool,
+    no_verify: bool,
+    owner_graph_path: Option<&Path>,
+) -> Result<UnassignOutcome> {
+    // Step 1: dedupe syms (later-wins isn't meaningful here, just
+    // dedupe; warn so authors don't ship typos as silent duplicates).
+    let mut seen: BTreeSet<String> = BTreeSet::new();
+    let mut syms_unique: Vec<String> = Vec::new();
+    for s in syms {
+        if !seen.insert(s.clone()) {
+            eprintln!("warning: duplicate sym {s:?} in batch; ignoring repeat");
+            continue;
+        }
+        syms_unique.push(s);
+    }
+    if syms_unique.is_empty() {
+        return Ok(UnassignOutcome {
+            unassigned: 0,
+            files_written: Vec::new(),
+            files_deleted: Vec::new(),
+            action: "noop",
+        });
+    }
+
+    // Step 2: load every module YAML once.
+    let mut docs = load_module_docs(modules_root)?;
+
+    // Step 3: locate each sym's current home + the member entry.
+    let mut plan: Vec<PlannedUnassign> = Vec::new();
+    for s in &syms_unique {
+        let hit = resolve_unambiguous(modules_root, s)?;
+        plan.push(PlannedUnassign {
+            sym: s.clone(),
+            source_module: hit.module_path.clone(),
+            source_index: hit.member_index,
+        });
+    }
+
+    // Step 4: gate the post-batch spec (cycles + atom-split). Runs
+    // before any mutation. CLI dispatcher enforces "graph or
+    // no-verify" so reaching here without a graph + with !no_verify
+    // would be a programmer error.
+    if !no_verify {
+        if let Some(graph_path) = owner_graph_path {
+            let removals: Vec<(PathBuf, String)> = plan
+                .iter()
+                .map(|p| {
+                    (
+                        modules_root.join(format!("{}.yaml", p.source_module)),
+                        p.sym.clone(),
+                    )
+                })
+                .collect();
+            let post_spec = post_unassign_spec(modules_root, &removals)?;
+            gate_post_edit_partition(graph_path, &post_spec)?;
+        }
+    }
+
+    // Step 5: drop each member from its source doc. Same null-sentinel
+    // + collapse-after pattern `run_bindings_assign` uses so multiple
+    // unassigns from the same module don't shift indices mid-pass.
+    for p in &plan {
+        let Some((_, doc)) = docs.get_mut(&p.source_module) else {
+            bail!("source module {:?} not in tree", p.source_module);
+        };
+        let _ = take_member(doc, p.source_index)?;
+    }
+    for (_, (_, doc)) in docs.iter_mut() {
+        collapse_null_members(doc);
+    }
+
+    // Step 6: identify drained-but-not-deleted source modules.
+    let mut to_delete: Vec<String> = Vec::new();
+    for (mp, (_, doc)) in &docs {
+        if is_residual_module_path(mp) {
+            continue;
+        }
+        let members_empty = members_seq(doc).is_none_or(|s| s.is_empty());
+        if !members_empty {
+            continue;
+        }
+        let has_comment = doc
+            .as_mapping()
+            .and_then(|m| m.get(yk("comment")))
+            .is_some();
+        let has_anon = doc
+            .as_mapping()
+            .and_then(|m| m.get(yk("anonymous_statements")))
+            .and_then(Value::as_sequence)
+            .is_some_and(|s| !s.is_empty());
+        if !has_comment && !has_anon {
+            to_delete.push(mp.clone());
+        }
+    }
+
+    let mut files_written: Vec<String> = Vec::new();
+    let mut files_deleted: Vec<String> = Vec::new();
+    let action = if dry_run { "dry-run" } else { "applied" };
+    for (mp, (file, doc)) in &docs {
+        if to_delete.contains(mp) {
+            if !dry_run && file.exists() {
+                fs::remove_file(file).with_context(|| format!("rm {}", file.display()))?;
+            }
+            files_deleted.push(file.display().to_string());
+            continue;
+        }
+        if !dry_run {
+            if let Some(parent) = file.parent() {
+                fs::create_dir_all(parent).ok();
+            }
+            write_yaml(file, doc)?;
+        }
+        files_written.push(file.display().to_string());
+    }
+    Ok(UnassignOutcome {
+        unassigned: plan.len(),
+        files_written,
+        files_deleted,
+        action,
+    })
+}
+
+#[derive(Debug, Clone)]
+struct PlannedUnassign {
+    sym: String,
+    source_module: String,
+    source_index: usize,
 }
 
 // ---------------------------------------------------------------------

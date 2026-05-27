@@ -7,8 +7,8 @@ pub mod module;
 use std::path::PathBuf;
 
 use crate::binding::{
-    AssignOutcome, BindingsListFilters, Move, parse_batch_json, parse_move_triple, rename_binding,
-    run_bindings_assign, run_bindings_list,
+    AssignOutcome, BindingsListFilters, Move, UnassignOutcome, parse_batch_json, parse_move_triple,
+    rename_binding, run_bindings_assign, run_bindings_list, run_bindings_unassign,
 };
 use crate::comment::{
     BindingCommentArgs, ModuleCommentArgs, run_binding_comment_cmd, run_module_comment_cmd,
@@ -207,6 +207,9 @@ enum BindingsNsCommand {
     Rename(BindingsRenameArgs),
     /// Move one or more bindings between modules atomically.
     Assign(BindingsAssignArgs),
+    /// Remove one or more bindings from their current modules
+    /// atomically; they fall through to residual.
+    Unassign(BindingsUnassignArgs),
 }
 
 #[derive(Debug, ClapArgs)]
@@ -241,6 +244,30 @@ pub struct BindingsRenameArgs {
     /// Skip name-collision validation. Don't use casually.
     #[arg(long)]
     pub no_verify: bool,
+    /// Output format. Default `text` on tty, `json` on pipe.
+    #[arg(long, value_enum)]
+    pub format: Option<OutputFormat>,
+}
+
+#[derive(Debug, ClapArgs)]
+pub struct BindingsUnassignArgs {
+    #[arg(long = "modules", env = "DEBUNDLE_MODULES")]
+    pub modules_root: PathBuf,
+    /// Binding symbols (minified or readable) to remove from their
+    /// current modules. Same resolution rules as `bindings assign`.
+    #[arg(required = true)]
+    pub syms: Vec<String>,
+    /// Validate but do not modify any file.
+    #[arg(long)]
+    pub dry_run: bool,
+    /// Skip realizability validation. Don't use casually.
+    #[arg(long)]
+    pub no_verify: bool,
+    /// `owner_graph.json` for the chunk being edited. Required for
+    /// the realizability + atom-split gate; ignored when
+    /// `--no-verify` is set.
+    #[arg(long = "graph", env = "DEBUNDLE_GRAPH")]
+    pub owner_graph_path: Option<PathBuf>,
     /// Output format. Default `text` on tty, `json` on pipe.
     #[arg(long, value_enum)]
     pub format: Option<OutputFormat>,
@@ -384,6 +411,7 @@ pub fn run_debundle_cli(args: DebundleArgs) -> Result<()> {
             BindingsNsCommand::List(l) => run_bindings_list_cmd(l),
             BindingsNsCommand::Rename(r) => run_bindings_rename_cmd(r),
             BindingsNsCommand::Assign(a) => run_bindings_assign_cmd(a),
+            BindingsNsCommand::Unassign(u) => run_bindings_unassign_cmd(u),
         },
         DebundleCommand::Modules(args) => match args.command {
             ModulesNsCommand::Comment(c) => run_module_comment_cmd(c),
@@ -874,6 +902,44 @@ fn run_bindings_assign_cmd(args: BindingsAssignArgs) -> Result<()> {
     )?;
     let format = OutputFormat::resolve(args.format);
     print_assign_outcome(&out, format)
+}
+
+fn run_bindings_unassign_cmd(args: BindingsUnassignArgs) -> Result<()> {
+    // Mirror the "graph or no-verify" policy `bindings assign` /
+    // `modules merge` / `modules delete --force` use, so every
+    // mutating verb refuses silently-skipping the realizability gate.
+    if !args.no_verify && args.owner_graph_path.is_none() {
+        anyhow::bail!(
+            "realizability gate requires --graph (path to owner_graph.json) or --no-verify"
+        );
+    }
+    let out = run_bindings_unassign(
+        &args.modules_root,
+        args.syms,
+        args.dry_run,
+        args.no_verify,
+        args.owner_graph_path.as_deref(),
+    )?;
+    let format = OutputFormat::resolve(args.format);
+    print_unassign_outcome(&out, format)
+}
+
+fn print_unassign_outcome(out: &UnassignOutcome, format: OutputFormat) -> Result<()> {
+    match format {
+        OutputFormat::Text => {
+            println!(
+                "{}: {} unassign(s); {} file(s) written, {} file(s) deleted",
+                out.action,
+                out.unassigned,
+                out.files_written.len(),
+                out.files_deleted.len()
+            );
+        }
+        OutputFormat::Json | OutputFormat::Ndjson => {
+            println!("{}", serde_json::to_string_pretty(out)?);
+        }
+    }
+    Ok(())
 }
 
 fn print_assign_outcome(out: &AssignOutcome, format: OutputFormat) -> Result<()> {

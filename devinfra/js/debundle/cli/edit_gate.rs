@@ -93,6 +93,40 @@ pub fn post_delete_spec(modules_root: &Path, deleted_abs: &[PathBuf]) -> Result<
     Ok(PostEditSpec { modules })
 }
 
+/// Build the post-unassign spec view in memory. Drops the named
+/// bindings from each `(source_module_abs, binding_name)` pair so the
+/// resulting partition has them fall through to residual (the default
+/// when an owner isn't claimed by any spec module). Source modules
+/// that drain to zero members get dropped from the returned spec,
+/// mirroring the auto-delete behavior in `run_bindings_unassign`.
+///
+/// This is structurally `post_assign_spec` with no insertions — but a
+/// distinct entry point is worth having because the call sites read
+/// differently and the gate diagnostic ("owners go to residual") is
+/// the actionable lens for `unassign`. Used by `bindings unassign`.
+pub fn post_unassign_spec(
+    modules_root: &Path,
+    removals: &[(PathBuf, String)],
+) -> Result<PostEditSpec> {
+    let mut by_path: std::collections::BTreeMap<PathBuf, BTreeSet<String>> = Default::default();
+    for file in collect_module_files(modules_root)? {
+        by_path.insert(file.clone(), read_member_bindings(&file)?);
+    }
+    for (path, name) in removals {
+        if let Some(set) = by_path.get_mut(path) {
+            set.remove(name);
+        }
+    }
+    let modules: Vec<(PathBuf, BTreeSet<String>)> = by_path
+        .into_iter()
+        // Drained modules drop out of the gate's view — the writer
+        // path deletes them on apply, so the gate should run against
+        // the same module set the post-write spec will have.
+        .filter(|(_, s)| !s.is_empty())
+        .collect();
+    Ok(PostEditSpec { modules })
+}
+
 /// Build the post-assign spec view from the current modules tree
 /// minus a set of (binding-name, current-source-module) pairs to
 /// remove, plus a list of (binding-name, destination-module) pairs to
