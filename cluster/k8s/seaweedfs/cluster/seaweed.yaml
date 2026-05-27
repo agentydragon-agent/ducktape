@@ -69,6 +69,11 @@ spec:
     configSecret:
       name: seaweedfs-s3-config
       key: seaweedfs_s3_config.json
+    # Roll the s3 deployment whenever seaweedfs-s3-config changes —
+    # ESO assembles that Secret from per-tenant identities/*.sops.yaml,
+    # and `weed s3` only reads the config file at startup.
+    annotations:
+      reloader.stakater.com/auto: "true"
     metricsPort: 9327
     # weed s3 defaults -ip.bind to localhost — kubelet's readiness probe from
     # outside the pod gets "connection refused". Bind to 0.0.0.0 so probes
