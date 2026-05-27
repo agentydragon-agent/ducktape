@@ -495,6 +495,15 @@ pub struct AnonymousStatement {
     /// $g.prototype.invites"). Ignored by the resolver.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    /// Optional human-readable comment. Behaviorally equivalent to
+    /// [`note`](Self::note) — preserved on round-trip, ignored by
+    /// the resolver. Accepted for symmetry with the top-level
+    /// [`LogicalModule::comment`] and per-[`Member::comment`] fields,
+    /// so authors who reach for `comment:` here aren't surprised by
+    /// a `deny_unknown_fields` rejection. Prefer `comment:` for
+    /// multi-line prose; `note:` remains valid for one-liners.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub comment: Option<String>,
 }
 
 /// Default value the [`UnassignedMode::CatchallFile`] target path

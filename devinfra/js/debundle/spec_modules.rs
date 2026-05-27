@@ -246,6 +246,37 @@ mod tests {
     }
 
     #[test]
+    fn read_module_file_accepts_comment_field_on_anonymous_statement() {
+        // `AnonymousStatement` accepts `comment:` alongside `note:`
+        // (both `Option<String>`, both purely round-tripped). This
+        // exists because authors naturally reach for `comment:` —
+        // it's the spelling used at module and member level — and
+        // `deny_unknown_fields` would otherwise reject the entry
+        // with a cryptic "unknown field" error.
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("x.yaml");
+        fs::write(
+            &path,
+            "anonymous_statements:\n  - match: \"foo();\"\n    comment: |\n      Side-effecting \
+             registration\n      from the bundled vendor blob.\n  - match: \"bar();\"\n    note: \
+             one-liner note\n",
+        )
+        .unwrap();
+        let module = read_module_file(&path).unwrap();
+        assert_eq!(module.anonymous_statements.len(), 2);
+        assert_eq!(
+            module.anonymous_statements[0].comment.as_deref(),
+            Some("Side-effecting registration\nfrom the bundled vendor blob.\n"),
+        );
+        assert!(module.anonymous_statements[0].note.is_none());
+        assert_eq!(
+            module.anonymous_statements[1].note.as_deref(),
+            Some("one-liner note"),
+        );
+        assert!(module.anonymous_statements[1].comment.is_none());
+    }
+
+    #[test]
     fn is_residual_module_path_matches_residual_subtree_only() {
         assert!(is_residual_module_path("residual"));
         assert!(is_residual_module_path("residual/unhandled"));

@@ -286,6 +286,32 @@ named home.
 a one-liner. Its only non-`asset_map` neighbor is the module that
 mounts `<X />`. Move `X` into that consumer's YAML.
 
+### Commenting `anonymous_statements:` entries
+
+Each `anonymous_statements:` entry accepts an optional `comment:`
+**or** `note:` field — both are `Option<String>`, both are
+preserved on round-trip, and neither is consumed by the resolver.
+Prefer `comment:` (a YAML block scalar) for multi-line prose
+explaining what the side-effecting statement does and why it
+belongs to this module; `note:` is fine for a one-line label.
+
+```yaml
+anonymous_statements:
+  - match: '__decorate([Z], $g.prototype, "invites");'
+    comment: |
+      MobX-style decorator wiring for the `invites` getter on
+      the chat-window class — emitted as a sibling top-level
+      statement by Babel, lives here so the class and its
+      decorators move together.
+  - match: "registerPlugin(foo);"
+    note: side-effecting registration
+```
+
+`comment:` is accepted on `anonymous_statements:` entries even
+though the field originated at module and per-member level — the
+spec rejects unknown fields otherwise, and authors who reach for
+the familiar spelling shouldn't hit a cryptic parse error.
+
 ## Workflow: merging two modules
 
 ```bash
