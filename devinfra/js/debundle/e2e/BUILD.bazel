@@ -24,6 +24,22 @@ rust_library(
     ],
 )
 
+# Standard e2e tests: shell out to the built debundler binary against
+# a fixture spec and assert on the emitted artifact tree. They do not
+# call into the `:analysis` Rust library — splitting that dep off
+# avoids dragging the library through every test's compile graph.
+_STANDARD_E2E_DEPS = [
+    ":support",
+    "@crates//:serde",
+    "@crates//:serde_json",
+    "@crates//:serde_yaml",
+    "@crates//:swc_common",
+    "@crates//:swc_ecma_ast",
+    "@crates//:swc_ecma_parser",
+    "@crates//:tempfile",
+    "@rules_rust//tools/runfiles",
+]
+
 [
     rust_test(
         name = name,
@@ -34,18 +50,7 @@ rust_library(
             "@nodejs_linux_amd64//:bin/node",
         ],
         edition = "2024",
-        deps = [
-            ":support",
-            "//devinfra/js/debundle:analysis",
-            "@crates//:serde",
-            "@crates//:serde_json",
-            "@crates//:serde_yaml",
-            "@crates//:swc_common",
-            "@crates//:swc_ecma_ast",
-            "@crates//:swc_ecma_parser",
-            "@crates//:tempfile",
-            "@rules_rust//tools/runfiles",
-        ],
+        deps = _STANDARD_E2E_DEPS,
     )
     for name in [
         "anonymous_statement_test",
@@ -64,19 +69,14 @@ rust_library(
         "missing_binding_member_test",
         "residual_member_rename_test",
         "source_order_emit_test",
-        "realizability_test",
         "cross_module_emission_test",
         "purity_test",
-        "owner_graph_purity_reason_test",
         "import_coalescing_test",
         "object_literal_import_collapse_test",
         "object_literal_return_shorthand_drops_import_test",
         "duplicate_export_test",
         "at_init_promotion_nested_closure_test",
         "at_init_promotion_post_await_test",
-        "at_init_promotion_fndecl_direct_read_test",
-        "at_init_cross_module_call_body_reads_test",
-        "at_init_s_chain_dataflow_test",
         "auto_grown_export_alias_collision_test",
         "runtime_tdz_on_imported_class_test",
         "accepted_spec_runs_under_node_test",
@@ -84,6 +84,30 @@ rust_library(
         "mediator_reaches_asymmetric_cycle_test",
         "namespace_aggregator_split_tdz_test",
         "spec_comments_test",
+    ]
+]
+
+# E2E tests that also inspect the in-process analysis types
+# (`OwnerGraphReport`, `BindingReport`, etc.) emitted alongside the
+# debundler's text output. These need a direct dep on `:analysis`.
+[
+    rust_test(
+        name = name,
+        srcs = ["{}.rs".format(name)],
+        crate_root = "{}.rs".format(name),
+        data = [
+            "//devinfra/js/debundle",
+            "@nodejs_linux_amd64//:bin/node",
+        ],
+        edition = "2024",
+        deps = _STANDARD_E2E_DEPS + ["//devinfra/js/debundle:analysis"],
+    )
+    for name in [
+        "realizability_test",
+        "owner_graph_purity_reason_test",
+        "at_init_promotion_fndecl_direct_read_test",
+        "at_init_cross_module_call_body_reads_test",
+        "at_init_s_chain_dataflow_test",
     ]
 ]
 
