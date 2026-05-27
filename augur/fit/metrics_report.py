@@ -33,8 +33,8 @@ from augur.fit.data import load_historical
 from augur.fit.exogenous_model import FittableScorable, Scorable
 from augur.fit.metrics import held_out_predictive_score, multi_step_predictive_score, rolling_origin_predictive_score
 from augur.model.independent_exogenous import IndependentExogenousProviderConfig
-from augur.model.path_models.models.vecm import VecmConfig, VecmModel
 from augur.model.path_models.scenarios import HistoricalSeries
+from augur.model.vecm import VecmConfig, VecmModel
 from util.bazel.runfiles import get_required_path
 
 

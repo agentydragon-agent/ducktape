@@ -9,18 +9,24 @@ so the simulator never has to be told about prices out of band.
 
 ```yaml
 exogenous_provider:
-  # Pre-trained VECM provider — load the trained blob at startup, no fitting.
-  type: vecm
-  # /opt/augur/... is where //augur/fit/calibrated:trained_vecm_image_layer
-  # bakes the blob in the augur OCI image. Leave null to fall back to the
-  # runfiles location of the same blob (used by Bazel-driven dev binaries).
-  trained_blob: /opt/augur/trained_vecm.npz
-  latest_observations: {sp500: 5500.0, ...}
-  current_mortgage30_rate_pct: 6.5
-  private_equity_prices_usd: {private_equity_x: 50.0}
-  location_series_sources:
-    home_value: {san_francisco_ca: home, vallejo_ca: vallejo_home}
-    rent: {san_francisco_ca: rent, ...}
+  # Composite provider: a macro model owns public liquid/macro series, while a
+  # trained private-equity component owns `private_equity:*` prices and tender
+  # opportunity events. VECM intentionally does not synthesize PE fallbacks.
+  type: composite
+  macro:
+    type: vecm
+    # /opt/augur/... is where //augur/fit/calibrated:trained_vecm_image_layer
+    # bakes the blob in the augur OCI image. Leave null to fall back to the
+    # runfiles location of the same blob (used by Bazel-driven dev binaries).
+    trained_blob: /opt/augur/trained_vecm.npz
+    latest_observations: {sp500: 5500.0, ...}
+    current_mortgage30_rate_pct: 6.5
+    location_series_sources:
+      home_value: {san_francisco_ca: home, vallejo_ca: vallejo_home}
+      rent: {san_francisco_ca: rent, ...}
+  private_equity:
+    type: trained_private_equity
+    trained_model_path: /etc/augur/openai_private_equity_model.json
 ```
 
 ```yaml
@@ -47,13 +53,37 @@ discriminated union that ties them together for Pydantic's type dispatcher.
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import Field
 
+from augur.model.composite_exogenous import CompositeExogenousModel
 from augur.model.independent_exogenous import IndependentExogenousProviderConfig
-from augur.model.path_models.models.vecm import VecmExogenousProviderConfig
+from augur.model.schemas import FrozenModel
+from augur.model.trained_private_equity import TrainedPrivateEquityProviderConfig
+from augur.model.vecm import VecmExogenousProviderConfig
+
+BasicExogenousProviderConfig = Annotated[
+    IndependentExogenousProviderConfig | VecmExogenousProviderConfig | TrainedPrivateEquityProviderConfig,
+    Field(discriminator="type"),
+]
+
+
+class CompositeExogenousProviderConfig(FrozenModel):
+    type: Literal["composite"] = "composite"
+    macro: BasicExogenousProviderConfig
+    private_equity: BasicExogenousProviderConfig
+
+    def realize_model(self) -> CompositeExogenousModel:
+        return CompositeExogenousModel(
+            macro=self.macro.realize_model(), private_equity=self.private_equity.realize_model()
+        )
+
 
 ExogenousProviderConfig = Annotated[
-    IndependentExogenousProviderConfig | VecmExogenousProviderConfig, Field(discriminator="type")
+    IndependentExogenousProviderConfig
+    | VecmExogenousProviderConfig
+    | TrainedPrivateEquityProviderConfig
+    | CompositeExogenousProviderConfig,
+    Field(discriminator="type"),
 ]

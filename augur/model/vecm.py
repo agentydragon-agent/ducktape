@@ -20,10 +20,9 @@ of truth used by:
   closed form at h=1, MC-fitted Gaussian at h>1.
 - `VecmModel.sample(request)` — rolls the recurrence forward stochastically
   per rollout, converts log-level paths to multipliers, dispatches augur
-  series ids (inflation, sp500, home_value:*, rent:*, private_equity:*,
-  crypto:*) onto factor paths via `location_series_sources`, scales by
-  the deployment's `latest_observations`, populates tender events, and
-  returns a `SampledExogenousBundle`.
+  series ids (inflation, sp500, home_value:*, rent:*, crypto:*) onto factor
+  paths via `location_series_sources`, scales by the deployment's
+  `latest_observations`, and returns a `SampledExogenousBundle`.
 
 VecmModel implements Sampler + Fittable + Scorable from one class — the
 trainable thing and the runtime sampler are the same object, parameterised
@@ -77,10 +76,6 @@ from util.bazel.runfiles import get_required_path
 # when the deployment config leaves `trained_blob` unset — see
 # `VecmExogenousProviderConfig.realize_model`.
 _BUNDLED_VECM_BLOB_RUNFILE = "_main/augur/fit/calibrated/trained_vecm.npz"
-
-# Tender / sale opportunity events repeat at a fixed cadence. Deterministic per
-# rollout — same months across paths, simplifies the bundle event masks.
-_TENDER_INTERVAL_MONTHS = 12
 
 # Sample count for h>1 MC predictive density.
 _MC_HORIZON_SAMPLES = 5000
@@ -225,10 +220,10 @@ class VecmModel:
     1. Fit results (factor_names, n_factors, params, train_log_levels):
        populated by `fit(historical)` or `from_blob(...)`. Define the
        statistical model.
-    2. Deployment-layer config (latest_observations, location_series_sources,
-       private_equity_prices_usd): set by `VecmExogenousProviderConfig.realize_model`
-       from YAML. Define how factor paths map onto augur series ids and
-       how multipliers scale to absolute levels.
+    2. Deployment-layer config (latest_observations, location_series_sources):
+       set by `VecmExogenousProviderConfig.realize_model` from YAML. Define how
+       factor paths map onto augur series ids and how multipliers scale to
+       absolute levels.
     3. Provenance ids (exogenous_model_version_id, evidence_set_id,
        calibration_artifact_id): set after fit or load via
        `_compute_provenance`. Surface as bundle metadata.
@@ -245,7 +240,6 @@ class VecmModel:
 
     # Deployment-layer config.
     latest_observations: dict[str, Any] = field(default_factory=dict)
-    private_equity_prices_usd: dict[str, float] = field(default_factory=dict)
     location_series_sources: LocationSeriesSources | None = None
 
     # Provenance.
@@ -324,14 +318,10 @@ class VecmModel:
         path_by_factor = {
             factor_name: multipliers[:, :, factor_index] for factor_index, factor_name in enumerate(factor_names)
         }
-        shape = (rollout_count, horizon_months + 1)
-        private_equity_events = np.zeros(shape, dtype=np.bool_)
-        private_equity_events[:, _TENDER_INTERVAL_MONTHS : horizon_months + 1 : _TENDER_INTERVAL_MONTHS] = True
-
         level_blocks = [
             series_levels_frame(
                 series_id,
-                self._level_series(series_id, path_by_factor=path_by_factor, shape=shape),
+                self._level_series(series_id, path_by_factor=path_by_factor),
                 rollout_count=rollout_count,
                 horizon_months=horizon_months,
             )
@@ -339,10 +329,7 @@ class VecmModel:
         ]
         event_blocks = [
             series_events_frame(
-                event_id,
-                self._event_series(event_id, private_equity_events=private_equity_events),
-                rollout_count=rollout_count,
-                horizon_months=horizon_months,
+                event_id, self._event_series(event_id), rollout_count=rollout_count, horizon_months=horizon_months
             )
             for event_id in sorted(request.required_event_series)
         ]
@@ -357,8 +344,6 @@ class VecmModel:
                 "scenario_generator_version_id": "vecm_numpyro:v1",
                 "evidence_set_id": self.evidence_set_id,
                 "calibration_artifact_id": self.calibration_artifact_id,
-                "private_equity_prices_usd": dict(self.private_equity_prices_usd),
-                "event_stream_ids": ("private_equity_sale_opportunity_event",),
                 "notes": ("sampled by VecmModel (NumPyro)",),
                 "exogenous_provider_label": self.label,
             },
@@ -385,7 +370,6 @@ class VecmModel:
         *,
         latest_observations: Mapping[str, Any],
         location_series_sources: LocationSeriesSources,
-        private_equity_prices_usd: Mapping[str, float],
         evidence_source_id: str,
         config: VecmConfig | None = None,
     ) -> VecmModel:
@@ -405,7 +389,6 @@ class VecmModel:
             params=params,
             train_log_levels=train_log_levels,
             latest_observations=dict(latest_observations),
-            private_equity_prices_usd={k: float(v) for k, v in private_equity_prices_usd.items()},
             location_series_sources=location_series_sources,
         )
         model._compute_provenance(evidence_source_id)
@@ -479,9 +462,7 @@ class VecmModel:
 
     # ──────────────────────── Internal: bundle dispatch ────────────────────────
 
-    def _level_series(
-        self, series_id: str, *, path_by_factor: dict[str, np.ndarray], shape: tuple[int, int]
-    ) -> np.ndarray:
+    def _level_series(self, series_id: str, *, path_by_factor: dict[str, np.ndarray]) -> np.ndarray:
         if series_id == INFLATION_SERIES_ID:
             return self._factor_level(INFLATION_SERIES_ID, path_by_factor=path_by_factor)
         if series_id == SP500_SERIES_ID:
@@ -491,20 +472,22 @@ class VecmModel:
         if location_id := series_suffix(series_id, RENT_SERIES_PREFIX):
             return self._factor_level(self._location_factor("rent", location_id), path_by_factor=path_by_factor)
         if (issuer_id := series_suffix(series_id, PRIVATE_EQUITY_SERIES_PREFIX)) is not None:
-            try:
-                price = self.private_equity_prices_usd[issuer_id]
-            except KeyError as error:
-                raise ValueError(f"VECM private_equity_prices_usd has no entry for issuer {issuer_id!r}") from error
-            return np.full(shape, price, dtype="float64")
+            raise ValueError(
+                f"VECM cannot sample private-equity level series for issuer {issuer_id!r}; "
+                "configure a trained_private_equity component instead"
+            )
         if series_suffix(series_id, CRYPTO_SERIES_PREFIX) is not None:
             # Crypto factor names match the wire id exactly (`crypto:btc`, `crypto:eth`), so the
             # factor lookup is direct — no prefix-stripping translation table needed.
             return self._factor_level(series_id, path_by_factor=path_by_factor)
         raise ValueError(f"VECM exogenous model cannot sample level series {series_id!r}")
 
-    def _event_series(self, event_id: str, *, private_equity_events: np.ndarray) -> np.ndarray:
-        if series_suffix(event_id, PRIVATE_EQUITY_SALE_EVENT_PREFIX) is not None:
-            return private_equity_events
+    def _event_series(self, event_id: str) -> np.ndarray:
+        if (issuer_id := series_suffix(event_id, PRIVATE_EQUITY_SALE_EVENT_PREFIX)) is not None:
+            raise ValueError(
+                f"VECM cannot sample private-equity event series for issuer {issuer_id!r}; "
+                "configure a trained_private_equity component instead"
+            )
         raise ValueError(f"VECM exogenous model cannot sample event series {event_id!r}")
 
     def _location_factor(self, kind: Literal["home_value", "rent"], location_id: str) -> str:
@@ -599,13 +582,6 @@ class VecmExogenousProviderConfig(FrozenModel):
         description="Latest observed series state at the start of the simulation horizon (factor → value)."
     )
     current_mortgage30_rate_pct: float
-    private_equity_prices_usd: dict[str, float] = Field(
-        default_factory=dict,
-        description=(
-            "Per-issuer current per-unit private-equity price. Issuer ids match "
-            "the `private_equity:<issuer>` series suffix."
-        ),
-    )
     location_series_sources: LocationSeriesSourcesConfig
 
     def realize_model(self) -> VecmModel:
@@ -616,6 +592,5 @@ class VecmExogenousProviderConfig(FrozenModel):
             blob_path,
             latest_observations=self.latest_observations,
             location_series_sources=LocationSeriesSources.from_config(self.location_series_sources),
-            private_equity_prices_usd=self.private_equity_prices_usd,
             evidence_source_id=str(blob_path),
         )

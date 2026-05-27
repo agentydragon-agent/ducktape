@@ -27,7 +27,9 @@ from augur.api.finance import FinanceSnapshot
 from augur.api.local_regulation import LocalRegulation
 from augur.api.portfolio import PortfolioConfig
 from augur.api.schemas import ApiModel
-from augur.model.exogenous_provider_config import ExogenousProviderConfig
+from augur.model.exogenous_provider_config import CompositeExogenousProviderConfig, ExogenousProviderConfig
+from augur.model.trained_private_equity import TrainedPrivateEquityProviderConfig
+from augur.model.vecm import VecmExogenousProviderConfig
 
 AUGUR_CONFIG_PATH_ENV_VAR = "AUGUR_CONFIG_PATH"
 DEFAULT_AUGUR_CONFIG_PATH = Path("/etc/augur/config.yaml")
@@ -125,12 +127,12 @@ class Config(ApiModel):
 def load_augur_config(path: Path) -> Config:
     """Parse + validate a Config from a YAML file.
 
-    Relative `property_source.properties_path` and `property_source.asset_dir`
-    are anchored against the yaml's parent directory — useful for ConfigMap
-    mounts where the yaml and the property data live side-by-side (e.g.
-    `/etc/augur/{config.yaml,properties.json}`)."""
+    Relative deployment-owned file paths are anchored against the yaml's parent
+    directory — useful for ConfigMap mounts where the yaml and adjacent data live
+    side-by-side (e.g. `/etc/augur/{config.yaml,properties.json}`)."""
     config = Config.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
-    return _anchor_property_source_paths(config, base_dir=path.parent)
+    config = _anchor_property_source_paths(config, base_dir=path.parent)
+    return _anchor_exogenous_provider_paths(config, base_dir=path.parent)
 
 
 def _anchor_property_source_paths(config: Config, *, base_dir: Path) -> Config:
@@ -148,6 +150,33 @@ def _anchor_property_source_paths(config: Config, *, base_dir: Path) -> Config:
             "property_source": source.model_copy(update={"properties_path": properties_path, "asset_dir": asset_dir})
         }
     )
+
+
+def _anchor_exogenous_provider_paths(config: Config, *, base_dir: Path) -> Config:
+    provider = _anchor_provider_paths(config.exogenous_provider, base_dir=base_dir)
+    if provider == config.exogenous_provider:
+        return config
+    return config.model_copy(update={"exogenous_provider": provider})
+
+
+def _anchor_provider_paths(provider: ExogenousProviderConfig, *, base_dir: Path) -> ExogenousProviderConfig:
+    if isinstance(provider, TrainedPrivateEquityProviderConfig):
+        trained_model_path = provider.trained_model_path
+        if trained_model_path.is_absolute():
+            return provider
+        return provider.model_copy(update={"trained_model_path": (base_dir / trained_model_path).resolve()})
+    if isinstance(provider, VecmExogenousProviderConfig):
+        trained_blob = provider.trained_blob
+        if trained_blob is None or trained_blob.is_absolute():
+            return provider
+        return provider.model_copy(update={"trained_blob": (base_dir / trained_blob).resolve()})
+    if isinstance(provider, CompositeExogenousProviderConfig):
+        macro = _anchor_provider_paths(provider.macro, base_dir=base_dir)
+        private_equity = _anchor_provider_paths(provider.private_equity, base_dir=base_dir)
+        if macro == provider.macro and private_equity == provider.private_equity:
+            return provider
+        return provider.model_copy(update={"macro": macro, "private_equity": private_equity})
+    return provider
 
 
 def resolve_augur_config_path() -> Path:

@@ -92,14 +92,11 @@ def test_read_jsonl_groups_tender_events_by_issuer_and_trajectory(tmp_path: Path
     assert acme.trajectories[1] == (TenderEvent(month_index=9, price_per_share_usd=90.0),)
 
 
-def test_read_jsonl_synthesizes_empty_trajectory_set_for_issuers_with_no_events(tmp_path: Path) -> None:
-    """An issuer listed in `initial_marks` but absent from the artifact gets an empty
-    trajectory list — useful for positions held but with no tender history fit yet."""
-
+def test_read_jsonl_rejects_issuers_with_no_modeled_trajectories(tmp_path: Path) -> None:
     artifact = _write_jsonl(tmp_path / "pe.jsonl", [])
-    sets = read_private_equity_trajectories_jsonl(artifact, initial_marks={"holdco": 12.5})
-    assert sets["holdco"].initial_mark_usd == 12.5
-    assert sets["holdco"].trajectories == ()
+
+    with pytest.raises(ValueError, match="no modeled trajectories"):
+        read_private_equity_trajectories_jsonl(artifact, initial_marks={"holdco": 12.5})
 
 
 def test_read_jsonl_rejects_unknown_issuer(tmp_path: Path) -> None:
@@ -179,21 +176,15 @@ def test_sampler_overlay_cycles_trajectories_by_seed_modulo() -> None:
     assert events[3, 4]
 
 
-def test_sampler_overlay_emits_flat_initial_mark_with_no_trajectories() -> None:
-    """An issuer with `trajectories=()` yields a flat initial mark across the whole horizon
-    and zero events — equivalent to "this position is held but never tenders during the sim"."""
-
+def test_sampler_overlay_rejects_empty_trajectory_set() -> None:
     trajectory_set = PrivateEquityTrajectorySet(issuer_id="holdco", initial_mark_usd=42.0, trajectories=())
     sampler = PreSampledPrivateEquitySampler(
         underlying=_MinimalSampler(), trajectories_by_issuer={"holdco": trajectory_set}
     )
     request = ExogenousSamplingRequest(horizon_months=3, rollout_seeds=(7,))
-    bundle = sampler.sample(request)
 
-    levels = bundle.level_matrix(private_equity_series_id("holdco"), rollout_count=1, horizon_months=3)
-    np.testing.assert_array_equal(levels[0], np.array([42.0, 42.0, 42.0, 42.0]))
-    events = bundle.event_matrix(private_equity_sale_event_id("holdco"), rollout_count=1, horizon_months=3)
-    np.testing.assert_array_equal(events[0], np.zeros(4, dtype=np.bool_))
+    with pytest.raises(ValueError, match="flat private-equity fallbacks"):
+        sampler.sample(request)
 
 
 def test_sampler_overlay_replaces_pre_existing_pe_series_from_underlying() -> None:

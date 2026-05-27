@@ -1,6 +1,6 @@
 """Pre-sampled private-equity trajectories: ingest + Sampler overlay.
 
-A separate trainer (initially `gaffer-private/x/openai_stock_modeling/`) produces a
+A separate trainer produces a
 JSONL artifact with sampled per-rollout tender-event paths per issuer. This module
 parses the artifact and exposes a `Sampler` wrapper that bolts the PE trajectories
 onto an underlying exogenous bundle (VECM, independent, …) so the sim sees a unified
@@ -24,8 +24,9 @@ Trajectory selection per (rollout, issuer) is deterministic:
 
 The initial mark (sim t=0 valuation) comes from `initial_marks` (typically sourced
 from the portfolio config's `unit_value_usd`), not from the artifact, so the user's
-known-current-mark anchors the rollout. The artifact only supplies future tender
-events and their realized prices.
+known-current-mark anchors the rollout. The artifact must still supply modeled
+future trajectories for every issuer; missing issuers fail loudly instead of
+falling back to flat marks.
 """
 
 from __future__ import annotations
@@ -108,13 +109,12 @@ def read_private_equity_trajectories_jsonl(
         result[issuer] = PrivateEquityTrajectorySet(
             issuer_id=issuer, initial_mark_usd=float(initial_marks[issuer]), trajectories=ordered_trajectories
         )
-    # Any issuer with an initial mark but no trajectories in the artifact is also a
-    # valid case (e.g. position held but no tender history fit yet) — emit a flat
-    # never-tenders trajectory set so the sim can still evaluate the level series.
-    for issuer, mark in initial_marks.items():
-        if issuer in result:
-            continue
-        result[issuer] = PrivateEquityTrajectorySet(issuer_id=issuer, initial_mark_usd=float(mark), trajectories=())
+    missing = sorted(set(initial_marks) - set(result))
+    if missing:
+        raise ValueError(
+            f"PE trajectory artifact {path} has no modeled trajectories for issuer(s) {missing}; "
+            "train a private-equity model or remove the private-equity holding"
+        )
     return result
 
 
@@ -124,8 +124,7 @@ class PreSampledPrivateEquitySampler:
 
     `sample()` calls the underlying provider, strips out any pre-existing
     `private_equity:*` level or `private_equity_sale_opportunity:*` event series
-    (the artifact is the source of truth for PE — no double-counting if the
-    underlying VECM also has placeholder PE prices), then appends our materialized
+    (the artifact is the source of truth for PE), then appends our materialized
     PE level + event series for every configured issuer.
     """
 
@@ -179,14 +178,16 @@ def _materialize_pe_levels(
 
     Each rollout starts at the initial mark; at each tender month within its trajectory the
     mark steps to the tender's realized price and carries forward until the next tender (or
-    the end of the horizon). With no trajectories in the set, every rollout sees a flat
-    initial mark across the whole horizon.
+    the end of the horizon).
     """
 
     rollout_count = len(rollout_seeds)
     levels = np.full((rollout_count, horizon_months + 1), trajectory_set.initial_mark_usd, dtype=np.float64)
     if not trajectory_set.trajectories:
-        return levels
+        raise ValueError(
+            f"private-equity issuer {trajectory_set.issuer_id!r} has no modeled trajectories; "
+            "flat private-equity fallbacks are not supported"
+        )
     trajectory_count = len(trajectory_set.trajectories)
     for rollout_idx, seed in enumerate(rollout_seeds):
         trajectory = trajectory_set.trajectories[seed % trajectory_count]
@@ -209,7 +210,10 @@ def _materialize_pe_events(
     rollout_count = len(rollout_seeds)
     events = np.zeros((rollout_count, horizon_months + 1), dtype=np.bool_)
     if not trajectory_set.trajectories:
-        return events
+        raise ValueError(
+            f"private-equity issuer {trajectory_set.issuer_id!r} has no modeled trajectories; "
+            "flat private-equity fallbacks are not supported"
+        )
     trajectory_count = len(trajectory_set.trajectories)
     for rollout_idx, seed in enumerate(rollout_seeds):
         trajectory = trajectory_set.trajectories[seed % trajectory_count]

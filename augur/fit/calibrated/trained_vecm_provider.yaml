@@ -135,6 +135,5 @@ location_series_sources:
     mare_island_vallejo_ca: rent:san_francisco_ca
     san_francisco_ca: rent:san_francisco_ca
     vallejo_ca: rent:san_francisco_ca
-private_equity_prices_usd: {}
 trained_blob: /home/agentydragon/code/ducktape/augur/fit/calibrated/trained_vecm.npz
 type: vecm

@@ -27,7 +27,7 @@ import yaml
 from augur.fit.data import DEFAULT_CONFIG_PATH, load_evidence
 from augur.fit.evidence_config import load_evidence_config
 from augur.model.exogenous_provider_config import VecmExogenousProviderConfig
-from augur.model.path_models.models.vecm import VecmConfig, VecmModel
+from augur.model.vecm import VecmConfig, VecmModel
 
 _SUPPORTED_MODEL_LABELS = ("vecm",)
 

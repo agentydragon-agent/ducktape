@@ -91,7 +91,7 @@ py_binary(
         ":exogenous_model",
         ":metrics",
         "//augur/model:independent_exogenous",
-        "//augur/model/path_models/models:vecm",
+        "//augur/model:vecm",
         "//util/bazel:runfiles",
         "@pypi//pyyaml",
     ],
@@ -105,7 +105,7 @@ py_library(
         ":data",
         ":evidence_config",
         "//augur/model:exogenous_provider_config",
-        "//augur/model/path_models/models:vecm",
+        "//augur/model:vecm",
         "@pypi//pyyaml",
     ],
 )
@@ -114,6 +114,25 @@ py_binary(
     name = "train",
     main_module = "augur.fit.main",
     deps = [":train_lib"],
+)
+
+py_library(
+    name = "private_equity",
+    srcs = ["private_equity.py"],
+    deps = [
+        "//augur/model:schemas",
+        "//augur/model:trained_private_equity",
+        "@pypi//numpy",
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+        "@pypi//types_pyyaml",
+    ],
+)
+
+py_binary(
+    name = "train_private_equity",
+    main_module = "augur.fit.private_equity",
+    deps = [":private_equity"],
 )
 
 py_test(
@@ -151,6 +170,19 @@ py_test(
         "@pypi//jax",
         "@pypi//numpy",
         "@pypi//numpyro",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "private_equity_test",
+    srcs = ["private_equity_test.py"],
+    deps = [
+        ":private_equity",
+        "//augur/model:exogenous",
+        "//augur/model:series",
+        "//augur/model:trained_private_equity",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

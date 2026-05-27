@@ -18,8 +18,8 @@ from pydantic import TypeAdapter
 from augur.fit.main import main as train_main
 from augur.model.exogenous import ExogenousSamplingRequest
 from augur.model.exogenous_provider_config import ExogenousProviderConfig
-from augur.model.independent_exogenous import IndependentExogenousProviderConfig
 from augur.model.series import home_value_series_id, rent_series_id
+from augur.model.vecm import VecmExogenousProviderConfig
 
 _ADAPTER: TypeAdapter[ExogenousProviderConfig] = TypeAdapter(ExogenousProviderConfig)
 
@@ -37,7 +37,7 @@ def test_train_then_load_and_sample(model_label: str, tmp_path: Path) -> None:
     # Trainer only emits the active trained provider config; narrow away the
     # other discriminated-union variants so the trained-provider fields are
     # accessible below.
-    assert not isinstance(parsed, IndependentExogenousProviderConfig)
+    assert isinstance(parsed, VecmExogenousProviderConfig)
     assert parsed.type == model_label
     assert parsed.trained_blob == out_blob
     assert parsed.latest_observations  # non-empty; exact keys depend on the source-data schema
@@ -56,7 +56,6 @@ def test_train_then_load_and_sample(model_label: str, tmp_path: Path) -> None:
     )
 
     assert str(sampled.metadata["exogenous_model_version_id"]).startswith("model_version:")
-    assert sampled.metadata["private_equity_prices_usd"] == {}
     assert {
         row["series_id"] for row in sampled.levels.select("series_id").unique().iter_rows(named=True)
     } == required_level_series

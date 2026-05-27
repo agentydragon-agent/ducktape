@@ -9,12 +9,12 @@ across machines.
 from __future__ import annotations
 
 import numpy as np
+import pytest
 import pytest_bazel
 from numpyro import distributions as dist
 
 from augur.model.exogenous import ExogenousSamplingRequest
 from augur.model.location_series_sources import LocationSeriesSources
-from augur.model.path_models.models.vecm import VecmConfig, VecmModel
 from augur.model.path_models.scenarios import HistoricalSeries
 from augur.model.series import (
     INFLATION_SERIES_ID,
@@ -25,6 +25,7 @@ from augur.model.series import (
     private_equity_series_id,
     rent_series_id,
 )
+from augur.model.vecm import VecmConfig, VecmModel
 
 
 def _series_from_log_levels(log_levels: np.ndarray) -> HistoricalSeries:
@@ -116,7 +117,6 @@ class TestVecmModel:
             "rent:san_francisco_ca": 3000.0,
             "inflation": 320.0,
         }
-        model.private_equity_prices_usd = {"private_equity_x": 50.0}
         model.location_series_sources = LocationSeriesSources(
             home_value={"san_francisco_ca": "home_value:san_francisco_ca"},
             rent={"san_francisco_ca": "rent:san_francisco_ca"},
@@ -133,10 +133,8 @@ class TestVecmModel:
                         INFLATION_SERIES_ID,
                         home_value_series_id("san_francisco_ca"),
                         rent_series_id("san_francisco_ca"),
-                        private_equity_series_id("private_equity_x"),
                     }
                 ),
-                required_event_series=frozenset({private_equity_sale_event_id("private_equity_x")}),
             )
         )
 
@@ -148,13 +146,25 @@ class TestVecmModel:
         assert sampled.level_matrix(home_value_series_id("san_francisco_ca"), rollout_count=2, horizon_months=12)[
             :, 0
         ].tolist() == [1_000_000.0, 1_000_000.0]
-        assert (
-            sampled.event_matrix(
-                private_equity_sale_event_id("private_equity_x"), rollout_count=2, horizon_months=12
-            ).dtype
-            == np.bool_
-        )
         assert sampled.metadata["scenario_generator_id"] == "vecm_numpyro"
+
+        with pytest.raises(ValueError, match="trained_private_equity"):
+            model.sample(
+                ExogenousSamplingRequest(
+                    horizon_months=12,
+                    rollout_seeds=(7, 8),
+                    required_level_series=frozenset({private_equity_series_id("private_equity_x")}),
+                )
+            )
+
+        with pytest.raises(ValueError, match="trained_private_equity"):
+            model.sample(
+                ExogenousSamplingRequest(
+                    horizon_months=12,
+                    rollout_seeds=(7, 8),
+                    required_event_series=frozenset({private_equity_sale_event_id("private_equity_x")}),
+                )
+            )
 
     def test_sample_anchors_crypto_factors_to_latest_close(self) -> None:
         rng = np.random.default_rng(456)

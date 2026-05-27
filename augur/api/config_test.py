@@ -22,7 +22,9 @@ from augur.api.config import (
 from augur.api.finance import FinanceSnapshot
 from augur.api.local_regulation import LocalRegulation, TaxRegime
 from augur.api.portfolio import HoldingPositionConfig, HoldingTaxLotConfig, PortfolioAccountConfig, PortfolioConfig
+from augur.model.exogenous_provider_config import CompositeExogenousProviderConfig
 from augur.model.independent_exogenous import IndependentExogenousProviderConfig
+from augur.model.trained_private_equity import TrainedPrivateEquityProviderConfig
 
 
 def _minimal_config(**overrides: object) -> Config:
@@ -192,6 +194,52 @@ def test_yaml_round_trip_through_dump_and_load(tmp_path) -> None:
     reloaded = load_augur_config(path)
 
     assert reloaded == config
+
+
+def test_config_accepts_composite_provider_with_trained_private_equity(tmp_path) -> None:
+    model_path = tmp_path / "openai_private_equity_model.json"
+    config = _minimal_config(
+        exogenous_provider={
+            "type": "composite",
+            "macro": {"type": "independent"},
+            "private_equity": {"type": "trained_private_equity", "trained_model_path": str(model_path)},
+        }
+    )
+
+    assert isinstance(config.exogenous_provider, CompositeExogenousProviderConfig)
+    assert isinstance(config.exogenous_provider.private_equity, TrainedPrivateEquityProviderConfig)
+    assert config.exogenous_provider.private_equity.trained_model_path == model_path
+
+
+def test_relative_trained_private_equity_model_path_anchors_against_yaml_dir(tmp_path) -> None:
+    (tmp_path / "properties.json").write_text("[]", encoding="utf-8")
+    (tmp_path / "openai_private_equity_model.json").write_text("{}", encoding="utf-8")
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        dump_augur_config_yaml(
+            _minimal_config(
+                property_source=PropertySourceConfig(properties_path=Path("properties.json")),
+                exogenous_provider={
+                    "type": "composite",
+                    "macro": {"type": "independent"},
+                    "private_equity": {
+                        "type": "trained_private_equity",
+                        "trained_model_path": "openai_private_equity_model.json",
+                    },
+                },
+            )
+        ),
+        encoding="utf-8",
+    )
+
+    reloaded = load_augur_config(config_path)
+
+    assert isinstance(reloaded.exogenous_provider, CompositeExogenousProviderConfig)
+    assert isinstance(reloaded.exogenous_provider.private_equity, TrainedPrivateEquityProviderConfig)
+    assert (
+        reloaded.exogenous_provider.private_equity.trained_model_path
+        == (tmp_path / "openai_private_equity_model.json").resolve()
+    )
 
 
 def test_relative_property_source_paths_anchor_against_yaml_dir(tmp_path) -> None:
