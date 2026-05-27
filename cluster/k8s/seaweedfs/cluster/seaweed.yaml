@@ -69,22 +69,42 @@ spec:
             topologyKey: kubernetes.io/hostname
 
   filer:
-    replicas: 1 # leveldb2 metadata is per-pod; can't HA without a shared backend
+    # Single replica today. postgres2 backend allows scaling later — once
+    # the cluster has been operating on Postgres for a while and we've
+    # established WAL/PITR backup is healthy, this can go to 2+.
+    replicas: 1
     config: |
-      [leveldb2]
+      [postgres2]
       enabled = true
-      dir = "/data/filerldb2"
-    # Start the IAM gRPC service (iam_pb.SeaweedIdentityAccessManagement)
-    # so the seaweedfs-operator can wire Bucket CR access via gRPC. The
-    # operator's CRD has `filer.iam: bool (default true)`, but the operator
-    # only passes `-iam=false` when explicitly false — it never propagates
-    # `-iam=true` to the weed-filer command. Without this flag the IAM
-    # gRPC service is not registered (verified via grpcurl: filer's gRPC
-    # only exposes filer_pb.SeaweedFiler without it). Bucket CRs land in
-    # Failed/BucketAlreadyExists because the operator's iam_admin gRPC
-    # call returns Unimplemented.
-    extraArgs:
-      - "-iam=true"
+      hostname = "seaweedfs-filer-db-rw.seaweedfs.svc"
+      port = 5432
+      database = "seaweedfs"
+      sslmode = "disable"
+      connection_max_idle = 100
+      connection_max_open = 100
+      connection_max_lifetime_seconds = 0
+      enableUpsert = true
+      upsertQuery = """
+        INSERT INTO "%[1]s" (dirhash, name, directory, meta)
+          VALUES($1, $2, $3, $4)
+          ON CONFLICT (dirhash, name) DO UPDATE SET
+            directory=EXCLUDED.directory,
+            meta=EXCLUDED.meta
+      """
+    # Postgres credentials override filer.toml [postgres2] keys via viper's
+    # env-var binding (WEED_<key>, dot→underscore). CNPG auto-generates the
+    # Secret seaweedfs-filer-db-app at cluster bootstrap.
+    env:
+      - name: WEED_POSTGRES2_USERNAME
+        valueFrom:
+          secretKeyRef:
+            name: seaweedfs-filer-db-app
+            key: username
+      - name: WEED_POSTGRES2_PASSWORD
+        valueFrom:
+          secretKeyRef:
+            name: seaweedfs-filer-db-app
+            key: password
     metricsPort: 9326
     nodeSelector:
       topology.kubernetes.io/zone: hil-ovh
