@@ -14,7 +14,7 @@
 
 import { useEffect, useState } from "react";
 
-import { casinoSync, useCasinoState, useSyncStatus, useMe } from "./sync.js";
+import { casinoSync, useCasinoState, useSyncStatus, useMe, useDeploymentInfo } from "./sync.js";
 
 const ACTIVE_SESSION_LS_KEY = "casino:active_session";
 
@@ -70,6 +70,7 @@ export function useCasino() {
   const activeSession = useActiveSession();
   const syncStatus = useSyncStatus();
   const me = useMe();
+  const deploymentInfo = useDeploymentInfo();
   const offline = syncStatus.kind === "offline";
   const isAdmin = !!me?.is_admin;
   const username = me?.username ?? null;
@@ -288,6 +289,7 @@ export function useCasino() {
 
   return {
     offline,
+    deploymentInfo,
     username,
     isAdmin,
     credits,

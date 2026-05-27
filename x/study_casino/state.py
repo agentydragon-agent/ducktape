@@ -1,7 +1,7 @@
 """Pydantic schemas for the Study Casino's read-side wire surface.
 
 These mirror the JSON shapes the frontend consumes from
-`GET /state`, `/me`, `/admin/users`, and `/healthz`. Keeping them as
+`GET /state`, `/me`, `/admin/users`, `/deployment`, and `/healthz`. Keeping them as
 Pydantic models — instead of `dict[str, Any]` — lets FastAPI emit
 real `components.schemas` entries in its OpenAPI doc, which the
 frontend codegen (`//x/study_casino/frontend/lib:schema_zod`)
@@ -73,6 +73,14 @@ class HealthResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     ok: bool
+
+
+class DeploymentInfo(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    image_tag: str | None = None
+    source_commit: str | None = None
+    source_commit_url: str | None = None
 
 
 class AdminUsersResponse(BaseModel):

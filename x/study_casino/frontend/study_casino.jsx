@@ -23,6 +23,7 @@ export default function StudyCasino() {
   const casino = useCasino();
   const {
     offline,
+    deploymentInfo,
     username,
     isAdmin,
     credits,
@@ -521,7 +522,55 @@ export default function StudyCasino() {
           />
         )}
       </main>
+      <DeploymentFooter deploymentInfo={deploymentInfo} />
     </div>
+  );
+}
+
+function DeploymentFooter({ deploymentInfo }) {
+  const commit = deploymentInfo?.source_commit ?? null;
+  const tag = deploymentInfo?.image_tag ?? null;
+  if (!commit && !tag) return null;
+
+  const commitLabel = commit ? commit.slice(0, 7) : "unknown";
+  const commitNode = deploymentInfo?.source_commit_url ? (
+    <a
+      className="mono"
+      href={deploymentInfo.source_commit_url}
+      target="_blank"
+      rel="noreferrer"
+      style={{ color: COLORS.gold, textDecoration: "none" }}
+    >
+      {commitLabel}
+    </a>
+  ) : (
+    <span className="mono" style={{ color: COLORS.gold }}>
+      {commitLabel}
+    </span>
+  );
+
+  return (
+    <footer
+      style={{
+        maxWidth: 1100,
+        margin: "0 auto",
+        padding: "0 24px 28px",
+        color: COLORS.creamDim,
+        fontSize: 12,
+        display: "flex",
+        justifyContent: "center",
+        gap: 8,
+        flexWrap: "wrap",
+      }}
+    >
+      <span>Deployed commit</span>
+      {commitNode}
+      {tag && (
+        <span className="mono" title={tag} style={{ opacity: 0.65 }}>
+          {tag}
+        </span>
+      )}
+    </footer>
   );
 }
 

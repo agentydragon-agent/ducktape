@@ -35,6 +35,8 @@ spec:
               containerPort: 8080
               protocol: TCP
           env:
+            - name: STUDY_CASINO_IMAGE_TAG
+              value: devel-20260521192052-4ab4c77 # {"$imagepolicy": "flux-system:study-casino:tag"}
             # Compose the SQLAlchemy URL from the CNPG-generated secret. The
             # `$(VAR)` syntax in env values is resolved by the kubelet from
             # earlier-defined env vars in the same container. `+psycopg`

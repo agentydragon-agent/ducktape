@@ -86,6 +86,20 @@ def test_healthz(client: TestClient) -> None:
     assert r.json() == {"ok": True}
 
 
+def test_deployment_reports_commit_from_runtime_image_tag(
+    tmp_path: Path, db_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("STUDY_CASINO_IMAGE_TAG", "devel-20260521192052-4ab4c77")
+    with TestClient(create_app(_settings(tmp_path, db_url))) as c:
+        r = c.get("/deployment")
+    assert r.status_code == 200
+    assert r.json() == {
+        "image_tag": "devel-20260521192052-4ab4c77",
+        "source_commit": "4ab4c77",
+        "source_commit_url": "https://github.com/agentydragon/ducktape/commit/4ab4c77",
+    }
+
+
 def test_me_returns_default_user_without_oidc(client: TestClient) -> None:
     r = client.get("/me")
     assert r.status_code == 200

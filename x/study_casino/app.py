@@ -20,6 +20,7 @@ Wire surface:
   GET  /casino/stats                    — aggregated wager/payout stats (caller)
   GET  /admin/casino/stats              — admin-only: same, for `?user=<u>`
   GET  /game-events / /ledger-events    — read-only audit listings
+  GET  /deployment                      — runtime image tag / source commit
   GET  /me / /healthz                   — auth introspection / liveness
   WS   /ws                              — broadcasts {"type":"state_changed"}
                                           to every tab of the same user
@@ -86,6 +87,7 @@ from x.study_casino.actions import (
 )
 from x.study_casino.auth import create_oidc_router, decode_session_token, make_current_user_dep
 from x.study_casino.config import Settings
+from x.study_casino.deployment import build_deployment_info
 from x.study_casino.events import (
     BlackjackOutcome,
     GameEventMutation,
@@ -108,7 +110,7 @@ from x.study_casino.games import (
 )
 from x.study_casino.models import BalanceRow, BlackjackHandRow, PrizeLogRow, PrizeRow, SessionRow
 from x.study_casino.rng import ActionRngFactory, AuditedRandom
-from x.study_casino.state import AdminUsersResponse, HealthResponse, MeResponse, StateDump
+from x.study_casino.state import AdminUsersResponse, DeploymentInfo, HealthResponse, MeResponse, StateDump
 from x.study_casino.stats import CasinoStats
 from x.study_casino.store import ActionMutation, ActionRejectedError, SqlStore
 
@@ -273,6 +275,7 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
     current_user_dep = make_current_user_dep(oidc.session_secret if oidc else None)
     admin_users = settings.admin_users
     ws_manager = _WSManager()
+    deployment_info = build_deployment_info()
 
     def is_admin(username: str) -> bool:
         return username in admin_users
@@ -357,6 +360,10 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
     @app.get("/healthz")
     def healthz() -> HealthResponse:
         return HealthResponse(ok=True)
+
+    @app.get("/deployment")
+    def deployment() -> DeploymentInfo:
+        return deployment_info
 
     @app.get("/me")
     def me(username: Annotated[str, Depends(current_user_dep)]) -> MeResponse:

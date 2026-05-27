@@ -38,6 +38,13 @@ py_library(
 )
 
 py_library(
+    name = "deployment",
+    srcs = ["deployment.py"],
+    visibility = ["//visibility:public"],
+    deps = [":state"],
+)
+
+py_library(
     name = "actions",
     srcs = ["actions.py"],
     visibility = ["//visibility:public"],
@@ -111,6 +118,7 @@ py_library(
         ":actions",
         ":auth",
         ":config",
+        ":deployment",
         ":events",
         ":games",
         ":models",
@@ -131,6 +139,7 @@ py_library(
     deps = [
         ":app",
         ":config",
+        ":deployment",
         ":state",
         ":store",
     ],

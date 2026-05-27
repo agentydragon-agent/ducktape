@@ -22,6 +22,7 @@ import {
   zActionResponse,
   zAdminUsersResponse,
   zCasinoStats,
+  zDeploymentInfo,
   zMeResponse,
   zStateDump,
   zWsStateChangedMessage,
@@ -54,6 +55,7 @@ class CasinoSync {
     this.rejection = new Observable(null);
     // { username, is_admin } once /me returns. null until then.
     this.me = new Observable(null);
+    this.deploymentInfo = new Observable(null);
 
     this._ws = null;
     this._reconnectTimer = null;
@@ -76,6 +78,7 @@ class CasinoSync {
       // /me is best-effort; if it fails we still try /state and /ws.
     }
     await this.fetchState();
+    this.fetchDeploymentInfo();
     this._connectWebSocket();
 
     // Re-sync when a backgrounded tab comes back to the foreground.
@@ -111,6 +114,16 @@ class CasinoSync {
       this.status.set({ kind: "ok", lastSyncedAt: Date.now() });
     } catch (e) {
       this.status.set({ kind: "offline", reason: `state fetch failed: ${e.message ?? e}` });
+    }
+  }
+
+  async fetchDeploymentInfo() {
+    try {
+      const resp = await fetch("/deployment", { credentials: "same-origin" });
+      if (!resp.ok) return;
+      this.deploymentInfo.set(zDeploymentInfo.parse(await resp.json()));
+    } catch {
+      // Deployment metadata is informational; keep the main app usable if it is missing.
     }
   }
 
@@ -238,6 +251,13 @@ export function useSyncRejection() {
 export function useMe() {
   const [state, setState] = useState(casinoSync.me.value);
   useEffect(() => casinoSync.me.subscribe(setState), []);
+  return state;
+}
+
+/** Subscribe to runtime deployment metadata. Returns null until /deployment loads. */
+export function useDeploymentInfo() {
+  const [state, setState] = useState(casinoSync.deploymentInfo.value);
+  useEffect(() => casinoSync.deploymentInfo.subscribe(setState), []);
   return state;
 }
 
