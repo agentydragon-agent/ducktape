@@ -386,6 +386,7 @@ pub fn run_bindings_assign(
     dry_run: bool,
     no_verify: bool,
     owner_graph_path: Option<&Path>,
+    source_root: Option<&Path>,
 ) -> Result<AssignOutcome> {
     // Step 1: dedupe moves (last-wins per sym).
     let mut by_sym: BTreeMap<String, Move> = BTreeMap::new();
@@ -545,7 +546,7 @@ pub fn run_bindings_assign(
                 })
                 .collect();
             let post_spec = post_assign_spec(modules_root, &removals, &insertions)?;
-            gate_post_edit_partition(graph_path, &post_spec)?;
+            gate_post_edit_partition(graph_path, modules_root, source_root, &post_spec)?;
         }
     }
 
@@ -720,6 +721,7 @@ pub fn run_bindings_unassign(
     dry_run: bool,
     no_verify: bool,
     owner_graph_path: Option<&Path>,
+    source_root: Option<&Path>,
 ) -> Result<UnassignOutcome> {
     // Step 1: dedupe syms (later-wins isn't meaningful here, just
     // dedupe; warn so authors don't ship typos as silent duplicates).
@@ -771,7 +773,7 @@ pub fn run_bindings_unassign(
                 })
                 .collect();
             let post_spec = post_unassign_spec(modules_root, &removals)?;
-            gate_post_edit_partition(graph_path, &post_spec)?;
+            gate_post_edit_partition(graph_path, modules_root, source_root, &post_spec)?;
         }
     }
 
@@ -1029,7 +1031,7 @@ mod tests {
             module: "dest".into(),
             readable: None,
         }];
-        let out = run_bindings_assign(root, moves, false, false, None).unwrap();
+        let out = run_bindings_assign(root, moves, false, false, None, None).unwrap();
         assert_eq!(out.moves_applied, 1);
         assert!(!root.join("src.yaml").exists(), "source should be deleted");
         let dest = read(root, "dest.yaml");
@@ -1058,7 +1060,7 @@ mod tests {
             module: "dest".into(),
             readable: None,
         }];
-        run_bindings_assign(root, moves, false, false, None).unwrap();
+        run_bindings_assign(root, moves, false, false, None, None).unwrap();
         assert!(root.join("src.yaml").exists(), "src kept due to comment");
         let src = read(root, "src.yaml");
         let doc: Value = serde_yaml::from_str(&src).unwrap();
@@ -1080,7 +1082,7 @@ mod tests {
             module: "runtime/plugins".into(),
             readable: Some("PluginSettings".into()),
         }];
-        run_bindings_assign(root, moves, false, false, None).unwrap();
+        run_bindings_assign(root, moves, false, false, None, None).unwrap();
         assert!(root.join("runtime/plugins.yaml").exists());
         let body = read(root, "runtime/plugins.yaml");
         let doc: Value = serde_yaml::from_str(&body).unwrap();
@@ -1102,7 +1104,7 @@ mod tests {
             module: "dest".into(),
             readable: None,
         }];
-        let out = run_bindings_assign(root, moves, true, false, None).unwrap();
+        let out = run_bindings_assign(root, moves, true, false, None, None).unwrap();
         assert_eq!(out.action, "dry-run");
         assert!(root.join("src.yaml").exists(), "src not deleted");
         let original = read(root, "src.yaml");

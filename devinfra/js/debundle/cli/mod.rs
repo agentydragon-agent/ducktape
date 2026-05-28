@@ -268,6 +268,10 @@ pub struct BindingsUnassignArgs {
     /// `--no-verify` is set.
     #[arg(long = "graph", env = "DEBUNDLE_GRAPH")]
     pub owner_graph_path: Option<PathBuf>,
+    /// Root used to resolve relative `source_location.source_path`
+    /// values when the gate checks anonymous statement selectors.
+    #[arg(long = "source-root", env = "DEBUNDLE_SOURCE_ROOT")]
+    pub source_root: Option<PathBuf>,
     /// Output format. Default `text` on tty, `json` on pipe.
     #[arg(long, value_enum)]
     pub format: Option<OutputFormat>,
@@ -294,6 +298,10 @@ pub struct BindingsAssignArgs {
     /// `--no-verify` is set.
     #[arg(long = "graph", env = "DEBUNDLE_GRAPH")]
     pub owner_graph_path: Option<PathBuf>,
+    /// Root used to resolve relative `source_location.source_path`
+    /// values when the gate checks anonymous statement selectors.
+    #[arg(long = "source-root", env = "DEBUNDLE_SOURCE_ROOT")]
+    pub source_root: Option<PathBuf>,
     /// Output format. Default `text` on tty, `json` on pipe.
     #[arg(long, value_enum)]
     pub format: Option<OutputFormat>,
@@ -909,6 +917,7 @@ fn run_bindings_assign_cmd(args: BindingsAssignArgs) -> Result<()> {
         args.dry_run,
         args.no_verify,
         args.owner_graph_path.as_deref(),
+        args.source_root.as_deref(),
     )?;
     let format = OutputFormat::resolve(args.format);
     print_assign_outcome(&out, format)
@@ -929,6 +938,7 @@ fn run_bindings_unassign_cmd(args: BindingsUnassignArgs) -> Result<()> {
         args.dry_run,
         args.no_verify,
         args.owner_graph_path.as_deref(),
+        args.source_root.as_deref(),
     )?;
     let format = OutputFormat::resolve(args.format);
     print_unassign_outcome(&out, format)

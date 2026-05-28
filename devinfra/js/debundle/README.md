@@ -156,52 +156,72 @@ available.
 
 ## Comments
 
-Both members and module YAMLs may carry an optional `comment:`
-field for reverse-engineering annotations. The fields are authored
-once and propagate to the emitted JS on every rebuild, so RE notes
-survive `debundle run` invocations.
+Module YAMLs and `members:` entries may carry an optional
+`comment:` field for reverse-engineering annotations. These fields
+are authored once and emit into generated JS on every rebuild, so RE
+notes survive `debundle run` invocations.
+
+`anonymous_statements:` entries may also carry `comment:` or `note:`.
+Both fields are preserved on round-trip. `comment:` emits into
+generated JS immediately before the matched anonymous statement;
+`note:` remains YAML metadata.
+
+Debundle's output is meant to turn minified compiled chunks into nice
+human-readable code. Treat emitted `comment:` text as part of that
+readability surface: explain intent, invariants, and module
+relationships. Provenance, owner IDs, and source-call trivia belong in
+`note:` or should be omitted.
+
+Use `note:` for scratch reverse-engineering notes that should survive
+debundle edits but should not appear in generated JS, including
+uncertainty, provenance, and call-site observations.
 
 ```yaml
 # Module YAML
 comment: |
-  Plugin settings registry. Top-level home for state related to the
-  plugin extension surface.
+  Coordinates foo registrations and lookup state.
 
 members:
-  - name: PluginSettingsAccessor
+  - name: FooAccessor
     selector:
-      binding: { name: XOe, kind: variable_declarator }
+      binding: { name: a, kind: variable_declarator }
     comment: |
-      Accessor for plugin settings registered via the plugin
-      system's register() hook. Side-effect free.
+      Reads the active foo registry without mutating it.
+
+anonymous_statements:
+  - match: "Foo.prototype.bar = true;"
+    comment: |
+      Enables Foo.bar before consumers import Foo.
+  - match: "registerFoo(foo);"
+    note: "uncertain: looks like a registration side effect"
 ```
 
-Edit them via the CLI (assumes `DEBUNDLE_MODULES` is exported; pass
-`--modules <dir>` otherwise):
+Edit module and member comments via the CLI (assumes
+`DEBUNDLE_MODULES` is exported; pass `--modules <dir>` otherwise):
 
 ```sh
 # Set a member's comment from a positional arg.
-debundle bindings comment XOe "Accessor for plugin settings..."
+debundle bindings comment a "Accessor for foo state."
 
 # Open $EDITOR pre-populated with the current comment.
-debundle bindings comment XOe --edit
+debundle bindings comment a --edit
 
 # Remove the comment entirely.
-debundle bindings comment XOe --clear
+debundle bindings comment a --clear
 
 # Read the current comment (plain text on tty, JSON on pipe).
-debundle bindings comment XOe
+debundle bindings comment a
 
 # Same three modes for module-level comments.
-debundle modules comment runtime/plugins --edit
+debundle modules comment runtime/foo --edit
 ```
 
-`bindings comment` accepts minified (`XOe`) or readable
-(`PluginSettingsAccessor`) names. `modules comment` takes the
-module path (`runtime/plugins`) relative to `$DEBUNDLE_MODULES`.
+`bindings comment` accepts minified (`a`) or readable (`FooAccessor`)
+names. `modules comment` takes the module path (`runtime/foo`)
+relative to `$DEBUNDLE_MODULES`. Anonymous-statement comments are
+authored directly in YAML.
 
-CLI editing is live today. Emitting these comments into generated JS is
-future work; until then comments live in YAML and survive spec edits.
+CLI editing is live for module and member comments.
 
 ## Conditionally-correct optimizations
 

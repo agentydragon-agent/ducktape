@@ -97,6 +97,10 @@ struct LogicalModuleBody {
 struct FixtureAnonymousStatement {
     #[serde(rename = "match")]
     match_source: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    comment: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    note: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -207,8 +211,31 @@ pub fn logical_module_with_anon(
                 .iter()
                 .map(|m| FixtureAnonymousStatement {
                     match_source: (*m).to_string(),
+                    comment: None,
+                    note: None,
                 })
                 .collect(),
+        })
+        .expect("logical module fixture must serialize"),
+    )
+}
+
+pub fn logical_module_with_anon_comment(
+    path: &str,
+    members: &[Member],
+    anon_match: &str,
+    comment: impl Into<String>,
+) -> LogicalModuleEntry {
+    (
+        path.to_string(),
+        serde_json::to_value(LogicalModuleBody {
+            comment: None,
+            members: fixture_members(members),
+            anonymous_statements: vec![FixtureAnonymousStatement {
+                match_source: anon_match.to_string(),
+                comment: Some(comment.into()),
+                note: None,
+            }],
         })
         .expect("logical module fixture must serialize"),
     )

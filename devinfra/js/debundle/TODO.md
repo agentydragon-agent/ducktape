@@ -66,6 +66,19 @@ upgrades. Stale picks become a self-test: if the materialiser fails
 to find them, that's a real signal (either the bundle moved or our
 matchers regressed).
 
+## Anonymous selector indexing in graph dumps
+
+Graph-backed CLI paths should not rely on author-provided owner hints
+for `anonymous_statements:`. If selector resolution from source ever
+becomes too expensive for edit gates or coverage reports, extend
+`owner_graph.json` with enough machine data to resolve anonymous
+selectors from the dump itself. A good shape is a canonical emitted
+JS string or AST fingerprint for each anonymous owner, keyed by owner
+id and statement ordinal. Then CLI tools can match
+`anonymous_statements[].match` against graph-owned anonymous
+statements without reading source files and without embedding
+`owner:<id>` in spec notes.
+
 ### Smoke target contract
 
 - runs `bazel test //devinfra/js/debundle/excalidraw:load_test` (or

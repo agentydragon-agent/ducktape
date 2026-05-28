@@ -1,10 +1,13 @@
 use std::collections::BTreeMap;
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use swc_atoms::Atom;
 use swc_common::comments::{Comment, CommentKind, Comments, SingleThreadedComments};
 use swc_common::sync::Lrc;
-use swc_common::{BytePos, DUMMY_SP, FileName, GLOBALS, Globals, Mark, SourceMap, Spanned};
+use swc_common::{
+    BytePos, DUMMY_SP, EqIgnoreSpan, FileName, GLOBALS, Globals, Mark, SourceMap, Spanned,
+    SyntaxContext,
+};
 use swc_ecma_ast::{Decl, Module, ModuleDecl, ModuleItem, Pat, Stmt, Str};
 use swc_ecma_codegen::text_writer::JsWriter;
 use swc_ecma_codegen::{Config, Emitter};
@@ -242,10 +245,106 @@ fn parse_module_from_source_file(source_name: &str, fm: &swc_common::SourceFile)
 }
 
 pub fn emit_js_module(parsed: &ParsedJsModule, header_lines: &[String]) -> Result<String> {
-    emit_js_module_with_comments(parsed, header_lines, &BTreeMap::new())
+    emit_js_module_with_comments(parsed, header_lines, &BTreeMap::new(), &BTreeMap::new())
 }
 
-/// Emit a JS module with optional per-binding leading line comments.
+/// Resolve one `anonymous_statements[].match` selector to a top-level
+/// body index in `runtime_module`. Equality ignores spans and syntax
+/// contexts because selector snippets and runtime chunks are parsed
+/// independently.
+pub fn resolve_anonymous_statement_body_index(
+    runtime_module: &Module,
+    request_id: &str,
+    match_source: &str,
+) -> Result<usize> {
+    let matches = find_anonymous_statement_body_indices(runtime_module, request_id, match_source)?;
+    match matches.as_slice() {
+        [single] => Ok(*single),
+        [] => bail!(
+            "logical_module {request_id}: anonymous_statements[].match did not match any \
+             top-level statement in the chunk. Selector:\n{match_source}",
+        ),
+        multiple => bail!(
+            "logical_module {request_id}: anonymous_statements[].match is ambiguous — \
+             matched {} top-level statements at body indices {:?}. Refine the selector. \
+             Source:\n{match_source}",
+            multiple.len(),
+            multiple,
+        ),
+    }
+}
+
+/// Find every top-level body index matched by one
+/// `anonymous_statements[].match` selector. The selector must parse
+/// as exactly one top-level statement; zero matches in the runtime
+/// module are represented as `Ok(Vec::new())`.
+pub fn find_anonymous_statement_body_indices(
+    runtime_module: &Module,
+    request_id: &str,
+    match_source: &str,
+) -> Result<Vec<usize>> {
+    let parsed = parse_js_module_ast(
+        &format!("<anonymous_statement match in {request_id}>"),
+        match_source,
+    )
+    .with_context(|| {
+        format!("logical_module {request_id}: anonymous_statements[].match did not parse as JS:\n{match_source}")
+    })?;
+    let parsed_items: Vec<&ModuleItem> = parsed.body.iter().collect();
+    let needle = match parsed_items.as_slice() {
+        [single] => *single,
+        [] => bail!(
+            "logical_module {request_id}: anonymous_statements[].match parsed to zero \
+             statements; selector source must contain exactly one top-level \
+             statement:\n{match_source}",
+        ),
+        _ => bail!(
+            "logical_module {request_id}: anonymous_statements[].match parsed to {} \
+             statements; selector source must contain exactly one top-level \
+             statement:\n{match_source}",
+            parsed_items.len(),
+        ),
+    };
+    Ok(SyntaxContext::within_ignored_ctxt(|| {
+        runtime_module
+            .body
+            .iter()
+            .enumerate()
+            .filter_map(|(body_idx, item)| needle.eq_ignore_span(item).then_some(body_idx))
+            .collect()
+    }))
+}
+
+/// Number of post-comma-list-split positions a top-level body item
+/// produces. Mirrors the owner-graph fact splitter: `var x = ..., y
+/// = ...;` is one body item but two statement ordinals; other
+/// top-level items count as one.
+pub fn post_split_top_level_count(item: &ModuleItem) -> usize {
+    fn decl_count(decl: &Decl) -> usize {
+        match decl {
+            Decl::Var(var) if var.decls.len() > 1 => var.decls.len(),
+            _ => 1,
+        }
+    }
+    match item {
+        ModuleItem::Stmt(Stmt::Decl(decl)) => decl_count(decl),
+        ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export_decl)) => {
+            decl_count(&export_decl.decl)
+        }
+        _ => 1,
+    }
+}
+
+/// Convert a pre-split body index to the first post-split
+/// `StatementOrdinal` value for that body item.
+pub fn statement_ordinal_for_body_index(body: &[ModuleItem], body_idx: usize) -> usize {
+    body[..body_idx]
+        .iter()
+        .map(post_split_top_level_count)
+        .sum()
+}
+
+/// Emit a JS module with optional leading line comments.
 ///
 /// `binding_comments` maps a top-level binding name to a human-readable
 /// comment block (verbatim spec text — newlines preserved). For each
@@ -260,18 +359,26 @@ pub fn emit_js_module(parsed: &ParsedJsModule, header_lines: &[String]) -> Resul
 /// module body, so a comment-but-no-statement state isn't reachable in
 /// the normal pipeline, and a test fixture that exercises it shouldn't
 /// fail emission.
+///
+/// `leading_item_comments` maps a top-level item's `span.lo()` to a
+/// comment block. The lowerer uses this for comments attached to
+/// resolved anonymous statements, which have no binding name to key
+/// from.
 pub fn emit_js_module_with_comments(
     parsed: &ParsedJsModule,
     header_lines: &[String],
     binding_comments: &BTreeMap<String, String>,
+    leading_item_comments: &BTreeMap<BytePos, String>,
 ) -> Result<String> {
     let comments_storage = SingleThreadedComments::default();
-    let comments_handle: Option<&dyn Comments> = if binding_comments.is_empty() {
-        None
-    } else {
-        attach_binding_comments(&parsed.module, binding_comments, &comments_storage);
-        Some(&comments_storage)
-    };
+    let comments_handle: Option<&dyn Comments> =
+        if binding_comments.is_empty() && leading_item_comments.is_empty() {
+            None
+        } else {
+            attach_binding_comments(&parsed.module, binding_comments, &comments_storage);
+            attach_leading_item_comments(leading_item_comments, &comments_storage);
+            Some(&comments_storage)
+        };
     let mut buf = Vec::new();
     {
         let mut emitter = Emitter {
@@ -295,6 +402,27 @@ pub fn emit_js_module_with_comments(
     out.push_str(code);
     out.push('\n');
     Ok(out)
+}
+
+fn attach_leading_item_comments(
+    leading_item_comments: &BTreeMap<BytePos, String>,
+    storage: &SingleThreadedComments,
+) {
+    for (lo, comment_text) in leading_item_comments {
+        if *lo == BytePos(0) || comment_text.is_empty() {
+            continue;
+        }
+        for line in format_member_comment_line_texts(comment_text) {
+            storage.add_leading(
+                *lo,
+                Comment {
+                    kind: CommentKind::Line,
+                    span: DUMMY_SP,
+                    text: Atom::from(line),
+                },
+            );
+        }
+    }
 }
 
 /// Walk `module.body` and, for each top-level item whose declared
@@ -560,7 +688,9 @@ mod tests {
             let mut binding_comments = BTreeMap::new();
             binding_comments.insert("a".to_string(), "doc for a.\nsecond line.".to_string());
             binding_comments.insert("b".to_string(), "doc for b.".to_string());
-            let source = emit_js_module_with_comments(&parsed, &[], &binding_comments).unwrap();
+            let source =
+                emit_js_module_with_comments(&parsed, &[], &binding_comments, &BTreeMap::new())
+                    .unwrap();
             // Each binding's comment lands above its declaration; SWC
             // emits one `// <text>` per `Line` comment in the map.
             let a_pos = source
@@ -593,7 +723,9 @@ mod tests {
             let parsed = parse_js_module("test.js", "const a = 1;\nexport { a };\n").unwrap();
             let mut binding_comments = BTreeMap::new();
             binding_comments.insert("not_here".to_string(), "noise".to_string());
-            let source = emit_js_module_with_comments(&parsed, &[], &binding_comments).unwrap();
+            let source =
+                emit_js_module_with_comments(&parsed, &[], &binding_comments, &BTreeMap::new())
+                    .unwrap();
             assert!(
                 !source.contains("// noise"),
                 "unmatched binding keys must emit no comment:\n{source}",

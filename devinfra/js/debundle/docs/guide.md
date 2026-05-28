@@ -297,27 +297,26 @@ mounts `<X />`. Move `X` into that consumer's YAML.
 Each `anonymous_statements:` entry accepts an optional `comment:`
 **or** `note:` field — both are `Option<String>`, both are
 preserved on round-trip. The materializer resolves statements from
-`match:` and does not consume these fields; graph-only CLI checks such
-as `coverage` and edit-gate dry-runs use an `owner:<id>` token in
-`note:` or `comment:` when present so they can account for anonymous
-owners without re-reading source files. If an unhinted anonymous
-statement is needed to classify an atom, those graph-only checks fail
-with an explicit incomplete-loader error instead of treating the owner
-as residual.
-Prefer `comment:` (a YAML block scalar) for multi-line prose
-explaining what the side-effecting statement does and why it
-belongs to this module; `note:` is fine for a one-line label.
+`match:` and emits `comment:` immediately before the matched statement
+in generated JS; `note:` remains YAML metadata. Graph-backed CLI
+checks resolve the same selector against source and map the matched
+statement back to the owner graph, so the spec stays selector-based.
+Debundle's output is meant to turn minified compiled chunks into nice
+human-readable code. Use emitted `comment:` text as part of that
+readability surface: explain intent, invariants, and module
+relationships. Keep provenance, owner IDs, and source-call trivia in
+`note:` or omit them. Use `note:` for scratch reverse-engineering
+notes that should survive debundle edits but should not appear in
+generated JS, including uncertainty, provenance, and call-site
+observations.
 
 ```yaml
 anonymous_statements:
-  - match: '__decorate([Z], $g.prototype, "invites");'
+  - match: "Foo.prototype.bar = true;"
     comment: |
-      MobX-style decorator wiring for the `invites` getter on
-      the chat-window class — emitted as a sibling top-level
-      statement by Babel, lives here so the class and its
-      decorators move together.
-  - match: "registerPlugin(foo);"
-    note: side-effecting registration
+      Enables Foo.bar before consumers import Foo.
+  - match: "registerFoo(foo);"
+    note: "uncertain: looks like a registration side effect"
 ```
 
 `comment:` is accepted on `anonymous_statements:` entries even
@@ -359,19 +358,19 @@ refactors where an intermediate state is intentionally invalid).
 
 ```bash
 # Set a member's comment from a positional arg.
-debundle bindings comment XOe "Accessor for plugin settings ..."
+debundle bindings comment a "Accessor for foo state."
 
 # Open $EDITOR (fallback $VISUAL, then vi) pre-populated with the current comment.
-debundle bindings comment XOe --edit
+debundle bindings comment a --edit
 
 # Read the current comment (plain text on tty, JSON on pipe).
-debundle bindings comment XOe
+debundle bindings comment a
 
 # Remove the comment entirely.
-debundle bindings comment XOe --clear
+debundle bindings comment a --clear
 
 # Same three modes for module-level comments.
-debundle modules comment runtime/plugins --edit
+debundle modules comment runtime/foo --edit
 ```
 
 `<sym>` accepts minified or readable; `<module>` is the module path
@@ -385,8 +384,10 @@ Move semantics (CLI surface, not a separate feature):
   module-level `comment:` is empty/absent.
 - `modules merge` concatenates source-module comments into the target.
 
-CLI editing is live. Emitting comments into generated JS is future
-lowering work; until then comments live in YAML only.
+CLI editing is live for module and member comments; anonymous
+statement comments are authored directly in YAML. Module, member, and
+anonymous-statement `comment:` fields emit into generated JS. `note:`
+does not emit.
 
 ## Renaming or disabling a module
 

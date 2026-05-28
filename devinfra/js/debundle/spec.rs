@@ -500,17 +500,17 @@ pub struct AnonymousStatement {
     /// are spec errors.
     #[serde(rename = "match")]
     pub match_source: String,
-    /// Optional human-readable note (e.g. "MobX-style decorator on
-    /// $g.prototype.invites"). Ignored by the resolver.
+    /// Optional YAML-only note. Use this for provenance,
+    /// uncertainty, and other scratch reverse-engineering notes that
+    /// should survive spec edits without appearing in generated JS.
+    /// Ignored by the materializer.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
-    /// Optional human-readable comment. Behaviorally equivalent to
-    /// [`note`](Self::note) — preserved on round-trip, ignored by
-    /// the resolver. Accepted for symmetry with the top-level
-    /// [`LogicalModule::comment`] and per-[`Member::comment`] fields,
-    /// so authors who reach for `comment:` here aren't surprised by
-    /// a `deny_unknown_fields` rejection. Prefer `comment:` for
-    /// multi-line prose; `note:` remains valid for one-liners.
+    /// Optional human-readable comment. Preserved on round-trip and
+    /// emitted immediately above the matched anonymous statement in
+    /// generated JS. Accepted for symmetry with the top-level
+    /// [`LogicalModule::comment`] and per-[`Member::comment`] fields.
+    /// Prefer `note:` for scratch text that should stay YAML-only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub comment: Option<String>,
 }

@@ -114,10 +114,14 @@ impl ChunkPlanBuilder {
         imported_from_by_src: &mut BTreeMap<String, String>,
     ) -> Result<()> {
         let mut bindings = HashMap::<String, String>::new();
-        let anonymous_statement_ordinals =
+        let anonymous_statement_claims =
             resolve_anonymous_statement_ordinals(request, ctx.runtime_module)?;
-        for ordinal in &anonymous_statement_ordinals {
-            if let Some(existing) = self.anonymous_ordinal_assignment.get(ordinal).copied() {
+        for claim in &anonymous_statement_claims {
+            if let Some(existing) = self
+                .anonymous_ordinal_assignment
+                .get(&claim.ordinal)
+                .copied()
+            {
                 let existing_id: String = self
                     .module_plans
                     .get(existing)
@@ -129,12 +133,26 @@ impl ChunkPlanBuilder {
                      each anonymous statement may belong to at most one logical \
                      module.",
                     request.id,
-                    ordinal,
+                    claim.ordinal,
                     existing_id,
                 );
             }
-            self.anonymous_ordinal_assignment.insert(*ordinal, index);
+            self.anonymous_ordinal_assignment
+                .insert(claim.ordinal, index);
         }
+        let anonymous_statement_ordinals: Vec<usize> = anonymous_statement_claims
+            .iter()
+            .map(|claim| claim.ordinal)
+            .collect();
+        let anonymous_statement_comments: BTreeMap<usize, String> = anonymous_statement_claims
+            .iter()
+            .filter_map(|claim| {
+                claim
+                    .comment
+                    .as_ref()
+                    .map(|comment| (claim.ordinal, comment.clone()))
+            })
+            .collect();
         let dest_target_file = target_file_for_request(ctx.target_dir, &request.target_path)?;
         let module_id = ModuleId(LogicalModuleIndex(index));
         for member in &request.members {
@@ -239,6 +257,7 @@ impl ChunkPlanBuilder {
             explicit: true,
             bindings,
             anonymous_statement_ordinals,
+            anonymous_statement_comments,
             comment: request.comment.clone(),
             binding_comments,
         });
@@ -358,6 +377,7 @@ impl ChunkPlanBuilder {
                     explicit: false,
                     bindings: residual_bindings,
                     anonymous_statement_ordinals: Vec::new(),
+                    anonymous_statement_comments: BTreeMap::new(),
                     comment: None,
                     binding_comments: BTreeMap::new(),
                 });
@@ -525,6 +545,7 @@ impl ChunkPlanBuilder {
                 explicit: false,
                 bindings,
                 anonymous_statement_ordinals,
+                anonymous_statement_comments: BTreeMap::new(),
                 comment: None,
                 binding_comments: BTreeMap::new(),
             });

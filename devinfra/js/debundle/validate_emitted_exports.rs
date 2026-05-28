@@ -257,6 +257,7 @@ mod tests {
             body: JsFileBody::Ast(parsed),
             header_lines: Vec::new(),
             binding_comments: std::collections::BTreeMap::new(),
+            leading_item_comments: std::collections::BTreeMap::new(),
             metadata: FileMetadata {
                 chunk_id: chunk_name.to_string(),
                 chunk_file: file_name.to_string(),
@@ -406,6 +407,7 @@ export * from \"./sibling.js\";\n";
                 ),
                 header_lines: Vec::new(),
                 binding_comments: std::collections::BTreeMap::new(),
+                leading_item_comments: std::collections::BTreeMap::new(),
                 metadata: FileMetadata {
                     chunk_id: "c".to_string(),
                     chunk_file: "raw.js".to_string(),

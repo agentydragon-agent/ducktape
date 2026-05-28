@@ -8,6 +8,7 @@ use std::sync::Mutex;
 
 use rayon::prelude::*;
 use swc_common::GLOBALS;
+use swc_common::{BytePos, Spanned};
 
 use super::import_emit::{
     disambiguate_import_locals, import_decl_for_plan, preserve_export_specifier_names,
@@ -425,6 +426,7 @@ pub(super) fn lower_chunk(inputs: LowerChunkInputs<'_>) -> Result<LoweredChunk> 
         }),
         header_lines: header_lines.to_vec(),
         binding_comments: BTreeMap::new(),
+        leading_item_comments: BTreeMap::new(),
         metadata: FileMetadata {
             chunk_id: chunk_id.to_string(),
             chunk_file: entry_file.to_string(),
@@ -894,6 +896,7 @@ fn build_module_output(
             binding_names.join(", ")
         ),
     ]);
+    let leading_item_comments = anonymous_statement_comments_by_span(plan, context.runtime_ast);
     let file = JsFile {
         path: plan.target_file.clone(),
         body: JsFileBody::Ast(ParsedJsModule {
@@ -908,6 +911,7 @@ fn build_module_output(
         }),
         header_lines: header,
         binding_comments: plan.binding_comments.clone(),
+        leading_item_comments,
         metadata: FileMetadata {
             chunk_id: context.chunk_id.to_string(),
             chunk_file: plan.target_file.clone(),
@@ -929,4 +933,23 @@ fn build_module_output(
         target_path: plan.target_path.clone(),
     };
     (file, record, lowering)
+}
+
+fn anonymous_statement_comments_by_span(
+    plan: &ModulePlan,
+    runtime_ast: &ParsedJsModule,
+) -> BTreeMap<BytePos, String> {
+    plan.anonymous_statement_comments
+        .iter()
+        .filter_map(|(body_idx, comment)| {
+            if comment.is_empty() {
+                return None;
+            }
+            let lo = runtime_ast.module.body.get(*body_idx)?.span().lo();
+            if lo == BytePos(0) {
+                return None;
+            }
+            Some((lo, comment.clone()))
+        })
+        .collect()
 }

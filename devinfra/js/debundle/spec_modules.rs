@@ -48,25 +48,22 @@ pub struct BindingPatchesFile {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ModuleClaims {
     pub bindings: BTreeSet<String>,
-    pub anonymous_owner_ids: BTreeSet<String>,
-    pub unresolved_anonymous_statement_count: usize,
+    pub anonymous_match_sources: BTreeSet<String>,
 }
 
 impl ModuleClaims {
     pub fn is_empty(&self) -> bool {
-        self.bindings.is_empty()
-            && self.anonymous_owner_ids.is_empty()
-            && self.unresolved_anonymous_statement_count == 0
+        self.bindings.is_empty() && self.anonymous_match_sources.is_empty()
     }
 
-    pub fn has_resolved_claims(&self) -> bool {
-        !self.bindings.is_empty() || !self.anonymous_owner_ids.is_empty()
+    pub fn has_claims(&self) -> bool {
+        !self.bindings.is_empty() || !self.anonymous_match_sources.is_empty()
     }
 
     pub fn extend(&mut self, other: ModuleClaims) {
         self.bindings.extend(other.bindings);
-        self.anonymous_owner_ids.extend(other.anonymous_owner_ids);
-        self.unresolved_anonymous_statement_count += other.unresolved_anonymous_statement_count;
+        self.anonymous_match_sources
+            .extend(other.anonymous_match_sources);
     }
 }
 
@@ -136,14 +133,9 @@ pub fn module_claims(module: ModuleFile) -> ModuleClaims {
         claims.bindings.insert(member.selector.binding.name);
     }
     for statement in module.anonymous_statements {
-        match anonymous_statement_owner_id(&statement) {
-            Some(owner_id) => {
-                claims.anonymous_owner_ids.insert(owner_id);
-            }
-            None => {
-                claims.unresolved_anonymous_statement_count += 1;
-            }
-        }
+        claims
+            .anonymous_match_sources
+            .insert(statement.match_source);
     }
     claims
 }
@@ -153,25 +145,6 @@ pub fn read_module_claims(path: &Path) -> Result<ModuleClaims> {
         return Ok(ModuleClaims::default());
     }
     Ok(module_claims(read_module_file(path)?))
-}
-
-pub fn anonymous_statement_owner_id(statement: &AnonymousStatement) -> Option<String> {
-    statement
-        .note
-        .as_deref()
-        .and_then(extract_owner_id)
-        .or_else(|| statement.comment.as_deref().and_then(extract_owner_id))
-}
-
-fn extract_owner_id(text: &str) -> Option<String> {
-    let start = text.find("owner:")?;
-    let owner = &text[start..];
-    let end = owner
-        .char_indices()
-        .find(|(_, ch)| !matches!(ch, 'a'..='z' | 'A'..='Z' | '0'..='9' | ':' | '_' | '-'))
-        .map(|(idx, _)| idx)
-        .unwrap_or(owner.len());
-    Some(owner[..end].to_string())
 }
 
 pub fn load_binding_patch_members(modules_root: &Path) -> Result<Vec<Member>> {
@@ -279,7 +252,10 @@ mod tests {
         let path = dir.path().join("x.yaml");
         fs::write(
             &path,
-            "members:\n  - selector: { binding: { name: a } }\nanonymous_statements: []\n",
+            r#"members:
+  - selector: { binding: { name: a } }
+anonymous_statements: []
+"#,
         )
         .unwrap();
         let module = read_module_file(&path).unwrap();
@@ -288,7 +264,7 @@ mod tests {
     }
 
     #[test]
-    fn read_module_claims_includes_anonymous_owner_notes() {
+    fn read_module_claims_includes_anonymous_match_sources() {
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("x.yaml");
         fs::write(
@@ -297,11 +273,10 @@ mod tests {
   - selector: { binding: { name: Co } }
 anonymous_statements:
   - match: 'decorate(Co);'
-    note: "owner:42 - decorator on Co"
+    note: "decorator on Co"
   - match: 'register(Co);'
     comment: |
-      owner:43 registration side effect
-  - match: 'unlabeled();'
+      Registers Co before registry consumers run.
 "#,
         )
         .unwrap();
@@ -309,10 +284,9 @@ anonymous_statements:
         let claims = read_module_claims(&path).unwrap();
         assert_eq!(claims.bindings, BTreeSet::from(["Co".to_string()]));
         assert_eq!(
-            claims.anonymous_owner_ids,
-            BTreeSet::from(["owner:42".to_string(), "owner:43".to_string()])
+            claims.anonymous_match_sources,
+            BTreeSet::from(["decorate(Co);".to_string(), "register(Co);".to_string()])
         );
-        assert_eq!(claims.unresolved_anonymous_statement_count, 1);
     }
 
     #[test]
@@ -325,9 +299,15 @@ anonymous_statements:
         let path = dir.path().join("x.yaml");
         fs::write(
             &path,
-            "comment: |\n  Module overview\n  spans two lines.\nmembers:\n  - \
-             selector: { binding: { name: a } }\n    comment: |\n      Per-member comment\n      \
-             across two lines.\n",
+            r#"comment: |
+  Module overview
+  spans two lines.
+members:
+  - selector: { binding: { name: a } }
+    comment: |
+      Per-member comment
+      across two lines.
+"#,
         )
         .unwrap();
         let module = read_module_file(&path).unwrap();
@@ -345,25 +325,26 @@ anonymous_statements:
     #[test]
     fn read_module_file_accepts_comment_field_on_anonymous_statement() {
         // `AnonymousStatement` accepts `comment:` alongside `note:`
-        // (both `Option<String>`, both purely round-tripped). This
-        // exists because authors naturally reach for `comment:` —
-        // it's the spelling used at module and member level — and
-        // `deny_unknown_fields` would otherwise reject the entry
-        // with a cryptic "unknown field" error.
+        // (both `Option<String>`). `comment:` is the JS-visible prose
+        // field; `note:` is YAML-only scratch metadata.
         let dir = TempDir::new().unwrap();
         let path = dir.path().join("x.yaml");
         fs::write(
             &path,
-            "anonymous_statements:\n  - match: \"foo();\"\n    comment: |\n      Side-effecting \
-             registration\n      from the bundled vendor blob.\n  - match: \"bar();\"\n    note: \
-             one-liner note\n",
+            r#"anonymous_statements:
+  - match: "foo();"
+    comment: |
+      Registers foo before registry consumers run.
+  - match: "bar();"
+    note: one-liner note
+"#,
         )
         .unwrap();
         let module = read_module_file(&path).unwrap();
         assert_eq!(module.anonymous_statements.len(), 2);
         assert_eq!(
             module.anonymous_statements[0].comment.as_deref(),
-            Some("Side-effecting registration\nfrom the bundled vendor blob.\n"),
+            Some("Registers foo before registry consumers run.\n"),
         );
         assert!(module.anonymous_statements[0].note.is_none());
         assert_eq!(
@@ -386,7 +367,10 @@ anonymous_statements:
         let path = dir.path().join("bad.yaml");
         fs::write(
             &path,
-            "anonymous_statements:\n  - match: \"foo();\"\n    bogus_field: oops\n",
+            r#"anonymous_statements:
+  - match: "foo();"
+    bogus_field: oops
+"#,
         )
         .unwrap();
 

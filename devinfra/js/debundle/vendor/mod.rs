@@ -2666,6 +2666,7 @@ export { b as beta };
                     ),
                     header_lines: Vec::new(),
                     binding_comments: std::collections::BTreeMap::new(),
+                    leading_item_comments: std::collections::BTreeMap::new(),
                     metadata: FileMetadata {
                         chunk_id: chunk_id.to_string(),
                         chunk_file: entry_file.clone(),

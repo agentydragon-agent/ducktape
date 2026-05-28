@@ -194,12 +194,12 @@ fn fixture_with_anonymous_statement_claim() -> (TempDir, CommonArgs) {
         kind: class_declaration
 anonymous_statements:
   - match: 'Ro([Z], Co.prototype, "visible", 2);'
-    note: "owner:1 - @observable visible on Co."
+    note: "@observable visible on Co."
 "#,
     );
     write(
         &dir.path().join("static/index.js"),
-        "class Co {}\nRo([Z], Co.prototype, \"visible\", 2);\n",
+        "const ignored = 0;\nclass Co {}\nRo([Z], Co.prototype, \"visible\", 2);\n",
     );
     (
         dir,
@@ -232,6 +232,7 @@ fn coverage_reports_summary() {
         common,
         limit: 0,
         include_proposals: false,
+        source_root: None,
         format: None,
     })
     .unwrap();
@@ -248,12 +249,13 @@ fn coverage_reports_summary() {
 }
 
 #[test]
-fn coverage_counts_anonymous_statement_owner_notes_as_claims() {
+fn coverage_counts_anonymous_statement_selectors_as_claims() {
     let (_dir, common) = fixture_with_anonymous_statement_claim();
     let report = run_patch_plan_report(&PatchPlanArgs {
         common,
         limit: 0,
         include_proposals: false,
+        source_root: None,
         format: None,
     })
     .unwrap();

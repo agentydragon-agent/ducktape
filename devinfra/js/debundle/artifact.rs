@@ -8,7 +8,7 @@ use anyhow::{Context, Result, bail};
 use rayon::prelude::*;
 use relative_path::RelativePath;
 use serde::Serialize;
-use swc_common::GLOBALS;
+use swc_common::{BytePos, GLOBALS};
 
 use analysis::DepKind;
 pub use analysis::{ChunkId, ChunkTable};
@@ -88,6 +88,11 @@ pub struct JsFile {
     /// top-level statement in the body are silently dropped at emit
     /// time. See `emit_js_module_with_comments`.
     pub binding_comments: BTreeMap<String, String>,
+    /// Leading comments to emit above a specific top-level item by
+    /// that item's source span low byte position. Populated by the
+    /// lowerer from `anonymous_statements[].comment` after resolving
+    /// the anonymous selector to the matched source statement.
+    pub leading_item_comments: BTreeMap<BytePos, String>,
     pub metadata: FileMetadata,
 }
 
@@ -95,6 +100,7 @@ pub struct JsFileAstParts {
     pub path: String,
     pub header_lines: Vec<String>,
     pub binding_comments: BTreeMap<String, String>,
+    pub leading_item_comments: BTreeMap<BytePos, String>,
     pub metadata: FileMetadata,
 }
 
@@ -132,6 +138,7 @@ impl JsFile {
                     path: self.path,
                     header_lines: self.header_lines,
                     binding_comments: self.binding_comments,
+                    leading_item_comments: self.leading_item_comments,
                     metadata: self.metadata,
                 },
                 ast,
@@ -146,6 +153,7 @@ impl JsFile {
             body: JsFileBody::Ast(ast),
             header_lines: parts.header_lines,
             binding_comments: parts.binding_comments,
+            leading_item_comments: parts.leading_item_comments,
             metadata: parts.metadata,
         }
     }
@@ -161,6 +169,7 @@ impl JsFile {
             path: self.path,
             header_lines: self.header_lines,
             binding_comments: self.binding_comments,
+            leading_item_comments: self.leading_item_comments,
             metadata: self.metadata,
         })
     }
@@ -172,9 +181,12 @@ impl JsFile {
     pub fn render_source(&self) -> Result<String> {
         match &self.body {
             JsFileBody::Source(source) => Ok(source.clone()),
-            JsFileBody::Ast(ast) => {
-                emit_js_module_with_comments(ast, &self.header_lines, &self.binding_comments)
-            }
+            JsFileBody::Ast(ast) => emit_js_module_with_comments(
+                ast,
+                &self.header_lines,
+                &self.binding_comments,
+                &self.leading_item_comments,
+            ),
         }
     }
 }
@@ -1106,6 +1118,7 @@ pub fn load_js_chunks(
             body: JsFileBody::Source(content),
             header_lines: Vec::new(),
             binding_comments: BTreeMap::new(),
+            leading_item_comments: BTreeMap::new(),
             metadata: FileMetadata {
                 chunk_id: chunk_name,
                 chunk_file: entry_file.clone(),

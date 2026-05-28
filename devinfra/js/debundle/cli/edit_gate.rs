@@ -36,6 +36,7 @@ use analysis::{
     OwnerId, Partition, compute_atomic_units, render_atomic_unit_conflict_summary,
     render_cycle_summary, validate_factorization,
 };
+use anonymous_resolution::{AnonymousStatementClaimSet, resolve_anonymous_statement_claims};
 use anyhow::{Context, Result, bail};
 use spec_modules::{ModuleClaims, collect_module_files, is_module_yaml, read_module_claims};
 
@@ -201,7 +202,12 @@ pub fn read_gate_claims(path: &Path) -> Result<ModuleClaims> {
 /// blame report to stderr and returns an `anyhow::Error` when either
 /// rejects, so the CLI exit code is non-zero and the caller bails
 /// before writing.
-pub fn gate_post_edit_partition(owner_graph_path: &Path, post_spec: &PostEditSpec) -> Result<()> {
+pub fn gate_post_edit_partition(
+    owner_graph_path: &Path,
+    modules_root: &Path,
+    source_root: Option<&Path>,
+    post_spec: &PostEditSpec,
+) -> Result<()> {
     let owner_graph_report: OwnerGraphReport = serde_json::from_str(
         &fs::read_to_string(owner_graph_path)
             .with_context(|| format!("reading {}", owner_graph_path.display()))?,
@@ -222,16 +228,29 @@ pub fn gate_post_edit_partition(owner_graph_path: &Path, post_spec: &PostEditSpe
     // wins — the materializer's spec validator catches that
     // separately as a duplicate-binding diagnostic.
     let mut owner_by_binding_name: HashMap<String, OwnerId> = HashMap::new();
-    let mut owner_by_id: HashMap<String, OwnerId> = HashMap::new();
     for (idx, node) in owner_graph_report.nodes.iter().enumerate() {
         let owner = OwnerId(idx);
-        owner_by_id.insert(node.id.clone(), owner);
         for b in &node.declared_bindings {
             owner_by_binding_name
                 .entry(b.binding.to_string())
                 .or_insert(owner);
         }
     }
+    let claim_sets: Vec<AnonymousStatementClaimSet<'_>> = post_spec
+        .modules
+        .iter()
+        .map(|module| AnonymousStatementClaimSet {
+            module_path: &module.path,
+            match_sources: &module.claims.anonymous_match_sources,
+        })
+        .collect();
+    let anonymous_owners_by_module = resolve_anonymous_statement_claims(
+        &owner_graph_report,
+        owner_graph_path,
+        modules_root,
+        source_root,
+        &claim_sets,
+    )?;
 
     // ModuleId assignment: residual at logical:0, every surviving
     // spec module gets a fresh logical:N starting at 1. The label
@@ -243,12 +262,7 @@ pub fn gate_post_edit_partition(owner_graph_path: &Path, post_spec: &PostEditSpe
     let mut module_label_by_id: HashMap<ModuleId, String> =
         [(residual, "<residual>".to_string())].into_iter().collect();
     let mut next_idx = 1usize;
-    let unresolved_anonymous_statement_count: usize = post_spec
-        .modules
-        .iter()
-        .map(|module| module.claims.unresolved_anonymous_statement_count)
-        .sum();
-    for module in &post_spec.modules {
+    for (module_idx, module) in post_spec.modules.iter().enumerate() {
         let mid = ModuleId::logical(next_idx);
         next_idx += 1;
         module_label_by_id.insert(mid, module.path.to_string_lossy().into_owned());
@@ -257,14 +271,7 @@ pub fn gate_post_edit_partition(owner_graph_path: &Path, post_spec: &PostEditSpe
                 of[owner.0] = mid;
             }
         }
-        for owner_id in &module.claims.anonymous_owner_ids {
-            let Some(&owner) = owner_by_id.get(owner_id) else {
-                bail!(
-                    "module {} claims anonymous statement owner id {owner_id:?}, \
-                     but that owner does not exist in the owner graph",
-                    module.path.display(),
-                );
-            };
+        for owner in &anonymous_owners_by_module[module_idx] {
             of[owner.0] = mid;
         }
     }
@@ -286,21 +293,6 @@ pub fn gate_post_edit_partition(owner_graph_path: &Path, post_spec: &PostEditSpe
     let atomic_conflicts =
         detect_atomic_unit_conflicts(&atomic_units, &partition, &owner_graph_report);
     if !atomic_conflicts.is_empty() {
-        if unresolved_anonymous_statement_count > 0
-            && conflicts_contain_residual_anonymous_owner(&atomic_conflicts, residual)
-        {
-            bail!(
-                "post-edit spec has {} anonymous_statements entr{} without an owner:<id> note/comment, \
-                 and the edit gate needs those anonymous owners to classify an atomic unit; \
-                 graph-only CLI edit gate cannot resolve anonymous statement selectors from source",
-                unresolved_anonymous_statement_count,
-                if unresolved_anonymous_statement_count == 1 {
-                    "y"
-                } else {
-                    "ies"
-                },
-            );
-        }
         let summary = render_atomic_unit_conflict_summary(&atomic_conflicts, &module_name);
         eprintln!("error: post-edit spec splits one or more atomic units:\n{summary}");
         bail!("realizability gate rejected the edit (atom-split)");
@@ -386,18 +378,6 @@ fn detect_atomic_unit_conflicts(
     conflicts
 }
 
-fn conflicts_contain_residual_anonymous_owner(
-    conflicts: &[AtomicUnitConflict],
-    residual: ModuleId,
-) -> bool {
-    conflicts.iter().any(|conflict| {
-        conflict
-            .claims
-            .iter()
-            .any(|claim| claim.module == residual && claim.binding_names.is_empty())
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -449,10 +429,17 @@ mod tests {
     }
 
     #[test]
-    fn edit_gate_counts_anonymous_statement_owner_notes_as_claims() {
+    fn edit_gate_resolves_anonymous_statement_selectors_as_claims() {
         let temp = TempDir::new().unwrap();
         let graph_path = temp.path().join("owner_graph.json");
         let modules_root = temp.path().join("spec/modules");
+        write(
+            &temp.path().join("static/index.js"),
+            r#"const ignored = 0;
+class Co {}
+Ro([Z], Co.prototype, "visible", 2);
+"#,
+        );
         let class_owner = owner(
             "owner:0",
             1,
@@ -494,11 +481,11 @@ mod tests {
         name: Co
 anonymous_statements:
   - match: 'Ro([Z], Co.prototype, "visible", 2);'
-    note: "owner:1 - @observable visible on Co."
+    note: "observable decorator side effect"
 "#,
         );
 
         let post_spec = post_delete_spec(&modules_root, &[]).unwrap();
-        gate_post_edit_partition(&graph_path, &post_spec).unwrap();
+        gate_post_edit_partition(&graph_path, &modules_root, None, &post_spec).unwrap();
     }
 }

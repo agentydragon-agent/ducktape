@@ -1,8 +1,10 @@
 //! End-to-end coverage for the spec-level `comment:` fields on
-//! members and modules. The lowering pass renders the comments as
-//! `// ...` lines: module-level at the top of the generated file
-//! (above the lowerer's pragma block), per-member immediately above
-//! the binding's owner statement.
+//! members, modules, and anonymous statements. The lowering pass
+//! renders the comments as `// ...` lines: module-level at the top
+//! of the generated file (above the lowerer's pragma block),
+//! per-member immediately above the binding's owner statement, and
+//! anonymous-statement comments immediately above the matched
+//! side-effecting statement.
 
 use debundle_e2e_support::*;
 use std::fs;
@@ -109,6 +111,33 @@ export { a, b };
         "module comment must precede generator pragmas:\n{code}",
     );
     assert_entry_output(&fixture, "a b\n");
+}
+
+#[test]
+fn anonymous_statement_comment_lands_above_matched_statement() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"function Foo() {}
+Foo.prototype.bar = true;
+console.log(Foo.name);
+export { Foo };
+"#,
+        vec![logical_module_with_anon_comment(
+            "x",
+            &[Member::new("Foo")],
+            "Foo.prototype.bar = true;",
+            "Enables Foo.bar before consumers import Foo.",
+        )],
+    ));
+    let code = read_module(&fixture, MODULE_PATH);
+    assert_contains_in_order(
+        &code,
+        &[
+            "function Foo(",
+            "// Enables Foo.bar before consumers import Foo.",
+            "Foo.prototype.bar = true;",
+        ],
+    );
+    assert_entry_output(&fixture, "Foo\n");
 }
 
 #[test]

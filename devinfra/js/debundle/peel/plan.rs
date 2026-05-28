@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 
 use super::factorize::{FactorizeDiagnosticReport, FactorizeProposal, PeelFactorizeOptions};
 use super::factorize::{PeelFactorizeReport, analyze_peel_factorize};
+use anonymous_resolution::{AnonymousStatementClaimSet, resolve_anonymous_statement_claims};
 use anyhow::{Context, Result, bail};
 use clap::{Args as ClapArgs, Subcommand, ValueEnum};
 use serde::Serialize;
@@ -119,6 +120,11 @@ pub struct PatchPlanArgs {
     /// This is intentionally opt-in because it is expensive on large graphs.
     #[arg(long = "include-proposals")]
     pub include_proposals: bool,
+
+    /// Root used to resolve relative `source_location.source_path`
+    /// values when coverage checks anonymous statement selectors.
+    #[arg(long = "source-root", env = "DEBUNDLE_SOURCE_ROOT")]
+    pub source_root: Option<PathBuf>,
 
     /// Output format. Default `text` on tty, `json` on pipe.
     #[arg(long, value_enum)]
@@ -607,7 +613,13 @@ pub fn run_patch_plan_report(args: &PatchPlanArgs) -> Result<PatchPlanReport> {
     } else {
         None
     };
-    let mut rows = patch_plan_rows(&graph, &args.common.modules_root, factorize.as_ref())?;
+    let mut rows = patch_plan_rows(
+        &graph,
+        &args.common.owner_graph_path,
+        &args.common.modules_root,
+        args.source_root.as_deref(),
+        factorize.as_ref(),
+    )?;
     rows.sort_by_key(|row| (row.status, row.path.clone()));
     let summary = PatchPlanSummary {
         total_patch_sets: rows.len(),
@@ -998,12 +1010,12 @@ fn overlaps(owner_ids: &[String], selected: &BTreeSet<String>) -> bool {
 
 fn patch_plan_rows(
     graph: &OwnerGraphReport,
+    owner_graph_path: &Path,
     modules_root: &Path,
+    source_root: Option<&Path>,
     factorize: Option<&PeelFactorizeReport>,
 ) -> Result<Vec<PatchPlanRow>> {
     let binding_to_owner = binding_to_owner(graph);
-    let graph_owner_ids: BTreeSet<String> =
-        graph.nodes.iter().map(|node| node.id.clone()).collect();
     let unit_by_owner = unit_by_owner(graph);
     let unit_by_id: BTreeMap<String, &AtomicUnitReport> = graph
         .atomic_graph
@@ -1027,15 +1039,20 @@ fn patch_plan_rows(
                     unknown_binding_ids.push(binding.clone());
                 }
             }
-            for owner_id in &patch_set.anonymous_owner_ids {
-                if graph_owner_ids.contains(owner_id) {
-                    requested_owner_ids.insert(owner_id.clone());
-                } else {
-                    bail!(
-                        "module {} claims anonymous statement owner id {owner_id:?}, \
-                         but that owner does not exist in the owner graph",
-                        patch_set.path,
-                    );
+            let claim_sets = [AnonymousStatementClaimSet {
+                module_path: &patch_set.file,
+                match_sources: &patch_set.anonymous_match_sources,
+            }];
+            let anonymous_owners = resolve_anonymous_statement_claims(
+                graph,
+                owner_graph_path,
+                modules_root,
+                source_root,
+                &claim_sets,
+            )?;
+            for owner in &anonymous_owners[0] {
+                if let Some(node) = graph.nodes.get(owner.0) {
+                    requested_owner_ids.insert(node.id.clone());
                 }
             }
 
@@ -1086,23 +1103,6 @@ fn patch_plan_rows(
                     );
                 }
             }
-            if !missing_anonymous_owner_ids.is_empty()
-                && patch_set.unresolved_anonymous_statement_count > 0
-            {
-                bail!(
-                    "module {} has {} anonymous_statements entr{} without an owner:<id> note/comment, \
-                     and coverage needs those anonymous owners to classify atomic unit(s) {}; \
-                     graph-only CLI coverage cannot resolve anonymous statement selectors from source",
-                    patch_set.path,
-                    patch_set.unresolved_anonymous_statement_count,
-                    if patch_set.unresolved_anonymous_statement_count == 1 {
-                        "y"
-                    } else {
-                        "ies"
-                    },
-                    split_unit_ids.join(", "),
-                );
-            }
             let status = if !split_unit_ids.is_empty() {
                 PatchPlanStatus::SplitUnits
             } else if !unknown_binding_ids.is_empty() {
@@ -1135,8 +1135,7 @@ struct PatchSet {
     path: String,
     file: PathBuf,
     bindings: BTreeSet<String>,
-    anonymous_owner_ids: BTreeSet<String>,
-    unresolved_anonymous_statement_count: usize,
+    anonymous_match_sources: BTreeSet<String>,
 }
 
 fn load_patch_sets(modules_root: &Path) -> Result<Vec<PatchSet>> {
@@ -1151,21 +1150,19 @@ fn load_patch_sets(modules_root: &Path) -> Result<Vec<PatchSet>> {
             path: "binding_patches".to_string(),
             file: binding_patches_path,
             bindings: patch_bindings,
-            anonymous_owner_ids: BTreeSet::new(),
-            unresolved_anonymous_statement_count: 0,
+            anonymous_match_sources: BTreeSet::new(),
         });
     }
     for file in collect_module_files(modules_root)? {
         let claims = read_module_claims(&file)?;
-        if !claims.has_resolved_claims() {
+        if !claims.has_claims() {
             continue;
         }
         sets.push(PatchSet {
             path: module_path_from_file(&file, modules_root),
             file,
             bindings: claims.bindings,
-            anonymous_owner_ids: claims.anonymous_owner_ids,
-            unresolved_anonymous_statement_count: claims.unresolved_anonymous_statement_count,
+            anonymous_match_sources: claims.anonymous_match_sources,
         });
     }
     Ok(sets)
@@ -1691,6 +1688,7 @@ mod tests {
             common,
             limit: 0,
             include_proposals: false,
+            source_root: None,
             format: None,
         })
         .unwrap();
@@ -1711,6 +1709,7 @@ mod tests {
             common,
             limit: 0,
             include_proposals: true,
+            source_root: None,
             format: None,
         })
         .unwrap();

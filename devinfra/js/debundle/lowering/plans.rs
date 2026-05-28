@@ -10,13 +10,23 @@ pub(super) struct LogicalRequest {
     pub(super) target_path: String,
     pub(super) residual: bool,
     pub(super) members: Vec<MemberRequest>,
-    /// Verbatim source of each anonymous-statement member the spec
-    /// asked to co-move into this module. Resolved later (after AST
-    /// analysis) into [`ModulePlan::anonymous_statement_ordinals`].
-    pub(super) anonymous_match_sources: Vec<String>,
+    /// Anonymous-statement members the spec asked to co-move into
+    /// this module. Resolved later (after AST analysis) into
+    /// [`ModulePlan::anonymous_statement_ordinals`] and
+    /// [`ModulePlan::anonymous_statement_comments`].
+    pub(super) anonymous_statements: Vec<AnonymousStatementRequest>,
     /// Module-level human-readable comment from the spec. Emitted
     /// at the top of the generated module file, before any imports.
     /// See [`spec::LogicalModule::comment`].
+    pub(super) comment: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct AnonymousStatementRequest {
+    pub(super) match_source: String,
+    /// Optional `comment:` text from the anonymous statement spec
+    /// entry. `note:` is not emitted; it remains YAML scratch
+    /// metadata.
     pub(super) comment: Option<String>,
 }
 
@@ -106,6 +116,10 @@ pub(super) struct ModulePlan {
     /// materializer routes each such statement into this module's
     /// body in source order, alongside the named members.
     pub(super) anonymous_statement_ordinals: Vec<usize>,
+    /// Source-chunk body index → anonymous-statement comment text.
+    /// Emitted as a `// ...` block immediately above the matched
+    /// statement in the generated module body.
+    pub(super) anonymous_statement_comments: BTreeMap<usize, String>,
     /// Module-level human-readable comment from the spec, if any.
     /// Emitted at the top of the generated module file, before
     /// imports. See [`spec::LogicalModule::comment`].
@@ -135,10 +149,13 @@ pub(super) fn logical_requests_for_chunk(
             let members = build_members(&module.members);
             reject_duplicate_export_names("logical_module", &id, &members)?;
             reject_duplicate_member_bindings("logical_module", &id, &members)?;
-            let anonymous_match_sources = module
+            let anonymous_statements = module
                 .anonymous_statements
                 .iter()
-                .map(|stmt| stmt.match_source.clone())
+                .map(|stmt| AnonymousStatementRequest {
+                    match_source: stmt.match_source.clone(),
+                    comment: stmt.comment.clone(),
+                })
                 .collect();
             if catchall_target.as_deref() == Some(target_path.as_str()) {
                 explicit_module_at_catchall = true;
@@ -148,7 +165,7 @@ pub(super) fn logical_requests_for_chunk(
                 target_path: target_path.clone(),
                 residual: false,
                 members,
-                anonymous_match_sources,
+                anonymous_statements,
                 comment: module.comment.clone(),
             });
         }
@@ -167,7 +184,7 @@ pub(super) fn logical_requests_for_chunk(
             target_path,
             residual: true,
             members: Vec::new(),
-            anonymous_match_sources: Vec::new(),
+            anonymous_statements: Vec::new(),
             comment: None,
         });
     }
@@ -191,7 +208,7 @@ pub(super) fn logical_requests_for_chunk(
             target_path: join_module_path(&[target_dir, "unhandled"]),
             residual: true,
             members: Vec::new(),
-            anonymous_match_sources: Vec::new(),
+            anonymous_statements: Vec::new(),
             comment: None,
         });
     }

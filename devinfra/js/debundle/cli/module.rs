@@ -69,6 +69,11 @@ pub struct MergeArgs {
     /// the realizability gate; ignored when `--no-verify` is set.
     #[arg(long = "graph", env = "DEBUNDLE_GRAPH")]
     pub owner_graph_path: Option<PathBuf>,
+
+    /// Root used to resolve relative `source_location.source_path`
+    /// values when the gate checks anonymous statement selectors.
+    #[arg(long = "source-root", env = "DEBUNDLE_SOURCE_ROOT")]
+    pub source_root: Option<PathBuf>,
 }
 
 /// Summary returned by [`merge_modules`].
@@ -123,6 +128,11 @@ pub struct DeleteArgs {
     /// is structurally empty (no-op gate).
     #[arg(long = "graph", env = "DEBUNDLE_GRAPH")]
     pub owner_graph_path: Option<PathBuf>,
+
+    /// Root used to resolve relative `source_location.source_path`
+    /// values when the gate checks anonymous statement selectors.
+    #[arg(long = "source-root", env = "DEBUNDLE_SOURCE_ROOT")]
+    pub source_root: Option<PathBuf>,
 }
 
 /// Summary returned by [`delete_modules`].
@@ -192,7 +202,12 @@ pub fn run_merge(merge: MergeArgs) -> Result<()> {
             .map(|p| resolve_module_file(&merge.modules_root, p))
             .collect();
         let post_spec = post_merge_spec(&merge.modules_root, &target_abs, &source_abs)?;
-        gate_post_edit_partition(owner_graph_path, &post_spec)?;
+        gate_post_edit_partition(
+            owner_graph_path,
+            &merge.modules_root,
+            merge.source_root.as_deref(),
+            &post_spec,
+        )?;
     }
 
     let sources: Vec<&Path> = merge.sources.iter().map(PathBuf::as_path).collect();
@@ -388,7 +403,12 @@ pub fn run_delete(args: DeleteArgs) -> Result<()> {
             )
         })?;
         let post_spec = post_delete_spec(&args.modules_root, &paths_abs)?;
-        gate_post_edit_partition(owner_graph_path, &post_spec)?;
+        gate_post_edit_partition(
+            owner_graph_path,
+            &args.modules_root,
+            args.source_root.as_deref(),
+            &post_spec,
+        )?;
     }
 
     let summary = delete_modules(&paths_abs, args.dry_run)?;
