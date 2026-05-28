@@ -11,8 +11,12 @@
   "tender_price_log_discount_mu": 0.0,
   "tender_price_log_discount_sigma": 0.02,
   "last_tender_observed_at": "2026-01-15",
-  "evidence_digest": "sha256:fixture-private-company-a",
   "provenance": {
     "fixture": true
+  },
+  "scale_prior": {
+    "current_market_cap_usd": 1000000000.0,
+    "soft_cap_market_cap_usd": 5000000000.0,
+    "monthly_log_drift_penalty": 0.08
   }
 }

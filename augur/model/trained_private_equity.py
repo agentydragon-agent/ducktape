@@ -23,6 +23,20 @@ from augur.model.series_model import derive_stream_rollout_seeds
 _DAYS_PER_MONTH = 365.2425 / 12
 
 
+class TrainedPrivateEquityScalePrior(FrozenModel):
+    """Issuer-scale prior used to make extreme paths mean-revert softly.
+
+    `current_market_cap_usd` is the inferred issuer-scale value at the artifact's
+    current mark. `soft_cap_market_cap_usd` is not a hard maximum: above it, the
+    sampler subtracts an increasing drift penalty while still allowing shocks to
+    produce upside tail paths.
+    """
+
+    current_market_cap_usd: float = Field(gt=0)
+    soft_cap_market_cap_usd: float = Field(gt=0)
+    monthly_log_drift_penalty: float = Field(ge=0)
+
+
 class TrainedPrivateEquityModelArtifact(FrozenModel):
     """Compact JSON artifact written by the offline PE trainer.
 
@@ -43,8 +57,8 @@ class TrainedPrivateEquityModelArtifact(FrozenModel):
     tender_price_log_discount_mu: float = 0.0
     tender_price_log_discount_sigma: float = Field(default=0.08, ge=0)
     last_tender_observed_at: date | None = None
-    evidence_digest: str = Field(min_length=1)
     provenance: dict[str, Any] = Field(default_factory=dict)
+    scale_prior: TrainedPrivateEquityScalePrior
 
 
 class TrainedPrivateEquityProviderConfig(FrozenModel):
@@ -95,7 +109,6 @@ class TrainedPrivateEquityModel(FrozenModel):
                 "private_equity_model_schema_version": self.artifact.schema_version,
                 "private_equity_issuers": (issuer,),
                 "private_equity_prices_usd": {issuer: self.artifact.current_mark_usd},
-                "private_equity_evidence_digest": self.artifact.evidence_digest,
             },
         )
 
@@ -110,8 +123,11 @@ def _sample_levels(
         log_path[0] = math.log(artifact.current_mark_usd)
         if horizon_months:
             shocks = rng.standard_t(df=artifact.student_t_nu, size=horizon_months) * artifact.monthly_log_return_sigma
-            increments = artifact.monthly_log_return_mu + shocks
-            log_path[1:] = log_path[0] + np.cumsum(increments)
+            for month_idx, shock in enumerate(shocks, start=1):
+                penalty = private_equity_soft_cap_penalty(
+                    log_price=log_path[month_idx - 1], log_current_price=log_path[0], scale_prior=artifact.scale_prior
+                )
+                log_path[month_idx] = log_path[month_idx - 1] + artifact.monthly_log_return_mu + shock - penalty
         try:
             with np.errstate(over="raise", invalid="raise"):
                 level_path = np.exp(log_path)
@@ -176,3 +192,15 @@ def _apply_event_price_noise(
 
 def _months_between(start: date, end: date) -> float:
     return (end - start).days / _DAYS_PER_MONTH
+
+
+def private_equity_soft_cap_penalty(
+    *, log_price: float, log_current_price: float, scale_prior: TrainedPrivateEquityScalePrior
+) -> float:
+    """Return a drift penalty for paths above the configured market-cap soft cap."""
+
+    if scale_prior.monthly_log_drift_penalty == 0:
+        return 0.0
+    log_market_cap = math.log(scale_prior.current_market_cap_usd) + log_price - log_current_price
+    over_soft_cap = max(0.0, log_market_cap - math.log(scale_prior.soft_cap_market_cap_usd))
+    return scale_prior.monthly_log_drift_penalty * over_soft_cap

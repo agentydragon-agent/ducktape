@@ -130,8 +130,16 @@ those priors:
 | Philadelphia Fed Survey of Professional Forecasters | https://www.philadelphiafed.org/surveys-and-data/real-time-data-research/survey-of-professional-forecasters | External inflation forecast priors and posterior predictive checks. |
 | Kenneth French Data Library                         | https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/data_library.html                                   | Equity factor and market-risk reference data.                       |
 | Damodaran industry betas                            | https://pages.stern.nyu.edu/~adamodar/New_Home_Page/datafile/Betas.html                                     | Weak external anchor for private-company equity beta priors.        |
+| World Bank GDP                                      | https://data.worldbank.org/indicator/NY.GDP.MKTP.CD                                                         | World-GDP macro-capacity reference for private-equity scale priors. |
 | Stan prior choice recommendations                   | https://github.com/stan-dev/stan/wiki/prior-choice-recommendations                                          | General weakly-informative prior guidance.                          |
 | NumPyro distributions documentation                 | https://num.pyro.ai/en/stable/distributions.html                                                            | Distribution/covariance primitives used by Augur fit code.          |
+
+Large or mutable raw public files should either be normalized into small,
+reviewable checked-in snapshots or pinned as Bazel `http_file` repositories with
+`sha256` and a comment explaining the source. Do not make training depend on a
+mutable live URL without a checksum-pinned snapshot or mirror. CRSP is explicitly
+not a public download source; use it only if a licensed access path is configured
+outside this repository.
 
 Private company observations and their source notes live in the private
 deployment repository; do not copy personal or company-specific facts into

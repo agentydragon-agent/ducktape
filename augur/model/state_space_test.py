@@ -26,6 +26,7 @@ from augur.model.state_space import (
     StateSpacePrivateEquityEventPrior,
     write_state_space_artifact,
 )
+from augur.model.trained_private_equity import TrainedPrivateEquityScalePrior
 
 
 def test_state_space_samples_all_available_series_and_hard_anchors(tmp_path: Path) -> None:
@@ -161,9 +162,15 @@ def _artifact() -> StateSpaceModelArtifact:
                 last_tender_observed_at=date(2026, 1, 1),
             )
         },
+        private_equity_scale_priors={
+            "private_company_a": TrainedPrivateEquityScalePrior(
+                current_market_cap_usd=7_000_000_000.0,
+                soft_cap_market_cap_usd=5_000_000_000_000.0,
+                monthly_log_drift_penalty=0.08,
+            )
+        },
         source_manifest={"source_ids": ("fixture:public",)},
         prior_manifest={"kind": "fixture"},
-        evidence_digest="sha256:fixture",
     )
 
 

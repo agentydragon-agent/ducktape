@@ -106,6 +106,14 @@ def _write_private_equity_fixture(tmp_path: Path) -> Path:
             "uncertainty_log_sigma": 0.1,
             "source_id": "fixture:shareworks",
         },
+        {
+            "type": "valuation_observation",
+            "issuer_id": "private_company_a",
+            "observed_at": "2026-04-15",
+            "valuation_usd": 3_000_000_000.0,
+            "uncertainty_log_sigma": 0.1,
+            "source_id": "fixture:valuation",
+        },
     ]
     data_path.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
     config_path = tmp_path / "private_company_a_train.yaml"
@@ -117,6 +125,7 @@ def _write_private_equity_fixture(tmp_path: Path) -> Path:
                 "out_model_path": str(tmp_path / "unused_private_company_a_model.json"),
                 "as_of_date": "2026-04-15",
                 "priors": {
+                    "macro_capacity_reference_usd": 100_000_000_000.0,
                     "min_monthly_log_return_sigma": 0.03,
                     "student_t_nu": 5.0,
                     "tender_interval_months_median_prior": 9.0,

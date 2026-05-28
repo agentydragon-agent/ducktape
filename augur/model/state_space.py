@@ -45,10 +45,12 @@ from augur.model.series import (
     SP500_SERIES_ID,
     home_value_series_id,
     private_equity_sale_event_id,
+    private_equity_series_id,
     rent_series_id,
     series_suffix,
 )
 from augur.model.series_model import derive_stream_rollout_seeds
+from augur.model.trained_private_equity import TrainedPrivateEquityScalePrior, private_equity_soft_cap_penalty
 
 _MIN_MONTHLY_VARIANCE = 1e-8
 _OFF_BLOCK_SHRINKAGE = 0.0
@@ -71,9 +73,9 @@ class StateSpaceModelArtifact(FrozenModel):
     filtered_log_state_mean: dict[str, float] = Field(min_length=1)
     filtered_log_state_cov: tuple[tuple[float, ...], ...]
     private_equity_event_priors: dict[str, StateSpacePrivateEquityEventPrior] = Field(default_factory=dict)
+    private_equity_scale_priors: dict[str, TrainedPrivateEquityScalePrior] = Field(default_factory=dict)
     source_manifest: dict[str, Any] = Field(default_factory=dict)
     prior_manifest: dict[str, Any] = Field(default_factory=dict)
-    evidence_digest: str = Field(min_length=1)
 
     @model_validator(mode="after")
     def _validate_shapes(self) -> StateSpaceModelArtifact:
@@ -92,6 +94,17 @@ class StateSpaceModelArtifact(FrozenModel):
         _require_square_matrix(self.filtered_log_state_cov, n, "filtered_log_state_cov")
         if any(self.latest_level_by_factor[factor] <= 0 for factor in self.factor_names):
             raise ValueError("latest_level_by_factor values must be positive")
+        private_equity_issuers = {
+            issuer
+            for factor in self.factor_names
+            if (issuer := series_suffix(factor, PRIVATE_EQUITY_SERIES_PREFIX)) is not None
+        }
+        missing_scale_priors = private_equity_issuers - set(self.private_equity_scale_priors)
+        if missing_scale_priors:
+            raise ValueError(
+                "private_equity_scale_priors missing issuer(s) "
+                f"{sorted(missing_scale_priors)}; macro-scale private-equity prior is required"
+            )
         return self
 
 
@@ -103,9 +116,9 @@ class StateSpaceAdditionalFactor:
     monthly_log_return_sigma: float
     covariance_with_factors: Mapping[str, float] = field(default_factory=dict)
     source_ids: tuple[str, ...] = ()
-    evidence_digest: str = ""
     private_equity_issuer_id: str | None = None
     private_equity_event_prior: StateSpacePrivateEquityEventPrior | None = None
+    private_equity_scale_prior: TrainedPrivateEquityScalePrior | None = None
 
 
 class StateSpaceExogenousProviderConfig(FrozenModel):
@@ -175,6 +188,7 @@ class StateSpaceModel:
         latest_levels = {factor: float(latest_level_by_factor[factor]) for factor in base_factor_names}
         mean_by_factor = {factor: float(mean[idx]) for idx, factor in enumerate(base_factor_names)}
         event_priors: dict[str, StateSpacePrivateEquityEventPrior] = {}
+        scale_priors: dict[str, TrainedPrivateEquityScalePrior] = {}
         covariance = cov
 
         for extra in additional_factors:
@@ -193,25 +207,24 @@ class StateSpaceModel:
             )
             if extra.private_equity_issuer_id is not None and extra.private_equity_event_prior is not None:
                 event_priors[extra.private_equity_issuer_id] = extra.private_equity_event_prior
+            if extra.private_equity_issuer_id is not None:
+                if extra.private_equity_event_prior is None:
+                    raise ValueError(
+                        f"private-equity factor {extra.private_equity_issuer_id!r} missing tender event prior"
+                    )
+                if extra.private_equity_scale_prior is None:
+                    raise ValueError(
+                        f"private-equity factor {extra.private_equity_issuer_id!r} missing macro-scale prior"
+                    )
+                scale_priors[extra.private_equity_issuer_id] = extra.private_equity_scale_prior
 
         covariance = _nearest_positive_semidefinite(covariance)
         filtered_cov = np.diag(np.maximum(np.diag(covariance), _MIN_MONTHLY_VARIANCE))
         trained_through_month = historical.months[-1]
         merged_source_manifest = {
             **dict(source_manifest),
-            "additional_factors": {
-                extra.factor_name: {"source_ids": extra.source_ids, "evidence_digest": extra.evidence_digest}
-                for extra in additional_factors
-            },
+            "additional_factors": {extra.factor_name: {"source_ids": extra.source_ids} for extra in additional_factors},
         }
-        evidence_digest = "sha256:" + stable_identity_digest(
-            {
-                "factor_names": tuple(factor_names),
-                "trained_through_month": trained_through_month,
-                "source_manifest": merged_source_manifest,
-                "prior_manifest": dict(prior_manifest),
-            }
-        )
         return StateSpaceModelArtifact(
             factor_names=tuple(factor_names),
             trained_through_month=trained_through_month,
@@ -221,9 +234,9 @@ class StateSpaceModel:
             filtered_log_state_mean={factor: math.log(latest_levels[factor]) for factor in factor_names},
             filtered_log_state_cov=_matrix_to_tuple(filtered_cov),
             private_equity_event_priors=event_priors,
+            private_equity_scale_priors=scale_priors,
             source_manifest=merged_source_manifest,
             prior_manifest=dict(prior_manifest),
-            evidence_digest=evidence_digest,
         )
 
     @property
@@ -307,13 +320,25 @@ class StateSpaceModel:
         mean = np.asarray([self.artifact.monthly_log_return_mu[factor] for factor in factor_names], dtype=np.float64)
         cov = np.asarray(self.artifact.monthly_log_return_cov, dtype=np.float64)
         levels = np.empty((request.rollout_count, request.horizon_months + 1, len(factor_names)), dtype=np.float64)
+        private_equity_scale_indexes = self._private_equity_scale_indexes()
         for rollout_idx, seed in enumerate(request.rollout_seeds):
             rng = np.random.default_rng(seed)
             log_path = np.empty((request.horizon_months + 1, len(factor_names)), dtype=np.float64)
             log_path[0, :] = x0
             if request.horizon_months:
                 increments = rng.multivariate_normal(mean=mean, cov=cov, size=request.horizon_months)
-                log_path[1:, :] = x0 + np.cumsum(increments, axis=0)
+                if private_equity_scale_indexes:
+                    for month_idx, raw_increment in enumerate(increments, start=1):
+                        increment = np.asarray(raw_increment, dtype=np.float64).copy()
+                        for factor_index, scale_prior in private_equity_scale_indexes:
+                            increment[factor_index] -= private_equity_soft_cap_penalty(
+                                log_price=float(log_path[month_idx - 1, factor_index]),
+                                log_current_price=float(x0[factor_index]),
+                                scale_prior=scale_prior,
+                            )
+                        log_path[month_idx, :] = log_path[month_idx - 1, :] + increment
+                else:
+                    log_path[1:, :] = x0 + np.cumsum(increments, axis=0)
             try:
                 with np.errstate(over="raise", invalid="raise"):
                     level_path = np.exp(log_path)
@@ -399,16 +424,23 @@ class StateSpaceModel:
             if (issuer_id := series_suffix(series_id, PRIVATE_EQUITY_SERIES_PREFIX)) is not None
         }
 
+    def _private_equity_scale_indexes(self) -> tuple[tuple[int, TrainedPrivateEquityScalePrior], ...]:
+        if not self.artifact.private_equity_scale_priors:
+            return ()
+        factor_index = {factor: idx for idx, factor in enumerate(self.artifact.factor_names)}
+        indexes: list[tuple[int, TrainedPrivateEquityScalePrior]] = []
+        for issuer_id, scale_prior in self.artifact.private_equity_scale_priors.items():
+            factor_name = private_equity_series_id(issuer_id)
+            if factor_name in factor_index:
+                indexes.append((factor_index[factor_name], scale_prior))
+        return tuple(indexes)
+
     def _compute_provenance(self, evidence_source_id: str) -> None:
         self.exogenous_model_version_id = "model_version:" + stable_identity_digest(
             {"label": self.label, "class": type(self).__qualname__, "schema_version": self.artifact.schema_version}
         )
         self.evidence_set_id = "evidence_set:" + stable_identity_digest(
-            {
-                "evidence_source_id": evidence_source_id,
-                "artifact_evidence_digest": self.artifact.evidence_digest,
-                "conditioning": self.conditioning,
-            }
+            {"evidence_source_id": evidence_source_id, "conditioning": self.conditioning}
         )
         self.calibration_artifact_id = "calibration_artifact:" + stable_identity_digest(
             {

@@ -9,13 +9,18 @@ import pytest_bazel
 
 from augur.fit.private_equity import (
     PrivateEquityTrainingConfig,
+    PrivateEquityTrainingPriors,
     fit_private_equity_model,
     load_price_observations_jsonl,
     train_from_config,
 )
 from augur.model.exogenous import ExogenousSamplingRequest
 from augur.model.series import private_equity_sale_event_id, private_equity_series_id
-from augur.model.trained_private_equity import TrainedPrivateEquityModel, TrainedPrivateEquityModelArtifact
+from augur.model.trained_private_equity import (
+    TrainedPrivateEquityModel,
+    TrainedPrivateEquityModelArtifact,
+    TrainedPrivateEquityScalePrior,
+)
 
 
 def _write_jsonl(path: Path, rows: list[dict[str, object]]) -> Path:
@@ -46,6 +51,15 @@ def _rows() -> list[dict[str, object]]:
             "notes": "synthetic tender",
         },
         {
+            "type": "valuation_observation",
+            "issuer_id": "private_company_a",
+            "observed_at": "2024-11-15",
+            "valuation_usd": 2_100_000_000.0,
+            "uncertainty_log_sigma": 0.15,
+            "source_id": "test",
+            "notes": "synthetic valuation paired with tender price",
+        },
+        {
             "type": "price_observation",
             "issuer_id": "private_company_a",
             "observed_at": "2026-05-27",
@@ -58,7 +72,7 @@ def _rows() -> list[dict[str, object]]:
     ]
 
 
-def test_load_jsonl_rejects_non_price_observations(tmp_path: Path) -> None:
+def test_load_jsonl_accepts_valuation_observations(tmp_path: Path) -> None:
     path = _write_jsonl(
         tmp_path / "observations.jsonl",
         [
@@ -67,8 +81,22 @@ def test_load_jsonl_rejects_non_price_observations(tmp_path: Path) -> None:
                 "issuer_id": "private_company_a",
                 "observed_at": "2025-10-28",
                 "valuation_usd": 500_000_000_000,
+                "uncertainty_log_sigma": 0.2,
+                "source_id": "test",
             }
         ],
+    )
+
+    observations = load_price_observations_jsonl(path)
+
+    assert len(observations) == 1
+    assert observations[0].type == "valuation_observation"
+
+
+def test_load_jsonl_rejects_unknown_observation_type(tmp_path: Path) -> None:
+    path = _write_jsonl(
+        tmp_path / "observations.jsonl",
+        [{"type": "mystery_observation", "issuer_id": "private_company_a", "observed_at": "2025-10-28"}],
     )
 
     with pytest.raises(ValueError, match="unsupported observation type"):
@@ -78,7 +106,10 @@ def test_load_jsonl_rejects_non_price_observations(tmp_path: Path) -> None:
 def test_fit_requires_current_ppu_mark(tmp_path: Path) -> None:
     observations = load_price_observations_jsonl(_write_jsonl(tmp_path / "observations.jsonl", _rows()[:2]))
     config = PrivateEquityTrainingConfig(
-        issuer_id="private_company_a", observations_path="observations.jsonl", out_model_path="model.json"
+        issuer_id="private_company_a",
+        observations_path="observations.jsonl",
+        out_model_path="model.json",
+        priors=PrivateEquityTrainingPriors(macro_capacity_reference_usd=100_000_000_000.0),
     )
 
     with pytest.raises(ValueError, match="ppu_mark"):
@@ -94,6 +125,7 @@ issuer_id: private_company_a
 observations_path: observations.jsonl
 out_model_path: trained_model.json
 priors:
+  macro_capacity_reference_usd: 100000000000.0
   tender_interval_months_median_prior: 3.0
   tender_interval_log_sigma: 0.05
   tender_price_log_discount_sigma: 0.0
@@ -105,7 +137,6 @@ priors:
     artifact = train_from_config(config_path)
     assert artifact.issuer_id == "private_company_a"
     assert artifact.current_mark_usd == 687.69
-    assert artifact.evidence_digest.startswith("sha256:")
     assert (tmp_path / "trained_model.json").exists()
 
     model = TrainedPrivateEquityModel.from_path(tmp_path / "trained_model.json")
@@ -126,6 +157,157 @@ priors:
     assert events.shape == (3, 9)
 
 
+def test_sparse_tender_appreciation_is_shrunk_toward_stock_like_forward_prior(tmp_path: Path) -> None:
+    observations = load_price_observations_jsonl(
+        _write_jsonl(
+            tmp_path / "observations.jsonl",
+            [
+                {
+                    "type": "price_observation",
+                    "issuer_id": "private_company_a",
+                    "observed_at": "2025-01-01",
+                    "kind": "tender_price",
+                    "price_usd_per_share": 10.0,
+                    "uncertainty_log_sigma": 0.05,
+                    "source_id": "test",
+                },
+                {
+                    "type": "price_observation",
+                    "issuer_id": "private_company_a",
+                    "observed_at": "2025-07-01",
+                    "kind": "ppu_mark",
+                    "price_usd_per_share": 100.0,
+                    "uncertainty_log_sigma": 0.05,
+                    "source_id": "test",
+                },
+                {
+                    "type": "valuation_observation",
+                    "issuer_id": "private_company_a",
+                    "observed_at": "2025-07-01",
+                    "valuation_usd": 1_000_000_000.0,
+                    "uncertainty_log_sigma": 0.10,
+                    "source_id": "test",
+                },
+            ],
+        )
+    )
+    config = PrivateEquityTrainingConfig(
+        issuer_id="private_company_a",
+        observations_path="observations.jsonl",
+        out_model_path="model.json",
+        priors=PrivateEquityTrainingPriors(
+            macro_capacity_reference_usd=100_000_000_000.0,
+            stock_like_monthly_log_return_mu=0.005,
+            stock_like_monthly_log_return_mu_weight_months=240.0,
+            stock_like_monthly_log_return_sigma=0.10,
+            stock_like_monthly_log_return_sigma_weight_returns=60.0,
+        ),
+    )
+
+    artifact = fit_private_equity_model(observations, config)
+
+    assert artifact.provenance["empirical_monthly_log_return_mu"] > 0.35
+    assert artifact.monthly_log_return_mu < 0.02
+    assert artifact.monthly_log_return_sigma < 0.12
+
+
+def test_valuation_observations_create_soft_macro_scale_prior(tmp_path: Path) -> None:
+    observations = load_price_observations_jsonl(
+        _write_jsonl(
+            tmp_path / "observations.jsonl",
+            [
+                {
+                    "type": "price_observation",
+                    "issuer_id": "private_company_a",
+                    "observed_at": "2025-01-01",
+                    "kind": "tender_price",
+                    "price_usd_per_share": 100.0,
+                    "uncertainty_log_sigma": 0.05,
+                    "source_id": "test",
+                },
+                {
+                    "type": "valuation_observation",
+                    "issuer_id": "private_company_a",
+                    "observed_at": "2025-01-15",
+                    "valuation_usd": 1_000_000_000.0,
+                    "uncertainty_log_sigma": 0.10,
+                    "source_id": "test",
+                },
+                {
+                    "type": "price_observation",
+                    "issuer_id": "private_company_a",
+                    "observed_at": "2026-01-01",
+                    "kind": "ppu_mark",
+                    "price_usd_per_share": 150.0,
+                    "uncertainty_log_sigma": 0.05,
+                    "source_id": "test",
+                },
+            ],
+        )
+    )
+    config = PrivateEquityTrainingConfig(
+        issuer_id="private_company_a",
+        observations_path="observations.jsonl",
+        out_model_path="model.json",
+        priors=PrivateEquityTrainingPriors(
+            macro_capacity_reference_usd=100_000_000_000.0,
+            macro_capacity_soft_fraction=0.05,
+            macro_capacity_monthly_log_drift_penalty=0.10,
+        ),
+    )
+
+    artifact = fit_private_equity_model(observations, config)
+
+    assert artifact.scale_prior.current_market_cap_usd == pytest.approx(1_500_000_000.0)
+    assert artifact.scale_prior.soft_cap_market_cap_usd == pytest.approx(5_000_000_000.0)
+
+
+def test_runtime_scale_prior_penalizes_paths_above_soft_cap() -> None:
+    common = {
+        "issuer_id": "private_company_a",
+        "as_of_date": "2026-05-27",
+        "current_mark_usd": 100.0,
+        "monthly_log_return_mu": 0.20,
+        "monthly_log_return_sigma": 0.0 + 1e-9,
+        "tender_interval_months_median": 12.0,
+        "tender_interval_log_sigma": 0.1,
+    }
+    loose = TrainedPrivateEquityModel(
+        artifact=TrainedPrivateEquityModelArtifact(
+            **common,
+            scale_prior=TrainedPrivateEquityScalePrior(
+                current_market_cap_usd=10_000_000_000.0,
+                soft_cap_market_cap_usd=1_000_000_000_000.0,
+                monthly_log_drift_penalty=0.20,
+            ),
+        )
+    )
+    tight = TrainedPrivateEquityModel(
+        artifact=TrainedPrivateEquityModelArtifact(
+            **common,
+            scale_prior=TrainedPrivateEquityScalePrior(
+                current_market_cap_usd=10_000_000_000.0,
+                soft_cap_market_cap_usd=1_000_000_000.0,
+                monthly_log_drift_penalty=0.20,
+            ),
+        )
+    )
+    request = ExogenousSamplingRequest(
+        horizon_months=12,
+        rollout_seeds=(1,),
+        required_level_series=frozenset({private_equity_series_id("private_company_a")}),
+    )
+
+    loose_levels = loose.sample(request).level_matrix(
+        private_equity_series_id("private_company_a"), rollout_count=1, horizon_months=12
+    )
+    tight_levels = tight.sample(request).level_matrix(
+        private_equity_series_id("private_company_a"), rollout_count=1, horizon_months=12
+    )
+
+    assert tight_levels[0, -1] < loose_levels[0, -1]
+
+
 def test_runtime_sampling_fails_on_nonfinite_private_equity_prices() -> None:
     model = TrainedPrivateEquityModel(
         artifact=TrainedPrivateEquityModelArtifact(
@@ -136,7 +318,11 @@ def test_runtime_sampling_fails_on_nonfinite_private_equity_prices() -> None:
             monthly_log_return_sigma=0.01,
             tender_interval_months_median=12.0,
             tender_interval_log_sigma=0.1,
-            evidence_digest="sha256:test",
+            scale_prior=TrainedPrivateEquityScalePrior(
+                current_market_cap_usd=10_000_000_000.0,
+                soft_cap_market_cap_usd=1_000_000_000_000.0,
+                monthly_log_drift_penalty=0.20,
+            ),
         )
     )
 

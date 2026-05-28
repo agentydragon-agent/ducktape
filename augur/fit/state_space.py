@@ -130,8 +130,11 @@ def _fit_private_equity_factor(config_path: Path, historical: HistoricalSeries) 
         [observation for observation in observations if observation.issuer_id == config.issuer_id],
         key=lambda observation: observation.observed_at,
     )
-    mark = max((obs for obs in issuer_observations if obs.kind == "ppu_mark"), key=lambda obs: obs.observed_at)
-    coupling = _estimate_sp500_coupling(issuer_observations, historical)
+    price_observations = [
+        observation for observation in issuer_observations if isinstance(observation, PriceObservation)
+    ]
+    mark = max((obs for obs in price_observations if obs.kind == "ppu_mark"), key=lambda obs: obs.observed_at)
+    coupling = _estimate_sp500_coupling(price_observations, historical)
     sp500_sigma = _monthly_sigma(historical, "sp500")
     covariance_with_sp500 = coupling["rho_to_sp500"] * artifact.monthly_log_return_sigma * sp500_sigma
     factor = StateSpaceAdditionalFactor(
@@ -141,13 +144,13 @@ def _fit_private_equity_factor(config_path: Path, historical: HistoricalSeries) 
         monthly_log_return_sigma=artifact.monthly_log_return_sigma,
         covariance_with_factors={"sp500": covariance_with_sp500},
         source_ids=tuple(sorted({obs.source_id for obs in issuer_observations})),
-        evidence_digest=artifact.evidence_digest,
         private_equity_issuer_id=config.issuer_id,
         private_equity_event_prior=StateSpacePrivateEquityEventPrior(
             tender_interval_months_median=artifact.tender_interval_months_median,
             tender_interval_log_sigma=artifact.tender_interval_log_sigma,
             last_tender_observed_at=artifact.last_tender_observed_at,
         ),
+        private_equity_scale_prior=artifact.scale_prior,
     )
     point = ExogenousObservedPoint(
         value=artifact.current_mark_usd,
@@ -238,8 +241,8 @@ def _source_manifest(
         "private_equity": {
             fitted.factor.factor_name: {
                 "source_ids": fitted.factor.source_ids,
-                "evidence_digest": fitted.factor.evidence_digest,
                 "coupling_diagnostics": fitted.coupling_diagnostics,
+                "has_scale_prior": fitted.factor.private_equity_scale_prior is not None,
             }
             for fitted in private_factors
         },
