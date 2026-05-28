@@ -28,11 +28,12 @@ from augur.model.series import (
     private_equity_level_series_ids,
     private_equity_liquidity_blocked_series_id,
     private_equity_regime_code_series_id,
+    private_equity_series_id,
 )
 from augur.product import decode, service
 from augur.product.scenarios import build_scenario, resolve_primary_agent_id, sim_locations_from_config
 from augur.product.service import ProductService
-from augur.product.testing import ConstantFrameExogenousModel, level_matrix_with_month_override
+from augur.product.testing import ConstantFrameExogenousModel, level_matrix_with_month_override, level_matrix_with_step
 from augur.product.wire import (
     CashFinancing,
     ClosingCostPaymentEvent,
@@ -426,6 +427,61 @@ def test_product_rollout_includes_private_equity_protocol_event_and_forced_sale(
     assert isinstance(sale, HoldingSaleEvent)
     assert sale.units == pytest.approx(250.0)
     assert sale.proceeds_usd == pytest.approx(6_250.0)
+
+
+def test_product_rollout_collapse_revalues_unsold_private_equity() -> None:
+    issuer_id = "private_holding_a"
+    product = _service(
+        ConstantFrameExogenousModel(
+            level_overrides={
+                private_equity_series_id(issuer_id): level_matrix_with_step(default=25.0, override=0.5, month=1),
+                private_equity_event_kind_code_series_id(issuer_id): level_matrix_with_month_override(
+                    default=int(PrivateEquityEventKindCode.NONE),
+                    override=int(PrivateEquityEventKindCode.COLLAPSE),
+                    month=1,
+                ),
+                private_equity_regime_code_series_id(issuer_id): level_matrix_with_step(
+                    default=int(PrivateEquityRegimeCode.PRIVATE_OPERATING),
+                    override=int(PrivateEquityRegimeCode.COLLAPSED),
+                    month=1,
+                ),
+                private_equity_liquidity_blocked_series_id(issuer_id): level_matrix_with_step(
+                    default=0.0, override=1.0, month=1
+                ),
+                private_equity_forced_sale_fraction_series_id(issuer_id): 0.0,
+                private_equity_forced_recovery_cashout_usd_series_id(issuer_id): 0.0,
+            },
+            metadata={"exogenous_model_id": "collapsed_pe_fixture"},
+        )
+    )
+
+    detail = product.rollout(
+        RolloutRequest(
+            scenario=ScenarioKey(
+                exogenous_model_id="current_exogenous_model",
+                horizon_months=2,
+                monthly_spend_usd=1_000.0,
+                spend_index="none",
+                funding_policy=FundingPolicy(sell_order=()),
+            ),
+            seed=7,
+        )
+    )
+
+    metrics = detail.rollout.monthly_metrics
+    assert metrics["private_equity_value_usd"] == [25_000.0, 500.0, 500.0]
+    assert detail.rollout.terminal_metrics.private_equity_value_usd == 500.0
+    assert [
+        event
+        for event in detail.rollout.events
+        if event.kind == "holding_sale" and event.asset_id == "private_equity:private_holding_a"
+    ] == []
+    [pe_event] = [event for event in detail.rollout.events if event.kind == "private_equity_event"]
+    assert isinstance(pe_event, PrivateEquityMarkerEvent)
+    assert pe_event.event_kind == "collapse"
+    assert pe_event.regime == "collapsed"
+    assert pe_event.mark_usd == pytest.approx(0.5)
+    assert pe_event.liquidity_blocked is True
 
 
 def test_product_cash_buffer_uses_sim_trigger_and_fixed_sale_amount(
