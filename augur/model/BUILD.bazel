@@ -63,6 +63,7 @@ py_library(
     srcs = ["private_equity_risk.py"],
     deps = [
         ":exogenous",
+        ":private_equity_bundle",
         ":private_equity_protocol",
         ":schemas",
         ":series",
@@ -317,6 +318,7 @@ py_library(
     srcs = ["trained_private_equity.py"],
     deps = [
         ":exogenous",
+        ":private_equity_bundle",
         ":private_equity_protocol",
         ":schemas",
         ":series",
@@ -376,6 +378,7 @@ py_library(
     srcs = ["private_equity_trajectories.py"],
     deps = [
         ":exogenous",
+        ":private_equity_bundle",
         ":private_equity_protocol",
         ":series",
         "//augur:frames",

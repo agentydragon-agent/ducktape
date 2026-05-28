@@ -113,8 +113,8 @@ class PrivateEquityBundle:
 
         expected_shape = (rollout_count, horizon_months + 1)
         _require_float_matrix(mark_usd_per_unit, expected_shape, "mark_usd_per_unit")
-        if np.any(mark_usd_per_unit <= 0.0):
-            raise ValueError(f"PE issuer {issuer_id!r} mark_usd_per_unit must be positive")
+        if np.any(mark_usd_per_unit < 0.0):
+            raise ValueError(f"PE issuer {issuer_id!r} mark_usd_per_unit must be non-negative")
         _require_int_matrix(regime_code, expected_shape, "regime_code")
         _require_int_matrix(event_kind_code, expected_shape, "event_kind_code")
         _require_bool_matrix(sale_opportunity_active, expected_shape, "sale_opportunity_active")

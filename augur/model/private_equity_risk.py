@@ -21,6 +21,7 @@ from augur.model.exogenous import (
     series_levels_frame,
     validate_sample_satisfies_request,
 )
+from augur.model.private_equity_bundle import PrivateEquityBundle
 from augur.model.private_equity_protocol import private_equity_auxiliary_level_frames, private_equity_protocol_frame
 from augur.model.schemas import FrozenModel
 from augur.model.series import (
@@ -103,10 +104,27 @@ class PrivateEquityRiskModel:
         level_blocks = []
         event_blocks = []
         protocol_blocks = []
+        pe_bundle_parts: list[PrivateEquityBundle] = []
         prices: dict[str, float] = {}
         for issuer_id, issuer in sorted(self.issuers.items()):
             paths = _sample_issuer(issuer_id, issuer, request)
             prices[issuer_id] = issuer.current_mark_usd
+            pe_bundle_parts.append(
+                PrivateEquityBundle.from_issuer_arrays(
+                    issuer_id,
+                    mark_usd_per_unit=paths.mark.astype(np.float64),
+                    regime_code=paths.regime_code.astype(np.int64),
+                    event_kind_code=paths.event_kind_code.astype(np.int64),
+                    sale_opportunity_active=paths.tender_events.astype(np.bool_),
+                    sale_capacity_fraction=paths.sale_capacity_fraction.astype(np.float64),
+                    eligible_fraction=paths.eligible_fraction.astype(np.float64),
+                    forced_sale_fraction=paths.forced_sale_fraction.astype(np.float64),
+                    liquidity_blocked=(paths.liquidity_blocked >= 0.5).astype(np.bool_),
+                    forced_recovery_cashout_usd=paths.forced_recovery_cashout_usd.astype(np.float64),
+                    rollout_count=rollout_count,
+                    horizon_months=horizon_months,
+                )
+            )
             level_blocks.append(
                 series_levels_frame(
                     private_equity_series_id(issuer_id),
@@ -150,6 +168,7 @@ class PrivateEquityRiskModel:
 
         sampled = SampledExogenousBundle(
             levels=concat_frames(level_blocks, SERIES_LEVELS_SCHEMA),
+            private_equity=PrivateEquityBundle.combine(pe_bundle_parts),
             events=concat_frames(event_blocks, SERIES_EVENTS_SCHEMA),
             private_equity_protocol=concat_frames(protocol_blocks, PRIVATE_EQUITY_PROTOCOL_SCHEMA),
             metadata={
