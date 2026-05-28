@@ -19,9 +19,11 @@ locals {
 
   # Public Gateway node IPs. Update when public Gateway-capable nodes change.
   public_gateway_ips = [
-    "5.78.142.158",   # talos-vps-cp-0
-    "5.78.144.197",   # talos-vps-cp-1
+    "147.135.37.175", # talos-kimsufi-cp-0
     "147.135.39.162", # talos-kimsufi-worker-0
+    "147.135.39.176", # talos-kimsufi-worker-1
+    "147.135.104.5",  # talos-ks-game-worker-0
+    "147.135.104.16", # talos-ks-game-worker-1
   ]
 }
 

@@ -28,19 +28,18 @@ See <docs/bootstrap.md> for full setup.
   - 10.2.1.x: Control plane (Proxmox), 10.2.2.x: Workers (Proxmox)
 - Nodes: see [Node Types](#node-types) below
 - Domain: `*.allegedly.works` (AWS Route 53, DNS-01 challenges, dual LE issuers)
-- HTTPS: Internet → VPS:443 → Cilium Envoy (Gateway API) → backend pods
-- Nebula: encrypted mesh overlay (UDP 4242, lighthouses + relays on VPS nodes)
+- HTTPS: Internet → OVH bare metal:443 → Cilium Envoy (Gateway API) → backend pods
+- Nebula: encrypted mesh overlay (UDP 4242, lighthouses + relays on OVH nodes)
 - Cilium MTU: `MTU: 1412` (uppercase key required — VXLAN 50 + Nebula 38 = 88 overhead)
-- Kubeconfig patched post-bootstrap to real VPS IP (no VIP possible across VPS+home)
+- Kubeconfig patched post-bootstrap to `api.allegedly.works`
 
 ### Node Types
 
 | Node                                               | Type             | Region    | Availability     | Hardware            |
 | -------------------------------------------------- | ---------------- | --------- | ---------------- | ------------------- |
-| `talos-vps-cp-0`, `talos-vps-cp-1`                 | Talos CP         | `hil`     | Always on        | Hetzner CPX31       |
-| `talos-kimsufi-cp-0`                               | Talos CP         | `hil`     | Always on        | OVH Kimsufi         |
-| `talos-pve-cp-0`                                   | Talos CP         | `proxmox` | Always on (home) | Proxmox VM          |
-| `talos-kimsufi-worker-0`, `talos-kimsufi-worker-1` | Talos worker     | `hil`     | Always on        | OVH Kimsufi         |
+| `talos-kimsufi-cp-0`                               | Talos CP         | `hil`     | Always on        | OVH Kimsufi KS-5    |
+| `talos-kimsufi-worker-0`, `talos-kimsufi-worker-1` | Talos CP         | `hil`     | Always on        | OVH Kimsufi KS-5    |
+| `talos-ks-game-worker-0`, `talos-ks-game-worker-1` | Talos worker     | `hil`     | Always on        | OVH KS-GAME         |
 | `wyrm2`                                            | NixOS GPU worker | `proxmox` | Always on (home) | 2x RTX 5090         |
 | `iguana`                                           | NixOS laptop     | `roaming` | Often offline    | ThinkPad X1 Extreme |
 | `rugged`                                           | NixOS laptop     | `roaming` | Often offline    | Dell Rugged 12      |

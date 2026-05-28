@@ -1,4 +1,4 @@
-# SeaweedFS cluster — trial deployment on OVH Kimsufi workers.
+# SeaweedFS cluster — trial deployment on OVH Kimsufi nodes.
 #
 # Replication "001" (1 copy on different node, same rack) — survives a single
 # node loss across our 2-node, single-rack topology.
@@ -11,9 +11,9 @@
 # for metadata; leveldb2 metadata is in-pod (single-instance, no HA) —
 # trial only.
 #
-# All four components (master/volume/filer/s3) are pinned to kimsufi
-# workers via nodeSelector. Operator default would let pods land anywhere;
-# we want them strictly on the HDD-equipped OVH boxes.
+# All four components (master/volume/filer/s3) are pinned to OVH Kimsufi
+# nodes via nodeSelector. Operator default would let pods land anywhere; we
+# want them strictly on OVH boxes with a Talos data user volume.
 apiVersion: seaweed.seaweedfs.com/v1
 kind: Seaweed
 metadata:
@@ -38,7 +38,7 @@ spec:
   volumeServerDiskCount: 1
 
   master:
-    # 3-instance raft, one per kimsufi host (workers + CP). Quorum 2/3 →
+    # 3-instance raft, spread across kimsufi hosts. Quorum 2/3 →
     # cluster survives any single-node outage. Tolerate the CP taint
     # matching volume + s3.
     replicas: 3
@@ -63,11 +63,11 @@ spec:
             topologyKey: kubernetes.io/hostname
 
   volume:
-    # One per kimsufi host: 2 workers + 1 CP. The CP has the same KS-5
-    # hardware (8 CPU, 32 GiB, 2x 2TB HDD in JBOD) and its /dev/sdb is
-    # already mounted at /var/mnt/seaweedfs-data via Talos UserVolumeConfig
+    # Three volume servers spread across kimsufi hosts. KS-5 nodes use
+    # /dev/sdb; KS-GAME nodes use their second NVMe. All mount the data volume
+    # at /var/mnt/seaweedfs-data via Talos UserVolumeConfig
     # (cluster/terraform/main/ovh-nodes.tf). With replication=001 across
-    # 3 hosts we can lose one node and still have 2 surviving copies.
+    # 3 hosts, we can lose one node and still have 2 surviving copies.
     replicas: 3
     requests:
       storage: 1800Gi # leaves headroom on the 2 TB /dev/sdb
@@ -143,8 +143,8 @@ spec:
       - "-ip.bind=0.0.0.0"
     nodeSelector:
       topology.kubernetes.io/zone: hil-ovh
-    # Allow the kimsufi CP as a scheduling target so s3 can spread across
-    # all 3 hosts when desirable. Stateless gateway — no I/O contention.
+    # Allow kimsufi CPs as scheduling targets so s3 can spread across OVH
+    # hosts when desirable. Stateless gateway — no I/O contention.
     tolerations:
       - key: node-role.kubernetes.io/control-plane
         operator: Exists

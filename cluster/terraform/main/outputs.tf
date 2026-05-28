@@ -7,7 +7,7 @@ output "kubeconfig" {
   value = replace(
     talos_cluster_kubeconfig.cluster.kubeconfig_raw,
     "https://localhost:7445",
-    "https://${hcloud_server.vps[local.bootstrap_node].ipv4_address}:6443"
+    local.kubeconfig_cluster_endpoint
   )
   sensitive = true
 }
@@ -15,7 +15,7 @@ output "kubeconfig" {
 output "kubeconfig_data" {
   description = "Kubeconfig data components for provider configuration"
   value = {
-    host                   = "https://${hcloud_server.vps[local.bootstrap_node].ipv4_address}:6443"
+    host                   = local.kubeconfig_cluster_endpoint
     client_certificate     = talos_cluster_kubeconfig.cluster.kubernetes_client_configuration.client_certificate
     client_key             = talos_cluster_kubeconfig.cluster.kubernetes_client_configuration.client_key
     cluster_ca_certificate = talos_cluster_kubeconfig.cluster.kubernetes_client_configuration.ca_certificate
@@ -35,7 +35,7 @@ output "talos_config" {
 
 output "cluster_endpoint" {
   description = "Kubernetes API cluster endpoint"
-  value       = "https://${hcloud_server.vps[local.bootstrap_node].ipv4_address}:6443"
+  value       = local.kubeconfig_cluster_endpoint
 }
 
 output "cluster_domain" {
@@ -46,7 +46,11 @@ output "cluster_domain" {
 output "cluster_nodes" {
   description = "Cluster node information"
   value = {
-    vps_ips     = { for k, v in hcloud_server.vps : k => v.ipv4_address }
+    vps_ips = { for k, v in hcloud_server.vps : k => v.ipv4_address }
+    ovh_ips = merge(
+      { for k, v in data.ovh_dedicated_server.kimsufi : k => v.ip },
+      { for k, v in data.ovh_dedicated_server.kimsufi_cp : k => v.ip },
+    )
     proxmox_ips = { for k, v in local.proxmox_nodes : k => v.ip }
   }
 }
@@ -62,8 +66,8 @@ output "vps_node_ips" {
 }
 
 output "bootstrap_node_ip" {
-  description = "IP of the bootstrap node (primary API endpoint)"
-  value       = hcloud_server.vps[local.bootstrap_node].ipv4_address
+  description = "IP of the Talos node used to read cluster client configuration"
+  value       = local.primary_controlplane_ip
 }
 
 

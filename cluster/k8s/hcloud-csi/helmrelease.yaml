@@ -34,8 +34,8 @@ spec:
     # Pin to Hetzner Cloud nodes only — the driver talks to the hcloud API
     # with node IDs that don't exist for OVH. Hetzner VPS get zone=`hil-dc1`
     # from Talos CCM; kimsufi gets zone=`hil-ovh` (explicit node label).
-    # Tolerate the control-plane taint so the controller can land on a CP
-    # when no VPS workers are present (talos-vps-worker-0 was decommissioned).
+    # This chart is retained only for cleanup of old hcloud-volumes state; all
+    # active Talos nodes have moved off Hetzner Cloud.
     #
     # TODO: remove this chart entirely. No active workloads use hcloud-volumes
     # (the only PV is `tana-mcp/tana-mcp-config`, Released). Also clean up the

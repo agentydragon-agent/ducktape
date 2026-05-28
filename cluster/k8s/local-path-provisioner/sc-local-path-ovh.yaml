@@ -5,9 +5,12 @@ metadata:
 provisioner: cluster.local/local-path-provisioner
 reclaimPolicy: Delete
 volumeBindingMode: WaitForFirstConsumer
+# TODO(2026-05-28): Decide whether to split OVH local storage into separate
+# HDD-backed KS-5 and SSD/NVMe-backed KS-GAME storage classes. For now,
+# local-path-ovh means "OVH HIL node-local data disk" regardless of media.
 # zone (not region): region=hil includes Hetzner VPS too, but the user volume
-# at /var/mnt/seaweedfs-data only exists on the OVH Kimsufi workers
-# (declared via Talos UserVolumeConfig in cluster/terraform/main/ovh-nodes.tf).
+# at /var/mnt/seaweedfs-data only exists on the OVH Kimsufi nodes declared via
+# Talos UserVolumeConfig in cluster/terraform/main/ovh-nodes.tf.
 allowedTopologies:
   - matchLabelExpressions:
       - key: topology.kubernetes.io/zone

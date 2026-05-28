@@ -94,3 +94,15 @@ variable "kimsufi_service_name_cp0" {
   type        = string
   default     = "ns102453.ip-147-135-37.us"
 }
+
+variable "kimsufi_service_name_ks_game_0" {
+  description = "OVH service name of the first Kimsufi KS-GAME worker"
+  type        = string
+  default     = "ns104952.ip-147-135-104.us"
+}
+
+variable "kimsufi_service_name_ks_game_1" {
+  description = "OVH service name of the second Kimsufi KS-GAME worker"
+  type        = string
+  default     = "ns104963.ip-147-135-104.us"
+}

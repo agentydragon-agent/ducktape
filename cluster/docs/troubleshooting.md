@@ -294,8 +294,8 @@ chowns before the app starts.
 ```bash
 talosctl -n <node-ip> logs ext-nebula          # Talos nodes
 systemctl status nebula                         # NixOS workers
-ping 10.42.0.1                                  # vps0 lighthouse
-ping 10.42.0.2                                  # vps1 lighthouse
+ping 10.42.0.15                                 # talos-kimsufi-cp-0 lighthouse
+ping 10.42.0.13                                 # talos-kimsufi-worker-0 lighthouse
 ```
 
 Port: UDP 4242. If down: check firewall, verify certs (`nebula-cert print -path /etc/nebula/host.crt`).

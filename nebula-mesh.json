@@ -1,33 +1,10 @@
 {
   "_comment": "Single source of truth for the Nebula mesh host roster. Consumers: nix/nixos/modules/nebula.nix, nix/nixos/modules/k8s-worker.nix, cluster/terraform/main/nebula.tf, cluster/terraform/main/persistent-auth.tf, cluster/scripts/render_mobile_nebula_config.py. Add/remove/re-IP runbook: cluster/docs/mesh_membership.md.",
   "hosts": {
-    "talos-vps-cp-0": {
-      "nebula_ip": "10.42.0.1",
-      "endpoint": "5.78.142.158:4242",
-      "role": "control-plane",
-      "lighthouse": true,
-      "relay": true,
-      "managed_by": "tofu-hcloud",
-      "cert_groups": ["lighthouse"]
-    },
-    "talos-vps-cp-1": {
-      "nebula_ip": "10.42.0.2",
-      "endpoint": "5.78.144.197:4242",
-      "role": "control-plane",
-      "lighthouse": true,
-      "relay": true,
-      "managed_by": "tofu-hcloud",
-      "cert_groups": ["lighthouse"]
-    },
-    "talos-pve-cp-0": {
-      "nebula_ip": "10.42.0.10",
-      "role": "control-plane",
-      "managed_by": "tofu-proxmox"
-    },
     "talos-kimsufi-worker-0": {
       "nebula_ip": "10.42.0.13",
       "endpoint": "147.135.39.162:4242",
-      "role": "worker",
+      "role": "control-plane",
       "lighthouse": true,
       "relay": true,
       "managed_by": "tofu-ovh",
@@ -36,6 +13,24 @@
     "talos-kimsufi-worker-1": {
       "nebula_ip": "10.42.0.14",
       "endpoint": "147.135.39.176:4242",
+      "role": "control-plane",
+      "lighthouse": true,
+      "relay": true,
+      "managed_by": "tofu-ovh",
+      "cert_groups": ["lighthouse"]
+    },
+    "talos-ks-game-worker-0": {
+      "nebula_ip": "10.42.0.16",
+      "endpoint": "147.135.104.5:4242",
+      "role": "worker",
+      "lighthouse": true,
+      "relay": true,
+      "managed_by": "tofu-ovh",
+      "cert_groups": ["lighthouse"]
+    },
+    "talos-ks-game-worker-1": {
+      "nebula_ip": "10.42.0.17",
+      "endpoint": "147.135.104.16:4242",
       "role": "worker",
       "lighthouse": true,
       "relay": true,

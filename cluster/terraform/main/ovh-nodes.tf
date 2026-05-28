@@ -1,16 +1,16 @@
-# OVH Eco Kimsufi KS-5 bare metal nodes (workers + control plane, HIL, Hillsboro OR)
+# OVH Eco Kimsufi bare metal nodes (KS-5 control plane + KS-GAME workers, HIL)
 #
 # Talos is installed via OVH rescue mode (netboot → dd image to disk).
 # No Packer/snapshot mechanism available for OVH bare metal.
 #
 # Provisioning flow (per server):
 #   1. Set rescue boot + reboot → rescue env (SSH with cluster SSH key)
-#   2. dd Talos metal image to /dev/sda
+#   2. dd Talos metal image to the node's configured install_disk
 #   3. Set harddisk boot + reboot → Talos boots
 #   4. Apply Talos machine config (includes Nebula extension)
 #
 # Prerequisites:
-#   - Server purchased via OVH web UI; set TF_VAR_kimsufi_service_name[_1]
+#   - Server purchased via OVH web UI; set the matching kimsufi_service_name var
 #   - OVH API credentials in secrets/ovh-credentials.sops.yaml
 
 # ============================================================================
@@ -20,14 +20,42 @@
 locals {
   kimsufi_servers = {
     kimsufi_worker0 = {
-      service_name = var.kimsufi_service_name
-      hostname     = "talos-kimsufi-worker-0"
-      nebula_ip    = "10.42.0.13"
+      service_name    = var.kimsufi_service_name
+      hostname        = "talos-kimsufi-worker-0"
+      nebula_ip       = "10.42.0.13"
+      role            = "controlplane"
+      apply_mode      = "staged_if_needing_reboot"
+      install_disk    = "/dev/sda"
+      data_disk_match = "disk.dev_path == '/dev/sdb'"
+      zone            = "hil-ovh"
     }
     kimsufi_worker1 = {
-      service_name = var.kimsufi_service_name_1
-      hostname     = "talos-kimsufi-worker-1"
-      nebula_ip    = "10.42.0.14"
+      service_name    = var.kimsufi_service_name_1
+      hostname        = "talos-kimsufi-worker-1"
+      nebula_ip       = "10.42.0.14"
+      role            = "controlplane"
+      apply_mode      = "staged_if_needing_reboot"
+      install_disk    = "/dev/sda"
+      data_disk_match = "disk.dev_path == '/dev/sdb'"
+      zone            = "hil-ovh"
+    }
+    ks_game_worker0 = {
+      service_name    = var.kimsufi_service_name_ks_game_0
+      hostname        = "talos-ks-game-worker-0"
+      nebula_ip       = "10.42.0.16"
+      role            = "worker"
+      install_disk    = "/dev/disk/by-id/nvme-INTEL_SSDPE2MX450G7_BTPF8256006P450RGN"
+      data_disk_match = "disk.serial == 'BTPF8304019P450RGN'"
+      zone            = "hil-ovh"
+    }
+    ks_game_worker1 = {
+      service_name    = var.kimsufi_service_name_ks_game_1
+      hostname        = "talos-ks-game-worker-1"
+      nebula_ip       = "10.42.0.17"
+      role            = "worker"
+      install_disk    = "/dev/disk/by-id/nvme-INTEL_SSDPE2MX450G7_BTPF8256002V450RGN"
+      data_disk_match = "disk.serial == 'BTPF8256009U450RGN'"
+      zone            = "hil-ovh"
     }
   }
   # Filter out unpurchased servers (empty service name)
@@ -37,9 +65,13 @@ locals {
 
   kimsufi_cp_servers = {
     kimsufi_cp0 = {
-      service_name = var.kimsufi_service_name_cp0
-      hostname     = "talos-kimsufi-cp-0"
-      nebula_ip    = "10.42.0.15"
+      service_name    = var.kimsufi_service_name_cp0
+      hostname        = "talos-kimsufi-cp-0"
+      nebula_ip       = "10.42.0.15"
+      role            = "controlplane"
+      install_disk    = "/dev/sda"
+      data_disk_match = "disk.dev_path == '/dev/sdb'"
+      zone            = "hil-ovh"
     }
   }
   active_kimsufi_cp_servers = {
@@ -191,7 +223,7 @@ resource "null_resource" "install_talos_kimsufi" {
     # The Image Factory currently ships `metal-amd64.raw.zst`; older releases
     # used .xz, hence the URL-suffix switch.
     # KS-5 has 32 GB RAM; /tmp on tmpfs has room for the ~1.5 GB raw image.
-    # /dev/sda is the KS-5 SATA SSD (verify with `lsblk` if cloning to other HW).
+    # install_disk is per node: KS-5 uses /dev/sda, KS-GAME uses NVMe.
     inline = [
       "set -ex",
       # OVH Debian rescue doesn't have zstd pre-installed; xz-utils is there.
@@ -200,7 +232,7 @@ resource "null_resource" "install_talos_kimsufi" {
       "wget -q -O /tmp/talos.bin \"$URL\"",
       "case \"$URL\" in *.zst) zstd -dc /tmp/talos.bin > /tmp/talos.raw ;; *.xz) xz -dc /tmp/talos.bin > /tmp/talos.raw ;; *) echo \"unknown compression in $URL\" >&2; exit 1 ;; esac",
       "test -s /tmp/talos.raw",
-      "dd if=/tmp/talos.raw of=/dev/sda bs=4M status=progress",
+      "dd if=/tmp/talos.raw of=${each.value.install_disk} bs=4M status=progress",
       "sync",
     ]
   }
@@ -229,55 +261,94 @@ resource "ovh_dedicated_server_reboot_task" "kimsufi_to_talos" {
 # ============================================================================
 
 locals {
-  # Shared user volume config — claims the entire second disk for SeaweedFS data.
-  # Both workers and the CP have a KS-5 with 2x 2TB SATA HDD in JBOD.
-  # Talos installs onto /dev/sda; /dev/sdb is reliably the non-system disk.
-  # Talos auto-mounts at /var/mnt/seaweedfs-data (label: u-seaweedfs-data).
-  # NOTE: this only claims/formats the disk — the node is not added to the
-  # SeaweedFS cluster manifest automatically. Wire SeaweedFS separately.
-  kimsufi_seaweedfs_user_volume = {
-    apiVersion = "v1alpha1"
-    kind       = "UserVolumeConfig"
-    name       = "seaweedfs-data"
-    volumeType = "disk"
-    provisioning = {
-      diskSelector = {
-        match = "disk.dev_path == '/dev/sdb'"
-      }
-    }
-    filesystem = {
-      type = "xfs"
-    }
+  # OVH KS-5 control planes are also storage-bearing nodes. Keep them schedulable
+  # so existing OVH-local workloads and local-path PVs can continue to run there.
+  kimsufi_controlplane_cluster_config = merge(local.common_cluster_config, {
+    allowSchedulingOnControlPlanes = true
+  })
+
+  # Per-node user-volume patches. KS-5 nodes expose /dev/sdb; KS-GAME nodes
+  # expose a second NVMe. Both are mounted at the same path so local-path-ovh
+  # can use OVH-local capacity uniformly.
+  kimsufi_user_volume_config_patches = {
+    for k, v in merge(local.kimsufi_servers, local.kimsufi_cp_servers) :
+    k => v.data_disk_match == null ? [] : [
+      yamlencode({
+        apiVersion = "v1alpha1"
+        kind       = "UserVolumeConfig"
+        name       = "seaweedfs-data"
+        volumeType = "disk"
+        provisioning = {
+          diskSelector = {
+            match = v.data_disk_match
+          }
+        }
+        filesystem = {
+          type = "xfs"
+        }
+      })
+    ]
   }
 
-  kimsufi_machine_config_patch = yamlencode({
-    machine = merge(local.worker_machine_base, {
-      install = {
-        image = "factory.talos.dev/installer/${talos_image_factory_schematic.kimsufi.id}:${var.talos_version}"
-      }
-      # Topology labels set explicitly — no CCM for OVH bare metal.
-      nodeLabels = {
-        "topology.kubernetes.io/region" = "hil"
-        "topology.kubernetes.io/zone"   = "hil-ovh"
-      }
+  kimsufi_controlplane_machine_config_patches = {
+    for k, v in local.kimsufi_servers :
+    k => yamlencode({
+      machine = merge(local.common_machine_base, {
+        install = {
+          image = "factory.talos.dev/installer/${talos_image_factory_schematic.kimsufi.id}:${var.talos_version}"
+        }
+        files = local.cp_auth_files
+        # Topology labels set explicitly — no CCM for OVH bare metal.
+        nodeLabels = {
+          "topology.kubernetes.io/region" = "hil"
+          "topology.kubernetes.io/zone"   = v.zone
+        }
+      })
+      cluster = local.kimsufi_controlplane_cluster_config
     })
-    cluster = local.worker_cluster_config
-  })
+    if v.role == "controlplane"
+  }
 
-  kimsufi_cp_machine_config_patch = yamlencode({
-    machine = merge(local.common_machine_base, {
-      install = {
-        image = "factory.talos.dev/installer/${talos_image_factory_schematic.kimsufi.id}:${var.talos_version}"
-      }
-      files = local.cp_auth_files
-      # Topology labels set explicitly — no CCM for OVH bare metal.
-      nodeLabels = {
-        "topology.kubernetes.io/region" = "hil"
-        "topology.kubernetes.io/zone"   = "hil-ovh"
-      }
+  kimsufi_worker_machine_config_patches = {
+    for k, v in local.kimsufi_servers :
+    k => yamlencode({
+      machine = merge(local.worker_machine_base, {
+        install = {
+          image = "factory.talos.dev/installer/${talos_image_factory_schematic.kimsufi.id}:${var.talos_version}"
+        }
+        # Topology labels set explicitly — no CCM for OVH bare metal.
+        nodeLabels = {
+          "topology.kubernetes.io/region" = "hil"
+          "topology.kubernetes.io/zone"   = v.zone
+        }
+      })
+      cluster = local.worker_cluster_config
     })
-    cluster = local.common_cluster_config
-  })
+    if v.role == "worker"
+  }
+
+  kimsufi_machine_config_patches = merge(
+    local.kimsufi_controlplane_machine_config_patches,
+    local.kimsufi_worker_machine_config_patches,
+  )
+
+  kimsufi_cp_machine_config_patches = {
+    for k, v in local.kimsufi_cp_servers :
+    k => yamlencode({
+      machine = merge(local.common_machine_base, {
+        install = {
+          image = "factory.talos.dev/installer/${talos_image_factory_schematic.kimsufi.id}:${var.talos_version}"
+        }
+        files = local.cp_auth_files
+        # Topology labels set explicitly — no CCM for OVH bare metal.
+        nodeLabels = {
+          "topology.kubernetes.io/region" = "hil"
+          "topology.kubernetes.io/zone"   = v.zone
+        }
+      })
+      cluster = local.kimsufi_controlplane_cluster_config
+    })
+  }
 }
 
 data "talos_machine_configuration" "kimsufi" {
@@ -286,7 +357,7 @@ data "talos_machine_configuration" "kimsufi" {
   cluster_name       = var.cluster_name
   cluster_endpoint   = local.cluster_endpoint
   machine_secrets    = local.machine_secrets
-  machine_type       = "worker"
+  machine_type       = each.value.role
   talos_version      = var.talos_version
   kubernetes_version = var.kubernetes_version
   examples           = false
@@ -294,15 +365,15 @@ data "talos_machine_configuration" "kimsufi" {
 
   config_patches = concat(
     [
-      local.kimsufi_machine_config_patch,
+      local.kimsufi_machine_config_patches[each.key],
       yamlencode({
         apiVersion = "v1alpha1"
         kind       = "HostnameConfig"
         auto       = "off"
         hostname   = each.value.hostname
       }),
-      yamlencode(local.kimsufi_seaweedfs_user_volume),
     ],
+    local.kimsufi_user_volume_config_patches[each.key],
     local.nebula_machine_patches[each.key],
   )
 }
@@ -312,6 +383,7 @@ resource "talos_machine_configuration_apply" "kimsufi" {
 
   client_configuration        = local.client_configuration
   machine_configuration_input = data.talos_machine_configuration.kimsufi[each.key].machine_configuration
+  apply_mode                  = try(each.value.apply_mode, "auto")
   node                        = data.ovh_dedicated_server.kimsufi[each.key].ip
 
   depends_on = [ovh_dedicated_server_reboot_task.kimsufi_to_talos]
@@ -371,7 +443,7 @@ resource "null_resource" "install_talos_kimsufi_cp" {
       "wget -q -O /tmp/talos.bin \"$URL\"",
       "case \"$URL\" in *.zst) zstd -dc /tmp/talos.bin > /tmp/talos.raw ;; *.xz) xz -dc /tmp/talos.bin > /tmp/talos.raw ;; *) echo \"unknown compression in $URL\" >&2; exit 1 ;; esac",
       "test -s /tmp/talos.raw",
-      "dd if=/tmp/talos.raw of=/dev/sda bs=4M status=progress",
+      "dd if=/tmp/talos.raw of=${each.value.install_disk} bs=4M status=progress",
       "sync",
     ]
   }
@@ -411,15 +483,15 @@ data "talos_machine_configuration" "kimsufi_cp" {
 
   config_patches = concat(
     [
-      local.kimsufi_cp_machine_config_patch,
+      local.kimsufi_cp_machine_config_patches[each.key],
       yamlencode({
         apiVersion = "v1alpha1"
         kind       = "HostnameConfig"
         auto       = "off"
         hostname   = each.value.hostname
       }),
-      yamlencode(local.kimsufi_seaweedfs_user_volume),
     ],
+    local.kimsufi_user_volume_config_patches[each.key],
     local.nebula_machine_patches[each.key],
   )
 }

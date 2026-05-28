@@ -1,13 +1,13 @@
-# Provisioning an OVH Kimsufi worker
+# Provisioning an OVH Kimsufi node
 
-Add a Kimsufi bare-metal worker (KS-5 in HIL) to the cluster. Talos is installed
-via OVH rescue boot → `dd` of the metal image; then we apply a Talos machine
-config that joins the cluster and brings up the Nebula extension.
+Add a Kimsufi bare-metal node in OVH HIL to the cluster. Talos is installed via
+OVH rescue boot → `dd` of the metal image; then we apply a Talos machine config
+that joins the cluster and brings up the Nebula extension.
 
-The Terraform code in `cluster/terraform/main/ovh-nodes.tf` already declares two
-slots (`kimsufi_worker0`, `kimsufi_worker1`) keyed by `for_each` over
-`local.active_kimsufi_servers`. A slot is "active" iff its `service_name` variable
-is non-empty.
+The Terraform code in `cluster/terraform/main/ovh-nodes.tf` declares KS-5 and
+KS-GAME slots keyed by `for_each` over `local.active_kimsufi_servers` and
+`local.active_kimsufi_cp_servers`. A slot is "active" iff its `service_name`
+variable is non-empty.
 
 ## Prerequisites
 
@@ -35,18 +35,27 @@ is non-empty.
 
 ## 1. Choose a slot
 
-| Scenario                                   | Slot                                           |
-| ------------------------------------------ | ---------------------------------------------- |
-| First Kimsufi worker                       | `kimsufi_worker0` (`var.kimsufi_service_name`) |
-| Adding capacity alongside a healthy worker | empty slot (`worker_0` or `worker_1`)          |
-| Replacing an existing slot                 | the slot to replace — see §5                   |
+| Scenario                  | Slot                                                     |
+| ------------------------- | -------------------------------------------------------- |
+| Existing KS-5 worker slot | `kimsufi_worker0` (`var.kimsufi_service_name`)           |
+| Existing KS-5 worker slot | `kimsufi_worker1` (`var.kimsufi_service_name_1`)         |
+| Existing KS-5 CP slot     | `kimsufi_cp0` (`var.kimsufi_service_name_cp0`)           |
+| New KS-GAME worker slot   | `ks_game_worker0` (`var.kimsufi_service_name_ks_game_0`) |
+| New KS-GAME worker slot   | `ks_game_worker1` (`var.kimsufi_service_name_ks_game_1`) |
 
 Slot ↔ Nebula identity is fixed in code:
 
-| Slot              | Hostname                 | Nebula IP       | TF var                   |
-| ----------------- | ------------------------ | --------------- | ------------------------ |
-| `kimsufi_worker0` | `talos-kimsufi-worker-0` | `10.42.0.13/16` | `kimsufi_service_name`   |
-| `kimsufi_worker1` | `talos-kimsufi-worker-1` | `10.42.0.14/16` | `kimsufi_service_name_1` |
+| Slot              | Hostname                 | Nebula IP       | Talos role    | Install disk                     | Data disk selector               |
+| ----------------- | ------------------------ | --------------- | ------------- | -------------------------------- | -------------------------------- |
+| `kimsufi_worker0` | `talos-kimsufi-worker-0` | `10.42.0.13/16` | control plane | `/dev/sda`                       | `/dev/sdb`                       |
+| `kimsufi_worker1` | `talos-kimsufi-worker-1` | `10.42.0.14/16` | control plane | `/dev/sda`                       | `/dev/sdb`                       |
+| `kimsufi_cp0`     | `talos-kimsufi-cp-0`     | `10.42.0.15/16` | control plane | `/dev/sda`                       | `/dev/sdb`                       |
+| `ks_game_worker0` | `talos-ks-game-worker-0` | `10.42.0.16/16` | worker        | NVMe serial `BTPF8256006P450RGN` | NVMe serial `BTPF8304019P450RGN` |
+| `ks_game_worker1` | `talos-ks-game-worker-1` | `10.42.0.17/16` | worker        | NVMe serial `BTPF8256002V450RGN` | NVMe serial `BTPF8256009U450RGN` |
+
+`data_disk_match` becomes a Talos `UserVolumeConfig` disk selector mounted at
+`/var/mnt/seaweedfs-data`; `local-path-ovh` uses
+`/var/mnt/seaweedfs-data/local-path` on each listed node.
 
 ## 2. Set the service name
 
@@ -76,12 +85,19 @@ a real value. Roughly 8–12 minutes:
 
 1. `PUT /dedicated/server/{name}` — rescue SSH key, EFI bootloader path
 2. `PUT .../update` — set bootId=218949 (rescue), then `POST .../reboot`
-3. SSH into rescue, `dd` Talos metal image to `/dev/sda`
+3. SSH into rescue, `dd` Talos metal image to the slot's `install_disk`
 4. `PUT .../update` — set bootId=1 (harddisk), then `POST .../reboot`
 5. `PUT /machine/config` over Talos API — joins cluster, configures Nebula
 
 Targeted apply avoids the slow full-root refresh (Proxmox provider stalls on
 offline `atlas`).
+
+If `atlas`/Proxmox is offline during a control-plane migration, use targeted
+plans for hcloud/OVH only and leave Proxmox-managed resources in state. Once
+Proxmox is reachable again, run a reviewed full plan from `cluster/terraform/main`
+to converge the now-empty `local.proxmox_nodes` map, destroy
+`proxmox_virtual_environment_vm.talos["pve_cp0"]`, and prune the retired local
+Nebula cert null-resources.
 
 ## 4. Verify
 
@@ -135,9 +151,14 @@ relocate (VPS workers are tight on memory).
   causing a silent boot loop.
 - **`console=ttyS0,115200n8`** in `extraKernelArgs` — KS-5 has no display; this
   is the only way to see boot via OVH IPMI SOL.
-- **Region hardcoded to `hil` / `hil-ovh`** in `kimsufi_machine_config_patch`.
+- **Region hardcoded to `hil` / `hil-ovh`** in each Kimsufi slot definition.
   If the server lands in a non-HIL datacenter (e.g. `vin1`), fix the
-  `nodeLabels` block before applying or you'll mis-label the node.
+  slot's `zone` before applying or you'll mis-label the node.
+- **`ovh_dedicated_server_update` is deprecated** but still used as an
+  imperative boot-mode step for rescue -> install -> harddisk. The provider
+  replacement is `ovh_dedicated_server`, which can express only one desired
+  `boot_id` at a time for the canonical server resource. Replace this with a
+  small explicit OVH API helper before moving to OVH provider v3.
 - **`ovh_dedicated_server` auto-syncs `iam.displayName`** into state, which
   requires `PUT /services/*` scope. The HCL keeps `display_name = each.value.service_name`
   so state matches config and the PUT is never attempted — leave this in place

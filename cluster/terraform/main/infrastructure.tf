@@ -1,5 +1,5 @@
 # HYBRID INFRASTRUCTURE
-# 3-node Talos cluster: 2x Hetzner VPS (controlplane) + 1x Proxmox home (controlplane)
+# Talos cluster control plane currently runs on OVH Kimsufi bare metal.
 # Machine secrets generated fresh per lifecycle (prevents stale discovery from previous clusters)
 
 # ============================================================================
@@ -14,35 +14,35 @@ locals {
   # Cluster configuration
   cluster_endpoint = "https://localhost:7445" # KubePrism - avoids circular dependency
 
-  # Node topology - VPS nodes
-  vps_nodes = {
-    vps0 = { name = "talos-vps-cp-0", server_type = "cpx31", role = "controlplane" }
-    vps1 = { name = "talos-vps-cp-1", server_type = "cpx31", role = "controlplane" }
-  }
+  # Node topology - Hetzner VPS nodes.
+  # Empty after the OVH control-plane migration; keep the scaffolding so future
+  # hcloud nodes can be reintroduced without rewriting the module.
+  vps_nodes = {}
 
   # Derived: split by role for machine config generation
   vps_cp_nodes     = { for k, v in local.vps_nodes : k => v if v.role == "controlplane" }
   vps_worker_nodes = { for k, v in local.vps_nodes : k => v if v.role == "worker" }
 
-  # Node topology - Proxmox nodes
-  # Using VM IDs 10000+ to avoid conflicts with existing cluster (1500-2002)
-  proxmox_nodes = {
-    pve_cp0 = { name = "talos-pve-cp-0", type = "controlplane", vm_id = 10000, ip = "10.2.1.1" }
-  }
+  # Node topology - Proxmox Talos nodes.
+  # talos-pve-cp-0 is retired; Proxmox Kubernetes capacity is provided by NixOS
+  # workers instead.
+  proxmox_nodes = {}
 
   # Proxmox network configuration
   proxmox_gateway = "10.2.0.1"
 
-  # Bootstrap from first VPS (has public IP, most reliable for initial bootstrap)
-  bootstrap_node = "vps0"
+  # Stable Talos endpoint used for post-bootstrap client configuration reads.
+  primary_controlplane_ip     = data.ovh_dedicated_server.kimsufi_cp["kimsufi_cp0"].ip
+  kubeconfig_cluster_endpoint = "https://api.${var.cluster_domain}:6443"
 
   # Total expected node count (for health checks)
   expected_node_count = length(local.vps_nodes) + length(local.proxmox_nodes) + length(local.active_kimsufi_servers) + length(local.active_kimsufi_cp_servers)
 
-  # All controlplane endpoints (for talosconfig) - VPS CP IPs + Proxmox CP IPs + Kimsufi CP IPs
+  # All controlplane endpoints (for talosconfig).
   all_controlplane_ips = concat(
     [for k, v in hcloud_server.vps : v.ipv4_address if local.vps_nodes[k].role == "controlplane"],
     [for k, v in local.proxmox_nodes : v.ip if v.type == "controlplane"],
+    [for k, v in data.ovh_dedicated_server.kimsufi : v.ip if local.active_kimsufi_servers[k].role == "controlplane"],
     [for k, v in data.ovh_dedicated_server.kimsufi_cp : v.ip],
   )
 
@@ -386,24 +386,25 @@ resource "hcloud_firewall" "talos" {
 # TALOS BOOTSTRAP & KUBECONFIG
 # ============================================================================
 
-# Bootstrap etcd on the first VPS node. All other nodes are already configured
-# and waiting in the etcd join retry loop — they join automatically after this.
+# Bootstrap etcd. This resource records the already-bootstrapped cluster; the
+# endpoint is now an OVH control plane so the config no longer depends on
+# retired Hetzner nodes.
 resource "talos_machine_bootstrap" "cluster" {
   client_configuration = local.client_configuration
-  endpoint             = hcloud_server.vps[local.bootstrap_node].ipv4_address
-  node                 = hcloud_server.vps[local.bootstrap_node].ipv4_address
+  endpoint             = local.primary_controlplane_ip
+  node                 = local.primary_controlplane_ip
 
   depends_on = [
-    talos_machine_configuration_apply.vps,
-    talos_machine_configuration_apply.proxmox,
+    talos_machine_configuration_apply.kimsufi,
+    talos_machine_configuration_apply.kimsufi_cp,
   ]
 }
 
 # Generate kubeconfig
 resource "talos_cluster_kubeconfig" "cluster" {
   client_configuration = local.client_configuration
-  endpoint             = hcloud_server.vps[local.bootstrap_node].ipv4_address
-  node                 = hcloud_server.vps[local.bootstrap_node].ipv4_address
+  endpoint             = local.primary_controlplane_ip
+  node                 = local.primary_controlplane_ip
 
   depends_on = [talos_machine_bootstrap.cluster]
 }
@@ -424,7 +425,7 @@ resource "local_file" "kubeconfig" {
   content = replace(
     talos_cluster_kubeconfig.cluster.kubeconfig_raw,
     "https://localhost:7445",
-    "https://${hcloud_server.vps[local.bootstrap_node].ipv4_address}:6443"
+    local.kubeconfig_cluster_endpoint
   )
   filename = "${path.module}/kubeconfig"
 }
