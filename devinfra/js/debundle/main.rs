@@ -8,7 +8,9 @@ use swc_common::{GLOBALS, Globals};
 fn main() -> ExitCode {
     // Install the realizability gate-path perf counter reporter when
     // DEBUNDLE_TIMING=1 is set. Returns `None` when the env var is
-    // unset, so disabled-path overhead is zero. See
+    // unset, so normal runs do not print a report. Cheap counters are
+    // always recorded; the env var gates wall-clock timing, reporting,
+    // and the expensive shadow base-Tarjan measurement. See
     // `devinfra/js/debundle/perf/gate_perf_counters.md` for the
     // counter list + example output.
     let _gate_perf_guard = SccTimingReporter::install_if_enabled();

@@ -750,41 +750,39 @@ impl<'a> OverlayGraphView<'a> {
     }
 
     fn scc_containing(&self, node: ModuleId) -> BTreeSet<ModuleId> {
-        // `DEBUNDLE_TIMING=1` opt-in path: time this call + record
-        // overlay shape. The `enabled()` check is a single atomic load
-        // (`OnceLock<bool>`), so the disabled-path overhead is one
-        // predictable branch. See
-        // `realizability::gate_perf_counters` for the counter design.
-        let timing = gate_perf_counters::enabled();
-        let start = if timing { Some(Instant::now()) } else { None };
+        // Cheap counts and bounded histograms are always recorded.
+        // Wall-clock timing is only useful when reporting is enabled,
+        // so keep `Instant` calls behind `DEBUNDLE_TIMING`.
+        let start = if gate_perf_counters::enabled() {
+            Some(Instant::now())
+        } else {
+            None
+        };
 
         let result = self.scc_containing_inner(node);
 
-        if let Some(start) = start {
-            let elapsed = start.elapsed();
-            let nanos = gate_perf_counters::elapsed_to_u64(elapsed);
-            let overlay_empty = self.delta.is_empty();
-            // Classify each overlay entry as addition vs removal in
-            // the effective graph. Cheap: linear in `delta.len()`
-            // which is small by design (<50 in practice; see
-            // tana measurements in `perf/gate_perf_counters.md`).
-            let mut additions = 0usize;
-            let mut removals = 0usize;
-            for &(from, to) in self.delta.keys() {
-                if self.effective_count(from, to) > 0 {
-                    additions += 1;
-                } else {
-                    removals += 1;
-                }
+        let nanos = start.map(|start| gate_perf_counters::elapsed_to_u64(start.elapsed()));
+        let overlay_empty = self.delta.is_empty();
+        // Classify each overlay entry as addition vs removal in
+        // the effective graph. Cheap: linear in `delta.len()`
+        // which is small by design (<50 in practice; see
+        // tana measurements in `perf/gate_perf_counters.md`).
+        let mut additions = 0usize;
+        let mut removals = 0usize;
+        for &(from, to) in self.delta.keys() {
+            if self.effective_count(from, to) > 0 {
+                additions += 1;
+            } else {
+                removals += 1;
             }
-            gate_perf_counters::record_call(
-                nanos,
-                overlay_empty,
-                self.delta.len(),
-                additions,
-                removals,
-            );
         }
+        gate_perf_counters::record_call(
+            nanos,
+            overlay_empty,
+            self.delta.len(),
+            additions,
+            removals,
+        );
 
         result
     }
@@ -1005,12 +1003,20 @@ impl IncrementalQuotient {
         {
             let mut slot = self.cached_base_simulator.borrow_mut();
             if slot.is_none() {
+                let start = if gate_perf_counters::enabled() {
+                    Some(Instant::now())
+                } else {
+                    None
+                };
                 let (i_successors, constraining_pairs) = self.effective_simulator_inputs(None);
                 *slot = Some(EsmEvaluationSimulator::build(
                     &i_successors,
                     &constraining_pairs,
                     self.residual,
                 ));
+                gate_perf_counters::record_simulator_base_rebuild(
+                    start.map(|start| gate_perf_counters::elapsed_to_u64(start.elapsed())),
+                );
             }
         }
         std::cell::Ref::map(self.cached_base_simulator.borrow(), |opt| {
@@ -1213,12 +1219,14 @@ impl IncrementalQuotient {
             ..RealizabilityVerdict::default()
         };
         let mut reported = BTreeSet::<BTreeSet<ModuleId>>::new();
+        let mut i_scc_had_constraining_pair = false;
 
         // `DEBUNDLE_TIMING=1` shadow path: see
         // `verdict_with_overlay_touching` for the rationale.
         self.maybe_record_base_snapshot();
 
         let constraining_modules = self.constraining_graph.scc_containing(module);
+        let constraining_scc_size = constraining_modules.len();
         if constraining_modules.len() >= 2 {
             let constraining_owner_edges = self.constraining_edges_inside(&constraining_modules);
             reported.insert(constraining_modules.clone());
@@ -1229,11 +1237,13 @@ impl IncrementalQuotient {
         }
 
         let i_modules = self.i_graph.scc_containing(module);
+        let i_scc_size = i_modules.len();
         if i_modules.len() >= 2 && !reported.contains(&i_modules) {
             let any_constraining = self
                 .constraining_buckets
                 .keys()
                 .any(|(from, to)| i_modules.contains(from) && i_modules.contains(to));
+            i_scc_had_constraining_pair = any_constraining;
             if any_constraining {
                 let simulation = self.build_simulator(None);
                 let constraining_pairs: BTreeSet<(ModuleId, ModuleId)> =
@@ -1251,6 +1261,13 @@ impl IncrementalQuotient {
             }
         }
 
+        gate_perf_counters::record_verdict_touching(
+            false,
+            constraining_scc_size,
+            i_scc_size,
+            i_scc_had_constraining_pair,
+            !verdict.is_realizable(),
+        );
         verdict
     }
 
@@ -1265,6 +1282,7 @@ impl IncrementalQuotient {
             ..RealizabilityVerdict::default()
         };
         let mut reported = BTreeSet::<BTreeSet<ModuleId>>::new();
+        let mut i_scc_had_constraining_pair = false;
 
         // `DEBUNDLE_TIMING=1` shadow path: if the base graphs changed
         // since the last gate query, emulate the snapshot-per-push
@@ -1275,6 +1293,7 @@ impl IncrementalQuotient {
         let constraining_graph =
             OverlayGraphView::new(&self.constraining_graph, &overlay.constraining_delta);
         let constraining_modules = constraining_graph.scc_containing(module);
+        let constraining_scc_size = constraining_modules.len();
         if constraining_modules.len() >= 2 {
             let constraining_owner_edges =
                 self.constraining_edges_inside_with_overlay(&constraining_modules, overlay);
@@ -1287,6 +1306,7 @@ impl IncrementalQuotient {
 
         let i_graph_view = OverlayGraphView::new(&self.i_graph, &overlay.i_delta);
         let i_modules = i_graph_view.scc_containing(module);
+        let i_scc_size = i_modules.len();
         if i_modules.len() >= 2 && !reported.contains(&i_modules) {
             let constraining_pairs = self.constraining_pairs_with_overlay(overlay);
             let any_inside_scc = constraining_pairs.iter().any(|(from, to)| {
@@ -1296,6 +1316,7 @@ impl IncrementalQuotient {
                         .constraining_bucket_with_overlay((*from, *to), overlay)
                         .is_empty()
             });
+            i_scc_had_constraining_pair = any_inside_scc;
             if any_inside_scc {
                 let simulation = self.build_simulator(Some(overlay));
                 let effective_pairs: BTreeSet<(ModuleId, ModuleId)> = constraining_pairs
@@ -1319,6 +1340,13 @@ impl IncrementalQuotient {
             }
         }
 
+        gate_perf_counters::record_verdict_touching(
+            true,
+            constraining_scc_size,
+            i_scc_size,
+            i_scc_had_constraining_pair,
+            !verdict.is_realizable(),
+        );
         verdict
     }
 
@@ -1358,7 +1386,9 @@ impl IncrementalQuotient {
     /// simulator without recomputing. Otherwise, fall through to
     /// `build_simulator_from_scratch`.
     fn build_simulator(&self, overlay: Option<&QuotientOverlay>) -> EsmEvaluationSimulator {
-        if overlay_is_simulator_noop(overlay) {
+        let structural_noop = overlay_is_simulator_noop(overlay);
+        gate_perf_counters::record_simulator_request(structural_noop);
+        if structural_noop {
             return self.base_simulator().clone();
         }
         self.build_simulator_from_scratch(overlay)
@@ -1377,8 +1407,18 @@ impl IncrementalQuotient {
         &self,
         overlay: Option<&QuotientOverlay>,
     ) -> EsmEvaluationSimulator {
+        let start = if gate_perf_counters::enabled() {
+            Some(Instant::now())
+        } else {
+            None
+        };
         let (i_successors, constraining_pairs) = self.effective_simulator_inputs(overlay);
-        EsmEvaluationSimulator::build(&i_successors, &constraining_pairs, self.residual)
+        let simulator =
+            EsmEvaluationSimulator::build(&i_successors, &constraining_pairs, self.residual);
+        gate_perf_counters::record_simulator_overlay_rebuild(
+            start.map(|start| gate_perf_counters::elapsed_to_u64(start.elapsed())),
+        );
+        simulator
     }
 
     /// Materialize `(i_successors, constraining_pairs)` — the inputs
@@ -1791,14 +1831,13 @@ fn impacted_owner_edges(owner_graph: &OwnerGraph, owners: &[OwnerId]) -> Vec<Own
 }
 
 // ---------------------------------------------------------------------------
-// Gate-path performance counters (DEBUNDLE_TIMING=1)
+// Gate-path performance counters.
 //
 // Permanent diagnostics for `OverlayGraphView::scc_containing` and the
-// adjacent base-graph Tarjan cost. Gated entirely behind the
-// `DEBUNDLE_TIMING` environment variable (checked once per process at
-// startup via `OnceLock`). When disabled, every helper is a single
-// branch on a cached `bool` and no atomic / mutex / timing operations
-// run on the hot path.
+// adjacent realizability-gate costs. Cheap counters and bounded
+// histograms are recorded on every run; `DEBUNDLE_TIMING` gates
+// wall-clock timing, stderr reporting, and the expensive shadow
+// base-Tarjan measurement that emulates snapshot rebuild cost.
 //
 // Records:
 //   * `scc_containing` call count, split overlay-empty vs overlay-non-empty.
@@ -1814,7 +1853,7 @@ fn impacted_owner_edges(owner_graph: &OwnerGraph, owners: &[OwnerId]) -> Vec<Own
 //   * Base-graph `tarjan_scc` call count + cumulative wall time.
 //
 // Output: an RAII reporter (`SccTimingReporter`) installed early in
-// `main` prints the tally to stderr on drop.
+// `main` when `DEBUNDLE_TIMING=1` prints the tally to stderr on drop.
 // ---------------------------------------------------------------------------
 pub mod gate_perf_counters {
     use super::*;
@@ -1843,6 +1882,25 @@ pub mod gate_perf_counters {
 
     pub(super) static BASE_TARJAN_CALLS: AtomicUsize = AtomicUsize::new(0);
     pub(super) static BASE_TARJAN_NANOS: AtomicU64 = AtomicU64::new(0);
+
+    // -- Gate verdict / simulator counters ---------------------------------
+
+    pub(super) static VERDICT_TOUCHING_CALLS: AtomicUsize = AtomicUsize::new(0);
+    pub(super) static VERDICT_WITH_OVERLAY_CALLS: AtomicUsize = AtomicUsize::new(0);
+    pub(super) static VERDICT_REALIZABLE: AtomicUsize = AtomicUsize::new(0);
+    pub(super) static VERDICT_REJECTED: AtomicUsize = AtomicUsize::new(0);
+    pub(super) static I_SCC_WITH_CONSTRAINING: AtomicUsize = AtomicUsize::new(0);
+
+    pub(super) static SIMULATOR_REQUESTS: AtomicUsize = AtomicUsize::new(0);
+    pub(super) static SIMULATOR_STRUCTURAL_NOOP: AtomicUsize = AtomicUsize::new(0);
+    pub(super) static SIMULATOR_STRUCTURAL_CHANGED: AtomicUsize = AtomicUsize::new(0);
+    pub(super) static SIMULATOR_BASE_REBUILDS: AtomicUsize = AtomicUsize::new(0);
+    pub(super) static SIMULATOR_BASE_REBUILD_NANOS: AtomicU64 = AtomicU64::new(0);
+    pub(super) static SIMULATOR_OVERLAY_REBUILDS: AtomicUsize = AtomicUsize::new(0);
+    pub(super) static SIMULATOR_OVERLAY_REBUILD_NANOS: AtomicU64 = AtomicU64::new(0);
+
+    pub(super) static DIAGNOSTIC_TRANSLATION_CALLS: AtomicUsize = AtomicUsize::new(0);
+    pub(super) static DIAGNOSTIC_TRANSLATION_ACTIVE: AtomicUsize = AtomicUsize::new(0);
 
     // -- Reservoir-sampled histograms --------------------------------------
     //
@@ -1975,6 +2033,10 @@ pub mod gate_perf_counters {
     pub(super) static BASE_EDGES: Histogram = Histogram::new();
     pub(super) static BASE_SCCS: Histogram = Histogram::new();
     pub(super) static BASE_COND_EDGES: Histogram = Histogram::new();
+    pub(super) static CONSTRAINING_SCC_SIZE: Histogram = Histogram::new();
+    pub(super) static I_SCC_SIZE: Histogram = Histogram::new();
+    pub(super) static DIAGNOSTIC_OWNER_COUNT: Histogram = Histogram::new();
+    pub(super) static DIAGNOSTIC_SCC_COUNT: Histogram = Histogram::new();
 
     /// Record a single `scc_containing` call's per-call shape.
     /// `delta_len` is `overlay.delta.len()`; `additions` is the number
@@ -1983,7 +2045,7 @@ pub mod gate_perf_counters {
     /// `removals` is the number whose effective count is ≤ 0 (the
     /// overlay zeroes out a base edge).
     pub(super) fn record_call(
-        nanos: u64,
+        nanos: Option<u64>,
         overlay_empty: bool,
         delta_len: usize,
         additions: usize,
@@ -1995,10 +2057,71 @@ pub mod gate_perf_counters {
         } else {
             SCC_CALLS_OVERLAY_NONEMPTY.fetch_add(1, Ordering::Relaxed);
         }
-        SCC_NANOS.fetch_add(nanos, Ordering::Relaxed);
+        if let Some(nanos) = nanos {
+            SCC_NANOS.fetch_add(nanos, Ordering::Relaxed);
+        }
         OVERLAY_DELTA_LEN.record(delta_len.min(u32::MAX as usize) as u32);
         OVERLAY_ADDITIONS.record(additions.min(u32::MAX as usize) as u32);
         OVERLAY_REMOVALS.record(removals.min(u32::MAX as usize) as u32);
+    }
+
+    pub(super) fn record_verdict_touching(
+        overlay: bool,
+        constraining_scc_size: usize,
+        i_scc_size: usize,
+        i_scc_had_constraining_pair: bool,
+        rejected: bool,
+    ) {
+        VERDICT_TOUCHING_CALLS.fetch_add(1, Ordering::Relaxed);
+        if overlay {
+            VERDICT_WITH_OVERLAY_CALLS.fetch_add(1, Ordering::Relaxed);
+        }
+        if rejected {
+            VERDICT_REJECTED.fetch_add(1, Ordering::Relaxed);
+        } else {
+            VERDICT_REALIZABLE.fetch_add(1, Ordering::Relaxed);
+        }
+        if i_scc_had_constraining_pair {
+            I_SCC_WITH_CONSTRAINING.fetch_add(1, Ordering::Relaxed);
+        }
+        CONSTRAINING_SCC_SIZE.record(constraining_scc_size.min(u32::MAX as usize) as u32);
+        I_SCC_SIZE.record(i_scc_size.min(u32::MAX as usize) as u32);
+    }
+
+    pub(super) fn record_simulator_request(structural_noop: bool) {
+        SIMULATOR_REQUESTS.fetch_add(1, Ordering::Relaxed);
+        if structural_noop {
+            SIMULATOR_STRUCTURAL_NOOP.fetch_add(1, Ordering::Relaxed);
+        } else {
+            SIMULATOR_STRUCTURAL_CHANGED.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    pub(super) fn record_simulator_base_rebuild(nanos: Option<u64>) {
+        SIMULATOR_BASE_REBUILDS.fetch_add(1, Ordering::Relaxed);
+        if let Some(nanos) = nanos {
+            SIMULATOR_BASE_REBUILD_NANOS.fetch_add(nanos, Ordering::Relaxed);
+        }
+    }
+
+    pub(super) fn record_simulator_overlay_rebuild(nanos: Option<u64>) {
+        SIMULATOR_OVERLAY_REBUILDS.fetch_add(1, Ordering::Relaxed);
+        if let Some(nanos) = nanos {
+            SIMULATOR_OVERLAY_REBUILD_NANOS.fetch_add(nanos, Ordering::Relaxed);
+        }
+    }
+
+    pub(super) fn record_diagnostic_translation(
+        active: bool,
+        owner_count: usize,
+        scc_count: usize,
+    ) {
+        DIAGNOSTIC_TRANSLATION_CALLS.fetch_add(1, Ordering::Relaxed);
+        if active {
+            DIAGNOSTIC_TRANSLATION_ACTIVE.fetch_add(1, Ordering::Relaxed);
+        }
+        DIAGNOSTIC_OWNER_COUNT.record(owner_count.min(u32::MAX as usize) as u32);
+        DIAGNOSTIC_SCC_COUNT.record(scc_count.min(u32::MAX as usize) as u32);
     }
 
     /// Record one emulated base-SCC snapshot rebuild. Runs `tarjan_scc`
@@ -2086,9 +2209,75 @@ pub mod gate_perf_counters {
             "base tarjan_scc: {base_calls} calls, cumulative {base_secs:.3}s, per-call avg {base_per_call_us:.3} µs"
         );
 
+        let verdict_calls = VERDICT_TOUCHING_CALLS.load(Ordering::Relaxed);
+        let overlay_verdict_calls = VERDICT_WITH_OVERLAY_CALLS.load(Ordering::Relaxed);
+        let verdict_realizable = VERDICT_REALIZABLE.load(Ordering::Relaxed);
+        let verdict_rejected = VERDICT_REJECTED.load(Ordering::Relaxed);
+        let i_scc_with_constraining = I_SCC_WITH_CONSTRAINING.load(Ordering::Relaxed);
+        let _ = writeln!(
+            out,
+            "verdict_touching: {verdict_calls} calls ({overlay_verdict_calls} overlay), {verdict_realizable} realizable, {verdict_rejected} rejected"
+        );
+        let _ = writeln!(
+            out,
+            "  I-SCC with constraining pair: {i_scc_with_constraining}"
+        );
+
+        let simulator_requests = SIMULATOR_REQUESTS.load(Ordering::Relaxed);
+        let simulator_noop = SIMULATOR_STRUCTURAL_NOOP.load(Ordering::Relaxed);
+        let simulator_changed = SIMULATOR_STRUCTURAL_CHANGED.load(Ordering::Relaxed);
+        let _ = writeln!(
+            out,
+            "simulator requests: {simulator_requests} ({simulator_noop} structural-noop, {simulator_changed} structural-changed)"
+        );
+        let base_rebuilds = SIMULATOR_BASE_REBUILDS.load(Ordering::Relaxed);
+        let base_rebuild_nanos = SIMULATOR_BASE_REBUILD_NANOS.load(Ordering::Relaxed);
+        let base_rebuild_secs = base_rebuild_nanos as f64 / 1e9;
+        let base_rebuild_per_call_us = if base_rebuilds > 0 {
+            (base_rebuild_nanos as f64 / base_rebuilds as f64) / 1e3
+        } else {
+            0.0
+        };
+        let _ = writeln!(
+            out,
+            "  base simulator rebuilds: {base_rebuilds}, cumulative {base_rebuild_secs:.3}s, per-call avg {base_rebuild_per_call_us:.3} µs"
+        );
+        let overlay_rebuilds = SIMULATOR_OVERLAY_REBUILDS.load(Ordering::Relaxed);
+        let overlay_rebuild_nanos = SIMULATOR_OVERLAY_REBUILD_NANOS.load(Ordering::Relaxed);
+        let overlay_rebuild_secs = overlay_rebuild_nanos as f64 / 1e9;
+        let overlay_rebuild_per_call_us = if overlay_rebuilds > 0 {
+            (overlay_rebuild_nanos as f64 / overlay_rebuilds as f64) / 1e3
+        } else {
+            0.0
+        };
+        let _ = writeln!(
+            out,
+            "  overlay simulator rebuilds: {overlay_rebuilds}, cumulative {overlay_rebuild_secs:.3}s, per-call avg {overlay_rebuild_per_call_us:.3} µs"
+        );
+
+        let diagnostic_calls = DIAGNOSTIC_TRANSLATION_CALLS.load(Ordering::Relaxed);
+        let diagnostic_active = DIAGNOSTIC_TRANSLATION_ACTIVE.load(Ordering::Relaxed);
+        let diagnostic_bypassed = diagnostic_calls.saturating_sub(diagnostic_active);
+        let _ = writeln!(
+            out,
+            "diagnostic translation: {diagnostic_calls} calls ({diagnostic_active} active, {diagnostic_bypassed} bypassed)"
+        );
+
         report_histogram(&mut out, "  overlay delta.len()", &OVERLAY_DELTA_LEN);
         report_histogram(&mut out, "  overlay additions", &OVERLAY_ADDITIONS);
         report_histogram(&mut out, "  overlay removals", &OVERLAY_REMOVALS);
+        report_histogram(&mut out, "  constraining SCC size", &CONSTRAINING_SCC_SIZE);
+        report_histogram(&mut out, "  I-SCC size", &I_SCC_SIZE);
+        report_histogram(
+            &mut out,
+            "  diagnostic owner_modules count",
+            &DIAGNOSTIC_OWNER_COUNT,
+        );
+        report_histogram(
+            &mut out,
+            "  diagnostic unrealizable SCC count",
+            &DIAGNOSTIC_SCC_COUNT,
+        );
         report_histogram(&mut out, "  base nodes", &BASE_NODES);
         report_histogram(&mut out, "  base edges (distinct)", &BASE_EDGES);
         report_histogram(&mut out, "  base SCCs", &BASE_SCCS);
@@ -2127,8 +2316,9 @@ pub mod gate_perf_counters {
 /// RAII guard that prints the gate-path perf counter summary on drop
 /// when `DEBUNDLE_TIMING=1` is set in the process environment.
 /// Construct one early in `main` (`SccTimingReporter::install_if_enabled`)
-/// to get a tally at program exit. When `DEBUNDLE_TIMING` is unset, the
-/// helper returns `None` and no counter work is done anywhere.
+/// to get a tally at program exit. Cheap counters are still recorded
+/// when reporting is disabled; only wall-clock timing, stderr output,
+/// and shadow base-Tarjan measurement are gated.
 ///
 /// The counters themselves live in the private
 /// `realizability::gate_perf_counters` module; the guard is the only
@@ -2143,6 +2333,13 @@ impl SccTimingReporter {
             None
         }
     }
+}
+
+/// Record the cost shape of proposer-side verdict-to-diagnostic
+/// translation. This is intentionally always-on and cheap; reporting is
+/// still controlled by [`SccTimingReporter`].
+pub fn record_gate_diagnostic_translation(active: bool, owner_count: usize, scc_count: usize) {
+    gate_perf_counters::record_diagnostic_translation(active, owner_count, scc_count);
 }
 
 #[cfg(test)]

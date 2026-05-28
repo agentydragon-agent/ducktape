@@ -1,8 +1,10 @@
-# Gate-path perf counters (`DEBUNDLE_TIMING=1`)
+# Gate-path perf counters and timing report
 
 Permanent diagnostic counters for the proposer's realizability gate
-hot path, gated entirely behind the `DEBUNDLE_TIMING` environment
-variable. Lives in
+hot path. Cheap shape/count counters are always recorded. The
+`DEBUNDLE_TIMING` environment variable enables stderr reporting,
+wall-clock timing, and the expensive shadow base-Tarjan measurement.
+The implementation lives in
 `devinfra/js/debundle/realizability.rs::gate_perf_counters`, exposed
 through the `SccTimingReporter` RAII guard.
 
@@ -17,25 +19,37 @@ inner loop) plus its no-overlay cousin
    `overlay-empty` (`delta.is_empty()`) vs `overlay-non-empty`.
 2. **`scc_containing` cumulative time** — sum of per-call wall
    durations measured via `Instant::elapsed()`. Per-call average is
-   reported as `cumulative / count`.
+   reported as `cumulative / count`. Timing is collected only when
+   `DEBUNDLE_TIMING=1`.
 3. **Overlay shape histograms** — `delta.len()`, `additions` (overlay
    entries whose effective edge count > 0 after combining with the
    base), `removals` (effective count ≤ 0). Each histogram tracks
    `count`, `min`, `median`, `p95`, `max`, `mean` via a 4096-entry
    reservoir.
-4. **Base-graph snapshot rebuilds** — every time the committed base
+4. **Verdict counters** — `verdict_touching` calls, overlay-call
+   subset, realizable/rejected split, constraining-SCC size, I-SCC
+   size, and how often an I-SCC actually contains a constraining pair.
+5. **Simulator counters** — simulator requests, structural-no-op vs
+   structural-changed split, base rebuild count/time, and overlay
+   rebuild count/time. Timing is collected only when
+   `DEBUNDLE_TIMING=1`.
+6. **Diagnostic translation counters** — verdict-to-`CycleEvidence`
+   translation calls, active vs bypassed split, owner-module vector
+   size, and unrealizable-SCC count.
+7. **Base-graph snapshot rebuilds** — every time the committed base
    graphs change (`invalidate_cached_simulator` on any push/undo/
    commit), the _next_ gate query runs `tarjan_scc` once on each base
    graph (constraining + I) to emulate the per-push cost of a
    snapshot+clone incremental design. Records per-rebuild
    `nodes_count`, `distinct_edges_count`, `sccs_count`,
    `condensation_edges_count`, plus rebuild call count + cumulative
-   time.
+   time. This shadow work is collected only when `DEBUNDLE_TIMING=1`.
 
 The counters live entirely in the tree as permanent diagnostics —
-**not** "instrument, measure, strip". They're free when
-`DEBUNDLE_TIMING` is unset: a single `OnceLock<bool>` load (~ns), no
-atomic increments, no allocations, no shadow Tarjan.
+**not** "instrument, measure, strip". When `DEBUNDLE_TIMING` is unset,
+normal runs still pay the cheap counter path: atomic increments plus
+bounded integer histograms. They do not run `Instant` timing, print
+reports, or execute shadow Tarjan traversals.
 
 ## How to run
 
@@ -57,14 +71,27 @@ cat /tmp/timing.txt
 
 ## Example output (tana `78d928dca7`, 2026-05-27)
 
+The first measured run predates the later verdict/simulator/diagnostic
+counters, but the stable report shape is:
+
 ```
 === debundle gate perf counters (DEBUNDLE_TIMING=1) ===
 scc_containing: 4380 calls (0 overlay-empty, 4380 overlay-nonempty)
   cumulative: 10.251s, per-call avg: 2340.456 µs
 base tarjan_scc: 132 calls, cumulative 0.503s, per-call avg 3810.785 µs
+verdict_touching: ... calls (... overlay), ... realizable, ... rejected
+  I-SCC with constraining pair: ...
+simulator requests: ... (... structural-noop, ... structural-changed)
+  base simulator rebuilds: ..., cumulative ...s, per-call avg ... µs
+  overlay simulator rebuilds: ..., cumulative ...s, per-call avg ... µs
+diagnostic translation: ... calls (... active, ... bypassed)
   overlay delta.len(): count=4380 min=2 median=7 p95=9 max=33 mean=8.27
   overlay additions: count=4380 min=1 median=3 p95=4 max=16 mean=3.64
   overlay removals: count=4380 min=1 median=4 p95=5 max=17 mean=4.63
+  constraining SCC size: ...
+  I-SCC size: ...
+  diagnostic owner_modules count: ...
+  diagnostic unrealizable SCC count: ...
   base nodes: count=132 min=175 median=2407 p95=2473 max=9107 mean=1507.65
   base edges (distinct): count=132 min=294 median=11204 p95=11416 max=23472 mean=6164.76
   base SCCs: count=132 min=175 median=879 p95=879 max=6385 mean=705.77
@@ -99,11 +126,14 @@ Reading the output:
   `gate_perf_counters::enabled()` resolves `std::env::var_os` once;
   every later call is an atomic load. No env-lookup overhead on the
   hot path.
-- **Atomic-only hot path.** Each `scc_containing` call adds three
-  atomic increments (`SCC_CALLS_TOTAL`, the empty/nonempty bucket,
-  one timer add) plus three histogram records. Histogram records do
-  one lock acquire on a `Mutex<Vec<u32>>` — the proposer is single-
-  threaded so contention is zero.
+- **Cheap always-on hot path.** Each `scc_containing` call adds two
+  atomic increments (total + empty/nonempty bucket) plus three
+  bounded histogram records. Histogram records do one lock acquire on
+  a `Mutex<Vec<u32>>` — the proposer is single-threaded so contention
+  is zero.
+- **Timing is opt-in.** `Instant::now()` and cumulative nanosecond
+  additions run only when `DEBUNDLE_TIMING=1`, because those values
+  are only consumed by the stderr report.
 - **Reservoir-sampled histograms.** Each histogram keeps at most
   `RESERVOIR_CAP=4096` samples (chosen so the tana ~4380-call stream
   stays ~93 % captured) and computes percentiles by sorting on
@@ -120,8 +150,8 @@ Reading the output:
 
 Add new counters next to the existing ones in
 `realizability::gate_perf_counters` when you need to validate a new
-hot-path hypothesis. Keep them gated behind
-`gate_perf_counters::enabled()` and follow the atomic-increment +
-optional-`Instant` pattern. **Never strip a counter after one
-measurement** — the cost of permanent diagnostic infrastructure is
-low and the cost of re-instrumenting later is high.
+hot-path hypothesis. Keep cheap shape/count counters ungated; gate
+only wall-clock timing, report output, or extra graph traversals behind
+`gate_perf_counters::enabled()`. **Never strip a counter after one
+measurement** — the cost of permanent diagnostic infrastructure is low
+and the cost of re-instrumenting later is high.

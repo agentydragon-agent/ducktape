@@ -75,6 +75,7 @@ use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 use analysis::{
     DepKind, ModuleId, OwnerGraph, OwnerGraphReport, OwnerId, OwnerReportIndex, Partition,
     PartitionDelta, RESIDUAL_ENTRY_MODULE_ID, RealizabilityIndex, RealizabilityVerdict,
+    record_gate_diagnostic_translation,
 };
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde::Serialize;
@@ -1153,7 +1154,13 @@ impl QuotientGraph {
         verdict: &RealizabilityVerdict,
         overlay: Option<(ClassId, ClassId)>,
     ) -> CycleEvidence {
-        if verdict.is_realizable() {
+        let active = !verdict.is_realizable();
+        record_gate_diagnostic_translation(
+            active,
+            self.owner_ids.len().min(self.owner_graph.num_nodes()),
+            verdict.unrealizable_sccs.len(),
+        );
+        if !active {
             return CycleEvidence::default();
         }
         let project = |c: ClassId| -> ClassId {
@@ -1285,7 +1292,10 @@ impl QuotientGraph {
         owner_modules: &[ModuleId],
         overlay: Option<(ClassId, ClassId)>,
     ) -> CycleEvidence {
-        if verdict.is_realizable() {
+        let max_idx = self.owner_ids.len().min(owner_modules.len());
+        let active = !verdict.is_realizable();
+        record_gate_diagnostic_translation(active, max_idx, verdict.unrealizable_sccs.len());
+        if !active {
             return CycleEvidence::default();
         }
         let project = |c: ClassId| -> ClassId {
@@ -1300,7 +1310,6 @@ impl QuotientGraph {
         // Bounded length: we only consider owner indices that exist
         // in BOTH self.owner_ids and owner_modules — the old code
         // also skipped `owner_idx >= owner_modules.len()`.
-        let max_idx = self.owner_ids.len().min(owner_modules.len());
         let mut module_to_owners: FxHashMap<ModuleId, Vec<usize>> = FxHashMap::default();
         for (owner_idx, &module) in owner_modules.iter().enumerate().take(max_idx) {
             module_to_owners.entry(module).or_default().push(owner_idx);
