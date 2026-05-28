@@ -355,3 +355,6 @@ Current small `bindings ...` / `modules ...` gaps; nothing structural.
   An optional `--with-anonymous` flag exposing that count alongside
   `member_count` would let `debundle modules list --residual --with-anonymous`
   surface the residual sentinel's anonymous-statement drift over time.
+- **`debundle run` has no validation-only mode.** If that becomes useful,
+  add `debundle run --dry-run` as a pipeline parse/facts/gate check that
+  stops before writing emitted JS or reports.

@@ -25,6 +25,7 @@ use peel::{
     run_peel, run_plan_work_report, run_source_slice_report, run_units_report,
 };
 use pipeline::{TransformArgs, run_transform_cli};
+use spec_modules::{collect_module_files, module_path_from_file};
 use spec_stats::{SpecStats, compute_spec_stats, render_spec_stats_text};
 
 #[derive(Debug, Parser)]
@@ -496,19 +497,44 @@ pub fn dispatch_id_selection(id: &str, modules_root: &std::path::Path) -> Select
     if id.starts_with("diagnostic:") {
         return selection_with_diagnostic(id);
     }
-    if id.starts_with("auto_partition_") || id.starts_with("extend:") {
-        return selection_with_proposal(id);
-    }
     // Module-path detection: try resolving `<modules>/<id>.yaml`.
     // Spec authors sometimes have flat module paths (no `/`); the
     // existence check is the only reliable disambiguator vs. binding
     // names that happen to spell a module-like word.
-    let candidate = modules_root.join(format!("{id}.yaml"));
-    if candidate.is_file() {
-        return selection_with_module_path(id);
+    if let Some(module_path) = resolve_id_as_module_path(id, modules_root) {
+        return selection_with_module_path(&module_path);
+    }
+    if id.starts_with("auto_partition_") || id.starts_with("extend:") {
+        return selection_with_proposal(id);
     }
     // Fall through: treat as a binding name (minified or readable).
     selection_with_binding(id)
+}
+
+fn resolve_id_as_module_path(id: &str, modules_root: &std::path::Path) -> Option<String> {
+    let module_id = id.strip_suffix(".yaml").unwrap_or(id);
+    let candidate = modules_root.join(format!("{module_id}.yaml"));
+    if candidate.is_file() {
+        return Some(module_id.to_string());
+    }
+    if module_id.contains('/') {
+        return None;
+    }
+
+    let filename = format!("{module_id}.yaml");
+    let mut matches = collect_module_files(modules_root)
+        .ok()?
+        .into_iter()
+        .filter(|path| {
+            path.file_name()
+                .is_some_and(|name| name == filename.as_str())
+        })
+        .map(|path| module_path_from_file(&path, modules_root));
+    let first = matches.next()?;
+    if matches.next().is_some() {
+        return None;
+    }
+    Some(first)
 }
 
 fn selection_with_owner(value: &str) -> SelectionArgs {
@@ -1133,12 +1159,22 @@ fn render_source_slice_text(report: &peel::SourceSliceReport, out: &mut String) 
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
+    use std::fs;
+    use std::path::{Path, PathBuf};
 
     use clap::Parser;
     use pipeline::{TransformArgs, TransformSpecSource};
+    use tempfile::TempDir;
 
     use super::DebundleArgs;
+
+    fn write(root: &Path, rel: &str, body: &str) {
+        let path = root.join(rel);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
+        fs::write(path, body).unwrap();
+    }
 
     fn parsed_run_args(argv: &[&str]) -> TransformArgs {
         let parsed = DebundleArgs::try_parse_from(argv).expect("parse cli");
@@ -1306,6 +1342,25 @@ mod tests {
             parsed.command,
             super::DebundleCommand::ShowSource(_)
         ));
+    }
+
+    #[test]
+    fn dispatch_id_selection_resolves_unique_module_basename_before_proposal_id() {
+        let dir = TempDir::new().unwrap();
+        let modules_root = dir.path().join("modules");
+        write(
+            &modules_root,
+            "auto_partition/auto_partition_0499.yaml",
+            "members: []\n",
+        );
+
+        let selection = super::dispatch_id_selection("auto_partition_0499", &modules_root);
+
+        assert_eq!(
+            selection.module_path.as_deref(),
+            Some("auto_partition/auto_partition_0499")
+        );
+        assert!(selection.proposal_id.is_none());
     }
 
     #[test]
