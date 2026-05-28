@@ -10,6 +10,11 @@ py_binary(
     srcs = ["check_authentik_login.py"],
 )
 
+py_binary(
+    name = "ovh_hil_availability",
+    srcs = ["ovh_hil_availability.py"],
+)
+
 # Typed loader for nebula-mesh.json. Shared by render_mobile_nebula_config and
 # the validation test in //cluster/validation/.
 py_library(
