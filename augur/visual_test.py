@@ -60,6 +60,35 @@ SCREENSHOT_VIEWPORT: ViewportSize = {"width": 1280, "height": 1000}
 FROZEN_NOW_MS = 1_779_768_000_000  # 2026-05-15T12:00:00Z.
 
 
+def _wait_for_product_chart_geometry(page: Page) -> None:
+    """Wait for ResizeObserver-fed chart coordinates to catch up with the visible SVG width."""
+    page.wait_for_function(
+        """
+        () => {
+          const chart = document.querySelector("[data-product-fan-chart='netWorthUsd'] svg[role='img']");
+          const horizonInput = document.querySelector("input[aria-label='Horizon']");
+          if (!chart || !horizonInput) return false;
+          const horizonMonths = Number(String(horizonInput.value || "").replace(/,/g, ""));
+          if (!Number.isFinite(horizonMonths)) return false;
+          const expectedFinalYear = `${Math.max(1, Math.ceil(horizonMonths / 12))} yr`;
+          const finalYearTick = Array.from(chart.querySelectorAll("text")).find(
+            (node) => node.textContent.trim() === expectedFinalYear
+          );
+          if (!finalYearTick) return false;
+          const tickBox = finalYearTick.getBoundingClientRect();
+          const chartBox = chart.getBoundingClientRect();
+          return (
+            tickBox.left >= chartBox.left - 1 &&
+            tickBox.right <= chartBox.right + 1 &&
+            tickBox.left >= 0 &&
+            tickBox.right <= window.innerWidth + 1
+          );
+        }
+        """,
+        timeout=30_000,
+    )
+
+
 def _wait_for_product_page(page: Page) -> None:
     """Wait for the product surface's net-worth fan to render at non-zero height."""
     page.add_style_tag(content=deterministic_style())
@@ -88,6 +117,7 @@ def _wait_for_product_page(page: Page) -> None:
     assert page.get_by_text("Terminal scenario comparison").count() == 0
     assert page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth + 1")
     page.evaluate("() => document.fonts.ready.then(() => true)")
+    _wait_for_product_chart_geometry(page)
 
 
 def _select_first_rollout(page: Page) -> None:
@@ -242,6 +272,7 @@ def _render_case(page: Page, origin: str, case: VisualCase, out_dir: Path, suffi
     case.wait_ready(page)
     if case.interact is not None:
         case.interact(page)
+        _wait_for_product_chart_geometry(page)
     actual_path = out_dir / f"{case.name}.{suffix}.png"
     page.screenshot(path=str(actual_path), full_page=True, animations="disabled", caret="hide", scale="css")
     return actual_path
