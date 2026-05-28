@@ -218,6 +218,9 @@ def test_metric_fan_and_rollout_detail_share_cached_sim_rollouts(
     assert counting_exogenous_model.sample_requests[0].required_level_series == frozenset(
         {SP500_SERIES_ID, "crypto:btc", "crypto:eth", *private_equity_level_series_ids("private_holding_a")}
     )
+    assert counting_exogenous_model.sample_requests[0].required_private_equity_protocol_issuers == frozenset(
+        {"private_holding_a"}
+    )
     assert fan.exogenous_model_id == "composite_exogenous_model"
     assert fan.metric == "cash_usd"
     assert fan.failed_count == 0

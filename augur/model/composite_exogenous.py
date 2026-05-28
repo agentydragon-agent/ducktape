@@ -9,6 +9,7 @@ import polars as pl
 
 from augur.frames import concat_frames
 from augur.model.exogenous import (
+    PRIVATE_EQUITY_PROTOCOL_SCHEMA,
     SERIES_EVENTS_SCHEMA,
     SERIES_LEVELS_SCHEMA,
     ExogenousSamplingRequest,
@@ -41,6 +42,7 @@ class CompositeExogenousModel:
                 for event_id in request.required_event_series
                 if not is_private_equity_event_series_id(event_id)
             ),
+            required_private_equity_protocol_issuers=frozenset(),
         )
         pe_request = ExogenousSamplingRequest(
             horizon_months=request.horizon_months,
@@ -51,15 +53,26 @@ class CompositeExogenousModel:
             required_event_series=frozenset(
                 event_id for event_id in request.required_event_series if is_private_equity_event_series_id(event_id)
             ),
+            required_private_equity_protocol_issuers=request.required_private_equity_protocol_issuers,
         )
 
         macro_bundle = self.macro.sample(macro_request)
         pe_bundle = self.private_equity.sample(pe_request)
         _reject_duplicate_ids(macro_bundle.levels, pe_bundle.levels, id_column="series_id", label="level series")
         _reject_duplicate_ids(macro_bundle.events, pe_bundle.events, id_column="event_id", label="event series")
+        _reject_duplicate_ids(
+            macro_bundle.private_equity_protocol,
+            pe_bundle.private_equity_protocol,
+            id_column="issuer_id",
+            label="private-equity protocol issuer",
+        )
         sampled = SampledExogenousBundle(
             levels=concat_frames([macro_bundle.levels, pe_bundle.levels], SERIES_LEVELS_SCHEMA),
             events=concat_frames([macro_bundle.events, pe_bundle.events], SERIES_EVENTS_SCHEMA),
+            private_equity_protocol=concat_frames(
+                [macro_bundle.private_equity_protocol, pe_bundle.private_equity_protocol],
+                PRIVATE_EQUITY_PROTOCOL_SCHEMA,
+            ),
             metadata={
                 "exogenous_model_id": self.label,
                 "private_equity_prices_usd": _private_equity_prices_usd(pe_bundle.metadata),

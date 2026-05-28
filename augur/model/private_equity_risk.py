@@ -12,6 +12,7 @@ from pydantic import Field, model_validator
 
 from augur.frames import concat_frames
 from augur.model.exogenous import (
+    PRIVATE_EQUITY_PROTOCOL_SCHEMA,
     SERIES_EVENTS_SCHEMA,
     SERIES_LEVELS_SCHEMA,
     ExogenousSamplingRequest,
@@ -20,7 +21,7 @@ from augur.model.exogenous import (
     series_levels_frame,
     validate_sample_satisfies_request,
 )
-from augur.model.private_equity_protocol import private_equity_auxiliary_level_frames
+from augur.model.private_equity_protocol import private_equity_auxiliary_level_frames, private_equity_protocol_frame
 from augur.model.schemas import FrozenModel
 from augur.model.series import (
     PrivateEquityEventKindCode,
@@ -101,6 +102,7 @@ class PrivateEquityRiskModel:
         horizon_months = request.horizon_months
         level_blocks = []
         event_blocks = []
+        protocol_blocks = []
         prices: dict[str, float] = {}
         for issuer_id, issuer in sorted(self.issuers.items()):
             paths = _sample_issuer(issuer_id, issuer, request)
@@ -136,10 +138,20 @@ class PrivateEquityRiskModel:
                     horizon_months=horizon_months,
                 )
             )
+            protocol_blocks.append(
+                private_equity_protocol_frame(
+                    issuer_id,
+                    event_kind_code=paths.event_kind_code,
+                    regime_code=paths.regime_code,
+                    rollout_count=rollout_count,
+                    horizon_months=horizon_months,
+                )
+            )
 
         sampled = SampledExogenousBundle(
             levels=concat_frames(level_blocks, SERIES_LEVELS_SCHEMA),
             events=concat_frames(event_blocks, SERIES_EVENTS_SCHEMA),
+            private_equity_protocol=concat_frames(protocol_blocks, PRIVATE_EQUITY_PROTOCOL_SCHEMA),
             metadata={
                 "exogenous_model_id": self.label,
                 "private_equity_issuers": tuple(sorted(self.issuers)),

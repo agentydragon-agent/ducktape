@@ -151,13 +151,13 @@ Current support covers voluntary tender/public-market opportunities, sale
 capacity, eligibility, liquidity blocks, forced sale fractions, and forced
 recovery cashouts. Still missing:
 
-- **Typed PE protocol boundary.** Regime/event-kind codes currently travel
-  through generic float-valued `SampledExogenousBundle.levels` and are validated
-  into int arrays at sim compile time. Replace that with a typed end-to-end
-  representation — model/provider output, sim compilation, engine inputs,
-  decoded event logs, and product wire types should carry protocol codes as
-  typed enum/int fields or a dedicated protocol frame, with no float parsing or
-  rounding at simulator boundaries.
+- **Finish the typed PE protocol boundary.** Regime/event-kind codes now travel
+  through a typed `private_equity_protocol` frame instead of being parsed from
+  float level series. Capacity, eligibility, liquidity-block, forced-sale, and
+  forced-recovery controls still travel as numeric auxiliary level series.
+  Finish the migration by moving those controls into a dedicated protocol frame
+  or equivalent typed control surface, then remove compatibility code-series
+  requirements once downstream configs no longer need them for sanity checks.
 - **Product/API controls for PE participation preferences** beyond the single
   LNW-floor knob. The sim can consume richer protocol series, but the product
   surface cannot yet express tender acceptance, public-market liquidation,

@@ -268,6 +268,7 @@ py_library(
     deps = [
         ":deterministic",
         ":exogenous",
+        ":private_equity_protocol",
         ":series_model",
         "//augur:frames",
         "@pypi//numpy",
@@ -350,6 +351,7 @@ py_test(
     deps = [
         ":composite_exogenous",
         ":exogenous",
+        ":private_equity_protocol",
         ":series",
         "//augur:frames",
         "@pypi//numpy",

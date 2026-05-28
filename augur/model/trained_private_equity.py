@@ -20,6 +20,7 @@ from augur.model.exogenous import (
 )
 from augur.model.private_equity_protocol import (
     neutral_private_equity_auxiliary_level_frames,
+    neutral_private_equity_protocol_frame,
     observed_private_equity_mark_matrix,
 )
 from augur.model.schemas import FrozenModel
@@ -121,6 +122,9 @@ class TrainedPrivateEquityModel(FrozenModel):
                 SERIES_LEVELS_SCHEMA,
             ),
             events=events_frame,
+            private_equity_protocol=neutral_private_equity_protocol_frame(
+                issuer, tender_events=events, rollout_count=rollout_count, horizon_months=horizon_months
+            ),
             metadata={
                 "exogenous_model_id": self.label,
                 "private_equity_model_schema_version": self.artifact.schema_version,

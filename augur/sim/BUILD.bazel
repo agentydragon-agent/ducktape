@@ -207,6 +207,7 @@ py_library(
         ":scenario",
         "//augur/model:series",
         "@pypi//numpy",
+        "@pypi//polars",
     ],
 )
 

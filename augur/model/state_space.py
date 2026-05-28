@@ -24,6 +24,7 @@ from pydantic import Field, model_validator
 from augur.frames import concat_frames
 from augur.model.conditioning import ExogenousConditioningContext, ObservationTreatment, latest_observations_by_series
 from augur.model.exogenous import (
+    PRIVATE_EQUITY_PROTOCOL_SCHEMA,
     SERIES_EVENTS_SCHEMA,
     SERIES_LEVELS_SCHEMA,
     ExogenousSamplingRequest,
@@ -36,6 +37,7 @@ from augur.model.location_series_sources import LocationSeriesSources, LocationS
 from augur.model.path_models.scenarios import HistoricalSeries, historical_log_returns
 from augur.model.private_equity_protocol import (
     neutral_private_equity_auxiliary_level_frames,
+    neutral_private_equity_protocol_frame,
     observed_private_equity_mark_matrix,
 )
 from augur.model.provenance import stable_identity_digest
@@ -289,6 +291,12 @@ class StateSpaceModel:
                     issuer_id, tender_events=tender_events, rollout_count=rollout_count, horizon_months=horizon_months
                 )
             )
+        protocol_blocks = [
+            neutral_private_equity_protocol_frame(
+                issuer_id, tender_events=events, rollout_count=rollout_count, horizon_months=horizon_months
+            )
+            for issuer_id, events in event_by_issuer.items()
+        ]
         event_blocks = [
             series_events_frame(
                 private_equity_sale_event_id(issuer_id),
@@ -301,6 +309,7 @@ class StateSpaceModel:
         sampled = SampledExogenousBundle(
             levels=concat_frames(level_blocks, SERIES_LEVELS_SCHEMA),
             events=concat_frames(event_blocks, SERIES_EVENTS_SCHEMA),
+            private_equity_protocol=concat_frames(protocol_blocks, PRIVATE_EQUITY_PROTOCOL_SCHEMA),
             metadata={
                 "model_version_id": self.exogenous_model_version_id,
                 "exogenous_model_id": self.label,

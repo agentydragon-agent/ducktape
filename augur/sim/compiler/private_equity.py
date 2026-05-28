@@ -8,6 +8,7 @@ from dataclasses import dataclass
 
 import numpy as np
 import numpy.typing as npt
+import polars as pl
 from numpy.typing import NDArray
 
 from augur.model.series import (
@@ -40,6 +41,7 @@ class PEIssuerCompileOutput:
     belong to issuer `i`."""
 
     codes: NDArray[np.int64]
+    issuer_ids: tuple[str, ...]
     event_series: NDArray[np.int64]
     level_series: NDArray[np.int64]
     regime_code_series: NDArray[np.int64]
@@ -129,6 +131,7 @@ def compile_private_equity_tenders(
 
     issuers = PEIssuerCompileOutput(
         codes=pe_issuer_codes,
+        issuer_ids=issuer_ids,
         event_series=pe_issuer_event_series_index,
         level_series=pe_issuer_level_series_index,
         regime_code_series=pe_issuer_regime_code_series_index,
@@ -229,18 +232,12 @@ def compile_private_equity_tenders(
 
 
 def compile_private_equity_protocol_codes(
-    issuers: PEIssuerCompileOutput, *, external_values: npt.NDArray[np.float64]
+    issuers: PEIssuerCompileOutput, *, private_equity_protocol: pl.DataFrame, rollout_count: int, horizon_months: int
 ) -> tuple[npt.NDArray[np.int64], npt.NDArray[np.int64]]:
-    """Materialize typed PE protocol code arrays from generic sampled level series.
-
-    The exogenous bundle carries every level-like series in one float-valued frame. PE
-    regime and event-kind protocol series are integer-coded within that generic channel;
-    validate that once at the compiler boundary so engine/codec code consumes int arrays.
-    """
+    """Materialize PE protocol code arrays from the typed protocol frame."""
 
     issuer_count = issuers.codes.shape[0]
-    rollout_count = external_values.shape[1]
-    snapshot_months = external_values.shape[2]
+    snapshot_months = horizon_months + 1
     regime_codes = np.full((issuer_count, rollout_count, snapshot_months), NO_CODE, dtype=np.int64)
     event_kind_codes = np.full(
         (issuer_count, rollout_count, snapshot_months), int(PrivateEquityEventKindCode.NONE), dtype=np.int64
@@ -248,32 +245,54 @@ def compile_private_equity_protocol_codes(
     for issuer_idx, issuer_code in enumerate(issuers.codes):
         if int(issuer_code) < 0:
             continue
-        regime_series = int(issuers.regime_code_series[issuer_idx])
-        event_kind_series = int(issuers.event_kind_code_series[issuer_idx])
-        if regime_series < 0 or event_kind_series < 0:
-            raise ValueError("private-equity issuer is missing protocol code series")
-        regime_codes[issuer_idx] = _compile_code_matrix(
-            external_values[regime_series],
-            label=f"private-equity regime code series {regime_series}",
+        issuer_id = issuers.issuer_ids[issuer_idx]
+        regime_codes[issuer_idx] = _compile_protocol_code_matrix(
+            private_equity_protocol,
+            issuer_id=issuer_id,
+            value_column="regime_code",
+            rollout_count=rollout_count,
+            horizon_months=horizon_months,
+            label=f"private-equity protocol regime code for issuer {issuer_id!r}",
             allowed_values=_PRIVATE_EQUITY_REGIME_CODES,
         )
-        event_kind_codes[issuer_idx] = _compile_code_matrix(
-            external_values[event_kind_series],
-            label=f"private-equity event kind code series {event_kind_series}",
+        event_kind_codes[issuer_idx] = _compile_protocol_code_matrix(
+            private_equity_protocol,
+            issuer_id=issuer_id,
+            value_column="event_kind_code",
+            rollout_count=rollout_count,
+            horizon_months=horizon_months,
+            label=f"private-equity protocol event-kind code for issuer {issuer_id!r}",
             allowed_values=_PRIVATE_EQUITY_EVENT_KIND_CODES,
         )
     return regime_codes, event_kind_codes
 
 
-def _compile_code_matrix(
-    values: npt.NDArray[np.float64], *, label: str, allowed_values: frozenset[int]
+def _compile_protocol_code_matrix(
+    protocol: pl.DataFrame,
+    *,
+    issuer_id: str,
+    value_column: str,
+    rollout_count: int,
+    horizon_months: int,
+    label: str,
+    allowed_values: frozenset[int],
 ) -> npt.NDArray[np.int64]:
-    if not np.isfinite(values).all():
-        raise ValueError(f"{label} produced a non-finite value")
-    rounded = np.rint(values)
-    if not np.array_equal(values, rounded):
-        raise ValueError(f"{label} produced a non-integer value")
-    codes = rounded.astype(np.int64)
+    selected = protocol.filter(pl.col("issuer_id") == issuer_id).sort(["rollout_index", "month_index"])
+    if selected.is_empty():
+        raise ValueError(f"private-equity issuer {issuer_id!r} requires typed protocol rows")
+
+    expected_rows = rollout_count * (horizon_months + 1)
+    if selected.height != expected_rows:
+        raise ValueError(f"{label} has {selected.height} rows; expected {expected_rows}")
+
+    expected_rollouts = np.repeat(np.arange(rollout_count, dtype=np.int64), horizon_months + 1)
+    expected_months = np.tile(np.arange(horizon_months + 1, dtype=np.int64), rollout_count)
+    actual_rollouts = selected.get_column("rollout_index").to_numpy()
+    actual_months = selected.get_column("month_index").to_numpy()
+    if not np.array_equal(actual_rollouts, expected_rollouts) or not np.array_equal(actual_months, expected_months):
+        raise ValueError(f"{label} does not cover every rollout/month exactly once")
+
+    codes = selected.get_column(value_column).to_numpy().astype(np.int64).reshape((rollout_count, horizon_months + 1))
     unknown = sorted(int(code) for code in np.unique(codes) if int(code) not in allowed_values)
     if unknown:
         raise ValueError(f"{label} produced unknown code(s): {unknown}")

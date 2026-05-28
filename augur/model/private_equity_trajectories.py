@@ -40,6 +40,7 @@ import polars as pl
 
 from augur.frames import concat_frames
 from augur.model.exogenous import (
+    PRIVATE_EQUITY_PROTOCOL_SCHEMA,
     SERIES_EVENTS_SCHEMA,
     SERIES_LEVELS_SCHEMA,
     ExogenousSamplingRequest,
@@ -49,7 +50,10 @@ from augur.model.exogenous import (
     series_levels_frame,
     validate_sample_satisfies_request,
 )
-from augur.model.private_equity_protocol import neutral_private_equity_auxiliary_level_frames
+from augur.model.private_equity_protocol import (
+    neutral_private_equity_auxiliary_level_frames,
+    neutral_private_equity_protocol_frame,
+)
 from augur.model.series import (
     PRIVATE_EQUITY_EVENT_SERIES_PREFIXES,
     PRIVATE_EQUITY_LEVEL_SERIES_PREFIXES,
@@ -163,6 +167,7 @@ class PreSampledPrivateEquitySampler:
 
         pe_levels_frames: list[pl.DataFrame] = []
         pe_events_frames: list[pl.DataFrame] = []
+        pe_protocol_frames: list[pl.DataFrame] = []
         for issuer, trajectory_set in self.trajectories_by_issuer.items():
             levels = _materialize_pe_levels(
                 trajectory_set, rollout_seeds=request.rollout_seeds, horizon_months=horizon_months
@@ -188,12 +193,21 @@ class PreSampledPrivateEquitySampler:
                     horizon_months=horizon_months,
                 )
             )
+            pe_protocol_frames.append(
+                neutral_private_equity_protocol_frame(
+                    issuer, tender_events=events, rollout_count=rollout_count, horizon_months=horizon_months
+                )
+            )
 
         merged_levels = concat_frames([_drop_pe_levels(bundle.levels), *pe_levels_frames], SERIES_LEVELS_SCHEMA)
         merged_events = concat_frames([_drop_pe_events(bundle.events), *pe_events_frames], SERIES_EVENTS_SCHEMA)
+        merged_protocol = concat_frames(
+            [_drop_pe_protocol(bundle.private_equity_protocol), *pe_protocol_frames], PRIVATE_EQUITY_PROTOCOL_SCHEMA
+        )
         sampled = SampledExogenousBundle(
             levels=merged_levels,
             events=merged_events,
+            private_equity_protocol=merged_protocol,
             metadata={**bundle.metadata, "private_equity_issuers": tuple(sorted(self.trajectories_by_issuer))},
         )
         validate_sample_satisfies_request(request, sampled)
@@ -262,6 +276,12 @@ def _drop_pe_events(events: pl.DataFrame) -> pl.DataFrame:
     if events.is_empty():
         return events
     return events.filter(~_has_any_prefix("event_id", PRIVATE_EQUITY_EVENT_SERIES_PREFIXES))
+
+
+def _drop_pe_protocol(protocol: pl.DataFrame) -> pl.DataFrame:
+    if protocol.is_empty():
+        return protocol
+    return PRIVATE_EQUITY_PROTOCOL_SCHEMA.to_frame()
 
 
 def _has_any_prefix(column: str, prefixes: frozenset[str]) -> pl.Expr:

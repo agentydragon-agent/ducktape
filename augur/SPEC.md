@@ -68,17 +68,16 @@ deployment config are not supported by the product endpoint yet.
 The model layer must emit a complete per-issuer protocol bundle whenever a
 scenario holds `private_equity:<issuer>`:
 
-| Series / Event                                        | Meaning                                                                                                                      |
-| ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `private_equity:<issuer>`                             | Per-unit mark / sale price path.                                                                                             |
-| `private_equity_sale_opportunity:<issuer>`            | Discrete voluntary tender event stream. Public-market saleability is represented by the `public_market` regime.              |
-| `private_equity_regime_code:<issuer>`                 | Integer-coded sim-facing issuer regime: private operating, public market, acquired, collapsed.                               |
-| `private_equity_event_kind_code:<issuer>`             | Integer-coded event marker for tender, public-market open, acquisition cashout, legal impairment, forced recovery, collapse. |
-| `private_equity_sale_capacity_fraction:<issuer>`      | Fraction of currently held units sellable through a voluntary tender/public-market opportunity.                              |
-| `private_equity_eligible_fraction:<issuer>`           | Fraction of currently held units eligible for voluntary sale.                                                                |
-| `private_equity_forced_sale_fraction:<issuer>`        | Fraction of currently held units forcibly sold in that month.                                                                |
-| `private_equity_liquidity_blocked:<issuer>`           | Boolean-ish level; values `>= 0.5` block voluntary tender/public-market sales.                                               |
-| `private_equity_forced_recovery_cashout_usd:<issuer>` | Dollar recovery paid for the remaining position in that month.                                                               |
+| Series / Event                                        | Meaning                                                                                                                                                                                                                          |
+| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `private_equity:<issuer>`                             | Per-unit mark / sale price path.                                                                                                                                                                                                 |
+| `private_equity_sale_opportunity:<issuer>`            | Discrete voluntary tender event stream. Public-market saleability is represented by the `public_market` regime.                                                                                                                  |
+| Typed PE protocol frame                               | Integer-coded sim-facing issuer regime and event marker: private operating, public market, acquired, collapsed; tender, admin mark update, public-market open, acquisition cashout, legal impairment, forced recovery, collapse. |
+| `private_equity_sale_capacity_fraction:<issuer>`      | Fraction of currently held units sellable through a voluntary tender/public-market opportunity.                                                                                                                                  |
+| `private_equity_eligible_fraction:<issuer>`           | Fraction of currently held units eligible for voluntary sale.                                                                                                                                                                    |
+| `private_equity_forced_sale_fraction:<issuer>`        | Fraction of currently held units forcibly sold in that month.                                                                                                                                                                    |
+| `private_equity_liquidity_blocked:<issuer>`           | Boolean-ish level; values `>= 0.5` block voluntary tender/public-market sales.                                                                                                                                                   |
+| `private_equity_forced_recovery_cashout_usd:<issuer>` | Dollar recovery paid for the remaining position in that month.                                                                                                                                                                   |
 
 The simulator hard-fails if any required PE protocol series is absent. It
 validates integer code series, finite marks, and fraction bounds before applying

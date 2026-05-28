@@ -16,7 +16,7 @@ from pydantic import ValidationError
 from augur.frames import concat_frames
 from augur.model.exogenous import SERIES_LEVELS_SCHEMA, series_levels_frame
 from augur.model.gbm import GeometricBrownian
-from augur.model.private_equity_protocol import private_equity_auxiliary_level_frames
+from augur.model.private_equity_protocol import private_equity_auxiliary_level_frames, private_equity_protocol_frame
 from augur.model.series import (
     PrivateEquityEventKindCode,
     PrivateEquityRegimeCode,
@@ -3910,6 +3910,21 @@ def _pe_external_series(
             )
         ),
         series_events=EXTERNAL_SERIES_EVENTS_FRAME.normalize(pl.DataFrame(event_rows)),
+        private_equity_protocol=private_equity_protocol_frame(
+            "acme",
+            event_kind_code=event_kind_code
+            if event_kind_code is not None
+            else np.where(events, int(PrivateEquityEventKindCode.TENDER), 0),
+            regime_code=regime_code
+            if regime_code is not None
+            else _pe_code_matrix(
+                horizon_months=horizon_months,
+                rollouts=rollout_count,
+                value=int(PrivateEquityRegimeCode.PRIVATE_OPERATING),
+            ),
+            rollout_count=rollout_count,
+            horizon_months=horizon_months,
+        ),
     )
 
 
@@ -4265,8 +4280,32 @@ def test_pe_unknown_regime_code_fails_loudly() -> None:
         ),
     )
 
-    with pytest.raises(ValueError, match=r"private-equity regime code series .* unknown code"):
+    with pytest.raises(ValueError, match=r"private-equity protocol regime code .* unknown code"):
         simulate_with_external_series(scenario, rollout_count=1, external_series=external, locations={})
+
+
+def test_pe_missing_typed_protocol_fails_loudly() -> None:
+    horizon = 12
+    scenario = _pe_tender_scenario(
+        initial_cash_usd=0.0,
+        monthly_spend_usd=0.0,
+        pe_units=100.0,
+        pe_cost_basis_per_unit_usd=10.0,
+        pe_holding_period_months=36,
+        horizon_months=horizon,
+        lnw_floor_usd=1_000_000.0,
+    )
+    external = _pe_external_series(
+        initial_mark_usd=100.0, tender_month=5, tender_mark_usd=100.0, horizon_months=horizon
+    )
+    external_without_protocol = ExternalSeriesContext(
+        series_values=external.series_values, series_events=external.series_events
+    )
+
+    with pytest.raises(ValueError, match=r"private-equity issuer 'acme' requires typed protocol rows"):
+        simulate_with_external_series(
+            scenario, rollout_count=1, external_series=external_without_protocol, locations={}
+        )
 
 
 def test_pe_unknown_event_kind_code_fails_loudly() -> None:
@@ -4290,7 +4329,7 @@ def test_pe_unknown_event_kind_code_fails_loudly() -> None:
         ),
     )
 
-    with pytest.raises(ValueError, match=r"private-equity event kind code series .* unknown code"):
+    with pytest.raises(ValueError, match=r"private-equity protocol event-kind code .* unknown code"):
         simulate_with_external_series(scenario, rollout_count=1, external_series=external, locations={})
 
 

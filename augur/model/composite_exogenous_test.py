@@ -9,6 +9,7 @@ import pytest_bazel
 from augur.frames import concat_frames
 from augur.model.composite_exogenous import CompositeExogenousModel
 from augur.model.exogenous import (
+    PRIVATE_EQUITY_PROTOCOL_SCHEMA,
     SERIES_EVENTS_SCHEMA,
     SERIES_LEVELS_SCHEMA,
     ExogenousSamplingRequest,
@@ -16,6 +17,7 @@ from augur.model.exogenous import (
     series_events_frame,
     series_levels_frame,
 )
+from augur.model.private_equity_protocol import neutral_private_equity_protocol_frame
 from augur.model.series import (
     INFLATION_SERIES_ID,
     private_equity_eligible_fraction_series_id,
@@ -54,6 +56,18 @@ class _StaticSampler:
         return SampledExogenousBundle(
             levels=concat_frames(level_frames, SERIES_LEVELS_SCHEMA),
             events=concat_frames(event_frames, SERIES_EVENTS_SCHEMA),
+            private_equity_protocol=concat_frames(
+                [
+                    neutral_private_equity_protocol_frame(
+                        issuer,
+                        tender_events=np.zeros((request.rollout_count, request.horizon_months + 1), dtype=np.bool_),
+                        rollout_count=request.rollout_count,
+                        horizon_months=request.horizon_months,
+                    )
+                    for issuer in sorted(request.required_private_equity_protocol_issuers)
+                ],
+                PRIVATE_EQUITY_PROTOCOL_SCHEMA,
+            ),
         )
 
 
@@ -78,6 +92,7 @@ def test_composite_merges_macro_and_private_equity_series() -> None:
             }
         ),
         required_event_series=frozenset({private_equity_sale_event_id("private_company_a")}),
+        required_private_equity_protocol_issuers=frozenset({"private_company_a"}),
     )
 
     bundle = model.sample(request)
@@ -93,6 +108,10 @@ def test_composite_merges_macro_and_private_equity_series() -> None:
     assert macro.sample_requests[0].required_level_series == frozenset({INFLATION_SERIES_ID})
     assert private_equity.sample_requests[0].required_level_series == frozenset(
         {private_equity_series_id("private_company_a"), private_equity_eligible_fraction_series_id("private_company_a")}
+    )
+    assert macro.sample_requests[0].required_private_equity_protocol_issuers == frozenset()
+    assert private_equity.sample_requests[0].required_private_equity_protocol_issuers == frozenset(
+        {"private_company_a"}
     )
 
 

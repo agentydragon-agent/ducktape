@@ -16,6 +16,15 @@ SERIES_LEVELS_SCHEMA = pl.Schema(
 SERIES_EVENTS_SCHEMA = pl.Schema(
     {"rollout_index": pl.Int64(), "month_index": pl.Int64(), "event_id": pl.Utf8(), "active": pl.Boolean()}
 )
+PRIVATE_EQUITY_PROTOCOL_SCHEMA = pl.Schema(
+    {
+        "rollout_index": pl.Int64(),
+        "month_index": pl.Int64(),
+        "issuer_id": pl.Utf8(),
+        "regime_code": pl.Int64(),
+        "event_kind_code": pl.Int64(),
+    }
+)
 SERIES_VALUES_SCHEMA = pl.Schema(
     {"rollout_index": pl.Int64(), "month_index": pl.Int64(), "series_id": pl.Utf8(), "value": pl.Float64()}
 )
@@ -29,6 +38,7 @@ class ExogenousSamplingRequest:
     rollout_seeds: tuple[int, ...]
     required_level_series: frozenset[str] = frozenset()
     required_event_series: frozenset[str] = frozenset()
+    required_private_equity_protocol_issuers: frozenset[str] = frozenset()
 
     def __post_init__(self) -> None:
         if self.horizon_months < 0:
@@ -54,16 +64,22 @@ class SampledExogenousBundle:
 
     `levels` carries valued series such as asset prices, CPI index levels,
     rent levels, and home-value levels. `events` carries boolean exogenous
-    event paths such as private-equity sale windows.
+    event paths such as private-equity sale windows. `private_equity_protocol`
+    carries typed PE control codes that should not flow through float level
+    channels.
     """
 
     levels: pl.DataFrame
     events: pl.DataFrame = field(default_factory=lambda: SERIES_EVENTS_SCHEMA.to_frame())
+    private_equity_protocol: pl.DataFrame = field(default_factory=lambda: PRIVATE_EQUITY_PROTOCOL_SCHEMA.to_frame())
     metadata: Mapping[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         _require_schema(self.levels, SERIES_LEVELS_SCHEMA, frame_name="levels")
         _require_schema(self.events, SERIES_EVENTS_SCHEMA, frame_name="events")
+        _require_schema(
+            self.private_equity_protocol, PRIVATE_EQUITY_PROTOCOL_SCHEMA, frame_name="private_equity_protocol"
+        )
 
     def level_matrix(self, series_id: str, *, rollout_count: int, horizon_months: int) -> np.ndarray:
         """Return one level series as a `(rollout, month)` matrix."""
@@ -157,7 +173,10 @@ def validate_sample_satisfies_request(request: ExogenousSamplingRequest, sampled
 
     missing_level_series = sorted(request.required_level_series - _string_values(sampled.levels, "series_id"))
     missing_event_series = sorted(request.required_event_series - _string_values(sampled.events, "event_id"))
-    if not missing_level_series and not missing_event_series:
+    missing_pe_protocol_issuers = sorted(
+        request.required_private_equity_protocol_issuers - _string_values(sampled.private_equity_protocol, "issuer_id")
+    )
+    if not missing_level_series and not missing_event_series and not missing_pe_protocol_issuers:
         return
 
     details: list[str] = []
@@ -165,6 +184,8 @@ def validate_sample_satisfies_request(request: ExogenousSamplingRequest, sampled
         details.append(f"missing required level series: {missing_level_series}")
     if missing_event_series:
         details.append(f"missing required event series: {missing_event_series}")
+    if missing_pe_protocol_issuers:
+        details.append(f"missing required private-equity protocol issuer(s): {missing_pe_protocol_issuers}")
     raise ValueError("sampled exogenous bundle " + "; ".join(details))
 
 
@@ -179,7 +200,10 @@ def anchor_sampled_series_levels(
     active_anchors = {series_id: value for series_id, value in anchors.items() if series_id in sampled_series}
     if not active_anchors:
         return SampledExogenousBundle(
-            levels=sampled.levels, events=sampled.events, metadata={**sampled.metadata, "level_anchors": anchors}
+            levels=sampled.levels,
+            events=sampled.events,
+            private_equity_protocol=sampled.private_equity_protocol,
+            metadata={**sampled.metadata, "level_anchors": anchors},
         )
 
     anchor_frame = pl.DataFrame(
@@ -206,7 +230,10 @@ def anchor_sampled_series_levels(
         .select(SERIES_LEVELS_SCHEMA.names())
     )
     return SampledExogenousBundle(
-        levels=levels, events=sampled.events, metadata={**sampled.metadata, "level_anchors": anchors}
+        levels=levels,
+        events=sampled.events,
+        private_equity_protocol=sampled.private_equity_protocol,
+        metadata={**sampled.metadata, "level_anchors": anchors},
     )
 
 

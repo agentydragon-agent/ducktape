@@ -49,6 +49,13 @@ def slice_dense_result(dense: DenseSimulationResult, *, rollout_index: int) -> D
             if not dense.external_series.series_events.is_empty()
             else dense.external_series.series_events
         ),
+        private_equity_protocol=(
+            dense.external_series.private_equity_protocol.filter(pl.col("rollout_index") == rollout_index).with_columns(
+                rollout_index=pl.lit(0, dtype=pl.Int64)
+            )
+            if not dense.external_series.private_equity_protocol.is_empty()
+            else dense.external_series.private_equity_protocol
+        ),
     )
     return DenseSimulationResult(plan=plan, buffers=buffers, external_series=external_series)
 

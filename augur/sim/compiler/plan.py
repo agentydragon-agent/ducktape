@@ -313,7 +313,10 @@ def compile_simulation(
         cash_agent_codes=cash_agent_codes_arr,
     )
     pe_regime_codes, pe_event_kind_codes = compile_private_equity_protocol_codes(
-        pe_issuers, external_values=external_values
+        pe_issuers,
+        private_equity_protocol=external_series.private_equity_protocol,
+        rollout_count=rollout_count,
+        horizon_months=horizon,
     )
 
     slot_plan = SlotPlan(

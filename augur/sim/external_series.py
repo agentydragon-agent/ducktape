@@ -12,12 +12,13 @@ Subsequent step calls index into it by month.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import polars as pl
 
 from augur.frames import FrameSpec
 from augur.model.exogenous import (
+    PRIVATE_EQUITY_PROTOCOL_SCHEMA,
     SERIES_EVENTS_SCHEMA,
     SERIES_VALUES_SCHEMA,
     SampledExogenousBundle,
@@ -27,6 +28,7 @@ from augur.model.series_model import SeriesModelBundle, materialize_series_value
 
 EXTERNAL_SERIES_VALUES_FRAME = FrameSpec("series_values", SERIES_VALUES_SCHEMA)
 EXTERNAL_SERIES_EVENTS_FRAME = FrameSpec("series_events", SERIES_EVENTS_SCHEMA)
+PRIVATE_EQUITY_PROTOCOL_FRAME = FrameSpec("private_equity_protocol", PRIVATE_EQUITY_PROTOCOL_SCHEMA)
 
 
 @dataclass(frozen=True)
@@ -37,11 +39,12 @@ class ExternalSeriesContext:
 
     `series_values` carries level series (asset prices, CPI levels, rent levels).
     `series_events` carries boolean event paths (private-equity tender opportunities,
-    future regime-change events). Both are long-form polars frames keyed by
-    `(rollout_index, month_index, series_id|event_id)`."""
+    future regime-change events). `private_equity_protocol` carries typed regime and
+    event-kind code paths keyed by `(rollout_index, month_index, issuer_id)`."""
 
     series_values: pl.DataFrame
     series_events: pl.DataFrame
+    private_equity_protocol: pl.DataFrame = field(default_factory=lambda: PRIVATE_EQUITY_PROTOCOL_FRAME.empty())
 
     def series_at(self, month_index: int) -> pl.DataFrame:
         """Cross-section view at the given month: one row per
@@ -64,6 +67,7 @@ def materialize_external_series(
             materialize_series_values(bundle, rollout_seeds=rollout_seeds, horizon_months=horizon_months)
         ),
         series_events=EXTERNAL_SERIES_EVENTS_FRAME.empty(),
+        private_equity_protocol=PRIVATE_EQUITY_PROTOCOL_FRAME.empty(),
     )
 
 
@@ -73,4 +77,5 @@ def materialize_sampled_exogenous(bundle: SampledExogenousBundle) -> ExternalSer
     return ExternalSeriesContext(
         series_values=EXTERNAL_SERIES_VALUES_FRAME.normalize(series_values_from_bundle(bundle)),
         series_events=EXTERNAL_SERIES_EVENTS_FRAME.normalize(bundle.events),
+        private_equity_protocol=PRIVATE_EQUITY_PROTOCOL_FRAME.normalize(bundle.private_equity_protocol),
     )

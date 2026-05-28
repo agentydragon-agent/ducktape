@@ -6,7 +6,7 @@ import numpy as np
 import numpy.typing as npt
 import polars as pl
 
-from augur.model.exogenous import series_levels_frame
+from augur.model.exogenous import PRIVATE_EQUITY_PROTOCOL_SCHEMA, series_levels_frame
 from augur.model.series import (
     PrivateEquityEventKindCode,
     PrivateEquityRegimeCode,
@@ -75,6 +75,42 @@ def neutral_private_equity_auxiliary_level_frames(
         forced_recovery_cashout_usd=np.zeros(expected_shape, dtype=np.float64),
         rollout_count=rollout_count,
         horizon_months=horizon_months,
+    )
+
+
+def neutral_private_equity_protocol_frame(
+    issuer_id: str, *, tender_events: BoolMatrix, rollout_count: int, horizon_months: int
+) -> pl.DataFrame:
+    expected_shape = (rollout_count, horizon_months + 1)
+    _require_matrix(tender_events, expected_shape, "tender_events")
+    event_kind_code = np.where(
+        tender_events, int(PrivateEquityEventKindCode.TENDER), int(PrivateEquityEventKindCode.NONE)
+    )
+    return private_equity_protocol_frame(
+        issuer_id,
+        event_kind_code=event_kind_code,
+        regime_code=np.full(expected_shape, int(PrivateEquityRegimeCode.PRIVATE_OPERATING), dtype=np.int64),
+        rollout_count=rollout_count,
+        horizon_months=horizon_months,
+    )
+
+
+def private_equity_protocol_frame(
+    issuer_id: str, *, event_kind_code: CodeMatrix, regime_code: CodeMatrix, rollout_count: int, horizon_months: int
+) -> pl.DataFrame:
+    expected_shape = (rollout_count, horizon_months + 1)
+    _require_code_matrix(event_kind_code, expected_shape, "event_kind_code")
+    _require_code_matrix(regime_code, expected_shape, "regime_code")
+    rollout_idx, month_idx = _long_indices(rollout_count=rollout_count, horizon_months=horizon_months)
+    return pl.DataFrame(
+        {
+            "rollout_index": rollout_idx,
+            "month_index": month_idx,
+            "issuer_id": [issuer_id] * (rollout_count * (horizon_months + 1)),
+            "regime_code": regime_code.reshape(-1),
+            "event_kind_code": event_kind_code.reshape(-1),
+        },
+        schema=PRIVATE_EQUITY_PROTOCOL_SCHEMA,
     )
 
 
@@ -163,3 +199,10 @@ def _require_float_matrix(value: np.ndarray, expected_shape: tuple[int, int], la
     _require_matrix(value, expected_shape, label)
     if not np.isfinite(value).all():
         raise ValueError(f"private-equity {label} matrix must be finite")
+
+
+def _long_indices(*, rollout_count: int, horizon_months: int) -> tuple[np.ndarray, np.ndarray]:
+    return (
+        np.repeat(np.arange(rollout_count, dtype=np.int64), horizon_months + 1),
+        np.tile(np.arange(horizon_months + 1, dtype=np.int64), rollout_count),
+    )

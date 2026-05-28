@@ -10,11 +10,13 @@ import numpy as np
 from augur.frames import concat_frames
 from augur.model.deterministic import Constant
 from augur.model.exogenous import (
+    PRIVATE_EQUITY_PROTOCOL_SCHEMA,
     SERIES_EVENTS_SCHEMA,
     ExogenousSamplingRequest,
     SampledExogenousBundle,
     series_events_frame,
 )
+from augur.model.private_equity_protocol import neutral_private_equity_protocol_frame
 from augur.model.series_model import IndependentSeriesModels
 
 
@@ -55,9 +57,19 @@ class DeterministicSeriesFixtureModel:
             )
             for event_id in sorted(request.required_event_series)
         ]
+        protocol_blocks = [
+            neutral_private_equity_protocol_frame(
+                issuer_id,
+                tender_events=self._event_mask(request),
+                rollout_count=request.rollout_count,
+                horizon_months=request.horizon_months,
+            )
+            for issuer_id in sorted(request.required_private_equity_protocol_issuers)
+        ]
         return SampledExogenousBundle(
             levels=level_models.sample(request).levels,
             events=concat_frames(event_blocks, SERIES_EVENTS_SCHEMA),
+            private_equity_protocol=concat_frames(protocol_blocks, PRIVATE_EQUITY_PROTOCOL_SCHEMA),
             metadata=dict(self.metadata),
         )
 

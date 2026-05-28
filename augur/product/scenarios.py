@@ -182,6 +182,14 @@ def required_event_series(initial_lots: tuple[InitialLot, ...]) -> frozenset[str
     return frozenset(event_ids)
 
 
+def required_private_equity_protocol_issuers(initial_lots: tuple[InitialLot, ...]) -> frozenset[str]:
+    return frozenset(
+        issuer
+        for lot in initial_lots
+        if (issuer := private_equity_issuer_id_from_price_series_id(lot.asset_id)) is not None
+    )
+
+
 def build_scenario(
     scenario_key: ScenarioKey,
     *,
