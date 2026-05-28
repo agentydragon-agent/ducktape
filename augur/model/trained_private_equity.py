@@ -18,7 +18,10 @@ from augur.model.exogenous import (
     series_events_frame,
     series_levels_frame,
 )
-from augur.model.private_equity_protocol import neutral_private_equity_auxiliary_level_frames
+from augur.model.private_equity_protocol import (
+    neutral_private_equity_auxiliary_level_frames,
+    observed_private_equity_mark_matrix,
+)
 from augur.model.schemas import FrozenModel
 from augur.model.series import private_equity_sale_event_id, private_equity_series_id
 from augur.model.series_model import derive_stream_rollout_seeds
@@ -99,6 +102,7 @@ class TrainedPrivateEquityModel(FrozenModel):
             levels = _sample_levels(self.artifact, rollout_seeds=level_seeds, horizon_months=horizon_months)
             events = _sample_tender_events(self.artifact, rollout_seeds=event_seeds, horizon_months=horizon_months)
             _apply_event_price_noise(self.artifact, levels=levels, events=events, rollout_seeds=event_seeds)
+            levels = observed_private_equity_mark_matrix(levels, events)
 
         levels_frame = series_levels_frame(
             private_equity_series_id(issuer), levels, rollout_count=rollout_count, horizon_months=horizon_months

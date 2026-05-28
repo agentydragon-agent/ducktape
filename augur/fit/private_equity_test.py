@@ -72,6 +72,15 @@ def _rows() -> list[dict[str, object]]:
     ]
 
 
+@pytest.fixture
+def broad_scale_prior() -> TrainedPrivateEquityScalePrior:
+    return TrainedPrivateEquityScalePrior(
+        current_market_cap_usd=10_000_000_000.0,
+        soft_cap_market_cap_usd=1_000_000_000_000.0,
+        monthly_log_drift_penalty=0.20,
+    )
+
+
 def test_load_jsonl_accepts_valuation_observations(tmp_path: Path) -> None:
     path = _write_jsonl(
         tmp_path / "observations.jsonl",
@@ -155,6 +164,67 @@ priors:
     events = bundle.event_matrix(private_equity_sale_event_id("private_company_a"), rollout_count=3, horizon_months=8)
     assert events.dtype.kind == "b"
     assert events.shape == (3, 9)
+
+
+def test_runtime_private_marks_forward_fill_between_tenders(broad_scale_prior: TrainedPrivateEquityScalePrior) -> None:
+    model = TrainedPrivateEquityModel(
+        artifact=TrainedPrivateEquityModelArtifact(
+            issuer_id="private_company_a",
+            as_of_date="2026-05-27",
+            current_mark_usd=100.0,
+            monthly_log_return_mu=float(np.log(2.0)),
+            monthly_log_return_sigma=1e-9,
+            tender_interval_months_median=120.0,
+            tender_interval_log_sigma=1e-12,
+            tender_price_log_discount_sigma=0.0,
+            scale_prior=broad_scale_prior,
+        )
+    )
+
+    levels = model.sample(
+        ExogenousSamplingRequest(
+            horizon_months=4,
+            rollout_seeds=(1,),
+            required_level_series=frozenset({private_equity_series_id("private_company_a")}),
+        )
+    ).level_matrix(private_equity_series_id("private_company_a"), rollout_count=1, horizon_months=4)
+
+    np.testing.assert_allclose(levels, np.full((1, 5), 100.0))
+
+
+def test_runtime_tender_updates_observed_private_mark(broad_scale_prior: TrainedPrivateEquityScalePrior) -> None:
+    model = TrainedPrivateEquityModel(
+        artifact=TrainedPrivateEquityModelArtifact(
+            issuer_id="private_company_a",
+            as_of_date="2026-05-27",
+            current_mark_usd=100.0,
+            monthly_log_return_mu=float(np.log(2.0) / 2.0),
+            monthly_log_return_sigma=1e-12,
+            tender_interval_months_median=2.0,
+            tender_interval_log_sigma=1e-12,
+            tender_price_log_discount_sigma=0.0,
+            scale_prior=broad_scale_prior,
+        )
+    )
+
+    sampled = model.sample(
+        ExogenousSamplingRequest(
+            horizon_months=4,
+            rollout_seeds=(1,),
+            required_level_series=frozenset({private_equity_series_id("private_company_a")}),
+            required_event_series=frozenset({private_equity_sale_event_id("private_company_a")}),
+        )
+    )
+    levels = sampled.level_matrix(private_equity_series_id("private_company_a"), rollout_count=1, horizon_months=4)
+    events = sampled.event_matrix(private_equity_sale_event_id("private_company_a"), rollout_count=1, horizon_months=4)
+
+    assert events[0, 2]
+    assert events[0, 4]
+    assert levels[0, 0] == pytest.approx(100.0)
+    assert levels[0, 1] == pytest.approx(100.0)
+    assert levels[0, 2] == pytest.approx(200.0)
+    assert levels[0, 3] == pytest.approx(200.0)
+    assert levels[0, 4] == pytest.approx(400.0)
 
 
 def test_sparse_tender_appreciation_is_shrunk_toward_stock_like_forward_prior(tmp_path: Path) -> None:
@@ -269,8 +339,9 @@ def test_runtime_scale_prior_penalizes_paths_above_soft_cap() -> None:
         "current_mark_usd": 100.0,
         "monthly_log_return_mu": 0.20,
         "monthly_log_return_sigma": 0.0 + 1e-9,
-        "tender_interval_months_median": 12.0,
-        "tender_interval_log_sigma": 0.1,
+        "tender_interval_months_median": 1.0,
+        "tender_interval_log_sigma": 1e-12,
+        "tender_price_log_discount_sigma": 0.0,
     }
     loose = TrainedPrivateEquityModel(
         artifact=TrainedPrivateEquityModelArtifact(
@@ -308,7 +379,9 @@ def test_runtime_scale_prior_penalizes_paths_above_soft_cap() -> None:
     assert tight_levels[0, -1] < loose_levels[0, -1]
 
 
-def test_runtime_sampling_fails_on_nonfinite_private_equity_prices() -> None:
+def test_runtime_sampling_fails_on_nonfinite_private_equity_prices(
+    broad_scale_prior: TrainedPrivateEquityScalePrior,
+) -> None:
     model = TrainedPrivateEquityModel(
         artifact=TrainedPrivateEquityModelArtifact(
             issuer_id="private_company_a",
@@ -318,11 +391,7 @@ def test_runtime_sampling_fails_on_nonfinite_private_equity_prices() -> None:
             monthly_log_return_sigma=0.01,
             tender_interval_months_median=12.0,
             tender_interval_log_sigma=0.1,
-            scale_prior=TrainedPrivateEquityScalePrior(
-                current_market_cap_usd=10_000_000_000.0,
-                soft_cap_market_cap_usd=1_000_000_000_000.0,
-                monthly_log_drift_penalty=0.20,
-            ),
+            scale_prior=broad_scale_prior,
         )
     )
 

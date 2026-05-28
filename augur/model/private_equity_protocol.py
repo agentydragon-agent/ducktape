@@ -24,6 +24,29 @@ CodeMatrix = npt.NDArray[np.int64]
 FloatMatrix = npt.NDArray[np.float64]
 
 
+def observed_private_equity_mark_matrix(latent_mark: FloatMatrix, update_events: BoolMatrix) -> FloatMatrix:
+    """Expose private marks only at observed update events.
+
+    Before public-market trading exists, the sampled latent issuer value is an internal
+    driver. The user-visible PE mark is the last observed admin/tender value, forward
+    filled between sparse update events.
+    """
+
+    if latent_mark.shape != update_events.shape:
+        raise ValueError(
+            f"private-equity latent mark matrix has shape {latent_mark.shape}; "
+            f"expected update event shape {update_events.shape}"
+        )
+    if not np.isfinite(latent_mark).all() or np.any(latent_mark <= 0.0):
+        raise ValueError("private-equity latent mark matrix must be finite and positive")
+
+    observed = np.empty_like(latent_mark, dtype=np.float64)
+    observed[:, 0] = latent_mark[:, 0]
+    for month in range(1, latent_mark.shape[1]):
+        observed[:, month] = np.where(update_events[:, month], latent_mark[:, month], observed[:, month - 1])
+    return observed
+
+
 def neutral_private_equity_auxiliary_level_frames(
     issuer_id: str, *, tender_events: BoolMatrix, rollout_count: int, horizon_months: int
 ) -> tuple[pl.DataFrame, ...]:

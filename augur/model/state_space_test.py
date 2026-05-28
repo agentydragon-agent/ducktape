@@ -80,6 +80,25 @@ def test_state_space_conditioning_changes_sampled_paths(tmp_path: Path) -> None:
     np.testing.assert_allclose(high_sp500, low_sp500 * 2.0)
 
 
+def test_state_space_private_equity_marks_forward_fill_between_tenders(tmp_path: Path) -> None:
+    sampled = (
+        _provider(
+            tmp_path, sp500_anchor=100.0, pe_tender_interval_months_median=120.0, pe_tender_interval_log_sigma=1e-12
+        )
+        .realize_model()
+        .sample(
+            ExogenousSamplingRequest(
+                rollout_seeds=(11,),
+                horizon_months=4,
+                required_level_series=frozenset({private_equity_series_id("private_company_a")}),
+            )
+        )
+    )
+
+    levels = sampled.level_matrix(private_equity_series_id("private_company_a"), rollout_count=1, horizon_months=4)
+    np.testing.assert_allclose(levels, np.full((1, 5), 687.69))
+
+
 def test_state_space_hard_fails_missing_required_series(tmp_path: Path) -> None:
     model = _provider(tmp_path, sp500_anchor=123.0).realize_model()
 
@@ -91,10 +110,22 @@ def test_state_space_hard_fails_missing_required_series(tmp_path: Path) -> None:
         )
 
 
-def _provider(path: Path, *, sp500_anchor: float) -> StateSpaceExogenousProviderConfig:
+def _provider(
+    path: Path,
+    *,
+    sp500_anchor: float,
+    pe_tender_interval_months_median: float = 2.0,
+    pe_tender_interval_log_sigma: float = 0.1,
+) -> StateSpaceExogenousProviderConfig:
     path.mkdir(parents=True, exist_ok=True)
     artifact_path = path / "state_space.json"
-    write_state_space_artifact(artifact_path, _artifact())
+    write_state_space_artifact(
+        artifact_path,
+        _artifact(
+            pe_tender_interval_months_median=pe_tender_interval_months_median,
+            pe_tender_interval_log_sigma=pe_tender_interval_log_sigma,
+        ),
+    )
     conditioning = ExogenousConditioningContext(
         start_at=date(2026, 5, 1),
         observations={
@@ -122,7 +153,9 @@ def _provider(path: Path, *, sp500_anchor: float) -> StateSpaceExogenousProvider
     )
 
 
-def _artifact() -> StateSpaceModelArtifact:
+def _artifact(
+    *, pe_tender_interval_months_median: float = 2.0, pe_tender_interval_log_sigma: float = 0.1
+) -> StateSpaceModelArtifact:
     factors = (
         SP500_SERIES_ID,
         INFLATION_SERIES_ID,
@@ -158,8 +191,8 @@ def _artifact() -> StateSpaceModelArtifact:
         filtered_log_state_cov=tuple(tuple(float(value) for value in row) for row in cov),
         private_equity_event_priors={
             "private_company_a": StateSpacePrivateEquityEventPrior(
-                tender_interval_months_median=2.0,
-                tender_interval_log_sigma=0.1,
+                tender_interval_months_median=pe_tender_interval_months_median,
+                tender_interval_log_sigma=pe_tender_interval_log_sigma,
                 last_tender_observed_at=date(2026, 1, 1),
             )
         },

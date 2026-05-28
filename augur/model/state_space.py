@@ -34,7 +34,10 @@ from augur.model.exogenous import (
 )
 from augur.model.location_series_sources import LocationSeriesSources, LocationSeriesSourcesConfig
 from augur.model.path_models.scenarios import HistoricalSeries, historical_log_returns
-from augur.model.private_equity_protocol import neutral_private_equity_auxiliary_level_frames
+from augur.model.private_equity_protocol import (
+    neutral_private_equity_auxiliary_level_frames,
+    observed_private_equity_mark_matrix,
+)
 from augur.model.provenance import stable_identity_digest
 from augur.model.schemas import FrozenModel
 from augur.model.series import (
@@ -269,13 +272,17 @@ class StateSpaceModel:
             issuer_id: self._private_equity_event_series(issuer_id, request)
             for issuer_id in sorted(self.artifact.private_equity_event_priors)
         }
-        level_blocks = [
-            series_levels_frame(
-                series_id, path_by_factor[factor_name], rollout_count=rollout_count, horizon_months=horizon_months
+        level_blocks = []
+        for series_id, factor_name in sorted(self._series_factor_map().items()):
+            if factor_name not in path_by_factor:
+                continue
+            levels = path_by_factor[factor_name]
+            private_equity_issuer = series_suffix(series_id, PRIVATE_EQUITY_SERIES_PREFIX)
+            if private_equity_issuer is not None and private_equity_issuer in event_by_issuer:
+                levels = observed_private_equity_mark_matrix(levels, event_by_issuer[private_equity_issuer])
+            level_blocks.append(
+                series_levels_frame(series_id, levels, rollout_count=rollout_count, horizon_months=horizon_months)
             )
-            for series_id, factor_name in sorted(self._series_factor_map().items())
-            if factor_name in path_by_factor
-        ]
         for issuer_id, tender_events in event_by_issuer.items():
             level_blocks.extend(
                 neutral_private_equity_auxiliary_level_frames(
