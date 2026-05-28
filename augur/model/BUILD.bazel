@@ -30,6 +30,8 @@ py_library(
     name = "exogenous",
     srcs = ["exogenous.py"],
     deps = [
+        ":private_equity_bundle",
+        ":series",
         "@pypi//numpy",
         "@pypi//polars",
     ],

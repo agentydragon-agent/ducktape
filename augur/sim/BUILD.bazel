@@ -26,6 +26,7 @@ py_library(
     deps = [
         "//augur:frames",
         "//augur/model:exogenous",
+        "//augur/model:private_equity_bundle",
         "//augur/model:series_model",
         "@pypi//polars",
     ],

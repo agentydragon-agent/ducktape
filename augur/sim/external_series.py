@@ -24,6 +24,7 @@ from augur.model.exogenous import (
     SampledExogenousBundle,
     series_values_from_bundle,
 )
+from augur.model.private_equity_bundle import PrivateEquityBundle
 from augur.model.series_model import SeriesModelBundle, materialize_series_values
 
 EXTERNAL_SERIES_VALUES_FRAME = FrameSpec("series_values", SERIES_VALUES_SCHEMA)
@@ -33,17 +34,19 @@ PRIVATE_EQUITY_PROTOCOL_FRAME = FrameSpec("private_equity_protocol", PRIVATE_EQU
 
 @dataclass(frozen=True)
 class ExternalSeriesContext:
-    """The materialized external-series frame plus quick filtered views.
-    Construct once at sim start; pass alongside `state` into step
-    calls.
+    """The materialized external-series context.
 
-    `series_values` carries level series (asset prices, CPI levels, rent levels).
-    `series_events` carries boolean event paths (private-equity tender opportunities,
-    future regime-change events). `private_equity_protocol` carries typed regime and
-    event-kind code paths keyed by `(rollout_index, month_index, issuer_id)`."""
+    `series_values` carries non-PE level series (asset prices, CPI levels,
+    rent levels). `private_equity` carries the typed PE protocol bundle —
+    mark, regime, event-kind, fractions, blocked, recovery — per issuer.
+
+    Legacy `series_events` and `private_equity_protocol` are kept during
+    the migration window; new code should use `private_equity` exclusively.
+    """
 
     series_values: pl.DataFrame
     series_events: pl.DataFrame
+    private_equity: PrivateEquityBundle = field(default_factory=PrivateEquityBundle.empty)
     private_equity_protocol: pl.DataFrame = field(default_factory=lambda: PRIVATE_EQUITY_PROTOCOL_FRAME.empty())
 
     def series_at(self, month_index: int) -> pl.DataFrame:
@@ -67,6 +70,7 @@ def materialize_external_series(
             materialize_series_values(bundle, rollout_seeds=rollout_seeds, horizon_months=horizon_months)
         ),
         series_events=EXTERNAL_SERIES_EVENTS_FRAME.empty(),
+        private_equity=PrivateEquityBundle.empty(),
         private_equity_protocol=PRIVATE_EQUITY_PROTOCOL_FRAME.empty(),
     )
 
@@ -77,5 +81,6 @@ def materialize_sampled_exogenous(bundle: SampledExogenousBundle) -> ExternalSer
     return ExternalSeriesContext(
         series_values=EXTERNAL_SERIES_VALUES_FRAME.normalize(series_values_from_bundle(bundle)),
         series_events=EXTERNAL_SERIES_EVENTS_FRAME.normalize(bundle.events),
+        private_equity=bundle.private_equity,
         private_equity_protocol=PRIVATE_EQUITY_PROTOCOL_FRAME.normalize(bundle.private_equity_protocol),
     )

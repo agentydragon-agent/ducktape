@@ -10,6 +10,9 @@ from typing import Protocol
 import numpy as np
 import polars as pl
 
+from augur.model.private_equity_bundle import PrivateEquityBundle
+from augur.model.series import IssuerId
+
 SERIES_LEVELS_SCHEMA = pl.Schema(
     {"rollout_index": pl.Int64(), "month_index": pl.Int64(), "series_id": pl.Utf8(), "value": pl.Float64()}
 )
@@ -39,6 +42,7 @@ class ExogenousSamplingRequest:
     required_level_series: frozenset[str] = frozenset()
     required_event_series: frozenset[str] = frozenset()
     required_private_equity_protocol_issuers: frozenset[str] = frozenset()
+    required_private_equity_issuers: frozenset[IssuerId] = frozenset()
 
     def __post_init__(self) -> None:
         if self.horizon_months < 0:
@@ -60,16 +64,20 @@ class ExogenousSamplingRequest:
 
 @dataclass(frozen=True)
 class SampledExogenousBundle:
-    """Polars-native joint sample of exogenous levels and events.
+    """Polars-native joint sample of exogenous levels and PE protocol.
 
-    `levels` carries valued series such as asset prices, CPI index levels,
-    rent levels, and home-value levels. `events` carries boolean exogenous
-    event paths such as private-equity sale windows. `private_equity_protocol`
-    carries typed PE control codes that should not flow through float level
-    channels.
+    `levels` carries valued non-PE series (asset prices, CPI levels, rent
+    levels, home-value levels). `private_equity` carries the typed PE
+    protocol bundle (mark, regime, event kind, fractions, blocked, recovery)
+    per issuer.
+
+    Legacy fields `events` and `private_equity_protocol` are kept during the
+    migration window so producers that haven't yet been converted still type-
+    check; new code should populate `private_equity` exclusively.
     """
 
     levels: pl.DataFrame
+    private_equity: PrivateEquityBundle = field(default_factory=PrivateEquityBundle.empty)
     events: pl.DataFrame = field(default_factory=lambda: SERIES_EVENTS_SCHEMA.to_frame())
     private_equity_protocol: pl.DataFrame = field(default_factory=lambda: PRIVATE_EQUITY_PROTOCOL_SCHEMA.to_frame())
     metadata: Mapping[str, object] = field(default_factory=dict)
@@ -176,7 +184,16 @@ def validate_sample_satisfies_request(request: ExogenousSamplingRequest, sampled
     missing_pe_protocol_issuers = sorted(
         request.required_private_equity_protocol_issuers - _string_values(sampled.private_equity_protocol, "issuer_id")
     )
-    if not missing_level_series and not missing_event_series and not missing_pe_protocol_issuers:
+    sampled_pe_issuers = frozenset(str(issuer) for issuer in sampled.private_equity.issuer_ids())
+    missing_pe_bundle_issuers = sorted(
+        frozenset(str(i) for i in request.required_private_equity_issuers) - sampled_pe_issuers
+    )
+    if (
+        not missing_level_series
+        and not missing_event_series
+        and not missing_pe_protocol_issuers
+        and not missing_pe_bundle_issuers
+    ):
         return
 
     details: list[str] = []
@@ -186,6 +203,8 @@ def validate_sample_satisfies_request(request: ExogenousSamplingRequest, sampled
         details.append(f"missing required event series: {missing_event_series}")
     if missing_pe_protocol_issuers:
         details.append(f"missing required private-equity protocol issuer(s): {missing_pe_protocol_issuers}")
+    if missing_pe_bundle_issuers:
+        details.append(f"missing required private-equity bundle issuer(s): {missing_pe_bundle_issuers}")
     raise ValueError("sampled exogenous bundle " + "; ".join(details))
 
 
@@ -201,6 +220,7 @@ def anchor_sampled_series_levels(
     if not active_anchors:
         return SampledExogenousBundle(
             levels=sampled.levels,
+            private_equity=sampled.private_equity,
             events=sampled.events,
             private_equity_protocol=sampled.private_equity_protocol,
             metadata={**sampled.metadata, "level_anchors": anchors},
@@ -231,6 +251,7 @@ def anchor_sampled_series_levels(
     )
     return SampledExogenousBundle(
         levels=levels,
+        private_equity=sampled.private_equity,
         events=sampled.events,
         private_equity_protocol=sampled.private_equity_protocol,
         metadata={**sampled.metadata, "level_anchors": anchors},
