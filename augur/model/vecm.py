@@ -61,14 +61,15 @@ from augur.model.path_models.scenarios import HistoricalSeries
 from augur.model.provenance import stable_identity_digest
 from augur.model.schemas import FrozenModel
 from augur.model.series import (
-    CRYPTO_SERIES_PREFIX,
-    HOME_VALUE_SERIES_PREFIX,
-    INFLATION_SERIES_ID,
-    PRIVATE_EQUITY_SALE_EVENT_PREFIX,
-    PRIVATE_EQUITY_SERIES_PREFIX,
-    RENT_SERIES_PREFIX,
-    SP500_SERIES_ID,
-    series_suffix,
+    CryptoKey,
+    HomeValueKey,
+    InflationKey,
+    LevelSeriesKey,
+    RentKey,
+    SP500Key,
+    issuer_id_from_private_equity_mark_wire_id,
+    issuer_id_from_private_equity_sale_opportunity_wire_id,
+    parse_level_series_key,
 )
 from util.bazel.runfiles import get_required_path
 
@@ -470,27 +471,30 @@ class VecmModel:
     # ──────────────────────── Internal: bundle dispatch ────────────────────────
 
     def _level_series(self, series_id: str, *, path_by_factor: dict[str, np.ndarray]) -> np.ndarray:
-        if series_id == INFLATION_SERIES_ID:
-            return self._factor_level(INFLATION_SERIES_ID, path_by_factor=path_by_factor)
-        if series_id == SP500_SERIES_ID:
-            return self._factor_level(SP500_SERIES_ID, path_by_factor=path_by_factor)
-        if location_id := series_suffix(series_id, HOME_VALUE_SERIES_PREFIX):
-            return self._factor_level(self._location_factor("home_value", location_id), path_by_factor=path_by_factor)
-        if location_id := series_suffix(series_id, RENT_SERIES_PREFIX):
-            return self._factor_level(self._location_factor("rent", location_id), path_by_factor=path_by_factor)
-        if (issuer_id := series_suffix(series_id, PRIVATE_EQUITY_SERIES_PREFIX)) is not None:
+        # Private equity is not a level series and is not modeled by VECM —
+        # it must be routed through trained_private_equity. Reject before
+        # the typed-key parse, which would itself raise for PE wire ids.
+        if (issuer_id := issuer_id_from_private_equity_mark_wire_id(series_id)) is not None:
             raise ValueError(
                 f"VECM cannot sample private-equity level series for issuer {issuer_id!r}; "
                 "configure a trained_private_equity component instead"
             )
-        if series_suffix(series_id, CRYPTO_SERIES_PREFIX) is not None:
-            # Crypto factor names match the wire id exactly (`crypto:btc`, `crypto:eth`), so the
-            # factor lookup is direct — no prefix-stripping translation table needed.
-            return self._factor_level(series_id, path_by_factor=path_by_factor)
-        raise ValueError(f"VECM exogenous model cannot sample level series {series_id!r}")
+        key: LevelSeriesKey = parse_level_series_key(series_id)
+        match key:
+            case InflationKey() | SP500Key():
+                return self._factor_level(series_id, path_by_factor=path_by_factor)
+            case HomeValueKey(location_id=location_id):
+                return self._factor_level(
+                    self._location_factor("home_value", location_id), path_by_factor=path_by_factor
+                )
+            case RentKey(location_id=location_id):
+                return self._factor_level(self._location_factor("rent", location_id), path_by_factor=path_by_factor)
+            case CryptoKey():
+                # Crypto factor names match the wire id exactly (`crypto:btc`, `crypto:eth`).
+                return self._factor_level(series_id, path_by_factor=path_by_factor)
 
     def _event_series(self, event_id: str) -> np.ndarray:
-        if (issuer_id := series_suffix(event_id, PRIVATE_EQUITY_SALE_EVENT_PREFIX)) is not None:
+        if (issuer_id := issuer_id_from_private_equity_sale_opportunity_wire_id(event_id)) is not None:
             raise ValueError(
                 f"VECM cannot sample private-equity event series for issuer {issuer_id!r}; "
                 "configure a trained_private_equity component instead"
@@ -519,19 +523,20 @@ class VecmModel:
         direct = self.latest_observations.get(factor_name)
         if isinstance(direct, (int, float)):
             return float(direct)
-        if factor_name == "sp500":
-            return self._latest_observation_value("spy_adjusted_close_latest", fallback_key="sp500_price_latest")
-        if factor_name == "rent:san_francisco_ca":
-            return self._latest_observation_value("sf_rent_cpi_latest")
-        if factor_name == "inflation":
-            return self._latest_observation_value("cpi_latest")
-        if factor_name.startswith("crypto:"):
-            symbol = factor_name[len("crypto:") :]
-            return self._latest_observation_value(f"{symbol}_close_latest")
-        for key in ("zillow_home_value_latest_by_factor", "case_shiller_home_value_latest_by_factor"):
-            by_factor = self.latest_observations.get(key)
-            if isinstance(by_factor, dict) and factor_name in by_factor:
-                return _observation_value(by_factor[factor_name], f"{key}[{factor_name!r}]")
+        match parse_level_series_key(factor_name):
+            case SP500Key():
+                return self._latest_observation_value("spy_adjusted_close_latest", fallback_key="sp500_price_latest")
+            case RentKey(location_id="san_francisco_ca"):
+                return self._latest_observation_value("sf_rent_cpi_latest")
+            case InflationKey():
+                return self._latest_observation_value("cpi_latest")
+            case CryptoKey(symbol=symbol):
+                return self._latest_observation_value(f"{symbol}_close_latest")
+            case HomeValueKey() | RentKey():
+                for key in ("zillow_home_value_latest_by_factor", "case_shiller_home_value_latest_by_factor"):
+                    by_factor = self.latest_observations.get(key)
+                    if isinstance(by_factor, dict) and factor_name in by_factor:
+                        return _observation_value(by_factor[factor_name], f"{key}[{factor_name!r}]")
         raise ValueError(f"VECM config latest_observations has no usable latest value for factor {factor_name!r}")
 
     def _latest_observation_value(self, key: str, *, fallback_key: str | None = None) -> float:

@@ -17,7 +17,33 @@ from augur.model.exogenous import (
     Sampler,
     validate_sample_satisfies_request,
 )
-from augur.model.series import is_private_equity_event_series_id, is_private_equity_level_series_id
+from augur.model.series import (
+    issuer_id_from_private_equity_mark_wire_id,
+    issuer_id_from_private_equity_sale_opportunity_wire_id,
+    try_parse_level_series_key,
+)
+
+
+def _is_private_equity_level_wire_id(wire_id: str) -> bool:
+    """A PE level wire id has no corresponding `LevelSeriesKey` variant —
+    they are carried in the typed PE bundle. Anything that doesn't parse as a
+    level key is treated as PE for routing purposes (which currently covers the
+    PE mark + the 7 PE auxiliary level series). Robust enough for v1 routing."""
+
+    if try_parse_level_series_key(wire_id) is not None:
+        return False
+    # Confirm it's a known PE wire id (avoid silently routing typos to PE).
+    if issuer_id_from_private_equity_mark_wire_id(wire_id) is not None:
+        return True
+    # Auxiliary PE level wire ids start with one of seven known prefixes; rather
+    # than re-encode each prefix here, accept any wire id that isn't a level key
+    # — auxiliary names have the same `private_equity_*:<issuer>` shape and the
+    # downstream PE sampler will reject anything it doesn't recognize.
+    return wire_id.startswith("private_equity_")
+
+
+def _is_private_equity_event_wire_id(wire_id: str) -> bool:
+    return issuer_id_from_private_equity_sale_opportunity_wire_id(wire_id) is not None
 
 
 @dataclass(frozen=True)
@@ -35,12 +61,10 @@ class CompositeExogenousModel:
             required_level_series=frozenset(
                 series_id
                 for series_id in request.required_level_series
-                if not is_private_equity_level_series_id(series_id)
+                if not _is_private_equity_level_wire_id(series_id)
             ),
             required_event_series=frozenset(
-                event_id
-                for event_id in request.required_event_series
-                if not is_private_equity_event_series_id(event_id)
+                event_id for event_id in request.required_event_series if not _is_private_equity_event_wire_id(event_id)
             ),
             required_private_equity_protocol_issuers=frozenset(),
         )
@@ -48,10 +72,10 @@ class CompositeExogenousModel:
             horizon_months=request.horizon_months,
             rollout_seeds=request.rollout_seeds,
             required_level_series=frozenset(
-                series_id for series_id in request.required_level_series if is_private_equity_level_series_id(series_id)
+                series_id for series_id in request.required_level_series if _is_private_equity_level_wire_id(series_id)
             ),
             required_event_series=frozenset(
-                event_id for event_id in request.required_event_series if is_private_equity_event_series_id(event_id)
+                event_id for event_id in request.required_event_series if _is_private_equity_event_wire_id(event_id)
             ),
             required_private_equity_protocol_issuers=request.required_private_equity_protocol_issuers,
         )

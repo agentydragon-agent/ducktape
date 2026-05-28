@@ -8,6 +8,7 @@ import numpy as np
 import polars as pl
 
 from augur.model.series import home_value_series_id
+from augur.product.asset_key import PrivateEquityAssetKey, try_parse_asset_key
 from augur.product.wire import (
     CapitalImprovementMarkerEvent,
     ClosingCostPaymentEvent,
@@ -158,9 +159,6 @@ def _cash_by_month(dense: DenseSimulationResult, *, primary_agent_code: int) -> 
     return cast(np.ndarray, dense.buffers.state.cash_state[:, cash_slots, _SINGLE_ROLLOUT_INDEX].sum(axis=1))
 
 
-_PRIVATE_EQUITY_ASSET_PREFIX = "private_equity:"
-
-
 def _holding_value_by_month(dense: DenseSimulationResult, *, primary_agent_code: int) -> np.ndarray:
     """Sum of liquid-holding lots (stocks + crypto) priced at sampled series.
 
@@ -183,7 +181,7 @@ def _private_equity_value_by_month(dense: DenseSimulationResult, *, primary_agen
 
 
 def _is_private_equity(asset_id: str) -> bool:
-    return asset_id.startswith(_PRIVATE_EQUITY_ASSET_PREFIX)
+    return isinstance(try_parse_asset_key(asset_id), PrivateEquityAssetKey)
 
 
 def _lot_value_by_month(dense: DenseSimulationResult, *, primary_agent_code: int, include) -> np.ndarray:
@@ -258,15 +256,19 @@ def _holding_sale_events(
 def _private_equity_events(
     run: SimulationRun, *, primary_agent_id: str, asset_label_by_id: dict[str, str]
 ) -> tuple[RolloutEvent, ...]:
-    primary_pe_assets = set(
-        run.asset_lots.filter(
-            (pl.col("agent_id") == primary_agent_id) & pl.col("asset_id").str.starts_with(_PRIVATE_EQUITY_ASSET_PREFIX)
-        )
+    # Filter PE asset rows by classifying each asset_id through the typed
+    # `AssetKey` discriminator; polars itself can't dispatch on Python types,
+    # but we can compute the set of PE asset wire ids in Python and use `is_in`.
+    primary_assets = (
+        run.asset_lots.filter(pl.col("agent_id") == primary_agent_id)
         .select("asset_id")
         .unique()
         .get_column("asset_id")
         .to_list()
     )
+    primary_pe_assets = {
+        asset_id for asset_id in primary_assets if isinstance(try_parse_asset_key(str(asset_id)), PrivateEquityAssetKey)
+    }
     if not primary_pe_assets:
         return ()
     rows = run.events_log.private_equity_events.filter(pl.col("asset_id").is_in(primary_pe_assets)).sort(

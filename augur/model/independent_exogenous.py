@@ -23,7 +23,7 @@ from augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBund
 from augur.model.gbm import GeometricBrownian
 from augur.model.path_models.scenarios import HistoricalSeries
 from augur.model.schemas import FrozenModel
-from augur.model.series import private_equity_issuer_id_from_price_series_id
+from augur.model.series import issuer_id_from_private_equity_mark_wire_id
 from augur.model.series_model import IndependentSeriesModels, ScalarEventSpec, ScalarSeriesSpec
 
 
@@ -102,7 +102,7 @@ class IndependentExogenousModel(FrozenModel):
     def _private_equity_prices_usd(self) -> dict[str, float]:
         prices: dict[str, float] = {}
         for series_id, spec in self.series.items():
-            issuer_id = private_equity_issuer_id_from_price_series_id(series_id)
+            issuer_id = issuer_id_from_private_equity_mark_wire_id(series_id)
             if issuer_id is None:
                 continue
             prices[issuer_id] = _month_zero_level(spec)

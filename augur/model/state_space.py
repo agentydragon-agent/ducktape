@@ -43,17 +43,17 @@ from augur.model.private_equity_protocol import (
 from augur.model.provenance import stable_identity_digest
 from augur.model.schemas import FrozenModel
 from augur.model.series import (
-    CRYPTO_SERIES_PREFIX,
-    HOME_VALUE_SERIES_PREFIX,
-    INFLATION_SERIES_ID,
-    PRIVATE_EQUITY_SERIES_PREFIX,
-    RENT_SERIES_PREFIX,
-    SP500_SERIES_ID,
+    CryptoKey,
+    HomeValueKey,
+    InflationKey,
+    RentKey,
+    SP500Key,
     home_value_series_id,
+    issuer_id_from_private_equity_mark_wire_id,
     private_equity_sale_event_id,
     private_equity_series_id,
     rent_series_id,
-    series_suffix,
+    try_parse_level_series_key,
 )
 from augur.model.series_model import derive_stream_rollout_seeds
 from augur.model.trained_private_equity import TrainedPrivateEquityScalePrior, private_equity_soft_cap_penalty
@@ -103,7 +103,7 @@ class StateSpaceModelArtifact(FrozenModel):
         private_equity_issuers = {
             issuer
             for factor in self.factor_names
-            if (issuer := series_suffix(factor, PRIVATE_EQUITY_SERIES_PREFIX)) is not None
+            if (issuer := issuer_id_from_private_equity_mark_wire_id(factor)) is not None
         }
         missing_scale_priors = private_equity_issuers - set(self.private_equity_scale_priors)
         if missing_scale_priors:
@@ -279,7 +279,7 @@ class StateSpaceModel:
             if factor_name not in path_by_factor:
                 continue
             levels = path_by_factor[factor_name]
-            private_equity_issuer = series_suffix(series_id, PRIVATE_EQUITY_SERIES_PREFIX)
+            private_equity_issuer = issuer_id_from_private_equity_mark_wire_id(series_id)
             if private_equity_issuer is not None and private_equity_issuer in event_by_issuer:
                 levels = observed_private_equity_mark_matrix(levels, event_by_issuer[private_equity_issuer])
             level_blocks.append(
@@ -407,11 +407,13 @@ class StateSpaceModel:
         factors = set(self.artifact.factor_names)
         mapping: dict[str, str] = {}
         for factor in factors:
-            if factor in {SP500_SERIES_ID, INFLATION_SERIES_ID} or factor.startswith(
-                (CRYPTO_SERIES_PREFIX, PRIVATE_EQUITY_SERIES_PREFIX)
-            ):
+            # PE factor names use the per-issuer mark wire id (`private_equity:<issuer>`).
+            if issuer_id_from_private_equity_mark_wire_id(factor) is not None:
                 mapping[factor] = factor
-            if factor.startswith((HOME_VALUE_SERIES_PREFIX, RENT_SERIES_PREFIX)):
+                continue
+            # Everything else is a non-PE level series; dispatch on the typed key.
+            key = try_parse_level_series_key(factor)
+            if isinstance(key, InflationKey | SP500Key | CryptoKey | HomeValueKey | RentKey):
                 mapping[factor] = factor
         for location_id, factor in self.location_series_sources.home_value.items():
             if factor in factors:
@@ -454,7 +456,7 @@ class StateSpaceModel:
         return {
             issuer_id: levels[series_id]
             for series_id in self.artifact.factor_names
-            if (issuer_id := series_suffix(series_id, PRIVATE_EQUITY_SERIES_PREFIX)) is not None
+            if (issuer_id := issuer_id_from_private_equity_mark_wire_id(series_id)) is not None
         }
 
     def _private_equity_scale_indexes(self) -> tuple[tuple[int, TrainedPrivateEquityScalePrior], ...]:
@@ -521,12 +523,16 @@ def _regularize_covariance(factor_names: tuple[str, ...], covariance: np.ndarray
 
 
 def _coupling_allowed(left: str, right: str) -> bool:
-    if left.startswith(CRYPTO_SERIES_PREFIX) or right.startswith(CRYPTO_SERIES_PREFIX):
-        return left.startswith(CRYPTO_SERIES_PREFIX) and right.startswith(CRYPTO_SERIES_PREFIX)
-    if left.startswith(PRIVATE_EQUITY_SERIES_PREFIX):
-        return right == SP500_SERIES_ID
-    if right.startswith(PRIVATE_EQUITY_SERIES_PREFIX):
-        return left == SP500_SERIES_ID
+    left_key = try_parse_level_series_key(left)
+    right_key = try_parse_level_series_key(right)
+    left_is_pe = issuer_id_from_private_equity_mark_wire_id(left) is not None
+    right_is_pe = issuer_id_from_private_equity_mark_wire_id(right) is not None
+    if isinstance(left_key, CryptoKey) or isinstance(right_key, CryptoKey):
+        return isinstance(left_key, CryptoKey) and isinstance(right_key, CryptoKey)
+    if left_is_pe:
+        return isinstance(right_key, SP500Key)
+    if right_is_pe:
+        return isinstance(left_key, SP500Key)
     return True
 
 

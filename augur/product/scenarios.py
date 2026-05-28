@@ -12,11 +12,12 @@ from augur.api.portfolio import PortfolioConfig
 from augur.model.series import (
     INFLATION_SERIES_ID,
     home_value_series_id,
-    private_equity_issuer_id_from_price_series_id,
+    issuer_id_from_private_equity_mark_wire_id,
     private_equity_level_series_ids,
     private_equity_sale_event_id,
     rent_series_id,
 )
+from augur.product.asset_key import CryptoAssetKey, PrivateEquityAssetKey, try_parse_asset_key
 from augur.product.wire import (
     CapitalImprovementEventWire,
     CashFinancing,
@@ -131,7 +132,7 @@ def required_level_series(
 ) -> frozenset[str]:
     series_ids = {lot.asset_id for lot in initial_lots}
     for lot in initial_lots:
-        issuer = private_equity_issuer_id_from_price_series_id(lot.asset_id)
+        issuer = issuer_id_from_private_equity_mark_wire_id(lot.asset_id)
         if issuer is not None:
             series_ids.update(private_equity_level_series_ids(issuer))
     if scenario_key.spend_index == "inflation":
@@ -176,7 +177,7 @@ def required_event_series(initial_lots: tuple[InitialLot, ...]) -> frozenset[str
 
     event_ids: set[str] = set()
     for lot in initial_lots:
-        issuer = private_equity_issuer_id_from_price_series_id(lot.asset_id)
+        issuer = issuer_id_from_private_equity_mark_wire_id(lot.asset_id)
         if issuer is not None:
             event_ids.add(private_equity_sale_event_id(issuer))
     return frozenset(event_ids)
@@ -186,7 +187,7 @@ def required_private_equity_protocol_issuers(initial_lots: tuple[InitialLot, ...
     return frozenset(
         issuer
         for lot in initial_lots
-        if (issuer := private_equity_issuer_id_from_price_series_id(lot.asset_id)) is not None
+        if (issuer := issuer_id_from_private_equity_mark_wire_id(lot.asset_id)) is not None
     )
 
 
@@ -836,13 +837,12 @@ def _asset_preference_chain_from_sell_order(
             asset_ids.extend(
                 lot.asset_id
                 for lot in initial_lots
-                if (
-                    not lot.asset_id.startswith("crypto:")
-                    and private_equity_issuer_id_from_price_series_id(lot.asset_id) is None
-                )
+                if not isinstance(try_parse_asset_key(lot.asset_id), CryptoAssetKey | PrivateEquityAssetKey)
             )
         elif bucket == "crypto":
-            asset_ids.extend(lot.asset_id for lot in initial_lots if lot.asset_id.startswith("crypto:"))
+            asset_ids.extend(
+                lot.asset_id for lot in initial_lots if isinstance(try_parse_asset_key(lot.asset_id), CryptoAssetKey)
+            )
         else:
             raise ValueError(f"unsupported sell_order bucket: {bucket!r}")
     return list(dict.fromkeys(asset_ids))
@@ -858,7 +858,7 @@ def _build_private_equity_tender_policies(
     while exogenous forced-sale/recovery events still need owner/proceeds routing.
     """
 
-    holds_pe = any(private_equity_issuer_id_from_price_series_id(lot.asset_id) is not None for lot in initial_lots)
+    holds_pe = any(issuer_id_from_private_equity_mark_wire_id(lot.asset_id) is not None for lot in initial_lots)
     floor_usd = float(scenario_key.pe_tender_policy.liquid_net_worth_floor_usd)
     if not holds_pe:
         return []
