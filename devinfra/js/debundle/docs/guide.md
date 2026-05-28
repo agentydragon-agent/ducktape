@@ -352,7 +352,8 @@ debundle modules merge --target <T> <source1> [<source2> ...]
 ```
 
 Splices `members:` + `anonymous_statements:` from each source YAML
-into `<T>`; deletes the source YAML files.
+into `<T>`; creates `<T>` if needed, then deletes the source YAML
+files.
 Module-file args may include or omit `.yaml`, so `runtime/plugins`
 and `runtime/plugins.yaml` name the same module file.
 

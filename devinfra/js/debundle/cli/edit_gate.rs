@@ -60,7 +60,9 @@ pub struct PostEditSpec {
 
 /// Build the post-merge spec view in memory without touching the
 /// filesystem. Starts from the on-disk modules tree, drops the source
-/// files, and folds their `members:` binding names into the target.
+/// files, and folds their claims into the target. If the target file
+/// does not exist yet, synthesize it so the gate sees the same module
+/// the writer will create.
 pub fn post_merge_spec(
     modules_root: &Path,
     target_abs: &Path,
@@ -68,11 +70,13 @@ pub fn post_merge_spec(
 ) -> Result<PostEditSpec> {
     let removed: BTreeSet<PathBuf> = source_abs.iter().cloned().collect();
     let mut modules: Vec<PostEditModule> = Vec::new();
+    let mut saw_target = false;
     for file in collect_module_files(modules_root)? {
         if removed.contains(&file) {
             continue;
         }
         let claims = if file == target_abs {
+            saw_target = true;
             let mut combined = read_gate_claims(&file)?;
             for src in source_abs {
                 combined.extend(read_gate_claims(src)?);
@@ -82,6 +86,18 @@ pub fn post_merge_spec(
             read_gate_claims(&file)?
         };
         modules.push(PostEditModule { path: file, claims });
+    }
+    if !saw_target {
+        let mut claims = ModuleClaims::default();
+        for src in source_abs {
+            claims.extend(read_gate_claims(src)?);
+        }
+        if !claims.is_empty() {
+            modules.push(PostEditModule {
+                path: target_abs.to_path_buf(),
+                claims,
+            });
+        }
     }
     Ok(PostEditSpec { modules })
 }

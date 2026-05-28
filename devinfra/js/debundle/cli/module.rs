@@ -25,7 +25,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow, bail};
 use clap::{Args as ClapArgs, Subcommand};
-use serde_yaml::Value;
+use serde_yaml::{Mapping, Value};
 
 use crate::edit_gate::{gate_post_edit_partition, post_delete_spec, post_merge_spec};
 use crate::yaml_edit::{read_yaml, write_yaml_body_if_semantic_changed};
@@ -240,8 +240,9 @@ fn preview_merge(modules_root: &Path, target: &Path, sources: &[&Path]) -> Resul
         .collect();
     // Confirm every source + the target parse as YAML. This catches
     // syntactically broken files before any write would happen in a
-    // non-dry-run.
-    let _ = read_yaml(&target_abs)?;
+    // non-dry-run. A missing target is valid: the apply path will
+    // create it from the merged source claims.
+    let _ = read_yaml_or_empty(&target_abs)?;
     for src in &source_abs {
         let _ = read_yaml(src)?;
     }
@@ -270,7 +271,7 @@ pub fn merge_modules(
         .map(|p| resolve_module_file(modules_root, p))
         .collect();
 
-    let mut target_doc = read_yaml(&target_abs)?;
+    let mut target_doc = read_yaml_or_empty(&target_abs)?;
     let mut existing_names = collect_member_names(&target_doc, &target_abs)?;
     let mut merged_source_labels: Vec<String> = Vec::new();
 
@@ -302,6 +303,10 @@ pub fn merge_modules(
         &serde_yaml::to_string(&target_doc)
             .with_context(|| format!("serializing merged {}", target_abs.display()))?,
     );
+    if let Some(parent) = target_abs.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("creating parent directory {}", parent.display()))?;
+    }
     write_yaml_body_if_semantic_changed(&target_abs, &target_doc, body)?;
 
     for src in &source_abs {
@@ -454,6 +459,14 @@ fn resolve_module_file(root: &Path, path: &Path) -> PathBuf {
         yaml
     } else {
         resolved
+    }
+}
+
+fn read_yaml_or_empty(path: &Path) -> Result<Value> {
+    if path.exists() {
+        read_yaml(path)
+    } else {
+        Ok(Value::Mapping(Mapping::new()))
     }
 }
 
@@ -645,6 +658,44 @@ mod tests {
         assert!(!root.join("ai/models/pricing/lookup.yaml").exists());
         let merged = fs::read_to_string(root.join("ai/models/pricing.yaml")).unwrap();
         assert!(merged.contains("# merged from: ai/models/pricing/lookup.yaml"));
+    }
+
+    #[test]
+    fn merge_creates_missing_target_from_sources() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        write(
+            root,
+            "src/one.yaml",
+            "members:\n  - selector: { binding: { name: a } }\n",
+        );
+        write(
+            root,
+            "src/two.yaml",
+            "members:\n  - selector: { binding: { name: b } }\n",
+        );
+
+        let summary = merge_modules(
+            root,
+            Path::new("new/nested/target"),
+            &[Path::new("src/one"), Path::new("src/two.yaml")],
+        )
+        .unwrap();
+
+        assert_eq!(summary.target, root.join("new/nested/target.yaml"));
+        assert!(root.join("new/nested/target.yaml").exists());
+        assert!(!root.join("src/one.yaml").exists());
+        assert!(!root.join("src/two.yaml").exists());
+        let merged = fs::read_to_string(root.join("new/nested/target.yaml")).unwrap();
+        assert!(merged.contains("# merged from: src/one.yaml, src/two.yaml"));
+        let doc: Value = serde_yaml::from_str(&merged).unwrap();
+        let names: Vec<String> = doc["members"]
+            .as_sequence()
+            .unwrap()
+            .iter()
+            .map(|m| member_name(m).unwrap())
+            .collect();
+        assert_eq!(names, vec!["a", "b"]);
     }
 
     #[test]

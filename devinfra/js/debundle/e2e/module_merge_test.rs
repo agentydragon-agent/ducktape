@@ -166,6 +166,64 @@ fn modules_merge_new_subcommand_path_works_through_binary() {
 }
 
 #[test]
+fn modules_merge_can_create_missing_target_through_binary() {
+    let dir = TempDir::new().unwrap();
+    let root = dir.path();
+    let src_body = "members:\n  - selector: { binding: { name: a } }\n";
+    write(root, "src.yaml", src_body);
+
+    let dry_run = Command::new(debundle_binary())
+        .args([
+            "modules",
+            "merge",
+            "--modules",
+            root.to_str().unwrap(),
+            "--target",
+            "new/group",
+            "src",
+            "--dry-run",
+            "--no-verify",
+        ])
+        .output()
+        .expect("spawn debundle");
+    assert!(
+        dry_run.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&dry_run.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&dry_run.stdout).contains("dry-run"),
+        "expected dry-run verdict on stdout, got {:?}",
+        String::from_utf8_lossy(&dry_run.stdout)
+    );
+    assert!(!root.join("new/group.yaml").exists());
+    assert_eq!(fs::read_to_string(root.join("src.yaml")).unwrap(), src_body);
+
+    let out = Command::new(debundle_binary())
+        .args([
+            "modules",
+            "merge",
+            "--modules",
+            root.to_str().unwrap(),
+            "--target",
+            "new/group",
+            "src",
+            "--no-verify",
+        ])
+        .output()
+        .expect("spawn debundle");
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(!root.join("src.yaml").exists());
+    let merged = fs::read_to_string(root.join("new/group.yaml")).unwrap();
+    let doc: Value = serde_yaml::from_str(&merged).unwrap();
+    assert_eq!(member_names(&doc), vec!["a"]);
+}
+
+#[test]
 fn modules_merge_dry_run_does_not_modify_files() {
     let dir = TempDir::new().unwrap();
     let root = dir.path();

@@ -323,6 +323,47 @@ fn modules_merge_accepts_clean_merge() {
 }
 
 #[test]
+fn modules_merge_gate_accepts_missing_target() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let modules = root.join("modules");
+    let graph = root.join("owner_graph.json");
+    write(&graph, &graph_with_acyclic_cross_module_read());
+    write(
+        &modules.join("a.yaml"),
+        "members:\n  - selector: { binding: { name: alpha } }\n",
+    );
+    write(
+        &modules.join("b.yaml"),
+        "members:\n  - selector: { binding: { name: beta } }\n",
+    );
+
+    let out = Command::new(debundle_binary())
+        .args([
+            "modules",
+            "merge",
+            "--modules",
+            modules.to_str().unwrap(),
+            "--graph",
+            graph.to_str().unwrap(),
+            "--target",
+            "merged/new_target",
+            "a.yaml",
+            "b.yaml",
+        ])
+        .output()
+        .expect("spawn debundle");
+    assert!(
+        out.status.success(),
+        "expected zero exit; stderr: {}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert!(modules.join("merged/new_target.yaml").exists());
+    assert!(!modules.join("a.yaml").exists());
+    assert!(!modules.join("b.yaml").exists());
+}
+
+#[test]
 fn modules_delete_force_rejects_when_post_state_unrealizable() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();

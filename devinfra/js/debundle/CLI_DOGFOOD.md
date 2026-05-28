@@ -45,17 +45,7 @@ path; only `modules delete` requires the suffix. Inconsistent.
 **Fix idea**: accept the bare path (consistent with siblings) or change
 the error to "expected `.yaml` suffix".
 
-### 4. `modules merge --dry-run` silent on success
-
-`debundle modules merge --dry-run --target T S1` prints only `reading
-T.yaml` to stderr and exits 0. Per `cli.md`, mutating commands should
-print a one-line verdict (`ok` / `would change N files` / `rejected
-...`).
-
-**Fix idea**: emit the verdict line; cite the prior-art behavior of
-`bindings assign --dry-run`.
-
-### 5. `gate list` silent when `cycles.json` missing
+### 4. `gate list` silent when `cycles.json` missing
 
 `debundle gate list` with no current cycles emits a single `reading
 …/cycles.json` to stderr and exits 0 (no body). Indistinguishable from
@@ -66,7 +56,7 @@ file is missing, error explicitly.
 
 ## 🔵 Minor doc inconsistencies
 
-### 6. `tana/re/web/AGENTS.md` BIN path stale
+### 5. `tana/re/web/AGENTS.md` BIN path stale
 
 The doc says `BIN=bazel-bin/external/ducktape_debundle_bin/file/debundle`.
 The actual path now has a `+_repo_rules+` prefix:
@@ -74,14 +64,14 @@ The actual path now has a `+_repo_rules+` prefix:
 
 **Fix**: update gaffer-private's AGENTS.md.
 
-### 7. `describe` text format missing home-module path
+### 6. `describe` text format missing home-module path
 
 JSON output includes `binding_homes[].path`. Text output shows owners,
 bindings, atom membership, edge counts — but no module path. Either the
 text output should include the path, or the docs should reflect text's
 narrower surface.
 
-### 8. `bindings comment` read with empty comment returns empty string
+### 7. `bindings comment` read with empty comment returns empty string
 
 Reading an unset comment returns `{"sym": "...", "comment": "",
 "action": "read"}`. Indistinguishable from an explicit `comment: ""` in
@@ -89,7 +79,7 @@ the spec. Docs say "empty if none."
 
 **Fix idea**: return `"comment": null` or omit the field when unset.
 
-### 9. `describe <sym>` text format hangs on repeat invocations
+### 8. `describe <sym>` text format hangs on repeat invocations
 
 First invocation returned a 5-line summary; second invocation of the
 same command hung indefinitely. `--format json` consistently completes
