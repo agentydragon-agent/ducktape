@@ -27,9 +27,7 @@ py_library(
         "//augur:frames",
         "//augur/model:exogenous",
         "//augur/model:private_equity_bundle",
-        "//augur/model:series",
         "//augur/model:series_model",
-        "@pypi//numpy",
         "@pypi//polars",
     ],
 )
@@ -304,6 +302,7 @@ SIMULATE_TEST_DEPS = [
     "//augur:frames",
     "//augur/model:exogenous",
     "//augur/model:gbm",
+    "//augur/model:private_equity_bundle",
     "//augur/model:private_equity_protocol",
     "//augur/model:series",
     "//augur/model:series_model",

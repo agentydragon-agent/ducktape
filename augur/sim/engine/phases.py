@@ -231,34 +231,24 @@ def _apply_pe_tenders(
     active_rollout = ~current.failed
     if not active_rollout.any():
         return
+    channels = plan.pe_channels
     for issuer_idx in range(issuer_count):
         if int(plan.pe_issuers.codes[issuer_idx]) < 0:
             continue
         policy_idx = int(plan.pe_issuers.policy_index[issuer_idx])
-        event_series_idx = int(plan.pe_issuers.event_series[issuer_idx])
-        level_series_idx = int(plan.pe_issuers.level_series[issuer_idx])
-        if event_series_idx < 0 or level_series_idx < 0:
-            continue
-        mark = plan.external_values[level_series_idx, :, month]
+        mark = channels.marks[issuer_idx, :, month]
         if not np.isfinite(mark).all() or (mark < 0.0).any():
             raise ValueError(
                 f"private-equity mark series for issuer {text(plan, plan.pe_issuers.codes[issuer_idx])!r} "
                 "produced a negative or non-finite value"
             )
         positive_mark = mark > 0.0
-        tender_active = plan.external_event_values[event_series_idx, :, month] & active_rollout
-        regime_code = plan.pe_regime_codes[issuer_idx, :, month]
+        tender_active = channels.sale_opportunity_active[issuer_idx, :, month] & active_rollout
+        regime_code = channels.regime_codes[issuer_idx, :, month]
         public_market_active = regime_code == int(PrivateEquityRegimeCode.PUBLIC_MARKET)
-        liquidity_blocked = _required_pe_level_series_values(
-            plan, series_index=int(plan.pe_issuers.liquidity_blocked_series[issuer_idx]), month=month
-        )
-        liquidity_open = liquidity_blocked < 0.5
-        forced_sale_fraction = _fraction_pe_level_series_values(
-            plan, series_index=int(plan.pe_issuers.forced_sale_fraction_series[issuer_idx]), month=month
-        )
-        forced_recovery_cashout_usd = _required_pe_level_series_values(
-            plan, series_index=int(plan.pe_issuers.forced_recovery_cashout_usd_series[issuer_idx]), month=month
-        )
+        liquidity_open = ~channels.liquidity_blocked[issuer_idx, :, month]
+        forced_sale_fraction = channels.forced_sale_fractions[issuer_idx, :, month]
+        forced_recovery_cashout_usd = channels.forced_recovery_cashout_usd[issuer_idx, :, month]
         if (forced_recovery_cashout_usd < 0.0).any():
             raise ValueError("private-equity forced-recovery cashout series produced a negative value")
 
@@ -267,12 +257,8 @@ def _apply_pe_tenders(
             continue
         ordered_lots = lot_indices[np.argsort(plan.lot_purchase_month[lot_indices], kind="stable")]
         units_held = current.lot_remaining[ordered_lots, :].sum(axis=0)
-        sale_capacity_fraction = _fraction_pe_level_series_values(
-            plan, series_index=int(plan.pe_issuers.sale_capacity_fraction_series[issuer_idx]), month=month
-        )
-        eligible_fraction = _fraction_pe_level_series_values(
-            plan, series_index=int(plan.pe_issuers.eligible_fraction_series[issuer_idx]), month=month
-        )
+        sale_capacity_fraction = channels.sale_capacity_fractions[issuer_idx, :, month]
+        eligible_fraction = channels.eligible_fractions[issuer_idx, :, month]
 
         if policy_idx < 0:
             _record_pe_opportunity(
@@ -371,7 +357,9 @@ def _apply_pe_tenders(
             ~positive_mark, int(PrivateEquityOpportunityOutcome.NONPOSITIVE_MARK), opportunity_outcome
         )
         opportunity_outcome = np.where(
-            liquidity_blocked >= 0.5, int(PrivateEquityOpportunityOutcome.LIQUIDITY_BLOCKED), opportunity_outcome
+            channels.liquidity_blocked[issuer_idx, :, month],
+            int(PrivateEquityOpportunityOutcome.LIQUIDITY_BLOCKED),
+            opportunity_outcome,
         )
         opportunity_outcome = np.where(
             units_held <= 0.0, int(PrivateEquityOpportunityOutcome.NO_UNITS), opportunity_outcome
@@ -525,26 +513,6 @@ def _apply_pe_sale_result(
     buffers.lot_dispositions.pe.units[month, issuer_idx, kind_idx] += result.sold_units.T
     buffers.lot_dispositions.pe.basis[month, issuer_idx, kind_idx] += result.cost_basis_consumed.T
     buffers.lot_dispositions.pe.proceeds[month, issuer_idx, kind_idx] += result.proceeds.T
-
-
-def _required_pe_level_series_values(
-    plan: CompiledSimulation, *, series_index: int, month: int
-) -> npt.NDArray[np.float64]:
-    if series_index < 0:
-        raise ValueError("private-equity protocol series index is missing")
-    values = plan.external_values[series_index, :, month]
-    if not np.isfinite(values).all():
-        raise ValueError(f"private-equity protocol series {series_index} produced a non-finite value")
-    return values
-
-
-def _fraction_pe_level_series_values(
-    plan: CompiledSimulation, *, series_index: int, month: int
-) -> npt.NDArray[np.float64]:
-    values = _required_pe_level_series_values(plan, series_index=series_index, month=month)
-    if ((values < 0.0) | (values > 1.0)).any():
-        raise ValueError(f"private-equity fraction series {series_index} produced a value outside [0, 1]")
-    return values
 
 
 def _compute_liquid_net_worth(

@@ -7,30 +7,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
-import numpy.typing as npt
-import polars as pl
 from numpy.typing import NDArray
 
-from augur.model.series import (
-    PrivateEquityEventKindCode,
-    PrivateEquityRegimeCode,
-    issuer_id_from_private_equity_mark_wire_id,
-    private_equity_eligible_fraction_series_id,
-    private_equity_event_kind_code_series_id,
-    private_equity_forced_recovery_cashout_usd_series_id,
-    private_equity_forced_sale_fraction_series_id,
-    private_equity_level_series_ids,
-    private_equity_liquidity_blocked_series_id,
-    private_equity_regime_code_series_id,
-    private_equity_sale_capacity_fraction_series_id,
-    private_equity_sale_event_id,
-    private_equity_series_id,
-)
+from augur.model.private_equity_bundle import PrivateEquityBundle
+from augur.model.series import PrivateEquityEventKindCode, issuer_id_from_private_equity_mark_wire_id
 from augur.sim.compiler.helpers import AMOUNT_FIXED, NO_CODE, StringTable, amount_arrays
 from augur.sim.scenario import Scenario
-
-_PRIVATE_EQUITY_REGIME_CODES = frozenset(int(code) for code in PrivateEquityRegimeCode)
-_PRIVATE_EQUITY_EVENT_KIND_CODES = frozenset(int(code) for code in PrivateEquityEventKindCode)
 
 
 @dataclass(frozen=True)
@@ -42,17 +24,28 @@ class PEIssuerCompileOutput:
 
     codes: NDArray[np.int64]
     issuer_ids: tuple[str, ...]
-    event_series: NDArray[np.int64]
-    level_series: NDArray[np.int64]
-    regime_code_series: NDArray[np.int64]
-    event_kind_code_series: NDArray[np.int64]
-    sale_capacity_fraction_series: NDArray[np.int64]
-    eligible_fraction_series: NDArray[np.int64]
-    forced_sale_fraction_series: NDArray[np.int64]
-    liquidity_blocked_series: NDArray[np.int64]
-    forced_recovery_cashout_usd_series: NDArray[np.int64]
     policy_index: NDArray[np.int64]
     lot_mask: NDArray[np.bool_]
+
+
+@dataclass(frozen=True)
+class PEChannels:
+    """Per-issuer typed channel arrays for the PE protocol.
+
+    Shape: `(issuer, rollout, month + 1)` for each channel. Built from the
+    typed `PrivateEquityBundle` at compile time so the engine reads PE state
+    by field access instead of going through `external_values[series_index]`.
+    """
+
+    marks: NDArray[np.float64]
+    regime_codes: NDArray[np.int64]
+    event_kind_codes: NDArray[np.int64]
+    sale_opportunity_active: NDArray[np.bool_]
+    sale_capacity_fractions: NDArray[np.float64]
+    eligible_fractions: NDArray[np.float64]
+    forced_sale_fractions: NDArray[np.float64]
+    liquidity_blocked: NDArray[np.bool_]
+    forced_recovery_cashout_usd: NDArray[np.float64]
 
 
 @dataclass(frozen=True)
@@ -79,7 +72,6 @@ def compile_private_equity_tenders(
     strings: StringTable,
     *,
     series_index_by_id: dict[str, int],
-    event_index_by_id: dict[str, int],
     lot_agent_codes: np.ndarray,
     lot_asset_codes: np.ndarray,
     cash_agent_codes: np.ndarray,
@@ -106,15 +98,6 @@ def compile_private_equity_tenders(
     issuer_count = max(1, len(issuer_ids))
 
     pe_issuer_codes = np.full(issuer_count, NO_CODE, dtype=np.int64)
-    pe_issuer_event_series_index = np.full(issuer_count, NO_CODE, dtype=np.int64)
-    pe_issuer_level_series_index = np.full(issuer_count, NO_CODE, dtype=np.int64)
-    pe_issuer_regime_code_series_index = np.full(issuer_count, NO_CODE, dtype=np.int64)
-    pe_issuer_event_kind_code_series_index = np.full(issuer_count, NO_CODE, dtype=np.int64)
-    pe_issuer_sale_capacity_fraction_series_index = np.full(issuer_count, NO_CODE, dtype=np.int64)
-    pe_issuer_eligible_fraction_series_index = np.full(issuer_count, NO_CODE, dtype=np.int64)
-    pe_issuer_forced_sale_fraction_series_index = np.full(issuer_count, NO_CODE, dtype=np.int64)
-    pe_issuer_liquidity_blocked_series_index = np.full(issuer_count, NO_CODE, dtype=np.int64)
-    pe_issuer_forced_recovery_cashout_usd_series_index = np.full(issuer_count, NO_CODE, dtype=np.int64)
     pe_issuer_policy_index = np.full(issuer_count, NO_CODE, dtype=np.int64)
     pe_issuer_lot_mask = np.zeros((issuer_count, max(1, lot_count)), dtype=np.bool_)
 
@@ -130,19 +113,7 @@ def compile_private_equity_tenders(
     pe_policy_owner_non_pe_lot_mask = np.zeros((policy_count, max(1, lot_count)), dtype=np.bool_)
 
     issuers = PEIssuerCompileOutput(
-        codes=pe_issuer_codes,
-        issuer_ids=issuer_ids,
-        event_series=pe_issuer_event_series_index,
-        level_series=pe_issuer_level_series_index,
-        regime_code_series=pe_issuer_regime_code_series_index,
-        event_kind_code_series=pe_issuer_event_kind_code_series_index,
-        sale_capacity_fraction_series=pe_issuer_sale_capacity_fraction_series_index,
-        eligible_fraction_series=pe_issuer_eligible_fraction_series_index,
-        forced_sale_fraction_series=pe_issuer_forced_sale_fraction_series_index,
-        liquidity_blocked_series=pe_issuer_liquidity_blocked_series_index,
-        forced_recovery_cashout_usd_series=pe_issuer_forced_recovery_cashout_usd_series_index,
-        policy_index=pe_issuer_policy_index,
-        lot_mask=pe_issuer_lot_mask,
+        codes=pe_issuer_codes, issuer_ids=issuer_ids, policy_index=pe_issuer_policy_index, lot_mask=pe_issuer_lot_mask
     )
     pe_policies = PEPolicyCompileOutput(
         owner_agent=pe_policy_owner_agent_codes,
@@ -180,7 +151,9 @@ def compile_private_equity_tenders(
             pe_policy_owner_cash_mask[policy_idx, :cash_count] = cash_agent_codes == owner_code
         if lot_count > 0:
             owner_lots = lot_agent_codes == owner_code
-            pe_codes = {strings.require(private_equity_series_id(issuer)) for issuer in issuer_to_lots}
+            pe_codes = {
+                strings.require(f"private_equity:{issuer}") for issuer in issuer_to_lots
+            }  # asset_id wire form for this issuer's mark series
             non_pe_lot = ~np.isin(lot_asset_codes, list(pe_codes)) if pe_codes else np.ones(lot_count, dtype=np.bool_)
             pe_policy_owner_non_pe_lot_mask[policy_idx, :lot_count] = owner_lots & non_pe_lot
 
@@ -188,36 +161,6 @@ def compile_private_equity_tenders(
     policy_index_by_owner = {int(pe_policy_owner_agent_codes[idx]): idx for idx in range(len(policies))}
     for issuer_idx, issuer in enumerate(issuer_ids):
         pe_issuer_codes[issuer_idx] = strings.require(issuer)
-        level_series_id = private_equity_series_id(issuer)
-        event_series_id = private_equity_sale_event_id(issuer)
-        missing_level_series = sorted(private_equity_level_series_ids(issuer) - set(series_index_by_id))
-        missing_event_series = sorted({event_series_id} - set(event_index_by_id))
-        if missing_level_series or missing_event_series:
-            details: list[str] = []
-            if missing_level_series:
-                details.append(f"missing level series {missing_level_series}")
-            if missing_event_series:
-                details.append(f"missing event series {missing_event_series}")
-            raise ValueError(
-                f"private-equity issuer {issuer!r} requires complete protocol series: {'; '.join(details)}"
-            )
-
-        pe_issuer_level_series_index[issuer_idx] = series_index_by_id[level_series_id]
-        pe_issuer_event_series_index[issuer_idx] = event_index_by_id[event_series_id]
-        control_level_series = (
-            (private_equity_regime_code_series_id(issuer), pe_issuer_regime_code_series_index),
-            (private_equity_event_kind_code_series_id(issuer), pe_issuer_event_kind_code_series_index),
-            (private_equity_sale_capacity_fraction_series_id(issuer), pe_issuer_sale_capacity_fraction_series_index),
-            (private_equity_eligible_fraction_series_id(issuer), pe_issuer_eligible_fraction_series_index),
-            (private_equity_forced_sale_fraction_series_id(issuer), pe_issuer_forced_sale_fraction_series_index),
-            (private_equity_liquidity_blocked_series_id(issuer), pe_issuer_liquidity_blocked_series_index),
-            (
-                private_equity_forced_recovery_cashout_usd_series_id(issuer),
-                pe_issuer_forced_recovery_cashout_usd_series_index,
-            ),
-        )
-        for series_id, target in control_level_series:
-            target[issuer_idx] = series_index_by_id[series_id]
         # Lot indices owned by this issuer.
         lots = issuer_to_lots[issuer]
         for lot_index in lots:
@@ -231,70 +174,71 @@ def compile_private_equity_tenders(
     return issuers, pe_policies
 
 
-def compile_private_equity_protocol_codes(
-    issuers: PEIssuerCompileOutput, *, private_equity_protocol: pl.DataFrame, rollout_count: int, horizon_months: int
-) -> tuple[npt.NDArray[np.int64], npt.NDArray[np.int64]]:
-    """Materialize PE protocol code arrays from the typed protocol frame."""
+def compile_pe_channels(
+    issuers: PEIssuerCompileOutput, *, private_equity: PrivateEquityBundle, rollout_count: int, horizon_months: int
+) -> PEChannels:
+    """Materialize per-issuer PE channel arrays from the typed `PrivateEquityBundle`.
+
+    Returns shape `(issuer, rollout, month + 1)` for each channel. The bundle's
+    `from_issuer_arrays` already validates ranges, dtypes, and known code values;
+    this just slices the typed columns per issuer into dense ndarrays for the
+    engine to read by field access.
+    """
 
     issuer_count = issuers.codes.shape[0]
     snapshot_months = horizon_months + 1
+    marks = np.zeros((issuer_count, rollout_count, snapshot_months), dtype=np.float64)
     regime_codes = np.full((issuer_count, rollout_count, snapshot_months), NO_CODE, dtype=np.int64)
     event_kind_codes = np.full(
         (issuer_count, rollout_count, snapshot_months), int(PrivateEquityEventKindCode.NONE), dtype=np.int64
     )
+    sale_opportunity_active = np.zeros((issuer_count, rollout_count, snapshot_months), dtype=np.bool_)
+    sale_capacity_fractions = np.ones((issuer_count, rollout_count, snapshot_months), dtype=np.float64)
+    eligible_fractions = np.ones((issuer_count, rollout_count, snapshot_months), dtype=np.float64)
+    forced_sale_fractions = np.zeros((issuer_count, rollout_count, snapshot_months), dtype=np.float64)
+    liquidity_blocked = np.zeros((issuer_count, rollout_count, snapshot_months), dtype=np.bool_)
+    forced_recovery_cashout_usd = np.zeros((issuer_count, rollout_count, snapshot_months), dtype=np.float64)
     for issuer_idx, issuer_code in enumerate(issuers.codes):
         if int(issuer_code) < 0:
             continue
         issuer_id = issuers.issuer_ids[issuer_idx]
-        regime_codes[issuer_idx] = _compile_protocol_code_matrix(
-            private_equity_protocol,
-            issuer_id=issuer_id,
-            value_column="regime_code",
-            rollout_count=rollout_count,
-            horizon_months=horizon_months,
-            label=f"private-equity protocol regime code for issuer {issuer_id!r}",
-            allowed_values=_PRIVATE_EQUITY_REGIME_CODES,
+        if issuer_id not in private_equity.issuer_ids():
+            raise ValueError(f"private-equity bundle missing required issuer {issuer_id!r}")
+        marks[issuer_idx] = private_equity.issuer_float_matrix(
+            issuer_id, "mark_usd_per_unit", rollout_count=rollout_count, horizon_months=horizon_months
         )
-        event_kind_codes[issuer_idx] = _compile_protocol_code_matrix(
-            private_equity_protocol,
-            issuer_id=issuer_id,
-            value_column="event_kind_code",
-            rollout_count=rollout_count,
-            horizon_months=horizon_months,
-            label=f"private-equity protocol event-kind code for issuer {issuer_id!r}",
-            allowed_values=_PRIVATE_EQUITY_EVENT_KIND_CODES,
+        regime_codes[issuer_idx] = private_equity.issuer_int_matrix(
+            issuer_id, "regime_code", rollout_count=rollout_count, horizon_months=horizon_months
         )
-    return regime_codes, event_kind_codes
-
-
-def _compile_protocol_code_matrix(
-    protocol: pl.DataFrame,
-    *,
-    issuer_id: str,
-    value_column: str,
-    rollout_count: int,
-    horizon_months: int,
-    label: str,
-    allowed_values: frozenset[int],
-) -> npt.NDArray[np.int64]:
-    selected = protocol.filter(pl.col("issuer_id") == issuer_id).sort(["rollout_index", "month_index"])
-    if selected.is_empty():
-        raise ValueError(f"private-equity issuer {issuer_id!r} requires typed protocol rows")
-
-    expected_rows = rollout_count * (horizon_months + 1)
-    if selected.height != expected_rows:
-        raise ValueError(f"{label} has {selected.height} rows; expected {expected_rows}")
-
-    expected_rollouts = np.repeat(np.arange(rollout_count, dtype=np.int64), horizon_months + 1)
-    expected_months = np.tile(np.arange(horizon_months + 1, dtype=np.int64), rollout_count)
-    actual_rollouts = selected.get_column("rollout_index").to_numpy()
-    actual_months = selected.get_column("month_index").to_numpy()
-    if not np.array_equal(actual_rollouts, expected_rollouts) or not np.array_equal(actual_months, expected_months):
-        raise ValueError(f"{label} does not cover every rollout/month exactly once")
-
-    codes = selected.get_column(value_column).to_numpy().astype(np.int64).reshape((rollout_count, horizon_months + 1))
-    unknown = sorted(int(code) for code in np.unique(codes) if int(code) not in allowed_values)
-    if unknown:
-        raise ValueError(f"{label} produced unknown code(s): {unknown}")
-    typed_codes: npt.NDArray[np.int64] = codes
-    return typed_codes
+        event_kind_codes[issuer_idx] = private_equity.issuer_int_matrix(
+            issuer_id, "event_kind_code", rollout_count=rollout_count, horizon_months=horizon_months
+        )
+        sale_opportunity_active[issuer_idx] = private_equity.issuer_bool_matrix(
+            issuer_id, "sale_opportunity_active", rollout_count=rollout_count, horizon_months=horizon_months
+        )
+        sale_capacity_fractions[issuer_idx] = private_equity.issuer_float_matrix(
+            issuer_id, "sale_capacity_fraction", rollout_count=rollout_count, horizon_months=horizon_months
+        )
+        eligible_fractions[issuer_idx] = private_equity.issuer_float_matrix(
+            issuer_id, "eligible_fraction", rollout_count=rollout_count, horizon_months=horizon_months
+        )
+        forced_sale_fractions[issuer_idx] = private_equity.issuer_float_matrix(
+            issuer_id, "forced_sale_fraction", rollout_count=rollout_count, horizon_months=horizon_months
+        )
+        liquidity_blocked[issuer_idx] = private_equity.issuer_bool_matrix(
+            issuer_id, "liquidity_blocked", rollout_count=rollout_count, horizon_months=horizon_months
+        )
+        forced_recovery_cashout_usd[issuer_idx] = private_equity.issuer_float_matrix(
+            issuer_id, "forced_recovery_cashout_usd", rollout_count=rollout_count, horizon_months=horizon_months
+        )
+    return PEChannels(
+        marks=marks,
+        regime_codes=regime_codes,
+        event_kind_codes=event_kind_codes,
+        sale_opportunity_active=sale_opportunity_active,
+        sale_capacity_fractions=sale_capacity_fractions,
+        eligible_fractions=eligible_fractions,
+        forced_sale_fractions=forced_sale_fractions,
+        liquidity_blocked=liquidity_blocked,
+        forced_recovery_cashout_usd=forced_recovery_cashout_usd,
+    )

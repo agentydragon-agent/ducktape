@@ -26,9 +26,10 @@ from augur.sim.compiler.liquidity import LiquidityPolicyCompileOutput, compile_l
 from augur.sim.compiler.obligations import ObligationCompileOutput, compile_obligation_slots
 from augur.sim.compiler.primary_residence import PrimaryResidenceEventCompileOutput, compile_primary_residences
 from augur.sim.compiler.private_equity import (
+    PEChannels,
     PEIssuerCompileOutput,
     PEPolicyCompileOutput,
-    compile_private_equity_protocol_codes,
+    compile_pe_channels,
     compile_private_equity_tenders,
 )
 from augur.sim.compiler.properties import (
@@ -150,8 +151,7 @@ class CompiledSimulation:
     #     on tenders for this issuer (NO_CODE if no PrivateEquityTenderPolicy applies)
     pe_issuers: PEIssuerCompileOutput
     pe_policies: PEPolicyCompileOutput
-    pe_regime_codes: NDArray[np.int64]
-    pe_event_kind_codes: NDArray[np.int64]
+    pe_channels: PEChannels
     liquidity_policies: LiquidityPolicyCompileOutput
 
 
@@ -307,16 +307,12 @@ def compile_simulation(
         scenario,
         strings,
         series_index_by_id=series_index_by_id,
-        event_index_by_id=external_event_index_by_id,
         lot_agent_codes=lot_agent_codes_arr,
         lot_asset_codes=lot_asset_codes_arr,
         cash_agent_codes=cash_agent_codes_arr,
     )
-    pe_regime_codes, pe_event_kind_codes = compile_private_equity_protocol_codes(
-        pe_issuers,
-        private_equity_protocol=external_series.private_equity_protocol,
-        rollout_count=rollout_count,
-        horizon_months=horizon,
+    pe_channels = compile_pe_channels(
+        pe_issuers, private_equity=external_series.private_equity, rollout_count=rollout_count, horizon_months=horizon
     )
 
     slot_plan = SlotPlan(
@@ -384,8 +380,7 @@ def compile_simulation(
         external_event_values=external_event_values,
         pe_issuers=pe_issuers,
         pe_policies=pe_policies,
-        pe_regime_codes=pe_regime_codes,
-        pe_event_kind_codes=pe_event_kind_codes,
+        pe_channels=pe_channels,
         liquidity_policies=liquidity_policies,
     )
 

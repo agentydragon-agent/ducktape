@@ -152,30 +152,13 @@ def decode_pe_dispositions(plan: CompiledSimulation, buffers: SimulationBuffers)
 
 def decode_pe_protocol_events(plan: CompiledSimulation) -> pl.DataFrame:
     rows: list[dict[str, object]] = []
+    channels = plan.pe_channels
     for issuer_idx, issuer_code in enumerate(plan.pe_issuers.codes):
         if int(issuer_code) < 0:
             continue
         issuer_id = str(codes_to_strings(plan, np.array([issuer_code], dtype=np.int64))[0])
-        mark_series = int(plan.pe_issuers.level_series[issuer_idx])
-        sale_capacity_series = int(plan.pe_issuers.sale_capacity_fraction_series[issuer_idx])
-        eligible_series = int(plan.pe_issuers.eligible_fraction_series[issuer_idx])
-        forced_sale_series = int(plan.pe_issuers.forced_sale_fraction_series[issuer_idx])
-        liquidity_blocked_series = int(plan.pe_issuers.liquidity_blocked_series[issuer_idx])
-        forced_recovery_series = int(plan.pe_issuers.forced_recovery_cashout_usd_series[issuer_idx])
-        if (
-            min(
-                mark_series,
-                sale_capacity_series,
-                eligible_series,
-                forced_sale_series,
-                liquidity_blocked_series,
-                forced_recovery_series,
-            )
-            < 0
-        ):
-            continue
-        event_codes = plan.pe_event_kind_codes[issuer_idx]
-        regime_codes = plan.pe_regime_codes[issuer_idx]
+        event_codes = channels.event_kind_codes[issuer_idx]
+        regime_codes = channels.regime_codes[issuer_idx]
         event_window = event_codes[:, : plan.horizon_months]
         active = event_window != int(PrivateEquityEventKindCode.NONE)
         if not active.any():
@@ -192,12 +175,14 @@ def decode_pe_protocol_events(plan: CompiledSimulation) -> pl.DataFrame:
                     "asset_id": private_equity_series_id(issuer_id),
                     "event_kind": event_code.name.lower(),
                     "regime": regime_code.name.lower(),
-                    "mark_usd": float(plan.external_values[mark_series, rollout, month]),
-                    "sale_capacity_fraction": float(plan.external_values[sale_capacity_series, rollout, month]),
-                    "eligible_fraction": float(plan.external_values[eligible_series, rollout, month]),
-                    "forced_sale_fraction": float(plan.external_values[forced_sale_series, rollout, month]),
-                    "liquidity_blocked": bool(plan.external_values[liquidity_blocked_series, rollout, month] >= 0.5),
-                    "forced_recovery_cashout_usd": float(plan.external_values[forced_recovery_series, rollout, month]),
+                    "mark_usd": float(channels.marks[issuer_idx, rollout, month]),
+                    "sale_capacity_fraction": float(channels.sale_capacity_fractions[issuer_idx, rollout, month]),
+                    "eligible_fraction": float(channels.eligible_fractions[issuer_idx, rollout, month]),
+                    "forced_sale_fraction": float(channels.forced_sale_fractions[issuer_idx, rollout, month]),
+                    "liquidity_blocked": bool(channels.liquidity_blocked[issuer_idx, rollout, month]),
+                    "forced_recovery_cashout_usd": float(
+                        channels.forced_recovery_cashout_usd[issuer_idx, rollout, month]
+                    ),
                 }
             )
     if not rows:
@@ -211,11 +196,12 @@ def decode_pe_opportunity_events(plan: CompiledSimulation, buffers: SimulationBu
         return EVENT_FRAMES.private_equity_opportunities.empty()
     months, issuers, rollouts = np.argwhere(active).T
     issuer_ids = codes_to_strings(plan, plan.pe_issuers.codes)
+    channels = plan.pe_channels
     rows: list[dict[str, object]] = []
     for month, issuer_idx, rollout in zip(months, issuers, rollouts, strict=True):
         issuer_id = str(issuer_ids[issuer_idx])
-        event_code = PrivateEquityEventKindCode(int(plan.pe_event_kind_codes[issuer_idx, rollout, month]))
-        regime_code = PrivateEquityRegimeCode(int(plan.pe_regime_codes[issuer_idx, rollout, month]))
+        event_code = PrivateEquityEventKindCode(int(channels.event_kind_codes[issuer_idx, rollout, month]))
+        regime_code = PrivateEquityRegimeCode(int(channels.regime_codes[issuer_idx, rollout, month]))
         outcome = PrivateEquityOpportunityOutcome(
             int(buffers.private_equity_opportunities.outcome[month, issuer_idx, rollout])
         )
@@ -229,17 +215,10 @@ def decode_pe_opportunity_events(plan: CompiledSimulation, buffers: SimulationBu
                 "event_kind": event_code.name.lower(),
                 "regime": regime_code.name.lower(),
                 "outcome": outcome.name.lower(),
-                "mark_usd": float(plan.external_values[int(plan.pe_issuers.level_series[issuer_idx]), rollout, month]),
-                "sale_capacity_fraction": float(
-                    plan.external_values[int(plan.pe_issuers.sale_capacity_fraction_series[issuer_idx]), rollout, month]
-                ),
-                "eligible_fraction": float(
-                    plan.external_values[int(plan.pe_issuers.eligible_fraction_series[issuer_idx]), rollout, month]
-                ),
-                "liquidity_blocked": bool(
-                    plan.external_values[int(plan.pe_issuers.liquidity_blocked_series[issuer_idx]), rollout, month]
-                    >= 0.5
-                ),
+                "mark_usd": float(channels.marks[issuer_idx, rollout, month]),
+                "sale_capacity_fraction": float(channels.sale_capacity_fractions[issuer_idx, rollout, month]),
+                "eligible_fraction": float(channels.eligible_fractions[issuer_idx, rollout, month]),
+                "liquidity_blocked": bool(channels.liquidity_blocked[issuer_idx, rollout, month]),
                 "floor_usd": float(buffers.private_equity_opportunities.floor[month, issuer_idx, rollout]),
                 "liquid_net_worth_usd": float(
                     buffers.private_equity_opportunities.liquid_net_worth[month, issuer_idx, rollout]

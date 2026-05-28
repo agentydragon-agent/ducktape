@@ -18,7 +18,8 @@ from pydantic import ValidationError
 from augur.frames import concat_frames
 from augur.model.exogenous import SERIES_LEVELS_SCHEMA, series_levels_frame
 from augur.model.gbm import GeometricBrownian
-from augur.model.private_equity_protocol import private_equity_auxiliary_level_frames, private_equity_protocol_frame
+from augur.model.private_equity_bundle import PrivateEquityBundle
+from augur.model.private_equity_protocol import private_equity_auxiliary_level_frames
 from augur.model.series import (
     PrivateEquityEventKindCode,
     PrivateEquityRegimeCode,
@@ -3912,11 +3913,9 @@ def _pe_external_series(
             )
         ),
         series_events=EXTERNAL_SERIES_EVENTS_FRAME.normalize(pl.DataFrame(event_rows)),
-        private_equity_protocol=private_equity_protocol_frame(
+        private_equity=PrivateEquityBundle.from_issuer_arrays(
             "acme",
-            event_kind_code=event_kind_code
-            if event_kind_code is not None
-            else np.where(events, int(PrivateEquityEventKindCode.TENDER), 0),
+            mark_usd_per_unit=levels,
             regime_code=regime_code
             if regime_code is not None
             else _pe_code_matrix(
@@ -3924,6 +3923,25 @@ def _pe_external_series(
                 rollouts=rollout_count,
                 value=int(PrivateEquityRegimeCode.PRIVATE_OPERATING),
             ),
+            event_kind_code=event_kind_code
+            if event_kind_code is not None
+            else np.where(events, int(PrivateEquityEventKindCode.TENDER), 0).astype(np.int64),
+            sale_opportunity_active=events,
+            sale_capacity_fraction=sale_capacity_fraction
+            if sale_capacity_fraction is not None
+            else _pe_float_matrix(horizon_months=horizon_months, rollouts=rollout_count, value=1.0),
+            eligible_fraction=eligible_fraction
+            if eligible_fraction is not None
+            else _pe_float_matrix(horizon_months=horizon_months, rollouts=rollout_count, value=1.0),
+            forced_sale_fraction=forced_sale_fraction
+            if forced_sale_fraction is not None
+            else _pe_float_matrix(horizon_months=horizon_months, rollouts=rollout_count, value=0.0),
+            liquidity_blocked=(liquidity_blocked >= 0.5).astype(np.bool_)
+            if liquidity_blocked is not None
+            else np.zeros((rollout_count, horizon_months + 1), dtype=np.bool_),
+            forced_recovery_cashout_usd=forced_recovery_cashout_usd
+            if forced_recovery_cashout_usd is not None
+            else _pe_float_matrix(horizon_months=horizon_months, rollouts=rollout_count, value=0.0),
             rollout_count=rollout_count,
             horizon_months=horizon_months,
         ),
@@ -4272,111 +4290,70 @@ def test_pe_tender_missing_protocol_series_fails_loudly() -> None:
         horizon_months=12,
         lnw_floor_usd=1_000_000.0,
     )
+    # The scenario holds a `private_equity:acme` lot but the materialized
+    # ExternalSeriesContext omits the typed PrivateEquityBundle entirely —
+    # the compiler must reject this loudly.
     external = ExternalSeriesContext(
-        series_values=EXTERNAL_SERIES_VALUES_FRAME.normalize(
-            pl.DataFrame(
-                [
-                    {
-                        "rollout_index": 0,
-                        "month_index": month,
-                        "series_id": private_equity_series_id("acme"),
-                        "value": 100.0,
-                    }
-                    for month in range(13)
-                ]
-            )
-        ),
-        series_events=EXTERNAL_SERIES_EVENTS_FRAME.normalize(
-            pl.DataFrame(
-                [
-                    {
-                        "rollout_index": 0,
-                        "month_index": month,
-                        "event_id": private_equity_sale_event_id("acme"),
-                        "active": month == 5,
-                    }
-                    for month in range(13)
-                ]
-            )
-        ),
+        series_values=EXTERNAL_SERIES_VALUES_FRAME.empty(), series_events=EXTERNAL_SERIES_EVENTS_FRAME.empty()
     )
 
-    with pytest.raises(ValueError, match="requires complete protocol series"):
+    with pytest.raises(ValueError, match=r"private-equity bundle missing required issuer 'acme'"):
         simulate_with_external_series(scenario, rollout_count=1, external_series=external, locations={})
 
 
 def test_pe_unknown_regime_code_fails_loudly() -> None:
     horizon = 12
-    scenario = _pe_tender_scenario(
-        initial_cash_usd=0.0,
-        monthly_spend_usd=0.0,
-        pe_units=100.0,
-        pe_cost_basis_per_unit_usd=10.0,
-        pe_holding_period_months=36,
-        horizon_months=horizon,
-        lnw_floor_usd=1_000_000.0,
-    )
-    external = _pe_external_series(
-        initial_mark_usd=100.0,
-        tender_month=5,
-        tender_mark_usd=100.0,
-        horizon_months=horizon,
-        regime_code=_pe_single_month_code_matrix(
-            horizon_months=horizon, month=5, value=999, default=int(PrivateEquityRegimeCode.PRIVATE_OPERATING)
-        ),
-    )
-
-    with pytest.raises(ValueError, match=r"private-equity protocol regime code .* unknown code"):
-        simulate_with_external_series(scenario, rollout_count=1, external_series=external, locations={})
+    # The PrivateEquityBundle's `from_issuer_arrays` validates regime codes
+    # against the typed `PrivateEquityRegimeCode` enum at construction time —
+    # the simulate path never sees the bad data.
+    with pytest.raises(ValueError, match=r"channel 'regime_code' has unknown code\(s\) \[999\]"):
+        _pe_external_series(
+            initial_mark_usd=100.0,
+            tender_month=5,
+            tender_mark_usd=100.0,
+            horizon_months=horizon,
+            regime_code=_pe_single_month_code_matrix(
+                horizon_months=horizon, month=5, value=999, default=int(PrivateEquityRegimeCode.PRIVATE_OPERATING)
+            ),
+        )
 
 
 def test_pe_missing_typed_protocol_fails_loudly() -> None:
-    horizon = 12
     scenario = _pe_tender_scenario(
         initial_cash_usd=0.0,
         monthly_spend_usd=0.0,
         pe_units=100.0,
         pe_cost_basis_per_unit_usd=10.0,
         pe_holding_period_months=36,
-        horizon_months=horizon,
+        horizon_months=12,
         lnw_floor_usd=1_000_000.0,
     )
-    external = _pe_external_series(
-        initial_mark_usd=100.0, tender_month=5, tender_mark_usd=100.0, horizon_months=horizon
-    )
-    external_without_protocol = ExternalSeriesContext(
-        series_values=external.series_values, series_events=external.series_events
+    # An empty PE bundle on the ExternalSeriesContext (engine sees an issuer
+    # with no PE channels) is rejected at compile time.
+    external = ExternalSeriesContext(
+        series_values=EXTERNAL_SERIES_VALUES_FRAME.empty(),
+        series_events=EXTERNAL_SERIES_EVENTS_FRAME.empty(),
+        private_equity=PrivateEquityBundle.empty(),
     )
 
-    with pytest.raises(ValueError, match=r"private-equity issuer 'acme' requires typed protocol rows"):
-        simulate_with_external_series(
-            scenario, rollout_count=1, external_series=external_without_protocol, locations={}
-        )
+    with pytest.raises(ValueError, match=r"private-equity bundle missing required issuer 'acme'"):
+        simulate_with_external_series(scenario, rollout_count=1, external_series=external, locations={})
 
 
 def test_pe_unknown_event_kind_code_fails_loudly() -> None:
     horizon = 12
-    scenario = _pe_tender_scenario(
-        initial_cash_usd=0.0,
-        monthly_spend_usd=0.0,
-        pe_units=100.0,
-        pe_cost_basis_per_unit_usd=10.0,
-        pe_holding_period_months=36,
-        horizon_months=horizon,
-        lnw_floor_usd=1_000_000.0,
-    )
-    external = _pe_external_series(
-        initial_mark_usd=100.0,
-        tender_month=5,
-        tender_mark_usd=100.0,
-        horizon_months=horizon,
-        event_kind_code=_pe_single_month_code_matrix(
-            horizon_months=horizon, month=5, value=999, default=int(PrivateEquityEventKindCode.NONE)
-        ),
-    )
-
-    with pytest.raises(ValueError, match=r"private-equity protocol event-kind code .* unknown code"):
-        simulate_with_external_series(scenario, rollout_count=1, external_series=external, locations={})
+    # `from_issuer_arrays` rejects unknown event-kind codes against the
+    # typed `PrivateEquityEventKindCode` enum.
+    with pytest.raises(ValueError, match=r"channel 'event_kind_code' has unknown code\(s\) \[999\]"):
+        _pe_external_series(
+            initial_mark_usd=100.0,
+            tender_month=5,
+            tender_mark_usd=100.0,
+            horizon_months=horizon,
+            event_kind_code=_pe_single_month_code_matrix(
+                horizon_months=horizon, month=5, value=999, default=int(PrivateEquityEventKindCode.NONE)
+            ),
+        )
 
 
 def test_pe_tender_fires_above_floor_no_sale() -> None:

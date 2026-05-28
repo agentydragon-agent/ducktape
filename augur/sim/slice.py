@@ -8,6 +8,7 @@ from typing import Any
 import numpy as np
 import polars as pl
 
+from augur.model.private_equity_bundle import PrivateEquityBundle
 from augur.sim.buffers import SimulationBuffers
 from augur.sim.codec.plan import DenseSimulationResult
 from augur.sim.external_series import ExternalSeriesContext
@@ -18,13 +19,13 @@ def slice_dense_result(dense: DenseSimulationResult, *, rollout_index: int) -> D
 
     The cached slice owns its own memory (via `.copy()` on every array) so the
     source batch can be released."""
+    sliced_pe_channels = _take_dc(dense.plan.pe_channels, rollout_index, axis=1)
     plan = dataclasses.replace(
         dense.plan,
         rollout_count=1,
         slot_plan=dataclasses.replace(dense.plan.slot_plan, rollout_count=1),
         external_values=dense.plan.external_values[:, rollout_index : rollout_index + 1, :].copy(),
-        pe_regime_codes=dense.plan.pe_regime_codes[:, rollout_index : rollout_index + 1, :].copy(),
-        pe_event_kind_codes=dense.plan.pe_event_kind_codes[:, rollout_index : rollout_index + 1, :].copy(),
+        pe_channels=sliced_pe_channels,
     )
     buffers = SimulationBuffers(
         state=_take_dc(dense.buffers.state, rollout_index, axis=-1),
@@ -50,15 +51,20 @@ def slice_dense_result(dense: DenseSimulationResult, *, rollout_index: int) -> D
             if not dense.external_series.series_events.is_empty()
             else dense.external_series.series_events
         ),
-        private_equity_protocol=(
-            dense.external_series.private_equity_protocol.filter(pl.col("rollout_index") == rollout_index).with_columns(
-                rollout_index=pl.lit(0, dtype=pl.Int64)
-            )
-            if not dense.external_series.private_equity_protocol.is_empty()
-            else dense.external_series.private_equity_protocol
-        ),
+        private_equity=_slice_pe_bundle(dense.external_series.private_equity, rollout_index=rollout_index),
     )
     return DenseSimulationResult(plan=plan, buffers=buffers, external_series=external_series)
+
+
+def _slice_pe_bundle(pe: PrivateEquityBundle, *, rollout_index: int) -> PrivateEquityBundle:
+    """Restrict a PE bundle to one rollout, remapping rollout indices to 0."""
+
+    if pe.is_empty():
+        return pe
+    sliced = pe.frame.filter(pl.col("rollout_index") == rollout_index).with_columns(
+        rollout_index=pl.lit(0, dtype=pl.Int64)
+    )
+    return PrivateEquityBundle(frame=sliced)
 
 
 def _take_dc[T](obj: T, rollout_index: int, *, axis: int) -> T:
