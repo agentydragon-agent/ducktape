@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { fanChartAxis, fmtAxisMetricValue, fmtMetricValue } from "./lib/chart.js";
+import { axisCoordinate, fanChartAxis, fmtAxisMetricValue, fmtMetricValue } from "./lib/chart.js";
 import { fmtNumber } from "./lib/format.js";
 import { FAN_PERCENTILES } from "./input_helpers.js";
 import {
@@ -13,7 +13,14 @@ import {
   rolloutStatusText,
 } from "./data_helpers.js";
 
-export function TerminalDistributionHistogram({ summaries, selectedSeed, loadingSeed, onSelect, metric }) {
+export function TerminalDistributionHistogram({
+  summaries,
+  selectedSeed,
+  loadingSeed,
+  onSelect,
+  metric,
+  metricScale = "linear",
+}) {
   if (summaries.length === 0) return null;
   const entries = summaries
     .map((summary) => ({ summary, value: terminalMetricValue(summary.terminalMetrics, metric) }))
@@ -22,11 +29,14 @@ export function TerminalDistributionHistogram({ summaries, selectedSeed, loading
     entries.length > 0
       ? fanChartAxis(
           metric.chartValue,
-          entries.map((entry) => entry.value)
+          entries.map((entry) => entry.value),
+          metricScale
         )
       : { min: 0, max: 1, range: 1, ticks: [0, 1] };
   const binCount = Math.max(8, Math.min(36, Math.ceil(Math.sqrt(entries.length) * 1.3)));
-  const bins = terminalHistogramBins(entries, binCount, axis.min, axis.max);
+  const bins = terminalHistogramBins(entries, binCount, axis.min, axis.max, (entry) =>
+    axisCoordinate(axis, entry.value)
+  );
   const maxBinCount = Math.max(...bins.map((bin) => bin.rollouts.length), 1);
   // Cells stack with a 1-px gap, so the real rendered column height is
   // `(cellHeight + 1) * maxBinCount` — accounting for the gap keeps overflow-hidden from
@@ -42,11 +52,14 @@ export function TerminalDistributionHistogram({ summaries, selectedSeed, loading
   })).filter((row) => Number.isFinite(row.value));
   const axisLeftPct = (value) => {
     if (!Number.isFinite(value) || axis.range <= 0) return null;
-    return ((value - axis.min) / axis.range) * 100;
+    return ((axisCoordinate(axis, value) - axis.min) / axis.range) * 100;
   };
   const xTicks = Array.isArray(axis.ticks) ? axis.ticks.slice().sort((left, right) => left - right) : [];
   return (
-    <div className="border-t border-slate-200 px-4 py-3 dark:border-slate-700">
+    <div
+      className="border-t border-slate-200 px-4 py-3 dark:border-slate-700"
+      data-product-histogram-scale={metricScale}
+    >
       <div className="mb-2 flex items-center justify-between gap-3">
         <div>
           <div className="augur-eyebrow">Terminal {metric.label.toLowerCase()} distribution</div>

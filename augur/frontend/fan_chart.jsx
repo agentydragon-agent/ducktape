@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { fanChartAxis, fanChartYearTicks, fmtAxisMetricValue, fmtMetricValue } from "./lib/chart.js";
+import { axisCoordinate, fanChartAxis, fanChartYearTicks, fmtAxisMetricValue, fmtMetricValue } from "./lib/chart.js";
 import { fmtUsd } from "./lib/format.js";
 import { FAN_PERCENTILES } from "./input_helpers.js";
 import {
@@ -156,6 +156,7 @@ export function MetricFanChart({
   hoveredEventMonthIndex,
   onSelectEventMonth,
   onHoverEventMonth,
+  metricScale = "linear",
 }) {
   const [hoveredMonth, setHoveredMonth] = useState(null);
   const svgRef = useRef(null);
@@ -182,13 +183,13 @@ export function MetricFanChart({
     .flatMap((row) => sortedPercentiles.map((pct) => row.values.get(pct)))
     .concat(selectedRows.map((row) => row.value))
     .filter(Number.isFinite);
-  const yAxis = fanChartAxis(metric.chartValue, values);
+  const yAxis = fanChartAxis(metric.chartValue, values, metricScale);
   const svgHeight = 300;
   const margin = { left: 82, right: 24, top: 18, bottom: 42 };
   const plotHeight = svgHeight - margin.top - margin.bottom;
   const plotWidth = svgWidth - margin.left - margin.right;
   const x = (row) => margin.left + (row.year / maxYear) * plotWidth;
-  const y = (value) => margin.top + (1 - (value - yAxis.min) / yAxis.range) * plotHeight;
+  const y = (value) => margin.top + (1 - (axisCoordinate(yAxis, value) - yAxis.min) / yAxis.range) * plotHeight;
   const valueAt = (row, pct) => row.values.get(pct);
   const line = (pct) => rows.map((row) => `${x(row)},${y(valueAt(row, pct))}`).join(" ");
   const selectedLine = selectedRows.map((row) => `${x(row)},${y(row.value)}`).join(" ");
@@ -260,7 +261,7 @@ export function MetricFanChart({
   const hoveredRow = hoveredMonth;
 
   return (
-    <div className="overflow-x-auto p-4" data-product-fan-chart={metric.chartValue}>
+    <div className="overflow-x-auto p-4" data-product-fan-chart={metric.chartValue} data-product-scale={metricScale}>
       <svg
         ref={svgRef}
         role="img"

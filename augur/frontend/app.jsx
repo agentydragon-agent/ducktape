@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { MantineProvider, NativeSelect } from "@mantine/core";
+import { MantineProvider, NativeSelect, SegmentedControl } from "@mantine/core";
 
 import {
   fetchAugurBootstrap,
@@ -33,10 +33,17 @@ import {
   visibleMetricOptions,
 } from "./data_helpers.js";
 
+const METRIC_SCALE_OPTIONS = [
+  { value: "linear", label: "Linear" },
+  { value: "log", label: "Log" },
+];
+
 function RolloutResultsPanel({
   visibleMetrics,
   selectedMetric,
   onSelectMetric,
+  metricScale,
+  onSelectMetricScale,
   rolloutSummaries,
   selectedSeed,
   onSelectSeed,
@@ -53,17 +60,29 @@ function RolloutResultsPanel({
   return (
     <section className="augur-panel overflow-hidden" aria-label="Cash projection workspace">
       <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
-        <NativeSelect
-          aria-label="Metric to plot"
-          value={selectedMetric.value}
-          data={visibleMetrics.map((metric) => ({ value: metric.value, label: metric.label }))}
-          classNames={{ input: "augur-tabular min-w-[12rem]" }}
-          onChange={(event) => onSelectMetric(event.target.value)}
-        />
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <NativeSelect
+            aria-label="Metric to plot"
+            value={selectedMetric.value}
+            data={visibleMetrics.map((metric) => ({ value: metric.value, label: metric.label }))}
+            classNames={{ input: "augur-tabular min-w-[12rem]" }}
+            onChange={(event) => onSelectMetric(event.target.value)}
+          />
+          <div data-product-chart-scale-control>
+            <SegmentedControl
+              aria-label="Chart scale"
+              size="xs"
+              value={metricScale}
+              data={METRIC_SCALE_OPTIONS}
+              onChange={onSelectMetricScale}
+            />
+          </div>
+        </div>
       </div>
       <TerminalDistributionHistogram
         summaries={rolloutSummaries}
         metric={selectedMetric}
+        metricScale={metricScale}
         selectedSeed={selectedSeed}
         loadingSeed={selectedRolloutLoading ? selectedSeed : null}
         onSelect={onSelectSeed}
@@ -72,6 +91,7 @@ function RolloutResultsPanel({
         <MetricFanChart
           rows={fanRows}
           metric={selectedMetric}
+          metricScale={metricScale}
           percentiles={percentiles}
           selectedRows={selectedRows}
           selectedEvents={selectedEvents}
@@ -157,6 +177,7 @@ function DeploymentCommitSummary({ deployment }) {
 function ProductProjectionWorkspace({ bootstrap, deployment }) {
   const [input, setInput] = useState(() => productInputFromSearch(window.location.search, bootstrap));
   const [selectedMetricValue, setSelectedMetricValue] = useState("net_worth_usd");
+  const [metricScale, setMetricScale] = useState("linear");
   const [result, setResult] = useState(null);
   const [runError, setRunError] = useState(null);
   const [portfolio, setPortfolio] = useState(null);
@@ -322,6 +343,8 @@ function ProductProjectionWorkspace({ bootstrap, deployment }) {
                 visibleMetrics={visibleMetrics}
                 selectedMetric={selectedMetric}
                 onSelectMetric={setSelectedMetricValue}
+                metricScale={metricScale}
+                onSelectMetricScale={setMetricScale}
                 rolloutSummaries={rolloutSummaries}
                 selectedSeed={selectedSeed}
                 onSelectSeed={setSelectedSeed}

@@ -374,7 +374,13 @@ export function eventTitle(event) {
   return `Month ${eventStateMonthIndex(event) ?? "n/a"}: ${eventLabel(event)} ${fmtUsd(eventAmount(event))}`;
 }
 
-export function terminalHistogramBins(completedEntries, binCount, axisMin, axisMax) {
+export function terminalHistogramBins(
+  completedEntries,
+  binCount,
+  axisMin,
+  axisMax,
+  coordinateValue = (entry) => entry.value
+) {
   const span = axisMax - axisMin;
   const binWidth = span > 0 ? span / binCount : 1;
   const bins = Array.from({ length: binCount }, (_, index) => ({
@@ -383,7 +389,9 @@ export function terminalHistogramBins(completedEntries, binCount, axisMin, axisM
     rollouts: [],
   }));
   for (const entry of completedEntries) {
-    const idx = Math.min(binCount - 1, Math.max(0, Math.floor((entry.value - axisMin) / binWidth)));
+    const coordinate = coordinateValue(entry);
+    if (!Number.isFinite(coordinate)) continue;
+    const idx = Math.min(binCount - 1, Math.max(0, Math.floor((coordinate - axisMin) / binWidth)));
     bins[idx].rollouts.push(entry);
   }
   for (const bin of bins) {

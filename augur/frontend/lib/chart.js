@@ -1,6 +1,11 @@
 import { fmtNumber, fmtPct, fmtUsd } from "./format.js";
 
 const FAN_CHART_TICK_FRACTIONS = [0, 0.25, 0.5, 0.75, 1];
+const LOG_SCALE_UNIT = 1;
+
+export function normalizeMetricScale(metricScale) {
+  return metricScale === "log" ? "log" : "linear";
+}
 
 export function metricIsCurrency(metricName) {
   return metricName?.endsWith("Usd") || metricName?.includes("Value") || metricName?.includes("CashFlow");
@@ -37,6 +42,22 @@ export function niceCurrencyTickStep(rawStep) {
   return Math.max(1, niceNormalized * magnitude);
 }
 
+export function transformMetricValue(value, metricScale) {
+  if (!Number.isFinite(value)) return NaN;
+  if (normalizeMetricScale(metricScale) !== "log") return value;
+  return Math.sign(value) * Math.log1p(Math.abs(value) / LOG_SCALE_UNIT);
+}
+
+export function inverseTransformMetricValue(value, metricScale) {
+  if (!Number.isFinite(value)) return NaN;
+  if (normalizeMetricScale(metricScale) !== "log") return value;
+  return Math.sign(value) * Math.expm1(Math.abs(value)) * LOG_SCALE_UNIT;
+}
+
+export function axisCoordinate(axis, value) {
+  return transformMetricValue(value, axis?.scale ?? "linear");
+}
+
 export function currencyFanChartAxis(values, targetTickCount = 5) {
   const min = Math.min(...values);
   const max = Math.max(...values);
@@ -52,29 +73,58 @@ export function currencyFanChartAxis(values, targetTickCount = 5) {
   for (let value = axisMax, guard = 0; value >= axisMin - step / 2 && guard < 12; value -= step, guard += 1) {
     ticks.push(Math.round(value / step) * step);
   }
-  return { min: axisMin, max: axisMax, range: axisMax - axisMin, ticks };
+  return { min: axisMin, max: axisMax, range: axisMax - axisMin, ticks, scale: "linear" };
 }
 
-export function fanChartAxis(metricName, values) {
-  if (values.length === 0) {
+function transformedFanChartAxis(values, metricScale) {
+  const scale = normalizeMetricScale(metricScale);
+  const transformedValues = values.map((value) => transformMetricValue(value, scale)).filter(Number.isFinite);
+  if (transformedValues.length === 0) {
     return {
       min: 0,
       max: 1,
       range: 1,
-      ticks: FAN_CHART_TICK_FRACTIONS.map((tick) => 1 - tick),
+      ticks: FAN_CHART_TICK_FRACTIONS.map((tick) => inverseTransformMetricValue(1 - tick, scale)),
+      scale,
     };
   }
-  if (metricIsCurrency(metricName)) {
-    return currencyFanChartAxis(values);
+  let min = Math.min(...transformedValues);
+  let max = Math.max(...transformedValues);
+  if (min === max) {
+    const pad = Math.max(1, Math.abs(max) * 0.15);
+    min -= pad;
+    max += pad;
   }
-  const min = Math.min(...values);
-  const max = Math.max(...values);
+  const range = max - min;
+  return {
+    min,
+    max,
+    range,
+    ticks: FAN_CHART_TICK_FRACTIONS.map((tick) => inverseTransformMetricValue(min + range * (1 - tick), scale)),
+    scale,
+  };
+}
+
+export function fanChartAxis(metricName, values, metricScale = "linear") {
+  const finiteValues = values.filter(Number.isFinite);
+  if (finiteValues.length === 0) {
+    return transformedFanChartAxis([], metricScale);
+  }
+  if (normalizeMetricScale(metricScale) === "log") {
+    return transformedFanChartAxis(finiteValues, metricScale);
+  }
+  if (metricIsCurrency(metricName)) {
+    return currencyFanChartAxis(finiteValues);
+  }
+  const min = Math.min(...finiteValues);
+  const max = Math.max(...finiteValues);
   const range = max === min ? 1 : max - min;
   return {
     min,
     max: min + range,
     range,
     ticks: FAN_CHART_TICK_FRACTIONS.map((tick) => min + range * (1 - tick)),
+    scale: "linear",
   };
 }
 
