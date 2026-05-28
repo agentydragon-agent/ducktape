@@ -322,4 +322,4 @@ def _monthly_probability(annual_probability: float) -> float:
         return 0.0
     if annual_probability >= 1.0:
         return 1.0
-    return 1.0 - (1.0 - annual_probability) ** (1.0 / 12.0)
+    return float(1.0 - math.pow(1.0 - annual_probability, 1.0 / 12.0))
