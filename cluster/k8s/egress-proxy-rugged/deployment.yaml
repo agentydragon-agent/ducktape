@@ -24,6 +24,11 @@ spec:
     spec:
       nodeSelector:
         kubernetes.io/hostname: rugged
+      tolerations:
+        - key: node-role.kubernetes.io/roaming
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532
