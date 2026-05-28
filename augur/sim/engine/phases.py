@@ -8,13 +8,16 @@ from __future__ import annotations
 import numpy as np
 import numpy.typing as npt
 
-from augur.model.series import PrivateEquityRegimeCode
+from augur.model.series import PrivateEquityEventKindCode, PrivateEquityRegimeCode
 from augur.sim.buffers import CurrentStateBuffers, SimulationBuffers
 from augur.sim.codec.helpers import text
 from augur.sim.compiler import CompiledSimulation
 from augur.sim.compiler.helpers import AMOUNT_FIXED, NO_CODE
 from augur.sim.enums import CapitalGainClassification, LifecycleKind, ObligationSource
 from augur.sim.tensor_fifo import FifoSaleResult, fifo_sell_dollars, fifo_sell_units, lot_order_for_pool
+
+_PRIVATE_EQUITY_REGIME_CODES = frozenset(int(code) for code in PrivateEquityRegimeCode)
+_PRIVATE_EQUITY_EVENT_KIND_CODES = frozenset(int(code) for code in PrivateEquityEventKindCode)
 
 
 def _apply_scheduled_transfers(
@@ -242,10 +245,18 @@ def _apply_pe_tenders(
         positive_mark = mark > 0.0
         tender_active = plan.external_event_values[event_series_idx, :, month] & active_rollout
         regime_code = _code_pe_level_series_values(
-            plan, series_index=int(plan.pe_issuers.regime_code_series[issuer_idx]), month=month
+            plan,
+            series_index=int(plan.pe_issuers.regime_code_series[issuer_idx]),
+            month=month,
+            label="regime",
+            allowed_values=_PRIVATE_EQUITY_REGIME_CODES,
         )
         event_kind_code = _code_pe_level_series_values(
-            plan, series_index=int(plan.pe_issuers.event_kind_code_series[issuer_idx]), month=month
+            plan,
+            series_index=int(plan.pe_issuers.event_kind_code_series[issuer_idx]),
+            month=month,
+            label="event kind",
+            allowed_values=_PRIVATE_EQUITY_EVENT_KIND_CODES,
         )
         del event_kind_code  # validated for protocol integrity; behavior-specific series drive v1 sim actions.
         public_market_active = regime_code == int(PrivateEquityRegimeCode.PUBLIC_MARKET)
@@ -413,12 +424,18 @@ def _required_pe_level_series_values(
     return values
 
 
-def _code_pe_level_series_values(plan: CompiledSimulation, *, series_index: int, month: int) -> npt.NDArray[np.int64]:
+def _code_pe_level_series_values(
+    plan: CompiledSimulation, *, series_index: int, month: int, label: str, allowed_values: frozenset[int]
+) -> npt.NDArray[np.int64]:
     values = _required_pe_level_series_values(plan, series_index=series_index, month=month)
     rounded = np.rint(values)
     if not np.array_equal(values, rounded):
-        raise ValueError(f"private-equity code series {series_index} produced a non-integer value")
-    return rounded.astype(np.int64)
+        raise ValueError(f"private-equity {label} code series {series_index} produced a non-integer value")
+    codes = rounded.astype(np.int64)
+    unknown = sorted(int(code) for code in np.unique(codes) if int(code) not in allowed_values)
+    if unknown:
+        raise ValueError(f"private-equity {label} code series {series_index} produced unknown code(s): {unknown}")
+    return codes
 
 
 def _fraction_pe_level_series_values(
