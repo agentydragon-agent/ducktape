@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 import pytest
@@ -16,15 +16,22 @@ from augur.model.exogenous import (
     series_events_frame,
     series_levels_frame,
 )
-from augur.model.series import INFLATION_SERIES_ID, private_equity_sale_event_id, private_equity_series_id
+from augur.model.series import (
+    INFLATION_SERIES_ID,
+    private_equity_eligible_fraction_series_id,
+    private_equity_sale_event_id,
+    private_equity_series_id,
+)
 
 
 @dataclass(frozen=True)
 class _StaticSampler:
     levels: dict[str, float]
     events: dict[str, int]
+    sample_requests: list[ExogenousSamplingRequest] = field(default_factory=list)
 
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
+        self.sample_requests.append(request)
         level_frames = [
             series_levels_frame(
                 series_id,
@@ -51,17 +58,25 @@ class _StaticSampler:
 
 
 def test_composite_merges_macro_and_private_equity_series() -> None:
-    model = CompositeExogenousModel(
-        macro=_StaticSampler(levels={INFLATION_SERIES_ID: 1.0}, events={}),
-        private_equity=_StaticSampler(
-            levels={private_equity_series_id("private_company_a"): 687.69},
-            events={private_equity_sale_event_id("private_company_a"): 2},
-        ),
+    macro = _StaticSampler(levels={INFLATION_SERIES_ID: 1.0}, events={})
+    private_equity = _StaticSampler(
+        levels={
+            private_equity_series_id("private_company_a"): 687.69,
+            private_equity_eligible_fraction_series_id("private_company_a"): 0.5,
+        },
+        events={private_equity_sale_event_id("private_company_a"): 2},
     )
+    model = CompositeExogenousModel(macro=macro, private_equity=private_equity)
     request = ExogenousSamplingRequest(
         horizon_months=3,
         rollout_seeds=(7,),
-        required_level_series=frozenset({INFLATION_SERIES_ID, private_equity_series_id("private_company_a")}),
+        required_level_series=frozenset(
+            {
+                INFLATION_SERIES_ID,
+                private_equity_series_id("private_company_a"),
+                private_equity_eligible_fraction_series_id("private_company_a"),
+            }
+        ),
         required_event_series=frozenset({private_equity_sale_event_id("private_company_a")}),
     )
 
@@ -75,6 +90,10 @@ def test_composite_merges_macro_and_private_equity_series() -> None:
     assert bundle.event_matrix(private_equity_sale_event_id("private_company_a"), rollout_count=1, horizon_months=3)[
         0, 2
     ]
+    assert macro.sample_requests[0].required_level_series == frozenset({INFLATION_SERIES_ID})
+    assert private_equity.sample_requests[0].required_level_series == frozenset(
+        {private_equity_series_id("private_company_a"), private_equity_eligible_fraction_series_id("private_company_a")}
+    )
 
 
 def test_composite_rejects_duplicate_series_outputs() -> None:

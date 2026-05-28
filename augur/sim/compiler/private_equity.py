@@ -9,7 +9,19 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
-from augur.model.series import PRIVATE_EQUITY_SERIES_PREFIX, private_equity_sale_event_id
+from augur.model.series import (
+    private_equity_eligible_fraction_series_id,
+    private_equity_event_kind_code_series_id,
+    private_equity_forced_recovery_cashout_usd_series_id,
+    private_equity_forced_sale_fraction_series_id,
+    private_equity_issuer_id_from_price_series_id,
+    private_equity_level_series_ids,
+    private_equity_liquidity_blocked_series_id,
+    private_equity_regime_code_series_id,
+    private_equity_sale_capacity_fraction_series_id,
+    private_equity_sale_event_id,
+    private_equity_series_id,
+)
 from augur.sim.compiler.helpers import AMOUNT_FIXED, NO_CODE, StringTable, amount_arrays
 from augur.sim.scenario import Scenario
 
@@ -24,6 +36,13 @@ class PEIssuerCompileOutput:
     codes: NDArray[np.int64]
     event_series: NDArray[np.int64]
     level_series: NDArray[np.int64]
+    regime_code_series: NDArray[np.int64]
+    event_kind_code_series: NDArray[np.int64]
+    sale_capacity_fraction_series: NDArray[np.int64]
+    eligible_fraction_series: NDArray[np.int64]
+    forced_sale_fraction_series: NDArray[np.int64]
+    liquidity_blocked_series: NDArray[np.int64]
+    forced_recovery_cashout_usd_series: NDArray[np.int64]
     policy_index: NDArray[np.int64]
     lot_mask: NDArray[np.bool_]
 
@@ -67,10 +86,9 @@ def compile_private_equity_tenders(
 
     issuer_to_lots: dict[str, list[int]] = {}
     for lot_index, lot in enumerate(scenario.initial_lots):
-        if not lot.asset_id.startswith(PRIVATE_EQUITY_SERIES_PREFIX):
-            continue
-        issuer = lot.asset_id[len(PRIVATE_EQUITY_SERIES_PREFIX) :]
-        issuer_to_lots.setdefault(issuer, []).append(lot_index)
+        issuer = private_equity_issuer_id_from_price_series_id(lot.asset_id)
+        if issuer is not None:
+            issuer_to_lots.setdefault(issuer, []).append(lot_index)
     issuer_ids = tuple(sorted(issuer_to_lots))
 
     policies = scenario.private_equity_tender_policies
@@ -82,6 +100,13 @@ def compile_private_equity_tenders(
     pe_issuer_codes = np.full(issuer_count, NO_CODE, dtype=np.int64)
     pe_issuer_event_series_index = np.full(issuer_count, NO_CODE, dtype=np.int64)
     pe_issuer_level_series_index = np.full(issuer_count, NO_CODE, dtype=np.int64)
+    pe_issuer_regime_code_series_index = np.full(issuer_count, NO_CODE, dtype=np.int64)
+    pe_issuer_event_kind_code_series_index = np.full(issuer_count, NO_CODE, dtype=np.int64)
+    pe_issuer_sale_capacity_fraction_series_index = np.full(issuer_count, NO_CODE, dtype=np.int64)
+    pe_issuer_eligible_fraction_series_index = np.full(issuer_count, NO_CODE, dtype=np.int64)
+    pe_issuer_forced_sale_fraction_series_index = np.full(issuer_count, NO_CODE, dtype=np.int64)
+    pe_issuer_liquidity_blocked_series_index = np.full(issuer_count, NO_CODE, dtype=np.int64)
+    pe_issuer_forced_recovery_cashout_usd_series_index = np.full(issuer_count, NO_CODE, dtype=np.int64)
     pe_issuer_policy_index = np.full(issuer_count, NO_CODE, dtype=np.int64)
     pe_issuer_lot_mask = np.zeros((issuer_count, max(1, lot_count)), dtype=np.bool_)
 
@@ -100,6 +125,13 @@ def compile_private_equity_tenders(
         codes=pe_issuer_codes,
         event_series=pe_issuer_event_series_index,
         level_series=pe_issuer_level_series_index,
+        regime_code_series=pe_issuer_regime_code_series_index,
+        event_kind_code_series=pe_issuer_event_kind_code_series_index,
+        sale_capacity_fraction_series=pe_issuer_sale_capacity_fraction_series_index,
+        eligible_fraction_series=pe_issuer_eligible_fraction_series_index,
+        forced_sale_fraction_series=pe_issuer_forced_sale_fraction_series_index,
+        liquidity_blocked_series=pe_issuer_liquidity_blocked_series_index,
+        forced_recovery_cashout_usd_series=pe_issuer_forced_recovery_cashout_usd_series_index,
         policy_index=pe_issuer_policy_index,
         lot_mask=pe_issuer_lot_mask,
     )
@@ -139,7 +171,7 @@ def compile_private_equity_tenders(
             pe_policy_owner_cash_mask[policy_idx, :cash_count] = cash_agent_codes == owner_code
         if lot_count > 0:
             owner_lots = lot_agent_codes == owner_code
-            pe_codes = {strings.require(f"{PRIVATE_EQUITY_SERIES_PREFIX}{issuer}") for issuer in issuer_to_lots}
+            pe_codes = {strings.require(private_equity_series_id(issuer)) for issuer in issuer_to_lots}
             non_pe_lot = ~np.isin(lot_asset_codes, list(pe_codes)) if pe_codes else np.ones(lot_count, dtype=np.bool_)
             pe_policy_owner_non_pe_lot_mask[policy_idx, :lot_count] = owner_lots & non_pe_lot
 
@@ -147,12 +179,36 @@ def compile_private_equity_tenders(
     policy_index_by_owner = {int(pe_policy_owner_agent_codes[idx]): idx for idx in range(len(policies))}
     for issuer_idx, issuer in enumerate(issuer_ids):
         pe_issuer_codes[issuer_idx] = strings.require(issuer)
-        level_series_id = f"{PRIVATE_EQUITY_SERIES_PREFIX}{issuer}"
+        level_series_id = private_equity_series_id(issuer)
         event_series_id = private_equity_sale_event_id(issuer)
-        if level_series_id in series_index_by_id:
-            pe_issuer_level_series_index[issuer_idx] = series_index_by_id[level_series_id]
-        if event_series_id in event_index_by_id:
-            pe_issuer_event_series_index[issuer_idx] = event_index_by_id[event_series_id]
+        missing_level_series = sorted(private_equity_level_series_ids(issuer) - set(series_index_by_id))
+        missing_event_series = sorted({event_series_id} - set(event_index_by_id))
+        if missing_level_series or missing_event_series:
+            details: list[str] = []
+            if missing_level_series:
+                details.append(f"missing level series {missing_level_series}")
+            if missing_event_series:
+                details.append(f"missing event series {missing_event_series}")
+            raise ValueError(
+                f"private-equity issuer {issuer!r} requires complete protocol series: {'; '.join(details)}"
+            )
+
+        pe_issuer_level_series_index[issuer_idx] = series_index_by_id[level_series_id]
+        pe_issuer_event_series_index[issuer_idx] = event_index_by_id[event_series_id]
+        control_level_series = (
+            (private_equity_regime_code_series_id(issuer), pe_issuer_regime_code_series_index),
+            (private_equity_event_kind_code_series_id(issuer), pe_issuer_event_kind_code_series_index),
+            (private_equity_sale_capacity_fraction_series_id(issuer), pe_issuer_sale_capacity_fraction_series_index),
+            (private_equity_eligible_fraction_series_id(issuer), pe_issuer_eligible_fraction_series_index),
+            (private_equity_forced_sale_fraction_series_id(issuer), pe_issuer_forced_sale_fraction_series_index),
+            (private_equity_liquidity_blocked_series_id(issuer), pe_issuer_liquidity_blocked_series_index),
+            (
+                private_equity_forced_recovery_cashout_usd_series_id(issuer),
+                pe_issuer_forced_recovery_cashout_usd_series_index,
+            ),
+        )
+        for series_id, target in control_level_series:
+            target[issuer_idx] = series_index_by_id[series_id]
         # Lot indices owned by this issuer.
         lots = issuer_to_lots[issuer]
         for lot_index in lots:

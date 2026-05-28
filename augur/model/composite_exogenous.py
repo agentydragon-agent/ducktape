@@ -16,7 +16,7 @@ from augur.model.exogenous import (
     Sampler,
     validate_sample_satisfies_request,
 )
-from augur.model.series import PRIVATE_EQUITY_SALE_EVENT_PREFIX, PRIVATE_EQUITY_SERIES_PREFIX, series_suffix
+from augur.model.series import is_private_equity_event_series_id, is_private_equity_level_series_id
 
 
 @dataclass(frozen=True)
@@ -34,26 +34,22 @@ class CompositeExogenousModel:
             required_level_series=frozenset(
                 series_id
                 for series_id in request.required_level_series
-                if series_suffix(series_id, PRIVATE_EQUITY_SERIES_PREFIX) is None
+                if not is_private_equity_level_series_id(series_id)
             ),
             required_event_series=frozenset(
                 event_id
                 for event_id in request.required_event_series
-                if series_suffix(event_id, PRIVATE_EQUITY_SALE_EVENT_PREFIX) is None
+                if not is_private_equity_event_series_id(event_id)
             ),
         )
         pe_request = ExogenousSamplingRequest(
             horizon_months=request.horizon_months,
             rollout_seeds=request.rollout_seeds,
             required_level_series=frozenset(
-                series_id
-                for series_id in request.required_level_series
-                if series_suffix(series_id, PRIVATE_EQUITY_SERIES_PREFIX) is not None
+                series_id for series_id in request.required_level_series if is_private_equity_level_series_id(series_id)
             ),
             required_event_series=frozenset(
-                event_id
-                for event_id in request.required_event_series
-                if series_suffix(event_id, PRIVATE_EQUITY_SALE_EVENT_PREFIX) is not None
+                event_id for event_id in request.required_event_series if is_private_equity_event_series_id(event_id)
             ),
         )
 

@@ -24,6 +24,7 @@ from augur.api.local_regulation import LocalRegulation, TaxRegime
 from augur.api.portfolio import HoldingPositionConfig, HoldingTaxLotConfig, PortfolioAccountConfig, PortfolioConfig
 from augur.model.exogenous_provider_config import CompositeExogenousProviderConfig
 from augur.model.independent_exogenous import IndependentExogenousProviderConfig
+from augur.model.private_equity_risk import PrivateEquityRiskProviderConfig
 from augur.model.state_space import StateSpaceExogenousProviderConfig
 from augur.model.trained_private_equity import TrainedPrivateEquityProviderConfig
 
@@ -210,6 +211,23 @@ def test_config_accepts_composite_provider_with_trained_private_equity(tmp_path)
     assert isinstance(config.exogenous_provider, CompositeExogenousProviderConfig)
     assert isinstance(config.exogenous_provider.private_equity, TrainedPrivateEquityProviderConfig)
     assert config.exogenous_provider.private_equity.trained_model_path == model_path
+
+
+def test_config_accepts_composite_provider_with_private_equity_risk() -> None:
+    config = _minimal_config(
+        exogenous_provider={
+            "type": "composite",
+            "macro": {"type": "independent"},
+            "private_equity": {
+                "type": "private_equity_risk",
+                "issuers": {"private_holding_a": {"current_mark_usd": 25.0}},
+            },
+        }
+    )
+
+    assert isinstance(config.exogenous_provider, CompositeExogenousProviderConfig)
+    assert isinstance(config.exogenous_provider.private_equity, PrivateEquityRiskProviderConfig)
+    assert config.exogenous_provider.private_equity.issuers["private_holding_a"].current_mark_usd == 25.0
 
 
 def test_relative_trained_private_equity_model_path_anchors_against_yaml_dir(tmp_path) -> None:

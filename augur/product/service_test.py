@@ -17,7 +17,7 @@ from augur.model.exogenous import (
 )
 from augur.model.exogenous_provider_config import CompositeExogenousProviderConfig
 from augur.model.independent_exogenous import IndependentExogenousProviderConfig
-from augur.model.series import INFLATION_SERIES_ID, SP500_SERIES_ID
+from augur.model.series import INFLATION_SERIES_ID, SP500_SERIES_ID, private_equity_level_series_ids
 from augur.product import decode, service
 from augur.product.scenarios import build_scenario, resolve_primary_agent_id, sim_locations_from_config
 from augur.product.service import ProductService
@@ -178,7 +178,7 @@ def test_metric_fan_and_rollout_detail_share_cached_sim_rollouts(
 
     assert [request.rollout_seeds for request in counting_exogenous_model.sample_requests] == [(7, 8)]
     assert counting_exogenous_model.sample_requests[0].required_level_series == frozenset(
-        {SP500_SERIES_ID, "crypto:btc", "crypto:eth", "private_equity:private_holding_a"}
+        {SP500_SERIES_ID, "crypto:btc", "crypto:eth", *private_equity_level_series_ids("private_holding_a")}
     )
     assert fan.exogenous_model_id == "composite_exogenous_model"
     assert fan.metric == "cash_usd"

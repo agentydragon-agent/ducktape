@@ -16,6 +16,7 @@ from augur.model.series import (
     SP500_SERIES_ID,
     crypto_series_id,
     home_value_series_id,
+    private_equity_level_series_ids,
     private_equity_sale_event_id,
     private_equity_series_id,
     rent_series_id,
@@ -48,7 +49,7 @@ def test_state_space_samples_all_available_series_and_hard_anchors(tmp_path: Pat
         home_value_series_id("san_francisco_ca"),
         home_value_series_id("mare_island_vallejo_ca"),
         rent_series_id("san_francisco_ca"),
-        private_equity_series_id("private_company_a"),
+        *private_equity_level_series_ids("private_company_a"),
     }
     np.testing.assert_allclose(
         sampled.level_matrix(SP500_SERIES_ID, rollout_count=2, horizon_months=3)[:, 0], np.array([123.0, 123.0])

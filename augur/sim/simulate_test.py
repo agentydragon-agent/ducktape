@@ -6,12 +6,23 @@ event log, and produces Polars boundary frames for projections and APIs.
 
 from __future__ import annotations
 
+import numpy as np
+import numpy.typing as npt
 import polars as pl
 import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
+from augur.frames import concat_frames
+from augur.model.exogenous import SERIES_LEVELS_SCHEMA, series_levels_frame
 from augur.model.gbm import GeometricBrownian
+from augur.model.private_equity_protocol import private_equity_auxiliary_level_frames
+from augur.model.series import (
+    PrivateEquityEventKindCode,
+    PrivateEquityRegimeCode,
+    private_equity_sale_event_id,
+    private_equity_series_id,
+)
 from augur.model.series_model import SeriesModelBundle
 from augur.sim.external_series import EXTERNAL_SERIES_EVENTS_FRAME, EXTERNAL_SERIES_VALUES_FRAME, ExternalSeriesContext
 from augur.sim.locations import Location
@@ -43,6 +54,9 @@ from augur.sim.scenario import (
     TaxProfile,
 )
 from augur.sim.simulate import simulate, simulate_with_external_series
+
+CodeMatrix = npt.NDArray[np.int64]
+FloatMatrix = npt.NDArray[np.float64]
 
 
 def _external_series_context_for_levels(series_id: str, levels_by_rollout: list[list[float]]) -> ExternalSeriesContext:
@@ -3818,6 +3832,12 @@ def _pe_external_series(
     tender_mark_usd: float | None,
     horizon_months: int,
     rollout_count: int = 1,
+    regime_code: CodeMatrix | None = None,
+    sale_capacity_fraction: FloatMatrix | None = None,
+    eligible_fraction: FloatMatrix | None = None,
+    forced_sale_fraction: FloatMatrix | None = None,
+    liquidity_blocked: FloatMatrix | None = None,
+    forced_recovery_cashout_usd: FloatMatrix | None = None,
 ) -> ExternalSeriesContext:
     """Build an ExternalSeriesContext with one PE level + event series for acme.
 
@@ -3825,33 +3845,88 @@ def _pe_external_series(
     at `tender_month` and onward. Event: True only at `tender_month` (or never if None).
     """
 
-    level_rows = []
     event_rows = []
+    levels = np.full((rollout_count, horizon_months + 1), initial_mark_usd, dtype=np.float64)
+    events = np.zeros((rollout_count, horizon_months + 1), dtype=np.bool_)
     for rollout in range(rollout_count):
         current_mark = initial_mark_usd
         for month in range(horizon_months + 1):
             if tender_month is not None and month == tender_month and tender_mark_usd is not None:
                 current_mark = tender_mark_usd
-            level_rows.append(
-                {
-                    "rollout_index": rollout,
-                    "month_index": month,
-                    "series_id": "private_equity:acme",
-                    "value": current_mark,
-                }
-            )
+            levels[rollout, month] = current_mark
+            active = tender_month is not None and month == tender_month
+            events[rollout, month] = active
             event_rows.append(
                 {
                     "rollout_index": rollout,
                     "month_index": month,
-                    "event_id": "private_equity_sale_opportunity:acme",
-                    "active": (tender_month is not None and month == tender_month),
+                    "event_id": private_equity_sale_event_id("acme"),
+                    "active": active,
                 }
             )
+    level_frame = series_levels_frame(
+        private_equity_series_id("acme"), levels, rollout_count=rollout_count, horizon_months=horizon_months
+    )
     return ExternalSeriesContext(
-        series_values=EXTERNAL_SERIES_VALUES_FRAME.normalize(pl.DataFrame(level_rows)),
+        series_values=EXTERNAL_SERIES_VALUES_FRAME.normalize(
+            concat_frames(
+                [
+                    level_frame,
+                    *private_equity_auxiliary_level_frames(
+                        "acme",
+                        tender_events=events,
+                        event_kind_code=np.where(events, int(PrivateEquityEventKindCode.TENDER), 0),
+                        regime_code=regime_code
+                        if regime_code is not None
+                        else _pe_code_matrix(
+                            horizon_months=horizon_months,
+                            rollouts=rollout_count,
+                            value=int(PrivateEquityRegimeCode.PRIVATE_OPERATING),
+                        ),
+                        sale_capacity_fraction=sale_capacity_fraction
+                        if sale_capacity_fraction is not None
+                        else _pe_float_matrix(horizon_months=horizon_months, rollouts=rollout_count, value=1.0),
+                        eligible_fraction=eligible_fraction
+                        if eligible_fraction is not None
+                        else _pe_float_matrix(horizon_months=horizon_months, rollouts=rollout_count, value=1.0),
+                        forced_sale_fraction=forced_sale_fraction
+                        if forced_sale_fraction is not None
+                        else _pe_float_matrix(horizon_months=horizon_months, rollouts=rollout_count, value=0.0),
+                        liquidity_blocked=liquidity_blocked
+                        if liquidity_blocked is not None
+                        else _pe_float_matrix(horizon_months=horizon_months, rollouts=rollout_count, value=0.0),
+                        forced_recovery_cashout_usd=forced_recovery_cashout_usd
+                        if forced_recovery_cashout_usd is not None
+                        else _pe_float_matrix(horizon_months=horizon_months, rollouts=rollout_count, value=0.0),
+                        rollout_count=rollout_count,
+                        horizon_months=horizon_months,
+                    ),
+                ],
+                SERIES_LEVELS_SCHEMA,
+            )
+        ),
         series_events=EXTERNAL_SERIES_EVENTS_FRAME.normalize(pl.DataFrame(event_rows)),
     )
+
+
+def _pe_float_matrix(*, horizon_months: int, rollouts: int = 1, value: float) -> FloatMatrix:
+    return np.full((rollouts, horizon_months + 1), value, dtype=np.float64)
+
+
+def _pe_code_matrix(*, horizon_months: int, rollouts: int = 1, value: int) -> CodeMatrix:
+    return np.full((rollouts, horizon_months + 1), value, dtype=np.int64)
+
+
+def _pe_single_month_matrix(*, horizon_months: int, month: int, value: float, default: float = 0.0) -> FloatMatrix:
+    matrix = _pe_float_matrix(horizon_months=horizon_months, value=default)
+    matrix[:, month] = value
+    return matrix
+
+
+def _pe_single_month_code_matrix(*, horizon_months: int, month: int, value: int, default: int) -> CodeMatrix:
+    matrix = _pe_code_matrix(horizon_months=horizon_months, value=default)
+    matrix[:, month] = value
+    return matrix
 
 
 def _pe_lot_remaining_at(result, *, lot_id: str, month_index: int) -> float:
@@ -3930,6 +4005,201 @@ def test_pe_tender_fires_below_floor_sells_to_lift_lnw() -> None:
     assert row["units_sold"] == pytest.approx(100.0, abs=1e-6)
     assert row["proceeds_usd"] == pytest.approx(6_000.0, abs=1.0)
     assert row["cause_id"].startswith("pe_tender_m5")
+
+
+def test_pe_tender_capacity_fraction_limits_sale() -> None:
+    scenario = _pe_tender_scenario(
+        initial_cash_usd=0.0,
+        monthly_spend_usd=0.0,
+        pe_units=100.0,
+        pe_cost_basis_per_unit_usd=10.0,
+        pe_holding_period_months=36,
+        horizon_months=12,
+        lnw_floor_usd=1_000_000.0,
+    )
+    external = _pe_external_series(
+        initial_mark_usd=100.0,
+        tender_month=5,
+        tender_mark_usd=100.0,
+        horizon_months=12,
+        sale_capacity_fraction=_pe_float_matrix(horizon_months=12, value=0.25),
+    )
+    result = simulate_with_external_series(scenario, rollout_count=1, external_series=external, locations={})
+
+    assert _pe_lot_remaining_at(result, lot_id="acme_lot_a", month_index=6) == pytest.approx(75.0)
+    assert _alice_cash_at(result, month_index=6) == pytest.approx(2_500.0)
+
+
+def test_pe_tender_eligible_fraction_limits_sale() -> None:
+    scenario = _pe_tender_scenario(
+        initial_cash_usd=0.0,
+        monthly_spend_usd=0.0,
+        pe_units=100.0,
+        pe_cost_basis_per_unit_usd=10.0,
+        pe_holding_period_months=36,
+        horizon_months=12,
+        lnw_floor_usd=1_000_000.0,
+    )
+    external = _pe_external_series(
+        initial_mark_usd=100.0,
+        tender_month=5,
+        tender_mark_usd=100.0,
+        horizon_months=12,
+        eligible_fraction=_pe_float_matrix(horizon_months=12, value=0.4),
+    )
+    result = simulate_with_external_series(scenario, rollout_count=1, external_series=external, locations={})
+
+    assert _pe_lot_remaining_at(result, lot_id="acme_lot_a", month_index=6) == pytest.approx(60.0)
+    assert _alice_cash_at(result, month_index=6) == pytest.approx(4_000.0)
+
+
+def test_pe_tender_liquidity_blocked_prevents_sale() -> None:
+    scenario = _pe_tender_scenario(
+        initial_cash_usd=0.0,
+        monthly_spend_usd=0.0,
+        pe_units=100.0,
+        pe_cost_basis_per_unit_usd=10.0,
+        pe_holding_period_months=36,
+        horizon_months=12,
+        lnw_floor_usd=1_000_000.0,
+    )
+    external = _pe_external_series(
+        initial_mark_usd=100.0,
+        tender_month=5,
+        tender_mark_usd=100.0,
+        horizon_months=12,
+        liquidity_blocked=_pe_float_matrix(horizon_months=12, value=1.0),
+    )
+    result = simulate_with_external_series(scenario, rollout_count=1, external_series=external, locations={})
+
+    assert _pe_lot_remaining_at(result, lot_id="acme_lot_a", month_index=6) == pytest.approx(100.0)
+    assert _alice_cash_at(result, month_index=6) == pytest.approx(0.0)
+
+
+def test_pe_public_market_regime_allows_floor_sale_without_tender_event() -> None:
+    horizon = 12
+    public_market_regime = _pe_single_month_code_matrix(
+        horizon_months=horizon,
+        month=5,
+        value=int(PrivateEquityRegimeCode.PUBLIC_MARKET),
+        default=int(PrivateEquityRegimeCode.PRIVATE_OPERATING),
+    )
+    scenario = _pe_tender_scenario(
+        initial_cash_usd=0.0,
+        monthly_spend_usd=0.0,
+        pe_units=100.0,
+        pe_cost_basis_per_unit_usd=10.0,
+        pe_holding_period_months=36,
+        horizon_months=horizon,
+        lnw_floor_usd=5_000.0,
+    )
+    external = _pe_external_series(
+        initial_mark_usd=100.0,
+        tender_month=None,
+        tender_mark_usd=None,
+        horizon_months=horizon,
+        regime_code=public_market_regime,
+    )
+    result = simulate_with_external_series(scenario, rollout_count=1, external_series=external, locations={})
+
+    assert _pe_lot_remaining_at(result, lot_id="acme_lot_a", month_index=6) == pytest.approx(50.0)
+    assert _alice_cash_at(result, month_index=6) == pytest.approx(5_000.0)
+
+
+def test_pe_forced_sale_fraction_sells_without_tender_or_floor_shortfall() -> None:
+    horizon = 12
+    scenario = _pe_tender_scenario(
+        initial_cash_usd=10_000.0,
+        monthly_spend_usd=0.0,
+        pe_units=100.0,
+        pe_cost_basis_per_unit_usd=10.0,
+        pe_holding_period_months=36,
+        horizon_months=horizon,
+        lnw_floor_usd=0.0,
+    )
+    external = _pe_external_series(
+        initial_mark_usd=100.0,
+        tender_month=None,
+        tender_mark_usd=None,
+        horizon_months=horizon,
+        forced_sale_fraction=_pe_single_month_matrix(horizon_months=horizon, month=5, value=0.3),
+    )
+    result = simulate_with_external_series(scenario, rollout_count=1, external_series=external, locations={})
+
+    assert _pe_lot_remaining_at(result, lot_id="acme_lot_a", month_index=6) == pytest.approx(70.0)
+    assert _alice_cash_at(result, month_index=6) == pytest.approx(13_000.0)
+
+
+def test_pe_forced_recovery_cashout_sells_remaining_units_for_recovery_amount() -> None:
+    horizon = 12
+    scenario = _pe_tender_scenario(
+        initial_cash_usd=0.0,
+        monthly_spend_usd=0.0,
+        pe_units=100.0,
+        pe_cost_basis_per_unit_usd=10.0,
+        pe_holding_period_months=36,
+        horizon_months=horizon,
+        lnw_floor_usd=0.0,
+    )
+    external = _pe_external_series(
+        initial_mark_usd=100.0,
+        tender_month=None,
+        tender_mark_usd=None,
+        horizon_months=horizon,
+        forced_recovery_cashout_usd=_pe_single_month_matrix(horizon_months=horizon, month=5, value=100.0),
+    )
+    result = simulate_with_external_series(scenario, rollout_count=1, external_series=external, locations={})
+
+    assert _pe_lot_remaining_at(result, lot_id="acme_lot_a", month_index=6) == pytest.approx(0.0)
+    assert _alice_cash_at(result, month_index=6) == pytest.approx(100.0)
+    disp = result.events_log.lot_dispositions.filter((pl.col("rollout_index") == 0) & (pl.col("month_index") == 5))
+    assert disp.height == 1
+    row = disp.row(0, named=True)
+    assert row["units_sold"] == pytest.approx(100.0)
+    assert row["proceeds_usd"] == pytest.approx(100.0)
+
+
+def test_pe_tender_missing_protocol_series_fails_loudly() -> None:
+    scenario = _pe_tender_scenario(
+        initial_cash_usd=0.0,
+        monthly_spend_usd=0.0,
+        pe_units=100.0,
+        pe_cost_basis_per_unit_usd=10.0,
+        pe_holding_period_months=36,
+        horizon_months=12,
+        lnw_floor_usd=1_000_000.0,
+    )
+    external = ExternalSeriesContext(
+        series_values=EXTERNAL_SERIES_VALUES_FRAME.normalize(
+            pl.DataFrame(
+                [
+                    {
+                        "rollout_index": 0,
+                        "month_index": month,
+                        "series_id": private_equity_series_id("acme"),
+                        "value": 100.0,
+                    }
+                    for month in range(13)
+                ]
+            )
+        ),
+        series_events=EXTERNAL_SERIES_EVENTS_FRAME.normalize(
+            pl.DataFrame(
+                [
+                    {
+                        "rollout_index": 0,
+                        "month_index": month,
+                        "event_id": private_equity_sale_event_id("acme"),
+                        "active": month == 5,
+                    }
+                    for month in range(13)
+                ]
+            )
+        ),
+    )
+
+    with pytest.raises(ValueError, match="requires complete protocol series"):
+        simulate_with_external_series(scenario, rollout_count=1, external_series=external, locations={})
 
 
 def test_pe_tender_fires_above_floor_no_sale() -> None:

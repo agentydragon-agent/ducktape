@@ -10,7 +10,8 @@ so the simulator never has to be told about prices out of band.
 ```yaml
 exogenous_provider:
   # Composite provider: a macro model owns public liquid/macro series, while a
-  # trained private-equity component owns `private_equity:*` prices and tender
+  # trained private-equity component owns the complete PE protocol series for each
+  # issuer: `private_equity:*` prices, auxiliary liquidity/control levels, and tender
   # opportunity events. VECM intentionally does not synthesize PE fallbacks.
   type: composite
   macro:
@@ -31,9 +32,24 @@ exogenous_provider:
 
 ```yaml
 exogenous_provider:
-  # Independent-per-series provider. Every series id is enumerated; PE issuer
-  # prices live in the YAML as the `initial_value` of their `private_equity:*`
-  # series.
+  # Generic prior-parameter PE risk provider. Useful for fixture/prod configs that
+  # want the PE protocol shape without a trained private-equity artifact yet. Set
+  # drift/vol/probabilities to zero in tests when exact constant paths matter.
+  type: private_equity_risk
+  issuers:
+    private_equity_x:
+      current_mark_usd: 50.0
+      monthly_log_return_mu: 0.0
+      monthly_log_return_sigma: 0.0
+      tender_interval_months_median: 6.0
+      tender_interval_log_sigma: 0.0
+```
+
+```yaml
+exogenous_provider:
+  # Independent-per-series provider. Every series id is enumerated; PE issuer prices
+  # live in the YAML as the `initial_value` of their `private_equity:*` series, and
+  # every required PE auxiliary series must also be enumerated.
   type: independent
   series:
     inflation: {kind: gbm, initial_value: 1.0, monthly_log_return_mu: 0.00237, monthly_log_return_sigma: 0.00433}
@@ -59,6 +75,7 @@ from pydantic import Field
 
 from augur.model.composite_exogenous import CompositeExogenousModel
 from augur.model.independent_exogenous import IndependentExogenousProviderConfig
+from augur.model.private_equity_risk import PrivateEquityRiskProviderConfig
 from augur.model.schemas import FrozenModel
 from augur.model.state_space import StateSpaceExogenousProviderConfig
 from augur.model.trained_private_equity import TrainedPrivateEquityProviderConfig
@@ -68,7 +85,8 @@ BasicExogenousProviderConfig = Annotated[
     IndependentExogenousProviderConfig
     | VecmExogenousProviderConfig
     | StateSpaceExogenousProviderConfig
-    | TrainedPrivateEquityProviderConfig,
+    | TrainedPrivateEquityProviderConfig
+    | PrivateEquityRiskProviderConfig,
     Field(discriminator="type"),
 ]
 
@@ -89,6 +107,7 @@ ExogenousProviderConfig = Annotated[
     | VecmExogenousProviderConfig
     | StateSpaceExogenousProviderConfig
     | TrainedPrivateEquityProviderConfig
+    | PrivateEquityRiskProviderConfig
     | CompositeExogenousProviderConfig,
     Field(discriminator="type"),
 ]

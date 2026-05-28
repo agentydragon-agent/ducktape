@@ -8,12 +8,13 @@ from __future__ import annotations
 import numpy as np
 import numpy.typing as npt
 
+from augur.model.series import PrivateEquityRegimeCode
 from augur.sim.buffers import CurrentStateBuffers, SimulationBuffers
 from augur.sim.codec.helpers import text
 from augur.sim.compiler import CompiledSimulation
 from augur.sim.compiler.helpers import AMOUNT_FIXED, NO_CODE
 from augur.sim.enums import CapitalGainClassification, LifecycleKind, ObligationSource
-from augur.sim.tensor_fifo import fifo_sell_dollars, fifo_sell_units, lot_order_for_pool
+from augur.sim.tensor_fifo import FifoSaleResult, fifo_sell_dollars, fifo_sell_units, lot_order_for_pool
 
 
 def _apply_scheduled_transfers(
@@ -208,7 +209,9 @@ def _apply_pe_tenders(
       2. If any rollout fires: read the issuer's per-rollout mark (level series).
       3. Compute the owner's liquid net worth = cash + non-PE lot value.
       4. shortfall = max(0, floor - LNW), capped by available PE value.
-      5. Drain FIFO from the issuer's lots at the mark, credit proceeds to the policy's
+      5. Apply required issuer-level liquidity controls from exogenous series: blocked
+         liquidity prevents sale, while eligible/capacity fractions limit sellable units.
+      6. Drain FIFO from the issuer's lots at the mark, credit proceeds to the policy's
          designated cash slot, accrue the cap gain to the owner's capital_gain_ytd.
 
     Multiple issuers tendering the same month are processed in array order; each updates
@@ -230,14 +233,90 @@ def _apply_pe_tenders(
         level_series_idx = int(plan.pe_issuers.level_series[issuer_idx])
         if policy_idx < 0 or event_series_idx < 0 or level_series_idx < 0:
             continue
-        tender_active = plan.external_event_values[event_series_idx, :, month]  # (rollout,)
-        tender_active = tender_active & active_rollout
-        if not tender_active.any():
-            continue
         mark = plan.external_values[level_series_idx, :, month]
-        mark = np.nan_to_num(mark, nan=0.0)
-        valid_mark = mark > 0.0
-        if not valid_mark.any():
+        if not np.isfinite(mark).all() or (mark < 0.0).any():
+            raise ValueError(
+                f"private-equity mark series for issuer {text(plan, plan.pe_issuers.codes[issuer_idx])!r} "
+                "produced a negative or non-finite value"
+            )
+        positive_mark = mark > 0.0
+        tender_active = plan.external_event_values[event_series_idx, :, month] & active_rollout
+        regime_code = _code_pe_level_series_values(
+            plan, series_index=int(plan.pe_issuers.regime_code_series[issuer_idx]), month=month
+        )
+        event_kind_code = _code_pe_level_series_values(
+            plan, series_index=int(plan.pe_issuers.event_kind_code_series[issuer_idx]), month=month
+        )
+        del event_kind_code  # validated for protocol integrity; behavior-specific series drive v1 sim actions.
+        public_market_active = regime_code == int(PrivateEquityRegimeCode.PUBLIC_MARKET)
+        liquidity_blocked = _required_pe_level_series_values(
+            plan, series_index=int(plan.pe_issuers.liquidity_blocked_series[issuer_idx]), month=month
+        )
+        liquidity_open = liquidity_blocked < 0.5
+        forced_sale_fraction = _fraction_pe_level_series_values(
+            plan, series_index=int(plan.pe_issuers.forced_sale_fraction_series[issuer_idx]), month=month
+        )
+        forced_recovery_cashout_usd = _required_pe_level_series_values(
+            plan, series_index=int(plan.pe_issuers.forced_recovery_cashout_usd_series[issuer_idx]), month=month
+        )
+        if (forced_recovery_cashout_usd < 0.0).any():
+            raise ValueError("private-equity forced-recovery cashout series produced a negative value")
+
+        lot_indices = np.flatnonzero(plan.pe_issuers.lot_mask[issuer_idx])
+        if lot_indices.size == 0:
+            continue
+        ordered_lots = lot_indices[np.argsort(plan.lot_purchase_month[lot_indices], kind="stable")]
+        units_held = current.lot_remaining[ordered_lots, :].sum(axis=0)
+
+        recovery_active = (forced_recovery_cashout_usd > 0.0) & active_rollout & (units_held > 0.0)
+        if recovery_active.any():
+            recovery_unit_price = np.divide(
+                forced_recovery_cashout_usd,
+                units_held,
+                out=np.ones_like(forced_recovery_cashout_usd),
+                where=units_held > 0.0,
+            )
+            recovery_result = fifo_sell_units(
+                lot_remaining=current.lot_remaining.T,
+                ordered_lots=ordered_lots,
+                target_units=np.where(recovery_active, units_held, 0.0),
+                unit_price=recovery_unit_price,
+                cost_basis_per_unit=plan.lot_cost_basis_per_unit,
+            )
+            _apply_pe_sale_result(
+                plan,
+                buffers,
+                current,
+                month=month,
+                issuer_idx=issuer_idx,
+                policy_idx=policy_idx,
+                result=recovery_result,
+                oversell_label="PE forced recovery",
+            )
+
+        units_held = current.lot_remaining[ordered_lots, :].sum(axis=0)
+        forced_sale_active = (forced_sale_fraction > 0.0) & active_rollout & positive_mark & (units_held > 0.0)
+        if forced_sale_active.any():
+            forced_sale_result = fifo_sell_units(
+                lot_remaining=current.lot_remaining.T,
+                ordered_lots=ordered_lots,
+                target_units=np.where(forced_sale_active, units_held * forced_sale_fraction, 0.0),
+                unit_price=mark,
+                cost_basis_per_unit=plan.lot_cost_basis_per_unit,
+            )
+            _apply_pe_sale_result(
+                plan,
+                buffers,
+                current,
+                month=month,
+                issuer_idx=issuer_idx,
+                policy_idx=policy_idx,
+                result=forced_sale_result,
+                oversell_label="PE forced sale",
+            )
+
+        opportunity_active = (tender_active | public_market_active) & active_rollout & liquidity_open & positive_mark
+        if not opportunity_active.any():
             continue
 
         floor = _amount_values(
@@ -252,51 +331,103 @@ def _apply_pe_tenders(
         )
         lnw = _compute_liquid_net_worth(plan, current, policy_idx=policy_idx, month=month)
         shortfall = np.maximum(0.0, floor - lnw)
-
-        lot_indices = np.flatnonzero(plan.pe_issuers.lot_mask[issuer_idx])
-        if lot_indices.size == 0:
-            continue
-        ordered_lots = lot_indices[np.argsort(plan.lot_purchase_month[lot_indices], kind="stable")]
         units_held = current.lot_remaining[ordered_lots, :].sum(axis=0)
-        available_value = units_held * mark
-        target_dollars = np.minimum(shortfall, available_value)
-        target_dollars = np.where(tender_active & valid_mark, target_dollars, 0.0)
-        if not (target_dollars > 0.0).any():
+        sale_capacity_fraction = _fraction_pe_level_series_values(
+            plan, series_index=int(plan.pe_issuers.sale_capacity_fraction_series[issuer_idx]), month=month
+        )
+        eligible_fraction = _fraction_pe_level_series_values(
+            plan, series_index=int(plan.pe_issuers.eligible_fraction_series[issuer_idx]), month=month
+        )
+        sellable_units = units_held * sale_capacity_fraction * eligible_fraction
+        shortfall_units = np.divide(shortfall, mark, out=np.zeros_like(shortfall), where=mark > 0.0)
+        target_units = np.minimum(shortfall_units, sellable_units)
+        target_units = np.where(opportunity_active, target_units, 0.0)
+        if not (target_units > 0.0).any():
             continue
 
-        # `fifo_sell_dollars` works in (R, L); current.lot_remaining is (L, R) per B0,
+        # `fifo_sell_units` works in (R, L); current.lot_remaining is (L, R) per B0,
         # so transpose at the call seam.
-        result = fifo_sell_dollars(
+        result = fifo_sell_units(
             lot_remaining=current.lot_remaining.T,
             ordered_lots=ordered_lots,
-            target_dollars=target_dollars,
+            target_units=target_units,
             unit_price=mark,
             cost_basis_per_unit=plan.lot_cost_basis_per_unit,
         )
-        if result.oversell.any():
-            raise ValueError(
-                f"PE tender attempted to sell more than available lots for issuer "
-                f"{text(plan, plan.pe_issuers.codes[issuer_idx])}"
-            )
-        current.lot_remaining -= result.sold_units.T
-        proceeds_slot = int(plan.pe_policies.proceeds_cash_slot[policy_idx])
-        if proceeds_slot >= 0:
-            current.cash[proceeds_slot, :] += result.total_proceeds
-        owner_code = int(plan.pe_policies.owner_agent[policy_idx])
-        _record_capital_gains(
+        _apply_pe_sale_result(
             plan,
+            buffers,
             current,
             month=month,
-            agent_code=owner_code,
-            sold_units=result.sold_units,
-            gains=result.proceeds - result.cost_basis_consumed,
+            issuer_idx=issuer_idx,
+            policy_idx=policy_idx,
+            result=result,
+            oversell_label="PE tender",
         )
-        # Record disposition for downstream event decoding.
-        sale_active = result.sold_units > 0.0  # (L, R)
-        buffers.lot_dispositions.pe.active[month, issuer_idx] |= sale_active.T  # (L, R) → (lot, R)
-        buffers.lot_dispositions.pe.units[month, issuer_idx] += result.sold_units.T
-        buffers.lot_dispositions.pe.basis[month, issuer_idx] += result.cost_basis_consumed.T
-        buffers.lot_dispositions.pe.proceeds[month, issuer_idx] += result.proceeds.T
+
+
+def _apply_pe_sale_result(
+    plan: CompiledSimulation,
+    buffers: SimulationBuffers,
+    current: CurrentStateBuffers,
+    *,
+    month: int,
+    issuer_idx: int,
+    policy_idx: int,
+    result: FifoSaleResult,
+    oversell_label: str,
+) -> None:
+    if result.oversell.any():
+        raise ValueError(
+            f"{oversell_label} attempted to sell more than available lots for issuer "
+            f"{text(plan, plan.pe_issuers.codes[issuer_idx])}"
+        )
+    current.lot_remaining -= result.sold_units.T
+    proceeds_slot = int(plan.pe_policies.proceeds_cash_slot[policy_idx])
+    if proceeds_slot >= 0:
+        current.cash[proceeds_slot, :] += result.total_proceeds
+    owner_code = int(plan.pe_policies.owner_agent[policy_idx])
+    _record_capital_gains(
+        plan,
+        current,
+        month=month,
+        agent_code=owner_code,
+        sold_units=result.sold_units,
+        gains=result.proceeds - result.cost_basis_consumed,
+    )
+    sale_active = result.sold_units > 0.0  # (R, L)
+    buffers.lot_dispositions.pe.active[month, issuer_idx] |= sale_active.T  # (R, L) -> (lot, R)
+    buffers.lot_dispositions.pe.units[month, issuer_idx] += result.sold_units.T
+    buffers.lot_dispositions.pe.basis[month, issuer_idx] += result.cost_basis_consumed.T
+    buffers.lot_dispositions.pe.proceeds[month, issuer_idx] += result.proceeds.T
+
+
+def _required_pe_level_series_values(
+    plan: CompiledSimulation, *, series_index: int, month: int
+) -> npt.NDArray[np.float64]:
+    if series_index < 0:
+        raise ValueError("private-equity protocol series index is missing")
+    values = plan.external_values[series_index, :, month]
+    if not np.isfinite(values).all():
+        raise ValueError(f"private-equity protocol series {series_index} produced a non-finite value")
+    return values
+
+
+def _code_pe_level_series_values(plan: CompiledSimulation, *, series_index: int, month: int) -> npt.NDArray[np.int64]:
+    values = _required_pe_level_series_values(plan, series_index=series_index, month=month)
+    rounded = np.rint(values)
+    if not np.array_equal(values, rounded):
+        raise ValueError(f"private-equity code series {series_index} produced a non-integer value")
+    return rounded.astype(np.int64)
+
+
+def _fraction_pe_level_series_values(
+    plan: CompiledSimulation, *, series_index: int, month: int
+) -> npt.NDArray[np.float64]:
+    values = _required_pe_level_series_values(plan, series_index=series_index, month=month)
+    if ((values < 0.0) | (values > 1.0)).any():
+        raise ValueError(f"private-equity fraction series {series_index} produced a value outside [0, 1]")
+    return values
 
 
 def _compute_liquid_net_worth(

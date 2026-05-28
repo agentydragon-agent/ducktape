@@ -9,7 +9,14 @@ from more_itertools import one
 from augur.api.bootstrap import ActorRole, Property
 from augur.api.config import Config, LocationConfig
 from augur.api.portfolio import PortfolioConfig
-from augur.model.series import INFLATION_SERIES_ID, home_value_series_id, private_equity_sale_event_id, rent_series_id
+from augur.model.series import (
+    INFLATION_SERIES_ID,
+    home_value_series_id,
+    private_equity_issuer_id_from_price_series_id,
+    private_equity_level_series_ids,
+    private_equity_sale_event_id,
+    rent_series_id,
+)
 from augur.product.wire import (
     CapitalImprovementEventWire,
     CashFinancing,
@@ -123,6 +130,10 @@ def required_level_series(
     scenario_key: ScenarioKey, *, initial_lots: tuple[InitialLot, ...], properties_by_id: dict[str, Property]
 ) -> frozenset[str]:
     series_ids = {lot.asset_id for lot in initial_lots}
+    for lot in initial_lots:
+        issuer = private_equity_issuer_id_from_price_series_id(lot.asset_id)
+        if issuer is not None:
+            series_ids.update(private_equity_level_series_ids(issuer))
     if scenario_key.spend_index == "inflation":
         series_ids.add(INFLATION_SERIES_ID)
     if scenario_key.monthly_rent_usd > 0:
@@ -163,12 +174,10 @@ def required_event_series(initial_lots: tuple[InitialLot, ...]) -> frozenset[str
     provider knows which event streams to materialize for this scenario.
     """
 
-    # TODO: matching by asset_id.startswith("private_equity:") is fragile. An enum on
-    # the holding's `security_kind` field (e.g. `private_equity`) would be cleaner.
     event_ids: set[str] = set()
     for lot in initial_lots:
-        if lot.asset_id.startswith("private_equity:"):
-            issuer = lot.asset_id[len("private_equity:") :]
+        issuer = private_equity_issuer_id_from_price_series_id(lot.asset_id)
+        if issuer is not None:
             event_ids.add(private_equity_sale_event_id(issuer))
     return frozenset(event_ids)
 
@@ -819,7 +828,10 @@ def _asset_preference_chain_from_sell_order(
             asset_ids.extend(
                 lot.asset_id
                 for lot in initial_lots
-                if not lot.asset_id.startswith("crypto:") and not lot.asset_id.startswith("private_equity:")
+                if (
+                    not lot.asset_id.startswith("crypto:")
+                    and private_equity_issuer_id_from_price_series_id(lot.asset_id) is None
+                )
             )
         elif bucket == "crypto":
             asset_ids.extend(lot.asset_id for lot in initial_lots if lot.asset_id.startswith("crypto:"))
@@ -839,7 +851,7 @@ def _build_private_equity_tender_policies(
     smaller.
     """
 
-    holds_pe = any(lot.asset_id.startswith("private_equity:") for lot in initial_lots)
+    holds_pe = any(private_equity_issuer_id_from_price_series_id(lot.asset_id) is not None for lot in initial_lots)
     floor_usd = float(scenario_key.pe_tender_policy.liquid_net_worth_floor_usd)
     if not holds_pe or floor_usd <= 0:
         return []

@@ -6,6 +6,13 @@ required_level_series:
   - inflation
   - sp500
   - private_equity:private_company_a
+  - private_equity_regime_code:private_company_a
+  - private_equity_event_kind_code:private_company_a
+  - private_equity_sale_capacity_fraction:private_company_a
+  - private_equity_eligible_fraction:private_company_a
+  - private_equity_forced_sale_fraction:private_company_a
+  - private_equity_liquidity_blocked:private_company_a
+  - private_equity_forced_recovery_cashout_usd:private_company_a
 required_event_series:
   - private_equity_sale_opportunity:private_company_a
 level_checks:

@@ -34,6 +34,7 @@ from augur.model.exogenous import (
 )
 from augur.model.location_series_sources import LocationSeriesSources, LocationSeriesSourcesConfig
 from augur.model.path_models.scenarios import HistoricalSeries, historical_log_returns
+from augur.model.private_equity_protocol import neutral_private_equity_auxiliary_level_frames
 from augur.model.provenance import stable_identity_digest
 from augur.model.schemas import FrozenModel
 from augur.model.series import (
@@ -104,6 +105,12 @@ class StateSpaceModelArtifact(FrozenModel):
             raise ValueError(
                 "private_equity_scale_priors missing issuer(s) "
                 f"{sorted(missing_scale_priors)}; macro-scale private-equity prior is required"
+            )
+        missing_event_priors = private_equity_issuers - set(self.private_equity_event_priors)
+        if missing_event_priors:
+            raise ValueError(
+                "private_equity_event_priors missing issuer(s) "
+                f"{sorted(missing_event_priors)}; private-equity tender event series is required"
             )
         return self
 
@@ -258,6 +265,10 @@ class StateSpaceModel:
         path_by_factor = {
             factor_name: factor_levels[:, :, factor_index] for factor_index, factor_name in enumerate(factor_names)
         }
+        event_by_issuer = {
+            issuer_id: self._private_equity_event_series(issuer_id, request)
+            for issuer_id in sorted(self.artifact.private_equity_event_priors)
+        }
         level_blocks = [
             series_levels_frame(
                 series_id, path_by_factor[factor_name], rollout_count=rollout_count, horizon_months=horizon_months
@@ -265,14 +276,20 @@ class StateSpaceModel:
             for series_id, factor_name in sorted(self._series_factor_map().items())
             if factor_name in path_by_factor
         ]
+        for issuer_id, tender_events in event_by_issuer.items():
+            level_blocks.extend(
+                neutral_private_equity_auxiliary_level_frames(
+                    issuer_id, tender_events=tender_events, rollout_count=rollout_count, horizon_months=horizon_months
+                )
+            )
         event_blocks = [
             series_events_frame(
                 private_equity_sale_event_id(issuer_id),
-                self._private_equity_event_series(issuer_id, request),
+                events,
                 rollout_count=rollout_count,
                 horizon_months=horizon_months,
             )
-            for issuer_id in sorted(self.artifact.private_equity_event_priors)
+            for issuer_id, events in event_by_issuer.items()
         ]
         sampled = SampledExogenousBundle(
             levels=concat_frames(level_blocks, SERIES_LEVELS_SCHEMA),

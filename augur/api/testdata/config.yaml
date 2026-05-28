@@ -92,19 +92,16 @@ exogenous_provider:
         monthly_log_return_mu: 0.0024625000
         monthly_log_return_sigma: 0.0086602540
   private_equity:
-    type: independent
-    series:
-      # Routing key matches the portfolio `private_equity:<issuer>` value_series_id.
-      "private_equity:private_holding_a": # annual return 8%, vol 35%
-        kind: gbm
-        initial_value: 25.0
-        monthly_log_return_mu: 0.0015625000
-        monthly_log_return_sigma: 0.1010362971
-    events:
-      "private_equity_sale_opportunity:private_holding_a":
-        kind: poisson
-        monthly_lambda: 0.0833333333 # 1/12 (roughly once per year)
-        min_horizon_months: 6
+    # Exercise the PE risk provider on the public devserver path while keeping
+    # fixture marks deterministic: zero monthly drift/vol, semiannual tenders.
+    type: private_equity_risk
+    issuers:
+      private_holding_a:
+        current_mark_usd: 25.0
+        monthly_log_return_mu: 0.0
+        monthly_log_return_sigma: 0.0
+        tender_interval_months_median: 6.0
+        tender_interval_log_sigma: 0.0
 portfolio:
   accounts:
     - account_id: taxable_brokerage

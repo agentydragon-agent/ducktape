@@ -25,7 +25,12 @@ from augur.model.private_equity_trajectories import (
     TenderEvent,
     read_private_equity_trajectories_jsonl,
 )
-from augur.model.series import private_equity_sale_event_id, private_equity_series_id
+from augur.model.series import (
+    private_equity_event_kind_code_series_id,
+    private_equity_liquidity_blocked_series_id,
+    private_equity_sale_event_id,
+    private_equity_series_id,
+)
 
 
 @dataclass(frozen=True)
@@ -142,6 +147,15 @@ def test_sampler_overlay_emits_piecewise_constant_mark_and_event_pulse() -> None
     expected_events = np.zeros(11, dtype=np.bool_)
     expected_events[5] = True
     np.testing.assert_array_equal(events[0], expected_events)
+
+    event_kind = bundle.level_matrix(
+        private_equity_event_kind_code_series_id("acme"), rollout_count=1, horizon_months=10
+    )
+    np.testing.assert_array_equal(event_kind[0], np.array([0.0] * 5 + [1.0] + [0.0] * 5))
+    liquidity_blocked = bundle.level_matrix(
+        private_equity_liquidity_blocked_series_id("acme"), rollout_count=1, horizon_months=10
+    )
+    np.testing.assert_array_equal(liquidity_blocked[0], np.zeros(11))
 
 
 def test_sampler_overlay_cycles_trajectories_by_seed_modulo() -> None:

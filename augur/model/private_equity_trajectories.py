@@ -38,16 +38,23 @@ from pathlib import Path
 import numpy as np
 import polars as pl
 
+from augur.frames import concat_frames
 from augur.model.exogenous import (
+    SERIES_EVENTS_SCHEMA,
+    SERIES_LEVELS_SCHEMA,
     ExogenousSamplingRequest,
     SampledExogenousBundle,
     Sampler,
     series_events_frame,
     series_levels_frame,
+    validate_sample_satisfies_request,
 )
+from augur.model.private_equity_protocol import neutral_private_equity_auxiliary_level_frames
 from augur.model.series import (
-    PRIVATE_EQUITY_SALE_EVENT_PREFIX,
-    PRIVATE_EQUITY_SERIES_PREFIX,
+    PRIVATE_EQUITY_EVENT_SERIES_PREFIXES,
+    PRIVATE_EQUITY_LEVEL_SERIES_PREFIXES,
+    is_private_equity_event_series_id,
+    is_private_equity_level_series_id,
     private_equity_sale_event_id,
     private_equity_series_id,
 )
@@ -122,18 +129,33 @@ def read_private_equity_trajectories_jsonl(
 class PreSampledPrivateEquitySampler:
     """Sampler overlay: underlying provider + per-issuer PE trajectories from an artifact.
 
-    `sample()` calls the underlying provider, strips out any pre-existing
-    `private_equity:*` level or `private_equity_sale_opportunity:*` event series
-    (the artifact is the source of truth for PE), then appends our materialized
-    PE level + event series for every configured issuer.
+    `sample()` calls the underlying provider without PE requirements, strips out any
+    pre-existing PE protocol level/event series (the artifact is the source of truth
+    for PE), then appends our materialized PE levels and tender events for every
+    configured issuer.
     """
 
     underlying: Sampler
     trajectories_by_issuer: dict[str, PrivateEquityTrajectorySet]
 
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
-        bundle = self.underlying.sample(request)
+        underlying_request = ExogenousSamplingRequest(
+            horizon_months=request.horizon_months,
+            rollout_seeds=request.rollout_seeds,
+            required_level_series=frozenset(
+                series_id
+                for series_id in request.required_level_series
+                if not is_private_equity_level_series_id(series_id)
+            ),
+            required_event_series=frozenset(
+                event_id
+                for event_id in request.required_event_series
+                if not is_private_equity_event_series_id(event_id)
+            ),
+        )
+        bundle = self.underlying.sample(underlying_request)
         if not self.trajectories_by_issuer:
+            validate_sample_satisfies_request(request, bundle)
             return bundle
 
         rollout_count = request.rollout_count
@@ -153,6 +175,11 @@ class PreSampledPrivateEquitySampler:
                     private_equity_series_id(issuer), levels, rollout_count=rollout_count, horizon_months=horizon_months
                 )
             )
+            pe_levels_frames.extend(
+                neutral_private_equity_auxiliary_level_frames(
+                    issuer, tender_events=events, rollout_count=rollout_count, horizon_months=horizon_months
+                )
+            )
             pe_events_frames.append(
                 series_events_frame(
                     private_equity_sale_event_id(issuer),
@@ -162,13 +189,15 @@ class PreSampledPrivateEquitySampler:
                 )
             )
 
-        merged_levels = pl.concat([_drop_pe_levels(bundle.levels), *pe_levels_frames], how="vertical_relaxed")
-        merged_events = pl.concat([_drop_pe_events(bundle.events), *pe_events_frames], how="vertical_relaxed")
-        return SampledExogenousBundle(
+        merged_levels = concat_frames([_drop_pe_levels(bundle.levels), *pe_levels_frames], SERIES_LEVELS_SCHEMA)
+        merged_events = concat_frames([_drop_pe_events(bundle.events), *pe_events_frames], SERIES_EVENTS_SCHEMA)
+        sampled = SampledExogenousBundle(
             levels=merged_levels,
             events=merged_events,
             metadata={**bundle.metadata, "private_equity_issuers": tuple(sorted(self.trajectories_by_issuer))},
         )
+        validate_sample_satisfies_request(request, sampled)
+        return sampled
 
 
 def _materialize_pe_levels(
@@ -226,10 +255,17 @@ def _materialize_pe_events(
 def _drop_pe_levels(levels: pl.DataFrame) -> pl.DataFrame:
     if levels.is_empty():
         return levels
-    return levels.filter(~pl.col("series_id").str.starts_with(PRIVATE_EQUITY_SERIES_PREFIX))
+    return levels.filter(~_has_any_prefix("series_id", PRIVATE_EQUITY_LEVEL_SERIES_PREFIXES))
 
 
 def _drop_pe_events(events: pl.DataFrame) -> pl.DataFrame:
     if events.is_empty():
         return events
-    return events.filter(~pl.col("event_id").str.starts_with(PRIVATE_EQUITY_SALE_EVENT_PREFIX))
+    return events.filter(~_has_any_prefix("event_id", PRIVATE_EQUITY_EVENT_SERIES_PREFIXES))
+
+
+def _has_any_prefix(column: str, prefixes: frozenset[str]) -> pl.Expr:
+    expr = pl.lit(False)
+    for prefix in prefixes:
+        expr = expr | pl.col(column).str.starts_with(prefix)
+    return expr

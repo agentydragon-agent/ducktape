@@ -48,6 +48,41 @@ py_library(
 )
 
 py_library(
+    name = "private_equity_protocol",
+    srcs = ["private_equity_protocol.py"],
+    deps = [
+        ":exogenous",
+        ":series",
+        "@pypi//numpy",
+        "@pypi//polars",
+    ],
+)
+
+py_library(
+    name = "private_equity_risk",
+    srcs = ["private_equity_risk.py"],
+    deps = [
+        ":exogenous",
+        ":private_equity_protocol",
+        ":schemas",
+        ":series",
+        ":series_model",
+        "//augur:frames",
+        "@pypi//numpy",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "series_test",
+    srcs = ["series_test.py"],
+    deps = [
+        ":series",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
     name = "deterministic",
     srcs = ["deterministic.py"],
     deps = [
@@ -113,6 +148,7 @@ py_library(
         ":conditioning",
         ":exogenous",
         ":location_series_sources",
+        ":private_equity_protocol",
         ":provenance",
         ":schemas",
         ":series",
@@ -187,6 +223,7 @@ py_library(
         ":composite_exogenous",
         ":conditioning",
         ":independent_exogenous",
+        ":private_equity_risk",
         ":schemas",
         ":state_space",
         ":trained_private_equity",
@@ -272,11 +309,27 @@ py_library(
     srcs = ["trained_private_equity.py"],
     deps = [
         ":exogenous",
+        ":private_equity_protocol",
         ":schemas",
         ":series",
         ":series_model",
+        "//augur:frames",
         "@pypi//numpy",
         "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "private_equity_risk_test",
+    srcs = ["private_equity_risk_test.py"],
+    deps = [
+        ":exogenous",
+        ":exogenous_provider_config",
+        ":private_equity_risk",
+        ":series",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 
@@ -310,7 +363,9 @@ py_library(
     srcs = ["private_equity_trajectories.py"],
     deps = [
         ":exogenous",
+        ":private_equity_protocol",
         ":series",
+        "//augur:frames",
         "@pypi//numpy",
         "@pypi//polars",
     ],
