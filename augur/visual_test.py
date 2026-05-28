@@ -265,6 +265,24 @@ def page(browser: Browser) -> Iterator[Page]:
             context.close()
 
 
+def _take_stable_full_page_screenshot(page: Page, target_path: Path) -> Path:
+    previous_bytes: bytes | None = None
+    previous_path: Path | None = None
+    for attempt in range(6):
+        attempt_path = target_path.with_name(f"{target_path.stem}.attempt{attempt}{target_path.suffix}")
+        page.screenshot(path=str(attempt_path), full_page=True, animations="disabled", caret="hide", scale="css")
+        current_bytes = attempt_path.read_bytes()
+        if current_bytes == previous_bytes:
+            shutil.copy(attempt_path, target_path)
+            return target_path
+        previous_bytes = current_bytes
+        previous_path = attempt_path
+        page.wait_for_timeout(150)
+    assert previous_path is not None
+    shutil.copy(previous_path, target_path)
+    return target_path
+
+
 def _render_case(page: Page, origin: str, case: VisualCase, out_dir: Path, suffix: str) -> Path:
     page.goto(f"{origin}{case.path}", wait_until="networkidle", timeout=60_000)
     case.wait_ready(page)
@@ -274,8 +292,7 @@ def _render_case(page: Page, origin: str, case: VisualCase, out_dir: Path, suffi
         case.interact(page)
         _wait_for_product_chart_geometry(page)
     actual_path = out_dir / f"{case.name}.{suffix}.png"
-    page.screenshot(path=str(actual_path), full_page=True, animations="disabled", caret="hide", scale="css")
-    return actual_path
+    return _take_stable_full_page_screenshot(page, actual_path)
 
 
 @pytest.mark.parametrize("case", VISUAL_CASES, ids=[case.name for case in VISUAL_CASES])
