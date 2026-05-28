@@ -17,6 +17,10 @@ let
   codexSccacheCache = "${config.xdg.cacheHome}/sccache";
 
   codexSettings = {
+    model = "gpt-5.5";
+    model_reasoning_effort = "xhigh";
+    plan_mode_reasoning_effort = "xhigh";
+
     # Local model providers for GPT-OSS
     model_providers = {
       # vllm provider disabled: wire_api = "chat" is no longer supported (2026-04-21).
