@@ -34,6 +34,7 @@ from augur.sim.engine.phases import (
     _apply_scheduled_transfers,
     _apply_tax_accruals,
 )
+from augur.sim.enums import PrivateEquityDispositionKind
 from augur.sim.external_series import ExternalSeriesContext
 from augur.sim.locations import Location
 from augur.sim.runtime import load_jurisdictions_for
@@ -253,12 +254,18 @@ def _allocate_buffers(plan: CompiledSimulation) -> SimulationBuffers:
                     (h, p.liquidity_policy_count, p.max_liquidity_policy_assets, lot_axis, r), dtype=np.float64
                 ),
             ),
-            # PE tender disposition buffers[H, PE_issuer, max(1, L), R]
+            # PE disposition buffers[H, PE_issuer, PE_disposition_kind, max(1, L), R]
             pe=DispositionGroup(
-                active=np.zeros((h, p.pe_issuer_count, lot_axis, r), dtype=np.bool_),
-                units=np.zeros((h, p.pe_issuer_count, lot_axis, r), dtype=np.float64),
-                basis=np.zeros((h, p.pe_issuer_count, lot_axis, r), dtype=np.float64),
-                proceeds=np.zeros((h, p.pe_issuer_count, lot_axis, r), dtype=np.float64),
+                active=np.zeros((h, p.pe_issuer_count, len(PrivateEquityDispositionKind), lot_axis, r), dtype=np.bool_),
+                units=np.zeros(
+                    (h, p.pe_issuer_count, len(PrivateEquityDispositionKind), lot_axis, r), dtype=np.float64
+                ),
+                basis=np.zeros(
+                    (h, p.pe_issuer_count, len(PrivateEquityDispositionKind), lot_axis, r), dtype=np.float64
+                ),
+                proceeds=np.zeros(
+                    (h, p.pe_issuer_count, len(PrivateEquityDispositionKind), lot_axis, r), dtype=np.float64
+                ),
             ),
         ),
         taxes=TaxEventBuffers(

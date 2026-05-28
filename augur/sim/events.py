@@ -295,6 +295,23 @@ PROPERTY_SALE_EVENT_SCHEMA = pl.Schema(
     }
 )
 
+PRIVATE_EQUITY_EVENT_SCHEMA = pl.Schema(
+    {
+        "rollout_index": pl.Int64(),
+        "month_index": pl.Int64(),
+        "issuer_id": pl.Utf8(),
+        "asset_id": pl.Utf8(),
+        "event_kind": pl.Utf8(),
+        "regime": pl.Utf8(),
+        "mark_usd": pl.Float64(),
+        "sale_capacity_fraction": pl.Float64(),
+        "eligible_fraction": pl.Float64(),
+        "forced_sale_fraction": pl.Float64(),
+        "liquidity_blocked": pl.Boolean(),
+        "forced_recovery_cashout_usd": pl.Float64(),
+    }
+)
+
 
 @dataclass(frozen=True)
 class EventFrameCatalog:
@@ -316,6 +333,7 @@ class EventFrameCatalog:
     set_primary_residence_events: FrameSpec
     capital_improvement_events: FrameSpec
     property_sale_events: FrameSpec
+    private_equity_events: FrameSpec
 
     def ordered(self) -> tuple[FrameSpec, ...]:
         return (
@@ -335,6 +353,7 @@ class EventFrameCatalog:
             self.set_primary_residence_events,
             self.capital_improvement_events,
             self.property_sale_events,
+            self.private_equity_events,
         )
 
 
@@ -355,6 +374,7 @@ EVENT_FRAMES = EventFrameCatalog(
     set_primary_residence_events=FrameSpec("set_primary_residence_events", SET_PRIMARY_RESIDENCE_EVENT_SCHEMA),
     capital_improvement_events=FrameSpec("capital_improvement_events", CAPITAL_IMPROVEMENT_EVENT_SCHEMA),
     property_sale_events=FrameSpec("property_sale_events", PROPERTY_SALE_EVENT_SCHEMA),
+    private_equity_events=FrameSpec("private_equity_events", PRIVATE_EQUITY_EVENT_SCHEMA),
 )
 
 EVENT_FRAME_SPECS = EVENT_FRAMES.ordered()
@@ -462,3 +482,7 @@ class EventLog:
     @property
     def property_sale_events(self) -> pl.DataFrame:
         return self.frame(EVENT_FRAMES.property_sale_events)
+
+    @property
+    def private_equity_events(self) -> pl.DataFrame:
+        return self.frame(EVENT_FRAMES.private_equity_events)

@@ -7,9 +7,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
+import numpy.typing as npt
 from numpy.typing import NDArray
 
 from augur.model.series import (
+    PrivateEquityEventKindCode,
+    PrivateEquityRegimeCode,
     private_equity_eligible_fraction_series_id,
     private_equity_event_kind_code_series_id,
     private_equity_forced_recovery_cashout_usd_series_id,
@@ -24,6 +27,9 @@ from augur.model.series import (
 )
 from augur.sim.compiler.helpers import AMOUNT_FIXED, NO_CODE, StringTable, amount_arrays
 from augur.sim.scenario import Scenario
+
+_PRIVATE_EQUITY_REGIME_CODES = frozenset(int(code) for code in PrivateEquityRegimeCode)
+_PRIVATE_EQUITY_EVENT_KIND_CODES = frozenset(int(code) for code in PrivateEquityEventKindCode)
 
 
 @dataclass(frozen=True)
@@ -220,3 +226,56 @@ def compile_private_equity_tenders(
             pe_issuer_policy_index[issuer_idx] = policy_index_by_owner[owner_code]
 
     return issuers, pe_policies
+
+
+def compile_private_equity_protocol_codes(
+    issuers: PEIssuerCompileOutput, *, external_values: npt.NDArray[np.float64]
+) -> tuple[npt.NDArray[np.int64], npt.NDArray[np.int64]]:
+    """Materialize typed PE protocol code arrays from generic sampled level series.
+
+    The exogenous bundle carries every level-like series in one float-valued frame. PE
+    regime and event-kind protocol series are integer-coded within that generic channel;
+    validate that once at the compiler boundary so engine/codec code consumes int arrays.
+    """
+
+    issuer_count = issuers.codes.shape[0]
+    rollout_count = external_values.shape[1]
+    snapshot_months = external_values.shape[2]
+    regime_codes = np.full((issuer_count, rollout_count, snapshot_months), NO_CODE, dtype=np.int64)
+    event_kind_codes = np.full(
+        (issuer_count, rollout_count, snapshot_months), int(PrivateEquityEventKindCode.NONE), dtype=np.int64
+    )
+    for issuer_idx, issuer_code in enumerate(issuers.codes):
+        if int(issuer_code) < 0:
+            continue
+        regime_series = int(issuers.regime_code_series[issuer_idx])
+        event_kind_series = int(issuers.event_kind_code_series[issuer_idx])
+        if regime_series < 0 or event_kind_series < 0:
+            raise ValueError("private-equity issuer is missing protocol code series")
+        regime_codes[issuer_idx] = _compile_code_matrix(
+            external_values[regime_series],
+            label=f"private-equity regime code series {regime_series}",
+            allowed_values=_PRIVATE_EQUITY_REGIME_CODES,
+        )
+        event_kind_codes[issuer_idx] = _compile_code_matrix(
+            external_values[event_kind_series],
+            label=f"private-equity event kind code series {event_kind_series}",
+            allowed_values=_PRIVATE_EQUITY_EVENT_KIND_CODES,
+        )
+    return regime_codes, event_kind_codes
+
+
+def _compile_code_matrix(
+    values: npt.NDArray[np.float64], *, label: str, allowed_values: frozenset[int]
+) -> npt.NDArray[np.int64]:
+    if not np.isfinite(values).all():
+        raise ValueError(f"{label} produced a non-finite value")
+    rounded = np.rint(values)
+    if not np.array_equal(values, rounded):
+        raise ValueError(f"{label} produced a non-integer value")
+    codes = rounded.astype(np.int64)
+    unknown = sorted(int(code) for code in np.unique(codes) if int(code) not in allowed_values)
+    if unknown:
+        raise ValueError(f"{label} produced unknown code(s): {unknown}")
+    typed_codes: npt.NDArray[np.int64] = codes
+    return typed_codes

@@ -22,6 +22,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from augur.sim.compiler import CompiledSimulation, SlotPlan
+from augur.sim.enums import PrivateEquityDispositionKind
 
 
 def _expect_array(name: str, array: np.ndarray, *, shape: tuple[int, ...], dtype: Any) -> None:
@@ -454,7 +455,7 @@ class LotDispositionEventBuffers:
         self.liquidity.validate(
             "liquidity", (h, plan.liquidity_policy_count, plan.max_liquidity_policy_assets, lot_axis, r)
         )
-        self.pe.validate("pe", (h, plan.pe_issuer_count, lot_axis, r))
+        self.pe.validate("pe", (h, plan.pe_issuer_count, len(PrivateEquityDispositionKind), lot_axis, r))
 
 
 @dataclass

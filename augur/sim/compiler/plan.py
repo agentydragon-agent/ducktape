@@ -28,6 +28,7 @@ from augur.sim.compiler.primary_residence import PrimaryResidenceEventCompileOut
 from augur.sim.compiler.private_equity import (
     PEIssuerCompileOutput,
     PEPolicyCompileOutput,
+    compile_private_equity_protocol_codes,
     compile_private_equity_tenders,
 )
 from augur.sim.compiler.properties import (
@@ -149,6 +150,8 @@ class CompiledSimulation:
     #     on tenders for this issuer (NO_CODE if no PrivateEquityTenderPolicy applies)
     pe_issuers: PEIssuerCompileOutput
     pe_policies: PEPolicyCompileOutput
+    pe_regime_codes: NDArray[np.int64]
+    pe_event_kind_codes: NDArray[np.int64]
     liquidity_policies: LiquidityPolicyCompileOutput
 
 
@@ -309,6 +312,9 @@ def compile_simulation(
         lot_asset_codes=lot_asset_codes_arr,
         cash_agent_codes=cash_agent_codes_arr,
     )
+    pe_regime_codes, pe_event_kind_codes = compile_private_equity_protocol_codes(
+        pe_issuers, external_values=external_values
+    )
 
     slot_plan = SlotPlan(
         event_months=horizon,
@@ -375,6 +381,8 @@ def compile_simulation(
         external_event_values=external_event_values,
         pe_issuers=pe_issuers,
         pe_policies=pe_policies,
+        pe_regime_codes=pe_regime_codes,
+        pe_event_kind_codes=pe_event_kind_codes,
         liquidity_policies=liquidity_policies,
     )
 

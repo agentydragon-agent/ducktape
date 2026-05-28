@@ -71,6 +71,17 @@ py_library(
     ],
 )
 
+py_library(
+    name = "testing",
+    testonly = True,
+    srcs = ["testing.py"],
+    deps = [
+        "//augur:frames",
+        "//augur/model:exogenous",
+        "@pypi//numpy",
+    ],
+)
+
 py_test(
     name = "portfolio_test",
     srcs = ["portfolio_test.py"],
@@ -94,14 +105,18 @@ py_test(
         ":decode",
         ":scenarios",
         ":service",
+        ":testing",
         ":wire",
+        "//augur:frames",
         "//augur/api:catalog",
         "//augur/api:config",
         "//augur/model:exogenous",
+        "//augur/model:private_equity_protocol",
         "//augur/model:series",
         "//augur/sim:scenario",
         "//util/bazel:runfiles",
         "@pypi//more_itertools",
+        "@pypi//numpy",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

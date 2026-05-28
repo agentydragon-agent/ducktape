@@ -137,6 +137,8 @@ def test_private_equity_risk_forced_sale_emits_sale_fraction_without_tender() ->
     tenders = sampled.event_matrix(private_equity_sale_event_id("acme"), rollout_count=1, horizon_months=2)
 
     assert int(event_kind[0, 1]) == int(PrivateEquityEventKindCode.ACQUISITION_CASHOUT)
+    regime = sampled.level_matrix(private_equity_regime_code_series_id("acme"), rollout_count=1, horizon_months=2)
+    assert int(regime[0, 1]) == int(PrivateEquityRegimeCode.ACQUIRED)
     assert 0.0 < forced_sale[0, 1] <= 1.0
     assert not tenders[0, 1]
 

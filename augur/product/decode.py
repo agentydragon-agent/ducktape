@@ -17,6 +17,7 @@ from augur.product.wire import (
     MonthlyExpenseEvent,
     MortgagePaymentEvent,
     OutsideRentPaymentEvent,
+    PrivateEquityMarkerEvent,
     PropertyMaintenancePaymentEvent,
     PropertyPurchaseEvent,
     PropertySaleMarkerEvent,
@@ -105,6 +106,7 @@ def rollout_events_from(
     events = [
         *_holding_sale_events(run, primary_agent_id=primary_agent_id, asset_label_by_id=asset_label_by_id),
         *_property_purchase_events(run, primary_agent_id=primary_agent_id),
+        *_private_equity_events(run, primary_agent_id=primary_agent_id, asset_label_by_id=asset_label_by_id),
         *_mortgage_payment_events(run, primary_agent_id=primary_agent_id),
         *_property_tax_payment_events(run, primary_agent_id=primary_agent_id),
         *_hoa_dues_events(run, primary_agent_id=primary_agent_id),
@@ -127,17 +129,18 @@ def rollout_events_from(
         "set_rented_fraction": 3,
         "capital_improvement": 4,
         "property_sale": 5,
-        "holding_sale": 6,
-        "tax_accrual": 7,
-        "tax_payment": 8,
-        "property_tax_payment": 9,
-        "hoa_dues_payment": 10,
-        "homeowners_insurance_payment": 11,
-        "property_maintenance_payment": 12,
-        "mortgage_payment": 13,
-        "monthly_expense": 14,
-        "outside_rent": 15,
-        "failure": 16,
+        "private_equity_event": 6,
+        "holding_sale": 7,
+        "tax_accrual": 8,
+        "tax_payment": 9,
+        "property_tax_payment": 10,
+        "hoa_dues_payment": 11,
+        "homeowners_insurance_payment": 12,
+        "property_maintenance_payment": 13,
+        "mortgage_payment": 14,
+        "monthly_expense": 15,
+        "outside_rent": 16,
+        "failure": 17,
     }
     return tuple(sorted(events, key=lambda event: (event.month_index, priority[event.kind])))
 
@@ -246,6 +249,43 @@ def _holding_sale_events(
             cost_basis_usd=float(row["cost_basis_usd"]),
         )
         for row in sale_rows.iter_rows(named=True)
+    )
+
+
+def _private_equity_events(
+    run: SimulationRun, *, primary_agent_id: str, asset_label_by_id: dict[str, str]
+) -> tuple[RolloutEvent, ...]:
+    primary_pe_assets = set(
+        run.asset_lots.filter(
+            (pl.col("agent_id") == primary_agent_id) & pl.col("asset_id").str.starts_with(_PRIVATE_EQUITY_ASSET_PREFIX)
+        )
+        .select("asset_id")
+        .unique()
+        .get_column("asset_id")
+        .to_list()
+    )
+    if not primary_pe_assets:
+        return ()
+    rows = run.events_log.private_equity_events.filter(pl.col("asset_id").is_in(primary_pe_assets)).sort(
+        "month_index", "issuer_id", "event_kind"
+    )
+    return tuple(
+        PrivateEquityMarkerEvent(
+            month_index=int(row["month_index"]),
+            amount_usd=0.0,
+            issuer_id=str(row["issuer_id"]),
+            asset_id=str(row["asset_id"]),
+            asset_label=asset_label_by_id.get(str(row["asset_id"])),
+            event_kind=str(row["event_kind"]),
+            regime=str(row["regime"]),
+            mark_usd=float(row["mark_usd"]),
+            sale_capacity_fraction=float(row["sale_capacity_fraction"]),
+            eligible_fraction=float(row["eligible_fraction"]),
+            forced_sale_fraction=float(row["forced_sale_fraction"]),
+            liquidity_blocked=bool(row["liquidity_blocked"]),
+            forced_recovery_cashout_usd=float(row["forced_recovery_cashout_usd"]),
+        )
+        for row in rows.iter_rows(named=True)
     )
 
 

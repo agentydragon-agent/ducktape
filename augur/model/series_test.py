@@ -3,8 +3,6 @@ from __future__ import annotations
 import pytest_bazel
 
 from augur.model.series import (
-    PrivateEquityEventKindCode,
-    PrivateEquityRegimeCode,
     is_private_equity_event_series_id,
     is_private_equity_level_series_id,
     private_equity_auxiliary_level_series_ids,
@@ -67,14 +65,6 @@ def test_private_equity_event_classifiers_cover_sale_opportunity_event() -> None
     assert is_private_equity_event_series_id(event_id)
     assert private_equity_issuer_id_from_event_series_id(event_id) == "private_company_a"
     assert not is_private_equity_event_series_id("private_equity_event_kind_code:private_company_a")
-
-
-def test_private_equity_protocol_code_values_are_stable() -> None:
-    assert int(PrivateEquityRegimeCode.PRIVATE_OPERATING) == 1
-    assert int(PrivateEquityRegimeCode.COLLAPSED) == 6
-    assert int(PrivateEquityEventKindCode.NONE) == 0
-    assert int(PrivateEquityEventKindCode.TENDER) == 1
-    assert int(PrivateEquityEventKindCode.COLLAPSE) == 7
 
 
 if __name__ == "__main__":

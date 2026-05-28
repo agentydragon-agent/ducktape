@@ -7,6 +7,7 @@ from __future__ import annotations
 import numpy as np
 import polars as pl
 
+from augur.model.series import PrivateEquityEventKindCode, PrivateEquityRegimeCode, private_equity_series_id
 from augur.sim.buffers import SimulationBuffers
 from augur.sim.codec.helpers import (
     codes_to_strings,
@@ -16,6 +17,7 @@ from augur.sim.codec.helpers import (
     state_history_frame_from_columns,
 )
 from augur.sim.compiler import CompiledSimulation
+from augur.sim.enums import PrivateEquityDispositionKind
 from augur.sim.events import EVENT_FRAMES
 from augur.sim.state import ASSET_LOT_FRAME, CASH_BALANCES_FRAME
 
@@ -118,16 +120,19 @@ def decode_liquidity_dispositions(plan: CompiledSimulation, buffers: SimulationB
 
 
 def decode_pe_dispositions(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
-    active = buffers.lot_dispositions.pe.active  # (M, issuer, lot, R)
+    active = buffers.lot_dispositions.pe.active  # (M, issuer, kind, lot, R)
     if active.any():
-        months, issuers, lots, rollouts = np.argwhere(active).T
+        months, issuers, kinds, lots, rollouts = np.argwhere(active).T
     else:
-        months = issuers = lots = rollouts = np.array([], dtype=np.int64)
+        months = issuers = kinds = lots = rollouts = np.array([], dtype=np.int64)
     # pe_issuers.codes are issuer names (e.g. "acme"), not full asset_ids.
     # Use lot_asset_codes to get the correct "private_equity:<issuer>" asset_id.
     asset_codes = plan.lot_asset_codes[lots]
     issuer_names = codes_to_strings(plan, plan.pe_issuers.codes)[issuers]
-    cause_ids = np.array([f"pe_tender_m{m}_{n}" for m, n in zip(months, issuer_names, strict=True)], dtype=object)
+    cause_prefixes = np.array([_pe_disposition_cause_prefix(PrivateEquityDispositionKind(int(k))) for k in kinds])
+    cause_ids = np.array(
+        [f"{p}_m{m}_{n}" for p, m, n in zip(cause_prefixes, months, issuer_names, strict=True)], dtype=object
+    )
     policy_idxs = plan.pe_issuers.policy_index[issuers]
     return _lot_disposition_frame(
         plan=plan,
@@ -138,11 +143,70 @@ def decode_pe_dispositions(plan: CompiledSimulation, buffers: SimulationBuffers)
         source_account_codes=plan.pe_policies.proceeds_cash_slot[policy_idxs],
         asset_codes=asset_codes,
         lots=lots,
-        units=buffers.lot_dispositions.pe.units[months, issuers, lots, rollouts],
-        basis=buffers.lot_dispositions.pe.basis[months, issuers, lots, rollouts],
-        proceeds=buffers.lot_dispositions.pe.proceeds[months, issuers, lots, rollouts],
+        units=buffers.lot_dispositions.pe.units[months, issuers, kinds, lots, rollouts],
+        basis=buffers.lot_dispositions.pe.basis[months, issuers, kinds, lots, rollouts],
+        proceeds=buffers.lot_dispositions.pe.proceeds[months, issuers, kinds, lots, rollouts],
         proceeds_account_codes=plan.pe_policies.proceeds_cash_slot[policy_idxs],
     )
+
+
+def decode_pe_protocol_events(plan: CompiledSimulation) -> pl.DataFrame:
+    rows: list[dict[str, object]] = []
+    for issuer_idx, issuer_code in enumerate(plan.pe_issuers.codes):
+        if int(issuer_code) < 0:
+            continue
+        issuer_id = str(codes_to_strings(plan, np.array([issuer_code], dtype=np.int64))[0])
+        mark_series = int(plan.pe_issuers.level_series[issuer_idx])
+        sale_capacity_series = int(plan.pe_issuers.sale_capacity_fraction_series[issuer_idx])
+        eligible_series = int(plan.pe_issuers.eligible_fraction_series[issuer_idx])
+        forced_sale_series = int(plan.pe_issuers.forced_sale_fraction_series[issuer_idx])
+        liquidity_blocked_series = int(plan.pe_issuers.liquidity_blocked_series[issuer_idx])
+        forced_recovery_series = int(plan.pe_issuers.forced_recovery_cashout_usd_series[issuer_idx])
+        if (
+            min(
+                mark_series,
+                sale_capacity_series,
+                eligible_series,
+                forced_sale_series,
+                liquidity_blocked_series,
+                forced_recovery_series,
+            )
+            < 0
+        ):
+            continue
+        event_codes = plan.pe_event_kind_codes[issuer_idx]
+        regime_codes = plan.pe_regime_codes[issuer_idx]
+        event_window = event_codes[:, : plan.horizon_months]
+        active = event_window != int(PrivateEquityEventKindCode.NONE)
+        if not active.any():
+            continue
+        rollouts, months = np.argwhere(active).T
+        for rollout, month in zip(rollouts, months, strict=True):
+            event_code = PrivateEquityEventKindCode(int(event_codes[rollout, month]))
+            regime_code = PrivateEquityRegimeCode(int(regime_codes[rollout, month]))
+            rows.append(
+                {
+                    "rollout_index": int(rollout),
+                    "month_index": int(month),
+                    "issuer_id": issuer_id,
+                    "asset_id": private_equity_series_id(issuer_id),
+                    "event_kind": event_code.name.lower(),
+                    "regime": regime_code.name.lower(),
+                    "mark_usd": float(plan.external_values[mark_series, rollout, month]),
+                    "sale_capacity_fraction": float(plan.external_values[sale_capacity_series, rollout, month]),
+                    "eligible_fraction": float(plan.external_values[eligible_series, rollout, month]),
+                    "forced_sale_fraction": float(plan.external_values[forced_sale_series, rollout, month]),
+                    "liquidity_blocked": bool(plan.external_values[liquidity_blocked_series, rollout, month] >= 0.5),
+                    "forced_recovery_cashout_usd": float(plan.external_values[forced_recovery_series, rollout, month]),
+                }
+            )
+    if not rows:
+        return EVENT_FRAMES.private_equity_events.empty()
+    return EVENT_FRAMES.private_equity_events.normalize(pl.DataFrame(rows))
+
+
+def _pe_disposition_cause_prefix(kind: PrivateEquityDispositionKind) -> str:
+    return f"pe_{kind.name.lower()}"
 
 
 def _lot_disposition_frame(

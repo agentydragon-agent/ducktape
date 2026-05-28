@@ -845,17 +845,16 @@ def _build_private_equity_tender_policies(
 ) -> list[PrivateEquityTenderPolicy]:
     """Build the sim `PrivateEquityTenderPolicy` list from the wire's pe_tender_policy.
 
-    A single policy targets the primary agent. Emitted only when the user holds at least one
-    PE lot AND set a positive `liquid_net_worth_floor_usd` — a zero floor or no PE position
-    means the policy is a no-op, so we omit it entirely to keep the sim's per-issuer arrays
-    smaller.
+    A single policy targets the primary agent. It is emitted whenever the user holds PE,
+    even with a zero floor: the floor only controls voluntary tender/public-market sales,
+    while exogenous forced-sale/recovery events still need owner/proceeds routing.
     """
 
     holds_pe = any(private_equity_issuer_id_from_price_series_id(lot.asset_id) is not None for lot in initial_lots)
     floor_usd = float(scenario_key.pe_tender_policy.liquid_net_worth_floor_usd)
-    if not holds_pe or floor_usd <= 0:
+    if not holds_pe:
         return []
-    if scenario_key.pe_tender_policy.index_floor_to_inflation:
+    if floor_usd > 0 and scenario_key.pe_tender_policy.index_floor_to_inflation:
         floor: FixedAmount | SeriesIndexedAmount = SeriesIndexedAmount(
             base_amount_usd=floor_usd, series_id=INFLATION_SERIES_ID, adjustment_period_months=1
         )

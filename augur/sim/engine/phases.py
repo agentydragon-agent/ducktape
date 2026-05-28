@@ -8,16 +8,13 @@ from __future__ import annotations
 import numpy as np
 import numpy.typing as npt
 
-from augur.model.series import PrivateEquityEventKindCode, PrivateEquityRegimeCode
+from augur.model.series import PrivateEquityRegimeCode
 from augur.sim.buffers import CurrentStateBuffers, SimulationBuffers
 from augur.sim.codec.helpers import text
 from augur.sim.compiler import CompiledSimulation
 from augur.sim.compiler.helpers import AMOUNT_FIXED, NO_CODE
-from augur.sim.enums import CapitalGainClassification, LifecycleKind, ObligationSource
+from augur.sim.enums import CapitalGainClassification, LifecycleKind, ObligationSource, PrivateEquityDispositionKind
 from augur.sim.tensor_fifo import FifoSaleResult, fifo_sell_dollars, fifo_sell_units, lot_order_for_pool
-
-_PRIVATE_EQUITY_REGIME_CODES = frozenset(int(code) for code in PrivateEquityRegimeCode)
-_PRIVATE_EQUITY_EVENT_KIND_CODES = frozenset(int(code) for code in PrivateEquityEventKindCode)
 
 
 def _apply_scheduled_transfers(
@@ -244,21 +241,7 @@ def _apply_pe_tenders(
             )
         positive_mark = mark > 0.0
         tender_active = plan.external_event_values[event_series_idx, :, month] & active_rollout
-        regime_code = _code_pe_level_series_values(
-            plan,
-            series_index=int(plan.pe_issuers.regime_code_series[issuer_idx]),
-            month=month,
-            label="regime",
-            allowed_values=_PRIVATE_EQUITY_REGIME_CODES,
-        )
-        event_kind_code = _code_pe_level_series_values(
-            plan,
-            series_index=int(plan.pe_issuers.event_kind_code_series[issuer_idx]),
-            month=month,
-            label="event kind",
-            allowed_values=_PRIVATE_EQUITY_EVENT_KIND_CODES,
-        )
-        del event_kind_code  # validated for protocol integrity; behavior-specific series drive v1 sim actions.
+        regime_code = plan.pe_regime_codes[issuer_idx, :, month]
         public_market_active = regime_code == int(PrivateEquityRegimeCode.PUBLIC_MARKET)
         liquidity_blocked = _required_pe_level_series_values(
             plan, series_index=int(plan.pe_issuers.liquidity_blocked_series[issuer_idx]), month=month
@@ -301,6 +284,7 @@ def _apply_pe_tenders(
                 month=month,
                 issuer_idx=issuer_idx,
                 policy_idx=policy_idx,
+                disposition_kind=PrivateEquityDispositionKind.FORCED_RECOVERY,
                 result=recovery_result,
                 oversell_label="PE forced recovery",
             )
@@ -322,6 +306,7 @@ def _apply_pe_tenders(
                 month=month,
                 issuer_idx=issuer_idx,
                 policy_idx=policy_idx,
+                disposition_kind=PrivateEquityDispositionKind.FORCED_SALE,
                 result=forced_sale_result,
                 oversell_label="PE forced sale",
             )
@@ -357,24 +342,70 @@ def _apply_pe_tenders(
             continue
 
         # `fifo_sell_units` works in (R, L); current.lot_remaining is (L, R) per B0,
-        # so transpose at the call seam.
-        result = fifo_sell_units(
-            lot_remaining=current.lot_remaining.T,
-            ordered_lots=ordered_lots,
-            target_units=target_units,
-            unit_price=mark,
-            cost_basis_per_unit=plan.lot_cost_basis_per_unit,
-        )
-        _apply_pe_sale_result(
+        # so transpose at the call seam. Tender and public-market liquidity can differ by
+        # rollout in one vectorized batch, so record them into separate disposition-kind slots.
+        _apply_pe_target_units_sale(
             plan,
             buffers,
             current,
             month=month,
             issuer_idx=issuer_idx,
             policy_idx=policy_idx,
-            result=result,
+            ordered_lots=ordered_lots,
+            mark=mark,
+            target_units=np.where(tender_active & ~public_market_active, target_units, 0.0),
+            disposition_kind=PrivateEquityDispositionKind.TENDER,
             oversell_label="PE tender",
         )
+        _apply_pe_target_units_sale(
+            plan,
+            buffers,
+            current,
+            month=month,
+            issuer_idx=issuer_idx,
+            policy_idx=policy_idx,
+            ordered_lots=ordered_lots,
+            mark=mark,
+            target_units=np.where(public_market_active, target_units, 0.0),
+            disposition_kind=PrivateEquityDispositionKind.PUBLIC_MARKET,
+            oversell_label="PE public market sale",
+        )
+
+
+def _apply_pe_target_units_sale(
+    plan: CompiledSimulation,
+    buffers: SimulationBuffers,
+    current: CurrentStateBuffers,
+    *,
+    month: int,
+    issuer_idx: int,
+    policy_idx: int,
+    ordered_lots: npt.NDArray[np.int64],
+    mark: npt.NDArray[np.float64],
+    target_units: npt.NDArray[np.float64],
+    disposition_kind: PrivateEquityDispositionKind,
+    oversell_label: str,
+) -> None:
+    if not (target_units > 0.0).any():
+        return
+    result = fifo_sell_units(
+        lot_remaining=current.lot_remaining.T,
+        ordered_lots=ordered_lots,
+        target_units=target_units,
+        unit_price=mark,
+        cost_basis_per_unit=plan.lot_cost_basis_per_unit,
+    )
+    _apply_pe_sale_result(
+        plan,
+        buffers,
+        current,
+        month=month,
+        issuer_idx=issuer_idx,
+        policy_idx=policy_idx,
+        disposition_kind=disposition_kind,
+        result=result,
+        oversell_label=oversell_label,
+    )
 
 
 def _apply_pe_sale_result(
@@ -385,6 +416,7 @@ def _apply_pe_sale_result(
     month: int,
     issuer_idx: int,
     policy_idx: int,
+    disposition_kind: PrivateEquityDispositionKind,
     result: FifoSaleResult,
     oversell_label: str,
 ) -> None:
@@ -407,10 +439,11 @@ def _apply_pe_sale_result(
         gains=result.proceeds - result.cost_basis_consumed,
     )
     sale_active = result.sold_units > 0.0  # (R, L)
-    buffers.lot_dispositions.pe.active[month, issuer_idx] |= sale_active.T  # (R, L) -> (lot, R)
-    buffers.lot_dispositions.pe.units[month, issuer_idx] += result.sold_units.T
-    buffers.lot_dispositions.pe.basis[month, issuer_idx] += result.cost_basis_consumed.T
-    buffers.lot_dispositions.pe.proceeds[month, issuer_idx] += result.proceeds.T
+    kind_idx = int(disposition_kind)
+    buffers.lot_dispositions.pe.active[month, issuer_idx, kind_idx] |= sale_active.T  # (R, L) -> (lot, R)
+    buffers.lot_dispositions.pe.units[month, issuer_idx, kind_idx] += result.sold_units.T
+    buffers.lot_dispositions.pe.basis[month, issuer_idx, kind_idx] += result.cost_basis_consumed.T
+    buffers.lot_dispositions.pe.proceeds[month, issuer_idx, kind_idx] += result.proceeds.T
 
 
 def _required_pe_level_series_values(
@@ -422,20 +455,6 @@ def _required_pe_level_series_values(
     if not np.isfinite(values).all():
         raise ValueError(f"private-equity protocol series {series_index} produced a non-finite value")
     return values
-
-
-def _code_pe_level_series_values(
-    plan: CompiledSimulation, *, series_index: int, month: int, label: str, allowed_values: frozenset[int]
-) -> npt.NDArray[np.int64]:
-    values = _required_pe_level_series_values(plan, series_index=series_index, month=month)
-    rounded = np.rint(values)
-    if not np.array_equal(values, rounded):
-        raise ValueError(f"private-equity {label} code series {series_index} produced a non-integer value")
-    codes = rounded.astype(np.int64)
-    unknown = sorted(int(code) for code in np.unique(codes) if int(code) not in allowed_values)
-    if unknown:
-        raise ValueError(f"private-equity {label} code series {series_index} produced unknown code(s): {unknown}")
-    return codes
 
 
 def _fraction_pe_level_series_values(

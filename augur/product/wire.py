@@ -10,6 +10,16 @@ from augur.api.schemas import ApiModel, Frame, Percentage
 
 SpendIndex = Literal["none", "inflation"]
 SellableBucket = Literal["stocks", "crypto"]
+PrivateEquityEventKind = Literal[
+    "tender",
+    "admin_mark_update",
+    "public_market_open",
+    "acquisition_cashout",
+    "legal_impairment",
+    "forced_recovery",
+    "collapse",
+]
+PrivateEquityRegime = Literal["private_operating", "public_market", "acquired", "collapsed"]
 MetricName = Literal[
     "cash_usd",
     "holding_value_usd",
@@ -250,6 +260,21 @@ class HoldingSaleEvent(_RolloutEventBase):
     cost_basis_usd: NonNegativeFloat
 
 
+class PrivateEquityMarkerEvent(_RolloutEventBase):
+    kind: Literal["private_equity_event"] = "private_equity_event"
+    issuer_id: str
+    asset_id: str
+    asset_label: str | None = None
+    event_kind: PrivateEquityEventKind
+    regime: PrivateEquityRegime
+    mark_usd: NonNegativeFloat
+    sale_capacity_fraction: NonNegativeFloat = Field(le=1.0)
+    eligible_fraction: NonNegativeFloat = Field(le=1.0)
+    forced_sale_fraction: NonNegativeFloat = Field(le=1.0)
+    liquidity_blocked: bool
+    forced_recovery_cashout_usd: NonNegativeFloat
+
+
 class MonthlyExpenseEvent(_RolloutEventBase):
     kind: Literal["monthly_expense"] = "monthly_expense"
     amount_due_usd: NonNegativeFloat
@@ -387,6 +412,7 @@ class PropertySaleMarkerEvent(_RolloutEventBase):
 
 type RolloutEvent = Annotated[
     HoldingSaleEvent
+    | PrivateEquityMarkerEvent
     | MonthlyExpenseEvent
     | OutsideRentPaymentEvent
     | PropertyPurchaseEvent

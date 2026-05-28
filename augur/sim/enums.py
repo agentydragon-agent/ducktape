@@ -26,3 +26,10 @@ class LifecycleKind(IntEnum):
     FRACTION = 0
     CAPITAL_IMPROVEMENT = 1
     SALE = 2
+
+
+class PrivateEquityDispositionKind(IntEnum):
+    TENDER = 0
+    PUBLIC_MARKET = 1
+    FORCED_SALE = 2
+    FORCED_RECOVERY = 3

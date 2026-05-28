@@ -15,6 +15,7 @@ export const ROLLOUT_EVENT_KIND_ORDER = [
   "set_rented_fraction",
   "capital_improvement",
   "property_sale",
+  "private_equity_event",
   "holding_sale",
   "tax_accrual",
   "tax_payment",
@@ -35,6 +36,7 @@ export const ROLLOUT_EVENT_KIND_LABELS = {
   set_rented_fraction: "Set rented %",
   capital_improvement: "Capital improvement",
   property_sale: "Property sale",
+  private_equity_event: "PE event",
   holding_sale: "Holding sale",
   tax_accrual: "Tax accrual",
   tax_payment: "Tax payment",
@@ -77,6 +79,7 @@ export const ROLLOUT_EVENT_COLORS = {
   set_rented_fraction: "#0ea5e9",
   capital_improvement: "#15803d",
   property_sale: "#be123c",
+  private_equity_event: "#9333ea",
 };
 
 // Pixel pitch between vertical marker stacks (events stack upward above the rollout line).
@@ -364,6 +367,31 @@ export const EVENT_FORMATTERS = {
       const ltcg = Number(event.longTermCapitalGainUsd);
       if (ltcg > 0) parts.push(`LTCG ${fmtUsd(ltcg)}`);
       return parts.join("; ");
+    },
+  },
+  private_equity_event: {
+    label: (event) => {
+      const label = event.assetLabel ?? event.assetId ?? "Private equity";
+      if (event.eventKind === "tender") return `Tender: ${label}`;
+      if (event.eventKind === "public_market_open") return `Public market: ${label}`;
+      if (event.eventKind === "acquisition_cashout") return `Acquisition: ${label}`;
+      if (event.eventKind === "legal_impairment") return `Liquidity impaired: ${label}`;
+      if (event.eventKind === "forced_recovery") return `Recovery cashout: ${label}`;
+      if (event.eventKind === "collapse") return `Collapsed: ${label}`;
+      return `PE event: ${label}`;
+    },
+    detail: (event) => {
+      const parts = [`mark ${fmtUsd(event.markUsd)}`, String(event.regime ?? "").replace(/_/g, " ")];
+      const capacity = Number(event.saleCapacityFraction);
+      if (Number.isFinite(capacity) && capacity < 1) parts.push(`capacity ${(capacity * 100).toFixed(0)}%`);
+      const eligible = Number(event.eligibleFraction);
+      if (Number.isFinite(eligible) && eligible < 1) parts.push(`eligible ${(eligible * 100).toFixed(0)}%`);
+      const forcedSale = Number(event.forcedSaleFraction);
+      if (forcedSale > 0) parts.push(`forced sale ${(forcedSale * 100).toFixed(0)}%`);
+      if (event.liquidityBlocked) parts.push("liquidity blocked");
+      const recovery = Number(event.forcedRecoveryCashoutUsd);
+      if (recovery > 0) parts.push(`recovery ${fmtUsd(recovery)}`);
+      return parts.filter(Boolean).join("; ");
     },
   },
 };

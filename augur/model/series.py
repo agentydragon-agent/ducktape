@@ -21,12 +21,18 @@ PRIVATE_EQUITY_FORCED_RECOVERY_CASHOUT_USD_SERIES_PREFIX = "private_equity_force
 
 
 class PrivateEquityRegimeCode(IntEnum):
+    """Sim-facing issuer operating modes.
+
+    Keep this enum to states that change holder-visible liquidity or accounting behavior.
+    Model-internal latent states such as business distress should stay in the model and
+    affect the emitted protocol series instead of being exposed directly to the simulator.
+    Liquidity suspension is represented by the separate `liquidity_blocked` protocol series.
+    """
+
     PRIVATE_OPERATING = 1
-    LIQUIDITY_SUSPENDED = 2
-    DISTRESSED = 3
-    PUBLIC_MARKET = 4
-    ACQUISITION_CASHOUT = 5
-    COLLAPSED = 6
+    PUBLIC_MARKET = 2
+    ACQUIRED = 3
+    COLLAPSED = 4
 
 
 class PrivateEquityEventKindCode(IntEnum):

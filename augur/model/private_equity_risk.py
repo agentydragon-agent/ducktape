@@ -251,7 +251,7 @@ def _sample_events_into(
         if public_market:
             regime_code[month] = int(PrivateEquityRegimeCode.PUBLIC_MARKET)
         elif month <= suspended_through:
-            regime_code[month] = int(PrivateEquityRegimeCode.LIQUIDITY_SUSPENDED)
+            regime_code[month] = int(PrivateEquityRegimeCode.PRIVATE_OPERATING)
             liquidity_blocked[month] = 1.0
             continue
 
@@ -283,12 +283,12 @@ def _sample_events_into(
                 rng.integers(issuer.liquidity_suspension_months_min, issuer.liquidity_suspension_months_max + 1)
             )
             suspended_through = max(suspended_through, min(horizon_months, month + duration - 1))
-            regime_code[month : suspended_through + 1] = int(PrivateEquityRegimeCode.LIQUIDITY_SUSPENDED)
+            regime_code[month : suspended_through + 1] = int(PrivateEquityRegimeCode.PRIVATE_OPERATING)
             liquidity_blocked[month : suspended_through + 1] = 1.0
         elif rng.random() < monthly_forced_sale:
             event_kind = PrivateEquityEventKindCode.ACQUISITION_CASHOUT
             forced_sale_fraction[month] = rng.beta(issuer.forced_sale_fraction_alpha, issuer.forced_sale_fraction_beta)
-            regime_code[month] = int(PrivateEquityRegimeCode.ACQUISITION_CASHOUT)
+            regime_code[month] = int(PrivateEquityRegimeCode.ACQUIRED)
         elif not public_market and month in tender_months:
             event_kind = PrivateEquityEventKindCode.TENDER
             tender_events[month] = True

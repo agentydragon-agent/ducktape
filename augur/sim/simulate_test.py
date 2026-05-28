@@ -53,7 +53,8 @@ from augur.sim.scenario import (
     SetRentedFractionEvent,
     TaxProfile,
 )
-from augur.sim.simulate import simulate, simulate_with_external_series
+from augur.sim.simulate import simulate, simulate_dense_with_external_series, simulate_with_external_series
+from augur.sim.slice import slice_dense_result
 
 CodeMatrix = npt.NDArray[np.int64]
 FloatMatrix = npt.NDArray[np.float64]
@@ -4007,7 +4008,36 @@ def test_pe_tender_fires_below_floor_sells_to_lift_lnw() -> None:
     assert row["asset_id"] == "private_equity:acme"
     assert row["units_sold"] == pytest.approx(100.0, abs=1e-6)
     assert row["proceeds_usd"] == pytest.approx(6_000.0, abs=1.0)
-    assert row["cause_id"].startswith("pe_tender_m5")
+    assert row["cause_id"] == "pe_tender_m5_acme"
+    [marker] = result.events_log.private_equity_events.filter(
+        (pl.col("rollout_index") == 0) & (pl.col("month_index") == tender_month)
+    ).iter_rows(named=True)
+    assert marker["event_kind"] == "tender"
+    assert marker["asset_id"] == "private_equity:acme"
+
+
+def test_pe_protocol_event_decode_survives_single_rollout_slice() -> None:
+    scenario = _pe_tender_scenario(
+        initial_cash_usd=0.0,
+        monthly_spend_usd=0.0,
+        pe_units=100.0,
+        pe_cost_basis_per_unit_usd=10.0,
+        pe_holding_period_months=36,
+        horizon_months=12,
+        lnw_floor_usd=1_000_000.0,
+    )
+    external = _pe_external_series(
+        initial_mark_usd=50.0, tender_month=5, tender_mark_usd=60.0, horizon_months=12, rollout_count=2
+    )
+
+    dense = simulate_dense_with_external_series(scenario, rollout_count=2, external_series=external, locations={})
+    sliced = slice_dense_result(dense, rollout_index=1).decode()
+
+    [marker] = sliced.events_log.private_equity_events.iter_rows(named=True)
+    assert marker["rollout_index"] == 0
+    assert marker["month_index"] == 5
+    assert marker["event_kind"] == "tender"
+    assert marker["mark_usd"] == pytest.approx(60.0)
 
 
 def test_pe_tender_capacity_fraction_limits_sale() -> None:
@@ -4107,6 +4137,10 @@ def test_pe_public_market_regime_allows_floor_sale_without_tender_event() -> Non
 
     assert _pe_lot_remaining_at(result, lot_id="acme_lot_a", month_index=6) == pytest.approx(50.0)
     assert _alice_cash_at(result, month_index=6) == pytest.approx(5_000.0)
+    [row] = result.events_log.lot_dispositions.filter(
+        (pl.col("rollout_index") == 0) & (pl.col("month_index") == 5)
+    ).iter_rows(named=True)
+    assert row["cause_id"] == "pe_public_market_m5_acme"
 
 
 def test_pe_forced_sale_fraction_sells_without_tender_or_floor_shortfall() -> None:
@@ -4131,6 +4165,10 @@ def test_pe_forced_sale_fraction_sells_without_tender_or_floor_shortfall() -> No
 
     assert _pe_lot_remaining_at(result, lot_id="acme_lot_a", month_index=6) == pytest.approx(70.0)
     assert _alice_cash_at(result, month_index=6) == pytest.approx(13_000.0)
+    [row] = result.events_log.lot_dispositions.filter(
+        (pl.col("rollout_index") == 0) & (pl.col("month_index") == 5)
+    ).iter_rows(named=True)
+    assert row["cause_id"] == "pe_forced_sale_m5_acme"
 
 
 def test_pe_forced_recovery_cashout_sells_remaining_units_for_recovery_amount() -> None:
@@ -4160,6 +4198,7 @@ def test_pe_forced_recovery_cashout_sells_remaining_units_for_recovery_amount() 
     row = disp.row(0, named=True)
     assert row["units_sold"] == pytest.approx(100.0)
     assert row["proceeds_usd"] == pytest.approx(100.0)
+    assert row["cause_id"] == "pe_forced_recovery_m5_acme"
 
 
 def test_pe_tender_missing_protocol_series_fails_loudly() -> None:
