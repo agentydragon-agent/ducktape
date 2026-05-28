@@ -15,6 +15,8 @@ required_level_series:
   - private_equity_forced_recovery_cashout_usd:private_company_a
 required_event_series:
   - private_equity_sale_opportunity:private_company_a
+required_private_equity_protocol_issuers:
+  - private_company_a
 level_checks:
   - series_id: inflation
     initial_value: 330.0
@@ -52,3 +54,7 @@ event_checks:
         upper_percentile: 99
         lower: 1
         upper: 5
+private_equity_protocol_checks:
+  - issuer_id: private_company_a
+    allowed_regime_codes: [1]
+    allowed_event_kind_codes: [0, 1]

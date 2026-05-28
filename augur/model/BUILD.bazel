@@ -241,6 +241,7 @@ py_library(
         ":schemas",
         "//util/bazel:runfiles",
         "@pypi//numpy",
+        "@pypi//polars",
         "@pypi//pydantic",
         "@pypi//pyyaml",
     ],

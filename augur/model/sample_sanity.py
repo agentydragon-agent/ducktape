@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+import polars as pl
 import yaml
 from pydantic import Field, TypeAdapter, model_validator
 
@@ -84,6 +85,12 @@ class EventSeriesSanityCheck(FrozenModel):
     active_count_percentile_ranges: tuple[EventCountPercentileRangeBound, ...] = ()
 
 
+class PrivateEquityProtocolSanityCheck(FrozenModel):
+    issuer_id: str
+    allowed_regime_codes: tuple[int, ...] = ()
+    allowed_event_kind_codes: tuple[int, ...] = ()
+
+
 class SampleSanitySpec(FrozenModel):
     provider_config_path: Path
     horizon_months: int = Field(ge=0)
@@ -91,8 +98,10 @@ class SampleSanitySpec(FrozenModel):
     rollout_count: int = Field(gt=0)
     required_level_series: tuple[str, ...] = ()
     required_event_series: tuple[str, ...] = ()
+    required_private_equity_protocol_issuers: tuple[str, ...] = ()
     level_checks: tuple[LevelSeriesSanityCheck, ...] = ()
     event_checks: tuple[EventSeriesSanityCheck, ...] = ()
+    private_equity_protocol_checks: tuple[PrivateEquityProtocolSanityCheck, ...] = ()
 
     @property
     def rollout_seeds(self) -> tuple[int, ...]:
@@ -113,9 +122,19 @@ def run_sample_sanity(spec: SampleSanitySpec, *, base_dir: Path) -> None:
         rollout_seeds=spec.rollout_seeds,
         required_level_series=frozenset(spec.required_level_series),
         required_event_series=frozenset(spec.required_event_series),
+        required_private_equity_protocol_issuers=frozenset(spec.required_private_equity_protocol_issuers),
     )
     sampled = model.sample(request)
     validate_sample_satisfies_request(request, sampled)
+
+    for issuer_id in spec.required_private_equity_protocol_issuers:
+        _protocol_code_matrix(
+            sampled.private_equity_protocol,
+            issuer_id=issuer_id,
+            column="regime_code",
+            rollout_count=spec.rollout_count,
+            horizon_months=spec.horizon_months,
+        )
 
     for level_check in spec.level_checks:
         levels = sampled.level_matrix(
@@ -167,6 +186,34 @@ def run_sample_sanity(spec: SampleSanitySpec, *, base_dir: Path) -> None:
                 active_counts, active_count_range, label=f"{event_check.event_id} active-count"
             )
 
+    for protocol_check in spec.private_equity_protocol_checks:
+        regime_codes = _protocol_code_matrix(
+            sampled.private_equity_protocol,
+            issuer_id=protocol_check.issuer_id,
+            column="regime_code",
+            rollout_count=spec.rollout_count,
+            horizon_months=spec.horizon_months,
+        )
+        event_kind_codes = _protocol_code_matrix(
+            sampled.private_equity_protocol,
+            issuer_id=protocol_check.issuer_id,
+            column="event_kind_code",
+            rollout_count=spec.rollout_count,
+            horizon_months=spec.horizon_months,
+        )
+        if protocol_check.allowed_regime_codes:
+            _assert_codes_allowed(
+                regime_codes,
+                allowed=frozenset(protocol_check.allowed_regime_codes),
+                label=f"private-equity issuer {protocol_check.issuer_id!r} regime_code",
+            )
+        if protocol_check.allowed_event_kind_codes:
+            _assert_codes_allowed(
+                event_kind_codes,
+                allowed=frozenset(protocol_check.allowed_event_kind_codes),
+                label=f"private-equity issuer {protocol_check.issuer_id!r} event_kind_code",
+            )
+
 
 def _load_provider_config(path: Path) -> ExogenousProviderConfig:
     provider = _ADAPTER.validate_python(yaml.safe_load(path.read_text(encoding="utf-8")))
@@ -206,6 +253,34 @@ def _resolve_path(path: Path, *, base_dir: Path) -> Path:
 def _assert_finite(values: np.ndarray, *, label: str) -> None:
     if not np.all(np.isfinite(values)):
         raise AssertionError(f"{label} produced non-finite value(s)")
+
+
+def _protocol_code_matrix(
+    frame: pl.DataFrame, *, issuer_id: str, column: str, rollout_count: int, horizon_months: int
+) -> np.ndarray:
+    expected_rows = rollout_count * (horizon_months + 1)
+    issuer_frame = frame.filter(pl.col("issuer_id") == issuer_id).sort(["rollout_index", "month_index"])
+    if issuer_frame.height != expected_rows:
+        raise AssertionError(
+            f"private-equity protocol issuer {issuer_id!r} produced {issuer_frame.height} row(s); "
+            f"expected {expected_rows}"
+        )
+    rollout_index = issuer_frame.get_column("rollout_index").to_numpy()
+    month_index = issuer_frame.get_column("month_index").to_numpy()
+    expected_rollout_index = np.repeat(np.arange(rollout_count, dtype=np.int64), horizon_months + 1)
+    expected_month_index = np.tile(np.arange(horizon_months + 1, dtype=np.int64), rollout_count)
+    if not np.array_equal(rollout_index, expected_rollout_index) or not np.array_equal(
+        month_index, expected_month_index
+    ):
+        raise AssertionError(f"private-equity protocol issuer {issuer_id!r} has incomplete or duplicate coordinates")
+    return issuer_frame.get_column(column).to_numpy().reshape((rollout_count, horizon_months + 1))
+
+
+def _assert_codes_allowed(values: np.ndarray, *, allowed: frozenset[int], label: str) -> None:
+    observed = frozenset(int(value) for value in np.unique(values))
+    unexpected = sorted(observed - allowed)
+    if unexpected:
+        raise AssertionError(f"{label} produced unexpected code(s): {unexpected}; allowed {sorted(allowed)}")
 
 
 def _check_percentile_bound(values: np.ndarray, bound: PercentileBound, *, label: str) -> None:
