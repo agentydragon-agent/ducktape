@@ -148,6 +148,7 @@ fn coverage_reports_summary() {
     let report = run_patch_plan_report(&PatchPlanArgs {
         common,
         limit: 0,
+        include_proposals: false,
         format: None,
     })
     .unwrap();
@@ -155,6 +156,12 @@ fn coverage_reports_summary() {
     // set. Smoke-test that the summary has counts and the rows vector
     // is well-formed.
     assert_eq!(report.summary.total_patch_sets, report.rows.len());
+    assert!(
+        report
+            .rows
+            .iter()
+            .all(|row| row.matching_proposal_ids.is_none())
+    );
 }
 
 #[test]
@@ -164,11 +171,14 @@ fn graph_summary_reports_counts() {
         common,
         size_cap_lines: 10_000,
         limit: 10,
+        include_proposals: false,
         format: None,
     })
     .unwrap();
     assert_eq!(report.owner_count, 2);
     assert_eq!(report.atomic_unit_count, 2);
+    assert_eq!(report.proposal_count, None);
+    assert_eq!(report.diagnostic_count, None);
 }
 
 #[test]
@@ -200,6 +210,7 @@ fn describe_binding_resolves_via_selection() {
         },
         size_cap_lines: 10_000,
         limit: 0,
+        include_proposals: false,
         format: None,
     })
     .unwrap();

@@ -40,8 +40,9 @@ Public skills must not encode private project names or fixed app taxonomies.
 
 1. Refresh debundle outputs, root/chunk reports, directory reports, and
    owner graph.
-2. Run `debundle modules propose` (and `graph-summary` for aggregate
-   counts) and capture progress metrics.
+2. Run `debundle modules propose` and `graph-summary` for aggregate
+   graph metrics. Use `graph-summary --include-proposals` only when
+   proposal and diagnostic counts are needed.
 3. Ask intake for dispatchable seeds.
 4. Dispatch independent lane workers and any architect/naming/doc cleanup work.
 5. Integrate green worker branches in batches.

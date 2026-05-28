@@ -74,7 +74,9 @@ When a binding's role is unclear or a proposal is suspicious:
 1. **`debundle describe <sym>`** — graph + spec context. `<sym>` is
    either the minified name (`XOe`) or the readable name
    (`PluginSettingsAccessor`). Output includes the binding's owner,
-   home module, atom membership, and incoming/outgoing edges.
+   home module, atom membership, and incoming/outgoing edges. Add
+   `--include-proposals` only when factorizer proposal/diagnostic
+   annotations are needed.
 2. **`debundle show-source <sym>`** — print the original source span
    for the owner. Use `--context-lines 40` to widen the view.
 3. **`debundle cluster <sym>`** — list the module-quotient neighbors
@@ -105,6 +107,10 @@ For aggregate counts before drilling in:
 ```bash
 debundle graph-summary --format text
 ```
+
+Use `debundle graph-summary --include-proposals` only when aggregate
+proposal and diagnostic counts matter; the default is a fast graph
+summary.
 
 For a focused look at one proposal before applying:
 

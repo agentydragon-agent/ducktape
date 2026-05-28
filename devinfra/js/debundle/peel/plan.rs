@@ -115,6 +115,11 @@ pub struct PatchPlanArgs {
     #[arg(long, default_value_t = 0)]
     pub limit: usize,
 
+    /// Also run the proposal factorizer to populate matching proposal ids.
+    /// This is intentionally opt-in because it is expensive on large graphs.
+    #[arg(long = "include-proposals")]
+    pub include_proposals: bool,
+
     /// Output format. Default `text` on tty, `json` on pipe.
     #[arg(long, value_enum)]
     pub format: Option<OutputFormat>,
@@ -132,6 +137,11 @@ pub struct GraphSummaryArgs {
     /// Maximum number of largest residual units to emit. Zero means unlimited.
     #[arg(long, default_value_t = 10)]
     pub limit: usize,
+
+    /// Also run the proposal factorizer to include proposal/diagnostic counts.
+    /// This is intentionally opt-in because it is expensive on large graphs.
+    #[arg(long = "include-proposals")]
+    pub include_proposals: bool,
 
     /// Output format. Default `text` on tty, `json` on pipe.
     #[arg(long, value_enum)]
@@ -153,6 +163,12 @@ pub struct ExplainArgs {
     /// Maximum number of rows to emit per report section. Zero means unlimited.
     #[arg(long, default_value_t = 0)]
     pub limit: usize,
+
+    /// Also run the proposal factorizer to annotate matching proposals and
+    /// diagnostics. This is intentionally opt-in because it is expensive on
+    /// large graphs.
+    #[arg(long = "include-proposals")]
+    pub include_proposals: bool,
 
     /// Output format. Default `text` on tty, `json` on pipe.
     #[arg(long, value_enum)]
@@ -289,8 +305,10 @@ pub struct ExplainReport {
     pub incoming_atomic_edges: Vec<AtomicUnitEdgeReport>,
     pub outgoing_atomic_edges: Vec<AtomicUnitEdgeReport>,
     pub quotient_edges: Vec<QuotientEdgeReport>,
-    pub factorize_proposals: Vec<FactorizeProposal>,
-    pub factorize_diagnostics: Vec<FactorizeDiagnosticReport>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub factorize_proposals: Option<Vec<FactorizeProposal>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub factorize_diagnostics: Option<Vec<FactorizeDiagnosticReport>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub limits: Option<LimitReport>,
 }
@@ -324,7 +342,8 @@ pub struct PatchPlanRow {
     pub missing_binding_ids: Vec<String>,
     pub missing_owner_ids: Vec<String>,
     pub missing_anonymous_owner_ids: Vec<String>,
-    pub matching_proposal_ids: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub matching_proposal_ids: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq, PartialOrd, Ord)]
@@ -344,8 +363,10 @@ pub struct GraphSummaryReport {
     pub atomic_edge_count: usize,
     pub module_count: usize,
     pub module_edge_count: usize,
-    pub proposal_count: usize,
-    pub diagnostic_count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub proposal_count: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub diagnostic_count: Option<usize>,
     pub largest_residual_units: Vec<UnitSummary>,
 }
 
@@ -577,12 +598,16 @@ pub fn run_units_report(args: &UnitsArgs) -> Result<UnitsReport> {
 
 pub fn run_patch_plan_report(args: &PatchPlanArgs) -> Result<PatchPlanReport> {
     let graph = load_graph(&args.common.owner_graph_path)?;
-    let factorize = analyze_peel_factorize(&PeelFactorizeOptions {
-        owner_graph_path: args.common.owner_graph_path.clone(),
-        modules_root: args.common.modules_root.clone(),
-        size_cap_lines: 10_000,
-    })?;
-    let mut rows = patch_plan_rows(&graph, &args.common.modules_root, &factorize)?;
+    let factorize = if args.include_proposals {
+        Some(analyze_peel_factorize(&PeelFactorizeOptions {
+            owner_graph_path: args.common.owner_graph_path.clone(),
+            modules_root: args.common.modules_root.clone(),
+            size_cap_lines: 10_000,
+        })?)
+    } else {
+        None
+    };
+    let mut rows = patch_plan_rows(&graph, &args.common.modules_root, factorize.as_ref())?;
     rows.sort_by_key(|row| (row.status, row.path.clone()));
     let summary = PatchPlanSummary {
         total_patch_sets: rows.len(),
@@ -607,11 +632,15 @@ pub fn run_patch_plan_report(args: &PatchPlanArgs) -> Result<PatchPlanReport> {
 
 pub fn run_graph_summary_report(args: &GraphSummaryArgs) -> Result<GraphSummaryReport> {
     let graph = load_graph(&args.common.owner_graph_path)?;
-    let factorize = analyze_peel_factorize(&PeelFactorizeOptions {
-        owner_graph_path: args.common.owner_graph_path.clone(),
-        modules_root: args.common.modules_root.clone(),
-        size_cap_lines: args.size_cap_lines,
-    })?;
+    let factorize = if args.include_proposals {
+        Some(analyze_peel_factorize(&PeelFactorizeOptions {
+            owner_graph_path: args.common.owner_graph_path.clone(),
+            modules_root: args.common.modules_root.clone(),
+            size_cap_lines: args.size_cap_lines,
+        })?)
+    } else {
+        None
+    };
     let mut largest_residual_units: Vec<UnitSummary> = graph
         .atomic_graph
         .nodes
@@ -651,8 +680,8 @@ pub fn run_graph_summary_report(args: &GraphSummaryArgs) -> Result<GraphSummaryR
         atomic_edge_count: graph.atomic_graph.edges.len(),
         module_count: graph.quotient.nodes.len(),
         module_edge_count: graph.quotient.edges.len(),
-        proposal_count: factorize.proposals.len(),
-        diagnostic_count: factorize.diagnostics.len(),
+        proposal_count: factorize.as_ref().map(|report| report.proposals.len()),
+        diagnostic_count: factorize.as_ref().map(|report| report.diagnostics.len()),
         largest_residual_units,
     })
 }
@@ -669,7 +698,27 @@ pub fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
     let graph = load_graph(&args.common.owner_graph_path)?;
     let selection = args.selection.selection_kind()?;
     let query = query_report(&selection);
-    let owner_ids = resolve_owner_ids(&selection, &graph, &args.common, args.size_cap_lines)?;
+    let selection_needs_factorize = matches!(
+        &selection,
+        SelectionKind::Proposal(_) | SelectionKind::Diagnostic(_)
+    );
+    let factorize = if args.include_proposals || selection_needs_factorize {
+        Some(analyze_peel_factorize(&PeelFactorizeOptions {
+            owner_graph_path: args.common.owner_graph_path.clone(),
+            modules_root: args.common.modules_root.clone(),
+            size_cap_lines: args.size_cap_lines,
+        })?)
+    } else {
+        None
+    };
+    let include_factorize_sections = factorize.is_some();
+    let owner_ids = resolve_owner_ids(
+        &selection,
+        &graph,
+        &args.common,
+        args.size_cap_lines,
+        factorize.as_ref(),
+    )?;
     let owner_set: BTreeSet<String> = owner_ids.iter().cloned().collect();
     let mut owners = owners_for_ids(&graph, &owner_set);
 
@@ -747,21 +796,22 @@ pub fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
         .cloned()
         .collect();
 
-    let factorize = analyze_peel_factorize(&PeelFactorizeOptions {
-        owner_graph_path: args.common.owner_graph_path.clone(),
-        modules_root: args.common.modules_root.clone(),
-        size_cap_lines: args.size_cap_lines,
-    })?;
-    let mut factorize_proposals = factorize
-        .proposals
-        .into_iter()
-        .filter(|proposal| overlaps(&proposal.owner_ids, &owner_set))
-        .collect();
-    let mut factorize_diagnostics = factorize
-        .diagnostics
-        .into_iter()
-        .filter(|diagnostic| overlaps(&diagnostic.owner_ids, &owner_set))
-        .collect();
+    let (mut factorize_proposals, mut factorize_diagnostics) = if let Some(factorize) = factorize {
+        (
+            factorize
+                .proposals
+                .into_iter()
+                .filter(|proposal| overlaps(&proposal.owner_ids, &owner_set))
+                .collect(),
+            factorize
+                .diagnostics
+                .into_iter()
+                .filter(|diagnostic| overlaps(&diagnostic.owner_ids, &owner_set))
+                .collect(),
+        )
+    } else {
+        (Vec::new(), Vec::new())
+    };
     let mut limited_owner_ids = owner_ids;
 
     let mut sections = BTreeMap::new();
@@ -796,8 +846,8 @@ pub fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
         incoming_atomic_edges,
         outgoing_atomic_edges,
         quotient_edges,
-        factorize_proposals,
-        factorize_diagnostics,
+        factorize_proposals: include_factorize_sections.then_some(factorize_proposals),
+        factorize_diagnostics: include_factorize_sections.then_some(factorize_diagnostics),
         limits: limit_report(args.limit, sections),
     })
 }
@@ -806,7 +856,7 @@ pub fn run_source_slice_report(args: &SourceSliceArgs) -> Result<SourceSliceRepo
     let graph = load_graph(&args.common.owner_graph_path)?;
     let selection = args.selection.selection_kind()?;
     let query = query_report(&selection);
-    let owner_ids = resolve_owner_ids(&selection, &graph, &args.common, args.size_cap_lines)?;
+    let owner_ids = resolve_owner_ids(&selection, &graph, &args.common, args.size_cap_lines, None)?;
     let owner_set: BTreeSet<String> = owner_ids.iter().cloned().collect();
     let owners = owners_for_ids(&graph, &owner_set);
     let spans = source_spans(&owners)?;
@@ -949,7 +999,7 @@ fn overlaps(owner_ids: &[String], selected: &BTreeSet<String>) -> bool {
 fn patch_plan_rows(
     graph: &OwnerGraphReport,
     modules_root: &Path,
-    factorize: &PeelFactorizeReport,
+    factorize: Option<&PeelFactorizeReport>,
 ) -> Result<Vec<PatchPlanRow>> {
     let binding_to_owner = binding_to_owner(graph);
     let unit_by_owner = unit_by_owner(graph);
@@ -1030,7 +1080,8 @@ fn patch_plan_rows(
             } else {
                 PatchPlanStatus::CompleteUnits
             };
-            let matching_proposal_ids = matching_proposal_ids(factorize, &requested_owner_ids);
+            let matching_proposal_ids =
+                factorize.map(|factorize| matching_proposal_ids(factorize, &requested_owner_ids));
             Ok(PatchPlanRow {
                 path: patch_set.path,
                 file: patch_set.file.display().to_string(),
@@ -1214,6 +1265,7 @@ fn resolve_owner_ids(
     graph: &OwnerGraphReport,
     common: &CommonArgs,
     size_cap_lines: usize,
+    factorize: Option<&PeelFactorizeReport>,
 ) -> Result<Vec<String>> {
     let mut owner_ids: Vec<String> = match selection {
         SelectionKind::Owner(owner_id) => {
@@ -1228,17 +1280,16 @@ fn resolve_owner_ids(
             .map(|node| node.id.clone())
             .collect(),
         SelectionKind::Proposal(proposal_id) => {
-            let factorize = analyze_peel_factorize(&PeelFactorizeOptions {
-                owner_graph_path: common.owner_graph_path.clone(),
-                modules_root: common.modules_root.clone(),
-                size_cap_lines,
-            })?;
-            factorize
-                .proposals
-                .iter()
-                .find(|proposal| proposal.proposed_module_id == *proposal_id)
-                .map(|proposal| proposal.owner_ids.clone())
-                .unwrap_or_default()
+            if let Some(factorize) = factorize {
+                owner_ids_for_proposal(factorize, proposal_id)
+            } else {
+                let factorize = analyze_peel_factorize(&PeelFactorizeOptions {
+                    owner_graph_path: common.owner_graph_path.clone(),
+                    modules_root: common.modules_root.clone(),
+                    size_cap_lines,
+                })?;
+                owner_ids_for_proposal(&factorize, proposal_id)
+            }
         }
         SelectionKind::Unit(unit_id) => graph
             .atomic_graph
@@ -1248,17 +1299,16 @@ fn resolve_owner_ids(
             .map(|unit| unit.owner_ids.clone())
             .unwrap_or_default(),
         SelectionKind::Diagnostic(diagnostic_id) => {
-            let factorize = analyze_peel_factorize(&PeelFactorizeOptions {
-                owner_graph_path: common.owner_graph_path.clone(),
-                modules_root: common.modules_root.clone(),
-                size_cap_lines,
-            })?;
-            factorize
-                .diagnostics
-                .iter()
-                .find(|diagnostic| diagnostic.diagnostic_id == *diagnostic_id)
-                .map(|diagnostic| diagnostic.owner_ids.clone())
-                .unwrap_or_default()
+            if let Some(factorize) = factorize {
+                owner_ids_for_diagnostic(factorize, diagnostic_id)
+            } else {
+                let factorize = analyze_peel_factorize(&PeelFactorizeOptions {
+                    owner_graph_path: common.owner_graph_path.clone(),
+                    modules_root: common.modules_root.clone(),
+                    size_cap_lines,
+                })?;
+                owner_ids_for_diagnostic(&factorize, diagnostic_id)
+            }
         }
     };
     owner_ids.sort();
@@ -1267,6 +1317,24 @@ fn resolve_owner_ids(
         bail!("selection did not resolve to any owner ids");
     }
     Ok(owner_ids)
+}
+
+fn owner_ids_for_proposal(factorize: &PeelFactorizeReport, proposal_id: &str) -> Vec<String> {
+    factorize
+        .proposals
+        .iter()
+        .find(|proposal| proposal.proposed_module_id == *proposal_id)
+        .map(|proposal| proposal.owner_ids.clone())
+        .unwrap_or_default()
+}
+
+fn owner_ids_for_diagnostic(factorize: &PeelFactorizeReport, diagnostic_id: &str) -> Vec<String> {
+    factorize
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.diagnostic_id == *diagnostic_id)
+        .map(|diagnostic| diagnostic.owner_ids.clone())
+        .unwrap_or_default()
 }
 
 fn binding_homes(
@@ -1590,6 +1658,7 @@ mod tests {
         let report = run_patch_plan_report(&PatchPlanArgs {
             common,
             limit: 0,
+            include_proposals: false,
             format: None,
         })
         .unwrap();
@@ -1600,6 +1669,28 @@ mod tests {
             .expect("binding patch row");
         assert_eq!(row.status, PatchPlanStatus::CompleteUnits);
         assert_eq!(row.complete_unit_ids, vec!["atomic:0".to_string()]);
+        assert_eq!(row.matching_proposal_ids, None);
+    }
+
+    #[test]
+    fn patch_plan_includes_matching_proposals_on_request() {
+        let (_temp, common) = fixture();
+        let report = run_patch_plan_report(&PatchPlanArgs {
+            common,
+            limit: 0,
+            include_proposals: true,
+            format: None,
+        })
+        .unwrap();
+        let row = report
+            .rows
+            .iter()
+            .find(|row| row.path == "binding_patches")
+            .expect("binding patch row");
+        assert_eq!(
+            row.matching_proposal_ids,
+            Some(vec!["auto_partition_0000".to_string()])
+        );
     }
 
     #[test]
@@ -1616,6 +1707,7 @@ mod tests {
             },
             size_cap_lines: 10_000,
             limit: 0,
+            include_proposals: true,
             format: None,
         })
         .unwrap();
@@ -1628,9 +1720,33 @@ mod tests {
         );
         assert_eq!(report.atomic_units[0].id, "atomic:0");
         assert_eq!(
-            report.factorize_proposals[0].proposed_module_id,
+            report.factorize_proposals.as_ref().unwrap()[0].proposed_module_id,
             "auto_partition_0000"
         );
+    }
+
+    #[test]
+    fn explain_binding_skips_factorizer_by_default() {
+        let (_temp, common) = fixture();
+        let report = run_explain_report(&ExplainArgs {
+            common,
+            selection: SelectionArgs {
+                owner_id: None,
+                binding_id: Some("ZZ".to_string()),
+                proposal_id: None,
+                unit_id: None,
+                diagnostic_id: None,
+            },
+            size_cap_lines: 10_000,
+            limit: 0,
+            include_proposals: false,
+            format: None,
+        })
+        .unwrap();
+
+        assert_eq!(report.owner_ids, vec!["owner:0"]);
+        assert!(report.factorize_proposals.is_none());
+        assert!(report.factorize_diagnostics.is_none());
     }
 
     #[test]
@@ -1671,6 +1787,7 @@ mod tests {
             },
             size_cap_lines: 10_000,
             limit: 1,
+            include_proposals: false,
             format: None,
         })
         .unwrap();

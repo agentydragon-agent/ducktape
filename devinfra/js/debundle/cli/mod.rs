@@ -366,6 +366,12 @@ pub struct DescribeArgs {
     #[arg(long, default_value_t = 0)]
     pub limit: usize,
 
+    /// Also run the proposal factorizer to annotate matching proposals and
+    /// diagnostics. This is intentionally opt-in because it is expensive on
+    /// large graphs.
+    #[arg(long = "include-proposals")]
+    pub include_proposals: bool,
+
     /// Output format. Default `text` on tty, `json` on pipe.
     #[arg(long, value_enum)]
     pub format: Option<OutputFormat>,
@@ -552,12 +558,15 @@ fn run_describe(args: DescribeArgs) -> Result<()> {
                 selection,
                 size_cap_lines: args.size_cap_lines,
                 limit: args.limit,
+                include_proposals: args.include_proposals,
                 format: None,
             };
             let report = run_explain_report(&inner)?;
             print_report(&report, format, render_explain_text).context("writing describe output")
         }
-        Err(module_path) => describe_module(&module_path, &args.common, format),
+        Err(module_path) => {
+            describe_module(&module_path, &args.common, args.include_proposals, format)
+        }
     }
 }
 
@@ -593,7 +602,12 @@ fn run_show_source(args: ShowSourceArgs) -> Result<()> {
 /// `describe <module-path>`: resolve every binding in the module to
 /// owner ids then run the same explain report. Falls through to an
 /// empty selection (no owners) when the module YAML has no bindings.
-fn describe_module(module_path: &str, common: &PeelCommonArgs, format: OutputFormat) -> Result<()> {
+fn describe_module(
+    module_path: &str,
+    common: &PeelCommonArgs,
+    include_proposals: bool,
+    format: OutputFormat,
+) -> Result<()> {
     use std::collections::BTreeSet;
     let bindings = collect_module_bindings(module_path, &common.modules_root)?;
     if bindings.is_empty() {
@@ -624,6 +638,7 @@ fn describe_module(module_path: &str, common: &PeelCommonArgs, format: OutputFor
         selection: selection_with_owner(&first),
         size_cap_lines: 10_000,
         limit: 0,
+        include_proposals,
         format: None,
     };
     let report = run_explain_report(&inner)?;
@@ -1078,14 +1093,22 @@ fn render_patch_plan_text(report: &peel::PatchPlanReport, out: &mut String) {
 }
 
 fn render_graph_summary_text(report: &peel::GraphSummaryReport, out: &mut String) {
+    let proposal_count = report
+        .proposal_count
+        .map(|count| count.to_string())
+        .unwrap_or_else(|| "skipped".to_string());
+    let diagnostic_count = report
+        .diagnostic_count
+        .map(|count| count.to_string())
+        .unwrap_or_else(|| "skipped".to_string());
     out.push_str(&format!(
         "owners={} edges={} atoms={} residual={} proposals={} diagnostics={}\n",
         report.owner_count,
         report.owner_edge_count,
         report.atomic_unit_count,
         report.residual_atomic_unit_count,
-        report.proposal_count,
-        report.diagnostic_count,
+        proposal_count,
+        diagnostic_count,
     ));
 }
 

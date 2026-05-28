@@ -138,13 +138,13 @@ These are top-level commands. Deprecated `debundle peel <...>` aliases
 still exist for compatibility, but new docs and scripts should use the
 top-level forms.
 
-| Command                     | Mutates? | Function                                                                                                                                                                                                                                                                                                | Status  |
-| --------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| `debundle atoms`            | no       | List structural atoms (owner-level SCCs of the constraining-edge graph; per design.md §"Two classes of atom").                                                                                                                                                                                          | shipped |
-| `debundle coverage`         | no       | Report spec coverage against atoms: which atoms are claimed, which fall through to residual.                                                                                                                                                                                                            | shipped |
-| `debundle graph-summary`    | no       | High-level counts (owners, edges, atoms, residual-eligible bindings, etc.).                                                                                                                                                                                                                             | shipped |
-| `debundle describe <id>`    | no       | Dereference any identifier with full graph + spec context. Accepted ID kinds: a binding (minified `XOe` or readable `PluginSettingsAccessor`), a module path (`runtime/plugins`), a proposal id, an atom id, an owner id (`owner:42`), a diagnostic id. The renderer dispatches on the kind it detects. | shipped |
-| `debundle show-source <id>` | no       | Print the source text for any identifier. Accepted ID kinds: binding (minified or readable), module path (concatenated source of every owner statement in the module, in declaration order), proposal id, atom id, owner id, diagnostic id.                                                             | shipped |
+| Command                     | Mutates? | Function                                                                                                                                                                                                                                                                                                                                  | Status  |
+| --------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| `debundle atoms`            | no       | List structural atoms (owner-level SCCs of the constraining-edge graph; per design.md §"Two classes of atom").                                                                                                                                                                                                                            | shipped |
+| `debundle coverage`         | no       | Report spec coverage against atoms: which atoms are claimed, which fall through to residual. Add `--include-proposals` when rows should include matching factorizer proposal ids.                                                                                                                                                         | shipped |
+| `debundle graph-summary`    | no       | High-level counts (owners, edges, atoms, residual-eligible bindings, etc.). Add `--include-proposals` when proposal and diagnostic counts are needed.                                                                                                                                                                                     | shipped |
+| `debundle describe <id>`    | no       | Dereference any identifier with full graph + spec context. Accepted ID kinds: a binding (minified `XOe` or readable `PluginSettingsAccessor`), a module path (`runtime/plugins`), a proposal id, an atom id, an owner id (`owner:42`), a diagnostic id. Add `--include-proposals` when nearby proposal/diagnostic annotations are needed. | shipped |
+| `debundle show-source <id>` | no       | Print the source text for any identifier. Accepted ID kinds: binding (minified or readable), module path (concatenated source of every owner statement in the module, in declaration order), proposal id, atom id, owner id, diagnostic id.                                                                                               | shipped |
 
 The `peel` namespace is deprecated. Existing `peel <...>` invocations
 continue to work as aliases with a stderr deprecation note pointing to
@@ -186,6 +186,13 @@ If `--format` isn't passed and stdout is **not** a tty (i.e. the
 command is in a pipeline), the default flips to `json`. So
 `debundle modules propose | jq …` works without an explicit
 `--format json`.
+
+Read-only inspection commands prefer fast graph/spec lookups. `modules
+propose` is the command that runs the proposal factorizer by default.
+`describe`, `coverage`, and `graph-summary` do not run it unless the
+selection itself is a proposal/diagnostic id or `--include-proposals`
+is passed. Proposal-derived JSON fields are omitted when the factorizer
+is skipped.
 
 Mutating commands (`bindings assign`, `bindings unassign`,
 `bindings rename`, `modules merge`, `modules delete`) print a

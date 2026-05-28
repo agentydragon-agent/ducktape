@@ -178,6 +178,7 @@ fn explain_with_binding(common: CommonArgs, sym: &str) -> peel::ExplainReport {
         },
         size_cap_lines: 10_000,
         limit: 0,
+        include_proposals: false,
         format: None,
     })
     .expect("explain report")

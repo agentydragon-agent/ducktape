@@ -43,8 +43,9 @@ bazelisk --output_base=/tmp/debundle-cli-bazel \
 ## Planning Loop
 
 1. Run `debundle graph-summary --limit 25` first when orientation is
-   needed. It reports owner, atomic-unit, atomic-edge, proposal, and
-   diagnostic counts plus the largest residual atomic units.
+   needed. It reports owner, atomic-unit, and atomic-edge counts plus
+   the largest residual atomic units. Add `--include-proposals` only
+   when proposal and diagnostic counts are worth running the factorizer.
 
 2. Run `debundle modules propose --limit 25` for dispatchable work.
    Treat `proposals[]` with `landable_today: true` as the primary
@@ -66,8 +67,9 @@ bazelisk --output_base=/tmp/debundle-cli-bazel \
 
 5. Before assigning a proposal, run `debundle describe <id>` on its
    proposal, atom, owner, binding, or diagnostic ID. Check graph
-   neighbors, current spec homes, atomic-unit closure, and factorizer
-   diagnostics.
+   neighbors, current spec homes, and atomic-unit closure. Add
+   `--include-proposals` for factorizer diagnostics when the extra
+   context is needed.
 
 6. Read source with `debundle show-source <id>` when deciding final
    module names, architecture, or whether a proposal should be split

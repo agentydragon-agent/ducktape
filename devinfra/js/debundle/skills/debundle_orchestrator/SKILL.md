@@ -45,7 +45,8 @@ dispatch the integrator.
 
 1. Refresh the debundle outputs, manifest, and owner graph.
 2. Run `debundle modules propose` and `debundle graph-summary` to update
-   progress metrics.
+   progress metrics. Use `graph-summary --include-proposals` only when
+   proposal and diagnostic counts are needed.
 3. Ask intake for dispatchable seeds.
 4. Dispatch independent lane workers and any reorg/naming/doc cleanup work.
 5. Integrate green worker branches in batches.
