@@ -15,6 +15,7 @@ py_library(
     name = "scenarios",
     srcs = ["scenarios.py"],
     deps = [
+        ":asset_key",
         ":wire",
         "//augur/api:bootstrap",
         "//augur/api:config",
@@ -31,8 +32,10 @@ py_library(
     name = "decode",
     srcs = ["decode.py"],
     deps = [
+        ":asset_key",
         ":wire",
         "//augur/model:series",
+        "//augur/sim:codec",
         "//augur/sim:engine",
         "//augur/sim:scenario",
         "@pypi//numpy",
@@ -51,12 +54,12 @@ py_library(
         "//augur/api:portfolio",
         "//augur/api:schemas",
         "//augur/model:exogenous",
-        "//augur/sim:engine",
+        "//augur/sim:codec",
         "//augur/sim:external_series",
+        "//augur/sim:locations",
         "//augur/sim:simulate",
         "//augur/sim:slice",
         "@pypi//numpy",
-        "@pypi//polars",
     ],
 )
 
@@ -89,6 +92,7 @@ py_test(
     srcs = ["portfolio_test.py"],
     deps = [
         ":portfolio",
+        "//:conftest",
         "//augur/api:finance",
         "//augur/api:portfolio",
         "@pypi//pytest_bazel",
@@ -109,17 +113,29 @@ py_test(
         ":service",
         ":testing",
         ":wire",
-        "//augur:frames",
+        "//:conftest",
         "//augur/api:catalog",
         "//augur/api:config",
         "//augur/model:exogenous",
-        "//augur/model:private_equity_protocol",
+        "//augur/model:exogenous_provider_config",
+        "//augur/model:independent_exogenous",
         "//augur/model:series",
+        "//augur/sim:external_series",
         "//augur/sim:scenario",
+        "//augur/sim:simulate",
         "//util/bazel:runfiles",
         "@pypi//more_itertools",
-        "@pypi//numpy",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "asset_key",
+    srcs = ["asset_key.py"],
+    deps = [
+        "//augur/model:schemas",
+        "//augur/model:series",
+        "@pypi//pydantic",
     ],
 )

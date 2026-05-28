@@ -100,8 +100,8 @@ class StateSpaceModelArtifact(FrozenModel):
         _require_square_matrix(self.filtered_log_state_cov, n, "filtered_log_state_cov")
         if any(self.latest_level_by_factor[factor] <= 0 for factor in self.factor_names):
             raise ValueError("latest_level_by_factor values must be positive")
-        private_equity_issuers = {
-            issuer
+        private_equity_issuers: set[str] = {
+            str(issuer)
             for factor in self.factor_names
             if (issuer := issuer_id_from_private_equity_mark_wire_id(factor)) is not None
         }

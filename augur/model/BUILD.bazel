@@ -5,14 +5,7 @@ package(default_visibility = ["//visibility:public"])
 py_library(
     name = "schemas",
     srcs = ["schemas.py"],
-    deps = [
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
-    name = "provenance",
-    srcs = ["provenance.py"],
+    deps = ["@pypi//pydantic"],
 )
 
 py_library(
@@ -45,6 +38,10 @@ py_library(
 py_library(
     name = "series",
     srcs = ["series.py"],
+    deps = [
+        ":schemas",
+        "@pypi//pydantic",
+    ],
 )
 
 py_library(
@@ -78,6 +75,7 @@ py_test(
     srcs = ["series_test.py"],
     deps = [
         ":series",
+        "//:conftest",
         "@pypi//pytest_bazel",
     ],
 )
@@ -192,6 +190,7 @@ py_test(
         ":location_series_sources",
         ":series",
         ":vecm",
+        "//:conftest",
         "//augur/model/path_models:scenarios",
         "@pypi//numpy",
         "@pypi//numpyro",
@@ -210,6 +209,7 @@ py_test(
         ":series",
         ":state_space",
         ":trained_private_equity",
+        "//:conftest",
         "@pypi//numpy",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -221,7 +221,6 @@ py_library(
     srcs = ["exogenous_provider_config.py"],
     deps = [
         ":composite_exogenous",
-        ":conditioning",
         ":independent_exogenous",
         ":private_equity_risk",
         ":schemas",
@@ -257,6 +256,7 @@ py_test(
     ],
     deps = [
         ":sample_sanity",
+        "//:conftest",
         "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
     ],
@@ -283,9 +283,9 @@ py_test(
         ":deterministic",
         ":exogenous",
         ":gbm",
-        ":series",
         ":series_model",
         ":testing",
+        "//:conftest",
         "@pypi//numpy",
         "@pypi//polars",
         "@pypi//pytest",
@@ -301,7 +301,9 @@ py_test(
         ":exogenous_provider_config",
         ":independent_exogenous",
         ":series",
+        "//:conftest",
         "@pypi//numpy",
+        "@pypi//pydantic",
         "@pypi//pytest_bazel",
     ],
 )
@@ -329,7 +331,9 @@ py_test(
         ":exogenous_provider_config",
         ":private_equity_risk",
         ":series",
+        "//:conftest",
         "@pypi//numpy",
+        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -354,6 +358,7 @@ py_test(
         ":exogenous",
         ":private_equity_protocol",
         ":series",
+        "//:conftest",
         "//augur:frames",
         "@pypi//numpy",
         "@pypi//pytest",
@@ -381,9 +386,26 @@ py_test(
         ":exogenous",
         ":private_equity_trajectories",
         ":series",
+        "//:conftest",
         "@pypi//numpy",
         "@pypi//polars",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
+)
+
+py_library(
+    name = "private_equity_bundle",
+    srcs = ["private_equity_bundle.py"],
+    deps = [
+        ":series",
+        "//augur:frames",
+        "@pypi//numpy",
+        "@pypi//polars",
+    ],
+)
+
+py_library(
+    name = "provenance",
+    srcs = ["provenance.py"],
 )
