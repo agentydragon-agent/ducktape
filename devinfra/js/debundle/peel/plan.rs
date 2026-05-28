@@ -1379,7 +1379,7 @@ fn resolve_owner_ids(
             .map(|node| node.id.clone())
             .collect(),
         SelectionKind::Proposal(proposal_id) => {
-            if let Some(factorize) = factorize {
+            let proposal_owner_ids = if let Some(factorize) = factorize {
                 owner_ids_for_proposal(factorize, proposal_id)
             } else {
                 let factorize = analyze_peel_factorize(&PeelFactorizeOptions {
@@ -1389,6 +1389,13 @@ fn resolve_owner_ids(
                     size_cap_lines,
                 })?;
                 owner_ids_for_proposal(&factorize, proposal_id)
+            };
+            if let Some(owner_ids) = proposal_owner_ids {
+                owner_ids
+            } else {
+                bail!(
+                    "proposal id {proposal_id:?} not found in current module proposals; run `debundle modules propose` to list current proposal ids"
+                );
             }
         }
         SelectionKind::Unit(unit_id) => graph
@@ -1399,7 +1406,7 @@ fn resolve_owner_ids(
             .map(|unit| unit.owner_ids.clone())
             .unwrap_or_default(),
         SelectionKind::Diagnostic(diagnostic_id) => {
-            if let Some(factorize) = factorize {
+            let diagnostic_owner_ids = if let Some(factorize) = factorize {
                 owner_ids_for_diagnostic(factorize, diagnostic_id)
             } else {
                 let factorize = analyze_peel_factorize(&PeelFactorizeOptions {
@@ -1409,6 +1416,13 @@ fn resolve_owner_ids(
                     size_cap_lines,
                 })?;
                 owner_ids_for_diagnostic(&factorize, diagnostic_id)
+            };
+            if let Some(owner_ids) = diagnostic_owner_ids {
+                owner_ids
+            } else {
+                bail!(
+                    "diagnostic id {diagnostic_id:?} not found in current module proposal diagnostics; run `debundle modules propose` to list current diagnostic ids"
+                );
             }
         }
     };
@@ -1470,22 +1484,26 @@ fn resolve_module_path_owner_ids(
     Ok(owner_ids.into_iter().collect())
 }
 
-fn owner_ids_for_proposal(factorize: &PeelFactorizeReport, proposal_id: &str) -> Vec<String> {
+fn owner_ids_for_proposal(
+    factorize: &PeelFactorizeReport,
+    proposal_id: &str,
+) -> Option<Vec<String>> {
     factorize
         .proposals
         .iter()
         .find(|proposal| proposal.proposed_module_id == *proposal_id)
         .map(|proposal| proposal.owner_ids.clone())
-        .unwrap_or_default()
 }
 
-fn owner_ids_for_diagnostic(factorize: &PeelFactorizeReport, diagnostic_id: &str) -> Vec<String> {
+fn owner_ids_for_diagnostic(
+    factorize: &PeelFactorizeReport,
+    diagnostic_id: &str,
+) -> Option<Vec<String>> {
     factorize
         .diagnostics
         .iter()
         .find(|diagnostic| diagnostic.diagnostic_id == *diagnostic_id)
         .map(|diagnostic| diagnostic.owner_ids.clone())
-        .unwrap_or_default()
 }
 
 fn binding_homes(

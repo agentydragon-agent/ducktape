@@ -563,3 +563,29 @@ fn show_source_module_path_resolves_anonymous_only_module_claim() {
     assert_eq!(report.slices.len(), 1);
     assert!(report.slices[0].text.contains("registerSchema(\"task\");"));
 }
+
+#[test]
+fn show_source_missing_proposal_reports_stale_id() {
+    let (dir, common) = fixture();
+    let err = run_source_slice_report(&SourceSliceArgs {
+        common,
+        selection: SelectionArgs {
+            owner_id: None,
+            module_path: None,
+            module_id: None,
+            binding_id: None,
+            proposal_id: Some("auto_partition_0499".to_string()),
+            unit_id: None,
+            diagnostic_id: None,
+        },
+        size_cap_lines: 10_000,
+        context_lines: 0,
+        source_root: Some(dir.path().to_path_buf()),
+        format: None,
+    })
+    .unwrap_err();
+
+    let message = format!("{err:#}");
+    assert!(message.contains("proposal id \"auto_partition_0499\" not found"));
+    assert!(message.contains("debundle modules propose"));
+}
