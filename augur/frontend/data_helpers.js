@@ -411,13 +411,20 @@ export function portfolioHasBucket(portfolio, bucketName) {
   if (bucketName === "crypto") {
     return holdings.some((position) => position.securityKind === "cryptocurrency");
   }
-  // The non-crypto bucket is labeled "stocks" in `SELL_BUCKETS`; match that name (the earlier
-  // "holdings" string was a rename that left this filter stale, hiding the stocks row whenever
-  // the portfolio had any non-crypto holdings).
+  // Match the backend sell-order compiler: private equity is handled by tender policies, not the
+  // liquid "stocks" sale bucket.
   if (bucketName === "stocks") {
-    return holdings.some((position) => position.securityKind !== "cryptocurrency");
+    return holdings.some((position) => isStockBucketPosition(position));
   }
   return false;
+}
+
+export function isPrivateSecurityPosition(position) {
+  return position?.securityKind === "private_equity";
+}
+
+export function isStockBucketPosition(position) {
+  return position != null && position.securityKind !== "cryptocurrency" && !isPrivateSecurityPosition(position);
 }
 
 export function firstSaleMonth(events) {

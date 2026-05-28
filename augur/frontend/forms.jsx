@@ -22,7 +22,7 @@ import {
   nextLifecycleEventId,
 } from "./input_helpers.js";
 import { FAN_PERCENTILES } from "./input_helpers.js";
-import { rolloutSliverColor, portfolioHasBucket } from "./data_helpers.js";
+import { rolloutSliverColor, portfolioHasBucket, isPrivateSecurityPosition } from "./data_helpers.js";
 
 function firstSaleMonth(events) {
   let earliest = null;
@@ -553,6 +553,11 @@ export function SellOrderControl({ sellOrder, portfolio, onChange }) {
 
 export function ProductPortfolioPanel({ portfolio, error }) {
   const holdings = portfolio?.holdings ?? [];
+  const publicHoldings = holdings.filter((position) => !isPrivateSecurityPosition(position));
+  const privateSecurityHoldings = holdings.filter(isPrivateSecurityPosition);
+  const publicHoldingsValueUsd = sumCurrentValueUsd(publicHoldings);
+  const privateSecurityValueUsd = sumCurrentValueUsd(privateSecurityHoldings);
+  const showHoldingsTotal = publicHoldings.length > 0 && privateSecurityHoldings.length > 0;
   return (
     <div className="px-4 py-3">
       <div className="augur-eyebrow">Initial portfolio</div>
@@ -601,19 +606,52 @@ export function ProductPortfolioPanel({ portfolio, error }) {
           </tbody>
           {holdings.length > 0 && (
             <tfoot>
-              <tr className="border-t border-slate-200 dark:border-slate-700">
-                <td className="py-1 text-xs augur-muted">Public securities</td>
-                <td colSpan={3} />
-                <td className="py-1 text-right font-semibold augur-tabular">
-                  {fmtUsd(portfolio?.totalHoldingsValueUsd)}
-                </td>
-              </tr>
+              {publicHoldings.length > 0 && (
+                <tr className="border-t border-slate-200 dark:border-slate-700">
+                  <td className="py-1 text-xs augur-muted">Public securities</td>
+                  <td colSpan={3} />
+                  <td
+                    className="py-1 text-right font-semibold augur-tabular"
+                    data-product-portfolio-subtotal="public-securities"
+                  >
+                    {fmtUsd(publicHoldingsValueUsd)}
+                  </td>
+                </tr>
+              )}
+              {privateSecurityHoldings.length > 0 && (
+                <tr className="border-t border-slate-200 dark:border-slate-700">
+                  <td className="py-1 text-xs augur-muted">Private securities</td>
+                  <td colSpan={3} />
+                  <td
+                    className="py-1 text-right font-semibold augur-tabular"
+                    data-product-portfolio-subtotal="private-securities"
+                  >
+                    {fmtUsd(privateSecurityValueUsd)}
+                  </td>
+                </tr>
+              )}
+              {showHoldingsTotal && (
+                <tr className="border-t border-slate-200 dark:border-slate-700">
+                  <td className="py-1 text-xs font-semibold augur-strong">Holdings total</td>
+                  <td colSpan={3} />
+                  <td
+                    className="py-1 text-right font-semibold augur-tabular"
+                    data-product-portfolio-subtotal="holdings-total"
+                  >
+                    {fmtUsd(portfolio?.totalHoldingsValueUsd)}
+                  </td>
+                </tr>
+              )}
             </tfoot>
           )}
         </table>
       )}
     </div>
   );
+}
+
+function sumCurrentValueUsd(positions) {
+  return positions.reduce((total, position) => total + (position.currentValueUsd ?? 0), 0);
 }
 
 export function ProductScenarioForm({ input, bootstrap, portfolio, portfolioError, onChange, onReset }) {
