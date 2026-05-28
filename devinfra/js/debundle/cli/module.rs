@@ -185,11 +185,11 @@ pub fn run_merge(merge: MergeArgs) -> Result<()> {
                  --no-verify"
             )
         })?;
-        let target_abs = resolve_under(&merge.modules_root, &merge.target);
+        let target_abs = resolve_module_file(&merge.modules_root, &merge.target);
         let source_abs: Vec<PathBuf> = merge
             .sources
             .iter()
-            .map(|p| resolve_under(&merge.modules_root, p))
+            .map(|p| resolve_module_file(&merge.modules_root, p))
             .collect();
         let post_spec = post_merge_spec(&merge.modules_root, &target_abs, &source_abs)?;
         gate_post_edit_partition(owner_graph_path, &post_spec)?;
@@ -217,20 +217,10 @@ pub fn run_merge(merge: MergeArgs) -> Result<()> {
 /// Like `merge_modules` but without writing/deleting. Returns the
 /// summary that would be produced. Used by `--dry-run`.
 fn preview_merge(modules_root: &Path, target: &Path, sources: &[&Path]) -> Result<MergeSummary> {
-    let target_abs = if target.is_absolute() {
-        target.to_path_buf()
-    } else {
-        modules_root.join(target)
-    };
+    let target_abs = resolve_module_file(modules_root, target);
     let source_abs: Vec<PathBuf> = sources
         .iter()
-        .map(|p| {
-            if p.is_absolute() {
-                p.to_path_buf()
-            } else {
-                modules_root.join(p)
-            }
-        })
+        .map(|p| resolve_module_file(modules_root, p))
         .collect();
     // Confirm every source + the target parse as YAML. This catches
     // syntactically broken files before any write would happen in a
@@ -258,10 +248,10 @@ pub fn merge_modules(
     target: &Path,
     sources: &[&Path],
 ) -> Result<MergeSummary> {
-    let target_abs = resolve_under(modules_root, target);
+    let target_abs = resolve_module_file(modules_root, target);
     let source_abs: Vec<PathBuf> = sources
         .iter()
-        .map(|p| resolve_under(modules_root, p))
+        .map(|p| resolve_module_file(modules_root, p))
         .collect();
 
     let mut target_doc = read_yaml(&target_abs)?;
@@ -341,7 +331,7 @@ pub fn run_delete(args: DeleteArgs) -> Result<()> {
     let paths_abs: Vec<PathBuf> = args
         .paths
         .iter()
-        .map(|p| resolve_under(&args.modules_root, p))
+        .map(|p| resolve_module_file(&args.modules_root, p))
         .collect();
 
     // Verify every path exists up-front so we never get stuck in a
@@ -430,11 +420,20 @@ pub fn delete_modules(paths: &[PathBuf], dry_run: bool) -> Result<DeleteSummary>
     })
 }
 
-fn resolve_under(root: &Path, rel: &Path) -> PathBuf {
-    if rel.is_absolute() {
-        rel.to_path_buf()
+fn resolve_module_file(root: &Path, path: &Path) -> PathBuf {
+    let resolved = if path.is_absolute() {
+        path.to_path_buf()
     } else {
-        root.join(rel)
+        root.join(path)
+    };
+    if resolved.extension().is_some() {
+        return resolved;
+    }
+    let yaml = resolved.with_extension("yaml");
+    if yaml.exists() || !resolved.exists() || resolved.is_dir() {
+        yaml
+    } else {
+        resolved
     }
 }
 
@@ -586,6 +585,38 @@ mod tests {
             .map(|m| member_name(m).unwrap())
             .collect();
         assert_eq!(names, vec!["a", "b", "c"]);
+    }
+
+    #[test]
+    fn merge_resolves_extensionless_module_paths_to_yaml_files() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        write(
+            root,
+            "ai/models/pricing.yaml",
+            "members:\n  - selector: { binding: { name: a } }\n",
+        );
+        write(
+            root,
+            "ai/models/pricing/lookup.yaml",
+            "members:\n  - selector: { binding: { name: b } }\n",
+        );
+
+        let summary = merge_modules(
+            root,
+            Path::new("ai/models/pricing"),
+            &[Path::new("ai/models/pricing/lookup")],
+        )
+        .unwrap();
+
+        assert_eq!(summary.target, root.join("ai/models/pricing.yaml"));
+        assert_eq!(
+            summary.merged_sources,
+            vec![root.join("ai/models/pricing/lookup.yaml")]
+        );
+        assert!(!root.join("ai/models/pricing/lookup.yaml").exists());
+        let merged = fs::read_to_string(root.join("ai/models/pricing.yaml")).unwrap();
+        assert!(merged.contains("# merged from: ai/models/pricing/lookup.yaml"));
     }
 
     #[test]
