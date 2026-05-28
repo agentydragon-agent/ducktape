@@ -48,6 +48,7 @@ resources:
   - hubble-ui/flux-kustomization.yaml
   - dns-automation/flux-kustomization.yaml
   - kube-api-proxy/flux-kustomization.yaml
+  - egress-proxy-rugged/flux-kustomization.yaml
   - docker-ci/flux-kustomization.yaml
   - docker-ci/agent-rbac/flux-kustomization.yaml
 
