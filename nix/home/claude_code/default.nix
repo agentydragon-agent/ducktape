@@ -623,13 +623,19 @@ in
   # Add gmail-mcp-server to PATH for auth setup command
   config.home.packages = [ gmail-mcp-server ];
 
-  # Deploy skills, plugin cache, and installed_plugins.json
+  # Deploy skills and plugin cache.
   config.home.file =
     skillFiles
     # Plugin cache directories
-    // pluginCacheFiles
-    # Plugin registry
-    // lib.optionalAttrs (cfg.plugins != [ ]) {
-      ".claude/plugins/installed_plugins.json".text = installedPluginsJson;
-    };
+    // pluginCacheFiles;
+
+  # TODO: If re-enabling management of installed_plugins.json, first update
+  # installedPluginsJson to match Claude's current registry shape. Claude rewrites
+  # installPath with a versioned suffix (for example, /pyright-lsp/1.0.0) and
+  # updates mutable timestamps, which makes the old deterministic file conflict
+  # on every Home Manager activation.
+  # Re-enable by folding this back into config.home.file above:
+  # // lib.optionalAttrs (cfg.plugins != [ ]) {
+  #   ".claude/plugins/installed_plugins.json".text = installedPluginsJson;
+  # };
 }
