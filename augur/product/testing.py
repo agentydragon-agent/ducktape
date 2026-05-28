@@ -18,13 +18,20 @@ from augur.model.exogenous import (
     series_events_frame,
     series_levels_frame,
 )
+from augur.model.private_equity_bundle import PrivateEquityBundle
 from augur.model.private_equity_protocol import private_equity_protocol_frame
 from augur.model.series import (
     PrivateEquityEventKindCode,
     PrivateEquityRegimeCode,
+    private_equity_eligible_fraction_series_id,
     private_equity_event_kind_code_series_id,
+    private_equity_forced_recovery_cashout_usd_series_id,
+    private_equity_forced_sale_fraction_series_id,
+    private_equity_liquidity_blocked_series_id,
     private_equity_regime_code_series_id,
+    private_equity_sale_capacity_fraction_series_id,
     private_equity_sale_event_id,
+    private_equity_series_id,
 )
 
 type LevelOverride = float | npt.NDArray[np.float64] | Callable[[ExogenousSamplingRequest], npt.NDArray[np.float64]]
@@ -78,12 +85,80 @@ class ConstantFrameExogenousModel:
             )
             for issuer_id in sorted(request.required_private_equity_protocol_issuers)
         ]
+        pe_bundle_parts = [
+            _build_pe_bundle_part(
+                self.level_overrides, self.event_overrides, self.default_level_value, issuer_id, request
+            )
+            for issuer_id in sorted(request.required_private_equity_protocol_issuers)
+        ]
+        private_equity_bundle = (
+            PrivateEquityBundle.combine(pe_bundle_parts) if pe_bundle_parts else PrivateEquityBundle.empty()
+        )
         return SampledExogenousBundle(
             levels=concat_frames(levels, SERIES_LEVELS_SCHEMA),
+            private_equity=private_equity_bundle,
             events=concat_frames(events, SERIES_EVENTS_SCHEMA),
             private_equity_protocol=concat_frames(protocols, PRIVATE_EQUITY_PROTOCOL_SCHEMA),
             metadata=dict(self.metadata),
         )
+
+
+def _build_pe_bundle_part(
+    level_overrides: Mapping[str, LevelOverride],
+    event_overrides: Mapping[str, EventOverride],
+    default_level_value: float,
+    issuer_id: str,
+    request: ExogenousSamplingRequest,
+) -> PrivateEquityBundle:
+    """Build a single-issuer PrivateEquityBundle from the legacy series-id keyed overrides."""
+
+    expected_shape = (request.rollout_count, request.horizon_months + 1)
+    tender_events = _event_matrix(event_overrides.get(private_equity_sale_event_id(issuer_id), False), request)
+    mark_override = level_overrides.get(private_equity_series_id(issuer_id))
+    mark = (
+        _level_matrix(mark_override, request)
+        if mark_override is not None
+        else np.full(expected_shape, default_level_value, dtype=np.float64)
+    )
+    regime_code = _code_matrix(
+        level_overrides.get(private_equity_regime_code_series_id(issuer_id)),
+        request,
+        default=int(PrivateEquityRegimeCode.PRIVATE_OPERATING),
+    )
+    event_kind_code = _code_matrix(
+        level_overrides.get(private_equity_event_kind_code_series_id(issuer_id)),
+        request,
+        default=_default_event_kind_code_matrix(event_overrides, issuer_id, request),
+    )
+    sale_capacity_fraction = _level_matrix(
+        level_overrides.get(private_equity_sale_capacity_fraction_series_id(issuer_id), 1.0), request
+    )
+    eligible_fraction = _level_matrix(
+        level_overrides.get(private_equity_eligible_fraction_series_id(issuer_id), 1.0), request
+    )
+    forced_sale_fraction = _level_matrix(
+        level_overrides.get(private_equity_forced_sale_fraction_series_id(issuer_id), 0.0), request
+    )
+    liquidity_blocked = _level_matrix(
+        level_overrides.get(private_equity_liquidity_blocked_series_id(issuer_id), 0.0), request
+    )
+    forced_recovery_cashout_usd = _level_matrix(
+        level_overrides.get(private_equity_forced_recovery_cashout_usd_series_id(issuer_id), 0.0), request
+    )
+    return PrivateEquityBundle.from_issuer_arrays(
+        issuer_id,
+        mark_usd_per_unit=mark,
+        regime_code=regime_code,
+        event_kind_code=event_kind_code,
+        sale_opportunity_active=tender_events,
+        sale_capacity_fraction=sale_capacity_fraction,
+        eligible_fraction=eligible_fraction,
+        forced_sale_fraction=forced_sale_fraction,
+        liquidity_blocked=(liquidity_blocked >= 0.5).astype(np.bool_),
+        forced_recovery_cashout_usd=forced_recovery_cashout_usd,
+        rollout_count=request.rollout_count,
+        horizon_months=request.horizon_months,
+    )
 
 
 def level_matrix_with_month_override(*, default: float, override: float, month: int) -> LevelOverride:

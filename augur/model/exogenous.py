@@ -249,13 +249,48 @@ def anchor_sampled_series_levels(
         )
         .select(SERIES_LEVELS_SCHEMA.names())
     )
+    private_equity = _anchor_private_equity_marks(sampled.private_equity, anchors=active_anchors)
     return SampledExogenousBundle(
         levels=levels,
-        private_equity=sampled.private_equity,
+        private_equity=private_equity,
         events=sampled.events,
         private_equity_protocol=sampled.private_equity_protocol,
         metadata={**sampled.metadata, "level_anchors": anchors},
     )
+
+
+def _anchor_private_equity_marks(pe: PrivateEquityBundle, *, anchors: Mapping[str, float]) -> PrivateEquityBundle:
+    """Rescale `mark_usd_per_unit` for each issuer whose `private_equity:<issuer>` wire id
+    appears in `anchors`, mirroring the rescaling applied to the levels frame."""
+
+    if pe.is_empty() or not anchors:
+        return pe
+    pe_prefix = "private_equity:"
+    issuer_anchor: dict[str, float] = {}
+    for series_id, anchor_value in anchors.items():
+        if series_id.startswith(pe_prefix):
+            issuer_anchor[series_id[len(pe_prefix) :]] = anchor_value
+    if not issuer_anchor:
+        return pe
+    frame = pe.frame
+    base_frame = frame.filter(pl.col("month_index") == 0).select(
+        "rollout_index", "issuer_id", pl.col("mark_usd_per_unit").alias("_base_value")
+    )
+    anchor_frame = pl.DataFrame(
+        {"issuer_id": list(issuer_anchor), "_anchor_value": list(issuer_anchor.values())},
+        schema={"issuer_id": pl.Utf8(), "_anchor_value": pl.Float64()},
+    )
+    joined = (
+        frame.join(base_frame, on=["rollout_index", "issuer_id"], how="left")
+        .join(anchor_frame, on="issuer_id", how="left")
+        .with_columns(
+            mark_usd_per_unit=pl.when(pl.col("_anchor_value").is_not_null() & (pl.col("_base_value") > 0.0))
+            .then(pl.col("mark_usd_per_unit") * pl.col("_anchor_value") / pl.col("_base_value"))
+            .otherwise(pl.col("mark_usd_per_unit"))
+        )
+        .select(frame.columns)
+    )
+    return PrivateEquityBundle(frame=joined)
 
 
 def _long_indices(*, rollout_count: int, horizon_months: int) -> tuple[np.ndarray, np.ndarray]:
