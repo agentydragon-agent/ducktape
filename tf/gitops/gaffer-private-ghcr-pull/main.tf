@@ -28,6 +28,7 @@ locals {
   # gaffer-private app.
   consumer_namespaces = [
     "augur",
+    "listing-monitor",
     "thrive-scraper",
   ]
 }
