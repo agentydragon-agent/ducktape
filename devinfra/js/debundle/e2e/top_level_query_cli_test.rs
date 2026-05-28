@@ -210,6 +210,55 @@ anonymous_statements:
     )
 }
 
+fn fixture_with_anonymous_only_module_claim() -> (TempDir, CommonArgs) {
+    let dir = TempDir::new().unwrap();
+    let graph_path = dir.path().join("owner_graph.json");
+    let modules_root = dir.path().join("spec/modules");
+    let anonymous = anonymous_owner("owner:0", 0);
+    let report = OwnerGraphReport {
+        chunk_id: "static/index".to_string(),
+        nodes: vec![anonymous.clone()],
+        edges: Vec::new(),
+        quotient: OwnerGraphQuotientReport {
+            nodes: Vec::new(),
+            edges: Vec::new(),
+            sccs: Vec::<QuotientSccReport>::new(),
+        },
+        atomic_graph: AtomicGraphReport {
+            nodes: vec![AtomicUnitReport {
+                id: "atomic:0".to_string(),
+                owner_ids: vec![anonymous.id.clone()],
+                members: Vec::new(),
+                anonymous_statement_owner_ids: vec![anonymous.id.clone()],
+                destinations: vec![module_ref("logical:residual", true)],
+                causes: Vec::new(),
+                size_lines_estimate: 1,
+                source_line_range: Some([1, 1]),
+                ordinal_span: 0,
+            }],
+            edges: Vec::new(),
+        },
+    };
+    write(&graph_path, &serde_json::to_string(&report).unwrap());
+    write(
+        &modules_root.join("auto_partition/auto_partition_0187.yaml"),
+        r#"anonymous_statements:
+  - match: 'registerSchema("task");'
+"#,
+    );
+    write(
+        &dir.path().join("static/index.js"),
+        "registerSchema(\"task\");\n",
+    );
+    (
+        dir,
+        CommonArgs {
+            owner_graph_path: graph_path,
+            modules_root,
+        },
+    )
+}
+
 fn fixture_with_ambiguous_anonymous_statements() -> (TempDir, CommonArgs) {
     let dir = TempDir::new().unwrap();
     let graph_path = dir.path().join("owner_graph.json");
@@ -336,6 +385,7 @@ fn graph_summary_reports_counts() {
         size_cap_lines: 10_000,
         limit: 10,
         include_proposals: false,
+        source_root: None,
         format: None,
     })
     .unwrap();
@@ -391,6 +441,7 @@ fn describe_binding_resolves_via_selection() {
         common,
         selection: SelectionArgs {
             owner_id: None,
+            module_path: None,
             module_id: None,
             binding_id: Some("ZZ".to_string()),
             proposal_id: None,
@@ -398,6 +449,7 @@ fn describe_binding_resolves_via_selection() {
             diagnostic_id: None,
         },
         size_cap_lines: 10_000,
+        source_root: None,
         limit: 0,
         include_proposals: false,
         format: None,
@@ -414,6 +466,7 @@ fn describe_module_id_resolves_all_module_owners() {
         common,
         selection: SelectionArgs {
             owner_id: None,
+            module_path: None,
             module_id: Some("logical:residual".to_string()),
             binding_id: None,
             proposal_id: None,
@@ -421,6 +474,7 @@ fn describe_module_id_resolves_all_module_owners() {
             diagnostic_id: None,
         },
         size_cap_lines: 10_000,
+        source_root: None,
         limit: 0,
         include_proposals: false,
         format: None,
@@ -431,12 +485,44 @@ fn describe_module_id_resolves_all_module_owners() {
 }
 
 #[test]
+fn describe_module_path_resolves_anonymous_only_module_claim() {
+    let (dir, common) = fixture_with_anonymous_only_module_claim();
+    let report = run_explain_report(&ExplainArgs {
+        common,
+        selection: SelectionArgs {
+            owner_id: None,
+            module_path: Some("auto_partition/auto_partition_0187".to_string()),
+            module_id: None,
+            binding_id: None,
+            proposal_id: None,
+            unit_id: None,
+            diagnostic_id: None,
+        },
+        size_cap_lines: 10_000,
+        source_root: Some(dir.path().to_path_buf()),
+        limit: 0,
+        include_proposals: false,
+        format: None,
+    })
+    .unwrap();
+
+    assert_eq!(report.query.kind, peel::plan::QueryKind::Module);
+    assert_eq!(report.owner_ids, vec!["owner:0"]);
+    assert_eq!(report.atomic_units[0].id, "atomic:0");
+    assert_eq!(
+        report.atomic_units[0].anonymous_statement_owner_ids,
+        vec!["owner:0"]
+    );
+}
+
+#[test]
 fn show_source_binding_resolves_via_selection() {
     let (dir, common) = fixture();
     let report = run_source_slice_report(&SourceSliceArgs {
         common,
         selection: SelectionArgs {
             owner_id: None,
+            module_path: None,
             module_id: None,
             binding_id: Some("ZZ".to_string()),
             proposal_id: None,
@@ -451,4 +537,29 @@ fn show_source_binding_resolves_via_selection() {
     .unwrap();
     assert_eq!(report.slices.len(), 1);
     assert!(report.slices[0].text.contains("class PaymentError"));
+}
+
+#[test]
+fn show_source_module_path_resolves_anonymous_only_module_claim() {
+    let (dir, common) = fixture_with_anonymous_only_module_claim();
+    let report = run_source_slice_report(&SourceSliceArgs {
+        common,
+        selection: SelectionArgs {
+            owner_id: None,
+            module_path: Some("auto_partition/auto_partition_0187".to_string()),
+            module_id: None,
+            binding_id: None,
+            proposal_id: None,
+            unit_id: None,
+            diagnostic_id: None,
+        },
+        size_cap_lines: 10_000,
+        context_lines: 0,
+        source_root: Some(dir.path().to_path_buf()),
+        format: None,
+    })
+    .unwrap();
+
+    assert_eq!(report.slices.len(), 1);
+    assert!(report.slices[0].text.contains("registerSchema(\"task\");"));
 }

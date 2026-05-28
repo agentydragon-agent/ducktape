@@ -380,6 +380,10 @@ pub struct DescribeArgs {
     #[arg(long = "include-proposals")]
     pub include_proposals: bool,
 
+    /// Root used to resolve relative `source_location.source_path` values.
+    #[arg(long = "source-root", env = "DEBUNDLE_SOURCE_ROOT")]
+    pub source_root: Option<PathBuf>,
+
     /// Output format. Default `text` on tty, `json` on pipe.
     #[arg(long, value_enum)]
     pub format: Option<OutputFormat>,
@@ -471,30 +475,26 @@ pub fn run_debundle_cli(args: DebundleArgs) -> Result<()> {
 }
 
 /// Dispatch an `<id>` argument into a [`SelectionArgs`] populated with
-/// exactly one field. Module-path IDs return `Ok(Err(module_path))` so
-/// the caller can resolve the YAML module path separately; logical
-/// module ids resolve through the owner graph like other structured
-/// IDs.
-pub fn dispatch_id_selection(
-    id: &str,
-    modules_root: &std::path::Path,
-) -> std::result::Result<SelectionArgs, String> {
+/// exactly one field. Module paths and logical module ids resolve
+/// through the same owner-graph/spec claim path as other structured
+/// IDs, so binding members and anonymous statements stay in sync.
+pub fn dispatch_id_selection(id: &str, modules_root: &std::path::Path) -> SelectionArgs {
     // Prefix-based dispatch covers the structured ID kinds emitted by
     // the analysis crate.
     if id.starts_with("owner:") {
-        return Ok(selection_with_owner(id));
+        return selection_with_owner(id);
     }
     if id.starts_with("logical:") {
-        return Ok(selection_with_module(id));
+        return selection_with_module(id);
     }
     if id.starts_with("atomic:") {
-        return Ok(selection_with_unit(id));
+        return selection_with_unit(id);
     }
     if id.starts_with("diagnostic:") {
-        return Ok(selection_with_diagnostic(id));
+        return selection_with_diagnostic(id);
     }
     if id.starts_with("auto_partition_") || id.starts_with("extend:") {
-        return Ok(selection_with_proposal(id));
+        return selection_with_proposal(id);
     }
     // Module-path detection: try resolving `<modules>/<id>.yaml`.
     // Spec authors sometimes have flat module paths (no `/`); the
@@ -502,15 +502,16 @@ pub fn dispatch_id_selection(
     // names that happen to spell a module-like word.
     let candidate = modules_root.join(format!("{id}.yaml"));
     if candidate.is_file() {
-        return Err(id.to_string());
+        return selection_with_module_path(id);
     }
     // Fall through: treat as a binding name (minified or readable).
-    Ok(selection_with_binding(id))
+    selection_with_binding(id)
 }
 
 fn selection_with_owner(value: &str) -> SelectionArgs {
     SelectionArgs {
         owner_id: Some(value.to_string()),
+        module_path: None,
         module_id: None,
         binding_id: None,
         proposal_id: None,
@@ -522,7 +523,20 @@ fn selection_with_owner(value: &str) -> SelectionArgs {
 fn selection_with_module(value: &str) -> SelectionArgs {
     SelectionArgs {
         owner_id: None,
+        module_path: None,
         module_id: Some(value.to_string()),
+        binding_id: None,
+        proposal_id: None,
+        unit_id: None,
+        diagnostic_id: None,
+    }
+}
+
+fn selection_with_module_path(value: &str) -> SelectionArgs {
+    SelectionArgs {
+        owner_id: None,
+        module_path: Some(value.to_string()),
+        module_id: None,
         binding_id: None,
         proposal_id: None,
         unit_id: None,
@@ -533,6 +547,7 @@ fn selection_with_module(value: &str) -> SelectionArgs {
 fn selection_with_unit(value: &str) -> SelectionArgs {
     SelectionArgs {
         owner_id: None,
+        module_path: None,
         module_id: None,
         binding_id: None,
         proposal_id: None,
@@ -544,6 +559,7 @@ fn selection_with_unit(value: &str) -> SelectionArgs {
 fn selection_with_diagnostic(value: &str) -> SelectionArgs {
     SelectionArgs {
         owner_id: None,
+        module_path: None,
         module_id: None,
         binding_id: None,
         proposal_id: None,
@@ -555,6 +571,7 @@ fn selection_with_diagnostic(value: &str) -> SelectionArgs {
 fn selection_with_proposal(value: &str) -> SelectionArgs {
     SelectionArgs {
         owner_id: None,
+        module_path: None,
         module_id: None,
         binding_id: Some(String::new()),
         proposal_id: Some(value.to_string()),
@@ -566,6 +583,7 @@ fn selection_with_proposal(value: &str) -> SelectionArgs {
 fn selection_with_binding(value: &str) -> SelectionArgs {
     SelectionArgs {
         owner_id: None,
+        module_path: None,
         module_id: None,
         binding_id: Some(value.to_string()),
         proposal_id: None,
@@ -576,136 +594,36 @@ fn selection_with_binding(value: &str) -> SelectionArgs {
 
 fn run_describe(args: DescribeArgs) -> Result<()> {
     let format = OutputFormat::resolve(args.format);
-    match dispatch_id_selection(&args.id, &args.common.modules_root) {
-        Ok(mut selection) => {
-            // selection_with_proposal stuffs a sentinel binding_id; clear it.
-            if selection.proposal_id.is_some() {
-                selection.binding_id = None;
-            }
-            let inner = ExplainArgs {
-                common: args.common,
-                selection,
-                size_cap_lines: args.size_cap_lines,
-                limit: args.limit,
-                include_proposals: args.include_proposals,
-                format: None,
-            };
-            let report = run_explain_report(&inner)?;
-            print_report(&report, format, render_explain_text).context("writing describe output")
-        }
-        Err(module_path) => {
-            describe_module(&module_path, &args.common, args.include_proposals, format)
-        }
+    let mut selection = dispatch_id_selection(&args.id, &args.common.modules_root);
+    // selection_with_proposal stuffs a sentinel binding_id; clear it.
+    if selection.proposal_id.is_some() {
+        selection.binding_id = None;
     }
-}
-
-fn run_show_source(args: ShowSourceArgs) -> Result<()> {
-    let format = OutputFormat::resolve(args.format);
-    match dispatch_id_selection(&args.id, &args.common.modules_root) {
-        Ok(mut selection) => {
-            if selection.proposal_id.is_some() {
-                selection.binding_id = None;
-            }
-            let inner = SourceSliceArgs {
-                common: args.common,
-                selection,
-                size_cap_lines: args.size_cap_lines,
-                context_lines: args.context_lines,
-                source_root: args.source_root,
-                format: None,
-            };
-            let report = run_source_slice_report(&inner)?;
-            print_report(&report, format, render_source_slice_text)
-                .context("writing show-source output")
-        }
-        Err(module_path) => show_module_source(
-            &module_path,
-            &args.common,
-            args.context_lines,
-            args.source_root.as_deref(),
-            format,
-        ),
-    }
-}
-
-/// `describe <module-path>`: resolve every binding in the module to
-/// owner ids then run the same explain report. Falls through to an
-/// empty selection (no owners) when the module YAML has no bindings.
-fn describe_module(
-    module_path: &str,
-    common: &PeelCommonArgs,
-    include_proposals: bool,
-    format: OutputFormat,
-) -> Result<()> {
-    use std::collections::BTreeSet;
-    let bindings = collect_module_bindings(module_path, &common.modules_root)?;
-    if bindings.is_empty() {
-        anyhow::bail!("module {module_path:?} has no members; nothing to describe");
-    }
-    let graph: analysis::OwnerGraphReport = serde_json::from_str(&std::fs::read_to_string(
-        &common.owner_graph_path,
-    )?)
-    .with_context(|| format!("parsing owner graph {}", common.owner_graph_path.display()))?;
-    let mut owner_ids: BTreeSet<String> = BTreeSet::new();
-    for node in &graph.nodes {
-        if node
-            .declared_bindings
-            .iter()
-            .any(|b| bindings.contains(&b.binding.to_string()))
-        {
-            owner_ids.insert(node.id.clone());
-        }
-    }
-    if owner_ids.is_empty() {
-        anyhow::bail!(
-            "module {module_path:?} declares bindings that do not appear in the owner graph"
-        );
-    }
-    let first = owner_ids.iter().next().unwrap().clone();
     let inner = ExplainArgs {
-        common: common.clone(),
-        selection: selection_with_owner(&first),
-        size_cap_lines: 10_000,
-        limit: 0,
-        include_proposals,
+        common: args.common,
+        selection,
+        size_cap_lines: args.size_cap_lines,
+        source_root: args.source_root,
+        limit: args.limit,
+        include_proposals: args.include_proposals,
         format: None,
     };
     let report = run_explain_report(&inner)?;
     print_report(&report, format, render_explain_text).context("writing describe output")
 }
 
-/// `show-source <module-path>`: concatenate source text for every
-/// declared binding in the module, in declaration order.
-fn show_module_source(
-    module_path: &str,
-    common: &PeelCommonArgs,
-    context_lines: usize,
-    source_root: Option<&std::path::Path>,
-    format: OutputFormat,
-) -> Result<()> {
-    use std::collections::BTreeSet;
-    let bindings = collect_module_bindings(module_path, &common.modules_root)?;
-    let graph: analysis::OwnerGraphReport =
-        serde_json::from_str(&std::fs::read_to_string(&common.owner_graph_path)?)?;
-    let mut owner_ids: BTreeSet<String> = BTreeSet::new();
-    for node in &graph.nodes {
-        if node
-            .declared_bindings
-            .iter()
-            .any(|b| bindings.contains(&b.binding.to_string()))
-        {
-            owner_ids.insert(node.id.clone());
-        }
+fn run_show_source(args: ShowSourceArgs) -> Result<()> {
+    let format = OutputFormat::resolve(args.format);
+    let mut selection = dispatch_id_selection(&args.id, &args.common.modules_root);
+    if selection.proposal_id.is_some() {
+        selection.binding_id = None;
     }
-    let Some(first) = owner_ids.iter().next() else {
-        anyhow::bail!("module {module_path:?} has no resolvable owner; nothing to show");
-    };
     let inner = SourceSliceArgs {
-        common: common.clone(),
-        selection: selection_with_owner(first),
-        size_cap_lines: 10_000,
-        context_lines,
-        source_root: source_root.map(|p| p.to_path_buf()),
+        common: args.common,
+        selection,
+        size_cap_lines: args.size_cap_lines,
+        context_lines: args.context_lines,
+        source_root: args.source_root,
         format: None,
     };
     let report = run_source_slice_report(&inner)?;
@@ -1210,21 +1128,6 @@ fn render_source_slice_text(report: &peel::SourceSliceReport, out: &mut String) 
     }
 }
 
-fn collect_module_bindings(
-    module_path: &str,
-    modules_root: &std::path::Path,
-) -> Result<std::collections::BTreeSet<String>> {
-    use std::collections::BTreeSet;
-    let yaml_path = modules_root.join(format!("{module_path}.yaml"));
-    let module = spec_modules::read_module_file(&yaml_path)
-        .with_context(|| format!("reading module YAML {}", yaml_path.display()))?;
-    Ok(module
-        .members
-        .into_iter()
-        .map(|m| m.selector.binding.name)
-        .collect::<BTreeSet<_>>())
-}
-
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -1457,28 +1360,28 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let modules = tmp.path().to_path_buf();
         std::fs::create_dir_all(&modules).unwrap();
-        let sel = super::dispatch_id_selection("owner:42", &modules).unwrap();
+        let sel = super::dispatch_id_selection("owner:42", &modules);
         assert_eq!(sel.owner_id.as_deref(), Some("owner:42"));
     }
 
     #[test]
     fn dispatch_id_logical_prefix() {
         let tmp = tempfile::tempdir().unwrap();
-        let sel = super::dispatch_id_selection("logical:7", tmp.path()).unwrap();
+        let sel = super::dispatch_id_selection("logical:7", tmp.path());
         assert_eq!(sel.module_id.as_deref(), Some("logical:7"));
     }
 
     #[test]
     fn dispatch_id_atomic_prefix() {
         let tmp = tempfile::tempdir().unwrap();
-        let sel = super::dispatch_id_selection("atomic:7", tmp.path()).unwrap();
+        let sel = super::dispatch_id_selection("atomic:7", tmp.path());
         assert_eq!(sel.unit_id.as_deref(), Some("atomic:7"));
     }
 
     #[test]
     fn dispatch_id_diagnostic_prefix() {
         let tmp = tempfile::tempdir().unwrap();
-        let sel = super::dispatch_id_selection("diagnostic:size_cap_0001", tmp.path()).unwrap();
+        let sel = super::dispatch_id_selection("diagnostic:size_cap_0001", tmp.path());
         assert_eq!(
             sel.diagnostic_id.as_deref(),
             Some("diagnostic:size_cap_0001")
@@ -1488,7 +1391,7 @@ mod tests {
     #[test]
     fn dispatch_id_proposal_prefix() {
         let tmp = tempfile::tempdir().unwrap();
-        let sel = super::dispatch_id_selection("auto_partition_0042", tmp.path()).unwrap();
+        let sel = super::dispatch_id_selection("auto_partition_0042", tmp.path());
         assert_eq!(sel.proposal_id.as_deref(), Some("auto_partition_0042"));
     }
 
@@ -1498,14 +1401,14 @@ mod tests {
         let modules = tmp.path();
         std::fs::create_dir_all(modules.join("runtime")).unwrap();
         std::fs::write(modules.join("runtime/plugins.yaml"), "members: []\n").unwrap();
-        let err = super::dispatch_id_selection("runtime/plugins", modules).unwrap_err();
-        assert_eq!(err, "runtime/plugins");
+        let sel = super::dispatch_id_selection("runtime/plugins", modules);
+        assert_eq!(sel.module_path.as_deref(), Some("runtime/plugins"));
     }
 
     #[test]
     fn dispatch_id_binding_otherwise() {
         let tmp = tempfile::tempdir().unwrap();
-        let sel = super::dispatch_id_selection("XOe", tmp.path()).unwrap();
+        let sel = super::dispatch_id_selection("XOe", tmp.path());
         assert_eq!(sel.binding_id.as_deref(), Some("XOe"));
     }
 

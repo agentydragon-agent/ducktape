@@ -154,6 +154,11 @@ pub struct GraphSummaryArgs {
     #[arg(long = "include-proposals")]
     pub include_proposals: bool,
 
+    /// Root used to resolve relative `source_location.source_path`
+    /// values when annotating anonymous-statement proposal addressability.
+    #[arg(long = "source-root", env = "DEBUNDLE_SOURCE_ROOT")]
+    pub source_root: Option<PathBuf>,
+
     /// Output format. Default `text` on tty, `json` on pipe.
     #[arg(long, value_enum)]
     pub format: Option<OutputFormat>,
@@ -170,6 +175,11 @@ pub struct ExplainArgs {
     /// Hard line ceiling used when resolving `--proposal-id`.
     #[arg(long = "size-cap-lines", default_value_t = 10_000)]
     pub size_cap_lines: usize,
+
+    /// Root used to resolve relative `source_location.source_path`
+    /// values when module-path selections claim anonymous statements.
+    #[arg(long = "source-root", env = "DEBUNDLE_SOURCE_ROOT")]
+    pub source_root: Option<PathBuf>,
 
     /// Maximum number of rows to emit per report section. Zero means unlimited.
     #[arg(long, default_value_t = 0)]
@@ -217,6 +227,10 @@ pub struct SelectionArgs {
     #[arg(long = "owner-id")]
     pub owner_id: Option<String>,
 
+    /// Select every owner claimed by this module path.
+    #[arg(long = "module-path")]
+    pub module_path: Option<String>,
+
     /// Select every owner assigned to this module id.
     #[arg(long = "module-id")]
     pub module_id: Option<String>,
@@ -258,6 +272,7 @@ pub enum QueryKind {
 #[derive(Debug, Clone)]
 enum SelectionKind {
     Owner(String),
+    ModulePath(String),
     Module(String),
     Binding(String),
     Proposal(String),
@@ -269,6 +284,7 @@ impl SelectionKind {
     fn value(&self) -> &str {
         match self {
             Self::Owner(v)
+            | Self::ModulePath(v)
             | Self::Module(v)
             | Self::Binding(v)
             | Self::Proposal(v)
@@ -280,6 +296,7 @@ impl SelectionKind {
     fn query_kind(&self) -> QueryKind {
         match self {
             Self::Owner(_) => QueryKind::Owner,
+            Self::ModulePath(_) => QueryKind::Module,
             Self::Module(_) => QueryKind::Module,
             Self::Binding(_) => QueryKind::Binding,
             Self::Proposal(_) => QueryKind::Proposal,
@@ -663,7 +680,7 @@ pub fn run_graph_summary_report(args: &GraphSummaryArgs) -> Result<GraphSummaryR
         Some(analyze_peel_factorize(&PeelFactorizeOptions {
             owner_graph_path: args.common.owner_graph_path.clone(),
             modules_root: args.common.modules_root.clone(),
-            source_root: None,
+            source_root: args.source_root.clone(),
             size_cap_lines: args.size_cap_lines,
         })?)
     } else {
@@ -746,6 +763,7 @@ pub fn run_explain_report(args: &ExplainArgs) -> Result<ExplainReport> {
         &graph,
         &args.common,
         args.size_cap_lines,
+        args.source_root.as_deref(),
         factorize.as_ref(),
     )?;
     let owner_set: BTreeSet<String> = owner_ids.iter().cloned().collect();
@@ -885,7 +903,14 @@ pub fn run_source_slice_report(args: &SourceSliceArgs) -> Result<SourceSliceRepo
     let graph = load_graph(&args.common.owner_graph_path)?;
     let selection = args.selection.selection_kind()?;
     let query = query_report(&selection);
-    let owner_ids = resolve_owner_ids(&selection, &graph, &args.common, args.size_cap_lines, None)?;
+    let owner_ids = resolve_owner_ids(
+        &selection,
+        &graph,
+        &args.common,
+        args.size_cap_lines,
+        args.source_root.as_deref(),
+        None,
+    )?;
     let owner_set: BTreeSet<String> = owner_ids.iter().cloned().collect();
     let owners = owners_for_ids(&graph, &owner_set);
     let spans = source_spans(&owners)?;
@@ -1227,6 +1252,7 @@ impl SelectionArgs {
     fn selection_kind(&self) -> Result<SelectionKind> {
         let selected = [
             self.owner_id.as_ref(),
+            self.module_path.as_ref(),
             self.module_id.as_ref(),
             self.binding_id.as_ref(),
             self.proposal_id.as_ref(),
@@ -1238,11 +1264,13 @@ impl SelectionArgs {
         .count();
         if selected != 1 {
             bail!(
-                "select exactly one of --owner-id, --module-id, --binding-id, --proposal-id, --unit-id, or --diagnostic-id (got {selected})"
+                "select exactly one of --owner-id, --module-path, --module-id, --binding-id, --proposal-id, --unit-id, or --diagnostic-id (got {selected})"
             );
         }
         if let Some(owner_id) = &self.owner_id {
             Ok(SelectionKind::Owner(owner_id.clone()))
+        } else if let Some(module_path) = &self.module_path {
+            Ok(SelectionKind::ModulePath(module_path.clone()))
         } else if let Some(module_id) = &self.module_id {
             Ok(SelectionKind::Module(module_id.clone()))
         } else if let Some(binding_id) = &self.binding_id {
@@ -1314,6 +1342,7 @@ fn resolve_owner_ids(
     graph: &OwnerGraphReport,
     common: &CommonArgs,
     size_cap_lines: usize,
+    source_root: Option<&Path>,
     factorize: Option<&PeelFactorizeReport>,
 ) -> Result<Vec<String>> {
     let mut owner_ids: Vec<String> = match selection {
@@ -1323,6 +1352,9 @@ fn resolve_owner_ids(
             } else {
                 bail!("owner id {owner_id:?} not found in owner graph");
             }
+        }
+        SelectionKind::ModulePath(module_path) => {
+            resolve_module_path_owner_ids(graph, common, source_root, module_path)?
         }
         SelectionKind::Module(module_id) => {
             let owner_ids: Vec<String> = graph
@@ -1353,7 +1385,7 @@ fn resolve_owner_ids(
                 let factorize = analyze_peel_factorize(&PeelFactorizeOptions {
                     owner_graph_path: common.owner_graph_path.clone(),
                     modules_root: common.modules_root.clone(),
-                    source_root: None,
+                    source_root: source_root.map(Path::to_path_buf),
                     size_cap_lines,
                 })?;
                 owner_ids_for_proposal(&factorize, proposal_id)
@@ -1373,7 +1405,7 @@ fn resolve_owner_ids(
                 let factorize = analyze_peel_factorize(&PeelFactorizeOptions {
                     owner_graph_path: common.owner_graph_path.clone(),
                     modules_root: common.modules_root.clone(),
-                    source_root: None,
+                    source_root: source_root.map(Path::to_path_buf),
                     size_cap_lines,
                 })?;
                 owner_ids_for_diagnostic(&factorize, diagnostic_id)
@@ -1386,6 +1418,56 @@ fn resolve_owner_ids(
         bail!("selection did not resolve to any owner ids");
     }
     Ok(owner_ids)
+}
+
+fn resolve_module_path_owner_ids(
+    graph: &OwnerGraphReport,
+    common: &CommonArgs,
+    source_root: Option<&Path>,
+    module_path: &str,
+) -> Result<Vec<String>> {
+    let yaml_path = common.modules_root.join(format!("{module_path}.yaml"));
+    let claims = read_module_claims(&yaml_path)
+        .with_context(|| format!("reading module YAML {}", yaml_path.display()))?;
+    if !claims.has_claims() {
+        bail!("module {module_path:?} has no members or anonymous_statements; nothing to describe");
+    }
+
+    let binding_to_owner = binding_to_owner(graph);
+    let mut owner_ids = BTreeSet::<String>::new();
+    let mut unknown_binding_ids = Vec::<String>::new();
+    for binding in &claims.bindings {
+        if let Some(owner_id) = binding_to_owner.get(binding) {
+            owner_ids.insert(owner_id.clone());
+        } else {
+            unknown_binding_ids.push(binding.clone());
+        }
+    }
+
+    let claim_sets = [AnonymousStatementClaimSet {
+        module_path: &yaml_path,
+        match_sources: &claims.anonymous_match_sources,
+    }];
+    let anonymous_owners = resolve_anonymous_statement_claims(
+        graph,
+        &common.owner_graph_path,
+        &common.modules_root,
+        source_root,
+        &claim_sets,
+    )?;
+    for owner in &anonymous_owners[0] {
+        if let Some(node) = graph.nodes.get(owner.0) {
+            owner_ids.insert(node.id.clone());
+        }
+    }
+
+    if owner_ids.is_empty() && !unknown_binding_ids.is_empty() {
+        bail!(
+            "module {module_path:?} declares bindings that do not appear in the owner graph: {}",
+            unknown_binding_ids.join(", ")
+        );
+    }
+    Ok(owner_ids.into_iter().collect())
 }
 
 fn owner_ids_for_proposal(factorize: &PeelFactorizeReport, proposal_id: &str) -> Vec<String> {
@@ -1772,6 +1854,7 @@ mod tests {
             common,
             selection: SelectionArgs {
                 owner_id: None,
+                module_path: None,
                 module_id: None,
                 binding_id: Some("ZZ".to_string()),
                 proposal_id: None,
@@ -1779,6 +1862,7 @@ mod tests {
                 diagnostic_id: None,
             },
             size_cap_lines: 10_000,
+            source_root: None,
             limit: 0,
             include_proposals: true,
             format: None,
@@ -1805,6 +1889,7 @@ mod tests {
             common,
             selection: SelectionArgs {
                 owner_id: None,
+                module_path: None,
                 module_id: None,
                 binding_id: Some("ZZ".to_string()),
                 proposal_id: None,
@@ -1812,6 +1897,7 @@ mod tests {
                 diagnostic_id: None,
             },
             size_cap_lines: 10_000,
+            source_root: None,
             limit: 0,
             include_proposals: false,
             format: None,
@@ -1854,6 +1940,7 @@ mod tests {
             common,
             selection: SelectionArgs {
                 owner_id: None,
+                module_path: None,
                 module_id: None,
                 binding_id: Some("ZZ".to_string()),
                 proposal_id: None,
@@ -1861,6 +1948,7 @@ mod tests {
                 diagnostic_id: None,
             },
             size_cap_lines: 10_000,
+            source_root: None,
             limit: 1,
             include_proposals: false,
             format: None,
@@ -1887,6 +1975,7 @@ mod tests {
             common,
             selection: SelectionArgs {
                 owner_id: Some("owner:0".to_string()),
+                module_path: None,
                 module_id: None,
                 binding_id: None,
                 proposal_id: None,
