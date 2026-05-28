@@ -7,8 +7,8 @@ Terraform via tofu-controller.
 
 ```text
 AWS Route 53 hosted zone (Z02901943N8ZFQFOD9P5I)
-├── *.allegedly.works  A  → VPS node IPs (wildcard)
-├── allegedly.works    A  → VPS node IPs (apex)
+├── *.allegedly.works  A  → OVH gateway node IPs (wildcard)
+├── allegedly.works    A  → OVH gateway node IPs (apex)
 └── _acme-challenge.*  TXT  (managed by cert-manager for ACME DNS-01)
 
 Terraform (tofu-controller) manages A records.
@@ -17,13 +17,13 @@ cert-manager Route 53 solver manages ACME challenge TXT records.
 
 ## Records
 
-| Record   | FQDN                 | IPs              | TTL |
-| -------- | -------------------- | ---------------- | --- |
-| wildcard | `*.allegedly.works.` | All VPS node IPs | 300 |
-| apex     | `allegedly.works.`   | All VPS node IPs | 300 |
+| Record   | FQDN                 | IPs                  | TTL |
+| -------- | -------------------- | -------------------- | --- |
+| wildcard | `*.allegedly.works.` | OVH gateway node IPs | 300 |
+| apex     | `allegedly.works.`   | OVH gateway node IPs | 300 |
 
-VPS node IPs are hardcoded in the Terraform module. Update when adding/removing
-VPS nodes.
+OVH gateway node IPs are hardcoded in the Terraform module. Update when adding
+or removing gateway nodes.
 
 ## Key Files
 
@@ -53,8 +53,8 @@ dig allegedly.works NS
 kubectl get certificate -A
 ```
 
-## Updating VPS Node IPs
+## Updating Gateway Node IPs
 
-When adding or removing VPS nodes, update the `vps_ips` local in
-`terraform/gitops/dns-records/main.tf`. Commit and push — tofu-controller
-applies automatically.
+When adding or removing gateway nodes, update the IP locals in
+`terraform/gitops/dns-records/main.tf`. Commit and push; tofu-controller applies
+automatically.

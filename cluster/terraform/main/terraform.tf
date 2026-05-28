@@ -8,10 +8,9 @@ terraform {
   required_providers {
     # From persistent-auth (SOPS-encrypted secrets)
     sops = { source = "carlpett/sops", version = "~> 1.4.0" }
-    # From infrastructure + persistent-auth + nixos-dev-env
+    # From persistent-auth + nixos-dev-env
     proxmox = { source = "bpg/proxmox", version = "~> 0.93.0" }
     # From infrastructure
-    hcloud     = { source = "hetznercloud/hcloud", version = "~> 1.45" }
     talos      = { source = "siderolabs/talos", version = "~> 0.10.0" }
     kubernetes = { source = "hashicorp/kubernetes", version = "~> 2.38.0" }
     # From flux
@@ -69,10 +68,6 @@ provider "flux" {
       private_key = data.sops_file.flux_deploy_key.data["private_key"]
     }
   }
-}
-
-provider "hcloud" {
-  token = var.hcloud_token
 }
 
 provider "talos" {}

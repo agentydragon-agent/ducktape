@@ -3,8 +3,8 @@
 Small Talos k8s cluster with GitOps and HTTPS.
 
 - Deploy: `bazel run //cluster:bootstrap` (single command, automated layered deployment)
-- VMs: Talos on Proxmox + Hetzner VPS, configured with OpenTofu
-- Ingress: Cilium Gateway API (Envoy hostNetwork on VPS)
+- Machines: Talos on OVH Kimsufi bare metal plus NixOS/Proxmox workers, configured with OpenTofu
+- Ingress: Cilium Gateway API (Envoy hostNetwork on OVH)
 - CNI: Cilium VXLAN (infrastructure-managed, not GitOps)
 - Secrets: SOPS (age-encrypted in git, decrypted by Flux). ESO with the Kubernetes
   provider mirrors a few secrets cross-namespace. Vault was decommissioned 2026-04-19
@@ -13,7 +13,7 @@ Small Talos k8s cluster with GitOps and HTTPS.
 ## Prerequisites
 
 - Proxmox host `atlas` with SSH access (`root@atlas`)
-- Hetzner Cloud API token (`HCLOUD_TOKEN`)
+- OVH API credentials (`secrets/ovh-credentials.sops.yaml`)
 - GitHub CLI (`gh auth login`) for Flux
 - direnv configured in cluster directory
 
@@ -89,8 +89,6 @@ All storage is region-local — no cross-site synchronous replication.
 | `lvm-proxmox-hdd`    | OpenEBS LVM CSI        | `proxmox` | HDD thin provisioning: Harbor, Langfuse, Docker CI, Grocy                |
 | `proxmox-csi-retain` | Proxmox CSI            | `proxmox` | Block storage via Proxmox API: Ollama, Devbot (migrating off)            |
 | `longhorn`           | Longhorn               | `hil`     | Legacy — orphaned PVCs only, no active workloads                         |
-| `hetzner-longhorn`   | Longhorn               | `hil`     | Replicated across VPS nodes (none active yet)                            |
-| `hcloud-volumes`     | Hetzner Cloud CSI      | `hil`     | (none active)                                                            |
 
 Proxmox CSI needs VLAN access to Proxmox API. OpenEBS LVM is constrained to nodes
 with the `openebs-proxmox-ssd` / `openebs-proxmox-hdd` volume groups (currently Proxmox nodes only).
@@ -118,15 +116,15 @@ which reads the env var and injects GPU devices/libraries via host CDI specs.
 
 ## Failure Modes
 
-| Scenario        | Cluster    | Ingress | DNS   | Authentik | Notes                                         |
-| --------------- | ---------- | ------- | ----- | --------- | --------------------------------------------- |
-| Single VPS down | 2/3 quorum | Works   | Works | Works     | Surviving VPS CP carries ingress + lighthouse |
-| Both VPS down   | 1/3 only   | Down    | Down  | Down      | Home pods continue but cluster frozen         |
-| Home down       | 2/3 quorum | Works   | Works | Works     | All VPS-critical services on `local-path`     |
+| Scenario              | Cluster    | Ingress | DNS   | Authentik | Notes                                             |
+| --------------------- | ---------- | ------- | ----- | --------- | ------------------------------------------------- |
+| Single OVH CP down    | 2/3 quorum | Works   | Works | Works     | Surviving OVH CP carries ingress + lighthouse     |
+| Multiple OVH CPs down | 1/3 only   | Down    | Down  | Down      | Home pods continue but cluster frozen             |
+| Home down             | 3/3 quorum | Works   | Works | Works     | Public-critical services run on OVH-local storage |
 
-### VPS-Only Resilience Invariants
+### OVH-Only Resilience Invariants
 
-The following services **MUST** work/recover with VPS only (without Proxmox):
+The following services **MUST** work/recover with OVH only (without Proxmox):
 
 - **DNS** (AWS Route 53) — all external name resolution depends on this
 - **Website** (`allegedly.works`) — public-facing

@@ -22,7 +22,7 @@ spec:
       - key: node-role.kubernetes.io/control-plane
         operator: Exists
         effect: NoSchedule
-    # One PostgreSQL instance per VPS node for real HA
+    # One PostgreSQL instance per HIL node for real HA.
     topologyKey: kubernetes.io/hostname
 
   storage:

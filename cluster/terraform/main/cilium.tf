@@ -1,8 +1,7 @@
 # Cilium CNI + Gateway API CRDs — deployed via helm CLI during bootstrap.
 #
-# Cilium's rendered manifest (~82KB) exceeds Hetzner's 32KB user_data limit,
-# so it can't be a Talos inlineManifest. Instead we install via helm CLI
-# after the k8s API is reachable.
+# Cilium's rendered manifest is large, so keep it out of Talos inline manifests
+# and install it via helm CLI after the k8s API is reachable.
 
 locals {
   cilium_version      = "1.19.2"

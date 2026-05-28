@@ -28,8 +28,8 @@ spec:
 
     # Restrict the FUSE mount service + CSI node daemons to OVH kimsufi
     # nodes. Pods consuming seaweedfs-ovh PVCs must schedule on OVH; we
-    # don't want phantom daemonsets on Hetzner/Proxmox until we know the
-    # backend is suitable.
+    # don't want phantom daemonsets on non-OVH nodes until we know the backend
+    # is suitable.
     mountService:
       enabled: true
       image: chrislusf/seaweedfs-mount

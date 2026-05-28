@@ -93,7 +93,7 @@ Targeted apply avoids the slow full-root refresh (Proxmox provider stalls on
 offline `atlas`).
 
 If `atlas`/Proxmox is offline during a control-plane migration, use targeted
-plans for hcloud/OVH only and leave Proxmox-managed resources in state. Once
+plans for OVH only and leave Proxmox-managed resources in state. Once
 Proxmox is reachable again, run a reviewed full plan from `cluster/terraform/main`
 to converge the now-empty `local.proxmox_nodes` map, destroy
 `proxmox_virtual_environment_vm.talos["pve_cp0"]`, and prune the retired local
@@ -111,7 +111,7 @@ ping 10.42.0.13  # or .14, depending on slot
 ```
 
 Add the new public IP to `cluster/nebula-mesh.json` so non-Talos nodes (wyrm2,
-rugged) have a direct path instead of relying on VPS relays. Commit.
+rugged) have a direct path instead of relying on stale relay paths. Commit.
 
 ## 5. Replacing an existing slot
 
@@ -138,7 +138,7 @@ expiry. Two strategies:
 3. Then do (A) for the slot you're retiring.
 
 Use B when the slot to retire is hosting load-bearing pods that can't easily
-relocate (VPS workers are tight on memory).
+relocate (worker memory pressure is the usual reason).
 
 ## Gotchas
 

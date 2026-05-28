@@ -5,7 +5,7 @@
 #
 # This file consumes the roster and produces:
 #   - Per-node Nebula configs (ExtensionServiceConfig YAMLs mounted by Talos)
-#   - A drift check comparing roster endpoints to live hcloud/OVH IPs
+#   - A drift check comparing roster endpoints to live OVH IPs
 #
 # Cert PKI (CA + node certs) lives in persistent-auth.tf, which also reads the
 # roster (filtered to tofu-managed hosts).
@@ -53,10 +53,9 @@ locals {
     }
   }
 
-  # Live endpoints reported by hcloud / OVH data sources, keyed by TF resource
-  # key. Used by the drift check below.
+  # Live endpoints reported by OVH data sources, keyed by TF resource key. Used
+  # by the drift check below.
   nebula_live_endpoints = merge(
-    { for k in keys(local.vps_cp_nodes) : k => "${hcloud_server.vps[k].ipv4_address}:4242" },
     { for k in keys(data.ovh_dedicated_server.kimsufi) : k => "${data.ovh_dedicated_server.kimsufi[k].ip}:4242" },
     { for k in keys(data.ovh_dedicated_server.kimsufi_cp) : k => "${data.ovh_dedicated_server.kimsufi_cp[k].ip}:4242" },
   )
@@ -178,8 +177,7 @@ locals {
 }
 
 # Drift check: every TF-managed host that has a live endpoint must match the
-# roster. Skip if the roster declares no endpoint yet (chicken-and-egg case
-# for a brand-new Hetzner VPS — see cluster/docs/mesh_membership.md).
+# roster. Skip if the roster declares no endpoint yet.
 check "nebula_mesh_endpoint_drift" {
   assert {
     condition = alltrue([

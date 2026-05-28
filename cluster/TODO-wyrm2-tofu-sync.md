@@ -22,7 +22,6 @@ kubectl port-forward -n tofu-state svc/tofu-state-db-rw 15432:5432 &
 export SOPS_AGE_KEY=$(ssh-to-age -private-key < ~/.ssh/id_ed25519)
 export PG_CONN_STR="postgres://tfstate:$(kubectl get secret -n tofu-state tofu-state-db-credentials -o jsonpath='{.data.password}' | base64 -d)@localhost:15432/tfstate?sslmode=disable"
 export PROXMOX_VE_API_TOKEN=$(sops -d --extract '["proxmox_ve_api_token"]' ../../../secrets/shared/cluster-tokens.yaml)
-export TF_VAR_hcloud_token=$(sops -d --extract '["hcloud_token"]' ../../../secrets/shared/cluster-tokens.yaml)
 export KUBECONFIG=~/.kube/config
 
 tofu plan -target=module.wyrm2

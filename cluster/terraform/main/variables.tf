@@ -12,7 +12,7 @@ variable "cluster_domain" {
 }
 
 variable "talos_version" {
-  description = "Talos version for the cluster (VPS nodes)"
+  description = "Talos version for the cluster"
   type        = string
   default     = "v1.12.3"
 }
@@ -30,19 +30,6 @@ variable "kubernetes_version" {
   description = "Kubernetes version"
   type        = string
   default     = "1.35.1"
-}
-
-# Hetzner Cloud (from infrastructure)
-variable "hcloud_token" {
-  description = "Hetzner Cloud API token"
-  type        = string
-  sensitive   = true
-}
-
-variable "hetzner_location" {
-  description = "Hetzner Cloud location"
-  type        = string
-  default     = "hil"
 }
 
 # Proxmox (shared by persistent-auth + infrastructure + VMs)

@@ -14,15 +14,6 @@ locals {
   # Cluster configuration
   cluster_endpoint = "https://localhost:7445" # KubePrism - avoids circular dependency
 
-  # Node topology - Hetzner VPS nodes.
-  # Empty after the OVH control-plane migration; keep the scaffolding so future
-  # hcloud nodes can be reintroduced without rewriting the module.
-  vps_nodes = {}
-
-  # Derived: split by role for machine config generation
-  vps_cp_nodes     = { for k, v in local.vps_nodes : k => v if v.role == "controlplane" }
-  vps_worker_nodes = { for k, v in local.vps_nodes : k => v if v.role == "worker" }
-
   # Node topology - Proxmox Talos nodes.
   # talos-pve-cp-0 is retired; Proxmox Kubernetes capacity is provided by NixOS
   # workers instead.
@@ -36,11 +27,10 @@ locals {
   kubeconfig_cluster_endpoint = "https://api.${var.cluster_domain}:6443"
 
   # Total expected node count (for health checks)
-  expected_node_count = length(local.vps_nodes) + length(local.proxmox_nodes) + length(local.active_kimsufi_servers) + length(local.active_kimsufi_cp_servers)
+  expected_node_count = length(local.proxmox_nodes) + length(local.active_kimsufi_servers) + length(local.active_kimsufi_cp_servers)
 
   # All controlplane endpoints (for talosconfig).
   all_controlplane_ips = concat(
-    [for k, v in hcloud_server.vps : v.ipv4_address if local.vps_nodes[k].role == "controlplane"],
     [for k, v in local.proxmox_nodes : v.ip if v.type == "controlplane"],
     [for k, v in data.ovh_dedicated_server.kimsufi : v.ip if local.active_kimsufi_servers[k].role == "controlplane"],
     [for k, v in data.ovh_dedicated_server.kimsufi_cp : v.ip],
@@ -162,8 +152,7 @@ locals {
     }
   ]
 
-  # Shared kube-apiserver config for all control plane nodes (VPS + Proxmox).
-  # Centralised here to avoid duplicating between hetzner-nodes.tf and proxmox-nodes.tf.
+  # Shared kube-apiserver config for all control plane nodes.
   api_server_config = {
     certSANs = ["api.${var.cluster_domain}"]
     extraArgs = {
@@ -189,8 +178,8 @@ locals {
     network                        = { cni = { name = "none" } }
     proxy                          = { disabled = true }
     # Talos CCM as inline manifest — removes cloud-provider taint before Flux.
-    # Cilium is too large (~82KB) for Hetzner's 32KB user_data limit, so it
-    # stays as a null_resource helm install (see cilium.tf).
+    # Cilium stays as a null_resource helm install because it is large and is
+    # easier to manage once the k8s API is reachable.
     inlineManifests = [
       { name = "talos-ccm", contents = data.helm_template.talos_ccm.manifest },
     ]
@@ -263,132 +252,11 @@ locals {
 }
 
 # ============================================================================
-# HETZNER VPS NODES (see hetzner-nodes.tf for server resources)
-# ============================================================================
-
-# Firewall for Talos/Kubernetes traffic
-resource "hcloud_firewall" "talos" {
-  name = "talos-cluster"
-
-  # Kubernetes API
-  rule {
-    direction  = "in"
-    protocol   = "tcp"
-    port       = "6443"
-    source_ips = ["0.0.0.0/0", "::/0"]
-  }
-
-  # Talos API
-  rule {
-    direction  = "in"
-    protocol   = "tcp"
-    port       = "50000"
-    source_ips = ["0.0.0.0/0", "::/0"]
-  }
-
-  # Talos trustd (cluster join)
-  rule {
-    direction  = "in"
-    protocol   = "tcp"
-    port       = "50001"
-    source_ips = ["0.0.0.0/0", "::/0"]
-  }
-
-  # Nebula mesh overlay
-  rule {
-    direction  = "in"
-    protocol   = "udp"
-    port       = "4242"
-    source_ips = ["0.0.0.0/0", "::/0"]
-  }
-
-  # Cilium VXLAN overlay (between nodes)
-  rule {
-    direction  = "in"
-    protocol   = "udp"
-    port       = "8472"
-    source_ips = ["0.0.0.0/0", "::/0"]
-  }
-
-  # Cilium health checks (cluster health probes between nodes)
-  rule {
-    direction  = "in"
-    protocol   = "tcp"
-    port       = "4240"
-    source_ips = ["0.0.0.0/0", "::/0"]
-  }
-
-  # HTTPS ingress
-  rule {
-    direction  = "in"
-    protocol   = "tcp"
-    port       = "443"
-    source_ips = ["0.0.0.0/0", "::/0"]
-  }
-
-  # Docker CI (DinD mTLS)
-  rule {
-    direction  = "in"
-    protocol   = "tcp"
-    port       = "2376"
-    source_ips = ["0.0.0.0/0", "::/0"]
-  }
-
-  # HTTP (for ACME)
-  rule {
-    direction  = "in"
-    protocol   = "tcp"
-    port       = "80"
-    source_ips = ["0.0.0.0/0", "::/0"]
-  }
-
-  # DNS (TCP)
-  rule {
-    direction  = "in"
-    protocol   = "tcp"
-    port       = "53"
-    source_ips = ["0.0.0.0/0", "::/0"]
-  }
-
-  # DNS (UDP)
-  rule {
-    direction  = "in"
-    protocol   = "udp"
-    port       = "53"
-    source_ips = ["0.0.0.0/0", "::/0"]
-  }
-
-  # etcd (between controllers)
-  rule {
-    direction  = "in"
-    protocol   = "tcp"
-    port       = "2379-2380"
-    source_ips = ["0.0.0.0/0", "::/0"]
-  }
-
-  # Kubelet API
-  rule {
-    direction  = "in"
-    protocol   = "tcp"
-    port       = "10250"
-    source_ips = ["0.0.0.0/0", "::/0"]
-  }
-
-  # ICMP (ping)
-  rule {
-    direction  = "in"
-    protocol   = "icmp"
-    source_ips = ["0.0.0.0/0", "::/0"]
-  }
-}
-
-# ============================================================================
 # TALOS BOOTSTRAP & KUBECONFIG
 # ============================================================================
 
 # Bootstrap etcd. This resource records the already-bootstrapped cluster; the
-# endpoint is now an OVH control plane so the config no longer depends on
-# retired Hetzner nodes.
+# endpoint is now an OVH control plane.
 resource "talos_machine_bootstrap" "cluster" {
   client_configuration = local.client_configuration
   endpoint             = local.primary_controlplane_ip

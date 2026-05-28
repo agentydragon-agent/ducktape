@@ -51,20 +51,14 @@ PERSISTENT_AUTH_TARGETS = [
     "talos_machine_secrets.cluster",
 ]
 
-# Infrastructure resources — VMs, Talos config, Cilium, k8s secrets.
+# Infrastructure resources — machines, Talos config, Cilium, k8s secrets.
 # Applied after persistent-auth, before Flux.
 INFRA_TARGETS = [
-    "talos_image_factory_schematic.hcloud",
     "talos_image_factory_schematic.proxmox",
-    "terraform_data.talos_hcloud_image",
     "tls_private_key.ssh",
-    "hcloud_ssh_key.talos",
-    "hcloud_firewall.talos",
-    "hcloud_server.vps",
     "proxmox_virtual_environment_download_file.talos_disk",
     "proxmox_virtual_environment_file.network_config",
     "proxmox_virtual_environment_vm.talos",
-    "talos_machine_configuration_apply.vps",
     "talos_machine_configuration_apply.proxmox",
     "talos_machine_bootstrap.cluster",
     "talos_cluster_kubeconfig.cluster",
@@ -74,7 +68,6 @@ INFRA_TARGETS = [
     "null_resource.wait_for_k8s_api",
     "null_resource.cilium_bootstrap",
     "null_resource.wait_for_nodes_ready",
-    "kubernetes_secret.hcloud_csi",
     "kubernetes_namespace.flux_system",
     "kubernetes_secret.sops_age_cluster_secrets",
     "kubernetes_config_map.cluster_info",

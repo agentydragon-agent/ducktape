@@ -5,8 +5,9 @@ metadata:
   namespace: tofu-state
   annotations:
     description: >-
-      Proxmox storage for cold-boot recovery. The CNPG cluster runs on VPS
-      (local-path); backups on Proxmox ensure a different failure domain.
+      Proxmox storage for cold-boot recovery. The CNPG cluster runs on OVH
+      HIL local-path storage; backups on Proxmox ensure a different failure
+      domain.
 spec:
   accessModes:
     - ReadWriteOnce

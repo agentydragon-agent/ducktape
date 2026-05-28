@@ -68,7 +68,7 @@ spec:
 
       # Secrets now loaded per-component via server.envFrom and worker.envFrom
 
-    # Server deployment — single replica (VPS memory too tight for 2+ with current requests)
+    # Server deployment — single replica (OVH memory too tight for 2+ with current requests)
     server:
       name: server
       replicas: 1
@@ -100,7 +100,7 @@ spec:
         periodSeconds: 10
 
       # Default 3s timeout is too tight — outpost API calls regularly take
-      # 1s+ even with VPS-local PostgreSQL. Give enough headroom.
+      # 1s+ even with OVH-local PostgreSQL. Give enough headroom.
       livenessProbe:
         timeoutSeconds: 10
       readinessProbe:

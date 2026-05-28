@@ -46,22 +46,11 @@ output "cluster_domain" {
 output "cluster_nodes" {
   description = "Cluster node information"
   value = {
-    vps_ips = { for k, v in hcloud_server.vps : k => v.ipv4_address }
     ovh_ips = merge(
       { for k, v in data.ovh_dedicated_server.kimsufi : k => v.ip },
       { for k, v in data.ovh_dedicated_server.kimsufi_cp : k => v.ip },
     )
     proxmox_ips = { for k, v in local.proxmox_nodes : k => v.ip }
-  }
-}
-
-output "vps_node_ips" {
-  description = "Public IP addresses of VPS nodes"
-  value = {
-    for k, v in hcloud_server.vps : k => {
-      ipv4 = v.ipv4_address
-      ipv6 = v.ipv6_address
-    }
   }
 }
 

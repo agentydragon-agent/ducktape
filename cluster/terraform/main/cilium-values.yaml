@@ -33,7 +33,7 @@ MTU: 1412
 
 # Gateway API: replaces ingress-nginx (retired March 2026)
 # Reuses per-node Envoy DaemonSet — zero additional controllers.
-# hostNetwork binds ports 80/443 directly on VPS nodes.
+# hostNetwork binds ports 80/443 directly on gateway nodes.
 gatewayAPI:
   enabled: true
   enableAppProtocol: true

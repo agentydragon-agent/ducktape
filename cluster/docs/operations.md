@@ -21,7 +21,7 @@ sops cluster/k8s/<app>/secrets/new-secret.sops.yaml
 ```bash
 cd /home/agentydragon/code/ducktape/cluster/terraform/main
 
-# Add new node to the `proxmox_nodes` or `hetzner_nodes` locals map
+# Add new node to the relevant OpenTofu topology, usually `ovh-nodes.tf`
 # Apply changes
 tofu apply
 
@@ -46,7 +46,7 @@ ssh root@atlas 'qm reboot 10000'
 
 ### Remove Node
 
-Remove the node from `proxmox_nodes` or `hetzner_nodes` locals in OpenTofu, then `tofu apply`.
+Remove the node from the relevant OpenTofu topology, then `tofu apply`.
 Kubernetes node object will be cleaned up automatically.
 
 ## System Diagnostics

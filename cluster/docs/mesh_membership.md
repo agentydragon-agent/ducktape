@@ -8,7 +8,7 @@ The mesh host roster is a single JSON file at the repo root,
   backends for kubelet)
 - `cluster/terraform/main/nebula.tf` — per-node ExtensionServiceConfig YAMLs,
   plus a `check {}` block asserting that roster endpoints match the live
-  hcloud / OVH IPs
+  OVH IPs
 - `cluster/terraform/main/persistent-auth.tf` — issues per-host Nebula certs
   for every tofu-managed entry
 - `cluster/scripts/render_mobile_nebula_config.py` — mobile client config
@@ -25,14 +25,14 @@ Pydantic schema and validation: `cluster/scripts/nebula_mesh.py`, exercised by
   "role":         "control-plane" | "worker" | "laptop" | "non-k8s",
   "lighthouse":   true | false,         // default false
   "relay":        true | false,         // default false
-  "managed_by":   "tofu-hcloud" | "tofu-ovh" | "tofu-proxmox" | "nixos" | "mobile",
+  "managed_by":   "tofu-ovh" | "tofu-proxmox" | "nixos" | "mobile",
   "cert_groups":  [...]                 // optional; embedded in the Nebula cert
 }
 ```
 
 ## Add a host
 
-Three flavours depending on how the underlying machine is provisioned.
+Two flavours depending on how the underlying machine is provisioned.
 
 ### OVH Kimsufi (endpoint known before TF apply)
 
@@ -49,26 +49,6 @@ any TF apply.
    endpoint matches live OVH data.
 5. Restart Nebula on roaming/NixOS hosts (or wait for next `nixos-rebuild
 switch`) so they pick up the new `static_host_map`.
-
-### Hetzner VPS (endpoint only known after first TF apply)
-
-This is the chicken-and-egg case: the hcloud server gets its public IP when TF
-creates it. Two-step apply.
-
-1. Edit `nebula-mesh.json`: add the host with `nebula_ip`, role, flags,
-   `managed_by: "tofu-hcloud"`. **Leave `endpoint` out for now** — the drift
-   check skips hosts without one.
-2. Add a row to `local.nebula_tf_key_to_host` in nebula.tf, and (if it's a new
-   VPS slot) update `local.vps_nodes` in
-   `cluster/terraform/main/infrastructure.tf`.
-3. `bazel run //cluster:bootstrap`. TF provisions the hcloud_server and issues
-   the cert.
-4. Read the new IP:
-   `tofu -chdir=cluster/terraform/main output -raw <key>` (or `hcloud server list`).
-5. Edit `nebula-mesh.json`: fill in the now-known `endpoint`.
-6. `bazel run //cluster:bootstrap` again. The drift `check` now enforces the
-   match; per-node configs propagate to other Talos nodes.
-7. Restart Nebula on roaming/NixOS hosts.
 
 ### NixOS / laptop / mobile (manual cert)
 
@@ -90,7 +70,7 @@ For nodes not provisioned by TF (atlas, wyrm2, rugged, iguana, pixel6).
 1. Cordon + drain in k8s (existing flow).
 2. Edit `nebula-mesh.json`: delete the host entry.
 3. Remove the matching row from `local.nebula_tf_key_to_host` in nebula.tf
-   (and `local.vps_nodes` in infrastructure.tf if applicable).
+   if applicable.
 4. `bazel run //cluster:bootstrap`. TF destroys the underlying resource and
    prunes the cert; remaining Talos nodes get refreshed configs.
 5. **Restart Nebula on remaining lighthouses** (e.g., `talosctl service nebula
@@ -110,7 +90,7 @@ restart -n <ip>`). Without this, the lighthouses sit in silent
 
 ## Provider re-IPs a host
 
-OVH reallocates a Kimsufi IP, or hcloud destroys/recreates a VPS:
+OVH reallocates a Kimsufi IP:
 
 1. `bazel run //cluster:bootstrap` (or any `tofu plan`) fails the drift
    `check` with a diff: `roster=<old> live=<new>`.
@@ -131,4 +111,4 @@ OVH reallocates a Kimsufi IP, or hcloud destroys/recreates a VPS:
   empty).
 
 TF `check "nebula_mesh_endpoint_drift"` runs at plan time and catches mismatch
-against live `hcloud_server.*` / `data.ovh_dedicated_server.*` IPs.
+against live `data.ovh_dedicated_server.*` IPs.

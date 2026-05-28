@@ -32,10 +32,10 @@ headlamp, inventree, kagent, matrix, openclaw, study-casino). State lives in the
 without also wiping that state secret triggers the cascading desync described in
 <docs/lessons_learned/2026_02_18_authentik_tf_state_lifecycle_coupling.md>.
 
-## CRITICAL: VPS-Only Resilience
+## CRITICAL: OVH-Only Resilience
 
-DNS and website MUST work with VPS only (without Proxmox). No `proxmox-csi-retain` storage
-or Proxmox-pinned nodes. See <docs/plan.md> "VPS-Only Resilience Invariants".
+DNS and website MUST work with OVH only (without Proxmox). No `proxmox-csi-retain` storage
+or Proxmox-pinned nodes. See <docs/plan.md> "OVH-Only Resilience Invariants".
 
 ## Primary Directive: Declarative Turnkey Bootstrap
 
@@ -82,7 +82,7 @@ In `terraform/main/`:
 
 | File                       | Purpose                                        |
 | -------------------------- | ---------------------------------------------- |
-| `hetzner-nodes.tf`         | VPS definitions                                |
+| `ovh-nodes.tf`             | OVH Kimsufi bare-metal definitions             |
 | `proxmox-nodes.tf`         | Proxmox VM definitions                         |
 | `talos-machine-secrets.tf` | Machine secrets (ephemeral)                    |
 | `cilium.tf`                | CNI configuration                              |

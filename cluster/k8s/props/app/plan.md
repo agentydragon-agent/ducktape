@@ -2,10 +2,11 @@
 
 ## Langfuse
 
-- [ ] **TODO(reliability): Move PostgreSQL to hcloud-volumes on VPS** —
+- [ ] **TODO(reliability): Move PostgreSQL to durable replicated storage** —
       Currently Langfuse's PostgreSQL is on `proxmox-csi-retain`. For
-      durability and cross-node HA, move to `hcloud-volumes` on VPS nodes
-      (same pattern as Authentik). See `cluster/k8s/langfuse/helmrelease.yaml`.
+      durability and cross-node HA, use a CNPG-style replicated database on the
+      current OVH/Proxmox storage classes. See
+      `cluster/k8s/langfuse/helmrelease.yaml`.
 
 - [ ] **TODO(reliability): ClickHouse replication** — Currently single-node on
       Proxmox. For production use, deploy a 3-node ClickHouse cluster.
@@ -18,6 +19,6 @@
       already applied to Loki, Tempo, and Mimir.
       See `cluster/k8s/langfuse/helmrelease.yaml`.
 
-- [ ] **TODO(reliability): Move Redis to VPS or add Sentinel** — Currently
+- [ ] **TODO(reliability): Move Redis to OVH or add Sentinel** — Currently
       single-node Redis on Proxmox. For reliability add Redis Sentinel or
-      move to VPS. See `cluster/k8s/langfuse/helmrelease.yaml`.
+      move to OVH. See `cluster/k8s/langfuse/helmrelease.yaml`.

@@ -287,7 +287,7 @@ creation_rules:
   # --- All-user secrets (admin + all user SSH keys) ---
   # cluster-secrets-age: Flux SOPS decryption key (TODO: consider narrowing to admin-only)
   # flux-deploy-key: ED25519 SSH key registered as GitHub deploy key
-  # cluster-tokens: hcloud + proxmox API tokens (tofu apply)
+  # cluster-tokens: Proxmox API token for tofu apply; legacy HCloud token retained for account history
   # habitify, huggingface: personal API tokens exported as env vars
   - path_regex: secrets/shared/.*\.yaml$
     key_groups:

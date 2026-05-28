@@ -7,8 +7,8 @@ See <../README.md> for architecture overview, node topology, and networking deta
 
 ### Required Credentials
 
-1. **Hetzner Cloud API Token** (`HCLOUD_TOKEN` env var)
-2. **Proxmox API Token** (`PROXMOX_VE_API_TOKEN` env var, `root@pam`)
+1. **Proxmox API Token** (`PROXMOX_VE_API_TOKEN` env var, `root@pam`)
+2. **OVH API credentials** (`secrets/ovh-credentials.sops.yaml`)
 3. **GitHub CLI** (`gh auth login`) for Flux GitOps bootstrap
 
 ### Required Access
@@ -28,7 +28,6 @@ See <bootstrap_dependencies.md> for the full dependency graph.
 ## Cold-Start Deployment
 
 ```bash
-export HCLOUD_TOKEN="your-hetzner-api-token"
 bazel run //cluster:bootstrap
 ```
 
@@ -48,8 +47,8 @@ The bootstrap script executes a multi-phase deployment against a single TF root
 
 ### Phase 2: Infrastructure (`tofu apply -target=<infra resources>` + health checks)
 
-- Hetzner API → 2x VPS with Talos ISO
-- Proxmox API → 1x VM with cloud-init for static IP
+- OVH API → Kimsufi bare-metal Talos nodes
+- Proxmox API → NixOS worker capacity and any active Proxmox VMs
 - Talos API → Bootstraps cluster, generates kubeconfig
 - Kubernetes API → Installs Cilium CNI, deploys SOPS age key to flux-system
 
@@ -57,7 +56,7 @@ The bootstrap script executes a multi-phase deployment against a single TF root
 
 - Flux Bootstrap → GitOps engine with GitHub
 - Core Services → cert-manager, Cilium Gateway API
-- Storage → Hetzner CSI (VPS), Proxmox CSI (home)
+- Storage → local-path/SeaweedFS/OpenEBS/Proxmox CSI
 - Platform → ESO, Authentik
 
 ### Verification
@@ -99,8 +98,8 @@ via `${LETSENCRYPT_ISSUER}-root-ca` naming convention.
 
 ### Ingress (Gateway API)
 
-- Cilium Gateway API with Envoy DaemonSet (hostNetwork on VPS nodes)
-- VPS public IPs receive HTTPS traffic directly on ports 80/443
+- Cilium Gateway API with Envoy DaemonSet (hostNetwork on OVH nodes)
+- OVH public IPs receive HTTPS traffic directly on ports 80/443
 - Gateway terminates TLS using wildcard cert (`*.allegedly.works`)
 - HTTPRoutes in each application namespace route to backend services
 
@@ -108,4 +107,4 @@ via `${LETSENCRYPT_ISSUER}-root-ca` naming convention.
 
 Uses `localhost:7445` (Talos KubePrism on CP nodes, haproxy on NixOS workers) during
 bootstrap to avoid circular dependency. Kubeconfig is patched post-bootstrap with
-real VPS IP for external access.
+`api.allegedly.works` for external access.

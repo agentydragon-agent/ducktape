@@ -9,7 +9,6 @@ tf_providers_versions(
     name = "providers",
     providers = {
         "proxmox": "bpg/proxmox:~>0.93.0",
-        "hcloud": "hetznercloud/hcloud:~>1.45",
         "talos": "siderolabs/talos:~>0.10.0",
         "kubernetes": "hashicorp/kubernetes:~>2.38.0",
         "flux": "fluxcd/flux:~>1.7.0",
@@ -31,7 +30,6 @@ tf_module(
     ],
     providers = [
         "proxmox",
-        "hcloud",
         "talos",
         "kubernetes",
         "flux",
