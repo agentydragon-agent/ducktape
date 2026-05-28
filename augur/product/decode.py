@@ -297,15 +297,16 @@ def _private_equity_events(
 def _private_equity_opportunities(
     run: SimulationRun, *, primary_agent_id: str, asset_label_by_id: dict[str, str]
 ) -> tuple[RolloutEvent, ...]:
-    primary_pe_assets = set(
-        run.asset_lots.filter(
-            (pl.col("agent_id") == primary_agent_id) & pl.col("asset_id").str.starts_with(_PRIVATE_EQUITY_ASSET_PREFIX)
-        )
+    primary_assets = (
+        run.asset_lots.filter(pl.col("agent_id") == primary_agent_id)
         .select("asset_id")
         .unique()
         .get_column("asset_id")
         .to_list()
     )
+    primary_pe_assets = {
+        asset_id for asset_id in primary_assets if isinstance(try_parse_asset_key(str(asset_id)), PrivateEquityAssetKey)
+    }
     if not primary_pe_assets:
         return ()
     rows = run.events_log.private_equity_opportunities.filter(pl.col("asset_id").is_in(primary_pe_assets)).sort(
