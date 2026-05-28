@@ -42,10 +42,12 @@ catalogs and have read-only access to other users' states.
 import asyncio
 import json
 import logging
+import os
 import sys
 import time
 import uuid
 from collections import defaultdict
+from collections.abc import MutableMapping
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -153,7 +155,11 @@ class _CasinoStaticFiles(StaticFiles):
     """
 
     def file_response(
-        self, full_path: str, stat_result: object, scope: dict[str, Any], status_code: int = 200
+        self,
+        full_path: str | os.PathLike[str],
+        stat_result: os.stat_result,
+        scope: MutableMapping[str, Any],
+        status_code: int = 200,
     ) -> Response:
         path = Path(full_path)
         if path.name == "index.html":
