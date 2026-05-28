@@ -25,6 +25,29 @@ Downstream user repos track private composition: specific agent identities,
 holdings, property shortlists, media, deployment manifests, and
 company-/person-specific modeling assumptions.
 
+### Public/private evidence boundary
+
+Ducktape is the source of truth for shared Augur conventions, generic modeling
+interfaces, public reference classes, public data acquisition recipes, and public
+forecasting notes. It may define schemas and evidence categories, and it may include
+sourced public issuer-specific facts when those facts are useful to a generic
+forecasting or modeling discussion.
+
+Downstream private repos hold evidence that identifies a person, account, issuer,
+security holding, property, or deployment. Examples include Shareworks/account
+snapshots, exact share counts, security numbers, holder status, tender eligibility,
+plan documents, transfer restrictions, property shortlists, private config, and
+trained artifacts whose contents encode private observations.
+
+When a forecast or model needs both public and private evidence, keep the generic
+method, source taxonomy, and public issuer facts here; keep private holder facts
+downstream; and have downstream notes point back to this convention instead of
+duplicating it. For example, Ducktape may say a private-company equity forecast is
+motivated by an OpenAI holding and may cite public OpenAI financing, valuation,
+governance, and liquidity sources. It must not include private quantities, security
+numbers, account screenshots, Shareworks-only facts, private documents, personal
+eligibility terms, or other holder-specific account details.
+
 ## Layout
 
 | Directory   | Purpose                                                                                                                                 |
