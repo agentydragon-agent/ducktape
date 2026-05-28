@@ -38,7 +38,9 @@ use std::process::Command;
 
 use anyhow::{Context, Result, anyhow, bail};
 use clap::{Args as ClapArgs, Subcommand, ValueEnum};
-use serde_yaml::{Mapping, Value};
+use serde_yaml::Value;
+
+use crate::yaml_edit::{read_yaml, write_yaml_if_semantic_changed, yaml_semantically_changed};
 
 /// Top-level `debundle bindings ...` argument shape.
 ///
@@ -365,13 +367,16 @@ pub fn apply_binding_comment(
         }
     };
 
-    let action = if dirty && dry_run {
+    let changed = dirty && yaml_semantically_changed(&file, &doc)?;
+    let action = if dirty && !changed {
+        "unchanged"
+    } else if changed && dry_run {
         "dry-run"
     } else {
         new_action
     };
-    if dirty && !dry_run {
-        write_yaml(&file, &doc)?;
+    if changed && !dry_run {
+        write_yaml_if_semantic_changed(&file, &doc)?;
     }
 
     Ok(CommentOutcome {
@@ -529,13 +534,16 @@ pub fn apply_module_comment(
         }
     };
 
-    let action = if dirty && dry_run {
+    let changed = dirty && yaml_semantically_changed(&file, &doc)?;
+    let action = if dirty && !changed {
+        "unchanged"
+    } else if changed && dry_run {
         "dry-run"
     } else {
         new_action
     };
-    if dirty && !dry_run {
-        write_yaml(&file, &doc)?;
+    if changed && !dry_run {
+        write_yaml_if_semantic_changed(&file, &doc)?;
     }
 
     Ok(CommentOutcome {
@@ -583,23 +591,6 @@ fn set_module_comment(doc: &mut Value, value: Option<String>) -> Result<()> {
 
 fn yk(s: &str) -> Value {
     Value::String(s.to_string())
-}
-
-fn read_yaml(path: &Path) -> Result<Value> {
-    let text = fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-    let parsed: Value =
-        serde_yaml::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
-    Ok(match parsed {
-        Value::Null => Value::Mapping(Mapping::new()),
-        other => other,
-    })
-}
-
-fn write_yaml(path: &Path, doc: &Value) -> Result<()> {
-    let body =
-        serde_yaml::to_string(doc).with_context(|| format!("serializing {}", path.display()))?;
-    fs::write(path, body).with_context(|| format!("writing {}", path.display()))?;
-    Ok(())
 }
 
 fn collect_yaml_files(root: &Path) -> Result<Vec<PathBuf>> {
@@ -813,6 +804,20 @@ mod tests {
                 .unwrap();
         assert_eq!(out.action, "dry-run");
         assert_eq!(out.comment, "will not stick");
+        assert_eq!(read(root, "m.yaml"), original);
+    }
+
+    #[test]
+    fn setting_same_binding_comment_preserves_formatting() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        let original = "# hand formatted\nmembers: [ { selector: { binding: { name: XOe } }, comment: keep } ]\n";
+        write(root, "m.yaml", original);
+
+        let out =
+            apply_binding_comment(root, "XOe", CommentMode::Set("keep".into()), false).unwrap();
+
+        assert_eq!(out.action, "unchanged");
         assert_eq!(read(root, "m.yaml"), original);
     }
 

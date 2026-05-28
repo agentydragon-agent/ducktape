@@ -25,9 +25,10 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow, bail};
 use clap::{Args as ClapArgs, Subcommand};
-use serde_yaml::{Mapping, Value};
+use serde_yaml::Value;
 
 use crate::edit_gate::{gate_post_edit_partition, post_delete_spec, post_merge_spec};
+use crate::yaml_edit::{read_yaml, write_yaml_body_if_semantic_changed};
 
 /// Top-level `debundle module ...` argument shape.
 #[derive(Debug, ClapArgs)]
@@ -301,8 +302,7 @@ pub fn merge_modules(
         &serde_yaml::to_string(&target_doc)
             .with_context(|| format!("serializing merged {}", target_abs.display()))?,
     );
-    fs::write(&target_abs, body)
-        .with_context(|| format!("writing merged {}", target_abs.display()))?;
+    write_yaml_body_if_semantic_changed(&target_abs, &target_doc, body)?;
 
     for src in &source_abs {
         fs::remove_file(src)
@@ -463,17 +463,6 @@ fn display_relative(root: &Path, abs: &Path) -> String {
         .unwrap_or_else(|_| abs.to_string_lossy().into_owned())
 }
 
-fn read_yaml(path: &Path) -> Result<Value> {
-    let text = fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-    let parsed: Value =
-        serde_yaml::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
-    // Treat an empty file as an empty mapping so we can splice into it.
-    Ok(match parsed {
-        Value::Null => Value::Mapping(Mapping::new()),
-        other => other,
-    })
-}
-
 fn collect_member_names(doc: &Value, path: &Path) -> Result<BTreeSet<String>> {
     let mut names = BTreeSet::new();
     let Some(members) = sequence_field(doc, "members") else {
@@ -605,6 +594,25 @@ mod tests {
             .map(|m| member_name(m).unwrap())
             .collect();
         assert_eq!(names, vec!["a", "b", "c"]);
+    }
+
+    #[test]
+    fn merge_with_semantically_empty_source_preserves_target_formatting() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        let target = "# hand formatted\nmembers: [ { selector: { binding: { name: a } } } ]\n";
+        write(root, "target.yaml", target);
+        write(root, "empty.yaml", "members: []\n");
+
+        let summary =
+            merge_modules(root, Path::new("target.yaml"), &[Path::new("empty.yaml")]).unwrap();
+
+        assert_eq!(summary.merged_sources, vec![root.join("empty.yaml")]);
+        assert!(!root.join("empty.yaml").exists());
+        assert_eq!(
+            fs::read_to_string(root.join("target.yaml")).unwrap(),
+            target
+        );
     }
 
     #[test]

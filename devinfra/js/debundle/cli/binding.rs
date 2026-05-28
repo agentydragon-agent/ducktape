@@ -24,6 +24,7 @@ use serde_yaml::{Mapping, Value};
 use spec_modules::{collect_module_files, is_residual_module_path, module_path_from_file};
 
 use crate::edit_gate::{gate_post_edit_partition, post_assign_spec, post_unassign_spec};
+use crate::yaml_edit::{read_yaml, write_yaml_if_semantic_changed, yaml_semantically_changed};
 
 /// A located member inside a module file. Returned by [`find_matches`]
 /// and is the unit `assign` / `rename` mutate.
@@ -244,9 +245,16 @@ pub fn rename_binding(
     let mut doc = read_yaml(&hit.file)?;
     let old_readable = current_readable_name(&doc, hit.member_index)?;
     set_readable_name(&mut doc, hit.member_index, new)?;
-    let action = if dry_run { "dry-run" } else { "renamed" };
-    if !dry_run {
-        write_yaml(&hit.file, &doc)?;
+    let changed = yaml_semantically_changed(&hit.file, &doc)?;
+    let action = if !changed {
+        "unchanged"
+    } else if dry_run {
+        "dry-run"
+    } else {
+        "renamed"
+    };
+    if changed && !dry_run {
+        write_yaml_if_semantic_changed(&hit.file, &doc)?;
     }
     Ok(RenameOutcome {
         file: hit.file,
@@ -708,13 +716,16 @@ pub fn run_bindings_assign(
             files_deleted.push(file.display().to_string());
             continue;
         }
-        if !dry_run {
+        let changed = yaml_semantically_changed(file, doc)?;
+        if changed && !dry_run {
             if let Some(parent) = file.parent() {
                 fs::create_dir_all(parent).ok();
             }
-            write_yaml(file, doc)?;
+            write_yaml_if_semantic_changed(file, doc)?;
         }
-        files_written.push(file.display().to_string());
+        if changed {
+            files_written.push(file.display().to_string());
+        }
     }
     Ok(AssignOutcome {
         moves_applied: plan.len(),
@@ -926,13 +937,16 @@ pub fn run_bindings_unassign(
             files_deleted.push(file.display().to_string());
             continue;
         }
-        if !dry_run {
+        let changed = yaml_semantically_changed(file, doc)?;
+        if changed && !dry_run {
             if let Some(parent) = file.parent() {
                 fs::create_dir_all(parent).ok();
             }
-            write_yaml(file, doc)?;
+            write_yaml_if_semantic_changed(file, doc)?;
         }
-        files_written.push(file.display().to_string());
+        if changed {
+            files_written.push(file.display().to_string());
+        }
     }
     Ok(UnassignOutcome {
         unassigned: plan.len(),
@@ -957,23 +971,6 @@ struct PlannedUnassign {
 
 fn yk(s: &str) -> Value {
     Value::String(s.to_string())
-}
-
-fn read_yaml(path: &Path) -> Result<Value> {
-    let text = fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-    let parsed: Value =
-        serde_yaml::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
-    Ok(match parsed {
-        Value::Null => Value::Mapping(Mapping::new()),
-        other => other,
-    })
-}
-
-fn write_yaml(path: &Path, doc: &Value) -> Result<()> {
-    let body =
-        serde_yaml::to_string(doc).with_context(|| format!("serializing {}", path.display()))?;
-    fs::write(path, body).with_context(|| format!("writing {}", path.display()))?;
-    Ok(())
 }
 
 fn current_readable_name(doc: &Value, index: usize) -> Result<Option<String>> {
@@ -1151,6 +1148,19 @@ mod tests {
         let body = read(root, "m.yaml");
         let doc: Value = serde_yaml::from_str(&body).unwrap();
         assert_eq!(doc["members"][0]["name"].as_str(), Some("PluginSettings"));
+    }
+
+    #[test]
+    fn rename_to_existing_readable_name_preserves_formatting() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        let original = "# hand formatted\nmembers: [ { name: PluginSettings, selector: { binding: { name: XOe } } } ]\n";
+        write(root, "m.yaml", original);
+
+        let out = rename_binding(root, "XOe", "PluginSettings", false, false).unwrap();
+
+        assert_eq!(out.action, "unchanged");
+        assert_eq!(read(root, "m.yaml"), original);
     }
 
     #[test]

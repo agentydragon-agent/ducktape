@@ -3,6 +3,7 @@ pub mod comment;
 pub mod edit_gate;
 pub mod gate;
 pub mod module;
+pub mod yaml_edit;
 
 use std::path::PathBuf;
 
