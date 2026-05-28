@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, bail};
 use rayon::prelude::*;
 use serde::Serialize;
-use swc_common::{DUMMY_SP, EqIgnoreSpan, GLOBALS, SyntaxContext};
+use swc_common::{DUMMY_SP, GLOBALS, SyntaxContext};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
