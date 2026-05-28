@@ -117,47 +117,35 @@ Still to do:
 Current plan, ordered by leverage. Re-profile before implementation if
 the consumer corpus or pipeline shape has changed materially.
 
-1. **Replace the inner scan in
-   `lowering::exports::trim_dead_named_specifiers`.**
-   This is the new top hot loop: **12.62% Children %** under
-   `lower_chunk` (>20% of `lower_chunk`'s own time). The shape is
-   `Vec<NamedSpecifier>::retain(|spec| consumers.any(|c| c.name ==
-spec.name))` — O(N×M) scan, with each comparison going through
-   `swc_atoms::Atom::as_str` → `hstr::Atom::as_str` /
-   `TaggedValue::data` (`Iterator::any::check::{{closure}}` was
-   5.93% self, 9.63% Children %). Convert the inner `any` to a
-   precomputed `HashSet<&Atom>` (or `HashSet<JsWord>`) of live
-   consumer names materialized once per chunk before the retain.
-
-2. **Stream / shrink `artifact::write_tree_reports`.**
+1. **Stream / shrink `artifact::write_tree_reports`.**
    6.42% Children %; the deepest cost is serde_json pretty-print of
    `DirectoryManifestIndex` / `DirectoryBoundarySummary` under
    `artifact::write_json` (2.79% Children %). Stream JSON directly to
    disk or shrink the on-wire shape.
 
-3. **`vendor::strip::sweep_unreachable_top_level`.**
+2. **`vendor::strip::sweep_unreachable_top_level`.**
    6.40% Children % in the current profile. Likely amenable to indexed
    reachability or per-chunk caching.
 
-4. **Use the overlay realizability fast path where hypothetical moves remain.**
+3. **Use the overlay realizability fast path where hypothetical moves remain.**
    Candidate-style evaluation should use `RealizabilityIndex`'
    `verdict_after_moving_owners_touching` where possible instead of the
    rollbacking push/scope path. This avoids mutating the maintained quotient
    during repeated what-if checks.
 
-5. **Keep harness emission proportional to the work.**
+4. **Keep harness emission proportional to the work.**
    Most of the remaining `emit_browser_harness` cost is
    `materialize_artifact_scripts` → `write_tree_reports`, i.e. report
    writes (item 2), not the harness JS emission itself. Split
    browser-harness generation from non-browser runs where practical,
    and avoid recopying unchanged non-JS assets.
 
-6. **AST visit churn in `prepare_js_chunks`.** SWC parser / lexer /
+5. **AST visit churn in `prepare_js_chunks`.** SWC parser / lexer /
    `visit_children_with` still occupy ~10–15% summed across many
    sub-2.5%-self entries (`parse_member_expr_or_new_expr_inner`
    2.19% self; `parse_subscript` 1.80%; `Expr::visit_children_with`
    1.57%; etc.). No single parser symbol is over the priority
-   threshold; revisit after items 1–3.
+   threshold; revisit after items 1–2.
 
 ## Graph pass performance and module boundaries
 

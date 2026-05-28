@@ -3,6 +3,7 @@
 //! and convert binding maps into `export { ... }` ModuleItems.
 
 use super::*;
+use rustc_hash::FxHashSet;
 
 pub(super) fn trim_dead_named_specifiers(
     body: &mut [ModuleItem],
@@ -17,13 +18,13 @@ pub(super) fn trim_dead_named_specifiers(
     // `id.0` is the `swc_atoms::Atom` (a.k.a. `JsWord`) carried in
     // `Id = (Atom, SyntaxContext)`; we collect refs by sym for the
     // claimed-and-unused filter below.
-    let refs: HashSet<_> = collector.ids.iter().map(|id| &id.0).collect();
+    let refs: FxHashSet<_> = collector.ids.iter().map(|id| &id.0).collect();
     // Precompute the set of claimed binding syms once — turns the
     // inner `bindings.iter().any(...)` (O(N) per specifier; the top
     // non-materialize hotspot in the 2026-05-26 profile at 12.62%
     // Children%) into an O(1) HashSet lookup. Top-level names are
     // unique within a chunk, so syms are sufficient to discriminate.
-    let claimed_syms: HashSet<_> = bindings.keys().map(|id| &id.0).collect();
+    let claimed_syms: FxHashSet<_> = bindings.keys().map(|id| &id.0).collect();
     for item in body.iter_mut() {
         let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
             continue;

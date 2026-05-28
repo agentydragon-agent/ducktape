@@ -442,6 +442,7 @@ rust_library(
         ":write_tree",
         "@crates//:anyhow",
         "@crates//:rayon",
+        "@crates//:rustc-hash",
         "@crates//:serde",
         "@crates//:serde_json",
         "@crates//:swc_atoms",
