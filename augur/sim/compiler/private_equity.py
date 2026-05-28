@@ -14,11 +14,11 @@ from numpy.typing import NDArray
 from augur.model.series import (
     PrivateEquityEventKindCode,
     PrivateEquityRegimeCode,
+    issuer_id_from_private_equity_mark_wire_id,
     private_equity_eligible_fraction_series_id,
     private_equity_event_kind_code_series_id,
     private_equity_forced_recovery_cashout_usd_series_id,
     private_equity_forced_sale_fraction_series_id,
-    private_equity_issuer_id_from_price_series_id,
     private_equity_level_series_ids,
     private_equity_liquidity_blocked_series_id,
     private_equity_regime_code_series_id,
@@ -94,9 +94,9 @@ def compile_private_equity_tenders(
 
     issuer_to_lots: dict[str, list[int]] = {}
     for lot_index, lot in enumerate(scenario.initial_lots):
-        issuer = private_equity_issuer_id_from_price_series_id(lot.asset_id)
-        if issuer is not None:
-            issuer_to_lots.setdefault(issuer, []).append(lot_index)
+        lot_issuer = issuer_id_from_private_equity_mark_wire_id(lot.asset_id)
+        if lot_issuer is not None:
+            issuer_to_lots.setdefault(str(lot_issuer), []).append(lot_index)
     issuer_ids = tuple(sorted(issuer_to_lots))
 
     policies = scenario.private_equity_tender_policies

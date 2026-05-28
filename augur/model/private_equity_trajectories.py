@@ -57,13 +57,31 @@ from augur.model.private_equity_protocol import (
     neutral_private_equity_protocol_frame,
 )
 from augur.model.series import (
-    PRIVATE_EQUITY_EVENT_SERIES_PREFIXES,
-    PRIVATE_EQUITY_LEVEL_SERIES_PREFIXES,
-    is_private_equity_event_series_id,
-    is_private_equity_level_series_id,
+    issuer_id_from_private_equity_mark_wire_id,
+    issuer_id_from_private_equity_sale_opportunity_wire_id,
     private_equity_sale_event_id,
     private_equity_series_id,
+    try_parse_level_series_key,
 )
+
+
+def _is_private_equity_level_wire_id(wire_id: str) -> bool:
+    """A PE level wire id has no corresponding `LevelSeriesKey` variant.
+
+    Mirrors composite_exogenous.py's helper: anything that doesn't parse as a
+    level key but has the PE-namespace shape (mark or auxiliary control series)
+    is treated as PE for routing purposes.
+    """
+
+    if try_parse_level_series_key(wire_id) is not None:
+        return False
+    if issuer_id_from_private_equity_mark_wire_id(wire_id) is not None:
+        return True
+    return wire_id.startswith("private_equity_")
+
+
+def _is_private_equity_event_wire_id(wire_id: str) -> bool:
+    return issuer_id_from_private_equity_sale_opportunity_wire_id(wire_id) is not None
 
 
 @dataclass(frozen=True)
@@ -151,12 +169,10 @@ class PreSampledPrivateEquitySampler:
             required_level_series=frozenset(
                 series_id
                 for series_id in request.required_level_series
-                if not is_private_equity_level_series_id(series_id)
+                if not _is_private_equity_level_wire_id(series_id)
             ),
             required_event_series=frozenset(
-                event_id
-                for event_id in request.required_event_series
-                if not is_private_equity_event_series_id(event_id)
+                event_id for event_id in request.required_event_series if not _is_private_equity_event_wire_id(event_id)
             ),
         )
         bundle = self.underlying.sample(underlying_request)
@@ -280,25 +296,26 @@ def _materialize_pe_events(
 
 
 def _drop_pe_levels(levels: pl.DataFrame) -> pl.DataFrame:
+    """Drop PE-namespaced rows from a series_levels frame.
+
+    PE level wire ids share a `private_equity` namespace prefix (mark
+    `private_equity:<issuer>` plus the 7 auxiliary `private_equity_*:<issuer>`
+    control channels). The polars filter encodes the wire-format shape; the
+    Python-side dispatch elsewhere goes through the typed key parser.
+    """
+
     if levels.is_empty():
         return levels
-    return levels.filter(~_has_any_prefix("series_id", PRIVATE_EQUITY_LEVEL_SERIES_PREFIXES))
+    return levels.filter(~pl.col("series_id").str.starts_with("private_equity"))
 
 
 def _drop_pe_events(events: pl.DataFrame) -> pl.DataFrame:
     if events.is_empty():
         return events
-    return events.filter(~_has_any_prefix("event_id", PRIVATE_EQUITY_EVENT_SERIES_PREFIXES))
+    return events.filter(~pl.col("event_id").str.starts_with("private_equity_sale_opportunity"))
 
 
 def _drop_pe_protocol(protocol: pl.DataFrame) -> pl.DataFrame:
     if protocol.is_empty():
         return protocol
     return PRIVATE_EQUITY_PROTOCOL_SCHEMA.to_frame()
-
-
-def _has_any_prefix(column: str, prefixes: frozenset[str]) -> pl.Expr:
-    expr = pl.lit(False)
-    for prefix in prefixes:
-        expr = expr | pl.col(column).str.starts_with(prefix)
-    return expr

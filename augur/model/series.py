@@ -219,20 +219,6 @@ PRIVATE_EQUITY_FORCED_SALE_FRACTION_SERIES_PREFIX = "private_equity_forced_sale_
 PRIVATE_EQUITY_LIQUIDITY_BLOCKED_SERIES_PREFIX = "private_equity_liquidity_blocked:"
 PRIVATE_EQUITY_FORCED_RECOVERY_CASHOUT_USD_SERIES_PREFIX = "private_equity_forced_recovery_cashout_usd:"
 
-PRIVATE_EQUITY_LEVEL_SERIES_PREFIXES = frozenset(
-    {
-        PRIVATE_EQUITY_SERIES_PREFIX,
-        PRIVATE_EQUITY_REGIME_CODE_SERIES_PREFIX,
-        PRIVATE_EQUITY_EVENT_KIND_CODE_SERIES_PREFIX,
-        PRIVATE_EQUITY_SALE_CAPACITY_FRACTION_SERIES_PREFIX,
-        PRIVATE_EQUITY_ELIGIBLE_FRACTION_SERIES_PREFIX,
-        PRIVATE_EQUITY_FORCED_SALE_FRACTION_SERIES_PREFIX,
-        PRIVATE_EQUITY_LIQUIDITY_BLOCKED_SERIES_PREFIX,
-        PRIVATE_EQUITY_FORCED_RECOVERY_CASHOUT_USD_SERIES_PREFIX,
-    }
-)
-PRIVATE_EQUITY_EVENT_SERIES_PREFIXES = frozenset({PRIVATE_EQUITY_SALE_EVENT_PREFIX})
-
 
 def home_value_series_id(location_id: str) -> str:
     return HomeValueKey(location_id=LocationId(location_id)).wire_id
@@ -298,37 +284,3 @@ def private_equity_level_series_ids(issuer_id: str) -> frozenset[str]:
 
 def private_equity_sale_event_id(issuer_id: str) -> str:
     return private_equity_sale_opportunity_wire_id(issuer_id)
-
-
-def private_equity_issuer_id_from_price_series_id(series_id: str) -> str | None:
-    return series_suffix(series_id, PRIVATE_EQUITY_SERIES_PREFIX)
-
-
-def private_equity_issuer_id_from_level_series_id(series_id: str) -> str | None:
-    for prefix in PRIVATE_EQUITY_LEVEL_SERIES_PREFIXES:
-        issuer_id = series_suffix(series_id, prefix)
-        if issuer_id is not None:
-            return issuer_id
-    return None
-
-
-def private_equity_issuer_id_from_event_series_id(event_id: str) -> str | None:
-    for prefix in PRIVATE_EQUITY_EVENT_SERIES_PREFIXES:
-        issuer_id = series_suffix(event_id, prefix)
-        if issuer_id is not None:
-            return issuer_id
-    return None
-
-
-def is_private_equity_level_series_id(series_id: str) -> bool:
-    return private_equity_issuer_id_from_level_series_id(series_id) is not None
-
-
-def is_private_equity_event_series_id(event_id: str) -> bool:
-    return private_equity_issuer_id_from_event_series_id(event_id) is not None
-
-
-def series_suffix(value: str, prefix: str) -> str | None:
-    if not value.startswith(prefix):
-        return None
-    return value[len(prefix) :]
