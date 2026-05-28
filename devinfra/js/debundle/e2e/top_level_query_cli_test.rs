@@ -210,6 +210,64 @@ anonymous_statements:
     )
 }
 
+fn fixture_with_ambiguous_anonymous_statements() -> (TempDir, CommonArgs) {
+    let dir = TempDir::new().unwrap();
+    let graph_path = dir.path().join("owner_graph.json");
+    let modules_root = dir.path().join("spec/modules");
+    let first = anonymous_owner("owner:0", 0);
+    let second = anonymous_owner("owner:1", 1);
+    let report = OwnerGraphReport {
+        chunk_id: "static/index".to_string(),
+        nodes: vec![first.clone(), second.clone()],
+        edges: Vec::new(),
+        quotient: OwnerGraphQuotientReport {
+            nodes: Vec::new(),
+            edges: Vec::new(),
+            sccs: Vec::<QuotientSccReport>::new(),
+        },
+        atomic_graph: AtomicGraphReport {
+            nodes: vec![
+                AtomicUnitReport {
+                    id: "atomic:0".to_string(),
+                    owner_ids: vec![first.id.clone()],
+                    members: Vec::new(),
+                    anonymous_statement_owner_ids: vec![first.id.clone()],
+                    destinations: vec![module_ref("logical:residual", true)],
+                    causes: Vec::new(),
+                    size_lines_estimate: 1,
+                    source_line_range: Some([1, 1]),
+                    ordinal_span: 0,
+                },
+                AtomicUnitReport {
+                    id: "atomic:1".to_string(),
+                    owner_ids: vec![second.id.clone()],
+                    members: Vec::new(),
+                    anonymous_statement_owner_ids: vec![second.id.clone()],
+                    destinations: vec![module_ref("logical:residual", true)],
+                    causes: Vec::new(),
+                    size_lines_estimate: 1,
+                    source_line_range: Some([2, 2]),
+                    ordinal_span: 0,
+                },
+            ],
+            edges: Vec::new(),
+        },
+    };
+    write(&graph_path, &serde_json::to_string(&report).unwrap());
+    write(&modules_root.join(".keep"), "");
+    write(
+        &dir.path().join("static/index.js"),
+        "registerSchema(\"task\");\nregisterSchema(\"task\");\n",
+    );
+    (
+        dir,
+        CommonArgs {
+            owner_graph_path: graph_path,
+            modules_root,
+        },
+    )
+}
+
 #[test]
 fn atoms_lists_units() {
     let (_dir, common) = fixture();
@@ -293,6 +351,7 @@ fn modules_propose_emits_plan_work_report() {
     let report = run_plan_work_report(&PlanWorkArgs {
         common,
         size_cap_lines: 10_000,
+        source_root: None,
         limit: 0,
         format: None,
     })
@@ -303,12 +362,36 @@ fn modules_propose_emits_plan_work_report() {
 }
 
 #[test]
+fn modules_propose_marks_duplicate_full_ast_anonymous_statements_advisory() {
+    let (dir, common) = fixture_with_ambiguous_anonymous_statements();
+    let report = run_plan_work_report(&PlanWorkArgs {
+        common,
+        size_cap_lines: 10_000,
+        source_root: Some(dir.path().to_path_buf()),
+        limit: 0,
+        format: None,
+    })
+    .unwrap();
+
+    assert_eq!(report.report.proposals.len(), 2);
+    assert!(report.report.proposals.iter().all(|proposal| {
+        !proposal.landable_today
+            && proposal.unaddressable_anonymous_owner_ids.len() == 1
+            && proposal
+                .landability_notes
+                .iter()
+                .any(|note| note.contains("full-AST selector"))
+    }));
+}
+
+#[test]
 fn describe_binding_resolves_via_selection() {
     let (_dir, common) = fixture();
     let report = run_explain_report(&ExplainArgs {
         common,
         selection: SelectionArgs {
             owner_id: None,
+            module_id: None,
             binding_id: Some("ZZ".to_string()),
             proposal_id: None,
             unit_id: None,
@@ -325,12 +408,36 @@ fn describe_binding_resolves_via_selection() {
 }
 
 #[test]
+fn describe_module_id_resolves_all_module_owners() {
+    let (_dir, common) = fixture();
+    let report = run_explain_report(&ExplainArgs {
+        common,
+        selection: SelectionArgs {
+            owner_id: None,
+            module_id: Some("logical:residual".to_string()),
+            binding_id: None,
+            proposal_id: None,
+            unit_id: None,
+            diagnostic_id: None,
+        },
+        size_cap_lines: 10_000,
+        limit: 0,
+        include_proposals: false,
+        format: None,
+    })
+    .unwrap();
+    assert_eq!(report.query.kind, peel::plan::QueryKind::Module);
+    assert_eq!(report.owner_ids, vec!["owner:0", "owner:1"]);
+}
+
+#[test]
 fn show_source_binding_resolves_via_selection() {
     let (dir, common) = fixture();
     let report = run_source_slice_report(&SourceSliceArgs {
         common,
         selection: SelectionArgs {
             owner_id: None,
+            module_id: None,
             binding_id: Some("ZZ".to_string()),
             proposal_id: None,
             unit_id: None,

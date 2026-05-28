@@ -165,8 +165,6 @@ For large refactors, pipe JSON:
 ```bash
 debundle bindings assign --batch moves.json
 debundle bindings assign --batch - < moves.json
-# Direct from the factorizer:
-debundle modules propose | debundle bindings assign --batch -
 ```
 
 JSON shape:
@@ -178,6 +176,10 @@ JSON shape:
   { "sym": "ZOe", "module": "runtime/widgets", "readable": "WidgetRegistry" }
 ]
 ```
+
+`modules propose` emits planning evidence, not this move-array shape.
+Use its `landable_today` and owner/module fields to prepare a reviewed
+batch instead of piping proposal JSON directly into `bindings assign`.
 
 `sym` and `module` are required; `readable` is optional. Array order
 controls dedupe (last-wins on duplicate `sym`).

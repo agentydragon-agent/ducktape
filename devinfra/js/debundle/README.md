@@ -18,12 +18,12 @@ Cheat sheet of the most-used commands:
 - `debundle bindings rename <original> <readable>` — rename without
   moving.
 - `debundle modules propose` — factorizer-derived move proposals;
-  JSON output composes directly into `bindings assign --batch -`.
+  `--source-root` annotates anonymous-statement addressability.
 - `debundle modules merge --target <T> <sources...>` — splice module
   YAMLs.
 - `debundle describe <id>` / `debundle show-source <id>` — graph +
-  source context for any binding / module / atom / owner / proposal /
-  diagnostic ID.
+  source context for any binding / module path or `logical:N` module id /
+  atom / owner / proposal / diagnostic ID.
 - `debundle bindings comment <sym>` / `debundle modules comment <module>` —
   edit `comment:` fields (see "Comments" below).
 

@@ -81,12 +81,12 @@ export { anchor, consumer };
     let report = factorize(&graph, &BTreeMap::new(), 10_000);
 
     assert!(
-        report
-            .proposals
-            .iter()
-            .all(|proposal| proposal.landable_today
-                && proposal.status == analysis::PeelCandidateStatus::PeelableNow),
-        "factorize proposals must be certified-only: {report:#?}",
+        report.proposals.iter().all(|proposal| proposal.status
+            == analysis::PeelCandidateStatus::PeelableNow
+            && (proposal.landable_today
+                || (!proposal.unaddressable_anonymous_owner_ids.is_empty()
+                    && !proposal.landability_notes.is_empty()))),
+        "factorize proposals must be landable or explicitly advisory: {report:#?}",
     );
     assert!(
         report.proposals.iter().any(|proposal| proposal.binding_ids

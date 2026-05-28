@@ -122,7 +122,8 @@ bazelisk run @ducktape//devinfra/js/debundle:debundle -- \
 ## Reading Results
 
 - `modules propose` is the module-assignment proposal query. Output is
-  a JSON shape accepted directly by `bindings assign --batch`.
+  planning evidence; convert reviewed `landable_today` proposals into
+  explicit `{sym,module,readable?}` moves before using `bindings assign --batch`.
 - `coverage` is the current YAML coverage query against atomic units.
 - `atoms` is the atomic-DAG catalog.
 - `graph-summary` is the quick aggregate overview.

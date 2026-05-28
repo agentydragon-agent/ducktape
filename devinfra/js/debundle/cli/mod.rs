@@ -472,7 +472,9 @@ pub fn run_debundle_cli(args: DebundleArgs) -> Result<()> {
 
 /// Dispatch an `<id>` argument into a [`SelectionArgs`] populated with
 /// exactly one field. Module-path IDs return `Ok(Err(module_path))` so
-/// the caller can handle the (no-owner) module-only case separately.
+/// the caller can resolve the YAML module path separately; logical
+/// module ids resolve through the owner graph like other structured
+/// IDs.
 pub fn dispatch_id_selection(
     id: &str,
     modules_root: &std::path::Path,
@@ -481,6 +483,9 @@ pub fn dispatch_id_selection(
     // the analysis crate.
     if id.starts_with("owner:") {
         return Ok(selection_with_owner(id));
+    }
+    if id.starts_with("logical:") {
+        return Ok(selection_with_module(id));
     }
     if id.starts_with("atomic:") {
         return Ok(selection_with_unit(id));
@@ -506,6 +511,18 @@ pub fn dispatch_id_selection(
 fn selection_with_owner(value: &str) -> SelectionArgs {
     SelectionArgs {
         owner_id: Some(value.to_string()),
+        module_id: None,
+        binding_id: None,
+        proposal_id: None,
+        unit_id: None,
+        diagnostic_id: None,
+    }
+}
+
+fn selection_with_module(value: &str) -> SelectionArgs {
+    SelectionArgs {
+        owner_id: None,
+        module_id: Some(value.to_string()),
         binding_id: None,
         proposal_id: None,
         unit_id: None,
@@ -516,6 +533,7 @@ fn selection_with_owner(value: &str) -> SelectionArgs {
 fn selection_with_unit(value: &str) -> SelectionArgs {
     SelectionArgs {
         owner_id: None,
+        module_id: None,
         binding_id: None,
         proposal_id: None,
         unit_id: Some(value.to_string()),
@@ -526,6 +544,7 @@ fn selection_with_unit(value: &str) -> SelectionArgs {
 fn selection_with_diagnostic(value: &str) -> SelectionArgs {
     SelectionArgs {
         owner_id: None,
+        module_id: None,
         binding_id: None,
         proposal_id: None,
         unit_id: None,
@@ -536,6 +555,7 @@ fn selection_with_diagnostic(value: &str) -> SelectionArgs {
 fn selection_with_proposal(value: &str) -> SelectionArgs {
     SelectionArgs {
         owner_id: None,
+        module_id: None,
         binding_id: Some(String::new()),
         proposal_id: Some(value.to_string()),
         unit_id: None,
@@ -546,6 +566,7 @@ fn selection_with_proposal(value: &str) -> SelectionArgs {
 fn selection_with_binding(value: &str) -> SelectionArgs {
     SelectionArgs {
         owner_id: None,
+        module_id: None,
         binding_id: Some(value.to_string()),
         proposal_id: None,
         unit_id: None,
@@ -1129,12 +1150,27 @@ fn render_plan_work_text(report: &peel::PlanWorkReport, out: &mut String) {
         report.report.diagnostics.len(),
     ));
     for proposal in &report.report.proposals {
+        let landable = if proposal.landable_today {
+            "landable"
+        } else {
+            "needs-manual-work"
+        };
         out.push_str(&format!(
-            "  {}  owners={} size={}\n",
+            "  {}  owners={} size={} {}\n",
             proposal.proposed_module_id,
             proposal.owner_ids.len(),
             proposal.size_lines_estimate,
+            landable,
         ));
+        for note in &proposal.landability_notes {
+            out.push_str(&format!("    note: {note}\n"));
+        }
+        if !proposal.unaddressable_anonymous_owner_ids.is_empty() {
+            out.push_str(&format!(
+                "    unaddressable anonymous owners: {}\n",
+                proposal.unaddressable_anonymous_owner_ids.join(", "),
+            ));
+        }
     }
 }
 
@@ -1423,6 +1459,13 @@ mod tests {
         std::fs::create_dir_all(&modules).unwrap();
         let sel = super::dispatch_id_selection("owner:42", &modules).unwrap();
         assert_eq!(sel.owner_id.as_deref(), Some("owner:42"));
+    }
+
+    #[test]
+    fn dispatch_id_logical_prefix() {
+        let tmp = tempfile::tempdir().unwrap();
+        let sel = super::dispatch_id_selection("logical:7", tmp.path()).unwrap();
+        assert_eq!(sel.module_id.as_deref(), Some("logical:7"));
     }
 
     #[test]

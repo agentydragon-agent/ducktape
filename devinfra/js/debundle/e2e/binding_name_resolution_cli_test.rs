@@ -171,6 +171,7 @@ fn explain_with_binding(common: CommonArgs, sym: &str) -> peel::ExplainReport {
         common,
         selection: SelectionArgs {
             owner_id: None,
+            module_id: None,
             binding_id: Some(sym.to_string()),
             proposal_id: None,
             unit_id: None,
@@ -193,6 +194,7 @@ fn show_source_with_binding(
         common,
         selection: SelectionArgs {
             owner_id: None,
+            module_id: None,
             binding_id: Some(sym.to_string()),
             proposal_id: None,
             unit_id: None,

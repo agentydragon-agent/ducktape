@@ -45,7 +45,11 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use serde::Serialize;
 
-use analysis::{FactorizeDiagnosticReason, LineRange, OwnerGraphReport, PeelCandidateStatus};
+use analysis::{
+    FactorizeDiagnosticReason, LineRange, OwnerGraphNodeReport, OwnerGraphReport,
+    PeelCandidateStatus, StatementKind,
+};
+use anonymous_resolution::addressable_anonymous_statement_owner_ids;
 use spec_modules::load_active_claims;
 
 use crate::quotient::{
@@ -57,6 +61,7 @@ use crate::quotient::{
 pub struct PeelFactorizeOptions {
     pub owner_graph_path: PathBuf,
     pub modules_root: PathBuf,
+    pub source_root: Option<PathBuf>,
     /// Hard ceiling (in summed source-line counts) per emitted
     /// proposal. Frontiers exceeding the cap appear as diagnostics.
     pub size_cap_lines: usize,
@@ -144,6 +149,16 @@ pub struct FactorizeProposal {
     /// compatibility with older reports.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub cycle_blocker_owner_ids: Vec<String>,
+    /// Anonymous owners that the proposer cannot turn into stable
+    /// `anonymous_statements:` selectors. The proposal stays visible
+    /// for architectural review, but is not directly feedable to a
+    /// spec edit while this list is non-empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unaddressable_anonymous_owner_ids: Vec<String>,
+    /// Human-facing reasons a proposal may need manual handling even
+    /// when the graph closure itself is useful.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub landability_notes: Vec<String>,
     /// Proposal verdict for this closed atomic-unit owner set.
     pub status: PeelCandidateStatus,
     /// `true` for atomic-DAG-closed proposal cells.
@@ -195,13 +210,49 @@ pub fn analyze_peel_factorize(options: &PeelFactorizeOptions) -> Result<PeelFact
     )
     .with_context(|| format!("parsing {}", options.owner_graph_path.display()))?;
     let claims = load_active_claims(&options.modules_root)?;
-    Ok(factorize(&graph, &claims, options.size_cap_lines))
+    let addressable_anonymous_owner_ids = if options.source_root.is_some() {
+        Some(addressable_anonymous_statement_owner_ids(
+            &graph,
+            &options.owner_graph_path,
+            &options.modules_root,
+            options.source_root.as_deref(),
+        )?)
+    } else {
+        None
+    };
+    Ok(factorize_with_context(
+        &graph,
+        &claims,
+        options.size_cap_lines,
+        FactorizeContext {
+            addressable_anonymous_owner_ids,
+        },
+    ))
 }
 
 pub fn factorize(
     graph: &OwnerGraphReport,
     active_claims: &BTreeMap<String, String>,
     size_cap_lines: usize,
+) -> PeelFactorizeReport {
+    factorize_with_context(
+        graph,
+        active_claims,
+        size_cap_lines,
+        FactorizeContext::default(),
+    )
+}
+
+#[derive(Debug, Clone, Default)]
+struct FactorizeContext {
+    addressable_anonymous_owner_ids: Option<BTreeSet<String>>,
+}
+
+fn factorize_with_context(
+    graph: &OwnerGraphReport,
+    active_claims: &BTreeMap<String, String>,
+    size_cap_lines: usize,
+    context: FactorizeContext,
 ) -> PeelFactorizeReport {
     let owner_index: HashMap<&str, usize> = graph
         .nodes
@@ -226,14 +277,7 @@ pub fn factorize(
             if node.destination.residual {
                 return None;
             }
-            let path = node
-                .declared_bindings
-                .iter()
-                .find_map(|b| active_claims.get(b.binding.as_str()))
-                .cloned()
-                .or_else(|| node.destination.target_file.clone())
-                .unwrap_or_else(|| node.destination.label.clone());
-            Some((i, path))
+            Some((i, active_module_label(node, active_claims)))
         })
         .collect();
 
@@ -301,6 +345,7 @@ pub fn factorize(
         &edges_to_active,
         graph,
         size_cap_lines,
+        &context,
     );
     let diagnostics = collect_size_cap_diagnostics(&quotient, graph, size_cap_lines);
     let status_counts = status_counts(&proposals);
@@ -317,6 +362,19 @@ pub fn factorize(
         size_distributions,
         seed_rejections,
     }
+}
+
+fn active_module_label(
+    node: &OwnerGraphNodeReport,
+    active_claims: &BTreeMap<String, String>,
+) -> String {
+    node.declared_bindings
+        .iter()
+        .find_map(|b| active_claims.get(b.binding.as_str()))
+        .cloned()
+        .or_else(|| (!node.destination.label.is_empty()).then(|| node.destination.label.clone()))
+        .or_else(|| node.destination.target_file.clone())
+        .unwrap_or_else(|| node.destination.id.clone())
 }
 
 /// Spec-module groups derived from `graph.nodes` destinations.
@@ -383,6 +441,7 @@ fn emit_proposals(
     active_edges: &[(usize, String)],
     graph: &OwnerGraphReport,
     size_cap_lines: usize,
+    context: &FactorizeContext,
 ) -> Vec<FactorizeProposal> {
     // Build owner-to-class for every owner. The renderer's edge
     // attribution treats classes as the unit of accounting (the
@@ -451,6 +510,7 @@ fn emit_proposals(
                 active_edges,
                 graph,
                 &owner_to_candidate,
+                context,
             )
         })
         .collect();
@@ -605,6 +665,7 @@ fn build_proposal(
     active_edges: &[(usize, String)],
     graph: &OwnerGraphReport,
     owner_to_candidate: &HashMap<usize, usize>,
+    context: &FactorizeContext,
 ) -> FactorizeProposal {
     let label_vec: Vec<String> = labels
         .map(|s| s.iter().cloned().collect())
@@ -709,6 +770,11 @@ fn build_proposal(
     } else {
         class_lines
     };
+    let AnonymousAddressability {
+        landable,
+        unaddressable_owner_ids,
+        notes,
+    } = anonymous_addressability(&owner_idxs, graph, context);
     FactorizeProposal {
         proposed_module_id,
         owner_ids,
@@ -723,11 +789,60 @@ fn build_proposal(
         edges_to_active_modules: to_active,
         active_modules_referenced,
         cycle_blocker_owner_ids: Vec::new(),
+        unaddressable_anonymous_owner_ids: unaddressable_owner_ids,
+        landability_notes: notes,
         status: PeelCandidateStatus::PeelableNow,
-        landable_today: true,
+        landable_today: landable,
         extends_module_id,
         extension_owner_ids,
         merge_into,
+    }
+}
+
+#[derive(Debug, Clone)]
+struct AnonymousAddressability {
+    landable: bool,
+    unaddressable_owner_ids: Vec<String>,
+    notes: Vec<String>,
+}
+
+fn anonymous_addressability(
+    owner_idxs: &[usize],
+    graph: &OwnerGraphReport,
+    context: &FactorizeContext,
+) -> AnonymousAddressability {
+    let mut unaddressable_owner_ids = Vec::new();
+    let mut notes = BTreeSet::<String>::new();
+    for &idx in owner_idxs {
+        let node = &graph.nodes[idx];
+        if !node.declared_bindings.is_empty() {
+            continue;
+        }
+        if matches!(
+            node.statement_kind,
+            StatementKind::Import | StatementKind::Export
+        ) {
+            unaddressable_owner_ids.push(node.id.clone());
+            notes.insert(
+                "contains import/export owner(s) that are advisory only for spec edits".to_string(),
+            );
+            continue;
+        }
+        if let Some(addressable_ids) = &context.addressable_anonymous_owner_ids {
+            if !addressable_ids.contains(&node.id) {
+                unaddressable_owner_ids.push(node.id.clone());
+                notes.insert(
+                    "contains anonymous owner(s) whose full-AST selector is ambiguous or unavailable"
+                        .to_string(),
+                );
+            }
+        }
+    }
+    unaddressable_owner_ids.sort();
+    AnonymousAddressability {
+        landable: unaddressable_owner_ids.is_empty(),
+        unaddressable_owner_ids,
+        notes: notes.into_iter().collect(),
     }
 }
 
@@ -869,6 +984,16 @@ mod tests {
             lines,
             test_utils::module_ref(module_path, false),
         )
+    }
+
+    fn module_report_ref(id: &str, label: &str, target_file: &str) -> ModuleReportRef {
+        ModuleReportRef {
+            id: id.to_string(),
+            label: label.to_string(),
+            residual: false,
+            index: None,
+            target_file: Some(target_file.to_string()),
+        }
     }
 
     fn owner_at(
@@ -1067,6 +1192,141 @@ mod tests {
             .expect("b proposal");
         assert_eq!(proposal.edges_to_active_modules, 1);
         assert_eq!(proposal.active_modules_referenced, vec!["ui/x".to_string()],);
+    }
+
+    #[test]
+    fn merge_proposals_use_spec_module_labels_not_generated_target_files() {
+        let a = owner_at(
+            "a",
+            1,
+            &["a"],
+            10,
+            module_report_ref("logical:1", "domains/system/ids", "domains/system/ids.js"),
+        );
+        let b = owner_at(
+            "b",
+            2,
+            &["b"],
+            10,
+            module_report_ref(
+                "logical:2",
+                "domains/system/id_helpers",
+                "domains/system/id_helpers.js",
+            ),
+        );
+        let graph = graph_with_atomic_units(
+            vec![a.clone(), b.clone()],
+            vec![
+                edge("e1", "a", "b", DepKind::EagerUse, true),
+                edge("e2", "b", "a", DepKind::EagerUse, true),
+            ],
+            vec![unit("atomic:0", &[&a]), unit("atomic:1", &[&b])],
+            vec![],
+        );
+        let report = factorize(&graph, &no_claims(), 10_000);
+        let proposal = report
+            .proposals
+            .iter()
+            .find(|proposal| proposal.merge_into.is_some())
+            .expect("merge proposal");
+        assert_eq!(
+            proposal.merge_into.as_ref().unwrap(),
+            &vec![
+                "domains/system/id_helpers".to_string(),
+                "domains/system/ids".to_string(),
+            ],
+        );
+    }
+
+    #[test]
+    fn anonymous_import_export_proposals_stay_visible_but_not_landable() {
+        let mut import = owner("owner:import", 1, &[], 1);
+        import.statement_kind = StatementKind::Import;
+        let graph = graph_with_atomic_units(
+            vec![import.clone()],
+            vec![],
+            vec![unit("atomic:0", &[&import])],
+            vec![],
+        );
+        let report = factorize(&graph, &no_claims(), 10_000);
+        let proposal = report.proposals.first().expect("anonymous proposal");
+        assert_eq!(
+            proposal.anonymous_statement_owner_ids,
+            vec!["owner:import".to_string()],
+        );
+        assert!(!proposal.landable_today);
+        assert_eq!(
+            proposal.unaddressable_anonymous_owner_ids,
+            vec!["owner:import".to_string()],
+        );
+        assert!(
+            proposal
+                .landability_notes
+                .iter()
+                .any(|note| note.contains("import/export")),
+            "expected import/export note: {proposal:?}",
+        );
+    }
+
+    #[test]
+    fn full_ast_addressable_anonymous_proposals_remain_landable() {
+        let mut effect = owner("owner:effect", 1, &[], 1);
+        effect.statement_kind = StatementKind::SideEffect;
+        let graph = graph_with_atomic_units(
+            vec![effect.clone()],
+            vec![],
+            vec![unit("atomic:0", &[&effect])],
+            vec![],
+        );
+        let report = factorize_with_context(
+            &graph,
+            &no_claims(),
+            10_000,
+            FactorizeContext {
+                addressable_anonymous_owner_ids: Some(BTreeSet::from(["owner:effect".to_string()])),
+            },
+        );
+        let proposal = report.proposals.first().expect("anonymous proposal");
+        assert!(proposal.landable_today, "{proposal:?}");
+        assert!(proposal.unaddressable_anonymous_owner_ids.is_empty());
+        assert!(proposal.landability_notes.is_empty());
+    }
+
+    #[test]
+    fn ambiguous_full_ast_anonymous_proposals_stay_visible_but_not_landable() {
+        let mut effect = owner("owner:effect", 1, &[], 1);
+        effect.statement_kind = StatementKind::SideEffect;
+        let graph = graph_with_atomic_units(
+            vec![effect.clone()],
+            vec![],
+            vec![unit("atomic:0", &[&effect])],
+            vec![],
+        );
+        let report = factorize_with_context(
+            &graph,
+            &no_claims(),
+            10_000,
+            FactorizeContext {
+                addressable_anonymous_owner_ids: Some(BTreeSet::new()),
+            },
+        );
+        let proposal = report.proposals.first().expect("anonymous proposal");
+        assert_eq!(
+            proposal.anonymous_statement_owner_ids,
+            vec!["owner:effect".to_string()],
+        );
+        assert!(!proposal.landable_today);
+        assert_eq!(
+            proposal.unaddressable_anonymous_owner_ids,
+            vec!["owner:effect".to_string()],
+        );
+        assert!(
+            proposal
+                .landability_notes
+                .iter()
+                .any(|note| note.contains("full-AST selector")),
+            "expected full-AST selector note: {proposal:?}",
+        );
     }
 
     // Owners that individually exceed the size cap surface as

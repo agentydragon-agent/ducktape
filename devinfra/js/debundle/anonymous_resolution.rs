@@ -11,8 +11,9 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use analysis::{OwnerGraphReport, OwnerId};
+use analysis::{OwnerGraphReport, OwnerId, StatementKind};
 use anyhow::{Context, Result, bail};
+use swc_common::{EqIgnoreSpan, SyntaxContext};
 
 #[derive(Debug, Clone, Copy)]
 pub struct AnonymousStatementClaimSet<'a> {
@@ -36,6 +37,87 @@ pub fn resolve_anonymous_statement_claims(
             claims_by_module,
         )
     })
+}
+
+pub fn addressable_anonymous_statement_owner_ids(
+    graph: &OwnerGraphReport,
+    owner_graph_path: &Path,
+    modules_root: &Path,
+    source_root: Option<&Path>,
+) -> Result<BTreeSet<String>> {
+    js_ast::with_swc_globals(|| {
+        addressable_anonymous_statement_owner_ids_in_globals(
+            graph,
+            owner_graph_path,
+            modules_root,
+            source_root,
+        )
+    })
+}
+
+fn addressable_anonymous_statement_owner_ids_in_globals(
+    graph: &OwnerGraphReport,
+    owner_graph_path: &Path,
+    modules_root: &Path,
+    source_root: Option<&Path>,
+) -> Result<BTreeSet<String>> {
+    let mut owner_by_source_ordinal = HashMap::<(String, usize), &str>::new();
+    let mut source_paths = BTreeSet::<String>::new();
+    for node in &graph.nodes {
+        if !node.declared_bindings.is_empty()
+            || matches!(
+                node.statement_kind,
+                StatementKind::Import | StatementKind::Export
+            )
+        {
+            continue;
+        }
+        if let Some(location) = &node.source_location {
+            source_paths.insert(location.source_path.clone());
+            owner_by_source_ordinal.insert(
+                (location.source_path.clone(), node.statement_ordinal.0),
+                &node.id,
+            );
+        }
+    }
+
+    let mut out = BTreeSet::<String>::new();
+    for source_path in &source_paths {
+        let resolved =
+            resolve_source_file(source_path, source_root, owner_graph_path, modules_root)?;
+        let source = fs::read_to_string(&resolved)
+            .with_context(|| format!("reading source file {}", resolved.display()))?;
+        let parsed = js_ast::parse_js_module(source_path, &source)
+            .with_context(|| format!("parsing source file {}", resolved.display()))?;
+        let unique_body_indices: BTreeSet<usize> = SyntaxContext::within_ignored_ctxt(|| {
+            parsed
+                .module
+                .body
+                .iter()
+                .enumerate()
+                .filter_map(|(body_idx, item)| {
+                    let match_count = parsed
+                        .module
+                        .body
+                        .iter()
+                        .filter(|candidate| item.eq_ignore_span(candidate))
+                        .take(2)
+                        .count();
+                    (match_count == 1).then_some(body_idx)
+                })
+                .collect()
+        });
+        for body_idx in unique_body_indices {
+            let statement_ordinal =
+                js_ast::statement_ordinal_for_body_index(&parsed.module.body, body_idx);
+            if let Some(owner_id) =
+                owner_by_source_ordinal.get(&(source_path.clone(), statement_ordinal))
+            {
+                out.insert((*owner_id).to_string());
+            }
+        }
+    }
+    Ok(out)
 }
 
 fn resolve_anonymous_statement_claims_in_globals(

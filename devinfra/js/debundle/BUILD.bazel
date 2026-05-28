@@ -39,6 +39,7 @@ rust_library(
         ":analysis",
         ":js_ast",
         "@crates//:anyhow",
+        "@crates//:swc_common",
     ],
 )
 
