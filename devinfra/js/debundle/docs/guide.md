@@ -91,16 +91,32 @@ IDs, diagnostic IDs. The renderer dispatches on the kind it detects.
 
 Use the factorizer to surface what's currently extractable:
 
-1. **`debundle modules propose --format json > moves.json`** —
+1. **`debundle modules propose --format json > proposals.json`** —
    factorizer proposals + diagnostics derived from the atomic DAG.
-   The JSON shape is one of the input shapes `bindings assign --batch`
-   accepts; the two commands compose without a TSV step.
 2. **Skim the diagnostics.** Each diagnostic explains why a closed
    atomic-DAG set could not become a `peelable_now` proposal
    (oversized, blocked by an active module, residual-dependency
    leak).
-3. **Apply with `debundle bindings assign --batch moves.json`** (see
-   the move workflow below).
+3. **Apply reviewed binding-only proposals** (see the move workflow
+   below). `bindings assign --batch` accepts selected proposal objects
+   when every selected row maps to member moves: `landable_today: true`,
+   non-empty `binding_ids`, no `merge_into`, and no
+   `anonymous_statement_owner_ids`.
+
+```bash
+jq '[.proposals[]
+     | select(.landable_today
+       and (.merge_into | not)
+       and (((.binding_ids // []) | length) > 0)
+       and (((.anonymous_statement_owner_ids // []) | length) == 0))]' \
+  proposals.json > selected-proposals.json
+debundle bindings assign --batch selected-proposals.json --dry-run
+```
+
+`merge_into` rows are emitted-output proposal evidence, not direct
+`bindings assign` moves; use `debundle modules merge --target ...` or
+manual YAML after choosing the target. Rows with
+`anonymous_statement_owner_ids` need `anonymous_statements:` edits.
 
 For aggregate counts before drilling in:
 
@@ -177,9 +193,12 @@ JSON shape:
 ]
 ```
 
-`modules propose` emits planning evidence, not this move-array shape.
-Use its `landable_today` and owner/module fields to prepare a reviewed
-batch instead of piping proposal JSON directly into `bindings assign`.
+`--batch` also accepts `modules propose --format json` output, or a
+filtered proposal array, when every selected proposal maps cleanly to
+member moves. It refuses non-landable rows, `merge_into` rows, rows
+without `binding_ids`, and rows containing
+`anonymous_statement_owner_ids`; use an explicit move array when you
+need `readable` renames.
 
 `sym` and `module` are required; `readable` is optional. Array order
 controls dedupe (last-wins on duplicate `sym`).

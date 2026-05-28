@@ -52,8 +52,10 @@ bazelisk --output_base=/tmp/debundle-cli-bazel \
    module-assignment surface. Each proposal has owner IDs, binding IDs,
    line span, active-module references, and residual-cell references.
    Limited output preserves planner order: residual-edge topo-depth,
-   then source start line. The JSON shape is directly accepted by
-   `debundle bindings assign --batch -` for downstream application.
+   then source start line. `debundle bindings assign --batch -`
+   accepts only proposal selections that map cleanly to member moves:
+   `landable_today: true`, non-empty `binding_ids`, no `merge_into`,
+   and no `anonymous_statement_owner_ids`.
 
 3. For current YAML coverage, run `debundle coverage`. Rows describe
    whether a module or binding-patch set covers complete atomic units,
@@ -122,8 +124,11 @@ bazelisk run @ducktape//devinfra/js/debundle:debundle -- \
 ## Reading Results
 
 - `modules propose` is the module-assignment proposal query. Output is
-  planning evidence; convert reviewed `landable_today` proposals into
-  explicit `{sym,module,readable?}` moves before using `bindings assign --batch`.
+  planning evidence; feed only reviewed binding-only fresh/extension
+  proposal rows to `bindings assign --batch`, or convert them into
+  explicit `{sym,module,readable?}` moves when readable renames are
+  needed. Handle `merge_into` and `anonymous_statement_owner_ids` rows
+  with `modules merge` or manual YAML.
 - `coverage` is the current YAML coverage query against atomic units.
 - `atoms` is the atomic-DAG catalog.
 - `graph-summary` is the quick aggregate overview.

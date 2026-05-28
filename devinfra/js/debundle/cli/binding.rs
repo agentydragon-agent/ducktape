@@ -328,6 +328,26 @@ pub struct Move {
     pub readable: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+struct ProposalBatch {
+    proposals: Vec<BatchProposal>,
+}
+
+#[derive(Debug, Deserialize)]
+struct BatchProposal {
+    proposed_module_id: String,
+    #[serde(default)]
+    binding_ids: Vec<String>,
+    #[serde(default)]
+    anonymous_statement_owner_ids: Vec<String>,
+    #[serde(default)]
+    landable_today: bool,
+    #[serde(default)]
+    extends_module_id: Option<String>,
+    #[serde(default)]
+    merge_into: Option<Vec<String>>,
+}
+
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct AssignOutcome {
     pub moves_applied: usize,
@@ -349,17 +369,98 @@ pub fn parse_move_triple(s: &str) -> Result<Move> {
     })
 }
 
-/// Parse `--batch <file>` JSON: a top-level array of
-/// `{sym, module, readable?}` objects, or `modules propose`'s native
-/// shape `{proposals: [{owner_ids, proposed_module_id, ...}]}` mapped
-/// to moves. v1 only accepts the array shape; the propose shape lands
-/// once the proposal -> binding mapping is exposed.
+/// Parse `--batch <file>` JSON.
+///
+/// Accepted shapes:
+///   * a top-level array of `{sym, module, readable?}` objects
+///   * `modules propose --format json` output, when every selected
+///     proposal is a binding-only fresh/extension proposal
+///   * a top-level array of those proposal objects, e.g. from a `jq`
+///     `.proposals[]` filter
 pub fn parse_batch_json(text: &str) -> Result<Vec<Move>> {
     // Try the simple array shape first.
     if let Ok(moves) = serde_json::from_str::<Vec<Move>>(text) {
         return Ok(moves);
     }
-    bail!("--batch JSON must be a top-level array of {{sym, module, readable?}} objects");
+    if let Ok(batch) = serde_json::from_str::<ProposalBatch>(text) {
+        return proposal_batch_to_moves(batch.proposals);
+    }
+    if let Ok(proposals) = serde_json::from_str::<Vec<BatchProposal>>(text) {
+        return proposal_batch_to_moves(proposals);
+    }
+    bail!(
+        "--batch JSON must be a top-level array of {{sym, module, readable?}} objects, \
+         `modules propose --format json` output, or an array of proposal objects"
+    );
+}
+
+fn proposal_batch_to_moves(proposals: Vec<BatchProposal>) -> Result<Vec<Move>> {
+    let mut moves = Vec::new();
+    let mut rejected = Vec::new();
+
+    for proposal in proposals {
+        match proposal_to_moves(proposal) {
+            Ok(mut proposal_moves) => moves.append(&mut proposal_moves),
+            Err((id, reason)) => rejected.push(format!("{id}: {reason}")),
+        }
+    }
+
+    if !rejected.is_empty() {
+        bail!(
+            "--batch modules-propose JSON contains proposals that `bindings assign` cannot apply \
+             directly:\n  - {}\nSelect only binding-only fresh/extension proposals, or handle \
+             `merge_into` / `anonymous_statement_owner_ids` rows with `modules merge` or manual YAML.",
+            rejected.join("\n  - ")
+        );
+    }
+    if moves.is_empty() {
+        bail!(
+            "--batch modules-propose JSON did not contain any binding moves; select proposals with \
+             non-empty `binding_ids`"
+        );
+    }
+    Ok(moves)
+}
+
+fn proposal_to_moves(proposal: BatchProposal) -> std::result::Result<Vec<Move>, (String, String)> {
+    let id = proposal.proposed_module_id.clone();
+    if !proposal.landable_today {
+        return Err((id, "`landable_today` is false".to_string()));
+    }
+    if let Some(merge_into) = &proposal.merge_into {
+        return Err((
+            id,
+            format!(
+                "`merge_into` proposals merge existing modules ({}) and are not member moves",
+                merge_into.join(", ")
+            ),
+        ));
+    }
+    if !proposal.anonymous_statement_owner_ids.is_empty() {
+        return Err((
+            id,
+            format!(
+                "contains anonymous statements ({}) but `bindings assign` only moves members",
+                proposal.anonymous_statement_owner_ids.join(", ")
+            ),
+        ));
+    }
+    if proposal.binding_ids.is_empty() {
+        return Err((id, "no `binding_ids` to move".to_string()));
+    }
+
+    let module = proposal
+        .extends_module_id
+        .unwrap_or(proposal.proposed_module_id);
+    Ok(proposal
+        .binding_ids
+        .into_iter()
+        .map(|sym| Move {
+            sym,
+            module: module.clone(),
+            readable: None,
+        })
+        .collect())
 }
 
 /// Apply a sequence of moves atomically: read every module's YAML
@@ -958,6 +1059,82 @@ mod tests {
         .unwrap();
         assert_eq!(m.len(), 2);
         assert_eq!(m[1].readable.as_deref(), Some("B"));
+    }
+
+    #[test]
+    fn parse_batch_json_modules_propose_report_shape() {
+        let m = parse_batch_json(
+            r#"{
+                "proposals": [
+                    {
+                        "proposed_module_id": "auto_partition_0001",
+                        "binding_ids": ["a", "b"],
+                        "landable_today": true
+                    }
+                ],
+                "diagnostics": []
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(m.len(), 2);
+        assert_eq!(m[0].sym, "a");
+        assert_eq!(m[0].module, "auto_partition_0001");
+        assert_eq!(m[1].sym, "b");
+        assert_eq!(m[1].module, "auto_partition_0001");
+    }
+
+    #[test]
+    fn parse_batch_json_proposal_array_uses_extend_destination() {
+        let m = parse_batch_json(
+            r#"[
+                {
+                    "proposed_module_id": "extend:runtime/plugins",
+                    "binding_ids": ["a"],
+                    "landable_today": true,
+                    "extends_module_id": "runtime/plugins"
+                }
+            ]"#,
+        )
+        .unwrap();
+        assert_eq!(m.len(), 1);
+        assert_eq!(m[0].sym, "a");
+        assert_eq!(m[0].module, "runtime/plugins");
+    }
+
+    #[test]
+    fn parse_batch_json_rejects_merge_proposal() {
+        let err = parse_batch_json(
+            r#"[
+                {
+                    "proposed_module_id": "merge:domains/system/ids+domains/system/types",
+                    "binding_ids": ["a"],
+                    "landable_today": true,
+                    "merge_into": ["domains/system/ids", "domains/system/types"]
+                }
+            ]"#,
+        )
+        .unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("merge_into"), "got {msg}");
+        assert!(msg.contains("modules merge"), "got {msg}");
+    }
+
+    #[test]
+    fn parse_batch_json_rejects_anonymous_statement_proposal() {
+        let err = parse_batch_json(
+            r#"[
+                {
+                    "proposed_module_id": "auto_partition_0002",
+                    "binding_ids": ["a"],
+                    "anonymous_statement_owner_ids": ["owner:7"],
+                    "landable_today": true
+                }
+            ]"#,
+        )
+        .unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("anonymous_statement_owner_ids"), "got {msg}");
+        assert!(msg.contains("bindings assign"), "got {msg}");
     }
 
     #[test]

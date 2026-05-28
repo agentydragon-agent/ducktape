@@ -285,6 +285,8 @@ pub struct BindingsAssignArgs {
     /// when `--batch` is supplied.
     pub triples: Vec<String>,
     /// Read additional moves from a JSON file (or `-` for stdin).
+    /// Accepts explicit `{sym, module, readable?}` move arrays, plus
+    /// reviewed binding-only `modules propose` rows.
     #[arg(long)]
     pub batch: Option<String>,
     /// Validate but do not modify any file.

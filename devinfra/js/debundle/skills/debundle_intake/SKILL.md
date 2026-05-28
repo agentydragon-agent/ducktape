@@ -73,7 +73,9 @@ Write `<scratch>/seeds.json`:
 ```
 
 For workers consuming this directly via `debundle bindings assign --batch`,
-re-shape the entries to the batch format (`{sym, module, readable?}`); see
+pass only binding-only fresh/extension proposal rows, or re-shape them to
+`{sym, module, readable?}` when adding readable names. `merge_into` and
+`anonymous_statement_owner_ids` rows need `modules merge` or manual YAML; see
 `references/cli.md` §"Batch atomicity".
 
 Sort seeds by:
