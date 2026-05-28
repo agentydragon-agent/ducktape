@@ -51,7 +51,13 @@ export const ROLLOUT_EVENT_KIND_LABELS = {
 // Kinds that fire every month produce one marker per row at the same x position — visual
 // clutter rather than signal. They start hidden in the legend; users can toggle them back on
 // if they want to confirm the per-month accrual is firing.
-export const DEFAULT_HIDDEN_EVENT_KINDS = new Set(["monthly_expense", "outside_rent"]);
+export const DEFAULT_HIDDEN_EVENT_KINDS = new Set([
+  "monthly_expense",
+  "outside_rent",
+  "property_tax_payment",
+  "homeowners_insurance_payment",
+  "property_maintenance_payment",
+]);
 
 export const ROLLOUT_EVENT_COLORS = {
   holding_sale: "#0f766e",

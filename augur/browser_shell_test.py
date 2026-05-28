@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import time
 import urllib.error
@@ -22,6 +23,8 @@ pytest_plugins = ("util.playwright",)
 
 if TYPE_CHECKING:
     from playwright.sync_api import Browser, Page, Playwright
+
+_PROPERTY_LIFECYCLE_URL = "/product?s=3.240............location_a_property&lc=r24:50~c60:50000~s120:6"
 
 
 @pytest.fixture
@@ -122,6 +125,26 @@ def test_product_shell_renders_metric_fan_charts(page: Page, augur_server: str) 
     page.locator("[data-product-histogram-scale='linear']").wait_for(state="visible", timeout=15_000)
     page.get_by_label("Metric to plot").select_option("holding_value_usd")
     page.locator("[data-product-fan-chart='holdingValueUsd']").wait_for(state="visible", timeout=30_000)
+
+
+def test_property_recurring_expense_events_start_hidden_on_rollout_graph(page: Page, augur_server: str) -> None:
+    page.goto(f"{augur_server}{_PROPERTY_LIFECYCLE_URL}", wait_until="domcontentloaded")
+    page.locator("[data-augur-surface='product']").wait_for(state="visible", timeout=15_000)
+    page.locator("[data-product-fan-chart='netWorthUsd']").wait_for(state="visible", timeout=30_000)
+    page.locator("[data-product-rollout-sliver]").first.click()
+    page.get_by_text("Selected rollout events").wait_for(state="visible", timeout=30_000)
+    page.get_by_text("Event kinds").wait_for(state="visible", timeout=30_000)
+    legend = page.get_by_label("Event-kind visibility legend")
+
+    for label, event_kind in [
+        ("Property tax", "property_tax_payment"),
+        ("Homeowners insurance", "homeowners_insurance_payment"),
+        ("Maintenance", "property_maintenance_payment"),
+    ]:
+        button = legend.get_by_role("button", name=re.compile(label))
+        button.wait_for(state="visible", timeout=15_000)
+        assert button.get_attribute("aria-pressed") == "false"
+        assert page.locator(f"[data-product-rollout-event-marker='{event_kind}']").count() == 0
 
 
 if __name__ == "__main__":
