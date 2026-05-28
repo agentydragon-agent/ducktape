@@ -53,7 +53,7 @@ def set_path(doc: dict, path: tuple[str, ...], value: Any) -> None:
 
 
 def unmanaged_live_doc(live: dict, base: dict) -> dict:
-    doc = {}
+    doc: dict[str, Any] = {}
     for path in unmanaged_live_paths(live, base):
         set_path(doc, path, path_value(live, path))
     return doc
