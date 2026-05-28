@@ -4,27 +4,29 @@
 
 use super::*;
 use rustc_hash::FxHashSet;
+use swc_atoms::Atom;
 
 pub(super) fn trim_dead_named_specifiers(
     body: &mut [ModuleItem],
     bindings: &HashMap<Id, BindingKind>,
 ) {
-    let mut collector = RefCollector::default();
+    let candidate_syms = claimed_named_import_syms(body, bindings);
+    if candidate_syms.is_empty() {
+        return;
+    }
+
+    let mut collector = TargetedRefCollector::new(&candidate_syms);
     for item in body.iter() {
+        if collector.is_complete() {
+            break;
+        }
         item.visit_with(&mut collector);
     }
-    // We only need by-sym membership here (matching the pre-hygiene
-    // `claimed && unused` check); collapse Ids to their syms.
-    // `id.0` is the `swc_atoms::Atom` (a.k.a. `JsWord`) carried in
-    // `Id = (Atom, SyntaxContext)`; we collect refs by sym for the
-    // claimed-and-unused filter below.
-    let refs: FxHashSet<_> = collector.ids.iter().map(|id| &id.0).collect();
-    // Precompute the set of claimed binding syms once — turns the
-    // inner `bindings.iter().any(...)` (O(N) per specifier; the top
-    // non-materialize hotspot in the 2026-05-26 profile at 12.62%
-    // Children%) into an O(1) HashSet lookup. Top-level names are
-    // unique within a chunk, so syms are sufficient to discriminate.
-    let claimed_syms: FxHashSet<_> = bindings.keys().map(|id| &id.0).collect();
+    let refs = collector.into_found_syms();
+    if refs.len() == candidate_syms.len() {
+        return;
+    }
+
     for item in body.iter_mut() {
         let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
             continue;
@@ -37,7 +39,7 @@ pub(super) fn trim_dead_named_specifiers(
         import.specifiers.retain(|spec| match spec {
             ImportSpecifier::Default(_) | ImportSpecifier::Namespace(_) => true,
             ImportSpecifier::Named(named) => {
-                let claimed = claimed_syms.contains(&named.local.sym);
+                let claimed = candidate_syms.contains(&named.local.sym);
                 let unused = !refs.contains(&named.local.sym);
                 !(claimed && unused)
             }
@@ -48,6 +50,129 @@ pub(super) fn trim_dead_named_specifiers(
         // original entry depended on, regardless of whether any
         // moved logical module is loaded by the residual.
     }
+}
+
+fn claimed_named_import_syms(
+    body: &[ModuleItem],
+    bindings: &HashMap<Id, BindingKind>,
+) -> FxHashSet<Atom> {
+    if bindings.is_empty() {
+        return FxHashSet::default();
+    }
+    let claimed_syms: FxHashSet<_> = bindings.keys().map(|id| id.0.clone()).collect();
+    let mut candidate_syms = FxHashSet::default();
+    for item in body {
+        let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
+            continue;
+        };
+        for specifier in &import.specifiers {
+            if let ImportSpecifier::Named(named) = specifier
+                && claimed_syms.contains(&named.local.sym)
+            {
+                candidate_syms.insert(named.local.sym.clone());
+            }
+        }
+    }
+    candidate_syms
+}
+
+// Mirrors `RefCollector`'s binding/shadowing rules, but only stores
+// symbols that can affect dead import-specifier trimming.
+struct TargetedRefCollector<'a> {
+    targets: &'a FxHashSet<Atom>,
+    found: FxHashSet<Atom>,
+    shadowed_scopes: Vec<BTreeSet<String>>,
+}
+
+impl<'a> TargetedRefCollector<'a> {
+    fn new(targets: &'a FxHashSet<Atom>) -> Self {
+        Self {
+            targets,
+            found: FxHashSet::default(),
+            shadowed_scopes: Vec::new(),
+        }
+    }
+
+    fn is_complete(&self) -> bool {
+        self.found.len() == self.targets.len()
+    }
+
+    fn into_found_syms(self) -> FxHashSet<Atom> {
+        self.found
+    }
+
+    fn is_shadowed(&self, name: &str) -> bool {
+        self.shadowed_scopes
+            .iter()
+            .rev()
+            .any(|scope| scope.contains(name))
+    }
+
+    fn with_shadowed_scope<F: FnOnce(&mut Self)>(&mut self, names: BTreeSet<String>, f: F) {
+        self.shadowed_scopes.push(names);
+        f(self);
+        self.shadowed_scopes.pop();
+    }
+}
+
+impl Visit for TargetedRefCollector<'_> {
+    fn visit_ident(&mut self, node: &Ident) {
+        if !self.is_complete()
+            && self.targets.contains(&node.sym)
+            && !self.is_shadowed(node.sym.as_ref())
+        {
+            self.found.insert(node.sym.clone());
+        }
+    }
+
+    fn visit_binding_ident(&mut self, _node: &BindingIdent) {}
+
+    fn visit_import_decl(&mut self, _node: &ImportDecl) {}
+
+    fn visit_function(&mut self, node: &Function) {
+        if self.is_complete() {
+            return;
+        }
+        let shadowed = node
+            .params
+            .iter()
+            .flat_map(|param| binding_names(&param.pat))
+            .collect::<BTreeSet<_>>();
+        self.with_shadowed_scope(shadowed, |collector| node.visit_children_with(collector));
+    }
+
+    fn visit_arrow_expr(&mut self, node: &ArrowExpr) {
+        if self.is_complete() {
+            return;
+        }
+        let shadowed = node
+            .params
+            .iter()
+            .flat_map(binding_names)
+            .collect::<BTreeSet<_>>();
+        self.with_shadowed_scope(shadowed, |collector| node.visit_children_with(collector));
+    }
+
+    fn visit_member_expr(&mut self, node: &MemberExpr) {
+        node.obj.visit_with(self);
+        if !self.is_complete()
+            && let MemberProp::Computed(computed) = &node.prop
+        {
+            computed.expr.visit_with(self);
+        }
+    }
+
+    fn visit_prop_name(&mut self, node: &PropName) {
+        if !self.is_complete()
+            && let PropName::Computed(computed) = node
+        {
+            computed.expr.visit_with(self);
+        }
+    }
+
+    fn visit_jsx_element_name(&mut self, _node: &JSXElementName) {}
+
+    fn visit_jsx_attr_name(&mut self, _node: &JSXAttrName) {}
 }
 
 pub(super) fn reject_duplicate_export_names(

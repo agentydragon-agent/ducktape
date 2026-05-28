@@ -750,3 +750,44 @@ export { composed };
     // and the re-export keeps the original public surface.
     assert_entry_output(&fixture, "42\n");
 }
+
+#[test]
+fn keeps_specifier_for_imported_binding_still_used_in_residual() {
+    let mut opts = FixtureOpts::new(
+        r#"import { dep } from "./vendor.js";
+const composed = dep + 1;
+console.log(dep);
+export { composed };
+"#,
+        vec![
+            (
+                "mod_x".to_string(),
+                json!({
+                    "members": [{
+                        "name": "Composed",
+                        "selector": { "binding": { "name": "composed" } },
+                    }],
+                }),
+            ),
+            (
+                "mod_dep".to_string(),
+                json!({
+                    "members": [{
+                        "name": "Dep",
+                        "selector": { "binding": { "name": "dep", "kind": "import_specifier" } },
+                    }],
+                }),
+            ),
+        ],
+    );
+    opts.extra_files = &[("static/app/vendor.js", "export const dep = 41;\n")];
+    let fixture = run_fixture(opts);
+
+    let entry = fs::read_to_string(fixture.out_root.join("static/app/entry.js"))
+        .expect("read residual entry");
+    assert!(
+        entry.contains("{ dep }") || entry.contains("{dep}"),
+        "residual must keep the live `dep` named specifier; got:\n{entry}",
+    );
+    assert_entry_output(&fixture, "41\n");
+}
