@@ -6,6 +6,13 @@ resources:
   - ducktape-automation-github-app.sops.yaml
 patches:
   - target:
+      kind: Namespace
+      name: flux-system
+    patch: |
+      - op: add
+        path: /metadata/labels/goldilocks.fairwinds.com~1enabled
+        value: "false"
+  - target:
       kind: GitRepository
       name: flux-system
     patch: |

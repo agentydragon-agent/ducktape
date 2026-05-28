@@ -8,6 +8,7 @@ from pathlib import Path
 import yaml
 
 from cluster.validation.cluster import ParsedCluster
+from cluster.validation.k8s import K8sResource
 from cluster.validation.kustomize import KustomizeBuildResult
 
 
@@ -66,19 +67,18 @@ def check_duplicate_external_secrets(build_results: list[KustomizeBuildResult]) 
 def check_goldilocks_namespace_labels(cluster: ParsedCluster) -> list[str]:
     """Check that namespaces with a goldilocks vpa-update-mode label also have goldilocks enabled."""
     errors = []
-    for file_path, resources in cluster.source_resources.items():
-        for resource in resources:
-            if resource.kind != "Namespace":
-                continue
-            labels = resource.metadata.labels
-            if (
-                "goldilocks.fairwinds.com/vpa-update-mode" in labels
-                and labels.get("goldilocks.fairwinds.com/enabled") != "true"
-            ):
-                errors.append(
-                    f"{file_path}: namespace '{resource.name}' has goldilocks.fairwinds.com/vpa-update-mode "
-                    f'but is missing goldilocks.fairwinds.com/enabled="true"'
-                )
+    for origin, resource in _goldilocks_check_resources(cluster):
+        if resource.kind != "Namespace":
+            continue
+        labels = resource.metadata.labels
+        if (
+            "goldilocks.fairwinds.com/vpa-update-mode" in labels
+            and labels.get("goldilocks.fairwinds.com/enabled") != "true"
+        ):
+            errors.append(
+                f"{origin}: namespace '{resource.name}' has goldilocks.fairwinds.com/vpa-update-mode "
+                f'but is missing goldilocks.fairwinds.com/enabled="true"'
+            )
     return errors
 
 
@@ -86,25 +86,34 @@ _WORKLOAD_KINDS = {"Deployment", "StatefulSet", "DaemonSet"}
 _GOLDILOCKS_ENABLED_LABEL = "goldilocks.fairwinds.com/enabled"
 
 
+def _goldilocks_check_resources(cluster: ParsedCluster) -> list[tuple[Path, K8sResource]]:
+    """Use rendered resources when available so namespace patches are included."""
+    if cluster.build_results:
+        return [
+            (result.kustomization_path, resource) for result in cluster.build_results for resource in result.resources
+        ]
+
+    return [
+        (file_path, resource) for file_path, resources in cluster.source_resources.items() for resource in resources
+    ]
+
+
 def check_goldilocks_explicit_decision(cluster: ParsedCluster) -> list[str]:
     """Every namespace with workloads must explicitly set goldilocks enabled label."""
     errors = []
+    resources = [resource for _, resource in _goldilocks_check_resources(cluster)]
 
     workload_namespaces: set[str] = set()
-    for result in cluster.build_results:
-        for resource in result.resources:
-            if resource.kind in _WORKLOAD_KINDS and resource.namespace:
-                workload_namespaces.add(resource.namespace)
-    for resources in cluster.source_resources.values():
-        for resource in resources:
-            if resource.kind in _WORKLOAD_KINDS and resource.namespace:
-                workload_namespaces.add(resource.namespace)
+    for resource in resources:
+        if resource.kind in _WORKLOAD_KINDS and resource.namespace:
+            workload_namespaces.add(resource.namespace)
 
     namespace_goldilocks: dict[str, str | None] = {}
-    for resources in cluster.source_resources.values():
-        for resource in resources:
-            if resource.kind == "Namespace":
-                namespace_goldilocks[resource.name] = resource.metadata.labels.get(_GOLDILOCKS_ENABLED_LABEL)
+    for resource in resources:
+        if resource.kind == "Namespace":
+            label = resource.metadata.labels.get(_GOLDILOCKS_ENABLED_LABEL)
+            if label is not None or resource.name not in namespace_goldilocks:
+                namespace_goldilocks[resource.name] = label
 
     for ns in sorted(workload_namespaces):
         if ns not in namespace_goldilocks:

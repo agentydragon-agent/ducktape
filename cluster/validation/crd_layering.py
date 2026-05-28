@@ -40,6 +40,33 @@ OPERATOR_CRDS: dict[str, set[str]] = {
     "longhorn": set(),  # Longhorn CRDs (Volume, Engine, etc.) are internal to the operator
     "vpa": {"VerticalPodAutoscaler", "VerticalPodAutoscalerCheckpoint"},
     "node-feature-discovery": {"NodeFeatureRule", "NodeFeature", "NodeFeatureGroup"},
+    "kubevirt-operator": {"KubeVirt"},
+    "kubevirt": {
+        "VirtualMachine",
+        "VirtualMachineClone",
+        "VirtualMachineExport",
+        "VirtualMachineInstance",
+        "VirtualMachineInstanceMigration",
+        "VirtualMachineInstancePreset",
+        "VirtualMachineInstanceReplicaSet",
+        "VirtualMachinePool",
+        "VirtualMachineRestore",
+        "VirtualMachineSnapshot",
+        "VirtualMachineSnapshotContent",
+    },
+    "cdi-operator": {"CDI"},
+    "cdi": {
+        "CDIConfig",
+        "DataImportCron",
+        "DataSource",
+        "DataVolume",
+        "ObjectTransfer",
+        "StorageProfile",
+        "VolumeCloneSource",
+        "VolumeImportSource",
+        "VolumeSnapshotSource",
+        "VolumeUploadSource",
+    },
     "openclaw-operator": {"OpenClawInstance", "OpenClawSelfConfig"},
     # TODO: if non-GHCR image automations are added, add a separate entry here
     # (e.g. "flux-image-automation-harbor": {"ImageRepository", ...}).

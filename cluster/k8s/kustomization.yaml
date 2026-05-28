@@ -44,6 +44,10 @@ resources:
   - nvidia-device-plugin/flux-kustomization.yaml
   - nvidia-device-plugin/agent-rbac/flux-kustomization.yaml
   - kvm-device-plugin/flux-kustomization.yaml
+  - kubevirt/operator/flux-kustomization.yaml
+  - kubevirt/app/flux-kustomization.yaml
+  - kubevirt/cdi-operator/flux-kustomization.yaml
+  - kubevirt/cdi/flux-kustomization.yaml
   - hubble-ui/flux-kustomization.yaml
   - dns-automation/flux-kustomization.yaml
   - kube-api-proxy/flux-kustomization.yaml
