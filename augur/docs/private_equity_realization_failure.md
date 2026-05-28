@@ -40,6 +40,67 @@ to cash, accounting for transfer restrictions, tender eligibility, sale caps, pr
 secondary haircuts, legal status, and capital-structure effects. It is not the same
 as the company-reported mark.
 
+## Generic Realization Model
+
+Model realization risk as a company-value path plus a separate holder-realization
+path. A private-company mark can be economically real and still fail to become usable
+wealth on the planning horizon.
+
+```text
+usable_value(t)
+  = eligible_fraction(t)
+  * liquidity_fraction_available(t)
+  * company_value_per_share(t)
+  * realization_haircut(t)
+  * holder_claim_survival(t)
+```
+
+This is a forecasting decomposition, not an Augur implementation contract.
+
+- `company_value_per_share`: issuer outcome, dilution, capital stack, distress, and
+  upside/downside repricing.
+- `eligible_fraction`: fraction of the position that can legally and practically
+  participate in a sale at each date.
+- `liquidity_fraction_available`: tender, IPO, acquisition, structured secondary, or
+  negotiated-sale capacity available to the holder by date.
+- `realization_haircut`: private-secondary discount, sale price versus paper mark,
+  fees, withholding, and execution friction.
+- `holder_claim_survival`: legal/title/admin/plan-status hazards that can impair the
+  holder's claim even if the issuer survives.
+
+The decomposition should be lot-aware only where lot state affects the forecast.
+For example, if a small tail of shares is still inside a holding-period or tender
+eligibility window, represent that as `eligible_fraction(t)` for short-horizon cash
+planning. Do not let lot-level bookkeeping dominate a 5- or 10-year forecast when the
+holder has no plausible need to sell those lots before they season.
+
+Use public law and generic securities references here, and keep holder-specific
+eligibility evidence downstream. The SEC's Rule 144 investor guidance is a generic
+public reference for restricted and control securities; it describes the different
+resale conditions that can apply by issuer reporting status, affiliate status, and
+holding period. <https://www.sec.gov/about/reports-publications/investorpubsrule144>
+
+### Evidence Shape
+
+Private downstream notes should condition this model with source-backed facts, but
+the generic model should not need personal account data. A useful evidence ledger
+has these fields:
+
+- `source`: document, platform record, public article, legal filing, or user
+  statement;
+- `fact`: the smallest factual claim that affects the forecast;
+- `applies_to`: issuer, security class, holder category, lot, or tender process;
+- `model_effect`: which term in the decomposition moves and in what direction;
+- `confidence`: whether the source is direct, inferred, stale, ambiguous, or only
+  partially applicable.
+
+For private documents, downstream ledgers should cite the specific document title
+used for each fact, not only a folder, archive, platform, or screenshot batch.
+
+Keep private source ledgers downstream when the facts reveal account state, exact
+holdings, security identifiers, platform-only values, personal eligibility, or
+nonpublic tender/plan terms.
+
 ## Conditional Framing
 
 Exclude:
