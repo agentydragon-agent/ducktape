@@ -162,10 +162,11 @@ recovery cashouts. Still missing:
   LNW-floor knob. The sim can consume richer protocol series, but the product
   surface cannot yet express tender acceptance, public-market liquidation,
   acquisition, IPO-lockup, or tax-preference choices separately.
-- **PE IPO/acquisition lifecycle event presentation**. The sim applies the
-  protocol effects, but product rollout detail should expose public-market
-  opens, legal impairments, forced recoveries, and acquisition cashouts as
-  first-class explanatory events rather than only sale dispositions.
+- **Broaden PE path inspection coverage.** Product rollout detail and the
+  frontend event layer now expose PE protocol markers and sparse tender
+  opportunity rows. Keep adding deterministic tests and production-like sample
+  checks for public-market opens, legal impairments, forced recoveries,
+  acquisition cashouts, and low-value paths so these remain explainable.
 - **`PartnerEquityAccrualPolicy`** translation — depends on the generic
   property-stake model covering partner ownership, contribution
   allocation, and balance snapshots.
@@ -234,7 +235,8 @@ recovery cashouts. Still missing:
 - Expand the backend sim smoke harness beyond the current slices.
   Today `//augur/api:server_test` proves `ScenarioKey` requests
   translate, sample, complete, and return the product response shape;
-  richer assertions on event streams would catch regressions earlier.
+  it also covers selected PE protocol and capacity-limited tender paths. Keep
+  broadening event-stream assertions as new lifecycle surfaces land.
 
 ## Refactor follow-ups
 

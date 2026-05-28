@@ -130,10 +130,11 @@ delinquency balances, recovery/cure, or underpayment penalties.
 Discrete one-time events the engine also records (not produced by policies but
 by exogenous trajectory inputs / scenario configuration):
 
-| Event            | Source                                     | Effect                                                                                           |
-| ---------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------ |
-| `LiquidityEvent` | Exogenous opportunity for `PrivateEquity`. | Window during which `SellAsset` on that equity is permitted at the event's `price_usd_per_unit`. |
-| `RegimeChange`   | Exogenous regime transition (future).      | Mutates the asset's `LiquidityRegime` variant.                                                   |
+| Event                           | Source                                    | Effect                                                                                                                               |
+| ------------------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `PrivateEquityMarkerEvent`      | Exogenous PE protocol frame.              | Explains tender/admin/public-market/acquisition/legal/recovery/collapse markers and the sim-facing PE regime/controls for a month.   |
+| `PrivateEquityOpportunityEvent` | Exogenous PE opportunity + holder policy. | Explains sparse tender decisions: sold, floor-satisfied, capacity-zero, liquidity-blocked, no-policy, no-units, or nonpositive-mark. |
+| Lifecycle/property markers      | Scenario configuration.                   | Explains deterministic property/rental/primary-residence lifecycle events that affect state or obligations.                          |
 
 ## Per-rollout evaluation loop
 
