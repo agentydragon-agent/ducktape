@@ -146,15 +146,19 @@ Still missing:
 
 ## Private equity
 
-PE tender regime is wired end-to-end (sim engine → wire → translator →
-frontend LNW-floor knob). Still missing:
+PE protocol series are wired through model → sim → product/API fixtures.
+Current support covers voluntary tender/public-market opportunities, sale
+capacity, eligibility, liquidity blocks, forced sale fractions, and forced
+recovery cashouts. Still missing:
 
-- **Public-market PE regime** (post-IPO unrestricted shares behaving like
-  public stock).
-- **Acquisition regime** (PE position bought out at a specified or
-  modeled price, often above marketed valuation, with lockup variations).
-- **PE IPO and PE acquisition lifecycle events** — should lower into the
-  appropriate regime transition.
+- **Product/API controls for PE participation preferences** beyond the single
+  LNW-floor knob. The sim can consume richer protocol series, but the product
+  surface cannot yet express tender acceptance, public-market liquidation,
+  acquisition, IPO-lockup, or tax-preference choices separately.
+- **PE IPO/acquisition lifecycle event presentation**. The sim applies the
+  protocol effects, but product rollout detail should expose public-market
+  opens, legal impairments, forced recoveries, and acquisition cashouts as
+  first-class explanatory events rather than only sale dispositions.
 - **`PartnerEquityAccrualPolicy`** translation — depends on the generic
   property-stake model covering partner ownership, contribution
   allocation, and balance snapshots.

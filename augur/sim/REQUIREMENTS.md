@@ -1089,34 +1089,34 @@ month via a configured purchase event.
 #### S14.1 — Position with tender-only liquidity.
 
 Alice's position `"alice_private_equity"` is a capital-gains-eligible
-holding configured with a `sellability_mask` derived from a market-
-model "tender opportunity" path: false except at the specific months
-where a tender is offered to the rollout. A liquidity policy
-(S9.1-style) attempts to sell in month M:
+holding with a market-model "tender opportunity" path. The exogenous
+bundle also supplies issuer protocol levels: regime code, event kind,
+sale-capacity fraction, eligible fraction, forced-sale fraction,
+liquidity-block flag, and forced-recovery cashout dollars.
 
-- If `sellability_mask[rollout, M]` is true, the sale fires.
-- If false, the sale falls through to the next funding source per
-  the policy's preference chain (S9.2). The position is not sold;
-  the policy is not silently no-op'd — the failure-to-sell-this-
-  asset is recorded so the decision log shows that this asset was
-  considered and skipped.
+A PE tender policy attempts to sell in month M only when the rollout has a
+tender opportunity or a public-market regime, liquidity is not blocked,
+the mark is positive, and the policy's liquid-net-worth floor is short.
+The sale is capped by sale-capacity and eligible fractions. If those
+conditions are false, the position is not silently liquidated through the
+ordinary public-security liquidity policy.
 
 #### S14.2 — Mixed-liquidity positions in one scenario.
 
 Alice holds three capital-gains-eligible positions:
 
-- `"sp500_etf"` — sellability_mask = all true (default).
-- `"alice_preipo"` — sellability_mask = false until month 36
-  (lockup), then true. Represents an IPO lockup.
-- `"alice_private_equity"` — sellability_mask sampled from the
-  market-model tender path per rollout (S14.1 style).
+- `"sp500_etf"` — ordinary public security, sellable through the liquidity
+  policy path.
+- `"alice_preipo"` — private equity whose protocol regime can switch to
+  public market when an exogenous IPO/open-market event lands.
+- `"alice_private_equity"` — private equity whose tender path and holder
+  eligibility are sampled per rollout.
 
-All three are instances of the same capital-gains-eligible-holding
-template. The engine does not have a "PE sale" code path separate
-from a "stock sale" code path — sales route through one function
-that filters by `sellability_mask[rollout, M]` and skips ineligible
-rollouts. Different rollouts may execute the same scheduled sale
-on different positions depending on which masks permit it.
+Public-security liquidity and PE tender/public-market sales both consume the
+same FIFO lot accounting helper, but PE has a separate protocol-driven sale
+phase because tender availability, holder eligibility, forced sale, and
+recovery cashout are issuer-level exogenous states rather than ordinary
+asset-preference-chain choices.
 
 ## Outputs the simulator must produce
 

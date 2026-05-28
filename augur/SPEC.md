@@ -56,39 +56,48 @@ deployment config are not supported by the product endpoint yet.
 
 ### Asset subtypes
 
-| Subtype          | Valuation                                                                                                         | Liquidity                                                                                 |
-| ---------------- | ----------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `Cash`           | Face value.                                                                                                       | Always liquid.                                                                            |
-| `LiquidSecurity` | Tracks an external-series multiplier (e.g. SP500 total-return proxy).                                             | Always sellable.                                                                          |
-| `RealEstate`     | Tracks location-bound home-value and rent paths; has property tax / insurance / HOA / maintenance / depreciation. | Sellable on demand; sale incurs closing costs, capital-gains tax, depreciation recapture. |
-| `PrivateEquity`  | Tracks an idiosyncratic per-asset price path supplied by the exogenous trajectory bundle.                         | Determined by a `LiquidityRegime` variant attached to the asset. See below.               |
+| Subtype          | Valuation                                                                                                             | Liquidity                                                                                 |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `Cash`           | Face value.                                                                                                           | Always liquid.                                                                            |
+| `LiquidSecurity` | Tracks an external-series multiplier (e.g. SP500 total-return proxy).                                                 | Always sellable.                                                                          |
+| `RealEstate`     | Tracks location-bound home-value and rent paths; has property tax / insurance / HOA / maintenance / depreciation.     | Sellable on demand; sale incurs closing costs, capital-gains tax, depreciation recapture. |
+| `PrivateEquity`  | Tracks an idiosyncratic per-asset price path and protocol control series supplied by the exogenous trajectory bundle. | Saleability is driven by exogenous PE protocol series plus the owner's PE tender policy.  |
 
-### LiquidityRegime (variant on `PrivateEquity`)
+### Private-Equity Protocol
 
-A discriminated union. Current variants:
+The model layer must emit a complete per-issuer protocol bundle whenever a
+scenario holds `private_equity:<issuer>`:
 
-| Variant              | Meaning                                                                                                                                                                                                                                                                        | Status       |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------ |
-| `LiquidityEventOnly` | Sale only at discrete exogenous liquidity opportunities. The event stream has binary arrivals and per-event price.                                                                                                                                                             | Implemented. |
-| `PublicMarket`       | Free sale at the spot price each month, subject to optional `lockup_end_month`. Participates in the obligation funding-policy chain when a `CheckingFloorSellPublicStockPolicy` lists `PRIVATE_EQUITY` in `sale_asset_preference`; the default preference does not include PE. | Implemented. |
-| `Acquisition`        | One-shot forced conversion of the entire remaining position at a fixed `cash_per_unit_usd` on `event_month`. Realized gain feeds the existing annual sale-tax allocation.                                                                                                      | Implemented. |
+| Series / Event                                        | Meaning                                                                                                                      |
+| ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `private_equity:<issuer>`                             | Per-unit mark / sale price path.                                                                                             |
+| `private_equity_sale_opportunity:<issuer>`            | Discrete tender or sale-opportunity event stream.                                                                            |
+| `private_equity_regime_code:<issuer>`                 | Integer-coded issuer regime: private operating, liquidity suspended, public market, cashout, collapsed.                      |
+| `private_equity_event_kind_code:<issuer>`             | Integer-coded event marker for tender, public-market open, acquisition cashout, legal impairment, forced recovery, collapse. |
+| `private_equity_sale_capacity_fraction:<issuer>`      | Fraction of currently held units sellable through a voluntary tender/public-market opportunity.                              |
+| `private_equity_eligible_fraction:<issuer>`           | Fraction of currently held units eligible for voluntary sale.                                                                |
+| `private_equity_forced_sale_fraction:<issuer>`        | Fraction of currently held units forcibly sold in that month.                                                                |
+| `private_equity_liquidity_blocked:<issuer>`           | Boolean-ish level; values `>= 0.5` block voluntary tender/public-market sales.                                               |
+| `private_equity_forced_recovery_cashout_usd:<issuer>` | Dollar recovery paid for the remaining position in that month.                                                               |
 
-A `PrivateEquity` asset can transition between regimes via an exogenous
-**regime-change event** (e.g. an IPO converts `LiquidityEventOnly` → `PublicMarket`).
-The discriminated-union shape supports this, but there is no runtime hook
-yet: regime changes mid-rollout are Future. Today, a position's regime is
-fixed for the whole horizon by `PrivateEquityPosition.liquidity_regime`.
+The simulator hard-fails if any required PE protocol series is absent. It
+validates integer code series, finite marks, and fraction bounds before applying
+sales. Voluntary sales are policy-mediated: the owner's PE tender policy sets a
+liquid-net-worth floor, while the exogenous protocol determines whether a tender
+or public-market sale is possible and how much is sellable. Forced sale and
+forced-recovery cashout series bypass the voluntary floor and apply directly to
+the remaining position.
 
 ### Policy types
 
 Policies are first-class typed objects. The current policy vocabulary:
 
-| Policy                    | Inputs                                                     | Action(s) emitted                                                                          |
-| ------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `PrivateEquitySalePolicy` | Sale-rule configuration for PE sale opportunities.         | Sell `PrivateEquity` when an automatic rule intersects with an exogenous sale opportunity. |
-| `MortgagePaymentPolicy`   | Mortgage liability, payer agent, cash source.              | `PayLiability` from owner cash flow.                                                       |
-| `RentalUsePolicy`         | Property, mode (occupied / rented / partial), tenant pool. | `OccupyProperty` / `RentProperty`.                                                         |
-| `OccupancyDecisionPolicy` | Property, move-out month, alternative housing config.      | Transitions occupation phase; potentially triggers `RentProperty`.                         |
+| Policy                    | Inputs                                                       | Action(s) emitted                                                                                          |
+| ------------------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
+| `PrivateEquitySalePolicy` | Sale-rule configuration for voluntary PE sale opportunities. | Sell `PrivateEquity` when an automatic rule intersects with an exogenous tender/public-market opportunity. |
+| `MortgagePaymentPolicy`   | Mortgage liability, payer agent, cash source.                | `PayLiability` from owner cash flow.                                                                       |
+| `RentalUsePolicy`         | Property, mode (occupied / rented / partial), tenant pool.   | `OccupyProperty` / `RentProperty`.                                                                         |
+| `OccupancyDecisionPolicy` | Property, move-out month, alternative housing config.        | Transitions occupation phase; potentially triggers `RentProperty`.                                         |
 
 Policies do not encode actor identities in their type names — actor IDs are
 data in scenario configuration, not type-system distinctions.

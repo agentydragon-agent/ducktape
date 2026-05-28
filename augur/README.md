@@ -87,10 +87,10 @@ bazelisk run //augur:dev
 ```
 
 The public fixture config uses a composite exogenous provider: an independent
-macro block plus an independent private-equity block. Fitted macro models are
-selected in `Config.exogenous_provider` YAML, e.g. `type: vecm` with a trained
-blob path or `type: state_space` with a trained artifact path plus grouped
-conditioning observations.
+macro block plus a deterministic `private_equity_risk` fixture issuer. Fitted
+macro models are selected in `Config.exogenous_provider` YAML, e.g. `type:
+vecm` with a trained blob path or `type: state_space` with a trained artifact
+path plus grouped conditioning observations.
 
 ## Profiling
 

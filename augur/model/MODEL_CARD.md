@@ -127,9 +127,10 @@ Current generator run, informally:
   index, factor set, and event-stream identity.
 - Mortgage rates are current evidence adapted into sampled paths; they are
   currently kept constant over the sampled horizon.
-- Private-equity marks and tender opportunities can be folded into
-  `state_space` artifacts from private JSONL observations, but the public
-  checked-in artifact does not contain private data.
+- Private-equity marks, tender opportunities, and protocol controls can be
+  supplied by `state_space`, trained private-equity artifacts, or the generic
+  prior-parameter `private_equity_risk` provider. The public checked-in
+  artifacts do not contain private holder data.
 - Historical public market data is limited and location coverage is narrow.
   Zillow rows are trimmed to the currently configured cities.
 - Source refresh recency is not enforced by this document or by model metadata.
