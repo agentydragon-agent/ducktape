@@ -28,6 +28,7 @@ from augur.api.local_regulation import LocalRegulation
 from augur.api.portfolio import PortfolioConfig
 from augur.api.schemas import ApiModel
 from augur.model.exogenous_provider_config import CompositeExogenousProviderConfig, ExogenousProviderConfig
+from augur.model.state_space import StateSpaceExogenousProviderConfig
 from augur.model.trained_private_equity import TrainedPrivateEquityProviderConfig
 from augur.model.vecm import VecmExogenousProviderConfig
 
@@ -117,9 +118,8 @@ class Config(ApiModel):
     product_input_defaults: ProductInputDefaults = Field(default_factory=ProductInputDefaults)
     exogenous_provider: ExogenousProviderConfig = Field(
         description=(
-            "Deployment's exogenous-bundle provider choice (discriminated by `type`: simple / vecm). "
-            "Carries per-provider knobs and trained-asset paths; the server materializes this into a "
-            "runtime `Sampler` at startup."
+            "Deployment's exogenous-bundle provider choice, discriminated by `type`. Carries per-provider "
+            "knobs and trained-asset paths; the server materializes this into a runtime `Sampler` at startup."
         )
     )
 
@@ -170,6 +170,11 @@ def _anchor_provider_paths(provider: ExogenousProviderConfig, *, base_dir: Path)
         if trained_blob is None or trained_blob.is_absolute():
             return provider
         return provider.model_copy(update={"trained_blob": (base_dir / trained_blob).resolve()})
+    if isinstance(provider, StateSpaceExogenousProviderConfig):
+        trained_artifact_path = provider.trained_artifact_path
+        if trained_artifact_path.is_absolute():
+            return provider
+        return provider.model_copy(update={"trained_artifact_path": (base_dir / trained_artifact_path).resolve()})
     if isinstance(provider, CompositeExogenousProviderConfig):
         macro = _anchor_provider_paths(provider.macro, base_dir=base_dir)
         private_equity = _anchor_provider_paths(provider.private_equity, base_dir=base_dir)

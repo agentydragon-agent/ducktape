@@ -137,7 +137,9 @@ def required_level_series(
             series_ids.add(INFLATION_SERIES_ID)
         if scenario_key.annual_maintenance_pct > 0:
             series_ids.add(INFLATION_SERIES_ID)
-        if scenario_key.property_purchase.initial_rental is not None:
+        if scenario_key.property_purchase.initial_rental is not None or _has_positive_rented_fraction_event(
+            scenario_key.property_purchase
+        ):
             series_ids.add(rent_series_id(property_.location_id))
     # PE tender policy with an inflation-indexed floor needs the CPI series.
     if (
@@ -527,6 +529,12 @@ class _RentalCashflowSegment:
     fraction_rented: float
 
 
+@dataclass(frozen=True)
+class _RentalCashflowTerms:
+    base_monthly_rent: float
+    vacancy_multiplier: float
+
+
 def _wire_landlord_rental(
     purchase: PropertyPurchase, *, property_: Property, primary_agent_id: str, horizon_months: int
 ) -> LandlordRentalWiring:
@@ -540,13 +548,12 @@ def _wire_landlord_rental(
     fee fires when each rental segment starts and every `avg_tenancy_months` while active.
     """
 
-    rental = purchase.initial_rental
-    if rental is None:
-        _reject_dynamic_rental_without_terms(purchase, property_id=property_.id)
+    terms = _rental_cashflow_terms(purchase, property_=property_)
+    if terms is None:
         return _EMPTY_LANDLORD_RENTAL_WIRING
     rent_series = rent_series_id(property_.location_id)
-    base_monthly_rent = _resolve_monthly_rent(rental, property_=property_)
-    vacancy_multiplier = 1.0 - float(rental.vacancy_pct)
+    base_monthly_rent = terms.base_monthly_rent
+    vacancy_multiplier = terms.vacancy_multiplier
     rental_segments = _rental_cashflow_segments(purchase, horizon_months=horizon_months)
     if not rental_segments:
         return _EMPTY_LANDLORD_RENTAL_WIRING
@@ -638,23 +645,36 @@ def _wire_landlord_rental(
     )
 
 
-def _reject_dynamic_rental_without_terms(purchase: PropertyPurchase, *, property_id: str) -> None:
-    for event in purchase.lifecycle_events:
-        if isinstance(event, SetRentedFractionEventWire) and event.rented_fraction > 0:
-            raise ValueError(
-                f"property {property_id!r} has set_rented_fraction={float(event.rented_fraction):g} at month "
-                f"{event.month}, but no initial_rental terms; set initial_rental so product lowering knows "
-                "full-property rent and vacancy assumptions"
-            )
+def _rental_cashflow_terms(purchase: PropertyPurchase, *, property_: Property) -> _RentalCashflowTerms | None:
+    if purchase.initial_rental is not None:
+        return _RentalCashflowTerms(
+            base_monthly_rent=_resolve_monthly_rent(purchase.initial_rental, property_=property_),
+            vacancy_multiplier=1.0 - float(purchase.initial_rental.vacancy_pct),
+        )
+    if not _has_positive_rented_fraction_event(purchase):
+        return None
+    if property_.rent_estimate_usd is None:
+        raise ValueError(
+            f"property {property_.id!r} has a future rented-fraction event but no rent_estimate_usd; "
+            "set initial_rental.full_property_monthly_rent_usd so product lowering knows full-property rent"
+        )
+    return _RentalCashflowTerms(
+        base_monthly_rent=float(property_.rent_estimate_usd),
+        vacancy_multiplier=1.0 - float(RentalIncomePlan().vacancy_pct),
+    )
+
+
+def _has_positive_rented_fraction_event(purchase: PropertyPurchase) -> bool:
+    return any(
+        isinstance(event, SetRentedFractionEventWire) and float(event.rented_fraction) > 0.0
+        for event in purchase.lifecycle_events
+    )
 
 
 def _rental_cashflow_segments(purchase: PropertyPurchase, *, horizon_months: int) -> tuple[_RentalCashflowSegment, ...]:
-    rental = purchase.initial_rental
-    if rental is None:
-        return ()
     end_month = horizon_months - 1
     current_start = 0
-    current_fraction = float(rental.fraction_rented)
+    current_fraction = _initial_rented_fraction(purchase)
     segments: list[_RentalCashflowSegment] = []
     for event in sorted(
         (
@@ -708,7 +728,7 @@ def _sim_property_purchase(
         down_payment = purchase_price
     else:
         down_payment = purchase_price * purchase.financing.down_payment_pct / 100.0
-    rented_fraction = float(purchase.initial_rental.fraction_rented) if purchase.initial_rental is not None else 0.0
+    rented_fraction = _initial_rented_fraction(purchase)
     return ScheduledPropertyPurchase(
         month=0,
         cause_id=f"{property_.id}_purchase",
@@ -727,6 +747,10 @@ def _sim_property_purchase(
         # The wire schema doesn't yet expose this knob; we use the sim default (0.20) until
         # the deployment-config / property-record story lands. See augur/sim/TODO.md.
     )
+
+
+def _initial_rented_fraction(purchase: PropertyPurchase) -> float:
+    return float(purchase.initial_rental.fraction_rented) if purchase.initial_rental is not None else 0.0
 
 
 def _monthly_spend_amount(scenario_key: ScenarioKey) -> float | SeriesIndexedAmount:

@@ -54,27 +54,33 @@ def test_composite_merges_macro_and_private_equity_series() -> None:
     model = CompositeExogenousModel(
         macro=_StaticSampler(levels={INFLATION_SERIES_ID: 1.0}, events={}),
         private_equity=_StaticSampler(
-            levels={private_equity_series_id("openai"): 687.69}, events={private_equity_sale_event_id("openai"): 2}
+            levels={private_equity_series_id("private_company_a"): 687.69},
+            events={private_equity_sale_event_id("private_company_a"): 2},
         ),
     )
     request = ExogenousSamplingRequest(
         horizon_months=3,
         rollout_seeds=(7,),
-        required_level_series=frozenset({INFLATION_SERIES_ID, private_equity_series_id("openai")}),
-        required_event_series=frozenset({private_equity_sale_event_id("openai")}),
+        required_level_series=frozenset({INFLATION_SERIES_ID, private_equity_series_id("private_company_a")}),
+        required_event_series=frozenset({private_equity_sale_event_id("private_company_a")}),
     )
 
     bundle = model.sample(request)
 
     assert bundle.level_matrix(INFLATION_SERIES_ID, rollout_count=1, horizon_months=3)[0, 0] == 1.0
-    assert bundle.level_matrix(private_equity_series_id("openai"), rollout_count=1, horizon_months=3)[0, 0] == 687.69
-    assert bundle.event_matrix(private_equity_sale_event_id("openai"), rollout_count=1, horizon_months=3)[0, 2]
+    assert (
+        bundle.level_matrix(private_equity_series_id("private_company_a"), rollout_count=1, horizon_months=3)[0, 0]
+        == 687.69
+    )
+    assert bundle.event_matrix(private_equity_sale_event_id("private_company_a"), rollout_count=1, horizon_months=3)[
+        0, 2
+    ]
 
 
 def test_composite_rejects_duplicate_series_outputs() -> None:
     model = CompositeExogenousModel(
-        macro=_StaticSampler(levels={private_equity_series_id("openai"): 1.0}, events={}),
-        private_equity=_StaticSampler(levels={private_equity_series_id("openai"): 2.0}, events={}),
+        macro=_StaticSampler(levels={private_equity_series_id("private_company_a"): 1.0}, events={}),
+        private_equity=_StaticSampler(levels={private_equity_series_id("private_company_a"): 2.0}, events={}),
     )
 
     with pytest.raises(ValueError, match="duplicate level series"):
@@ -82,7 +88,7 @@ def test_composite_rejects_duplicate_series_outputs() -> None:
             ExogenousSamplingRequest(
                 horizon_months=1,
                 rollout_seeds=(1,),
-                required_level_series=frozenset({private_equity_series_id("openai")}),
+                required_level_series=frozenset({private_equity_series_id("private_company_a")}),
             )
         )
 
@@ -91,7 +97,8 @@ def test_composite_rejects_missing_required_private_equity_series() -> None:
     model = CompositeExogenousModel(
         macro=_StaticSampler(levels={INFLATION_SERIES_ID: 1.0}, events={}),
         private_equity=_StaticSampler(
-            levels={private_equity_series_id("openai"): 687.69}, events={private_equity_sale_event_id("openai"): 1}
+            levels={private_equity_series_id("private_company_a"): 687.69},
+            events={private_equity_sale_event_id("private_company_a"): 1},
         ),
     )
 

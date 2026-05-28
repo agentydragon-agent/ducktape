@@ -10,9 +10,9 @@ events from the artifact.
 Artifact schema (one event per JSONL line):
 
 ```jsonl
-{"issuer_id": "openai", "trajectory_index": 0, "month_index": 5, "event_type": "tender", "price_per_share_usd": 250.0}
-{"issuer_id": "openai", "trajectory_index": 0, "month_index": 18, "event_type": "tender", "price_per_share_usd": 290.0}
-{"issuer_id": "openai", "trajectory_index": 1, "month_index": 12, "event_type": "tender", "price_per_share_usd": 220.0}
+{"issuer_id": "private_company_a", "trajectory_index": 0, "month_index": 5, "event_type": "tender", "price_per_share_usd": 250.0}
+{"issuer_id": "private_company_a", "trajectory_index": 0, "month_index": 18, "event_type": "tender", "price_per_share_usd": 290.0}
+{"issuer_id": "private_company_a", "trajectory_index": 1, "month_index": 12, "event_type": "tender", "price_per_share_usd": 220.0}
 ```
 
 Only `event_type == "tender"` is consumed today. Other event types (`ipo`,

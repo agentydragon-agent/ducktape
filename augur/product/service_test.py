@@ -15,6 +15,7 @@ from augur.model.exogenous import (
     SampledExogenousBundle,
     Sampler,
 )
+from augur.model.exogenous_provider_config import CompositeExogenousProviderConfig
 from augur.model.independent_exogenous import IndependentExogenousProviderConfig
 from augur.model.series import INFLATION_SERIES_ID, SP500_SERIES_ID
 from augur.product import decode, service
@@ -114,9 +115,20 @@ def test_product_fails_when_sample_is_missing_required_exogenous_series() -> Non
 def test_product_fails_when_crypto_holding_price_is_not_modeled() -> None:
     config = _augur_config()
     provider = config.exogenous_provider
-    assert isinstance(provider, IndependentExogenousProviderConfig)
+    assert isinstance(provider, CompositeExogenousProviderConfig)
+    assert isinstance(provider.macro, IndependentExogenousProviderConfig)
     model = provider.model_copy(
-        update={"series": {series_id: spec for series_id, spec in provider.series.items() if series_id != "crypto:btc"}}
+        update={
+            "macro": provider.macro.model_copy(
+                update={
+                    "series": {
+                        series_id: spec
+                        for series_id, spec in provider.macro.series.items()
+                        if series_id != "crypto:btc"
+                    }
+                }
+            )
+        }
     ).realize_model()
     product = _service(model, augur_config=config)
 
@@ -168,7 +180,7 @@ def test_metric_fan_and_rollout_detail_share_cached_sim_rollouts(
     assert counting_exogenous_model.sample_requests[0].required_level_series == frozenset(
         {SP500_SERIES_ID, "crypto:btc", "crypto:eth", "private_equity:private_holding_a"}
     )
-    assert fan.exogenous_model_id == "independent_exogenous_model"
+    assert fan.exogenous_model_id == "composite_exogenous_model"
     assert fan.metric == "cash_usd"
     assert fan.failed_count == 0
     assert [summary.seed for summary in fan.rollout_summaries] == [7, 8]
@@ -197,7 +209,7 @@ def test_metric_fan_and_rollout_detail_share_cached_sim_rollouts(
     detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
 
     assert [request.rollout_seeds for request in counting_exogenous_model.sample_requests] == [(7, 8)]
-    assert detail.exogenous_model_id == "independent_exogenous_model"
+    assert detail.exogenous_model_id == "composite_exogenous_model"
     assert detail.rollout.seed == 7
     assert detail.rollout.monthly_metrics["cash_usd"] == [250_000.0, 249_000.0, 248_000.0, 247_000.0]
     assert detail.rollout.monthly_metrics["holding_value_usd"][0] == 835_500.0
@@ -731,6 +743,71 @@ def test_product_rental_lifecycle_resizes_tenant_rent_and_management_fees() -> N
         assert isinstance(leasing_fee.amount_usd, SeriesIndexedAmount)
         leasing_amounts.append(leasing_fee.amount_usd.base_amount_usd)
     assert leasing_amounts == pytest.approx([6_000.0 * 0.25, 6_000.0 * 0.75, 6_000.0 * 0.5])
+
+
+def test_future_rental_lifecycle_uses_property_rent_estimate_without_initial_rental() -> None:
+    config = _augur_config()
+    bootstrap = build_bootstrap_payload(config)
+    primary_agent_id = resolve_primary_agent_id(config)
+    scenario = ScenarioKey(
+        exogenous_model_id="current_exogenous_model",
+        horizon_months=6,
+        monthly_spend_usd=1_000.0,
+        spend_index="none",
+        funding_policy=FundingPolicy(sell_order=()),
+        property_purchase=PropertyPurchase(
+            property_id="location_a_property",
+            financing=CashFinancing(),
+            is_primary_residence=True,
+            lifecycle_events=(SetRentedFractionEventWire(month=3, rented_fraction=0.5),),
+        ),
+    )
+
+    sim_scenario = build_scenario(
+        scenario,
+        primary_agent_id=primary_agent_id,
+        initial_cash_usd=1_200_000.0,
+        initial_lots=(),
+        properties_by_id={property_.id: property_ for property_ in bootstrap.properties},
+    )
+
+    rent_transfer = one(
+        transfer
+        for transfer in sim_scenario.recurring_transfers
+        if transfer.cause_id == "rental_income:location_a_property"
+    )
+    assert (rent_transfer.start_month, rent_transfer.end_month) == (3, 5)
+    assert isinstance(rent_transfer.amount_usd, SeriesIndexedAmount)
+    assert rent_transfer.amount_usd.base_amount_usd == pytest.approx(4_200.0 * 0.5 * 0.95)
+    assert rent_transfer.amount_usd.series_id == "rent:location_a"
+
+
+def test_future_rental_lifecycle_requires_rent_series_at_product_api(
+    counting_exogenous_model: CountingExogenousModel,
+) -> None:
+    augur_config = _augur_config()
+    augur_config = augur_config.model_copy(
+        update={"snapshot": augur_config.snapshot.model_copy(update={"cash_usd": 1_200_000.0})}
+    )
+    product = _service(counting_exogenous_model, augur_config=augur_config)
+    scenario = ScenarioKey(
+        exogenous_model_id="current_exogenous_model",
+        horizon_months=6,
+        monthly_spend_usd=1_000.0,
+        spend_index="none",
+        funding_policy=FundingPolicy(sell_order=()),
+        property_purchase=PropertyPurchase(
+            property_id="location_a_property",
+            financing=CashFinancing(),
+            is_primary_residence=True,
+            lifecycle_events=(SetRentedFractionEventWire(month=3, rented_fraction=0.5),),
+        ),
+    )
+
+    detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
+
+    assert detail.rollout.failed is False
+    assert "rent:location_a" in counting_exogenous_model.sample_requests[0].required_level_series
 
 
 def test_primary_residence_event_emits_rollout_marker(counting_exogenous_model: CountingExogenousModel) -> None:

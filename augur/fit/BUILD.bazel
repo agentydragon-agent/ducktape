@@ -66,6 +66,21 @@ py_library(
 )
 
 py_library(
+    name = "state_space",
+    srcs = ["state_space.py"],
+    deps = [
+        ":evidence_data",
+        ":private_equity",
+        "//augur/model:conditioning",
+        "//augur/model:series",
+        "//augur/model:state_space",
+        "//augur/model/path_models:scenarios",
+        "@pypi//numpy",
+        "@pypi//pandas",
+    ],
+)
+
+py_library(
     name = "data",
     srcs = ["data.py"],
     data = [":evidence_config_files"],
@@ -90,6 +105,7 @@ py_binary(
         ":data",
         ":exogenous_model",
         ":metrics",
+        "//augur/model:exogenous_provider_config",
         "//augur/model:independent_exogenous",
         "//augur/model:vecm",
         "//util/bazel:runfiles",
@@ -104,7 +120,9 @@ py_library(
     deps = [
         ":data",
         ":evidence_config",
+        ":state_space",
         "//augur/model:exogenous_provider_config",
+        "//augur/model:state_space",
         "//augur/model:vecm",
         "@pypi//pyyaml",
     ],
@@ -198,8 +216,26 @@ py_test(
         "//augur/model:exogenous_provider_config",
         "//augur/model:independent_exogenous",
         "//augur/model:series",
+        "//augur/model:state_space",
         "@pypi//pydantic",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "state_space_acceptance_test",
+    size = "large",
+    srcs = ["state_space_acceptance_test.py"],
+    deps = [
+        ":train_lib",
+        "//augur/model:exogenous",
+        "//augur/model:exogenous_provider_config",
+        "//augur/model:series",
+        "//augur/model:state_space",
+        "@pypi//numpy",
+        "@pypi//pydantic",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],

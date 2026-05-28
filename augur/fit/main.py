@@ -26,10 +26,12 @@ import yaml
 
 from augur.fit.data import DEFAULT_CONFIG_PATH, load_evidence
 from augur.fit.evidence_config import load_evidence_config
-from augur.model.exogenous_provider_config import VecmExogenousProviderConfig
+from augur.fit.state_space import fit_state_space_artifact
+from augur.model.exogenous_provider_config import StateSpaceExogenousProviderConfig, VecmExogenousProviderConfig
+from augur.model.state_space import write_state_space_artifact
 from augur.model.vecm import VecmConfig, VecmModel
 
-_SUPPORTED_MODEL_LABELS = ("vecm",)
+_SUPPORTED_MODEL_LABELS = ("vecm", "state_space")
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
@@ -55,6 +57,16 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Absolute path the per-model trained state blob will be written to. Echoed into the config verbatim.",
     )
+    parser.add_argument(
+        "--private-equity-config",
+        action="append",
+        default=[],
+        type=Path,
+        help=(
+            "Optional private-equity training YAML to fold into the state-space artifact. "
+            "May be passed more than once. Only supported for --model state_space."
+        ),
+    )
     return parser
 
 
@@ -66,17 +78,35 @@ def main(argv: list[str] | None = None) -> int:
 
     config = load_evidence_config(evidence_config_path)
     historical, evidence = load_evidence(config, evidence_config_path.parent)
+    provider_config: VecmExogenousProviderConfig | StateSpaceExogenousProviderConfig
 
-    model = VecmModel(config=VecmConfig())
-    model.fit(historical)
-    model.save(out_blob)
-
-    provider_config = VecmExogenousProviderConfig(
-        trained_blob=out_blob,
-        latest_observations=dict(evidence.latest_observations),
-        current_mortgage30_rate_pct=float(evidence.current_mortgage30_rate_pct),
-        location_series_sources=config.location_series_sources,
-    )
+    if args.model == "vecm":
+        if args.private_equity_config:
+            raise ValueError("--private-equity-config is only supported for --model state_space")
+        model = VecmModel(config=VecmConfig())
+        model.fit(historical)
+        model.save(out_blob)
+        provider_config = VecmExogenousProviderConfig(
+            trained_blob=out_blob,
+            latest_observations=dict(evidence.latest_observations),
+            current_mortgage30_rate_pct=float(evidence.current_mortgage30_rate_pct),
+            location_series_sources=config.location_series_sources,
+        )
+    elif args.model == "state_space":
+        artifact, conditioning = fit_state_space_artifact(
+            historical,
+            evidence,
+            private_equity_config_paths=tuple(path.resolve() for path in args.private_equity_config),
+        )
+        write_state_space_artifact(out_blob, artifact)
+        provider_config = StateSpaceExogenousProviderConfig(
+            trained_artifact_path=out_blob,
+            conditioning=conditioning,
+            current_mortgage30_rate_pct=float(evidence.current_mortgage30_rate_pct),
+            location_series_sources=config.location_series_sources,
+        )
+    else:
+        raise AssertionError(f"unsupported model {args.model!r}")
 
     out_provider_config.write_text(
         yaml.safe_dump(provider_config.model_dump(mode="json"), sort_keys=True, default_flow_style=False),

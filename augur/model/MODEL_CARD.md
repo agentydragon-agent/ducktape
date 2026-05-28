@@ -1,21 +1,23 @@
 # Augur Exogenous Model Card And Provenance
 
-Last updated: 2026-05-20.
+Last updated: 2026-05-28.
 
 This is the minimal `ModelCard` for the current Augur exogenous-model layer.
-The active trained `vecm` provider attaches typed model-version, evidence,
-calibration, scenario-generator, and exogenous-path-set identity metadata to
-`SampledExogenousBundle.metadata`. Those identities are stable for the same
-checked-in public evidence and model inputs, but evidence and calibration are
-still runtime-derived metadata rather than durable persisted artifacts.
+The deployed checked-in calibrated provider is still `vecm`. A new
+`state_space` provider is available for trained artifacts that persist
+evidence/prior manifests, a filtered latent start state, grouped runtime
+conditioning observations, and artifact-level acceptance tests.
 
 ## Scope
 
 Current governed surface:
 
-- Active trained exogenous model: `vecm`.
+- Active deployed trained exogenous model: `vecm`.
+- New trained exogenous provider: `state_space`.
 - `VecmModel` (NumPyro), which loads a trained VECM blob and samples native
   `SampledExogenousBundle` levels/events.
+- `StateSpaceModel`, which loads a JSON artifact, conditions on grouped
+  observations, and samples all modeled level/event series it can provide.
 - Simple stochastic providers are runtime placeholders. Deterministic flat
   exogenous paths are test-only fixtures. Neither is a calibrated exogenous model.
 
@@ -63,9 +65,14 @@ Today that means:
   monthly log returns, marginal return evidence, calibrated path priors, current
   mortgage-rate evidence, and latest-observation metadata.
 - Calibration/fitting happens offline through `augur.fit`; runtime
-  config points at the persisted trained VECM blob.
+  config points at a persisted trained blob/artifact.
 - Sampled-bundle generation happens when `VecmModel.sample(request)` rolls
   the fitted recurrence forward and emits native sampled levels/events.
+- For `state_space`, runtime config also carries `conditioning.start_at` plus
+  `conditioning.observations`, grouped as `series_id -> observed points`.
+  Hard-start and noisy-mark observations update the sampled month-zero state;
+  informative observations are recorded for inference/provenance without
+  forcing the start level.
 - Projection happens in `augur/sim`; the simulator should not receive
   source-specific objects such as FRED, Yahoo, Zillow, or Manifold shapes.
 
@@ -79,9 +86,10 @@ not archival proof on their own.
 
 Current evidence set, informally:
 
-- factor names: `sp500`, configured home-value factors, `rent`, `inflation`;
-- aligned monthly returns built from SPY adjusted close, Zillow home values,
-  rent CPI, and headline CPI;
+- factor names: `sp500`, `crypto:btc`, `crypto:eth`, configured home-value
+  factors, `rent`, `inflation`;
+- aligned monthly returns built from SPY adjusted close, Yahoo BTC/ETH,
+  Zillow home values, rent CPI, and headline CPI;
 - supporting latest observations for FRED SP500 price, FRED mortgage 30-year
   rate, Case-Shiller SF, FHFA SF-Oakland-Berkeley, and other source series;
 - data-derived exogenous-path priors for each factor.
@@ -89,10 +97,13 @@ Current evidence set, informally:
 Current calibration artifact, informally:
 
 - in-memory fitted parameters on one `VecmModel` instance;
+- for `state_space`, a JSON artifact with factor names, monthly return moments,
+  block-shrunk covariance, latest factor levels, filtered latent state, source
+  manifest, prior manifest, and optional private-equity event priors;
 - per-factor exogenous-path prior calibration stored in `ExogenousEvidence`;
 - a runtime-derived calibration run/artifact identity in
   `SampledExogenousBundle.metadata`;
-- no durable calibration bundle or persisted fitted-parameter artifact yet.
+- no durable validation report artifact yet.
 
 Current generator run, informally:
 
@@ -116,8 +127,9 @@ Current generator run, informally:
   index, factor set, and event-stream identity.
 - Mortgage rates are current evidence adapted into sampled paths; they are
   currently kept constant over the sampled horizon.
-- Private-equity marks and yearly tender opportunities are current model/runtime
-  bundle concerns in the VECM wrapper, not fitted idiosyncratic company models.
+- Private-equity marks and tender opportunities can be folded into
+  `state_space` artifacts from private JSONL observations, but the public
+  checked-in artifact does not contain private data.
 - Historical public market data is limited and location coverage is narrow.
   Zillow rows are trimmed to the currently configured cities.
 - Source refresh recency is not enforced by this document or by model metadata.
@@ -130,6 +142,10 @@ Current validation exists as model tests, provider shape tests, and the metric
 battery in `augur/fit/metrics_report.py`. The metric battery scores
 the active trained model on held-out, rolling-origin, and multi-step predictive
 log-density.
+
+`state_space` also has artifact-level acceptance tests that train/load an
+artifact, enforce required-series coverage, check month-zero conditioning, and
+guard short-horizon CPI posterior predictive sanity.
 
 Still missing:
 

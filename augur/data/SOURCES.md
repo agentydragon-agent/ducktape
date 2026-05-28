@@ -117,6 +117,26 @@ with open(sys.argv[1], newline='') as fin, open(sys.argv[2], 'w', newline='') as
 Add the corresponding `(RegionName, State)` pair to the filter when extending
 the location set.
 
+## Prior and reference sources
+
+The `state_space` trainer persists a `prior_manifest` in each trained artifact.
+The manifest records the configured prior choices and links them to the evidence
+that produced the artifact. Public reference sources to use when revisiting
+those priors:
+
+| Source                                              | URL                                                                                                         | Use                                                                 |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| FRED CPIAUCSL                                       | https://fred.stlouisfed.org/series/CPIAUCSL                                                                 | CPI level history and inflation sanity checks.                      |
+| Philadelphia Fed Survey of Professional Forecasters | https://www.philadelphiafed.org/surveys-and-data/real-time-data-research/survey-of-professional-forecasters | External inflation forecast priors and posterior predictive checks. |
+| Kenneth French Data Library                         | https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/data_library.html                                   | Equity factor and market-risk reference data.                       |
+| Damodaran industry betas                            | https://pages.stern.nyu.edu/~adamodar/New_Home_Page/datafile/Betas.html                                     | Weak external anchor for private-company equity beta priors.        |
+| Stan prior choice recommendations                   | https://github.com/stan-dev/stan/wiki/prior-choice-recommendations                                          | General weakly-informative prior guidance.                          |
+| NumPyro distributions documentation                 | https://num.pyro.ai/en/stable/distributions.html                                                            | Distribution/covariance primitives used by Augur fit code.          |
+
+Private company observations and their source notes live in the private
+deployment repository; do not copy personal or company-specific facts into
+this public data directory.
+
 ## Refresh checklist
 
 When refreshing one or more series:

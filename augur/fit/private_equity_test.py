@@ -27,7 +27,7 @@ def _rows() -> list[dict[str, object]]:
     return [
         {
             "type": "price_observation",
-            "issuer_id": "openai",
+            "issuer_id": "private_company_a",
             "observed_at": "2023-11-15",
             "kind": "tender_price",
             "price_usd_per_share": 150.0,
@@ -37,7 +37,7 @@ def _rows() -> list[dict[str, object]]:
         },
         {
             "type": "price_observation",
-            "issuer_id": "openai",
+            "issuer_id": "private_company_a",
             "observed_at": "2024-11-15",
             "kind": "tender_price",
             "price_usd_per_share": 210.0,
@@ -47,12 +47,12 @@ def _rows() -> list[dict[str, object]]:
         },
         {
             "type": "price_observation",
-            "issuer_id": "openai",
+            "issuer_id": "private_company_a",
             "observed_at": "2026-05-27",
             "kind": "ppu_mark",
             "price_usd_per_share": 687.69,
             "uncertainty_log_sigma": 0.10,
-            "source_id": "shareworks",
+            "source_id": "fixture_current_mark",
             "notes": "synthetic current mark",
         },
     ]
@@ -64,7 +64,7 @@ def test_load_jsonl_rejects_non_price_observations(tmp_path: Path) -> None:
         [
             {
                 "type": "valuation_observation",
-                "issuer_id": "openai",
+                "issuer_id": "private_company_a",
                 "observed_at": "2025-10-28",
                 "valuation_usd": 500_000_000_000,
             }
@@ -78,7 +78,7 @@ def test_load_jsonl_rejects_non_price_observations(tmp_path: Path) -> None:
 def test_fit_requires_current_ppu_mark(tmp_path: Path) -> None:
     observations = load_price_observations_jsonl(_write_jsonl(tmp_path / "observations.jsonl", _rows()[:2]))
     config = PrivateEquityTrainingConfig(
-        issuer_id="openai", observations_path="observations.jsonl", out_model_path="model.json"
+        issuer_id="private_company_a", observations_path="observations.jsonl", out_model_path="model.json"
     )
 
     with pytest.raises(ValueError, match="ppu_mark"):
@@ -90,7 +90,7 @@ def test_train_round_trips_compact_model_and_runtime_samples(tmp_path: Path) -> 
     config_path = tmp_path / "train.yaml"
     config_path.write_text(
         """
-issuer_id: openai
+issuer_id: private_company_a
 observations_path: observations.jsonl
 out_model_path: trained_model.json
 priors:
@@ -103,7 +103,7 @@ priors:
     )
 
     artifact = train_from_config(config_path)
-    assert artifact.issuer_id == "openai"
+    assert artifact.issuer_id == "private_company_a"
     assert artifact.current_mark_usd == 687.69
     assert artifact.evidence_digest.startswith("sha256:")
     assert (tmp_path / "trained_model.json").exists()
@@ -112,16 +112,16 @@ priors:
     request = ExogenousSamplingRequest(
         horizon_months=8,
         rollout_seeds=(1, 2, 3),
-        required_level_series=frozenset({private_equity_series_id("openai")}),
-        required_event_series=frozenset({private_equity_sale_event_id("openai")}),
+        required_level_series=frozenset({private_equity_series_id("private_company_a")}),
+        required_event_series=frozenset({private_equity_sale_event_id("private_company_a")}),
     )
     bundle = model.sample(request)
 
-    levels = bundle.level_matrix(private_equity_series_id("openai"), rollout_count=3, horizon_months=8)
+    levels = bundle.level_matrix(private_equity_series_id("private_company_a"), rollout_count=3, horizon_months=8)
     assert levels.shape == (3, 9)
     np.testing.assert_allclose(levels[:, 0], np.array([687.69, 687.69, 687.69]))
     assert (levels > 0).all()
-    events = bundle.event_matrix(private_equity_sale_event_id("openai"), rollout_count=3, horizon_months=8)
+    events = bundle.event_matrix(private_equity_sale_event_id("private_company_a"), rollout_count=3, horizon_months=8)
     assert events.dtype.kind == "b"
     assert events.shape == (3, 9)
 
@@ -129,7 +129,7 @@ priors:
 def test_runtime_sampling_fails_on_nonfinite_private_equity_prices() -> None:
     model = TrainedPrivateEquityModel(
         artifact=TrainedPrivateEquityModelArtifact(
-            issuer_id="openai",
+            issuer_id="private_company_a",
             as_of_date="2026-05-27",
             current_mark_usd=687.69,
             monthly_log_return_mu=1000.0,
@@ -145,7 +145,7 @@ def test_runtime_sampling_fails_on_nonfinite_private_equity_prices() -> None:
             ExogenousSamplingRequest(
                 horizon_months=1,
                 rollout_seeds=(1,),
-                required_level_series=frozenset({private_equity_series_id("openai")}),
+                required_level_series=frozenset({private_equity_series_id("private_company_a")}),
             )
         )
 

@@ -1,0 +1,47 @@
+provider_config_path: fixture_exogenous_provider.yaml
+horizon_months: 12
+rollout_seed_start: 1301
+rollout_count: 512
+required_level_series:
+  - inflation
+  - sp500
+  - private_equity:private_company_a
+required_event_series:
+  - private_equity_sale_opportunity:private_company_a
+level_checks:
+  - series_id: inflation
+    initial_value: 330.0
+    ratio_percentile_ranges:
+      - month: 12
+        lower_percentile: 1
+        upper_percentile: 99
+        lower: 0.99
+        upper: 1.06
+  - series_id: sp500
+    initial_value: 7000.0
+    ratio_percentile_ranges:
+      - month: 12
+        lower_percentile: 1
+        upper_percentile: 99
+        lower: 0.72
+        upper: 1.5
+  - series_id: private_equity:private_company_a
+    initial_value: 100.0
+    ratio_percentile_ranges:
+      - month: 12
+        lower_percentile: 1
+        upper_percentile: 99
+        lower: 0.45
+        upper: 2.25
+    ratio_percentile_bounds:
+      - month: 12
+        percentile: 50
+        lower: 0.85
+        upper: 1.35
+event_checks:
+  - event_id: private_equity_sale_opportunity:private_company_a
+    active_count_percentile_ranges:
+      - lower_percentile: 50
+        upper_percentile: 99
+        lower: 1
+        upper: 5

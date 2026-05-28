@@ -548,8 +548,8 @@ class PrivateEquityTenderPolicy(BaseModel):
     Scope notes (deferred enhancements, captured here so a future reader knows what's missing):
 
     - **Per-issuer policies.** v1 supports one global policy per agent; a per-issuer policy
-      list (`floor_by_issuer: dict[str, AmountSchedule]`) could allow "sell only OpenAI to
-      reach $X, never sell SpaceX") if needed.
+      list (`floor_by_issuer: dict[str, AmountSchedule]`) could allow "sell only
+      issuer A to reach $X, never sell issuer B") if needed.
     - **Partial-tender fraction.** Real tenders sometimes cap participation (e.g. "you may
       sell up to 20% of your holdings"). The trajectory artifact carries a
       `saleable_fraction` field already; consuming it would let the policy gate units sold
@@ -665,10 +665,11 @@ class Scenario(BaseModel):
     @model_validator(mode="after")
     def _reject_out_of_horizon_scheduled_events(self) -> Scenario:
         horizon = int(self.horizon_months)
-        for transfer in self.scheduled_transfers:
-            if not 0 <= transfer.month < horizon:
+        for scheduled_transfer in self.scheduled_transfers:
+            if not 0 <= scheduled_transfer.month < horizon:
                 raise ValueError(
-                    f"scheduled transfer {transfer.cause_id!r} has month {transfer.month}, "
+                    f"scheduled transfer {scheduled_transfer.cause_id!r} "
+                    f"has month {scheduled_transfer.month}, "
                     f"outside scenario horizon [0, {horizon})"
                 )
         for sale in self.scheduled_asset_sales:
@@ -677,10 +678,11 @@ class Scenario(BaseModel):
                     f"scheduled asset sale {sale.cause_id!r} has month {sale.month}, "
                     f"outside scenario horizon [0, {horizon})"
                 )
-        for obligation in self.scheduled_obligations:
-            if not 0 <= obligation.month < horizon:
+        for scheduled_obligation in self.scheduled_obligations:
+            if not 0 <= scheduled_obligation.month < horizon:
                 raise ValueError(
-                    f"scheduled obligation {obligation.obligation_id!r} has month {obligation.month}, "
+                    f"scheduled obligation {scheduled_obligation.obligation_id!r} "
+                    f"has month {scheduled_obligation.month}, "
                     f"outside scenario horizon [0, {horizon})"
                 )
         for purchase in self.scheduled_property_purchases:
@@ -689,17 +691,25 @@ class Scenario(BaseModel):
                     f"scheduled property purchase {purchase.cause_id!r} has month {purchase.month}, "
                     f"outside scenario horizon [0, {horizon})"
                 )
-        for transfer in self.recurring_transfers:
-            if transfer.end_month is not None and transfer.end_month < transfer.start_month:
+        for recurring_transfer in self.recurring_transfers:
+            if (
+                recurring_transfer.end_month is not None
+                and recurring_transfer.end_month < recurring_transfer.start_month
+            ):
                 raise ValueError(
-                    f"recurring transfer {transfer.cause_id!r} has end_month {transfer.end_month} "
-                    f"before start_month {transfer.start_month}"
+                    f"recurring transfer {recurring_transfer.cause_id!r} "
+                    f"has end_month {recurring_transfer.end_month} "
+                    f"before start_month {recurring_transfer.start_month}"
                 )
-        for obligation in self.recurring_obligations:
-            if obligation.end_month is not None and obligation.end_month < obligation.start_month:
+        for recurring_obligation in self.recurring_obligations:
+            if (
+                recurring_obligation.end_month is not None
+                and recurring_obligation.end_month < recurring_obligation.start_month
+            ):
                 raise ValueError(
-                    f"recurring obligation {obligation.obligation_id!r} has end_month {obligation.end_month} "
-                    f"before start_month {obligation.start_month}"
+                    f"recurring obligation {recurring_obligation.obligation_id!r} "
+                    f"has end_month {recurring_obligation.end_month} "
+                    f"before start_month {recurring_obligation.start_month}"
                 )
         return self
 
@@ -717,43 +727,47 @@ class Scenario(BaseModel):
             raise ValueError(f"duplicate scheduled property purchase property_id(s): {duplicate_list}")
 
         sale_month_by_property_id: dict[str, int] = {}
-        for event in self.property_lifecycle_events:
-            event_month = int(event.month)
+        for lifecycle_event in self.property_lifecycle_events:
+            event_month = int(lifecycle_event.month)
             if not 0 <= event_month < horizon:
                 raise ValueError(
-                    f"property lifecycle event for {event.property_id!r} has month {event.month}, "
+                    f"property lifecycle event for {lifecycle_event.property_id!r} "
+                    f"has month {lifecycle_event.month}, "
                     f"outside scenario horizon [0, {horizon})"
                 )
-            purchase_month = purchase_month_by_property_id.get(event.property_id)
+            purchase_month = purchase_month_by_property_id.get(lifecycle_event.property_id)
             if purchase_month is None:
                 known = ", ".join(repr(property_id) for property_id in sorted(purchase_month_by_property_id))
                 raise ValueError(
-                    f"property lifecycle event at month {event.month} references unknown property_id "
-                    f"{event.property_id!r}; known: {known or '<none>'}"
+                    f"property lifecycle event at month {lifecycle_event.month} references unknown property_id "
+                    f"{lifecycle_event.property_id!r}; known: {known or '<none>'}"
                 )
             if event_month <= purchase_month:
                 raise ValueError(
-                    f"property lifecycle event for {event.property_id!r} fires at month {event.month} "
+                    f"property lifecycle event for {lifecycle_event.property_id!r} "
+                    f"fires at month {lifecycle_event.month} "
                     f"but the property's purchase month is {purchase_month}; lifecycle events must "
                     "fire strictly after purchase."
                 )
-            if isinstance(event, PropertySaleEvent):
-                previous_sale_month = sale_month_by_property_id.get(event.property_id)
+            if isinstance(lifecycle_event, PropertySaleEvent):
+                previous_sale_month = sale_month_by_property_id.get(lifecycle_event.property_id)
                 if previous_sale_month is not None:
                     raise ValueError(
-                        f"multiple property sale lifecycle events for {event.property_id!r}: "
-                        f"months {previous_sale_month} and {event.month}"
+                        f"multiple property sale lifecycle events for {lifecycle_event.property_id!r}: "
+                        f"months {previous_sale_month} and {lifecycle_event.month}"
                     )
-                sale_month_by_property_id[event.property_id] = event_month
+                sale_month_by_property_id[lifecycle_event.property_id] = event_month
 
-        for event in self.property_lifecycle_events:
-            sale_month = sale_month_by_property_id.get(event.property_id)
+        for lifecycle_event in self.property_lifecycle_events:
+            sale_month = sale_month_by_property_id.get(lifecycle_event.property_id)
             if sale_month is None:
                 continue
-            event_month = int(event.month)
-            if event_month > sale_month or (event_month == sale_month and not isinstance(event, PropertySaleEvent)):
+            event_month = int(lifecycle_event.month)
+            if event_month > sale_month or (
+                event_month == sale_month and not isinstance(lifecycle_event, PropertySaleEvent)
+            ):
                 raise ValueError(
-                    f"property lifecycle event for {event.property_id!r} at month {event.month} "
+                    f"property lifecycle event for {lifecycle_event.property_id!r} at month {lifecycle_event.month} "
                     f"fires after sale at month {sale_month}; the property is frozen after sale"
                 )
         return self
@@ -767,9 +781,9 @@ class Scenario(BaseModel):
             purchase_by_property_id[purchase.property_id] = purchase
 
         sale_month_by_property_id: dict[str, int] = {}
-        for event in self.property_lifecycle_events:
-            if isinstance(event, PropertySaleEvent):
-                sale_month_by_property_id[event.property_id] = int(event.month)
+        for lifecycle_event in self.property_lifecycle_events:
+            if isinstance(lifecycle_event, PropertySaleEvent):
+                sale_month_by_property_id[lifecycle_event.property_id] = int(lifecycle_event.month)
 
         seen_initial_agents: set[str] = set()
         for assignment in self.initial_primary_residences:
@@ -788,31 +802,33 @@ class Scenario(BaseModel):
             )
 
         seen_event_keys: set[tuple[str, int]] = set()
-        for event in self.primary_residence_events:
-            event_month = int(event.month)
+        for primary_event in self.primary_residence_events:
+            event_month = int(primary_event.month)
             if not 0 <= event_month < horizon:
                 raise ValueError(
-                    f"primary residence event for agent_id {event.agent_id!r} has month {event.month}, "
+                    f"primary residence event for agent_id {primary_event.agent_id!r} "
+                    f"has month {primary_event.month}, "
                     f"outside scenario horizon [0, {horizon})"
                 )
-            key = (event.agent_id, event_month)
+            key = (primary_event.agent_id, event_month)
             if key in seen_event_keys:
                 raise ValueError(
-                    f"multiple primary residence events for agent_id {event.agent_id!r} at month {event.month}"
+                    f"multiple primary residence events for agent_id {primary_event.agent_id!r} "
+                    f"at month {primary_event.month}"
                 )
             seen_event_keys.add(key)
-            if event.property_id is None:
-                if event.agent_id not in agent_ids:
+            if primary_event.property_id is None:
+                if primary_event.agent_id not in agent_ids:
                     known = ", ".join(repr(agent_id) for agent_id in sorted(agent_ids))
                     raise ValueError(
-                        f"primary residence event at month {event.month} references unknown agent_id "
-                        f"{event.agent_id!r}; known: {known or '<none>'}"
+                        f"primary residence event at month {primary_event.month} references unknown agent_id "
+                        f"{primary_event.agent_id!r}; known: {known or '<none>'}"
                     )
                 continue
             self._validate_primary_residence_property_assignment(
                 label="primary residence event",
-                agent_id=event.agent_id,
-                property_id=event.property_id,
+                agent_id=primary_event.agent_id,
+                property_id=primary_event.property_id,
                 month=event_month,
                 agent_ids=agent_ids,
                 purchase_by_property_id=purchase_by_property_id,

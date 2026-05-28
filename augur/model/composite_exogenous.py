@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 import polars as pl
@@ -65,6 +66,7 @@ class CompositeExogenousModel:
             events=concat_frames([macro_bundle.events, pe_bundle.events], SERIES_EVENTS_SCHEMA),
             metadata={
                 "exogenous_model_id": self.label,
+                "private_equity_prices_usd": _private_equity_prices_usd(pe_bundle.metadata),
                 "macro_metadata": dict(macro_bundle.metadata),
                 "private_equity_metadata": dict(pe_bundle.metadata),
             },
@@ -85,3 +87,20 @@ def _ids(frame: pl.DataFrame, column: str) -> frozenset[str]:
     if frame.is_empty():
         return frozenset()
     return frozenset(str(value) for value in frame.get_column(column).unique().to_list())
+
+
+def _private_equity_prices_usd(metadata: Mapping[str, object]) -> dict[str, float]:
+    raw = metadata.get("private_equity_prices_usd")
+    if raw is None:
+        return {}
+    if not isinstance(raw, Mapping):
+        raise TypeError("private_equity metadata key private_equity_prices_usd must be a mapping")
+
+    prices: dict[str, float] = {}
+    for key, value in raw.items():
+        if not isinstance(key, str):
+            raise TypeError("private_equity_prices_usd keys must be strings")
+        if isinstance(value, bool) or not isinstance(value, int | float):
+            raise TypeError(f"private_equity_prices_usd[{key!r}] must be numeric")
+        prices[key] = float(value)
+    return prices

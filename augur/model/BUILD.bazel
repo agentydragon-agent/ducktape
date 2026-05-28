@@ -25,6 +25,15 @@ py_library(
 )
 
 py_library(
+    name = "conditioning",
+    srcs = ["conditioning.py"],
+    deps = [
+        ":schemas",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
     name = "exogenous",
     srcs = ["exogenous.py"],
     deps = [
@@ -98,6 +107,26 @@ py_library(
 )
 
 py_library(
+    name = "state_space",
+    srcs = ["state_space.py"],
+    deps = [
+        ":conditioning",
+        ":exogenous",
+        ":location_series_sources",
+        ":provenance",
+        ":schemas",
+        ":series",
+        ":series_model",
+        "//augur:frames",
+        "//augur/model/path_models:scenarios",
+        "@pypi//jax",
+        "@pypi//numpy",
+        "@pypi//numpyro",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
     name = "vecm",
     srcs = ["vecm.py"],
     data = ["//augur/fit/calibrated:trained_vecm_blob"],
@@ -134,16 +163,62 @@ py_test(
     ],
 )
 
+py_test(
+    name = "state_space_test",
+    srcs = ["state_space_test.py"],
+    deps = [
+        ":conditioning",
+        ":exogenous",
+        ":location_series_sources",
+        ":series",
+        ":state_space",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_library(
     name = "exogenous_provider_config",
     srcs = ["exogenous_provider_config.py"],
     deps = [
         ":composite_exogenous",
+        ":conditioning",
         ":independent_exogenous",
         ":schemas",
+        ":state_space",
         ":trained_private_equity",
         ":vecm",
         "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "sample_sanity",
+    srcs = ["sample_sanity.py"],
+    deps = [
+        ":exogenous",
+        ":exogenous_provider_config",
+        ":schemas",
+        "//util/bazel:runfiles",
+        "@pypi//numpy",
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "sample_sanity_test",
+    srcs = ["sample_sanity_test.py"],
+    data = [
+        "testdata/fixture_exogenous_provider.yaml",
+        "testdata/fixture_private_equity_model.json",
+        "testdata/fixture_sample_sanity.yaml",
+    ],
+    deps = [
+        ":sample_sanity",
+        "//util/bazel:runfiles",
+        "@pypi//pytest_bazel",
     ],
 )
 

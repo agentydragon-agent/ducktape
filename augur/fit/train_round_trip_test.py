@@ -19,6 +19,7 @@ from augur.fit.main import main as train_main
 from augur.model.exogenous import ExogenousSamplingRequest
 from augur.model.exogenous_provider_config import ExogenousProviderConfig
 from augur.model.series import home_value_series_id, rent_series_id
+from augur.model.state_space import StateSpaceExogenousProviderConfig
 from augur.model.vecm import VecmExogenousProviderConfig
 
 _ADAPTER: TypeAdapter[ExogenousProviderConfig] = TypeAdapter(ExogenousProviderConfig)
@@ -27,7 +28,7 @@ _ADAPTER: TypeAdapter[ExogenousProviderConfig] = TypeAdapter(ExogenousProviderCo
 @pytest.mark.parametrize("model_label", ["vecm"])
 def test_train_then_load_and_sample(model_label: str, tmp_path: Path) -> None:
     out_manifest = tmp_path / "exogenous_provider.yaml"
-    out_blob = tmp_path / f"trained_{model_label}.npz"
+    out_blob = tmp_path / (f"trained_{model_label}.npz" if model_label == "vecm" else f"trained_{model_label}.json")
     train_main(["--model", model_label, "--out-provider-config", str(out_manifest), "--out-blob", str(out_blob)])
 
     assert out_manifest.exists()
@@ -62,6 +63,41 @@ def test_train_then_load_and_sample(model_label: str, tmp_path: Path) -> None:
     for location in locations:
         assert sampled.level_matrix(home_value_series_id(location), rollout_count=2, horizon_months=12).shape == (2, 13)
         assert sampled.level_matrix(rent_series_id(location), rollout_count=2, horizon_months=12).shape == (2, 13)
+
+
+@pytest.mark.parametrize("model_label", ["state_space"])
+def test_train_state_space_then_load_and_sample(model_label: str, tmp_path: Path) -> None:
+    out_manifest = tmp_path / "exogenous_provider.yaml"
+    out_blob = tmp_path / f"trained_{model_label}.json"
+    train_main(["--model", model_label, "--out-provider-config", str(out_manifest), "--out-blob", str(out_blob)])
+
+    assert out_manifest.exists()
+    assert out_blob.exists()
+
+    parsed = _ADAPTER.validate_python(yaml.safe_load(out_manifest.read_text(encoding="utf-8")))
+    assert isinstance(parsed, StateSpaceExogenousProviderConfig)
+    assert parsed.type == model_label
+    assert parsed.trained_artifact_path == out_blob
+    assert parsed.conditioning.observations
+
+    model = parsed.realize_model()
+    locations = sorted(parsed.location_series_sources.home_value)
+    required_level_series = frozenset(
+        {
+            series_id
+            for location in locations
+            for series_id in (home_value_series_id(location), rent_series_id(location))
+        }
+    )
+    sampled = model.sample(
+        ExogenousSamplingRequest(rollout_seeds=(7, 8), horizon_months=12, required_level_series=required_level_series)
+    )
+
+    assert str(sampled.metadata["exogenous_model_version_id"]).startswith("model_version:")
+    assert sampled.metadata["source_manifest"]
+    assert {
+        row["series_id"] for row in sampled.levels.select("series_id").unique().iter_rows(named=True)
+    } >= required_level_series
 
 
 if __name__ == "__main__":

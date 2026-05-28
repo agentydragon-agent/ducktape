@@ -26,7 +26,7 @@ exogenous_provider:
       rent: {san_francisco_ca: rent, ...}
   private_equity:
     type: trained_private_equity
-    trained_model_path: /etc/augur/openai_private_equity_model.json
+    trained_model_path: /etc/augur/private_equity_model.json
 ```
 
 ```yaml
@@ -60,11 +60,15 @@ from pydantic import Field
 from augur.model.composite_exogenous import CompositeExogenousModel
 from augur.model.independent_exogenous import IndependentExogenousProviderConfig
 from augur.model.schemas import FrozenModel
+from augur.model.state_space import StateSpaceExogenousProviderConfig
 from augur.model.trained_private_equity import TrainedPrivateEquityProviderConfig
 from augur.model.vecm import VecmExogenousProviderConfig
 
 BasicExogenousProviderConfig = Annotated[
-    IndependentExogenousProviderConfig | VecmExogenousProviderConfig | TrainedPrivateEquityProviderConfig,
+    IndependentExogenousProviderConfig
+    | VecmExogenousProviderConfig
+    | StateSpaceExogenousProviderConfig
+    | TrainedPrivateEquityProviderConfig,
     Field(discriminator="type"),
 ]
 
@@ -83,6 +87,7 @@ class CompositeExogenousProviderConfig(FrozenModel):
 ExogenousProviderConfig = Annotated[
     IndependentExogenousProviderConfig
     | VecmExogenousProviderConfig
+    | StateSpaceExogenousProviderConfig
     | TrainedPrivateEquityProviderConfig
     | CompositeExogenousProviderConfig,
     Field(discriminator="type"),

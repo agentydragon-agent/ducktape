@@ -45,64 +45,66 @@ location_selection:
   - location_a
   - location_b
 exogenous_provider:
-  # Public fixture uses the independent-per-series provider — visual_test
-  # renders distribution fans (needs non-flat samples), and browser_shell_test
-  # only checks API surface so doesn't care about the specific values.
-  # GBM params are pre-computed from annual return / volatility:
-  #   monthly_log_return_sigma = annual_vol / sqrt(12)
-  #   monthly_log_return_mu    = annual_return / 12 - 0.5 * monthly_log_return_sigma^2
-  type: independent
-  series:
-    inflation: # annual return 3%, vol 1.5%
-      kind: gbm
-      initial_value: 1.0
-      monthly_log_return_mu: 0.0024906250
-      monthly_log_return_sigma: 0.0043301270
-    sp500: # annual return 7%, vol 16%
-      kind: gbm
-      initial_value: 1.0
-      monthly_log_return_mu: 0.0047666667
-      monthly_log_return_sigma: 0.0461880215
-    "crypto:btc":
-      kind: constant
-      value: 75000.0
-    "crypto:eth":
-      kind: constant
-      value: 2100.0
-    "home_value:location_a": # annual return 3.5%, vol 8%
-      kind: gbm
-      initial_value: 1.0
-      monthly_log_return_mu: 0.0026500000
-      monthly_log_return_sigma: 0.0230940108
-    "home_value:location_b":
-      kind: gbm
-      initial_value: 1.0
-      monthly_log_return_mu: 0.0026500000
-      monthly_log_return_sigma: 0.0230940108
-    "rent:location_a": # annual return 3%, vol 3%
-      kind: gbm
-      initial_value: 1.0
-      monthly_log_return_mu: 0.0024625000
-      monthly_log_return_sigma: 0.0086602540
-    "rent:location_b":
-      kind: gbm
-      initial_value: 1.0
-      monthly_log_return_mu: 0.0024625000
-      monthly_log_return_sigma: 0.0086602540
-    # Routing key matches the portfolio `private_equity:<issuer>` value_series_id and the
-    # snapshot.concentrated_holdings.holding_id; the product translator
-    # (`augur/product/scenarios._build_private_equity_tender_policies`) wires this issuer
-    # to a tender policy when the PE row is present in `portfolio.holdings`.
-    "private_equity:private_holding_a": # annual return 8%, vol 35%
-      kind: gbm
-      initial_value: 25.0
-      monthly_log_return_mu: 0.0015625000
-      monthly_log_return_sigma: 0.1010362971
-  events:
-    "private_equity_sale_opportunity:private_holding_a":
-      kind: poisson
-      monthly_lambda: 0.0833333333 # 1/12 (roughly once per year)
-      min_horizon_months: 6
+  # Public fixture uses a composite provider: macro/liquid/real-estate series in
+  # one independent block, private-equity price/event series in another. That
+  # mirrors production's split without requiring trained fixture artifacts.
+  type: composite
+  macro:
+    # GBM params are pre-computed from annual return / volatility:
+    #   monthly_log_return_sigma = annual_vol / sqrt(12)
+    #   monthly_log_return_mu    = annual_return / 12 - 0.5 * monthly_log_return_sigma^2
+    type: independent
+    series:
+      inflation: # annual return 3%, vol 1.5%
+        kind: gbm
+        initial_value: 1.0
+        monthly_log_return_mu: 0.0024906250
+        monthly_log_return_sigma: 0.0043301270
+      sp500: # annual return 7%, vol 16%
+        kind: gbm
+        initial_value: 1.0
+        monthly_log_return_mu: 0.0047666667
+        monthly_log_return_sigma: 0.0461880215
+      "crypto:btc":
+        kind: constant
+        value: 75000.0
+      "crypto:eth":
+        kind: constant
+        value: 2100.0
+      "home_value:location_a": # annual return 3.5%, vol 8%
+        kind: gbm
+        initial_value: 1.0
+        monthly_log_return_mu: 0.0026500000
+        monthly_log_return_sigma: 0.0230940108
+      "home_value:location_b":
+        kind: gbm
+        initial_value: 1.0
+        monthly_log_return_mu: 0.0026500000
+        monthly_log_return_sigma: 0.0230940108
+      "rent:location_a": # annual return 3%, vol 3%
+        kind: gbm
+        initial_value: 1.0
+        monthly_log_return_mu: 0.0024625000
+        monthly_log_return_sigma: 0.0086602540
+      "rent:location_b":
+        kind: gbm
+        initial_value: 1.0
+        monthly_log_return_mu: 0.0024625000
+        monthly_log_return_sigma: 0.0086602540
+  private_equity:
+    type: independent
+    series:
+      # Routing key matches the portfolio `private_equity:<issuer>` value_series_id.
+      "private_equity:private_holding_a": # annual return 8%, vol 35%
+        kind: gbm
+        initial_value: 25.0
+        monthly_log_return_mu: 0.0015625000
+        monthly_log_return_sigma: 0.1010362971
+    events:
+      "private_equity_sale_opportunity:private_holding_a":
+        kind: poisson
+        monthly_lambda: 0.0833333333 # 1/12 (roughly once per year)
+        min_horizon_months: 6
 portfolio:
   accounts:
     - account_id: taxable_brokerage

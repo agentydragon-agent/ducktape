@@ -63,9 +63,11 @@ For local public-fixture development, use the combined dev-only wrapper:
 bazelisk run //augur:dev
 ```
 
-The public fixture config uses the lightweight `simple` exogenous provider. Fitted
-macro models are selected in `Config.exogenous_provider` YAML, e.g. `type:
-vecm` with a trained blob path.
+The public fixture config uses a composite exogenous provider: an independent
+macro block plus an independent private-equity block. Fitted macro models are
+selected in `Config.exogenous_provider` YAML, e.g. `type: vecm` with a trained
+blob path or `type: state_space` with a trained artifact path plus grouped
+conditioning observations.
 
 ## Profiling
 

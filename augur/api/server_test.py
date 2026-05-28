@@ -106,7 +106,7 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
         {"scenario": scenario, "rollout_seeds": [7, 8], "metric": "cash_usd", "percentiles": [0, 50, 100]},
     )
 
-    assert fan["exogenous_model_id"] == "independent_exogenous_model"
+    assert fan["exogenous_model_id"] == "composite_exogenous_model"
     assert "horizon_months" not in fan
     assert fan["metric"] == "cash_usd"
     assert fan["failed_count"] == 0
@@ -153,7 +153,7 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
 
     detail = _post_json(server_url, "/api/product/projections/rollout", {"scenario": scenario, "seed": 7})
 
-    assert detail["exogenous_model_id"] == "independent_exogenous_model"
+    assert detail["exogenous_model_id"] == "composite_exogenous_model"
     assert "horizon_months" not in detail
     assert detail["rollout"]["seed"] == 7
     assert detail["rollout"]["failed"] is False

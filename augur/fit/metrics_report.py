@@ -32,6 +32,7 @@ import yaml
 from augur.fit.data import load_historical
 from augur.fit.exogenous_model import FittableScorable, Scorable
 from augur.fit.metrics import held_out_predictive_score, multi_step_predictive_score, rolling_origin_predictive_score
+from augur.model.exogenous_provider_config import CompositeExogenousProviderConfig
 from augur.model.independent_exogenous import IndependentExogenousProviderConfig
 from augur.model.path_models.scenarios import HistoricalSeries
 from augur.model.vecm import VecmConfig, VecmModel
@@ -50,7 +51,12 @@ def _build_independent_from_testdata() -> Scorable:
     config_path = get_required_path("_main/augur/api/testdata/config.yaml")
     payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     provider_payload = payload["exogenous_provider"]
-    config = IndependentExogenousProviderConfig.model_validate(provider_payload)
+    if provider_payload.get("type") == "composite":
+        config = CompositeExogenousProviderConfig.model_validate(provider_payload).macro
+        if not isinstance(config, IndependentExogenousProviderConfig):
+            raise TypeError("public fixture composite macro provider must be independent for metric scoring")
+    else:
+        config = IndependentExogenousProviderConfig.model_validate(provider_payload)
     return cast(Scorable, config.realize_model())
 
 

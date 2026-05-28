@@ -456,7 +456,7 @@ def _apply_property_sale(
 
     series_idx = int(plan.property_home_value_series_index[prop])
     if series_idx < 0:
-        property_id = plan.strings[int(plan.properties.codes[prop])]
+        property_id = plan.strings[int(plan.properties.id[prop])]
         msg = f"property sale for property_id {property_id!r} reached engine without a home-value series"
         raise RuntimeError(msg)
     base_value = plan.external_values[series_idx, :, 0]  # per-rollout, base month

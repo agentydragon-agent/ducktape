@@ -104,7 +104,7 @@ def test_deterministic_fixture_samples_requested_constant_series_and_events() ->
             horizon_months=2,
             rollout_seeds=(101, 102),
             required_level_series=frozenset({"inflation", "sp500"}),
-            required_event_series=frozenset({"private_equity_sale_opportunity:openai"}),
+            required_event_series=frozenset({"private_equity_sale_opportunity:private_company_a"}),
         )
     )
 
@@ -118,7 +118,7 @@ def test_deterministic_fixture_samples_requested_constant_series_and_events() ->
         [2.0, 2.0, 2.0],
     ]
     assert sampled.event_matrix(
-        "private_equity_sale_opportunity:openai", rollout_count=2, horizon_months=2
+        "private_equity_sale_opportunity:private_company_a", rollout_count=2, horizon_months=2
     ).tolist() == [[False, True, False], [False, True, False]]
 
 
@@ -127,7 +127,7 @@ def test_sample_compatibility_accepts_required_subset_and_extra_series() -> None
         horizon_months=2,
         rollout_seeds=(101,),
         required_level_series=frozenset({"sp500"}),
-        required_event_series=frozenset({"private_equity_sale_opportunity:openai"}),
+        required_event_series=frozenset({"private_equity_sale_opportunity:private_company_a"}),
     )
     sampled = SampledExogenousBundle(
         levels=pl.concat(
@@ -139,7 +139,7 @@ def test_sample_compatibility_accepts_required_subset_and_extra_series() -> None
         events=pl.concat(
             [
                 series_events_frame(
-                    "private_equity_sale_opportunity:openai",
+                    "private_equity_sale_opportunity:private_company_a",
                     np.zeros((1, 3), dtype=np.bool_),
                     rollout_count=1,
                     horizon_months=2,
