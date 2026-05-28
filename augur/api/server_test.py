@@ -25,8 +25,15 @@ from augur.model.series import (
     private_equity_forced_sale_fraction_series_id,
     private_equity_liquidity_blocked_series_id,
     private_equity_regime_code_series_id,
+    private_equity_sale_capacity_fraction_series_id,
+    private_equity_sale_event_id,
+    private_equity_series_id,
 )
-from augur.product.testing import ConstantFrameExogenousModel, level_matrix_with_month_override
+from augur.product.testing import (
+    ConstantFrameExogenousModel,
+    event_matrix_with_month_override,
+    level_matrix_with_month_override,
+)
 from util.bazel.runfiles import get_required_path
 from util.net import pick_free_port
 from util.testing.undeclared_outputs import undeclared_outputs_dir
@@ -137,6 +144,34 @@ def _get_json(origin: str, path: str) -> dict[str, Any]:
         assert response.status == 200
         assert "application/json" in response.headers["content-type"]
         return cast(dict[str, Any], json.loads(response.read().decode()))
+
+
+@pytest.fixture
+def capacity_limited_private_equity_client() -> Iterator[TestClient]:
+    issuer_id = "private_holding_a"
+    model = ConstantFrameExogenousModel(
+        level_overrides={
+            private_equity_series_id(issuer_id): 25.0,
+            private_equity_sale_capacity_fraction_series_id(issuer_id): 0.25,
+            private_equity_forced_sale_fraction_series_id(issuer_id): 0.0,
+            private_equity_liquidity_blocked_series_id(issuer_id): 0.0,
+            private_equity_forced_recovery_cashout_usd_series_id(issuer_id): 0.0,
+        },
+        event_overrides={
+            private_equity_sale_event_id(issuer_id): event_matrix_with_month_override(
+                default=False, override=True, month=1
+            )
+        },
+        metadata={"exogenous_model_id": "capacity_limited_pe_fixture"},
+    )
+    app = create_app(
+        ApiServerConfig(
+            augur_config=load_augur_config(get_required_path("_main/augur/api/testdata/config.yaml")),
+            exogenous_model=model,
+        )
+    )
+    with TestClient(app) as client:
+        yield client
 
 
 def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollout_detail(server_url: str) -> None:
@@ -445,6 +480,47 @@ def test_api_product_rollout_includes_private_equity_protocol_event_and_forced_s
     ]
     assert sale["units"] == pytest.approx(250.0)
     assert sale["proceeds_usd"] == pytest.approx(6_250.0)
+
+
+def test_api_product_metric_fan_respects_private_equity_tender_capacity(
+    capacity_limited_private_equity_client: TestClient,
+) -> None:
+    scenario = {
+        "exogenous_model_id": "current_exogenous_model",
+        "horizon_months": 2,
+        "monthly_spend_usd": 1_000.0,
+        "spend_index": "none",
+        "funding_policy": {"sell_order": []},
+        "pe_tender_policy": {"liquid_net_worth_floor_usd": 1_200_000.0, "index_floor_to_inflation": False},
+    }
+
+    fan_response = capacity_limited_private_equity_client.post(
+        "/api/product/projections/metric_fan",
+        json={"scenario": scenario, "rollout_seeds": [7], "metric": "cash_usd", "percentiles": [50]},
+    )
+
+    assert fan_response.status_code == 200
+    fan = fan_response.json()
+    assert fan["exogenous_model_id"] == "capacity_limited_pe_fixture"
+    assert fan["terminal_metric_percentiles"] == {"percentile": [50.0], "value": [254_250.0]}
+    [summary] = fan["rollout_summaries"]
+    assert summary["terminal_metrics"]["cash_usd"] == pytest.approx(254_250.0)
+    assert summary["terminal_metrics"]["private_equity_value_usd"] == pytest.approx(18_750.0)
+
+    rollout_response = capacity_limited_private_equity_client.post(
+        "/api/product/projections/rollout", json={"scenario": scenario, "seed": 7}
+    )
+
+    assert rollout_response.status_code == 200
+    detail = rollout_response.json()
+    assert detail["rollout"]["terminal_metrics"]["cash_usd"] == pytest.approx(254_250.0)
+    assert detail["rollout"]["terminal_metrics"]["private_equity_value_usd"] == pytest.approx(18_750.0)
+    [opportunity] = [event for event in detail["rollout"]["events"] if event["kind"] == "private_equity_opportunity"]
+    assert opportunity["event_kind"] == "tender"
+    assert opportunity["outcome"] == "sold"
+    assert opportunity["sellable_units"] == pytest.approx(250.0)
+    assert opportunity["target_units"] == pytest.approx(250.0)
+    assert opportunity["proceeds_usd"] == pytest.approx(6_250.0)
 
 
 def test_backend_server_product_cash_buffer_uses_trigger_and_fixed_sale_amount(server_url: str) -> None:
