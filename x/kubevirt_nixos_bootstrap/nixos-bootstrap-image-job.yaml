@@ -1,0 +1,88 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nixos-vm-smoke
+  labels:
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/warn: privileged
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nixos-bootstrap-smoke-root
+  namespace: nixos-vm-smoke
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+  storageClassName: local-path-ovh
+  volumeMode: Filesystem
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: nixos-bootstrap-smoke-image
+  namespace: nixos-vm-smoke
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      # Experimental escape hatch: normal pod DNS/proxy egress did not work for
+      # this smoke-test build in claude-sandbox.
+      hostNetwork: true
+      dnsPolicy: Default
+      nodeSelector:
+        topology.kubernetes.io/region: hil
+      containers:
+        - name: build-image
+          image: nixos/nix:2.24.11
+          imagePullPolicy: IfNotPresent
+          resources:
+            requests:
+              cpu: "1"
+              memory: 2Gi
+            limits:
+              cpu: "2"
+              memory: 6Gi
+          env:
+            - name: NIX_CONFIG
+              value: |
+                experimental-features = nix-command flakes
+                substituters = https://cache.nixos.org/
+                trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+                system-features = benchmark big-parallel kvm nixos-test uid-range
+                accept-flake-config = true
+          command:
+            - /bin/sh
+            - -ceu
+            - |
+              unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy ALL_PROXY all_proxy
+              nix build --no-link --print-out-paths github:agentydragon/ducktape/devel#bootstrap-image | tee /tmp/out-path
+              image="$(find "$(cat /tmp/out-path)" -maxdepth 1 -name '*.qcow2' -print -quit)"
+              test -n "$image"
+              qemu_img="$(find /nix/store -path '*/bin/qemu-img' -print -quit)"
+              test -n "$qemu_img"
+              "$qemu_img" convert -O raw "$image" /out/disk.raw
+              chmod 0666 /out/disk.raw
+              mv /out/disk.raw /out/disk.img
+              sync
+              ls -lh /out/disk.img
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - name: rootdisk
+              mountPath: /out
+            - name: kvm
+              mountPath: /dev/kvm
+      volumes:
+        - name: rootdisk
+          persistentVolumeClaim:
+            claimName: nixos-bootstrap-smoke-root
+        - name: kvm
+          hostPath:
+            path: /dev/kvm
+            type: CharDevice
