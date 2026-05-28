@@ -41,6 +41,19 @@ python3 cluster/scripts/ovh_hil_availability.py
 The script defaults to `--datacenter=hil`, `--ovh-subsidiary=US`, and
 `--max-monthly-usd=100`. Use `--help` for the small set of override flags.
 
+## Hetzner price comparison
+
+The cluster no longer provisions HCloud nodes, but the old server-type helper is
+kept for occasional bang/buck comparisons against OVH:
+
+```bash
+python3 cluster/scripts/hcloud_server_types.py --location hil
+```
+
+This uses the `hcloud` CLI from `cluster/shell.nix`. If the CLI requires a token,
+set it explicitly for the command; `cluster/.envrc` intentionally does not export
+the legacy HCloud token.
+
 ## Interpreting the output
 
 Treat the table as an ordering shortlist, not an inventory ledger. OVH's

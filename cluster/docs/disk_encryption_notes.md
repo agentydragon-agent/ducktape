@@ -1,8 +1,8 @@
 # Disk Encryption & Node Security Notes
 
 Notes from investigation on 2026-04-11. Context: cluster runs Talos Linux on
-Proxmox (atlas, home) and Hetzner VPS nodes. Currently **no disk encryption is
-enabled** on any node.
+OVH/Kimsufi bare metal plus NixOS/Proxmox workers. Currently **no disk
+encryption is enabled** on any node.
 
 ## Threat Model
 
@@ -11,7 +11,7 @@ enabled** on any node.
 | Disk removed from machine       | Drive RMA, decommission                 | etcd data, secrets, certs                    |
 | Whole machine stolen (offline)  | Datacenter break-in, shipping intercept | Everything on disk                           |
 | Whole machine stolen (online)   | Attacker boots it on their network      | Kubelet creds, mounted secrets               |
-| Hosting provider is adversarial | Hetzner images disk, snapshots RAM      | Everything — RAM, disk, network metadata     |
+| Hosting provider is adversarial | Provider images disk, accesses console  | Everything — RAM, disk, network metadata     |
 | Root on a running node          | Kernel exploit, container escape        | Secrets for pods on that node, kubelet creds |
 
 ## What Kubernetes Stores and Where
@@ -41,8 +41,8 @@ key slots can be combined.
 - Best with SecureBoot — ensures only verified Talos can unlock
 - **Does not help against whole-machine theft** — attacker boots the machine normally
 - **No TPM+PIN support** in Talos
-- Proxmox VMs can use vTPM; Hetzner dedicated servers have physical TPM; Hetzner
-  cloud/VPS do **not** have TPM
+- Proxmox VMs can use vTPM; dedicated servers may have physical TPM, but verify
+  per model and provider boot chain
 
 ### KMS (Omni)
 
@@ -81,81 +81,67 @@ Must run elsewhere:
 - Small separate cluster (k3s on a Pi, cheap VPS, different provider)
 - A dedicated management VM outside the encrypted cluster
 
-## Hetzner-Specific Concerns
+## Hosted Provider Concerns
 
-If you're paranoid about Hetzner specifically:
+If you're paranoid about a hosted bare-metal provider:
 
-### What Hetzner Can Do (Cloud/VPS)
-
-- **Snapshot your VM's disk and RAM at any time** — they control the hypervisor
-- **Read network traffic metadata** (not content if encrypted, but flow data)
-- **Clone the VM** without your knowledge
-- **No TPM available** on cloud VPS — can't do hardware-bound encryption
-- You are trusting their hypervisor, firmware, and staff
-
-### What Hetzner Can Do (Dedicated Servers)
+### What The Provider Can Do
 
 - **Physical access** to the machine
 - **IPMI/BMC access** — can mount ISOs, access console, potentially read RAM
 - **Disk imaging** during maintenance windows
-- Physical TPM exists but Hetzner controls the machine's boot chain
-- Slightly better than cloud (you control the OS), but still their physical access
+- **Network metadata** — not content if encrypted, but flow data
+- Provider-controlled firmware, remote hands, and boot-chain access remain in
+  the trust boundary
 
 ### Mitigations
 
 **Against disk reads (decommission, snapshot, RMA):**
 
 - Disk encryption with any provider helps — even `static` passphrase means a raw
-  disk image is encrypted (though key is in config on same disk for cloud VMs)
-
-**Against live VM cloning/snapshotting (cloud VPS):**
-
-- **Nothing fully works.** If they snapshot RAM, they get decryption keys.
-- KMS encryption helps: cloned VM on a different network can't reach your Omni to
-  re-unseal after reboot. But a live clone with RAM has keys already loaded.
-- This is the fundamental limit of running on someone else's hypervisor.
+  disk image is encrypted (though key placement determines how useful that is)
 
 **Against a determined adversarial provider:**
 
 - **Don't store high-value secrets on their infrastructure.** Use external secret
-  stores (Vault on trusted hardware) and inject secrets at runtime.
-- **Minimize blast radius**: don't run etcd (control plane) on Hetzner. Run control
-  plane on trusted hardware (home Proxmox), use Hetzner only for workers.
+  stores or inject secrets at runtime.
+- **Minimize blast radius**: etcd on hosted nodes puts the provider in the control
+  plane trust boundary. If that risk becomes unacceptable, keep control-plane
+  nodes and highest-value secrets on trusted hardware.
 - Workers only get secrets for pods scheduled on them (`NodeRestriction` admission
   controller, enabled by default).
 - **Short-lived credentials**: workload identity, projected service account tokens,
   rotated frequently.
-- **Encrypt application data at rest** with keys stored outside Hetzner (e.g., SOPS
-  with age keys in Vault, not on the node).
+- **Encrypt application data at rest** with keys stored outside the node/provider.
 
 **Network:**
 
 - Nebula mesh already encrypts node-to-node traffic (you have this)
 - API server traffic is TLS
-- But Hetzner sees WireGuard/Nebula handshake metadata (which nodes talk, when, volume)
+- But the hosting provider sees WireGuard/Nebula handshake metadata (which nodes
+  talk, when, volume)
 
 ### Realistic Assessment
 
-For a homelab/personal infra, the realistic threats from Hetzner are:
+For a homelab/personal infra, the realistic threats from a hosting provider are:
 
-1. **Negligible**: Hetzner actively attacking you (they'd lose their business)
-2. **Low but real**: Hetzner employee going rogue, or law enforcement compelling access
+1. **Negligible**: Provider actively attacking you (they'd lose their business)
+2. **Low but real**: Provider employee going rogue, or law enforcement compelling access
 3. **Moderate**: Decommissioned hardware not being properly wiped
 
 Practical posture:
 
 - **Enable disk encryption** (`tpm` on Proxmox where vTPM exists, `kms` via Omni for
   full protection)
-- **Keep control plane at home** on Proxmox (you control physical access)
-- **Use Hetzner for workers only** — they see only the pods scheduled there
+- **Use trusted hardware for the most sensitive workloads** if the hosted-provider
+  trust boundary is unacceptable
 - **External secrets** for anything truly sensitive
-- **Accept the hypervisor trust boundary** — if you can't accept it, use dedicated
-  servers or don't use Hetzner
+- **Accept the provider trust boundary** for hosted nodes
 
 ## Action Items
 
 - [ ] Enable `machine.systemDiskEncryption` on Proxmox nodes (vTPM available)
 - [ ] Evaluate Omni SaaS Hobby tier ($10/mo) for KMS encryption across all nodes
-- [ ] Audit what secrets are accessible on Hetzner worker nodes specifically
-- [ ] Consider moving control plane to Proxmox-only if not already
+- [ ] Audit what secrets are accessible on OVH nodes specifically
+- [ ] Decide whether OVH-hosted control-plane nodes are acceptable for this threat model
 - [ ] Review `NodeRestriction` admission controller is enabled

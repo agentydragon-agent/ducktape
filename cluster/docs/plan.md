@@ -1,8 +1,8 @@
 # Cluster Roadmap
 
-**Status**: 5 nodes (2 VPS + 1 Proxmox CP + 1 GPU worker + 1 roaming laptop).
-Cilium Gateway API, DNS automation, Authentik SSO. PowerDNS and Authentik on
-CloudNativePG `local-path`.
+**Status**: OVH/Kimsufi Talos control-plane and worker nodes, plus NixOS/Proxmox
+workers and roaming laptops. Cilium Gateway API, DNS automation, Authentik SSO.
+PowerDNS and Authentik run on CloudNativePG `local-path`.
 
 ## Dropped Services
 
@@ -19,7 +19,7 @@ CloudNativePG `local-path`.
   Re-enable once hardware is back up.
 - **BuildBuddy Executor**: `buildbuddy-executor` — scaled to 0. Re-enable when needed.
 - **InvenTree**: `inventree-{namespace,secrets,token-provisioner}`,
-  `authentik-blueprint-inventree-secret` — VPS memory pressure.
+  `authentik-blueprint-inventree-secret` — capacity pressure.
 - **Firecrawl**: `firecrawl-{namespace,db}`
 - **Langfuse**: `langfuse-{secrets,db}` — suspended 2026-03-31, degraded Longhorn
   volumes on wyrm2. Namespace kept active for `claude-rbac` RoleBinding dependency.
@@ -34,12 +34,12 @@ CloudNativePG `local-path`.
   resources deleted. See <../k8s/agents/kagent/TODO.md>.
 - **SDR**: `sdr` — suspended 2026-05-09. Temporarily disabled until the radio
   hardware is set up again after relocation to new place.
-- **Mimir + Tempo**: `mimir`, `tempo` — suspended 2026-05-13. VPS worker-0 OOM
-  cascade (6072 Mi requested / 7246 Mi allocatable). Unsuspend once there's
+- **Mimir + Tempo**: `mimir`, `tempo` — suspended 2026-05-13 after HIL capacity
+  pressure (6072 Mi requested / 7246 Mi allocatable). Unsuspend once there's
   capacity and we figure out proper memory sizing (VPA resource policies,
   right-sized requests, or additional node capacity).
 - **Google Workspace MCP**: `google-workspace-mcp` — suspended 2026-05-13.
-  Resources and PVC deleted. Unsuspend once VPS memory pressure resolves.
+  Resources and PVC deleted. Unsuspend once capacity pressure resolves.
 
 ## Next Actions
 
@@ -76,17 +76,6 @@ CloudNativePG `local-path`.
       Would drop the Harbor Helm chart, CNPG cluster, 32Gi HDD PVC, ~700Mi RAM, and all
       Harbor-specific TF modules.
 
-- [ ] **Apply kube-apiserver auth-config migration to VPS CPs** (unblocked once wyrm2 is
-      back): `secrets/nebula/ca.sops.key` now has all agentydragon user keys as recipients
-      but the file needs re-encryption before `tofu apply` works from any user machine.
-      Steps when wyrm2 is back: 1. `sops updatekeys secrets/nebula/ca.sops.key` (uses admin key on wyrm2 to re-encrypt
-      with new recipients from `.sops.yaml`) 2. Commit the re-encrypted `ca.sops.key` 3. `tofu apply -target='talos_machine_configuration_apply.vps'` from any agentydragon
-      machine — applies the auth-config migration (removes old `--oidc-*` flags, adds
-      `authentication-config` extraArg + `extraVolumes` + `/etc/kubernetes/auth/` file)
-      to `talos-vps-cp-0` and `talos-vps-cp-1`. Apply to `talos-pve-cp-0` separately
-      once atlas is back. 4. Verify kube-apiserver restarts cleanly on each CP before moving to the next.
-      Note: etcd quorum is safe for rolling VPS CP updates (2/3 members, can lose 1).
-
 - [ ] Verify dmeventd thin pool monitoring after wyrm2 reboot: NixOS config changed
       `pkgs.lvm2` → `pkgs.lvm2_dmeventd` so `lvchange --monitor y` actually registers
       with dmeventd. After next wyrm2 reboot, verify with
@@ -100,10 +89,6 @@ CloudNativePG `local-path`.
       itself should decrypt the new token and inject it into the local environment so
       Claude Code sessions work immediately without waiting for the git push + re-source
       cycle.
-- [ ] Auto-derive `nebula-mesh.json` from Hetzner: the static_host_map must match
-      current VPS IPs, but Hetzner assigns IPs at server creation time and they can
-      change across teardown/rebuild. Currently manual — tofu should write it, or
-      bootstrap should update it from `hcloud server list` output.
 - [ ] Require every workload to declare Stakater Reloader explicitly as enabled or
       intentionally disabled. No implicit default. Enforce via review/docs and
       add missing `reloader.stakater.com/auto: "true"` or an explicit opt-out
@@ -114,22 +99,22 @@ CloudNativePG `local-path`.
       `allowedRoutes.kinds: [TLSRoute]` to bleed into all listeners, blocking all HTTPRoutes.
       Options: (a) move docker-ci to HTTPS on port 443 with a subdomain, (b) separate Gateway
       resource for docker-ci only, (c) wait for Cilium fix and re-add the listener with
-      `sectionName` on all HTTPRoute parentRefs. Also consider auto-discovering VPS IPs for
-      `CiliumLoadBalancerIPPool` from Hetzner nodes / nodes with external IPs.
+      `sectionName` on all HTTPRoute parentRefs. Also consider deriving Gateway IP pools
+      from OVH node inventory rather than hardcoding addresses.
 - [ ] Cilium Gateway API `Programmed=False` (#42786): hostNetwork mode leaves the Gateway
       status as `Programmed=False` / `AddressNotAssigned`. Verify whether this is cosmetic
-      (routes still work) or blocks CEC programming. If blocking, try `spec.addresses` with
-      static VPS IPs, or track the upstream fix.
+      (routes still work) or blocks CEC programming. If blocking, try `spec.addresses`
+      with static OVH Gateway IPs, or track the upstream fix.
 - [ ] Decouple wyrm2 from tofu: `module.wyrm2` in the same TF root as the cluster means
       any `tofu apply` risks rebooting wyrm2 (the machine running tofu). The `--exclude`
       flag is a workaround but error-prone. Options: separate TF root for wyrm2, or manage
       wyrm2 VM config purely via NixOS/Proxmox API (no terraform). See postmortem
       `cluster/docs/lessons_learned/2026_04_01_cluster_nuke_postmortem.md`.
 - [ ] Move Flux to Talos inline/extra manifest (CCM already done via `talos-ccm.tf`).
-      Cilium can't be inlined — its rendered manifest (~82KB) exceeds Hetzner's 32KB
-      `user_data` limit. Cilium stays as `null_resource.cilium_bootstrap` (helm CLI).
-      Gateway API CRDs could move to `extraManifests` (URL fetch) but currently also
-      use `null_resource` for consistency with Cilium.
+      Cilium stays as `null_resource.cilium_bootstrap` (helm CLI) because it is large
+      and easier to manage after the k8s API is reachable. Gateway API CRDs could move
+      to `extraManifests` (URL fetch) but currently also use `null_resource` for
+      consistency with Cilium.
 - [ ] Consolidate tofu plan prerequisites — credentials are now SOPS-managed
       (`shared/cluster-tokens.yaml`, `credentials.sops.yaml`) and auto-decrypted by
       `cluster/.envrc`. Remaining gaps: - `kubeconfig`: written to `terraform/main/kubeconfig` only after
@@ -149,7 +134,7 @@ CloudNativePG `local-path`.
 - [ ] Authentik cache/channels offload: design a Redis-based replacement for the current
       Postgres-backed cache/channels path (`django_postgres_cache`,
       `django_channels_postgres`) without regressing single-node-failure resilience on the
-      Hetzner side. Decide whether this needs HA Redis/Sentinel, an acceptable degraded mode,
+      OVH side. Decide whether this needs HA Redis/Sentinel, an acceptable degraded mode,
       or a different architecture before wiring Authentik to use it. Re-measure steady-state
       Postgres connections afterward before deciding whether any DB limit or
       worker-concurrency changes are still needed.
@@ -158,7 +143,7 @@ CloudNativePG `local-path`.
       PVCs, creating a deadlock. Likely a Proxmox API connectivity issue in
       `proxmox-proxy`. Check `csi-proxmox` controller logs and `proxmox-proxy` logs.
 - [ ] Consider OpenEBS LVM on Talos nodes; Talos has `machine.disks` or `machine.volumes`.
-      Would allow firecracker fast-clone on Hetzner.
+      Would allow firecracker fast-clone on OVH workers.
 - [ ] Trial SeaweedFS with both the upstream operator and CSI driver. Deploy the
       Seaweed cluster via `seaweedfs-operator`, then install the CSI driver as a
       separate Flux `HelmRelease` pointed at the operator-created filer service.
@@ -170,7 +155,7 @@ CloudNativePG `local-path`.
       annotation, but only fires at Node admission time — nodes created before Kyverno is
       deployed (i.e., bootstrap) never get tagged. Currently patched manually. Options:
       patch in `bootstrap.py` after Longhorn is up, or use a Longhorn `NodeLabel` feature
-      if one is added upstream. Affects `hetzner-longhorn` and `proxmox-longhorn` SCs.
+      if one is added upstream. Affects legacy Longhorn storage classes.
 - [ ] Enable systemd watchdog for kubelet on NixOS workers (`WatchdogSec=` in kubelet
       service unit) — restarts kubelet if it deadlocks
 - [ ] NVIDIA GPU monitoring: add DCGM exporter ServiceMonitor + Grafana dashboard (gnetId 12239)
@@ -222,10 +207,11 @@ CloudNativePG `local-path`.
 - [ ] Move more PVCs to `local-path` (Proxmox CSI 29 LUN limit). Candidates:
       `langfuse/langfuse-s3`.
 - [ ] Delete the generic `local-path` StorageClass (not region-pinned; superseded by
-      `local-path-hetzner` and `local-path-proxmox`).
-- [ ] Fix Goldilocks VPA over-requesting memory on VPS pods. VPA `updateMode: Auto`
+      provider-pinned storage classes such as `local-path-ovh` and
+      `local-path-proxmox`).
+- [ ] Fix Goldilocks VPA over-requesting memory on HIL pods. VPA `updateMode: Auto`
       mutates pod requests on creation but old pods retain stale high values until
-      restarted. This caused grocy-sf to fail scheduling (97% memory requested on VPS
+      restarted. This caused grocy-sf to fail scheduling (97% memory requested on HIL
       workers despite 65-78% actual usage). **Root cause**: Goldilocks auto-creates VPAs
       with no resource policy, and VPA recommendations accumulate historical peaks.
       **Proposed solution**: (1) Add `goldilocks.fairwinds.com/vpa-resource-policy`
@@ -234,19 +220,18 @@ CloudNativePG `local-path`.
       so stale requests don't block scheduling — let pod restarts pick up new values
       naturally. (3) Consider running the Kubernetes Descheduler (`k8s-sigs/descheduler`)
       with `RemoveDuplicates` and `LowNodeUtilization` strategies to spread pods across
-      VPS workers and evict those with grossly inflated requests. Descheduler is the
+      HIL workers and evict those with grossly inflated requests. Descheduler is the
       right tool for _rebalancing_ after VPA shrinks requests, but the root fix is
       bounding VPA recommendations via resource policies so they never balloon in the
       first place.
 - Loki + SeaweedFS S3 (MinIO retired 2026-05; Loki/Tempo/Mimir all point at the
   SeaweedFS S3 gateway on OVH):
   - [ ] **Phase 3** (future): Off-site backup of log history — replicate the
-        OVH SeaweedFS buckets to a second location (Hetzner Object Storage,
-        Cloudflare R2, or a second SeaweedFS instance on Proxmox) for
-        disaster recovery.
+        OVH SeaweedFS buckets to a second location (Cloudflare R2, AWS S3, or a
+        second SeaweedFS instance on Proxmox) for disaster recovery.
   - [ ] **Phase 4** (future): Split Loki write path by region — Proxmox node logs
-        write to a Proxmox-local object store, Hetzner node logs write to the
-        OVH SeaweedFS. Avoids cross-site traffic for log ingestion.
+        write to a Proxmox-local object store, OVH node logs write to OVH
+        SeaweedFS. Avoids cross-site traffic for log ingestion.
         Grafana queries both.
 - [ ] Re-enable MFA (TOTP/WebAuthn) once device enrollment is set up
 - [ ] Wire `scripts/check-authentik-login.py` into bootstrap/CI
@@ -283,16 +268,16 @@ CloudNativePG `local-path`.
 
 See <plans/file_sync_evaluation.md>.
 
-## VPS-Only Resilience Invariants
+## OVH-Only Resilience Invariants
 
-**Rule**: These services MUST work with VPS only (Proxmox completely down). No
+**Rule**: These services MUST work with OVH only (Proxmox completely down). No
 `proxmox-csi-retain` storage or Proxmox-pinned workloads.
 
 | Service   | Status | Storage            | Notes                                                         |
 | --------- | ------ | ------------------ | ------------------------------------------------------------- |
-| DNS       | OK     | `local-path`       | CNPG 2-instance on VPS                                        |
+| DNS       | OK     | `local-path`       | CNPG on OVH/HIL nodes                                         |
 | Website   | OK     | None (stateless)   |                                                               |
-| Ingress   | OK     | None (hostNetwork) | Cilium Gateway on VPS                                         |
+| Ingress   | OK     | None (hostNetwork) | Cilium Gateway on OVH                                         |
 | Authentik | OK     | `local-path`       | All components pinned                                         |
 | Grafana   | OK     | CNPG OVH-HA        | grafana-operator managed, JWT auth, no admin creds dependency |
 
@@ -300,7 +285,7 @@ See <plans/file_sync_evaluation.md>.
 
 1. No `proxmox-csi-retain` PVCs in dependency chain
 2. No `topology.kubernetes.io/region: proxmox` affinity
-3. Can schedule on VPS nodes
+3. Can schedule on OVH nodes
 4. All upstream dependencies also pass 1-3
 
 **Proxmox-dependent services** (tolerate downtime by design): Harbor, Gitea,
@@ -407,18 +392,18 @@ SPIRE disabled — times out on Talos bootstrap. Nebula provides inter-node encr
 
 ### Firewall Hardening
 
-All Hetzner rules allow `0.0.0.0/0`. Restrict K8s API (6443), Talos API (50000-50001),
-etcd (2379-2380), kubelet (10250), Nebula (4242), VXLAN (8472) to admin IPs and
-inter-node CIDRs. Keep 80/443/53 public.
+Restrict K8s API (6443), Talos API (50000-50001), etcd (2379-2380), kubelet
+(10250), Nebula (4242), and VXLAN (8472) to admin IPs and inter-node CIDRs.
+Keep 80/443/53 public.
 
 ### Kubeconfig Endpoints (Current State)
 
-| Consumer                      | Endpoint                 | Mechanism                                             |
-| ----------------------------- | ------------------------ | ----------------------------------------------------- |
-| Talos nodes (kubelet)         | `localhost:7445`         | KubePrism (built-in Talos API proxy)                  |
-| NixOS workers (wyrm2, rugged) | `localhost:7445`         | haproxy → all CP Nebula IPs (`10.42.0.{1,2,10}:6443`) |
-| TF state / `cluster/.envrc`   | `https://<vps0-ip>:6443` | Direct VPS IP (bootstrap node)                        |
-| `~/.kube/config` (wyrm2)      | `localhost:7445`         | Via local haproxy                                     |
+| Consumer                      | Endpoint                    | Mechanism                            |
+| ----------------------------- | --------------------------- | ------------------------------------ |
+| Talos nodes (kubelet)         | `localhost:7445`            | KubePrism (built-in Talos API proxy) |
+| NixOS workers (wyrm2, rugged) | `localhost:7445`            | haproxy -> all CP Nebula IPs         |
+| TF state / `cluster/.envrc`   | `terraform/main/kubeconfig` | File written by OpenTofu             |
+| `~/.kube/config` (wyrm2)      | `localhost:7445`            | Via local haproxy                    |
 
 `api.allegedly.works` exists on port 443 behind the cluster Cilium Gateway
 (TLSRoute in `k8s/kube-api-proxy/` with TLS passthrough to the `kubernetes`
@@ -429,7 +414,7 @@ would not work. TLS passthrough preserves client certificates for x509 auth.
 ### OpenTofu State Backend
 
 All 6 former TF roots consolidated into a single root at `cluster/terraform/main/` with
-PG backend (CNPG `tofu-state-db`, schema `main`, 2 replicas on VPS `local-path`). Backup
+PG backend (CNPG `tofu-state-db`, schema `main`, OVH local-path). Backup
 CronJob writes `pg_dump` to `local-path-proxmox` PVC every 6 hours.
 
 Zero `terraform_remote_state` dependencies — everything is in the same root. Persistent-auth
@@ -488,7 +473,7 @@ on Proxmox ZFS for local reliability (checksums, snapshots). Off-site disaster r
 needed:
 
 - [ ] Generalize the `tofu-state` pg_dump CronJob pattern to all Proxmox CNPG clusters
-      (write dumps to VPS-hosted PVC or object storage)
+      (write dumps to OVH-hosted PVC or object storage)
 - [ ] Longer term: CNPG `ScheduledBackup` + Barman to S3-compatible store (SeaweedFS
       S3 gateway, or an external cloud bucket) for continuous WAL archiving and
       point-in-time recovery
@@ -656,17 +641,19 @@ CNPG is 2-instance primary+standby. Low priority -- survives single-node failure
 
 ### CNI: Cilium with VXLAN
 
-VXLAN tunnel mode. Hetzner VPS not on same L2; native routing fails. `MTU: 1412`
-(uppercase, case-sensitive). VXLAN (50) + Nebula (38) = 88 overhead. UDP 8472 required.
+VXLAN tunnel mode. OVH and Proxmox nodes are not on the same L2; native routing
+fails. `MTU: 1412` (uppercase, case-sensitive). VXLAN (50) + Nebula (38) = 88
+overhead. UDP 8472 required.
 See <lessons_learned/2026_02_11_cilium_mtu_cross_node_packet_loss.md>.
 
 ### Storage Strategy
 
-Minimize Hetzner volumes; generous on Proxmox.
+Use OVH-local storage for public-critical services and Proxmox storage for
+storage-heavy services that tolerate home downtime.
 
 | Location | Services                                                      | Rationale                         |
 | -------- | ------------------------------------------------------------- | --------------------------------- |
-| VPS      | Authentik, Grafana, Gateway, DNS, cert-mgr                    | Always-on, critical path          |
+| OVH      | Authentik, Grafana, Gateway, DNS, cert-mgr                    | Always-on, critical path          |
 | Home     | Harbor, Gitea, Ollama                                         | Storage-heavy, tolerates downtime |
 | OVH      | SeaweedFS, attic-db, Nix cache chunks + Loki/Mimir/Tempo (S3) | Replicated across 2 kimsufi nodes |
 

@@ -26,16 +26,6 @@ kubectl get pods -A --field-selector spec.nodeName=<node> \
 
 See <lessons_learned/2026_03_07_talosctl_upgrade_hostname_loss.md> (Root Cause 3).
 
-### Hetzner VPS Accidental Replacement via tofu apply
-
-**Symptoms**: Different server IDs/IPs, API unreachable, etcd quorum lost.
-`tofu plan` shows `must be replaced` due to `image` change.
-
-**Fix**: `lifecycle { ignore_changes = [user_data, image] }` on `hcloud_server`.
-Never `tofu apply -auto-approve` with `-target` without reviewing full plan.
-
-See <lessons_learned/2026_03_07_talosctl_upgrade_hostname_loss.md>.
-
 ### Zombie Kubelet (Containerd Crash Recovery)
 
 **Symptoms**: Node Ready but pods stuck Pending; kubelet `STATE: Failed`;
@@ -114,7 +104,7 @@ for r in json.load(sys.stdin)['items']:
 
 ### MTU Case Sensitivity (Cross-Node Packet Loss)
 
-**Symptoms**: 10-30% TCP failures between VPS and Proxmox; webhook timeouts; bootstrap
+**Symptoms**: 10-30% TCP failures between OVH and Proxmox; webhook timeouts; bootstrap
 stalls; `ReasmFails` in `/proc/net/snmp`.
 
 **Cause**: Cilium Helm chart uses uppercase `MTU`, not `mtu`. Lowercase is silently
@@ -277,10 +267,6 @@ chown <app-uid>:0 /data/*.db
 chmod 644 /data/*.db
 chmod 777 /data        # SQLite needs to create -wal/-shm files in the directory
 ```
-
-On `hcloud-volumes`, `chown` may fail with "Operation not permitted" even from uid 0
-(due to idmapped mounts). Workaround: `chmod 666` the DB files and `chmod 777` the
-directory instead — the app gets write access via other/world bits.
 
 **Prevention**: Use a restore pod with `runAsUser` matching the app's uid so files
 are created with correct ownership from the start. If `kubectl cp` still creates as
