@@ -16,6 +16,7 @@ from augur.sim.codec.assets import (
     decode_cash,
     decode_liquidity_dispositions,
     decode_pe_dispositions,
+    decode_pe_opportunity_events,
     decode_pe_protocol_events,
     decode_sched_dispositions,
 )
@@ -120,6 +121,7 @@ def decode_events(plan: CompiledSimulation, buffers: SimulationBuffers) -> Event
             "capital_improvement_events": capital_improvement_frame,
             "property_sale_events": property_sale_frame,
             "private_equity_events": decode_pe_protocol_events(plan),
+            "private_equity_opportunities": decode_pe_opportunity_events(plan, buffers),
         }
     )
 

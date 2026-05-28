@@ -17,7 +17,7 @@ from augur.sim.codec.helpers import (
     state_history_frame_from_columns,
 )
 from augur.sim.compiler import CompiledSimulation
-from augur.sim.enums import PrivateEquityDispositionKind
+from augur.sim.enums import PrivateEquityDispositionKind, PrivateEquityOpportunityOutcome
 from augur.sim.events import EVENT_FRAMES
 from augur.sim.state import ASSET_LOT_FRAME, CASH_BALANCES_FRAME
 
@@ -203,6 +203,57 @@ def decode_pe_protocol_events(plan: CompiledSimulation) -> pl.DataFrame:
     if not rows:
         return EVENT_FRAMES.private_equity_events.empty()
     return EVENT_FRAMES.private_equity_events.normalize(pl.DataFrame(rows))
+
+
+def decode_pe_opportunity_events(plan: CompiledSimulation, buffers: SimulationBuffers) -> pl.DataFrame:
+    active = buffers.private_equity_opportunities.active
+    if not active.any():
+        return EVENT_FRAMES.private_equity_opportunities.empty()
+    months, issuers, rollouts = np.argwhere(active).T
+    issuer_ids = codes_to_strings(plan, plan.pe_issuers.codes)
+    rows: list[dict[str, object]] = []
+    for month, issuer_idx, rollout in zip(months, issuers, rollouts, strict=True):
+        issuer_id = str(issuer_ids[issuer_idx])
+        event_code = PrivateEquityEventKindCode(int(plan.pe_event_kind_codes[issuer_idx, rollout, month]))
+        regime_code = PrivateEquityRegimeCode(int(plan.pe_regime_codes[issuer_idx, rollout, month]))
+        outcome = PrivateEquityOpportunityOutcome(
+            int(buffers.private_equity_opportunities.outcome[month, issuer_idx, rollout])
+        )
+        rows.append(
+            {
+                "rollout_index": int(rollout),
+                "month_index": int(month),
+                "cause_id": f"pe_opportunity_m{int(month)}_{issuer_id}",
+                "issuer_id": issuer_id,
+                "asset_id": private_equity_series_id(issuer_id),
+                "event_kind": event_code.name.lower(),
+                "regime": regime_code.name.lower(),
+                "outcome": outcome.name.lower(),
+                "mark_usd": float(plan.external_values[int(plan.pe_issuers.level_series[issuer_idx]), rollout, month]),
+                "sale_capacity_fraction": float(
+                    plan.external_values[int(plan.pe_issuers.sale_capacity_fraction_series[issuer_idx]), rollout, month]
+                ),
+                "eligible_fraction": float(
+                    plan.external_values[int(plan.pe_issuers.eligible_fraction_series[issuer_idx]), rollout, month]
+                ),
+                "liquidity_blocked": bool(
+                    plan.external_values[int(plan.pe_issuers.liquidity_blocked_series[issuer_idx]), rollout, month]
+                    >= 0.5
+                ),
+                "floor_usd": float(buffers.private_equity_opportunities.floor[month, issuer_idx, rollout]),
+                "liquid_net_worth_usd": float(
+                    buffers.private_equity_opportunities.liquid_net_worth[month, issuer_idx, rollout]
+                ),
+                "shortfall_usd": float(buffers.private_equity_opportunities.shortfall[month, issuer_idx, rollout]),
+                "units_held": float(buffers.private_equity_opportunities.units_held[month, issuer_idx, rollout]),
+                "sellable_units": float(
+                    buffers.private_equity_opportunities.sellable_units[month, issuer_idx, rollout]
+                ),
+                "target_units": float(buffers.private_equity_opportunities.target_units[month, issuer_idx, rollout]),
+                "proceeds_usd": float(buffers.private_equity_opportunities.proceeds[month, issuer_idx, rollout]),
+            }
+        )
+    return EVENT_FRAMES.private_equity_opportunities.normalize(pl.DataFrame(rows))
 
 
 def _pe_disposition_cause_prefix(kind: PrivateEquityDispositionKind) -> str:

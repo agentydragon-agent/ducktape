@@ -20,6 +20,9 @@ PrivateEquityEventKind = Literal[
     "collapse",
 ]
 PrivateEquityRegime = Literal["private_operating", "public_market", "acquired", "collapsed"]
+PrivateEquityOpportunityOutcome = Literal[
+    "sold", "floor_satisfied", "capacity_zero", "liquidity_blocked", "no_policy", "no_units", "nonpositive_mark"
+]
 MetricName = Literal[
     "cash_usd",
     "holding_value_usd",
@@ -275,6 +278,27 @@ class PrivateEquityMarkerEvent(_RolloutEventBase):
     forced_recovery_cashout_usd: NonNegativeFloat
 
 
+class PrivateEquityOpportunityEvent(_RolloutEventBase):
+    kind: Literal["private_equity_opportunity"] = "private_equity_opportunity"
+    issuer_id: str
+    asset_id: str
+    asset_label: str | None = None
+    event_kind: PrivateEquityEventKind
+    regime: PrivateEquityRegime
+    outcome: PrivateEquityOpportunityOutcome
+    mark_usd: NonNegativeFloat
+    sale_capacity_fraction: NonNegativeFloat = Field(le=1.0)
+    eligible_fraction: NonNegativeFloat = Field(le=1.0)
+    liquidity_blocked: bool
+    floor_usd: NonNegativeFloat
+    liquid_net_worth_usd: NonNegativeFloat
+    shortfall_usd: NonNegativeFloat
+    units_held: NonNegativeFloat
+    sellable_units: NonNegativeFloat
+    target_units: NonNegativeFloat
+    proceeds_usd: NonNegativeFloat
+
+
 class MonthlyExpenseEvent(_RolloutEventBase):
     kind: Literal["monthly_expense"] = "monthly_expense"
     amount_due_usd: NonNegativeFloat
@@ -413,6 +437,7 @@ class PropertySaleMarkerEvent(_RolloutEventBase):
 type RolloutEvent = Annotated[
     HoldingSaleEvent
     | PrivateEquityMarkerEvent
+    | PrivateEquityOpportunityEvent
     | MonthlyExpenseEvent
     | OutsideRentPaymentEvent
     | PropertyPurchaseEvent

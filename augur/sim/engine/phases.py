@@ -13,7 +13,13 @@ from augur.sim.buffers import CurrentStateBuffers, SimulationBuffers
 from augur.sim.codec.helpers import text
 from augur.sim.compiler import CompiledSimulation
 from augur.sim.compiler.helpers import AMOUNT_FIXED, NO_CODE
-from augur.sim.enums import CapitalGainClassification, LifecycleKind, ObligationSource, PrivateEquityDispositionKind
+from augur.sim.enums import (
+    CapitalGainClassification,
+    LifecycleKind,
+    ObligationSource,
+    PrivateEquityDispositionKind,
+    PrivateEquityOpportunityOutcome,
+)
 from augur.sim.tensor_fifo import FifoSaleResult, fifo_sell_dollars, fifo_sell_units, lot_order_for_pool
 
 
@@ -231,7 +237,7 @@ def _apply_pe_tenders(
         policy_idx = int(plan.pe_issuers.policy_index[issuer_idx])
         event_series_idx = int(plan.pe_issuers.event_series[issuer_idx])
         level_series_idx = int(plan.pe_issuers.level_series[issuer_idx])
-        if policy_idx < 0 or event_series_idx < 0 or level_series_idx < 0:
+        if event_series_idx < 0 or level_series_idx < 0:
             continue
         mark = plan.external_values[level_series_idx, :, month]
         if not np.isfinite(mark).all() or (mark < 0.0).any():
@@ -261,6 +267,29 @@ def _apply_pe_tenders(
             continue
         ordered_lots = lot_indices[np.argsort(plan.lot_purchase_month[lot_indices], kind="stable")]
         units_held = current.lot_remaining[ordered_lots, :].sum(axis=0)
+        sale_capacity_fraction = _fraction_pe_level_series_values(
+            plan, series_index=int(plan.pe_issuers.sale_capacity_fraction_series[issuer_idx]), month=month
+        )
+        eligible_fraction = _fraction_pe_level_series_values(
+            plan, series_index=int(plan.pe_issuers.eligible_fraction_series[issuer_idx]), month=month
+        )
+
+        if policy_idx < 0:
+            _record_pe_opportunity(
+                buffers,
+                month=month,
+                issuer_idx=issuer_idx,
+                active=tender_active,
+                outcome=np.full(plan.rollout_count, int(PrivateEquityOpportunityOutcome.NO_POLICY), dtype=np.int64),
+                floor=np.zeros(plan.rollout_count, dtype=np.float64),
+                liquid_net_worth=np.zeros(plan.rollout_count, dtype=np.float64),
+                shortfall=np.zeros(plan.rollout_count, dtype=np.float64),
+                units_held=units_held,
+                sellable_units=units_held * sale_capacity_fraction * eligible_fraction,
+                target_units=np.zeros(plan.rollout_count, dtype=np.float64),
+                proceeds=np.zeros(plan.rollout_count, dtype=np.float64),
+            )
+            continue
 
         recovery_active = (forced_recovery_cashout_usd > 0.0) & active_rollout & (units_held > 0.0)
         if recovery_active.any():
@@ -311,10 +340,6 @@ def _apply_pe_tenders(
                 oversell_label="PE forced sale",
             )
 
-        opportunity_active = (tender_active | public_market_active) & active_rollout & liquidity_open & positive_mark
-        if not opportunity_active.any():
-            continue
-
         floor = _amount_values(
             plan,
             kind=int(plan.pe_policies.floor_kind[policy_idx]),
@@ -328,16 +353,43 @@ def _apply_pe_tenders(
         lnw = _compute_liquid_net_worth(plan, current, policy_idx=policy_idx, month=month)
         shortfall = np.maximum(0.0, floor - lnw)
         units_held = current.lot_remaining[ordered_lots, :].sum(axis=0)
-        sale_capacity_fraction = _fraction_pe_level_series_values(
-            plan, series_index=int(plan.pe_issuers.sale_capacity_fraction_series[issuer_idx]), month=month
-        )
-        eligible_fraction = _fraction_pe_level_series_values(
-            plan, series_index=int(plan.pe_issuers.eligible_fraction_series[issuer_idx]), month=month
-        )
         sellable_units = units_held * sale_capacity_fraction * eligible_fraction
         shortfall_units = np.divide(shortfall, mark, out=np.zeros_like(shortfall), where=mark > 0.0)
         target_units = np.minimum(shortfall_units, sellable_units)
+        opportunity_active = (tender_active | public_market_active) & active_rollout & liquidity_open & positive_mark
         target_units = np.where(opportunity_active, target_units, 0.0)
+        opportunity_outcome = np.full(plan.rollout_count, int(PrivateEquityOpportunityOutcome.SOLD), dtype=np.int64)
+        opportunity_outcome = np.where(
+            shortfall <= 0.0, int(PrivateEquityOpportunityOutcome.FLOOR_SATISFIED), opportunity_outcome
+        )
+        opportunity_outcome = np.where(
+            (sale_capacity_fraction * eligible_fraction) <= 0.0,
+            int(PrivateEquityOpportunityOutcome.CAPACITY_ZERO),
+            opportunity_outcome,
+        )
+        opportunity_outcome = np.where(
+            ~positive_mark, int(PrivateEquityOpportunityOutcome.NONPOSITIVE_MARK), opportunity_outcome
+        )
+        opportunity_outcome = np.where(
+            liquidity_blocked >= 0.5, int(PrivateEquityOpportunityOutcome.LIQUIDITY_BLOCKED), opportunity_outcome
+        )
+        opportunity_outcome = np.where(
+            units_held <= 0.0, int(PrivateEquityOpportunityOutcome.NO_UNITS), opportunity_outcome
+        )
+        _record_pe_opportunity(
+            buffers,
+            month=month,
+            issuer_idx=issuer_idx,
+            active=tender_active,
+            outcome=opportunity_outcome,
+            floor=floor,
+            liquid_net_worth=lnw,
+            shortfall=shortfall,
+            units_held=units_held,
+            sellable_units=sellable_units,
+            target_units=target_units,
+            proceeds=target_units * mark,
+        )
         if not (target_units > 0.0).any():
             continue
 
@@ -370,6 +422,35 @@ def _apply_pe_tenders(
             disposition_kind=PrivateEquityDispositionKind.PUBLIC_MARKET,
             oversell_label="PE public market sale",
         )
+
+
+def _record_pe_opportunity(
+    buffers: SimulationBuffers,
+    *,
+    month: int,
+    issuer_idx: int,
+    active: npt.NDArray[np.bool_],
+    outcome: npt.NDArray[np.int64],
+    floor: npt.NDArray[np.float64],
+    liquid_net_worth: npt.NDArray[np.float64],
+    shortfall: npt.NDArray[np.float64],
+    units_held: npt.NDArray[np.float64],
+    sellable_units: npt.NDArray[np.float64],
+    target_units: npt.NDArray[np.float64],
+    proceeds: npt.NDArray[np.float64],
+) -> None:
+    if not active.any():
+        return
+    destination = buffers.private_equity_opportunities
+    destination.active[month, issuer_idx, active] = True
+    destination.outcome[month, issuer_idx, active] = outcome[active]
+    destination.floor[month, issuer_idx, active] = floor[active]
+    destination.liquid_net_worth[month, issuer_idx, active] = liquid_net_worth[active]
+    destination.shortfall[month, issuer_idx, active] = shortfall[active]
+    destination.units_held[month, issuer_idx, active] = units_held[active]
+    destination.sellable_units[month, issuer_idx, active] = sellable_units[active]
+    destination.target_units[month, issuer_idx, active] = target_units[active]
+    destination.proceeds[month, issuer_idx, active] = proceeds[active]
 
 
 def _apply_pe_target_units_sale(

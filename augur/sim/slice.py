@@ -31,6 +31,7 @@ def slice_dense_result(dense: DenseSimulationResult, *, rollout_index: int) -> D
         transfers=_take_dc(dense.buffers.transfers, rollout_index, axis=-1),
         properties=_take_dc(dense.buffers.properties, rollout_index, axis=-1),
         lot_dispositions=_take_dc(dense.buffers.lot_dispositions, rollout_index, axis=-1),
+        private_equity_opportunities=_take_dc(dense.buffers.private_equity_opportunities, rollout_index, axis=-1),
         taxes=_take_dc(dense.buffers.taxes, rollout_index, axis=-1),
         obligations=_take_dc(dense.buffers.obligations, rollout_index, axis=-1),
         primary_residence=_take_dc(dense.buffers.primary_residence, rollout_index, axis=-1),

@@ -11,6 +11,7 @@ from augur.sim.buffers import (
     LotDispositionEventBuffers,
     ObligationEventBuffers,
     PrimaryResidenceEventBuffers,
+    PrivateEquityOpportunityEventBuffers,
     PropertyEventBuffers,
     SimulationBuffers,
     StateHistoryBuffers,
@@ -267,6 +268,17 @@ def _allocate_buffers(plan: CompiledSimulation) -> SimulationBuffers:
                     (h, p.pe_issuer_count, len(PrivateEquityDispositionKind), lot_axis, r), dtype=np.float64
                 ),
             ),
+        ),
+        private_equity_opportunities=PrivateEquityOpportunityEventBuffers(
+            active=np.zeros((h, p.pe_issuer_count, r), dtype=np.bool_),
+            outcome=np.full((h, p.pe_issuer_count, r), NO_CODE, dtype=np.int64),
+            floor=np.zeros((h, p.pe_issuer_count, r), dtype=np.float64),
+            liquid_net_worth=np.zeros((h, p.pe_issuer_count, r), dtype=np.float64),
+            shortfall=np.zeros((h, p.pe_issuer_count, r), dtype=np.float64),
+            units_held=np.zeros((h, p.pe_issuer_count, r), dtype=np.float64),
+            sellable_units=np.zeros((h, p.pe_issuer_count, r), dtype=np.float64),
+            target_units=np.zeros((h, p.pe_issuer_count, r), dtype=np.float64),
+            proceeds=np.zeros((h, p.pe_issuer_count, r), dtype=np.float64),
         ),
         taxes=TaxEventBuffers(
             # tax accrual/breakdown buffers[H, max(1, J), R]

@@ -104,6 +104,15 @@ def level_matrix_with_step(*, default: float, override: float, month: int) -> Le
     return build
 
 
+def event_matrix_with_month_override(*, default: bool, override: bool, month: int) -> EventOverride:
+    def build(request: ExogenousSamplingRequest) -> npt.NDArray[np.bool_]:
+        matrix = np.full((request.rollout_count, request.horizon_months + 1), default, dtype=np.bool_)
+        matrix[:, min(month, request.horizon_months)] = override
+        return matrix
+
+    return build
+
+
 def _level_matrix(value: LevelOverride, request: ExogenousSamplingRequest) -> npt.NDArray[np.float64]:
     raw = value(request) if callable(value) else value
     matrix = (

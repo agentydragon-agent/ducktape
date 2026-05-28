@@ -6,6 +6,8 @@ event log, and produces Polars boundary frames for projections and APIs.
 
 from __future__ import annotations
 
+from typing import cast
+
 import numpy as np
 import numpy.typing as npt
 import polars as pl
@@ -3960,6 +3962,15 @@ def _alice_cash_at(result, *, month_index: int) -> float:
     return float(rows.get_column("balance_usd").sum())
 
 
+def _pe_opportunity_at(result, *, month_index: int) -> dict[str, object]:
+    return cast(
+        dict[str, object],
+        result.events_log.private_equity_opportunities.filter(
+            (pl.col("rollout_index") == 0) & (pl.col("month_index") == month_index)
+        ).row(0, named=True),
+    )
+
+
 def test_pe_tender_never_fires_leaves_position_intact() -> None:
     """Without any tender event, the PE position carries through the horizon untouched."""
 
@@ -4076,6 +4087,37 @@ def test_pe_tender_capacity_fraction_limits_sale() -> None:
 
     assert _pe_lot_remaining_at(result, lot_id="acme_lot_a", month_index=6) == pytest.approx(75.0)
     assert _alice_cash_at(result, month_index=6) == pytest.approx(2_500.0)
+    opportunity = _pe_opportunity_at(result, month_index=5)
+    assert opportunity["outcome"] == "sold"
+    assert opportunity["sellable_units"] == pytest.approx(25.0)
+    assert opportunity["target_units"] == pytest.approx(25.0)
+    assert opportunity["proceeds_usd"] == pytest.approx(2_500.0)
+
+
+def test_pe_tender_zero_capacity_emits_capacity_zero_opportunity_trace() -> None:
+    scenario = _pe_tender_scenario(
+        initial_cash_usd=0.0,
+        monthly_spend_usd=0.0,
+        pe_units=100.0,
+        pe_cost_basis_per_unit_usd=10.0,
+        pe_holding_period_months=36,
+        horizon_months=12,
+        lnw_floor_usd=1_000_000.0,
+    )
+    external = _pe_external_series(
+        initial_mark_usd=100.0,
+        tender_month=5,
+        tender_mark_usd=100.0,
+        horizon_months=12,
+        sale_capacity_fraction=_pe_float_matrix(horizon_months=12, value=0.0),
+    )
+    result = simulate_with_external_series(scenario, rollout_count=1, external_series=external, locations={})
+
+    assert _pe_lot_remaining_at(result, lot_id="acme_lot_a", month_index=6) == pytest.approx(100.0)
+    opportunity = _pe_opportunity_at(result, month_index=5)
+    assert opportunity["outcome"] == "capacity_zero"
+    assert opportunity["sellable_units"] == pytest.approx(0.0)
+    assert opportunity["target_units"] == pytest.approx(0.0)
 
 
 def test_pe_tender_eligible_fraction_limits_sale() -> None:
@@ -4122,6 +4164,10 @@ def test_pe_tender_liquidity_blocked_prevents_sale() -> None:
 
     assert _pe_lot_remaining_at(result, lot_id="acme_lot_a", month_index=6) == pytest.approx(100.0)
     assert _alice_cash_at(result, month_index=6) == pytest.approx(0.0)
+    opportunity = _pe_opportunity_at(result, month_index=5)
+    assert opportunity["outcome"] == "liquidity_blocked"
+    assert opportunity["liquidity_blocked"] is True
+    assert opportunity["target_units"] == pytest.approx(0.0)
 
 
 def test_pe_public_market_regime_allows_floor_sale_without_tender_event() -> None:
@@ -4350,6 +4396,9 @@ def test_pe_tender_fires_above_floor_no_sale() -> None:
     # Cash 200k > floor 50k → no sale at tender.
     assert _pe_lot_remaining_at(result, lot_id="acme_lot_a", month_index=6) == pytest.approx(100.0)
     assert _alice_cash_at(result, month_index=6) == pytest.approx(200_000.0)
+    opportunity = _pe_opportunity_at(result, month_index=5)
+    assert opportunity["outcome"] == "floor_satisfied"
+    assert opportunity["shortfall_usd"] == pytest.approx(0.0)
 
 
 def test_pe_tender_inactive_when_no_policy() -> None:
@@ -4368,6 +4417,8 @@ def test_pe_tender_inactive_when_no_policy() -> None:
     external = _pe_external_series(initial_mark_usd=50.0, tender_month=5, tender_mark_usd=60.0, horizon_months=12)
     result = simulate_with_external_series(scenario_no_policy, rollout_count=1, external_series=external, locations={})
     assert _pe_lot_remaining_at(result, lot_id="acme_lot_a", month_index=6) == pytest.approx(100.0)
+    opportunity = _pe_opportunity_at(result, month_index=5)
+    assert opportunity["outcome"] == "no_policy"
 
 
 def test_pe_tender_zero_floor_never_sells() -> None:

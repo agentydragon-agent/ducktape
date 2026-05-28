@@ -312,6 +312,30 @@ PRIVATE_EQUITY_EVENT_SCHEMA = pl.Schema(
     }
 )
 
+PRIVATE_EQUITY_OPPORTUNITY_SCHEMA = pl.Schema(
+    {
+        "rollout_index": pl.Int64(),
+        "month_index": pl.Int64(),
+        "cause_id": pl.Utf8(),
+        "issuer_id": pl.Utf8(),
+        "asset_id": pl.Utf8(),
+        "event_kind": pl.Utf8(),
+        "regime": pl.Utf8(),
+        "outcome": pl.Utf8(),
+        "mark_usd": pl.Float64(),
+        "sale_capacity_fraction": pl.Float64(),
+        "eligible_fraction": pl.Float64(),
+        "liquidity_blocked": pl.Boolean(),
+        "floor_usd": pl.Float64(),
+        "liquid_net_worth_usd": pl.Float64(),
+        "shortfall_usd": pl.Float64(),
+        "units_held": pl.Float64(),
+        "sellable_units": pl.Float64(),
+        "target_units": pl.Float64(),
+        "proceeds_usd": pl.Float64(),
+    }
+)
+
 
 @dataclass(frozen=True)
 class EventFrameCatalog:
@@ -334,6 +358,7 @@ class EventFrameCatalog:
     capital_improvement_events: FrameSpec
     property_sale_events: FrameSpec
     private_equity_events: FrameSpec
+    private_equity_opportunities: FrameSpec
 
     def ordered(self) -> tuple[FrameSpec, ...]:
         return (
@@ -354,6 +379,7 @@ class EventFrameCatalog:
             self.capital_improvement_events,
             self.property_sale_events,
             self.private_equity_events,
+            self.private_equity_opportunities,
         )
 
 
@@ -375,6 +401,7 @@ EVENT_FRAMES = EventFrameCatalog(
     capital_improvement_events=FrameSpec("capital_improvement_events", CAPITAL_IMPROVEMENT_EVENT_SCHEMA),
     property_sale_events=FrameSpec("property_sale_events", PROPERTY_SALE_EVENT_SCHEMA),
     private_equity_events=FrameSpec("private_equity_events", PRIVATE_EQUITY_EVENT_SCHEMA),
+    private_equity_opportunities=FrameSpec("private_equity_opportunities", PRIVATE_EQUITY_OPPORTUNITY_SCHEMA),
 )
 
 EVENT_FRAME_SPECS = EVENT_FRAMES.ordered()
@@ -486,3 +513,7 @@ class EventLog:
     @property
     def private_equity_events(self) -> pl.DataFrame:
         return self.frame(EVENT_FRAMES.private_equity_events)
+
+    @property
+    def private_equity_opportunities(self) -> pl.DataFrame:
+        return self.frame(EVENT_FRAMES.private_equity_opportunities)

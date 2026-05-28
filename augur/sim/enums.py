@@ -33,3 +33,13 @@ class PrivateEquityDispositionKind(IntEnum):
     PUBLIC_MARKET = 1
     FORCED_SALE = 2
     FORCED_RECOVERY = 3
+
+
+class PrivateEquityOpportunityOutcome(IntEnum):
+    SOLD = 0
+    FLOOR_SATISFIED = 1
+    CAPACITY_ZERO = 2
+    LIQUIDITY_BLOCKED = 3
+    NO_POLICY = 4
+    NO_UNITS = 5
+    NONPOSITIVE_MARK = 6

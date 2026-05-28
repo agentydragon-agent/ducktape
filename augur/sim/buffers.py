@@ -459,6 +459,31 @@ class LotDispositionEventBuffers:
 
 
 @dataclass
+class PrivateEquityOpportunityEventBuffers:
+    active: NDArray[np.bool_]
+    outcome: NDArray[np.int64]
+    floor: NDArray[np.float64]
+    liquid_net_worth: NDArray[np.float64]
+    shortfall: NDArray[np.float64]
+    units_held: NDArray[np.float64]
+    sellable_units: NDArray[np.float64]
+    target_units: NDArray[np.float64]
+    proceeds: NDArray[np.float64]
+
+    def validate(self, plan: SlotPlan) -> None:
+        shape = (plan.event_months, plan.pe_issuer_count, plan.rollout_count)
+        _expect_array("pe_opportunity.active", self.active, shape=shape, dtype=np.bool_)
+        _expect_array("pe_opportunity.outcome", self.outcome, shape=shape, dtype=np.int64)
+        _expect_array("pe_opportunity.floor", self.floor, shape=shape, dtype=np.float64)
+        _expect_array("pe_opportunity.liquid_net_worth", self.liquid_net_worth, shape=shape, dtype=np.float64)
+        _expect_array("pe_opportunity.shortfall", self.shortfall, shape=shape, dtype=np.float64)
+        _expect_array("pe_opportunity.units_held", self.units_held, shape=shape, dtype=np.float64)
+        _expect_array("pe_opportunity.sellable_units", self.sellable_units, shape=shape, dtype=np.float64)
+        _expect_array("pe_opportunity.target_units", self.target_units, shape=shape, dtype=np.float64)
+        _expect_array("pe_opportunity.proceeds", self.proceeds, shape=shape, dtype=np.float64)
+
+
+@dataclass
 class TaxEventBuffers:
     accrual_active: NDArray[np.bool_]
     accrual_amount: NDArray[np.float64]
@@ -536,6 +561,7 @@ class SimulationBuffers:
     transfers: TransferEventBuffers
     properties: PropertyEventBuffers
     lot_dispositions: LotDispositionEventBuffers
+    private_equity_opportunities: PrivateEquityOpportunityEventBuffers
     taxes: TaxEventBuffers
     obligations: ObligationEventBuffers
     primary_residence: PrimaryResidenceEventBuffers
@@ -551,6 +577,7 @@ class SimulationBuffers:
         self.transfers.validate(slot_plan)
         self.properties.validate(slot_plan)
         self.lot_dispositions.validate(slot_plan)
+        self.private_equity_opportunities.validate(slot_plan)
         self.taxes.validate(slot_plan)
         self.obligations.validate(slot_plan)
         self.primary_residence.validate(slot_plan, event_count=int(plan.primary_residence_events.month.shape[0]))

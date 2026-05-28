@@ -16,6 +16,7 @@ export const ROLLOUT_EVENT_KIND_ORDER = [
   "capital_improvement",
   "property_sale",
   "private_equity_event",
+  "private_equity_opportunity",
   "holding_sale",
   "tax_accrual",
   "tax_payment",
@@ -37,6 +38,7 @@ export const ROLLOUT_EVENT_KIND_LABELS = {
   capital_improvement: "Capital improvement",
   property_sale: "Property sale",
   private_equity_event: "PE event",
+  private_equity_opportunity: "PE opportunity",
   holding_sale: "Holding sale",
   tax_accrual: "Tax accrual",
   tax_payment: "Tax payment",
@@ -80,6 +82,7 @@ export const ROLLOUT_EVENT_COLORS = {
   capital_improvement: "#15803d",
   property_sale: "#be123c",
   private_equity_event: "#9333ea",
+  private_equity_opportunity: "#6d28d9",
 };
 
 // Pixel pitch between vertical marker stacks (events stack upward above the rollout line).
@@ -391,6 +394,28 @@ export const EVENT_FORMATTERS = {
       if (event.liquidityBlocked) parts.push("liquidity blocked");
       const recovery = Number(event.forcedRecoveryCashoutUsd);
       if (recovery > 0) parts.push(`recovery ${fmtUsd(recovery)}`);
+      return parts.filter(Boolean).join("; ");
+    },
+  },
+  private_equity_opportunity: {
+    label: (event) => {
+      const label = event.assetLabel ?? event.assetId ?? "Private equity";
+      const outcome = String(event.outcome ?? "").replace(/_/g, " ");
+      return `PE opportunity: ${label}${outcome ? ` (${outcome})` : ""}`;
+    },
+    detail: (event) => {
+      const parts = [
+        `mark ${fmtUsd(event.markUsd)}`,
+        `shortfall ${fmtUsd(event.shortfallUsd)}`,
+        `target ${fmtNumber(event.targetUnits)} units`,
+      ];
+      const proceeds = Number(event.proceedsUsd);
+      if (proceeds > 0) parts.push(`proceeds ${fmtUsd(proceeds)}`);
+      const capacity = Number(event.saleCapacityFraction);
+      if (Number.isFinite(capacity) && capacity < 1) parts.push(`capacity ${(capacity * 100).toFixed(0)}%`);
+      const eligible = Number(event.eligibleFraction);
+      if (Number.isFinite(eligible) && eligible < 1) parts.push(`eligible ${(eligible * 100).toFixed(0)}%`);
+      if (event.liquidityBlocked) parts.push("liquidity blocked");
       return parts.filter(Boolean).join("; ");
     },
   },
