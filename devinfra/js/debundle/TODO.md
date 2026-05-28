@@ -117,11 +117,12 @@ Still to do:
 Current plan, ordered by leverage. Re-profile before implementation if
 the consumer corpus or pipeline shape has changed materially.
 
-1. **Stream / shrink `artifact::write_tree_reports`.**
-   6.42% Children %; the deepest cost is serde_json pretty-print of
-   `DirectoryManifestIndex` / `DirectoryBoundarySummary` under
-   `artifact::write_json` (2.79% Children %). Stream JSON directly to
-   disk or shrink the on-wire shape.
+1. **Re-profile / shrink `artifact::write_tree_reports`.**
+   The previous profile showed 6.42% Children % here, dominated by
+   serde_json pretty-print of `DirectoryManifestIndex` /
+   `DirectoryBoundarySummary`. Generated reports now use compact JSON;
+   re-profile before more work, then shrink the on-wire shape if this
+   path remains hot.
 
 2. **`vendor::strip::sweep_unreachable_top_level`.**
    6.40% Children % in the current profile. Likely amenable to indexed

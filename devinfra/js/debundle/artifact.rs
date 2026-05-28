@@ -17,15 +17,11 @@ use output_layout::{CHUNK_REPORT, report_path_for_directory, report_path_for_fil
 
 pub const CANONICAL_CHUNK_ENTRY_FILE: &str = "entry.js";
 
+/// Emit compact JSON for pipeline side outputs.
+///
+/// These reports are usually consumed by tooling or `jq`; pretty printing is a
+/// measurable cost on large bundles.
 pub fn write_json(path: impl AsRef<Path>, data: &impl Serialize) -> Result<()> {
-    serde_json::to_writer_pretty(&fs::File::create(path.as_ref())?, data)?;
-    Ok(())
-}
-
-/// Like [`write_json`] but emits compact JSON (no whitespace) through a
-/// buffered writer. Intended for high-volume pipeline-consumed reports
-/// where the readers are downstream tooling, not humans with `jq`.
-fn write_json_compact(path: impl AsRef<Path>, data: &impl Serialize) -> Result<()> {
     let file = fs::File::create(path.as_ref())?;
     let mut writer = BufWriter::new(file);
     serde_json::to_writer(&mut writer, data)?;
@@ -1223,9 +1219,7 @@ fn write_tree_reports(
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
-        // Per-file FileDependencyManifest is pipeline-consumed (boundary +
-        // dependency facts); emit compact JSON to keep this hot path cheap.
-        write_json_compact(path, &manifest)
+        write_json(path, &manifest)
     })?;
 
     let manifests = build_directory_dependency_manifests(decomposition_by_chunk, file_metrics);
@@ -1234,9 +1228,7 @@ fn write_tree_reports(
         if let Some(parent) = manifest_path.parent() {
             fs::create_dir_all(parent)?;
         }
-        // Per-directory DirectoryManifestIndex is pipeline-consumed; emit
-        // compact JSON.
-        write_json_compact(&manifest_path, &manifest)
+        write_json(&manifest_path, &manifest)
     })?;
     Ok(())
 }
