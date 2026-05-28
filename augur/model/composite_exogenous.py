@@ -17,6 +17,7 @@ from augur.model.exogenous import (
     Sampler,
     validate_sample_satisfies_request,
 )
+from augur.model.private_equity_bundle import PrivateEquityBundle
 from augur.model.series import (
     issuer_id_from_private_equity_mark_wire_id,
     issuer_id_from_private_equity_sale_opportunity_wire_id,
@@ -92,6 +93,7 @@ class CompositeExogenousModel:
         )
         sampled = SampledExogenousBundle(
             levels=concat_frames([macro_bundle.levels, pe_bundle.levels], SERIES_LEVELS_SCHEMA),
+            private_equity=PrivateEquityBundle.combine([macro_bundle.private_equity, pe_bundle.private_equity]),
             events=concat_frames([macro_bundle.events, pe_bundle.events], SERIES_EVENTS_SCHEMA),
             private_equity_protocol=concat_frames(
                 [macro_bundle.private_equity_protocol, pe_bundle.private_equity_protocol],

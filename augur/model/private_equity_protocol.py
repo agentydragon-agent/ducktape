@@ -7,6 +7,7 @@ import numpy.typing as npt
 import polars as pl
 
 from augur.model.exogenous import PRIVATE_EQUITY_PROTOCOL_SCHEMA, series_levels_frame
+from augur.model.private_equity_bundle import PrivateEquityBundle
 from augur.model.series import (
     PrivateEquityEventKindCode,
     PrivateEquityRegimeCode,
@@ -45,6 +46,38 @@ def observed_private_equity_mark_matrix(latent_mark: FloatMatrix, update_events:
     for month in range(1, latent_mark.shape[1]):
         observed[:, month] = np.where(update_events[:, month], latent_mark[:, month], observed[:, month - 1])
     return observed
+
+
+def neutral_private_equity_issuer_bundle(
+    issuer_id: str, *, observed_mark: FloatMatrix, tender_events: BoolMatrix, rollout_count: int, horizon_months: int
+) -> PrivateEquityBundle:
+    """Build a single-issuer `PrivateEquityBundle` with v1 neutral protocol defaults.
+
+    Mirrors the behavior of `neutral_private_equity_protocol_frame` +
+    `neutral_private_equity_auxiliary_level_frames`: private operating regime,
+    tender event kind on tender months and `NONE` otherwise, full sale capacity
+    and eligibility, no forced sales, no liquidity block, no forced recovery.
+    """
+
+    expected_shape = (rollout_count, horizon_months + 1)
+    _require_matrix(tender_events, expected_shape, "tender_events")
+    event_kind = np.where(
+        tender_events, int(PrivateEquityEventKindCode.TENDER), int(PrivateEquityEventKindCode.NONE)
+    ).astype(np.int64)
+    return PrivateEquityBundle.from_issuer_arrays(
+        issuer_id,
+        mark_usd_per_unit=observed_mark.astype(np.float64),
+        regime_code=np.full(expected_shape, int(PrivateEquityRegimeCode.PRIVATE_OPERATING), dtype=np.int64),
+        event_kind_code=event_kind,
+        sale_opportunity_active=tender_events.astype(np.bool_),
+        sale_capacity_fraction=np.ones(expected_shape, dtype=np.float64),
+        eligible_fraction=np.ones(expected_shape, dtype=np.float64),
+        forced_sale_fraction=np.zeros(expected_shape, dtype=np.float64),
+        liquidity_blocked=np.zeros(expected_shape, dtype=np.bool_),
+        forced_recovery_cashout_usd=np.zeros(expected_shape, dtype=np.float64),
+        rollout_count=rollout_count,
+        horizon_months=horizon_months,
+    )
 
 
 def neutral_private_equity_auxiliary_level_frames(

@@ -35,8 +35,10 @@ from augur.model.exogenous import (
 )
 from augur.model.location_series_sources import LocationSeriesSources, LocationSeriesSourcesConfig
 from augur.model.path_models.scenarios import HistoricalSeries, historical_log_returns
+from augur.model.private_equity_bundle import PrivateEquityBundle
 from augur.model.private_equity_protocol import (
     neutral_private_equity_auxiliary_level_frames,
+    neutral_private_equity_issuer_bundle,
     neutral_private_equity_protocol_frame,
     observed_private_equity_mark_matrix,
 )
@@ -275,6 +277,7 @@ class StateSpaceModel:
             for issuer_id in sorted(self.artifact.private_equity_event_priors)
         }
         level_blocks = []
+        observed_mark_by_issuer: dict[str, np.ndarray] = {}
         for series_id, factor_name in sorted(self._series_factor_map().items()):
             if factor_name not in path_by_factor:
                 continue
@@ -282,6 +285,7 @@ class StateSpaceModel:
             private_equity_issuer = issuer_id_from_private_equity_mark_wire_id(series_id)
             if private_equity_issuer is not None and private_equity_issuer in event_by_issuer:
                 levels = observed_private_equity_mark_matrix(levels, event_by_issuer[private_equity_issuer])
+                observed_mark_by_issuer[private_equity_issuer] = levels
             level_blocks.append(
                 series_levels_frame(series_id, levels, rollout_count=rollout_count, horizon_months=horizon_months)
             )
@@ -306,8 +310,23 @@ class StateSpaceModel:
             )
             for issuer_id, events in event_by_issuer.items()
         ]
+        private_equity_parts = [
+            neutral_private_equity_issuer_bundle(
+                issuer_id,
+                observed_mark=observed_mark_by_issuer[issuer_id],
+                tender_events=tender_events,
+                rollout_count=rollout_count,
+                horizon_months=horizon_months,
+            )
+            for issuer_id, tender_events in event_by_issuer.items()
+            if issuer_id in observed_mark_by_issuer
+        ]
+        private_equity = (
+            PrivateEquityBundle.combine(private_equity_parts) if private_equity_parts else PrivateEquityBundle.empty()
+        )
         sampled = SampledExogenousBundle(
             levels=concat_frames(level_blocks, SERIES_LEVELS_SCHEMA),
+            private_equity=private_equity,
             events=concat_frames(event_blocks, SERIES_EVENTS_SCHEMA),
             private_equity_protocol=concat_frames(protocol_blocks, PRIVATE_EQUITY_PROTOCOL_SCHEMA),
             metadata={

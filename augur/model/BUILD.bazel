@@ -51,6 +51,7 @@ py_library(
     srcs = ["private_equity_protocol.py"],
     deps = [
         ":exogenous",
+        ":private_equity_bundle",
         ":series",
         "@pypi//numpy",
         "@pypi//polars",
@@ -148,6 +149,7 @@ py_library(
         ":conditioning",
         ":exogenous",
         ":location_series_sources",
+        ":private_equity_bundle",
         ":private_equity_protocol",
         ":provenance",
         ":schemas",
@@ -346,6 +348,7 @@ py_library(
     srcs = ["composite_exogenous.py"],
     deps = [
         ":exogenous",
+        ":private_equity_bundle",
         ":series",
         "//augur:frames",
         "@pypi//polars",
