@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 import numpy as np
 import pytest
 import pytest_bazel
@@ -23,9 +25,13 @@ from augur.model.series import (
 
 
 def _issuer(**updates: object) -> PrivateEquityRiskIssuerConfig:
-    return PrivateEquityRiskIssuerConfig(
-        current_mark_usd=100.0, tender_interval_months_median=120.0, tender_interval_log_sigma=0.0, **updates
-    )
+    fields = {
+        "current_mark_usd": 100.0,
+        "tender_interval_months_median": 120.0,
+        "tender_interval_log_sigma": 0.0,
+        **updates,
+    }
+    return PrivateEquityRiskIssuerConfig.model_validate(fields)
 
 
 def _sample(issuer: PrivateEquityRiskIssuerConfig, *, horizon_months: int = 4):
@@ -59,6 +65,68 @@ def test_private_equity_risk_samples_complete_required_protocol() -> None:
         sampled.level_matrix(private_equity_series_id("acme"), rollout_count=1, horizon_months=2),
         np.array([[100.0, 100.0, 100.0]]),
     )
+
+
+def test_private_equity_risk_private_mark_is_piecewise_constant_between_observed_ticks() -> None:
+    sampled = _sample(_issuer(monthly_log_return_mu=math.log(2.0), monthly_log_return_sigma=0.0), horizon_months=4)
+
+    mark = sampled.level_matrix(private_equity_series_id("acme"), rollout_count=1, horizon_months=4)
+
+    np.testing.assert_allclose(mark, np.full((1, 5), 100.0))
+
+
+def test_private_equity_risk_admin_mark_update_changes_mark_without_sale_opportunity() -> None:
+    sampled = _sample(
+        _issuer(
+            monthly_log_return_mu=math.log(2.0) / 2.0,
+            monthly_log_return_sigma=0.0,
+            admin_mark_update_interval_months_median=2.0,
+            admin_mark_update_interval_log_sigma=0.0,
+            admin_mark_update_log_noise_sigma=0.0,
+        ),
+        horizon_months=4,
+    )
+
+    mark = sampled.level_matrix(private_equity_series_id("acme"), rollout_count=1, horizon_months=4)
+    event_kind = sampled.level_matrix(
+        private_equity_event_kind_code_series_id("acme"), rollout_count=1, horizon_months=4
+    )
+    tenders = sampled.event_matrix(private_equity_sale_event_id("acme"), rollout_count=1, horizon_months=4)
+
+    assert int(event_kind[0, 2]) == int(PrivateEquityEventKindCode.ADMIN_MARK_UPDATE)
+    assert int(event_kind[0, 4]) == int(PrivateEquityEventKindCode.ADMIN_MARK_UPDATE)
+    np.testing.assert_array_equal(tenders, np.zeros((1, 5), dtype=np.bool_))
+    assert mark[0, 0] == pytest.approx(100.0)
+    assert mark[0, 1] == pytest.approx(100.0)
+    assert mark[0, 2] == pytest.approx(200.0)
+    assert mark[0, 3] == pytest.approx(200.0)
+    assert mark[0, 4] == pytest.approx(400.0)
+
+
+def test_private_equity_risk_tender_updates_mark_and_sale_opportunity() -> None:
+    sampled = _sample(
+        _issuer(
+            monthly_log_return_mu=math.log(2.0) / 2.0,
+            monthly_log_return_sigma=0.0,
+            tender_interval_months_median=2.0,
+            tender_interval_log_sigma=0.0,
+            tender_price_log_discount_sigma=0.0,
+        ),
+        horizon_months=3,
+    )
+
+    mark = sampled.level_matrix(private_equity_series_id("acme"), rollout_count=1, horizon_months=3)
+    event_kind = sampled.level_matrix(
+        private_equity_event_kind_code_series_id("acme"), rollout_count=1, horizon_months=3
+    )
+    tenders = sampled.event_matrix(private_equity_sale_event_id("acme"), rollout_count=1, horizon_months=3)
+
+    assert int(event_kind[0, 2]) == int(PrivateEquityEventKindCode.TENDER)
+    assert tenders[0, 2]
+    assert mark[0, 0] == pytest.approx(100.0)
+    assert mark[0, 1] == pytest.approx(100.0)
+    assert mark[0, 2] == pytest.approx(200.0)
+    assert mark[0, 3] == pytest.approx(200.0)
 
 
 def test_private_equity_risk_forced_recovery_cashout_marks_protocol_event() -> None:
@@ -120,6 +188,18 @@ def test_private_equity_risk_public_market_is_absorbing_open_liquidity_regime() 
     assert int(event_kind[0, 1]) == int(PrivateEquityEventKindCode.PUBLIC_MARKET_OPEN)
     np.testing.assert_array_equal(regime[0, 1:], np.full(3, int(PrivateEquityRegimeCode.PUBLIC_MARKET)))
     np.testing.assert_array_equal(blocked[0, 1:], np.zeros(3))
+
+
+def test_private_equity_risk_public_market_lockup_blocks_liquidity_then_opens() -> None:
+    sampled = _sample(_issuer(annual_public_market_probability=1.0, public_market_lockup_months=2), horizon_months=4)
+
+    regime = sampled.level_matrix(private_equity_regime_code_series_id("acme"), rollout_count=1, horizon_months=4)
+    blocked = sampled.level_matrix(
+        private_equity_liquidity_blocked_series_id("acme"), rollout_count=1, horizon_months=4
+    )
+
+    np.testing.assert_array_equal(regime[0, 1:], np.full(4, int(PrivateEquityRegimeCode.PUBLIC_MARKET)))
+    np.testing.assert_array_equal(blocked[0], np.array([0.0, 1.0, 1.0, 0.0, 0.0]))
 
 
 def test_private_equity_risk_forced_sale_emits_sale_fraction_without_tender() -> None:

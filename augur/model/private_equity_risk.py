@@ -49,10 +49,19 @@ class PrivateEquityRiskIssuerConfig(FrozenModel):
     student_t_nu: float = Field(default=5.0, gt=2.0)
     tender_interval_months_median: float = Field(default=12.0, gt=0.0)
     tender_interval_log_sigma: float = Field(default=0.5, ge=0.0)
+    tender_price_log_discount_mu: float = 0.0
+    tender_price_log_discount_sigma: float = Field(default=0.08, ge=0.0)
     tender_sale_capacity_alpha: float = Field(default=10.0, gt=0.0)
     tender_sale_capacity_beta: float = Field(default=1.0, gt=0.0)
+    admin_mark_update_interval_months_median: float = Field(default=0.0, ge=0.0)
+    admin_mark_update_interval_log_sigma: float = Field(default=0.5, ge=0.0)
+    admin_mark_update_log_noise_mu: float = 0.0
+    admin_mark_update_log_noise_sigma: float = Field(default=0.10, ge=0.0)
     eligible_fraction: float = Field(default=1.0, ge=0.0, le=1.0)
     annual_public_market_probability: float = Field(default=0.0, ge=0.0, le=1.0)
+    public_market_lockup_months: int = Field(default=0, ge=0)
+    public_market_price_log_discount_mu: float = 0.0
+    public_market_price_log_discount_sigma: float = Field(default=0.20, ge=0.0)
     annual_liquidity_suspension_probability: float = Field(default=0.0, ge=0.0, le=1.0)
     liquidity_suspension_months_min: int = Field(default=1, ge=1)
     liquidity_suspension_months_max: int = Field(default=6, ge=1)
@@ -171,10 +180,11 @@ def _sample_issuer(
     level_seeds = derive_stream_rollout_seeds(request.rollout_seeds, stream_id=f"{issuer_id}:pe_risk_level")
     event_seeds = derive_stream_rollout_seeds(request.rollout_seeds, stream_id=f"{issuer_id}:pe_risk_event")
     for rollout_idx, (level_seed, event_seed) in enumerate(zip(level_seeds, event_seeds, strict=True)):
-        mark[rollout_idx, :] = _sample_mark_path(issuer, seed=level_seed, horizon_months=request.horizon_months)
+        latent_mark = _sample_latent_mark_path(issuer, seed=level_seed, horizon_months=request.horizon_months)
         _sample_events_into(
             issuer,
             seed=event_seed,
+            latent_mark=latent_mark,
             mark=mark[rollout_idx],
             tender_events=tender_events[rollout_idx],
             event_kind_code=event_kind_code[rollout_idx],
@@ -198,7 +208,7 @@ def _sample_issuer(
     )
 
 
-def _sample_mark_path(issuer: PrivateEquityRiskIssuerConfig, *, seed: int, horizon_months: int) -> FloatMatrix:
+def _sample_latent_mark_path(issuer: PrivateEquityRiskIssuerConfig, *, seed: int, horizon_months: int) -> FloatMatrix:
     path = np.empty(horizon_months + 1, dtype=np.float64)
     path[0] = issuer.current_mark_usd
     if horizon_months == 0:
@@ -220,6 +230,7 @@ def _sample_events_into(
     issuer: PrivateEquityRiskIssuerConfig,
     *,
     seed: int,
+    latent_mark: FloatMatrix,
     mark: FloatMatrix,
     tender_events: BoolMatrix,
     event_kind_code: CodeMatrix,
@@ -237,20 +248,43 @@ def _sample_events_into(
     monthly_recovery = _monthly_probability(issuer.annual_forced_recovery_probability)
     monthly_collapse = _monthly_probability(issuer.annual_collapse_probability)
     public_market = False
+    acquired = False
     collapsed = False
     suspended_through = 0
+    public_market_lockup_through = 0
 
-    tender_months = _sample_tender_months(issuer, rng=rng, horizon_months=horizon_months)
+    tender_months = _sample_event_months(
+        median_months=issuer.tender_interval_months_median,
+        log_sigma=issuer.tender_interval_log_sigma,
+        rng=rng,
+        horizon_months=horizon_months,
+    )
+    admin_mark_months = _sample_event_months(
+        median_months=issuer.admin_mark_update_interval_months_median,
+        log_sigma=issuer.admin_mark_update_interval_log_sigma,
+        rng=rng,
+        horizon_months=horizon_months,
+    )
     for month in range(1, horizon_months + 1):
+        mark[month] = mark[month - 1]
         if collapsed:
             regime_code[month] = int(PrivateEquityRegimeCode.COLLAPSED)
             liquidity_blocked[month] = 1.0
-            mark[month] = issuer.current_mark_usd * issuer.collapsed_mark_fraction
+            mark[month] = mark[month - 1]
+            continue
+
+        if acquired:
+            regime_code[month] = int(PrivateEquityRegimeCode.ACQUIRED)
+            liquidity_blocked[month] = 1.0
+            mark[month] = mark[month - 1]
             continue
 
         if public_market:
             regime_code[month] = int(PrivateEquityRegimeCode.PUBLIC_MARKET)
-        elif month <= suspended_through:
+            mark[month] = latent_mark[month]
+            liquidity_blocked[month] = 1.0 if month <= public_market_lockup_through else 0.0
+            continue
+        if month <= suspended_through:
             regime_code[month] = int(PrivateEquityRegimeCode.PRIVATE_OPERATING)
             liquidity_blocked[month] = 1.0
             continue
@@ -263,19 +297,28 @@ def _sample_events_into(
             )
             regime_code[month:] = int(PrivateEquityRegimeCode.COLLAPSED)
             liquidity_blocked[month:] = 1.0
-            mark[month:] = issuer.current_mark_usd * issuer.collapsed_mark_fraction
+            mark[month:] = mark[month - 1] * issuer.collapsed_mark_fraction
             collapsed = True
         elif not public_market and rng.random() < monthly_collapse:
             event_kind = PrivateEquityEventKindCode.COLLAPSE
             regime_code[month:] = int(PrivateEquityRegimeCode.COLLAPSED)
             liquidity_blocked[month:] = 1.0
-            mark[month:] = issuer.current_mark_usd * issuer.collapsed_mark_fraction
+            mark[month:] = mark[month - 1] * issuer.collapsed_mark_fraction
             collapsed = True
         elif not public_market and rng.random() < monthly_public:
             event_kind = PrivateEquityEventKindCode.PUBLIC_MARKET_OPEN
             regime_code[month:] = int(PrivateEquityRegimeCode.PUBLIC_MARKET)
             sale_capacity_fraction[month:] = 1.0
-            liquidity_blocked[month:] = 0.0
+            public_market_lockup_through = min(horizon_months, month + issuer.public_market_lockup_months - 1)
+            if public_market_lockup_through >= month:
+                liquidity_blocked[month : public_market_lockup_through + 1] = 1.0
+            liquidity_blocked[public_market_lockup_through + 1 :] = 0.0
+            mark[month] = _noisy_mark(
+                latent_mark[month],
+                rng=rng,
+                log_noise_mu=issuer.public_market_price_log_discount_mu,
+                log_noise_sigma=issuer.public_market_price_log_discount_sigma,
+            )
             public_market = True
         elif not public_market and rng.random() < monthly_suspension:
             event_kind = PrivateEquityEventKindCode.LEGAL_IMPAIRMENT
@@ -288,33 +331,61 @@ def _sample_events_into(
         elif rng.random() < monthly_forced_sale:
             event_kind = PrivateEquityEventKindCode.ACQUISITION_CASHOUT
             forced_sale_fraction[month] = rng.beta(issuer.forced_sale_fraction_alpha, issuer.forced_sale_fraction_beta)
-            regime_code[month] = int(PrivateEquityRegimeCode.ACQUIRED)
+            regime_code[month:] = int(PrivateEquityRegimeCode.ACQUIRED)
+            liquidity_blocked[month:] = 1.0
+            mark[month] = _noisy_mark(
+                latent_mark[month],
+                rng=rng,
+                log_noise_mu=issuer.public_market_price_log_discount_mu,
+                log_noise_sigma=issuer.public_market_price_log_discount_sigma,
+            )
+            acquired = True
         elif not public_market and month in tender_months:
             event_kind = PrivateEquityEventKindCode.TENDER
             tender_events[month] = True
             sale_capacity_fraction[month] = rng.beta(
                 issuer.tender_sale_capacity_alpha, issuer.tender_sale_capacity_beta
             )
+            mark[month] = _noisy_mark(
+                latent_mark[month],
+                rng=rng,
+                log_noise_mu=issuer.tender_price_log_discount_mu,
+                log_noise_sigma=issuer.tender_price_log_discount_sigma,
+            )
+        elif not public_market and month in admin_mark_months:
+            event_kind = PrivateEquityEventKindCode.ADMIN_MARK_UPDATE
+            mark[month] = _noisy_mark(
+                latent_mark[month],
+                rng=rng,
+                log_noise_mu=issuer.admin_mark_update_log_noise_mu,
+                log_noise_sigma=issuer.admin_mark_update_log_noise_sigma,
+            )
 
         if event_kind != PrivateEquityEventKindCode.NONE:
             event_kind_code[month] = int(event_kind)
 
 
-def _sample_tender_months(
-    issuer: PrivateEquityRiskIssuerConfig, *, rng: np.random.Generator, horizon_months: int
+def _sample_event_months(
+    *, median_months: float, log_sigma: float, rng: np.random.Generator, horizon_months: int
 ) -> frozenset[int]:
+    if median_months <= 0.0:
+        return frozenset()
     months: set[int] = set()
     cursor_month = 0.0
     while True:
-        interval = float(
-            rng.lognormal(mean=math.log(issuer.tender_interval_months_median), sigma=issuer.tender_interval_log_sigma)
-        )
+        interval = float(rng.lognormal(mean=math.log(median_months), sigma=log_sigma))
         cursor_month += max(interval, 1.0)
         month_index = round(cursor_month)
         if month_index > horizon_months:
             return frozenset(months)
         if month_index >= 1:
             months.add(month_index)
+
+
+def _noisy_mark(value: float, *, rng: np.random.Generator, log_noise_mu: float, log_noise_sigma: float) -> float:
+    if log_noise_mu == 0.0 and log_noise_sigma == 0.0:
+        return value
+    return float(value * math.exp(rng.normal(loc=log_noise_mu, scale=log_noise_sigma)))
 
 
 def _monthly_probability(annual_probability: float) -> float:

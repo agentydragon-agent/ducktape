@@ -120,13 +120,13 @@ this file as a backlog, not a second ordered roadmap.
       should move into a shared repo helper alongside similar browser
       visual tests so each app doesn't invent its own deterministic
       screenshot harness.
-- [ ] **Browser/UI for the new PE `LiquidityRegime` variants.** The
-      schema supports `LiquidityEventOnly` /
-      `PublicMarket(lockup_end_month)` /
-      `Acquisition(event_month, cash_per_unit_usd)` (#1601), and the
-      engine respects all three. The browser still only exposes a
-      single "tender-eligible" PE input shape — no UI for setting the
-      regime, no UI for entering a lockup or acquisition event.
+- [ ] **Browser/UI for PE protocol controls and inspection.** The
+      model/sim protocol now distinguishes private operating, public
+      market, acquired, and collapsed regimes plus tender/admin/legal/
+      forced-recovery event kinds. The browser still only exposes the
+      single fixture PE holding and tender floor shape — no UI for
+      configuring public-market lockup, acquisition cashout, legal
+      block, recovery, or collapsed-path assumptions.
 - [ ] **Normalize result table labels.** Headers like `P50 net worth`
       next to `liquid worth` are inconsistent because the second value
       is also a percentile, and "liquid worth" is unclear wording.
