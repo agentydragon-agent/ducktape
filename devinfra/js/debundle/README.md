@@ -12,7 +12,8 @@ See `docs/guide.md` for step-by-step workflows.
 Cheat sheet of the most-used commands:
 
 - `debundle run` — execute the transform pipeline (parse + facts +
-  owner_graph + realizability gate + lower + emit).
+  owner_graph + realizability gate + lower + emit). Add `--dry-run`
+  to run pipeline checks without writing emitted JS or reports.
 - `debundle bindings assign <sym>:<module>[:<readable>]` — move a
   binding (single, multi-positional, or `--batch <file.json>`).
 - `debundle bindings rename <original> <readable>` — rename without

@@ -24,7 +24,7 @@ use peel::{
     resolve_binding_owners, run_explain_report, run_graph_summary_report, run_patch_plan_report,
     run_peel, run_plan_work_report, run_source_slice_report, run_units_report,
 };
-use pipeline::{TransformArgs, run_transform_cli};
+use pipeline::{TransformArgs, TransformRunOptions, run_transform_cli_with_options};
 use spec_modules::{collect_module_files, module_path_from_file};
 use spec_stats::{SpecStats, compute_spec_stats, render_spec_stats_text};
 
@@ -422,8 +422,12 @@ pub struct ShowSourceArgs {
 pub fn run_debundle_cli(args: DebundleArgs) -> Result<()> {
     match args.command {
         DebundleCommand::Run(args) => {
+            let dry_run = args.dry_run;
             let cli = args.resolve()?;
-            run_transform_cli(&cli)?;
+            run_transform_cli_with_options(&cli, TransformRunOptions { dry_run })?;
+            if dry_run {
+                println!("dry-run: transform pipeline checks passed; no outputs written");
+            }
             Ok(())
         }
         DebundleCommand::Peel(args) => run_peel(args).context("running peel query"),
@@ -1192,11 +1196,13 @@ mod tests {
                 "run",
                 "--spec",
                 "spec.yaml",
+                "--dry-run",
                 "--package-root",
                 "pkg=/tmp/pkg",
                 "--packages-root",
                 "/tmp/packages",
             ]);
+            assert!(args.dry_run);
             let cli = args.resolve().expect("resolve cli");
             assert_eq!(
                 cli.spec_source,

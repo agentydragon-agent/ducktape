@@ -21,7 +21,7 @@ collision detection. If validation fails the command refuses with a
 structured diagnostic (binding-pair blame for gate rejections, name
 clash for renames) and **does not modify any file**.
 
-Two flags adjust the default on every mutating command:
+Two flags adjust the default on spec-edit commands:
 
 | Flag          | Effect                                                                                                                                                        |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -33,6 +33,10 @@ Two flags adjust the default on every mutating command:
 change without validating. Mostly useful when investigating _why_
 the gate would reject and you want to inspect the intermediate
 state without committing to it.
+
+`debundle run --dry-run` is separate: it runs pipeline parse/facts/gate
+checks and skips all emitted JS and report writes. There is no
+`debundle run --no-verify`.
 
 Read-only commands (queries, listings, source slicing) take
 neither flag — they have no side effects.
@@ -59,9 +63,9 @@ with a list. Use the minified form to disambiguate.
 
 ### Pipeline
 
-| Command        | Mutates?                 | Function                                                                                                         |
-| -------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------- |
-| `debundle run` | yes (emits JS + reports) | Run the full transform pipeline: parse + facts + owner_graph + atomic_units + realizability gate + lower + emit. |
+| Command        | Mutates?                 | Function                                                                                                                                                                                 |
+| -------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `debundle run` | yes (emits JS + reports) | Run the full transform pipeline: parse + facts + owner_graph + atomic_units + realizability gate + lower + emit. `--dry-run` runs pipeline checks without writing emitted JS or reports. |
 
 ### Bindings
 

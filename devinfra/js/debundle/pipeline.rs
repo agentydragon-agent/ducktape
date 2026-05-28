@@ -34,6 +34,11 @@ pub struct TransformCli {
     pub packages_root: Option<PathBuf>,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct TransformRunOptions {
+    pub dry_run: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TransformSpecSource {
     Flat { path: PathBuf },
@@ -67,6 +72,9 @@ pub struct TransformArgs {
     /// Root directory containing per-package sources (alternative to repeated --package-root).
     #[arg(long)]
     pub packages_root: Option<PathBuf>,
+    /// Run pipeline checks without writing emitted JS or reports.
+    #[arg(long)]
+    pub dry_run: bool,
 }
 
 impl TransformArgs {
@@ -130,9 +138,18 @@ fn parse_package_root_kv(value: &str) -> Result<(String, PathBuf), String> {
 }
 
 pub fn run_transform_cli(cli: &TransformCli) -> Result<()> {
+    run_transform_cli_with_options(cli, TransformRunOptions::default())
+}
+
+pub fn run_transform_cli_with_options(
+    cli: &TransformCli,
+    options: TransformRunOptions,
+) -> Result<()> {
     let spec = load_transform_spec_source(&cli.spec_source)?;
     validate_transform_spec(&spec)?;
-    preflight_output_roots(&spec)?;
+    if !options.dry_run {
+        preflight_output_roots(&spec)?;
+    }
     let (artifact, _load_manifest) =
         load_js_chunks(&spec.inputs.input_root, &spec.inputs.js_list_path)?;
     let materialise_chunk_ids: Vec<String> = spec
@@ -154,7 +171,8 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<()> {
     let mut chunk_records = prepare_result.chunk_records;
     let mut vendor_report = VendorSwapsReport::default();
 
-    let full_swap_result = run_full_vendor_swaps(artifact, &artifact_indexes, &spec, cli)?;
+    let full_swap_result =
+        run_full_vendor_swaps(artifact, &artifact_indexes, &spec, cli, !options.dry_run)?;
     artifact = full_swap_result.artifact;
     vendor_report.full = full_swap_result.full_swap_resolutions;
     chunk_records.retain(|chunk| !full_swap_result.removed_chunk_ids.contains(&chunk.chunk_id));
@@ -186,7 +204,11 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<()> {
                 chunk_ids: materialise_chunk_ids,
                 file,
                 prune_other_chunks,
-                report_out_dir,
+                report_out_dir: if options.dry_run {
+                    None
+                } else {
+                    report_out_dir
+                },
                 target_dir,
             },
         )?;
@@ -197,14 +219,15 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<()> {
         unmatched_spec_claims = materialize_result.unmatched_spec_claims;
     }
 
-    let partial_result = run_partial_vendor_swaps(artifact, &artifact_indexes, &spec, cli)?;
+    let partial_result =
+        run_partial_vendor_swaps(artifact, &artifact_indexes, &spec, cli, !options.dry_run)?;
     artifact = partial_result.artifact;
     vendor_report.partial = partial_result.partial_swap_resolutions;
     vendor_report.bundled_partial = partial_result.bundled_partial_swap_resolutions;
     vendor_report.strip_stats = partial_result.strip_stats;
 
     write_vendor_swaps_report(
-        spec.swap_vendor_chunks.write,
+        spec.swap_vendor_chunks.write && !options.dry_run,
         spec.swap_vendor_chunks.output_manifest_path.as_deref(),
         &vendor_report,
     )?;
@@ -218,7 +241,9 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<()> {
     // pipelines without vendor swaps still benefit.
     validate_emitted_exports(&artifact)?;
 
-    if let Some(cfg) = &spec.write_js_tree {
+    if !options.dry_run
+        && let Some(cfg) = &spec.write_js_tree
+    {
         write_js_tree(&WriteTreeInput {
             artifact: &artifact,
             out_dir: &cfg.out_dir,
@@ -230,7 +255,9 @@ pub fn run_transform_cli(cli: &TransformCli) -> Result<()> {
         })?;
     }
 
-    if let Some(cfg) = &spec.emit_browser_harness {
+    if !options.dry_run
+        && let Some(cfg) = &spec.emit_browser_harness
+    {
         let opts = EmitBrowserHarnessOptions {
             asset_summary_path: cfg.asset_summary_path.clone(),
             out_dir: cfg.out_dir.clone(),
@@ -326,6 +353,7 @@ fn run_full_vendor_swaps(
     artifact_indexes: &ArtifactIndexes,
     spec: &TransformSpec,
     cli: &TransformCli,
+    write_outputs: bool,
 ) -> Result<FullVendorSwapResult> {
     let mut artifact = artifact;
     let mut full_swap_resolutions = BTreeMap::new();
@@ -355,7 +383,7 @@ fn run_full_vendor_swaps(
                     packages_root: &cli.packages_root,
                     output_manifest_path: swap_cfg.output_manifest_path.clone(),
                     output_wrapper_dir: swap_cfg.output_wrapper_dir.clone(),
-                    write: swap_cfg.write,
+                    write: swap_cfg.write && write_outputs,
                 },
             )?;
             artifact = swap_result.artifact;
@@ -388,6 +416,7 @@ fn run_partial_vendor_swaps(
     artifact_indexes: &ArtifactIndexes,
     spec: &TransformSpec,
     cli: &TransformCli,
+    write_outputs: bool,
 ) -> Result<PartialVendorSwapResult> {
     let mut artifact = artifact;
     let mut partial_swap_resolutions = BTreeMap::new();
@@ -427,7 +456,7 @@ fn run_partial_vendor_swaps(
                     packages_root: &cli.packages_root,
                     output_manifest_path: swap_cfg.output_manifest_path.clone(),
                     output_wrapper_dir: swap_cfg.output_wrapper_dir.clone(),
-                    write: swap_cfg.write,
+                    write: swap_cfg.write && write_outputs,
                 },
             )?;
             artifact = bundled_result.artifact;
@@ -817,6 +846,76 @@ mod tests {
             );
             assert!(js_out.join("stale.txt").exists());
             assert!(harness_out.join("stale.txt").exists());
+            Ok(())
+        })
+    }
+
+    #[test]
+    fn dry_run_runs_pipeline_checks_without_writing_outputs() -> Result<()> {
+        js_ast::with_swc_globals(|| {
+            let temp = tempfile::tempdir()?;
+            let root = temp.path();
+            let snapshot = root.join("snapshot");
+            let extracted = root.join("extracted");
+            let js_out = root.join("js-out");
+            let harness_out = root.join("harness-out");
+            fs::create_dir_all(snapshot.join("static"))?;
+            fs::create_dir_all(&extracted)?;
+            fs::create_dir_all(&js_out)?;
+            fs::create_dir_all(&harness_out)?;
+            fs::write(js_out.join("stale.txt"), "old")?;
+            fs::write(harness_out.join("stale.txt"), "old")?;
+            fs::write(
+                snapshot.join("index.html"),
+                r#"<!doctype html>
+<script type="module" src="./static/index.js"></script>
+"#,
+            )?;
+            fs::write(
+                snapshot.join("static/index.js"),
+                "globalThis.__value = 1;\n",
+            )?;
+            let js_list_path = extracted.join("js-files.txt");
+            fs::write(&js_list_path, "static/index.js\n")?;
+            let asset_summary_path = extracted.join("asset-summary.json");
+            fs::write(
+                &asset_summary_path,
+                serde_json::to_string(&AssetSummaryFixture {
+                    entry_points: AssetSummaryEntryPoints { html: "index.html" },
+                })?,
+            )?;
+
+            let mut spec = empty_transform_spec();
+            spec.inputs = spec::LoadJsChunksArgs {
+                input_root: snapshot.clone(),
+                js_list_path,
+            };
+            spec.write_js_tree = Some(spec::WriteJsTreeConfig {
+                out_dir: js_out.clone(),
+            });
+            spec.emit_browser_harness = Some(spec::EmitBrowserHarnessConfig {
+                asset_summary_path,
+                out_dir: harness_out.clone(),
+                snapshot_root: snapshot,
+            });
+            let spec_path = root.join("transform-spec.yaml");
+            fs::write(&spec_path, serde_yaml::to_string(&spec)?)?;
+
+            run_transform_cli_with_options(
+                &TransformCli {
+                    spec_source: TransformSpecSource::Flat { path: spec_path },
+                    package_roots: HashMap::new(),
+                    packages_root: None,
+                },
+                TransformRunOptions { dry_run: true },
+            )?;
+
+            assert!(js_out.join("stale.txt").exists());
+            assert!(harness_out.join("stale.txt").exists());
+            assert!(!js_out.join("app").exists());
+            assert!(!harness_out.join("app").exists());
+            assert!(!js_out.join("reports").exists());
+            assert!(!harness_out.join("reports").exists());
             Ok(())
         })
     }

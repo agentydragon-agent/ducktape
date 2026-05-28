@@ -67,6 +67,9 @@ unrealizable, `debundle run` rejects and emits structured side outputs
 `reports/tree/<chunk-id>/`. There is no `run --no-verify` — fix the
 spec first.
 
+Use `debundle run --dry-run` to run pipeline parse/facts/gate checks
+without writing emitted JS or reports.
+
 ## Workflow: investigating a binding end-to-end
 
 When a binding's role is unclear or a proposal is suspicious:
