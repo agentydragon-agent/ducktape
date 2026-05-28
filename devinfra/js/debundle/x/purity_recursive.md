@@ -3,9 +3,9 @@
 This note tracks reusable debundler purity-analysis work. It excludes
 corpus-specific owner ids, bundle paths, and spec cleanup notes.
 
-## Current Status
+## Current Scope
 
-The first useful purity improvements have already landed:
+The current purity classifier handles these reusable chunk-local shapes:
 
 - plain-data recognition for chunk-local `const` literals
 - per-declarator owner splitting for comma-list declarations
@@ -15,7 +15,7 @@ The first useful purity improvements have already landed:
 - TypeScript enum IIFE recognition for string enums
 - TypeScript enum IIFE recognition for numeric reverse-map enums
 
-Those changes remove the need for many callsite-level purity hints in
+These shapes remove the need for many callsite-level purity hints in
 ordinary chunk-local helper chains.
 
 ## Remaining Generic Follow-Ups

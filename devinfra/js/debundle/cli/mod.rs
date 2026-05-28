@@ -169,7 +169,7 @@ pub struct ClusterReport {
 /// Args for `debundle modules ...`. Aggregates the existing
 /// comment-edit verb (in `cli::comment`) with the new
 /// `merge` / `delete` / `propose` verbs lifted from `module merge`
-/// and `peel plan-work`.
+/// and the proposal planner.
 #[derive(Debug, ClapArgs)]
 pub struct ModulesNs {
     #[command(subcommand)]

@@ -61,18 +61,16 @@ Plus one mapping and one heuristic:
 | `analyze_peel_factorize()`     | `analyze_peel_proposals()`    |
 | `sort_factorize_diagnostics()` | `sort_proposal_diagnostics()` |
 
-## Already Correct (no change)
+## Keep As-Is
 
 - `OwnerGraph`, `OwnerNode`, `OwnerId`
 - `AtomicUnit`, `AtomicGraphReport`, `AtomicUnitReport`, `AtomicUnitEdgeReport`
 - `ChunkAnalysis`
 - `compute_owner_graph_and_units()`, `compute_atomic_units()`
-- `build_module_quotient()` → just renamed to `build_module_dag()`
 
 ## Docs to Update
 
 - `docs/design.md`: ~15 references to `ChunkFactorization`, `FactorizationReport`, `validate_factorization`, `factor_assembly`
-- ~~`FACTORIZE.md`~~: deleted; conceptual content folded into `docs/design.md` §"Layered mental model" + §"Factor assembly inside `debundle run`".
 - `TODO.md`: `peel/factorize.rs` reference
 - `README.md`: any `ChunkFactorization` references
 - `x/graph_planner_factorization.md`: rename or update

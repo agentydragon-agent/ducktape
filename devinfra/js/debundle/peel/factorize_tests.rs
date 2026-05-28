@@ -1216,9 +1216,9 @@ fn factor_assembly_single_claim_with_unclaimed_unit_members_is_a_conflict() {
     // across {mod_0, <residual_entry>} — unrealizable. The spec
     // author needs to either also assign B (or leave both
     // unassigned), or remove the constraining edge that fused
-    // them in the first place. `debundle peel patch-plan` may
-    // flag the split unit as an advisory edit, but factor_assembly
-    // refuses to silently move B for the user.
+    // them in the first place. `debundle coverage` may flag the
+    // split unit as an advisory edit, but factor_assembly refuses
+    // to silently move B for the user.
     let factorization =
         factorization_for("const A = B + 1; const B = A + 1;", &[("A", logical(0))]);
     let report = factorization.validate();

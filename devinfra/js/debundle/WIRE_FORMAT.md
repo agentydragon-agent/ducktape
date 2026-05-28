@@ -6,8 +6,8 @@ are consumed by:
 - spec authors with `jq` poking at cycle / owner-graph / atomic-unit reports;
 - CLI tooling (top-level `debundle modules propose` / `atoms` /
   `coverage` / `describe` / `show-source` / `scc` / `cluster` /
-  `graph-summary` — the legacy `debundle peel <…>` spellings still
-  work as deprecated aliases);
+  `graph-summary`; deprecated `debundle peel <...>` aliases may still
+  exist but new docs and scripts should not use them);
 - humans reading the files during debugging.
 
 This doc states the convention these files follow.
@@ -96,4 +96,4 @@ let top_level = top_level_id(atom_from_wire, mark_b);
   these wire formats serialize evidence for.
 - `docs/lessons_learned/cross_process_stage_b.md` — why we don't
   serialize pre-filter facts.
-- `ARCH_REVIEW_2026_05.md` — open architectural backlog.
+- `ARCHITECTURE_BACKLOG.md` — current architectural backlog.

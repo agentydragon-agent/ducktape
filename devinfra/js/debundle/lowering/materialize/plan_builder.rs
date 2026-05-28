@@ -5,7 +5,7 @@
 //! that previously appeared in eight subtly different forms now lives
 //! behind the builder's encapsulation.
 //!
-//! See `ARCH_REVIEW_2026_05.md` § "`materialize_logical_chunk` is a
+//! See `ARCHITECTURE_BACKLOG.md` § "`materialize_logical_chunk` is a
 //! 750-line god function with parallel mutable state" for the
 //! original motivation.
 

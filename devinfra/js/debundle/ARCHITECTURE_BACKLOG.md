@@ -1,34 +1,45 @@
-# Debundle crate — architecture review (May 2026)
+# Debundle Architecture Backlog
 
-Reviewed against `01c149496` on branch `feat-arch-review-2026-05`. Read on top of `docs/design.md`, `CODE_REVIEW.md`, `AGENTS.md`. Findings are at the design/architecture level; small style points already covered by `CODE_REVIEW.md` are not repeated.
-
-> **Status.** Items handled since the original review have been removed; what remains is the open backlog. The cross-process Stage B plan was also abandoned — items in this review that assumed cross-process caching of Stage A artifacts have been dropped along with it. Narrative + rejected alternatives: `docs/lessons_learned/cross_process_stage_b.md`.
+Current architecture-level follow-ups for `devinfra/js/debundle/`. This
+file is an active backlog: resolved items are deleted, not struck through.
 
 ## Open backlog
 
-The original executive-summary item resolved with the `EdgeRole` enum. Remaining work is the section-by-section backlog below.
+Re-check file paths and line numbers against current `HEAD` before
+acting; this file intentionally describes shapes rather than frozen
+review line references.
 
 ## Duplicated calculations
 
 ### `tarjan_scc` over the module quotient: residual walks
 
-After the Lemma-2 unification (`da7e928e2`) and `RealizabilityVerdict::scc_partition()` introduction (`7d2d79bc9`), 5 module-quotient Tarjan walks collapsed into 2:
+The module-quotient pipeline currently has two broad Tarjan consumers:
 
 1. `check_realizability` materialises one SCC partition and exposes it on the verdict; `validate_factorization` and `reports::build_quotient_scc_reports` consume it instead of re-walking.
 2. `ChunkFactorization::build_with` caches a `dep_graph_sccs` field used by the materializer/emitter path.
 
 Remaining legitimate walks (different graphs): `validation.rs::compute_realizability_cut` (FAS iteration, intrinsic), `graph.rs::promote_at_init_calls` (closure fixpoint), `atomic_units.rs::compute_atomic_units` (constraining-edge owner SCC).
 
-**Open follow-up.** The two surviving module-quotient walks (verdict-time + factorization-build-time) compute the same partition for different consumers; structurally consolidatable behind a wider API change, but not urgent and not on a hot path.
+**Open follow-up.** The verdict-time and factorization-build-time walks
+compute the same partition for different consumers; structurally
+consolidatable behind a wider API change, but not urgent and not on a hot
+path.
 
 ### `OwnerGraph::from_report` rehydration carries `declared: BTreeSet::new()`
 
-`graph.rs::OwnerGraph::from_report` rehydrates an `OwnerGraph` from its JSON wire shape (`OwnerGraphReport`), but with `declared: BTreeSet::new()` because the report doesn't carry per-node binding sets. The original ARCH_REVIEW note assumed this function was dead — the intended consumer was a hypothetical cross-process Stage B planner — but two production callers ship today:
+`graph.rs::OwnerGraph::from_report` rehydrates an `OwnerGraph` from its
+JSON wire shape (`OwnerGraphReport`), but with `declared:
+BTreeSet::new()` because the report does not carry per-node binding sets.
+Current production callers:
 
 1. `cli/module.rs::gate_post_edit_partition` — the CLI realizability gate that runs after every spec edit. It deserializes `OwnerGraphReport` from disk, rehydrates via `OwnerGraph::from_report`, then runs the cycle check before letting the edit land. This is the cross-process Stage B in everything but name — just synchronously inside the CLI process rather than as a separate daemon.
 2. `peel/quotient.rs::QuotientGraph::from_report` — kernel constructor used by every `from_report_with_partition*` entrypoint and the quotient integration tests.
 
-What's actually worth resolving here is the structural shape: callers re-hydrate with an empty `declared`, which means downstream code that touches `OwnerNode::declared` will silently see "no bindings" instead of the truth. The right fix is either (a) extend `OwnerGraphReport` to carry per-node `declared`, or (b) split into a thin reconstruct-from-graph-shape function that doesn't pretend `declared` is meaningful. Today's signature is a hazard — callers can ask for binding sets and get an empty answer. See also `docs/lessons_learned/cross_process_stage_b.md` — the cross-process variant didn't ship, but the in-process rehydration path did.
+The structural hazard is the empty `declared` value: downstream code that
+touches `OwnerNode::declared` sees "no bindings" instead of the truth.
+The fix is either (a) extend `OwnerGraphReport` to carry per-node
+`declared`, or (b) split into a reconstruct-from-graph-shape function that
+does not pretend `declared` is meaningful.
 
 ## Encapsulation + module boundaries
 
@@ -54,7 +65,12 @@ Six distinct types in the orbit of "stuff a chunk analysis produced" (after the 
 
 ### `pub(crate)` on internals is broad
 
-`OwnerGraph` fields are now private (encapsulation refactor done), but `RealizabilityIndex` holds owner-edge references, `IncrementalQuotient` maintains bucket state derived from the owner graph, and `OwnerGraph::from_report` reconstructs it from JSON. The _crate-internal_ invariant surface is still large. The grep-based parallel-call-site test (`no_consumer_calls_is_cross_module_at_init_promotion_directly`) that motivated this item has been deleted, but the underlying concern — that crate-internal invariants are encoded by convention rather than type — remains for these consumers.
+`OwnerGraph` fields are private, but `RealizabilityIndex` holds
+owner-edge references, `IncrementalQuotient` maintains bucket state
+derived from the owner graph, and `OwnerGraph::from_report` reconstructs
+it from JSON. The _crate-internal_ invariant surface is still large:
+several consumers rely on conventions rather than a type boundary that
+makes invalid operations impossible.
 
 ## Name overloading
 
@@ -77,34 +93,51 @@ That's one algorithm with two passes. Pass 1 is a cheap necessary condition (mut
 
 `atomic_units.rs::compute_atomic_units` is the structural-atom detector (SCCs of the constraining-edge owner graph). `factor_assembly::detect_unit_conflict` is the "did the spec split a unit?" detector. The structural atoms are computed once per chunk (in `compute_owner_graph_and_units_with`), passed through `OwnerGraphAndUnits` to the materializer and into `ChunkFactorization`. Clean — this is the right shape.
 
-Spec-induced atoms (the SCCs of `I ∪ S` under the quotient) are NOT precomputed; they emerge from the realizability primitive. docs/design.md §"Two classes of atom" labels them as a distinct concept. After `7d2d79bc9` the verdict exposes the SCC partition and `validate_factorization` consumes it instead of re-walking; the residual walk lives on `ChunkFactorization::dep_graph_sccs` for the materializer/emitter path (see §"Duplicated calculations" for the open consolidation).
+Spec-induced atoms (the SCCs of `I ∪ S` under the quotient) are NOT
+precomputed; they emerge from the realizability primitive. docs/design.md
+§"Two classes of atom" labels them as a distinct concept. The verdict
+exposes the SCC partition and `validate_factorization` consumes it. The
+residual walk lives on `ChunkFactorization::dep_graph_sccs` for the
+materializer/emitter path (see "Duplicated calculations" for the open
+consolidation).
 
 ## Test-vs-spec drift
 
-### `#[ignore]`d tests are clean
+### `#[ignore]`d tests should name the future work
 
-`e2e/purity_test.rs` is the only file with `#[ignore]`d tests, and each names an explicit "Step D"/"Step E in the purity-desiderata follow-up plan" reason. These are documented future work, not drift. Good shape.
+`e2e/purity_test.rs` names explicit "Step D"/"Step E" reasons for its
+ignored tests. Keep that standard for any new ignored test: the reason
+must point to current future work, not an unexplained skip.
 
-### "v2 hypothesis was wrong" — found one comment
+### Defensive comments should stay tied to a real invariant
 
-`graph.rs::chunk_source_import_order`'s `None`-after-`Some` clause is "kept for robustness against future filter changes that might admit non-constraining members" — i.e. defensive code for a hypothesis that hasn't been validated. That's mild; not real drift.
+`graph.rs::chunk_source_import_order`'s `None`-after-`Some` clause is
+"kept for robustness against future filter changes that might admit
+non-constraining members". If the filter shape changes, either turn this
+into a tested invariant or delete the defensive branch.
 
-### The docs/design.md vs CODE_REVIEW.md vs README.md vs guide.md split
+### Keep the doc split crisp
 
 These files plus AGENTS.md plus RENAME.md document the same project from multiple perspectives. Skimming them, I find:
 
 - docs/design.md is the canonical theorem + algorithm document.
 - AGENTS.md is the canonical "how to work on this crate" document.
-- CODE_REVIEW.md is a prior code-review backlog (clearly marked, useful).
+- CODE_REVIEW.md is the active code-quality backlog.
 - README.md is a marketing-shaped pitch with usage.
 - guide.md is shorter intro material.
-- TODO.md is a ~24K-byte backlog.
-- docs/lessons_learned/cross_process_stage_b.md is the post-mortem for the abandoned cross-process Stage B plan.
+- TODO.md is the broad active work backlog.
+- docs/lessons_learned/cross_process_stage_b.md is the historical
+  exception: it records an abandoned design to prevent repeating it.
 - RENAME.md is a focused doc on the readability rename pass.
 
 ## Quick wins (≤30 min each)
 
-1. **Carry chunk-top-level `Mark` on `ChunkContext`** so `top_level_id` lookups don't have to be threaded through every materialize-side function as a separate parameter. With the MLCI split landed the `Mark` now lives on `LowerChunkAst`, but it's still threaded through ~8 helpers below `lower_chunk`. Folding the `top_level_id` helper onto a small `ChunkContext` accessor would let helpers take just that context instead.
+1. **Carry chunk-top-level `Mark` on `ChunkContext`** so `top_level_id`
+   lookups do not have to be threaded through every materialize-side
+   function as a separate parameter. The `Mark` lives on `LowerChunkAst`
+   but is still threaded through several helpers below `lower_chunk`.
+   Folding the `top_level_id` helper onto a small `ChunkContext`
+   accessor would let helpers take just that context instead.
 
 ## Concerns to discuss before deciding
 
@@ -121,7 +154,3 @@ Today the simulator in `realizability.rs` is the gate's `cross-checks the materi
 ### Do anonymous statements deserve a first-class `OwnerKind`?
 
 Today an "anonymous statement" is just an `OwnerNode` with empty `declared`. The materializer (`lowering/materialize/mod.rs`) special-cases them via `anonymous_statement_ordinals` + an explicit `anon_residual_sentinel` ModuleId. The realizability gate doesn't distinguish them. Several diagnostics use the placeholder `<anon stmt #ord>` in `validation.rs`. This is a coherent piece of vocabulary that should perhaps be an `OwnerNode::kind` variant rather than a sentinel "empty declared bindings". Worth thinking about at the next refactor — not blocking.
-
----
-
-**Reviewer note.** This file is a living backlog; resolved items get deleted, not struck through. The original HEAD reference (`01c149496`) is historical — line numbers in remaining items may drift and should be re-resolved against current HEAD before acting.

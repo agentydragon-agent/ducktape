@@ -368,7 +368,7 @@ pub(super) fn materialize_logical_chunk(
 /// owns the application of those decisions to the builder's
 /// `ModulePlan` list.
 ///
-/// See `ARCH_REVIEW_2026_05.md` § "`compute_stage_one_analysis` —
+/// See `ARCHITECTURE_BACKLOG.md` § "`compute_stage_one_analysis` —
 /// only rebind-folding still leaks into the materializer" for the
 /// original separation rationale.
 fn apply_stage_one_a5(builder: &mut ChunkPlanBuilder, precomputed: &OwnerGraphAndUnits) {

@@ -35,19 +35,14 @@
 //! `analysis::check_realizability(&OwnerGraph, &Partition)`. The same
 //! function the materializer's `validate_factorization` calls.
 //!
-//! Before Track A the kernel reimplemented the gate over the JSON
-//! `OwnerGraphReport` adjacency — dropping every non-constraining
-//! edge in the process. That elided pass 2 of `check_realizability`
-//! (the full I-graph Tarjan plus `EsmEvaluationSimulator`), so the
-//! planner was blind to asymmetric `(eager forward, lazy back)`
-//! I-cycles that the materializer catches. Symptom: production
-//! `peel plan-work` reported `0 seed_rejections` while the same
-//! spec's `bazelisk build` reported a 1100+-module SCC. The fix:
-//! reconstruct an `OwnerGraph` from the report via
-//! `OwnerGraph::from_report`, store it on the kernel, project each
-//! candidate query's class assignment back to a `Partition` whose
-//! owners point at the right synthetic `ModuleId`, and run
-//! `check_realizability` on the projection.
+//! The kernel must not reimplement the gate over the JSON
+//! `OwnerGraphReport` adjacency: a constraining-only projection drops
+//! non-constraining edges and misses asymmetric `(eager forward, lazy
+//! back)` I-cycles that the materializer catches. The current kernel
+//! reconstructs an `OwnerGraph` from the report, stores it on the
+//! kernel, and projects each candidate query's class assignment back to
+//! a `Partition` whose verdict comes from the shared realizability
+//! primitive.
 //!
 //! ## Cost of the unified gate
 //!
@@ -276,8 +271,7 @@ pub struct QuotientGraph {
     /// Reverse index for `owner_ids`: owner-id string → `OwnerIdx`.
     /// Built once at construction; `owner_ids` is never mutated after
     /// that, so this stays in sync. Backs `owner_idx_of` so callers
-    /// avoid an O(n) linear scan per lookup (hot on `peel plan-work`,
-    /// 17.6% inclusive in the 2026-05-25 callgraph profile).
+    /// avoid an O(n) linear scan per lookup in the proposer.
     owner_id_to_idx: FxHashMap<String, OwnerIdx>,
     /// Owner → current class. Dense, indexed by `OwnerIdx.0`.
     owner_to_class: Vec<ClassId>,
@@ -387,14 +381,13 @@ fn edge_weight(kind: DepKind) -> u32 {
 pub(super) struct EdgeState {
     /// Number of underlying owner edges from members of the source
     /// class to members of the target class whose
-    /// `constrains_init_order` is true. Was `class_edge_multiplicity`.
+    /// `constrains_init_order` is true.
     pub(super) constraining_count: u32,
     /// Total underlying owner edges (constraining or not) from
     /// members of the source class to members of the target class.
-    /// Always `>= constraining_count`. Was `class_weighted_edge_count`.
+    /// Always `>= constraining_count`.
     pub(super) weighted_count: u32,
-    /// Sum of `edge_weight` over all underlying owner edges. Was
-    /// `class_edge_weight`.
+    /// Sum of `edge_weight` over all underlying owner edges.
     weighted_sum: u64,
 }
 

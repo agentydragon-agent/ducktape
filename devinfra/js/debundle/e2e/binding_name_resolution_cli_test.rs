@@ -2,12 +2,10 @@
 //! resolver (`peel::resolve_binding_owners`) used by `debundle
 //! describe`, `show-source`, `cluster`, and `scc --binding`.
 //!
-//! Pins the `CLI_DOGFOOD_2026_05.md` item #3 contract: before the fix,
-//! `describe`/`show-source` only matched the minified
-//! `BindingReport.binding`, while `cluster` matched both forms. Now all
-//! verbs share one helper; both forms work, both forms produce the
-//! same owner ids, and the minified form wins on the (rare)
-//! cross-binding spell collision.
+//! Pins the `CLI_DOGFOOD.md` binding-name-resolution contract: all
+//! top-level graph/source query verbs share one helper; minified and
+//! readable forms work, both forms produce the same owner ids, and the
+//! minified form wins on the rare cross-binding spell collision.
 //!
 //! Calls the library entry points directly so the test runs in-process
 //! and doesn't depend on the built debundler binary.
@@ -209,11 +207,8 @@ fn show_source_with_binding(
 
 #[test]
 fn describe_accepts_readable_name() {
-    // CLI_DOGFOOD_2026_05.md item #3 (regression test): on devel
-    // before the fix, `describe PluginSettingsAccessor` failed with
-    // "selection did not resolve to any owner ids". After the fix the
-    // readable name resolves to the same owner the minified form
-    // already did.
+    // CLI_DOGFOOD.md contract: readable names resolve to the same
+    // owner as the minified form.
     let (_dir, common) = renamed_fixture();
     let report = explain_with_binding(common, "PluginSettingsAccessor");
     assert_eq!(report.owner_ids, vec!["owner:0"]);

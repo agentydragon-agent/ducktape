@@ -8,11 +8,11 @@ here.
 
 ## Current Surface
 
-The production planner surface is the `debundle peel plan-work`
+The production planner surface is the `debundle modules propose`
 subcommand:
 
 ```bash
-debundle peel plan-work \
+debundle modules propose \
   --graph <owner_graph.json> \
   --modules <spec-root>/modules \
   --size-cap-lines 10000 \
@@ -21,13 +21,16 @@ debundle peel plan-work \
 
 Related read-only queries:
 
-- `debundle peel units`
-- `debundle peel patch-plan`
-- `debundle peel graph-summary`
-- `debundle peel explain`
-- `debundle peel source-slice`
+- `debundle atoms`
+- `debundle coverage`
+- `debundle graph-summary`
+- `debundle describe`
+- `debundle show-source`
 
-`plan-work` is the ordered dispatch surface for authoring work. It
+Deprecated `debundle peel ...` aliases still exist, but current docs and
+scripts should use the top-level names.
+
+`modules propose` is the ordered dispatch surface for authoring work. It
 reads the emitted owner graph plus embedded atomic DAG and the current spec
 module tree, emits bounded proposal records, and leaves final names and paths
 to human or agent review. Older per-symbol queues and corpus-specific scratch
@@ -54,7 +57,7 @@ as an import from an exporting module.
 Strongly connected components of the constraining-edge graph are atomic for
 module splitting unless the analysis can refine the edge kind. `debundle run`
 emits the resulting atomic-unit condensation graph as `atomic_graph`; planner
-recommendations are a `debundle peel` projection over that DAG.
+recommendations are a top-level CLI projection over that DAG.
 
 ## What The Current Planner Covers
 
@@ -76,7 +79,7 @@ more explicit about why one proposal is better than another.
 The next planner design should extend the current command rather than
 add a parallel CLI:
 
-1. Keep `debundle peel plan-work` as the public command.
+1. Keep `debundle modules propose` as the public command.
 2. Add proposal metadata instead of inventing a second output contract.
 3. Preserve bounded JSON output for agents.
 4. Make algorithm choices explicit options only after at least two
@@ -168,7 +171,7 @@ representing as debundler-side analysis work when they recur:
 
 The practical agent architecture is:
 
-1. Run `debundle peel plan-work`.
+1. Run `debundle modules propose`.
 2. Select a bounded set of proposals.
 3. Have humans or agents assign final names and paths.
 4. Reject bad-shape proposals before YAML edits.

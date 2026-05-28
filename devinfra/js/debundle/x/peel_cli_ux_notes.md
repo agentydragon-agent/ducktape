@@ -1,11 +1,11 @@
 # Peel CLI UX Notes
 
-This note keeps generic usability follow-ups for `debundle peel` commands.
-Corpus-specific paths and owner ids belong in the consuming repo.
+This note keeps generic usability follow-ups for the top-level planner
+commands. Corpus-specific paths and owner ids belong in the consuming repo.
 
 ## Bounded Planner Output
 
-`debundle peel plan-work` is the main dispatch surface for agents and humans.
+`debundle modules propose` is the main dispatch surface for agents and humans.
 For fresh or sparse specs, output can still become hard to consume if proposal
 details and diagnostics are both large.
 
@@ -18,7 +18,7 @@ Useful follow-ups:
 
 ## Concise Explain Mode
 
-`debundle peel explain --owner-id ...` should have a compact mode focused on:
+`debundle describe --owner-id ...` should have a compact mode focused on:
 
 - selected owner identity and source span
 - atomic-unit membership
@@ -37,10 +37,10 @@ instead of assuming repository root or working directory.
 
 ## Patch Plan Naming
 
-`patch-plan` is useful for intersecting existing module YAML and binding-patch
-composition with atomic-unit coverage. It is not the only way to discover
-readable work: `units --readable-only` and `plan-work` may show graph-valid
-work even when no whole patch section is ready.
+`coverage` is useful for intersecting existing module YAML with
+atomic-unit coverage. It is not the only way to discover readable work:
+`atoms --readable-only` and `modules propose` may show graph-valid work
+even when no whole patch section is ready.
 
-Docs and skill text should avoid implying that an empty `patch-plan` means
+Docs and skill text should avoid implying that empty coverage output means
 there is no landable work.

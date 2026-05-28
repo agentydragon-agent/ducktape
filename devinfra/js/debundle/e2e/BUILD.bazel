@@ -201,9 +201,9 @@ rust_test(
 )
 
 # Realizability + atom-split gate hookup for `debundle bindings
-# assign` (CLI_DOGFOOD_2026_05.md items #1 and #2). Same fixture
-# pattern as `modules_gate_cli_test`: shell out to the built binary
-# against synthetic owner_graph.json.
+# assign` (see CLI_DOGFOOD.md). Same fixture pattern as
+# `modules_gate_cli_test`: shell out to the built binary against
+# synthetic owner_graph.json.
 rust_test(
     name = "bindings_assign_gate_cli_test",
     srcs = ["bindings_assign_gate_cli_test.rs"],

@@ -1,7 +1,7 @@
 //! End-to-end coverage of the realizability gate hookup in
 //! `debundle bindings assign` — atom-split detection and the
 //! dry-run / non-dry-run exit-code consistency contract (see
-//! `CLI_DOGFOOD_2026_05.md` items #1 and #2).
+//! `CLI_DOGFOOD.md`).
 //!
 //! Shells out to the built `debundle` binary against synthetic
 //! `owner_graph.json` fixtures so the gate's path through CLI args +
@@ -243,10 +243,9 @@ fn bindings_assign_rejects_split_under_dry_run_too() {
 
 #[test]
 fn bindings_assign_dry_run_and_apply_share_exit_code() {
-    // CLI_DOGFOOD_2026_05.md item #2: `--dry-run` and non-dry-run on
-    // the same input must return the same exit code. The atom-split
-    // fixture is a clean way to assert this — both should bail with
-    // exit 1.
+    // CLI_DOGFOOD.md contract: `--dry-run` and non-dry-run on the same
+    // input must return the same exit code. The atom-split fixture is a
+    // clean way to assert this — both should bail with exit 1.
     let dir_dry = tempfile::tempdir().unwrap();
     let (modules_dry, graph_dry) = write_atomic_unit_fixture(dir_dry.path());
     let dry = Command::new(debundle_binary())

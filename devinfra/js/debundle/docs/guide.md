@@ -370,7 +370,8 @@ Move semantics (CLI surface, not a separate feature):
   module-level `comment:` is empty/absent.
 - `modules merge` concatenates source-module comments into the target.
 
-JS emission of comments lands with #88; CLI editing is live (#89).
+CLI editing is live. Emitting comments into generated JS is future
+lowering work; until then comments live in YAML only.
 
 ## Renaming or disabling a module
 
@@ -423,8 +424,6 @@ command, not by hand-editing generated output.
 
 ## See also
 
-- `cli.md` — full command surface (shipped + planned).
+- `cli.md` — current command surface.
 - `README.md` — crate pitch, Bazel integration, `comment:` schema.
 - `design.md` — the realizability theorem the gate enforces.
-- `FACTORIZE.md` (legacy; folded into `design.md`) — owner / atomic /
-  module graph vocabulary.

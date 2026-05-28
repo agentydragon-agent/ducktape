@@ -119,18 +119,15 @@ bazelisk run @ducktape//devinfra/js/debundle:debundle -- \
 
 ## Reading Results
 
-- `modules propose` is the module-assignment proposal query (was
-  `peel plan-work`). Output is a JSON shape accepted directly by
-  `bindings assign --batch`.
-- `coverage` is the current YAML coverage query against atomic units
-  (was `peel patch-plan`).
-- `atoms` is the atomic-DAG catalog (was `peel units`).
+- `modules propose` is the module-assignment proposal query. Output is
+  a JSON shape accepted directly by `bindings assign --batch`.
+- `coverage` is the current YAML coverage query against atomic units.
+- `atoms` is the atomic-DAG catalog.
 - `graph-summary` is the quick aggregate overview.
 - `describe` is the graph walk primitive for owners, bindings, atoms,
   diagnostics, modules, and proposals. Pass the ID as a positional;
-  the renderer dispatches on the kind it detects (was `peel explain`).
-- `show-source` is the source retrieval primitive for the same IDs
-  (was `peel source-slice`).
+  the renderer dispatches on the kind it detects.
+- `show-source` is the source retrieval primitive for the same IDs.
 - `scc` / `cluster` are module-quotient queries.
 
 Prefer these commands over grepping generated output. The owner graph is
@@ -139,5 +136,5 @@ atomic DAG is the source of truth for indivisible move units. The proposal
 queue is a heuristic projection from that DAG, not a serialized fact from
 `debundle run`.
 
-`peel <…>` invocations continue to work for one release as deprecated
-aliases for the new top-level commands. Prefer the new spelling.
+`peel <...>` invocations are deprecated aliases. Prefer the top-level
+commands in all new docs, scripts, and reports.

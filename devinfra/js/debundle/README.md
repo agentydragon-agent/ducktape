@@ -6,7 +6,7 @@ drive later module extraction and naming work.
 
 ## CLI
 
-See `docs/cli.md` for the full command reference (shipped + planned).
+See `docs/cli.md` for the current command reference.
 See `docs/guide.md` for step-by-step workflows.
 
 Cheat sheet of the most-used commands:
@@ -200,8 +200,8 @@ debundle modules comment runtime/plugins --edit
 (`PluginSettingsAccessor`) names. `modules comment` takes the
 module path (`runtime/plugins`) relative to `$DEBUNDLE_MODULES`.
 
-JS emission of these comments is on the roadmap (#88); CLI editing
-is live today (#89).
+CLI editing is live today. Emitting these comments into generated JS is
+future work; until then comments live in YAML and survive spec edits.
 
 ## Conditionally-correct optimizations
 

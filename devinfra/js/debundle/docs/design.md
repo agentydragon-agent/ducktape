@@ -465,16 +465,13 @@ push a delta and read the index — not to spin up a parallel walk over
 read the verdict's owner-edge provenance, but the validity decision goes
 through the primitive only.
 
-### Peel planner unification (Track A)
+### Peel planner unification
 
-Until commit `<this-PR>`, the peel planner's `QuotientGraph` kernel
-reimplemented the gate over the JSON `OwnerGraphReport` — Tarjan over a
-constraining-only edge projection. That reimplementation dropped every
-`LazyUse` edge, so the kernel was blind to asymmetric `(eager forward,
-lazy back)` I-cycles the materializer's
-`EsmEvaluationSimulator` pass catches. The symptom in production: `peel
-plan-work` reported `0 seed_rejections` while `bazelisk build` of the
-same spec failed with a 1100+-module SCC.
+The peel planner's `QuotientGraph` kernel uses the same realizability
+primitive as the materializer. It must not reimplement the gate over a
+JSON `OwnerGraphReport` projection: a constraining-only projection drops
+`LazyUse` edges and becomes blind to asymmetric `(eager forward, lazy
+back)` I-cycles that the `EsmEvaluationSimulator` pass catches.
 
 The unified path:
 
@@ -484,13 +481,13 @@ OwnerReportIndex)` reconstructs the typed IR from the JSON wire
    lazy) with the original `DepKind`.
 2. `QuotientGraph::from_report` stashes the reconstructed `OwnerGraph`
    on the kernel.
-3. `merge_preserves_invariants` and `would_be_cycles_after_contract`
-   project the current class assignment back to a `Partition`
-   (one synthetic `ModuleId` per live class; the residual catchall
-   becomes `ModuleId::logical(0)`) and call
-   `check_realizability(&owner_graph, &partition)`. The verdict is
-   the source of truth — same function the materializer's
-   `validate_factorization` calls.
+3. `would_be_cycles_after_contract` projects the current class
+   assignment back to a `Partition` (one synthetic `ModuleId` per live
+   class; the residual catchall becomes `ModuleId::logical(0)`) and
+   calls the shared realizability primitive. The verdict is the source
+   of truth — same primitive the materializer's `validate_factorization`
+   calls. `merge_preserves_invariants` stays on the cheaper boolean path
+   and avoids diagnostic evidence generation.
 4. `cycle_set()` also runs the unified gate per call.
 
 #### Cost and the upgrade path
@@ -1215,14 +1212,12 @@ dependencies:
   spec's binding claims, run the realizability gate, lower to ESM.
   Today this lives inline in `lowering::materialize_logical_chunk`.
 
-The materializer is the composition of both. v1 (current code)
-materializes Stage A only in-memory: the composer is a single named
-call site, so future work can pull Stage A out into its own Bazel
-action with a cacheable on-disk artifact (per-concept JSON sidecars:
-`facts.json`, `owner_graph_structural.json`, `atomic_units.json`,
-`ast.json`) without touching the materializer's interior. The
-proposal at `PIPELINE_SPLIT.md` covers the planned split into
-separate cacheable Bazel actions.
+The materializer is the composition of both. Current code materializes
+Stage A in-memory through one named call site. Keep that shape: it makes
+the boundary explicit without committing the pipeline to cross-process
+fact reuse. If future work tries to cache Stage A across processes, it
+must first solve SWC hygiene replay for pre-filter facts; see
+`WIRE_FORMAT.md` and `docs/lessons_learned/cross_process_stage_b.md`.
 
 The reason to call this out: every diagnostic in §"Two classes of
 atom" lives in Stage B (it depends on the spec's quotient), but its
@@ -1864,10 +1859,11 @@ Implementation status: the realizability index now maintains rollbackable
 quotient edge buckets and validates candidate deltas with scoped push/read/undo
 over localized SCC reachability. A tested non-mutating overlay predicate exists
 as a future optimization path, but local profiling found the current
-ordered-map overlay slower than the rollback path. Dense module indexes or
-reusable visited buffers are the next likely optimization if this remains
-material. `factorize` should continue to be audited against this contract
-before large-factor output is treated as authoritative.
+ordered-map overlay slower than the rollback path. The current proposer-latency
+fix is the quotient boolean gate split; further dense-index or reusable-buffer
+work should wait for a fresh post-fix profile that makes this path material
+again. `factorize` should continue to be audited against this contract before
+large-factor output is treated as authoritative.
 
 ### Graph operations for peel tooling
 
@@ -2901,9 +2897,8 @@ stringified sequential index per top-level decl, exposes it in
 the chunk analysis output, and the gaffer spec references it.
 Replacing it:
 
-- Spec entries continue to identify bindings by `binding.name`
-  (already done) and optionally `owner.line` for drift
-  detection (already done). Both are meaningful and unambiguous
+- Spec entries identify bindings by `binding.name` and can use
+  `owner.line` for drift detection. Both are meaningful and unambiguous
   within a chunk's top-level scope.
 - The chunk analysis output continues to enumerate top-level
   decls with their `ordinal`, `name`, `kind`, `line`, etc.,
@@ -3184,9 +3179,9 @@ Tracking:
   to match. Code that disagrees with the doc is a bug — either
   in the code or in the doc. Decide which and bring them back in
   sync.
-- Add a status line under each phase as it progresses; never
-  delete completed phases — the historical record matters when
-  later questions surface ("why did we do it this way?").
+- Keep sections phrased as current contract or future design. Do not
+  accumulate completed phase logs in this canonical design doc; Git
+  history and dedicated lessons-learned notes carry historical detail.
 - Open design questions go in <#open-design-questions>. Once
   resolved, move the resolution into the body of the doc and
   delete the question.

@@ -20,7 +20,7 @@
 //!
 //! "Stage A.5" because it runs after Stage A (`compute_stage_one_analysis`)
 //! and after the partition's seed phases, but before Stage B (lowering
-//! proper). See `ARCH_REVIEW_2026_05.md` for the separation rationale.
+//! proper). See `ARCHITECTURE_BACKLOG.md` for the separation rationale.
 
 use std::collections::HashMap;
 

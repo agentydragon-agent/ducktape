@@ -114,19 +114,8 @@ Still to do:
 
 ## Materialize-stage hot-loop optimizations
 
-A 2026-05-26 profile (consumer
-`<spec>/profile_reports/2026-05-26-post-arch-cleanup/README.md`)
-moves the picture forward from the 2026-05-10 / 2026-05-20 reports.
-Headline shift: post-arch-cleanup (A–F + ChunkPlanBuilder
-extraction + overlay realizability + prepare-chunks visit fusion +
-ESM simulator kludge fix), `materialize_logical_chunk` is down
-from 41.63% Children % (2026-05-10) to **8.93%**, and the
-`build_owner_graph_report` 22.54 s hotspot is gone from the top
-hits. The per-candidate hot-loop wins (binding caches, BTreeMap →
-HashMap, typed edge IDs, realizability overlay, IR cleanup) are
-visibly landed.
-
-The current remaining plan, ordered by leverage:
+Current plan, ordered by leverage. Re-profile before implementation if
+the consumer corpus or pipeline shape has changed materially.
 
 1. **Replace the inner scan in
    `lowering::exports::trim_dead_named_specifiers`.**
@@ -141,38 +130,29 @@ spec.name))` — O(N×M) scan, with each comparison going through
    consumer names materialized once per chunk before the retain.
 
 2. **Stream / shrink `artifact::write_tree_reports`.**
-   6.42% Children %; the deepest cost is serde_json pretty-print
-   of `DirectoryManifestIndex` / `DirectoryBoundarySummary` under
-   `artifact::write_json` (2.79% Children %). Same shape as the
-   previously-tracked "compact owner_graph.json writes" item —
-   stream JSON directly to disk or shrink the on-wire shape.
+   6.42% Children %; the deepest cost is serde_json pretty-print of
+   `DirectoryManifestIndex` / `DirectoryBoundarySummary` under
+   `artifact::write_json` (2.79% Children %). Stream JSON directly to
+   disk or shrink the on-wire shape.
 
 3. **`vendor::strip::sweep_unreachable_top_level`.**
-   6.40% Children %, newly visible in the top tier. Likely
-   amenable to indexed reachability or per-chunk caching, on the
-   same theme as item 2 from the older plan
-   (reachability allocation).
+   6.40% Children % in the current profile. Likely amenable to indexed
+   reachability or per-chunk caching.
 
 4. **Use the overlay realizability fast path where hypothetical moves remain.**
    Candidate-style evaluation should use `RealizabilityIndex`'
    `verdict_after_moving_owners_touching` where possible instead of the
    rollbacking push/scope path. This avoids mutating the maintained quotient
-   during repeated what-if checks. (Carried forward from
-   2026-05-20; still applies wherever push/scope rollbacks are
-   reachable.)
+   during repeated what-if checks.
 
 5. **Keep harness emission proportional to the work.**
-   `emit_browser_harness` is at 11.15% Children % — down from
-   ~53% wall (18.78 s / 35.15 s) in the 2026-05-20 baseline. Most
-   of what remains (7.50% Children %) is `materialize_artifact_scripts`
-   → `write_tree_reports`, i.e. report writes (item 2), not the
-   harness JS emission itself. Split browser-harness generation
-   from non-browser runs where practical, and avoid recopying
-   unchanged non-JS assets.
+   Most of the remaining `emit_browser_harness` cost is
+   `materialize_artifact_scripts` → `write_tree_reports`, i.e. report
+   writes (item 2), not the harness JS emission itself. Split
+   browser-harness generation from non-browser runs where practical,
+   and avoid recopying unchanged non-JS assets.
 
-Older profile follow-ups that still apply:
-
-1. **AST visit churn in `prepare_js_chunks`.** SWC parser / lexer /
+6. **AST visit churn in `prepare_js_chunks`.** SWC parser / lexer /
    `visit_children_with` still occupy ~10–15% summed across many
    sub-2.5%-self entries (`parse_member_expr_or_new_expr_inner`
    2.19% self; `parse_subscript` 1.80%; `Expr::visit_children_with`
@@ -240,16 +220,8 @@ shapes):
   (e.g. `import { helper }` matches `export const helper = () => …`
   but not a re-export from elsewhere).
 
-Today only one residual cluster in a representative bundle
-spec sits cross-chunk (MobX wrapper bindings tracked by the non-emitting
-binding-patch stream) and that cluster is the legitimate user of the spec-side
-`purity: pure` override — genuinely-impure-but-init-safe vendor
-shape, not a pure-by-derivation chain. So Part 3 isn't load-bearing
-yet. Land if a future snapshot grows a cross-chunk pure-helper
-chain.
-
-Context: <consumer-repo notes on purity recursion>
-"Part 3 — cross-module purity" section.
+Land this only when a current corpus has a cross-chunk pure-helper chain
+that is not better modeled as an explicit author override.
 
 ## Corpus breadth
 
@@ -266,15 +238,10 @@ The naturalizer / lowerer currently mutates identifiers in place across
 several independently-discovered passes and lets every downstream consumer
 (import planning, cross-module binding lookup, fact collection,
 source-map fragment emission, export tables) read whatever name happens
-to exist when _it_ runs. PR #1627 (`object_literal_import_collapse_test`,
-fixed by e0b9c7f) and PR #1631
-(`object_literal_return_shorthand_drops_import_test`, fixed by the
-heuristic-rename reverse-lookup at
-`lowering/plan_references.rs::plan_module_reference_needs`) are both symptoms of
-the same shape: a rename happened in one layer and a downstream layer
-keyed off the wrong-era name. Each fix has been a localized defensive
-patch on the consumer side, which leaves the same trap waiting for the
-next consumer that doesn't yet know about the rename.
+to exist when _it_ runs. The problematic shape is a rename in one layer
+followed by a downstream layer keying off the wrong-era name. Localized
+defensive patches on individual consumers leave the same trap waiting
+for the next consumer that does not know about the rename.
 
 The proposed architectural fix is a single **collect → validate → execute
 (once)** rename pipeline:
@@ -304,13 +271,10 @@ priority, invariants_it_assumes)`.
   pre-rename and post-rename names consults the same finalized mapping.
 
 Direct consequence: the family of "X-layer renamed it, Y-layer didn't
-notice" bugs collapses to one architectural seam. The
-`plan_module_reference_needs` reverse-lookup that fixes #1631 becomes
-dead code (the final mapping makes both the body AST and the
-`runtime_imports` map agree on a single set of names before planning
-runs), and similarly `normalize_relative_module_specifier` from the
-#1627 fix could rejoin a normal path-building step rather than living as
-a defensive sanitizer at the usage site.
+notice" bugs collapses to one architectural boundary. Existing
+defensive reverse-lookups and path sanitizers can become ordinary
+mapping/path-building code once the final mapping makes body ASTs,
+runtime imports, and report tables agree before planning runs.
 
 Prerequisite work before designing the pipeline:
 
@@ -336,11 +300,10 @@ Prerequisite work before designing the pipeline:
    reach per-function naturalizer collection. The intent buffer should
    reject cross-scope writes by construction.
 
-4. Design must not block on landing #1631-style defensive fixes — those
-   should land case by case as they're discovered, with this TODO
-   updated to note when a defensive patch becomes architecturally
-   redundant. Removing the defensive patches is part of the
-   pipeline-landing cleanup, not the architecture work itself.
+4. Design must not block on landing small defensive fixes. Land them
+   case by case as bugs are discovered. Removing redundant defensive
+   patches is part of the pipeline-landing cleanup, not the architecture
+   work itself.
 
 Likely multiple PRs.
 
@@ -374,102 +337,9 @@ propKeyA` and `collect_naturalization_renames_from_function` says
      requires reordering the materializer to compute a final body
      order before any rename intents are submitted).
 
-## Reinvented-wheel audit findings (recorded, no immediate action)
-
-A high-level audit (see chat session
-01VmZmgJmMUXFECyQGtsrBMd, after the `ModuleQuotient` Deref-newtype
-refactor) surveyed the debundler for places where we hand-roll
-something a stdlib / petgraph / swc helper provides. Most findings
-came back "appropriate / not actually a reinvention". The ones
-below are recorded for visibility, with the explicit decision
-that they're not worth doing right now.
-
-### `ChunkTable` interner stays
-
-`ids.rs`'s `ChunkTable` maps chunk paths (`String`) → dense
-`ChunkId(usize)` handles. Superficially looks like the same shape
-as the retired `BindingTable`, but the value proposition is
-different:
-
-- `ChunkId(usize)` is `Copy`, 8 bytes — flows through ~106 sites
-  by value. Swapping to `Atom` (the `BindingName → Id` migration's
-  natural answer) loses `Copy` semantics: `Atom` is `Clone`-not-
-  `Copy` (Arc-backed), forcing `.clone()` at every handle-passing
-  site.
-- swc's `Atom` global interning is tuned for short repeated JS
-  identifiers, not 30-character file paths. The interning win
-  evaporates for the actual chunk-key shape.
-- The dense indexing is used by storage like
-  `Vec<JsChunk>`-indexed-by-`ChunkId.0` and by stable round-trip
-  ordering in `ChunkBundle.chunk_order`.
-
-Keep `ChunkTable` as-is.
-
-### `OwnerGraph` hand-rolled CSR stays
-
-`graph.rs`'s `OwnerGraph` stores `Vec<OwnerEdge>` plus
-`Vec<Vec<OwnerEdgeId>>` (out_edges / in_edges) CSR adjacency. This
-isn't directly replaceable by petgraph because the design
-intentionally carries **multiple reasons per `(from, to)` pair as
-separate edges**, deterministically sorted by
-`(from, to, reason.kind, statement_ordinal, binding)` for stable
-report output. petgraph's `DiGraph`/`DiGraphMap` would force a
-single edge per pair or push the multi-reason list into a single
-edge weight (which is what `ModuleQuotient` does at the quotient
-level, where dedup is wanted). Keep the owner-level CSR.
-
-### `LazyBoundary` + `lazy_visit_*` helpers stay
-
-`facts.rs`'s `LazyBoundary` trait and `descend_lazy` /
-`lazy_visit_function` / `lazy_visit_class_member` family aren't a
-reinvention of `swc_ecma_visit::Visit` — they're a layer **on top
-of** `Visit` that lets the collector track lazy vs eager scope
-context (function bodies, class instance fields, getter/setter
-bodies) without each visitor re-implementing the boundary logic.
-The visitor merge (#1671) already collapsed the per-collector
-boilerplate to one shared collector that uses the helpers; no
-further win available without a generic-walker macro that wouldn't
-read cleaner than the current shape.
-
-### Manual `VisitMut` impls in `lowering/` stay
-
-`IdentifierRenamer`, `RenameAndShorthandNaturalizer`,
-`ShorthandNaturalizer`, etc. each implement custom `VisitMut`
-visitors. These are domain-specific transformations swc doesn't
-expose — the right use of swc's `VisitMut` trait, not a wheel
-reinvention.
-
-### Dense-int newtypes stay
-
-`OwnerId`, `OwnerEdgeId`, `StatementOrdinal`, `LogicalModuleIndex`,
-`ModuleId`, `ChunkId` are all `pub struct Foo(pub usize)` newtypes.
-Crates like `typed_index_collections` / `slotmap` would provide
-marginal type-system safety on `Vec` indexing, at the cost of a
-dep + per-storage-site conversion. Plain newtypes are standard
-compiler-IR practice; keep.
-
-### String-based ID round-tripping (`"owner:N"`, `"logical:N"`) stays
-
-`reports.rs`'s `owner_key` / `module_key` / `module_id_from_key`
-serialize typed IDs to human-readable strings for JSON reports
-and parse them back. Reasonable for the
-serialization-boundary use; not gymnastics.
-
-### `HashMap` + post-hoc `sort()` patterns
-
-~40 sites collect into a `HashMap` / `Vec` and `.sort()` for
-deterministic output. `BTreeMap` / `IndexMap` would eliminate
-the sort at the cost of slightly different iteration semantics.
-Most sites are one-shot init / report generation (not hot path);
-worth converting a few specific report-generation sites to
-`BTreeMap` for semantic clarity (the sorted order is the point,
-not an afterthought), but no urgent action.
-
 ## CLI gaps found while surveying real specs
 
-Rough edges hit during a real-corpus survey (2026-05-26, the real-corpus
-web spec via the new top-level CLI). Each is a small `bindings ...` /
-`modules ...` addition; nothing structural.
+Current small `bindings ...` / `modules ...` gaps; nothing structural.
 
 - **`modules list --empty` shows every empty module, including ones
   preserved by a `comment:`.** The actually-actionable subset is
@@ -483,11 +353,3 @@ web spec via the new top-level CLI). Each is a small `bindings ...` /
   An optional `--with-anonymous` flag exposing that count alongside
   `member_count` would let `debundle modules list --residual --with-anonymous`
   surface the residual sentinel's anonymous-statement drift over time.
-- ~~**No `debundle cycles ...` namespace.**~~ Shipped as
-  `debundle gate {list,describe,cut}` (the unit is the blocking SCC,
-  not a cycle — a single SCC can carry exponentially many simple
-  cycles, so the CLI exposes the cut as a primitive but deliberately
-  not a `cycle list`). `cycles.json` is now the trimmed wire shape
-  `[{id, modules, cut}]`; `describe <id>` re-derives the per-edge
-  evidence on demand from `owner_graph.json` + the SCC's module set,
-  matching the per-rejection stderr summary the gate emits today.
