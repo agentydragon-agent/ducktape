@@ -296,7 +296,14 @@ mounts `<X />`. Move `X` into that consumer's YAML.
 
 Each `anonymous_statements:` entry accepts an optional `comment:`
 **or** `note:` field — both are `Option<String>`, both are
-preserved on round-trip, and neither is consumed by the resolver.
+preserved on round-trip. The materializer resolves statements from
+`match:` and does not consume these fields; graph-only CLI checks such
+as `coverage` and edit-gate dry-runs use an `owner:<id>` token in
+`note:` or `comment:` when present so they can account for anonymous
+owners without re-reading source files. If an unhinted anonymous
+statement is needed to classify an atom, those graph-only checks fail
+with an explicit incomplete-loader error instead of treating the owner
+as residual.
 Prefer `comment:` (a YAML block scalar) for multi-line prose
 explaining what the side-effecting statement does and why it
 belongs to this module; `note:` is fine for a one-line label.

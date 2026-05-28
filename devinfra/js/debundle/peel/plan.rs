@@ -22,7 +22,7 @@ use analysis::{
 };
 use spec_modules::{
     collect_module_files, default_binding_patches_path, load_binding_patch_members,
-    module_path_from_file, read_module_file,
+    module_path_from_file, read_module_claims, read_module_file,
 };
 
 #[derive(Debug, ClapArgs)]
@@ -1002,6 +1002,8 @@ fn patch_plan_rows(
     factorize: Option<&PeelFactorizeReport>,
 ) -> Result<Vec<PatchPlanRow>> {
     let binding_to_owner = binding_to_owner(graph);
+    let graph_owner_ids: BTreeSet<String> =
+        graph.nodes.iter().map(|node| node.id.clone()).collect();
     let unit_by_owner = unit_by_owner(graph);
     let unit_by_id: BTreeMap<String, &AtomicUnitReport> = graph
         .atomic_graph
@@ -1023,6 +1025,17 @@ fn patch_plan_rows(
                     requested_owner_ids.insert(owner_id.clone());
                 } else {
                     unknown_binding_ids.push(binding.clone());
+                }
+            }
+            for owner_id in &patch_set.anonymous_owner_ids {
+                if graph_owner_ids.contains(owner_id) {
+                    requested_owner_ids.insert(owner_id.clone());
+                } else {
+                    bail!(
+                        "module {} claims anonymous statement owner id {owner_id:?}, \
+                         but that owner does not exist in the owner graph",
+                        patch_set.path,
+                    );
                 }
             }
 
@@ -1073,6 +1086,23 @@ fn patch_plan_rows(
                     );
                 }
             }
+            if !missing_anonymous_owner_ids.is_empty()
+                && patch_set.unresolved_anonymous_statement_count > 0
+            {
+                bail!(
+                    "module {} has {} anonymous_statements entr{} without an owner:<id> note/comment, \
+                     and coverage needs those anonymous owners to classify atomic unit(s) {}; \
+                     graph-only CLI coverage cannot resolve anonymous statement selectors from source",
+                    patch_set.path,
+                    patch_set.unresolved_anonymous_statement_count,
+                    if patch_set.unresolved_anonymous_statement_count == 1 {
+                        "y"
+                    } else {
+                        "ies"
+                    },
+                    split_unit_ids.join(", "),
+                );
+            }
             let status = if !split_unit_ids.is_empty() {
                 PatchPlanStatus::SplitUnits
             } else if !unknown_binding_ids.is_empty() {
@@ -1105,6 +1135,8 @@ struct PatchSet {
     path: String,
     file: PathBuf,
     bindings: BTreeSet<String>,
+    anonymous_owner_ids: BTreeSet<String>,
+    unresolved_anonymous_statement_count: usize,
 }
 
 fn load_patch_sets(modules_root: &Path) -> Result<Vec<PatchSet>> {
@@ -1119,21 +1151,21 @@ fn load_patch_sets(modules_root: &Path) -> Result<Vec<PatchSet>> {
             path: "binding_patches".to_string(),
             file: binding_patches_path,
             bindings: patch_bindings,
+            anonymous_owner_ids: BTreeSet::new(),
+            unresolved_anonymous_statement_count: 0,
         });
     }
     for file in collect_module_files(modules_root)? {
-        let bindings = read_module_file(&file)?
-            .members
-            .into_iter()
-            .map(|member| member.selector.binding.name)
-            .collect::<BTreeSet<_>>();
-        if bindings.is_empty() {
+        let claims = read_module_claims(&file)?;
+        if !claims.has_resolved_claims() {
             continue;
         }
         sets.push(PatchSet {
             path: module_path_from_file(&file, modules_root),
             file,
-            bindings,
+            bindings: claims.bindings,
+            anonymous_owner_ids: claims.anonymous_owner_ids,
+            unresolved_anonymous_statement_count: claims.unresolved_anonymous_statement_count,
         });
     }
     Ok(sets)

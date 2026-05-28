@@ -13,6 +13,7 @@ use analysis::{
     OwnerGraphEdgeReport, OwnerGraphNodeReport, OwnerGraphQuotientReport, OwnerGraphReport, Purity,
     QuotientSccReport, SourceLocation, StatementKind, StatementOrdinal,
 };
+use peel::plan::PatchPlanStatus;
 use peel::{
     CommonArgs, ExplainArgs, GraphSummaryArgs, PatchPlanArgs, PlanWorkArgs, SelectionArgs,
     SourceSliceArgs, UnitsArgs, run_explain_report, run_graph_summary_report,
@@ -55,6 +56,22 @@ fn owner(id: &str, ordinal: usize, binding: &str, export: &str) -> OwnerGraphNod
         }),
         declared_bindings: vec![member(binding, export)],
         statement_kind: StatementKind::VarDecl,
+        purity: Purity::Pure,
+        destination: module_ref("logical:residual", true),
+    }
+}
+
+fn anonymous_owner(id: &str, ordinal: usize) -> OwnerGraphNodeReport {
+    OwnerGraphNodeReport {
+        id: id.to_string(),
+        statement_ordinal: StatementOrdinal(ordinal),
+        source_location: Some(SourceLocation {
+            source_path: "static/index.js".to_string(),
+            start_line: ordinal + 1,
+            end_line: ordinal + 1,
+        }),
+        declared_bindings: Vec::new(),
+        statement_kind: StatementKind::SideEffect,
         purity: Purity::Pure,
         destination: module_ref("logical:residual", true),
     }
@@ -127,6 +144,72 @@ fn fixture() -> (TempDir, CommonArgs) {
     )
 }
 
+fn fixture_with_anonymous_statement_claim() -> (TempDir, CommonArgs) {
+    let dir = TempDir::new().unwrap();
+    let graph_path = dir.path().join("owner_graph.json");
+    let modules_root = dir.path().join("spec/modules");
+    let class_owner = owner("owner:0", 1, "Co", "SearchPopoverState");
+    let decorator_owner = anonymous_owner("owner:1", 2);
+    let report = OwnerGraphReport {
+        chunk_id: "static/index".to_string(),
+        nodes: vec![class_owner, decorator_owner],
+        edges: vec![OwnerGraphEdgeReport {
+            id: "edge:0".to_string(),
+            source: "owner:1".to_string(),
+            target: "owner:0".to_string(),
+            edge_kind: DepKind::LocalEffect,
+            binding: Some("Co".into()),
+            statement_ordinal: StatementOrdinal(2),
+            constrains_init_order: true,
+            role: None,
+        }],
+        quotient: OwnerGraphQuotientReport {
+            nodes: Vec::new(),
+            edges: Vec::new(),
+            sccs: Vec::<QuotientSccReport>::new(),
+        },
+        atomic_graph: AtomicGraphReport {
+            nodes: vec![AtomicUnitReport {
+                id: "atomic:0".to_string(),
+                owner_ids: vec!["owner:0".to_string(), "owner:1".to_string()],
+                members: vec![member("Co", "SearchPopoverState")],
+                anonymous_statement_owner_ids: vec!["owner:1".to_string()],
+                destinations: vec![module_ref("logical:residual", true)],
+                causes: vec![DepKind::LocalEffect],
+                size_lines_estimate: 2,
+                source_line_range: Some([2, 3]),
+                ordinal_span: 1,
+            }],
+            edges: Vec::new(),
+        },
+    };
+    write(&graph_path, &serde_json::to_string(&report).unwrap());
+    write(
+        &modules_root.join("features/search/popover_state.yaml"),
+        r#"members:
+  - name: SearchPopoverState
+    selector:
+      binding:
+        name: Co
+        kind: class_declaration
+anonymous_statements:
+  - match: 'Ro([Z], Co.prototype, "visible", 2);'
+    note: "owner:1 - @observable visible on Co."
+"#,
+    );
+    write(
+        &dir.path().join("static/index.js"),
+        "class Co {}\nRo([Z], Co.prototype, \"visible\", 2);\n",
+    );
+    (
+        dir,
+        CommonArgs {
+            owner_graph_path: graph_path,
+            modules_root,
+        },
+    )
+}
+
 #[test]
 fn atoms_lists_units() {
     let (_dir, common) = fixture();
@@ -162,6 +245,27 @@ fn coverage_reports_summary() {
             .iter()
             .all(|row| row.matching_proposal_ids.is_none())
     );
+}
+
+#[test]
+fn coverage_counts_anonymous_statement_owner_notes_as_claims() {
+    let (_dir, common) = fixture_with_anonymous_statement_claim();
+    let report = run_patch_plan_report(&PatchPlanArgs {
+        common,
+        limit: 0,
+        include_proposals: false,
+        format: None,
+    })
+    .unwrap();
+
+    assert_eq!(report.summary.total_patch_sets, 1);
+    assert_eq!(report.summary.complete_patch_sets, 1);
+    assert_eq!(report.summary.split_patch_sets, 0);
+    let row = &report.rows[0];
+    assert_eq!(row.path, "features/search/popover_state");
+    assert_eq!(row.status, PatchPlanStatus::CompleteUnits);
+    assert_eq!(row.complete_unit_ids, vec!["atomic:0"]);
+    assert!(row.missing_anonymous_owner_ids.is_empty());
 }
 
 #[test]

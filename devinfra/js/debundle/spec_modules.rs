@@ -45,6 +45,31 @@ pub struct BindingPatchesFile {
     pub members: Vec<Member>,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ModuleClaims {
+    pub bindings: BTreeSet<String>,
+    pub anonymous_owner_ids: BTreeSet<String>,
+    pub unresolved_anonymous_statement_count: usize,
+}
+
+impl ModuleClaims {
+    pub fn is_empty(&self) -> bool {
+        self.bindings.is_empty()
+            && self.anonymous_owner_ids.is_empty()
+            && self.unresolved_anonymous_statement_count == 0
+    }
+
+    pub fn has_resolved_claims(&self) -> bool {
+        !self.bindings.is_empty() || !self.anonymous_owner_ids.is_empty()
+    }
+
+    pub fn extend(&mut self, other: ModuleClaims) {
+        self.bindings.extend(other.bindings);
+        self.anonymous_owner_ids.extend(other.anonymous_owner_ids);
+        self.unresolved_anonymous_statement_count += other.unresolved_anonymous_statement_count;
+    }
+}
+
 pub fn is_module_yaml(path: &Path) -> bool {
     path.file_name()
         .and_then(|name| name.to_str())
@@ -103,6 +128,50 @@ pub fn read_binding_patches_file(path: &Path) -> Result<BindingPatchesFile> {
         &fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?,
     )
     .with_context(|| format!("parsing {}", path.display()))
+}
+
+pub fn module_claims(module: ModuleFile) -> ModuleClaims {
+    let mut claims = ModuleClaims::default();
+    for member in module.members {
+        claims.bindings.insert(member.selector.binding.name);
+    }
+    for statement in module.anonymous_statements {
+        match anonymous_statement_owner_id(&statement) {
+            Some(owner_id) => {
+                claims.anonymous_owner_ids.insert(owner_id);
+            }
+            None => {
+                claims.unresolved_anonymous_statement_count += 1;
+            }
+        }
+    }
+    claims
+}
+
+pub fn read_module_claims(path: &Path) -> Result<ModuleClaims> {
+    if !is_module_yaml(path) {
+        return Ok(ModuleClaims::default());
+    }
+    Ok(module_claims(read_module_file(path)?))
+}
+
+pub fn anonymous_statement_owner_id(statement: &AnonymousStatement) -> Option<String> {
+    statement
+        .note
+        .as_deref()
+        .and_then(extract_owner_id)
+        .or_else(|| statement.comment.as_deref().and_then(extract_owner_id))
+}
+
+fn extract_owner_id(text: &str) -> Option<String> {
+    let start = text.find("owner:")?;
+    let owner = &text[start..];
+    let end = owner
+        .char_indices()
+        .find(|(_, ch)| !matches!(ch, 'a'..='z' | 'A'..='Z' | '0'..='9' | ':' | '_' | '-'))
+        .map(|(idx, _)| idx)
+        .unwrap_or(owner.len());
+    Some(owner[..end].to_string())
 }
 
 pub fn load_binding_patch_members(modules_root: &Path) -> Result<Vec<Member>> {
@@ -216,6 +285,34 @@ mod tests {
         let module = read_module_file(&path).unwrap();
         assert_eq!(module.members.len(), 1);
         assert_eq!(module.members[0].selector.binding.name, "a");
+    }
+
+    #[test]
+    fn read_module_claims_includes_anonymous_owner_notes() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("x.yaml");
+        fs::write(
+            &path,
+            r#"members:
+  - selector: { binding: { name: Co } }
+anonymous_statements:
+  - match: 'decorate(Co);'
+    note: "owner:42 - decorator on Co"
+  - match: 'register(Co);'
+    comment: |
+      owner:43 registration side effect
+  - match: 'unlabeled();'
+"#,
+        )
+        .unwrap();
+
+        let claims = read_module_claims(&path).unwrap();
+        assert_eq!(claims.bindings, BTreeSet::from(["Co".to_string()]));
+        assert_eq!(
+            claims.anonymous_owner_ids,
+            BTreeSet::from(["owner:42".to_string(), "owner:43".to_string()])
+        );
+        assert_eq!(claims.unresolved_anonymous_statement_count, 1);
     }
 
     #[test]

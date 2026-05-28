@@ -15,7 +15,8 @@
 //!    `docs/design.md` §"Two classes of atom").
 //!
 //! Both checks share the same `PostEditSpec` view: a list of surviving
-//! module paths, each with the binding names it declares. Each verb
+//! module paths, each with the binding names and anonymous owner ids
+//! it declares. Each verb
 //! builds its own `PostEditSpec` (`post_merge_spec`,
 //! `post_delete_spec`, `post_assign_spec`) and then calls
 //! `gate_post_edit_partition` which is the single entry point
@@ -36,17 +37,24 @@ use analysis::{
     render_cycle_summary, validate_factorization,
 };
 use anyhow::{Context, Result, bail};
-use spec_modules::{collect_module_files, is_module_yaml, read_module_file};
+use spec_modules::{ModuleClaims, collect_module_files, is_module_yaml, read_module_claims};
+
+#[derive(Debug, Clone)]
+pub struct PostEditModule {
+    pub path: PathBuf,
+    pub claims: ModuleClaims,
+}
 
 /// Simulated post-edit spec state — one entry per surviving module,
-/// each listing the binding names declared by its `members:` array.
+/// each listing the owner claims declared by its `members:` and
+/// `anonymous_statements:` arrays.
 /// `modules` is keyed by absolute YAML path so the gate's
 /// module-id assignment is deterministic across runs.
 #[derive(Debug, Clone)]
 pub struct PostEditSpec {
     /// Surviving module YAML paths (absolute), each with the set of
-    /// binding names it declares after the edit.
-    pub modules: Vec<(PathBuf, BTreeSet<String>)>,
+    /// binding/anonymous owner claims it declares after the edit.
+    pub modules: Vec<PostEditModule>,
 }
 
 /// Build the post-merge spec view in memory without touching the
@@ -58,21 +66,21 @@ pub fn post_merge_spec(
     source_abs: &[PathBuf],
 ) -> Result<PostEditSpec> {
     let removed: BTreeSet<PathBuf> = source_abs.iter().cloned().collect();
-    let mut modules: Vec<(PathBuf, BTreeSet<String>)> = Vec::new();
+    let mut modules: Vec<PostEditModule> = Vec::new();
     for file in collect_module_files(modules_root)? {
         if removed.contains(&file) {
             continue;
         }
-        let bindings = if file == target_abs {
-            let mut combined = read_member_bindings(&file)?;
+        let claims = if file == target_abs {
+            let mut combined = read_gate_claims(&file)?;
             for src in source_abs {
-                combined.extend(read_member_bindings(src)?);
+                combined.extend(read_gate_claims(src)?);
             }
             combined
         } else {
-            read_member_bindings(&file)?
+            read_gate_claims(&file)?
         };
-        modules.push((file, bindings));
+        modules.push(PostEditModule { path: file, claims });
     }
     Ok(PostEditSpec { modules })
 }
@@ -83,12 +91,15 @@ pub fn post_merge_spec(
 /// residual).
 pub fn post_delete_spec(modules_root: &Path, deleted_abs: &[PathBuf]) -> Result<PostEditSpec> {
     let removed: BTreeSet<PathBuf> = deleted_abs.iter().cloned().collect();
-    let mut modules: Vec<(PathBuf, BTreeSet<String>)> = Vec::new();
+    let mut modules: Vec<PostEditModule> = Vec::new();
     for file in collect_module_files(modules_root)? {
         if removed.contains(&file) {
             continue;
         }
-        modules.push((file.clone(), read_member_bindings(&file)?));
+        modules.push(PostEditModule {
+            path: file.clone(),
+            claims: read_gate_claims(&file)?,
+        });
     }
     Ok(PostEditSpec { modules })
 }
@@ -108,21 +119,22 @@ pub fn post_unassign_spec(
     modules_root: &Path,
     removals: &[(PathBuf, String)],
 ) -> Result<PostEditSpec> {
-    let mut by_path: std::collections::BTreeMap<PathBuf, BTreeSet<String>> = Default::default();
+    let mut by_path: std::collections::BTreeMap<PathBuf, ModuleClaims> = Default::default();
     for file in collect_module_files(modules_root)? {
-        by_path.insert(file.clone(), read_member_bindings(&file)?);
+        by_path.insert(file.clone(), read_gate_claims(&file)?);
     }
     for (path, name) in removals {
-        if let Some(set) = by_path.get_mut(path) {
-            set.remove(name);
+        if let Some(claims) = by_path.get_mut(path) {
+            claims.bindings.remove(name);
         }
     }
-    let modules: Vec<(PathBuf, BTreeSet<String>)> = by_path
+    let modules: Vec<PostEditModule> = by_path
         .into_iter()
         // Drained modules drop out of the gate's view — the writer
         // path deletes them on apply, so the gate should run against
         // the same module set the post-write spec will have.
-        .filter(|(_, s)| !s.is_empty())
+        .filter(|(_, claims)| !claims.is_empty())
+        .map(|(path, claims)| PostEditModule { path, claims })
         .collect();
     Ok(PostEditSpec { modules })
 }
@@ -144,46 +156,40 @@ pub fn post_assign_spec(
     removals: &[(PathBuf, String)],
     insertions: &[(PathBuf, String)],
 ) -> Result<PostEditSpec> {
-    let mut by_path: std::collections::BTreeMap<PathBuf, BTreeSet<String>> = Default::default();
+    let mut by_path: std::collections::BTreeMap<PathBuf, ModuleClaims> = Default::default();
     for file in collect_module_files(modules_root)? {
-        by_path.insert(file.clone(), read_member_bindings(&file)?);
+        by_path.insert(file.clone(), read_gate_claims(&file)?);
     }
     for (path, name) in removals {
-        if let Some(set) = by_path.get_mut(path) {
-            set.remove(name);
+        if let Some(claims) = by_path.get_mut(path) {
+            claims.bindings.remove(name);
         }
     }
     for (path, name) in insertions {
         by_path
             .entry(path.clone())
             .or_default()
+            .bindings
             .insert(name.clone());
     }
-    let modules: Vec<(PathBuf, BTreeSet<String>)> = by_path
+    let modules: Vec<PostEditModule> = by_path
         .into_iter()
         // Drained modules drop out of the gate's view — the writer
         // path deletes them on apply, so the gate should run against
         // the same module set the post-write spec will have.
-        .filter(|(_, s)| !s.is_empty())
+        .filter(|(_, claims)| !claims.is_empty())
+        .map(|(path, claims)| PostEditModule { path, claims })
         .collect();
     Ok(PostEditSpec { modules })
 }
 
-/// Parse a spec module YAML and return the set of `members[].selector.binding.name`
-/// values it declares. Unparseable members are skipped (the gate
-/// tolerates author noise so its rejection signal is "the partition
-/// is unrealizable", not "your YAML is malformed").
-pub fn read_member_bindings(path: &Path) -> Result<BTreeSet<String>> {
+/// Parse a spec module YAML and return the owner claims its
+/// `members:` and `anonymous_statements:` entries declare.
+pub fn read_gate_claims(path: &Path) -> Result<ModuleClaims> {
     if !is_module_yaml(path) {
-        return Ok(BTreeSet::new());
+        return Ok(ModuleClaims::default());
     }
-    let module =
-        read_module_file(path).with_context(|| format!("reading module {}", path.display()))?;
-    let mut names: BTreeSet<String> = BTreeSet::new();
-    for member in module.members {
-        names.insert(member.selector.binding.name);
-    }
-    Ok(names)
+    read_module_claims(path).with_context(|| format!("reading module {}", path.display()))
 }
 
 /// Reconstruct the `OwnerGraph` from `owner_graph_path`, build the
@@ -216,8 +222,10 @@ pub fn gate_post_edit_partition(owner_graph_path: &Path, post_spec: &PostEditSpe
     // wins — the materializer's spec validator catches that
     // separately as a duplicate-binding diagnostic.
     let mut owner_by_binding_name: HashMap<String, OwnerId> = HashMap::new();
+    let mut owner_by_id: HashMap<String, OwnerId> = HashMap::new();
     for (idx, node) in owner_graph_report.nodes.iter().enumerate() {
         let owner = OwnerId(idx);
+        owner_by_id.insert(node.id.clone(), owner);
         for b in &node.declared_bindings {
             owner_by_binding_name
                 .entry(b.binding.to_string())
@@ -235,14 +243,29 @@ pub fn gate_post_edit_partition(owner_graph_path: &Path, post_spec: &PostEditSpe
     let mut module_label_by_id: HashMap<ModuleId, String> =
         [(residual, "<residual>".to_string())].into_iter().collect();
     let mut next_idx = 1usize;
-    for (path, bindings) in &post_spec.modules {
+    let unresolved_anonymous_statement_count: usize = post_spec
+        .modules
+        .iter()
+        .map(|module| module.claims.unresolved_anonymous_statement_count)
+        .sum();
+    for module in &post_spec.modules {
         let mid = ModuleId::logical(next_idx);
         next_idx += 1;
-        module_label_by_id.insert(mid, path.to_string_lossy().into_owned());
-        for name in bindings {
+        module_label_by_id.insert(mid, module.path.to_string_lossy().into_owned());
+        for name in &module.claims.bindings {
             if let Some(&owner) = owner_by_binding_name.get(name) {
                 of[owner.0] = mid;
             }
+        }
+        for owner_id in &module.claims.anonymous_owner_ids {
+            let Some(&owner) = owner_by_id.get(owner_id) else {
+                bail!(
+                    "module {} claims anonymous statement owner id {owner_id:?}, \
+                     but that owner does not exist in the owner graph",
+                    module.path.display(),
+                );
+            };
+            of[owner.0] = mid;
         }
     }
     let partition = Partition::from_assignments(of, residual);
@@ -263,6 +286,21 @@ pub fn gate_post_edit_partition(owner_graph_path: &Path, post_spec: &PostEditSpe
     let atomic_conflicts =
         detect_atomic_unit_conflicts(&atomic_units, &partition, &owner_graph_report);
     if !atomic_conflicts.is_empty() {
+        if unresolved_anonymous_statement_count > 0
+            && conflicts_contain_residual_anonymous_owner(&atomic_conflicts, residual)
+        {
+            bail!(
+                "post-edit spec has {} anonymous_statements entr{} without an owner:<id> note/comment, \
+                 and the edit gate needs those anonymous owners to classify an atomic unit; \
+                 graph-only CLI edit gate cannot resolve anonymous statement selectors from source",
+                unresolved_anonymous_statement_count,
+                if unresolved_anonymous_statement_count == 1 {
+                    "y"
+                } else {
+                    "ies"
+                },
+            );
+        }
         let summary = render_atomic_unit_conflict_summary(&atomic_conflicts, &module_name);
         eprintln!("error: post-edit spec splits one or more atomic units:\n{summary}");
         bail!("realizability gate rejected the edit (atom-split)");
@@ -346,4 +384,121 @@ fn detect_atomic_unit_conflicts(
         });
     }
     conflicts
+}
+
+fn conflicts_contain_residual_anonymous_owner(
+    conflicts: &[AtomicUnitConflict],
+    residual: ModuleId,
+) -> bool {
+    conflicts.iter().any(|conflict| {
+        conflict
+            .claims
+            .iter()
+            .any(|claim| claim.module == residual && claim.binding_names.is_empty())
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use analysis::{
+        AtomicGraphReport, BindingReport, DepKind, ModuleReportRef, OwnerGraphEdgeReport,
+        OwnerGraphNodeReport, OwnerGraphQuotientReport, Purity, QuotientSccReport, SourceLocation,
+        StatementKind, StatementOrdinal,
+    };
+    use tempfile::TempDir;
+
+    use super::*;
+
+    fn module_ref(id: &str, residual: bool) -> ModuleReportRef {
+        ModuleReportRef {
+            id: id.to_string(),
+            label: id.to_string(),
+            residual,
+            index: None,
+            target_file: (!residual).then(|| id.to_string()),
+        }
+    }
+
+    fn owner(id: &str, ordinal: usize, bindings: Vec<BindingReport>) -> OwnerGraphNodeReport {
+        OwnerGraphNodeReport {
+            id: id.to_string(),
+            statement_ordinal: StatementOrdinal(ordinal),
+            source_location: Some(SourceLocation {
+                source_path: "static/index.js".to_string(),
+                start_line: ordinal + 1,
+                end_line: ordinal + 1,
+            }),
+            statement_kind: if bindings.is_empty() {
+                StatementKind::SideEffect
+            } else {
+                StatementKind::ClassDecl
+            },
+            declared_bindings: bindings,
+            purity: Purity::Pure,
+            destination: module_ref("logical:residual", true),
+        }
+    }
+
+    fn write(path: &Path, body: &str) {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
+        fs::write(path, body).unwrap();
+    }
+
+    #[test]
+    fn edit_gate_counts_anonymous_statement_owner_notes_as_claims() {
+        let temp = TempDir::new().unwrap();
+        let graph_path = temp.path().join("owner_graph.json");
+        let modules_root = temp.path().join("spec/modules");
+        let class_owner = owner(
+            "owner:0",
+            1,
+            vec![BindingReport {
+                binding: "Co".into(),
+                export_name: "SearchPopoverState".into(),
+            }],
+        );
+        let decorator_owner = owner("owner:1", 2, Vec::new());
+        let graph = OwnerGraphReport {
+            chunk_id: "static/index".to_string(),
+            nodes: vec![class_owner, decorator_owner],
+            edges: vec![OwnerGraphEdgeReport {
+                id: "edge:0".to_string(),
+                source: "owner:1".to_string(),
+                target: "owner:0".to_string(),
+                edge_kind: DepKind::LocalEffect,
+                binding: Some("Co".into()),
+                statement_ordinal: StatementOrdinal(2),
+                constrains_init_order: true,
+                role: None,
+            }],
+            quotient: OwnerGraphQuotientReport {
+                nodes: Vec::new(),
+                edges: Vec::new(),
+                sccs: Vec::<QuotientSccReport>::new(),
+            },
+            atomic_graph: AtomicGraphReport {
+                nodes: Vec::new(),
+                edges: Vec::new(),
+            },
+        };
+        write(&graph_path, &serde_json::to_string(&graph).unwrap());
+        write(
+            &modules_root.join("features/search/popover_state.yaml"),
+            r#"members:
+  - selector:
+      binding:
+        name: Co
+anonymous_statements:
+  - match: 'Ro([Z], Co.prototype, "visible", 2);'
+    note: "owner:1 - @observable visible on Co."
+"#,
+        );
+
+        let post_spec = post_delete_spec(&modules_root, &[]).unwrap();
+        gate_post_edit_partition(&graph_path, &post_spec).unwrap();
+    }
 }
