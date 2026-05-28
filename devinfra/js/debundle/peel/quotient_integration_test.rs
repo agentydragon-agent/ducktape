@@ -1394,6 +1394,56 @@ fn incremental_index_matches_rebuild_on_synthetic_specs() {
 }
 
 #[test]
+fn boolean_merge_gate_matches_diagnostic_cycle_gate() {
+    // The greedy hot path only needs a yes/no answer, while
+    // `would_be_cycles_after_contract` materializes diagnostic
+    // evidence. Keep the verdicts equivalent on precondition-clean
+    // merges, including the important case where merging endpoints
+    // of an intermediate path would create a new multi-class SCC.
+    use peel::quotient::ClassId;
+
+    let a = active_owner("owner:a", 1, &["BindingA"], 10, "ui/a");
+    let h = active_owner("owner:h", 2, &["BindingH"], 10, "ui/h");
+    let b = active_owner("owner:b", 3, &["BindingB"], 10, "ui/b");
+    let report = graph_of(
+        vec![a.clone(), h.clone(), b.clone()],
+        vec![
+            owner_edge("edge:0", "owner:a", "owner:h", DepKind::EagerUse, true),
+            owner_edge("edge:1", "owner:h", "owner:b", DepKind::EagerUse, true),
+        ],
+        vec![
+            atomic_unit_for("atomic:0", &[&a]),
+            atomic_unit_for("atomic:1", &[&h]),
+            atomic_unit_for("atomic:2", &[&b]),
+        ],
+        vec![],
+    );
+    let groups = vec![
+        make_module_group("ui/a", vec![0]),
+        make_module_group("ui/h", vec![1]),
+        make_module_group("ui/b", vec![2]),
+    ];
+    let (mut q, _) = QuotientGraph::from_report_with_partition_extended(&report, 10_000, &groups);
+
+    for (left, right, expected_preserves) in [
+        (ClassId(0), ClassId(1), true),
+        (ClassId(1), ClassId(2), true),
+        (ClassId(0), ClassId(2), false),
+    ] {
+        let diagnostic_preserves = q.would_be_cycles_after_contract(left, right).is_none();
+        let boolean_preserves = q.merge_preserves_invariants(left, right);
+        assert_eq!(
+            diagnostic_preserves, expected_preserves,
+            "unexpected diagnostic verdict for ({left:?}, {right:?})",
+        );
+        assert_eq!(
+            boolean_preserves, diagnostic_preserves,
+            "boolean hot path diverged from diagnostic verdict for ({left:?}, {right:?})",
+        );
+    }
+}
+
+#[test]
 fn greedy_on_gaffer_chunk_completes_under_one_minute() {
     // Benchmark: real owner_graph.json from a recent gaffer cache.
     // The fixture is pointed at via GAFFER_OWNER_GRAPH; absence

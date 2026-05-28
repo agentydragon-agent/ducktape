@@ -707,11 +707,13 @@ impl QuotientGraph {
     ///    a merge — see the plan's "Why merges don't create cycles"
     ///    — but checked defensively against future gate clauses).
     ///
-    /// State mutation: the persistent realizability index sees a
-    /// scoped push/undo for the cycle-clause check, so the index's
-    /// committed partition is restored byte-equally on return.
+    /// State mutation: this hot boolean path does not materialize
+    /// diagnostic evidence, so the persistent realizability index is
+    /// not touched. `would_be_cycles_after_contract` remains the
+    /// diagnostic path and performs scoped push/undo work when it
+    /// needs owner-level cycle evidence.
     pub fn merge_preserves_invariants(&mut self, c1: ClassId, c2: ClassId) -> bool {
-        self.check_merge(c1, c2).is_ok()
+        self.check_merge_boolean(c1, c2)
     }
 
     /// Diagnostic: what cycles would the merge create or surface?
@@ -976,6 +978,29 @@ impl QuotientGraph {
     }
 
     fn check_merge(&mut self, c1: ClassId, c2: ClassId) -> Result<(), ContractRejected> {
+        self.check_merge_preconditions(c1, c2)?;
+        if let Some(cycle) = self.would_be_cycles_after_contract(c1, c2) {
+            return Err(ContractRejected::WouldCreateCycle { cycle });
+        }
+        Ok(())
+    }
+
+    /// Hot-path boolean gate used by the greedy candidate loop.
+    ///
+    /// This deliberately avoids `would_be_cycles_after_contract`'s
+    /// evidence materialization. On large corpora, most rejected
+    /// candidates only need a yes/no answer; constructing
+    /// `CycleEvidence` routes through the full realizability verdict,
+    /// simulator, and owner-module diagnostic translation. Keep that
+    /// work on the cold diagnostics path.
+    fn check_merge_boolean(&mut self, c1: ClassId, c2: ClassId) -> bool {
+        if self.check_merge_preconditions(c1, c2).is_err() {
+            return false;
+        }
+        !self.would_violate_cycle_gate_after_contract(c1, c2)
+    }
+
+    fn check_merge_preconditions(&self, c1: ClassId, c2: ClassId) -> Result<(), ContractRejected> {
         if c1 == c2 {
             return Err(ContractRejected::SameClass);
         }
@@ -998,10 +1023,39 @@ impl QuotientGraph {
                 cap: self.cap_lines,
             });
         }
-        if let Some(cycle) = self.would_be_cycles_after_contract(c1, c2) {
-            return Err(ContractRejected::WouldCreateCycle { cycle });
-        }
         Ok(())
+    }
+
+    /// Boolean twin of `would_be_cycles_after_contract`.
+    ///
+    /// The detailed method exists for diagnostics and has to translate
+    /// owner/module evidence when rejecting. This method preserves the
+    /// same yes/no decision while staying on the cheap class graph
+    /// path used by the candidate-pop loop.
+    fn would_violate_cycle_gate_after_contract(&mut self, c1: ClassId, c2: ClassId) -> bool {
+        if c1 == c2 {
+            return false;
+        }
+        let (probe, other) = match (
+            self.class_to_cycle_indices.get(&c1),
+            self.class_to_cycle_indices.get(&c2),
+        ) {
+            (Some(a), Some(b)) => {
+                if a.len() <= b.len() {
+                    (a, c2)
+                } else {
+                    (b, c1)
+                }
+            }
+            _ => (&Vec::new() as &Vec<usize>, c2),
+        };
+        for &idx in probe {
+            let cycle = &self.cached_cycles[idx];
+            if cycle.classes.contains(&other) && cycle.classes.len() > 2 {
+                return true;
+            }
+        }
+        self.merge_creates_new_constraining_cycle(c1, c2)
     }
 
     /// Project the kernel's current class assignment back to an
@@ -1018,7 +1072,6 @@ impl QuotientGraph {
     /// The optional `overlay` argument lets the caller ask "what if
     /// I contracted `(a, b)` first?" — class `b` is projected as if
     /// it had already been absorbed into `a`. Used by
-    /// `merge_preserves_invariants` and
     /// `would_be_cycles_after_contract` to ask the gate about a
     /// hypothetical post-merge state without mutating the kernel.
     pub fn project_partition_for_tests(&self) -> Partition {

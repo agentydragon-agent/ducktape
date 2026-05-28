@@ -15,16 +15,18 @@ shadow-Tarjan measurements.
 ## Problem
 
 `OverlayGraphView::scc_containing(to)` (in
-`devinfra/js/debundle/realizability.rs`) is the single biggest known
-cost in `modules propose`. Direct instrumentation on tana `78d928dca7`:
+`devinfra/js/debundle/realizability.rs`) is a real hot slice in
+`modules propose`, but the full PR #1710 counters show the broader
+candidate gate is the better optimization boundary. Direct
+instrumentation on tana `78d928dca7`:
 
-| Metric                 | Value      |
-| ---------------------- | ---------- |
-| `scc_containing` calls | 4380       |
-| ... overlay-empty      | 0          |
-| ... overlay-non-empty  | 4380       |
-| Cumulative wall        | **9.82 s** |
-| Per-call avg           | 2.24 ms    |
+| Metric                 | Value       |
+| ---------------------- | ----------- |
+| `scc_containing` calls | 4380        |
+| ... overlay-empty      | 0           |
+| ... overlay-non-empty  | 4380        |
+| Cumulative wall        | **10.13 s** |
+| Per-call avg           | 2.31 ms     |
 
 That's ~22% of the 46 s `modules propose` wall.
 
@@ -43,8 +45,54 @@ in the **full module graph** (median 2407 nodes / 11204 edges).
 | base SCCs          | 175 |    879 |   879 |  6385 |  705.77 |
 | condensation edges | 294 |   1234 |  1234 |  9717 | 1050.10 |
 
-Base Tarjan: 132 rebuilds × 3.69 ms = **0.49 s total**. Amortization
+Base Tarjan: 132 rebuilds × 3.72 ms = **0.49 s total**. Amortization
 ratio: 4380 queries / 132 rebuilds = **33:1**.
+
+### Gate / simulator / diagnostic counters
+
+| Metric                         |       Value |
+| ------------------------------ | ----------: |
+| `verdict_touching` calls       |        2190 |
+| ... overlay calls              |        2190 |
+| ... realizable                 |           0 |
+| ... rejected                   |        2190 |
+| I-SCC with constraining pair   |        2190 |
+| simulator requests             |        2192 |
+| ... structural no-op           |           2 |
+| ... structural changed         |        2190 |
+| base simulator rebuilds        |           2 |
+| base simulator rebuild wall    |      0.076s |
+| overlay simulator rebuilds     |        2190 |
+| overlay simulator rebuild wall | **21.572s** |
+| overlay simulator avg          |     9.85 ms |
+| diagnostic translations        |        2191 |
+| ... active                     |        2191 |
+| ... bypassed                   |           0 |
+
+Every candidate reaching the overlay verdict path rejected in this run,
+but the current path still rebuilt the overlay simulator and translated
+diagnostics for almost every candidate. That makes the class-aware
+boolean fast path more attractive than an SCC-only implementation:
+avoid constructing full `RealizabilityVerdict` / `CycleEvidence` and
+avoid rebuilding simulator inputs on rejected candidates unless the
+boolean path actually needs that work.
+
+The first quotient-level split proved that diagnosis: after moving
+`merge_preserves_invariants` to a boolean class-graph path while
+leaving `would_be_cycles_after_contract` as the evidence path, the same
+proposer output remained byte-identical (93 proposals), while
+`scc_containing` calls dropped 4380→10 and overlay simulator rebuilds
+dropped 2190→5. That means SCC-only work is now a follow-up only if
+fresh profiles show it still matters.
+
+Diagnostic translation shape:
+
+| Stat                              |  min | median |  p95 |  max |    mean |
+| --------------------------------- | ---: | -----: | ---: | ---: | ------: |
+| constraining SCC size             |    2 |      3 |    3 |   23 |    3.16 |
+| I-SCC size                        | 1524 |   1557 | 1585 | 2711 | 1557.43 |
+| diagnostic owner_modules count    | 9709 |   9709 | 9709 | 9709 | 9709.00 |
+| diagnostic unrealizable SCC count |    0 |      2 |    2 |    2 |    2.00 |
 
 ### Per-query overlay shape
 
@@ -241,7 +289,7 @@ fn scc_containing(&self, to: ModuleId) -> BTreeSet<ModuleId> {
 
 What V2 avoids:
 
-1. **Per-push module Tarjan rebuild.** V1: 132 × 3.69 ms = 0.49 s.
+1. **Per-push module Tarjan rebuild.** V1: 132 × 3.72 ms = 0.49 s.
    V2: zero. The owner-SCC index is static.
 2. **Per-query clone of the condensation map.** V1: 4380 × ~5 µs = 22 ms.
    V2: a small per-query diff (~7 owners).
@@ -260,10 +308,10 @@ What V2 avoids:
 | Per-query overlay diff      | O(\|overlay\|) ≈ 7 µs                   | 4380        | ~30 ms     |
 | Per-query bidirectional BFS | O(\|reach of `to`\|) ≈ 10–30 µs typical | 4380        | ~44–130 ms |
 | Per-query materialize       | O(\|SCC of `to`\|) ≈ 10 µs              | 4380        | ~44 ms     |
-| **Total replacing 9.82 s**  |                                         |             | **~0.2 s** |
+| **Total replacing 10.13 s** |                                         |             | **~0.2 s** |
 
 Predicted **~50× speedup** on `scc_containing` cumulative time;
-**~9.6 s off the 46 s proposer wall**.
+**~9.9 s off the 46 s proposer wall**.
 
 The number is uncertain — typical reach in the module quotient on
 tana is unmeasured. Plausible range based on the median condensation
@@ -903,8 +951,9 @@ V2 also needs:
 
 1. **Scope creep.** A class-aware gate touches `QuotientGraph`,
    `RealizabilityIndex`, simulator inputs, and diagnostic translation.
-   Do it only after V1.5/V2 measurements show the SCC-only path has
-   stopped paying.
+   The PR #1710 numbers justify starting with the smallest broad-gate
+   slice: a boolean candidate check that short-circuits before
+   I-SCC/simulator/diagnostic work when Pass 1 already rejects.
 2. **Diagnostic drift.** A boolean fast path is easy to make correct;
    lazy evidence is where output drift can hide. Keep the current
    verdict translation as an oracle until byte-identical diagnostics
@@ -929,24 +978,37 @@ Recommended order of decisions:
    `c4341ae2f`). Extend them as cheap always-on counts/histograms;
    `DEBUNDLE_TIMING=1` should only turn on reporting, wall-clock
    timings, and shadow-oracle traversals.
-2. Choose the implementation boundary that actually looks best after
-   reading the current code: V1.5, V2, or the broader class-aware gate.
-   Prefer the faster steady-state design when the complexity is
-   tractable.
-3. If choosing V1.5, implement the targeted-condensation path:
+2. First implement the cheapest boolean candidate-gate split at the
+   current `QuotientGraph` boundary:
+   - keep `merge_preserves_invariants` on a boolean class-graph path;
+   - keep `would_be_cycles_after_contract` as the diagnostic/evidence
+     path;
+   - keep full verdict translation as the oracle path for diagnostics.
+3. Require byte-identical `modules propose --format json` on tana
+   against the previous full-evidence behavior, then benchmark with
+   `DEBUNDLE_TIMING=1`.
+4. If simulator/diagnostic work remains hot outside the quotient
+   cycle gate, broaden the boolean query into `RealizabilityIndex`:
+   - check cross-rebinds and constraining SCC before I-SCC/simulator;
+   - return a boolean to the greedy candidate-pop loop;
+   - build/run the simulator only after cheaper gates cannot decide.
+5. If SCC lookup remains hot after that, choose V1.5, V2, or the full
+   class-aware gate based on the new counter report. Prefer the faster
+   steady-state design when the complexity is tractable.
+6. If choosing V1.5, implement the targeted-condensation path:
    - add condensation adjacency (`out` / `in`) to `BaseSnapshot`;
    - add `ProjectedOverlay` with aggregated condensation deltas,
      synthetic singleton endpoint handling, and conservative fallback
      on base-internal edge removals;
    - replace clone+Tarjan with targeted forward/reverse reachability;
    - keep full DFS as the correctness fallback.
-4. If choosing V2 directly, maintain `owner_sccs_per_module`, not
+7. If choosing V2 directly, maintain `owner_sccs_per_module`, not
    `owners_per_module`, and use V1.5/full-DFS only as rollout
    fallbacks or test oracles if they help.
-5. If choosing the class-aware gate directly, start with a boolean
+8. If choosing the class-aware gate directly, start with a boolean
    fast path plus diagnostic-oracle tests, then pull evidence
    translation and simulator input ownership across the boundary.
-6. Add counters appropriate to the chosen boundary. Bench-gate: if
+9. Add counters appropriate to the chosen boundary. Bench-gate: if
    wall delta from current head is < 3 s averaged across 5 interleaved
    rounds, stop and report; do not ship a flat-wall fix.
 
