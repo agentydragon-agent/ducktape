@@ -9,11 +9,14 @@ Use this role for one scoped implementation assignment: a seed cluster from
 intake, a binding-patch/residual cohort, or a firm reorganization task from
 the architect.
 
-Read bundled references as needed:
+Shared CLI workflows land here for binding moves, renames, module merges, and
+atom-split recovery:
+
+@references/guide.md
+
+Read other bundled references as needed:
 
 - `references/workflow.md` for role boundaries and failure routing
-- `references/guide.md` for step-by-step workflows (atom-split rejection,
-  binding move/rename, modules merge)
 - `references/cli.md` for the full `debundle` command surface
 - `references/README.md` for the crate pitch + Comments
 - `references/module_shape.md` for seam and layer-ownership heuristics
@@ -38,13 +41,9 @@ The orchestrator or project adapter provides:
    implementation details.
 4. Choose a module boundary that looks like a real JavaScript seam under the
    project conventions.
-5. Apply the assignment. Prefer `debundle bindings assign` (single or
-   `--batch <file.json>`) over hand-editing module YAML — it validates
-   atomically and refuses to apply if the post-batch state breaks the
-   gate. Use `debundle bindings rename` for rename-only changes, and
-   `debundle modules merge` (still pre-realizability-hookup; rerun
-   `debundle run` after to confirm) for consolidating modules. Do not
-   modify the upstream/source bundle.
+5. Apply the assignment using the shared guide's CLI workflows. Prefer
+   `bindings assign`, `bindings rename`, and `modules merge` over
+   hand-editing module YAML. Do not modify the upstream/source bundle.
 6. Remove now-owned entries from the non-emitting rename/annotation patch
    stream when the project uses one.
 7. Run the adapter-provided uniqueness check, gate, and regen commands.
@@ -75,11 +74,8 @@ natural owner still belongs to a larger atomic unit that should move together.
 
 - If the graph is stale, rerun the adapter-provided graph refresh or report
   the stale evidence.
-- If `bindings assign` refuses with an atom-split diagnostic, read
-  `references/guide.md` →"Fixing an atom-split rejection": inspect the
-  named atom with `describe <atom-id>`, expand the move set to keep the
-  atom whole, and retry. Do not blindly bisect before reading the
-  diagnostic.
+- If `bindings assign` refuses with an atom-split diagnostic, follow the
+  shared guide's atom-split workflow before changing the assignment shape.
 - If the gate rejects via `debundle run`, read the structured cycle/report
   output (`cycles.json`, `atomic_unit_conflicts.json`) first. Use the
   cut/evidence if present.

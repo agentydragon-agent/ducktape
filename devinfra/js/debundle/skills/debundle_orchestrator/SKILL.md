@@ -8,10 +8,14 @@ description: Coordinate a generic AI-driven debundling loop across intake, lane 
 Use this role to keep an AI-driven debundling loop moving. The orchestrator
 routes work between specialist roles and owns project-adapter details.
 
-Read bundled references as needed:
+Shared CLI workflows land here so planner, intake, and worker routing use the
+same command semantics:
+
+@references/guide.md
+
+Read other bundled references as needed:
 
 - `references/workflow.md` for the shared multi-agent workflow
-- `references/guide.md` for step-by-step workflows
 - `references/cli.md` for the full `debundle` command surface
 - `references/README.md` for the crate pitch + Bazel integration + Comments
 - `references/module_shape.md` for when to route to architect or lane workers

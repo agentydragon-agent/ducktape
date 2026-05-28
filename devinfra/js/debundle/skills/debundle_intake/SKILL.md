@@ -8,10 +8,13 @@ description: Turn `debundle modules propose` output into named, dispatchable see
 Use this role after `debundle_plan_work` has produced planner output. Intake
 translates certified structural proposals into work packets for lane workers.
 
-Read bundled references as needed:
+Shared CLI workflows land here so proposal/batch semantics stay in one place:
+
+@references/guide.md
+
+Read other bundled references as needed:
 
 - `references/workflow.md` for handoffs and scratch-state conventions
-- `references/guide.md` for step-by-step workflows
 - `references/cli.md` for the full `debundle` command surface
 - `references/README.md` for the crate pitch + Comments
 - `references/module_shape.md` for destination and cohesion heuristics
@@ -72,11 +75,10 @@ Write `<scratch>/seeds.json`:
 ]
 ```
 
-For workers consuming this directly via `debundle bindings assign --batch`,
-pass only binding-only fresh/extension proposal rows, or re-shape them to
-`{sym, module, readable?}` when adding readable names. `merge_into` and
-`anonymous_statement_owner_ids` rows need `modules merge` or manual YAML; see
-`references/cli.md` §"Batch atomicity".
+For workers consuming seeds via `debundle bindings assign --batch`, pass only
+binding-only fresh/extension proposal rows, or re-shape them to
+`{sym, module, readable?}` when adding readable names. The shared guide covers
+the rejected proposal shapes.
 
 Sort seeds by:
 
