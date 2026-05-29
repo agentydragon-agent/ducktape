@@ -29,8 +29,8 @@ export function RolloutResultsSkeleton() {
 
 export function StatCardsSkeleton() {
   return (
-    <div className="grid gap-3 sm:grid-cols-3">
-      {Array.from({ length: 3 }, (_, i) => (
+    <div className="grid gap-3 sm:grid-cols-2">
+      {Array.from({ length: 2 }, (_, i) => (
         <div key={i} className="augur-card p-4">
           <Skeleton className="mb-2 h-3 w-32" />
           <Skeleton className="h-8 w-28" />

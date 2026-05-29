@@ -355,7 +355,7 @@ function ProductProjectionWorkspace({ bootstrap, deployment }) {
               {runError && <div className="augur-note-danger p-4 text-sm">Product projection failed: {runError}</div>}
 
               {result ? (
-                <div className="grid gap-3 sm:grid-cols-3">
+                <div className="grid gap-3 sm:grid-cols-2">
                   <div className="augur-card p-4">
                     <div className="augur-eyebrow">Median terminal {selectedMetric.label.toLowerCase()}</div>
                     <div className="mt-2 text-2xl font-semibold augur-tabular">
@@ -367,10 +367,6 @@ function ProductProjectionWorkspace({ bootstrap, deployment }) {
                     <div className="mt-2 text-2xl font-semibold augur-tabular">
                       {fmtNumber(failedCount)} / {fmtNumber(request.rolloutSeeds.length)}
                     </div>
-                  </div>
-                  <div className="augur-card p-4">
-                    <div className="augur-eyebrow">Exogenous model</div>
-                    <div className="mt-2 text-sm font-semibold augur-tabular">{result.exogenousModelId}</div>
                   </div>
                 </div>
               ) : (
