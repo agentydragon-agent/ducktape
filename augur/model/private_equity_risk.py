@@ -45,6 +45,14 @@ class PrivateEquityRiskIssuerConfig(FrozenModel):
     tender_price_log_discount_sigma: float = Field(default=0.08, ge=0.0)
     tender_sale_capacity_alpha: float = Field(default=10.0, gt=0.0)
     tender_sale_capacity_beta: float = Field(default=1.0, gt=0.0)
+    # Probability that a scheduled tender precursor event is canceled before
+    # reaching execution. The realization-risk plan distinguishes the tender
+    # opportunity arising (LogNormal-scheduled precursor) from the tender
+    # actually executing; cancellation is the gap. Plan [HEURISTIC] baseline
+    # 0.08 for normal/neutral macro; macro-state-dependent cancellation is not
+    # yet modeled. Independent of the suspension/terminal-state blockers,
+    # which deterministically prevent execution.
+    tender_cancellation_probability: float = Field(default=0.0, ge=0.0, le=1.0)
     admin_mark_update_interval_months_median: float = Field(default=0.0, ge=0.0)
     admin_mark_update_interval_log_sigma: float = Field(default=0.5, ge=0.0)
     admin_mark_update_log_noise_mu: float = 0.0
@@ -213,7 +221,10 @@ def _sample_issuer(
     # seeded by the hash of all per-rollout event seeds; vectorization gives up the
     # original property that rollout R's draws depend only on its own seed.
     event_rng = np.random.default_rng(_seed_from_rollout_seeds(event_seeds))
-    tender_mask = _sample_event_month_mask_vectorized(
+    # Tender-precursor schedule. The precursor event firing is necessary but not
+    # sufficient for an actual tender — execution is gated below by the
+    # cancellation draw and by the eligibility mask (terminal/suspended state).
+    tender_scheduled_mask = _sample_event_month_mask_vectorized(
         median_months=issuer.tender_interval_months_median,
         log_sigma=issuer.tender_interval_log_sigma,
         rng=event_rng,
@@ -238,6 +249,7 @@ def _sample_issuer(
     u_legal_severe_mechanism = event_rng.random((rollout_count, horizon_months))
     u_suspension = event_rng.random((rollout_count, horizon_months))
     u_forced_sale = event_rng.random((rollout_count, horizon_months))
+    u_tender_cancellation = event_rng.random((rollout_count, horizon_months))
 
     monthly_public = _monthly_probability(issuer.annual_public_market_probability)
     monthly_suspension = _monthly_probability(issuer.annual_liquidity_suspension_probability)
@@ -454,8 +466,12 @@ def _sample_issuer(
                 fires |= branch
                 eligible &= ~branch
 
-            # Branch 7: tender (deterministic schedule, gated by eligibility).
-            branch = eligible & tender_mask[:, t]
+            # Branch 7: tender. A tender executes only when the scheduled precursor
+            # fires AND the cancellation draw misses AND no blocker preempted the
+            # month (eligibility already rules out terminal/suspended state).
+            tender_precursor_fires = tender_scheduled_mask[:, t]
+            tender_canceled = u_tender_cancellation[:, u_idx] < issuer.tender_cancellation_probability
+            branch = eligible & tender_precursor_fires & ~tender_canceled
             if branch.any():
                 event_kind_code[branch, t] = int(PrivateEquityEventKindCode.TENDER)
                 tender_events[branch, t] = True
