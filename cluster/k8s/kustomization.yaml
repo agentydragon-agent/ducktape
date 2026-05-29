@@ -291,8 +291,6 @@ resources:
 
   # --- standalone applications ---
   - buildbuddy-executor/flux-kustomization.yaml
-  - gecko/namespace/flux-kustomization.yaml
-  - gecko/app/flux-kustomization.yaml
   - website/flux-kustomization.yaml
 
   # --- cpap-sync ---
