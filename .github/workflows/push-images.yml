@@ -2,9 +2,9 @@
 #
 # For each image in the matrix:
 #
-#   1. Optionally run tests (`test_target`). A failing test skips this
-#      image's push but does not fail the matrix job — other images keep
-#      pushing. (Same continue-on-error semantics as before the rewrite.)
+#   1. Optionally run tests (`test_target`). A failing test fails this
+#      matrix job loudly and skips the push for this image. Other matrix
+#      entries are unaffected (`fail-fast: false`).
 #
 #   2. `bb remote build <image>.digest --remote_download_outputs=toplevel`
 #      downloads only the ~70-byte sibling `.json.sha256` digest file that
@@ -139,7 +139,6 @@ jobs:
         with:
           args: test ${{ matrix.test_target }}
           rbe_image: ${{ inputs.rbe_image }}
-        continue-on-error: true
 
       - name: Resolve image output paths
         if: steps.test.outcome == 'success' || steps.test.outcome == 'skipped'
