@@ -118,6 +118,10 @@ sudo nixos-rebuild switch --flake github:agentydragon/ducktape?ref=devel#gecko
   request timeouts. GitHub-hosted runners can upload the 5.6 GiB bootstrap qcow2
   slowly, and Envoy's default stream timeouts cut multipart PUT request bodies
   before SeaweedFS can finish reading each part.
+- The dedicated public S3 gateway is sized above the default tiny SeaweedFS
+  sidecar footprint, and the CI workflow limits AWS CLI multipart uploads to two
+  64MiB parts at a time. The default AWS CLI concurrency can overwhelm the
+  public Gateway/S3 path enough that clients close part uploads mid-body.
 - The first manual spike created `vm-images-s3-credentials` directly and was
   removed. The paved path is SOPS -> Flux -> Kubernetes Secret -> ExternalSecret
   rendered gateway config.

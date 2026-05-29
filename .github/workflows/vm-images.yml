@@ -76,7 +76,7 @@ jobs:
         shell: bash
         run: nix profile install nixpkgs#awscli2
 
-      - name: Configure S3 path-style addressing
+      - name: Configure S3 transfer settings
         if: steps.credentials.outputs.present == 'true'
         shell: bash
         run: |
@@ -85,8 +85,12 @@ jobs:
           cat > ~/.aws/config <<'EOF'
           [default]
           region = us-east-1
+          cli_connect_timeout = 60
+          cli_read_timeout = 3600
           s3 =
               addressing_style = path
+              max_concurrent_requests = 2
+              multipart_chunksize = 64MB
           EOF
 
       - name: Build image
