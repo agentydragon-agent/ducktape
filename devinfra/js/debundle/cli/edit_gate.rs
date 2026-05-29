@@ -399,23 +399,14 @@ mod tests {
     use std::fs;
 
     use analysis::{
-        AtomicGraphReport, BindingReport, DepKind, ModuleReportRef, OwnerGraphEdgeReport,
-        OwnerGraphNodeReport, OwnerGraphQuotientReport, Purity, QuotientSccReport, SourceLocation,
-        StatementKind, StatementOrdinal,
+        AtomicGraphReport, BindingReport, DepKind, OwnerGraphEdgeReport, OwnerGraphNodeReport,
+        OwnerGraphQuotientReport, Purity, QuotientSccReport, SourceLocation, StatementKind,
+        StatementOrdinal,
     };
+    use report_fixtures::{module_ref, module_table};
     use tempfile::TempDir;
 
     use super::*;
-
-    fn module_ref(id: &str, residual: bool) -> ModuleReportRef {
-        ModuleReportRef {
-            id: id.to_string(),
-            label: id.to_string(),
-            residual,
-            index: None,
-            target_file: (!residual).then(|| id.to_string()),
-        }
-    }
 
     fn owner(id: &str, ordinal: usize, bindings: Vec<BindingReport>) -> OwnerGraphNodeReport {
         OwnerGraphNodeReport {
@@ -433,7 +424,7 @@ mod tests {
             },
             declared_bindings: bindings,
             purity: Purity::Pure,
-            destination: module_ref("logical:residual", true),
+            destination: module_ref("residual"),
         }
     }
 
@@ -465,9 +456,11 @@ Ro([Z], Co.prototype, "visible", 2);
             }],
         );
         let decorator_owner = owner("owner:1", 2, Vec::new());
+        let nodes = vec![class_owner, decorator_owner];
+        let module_nodes = module_table(nodes.iter().map(|n| &n.destination));
         let graph = OwnerGraphReport {
             chunk_id: "static/index".to_string(),
-            nodes: vec![class_owner, decorator_owner],
+            nodes,
             edges: vec![OwnerGraphEdgeReport {
                 id: "edge:0".to_string(),
                 source: "owner:1".to_string(),
@@ -479,7 +472,7 @@ Ro([Z], Co.prototype, "visible", 2);
                 role: None,
             }],
             quotient: OwnerGraphQuotientReport {
-                nodes: Vec::new(),
+                nodes: module_nodes,
                 edges: Vec::new(),
                 sccs: Vec::<QuotientSccReport>::new(),
             },

@@ -126,6 +126,7 @@ rust_test(
         ":support",
         "//devinfra/js/debundle:analysis",
         "//devinfra/js/debundle:peel",
+        "//devinfra/js/debundle:spec",
         "@crates//:serde",
         "@crates//:serde_json",
         "@rules_rust//tools/runfiles",
@@ -147,6 +148,7 @@ rust_test(
         ":support",
         "//devinfra/js/debundle:analysis",
         "//devinfra/js/debundle:peel",
+        "//devinfra/js/debundle:spec",
         "@crates//:serde",
         "@crates//:serde_json",
         "@rules_rust//tools/runfiles",
@@ -257,6 +259,8 @@ rust_test(
     deps = [
         "//devinfra/js/debundle:analysis",
         "//devinfra/js/debundle:peel",
+        "//devinfra/js/debundle:report_fixtures",
+        "//devinfra/js/debundle:spec",
         "@crates//:serde_json",
         "@crates//:tempfile",
     ],
@@ -345,6 +349,8 @@ rust_test(
     deps = [
         "//devinfra/js/debundle:analysis",
         "//devinfra/js/debundle:peel",
+        "//devinfra/js/debundle:report_fixtures",
+        "//devinfra/js/debundle:spec",
         "@crates//:serde_json",
         "@crates//:tempfile",
     ],

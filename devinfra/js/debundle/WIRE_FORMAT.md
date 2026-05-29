@@ -90,6 +90,51 @@ let global = (atom_from_wire, SyntaxContext::empty());
 let top_level = top_level_id(atom_from_wire, mark_b);
 ```
 
+## Convention: one canonical module identity (`ModulePath`)
+
+A logical module has exactly one identity: `spec::ModulePath`, the
+chunk-relative path the module emits to, in canonical form —
+**relative, slash-separated, lowercase** (`domains/system/ids`). The
+on-disk spec file (`modules/domains/system/ids.yaml`), the module
+table's `path`, and the active-claim lookup all denote a module by
+this same value.
+
+`ModulePath::parse` is the only constructor: it strips a leading
+`"<chunk_id>::"` (the in-process `LogicalModule.id` spelling minted in
+`lowering/plans.rs`), lowercases, and normalizes separators. Two
+spellings of one module therefore collapse to a single value, so `==`
+is an honest identity test — this is what makes the peel factorizer's
+self-merge bug structurally impossible.
+
+The internal array handle `ModuleId(LogicalModuleIndex)` is an
+in-process index for O(1) lookups; it is distinct from `ModulePath` and
+is not the public identity.
+
+## Convention: interned module references + a single module table
+
+Module identity is **interned** on the wire. `owner_graph.json` (a.k.a.
+`module_graph`) carries exactly one module table — `module_graph.nodes`,
+a list of `ModuleEntry { key, path, residual }` — and the table is the
+**single source of truth** for each module's path and residual flag.
+Everything that points at a module carries only the interned
+`ModuleKey` (`"logical:N"`):
+
+| Field                                     | Type          |
+| ----------------------------------------- | ------------- |
+| `nodes[].destination`                     | `ModuleKey`   |
+| `module_graph.nodes[]`                    | `ModuleEntry` |
+| `module_graph.edges[].source` / `.target` | `ModuleKey`   |
+| `module_graph.sccs[].modules[]`           | `ModuleKey`   |
+| `atomic_graph.nodes[].destinations[]`     | `ModuleKey`   |
+
+There is no second encoding of a module: a reference is a key, the path
+and residual flag live once in the table, and a consumer resolves a key
+via `OwnerGraphReport::module(key)` / `is_residual(key)`. The former
+`ModuleReportRef { id, label, residual, index, target_file }` — which
+spelled one identity five ways — and the parallel `sccs[].labels` are
+gone. Residual-ness is read from the table's authoritative `residual`
+flag, never inferred from a key string.
+
 ## Related documents
 
 - `docs/design.md` §"Two classes of atom" — the realizability theorem

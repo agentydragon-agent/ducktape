@@ -1722,13 +1722,7 @@ mod edge_role_wire_format_tests {
             declared_bindings: Vec::new(),
             statement_kind: StatementKind::VarDecl,
             purity: Purity::Pure,
-            destination: crate::ModuleReportRef {
-                id: "logical:0".to_string(),
-                label: String::new(),
-                residual: true,
-                index: None,
-                target_file: None,
-            },
+            destination: crate::ModuleKey("residual".to_string()),
         }
     }
 
@@ -1939,13 +1933,7 @@ mod declared_round_trip_tests {
                     .collect(),
                 statement_kind: n.kind,
                 purity: n.purity.clone(),
-                destination: crate::ModuleReportRef {
-                    id: "logical:0".to_string(),
-                    label: String::new(),
-                    residual: false,
-                    index: None,
-                    target_file: None,
-                },
+                destination: crate::ModuleKey("m".to_string()),
             })
             .collect();
         let edges: Vec<OwnerGraphEdgeReport> = owner_graph
@@ -1984,7 +1972,7 @@ mod declared_round_trip_tests {
             // semantic test below sees a non-trivial partition.
             let dest = ModuleId(LogicalModuleIndex(idx % 2));
             for id in &node.declared {
-                bindings.insert(id.clone(), BindingKind::Owned { owner: dest });
+                bindings.insert(id.clone(), BindingKind::Owned { module: dest });
             }
         }
         let logical_modules = vec![

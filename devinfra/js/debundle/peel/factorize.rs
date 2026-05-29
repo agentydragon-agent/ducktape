@@ -50,6 +50,7 @@ use analysis::{
     PeelCandidateStatus, StatementKind,
 };
 use anonymous_resolution::addressable_anonymous_statement_owner_ids;
+use spec::ModulePath;
 use spec_modules::load_active_claims;
 
 use crate::quotient::{
@@ -232,7 +233,7 @@ pub fn analyze_peel_factorize(options: &PeelFactorizeOptions) -> Result<PeelFact
 
 pub fn factorize(
     graph: &OwnerGraphReport,
-    active_claims: &BTreeMap<String, String>,
+    active_claims: &BTreeMap<String, ModulePath>,
     size_cap_lines: usize,
 ) -> PeelFactorizeReport {
     factorize_with_context(
@@ -250,7 +251,7 @@ struct FactorizeContext {
 
 fn factorize_with_context(
     graph: &OwnerGraphReport,
-    active_claims: &BTreeMap<String, String>,
+    active_claims: &BTreeMap<String, ModulePath>,
     size_cap_lines: usize,
     context: FactorizeContext,
 ) -> PeelFactorizeReport {
@@ -265,19 +266,19 @@ fn factorize_with_context(
         .nodes
         .iter()
         .enumerate()
-        .filter(|(_, node)| node.destination.residual)
+        .filter(|(_, node)| graph.is_residual(&node.destination))
         .map(|(i, _)| i)
         .collect();
 
-    let owner_to_active_module: HashMap<usize, String> = graph
+    let owner_to_active_module: HashMap<usize, ModulePath> = graph
         .nodes
         .iter()
         .enumerate()
         .filter_map(|(i, node)| {
-            if node.destination.residual {
+            if graph.is_residual(&node.destination) {
                 return None;
             }
-            Some((i, active_module_label(node, active_claims, &graph.chunk_id)))
+            Some((i, active_module_label(node, active_claims, graph)))
         })
         .collect();
 
@@ -304,7 +305,7 @@ fn factorize_with_context(
     // semantics; non-residual edges are part of the spec module's
     // internal initialization, not relevant to peel proposals).
     let mut residual_constraining_edges: Vec<(usize, usize)> = Vec::new();
-    let mut edges_to_active: Vec<(usize, String)> = Vec::new();
+    let mut edges_to_active: Vec<(usize, ModulePath)> = Vec::new();
     for edge in &graph.edges {
         if !edge.constrains_init_order {
             continue;
@@ -329,7 +330,7 @@ fn factorize_with_context(
     // active-claimed owners surviving in each class; if a class
     // contains owners from two distinct active modules, the labels
     // are collected and surfaced as a `merge_into` later.
-    let mut class_to_labels: BTreeMap<ClassId, BTreeSet<String>> = BTreeMap::new();
+    let mut class_to_labels: BTreeMap<ClassId, BTreeSet<ModulePath>> = BTreeMap::new();
     for (idx, _) in graph.nodes.iter().enumerate() {
         let Some(label) = owner_to_active_module.get(&idx) else {
             continue;
@@ -364,54 +365,51 @@ fn factorize_with_context(
     }
 }
 
+/// The canonical [`ModulePath`] an owner's destination resolves to.
+///
+/// A claimed binding resolves via `active_claims` (the spec authority).
+/// Otherwise the destination's canonical path comes straight from the
+/// module table — a single source of truth, already normalized, so no
+/// chunk-prefix stripping or fallback chain is needed and two owners of
+/// one module can never disagree (the former self-merge bug). A
+/// destination key absent from the table is a malformed report we
+/// surface by panicking rather than inventing an identity.
 fn active_module_label(
     node: &OwnerGraphNodeReport,
-    active_claims: &BTreeMap<String, String>,
-    chunk_id: &str,
-) -> String {
-    let label = node
+    active_claims: &BTreeMap<String, ModulePath>,
+    graph: &OwnerGraphReport,
+) -> ModulePath {
+    if let Some(claimed) = node
         .declared_bindings
         .iter()
         .find_map(|b| active_claims.get(b.binding.as_str()))
-        .cloned()
-        .or_else(|| (!node.destination.label.is_empty()).then(|| node.destination.label.clone()))
-        .or_else(|| node.destination.target_file.clone())
-        .unwrap_or_else(|| node.destination.id.clone());
-    canonical_module_label(&label, chunk_id)
-}
-
-/// Collapse the two spellings of one module to a single label.
-///
-/// Production owner-graph destinations spell a module's label with a
-/// `"<chunk_id>::"` prefix (e.g. `static/index-DI2GynTv::domains/system/ids`),
-/// while the active-claim lookup yields the clean spec path
-/// (`domains/system/ids`). Within one spec module some owners resolve
-/// via the claim and others fall through to `destination.label`, so a
-/// single class collects both spellings and would emit a bogus
-/// `merge_into` self-merge. Stripping the chunk-id prefix canonicalizes
-/// both to the clean path.
-fn canonical_module_label(label: &str, chunk_id: &str) -> String {
-    if chunk_id.is_empty() {
-        return label.to_string();
+    {
+        return claimed.clone();
     }
-    label
-        .strip_prefix(chunk_id)
-        .and_then(|rest| rest.strip_prefix("::"))
-        .map(str::to_string)
-        .unwrap_or_else(|| label.to_string())
+    graph
+        .module(&node.destination)
+        .unwrap_or_else(|| {
+            panic!(
+                "owner {} destination {} absent from module table",
+                node.id, node.destination
+            )
+        })
+        .path
+        .clone()
 }
 
 /// Spec-module groups derived from `graph.nodes` destinations.
-/// Owners with a non-residual destination are grouped by
-/// destination id; residual owners stay out (they'll be singletons).
+/// Owners with a non-residual destination are grouped by their
+/// (interned) destination key; residual owners stay out (they'll be
+/// singletons).
 fn spec_module_groups(graph: &OwnerGraphReport) -> Vec<SpecModuleGroup> {
     let mut groups: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for node in &graph.nodes {
-        if node.destination.residual {
+        if graph.is_residual(&node.destination) {
             continue;
         }
         groups
-            .entry(node.destination.id.clone())
+            .entry(node.destination.0.clone())
             .or_default()
             .push(node.id.clone());
     }
@@ -460,9 +458,9 @@ fn owner_line_count(node: &analysis::OwnerGraphNodeReport) -> usize {
 /// (computed separately in `collect_size_cap_diagnostics`).
 fn emit_proposals(
     quotient: &QuotientGraph,
-    class_to_labels: &BTreeMap<ClassId, BTreeSet<String>>,
+    class_to_labels: &BTreeMap<ClassId, BTreeSet<ModulePath>>,
     residual_edges: &[(usize, usize)],
-    active_edges: &[(usize, String)],
+    active_edges: &[(usize, ModulePath)],
     graph: &OwnerGraphReport,
     size_cap_lines: usize,
     context: &FactorizeContext,
@@ -490,7 +488,7 @@ fn emit_proposals(
         let n_labels = labels.map(|s| s.len()).unwrap_or(0);
         let has_residual_origin = quotient
             .class_members(c)
-            .any(|o| graph.nodes[o.0].destination.residual);
+            .any(|o| graph.is_residual(&graph.nodes[o.0].destination));
         if n_labels == 0 {
             // Pure residual class. Always emit (fresh-module).
             candidate_classes.push(c);
@@ -683,16 +681,19 @@ fn compute_topo_depths(
 fn build_proposal(
     candidate_idx: usize,
     class_id: ClassId,
-    labels: Option<&BTreeSet<String>>,
+    labels: Option<&BTreeSet<ModulePath>>,
     quotient: &QuotientGraph,
     residual_edges: &[(usize, usize)],
-    active_edges: &[(usize, String)],
+    active_edges: &[(usize, ModulePath)],
     graph: &OwnerGraphReport,
     owner_to_candidate: &HashMap<usize, usize>,
     context: &FactorizeContext,
 ) -> FactorizeProposal {
+    // Labels arrive sorted (BTreeSet over canonical `ModulePath`).
+    // Convert to wire strings once, at this boundary; identity logic
+    // above this point is type-safe.
     let label_vec: Vec<String> = labels
-        .map(|s| s.iter().cloned().collect())
+        .map(|s| s.iter().map(ModulePath::to_string).collect())
         .unwrap_or_default();
     let is_extension = !label_vec.is_empty();
     let merge_into: Option<Vec<String>> = (label_vec.len() >= 2).then(|| label_vec.clone());
@@ -711,7 +712,7 @@ fn build_proposal(
         all_owner_idxs
             .iter()
             .copied()
-            .filter(|&idx| graph.nodes[idx].destination.residual)
+            .filter(|&idx| graph.is_residual(&graph.nodes[idx].destination))
             .collect()
     } else {
         all_owner_idxs.clone()
@@ -762,14 +763,15 @@ fn build_proposal(
         .collect();
 
     let mut to_active = 0usize;
-    let mut active_targets: BTreeSet<String> = BTreeSet::new();
+    let mut active_targets: BTreeSet<ModulePath> = BTreeSet::new();
     for (source_owner, module_path) in active_edges {
         if owner_to_candidate.get(source_owner) == Some(&candidate_idx) {
             to_active += 1;
             active_targets.insert(module_path.clone());
         }
     }
-    let active_modules_referenced: Vec<String> = active_targets.into_iter().collect();
+    let active_modules_referenced: Vec<String> =
+        active_targets.iter().map(ModulePath::to_string).collect();
 
     let extension_owner_ids: Vec<String> = if is_extension {
         let mut ids: Vec<String> = owner_idxs
@@ -972,7 +974,7 @@ mod tests {
     use swc_atoms::Atom;
 
     use analysis::{
-        AtomicGraphReport, AtomicUnitEdgeReport, AtomicUnitReport, DepKind, ModuleReportRef,
+        AtomicGraphReport, AtomicUnitEdgeReport, AtomicUnitReport, DepKind, ModuleKey,
         OwnerGraphEdgeReport, OwnerGraphNodeReport, OwnerGraphQuotientReport, OwnerGraphReport,
         Purity, SourceLocation, StatementKind, StatementOrdinal,
     };
@@ -990,7 +992,7 @@ mod tests {
             ordinal_value,
             bindings,
             lines,
-            test_utils::module_ref("logical:residual", true),
+            test_utils::module_ref("residual"),
         )
     }
 
@@ -1006,18 +1008,8 @@ mod tests {
             ordinal_value,
             bindings,
             lines,
-            test_utils::module_ref(module_path, false),
+            test_utils::module_ref(module_path),
         )
-    }
-
-    fn module_report_ref(id: &str, label: &str, target_file: &str) -> ModuleReportRef {
-        ModuleReportRef {
-            id: id.to_string(),
-            label: label.to_string(),
-            residual: false,
-            index: None,
-            target_file: Some(target_file.to_string()),
-        }
     }
 
     fn owner_at(
@@ -1025,7 +1017,7 @@ mod tests {
         ordinal_value: usize,
         bindings: &[&str],
         lines: usize,
-        destination: ModuleReportRef,
+        destination: ModuleKey,
     ) -> OwnerGraphNodeReport {
         OwnerGraphNodeReport {
             id: id.to_string(),
@@ -1075,14 +1067,14 @@ mod tests {
     fn unit(id: &str, owners: &[&OwnerGraphNodeReport]) -> AtomicUnitReport {
         let mut owner_ids = Vec::new();
         let mut members = Vec::new();
-        let mut destinations = BTreeMap::<String, ModuleReportRef>::new();
+        let mut destinations = BTreeMap::<ModuleKey, ModuleKey>::new();
         let mut line_range = LineRange::new();
         let mut min_ordinal = usize::MAX;
         let mut max_ordinal = 0usize;
         for owner in owners {
             owner_ids.push(owner.id.clone());
             members.extend(owner.declared_bindings.clone());
-            destinations.insert(owner.destination.id.clone(), owner.destination.clone());
+            destinations.insert(owner.destination.clone(), owner.destination.clone());
             if let Some(location) = &owner.source_location {
                 line_range.expand(location);
             }
@@ -1119,12 +1111,15 @@ mod tests {
         atomic_units: Vec<AtomicUnitReport>,
         atomic_edges: Vec<AtomicUnitEdgeReport>,
     ) -> OwnerGraphReport {
+        // The module table is the single source of truth for path +
+        // residual; build it from the distinct owner destinations.
+        let module_nodes = test_utils::module_table(nodes.iter().map(|n| &n.destination));
         OwnerGraphReport {
             chunk_id: "x".to_string(),
             nodes,
             edges,
             quotient: OwnerGraphQuotientReport {
-                nodes: vec![],
+                nodes: module_nodes,
                 edges: vec![],
                 sccs: vec![],
             },
@@ -1135,8 +1130,15 @@ mod tests {
         }
     }
 
-    fn no_claims() -> BTreeMap<String, String> {
+    fn no_claims() -> BTreeMap<String, ModulePath> {
         BTreeMap::new()
+    }
+
+    fn claims(pairs: &[(&str, &str)]) -> BTreeMap<String, ModulePath> {
+        pairs
+            .iter()
+            .map(|(binding, path)| (binding.to_string(), ModulePath::parse(path, "").unwrap()))
+            .collect()
     }
 
     #[test]
@@ -1207,8 +1209,7 @@ mod tests {
             vec![unit("atomic:0", &[&a]), unit("atomic:1", &[&b])],
             vec![atomic_edge("atomic_edge:0", "atomic:1", "atomic:0")],
         );
-        let claims = BTreeMap::from([("a".to_string(), "ui/x".to_string())]);
-        let report = factorize(&graph, &claims, 10_000);
+        let report = factorize(&graph, &claims(&[("a", "ui/x")]), 10_000);
         let proposal = report
             .proposals
             .iter()
@@ -1225,18 +1226,14 @@ mod tests {
             1,
             &["a"],
             10,
-            module_report_ref("logical:1", "domains/system/ids", "domains/system/ids.js"),
+            test_utils::module_ref("domains/system/ids"),
         );
         let b = owner_at(
             "b",
             2,
             &["b"],
             10,
-            module_report_ref(
-                "logical:2",
-                "domains/system/id_helpers",
-                "domains/system/id_helpers.js",
-            ),
+            test_utils::module_ref("domains/system/id_helpers"),
         );
         let graph = graph_with_atomic_units(
             vec![a.clone(), b.clone()],
@@ -1263,21 +1260,18 @@ mod tests {
     }
 
     #[test]
-    fn chunk_prefixed_and_clean_label_of_one_module_do_not_self_merge() {
-        // Two owners of ONE spec module (same destination.id ->
+    fn two_owners_of_one_module_reached_by_different_routes_do_not_self_merge() {
+        // Two owners of ONE spec module (same destination key ->
         // `spec_module_groups` contracts them into one class). Owner
-        // `a` resolves its label via an active claim to the clean
-        // path `domains/system/ids`; owner `b` has no claim and falls
-        // through to `destination.label`, which production reports
-        // spell with the `<chunk_id>::` prefix
-        // (`x::domains/system/ids`). The two spellings denote the same
-        // module, so the class must collapse to a single label and
-        // emit NO `merge_into` self-merge.
-        let dest = module_report_ref(
-            "logical:1",
-            "x::domains/system/ids",
-            "domains/system/ids.js",
-        );
+        // `a` resolves its identity via an active claim
+        // (`domains/system/ids`); owner `b` has no claim and resolves
+        // via the module table. Both routes yield the one canonical
+        // `ModulePath`, so the class collapses to a single label and
+        // emits NO `merge_into` self-merge. (The former two-spelling
+        // bug — a chunk-prefixed `<chunk>::path` vs the clean path —
+        // is now unrepresentable: the wire carries one interned key
+        // and the table holds one canonical path.)
+        let dest = test_utils::module_ref("domains/system/ids");
         let a = owner_at("a", 1, &["a"], 10, dest.clone());
         let b = owner_at("b", 2, &["b"], 10, dest.clone());
         let graph = graph_with_atomic_units(
@@ -1289,8 +1283,7 @@ mod tests {
             vec![unit("atomic:0", &[&a]), unit("atomic:1", &[&b])],
             vec![],
         );
-        let claims = BTreeMap::from([("a".to_string(), "domains/system/ids".to_string())]);
-        let report = factorize(&graph, &claims, 10_000);
+        let report = factorize(&graph, &claims(&[("a", "domains/system/ids")]), 10_000);
         assert!(
             report.proposals.iter().all(|p| p.merge_into.is_none()),
             "expected no self-merge proposal from two spellings of one module: {report:#?}",

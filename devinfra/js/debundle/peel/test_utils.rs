@@ -1,4 +1,9 @@
-use analysis::{BindingReport, ModuleReportRef};
+use analysis::BindingReport;
+
+// Owner-graph wire-fixture builders (the module table + interned
+// `ModuleKey` references) are shared across crates; re-export them so
+// peel's tests keep calling `test_utils::module_ref` / `module_table`.
+pub use report_fixtures::{module_ref, module_table};
 
 pub fn member(binding: &str, export_name: &str) -> BindingReport {
     BindingReport {
@@ -9,14 +14,4 @@ pub fn member(binding: &str, export_name: &str) -> BindingReport {
 
 pub fn binding(name: &str) -> BindingReport {
     member(name, name)
-}
-
-pub fn module_ref(id: &str, residual: bool) -> ModuleReportRef {
-    ModuleReportRef {
-        id: id.to_string(),
-        label: id.to_string(),
-        residual,
-        index: None,
-        target_file: (!residual).then(|| id.to_string()),
-    }
 }

@@ -361,7 +361,7 @@ fn factorization_for(source: &str, ownership: &[(&str, ModuleId)]) -> ChunkFacto
     let mut bindings = HashMap::new();
     for (name, id) in ownership {
         let resolved = resolve_test_module_id(*id, residual_idx);
-        bindings.insert(test_id(name), BindingKind::Owned { owner: resolved });
+        bindings.insert(test_id(name), BindingKind::Owned { module: resolved });
     }
     let mut logical_modules: Vec<LogicalModule> = (0..explicit_count)
         .map(|i| LogicalModule {
@@ -400,10 +400,10 @@ fn factorization_with_residual_module(
     let logical = logical(1);
     let mut bindings = HashMap::new();
     for name in residual_bindings {
-        bindings.insert(test_id(name), BindingKind::Owned { owner: residual });
+        bindings.insert(test_id(name), BindingKind::Owned { module: residual });
     }
     for name in logical_bindings {
-        bindings.insert(test_id(name), BindingKind::Owned { owner: logical });
+        bindings.insert(test_id(name), BindingKind::Owned { module: logical });
     }
     let logical_modules = vec![
         LogicalModule {
@@ -463,7 +463,7 @@ fn owner_graph_retains_reads_to_unassigned_declared_bindings() {
         .find(|node| node.id == "owner:1")
         .expect("X owner should be reported");
     assert!(
-        residual_owner.destination.residual,
+        report.is_residual(&residual_owner.destination),
         "residual owner should land on the synthesized residual module: {:?}",
         residual_owner.destination,
     );
@@ -489,7 +489,7 @@ fn owner_graph_report_emits_atomic_graph_not_heuristic_peel_fields() {
                     && unit
                         .destinations
                         .iter()
-                        .any(|destination| destination.residual)
+                        .any(|destination| report.is_residual(destination))
             ),
         "Leaf should appear as a residual atomic unit: {:#?}",
         report.atomic_graph,

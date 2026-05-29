@@ -14,14 +14,15 @@ use std::fs;
 use std::path::Path;
 
 use analysis::{
-    AtomicGraphReport, AtomicUnitReport, BindingReport, DepKind, ModuleReportRef,
-    OwnerGraphEdgeReport, OwnerGraphNodeReport, OwnerGraphQuotientReport, OwnerGraphReport, Purity,
-    QuotientEdgeReport, QuotientSccReport, SourceLocation, StatementKind, StatementOrdinal,
+    AtomicGraphReport, AtomicUnitReport, BindingReport, DepKind, OwnerGraphEdgeReport,
+    OwnerGraphNodeReport, OwnerGraphQuotientReport, OwnerGraphReport, Purity, QuotientEdgeReport,
+    QuotientSccReport, SourceLocation, StatementKind, StatementOrdinal,
 };
 use peel::{
     CommonArgs, ExplainArgs, SelectionArgs, SourceSliceArgs, resolve_binding_owners,
     run_explain_report, run_source_slice_report,
 };
+use report_fixtures::{module_entry, module_ref};
 use tempfile::TempDir;
 
 fn write(path: &Path, body: &str) {
@@ -38,22 +39,12 @@ fn member(binding: &str, export: &str) -> BindingReport {
     }
 }
 
-fn module_ref(id: &str, residual: bool) -> ModuleReportRef {
-    ModuleReportRef {
-        id: id.to_string(),
-        label: id.to_string(),
-        residual,
-        index: None,
-        target_file: (!residual).then(|| id.to_string()),
-    }
-}
-
 fn owner(
     id: &str,
     ordinal: usize,
     binding: &str,
     export: &str,
-    destination: ModuleReportRef,
+    destination: analysis::ModuleKey,
 ) -> OwnerGraphNodeReport {
     OwnerGraphNodeReport {
         id: id.to_string(),
@@ -84,24 +75,18 @@ fn renamed_fixture() -> (TempDir, CommonArgs) {
         1,
         "XOe",
         "PluginSettingsAccessor",
-        module_ref("logical:ui/plugins", false),
+        module_ref("ui/plugins"),
     );
-    let other = owner(
-        "owner:1",
-        2,
-        "YOe",
-        "YOe",
-        module_ref("logical:residual", true),
-    );
+    let other = owner("owner:1", 2, "YOe", "YOe", module_ref("residual"));
     let quotient = OwnerGraphQuotientReport {
         nodes: vec![
-            module_ref("logical:ui/plugins", false),
-            module_ref("logical:residual", true),
+            module_entry(&module_ref("ui/plugins")),
+            module_entry(&module_ref("residual")),
         ],
         edges: vec![QuotientEdgeReport {
             id: "q_edge:0".to_string(),
-            source: "logical:residual".to_string(),
-            target: "logical:ui/plugins".to_string(),
+            source: module_ref("residual"),
+            target: module_ref("ui/plugins"),
             edge_kinds: vec![DepKind::EagerUse],
             constrains_init_order: true,
         }],
@@ -128,7 +113,7 @@ fn renamed_fixture() -> (TempDir, CommonArgs) {
                     owner_ids: vec!["owner:0".to_string()],
                     members: vec![member("XOe", "PluginSettingsAccessor")],
                     anonymous_statement_owner_ids: Vec::new(),
-                    destinations: vec![module_ref("logical:ui/plugins", false)],
+                    destinations: vec![module_ref("ui/plugins")],
                     causes: Vec::new(),
                     size_lines_estimate: 1,
                     source_line_range: Some([2, 2]),
@@ -139,7 +124,7 @@ fn renamed_fixture() -> (TempDir, CommonArgs) {
                     owner_ids: vec!["owner:1".to_string()],
                     members: vec![member("YOe", "YOe")],
                     anonymous_statement_owner_ids: Vec::new(),
-                    destinations: vec![module_ref("logical:residual", true)],
+                    destinations: vec![module_ref("residual")],
                     causes: Vec::new(),
                     size_lines_estimate: 1,
                     source_line_range: Some([3, 3]),
@@ -281,14 +266,14 @@ fn resolve_binding_owners_prefers_minified_on_name_collision() {
         1,
         "Collide",
         "Collide",
-        module_ref("logical:ui/plugins", false),
+        module_ref("ui/plugins"),
     );
     let by_readable = owner(
         "owner:readable",
         2,
         "ZZZ",
         "Collide",
-        module_ref("logical:residual", true),
+        module_ref("residual"),
     );
     let report = OwnerGraphReport {
         chunk_id: "static/index".to_string(),

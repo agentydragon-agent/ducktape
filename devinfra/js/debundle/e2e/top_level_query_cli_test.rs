@@ -9,9 +9,9 @@ use std::fs;
 use std::path::Path;
 
 use analysis::{
-    AtomicGraphReport, AtomicUnitReport, BindingReport, DepKind, ModuleReportRef,
-    OwnerGraphEdgeReport, OwnerGraphNodeReport, OwnerGraphQuotientReport, OwnerGraphReport, Purity,
-    QuotientSccReport, SourceLocation, StatementKind, StatementOrdinal,
+    AtomicGraphReport, AtomicUnitReport, BindingReport, DepKind, ModuleEntry, OwnerGraphEdgeReport,
+    OwnerGraphNodeReport, OwnerGraphQuotientReport, OwnerGraphReport, Purity, QuotientSccReport,
+    SourceLocation, StatementKind, StatementOrdinal,
 };
 use peel::plan::PatchPlanStatus;
 use peel::{
@@ -19,6 +19,7 @@ use peel::{
     SourceSliceArgs, UnitsArgs, run_explain_report, run_graph_summary_report,
     run_patch_plan_report, run_plan_work_report, run_source_slice_report, run_units_report,
 };
+use report_fixtures::{module_ref, module_table};
 use tempfile::TempDir;
 
 fn write(path: &Path, body: &str) {
@@ -35,14 +36,10 @@ fn member(binding: &str, export: &str) -> BindingReport {
     }
 }
 
-fn module_ref(id: &str, residual: bool) -> ModuleReportRef {
-    ModuleReportRef {
-        id: id.to_string(),
-        label: id.to_string(),
-        residual,
-        index: None,
-        target_file: (!residual).then(|| id.to_string()),
-    }
+/// The module table for a graph whose only module is the residual
+/// catch-all (these query fixtures put every owner in residual).
+fn residual_table() -> Vec<ModuleEntry> {
+    module_table([&module_ref("residual")])
 }
 
 fn owner(id: &str, ordinal: usize, binding: &str, export: &str) -> OwnerGraphNodeReport {
@@ -57,7 +54,7 @@ fn owner(id: &str, ordinal: usize, binding: &str, export: &str) -> OwnerGraphNod
         declared_bindings: vec![member(binding, export)],
         statement_kind: StatementKind::VarDecl,
         purity: Purity::Pure,
-        destination: module_ref("logical:residual", true),
+        destination: module_ref("residual"),
     }
 }
 
@@ -73,7 +70,7 @@ fn anonymous_owner(id: &str, ordinal: usize) -> OwnerGraphNodeReport {
         declared_bindings: Vec::new(),
         statement_kind: StatementKind::SideEffect,
         purity: Purity::Pure,
-        destination: module_ref("logical:residual", true),
+        destination: module_ref("residual"),
     }
 }
 
@@ -97,7 +94,7 @@ fn fixture() -> (TempDir, CommonArgs) {
             role: None,
         }],
         quotient: OwnerGraphQuotientReport {
-            nodes: Vec::new(),
+            nodes: residual_table(),
             edges: Vec::new(),
             sccs: Vec::<QuotientSccReport>::new(),
         },
@@ -108,7 +105,7 @@ fn fixture() -> (TempDir, CommonArgs) {
                     owner_ids: vec!["owner:0".to_string()],
                     members: vec![member("ZZ", "ZZ")],
                     anonymous_statement_owner_ids: Vec::new(),
-                    destinations: vec![module_ref("logical:residual", true)],
+                    destinations: vec![module_ref("residual")],
                     causes: Vec::new(),
                     size_lines_estimate: 1,
                     source_line_range: Some([2, 2]),
@@ -119,7 +116,7 @@ fn fixture() -> (TempDir, CommonArgs) {
                     owner_ids: vec!["owner:1".to_string()],
                     members: vec![member("aa", "aa")],
                     anonymous_statement_owner_ids: Vec::new(),
-                    destinations: vec![module_ref("logical:residual", true)],
+                    destinations: vec![module_ref("residual")],
                     causes: Vec::new(),
                     size_lines_estimate: 1,
                     source_line_range: Some([3, 3]),
@@ -164,7 +161,7 @@ fn fixture_with_anonymous_statement_claim() -> (TempDir, CommonArgs) {
             role: None,
         }],
         quotient: OwnerGraphQuotientReport {
-            nodes: Vec::new(),
+            nodes: residual_table(),
             edges: Vec::new(),
             sccs: Vec::<QuotientSccReport>::new(),
         },
@@ -174,7 +171,7 @@ fn fixture_with_anonymous_statement_claim() -> (TempDir, CommonArgs) {
                 owner_ids: vec!["owner:0".to_string(), "owner:1".to_string()],
                 members: vec![member("Co", "SearchPopoverState")],
                 anonymous_statement_owner_ids: vec!["owner:1".to_string()],
-                destinations: vec![module_ref("logical:residual", true)],
+                destinations: vec![module_ref("residual")],
                 causes: vec![DepKind::LocalEffect],
                 size_lines_estimate: 2,
                 source_line_range: Some([2, 3]),
@@ -220,7 +217,7 @@ fn fixture_with_anonymous_only_module_claim() -> (TempDir, CommonArgs) {
         nodes: vec![anonymous.clone()],
         edges: Vec::new(),
         quotient: OwnerGraphQuotientReport {
-            nodes: Vec::new(),
+            nodes: residual_table(),
             edges: Vec::new(),
             sccs: Vec::<QuotientSccReport>::new(),
         },
@@ -230,7 +227,7 @@ fn fixture_with_anonymous_only_module_claim() -> (TempDir, CommonArgs) {
                 owner_ids: vec![anonymous.id.clone()],
                 members: Vec::new(),
                 anonymous_statement_owner_ids: vec![anonymous.id.clone()],
-                destinations: vec![module_ref("logical:residual", true)],
+                destinations: vec![module_ref("residual")],
                 causes: Vec::new(),
                 size_lines_estimate: 1,
                 source_line_range: Some([1, 1]),
@@ -270,7 +267,7 @@ fn fixture_with_ambiguous_anonymous_statements() -> (TempDir, CommonArgs) {
         nodes: vec![first.clone(), second.clone()],
         edges: Vec::new(),
         quotient: OwnerGraphQuotientReport {
-            nodes: Vec::new(),
+            nodes: residual_table(),
             edges: Vec::new(),
             sccs: Vec::<QuotientSccReport>::new(),
         },
@@ -281,7 +278,7 @@ fn fixture_with_ambiguous_anonymous_statements() -> (TempDir, CommonArgs) {
                     owner_ids: vec![first.id.clone()],
                     members: Vec::new(),
                     anonymous_statement_owner_ids: vec![first.id.clone()],
-                    destinations: vec![module_ref("logical:residual", true)],
+                    destinations: vec![module_ref("residual")],
                     causes: Vec::new(),
                     size_lines_estimate: 1,
                     source_line_range: Some([1, 1]),
@@ -292,7 +289,7 @@ fn fixture_with_ambiguous_anonymous_statements() -> (TempDir, CommonArgs) {
                     owner_ids: vec![second.id.clone()],
                     members: Vec::new(),
                     anonymous_statement_owner_ids: vec![second.id.clone()],
-                    destinations: vec![module_ref("logical:residual", true)],
+                    destinations: vec![module_ref("residual")],
                     causes: Vec::new(),
                     size_lines_estimate: 1,
                     source_line_range: Some([2, 2]),
@@ -467,7 +464,7 @@ fn describe_module_id_resolves_all_module_owners() {
         selection: SelectionArgs {
             owner_id: None,
             module_path: None,
-            module_id: Some("logical:residual".to_string()),
+            module_id: Some("residual".to_string()),
             binding_id: None,
             proposal_id: None,
             unit_id: None,

@@ -23,7 +23,7 @@ use std::collections::BTreeMap;
 
 use analysis::{
     AtomicGraphReport, AtomicUnitEdgeReport, AtomicUnitReport, BindingReport, DepKind, LineRange,
-    ModuleReportRef, OwnerGraphEdgeReport, OwnerGraphNodeReport, OwnerGraphQuotientReport,
+    ModuleKey, OwnerGraphEdgeReport, OwnerGraphNodeReport, OwnerGraphQuotientReport,
     OwnerGraphReport, Purity, RealizabilityVerdict, SourceLocation, StatementKind,
     StatementOrdinal, check_realizability,
 };
@@ -33,8 +33,23 @@ use peel::quotient::{
     OwnerIdx, QuotientGraph, SeedContractionRejected, SpecModuleGroup, build_seed_quotient,
     greedy_merge_to_convergence, greedy_merge_to_convergence_full_scan,
 };
+use report_fixtures::{module_ref, module_table};
+use spec::ModulePath;
 
 // ---------- Fixture helpers (generic; no the upstream/gaffer strings). ----------
+
+/// Active-claims map (binding name → canonical module path) from
+/// clean spec paths. `no_claims()` is the empty case.
+fn claims(pairs: &[(&str, &str)]) -> BTreeMap<String, ModulePath> {
+    pairs
+        .iter()
+        .map(|(binding, path)| (binding.to_string(), ModulePath::parse(path, "").unwrap()))
+        .collect()
+}
+
+fn no_claims() -> BTreeMap<String, ModulePath> {
+    BTreeMap::new()
+}
 
 fn binding(name: &str) -> BindingReport {
     BindingReport {
@@ -43,22 +58,12 @@ fn binding(name: &str) -> BindingReport {
     }
 }
 
-fn module_ref(id: &str, residual: bool) -> ModuleReportRef {
-    ModuleReportRef {
-        id: id.to_string(),
-        label: id.to_string(),
-        residual,
-        index: None,
-        target_file: (!residual).then(|| id.to_string()),
-    }
-}
-
 fn owner(
     id: &str,
     ordinal: usize,
     bindings: &[&str],
     lines: usize,
-    destination: ModuleReportRef,
+    destination: ModuleKey,
 ) -> OwnerGraphNodeReport {
     OwnerGraphNodeReport {
         id: id.to_string(),
@@ -81,13 +86,7 @@ fn residual_owner(
     bindings: &[&str],
     lines: usize,
 ) -> OwnerGraphNodeReport {
-    owner(
-        id,
-        ordinal,
-        bindings,
-        lines,
-        module_ref("logical:residual", true),
-    )
+    owner(id, ordinal, bindings, lines, module_ref("residual"))
 }
 
 fn active_owner(
@@ -97,7 +96,7 @@ fn active_owner(
     lines: usize,
     module_path: &str,
 ) -> OwnerGraphNodeReport {
-    owner(id, ordinal, bindings, lines, module_ref(module_path, false))
+    owner(id, ordinal, bindings, lines, module_ref(module_path))
 }
 
 fn owner_edge(
@@ -122,14 +121,14 @@ fn owner_edge(
 fn atomic_unit_for(id: &str, owners: &[&OwnerGraphNodeReport]) -> AtomicUnitReport {
     let mut owner_ids = Vec::new();
     let mut members = Vec::new();
-    let mut destinations = BTreeMap::<String, ModuleReportRef>::new();
+    let mut destinations = BTreeMap::<ModuleKey, ModuleKey>::new();
     let mut line_range = LineRange::new();
     let mut min_ordinal = usize::MAX;
     let mut max_ordinal = 0usize;
     for o in owners {
         owner_ids.push(o.id.clone());
         members.extend(o.declared_bindings.clone());
-        destinations.insert(o.destination.id.clone(), o.destination.clone());
+        destinations.insert(o.destination.clone(), o.destination.clone());
         if let Some(location) = &o.source_location {
             line_range.expand(location);
         }
@@ -166,12 +165,13 @@ fn graph_of(
     units: Vec<AtomicUnitReport>,
     unit_edges: Vec<AtomicUnitEdgeReport>,
 ) -> OwnerGraphReport {
+    let module_nodes = module_table(nodes.iter().map(|n| &n.destination));
     OwnerGraphReport {
         chunk_id: "x".to_string(),
         nodes,
         edges,
         quotient: OwnerGraphQuotientReport {
-            nodes: vec![],
+            nodes: module_nodes,
             edges: vec![],
             sccs: vec![],
         },
@@ -635,11 +635,9 @@ fn factorize_golden_output_unchanged() {
     // Snapshots live at `devinfra/js/debundle/peel/golden/`. To
     // regenerate (only after a deliberate, justified change), set
     // `UPDATE_GOLDENS=1` when running the test.
-    let claims: BTreeMap<String, String> = BTreeMap::new();
-    let f1 = factorize(&golden_residual_singletons(), &claims, 10_000);
-    let f2 = factorize(&golden_closed_residual_unit(), &claims, 10_000);
-    let claims_active: BTreeMap<String, String> =
-        BTreeMap::from([("BindingA".to_string(), "ui/x".to_string())]);
+    let f1 = factorize(&golden_residual_singletons(), &no_claims(), 10_000);
+    let f2 = factorize(&golden_closed_residual_unit(), &no_claims(), 10_000);
+    let claims_active = claims(&[("BindingA", "ui/x")]);
     let f3 = factorize(&golden_extend_active_via_anon(), &claims_active, 10_000);
 
     let json1 = serde_json::to_string_pretty(&f1).unwrap();
@@ -913,13 +911,7 @@ fn greedy_never_merges_into_residual() {
         declared_bindings: vec![],
         statement_kind: StatementKind::VarDecl,
         purity: Purity::Pure,
-        destination: ModuleReportRef {
-            id: analysis::RESIDUAL_ENTRY_MODULE_ID.to_string(),
-            label: "residual".to_string(),
-            residual: true,
-            index: None,
-            target_file: None,
-        },
+        destination: module_ref("residual"),
     };
     let h = residual_owner("owner:h", 3, &["BindingH"], 5);
     let report = graph_of(
@@ -947,6 +939,11 @@ fn greedy_never_merges_into_residual() {
         QuotientGraph::from_report_with_partition_extended(&report, 10_000, &groups);
     let residual_idx = q.owner_idx_of("owner:residual_catchall").unwrap();
     let residual_class = q.class_of(residual_idx);
+    // Designate the catch-all class as the sticky residual sink; the
+    // kernel leaves classes non-residual at seed time (residual-destined
+    // owners are otherwise peelable), so this test marks the sink it
+    // wants the greedy to refuse to merge into.
+    q.mark_class_residual(residual_class);
     let contractions = greedy_merge_to_convergence(&mut q);
     for (c1, c2) in &contractions {
         assert!(
@@ -1466,9 +1463,8 @@ fn greedy_on_gaffer_chunk_completes_under_one_minute() {
     // (every owner with destination.id != residual is treated as
     // its own active module, which is what the planner would see
     // before any spec edits).
-    let claims: BTreeMap<String, String> = BTreeMap::new();
     let started = std::time::Instant::now();
-    let result = factorize(&report, &claims, 10_000);
+    let result = factorize(&report, &no_claims(), 10_000);
     let elapsed = started.elapsed();
     let extension_proposals: usize = result
         .proposals
@@ -1654,11 +1650,11 @@ fn merge_two_existing_modules_with_mutual_eager_reads() {
         ],
         vec![],
     );
-    let claims: BTreeMap<String, String> = BTreeMap::from([
-        ("BindingA".to_string(), "ui/a".to_string()),
-        ("BindingB".to_string(), "ui/b".to_string()),
-    ]);
-    let result = factorize(&report, &claims, 10_000);
+    let result = factorize(
+        &report,
+        &claims(&[("BindingA", "ui/a"), ("BindingB", "ui/b")]),
+        10_000,
+    );
     let merge_proposals: Vec<&peel::factorize::FactorizeProposal> = result
         .proposals
         .iter()
@@ -1713,11 +1709,11 @@ fn merge_absorbs_residual_owner_with_only_intra_deps() {
         ],
         vec![],
     );
-    let claims: BTreeMap<String, String> = BTreeMap::from([
-        ("BindingA".to_string(), "ui/a".to_string()),
-        ("BindingB".to_string(), "ui/b".to_string()),
-    ]);
-    let result = factorize(&report, &claims, 10_000);
+    let result = factorize(
+        &report,
+        &claims(&[("BindingA", "ui/a"), ("BindingB", "ui/b")]),
+        10_000,
+    );
     let merge_proposals: Vec<&peel::factorize::FactorizeProposal> = result
         .proposals
         .iter()
@@ -1768,12 +1764,10 @@ fn unification_byte_identical_on_well_formed_inputs() {
     // unification. This test asserts the "zero rejections" half;
     // the byte-identity half is covered by
     // `factorize_golden_output_unchanged`.
-    let claims_empty: BTreeMap<String, String> = BTreeMap::new();
-    let claims_active: BTreeMap<String, String> =
-        BTreeMap::from([("BindingA".to_string(), "ui/x".to_string())]);
+    let claims_active = claims(&[("BindingA", "ui/x")]);
 
-    let r1 = factorize(&golden_residual_singletons(), &claims_empty, 10_000);
-    let r2 = factorize(&golden_closed_residual_unit(), &claims_empty, 10_000);
+    let r1 = factorize(&golden_residual_singletons(), &no_claims(), 10_000);
+    let r2 = factorize(&golden_closed_residual_unit(), &no_claims(), 10_000);
     let r3 = factorize(&golden_extend_active_via_anon(), &claims_active, 10_000);
 
     assert!(
@@ -1942,9 +1936,7 @@ fn unification_rejects_cyclic_atomic_reachability_with_diagnostic() {
     // Spec module mod_alpha contains Foo. The factorize entry
     // point derives spec_modules from the owner destinations, so
     // the active owner above is already registered as mod_alpha.
-    let claims: BTreeMap<String, String> =
-        BTreeMap::from([("Foo".to_string(), "mod_alpha".to_string())]);
-    let result = factorize(&report, &claims, 10_000);
+    let result = factorize(&report, &claims(&[("Foo", "mod_alpha")]), 10_000);
 
     // (a) No proposal should bundle Foo with Helper or Bar — the
     // cycle prevents merging Foo's class with Helper's class
