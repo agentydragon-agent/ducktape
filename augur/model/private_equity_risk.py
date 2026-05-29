@@ -258,8 +258,6 @@ def _sample_issuer(
     monthly_collapse = _monthly_probability(issuer.annual_collapse_probability)
     monthly_legal = _monthly_probability(issuer.annual_legal_event_probability)
 
-    rollouts = np.arange(rollout_count)
-
     def _apply_terminal_block(mask: np.ndarray, *, regime_value: int, mark_factor: float | None, t: int) -> None:
         """Forward-fill regime + liquidity_blocked for rollouts in `mask` from month t onward.
         If `mark_factor` is set, the mark from t onward becomes mark[:, t-1] * mark_factor.
@@ -297,7 +295,6 @@ def _sample_issuer(
 
         # Eligible for new events.
         eligible = active_now & ~suspended_now
-        fires = np.zeros(rollout_count, dtype=np.bool_)
 
         if eligible.any():
             # Branch 1: forced_recovery → COLLAPSED with low-dollar cashout.
@@ -315,7 +312,6 @@ def _sample_issuer(
                     t=t,
                 )
                 collapsed |= branch
-                fires |= branch
                 eligible &= ~branch
 
             # Branch 2: collapse → COLLAPSED.
@@ -329,7 +325,6 @@ def _sample_issuer(
                     t=t,
                 )
                 collapsed |= branch
-                fires |= branch
                 eligible &= ~branch
 
             # Branch 3: public_market_open.
@@ -354,7 +349,6 @@ def _sample_issuer(
                     lockup_cols = np.arange(t, new_lockup_through + 1)
                     liquidity_blocked[np.ix_(rows, lockup_cols)] = 1.0
                 public_market |= branch
-                fires |= branch
                 eligible &= ~branch
 
             # Branch 4: legal_event (umbrella) — 80% temporary recoverable / 15% permanent cap / 5% severe.
@@ -422,7 +416,6 @@ def _sample_issuer(
                             0.0, _LEGAL_SEVERE_SMALL_DOLLAR_USD_MAX, size=n
                         )
 
-                fires |= branch
                 eligible &= ~branch
 
             # Branch 5: ordinary suspension (no event_kind per plan).
@@ -434,7 +427,6 @@ def _sample_issuer(
                 ).astype(np.int64)
                 new_through = np.minimum(horizon_months, t + durations - 1)
                 suspended_through[branch] = np.maximum(suspended_through[branch], new_through)
-                fires |= branch
                 eligible &= ~branch
 
             # Branch 6: forced_sale → ACQUIRED.
@@ -463,7 +455,6 @@ def _sample_issuer(
                     later_cols = np.arange(t + 1, horizon_months + 1)
                     mark[np.ix_(rows, later_cols)] = mark[rows, t][:, None]
                 acquired |= branch
-                fires |= branch
                 eligible &= ~branch
 
             # Branch 7: tender. A tender executes only when the scheduled precursor
@@ -486,7 +477,6 @@ def _sample_issuer(
                     log_noise_mu=issuer.tender_price_log_discount_mu,
                     log_noise_sigma=issuer.tender_price_log_discount_sigma,
                 )
-                fires |= branch
                 eligible &= ~branch
 
             # Branch 8: admin_mark_update (deterministic schedule, gated by eligibility).
@@ -499,12 +489,8 @@ def _sample_issuer(
                     log_noise_mu=issuer.admin_mark_update_log_noise_mu,
                     log_noise_sigma=issuer.admin_mark_update_log_noise_sigma,
                 )
-                fires |= branch
                 eligible &= ~branch
 
-        del fires  # branch-wise mutual-exclusion accounting; not needed outside the loop
-
-    del rollouts  # unused alias; carried for symmetry with the per-month bookkeeping
     eligible_fraction = np.full(shape, issuer.eligible_fraction, dtype=np.float64)
 
     return _IssuerPaths(
