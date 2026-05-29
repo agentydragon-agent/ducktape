@@ -110,6 +110,22 @@ nebula-cert print -ca /path/to/ca.crt -path nebula.crt  # cert is valid
 ping 10.42.0.13  # or .14, depending on slot
 ```
 
+If the new node shares a public `/24` with an existing Kimsufi node, also verify
+public Talos reachability between those nodes. Nebula and kubelet may look healthy
+while public peer traffic still fails.
+
+```bash
+# Direct API readiness for each Kimsufi control-plane public IP.
+kubectl --server=https://147.135.37.175:6443 --insecure-skip-tls-verify=true get --raw='/readyz?verbose'
+kubectl --server=https://147.135.39.162:6443 --insecure-skip-tls-verify=true get --raw='/readyz?verbose'
+kubectl --server=https://147.135.39.176:6443 --insecure-skip-tls-verify=true get --raw='/readyz?verbose'
+
+# Cross-node Talos API/maintenance reachability from host-networked Kimsufi pods.
+# Use one Cilium pod per Kimsufi node as the source and test the other public IPs.
+kubectl -n kube-system exec <cilium-pod-on-source-node> -- \
+  bash -lc 'for ip in 147.135.37.175 147.135.39.162 147.135.39.176 147.135.104.5 147.135.104.16; do timeout 2 bash -lc "</dev/tcp/${ip}/50000" && echo "${ip} ok" || echo "${ip} fail"; done'
+```
+
 Add the new public IP to `cluster/nebula-mesh.json` so non-Talos nodes (wyrm2,
 rugged) have a direct path instead of relying on stale relay paths. Commit.
 
@@ -170,6 +186,15 @@ relocate (worker memory pressure is the usual reason).
   slot's 9 entries before applying.
 - **Tofu plan is slow** on the full root if Proxmox `atlas` is offline (provider
   hangs on network timeouts). Always use `-target=` for ad-hoc operations.
+- **Kimsufi peers in the same public `/24` still need explicit host routes.**
+  OVH assigns addresses that look same-subnet, but traffic between those public
+  peers must go through the per-subnet gateway (`<first-three-octets>.254`) rather
+  than direct neighbor resolution. `cluster/terraform/main/ovh-nodes.tf` computes
+  `/32` peer routes in `local.kimsufi_eno1_peer_routes` and applies them with a
+  Talos `LinkConfig` on `eno1`. Keep the paired `DHCPv4Config`; a route-only
+  `LinkConfig` disables Talos' default DHCP operators. Roll route changes out one
+  machine at a time, prefer `talosctl --mode=try` for the canary, and run the
+  public `:50000` peer matrix before applying the next node.
 
 ## References
 
