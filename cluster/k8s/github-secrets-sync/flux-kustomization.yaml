@@ -21,6 +21,5 @@ spec:
   dependsOn:
     - name: tofu-controller
     - name: tofu-state-db
-    - name: agent-shared-secrets
     - name: github-secrets-sync-secrets
     - name: seaweedfs-vm-images-s3
