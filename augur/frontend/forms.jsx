@@ -139,10 +139,10 @@ export function PropertyPurchasePanel({ bootstrap, input, onChange }) {
                 />
               </div>
             )}
-            <div className="text-xs augur-muted">Insurance and maintenance are annual % of purchase price.</div>
             <div className="grid gap-3 sm:grid-cols-2">
               <NumberField
                 label="Insurance"
+                description="annual, % of purchase price"
                 value={input.annualInsurancePct}
                 min={0}
                 max={10}
@@ -152,6 +152,7 @@ export function PropertyPurchasePanel({ bootstrap, input, onChange }) {
               />
               <NumberField
                 label="Maintenance"
+                description="annual, % of purchase price"
                 value={input.annualMaintenancePct}
                 min={0}
                 max={10}
