@@ -11,34 +11,31 @@ from augur.api.config import Config, load_augur_config
 from augur.model.exogenous import SERIES_LEVELS_SCHEMA, ExogenousSamplingRequest, SampledExogenousBundle, Sampler
 from augur.model.exogenous_provider_config import CompositeExogenousProviderConfig
 from augur.model.independent_exogenous import IndependentExogenousProviderConfig
-from augur.model.private_equity_bundle import (
-    PrivateEquityBoolChannel,
-    PrivateEquityFloatChannel,
-    PrivateEquityIntChannel,
-)
 from augur.model.series import (
     CryptoKey,
     CryptoSymbol,
     HomeValueKey,
     InflationKey,
+    IssuerId,
     LocationId,
     PrivateEquityEventKindCode,
     PrivateEquityRegimeCode,
     RentKey,
     SP500Key,
 )
-from augur.product import decode, service
-from augur.product.scenarios import build_scenario, resolve_primary_agent_id, sim_locations_from_config
-from augur.product.service import ProductService
-from augur.product.testing import (
+from augur.model.testing import (
     ConstantFrameExogenousModel,
+    PrivateEquityChannels,
     event_matrix_with_month_override,
     event_matrix_with_step,
     int_matrix_with_month_override,
     int_matrix_with_step,
-    level_matrix_with_month_override,
     level_matrix_with_step,
 )
+from augur.product import decode, service
+from augur.product.scenarios import build_scenario, resolve_primary_agent_id, sim_locations_from_config
+from augur.product.service import ProductService
+from augur.product.testing import TEST_CONFIG_LEVEL_PLACEHOLDERS, forced_private_equity_event_fixture
 from augur.product.wire import (
     CashFinancing,
     ClosingCostPaymentEvent,
@@ -102,27 +99,7 @@ def counting_exogenous_model() -> CountingExogenousModel:
 
 @pytest.fixture
 def forced_private_equity_event_model() -> ConstantFrameExogenousModel:
-    issuer_id = "private_holding_a"
-    return ConstantFrameExogenousModel(
-        private_equity_int_overrides={
-            (issuer_id, PrivateEquityIntChannel.EVENT_KIND_CODE): int_matrix_with_month_override(
-                default=int(PrivateEquityEventKindCode.NONE),
-                override=int(PrivateEquityEventKindCode.ACQUISITION_CASHOUT),
-                month=1,
-            ),
-            (issuer_id, PrivateEquityIntChannel.REGIME_CODE): int_matrix_with_month_override(
-                default=int(PrivateEquityRegimeCode.PRIVATE_OPERATING),
-                override=int(PrivateEquityRegimeCode.ACQUIRED),
-                month=1,
-            ),
-        },
-        private_equity_float_overrides={
-            (issuer_id, PrivateEquityFloatChannel.FORCED_SALE_FRACTION): level_matrix_with_month_override(
-                default=0.0, override=0.25, month=1
-            )
-        },
-        metadata={"exogenous_model_id": "forced_pe_fixture"},
-    )
+    return forced_private_equity_event_fixture()
 
 
 def _service(model: Sampler, *, augur_config: Config | None = None) -> ProductService:
@@ -436,29 +413,24 @@ def test_product_rollout_includes_private_equity_protocol_event_and_forced_sale(
 
 
 def test_product_rollout_collapse_revalues_unsold_private_equity() -> None:
-    issuer_id = "private_holding_a"
+    issuer_id = IssuerId("private_holding_a")
     product = _service(
         ConstantFrameExogenousModel(
-            private_equity_float_overrides={
-                (issuer_id, PrivateEquityFloatChannel.MARK_USD_PER_UNIT): level_matrix_with_step(
-                    default=25.0, override=0.5, month=1
-                )
-            },
-            private_equity_int_overrides={
-                (issuer_id, PrivateEquityIntChannel.EVENT_KIND_CODE): int_matrix_with_month_override(
-                    default=int(PrivateEquityEventKindCode.NONE),
-                    override=int(PrivateEquityEventKindCode.COLLAPSE),
-                    month=1,
-                ),
-                (issuer_id, PrivateEquityIntChannel.REGIME_CODE): int_matrix_with_step(
-                    default=int(PrivateEquityRegimeCode.PRIVATE_OPERATING),
-                    override=int(PrivateEquityRegimeCode.COLLAPSED),
-                    month=1,
-                ),
-            },
-            private_equity_bool_overrides={
-                (issuer_id, PrivateEquityBoolChannel.LIQUIDITY_BLOCKED): event_matrix_with_step(
-                    default=False, override=True, month=1
+            levels=TEST_CONFIG_LEVEL_PLACEHOLDERS,
+            private_equity={
+                issuer_id: PrivateEquityChannels(
+                    mark_usd_per_unit=level_matrix_with_step(default=25.0, override=0.5, month=1),
+                    event_kind_code=int_matrix_with_month_override(
+                        default=int(PrivateEquityEventKindCode.NONE),
+                        override=int(PrivateEquityEventKindCode.COLLAPSE),
+                        month=1,
+                    ),
+                    regime_code=int_matrix_with_step(
+                        default=int(PrivateEquityRegimeCode.PRIVATE_OPERATING),
+                        override=int(PrivateEquityRegimeCode.COLLAPSED),
+                        month=1,
+                    ),
+                    liquidity_blocked=event_matrix_with_step(default=False, override=True, month=1),
                 )
             },
             metadata={"exogenous_model_id": "collapsed_pe_fixture"},
@@ -495,12 +467,19 @@ def test_product_rollout_collapse_revalues_unsold_private_equity() -> None:
 
 
 def test_product_rollout_includes_private_equity_opportunity_trace() -> None:
-    issuer_id = "private_holding_a"
+    issuer_id = IssuerId("private_holding_a")
     product = _service(
         ConstantFrameExogenousModel(
-            private_equity_bool_overrides={
-                (issuer_id, PrivateEquityBoolChannel.SALE_OPPORTUNITY_ACTIVE): event_matrix_with_month_override(
-                    default=False, override=True, month=1
+            levels=TEST_CONFIG_LEVEL_PLACEHOLDERS,
+            private_equity={
+                issuer_id: PrivateEquityChannels(
+                    mark_usd_per_unit=1.0,
+                    sale_opportunity_active=event_matrix_with_month_override(default=False, override=True, month=1),
+                    event_kind_code=int_matrix_with_month_override(
+                        default=int(PrivateEquityEventKindCode.NONE),
+                        override=int(PrivateEquityEventKindCode.TENDER),
+                        month=1,
+                    ),
                 )
             },
             metadata={"exogenous_model_id": "tender_opportunity_fixture"},

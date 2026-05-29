@@ -17,18 +17,7 @@ from fastapi.testclient import TestClient
 
 from augur.api.config import load_augur_config
 from augur.api.server import ApiServerConfig, create_app
-from augur.model.private_equity_bundle import (
-    PrivateEquityBoolChannel,
-    PrivateEquityFloatChannel,
-    PrivateEquityIntChannel,
-)
-from augur.model.series import PrivateEquityEventKindCode, PrivateEquityRegimeCode
-from augur.product.testing import (
-    ConstantFrameExogenousModel,
-    event_matrix_with_month_override,
-    int_matrix_with_month_override,
-    level_matrix_with_month_override,
-)
+from augur.product.testing import capacity_limited_private_equity_fixture, forced_private_equity_event_fixture
 from util.bazel.runfiles import get_required_path
 from util.net import pick_free_port
 from util.testing.undeclared_outputs import undeclared_outputs_dir
@@ -36,31 +25,10 @@ from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 @pytest.fixture
 def forced_private_equity_event_client() -> Iterator[TestClient]:
-    issuer_id = "private_holding_a"
-    model = ConstantFrameExogenousModel(
-        private_equity_int_overrides={
-            (issuer_id, PrivateEquityIntChannel.EVENT_KIND_CODE): int_matrix_with_month_override(
-                default=int(PrivateEquityEventKindCode.NONE),
-                override=int(PrivateEquityEventKindCode.ACQUISITION_CASHOUT),
-                month=1,
-            ),
-            (issuer_id, PrivateEquityIntChannel.REGIME_CODE): int_matrix_with_month_override(
-                default=int(PrivateEquityRegimeCode.PRIVATE_OPERATING),
-                override=int(PrivateEquityRegimeCode.ACQUIRED),
-                month=1,
-            ),
-        },
-        private_equity_float_overrides={
-            (issuer_id, PrivateEquityFloatChannel.FORCED_SALE_FRACTION): level_matrix_with_month_override(
-                default=0.0, override=0.25, month=1
-            )
-        },
-        metadata={"exogenous_model_id": "forced_pe_fixture"},
-    )
     app = create_app(
         ApiServerConfig(
             augur_config=load_augur_config(get_required_path("_main/augur/api/testdata/config.yaml")),
-            exogenous_model=model,
+            exogenous_model=forced_private_equity_event_fixture(),
         )
     )
     with TestClient(app) as client:
@@ -143,26 +111,10 @@ def _get_json(origin: str, path: str) -> dict[str, Any]:
 
 @pytest.fixture
 def capacity_limited_private_equity_client() -> Iterator[TestClient]:
-    issuer_id = "private_holding_a"
-    model = ConstantFrameExogenousModel(
-        private_equity_float_overrides={
-            (issuer_id, PrivateEquityFloatChannel.MARK_USD_PER_UNIT): 25.0,
-            (issuer_id, PrivateEquityFloatChannel.SALE_CAPACITY_FRACTION): 0.25,
-            (issuer_id, PrivateEquityFloatChannel.FORCED_SALE_FRACTION): 0.0,
-            (issuer_id, PrivateEquityFloatChannel.FORCED_RECOVERY_CASHOUT_USD): 0.0,
-        },
-        private_equity_bool_overrides={
-            (issuer_id, PrivateEquityBoolChannel.LIQUIDITY_BLOCKED): False,
-            (issuer_id, PrivateEquityBoolChannel.SALE_OPPORTUNITY_ACTIVE): event_matrix_with_month_override(
-                default=False, override=True, month=1
-            ),
-        },
-        metadata={"exogenous_model_id": "capacity_limited_pe_fixture"},
-    )
     app = create_app(
         ApiServerConfig(
             augur_config=load_augur_config(get_required_path("_main/augur/api/testdata/config.yaml")),
-            exogenous_model=model,
+            exogenous_model=capacity_limited_private_equity_fixture(),
         )
     )
     with TestClient(app) as client:

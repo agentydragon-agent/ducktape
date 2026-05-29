@@ -2,74 +2,200 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 
 import numpy as np
+import numpy.typing as npt
 
-from augur.model.deterministic import Constant
-from augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle
+from augur.frames import concat_frames
+from augur.model.exogenous import (
+    SERIES_LEVELS_SCHEMA,
+    ExogenousSamplingRequest,
+    SampledExogenousBundle,
+    series_levels_frame,
+)
 from augur.model.private_equity_bundle import PrivateEquityBundle
-from augur.model.private_equity_protocol import neutral_private_equity_issuer_bundle
-from augur.model.series_model import IndependentSeriesModels
+from augur.model.series import IssuerId, LevelSeriesKey, PrivateEquityEventKindCode, PrivateEquityRegimeCode
 
-
-def _fixture_metadata() -> dict[str, object]:
-    return {
-        "exogenous_model_id": "deterministic_series_fixture",
-        "exogenous_model_version_id": "deterministic_series_fixture:v1",
-        "scenario_generator_id": "deterministic_series_fixture",
-        "scenario_generator_version_id": "deterministic_series_fixture:v1",
-        "evidence_set_id": "fixture:deterministic",
-        "calibration_artifact_id": "fixture:deterministic",
-        "notes": ("deterministic series fixture",),
-    }
+type LevelOverride = float | npt.NDArray[np.float64] | Callable[[ExogenousSamplingRequest], npt.NDArray[np.float64]]
+type IntOverride = int | npt.NDArray[np.int64] | Callable[[ExogenousSamplingRequest], npt.NDArray[np.int64]]
+type EventOverride = bool | npt.NDArray[np.bool_] | Callable[[ExogenousSamplingRequest], npt.NDArray[np.bool_]]
 
 
 @dataclass(frozen=True)
-class DeterministicSeriesFixtureModel:
-    """Joint model fixture composed from constant scalar series models."""
+class PrivateEquityChannels:
+    """Constant per-issuer PE channels for fixture sampling.
 
-    default_level_value: float = 1.0
-    level_values: Mapping[str, float] = field(default_factory=dict)
-    event_active_months: tuple[int, ...] = (12,)
-    metadata: Mapping[str, object] = field(default_factory=_fixture_metadata)
+    `mark_usd_per_unit` is required; every other channel has a neutral
+    default (`PRIVATE_OPERATING` regime, no events, full capacity /
+    eligibility, no forced sale, no liquidity block, no recovery cashout).
+    """
+
+    mark_usd_per_unit: LevelOverride
+    regime_code: IntOverride = int(PrivateEquityRegimeCode.PRIVATE_OPERATING)
+    event_kind_code: IntOverride = int(PrivateEquityEventKindCode.NONE)
+    sale_opportunity_active: EventOverride = False
+    sale_capacity_fraction: LevelOverride = 1.0
+    eligible_fraction: LevelOverride = 1.0
+    forced_sale_fraction: LevelOverride = 0.0
+    liquidity_blocked: EventOverride = False
+    forced_recovery_cashout_usd: LevelOverride = 0.0
+
+
+@dataclass
+class ConstantFrameExogenousModel:
+    """Constant-frame fixture sampler.
+
+    `levels` and `private_equity` are the constants the sampler returns
+    for each requested key. Sampling a key the fixture wasn't seeded
+    with raises `KeyError` — there are no implicit fallbacks.
+    """
+
+    levels: Mapping[LevelSeriesKey, LevelOverride] = field(default_factory=dict)
+    private_equity: Mapping[IssuerId, PrivateEquityChannels] = field(default_factory=dict)
+    metadata: Mapping[str, object] = field(default_factory=lambda: {"exogenous_model_id": "constant_frame_fixture"})
+    sample_requests: list[ExogenousSamplingRequest] = field(default_factory=list)
 
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
-        level_models = IndependentSeriesModels(
-            series={
-                key.wire_id: Constant(value=self.level_values.get(key.wire_id, self.default_level_value))
-                for key in sorted(request.required_level_series, key=lambda key: key.wire_id)
-            }
-        )
-        tender_events = self._event_mask(request)
-        # The default issuer mark for fixture scenarios is just the default
-        # level value — the production anchoring step rescales it to whatever
-        # `unit_value_usd` the portfolio config sets.
-        default_mark = np.full(
-            (request.rollout_count, request.horizon_months + 1), self.default_level_value, dtype=np.float64
-        )
-        pe_bundle_parts = [
-            neutral_private_equity_issuer_bundle(
-                issuer_id,
-                observed_mark=default_mark,
-                tender_events=tender_events,
+        self.sample_requests.append(request)
+        level_frames = [
+            series_levels_frame(
+                key,
+                _level_matrix(self._require_level(key), request),
                 rollout_count=request.rollout_count,
                 horizon_months=request.horizon_months,
             )
+            for key in sorted(request.required_level_series, key=lambda key: key.wire_id)
+        ]
+        pe_parts = [
+            _pe_bundle_from_channels(issuer_id, self._require_pe(issuer_id), request)
             for issuer_id in sorted(request.required_private_equity_issuers)
         ]
         return SampledExogenousBundle(
-            levels=level_models.sample(request).levels,
-            private_equity=(
-                PrivateEquityBundle.combine(pe_bundle_parts) if pe_bundle_parts else PrivateEquityBundle.empty()
-            ),
+            levels=concat_frames(level_frames, SERIES_LEVELS_SCHEMA),
+            private_equity=PrivateEquityBundle.combine(pe_parts) if pe_parts else PrivateEquityBundle.empty(),
             metadata=dict(self.metadata),
         )
 
-    def _event_mask(self, request: ExogenousSamplingRequest) -> np.ndarray:
-        active = np.zeros((request.rollout_count, request.horizon_months + 1), dtype=np.bool_)
-        for month in self.event_active_months:
-            if 0 <= month <= request.horizon_months:
-                active[:, month] = True
-        return active
+    def _require_level(self, key: LevelSeriesKey) -> LevelOverride:
+        if key not in self.levels:
+            raise KeyError(f"constant fixture has no value seeded for level series {key.wire_id!r}")
+        return self.levels[key]
+
+    def _require_pe(self, issuer_id: IssuerId) -> PrivateEquityChannels:
+        if issuer_id not in self.private_equity:
+            raise KeyError(f"constant fixture has no PrivateEquityChannels seeded for issuer {issuer_id!r}")
+        return self.private_equity[issuer_id]
+
+
+def _pe_bundle_from_channels(
+    issuer_id: str, channels: PrivateEquityChannels, request: ExogenousSamplingRequest
+) -> PrivateEquityBundle:
+    return PrivateEquityBundle.from_issuer_arrays(
+        issuer_id,
+        mark_usd_per_unit=_level_matrix(channels.mark_usd_per_unit, request),
+        regime_code=_int_matrix(channels.regime_code, request),
+        event_kind_code=_int_matrix(channels.event_kind_code, request),
+        sale_opportunity_active=_event_matrix(channels.sale_opportunity_active, request),
+        sale_capacity_fraction=_level_matrix(channels.sale_capacity_fraction, request),
+        eligible_fraction=_level_matrix(channels.eligible_fraction, request),
+        forced_sale_fraction=_level_matrix(channels.forced_sale_fraction, request),
+        liquidity_blocked=_event_matrix(channels.liquidity_blocked, request),
+        forced_recovery_cashout_usd=_level_matrix(channels.forced_recovery_cashout_usd, request),
+        rollout_count=request.rollout_count,
+        horizon_months=request.horizon_months,
+    )
+
+
+def level_matrix_with_month_override(*, default: float, override: float, month: int) -> LevelOverride:
+    def build(request: ExogenousSamplingRequest) -> npt.NDArray[np.float64]:
+        matrix = np.full((request.rollout_count, request.horizon_months + 1), default, dtype=np.float64)
+        matrix[:, min(month, request.horizon_months)] = override
+        return matrix
+
+    return build
+
+
+def level_matrix_with_step(*, default: float, override: float, month: int) -> LevelOverride:
+    def build(request: ExogenousSamplingRequest) -> npt.NDArray[np.float64]:
+        matrix = np.full((request.rollout_count, request.horizon_months + 1), default, dtype=np.float64)
+        matrix[:, min(month, request.horizon_months) :] = override
+        return matrix
+
+    return build
+
+
+def event_matrix_with_month_override(*, default: bool, override: bool, month: int) -> EventOverride:
+    def build(request: ExogenousSamplingRequest) -> npt.NDArray[np.bool_]:
+        matrix = np.full((request.rollout_count, request.horizon_months + 1), default, dtype=np.bool_)
+        matrix[:, min(month, request.horizon_months)] = override
+        return matrix
+
+    return build
+
+
+def event_matrix_with_step(*, default: bool, override: bool, month: int) -> EventOverride:
+    def build(request: ExogenousSamplingRequest) -> npt.NDArray[np.bool_]:
+        matrix = np.full((request.rollout_count, request.horizon_months + 1), default, dtype=np.bool_)
+        matrix[:, min(month, request.horizon_months) :] = override
+        return matrix
+
+    return build
+
+
+def int_matrix_with_month_override(*, default: int, override: int, month: int) -> IntOverride:
+    def build(request: ExogenousSamplingRequest) -> npt.NDArray[np.int64]:
+        matrix = np.full((request.rollout_count, request.horizon_months + 1), default, dtype=np.int64)
+        matrix[:, min(month, request.horizon_months)] = override
+        return matrix
+
+    return build
+
+
+def int_matrix_with_step(*, default: int, override: int, month: int) -> IntOverride:
+    def build(request: ExogenousSamplingRequest) -> npt.NDArray[np.int64]:
+        matrix = np.full((request.rollout_count, request.horizon_months + 1), default, dtype=np.int64)
+        matrix[:, min(month, request.horizon_months) :] = override
+        return matrix
+
+    return build
+
+
+def _level_matrix(value: LevelOverride, request: ExogenousSamplingRequest) -> npt.NDArray[np.float64]:
+    raw = value(request) if callable(value) else value
+    matrix = (
+        np.asarray(raw, dtype=np.float64)
+        if isinstance(raw, np.ndarray)
+        else np.full((request.rollout_count, request.horizon_months + 1), float(raw), dtype=np.float64)
+    )
+    _check_shape(matrix, request)
+    return matrix
+
+
+def _int_matrix(value: IntOverride, request: ExogenousSamplingRequest) -> npt.NDArray[np.int64]:
+    raw = value(request) if callable(value) else value
+    matrix = (
+        np.asarray(raw, dtype=np.int64)
+        if isinstance(raw, np.ndarray)
+        else np.full((request.rollout_count, request.horizon_months + 1), int(raw), dtype=np.int64)
+    )
+    _check_shape(matrix, request)
+    return matrix
+
+
+def _event_matrix(value: EventOverride, request: ExogenousSamplingRequest) -> npt.NDArray[np.bool_]:
+    raw = value(request) if callable(value) else value
+    matrix = (
+        np.asarray(raw, dtype=np.bool_)
+        if isinstance(raw, np.ndarray)
+        else np.full((request.rollout_count, request.horizon_months + 1), bool(raw), dtype=np.bool_)
+    )
+    _check_shape(matrix, request)
+    return matrix
+
+
+def _check_shape(matrix: np.ndarray, request: ExogenousSamplingRequest) -> None:
+    expected = (request.rollout_count, request.horizon_months + 1)
+    if matrix.shape != expected:
+        raise ValueError(f"constant fixture matrix has shape {matrix.shape}; expected {expected}")

@@ -277,10 +277,9 @@ py_library(
     testonly = True,
     srcs = ["testing.py"],
     deps = [
-        ":deterministic",
         ":exogenous",
-        ":private_equity_protocol",
-        ":series_model",
+        ":private_equity_bundle",
+        ":series",
         "//augur:frames",
         "@pypi//numpy",
     ],

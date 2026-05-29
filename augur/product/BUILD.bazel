@@ -79,11 +79,8 @@ py_library(
     testonly = True,
     srcs = ["testing.py"],
     deps = [
-        "//augur:frames",
-        "//augur/model:exogenous",
-        "//augur/model:private_equity_protocol",
         "//augur/model:series",
-        "@pypi//numpy",
+        "//augur/model:testing",
     ],
 )
 
@@ -120,6 +117,7 @@ py_test(
         "//augur/model:exogenous_provider_config",
         "//augur/model:independent_exogenous",
         "//augur/model:series",
+        "//augur/model:testing",
         "//augur/sim:external_series",
         "//augur/sim:scenario",
         "//augur/sim:simulate",

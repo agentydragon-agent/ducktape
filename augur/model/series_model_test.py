@@ -17,7 +17,7 @@ from augur.model.exogenous import (
 from augur.model.gbm import GeometricBrownian
 from augur.model.series import HomeValueKey, InflationKey, LocationId, SP500Key
 from augur.model.series_model import IndependentSeriesModels, SeriesModelBundle, materialize_series_values
-from augur.model.testing import DeterministicSeriesFixtureModel
+from augur.model.testing import ConstantFrameExogenousModel
 
 
 def test_scalar_models_are_owned_by_model_modules() -> None:
@@ -97,10 +97,8 @@ def test_deterministic_model_rejects_wrong_horizon_length() -> None:
         model.sample(ExogenousSamplingRequest(horizon_months=2, rollout_seeds=(1,)))
 
 
-def test_deterministic_fixture_samples_requested_constant_series_and_events() -> None:
-    model = DeterministicSeriesFixtureModel(
-        default_level_value=1.0, level_values={"sp500": 2.0}, event_active_months=(1,)
-    )
+def test_constant_frame_fixture_samples_seeded_level_keys() -> None:
+    model = ConstantFrameExogenousModel(levels={InflationKey(): 1.0, SP500Key(): 2.0})
 
     sampled = model.sample(
         ExogenousSamplingRequest(
