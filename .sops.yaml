@@ -24,6 +24,22 @@ keys:
   # Bootstrap deploys it to the cluster as a k8s Secret.
   - &cluster-secrets age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
 creation_rules:
+  # DriveFS artifacts S3 gateway credentials — Flux applies the Secret for the
+  # dedicated S3 gateway (cluster-secrets), user machines need to read
+  # writer credentials for uploading new binaries (user keys), and gaffer-private
+  # CI needs reader credentials to fetch binaries during builds (CI key).
+  - path_regex: cluster/k8s/seaweedfs/drivefs-artifacts-s3/credentials\.sops\.yaml$
+    encrypted_regex: ^(data|stringData)$
+    key_groups:
+      - age:
+          - *admin
+          - *cluster-secrets
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
+          - *ci
+
   # tofu-state PG backend credentials — Flux applies the Secret, CNPG consumes it
   # in-cluster (cluster-secrets), AND tofu running on user machines needs to read
   # the password to set PG_CONN_STR (user keys). More specific than the generic
