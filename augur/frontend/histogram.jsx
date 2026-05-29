@@ -55,6 +55,48 @@ export function TerminalDistributionHistogram({
   const sortedEntries = useMemo(() => entries.slice().sort((left, right) => left.value - right.value), [entries]);
   const selectedSliderEntry = sortedEntries.find((entry) => Number(entry.summary.seed) === selectedSeed) ?? null;
   const thumbLeftPct = selectedSliderEntry ? axisLeftPct(selectedSliderEntry.value) : null;
+  const histogramDragRef = useRef({ dragging: false, startX: 0, startY: 0, startSeed: null, wasSelected: false });
+  const seedAtPoint = (clientX, clientY) => {
+    const target = document.elementFromPoint(clientX, clientY);
+    if (!target) return null;
+    const cell = target.closest("[data-product-rollout-sliver]");
+    if (!cell) return null;
+    const seed = Number(cell.getAttribute("data-product-rollout-sliver"));
+    return Number.isFinite(seed) ? seed : null;
+  };
+  const handleHistogramPointerDown = (event) => {
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    const seed = seedAtPoint(event.clientX, event.clientY);
+    histogramDragRef.current = {
+      dragging: true,
+      startX: event.clientX,
+      startY: event.clientY,
+      startSeed: seed,
+      wasSelected: seed != null && seed === selectedSeed,
+    };
+    if (seed != null && seed !== selectedSeed) onSelect(seed);
+  };
+  const handleHistogramPointerMove = (event) => {
+    if (!histogramDragRef.current.dragging) return;
+    const seed = seedAtPoint(event.clientX, event.clientY);
+    if (seed != null && seed !== selectedSeed) onSelect(seed);
+  };
+  const handleHistogramPointerUp = (event) => {
+    const state = histogramDragRef.current;
+    histogramDragRef.current = { dragging: false, startX: 0, startY: 0, startSeed: null, wasSelected: false };
+    event.currentTarget.releasePointerCapture(event.pointerId);
+    // Preserve the original "click already-selected cell to deselect" behavior: if the press
+    // started on the selected cell and never moved appreciably, treat the release as a toggle.
+    if (!state.dragging || !state.wasSelected) return;
+    const dx = event.clientX - state.startX;
+    const dy = event.clientY - state.startY;
+    if (dx * dx + dy * dy < 25) onSelect(null);
+  };
+  const handleHistogramPointerCancel = (event) => {
+    histogramDragRef.current = { dragging: false, startX: 0, startY: 0, startSeed: null, wasSelected: false };
+    event.currentTarget.releasePointerCapture(event.pointerId);
+  };
   return (
     <div
       className="border-t border-slate-200 px-4 py-3 dark:border-slate-700"
@@ -78,10 +120,14 @@ export function TerminalDistributionHistogram({
       <div className="flex items-stretch gap-3">
         <div className="relative flex flex-1 flex-col px-3">
           <div
-            className="flex flex-1 items-end gap-px"
+            className="flex flex-1 cursor-pointer touch-none items-end gap-px"
             role="list"
             aria-label="Select rollout to inspect"
             style={{ height: containerHeight }}
+            onPointerDown={handleHistogramPointerDown}
+            onPointerMove={handleHistogramPointerMove}
+            onPointerUp={handleHistogramPointerUp}
+            onPointerCancel={handleHistogramPointerCancel}
           >
             {bins.map((bin) => (
               <TerminalHistogramColumn
