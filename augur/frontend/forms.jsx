@@ -559,9 +559,22 @@ export function ProductPortfolioPanel({ portfolio, error }) {
   const publicHoldingsValueUsd = sumCurrentValueUsd(publicHoldings);
   const privateSecurityValueUsd = sumCurrentValueUsd(privateSecurityHoldings);
   const showHoldingsTotal = publicHoldings.length > 0 && privateSecurityHoldings.length > 0;
+  const totalUsd = (portfolio?.cashUsd ?? 0) + (portfolio?.totalHoldingsValueUsd ?? 0);
   return (
-    <div className="px-4 py-3">
-      <div className="augur-eyebrow">Initial portfolio</div>
+    <details className="px-4 py-3 [&_summary::-webkit-details-marker]:hidden">
+      <summary className="augur-eyebrow flex cursor-pointer list-none items-baseline justify-between gap-2">
+        <span className="inline-flex items-center gap-1">
+          <span aria-hidden="true" className="transition-transform [details[open]_&]:rotate-90">
+            ▸
+          </span>
+          Initial portfolio
+        </span>
+        {portfolio && !error && (
+          <span className="text-xs font-normal normal-case tracking-normal augur-tabular augur-muted">
+            {fmtUsd(totalUsd)}
+          </span>
+        )}
+      </summary>
       {error ? (
         <div className="mt-3 augur-note-danger text-sm">Portfolio failed to load: {error}</div>
       ) : (
@@ -647,7 +660,7 @@ export function ProductPortfolioPanel({ portfolio, error }) {
           )}
         </table>
       )}
-    </div>
+    </details>
   );
 }
 
