@@ -83,6 +83,8 @@ resources:
   - agents/kubectl-sandbox-mcp/app/flux-kustomization.yaml
   - agents/manifold-mcp/namespace/flux-kustomization.yaml
   - agents/manifold-mcp/app/flux-kustomization.yaml
+  - agents/postscanmail-mcp/namespace/flux-kustomization.yaml
+  - agents/postscanmail-mcp/app/flux-kustomization.yaml
   - agents/homeassistant-proxy/flux-kustomization.yaml
   - agents/openclaw/operator/flux-kustomization.yaml
   - agents/openclaw/gateway-namespace/flux-kustomization.yaml
@@ -289,6 +291,8 @@ resources:
 
   # --- standalone applications ---
   - buildbuddy-executor/flux-kustomization.yaml
+  - gecko/namespace/flux-kustomization.yaml
+  - gecko/app/flux-kustomization.yaml
   - website/flux-kustomization.yaml
 
   # --- cpap-sync ---

@@ -89,6 +89,11 @@ jobs:
             }
           - { image: "//x/manifold_mcp_server:image", image_name: manifold-mcp-server, test_target: "" }
           - {
+              image: "//x/postscanmail_mcp_server:image",
+              image_name: postscanmail-mcp-server,
+              test_target: "//x/postscanmail_mcp_server/...",
+            }
+          - {
               image: "//x/authentik_mcp_poc:server_image",
               image_name: authentik-mcp-poc-server,
               test_target: "//x/authentik_mcp_poc/...",
