@@ -38,11 +38,8 @@ export function TerminalDistributionHistogram({
     axisCoordinate(axis, entry.value)
   );
   const maxBinCount = Math.max(...bins.map((bin) => bin.rollouts.length), 1);
-  // Cells stack with a 1-px gap, so the real rendered column height is
-  // `(cellHeight + 1) * maxBinCount` — accounting for the gap keeps overflow-hidden from
-  // silently clipping the tops of the tallest bars.
-  const cellHeight = Math.max(2, Math.min(10, Math.floor(280 / maxBinCount) - 1));
-  const containerHeight = Math.max(80, Math.min(320, (cellHeight + 1) * maxBinCount + 4));
+  const cellHeight = Math.max(2, Math.min(10, Math.floor(280 / maxBinCount)));
+  const containerHeight = Math.max(80, Math.min(320, cellHeight * maxBinCount + 4));
   const percentiles = FAN_PERCENTILES.map((percentile) => ({
     percentile,
     value: quantile(
@@ -151,10 +148,7 @@ export function TerminalHistogramColumn({
   metric,
 }) {
   return (
-    <div
-      className="flex flex-1 flex-col-reverse items-stretch overflow-hidden"
-      style={{ height: containerHeight, gap: 1 }}
-    >
+    <div className="flex flex-1 flex-col-reverse items-stretch overflow-hidden" style={{ height: containerHeight }}>
       {rollouts.map((entry) => {
         const seed = Number(entry.summary.seed);
         const isSelected = selectedSeed === seed;
@@ -173,13 +167,12 @@ export function TerminalHistogramColumn({
             type="button"
             aria-label={titleParts.join(", ")}
             aria-pressed={isSelected}
-            className="relative rounded-[2px] transition hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-teal-400"
+            className="relative transition hover:brightness-125 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-teal-400"
             data-product-rollout-sliver={seed}
             onClick={() => onSelect(isSelected ? null : seed)}
             style={{
               height: cellHeight,
               backgroundColor: isSelected ? blendWithTeal(cellColor(entry)) : cellColor(entry),
-              border: "1px solid rgba(15, 23, 42, 0.12)",
             }}
             title={titleParts.join(" - ")}
           >
