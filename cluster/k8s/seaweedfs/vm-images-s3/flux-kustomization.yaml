@@ -1,0 +1,33 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: seaweedfs-vm-images-s3
+  namespace: flux-system
+spec:
+  interval: 10m
+  retryInterval: 1m
+  path: ./cluster/k8s/seaweedfs/vm-images-s3
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  dependsOn:
+    - name: seaweedfs-vm-images-bucket
+      namespace: flux-system
+    - name: seaweedfs-secrets
+      namespace: flux-system
+    - name: seaweedfs-cluster
+      namespace: flux-system
+    - name: gateway
+      namespace: flux-system
+  wait: true
+  timeout: 5m
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: vm-images-s3
+      namespace: seaweedfs
