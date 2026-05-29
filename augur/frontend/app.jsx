@@ -304,7 +304,7 @@ function ProductProjectionWorkspace({ bootstrap, deployment }) {
       />
 
       <main className="px-4 py-6 sm:px-6 lg:px-8">
-        <section className="grid min-w-0 gap-5 min-[960px]:grid-cols-[30rem_minmax(0,1fr)]">
+        <section className="grid min-w-0 gap-5 min-[864px]:grid-cols-[28rem_minmax(0,1fr)]">
           <ProductScenarioForm
             input={input}
             bootstrap={bootstrap}
