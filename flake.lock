@@ -19,11 +19,11 @@
     "claude-plugins-official": {
       "flake": false,
       "locked": {
-        "lastModified": 1779659326,
-        "narHash": "sha256-zKNCeUQoCVZaJfP+eVmFD9G6du8Iu8p7TZPBcdF3ujs=",
+        "lastModified": 1779974469,
+        "narHash": "sha256-DSPMT/c4x4D26cj0S78QNpHwAamluVNyu83fUCTmLks=",
         "owner": "anthropics",
         "repo": "claude-plugins-official",
-        "rev": "1b527e2ee74e6dbd198e22cd41701c3b6f47dfec",
+        "rev": "e9b54375b8e6b83a718cebb2033caca8c01976a8",
         "type": "github"
       },
       "original": {
@@ -114,11 +114,11 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1779467186,
-        "narHash": "sha256-nOesoDCiXcUftqbRBMz9tt4blI5PvljMWbm3kuCA+0s=",
+        "lastModified": 1779796641,
+        "narHash": "sha256-ZsIrKmhp4vbBXoXXmR/tBXA/UCsAQiJL9vsgZEduhVY=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "b77b3de8775677f84492abe84635f87b0e153f0f",
+        "rev": "25f538306313eae3927264466c70d7001dcea1df",
         "type": "github"
       },
       "original": {
@@ -174,11 +174,11 @@
     "siderolabs-docs": {
       "flake": false,
       "locked": {
-        "lastModified": 1779785146,
-        "narHash": "sha256-v5lDPuKDfhUSmkGSrmciPfNbJ+7t+Z7KbE7tCj0tsvE=",
+        "lastModified": 1779975221,
+        "narHash": "sha256-vhH0rjSMzyzCIeNXfn2yYqgL95V2PlY4JoNnjjAV2OE=",
         "owner": "siderolabs",
         "repo": "docs",
-        "rev": "db5946360feffaa176119bc20510d524f03db8bf",
+        "rev": "5011b33ce38d410f5933f606446a93775dac75fe",
         "type": "github"
       },
       "original": {
