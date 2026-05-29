@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from functools import cached_property
 from pathlib import Path
+from typing import Literal
 
 import numpy as np
-import polars as pl
 import yaml
 from pydantic import Field, TypeAdapter, model_validator
 
@@ -19,7 +19,7 @@ from augur.model.exogenous_provider_config import (
     VecmExogenousProviderConfig,
 )
 from augur.model.schemas import FrozenModel
-from augur.model.series import IssuerId, LevelSeriesKey, parse_level_series_key
+from augur.model.series import IssuerId, LevelSeriesKey, PrivateEquityEventKindCode, parse_level_series_key
 from util.bazel.runfiles import get_required_path
 
 _ADAPTER: TypeAdapter[ExogenousProviderConfig] = TypeAdapter(ExogenousProviderConfig)
@@ -69,6 +69,30 @@ class EventCountPercentileRangeBound(FrozenModel):
         return self
 
 
+class LevelThresholdProbabilityBound(FrozenModel):
+    """Acceptance band on the fraction of rollouts whose level at `month` satisfies a threshold.
+
+    Threshold semantics:
+    - `absolute`: compare against `threshold` directly (same units as the series).
+    - `ratio_of_initial`: compare against `threshold * level_at_month_0`.
+
+    `comparison` is the predicate that defines the success event whose probability is bounded.
+    """
+
+    month: int = Field(ge=0)
+    comparison: Literal["lt", "le", "gt", "ge"]
+    threshold_kind: Literal["absolute", "ratio_of_initial"]
+    threshold: float
+    probability_lower: float = Field(ge=0.0, le=1.0)
+    probability_upper: float = Field(ge=0.0, le=1.0)
+
+    @model_validator(mode="after")
+    def _validate_probability_ordering(self) -> LevelThresholdProbabilityBound:
+        if self.probability_lower > self.probability_upper:
+            raise ValueError("probability_lower must be <= probability_upper")
+        return self
+
+
 class LevelSeriesSanityCheck(FrozenModel):
     series_id: str
     initial_value: float | None = None
@@ -79,6 +103,7 @@ class LevelSeriesSanityCheck(FrozenModel):
     value_percentile_ranges: tuple[PercentileRangeBound, ...] = ()
     ratio_percentile_bounds: tuple[PercentileBound, ...] = ()
     ratio_percentile_ranges: tuple[PercentileRangeBound, ...] = ()
+    threshold_probability_bounds: tuple[LevelThresholdProbabilityBound, ...] = ()
 
     @cached_property
     def level_key(self) -> LevelSeriesKey:
@@ -93,6 +118,33 @@ class EventSeriesSanityCheck(FrozenModel):
     issuer_id: str
     active_count_percentile_bounds: tuple[EventCountPercentileBound, ...] = ()
     active_count_percentile_ranges: tuple[EventCountPercentileRangeBound, ...] = ()
+
+
+class EventKindObservedCheck(FrozenModel):
+    """Acceptance band on the fraction of rollouts whose `event_kind_code` channel
+    contains at least one (or exactly zero) occurrence of any code in `event_kind_codes`
+    within the inclusive month window `[0, by_month]`.
+
+    Multiple codes are treated as a union (OR), so the same check can express
+    "at least one TENDER or PUBLIC_MARKET_OPEN by month 24" by listing both codes.
+    """
+
+    issuer_id: str
+    event_kind_codes: tuple[int, ...] = Field(min_length=1)
+    by_month: int = Field(ge=0)
+    count_op: Literal["at_least_one", "exactly_zero"]
+    probability_lower: float = Field(ge=0.0, le=1.0)
+    probability_upper: float = Field(ge=0.0, le=1.0)
+
+    @model_validator(mode="after")
+    def _validate(self) -> EventKindObservedCheck:
+        if self.probability_lower > self.probability_upper:
+            raise ValueError("probability_lower must be <= probability_upper")
+        allowed = {int(code) for code in PrivateEquityEventKindCode}
+        unexpected = sorted(set(self.event_kind_codes) - allowed)
+        if unexpected:
+            raise ValueError(f"event_kind_codes {unexpected} are not PrivateEquityEventKindCode values")
+        return self
 
 
 class PrivateEquityProtocolSanityCheck(FrozenModel):
@@ -110,6 +162,7 @@ class SampleSanitySpec(FrozenModel):
     required_private_equity_issuers: tuple[str, ...] = ()
     level_checks: tuple[LevelSeriesSanityCheck, ...] = ()
     event_checks: tuple[EventSeriesSanityCheck, ...] = ()
+    event_kind_observed_checks: tuple[EventKindObservedCheck, ...] = ()
     private_equity_protocol_checks: tuple[PrivateEquityProtocolSanityCheck, ...] = ()
 
     @property
@@ -166,6 +219,19 @@ def run_sample_sanity(spec: SampleSanitySpec, *, base_dir: Path) -> None:
             _check_percentile_range_bound(
                 ratios, ratio_range, label=f"{level_check.series_id} ratio m{ratio_range.month}/m0"
             )
+        for threshold_bound in level_check.threshold_probability_bounds:
+            _check_threshold_probability_bound(
+                levels, threshold_bound, series_id=level_check.series_id, rollout_count=spec.rollout_count
+            )
+
+    for event_kind_check in spec.event_kind_observed_checks:
+        event_kind_codes = sampled.private_equity.issuer_int_matrix(
+            event_kind_check.issuer_id,
+            "event_kind_code",
+            rollout_count=spec.rollout_count,
+            horizon_months=spec.horizon_months,
+        )
+        _check_event_kind_observed(event_kind_codes, event_kind_check)
 
     for event_check in spec.event_checks:
         events = sampled.private_equity.issuer_bool_matrix(
@@ -255,27 +321,6 @@ def _assert_finite(values: np.ndarray, *, label: str) -> None:
         raise AssertionError(f"{label} produced non-finite value(s)")
 
 
-def _protocol_code_matrix(
-    frame: pl.DataFrame, *, issuer_id: str, column: str, rollout_count: int, horizon_months: int
-) -> np.ndarray:
-    expected_rows = rollout_count * (horizon_months + 1)
-    issuer_frame = frame.filter(pl.col("issuer_id") == issuer_id).sort(["rollout_index", "month_index"])
-    if issuer_frame.height != expected_rows:
-        raise AssertionError(
-            f"private-equity protocol issuer {issuer_id!r} produced {issuer_frame.height} row(s); "
-            f"expected {expected_rows}"
-        )
-    rollout_index = issuer_frame.get_column("rollout_index").to_numpy()
-    month_index = issuer_frame.get_column("month_index").to_numpy()
-    expected_rollout_index = np.repeat(np.arange(rollout_count, dtype=np.int64), horizon_months + 1)
-    expected_month_index = np.tile(np.arange(horizon_months + 1, dtype=np.int64), rollout_count)
-    if not np.array_equal(rollout_index, expected_rollout_index) or not np.array_equal(
-        month_index, expected_month_index
-    ):
-        raise AssertionError(f"private-equity protocol issuer {issuer_id!r} has incomplete or duplicate coordinates")
-    return issuer_frame.get_column(column).to_numpy().reshape((rollout_count, horizon_months + 1))
-
-
 def _assert_codes_allowed(values: np.ndarray, *, allowed: frozenset[int], label: str) -> None:
     observed = frozenset(int(value) for value in np.unique(values))
     unexpected = sorted(observed - allowed)
@@ -312,6 +357,40 @@ def _check_percentile_count_range_bound(
         upper=bound.upper,
         label=f"{label} p{bound.lower_percentile:g}..p{bound.upper_percentile:g}",
     )
+
+
+_LEVEL_COMPARATORS = {"lt": np.less, "le": np.less_equal, "gt": np.greater, "ge": np.greater_equal}
+
+
+def _check_threshold_probability_bound(
+    levels: np.ndarray, bound: LevelThresholdProbabilityBound, *, series_id: str, rollout_count: int
+) -> None:
+    if bound.threshold_kind == "absolute":
+        threshold = np.full(rollout_count, bound.threshold, dtype=np.float64)
+    else:
+        threshold = bound.threshold * levels[:, 0]
+    comparator = _LEVEL_COMPARATORS[bound.comparison]
+    successes = comparator(levels[:, bound.month], threshold)
+    probability = float(successes.mean())
+    label = (
+        f"{series_id} P(level {bound.comparison} {bound.threshold:g}"
+        f"{' * initial' if bound.threshold_kind == 'ratio_of_initial' else ''} at m{bound.month})"
+    )
+    _assert_bound(probability, lower=bound.probability_lower, upper=bound.probability_upper, label=label)
+
+
+def _check_event_kind_observed(event_kind_codes: np.ndarray, bound: EventKindObservedCheck) -> None:
+    window = event_kind_codes[:, : bound.by_month + 1]
+    occurrence_mask = np.isin(window, np.asarray(bound.event_kind_codes, dtype=window.dtype))
+    occurs_per_rollout = occurrence_mask.any(axis=1)
+    successes = occurs_per_rollout if bound.count_op == "at_least_one" else ~occurs_per_rollout
+    probability = float(successes.mean())
+    kind_names = ",".join(PrivateEquityEventKindCode(code).name for code in bound.event_kind_codes)
+    label = (
+        f"private-equity issuer {bound.issuer_id!r} "
+        f"P({bound.count_op.replace('_', ' ')} of {{{kind_names}}} by m{bound.by_month})"
+    )
+    _assert_bound(probability, lower=bound.probability_lower, upper=bound.probability_upper, label=label)
 
 
 def _assert_bound(value: float, *, lower: float | None, upper: float | None, label: str) -> None:

@@ -24,6 +24,15 @@ level_checks:
         upper_percentile: 99
         lower: 0.72
         upper: 1.5
+    threshold_probability_bounds:
+      # GBM with mu=0.005, sigma=0.04 over 12 months: P(level > initial) sits in
+      # the upper half. Generous band, just exercises the runner.
+      - month: 12
+        comparison: gt
+        threshold_kind: ratio_of_initial
+        threshold: 1.0
+        probability_lower: 0.4
+        probability_upper: 0.9
 event_checks:
   - issuer_id: private_company_a
     active_count_percentile_ranges:
@@ -31,6 +40,24 @@ event_checks:
         upper_percentile: 99
         lower: 1
         upper: 5
+event_kind_observed_checks:
+  # Trained PE model has 6-month median tender interval and last tender at
+  # as-of - 4.5 months, so the next tender lands inside the horizon nearly
+  # always. Exercises the at_least_one path.
+  - issuer_id: private_company_a
+    event_kind_codes: [1] # TENDER
+    by_month: 12
+    count_op: at_least_one
+    probability_lower: 0.9
+    probability_upper: 1.0
+  # Trained PE model emits only NONE/TENDER, so COLLAPSE never occurs.
+  # Exercises the exactly_zero path.
+  - issuer_id: private_company_a
+    event_kind_codes: [7] # COLLAPSE
+    by_month: 12
+    count_op: exactly_zero
+    probability_lower: 1.0
+    probability_upper: 1.0
 private_equity_protocol_checks:
   - issuer_id: private_company_a
     allowed_regime_codes: [1]

@@ -71,11 +71,6 @@ this file as a backlog, not a second ordered roadmap.
 
 ## API / Runtime Design Debt
 
-- [ ] **Split private-equity sale opportunity, user participation
-      preference, policy decision, accounting application, and public
-      action into separate concepts with explicit cause IDs.**
-      Tender-eligible private marks are not liquid assets and must stay
-      out of `liquid_net_worth`.
 - [ ] **Extend policy schema/programs** enough for downstream
       deployments to express concentrated-holding limits,
       liquidity-sale preferences, tender/acquisition/IPO preferences,
