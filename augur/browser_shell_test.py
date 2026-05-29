@@ -126,9 +126,12 @@ def test_product_shell_renders_metric_fan_charts(page: Page, augur_server: str) 
     page.get_by_label("Metric to plot").select_option("holding_value_usd")
     page.locator("[data-product-fan-chart='holdingValueUsd']").wait_for(state="visible", timeout=30_000)
     page.get_by_text("Initial portfolio").wait_for(state="visible", timeout=15_000)
+    # Grand total (cash + holdings) is shown in the collapsed accordion summary.
+    assert page.locator("[data-product-portfolio-subtotal='total']").inner_text() == "$1,110,500"
+    # Open the accordion to see per-bucket subtotals inline with their positions.
+    page.get_by_text("Initial portfolio").click()
     assert page.locator("[data-product-portfolio-subtotal='public-securities']").inner_text() == "$835,500"
     assert page.locator("[data-product-portfolio-subtotal='private-securities']").inner_text() == "$25,000"
-    assert page.locator("[data-product-portfolio-subtotal='holdings-total']").inner_text() == "$860,500"
 
 
 def test_property_recurring_expense_events_start_hidden_on_rollout_graph(page: Page, augur_server: str) -> None:

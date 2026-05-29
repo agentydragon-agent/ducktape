@@ -552,14 +552,58 @@ export function SellOrderControl({ sellOrder, portfolio, onChange }) {
   );
 }
 
+function PortfolioGroupHeaderRow({ label }) {
+  return (
+    <tr className="border-t border-slate-200 dark:border-slate-700">
+      <td colSpan={5} className="pt-2 pb-1 text-[11px] uppercase tracking-wide augur-muted">
+        {label}
+      </td>
+    </tr>
+  );
+}
+
+function PortfolioPositionRow({ position }) {
+  return (
+    <tr className="border-t border-slate-100 dark:border-slate-800">
+      <td className="py-1 pl-3">
+        <div className="truncate font-semibold augur-strong">{position.label || position.symbol}</div>
+        <div className="truncate text-xs augur-muted">
+          {position.symbol} · {position.accountLabel || position.accountId}
+        </div>
+      </td>
+      <td className="py-1 text-right augur-tabular">{fmtNumber(position.quantity)}</td>
+      <td className="py-1 text-right augur-tabular">{fmtUsd(position.unitValueUsd)}</td>
+      <td className="py-1 text-right augur-tabular">{fmtUsd(position.totalCostBasisUsd)}</td>
+      <td className="py-1 text-right font-semibold augur-tabular">{fmtUsd(position.currentValueUsd)}</td>
+    </tr>
+  );
+}
+
+function PortfolioSubtotalRow({ label, valueUsd, dataKey }) {
+  return (
+    <tr className="border-t border-slate-100 dark:border-slate-800">
+      <td colSpan={4} className="py-1 pl-3 text-xs augur-muted">
+        {label}
+      </td>
+      <td
+        className="py-1 text-right text-xs font-semibold augur-tabular augur-muted"
+        data-product-portfolio-subtotal={dataKey}
+      >
+        {fmtUsd(valueUsd)}
+      </td>
+    </tr>
+  );
+}
+
 export function ProductPortfolioPanel({ portfolio, error }) {
   const holdings = portfolio?.holdings ?? [];
   const publicHoldings = holdings.filter((position) => !isPrivateSecurityPosition(position));
   const privateSecurityHoldings = holdings.filter(isPrivateSecurityPosition);
   const publicHoldingsValueUsd = sumCurrentValueUsd(publicHoldings);
   const privateSecurityValueUsd = sumCurrentValueUsd(privateSecurityHoldings);
-  const showHoldingsTotal = publicHoldings.length > 0 && privateSecurityHoldings.length > 0;
-  const totalUsd = (portfolio?.cashUsd ?? 0) + (portfolio?.totalHoldingsValueUsd ?? 0);
+  const cashUsd = portfolio?.cashUsd ?? 0;
+  const totalUsd = cashUsd + (portfolio?.totalHoldingsValueUsd ?? 0);
+  const hasAnything = cashUsd > 0 || holdings.length > 0;
   return (
     <details className="px-4 py-3 [&_summary::-webkit-details-marker]:hidden">
       <summary className="augur-eyebrow flex cursor-pointer list-none items-baseline justify-between gap-2">
@@ -570,7 +614,10 @@ export function ProductPortfolioPanel({ portfolio, error }) {
           Initial portfolio
         </span>
         {portfolio && !error && (
-          <span className="text-xs font-normal normal-case tracking-normal augur-tabular augur-muted">
+          <span
+            className="text-xs font-normal normal-case tracking-normal augur-tabular augur-muted"
+            data-product-portfolio-subtotal="total"
+          >
             {fmtUsd(totalUsd)}
           </span>
         )}
@@ -591,25 +638,35 @@ export function ProductPortfolioPanel({ portfolio, error }) {
           <tbody>
             <tr className="border-t border-slate-100 dark:border-slate-800">
               <td className="py-1 font-semibold augur-strong">Cash</td>
-              <td className="py-1 text-right augur-muted">—</td>
-              <td className="py-1 text-right augur-muted">—</td>
-              <td className="py-1 text-right augur-muted">—</td>
-              <td className="py-1 text-right font-semibold augur-tabular">{fmtUsd(portfolio?.cashUsd)}</td>
+              <td colSpan={3} />
+              <td className="py-1 text-right font-semibold augur-tabular">{fmtUsd(cashUsd)}</td>
             </tr>
-            {holdings.map((position) => (
-              <tr key={position.positionId} className="border-t border-slate-100 dark:border-slate-800">
-                <td className="py-1">
-                  <div className="truncate font-semibold augur-strong">{position.label || position.symbol}</div>
-                  <div className="truncate text-xs augur-muted">
-                    {position.symbol} · {position.accountLabel || position.accountId}
-                  </div>
-                </td>
-                <td className="py-1 text-right augur-tabular">{fmtNumber(position.quantity)}</td>
-                <td className="py-1 text-right augur-tabular">{fmtUsd(position.unitValueUsd)}</td>
-                <td className="py-1 text-right augur-tabular">{fmtUsd(position.totalCostBasisUsd)}</td>
-                <td className="py-1 text-right font-semibold augur-tabular">{fmtUsd(position.currentValueUsd)}</td>
-              </tr>
-            ))}
+            {publicHoldings.length > 0 && (
+              <>
+                <PortfolioGroupHeaderRow label="Public securities" />
+                {publicHoldings.map((position) => (
+                  <PortfolioPositionRow key={position.positionId} position={position} />
+                ))}
+                <PortfolioSubtotalRow
+                  label="Public subtotal"
+                  valueUsd={publicHoldingsValueUsd}
+                  dataKey="public-securities"
+                />
+              </>
+            )}
+            {privateSecurityHoldings.length > 0 && (
+              <>
+                <PortfolioGroupHeaderRow label="Private securities" />
+                {privateSecurityHoldings.map((position) => (
+                  <PortfolioPositionRow key={position.positionId} position={position} />
+                ))}
+                <PortfolioSubtotalRow
+                  label="Private subtotal"
+                  valueUsd={privateSecurityValueUsd}
+                  dataKey="private-securities"
+                />
+              </>
+            )}
             {holdings.length === 0 && (
               <tr className="border-t border-slate-100 dark:border-slate-800">
                 <td colSpan={5} className="py-1 augur-muted">
@@ -618,44 +675,14 @@ export function ProductPortfolioPanel({ portfolio, error }) {
               </tr>
             )}
           </tbody>
-          {holdings.length > 0 && (
+          {hasAnything && (
             <tfoot>
-              {publicHoldings.length > 0 && (
-                <tr className="border-t border-slate-200 dark:border-slate-700">
-                  <td className="py-1 text-xs augur-muted">Public securities</td>
-                  <td colSpan={3} />
-                  <td
-                    className="py-1 text-right font-semibold augur-tabular"
-                    data-product-portfolio-subtotal="public-securities"
-                  >
-                    {fmtUsd(publicHoldingsValueUsd)}
-                  </td>
-                </tr>
-              )}
-              {privateSecurityHoldings.length > 0 && (
-                <tr className="border-t border-slate-200 dark:border-slate-700">
-                  <td className="py-1 text-xs augur-muted">Private securities</td>
-                  <td colSpan={3} />
-                  <td
-                    className="py-1 text-right font-semibold augur-tabular"
-                    data-product-portfolio-subtotal="private-securities"
-                  >
-                    {fmtUsd(privateSecurityValueUsd)}
-                  </td>
-                </tr>
-              )}
-              {showHoldingsTotal && (
-                <tr className="border-t border-slate-200 dark:border-slate-700">
-                  <td className="py-1 text-xs font-semibold augur-strong">Holdings total</td>
-                  <td colSpan={3} />
-                  <td
-                    className="py-1 text-right font-semibold augur-tabular"
-                    data-product-portfolio-subtotal="holdings-total"
-                  >
-                    {fmtUsd(portfolio?.totalHoldingsValueUsd)}
-                  </td>
-                </tr>
-              )}
+              <tr className="border-t-2 border-slate-300 dark:border-slate-600">
+                <td colSpan={4} className="py-1 font-semibold augur-strong">
+                  Total
+                </td>
+                <td className="py-1 text-right font-semibold augur-tabular">{fmtUsd(totalUsd)}</td>
+              </tr>
             </tfoot>
           )}
         </table>
