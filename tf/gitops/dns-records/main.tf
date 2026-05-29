@@ -25,6 +25,14 @@ locals {
     "147.135.104.5",  # talos-ks-game-worker-0
     "147.135.104.16", # talos-ks-game-worker-1
   ]
+
+  # Kubernetes API endpoints. Keep this narrower than public_gateway_ips:
+  # kubeconfigs use api.allegedly.works:6443, and worker-only gateway nodes do
+  # not serve the apiserver on that port.
+  kube_api_ips = [
+    "147.135.37.175", # talos-kimsufi-cp-0
+    "147.135.39.162", # talos-kimsufi-worker-0
+  ]
 }
 
 provider "aws" {
@@ -65,6 +73,18 @@ resource "aws_route53_record" "apex" {
   type            = "A"
   ttl             = 300
   records         = local.public_gateway_ips
+  allow_overwrite = true
+}
+
+# Kubernetes API A record. This intentionally overrides the wildcard record
+# because kubeconfigs connect to api.allegedly.works:6443.
+resource "aws_route53_record" "api" {
+  #checkov:skip=CKV2_AWS_23:A records point to external Kubernetes API nodes, not AWS resources
+  zone_id         = var.route53_zone_id
+  name            = "api.${local.domain}"
+  type            = "A"
+  ttl             = 60
+  records         = local.kube_api_ips
   allow_overwrite = true
 }
 
