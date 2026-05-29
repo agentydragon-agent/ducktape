@@ -16,14 +16,7 @@ from numpyro import distributions as dist
 from augur.model.exogenous import ExogenousSamplingRequest
 from augur.model.location_series_sources import LocationSeriesSources
 from augur.model.path_models.scenarios import HistoricalSeries
-from augur.model.series import (
-    INFLATION_SERIES_ID,
-    SP500_SERIES_ID,
-    crypto_series_id,
-    home_value_series_id,
-    private_equity_series_id,
-    rent_series_id,
-)
+from augur.model.series import CryptoKey, CryptoSymbol, HomeValueKey, InflationKey, LocationId, RentKey, SP500Key
 from augur.model.vecm import VecmConfig, VecmModel
 
 
@@ -128,34 +121,26 @@ class TestVecmModel:
                 rollout_seeds=(7, 8),
                 required_level_series=frozenset(
                     {
-                        SP500_SERIES_ID,
-                        INFLATION_SERIES_ID,
-                        home_value_series_id("san_francisco_ca"),
-                        rent_series_id("san_francisco_ca"),
+                        SP500Key(),
+                        InflationKey(),
+                        HomeValueKey(location_id=LocationId("san_francisco_ca")),
+                        RentKey(location_id=LocationId("san_francisco_ca")),
                     }
                 ),
             )
         )
 
         # SP500 paths start at 5500 (the latest observation) and scale by month-0=1 multiplier.
-        assert sampled.level_matrix(SP500_SERIES_ID, rollout_count=2, horizon_months=12)[:, 0].tolist() == [
-            5500.0,
-            5500.0,
-        ]
-        assert sampled.level_matrix(home_value_series_id("san_francisco_ca"), rollout_count=2, horizon_months=12)[
-            :, 0
-        ].tolist() == [1_000_000.0, 1_000_000.0]
+        assert sampled.level_matrix(SP500Key(), rollout_count=2, horizon_months=12)[:, 0].tolist() == [5500.0, 5500.0]
+        assert sampled.level_matrix(
+            HomeValueKey(location_id=LocationId("san_francisco_ca")), rollout_count=2, horizon_months=12
+        )[:, 0].tolist() == [1_000_000.0, 1_000_000.0]
         assert sampled.metadata["scenario_generator_id"] == "vecm_numpyro"
-
-        # VECM does not model PE — requesting a PE level series fails loudly.
-        with pytest.raises(ValueError, match="trained_private_equity"):
-            model.sample(
-                ExogenousSamplingRequest(
-                    horizon_months=12,
-                    rollout_seeds=(7, 8),
-                    required_level_series=frozenset({private_equity_series_id("private_equity_x")}),
-                )
-            )
+        # Note: VECM-rejects-PE was previously asserted by calling
+        # `model.sample(required_level_series={"private_equity:..."})`. With the
+        # typed boundary, PE has no `LevelSeriesKey` variant — the rejection now
+        # happens at type construction (`required_level_series` cannot contain PE),
+        # so a sampler-level check is unnecessary.
 
     def test_offdiag_loadings_are_scaled_by_target_factor_volatility(self) -> None:
         model = VecmModel(
@@ -179,13 +164,11 @@ class TestVecmModel:
 
         sampled = model.sample(
             ExogenousSamplingRequest(
-                horizon_months=1,
-                rollout_seeds=tuple(range(512)),
-                required_level_series=frozenset({INFLATION_SERIES_ID}),
+                horizon_months=1, rollout_seeds=tuple(range(512)), required_level_series=frozenset({InflationKey()})
             )
         )
 
-        inflation = sampled.level_matrix(INFLATION_SERIES_ID, rollout_count=512, horizon_months=1)
+        inflation = sampled.level_matrix(InflationKey(), rollout_count=512, horizon_months=1)
         monthly_log_return = np.log(inflation[:, 1] / inflation[:, 0])
         assert float(np.std(monthly_log_return, ddof=1)) < 0.02
 
@@ -218,20 +201,20 @@ class TestVecmModel:
             ExogenousSamplingRequest(
                 horizon_months=6,
                 rollout_seeds=(11, 12),
-                required_level_series=frozenset({SP500_SERIES_ID, crypto_series_id("btc"), crypto_series_id("eth")}),
+                required_level_series=frozenset(
+                    {SP500Key(), CryptoKey(symbol=CryptoSymbol("btc")), CryptoKey(symbol=CryptoSymbol("eth"))}
+                ),
             )
         )
 
         # Month-0 multiplier is 1.0, so the first sampled level equals latest_observations directly.
         # This proves _latest_factor_value's crypto:* branch correctly maps to <symbol>_close_latest.
-        assert sampled.level_matrix(crypto_series_id("btc"), rollout_count=2, horizon_months=6)[:, 0].tolist() == [
-            65_000.0,
-            65_000.0,
-        ]
-        assert sampled.level_matrix(crypto_series_id("eth"), rollout_count=2, horizon_months=6)[:, 0].tolist() == [
-            3_200.0,
-            3_200.0,
-        ]
+        assert sampled.level_matrix(CryptoKey(symbol=CryptoSymbol("btc")), rollout_count=2, horizon_months=6)[
+            :, 0
+        ].tolist() == [65_000.0, 65_000.0]
+        assert sampled.level_matrix(CryptoKey(symbol=CryptoSymbol("eth")), rollout_count=2, horizon_months=6)[
+            :, 0
+        ].tolist() == [3_200.0, 3_200.0]
 
 
 if __name__ == "__main__":

@@ -36,7 +36,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
-import polars as pl
 
 from augur.model.exogenous import (
     ExogenousSamplingRequest,
@@ -46,22 +45,6 @@ from augur.model.exogenous import (
 )
 from augur.model.private_equity_bundle import PrivateEquityBundle
 from augur.model.private_equity_protocol import neutral_private_equity_issuer_bundle
-from augur.model.series import issuer_id_from_private_equity_mark_wire_id, try_parse_level_series_key
-
-
-def _is_private_equity_level_wire_id(wire_id: str) -> bool:
-    """A PE level wire id has no corresponding `LevelSeriesKey` variant.
-
-    Mirrors composite_exogenous.py's helper: anything that doesn't parse as a
-    level key but has the PE-namespace shape (mark or auxiliary control series)
-    is treated as PE for routing purposes.
-    """
-
-    if try_parse_level_series_key(wire_id) is not None:
-        return False
-    if issuer_id_from_private_equity_mark_wire_id(wire_id) is not None:
-        return True
-    return wire_id.startswith("private_equity_")
 
 
 @dataclass(frozen=True)
@@ -143,14 +126,12 @@ class PreSampledPrivateEquitySampler:
     trajectories_by_issuer: dict[str, PrivateEquityTrajectorySet]
 
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
+        # `required_level_series` only carries non-PE typed keys; pass straight
+        # through to the underlying provider.
         underlying_request = ExogenousSamplingRequest(
             horizon_months=request.horizon_months,
             rollout_seeds=request.rollout_seeds,
-            required_level_series=frozenset(
-                series_id
-                for series_id in request.required_level_series
-                if not _is_private_equity_level_wire_id(series_id)
-            ),
+            required_level_series=request.required_level_series,
         )
         bundle = self.underlying.sample(underlying_request)
         if not self.trajectories_by_issuer:
@@ -179,7 +160,7 @@ class PreSampledPrivateEquitySampler:
             )
 
         sampled = SampledExogenousBundle(
-            levels=_drop_pe_levels(bundle.levels),
+            levels=bundle.levels,
             private_equity=PrivateEquityBundle.combine(pe_bundle_parts),
             metadata={**bundle.metadata, "private_equity_issuers": tuple(sorted(self.trajectories_by_issuer))},
         )
@@ -237,17 +218,3 @@ def _materialize_pe_events(
             if 0 <= event.month_index <= horizon_months:
                 events[rollout_idx, event.month_index] = True
     return events
-
-
-def _drop_pe_levels(levels: pl.DataFrame) -> pl.DataFrame:
-    """Drop PE-namespaced rows from a series_levels frame.
-
-    PE level wire ids share a `private_equity` namespace prefix (mark
-    `private_equity:<issuer>` plus the 7 auxiliary `private_equity_*:<issuer>`
-    control channels). The polars filter encodes the wire-format shape; the
-    Python-side dispatch elsewhere goes through the typed key parser.
-    """
-
-    if levels.is_empty():
-        return levels
-    return levels.filter(~pl.col("series_id").str.starts_with("private_equity"))

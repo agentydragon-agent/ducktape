@@ -15,7 +15,7 @@ from augur.fit.private_equity import (
     train_from_config,
 )
 from augur.model.exogenous import ExogenousSamplingRequest
-from augur.model.series import private_equity_series_id
+from augur.model.series import IssuerId
 from augur.model.trained_private_equity import (
     TrainedPrivateEquityModel,
     TrainedPrivateEquityModelArtifact,
@@ -150,7 +150,9 @@ priors:
 
     model = TrainedPrivateEquityModel.from_path(tmp_path / "trained_model.json")
     request = ExogenousSamplingRequest(
-        horizon_months=8, rollout_seeds=(1, 2, 3), required_private_equity_issuers=frozenset({"private_company_a"})
+        horizon_months=8,
+        rollout_seeds=(1, 2, 3),
+        required_private_equity_issuers=frozenset({IssuerId("private_company_a")}),
     )
     bundle = model.sample(request)
 
@@ -184,7 +186,9 @@ def test_runtime_private_marks_forward_fill_between_tenders(broad_scale_prior: T
 
     sampled = model.sample(
         ExogenousSamplingRequest(
-            horizon_months=4, rollout_seeds=(1,), required_private_equity_issuers=frozenset({"private_company_a"})
+            horizon_months=4,
+            rollout_seeds=(1,),
+            required_private_equity_issuers=frozenset({IssuerId("private_company_a")}),
         )
     )
     levels = sampled.private_equity.issuer_float_matrix(
@@ -211,7 +215,9 @@ def test_runtime_tender_updates_observed_private_mark(broad_scale_prior: Trained
 
     sampled = model.sample(
         ExogenousSamplingRequest(
-            horizon_months=4, rollout_seeds=(1,), required_private_equity_issuers=frozenset({"private_company_a"})
+            horizon_months=4,
+            rollout_seeds=(1,),
+            required_private_equity_issuers=frozenset({IssuerId("private_company_a")}),
         )
     )
     levels = sampled.private_equity.issuer_float_matrix(
@@ -367,7 +373,9 @@ def test_runtime_scale_prior_penalizes_paths_above_soft_cap() -> None:
         )
     )
     request = ExogenousSamplingRequest(
-        horizon_months=12, rollout_seeds=(1,), required_private_equity_issuers=frozenset({"private_company_a"})
+        horizon_months=12,
+        rollout_seeds=(1,),
+        required_private_equity_issuers=frozenset({IssuerId("private_company_a")}),
     )
 
     loose_levels = loose.sample(request).private_equity.issuer_float_matrix(
@@ -401,7 +409,7 @@ def test_runtime_sampling_fails_on_nonfinite_private_equity_prices(
             ExogenousSamplingRequest(
                 horizon_months=1,
                 rollout_seeds=(1,),
-                required_level_series=frozenset({private_equity_series_id("private_company_a")}),
+                required_private_equity_issuers=frozenset({IssuerId("private_company_a")}),
             )
         )
 

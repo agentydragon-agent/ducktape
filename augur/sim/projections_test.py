@@ -35,7 +35,7 @@ def test_projection_due_now_obligation_sells_assets_and_settles(deterministic_se
             InitialLot(
                 lot_id="alice_vti",
                 agent_id="alice",
-                asset_id="vti",
+                asset_id="crypto:vti",
                 purchase_month_index=-24,
                 quantity=10.0,
                 cost_basis_per_unit_usd=50.0,
@@ -54,7 +54,9 @@ def test_projection_due_now_obligation_sells_assets_and_settles(deterministic_se
             )
         ],
         external_series=deterministic_series_bundle([100.0, 100.0]),
-        liquidity_policies=[LiquidityPolicy(agent_id="alice", account_id="checking", asset_preference_chain=["vti"])],
+        liquidity_policies=[
+            LiquidityPolicy(agent_id="alice", account_id="checking", asset_preference_chain=["crypto:vti"])
+        ],
         tax_profiles=[],
         horizon_months=1,
     )
@@ -67,7 +69,7 @@ def test_projection_due_now_obligation_sells_assets_and_settles(deterministic_se
     assert lifecycle["amount_due_usd"] == pytest.approx(500.0)
     assert lifecycle["amount_paid_usd"] == pytest.approx(500.0)
     assert lifecycle["shortfall_usd"] == pytest.approx(0.0)
-    assert lifecycle["attempted_funding_sources"] == "vti"
+    assert lifecycle["attempted_funding_sources"] == "crypto:vti"
 
     alice_final = _net_worth_row(projection.net_worth, agent_id="alice", month=1)
     assert alice_final["cash_usd"] == pytest.approx(0.0)
@@ -79,7 +81,7 @@ def test_projection_due_now_obligation_sells_assets_and_settles(deterministic_se
     transaction_types = set(projection.transactions.get_column("transaction_type").to_list())
     assert {"asset_sale", "cash_transfer", "obligation_settlement"} <= transaction_types
     sale = projection.transactions.filter(pl.col("transaction_type") == "asset_sale").row(0, named=True)
-    assert sale["transaction_id"] == "liquidity_sale_m0_vti:alice_vti"
+    assert sale["transaction_id"] == "liquidity_sale_m0_crypto:vti:alice_vti"
     assert sale["amount_usd"] == pytest.approx(400.0)
     assert sale["quantity"] == pytest.approx(4.0)
 
@@ -146,7 +148,7 @@ def test_projection_tax_safe_harbor_breakdown_and_payments() -> None:
             InitialLot(
                 lot_id="alice_long_vti",
                 agent_id="alice",
-                asset_id="vti",
+                asset_id="crypto:vti",
                 purchase_month_index=-24,
                 quantity=100.0,
                 cost_basis_per_unit_usd=80.0,
@@ -170,7 +172,7 @@ def test_projection_tax_safe_harbor_breakdown_and_payments() -> None:
                 month=6,
                 cause_id="alice_long_sale",
                 agent_id="alice",
-                asset_id="vti",
+                asset_id="crypto:vti",
                 quantity=100.0,
                 price_per_unit_usd=280.0,
                 proceeds_account_id="checking",

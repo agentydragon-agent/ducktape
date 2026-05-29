@@ -16,7 +16,17 @@ from augur.model.private_equity_bundle import (
     PrivateEquityFloatChannel,
     PrivateEquityIntChannel,
 )
-from augur.model.series import INFLATION_SERIES_ID, SP500_SERIES_ID, PrivateEquityEventKindCode, PrivateEquityRegimeCode
+from augur.model.series import (
+    CryptoKey,
+    CryptoSymbol,
+    HomeValueKey,
+    InflationKey,
+    LocationId,
+    PrivateEquityEventKindCode,
+    PrivateEquityRegimeCode,
+    RentKey,
+    SP500Key,
+)
 from augur.product import decode, service
 from augur.product.scenarios import build_scenario, resolve_primary_agent_id, sim_locations_from_config
 from augur.product.service import ProductService
@@ -141,7 +151,7 @@ def test_product_fails_when_sample_is_missing_required_exogenous_series() -> Non
     model = MissingRequiredExogenousModel()
     product = _service(model)
 
-    with pytest.raises(ValueError, match=f"missing required level series: .*{SP500_SERIES_ID}"):
+    with pytest.raises(ValueError, match=f"missing required level series: .*{SP500Key().wire_id}"):
         product.rollout(RolloutRequest(scenario=_scenario_key(), seed=7))
 
     assert model.sample_requests[0].required_level_series
@@ -213,7 +223,7 @@ def test_metric_fan_and_rollout_detail_share_cached_sim_rollouts(
 
     assert [request.rollout_seeds for request in counting_exogenous_model.sample_requests] == [(7, 8)]
     assert counting_exogenous_model.sample_requests[0].required_level_series == frozenset(
-        {SP500_SERIES_ID, "crypto:btc", "crypto:eth"}
+        {SP500Key(), CryptoKey(symbol=CryptoSymbol("btc")), CryptoKey(symbol=CryptoSymbol("eth"))}
     )
     assert counting_exogenous_model.sample_requests[0].required_private_equity_issuers == frozenset(
         {"private_holding_a"}
@@ -633,7 +643,10 @@ def test_outside_rent_emits_yearly_re_pegged_obligation(counting_exogenous_model
     # Within year 1 the amount stays flat.
     assert len({event.amount_paid_usd for event in year_one}) == 1
     # Required-level-series for the request should include the location-keyed rent series.
-    assert "rent:location_a" in counting_exogenous_model.sample_requests[0].required_level_series
+    assert (
+        RentKey(location_id=LocationId("location_a"))
+        in counting_exogenous_model.sample_requests[0].required_level_series
+    )
 
     # Year-0 cash drops by spend + rent = 4000 each month deterministically.
     cash = detail.rollout.monthly_metrics["cash_usd"]
@@ -652,7 +665,7 @@ def test_outside_rent_zero_omits_rent_series_requirement(counting_exogenous_mode
     product.metric_fan(MetricFanRequest(scenario=scenario, rollout_seeds=(7,), metric="cash_usd", percentiles=(50,)))
 
     assert not any(
-        "rent:" in series_id for series_id in counting_exogenous_model.sample_requests[0].required_level_series
+        isinstance(key, RentKey) for key in counting_exogenous_model.sample_requests[0].required_level_series
     )
 
 
@@ -979,7 +992,10 @@ def test_future_rental_lifecycle_requires_rent_series_at_product_api(
     detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
 
     assert detail.rollout.failed is False
-    assert "rent:location_a" in counting_exogenous_model.sample_requests[0].required_level_series
+    assert (
+        RentKey(location_id=LocationId("location_a"))
+        in counting_exogenous_model.sample_requests[0].required_level_series
+    )
 
 
 def test_primary_residence_event_emits_rollout_marker(counting_exogenous_model: CountingExogenousModel) -> None:
@@ -1038,7 +1054,10 @@ def test_property_purchase_metrics_track_value_balance_and_equity(
     assert home_equity_usd == pytest.approx(property_value_usd - mortgage_balance_usd)
     assert net_worth_usd == pytest.approx(liquid_net_worth_usd + home_equity_usd + private_equity_value_usd)
     # Required-level-series should include the location's home-value series.
-    assert "home_value:location_a" in counting_exogenous_model.sample_requests[0].required_level_series
+    assert (
+        HomeValueKey(location_id=LocationId("location_a"))
+        in counting_exogenous_model.sample_requests[0].required_level_series
+    )
 
 
 def test_cash_property_purchase_omits_mortgage_payments(counting_exogenous_model: CountingExogenousModel) -> None:
@@ -1100,7 +1119,7 @@ def test_property_purchase_emits_hoa_dues_when_property_has_monthly_hoa(
         assert event.amount_due_usd == pytest.approx(150.0, rel=0.1)
         assert event.amount_paid_usd == pytest.approx(event.amount_due_usd)
         assert event.shortfall_usd == 0.0
-    assert INFLATION_SERIES_ID in counting_exogenous_model.sample_requests[0].required_level_series
+    assert InflationKey() in counting_exogenous_model.sample_requests[0].required_level_series
 
 
 def test_property_purchase_skips_hoa_when_property_has_no_monthly_hoa(

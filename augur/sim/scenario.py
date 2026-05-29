@@ -11,11 +11,13 @@ external-series bundle reference, and tax profiles per agent.
 from __future__ import annotations
 
 from enum import StrEnum
+from functools import cached_property
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, NonNegativeInt, PositiveInt, model_validator
+from pydantic import BaseModel, ConfigDict, Field, NonNegativeInt, PositiveInt, model_validator
 
 from augur.model.series_model import SeriesModelBundle
+from augur.product.asset_key import AssetKey, try_parse_asset_key
 
 
 class FilingStatus(StrEnum):
@@ -227,7 +229,16 @@ class InitialLot(BaseModel):
     pre-dating the horizon are fine and feed into LTCG/STCG
     classification of later sales). `account_id` identifies the
     holding account used for FIFO pools; lots in different accounts
-    are not fungible."""
+    are not fungible.
+
+    `asset_id` is the wire-id string used as a flat lookup key into the
+    compiler's series-index table. The typed `asset` cached property
+    parses it once at access into the `AssetKey` discriminated union;
+    dispatch sites read `lot.asset` instead of re-parsing the wire-id.
+    `asset` is `None` when the wire-id is not a recognized asset
+    classification — engine machinery still treats these as opaque
+    string keys.
+    """
 
     lot_id: str
     agent_id: str
@@ -236,6 +247,14 @@ class InitialLot(BaseModel):
     purchase_month_index: int
     quantity: float
     cost_basis_per_unit_usd: float
+
+    @cached_property
+    def asset(self) -> AssetKey | None:
+        """Typed asset classification for this lot, parsed once from `asset_id`."""
+
+        return try_parse_asset_key(self.asset_id)
+
+    model_config = ConfigDict(ignored_types=(cached_property,))
 
 
 class ScheduledAssetSale(BaseModel):
@@ -259,6 +278,14 @@ class ScheduledAssetSale(BaseModel):
     quantity: float
     proceeds_account_id: str
     price_per_unit_usd: float | None = None
+
+    @cached_property
+    def asset(self) -> AssetKey | None:
+        """Typed asset classification for this sale, parsed once from `asset_id`."""
+
+        return try_parse_asset_key(self.asset_id)
+
+    model_config = ConfigDict(ignored_types=(cached_property,))
 
 
 class LiquidityPolicy(BaseModel):

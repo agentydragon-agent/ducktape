@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from functools import cached_property
 from pathlib import Path
 
 import numpy as np
@@ -18,6 +19,7 @@ from augur.model.exogenous_provider_config import (
     VecmExogenousProviderConfig,
 )
 from augur.model.schemas import FrozenModel
+from augur.model.series import IssuerId, LevelSeriesKey, parse_level_series_key
 from util.bazel.runfiles import get_required_path
 
 _ADAPTER: TypeAdapter[ExogenousProviderConfig] = TypeAdapter(ExogenousProviderConfig)
@@ -78,6 +80,12 @@ class LevelSeriesSanityCheck(FrozenModel):
     ratio_percentile_bounds: tuple[PercentileBound, ...] = ()
     ratio_percentile_ranges: tuple[PercentileRangeBound, ...] = ()
 
+    @cached_property
+    def level_key(self) -> LevelSeriesKey:
+        """Typed level-series key parsed once from the YAML-supplied `series_id`."""
+
+        return parse_level_series_key(self.series_id)
+
 
 class EventSeriesSanityCheck(FrozenModel):
     """Sanity check on the `sale_opportunity_active` channel of one PE issuer."""
@@ -121,15 +129,15 @@ def run_sample_sanity(spec: SampleSanitySpec, *, base_dir: Path) -> None:
     request = ExogenousSamplingRequest(
         horizon_months=spec.horizon_months,
         rollout_seeds=spec.rollout_seeds,
-        required_level_series=frozenset(spec.required_level_series),
-        required_private_equity_issuers=frozenset(spec.required_private_equity_issuers),
+        required_level_series=frozenset(parse_level_series_key(series_id) for series_id in spec.required_level_series),
+        required_private_equity_issuers=frozenset(IssuerId(issuer) for issuer in spec.required_private_equity_issuers),
     )
     sampled = model.sample(request)
     validate_sample_satisfies_request(request, sampled)
 
     for level_check in spec.level_checks:
         levels = sampled.level_matrix(
-            level_check.series_id, rollout_count=spec.rollout_count, horizon_months=spec.horizon_months
+            level_check.level_key, rollout_count=spec.rollout_count, horizon_months=spec.horizon_months
         )
         _assert_finite(levels, label=level_check.series_id)
         if level_check.require_positive and np.any(levels <= 0.0):

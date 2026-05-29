@@ -26,6 +26,7 @@ from augur.model.exogenous import (
 )
 from augur.model.gbm import GeometricBrownian
 from augur.model.poisson_events import PoissonEvents
+from augur.model.series import LevelSeriesKey, parse_level_series_key
 
 ScalarSeriesSpec = Annotated[Constant | Deterministic | GeometricBrownian, Field(discriminator="kind")]
 ScalarEventSpec = Annotated[PoissonEvents, Field(discriminator="kind")]
@@ -38,9 +39,11 @@ class IndependentSeriesModels(BaseModel):
     series: dict[str, ScalarSeriesSpec] = Field(default_factory=dict)
 
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
+        # YAML series keys are wire strings; parse them into typed keys at the
+        # boundary so `series_levels_frame` only ever sees `LevelSeriesKey`.
         level_blocks = [
             series_levels_frame(
-                series_id,
+                parse_level_series_key(series_id),
                 model.sample_levels(
                     rollout_seeds=derive_stream_rollout_seeds(request.rollout_seeds, stream_id=series_id),
                     horizon_months=request.horizon_months,
@@ -70,7 +73,7 @@ class SeriesModelBundle(BaseModel):
         *,
         horizon_months: int,
         rollout_seeds: tuple[int, ...],
-        required_level_series: frozenset[str] = frozenset(),
+        required_level_series: frozenset[LevelSeriesKey] = frozenset(),
     ) -> SampledExogenousBundle:
         model: Sampler = self.model
         return model.sample(

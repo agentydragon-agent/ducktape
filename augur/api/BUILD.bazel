@@ -106,6 +106,8 @@ py_library(
     name = "portfolio",
     srcs = ["portfolio.py"],
     deps = [
+        "//augur/model:series",
+        "//augur/product:asset_key",
         "//augur/sim:scenario",
         "@pypi//pydantic",
     ],

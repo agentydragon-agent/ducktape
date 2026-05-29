@@ -10,7 +10,8 @@ import numpy as np
 from numpy.typing import NDArray
 
 from augur.model.private_equity_bundle import PrivateEquityBundle
-from augur.model.series import PrivateEquityEventKindCode, issuer_id_from_private_equity_mark_wire_id
+from augur.model.series import PrivateEquityEventKindCode
+from augur.product.asset_key import PrivateEquityAssetKey
 from augur.sim.compiler.helpers import AMOUNT_FIXED, NO_CODE, StringTable, amount_arrays
 from augur.sim.scenario import Scenario
 
@@ -86,9 +87,8 @@ def compile_private_equity_tenders(
 
     issuer_to_lots: dict[str, list[int]] = {}
     for lot_index, lot in enumerate(scenario.initial_lots):
-        lot_issuer = issuer_id_from_private_equity_mark_wire_id(lot.asset_id)
-        if lot_issuer is not None:
-            issuer_to_lots.setdefault(str(lot_issuer), []).append(lot_index)
+        if isinstance(lot.asset, PrivateEquityAssetKey):
+            issuer_to_lots.setdefault(str(lot.asset.issuer_id), []).append(lot_index)
     issuer_ids = tuple(sorted(issuer_to_lots))
 
     policies = scenario.private_equity_tender_policies

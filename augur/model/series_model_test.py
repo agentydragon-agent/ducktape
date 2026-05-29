@@ -15,6 +15,7 @@ from augur.model.exogenous import (
     validate_sample_satisfies_request,
 )
 from augur.model.gbm import GeometricBrownian
+from augur.model.series import HomeValueKey, InflationKey, LocationId, SP500Key
 from augur.model.series_model import IndependentSeriesModels, SeriesModelBundle, materialize_series_values
 from augur.model.testing import DeterministicSeriesFixtureModel
 
@@ -35,7 +36,11 @@ def test_sampling_request_requires_explicit_rollout_seeds() -> None:
 
 
 def test_independent_model_samples_deterministic_levels_for_each_rollout() -> None:
-    model = IndependentSeriesModels(series={"vti": Deterministic(levels=[100.0, 110.0, 120.0])})
+    # `crypto:vti` is a valid `CryptoKey` wire id; the typed-series boundary
+    # rejects bare `"vti"`. Internally `IndependentSeriesModels.series` still
+    # keys on the wire string (YAML-facing), but only known `LevelSeriesKey`
+    # wire ids are allowed.
+    model = IndependentSeriesModels(series={"crypto:vti": Deterministic(levels=[100.0, 110.0, 120.0])})
 
     frame = model.sample(ExogenousSamplingRequest(horizon_months=2, rollout_seeds=(101, 102))).levels.sort(
         ["rollout_index", "month_index"]
@@ -43,12 +48,12 @@ def test_independent_model_samples_deterministic_levels_for_each_rollout() -> No
 
     assert frame.schema == SERIES_LEVELS_SCHEMA
     assert frame.to_dicts() == [
-        {"rollout_index": 0, "month_index": 0, "series_id": "vti", "value": 100.0},
-        {"rollout_index": 0, "month_index": 1, "series_id": "vti", "value": 110.0},
-        {"rollout_index": 0, "month_index": 2, "series_id": "vti", "value": 120.0},
-        {"rollout_index": 1, "month_index": 0, "series_id": "vti", "value": 100.0},
-        {"rollout_index": 1, "month_index": 1, "series_id": "vti", "value": 110.0},
-        {"rollout_index": 1, "month_index": 2, "series_id": "vti", "value": 120.0},
+        {"rollout_index": 0, "month_index": 0, "series_id": "crypto:vti", "value": 100.0},
+        {"rollout_index": 0, "month_index": 1, "series_id": "crypto:vti", "value": 110.0},
+        {"rollout_index": 0, "month_index": 2, "series_id": "crypto:vti", "value": 120.0},
+        {"rollout_index": 1, "month_index": 0, "series_id": "crypto:vti", "value": 100.0},
+        {"rollout_index": 1, "month_index": 1, "series_id": "crypto:vti", "value": 110.0},
+        {"rollout_index": 1, "month_index": 2, "series_id": "crypto:vti", "value": 120.0},
     ]
 
 
@@ -58,9 +63,9 @@ def test_bundle_api_unites_deterministic_constant_and_gbm_models() -> None:
             "model": {
                 "kind": "independent",
                 "series": {
-                    "vti": {"kind": "deterministic", "levels": [100.0, 100.0, 100.0]},
-                    "bnd": {"kind": "constant", "value": 95.0},
-                    "qqq": {
+                    "crypto:vti": {"kind": "deterministic", "levels": [100.0, 100.0, 100.0]},
+                    "crypto:bnd": {"kind": "constant", "value": 95.0},
+                    "crypto:qqq": {
                         "kind": "gbm",
                         "initial_value": 200.0,
                         "monthly_log_return_mu": 0.01,
@@ -77,16 +82,16 @@ def test_bundle_api_unites_deterministic_constant_and_gbm_models() -> None:
     assert first.schema == SERIES_VALUES_SCHEMA
     assert first.height == 27
     assert first.equals(second)
-    assert first.filter((pl.col("series_id") == "qqq") & (pl.col("month_index") == 0))["value"].to_list() == [
+    assert first.filter((pl.col("series_id") == "crypto:qqq") & (pl.col("month_index") == 0))["value"].to_list() == [
         200.0,
         200.0,
         200.0,
     ]
-    assert first.filter(pl.col("series_id") == "bnd")["value"].to_list() == [95.0] * 9
+    assert first.filter(pl.col("series_id") == "crypto:bnd")["value"].to_list() == [95.0] * 9
 
 
 def test_deterministic_model_rejects_wrong_horizon_length() -> None:
-    model = IndependentSeriesModels(series={"vti": Deterministic(levels=[100.0, 110.0])})
+    model = IndependentSeriesModels(series={"crypto:vti": Deterministic(levels=[100.0, 110.0])})
 
     with pytest.raises(ValueError, match=r"need 3"):
         model.sample(ExogenousSamplingRequest(horizon_months=2, rollout_seeds=(1,)))
@@ -99,15 +104,15 @@ def test_deterministic_fixture_samples_requested_constant_series_and_events() ->
 
     sampled = model.sample(
         ExogenousSamplingRequest(
-            horizon_months=2, rollout_seeds=(101, 102), required_level_series=frozenset({"inflation", "sp500"})
+            horizon_months=2, rollout_seeds=(101, 102), required_level_series=frozenset({InflationKey(), SP500Key()})
         )
     )
 
-    assert sampled.level_matrix("inflation", rollout_count=2, horizon_months=2).tolist() == [
+    assert sampled.level_matrix(InflationKey(), rollout_count=2, horizon_months=2).tolist() == [
         [1.0, 1.0, 1.0],
         [1.0, 1.0, 1.0],
     ]
-    assert sampled.level_matrix("sp500", rollout_count=2, horizon_months=2).tolist() == [
+    assert sampled.level_matrix(SP500Key(), rollout_count=2, horizon_months=2).tolist() == [
         [2.0, 2.0, 2.0],
         [2.0, 2.0, 2.0],
     ]
@@ -115,13 +120,18 @@ def test_deterministic_fixture_samples_requested_constant_series_and_events() ->
 
 def test_sample_compatibility_accepts_required_subset_and_extra_series() -> None:
     request = ExogenousSamplingRequest(
-        horizon_months=2, rollout_seeds=(101,), required_level_series=frozenset({"sp500"})
+        horizon_months=2, rollout_seeds=(101,), required_level_series=frozenset({SP500Key()})
     )
     sampled = SampledExogenousBundle(
         levels=pl.concat(
             [
-                series_levels_frame("sp500", np.ones((1, 3)), rollout_count=1, horizon_months=2),
-                series_levels_frame("extra_level", np.ones((1, 3)), rollout_count=1, horizon_months=2),
+                series_levels_frame(SP500Key(), np.ones((1, 3)), rollout_count=1, horizon_months=2),
+                series_levels_frame(
+                    HomeValueKey(location_id=LocationId("extra_level")),
+                    np.ones((1, 3)),
+                    rollout_count=1,
+                    horizon_months=2,
+                ),
             ]
         )
     )
@@ -130,12 +140,17 @@ def test_sample_compatibility_accepts_required_subset_and_extra_series() -> None
 
 
 def test_sample_compatibility_rejects_missing_required_level_series() -> None:
+    # A `RentKey` for an unmodeled location plays the part of an "unrecognized"
+    # request key — the assertion just needs a typed `LevelSeriesKey` that the
+    # empty sampled bundle won't satisfy.
     request = ExogenousSamplingRequest(
-        horizon_months=2, rollout_seeds=(101,), required_level_series=frozenset({"prices_of_tea:china"})
+        horizon_months=2,
+        rollout_seeds=(101,),
+        required_level_series=frozenset({HomeValueKey(location_id=LocationId("prices_of_tea_china"))}),
     )
     sampled = SampledExogenousBundle(levels=SERIES_LEVELS_SCHEMA.to_frame())
 
-    with pytest.raises(ValueError, match=r"missing required level series: \['prices_of_tea:china'\]"):
+    with pytest.raises(ValueError, match=r"missing required level series: \['home_value:prices_of_tea_china'\]"):
         validate_sample_satisfies_request(request, sampled)
 
 

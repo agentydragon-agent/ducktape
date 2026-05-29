@@ -25,6 +25,7 @@ from augur.model.private_equity_trajectories import (
     TenderEvent,
     read_private_equity_trajectories_jsonl,
 )
+from augur.model.series import SP500Key
 
 
 @dataclass(frozen=True)
@@ -196,15 +197,16 @@ def test_sampler_overlay_rejects_empty_trajectory_set() -> None:
         sampler.sample(request)
 
 
-def test_sampler_overlay_replaces_pre_existing_pe_series_from_underlying() -> None:
-    """If the underlying provider also emits a `private_equity:*` level row (e.g. VECM's
-    placeholder constant), the overlay strips it so the PE mark comes solely from the
-    artifact's typed PE bundle."""
+def test_sampler_overlay_layered_pe_bundle_uses_artifact() -> None:
+    """The overlay's typed PE bundle takes precedence over any underlying PE state.
 
-    placeholder_levels = series_levels_frame(
-        "private_equity:acme", np.full((1, 6), 999.0), rollout_count=1, horizon_months=5
-    )
-    underlying = _MinimalSampler(levels=placeholder_levels)
+    Before the typed-series boundary the overlay also had to strip stale
+    `private_equity:*` rows out of the levels frame; that path is gone now —
+    `levels` only carries non-PE `LevelSeriesKey` series, so the PE mark only
+    ever flows through `bundle.private_equity`.
+    """
+
+    underlying = _MinimalSampler()
     trajectory_set = PrivateEquityTrajectorySet(
         issuer_id="acme",
         initial_mark_usd=100.0,
@@ -213,9 +215,6 @@ def test_sampler_overlay_replaces_pre_existing_pe_series_from_underlying() -> No
     sampler = PreSampledPrivateEquitySampler(underlying=underlying, trajectories_by_issuer={"acme": trajectory_set})
     bundle = sampler.sample(ExogenousSamplingRequest(horizon_months=5, rollout_seeds=(0,)))
 
-    # The placeholder PE row from the underlying provider is dropped from `levels`.
-    assert bundle.levels.filter(pl.col("series_id") == "private_equity:acme").is_empty()
-    # The artifact-driven PE mark lives in the typed bundle.
     levels = bundle.private_equity.issuer_float_matrix("acme", "mark_usd_per_unit", rollout_count=1, horizon_months=5)
     np.testing.assert_array_equal(levels[0], np.array([100.0, 100.0, 150.0, 150.0, 150.0, 150.0]))
 
@@ -223,13 +222,13 @@ def test_sampler_overlay_replaces_pre_existing_pe_series_from_underlying() -> No
 def test_sampler_overlay_preserves_underlying_non_pe_series() -> None:
     """Non-PE level series from the underlying flow through unchanged."""
 
-    sp500_levels = series_levels_frame("sp500", np.array([[1.0, 1.02, 1.05]]), rollout_count=1, horizon_months=2)
+    sp500_levels = series_levels_frame(SP500Key(), np.array([[1.0, 1.02, 1.05]]), rollout_count=1, horizon_months=2)
     underlying = _MinimalSampler(levels=sp500_levels)
     sampler = PreSampledPrivateEquitySampler(underlying=underlying, trajectories_by_issuer={})
     bundle = sampler.sample(ExogenousSamplingRequest(horizon_months=2, rollout_seeds=(0,)))
 
     np.testing.assert_array_equal(
-        bundle.level_matrix("sp500", rollout_count=1, horizon_months=2), np.array([[1.0, 1.02, 1.05]])
+        bundle.level_matrix(SP500Key(), rollout_count=1, horizon_months=2), np.array([[1.0, 1.02, 1.05]])
     )
 
 

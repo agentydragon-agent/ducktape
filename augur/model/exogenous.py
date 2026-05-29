@@ -11,6 +11,7 @@ import numpy as np
 import polars as pl
 
 from augur.model.private_equity_bundle import PrivateEquityBundle
+from augur.model.series import IssuerId, LevelSeriesKey, parse_level_series_key
 
 SERIES_LEVELS_SCHEMA = pl.Schema(
     {"rollout_index": pl.Int64(), "month_index": pl.Int64(), "series_id": pl.Utf8(), "value": pl.Float64()}
@@ -24,16 +25,17 @@ SERIES_VALUES_SCHEMA = pl.Schema(
 class ExogenousSamplingRequest:
     """Request metadata passed to an exogenous path model sample.
 
-    Non-PE level series are required by wire id in `required_level_series`.
-    PE issuers (carrying the whole `PrivateEquityBundle` per issuer) are
-    required by `required_private_equity_issuers`. PE tender events and
-    protocol channels are part of the bundle, not separate request channels.
+    Non-PE level series are required by typed `LevelSeriesKey` in
+    `required_level_series`. PE issuers (carrying the whole
+    `PrivateEquityBundle` per issuer) are required by
+    `required_private_equity_issuers`. PE tender events and protocol
+    channels are part of the PE bundle, not separate request channels.
     """
 
     horizon_months: int
     rollout_seeds: tuple[int, ...]
-    required_level_series: frozenset[str] = frozenset()
-    required_private_equity_issuers: frozenset[str] = frozenset()
+    required_level_series: frozenset[LevelSeriesKey] = frozenset()
+    required_private_equity_issuers: frozenset[IssuerId] = frozenset()
 
     def __post_init__(self) -> None:
         if self.horizon_months < 0:
@@ -58,9 +60,10 @@ class SampledExogenousBundle:
     """Polars-native joint sample of exogenous levels and PE protocol.
 
     `levels` carries valued non-PE series (asset prices, CPI levels, rent
-    levels, home-value levels). `private_equity` carries the typed PE
-    protocol bundle (mark, regime, event kind, sale opportunity, fractions,
-    blocked, recovery) per issuer.
+    levels, home-value levels) keyed by the typed `LevelSeriesKey`'s
+    `wire_id` in a `series_id: Utf8` column. `private_equity` carries the
+    typed PE protocol bundle (mark, regime, event kind, sale opportunity,
+    fractions, blocked, recovery) per issuer.
     """
 
     levels: pl.DataFrame
@@ -70,13 +73,13 @@ class SampledExogenousBundle:
     def __post_init__(self) -> None:
         _require_schema(self.levels, SERIES_LEVELS_SCHEMA, frame_name="levels")
 
-    def level_matrix(self, series_id: str, *, rollout_count: int, horizon_months: int) -> np.ndarray:
+    def level_matrix(self, key: LevelSeriesKey, *, rollout_count: int, horizon_months: int) -> np.ndarray:
         """Return one level series as a `(rollout, month)` matrix."""
 
         return _matrix_from_long_frame(
             self.levels,
             id_column="series_id",
-            id_value=series_id,
+            id_value=key.wire_id,
             value_column="value",
             rollout_count=rollout_count,
             horizon_months=horizon_months,
@@ -97,17 +100,19 @@ class Sampler(Protocol):
         ...
 
 
-def series_levels_frame(series_id: str, levels: np.ndarray, *, rollout_count: int, horizon_months: int) -> pl.DataFrame:
+def series_levels_frame(
+    key: LevelSeriesKey, levels: np.ndarray, *, rollout_count: int, horizon_months: int
+) -> pl.DataFrame:
     expected_shape = (rollout_count, horizon_months + 1)
     if levels.shape != expected_shape:
-        raise ValueError(f"series {series_id!r} produced levels with shape {levels.shape}; expected {expected_shape}")
+        raise ValueError(f"series {key.wire_id!r} produced levels with shape {levels.shape}; expected {expected_shape}")
 
     rollout_idx, month_idx = _long_indices(rollout_count=rollout_count, horizon_months=horizon_months)
     return pl.DataFrame(
         {
             "rollout_index": rollout_idx,
             "month_index": month_idx,
-            "series_id": [series_id] * (rollout_count * (horizon_months + 1)),
+            "series_id": [key.wire_id] * (rollout_count * (horizon_months + 1)),
             "value": levels.reshape(-1),
         },
         schema=SERIES_LEVELS_SCHEMA,
@@ -121,42 +126,70 @@ def series_values_from_bundle(bundle: SampledExogenousBundle) -> pl.DataFrame:
 
 
 def validate_sample_satisfies_request(request: ExogenousSamplingRequest, sampled: SampledExogenousBundle) -> None:
-    """Validate that a sampled bundle covers the consumer-requested series ids.
+    """Validate that a sampled bundle covers the consumer-requested keys.
 
-    Providers are free to sample extra series. The request's required ids are a
-    consumer compatibility contract, enforced at the boundary that consumes the
-    provider.
+    Providers are free to sample extra series. The request's required keys
+    are a consumer compatibility contract, enforced at the boundary that
+    consumes the provider.
     """
 
-    missing_level_series = sorted(request.required_level_series - _string_values(sampled.levels, "series_id"))
-    sampled_pe_issuers = frozenset(str(issuer) for issuer in sampled.private_equity.issuer_ids())
+    sampled_wire_ids = _string_values(sampled.levels, "series_id")
+    missing_level_series = sorted(
+        (key for key in request.required_level_series if key.wire_id not in sampled_wire_ids),
+        key=lambda key: key.wire_id,
+    )
+    sampled_pe_issuers = frozenset(IssuerId(str(issuer)) for issuer in sampled.private_equity.issuer_ids())
     missing_pe_issuers = sorted(request.required_private_equity_issuers - sampled_pe_issuers)
     if not missing_level_series and not missing_pe_issuers:
         return
 
     details: list[str] = []
     if missing_level_series:
-        details.append(f"missing required level series: {missing_level_series}")
+        details.append(f"missing required level series: {[key.wire_id for key in missing_level_series]}")
     if missing_pe_issuers:
         details.append(f"missing required private-equity issuer(s): {missing_pe_issuers}")
     raise ValueError("sampled exogenous bundle " + "; ".join(details))
 
 
+_EMPTY_LEVEL_ANCHORS: Mapping[LevelSeriesKey, float] = {}
+_EMPTY_PE_ANCHORS: Mapping[IssuerId, float] = {}
+
+
 def anchor_sampled_series_levels(
-    sampled: SampledExogenousBundle, level_anchors: Mapping[str, float]
+    sampled: SampledExogenousBundle,
+    *,
+    level_series_anchors: Mapping[LevelSeriesKey, float] = _EMPTY_LEVEL_ANCHORS,
+    private_equity_anchors: Mapping[IssuerId, float] = _EMPTY_PE_ANCHORS,
 ) -> SampledExogenousBundle:
-    anchors = {series_id: float(value) for series_id, value in level_anchors.items()}
-    if not anchors or sampled.levels.is_empty():
-        return sampled
+    """Rescale sampled paths so month-0 values match the supplied anchors.
+
+    `level_series_anchors` keys non-PE levels by `LevelSeriesKey`.
+    `private_equity_anchors` keys the PE bundle's per-unit mark by
+    `IssuerId`. Both anchor maps are typed — the wire-encoded `series_id`
+    column on `bundle.levels` is parsed back into typed keys here to align
+    with the request channel.
+    """
+
+    level_anchors_typed = dict(level_series_anchors)
+    pe_anchors_typed = {IssuerId(str(issuer)): float(value) for issuer, value in dict(private_equity_anchors).items()}
+    metadata_extras: dict[str, object] = {}
+    if level_anchors_typed:
+        metadata_extras["level_anchors"] = {key.wire_id: float(value) for key, value in level_anchors_typed.items()}
+    if pe_anchors_typed:
+        metadata_extras["private_equity_anchors"] = pe_anchors_typed
+
+    private_equity = _anchor_private_equity_marks(sampled.private_equity, pe_anchors_typed)
+
+    if not level_anchors_typed or sampled.levels.is_empty():
+        return SampledExogenousBundle(
+            levels=sampled.levels, private_equity=private_equity, metadata={**sampled.metadata, **metadata_extras}
+        )
 
     sampled_series = set(sampled.levels.get_column("series_id").unique().to_list())
-    active_anchors = {series_id: value for series_id, value in anchors.items() if series_id in sampled_series}
-    private_equity = _anchor_private_equity_marks(sampled.private_equity, anchors=anchors)
+    active_anchors = {key.wire_id: value for key, value in level_anchors_typed.items() if key.wire_id in sampled_series}
     if not active_anchors:
         return SampledExogenousBundle(
-            levels=sampled.levels,
-            private_equity=private_equity,
-            metadata={**sampled.metadata, "level_anchors": anchors},
+            levels=sampled.levels, private_equity=private_equity, metadata={**sampled.metadata, **metadata_extras}
         )
 
     anchor_frame = pl.DataFrame(
@@ -183,24 +216,27 @@ def anchor_sampled_series_levels(
         .select(SERIES_LEVELS_SCHEMA.names())
     )
     return SampledExogenousBundle(
-        levels=levels, private_equity=private_equity, metadata={**sampled.metadata, "level_anchors": anchors}
+        levels=levels, private_equity=private_equity, metadata={**sampled.metadata, **metadata_extras}
     )
 
 
-def _anchor_private_equity_marks(pe: PrivateEquityBundle, *, anchors: Mapping[str, float]) -> PrivateEquityBundle:
-    """Rescale `mark_usd_per_unit` for each issuer whose `private_equity:<issuer>` wire id
-    appears in `anchors`. Mirrors the rescaling applied to the levels frame; the
-    portfolio config's `unit_value_usd` is the canonical mark anchor at month 0."""
+def parse_levels_frame_keys(frame: pl.DataFrame) -> frozenset[LevelSeriesKey]:
+    """Recover typed keys for every `series_id` in a levels frame.
 
+    Useful when a producer needs to know the set of distinct keys it
+    sampled — the levels frame's `series_id` column is the wire boundary;
+    callers above this function should only see `LevelSeriesKey`.
+    """
+
+    if frame.is_empty():
+        return frozenset()
+    return frozenset(parse_level_series_key(str(value)) for value in frame.get_column("series_id").unique().to_list())
+
+
+def _anchor_private_equity_marks(pe: PrivateEquityBundle, anchors: Mapping[IssuerId, float]) -> PrivateEquityBundle:
     if pe.is_empty() or not anchors:
         return pe
-    pe_prefix = "private_equity:"
-    issuer_anchor: dict[str, float] = {}
-    for series_id, anchor_value in anchors.items():
-        if series_id.startswith(pe_prefix):
-            issuer_anchor[series_id[len(pe_prefix) :]] = anchor_value
-    if not issuer_anchor:
-        return pe
+    issuer_anchor = {str(issuer): float(value) for issuer, value in anchors.items()}
     frame = pe.frame
     base_frame = frame.filter(pl.col("month_index") == 0).select(
         "rollout_index", "issuer_id", pl.col("mark_usd_per_unit").alias("_base_value")

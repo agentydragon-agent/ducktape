@@ -16,25 +16,6 @@ from augur.model.exogenous import (
     validate_sample_satisfies_request,
 )
 from augur.model.private_equity_bundle import PrivateEquityBundle
-from augur.model.series import issuer_id_from_private_equity_mark_wire_id, try_parse_level_series_key
-
-
-def _is_private_equity_level_wire_id(wire_id: str) -> bool:
-    """A PE level wire id has no corresponding `LevelSeriesKey` variant —
-    they are carried in the typed PE bundle. Anything that doesn't parse as a
-    level key is treated as PE for routing purposes (which currently covers the
-    PE mark + the 7 PE auxiliary level series). Robust enough for v1 routing."""
-
-    if try_parse_level_series_key(wire_id) is not None:
-        return False
-    # Confirm it's a known PE wire id (avoid silently routing typos to PE).
-    if issuer_id_from_private_equity_mark_wire_id(wire_id) is not None:
-        return True
-    # Auxiliary PE level wire ids start with one of seven known prefixes; rather
-    # than re-encode each prefix here, accept any wire id that isn't a level key
-    # — auxiliary names have the same `private_equity_*:<issuer>` shape and the
-    # downstream PE sampler will reject anything it doesn't recognize.
-    return wire_id.startswith("private_equity_")
 
 
 @dataclass(frozen=True)
@@ -46,22 +27,18 @@ class CompositeExogenousModel:
     label: str = "composite_exogenous_model"
 
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
+        # `required_level_series` only carries non-PE `LevelSeriesKey` values
+        # post-migration; PE is routed via `required_private_equity_issuers`.
         macro_request = ExogenousSamplingRequest(
             horizon_months=request.horizon_months,
             rollout_seeds=request.rollout_seeds,
-            required_level_series=frozenset(
-                series_id
-                for series_id in request.required_level_series
-                if not _is_private_equity_level_wire_id(series_id)
-            ),
+            required_level_series=request.required_level_series,
             required_private_equity_issuers=frozenset(),
         )
         pe_request = ExogenousSamplingRequest(
             horizon_months=request.horizon_months,
             rollout_seeds=request.rollout_seeds,
-            required_level_series=frozenset(
-                series_id for series_id in request.required_level_series if _is_private_equity_level_wire_id(series_id)
-            ),
+            required_level_series=frozenset(),
             required_private_equity_issuers=request.required_private_equity_issuers,
         )
 

@@ -22,13 +22,14 @@ from augur.fit.private_equity import (
 )
 from augur.model.conditioning import ExogenousConditioningContext, ExogenousObservedPoint, ObservationTreatment
 from augur.model.path_models.scenarios import HistoricalSeries
-from augur.model.series import private_equity_series_id
+from augur.model.series import IssuerId
 from augur.model.state_space import (
     StateSpaceAdditionalFactor,
     StateSpaceModel,
     StateSpaceModelArtifact,
     StateSpacePrivateEquityEventPrior,
 )
+from augur.product.asset_key import PrivateEquityAssetKey
 
 _DAYS_PER_MONTH = 365.2425 / 12
 # Weak prior for the monthly private-equity/SP500 return correlation. The value
@@ -138,7 +139,7 @@ def _fit_private_equity_factor(config_path: Path, historical: HistoricalSeries) 
     sp500_sigma = _monthly_sigma(historical, "sp500")
     covariance_with_sp500 = coupling["rho_to_sp500"] * artifact.monthly_log_return_sigma * sp500_sigma
     factor = StateSpaceAdditionalFactor(
-        factor_name=private_equity_series_id(config.issuer_id),
+        factor_name=PrivateEquityAssetKey(issuer_id=IssuerId(config.issuer_id)).wire_id,
         latest_level=artifact.current_mark_usd,
         monthly_log_return_mu=artifact.monthly_log_return_mu,
         monthly_log_return_sigma=artifact.monthly_log_return_sigma,

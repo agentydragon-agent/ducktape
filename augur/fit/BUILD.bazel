@@ -75,6 +75,7 @@ py_library(
         "//augur/model:series",
         "//augur/model:state_space",
         "//augur/model/path_models:scenarios",
+        "//augur/product:asset_key",
         "@pypi//numpy",
         "@pypi//pandas",
     ],

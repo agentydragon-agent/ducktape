@@ -32,7 +32,9 @@ def _sample(issuer: PrivateEquityRiskIssuerConfig, *, horizon_months: int = 4) -
     model = PrivateEquityRiskProviderConfig(issuers={"acme": issuer}).realize_model()
     return model.sample(
         ExogenousSamplingRequest(
-            horizon_months=horizon_months, rollout_seeds=(7,), required_private_equity_issuers=frozenset({"acme"})
+            horizon_months=horizon_months,
+            rollout_seeds=(7,),
+            required_private_equity_issuers=frozenset({IssuerId("acme")}),
         )
     )
 

@@ -18,7 +18,7 @@ from pydantic import TypeAdapter
 from augur.fit.main import main as train_main
 from augur.model.exogenous import ExogenousSamplingRequest
 from augur.model.exogenous_provider_config import ExogenousProviderConfig
-from augur.model.series import home_value_series_id, rent_series_id
+from augur.model.series import HomeValueKey, LevelSeriesKey, LocationId, RentKey
 from augur.model.state_space import StateSpaceExogenousProviderConfig
 from augur.model.vecm import VecmExogenousProviderConfig
 
@@ -45,11 +45,11 @@ def test_train_then_load_and_sample(model_label: str, tmp_path: Path) -> None:
 
     model = parsed.realize_model()
     locations = sorted(parsed.location_series_sources.home_value)
-    required_level_series = frozenset(
+    required_level_series: frozenset[LevelSeriesKey] = frozenset(
         {
-            series_id
+            key
             for location in locations
-            for series_id in (home_value_series_id(location), rent_series_id(location))
+            for key in (HomeValueKey(location_id=LocationId(location)), RentKey(location_id=LocationId(location)))
         }
     )
     sampled = model.sample(
@@ -57,12 +57,16 @@ def test_train_then_load_and_sample(model_label: str, tmp_path: Path) -> None:
     )
 
     assert str(sampled.metadata["exogenous_model_version_id"]).startswith("model_version:")
-    assert {
-        row["series_id"] for row in sampled.levels.select("series_id").unique().iter_rows(named=True)
-    } == required_level_series
+    assert {row["series_id"] for row in sampled.levels.select("series_id").unique().iter_rows(named=True)} == {
+        key.wire_id for key in required_level_series
+    }
     for location in locations:
-        assert sampled.level_matrix(home_value_series_id(location), rollout_count=2, horizon_months=12).shape == (2, 13)
-        assert sampled.level_matrix(rent_series_id(location), rollout_count=2, horizon_months=12).shape == (2, 13)
+        assert sampled.level_matrix(
+            HomeValueKey(location_id=LocationId(location)), rollout_count=2, horizon_months=12
+        ).shape == (2, 13)
+        assert sampled.level_matrix(
+            RentKey(location_id=LocationId(location)), rollout_count=2, horizon_months=12
+        ).shape == (2, 13)
 
 
 @pytest.mark.parametrize("model_label", ["state_space"])
@@ -82,11 +86,11 @@ def test_train_state_space_then_load_and_sample(model_label: str, tmp_path: Path
 
     model = parsed.realize_model()
     locations = sorted(parsed.location_series_sources.home_value)
-    required_level_series = frozenset(
+    required_level_series: frozenset[LevelSeriesKey] = frozenset(
         {
-            series_id
+            key
             for location in locations
-            for series_id in (home_value_series_id(location), rent_series_id(location))
+            for key in (HomeValueKey(location_id=LocationId(location)), RentKey(location_id=LocationId(location)))
         }
     )
     sampled = model.sample(
@@ -95,9 +99,9 @@ def test_train_state_space_then_load_and_sample(model_label: str, tmp_path: Path
 
     assert str(sampled.metadata["exogenous_model_version_id"]).startswith("model_version:")
     assert sampled.metadata["source_manifest"]
-    assert {
-        row["series_id"] for row in sampled.levels.select("series_id").unique().iter_rows(named=True)
-    } >= required_level_series
+    assert {row["series_id"] for row in sampled.levels.select("series_id").unique().iter_rows(named=True)} >= {
+        key.wire_id for key in required_level_series
+    }
 
 
 if __name__ == "__main__":

@@ -12,12 +12,14 @@ from augur.model.conditioning import ExogenousConditioningContext, ExogenousObse
 from augur.model.exogenous import ExogenousSamplingRequest
 from augur.model.location_series_sources import LocationSeriesSourcesConfig
 from augur.model.series import (
-    INFLATION_SERIES_ID,
-    SP500_SERIES_ID,
-    crypto_series_id,
-    home_value_series_id,
-    private_equity_series_id,
-    rent_series_id,
+    CryptoKey,
+    CryptoSymbol,
+    HomeValueKey,
+    InflationKey,
+    IssuerId,
+    LocationId,
+    RentKey,
+    SP500Key,
 )
 from augur.model.state_space import (
     StateSpaceExogenousProviderConfig,
@@ -26,28 +28,29 @@ from augur.model.state_space import (
     write_state_space_artifact,
 )
 from augur.model.trained_private_equity import TrainedPrivateEquityScalePrior
+from augur.product.asset_key import PrivateEquityAssetKey
 
 
 def test_state_space_samples_all_available_series_and_hard_anchors(tmp_path: Path) -> None:
     provider = _provider(tmp_path, sp500_anchor=123.0)
     sampled = provider.realize_model().sample(
         ExogenousSamplingRequest(
-            rollout_seeds=(7, 8), horizon_months=3, required_level_series=frozenset({INFLATION_SERIES_ID})
+            rollout_seeds=(7, 8), horizon_months=3, required_level_series=frozenset({InflationKey()})
         )
     )
 
     series_ids = set(sampled.levels.get_column("series_id").unique().to_list())
     assert series_ids >= {
-        SP500_SERIES_ID,
-        INFLATION_SERIES_ID,
-        crypto_series_id("btc"),
-        home_value_series_id("san_francisco_ca"),
-        home_value_series_id("mare_island_vallejo_ca"),
-        rent_series_id("san_francisco_ca"),
+        SP500Key().wire_id,
+        InflationKey().wire_id,
+        CryptoKey(symbol=CryptoSymbol("btc")).wire_id,
+        HomeValueKey(location_id=LocationId("san_francisco_ca")).wire_id,
+        HomeValueKey(location_id=LocationId("mare_island_vallejo_ca")).wire_id,
+        RentKey(location_id=LocationId("san_francisco_ca")).wire_id,
     }
     assert sampled.private_equity.issuer_ids() >= frozenset({"private_company_a"})
     np.testing.assert_allclose(
-        sampled.level_matrix(SP500_SERIES_ID, rollout_count=2, horizon_months=3)[:, 0], np.array([123.0, 123.0])
+        sampled.level_matrix(SP500Key(), rollout_count=2, horizon_months=3)[:, 0], np.array([123.0, 123.0])
     )
     assert sampled.private_equity.issuer_bool_matrix(
         "private_company_a", "sale_opportunity_active", rollout_count=2, horizon_months=3
@@ -70,8 +73,8 @@ def test_state_space_conditioning_changes_sampled_paths(tmp_path: Path) -> None:
         .sample(ExogenousSamplingRequest(rollout_seeds=(11,), horizon_months=3))
     )
 
-    low_sp500 = low.level_matrix(SP500_SERIES_ID, rollout_count=1, horizon_months=3)
-    high_sp500 = high.level_matrix(SP500_SERIES_ID, rollout_count=1, horizon_months=3)
+    low_sp500 = low.level_matrix(SP500Key(), rollout_count=1, horizon_months=3)
+    high_sp500 = high.level_matrix(SP500Key(), rollout_count=1, horizon_months=3)
     np.testing.assert_allclose(high_sp500, low_sp500 * 2.0)
 
 
@@ -83,7 +86,9 @@ def test_state_space_private_equity_marks_forward_fill_between_tenders(tmp_path:
         .realize_model()
         .sample(
             ExogenousSamplingRequest(
-                rollout_seeds=(11,), horizon_months=4, required_private_equity_issuers=frozenset({"private_company_a"})
+                rollout_seeds=(11,),
+                horizon_months=4,
+                required_private_equity_issuers=frozenset({IssuerId("private_company_a")}),
             )
         )
     )
@@ -97,10 +102,14 @@ def test_state_space_private_equity_marks_forward_fill_between_tenders(tmp_path:
 def test_state_space_hard_fails_missing_required_series(tmp_path: Path) -> None:
     model = _provider(tmp_path, sp500_anchor=123.0).realize_model()
 
+    # `prices_of_tea` isn't a level series the artifact models; rent in an
+    # unmodeled location is the closest typed-key equivalent of "unknown".
     with pytest.raises(ValueError, match="missing required level series"):
         model.sample(
             ExogenousSamplingRequest(
-                rollout_seeds=(1,), horizon_months=1, required_level_series=frozenset({"prices_of_tea_in_china"})
+                rollout_seeds=(1,),
+                horizon_months=1,
+                required_level_series=frozenset({RentKey(location_id=LocationId("nowhere_xx"))}),
             )
         )
 
@@ -124,7 +133,7 @@ def _provider(
     conditioning = ExogenousConditioningContext(
         start_at=date(2026, 5, 1),
         observations={
-            SP500_SERIES_ID: (
+            SP500Key().wire_id: (
                 ExogenousObservedPoint(
                     value=sp500_anchor,
                     observed_at=date(2026, 5, 1),
@@ -151,30 +160,15 @@ def _provider(
 def _artifact(
     *, pe_tender_interval_months_median: float = 2.0, pe_tender_interval_log_sigma: float = 0.1
 ) -> StateSpaceModelArtifact:
-    factors = (
-        SP500_SERIES_ID,
-        INFLATION_SERIES_ID,
-        crypto_series_id("btc"),
-        home_value_series_id("san_francisco_ca"),
-        rent_series_id("san_francisco_ca"),
-        private_equity_series_id("private_company_a"),
-    )
-    latest = {
-        SP500_SERIES_ID: 100.0,
-        INFLATION_SERIES_ID: 320.0,
-        crypto_series_id("btc"): 80_000.0,
-        home_value_series_id("san_francisco_ca"): 1_400_000.0,
-        rent_series_id("san_francisco_ca"): 530.0,
-        private_equity_series_id("private_company_a"): 687.69,
-    }
-    mu = {
-        SP500_SERIES_ID: 0.005,
-        INFLATION_SERIES_ID: 0.002,
-        crypto_series_id("btc"): 0.01,
-        home_value_series_id("san_francisco_ca"): 0.003,
-        rent_series_id("san_francisco_ca"): 0.0025,
-        private_equity_series_id("private_company_a"): 0.01,
-    }
+    sp500 = SP500Key().wire_id
+    inflation = InflationKey().wire_id
+    btc = CryptoKey(symbol=CryptoSymbol("btc")).wire_id
+    hv_sf = HomeValueKey(location_id=LocationId("san_francisco_ca")).wire_id
+    rent_sf = RentKey(location_id=LocationId("san_francisco_ca")).wire_id
+    pe = PrivateEquityAssetKey(issuer_id=IssuerId("private_company_a")).wire_id
+    factors = (sp500, inflation, btc, hv_sf, rent_sf, pe)
+    latest = {sp500: 100.0, inflation: 320.0, btc: 80_000.0, hv_sf: 1_400_000.0, rent_sf: 530.0, pe: 687.69}
+    mu = {sp500: 0.005, inflation: 0.002, btc: 0.01, hv_sf: 0.003, rent_sf: 0.0025, pe: 0.01}
     cov = np.diag([0.04**2, 0.003**2, 0.2**2, 0.01**2, 0.006**2, 0.08**2])
     return StateSpaceModelArtifact(
         factor_names=factors,

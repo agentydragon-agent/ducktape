@@ -21,7 +21,7 @@ from augur.model.private_equity_bundle import (
     PrivateEquityFloatChannel,
     PrivateEquityIntChannel,
 )
-from augur.model.series import PrivateEquityEventKindCode, PrivateEquityRegimeCode
+from augur.model.series import LevelSeriesKey, PrivateEquityEventKindCode, PrivateEquityRegimeCode
 
 type LevelOverride = float | npt.NDArray[np.float64] | Callable[[ExogenousSamplingRequest], npt.NDArray[np.float64]]
 type IntOverride = int | npt.NDArray[np.int64] | Callable[[ExogenousSamplingRequest], npt.NDArray[np.int64]]
@@ -46,7 +46,7 @@ class ConstantFrameExogenousModel:
     construction time.
     """
 
-    level_overrides: Mapping[str, LevelOverride] = field(default_factory=dict)
+    level_overrides: Mapping[LevelSeriesKey, LevelOverride] = field(default_factory=dict)
     private_equity_float_overrides: Mapping[tuple[str, PrivateEquityFloatChannel], LevelOverride] = field(
         default_factory=dict
     )
@@ -64,12 +64,12 @@ class ConstantFrameExogenousModel:
         self.sample_requests.append(request)
         levels = [
             series_levels_frame(
-                series_id,
-                _level_matrix(self.level_overrides.get(series_id, self.default_level_value), request),
+                key,
+                _level_matrix(self.level_overrides.get(key, self.default_level_value), request),
                 rollout_count=request.rollout_count,
                 horizon_months=request.horizon_months,
             )
-            for series_id in sorted(request.required_level_series)
+            for key in sorted(request.required_level_series, key=lambda key: key.wire_id)
         ]
         pe_bundle_parts = [
             _build_pe_bundle_part(self, issuer_id, request)

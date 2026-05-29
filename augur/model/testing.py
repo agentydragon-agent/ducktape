@@ -38,8 +38,8 @@ class DeterministicSeriesFixtureModel:
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
         level_models = IndependentSeriesModels(
             series={
-                series_id: Constant(value=self.level_values.get(series_id, self.default_level_value))
-                for series_id in sorted(request.required_level_series)
+                key.wire_id: Constant(value=self.level_values.get(key.wire_id, self.default_level_value))
+                for key in sorted(request.required_level_series, key=lambda key: key.wire_id)
             }
         )
         tender_events = self._event_mask(request)

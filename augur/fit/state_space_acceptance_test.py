@@ -12,7 +12,7 @@ from pydantic import TypeAdapter
 from augur.fit.main import main as train_main
 from augur.model.exogenous import ExogenousSamplingRequest
 from augur.model.exogenous_provider_config import ExogenousProviderConfig
-from augur.model.series import INFLATION_SERIES_ID
+from augur.model.series import InflationKey, IssuerId
 from augur.model.state_space import StateSpaceExogenousProviderConfig
 
 _ADAPTER: TypeAdapter[ExogenousProviderConfig] = TypeAdapter(ExogenousProviderConfig)
@@ -26,11 +26,11 @@ def test_state_space_public_artifact_has_sane_short_horizon_cpi(tmp_path: Path) 
         ExogenousSamplingRequest(
             rollout_seeds=tuple(range(1301, 1301 + rollout_count)),
             horizon_months=6,
-            required_level_series=frozenset({INFLATION_SERIES_ID}),
+            required_level_series=frozenset({InflationKey()}),
         )
     )
 
-    inflation = sampled.level_matrix(INFLATION_SERIES_ID, rollout_count=rollout_count, horizon_months=6)
+    inflation = sampled.level_matrix(InflationKey(), rollout_count=rollout_count, horizon_months=6)
     six_month_ratio = inflation[:, 6] / inflation[:, 0]
     assert float(np.quantile(six_month_ratio, 0.01)) > 0.95
     assert float(np.quantile(six_month_ratio, 0.99)) < 1.08
@@ -42,7 +42,9 @@ def test_state_space_private_equity_artifact_models_price_and_sale_event(tmp_pat
     model = provider.realize_model()
     sampled = model.sample(
         ExogenousSamplingRequest(
-            rollout_seeds=(1, 2), horizon_months=12, required_private_equity_issuers=frozenset({"private_company_a"})
+            rollout_seeds=(1, 2),
+            horizon_months=12,
+            required_private_equity_issuers=frozenset({IssuerId("private_company_a")}),
         )
     )
 

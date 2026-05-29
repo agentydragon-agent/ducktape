@@ -49,7 +49,7 @@ def test_dry_add_fourth_position_is_config_only() -> None:
     """Spike-1 DRY proof: adding a 4th capital-gains-eligible
     position to the scenario takes one new InitialLot record and
     one new independent external-series entry, zero engine code. The simulator
-    accepts the new asset_id ("efv") through the same code paths
+    accepts the new asset_id ("crypto:efv") through the same code paths
     as VTI/QQQ/BTC. After running 10 rollouts at 24 months we see
     EFV as a tracked asset in lots and external-series frames."""
     base = build_bench_scenario(horizon_months=24)
@@ -57,18 +57,18 @@ def test_dry_add_fourth_position_is_config_only() -> None:
     new_lot = InitialLot(
         lot_id="alice_efv",
         agent_id="alice",
-        asset_id="efv",
+        asset_id="crypto:efv",
         purchase_month_index=-12,
         quantity=50.0,
         cost_basis_per_unit_usd=70.0,
     )
-    series = {**base.external_series.model.series, "efv": Deterministic(levels=[100.0] * 25)}
+    series = {**base.external_series.model.series, "crypto:efv": Deterministic(levels=[100.0] * 25)}
     extended = base.model_copy(
         update={
             "initial_lots": [*base.initial_lots, new_lot],
             "external_series": SeriesModelBundle.independent(series),
             "liquidity_policies": [
-                p.model_copy(update={"asset_preference_chain": [*p.asset_preference_chain, "efv"]})
+                p.model_copy(update={"asset_preference_chain": [*p.asset_preference_chain, "crypto:efv"]})
                 for p in base.liquidity_policies
             ],
         }
@@ -77,10 +77,10 @@ def test_dry_add_fourth_position_is_config_only() -> None:
     result = simulate(extended, rollout_count=10, locations={})
 
     # The new asset shows up in lots:
-    efv_lots = result.asset_lots.filter(pl.col("asset_id") == "efv")
+    efv_lots = result.asset_lots.filter(pl.col("asset_id") == "crypto:efv")
     assert efv_lots.height > 0
     # And in external series values:
-    efv_values = result.series_values.filter(pl.col("series_id") == "efv")
+    efv_values = result.series_values.filter(pl.col("series_id") == "crypto:efv")
     assert efv_values.height == 25 * 10  # months x rollouts
 
 

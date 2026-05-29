@@ -7,7 +7,8 @@ from __future__ import annotations
 import numpy as np
 import polars as pl
 
-from augur.model.series import PrivateEquityEventKindCode, PrivateEquityRegimeCode, private_equity_series_id
+from augur.model.series import IssuerId, PrivateEquityEventKindCode, PrivateEquityRegimeCode
+from augur.product.asset_key import PrivateEquityAssetKey
 from augur.sim.buffers import SimulationBuffers
 from augur.sim.codec.helpers import (
     codes_to_strings,
@@ -172,7 +173,7 @@ def decode_pe_protocol_events(plan: CompiledSimulation) -> pl.DataFrame:
                     "rollout_index": int(rollout),
                     "month_index": int(month),
                     "issuer_id": issuer_id,
-                    "asset_id": private_equity_series_id(issuer_id),
+                    "asset_id": PrivateEquityAssetKey(issuer_id=IssuerId(issuer_id)).wire_id,
                     "event_kind": event_code.name.lower(),
                     "regime": regime_code.name.lower(),
                     "mark_usd": float(channels.marks[issuer_idx, rollout, month]),
@@ -211,7 +212,7 @@ def decode_pe_opportunity_events(plan: CompiledSimulation, buffers: SimulationBu
                 "month_index": int(month),
                 "cause_id": f"pe_opportunity_m{int(month)}_{issuer_id}",
                 "issuer_id": issuer_id,
-                "asset_id": private_equity_series_id(issuer_id),
+                "asset_id": PrivateEquityAssetKey(issuer_id=IssuerId(issuer_id)).wire_id,
                 "event_kind": event_code.name.lower(),
                 "regime": regime_code.name.lower(),
                 "outcome": outcome.name.lower(),

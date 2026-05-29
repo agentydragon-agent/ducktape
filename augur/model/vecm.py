@@ -65,8 +65,6 @@ from augur.model.series import (
     LevelSeriesKey,
     RentKey,
     SP500Key,
-    issuer_id_from_private_equity_mark_wire_id,
-    issuer_id_from_private_equity_sale_opportunity_wire_id,
     parse_level_series_key,
 )
 from util.bazel.runfiles import get_required_path
@@ -326,12 +324,12 @@ class VecmModel:
         }
         level_blocks = [
             series_levels_frame(
-                series_id,
-                self._level_series(series_id, path_by_factor=path_by_factor),
+                key,
+                self._level_series(key, path_by_factor=path_by_factor),
                 rollout_count=rollout_count,
                 horizon_months=horizon_months,
             )
-            for series_id in sorted(request.required_level_series)
+            for key in sorted(request.required_level_series, key=lambda key: key.wire_id)
         ]
         return SampledExogenousBundle(
             levels=concat_frames(level_blocks, SERIES_LEVELS_SCHEMA),
@@ -461,36 +459,17 @@ class VecmModel:
 
     # ──────────────────────── Internal: bundle dispatch ────────────────────────
 
-    def _level_series(self, series_id: str, *, path_by_factor: dict[str, np.ndarray]) -> np.ndarray:
-        # Private equity is not a level series and is not modeled by VECM —
-        # it must be routed through trained_private_equity. Reject before
-        # the typed-key parse, which would itself raise for PE wire ids.
-        if (issuer_id := issuer_id_from_private_equity_mark_wire_id(series_id)) is not None:
-            raise ValueError(
-                f"VECM cannot sample private-equity level series for issuer {issuer_id!r}; "
-                "configure a trained_private_equity component instead"
-            )
-        key: LevelSeriesKey = parse_level_series_key(series_id)
+    def _level_series(self, key: LevelSeriesKey, *, path_by_factor: dict[str, np.ndarray]) -> np.ndarray:
         match key:
-            case InflationKey() | SP500Key():
-                return self._factor_level(series_id, path_by_factor=path_by_factor)
+            case InflationKey() | SP500Key() | CryptoKey():
+                # These factor names match the wire id exactly.
+                return self._factor_level(key.wire_id, path_by_factor=path_by_factor)
             case HomeValueKey(location_id=location_id):
                 return self._factor_level(
                     self._location_factor("home_value", location_id), path_by_factor=path_by_factor
                 )
             case RentKey(location_id=location_id):
                 return self._factor_level(self._location_factor("rent", location_id), path_by_factor=path_by_factor)
-            case CryptoKey():
-                # Crypto factor names match the wire id exactly (`crypto:btc`, `crypto:eth`).
-                return self._factor_level(series_id, path_by_factor=path_by_factor)
-
-    def _event_series(self, event_id: str) -> np.ndarray:
-        if (issuer_id := issuer_id_from_private_equity_sale_opportunity_wire_id(event_id)) is not None:
-            raise ValueError(
-                f"VECM cannot sample private-equity event series for issuer {issuer_id!r}; "
-                "configure a trained_private_equity component instead"
-            )
-        raise ValueError(f"VECM exogenous model cannot sample event series {event_id!r}")
 
     def _location_factor(self, kind: Literal["home_value", "rent"], location_id: str) -> str:
         if self.location_series_sources is None:

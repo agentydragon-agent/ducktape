@@ -15,7 +15,7 @@ DeterministicSeriesModelBundleFactory = Callable[[Sequence[float]], SeriesModelB
 
 @pytest.fixture
 def deterministic_series_bundle() -> DeterministicSeriesModelBundleFactory:
-    def build(levels: Sequence[float], *, asset_id: str = "vti") -> SeriesModelBundle:
+    def build(levels: Sequence[float], *, asset_id: str = "crypto:vti") -> SeriesModelBundle:
         return SeriesModelBundle.independent({asset_id: Deterministic(levels=list(levels))})
 
     return build

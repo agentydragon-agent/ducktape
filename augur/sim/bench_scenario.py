@@ -61,7 +61,7 @@ def build_bench_scenario(
             InitialLot(
                 lot_id="alice_vti",
                 agent_id="alice",
-                asset_id="vti",
+                asset_id="crypto:vti",
                 purchase_month_index=-36,
                 quantity=300.0,
                 cost_basis_per_unit_usd=180.0,
@@ -69,7 +69,7 @@ def build_bench_scenario(
             InitialLot(
                 lot_id="alice_qqq",
                 agent_id="alice",
-                asset_id="qqq",
+                asset_id="crypto:qqq",
                 purchase_month_index=-24,
                 quantity=120.0,
                 cost_basis_per_unit_usd=300.0,
@@ -77,7 +77,7 @@ def build_bench_scenario(
             InitialLot(
                 lot_id="alice_btc",
                 agent_id="alice",
-                asset_id="btc",
+                asset_id="crypto:btc",
                 purchase_month_index=-18,
                 quantity=2.0,
                 cost_basis_per_unit_usd=25_000.0,
@@ -106,13 +106,13 @@ def build_bench_scenario(
         ],
         external_series=SeriesModelBundle.independent(
             {
-                "vti": GeometricBrownian(
+                "crypto:vti": GeometricBrownian(
                     initial_value=240.0, monthly_log_return_mu=0.0067, monthly_log_return_sigma=0.04
                 ),
-                "qqq": GeometricBrownian(
+                "crypto:qqq": GeometricBrownian(
                     initial_value=400.0, monthly_log_return_mu=0.008, monthly_log_return_sigma=0.05
                 ),
-                "btc": GeometricBrownian(
+                "crypto:btc": GeometricBrownian(
                     initial_value=60_000.0, monthly_log_return_mu=0.012, monthly_log_return_sigma=0.15
                 ),
             }
@@ -130,7 +130,7 @@ def build_bench_scenario(
             LiquidityPolicy(
                 agent_id="alice",
                 account_id="checking",
-                asset_preference_chain=["vti", "qqq", "btc"],
+                asset_preference_chain=["crypto:vti", "crypto:qqq", "crypto:btc"],
                 cash_buffer_trigger_below_usd=floor_usd,
                 cash_buffer_sale_usd=floor_usd,
                 cause_id_prefix="alice_floor_sale",

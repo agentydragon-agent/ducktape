@@ -13,6 +13,7 @@ import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import date
+from functools import cached_property
 from pathlib import Path
 from typing import Any, Literal
 
@@ -42,17 +43,17 @@ from augur.model.schemas import FrozenModel
 from augur.model.series import (
     CryptoKey,
     HomeValueKey,
-    InflationKey,
+    IssuerId,
+    LevelSeriesKey,
+    LocationId,
     RentKey,
     SP500Key,
-    home_value_series_id,
-    issuer_id_from_private_equity_mark_wire_id,
-    private_equity_series_id,
-    rent_series_id,
+    parse_level_series_key,
     try_parse_level_series_key,
 )
 from augur.model.series_model import derive_stream_rollout_seeds
 from augur.model.trained_private_equity import TrainedPrivateEquityScalePrior, private_equity_soft_cap_penalty
+from augur.product.asset_key import PrivateEquityAssetKey, parse_asset_key
 
 _MIN_MONTHLY_VARIANCE = 1e-8
 _OFF_BLOCK_SHRINKAGE = 0.0
@@ -63,6 +64,23 @@ class StateSpacePrivateEquityEventPrior(FrozenModel):
     tender_interval_months_median: float = Field(gt=0)
     tender_interval_log_sigma: float = Field(gt=0)
     last_tender_observed_at: date | None = None
+
+
+def _classify_factor(factor: str) -> LevelSeriesKey | IssuerId:
+    """Classify a `factor_names` entry as either a `LevelSeriesKey` (non-PE) or the
+    `IssuerId` of a private-equity mark factor.
+
+    The artifact's on-disk JSON keeps `factor_names` as wire-id strings; this
+    helper is the single boundary that turns each wire-id back into a typed key.
+    Raises `ValueError` for unrecognized wire ids.
+    """
+
+    if (level_key := try_parse_level_series_key(factor)) is not None:
+        return level_key
+    asset_key = parse_asset_key(factor)
+    if not isinstance(asset_key, PrivateEquityAssetKey):
+        raise ValueError(f"state-space factor {factor!r} is neither a level series nor a PE mark")
+    return asset_key.issuer_id
 
 
 class StateSpaceModelArtifact(FrozenModel):
@@ -96,11 +114,7 @@ class StateSpaceModelArtifact(FrozenModel):
         _require_square_matrix(self.filtered_log_state_cov, n, "filtered_log_state_cov")
         if any(self.latest_level_by_factor[factor] <= 0 for factor in self.factor_names):
             raise ValueError("latest_level_by_factor values must be positive")
-        private_equity_issuers: set[str] = {
-            str(issuer)
-            for factor in self.factor_names
-            if (issuer := issuer_id_from_private_equity_mark_wire_id(factor)) is not None
-        }
+        private_equity_issuers = {str(issuer) for issuer in self.private_equity_factor_issuers}
         missing_scale_priors = private_equity_issuers - set(self.private_equity_scale_priors)
         if missing_scale_priors:
             raise ValueError(
@@ -114,6 +128,24 @@ class StateSpaceModelArtifact(FrozenModel):
                 f"{sorted(missing_event_priors)}; private-equity tender event series is required"
             )
         return self
+
+    @cached_property
+    def factor_classifications(self) -> tuple[LevelSeriesKey | IssuerId, ...]:
+        """Typed classification of every `factor_names` entry. Parsed once."""
+
+        return tuple(_classify_factor(factor) for factor in self.factor_names)
+
+    @cached_property
+    def level_factors(self) -> tuple[LevelSeriesKey, ...]:
+        """Non-PE level-series factors in `factor_names` order."""
+
+        return tuple(item for item in self.factor_classifications if not isinstance(item, str))
+
+    @cached_property
+    def private_equity_factor_issuers(self) -> tuple[IssuerId, ...]:
+        """PE issuer ids in `factor_names` order."""
+
+        return tuple(IssuerId(item) for item in self.factor_classifications if isinstance(item, str))
 
 
 @dataclass(frozen=True)
@@ -272,20 +304,29 @@ class StateSpaceModel:
         }
         level_blocks = []
         observed_mark_by_issuer: dict[str, np.ndarray] = {}
+        pe_issuer_by_wire_id = {
+            PrivateEquityAssetKey(issuer_id=issuer_id).wire_id: issuer_id
+            for issuer_id in self.artifact.private_equity_factor_issuers
+        }
         for series_id, factor_name in sorted(self._series_factor_map().items()):
             if factor_name not in path_by_factor:
                 continue
             levels = path_by_factor[factor_name]
-            private_equity_issuer = issuer_id_from_private_equity_mark_wire_id(series_id)
-            if private_equity_issuer is not None and private_equity_issuer in event_by_issuer:
+            if (private_equity_issuer := pe_issuer_by_wire_id.get(series_id)) is not None:
                 # PE marks live in the canonical PrivateEquityBundle below; the legacy
                 # `levels` frame only carries non-PE series now.
-                observed_mark_by_issuer[private_equity_issuer] = observed_private_equity_mark_matrix(
-                    levels, event_by_issuer[private_equity_issuer]
-                )
+                if str(private_equity_issuer) in event_by_issuer:
+                    observed_mark_by_issuer[str(private_equity_issuer)] = observed_private_equity_mark_matrix(
+                        levels, event_by_issuer[str(private_equity_issuer)]
+                    )
                 continue
             level_blocks.append(
-                series_levels_frame(series_id, levels, rollout_count=rollout_count, horizon_months=horizon_months)
+                series_levels_frame(
+                    parse_level_series_key(series_id),
+                    levels,
+                    rollout_count=rollout_count,
+                    horizon_months=horizon_months,
+                )
             )
         private_equity_parts = [
             neutral_private_equity_issuer_bundle(
@@ -400,21 +441,20 @@ class StateSpaceModel:
     def _series_factor_map(self) -> dict[str, str]:
         factors = set(self.artifact.factor_names)
         mapping: dict[str, str] = {}
-        for factor in factors:
-            # PE factor names use the per-issuer mark wire id (`private_equity:<issuer>`).
-            if issuer_id_from_private_equity_mark_wire_id(factor) is not None:
-                mapping[factor] = factor
-                continue
-            # Everything else is a non-PE level series; dispatch on the typed key.
-            key = try_parse_level_series_key(factor)
-            if isinstance(key, InflationKey | SP500Key | CryptoKey | HomeValueKey | RentKey):
-                mapping[factor] = factor
+        for factor, classification in zip(
+            self.artifact.factor_names, self.artifact.factor_classifications, strict=True
+        ):
+            # Both PE and level-series factors keep their wire-id form as the
+            # series-id lookup key. Classification just ensures they round-trip
+            # cleanly through the typed boundary.
+            del classification  # presence in the classification is enough
+            mapping[factor] = factor
         for location_id, factor in self.location_series_sources.home_value.items():
             if factor in factors:
-                mapping[home_value_series_id(location_id)] = factor
+                mapping[HomeValueKey(location_id=LocationId(location_id)).wire_id] = factor
         for location_id, factor in self.location_series_sources.rent.items():
             if factor in factors:
-                mapping[rent_series_id(location_id)] = factor
+                mapping[RentKey(location_id=LocationId(location_id)).wire_id] = factor
         return mapping
 
     def _private_equity_event_series(self, issuer_id: str, request: ExogenousSamplingRequest) -> np.ndarray:
@@ -448,9 +488,8 @@ class StateSpaceModel:
     def _private_equity_prices_usd(self) -> dict[str, float]:
         levels = self._conditioned_start_levels()
         return {
-            issuer_id: levels[series_id]
-            for series_id in self.artifact.factor_names
-            if (issuer_id := issuer_id_from_private_equity_mark_wire_id(series_id)) is not None
+            str(issuer_id): levels[PrivateEquityAssetKey(issuer_id=issuer_id).wire_id]
+            for issuer_id in self.artifact.private_equity_factor_issuers
         }
 
     def _private_equity_scale_indexes(self) -> tuple[tuple[int, TrainedPrivateEquityScalePrior], ...]:
@@ -459,7 +498,7 @@ class StateSpaceModel:
         factor_index = {factor: idx for idx, factor in enumerate(self.artifact.factor_names)}
         indexes: list[tuple[int, TrainedPrivateEquityScalePrior]] = []
         for issuer_id, scale_prior in self.artifact.private_equity_scale_priors.items():
-            factor_name = private_equity_series_id(issuer_id)
+            factor_name = PrivateEquityAssetKey(issuer_id=IssuerId(issuer_id)).wire_id
             if factor_name in factor_index:
                 indexes.append((factor_index[factor_name], scale_prior))
         return tuple(indexes)
@@ -517,16 +556,16 @@ def _regularize_covariance(factor_names: tuple[str, ...], covariance: np.ndarray
 
 
 def _coupling_allowed(left: str, right: str) -> bool:
-    left_key = try_parse_level_series_key(left)
-    right_key = try_parse_level_series_key(right)
-    left_is_pe = issuer_id_from_private_equity_mark_wire_id(left) is not None
-    right_is_pe = issuer_id_from_private_equity_mark_wire_id(right) is not None
-    if isinstance(left_key, CryptoKey) or isinstance(right_key, CryptoKey):
-        return isinstance(left_key, CryptoKey) and isinstance(right_key, CryptoKey)
+    left_classification = _classify_factor(left)
+    right_classification = _classify_factor(right)
+    left_is_pe = isinstance(left_classification, str)
+    right_is_pe = isinstance(right_classification, str)
+    if isinstance(left_classification, CryptoKey) or isinstance(right_classification, CryptoKey):
+        return isinstance(left_classification, CryptoKey) and isinstance(right_classification, CryptoKey)
     if left_is_pe:
-        return isinstance(right_key, SP500Key)
+        return isinstance(right_classification, SP500Key)
     if right_is_pe:
-        return isinstance(left_key, SP500Key)
+        return isinstance(left_classification, SP500Key)
     return True
 
 

@@ -7,8 +7,8 @@ from typing import cast
 import numpy as np
 import polars as pl
 
-from augur.model.series import home_value_series_id
-from augur.product.asset_key import PrivateEquityAssetKey, try_parse_asset_key
+from augur.model.series import HomeValueKey, LocationId
+from augur.product.asset_key import PrivateEquityAssetKey, parse_asset_key
 from augur.product.wire import (
     CapitalImprovementMarkerEvent,
     ClosingCostPaymentEvent,
@@ -181,7 +181,7 @@ def _private_equity_value_by_month(dense: DenseSimulationResult, *, primary_agen
 
 
 def _is_private_equity(asset_id: str) -> bool:
-    return isinstance(try_parse_asset_key(asset_id), PrivateEquityAssetKey)
+    return isinstance(parse_asset_key(asset_id), PrivateEquityAssetKey)
 
 
 def _lot_value_by_month(dense: DenseSimulationResult, *, primary_agent_code: int, include) -> np.ndarray:
@@ -198,7 +198,7 @@ def _lot_value_by_month(dense: DenseSimulationResult, *, primary_agent_code: int
         quantity = dense.buffers.state.lot_state[:, lot, _SINGLE_ROLLOUT_INDEX]
         # PE lots take their mark from `pe_channels.marks` (typed bundle); non-PE lots
         # read from the series-id-indexed external_values.
-        if isinstance(parsed := try_parse_asset_key(asset_id), PrivateEquityAssetKey):
+        if isinstance(parsed := parse_asset_key(asset_id), PrivateEquityAssetKey):
             issuer_idx = pe_issuer_index.get(str(parsed.issuer_id))
             if issuer_idx is None:
                 raise ValueError(f"holding asset {asset_id!r} has no compiled PE channels")
@@ -276,7 +276,7 @@ def _private_equity_events(
         .to_list()
     )
     primary_pe_assets = {
-        asset_id for asset_id in primary_assets if isinstance(try_parse_asset_key(str(asset_id)), PrivateEquityAssetKey)
+        asset_id for asset_id in primary_assets if isinstance(parse_asset_key(str(asset_id)), PrivateEquityAssetKey)
     }
     if not primary_pe_assets:
         return ()
@@ -314,7 +314,7 @@ def _private_equity_opportunities(
         .to_list()
     )
     primary_pe_assets = {
-        asset_id for asset_id in primary_assets if isinstance(try_parse_asset_key(str(asset_id)), PrivateEquityAssetKey)
+        asset_id for asset_id in primary_assets if isinstance(parse_asset_key(str(asset_id)), PrivateEquityAssetKey)
     }
     if not primary_pe_assets:
         return ()
@@ -472,7 +472,7 @@ def _property_value_by_month(dense: DenseSimulationResult, *, primary_agent_code
         if purchase_month < 0:
             continue
         location_id = plan.strings[int(plan.properties.location_id[prop])]
-        series_index = series_index_by_id.get(home_value_series_id(location_id))
+        series_index = series_index_by_id.get(HomeValueKey(location_id=LocationId(location_id)).wire_id)
         if series_index is None:
             continue
         levels = np.nan_to_num(plan.external_values[series_index, _SINGLE_ROLLOUT_INDEX, :], nan=0.0)

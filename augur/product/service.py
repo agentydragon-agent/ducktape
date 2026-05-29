@@ -205,7 +205,12 @@ class ProductService:
         )
         sampled = self._exogenous_model.sample(sampling_request)
         validate_sample_satisfies_request(sampling_request, sampled)
-        sampled = anchor_sampled_series_levels(sampled, self._portfolio.level_anchors)
+        anchors = self._portfolio.level_anchors
+        sampled = anchor_sampled_series_levels(
+            sampled,
+            level_series_anchors=anchors.level_series_anchors,
+            private_equity_anchors=anchors.private_equity_anchors,
+        )
         dense = simulate_dense_with_external_series(
             scenario,
             rollout_count=len(seeds),

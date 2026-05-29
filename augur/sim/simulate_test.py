@@ -212,8 +212,8 @@ def test_scenario_rejects_duplicate_liquidity_policy_accounts() -> None:
             agents=[Agent(agent_id="alice")],
             initial_cash=[InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=100.0)],
             liquidity_policies=[
-                LiquidityPolicy(agent_id="alice", account_id="checking", asset_preference_chain=["vti"]),
-                LiquidityPolicy(agent_id="alice", account_id="checking", asset_preference_chain=["qqq"]),
+                LiquidityPolicy(agent_id="alice", account_id="checking", asset_preference_chain=["crypto:vti"]),
+                LiquidityPolicy(agent_id="alice", account_id="checking", asset_preference_chain=["crypto:qqq"]),
             ],
             tax_profiles=[],
             horizon_months=1,
@@ -222,7 +222,7 @@ def test_scenario_rejects_duplicate_liquidity_policy_accounts() -> None:
 
 def test_scenario_rejects_duplicate_lot_purchase_months_within_fifo_pool() -> None:
     with pytest.raises(
-        ValidationError, match=r"duplicate initial lot purchase months.*alice/checking/vti@-12.*old_a.*old_b"
+        ValidationError, match=r"duplicate initial lot purchase months.*alice/checking/crypto:vti@-12.*old_a.*old_b"
     ):
         Scenario(
             agents=[Agent(agent_id="alice")],
@@ -231,7 +231,7 @@ def test_scenario_rejects_duplicate_lot_purchase_months_within_fifo_pool() -> No
                 InitialLot(
                     lot_id="old_a",
                     agent_id="alice",
-                    asset_id="vti",
+                    asset_id="crypto:vti",
                     purchase_month_index=-12,
                     quantity=10.0,
                     cost_basis_per_unit_usd=80.0,
@@ -239,7 +239,7 @@ def test_scenario_rejects_duplicate_lot_purchase_months_within_fifo_pool() -> No
                 InitialLot(
                     lot_id="old_b",
                     agent_id="alice",
-                    asset_id="vti",
+                    asset_id="crypto:vti",
                     purchase_month_index=-12,
                     quantity=5.0,
                     cost_basis_per_unit_usd=90.0,
@@ -259,7 +259,7 @@ def test_duplicate_lot_purchase_months_are_allowed_in_different_accounts() -> No
                 lot_id="taxable_old",
                 agent_id="alice",
                 account_id="taxable",
-                asset_id="vti",
+                asset_id="crypto:vti",
                 purchase_month_index=-12,
                 quantity=10.0,
                 cost_basis_per_unit_usd=80.0,
@@ -268,7 +268,7 @@ def test_duplicate_lot_purchase_months_are_allowed_in_different_accounts() -> No
                 lot_id="ira_old",
                 agent_id="alice",
                 account_id="ira",
-                asset_id="vti",
+                asset_id="crypto:vti",
                 purchase_month_index=-12,
                 quantity=5.0,
                 cost_basis_per_unit_usd=70.0,
@@ -316,7 +316,7 @@ def test_scenario_rejects_out_of_horizon_scheduled_asset_sales() -> None:
                 InitialLot(
                     lot_id="seed",
                     agent_id="alice",
-                    asset_id="vti",
+                    asset_id="crypto:vti",
                     purchase_month_index=0,
                     quantity=1.0,
                     cost_basis_per_unit_usd=100.0,
@@ -327,7 +327,7 @@ def test_scenario_rejects_out_of_horizon_scheduled_asset_sales() -> None:
                     month=2,
                     cause_id="late_sale",
                     agent_id="alice",
-                    asset_id="vti",
+                    asset_id="crypto:vti",
                     quantity=1.0,
                     proceeds_account_id="checking",
                     price_per_unit_usd=100.0,
@@ -346,7 +346,7 @@ def test_scenario_rejects_out_of_horizon_scheduled_asset_sales() -> None:
                     month=-1,
                     cause_id="pre_sale",
                     agent_id="alice",
-                    asset_id="vti",
+                    asset_id="crypto:vti",
                     quantity=1.0,
                     proceeds_account_id="checking",
                     price_per_unit_usd=100.0,
@@ -973,7 +973,7 @@ def test_initial_lot_partial_sale_consumes_units_credits_proceeds() -> None:
             InitialLot(
                 lot_id="alice_vti_seed",
                 agent_id="alice",
-                asset_id="vti",
+                asset_id="crypto:vti",
                 purchase_month_index=-24,
                 quantity=100.0,
                 cost_basis_per_unit_usd=80.0,
@@ -984,7 +984,7 @@ def test_initial_lot_partial_sale_consumes_units_credits_proceeds() -> None:
                 month=3,
                 cause_id="alice_partial_sale",
                 agent_id="alice",
-                asset_id="vti",
+                asset_id="crypto:vti",
                 quantity=30.0,
                 price_per_unit_usd=120.0,
                 proceeds_account_id="checking",
@@ -1039,7 +1039,7 @@ def test_initial_lot_full_sale_zeros_remaining_quantity() -> None:
             InitialLot(
                 lot_id="alice_vti_seed",
                 agent_id="alice",
-                asset_id="vti",
+                asset_id="crypto:vti",
                 purchase_month_index=-12,
                 quantity=100.0,
                 cost_basis_per_unit_usd=90.0,
@@ -1050,7 +1050,7 @@ def test_initial_lot_full_sale_zeros_remaining_quantity() -> None:
                 month=2,
                 cause_id="full_liquidation",
                 agent_id="alice",
-                asset_id="vti",
+                asset_id="crypto:vti",
                 quantity=100.0,
                 price_per_unit_usd=150.0,
                 proceeds_account_id="checking",
@@ -1083,7 +1083,7 @@ def test_asset_sale_scales_across_rollouts() -> None:
             InitialLot(
                 lot_id="seed",
                 agent_id="alice",
-                asset_id="vti",
+                asset_id="crypto:vti",
                 purchase_month_index=0,
                 quantity=50.0,
                 cost_basis_per_unit_usd=100.0,
@@ -1094,7 +1094,7 @@ def test_asset_sale_scales_across_rollouts() -> None:
                 month=1,
                 cause_id="sale",
                 agent_id="alice",
-                asset_id="vti",
+                asset_id="crypto:vti",
                 quantity=20.0,
                 price_per_unit_usd=110.0,
                 proceeds_account_id="checking",
@@ -1127,7 +1127,7 @@ def test_fifo_sale_crossing_two_lots() -> None:
             InitialLot(
                 lot_id="lot_a_old",
                 agent_id="alice",
-                asset_id="vti",
+                asset_id="crypto:vti",
                 purchase_month_index=-6,
                 quantity=100.0,
                 cost_basis_per_unit_usd=80.0,
@@ -1135,7 +1135,7 @@ def test_fifo_sale_crossing_two_lots() -> None:
             InitialLot(
                 lot_id="lot_b_younger",
                 agent_id="alice",
-                asset_id="vti",
+                asset_id="crypto:vti",
                 purchase_month_index=2,
                 quantity=50.0,
                 cost_basis_per_unit_usd=100.0,
@@ -1146,7 +1146,7 @@ def test_fifo_sale_crossing_two_lots() -> None:
                 month=8,
                 cause_id="big_sale",
                 agent_id="alice",
-                asset_id="vti",
+                asset_id="crypto:vti",
                 quantity=120.0,
                 price_per_unit_usd=200.0,
                 proceeds_account_id="checking",
@@ -1200,7 +1200,7 @@ def test_same_month_scheduled_sales_consume_lots_sequentially() -> None:
             InitialLot(
                 lot_id="old",
                 agent_id="alice",
-                asset_id="vti",
+                asset_id="crypto:vti",
                 purchase_month_index=-24,
                 quantity=100.0,
                 cost_basis_per_unit_usd=80.0,
@@ -1208,7 +1208,7 @@ def test_same_month_scheduled_sales_consume_lots_sequentially() -> None:
             InitialLot(
                 lot_id="new",
                 agent_id="alice",
-                asset_id="vti",
+                asset_id="crypto:vti",
                 purchase_month_index=-6,
                 quantity=100.0,
                 cost_basis_per_unit_usd=100.0,
@@ -1219,7 +1219,7 @@ def test_same_month_scheduled_sales_consume_lots_sequentially() -> None:
                 month=1,
                 cause_id="first_sale",
                 agent_id="alice",
-                asset_id="vti",
+                asset_id="crypto:vti",
                 quantity=70.0,
                 price_per_unit_usd=150.0,
                 proceeds_account_id="checking",
@@ -1228,7 +1228,7 @@ def test_same_month_scheduled_sales_consume_lots_sequentially() -> None:
                 month=1,
                 cause_id="second_sale",
                 agent_id="alice",
-                asset_id="vti",
+                asset_id="crypto:vti",
                 quantity=70.0,
                 price_per_unit_usd=150.0,
                 proceeds_account_id="checking",
@@ -1326,7 +1326,7 @@ def test_sales_of_two_different_assets_are_independent() -> None:
             InitialLot(
                 lot_id="vti_lot",
                 agent_id="alice",
-                asset_id="vti",
+                asset_id="crypto:vti",
                 purchase_month_index=0,
                 quantity=10.0,
                 cost_basis_per_unit_usd=100.0,
@@ -1334,7 +1334,7 @@ def test_sales_of_two_different_assets_are_independent() -> None:
             InitialLot(
                 lot_id="qqq_lot",
                 agent_id="alice",
-                asset_id="qqq",
+                asset_id="crypto:qqq",
                 purchase_month_index=0,
                 quantity=10.0,
                 cost_basis_per_unit_usd=200.0,
@@ -1345,7 +1345,7 @@ def test_sales_of_two_different_assets_are_independent() -> None:
                 month=2,
                 cause_id="sell_vti",
                 agent_id="alice",
-                asset_id="vti",
+                asset_id="crypto:vti",
                 quantity=4.0,
                 price_per_unit_usd=150.0,
                 proceeds_account_id="checking",
@@ -1354,7 +1354,7 @@ def test_sales_of_two_different_assets_are_independent() -> None:
                 month=5,
                 cause_id="sell_qqq",
                 agent_id="alice",
-                asset_id="qqq",
+                asset_id="crypto:qqq",
                 quantity=3.0,
                 price_per_unit_usd=250.0,
                 proceeds_account_id="checking",
@@ -1389,7 +1389,7 @@ def test_scheduled_sale_consumes_only_source_account_fifo_pool() -> None:
                 lot_id="taxable_vti",
                 agent_id="alice",
                 account_id="taxable",
-                asset_id="vti",
+                asset_id="crypto:vti",
                 purchase_month_index=-12,
                 quantity=10.0,
                 cost_basis_per_unit_usd=80.0,
@@ -1398,7 +1398,7 @@ def test_scheduled_sale_consumes_only_source_account_fifo_pool() -> None:
                 lot_id="ira_vti",
                 agent_id="alice",
                 account_id="ira",
-                asset_id="vti",
+                asset_id="crypto:vti",
                 purchase_month_index=-12,
                 quantity=10.0,
                 cost_basis_per_unit_usd=70.0,
@@ -1410,7 +1410,7 @@ def test_scheduled_sale_consumes_only_source_account_fifo_pool() -> None:
                 cause_id="taxable_sale",
                 agent_id="alice",
                 source_account_id="taxable",
-                asset_id="vti",
+                asset_id="crypto:vti",
                 quantity=8.0,
                 price_per_unit_usd=100.0,
                 proceeds_account_id="checking",
@@ -1443,7 +1443,7 @@ def test_scheduled_sale_oversell_raises_without_partial_disposition() -> None:
                 lot_id="taxable_vti",
                 agent_id="alice",
                 account_id="taxable",
-                asset_id="vti",
+                asset_id="crypto:vti",
                 purchase_month_index=-12,
                 quantity=5.0,
                 cost_basis_per_unit_usd=80.0,
@@ -1455,7 +1455,7 @@ def test_scheduled_sale_oversell_raises_without_partial_disposition() -> None:
                 cause_id="oversell",
                 agent_id="alice",
                 source_account_id="taxable",
-                asset_id="vti",
+                asset_id="crypto:vti",
                 quantity=6.0,
                 price_per_unit_usd=100.0,
                 proceeds_account_id="checking",
@@ -1483,7 +1483,7 @@ def test_series_driven_sale_uses_deterministic_price_curve(deterministic_series_
             InitialLot(
                 lot_id="seed",
                 agent_id="alice",
-                asset_id="vti",
+                asset_id="crypto:vti",
                 purchase_month_index=-3,
                 quantity=10.0,
                 cost_basis_per_unit_usd=90.0,
@@ -1494,7 +1494,7 @@ def test_series_driven_sale_uses_deterministic_price_curve(deterministic_series_
                 month=4,
                 cause_id="sampled_sale",
                 agent_id="alice",
-                asset_id="vti",
+                asset_id="crypto:vti",
                 quantity=4.0,
                 proceeds_account_id="checking",
             )
@@ -1513,7 +1513,7 @@ def test_series_driven_sale_uses_deterministic_price_curve(deterministic_series_
     assert disp["proceeds_usd"] == 600.0
 
     # External series values on the run match the configured path.
-    vti = result.series_values.filter(pl.col("series_id") == "vti").sort("month_index")
+    vti = result.series_values.filter(pl.col("series_id") == "crypto:vti").sort("month_index")
     assert vti.get_column("value").to_list() == [100.0, 110.0, 120.0, 130.0, 150.0, 160.0, 170.0]
 
 
@@ -1522,7 +1522,11 @@ def test_gbm_series_diverges_across_rollouts_same_seed_is_reproducible() -> None
     (so sale proceeds differ across rollouts) but a fixed rollout-seed vector
     reproduces the same values across runs."""
     bundle = SeriesModelBundle.independent(
-        {"vti": GeometricBrownian(initial_value=100.0, monthly_log_return_mu=0.005, monthly_log_return_sigma=0.05)}
+        {
+            "crypto:vti": GeometricBrownian(
+                initial_value=100.0, monthly_log_return_mu=0.005, monthly_log_return_sigma=0.05
+            )
+        }
     )
     scenario = Scenario(
         agents=[Agent(agent_id="alice")],
@@ -1531,7 +1535,7 @@ def test_gbm_series_diverges_across_rollouts_same_seed_is_reproducible() -> None
             InitialLot(
                 lot_id="seed",
                 agent_id="alice",
-                asset_id="vti",
+                asset_id="crypto:vti",
                 purchase_month_index=0,
                 quantity=5.0,
                 cost_basis_per_unit_usd=100.0,
@@ -1542,7 +1546,7 @@ def test_gbm_series_diverges_across_rollouts_same_seed_is_reproducible() -> None
                 month=3,
                 cause_id="sampled_sale",
                 agent_id="alice",
-                asset_id="vti",
+                asset_id="crypto:vti",
                 quantity=5.0,
                 proceeds_account_id="checking",
             )
@@ -1675,7 +1679,7 @@ def test_year_end_tax_includes_long_term_capital_gain_under_federal_ltcg_schedul
             InitialLot(
                 lot_id="alice_long_vti",
                 agent_id="alice",
-                asset_id="vti",
+                asset_id="crypto:vti",
                 purchase_month_index=-24,
                 quantity=100.0,
                 cost_basis_per_unit_usd=80.0,
@@ -1699,7 +1703,7 @@ def test_year_end_tax_includes_long_term_capital_gain_under_federal_ltcg_schedul
                 month=6,
                 cause_id="alice_long_sale",
                 agent_id="alice",
-                asset_id="vti",
+                asset_id="crypto:vti",
                 quantity=100.0,
                 price_per_unit_usd=280.0,
                 proceeds_account_id="checking",
@@ -1759,7 +1763,7 @@ def test_e2e_pinned_ltcg_tax_safe_harbor_and_cash_numerics() -> None:
             InitialLot(
                 lot_id="alice_long_vti",
                 agent_id="alice",
-                asset_id="vti",
+                asset_id="crypto:vti",
                 purchase_month_index=-24,
                 quantity=100.0,
                 cost_basis_per_unit_usd=80.0,
@@ -1783,7 +1787,7 @@ def test_e2e_pinned_ltcg_tax_safe_harbor_and_cash_numerics() -> None:
                 month=6,
                 cause_id="alice_long_sale",
                 agent_id="alice",
-                asset_id="vti",
+                asset_id="crypto:vti",
                 quantity=100.0,
                 price_per_unit_usd=280.0,
                 proceeds_account_id="checking",
@@ -1859,7 +1863,7 @@ def test_e2e_pinned_multi_asset_ltcg_stcg_tax_breakdown_numerics() -> None:
             InitialLot(
                 lot_id="alice_long_vti",
                 agent_id="alice",
-                asset_id="vti",
+                asset_id="crypto:vti",
                 purchase_month_index=-24,
                 quantity=100.0,
                 cost_basis_per_unit_usd=100.0,
@@ -1891,7 +1895,7 @@ def test_e2e_pinned_multi_asset_ltcg_stcg_tax_breakdown_numerics() -> None:
                 month=6,
                 cause_id="alice_long_sale",
                 agent_id="alice",
-                asset_id="vti",
+                asset_id="crypto:vti",
                 quantity=100.0,
                 price_per_unit_usd=200.0,
                 proceeds_account_id="checking",
@@ -1958,7 +1962,7 @@ def test_e2e_pinned_tax_payments_force_asset_liquidation_and_settle_liability(de
             InitialLot(
                 lot_id="alice_vti_seed",
                 agent_id="alice",
-                asset_id="vti",
+                asset_id="crypto:vti",
                 purchase_month_index=-24,
                 quantity=100.0,
                 cost_basis_per_unit_usd=100.0,
@@ -1997,7 +2001,9 @@ def test_e2e_pinned_tax_payments_force_asset_liquidation_and_settle_liability(de
                 prior_year_tax_usd=2_000.0,
             )
         ],
-        liquidity_policies=[LiquidityPolicy(agent_id="alice", account_id="checking", asset_preference_chain=["vti"])],
+        liquidity_policies=[
+            LiquidityPolicy(agent_id="alice", account_id="checking", asset_preference_chain=["crypto:vti"])
+        ],
         horizon_months=13,
     )
 
@@ -2220,7 +2226,7 @@ def test_due_now_obligation_sells_assets_and_settles(deterministic_series_bundle
             InitialLot(
                 lot_id="alice_vti",
                 agent_id="alice",
-                asset_id="vti",
+                asset_id="crypto:vti",
                 purchase_month_index=-24,
                 quantity=10.0,
                 cost_basis_per_unit_usd=50.0,
@@ -2239,7 +2245,9 @@ def test_due_now_obligation_sells_assets_and_settles(deterministic_series_bundle
             )
         ],
         external_series=deterministic_series_bundle([100.0, 100.0]),
-        liquidity_policies=[LiquidityPolicy(agent_id="alice", account_id="checking", asset_preference_chain=["vti"])],
+        liquidity_policies=[
+            LiquidityPolicy(agent_id="alice", account_id="checking", asset_preference_chain=["crypto:vti"])
+        ],
         tax_profiles=[],
         horizon_months=1,
     )
@@ -2253,10 +2261,10 @@ def test_due_now_obligation_sells_assets_and_settles(deterministic_series_bundle
     settlement = result.events_log.obligation_settlements.row(0, named=True)
     assert settlement["amount_paid_usd"] == pytest.approx(500.0)
     assert settlement["shortfall_usd"] == pytest.approx(0.0)
-    assert settlement["attempted_funding_sources"] == "vti"
+    assert settlement["attempted_funding_sources"] == "crypto:vti"
 
     funding_sale = result.events_log.lot_dispositions.row(0, named=True)
-    assert funding_sale["cause_id"] == "liquidity_sale_m0_vti"
+    assert funding_sale["cause_id"] == "liquidity_sale_m0_crypto:vti"
     assert funding_sale["units_sold"] == pytest.approx(4.0)
     assert funding_sale["proceeds_usd"] == pytest.approx(400.0)
 
@@ -2280,7 +2288,7 @@ def test_liquidity_policy_sale_uses_rollout_specific_prices() -> None:
             InitialLot(
                 lot_id="alice_vti",
                 agent_id="alice",
-                asset_id="vti",
+                asset_id="crypto:vti",
                 purchase_month_index=-24,
                 quantity=10.0,
                 cost_basis_per_unit_usd=50.0,
@@ -2298,11 +2306,15 @@ def test_liquidity_policy_sale_uses_rollout_specific_prices() -> None:
                 amount_due_usd=500.0,
             )
         ],
-        liquidity_policies=[LiquidityPolicy(agent_id="alice", account_id="checking", asset_preference_chain=["vti"])],
+        liquidity_policies=[
+            LiquidityPolicy(agent_id="alice", account_id="checking", asset_preference_chain=["crypto:vti"])
+        ],
         tax_profiles=[],
         horizon_months=1,
     )
-    external_series = _external_series_context_for_levels("vti", levels_by_rollout=[[100.0, 100.0], [200.0, 200.0]])
+    external_series = _external_series_context_for_levels(
+        "crypto:vti", levels_by_rollout=[[100.0, 100.0], [200.0, 200.0]]
+    )
 
     result = simulate_with_external_series(scenario, rollout_count=2, external_series=external_series, locations={})
 
@@ -2328,7 +2340,7 @@ def test_liquidity_policy_consumes_only_policy_account_fifo_pool(deterministic_s
                 lot_id="alice_taxable_vti",
                 agent_id="alice",
                 account_id="taxable",
-                asset_id="vti",
+                asset_id="crypto:vti",
                 purchase_month_index=-24,
                 quantity=5.0,
                 cost_basis_per_unit_usd=50.0,
@@ -2337,7 +2349,7 @@ def test_liquidity_policy_consumes_only_policy_account_fifo_pool(deterministic_s
                 lot_id="alice_ira_vti",
                 agent_id="alice",
                 account_id="ira",
-                asset_id="vti",
+                asset_id="crypto:vti",
                 purchase_month_index=-24,
                 quantity=100.0,
                 cost_basis_per_unit_usd=50.0,
@@ -2356,7 +2368,9 @@ def test_liquidity_policy_consumes_only_policy_account_fifo_pool(deterministic_s
             )
         ],
         external_series=deterministic_series_bundle([100.0, 100.0]),
-        liquidity_policies=[LiquidityPolicy(agent_id="alice", account_id="taxable", asset_preference_chain=["vti"])],
+        liquidity_policies=[
+            LiquidityPolicy(agent_id="alice", account_id="taxable", asset_preference_chain=["crypto:vti"])
+        ],
         tax_profiles=[],
         horizon_months=1,
     )
@@ -2519,7 +2533,7 @@ def test_policy_without_sale_orders_fails_hard_demand_even_with_assets(determini
             InitialLot(
                 lot_id="alice_vti",
                 agent_id="alice",
-                asset_id="vti",
+                asset_id="crypto:vti",
                 purchase_month_index=-24,
                 quantity=10.0,
                 cost_basis_per_unit_usd=50.0,
@@ -2566,7 +2580,7 @@ def test_cash_buffer_sale_evaluates_after_hard_demands(deterministic_series_bund
             InitialLot(
                 lot_id="alice_vti",
                 agent_id="alice",
-                asset_id="vti",
+                asset_id="crypto:vti",
                 purchase_month_index=-24,
                 quantity=100.0,
                 cost_basis_per_unit_usd=50.0,
@@ -2589,7 +2603,7 @@ def test_cash_buffer_sale_evaluates_after_hard_demands(deterministic_series_bund
             LiquidityPolicy(
                 agent_id="alice",
                 account_id="checking",
-                asset_preference_chain=["vti"],
+                asset_preference_chain=["crypto:vti"],
                 cash_buffer_trigger_below_usd=2000.0,
                 cash_buffer_sale_usd=5000.0,
             )
@@ -2623,7 +2637,7 @@ def test_cash_buffer_not_triggered_when_post_demand_cash_is_enough(deterministic
             InitialLot(
                 lot_id="alice_vti",
                 agent_id="alice",
-                asset_id="vti",
+                asset_id="crypto:vti",
                 purchase_month_index=-24,
                 quantity=100.0,
                 cost_basis_per_unit_usd=50.0,
@@ -2646,7 +2660,7 @@ def test_cash_buffer_not_triggered_when_post_demand_cash_is_enough(deterministic
             LiquidityPolicy(
                 agent_id="alice",
                 account_id="checking",
-                asset_preference_chain=["vti"],
+                asset_preference_chain=["crypto:vti"],
                 cash_buffer_trigger_below_usd=2000.0,
                 cash_buffer_sale_usd=5000.0,
             )
@@ -2752,7 +2766,7 @@ def test_explicit_sale_price_overrides_sampled_series(deterministic_series_bundl
             InitialLot(
                 lot_id="seed",
                 agent_id="alice",
-                asset_id="vti",
+                asset_id="crypto:vti",
                 purchase_month_index=0,
                 quantity=10.0,
                 cost_basis_per_unit_usd=50.0,
@@ -2763,7 +2777,7 @@ def test_explicit_sale_price_overrides_sampled_series(deterministic_series_bundl
                 month=1,
                 cause_id="fixed_sale",
                 agent_id="alice",
-                asset_id="vti",
+                asset_id="crypto:vti",
                 quantity=3.0,
                 price_per_unit_usd=99.0,
                 proceeds_account_id="checking",
@@ -3009,7 +3023,7 @@ def test_liquidity_policy_covers_monthly_spend_deficit(deterministic_series_bund
             InitialLot(
                 lot_id="alice_vti",
                 agent_id="alice",
-                asset_id="vti",
+                asset_id="crypto:vti",
                 purchase_month_index=-1,
                 quantity=200.0,
                 cost_basis_per_unit_usd=50.0,
@@ -3028,7 +3042,9 @@ def test_liquidity_policy_covers_monthly_spend_deficit(deterministic_series_bund
             )
         ],
         external_series=deterministic_series_bundle([100.0] * 4),
-        liquidity_policies=[LiquidityPolicy(agent_id="alice", account_id="checking", asset_preference_chain=["vti"])],
+        liquidity_policies=[
+            LiquidityPolicy(agent_id="alice", account_id="checking", asset_preference_chain=["crypto:vti"])
+        ],
         tax_profiles=[],
         horizon_months=3,
     )
@@ -3063,7 +3079,7 @@ def test_rollout_marked_failed_when_assets_exhausted(deterministic_series_bundle
             InitialLot(
                 lot_id="alice_vti",
                 agent_id="alice",
-                asset_id="vti",
+                asset_id="crypto:vti",
                 purchase_month_index=-1,
                 quantity=5.0,  # only $500 of VTI at $100/unit
                 cost_basis_per_unit_usd=80.0,
@@ -3082,7 +3098,9 @@ def test_rollout_marked_failed_when_assets_exhausted(deterministic_series_bundle
             )
         ],
         external_series=deterministic_series_bundle([100.0, 100.0]),
-        liquidity_policies=[LiquidityPolicy(agent_id="alice", account_id="checking", asset_preference_chain=["vti"])],
+        liquidity_policies=[
+            LiquidityPolicy(agent_id="alice", account_id="checking", asset_preference_chain=["crypto:vti"])
+        ],
         tax_profiles=[],
         horizon_months=1,
     )
@@ -3119,7 +3137,7 @@ def test_failed_rollout_skips_future_recurring_transfers(deterministic_series_bu
             InitialLot(
                 lot_id="alice_vti",
                 agent_id="alice",
-                asset_id="vti",
+                asset_id="crypto:vti",
                 purchase_month_index=-1,
                 quantity=1.0,
                 cost_basis_per_unit_usd=80.0,
@@ -3150,7 +3168,9 @@ def test_failed_rollout_skips_future_recurring_transfers(deterministic_series_bu
             )
         ],
         external_series=deterministic_series_bundle([100.0, 100.0, 100.0]),
-        liquidity_policies=[LiquidityPolicy(agent_id="alice", account_id="checking", asset_preference_chain=["vti"])],
+        liquidity_policies=[
+            LiquidityPolicy(agent_id="alice", account_id="checking", asset_preference_chain=["crypto:vti"])
+        ],
         tax_profiles=[],
         horizon_months=2,
     )

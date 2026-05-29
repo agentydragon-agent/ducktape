@@ -9,10 +9,14 @@ this shape into lower-level sim objects at the runtime boundary.
 from __future__ import annotations
 
 from collections import Counter
+from dataclasses import dataclass
 from enum import StrEnum
+from functools import cached_property
 
 from pydantic import BaseModel, ConfigDict, Field, NonNegativeFloat, NonNegativeInt, PositiveFloat, model_validator
 
+from augur.model.series import CryptoKey, IssuerId, LevelSeriesKey, SP500Key
+from augur.product.asset_key import AssetKey, CryptoAssetKey, PrivateEquityAssetKey, SP500AssetKey, parse_asset_key
 from augur.sim.scenario import InitialLot
 
 _ID_PATTERN = r"^[a-z0-9][a-z0-9_\-]*$"
@@ -20,7 +24,7 @@ _SERIES_ID_PATTERN = r"^[a-z0-9][a-z0-9_:\-]*$"
 
 
 class PortfolioConfigModel(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(extra="forbid", frozen=True, ignored_types=(cached_property,))
 
 
 class PortfolioAccountType(StrEnum):
@@ -80,6 +84,13 @@ class HoldingPositionConfig(PortfolioConfigModel):
     )
     unit_value_usd: PositiveFloat
     lots: tuple[HoldingTaxLotConfig, ...] = Field(min_length=1)
+
+    @cached_property
+    def asset_key(self) -> AssetKey:
+        """Typed asset classification for this holding position, parsed once from
+        the YAML-supplied wire-id `value_series_id`."""
+
+        return parse_asset_key(self.value_series_id)
 
     @property
     def total_quantity(self) -> float:
@@ -146,8 +157,21 @@ class PortfolioConfig(PortfolioConfigModel):
         return sum(position.current_value_usd for position in self.holdings)
 
     @property
-    def level_anchors(self) -> dict[str, float]:
-        return {position.value_series_id: float(position.unit_value_usd) for position in self.holdings}
+    def level_anchors(self) -> PortfolioLevelAnchors:
+        level_series_anchors: dict[LevelSeriesKey, float] = {}
+        private_equity_anchors: dict[IssuerId, float] = {}
+        for position in self.holdings:
+            unit_value = float(position.unit_value_usd)
+            asset_key = position.asset_key
+            if isinstance(asset_key, PrivateEquityAssetKey):
+                private_equity_anchors[asset_key.issuer_id] = unit_value
+            elif isinstance(asset_key, SP500AssetKey):
+                level_series_anchors[SP500Key()] = unit_value
+            elif isinstance(asset_key, CryptoAssetKey):
+                level_series_anchors[CryptoKey(symbol=asset_key.symbol)] = unit_value
+        return PortfolioLevelAnchors(
+            level_series_anchors=level_series_anchors, private_equity_anchors=private_equity_anchors
+        )
 
     def to_initial_lots(self) -> tuple[InitialLot, ...]:
         account_by_id = {account.account_id: account for account in self.accounts}
@@ -163,6 +187,21 @@ class PortfolioConfig(PortfolioConfigModel):
             for position in self.holdings
             for lot in position.lots
         )
+
+
+@dataclass(frozen=True)
+class PortfolioLevelAnchors:
+    """Typed split of portfolio month-0 anchors.
+
+    Non-PE level series anchors flow into the exogenous bundle's `levels` frame
+    via `LevelSeriesKey`; PE issuer anchors flow into the `PrivateEquityBundle`
+    keyed by `IssuerId`. The split lives at the API/runtime boundary because
+    that's where wire-encoded `value_series_id` strings get parsed into typed
+    `AssetKey` values.
+    """
+
+    level_series_anchors: dict[LevelSeriesKey, float]
+    private_equity_anchors: dict[IssuerId, float]
 
 
 def _duplicates(values) -> list[str]:

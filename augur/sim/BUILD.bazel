@@ -108,6 +108,7 @@ py_library(
     srcs = ["scenario.py"],
     deps = [
         "//augur/model:series_model",
+        "//augur/product:asset_key",
         "@pypi//pydantic",
     ],
 )
@@ -206,7 +207,9 @@ py_library(
         ":locations",
         ":runtime",
         ":scenario",
+        "//augur/model:private_equity_bundle",
         "//augur/model:series",
+        "//augur/product:asset_key",
         "@pypi//numpy",
         "@pypi//polars",
     ],
@@ -245,6 +248,7 @@ py_library(
         ":external_series",
         ":state",
         "//augur/model:series",
+        "//augur/product:asset_key",
         "@pypi//numpy",
         "@pypi//polars",
     ],

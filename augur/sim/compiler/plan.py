@@ -12,7 +12,7 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
-from augur.model.series import home_value_series_id
+from augur.model.series import HomeValueKey, LocationId
 from augur.sim.compiler.assets import SaleCompileOutput, compile_sales
 from augur.sim.compiler.deductions import (
     MIDCompileOutput,
@@ -243,7 +243,7 @@ def compile_simulation(
     )
     property_home_value_series_index = np.array(
         [
-            series_index_by_id.get(home_value_series_id(p.location_id), NO_CODE)
+            series_index_by_id.get(HomeValueKey(location_id=LocationId(p.location_id)).wire_id, NO_CODE)
             for p in scenario.scheduled_property_purchases
         ],
         dtype=np.int64,
@@ -399,7 +399,7 @@ def _reject_missing_property_sale_home_values(scenario: Scenario, external_serie
         if not isinstance(event, PropertySaleEvent):
             continue
         property_ = property_by_id[event.property_id]
-        required_series_id = home_value_series_id(property_.location_id)
+        required_series_id = HomeValueKey(location_id=LocationId(property_.location_id)).wire_id
         if required_series_id in available_series_ids:
             continue
         msg = (
