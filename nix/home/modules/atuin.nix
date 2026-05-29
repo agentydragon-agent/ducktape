@@ -38,21 +38,24 @@
     mode = "0600";
   };
 
-  # First-run login: if no session token yet, exchange password + key for one.
-  # `atuin login` writes ${xdg.dataHome}/atuin/session. Failures are tolerated
-  # (server outage, offline laptop) so activation stays unblocked — the next
-  # `home-manager switch` retries. Sequenced after sops-nix so the secret
-  # files exist; the readability guard handles the bootstrap case where
-  # sops-nix's systemd unit hasn't run yet.
+  # Re-login on every activation. `atuin login` always issues a fresh session
+  # token, so this keeps the locally-cached token in lockstep with the
+  # cluster-side DB even after a rebuild that wipes the sessions table
+  # (locally-cached token then 403s on sync until re-login). Cost is one HTTP
+  # request + one extra row per switch — negligible vs. the manual-recovery
+  # alternative. Failures are tolerated (server outage, offline laptop) so
+  # activation stays unblocked; next `home-manager switch` retries.
+  # Sequenced after sops-nix so secret files exist; the readability guard
+  # handles the bootstrap case where sops-nix's systemd unit hasn't run yet.
   home.activation.atuinLogin = lib.hm.dag.entryAfter [ "sops-nix" ] ''
-    SESSION="${config.xdg.dataHome}/atuin/session"
     PASS="${config.sops.secrets.atuin_user_password.path}"
     KEY="${config.sops.secrets.atuin_key.path}"
-    if [ ! -s "$SESSION" ] && [ -r "$PASS" ] && [ -r "$KEY" ]; then
+    if [ -r "$PASS" ] && [ -r "$KEY" ]; then
       ${pkgs.atuin}/bin/atuin login \
         -u agentydragon \
         -p "$(cat "$PASS")" \
         -k "$(cat "$KEY")" \
+        >/dev/null \
         || echo "atuin login failed; will retry on next home-manager switch"
     fi
   '';
