@@ -153,6 +153,24 @@ class PrivateEquityProtocolSanityCheck(FrozenModel):
     allowed_event_kind_codes: tuple[int, ...] = ()
 
 
+class PrivateEquityMarkSanityCheck(FrozenModel):
+    """Sanity check on the `mark_usd_per_unit` channel of one PE issuer.
+
+    Same statistical shape as `LevelSeriesSanityCheck` but sourced from the
+    typed `PrivateEquityBundle` instead of the level matrix, since PE marks
+    are not level series.
+    """
+
+    issuer_id: str
+    initial_value: float | None = None
+    initial_atol: float = Field(default=1e-6, ge=0.0)
+    initial_rtol: float = Field(default=1e-9, ge=0.0)
+    require_positive: bool = True
+    ratio_percentile_bounds: tuple[PercentileBound, ...] = ()
+    ratio_percentile_ranges: tuple[PercentileRangeBound, ...] = ()
+    threshold_probability_bounds: tuple[LevelThresholdProbabilityBound, ...] = ()
+
+
 class SampleSanitySpec(FrozenModel):
     provider_config_path: Path
     horizon_months: int = Field(ge=0)
@@ -164,6 +182,7 @@ class SampleSanitySpec(FrozenModel):
     event_checks: tuple[EventSeriesSanityCheck, ...] = ()
     event_kind_observed_checks: tuple[EventKindObservedCheck, ...] = ()
     private_equity_protocol_checks: tuple[PrivateEquityProtocolSanityCheck, ...] = ()
+    private_equity_mark_checks: tuple[PrivateEquityMarkSanityCheck, ...] = ()
 
     @property
     def rollout_seeds(self) -> tuple[int, ...]:
@@ -232,6 +251,36 @@ def run_sample_sanity(spec: SampleSanitySpec, *, base_dir: Path) -> None:
             horizon_months=spec.horizon_months,
         )
         _check_event_kind_observed(event_kind_codes, event_kind_check)
+
+    for mark_check in spec.private_equity_mark_checks:
+        marks = sampled.private_equity.issuer_float_matrix(
+            mark_check.issuer_id,
+            "mark_usd_per_unit",
+            rollout_count=spec.rollout_count,
+            horizon_months=spec.horizon_months,
+        )
+        label_prefix = f"PE issuer {mark_check.issuer_id!r} mark"
+        _assert_finite(marks, label=label_prefix)
+        if mark_check.require_positive and np.any(marks <= 0.0):
+            raise AssertionError(f"{label_prefix} produced non-positive value(s)")
+        if mark_check.initial_value is not None:
+            np.testing.assert_allclose(
+                marks[:, 0],
+                np.full(spec.rollout_count, float(mark_check.initial_value), dtype=np.float64),
+                atol=mark_check.initial_atol,
+                rtol=mark_check.initial_rtol,
+                err_msg=f"{label_prefix} month-0 anchor mismatch",
+            )
+        for ratio_bound in mark_check.ratio_percentile_bounds:
+            ratios = marks[:, ratio_bound.month] / marks[:, 0]
+            _check_percentile_bound(ratios, ratio_bound, label=f"{label_prefix} ratio m{ratio_bound.month}/m0")
+        for ratio_range in mark_check.ratio_percentile_ranges:
+            ratios = marks[:, ratio_range.month] / marks[:, 0]
+            _check_percentile_range_bound(ratios, ratio_range, label=f"{label_prefix} ratio m{ratio_range.month}/m0")
+        for threshold_bound in mark_check.threshold_probability_bounds:
+            _check_threshold_probability_bound(
+                marks, threshold_bound, series_id=label_prefix, rollout_count=spec.rollout_count
+            )
 
     for event_check in spec.event_checks:
         events = sampled.private_equity.issuer_bool_matrix(
