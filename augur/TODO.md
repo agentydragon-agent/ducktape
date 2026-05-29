@@ -69,6 +69,35 @@ this file as a backlog, not a second ordered roadmap.
       data loading/config ideas after the native `SampledExogenousBundle`
       API is the target.
 
+## Liquidity Policy
+
+- [ ] **Harmonize the multi-tier liquidity ladder.** Today's product
+      surfaces two policies that look superficially similar but live in
+      different shapes and don't compose: - `FundingPolicy` (in `augur/product/wire.py`) — cash buffer: when
+      post-obligation cash drops below a dollar trigger, sell a fixed
+      dollar amount from `public_securities`. Trigger + sell-amount
+      come from the frontend per scenario. - `PrivateEquityTenderPolicy` — liquid-net-worth floor: only sell PE
+      through a tender if liquid_net_worth ≥ floor. Floor comes from
+      the frontend per scenario.
+      Holders generally want a **ladder of buffers** instead — e.g. "cash
+      ≥ X" + "liquid public-stock value ≥ Y" + "PE only above net-worth
+      floor Z" — with cascading top-up rules where a lower-tier shortfall
+      triggers sales from the next-higher tier. Today the two existing
+      tiers (cash trigger, PE floor) can't express the missing middle
+      tier (a stock-value floor that triggers PE sales). Frontend should
+      expose all three knobs as one unified panel rather than two
+      disjoint policies, matching the same per-scenario shape.
+- [ ] **Reinvestment of PE sale proceeds.** When a tender executes, the
+      proceeds flow to cash. A holder using a multi-tier ladder typically
+      wants part of those proceeds to immediately fund a public-stock
+      purchase (refilling the stock tier), not sit as cash. The
+      simulator has no concept of post-sale buys; PE→stock reinvestment
+      is a missing flow. Likely shape: an optional `reinvestment_target`
+      on the sale rule that names a downstream stock/account and a
+      fraction or dollar amount of proceeds to route there before the
+      remainder lands as cash. Frontend control alongside the ladder
+      knobs above.
+
 ## API / Runtime Design Debt
 
 - [ ] **Extend policy schema/programs** enough for downstream
