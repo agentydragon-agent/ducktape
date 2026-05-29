@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useMemo, useRef } from "react";
 import { axisCoordinate, fanChartAxis, fmtAxisMetricValue, fmtMetricValue } from "./lib/chart.js";
 import { fmtNumber } from "./lib/format.js";
 import { FAN_PERCENTILES } from "./input_helpers.js";
@@ -52,6 +52,9 @@ export function TerminalDistributionHistogram({
     return ((axisCoordinate(axis, value) - axis.min) / axis.range) * 100;
   };
   const xTicks = Array.isArray(axis.ticks) ? axis.ticks.slice().sort((left, right) => left - right) : [];
+  const sortedEntries = useMemo(() => entries.slice().sort((left, right) => left.value - right.value), [entries]);
+  const selectedSliderEntry = sortedEntries.find((entry) => Number(entry.summary.seed) === selectedSeed) ?? null;
+  const thumbLeftPct = selectedSliderEntry ? axisLeftPct(selectedSliderEntry.value) : null;
   return (
     <div
       className="border-t border-slate-200 px-4 py-3 dark:border-slate-700"
@@ -60,7 +63,7 @@ export function TerminalDistributionHistogram({
       <div className="mb-2 flex items-center justify-between gap-3">
         <div>
           <div className="augur-eyebrow">Terminal {metric.label.toLowerCase()} distribution</div>
-          <div className="mt-1 text-xs augur-muted">One cell per rollout; click to inspect. Failures in red.</div>
+          <div className="mt-1 text-xs augur-muted">One cell per rollout. Failures in red.</div>
         </div>
         {selectedSeed != null && (
           <button
@@ -116,6 +119,13 @@ export function TerminalDistributionHistogram({
               </div>
             );
           })}
+          {thumbLeftPct != null && (
+            <div
+              className="pointer-events-none absolute inset-y-0 w-px bg-teal-500/80"
+              style={{ left: `${thumbLeftPct}%` }}
+              aria-hidden="true"
+            />
+          )}
           <div className="relative mt-1 h-4 text-[10px] augur-tabular augur-muted" aria-hidden="true">
             {xTicks.map((value) => {
               const leftPct = axisLeftPct(value);
@@ -131,7 +141,123 @@ export function TerminalDistributionHistogram({
               );
             })}
           </div>
+          <RolloutPercentileSlider
+            sortedEntries={sortedEntries}
+            axis={axis}
+            axisLeftPct={axisLeftPct}
+            selectedEntry={selectedSliderEntry}
+            onSelect={onSelect}
+            metric={metric}
+          />
         </div>
+      </div>
+    </div>
+  );
+}
+
+function RolloutPercentileSlider({ sortedEntries, axis, axisLeftPct, selectedEntry, onSelect, metric }) {
+  const railRef = useRef(null);
+  const draggingRef = useRef(false);
+  const selectedIdx = selectedEntry ? sortedEntries.indexOf(selectedEntry) : -1;
+  const thumbLeftPct = selectedEntry ? axisLeftPct(selectedEntry.value) : null;
+  const valueLabel = selectedEntry ? fmtAxisMetricValue(metric.chartValue, selectedEntry.value) : null;
+  const rankPercentile = selectedEntry ? Math.round(Number(selectedEntry.summary.rankPercentile)) : null;
+  const failed = selectedEntry?.summary?.failed ?? false;
+
+  const selectFromPointer = useCallback(
+    (clientX) => {
+      const rail = railRef.current;
+      if (!rail || sortedEntries.length === 0) return;
+      const rect = rail.getBoundingClientRect();
+      if (rect.width <= 0) return;
+      const t = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+      const targetCoord = axis.min + t * axis.range;
+      let bestIdx = 0;
+      let bestDist = Infinity;
+      for (let idx = 0; idx < sortedEntries.length; idx += 1) {
+        const coord = axisCoordinate(axis, sortedEntries[idx].value);
+        const dist = Math.abs(coord - targetCoord);
+        if (dist < bestDist) {
+          bestDist = dist;
+          bestIdx = idx;
+        }
+      }
+      onSelect(Number(sortedEntries[bestIdx].summary.seed));
+    },
+    [sortedEntries, axis, onSelect]
+  );
+
+  const handlePointerDown = (event) => {
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    draggingRef.current = true;
+    selectFromPointer(event.clientX);
+  };
+  const handlePointerMove = (event) => {
+    if (!draggingRef.current) return;
+    selectFromPointer(event.clientX);
+  };
+  const handlePointerUp = (event) => {
+    draggingRef.current = false;
+    event.currentTarget.releasePointerCapture(event.pointerId);
+  };
+  const handleKeyDown = (event) => {
+    if (sortedEntries.length === 0) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      onSelect(null);
+      return;
+    }
+    const step = event.shiftKey ? 10 : 1;
+    let nextIdx;
+    if (event.key === "ArrowRight") nextIdx = selectedIdx < 0 ? 0 : selectedIdx + step;
+    else if (event.key === "ArrowLeft") nextIdx = selectedIdx < 0 ? sortedEntries.length - 1 : selectedIdx - step;
+    else if (event.key === "Home") nextIdx = 0;
+    else if (event.key === "End") nextIdx = sortedEntries.length - 1;
+    else return;
+    event.preventDefault();
+    nextIdx = Math.max(0, Math.min(sortedEntries.length - 1, nextIdx));
+    onSelect(Number(sortedEntries[nextIdx].summary.seed));
+  };
+
+  return (
+    <div className="relative mt-3 select-none" data-product-percentile-slider>
+      <div
+        ref={railRef}
+        role="slider"
+        tabIndex={0}
+        aria-label={`Inspect rollout by terminal ${metric.label.toLowerCase()}`}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={rankPercentile ?? 0}
+        aria-valuetext={selectedEntry ? `P${rankPercentile}, ${valueLabel}` : "no rollout selected"}
+        className="relative h-1.5 cursor-pointer rounded-full bg-slate-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-400 dark:bg-slate-700"
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+        onKeyDown={handleKeyDown}
+      >
+        {thumbLeftPct != null && (
+          <span
+            aria-hidden="true"
+            data-product-percentile-slider-thumb
+            className="pointer-events-none absolute top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full bg-teal-500 shadow ring-2 ring-white dark:ring-slate-900"
+            style={{ left: `${thumbLeftPct}%` }}
+          />
+        )}
+      </div>
+      <div className="relative mt-2 h-4 text-[11px]">
+        {selectedEntry ? (
+          <div
+            className="absolute -translate-x-1/2 whitespace-nowrap font-semibold augur-tabular"
+            style={{ left: `${thumbLeftPct}%` }}
+          >
+            P{rankPercentile} · {failed ? "failed" : valueLabel}
+          </div>
+        ) : (
+          <div className="text-center augur-muted">Click a bar or drag the rail to inspect a rollout</div>
+        )}
       </div>
     </div>
   );
