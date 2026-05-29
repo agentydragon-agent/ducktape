@@ -116,12 +116,50 @@ class Config(ApiModel):
     # frontend layers these over its hard-coded base defaults at bootstrap time so deployments
     # (e.g. `gaffer-private`) can bias the UI without code changes.
     product_input_defaults: ProductInputDefaults = Field(default_factory=ProductInputDefaults)
-    exogenous_provider: ExogenousProviderConfig = Field(
+    exogenous_presets: dict[str, ExogenousProviderConfig] = Field(
+        min_length=1,
         description=(
-            "Deployment's exogenous-bundle provider choice, discriminated by `type`. Carries per-provider "
-            "knobs and trained-asset paths; the server materializes this into a runtime `Sampler` at startup."
+            "Named registry of exogenous-bundle providers. Frontend exposes the preset id via "
+            "`ScenarioKey.exogenous_model_id` so the user can A/B providers (e.g. a hand-tuned "
+            "structured model vs a fitted-artifact-based one). The server materializes each preset "
+            "into its own runtime `Sampler` at startup."
+        ),
+    )
+    default_exogenous_preset_id: str = Field(
+        description=(
+            "Preset id used when the request omits or defaults `exogenous_model_id`. Must name a "
+            "key in `exogenous_presets`."
         )
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _expand_legacy_exogenous_provider(cls, data: object) -> object:
+        """Wrap a top-level `exogenous_provider:` into the new presets registry under the
+        historical id `current_exogenous_model`, so existing deployment configs and tests
+        keep loading without edits while presets is the canonical schema going forward.
+        """
+
+        if not isinstance(data, dict) or "exogenous_provider" not in data:
+            return data
+        if "exogenous_presets" in data:
+            raise ValueError(
+                "exogenous_provider and exogenous_presets are mutually exclusive; use only exogenous_presets"
+            )
+        data = dict(data)
+        provider = data.pop("exogenous_provider")
+        data["exogenous_presets"] = {"current_exogenous_model": provider}
+        data.setdefault("default_exogenous_preset_id", "current_exogenous_model")
+        return data
+
+    @model_validator(mode="after")
+    def _validate_default_preset(self) -> Config:
+        if self.default_exogenous_preset_id not in self.exogenous_presets:
+            raise ValueError(
+                f"default_exogenous_preset_id {self.default_exogenous_preset_id!r} is not a key in "
+                f"exogenous_presets (have {sorted(self.exogenous_presets)})"
+            )
+        return self
 
 
 def load_augur_config(path: Path) -> Config:
@@ -153,10 +191,13 @@ def _anchor_property_source_paths(config: Config, *, base_dir: Path) -> Config:
 
 
 def _anchor_exogenous_provider_paths(config: Config, *, base_dir: Path) -> Config:
-    provider = _anchor_provider_paths(config.exogenous_provider, base_dir=base_dir)
-    if provider == config.exogenous_provider:
+    anchored = {
+        preset_id: _anchor_provider_paths(provider, base_dir=base_dir)
+        for preset_id, provider in config.exogenous_presets.items()
+    }
+    if anchored == dict(config.exogenous_presets):
         return config
-    return config.model_copy(update={"exogenous_provider": provider})
+    return config.model_copy(update={"exogenous_presets": anchored})
 
 
 def _anchor_provider_paths(provider: ExogenousProviderConfig, *, base_dir: Path) -> ExogenousProviderConfig:

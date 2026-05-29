@@ -28,7 +28,7 @@ def forced_private_equity_event_client() -> Iterator[TestClient]:
     app = create_app(
         ApiServerConfig(
             augur_config=load_augur_config(get_required_path("_main/augur/api/testdata/config.yaml")),
-            exogenous_model=forced_private_equity_event_fixture(),
+            exogenous_models={"current_exogenous_model": forced_private_equity_event_fixture()},
         )
     )
     with TestClient(app) as client:
@@ -114,7 +114,7 @@ def capacity_limited_private_equity_client() -> Iterator[TestClient]:
     app = create_app(
         ApiServerConfig(
             augur_config=load_augur_config(get_required_path("_main/augur/api/testdata/config.yaml")),
-            exogenous_model=capacity_limited_private_equity_fixture(),
+            exogenous_models={"current_exogenous_model": capacity_limited_private_equity_fixture()},
         )
     )
     with TestClient(app) as client:

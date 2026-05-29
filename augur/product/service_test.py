@@ -94,7 +94,8 @@ def _augur_config() -> Config:
 
 @pytest.fixture
 def counting_exogenous_model() -> CountingExogenousModel:
-    return CountingExogenousModel(inner=_augur_config().exogenous_provider.realize_model())
+    config = _augur_config()
+    return CountingExogenousModel(inner=config.exogenous_presets[config.default_exogenous_preset_id].realize_model())
 
 
 @pytest.fixture
@@ -112,7 +113,7 @@ def _service(model: Sampler, *, augur_config: Config | None = None) -> ProductSe
         known_location_ids=frozenset(location.id for location in bootstrap.locations),
         locations=sim_locations_from_config(config.locations),
         properties_by_id={property_.id: property_ for property_ in bootstrap.properties},
-        exogenous_model=model,
+        exogenous_models={"current_exogenous_model": model},
         max_rollout_samples=config.max_rollout_samples,
         max_cache_rollouts=10,
     )
@@ -136,7 +137,7 @@ def test_product_fails_when_sample_is_missing_required_exogenous_series() -> Non
 
 def test_product_fails_when_crypto_holding_price_is_not_modeled() -> None:
     config = _augur_config()
-    provider = config.exogenous_provider
+    provider = config.exogenous_presets[config.default_exogenous_preset_id]
     assert isinstance(provider, CompositeExogenousProviderConfig)
     assert isinstance(provider.macro, IndependentExogenousProviderConfig)
     model = provider.model_copy(

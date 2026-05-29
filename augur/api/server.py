@@ -27,7 +27,7 @@ from augur.product.wire import MetricFanRequest, RolloutRequest
 @dataclass(frozen=True)
 class ApiServerConfig:
     augur_config: Config
-    exogenous_model: Sampler
+    exogenous_models: dict[str, Sampler]
 
 
 def create_app(config: ApiServerConfig) -> FastAPI:
@@ -41,7 +41,7 @@ def create_app(config: ApiServerConfig) -> FastAPI:
         known_location_ids=frozenset(location.id for location in bootstrap.locations),
         locations=sim_locations_from_config(augur_config.locations),
         properties_by_id={property_.id: property_ for property_ in bootstrap.properties},
-        exogenous_model=config.exogenous_model,
+        exogenous_models=config.exogenous_models,
         max_rollout_samples=augur_config.max_rollout_samples,
     )
 
@@ -71,6 +71,12 @@ def create_app(config: ApiServerConfig) -> FastAPI:
     def product_portfolio_snapshot() -> JSONResponse:
         return payload(product_portfolio_response(snapshot=augur_config.snapshot, portfolio=augur_config.portfolio))
 
+    @app.get("/api/exogenous_presets")
+    def exogenous_presets() -> JSONResponse:
+        return payload(
+            {"presets": sorted(augur_config.exogenous_presets), "default": augur_config.default_exogenous_preset_id}
+        )
+
     @app.post("/api/product/projections/metric_fan")
     def product_projection_metric_fan(request: MetricFanRequest) -> JSONResponse:
         return payload(product_service.metric_fan(request))
@@ -91,8 +97,10 @@ def create_app(config: ApiServerConfig) -> FastAPI:
 
 
 def create_app_from_augur_config(augur_config: Config) -> FastAPI:
-    exogenous_model = augur_config.exogenous_provider.realize_model()
-    return create_app(ApiServerConfig(augur_config=augur_config, exogenous_model=exogenous_model))
+    exogenous_models = {
+        preset_id: provider.realize_model() for preset_id, provider in augur_config.exogenous_presets.items()
+    }
+    return create_app(ApiServerConfig(augur_config=augur_config, exogenous_models=exogenous_models))
 
 
 def _add_server_args(parser: argparse.ArgumentParser, *, api_only_help: str) -> None:
@@ -127,7 +135,10 @@ def _run_server_with_args(*, augur_config: Config, args: argparse.Namespace) -> 
 
 def run_app(*, app: FastAPI, augur_config: Config, host: str, port: int) -> int:
     print(f"serving Augur API on http://{host}:{port}")
-    print(f"exogenous provider: {augur_config.exogenous_provider.type}")
+    print(
+        f"exogenous presets: {sorted(augur_config.exogenous_presets)} "
+        f"(default: {augur_config.default_exogenous_preset_id})"
+    )
     uvicorn.run(app, host=host, port=port)
     return 0
 

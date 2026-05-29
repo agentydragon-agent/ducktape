@@ -85,19 +85,21 @@ class ProductService:
         known_location_ids: frozenset[str],
         locations: dict[str, Location],
         properties_by_id: dict[str, Property],
-        exogenous_model: Sampler,
+        exogenous_models: dict[str, Sampler],
         max_rollout_samples: int,
         max_cache_rollouts: int = DEFAULT_MAX_CACHE_ROLLOUTS,
     ) -> None:
         if max_cache_rollouts <= 0:
             raise ValueError("max_cache_rollouts must be positive")
+        if not exogenous_models:
+            raise ValueError("exogenous_models must contain at least one preset")
         self._portfolio = portfolio
         self._initial_cash_usd = float(initial_cash_usd)
         self._primary_agent_id = primary_agent_id
         self._known_location_ids = known_location_ids
         self._locations = locations
         self._properties_by_id = properties_by_id
-        self._exogenous_model = exogenous_model
+        self._exogenous_models = exogenous_models
         self._max_rollout_samples = int(max_rollout_samples)
         self._max_cache_rollouts = int(max_cache_rollouts)
         self._initial_lots = initial_lots_from_portfolio(portfolio, primary_agent_id=primary_agent_id)
@@ -150,8 +152,11 @@ class ProductService:
         )
 
     def _decoded_rollouts(self, scenario_key: ScenarioKey, seeds: tuple[int, ...]) -> tuple[_DecodedRollout, ...]:
-        if scenario_key.exogenous_model_id != "current_exogenous_model":
-            raise ValueError(f"unsupported exogenous_model_id: {scenario_key.exogenous_model_id!r}")
+        if scenario_key.exogenous_model_id not in self._exogenous_models:
+            raise ValueError(
+                f"unknown exogenous_model_id: {scenario_key.exogenous_model_id!r} "
+                f"(known presets: {sorted(self._exogenous_models)})"
+            )
         if (
             scenario_key.rental_location_id is not None
             and scenario_key.rental_location_id not in self._known_location_ids
@@ -203,7 +208,7 @@ class ProductService:
             ),
             required_private_equity_issuers=required_private_equity_issuers(self._initial_lots),
         )
-        sampled = self._exogenous_model.sample(sampling_request)
+        sampled = self._exogenous_models[scenario_key.exogenous_model_id].sample(sampling_request)
         validate_sample_satisfies_request(sampling_request, sampled)
         anchors = self._portfolio.level_anchors
         sampled = anchor_sampled_series_levels(
