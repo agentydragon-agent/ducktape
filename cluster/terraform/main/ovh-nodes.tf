@@ -332,6 +332,55 @@ locals {
     local.kimsufi_worker_machine_config_patches,
   )
 
+  kimsufi_public_ips = merge(
+    { for k, v in data.ovh_dedicated_server.kimsufi : k => v.ip },
+    { for k, v in data.ovh_dedicated_server.kimsufi_cp : k => v.ip },
+  )
+
+  kimsufi_public_ipv4_24s = {
+    for k, ip in local.kimsufi_public_ips : k => join(".", slice(split(".", ip), 0, 3))
+  }
+
+  kimsufi_eno1_peer_routes = {
+    for k, ip in local.kimsufi_public_ips : k => [
+      for peer_key, peer_ip in local.kimsufi_public_ips : {
+        destination = "${peer_ip}/32"
+        gateway     = "${local.kimsufi_public_ipv4_24s[k]}.254"
+      }
+      if peer_key != k && local.kimsufi_public_ipv4_24s[peer_key] == local.kimsufi_public_ipv4_24s[k]
+    ]
+  }
+
+  # Roll this network change out one node at a time. A route-only LinkConfig
+  # disables Talos' default DHCP operators, so each enabled node must get the
+  # paired DHCPv4Config below and should be canaried with talosctl --mode=try
+  # before being added here.
+  kimsufi_eno1_peer_route_enabled_nodes = toset([
+    "kimsufi_worker0",
+    "kimsufi_worker1",
+    "ks_game_worker0",
+    "ks_game_worker1",
+  ])
+
+  kimsufi_eno1_peer_route_patches = {
+    for k, routes in local.kimsufi_eno1_peer_routes : k => !contains(local.kimsufi_eno1_peer_route_enabled_nodes, k) || length(routes) == 0 ? [] : [
+      yamlencode({
+        apiVersion       = "v1alpha1"
+        kind             = "DHCPv4Config"
+        name             = "eno1"
+        routeMetric      = 1024
+        clientIdentifier = "mac"
+      }),
+      yamlencode({
+        apiVersion = "v1alpha1"
+        kind       = "LinkConfig"
+        name       = "eno1"
+        up         = true
+        routes     = routes
+      }),
+    ]
+  }
+
   kimsufi_cp_machine_config_patches = {
     for k, v in local.kimsufi_cp_servers :
     k => yamlencode({
@@ -374,6 +423,7 @@ data "talos_machine_configuration" "kimsufi" {
       }),
     ],
     local.kimsufi_user_volume_config_patches[each.key],
+    local.kimsufi_eno1_peer_route_patches[each.key],
     local.nebula_machine_patches[each.key],
   )
 }
@@ -492,6 +542,7 @@ data "talos_machine_configuration" "kimsufi_cp" {
       }),
     ],
     local.kimsufi_user_volume_config_patches[each.key],
+    local.kimsufi_eno1_peer_route_patches[each.key],
     local.nebula_machine_patches[each.key],
   )
 }
