@@ -783,13 +783,10 @@ export function ProductScenarioForm({ input, bootstrap, portfolio, portfolioErro
           />
           <hr className="my-4 border-slate-200 dark:border-slate-700" />
           <div className="augur-eyebrow">Private equity tenders</div>
-          <div className="mt-2 text-xs augur-muted">
-            Sell enough at each modeled tender event to lift liquid net worth (cash + non-PE holdings) to this floor.
-            Zero disables PE sales.
-          </div>
           <div className="mt-2 grid gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
             <NumberField
               label="LNW floor"
+              description="At each PE tender, sell enough to lift liquid net worth (cash + non-PE) to this floor. $0 disables."
               value={input.peLnwFloorUsd}
               min={0}
               step={10000}
