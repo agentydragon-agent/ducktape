@@ -157,6 +157,7 @@ export function MetricFanChart({
   onSelectEventMonth,
   onHoverEventMonth,
   metricScale = "linear",
+  currencyDisplay = "exact",
 }) {
   const [hoveredMonth, setHoveredMonth] = useState(null);
   const svgRef = useRef(null);
@@ -369,7 +370,7 @@ export function MetricFanChart({
                     const val = hoveredRow.values.get(pct);
                     return (
                       <text key={pct} x={8} y={28 + i * 14} fontSize="10" fill="#64748b">
-                        P{pct}: {Number.isFinite(val) ? fmtMetricValue(metric.chartValue, val) : "n/a"}
+                        P{pct}: {Number.isFinite(val) ? fmtMetricValue(metric.chartValue, val, currencyDisplay) : "n/a"}
                       </text>
                     );
                   })}

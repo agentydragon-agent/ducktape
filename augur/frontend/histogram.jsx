@@ -20,6 +20,7 @@ export function TerminalDistributionHistogram({
   onSelect,
   metric,
   metricScale = "linear",
+  currencyDisplay = "exact",
 }) {
   if (summaries.length === 0) return null;
   const entries = summaries
@@ -139,6 +140,7 @@ export function TerminalDistributionHistogram({
                 loadingSeed={loadingSeed}
                 onSelect={onSelect}
                 metric={metric}
+                currencyDisplay={currencyDisplay}
                 cellColor={(entry) =>
                   entry.summary.failed ? FAILED_ROLLOUT_COLOR : rolloutSliverColor(entry.summary.rankPercentile)
                 }
@@ -318,6 +320,7 @@ export function TerminalHistogramColumn({
   onSelect,
   cellColor,
   metric,
+  currencyDisplay = "exact",
 }) {
   return (
     <div className="flex flex-1 flex-col-reverse items-stretch overflow-hidden" style={{ height: containerHeight }}>
@@ -326,7 +329,9 @@ export function TerminalHistogramColumn({
         const isSelected = selectedSeed === seed;
         const isLoading = loadingSeed === seed;
         const failedMonth = entry.summary.terminalMetrics?.failedMonthIndex;
-        const valueLabel = Number.isFinite(entry.value) ? fmtMetricValue(metric.chartValue, entry.value) : "n/a";
+        const valueLabel = Number.isFinite(entry.value)
+          ? fmtMetricValue(metric.chartValue, entry.value, currencyDisplay)
+          : "n/a";
         const titleParts = [
           `Seed ${seed}`,
           `P${Math.round(Number(entry.summary.rankPercentile))}`,

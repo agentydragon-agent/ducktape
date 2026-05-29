@@ -8,7 +8,8 @@ import {
   fetchProductPortfolio,
   fetchProductRollout,
 } from "./client.js";
-import { fmtNumber, fmtUsd } from "./lib/format.js";
+import { fmtNumber } from "./lib/format.js";
+import { fmtMetricValue } from "./lib/chart.js";
 
 import { MetricFanChart } from "./fan_chart.jsx";
 import { TerminalDistributionHistogram } from "./histogram.jsx";
@@ -38,12 +39,19 @@ const METRIC_SCALE_OPTIONS = [
   { value: "log", label: "Log" },
 ];
 
+const CURRENCY_DISPLAY_OPTIONS = [
+  { value: "exact", label: "Exact" },
+  { value: "compact", label: "Compact" },
+];
+
 function RolloutResultsPanel({
   visibleMetrics,
   selectedMetric,
   onSelectMetric,
   metricScale,
   onSelectMetricScale,
+  currencyDisplay,
+  onSelectCurrencyDisplay,
   rolloutSummaries,
   selectedSeed,
   onSelectSeed,
@@ -68,14 +76,25 @@ function RolloutResultsPanel({
             classNames={{ input: "augur-tabular min-w-[12rem]" }}
             onChange={(event) => onSelectMetric(event.target.value)}
           />
-          <div data-product-chart-scale-control>
-            <SegmentedControl
-              aria-label="Chart scale"
-              size="xs"
-              value={metricScale}
-              data={METRIC_SCALE_OPTIONS}
-              onChange={onSelectMetricScale}
-            />
+          <div className="flex flex-wrap items-center gap-3">
+            <div data-product-currency-display-control>
+              <SegmentedControl
+                aria-label="Currency display"
+                size="xs"
+                value={currencyDisplay}
+                data={CURRENCY_DISPLAY_OPTIONS}
+                onChange={onSelectCurrencyDisplay}
+              />
+            </div>
+            <div data-product-chart-scale-control>
+              <SegmentedControl
+                aria-label="Chart scale"
+                size="xs"
+                value={metricScale}
+                data={METRIC_SCALE_OPTIONS}
+                onChange={onSelectMetricScale}
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -83,6 +102,7 @@ function RolloutResultsPanel({
         summaries={rolloutSummaries}
         metric={selectedMetric}
         metricScale={metricScale}
+        currencyDisplay={currencyDisplay}
         selectedSeed={selectedSeed}
         loadingSeed={selectedRolloutLoading ? selectedSeed : null}
         onSelect={onSelectSeed}
@@ -92,6 +112,7 @@ function RolloutResultsPanel({
           rows={fanRows}
           metric={selectedMetric}
           metricScale={metricScale}
+          currencyDisplay={currencyDisplay}
           percentiles={percentiles}
           selectedRows={selectedRows}
           selectedEvents={selectedEvents}
@@ -130,6 +151,7 @@ function RolloutResultsPanel({
         selectedSummary={selectedSummary}
         metrics={visibleMetrics}
         selectedMetric={selectedMetric}
+        currencyDisplay={currencyDisplay}
       />
     </section>
   );
@@ -178,6 +200,7 @@ function ProductProjectionWorkspace({ bootstrap, deployment }) {
   const [input, setInput] = useState(() => productInputFromSearch(window.location.search, bootstrap));
   const [selectedMetricValue, setSelectedMetricValue] = useState("net_worth_usd");
   const [metricScale, setMetricScale] = useState("linear");
+  const [currencyDisplay, setCurrencyDisplay] = useState("compact");
   const [result, setResult] = useState(null);
   const [runError, setRunError] = useState(null);
   const [portfolio, setPortfolio] = useState(null);
@@ -321,7 +344,9 @@ function ProductProjectionWorkspace({ bootstrap, deployment }) {
               <div className="grid gap-3 sm:grid-cols-3">
                 <div className="augur-card p-4">
                   <div className="augur-eyebrow">Median terminal {selectedMetric.label.toLowerCase()}</div>
-                  <div className="mt-2 text-2xl font-semibold augur-tabular">{fmtUsd(terminalP50)}</div>
+                  <div className="mt-2 text-2xl font-semibold augur-tabular">
+                    {fmtMetricValue(selectedMetric.chartValue, terminalP50, currencyDisplay)}
+                  </div>
                 </div>
                 <div className="augur-card p-4">
                   <div className="augur-eyebrow">Failed rollouts</div>
@@ -345,6 +370,8 @@ function ProductProjectionWorkspace({ bootstrap, deployment }) {
                 onSelectMetric={setSelectedMetricValue}
                 metricScale={metricScale}
                 onSelectMetricScale={setMetricScale}
+                currencyDisplay={currencyDisplay}
+                onSelectCurrencyDisplay={setCurrencyDisplay}
                 rolloutSummaries={rolloutSummaries}
                 selectedSeed={selectedSeed}
                 onSelectSeed={setSelectedSeed}

@@ -1,5 +1,4 @@
 import React from "react";
-import { fmtUsd, fmtNumber } from "./lib/format.js";
 import { fmtMetricValue } from "./lib/chart.js";
 import { FAN_PERCENTILES } from "./input_helpers.js";
 import {
@@ -9,10 +8,15 @@ import {
   SELECTED_COL_CELL,
   rolloutStatusText,
   terminalMetricTableRows,
-  terminalPercentileValue,
 } from "./data_helpers.js";
 
-export function TerminalMetricTable({ summaries, selectedSummary, metrics, selectedMetric }) {
+export function TerminalMetricTable({
+  summaries,
+  selectedSummary,
+  metrics,
+  selectedMetric,
+  currencyDisplay = "exact",
+}) {
   if (summaries.length === 0) return null;
   const rows = terminalMetricTableRows(summaries, selectedSummary, metrics);
   // Determine where the SELECTED column slots into the percentile order based on the
@@ -67,13 +71,19 @@ export function TerminalMetricTable({ summaries, selectedSummary, metrics, selec
                 {row.percentiles.map(({ percentile, value }, index) => (
                   <React.Fragment key={percentile}>
                     {showSelectedColumn && selectedColumnIndex === index && (
-                      <td className={SELECTED_COL_CELL}>{fmtUsd(row.selectedValue)}</td>
+                      <td className={SELECTED_COL_CELL}>
+                        {fmtMetricValue(row.metric.chartValue, row.selectedValue, currencyDisplay)}
+                      </td>
                     )}
-                    <td className={TABLE_NUMERIC_CELL}>{fmtUsd(value)}</td>
+                    <td className={TABLE_NUMERIC_CELL}>
+                      {fmtMetricValue(row.metric.chartValue, value, currencyDisplay)}
+                    </td>
                   </React.Fragment>
                 ))}
                 {showSelectedColumn && selectedColumnIndex === FAN_PERCENTILES.length && (
-                  <td className={SELECTED_COL_CELL}>{fmtUsd(row.selectedValue)}</td>
+                  <td className={SELECTED_COL_CELL}>
+                    {fmtMetricValue(row.metric.chartValue, row.selectedValue, currencyDisplay)}
+                  </td>
                 )}
               </tr>
             ))}

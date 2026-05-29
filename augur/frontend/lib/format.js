@@ -8,6 +8,17 @@ export function fmtUsd(value) {
   });
 }
 
+export function fmtUsdCompact(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "n/a";
+  return number.toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+    notation: "compact",
+    maximumFractionDigits: Math.abs(number) >= 1_000_000 ? 2 : 1,
+  });
+}
+
 export function fmtPct(value) {
   const number = Number(value);
   if (!Number.isFinite(number)) return "n/a";

@@ -1,4 +1,4 @@
-import { fmtNumber, fmtPct, fmtUsd } from "./format.js";
+import { fmtNumber, fmtPct, fmtUsd, fmtUsdCompact } from "./format.js";
 
 const FAN_CHART_TICK_FRACTIONS = [0, 0.25, 0.5, 0.75, 1];
 const LOG_SCALE_UNIT = 1;
@@ -11,27 +11,18 @@ export function metricIsCurrency(metricName) {
   return metricName?.endsWith("Usd") || metricName?.includes("Value") || metricName?.includes("CashFlow");
 }
 
-export function fmtMetricValue(metricName, value) {
+export function fmtMetricValue(metricName, value, currencyDisplay = "exact") {
   if (metricName?.endsWith("Pct")) {
     return fmtPct(value);
   }
   if (metricIsCurrency(metricName)) {
-    return fmtUsd(value);
+    return currencyDisplay === "compact" ? fmtUsdCompact(value) : fmtUsd(value);
   }
   return fmtNumber(value);
 }
 
 export function fmtAxisMetricValue(metricName, value) {
-  if (!metricIsCurrency(metricName)) {
-    return fmtMetricValue(metricName, value);
-  }
-  if (!Number.isFinite(value)) return "n/a";
-  return value.toLocaleString("en-US", {
-    style: "currency",
-    currency: "USD",
-    notation: "compact",
-    maximumFractionDigits: Math.abs(value) >= 1_000_000 ? 2 : 1,
-  });
+  return fmtMetricValue(metricName, value, "compact");
 }
 
 export function niceCurrencyTickStep(rawStep) {
@@ -46,12 +37,6 @@ export function transformMetricValue(value, metricScale) {
   if (!Number.isFinite(value)) return NaN;
   if (normalizeMetricScale(metricScale) !== "log") return value;
   return Math.sign(value) * Math.log1p(Math.abs(value) / LOG_SCALE_UNIT);
-}
-
-export function inverseTransformMetricValue(value, metricScale) {
-  if (!Number.isFinite(value)) return NaN;
-  if (normalizeMetricScale(metricScale) !== "log") return value;
-  return Math.sign(value) * Math.expm1(Math.abs(value)) * LOG_SCALE_UNIT;
 }
 
 export function axisCoordinate(axis, value) {
@@ -76,20 +61,78 @@ export function currencyFanChartAxis(values, targetTickCount = 5) {
   return { min: axisMin, max: axisMax, range: axisMax - axisMin, ticks, scale: "linear" };
 }
 
-function transformedFanChartAxis(values, metricScale) {
-  const scale = normalizeMetricScale(metricScale);
-  const transformedValues = values.map((value) => transformMetricValue(value, scale)).filter(Number.isFinite);
-  if (transformedValues.length === 0) {
+function decadeTicksAscending(minPos, maxPos) {
+  // Snap axis ticks to the closest 1·10^k / 3·10^k value that brackets the data, instead
+  // of padding out to whole-decade boundaries. So data spanning $300K..$3M gets ticks
+  // [$300K, $1M, $3M], not [$100K, $300K, $1M, $3M, $10M].
+  const realSpan = Math.log10(maxPos / minPos);
+  const multiples = realSpan > 5 ? [1] : [1, 3];
+  const stepDecades = realSpan > 10 ? 2 : 1;
+  const minDecade = Math.floor(Math.log10(minPos)) - 1;
+  const maxDecade = Math.ceil(Math.log10(maxPos)) + 1;
+  const candidates = [];
+  for (let d = minDecade; d <= maxDecade; d += stepDecades) {
+    for (const m of multiples) candidates.push(m * 10 ** d);
+  }
+  candidates.sort((left, right) => left - right);
+  const lo = candidates.filter((value) => value <= minPos).pop() ?? candidates[0];
+  const hi = candidates.find((value) => value >= maxPos) ?? candidates[candidates.length - 1];
+  return candidates.filter((value) => value >= lo && value <= hi);
+}
+
+function crossZeroSideTicks(maxMag) {
+  // Decade-only ticks for one side of a symlog axis. Skip 2/5 multiples because the other
+  // side plus the explicit 0 tick would otherwise overload the axis with labels.
+  const highDecade = Math.ceil(Math.log10(Math.max(maxMag, 1)));
+  const lowDecade = Math.max(0, highDecade - 3);
+  const ticks = [];
+  for (let d = lowDecade; d <= highDecade; d += 1) ticks.push(10 ** d);
+  return ticks;
+}
+
+function logFanChartAxis(values) {
+  const scale = "log";
+  if (values.length === 0) {
+    const axisMax = transformMetricValue(10, scale);
+    return { min: 0, max: axisMax, range: axisMax, ticks: [10, 1, 0], scale };
+  }
+  let min = Math.min(...values);
+  let max = Math.max(...values);
+  if (min === max) {
+    const pad = Math.max(1, Math.abs(min) * 9);
+    min -= pad;
+    max += pad;
+  }
+  const tickValues = new Set();
+  if (min > 0) {
+    for (const value of decadeTicksAscending(Math.max(min, 1), Math.max(max, 1))) tickValues.add(value);
+  } else if (max < 0) {
+    for (const value of decadeTicksAscending(Math.max(-max, 1), Math.max(-min, 1))) tickValues.add(-value);
+  } else {
+    if (max > 0) for (const value of crossZeroSideTicks(max)) tickValues.add(value);
+    if (min < 0) for (const value of crossZeroSideTicks(-min)) tickValues.add(-value);
+    tickValues.add(0);
+  }
+  const sorted = Array.from(tickValues).sort((left, right) => left - right);
+  const axisMin = transformMetricValue(sorted[0], scale);
+  const axisMax = transformMetricValue(sorted[sorted.length - 1], scale);
+  const range = axisMax - axisMin || 1;
+  return { min: axisMin, max: axisMax, range, ticks: sorted.slice().reverse(), scale };
+}
+
+function linearTransformedFanChartAxis(values) {
+  const scale = "linear";
+  if (values.length === 0) {
     return {
       min: 0,
       max: 1,
       range: 1,
-      ticks: FAN_CHART_TICK_FRACTIONS.map((tick) => inverseTransformMetricValue(1 - tick, scale)),
+      ticks: FAN_CHART_TICK_FRACTIONS.map((tick) => 1 - tick),
       scale,
     };
   }
-  let min = Math.min(...transformedValues);
-  let max = Math.max(...transformedValues);
+  let min = Math.min(...values);
+  let max = Math.max(...values);
   if (min === max) {
     const pad = Math.max(1, Math.abs(max) * 0.15);
     min -= pad;
@@ -100,32 +143,23 @@ function transformedFanChartAxis(values, metricScale) {
     min,
     max,
     range,
-    ticks: FAN_CHART_TICK_FRACTIONS.map((tick) => inverseTransformMetricValue(min + range * (1 - tick), scale)),
+    ticks: FAN_CHART_TICK_FRACTIONS.map((tick) => min + range * (1 - tick)),
     scale,
   };
 }
 
 export function fanChartAxis(metricName, values, metricScale = "linear") {
   const finiteValues = values.filter(Number.isFinite);
-  if (finiteValues.length === 0) {
-    return transformedFanChartAxis([], metricScale);
-  }
   if (normalizeMetricScale(metricScale) === "log") {
-    return transformedFanChartAxis(finiteValues, metricScale);
+    return logFanChartAxis(finiteValues);
+  }
+  if (finiteValues.length === 0) {
+    return linearTransformedFanChartAxis([]);
   }
   if (metricIsCurrency(metricName)) {
     return currencyFanChartAxis(finiteValues);
   }
-  const min = Math.min(...finiteValues);
-  const max = Math.max(...finiteValues);
-  const range = max === min ? 1 : max - min;
-  return {
-    min,
-    max: min + range,
-    range,
-    ticks: FAN_CHART_TICK_FRACTIONS.map((tick) => min + range * (1 - tick)),
-    scale: "linear",
-  };
+  return linearTransformedFanChartAxis(finiteValues);
 }
 
 export function fanChartYearTicks(maxYear) {
