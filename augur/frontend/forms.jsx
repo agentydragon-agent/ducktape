@@ -320,6 +320,7 @@ function LifecycleEventValueField({ event, onChange }) {
     return (
       <NumberField
         label="Closing cost"
+        description="% of sale price."
         value={event.closingCostPct}
         min={0}
         max={100}
@@ -371,6 +372,7 @@ export function RentalPanel({ input, property, onChange }) {
       <div className="grid gap-3 sm:grid-cols-2">
         <NumberField
           label="Fraction rented"
+          description="Share of the property rented out."
           value={input.rentalFractionRentedPct}
           min={0}
           max={100}
@@ -380,6 +382,7 @@ export function RentalPanel({ input, property, onChange }) {
         />
         <NumberField
           label="Vacancy"
+          description="Average idle time on collected rent."
           value={input.rentalVacancyPct}
           min={0}
           max={100}
@@ -411,6 +414,7 @@ export function RentalPanel({ input, property, onChange }) {
         <div className="grid gap-3 sm:grid-cols-3">
           <NumberField
             label="Management fee"
+            description="% of collected rent, monthly."
             value={input.managementFeePct}
             min={0}
             max={50}
@@ -420,6 +424,7 @@ export function RentalPanel({ input, property, onChange }) {
           />
           <NumberField
             label="Leasing fee"
+            description="Months of rent per new lease."
             value={input.leasingFeeMonths}
             min={0}
             max={3}
@@ -429,6 +434,7 @@ export function RentalPanel({ input, property, onChange }) {
           />
           <NumberField
             label="Avg tenancy"
+            description="Sets how often the leasing fee fires."
             value={input.avgTenancyMonths}
             min={1}
             max={120}
@@ -758,6 +764,7 @@ export function ProductScenarioForm({ input, bootstrap, portfolio, portfolioErro
           <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
             <NumberField
               label="Trigger below"
+              description="Cash level that triggers a sale."
               value={input.cashBufferTriggerBelowUsd}
               min={0}
               step={1000}
@@ -767,6 +774,7 @@ export function ProductScenarioForm({ input, bootstrap, portfolio, portfolioErro
             />
             <NumberField
               label="Sell amount"
+              description="Sold each time the trigger fires."
               value={input.cashBufferSaleUsd}
               min={0}
               step={1000}

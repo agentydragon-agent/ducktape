@@ -46,11 +46,10 @@ overruns the chart height.
 
 ## Inputs
 
-8. **More `description=` hints (same pattern as Insurance/Maintenance).** Good
-   candidates: Trigger below, LNW floor, Sampling fields (jargon-y), Vacancy
-   ("% of months unoccupied"), Leasing fee ("months of rent per turnover"),
-   Closing cost ("% of sale price"). Domain terms that an outside user won't
-   know.
+8. **More `description=` hints (same pattern as Insurance/Maintenance).** Round
+   1 landed Trigger below, Sell amount, LNW floor, Fraction rented, Vacancy,
+   Management fee, Leasing fee, Avg tenancy, Closing cost. Still candidate:
+   anything in Sampling that grows beyond `Rollouts` / `First seed`.
 9. **Shorthand entry on currency inputs.** `"1.4k"` / `"850k"` / `"1.2m"`
    parsing for monthly spend and amounts. Mantine's `NumberInput` supports a
    `parser` prop.
@@ -78,4 +77,10 @@ overruns the chart height.
 - 2026-05-28: Insurance / Maintenance fields moved the "% of purchase price"
   hint into a per-field `description` (`forms.jsx:144-162`).
 - 2026-05-28: Portfolio section collapsed by default with a grand-total teaser
-  in the summary (`forms.jsx:555+`).
+  in the summary (`forms.jsx:555+`), and the open table regrouped into Cash /
+  Public / Private sections with inline subtotals + grand Total in the footer.
+- 2026-05-28: Monthly spend now sits side-by-side with its index picker (same
+  responsive grid as Trigger below + Sell amount).
+- 2026-05-28: PE-tenders blurb folded into the LNW floor field's `description`.
+- 2026-05-28: `description` hints added to Trigger below, Sell amount, Fraction
+  rented, Vacancy, Management fee, Leasing fee, Avg tenancy, Closing cost.
