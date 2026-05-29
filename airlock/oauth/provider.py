@@ -158,6 +158,7 @@ class PlaidProvider(_BaseProvider):
                 json={
                     "client_id": self.client_id,
                     "secret": self.client_secret,
+                    "client_name": self.config.display_name,
                     "user": {"client_user_id": "owner"},
                     "products": self.config.products,
                     "country_codes": ["US"],
@@ -165,7 +166,8 @@ class PlaidProvider(_BaseProvider):
                     "redirect_uri": self.config.redirect_uri,
                 },
             )
-            response.raise_for_status()
+            if response.is_error:
+                raise RuntimeError(f"Plaid /link/token/create {response.status_code}: {response.text}")
             return str(response.json()["link_token"])
 
     async def exchange_public_token(self, public_token: str) -> TokenData:
