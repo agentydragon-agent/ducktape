@@ -41,8 +41,22 @@ GitHub Actions upload credentials are synced from the same Kubernetes Secret by
 
 ## Publishing A Bootstrap Image
 
-`.github/workflows/vm-images.yml` builds `.#bootstrap-image`, then uploads the
-qcow2 output:
+**Paved path: in-cluster CronJob.** `cluster/k8s/vm-images-publisher/` carries
+a suspended CronJob that runs `nix build .#bootstrap-image` and uploads the
+qcow2 to SeaweedFS through the internal S3 endpoint. Operators trigger a
+publish with:
+
+```bash
+kubectl create job --from=cronjob/vm-images-publisher \
+  "publish-$(date +%s)" -n vm-images-publisher
+```
+
+See <k8s/vm-images-publisher/README.md> for the runbook. Object keys are
+commit-addressed (`bootstrap/<sha>.qcow2`); existing VMs do not auto-replace
+their root PVC when a new image is published.
+
+**Legacy path: GitHub Actions** (`.github/workflows/vm-images.yml`) builds the
+same image and uploads via the public `vm-images-s3.allegedly.works` endpoint:
 
 ```bash
 nix build .#bootstrap-image
@@ -50,14 +64,11 @@ aws --endpoint-url https://vm-images-s3.allegedly.works \
   s3 cp result/*.qcow2 "s3://vm-images/bootstrap/${GITHUB_SHA}.qcow2"
 ```
 
-Use commit-addressed object keys. Existing VMs should not auto-replace their root
-PVC when a new bootstrap image is published; the bootstrap image is for first
-provisioning and recovery.
-
-The first push that introduces this wiring may skip the workflow because the
-GitHub repository secrets do not exist until Flux applies the SOPS Secret and
-`github-secrets-sync` reconciles. After that, dispatch the workflow manually or
-let the next matching push publish the image.
+This path observed sustained throughput of ~250 KiB/s from GitHub-hosted
+runners to the public Envoy → SeaweedFS S3 gateway — too slow for multi-GiB
+qcow2 uploads to complete inside the stream-timeout window. Use the in-cluster
+publisher instead; this workflow is kept for emergency / local development
+only.
 
 ## Importing With CDI
 
