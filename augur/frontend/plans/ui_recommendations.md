@@ -47,8 +47,8 @@ overruns the chart height.
 ## Inputs
 
 8. **More `description=` hints (same pattern as Insurance/Maintenance).** Round
-   1 landed Sell amount, LNW floor, Management fee, Leasing fee, Avg tenancy,
-   Closing cost. Reverted as noise on Fraction rented / Vacancy / Trigger below
+   1 landed LNW floor, Management fee, Leasing fee, Avg tenancy, Closing cost.
+   Reverted as noise on Fraction rented / Vacancy / Trigger below / Sell amount
    — when label + suffix already conveys it, the description just bulks the
    sidebar. Still candidate: anything in Sampling that grows beyond `Rollouts` /
    `First seed`.
@@ -84,7 +84,7 @@ overruns the chart height.
 - 2026-05-28: Monthly spend now sits side-by-side with its index picker (same
   responsive grid as Trigger below + Sell amount).
 - 2026-05-28: PE-tenders blurb folded into the LNW floor field's `description`.
-- 2026-05-28: `description` hints added to Sell amount, Management fee,
-  Leasing fee, Avg tenancy, Closing cost (and earlier Insurance / Maintenance /
-  LNW floor). Trigger below / Fraction rented / Vacancy tried then reverted as
-  noise.
+- 2026-05-28: `description` hints added to Management fee, Leasing fee, Avg
+  tenancy, Closing cost (and earlier Insurance / Maintenance / LNW floor).
+  Sell amount / Trigger below / Fraction rented / Vacancy tried then reverted
+  as noise.

@@ -771,7 +771,6 @@ export function ProductScenarioForm({ input, bootstrap, portfolio, portfolioErro
             />
             <NumberField
               label="Sell amount"
-              description="Sold each time the trigger fires."
               value={input.cashBufferSaleUsd}
               min={0}
               step={1000}
