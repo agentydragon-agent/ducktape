@@ -12,18 +12,16 @@ from cluster.validation.k8s import K8sResource
 from cluster.validation.kustomize import KustomizeBuildResult
 
 
-def find_orphaned_files(cluster: ParsedCluster, k8s_dir: Path) -> list[str]:
-    """Find YAML files not referenced by any kustomization."""
-    # TODO(2026-05-16): scope this scan to staged files only when invoked via
-    # pre-commit. Today it walks every YAML under cluster/k8s and complains
-    # about anything orphan — including parallel-agent files that exist on
-    # disk but aren't staged yet. That makes unrelated commits fail until the
-    # other agent lands its work. Likely fix: thread a "candidate set" argument
-    # through ParsedCluster.all_yaml_files and have the pre-commit entrypoint
-    # pass `git diff --cached --name-only` instead of the whole tree.
-    errors = []
+def find_orphaned_files(cluster: ParsedCluster, k8s_dir: Path, candidates: set[Path] | None = None) -> list[str]:
+    """Find YAML files not referenced by any kustomization.
 
-    # Build set of all referenced files
+    When `candidates` is provided (pre-commit invocation), only files in that
+    set are checked — keeps a clean diff from being blocked by orphans a
+    parallel agent left on disk but hasn't staged yet. When `candidates` is
+    None (CI / Bazel integration test) every YAML under `k8s_dir` is checked.
+
+    Paths in `candidates` must be resolved/absolute to match `all_yaml_files`.
+    """
     referenced: set[Path] = set()
     for kust in cluster.kustomize_files.values():
         referenced.update(kust.all_referenced_files)
@@ -31,14 +29,15 @@ def find_orphaned_files(cluster: ParsedCluster, k8s_dir: Path) -> list[str]:
             if resource.is_dir():
                 referenced.add(resource / "kustomization.yaml")
 
+    errors = []
     for yaml_file in cluster.all_yaml_files:
         if yaml_file.name == "kustomization.yaml":
             continue
-
+        if candidates is not None and yaml_file not in candidates:
+            continue
         if yaml_file not in referenced:
             relative = yaml_file.relative_to(k8s_dir)
             errors.append(f"Orphaned file not referenced by any kustomization: {relative}")
-
     return errors
 
 

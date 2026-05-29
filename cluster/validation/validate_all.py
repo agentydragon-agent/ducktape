@@ -41,8 +41,16 @@ from cluster.validation.helm_templates import validate_helm_templates
 from cluster.validation.kustomize import KustomizeBuildError, run_kustomize_build
 
 
-async def validate(root: Path, *, skip_flux_build: bool = False) -> list[str]:
-    """Run all cluster validations. Returns a list of error strings."""
+async def validate(
+    root: Path, *, skip_flux_build: bool = False, orphan_candidates: set[Path] | None = None
+) -> list[str]:
+    """Run all cluster validations. Returns a list of error strings.
+
+    `orphan_candidates` scopes the orphaned-file check to a specific set of
+    resolved file paths (pre-commit passes the staged file set). When None,
+    every YAML under `root` is considered — the right behaviour for CI / the
+    Bazel integration test.
+    """
     cluster = parse_cluster(root)
     outcomes = await asyncio.gather(*[run_kustomize_build(k) for k in cluster.kustomize_files], return_exceptions=True)
 
@@ -67,7 +75,7 @@ async def validate(root: Path, *, skip_flux_build: bool = False) -> list[str]:
         except CrdLayeringViolationError as e:
             errors.append(str(e))
 
-    errors.extend(find_orphaned_files(cluster, root))
+    errors.extend(find_orphaned_files(cluster, root, candidates=orphan_candidates))
     errors.extend(check_blueprint_completeness(root))
     errors.extend(check_goldilocks_namespace_labels(cluster))
     errors.extend(check_goldilocks_explicit_decision(cluster))

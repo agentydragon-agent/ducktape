@@ -67,7 +67,12 @@ async def run_pytest_main_check(files: list[Path], repo_root: Path, bazel_index:
 async def run_cluster_validate(files: list[Path], repo_root: Path) -> str | None:
     if not any(is_cluster_validated(f) for f in files):
         return None
-    errors = await validate_cluster(repo_root / "cluster/k8s", skip_flux_build=True)
+    # Pre-commit only flags orphans introduced by this commit — unstaged YAML
+    # left on disk by a parallel agent shouldn't fail an unrelated diff.
+    orphan_candidates = {(repo_root / f).resolve() for f in files}
+    errors = await validate_cluster(
+        repo_root / "cluster/k8s", skip_flux_build=True, orphan_candidates=orphan_candidates
+    )
     if errors:
         return "\n".join(f"  {e.strip()}" for e in errors)
     return None
