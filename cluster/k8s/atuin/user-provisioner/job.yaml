@@ -89,7 +89,7 @@ spec:
     spec:
       restartPolicy: OnFailure
       nodeSelector:
-        topology.kubernetes.io/region: proxmox
+        topology.kubernetes.io/zone: hil-ovh
       containers:
         - name: provisioner
           image: python:3.13-alpine

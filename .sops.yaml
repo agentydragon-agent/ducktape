@@ -51,6 +51,22 @@ creation_rules:
           - *admin
           - *cluster-secrets
 
+  # Atuin user password: shared between the cluster-side user-provisioner Job
+  # (which reads the password and writes the argon2 hash into atuin's DB) and
+  # home-manager sops-nix on each NixOS host (which feeds the same plaintext
+  # password to `atuin login`). Single source of truth — no duplication.
+  # More specific than the generic cluster/k8s/* rule below, so this match wins.
+  - path_regex: cluster/k8s/user-agentydragon/atuin-user-password\.sops\.yaml$
+    encrypted_regex: ^(data|stringData)$
+    key_groups:
+      - age:
+          - *admin
+          - *cluster-secrets
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
+
   # Cluster k8s secrets (Flux + admin can decrypt)
   - path_regex: cluster/k8s/.*\.sops\.yaml$
     encrypted_regex: ^(data|stringData)$

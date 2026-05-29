@@ -66,7 +66,7 @@ pinned DBs or vice versa. This prevents cross-site write latency.
 | tofu-state-db-ovh  | OVH-HA         | Yes       |
 | attic-db           | OVH-HA         | Yes       |
 | seaweedfs-filer-db | OVH-HA         | Yes       |
-| atuin-db           | Proxmox-single | Yes       |
+| atuin-db           | OVH-HA         | Yes       |
 | langfuse-db        | Proxmox-single | Yes       |
 | inventree-db       | Proxmox-single | Yes       |
 | harbor-db          | Proxmox-single | Yes       |

@@ -85,6 +85,7 @@ in
     ./modules/gnome-custom-keybindings.nix
     ./modules/flameshot-screenshots.nix
     ./modules/attic.nix
+    ./modules/atuin.nix
     ./modules/buildbuddy.nix
     ./modules/datetime-format.nix
     ./modules/sops-env.nix
@@ -902,17 +903,6 @@ in
 
     # Bash-specific initialization
     initExtra = bashInit + "\n" + commonShellInit;
-  };
-
-  # Atuin - better shell history
-  programs.atuin = {
-    enable = true;
-    enableBashIntegration = true;
-    enableZshIntegration = true;
-    flags = [ "--disable-up-arrow" ];
-    settings = {
-      sync_address = "https://atuin.allegedly.works";
-    };
   };
 
   # Direnv - per-directory environment management

@@ -18,7 +18,7 @@ spec:
         app.kubernetes.io/name: atuin
     spec:
       nodeSelector:
-        topology.kubernetes.io/region: proxmox
+        topology.kubernetes.io/zone: hil-ovh
       containers:
         - name: atuin
           image: ghcr.io/atuinsh/atuin:v18.12.0
