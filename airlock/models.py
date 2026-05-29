@@ -229,6 +229,16 @@ class DisconnectedOAuthStatus(BaseModel):
 OAuthConnectionStatus = Annotated[ConnectedOAuthStatus | DisconnectedOAuthStatus, Field(discriminator="state")]
 
 
+class DeploymentInfo(BaseModel):
+    """Pod-level deployment metadata derived from the `AIRLOCK_IMAGE_TAG` env var."""
+
+    image_tag: str | None = None
+    source_commit: str | None = None
+    source_commit_url: str | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class OAuthProviderStatus(BaseModel):
     name: str = Field(description="Provider identifier")
     display_name: str = Field(description="Human-readable name")

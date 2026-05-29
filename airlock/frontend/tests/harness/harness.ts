@@ -68,6 +68,12 @@ const BACKENDS: BackendStatus[] = [
   },
 ];
 
+const DEPLOYMENT_INFO = {
+  image_tag: "devel-20260529194300-3b9e37c",
+  source_commit: "3b9e37c50911c40c11a51903de961c2db0f50f59",
+  source_commit_url: "https://github.com/agentydragon/ducktape/commit/3b9e37c50911c40c11a51903de961c2db0f50f59",
+};
+
 const OAUTH_PROVIDERS: OAuthProviderStatus[] = [
   {
     name: "google",
@@ -169,6 +175,9 @@ if (page) {
     }
     if (pathname === "/api/oauth/providers") {
       return json(OAUTH_PROVIDERS);
+    }
+    if (pathname === "/api/info") {
+      return json(DEPLOYMENT_INFO);
     }
     // Anything else (e.g. fonts loaded from CSS): let it through.
     throw new Error(`Unmocked fetch: ${url}`);

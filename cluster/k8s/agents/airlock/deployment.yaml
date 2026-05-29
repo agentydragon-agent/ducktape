@@ -32,6 +32,8 @@ spec:
               containerPort: 8765
               protocol: TCP
           env:
+            - name: AIRLOCK_IMAGE_TAG
+              value: devel-20260529231542-304b2dd # {"$imagepolicy": "flux-system:airlock:tag"}
             - name: CONFIG_PATH
               value: "/etc/airlock/config.yaml"
             - name: EXEC_BACKEND_TOKEN

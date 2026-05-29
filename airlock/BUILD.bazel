@@ -101,12 +101,19 @@ py_library(
 )
 
 py_library(
+    name = "deployment",
+    srcs = ["deployment.py"],
+    deps = [":models"],
+)
+
+py_library(
     name = "app",
     srcs = ["app.py"],
     data = ["//airlock/frontend:bundle"],
     visibility = ["//visibility:public"],
     deps = [
         ":config",
+        ":deployment",
         ":kv_store",
         ":models",
         ":predicates",

@@ -5,7 +5,7 @@
   import ActionDetail from "./ActionDetail.svelte";
   import BackendStatus from "./BackendStatus.svelte";
   import OAuthProviders from "./OAuthProviders.svelte";
-  import type { Action } from "./types.ts";
+  import type { Action, DeploymentInfo } from "./types.ts";
 
   type Route =
     | { kind: "list" }
@@ -35,6 +35,7 @@
   let action = $state<Action | null>(null);
   let loading = $state(true);
   let error = $state<string | null>(null);
+  let deploymentInfo = $state<DeploymentInfo | null>(null);
 
   async function loadList(): Promise<void> {
     const api = await getApiClient();
@@ -42,6 +43,13 @@
   }
 
   onMount(async () => {
+    // Best-effort deployment info — never blocks the page.
+    try {
+      const api = await getApiClient();
+      deploymentInfo = await api.getDeploymentInfo();
+    } catch {
+      // ignore — footer is hidden if we can't get it
+    }
     if (route.kind === "action") {
       try {
         const api = await getApiClient();
@@ -122,4 +130,30 @@
   </main>
 {:else}
   <ActionList {pending} {recent} />
+{/if}
+
+{#if deploymentInfo?.image_tag || deploymentInfo?.source_commit}
+  <footer class="app-footer max-w-4xl mx-auto px-4 py-4 text-xs flex flex-wrap justify-center gap-2">
+    <span style="color: var(--color-text-muted);">Deployed commit</span>
+    {#if deploymentInfo.source_commit_url}
+      <a
+        href={deploymentInfo.source_commit_url}
+        target="_blank"
+        rel="noreferrer"
+        class="font-mono"
+        style="color: var(--color-header-link);"
+      >
+        {deploymentInfo.source_commit?.slice(0, 7) ?? "unknown"}
+      </a>
+    {:else}
+      <span class="font-mono" style="color: var(--color-text-muted);">
+        {deploymentInfo.source_commit?.slice(0, 7) ?? "unknown"}
+      </span>
+    {/if}
+    {#if deploymentInfo.image_tag}
+      <span class="font-mono" title={deploymentInfo.image_tag} style="color: var(--color-text-muted); opacity: 0.65;">
+        {deploymentInfo.image_tag}
+      </span>
+    {/if}
+  </footer>
 {/if}

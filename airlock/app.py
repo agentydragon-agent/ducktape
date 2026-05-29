@@ -31,6 +31,7 @@ from pydantic import BaseModel
 from starlette.responses import HTMLResponse, StreamingResponse
 
 from airlock.config import Settings, build_oauth_providers
+from airlock.deployment import build_deployment_info
 from airlock.kv_store import PostgresKeyValueStore
 from airlock.models import (
     Action,
@@ -40,6 +41,7 @@ from airlock.models import (
     BackendStatus,
     ConnectedOAuthStatus,
     DenyDecision,
+    DeploymentInfo,
     DisconnectedOAuthStatus,
     OAuthProviderStatus,
 )
@@ -175,6 +177,12 @@ def create_app(settings: Settings, *, auth: AuthProvider, include_static: bool =
     @app.get("/api/backends")
     async def list_backends() -> list[BackendStatus]:
         return server.get_backend_statuses()
+
+    deployment_info = build_deployment_info()
+
+    @app.get("/api/info")
+    async def get_info() -> DeploymentInfo:
+        return deployment_info
 
     @app.get("/api/oauth/providers")
     async def list_oauth_providers() -> list[OAuthProviderStatus]:

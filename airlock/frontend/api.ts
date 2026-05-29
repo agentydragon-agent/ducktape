@@ -6,7 +6,7 @@
  * Real-time updates are received via SSE from /api/events.
  */
 import { getAccessToken } from "./auth.ts";
-import type { Action, ActionKey, ActionStatus, BackendStatus, OAuthProviderStatus } from "./types.ts";
+import type { Action, ActionKey, ActionStatus, BackendStatus, DeploymentInfo, OAuthProviderStatus } from "./types.ts";
 
 type Callback<T> = (data: T) => void;
 
@@ -161,6 +161,10 @@ export class AirlockApiClient {
 
   async listBackends(): Promise<BackendStatus[]> {
     return apiFetch<BackendStatus[]>("/api/backends");
+  }
+
+  async getDeploymentInfo(): Promise<DeploymentInfo> {
+    return apiFetch<DeploymentInfo>("/api/info");
   }
 }
 
