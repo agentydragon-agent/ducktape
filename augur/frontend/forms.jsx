@@ -108,7 +108,7 @@ export function PropertyPurchasePanel({ bootstrap, input, onChange }) {
               onChange={(event) => onChange({ financingKind: event.target.value === "mortgage" ? "mortgage" : "cash" })}
             />
             {mortgageActive && (
-              <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1 2xl:grid-cols-3">
+              <div className="grid gap-3 sm:grid-cols-3 min-[960px]:grid-cols-1 2xl:grid-cols-3">
                 <NumberField
                   label="Down payment"
                   value={input.downPaymentPct}
@@ -717,7 +717,7 @@ export function ProductScenarioForm({ input, bootstrap, portfolio, portfolioErro
             />
           </div>
         </div>
-        <div className="grid gap-3 px-4 py-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+        <div className="grid gap-3 px-4 py-3 sm:grid-cols-2 min-[960px]:grid-cols-1 2xl:grid-cols-2">
           <NumberField
             label="Monthly spend"
             value={input.monthlySpendUsd}
@@ -759,7 +759,7 @@ export function ProductScenarioForm({ input, bootstrap, portfolio, portfolioErro
             portfolio={portfolio}
             onChange={(sellOrder) => onChange({ sellOrder })}
           />
-          <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+          <div className="mt-3 grid gap-3 sm:grid-cols-2 min-[960px]:grid-cols-1 2xl:grid-cols-2">
             <NumberField
               label="Trigger below"
               value={input.cashBufferTriggerBelowUsd}
@@ -787,7 +787,7 @@ export function ProductScenarioForm({ input, bootstrap, portfolio, portfolioErro
           />
           <hr className="my-4 border-slate-200 dark:border-slate-700" />
           <div className="augur-eyebrow">Private equity tenders</div>
-          <div className="mt-2 grid gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+          <div className="mt-2 grid gap-3 sm:grid-cols-2 min-[960px]:grid-cols-1 2xl:grid-cols-2">
             <NumberField
               label="LNW floor"
               description="At each PE tender, sell enough to lift liquid net worth (cash + non-PE) to this floor. $0 disables."
