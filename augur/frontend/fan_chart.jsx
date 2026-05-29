@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { axisCoordinate, fanChartAxis, fanChartYearTicks, fmtAxisMetricValue, fmtMetricValue } from "./lib/chart.js";
-import { fmtUsd } from "./lib/format.js";
 import { FAN_PERCENTILES } from "./input_helpers.js";
+import { useCurrencyDisplay } from "./hooks.js";
 import {
   SELECTED_ROLLOUT_COLOR,
   FAILED_ROLLOUT_COLOR,
@@ -9,19 +9,8 @@ import {
   EVENT_MARKER_STACK_BASE_OFFSET_PX,
   eventMonthIndex,
   eventColor,
-  eventAmount,
-  eventLabel,
-  eventDetailText,
+  eventTitle,
 } from "./data_helpers.js";
-
-function eventStateMonthIndex(event) {
-  const monthIndex = eventMonthIndex(event);
-  return monthIndex == null ? null : monthIndex + 1;
-}
-
-function eventTitle(event) {
-  return `Month ${eventStateMonthIndex(event) ?? "n/a"}: ${eventLabel(event)} ${fmtUsd(eventAmount(event))}`;
-}
 
 function FanAxes({ left, top, plotWidth, plotHeight, height, x, y, yAxis, maxYear, metric }) {
   return (
@@ -69,6 +58,8 @@ function FanEventMarker({
   onSelectEventMonth,
   onHoverEventMonth,
 }) {
+  const { display: currencyDisplay } = useCurrencyDisplay();
+  const title = eventTitle(event, currencyDisplay);
   const isSelected = selectedEventMonthIndex === monthIndex;
   const isHovered = hoveredEventMonthIndex === monthIndex;
   const isActive = isSelected || isHovered;
@@ -89,7 +80,7 @@ function FanEventMarker({
       key={`${event.kind}-${event.monthIndex}-${index}`}
       role="button"
       tabIndex={0}
-      aria-label={eventTitle(event)}
+      aria-label={title}
       data-product-rollout-event-marker={event.kind}
       data-product-rollout-event-marker-month={monthIndex}
       data-product-rollout-event-marker-selected={isSelected ? "true" : "false"}
@@ -137,7 +128,7 @@ function FanEventMarker({
         stroke="white"
         strokeWidth={isActive ? 2 : 1.25}
       >
-        <title>{eventTitle(event)}</title>
+        <title>{title}</title>
       </circle>
     </g>
   );
@@ -157,8 +148,8 @@ export function MetricFanChart({
   onSelectEventMonth,
   onHoverEventMonth,
   metricScale = "linear",
-  currencyDisplay = "exact",
 }) {
+  const { display: currencyDisplay } = useCurrencyDisplay();
   const [hoveredMonth, setHoveredMonth] = useState(null);
   const svgRef = useRef(null);
   const [svgWidth, setSvgWidth] = useState(760);

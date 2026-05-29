@@ -18,7 +18,7 @@ import { SelectedRolloutEventsPanel, EventKindLegend } from "./events_panel.jsx"
 import { ProductScenarioForm } from "./forms.jsx";
 import { AugurHeader } from "./header.jsx";
 import { RolloutResultsSkeleton, StatCardsSkeleton, ProductProjectionLoading } from "./skeleton.jsx";
-import { useVisibleEventKinds, useEventSelection } from "./hooks.js";
+import { CurrencyDisplayProvider, useCurrencyDisplay, useVisibleEventKinds, useEventSelection } from "./hooks.js";
 import {
   METRIC_OPTIONS,
   productInputDefaults,
@@ -50,8 +50,6 @@ function RolloutResultsPanel({
   onSelectMetric,
   metricScale,
   onSelectMetricScale,
-  currencyDisplay,
-  onSelectCurrencyDisplay,
   rolloutSummaries,
   selectedSeed,
   onSelectSeed,
@@ -65,6 +63,7 @@ function RolloutResultsPanel({
   eventSelection,
   rolloutError,
 }) {
+  const { display: currencyDisplay, setDisplay: onSelectCurrencyDisplay } = useCurrencyDisplay();
   return (
     <section className="augur-panel overflow-hidden" aria-label="Cash projection workspace">
       <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
@@ -102,7 +101,6 @@ function RolloutResultsPanel({
         summaries={rolloutSummaries}
         metric={selectedMetric}
         metricScale={metricScale}
-        currencyDisplay={currencyDisplay}
         selectedSeed={selectedSeed}
         loadingSeed={selectedRolloutLoading ? selectedSeed : null}
         onSelect={onSelectSeed}
@@ -112,7 +110,6 @@ function RolloutResultsPanel({
           rows={fanRows}
           metric={selectedMetric}
           metricScale={metricScale}
-          currencyDisplay={currencyDisplay}
           percentiles={percentiles}
           selectedRows={selectedRows}
           selectedEvents={selectedEvents}
@@ -144,7 +141,6 @@ function RolloutResultsPanel({
           hoveredEventMonthIndex={eventSelection.hoveredEventMonthIndex}
           onSelectEventMonth={eventSelection.onSelectEventMonth}
           onHoverEventMonth={eventSelection.onHoverEventMonth}
-          currencyDisplay={currencyDisplay}
         />
       )}
       <TerminalMetricTable
@@ -152,7 +148,6 @@ function RolloutResultsPanel({
         selectedSummary={selectedSummary}
         metrics={visibleMetrics}
         selectedMetric={selectedMetric}
-        currencyDisplay={currencyDisplay}
       />
     </section>
   );
@@ -325,86 +320,91 @@ function ProductProjectionWorkspace({ bootstrap, deployment }) {
     return () => controller.abort();
   }, [request.scenario, result, rolloutDetails, selectedDetailKey, selectedSeed]);
 
+  const currencyDisplayContext = useMemo(
+    () => ({ display: currencyDisplay, setDisplay: setCurrencyDisplay }),
+    [currencyDisplay]
+  );
+
   return (
-    <div
-      data-augur-surface="product"
-      className="min-h-screen bg-slate-100 text-slate-800 dark:bg-slate-950 dark:text-slate-100"
-    >
-      <AugurHeader
-        rightSlot={
-          <>
-            <DeploymentCommitSummary deployment={deployment} />
-            <span className="whitespace-nowrap">{fmtNumber(request.rolloutSeeds.length)} rollouts</span>
-          </>
-        }
-      />
+    <CurrencyDisplayProvider value={currencyDisplayContext}>
+      <div
+        data-augur-surface="product"
+        className="min-h-screen bg-slate-100 text-slate-800 dark:bg-slate-950 dark:text-slate-100"
+      >
+        <AugurHeader
+          rightSlot={
+            <>
+              <DeploymentCommitSummary deployment={deployment} />
+              <span className="whitespace-nowrap">{fmtNumber(request.rolloutSeeds.length)} rollouts</span>
+            </>
+          }
+        />
 
-      <main className="px-4 py-6 sm:px-6 lg:px-8">
-        <section className="grid min-w-0 gap-5 min-[864px]:grid-cols-[28rem_minmax(0,1fr)]">
-          <ProductScenarioForm
-            input={input}
-            bootstrap={bootstrap}
-            portfolio={portfolio}
-            portfolioError={portfolioError}
-            onChange={updateInput}
-            onReset={() => setInput(productInputDefaults(bootstrap))}
-          />
+        <main className="px-4 py-6 sm:px-6 lg:px-8">
+          <section className="grid min-w-0 gap-5 min-[864px]:grid-cols-[28rem_minmax(0,1fr)]">
+            <ProductScenarioForm
+              input={input}
+              bootstrap={bootstrap}
+              portfolio={portfolio}
+              portfolioError={portfolioError}
+              onChange={updateInput}
+              onReset={() => setInput(productInputDefaults(bootstrap))}
+            />
 
-          <div className="min-w-0 space-y-5">
-            {runError && <div className="augur-note-danger p-4 text-sm">Product projection failed: {runError}</div>}
+            <div className="min-w-0 space-y-5">
+              {runError && <div className="augur-note-danger p-4 text-sm">Product projection failed: {runError}</div>}
 
-            {result ? (
-              <div className="grid gap-3 sm:grid-cols-3">
-                <div className="augur-card p-4">
-                  <div className="augur-eyebrow">Median terminal {selectedMetric.label.toLowerCase()}</div>
-                  <div className="mt-2 text-2xl font-semibold augur-tabular">
-                    {fmtMetricValue(selectedMetric.chartValue, terminalP50, currencyDisplay)}
+              {result ? (
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="augur-card p-4">
+                    <div className="augur-eyebrow">Median terminal {selectedMetric.label.toLowerCase()}</div>
+                    <div className="mt-2 text-2xl font-semibold augur-tabular">
+                      {fmtMetricValue(selectedMetric.chartValue, terminalP50, currencyDisplay)}
+                    </div>
+                  </div>
+                  <div className="augur-card p-4">
+                    <div className="augur-eyebrow">Failed rollouts</div>
+                    <div className="mt-2 text-2xl font-semibold augur-tabular">
+                      {fmtNumber(failedCount)} / {fmtNumber(request.rolloutSeeds.length)}
+                    </div>
+                  </div>
+                  <div className="augur-card p-4">
+                    <div className="augur-eyebrow">Exogenous model</div>
+                    <div className="mt-2 text-sm font-semibold augur-tabular">{result.exogenousModelId}</div>
                   </div>
                 </div>
-                <div className="augur-card p-4">
-                  <div className="augur-eyebrow">Failed rollouts</div>
-                  <div className="mt-2 text-2xl font-semibold augur-tabular">
-                    {fmtNumber(failedCount)} / {fmtNumber(request.rolloutSeeds.length)}
-                  </div>
-                </div>
-                <div className="augur-card p-4">
-                  <div className="augur-eyebrow">Exogenous model</div>
-                  <div className="mt-2 text-sm font-semibold augur-tabular">{result.exogenousModelId}</div>
-                </div>
-              </div>
-            ) : (
-              <StatCardsSkeleton />
-            )}
+              ) : (
+                <StatCardsSkeleton />
+              )}
 
-            {result ? (
-              <RolloutResultsPanel
-                visibleMetrics={visibleMetrics}
-                selectedMetric={selectedMetric}
-                onSelectMetric={setSelectedMetricValue}
-                metricScale={metricScale}
-                onSelectMetricScale={setMetricScale}
-                currencyDisplay={currencyDisplay}
-                onSelectCurrencyDisplay={setCurrencyDisplay}
-                rolloutSummaries={rolloutSummaries}
-                selectedSeed={selectedSeed}
-                onSelectSeed={setSelectedSeed}
-                selectedRolloutLoading={selectedRolloutLoading}
-                fanRows={fanRows}
-                percentiles={request.percentiles}
-                selectedRows={selectedRows}
-                selectedEvents={selectedEvents}
-                selectedSummary={selectedSummary}
-                visibleEventKinds={visibleEventKinds}
-                eventSelection={eventSelection}
-                rolloutError={rolloutError}
-              />
-            ) : (
-              <RolloutResultsSkeleton />
-            )}
-          </div>
-        </section>
-      </main>
-    </div>
+              {result ? (
+                <RolloutResultsPanel
+                  visibleMetrics={visibleMetrics}
+                  selectedMetric={selectedMetric}
+                  onSelectMetric={setSelectedMetricValue}
+                  metricScale={metricScale}
+                  onSelectMetricScale={setMetricScale}
+                  rolloutSummaries={rolloutSummaries}
+                  selectedSeed={selectedSeed}
+                  onSelectSeed={setSelectedSeed}
+                  selectedRolloutLoading={selectedRolloutLoading}
+                  fanRows={fanRows}
+                  percentiles={request.percentiles}
+                  selectedRows={selectedRows}
+                  selectedEvents={selectedEvents}
+                  selectedSummary={selectedSummary}
+                  visibleEventKinds={visibleEventKinds}
+                  eventSelection={eventSelection}
+                  rolloutError={rolloutError}
+                />
+              ) : (
+                <RolloutResultsSkeleton />
+              )}
+            </div>
+          </section>
+        </main>
+      </div>
+    </CurrencyDisplayProvider>
   );
 }
 

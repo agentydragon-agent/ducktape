@@ -1,5 +1,13 @@
-import { useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import { DEFAULT_HIDDEN_EVENT_KINDS, ROLLOUT_EVENT_KIND_ORDER } from "./data_helpers.js";
+
+const CurrencyDisplayContext = createContext({ display: "compact", setDisplay: () => {} });
+
+export const CurrencyDisplayProvider = CurrencyDisplayContext.Provider;
+
+export function useCurrencyDisplay() {
+  return useContext(CurrencyDisplayContext);
+}
 
 export function useVisibleEventKinds() {
   const allKinds = ROLLOUT_EVENT_KIND_ORDER;

@@ -2,6 +2,7 @@ import React, { useCallback, useMemo, useRef } from "react";
 import { axisCoordinate, fanChartAxis, fmtAxisMetricValue, fmtMetricValue } from "./lib/chart.js";
 import { fmtNumber } from "./lib/format.js";
 import { FAN_PERCENTILES } from "./input_helpers.js";
+import { useCurrencyDisplay } from "./hooks.js";
 import {
   FAILED_ROLLOUT_COLOR,
   SELECTED_ROLLOUT_COLOR,
@@ -20,7 +21,6 @@ export function TerminalDistributionHistogram({
   onSelect,
   metric,
   metricScale = "linear",
-  currencyDisplay = "exact",
 }) {
   if (summaries.length === 0) return null;
   const entries = summaries
@@ -140,7 +140,6 @@ export function TerminalDistributionHistogram({
                 loadingSeed={loadingSeed}
                 onSelect={onSelect}
                 metric={metric}
-                currencyDisplay={currencyDisplay}
                 cellColor={(entry) =>
                   entry.summary.failed ? FAILED_ROLLOUT_COLOR : rolloutSliverColor(entry.summary.rankPercentile)
                 }
@@ -320,8 +319,8 @@ export function TerminalHistogramColumn({
   onSelect,
   cellColor,
   metric,
-  currencyDisplay = "exact",
 }) {
+  const { display: currencyDisplay } = useCurrencyDisplay();
   return (
     <div className="flex flex-1 flex-col-reverse items-stretch overflow-hidden" style={{ height: containerHeight }}>
       {rollouts.map((entry) => {

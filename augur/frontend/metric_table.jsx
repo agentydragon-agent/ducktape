@@ -1,6 +1,7 @@
 import React from "react";
 import { fmtMetricValue } from "./lib/chart.js";
 import { FAN_PERCENTILES } from "./input_helpers.js";
+import { useCurrencyDisplay } from "./hooks.js";
 import {
   TABLE_NUMERIC_CELL,
   TABLE_NUMERIC_HEADER,
@@ -10,13 +11,8 @@ import {
   terminalMetricTableRows,
 } from "./data_helpers.js";
 
-export function TerminalMetricTable({
-  summaries,
-  selectedSummary,
-  metrics,
-  selectedMetric,
-  currencyDisplay = "exact",
-}) {
+export function TerminalMetricTable({ summaries, selectedSummary, metrics, selectedMetric }) {
+  const { display: currencyDisplay } = useCurrencyDisplay();
   if (summaries.length === 0) return null;
   const rows = terminalMetricTableRows(summaries, selectedSummary, metrics);
   // Determine where the SELECTED column slots into the percentile order based on the

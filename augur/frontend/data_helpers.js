@@ -1,6 +1,10 @@
 import { rowsFrom } from "./lib/frame.js";
-import { fmtNumber, fmtUsd } from "./lib/format.js";
+import { fmtNumber, fmtUsd, fmtUsdCompact } from "./lib/format.js";
 import { METRIC_OPTIONS, FAN_PERCENTILES } from "./input_helpers.js";
+
+function cu(value, currencyDisplay) {
+  return currencyDisplay === "compact" ? fmtUsdCompact(value) : fmtUsd(value);
+}
 
 export const SELECTED_ROLLOUT_COLOR = "#0f766e";
 export const FAILED_ROLLOUT_COLOR = "#ef4444";
@@ -247,10 +251,10 @@ export function jurisdictionLabel(jurisdictionId) {
   return (jurisdictionId ?? "").replace(/_/g, " ");
 }
 
-export function formatDueWithShortfall(amountDueUsd, shortfallUsd) {
+export function formatDueWithShortfall(amountDueUsd, shortfallUsd, currencyDisplay) {
   const shortfall = Number(shortfallUsd);
-  const base = `due ${fmtUsd(amountDueUsd)}`;
-  return shortfall > 0 ? `${base}; shortfall ${fmtUsd(shortfall)}` : base;
+  const base = `due ${cu(amountDueUsd, currencyDisplay)}`;
+  return shortfall > 0 ? `${base}; shortfall ${cu(shortfall, currencyDisplay)}` : base;
 }
 
 export function shortfallLabel(event, { ok, shortfall }) {
@@ -264,33 +268,36 @@ export function taxPaymentLabel(event) {
   return isShortfall ? "Tax payment shortfall" : "Paid taxes";
 }
 
-export function taxAccrualDetail(event) {
+export function taxAccrualDetail(event, currencyDisplay) {
   const capitalGainTax = Number(event.capitalGainTaxUsd);
   const gain = Number(event.ltcgUsd) + Number(event.stcgUsd);
   const itemized = Number(event.itemizedDeductionUsd);
   const standard = Number(event.standardDeductionUsd);
   const mid = Number(event.mortgageInterestDeductionUsd);
   const parts = [
-    `ordinary tax ${fmtUsd(event.ordinaryTaxUsd)}`,
-    `gain tax ${fmtUsd(capitalGainTax)}`,
-    `gains ${fmtUsd(gain)}`,
+    `ordinary tax ${cu(event.ordinaryTaxUsd, currencyDisplay)}`,
+    `gain tax ${cu(capitalGainTax, currencyDisplay)}`,
+    `gains ${cu(gain, currencyDisplay)}`,
   ];
   if (mid > 0) {
     const usedItemized = itemized > standard;
-    parts.push(`MID ${fmtUsd(mid)}`);
-    parts.push(`deduction ${fmtUsd(usedItemized ? itemized : standard)} (${usedItemized ? "itemized" : "standard"})`);
+    parts.push(`MID ${cu(mid, currencyDisplay)}`);
+    parts.push(
+      `deduction ${cu(usedItemized ? itemized : standard, currencyDisplay)} (${usedItemized ? "itemized" : "standard"})`
+    );
   }
   return parts.join("; ");
 }
 
-export function propertyPurchaseDetail(event) {
+export function propertyPurchaseDetail(event, currencyDisplay) {
   const mortgage = Number(event.mortgagePrincipalUsd);
-  const parts = [`down ${fmtUsd(event.downPaymentUsd)}`];
-  if (mortgage > 0) parts.push(`mortgage ${fmtUsd(mortgage)}`);
+  const parts = [`down ${cu(event.downPaymentUsd, currencyDisplay)}`];
+  if (mortgage > 0) parts.push(`mortgage ${cu(mortgage, currencyDisplay)}`);
   return parts.join("; ");
 }
 
-const dueWithShortfallDetail = (event) => formatDueWithShortfall(event.amountDueUsd, event.shortfallUsd);
+const dueWithShortfallDetail = (event, currencyDisplay) =>
+  formatDueWithShortfall(event.amountDueUsd, event.shortfallUsd, currencyDisplay);
 
 // Single source of truth for per-event-kind label + detail rendering. Adding a new
 // `RolloutEvent` discriminator must add an entry here, otherwise eventLabel/eventDetailText fall
@@ -298,7 +305,8 @@ const dueWithShortfallDetail = (event) => formatDueWithShortfall(event.amountDue
 export const EVENT_FORMATTERS = {
   holding_sale: {
     label: (event) => `Sold ${event.assetLabel ?? event.assetId ?? "asset"}`,
-    detail: (event) => `${fmtNumber(event.units)} units; basis ${fmtUsd(event.costBasisUsd)}`,
+    detail: (event, currencyDisplay) =>
+      `${fmtNumber(event.units)} units; basis ${cu(event.costBasisUsd, currencyDisplay)}`,
   },
   monthly_expense: {
     label: (event) => shortfallLabel(event, { ok: "Paid monthly expenses", shortfall: "Monthly expenses shortfall" }),
@@ -317,7 +325,8 @@ export const EVENT_FORMATTERS = {
   closing_cost_payment: { label: () => "Paid closing costs", detail: () => "" },
   mortgage_payment: {
     label: () => "Paid mortgage",
-    detail: (event) => `interest ${fmtUsd(event.interestUsd)}; principal ${fmtUsd(event.principalUsd)}`,
+    detail: (event, currencyDisplay) =>
+      `interest ${cu(event.interestUsd, currencyDisplay)}; principal ${cu(event.principalUsd, currencyDisplay)}`,
   },
   property_tax_payment: {
     label: (event) => shortfallLabel(event, { ok: "Paid property tax", shortfall: "Property tax shortfall" }),
@@ -336,7 +345,10 @@ export const EVENT_FORMATTERS = {
     label: (event) => shortfallLabel(event, { ok: "Paid maintenance", shortfall: "Maintenance shortfall" }),
     detail: dueWithShortfallDetail,
   },
-  failure: { label: () => "Rollout failed", detail: (event) => `shortfall ${fmtUsd(event.shortfallUsd)}` },
+  failure: {
+    label: () => "Rollout failed",
+    detail: (event, currencyDisplay) => `shortfall ${cu(event.shortfallUsd, currencyDisplay)}`,
+  },
   set_rented_fraction: {
     label: (event) => {
       const fraction = Number(event.rentedFraction);
@@ -352,23 +364,23 @@ export const EVENT_FORMATTERS = {
   },
   capital_improvement: {
     label: () => "Capital improvement",
-    detail: (event) => `${event.propertyId}; basis bump ${fmtUsd(event.amountUsd)}`,
+    detail: (event, currencyDisplay) => `${event.propertyId}; basis bump ${cu(event.amountUsd, currencyDisplay)}`,
   },
   property_sale: {
     label: () => "Sold property",
-    detail: (event) => {
+    detail: (event, currencyDisplay) => {
       const parts = [
         `${event.propertyId}`,
-        `proceeds ${fmtUsd(event.grossProceedsUsd)}`,
-        `payoff ${fmtUsd(event.mortgagePayoffUsd)}`,
-        `net cash ${fmtUsd(event.netCashToOwnerUsd)}`,
+        `proceeds ${cu(event.grossProceedsUsd, currencyDisplay)}`,
+        `payoff ${cu(event.mortgagePayoffUsd, currencyDisplay)}`,
+        `net cash ${cu(event.netCashToOwnerUsd, currencyDisplay)}`,
       ];
       const recapture = Number(event.depreciationRecaptureUsd);
-      if (recapture > 0) parts.push(`§1250 ${fmtUsd(recapture)}`);
+      if (recapture > 0) parts.push(`§1250 ${cu(recapture, currencyDisplay)}`);
       const exclusion = Number(event.section121ExclusionUsd);
-      if (exclusion > 0) parts.push(`§121 ${fmtUsd(exclusion)}`);
+      if (exclusion > 0) parts.push(`§121 ${cu(exclusion, currencyDisplay)}`);
       const ltcg = Number(event.longTermCapitalGainUsd);
-      if (ltcg > 0) parts.push(`LTCG ${fmtUsd(ltcg)}`);
+      if (ltcg > 0) parts.push(`LTCG ${cu(ltcg, currencyDisplay)}`);
       return parts.join("; ");
     },
   },
@@ -383,8 +395,8 @@ export const EVENT_FORMATTERS = {
       if (event.eventKind === "collapse") return `Collapsed: ${label}`;
       return `PE event: ${label}`;
     },
-    detail: (event) => {
-      const parts = [`mark ${fmtUsd(event.markUsd)}`, String(event.regime ?? "").replace(/_/g, " ")];
+    detail: (event, currencyDisplay) => {
+      const parts = [`mark ${cu(event.markUsd, currencyDisplay)}`, String(event.regime ?? "").replace(/_/g, " ")];
       const capacity = Number(event.saleCapacityFraction);
       if (Number.isFinite(capacity) && capacity < 1) parts.push(`capacity ${(capacity * 100).toFixed(0)}%`);
       const eligible = Number(event.eligibleFraction);
@@ -393,7 +405,7 @@ export const EVENT_FORMATTERS = {
       if (forcedSale > 0) parts.push(`forced sale ${(forcedSale * 100).toFixed(0)}%`);
       if (event.liquidityBlocked) parts.push("liquidity blocked");
       const recovery = Number(event.forcedRecoveryCashoutUsd);
-      if (recovery > 0) parts.push(`recovery ${fmtUsd(recovery)}`);
+      if (recovery > 0) parts.push(`recovery ${cu(recovery, currencyDisplay)}`);
       return parts.filter(Boolean).join("; ");
     },
   },
@@ -403,14 +415,14 @@ export const EVENT_FORMATTERS = {
       const outcome = String(event.outcome ?? "").replace(/_/g, " ");
       return `PE opportunity: ${label}${outcome ? ` (${outcome})` : ""}`;
     },
-    detail: (event) => {
+    detail: (event, currencyDisplay) => {
       const parts = [
-        `mark ${fmtUsd(event.markUsd)}`,
-        `shortfall ${fmtUsd(event.shortfallUsd)}`,
+        `mark ${cu(event.markUsd, currencyDisplay)}`,
+        `shortfall ${cu(event.shortfallUsd, currencyDisplay)}`,
         `target ${fmtNumber(event.targetUnits)} units`,
       ];
       const proceeds = Number(event.proceedsUsd);
-      if (proceeds > 0) parts.push(`proceeds ${fmtUsd(proceeds)}`);
+      if (proceeds > 0) parts.push(`proceeds ${cu(proceeds, currencyDisplay)}`);
       const capacity = Number(event.saleCapacityFraction);
       if (Number.isFinite(capacity) && capacity < 1) parts.push(`capacity ${(capacity * 100).toFixed(0)}%`);
       const eligible = Number(event.eligibleFraction);
@@ -425,12 +437,12 @@ export function eventLabel(event) {
   return EVENT_FORMATTERS[event?.kind]?.label(event) ?? "Event";
 }
 
-export function eventDetailText(event) {
-  return EVENT_FORMATTERS[event?.kind]?.detail(event) ?? "";
+export function eventDetailText(event, currencyDisplay) {
+  return EVENT_FORMATTERS[event?.kind]?.detail(event, currencyDisplay) ?? "";
 }
 
-export function eventTitle(event) {
-  return `Month ${eventStateMonthIndex(event) ?? "n/a"}: ${eventLabel(event)} ${fmtUsd(eventAmount(event))}`;
+export function eventTitle(event, currencyDisplay) {
+  return `Month ${eventStateMonthIndex(event) ?? "n/a"}: ${eventLabel(event)} ${cu(eventAmount(event), currencyDisplay)}`;
 }
 
 export function terminalHistogramBins(
