@@ -30,3 +30,5 @@ spec:
     - name: kubectl-sandbox-mcp-namespace
     # Same for manifold-mcp.
     - name: manifold-mcp-namespace
+    # Same for postscanmail-mcp.
+    - name: postscanmail-mcp-namespace
