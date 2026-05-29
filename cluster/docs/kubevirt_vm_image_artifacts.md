@@ -122,6 +122,13 @@ sudo nixos-rebuild switch --flake github:agentydragon/ducktape?ref=devel#gecko
   sidecar footprint, and the CI workflow limits AWS CLI multipart uploads to two
   64MiB parts at a time. The default AWS CLI concurrency can overwhelm the
   public Gateway/S3 path enough that clients close part uploads mid-body.
+- Follow-up testing on 2026-05-29 showed that the public Gateway path is still
+  not a reliable writer for the full 5.6 GiB bootstrap qcow2: workflow runs
+  `26636690703` and `26636988539` still produced SeaweedFS `PutObjectPart`
+  `unexpected EOF` / `i/o timeout` errors before they were cancelled. Keep the
+  public route for CDI reads and small probes; make the publisher run inside the
+  cluster against `http://vm-images-s3.seaweedfs.svc:8333` or use a different
+  write-only ingress before relying on CI publication.
 - The first manual spike created `vm-images-s3-credentials` directly and was
   removed. The paved path is SOPS -> Flux -> Kubernetes Secret -> ExternalSecret
   rendered gateway config.
