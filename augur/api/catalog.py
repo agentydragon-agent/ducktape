@@ -116,4 +116,6 @@ def build_bootstrap_payload(config: Config) -> BootstrapResponse:
         max_rollout_samples=config.max_rollout_samples,
         max_horizon_months=MAX_HORIZON_MONTHS,
         product_input_defaults=config.product_input_defaults,
+        exogenous_presets=tuple(sorted(config.exogenous_presets)),
+        default_exogenous_preset_id=config.default_exogenous_preset_id,
     )

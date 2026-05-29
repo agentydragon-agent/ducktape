@@ -52,6 +52,9 @@ export const DEFAULT_PRODUCT_INPUT_BASE = {
   // `{ kind, month, ...kind-specific }`. Persisted to the URL as a separate `lc` param
   // (a flat-positional `s=` packing can't represent variable-length structured lists).
   propertyLifecycleEvents: [],
+  // Exogenous-bundle preset id. `null` means use bootstrap.defaultExogenousPresetId.
+  // The deployment's available presets are listed in bootstrap.exogenousPresets.
+  exogenousModelId: null,
 };
 
 export const LIFECYCLE_KINDS = [
@@ -161,6 +164,7 @@ const INPUT_FIELDS = [
   // Appended after existing positions so older `?s=` URLs continue to decode without shifting
   // their downstream slots. New optional fields go at the tail.
   { key: "cashBufferIndexToInflation", type: "bool" },
+  { key: "exogenousModelId", type: "string" },
 ];
 
 export function encodeInputValue(value, field) {
@@ -409,7 +413,7 @@ export function productScenario(input, bootstrap) {
   const monthlyRentUsd = Math.max(0, Number(input.monthlyRentUsd) || 0);
   const rentalLocationId = monthlyRentUsd > 0 ? input.rentalLocationId : null;
   return {
-    exogenousModelId: "current_exogenous_model",
+    exogenousModelId: input.exogenousModelId || bootstrap.defaultExogenousPresetId,
     horizonMonths: clampInteger(input.horizonMonths, 1, bootstrap.maxHorizonMonths),
     monthlySpendUsd: Math.max(1, Number(input.monthlySpendUsd) || 1),
     spendIndex: input.spendIndex === "none" ? "none" : "inflation",
