@@ -48,7 +48,9 @@ spec:
               envFrom:
                 - secretRef:
                     name: vm-images-s3-writer
-              command: ["/bin/sh", "/scripts/publish.sh"]
+              # nixos/nix has no /bin/sh; bash is on the image's default PATH
+              # (/root/.nix-profile/bin) via the upstream Dockerfile.
+              command: ["bash", "/scripts/publish.sh"]
               securityContext:
                 privileged: true
               volumeMounts:
@@ -56,8 +58,6 @@ spec:
                   mountPath: /scripts
                 - name: kvm
                   mountPath: /dev/kvm
-                - name: nix
-                  mountPath: /nix
                 - name: tmp
                   mountPath: /tmp
           volumes:
@@ -69,9 +69,9 @@ spec:
               hostPath:
                 path: /dev/kvm
                 type: CharDevice
-            - name: nix
-              emptyDir:
-                sizeLimit: 12Gi
+            # No /nix mount: the image already populates /nix/store with bash,
+            # nix, coreutils, etc. An emptyDir here would shadow them and the
+            # container couldn't exec `bash`. Container overlay handles writes.
             - name: tmp
               emptyDir:
                 sizeLimit: 8Gi
