@@ -10,7 +10,10 @@ spec:
   hostnames:
     - "vm-images-s3.allegedly.works"
   rules:
-    - backendRefs:
+    - timeouts:
+        request: "3600s"
+        backendRequest: "3600s"
+      backendRefs:
         # Do not point this route at the operator-managed `seaweedfs-s3`
         # service. This dedicated service mounts a config containing only
         # VM-image credentials.

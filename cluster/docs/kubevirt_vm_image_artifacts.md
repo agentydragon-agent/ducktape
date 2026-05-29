@@ -114,6 +114,10 @@ sudo nixos-rebuild switch --flake github:agentydragon/ducktape?ref=devel#gecko
   exposed this when the old 30GB `volumeSizeLimitMB` left two volume servers at
   their computed 61/61 slot limit before `vm-images` had any writable volumes.
   Keep the lower 16GB limit unless the volume-server capacity model changes.
+- The public `vm-images-s3` HTTPRoute must allow long request and backend
+  request timeouts. GitHub-hosted runners can upload the 5.6 GiB bootstrap qcow2
+  slowly, and Envoy's default stream timeouts cut multipart PUT request bodies
+  before SeaweedFS can finish reading each part.
 - The first manual spike created `vm-images-s3-credentials` directly and was
   removed. The paved path is SOPS -> Flux -> Kubernetes Secret -> ExternalSecret
   rendered gateway config.
