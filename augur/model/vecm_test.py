@@ -21,7 +21,6 @@ from augur.model.series import (
     SP500_SERIES_ID,
     crypto_series_id,
     home_value_series_id,
-    private_equity_sale_event_id,
     private_equity_series_id,
     rent_series_id,
 )
@@ -148,21 +147,13 @@ class TestVecmModel:
         ].tolist() == [1_000_000.0, 1_000_000.0]
         assert sampled.metadata["scenario_generator_id"] == "vecm_numpyro"
 
+        # VECM does not model PE — requesting a PE level series fails loudly.
         with pytest.raises(ValueError, match="trained_private_equity"):
             model.sample(
                 ExogenousSamplingRequest(
                     horizon_months=12,
                     rollout_seeds=(7, 8),
                     required_level_series=frozenset({private_equity_series_id("private_equity_x")}),
-                )
-            )
-
-        with pytest.raises(ValueError, match="trained_private_equity"):
-            model.sample(
-                ExogenousSamplingRequest(
-                    horizon_months=12,
-                    rollout_seeds=(7, 8),
-                    required_event_series=frozenset({private_equity_sale_event_id("private_equity_x")}),
                 )
             )
 

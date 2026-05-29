@@ -15,17 +15,9 @@ import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
-from augur.frames import concat_frames
-from augur.model.exogenous import SERIES_LEVELS_SCHEMA, series_levels_frame
 from augur.model.gbm import GeometricBrownian
 from augur.model.private_equity_bundle import PrivateEquityBundle
-from augur.model.private_equity_protocol import private_equity_auxiliary_level_frames
-from augur.model.series import (
-    PrivateEquityEventKindCode,
-    PrivateEquityRegimeCode,
-    private_equity_sale_event_id,
-    private_equity_series_id,
-)
+from augur.model.series import PrivateEquityEventKindCode, PrivateEquityRegimeCode
 from augur.model.series_model import SeriesModelBundle
 from augur.sim.external_series import EXTERNAL_SERIES_EVENTS_FRAME, EXTERNAL_SERIES_VALUES_FRAME, ExternalSeriesContext
 from augur.sim.locations import Location
@@ -3850,98 +3842,39 @@ def _pe_external_series(
     at `tender_month` and onward. Event: True only at `tender_month` (or never if None).
     """
 
-    event_rows = []
     levels = np.full((rollout_count, horizon_months + 1), initial_mark_usd, dtype=np.float64)
     events = np.zeros((rollout_count, horizon_months + 1), dtype=np.bool_)
-    for rollout in range(rollout_count):
-        current_mark = initial_mark_usd
-        for month in range(horizon_months + 1):
-            if tender_month is not None and month == tender_month and tender_mark_usd is not None:
-                current_mark = tender_mark_usd
-            levels[rollout, month] = current_mark
-            active = tender_month is not None and month == tender_month
-            events[rollout, month] = active
-            event_rows.append(
-                {
-                    "rollout_index": rollout,
-                    "month_index": month,
-                    "event_id": private_equity_sale_event_id("acme"),
-                    "active": active,
-                }
-            )
-    level_frame = series_levels_frame(
-        private_equity_series_id("acme"), levels, rollout_count=rollout_count, horizon_months=horizon_months
+    if tender_month is not None and tender_mark_usd is not None:
+        levels[:, tender_month:] = tender_mark_usd
+        events[:, tender_month] = True
+    default_code = lambda value: _pe_code_matrix(  # noqa: E731
+        horizon_months=horizon_months, rollouts=rollout_count, value=value
+    )
+    default_float = lambda value: _pe_float_matrix(  # noqa: E731
+        horizon_months=horizon_months, rollouts=rollout_count, value=value
     )
     return ExternalSeriesContext(
-        series_values=EXTERNAL_SERIES_VALUES_FRAME.normalize(
-            concat_frames(
-                [
-                    level_frame,
-                    *private_equity_auxiliary_level_frames(
-                        "acme",
-                        tender_events=events,
-                        event_kind_code=event_kind_code
-                        if event_kind_code is not None
-                        else np.where(events, int(PrivateEquityEventKindCode.TENDER), 0),
-                        regime_code=regime_code
-                        if regime_code is not None
-                        else _pe_code_matrix(
-                            horizon_months=horizon_months,
-                            rollouts=rollout_count,
-                            value=int(PrivateEquityRegimeCode.PRIVATE_OPERATING),
-                        ),
-                        sale_capacity_fraction=sale_capacity_fraction
-                        if sale_capacity_fraction is not None
-                        else _pe_float_matrix(horizon_months=horizon_months, rollouts=rollout_count, value=1.0),
-                        eligible_fraction=eligible_fraction
-                        if eligible_fraction is not None
-                        else _pe_float_matrix(horizon_months=horizon_months, rollouts=rollout_count, value=1.0),
-                        forced_sale_fraction=forced_sale_fraction
-                        if forced_sale_fraction is not None
-                        else _pe_float_matrix(horizon_months=horizon_months, rollouts=rollout_count, value=0.0),
-                        liquidity_blocked=liquidity_blocked
-                        if liquidity_blocked is not None
-                        else _pe_float_matrix(horizon_months=horizon_months, rollouts=rollout_count, value=0.0),
-                        forced_recovery_cashout_usd=forced_recovery_cashout_usd
-                        if forced_recovery_cashout_usd is not None
-                        else _pe_float_matrix(horizon_months=horizon_months, rollouts=rollout_count, value=0.0),
-                        rollout_count=rollout_count,
-                        horizon_months=horizon_months,
-                    ),
-                ],
-                SERIES_LEVELS_SCHEMA,
-            )
-        ),
-        series_events=EXTERNAL_SERIES_EVENTS_FRAME.normalize(pl.DataFrame(event_rows)),
+        series_values=EXTERNAL_SERIES_VALUES_FRAME.empty(),
+        series_events=EXTERNAL_SERIES_EVENTS_FRAME.empty(),
         private_equity=PrivateEquityBundle.from_issuer_arrays(
             "acme",
             mark_usd_per_unit=levels,
             regime_code=regime_code
             if regime_code is not None
-            else _pe_code_matrix(
-                horizon_months=horizon_months,
-                rollouts=rollout_count,
-                value=int(PrivateEquityRegimeCode.PRIVATE_OPERATING),
-            ),
+            else default_code(int(PrivateEquityRegimeCode.PRIVATE_OPERATING)),
             event_kind_code=event_kind_code
             if event_kind_code is not None
             else np.where(events, int(PrivateEquityEventKindCode.TENDER), 0).astype(np.int64),
             sale_opportunity_active=events,
-            sale_capacity_fraction=sale_capacity_fraction
-            if sale_capacity_fraction is not None
-            else _pe_float_matrix(horizon_months=horizon_months, rollouts=rollout_count, value=1.0),
-            eligible_fraction=eligible_fraction
-            if eligible_fraction is not None
-            else _pe_float_matrix(horizon_months=horizon_months, rollouts=rollout_count, value=1.0),
-            forced_sale_fraction=forced_sale_fraction
-            if forced_sale_fraction is not None
-            else _pe_float_matrix(horizon_months=horizon_months, rollouts=rollout_count, value=0.0),
+            sale_capacity_fraction=sale_capacity_fraction if sale_capacity_fraction is not None else default_float(1.0),
+            eligible_fraction=eligible_fraction if eligible_fraction is not None else default_float(1.0),
+            forced_sale_fraction=forced_sale_fraction if forced_sale_fraction is not None else default_float(0.0),
             liquidity_blocked=(liquidity_blocked >= 0.5).astype(np.bool_)
             if liquidity_blocked is not None
             else np.zeros((rollout_count, horizon_months + 1), dtype=np.bool_),
             forced_recovery_cashout_usd=forced_recovery_cashout_usd
             if forced_recovery_cashout_usd is not None
-            else _pe_float_matrix(horizon_months=horizon_months, rollouts=rollout_count, value=0.0),
+            else default_float(0.0),
             rollout_count=rollout_count,
             horizon_months=horizon_months,
         ),

@@ -16,8 +16,6 @@ from augur.model.series import (
     SP500_SERIES_ID,
     crypto_series_id,
     home_value_series_id,
-    private_equity_level_series_ids,
-    private_equity_sale_event_id,
     private_equity_series_id,
     rent_series_id,
 )
@@ -34,10 +32,7 @@ def test_state_space_samples_all_available_series_and_hard_anchors(tmp_path: Pat
     provider = _provider(tmp_path, sp500_anchor=123.0)
     sampled = provider.realize_model().sample(
         ExogenousSamplingRequest(
-            rollout_seeds=(7, 8),
-            horizon_months=3,
-            required_level_series=frozenset({INFLATION_SERIES_ID}),
-            required_event_series=frozenset({private_equity_sale_event_id("private_company_a")}),
+            rollout_seeds=(7, 8), horizon_months=3, required_level_series=frozenset({INFLATION_SERIES_ID})
         )
     )
 
@@ -49,13 +44,13 @@ def test_state_space_samples_all_available_series_and_hard_anchors(tmp_path: Pat
         home_value_series_id("san_francisco_ca"),
         home_value_series_id("mare_island_vallejo_ca"),
         rent_series_id("san_francisco_ca"),
-        *private_equity_level_series_ids("private_company_a"),
     }
+    assert sampled.private_equity.issuer_ids() >= frozenset({"private_company_a"})
     np.testing.assert_allclose(
         sampled.level_matrix(SP500_SERIES_ID, rollout_count=2, horizon_months=3)[:, 0], np.array([123.0, 123.0])
     )
-    assert sampled.event_matrix(
-        private_equity_sale_event_id("private_company_a"), rollout_count=2, horizon_months=3
+    assert sampled.private_equity.issuer_bool_matrix(
+        "private_company_a", "sale_opportunity_active", rollout_count=2, horizon_months=3
     ).shape == (2, 4)
     source_manifest = cast(dict[str, Any], sampled.metadata["source_manifest"])
     prior_manifest = cast(dict[str, Any], sampled.metadata["prior_manifest"])
@@ -88,14 +83,14 @@ def test_state_space_private_equity_marks_forward_fill_between_tenders(tmp_path:
         .realize_model()
         .sample(
             ExogenousSamplingRequest(
-                rollout_seeds=(11,),
-                horizon_months=4,
-                required_level_series=frozenset({private_equity_series_id("private_company_a")}),
+                rollout_seeds=(11,), horizon_months=4, required_private_equity_issuers=frozenset({"private_company_a"})
             )
         )
     )
 
-    levels = sampled.level_matrix(private_equity_series_id("private_company_a"), rollout_count=1, horizon_months=4)
+    levels = sampled.private_equity.issuer_float_matrix(
+        "private_company_a", "mark_usd_per_unit", rollout_count=1, horizon_months=4
+    )
     np.testing.assert_allclose(levels, np.full((1, 5), 687.69))
 
 

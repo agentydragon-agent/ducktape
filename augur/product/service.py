@@ -34,9 +34,8 @@ from augur.product.scenarios import (
     asset_label_by_series_id,
     build_scenario,
     initial_lots_from_portfolio,
-    required_event_series,
     required_level_series,
-    required_private_equity_protocol_issuers,
+    required_private_equity_issuers,
 )
 from augur.product.wire import (
     MetricFanRequest,
@@ -202,8 +201,7 @@ class ProductService:
             required_level_series=required_level_series(
                 scenario_key, initial_lots=self._initial_lots, properties_by_id=self._properties_by_id
             ),
-            required_event_series=required_event_series(self._initial_lots),
-            required_private_equity_protocol_issuers=required_private_equity_protocol_issuers(self._initial_lots),
+            required_private_equity_issuers=required_private_equity_issuers(self._initial_lots),
         )
         sampled = self._exogenous_model.sample(sampling_request)
         validate_sample_satisfies_request(sampling_request, sampled)

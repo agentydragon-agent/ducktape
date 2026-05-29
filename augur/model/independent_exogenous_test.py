@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import numpy as np
 import pytest_bazel
 from pydantic import TypeAdapter
 
@@ -11,7 +10,6 @@ from augur.model.series import (
     INFLATION_SERIES_ID,
     SP500_SERIES_ID,
     home_value_series_id,
-    private_equity_sale_event_id,
     private_equity_series_id,
     rent_series_id,
 )
@@ -53,13 +51,6 @@ def _example_config() -> IndependentExogenousProviderConfig:
                     "monthly_log_return_sigma": 0.1010362971,
                 },
             },
-            "events": {
-                private_equity_sale_event_id("private_equity_x"): {
-                    "kind": "poisson",
-                    "monthly_lambda": 0.0138888889,
-                    "min_horizon_months": 12,
-                }
-            },
         }
     )
 
@@ -80,7 +71,6 @@ def test_independent_model_samples_levels_and_events() -> None:
                     private_equity_series_id("private_equity_x"),
                 }
             ),
-            required_event_series=frozenset({private_equity_sale_event_id("private_equity_x")}),
         )
     )
 
@@ -94,10 +84,8 @@ def test_independent_model_samples_levels_and_events() -> None:
     assert sampled.level_matrix(private_equity_series_id("private_equity_x"), rollout_count=2, horizon_months=12)[
         :, 0
     ].tolist() == [50.0, 50.0]
-    assert (
-        sampled.event_matrix(private_equity_sale_event_id("private_equity_x"), rollout_count=2, horizon_months=12).dtype
-        == np.bool_
-    )
+    # IndependentExogenousModel doesn't sample PE channels — the typed PE bundle stays empty.
+    assert sampled.private_equity.is_empty()
     assert sampled.metadata["exogenous_model_id"] == "independent_exogenous_model"
     assert sampled.metadata["private_equity_prices_usd"] == {"private_equity_x": 50.0}
 

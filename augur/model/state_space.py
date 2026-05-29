@@ -24,12 +24,9 @@ from pydantic import Field, model_validator
 from augur.frames import concat_frames
 from augur.model.conditioning import ExogenousConditioningContext, ObservationTreatment, latest_observations_by_series
 from augur.model.exogenous import (
-    PRIVATE_EQUITY_PROTOCOL_SCHEMA,
-    SERIES_EVENTS_SCHEMA,
     SERIES_LEVELS_SCHEMA,
     ExogenousSamplingRequest,
     SampledExogenousBundle,
-    series_events_frame,
     series_levels_frame,
     validate_sample_satisfies_request,
 )
@@ -37,9 +34,7 @@ from augur.model.location_series_sources import LocationSeriesSources, LocationS
 from augur.model.path_models.scenarios import HistoricalSeries, historical_log_returns
 from augur.model.private_equity_bundle import PrivateEquityBundle
 from augur.model.private_equity_protocol import (
-    neutral_private_equity_auxiliary_level_frames,
     neutral_private_equity_issuer_bundle,
-    neutral_private_equity_protocol_frame,
     observed_private_equity_mark_matrix,
 )
 from augur.model.provenance import stable_identity_digest
@@ -52,7 +47,6 @@ from augur.model.series import (
     SP500Key,
     home_value_series_id,
     issuer_id_from_private_equity_mark_wire_id,
-    private_equity_sale_event_id,
     private_equity_series_id,
     rent_series_id,
     try_parse_level_series_key,
@@ -284,32 +278,15 @@ class StateSpaceModel:
             levels = path_by_factor[factor_name]
             private_equity_issuer = issuer_id_from_private_equity_mark_wire_id(series_id)
             if private_equity_issuer is not None and private_equity_issuer in event_by_issuer:
-                levels = observed_private_equity_mark_matrix(levels, event_by_issuer[private_equity_issuer])
-                observed_mark_by_issuer[private_equity_issuer] = levels
+                # PE marks live in the canonical PrivateEquityBundle below; the legacy
+                # `levels` frame only carries non-PE series now.
+                observed_mark_by_issuer[private_equity_issuer] = observed_private_equity_mark_matrix(
+                    levels, event_by_issuer[private_equity_issuer]
+                )
+                continue
             level_blocks.append(
                 series_levels_frame(series_id, levels, rollout_count=rollout_count, horizon_months=horizon_months)
             )
-        for issuer_id, tender_events in event_by_issuer.items():
-            level_blocks.extend(
-                neutral_private_equity_auxiliary_level_frames(
-                    issuer_id, tender_events=tender_events, rollout_count=rollout_count, horizon_months=horizon_months
-                )
-            )
-        protocol_blocks = [
-            neutral_private_equity_protocol_frame(
-                issuer_id, tender_events=events, rollout_count=rollout_count, horizon_months=horizon_months
-            )
-            for issuer_id, events in event_by_issuer.items()
-        ]
-        event_blocks = [
-            series_events_frame(
-                private_equity_sale_event_id(issuer_id),
-                events,
-                rollout_count=rollout_count,
-                horizon_months=horizon_months,
-            )
-            for issuer_id, events in event_by_issuer.items()
-        ]
         private_equity_parts = [
             neutral_private_equity_issuer_bundle(
                 issuer_id,
@@ -327,8 +304,6 @@ class StateSpaceModel:
         sampled = SampledExogenousBundle(
             levels=concat_frames(level_blocks, SERIES_LEVELS_SCHEMA),
             private_equity=private_equity,
-            events=concat_frames(event_blocks, SERIES_EVENTS_SCHEMA),
-            private_equity_protocol=concat_frames(protocol_blocks, PRIVATE_EQUITY_PROTOCOL_SCHEMA),
             metadata={
                 "model_version_id": self.exogenous_model_version_id,
                 "exogenous_model_id": self.label,

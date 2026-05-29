@@ -12,7 +12,7 @@ from pydantic import TypeAdapter
 from augur.fit.main import main as train_main
 from augur.model.exogenous import ExogenousSamplingRequest
 from augur.model.exogenous_provider_config import ExogenousProviderConfig
-from augur.model.series import INFLATION_SERIES_ID, private_equity_sale_event_id, private_equity_series_id
+from augur.model.series import INFLATION_SERIES_ID
 from augur.model.state_space import StateSpaceExogenousProviderConfig
 
 _ADAPTER: TypeAdapter[ExogenousProviderConfig] = TypeAdapter(ExogenousProviderConfig)
@@ -42,19 +42,16 @@ def test_state_space_private_equity_artifact_models_price_and_sale_event(tmp_pat
     model = provider.realize_model()
     sampled = model.sample(
         ExogenousSamplingRequest(
-            rollout_seeds=(1, 2),
-            horizon_months=12,
-            required_level_series=frozenset({private_equity_series_id("private_company_a")}),
-            required_event_series=frozenset({private_equity_sale_event_id("private_company_a")}),
+            rollout_seeds=(1, 2), horizon_months=12, required_private_equity_issuers=frozenset({"private_company_a"})
         )
     )
 
-    private_company = sampled.level_matrix(
-        private_equity_series_id("private_company_a"), rollout_count=2, horizon_months=12
+    private_company = sampled.private_equity.issuer_float_matrix(
+        "private_company_a", "mark_usd_per_unit", rollout_count=2, horizon_months=12
     )
     np.testing.assert_allclose(private_company[:, 0], np.array([300.0, 300.0]))
-    assert sampled.event_matrix(
-        private_equity_sale_event_id("private_company_a"), rollout_count=2, horizon_months=12
+    assert sampled.private_equity.issuer_bool_matrix(
+        "private_company_a", "sale_opportunity_active", rollout_count=2, horizon_months=12
     ).shape == (2, 13)
     assert sampled.metadata["private_equity_prices_usd"] == {"private_company_a": 300.0}
     source_manifest = cast(dict[str, Any], sampled.metadata["source_manifest"])

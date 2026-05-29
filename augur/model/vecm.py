@@ -49,11 +49,9 @@ from pydantic import Field
 
 from augur.frames import concat_frames
 from augur.model.exogenous import (
-    SERIES_EVENTS_SCHEMA,
     SERIES_LEVELS_SCHEMA,
     ExogenousSamplingRequest,
     SampledExogenousBundle,
-    series_events_frame,
     series_levels_frame,
 )
 from augur.model.location_series_sources import LocationSeriesSources, LocationSeriesSourcesConfig
@@ -335,15 +333,8 @@ class VecmModel:
             )
             for series_id in sorted(request.required_level_series)
         ]
-        event_blocks = [
-            series_events_frame(
-                event_id, self._event_series(event_id), rollout_count=rollout_count, horizon_months=horizon_months
-            )
-            for event_id in sorted(request.required_event_series)
-        ]
         return SampledExogenousBundle(
             levels=concat_frames(level_blocks, SERIES_LEVELS_SCHEMA),
-            events=concat_frames(event_blocks, SERIES_EVENTS_SCHEMA),
             metadata={
                 "model_version_id": self.exogenous_model_version_id,
                 "exogenous_model_id": self.label,

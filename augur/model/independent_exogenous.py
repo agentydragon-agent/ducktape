@@ -24,7 +24,7 @@ from augur.model.gbm import GeometricBrownian
 from augur.model.path_models.scenarios import HistoricalSeries
 from augur.model.schemas import FrozenModel
 from augur.model.series import issuer_id_from_private_equity_mark_wire_id
-from augur.model.series_model import IndependentSeriesModels, ScalarEventSpec, ScalarSeriesSpec
+from augur.model.series_model import IndependentSeriesModels, ScalarSeriesSpec
 
 
 class IndependentExogenousProviderConfig(FrozenModel):
@@ -37,10 +37,9 @@ class IndependentExogenousProviderConfig(FrozenModel):
 
     type: Literal["independent"] = "independent"
     series: dict[str, ScalarSeriesSpec] = Field(default_factory=dict)
-    events: dict[str, ScalarEventSpec] = Field(default_factory=dict)
 
     def realize_model(self) -> IndependentExogenousModel:
-        return IndependentExogenousModel(series=self.series, events=self.events)
+        return IndependentExogenousModel(series=self.series)
 
 
 class IndependentExogenousModel(FrozenModel):
@@ -52,17 +51,15 @@ class IndependentExogenousModel(FrozenModel):
 
     label: str = "independent_exogenous_model"
     series: dict[str, ScalarSeriesSpec]
-    events: dict[str, ScalarEventSpec]
 
     @property
     def factor_names(self) -> tuple[str, ...]:
         return tuple(self.series.keys())
 
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
-        bundle = IndependentSeriesModels(series=self.series, events=self.events).sample(request)
+        bundle = IndependentSeriesModels(series=self.series).sample(request)
         return SampledExogenousBundle(
             levels=bundle.levels,
-            events=bundle.events,
             metadata={"exogenous_model_id": self.label, "private_equity_prices_usd": self._private_equity_prices_usd()},
         )
 

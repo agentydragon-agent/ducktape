@@ -188,17 +188,26 @@ def _lot_value_by_month(dense: DenseSimulationResult, *, primary_agent_code: int
     plan = dense.plan
     values = np.zeros(plan.horizon_months + 1, dtype=np.float64)
     series_index_by_id = {series_id: index for index, series_id in enumerate(plan.series_ids)}
+    pe_issuer_index = {str(issuer_id): idx for idx, issuer_id in enumerate(plan.pe_issuers.issuer_ids)}
     for lot in range(plan.lot_id_codes.shape[0]):
         if int(plan.lot_agent_codes[lot]) != primary_agent_code:
             continue
         asset_id = plan.strings[int(plan.lot_asset_codes[lot])]
         if not include(asset_id):
             continue
-        series_index = series_index_by_id.get(asset_id)
-        if series_index is None:
-            raise ValueError(f"holding asset {asset_id!r} has no modeled price series in the compiled simulation")
         quantity = dense.buffers.state.lot_state[:, lot, _SINGLE_ROLLOUT_INDEX]
-        price = plan.external_values[series_index, _SINGLE_ROLLOUT_INDEX, :]
+        # PE lots take their mark from `pe_channels.marks` (typed bundle); non-PE lots
+        # read from the series-id-indexed external_values.
+        if isinstance(parsed := try_parse_asset_key(asset_id), PrivateEquityAssetKey):
+            issuer_idx = pe_issuer_index.get(str(parsed.issuer_id))
+            if issuer_idx is None:
+                raise ValueError(f"holding asset {asset_id!r} has no compiled PE channels")
+            price = plan.pe_channels.marks[issuer_idx, _SINGLE_ROLLOUT_INDEX, :]
+        else:
+            series_index = series_index_by_id.get(asset_id)
+            if series_index is None:
+                raise ValueError(f"holding asset {asset_id!r} has no modeled price series in the compiled simulation")
+            price = plan.external_values[series_index, _SINGLE_ROLLOUT_INDEX, :]
         missing_price = (np.abs(quantity) > 1e-9) & ~np.isfinite(price)
         if missing_price.any():
             months = ", ".join(str(month) for month in np.flatnonzero(missing_price)[:5])

@@ -13,8 +13,6 @@ from augur.model.series import (
     INFLATION_SERIES_ID,
     home_value_series_id,
     issuer_id_from_private_equity_mark_wire_id,
-    private_equity_level_series_ids,
-    private_equity_sale_event_id,
     rent_series_id,
 )
 from augur.product.asset_key import CryptoAssetKey, PrivateEquityAssetKey, try_parse_asset_key
@@ -130,11 +128,12 @@ def asset_label_by_series_id(portfolio: PortfolioConfig) -> dict[str, str]:
 def required_level_series(
     scenario_key: ScenarioKey, *, initial_lots: tuple[InitialLot, ...], properties_by_id: dict[str, Property]
 ) -> frozenset[str]:
-    series_ids = {lot.asset_id for lot in initial_lots}
-    for lot in initial_lots:
-        issuer = issuer_id_from_private_equity_mark_wire_id(lot.asset_id)
-        if issuer is not None:
-            series_ids.update(private_equity_level_series_ids(issuer))
+    # PE lot asset_ids (`private_equity:<issuer>`) flow through the typed
+    # PrivateEquityBundle, not through the level-series channel — they're
+    # surfaced via `required_private_equity_issuers` instead.
+    series_ids = {
+        lot.asset_id for lot in initial_lots if issuer_id_from_private_equity_mark_wire_id(lot.asset_id) is None
+    }
     if scenario_key.spend_index == "inflation":
         series_ids.add(INFLATION_SERIES_ID)
     if scenario_key.monthly_rent_usd > 0:
@@ -168,22 +167,7 @@ def required_level_series(
     return frozenset(series_ids)
 
 
-def required_event_series(initial_lots: tuple[InitialLot, ...]) -> frozenset[str]:
-    """PE tender event series needed by the sim, one per held PE issuer.
-
-    The product translator passes this to the exogenous-sampling layer so the trajectory
-    provider knows which event streams to materialize for this scenario.
-    """
-
-    event_ids: set[str] = set()
-    for lot in initial_lots:
-        issuer = issuer_id_from_private_equity_mark_wire_id(lot.asset_id)
-        if issuer is not None:
-            event_ids.add(private_equity_sale_event_id(issuer))
-    return frozenset(event_ids)
-
-
-def required_private_equity_protocol_issuers(initial_lots: tuple[InitialLot, ...]) -> frozenset[str]:
+def required_private_equity_issuers(initial_lots: tuple[InitialLot, ...]) -> frozenset[str]:
     return frozenset(
         issuer
         for lot in initial_lots

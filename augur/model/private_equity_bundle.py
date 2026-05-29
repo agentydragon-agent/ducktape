@@ -27,6 +27,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
+from enum import StrEnum
 
 import numpy as np
 import numpy.typing as npt
@@ -34,6 +35,33 @@ import polars as pl
 
 from augur.frames import FrameSpec
 from augur.model.series import IssuerId, PrivateEquityEventKindCode, PrivateEquityRegimeCode
+
+
+class PrivateEquityFloatChannel(StrEnum):
+    """Float-valued PE bundle channel column names."""
+
+    MARK_USD_PER_UNIT = "mark_usd_per_unit"
+    SALE_CAPACITY_FRACTION = "sale_capacity_fraction"
+    ELIGIBLE_FRACTION = "eligible_fraction"
+    FORCED_SALE_FRACTION = "forced_sale_fraction"
+    FORCED_RECOVERY_CASHOUT_USD = "forced_recovery_cashout_usd"
+
+
+class PrivateEquityIntChannel(StrEnum):
+    """Integer-valued PE bundle channel column names — discriminated codes."""
+
+    REGIME_CODE = "regime_code"
+    EVENT_KIND_CODE = "event_kind_code"
+
+
+class PrivateEquityBoolChannel(StrEnum):
+    """Boolean-valued PE bundle channel column names."""
+
+    SALE_OPPORTUNITY_ACTIVE = "sale_opportunity_active"
+    LIQUIDITY_BLOCKED = "liquidity_blocked"
+
+
+type PrivateEquityChannel = PrivateEquityFloatChannel | PrivateEquityIntChannel | PrivateEquityBoolChannel
 
 PRIVATE_EQUITY_BUNDLE_SCHEMA = pl.Schema(
     {
@@ -67,9 +95,9 @@ _FLOAT_COLUMNS = frozenset(
 _INT_COLUMNS = frozenset({"regime_code", "event_kind_code"})
 _BOOL_COLUMNS = frozenset({"sale_opportunity_active", "liquidity_blocked"})
 
-FloatMatrix = npt.NDArray[np.float64]
-IntMatrix = npt.NDArray[np.int64]
-BoolMatrix = npt.NDArray[np.bool_]
+type FloatMatrix = npt.NDArray[np.float64]
+type IntMatrix = npt.NDArray[np.int64]
+type BoolMatrix = npt.NDArray[np.bool_]
 
 
 @dataclass(frozen=True)

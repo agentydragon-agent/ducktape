@@ -10,22 +10,12 @@ from typing import Any, Literal
 import numpy as np
 from pydantic import Field
 
-from augur.frames import concat_frames
-from augur.model.exogenous import (
-    SERIES_LEVELS_SCHEMA,
-    ExogenousSamplingRequest,
-    SampledExogenousBundle,
-    series_events_frame,
-    series_levels_frame,
-)
+from augur.model.exogenous import SERIES_LEVELS_SCHEMA, ExogenousSamplingRequest, SampledExogenousBundle
 from augur.model.private_equity_protocol import (
-    neutral_private_equity_auxiliary_level_frames,
     neutral_private_equity_issuer_bundle,
-    neutral_private_equity_protocol_frame,
     observed_private_equity_mark_matrix,
 )
 from augur.model.schemas import FrozenModel
-from augur.model.series import private_equity_sale_event_id, private_equity_series_id
 from augur.model.series_model import derive_stream_rollout_seeds
 
 _DAYS_PER_MONTH = 365.2425 / 12
@@ -106,32 +96,14 @@ class TrainedPrivateEquityModel(FrozenModel):
             _apply_event_price_noise(self.artifact, levels=levels, events=events, rollout_seeds=event_seeds)
             levels = observed_private_equity_mark_matrix(levels, events)
 
-        levels_frame = series_levels_frame(
-            private_equity_series_id(issuer), levels, rollout_count=rollout_count, horizon_months=horizon_months
-        )
-        events_frame = series_events_frame(
-            private_equity_sale_event_id(issuer), events, rollout_count=rollout_count, horizon_months=horizon_months
-        )
         return SampledExogenousBundle(
-            levels=concat_frames(
-                [
-                    levels_frame,
-                    *neutral_private_equity_auxiliary_level_frames(
-                        issuer, tender_events=events, rollout_count=rollout_count, horizon_months=horizon_months
-                    ),
-                ],
-                SERIES_LEVELS_SCHEMA,
-            ),
+            levels=SERIES_LEVELS_SCHEMA.to_frame(),
             private_equity=neutral_private_equity_issuer_bundle(
                 issuer,
                 observed_mark=levels,
                 tender_events=events,
                 rollout_count=rollout_count,
                 horizon_months=horizon_months,
-            ),
-            events=events_frame,
-            private_equity_protocol=neutral_private_equity_protocol_frame(
-                issuer, tender_events=events, rollout_count=rollout_count, horizon_months=horizon_months
             ),
             metadata={
                 "exogenous_model_id": self.label,

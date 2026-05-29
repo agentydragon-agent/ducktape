@@ -7,16 +7,10 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from augur.frames import concat_frames
 from augur.model.deterministic import Constant
-from augur.model.exogenous import (
-    PRIVATE_EQUITY_PROTOCOL_SCHEMA,
-    SERIES_EVENTS_SCHEMA,
-    ExogenousSamplingRequest,
-    SampledExogenousBundle,
-    series_events_frame,
-)
-from augur.model.private_equity_protocol import neutral_private_equity_protocol_frame
+from augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle
+from augur.model.private_equity_bundle import PrivateEquityBundle
+from augur.model.private_equity_protocol import neutral_private_equity_issuer_bundle
 from augur.model.series_model import IndependentSeriesModels
 
 
@@ -48,28 +42,28 @@ class DeterministicSeriesFixtureModel:
                 for series_id in sorted(request.required_level_series)
             }
         )
-        event_blocks = [
-            series_events_frame(
-                event_id,
-                self._event_mask(request),
-                rollout_count=request.rollout_count,
-                horizon_months=request.horizon_months,
-            )
-            for event_id in sorted(request.required_event_series)
-        ]
-        protocol_blocks = [
-            neutral_private_equity_protocol_frame(
+        tender_events = self._event_mask(request)
+        # The default issuer mark for fixture scenarios is just the default
+        # level value — the production anchoring step rescales it to whatever
+        # `unit_value_usd` the portfolio config sets.
+        default_mark = np.full(
+            (request.rollout_count, request.horizon_months + 1), self.default_level_value, dtype=np.float64
+        )
+        pe_bundle_parts = [
+            neutral_private_equity_issuer_bundle(
                 issuer_id,
-                tender_events=self._event_mask(request),
+                observed_mark=default_mark,
+                tender_events=tender_events,
                 rollout_count=request.rollout_count,
                 horizon_months=request.horizon_months,
             )
-            for issuer_id in sorted(request.required_private_equity_protocol_issuers)
+            for issuer_id in sorted(request.required_private_equity_issuers)
         ]
         return SampledExogenousBundle(
             levels=level_models.sample(request).levels,
-            events=concat_frames(event_blocks, SERIES_EVENTS_SCHEMA),
-            private_equity_protocol=concat_frames(protocol_blocks, PRIVATE_EQUITY_PROTOCOL_SCHEMA),
+            private_equity=(
+                PrivateEquityBundle.combine(pe_bundle_parts) if pe_bundle_parts else PrivateEquityBundle.empty()
+            ),
             metadata=dict(self.metadata),
         )
 

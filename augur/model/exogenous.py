@@ -11,22 +11,9 @@ import numpy as np
 import polars as pl
 
 from augur.model.private_equity_bundle import PrivateEquityBundle
-from augur.model.series import IssuerId
 
 SERIES_LEVELS_SCHEMA = pl.Schema(
     {"rollout_index": pl.Int64(), "month_index": pl.Int64(), "series_id": pl.Utf8(), "value": pl.Float64()}
-)
-SERIES_EVENTS_SCHEMA = pl.Schema(
-    {"rollout_index": pl.Int64(), "month_index": pl.Int64(), "event_id": pl.Utf8(), "active": pl.Boolean()}
-)
-PRIVATE_EQUITY_PROTOCOL_SCHEMA = pl.Schema(
-    {
-        "rollout_index": pl.Int64(),
-        "month_index": pl.Int64(),
-        "issuer_id": pl.Utf8(),
-        "regime_code": pl.Int64(),
-        "event_kind_code": pl.Int64(),
-    }
 )
 SERIES_VALUES_SCHEMA = pl.Schema(
     {"rollout_index": pl.Int64(), "month_index": pl.Int64(), "series_id": pl.Utf8(), "value": pl.Float64()}
@@ -35,14 +22,18 @@ SERIES_VALUES_SCHEMA = pl.Schema(
 
 @dataclass(frozen=True)
 class ExogenousSamplingRequest:
-    """Request metadata passed to an exogenous path model sample."""
+    """Request metadata passed to an exogenous path model sample.
+
+    Non-PE level series are required by wire id in `required_level_series`.
+    PE issuers (carrying the whole `PrivateEquityBundle` per issuer) are
+    required by `required_private_equity_issuers`. PE tender events and
+    protocol channels are part of the bundle, not separate request channels.
+    """
 
     horizon_months: int
     rollout_seeds: tuple[int, ...]
     required_level_series: frozenset[str] = frozenset()
-    required_event_series: frozenset[str] = frozenset()
-    required_private_equity_protocol_issuers: frozenset[str] = frozenset()
-    required_private_equity_issuers: frozenset[IssuerId] = frozenset()
+    required_private_equity_issuers: frozenset[str] = frozenset()
 
     def __post_init__(self) -> None:
         if self.horizon_months < 0:
@@ -68,26 +59,16 @@ class SampledExogenousBundle:
 
     `levels` carries valued non-PE series (asset prices, CPI levels, rent
     levels, home-value levels). `private_equity` carries the typed PE
-    protocol bundle (mark, regime, event kind, fractions, blocked, recovery)
-    per issuer.
-
-    Legacy fields `events` and `private_equity_protocol` are kept during the
-    migration window so producers that haven't yet been converted still type-
-    check; new code should populate `private_equity` exclusively.
+    protocol bundle (mark, regime, event kind, sale opportunity, fractions,
+    blocked, recovery) per issuer.
     """
 
     levels: pl.DataFrame
     private_equity: PrivateEquityBundle = field(default_factory=PrivateEquityBundle.empty)
-    events: pl.DataFrame = field(default_factory=lambda: SERIES_EVENTS_SCHEMA.to_frame())
-    private_equity_protocol: pl.DataFrame = field(default_factory=lambda: PRIVATE_EQUITY_PROTOCOL_SCHEMA.to_frame())
     metadata: Mapping[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         _require_schema(self.levels, SERIES_LEVELS_SCHEMA, frame_name="levels")
-        _require_schema(self.events, SERIES_EVENTS_SCHEMA, frame_name="events")
-        _require_schema(
-            self.private_equity_protocol, PRIVATE_EQUITY_PROTOCOL_SCHEMA, frame_name="private_equity_protocol"
-        )
 
     def level_matrix(self, series_id: str, *, rollout_count: int, horizon_months: int) -> np.ndarray:
         """Return one level series as a `(rollout, month)` matrix."""
@@ -102,19 +83,6 @@ class SampledExogenousBundle:
             dtype=np.float64,
         )
 
-    def event_matrix(self, event_id: str, *, rollout_count: int, horizon_months: int) -> np.ndarray:
-        """Return one boolean event series as a `(rollout, month)` matrix."""
-
-        return _matrix_from_long_frame(
-            self.events,
-            id_column="event_id",
-            id_value=event_id,
-            value_column="active",
-            rollout_count=rollout_count,
-            horizon_months=horizon_months,
-            dtype=np.bool_,
-        )
-
 
 class Sampler(Protocol):
     """Runtime sampling boundary — required of every augur exogenous model.
@@ -125,7 +93,7 @@ class Sampler(Protocol):
     """
 
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
-        """Return all modeled external drivers as a sampled levels/events bundle."""
+        """Return all modeled external drivers as a sampled levels bundle."""
         ...
 
 
@@ -146,25 +114,6 @@ def series_levels_frame(series_id: str, levels: np.ndarray, *, rollout_count: in
     )
 
 
-def series_events_frame(event_id: str, active: np.ndarray, *, rollout_count: int, horizon_months: int) -> pl.DataFrame:
-    expected_shape = (rollout_count, horizon_months + 1)
-    if active.shape != expected_shape:
-        raise ValueError(
-            f"event series {event_id!r} produced mask with shape {active.shape}; expected {expected_shape}"
-        )
-
-    rollout_idx, month_idx = _long_indices(rollout_count=rollout_count, horizon_months=horizon_months)
-    return pl.DataFrame(
-        {
-            "rollout_index": rollout_idx,
-            "month_index": month_idx,
-            "event_id": [event_id] * (rollout_count * (horizon_months + 1)),
-            "active": active.reshape(-1),
-        },
-        schema=SERIES_EVENTS_SCHEMA,
-    )
-
-
 def series_values_from_bundle(bundle: SampledExogenousBundle) -> pl.DataFrame:
     """Materialize sampled level paths into the sim's external-series frame."""
 
@@ -180,31 +129,16 @@ def validate_sample_satisfies_request(request: ExogenousSamplingRequest, sampled
     """
 
     missing_level_series = sorted(request.required_level_series - _string_values(sampled.levels, "series_id"))
-    missing_event_series = sorted(request.required_event_series - _string_values(sampled.events, "event_id"))
-    missing_pe_protocol_issuers = sorted(
-        request.required_private_equity_protocol_issuers - _string_values(sampled.private_equity_protocol, "issuer_id")
-    )
     sampled_pe_issuers = frozenset(str(issuer) for issuer in sampled.private_equity.issuer_ids())
-    missing_pe_bundle_issuers = sorted(
-        frozenset(str(i) for i in request.required_private_equity_issuers) - sampled_pe_issuers
-    )
-    if (
-        not missing_level_series
-        and not missing_event_series
-        and not missing_pe_protocol_issuers
-        and not missing_pe_bundle_issuers
-    ):
+    missing_pe_issuers = sorted(request.required_private_equity_issuers - sampled_pe_issuers)
+    if not missing_level_series and not missing_pe_issuers:
         return
 
     details: list[str] = []
     if missing_level_series:
         details.append(f"missing required level series: {missing_level_series}")
-    if missing_event_series:
-        details.append(f"missing required event series: {missing_event_series}")
-    if missing_pe_protocol_issuers:
-        details.append(f"missing required private-equity protocol issuer(s): {missing_pe_protocol_issuers}")
-    if missing_pe_bundle_issuers:
-        details.append(f"missing required private-equity bundle issuer(s): {missing_pe_bundle_issuers}")
+    if missing_pe_issuers:
+        details.append(f"missing required private-equity issuer(s): {missing_pe_issuers}")
     raise ValueError("sampled exogenous bundle " + "; ".join(details))
 
 
@@ -217,12 +151,11 @@ def anchor_sampled_series_levels(
 
     sampled_series = set(sampled.levels.get_column("series_id").unique().to_list())
     active_anchors = {series_id: value for series_id, value in anchors.items() if series_id in sampled_series}
+    private_equity = _anchor_private_equity_marks(sampled.private_equity, anchors=anchors)
     if not active_anchors:
         return SampledExogenousBundle(
             levels=sampled.levels,
-            private_equity=sampled.private_equity,
-            events=sampled.events,
-            private_equity_protocol=sampled.private_equity_protocol,
+            private_equity=private_equity,
             metadata={**sampled.metadata, "level_anchors": anchors},
         )
 
@@ -249,19 +182,15 @@ def anchor_sampled_series_levels(
         )
         .select(SERIES_LEVELS_SCHEMA.names())
     )
-    private_equity = _anchor_private_equity_marks(sampled.private_equity, anchors=active_anchors)
     return SampledExogenousBundle(
-        levels=levels,
-        private_equity=private_equity,
-        events=sampled.events,
-        private_equity_protocol=sampled.private_equity_protocol,
-        metadata={**sampled.metadata, "level_anchors": anchors},
+        levels=levels, private_equity=private_equity, metadata={**sampled.metadata, "level_anchors": anchors}
     )
 
 
 def _anchor_private_equity_marks(pe: PrivateEquityBundle, *, anchors: Mapping[str, float]) -> PrivateEquityBundle:
     """Rescale `mark_usd_per_unit` for each issuer whose `private_equity:<issuer>` wire id
-    appears in `anchors`, mirroring the rescaling applied to the levels frame."""
+    appears in `anchors`. Mirrors the rescaling applied to the levels frame; the
+    portfolio config's `unit_value_usd` is the canonical mark anchor at month 0."""
 
     if pe.is_empty() or not anchors:
         return pe

@@ -80,7 +80,9 @@ class LevelSeriesSanityCheck(FrozenModel):
 
 
 class EventSeriesSanityCheck(FrozenModel):
-    event_id: str
+    """Sanity check on the `sale_opportunity_active` channel of one PE issuer."""
+
+    issuer_id: str
     active_count_percentile_bounds: tuple[EventCountPercentileBound, ...] = ()
     active_count_percentile_ranges: tuple[EventCountPercentileRangeBound, ...] = ()
 
@@ -97,8 +99,7 @@ class SampleSanitySpec(FrozenModel):
     rollout_seed_start: int = Field(default=1301, ge=0)
     rollout_count: int = Field(gt=0)
     required_level_series: tuple[str, ...] = ()
-    required_event_series: tuple[str, ...] = ()
-    required_private_equity_protocol_issuers: tuple[str, ...] = ()
+    required_private_equity_issuers: tuple[str, ...] = ()
     level_checks: tuple[LevelSeriesSanityCheck, ...] = ()
     event_checks: tuple[EventSeriesSanityCheck, ...] = ()
     private_equity_protocol_checks: tuple[PrivateEquityProtocolSanityCheck, ...] = ()
@@ -121,20 +122,10 @@ def run_sample_sanity(spec: SampleSanitySpec, *, base_dir: Path) -> None:
         horizon_months=spec.horizon_months,
         rollout_seeds=spec.rollout_seeds,
         required_level_series=frozenset(spec.required_level_series),
-        required_event_series=frozenset(spec.required_event_series),
-        required_private_equity_protocol_issuers=frozenset(spec.required_private_equity_protocol_issuers),
+        required_private_equity_issuers=frozenset(spec.required_private_equity_issuers),
     )
     sampled = model.sample(request)
     validate_sample_satisfies_request(request, sampled)
-
-    for issuer_id in spec.required_private_equity_protocol_issuers:
-        _protocol_code_matrix(
-            sampled.private_equity_protocol,
-            issuer_id=issuer_id,
-            column="regime_code",
-            rollout_count=spec.rollout_count,
-            horizon_months=spec.horizon_months,
-        )
 
     for level_check in spec.level_checks:
         levels = sampled.level_matrix(
@@ -169,8 +160,11 @@ def run_sample_sanity(spec: SampleSanitySpec, *, base_dir: Path) -> None:
             )
 
     for event_check in spec.event_checks:
-        events = sampled.event_matrix(
-            event_check.event_id, rollout_count=spec.rollout_count, horizon_months=spec.horizon_months
+        events = sampled.private_equity.issuer_bool_matrix(
+            event_check.issuer_id,
+            "sale_opportunity_active",
+            rollout_count=spec.rollout_count,
+            horizon_months=spec.horizon_months,
         )
         active_counts = events.astype(np.int64).sum(axis=1)
         for active_count_bound in event_check.active_count_percentile_bounds:
@@ -179,25 +173,23 @@ def run_sample_sanity(spec: SampleSanitySpec, *, base_dir: Path) -> None:
                 value,
                 lower=active_count_bound.lower,
                 upper=active_count_bound.upper,
-                label=f"{event_check.event_id} active-count p{active_count_bound.percentile:g}",
+                label=f"{event_check.issuer_id} active-count p{active_count_bound.percentile:g}",
             )
         for active_count_range in event_check.active_count_percentile_ranges:
             _check_percentile_count_range_bound(
-                active_counts, active_count_range, label=f"{event_check.event_id} active-count"
+                active_counts, active_count_range, label=f"{event_check.issuer_id} active-count"
             )
 
     for protocol_check in spec.private_equity_protocol_checks:
-        regime_codes = _protocol_code_matrix(
-            sampled.private_equity_protocol,
-            issuer_id=protocol_check.issuer_id,
-            column="regime_code",
+        regime_codes = sampled.private_equity.issuer_int_matrix(
+            protocol_check.issuer_id,
+            "regime_code",
             rollout_count=spec.rollout_count,
             horizon_months=spec.horizon_months,
         )
-        event_kind_codes = _protocol_code_matrix(
-            sampled.private_equity_protocol,
-            issuer_id=protocol_check.issuer_id,
-            column="event_kind_code",
+        event_kind_codes = sampled.private_equity.issuer_int_matrix(
+            protocol_check.issuer_id,
+            "event_kind_code",
             rollout_count=spec.rollout_count,
             horizon_months=spec.horizon_months,
         )

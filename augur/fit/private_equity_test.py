@@ -15,7 +15,7 @@ from augur.fit.private_equity import (
     train_from_config,
 )
 from augur.model.exogenous import ExogenousSamplingRequest
-from augur.model.series import private_equity_sale_event_id, private_equity_series_id
+from augur.model.series import private_equity_series_id
 from augur.model.trained_private_equity import (
     TrainedPrivateEquityModel,
     TrainedPrivateEquityModelArtifact,
@@ -150,18 +150,19 @@ priors:
 
     model = TrainedPrivateEquityModel.from_path(tmp_path / "trained_model.json")
     request = ExogenousSamplingRequest(
-        horizon_months=8,
-        rollout_seeds=(1, 2, 3),
-        required_level_series=frozenset({private_equity_series_id("private_company_a")}),
-        required_event_series=frozenset({private_equity_sale_event_id("private_company_a")}),
+        horizon_months=8, rollout_seeds=(1, 2, 3), required_private_equity_issuers=frozenset({"private_company_a"})
     )
     bundle = model.sample(request)
 
-    levels = bundle.level_matrix(private_equity_series_id("private_company_a"), rollout_count=3, horizon_months=8)
+    levels = bundle.private_equity.issuer_float_matrix(
+        "private_company_a", "mark_usd_per_unit", rollout_count=3, horizon_months=8
+    )
     assert levels.shape == (3, 9)
     np.testing.assert_allclose(levels[:, 0], np.array([687.69, 687.69, 687.69]))
     assert (levels > 0).all()
-    events = bundle.event_matrix(private_equity_sale_event_id("private_company_a"), rollout_count=3, horizon_months=8)
+    events = bundle.private_equity.issuer_bool_matrix(
+        "private_company_a", "sale_opportunity_active", rollout_count=3, horizon_months=8
+    )
     assert events.dtype.kind == "b"
     assert events.shape == (3, 9)
 
@@ -181,13 +182,14 @@ def test_runtime_private_marks_forward_fill_between_tenders(broad_scale_prior: T
         )
     )
 
-    levels = model.sample(
+    sampled = model.sample(
         ExogenousSamplingRequest(
-            horizon_months=4,
-            rollout_seeds=(1,),
-            required_level_series=frozenset({private_equity_series_id("private_company_a")}),
+            horizon_months=4, rollout_seeds=(1,), required_private_equity_issuers=frozenset({"private_company_a"})
         )
-    ).level_matrix(private_equity_series_id("private_company_a"), rollout_count=1, horizon_months=4)
+    )
+    levels = sampled.private_equity.issuer_float_matrix(
+        "private_company_a", "mark_usd_per_unit", rollout_count=1, horizon_months=4
+    )
 
     np.testing.assert_allclose(levels, np.full((1, 5), 100.0))
 
@@ -209,14 +211,15 @@ def test_runtime_tender_updates_observed_private_mark(broad_scale_prior: Trained
 
     sampled = model.sample(
         ExogenousSamplingRequest(
-            horizon_months=4,
-            rollout_seeds=(1,),
-            required_level_series=frozenset({private_equity_series_id("private_company_a")}),
-            required_event_series=frozenset({private_equity_sale_event_id("private_company_a")}),
+            horizon_months=4, rollout_seeds=(1,), required_private_equity_issuers=frozenset({"private_company_a"})
         )
     )
-    levels = sampled.level_matrix(private_equity_series_id("private_company_a"), rollout_count=1, horizon_months=4)
-    events = sampled.event_matrix(private_equity_sale_event_id("private_company_a"), rollout_count=1, horizon_months=4)
+    levels = sampled.private_equity.issuer_float_matrix(
+        "private_company_a", "mark_usd_per_unit", rollout_count=1, horizon_months=4
+    )
+    events = sampled.private_equity.issuer_bool_matrix(
+        "private_company_a", "sale_opportunity_active", rollout_count=1, horizon_months=4
+    )
 
     assert events[0, 2]
     assert events[0, 4]
@@ -364,16 +367,14 @@ def test_runtime_scale_prior_penalizes_paths_above_soft_cap() -> None:
         )
     )
     request = ExogenousSamplingRequest(
-        horizon_months=12,
-        rollout_seeds=(1,),
-        required_level_series=frozenset({private_equity_series_id("private_company_a")}),
+        horizon_months=12, rollout_seeds=(1,), required_private_equity_issuers=frozenset({"private_company_a"})
     )
 
-    loose_levels = loose.sample(request).level_matrix(
-        private_equity_series_id("private_company_a"), rollout_count=1, horizon_months=12
+    loose_levels = loose.sample(request).private_equity.issuer_float_matrix(
+        "private_company_a", "mark_usd_per_unit", rollout_count=1, horizon_months=12
     )
-    tight_levels = tight.sample(request).level_matrix(
-        private_equity_series_id("private_company_a"), rollout_count=1, horizon_months=12
+    tight_levels = tight.sample(request).private_equity.issuer_float_matrix(
+        "private_company_a", "mark_usd_per_unit", rollout_count=1, horizon_months=12
     )
 
     assert tight_levels[0, -1] < loose_levels[0, -1]

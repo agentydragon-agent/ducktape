@@ -9,27 +9,22 @@ import pytest_bazel
 from augur.frames import concat_frames
 from augur.model.composite_exogenous import CompositeExogenousModel
 from augur.model.exogenous import (
-    PRIVATE_EQUITY_PROTOCOL_SCHEMA,
-    SERIES_EVENTS_SCHEMA,
     SERIES_LEVELS_SCHEMA,
     ExogenousSamplingRequest,
     SampledExogenousBundle,
-    series_events_frame,
     series_levels_frame,
 )
-from augur.model.private_equity_protocol import neutral_private_equity_protocol_frame
-from augur.model.series import (
-    INFLATION_SERIES_ID,
-    private_equity_eligible_fraction_series_id,
-    private_equity_sale_event_id,
-    private_equity_series_id,
-)
+from augur.model.private_equity_bundle import PrivateEquityBundle
+from augur.model.private_equity_protocol import neutral_private_equity_issuer_bundle
+from augur.model.series import INFLATION_SERIES_ID
 
 
 @dataclass(frozen=True)
 class _StaticSampler:
-    levels: dict[str, float]
-    events: dict[str, int]
+    """Test fixture: emit a constant level frame + (optionally) one PE issuer bundle."""
+
+    levels: dict[str, float] = field(default_factory=dict)
+    pe_issuer_marks: dict[str, float] = field(default_factory=dict)
     sample_requests: list[ExogenousSamplingRequest] = field(default_factory=list)
 
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
@@ -43,109 +38,55 @@ class _StaticSampler:
             )
             for series_id, value in self.levels.items()
         ]
-        event_frames = []
-        for event_id, month in self.events.items():
-            active = np.zeros((request.rollout_count, request.horizon_months + 1), dtype=np.bool_)
-            if month <= request.horizon_months:
-                active[:, month] = True
-            event_frames.append(
-                series_events_frame(
-                    event_id, active, rollout_count=request.rollout_count, horizon_months=request.horizon_months
-                )
+        pe_parts = [
+            neutral_private_equity_issuer_bundle(
+                issuer_id,
+                observed_mark=np.full((request.rollout_count, request.horizon_months + 1), mark, dtype=np.float64),
+                tender_events=np.zeros((request.rollout_count, request.horizon_months + 1), dtype=np.bool_),
+                rollout_count=request.rollout_count,
+                horizon_months=request.horizon_months,
             )
+            for issuer_id, mark in self.pe_issuer_marks.items()
+        ]
         return SampledExogenousBundle(
             levels=concat_frames(level_frames, SERIES_LEVELS_SCHEMA),
-            events=concat_frames(event_frames, SERIES_EVENTS_SCHEMA),
-            private_equity_protocol=concat_frames(
-                [
-                    neutral_private_equity_protocol_frame(
-                        issuer,
-                        tender_events=np.zeros((request.rollout_count, request.horizon_months + 1), dtype=np.bool_),
-                        rollout_count=request.rollout_count,
-                        horizon_months=request.horizon_months,
-                    )
-                    for issuer in sorted(request.required_private_equity_protocol_issuers)
-                ],
-                PRIVATE_EQUITY_PROTOCOL_SCHEMA,
-            ),
+            private_equity=PrivateEquityBundle.combine(pe_parts) if pe_parts else PrivateEquityBundle.empty(),
         )
 
 
 def test_composite_merges_macro_and_private_equity_series() -> None:
-    macro = _StaticSampler(levels={INFLATION_SERIES_ID: 1.0}, events={})
-    private_equity = _StaticSampler(
-        levels={
-            private_equity_series_id("private_company_a"): 687.69,
-            private_equity_eligible_fraction_series_id("private_company_a"): 0.5,
-        },
-        events={private_equity_sale_event_id("private_company_a"): 2},
-    )
+    macro = _StaticSampler(levels={INFLATION_SERIES_ID: 1.0})
+    private_equity = _StaticSampler(pe_issuer_marks={"private_company_a": 687.69})
     model = CompositeExogenousModel(macro=macro, private_equity=private_equity)
     request = ExogenousSamplingRequest(
         horizon_months=3,
         rollout_seeds=(7,),
-        required_level_series=frozenset(
-            {
-                INFLATION_SERIES_ID,
-                private_equity_series_id("private_company_a"),
-                private_equity_eligible_fraction_series_id("private_company_a"),
-            }
-        ),
-        required_event_series=frozenset({private_equity_sale_event_id("private_company_a")}),
-        required_private_equity_protocol_issuers=frozenset({"private_company_a"}),
+        required_level_series=frozenset({INFLATION_SERIES_ID}),
+        required_private_equity_issuers=frozenset({"private_company_a"}),
     )
 
     bundle = model.sample(request)
 
     assert bundle.level_matrix(INFLATION_SERIES_ID, rollout_count=1, horizon_months=3)[0, 0] == 1.0
-    assert (
-        bundle.level_matrix(private_equity_series_id("private_company_a"), rollout_count=1, horizon_months=3)[0, 0]
-        == 687.69
-    )
-    assert bundle.event_matrix(private_equity_sale_event_id("private_company_a"), rollout_count=1, horizon_months=3)[
-        0, 2
-    ]
+    assert bundle.private_equity.issuer_float_matrix(
+        "private_company_a", "mark_usd_per_unit", rollout_count=1, horizon_months=3
+    )[0, 0] == pytest.approx(687.69)
+    # PE flows only to the PE sub-provider; the macro sub-provider sees an empty PE-issuer set.
     assert macro.sample_requests[0].required_level_series == frozenset({INFLATION_SERIES_ID})
-    assert private_equity.sample_requests[0].required_level_series == frozenset(
-        {private_equity_series_id("private_company_a"), private_equity_eligible_fraction_series_id("private_company_a")}
-    )
-    assert macro.sample_requests[0].required_private_equity_protocol_issuers == frozenset()
-    assert private_equity.sample_requests[0].required_private_equity_protocol_issuers == frozenset(
-        {"private_company_a"}
-    )
+    assert macro.sample_requests[0].required_private_equity_issuers == frozenset()
+    assert private_equity.sample_requests[0].required_private_equity_issuers == frozenset({"private_company_a"})
 
 
-def test_composite_rejects_duplicate_series_outputs() -> None:
+def test_composite_rejects_missing_required_private_equity_issuer() -> None:
     model = CompositeExogenousModel(
-        macro=_StaticSampler(levels={private_equity_series_id("private_company_a"): 1.0}, events={}),
-        private_equity=_StaticSampler(levels={private_equity_series_id("private_company_a"): 2.0}, events={}),
+        macro=_StaticSampler(levels={INFLATION_SERIES_ID: 1.0}),
+        private_equity=_StaticSampler(pe_issuer_marks={"private_company_a": 687.69}),
     )
 
-    with pytest.raises(ValueError, match="duplicate level series"):
+    with pytest.raises(ValueError, match=r"missing required private-equity issuer\(s\): \['different_issuer'\]"):
         model.sample(
             ExogenousSamplingRequest(
-                horizon_months=1,
-                rollout_seeds=(1,),
-                required_level_series=frozenset({private_equity_series_id("private_company_a")}),
-            )
-        )
-
-
-def test_composite_rejects_missing_required_private_equity_series() -> None:
-    model = CompositeExogenousModel(
-        macro=_StaticSampler(levels={INFLATION_SERIES_ID: 1.0}, events={}),
-        private_equity=_StaticSampler(
-            levels={private_equity_series_id("private_company_a"): 687.69},
-            events={private_equity_sale_event_id("private_company_a"): 1},
-        ),
-    )
-
-    with pytest.raises(ValueError, match="missing required level series"):
-        model.sample(
-            ExogenousSamplingRequest(
-                horizon_months=1,
-                rollout_seeds=(1,),
-                required_level_series=frozenset({private_equity_series_id("different_issuer")}),
+                horizon_months=1, rollout_seeds=(1,), required_private_equity_issuers=frozenset({"different_issuer"})
             )
         )
 

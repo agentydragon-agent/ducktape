@@ -8,35 +8,24 @@ from more_itertools import one
 
 from augur.api.catalog import build_bootstrap_payload
 from augur.api.config import Config, load_augur_config
-from augur.model.exogenous import (
-    SERIES_EVENTS_SCHEMA,
-    SERIES_LEVELS_SCHEMA,
-    ExogenousSamplingRequest,
-    SampledExogenousBundle,
-    Sampler,
-)
+from augur.model.exogenous import SERIES_LEVELS_SCHEMA, ExogenousSamplingRequest, SampledExogenousBundle, Sampler
 from augur.model.exogenous_provider_config import CompositeExogenousProviderConfig
 from augur.model.independent_exogenous import IndependentExogenousProviderConfig
-from augur.model.series import (
-    INFLATION_SERIES_ID,
-    SP500_SERIES_ID,
-    PrivateEquityEventKindCode,
-    PrivateEquityRegimeCode,
-    private_equity_event_kind_code_series_id,
-    private_equity_forced_recovery_cashout_usd_series_id,
-    private_equity_forced_sale_fraction_series_id,
-    private_equity_level_series_ids,
-    private_equity_liquidity_blocked_series_id,
-    private_equity_regime_code_series_id,
-    private_equity_sale_event_id,
-    private_equity_series_id,
+from augur.model.private_equity_bundle import (
+    PrivateEquityBoolChannel,
+    PrivateEquityFloatChannel,
+    PrivateEquityIntChannel,
 )
+from augur.model.series import INFLATION_SERIES_ID, SP500_SERIES_ID, PrivateEquityEventKindCode, PrivateEquityRegimeCode
 from augur.product import decode, service
 from augur.product.scenarios import build_scenario, resolve_primary_agent_id, sim_locations_from_config
 from augur.product.service import ProductService
 from augur.product.testing import (
     ConstantFrameExogenousModel,
     event_matrix_with_month_override,
+    event_matrix_with_step,
+    int_matrix_with_month_override,
+    int_matrix_with_step,
     level_matrix_with_month_override,
     level_matrix_with_step,
 )
@@ -89,7 +78,7 @@ class MissingRequiredExogenousModel:
 
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
         self.sample_requests.append(request)
-        return SampledExogenousBundle(levels=SERIES_LEVELS_SCHEMA.to_frame(), events=SERIES_EVENTS_SCHEMA.to_frame())
+        return SampledExogenousBundle(levels=SERIES_LEVELS_SCHEMA.to_frame())
 
 
 def _augur_config() -> Config:
@@ -105,22 +94,22 @@ def counting_exogenous_model() -> CountingExogenousModel:
 def forced_private_equity_event_model() -> ConstantFrameExogenousModel:
     issuer_id = "private_holding_a"
     return ConstantFrameExogenousModel(
-        level_overrides={
-            private_equity_event_kind_code_series_id(issuer_id): level_matrix_with_month_override(
+        private_equity_int_overrides={
+            (issuer_id, PrivateEquityIntChannel.EVENT_KIND_CODE): int_matrix_with_month_override(
                 default=int(PrivateEquityEventKindCode.NONE),
                 override=int(PrivateEquityEventKindCode.ACQUISITION_CASHOUT),
                 month=1,
             ),
-            private_equity_regime_code_series_id(issuer_id): level_matrix_with_month_override(
+            (issuer_id, PrivateEquityIntChannel.REGIME_CODE): int_matrix_with_month_override(
                 default=int(PrivateEquityRegimeCode.PRIVATE_OPERATING),
                 override=int(PrivateEquityRegimeCode.ACQUIRED),
                 month=1,
             ),
-            private_equity_forced_sale_fraction_series_id(issuer_id): level_matrix_with_month_override(
+        },
+        private_equity_float_overrides={
+            (issuer_id, PrivateEquityFloatChannel.FORCED_SALE_FRACTION): level_matrix_with_month_override(
                 default=0.0, override=0.25, month=1
-            ),
-            private_equity_liquidity_blocked_series_id(issuer_id): 0.0,
-            private_equity_forced_recovery_cashout_usd_series_id(issuer_id): 0.0,
+            )
         },
         metadata={"exogenous_model_id": "forced_pe_fixture"},
     )
@@ -224,9 +213,9 @@ def test_metric_fan_and_rollout_detail_share_cached_sim_rollouts(
 
     assert [request.rollout_seeds for request in counting_exogenous_model.sample_requests] == [(7, 8)]
     assert counting_exogenous_model.sample_requests[0].required_level_series == frozenset(
-        {SP500_SERIES_ID, "crypto:btc", "crypto:eth", *private_equity_level_series_ids("private_holding_a")}
+        {SP500_SERIES_ID, "crypto:btc", "crypto:eth"}
     )
-    assert counting_exogenous_model.sample_requests[0].required_private_equity_protocol_issuers == frozenset(
+    assert counting_exogenous_model.sample_requests[0].required_private_equity_issuers == frozenset(
         {"private_holding_a"}
     )
     assert fan.exogenous_model_id == "composite_exogenous_model"
@@ -440,23 +429,27 @@ def test_product_rollout_collapse_revalues_unsold_private_equity() -> None:
     issuer_id = "private_holding_a"
     product = _service(
         ConstantFrameExogenousModel(
-            level_overrides={
-                private_equity_series_id(issuer_id): level_matrix_with_step(default=25.0, override=0.5, month=1),
-                private_equity_event_kind_code_series_id(issuer_id): level_matrix_with_month_override(
+            private_equity_float_overrides={
+                (issuer_id, PrivateEquityFloatChannel.MARK_USD_PER_UNIT): level_matrix_with_step(
+                    default=25.0, override=0.5, month=1
+                )
+            },
+            private_equity_int_overrides={
+                (issuer_id, PrivateEquityIntChannel.EVENT_KIND_CODE): int_matrix_with_month_override(
                     default=int(PrivateEquityEventKindCode.NONE),
                     override=int(PrivateEquityEventKindCode.COLLAPSE),
                     month=1,
                 ),
-                private_equity_regime_code_series_id(issuer_id): level_matrix_with_step(
+                (issuer_id, PrivateEquityIntChannel.REGIME_CODE): int_matrix_with_step(
                     default=int(PrivateEquityRegimeCode.PRIVATE_OPERATING),
                     override=int(PrivateEquityRegimeCode.COLLAPSED),
                     month=1,
                 ),
-                private_equity_liquidity_blocked_series_id(issuer_id): level_matrix_with_step(
-                    default=0.0, override=1.0, month=1
-                ),
-                private_equity_forced_sale_fraction_series_id(issuer_id): 0.0,
-                private_equity_forced_recovery_cashout_usd_series_id(issuer_id): 0.0,
+            },
+            private_equity_bool_overrides={
+                (issuer_id, PrivateEquityBoolChannel.LIQUIDITY_BLOCKED): event_matrix_with_step(
+                    default=False, override=True, month=1
+                )
             },
             metadata={"exogenous_model_id": "collapsed_pe_fixture"},
         )
@@ -495,13 +488,8 @@ def test_product_rollout_includes_private_equity_opportunity_trace() -> None:
     issuer_id = "private_holding_a"
     product = _service(
         ConstantFrameExogenousModel(
-            level_overrides={
-                private_equity_forced_sale_fraction_series_id(issuer_id): 0.0,
-                private_equity_forced_recovery_cashout_usd_series_id(issuer_id): 0.0,
-                private_equity_liquidity_blocked_series_id(issuer_id): 0.0,
-            },
-            event_overrides={
-                private_equity_sale_event_id(issuer_id): event_matrix_with_month_override(
+            private_equity_bool_overrides={
+                (issuer_id, PrivateEquityBoolChannel.SALE_OPPORTUNITY_ACTIVE): event_matrix_with_month_override(
                     default=False, override=True, month=1
                 )
             },

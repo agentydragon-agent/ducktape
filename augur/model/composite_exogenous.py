@@ -9,8 +9,6 @@ import polars as pl
 
 from augur.frames import concat_frames
 from augur.model.exogenous import (
-    PRIVATE_EQUITY_PROTOCOL_SCHEMA,
-    SERIES_EVENTS_SCHEMA,
     SERIES_LEVELS_SCHEMA,
     ExogenousSamplingRequest,
     SampledExogenousBundle,
@@ -18,11 +16,7 @@ from augur.model.exogenous import (
     validate_sample_satisfies_request,
 )
 from augur.model.private_equity_bundle import PrivateEquityBundle
-from augur.model.series import (
-    issuer_id_from_private_equity_mark_wire_id,
-    issuer_id_from_private_equity_sale_opportunity_wire_id,
-    try_parse_level_series_key,
-)
+from augur.model.series import issuer_id_from_private_equity_mark_wire_id, try_parse_level_series_key
 
 
 def _is_private_equity_level_wire_id(wire_id: str) -> bool:
@@ -43,10 +37,6 @@ def _is_private_equity_level_wire_id(wire_id: str) -> bool:
     return wire_id.startswith("private_equity_")
 
 
-def _is_private_equity_event_wire_id(wire_id: str) -> bool:
-    return issuer_id_from_private_equity_sale_opportunity_wire_id(wire_id) is not None
-
-
 @dataclass(frozen=True)
 class CompositeExogenousModel:
     """Route non-PE series to a macro provider and PE series/events to a PE provider."""
@@ -64,10 +54,7 @@ class CompositeExogenousModel:
                 for series_id in request.required_level_series
                 if not _is_private_equity_level_wire_id(series_id)
             ),
-            required_event_series=frozenset(
-                event_id for event_id in request.required_event_series if not _is_private_equity_event_wire_id(event_id)
-            ),
-            required_private_equity_protocol_issuers=frozenset(),
+            required_private_equity_issuers=frozenset(),
         )
         pe_request = ExogenousSamplingRequest(
             horizon_months=request.horizon_months,
@@ -75,30 +62,15 @@ class CompositeExogenousModel:
             required_level_series=frozenset(
                 series_id for series_id in request.required_level_series if _is_private_equity_level_wire_id(series_id)
             ),
-            required_event_series=frozenset(
-                event_id for event_id in request.required_event_series if _is_private_equity_event_wire_id(event_id)
-            ),
-            required_private_equity_protocol_issuers=request.required_private_equity_protocol_issuers,
+            required_private_equity_issuers=request.required_private_equity_issuers,
         )
 
         macro_bundle = self.macro.sample(macro_request)
         pe_bundle = self.private_equity.sample(pe_request)
         _reject_duplicate_ids(macro_bundle.levels, pe_bundle.levels, id_column="series_id", label="level series")
-        _reject_duplicate_ids(macro_bundle.events, pe_bundle.events, id_column="event_id", label="event series")
-        _reject_duplicate_ids(
-            macro_bundle.private_equity_protocol,
-            pe_bundle.private_equity_protocol,
-            id_column="issuer_id",
-            label="private-equity protocol issuer",
-        )
         sampled = SampledExogenousBundle(
             levels=concat_frames([macro_bundle.levels, pe_bundle.levels], SERIES_LEVELS_SCHEMA),
             private_equity=PrivateEquityBundle.combine([macro_bundle.private_equity, pe_bundle.private_equity]),
-            events=concat_frames([macro_bundle.events, pe_bundle.events], SERIES_EVENTS_SCHEMA),
-            private_equity_protocol=concat_frames(
-                [macro_bundle.private_equity_protocol, pe_bundle.private_equity_protocol],
-                PRIVATE_EQUITY_PROTOCOL_SCHEMA,
-            ),
             metadata={
                 "exogenous_model_id": self.label,
                 "private_equity_prices_usd": _private_equity_prices_usd(pe_bundle.metadata),

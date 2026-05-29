@@ -19,15 +19,13 @@ from dataclasses import dataclass, field
 import polars as pl
 
 from augur.frames import FrameSpec
-from augur.model.exogenous import (
-    SERIES_EVENTS_SCHEMA,
-    SERIES_VALUES_SCHEMA,
-    SampledExogenousBundle,
-    series_values_from_bundle,
-)
+from augur.model.exogenous import SERIES_VALUES_SCHEMA, SampledExogenousBundle, series_values_from_bundle
 from augur.model.private_equity_bundle import PrivateEquityBundle
 from augur.model.series_model import SeriesModelBundle, materialize_series_values
 
+SERIES_EVENTS_SCHEMA = pl.Schema(
+    {"rollout_index": pl.Int64(), "month_index": pl.Int64(), "event_id": pl.Utf8(), "active": pl.Boolean()}
+)
 EXTERNAL_SERIES_VALUES_FRAME = FrameSpec("series_values", SERIES_VALUES_SCHEMA)
 EXTERNAL_SERIES_EVENTS_FRAME = FrameSpec("series_events", SERIES_EVENTS_SCHEMA)
 
@@ -82,13 +80,12 @@ def materialize_sampled_exogenous(bundle: SampledExogenousBundle) -> ExternalSer
 
     The typed `PrivateEquityBundle` is the canonical source of PE protocol
     state — the engine reads PE channels directly from `pe_channels` arrays
-    compiled out of the bundle (no PE rows in `series_values`, no PE event
-    rows in `series_events`). Non-PE rows on `bundle.levels` and PE-unrelated
-    rows on `bundle.events` are passed through unchanged.
+    compiled out of the bundle. Non-PE rows on `bundle.levels` are passed
+    through unchanged.
     """
 
     return ExternalSeriesContext(
         series_values=EXTERNAL_SERIES_VALUES_FRAME.normalize(series_values_from_bundle(bundle)),
-        series_events=EXTERNAL_SERIES_EVENTS_FRAME.normalize(bundle.events),
+        series_events=EXTERNAL_SERIES_EVENTS_FRAME.empty(),
         private_equity=bundle.private_equity,
     )

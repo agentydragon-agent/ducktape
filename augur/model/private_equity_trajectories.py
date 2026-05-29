@@ -38,31 +38,15 @@ from pathlib import Path
 import numpy as np
 import polars as pl
 
-from augur.frames import concat_frames
 from augur.model.exogenous import (
-    PRIVATE_EQUITY_PROTOCOL_SCHEMA,
-    SERIES_EVENTS_SCHEMA,
-    SERIES_LEVELS_SCHEMA,
     ExogenousSamplingRequest,
     SampledExogenousBundle,
     Sampler,
-    series_events_frame,
-    series_levels_frame,
     validate_sample_satisfies_request,
 )
 from augur.model.private_equity_bundle import PrivateEquityBundle
-from augur.model.private_equity_protocol import (
-    neutral_private_equity_auxiliary_level_frames,
-    neutral_private_equity_issuer_bundle,
-    neutral_private_equity_protocol_frame,
-)
-from augur.model.series import (
-    issuer_id_from_private_equity_mark_wire_id,
-    issuer_id_from_private_equity_sale_opportunity_wire_id,
-    private_equity_sale_event_id,
-    private_equity_series_id,
-    try_parse_level_series_key,
-)
+from augur.model.private_equity_protocol import neutral_private_equity_issuer_bundle
+from augur.model.series import issuer_id_from_private_equity_mark_wire_id, try_parse_level_series_key
 
 
 def _is_private_equity_level_wire_id(wire_id: str) -> bool:
@@ -78,10 +62,6 @@ def _is_private_equity_level_wire_id(wire_id: str) -> bool:
     if issuer_id_from_private_equity_mark_wire_id(wire_id) is not None:
         return True
     return wire_id.startswith("private_equity_")
-
-
-def _is_private_equity_event_wire_id(wire_id: str) -> bool:
-    return issuer_id_from_private_equity_sale_opportunity_wire_id(wire_id) is not None
 
 
 @dataclass(frozen=True)
@@ -171,9 +151,6 @@ class PreSampledPrivateEquitySampler:
                 for series_id in request.required_level_series
                 if not _is_private_equity_level_wire_id(series_id)
             ),
-            required_event_series=frozenset(
-                event_id for event_id in request.required_event_series if not _is_private_equity_event_wire_id(event_id)
-            ),
         )
         bundle = self.underlying.sample(underlying_request)
         if not self.trajectories_by_issuer:
@@ -183,9 +160,6 @@ class PreSampledPrivateEquitySampler:
         rollout_count = request.rollout_count
         horizon_months = request.horizon_months
 
-        pe_levels_frames: list[pl.DataFrame] = []
-        pe_events_frames: list[pl.DataFrame] = []
-        pe_protocol_frames: list[pl.DataFrame] = []
         pe_bundle_parts: list[PrivateEquityBundle] = []
         for issuer, trajectory_set in self.trajectories_by_issuer.items():
             levels = _materialize_pe_levels(
@@ -193,29 +167,6 @@ class PreSampledPrivateEquitySampler:
             )
             events = _materialize_pe_events(
                 trajectory_set, rollout_seeds=request.rollout_seeds, horizon_months=horizon_months
-            )
-            pe_levels_frames.append(
-                series_levels_frame(
-                    private_equity_series_id(issuer), levels, rollout_count=rollout_count, horizon_months=horizon_months
-                )
-            )
-            pe_levels_frames.extend(
-                neutral_private_equity_auxiliary_level_frames(
-                    issuer, tender_events=events, rollout_count=rollout_count, horizon_months=horizon_months
-                )
-            )
-            pe_events_frames.append(
-                series_events_frame(
-                    private_equity_sale_event_id(issuer),
-                    events,
-                    rollout_count=rollout_count,
-                    horizon_months=horizon_months,
-                )
-            )
-            pe_protocol_frames.append(
-                neutral_private_equity_protocol_frame(
-                    issuer, tender_events=events, rollout_count=rollout_count, horizon_months=horizon_months
-                )
             )
             pe_bundle_parts.append(
                 neutral_private_equity_issuer_bundle(
@@ -227,16 +178,9 @@ class PreSampledPrivateEquitySampler:
                 )
             )
 
-        merged_levels = concat_frames([_drop_pe_levels(bundle.levels), *pe_levels_frames], SERIES_LEVELS_SCHEMA)
-        merged_events = concat_frames([_drop_pe_events(bundle.events), *pe_events_frames], SERIES_EVENTS_SCHEMA)
-        merged_protocol = concat_frames(
-            [_drop_pe_protocol(bundle.private_equity_protocol), *pe_protocol_frames], PRIVATE_EQUITY_PROTOCOL_SCHEMA
-        )
         sampled = SampledExogenousBundle(
-            levels=merged_levels,
+            levels=_drop_pe_levels(bundle.levels),
             private_equity=PrivateEquityBundle.combine(pe_bundle_parts),
-            events=merged_events,
-            private_equity_protocol=merged_protocol,
             metadata={**bundle.metadata, "private_equity_issuers": tuple(sorted(self.trajectories_by_issuer))},
         )
         validate_sample_satisfies_request(request, sampled)
@@ -307,15 +251,3 @@ def _drop_pe_levels(levels: pl.DataFrame) -> pl.DataFrame:
     if levels.is_empty():
         return levels
     return levels.filter(~pl.col("series_id").str.starts_with("private_equity"))
-
-
-def _drop_pe_events(events: pl.DataFrame) -> pl.DataFrame:
-    if events.is_empty():
-        return events
-    return events.filter(~pl.col("event_id").str.starts_with("private_equity_sale_opportunity"))
-
-
-def _drop_pe_protocol(protocol: pl.DataFrame) -> pl.DataFrame:
-    if protocol.is_empty():
-        return protocol
-    return PRIVATE_EQUITY_PROTOCOL_SCHEMA.to_frame()

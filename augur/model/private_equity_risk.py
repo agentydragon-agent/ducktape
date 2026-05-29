@@ -10,26 +10,15 @@ import numpy as np
 import numpy.typing as npt
 from pydantic import Field, model_validator
 
-from augur.frames import concat_frames
 from augur.model.exogenous import (
-    PRIVATE_EQUITY_PROTOCOL_SCHEMA,
-    SERIES_EVENTS_SCHEMA,
     SERIES_LEVELS_SCHEMA,
     ExogenousSamplingRequest,
     SampledExogenousBundle,
-    series_events_frame,
-    series_levels_frame,
     validate_sample_satisfies_request,
 )
 from augur.model.private_equity_bundle import PrivateEquityBundle
-from augur.model.private_equity_protocol import private_equity_auxiliary_level_frames, private_equity_protocol_frame
 from augur.model.schemas import FrozenModel
-from augur.model.series import (
-    PrivateEquityEventKindCode,
-    PrivateEquityRegimeCode,
-    private_equity_sale_event_id,
-    private_equity_series_id,
-)
+from augur.model.series import PrivateEquityEventKindCode, PrivateEquityRegimeCode
 from augur.model.series_model import derive_stream_rollout_seeds
 
 BoolMatrix = npt.NDArray[np.bool_]
@@ -101,9 +90,6 @@ class PrivateEquityRiskModel:
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
         rollout_count = request.rollout_count
         horizon_months = request.horizon_months
-        level_blocks = []
-        event_blocks = []
-        protocol_blocks = []
         pe_bundle_parts: list[PrivateEquityBundle] = []
         prices: dict[str, float] = {}
         for issuer_id, issuer in sorted(self.issuers.items()):
@@ -125,52 +111,10 @@ class PrivateEquityRiskModel:
                     horizon_months=horizon_months,
                 )
             )
-            level_blocks.append(
-                series_levels_frame(
-                    private_equity_series_id(issuer_id),
-                    paths.mark,
-                    rollout_count=rollout_count,
-                    horizon_months=horizon_months,
-                )
-            )
-            level_blocks.extend(
-                private_equity_auxiliary_level_frames(
-                    issuer_id,
-                    tender_events=paths.tender_events,
-                    rollout_count=rollout_count,
-                    horizon_months=horizon_months,
-                    event_kind_code=paths.event_kind_code,
-                    regime_code=paths.regime_code,
-                    sale_capacity_fraction=paths.sale_capacity_fraction,
-                    eligible_fraction=paths.eligible_fraction,
-                    forced_sale_fraction=paths.forced_sale_fraction,
-                    liquidity_blocked=paths.liquidity_blocked,
-                    forced_recovery_cashout_usd=paths.forced_recovery_cashout_usd,
-                )
-            )
-            event_blocks.append(
-                series_events_frame(
-                    private_equity_sale_event_id(issuer_id),
-                    paths.tender_events,
-                    rollout_count=rollout_count,
-                    horizon_months=horizon_months,
-                )
-            )
-            protocol_blocks.append(
-                private_equity_protocol_frame(
-                    issuer_id,
-                    event_kind_code=paths.event_kind_code,
-                    regime_code=paths.regime_code,
-                    rollout_count=rollout_count,
-                    horizon_months=horizon_months,
-                )
-            )
 
         sampled = SampledExogenousBundle(
-            levels=concat_frames(level_blocks, SERIES_LEVELS_SCHEMA),
+            levels=SERIES_LEVELS_SCHEMA.to_frame(),
             private_equity=PrivateEquityBundle.combine(pe_bundle_parts),
-            events=concat_frames(event_blocks, SERIES_EVENTS_SCHEMA),
-            private_equity_protocol=concat_frames(protocol_blocks, PRIVATE_EQUITY_PROTOCOL_SCHEMA),
             metadata={
                 "exogenous_model_id": self.label,
                 "private_equity_issuers": tuple(sorted(self.issuers)),

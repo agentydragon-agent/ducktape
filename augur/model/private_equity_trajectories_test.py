@@ -12,37 +12,32 @@ import pytest
 import pytest_bazel
 
 from augur.model.exogenous import (
-    SERIES_EVENTS_SCHEMA,
     SERIES_LEVELS_SCHEMA,
     ExogenousSamplingRequest,
     SampledExogenousBundle,
     Sampler,
     series_levels_frame,
 )
+from augur.model.private_equity_bundle import PrivateEquityBundle
 from augur.model.private_equity_trajectories import (
     PreSampledPrivateEquitySampler,
     PrivateEquityTrajectorySet,
     TenderEvent,
     read_private_equity_trajectories_jsonl,
 )
-from augur.model.series import (
-    private_equity_event_kind_code_series_id,
-    private_equity_liquidity_blocked_series_id,
-    private_equity_sale_event_id,
-    private_equity_series_id,
-)
 
 
 @dataclass(frozen=True)
 class _MinimalSampler(Sampler):
-    """A trivial Sampler that emits whatever level/event frames it was constructed with —
-    no PE, no other series — so tests can isolate the overlay's behavior."""
+    """A trivial Sampler that emits whatever level frame it was constructed with —
+    no PE, no other channels — so tests can isolate the overlay's behavior."""
 
     levels: pl.DataFrame = field(default_factory=lambda: SERIES_LEVELS_SCHEMA.to_frame())
-    events: pl.DataFrame = field(default_factory=lambda: SERIES_EVENTS_SCHEMA.to_frame())
 
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
-        return SampledExogenousBundle(levels=self.levels, events=self.events, metadata={"underlying_id": "minimal"})
+        return SampledExogenousBundle(
+            levels=self.levels, private_equity=PrivateEquityBundle.empty(), metadata={"underlying_id": "minimal"}
+        )
 
 
 def _write_jsonl(path: Path, rows: list[dict[str, object]]) -> Path:
@@ -138,24 +133,22 @@ def test_sampler_overlay_emits_piecewise_constant_mark_and_event_pulse() -> None
     request = ExogenousSamplingRequest(horizon_months=10, rollout_seeds=(0,))
     bundle = sampler.sample(request)
 
-    level_series = private_equity_series_id("acme")
-    levels = bundle.level_matrix(level_series, rollout_count=1, horizon_months=10)
+    levels = bundle.private_equity.issuer_float_matrix("acme", "mark_usd_per_unit", rollout_count=1, horizon_months=10)
     np.testing.assert_array_equal(levels[0], np.array([50.0] * 5 + [120.0] * 6))
 
-    event_series = private_equity_sale_event_id("acme")
-    events = bundle.event_matrix(event_series, rollout_count=1, horizon_months=10)
+    events = bundle.private_equity.issuer_bool_matrix(
+        "acme", "sale_opportunity_active", rollout_count=1, horizon_months=10
+    )
     expected_events = np.zeros(11, dtype=np.bool_)
     expected_events[5] = True
     np.testing.assert_array_equal(events[0], expected_events)
 
-    event_kind = bundle.level_matrix(
-        private_equity_event_kind_code_series_id("acme"), rollout_count=1, horizon_months=10
+    event_kind = bundle.private_equity.issuer_int_matrix("acme", "event_kind_code", rollout_count=1, horizon_months=10)
+    np.testing.assert_array_equal(event_kind[0], np.array([0] * 5 + [1] + [0] * 5, dtype=np.int64))
+    liquidity_blocked = bundle.private_equity.issuer_bool_matrix(
+        "acme", "liquidity_blocked", rollout_count=1, horizon_months=10
     )
-    np.testing.assert_array_equal(event_kind[0], np.array([0.0] * 5 + [1.0] + [0.0] * 5))
-    liquidity_blocked = bundle.level_matrix(
-        private_equity_liquidity_blocked_series_id("acme"), rollout_count=1, horizon_months=10
-    )
-    np.testing.assert_array_equal(liquidity_blocked[0], np.zeros(11))
+    np.testing.assert_array_equal(liquidity_blocked[0], np.zeros(11, dtype=np.bool_))
 
 
 def test_sampler_overlay_cycles_trajectories_by_seed_modulo() -> None:
@@ -177,7 +170,9 @@ def test_sampler_overlay_cycles_trajectories_by_seed_modulo() -> None:
     request = ExogenousSamplingRequest(horizon_months=6, rollout_seeds=(0, 1, 2, 3))
     bundle = sampler.sample(request)
 
-    events = bundle.event_matrix(private_equity_sale_event_id("acme"), rollout_count=4, horizon_months=6)
+    events = bundle.private_equity.issuer_bool_matrix(
+        "acme", "sale_opportunity_active", rollout_count=4, horizon_months=6
+    )
     # seed 0 -> traj 0 -> tender at month 3
     assert events[0, 3]
     assert not events[0, 4]
@@ -202,12 +197,12 @@ def test_sampler_overlay_rejects_empty_trajectory_set() -> None:
 
 
 def test_sampler_overlay_replaces_pre_existing_pe_series_from_underlying() -> None:
-    """If the underlying provider also emits a `private_equity:*` level (e.g. VECM's
-    placeholder constant), the overlay must strip it so we don't end up with duplicate
-    rows for the same series. The PE artifact is the source of truth."""
+    """If the underlying provider also emits a `private_equity:*` level row (e.g. VECM's
+    placeholder constant), the overlay strips it so the PE mark comes solely from the
+    artifact's typed PE bundle."""
 
     placeholder_levels = series_levels_frame(
-        private_equity_series_id("acme"), np.full((1, 6), 999.0), rollout_count=1, horizon_months=5
+        "private_equity:acme", np.full((1, 6), 999.0), rollout_count=1, horizon_months=5
     )
     underlying = _MinimalSampler(levels=placeholder_levels)
     trajectory_set = PrivateEquityTrajectorySet(
@@ -218,11 +213,10 @@ def test_sampler_overlay_replaces_pre_existing_pe_series_from_underlying() -> No
     sampler = PreSampledPrivateEquitySampler(underlying=underlying, trajectories_by_issuer={"acme": trajectory_set})
     bundle = sampler.sample(ExogenousSamplingRequest(horizon_months=5, rollout_seeds=(0,)))
 
-    # Exactly one row per (rollout, month) for the acme PE series — the underlying's 999.0
-    # placeholder must be filtered out.
-    acme_rows = bundle.levels.filter(pl.col("series_id") == private_equity_series_id("acme"))
-    assert len(acme_rows) == 6  # rollout=0 across months 0..5
-    levels = bundle.level_matrix(private_equity_series_id("acme"), rollout_count=1, horizon_months=5)
+    # The placeholder PE row from the underlying provider is dropped from `levels`.
+    assert bundle.levels.filter(pl.col("series_id") == "private_equity:acme").is_empty()
+    # The artifact-driven PE mark lives in the typed bundle.
+    levels = bundle.private_equity.issuer_float_matrix("acme", "mark_usd_per_unit", rollout_count=1, horizon_months=5)
     np.testing.assert_array_equal(levels[0], np.array([100.0, 100.0, 150.0, 150.0, 150.0, 150.0]))
 
 

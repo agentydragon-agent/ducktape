@@ -17,12 +17,10 @@ from pydantic import BaseModel, Field
 from augur.frames import concat_frames
 from augur.model.deterministic import Constant, Deterministic
 from augur.model.exogenous import (
-    SERIES_EVENTS_SCHEMA,
     SERIES_LEVELS_SCHEMA,
     ExogenousSamplingRequest,
     SampledExogenousBundle,
     Sampler,
-    series_events_frame,
     series_levels_frame,
     series_values_from_bundle,
 )
@@ -34,17 +32,10 @@ ScalarEventSpec = Annotated[PoissonEvents, Field(discriminator="kind")]
 
 
 class IndependentSeriesModels(BaseModel):
-    """Joint model composed from independent per-series scalar models.
-
-    `series` carries valued level series (asset prices, CPI indices, rent /
-    home value indices). `events` carries boolean event series (e.g.
-    private-equity sale windows). Both are sampled independently per id with
-    a stream-id-derived seed.
-    """
+    """Joint model composed from independent per-series scalar level models."""
 
     kind: Literal["independent"] = "independent"
     series: dict[str, ScalarSeriesSpec] = Field(default_factory=dict)
-    events: dict[str, ScalarEventSpec] = Field(default_factory=dict)
 
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
         level_blocks = [
@@ -59,22 +50,7 @@ class IndependentSeriesModels(BaseModel):
             )
             for series_id, model in self.series.items()
         ]
-        event_blocks = [
-            series_events_frame(
-                event_id,
-                model.sample_events(
-                    rollout_seeds=derive_stream_rollout_seeds(request.rollout_seeds, stream_id=event_id),
-                    horizon_months=request.horizon_months,
-                ),
-                rollout_count=request.rollout_count,
-                horizon_months=request.horizon_months,
-            )
-            for event_id, model in self.events.items()
-        ]
-        return SampledExogenousBundle(
-            levels=concat_frames(level_blocks, SERIES_LEVELS_SCHEMA),
-            events=concat_frames(event_blocks, SERIES_EVENTS_SCHEMA),
-        )
+        return SampledExogenousBundle(levels=concat_frames(level_blocks, SERIES_LEVELS_SCHEMA))
 
 
 SeriesModelSpec = IndependentSeriesModels
@@ -95,15 +71,11 @@ class SeriesModelBundle(BaseModel):
         horizon_months: int,
         rollout_seeds: tuple[int, ...],
         required_level_series: frozenset[str] = frozenset(),
-        required_event_series: frozenset[str] = frozenset(),
     ) -> SampledExogenousBundle:
         model: Sampler = self.model
         return model.sample(
             ExogenousSamplingRequest(
-                horizon_months=horizon_months,
-                rollout_seeds=rollout_seeds,
-                required_level_series=required_level_series,
-                required_event_series=required_event_series,
+                horizon_months=horizon_months, rollout_seeds=rollout_seeds, required_level_series=required_level_series
             )
         )
 
