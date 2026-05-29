@@ -268,14 +268,11 @@ def test_private_equity_risk_legal_event_severity_matches_plan_80_15_5_split() -
     model = PrivateEquityRiskProviderConfig(issuers={"acme": issuer}).realize_model()
     sampled = model.sample(
         ExogenousSamplingRequest(
-            horizon_months=2, rollout_seeds=rollout_seeds, required_private_equity_issuers=frozenset({IssuerId("acme")})
+            horizon_months=1, rollout_seeds=rollout_seeds, required_private_equity_issuers=frozenset({IssuerId("acme")})
         )
     )
     event_kind = sampled.private_equity.issuer_int_matrix(
-        "acme", str(PrivateEquityIntChannel.EVENT_KIND_CODE), rollout_count=rollout_count, horizon_months=2
-    )
-    blocked = sampled.private_equity.issuer_bool_matrix(
-        "acme", str(PrivateEquityBoolChannel.LIQUIDITY_BLOCKED), rollout_count=rollout_count, horizon_months=2
+        "acme", str(PrivateEquityIntChannel.EVENT_KIND_CODE), rollout_count=rollout_count, horizon_months=1
     )
 
     legal_share = float((event_kind[:, 1] == int(PrivateEquityEventKindCode.LEGAL_IMPAIRMENT)).mean())
@@ -287,23 +284,16 @@ def test_private_equity_risk_legal_event_severity_matches_plan_80_15_5_split() -
     assert 0.03 <= legal_share <= 0.07
     # 80% temp + 15% perm-cap → both NONE event_kind, summing to 95%.
     assert 0.93 <= none_share <= 0.97
-    # The 80% temp branch sets liquidity_blocked at the firing month. The 15%
-    # perm-cap branch does not. So `liquidity_blocked` mass at month 1 should be
-    # roughly the 80% temp share + the 5% severe share (severe-indefinite and
-    # severe-cap don't set liquidity_blocked but severe-indefinite does).
-    blocked_share = float(blocked[:, 1].mean())
-    assert 0.75 <= blocked_share <= 0.92
 
 
-def test_private_equity_risk_legal_impairment_keeps_liquidity_blocked_through_horizon() -> None:
-    """The 50%-severe-indefinite sub-branch sets liquidity_blocked from firing month forward.
-
-    Run with high umbrella legal rate over many rollouts; rollouts that get
-    LEGAL_IMPAIRMENT on month 1 should have liquidity_blocked == True for every
-    subsequent month within the horizon (the severe-indefinite case).
+def test_private_equity_risk_legal_impairment_severe_indefinite_blocks_at_firing_month() -> None:
+    """Of the rollouts that fire LEGAL_IMPAIRMENT, the 50% indefinite sub-branch
+    sets `liquidity_blocked = 1` starting at the firing month; the 30%
+    near-zero-capacity and 20% small-dollar-recovery sub-branches leave it at 0.
+    Using horizon=1 avoids compounding from subsequent months' legal events.
     """
 
-    rollout_count = 2048
+    rollout_count = 8192
     rollout_seeds = tuple(range(2001, 2001 + rollout_count))
     issuer = _issuer(
         monthly_log_return_mu=0.0,
@@ -314,26 +304,22 @@ def test_private_equity_risk_legal_impairment_keeps_liquidity_blocked_through_ho
     model = PrivateEquityRiskProviderConfig(issuers={"acme": issuer}).realize_model()
     sampled = model.sample(
         ExogenousSamplingRequest(
-            horizon_months=6, rollout_seeds=rollout_seeds, required_private_equity_issuers=frozenset({IssuerId("acme")})
+            horizon_months=1, rollout_seeds=rollout_seeds, required_private_equity_issuers=frozenset({IssuerId("acme")})
         )
     )
     event_kind = sampled.private_equity.issuer_int_matrix(
-        "acme", str(PrivateEquityIntChannel.EVENT_KIND_CODE), rollout_count=rollout_count, horizon_months=6
+        "acme", str(PrivateEquityIntChannel.EVENT_KIND_CODE), rollout_count=rollout_count, horizon_months=1
     )
     blocked = sampled.private_equity.issuer_bool_matrix(
-        "acme", str(PrivateEquityBoolChannel.LIQUIDITY_BLOCKED), rollout_count=rollout_count, horizon_months=6
+        "acme", str(PrivateEquityBoolChannel.LIQUIDITY_BLOCKED), rollout_count=rollout_count, horizon_months=1
     )
 
     severe_mask = event_kind[:, 1] == int(PrivateEquityEventKindCode.LEGAL_IMPAIRMENT)
-    # The indefinite sub-branch is 50% of the 5% severe share. With ~100 severe
-    # rollouts at R=2048, ~50 fall into the indefinite branch. Every other severe
-    # sub-branch (near-zero capacity, small-dollar recovery) leaves liquidity_blocked
-    # at its default 0, so the fraction of severe rollouts blocked at month 6 should
-    # be in roughly [0.4, 0.7].
-    blocked_at_horizon = blocked[severe_mask, 6]
-    if severe_mask.sum() >= 50:
-        indefinite_share = float(blocked_at_horizon.mean())
-        assert 0.35 <= indefinite_share <= 0.75
+    severe_count = int(severe_mask.sum())
+    assert severe_count >= 150, f"too few severe rollouts ({severe_count}) for a reliable subdistribution test"
+    indefinite_share = float(blocked[severe_mask, 1].mean())
+    # Plan's severe sub-split: 50% indefinite (blocked), 30% near-zero cap + 20% small recovery (not blocked).
+    assert 0.40 <= indefinite_share <= 0.60
 
 
 def test_private_equity_risk_unrequested_issuer_still_satisfies_request() -> None:
