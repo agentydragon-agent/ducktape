@@ -71,32 +71,36 @@ this file as a backlog, not a second ordered roadmap.
 
 ## Liquidity Policy
 
-- [ ] **Harmonize the multi-tier liquidity ladder.** Today's product
-      surfaces two policies that look superficially similar but live in
-      different shapes and don't compose: - `FundingPolicy` (in `augur/product/wire.py`) — cash buffer: when
+- [ ] **Replace the disjoint buffer policies with a rebalance-to-target
+      model.** Today's product surfaces two policies that look
+      superficially similar but live in different shapes and don't
+      compose: - `FundingPolicy` (in `augur/product/wire.py`) — cash buffer: when
       post-obligation cash drops below a dollar trigger, sell a fixed
       dollar amount from `public_securities`. Trigger + sell-amount
       come from the frontend per scenario. - `PrivateEquityTenderPolicy` — liquid-net-worth floor: only sell PE
       through a tender if liquid_net_worth ≥ floor. Floor comes from
       the frontend per scenario.
-      Holders generally want a **ladder of buffers** instead — e.g. "cash
-      ≥ X" + "liquid public-stock value ≥ Y" + "PE only above net-worth
-      floor Z" — with cascading top-up rules where a lower-tier shortfall
-      triggers sales from the next-higher tier. Today the two existing
-      tiers (cash trigger, PE floor) can't express the missing middle
-      tier (a stock-value floor that triggers PE sales). Frontend should
-      expose all three knobs as one unified panel rather than two
-      disjoint policies, matching the same per-scenario shape.
-- [ ] **Reinvestment of PE sale proceeds.** When a tender executes, the
-      proceeds flow to cash. A holder using a multi-tier ladder typically
-      wants part of those proceeds to immediately fund a public-stock
-      purchase (refilling the stock tier), not sit as cash. The
-      simulator has no concept of post-sale buys; PE→stock reinvestment
-      is a missing flow. Likely shape: an optional `reinvestment_target`
-      on the sale rule that names a downstream stock/account and a
-      fraction or dollar amount of proceeds to route there before the
-      remainder lands as cash. Frontend control alongside the ladder
-      knobs above.
+
+      A cleaner unifying frame is **rebalance toward a multi-tier target
+      allocation**: each tier (cash, liquid public stock, PE, possibly
+      property) has a target dollar amount (or fraction of net worth), and
+      the policy nudges holdings toward those targets each month by
+      buying/selling between tiers. A deadband around each target avoids
+      churn. This shape captures everything the existing floor-based
+      policies do (a "floor" is a one-sided target with infinite upper
+      deadband) plus three things the existing policies can't:
+      - the missing middle tier (a stock-value target that triggers PE
+        sales when stock holdings fall below it);
+      - reinvestment of PE sale proceeds (proceeds from a tender flow
+        toward whichever tier is below its target, not flat to cash);
+      - upside rebalancing (if PE grows to dominate net worth, sell into
+        tenders even without a cash need, to refill the stock tier).
+
+      Frontend exposes target amounts and deadbands per tier; the
+      simulator runs the rebalance rule each month against available
+      sale capacity (PE tender opportunities, public-stock liquidity).
+      The existing `FundingPolicy` + `PrivateEquityTenderPolicy` shapes
+      become special cases of this surface and can be deprecated.
 
 ## API / Runtime Design Debt
 
