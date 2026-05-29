@@ -784,8 +784,8 @@ export function ProductScenarioForm({ input, bootstrap, portfolio, portfolioErro
           <hr className="my-4 border-slate-200 dark:border-slate-700" />
           <div className="augur-eyebrow">Private equity tenders</div>
           <div className="mt-2 text-xs augur-muted">
-            PE tenders: sell enough at each modeled tender event to lift liquid net worth (cash + non-PE holdings) to
-            this floor. Zero disables PE sales.
+            Sell enough at each modeled tender event to lift liquid net worth (cash + non-PE holdings) to this floor.
+            Zero disables PE sales.
           </div>
           <div className="mt-2 grid gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
             <NumberField
