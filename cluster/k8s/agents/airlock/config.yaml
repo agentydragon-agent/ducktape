@@ -110,9 +110,16 @@ oauth:
       token_url: https://dev-ext.blueshieldca.com/as/token.oauth2/
       use_pkce: true
       aud: https://api-dev.blueshieldca.com/bsc/fhir-sandbox/fhir-server/api/v4/cloud/
+      # Scopes per https://dev-ext.blueshieldca.com/.well-known/openid-configuration:
+      # PatientEOB (claims/reimbursements), PatientRead (everything else), interop
+      # (catch-all per CMS rule), openid (ID token / fhirUser context).
+      # BSC's PingFederate doesn't expose `offline_access` as a scope, but the
+      # refresh_token grant is configured per-client and may still issue one.
       scopes:
+        - openid
         - interop
-        - offline_access
+        - PatientEOB
+        - PatientRead
       redirect_uri: https://airlock.allegedly.works/oauth/callback/bsc
       refresh_secret:
         name: bsc-tokens
