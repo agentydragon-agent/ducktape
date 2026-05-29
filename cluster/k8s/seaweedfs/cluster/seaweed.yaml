@@ -42,7 +42,12 @@ spec:
     # cluster survives any single-node outage. Tolerate the CP taint
     # matching volume + s3.
     replicas: 3
-    volumeSizeLimitMB: 30000
+    # SeaweedFS derives each volume server's maximum logical volume count from
+    # disk size / volumeSizeLimitMB. 30GB left the first two 1.8TiB servers at
+    # 61/61 logical volumes after only a handful of collections, so new
+    # replicated collections could not grow. 16GB keeps object chunks well below
+    # the per-volume cap while leaving enough free slots for new collections.
+    volumeSizeLimitMB: 16000
     defaultReplication: "001"
     metricsPort: 9321
     nodeSelector:

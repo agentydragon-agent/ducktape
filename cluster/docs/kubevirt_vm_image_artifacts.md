@@ -109,6 +109,11 @@ sudo nixos-rebuild switch --flake github:agentydragon/ducktape?ref=devel#gecko
   can auto-create bucket directories from identity actions, which bypasses the
   Bucket CR adoption path. The Flux wiring applies `seaweedfs-vm-images-bucket`
   first and gates `seaweedfs-vm-images-s3` on it.
+- New SeaweedFS collections need free logical volume slots on enough volume
+  servers to satisfy `defaultReplication: "001"`. The bootstrap publish path
+  exposed this when the old 30GB `volumeSizeLimitMB` left two volume servers at
+  their computed 61/61 slot limit before `vm-images` had any writable volumes.
+  Keep the lower 16GB limit unless the volume-server capacity model changes.
 - The first manual spike created `vm-images-s3-credentials` directly and was
   removed. The paved path is SOPS -> Flux -> Kubernetes Secret -> ExternalSecret
   rendered gateway config.
