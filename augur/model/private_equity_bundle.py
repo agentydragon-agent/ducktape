@@ -155,6 +155,13 @@ class PrivateEquityBundle:
             raise ValueError(f"PE issuer {issuer_id!r} forced_recovery_cashout_usd must be non-negative")
         _require_code_values(regime_code, frozenset(int(c) for c in PrivateEquityRegimeCode), "regime_code")
         _require_code_values(event_kind_code, frozenset(int(c) for c in PrivateEquityEventKindCode), "event_kind_code")
+        # Invariant: a voluntary tender opportunity (`sale_opportunity_active`) is the same
+        # thing as the TENDER event kind. Producers may not desync the two.
+        tender_mask = event_kind_code == int(PrivateEquityEventKindCode.TENDER)
+        if np.any(tender_mask != sale_opportunity_active):
+            raise ValueError(
+                f"PE issuer {issuer_id!r}: event_kind_code==TENDER must coincide with sale_opportunity_active==True"
+            )
 
         rollout_idx = np.repeat(np.arange(rollout_count, dtype=np.int64), horizon_months + 1)
         month_idx = np.tile(np.arange(horizon_months + 1, dtype=np.int64), rollout_count)

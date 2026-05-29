@@ -56,36 +56,52 @@ deployment config are not supported by the product endpoint yet.
 
 ### Asset subtypes
 
-| Subtype          | Valuation                                                                                                             | Liquidity                                                                                 |
-| ---------------- | --------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `Cash`           | Face value.                                                                                                           | Always liquid.                                                                            |
-| `LiquidSecurity` | Tracks an external-series multiplier (e.g. SP500 total-return proxy).                                                 | Always sellable.                                                                          |
-| `RealEstate`     | Tracks location-bound home-value and rent paths; has property tax / insurance / HOA / maintenance / depreciation.     | Sellable on demand; sale incurs closing costs, capital-gains tax, depreciation recapture. |
-| `PrivateEquity`  | Tracks an idiosyncratic per-asset price path and protocol control series supplied by the exogenous trajectory bundle. | Saleability is driven by exogenous PE protocol series plus the owner's PE tender policy.  |
+| Subtype          | Valuation                                                                                                         | Liquidity                                                                                 |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `Cash`           | Face value.                                                                                                       | Always liquid.                                                                            |
+| `LiquidSecurity` | Tracks an external-series multiplier (e.g. SP500 total-return proxy).                                             | Always sellable.                                                                          |
+| `RealEstate`     | Tracks location-bound home-value and rent paths; has property tax / insurance / HOA / maintenance / depreciation. | Sellable on demand; sale incurs closing costs, capital-gains tax, depreciation recapture. |
+| `PrivateEquity`  | Tracks an idiosyncratic per-asset price path and protocol control channels supplied by the typed PE bundle.       | Saleability is driven by the typed PE protocol bundle plus the owner's PE tender policy.  |
 
 ### Private-Equity Protocol
 
-The model layer must emit a complete per-issuer protocol bundle whenever a
-scenario holds `private_equity:<issuer>`:
+PE state crosses the model↔sim boundary as a single typed
+`PrivateEquityBundle` — one wide polars frame keyed by
+`(rollout_index, month_index, issuer_id)` with nine dtype-typed channels.
+The model layer must emit a complete per-issuer entry whenever a
+scenario holds the issuer; producing an issuer with any channel missing
+is a schema violation, not a runtime sim-compile failure. Channels
+group by dtype:
 
-| Series / Event                                        | Meaning                                                                                                                                                                                                                          |
-| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `private_equity:<issuer>`                             | Per-unit mark / sale price path.                                                                                                                                                                                                 |
-| `private_equity_sale_opportunity:<issuer>`            | Discrete voluntary tender event stream. Public-market saleability is represented by the `public_market` regime.                                                                                                                  |
-| Typed PE protocol frame                               | Integer-coded sim-facing issuer regime and event marker: private operating, public market, acquired, collapsed; tender, admin mark update, public-market open, acquisition cashout, legal impairment, forced recovery, collapse. |
-| `private_equity_sale_capacity_fraction:<issuer>`      | Fraction of currently held units sellable through a voluntary tender/public-market opportunity.                                                                                                                                  |
-| `private_equity_eligible_fraction:<issuer>`           | Fraction of currently held units eligible for voluntary sale.                                                                                                                                                                    |
-| `private_equity_forced_sale_fraction:<issuer>`        | Fraction of currently held units forcibly sold in that month.                                                                                                                                                                    |
-| `private_equity_liquidity_blocked:<issuer>`           | Boolean-ish level; values `>= 0.5` block voluntary tender/public-market sales.                                                                                                                                                   |
-| `private_equity_forced_recovery_cashout_usd:<issuer>` | Dollar recovery paid for the remaining position in that month.                                                                                                                                                                   |
+| Group                       | Channel                       | Meaning                                                                                                                                                              |
+| --------------------------- | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PrivateEquityFloatChannel` | `mark_usd_per_unit`           | Per-unit mark / sale price path.                                                                                                                                     |
+|                             | `sale_capacity_fraction`      | Fraction of currently held units sellable through a voluntary tender/public-market opportunity.                                                                      |
+|                             | `eligible_fraction`           | Fraction of currently held units eligible for voluntary sale.                                                                                                        |
+|                             | `forced_sale_fraction`        | Fraction of currently held units forcibly sold in that month.                                                                                                        |
+|                             | `forced_recovery_cashout_usd` | Dollar recovery paid for the remaining position in that month.                                                                                                       |
+| `PrivateEquityIntChannel`   | `regime_code`                 | `PrivateEquityRegimeCode`: `PRIVATE_OPERATING`, `PUBLIC_MARKET`, `ACQUIRED`, `COLLAPSED`.                                                                            |
+|                             | `event_kind_code`             | `PrivateEquityEventKindCode`: `NONE`, `TENDER`, `ADMIN_MARK_UPDATE`, `PUBLIC_MARKET_OPEN`, `ACQUISITION_CASHOUT`, `LEGAL_IMPAIRMENT`, `FORCED_RECOVERY`, `COLLAPSE`. |
+| `PrivateEquityBoolChannel`  | `sale_opportunity_active`     | Discrete voluntary tender opportunity flag. Public-market saleability is represented by the `PUBLIC_MARKET` regime, not by this flag.                                |
+|                             | `liquidity_blocked`           | True blocks voluntary tender/public-market sales for the month.                                                                                                      |
 
-The simulator hard-fails if any required PE protocol series is absent. It
-validates integer code series, finite marks, and fraction bounds before applying
-sales. Voluntary sales are policy-mediated: the owner's PE tender policy sets a
-liquid-net-worth floor, while the exogenous protocol determines whether a tender
-or public-market sale is possible and how much is sellable. Forced sale and
-forced-recovery cashout series bypass the voluntary floor and apply directly to
-the remaining position.
+Producers construct one issuer's bundle via the keyword-only
+`PrivateEquityBundle.from_issuer_arrays(...)` — every channel argument
+is required, so a producer can't half-fill an issuer. Multiple issuers
+combine via `PrivateEquityBundle.combine(...)`.
+
+Consumers (sim engine) index the bundle by issuer position into the
+typed `PEChannels` dataclass produced at compile time — there is no
+string-keyed PE series lookup on the request, in the sim plan, or in
+event compilation.
+
+The simulator validates finite marks and fraction bounds before
+applying sales. Voluntary sales are policy-mediated: the owner's PE
+tender policy sets a liquid-net-worth floor, while the typed bundle
+determines whether a tender or public-market sale is possible and how
+much is sellable. Forced sale and forced-recovery cashout channels
+bypass the voluntary floor and apply directly to the remaining
+position.
 
 ### Policy types
 
