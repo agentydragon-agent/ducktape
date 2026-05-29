@@ -73,12 +73,22 @@ const OAUTH_PROVIDERS: OAuthProviderStatus[] = [
     name: "google",
     display_name: "Google",
     provider_type: "oauth2",
+    requested_scopes: ["email", "profile"],
     status: { state: "connected", expires_at: "2025-01-16T10:30:00Z", scope: "email profile" },
+  },
+  {
+    name: "bsc",
+    display_name: "Blue Shield of California (FHIR sandbox)",
+    provider_type: "oauth2",
+    requested_scopes: ["openid", "interop", "PatientEOB", "PatientRead"],
+    // Stale token missing PatientEOB/PatientRead — exercises the drift display.
+    status: { state: "connected", expires_at: "2026-08-01T10:30:00Z", scope: "openid interop" },
   },
   {
     name: "plaid",
     display_name: "Plaid",
     provider_type: "plaid",
+    requested_scopes: ["transactions", "liabilities"],
     status: { state: "disconnected" },
   },
 ];

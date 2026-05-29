@@ -25,6 +25,14 @@
     return new Date(iso).toLocaleString();
   }
 
+  function scopeDiff(requested: string[], granted: string): { missing: string[]; extra: string[]; drift: boolean } {
+    const grantedSet = new Set(granted ? granted.split(/\s+/).filter(Boolean) : []);
+    const requestedSet = new Set(requested);
+    const missing = [...requestedSet].filter((s) => !grantedSet.has(s)).sort();
+    const extra = [...grantedSet].filter((s) => !requestedSet.has(s)).sort();
+    return { missing, extra, drift: missing.length + extra.length > 0 };
+  }
+
   async function connectPlaid(providerName: string): Promise<void> {
     plaidLoading = providerName;
     try {
@@ -98,12 +106,28 @@
                   <span class="status-pill status-pill-pending">Not connected</span>
                 {/if}
               </dd>
+              <dt class="section-heading font-semibold">Requested</dt>
+              <dd class="m-0" style="color: var(--color-text-muted);">
+                {provider.requested_scopes.join(" ") || "(none)"}
+              </dd>
               {#if provider.status.state === "connected"}
                 <dt class="section-heading font-semibold">Expires</dt>
                 <dd class="m-0" style="color: var(--color-text-muted);">{fmtExpiry(provider.status.expires_at)}</dd>
-                {#if provider.status.scope}
-                  <dt class="section-heading font-semibold">Scopes</dt>
-                  <dd class="m-0" style="color: var(--color-text-muted);">{provider.status.scope}</dd>
+                <dt class="section-heading font-semibold">Granted</dt>
+                <dd class="m-0" style="color: var(--color-text-muted);">{provider.status.scope || "(none)"}</dd>
+                {@const diff = scopeDiff(provider.requested_scopes, provider.status.scope)}
+                {#if diff.drift}
+                  <dt class="section-heading font-semibold">Drift</dt>
+                  <dd class="m-0" style="color: var(--color-warning, #b45309);">
+                    {#if diff.missing.length > 0}missing: <code class="code-tag text-xs rounded px-1.5 py-0.5"
+                        >{diff.missing.join(" ")}</code
+                      >{/if}
+                    {#if diff.missing.length > 0 && diff.extra.length > 0}<span>; </span>{/if}
+                    {#if diff.extra.length > 0}extra: <code class="code-tag text-xs rounded px-1.5 py-0.5"
+                        >{diff.extra.join(" ")}</code
+                      >{/if}
+                    — re-authorize to fix
+                  </dd>
                 {/if}
               {/if}
             </dl>

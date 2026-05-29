@@ -188,9 +188,18 @@ def create_app(settings: Settings, *, auth: AuthProvider, include_static: bool =
                 if token
                 else DisconnectedOAuthStatus()
             )
+            # Plaid uses `products` rather than OAuth scopes; expose those as requested_scopes
+            # so the frontend can use a single field for "what the provider was asked for".
+            requested_scopes = (
+                list(provider.config.products) if isinstance(provider, PlaidProvider) else list(provider.config.scopes)
+            )
             result.append(
                 OAuthProviderStatus(
-                    name=name, display_name=provider.config.display_name, provider_type=provider_type, status=status
+                    name=name,
+                    display_name=provider.config.display_name,
+                    provider_type=provider_type,
+                    requested_scopes=requested_scopes,
+                    status=status,
                 )
             )
         return result

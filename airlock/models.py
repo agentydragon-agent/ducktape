@@ -233,6 +233,12 @@ class OAuthProviderStatus(BaseModel):
     name: str = Field(description="Provider identifier")
     display_name: str = Field(description="Human-readable name")
     provider_type: str = Field(description="oauth2 or plaid")
+    requested_scopes: list[str] = Field(
+        description=(
+            "Scopes configured for this provider. Compared against the granted scope on the "
+            "connected token to surface scope drift (re-auth required)."
+        )
+    )
     status: OAuthConnectionStatus
 
     model_config = ConfigDict(extra="forbid")
