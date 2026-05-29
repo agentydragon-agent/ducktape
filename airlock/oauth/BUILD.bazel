@@ -5,7 +5,10 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 py_library(
     name = "provider",
     srcs = ["provider.py"],
-    visibility = ["//airlock:__subpackages__"],
+    visibility = [
+        "//airlock:__subpackages__",
+        "//x/plaid:__pkg__",
+    ],
     deps = [
         "@pypi//httpx",
         "@pypi//pydantic",

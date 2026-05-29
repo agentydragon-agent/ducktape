@@ -240,6 +240,16 @@ creation_rules:
           - *admin
           - *atlas-agentydragon
 
+  # --- Plaid API credentials (admin + all user keys) ---
+  - path_regex: secrets/plaid\.sops\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
+
   # --- Talos machine secrets (admin-only, state recovery backup) ---
   - path_regex: secrets/talos-machine-secrets\.sops\.yaml$
     key_groups:

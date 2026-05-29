@@ -201,7 +201,6 @@ PowerDNS and Authentik run on CloudNativePG `local-path`.
 - [ ] File upstream: powerdns-operator "stuck Failed" bug — once a ClusterRRset
       reaches Failed, it never retries unless spec changes. Should retry with backoff.
       See <lessons_learned/2026_04_07_powerdns_operator_stuck_failed_rrsets.md>.
-- [ ] Plaid integration: fix onboarding (`link/token/create` returns 400)
 - [ ] Tandoor: verify deployment works end-to-end (DB migration, Authentik
       proxy auth, recipe import)
 - [ ] Move more PVCs to `local-path` (Proxmox CSI 29 LUN limit). Candidates:
