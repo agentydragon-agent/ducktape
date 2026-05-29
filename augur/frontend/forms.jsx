@@ -701,10 +701,15 @@ function sumCurrentValueUsd(positions) {
 
 export function ProductScenarioForm({ input, bootstrap, portfolio, portfolioError, onChange, onReset }) {
   return (
-    <aside className="min-w-0 space-y-3">
+    <aside className="min-w-0">
       <div className="augur-card divide-y divide-slate-200 dark:divide-slate-700">
         <div className="px-4 py-3">
-          <div className="augur-eyebrow">Scenario</div>
+          <div className="flex items-center justify-between gap-2">
+            <div className="augur-eyebrow">Scenario</div>
+            <Button size="xs" variant="subtle" onClick={onReset}>
+              Reset form
+            </Button>
+          </div>
           <div className="mt-3">
             <NumberField
               label="Horizon"
@@ -833,9 +838,6 @@ export function ProductScenarioForm({ input, bootstrap, portfolio, portfolioErro
           </div>
         </details>
       </div>
-      <Button variant="subtle" onClick={onReset}>
-        Reset form
-      </Button>
     </aside>
   );
 }

@@ -121,13 +121,13 @@ export function SelectedRolloutEventsPanel({
                         onBlur={() => onHoverEventMonth?.(null)}
                       >
                         <td className="px-4 py-1">
-                          <div className="flex min-w-0 items-center gap-2">
+                          <div className="flex min-w-0 items-start gap-2">
                             <span
-                              className="h-2.5 w-2.5 shrink-0 rounded-full"
+                              className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full"
                               style={{ backgroundColor: eventColor(event) }}
                               aria-hidden="true"
                             />
-                            <span className="min-w-0 truncate">{eventLabel(event)}</span>
+                            <span className="min-w-0">{eventLabel(event)}</span>
                           </div>
                         </td>
                         <td className="whitespace-nowrap px-3 py-1 text-right augur-tabular">
