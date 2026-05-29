@@ -69,17 +69,33 @@ oauth:
       extra_auth_params:
         access_type: offline
         prompt: consent
-    - name: plaid
+    - name: plaid_chase
       provider_type: plaid
-      display_name: Plaid
+      display_name: Plaid (Chase)
       token_url: https://production.plaid.com/item/public_token/exchange
       products:
         - transactions
-      redirect_uri: https://airlock.allegedly.works/oauth/callback/plaid
+      redirect_uri: https://airlock.allegedly.works/oauth/callback/plaid_chase
       refresh_secret:
-        name: plaid-tokens
+        name: plaid-chase-tokens
       access_secret:
-        name: plaid-access-token
+        name: plaid-chase-access-token
+        annotations:
+          reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+          reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: openclaw-sandbox,claude-sandbox
+          reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+          reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: openclaw-sandbox,claude-sandbox
+    - name: plaid_bofa
+      provider_type: plaid
+      display_name: Plaid (BofA)
+      token_url: https://production.plaid.com/item/public_token/exchange
+      products:
+        - transactions
+      redirect_uri: https://airlock.allegedly.works/oauth/callback/plaid_bofa
+      refresh_secret:
+        name: plaid-bofa-tokens
+      access_secret:
+        name: plaid-bofa-access-token
         annotations:
           reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
           reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: openclaw-sandbox,claude-sandbox
