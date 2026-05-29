@@ -92,19 +92,19 @@
               <dd class="m-0"><code class="code-tag text-xs rounded px-1.5 py-0.5">{provider.provider_type}</code></dd>
               <dt class="section-heading font-semibold">Status</dt>
               <dd class="m-0">
-                {#if provider.connected}
+                {#if provider.status.state === "connected"}
                   <span class="status-pill status-pill-done">Connected</span>
                 {:else}
                   <span class="status-pill status-pill-pending">Not connected</span>
                 {/if}
               </dd>
-              {#if provider.connected}
+              {#if provider.status.state === "connected"}
                 <dt class="section-heading font-semibold">Expires</dt>
-                <dd class="m-0" style="color: var(--color-text-muted);">{fmtExpiry(provider.expires_at)}</dd>
-              {/if}
-              {#if provider.scope}
-                <dt class="section-heading font-semibold">Scopes</dt>
-                <dd class="m-0" style="color: var(--color-text-muted);">{provider.scope}</dd>
+                <dd class="m-0" style="color: var(--color-text-muted);">{fmtExpiry(provider.status.expires_at)}</dd>
+                {#if provider.status.scope}
+                  <dt class="section-heading font-semibold">Scopes</dt>
+                  <dd class="m-0" style="color: var(--color-text-muted);">{provider.status.scope}</dd>
+                {/if}
               {/if}
             </dl>
           </div>
@@ -114,14 +114,18 @@
               disabled={plaidLoading === provider.name}
               class="btn-approve font-semibold px-5 py-2.5 rounded-lg border-0 cursor-pointer transition-colors text-sm"
             >
-              {plaidLoading === provider.name ? "Loading…" : provider.connected ? "Reconnect" : "Connect"}
+              {plaidLoading === provider.name
+                ? "Loading…"
+                : provider.status.state === "connected"
+                  ? "Reconnect"
+                  : "Connect"}
             </button>
           {:else}
             <a
               href="/oauth/authorize/{provider.name}"
               class="btn-approve font-semibold px-5 py-2.5 rounded-lg border-0 cursor-pointer transition-colors text-sm no-underline"
             >
-              {provider.connected ? "Reconnect" : "Connect"}
+              {provider.status.state === "connected" ? "Reconnect" : "Connect"}
             </a>
           {/if}
         </div>
