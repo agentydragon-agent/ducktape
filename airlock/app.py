@@ -88,6 +88,18 @@ def create_app(settings: Settings, *, auth: AuthProvider, include_static: bool =
 
         app.include_router(create_oauth_router(oauth_providers, oauth_k8s_store, oauth_target_ns))
 
+        # SPA catch-all is registered here, AFTER the OAuth router, so that
+        # /oauth/* routes are matched first. Registering at module-eval time
+        # shadows the lifespan-added OAuth routes — fetch('/oauth/authorize/plaid')
+        # would otherwise receive index.html instead of the link_token JSON.
+        if include_static:
+            _html = (_FRONTEND_DIST_DIR / "index.html").read_text()
+            app.mount("/static/frontend", StaticFiles(directory=str(_FRONTEND_DIST_DIR)))
+
+            @app.get("/{rest:path}")
+            async def index(rest: str) -> HTMLResponse:
+                return HTMLResponse(_html)
+
         task = asyncio.create_task(token_refresh_loop(oauth_providers, oauth_k8s_store, oauth_target_ns))
         try:
             yield
@@ -182,17 +194,6 @@ def create_app(settings: Settings, *, auth: AuthProvider, include_static: bool =
                 )
             )
         return result
-
-    # ── Static files + SPA catch-all ─────────────────────────────────────────
-
-    if include_static:
-        _html = (_FRONTEND_DIST_DIR / "index.html").read_text()
-
-        app.mount("/static/frontend", StaticFiles(directory=str(_FRONTEND_DIST_DIR)))
-
-        @app.get("/{rest:path}")
-        async def index(rest: str) -> HTMLResponse:
-            return HTMLResponse(_html)
 
     return app
 
