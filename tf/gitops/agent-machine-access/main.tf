@@ -443,6 +443,17 @@ resource "kubernetes_secret" "manifold_mcp_oidc" {
 # The downstream PostScan Mail REST API is reached via a static x-api-key
 # held by the postscanmail-mcp-server sidecar.
 
+# Bump `keepers.version` to force the provider to be replaced, which
+# regenerates the client_secret in Authentik and re-renders the
+# `postscanmail-mcp-oidc` Kubernetes Secret. Reloader rolls the facade pod
+# automatically on Secret change.
+resource "random_id" "postscanmail_mcp_secret_rotation" {
+  byte_length = 4
+  keepers = {
+    version = "2"
+  }
+}
+
 resource "authentik_provider_oauth2" "postscanmail_mcp" {
   name               = "postscanmail-mcp"
   client_id          = "postscanmail-mcp"
@@ -467,6 +478,10 @@ resource "authentik_provider_oauth2" "postscanmail_mcp" {
       url           = "https://postscanmail-mcp.allegedly.works/auth/callback"
     },
   ]
+
+  lifecycle {
+    replace_triggered_by = [random_id.postscanmail_mcp_secret_rotation]
+  }
 }
 
 resource "authentik_application" "postscanmail_mcp" {
