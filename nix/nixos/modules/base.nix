@@ -16,7 +16,7 @@
 
   # Networking
   networking.hostName = hostname;
-  networking.networkmanager.enable = true;
+  networking.networkmanager.enable = lib.mkDefault true;
 
   # Timezone
   time.timeZone = "America/Los_Angeles";
@@ -86,85 +86,16 @@
     };
   };
 
-  # Essential packages
-  environment.systemPackages =
-    (with pkgs; [
-      git
-      neovim
-      wget
-      curl
-      htop
-      tmux
-      home-manager
-      nix-du
-      dust
-      ncdu
-      procs
-      bandwhich
-      tree
-      iotop
-      nmap
-      iftop
-      mtr
-      btop
-      bottom
-      pv
-      mosh
-      ripgrep
-
-      # Network diagnostics
-      dig
-      tcpdump
-      iperf3
-      openssl
-      conntrack-tools
-      ethtool
-      bpftools
-      net-tools
-      traceroute
-
-      # System diagnostics
-      gdb
-      lsof
-      ltrace
-      strace
-      usbutils
-      pciutils
-      acpi
-      nethogs
-      inotify-tools
-
-      # Binary inspection / debugging
-      file
-      binutils
-      elfutils
-      patchelf
-      valgrind
-      heaptrack
-
-      # Profiling / performance
-      sysstat
-
-      # Compression
-      zip
-      unzip
-
-      # Serial/network utilities
-      socat
-      minicom
-      zbar
-      speedtest-cli
-
-      # Secrets/credentials
-      libsecret
-
-      # PDF/OCR
-      poppler-utils
-      tesseract
-    ])
-    ++ [
-      pkgs.perf
-    ];
+  # Bare-minimum packages shared by every host (including `bootstrap`).
+  # Diagnostics, editors, profiling, etc. live in workstation.nix and are
+  # imported by real workstation hosts only.
+  environment.systemPackages = with pkgs; [
+    git
+    vim
+    curl
+    wget
+    openssl
+  ];
 
   system.stateVersion = "25.11";
 }

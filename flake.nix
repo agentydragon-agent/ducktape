@@ -170,6 +170,10 @@
           # activation (no hm-bootstrap.nix needed). Requires the HM host
           # config module path (e.g., ./nix/home/hosts/nixos-vm.nix).
           inlineHomeManager ? null,
+          # Whether to include home-manager at all. Bootstrap images set this
+          # false to keep the closure tiny — the real host config takes over
+          # after first `nixos-rebuild switch`.
+          enableHomeManager ? true,
         }:
         let
           hmExtraSpecialArgs =
@@ -196,6 +200,8 @@
           modules = [
             ./nix/nixos/modules/base.nix
             ./nix/nixos/hosts/${hostname}
+          ]
+          ++ nixpkgs.lib.optionals enableHomeManager [
             home-manager.nixosModules.home-manager
             (
               if inlineHomeManager != null then
@@ -433,6 +439,7 @@
           hostname = "bootstrap";
           username = "agentydragon";
           hardwareModule = ./nix/nixos/modules/vm-hardware.nix;
+          enableHomeManager = false;
         };
 
         # Minimal NixOS container for testing Bazel compatibility.

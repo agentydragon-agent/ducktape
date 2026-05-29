@@ -1,4 +1,6 @@
-# Workstation module - Docker, GUI apps, creative/productivity tools
+# Workstation module - Docker, GUI apps, creative/productivity tools,
+# and the full CLI diagnostic/debug toolkit. Imported by real workstation
+# hosts (wyrm2/iguana/rugged). Kept out of `bootstrap` to shrink that image.
 {
   config,
   pkgs,
@@ -7,34 +9,109 @@
   ...
 }:
 {
-  # System packages (GUI apps, tools that need system-level integration)
-  environment.systemPackages = with pkgs; [
-    gnome-terminal
-    google-chrome
+  environment.systemPackages =
+    (with pkgs; [
+      gnome-terminal
+      google-chrome
 
-    # Creative/CAD
-    freecad
-    openscad
-    xournalpp
+      # Creative/CAD
+      freecad
+      openscad
+      xournalpp
 
-    # Graphics/Audio editing
-    gimp
-    krita
-    inkscape
-    audacity
+      # Graphics/Audio editing
+      gimp
+      krita
+      inkscape
+      audacity
 
-    # Development & Analysis
-    vscode
-    wireshark
+      # Development & Analysis
+      vscode
+      wireshark
 
-    # Media & Downloads
-    vlc
-    transmission_4-gtk
+      # Media & Downloads
+      vlc
+      transmission_4-gtk
 
-    # Communication (Electron apps)
-    discord
-    element-desktop
-  ];
+      # Communication (Electron apps)
+      discord
+      element-desktop
+
+      # CLI editor + shell convenience
+      neovim
+      tmux
+      mosh
+      ripgrep
+      tree
+      pv
+      home-manager
+
+      # Disk + system inspection
+      htop
+      btop
+      bottom
+      procs
+      iotop
+      nix-du
+      dust
+      ncdu
+
+      # Network diagnostics
+      dig
+      tcpdump
+      iperf3
+      conntrack-tools
+      ethtool
+      bpftools
+      net-tools
+      traceroute
+      nmap
+      iftop
+      mtr
+      bandwhich
+      nethogs
+
+      # System diagnostics / tracing
+      gdb
+      lsof
+      ltrace
+      strace
+      usbutils
+      pciutils
+      acpi
+      inotify-tools
+
+      # Binary inspection / debugging
+      file
+      binutils
+      elfutils
+      patchelf
+      valgrind
+      heaptrack
+
+      # Profiling / performance
+      sysstat
+
+      # Compression
+      zip
+      unzip
+
+      # Serial/network utilities
+      socat
+      minicom
+      zbar
+      speedtest-cli
+
+      # Secrets/credentials
+      libsecret
+
+      # PDF/OCR
+      poppler-utils
+      tesseract
+    ])
+    ++ [
+      pkgs.perf
+    ];
 
   # Docker
   virtualisation.docker = {
