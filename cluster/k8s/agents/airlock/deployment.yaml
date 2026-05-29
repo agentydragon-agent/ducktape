@@ -25,7 +25,7 @@ spec:
         fsGroup: 1000
       containers:
         - name: airlock
-          image: ghcr.io/agentydragon/airlock:devel-20260529194735-3f25684 # {"$imagepolicy": "flux-system:airlock"}
+          image: ghcr.io/agentydragon/airlock:devel-20260529231542-304b2dd # {"$imagepolicy": "flux-system:airlock"}
           imagePullPolicy: Always
           ports:
             - name: http
