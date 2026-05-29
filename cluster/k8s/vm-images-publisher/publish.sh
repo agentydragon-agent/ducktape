@@ -1,6 +1,9 @@
-#!/usr/bin/env sh
+#!/usr/bin/env bash
 # Build .#bootstrap-image at the requested git ref and upload the qcow2 to
 # SeaweedFS via the in-cluster S3 endpoint. See README.md for context.
+#
+# Runtime deps (git, awscli2, gawk) are provided by the wrapping `nix shell`
+# in cronjob.yaml. coreutils + findutils are already in the nixos/nix image.
 set -euo pipefail
 unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy ALL_PROXY all_proxy
 
@@ -11,21 +14,6 @@ unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy ALL_PROXY all_proxy
 : "${OBJECT_PREFIX:=bootstrap}"
 : "${S3_BUCKET:=vm-images}"
 : "${S3_ENDPOINT:=http://vm-images-s3.seaweedfs.svc.cluster.local:8333}"
-
-ensure_runtime_deps() {
-  for cmd in git find sha256sum stat aws; do
-    if ! command -v "$cmd" >/dev/null 2>&1; then
-      echo "installing runtime deps via nix profile"
-      nix profile install \
-        nixpkgs#git \
-        nixpkgs#findutils \
-        nixpkgs#coreutils \
-        nixpkgs#awscli2
-      return
-    fi
-  done
-}
-ensure_runtime_deps
 
 GIT_SHA="$(git ls-remote "$REPO" "refs/heads/${REF}" | awk '{print $1}')"
 if [ -z "${GIT_SHA}" ]; then

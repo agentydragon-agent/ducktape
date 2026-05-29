@@ -48,9 +48,18 @@ spec:
               envFrom:
                 - secretRef:
                     name: vm-images-s3-writer
-              # nixos/nix has no /bin/sh; bash is on the image's default PATH
-              # (/root/.nix-profile/bin) via the upstream Dockerfile.
-              command: ["bash", "/scripts/publish.sh"]
+              # nixos/nix has no /bin/sh and only a minimal profile (no git,
+              # awscli2, gawk). Drop into a `nix shell` that provides the
+              # script's runtime deps, then exec it. `nix shell` (unlike
+              # `nix profile install`) doesn't read the existing user profile,
+              # so it works under default pure-eval.
+              command:
+                - bash
+                - -c
+                - >-
+                  exec nix shell
+                  nixpkgs#git nixpkgs#awscli2 nixpkgs#gawk
+                  --command bash /scripts/publish.sh
               securityContext:
                 privileged: true
               volumeMounts:
