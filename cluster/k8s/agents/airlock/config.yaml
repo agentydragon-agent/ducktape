@@ -75,6 +75,7 @@ oauth:
       token_url: https://production.plaid.com/item/public_token/exchange
       products:
         - transactions
+        - liabilities
       redirect_uri: https://airlock.allegedly.works/oauth/callback/plaid_chase
       refresh_secret:
         name: plaid-chase-tokens
@@ -91,6 +92,7 @@ oauth:
       token_url: https://production.plaid.com/item/public_token/exchange
       products:
         - transactions
+        - liabilities
       redirect_uri: https://airlock.allegedly.works/oauth/callback/plaid_bofa
       refresh_secret:
         name: plaid-bofa-tokens
