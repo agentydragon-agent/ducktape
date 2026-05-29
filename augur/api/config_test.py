@@ -38,7 +38,8 @@ def _minimal_config(**overrides: object) -> Config:
         "snapshot": FinanceSnapshot(as_of_date="2026-05-12"),
         "default_rollout_samples": 128,
         "max_rollout_samples": 1_000_000,
-        "exogenous_provider": IndependentExogenousProviderConfig(),
+        "exogenous_presets": {"current_exogenous_model": IndependentExogenousProviderConfig()},
+        "default_exogenous_preset_id": "current_exogenous_model",
     }
     defaults.update(overrides)
     return Config(**defaults)
@@ -169,7 +170,8 @@ def test_at_least_one_agent_required() -> None:
             snapshot=FinanceSnapshot(as_of_date="2026-05-12"),
             default_rollout_samples=128,
             max_rollout_samples=1_000_000,
-            exogenous_provider=IndependentExogenousProviderConfig(),
+            exogenous_presets={"current_exogenous_model": IndependentExogenousProviderConfig()},
+            default_exogenous_preset_id="current_exogenous_model",
         )
 
 
@@ -201,33 +203,39 @@ def test_yaml_round_trip_through_dump_and_load(tmp_path) -> None:
 def test_config_accepts_composite_provider_with_trained_private_equity(tmp_path) -> None:
     model_path = tmp_path / "private_equity_model.json"
     config = _minimal_config(
-        exogenous_provider={
-            "type": "composite",
-            "macro": {"type": "independent"},
-            "private_equity": {"type": "trained_private_equity", "trained_model_path": str(model_path)},
+        exogenous_presets={
+            "current_exogenous_model": {
+                "type": "composite",
+                "macro": {"type": "independent"},
+                "private_equity": {"type": "trained_private_equity", "trained_model_path": str(model_path)},
+            }
         }
     )
 
-    assert isinstance(config.exogenous_provider, CompositeExogenousProviderConfig)
-    assert isinstance(config.exogenous_provider.private_equity, TrainedPrivateEquityProviderConfig)
-    assert config.exogenous_provider.private_equity.trained_model_path == model_path
+    provider = config.exogenous_presets[config.default_exogenous_preset_id]
+    assert isinstance(provider, CompositeExogenousProviderConfig)
+    assert isinstance(provider.private_equity, TrainedPrivateEquityProviderConfig)
+    assert provider.private_equity.trained_model_path == model_path
 
 
 def test_config_accepts_composite_provider_with_private_equity_risk() -> None:
     config = _minimal_config(
-        exogenous_provider={
-            "type": "composite",
-            "macro": {"type": "independent"},
-            "private_equity": {
-                "type": "private_equity_risk",
-                "issuers": {"private_holding_a": {"current_mark_usd": 25.0}},
-            },
+        exogenous_presets={
+            "current_exogenous_model": {
+                "type": "composite",
+                "macro": {"type": "independent"},
+                "private_equity": {
+                    "type": "private_equity_risk",
+                    "issuers": {"private_holding_a": {"current_mark_usd": 25.0}},
+                },
+            }
         }
     )
 
-    assert isinstance(config.exogenous_provider, CompositeExogenousProviderConfig)
-    assert isinstance(config.exogenous_provider.private_equity, PrivateEquityRiskProviderConfig)
-    assert config.exogenous_provider.private_equity.issuers["private_holding_a"].current_mark_usd == 25.0
+    provider = config.exogenous_presets[config.default_exogenous_preset_id]
+    assert isinstance(provider, CompositeExogenousProviderConfig)
+    assert isinstance(provider.private_equity, PrivateEquityRiskProviderConfig)
+    assert provider.private_equity.issuers["private_holding_a"].current_mark_usd == 25.0
 
 
 def test_relative_trained_private_equity_model_path_anchors_against_yaml_dir(tmp_path) -> None:
@@ -238,13 +246,15 @@ def test_relative_trained_private_equity_model_path_anchors_against_yaml_dir(tmp
         dump_augur_config_yaml(
             _minimal_config(
                 property_source=PropertySourceConfig(properties_path=Path("properties.json")),
-                exogenous_provider={
-                    "type": "composite",
-                    "macro": {"type": "independent"},
-                    "private_equity": {
-                        "type": "trained_private_equity",
-                        "trained_model_path": "private_equity_model.json",
-                    },
+                exogenous_presets={
+                    "current_exogenous_model": {
+                        "type": "composite",
+                        "macro": {"type": "independent"},
+                        "private_equity": {
+                            "type": "trained_private_equity",
+                            "trained_model_path": "private_equity_model.json",
+                        },
+                    }
                 },
             )
         ),
@@ -253,12 +263,10 @@ def test_relative_trained_private_equity_model_path_anchors_against_yaml_dir(tmp
 
     reloaded = load_augur_config(config_path)
 
-    assert isinstance(reloaded.exogenous_provider, CompositeExogenousProviderConfig)
-    assert isinstance(reloaded.exogenous_provider.private_equity, TrainedPrivateEquityProviderConfig)
-    assert (
-        reloaded.exogenous_provider.private_equity.trained_model_path
-        == (tmp_path / "private_equity_model.json").resolve()
-    )
+    provider = reloaded.exogenous_presets[reloaded.default_exogenous_preset_id]
+    assert isinstance(provider, CompositeExogenousProviderConfig)
+    assert isinstance(provider.private_equity, TrainedPrivateEquityProviderConfig)
+    assert provider.private_equity.trained_model_path == (tmp_path / "private_equity_model.json").resolve()
 
 
 def test_relative_state_space_artifact_path_anchors_against_yaml_dir(tmp_path) -> None:
@@ -269,15 +277,17 @@ def test_relative_state_space_artifact_path_anchors_against_yaml_dir(tmp_path) -
         dump_augur_config_yaml(
             _minimal_config(
                 property_source=PropertySourceConfig(properties_path=Path("properties.json")),
-                exogenous_provider={
-                    "type": "state_space",
-                    "trained_artifact_path": "state_space_artifact.json",
-                    "conditioning": {"start_at": "2026-05-27", "observations": {}},
-                    "current_mortgage30_rate_pct": 6.23,
-                    "location_series_sources": {
-                        "home_value": {"location_a": "home_value:location_a"},
-                        "rent": {"location_a": "rent:location_a"},
-                    },
+                exogenous_presets={
+                    "current_exogenous_model": {
+                        "type": "state_space",
+                        "trained_artifact_path": "state_space_artifact.json",
+                        "conditioning": {"start_at": "2026-05-27", "observations": {}},
+                        "current_mortgage30_rate_pct": 6.23,
+                        "location_series_sources": {
+                            "home_value": {"location_a": "home_value:location_a"},
+                            "rent": {"location_a": "rent:location_a"},
+                        },
+                    }
                 },
             )
         ),
@@ -286,8 +296,9 @@ def test_relative_state_space_artifact_path_anchors_against_yaml_dir(tmp_path) -
 
     reloaded = load_augur_config(config_path)
 
-    assert isinstance(reloaded.exogenous_provider, StateSpaceExogenousProviderConfig)
-    assert reloaded.exogenous_provider.trained_artifact_path == (tmp_path / "state_space_artifact.json").resolve()
+    provider = reloaded.exogenous_presets[reloaded.default_exogenous_preset_id]
+    assert isinstance(provider, StateSpaceExogenousProviderConfig)
+    assert provider.trained_artifact_path == (tmp_path / "state_space_artifact.json").resolve()
 
 
 def test_relative_property_source_paths_anchor_against_yaml_dir(tmp_path) -> None:

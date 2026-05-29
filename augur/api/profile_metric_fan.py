@@ -11,7 +11,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from types import FrameType
-from typing import get_args
+from typing import cast, get_args
 
 from augur.api.catalog import build_bootstrap_payload
 from augur.api.config import Config, load_augur_config
@@ -110,7 +110,9 @@ def _config_path(config: str | None) -> Path:
 
 
 def _profile_exogenous_models(config: Config) -> dict[str, Sampler]:
-    return {preset_id: provider.realize_model() for preset_id, provider in config.exogenous_presets.items()}
+    return {
+        preset_id: cast(Sampler, provider.realize_model()) for preset_id, provider in config.exogenous_presets.items()
+    }
 
 
 @contextmanager

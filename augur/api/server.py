@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import uvicorn
 from fastapi import FastAPI
@@ -97,8 +97,9 @@ def create_app(config: ApiServerConfig) -> FastAPI:
 
 
 def create_app_from_augur_config(augur_config: Config) -> FastAPI:
-    exogenous_models = {
-        preset_id: provider.realize_model() for preset_id, provider in augur_config.exogenous_presets.items()
+    exogenous_models: dict[str, Sampler] = {
+        preset_id: cast(Sampler, provider.realize_model())
+        for preset_id, provider in augur_config.exogenous_presets.items()
     }
     return create_app(ApiServerConfig(augur_config=augur_config, exogenous_models=exogenous_models))
 

@@ -158,7 +158,8 @@ def _config(
         max_rollout_samples=128,
         locations=_fixture_locations(),
         location_selection=location_selection,
-        exogenous_provider=IndependentExogenousProviderConfig(),
+        exogenous_presets={"current_exogenous_model": IndependentExogenousProviderConfig()},
+        default_exogenous_preset_id="current_exogenous_model",
     )
 
 
