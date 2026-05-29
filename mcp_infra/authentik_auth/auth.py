@@ -114,7 +114,9 @@ def build_authentik_auth(
     """Build OIDCProxy + JWTVerifier auth for an Authentik-backed MCP server.
 
     OIDCProxy handles the user-facing MCP OAuth dance (DCR, PKCE, consent).
-    JWTVerifier validates tool-call Bearer tokens against Authentik's JWKS.
+    JWTVerifier validates tool-call Bearer tokens against Authentik's JWKS,
+    whose URL is taken from the OIDC discovery document (Authentik serves
+    JWKS at ``<issuer>/jwks/``, not ``<issuer>/.well-known/jwks``).
 
     Args:
         config: Authentik auth configuration.
@@ -125,8 +127,11 @@ def build_authentik_auth(
             encrypted store under ``FASTMCP_HOME``.
     """
     issuer = config.normalized_issuer()
+    config_url = f"{issuer}/.well-known/openid-configuration"
+    discovery = httpx.get(config_url, timeout=10.0).raise_for_status().json()
+    jwks_uri = discovery["jwks_uri"]
     proxy = OIDCProxy(
-        config_url=f"{issuer}/.well-known/openid-configuration",
+        config_url=config_url,
         client_id=config.oidc_client_id,
         client_secret=config.oidc_client_secret,
         base_url=config.normalized_public_base_url(),
@@ -135,7 +140,7 @@ def build_authentik_auth(
     )
     assert proxy.client_registration_options is not None
     proxy.client_registration_options.valid_scopes = valid_scopes or DEFAULT_VALID_SCOPES
-    return MultiAuth(server=proxy, verifiers=[JWTVerifier(jwks_uri=f"{issuer}/.well-known/jwks", issuer=issuer)])
+    return MultiAuth(server=proxy, verifiers=[JWTVerifier(jwks_uri=jwks_uri, issuer=issuer)])
 
 
 # ── Token exchange auth ───────────────────────────────────────────────────
