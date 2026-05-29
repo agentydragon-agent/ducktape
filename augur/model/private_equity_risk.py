@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import math
 from dataclasses import dataclass
 from typing import Literal
@@ -208,8 +209,10 @@ def _sample_issuer(
 
     latent_mark = _sample_latent_marks_vectorized(issuer, level_seeds=level_seeds, horizon_months=horizon_months)
 
-    # Per-rollout deterministic event-month masks ((R, T+1) booleans).
-    event_rng = np.random.default_rng(np.asarray(event_seeds, dtype=np.uint64))
+    # Per-rollout deterministic event-month masks ((R, T+1) booleans). One Generator
+    # seeded by the hash of all per-rollout event seeds; vectorization gives up the
+    # original property that rollout R's draws depend only on its own seed.
+    event_rng = np.random.default_rng(_seed_from_rollout_seeds(event_seeds))
     tender_mask = _sample_event_month_mask_vectorized(
         median_months=issuer.tender_interval_months_median,
         log_sigma=issuer.tender_interval_log_sigma,
@@ -321,6 +324,10 @@ def _sample_issuer(
             branch = eligible & (u_public[:, u_idx] < monthly_public)
             if branch.any():
                 event_kind_code[branch, t] = int(PrivateEquityEventKindCode.PUBLIC_MARKET_OPEN)
+                # Forward-fill PUBLIC_MARKET regime from t onward.
+                rows = np.where(branch)[0]
+                future_cols = np.arange(t, horizon_months + 1)
+                regime_code[np.ix_(rows, future_cols)] = int(PrivateEquityRegimeCode.PUBLIC_MARKET)
                 # Noisy public-market open mark at t.
                 mark[branch, t] = _noisy_mark_vectorized(
                     latent_mark[branch, t],
@@ -332,7 +339,6 @@ def _sample_issuer(
                 public_market_lockup_through[branch] = new_lockup_through
                 # Within-lockup liquidity_blocked.
                 if new_lockup_through >= t:
-                    rows = np.where(branch)[0]
                     lockup_cols = np.arange(t, new_lockup_through + 1)
                     liquidity_blocked[np.ix_(rows, lockup_cols)] = 1.0
                 public_market |= branch
@@ -433,12 +439,17 @@ def _sample_issuer(
                     log_noise_mu=issuer.public_market_price_log_discount_mu,
                     log_noise_sigma=issuer.public_market_price_log_discount_sigma,
                 )
-                _apply_terminal_block(
-                    branch,
-                    regime_value=int(PrivateEquityRegimeCode.ACQUIRED),
-                    mark_factor=None,  # mark[t:] left at mark[t] via earlier carry
-                    t=t + 1,  # already set mark[t] above; lock t+1..T to acquired
-                )
+                # Forward-fill ACQUIRED regime + liquidity_blocked from t (the firing
+                # month) onward; the mark stays at the noisy_mark value set above for
+                # t and carries forward (the carry-forward at the top of the next
+                # iteration uses mark[:, t-1], so we set mark[:, t+1:] explicitly).
+                rows = np.where(branch)[0]
+                future_cols = np.arange(t, horizon_months + 1)
+                regime_code[np.ix_(rows, future_cols)] = int(PrivateEquityRegimeCode.ACQUIRED)
+                liquidity_blocked[np.ix_(rows, future_cols)] = 1.0
+                if t < horizon_months:
+                    later_cols = np.arange(t + 1, horizon_months + 1)
+                    mark[np.ix_(rows, later_cols)] = mark[rows, t][:, None]
                 acquired |= branch
                 fires |= branch
                 eligible &= ~branch
@@ -503,9 +514,10 @@ def _sample_latent_marks_vectorized(
     paths[:, 0] = issuer.current_mark_usd
     if horizon_months == 0:
         return paths
-    # Single seeded generator with multi-dimensional draws preserves
-    # per-rollout reproducibility while sampling all R paths in one call.
-    rng = np.random.default_rng(np.asarray(level_seeds, dtype=np.uint64))
+    # Single Generator seeded by the hash of all per-rollout level seeds; vectorized
+    # sampling forfeits the original per-rollout-seed independence but stays
+    # deterministic given a fixed sequence of seeds.
+    rng = np.random.default_rng(_seed_from_rollout_seeds(level_seeds))
     shocks = rng.standard_t(df=issuer.student_t_nu, size=(rollout_count, horizon_months))
     shocks *= issuer.monthly_log_return_sigma
     log_path = math.log(issuer.current_mark_usd) + np.cumsum(issuer.monthly_log_return_mu + shocks, axis=1)
@@ -550,6 +562,15 @@ def _noisy_mark_vectorized(
     if log_noise_mu == 0.0 and log_noise_sigma == 0.0:
         return values
     return values * np.exp(rng.normal(loc=log_noise_mu, scale=log_noise_sigma, size=values.shape))
+
+
+def _seed_from_rollout_seeds(seeds: tuple[int, ...]) -> int:
+    """Deterministic uint64 seed mixed from a sequence of arbitrary-precision ints."""
+
+    digest = hashlib.sha256()
+    for seed in seeds:
+        digest.update(int(seed).to_bytes(32, "big", signed=False))
+    return int.from_bytes(digest.digest()[:8], "big")
 
 
 def _monthly_probability(annual_probability: float) -> float:
