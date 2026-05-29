@@ -144,6 +144,7 @@ function RolloutResultsPanel({
           hoveredEventMonthIndex={eventSelection.hoveredEventMonthIndex}
           onSelectEventMonth={eventSelection.onSelectEventMonth}
           onHoverEventMonth={eventSelection.onHoverEventMonth}
+          currencyDisplay={currencyDisplay}
         />
       )}
       <TerminalMetricTable
@@ -196,11 +197,20 @@ function DeploymentCommitSummary({ deployment }) {
   );
 }
 
+function viewPrefsFromSearch(searchString) {
+  const params = new URLSearchParams(searchString);
+  return {
+    metricScale: params.get("scale") === "log" ? "log" : "linear",
+    currencyDisplay: params.get("fmt") === "exact" ? "exact" : "compact",
+  };
+}
+
 function ProductProjectionWorkspace({ bootstrap, deployment }) {
+  const initialViewPrefs = viewPrefsFromSearch(window.location.search);
   const [input, setInput] = useState(() => productInputFromSearch(window.location.search, bootstrap));
   const [selectedMetricValue, setSelectedMetricValue] = useState("net_worth_usd");
-  const [metricScale, setMetricScale] = useState("linear");
-  const [currencyDisplay, setCurrencyDisplay] = useState("compact");
+  const [metricScale, setMetricScale] = useState(initialViewPrefs.metricScale);
+  const [currencyDisplay, setCurrencyDisplay] = useState(initialViewPrefs.currencyDisplay);
   const [result, setResult] = useState(null);
   const [runError, setRunError] = useState(null);
   const [portfolio, setPortfolio] = useState(null);
@@ -237,12 +247,15 @@ function ProductProjectionWorkspace({ bootstrap, deployment }) {
   const selectedRolloutLoading = selectedSeed != null && result != null && !selectedDetail && !rolloutError;
 
   useEffect(() => {
-    const search = productInputToSearch(input, bootstrap);
+    const params = new URLSearchParams(productInputToSearch(input, bootstrap));
+    if (metricScale !== "linear") params.set("scale", "log");
+    if (currencyDisplay !== "compact") params.set("fmt", "exact");
+    const search = params.toString();
     const newUrl = `${window.location.pathname}${search ? "?" + search : ""}${window.location.hash}`;
     if (newUrl !== window.location.pathname + window.location.search + window.location.hash) {
       window.history.replaceState(null, "", newUrl);
     }
-  }, [input, bootstrap]);
+  }, [input, bootstrap, metricScale, currencyDisplay]);
 
   useEffect(() => {
     const controller = new AbortController();

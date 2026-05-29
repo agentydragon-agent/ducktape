@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef } from "react";
-import { fmtUsd, fmtNumber } from "./lib/format.js";
+import { fmtNumber } from "./lib/format.js";
+import { fmtMetricValue } from "./lib/chart.js";
 import {
   ROLLOUT_EVENT_COLORS,
   ROLLOUT_EVENT_KIND_ORDER,
@@ -20,6 +21,7 @@ export function SelectedRolloutEventsPanel({
   hoveredEventMonthIndex,
   onSelectEventMonth,
   onHoverEventMonth,
+  currencyDisplay = "exact",
 }) {
   const groups = useMemo(() => eventGroupsByMonth(events), [events]);
   const groupRefs = useRef(new Map());
@@ -131,7 +133,7 @@ export function SelectedRolloutEventsPanel({
                           </div>
                         </td>
                         <td className="whitespace-nowrap px-3 py-1 text-right augur-tabular">
-                          {fmtUsd(eventAmount(event))}
+                          {fmtMetricValue("amountUsd", eventAmount(event), currencyDisplay)}
                         </td>
                         <td className="min-w-[12rem] px-4 py-1 text-xs augur-muted">{eventDetailText(event)}</td>
                       </tr>
