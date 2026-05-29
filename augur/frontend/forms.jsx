@@ -686,7 +686,7 @@ export function ProductScenarioForm({ input, bootstrap, portfolio, portfolioErro
             />
           </div>
         </div>
-        <div className="px-4 py-3">
+        <div className="grid gap-3 px-4 py-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
           <NumberField
             label="Monthly spend"
             value={input.monthlySpendUsd}
@@ -695,7 +695,7 @@ export function ProductScenarioForm({ input, bootstrap, portfolio, portfolioErro
             prefix="$"
             onChange={(monthlySpendUsd) => onChange({ monthlySpendUsd })}
           />
-          <IndexPicker className="mt-2" value={input.spendIndex} onChange={(spendIndex) => onChange({ spendIndex })} />
+          <IndexPicker value={input.spendIndex} onChange={(spendIndex) => onChange({ spendIndex })} />
         </div>
         <div className="grid gap-3 px-4 py-3 sm:grid-cols-2">
           <NumberField
