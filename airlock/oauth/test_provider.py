@@ -1,5 +1,7 @@
 """Tests for airlock.oauth.provider."""
 
+import base64
+import hashlib
 from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qs, urlparse
 
@@ -15,6 +17,7 @@ from airlock.oauth.provider import (
     TokenData,
     TokenSecretConfig,
     _parse_token_response,
+    generate_pkce_pair,
 )
 
 
@@ -100,6 +103,73 @@ async def test_exchange_code(provider: GenericOAuth2Provider) -> None:
     assert token.scope == "scope1 scope2"
     assert token.expires_at > datetime.now(UTC)
     assert route.called
+
+
+def test_generate_pkce_pair_s256() -> None:
+    """code_challenge must be base64url(SHA256(code_verifier)) without padding."""
+    verifier, challenge = generate_pkce_pair()
+    assert 43 <= len(verifier) <= 128  # RFC 7636 length window
+    expected = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode("ascii")).digest()).rstrip(b"=").decode("ascii")
+    assert challenge == expected
+    assert "=" not in challenge  # padding stripped
+
+    # Each call must yield a fresh pair.
+    v2, c2 = generate_pkce_pair()
+    assert v2 != verifier
+    assert c2 != challenge
+
+
+def test_build_authorize_url_with_pkce_and_aud() -> None:
+    config = OAuth2ProviderConfig(
+        name="bsc",
+        display_name="BSC",
+        authorize_url="https://example.com/authorize",
+        token_url="https://example.com/token",
+        scopes=["interop"],
+        redirect_uri="http://localhost/callback/bsc",
+        refresh_secret=TokenSecretConfig(name="bsc-tokens"),
+        access_secret=TokenSecretConfig(name="bsc-access-token"),
+        use_pkce=True,
+        aud="https://fhir.example.com/r4",
+    )
+    provider = GenericOAuth2Provider(config, "cid", "csec")
+    url = provider.build_authorize_url("st", code_challenge="CHAL")
+    params = parse_qs(urlparse(url).query)
+
+    assert params["code_challenge"] == ["CHAL"]
+    assert params["code_challenge_method"] == ["S256"]
+    assert params["aud"] == ["https://fhir.example.com/r4"]
+    assert params["scope"] == ["interop"]
+
+
+def test_build_authorize_url_no_pkce_no_aud(provider: GenericOAuth2Provider) -> None:
+    """When PKCE not requested and aud not configured, neither appears."""
+    url = provider.build_authorize_url("state")
+    params = parse_qs(urlparse(url).query)
+    assert "code_challenge" not in params
+    assert "code_challenge_method" not in params
+    assert "aud" not in params
+
+
+@respx.mock
+async def test_exchange_code_with_pkce(provider: GenericOAuth2Provider) -> None:
+    route = respx.post("https://example.com/token").mock(
+        return_value=Response(200, json={"access_token": "a", "expires_in": 3600})
+    )
+    await provider.exchange_code("code", code_verifier="my-verifier")
+    sent = dict(parse_qs(route.calls.last.request.content.decode()))
+    assert sent["code_verifier"] == ["my-verifier"]
+    assert sent["code"] == ["code"]
+
+
+@respx.mock
+async def test_exchange_code_no_pkce_omits_verifier(provider: GenericOAuth2Provider) -> None:
+    route = respx.post("https://example.com/token").mock(
+        return_value=Response(200, json={"access_token": "a", "expires_in": 3600})
+    )
+    await provider.exchange_code("code")
+    sent = dict(parse_qs(route.calls.last.request.content.decode()))
+    assert "code_verifier" not in sent
 
 
 @respx.mock

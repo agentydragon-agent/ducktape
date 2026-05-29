@@ -1,5 +1,7 @@
 """Generic OAuth2 provider: authorization URL, code exchange, token refresh."""
 
+import base64
+import hashlib
 import logging
 import secrets
 from datetime import UTC, datetime, timedelta
@@ -14,6 +16,14 @@ logger = logging.getLogger(__name__)
 
 ACCESS_TOKEN_FIELDS: frozenset[str] = frozenset({"access_token", "token_type", "expires_at", "scope"})
 ALL_TOKEN_FIELDS: frozenset[str] = frozenset({"access_token", "refresh_token", "token_type", "expires_at", "scope"})
+
+
+def generate_pkce_pair() -> tuple[str, str]:
+    """Return (code_verifier, code_challenge) per RFC 7636 with S256 method."""
+    verifier = secrets.token_urlsafe(64)
+    digest = hashlib.sha256(verifier.encode("ascii")).digest()
+    challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+    return verifier, challenge
 
 
 class TokenSecretConfig(BaseModel):
@@ -36,6 +46,11 @@ class OAuth2ProviderConfig(BaseProviderConfig):
     scopes: list[str] = Field(description="OAuth2 scopes to request")
     refresh_margin_seconds: int = Field(default=3600, description="Seconds before expiry to trigger refresh")
     extra_auth_params: dict[str, str] = Field(default_factory=dict, description="Extra query params for authorize URL")
+    use_pkce: bool = Field(default=False, description="Use PKCE (RFC 7636 S256). Required for SMART on FHIR.")
+    aud: str | None = Field(
+        default=None,
+        description="Optional `aud` param on the authorize URL — required for SMART on FHIR (FHIR base URL).",
+    )
 
 
 class PlaidProviderConfig(BaseProviderConfig):
@@ -76,7 +91,7 @@ class GenericOAuth2Provider(_BaseProvider):
         self.client_id = client_id
         self.client_secret = client_secret
 
-    def build_authorize_url(self, state: str) -> str:
+    def build_authorize_url(self, state: str, code_challenge: str | None = None) -> str:
         params = {
             "response_type": "code",
             "client_id": self.client_id,
@@ -85,20 +100,25 @@ class GenericOAuth2Provider(_BaseProvider):
             "state": state,
             **self.config.extra_auth_params,
         }
+        if code_challenge is not None:
+            params["code_challenge"] = code_challenge
+            params["code_challenge_method"] = "S256"
+        if self.config.aud is not None:
+            params["aud"] = self.config.aud
         return f"{self.config.authorize_url}?{urlencode(params)}"
 
-    async def exchange_code(self, code: str) -> TokenData:
+    async def exchange_code(self, code: str, code_verifier: str | None = None) -> TokenData:
+        data = {
+            "grant_type": "authorization_code",
+            "code": code,
+            "client_id": self.client_id,
+            "client_secret": self.client_secret,
+            "redirect_uri": self.config.redirect_uri,
+        }
+        if code_verifier is not None:
+            data["code_verifier"] = code_verifier
         async with httpx.AsyncClient() as client:
-            response = await client.post(
-                self.config.token_url,
-                data={
-                    "grant_type": "authorization_code",
-                    "code": code,
-                    "client_id": self.client_id,
-                    "client_secret": self.client_secret,
-                    "redirect_uri": self.config.redirect_uri,
-                },
-            )
+            response = await client.post(self.config.token_url, data=data)
             response.raise_for_status()
             return _parse_token_response(response.json())
 
