@@ -58,10 +58,23 @@ isn't in that list, add the public key to that file and re-publish the image.
 
 ## Exposing SSH Publicly
 
-Cilium 1.19 does not implement Gateway API `TCPRoute`, so a `protocol: TCP`
-listener on `cluster-gateway` never gets a corresponding Envoy listener.
-Until that changes — or we add a manual `CiliumEnvoyConfig` or a `NodePort`
-Service — `kubectl port-forward svc/<name>-ssh` is the way in.
+Cilium 1.19's Gateway API controller does not implement `TCPRoute`, so a
+`protocol: TCP` listener on `cluster-gateway` never gets a corresponding
+Envoy listener. The workaround is a hand-written `CiliumEnvoyConfig` that
+declares the listener directly on the `cilium-envoy` DaemonSet. See
+<k8s/gecko/app/ciliumenvoyconfig.yaml>: it binds `0.0.0.0:22` on every hil
+node (hostNetwork) with a `tcp_proxy` filter pointing at the gecko-ssh
+Service. Wildcard `*.allegedly.works` already resolves to those node IPs,
+so `ssh agentydragon@gecko.allegedly.works` works for any key in
+`nix/nixos/hosts/bootstrap/default.nix`.
+
+To expose a second VM, copy the CEC, bump the listener port (one port per
+backend; SSH has no SNI), and update `cluster:` / `backendServices:` to
+point at the new Service.
+
+Security model: SSH key-only auth on the VM (NixOS base config disables
+`PasswordAuthentication`). Bruteforce attempts against the public :22 are
+expected noise against a key-only sshd.
 
 ## Caveats
 
