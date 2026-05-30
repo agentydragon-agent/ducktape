@@ -17,8 +17,8 @@
       "sha256": "dFQ4p48/UUs72Pf9xswSbhRKcHrN8eZK1sGUQWDULzM="
     },
     "ducktape-git-hooks": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-git-hooks-5f2e3e67b414/ducktape_git_hooks-0.1.0-py3-none-any.whl",
-      "sha256": "Xy4+Z7QUbtlogkwuaVJyCl0t7EgiqorXGfjdYWbxZ0M="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-git-hooks-64830110d6c7/ducktape_git_hooks-0.1.0-py3-none-any.whl",
+      "sha256": "ZIMBENbHu9DwQVksrIgauz7CPRNK9YeD6QeUPx4OUms="
     },
     "ducktape-util": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-util-c9eb2c31ba5c/ducktape_util-0.1.0-py3-none-any.whl",
@@ -49,8 +49,8 @@
       "sha256": "MQ/QsML5JXmWsRnakb8+qZpiH+dUcy0NUyZPajS3n14="
     },
     "debundle": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-147fe743d4d8/debundle",
-      "sha256": "FH/nQ9TYCBk6FsPtxfPSJL1TIgQalvv3rVB1FGj3koA="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/debundle-730b8c25d894/debundle",
+      "sha256": "cwuMJdiUQhuAlGlRzcsAcmmIPlgDjFa5Ive/qDbPRXE="
     }
   }
 }
