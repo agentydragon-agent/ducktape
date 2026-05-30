@@ -19,7 +19,6 @@ from augur.model.private_equity_risk import (
     PrivateEquityRiskIssuerConfig,
     PrivateEquityRiskProviderConfig,
     PublicMarketCdfAnchor,
-    _dilution_factor,
     _public_market_open_hazard_by_month,
     _sample_company_valuation_vectorized,
 )
@@ -515,13 +514,13 @@ def test_dilution_factor_shape_and_values() -> None:
     """`dilution_factor(t) = (1+rate)^(t/12)`, with t=0 ⇒ 1 and t=12 ⇒ 1+rate."""
 
     rate = 0.30
-    factor = _dilution_factor(annual_dilution_rate=rate, horizon_months=24)
+    factor = _deterministic_dilution_factor(annual_dilution_rate=rate, horizon_months=24)
     assert factor.shape == (25,)
     assert factor[0] == pytest.approx(1.0)
     assert factor[12] == pytest.approx(1.0 + rate)
     assert factor[24] == pytest.approx((1.0 + rate) ** 2)
     # Zero dilution ⇒ identity row.
-    np.testing.assert_allclose(_dilution_factor(annual_dilution_rate=0.0, horizon_months=6), np.ones(7))
+    np.testing.assert_allclose(_deterministic_dilution_factor(annual_dilution_rate=0.0, horizon_months=6), np.ones(7))
 
 
 def test_positive_dilution_makes_coupled_mark_grow_slower_than_valuation_ratio() -> None:
@@ -542,8 +541,8 @@ def test_positive_dilution_makes_coupled_mark_grow_slower_than_valuation_ratio()
     valuation = _sample_company_valuation_vectorized(issuer, valuation_seeds=valuation_seeds, horizon_months=horizon)
     valuation_ratio = valuation / valuation[:, [0]]
 
-    diluted = _dilution_factor(annual_dilution_rate=rate, horizon_months=horizon)
-    undiluted = _dilution_factor(annual_dilution_rate=0.0, horizon_months=horizon)
+    diluted = _deterministic_dilution_factor(annual_dilution_rate=rate, horizon_months=horizon)
+    undiluted = _deterministic_dilution_factor(annual_dilution_rate=0.0, horizon_months=horizon)
     coupled_mark = issuer.current_mark_usd * valuation_ratio / diluted
     coupled_mark_no_dilution = issuer.current_mark_usd * valuation_ratio / undiluted
 
