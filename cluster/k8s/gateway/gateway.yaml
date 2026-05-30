@@ -45,15 +45,3 @@ spec:
       allowedRoutes:
         namespaces:
           from: All
-    # Raw TCP for `ssh agentydragon@gecko.allegedly.works` — wildcard A points
-    # at the hil hostNetwork Envoy nodes, which forward 22 → gecko-ssh:22 via
-    # cluster/k8s/gecko/app/tcproute.yaml.
-    - name: ssh-gecko
-      port: 22
-      protocol: TCP
-      allowedRoutes:
-        namespaces:
-          from: All
-        kinds:
-          - kind: TCPRoute
-            group: gateway.networking.k8s.io

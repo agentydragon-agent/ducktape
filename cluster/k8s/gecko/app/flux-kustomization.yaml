@@ -19,8 +19,6 @@ spec:
     - name: external-secrets-operator
     - name: seaweedfs-vm-images-s3
     - name: local-path-provisioner
-    # tcproute.yaml binds to the ssh-gecko listener on cluster-gateway
-    - name: gateway
   wait: true
   healthChecks:
     - apiVersion: external-secrets.io/v1
