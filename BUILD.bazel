@@ -283,6 +283,8 @@ py_package(
     name = "ducktape_pkg",
     packages = [
         "agent_core",
+        "cluster.skills.hetzner_vnc_screenshot",
+        "cluster.skills.proxmox_vm",
         "difftree",
         "git_commit_ai",
         "gmail_archiver",
@@ -292,8 +294,6 @@ py_package(
         "mcp_infra",
         "mcp_utils",
         "openai_utils",
-        "skills.hetzner_vnc_screenshot",
-        "skills.proxmox_vm",
     ],
     deps = [
         # CLI tool entry points. Each dep must transitively reach the module
@@ -304,8 +304,8 @@ py_package(
         "//difftree:cli",
         "//git_commit_ai:git_commit_ai_lib",
         "//gmail_archiver:main",
-        "//skills/hetzner_vnc_screenshot:vnc_screenshot",
-        "//skills/proxmox_vm:vm_interact",
+        "//cluster/skills/hetzner_vnc_screenshot:vnc_screenshot",
+        "//cluster/skills/proxmox_vm:vm_interact",
     ],
 )
 
@@ -317,8 +317,8 @@ py_wheel(
             "git-commit-ai = git_commit_ai.cli:main",
             "difftree = difftree.cli:main",
             "gmail-archiver = gmail_archiver.main:app",
-            "hetzner-vnc-screenshot = skills.hetzner_vnc_screenshot.vnc_screenshot:app",
-            "vm-interact = skills.proxmox_vm.vm_interact:app",
+            "hetzner-vnc-screenshot = cluster.skills.hetzner_vnc_screenshot.vnc_screenshot:app",
+            "vm-interact = cluster.skills.proxmox_vm.vm_interact:app",
         ],
     },
     python_requires = ">=3.13",

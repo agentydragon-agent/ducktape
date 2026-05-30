@@ -14,7 +14,7 @@ py_library(
 
 py_binary(
     name = "vm_interact_bin",
-    main_module = "skills.proxmox_vm.vm_interact",
+    main_module = "cluster.skills.proxmox_vm.vm_interact",
     deps = [":vm_interact"],
 )
 

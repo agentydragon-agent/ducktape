@@ -57,7 +57,7 @@ Modifiers: `shift-X`, `ctrl-X`, `alt-X` (e.g., `shift-a` for 'A', `ctrl-c` for C
 
 One command per line:
 
-```
+```text
 screenshot
 type ip addr
 enter

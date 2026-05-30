@@ -57,7 +57,7 @@ The custom adapter is inelegant - it buffers WebSocket messages and implements `
 
 ## Proposed Architecture
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────┐
 │  SKILL: hetzner_vnc                                            │
 │  ┌─────────────────┐    ┌──────────────┐    ┌───────────┐ │
@@ -86,7 +86,7 @@ The custom adapter is inelegant - it buffers WebSocket messages and implements `
 
 ### Protocol Sequence
 
-```
+```text
 1. hcloud API
    client.servers.request_console(server)
    Returns: { wss_url, password }
@@ -125,7 +125,7 @@ The custom adapter is inelegant - it buffers WebSocket messages and implements `
 
 ### New Files
 
-```
+```text
 skills/hetzner_vnc_screenshot/
 ├── SKILL.md                      # existing
 ├── vnc_screenshot.py            # keep for backwards compatibility

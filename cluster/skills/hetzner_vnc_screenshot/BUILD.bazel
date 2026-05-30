@@ -16,7 +16,7 @@ py_library(
 
 py_binary(
     name = "vnc_screenshot_bin",
-    main_module = "skills.hetzner_vnc_screenshot.vnc_screenshot",
+    main_module = "cluster.skills.hetzner_vnc_screenshot.vnc_screenshot",
     deps = [":vnc_screenshot"],
 )
 

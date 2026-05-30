@@ -157,7 +157,7 @@ kubectl exec -n <NAMESPACE> <TARGET_POD> -- \
 
 Point application at target cluster's service:
 
-```
+```text
 <TARGET_NAME>-rw.<NAMESPACE>.svc.cluster.local:5432
 ```
 

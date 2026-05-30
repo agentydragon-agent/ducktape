@@ -8,7 +8,6 @@ package(default_visibility = ["//visibility:public"])
 py_binary(
     name = "audit",
     srcs = ["audit.py"],
-    imports = ["../.."],
     main = "audit.py",
     deps = [
         "//cluster/validation:flux",

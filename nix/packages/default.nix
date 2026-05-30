@@ -200,8 +200,8 @@ rec {
       "difftree.cli"
       "git_commit_ai.cli"
       "gmail_archiver.main"
-      "skills.hetzner_vnc_screenshot.vnc_screenshot"
-      "skills.proxmox_vm.vm_interact"
+      "cluster.skills.hetzner_vnc_screenshot.vnc_screenshot"
+      "cluster.skills.proxmox_vm.vm_interact"
     ];
     propagatedBuildInputs = with python3Packages; [
       aiodocker
