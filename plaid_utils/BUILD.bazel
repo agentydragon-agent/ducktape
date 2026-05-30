@@ -1,0 +1,40 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+
+py_library(
+    name = "models",
+    srcs = ["models.py"],
+    visibility = ["//plaid_utils:__subpackages__"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "client",
+    srcs = ["client.py"],
+    visibility = ["//plaid_utils:__subpackages__"],
+    deps = ["@pypi//plaid_python"],
+)
+
+py_library(
+    name = "dev_creds",
+    srcs = ["dev_creds.py"],
+    deps = [
+        ":client",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "sandbox_smoke_lib",
+    srcs = ["sandbox_smoke.py"],
+    deps = [
+        ":client",
+        ":dev_creds",
+        "@pypi//plaid_python",
+    ],
+)
+
+py_binary(
+    name = "sandbox_smoke",
+    main_module = "plaid_utils.sandbox_smoke",
+    deps = [":sandbox_smoke_lib"],
+)
