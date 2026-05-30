@@ -66,7 +66,7 @@
     pkgs.telegram-desktop
     pkgs.tor-browser
     pkgs.tuxguitar
-    ducktapePackages.tana
+    ducktapePackages.tana-outliner
   ];
   # NixOS doesn't have Pop!_OS's built-in ubuntu-appindicators, so install it
   programs.gnome-shell.extensions = [

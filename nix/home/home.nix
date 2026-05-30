@@ -560,7 +560,7 @@ in
       claude-statusline # Claude Code statusline
       bbapi # BuildBuddy API CLI
       gterm-theme # GNOME Terminal theme follower
-      ducktapePackages.tana # Knowledge graph / note-taking
+      ducktapePackages.tana-outliner # Knowledge graph / note-taking
     ]
     ++ [
       eza # Modern ls
