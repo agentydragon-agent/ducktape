@@ -5,44 +5,34 @@ Every `ImageRepository` must be listed in the `flux-webhook` GitHub `Receiver` s
 picked up on the 5-minute `ImageRepository` poll. Also checks that every `ImagePolicy`
 references a defined `ImageRepository`, and that the webhook doesn't reference one that no
 longer exists.
+
+Reads the typed resources from `ParsedCluster.build_results` — the kustomize/flux build
+output the validator already produces — and isinstance-dispatches on the parsed variants, so
+it sees exactly what Flux applies and never re-walks source YAML (which would choke on the
+Authentik blueprints' custom `!Find`/`!Env` tags).
 """
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any
-
-import yaml
+from cluster.validation.cluster import ParsedCluster
+from cluster.validation.k8s import ImagePolicyResource, ImageRepositoryResource, ReceiverResource
 
 
-def _docs(path: Path) -> list[Any]:
-    if not path.exists():
-        return []
-    return [d for d in yaml.safe_load_all(path.read_text()) if isinstance(d, dict) and d.get("kind")]
-
-
-def check_image_automation_webhook(root: Path) -> list[str]:
+def check_image_automation_webhook(cluster: ParsedCluster) -> list[str]:
     image_repos: set[str] = set()
-    policy_refs: dict[str, Any] = {}
-    for f in sorted(root.rglob("*.yaml")):
-        if f.name.endswith(".sops.yaml"):
-            continue
-        for doc in _docs(f):
-            if doc["kind"] == "ImageRepository":
-                image_repos.add(doc.get("metadata", {}).get("name"))
-            elif doc["kind"] == "ImagePolicy":
-                policy_refs[doc.get("metadata", {}).get("name")] = (
-                    doc.get("spec", {}).get("imageRepositoryRef", {}).get("name")
-                )
-
+    policy_refs: dict[str, str] = {}
     webhook_repos: set[str] = set()
-    for doc in _docs(root / "flux-webhook" / "github-webhook-receiver.yaml"):
-        if doc["kind"] == "Receiver":
-            for ref in doc.get("spec", {}).get("resources", []):
-                if isinstance(ref, dict) and ref.get("kind") == "ImageRepository":
-                    name = ref.get("name")
-                    if name:
-                        webhook_repos.add(name)
+
+    for result in cluster.build_results:
+        for resource in result.resources:
+            if isinstance(resource, ImageRepositoryResource):
+                image_repos.add(resource.name)
+            elif isinstance(resource, ImagePolicyResource):
+                policy_refs[resource.name] = resource.spec.image_repository_ref.name
+            elif isinstance(resource, ReceiverResource):
+                webhook_repos.update(
+                    ref.name for ref in resource.spec.resources if ref.kind == "ImageRepository" and ref.name
+                )
 
     return [
         *(
