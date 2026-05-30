@@ -26,7 +26,7 @@ spec:
       enableServiceLinks: false
       containers:
         - name: plaid-mcp-server
-          image: ghcr.io/agentydragon/plaid-mcp-server:devel-20260530104740-8c207bf # {"$imagepolicy": "flux-system:plaid-mcp-server"}
+          image: ghcr.io/agentydragon/plaid-mcp-server:devel-20260530225958-ce17b9c # {"$imagepolicy": "flux-system:plaid-mcp-server"}
           imagePullPolicy: Always
           ports:
             - name: upstream
