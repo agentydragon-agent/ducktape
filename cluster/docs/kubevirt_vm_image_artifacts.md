@@ -33,18 +33,11 @@ admin shells may not be able to decrypt this file because it is encrypted to the
 cluster SOPS key; that is intentional. Commit and push the SOPS file, then let
 Flux decrypt it.
 
-GitHub Actions upload credentials are synced from the same Kubernetes Secret by
-`tf/gitops/github-secrets-sync` into repository secrets:
-
-- `VM_IMAGES_S3_ACCESS_KEY_ID`
-- `VM_IMAGES_S3_SECRET_ACCESS_KEY`
-
 ## Publishing A Bootstrap Image
 
-**Paved path: in-cluster CronJob.** `cluster/k8s/vm-images-publisher/` carries
-a suspended CronJob that runs `nix build .#bootstrap-image` and uploads the
-qcow2 to SeaweedFS through the internal S3 endpoint. Operators trigger a
-publish with:
+`cluster/k8s/vm-images-publisher/` carries a suspended CronJob that runs
+`nix build .#bootstrap-image` and uploads the qcow2 to SeaweedFS through the
+internal S3 endpoint. Operators trigger a publish with:
 
 ```bash
 kubectl create job --from=cronjob/vm-images-publisher \
@@ -54,21 +47,6 @@ kubectl create job --from=cronjob/vm-images-publisher \
 See <k8s/vm-images-publisher/README.md> for the runbook. Object keys are
 commit-addressed (`bootstrap/<sha>.qcow2`); existing VMs do not auto-replace
 their root PVC when a new image is published.
-
-**Legacy path: GitHub Actions** (`.github/workflows/vm-images.yml`) builds the
-same image and uploads via the public `vm-images-s3.allegedly.works` endpoint:
-
-```bash
-nix build .#bootstrap-image
-aws --endpoint-url https://vm-images-s3.allegedly.works \
-  s3 cp result/*.qcow2 "s3://vm-images/bootstrap/${GITHUB_SHA}.qcow2"
-```
-
-This path observed sustained throughput of ~250 KiB/s from GitHub-hosted
-runners to the public Envoy → SeaweedFS S3 gateway — too slow for multi-GiB
-qcow2 uploads to complete inside the stream-timeout window. Use the in-cluster
-publisher instead; this workflow is kept for emergency / local development
-only.
 
 ## Importing With CDI
 
@@ -125,21 +103,11 @@ sudo nixos-rebuild switch --flake github:agentydragon/ducktape?ref=devel#gecko
   exposed this when the old 30GB `volumeSizeLimitMB` left two volume servers at
   their computed 61/61 slot limit before `vm-images` had any writable volumes.
   Keep the lower 16GB limit unless the volume-server capacity model changes.
-- The public `vm-images-s3` HTTPRoute must allow long request and backend
-  request timeouts. GitHub-hosted runners can upload the 5.6 GiB bootstrap qcow2
-  slowly, and Envoy's default stream timeouts cut multipart PUT request bodies
-  before SeaweedFS can finish reading each part.
-- The dedicated public S3 gateway is sized above the default tiny SeaweedFS
-  sidecar footprint, and the CI workflow limits AWS CLI multipart uploads to two
-  64MiB parts at a time. The default AWS CLI concurrency can overwhelm the
-  public Gateway/S3 path enough that clients close part uploads mid-body.
-- Follow-up testing on 2026-05-29 showed that the public Gateway path is still
-  not a reliable writer for the full 5.6 GiB bootstrap qcow2: workflow runs
-  `26636690703` and `26636988539` still produced SeaweedFS `PutObjectPart`
-  `unexpected EOF` / `i/o timeout` errors before they were cancelled. Keep the
-  public route for CDI reads and small probes; make the publisher run inside the
-  cluster against `http://vm-images-s3.seaweedfs.svc:8333` or use a different
-  write-only ingress before relying on CI publication.
+- The public `vm-images-s3.allegedly.works` HTTPRoute is for **reads only**
+  (CDI imports). Writes from GitHub-hosted runners over this path sustained
+  ~250 KiB/s and could not complete multi-GiB uploads inside Envoy's stream
+  timeout window — the publisher therefore runs in-cluster against
+  `http://vm-images-s3.seaweedfs.svc:8333`.
 - The first manual spike created `vm-images-s3-credentials` directly and was
   removed. The paved path is SOPS -> Flux -> Kubernetes Secret -> ExternalSecret
   rendered gateway config.

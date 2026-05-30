@@ -3,13 +3,13 @@
 In-cluster builder + publisher for the `.#bootstrap-image` qcow2 used by CDI to
 provision KubeVirt VMs (gecko etc.).
 
-Why this exists: the `.github/workflows/vm-images.yml` runner-side path uploads
-the qcow2 through the public S3 gateway at `vm-images-s3.allegedly.works`. That
-path's sustained throughput from GitHub-hosted runners is ~250 KiB/s — too slow
-for a multi-GiB qcow2 to complete inside the Envoy stream-timeout window. The
-in-cluster Job uses the internal SeaweedFS S3 endpoint
-(`http://vm-images-s3.seaweedfs.svc.cluster.local:8333`), which has no such
-constraint.
+Why this exists: a GitHub Actions workflow previously did the publish from
+runner side and uploaded through the public S3 gateway at
+`vm-images-s3.allegedly.works`. Sustained throughput from GitHub-hosted runners
+over that path was ~250 KiB/s — too slow for a multi-GiB qcow2 to complete
+inside Envoy's stream-timeout window. This in-cluster Job uses the internal
+SeaweedFS S3 endpoint (`http://vm-images-s3.seaweedfs.svc.cluster.local:8333`)
+instead, which has no such constraint. The legacy workflow has been removed.
 
 ## Manifests
 

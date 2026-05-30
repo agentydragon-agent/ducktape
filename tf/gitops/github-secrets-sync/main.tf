@@ -31,13 +31,6 @@ data "kubernetes_secret" "ci_age_key" {
   }
 }
 
-data "kubernetes_secret" "vm_images_s3_credentials" {
-  metadata {
-    name      = "vm-images-s3-credentials"
-    namespace = "seaweedfs"
-  }
-}
-
 # --- GitHub Actions Secrets ---
 
 resource "github_actions_secret" "sops_age_key" {
@@ -52,17 +45,9 @@ resource "github_actions_secret" "sops_age_key_gaffer_private" {
   plaintext_value = data.kubernetes_secret.ci_age_key.data["age-key"]
 }
 
-resource "github_actions_secret" "vm_images_s3_access_key_id" {
-  repository      = "ducktape"
-  secret_name     = "VM_IMAGES_S3_ACCESS_KEY_ID"
-  plaintext_value = data.kubernetes_secret.vm_images_s3_credentials.data["ciWriterAccessKey"]
-}
-
-resource "github_actions_secret" "vm_images_s3_secret_access_key" {
-  repository      = "ducktape"
-  secret_name     = "VM_IMAGES_S3_SECRET_ACCESS_KEY"
-  plaintext_value = data.kubernetes_secret.vm_images_s3_credentials.data["ciWriterSecretKey"]
-}
-
-# Data sources for harbor_ci_robot, buildbuddy_api_key, attic_push_token
-# were removed (no `removed` block needed for data sources — just delete).
+# Data sources for harbor_ci_robot, buildbuddy_api_key, attic_push_token, and
+# vm_images_s3_credentials were removed (no `removed` block needed for data
+# sources — just delete). The GitHub Actions secrets VM_IMAGES_S3_* are no
+# longer needed since publishing moved in-cluster (see
+# cluster/k8s/vm-images-publisher/). Removing the resource blocks here will
+# destroy the GitHub secrets on the next tofu apply.
