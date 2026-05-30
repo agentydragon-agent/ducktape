@@ -372,6 +372,8 @@ let
     "bcr.bazel.build"
     "docs.bazel.build"
     "bazel.build"
+
+    "docs.cilium.io"
   ]
   ++ cfg.extraAllowedWebFetchDomains;
 
