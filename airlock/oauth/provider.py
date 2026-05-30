@@ -183,6 +183,7 @@ class PlaidProvider(_BaseProvider):
                     "country_codes": ["US"],
                     "language": "en",
                     "redirect_uri": self.config.redirect_uri,
+                    "transactions": {"days_requested": 730},
                 },
             )
             if response.is_error:
