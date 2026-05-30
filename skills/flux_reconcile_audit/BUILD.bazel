@@ -1,0 +1,18 @@
+# gazelle:ignore
+
+load("//devinfra/python:defs.bzl", "py_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+py_binary(
+    name = "audit",
+    srcs = ["audit.py"],
+    imports = ["../.."],
+    main = "audit.py",
+    deps = [
+        "//cluster/validation:flux",
+        "//cluster/validation:k8s",
+        "@pypi//httpx",
+        "@pypi//kubernetes_asyncio",
+    ],
+)

@@ -10,7 +10,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
-from cluster.validation.k8s import parse_k8s_resources
+from cluster.validation.k8s import Condition, parse_k8s_resources
 from cluster.validation.tool_resolve import resolve_tool
 
 
@@ -52,6 +52,49 @@ class FluxKustomizationSpec(BaseModel):
         if not rel.startswith(prefix):
             return None
         return (k8s_dir / rel[len(prefix) :]).resolve()
+
+
+class InventoryEntry(BaseModel):
+    """One applied resource in a Kustomization's status.inventory.
+
+    `id` format is `<namespace>_<name>_<group>_<kind>` (empty namespace for
+    cluster-scoped resources). `v` is the apiVersion."""
+
+    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
+
+    id: str
+    v: str = ""
+
+
+class Inventory(BaseModel):
+    """Flux Kustomization.status.inventory wrapper."""
+
+    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
+
+    entries: list[InventoryEntry] = []
+
+
+class FluxKustomizationStatus(BaseModel):
+    """Parsed status from a live Flux Kustomization CR (live API responses only;
+    YAML on disk doesn't carry status). Same shape works for HelmRelease too —
+    the conditions, lastAppliedRevision, lastAttemptedRevision fields are
+    identical."""
+
+    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
+
+    conditions: list[Condition] = []
+    last_applied_revision: str | None = None
+    last_attempted_revision: str | None = None
+    inventory: Inventory | None = None
+
+    def condition(self, type_: str) -> Condition | None:
+        """Return the first condition with the given type, or None."""
+        return next((c for c in self.conditions if c.type == type_), None)
+
+    @property
+    def ready(self) -> Condition | None:
+        """Convenience: the `Ready` condition, the one consumers want 99% of the time."""
+        return self.condition("Ready")
 
 
 class _ObjectMeta(BaseModel):

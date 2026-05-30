@@ -26,6 +26,24 @@ class K8sMetadata(BaseModel):
     labels: dict[str, str] = Field(default_factory=dict)
 
 
+class Condition(BaseModel):
+    """A standard Kubernetes status condition.
+
+    Used by controllers across the cluster (Flux Kustomizations, HelmReleases,
+    Deployments via `Available`/`Progressing`, CNPG `Cluster.Ready`, etc.) to
+    report observed state. Consumers usually filter by `type` and check
+    `status` ("True"/"False"/"Unknown")."""
+
+    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
+
+    type: str
+    status: str  # "True" / "False" / "Unknown"
+    reason: str | None = None
+    message: str | None = None
+    last_transition_time: str | None = None
+    observed_generation: int | None = None
+
+
 class K8sResource(BaseModel):
     """Parsed Kubernetes resource from YAML (generic base; see module docstring)."""
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Flux reconcile audit (v3).
+"""Flux reconcile audit (v4 — asyncio).
 
 Walks every Flux Kustomization + HelmRelease, classifies each into one of
 Broken / Slow-but-converges / Miswired-but-converges / Propagating /
@@ -8,45 +8,44 @@ from Flux's own condition / event message.
 
 Data sources, in order of preference:
 
-  1. K8s API via a single `kubectl proxy` (started by this script). One
-     HTTP round-trip per list — Events, Kustomizations, HelmReleases, and
-     each probe kind. Much faster than spawning a kubectl subprocess per
-     call (~30 ms vs ~300 ms).
+  1. K8s API via `kubernetes_asyncio`. CoreV1Api for Events (typed
+     `V1Event`), CustomObjectsApi for Flux CRDs + the condition-bearing
+     CRDs we probe by label. Same kubeconfig as kubectl; no subprocess.
   2. Kustomization `status.conditions[Ready].message` parsed for the
      bracketed `[Kind/namespace/name status: 'X']` reference — primary
      attribution for "which underlying object is the problem".
   3. Mimir (`gotk_reconcile_duration_seconds`) — one batched
      `histogram_quantile by (name, kind)` query for the Slow bucket's
      p99 threshold. Skipped with `--no-mimir`.
-  4. Loki — one batched `count_over_time by (Kustomization_name)` query
-     per controller for fail/finish counts past event retention. Skipped
-     with `--no-loki` or `--window ≤ 1h`.
+  4. Loki — two batched `count_over_time by (Kustomization_name)`
+     queries per controller (one for failures, one for finishes).
+     Supplements past event retention. Skipped with `--no-loki` or
+     `--window ≤ 1h`.
 
-Emits a single Markdown report to stdout.
+All independent fetches fan out via `asyncio.gather`. Emits a single
+Markdown report to stdout.
 """
 
 from __future__ import annotations
 
 import argparse
-import json
+import asyncio
 import math
 import re
-import subprocess
 import time
 from collections import defaultdict
-from collections.abc import Iterator
-from concurrent.futures import ThreadPoolExecutor
-from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from urllib.parse import urlencode
-from urllib.request import urlopen
 
-API_URL = "http://localhost:8001"
+import httpx
+from kubernetes_asyncio import client, config
+
+from cluster.validation.flux import FluxKustomizationStatus
+from cluster.validation.k8s import K8sMetadata
+
 MIMIR_URL = "http://localhost:8080/prometheus/api/v1"
 LOKI_URL = "http://localhost:3100/loki/api/v1"
 
-# Flux event reasons.
 SUCCESS_REASONS = {"ReconciliationSucceeded", "InstallSucceeded", "UpgradeSucceeded"}
 FAILURE_REASONS = {
     "ReconciliationFailed",
@@ -65,7 +64,6 @@ FAILURE_REASONS = {
     "ChartPullFailed",
 }
 
-# Transient infra noise — counted separately, doesn't promote to Broken.
 TRANSIENT_ERROR_PATTERNS = [
     r"etcdserver: request timed out",
     r"etcdserver: leader changed",
@@ -75,27 +73,24 @@ TRANSIENT_ERROR_PATTERNS = [
     r"too many requests",
 ]
 
-# `[Kind/namespace/name status: 'X']` parser.
 CULPRIT_RE = re.compile(r"\[(\w+)/([\w\-.]+)/([\w\-.]+) status: '([^']+)'\]")
 
-# Condition-bearing kinds to pre-fetch globally and filter by the Flux
-# `kustomize.toolkit.fluxcd.io/name` label. Tuple of (apiPath, kind) where
-# apiPath is everything between /api(s)/ and the resource selector.
-DEFAULT_PROBE_KINDS: list[tuple[str, str]] = [
-    ("apis/apps/v1/deployments", "Deployment"),
-    ("apis/apps/v1/statefulsets", "StatefulSet"),
-    ("apis/apps/v1/daemonsets", "DaemonSet"),
-    ("apis/batch/v1/jobs", "Job"),
-    ("apis/batch/v1/cronjobs", "CronJob"),
-    ("apis/helm.toolkit.fluxcd.io/v2/helmreleases", "HelmRelease"),
-    ("apis/external-secrets.io/v1/externalsecrets", "ExternalSecret"),
-    ("apis/postgresql.cnpg.io/v1/clusters", "Cluster"),
-    ("apis/cdi.kubevirt.io/v1beta1/datavolumes", "DataVolume"),
-    ("apis/kubevirt.io/v1/virtualmachines", "VirtualMachine"),
-    ("apis/seaweed.seaweedfs.com/v1/buckets", "Bucket"),
-    ("apis/infra.contrib.fluxcd.io/v1alpha2/terraforms", "Terraform"),
-    ("apis/openclaw.rocks/v1alpha1/openclawinstances", "OpenclawInstance"),
-    ("apis/cilium.io/v2/ciliumenvoyconfigs", "CiliumEnvoyConfig"),
+# Probe targets: (group, version, plural, Kind).
+DEFAULT_PROBE_KINDS: list[tuple[str, str, str, str]] = [
+    ("apps", "v1", "deployments", "Deployment"),
+    ("apps", "v1", "statefulsets", "StatefulSet"),
+    ("apps", "v1", "daemonsets", "DaemonSet"),
+    ("batch", "v1", "jobs", "Job"),
+    ("batch", "v1", "cronjobs", "CronJob"),
+    ("helm.toolkit.fluxcd.io", "v2", "helmreleases", "HelmRelease"),
+    ("external-secrets.io", "v1", "externalsecrets", "ExternalSecret"),
+    ("postgresql.cnpg.io", "v1", "clusters", "Cluster"),
+    ("cdi.kubevirt.io", "v1beta1", "datavolumes", "DataVolume"),
+    ("kubevirt.io", "v1", "virtualmachines", "VirtualMachine"),
+    ("seaweed.seaweedfs.com", "v1", "buckets", "Bucket"),
+    ("infra.contrib.fluxcd.io", "v1alpha2", "terraforms", "Terraform"),
+    ("openclaw.rocks", "v1alpha1", "openclawinstances", "OpenclawInstance"),
+    ("cilium.io", "v2", "ciliumenvoyconfigs", "CiliumEnvoyConfig"),
 ]
 
 FLUX_LABEL = "kustomize.toolkit.fluxcd.io/name"
@@ -109,53 +104,42 @@ def parse_window_seconds(window: str) -> int:
     return n * {"s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800}[unit]
 
 
-def http_json(url: str, timeout: int = 60) -> dict:
-    with urlopen(url, timeout=timeout) as r:
-        return json.loads(r.read())
+@dataclass
+class Event:
+    reason: str
+    message: str
+    last_ts: float
+    count: int
 
 
-def api_list(path: str, **params: str) -> dict:
-    """GET against http://localhost:8001/<path>?<params>."""
-    q = urlencode(params) if params else ""
-    sep = "?" if q else ""
-    return http_json(f"{API_URL}/{path.lstrip('/')}{sep}{q}", timeout=30)
+@dataclass
+class Resource:
+    kind: str  # "Kustomization" | "HelmRelease"
+    namespace: str
+    name: str
+    api_version: str
+    suspended: bool
+    status: FluxKustomizationStatus
+    events: list[Event] = field(default_factory=list)
+    bucket: str = "?"
+    evidence: dict = field(default_factory=dict)
 
 
-@contextmanager
-def kubectl_proxy(port: int = 8001) -> Iterator[None]:
-    """Start `kubectl proxy --port=<port>`, wait for it to come up, kill
-    on exit. Reuses the caller's kubeconfig — same auth as kubectl."""
-    proc = subprocess.Popen(["kubectl", "proxy", f"--port={port}"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    try:
-        # kubectl proxy prints "Starting to serve on 127.0.0.1:<port>"
-        # within ~50ms when it's ready.
-        deadline = time.time() + 10
-        assert proc.stdout is not None
-        while time.time() < deadline:
-            line = proc.stdout.readline()
-            if not line:
-                if proc.poll() is not None:
-                    raise RuntimeError("kubectl proxy exited before serving")
-                continue
-            if b"Starting to serve" in line:
-                break
-        else:
-            raise TimeoutError("kubectl proxy did not start within 10s")
-        yield
-    finally:
-        proc.terminate()
-        try:
-            proc.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            proc.kill()
+def _ts_unix(t: datetime | None) -> float:
+    if t is None:
+        return 0.0
+    if t.tzinfo is None:
+        t = t.replace(tzinfo=UTC)
+    return t.timestamp()
 
 
-def mimir_p99_by_name(window: str) -> dict[tuple[str, str], float]:
+async def mimir_p99_by_name(http: httpx.AsyncClient, window: str) -> dict[tuple[str, str], float]:
     promql = (
         f"histogram_quantile(0.99, sum by (le, name, kind) (rate(gotk_reconcile_duration_seconds_bucket[{window}])))"
     )
     try:
-        result = http_json(f"{MIMIR_URL}/query?{urlencode({'query': promql})}", timeout=60)["data"]["result"]
+        r = await http.get(f"{MIMIR_URL}/query", params={"query": promql}, timeout=60.0)
+        result = r.json()["data"]["result"]
     except Exception:
         return {}
     out: dict[tuple[str, str], float] = {}
@@ -175,14 +159,17 @@ def mimir_p99_by_name(window: str) -> dict[tuple[str, str], float]:
     return out
 
 
-def loki_count_by_name(app: str, name_label: str, line_match: str, window: str) -> dict[str, int]:
+async def loki_count_by_name(
+    http: httpx.AsyncClient, app: str, name_label: str, line_match: str, window: str
+) -> dict[str, int]:
     promql = (
         f"sum by ({name_label}) (count_over_time("
         f'{{namespace="flux-system",app="{app}"}} | json | __error__="" '
         f'|~ "{line_match}" [{window}]))'
     )
     try:
-        result = http_json(f"{LOKI_URL}/query?{urlencode({'query': promql})}", timeout=90)["data"]["result"]
+        r = await http.get(f"{LOKI_URL}/query", params={"query": promql}, timeout=90.0)
+        result = r.json()["data"]["result"]
     except Exception:
         return {}
     out: dict[str, int] = {}
@@ -197,111 +184,73 @@ def loki_count_by_name(app: str, name_label: str, line_match: str, window: str) 
     return out
 
 
-@dataclass
-class Event:
-    reason: str
-    message: str
-    last_ts: float
-    count: int
-    type: str
-
-
-@dataclass
-class Resource:
-    kind: str
-    namespace: str
-    name: str
-    api_version: str
-    suspended: bool
-    ready: str | None
-    reason: str | None
-    message: str | None
-    last_applied: str | None
-    last_attempted: str | None
-    events: list[Event] = field(default_factory=list)
-    bucket: str = "?"
-    evidence: dict = field(default_factory=dict)
-
-
-def collect_universe() -> list[Resource]:
+async def collect_universe(custom: client.CustomObjectsApi) -> list[Resource]:
     out: list[Resource] = []
-    for kind, api, path in [
-        ("Kustomization", "kustomize.toolkit.fluxcd.io/v1", "apis/kustomize.toolkit.fluxcd.io/v1/kustomizations"),
-        ("HelmRelease", "helm.toolkit.fluxcd.io/v2", "apis/helm.toolkit.fluxcd.io/v2/helmreleases"),
-    ]:
-        for it in api_list(path).get("items", []):
-            md = it["metadata"]
+    flux_kinds = [
+        ("Kustomization", "kustomize.toolkit.fluxcd.io/v1", "kustomize.toolkit.fluxcd.io", "v1", "kustomizations"),
+        ("HelmRelease", "helm.toolkit.fluxcd.io/v2", "helm.toolkit.fluxcd.io", "v2", "helmreleases"),
+    ]
+    responses = await asyncio.gather(
+        *(
+            custom.list_cluster_custom_object(group=group, version=version, plural=plural)
+            for _, _, group, version, plural in flux_kinds
+        )
+    )
+    for (kind, api_version, _, _, _), resp in zip(flux_kinds, responses, strict=True):
+        for it in resp.get("items", []):
+            md = K8sMetadata.model_validate(it.get("metadata", {}))
             spec = it.get("spec", {}) or {}
-            status = it.get("status", {}) or {}
-            ready = next((c for c in (status.get("conditions") or []) if c.get("type") == "Ready"), None)
+            status = FluxKustomizationStatus.model_validate(it.get("status", {}) or {})
             out.append(
                 Resource(
                     kind=kind,
-                    namespace=md["namespace"],
-                    name=md["name"],
-                    api_version=api,
+                    namespace=md.namespace,
+                    name=md.name,
+                    api_version=api_version,
                     suspended=bool(spec.get("suspend", False)),
-                    ready=ready["status"] if ready else None,
-                    reason=ready.get("reason") if ready else None,
-                    message=ready.get("message") if ready else None,
-                    last_applied=status.get("lastAppliedRevision"),
-                    last_attempted=status.get("lastAttemptedRevision"),
+                    status=status,
                 )
             )
     return out
 
 
-def _ts_parse(s: str | None) -> float:
-    if not s:
-        return 0.0
-    try:
-        return datetime.strptime(s, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC).timestamp()
-    except ValueError:
-        return 0.0
-
-
-def collect_events(api_version: str, since_ts: float) -> dict[tuple[str, str], list[Event]]:
-    raw = api_list("api/v1/events", fieldSelector=f"involvedObject.apiVersion={api_version}")
+async def collect_events(
+    core: client.CoreV1Api, api_version: str, since_ts: float
+) -> dict[tuple[str, str], list[Event]]:
+    resp = await core.list_event_for_all_namespaces(field_selector=f"involvedObject.apiVersion={api_version}")
     bucketed: dict[tuple[str, str], list[Event]] = defaultdict(list)
-    for it in raw.get("items", []):
-        inv = it.get("involvedObject", {}) or {}
-        last_ts = _ts_parse(it.get("lastTimestamp") or it.get("eventTime"))
+    for ev in resp.items:
+        inv = ev.involved_object
+        last_ts = _ts_unix(ev.last_timestamp or ev.event_time)
         if last_ts < since_ts:
             continue
-        bucketed[(inv.get("namespace", ""), inv.get("name", ""))].append(
-            Event(
-                reason=it.get("reason", ""),
-                message=it.get("message", ""),
-                last_ts=last_ts,
-                count=int(it.get("count") or 1),
-                type=it.get("type", "Normal"),
-            )
+        bucketed[(inv.namespace or "", inv.name or "")].append(
+            Event(reason=ev.reason or "", message=ev.message or "", last_ts=last_ts, count=int(ev.count or 1))
         )
     for evs in bucketed.values():
         evs.sort(key=lambda e: e.last_ts)
     return bucketed
 
 
-def fetch_probe_kinds(probe_paths: list[tuple[str, str]]) -> dict[str, list[dict]]:
-    """Pre-fetch every probe-kind list in parallel via the apiserver
-    proxy. Returns {kustomize-name: [object, ...]}, indexed by the Flux
-    label so the report can do an in-memory lookup."""
-    by_kustomization: dict[str, list[dict]] = defaultdict(list)
-
-    def _fetch(path_kind: tuple[str, str]) -> list[dict]:
-        path = path_kind[0]
+async def fetch_probe_kinds(
+    custom: client.CustomObjectsApi, probe_kinds: list[tuple[str, str, str, str]]
+) -> dict[str, list[dict]]:
+    async def _fetch(spec: tuple[str, str, str, str]) -> list[dict]:
         try:
-            return api_list(path).get("items", []) or []
+            return (await custom.list_cluster_custom_object(group=spec[0], version=spec[1], plural=spec[2])).get(
+                "items", []
+            ) or []
         except Exception:
             return []
 
-    with ThreadPoolExecutor(max_workers=len(probe_paths)) as ex:
-        for items in ex.map(_fetch, probe_paths):
-            for obj in items:
-                labels = (obj.get("metadata") or {}).get("labels") or {}
-                ks = labels.get(FLUX_LABEL)
-                if ks:
-                    by_kustomization[ks].append(obj)
+    results = await asyncio.gather(*(_fetch(s) for s in probe_kinds))
+    by_kustomization: dict[str, list[dict]] = defaultdict(list)
+    for items in results:
+        for obj in items:
+            labels = (obj.get("metadata") or {}).get("labels") or {}
+            ks = labels.get(FLUX_LABEL)
+            if ks:
+                by_kustomization[ks].append(obj)
     return by_kustomization
 
 
@@ -345,8 +294,8 @@ def classify(
     if real_fails:
         last_error = real_fails[-1].message
         culprit = extract_culprit(last_error)
-    if not culprit and r.message:
-        culprit = extract_culprit(r.message)
+    if not culprit and r.status.ready:
+        culprit = extract_culprit(r.status.ready.message or "")
 
     r.evidence = {
         "successes": finish_count,
@@ -360,16 +309,11 @@ def classify(
         "loki_success_supplement": loki_success_supplement,
     }
 
-    # Broken requires last_was_failure: a Kustomization currently
-    # ReconciliationSucceeded with many historical failures is
-    # Miswired-but-recovered, not Broken. We still use the event-count-
-    # based check (`real_fail_count >= 2`) so a mid-retry resource
-    # (Ready=Unknown reason=Progressing) is caught even though its
-    # current condition isn't False.
     if last_was_failure and (real_fail_count > finish_count or real_fail_count >= 2):
         r.bucket = "Broken"
         return
-    if r.ready == "False" and r.reason == "DependencyNotReady" and real_fail_count == 0:
+    ready = r.status.ready
+    if ready and ready.status == "False" and ready.reason == "DependencyNotReady" and real_fail_count == 0:
         r.bucket = "Propagating"
         return
     if real_fail_count > 0 and finish_count > 0:
@@ -381,7 +325,7 @@ def classify(
     r.bucket = "Healthy"
 
 
-def _cond(c: dict) -> str:
+def _cond_str(c: dict) -> str:
     st = c.get("status", "?")
     reason = c.get("reason", "")
     return f"{c.get('type', '?')}={st}{(' ' + reason) if reason else ''}"
@@ -393,15 +337,14 @@ def _summarize_status(kind: str, obj: dict) -> str:
     by_type = {c.get("type"): c for c in conds}
 
     if kind in {"Deployment", "ReplicaSet"}:
-        parts = [_cond(by_type[t]) for t in ("Available", "Progressing") if t in by_type]
+        parts = [_cond_str(by_type[t]) for t in ("Available", "Progressing") if t in by_type]
         if parts:
             return ", ".join(parts)
 
     pref = {"Pod": "Ready", "Job": "Complete", "Node": "Ready"}.get(kind, "Ready")
     chosen = by_type.get(pref) or by_type.get("Ready") or by_type.get("Available")
     if chosen:
-        return _cond(chosen)
-
+        return _cond_str(chosen)
     if status.get("phase"):
         return f"phase={status['phase']}"
     return "?"
@@ -473,9 +416,10 @@ def emit_report(
         print(f"\n{header} ({len(items)})\n")
         for r in items:
             ev = r.evidence
+            ready = r.status.ready
             print(f"### {r.kind}/{r.name} (ns={r.namespace})\n")
-            if r.reason:
-                print(f"- Current: Ready={r.ready}, reason=`{r.reason}`")
+            if ready:
+                print(f"- Current: Ready={ready.status}, reason=`{ready.reason or ''}`")
             if ev.get("p99_s", 0) > 0:
                 print(f"- p99 reconcile duration: {ev['p99_s']:.1f}s")
             if ev.get("real_fail_count"):
@@ -507,6 +451,78 @@ def emit_report(
     print(f"\n## Healthy ({healthy})\n\n{healthy} resources passed all checks.\n")
 
 
+async def _empty_dict() -> dict:
+    return {}
+
+
+async def _gather_dicts(coros: list) -> list[dict[str, int]]:
+    if not coros:
+        return []
+    return list(await asyncio.gather(*coros))
+
+
+async def async_main(args: argparse.Namespace) -> None:
+    window_s = parse_window_seconds(args.window)
+    since_ts = time.time() - window_s
+    use_mimir = not args.no_mimir
+    use_loki = (not args.no_loki) and window_s > 3600
+
+    try:
+        await config.load_kube_config()
+    except config.ConfigException:
+        config.load_incluster_config()
+
+    async with client.ApiClient() as api, httpx.AsyncClient() as http:
+        custom = client.CustomObjectsApi(api)
+        core = client.CoreV1Api(api)
+
+        loki_specs: list[tuple[str, str]] = []
+        loki_coros = []
+        if use_loki:
+            for kind, app, name_label in [
+                ("Kustomization", "kustomize-controller", "Kustomization_name"),
+                ("HelmRelease", "helm-controller", "HelmRelease_name"),
+            ]:
+                for which, match in [("fail", "Reconciliation failed"), ("ok", "Reconciliation finished")]:
+                    loki_specs.append((kind, which))
+                    loki_coros.append(loki_count_by_name(http, app, name_label, match, args.window))
+
+        rs, ks_events, hr_events, probe_objs, p99_map, loki_results = await asyncio.gather(
+            collect_universe(custom),
+            collect_events(core, "kustomize.toolkit.fluxcd.io/v1", since_ts),
+            collect_events(core, "helm.toolkit.fluxcd.io/v2", since_ts),
+            fetch_probe_kinds(custom, DEFAULT_PROBE_KINDS),
+            mimir_p99_by_name(http, args.window) if use_mimir else _empty_dict(),
+            _gather_dicts(loki_coros),
+        )
+
+    if args.name:
+        rs = [r for r in rs if r.name == args.name]
+    events_by_target: dict[tuple[str, str], list[Event]] = {**ks_events, **hr_events}
+    for r in rs:
+        r.events = events_by_target.get((r.namespace, r.name), [])
+
+    loki_fail: dict[tuple[str, str], int] = {}
+    loki_ok: dict[tuple[str, str], int] = {}
+    for (kind, which), counts in zip(loki_specs, loki_results, strict=True):
+        target = loki_fail if which == "fail" else loki_ok
+        for nm, cnt in counts.items():
+            target[(kind, nm)] = cnt
+
+    for r in rs:
+        thr = args.slow_kustomization_s if r.kind == "Kustomization" else args.slow_helmrelease_s
+        f_supp = loki_fail.get((r.kind, r.name), 0)
+        ok_supp = loki_ok.get((r.kind, r.name), 0)
+        p99 = p99_map.get((r.kind, r.name), 0.0)
+        try:
+            classify(r, p99, thr, f_supp, ok_supp)
+        except Exception as e:
+            r.bucket = "?Error"
+            r.evidence = {"error": repr(e)}
+
+    emit_report(rs, args.window, use_mimir, use_loki, probe_objs)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--window", default="7d")
@@ -515,97 +531,8 @@ def main() -> None:
     ap.add_argument("--no-loki", action="store_true")
     ap.add_argument("--slow-kustomization-s", type=float, default=60.0)
     ap.add_argument("--slow-helmrelease-s", type=float, default=300.0)
-    ap.add_argument("--concurrency", type=int, default=16)
-    ap.add_argument("--proxy-port", type=int, default=8001)
     args = ap.parse_args()
-
-    window_s = parse_window_seconds(args.window)
-    since_ts = time.time() - window_s
-    use_mimir = not args.no_mimir
-    use_loki = (not args.no_loki) and window_s > 3600
-
-    global API_URL  # noqa: PLW0603 — one-shot CLI-flag override at startup
-    API_URL = f"http://localhost:{args.proxy_port}"
-
-    with kubectl_proxy(port=args.proxy_port):
-        # Run independent fetches in parallel: universe, two event-streams,
-        # mimir + loki batched queries, and probe-kind globals.
-        with ThreadPoolExecutor(max_workers=args.concurrency) as ex:
-            f_universe = ex.submit(collect_universe)
-            f_ks_events = ex.submit(collect_events, "kustomize.toolkit.fluxcd.io/v1", since_ts)
-            f_hr_events = ex.submit(collect_events, "helm.toolkit.fluxcd.io/v2", since_ts)
-            f_probe = ex.submit(fetch_probe_kinds, DEFAULT_PROBE_KINDS)
-            f_mimir = ex.submit(mimir_p99_by_name, args.window) if use_mimir else None
-            f_loki_ks_fail = (
-                ex.submit(
-                    loki_count_by_name,
-                    "kustomize-controller",
-                    "Kustomization_name",
-                    "Reconciliation failed",
-                    args.window,
-                )
-                if use_loki
-                else None
-            )
-            f_loki_ks_ok = (
-                ex.submit(
-                    loki_count_by_name,
-                    "kustomize-controller",
-                    "Kustomization_name",
-                    "Reconciliation finished",
-                    args.window,
-                )
-                if use_loki
-                else None
-            )
-            f_loki_hr_fail = (
-                ex.submit(
-                    loki_count_by_name, "helm-controller", "HelmRelease_name", "Reconciliation failed", args.window
-                )
-                if use_loki
-                else None
-            )
-            f_loki_hr_ok = (
-                ex.submit(
-                    loki_count_by_name, "helm-controller", "HelmRelease_name", "Reconciliation finished", args.window
-                )
-                if use_loki
-                else None
-            )
-
-            rs = f_universe.result()
-            if args.name:
-                rs = [r for r in rs if r.name == args.name]
-            events_by_target = {**f_ks_events.result(), **f_hr_events.result()}
-            for r in rs:
-                r.events = events_by_target.get((r.namespace, r.name), [])
-            probe_objs = f_probe.result()
-            p99_map = f_mimir.result() if f_mimir is not None else {}
-            loki_fail: dict[tuple[str, str], int] = {}
-            loki_ok: dict[tuple[str, str], int] = {}
-            for fut, kind, target in [
-                (f_loki_ks_fail, "Kustomization", loki_fail),
-                (f_loki_hr_fail, "HelmRelease", loki_fail),
-                (f_loki_ks_ok, "Kustomization", loki_ok),
-                (f_loki_hr_ok, "HelmRelease", loki_ok),
-            ]:
-                if fut is None:
-                    continue
-                for nm, cnt in fut.result().items():
-                    target[(kind, nm)] = cnt
-
-        for r in rs:
-            thr = args.slow_kustomization_s if r.kind == "Kustomization" else args.slow_helmrelease_s
-            f_supp = loki_fail.get((r.kind, r.name), 0)
-            ok_supp = loki_ok.get((r.kind, r.name), 0)
-            p99 = p99_map.get((r.kind, r.name), 0.0)
-            try:
-                classify(r, p99, thr, f_supp, ok_supp)
-            except Exception as e:
-                r.bucket = "?Error"
-                r.evidence = {"error": repr(e)}
-
-        emit_report(rs, args.window, use_mimir, use_loki, probe_objs)
+    asyncio.run(async_main(args))
 
 
 if __name__ == "__main__":
