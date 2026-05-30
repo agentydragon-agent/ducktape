@@ -70,7 +70,10 @@ so `ssh agentydragon@gecko.allegedly.works` works for any key in
 
 To expose a second VM, copy the CEC, bump the listener port (one port per
 backend; SSH has no SNI), and update `cluster:` / `backendServices:` to
-point at the new Service.
+point at the new Service. Past ~2–3 VMs the port juggling gets clunky;
+<plans/vm_ssh_exposure.md> sketches a TLSRoute + `ProxyCommand` path that
+multiplexes any number of SSH backends behind the existing `:443` listener
+by SNI.
 
 Security model: SSH key-only auth on the VM (NixOS base config disables
 `PasswordAuthentication`). Bruteforce attempts against the public :22 are
