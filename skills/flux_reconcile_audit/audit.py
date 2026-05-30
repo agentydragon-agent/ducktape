@@ -1,29 +1,12 @@
 #!/usr/bin/env python3
-"""Flux reconcile audit (v4 — asyncio).
+"""Flux reconcile audit (v5 — history-first).
 
 Walks every Flux Kustomization + HelmRelease, classifies each into one of
 Broken / Slow-but-converges / Miswired-but-converges / Propagating /
-Suspended / Healthy, and surfaces the underlying-resource culprit pulled
-from Flux's own condition / event message.
+Suspended / Healthy. Primary signal is the per-revision `status.history`
+shipped by Flux 2.7+; Mimir / Loki / Events are optional supplements.
 
-Data sources, in order of preference:
-
-  1. K8s API via `kubernetes_asyncio`. CoreV1Api for Events (typed
-     `V1Event`), CustomObjectsApi for Flux CRDs + the condition-bearing
-     CRDs we probe by label. Same kubeconfig as kubectl; no subprocess.
-  2. Kustomization `status.conditions[Ready].message` parsed for the
-     bracketed `[Kind/namespace/name status: 'X']` reference — primary
-     attribution for "which underlying object is the problem".
-  3. Mimir (`gotk_reconcile_duration_seconds`) — one batched
-     `histogram_quantile by (name, kind)` query for the Slow bucket's
-     p99 threshold. Skipped with `--no-mimir`.
-  4. Loki — two batched `count_over_time by (Kustomization_name)`
-     queries per controller (one for failures, one for finishes).
-     Supplements past event retention. Skipped with `--no-loki` or
-     `--window ≤ 1h`.
-
-All independent fetches fan out via `asyncio.gather`. Emits a single
-Markdown report to stdout.
+Default mode reads only the live K8s API and runs in ~2-3 seconds.
 """
 
 from __future__ import annotations
@@ -32,22 +15,21 @@ import argparse
 import asyncio
 import math
 import re
-import time
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import httpx
 from kubernetes_asyncio import client, config
 
-from cluster.validation.flux import FluxKustomizationStatus
+from cluster.validation.flux import FluxKustomizationStatus, FluxReconcileHistoryEntry
 from cluster.validation.k8s import K8sMetadata
 
 MIMIR_URL = "http://localhost:8080/prometheus/api/v1"
 LOKI_URL = "http://localhost:3100/loki/api/v1"
 
-SUCCESS_REASONS = {"ReconciliationSucceeded", "InstallSucceeded", "UpgradeSucceeded"}
-FAILURE_REASONS = {
+SUCCESS_STATUSES = {"ReconciliationSucceeded", "InstallSucceeded", "UpgradeSucceeded"}
+FAILURE_STATUSES = {
     "ReconciliationFailed",
     "HealthCheckFailed",
     "BuildFailed",
@@ -63,15 +45,6 @@ FAILURE_REASONS = {
     "TestFailed",
     "ChartPullFailed",
 }
-
-TRANSIENT_ERROR_PATTERNS = [
-    r"etcdserver: request timed out",
-    r"etcdserver: leader changed",
-    r"connection refused",
-    r"context deadline exceeded",
-    r"the object has been modified",
-    r"too many requests",
-]
 
 CULPRIT_RE = re.compile(r"\[(\w+)/([\w\-.]+)/([\w\-.]+) status: '([^']+)'\]")
 
@@ -105,14 +78,6 @@ def parse_window_seconds(window: str) -> int:
 
 
 @dataclass
-class Event:
-    reason: str
-    message: str
-    last_ts: float
-    count: int
-
-
-@dataclass
 class Resource:
     kind: str  # "Kustomization" | "HelmRelease"
     namespace: str
@@ -120,17 +85,8 @@ class Resource:
     api_version: str
     suspended: bool
     status: FluxKustomizationStatus
-    events: list[Event] = field(default_factory=list)
     bucket: str = "?"
     evidence: dict = field(default_factory=dict)
-
-
-def _ts_unix(t: datetime | None) -> float:
-    if t is None:
-        return 0.0
-    if t.tzinfo is None:
-        t = t.replace(tzinfo=UTC)
-    return t.timestamp()
 
 
 async def mimir_p99_by_name(http: httpx.AsyncClient, window: str) -> dict[tuple[str, str], float]:
@@ -214,24 +170,6 @@ async def collect_universe(custom: client.CustomObjectsApi) -> list[Resource]:
     return out
 
 
-async def collect_events(
-    core: client.CoreV1Api, api_version: str, since_ts: float
-) -> dict[tuple[str, str], list[Event]]:
-    resp = await core.list_event_for_all_namespaces(field_selector=f"involvedObject.apiVersion={api_version}")
-    bucketed: dict[tuple[str, str], list[Event]] = defaultdict(list)
-    for ev in resp.items:
-        inv = ev.involved_object
-        last_ts = _ts_unix(ev.last_timestamp or ev.event_time)
-        if last_ts < since_ts:
-            continue
-        bucketed[(inv.namespace or "", inv.name or "")].append(
-            Event(reason=ev.reason or "", message=ev.message or "", last_ts=last_ts, count=int(ev.count or 1))
-        )
-    for evs in bucketed.values():
-        evs.sort(key=lambda e: e.last_ts)
-    return bucketed
-
-
 async def fetch_probe_kinds(
     custom: client.CustomObjectsApi, probe_kinds: list[tuple[str, str, str, str]]
 ) -> dict[str, list[dict]]:
@@ -262,66 +200,100 @@ def extract_culprit(text: str) -> tuple[str, str, str, str] | None:
 
 
 def classify(
-    r: Resource, p99: float, slow_threshold_s: float, loki_fail_supplement: int, loki_success_supplement: int
+    r: Resource,
+    since: datetime,
+    slow_threshold_s: float,
+    loki_fail_supplement: int,
+    loki_success_supplement: int,
+    p99_mimir: float,
 ) -> None:
     if r.suspended:
         r.bucket = "Suspended"
         return
 
-    successes = [e for e in r.events if e.reason in SUCCESS_REASONS]
-    failures = [e for e in r.events if e.reason in FAILURE_REASONS]
-    real_fails: list[Event] = []
-    transient_fails: list[Event] = []
-    for e in failures:
-        if any(re.search(p, e.message) for p in TRANSIENT_ERROR_PATTERNS):
-            transient_fails.append(e)
-        else:
-            real_fails.append(e)
+    history_in = r.status.history_in_window(since)
+    latest = r.status.latest_history
+    success_entries = [e for e in history_in if e.last_reconciled_status in SUCCESS_STATUSES]
+    failure_entries = [e for e in history_in if e.last_reconciled_status in FAILURE_STATUSES]
 
-    finish_count = sum(e.count for e in successes)
-    real_fail_count = sum(e.count for e in real_fails)
-    transient_fail_count = sum(e.count for e in transient_fails)
+    # Per-revision rollup. Each history entry IS per-revision-digest already;
+    # we use it to drive the Miswired ("same revision: failed then succeeded
+    # later" or "had failure entries then a success entry") and Broken
+    # decisions. Counts are by *entry*, not by individual reconcile attempt.
+    successful_revisions = {e.revision for e in success_entries}
+    failed_revisions_with_recovery = {e.revision for e in failure_entries if e.revision in successful_revisions}
 
-    last_success_ts = max((e.last_ts for e in successes), default=0.0)
-    last_failure_ts = max((e.last_ts for e in real_fails), default=0.0)
-    last_was_failure = last_failure_ts > last_success_ts and last_failure_ts > 0
+    # Per-history-entry attempt counts (best precision we have without Loki).
+    successes_attempts = sum(e.total_reconciliations for e in success_entries)
+    failures_attempts = sum(e.total_reconciliations for e in failure_entries)
+    failures_attempts = max(failures_attempts, loki_fail_supplement)
+    successes_attempts = max(successes_attempts, loki_success_supplement)
 
-    real_fail_count = max(real_fail_count, loki_fail_supplement)
-    finish_count = max(finish_count, loki_success_supplement)
+    last_was_failure = latest is not None and latest.last_reconciled_status in FAILURE_STATUSES
 
+    # Max in-window history duration is a proxy for p99 — we only have
+    # `lastReconciledDuration` per revision, not the full distribution. If
+    # Mimir has a real histogram-derived p99 we prefer that.
+    max_history_duration_s = max((e.duration_s for e in history_in), default=0.0)
+    p99 = p99_mimir if p99_mimir > 0 else max_history_duration_s
+
+    # Underlying-resource attribution. Latest history doesn't carry the
+    # error message, so we fall back to the current `Ready` condition's
+    # message which Flux populates with the bracketed reference.
     culprit = None
     last_error = None
-    if real_fails:
-        last_error = real_fails[-1].message
-        culprit = extract_culprit(last_error)
-    if not culprit and r.status.ready:
-        culprit = extract_culprit(r.status.ready.message or "")
+    ready = r.status.ready
+    if ready and ready.status == "False":
+        last_error = ready.message
+        culprit = extract_culprit(ready.message or "")
 
     r.evidence = {
-        "successes": finish_count,
-        "real_fail_count": real_fail_count,
-        "transient_fail_count": transient_fail_count,
+        "history_in_window": len(history_in),
+        "success_entries": len(success_entries),
+        "failure_entries": len(failure_entries),
+        "successes_attempts": successes_attempts,
+        "failures_attempts": failures_attempts,
         "p99_s": p99,
-        "last_error": last_error,
-        "last_was_failure": last_was_failure,
-        "culprit": culprit,
+        "max_history_duration_s": max_history_duration_s,
+        "p99_mimir": p99_mimir,
         "loki_fail_supplement": loki_fail_supplement,
         "loki_success_supplement": loki_success_supplement,
+        "last_was_failure": last_was_failure,
+        "latest_status": latest.last_reconciled_status if latest else None,
+        "latest_revision": latest.revision if latest else None,
+        "failed_revisions_with_recovery": sorted(failed_revisions_with_recovery),
+        "culprit": culprit,
+        "last_error": last_error,
     }
 
-    if last_was_failure and (real_fail_count > finish_count or real_fail_count >= 2):
+    # Classification (first match wins).
+    #
+    # Broken: latest history entry has a failure status. The controller is
+    # currently stuck at this revision.
+    if last_was_failure:
         r.bucket = "Broken"
         return
-    ready = r.status.ready
-    if ready and ready.status == "False" and ready.reason == "DependencyNotReady" and real_fail_count == 0:
+
+    # Propagating: currently Ready=False because a dependsOn target is still
+    # catching up. No real failures in history means the resource is in the
+    # transient propagation state, not broken.
+    if ready and ready.status == "False" and ready.reason == "DependencyNotReady" and len(failure_entries) == 0:
         r.bucket = "Propagating"
         return
-    if real_fail_count > 0 and finish_count > 0:
+
+    # Miswired: latest is a success but earlier entries in the window
+    # failed — Flux retried until it converged. Covers both "same revision
+    # had failures then succeeded" and "earlier revision failed before the
+    # current healthy one".
+    if len(failure_entries) > 0:
         r.bucket = "Miswired"
         return
-    if finish_count > 0 and p99 >= slow_threshold_s:
+
+    # Slow: succeeded but took too long. Threshold is per-kind.
+    if len(success_entries) > 0 and p99 >= slow_threshold_s:
         r.bucket = "Slow"
         return
+
     r.bucket = "Healthy"
 
 
@@ -375,6 +347,23 @@ def probe_managed_objects(r: Resource, probe_objs: dict[str, list[dict]]) -> lis
     return out
 
 
+def _format_history_table(history: list[FluxReconcileHistoryEntry], n: int = 5) -> str:
+    """One-line per entry summary, most-recent first."""
+    sorted_h = sorted(
+        (e for e in history if e.last_reconciled),
+        key=lambda e: e.last_reconciled,  # type: ignore[arg-type,return-value]
+        reverse=True,
+    )
+    lines = []
+    for e in sorted_h[:n]:
+        rev = e.revision.split(":", 1)[-1][:10] if ":" in e.revision else e.revision[:10]
+        ts = e.last_reconciled.isoformat(timespec="seconds") if e.last_reconciled else "?"
+        lines.append(
+            f"  - {ts} `{e.last_reconciled_status}` rev=`{rev}` total={e.total_reconciliations} dur={e.duration_s:.1f}s"
+        )
+    return "\n".join(lines)
+
+
 def emit_report(
     rs: list[Resource], window: str, use_mimir: bool, use_loki: bool, probe_objs: dict[str, list[dict]]
 ) -> None:
@@ -383,11 +372,11 @@ def emit_report(
         by_bucket[r.bucket].append(r)
 
     print(f"# Flux Reconcile Audit — last {window}\n")
-    sources = ["events"]
+    sources = ["status.history"]
     if use_mimir:
-        sources.append("Mimir (p99 duration)")
+        sources.append("Mimir (p99 fallback)")
     if use_loki:
-        sources.append("Loki (long-window fallback)")
+        sources.append("Loki (long-window count fallback)")
     sources.append("label-selector probes")
     print(f"Data sources: {', '.join(sources)}\n")
     print(
@@ -409,7 +398,7 @@ def emit_report(
         ("Suspended", "## Suspended (informational)"),
     ]:
         items = sorted(
-            by_bucket[b], key=lambda r: (-r.evidence.get("real_fail_count", 0), -r.evidence.get("p99_s", 0.0))
+            by_bucket[b], key=lambda r: (-r.evidence.get("failures_attempts", 0), -r.evidence.get("p99_s", 0.0))
         )
         if not items:
             continue
@@ -421,25 +410,41 @@ def emit_report(
             if ready:
                 print(f"- Current: Ready={ready.status}, reason=`{ready.reason or ''}`")
             if ev.get("p99_s", 0) > 0:
-                print(f"- p99 reconcile duration: {ev['p99_s']:.1f}s")
-            if ev.get("real_fail_count"):
+                src = "Mimir" if ev.get("p99_mimir", 0) > 0 else "history-max"
+                print(f"- p99 reconcile duration: {ev['p99_s']:.1f}s ({src})")
+            if ev.get("failures_attempts") or ev.get("successes_attempts"):
                 extras = []
-                if ev["transient_fail_count"]:
-                    extras.append(f"+{ev['transient_fail_count']} transient")
                 if ev.get("loki_fail_supplement"):
                     extras.append(f"loki-fail={ev['loki_fail_supplement']}")
                 if ev.get("loki_success_supplement"):
                     extras.append(f"loki-ok={ev['loki_success_supplement']}")
                 tag = f" ({', '.join(extras)})" if extras else ""
-                print(f"- Failures / successes in window: {ev['real_fail_count']} / {ev['successes']}{tag}")
+                print(
+                    f"- Reconcile attempts in window: "
+                    f"{ev['failures_attempts']} failed / "
+                    f"{ev['successes_attempts']} succeeded"
+                    f" across {ev['failure_entries']}+{ev['success_entries']} history entries{tag}"
+                )
+            if ev.get("latest_status"):
+                rev = ev.get("latest_revision") or ""
+                rev_short = rev.split(":", 1)[-1][:10] if ":" in rev else rev[:10]
+                print(f"- Latest entry: `{ev['latest_status']}` at rev `{rev_short}`")
+            if ev.get("failed_revisions_with_recovery"):
+                revs = ", ".join(
+                    (r.split(":", 1)[-1][:10] if ":" in r else r[:10]) for r in ev["failed_revisions_with_recovery"][:3]
+                )
+                print(f"- Revisions that failed then recovered: {revs}")
             if ev.get("culprit"):
                 k, ns, nm, st = ev["culprit"]
-                print(f"- Underlying culprit (from condition/event): {k}/{nm} ({ns}) — status `{st}`")
+                print(f"- Underlying culprit (from condition): {k}/{nm} ({ns}) — status `{st}`")
             if ev.get("last_error"):
                 err = ev["last_error"]
                 if len(err) > 400:
                     err = err[:400] + "…"
                 print(f"- Last error: `{err}`")
+            if r.status.history:
+                print("- History (most recent first):")
+                print(_format_history_table(r.status.history))
             lines = probe_managed_objects(r, probe_objs)
             if lines:
                 print("- Label-selector probe (unhealthy managed objects):")
@@ -455,17 +460,11 @@ async def _empty_dict() -> dict:
     return {}
 
 
-async def _gather_dicts(coros: list) -> list[dict[str, int]]:
-    if not coros:
-        return []
-    return list(await asyncio.gather(*coros))
-
-
 async def async_main(args: argparse.Namespace) -> None:
     window_s = parse_window_seconds(args.window)
-    since_ts = time.time() - window_s
-    use_mimir = not args.no_mimir
-    use_loki = (not args.no_loki) and window_s > 3600
+    since = datetime.now(UTC) - timedelta(seconds=window_s)
+    use_mimir = args.include_mimir
+    use_loki = args.include_loki and window_s > 3600
 
     try:
         await config.load_kube_config()
@@ -474,7 +473,6 @@ async def async_main(args: argparse.Namespace) -> None:
 
     async with client.ApiClient() as api, httpx.AsyncClient() as http:
         custom = client.CustomObjectsApi(api)
-        core = client.CoreV1Api(api)
 
         loki_specs: list[tuple[str, str]] = []
         loki_coros = []
@@ -483,24 +481,22 @@ async def async_main(args: argparse.Namespace) -> None:
                 ("Kustomization", "kustomize-controller", "Kustomization_name"),
                 ("HelmRelease", "helm-controller", "HelmRelease_name"),
             ]:
-                for which, match in [("fail", "Reconciliation failed"), ("ok", "Reconciliation finished")]:
+                for which, match in (("fail", "Reconciliation failed"), ("ok", "Reconciliation finished")):
                     loki_specs.append((kind, which))
                     loki_coros.append(loki_count_by_name(http, app, name_label, match, args.window))
 
-        rs, ks_events, hr_events, probe_objs, p99_map, loki_results = await asyncio.gather(
-            collect_universe(custom),
-            collect_events(core, "kustomize.toolkit.fluxcd.io/v1", since_ts),
-            collect_events(core, "helm.toolkit.fluxcd.io/v2", since_ts),
-            fetch_probe_kinds(custom, DEFAULT_PROBE_KINDS),
-            mimir_p99_by_name(http, args.window) if use_mimir else _empty_dict(),
-            _gather_dicts(loki_coros),
-        )
+        f_universe = asyncio.create_task(collect_universe(custom))
+        f_probe = asyncio.create_task(fetch_probe_kinds(custom, DEFAULT_PROBE_KINDS))
+        f_mimir = asyncio.create_task(mimir_p99_by_name(http, args.window) if use_mimir else _empty_dict())
+        f_loki = [asyncio.create_task(c) for c in loki_coros] if loki_coros else []
+
+        rs = await f_universe
+        probe_objs = await f_probe
+        p99_map = await f_mimir
+        loki_results = [await c for c in f_loki]
 
     if args.name:
         rs = [r for r in rs if r.name == args.name]
-    events_by_target: dict[tuple[str, str], list[Event]] = {**ks_events, **hr_events}
-    for r in rs:
-        r.events = events_by_target.get((r.namespace, r.name), [])
 
     loki_fail: dict[tuple[str, str], int] = {}
     loki_ok: dict[tuple[str, str], int] = {}
@@ -515,7 +511,7 @@ async def async_main(args: argparse.Namespace) -> None:
         ok_supp = loki_ok.get((r.kind, r.name), 0)
         p99 = p99_map.get((r.kind, r.name), 0.0)
         try:
-            classify(r, p99, thr, f_supp, ok_supp)
+            classify(r, since, thr, f_supp, ok_supp, p99)
         except Exception as e:
             r.bucket = "?Error"
             r.evidence = {"error": repr(e)}
@@ -527,8 +523,17 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--window", default="7d")
     ap.add_argument("--name", default=None)
-    ap.add_argument("--no-mimir", action="store_true")
-    ap.add_argument("--no-loki", action="store_true")
+    ap.add_argument(
+        "--include-mimir",
+        action="store_true",
+        help="Also pull p99 reconcile duration from Mimir (default: history-max only).",
+    )
+    ap.add_argument(
+        "--include-loki",
+        action="store_true",
+        help="Also pull fail/success counts from Loki, capped at the window. Useful when "
+        "the window exceeds Flux's history retention (default 10 entries).",
+    )
     ap.add_argument("--slow-kustomization-s", type=float, default=60.0)
     ap.add_argument("--slow-helmrelease-s", type=float, default=300.0)
     args = ap.parse_args()
