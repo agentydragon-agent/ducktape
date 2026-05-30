@@ -5,3 +5,4 @@ resources:
   - datavolume.yaml
   - virtualmachine.yaml
   - service.yaml
+  - tcproute.yaml
