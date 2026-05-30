@@ -24,7 +24,7 @@ pytest_plugins = ("util.playwright",)
 if TYPE_CHECKING:
     from playwright.sync_api import Browser, Page, Playwright
 
-_PROPERTY_LIFECYCLE_URL = "/product?s=4.240...........location_a_property&lc=r24:50~c60:50000~s120:6"
+_PROPERTY_LIFECYCLE_URL = "/product?h=240&s=5...........location_a_property&lc=r24:50~c60:50000~s120:6"
 
 
 @pytest.fixture
@@ -113,12 +113,13 @@ def test_product_shell_renders_metric_fan_charts(page: Page, augur_server: str) 
     page.get_by_label("Metric to plot").wait_for(state="visible", timeout=15_000)
     page.get_by_label("Metric to plot").select_option("cash_usd")
     page.locator("[data-product-fan-chart='cashUsd']").wait_for(state="visible", timeout=30_000)
-    page.locator("[data-product-chart-scale-control]").get_by_text("Log", exact=True).click()
+    # The linear/log scale toggle is a shared header control (drives both tabs' charts).
+    page.locator("[data-augur-scale-control]").get_by_text("Log", exact=True).click()
     page.locator("[data-product-fan-chart='cashUsd'][data-product-scale='log']").wait_for(
         state="visible", timeout=15_000
     )
     page.locator("[data-product-histogram-scale='log']").wait_for(state="visible", timeout=15_000)
-    page.locator("[data-product-chart-scale-control]").get_by_text("Linear", exact=True).click()
+    page.locator("[data-augur-scale-control]").get_by_text("Linear", exact=True).click()
     page.locator("[data-product-fan-chart='cashUsd'][data-product-scale='linear']").wait_for(
         state="visible", timeout=15_000
     )
