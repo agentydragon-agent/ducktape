@@ -1,9 +1,11 @@
 //! Profile YAML configuration.
 //!
-//! The profile is **repo-generic**: unknown fields are ignored so
-//! repo-specific keys (k8s, bazel_bes_proxy, setup_docker, pre_commit, etc.)
-//! don't break parsing. They're consumed by the repo's scripts, not the
-//! daemon.
+//! The profile is **repo-generic**: serde drops unknown fields, so the parser
+//! tolerates vestigial keys the retired Python daemon honored (`otel`,
+//! `bazel_bes_proxy`, `setup_docker`, `setup_tmpfs`, …) and forward-compatible
+//! additions without breaking. Promote such a key into `ProfileConfig` (with a
+//! test) only once the Rust daemon actually consumes it; until then it is
+//! silently ignored. See `devinfra/claude/TODO.md`.
 
 use serde::Deserialize;
 

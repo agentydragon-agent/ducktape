@@ -1,14 +1,21 @@
 startup_env_script: devinfra/secrets/web_env.sh
 
-otel:
-  endpoint: https://alloy-otlp.allegedly.works/v1/traces
-  # bearer_token: decrypted via startup_env_script (web_env.sh) at daemon startup.
-
 idle_watchdog: false
-setup_tmpfs: true
-setup_docker: true
-bazel_bes_proxy:
-  target: remote.buildbuddy.io:443
+
+# CLEANUP(2026-05-30): the keys below were removed because the Rust `claude-hook`
+# daemon IGNORES them — serde drops unknown fields (see config.rs), so they were
+# honored only by the retired Python daemon. Leaving them implied behavior that
+# does not happen: `setup_docker: true` did NOT start Docker (confirmed by the
+# web_selfcheck W5 finding on 2026-05-30). Removed:
+#   otel:            { endpoint: https://alloy-otlp.allegedly.works/v1/traces }
+#   setup_tmpfs:     true
+#   setup_docker:    true
+#   bazel_bes_proxy: { target: remote.buildbuddy.io:443 }
+# Restore a key (with a ProfileConfig field + test) when the Rust daemon
+# implements it; otherwise delete this tombstone once the "Rust parity
+# follow-ups" item in devinfra/claude/TODO.md is closed as won't-do.
+# NOTE: DUCKTAPE_OTEL_BEARER_TOKEN is still exported by web_env.sh, independent
+# of the removed `otel:` key.
 env_exports: |
   export DUCKTAPE_PRECOMMIT_ENFORCE_BAZEL_TESTS=0
   export DUCKTAPE_PRECOMMIT_ENFORCE_TEST_TAG=1

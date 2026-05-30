@@ -92,19 +92,19 @@ the check is verifying.
 
 ### Common
 
-**C1 — BUILDBUDDY_API_KEY is present and valid.**
+**C1 — BUILDBUDDY_API_KEY is present; validity is proven by C3.**
 
 ```bash
-[ -n "${BUILDBUDDY_API_KEY:-}" ] || echo "FAIL: BUILDBUDDY_API_KEY unset"
-curl -s -o /dev/null -w "%{http_code}\n" \
-  -H "x-buildbuddy-api-key: ${BUILDBUDDY_API_KEY}" \
-  -H "Content-Type: application/proto" \
-  --data-binary '' \
-  https://remote.buildbuddy.io/rpc/BuildBuddyService/GetUser
+[ -n "${BUILDBUDDY_API_KEY:-}" ] && echo "present (len=${#BUILDBUDDY_API_KEY})" \
+  || echo "FAIL: BUILDBUDDY_API_KEY unset"
 ```
 
-Pass: `200` (or `400` = malformed proto but auth passed). `401`/`403` =
-invalid key.
+Presence only — there is **no working lightweight HTTP probe**. The
+`remote.buildbuddy.io` gateway returns `415` for the old `GetUser` curl _with
+or without_ the key (it rejects the content type before auth), so that probe
+cannot distinguish a valid key. The authoritative validity test is the live
+RBE build in **C3 / W4**: a `401`/`403` or a BES auth rejection there is the
+real signal of a bad key.
 
 **C2 — GITHUB_TOKEN is present and valid.**
 
@@ -129,7 +129,8 @@ Pass: exit 0 with no `Unable to resolve host`, `certificate`,
 **C4 — bazelisk shim is active and invocations are session-tagged.**
 
 ```bash
-LIVE=$(basename "$(dirname "$CLAUDE_ENV_FILE")")
+LIVE=${CLAUDE_ENV_FILE:+$(basename "$(dirname "$CLAUDE_ENV_FILE")")}
+LIVE=${LIVE:-$(ps aux | grep '[c]laude-hook daemon' | grep -oP '(?<=--sock /tmp/claude-hd/)[^/]+' | head -1)}
 SESSION_DIR="$HOME/.claude/session-env/$LIVE"
 ls -l "$(command -v bazelisk)"  # must point into $SESSION_DIR/bin
 grep -E 'build_metadata|TAGS' "$SESSION_DIR/bbr.bazelrc" 2>/dev/null
@@ -146,27 +147,32 @@ BuildBuddy invocation tags after a real `bbr` invocation.
 **C6 — throwaway-commit pre-commit end-to-end.**
 
 ```bash
-set -e
 cd /home/user/ducktape
+START_BRANCH=$(git rev-parse --abbrev-ref HEAD)
 TEST_BRANCH="selfcheck/$(date +%s)"
+TEST_FILE=/home/user/ducktape/selfcheck-tmp.txt   # kebab-case: avoids the filename-convention hook
+trap 'git checkout -q "$START_BRANCH"; git branch -D "$TEST_BRANCH" 2>/dev/null; rm -f "$TEST_FILE"' EXIT
 git checkout -q -b "$TEST_BRANCH"
-TEST_FILE=$(mktemp /home/user/ducktape/selfcheck-XXXXX.txt)
-echo "selfcheck $(date -Iseconds)" > "$TEST_FILE"
+printf 'selfcheck %s\n' "$(date -Iseconds)" > "$TEST_FILE"
 git add "$TEST_FILE"
-git commit -m "test: selfcheck — delete me" 2>&1
-EXIT=$?
-git checkout -q -
-git branch -D "$TEST_BRANCH"
-rm -f "$TEST_FILE"
-echo "exit: $EXIT"
+# The commit-msg hook requires a BAZEL_TEST_INVOCATIONS= tag whenever
+# DUCKTAPE_PRECOMMIT_ENFORCE_TEST_TAG=1 (both profiles export this). A bare
+# commit is *correctly* rejected; use the none: form for a no-code change.
+git commit -m "test: selfcheck — delete me
+
+BAZEL_TEST_INVOCATIONS=none: selfcheck throwaway, no code/tests affected" 2>&1 | tail -40
+echo "exit: ${PIPESTATUS[0]}"
 ```
 
-Pass: exit 0.
+Pass: exit 0 with every hook Passed/Skipped (incl. `ducktape-commit-msg`). A
+bare commit _without_ the tag failing at `ducktape-commit-msg` is correct
+policy behavior, not a broken session.
 
 **C7 — hook daemon logs present, no unhandled exceptions.**
 
 ```bash
-LIVE=$(basename "$(dirname "$CLAUDE_ENV_FILE")")
+LIVE=${CLAUDE_ENV_FILE:+$(basename "$(dirname "$CLAUDE_ENV_FILE")")}
+LIVE=${LIVE:-$(ps aux | grep '[c]laude-hook daemon' | grep -oP '(?<=--sock /tmp/claude-hd/)[^/]+' | head -1)}
 LOG="/tmp/claude-hd/$LIVE/daemon.log"
 [ -f "$LOG" ] && grep -cE 'ERROR|Traceback|Exception' "$LOG" || echo MISSING
 ```
@@ -293,11 +299,17 @@ timeout 60 bbr build //devinfra:gazelle --nobuild 2>&1 | tail -10
 Pass: exit 0, no "which remote" prompt, no `Unable to resolve host`, no
 `127.0.0.1:*` in the runner's origin URL.
 
-**W5 — Docker is available.**
+**W5 — Docker (non-goal: the Rust daemon does not set one up).**
 
 ```bash
-docker info >/dev/null 2>&1 && echo OK || echo FAIL
+docker info >/dev/null 2>&1 && echo "present" || echo "absent (expected)"
 ```
+
+The web profile's `setup_docker` key is **ignored** by the Rust daemon — only
+the retired Python daemon started Docker (see `devinfra/claude/TODO.md`). So an
+absent local Docker daemon is **expected, not a failure**: Docker-dependent
+tests run on BuildBuddy RBE workers, not locally. Report `present`/`absent`
+informationally; only flag if a workflow genuinely needs local Docker.
 
 ## Out-of-SPEC diagnostics
 
@@ -335,6 +347,11 @@ There are **two** independent kinds of staleness to check:
 
 **(a) Pin in `nix/artifact-pins.json` is behind HEAD** — sync-pins.yml didn't
 run recently, or release.yml is failing. The repo itself is out of date.
+On a **shallow clone** (Claude Code web clones ~50 commits — check
+`.git/shallow`), the pinned commit is usually absent locally, so the
+`git log` / `git merge-base` ancestry checks below are unreliable. Compare the
+pin SHA against `origin/devel` via the GitHub MCP instead, or just confirm
+`daemon.err.log` shows no schema-drift crashes (the practical signal).
 
 **(b) Installed wheel is behind the pin** — on Firecracker web sessions
 with a persistent rootfs, `nix profile install` is a no-op when devtools
@@ -358,7 +375,7 @@ print('pinned:', m.group(1) if m else 'unknown')
 git -C /home/user/ducktape log --oneline -5 -- devinfra/claude/ nix/artifact-pins.json
 
 # (b) Installed wheel vs pin
-claude-hook --version  # git= shows the commit the installed wheel was built from
+claude-hook --version  # Rust binary: prints the crate version (e.g. 0.0.0), not a git stamp
 # Check daemon.err.log for template/schema crashes that indicate drift
 tail -50 /tmp/claude-hd/*/daemon.err.log 2>/dev/null
 ```
@@ -403,7 +420,7 @@ Profile: <CLI/Web>    Summary: <healthy / degraded / broken>
 | C2  | GITHUB_TOKEN valid             | OK/FAIL       | login=...             |
 | C3  | bbr build trivial              | OK/FAIL       | ...                   |
 | C4  | bazelisk shim + session tag    | OK/FAIL       | ...                   |
-| C5  | PostToolUse auto-apply         | OK/SKIP       | manually verified?    |
+| C5  | bbr imports session metadata   | OK/FAIL       | session:<id> tag      |
 | C6  | throwaway commit end-to-end    | OK/FAIL       | ...                   |
 | C7  | daemon log clean               | OK/FAIL       | N errors              |
 | C8  | OTLP tracing                   | OK/FAIL       | HTTP <code>           |
