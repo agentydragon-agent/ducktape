@@ -47,6 +47,28 @@ py_library(
 )
 
 py_library(
+    name = "level_series_groups",
+    srcs = ["level_series_groups.py"],
+    deps = [
+        ":schemas",
+        ":series",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "level_series_groups_test",
+    srcs = ["level_series_groups_test.py"],
+    deps = [
+        ":level_series_groups",
+        ":series",
+        "//:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
     name = "private_equity_protocol",
     srcs = ["private_equity_protocol.py"],
     deps = [
@@ -118,7 +140,9 @@ py_library(
         ":deterministic",
         ":exogenous",
         ":gbm",
+        ":level_series_groups",
         ":poisson_events",
+        ":series",
         "//augur:frames",
         "@pypi//polars",
         "@pypi//pydantic",
@@ -132,12 +156,12 @@ py_library(
         ":deterministic",
         ":exogenous",
         ":gbm",
+        ":level_series_groups",
         ":schemas",
         ":series",
         ":series_model",
         "//augur:frames",
         "//augur/model/path_models:scenarios",
-        "//augur/product:asset_key",
         "@pypi//jax",
         "@pypi//numpy",
         "@pypi//numpyro",
