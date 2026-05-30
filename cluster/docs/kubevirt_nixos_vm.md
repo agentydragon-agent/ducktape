@@ -1,77 +1,64 @@
 # KubeVirt NixOS VM Runbook
 
-KubeVirt and CDI are installed from `cluster/k8s/kubevirt/`. For a NixOS VM,
-the repo already has the same bootstrap pattern used for Proxmox hosts such as
-`wyrm2`:
+KubeVirt and CDI are installed from <k8s/kubevirt/>. The paved end-to-end flow
+for a new NixOS VM is:
+
+1. Publish the bootstrap qcow2 to SeaweedFS — `cluster/k8s/vm-images-publisher/`.
+2. Define the VM under `cluster/k8s/<name>/` with a CDI `DataVolume` sourcing
+   that qcow2 — see <k8s/gecko/> as the canonical example.
+3. Boot, SSH in with a key in `nix/nixos/hosts/bootstrap/default.nix`, then
+   `nixos-rebuild switch --flake github:agentydragon/ducktape?ref=devel#<name>`
+   to take on a real host config.
+
+## Publishing The Bootstrap Image
+
+Trigger an in-cluster build + upload from the suspended CronJob:
 
 ```bash
-nix build .#bootstrap-image
+kubectl create job --from=cronjob/vm-images-publisher \
+  "publish-$(date +%s)" -n vm-images-publisher
 ```
 
-That package comes from `self.nixosConfigurations.bootstrap.config.system.build.images.qemu-efi`.
-The full `#wyrm2` config is not a good small KubeVirt test VM because it carries
-workstation, GPU, storage, and Kubernetes-worker assumptions.
+See <k8s/vm-images-publisher/README.md> for environment overrides (publish a
+non-default ref, alternate flake output, etc.). The resulting object key is
+`bootstrap/<commit-sha>.qcow2`.
 
-## Low-Bandwidth Bootstrap Path
+## Wiring A VM
 
-When on a slow uplink, avoid `virtctl image-upload` of the 5.6 GiB qcow2.
-Use the experimental helper saved under:
+Crib from <k8s/gecko/>:
 
-```bash
-x/kubevirt_nixos_bootstrap/
-```
+- `namespace/` — dedicated namespace.
+- `app/vm-images-s3-reader.yaml` — `ExternalSecret` pulling `cdiReader*` keys
+  from `seaweedfs/vm-images-s3-credentials` via cross-namespace `SecretStore`.
+- `app/datavolume.yaml` — points at the published qcow2 via the public
+  `vm-images-s3.allegedly.works` endpoint (reads work over that path; only
+  writes were ever slow).
+- `app/virtualmachine.yaml` — `VirtualMachine` with UEFI (`secureBoot: false`),
+  virtio rootdisk + NIC, `runStrategy: Always`.
+- `app/service.yaml` — ClusterIP exposing SSH at :22.
 
-Apply the in-cluster image builder:
-
-```bash
-kubectl apply -f x/kubevirt_nixos_bootstrap/nixos-bootstrap-image-job.yaml
-kubectl -n nixos-vm-smoke wait --for=condition=complete job/nixos-bootstrap-smoke-image --timeout=30m
-```
-
-Then create the VM and optional SSH Service:
-
-```bash
-kubectl apply -f x/kubevirt_nixos_bootstrap/nixos-bootstrap-vm.yaml
-kubectl apply -f x/kubevirt_nixos_bootstrap/nixos-bootstrap-ssh-service.yaml
-kubectl -n nixos-vm-smoke get vm,vmi,pod -o wide
-```
-
-The builder creates a privileged `nixos-vm-smoke` namespace, builds
-`github:agentydragon/ducktape/devel#bootstrap-image` in-cluster, converts the
-qcow2 to raw, and writes it to the PVC as `/disk.img`. The raw conversion is
-required: KubeVirt filesystem PVC disks are attached as raw `disk.img` files.
+Both `namespace` and `app` are wired as separate Flux Kustomizations with
+`wait: true` health checks on the DataVolume + VirtualMachine, so the chain
+won't report Ready until CDI finishes the import and the VM is up.
 
 ## Verification
 
-Guest-agent status is the cleanest boot check:
-
 ```bash
-kubectl -n nixos-vm-smoke get vmi nixos-bootstrap-smoke \
-  -o jsonpath='{.status.guestOSInfo}{"\n"}'
-```
+# Guest agent boot check (also exposes IP, hostname, kernel)
+kubectl -n <ns> get vmi <name> -o jsonpath='{.status.guestOSInfo}{"\n"}'
 
-For SSH:
-
-```bash
-kubectl -n nixos-vm-smoke port-forward svc/nixos-bootstrap-smoke-ssh 2222:22
+# SSH via port-forward
+kubectl -n <ns> port-forward svc/<name>-ssh 2222:22
 ssh -p 2222 agentydragon@127.0.0.1
 ```
 
-The current bootstrap config only authorizes the keys listed in
-`nix/nixos/hosts/bootstrap/default.nix`. This session could verify boot via the
-guest agent, but SSH login was denied because the local key was not one of those
-bootstrap keys.
+The bootstrap NixOS config (`nix/nixos/hosts/bootstrap/default.nix`) authorises
+SSH keys for `wyrm2`, `atlas`, `rugged`. To SSH from a workstation whose key
+isn't in that list, add the public key to that file and re-publish the image.
 
 ## Caveats
 
-The smoke VM uses `local-path-ovh`, so it is tied to one node and is not
-live-migratable. It will not satisfy the original durable-VM goal by itself:
-node loss can still lose availability. For durable VMs, use a CSI backend with
-RWX/block support and `VolumeSnapshotClass` support before relying on
-KubeVirt migration, snapshots, or node-failure recovery.
-
-Cleanup:
-
-```bash
-kubectl delete namespace/nixos-vm-smoke --ignore-not-found=true
-```
+VMs that use `local-path-ovh` (or any local-path class) are tied to one node
+and are not live-migratable; node loss = availability loss. For durable VMs,
+use a CSI backend with RWX/block support and `VolumeSnapshotClass` before
+relying on KubeVirt migration, snapshots, or node-failure recovery.
