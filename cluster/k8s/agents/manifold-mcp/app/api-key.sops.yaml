@@ -5,6 +5,10 @@ metadata:
   namespace: manifold-mcp
   annotations:
     description: Manifold Markets API key. The Node MCP server reads it from the env at startup.
+    reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+    reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: augur
+    reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+    reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: augur
 stringData:
   MANIFOLD_API_KEY: ENC[AES256_GCM,data:zA0hTqlxFsHfaMKOK1RVuu5VB2erfZ9Jd6ggoZHE0pG0Unj2,iv:dt5joIj0KQMrMgbx4ZZx39GGj6jnS4inWnZA6qX90cg=,tag:Le/UA5C1f4cAfIaU8aDyHQ==,type:str]
 sops:
