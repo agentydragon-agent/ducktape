@@ -26,6 +26,11 @@ import {
   productInputToSearch,
   productInputFromSearch,
   productMetricFanRequest,
+  rolloutCountFromSearch,
+  rolloutCountDefault,
+  clampRolloutCount,
+  exogenousModelFromSearch,
+  exogenousModelDefault,
 } from "./input_helpers.js";
 import {
   metricFanRows,
@@ -63,6 +68,33 @@ function writeTabToSearch(tab) {
   const params = new URLSearchParams(window.location.search);
   if (tab === DEFAULT_TAB) params.delete("tab");
   else params.set("tab", tab);
+  const search = params.toString();
+  const newUrl = `${window.location.pathname}${search ? "?" + search : ""}${window.location.hash}`;
+  if (newUrl !== window.location.pathname + window.location.search + window.location.hash) {
+    window.history.replaceState(null, "", newUrl);
+  }
+}
+
+// The shared rollout count is a top-level concern (both tabs run this many rollouts), so it gets
+// its own `?n=` param written by the shell rather than living in either tab's serialized input.
+// Omitted when at the default, mirroring the trailing-default trimming of the product `?s=` state.
+function writeRolloutCountToSearch(value, bootstrap) {
+  const params = new URLSearchParams(window.location.search);
+  if (value == null || value === rolloutCountDefault(bootstrap)) params.delete("n");
+  else params.set("n", String(value));
+  const search = params.toString();
+  const newUrl = `${window.location.pathname}${search ? "?" + search : ""}${window.location.hash}`;
+  if (newUrl !== window.location.pathname + window.location.search + window.location.hash) {
+    window.history.replaceState(null, "", newUrl);
+  }
+}
+
+// The shared exogenous model is likewise a top-level concern (both tabs run against it), so it
+// gets its own `?x=` param. Omitted when at the deployment default, like the `?n=` param above.
+function writeExogenousModelToSearch(value, bootstrap) {
+  const params = new URLSearchParams(window.location.search);
+  if (value == null || value === exogenousModelDefault(bootstrap)) params.delete("x");
+  else params.set("x", value);
   const search = params.toString();
   const newUrl = `${window.location.pathname}${search ? "?" + search : ""}${window.location.hash}`;
   if (newUrl !== window.location.pathname + window.location.search + window.location.hash) {
@@ -246,7 +278,16 @@ function viewPrefsFromSearch(searchString) {
   };
 }
 
-function ProductProjectionWorkspace({ bootstrap, deployment, tab, onSelectTab }) {
+function ProductProjectionWorkspace({
+  bootstrap,
+  deployment,
+  tab,
+  onSelectTab,
+  rolloutCount,
+  onChangeRolloutCount,
+  exogenousModel,
+  onChangeExogenousModel,
+}) {
   const initialViewPrefs = viewPrefsFromSearch(window.location.search);
   const [input, setInput] = useState(() => productInputFromSearch(window.location.search, bootstrap));
   const [selectedMetricValue, setSelectedMetricValue] = useState("net_worth_usd");
@@ -265,8 +306,8 @@ function ProductProjectionWorkspace({ bootstrap, deployment, tab, onSelectTab })
   const selectedMetric =
     visibleMetrics.find((metric) => metric.value === selectedMetricValue) ?? visibleMetrics[0] ?? METRIC_OPTIONS[0];
   const request = useMemo(
-    () => productMetricFanRequest(input, bootstrap, selectedMetric),
-    [input, bootstrap, selectedMetric]
+    () => productMetricFanRequest(input, bootstrap, selectedMetric, rolloutCount, exogenousModel),
+    [input, bootstrap, selectedMetric, rolloutCount, exogenousModel]
   );
   const scenarioCacheKey = useMemo(() => JSON.stringify(request.scenario), [request.scenario]);
   const fanRows = useMemo(() => metricFanRows(result), [result]);
@@ -291,6 +332,13 @@ function ProductProjectionWorkspace({ bootstrap, deployment, tab, onSelectTab })
     const params = new URLSearchParams(productInputToSearch(input, bootstrap));
     if (metricScale !== "linear") params.set("scale", "log");
     if (currencyDisplay !== "compact") params.set("fmt", "exact");
+    // The shared rollout count (`?n=`) and exogenous model (`?x=`) are owned by the shell, not the
+    // product input. Carry the current values across so rewriting the product state doesn't drop them.
+    const currentParams = new URLSearchParams(window.location.search);
+    const sharedRolloutCount = currentParams.get("n");
+    if (sharedRolloutCount != null) params.set("n", sharedRolloutCount);
+    const sharedExogenousModel = currentParams.get("x");
+    if (sharedExogenousModel != null) params.set("x", sharedExogenousModel);
     const search = params.toString();
     const newUrl = `${window.location.pathname}${search ? "?" + search : ""}${window.location.hash}`;
     if (newUrl !== window.location.pathname + window.location.search + window.location.hash) {
@@ -379,12 +427,13 @@ function ProductProjectionWorkspace({ bootstrap, deployment, tab, onSelectTab })
       >
         <AugurHeader
           nav={<AugurTabBar tab={tab} onSelectTab={onSelectTab} />}
-          rightSlot={
-            <>
-              <DeploymentCommitSummary deployment={deployment} />
-              <span className="whitespace-nowrap">{fmtNumber(request.rolloutSeeds.length)} rollouts</span>
-            </>
-          }
+          rolloutCount={rolloutCount}
+          onChangeRolloutCount={onChangeRolloutCount}
+          maxRolloutCount={bootstrap.maxRolloutSamples}
+          exogenousModel={exogenousModel}
+          onChangeExogenousModel={onChangeExogenousModel}
+          exogenousPresets={bootstrap.exogenousPresets}
+          rightSlot={<DeploymentCommitSummary deployment={deployment} />}
         />
 
         <main className="px-4 py-6 sm:px-6 lg:px-8">
@@ -451,7 +500,16 @@ function ProductProjectionWorkspace({ bootstrap, deployment, tab, onSelectTab })
   );
 }
 
-function CalibrationAppSurface({ bootstrap, deployment, tab, onSelectTab }) {
+function CalibrationAppSurface({
+  bootstrap,
+  deployment,
+  tab,
+  onSelectTab,
+  rolloutCount,
+  onChangeRolloutCount,
+  exogenousModel,
+  onChangeExogenousModel,
+}) {
   return (
     <div
       data-augur-surface="calibration"
@@ -459,25 +517,50 @@ function CalibrationAppSurface({ bootstrap, deployment, tab, onSelectTab }) {
     >
       <AugurHeader
         nav={<AugurTabBar tab={tab} onSelectTab={onSelectTab} />}
+        rolloutCount={rolloutCount}
+        onChangeRolloutCount={onChangeRolloutCount}
+        maxRolloutCount={bootstrap.maxRolloutSamples}
+        exogenousModel={exogenousModel}
+        onChangeExogenousModel={onChangeExogenousModel}
+        exogenousPresets={bootstrap.exogenousPresets}
         rightSlot={<DeploymentCommitSummary deployment={deployment} />}
       />
       <main className="px-4 py-6 sm:px-6 lg:px-8">
-        <CalibrationWorkspace bootstrap={bootstrap} />
+        <CalibrationWorkspace bootstrap={bootstrap} rolloutCount={rolloutCount} exogenousModel={exogenousModel} />
       </main>
     </div>
   );
+}
+
+// Mounted once bootstrap has loaded so the shared rollout-count default (which depends on
+// `bootstrap.maxRolloutSamples`) is available at state-init time. Owns the cross-tab state —
+// the active tab and the shared rollout count — and hands both to whichever workspace is active.
+function LoadedAppShell({ bootstrap, deployment }) {
+  const [tab, setTab] = useState(() => tabFromSearch(window.location.search));
+  const [rolloutCount, setRolloutCount] = useState(() => rolloutCountFromSearch(window.location.search, bootstrap));
+
+  const onSelectTab = (next) => {
+    setTab(next);
+    writeTabToSearch(next);
+  };
+
+  const onChangeRolloutCount = (value) => {
+    const next = value == null ? value : clampRolloutCount(value, bootstrap);
+    setRolloutCount(next);
+    writeRolloutCountToSearch(next, bootstrap);
+  };
+
+  const sharedProps = { bootstrap, deployment, tab, onSelectTab, rolloutCount, onChangeRolloutCount };
+  if (tab === "calibration") {
+    return <CalibrationAppSurface {...sharedProps} />;
+  }
+  return <ProductProjectionWorkspace {...sharedProps} />;
 }
 
 function ProductProjectionAppShell() {
   const [bootstrap, setBootstrap] = useState(null);
   const [bootstrapError, setBootstrapError] = useState(null);
   const [deployment, setDeployment] = useState(null);
-  const [tab, setTab] = useState(() => tabFromSearch(window.location.search));
-
-  const onSelectTab = (next) => {
-    setTab(next);
-    writeTabToSearch(next);
-  };
 
   useEffect(() => {
     const controller = new AbortController();
@@ -507,13 +590,7 @@ function ProductProjectionAppShell() {
 
   if (!bootstrap) return <ProductProjectionLoading error={bootstrapError} />;
 
-  if (tab === "calibration") {
-    return <CalibrationAppSurface bootstrap={bootstrap} deployment={deployment} tab={tab} onSelectTab={onSelectTab} />;
-  }
-
-  return (
-    <ProductProjectionWorkspace bootstrap={bootstrap} deployment={deployment} tab={tab} onSelectTab={onSelectTab} />
-  );
+  return <LoadedAppShell bootstrap={bootstrap} deployment={deployment} />;
 }
 
 export default function AugurApp() {

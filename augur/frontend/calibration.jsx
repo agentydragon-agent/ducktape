@@ -1,12 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
 
 import { fetchCalibrationRun } from "./client.js";
-import { NativeSelectField, NumberField } from "./lib/controls.jsx";
+import { NumberField } from "./lib/controls.jsx";
 import { fmtPct } from "./lib/format.js";
 import { MetricFanChart } from "./fan_chart.jsx";
 import { RolloutResultsSkeleton } from "./skeleton.jsx";
 import { CurrencyDisplayProvider } from "./hooks.js";
-import { FAN_PERCENTILES } from "./input_helpers.js";
+import { FAN_PERCENTILES, clampRolloutCount } from "./input_helpers.js";
 import { markFanRows } from "./data_helpers.js";
 
 // The issuer mark fan is a per-unit USD price. `chartValue` ending in `Usd` makes the shared
@@ -14,9 +14,10 @@ import { markFanRows } from "./data_helpers.js";
 // mark (NOT a valuation — augur models no shares / market cap).
 const MARK_METRIC = { value: "mark_usd_per_unit", chartValue: "markUsd", label: "Per-unit mark" };
 
+// `rollouts` is intentionally absent: the rollout count is a tab-shared control owned by the app
+// shell (see `rolloutCountFromSearch`), passed in as a prop and woven into the run request below.
 const CALIBRATION_INPUT_DEFAULTS = {
   horizonMonths: 120,
-  rollouts: 2000,
   seed: 1701,
 };
 
@@ -43,8 +44,7 @@ function gapTextClass(absGap) {
   return "augur-tabular";
 }
 
-function CalibrationForm({ input, catalog, presets, defaultPresetId, onChange }) {
-  const presetOptions = presets.map((preset) => ({ value: preset, label: preset }));
+function CalibrationForm({ input, catalog, exogenousModel, onChange }) {
   return (
     <aside className="min-w-0">
       <div className="augur-card divide-y divide-slate-200 dark:divide-slate-700">
@@ -61,15 +61,13 @@ function CalibrationForm({ input, catalog, presets, defaultPresetId, onChange })
             <div className="mt-1 text-sm font-semibold augur-strong">{catalog.label}</div>
             <div className="text-xs augur-muted">issuer: {catalog.issuer}</div>
           </div>
-          <NativeSelectField
-            label="Model preset"
-            aria-label="Model preset"
-            description={defaultPresetId ? `Deployment default: ${defaultPresetId}` : undefined}
-            value={input.presetId ?? ""}
-            disabled={presets.length === 0}
-            data={presets.length === 0 ? [{ value: "", label: "(no presets)" }] : presetOptions}
-            onChange={(event) => onChange({ presetId: event.target.value || null })}
-          />
+          <div>
+            <div className="augur-eyebrow">Exogenous model</div>
+            <div className="mt-1 text-sm font-semibold augur-strong" data-calibration-model={exogenousModel ?? ""}>
+              {exogenousModel ?? "(no presets)"}
+            </div>
+            <div className="text-xs augur-muted">Choose the model in the header — shared with the product tab.</div>
+          </div>
         </div>
         <div className="grid gap-3 px-4 py-3 sm:grid-cols-2 min-[864px]:grid-cols-1 2xl:grid-cols-2">
           <NumberField
@@ -80,13 +78,6 @@ function CalibrationForm({ input, catalog, presets, defaultPresetId, onChange })
             step={12}
             suffix="mo"
             onChange={(horizonMonths) => onChange({ horizonMonths })}
-          />
-          <NumberField
-            label="Rollouts"
-            value={input.rollouts}
-            min={1}
-            step={500}
-            onChange={(rollouts) => onChange({ rollouts })}
           />
           <NumberField
             label="Seed"
@@ -285,28 +276,27 @@ function CalibrationResults({ response }) {
   );
 }
 
-export function CalibrationWorkspace({ bootstrap }) {
+export function CalibrationWorkspace({ bootstrap, rolloutCount, exogenousModel }) {
   const catalog = bootstrap.calibration ?? null;
-  const presets = bootstrap.exogenousPresets ?? [];
-  const defaultPresetId = bootstrap.defaultExogenousPresetId;
-  const initialPresetId = presets.includes(defaultPresetId) ? defaultPresetId : (presets[0] ?? null);
 
-  const [input, setInput] = useState({ ...CALIBRATION_INPUT_DEFAULTS, presetId: initialPresetId });
+  const [input, setInput] = useState({ ...CALIBRATION_INPUT_DEFAULTS });
   const [response, setResponse] = useState(null);
   const [runError, setRunError] = useState(null);
 
   const updateInput = (patch) => setInput((previous) => ({ ...previous, ...patch }));
 
-  // The calibration run is fully determined by these four inputs; memoizing keeps the
-  // auto-run effect from re-firing on unrelated re-renders (it keys on this request).
+  // The calibration run is fully determined by these inputs plus the tab-shared exogenous model
+  // (`exogenousModel`, owned by the app shell via `?x=`); memoizing keeps the auto-run effect from
+  // re-firing on unrelated re-renders (it keys on this request).
+  const rollouts = clampRolloutCount(rolloutCount, bootstrap);
   const request = useMemo(
     () => ({
-      presetId: input.presetId,
+      presetId: exogenousModel,
       horizonMonths: input.horizonMonths,
-      rollouts: input.rollouts,
+      rollouts,
       seed: input.seed,
     }),
-    [input.presetId, input.horizonMonths, input.rollouts, input.seed]
+    [exogenousModel, input.horizonMonths, rollouts, input.seed]
   );
 
   // Live auto-run (no button): debounce input changes, abort the in-flight run, and re-score
@@ -350,8 +340,7 @@ export function CalibrationWorkspace({ bootstrap }) {
           <CalibrationForm
             input={input}
             catalog={catalog}
-            presets={presets}
-            defaultPresetId={defaultPresetId}
+            exogenousModel={exogenousModel}
             onChange={updateInput}
           />
 
