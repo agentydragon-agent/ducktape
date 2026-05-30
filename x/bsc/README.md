@@ -139,7 +139,8 @@ code_verifier=...)` sends the verifier in the token POST.
 
 1. Commit + push + wait for Flux reconcile.
 2. Hit `https://airlock.allegedly.works/oauth/authorize/bsc` in a browser, log
-   in as the BSC member, approve consent.
+   in **as a sandbox synthetic member** (NOT a real blueshieldca.com member —
+   see "Sandbox member credentials" below), approve consent.
 3. Confirm `bsc-tokens` and `bsc-access-token` k8s Secrets appear in the
    `airlock` namespace.
 4. Call the FHIR endpoint with the access token —
@@ -147,6 +148,126 @@ code_verifier=...)` sends the verifier in the token POST.
    base URL.
 5. Iterate on scopes if `interop` doesn't unlock everything we need (may need
    granular `patient/ExplanationOfBenefit.read` etc).
+
+### 2026-05-29 — first end-to-end attempt: `access_denied` at member login
+
+First browser run of `/oauth/authorize/bsc` redirected to BSC PingFederate as
+expected, but came back to
+`https://airlock.allegedly.works/oauth/callback/bsc?error=access_denied&error_description=Authentication+failed.`
+
+This is **not** an airlock bug — the OAuth wiring is fine (verified the
+authorize redirect, state echo, and PingFederate's `/.well-known/openid-configuration`:
+issuer, endpoints, supported scopes `openid interop PatientEOB PatientRead`, and
+`code_challenge_methods_supported: ["plain","S256"]` all match what we send).
+`error=access_denied` + `error_description=Authentication+failed.` is the
+PingFederate canned response when the **member-login step** rejects the
+username/password — distinct from `invalid_client` (bad client secret),
+`invalid_scope` (scope not granted to the client), or `unauthorized_client`
+(grant type not enabled).
+
+Root cause: **the sandbox PingFederate has its own member directory, separate
+from production blueshieldca.com.** Real BSC member credentials do not exist
+on `dev-ext.blueshieldca.com`. The OAuth flow needs a **synthetic sandbox
+test member**, which the dev portal does not self-service.
+
+### Sandbox member credentials
+
+The dev portal does **not** publish sandbox test member credentials anywhere
+browsable. Surveyed 2026-05-29:
+
+- `/bsc/fhir-sandbox/` — no
+- `/bsc/fhir-sandbox/supportedProfiles` — no
+- `/bsc/fhir-sandbox/subscribeapi` — describes the OAuth flow including
+  "Member will login via BSC login screen and Provide the member username
+  and password" but provides no actual credentials
+- `/bsc/fhir-sandbox/product?title=Patient%20Access` and
+  `/bsc/fhir-sandbox/product/989` (Cloud Patient Access) — no
+- `/bsc/fhir-sandbox/releasenotes` — no
+- `/bsc/fhir-sandbox/createapps` — no (just account/app setup)
+- `/bsc/fhir-sandbox/interoperability` — no (CMS rule text only)
+- `/bsc/fhir-sandbox/productionaccess` — no test creds, **but** this is
+  where the support email surfaces: `interoperabilitysupp@blueshieldca.com`
+- `/bsc/fhir-sandbox/sitemap` — no `/test-users` or equivalent route exists
+- `/bsc/fhir-sandbox/contact` — no published credentials, but the contact
+  form is the documented support path
+
+**What `subscribeapi` does leak (incidentally):**
+
+The page embeds sample, never-rotated request/response payloads from
+someone else's working sandbox session. Decoding them yields the synthetic
+test-member identifier pattern, even though the password is absent:
+
+- Sample sandbox access_token JWT payload:
+  ```json
+  {
+    "sub": "910019283user1",
+    "title": "91001928300",
+    "sn": "USER11LASTNAME",
+    "givenName": "USER11FIRSTNAME",
+    "client_id": "8b6bfeba916146c8a1a076ccfae28d11",
+    "iss": "https://dev-ext.blueshieldca.com"
+  }
+  ```
+- Sample sandbox id_token payload includes `patient: f3e4189b-0669-43ba-8372-0d405e318452`
+  (the FHIR Patient resource ID for that synthetic member).
+- Sample Basic-auth header decodes to client_id/secret
+  `8b6bfeba916146c8a1a076ccfae28d11:e704d918f98d5876bad381c402ee43cc` —
+  **not ours**, do not use; this belongs to whoever built BSC's sample doc.
+
+So the sandbox member identifier scheme is clearly `<groupId>user<N>` (e.g.
+`910019283user1`), with placeholder display names `USER<NN>FIRSTNAME` /
+`USER<NN>LASTNAME` and corresponding FHIR Patient UUIDs. The login screen
+still needs a password we don't have.
+
+**Paths to obtain creds (try both):**
+
+1. **Email** `interoperabilitysupp@blueshieldca.com` (BSC's interoperability
+   support address, documented on `/productionaccess`). Subject something
+   like "Sandbox synthetic-member credentials for app `ducktape-test`".
+   Mention: developer-portal account, registered app `ducktape-test`,
+   subscribed to `fhir-cloud-patient-access-v1:1.0.0`, redirect URI
+   `https://airlock.allegedly.works/oauth/callback/bsc`, ask for
+   test-member username/password so the OAuth member-login step works.
+2. **Contact form** at `https://devportal-dev.blueshieldca.com/bsc/fhir-sandbox/contact`,
+   request type "Technical issues" or "Make changes to existing Sandbox account".
+
+Until those creds arrive, `/oauth/authorize/bsc` will keep returning
+`access_denied` regardless of how many times it's retried.
+
+### Authenticated portal survey
+
+Verified once with a real dev-portal session (cookies copied from a
+logged-in browser) that **logging in does not unlock any new docs page or
+credentials section**. The integration guide is `/bsc/fhir-sandbox/subscribeapi`
+and it renders byte-identical content authenticated vs anonymous.
+
+What logging in _does_ unlock — none of it useful for the `access_denied`:
+
+- Per-API pages `/bsc/fhir-sandbox/product/989/api/<id>` (one per FHIR resource:
+  Patient, EOB, MetaData, DiagnosticReport, MedicationKnowledge, …) embed a
+  Swagger 2.0 spec as base64 JSON inside `drupalSettings`. Just endpoint
+  shapes — no auth examples, no test-member references.
+- Internal API hostnames behind the public `api-dev.blueshieldca.com`:
+  `esbndp-api2.bsc.bscal.com:443` and `esbnxg-api2.bsc.bscal.com` (ESB endpoints,
+  not directly callable; the public `api-dev` host fronts both).
+- Our registered app metadata is rendered inline in every product/api page
+  as JSON: `title`, `redirectUri`, `credentials[].client_id`, and
+  `subscribed: true`. Confirms the app is correctly subscribed to Cloud
+  Patient Access and that the redirect URI matches what airlock sends. The
+  authoritative `client_id` lives in
+  <../../cluster/k8s/agents/airlock/bsc-client-credentials.sops.yaml>; the
+  portal HTML value should match the SOPS file (if it doesn't, the deployed
+  airlock is using a stale credential).
+
+Search of the authenticated pages for `test patient`, `test member`,
+`sample user/member/patient`, `user1`, `user2`, `910019283`, `login as`,
+`use the following`, `sandbox user`, `PingFederate`, `test credentials`,
+`demo user` returned zero hits. There is genuinely no public docs page,
+authenticated or otherwise, that explains the member-login step.
+
+The natural location for those creds would be `/bsc/fhir-sandbox/subscribeapi`,
+right next to the existing line "Member will login via BSC login screen and
+Provide the member username and password" — but that section just stops there.
 
 ## Production access path
 
