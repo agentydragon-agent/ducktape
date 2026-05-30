@@ -121,7 +121,13 @@ are deleted and the CI prefix-guard is in place.
         formula. Add config `annual_dilution_rate_log_sigma`; MAP/SVI-fit `μ_r, σ_r` from the
         implied-share-growth series in `augur/fit`. Independent of `V(t)` for now
         (conservatively over-states per-share spread; the hedge is M2.2-B). Touches only the
-        dilution side — no new bundle event kind.
+        dilution side — no new bundle event kind. - [x] **A1 — sampler half (landed).** `annual_dilution_rate_log_sigma` knob +
+        per-rollout median-anchored LogNormal draw
+        (`r = annual_dilution_rate·exp(σ·z)`, `z ~ N(0,1)`, so `median(r) =
+annual_dilution_rate` — not mean-anchored) off the independent
+        `<issuer>:pe_risk_dilution` seed stream, in
+        `augur/model/private_equity_risk.py`. `σ=0` is byte-identical to M2 v1. - [ ] **A2 — fit (pending).** `augur/fit` MAP/SVI fit of `μ_r, σ_r` from the
+        implied-share-growth series. - [ ] **A3 — gaffer config wiring** (after A2).
   - [ ] **M2.2-B — V↔dilution correlation.** Joint per-rollout `(V log-drift, r)` draw with
         fitted ρ (good-company worlds dilute more → per-share partly hedged; independence
         over-states per-share spread). Makes `V(t)`'s drift per-rollout — a change to the V

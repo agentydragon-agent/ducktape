@@ -375,6 +375,19 @@ py_test(
     ],
 )
 
+py_test(
+    name = "private_equity_risk_dilution_test",
+    srcs = ["private_equity_risk_dilution_test.py"],
+    deps = [
+        ":exogenous",
+        ":private_equity_risk",
+        ":series",
+        "//:conftest",
+        "@pypi//numpy",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_library(
     name = "composite_exogenous",
     srcs = ["composite_exogenous.py"],

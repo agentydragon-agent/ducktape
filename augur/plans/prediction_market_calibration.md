@@ -160,6 +160,14 @@ a fat posterior (argues for propagating parameter uncertainty into the per-rollo
   `μ_r, σ_r` from the implied-share-growth series. Independent of `V(t)` (conservatively
   _over_-states per-share spread by omitting the hedge in B). Touches only the dilution side —
   no new bundle event machinery.
+  **Sampler half LANDED** (`augur/model/private_equity_risk.py`): the
+  `annual_dilution_rate_log_sigma` knob + the per-rollout **median-anchored** LogNormal draw
+  `r = annual_dilution_rate · exp(σ·z)`, `z ~ N(0,1)` (so `median(r) = annual_dilution_rate`
+  exactly — deliberately not mean-anchored, which would drift the typical realized dilution up
+  by `exp(σ²/2)`), off the independent `<issuer>:pe_risk_dilution` seed stream. `σ = 0` (or
+  `annual_dilution_rate = 0`) is byte-identical to M2 v1 — the new seed stream is not even
+  derived in that path. **Still pending:** the `augur/fit` MAP/SVI fit of `μ_r, σ_r` (sub-step
+  **A2**), and gaffer config wiring after A2.
 - **M2.2-B — V↔dilution correlation.** Good-company worlds (V rises fast) raise more primary
   capital → dilute more, so per-share is partly hedged; drawing `r` independent of `V` _over_-
   states per-share spread. Make _both_ `V`'s log-drift and `r` per-rollout draws from a joint

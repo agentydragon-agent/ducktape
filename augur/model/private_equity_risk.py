@@ -144,10 +144,23 @@ class PrivateEquityRiskIssuerConfig(FrozenModel):
     annual_dilution_rate: float = Field(default=0.0, ge=0.0)
     """Continuous per-year share-count growth (employee mint + baseline).
 
-    Drives `dilution_factor(t) = (1 + annual_dilution_rate) ** (t / 12)`. This
-    is a v1 point estimate: the primary-round / secondary-trade distinction and
-    the hierarchical Bayesian fit are DEFERRED to M2.2 (TODO #1734). Only
-    meaningful when the valuation channel is on.
+    The per-rollout median dilution rate: each rollout draws
+    `r = annual_dilution_rate * exp(annual_dilution_rate_log_sigma * z)`,
+    `z ~ N(0, 1)`, driving `dilution_factor(t) = (1 + r) ** (t / 12)`. The
+    primary-round / secondary-trade distinction and the full Bayesian posterior
+    are DEFERRED to M2.2-C/D. Only meaningful when the valuation channel is on.
+    """
+    annual_dilution_rate_log_sigma: float = Field(default=0.0, ge=0.0)
+    """Per-rollout dilution-rate dispersion (M2.2-A).
+
+    Each rollout draws `r = annual_dilution_rate * exp(annual_dilution_rate_log_sigma * z)`
+    with `z ~ N(0, 1)` — a **median-anchored** LogNormal: `median(r) == annual_dilution_rate`
+    exactly (a LogNormal's median is `exp(mu)`). This is deliberately NOT mean-anchored —
+    mean-anchoring would inflate the typical realized dilution by `exp(sigma**2 / 2)` as
+    sigma grows, biasing the central mark path. Default `0.0` ⇒ every rollout gets exactly
+    `annual_dilution_rate` (`exp(0) == 1`), byte-identical to the M2 deterministic factor.
+    Only meaningful when the valuation channel is on; left unguarded in the validator since
+    it defaults inert and is simply ignored when the channel is off.
     """
 
     @model_validator(mode="after")
@@ -683,17 +696,53 @@ def _sample_company_valuation_vectorized(
     return paths
 
 
-def _dilution_factor(*, annual_dilution_rate: float, horizon_months: int) -> FloatMatrix:
-    """Per-month dilution factor row `(horizon_months + 1,)`.
+def _dilution_factor(
+    *,
+    annual_dilution_rate: float,
+    annual_dilution_rate_log_sigma: float,
+    horizon_months: int,
+    rollout_seeds: tuple[int, ...],
+    issuer_id: str,
+    rollout_count: int,
+) -> FloatMatrix:
+    """Per-month dilution factor.
 
-    `dilution_factor(t) = (1 + annual_dilution_rate) ** (t / 12)` with
-    `dilution_factor(0) == 1`. v1 point estimate; the primary-round /
-    secondary-trade split is DEFERRED (TODO #1734). Broadcasts against the
-    `(R, T+1)` valuation ratio so the coupled mark divides by it per month.
+    `dilution_factor(t) = (1 + r) ** (t / 12)` with `dilution_factor(0) == 1`.
+    Broadcasts against the `(R, T+1)` valuation ratio so the coupled mark divides
+    by it per month.
+
+    Two regimes:
+
+    * **Deterministic (DEFAULT).** When `annual_dilution_rate_log_sigma == 0` OR
+      `annual_dilution_rate == 0`, `r = annual_dilution_rate` for every rollout
+      and the result is the legacy `(horizon_months + 1,)` row, BYTE-IDENTICAL to
+      pre-M2.2 (the `:pe_risk_dilution` seed stream is NOT derived at all in this
+      path, so no other RNG stream is perturbed). v1 point estimate; the
+      primary-round / secondary-trade split is DEFERRED (TODO #1734).
+
+    * **Per-rollout dispersion (M2.2-A, opt-in).** When both
+      `annual_dilution_rate > 0` and `annual_dilution_rate_log_sigma > 0`, draw one
+      `z ~ N(0, 1)` per rollout off the INDEPENDENT `:pe_risk_dilution` seed stream
+      and set `r = annual_dilution_rate * exp(annual_dilution_rate_log_sigma * z)`,
+      i.e. `r ~ LogNormal(mu=log(annual_dilution_rate), sigma=...)`. This is
+      MEDIAN-anchored: `median(r) == annual_dilution_rate` exactly (LogNormal
+      median = exp(mu)). We deliberately do NOT mean-anchor — a mean-anchored draw
+      would shift the typical realized dilution UP by `exp(sigma**2 / 2)` as sigma
+      grows, biasing the central path. The returned factor is `(R, horizon_months + 1)`.
     """
 
     months = np.arange(horizon_months + 1, dtype=np.float64)
-    return np.power(1.0 + annual_dilution_rate, months / 12.0)
+    if annual_dilution_rate <= 0.0 or annual_dilution_rate_log_sigma <= 0.0:
+        # Deterministic source of truth for the off case; keep byte-identical.
+        return np.power(1.0 + annual_dilution_rate, months / 12.0)
+    # Independent per-rollout draw. Its own seed stream, so it cannot perturb the
+    # level / event / valuation RNG streams (mark/event/regime/valuation stay byte-
+    # identical when sigma flips on; only the per-share mark scale changes).
+    dilution_seeds = derive_stream_rollout_seeds(rollout_seeds, stream_id=f"{issuer_id}:pe_risk_dilution")
+    rng = np.random.default_rng(_seed_from_rollout_seeds(dilution_seeds))
+    z = rng.standard_normal(rollout_count)
+    r = annual_dilution_rate * np.exp(annual_dilution_rate_log_sigma * z)
+    return np.power(1.0 + r[:, None], months[None, :] / 12.0)
 
 
 def _sample_event_month_mask_vectorized(
