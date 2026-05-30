@@ -141,7 +141,7 @@
         target="_blank"
         rel="noreferrer"
         class="font-mono"
-        style="color: var(--color-header-link);"
+        style="color: var(--color-link);"
       >
         {deploymentInfo.source_commit?.slice(0, 7) ?? "unknown"}
       </a>
