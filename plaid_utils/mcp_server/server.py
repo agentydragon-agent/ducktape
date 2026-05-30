@@ -13,7 +13,7 @@ ITEM_LOGIN_REQUIRED, RATE_LIMIT_EXCEEDED, ...) to the agent.
 
 import logging
 import sys
-from datetime import date
+from datetime import date, timedelta
 from typing import Annotated, Any, Protocol
 
 import uvicorn
@@ -49,6 +49,18 @@ class ItemSummary(BaseModel):
     products: list[str]
 
 
+class ItemHistoryWindow(BaseModel):
+    """Probed transaction-history depth for an item."""
+
+    earliest_date: date | None = Field(
+        description="Earliest transaction date Plaid has, or null if none in the 730d window."
+    )
+    latest_date: date | None = Field(
+        description="Latest transaction date Plaid has, or null if none in the 730d window."
+    )
+    total_transactions: int = Field(description="Total transactions Plaid has in the last 730 days.")
+
+
 class PlaidApiLike(Protocol):
     """The slice of `plaid_api.PlaidApi` the server uses, so tests can inject a fake.
 
@@ -68,7 +80,10 @@ INSTRUCTIONS = (
     "Read-only access to the owner's Plaid-linked bank accounts: transactions, balances, and "
     "liabilities (credit cards, mortgages, student loans). Call list_items first to discover the "
     "`item` selectors and which products each supports. Transaction amount sign: positive = money "
-    "out (charges/debits), negative = money in (payments/refunds/deposits)."
+    "out (charges/debits), negative = money in (payments/refunds/deposits). Each item has a finite "
+    "transaction-history depth set at link time (Plaid default 90 days, max 730) — before issuing "
+    "wide date-range queries, call get_item_history_window so you don't mistake a short window for "
+    "missing data."
 )
 
 _ItemArg = Annotated[str, Field(description="Item selector from list_items, e.g. 'chase' or 'bofa'.")]
@@ -121,6 +136,10 @@ def build_server(api: PlaidApiLike, items: dict[str, ResolvedItem]) -> FastMCP:
         negative = money in (payments/refunds/deposits). A pending=true row is later replaced by
         a posted row whose pending_transaction_id points back to the pending id (dedupe on it).
         Recently linked/refreshed items can briefly raise PRODUCT_NOT_READY.
+
+        History depth is capped per item at link time (Plaid default 90 days, max 730). Dates
+        before that window return empty results — not an error. Call get_item_history_window
+        first if you need to know the actual span before issuing wide range queries.
         """
         options = TransactionsGetRequestOptions(offset=offset, count=count)
         if account_id is not None:
@@ -132,6 +151,42 @@ def build_server(api: PlaidApiLike, items: dict[str, ResolvedItem]) -> FastMCP:
         )
         parsed = TransactionsGetResponse.model_validate(sanitize(resp))
         return TransactionPage(total=parsed.total_transactions, transactions=parsed.transactions)
+
+    @mcp.tool
+    def get_item_history_window(item: _ItemArg) -> ItemHistoryWindow:
+        """Earliest/latest transaction dates Plaid has for this item, probed over 730 days.
+
+        Plaid records transactions.days_requested per item at link time (default 90 days,
+        max 730); requesting list_transactions for dates before earliest_date returns empty
+        results, not an error. Call this before issuing wide range queries so you don't
+        mistake a short history window for missing data. Cost: 2 /transactions/get calls.
+        """
+        access_token = resolve(item).access_token
+        end = date.today()
+        start = end - timedelta(days=730)
+
+        def probe(offset: int) -> TransactionsGetResponse:
+            resp = api.transactions_get(
+                TransactionsGetRequest(
+                    access_token=access_token,
+                    start_date=start,
+                    end_date=end,
+                    options=TransactionsGetRequestOptions(offset=offset, count=1),
+                )
+            )
+            return TransactionsGetResponse.model_validate(sanitize(resp))
+
+        latest = probe(0)
+        total = latest.total_transactions
+        if total == 0:
+            return ItemHistoryWindow(earliest_date=None, latest_date=None, total_transactions=0)
+        # /transactions/get returns rows sorted by date descending, so offset=total-1 is oldest.
+        earliest = probe(total - 1) if total > 1 else latest
+        return ItemHistoryWindow(
+            earliest_date=date.fromisoformat(earliest.transactions[0].date),
+            latest_date=date.fromisoformat(latest.transactions[0].date),
+            total_transactions=total,
+        )
 
     @mcp.tool
     def get_liabilities(item: _ItemArg) -> Liabilities:

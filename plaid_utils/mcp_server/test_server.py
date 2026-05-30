@@ -7,6 +7,10 @@ import pytest_bazel
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
 
+from plaid_utils.mcp_server.config import ResolvedItem
+from plaid_utils.mcp_server.conftest import FakePlaidApi
+from plaid_utils.mcp_server.server import build_server
+
 
 def unwrap(result: Any) -> Any:
     """Structured content of a CallToolResult, unwrapping FastMCP's {'result': ...} list wrapper."""
@@ -66,6 +70,19 @@ async def test_liabilities_rejects_item_without_product(client: Client) -> None:
 async def test_unknown_item_raises(client: Client) -> None:
     with pytest.raises(ToolError):
         await client.call_tool("list_accounts", {"item": "nope"})
+
+
+async def test_get_item_history_window_returns_oldest_and_newest(client: Client) -> None:
+    # Fixture has 5 transactions all dated 2026-05-20; probing both ends should agree.
+    window = unwrap(await client.call_tool("get_item_history_window", {"item": "chase"}))
+    assert window == {"earliest_date": "2026-05-20", "latest_date": "2026-05-20", "total_transactions": 5}
+
+
+async def test_get_item_history_window_empty_returns_nulls(items: dict[str, ResolvedItem]) -> None:
+    empty_api = FakePlaidApi(accounts=[], transactions=[], credit=[])
+    async with Client(build_server(empty_api, items)) as connected:
+        window = unwrap(await connected.call_tool("get_item_history_window", {"item": "chase"}))
+    assert window == {"earliest_date": None, "latest_date": None, "total_transactions": 0}
 
 
 if __name__ == "__main__":

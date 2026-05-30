@@ -12,6 +12,12 @@ item's access token; every tool takes an `item` selector.
 - `list_accounts(item)` → `list[Account]`. Cached balances (Plaid refreshes 1–4×/day).
 - `list_transactions(item, start_date, end_date, account_id?, offset?, count?)` → `TransactionPage`.
   Date range + `offset`/`count` pagination; `total` is the full in-range count before slicing.
+  History depth is capped per item at link time (Plaid default 90 days, max 730); queries before
+  the window return empty results, not an error.
+- `get_item_history_window(item)` → `ItemHistoryWindow` (`earliest_date`, `latest_date`,
+  `total_transactions`). Probes /transactions/get twice over a 730-day range to surface the
+  actual history span. Call before issuing wide range queries so a short window isn't mistaken
+  for missing data.
 - `get_liabilities(item)` → `Liabilities` (`credit` / `mortgage` / `student`, each null when the
   item has none). Only for items with the `liabilities` product; a card's `aprs` is often empty
   (issuer-dependent). Correlate each entry's `account_id` with `list_accounts` for the name/mask.
