@@ -60,6 +60,28 @@ class K8sTokenStore:
             else:
                 raise
 
+    async def reconcile_annotations(self, secret_name: str, namespace: str, annotations: dict[str, str]) -> None:
+        """Ensure a managed secret carries the configured annotations, without rewriting token data.
+
+        Merges (adds/updates the configured keys; leaves any others). This lets config-level
+        annotation changes — e.g. adding a reflector target namespace — reach already-written
+        secrets even when the token itself never changes. Plaid access tokens, for instance,
+        never refresh, so without this they would keep stale annotations until the next re-link.
+        """
+        if not annotations:
+            return
+        try:
+            secret = await self._api.read_namespaced_secret(secret_name, namespace)
+        except ApiException as e:
+            if e.status == 404:
+                return  # provider not linked yet — nothing to reconcile
+            raise
+        current = secret.metadata.annotations or {}
+        if all(current.get(key) == value for key, value in annotations.items()):
+            return  # already in sync
+        await self._api.patch_namespaced_secret(secret_name, namespace, {"metadata": {"annotations": annotations}})
+        logger.info(f"Reconciled annotations on secret {namespace}/{secret_name}")
+
     async def delete_orphaned_secrets(self, namespace: str, known_names: frozenset[str]) -> None:
         """Delete managed secrets whose names are not in known_names."""
         label_selector = f"app.kubernetes.io/managed-by={self._managed_by}"
