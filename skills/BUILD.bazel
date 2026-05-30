@@ -21,6 +21,7 @@ pkg_tar(
         "//skills/cluster_health:cluster_health_tar",
         "//skills/cnpg_region_switch:cnpg_region_switch_tar",
         "//skills/cpap:cpap_tar",
+        "//skills/flux_reconcile_audit:flux_reconcile_audit_tar",
         "//skills/followups:followups_tar",
         "//skills/forensic_surgeon:forensic_surgeon_tar",
         "//skills/freecad:freecad_tar",

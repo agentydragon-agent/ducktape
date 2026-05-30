@@ -1,6 +1,7 @@
 # gazelle:ignore
 
 load("//devinfra/python:defs.bzl", "py_binary")
+load("//skills:defs.bzl", "skill_package")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -15,4 +16,9 @@ py_binary(
         "@pypi//httpx",
         "@pypi//kubernetes_asyncio",
     ],
+)
+
+skill_package(
+    name = "flux_reconcile_audit",
+    srcs = ["SKILL.md"],
 )
