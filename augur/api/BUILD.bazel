@@ -31,6 +31,17 @@ py_library(
 )
 
 py_library(
+    name = "calibration_wire",
+    srcs = ["calibration_wire.py"],
+    deps = [
+        ":schemas",
+        "//augur/calibration",
+        "//augur/product:wire",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
     name = "finance",
     srcs = ["finance.py"],
     deps = [
@@ -168,6 +179,7 @@ py_test(
     size = "medium",
     srcs = ["server_test.py"],
     data = [
+        ":public_fixture_calibration_catalog",
         ":public_fixture_config",
         ":public_fixture_properties",
         ":server",
@@ -187,14 +199,41 @@ py_test(
     ],
 )
 
+py_test(
+    name = "test_calibration_endpoint",
+    srcs = ["test_calibration_endpoint.py"],
+    data = [
+        ":public_fixture_calibration_catalog",
+        ":public_fixture_config",
+        ":public_fixture_properties",
+    ],
+    deps = [
+        ":config",
+        ":server_lib",
+        "//augur/calibration:catalog",
+        "//augur/calibration:testing",
+        "//util/bazel:runfiles",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_library(
     name = "server_lib",
     srcs = ["server.py"],
     deps = [
+        ":bootstrap",
+        ":calibration_wire",
         ":casing",
         ":catalog",
         ":config",
         ":deployment",
+        ":schemas",
+        "//augur/calibration",
+        "//augur/calibration:catalog",
+        "//augur/calibration:manifold",
         "//augur/model:exogenous",
         "//augur/product:portfolio",
         "//augur/product:scenarios",
@@ -289,12 +328,15 @@ oci_load(
 py_library(
     name = "export_schema",
     srcs = ["export_schema.py"],
+    data = [
+        ":public_fixture_calibration_catalog",
+        ":public_fixture_config",
+        ":public_fixture_properties",
+    ],
     deps = [
-        ":bootstrap",
-        ":deployment",
-        "//augur/product:portfolio",
-        "//augur/product:wire",
-        "@pypi//fastapi",
+        ":config",
+        ":server_lib",
+        "//util/bazel:runfiles",
     ],
 )
 
@@ -312,4 +354,13 @@ filegroup(
 filegroup(
     name = "public_fixture_properties",
     srcs = ["testdata/properties.json"],
+)
+
+# The public fixture config registers a calibration catalog at
+# `../../calibration/example_openai_catalog.yaml`; anything that loads that config at
+# startup (the server binary under test, the calibration endpoint test) needs the
+# catalog in its runfiles at the resolved path.
+filegroup(
+    name = "public_fixture_calibration_catalog",
+    srcs = ["//augur/calibration:example_openai_catalog"],
 )

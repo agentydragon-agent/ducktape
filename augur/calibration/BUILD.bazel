@@ -1,0 +1,154 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "example_openai_catalog",
+    srcs = ["example_openai_catalog.yaml"],
+)
+
+py_library(
+    name = "resolvers",
+    srcs = ["resolvers.py"],
+    deps = [
+        "//augur/model:private_equity_bundle",
+        "//augur/model:series",
+        "@pypi//numpy",
+    ],
+)
+
+py_library(
+    name = "catalog",
+    srcs = ["catalog.py"],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+        "@pypi//types_pyyaml",
+    ],
+)
+
+py_library(
+    name = "manifold",
+    srcs = ["manifold.py"],
+    deps = [
+        "//augur/api:casing",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "testing",
+    testonly = True,
+    srcs = ["testing.py"],
+    deps = [
+        ":manifold",
+        "@pypi//httpx",
+    ],
+)
+
+py_library(
+    name = "calibration",
+    srcs = ["calibration.py"],
+    deps = [
+        ":catalog",
+        ":manifold",
+        ":resolvers",
+        "//augur/model:exogenous",
+        "//augur/model:private_equity_bundle",
+        "//augur/model:series",
+        "@pypi//numpy",
+        "@pypi//pydantic",
+        "@pypi//statsmodels",
+    ],
+)
+
+py_library(
+    name = "ipo_prior",
+    srcs = ["ipo_prior.py"],
+    deps = [
+        ":catalog",
+        ":manifold",
+        ":resolvers",
+        "//augur/model:private_equity_risk",
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+        "@pypi//types_pyyaml",
+    ],
+)
+
+py_binary(
+    name = "derive_ipo_prior",
+    main_module = "augur.calibration.ipo_prior",
+    deps = [":ipo_prior"],
+)
+
+py_test(
+    name = "test_resolvers",
+    srcs = ["test_resolvers.py"],
+    deps = [
+        ":resolvers",
+        "//:conftest",
+        "//augur/model:series",
+        "@pypi//numpy",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_catalog",
+    srcs = ["test_catalog.py"],
+    data = ["example_openai_catalog.yaml"],
+    deps = [
+        ":catalog",
+        "//:conftest",
+        "//util/bazel:runfiles",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_calibration",
+    srcs = ["test_calibration.py"],
+    deps = [
+        ":calibration",
+        ":catalog",
+        ":manifold",
+        ":testing",
+        "//:conftest",
+        "//augur/model:exogenous",
+        "//augur/model:series",
+        "//augur/model:testing",
+        "@pypi//numpy",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_manifold",
+    srcs = ["test_manifold.py"],
+    deps = [
+        ":manifold",
+        ":testing",
+        "//:conftest",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_ipo_prior",
+    srcs = ["test_ipo_prior.py"],
+    deps = [
+        ":catalog",
+        ":ipo_prior",
+        ":manifold",
+        ":testing",
+        "//:conftest",
+        "//augur/model:private_equity_risk",
+        "@pypi//pytest_bazel",
+    ],
+)

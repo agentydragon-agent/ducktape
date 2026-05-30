@@ -79,6 +79,18 @@ class PropertySourceConfig(ApiModel):
         return self
 
 
+class CalibrationCatalogConfig(ApiModel):
+    """The prediction-market catalog the exogenous-only calibration endpoints score.
+
+    `catalog_path` is a `MarketCatalog` YAML (resolved relative to the config file, like
+    `property_source.properties_path`). `issuer` is the private-equity issuer id the
+    catalog scores; the chosen exogenous preset's model must include it."""
+
+    catalog_path: Path
+    issuer: str = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
+    label: str | None = None
+
+
 class LocationConfig(ApiModel):
     """A deployment-owned location identity and its local modeling inputs.
 
@@ -131,6 +143,14 @@ class Config(ApiModel):
             "key in `exogenous_presets`."
         )
     )
+    calibration_catalog: CalibrationCatalogConfig | None = Field(
+        default=None,
+        description=(
+            "The single prediction-market catalog the exogenous-only calibration endpoints "
+            "(`/api/calibration/*`) score, loaded into a `MarketCatalog` at startup. `None` by "
+            "default; a deployment sets it to a catalog plus the issuer it scores."
+        ),
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -170,7 +190,12 @@ def load_augur_config(path: Path) -> Config:
     side-by-side (e.g. `/etc/augur/{config.yaml,properties.json}`)."""
     config = Config.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
     config = _anchor_property_source_paths(config, base_dir=path.parent)
-    return _anchor_exogenous_provider_paths(config, base_dir=path.parent)
+    config = _anchor_exogenous_provider_paths(config, base_dir=path.parent)
+    catalog = config.calibration_catalog
+    if catalog is not None and not catalog.catalog_path.is_absolute():
+        anchored = catalog.model_copy(update={"catalog_path": (path.parent / catalog.catalog_path).resolve()})
+        config = config.model_copy(update={"calibration_catalog": anchored})
+    return config
 
 
 def _anchor_property_source_paths(config: Config, *, base_dir: Path) -> Config:
