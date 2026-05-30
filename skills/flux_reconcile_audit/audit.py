@@ -1,39 +1,71 @@
 #!/usr/bin/env python3
-"""Flux reconcile audit.
+"""Flux reconcile audit (v3).
 
-Run from a shell where port-forwards to Mimir and Loki are already up
-(or pass --setup-pf to have this script start them itself). Reads the
-live cluster, queries Mimir + Loki over the window, classifies every
-Kustomization + HelmRelease into one of:
+Walks every Flux Kustomization + HelmRelease, classifies each into one of
+Broken / Slow-but-converges / Miswired-but-converges / Propagating /
+Suspended / Healthy, and surfaces the underlying-resource culprit pulled
+from Flux's own condition / event message.
 
-  - Broken               — persistent failure, won't recover unattended
-  - Miswired-but-converges — eventually succeeds but only after retries
-  - Slow-but-converges   — succeeds but p99 reconcile is high
-  - Propagating          — currently Ready=False with reason=DependencyNotReady
-                           AND no real failures in window (transient state)
-  - Suspended            — spec.suspend=true (informational)
-  - Healthy              — everything else
+Data sources, in order of preference:
 
-Emits a Markdown report on stdout.
+  1. K8s API via a single `kubectl proxy` (started by this script). One
+     HTTP round-trip per list — Events, Kustomizations, HelmReleases, and
+     each probe kind. Much faster than spawning a kubectl subprocess per
+     call (~30 ms vs ~300 ms).
+  2. Kustomization `status.conditions[Ready].message` parsed for the
+     bracketed `[Kind/namespace/name status: 'X']` reference — primary
+     attribution for "which underlying object is the problem".
+  3. Mimir (`gotk_reconcile_duration_seconds`) — one batched
+     `histogram_quantile by (name, kind)` query for the Slow bucket's
+     p99 threshold. Skipped with `--no-mimir`.
+  4. Loki — one batched `count_over_time by (Kustomization_name)` query
+     per controller for fail/finish counts past event retention. Skipped
+     with `--no-loki` or `--window ≤ 1h`.
+
+Emits a single Markdown report to stdout.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 import subprocess
 import time
-from collections import Counter, defaultdict
+from collections import defaultdict
+from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
+API_URL = "http://localhost:8001"
 MIMIR_URL = "http://localhost:8080/prometheus/api/v1"
 LOKI_URL = "http://localhost:3100/loki/api/v1"
 
-# Errors that are transient infra noise; don't count toward "Broken".
+# Flux event reasons.
+SUCCESS_REASONS = {"ReconciliationSucceeded", "InstallSucceeded", "UpgradeSucceeded"}
+FAILURE_REASONS = {
+    "ReconciliationFailed",
+    "HealthCheckFailed",
+    "BuildFailed",
+    "PostBuildFailed",
+    "ApplyFailed",
+    "PruneFailed",
+    "DecryptionFailed",
+    "ValidationFailed",
+    "AccessDenied",
+    "InstallFailed",
+    "UpgradeFailed",
+    "RollbackFailed",
+    "TestFailed",
+    "ChartPullFailed",
+}
+
+# Transient infra noise — counted separately, doesn't promote to Broken.
 TRANSIENT_ERROR_PATTERNS = [
     r"etcdserver: request timed out",
     r"etcdserver: leader changed",
@@ -43,9 +75,33 @@ TRANSIENT_ERROR_PATTERNS = [
     r"too many requests",
 ]
 
+# `[Kind/namespace/name status: 'X']` parser.
+CULPRIT_RE = re.compile(r"\[(\w+)/([\w\-.]+)/([\w\-.]+) status: '([^']+)'\]")
+
+# Condition-bearing kinds to pre-fetch globally and filter by the Flux
+# `kustomize.toolkit.fluxcd.io/name` label. Tuple of (apiPath, kind) where
+# apiPath is everything between /api(s)/ and the resource selector.
+DEFAULT_PROBE_KINDS: list[tuple[str, str]] = [
+    ("apis/apps/v1/deployments", "Deployment"),
+    ("apis/apps/v1/statefulsets", "StatefulSet"),
+    ("apis/apps/v1/daemonsets", "DaemonSet"),
+    ("apis/batch/v1/jobs", "Job"),
+    ("apis/batch/v1/cronjobs", "CronJob"),
+    ("apis/helm.toolkit.fluxcd.io/v2/helmreleases", "HelmRelease"),
+    ("apis/external-secrets.io/v1/externalsecrets", "ExternalSecret"),
+    ("apis/postgresql.cnpg.io/v1/clusters", "Cluster"),
+    ("apis/cdi.kubevirt.io/v1beta1/datavolumes", "DataVolume"),
+    ("apis/kubevirt.io/v1/virtualmachines", "VirtualMachine"),
+    ("apis/seaweed.seaweedfs.com/v1/buckets", "Bucket"),
+    ("apis/infra.contrib.fluxcd.io/v1alpha2/terraforms", "Terraform"),
+    ("apis/openclaw.rocks/v1alpha1/openclawinstances", "OpenclawInstance"),
+    ("apis/cilium.io/v2/ciliumenvoyconfigs", "CiliumEnvoyConfig"),
+]
+
+FLUX_LABEL = "kustomize.toolkit.fluxcd.io/name"
+
 
 def parse_window_seconds(window: str) -> int:
-    """Accept Prometheus-style durations: 30m, 4h, 7d, 1w."""
     m = re.fullmatch(r"(\d+)([smhdw])", window)
     if not m:
         raise ValueError(f"bad window: {window!r}")
@@ -53,40 +109,101 @@ def parse_window_seconds(window: str) -> int:
     return n * {"s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800}[unit]
 
 
-def query_mimir(promql: str) -> list[dict]:
-    url = f"{MIMIR_URL}/query?{urlencode({'query': promql})}"
-    with urlopen(url, timeout=30) as r:
-        return json.loads(r.read())["data"]["result"]
+def http_json(url: str, timeout: int = 60) -> dict:
+    with urlopen(url, timeout=timeout) as r:
+        return json.loads(r.read())
 
 
-def query_loki_count(logql: str, window: str) -> int:
-    """Run a count_over_time-wrapped logql query and return the integer count."""
-    full = f"sum(count_over_time({logql} [{window}]))"
-    url = f"{LOKI_URL}/query?{urlencode({'query': full})}"
-    with urlopen(url, timeout=30) as r:
-        result = json.loads(r.read())["data"]["result"]
-    return int(float(result[0]["value"][1])) if result else 0
+def api_list(path: str, **params: str) -> dict:
+    """GET against http://localhost:8001/<path>?<params>."""
+    q = urlencode(params) if params else ""
+    sep = "?" if q else ""
+    return http_json(f"{API_URL}/{path.lstrip('/')}{sep}{q}", timeout=30)
 
 
-def query_loki_lines(logql: str, start_ns: int, end_ns: int, limit: int = 200) -> list[dict]:
-    """Run a query_range and return parsed JSON log lines (best-effort)."""
-    url = f"{LOKI_URL}/query_range?" + urlencode({"query": logql, "start": start_ns, "end": end_ns, "limit": limit})
-    with urlopen(url, timeout=30) as r:
-        result = json.loads(r.read())["data"]["result"]
-    lines = []
-    for stream in result:
-        for entry in stream["values"]:
-            raw = entry[1]
-            try:
-                lines.append(json.loads(raw))
-            except json.JSONDecodeError:
+@contextmanager
+def kubectl_proxy(port: int = 8001) -> Iterator[None]:
+    """Start `kubectl proxy --port=<port>`, wait for it to come up, kill
+    on exit. Reuses the caller's kubeconfig — same auth as kubectl."""
+    proc = subprocess.Popen(["kubectl", "proxy", f"--port={port}"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    try:
+        # kubectl proxy prints "Starting to serve on 127.0.0.1:<port>"
+        # within ~50ms when it's ready.
+        deadline = time.time() + 10
+        assert proc.stdout is not None
+        while time.time() < deadline:
+            line = proc.stdout.readline()
+            if not line:
+                if proc.poll() is not None:
+                    raise RuntimeError("kubectl proxy exited before serving")
                 continue
-    return lines
+            if b"Starting to serve" in line:
+                break
+        else:
+            raise TimeoutError("kubectl proxy did not start within 10s")
+        yield
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
 
 
-def kubectl_json(*args: str) -> dict:
-    out = subprocess.check_output(["kubectl", *args])
-    return json.loads(out)
+def mimir_p99_by_name(window: str) -> dict[tuple[str, str], float]:
+    promql = (
+        f"histogram_quantile(0.99, sum by (le, name, kind) (rate(gotk_reconcile_duration_seconds_bucket[{window}])))"
+    )
+    try:
+        result = http_json(f"{MIMIR_URL}/query?{urlencode({'query': promql})}", timeout=60)["data"]["result"]
+    except Exception:
+        return {}
+    out: dict[tuple[str, str], float] = {}
+    for series in result:
+        m = series.get("metric", {})
+        nm = m.get("name")
+        kd = m.get("kind")
+        if not nm or not kd:
+            continue
+        try:
+            v = float(series["value"][1])
+        except (KeyError, ValueError):
+            continue
+        if math.isnan(v):
+            continue
+        out[(kd, nm)] = v
+    return out
+
+
+def loki_count_by_name(app: str, name_label: str, line_match: str, window: str) -> dict[str, int]:
+    promql = (
+        f"sum by ({name_label}) (count_over_time("
+        f'{{namespace="flux-system",app="{app}"}} | json | __error__="" '
+        f'|~ "{line_match}" [{window}]))'
+    )
+    try:
+        result = http_json(f"{LOKI_URL}/query?{urlencode({'query': promql})}", timeout=90)["data"]["result"]
+    except Exception:
+        return {}
+    out: dict[str, int] = {}
+    for series in result:
+        nm = series.get("metric", {}).get(name_label)
+        if not nm:
+            continue
+        try:
+            out[nm] = int(float(series["value"][1]))
+        except (KeyError, ValueError):
+            continue
+    return out
+
+
+@dataclass
+class Event:
+    reason: str
+    message: str
+    last_ts: float
+    count: int
+    type: str
 
 
 @dataclass
@@ -94,330 +211,244 @@ class Resource:
     kind: str
     namespace: str
     name: str
-    obj_namespace: str  # where the workload lives (for HelmRelease this differs)
+    api_version: str
     suspended: bool
     ready: str | None
     reason: str | None
     message: str | None
     last_applied: str | None
     last_attempted: str | None
-    depends_on: list[str] = field(default_factory=list)
-    health_checks: list[dict] = field(default_factory=list)
-    inventory: list[dict] = field(default_factory=list)
+    events: list[Event] = field(default_factory=list)
     bucket: str = "?"
-    bucket_evidence: dict = field(default_factory=dict)
+    evidence: dict = field(default_factory=dict)
 
 
 def collect_universe() -> list[Resource]:
-    universe: list[Resource] = []
-    for kind, args in [
-        ("Kustomization", ["get", "kustomization", "-A", "-o", "json"]),
-        ("HelmRelease", ["get", "helmrelease", "-A", "-o", "json"]),
+    out: list[Resource] = []
+    for kind, api, path in [
+        ("Kustomization", "kustomize.toolkit.fluxcd.io/v1", "apis/kustomize.toolkit.fluxcd.io/v1/kustomizations"),
+        ("HelmRelease", "helm.toolkit.fluxcd.io/v2", "apis/helm.toolkit.fluxcd.io/v2/helmreleases"),
     ]:
-        for it in kubectl_json(*args)["items"]:
+        for it in api_list(path).get("items", []):
             md = it["metadata"]
-            spec = it.get("spec", {})
+            spec = it.get("spec", {}) or {}
             status = it.get("status", {}) or {}
-            ready_cond = next((c for c in (status.get("conditions") or []) if c["type"] == "Ready"), None)
-            universe.append(
+            ready = next((c for c in (status.get("conditions") or []) if c.get("type") == "Ready"), None)
+            out.append(
                 Resource(
                     kind=kind,
                     namespace=md["namespace"],
                     name=md["name"],
-                    obj_namespace=md["namespace"],
+                    api_version=api,
                     suspended=bool(spec.get("suspend", False)),
-                    ready=ready_cond["status"] if ready_cond else None,
-                    reason=ready_cond.get("reason") if ready_cond else None,
-                    message=ready_cond.get("message") if ready_cond else None,
+                    ready=ready["status"] if ready else None,
+                    reason=ready.get("reason") if ready else None,
+                    message=ready.get("message") if ready else None,
                     last_applied=status.get("lastAppliedRevision"),
                     last_attempted=status.get("lastAttemptedRevision"),
-                    depends_on=[d["name"] for d in spec.get("dependsOn", [])],
-                    health_checks=spec.get("healthChecks", []),
-                    inventory=(status.get("inventory", {}) or {}).get("entries", []) or [],
                 )
             )
-    return universe
+    return out
 
 
-def _parse_inventory_id(entry_id: str) -> tuple[str, str, str, str]:
-    """Inventory ID format: <namespace>_<name>_<group>_<kind>."""
-    parts = entry_id.split("_")
-    if len(parts) < 4:
-        return ("", entry_id, "", "")
-    namespace = parts[0]
-    kind = parts[-1]
-    group = parts[-2]
-    name = "_".join(parts[1:-2])
-    return namespace, name, group, kind
+def _ts_parse(s: str | None) -> float:
+    if not s:
+        return 0.0
+    try:
+        return datetime.strptime(s, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC).timestamp()
+    except ValueError:
+        return 0.0
 
 
-def classify(r: Resource, window: str, start_ns: int, end_ns: int, slow_threshold_s: float) -> None:
+def collect_events(api_version: str, since_ts: float) -> dict[tuple[str, str], list[Event]]:
+    raw = api_list("api/v1/events", fieldSelector=f"involvedObject.apiVersion={api_version}")
+    bucketed: dict[tuple[str, str], list[Event]] = defaultdict(list)
+    for it in raw.get("items", []):
+        inv = it.get("involvedObject", {}) or {}
+        last_ts = _ts_parse(it.get("lastTimestamp") or it.get("eventTime"))
+        if last_ts < since_ts:
+            continue
+        bucketed[(inv.get("namespace", ""), inv.get("name", ""))].append(
+            Event(
+                reason=it.get("reason", ""),
+                message=it.get("message", ""),
+                last_ts=last_ts,
+                count=int(it.get("count") or 1),
+                type=it.get("type", "Normal"),
+            )
+        )
+    for evs in bucketed.values():
+        evs.sort(key=lambda e: e.last_ts)
+    return bucketed
+
+
+def fetch_probe_kinds(probe_paths: list[tuple[str, str]]) -> dict[str, list[dict]]:
+    """Pre-fetch every probe-kind list in parallel via the apiserver
+    proxy. Returns {kustomize-name: [object, ...]}, indexed by the Flux
+    label so the report can do an in-memory lookup."""
+    by_kustomization: dict[str, list[dict]] = defaultdict(list)
+
+    def _fetch(path_kind: tuple[str, str]) -> list[dict]:
+        path = path_kind[0]
+        try:
+            return api_list(path).get("items", []) or []
+        except Exception:
+            return []
+
+    with ThreadPoolExecutor(max_workers=len(probe_paths)) as ex:
+        for items in ex.map(_fetch, probe_paths):
+            for obj in items:
+                labels = (obj.get("metadata") or {}).get("labels") or {}
+                ks = labels.get(FLUX_LABEL)
+                if ks:
+                    by_kustomization[ks].append(obj)
+    return by_kustomization
+
+
+def extract_culprit(text: str) -> tuple[str, str, str, str] | None:
+    m = CULPRIT_RE.search(text or "")
+    if not m:
+        return None
+    return m.group(1), m.group(2), m.group(3), m.group(4)
+
+
+def classify(
+    r: Resource, p99: float, slow_threshold_s: float, loki_fail_supplement: int, loki_success_supplement: int
+) -> None:
     if r.suspended:
         r.bucket = "Suspended"
         return
 
-    kind_label = r.kind
-    app_label = "kustomize-controller" if r.kind == "Kustomization" else "helm-controller"
-    name_label_in_logs = "Kustomization_name" if r.kind == "Kustomization" else "HelmRelease_name"
-
-    base_log_selector = (
-        f'{{namespace="flux-system",app="{app_label}"}} | json | __error__="" | {name_label_in_logs}="{r.name}"'
-    )
-
-    # Counts in window
-    finish_count = query_loki_count(f'{base_log_selector} |= "Reconciliation finished"', window)
-    fail_count = query_loki_count(f'{base_log_selector} |= "Reconciliation failed"', window)
-
-    # Real failures (excluding transient infra blips)
-    fail_lines = query_loki_lines(f'{base_log_selector} |= "Reconciliation failed"', start_ns, end_ns, limit=200)
-    real_fails = []
-    transient_fails = []
-    for line in fail_lines:
-        err = line.get("error", "") or ""
-        if any(re.search(p, err) for p in TRANSIENT_ERROR_PATTERNS):
-            transient_fails.append(line)
+    successes = [e for e in r.events if e.reason in SUCCESS_REASONS]
+    failures = [e for e in r.events if e.reason in FAILURE_REASONS]
+    real_fails: list[Event] = []
+    transient_fails: list[Event] = []
+    for e in failures:
+        if any(re.search(p, e.message) for p in TRANSIENT_ERROR_PATTERNS):
+            transient_fails.append(e)
         else:
-            real_fails.append(line)
+            real_fails.append(e)
 
-    # Per-revision failure counts (for Miswired)
-    fail_by_rev = Counter(line.get("revision", "?") for line in real_fails)
-    finish_lines = query_loki_lines(f'{base_log_selector} |= "Reconciliation finished"', start_ns, end_ns, limit=200)
-    finished_revs = {line.get("revision") for line in finish_lines}
+    finish_count = sum(e.count for e in successes)
+    real_fail_count = sum(e.count for e in real_fails)
+    transient_fail_count = sum(e.count for e in transient_fails)
 
-    # p99 duration
-    try:
-        p99_result = query_mimir(
-            f"histogram_quantile(0.99, sum by (le) "
-            f"(rate(gotk_reconcile_duration_seconds_bucket"
-            f'{{name="{r.name}",kind="{kind_label}"}}[{window}])))'
-        )
-        p99 = float(p99_result[0]["value"][1]) if p99_result else 0.0
-    except Exception:
-        p99 = 0.0
+    last_success_ts = max((e.last_ts for e in successes), default=0.0)
+    last_failure_ts = max((e.last_ts for e in real_fails), default=0.0)
+    last_was_failure = last_failure_ts > last_success_ts and last_failure_ts > 0
 
-    # Dependency-wait line count (Kustomization only; helm has no dependsOn)
-    dep_wait = 0
-    if r.kind == "Kustomization":
-        dep_wait = query_loki_count(f'{base_log_selector} |= "Dependencies do not meet ready condition"', window)
+    real_fail_count = max(real_fail_count, loki_fail_supplement)
+    finish_count = max(finish_count, loki_success_supplement)
 
-    # Most-recent-event ordering: was the last real activity a failure?
-    last_fail_ts = max((line.get("ts", "") for line in real_fails), default="")
-    last_finish_ts = max((line.get("ts", "") for line in finish_lines), default="")
-    last_was_failure = last_fail_ts > last_finish_ts and last_fail_ts != ""
+    culprit = None
+    last_error = None
+    if real_fails:
+        last_error = real_fails[-1].message
+        culprit = extract_culprit(last_error)
+    if not culprit and r.message:
+        culprit = extract_culprit(r.message)
 
-    r.bucket_evidence = {
-        "finish_count": finish_count,
-        "fail_count": fail_count,
-        "real_fail_count": len(real_fails),
-        "transient_fail_count": len(transient_fails),
+    r.evidence = {
+        "successes": finish_count,
+        "real_fail_count": real_fail_count,
+        "transient_fail_count": transient_fail_count,
         "p99_s": p99,
-        "dep_wait_lines": dep_wait,
-        "fail_by_rev_top": dict(fail_by_rev.most_common(3)),
-        "last_error": (real_fails[-1].get("error") if real_fails else None),
-        "revision_converged": any(rev in finished_revs for rev in fail_by_rev),
+        "last_error": last_error,
         "last_was_failure": last_was_failure,
+        "culprit": culprit,
+        "loki_fail_supplement": loki_fail_supplement,
+        "loki_success_supplement": loki_success_supplement,
     }
 
-    # Classification rules (first match wins)
-    # Broken: more real failures than successes in window, OR the last activity
-    # was a failure and there's been more than one. We use the broader rule
-    # rather than only `ready=False` because a Kustomization mid-retry shows
-    # ready=Unknown,reason=Progressing even though it's effectively stuck.
-    if len(real_fails) > finish_count or (last_was_failure and len(real_fails) >= 2):
+    # Broken requires last_was_failure: a Kustomization currently
+    # ReconciliationSucceeded with many historical failures is
+    # Miswired-but-recovered, not Broken. We still use the event-count-
+    # based check (`real_fail_count >= 2`) so a mid-retry resource
+    # (Ready=Unknown reason=Progressing) is caught even though its
+    # current condition isn't False.
+    if last_was_failure and (real_fail_count > finish_count or real_fail_count >= 2):
         r.bucket = "Broken"
         return
-
-    # Propagating: currently Ready=False because a dependsOn target is still
-    # catching up. No real failures in window means this is just propagation
-    # lag, not breakage.
-    if r.ready == "False" and r.reason == "DependencyNotReady" and len(real_fails) == 0:
+    if r.ready == "False" and r.reason == "DependencyNotReady" and real_fail_count == 0:
         r.bucket = "Propagating"
         return
-
-    # Miswired: at least one revision has ≥2 real failures AND the same
-    # revision later finished successfully.
-    miswired = any(cnt >= 2 and rev in finished_revs for rev, cnt in fail_by_rev.items())
-    if miswired:
+    if real_fail_count > 0 and finish_count > 0:
         r.bucket = "Miswired"
         return
-
     if finish_count > 0 and p99 >= slow_threshold_s:
         r.bucket = "Slow"
         return
-
     r.bucket = "Healthy"
 
 
-# Per-kind cache of fetched objects, keyed by (group, kind) -> {(ns,name): object}.
-# Populated lazily on first probe of that kind; one `kubectl get -A -o json` per
-# kind instead of one per object.
-_kind_cache: dict[tuple[str, str], dict[tuple[str, str], dict]] = {}
-
-# Kinds that don't carry any usable status condition (probing is pointless).
-TRIVIAL_KINDS = {
-    "Namespace",
-    "ConfigMap",
-    "Secret",
-    "Service",
-    "ServiceAccount",
-    "Role",
-    "RoleBinding",
-    "ClusterRole",
-    "ClusterRoleBinding",
-    "NetworkPolicy",
-    "CiliumNetworkPolicy",
-    "Endpoints",
-    "EndpointSlice",
-    "HTTPRoute",
-    "TLSRoute",
-    "TCPRoute",
-    "Gateway",
-    "CustomResourceDefinition",
-    "PriorityClass",
-    "StorageClass",
-    "ConfigMapList",
-    "MutatingWebhookConfiguration",
-    "ValidatingWebhookConfiguration",
-    "PodDisruptionBudget",
-    "HorizontalPodAutoscaler",
-    "VerticalPodAutoscaler",
-    "PrometheusRule",
-    "ServiceMonitor",
-    "PodMonitor",
-    "GrafanaDashboard",
-    "GrafanaContactPoint",
-    "GrafanaNotificationPolicy",
-    "VolumeSnapshotClass",
-    "RuntimeClass",
-}
-
-
-def _fetch_kind(group: str, kind: str) -> dict[tuple[str, str], dict]:
-    key = (group, kind)
-    if key in _kind_cache:
-        return _kind_cache[key]
-    api = f"{kind.lower()}.{group}" if group else kind.lower()
-    try:
-        out = subprocess.check_output(
-            ["kubectl", "get", api, "-A", "-o", "json"], stderr=subprocess.DEVNULL, timeout=15
-        )
-        items = json.loads(out).get("items", [])
-        by_id = {(it["metadata"].get("namespace", ""), it["metadata"]["name"]): it for it in items}
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, json.JSONDecodeError):
-        by_id = {}
-    _kind_cache[key] = by_id
-    return by_id
-
-
-def _cond_str(c: dict) -> str:
+def _cond(c: dict) -> str:
     st = c.get("status", "?")
     reason = c.get("reason", "")
     return f"{c.get('type', '?')}={st}{(' ' + reason) if reason else ''}"
 
 
 def _summarize_status(kind: str, obj: dict) -> str:
-    """Short status string. For kinds where multiple conditions matter
-    (Deployment: Available + Progressing) we surface both so a partial
-    failure (Available=True but Progressing=False ProgressDeadlineExceeded)
-    isn't hidden behind the happier condition."""
     status = obj.get("status", {}) or {}
     conds = status.get("conditions") or []
-    cond_by_type = {c.get("type"): c for c in conds}
+    by_type = {c.get("type"): c for c in conds}
 
     if kind in {"Deployment", "ReplicaSet"}:
-        parts = [_cond_str(cond_by_type[t]) for t in ("Available", "Progressing") if t in cond_by_type]
+        parts = [_cond(by_type[t]) for t in ("Available", "Progressing") if t in by_type]
         if parts:
             return ", ".join(parts)
 
-    pref_by_kind = {"Pod": "Ready", "Job": "Complete", "Node": "Ready"}
-    pref = pref_by_kind.get(kind, "Ready")
-    chosen = cond_by_type.get(pref) or cond_by_type.get("Ready") or cond_by_type.get("Available")
+    pref = {"Pod": "Ready", "Job": "Complete", "Node": "Ready"}.get(kind, "Ready")
+    chosen = by_type.get(pref) or by_type.get("Ready") or by_type.get("Available")
     if chosen:
-        return _cond_str(chosen)
+        return _cond(chosen)
 
-    phase = status.get("phase")
-    if phase:
-        return f"phase={phase}"
-
-    if kind in {"Deployment", "StatefulSet"}:
-        ready = status.get("readyReplicas", 0)
-        replicas = obj.get("spec", {}).get("replicas", 0)
-        return f"{ready}/{replicas} ready"
-
+    if status.get("phase"):
+        return f"phase={status['phase']}"
     return "?"
 
 
 def _is_unhealthy(summary: str) -> bool:
-    """A status summary warrants inclusion in the report iff it contains at
-    least one `=False` condition or a phase that isn't Succeeded/Running."""
     if not summary or summary == "?":
         return True
-    # Multi-condition summaries: unhealthy if ANY condition is False.
     if "=False" in summary:
         return True
-    # phase= forms
     if summary.startswith("phase="):
-        return summary not in ("phase=Succeeded", "phase=Running", "phase=Bound")
-    # n/m ready
-    if summary.endswith(" ready") and not summary.startswith("0/0"):
-        ready, _, total = summary.partition("/")
-        try:
-            return int(ready) < int(total.split()[0])
-        except (ValueError, IndexError):
-            return True
+        return summary not in {"phase=Succeeded", "phase=Running", "phase=Bound"}
     return False
 
 
-def probe_health_checks(r: Resource) -> list[str]:
-    """For each healthCheck (or each inventory entry), fetch the target's
-    object via the K8s API (kubectl -A -o json, one call per kind, cached)
-    and emit a short condition summary. Skip trivial kinds and Ready=True
-    entries to keep the report compact."""
+def probe_managed_objects(r: Resource, probe_objs: dict[str, list[dict]]) -> list[str]:
+    if r.kind != "Kustomization":
+        return []
     out: list[str] = []
-    seen: set[tuple[str, str, str]] = set()
-
-    # Explicit healthChecks — always print
-    for hc in r.health_checks:
-        kind = hc.get("kind", "")
-        ns = hc.get("namespace", "")
-        n = hc.get("name", "")
-        api = hc.get("apiVersion", "")
-        group = api.split("/")[0] if "/" in api else ""
-        seen.add((kind, n, ns))
-        objs = _fetch_kind(group, kind)
-        obj = objs.get((ns, n))
-        if obj is None:
-            out.append(f"{kind}/{n} ({ns}): <not found>")
-        else:
-            out.append(f"{kind}/{n} ({ns}): {_summarize_status(kind, obj)}")
-
-    # Inventory fallback — only show entries that look unhealthy
-    for entry in r.inventory[:80]:
-        ns, n, group, kind = _parse_inventory_id(entry.get("id", ""))
-        if (kind, n, ns) in seen or kind in TRIVIAL_KINDS:
-            continue
-        objs = _fetch_kind(group, kind)
-        obj = objs.get((ns, n))
-        if obj is None:
-            continue
+    for obj in probe_objs.get(r.name, []):
+        kind = obj.get("kind", "")
+        md = obj.get("metadata", {}) or {}
         summary = _summarize_status(kind, obj)
         if _is_unhealthy(summary):
-            out.append(f"{kind}/{n} ({ns}): {summary}")
+            out.append(f"{kind}/{md.get('name', '')} ({md.get('namespace', '')}): {summary}")
             if len(out) >= 8:
                 break
-
     return out
 
 
-def emit_report(rs: list[Resource], window: str) -> None:
+def emit_report(
+    rs: list[Resource], window: str, use_mimir: bool, use_loki: bool, probe_objs: dict[str, list[dict]]
+) -> None:
     by_bucket = defaultdict(list)
     for r in rs:
         by_bucket[r.bucket].append(r)
 
-    n_total = len(rs)
     print(f"# Flux Reconcile Audit — last {window}\n")
+    sources = ["events"]
+    if use_mimir:
+        sources.append("Mimir (p99 duration)")
+    if use_loki:
+        sources.append("Loki (long-window fallback)")
+    sources.append("label-selector probes")
+    print(f"Data sources: {', '.join(sources)}\n")
     print(
-        f"Universe: {n_total} resources "
+        f"Universe: {len(rs)} resources "
         f"({sum(1 for r in rs if r.kind == 'Kustomization')} Kustomizations, "
         f"{sum(1 for r in rs if r.kind == 'HelmRelease')} HelmReleases)\n"
     )
@@ -435,81 +466,146 @@ def emit_report(rs: list[Resource], window: str) -> None:
         ("Suspended", "## Suspended (informational)"),
     ]:
         items = sorted(
-            by_bucket[b],
-            key=lambda r: (-r.bucket_evidence.get("real_fail_count", 0), -r.bucket_evidence.get("p99_s", 0)),
+            by_bucket[b], key=lambda r: (-r.evidence.get("real_fail_count", 0), -r.evidence.get("p99_s", 0.0))
         )
         if not items:
             continue
         print(f"\n{header} ({len(items)})\n")
         for r in items:
-            ev = r.bucket_evidence
-            print(f"### {r.kind}/{r.name} (ns={r.obj_namespace})\n")
+            ev = r.evidence
+            print(f"### {r.kind}/{r.name} (ns={r.namespace})\n")
             if r.reason:
                 print(f"- Current: Ready={r.ready}, reason=`{r.reason}`")
-            if ev.get("p99_s"):
+            if ev.get("p99_s", 0) > 0:
                 print(f"- p99 reconcile duration: {ev['p99_s']:.1f}s")
             if ev.get("real_fail_count"):
-                print(f"- Real failures in window: {ev['real_fail_count']} (+{ev['transient_fail_count']} transient)")
-            if ev.get("fail_by_rev_top"):
-                top = ", ".join(f"{rev[:12]}→{cnt}" for rev, cnt in ev["fail_by_rev_top"].items())
-                print(f"- Failures by revision: {top}")
-            if ev.get("dep_wait_lines"):
-                print(f"- Dep-wait events: {ev['dep_wait_lines']}")
+                extras = []
+                if ev["transient_fail_count"]:
+                    extras.append(f"+{ev['transient_fail_count']} transient")
+                if ev.get("loki_fail_supplement"):
+                    extras.append(f"loki-fail={ev['loki_fail_supplement']}")
+                if ev.get("loki_success_supplement"):
+                    extras.append(f"loki-ok={ev['loki_success_supplement']}")
+                tag = f" ({', '.join(extras)})" if extras else ""
+                print(f"- Failures / successes in window: {ev['real_fail_count']} / {ev['successes']}{tag}")
+            if ev.get("culprit"):
+                k, ns, nm, st = ev["culprit"]
+                print(f"- Underlying culprit (from condition/event): {k}/{nm} ({ns}) — status `{st}`")
             if ev.get("last_error"):
                 err = ev["last_error"]
                 if len(err) > 400:
                     err = err[:400] + "…"
                 print(f"- Last error: `{err}`")
-            hc_results = probe_health_checks(r)
-            if hc_results:
-                print("- Health-check probe:")
-                for hc in hc_results:
-                    print(f"  - {hc}")
+            lines = probe_managed_objects(r, probe_objs)
+            if lines:
+                print("- Label-selector probe (unhealthy managed objects):")
+                for line in lines:
+                    print(f"  - {line}")
             print()
 
     healthy = len(by_bucket["Healthy"])
-    print(f"\n## Healthy ({healthy})\n")
-    print(f"{healthy} resources passed all checks.\n")
+    print(f"\n## Healthy ({healthy})\n\n{healthy} resources passed all checks.\n")
 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--window", default="7d", help="Prometheus-style duration (default 7d)")
-    ap.add_argument("--name", default=None, help="Focus on a single Kustomization/HelmRelease name")
-    ap.add_argument(
-        "--slow-kustomization-s",
-        type=float,
-        default=60.0,
-        help="p99 duration threshold for Slow bucket (Kustomization)",
-    )
-    ap.add_argument(
-        "--slow-helmrelease-s", type=float, default=300.0, help="p99 duration threshold for Slow bucket (HelmRelease)"
-    )
-    ap.add_argument(
-        "--concurrency", type=int, default=12, help="Parallel classification workers (each runs ~5 HTTP queries)"
-    )
+    ap.add_argument("--window", default="7d")
+    ap.add_argument("--name", default=None)
+    ap.add_argument("--no-mimir", action="store_true")
+    ap.add_argument("--no-loki", action="store_true")
+    ap.add_argument("--slow-kustomization-s", type=float, default=60.0)
+    ap.add_argument("--slow-helmrelease-s", type=float, default=300.0)
+    ap.add_argument("--concurrency", type=int, default=16)
+    ap.add_argument("--proxy-port", type=int, default=8001)
     args = ap.parse_args()
 
     window_s = parse_window_seconds(args.window)
-    end_ns = int(time.time() * 1_000_000_000)
-    start_ns = end_ns - window_s * 1_000_000_000
+    since_ts = time.time() - window_s
+    use_mimir = not args.no_mimir
+    use_loki = (not args.no_loki) and window_s > 3600
 
-    rs = collect_universe()
-    if args.name:
-        rs = [r for r in rs if r.name == args.name]
+    global API_URL  # noqa: PLW0603 — one-shot CLI-flag override at startup
+    API_URL = f"http://localhost:{args.proxy_port}"
 
-    def _classify_one(r: Resource) -> None:
-        threshold = args.slow_kustomization_s if r.kind == "Kustomization" else args.slow_helmrelease_s
-        try:
-            classify(r, args.window, start_ns, end_ns, threshold)
-        except Exception as e:
-            r.bucket = "?Error"
-            r.bucket_evidence = {"error": repr(e)}
+    with kubectl_proxy(port=args.proxy_port):
+        # Run independent fetches in parallel: universe, two event-streams,
+        # mimir + loki batched queries, and probe-kind globals.
+        with ThreadPoolExecutor(max_workers=args.concurrency) as ex:
+            f_universe = ex.submit(collect_universe)
+            f_ks_events = ex.submit(collect_events, "kustomize.toolkit.fluxcd.io/v1", since_ts)
+            f_hr_events = ex.submit(collect_events, "helm.toolkit.fluxcd.io/v2", since_ts)
+            f_probe = ex.submit(fetch_probe_kinds, DEFAULT_PROBE_KINDS)
+            f_mimir = ex.submit(mimir_p99_by_name, args.window) if use_mimir else None
+            f_loki_ks_fail = (
+                ex.submit(
+                    loki_count_by_name,
+                    "kustomize-controller",
+                    "Kustomization_name",
+                    "Reconciliation failed",
+                    args.window,
+                )
+                if use_loki
+                else None
+            )
+            f_loki_ks_ok = (
+                ex.submit(
+                    loki_count_by_name,
+                    "kustomize-controller",
+                    "Kustomization_name",
+                    "Reconciliation finished",
+                    args.window,
+                )
+                if use_loki
+                else None
+            )
+            f_loki_hr_fail = (
+                ex.submit(
+                    loki_count_by_name, "helm-controller", "HelmRelease_name", "Reconciliation failed", args.window
+                )
+                if use_loki
+                else None
+            )
+            f_loki_hr_ok = (
+                ex.submit(
+                    loki_count_by_name, "helm-controller", "HelmRelease_name", "Reconciliation finished", args.window
+                )
+                if use_loki
+                else None
+            )
 
-    with ThreadPoolExecutor(max_workers=args.concurrency) as ex:
-        list(ex.map(_classify_one, rs))
+            rs = f_universe.result()
+            if args.name:
+                rs = [r for r in rs if r.name == args.name]
+            events_by_target = {**f_ks_events.result(), **f_hr_events.result()}
+            for r in rs:
+                r.events = events_by_target.get((r.namespace, r.name), [])
+            probe_objs = f_probe.result()
+            p99_map = f_mimir.result() if f_mimir is not None else {}
+            loki_fail: dict[tuple[str, str], int] = {}
+            loki_ok: dict[tuple[str, str], int] = {}
+            for fut, kind, target in [
+                (f_loki_ks_fail, "Kustomization", loki_fail),
+                (f_loki_hr_fail, "HelmRelease", loki_fail),
+                (f_loki_ks_ok, "Kustomization", loki_ok),
+                (f_loki_hr_ok, "HelmRelease", loki_ok),
+            ]:
+                if fut is None:
+                    continue
+                for nm, cnt in fut.result().items():
+                    target[(kind, nm)] = cnt
 
-    emit_report(rs, args.window)
+        for r in rs:
+            thr = args.slow_kustomization_s if r.kind == "Kustomization" else args.slow_helmrelease_s
+            f_supp = loki_fail.get((r.kind, r.name), 0)
+            ok_supp = loki_ok.get((r.kind, r.name), 0)
+            p99 = p99_map.get((r.kind, r.name), 0.0)
+            try:
+                classify(r, p99, thr, f_supp, ok_supp)
+            except Exception as e:
+                r.bucket = "?Error"
+                r.evidence = {"error": repr(e)}
+
+        emit_report(rs, args.window, use_mimir, use_loki, probe_objs)
 
 
 if __name__ == "__main__":
