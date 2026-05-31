@@ -20,6 +20,9 @@ spec:
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: postgres-mcp
           image: writenotenow/postgres-mcp:sha-ba84229@sha256:36a2b081b4c0ecf7e0f34deb6a312c32c467490881aa8c65d1fea18e9b5609e0
@@ -107,6 +110,12 @@ spec:
               cpu: "50m"
             limits:
               memory: "512Mi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsNonRoot: true
           readinessProbe:
             tcpSocket:
               port: 8000
@@ -144,6 +153,12 @@ spec:
               cpu: "50m"
             limits:
               memory: "256Mi"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsNonRoot: true
           readinessProbe:
             httpGet:
               path: /healthz
