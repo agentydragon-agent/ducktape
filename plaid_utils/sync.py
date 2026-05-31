@@ -57,6 +57,8 @@ def redact_payload(value: Any) -> Any:
         return {k: ("<redacted>" if k.lower() in sensitive else redact_payload(v)) for k, v in value.items()}
     if isinstance(value, list):
         return [redact_payload(v) for v in value]
+    if isinstance(value, date):
+        return value.isoformat()
     return value
 
 

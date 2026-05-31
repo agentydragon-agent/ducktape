@@ -43,6 +43,15 @@ py_test(
     ],
 )
 
+py_test(
+    name = "test_sync",
+    srcs = ["test_sync.py"],
+    deps = [
+        ":sync",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_library(
     name = "dev_creds",
     srcs = ["dev_creds.py"],
