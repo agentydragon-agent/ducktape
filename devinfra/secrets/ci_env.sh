@@ -35,3 +35,6 @@ try_export PROPS_REGISTRY_PASSWORD "$REPO_ROOT/secrets/ci/harbor-ci-robot.sops.y
 
 # GitHub releases (agentydragon account, contents:write on ducktape)
 try_export GH_RELEASE_PAT "$REPO_ROOT/secrets/ci/gh-release-pat.sops.yaml" '["token"]'
+
+# Restore the caller's shell options (do not leak our `set -euo pipefail`; see _common.sh).
+_secrets_restore_shell_opts
