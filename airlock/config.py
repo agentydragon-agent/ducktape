@@ -36,7 +36,7 @@ from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from airlock.models import WaitMode, YieldAfterMs
-from airlock.oauth.provider import GenericOAuth2Provider, OAuthConfig, PlaidProvider, PlaidProviderConfig, Provider
+from airlock.oauth.provider import GenericOAuth2Provider, OAuthConfig
 from mcp_infra.prefix import MCPMountPrefix
 
 
@@ -93,15 +93,12 @@ class Settings(BaseSettings):
         return settings
 
 
-def build_oauth_providers(oauth_config: OAuthConfig) -> dict[str, Provider]:
+def build_oauth_providers(oauth_config: OAuthConfig) -> dict[str, GenericOAuth2Provider]:
     """Construct OAuth provider instances from config + env vars."""
-    providers: dict[str, Provider] = {}
+    providers: dict[str, GenericOAuth2Provider] = {}
     for p in oauth_config.providers:
         prefix = p.name.upper()
         client_id = os.environ[f"{prefix}_CLIENT_ID"]
         client_secret = os.environ[f"{prefix}_CLIENT_SECRET"]
-        if isinstance(p, PlaidProviderConfig):
-            providers[p.name] = PlaidProvider(p, client_id, client_secret)
-        else:
-            providers[p.name] = GenericOAuth2Provider(p, client_id, client_secret)
+        providers[p.name] = GenericOAuth2Provider(p, client_id, client_secret)
     return providers

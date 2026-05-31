@@ -1,13 +1,6 @@
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 py_library(
-    name = "models",
-    srcs = ["models.py"],
-    visibility = ["//plaid_utils:__subpackages__"],
-    deps = ["@pypi//pydantic"],
-)
-
-py_library(
     name = "link_profiles",
     srcs = ["link_profiles.py"],
     visibility = ["//plaid_utils:__subpackages__"],

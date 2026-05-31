@@ -90,13 +90,6 @@ const OAUTH_PROVIDERS: OAuthProviderStatus[] = [
     // Stale token missing PatientEOB/PatientRead — exercises the drift display.
     status: { state: "connected", expires_at: "2026-08-01T10:30:00Z", scope: "openid interop" },
   },
-  {
-    name: "plaid",
-    display_name: "Plaid",
-    provider_type: "plaid",
-    requested_scopes: ["transactions", "liabilities"],
-    status: { state: "disconnected" },
-  },
 ];
 
 // ── Pages ────────────────────────────────────────────────────────────────────

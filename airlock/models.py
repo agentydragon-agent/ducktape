@@ -242,7 +242,7 @@ class DeploymentInfo(BaseModel):
 class OAuthProviderStatus(BaseModel):
     name: str = Field(description="Provider identifier")
     display_name: str = Field(description="Human-readable name")
-    provider_type: str = Field(description="oauth2 or plaid")
+    provider_type: str = Field(description="OAuth provider type.")
     requested_scopes: list[str] = Field(
         description=(
             "Scopes configured for this provider. Compared against the granted scope on the "

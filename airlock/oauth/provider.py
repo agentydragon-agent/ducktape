@@ -5,8 +5,8 @@ import hashlib
 import logging
 import secrets
 from datetime import UTC, datetime, timedelta
-from typing import Annotated, Literal
-from urllib.parse import urlencode, urlparse
+from typing import Literal
+from urllib.parse import urlencode
 
 import httpx
 from pydantic import BaseModel, Field
@@ -52,15 +52,6 @@ class OAuth2ProviderConfig(BaseProviderConfig):
     )
 
 
-class PlaidProviderConfig(BaseProviderConfig):
-    provider_type: Literal["plaid"]
-    token_url: str = Field(description="Plaid /item/public_token/exchange endpoint")
-    products: list[str] = Field(description="Plaid products to request (e.g. transactions, auth)")
-
-
-ProviderConfig = Annotated[OAuth2ProviderConfig | PlaidProviderConfig, Field(discriminator="provider_type")]
-
-
 class TokenData(BaseModel):
     access_token: str
     refresh_token: str
@@ -76,7 +67,7 @@ class OAuthConfig(BaseModel):
     managed_by: str = Field(
         default="airlock", description="Value for app.kubernetes.io/managed-by label on managed secrets"
     )
-    providers: list[ProviderConfig] = Field(description="Provider configurations")
+    providers: list[OAuth2ProviderConfig] = Field(description="Provider configurations")
 
 
 class _BaseProvider:
@@ -142,81 +133,6 @@ class GenericOAuth2Provider(_BaseProvider):
     def needs_refresh(self, token: TokenData) -> bool:
         margin = timedelta(seconds=self.config.refresh_margin_seconds)
         return datetime.now(UTC) >= token.expires_at - margin
-
-
-class PlaidProvider(_BaseProvider):
-    """Plaid Link provider.
-
-    Plaid uses a JS widget flow rather than a standard OAuth2 redirect:
-    1. Server calls /link/token/create to get a link_token.
-    2. Browser renders a page with the Plaid Link JS widget.
-    3. User links their bank; for OAuth institutions the bank redirects to
-       redirect_uri?oauth_state_id=<id> (server re-renders the widget with
-       receivedRedirectUri to resume the session).
-    4. On success the widget calls onSuccess(public_token); the page POSTs it
-       to our /callback/plaid endpoint.
-    5. Server exchanges the public_token for an access_token here.
-
-    Plaid access_tokens never expire, so needs_refresh() always returns False.
-    """
-
-    def __init__(self, config: PlaidProviderConfig, client_id: str, client_secret: str) -> None:
-        self.config = config
-        self.client_id = client_id
-        self.client_secret = client_secret
-
-    def _plaid_host(self) -> str:
-        parsed = urlparse(self.config.token_url)
-        return f"{parsed.scheme}://{parsed.netloc}"
-
-    async def create_link_token(self, state: str) -> str:
-        """Create a Plaid link_token. `state` is stored server-side for CSRF."""
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{self._plaid_host()}/link/token/create",
-                json={
-                    "client_id": self.client_id,
-                    "secret": self.client_secret,
-                    "client_name": self.config.display_name,
-                    "user": {"client_user_id": "owner"},
-                    "products": self.config.products,
-                    "country_codes": ["US"],
-                    "language": "en",
-                    "redirect_uri": self.config.redirect_uri,
-                    "transactions": {"days_requested": 730},
-                },
-            )
-            if response.is_error:
-                raise RuntimeError(f"Plaid /link/token/create {response.status_code}: {response.text}")
-            return str(response.json()["link_token"])
-
-    async def exchange_public_token(self, public_token: str) -> TokenData:
-        """Exchange a Plaid public_token for a permanent access_token."""
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                self.config.token_url,
-                json={"client_id": self.client_id, "secret": self.client_secret, "public_token": public_token},
-            )
-            response.raise_for_status()
-            data = response.json()
-        # Plaid access_tokens have no expiry; use a far-future sentinel.
-        return TokenData(
-            access_token=data["access_token"],
-            refresh_token="",
-            token_type="Bearer",
-            expires_at=datetime.now(UTC) + timedelta(days=36500),
-            scope=" ".join(self.config.products),
-        )
-
-    async def refresh_tokens(self, refresh_token: str) -> TokenData:
-        raise NotImplementedError("Plaid access_tokens do not expire and cannot be refreshed")
-
-    def needs_refresh(self, token: TokenData) -> bool:
-        return False
-
-
-# Union type used in app, refresh loop, and CLI.
-Provider = GenericOAuth2Provider | PlaidProvider
 
 
 def _parse_token_response(data: dict) -> TokenData:

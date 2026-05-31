@@ -21,10 +21,21 @@ spec:
           serviceAccountName: plaid-mcp
           restartPolicy: Never
           enableServiceLinks: false
+          securityContext:
+            seccompProfile:
+              type: RuntimeDefault
           containers:
             - name: sync
               image: ghcr.io/agentydragon/plaid-mcp-sync:devel-20260531112340-6904edd # {"$imagepolicy": "flux-system:plaid-mcp-sync"}
               imagePullPolicy: Always
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+                runAsGroup: 1000
+                runAsNonRoot: true
+                runAsUser: 1000
               env:
                 - name: PLAID_MCP_PLAID_ENV
                   valueFrom:

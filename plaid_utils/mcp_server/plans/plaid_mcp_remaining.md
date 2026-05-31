@@ -10,34 +10,24 @@ The agent-facing read path is intentionally Postgres SQL only. There are no v0 b
 
 ## Cutover From Airlock
 
-Airlock still owns the old Plaid wiring until the v0 UI and sync path are proven with the existing Items and at least one new link.
+Airlock no longer owns Plaid Link or Plaid token brokering. The Plaid client credentials are SOPS-managed in the `plaid-mcp` namespace, and Airlock's old Plaid provider stanzas, env vars, and access-token mirrors have been removed.
 
-Remaining cutover work:
+Completed validation:
 
-1. Keep using the same Plaid `client_id` and `client_secret`; make the `plaid-mcp` namespace the durable source of those credentials.
-2. Confirm the existing Chase and Bank of America access-token Secrets are present in `plaid-mcp` and synced through the new database path.
-3. Remove Airlock Plaid providers after confidence:
-   - Delete `plaid_chase` and `plaid_bofa` from `cluster/k8s/agents/airlock/config.yaml`.
-   - Drop Airlock Plaid env and token ESO wiring.
-   - Remove `cluster/k8s/agents/plaid-mcp/app/external-secret.yaml` token mirrors if no longer needed.
-4. Retire the old static-item MCP path in `plaid_utils/mcp_server/server.py` once no tests or docs depend on it as the active shape.
+- Existing Chase and Bank of America Items synced through the new database path.
+- New Interactive Brokers and Wealthfront Items linked through the v0 UI and synced into Postgres.
+- A manual CronJob run completed successfully with all four active links reporting non-null `last_synced_at`.
+- Claude.ai authenticated successfully against `https://plaid-db.allegedly.works/mcp`.
 
 ## New Link Validation
 
-Use `https://plaid-mcp.allegedly.works/` or `/link` to add investment-capable institutions.
-
-Priority links:
-
-- Interactive Brokers: use an investment profile first.
-- Wealthfront: use an investment profile first.
-
-For each new Item:
+For future new Items:
 
 1. Link through the UI.
 2. Confirm a Kubernetes access-token Secret and `links` row are created.
 3. Run or wait for sync.
 4. Verify SQL rows for accounts, holdings, securities, investment transactions where available, balances, and `plaid_api_events`.
-5. Verify the UI scope-upgrade, sync, remove, and repair paths before unwiring Airlock.
+5. Verify the UI scope-upgrade, sync, remove, and repair paths for any institution-specific behavior.
 
 ## v0 Hardening
 

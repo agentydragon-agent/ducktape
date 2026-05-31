@@ -12,8 +12,6 @@ synced Postgres database with a read-only role.
 - `//plaid_utils/mcp_server:app_cli` / `server_image`: web UI on `:8080`.
 - `//plaid_utils/mcp_server:sync_cli` / `sync_image`: CronJob entrypoint that
   refreshes every active link into Postgres.
-- `//plaid_utils/mcp_server:server_cli`: legacy static-item Plaid MCP server kept
-  for tests and comparison; it is not the v0 deployment.
 
 ## Configuration
 

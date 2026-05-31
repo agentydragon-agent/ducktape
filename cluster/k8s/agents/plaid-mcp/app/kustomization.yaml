@@ -3,7 +3,7 @@ kind: Kustomization
 namespace: plaid-mcp
 resources:
   - configmap.yaml
-  - external-secret.yaml
+  - plaid-client-credentials.sops.yaml
   - rbac.yaml
   - deployment.yaml
   - cronjob.yaml

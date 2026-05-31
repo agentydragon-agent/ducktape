@@ -1,13 +1,11 @@
 <script lang="ts">
   import { getApiClient } from "./api.ts";
-  import { getAccessToken } from "./auth.ts";
   import type { OAuthProviderStatus } from "./types.ts";
   import { onMount } from "svelte";
 
   let providers = $state<OAuthProviderStatus[]>([]);
   let loading = $state(true);
   let error = $state<string | null>(null);
-  let plaidLoading = $state<string | null>(null);
 
   onMount(async () => {
     try {
@@ -31,52 +29,6 @@
     const missing = [...requestedSet].filter((s) => !grantedSet.has(s)).sort();
     const extra = [...grantedSet].filter((s) => !requestedSet.has(s)).sort();
     return { missing, extra, drift: missing.length + extra.length > 0 };
-  }
-
-  async function connectPlaid(providerName: string): Promise<void> {
-    plaidLoading = providerName;
-    try {
-      const token = await getAccessToken();
-      const resp = await fetch(`/oauth/authorize/${providerName}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!resp.ok) throw new Error(`Failed to get link token: ${resp.status}`);
-      const data = await resp.json();
-
-      // Load Plaid Link SDK if not already loaded
-      if (!(window as any).Plaid) {
-        await new Promise<void>((resolve, reject) => {
-          const script = document.createElement("script");
-          script.src = "https://cdn.plaid.com/link/v2/stable/link-initialize.js";
-          script.onload = () => resolve();
-          script.onerror = () => reject(new Error("Failed to load Plaid SDK"));
-          document.head.appendChild(script);
-        });
-      }
-
-      const handler = (window as any).Plaid.create({
-        token: data.link_token,
-        receivedRedirectUri: data.received_redirect_uri ?? undefined,
-        onSuccess: async (publicToken: string) => {
-          await fetch(`/oauth/callback/${providerName}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-            body: JSON.stringify({ public_token: publicToken }),
-          });
-          // Refresh provider list
-          const api = await getApiClient();
-          providers = await api.listOAuthProviders();
-        },
-        onExit: (err: any) => {
-          if (err) error = `Plaid Link error: ${JSON.stringify(err)}`;
-        },
-      });
-      handler.open();
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
-    } finally {
-      plaidLoading = null;
-    }
   }
 </script>
 
@@ -132,26 +84,12 @@
               {/if}
             </dl>
           </div>
-          {#if provider.provider_type === "plaid"}
-            <button
-              onclick={() => connectPlaid(provider.name)}
-              disabled={plaidLoading === provider.name}
-              class="btn-approve font-semibold px-5 py-2.5 rounded-lg border-0 cursor-pointer transition-colors text-sm"
-            >
-              {plaidLoading === provider.name
-                ? "Loading…"
-                : provider.status.state === "connected"
-                  ? "Reconnect"
-                  : "Connect"}
-            </button>
-          {:else}
-            <a
-              href="/oauth/authorize/{provider.name}"
-              class="btn-approve font-semibold px-5 py-2.5 rounded-lg border-0 cursor-pointer transition-colors text-sm no-underline"
-            >
-              {provider.status.state === "connected" ? "Reconnect" : "Connect"}
-            </a>
-          {/if}
+          <a
+            href="/oauth/authorize/{provider.name}"
+            class="btn-approve font-semibold px-5 py-2.5 rounded-lg border-0 cursor-pointer transition-colors text-sm no-underline"
+          >
+            {provider.status.state === "connected" ? "Reconnect" : "Connect"}
+          </a>
         </div>
       </div>
     {/each}

@@ -5,7 +5,6 @@ resources:
   - exec-backend-token.yaml
   - oura-client-credentials.sops.yaml
   - google-client-credentials.sops.yaml
-  - plaid-client-credentials.sops.yaml
   - bsc-client-credentials.sops.yaml
   - postgres-cluster.yaml
   - serviceaccount.yaml

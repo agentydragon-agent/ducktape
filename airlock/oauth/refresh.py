@@ -5,7 +5,7 @@ import logging
 from collections.abc import Mapping
 
 from airlock.oauth.k8s_client import K8sTokenStore
-from airlock.oauth.provider import ACCESS_TOKEN_FIELDS, GenericOAuth2Provider, Provider
+from airlock.oauth.provider import ACCESS_TOKEN_FIELDS, GenericOAuth2Provider
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +34,10 @@ def check_scope_drift(
 
 
 async def token_refresh_loop(
-    providers: Mapping[str, Provider], k8s_store: K8sTokenStore, target_namespace: str, check_interval: float = 300
+    providers: Mapping[str, GenericOAuth2Provider],
+    k8s_store: K8sTokenStore,
+    target_namespace: str,
+    check_interval: float = 300,
 ) -> None:
     """Check all provider tokens periodically, refresh if near expiry, and clean up orphaned secrets."""
     known_secret_names = frozenset(
@@ -49,8 +52,7 @@ async def token_refresh_loop(
                 token = await k8s_store.read_token(provider.config.refresh_secret.name, target_namespace)
                 if token is None:
                     continue
-                if isinstance(provider, GenericOAuth2Provider):
-                    check_scope_drift(name, provider.config.scopes, token.scope, warned_scope_drifts)
+                check_scope_drift(name, provider.config.scopes, token.scope, warned_scope_drifts)
                 if not provider.needs_refresh(token):
                     continue
                 logger.info(f"Refreshing token for {name} (expires {token.expires_at})")

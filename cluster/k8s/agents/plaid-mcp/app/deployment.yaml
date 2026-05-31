@@ -20,10 +20,21 @@ spec:
     spec:
       serviceAccountName: plaid-mcp
       enableServiceLinks: false
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: plaid-web
           image: ghcr.io/agentydragon/plaid-mcp-server:devel-20260531112620-6904edd # {"$imagepolicy": "flux-system:plaid-mcp-server"}
           imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsGroup: 1000
+            runAsNonRoot: true
+            runAsUser: 1000
           ports:
             - name: http
               containerPort: 8080

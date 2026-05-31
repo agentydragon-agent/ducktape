@@ -46,7 +46,7 @@ from airlock.models import (
     OAuthProviderStatus,
 )
 from airlock.oauth.k8s_client import K8sTokenStore
-from airlock.oauth.provider import PlaidProvider, Provider
+from airlock.oauth.provider import GenericOAuth2Provider
 from airlock.oauth.refresh import token_refresh_loop
 from airlock.oauth.routes import create_oauth_router
 from airlock.predicates import load_predicate
@@ -77,7 +77,7 @@ def create_app(settings: Settings, *, auth: AuthProvider, include_static: bool =
     server = AirlockServer(settings, predicate=predicate, auth=auth)
     mcp_app = server.http_app(path="/")
 
-    oauth_providers: dict[str, Provider] = {}
+    oauth_providers: dict[str, GenericOAuth2Provider] = {}
     oauth_k8s_store: K8sTokenStore | None = None
     oauth_target_ns: str = ""
 
@@ -92,8 +92,7 @@ def create_app(settings: Settings, *, auth: AuthProvider, include_static: bool =
 
         # SPA catch-all is registered here, AFTER the OAuth router, so that
         # /oauth/* routes are matched first. Registering at module-eval time
-        # shadows the lifespan-added OAuth routes — fetch('/oauth/authorize/plaid')
-        # would otherwise receive index.html instead of the link_token JSON.
+        # shadows the lifespan-added OAuth routes.
         if include_static:
             _html = (_FRONTEND_DIST_DIR / "index.html").read_text()
             app.mount("/static/frontend", StaticFiles(directory=str(_FRONTEND_DIST_DIR)))
@@ -190,23 +189,17 @@ def create_app(settings: Settings, *, auth: AuthProvider, include_static: bool =
         result: list[OAuthProviderStatus] = []
         for name, provider in oauth_providers.items():
             token = await oauth_k8s_store.read_token(provider.config.refresh_secret.name, oauth_target_ns)
-            provider_type = "plaid" if isinstance(provider, PlaidProvider) else "oauth2"
             status = (
                 ConnectedOAuthStatus(expires_at=token.expires_at, scope=token.scope)
                 if token
                 else DisconnectedOAuthStatus()
             )
-            # Plaid uses `products` rather than OAuth scopes; expose those as requested_scopes
-            # so the frontend can use a single field for "what the provider was asked for".
-            requested_scopes = (
-                list(provider.config.products) if isinstance(provider, PlaidProvider) else list(provider.config.scopes)
-            )
             result.append(
                 OAuthProviderStatus(
                     name=name,
                     display_name=provider.config.display_name,
-                    provider_type=provider_type,
-                    requested_scopes=requested_scopes,
+                    provider_type="oauth2",
+                    requested_scopes=list(provider.config.scopes),
                     status=status,
                 )
             )

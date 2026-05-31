@@ -1,17 +1,15 @@
 # plaid_utils
 
-Plaid client for personal bank accounts — pull transactions, balances, and
-credit-card liabilities. Backs the [Plaid MCP server](mcp_server/README.md).
+Plaid client and sync utilities for personal accounts, cards, liabilities, and
+investments. Backs the [Plaid Link management service](mcp_server/README.md).
 
 Named `plaid_utils` (not `plaid`) so the top-level package doesn't collide with the
 official `plaid` SDK — same convention as `openai_utils`.
 
 `client.py` owns the official [`plaid-python`](https://github.com/plaid/plaid-python)
-SDK client lifecycle. `PlaidClient` delegates the raw SDK calls used by sync and MCP tools,
-adds app-level Link helpers, pins urllib3 to certifi's CA bundle, and supports `with
-PlaidClient(...)` for short-lived jobs. The MCP tool layer runs SDK responses through
-`sanitize_for_serialization` and validates them into the typed models in `models.py`, so
-callers get typed objects, not raw dicts.
+SDK client lifecycle. `PlaidClient` delegates the raw SDK calls used by sync,
+adds app-level Link helpers, pins urllib3 to certifi's CA bundle, and supports
+`with PlaidClient(...)` for short-lived jobs.
 
 ## Credentials
 
