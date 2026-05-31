@@ -225,6 +225,15 @@ PowerDNS and Authentik run on CloudNativePG `local-path`.
       first place.
 - Loki + SeaweedFS S3 (MinIO retired 2026-05; Loki/Tempo/Mimir all point at the
   SeaweedFS S3 gateway on OVH):
+  - [ ] **Host log capture**: Add durable Talos node-level log collection for
+        kernel ring buffer / dmesg-equivalent output plus key host services
+        (`machined`, kubelet, containerd, KubePrism). The 2026-05-31
+        `talos-kimsufi-worker-1` wedge left only pod logs in Loki; once Talos
+        API was wedged, `talosctl logs` and `talosctl dmesg` were unavailable
+        and the kernel evidence did not survive reboot. Prefer a privileged
+        node-local collector that writes to Loki or another durable store with
+        labels for `node`, `boot_id`, `talos_service`, and `source`, independent
+        of `talosctl` availability during an incident.
   - [ ] **Phase 3** (future): Off-site backup of log history — replicate the
         OVH SeaweedFS buckets to a second location (Cloudflare R2, AWS S3, or a
         second SeaweedFS instance on Proxmox) for disaster recovery.
