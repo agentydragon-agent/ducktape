@@ -116,6 +116,8 @@ spec:
               drop:
                 - ALL
             runAsNonRoot: true
+            runAsGroup: 1001
+            runAsUser: 1001
           readinessProbe:
             tcpSocket:
               port: 8000
@@ -159,6 +161,8 @@ spec:
               drop:
                 - ALL
             runAsNonRoot: true
+            runAsGroup: 1000
+            runAsUser: 1000
           readinessProbe:
             httpGet:
               path: /healthz
