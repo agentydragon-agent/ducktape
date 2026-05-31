@@ -15,10 +15,10 @@ Browser -> https://plaid-mcp.allegedly.works/link
     - runs initial sync into CNPG Postgres
 
 Claude / MCP client -> https://plaid-db.allegedly.works/mcp
-  Gateway -> mcp-oauth-facade (:8765) -> crystaldba/postgres-mcp (:8000)
+  Gateway -> mcp-oauth-facade (:8765) -> postgres-mcp Streamable HTTP (:8000)
     - Authentik OAuth app: plaid-db-mcp
     - database role: plaid_ro
-    - postgres-mcp access mode: restricted
+    - upstream tool filter keeps the surface focused on read/schema/performance tools
 ```
 
 There are no bespoke Plaid MCP tools in v0. Agents read `links`, `accounts`,

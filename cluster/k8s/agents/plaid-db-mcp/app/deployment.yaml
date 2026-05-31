@@ -6,7 +6,7 @@ metadata:
   labels:
     app.kubernetes.io/name: plaid-db-mcp
   annotations:
-    description: "Read-only Postgres MCP over the Plaid sync database, fronted by mcp-oauth-facade. The MCP uses the plaid_ro role and postgres-mcp restricted mode."
+    description: "Read-only Postgres MCP over the Plaid sync database, fronted by mcp-oauth-facade. The upstream MCP uses Streamable HTTP and connects with the plaid_ro role."
     reloader.stakater.com/auto: "true"
 spec:
   replicas: 1
@@ -22,23 +22,35 @@ spec:
       enableServiceLinks: false
       containers:
         - name: postgres-mcp
-          image: crystaldba/postgres-mcp:0.3.0
+          image: writenotenow/postgres-mcp:sha-ba84229@sha256:36a2b081b4c0ecf7e0f34deb6a312c32c467490881aa8c65d1fea18e9b5609e0
           imagePullPolicy: IfNotPresent
           args:
-            - --access-mode=restricted
-            - --transport=streamable-http
-            - --streamable-http-host=0.0.0.0
-            - --streamable-http-port=8000
+            - --transport
+            - http
+            - --port
+            - "8000"
+            - --server-host
+            - 0.0.0.0
+            - --tool-filter
+            - schema,introspection,monitoring,performance,+pg_read_query,+pg_explain,-codemode
           ports:
             - name: upstream
               containerPort: 8000
               protocol: TCP
           env:
-            - name: DATABASE_URI
+            - name: POSTGRES_URL
               valueFrom:
                 secretKeyRef:
                   name: plaid-mcp-db-readonly
                   key: DATABASE_URL
+            - name: MCP_HOST
+              value: 0.0.0.0
+            - name: MCP_TRANSPORT
+              value: http
+            - name: PORT
+              value: "8000"
+            - name: AUDIT_REDACT
+              value: "true"
           resources:
             requests:
               memory: "128Mi"
