@@ -4,7 +4,7 @@ Plaid v0 runtime package.
 
 The deployed image now runs [`app.py`](app.py): a FastAPI web UI for Plaid Link
 management plus a shared synchronous full-refresh sync engine. The agent-facing
-read path is not this package; it is `crystaldba/postgres-mcp` pointed at the
+read path is not this package; it is EnterpriseDB Pg Airman MCP pointed at the
 synced Postgres database with a read-only role.
 
 ## Entrypoints
