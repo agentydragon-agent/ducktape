@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, Protocol, cast
 from uuid import UUID
 
+from plaid.exceptions import ApiException as PlaidApiException
 from plaid.model.accounts_get_request import AccountsGetRequest
 from plaid.model.investments_holdings_get_request import InvestmentsHoldingsGetRequest
 from plaid.model.investments_transactions_get_request import InvestmentsTransactionsGetRequest
@@ -24,6 +26,8 @@ from plaid_utils.secret_store import SecretStore
 
 
 class PlaidApiLike(Protocol):
+    """Minimal Plaid SDK client surface; generated SDK request/response objects are untyped."""
+
     api_client: Any
 
     def item_get(self, request: Any, /) -> Any: ...
@@ -108,7 +112,7 @@ async def _sync_link_inner(
     captured_at = datetime.now(UTC)
 
     item = await _call(
-        api, storage, run_id, "item/get", "item_get", ItemGetRequest(access_token=access_token), link.item_id
+        api, storage, run_id, "item/get", api.item_get, ItemGetRequest(access_token=access_token), link.item_id
     )
     item_payload = item.get("item", {})
     await storage.upsert_link(
@@ -129,7 +133,7 @@ async def _sync_link_inner(
         storage,
         run_id,
         "accounts/get",
-        "accounts_get",
+        api.accounts_get,
         AccountsGetRequest(access_token=access_token),
         link.item_id,
     )
@@ -151,7 +155,7 @@ async def _sync_link_inner(
             storage,
             run_id,
             "investments/holdings/get",
-            "investments_holdings_get",
+            api.investments_holdings_get,
             InvestmentsHoldingsGetRequest(access_token=access_token),
             link.item_id,
         )
@@ -175,7 +179,7 @@ async def _sync_link_inner(
             storage,
             run_id,
             "liabilities/get",
-            "liabilities_get",
+            api.liabilities_get,
             LiabilitiesGetRequest(access_token=access_token),
             link.item_id,
         )
@@ -197,7 +201,7 @@ async def _fetch_transactions(
             storage,
             run_id,
             "transactions/get",
-            "transactions_get",
+            api.transactions_get,
             TransactionsGetRequest(
                 access_token=access_token,
                 start_date=start,
@@ -228,7 +232,7 @@ async def _fetch_investment_transactions(
             storage,
             run_id,
             "investments/transactions/get",
-            "investments_transactions_get",
+            api.investments_transactions_get,
             InvestmentsTransactionsGetRequest(
                 access_token=access_token,
                 start_date=start,
@@ -251,14 +255,14 @@ async def _call(
     storage: PlaidLinkStorage,
     run_id: UUID,
     endpoint: str,
-    method_name: str,
+    call: Callable[[Any], Any],
     request: Any,
     item_id: str,
 ) -> dict[str, Any]:
     started = time.monotonic()
     request_json = _request_json(request)
     try:
-        response = await asyncio.to_thread(getattr(api, method_name), request)
+        response = await asyncio.to_thread(call, request)
         response_json = cast(dict[str, Any], api.api_client.sanitize_for_serialization(response))
     except Exception as exc:
         await storage.record_api_event(
@@ -269,7 +273,7 @@ async def _call(
                 status="error",
                 duration_ms=int((time.monotonic() - started) * 1000),
                 error_type=type(exc).__name__,
-                error_code=getattr(exc, "status", None),
+                error_code=_plaid_error_code(exc),
                 request_json=redact_payload(request_json),
             )
         )
@@ -294,6 +298,12 @@ def _request_json(request: Any) -> dict[str, Any]:
         return cast(dict[str, Any], request)
     # All non-dict callers pass Plaid SDK request objects.
     return cast(dict[str, Any], request.to_dict())
+
+
+def _plaid_error_code(exc: Exception) -> str | None:
+    if isinstance(exc, PlaidApiException) and exc.status is not None:
+        return str(exc.status)
+    return None
 
 
 def _extract_request_id(response: dict[str, Any]) -> str | None:
