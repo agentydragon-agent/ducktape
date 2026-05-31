@@ -38,9 +38,16 @@ class PublicTokenExchange:
 
 
 class PlaidLinkClient:
-    def __init__(self, creds: PlaidLinkCreds, *, client_name: str = "Plaid MCP") -> None:
+    def __init__(
+        self,
+        creds: PlaidLinkCreds,
+        *,
+        client_name: str = "Plaid MCP",
+        transport: httpx.AsyncBaseTransport | None = None,
+    ) -> None:
         self._creds = creds
         self._client_name = client_name
+        self._transport = transport
 
     async def create_link_token(
         self,
@@ -65,14 +72,35 @@ class PlaidLinkClient:
         }
         if access_token is not None:
             payload["access_token"] = access_token
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(transport=self._transport) as client:
             response = await client.post(f"{self._creds.base_url}/link/token/create", json=payload)
             if response.is_error:
                 raise RuntimeError(f"Plaid /link/token/create {response.status_code}: {response.text}")
             return LinkTokenResult(link_token=response.json()["link_token"], products=products)
 
+    async def create_update_link_token(
+        self, *, access_token: str, redirect_uri: str, client_user_id: str, additional_products: list[str] | None = None
+    ) -> LinkTokenResult:
+        payload: dict[str, Any] = {
+            "client_id": self._creds.client_id,
+            "secret": self._creds.secret,
+            "client_name": self._client_name,
+            "user": {"client_user_id": client_user_id},
+            "country_codes": ["US"],
+            "language": "en",
+            "redirect_uri": redirect_uri,
+            "access_token": access_token,
+        }
+        if additional_products:
+            payload["additional_consented_products"] = additional_products
+        async with httpx.AsyncClient(transport=self._transport) as client:
+            response = await client.post(f"{self._creds.base_url}/link/token/create", json=payload)
+            if response.is_error:
+                raise RuntimeError(f"Plaid /link/token/create {response.status_code}: {response.text}")
+            return LinkTokenResult(link_token=response.json()["link_token"], products=additional_products or [])
+
     async def exchange_public_token(self, public_token: str) -> PublicTokenExchange:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(transport=self._transport) as client:
             response = await client.post(
                 f"{self._creds.base_url}/item/public_token/exchange",
                 json={"client_id": self._creds.client_id, "secret": self._creds.secret, "public_token": public_token},
@@ -82,7 +110,7 @@ class PlaidLinkClient:
             return PublicTokenExchange(access_token=data["access_token"], item_id=data["item_id"])
 
     async def remove_item(self, access_token: str) -> None:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(transport=self._transport) as client:
             response = await client.post(
                 f"{self._creds.base_url}/item/remove",
                 json={"client_id": self._creds.client_id, "secret": self._creds.secret, "access_token": access_token},

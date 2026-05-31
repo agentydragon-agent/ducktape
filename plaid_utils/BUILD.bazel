@@ -84,6 +84,20 @@ py_library(
     ],
 )
 
+py_test(
+    name = "test_plaid_link",
+    srcs = ["test_plaid_link.py"],
+    deps = [
+        ":link_profiles",
+        ":plaid_link",
+        "//:conftest",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_library(
     name = "secret_store",
     srcs = ["secret_store.py"],

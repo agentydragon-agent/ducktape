@@ -45,8 +45,8 @@ free on the Trial plan for teams created on/after 2026-04-15) remain.
 - **Pending → posted:** a `pending` transaction is later replaced by a posted one
   whose `pending_transaction_id` points back to the pending id.
 - **`ITEM_LOGIN_REQUIRED`:** when a bank login expires Plaid returns this error and
-  the Item must be **re-linked via airlock** (airlock owns the Plaid Link flow and
-  the access-token secrets).
+  the Item must be repaired through the Plaid MCP `/link` UI. The UI launches
+  Plaid update mode for the existing Item.
 
 ## Sandbox smoke test
 
@@ -57,10 +57,12 @@ exchanges it for an access_token, pulls `/accounts/get` and `/transactions/sync`
 PLAID_ENV=sandbox bb run //plaid_utils:sandbox_smoke
 ```
 
-## Real-account link
+## Real-account links
 
-Done via airlock's Plaid Link UI (`https://airlock.allegedly.works`), which stores
-the access tokens as k8s secrets. The MCP server consumes those tokens.
+Managed at `https://plaid-mcp.allegedly.works/` or `/link`. The UI creates new Items,
+requests additional consented products through Plaid update mode, repairs Items,
+syncs Items, and removes Items. Access tokens are stored as Kubernetes Secrets in
+the `plaid-mcp` namespace and are not written to Postgres.
 
 ## Rate limits
 

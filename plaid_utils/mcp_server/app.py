@@ -8,10 +8,10 @@ import re
 import sys
 from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any, Literal
 
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Path as ApiPath
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -75,6 +75,28 @@ class LinkTokenRequest(BaseModel):
 class LinkTokenResponse(BaseModel):
     link_token: str
     products: list[str]
+
+
+class LinkUpdateTokenRequest(BaseModel):
+    reason: Literal["repair", "add_scope"] = "repair"
+    profile: LinkProfile | None = None
+    advanced_products: list[str] | None = None
+
+
+class LinkUpdateTokenResponse(BaseModel):
+    link_token: str
+    products: list[str]
+    additional_products: list[str]
+
+
+class CompleteLinkUpdateRequest(BaseModel):
+    profile: LinkProfile | None = None
+    products: list[str] = Field(default_factory=list)
+    sync: bool = True
+
+
+class SyncResponse(BaseModel):
+    run_id: str
 
 
 class ExchangePublicTokenRequest(BaseModel):
@@ -197,8 +219,59 @@ def create_app(
             raise RuntimeError("newly inserted Plaid link disappeared")
         return _link_summary(updated)
 
+    @app.post("/api/links/{item_id}/update-link-token")
+    async def create_update_link_token(
+        item_id: Annotated[str, ApiPath(description="Plaid item_id")], body: LinkUpdateTokenRequest
+    ) -> LinkUpdateTokenResponse:
+        link = await require_storage().get_link(item_id)
+        if link is None:
+            raise HTTPException(404, f"unknown item_id: {item_id}")
+        access_token = await require_secrets().read_access_token(link.access_token_secret)
+        requested = _requested_products_for_update(link, body)
+        additional = [product for product in requested if product not in link.products_authorized]
+        result = await link_client.create_update_link_token(
+            access_token=access_token,
+            redirect_uri=settings.redirect_uri,
+            client_user_id="owner",
+            additional_products=additional if body.reason == "add_scope" else None,
+        )
+        return LinkUpdateTokenResponse(
+            link_token=result.link_token,
+            products=_merge_products(link.products_requested, requested),
+            additional_products=additional,
+        )
+
+    @app.post("/api/links/{item_id}/complete-update")
+    async def complete_link_update(
+        item_id: Annotated[str, ApiPath(description="Plaid item_id")], body: CompleteLinkUpdateRequest
+    ) -> LinkSummary:
+        current = await require_storage().get_link(item_id)
+        if current is None:
+            raise HTTPException(404, f"unknown item_id: {item_id}")
+        products = _merge_products(current.products_requested, body.products)
+        profile = body.profile or current.link_profile
+        link = await require_storage().mark_link_update_succeeded(
+            item_id=item_id, link_profile=profile, products_requested=products
+        )
+        if link is None:
+            raise HTTPException(404, f"unknown item_id: {item_id}")
+        if body.sync:
+            await _sync_one_link(api=api, storage=require_storage(), secrets=require_secrets(), link=link)
+            refreshed = await require_storage().get_link(item_id)
+            if refreshed is not None:
+                link = refreshed
+        return _link_summary(link)
+
+    @app.post("/api/links/{item_id}/sync")
+    async def sync_existing_link(item_id: Annotated[str, ApiPath(description="Plaid item_id")]) -> SyncResponse:
+        link = await require_storage().get_link(item_id)
+        if link is None:
+            raise HTTPException(404, f"unknown item_id: {item_id}")
+        run_id = await _sync_one_link(api=api, storage=require_storage(), secrets=require_secrets(), link=link)
+        return SyncResponse(run_id=str(run_id))
+
     @app.post("/api/links/{item_id}/remove")
-    async def remove_link(item_id: Annotated[str, Field(description="Plaid item_id")]) -> dict[str, str]:
+    async def remove_link(item_id: Annotated[str, ApiPath(description="Plaid item_id")]) -> dict[str, str]:
         link = await require_storage().get_link(item_id)
         if link is None:
             raise HTTPException(404, f"unknown item_id: {item_id}")
@@ -209,6 +282,15 @@ def create_app(
         return {"status": "revoked"}
 
     return app
+
+
+async def _sync_one_link(*, api: Any, storage: PlaidLinkStorage, secrets: SecretStore, link: StoredLink) -> Any:
+    try:
+        return await sync_link(api=api, storage=storage, secrets=secrets, link=link, trigger="manual")
+    except RuntimeError as exc:
+        if "sync already running" in str(exc):
+            raise HTTPException(409, str(exc)) from exc
+        raise
 
 
 async def run_sync(settings: PlaidWebSettings) -> list[str]:
@@ -233,6 +315,21 @@ def main() -> None:
 def _secret_name_for_item(item_id: str) -> str:
     slug = re.sub("[^a-z0-9-]+", "-", item_id.lower()).strip("-")
     return f"plaid-{slug}-access-token"[:253]
+
+
+def _requested_products_for_update(link: StoredLink, body: LinkUpdateTokenRequest) -> list[str]:
+    if body.reason == "repair" or body.profile is None:
+        return link.products_requested
+    return products_for_profile(body.profile, body.advanced_products)
+
+
+def _merge_products(*groups: list[str]) -> list[str]:
+    merged: list[str] = []
+    for group in groups:
+        for product in group:
+            if product not in merged:
+                merged.append(product)
+    return merged
 
 
 def _link_summary(link: StoredLink) -> LinkSummary:
@@ -261,23 +358,40 @@ _LINK_HTML = """<!doctype html>
     <style>
       :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
       body { margin: 0; background: Canvas; color: CanvasText; }
-      main { max-width: 960px; margin: 0 auto; padding: 32px 20px; }
-      header { display: flex; justify-content: space-between; gap: 16px; align-items: center; }
+      main { max-width: 1120px; margin: 0 auto; padding: 32px 20px; }
+      header { display: flex; justify-content: space-between; gap: 16px; align-items: center; flex-wrap: wrap; }
       h1 { font-size: 28px; margin: 0; }
+      h2 { font-size: 18px; margin: 0 0 12px; }
       section { margin-top: 24px; }
-      form { display: grid; grid-template-columns: 1fr 1fr auto; gap: 12px; align-items: end; }
+      form { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(220px, 1fr) auto; gap: 12px; align-items: end; }
       label { display: grid; gap: 6px; font-size: 13px; color: color-mix(in srgb, CanvasText 78%, Canvas); }
-      input, select, button { font: inherit; padding: 8px 10px; border-radius: 6px; border: 1px solid color-mix(in srgb, CanvasText 22%, Canvas); background: Canvas; color: CanvasText; }
-      button { cursor: pointer; background: #276ef1; color: white; border-color: #276ef1; font-weight: 650; }
+      input, select, button { font: inherit; min-height: 38px; padding: 8px 10px; border-radius: 6px; border: 1px solid color-mix(in srgb, CanvasText 22%, Canvas); background: Canvas; color: CanvasText; }
+      button { cursor: pointer; background: #276ef1; color: white; border-color: #276ef1; font-weight: 650; white-space: nowrap; }
+      button.secondary { background: Canvas; color: CanvasText; border-color: color-mix(in srgb, CanvasText 24%, Canvas); }
+      button.danger { background: #b42318; border-color: #b42318; color: white; }
+      button:disabled { opacity: 0.6; cursor: wait; }
       .advanced { display: none; grid-column: 1 / -1; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
       .advanced.visible { display: grid; }
       .check { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid color-mix(in srgb, CanvasText 16%, Canvas); border-radius: 6px; color: CanvasText; }
       .check input { padding: 0; }
-      table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+      .status { min-height: 22px; margin-top: 14px; color: color-mix(in srgb, CanvasText 70%, Canvas); font-size: 14px; }
+      .table-wrap { overflow-x: auto; }
+      table { width: 100%; min-width: 980px; border-collapse: collapse; margin-top: 12px; }
       th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid color-mix(in srgb, CanvasText 14%, Canvas); font-size: 14px; vertical-align: top; }
+      th { font-size: 12px; text-transform: uppercase; color: color-mix(in srgb, CanvasText 58%, Canvas); letter-spacing: 0; }
+      .name { font-weight: 700; }
       .muted { color: color-mix(in srgb, CanvasText 62%, Canvas); }
-      .danger { background: #b42318; border-color: #b42318; }
-      @media (max-width: 720px) { form { grid-template-columns: 1fr; } }
+      .meta { margin-top: 3px; font-size: 12px; overflow-wrap: anywhere; }
+      .pill-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+      .pill { border: 1px solid color-mix(in srgb, CanvasText 16%, Canvas); border-radius: 999px; padding: 3px 8px; font-size: 12px; background: color-mix(in srgb, CanvasText 5%, Canvas); }
+      .actions { display: grid; grid-template-columns: minmax(180px, 1fr) repeat(4, auto); gap: 8px; align-items: center; }
+      .empty { padding: 18px 8px; color: color-mix(in srgb, CanvasText 62%, Canvas); }
+      @media (max-width: 820px) {
+        form { grid-template-columns: 1fr; }
+        .advanced { grid-template-columns: 1fr; }
+        table { min-width: 760px; }
+        .actions { grid-template-columns: 1fr; }
+      }
     </style>
   </head>
   <body>
@@ -289,6 +403,7 @@ _LINK_HTML = """<!doctype html>
         </div>
       </header>
       <section>
+        <h2>Connect Institution</h2>
         <form id="link-form">
           <label>Label <input id="label" placeholder="Chase personal" /></label>
           <label>Data surface
@@ -308,25 +423,101 @@ _LINK_HTML = """<!doctype html>
           </div>
           <button type="submit">Connect</button>
         </form>
+        <div id="status" class="status" role="status"></div>
       </section>
       <section>
-        <h2>Current Links</h2>
-        <table>
-          <thead><tr><th>Institution</th><th>Profile</th><th>Products</th><th>Last Sync</th><th></th></tr></thead>
-          <tbody id="links"></tbody>
-        </table>
+        <h2>Active Links</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Institution</th><th>Access</th><th>Sync</th><th>Actions</th></tr></thead>
+            <tbody id="links"></tbody>
+          </table>
+        </div>
       </section>
     </main>
     <script>
       const pendingKey = 'plaid-link-pending';
+      const profiles = [
+        ['cashflow', 'Cashflow'],
+        ['credit_card_detail', 'Credit card detail'],
+        ['investments_holdings', 'Investment holdings'],
+        ['investments_full', 'Investments full'],
+        ['full_picture', 'Full picture']
+      ];
+      const statusEl = document.getElementById('status');
+
+      function setStatus(message) {
+        statusEl.textContent = message || '';
+      }
+      function escapeHtml(value) {
+        return String(value || '').replace(/[&<>"']/g, char => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[char]));
+      }
+      function pills(products) {
+        if (!products || products.length === 0) return '<span class="muted">none recorded</span>';
+        return `<div class="pill-row">${products.map(product => `<span class="pill">${escapeHtml(product)}</span>`).join('')}</div>`;
+      }
+      function profileSelect(link) {
+        const current = link.link_profile || 'cashflow';
+        return `<select data-role="scope-profile">${profiles.map(([value, label]) => `<option value="${value}" ${value === current ? 'selected' : ''}>${label}</option>`).join('')}</select>`;
+      }
+      async function apiFetch(url, options) {
+        const response = await fetch(url, options);
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(text || `${response.status} ${response.statusText}`);
+        }
+        return response.headers.get('content-type')?.includes('application/json') ? response.json() : response.text();
+      }
+      async function withStatus(message, work) {
+        setStatus(message);
+        document.querySelectorAll('button').forEach(button => { button.disabled = true; });
+        try {
+          const result = await work();
+          return result;
+        } catch (error) {
+          setStatus(error.message || String(error));
+          throw error;
+        } finally {
+          document.querySelectorAll('button').forEach(button => { button.disabled = false; });
+        }
+      }
 
       async function refreshLinks() {
-        const links = await fetch('/api/links').then(r => r.json());
+        const links = await apiFetch('/api/links');
         const tbody = document.getElementById('links');
         tbody.innerHTML = '';
+        if (links.length === 0) {
+          tbody.innerHTML = '<tr><td class="empty" colspan="4">No active Plaid links.</td></tr>';
+          return;
+        }
         for (const link of links) {
           const tr = document.createElement('tr');
-          tr.innerHTML = `<td>${link.label || link.institution_name || link.item_id}<div class="muted">${link.institution_name || ''}</div></td><td>${link.link_profile}</td><td>${link.products_requested.join(', ')}</td><td>${link.last_synced_at || ''}</td><td><button class="danger" data-item="${link.item_id}">Remove</button></td>`;
+          tr.dataset.item = link.item_id;
+          tr.innerHTML = `
+            <td>
+              <div class="name">${escapeHtml(link.label || link.institution_name || link.item_id)}</div>
+              <div class="muted">${escapeHtml(link.institution_name || '')}</div>
+              <div class="meta muted">${escapeHtml(link.item_id)}</div>
+              <div class="meta">Status: ${escapeHtml(link.status)}</div>
+            </td>
+            <td>
+              <div>Requested ${pills(link.products_requested)}</div>
+              <div class="meta muted">Authorized ${pills(link.products_authorized)}</div>
+              <div class="meta muted">Billed ${pills(link.products_billed)}</div>
+            </td>
+            <td>
+              <div>${escapeHtml(link.last_synced_at || 'not synced yet')}</div>
+              <div class="meta muted">Secret: ${escapeHtml(link.access_token_secret)}</div>
+            </td>
+            <td>
+              <div class="actions">
+                ${profileSelect(link)}
+                <button class="secondary" data-action="update">Add scopes</button>
+                <button class="secondary" data-action="repair">Repair</button>
+                <button class="secondary" data-action="sync">Sync</button>
+                <button class="danger" data-action="remove">Remove</button>
+              </div>
+            </td>`;
           tbody.appendChild(tr);
         }
       }
@@ -337,7 +528,7 @@ _LINK_HTML = """<!doctype html>
         document.getElementById('advanced-products').classList.toggle('visible', document.getElementById('profile').value === 'advanced');
       }
       async function exchangePublicToken(public_token, metadata, pending) {
-        await fetch('/api/exchange-public-token', {
+        await apiFetch('/api/exchange-public-token', {
           method: 'POST',
           headers: {'content-type': 'application/json'},
           body: JSON.stringify({
@@ -351,36 +542,97 @@ _LINK_HTML = """<!doctype html>
         });
         sessionStorage.removeItem(pendingKey);
         await refreshLinks();
+        setStatus('Link connected and synced.');
+      }
+      async function completeUpdate(metadata, pending) {
+        await apiFetch(`/api/links/${encodeURIComponent(pending.item_id)}/complete-update`, {
+          method: 'POST',
+          headers: {'content-type': 'application/json'},
+          body: JSON.stringify({profile: pending.profile, products: pending.products, sync: true})
+        });
+        sessionStorage.removeItem(pendingKey);
+        await refreshLinks();
+        setStatus(metadata?.institution?.name ? `Updated ${metadata.institution.name}.` : 'Link updated and synced.');
       }
       function openPlaid(pending, receivedRedirectUri) {
         const handler = Plaid.create({
           token: pending.link_token,
           receivedRedirectUri,
-          onSuccess: async (public_token, metadata) => exchangePublicToken(public_token, metadata, pending)
+          onSuccess: async (public_token, metadata) => {
+            if (pending.mode === 'update') {
+              await completeUpdate(metadata, pending);
+            } else {
+              await exchangePublicToken(public_token, metadata, pending);
+            }
+          },
+          onExit: (error) => {
+            if (error) setStatus(error.display_message || error.error_message || 'Plaid Link exited with an error.');
+          }
         });
         handler.open();
       }
       document.getElementById('links').addEventListener('click', async (event) => {
-        const item = event.target?.dataset?.item;
-        if (!item) return;
-        await fetch(`/api/links/${encodeURIComponent(item)}/remove`, {method: 'POST'});
-        await refreshLinks();
+        const button = event.target.closest('button[data-action]');
+        if (!button) return;
+        const row = button.closest('tr[data-item]');
+        const item = row?.dataset?.item;
+        const action = button.dataset.action;
+        if (!item || !action) return;
+        if (action === 'remove') {
+          if (!window.confirm('Remove this Plaid link and delete its access-token Secret?')) return;
+          await withStatus('Removing link...', async () => {
+            await apiFetch(`/api/links/${encodeURIComponent(item)}/remove`, {method: 'POST'});
+            await refreshLinks();
+            setStatus('Link removed.');
+          });
+          return;
+        }
+        if (action === 'sync') {
+          await withStatus('Syncing link...', async () => {
+            const result = await apiFetch(`/api/links/${encodeURIComponent(item)}/sync`, {method: 'POST'});
+            await refreshLinks();
+            setStatus(`Sync completed: ${result.run_id}`);
+          });
+          return;
+        }
+        const body = action === 'repair'
+          ? {reason: 'repair'}
+          : {reason: 'add_scope', profile: row.querySelector('[data-role="scope-profile"]').value};
+        await withStatus(action === 'repair' ? 'Opening Plaid repair flow...' : 'Opening Plaid scope request...', async () => {
+          const token = await apiFetch(`/api/links/${encodeURIComponent(item)}/update-link-token`, {
+            method: 'POST',
+            headers: {'content-type': 'application/json'},
+            body: JSON.stringify(body)
+          });
+          const pending = {
+            mode: 'update',
+            item_id: item,
+            profile: body.profile || null,
+            products: token.products,
+            link_token: token.link_token
+          };
+          sessionStorage.setItem(pendingKey, JSON.stringify(pending));
+          openPlaid(pending);
+        });
       });
       document.getElementById('profile').addEventListener('change', setAdvancedVisibility);
       document.getElementById('link-form').addEventListener('submit', async (event) => {
         event.preventDefault();
-        const profile = document.getElementById('profile').value;
-        const label = document.getElementById('label').value || null;
-        const advanced_products = profile === 'advanced' ? advancedProducts() : null;
-        const token = await fetch('/api/link-token', {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({profile, advanced_products})}).then(r => r.json());
-        const pending = {profile, products: token.products, label, link_token: token.link_token};
-        sessionStorage.setItem(pendingKey, JSON.stringify(pending));
-        openPlaid(pending);
+        await withStatus('Creating Plaid Link session...', async () => {
+          const profile = document.getElementById('profile').value;
+          const label = document.getElementById('label').value || null;
+          const advanced_products = profile === 'advanced' ? advancedProducts() : null;
+          const token = await apiFetch('/api/link-token', {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({profile, advanced_products})});
+          const pending = {mode: 'new', profile, products: token.products, label, link_token: token.link_token};
+          sessionStorage.setItem(pendingKey, JSON.stringify(pending));
+          openPlaid(pending);
+        });
       });
       setAdvancedVisibility();
       refreshLinks();
       const pending = JSON.parse(sessionStorage.getItem(pendingKey) || 'null');
       if (pending && new URLSearchParams(window.location.search).has('oauth_state_id')) {
+        setStatus('Completing Plaid redirect...');
         openPlaid(pending, window.location.href);
       }
     </script>

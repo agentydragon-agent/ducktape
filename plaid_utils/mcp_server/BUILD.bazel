@@ -152,6 +152,19 @@ py_library(
 )
 
 py_test(
+    name = "test_app",
+    srcs = ["test_app.py"],
+    deps = [
+        ":app",
+        "//plaid_utils:link_profiles",
+        "//plaid_utils:link_store",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_server",
     srcs = ["test_server.py"],
     deps = [

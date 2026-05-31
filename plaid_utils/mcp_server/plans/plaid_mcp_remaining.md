@@ -4,22 +4,9 @@ _Updated 2026-05-31._
 
 ## Current State
 
-v0 now has the Plaid Link UI, product-profile selection, access-token Secrets, CNPG Postgres, Plaid-shaped synced tables, append-only API/sync audit tables, the 12-hour full-refresh CronJob, and the read-only SQL MCP surface at `plaid-db.allegedly.works`.
+v0 now has the Plaid Link management UI at `https://plaid-mcp.allegedly.works/` and `/link`, product-profile selection, access-token Secrets, CNPG Postgres, Plaid-shaped synced tables, append-only API/sync audit tables, the 12-hour full-refresh CronJob, and the read-only SQL MCP surface at `plaid-db.allegedly.works`.
 
 The agent-facing read path is intentionally Postgres SQL only. There are no v0 bespoke Plaid MCP tools.
-
-## Immediate Rollout
-
-1. Finish replacing the Postgres MCP upstream with `enterprisedb/pg-airman-mcp`.
-   - Image: `enterprisedb/pg-airman-mcp:latest@sha256:99fb30356e66b7ebd816dbbbf70a29f091bcc1db09cf952bc719f10a05818c04`.
-   - Runtime: `--access-mode=restricted --transport=streamable-http --streamable-http-host=0.0.0.0 --streamable-http-port=8000`.
-   - Database URL: `AIRMAN_MCP_DATABASE_URL` from `plaid-mcp-db-readonly`.
-2. Push and let Flux apply the change.
-3. Verify:
-   - `plaid-db-mcp` pod is ready and Pg Airman logs show Streamable HTTP on port 8000.
-   - `https://plaid-db.allegedly.works/mcp` still returns the OAuth challenge before auth.
-   - An authenticated MCP client can run SELECT queries against `links`, `accounts`, `transactions`, holdings, liabilities, `sync_runs`, and `plaid_api_events`.
-   - The `plaid_ro` role rejects writes.
 
 ## Cutover From Airlock
 
@@ -37,7 +24,7 @@ Remaining cutover work:
 
 ## New Link Validation
 
-Use `https://plaid-mcp.allegedly.works/link` to add investment-capable institutions.
+Use `https://plaid-mcp.allegedly.works/` or `/link` to add investment-capable institutions.
 
 Priority links:
 
@@ -50,7 +37,7 @@ For each new Item:
 2. Confirm a Kubernetes access-token Secret and `links` row are created.
 3. Run or wait for sync.
 4. Verify SQL rows for accounts, holdings, securities, investment transactions where available, balances, and `plaid_api_events`.
-5. Verify the UI remove/repair path before unwiring Airlock.
+5. Verify the UI scope-upgrade, sync, remove, and repair paths before unwiring Airlock.
 
 ## v0 Hardening
 

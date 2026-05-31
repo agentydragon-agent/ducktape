@@ -318,6 +318,21 @@ class PlaidLinkStorage:
                 row.updated_at = _utcnow()
                 await session.commit()
 
+    async def mark_link_update_succeeded(
+        self, *, item_id: str, link_profile: LinkProfile, products_requested: list[str]
+    ) -> StoredLink | None:
+        async with self._session_factory() as session:
+            row = await session.get(_LinkRow, item_id)
+            if row is None:
+                return None
+            row.link_profile = link_profile.value
+            row.products_requested = products_requested
+            row.products_authorized = _merge_products(list(row.products_authorized), products_requested)
+            row.status = "active"
+            row.updated_at = _utcnow()
+            await session.commit()
+            return _stored_link(row)
+
     async def list_active_links(self) -> list[StoredLink]:
         async with self._session_factory() as session:
             rows = (
@@ -580,3 +595,12 @@ def _stored_link(row: _LinkRow) -> StoredLink:
         access_token_secret=row.access_token_secret,
         last_synced_at=row.last_synced_at,
     )
+
+
+def _merge_products(*groups: list[str]) -> list[str]:
+    merged: list[str] = []
+    for group in groups:
+        for product in group:
+            if product not in merged:
+                merged.append(product)
+    return merged

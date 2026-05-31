@@ -30,9 +30,21 @@ The web and sync entrypoints use `PlaidWebSettings`:
 Access tokens are one Kubernetes Secret per Plaid Item and are never stored in
 Postgres. The web UI writes those Secrets; the sync job reads them.
 
+## Link UI
+
+`/` and `/link` both serve the management UI for active Plaid Items. It can:
+
+- create a new Item from a product profile or advanced product checklist;
+- show active Items, requested/authorized/billed products, sync time, and Secret name;
+- launch Plaid update mode to repair or renew an Item;
+- request additional consented products for an existing Item, then sync it;
+- run a manual sync for one Item;
+- remove an Item through `/item/remove`, delete its access-token Secret, and mark it revoked.
+
 ## Deployment
 
 GitOps manifests live under
 [`cluster/k8s/agents/plaid-mcp/`](../../cluster/k8s/agents/plaid-mcp/README.md).
 The human UI is `https://plaid-mcp.allegedly.works/link`; the read-only SQL MCP
-is `https://plaid-db.allegedly.works/mcp`.
+is `https://plaid-db.allegedly.works/mcp`. The domain root
+`https://plaid-mcp.allegedly.works/` serves the same UI for convenience.
