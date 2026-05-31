@@ -43,6 +43,56 @@ spec:
                 secretKeyRef:
                   name: plaid-mcp-db-readonly
                   key: DATABASE_URL
+            - name: PGHOST
+              valueFrom:
+                secretKeyRef:
+                  name: plaid-mcp-db-readonly
+                  key: host
+            - name: PGPORT
+              valueFrom:
+                secretKeyRef:
+                  name: plaid-mcp-db-readonly
+                  key: port
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: plaid-mcp-db-readonly
+                  key: username
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: plaid-mcp-db-readonly
+                  key: password
+            - name: PGDATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: plaid-mcp-db-readonly
+                  key: dbname
+            - name: POSTGRES_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: plaid-mcp-db-readonly
+                  key: host
+            - name: POSTGRES_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: plaid-mcp-db-readonly
+                  key: port
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: plaid-mcp-db-readonly
+                  key: username
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: plaid-mcp-db-readonly
+                  key: password
+            - name: POSTGRES_DATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: plaid-mcp-db-readonly
+                  key: dbname
             - name: MCP_HOST
               value: 0.0.0.0
             - name: MCP_TRANSPORT
