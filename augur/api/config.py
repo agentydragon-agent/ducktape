@@ -200,8 +200,7 @@ def load_augur_config(path: Path) -> Config:
     config = Config.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
     config = _anchor_property_source_paths(config, base_dir=path.parent)
     config = _anchor_exogenous_provider_paths(config, base_dir=path.parent)
-    config = _anchor_calibration_catalog_paths(config, base_dir=path.parent)
-    return config
+    return _anchor_calibration_catalog_paths(config, base_dir=path.parent)
 
 
 def _anchor_calibration_catalog_paths(config: Config, *, base_dir: Path) -> Config:

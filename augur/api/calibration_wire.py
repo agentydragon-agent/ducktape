@@ -36,8 +36,8 @@ class CalibrationSanityBand(ApiModel):
     month: int | None = None
     expected_lower: float | None = None
     expected_upper: float | None = None
-    observed: list[float] = []
-    observed_labels: list[str] = []
+    observed: list[float] = Field(default_factory=list)
+    observed_labels: list[str] = Field(default_factory=list)
     status: Literal["pass", "fail", "skipped"]
     detail: str
 
@@ -81,4 +81,4 @@ class CalibrationRunResponse(ApiModel):
     preset_id: str
     result: CalibrationResult
     mark_fan: MarkFan
-    sanity_bands: list[CalibrationSanityBand] = []
+    sanity_bands: list[CalibrationSanityBand] = Field(default_factory=list)

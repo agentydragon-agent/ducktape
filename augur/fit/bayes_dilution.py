@@ -300,9 +300,9 @@ def fit_bayesian_dilution_prior(
             f"got {len(prices)} prices, {len(valuations)} valuations"
         )
 
-    # prices/valuations are distinct StrictModel subclasses; their join widens to the common base
-    # (no `observed_at`), so min over each typed list separately keeps the attribute access typed.
-    origin = min(min(obs.observed_at for obs in prices), min(obs.observed_at for obs in valuations))
+    price_origin = min(obs.observed_at for obs in prices)
+    valuation_origin = min(obs.observed_at for obs in valuations)
+    origin = min(price_origin, valuation_origin)
     price_t = np.array([_months_since(obs.observed_at, origin) for obs in prices], dtype=np.float64)
     price_y = np.array([np.log(obs.price_usd_per_share) for obs in prices], dtype=np.float64)
     price_s = np.array([obs.uncertainty_log_sigma for obs in prices], dtype=np.float64)

@@ -318,9 +318,7 @@ def test_relative_calibration_catalog_paths_anchor_against_yaml_dir(tmp_path) ->
             _minimal_config(
                 property_source=PropertySourceConfig(properties_path=Path("properties.json")),
                 calibration_catalog=CalibrationCatalogConfig(
-                    catalog_path=Path("catalog.yaml"),
-                    issuer="openai",
-                    sample_sanity_path=Path("sample_sanity.yaml"),
+                    catalog_path=Path("catalog.yaml"), issuer="openai", sample_sanity_path=Path("sample_sanity.yaml")
                 ),
             )
         ),
