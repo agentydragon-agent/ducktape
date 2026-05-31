@@ -10,11 +10,7 @@ import numpy as np
 import yaml
 from pydantic import Field, TypeAdapter, model_validator
 
-from augur.model.exogenous import (
-    ExogenousSamplingRequest,
-    SampledExogenousBundle,
-    validate_sample_satisfies_request,
-)
+from augur.model.exogenous import ExogenousSamplingRequest, SampledExogenousBundle, validate_sample_satisfies_request
 from augur.model.provider_config import (
     CompositeProviderConfig,
     ProviderConfig,
@@ -231,9 +227,7 @@ def evaluate_sample_sanity(spec: SampleSanitySpec, *, base_dir: Path) -> list[Sa
     )
     sampled = model.sample(request)
     validate_sample_satisfies_request(request, sampled)
-    return evaluate_sample_checks(
-        spec, sampled, rollout_count=spec.rollout_count, horizon_months=spec.horizon_months
-    )
+    return evaluate_sample_checks(spec, sampled, rollout_count=spec.rollout_count, horizon_months=spec.horizon_months)
 
 
 def evaluate_sample_checks(
@@ -253,12 +247,12 @@ def evaluate_sample_checks(
         results.extend(
             _evaluate_level_check(level_check, sampled, rollout_count=rollout_count, horizon_months=horizon_months)
         )
-    for event_kind_check in spec.event_kind_observed_checks:
-        results.append(
-            _evaluate_event_kind_check(
-                event_kind_check, sampled, rollout_count=rollout_count, horizon_months=horizon_months
-            )
+    results.extend(
+        _evaluate_event_kind_check(
+            event_kind_check, sampled, rollout_count=rollout_count, horizon_months=horizon_months
         )
+        for event_kind_check in spec.event_kind_observed_checks
+    )
     for mark_check in spec.private_equity_mark_checks:
         results.extend(
             _evaluate_mark_check(mark_check, sampled, rollout_count=rollout_count, horizon_months=horizon_months)
@@ -277,11 +271,7 @@ def evaluate_sample_checks(
 
 
 def _evaluate_level_check(
-    level_check: LevelSeriesSanityCheck,
-    sampled: SampledExogenousBundle,
-    *,
-    rollout_count: int,
-    horizon_months: int,
+    level_check: LevelSeriesSanityCheck, sampled: SampledExogenousBundle, *, rollout_count: int, horizon_months: int
 ) -> list[SanityBandResult]:
     series_id = level_check.key.wire_id
     levels = sampled.level_matrix(level_check.key, rollout_count=rollout_count, horizon_months=horizon_months)
@@ -306,34 +296,76 @@ def _evaluate_level_check(
     for value_bound in level_check.value_percentile_bounds:
         label = f"{series_id} value m{value_bound.month}"
         if value_bound.month > horizon_months:
-            results.append(_skip_percentile_bound(value_bound, series_id=series_id, label=label, month=value_bound.month, horizon_months=horizon_months))
+            results.append(
+                _skip_percentile_bound(
+                    value_bound,
+                    series_id=series_id,
+                    label=label,
+                    month=value_bound.month,
+                    horizon_months=horizon_months,
+                )
+            )
             continue
-        results.append(_check_percentile_bound(levels[:, value_bound.month], value_bound, series_id=series_id, label=label))
+        results.append(
+            _check_percentile_bound(levels[:, value_bound.month], value_bound, series_id=series_id, label=label)
+        )
     for value_range in level_check.value_percentile_ranges:
         label = f"{series_id} value m{value_range.month}"
         if value_range.month > horizon_months:
-            results.append(_skip_percentile_range_bound(value_range, series_id=series_id, label=label, month=value_range.month, horizon_months=horizon_months))
+            results.append(
+                _skip_percentile_range_bound(
+                    value_range,
+                    series_id=series_id,
+                    label=label,
+                    month=value_range.month,
+                    horizon_months=horizon_months,
+                )
+            )
             continue
-        results.append(_check_percentile_range_bound(levels[:, value_range.month], value_range, series_id=series_id, label=label))
+        results.append(
+            _check_percentile_range_bound(levels[:, value_range.month], value_range, series_id=series_id, label=label)
+        )
     for ratio_bound in level_check.ratio_percentile_bounds:
         label = f"{series_id} ratio m{ratio_bound.month}/m0"
         if ratio_bound.month > horizon_months:
-            results.append(_skip_percentile_bound(ratio_bound, series_id=series_id, label=label, month=ratio_bound.month, horizon_months=horizon_months))
+            results.append(
+                _skip_percentile_bound(
+                    ratio_bound,
+                    series_id=series_id,
+                    label=label,
+                    month=ratio_bound.month,
+                    horizon_months=horizon_months,
+                )
+            )
             continue
         ratios = levels[:, ratio_bound.month] / levels[:, 0]
         results.append(_check_percentile_bound(ratios, ratio_bound, series_id=series_id, label=label))
     for ratio_range in level_check.ratio_percentile_ranges:
         label = f"{series_id} ratio m{ratio_range.month}/m0"
         if ratio_range.month > horizon_months:
-            results.append(_skip_percentile_range_bound(ratio_range, series_id=series_id, label=label, month=ratio_range.month, horizon_months=horizon_months))
+            results.append(
+                _skip_percentile_range_bound(
+                    ratio_range,
+                    series_id=series_id,
+                    label=label,
+                    month=ratio_range.month,
+                    horizon_months=horizon_months,
+                )
+            )
             continue
         ratios = levels[:, ratio_range.month] / levels[:, 0]
         results.append(_check_percentile_range_bound(ratios, ratio_range, series_id=series_id, label=label))
     for threshold_bound in level_check.threshold_probability_bounds:
         if threshold_bound.month > horizon_months:
-            results.append(_skip_threshold_probability_bound(threshold_bound, series_id=series_id, horizon_months=horizon_months))
+            results.append(
+                _skip_threshold_probability_bound(threshold_bound, series_id=series_id, horizon_months=horizon_months)
+            )
             continue
-        results.append(_check_threshold_probability_bound(levels, threshold_bound, series_id=series_id, rollout_count=rollout_count))
+        results.append(
+            _check_threshold_probability_bound(
+                levels, threshold_bound, series_id=series_id, rollout_count=rollout_count
+            )
+        )
     return results
 
 
@@ -367,22 +399,42 @@ def _evaluate_mark_check(
     for ratio_bound in mark_check.ratio_percentile_bounds:
         label = f"{series_id} ratio m{ratio_bound.month}/m0"
         if ratio_bound.month > horizon_months:
-            results.append(_skip_percentile_bound(ratio_bound, series_id=series_id, label=label, month=ratio_bound.month, horizon_months=horizon_months))
+            results.append(
+                _skip_percentile_bound(
+                    ratio_bound,
+                    series_id=series_id,
+                    label=label,
+                    month=ratio_bound.month,
+                    horizon_months=horizon_months,
+                )
+            )
             continue
         ratios = marks[:, ratio_bound.month] / marks[:, 0]
         results.append(_check_percentile_bound(ratios, ratio_bound, series_id=series_id, label=label))
     for ratio_range in mark_check.ratio_percentile_ranges:
         label = f"{series_id} ratio m{ratio_range.month}/m0"
         if ratio_range.month > horizon_months:
-            results.append(_skip_percentile_range_bound(ratio_range, series_id=series_id, label=label, month=ratio_range.month, horizon_months=horizon_months))
+            results.append(
+                _skip_percentile_range_bound(
+                    ratio_range,
+                    series_id=series_id,
+                    label=label,
+                    month=ratio_range.month,
+                    horizon_months=horizon_months,
+                )
+            )
             continue
         ratios = marks[:, ratio_range.month] / marks[:, 0]
         results.append(_check_percentile_range_bound(ratios, ratio_range, series_id=series_id, label=label))
     for threshold_bound in mark_check.threshold_probability_bounds:
         if threshold_bound.month > horizon_months:
-            results.append(_skip_threshold_probability_bound(threshold_bound, series_id=series_id, horizon_months=horizon_months))
+            results.append(
+                _skip_threshold_probability_bound(threshold_bound, series_id=series_id, horizon_months=horizon_months)
+            )
             continue
-        results.append(_check_threshold_probability_bound(marks, threshold_bound, series_id=series_id, rollout_count=rollout_count))
+        results.append(
+            _check_threshold_probability_bound(marks, threshold_bound, series_id=series_id, rollout_count=rollout_count)
+        )
     return results
 
 
@@ -402,11 +454,7 @@ def _evaluate_event_kind_check(
 
 
 def _evaluate_event_check(
-    event_check: EventSeriesSanityCheck,
-    sampled: SampledExogenousBundle,
-    *,
-    rollout_count: int,
-    horizon_months: int,
+    event_check: EventSeriesSanityCheck, sampled: SampledExogenousBundle, *, rollout_count: int, horizon_months: int
 ) -> list[SanityBandResult]:
     series_id = f"PE issuer {event_check.issuer_id!r} sale_opportunity_active"
     events = sampled.private_equity.issuer_bool_matrix(
@@ -428,12 +476,12 @@ def _evaluate_event_check(
                 observed_label=f"p{active_count_bound.percentile:g}",
             )
         )
-    for active_count_range in event_check.active_count_percentile_ranges:
-        results.append(
-            _check_percentile_count_range_bound(
-                active_counts, active_count_range, series_id=series_id, label=f"{event_check.issuer_id} active-count"
-            )
+    results.extend(
+        _check_percentile_count_range_bound(
+            active_counts, active_count_range, series_id=series_id, label=f"{event_check.issuer_id} active-count"
         )
+        for active_count_range in event_check.active_count_percentile_ranges
+    )
     return results
 
 

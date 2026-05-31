@@ -20,11 +20,7 @@ from augur.api.config import Config, load_augur_config
 from augur.api.server import create_app_from_augur_config
 from augur.calibration.catalog import MarketCatalog
 from augur.calibration.testing import mock_manifold_client
-from augur.model.sample_sanity import (
-    LevelSeriesSanityCheck,
-    PrivateEquityMarkSanityCheck,
-    SampleSanitySpec,
-)
+from augur.model.sample_sanity import LevelSeriesSanityCheck, PrivateEquityMarkSanityCheck, SampleSanitySpec
 from augur.model.series import IssuerId, SP500Key
 from util.bazel.runfiles import get_required_path
 
@@ -141,9 +137,7 @@ def _config_with_sample_sanity(tmp_path: Path) -> Config:
         required_level_series=(SP500Key(),),
         required_private_equity_issuers=(IssuerId("openai"),),
         level_checks=(LevelSeriesSanityCheck(key=SP500Key(), initial_value=1.0),),
-        private_equity_mark_checks=(
-            PrivateEquityMarkSanityCheck(issuer_id=IssuerId("openai"), initial_value=100.0),
-        ),
+        private_equity_mark_checks=(PrivateEquityMarkSanityCheck(issuer_id=IssuerId("openai"), initial_value=100.0),),
     )
     spec_path = tmp_path / "sample_sanity.yaml"
     spec_path.write_text(yaml.safe_dump(spec.model_dump(mode="json")), encoding="utf-8")
@@ -156,9 +150,7 @@ def _config_with_sample_sanity(tmp_path: Path) -> Config:
 
 def test_run_calibration_includes_sample_sanity_bands(tmp_path: Path) -> None:
     with _client_for(_config_with_sample_sanity(tmp_path)) as client:
-        response = client.post(
-            "/api/calibration/run", json={"horizon_months": 24, "rollouts": 16, "seed": 1701}
-        )
+        response = client.post("/api/calibration/run", json={"horizon_months": 24, "rollouts": 16, "seed": 1701})
     assert response.status_code == 200, response.text
     bands = response.json()["sanity_bands"]
     assert bands

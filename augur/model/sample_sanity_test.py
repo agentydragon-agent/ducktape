@@ -72,7 +72,8 @@ def test_evaluate_sample_checks_reports_pass_and_fail() -> None:
     assert any("2000" in failure.detail and "3000" in failure.detail for failure in failures)
     # The passing range band records the observed percentile values it bounded.
     passing_ranges = [r for r in results if r.kind == "percentile_range" and r.status == "pass"]
-    assert passing_ranges and all(r.observed == (_SP500_LEVEL, _SP500_LEVEL) for r in passing_ranges)
+    assert passing_ranges
+    assert all(r.observed == (_SP500_LEVEL, _SP500_LEVEL) for r in passing_ranges)
 
 
 def test_evaluate_sample_checks_skips_bands_beyond_sampled_horizon() -> None:
@@ -81,10 +82,7 @@ def test_evaluate_sample_checks_skips_bands_beyond_sampled_horizon() -> None:
     far_band = PercentileRangeBound(month=120, lower_percentile=1, upper_percentile=99, lower=900.0, upper=1100.0)
     sampled = _sample_constant_sp500()
     results = evaluate_sample_checks(
-        _spec_with_bands(far_band),
-        sampled,
-        rollout_count=_ROLLOUT_COUNT,
-        horizon_months=_HORIZON_MONTHS,
+        _spec_with_bands(far_band), sampled, rollout_count=_ROLLOUT_COUNT, horizon_months=_HORIZON_MONTHS
     )
 
     skipped = [result for result in results if result.status == "skipped"]
@@ -111,7 +109,8 @@ def test_run_sample_sanity_raises_listing_failed_bands(tmp_path: Path) -> None:
         run_sample_sanity(spec, base_dir=tmp_path)
     message = str(excinfo.value)
     assert "outside expected range" in message
-    assert "2000" in message and "3000" in message
+    assert "2000" in message
+    assert "3000" in message
 
 
 if __name__ == "__main__":
