@@ -3,25 +3,34 @@
 from __future__ import annotations
 
 import contextlib
+import json
 import logging
 import re
 import sys
 from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, Protocol
+from uuid import UUID
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Path as ApiPath
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
+from plaid.exceptions import ApiException as PlaidApiException
+from plaid.model.country_code import CountryCode
+from plaid.model.item_public_token_exchange_request import ItemPublicTokenExchangeRequest
+from plaid.model.item_remove_request import ItemRemoveRequest
+from plaid.model.link_token_create_request import LinkTokenCreateRequest
+from plaid.model.link_token_create_request_user import LinkTokenCreateRequestUser
+from plaid.model.products import Products
 from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from plaid_utils.client import PlaidCreds, plaid_client
 from plaid_utils.link_profiles import LinkProfile, products_for_profile
 from plaid_utils.link_store import PlaidLinkStorage, StoredLink
-from plaid_utils.plaid_link import PlaidLinkClient, PlaidLinkCreds
 from plaid_utils.secret_store import K8sSecretStore, SecretStore
-from plaid_utils.sync import SyncWindows, sync_all, sync_link
+from plaid_utils.sync import PlaidApiLike, SyncWindows, sync_all, sync_link
 
 logger = logging.getLogger(__name__)
 
@@ -122,6 +131,64 @@ class LinkSummary(BaseModel):
     last_synced_at: str | None
 
 
+@dataclass(frozen=True)
+class LinkTokenResult:
+    link_token: str
+    products: list[str]
+
+
+@dataclass(frozen=True)
+class PublicTokenExchange:
+    access_token: str
+    item_id: str
+
+
+class PlaidLinkApiError(RuntimeError):
+    def __init__(self, *, endpoint: str, status_code: int, text: str, payload: dict[str, Any] | None = None) -> None:
+        self.endpoint = endpoint
+        self.status_code = status_code
+        self.text = text
+        self.payload = payload
+        message = payload.get("error_message") if payload else text
+        super().__init__(f"Plaid {endpoint} {status_code}: {message}")
+
+    def public_detail(self) -> dict[str, Any]:
+        detail: dict[str, Any] = {"endpoint": self.endpoint, "status_code": self.status_code}
+        if self.payload:
+            for key in (
+                "error_type",
+                "error_code",
+                "error_message",
+                "display_message",
+                "documentation_url",
+                "request_id",
+            ):
+                if key in self.payload:
+                    detail[key] = self.payload[key]
+        else:
+            detail["error_message"] = self.text
+        return detail
+
+
+class LinkTokenCreateResponse(Protocol):
+    link_token: str
+
+
+class ItemPublicTokenExchangeResponse(Protocol):
+    access_token: str
+    item_id: str
+
+
+class PlaidWebApi(PlaidApiLike, Protocol):
+    """Plaid SDK methods used by the Link management UI."""
+
+    def link_token_create(self, request: LinkTokenCreateRequest, /) -> LinkTokenCreateResponse: ...
+    def item_public_token_exchange(
+        self, request: ItemPublicTokenExchangeRequest, /
+    ) -> ItemPublicTokenExchangeResponse: ...
+    def item_remove(self, request: ItemRemoveRequest, /) -> object: ...
+
+
 class AppState:
     def __init__(self) -> None:
         self.storage: PlaidLinkStorage | None = None
@@ -129,13 +196,16 @@ class AppState:
 
 
 def create_app(
-    settings: PlaidWebSettings, *, storage: PlaidLinkStorage | None = None, secrets: SecretStore | None = None
+    settings: PlaidWebSettings,
+    *,
+    storage: PlaidLinkStorage | None = None,
+    secrets: SecretStore | None = None,
+    api: PlaidWebApi | None = None,
 ) -> FastAPI:
     state = AppState()
-    link_client = PlaidLinkClient(
-        PlaidLinkCreds(client_id=settings.client_id, secret=settings.client_secret, env=settings.plaid_env)
+    plaid_api = api or plaid_client(
+        PlaidCreds(client_id=settings.client_id, secret=settings.client_secret, env=settings.plaid_env)
     )
-    api = plaid_client(PlaidCreds(client_id=settings.client_id, secret=settings.client_secret, env=settings.plaid_env))
 
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -175,23 +245,34 @@ def create_app(
     async def root() -> str:
         return _LINK_HTML
 
+    @app.get("/favicon.ico", include_in_schema=False)
+    async def favicon() -> Response:
+        return Response(status_code=204)
+
     @app.get("/api/links")
     async def list_links() -> list[LinkSummary]:
         return [_link_summary(link) for link in await require_storage().list_active_links()]
 
     @app.post("/api/link-token")
     async def create_link_token(body: LinkTokenRequest) -> LinkTokenResponse:
-        result = await link_client.create_link_token(
-            profile=body.profile,
-            redirect_uri=settings.redirect_uri,
-            client_user_id="owner",
-            advanced_products=body.advanced_products,
-        )
+        try:
+            result = _create_link_token(
+                plaid_api,
+                profile=body.profile,
+                redirect_uri=settings.redirect_uri,
+                client_user_id="owner",
+                advanced_products=body.advanced_products,
+            )
+        except PlaidLinkApiError as exc:
+            raise HTTPException(502, exc.public_detail()) from exc
         return LinkTokenResponse(link_token=result.link_token, products=result.products)
 
     @app.post("/api/exchange-public-token")
     async def exchange_public_token(body: ExchangePublicTokenRequest) -> LinkSummary:
-        exchange = await link_client.exchange_public_token(body.public_token)
+        try:
+            exchange = _exchange_public_token(plaid_api, body.public_token)
+        except PlaidLinkApiError as exc:
+            raise HTTPException(502, exc.public_detail()) from exc
         secret_name = _secret_name_for_item(exchange.item_id)
         await require_secrets().write_access_token(secret_name, exchange.access_token)
         requested = body.products or products_for_profile(body.profile)
@@ -207,7 +288,7 @@ def create_app(
             label=body.label,
         )
         await sync_link(
-            api=api,
+            api=plaid_api,
             storage=require_storage(),
             secrets=require_secrets(),
             link=link,
@@ -229,12 +310,16 @@ def create_app(
         access_token = await require_secrets().read_access_token(link.access_token_secret)
         requested = _requested_products_for_update(link, body)
         additional = [product for product in requested if product not in link.products_authorized]
-        result = await link_client.create_update_link_token(
-            access_token=access_token,
-            redirect_uri=settings.redirect_uri,
-            client_user_id="owner",
-            additional_products=additional if body.reason == "add_scope" else None,
-        )
+        try:
+            result = _create_update_link_token(
+                plaid_api,
+                access_token=access_token,
+                redirect_uri=settings.redirect_uri,
+                client_user_id="owner",
+                additional_products=additional if body.reason == "add_scope" else None,
+            )
+        except PlaidLinkApiError as exc:
+            raise HTTPException(502, exc.public_detail()) from exc
         return LinkUpdateTokenResponse(
             link_token=result.link_token,
             products=_merge_products(link.products_requested, requested),
@@ -256,7 +341,7 @@ def create_app(
         if link is None:
             raise HTTPException(404, f"unknown item_id: {item_id}")
         if body.sync:
-            await _sync_one_link(api=api, storage=require_storage(), secrets=require_secrets(), link=link)
+            await _sync_one_link(api=plaid_api, storage=require_storage(), secrets=require_secrets(), link=link)
             refreshed = await require_storage().get_link(item_id)
             if refreshed is not None:
                 link = refreshed
@@ -267,7 +352,7 @@ def create_app(
         link = await require_storage().get_link(item_id)
         if link is None:
             raise HTTPException(404, f"unknown item_id: {item_id}")
-        run_id = await _sync_one_link(api=api, storage=require_storage(), secrets=require_secrets(), link=link)
+        run_id = await _sync_one_link(api=plaid_api, storage=require_storage(), secrets=require_secrets(), link=link)
         return SyncResponse(run_id=str(run_id))
 
     @app.post("/api/links/{item_id}/remove")
@@ -276,7 +361,10 @@ def create_app(
         if link is None:
             raise HTTPException(404, f"unknown item_id: {item_id}")
         access_token = await require_secrets().read_access_token(link.access_token_secret)
-        await link_client.remove_item(access_token)
+        try:
+            _remove_item(plaid_api, access_token)
+        except PlaidLinkApiError as exc:
+            raise HTTPException(502, exc.public_detail()) from exc
         await require_secrets().delete_access_token(link.access_token_secret)
         await require_storage().mark_link_revoked(item_id)
         return {"status": "revoked"}
@@ -284,7 +372,89 @@ def create_app(
     return app
 
 
-async def _sync_one_link(*, api: Any, storage: PlaidLinkStorage, secrets: SecretStore, link: StoredLink) -> Any:
+def _create_link_token(
+    api: PlaidWebApi,
+    *,
+    profile: LinkProfile,
+    redirect_uri: str,
+    client_user_id: str,
+    advanced_products: list[str] | None = None,
+    client_name: str = "Plaid MCP",
+) -> LinkTokenResult:
+    products = products_for_profile(profile, advanced_products)
+    request = LinkTokenCreateRequest(
+        client_name=client_name,
+        user=LinkTokenCreateRequestUser(client_user_id=client_user_id),
+        products=[Products(product) for product in products],
+        country_codes=[CountryCode("US")],
+        language="en",
+        redirect_uri=redirect_uri,
+        transactions={"days_requested": 730},
+    )
+    try:
+        response = api.link_token_create(request)
+    except PlaidApiException as exc:
+        raise _plaid_api_error("/link/token/create", exc) from exc
+    return LinkTokenResult(link_token=response.link_token, products=products)
+
+
+def _create_update_link_token(
+    api: PlaidWebApi,
+    *,
+    access_token: str,
+    redirect_uri: str,
+    client_user_id: str,
+    additional_products: list[str] | None = None,
+    client_name: str = "Plaid MCP",
+) -> LinkTokenResult:
+    request = LinkTokenCreateRequest(
+        client_name=client_name,
+        user=LinkTokenCreateRequestUser(client_user_id=client_user_id),
+        country_codes=[CountryCode("US")],
+        language="en",
+        redirect_uri=redirect_uri,
+        access_token=access_token,
+    )
+    if additional_products:
+        request.additional_consented_products = [Products(product) for product in additional_products]
+    try:
+        response = api.link_token_create(request)
+    except PlaidApiException as exc:
+        raise _plaid_api_error("/link/token/create", exc) from exc
+    return LinkTokenResult(link_token=response.link_token, products=additional_products or [])
+
+
+def _exchange_public_token(api: PlaidWebApi, public_token: str) -> PublicTokenExchange:
+    try:
+        response = api.item_public_token_exchange(ItemPublicTokenExchangeRequest(public_token=public_token))
+    except PlaidApiException as exc:
+        raise _plaid_api_error("/item/public_token/exchange", exc) from exc
+    return PublicTokenExchange(access_token=response.access_token, item_id=response.item_id)
+
+
+def _remove_item(api: PlaidWebApi, access_token: str) -> None:
+    try:
+        api.item_remove(ItemRemoveRequest(access_token=access_token))
+    except PlaidApiException as exc:
+        raise _plaid_api_error("/item/remove", exc) from exc
+
+
+def _plaid_api_error(endpoint: str, exc: PlaidApiException) -> PlaidLinkApiError:
+    text = str(getattr(exc, "body", None) or exc)
+    payload = None
+    try:
+        parsed = json.loads(text)
+    except ValueError:
+        parsed = None
+    if isinstance(parsed, dict):
+        payload = parsed
+    status_code = int(getattr(exc, "status", None) or 500)
+    return PlaidLinkApiError(endpoint=endpoint, status_code=status_code, text=text, payload=payload)
+
+
+async def _sync_one_link(
+    *, api: PlaidApiLike, storage: PlaidLinkStorage, secrets: SecretStore, link: StoredLink
+) -> UUID:
     try:
         return await sync_link(api=api, storage=storage, secrets=secrets, link=link, trigger="manual")
     except RuntimeError as exc:
@@ -462,11 +632,24 @@ _LINK_HTML = """<!doctype html>
       }
       async function apiFetch(url, options) {
         const response = await fetch(url, options);
+        const contentType = response.headers.get('content-type') || '';
+        const body = contentType.includes('application/json') ? await response.json() : await response.text();
         if (!response.ok) {
-          const text = await response.text();
-          throw new Error(text || `${response.status} ${response.statusText}`);
+          throw new Error(apiErrorMessage(body, response));
         }
-        return response.headers.get('content-type')?.includes('application/json') ? response.json() : response.text();
+        return body;
+      }
+      function apiErrorMessage(body, response) {
+        const detail = body && typeof body === 'object' && 'detail' in body ? body.detail : body;
+        if (detail && typeof detail === 'object') {
+          const bits = [];
+          if (detail.error_code) bits.push(detail.error_code);
+          if (detail.error_message) bits.push(detail.error_message);
+          if (detail.request_id) bits.push(`request ${detail.request_id}`);
+          if (bits.length) return bits.join(': ');
+          return JSON.stringify(detail);
+        }
+        return String(detail || `${response.status} ${response.statusText}`);
       }
       async function withStatus(message, work) {
         setStatus(message);

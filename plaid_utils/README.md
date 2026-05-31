@@ -64,6 +64,10 @@ requests additional consented products through Plaid update mode, repairs Items,
 syncs Items, and removes Items. Access tokens are stored as Kubernetes Secrets in
 the `plaid-mcp` namespace and are not written to Postgres.
 
+All Plaid Link flows use a single Plaid OAuth redirect URI:
+`https://plaid-mcp.allegedly.works/link/callback`. That URI must be allowlisted
+in the Plaid developer dashboard for production Link to work.
+
 ## Rate limits
 
 See <rate_limits.md>.

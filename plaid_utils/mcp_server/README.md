@@ -41,6 +41,10 @@ Postgres. The web UI writes those Secrets; the sync job reads them.
 - run a manual sync for one Item;
 - remove an Item through `/item/remove`, delete its access-token Secret, and mark it revoked.
 
+All new-link and update-mode flows use the same Plaid OAuth redirect URI:
+`https://plaid-mcp.allegedly.works/link/callback`. Keep that allowlisted in the
+Plaid developer dashboard.
+
 ## Deployment
 
 GitOps manifests live under
