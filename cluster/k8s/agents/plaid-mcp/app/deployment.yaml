@@ -22,7 +22,7 @@ spec:
       enableServiceLinks: false
       containers:
         - name: plaid-web
-          image: ghcr.io/agentydragon/plaid-mcp-server:devel-20260531080048-4d7042d # {"$imagepolicy": "flux-system:plaid-mcp-server"}
+          image: ghcr.io/agentydragon/plaid-mcp-server:devel-20260531082111-aeaca6c # {"$imagepolicy": "flux-system:plaid-mcp-server"}
           imagePullPolicy: Always
           ports:
             - name: http
