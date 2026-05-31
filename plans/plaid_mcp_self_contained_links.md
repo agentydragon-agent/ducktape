@@ -28,11 +28,10 @@ existing bank links. (Coinbase is out — Plaid doesn't aggregate it.)
 
 ## Locked decisions
 
-- **Reads = off-the-shelf read-only Postgres MCP over the synced DB.** Recommend
-  `crystaldba/postgres-mcp` in `--access-mode=restricted` (read-only) on **streamable-HTTP**
-  transport (Docker image, actively maintained). The agent reads all Plaid data via SQL; no
-  bespoke read tools. (Avoid the deprecated `@modelcontextprotocol/server-postgres` — known
-  read-only-bypass SQLi.)
+- **Reads = off-the-shelf read-only Postgres MCP over the synced DB.** Use
+  `enterprisedb/pg-airman-mcp` in `--access-mode=restricted` (read-only) on **streamable-HTTP**
+  transport. The agent reads all Plaid data via SQL; no bespoke read tools. (Avoid the deprecated
+  `@modelcontextprotocol/server-postgres` — known read-only-bypass SQLi.)
 - **v0 has a Plaid web service but no bespoke Plaid MCP tools**: `/link` handles add/remove/repair and
   writes access-token Secrets; a sync CronJob writes Postgres; the agent-facing read interface is only
   the read-only Postgres MCP.
@@ -264,7 +263,7 @@ v0 in `cluster/k8s/agents/plaid-mcp/`:
   off the same synchronous sync engine after successful link.
 - **plaid-sync CronJob**: image's `sync` entrypoint, writer `DATABASE_URL` from the CNPG `-app`
   secret, Plaid client credentials, and read access to access-token Secrets. This is not an MCP server.
-- **plaid-db-mcp**: `crystaldba/postgres-mcp --access-mode=restricted
+- **plaid-db-mcp**: `enterprisedb/pg-airman-mcp --access-mode=restricted
 --transport=streamable-http` + its own facade → `plaid-db.allegedly.works`. Reader
   `DATABASE_URL` from `plaid-mcp-db-readonly`. New Authentik app `plaid-db-mcp-oidc`
   (Terraform `agent-machine-access`, restricted to agentydragon), own Service + HTTPRoute +
@@ -315,7 +314,7 @@ Other:
   `readonly-role-provisioner-job.yaml`, `readonly-role.sql` CM, `readonly-secret.sops.yaml`);
   `app/` adds `rbac.yaml` + `cronjob.yaml`, edits `deployment.yaml` (writer env, SA) +
   `configmap.yaml`; delete `items.yaml`, per-token `external-secret.yaml`.
-- `cluster/k8s/agents/plaid-db-mcp/` (new): `deployment.yaml` (postgres-mcp + facade),
+- `cluster/k8s/agents/plaid-db-mcp/` (new): `deployment.yaml` (Pg Airman MCP + facade),
   `service.yaml`, `httproute.yaml` (`plaid-db.allegedly.works`), `configmap.yaml` (facade →
   localhost upstream), `ciliumnetworkpolicy.yaml`; OIDC app `plaid-db-mcp-oidc` via Terraform.
 - `cluster/k8s/agents/airlock/`: `config.yaml`, `deployment.yaml` (drop Plaid).

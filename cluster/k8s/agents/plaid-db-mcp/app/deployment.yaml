@@ -25,85 +25,23 @@ spec:
           type: RuntimeDefault
       containers:
         - name: postgres-mcp
-          image: writenotenow/postgres-mcp:sha-ba84229@sha256:36a2b081b4c0ecf7e0f34deb6a312c32c467490881aa8c65d1fea18e9b5609e0
+          image: enterprisedb/pg-airman-mcp:latest@sha256:99fb30356e66b7ebd816dbbbf70a29f091bcc1db09cf952bc719f10a05818c04
           imagePullPolicy: IfNotPresent
           args:
-            - --transport
-            - http
-            - --port
-            - "8000"
-            - --server-host
-            - 0.0.0.0
-            - --tool-filter
-            - schema,introspection,monitoring,performance,+pg_read_query,+pg_explain,-codemode
+            - --access-mode=restricted
+            - --transport=streamable-http
+            - --streamable-http-host=0.0.0.0
+            - --streamable-http-port=8000
           ports:
             - name: upstream
               containerPort: 8000
               protocol: TCP
           env:
-            - name: POSTGRES_URL
+            - name: AIRMAN_MCP_DATABASE_URL
               valueFrom:
                 secretKeyRef:
                   name: plaid-mcp-db-readonly
                   key: DATABASE_URL
-            - name: PGHOST
-              valueFrom:
-                secretKeyRef:
-                  name: plaid-mcp-db-readonly
-                  key: host
-            - name: PGPORT
-              valueFrom:
-                secretKeyRef:
-                  name: plaid-mcp-db-readonly
-                  key: port
-            - name: PGUSER
-              valueFrom:
-                secretKeyRef:
-                  name: plaid-mcp-db-readonly
-                  key: username
-            - name: PGPASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: plaid-mcp-db-readonly
-                  key: password
-            - name: PGDATABASE
-              valueFrom:
-                secretKeyRef:
-                  name: plaid-mcp-db-readonly
-                  key: dbname
-            - name: POSTGRES_HOST
-              valueFrom:
-                secretKeyRef:
-                  name: plaid-mcp-db-readonly
-                  key: host
-            - name: POSTGRES_PORT
-              valueFrom:
-                secretKeyRef:
-                  name: plaid-mcp-db-readonly
-                  key: port
-            - name: POSTGRES_USER
-              valueFrom:
-                secretKeyRef:
-                  name: plaid-mcp-db-readonly
-                  key: username
-            - name: POSTGRES_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: plaid-mcp-db-readonly
-                  key: password
-            - name: POSTGRES_DATABASE
-              valueFrom:
-                secretKeyRef:
-                  name: plaid-mcp-db-readonly
-                  key: dbname
-            - name: MCP_HOST
-              value: 0.0.0.0
-            - name: MCP_TRANSPORT
-              value: http
-            - name: PORT
-              value: "8000"
-            - name: AUDIT_REDACT
-              value: "true"
           resources:
             requests:
               memory: "128Mi"
@@ -116,8 +54,8 @@ spec:
               drop:
                 - ALL
             runAsNonRoot: true
-            runAsGroup: 1001
-            runAsUser: 1001
+            runAsGroup: 1000
+            runAsUser: 1000
           readinessProbe:
             tcpSocket:
               port: 8000
