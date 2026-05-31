@@ -23,7 +23,7 @@ spec:
           enableServiceLinks: false
           containers:
             - name: sync
-              image: ghcr.io/agentydragon/plaid-mcp-sync:devel-20260530225958-ce17b9c # {"$imagepolicy": "flux-system:plaid-mcp-sync"}
+              image: ghcr.io/agentydragon/plaid-mcp-sync:devel-20260531013707-73e50da # {"$imagepolicy": "flux-system:plaid-mcp-sync"}
               imagePullPolicy: Always
               env:
                 - name: PLAID_MCP_PLAID_ENV
