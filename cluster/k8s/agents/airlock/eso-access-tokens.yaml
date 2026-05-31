@@ -38,3 +38,41 @@ spec:
     dataFrom:
       - extract:
           key: google-access-token
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterExternalSecret
+metadata:
+  name: plaid-chase-access-token
+spec:
+  namespaces:
+    - openclaw-sandbox
+    - claude-sandbox
+  externalSecretSpec:
+    refreshInterval: 1m
+    secretStoreRef:
+      name: kubernetes-airlock-secret-store
+      kind: ClusterSecretStore
+    target:
+      name: plaid-chase-access-token
+    dataFrom:
+      - extract:
+          key: plaid-chase-access-token
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterExternalSecret
+metadata:
+  name: plaid-bofa-access-token
+spec:
+  namespaces:
+    - openclaw-sandbox
+    - claude-sandbox
+  externalSecretSpec:
+    refreshInterval: 1m
+    secretStoreRef:
+      name: kubernetes-airlock-secret-store
+      kind: ClusterSecretStore
+    target:
+      name: plaid-bofa-access-token
+    dataFrom:
+      - extract:
+          key: plaid-bofa-access-token

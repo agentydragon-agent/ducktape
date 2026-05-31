@@ -1,5 +1,17 @@
 # Airlock TODOs
 
+## Plaid migration cleanup
+
+Airlock still owns the current `plaid_chase` and `plaid_bofa` provider stanzas
+during the Plaid v0 rollout. The new `plaid-mcp` service reuses the same
+`plaid-client-credentials` Secret, imports the existing Airlock access tokens,
+and mirrors Plaid data into its own Postgres database.
+
+After `https://plaid-mcp.allegedly.works/link` proves link management works and
+the sync database contains the needed account/transaction/liability data, remove
+the Airlock Plaid providers, their duplicated `PLAID_*` env vars, and the
+Airlock access-token mirrors from `cluster/k8s/agents/airlock/`.
+
 ## OIDCProxy follow-ups
 
 MCP OAuth via `MultiAuth(OIDCProxy + JWTVerifier)` is implemented. Remaining items:
