@@ -1,7 +1,7 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: plaid-mcp
+  name: plaid-db-mcp
   namespace: flux-system
 spec:
   retryInterval: 1m
@@ -10,15 +10,16 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
-  path: ./cluster/k8s/agents/plaid-mcp/app
+  path: ./cluster/k8s/agents/plaid-db-mcp/app
   prune: true
   wait: true
+  dependsOn:
+    - name: gateway
+    - name: plaid-mcp-db
+    - name: valkey
+    - name: agent-machine-access-tf
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment
-      name: plaid-mcp
+      name: plaid-db-mcp
       namespace: plaid-mcp
-  dependsOn:
-    - name: plaid-mcp-namespace
-    - name: plaid-mcp-db
-    - name: external-secrets-config

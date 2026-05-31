@@ -22,6 +22,7 @@ configMapGenerator:
       - blueprints/proxmox-sso.yaml
       - blueprints/goldilocks-sso.yaml
       - blueprints/google-workspace-mcp-sso.yaml
+      - blueprints/plaid-link-sso.yaml
       - blueprints/embedded-outpost.yaml
       - blueprints/airlock-scope-mappings.yaml
       - blueprints/airlock-sso.yaml

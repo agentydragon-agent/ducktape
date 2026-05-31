@@ -4,16 +4,7 @@ metadata:
   name: plaid-mcp-config
   namespace: plaid-mcp
 data:
-  # --- mcp-oauth-facade (front container) ---
-  MCP_FACADE_AUTH__OIDC_ISSUER: "https://auth.allegedly.works/application/o/plaid-mcp/"
-  MCP_FACADE_AUTH__PUBLIC_BASE_URL: "https://plaid-mcp.allegedly.works"
-  MCP_FACADE_FACADE_NAME: "Plaid MCP Facade"
-  MCP_FACADE_UPSTREAM__KIND: "http"
-  MCP_FACADE_UPSTREAM__URL: "http://localhost:8080/mcp"
-  MCP_FACADE_PERSISTENCE__KIND: "valkey"
-  MCP_FACADE_PERSISTENCE__HOST: "plaid-valkey-kimsufi-master.plaid-mcp.svc.cluster.local"
-  MCP_FACADE_PERSISTENCE__DB: "0"
-  # --- plaid-mcp-server (upstream container), non-secret settings ---
   PLAID_MCP_PLAID_ENV: "production"
-  # The item registry is NOT here — it's a YAML file (items.yaml) generated into the
-  # plaid-mcp-items ConfigMap and mounted at /etc/plaid-mcp/items.yaml.
+  PLAID_MCP_PUBLIC_BASE_URL: "https://plaid-mcp.allegedly.works"
+  PLAID_MCP_TRANSACTION_DAYS: "730"
+  PLAID_MCP_INVESTMENT_TRANSACTION_DAYS: "730"
