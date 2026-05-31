@@ -35,11 +35,18 @@ Postgres. The web UI writes those Secrets; the sync job reads them.
 `/` and `/link` both serve the management UI for active Plaid Items. It can:
 
 - create a new Item from a product profile or advanced product checklist;
+- choose the Transactions history depth for new Items and show the recorded or
+  observed history window for active Items;
 - show active Items, requested/authorized/billed products, sync time, and Secret name;
 - launch Plaid update mode to repair or renew an Item;
 - request additional consented products for an existing Item, then sync it;
 - run a manual sync for one Item;
 - remove an Item through `/item/remove`, delete its access-token Secret, and mark it revoked.
+
+Plaid fixes `transactions.days_requested` when Transactions is first added to an
+Item. Existing Items cannot be expanded by sending a larger value later; the UI
+therefore records the value for new links and shows an observed synced range for
+inherited links whose original Link request was not logged.
 
 All new-link and update-mode flows use the same Plaid OAuth redirect URI:
 `https://plaid-mcp.allegedly.works/link/callback`. Keep that allowlisted in the

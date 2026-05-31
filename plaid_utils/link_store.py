@@ -51,6 +51,7 @@ class _LinkRow(_Base):
     label: Mapped[str | None] = mapped_column(String, nullable=True)
     link_profile: Mapped[str] = mapped_column(String, nullable=False)
     products_requested: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    transaction_days_requested: Mapped[int | None] = mapped_column(Integer, nullable=True)
     products_authorized: Mapped[list[str]] = mapped_column(JSON, nullable=False)
     products_billed: Mapped[list[str]] = mapped_column(JSON, nullable=False)
     status: Mapped[str] = mapped_column(String, nullable=False)
@@ -230,11 +231,15 @@ class StoredLink:
     institution_name: str | None
     link_profile: LinkProfile
     products_requested: list[str]
+    transaction_days_requested: int | None
     products_authorized: list[str]
     products_billed: list[str]
     status: str
     access_token_secret: str
     last_synced_at: datetime | None
+    earliest_transaction_date: date | None = None
+    latest_transaction_date: date | None = None
+    synced_transaction_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -279,12 +284,13 @@ class PlaidLinkStorage:
         institution_id: str | None,
         institution_name: str | None,
         label: str | None,
+        transaction_days_requested: int | None = None,
         products_authorized: list[str] | None = None,
         products_billed: list[str] | None = None,
         status: str = "active",
     ) -> StoredLink:
         now = _utcnow()
-        values = {
+        values: dict[str, object] = {
             "item_id": item_id,
             "institution_id": institution_id,
             "institution_name": institution_name,
@@ -297,6 +303,8 @@ class PlaidLinkStorage:
             "access_token_secret": access_token_secret,
             "updated_at": now,
         }
+        if transaction_days_requested is not None:
+            values["transaction_days_requested"] = transaction_days_requested
         insert_values = values | {"created_at": now}
         update_values = {k: v for k, v in values.items() if k != "item_id"}
         stmt = (
@@ -334,13 +342,40 @@ class PlaidLinkStorage:
             return _stored_link(row)
 
     async def list_active_links(self) -> list[StoredLink]:
+        transaction_stats = (
+            select(
+                _TransactionRow.item_id.label("item_id"),
+                func.min(_TransactionRow.date).label("earliest_transaction_date"),
+                func.max(_TransactionRow.date).label("latest_transaction_date"),
+                func.count(_TransactionRow.transaction_id).label("synced_transaction_count"),
+            )
+            .where(_TransactionRow.removed.is_(False))
+            .group_by(_TransactionRow.item_id)
+            .subquery()
+        )
         async with self._session_factory() as session:
             rows = (
                 await session.execute(
-                    select(_LinkRow).where(_LinkRow.status != "revoked").order_by(_LinkRow.institution_name)
+                    select(
+                        _LinkRow,
+                        transaction_stats.c.earliest_transaction_date,
+                        transaction_stats.c.latest_transaction_date,
+                        transaction_stats.c.synced_transaction_count,
+                    )
+                    .outerjoin(transaction_stats, transaction_stats.c.item_id == _LinkRow.item_id)
+                    .where(_LinkRow.status != "revoked")
+                    .order_by(_LinkRow.institution_name)
                 )
-            ).scalars()
-            return [_stored_link(r) for r in rows]
+            ).all()
+            return [
+                _stored_link(
+                    row,
+                    earliest_transaction_date=earliest_transaction_date,
+                    latest_transaction_date=latest_transaction_date,
+                    synced_transaction_count=synced_transaction_count or 0,
+                )
+                for row, earliest_transaction_date, latest_transaction_date, synced_transaction_count in rows
+            ]
 
     async def get_link(self, item_id: str) -> StoredLink | None:
         async with self._session_factory() as session:
@@ -377,9 +412,15 @@ class PlaidLinkStorage:
             row = await session.get(_SyncRunRow, run_id)
             if row is None:
                 raise ValueError(f"sync run not found: {run_id}")
+            finished_at = _utcnow()
             row.status = status
-            row.finished_at = _utcnow()
+            row.finished_at = finished_at
             row.error_summary = error_summary
+            if status == "succeeded" and row.item_id is not None:
+                link = await session.get(_LinkRow, row.item_id)
+                if link is not None:
+                    link.last_synced_at = finished_at
+                    link.updated_at = finished_at
             await session.commit()
 
     async def record_api_event(self, event: ApiEvent) -> None:
@@ -488,10 +529,6 @@ class PlaidLinkStorage:
                     row.removed = True
                     row.removed_at = captured_at
                     row.updated_at = captured_at
-            link = await session.get(_LinkRow, item_id)
-            if link is not None:
-                link.last_synced_at = captured_at
-                link.updated_at = captured_at
             await session.commit()
 
     async def apply_holdings(
@@ -581,7 +618,13 @@ class PlaidLinkStorage:
             await session.commit()
 
 
-def _stored_link(row: _LinkRow) -> StoredLink:
+def _stored_link(
+    row: _LinkRow,
+    *,
+    earliest_transaction_date: date | None = None,
+    latest_transaction_date: date | None = None,
+    synced_transaction_count: int = 0,
+) -> StoredLink:
     return StoredLink(
         item_id=row.item_id,
         label=row.label,
@@ -589,11 +632,15 @@ def _stored_link(row: _LinkRow) -> StoredLink:
         institution_name=row.institution_name,
         link_profile=LinkProfile(row.link_profile),
         products_requested=list(row.products_requested),
+        transaction_days_requested=row.transaction_days_requested,
         products_authorized=list(row.products_authorized),
         products_billed=list(row.products_billed),
         status=row.status,
         access_token_secret=row.access_token_secret,
         last_synced_at=row.last_synced_at,
+        earliest_transaction_date=earliest_transaction_date,
+        latest_transaction_date=latest_transaction_date,
+        synced_transaction_count=synced_transaction_count,
     )
 
 

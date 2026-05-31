@@ -27,7 +27,7 @@ from plaid.model.transactions_get_request import TransactionsGetRequest
 from plaid.model.transactions_get_request_options import TransactionsGetRequestOptions
 from pydantic import BaseModel, Field
 
-from plaid_utils.client import PlaidCreds, plaid_client
+from plaid_utils.client import PlaidClient, PlaidCreds
 from plaid_utils.mcp_server.config import ResolvedItem, ServerSettings
 from plaid_utils.models import (
     Account,
@@ -70,7 +70,8 @@ class PlaidApiClientLike(Protocol):
 class PlaidApiLike(Protocol):
     """The slice of `plaid_api.PlaidApi` the server uses, so tests can inject a fake."""
 
-    api_client: PlaidApiClientLike
+    @property
+    def api_client(self) -> PlaidApiClientLike: ...
 
     def accounts_get(self, request: AccountsGetRequest, /) -> object: ...
     def accounts_balance_get(self, request: AccountsBalanceGetRequest, /) -> object: ...
@@ -235,7 +236,7 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s", stream=sys.stderr)
     settings = ServerSettings()
     items = settings.resolved_items()
-    api = plaid_client(PlaidCreds(client_id=settings.client_id, secret=settings.client_secret, env=settings.plaid_env))
+    api = PlaidClient(PlaidCreds(client_id=settings.client_id, secret=settings.client_secret, env=settings.plaid_env))
     mcp = build_server(api, items)
     logger.info("plaid-mcp listening on %s:%d (items: %s)", settings.host, settings.port, sorted(items))
     uvicorn.run(mcp.http_app(path="/mcp"), host=settings.host, port=settings.port, log_level="info")

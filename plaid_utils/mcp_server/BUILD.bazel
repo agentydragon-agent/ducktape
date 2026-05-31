@@ -156,6 +156,7 @@ py_test(
     srcs = ["test_app.py"],
     deps = [
         ":app",
+        "//plaid_utils:client",
         "//plaid_utils:link_profiles",
         "//plaid_utils:link_store",
         "@pypi//fastapi",

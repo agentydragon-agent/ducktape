@@ -40,7 +40,8 @@ class PlaidApiClientLike(Protocol):
 class PlaidApiLike(Protocol):
     """Minimal Plaid SDK client surface used by the synchronous sync job."""
 
-    api_client: PlaidApiClientLike
+    @property
+    def api_client(self) -> PlaidApiClientLike: ...
 
     def item_get(self, request: ItemGetRequest, /) -> object: ...
     def accounts_get(self, request: AccountsGetRequest, /) -> object: ...
@@ -137,6 +138,7 @@ async def _sync_link_inner(
         access_token_secret=link.access_token_secret,
         link_profile=link.link_profile,
         products_requested=link.products_requested,
+        transaction_days_requested=link.transaction_days_requested,
         products_authorized=item_payload.get("products") or link.products_authorized,
         products_billed=item_payload.get("billed_products") or link.products_billed,
         institution_id=item_payload.get("institution_id") or link.institution_id,

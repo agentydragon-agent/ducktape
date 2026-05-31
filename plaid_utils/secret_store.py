@@ -19,15 +19,22 @@ class SecretStore(Protocol):
 
 
 class K8sSecretStore:
-    def __init__(self, api: client.CoreV1Api, namespace: str, managed_by: str = "plaid-mcp") -> None:
+    def __init__(
+        self, api: client.CoreV1Api, api_client: client.ApiClient, namespace: str, managed_by: str = "plaid-mcp"
+    ) -> None:
         self._api = api
+        self._api_client = api_client
         self._namespace = namespace
         self._managed_by = managed_by
 
     @classmethod
     async def from_incluster(cls, namespace: str, managed_by: str = "plaid-mcp") -> Self:
         config.load_incluster_config()
-        return cls(client.CoreV1Api(), namespace, managed_by)
+        api_client = client.ApiClient()
+        return cls(client.CoreV1Api(api_client), api_client, namespace, managed_by)
+
+    async def close(self) -> None:
+        await self._api_client.close()
 
     async def read_access_token(self, secret_name: str) -> str:
         secret = await self._api.read_namespaced_secret(secret_name, self._namespace)

@@ -3,31 +3,23 @@
 from __future__ import annotations
 
 import contextlib
-import json
 import logging
 import re
 import sys
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated, Any, Literal, Protocol
+from typing import Annotated, Literal, Protocol
 from uuid import UUID
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Path as ApiPath
 from fastapi.responses import HTMLResponse, Response
-from plaid.exceptions import ApiException as PlaidApiException
-from plaid.model.country_code import CountryCode
-from plaid.model.item_public_token_exchange_request import ItemPublicTokenExchangeRequest
-from plaid.model.item_remove_request import ItemRemoveRequest
-from plaid.model.link_token_create_request import LinkTokenCreateRequest
-from plaid.model.link_token_create_request_user import LinkTokenCreateRequestUser
-from plaid.model.products import Products
 from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from plaid_utils.client import PlaidCreds, plaid_client
-from plaid_utils.link_profiles import LinkProfile, products_for_profile
+from plaid_utils.client import LinkTokenResult, PlaidClient, PlaidClientError, PlaidCreds, PublicTokenExchange
+from plaid_utils.link_profiles import LinkProfile, Product, products_for_profile
 from plaid_utils.link_store import PlaidLinkStorage, StoredLink
 from plaid_utils.secret_store import K8sSecretStore, SecretStore
 from plaid_utils.sync import PlaidApiLike, SyncWindows, sync_all, sync_link
@@ -35,6 +27,7 @@ from plaid_utils.sync import PlaidApiLike, SyncWindows, sync_all, sync_link
 logger = logging.getLogger(__name__)
 
 _NS_PATH = Path("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
+_MAX_TRANSACTION_DAYS = 730
 
 
 class PlaidWebSettings(BaseSettings):
@@ -49,8 +42,8 @@ class PlaidWebSettings(BaseSettings):
     managed_by: str = "plaid-mcp"
     host: str = "0.0.0.0"
     port: int = 8080
-    transaction_days: int = 730
-    investment_transaction_days: int = 730
+    transaction_days: int = Field(default=730, ge=1, le=_MAX_TRANSACTION_DAYS)
+    investment_transaction_days: int = Field(default=730, ge=1, le=_MAX_TRANSACTION_DAYS)
 
     @field_validator("public_base_url", mode="after")
     @classmethod
@@ -79,11 +72,18 @@ class PlaidWebSettings(BaseSettings):
 class LinkTokenRequest(BaseModel):
     profile: LinkProfile
     advanced_products: list[str] | None = None
+    transaction_days_requested: int | None = Field(default=None, ge=1, le=_MAX_TRANSACTION_DAYS)
 
 
 class LinkTokenResponse(BaseModel):
     link_token: str
     products: list[str]
+    transaction_days_requested: int | None
+
+
+class WebConfigResponse(BaseModel):
+    transaction_days: int
+    max_transaction_days: int = _MAX_TRANSACTION_DAYS
 
 
 class LinkUpdateTokenRequest(BaseModel):
@@ -112,6 +112,7 @@ class ExchangePublicTokenRequest(BaseModel):
     public_token: str
     profile: LinkProfile
     products: list[str]
+    transaction_days_requested: int | None = Field(default=None, ge=1, le=_MAX_TRANSACTION_DAYS)
     label: str | None = None
     institution_id: str | None = None
     institution_name: str | None = None
@@ -124,6 +125,11 @@ class LinkSummary(BaseModel):
     institution_name: str | None
     link_profile: LinkProfile
     products_requested: list[str]
+    transaction_days_requested: int | None
+    earliest_transaction_date: str | None
+    latest_transaction_date: str | None
+    observed_transaction_history_days: int | None
+    synced_transaction_count: int
     products_authorized: list[str]
     products_billed: list[str]
     status: str
@@ -131,66 +137,36 @@ class LinkSummary(BaseModel):
     last_synced_at: str | None
 
 
-@dataclass(frozen=True)
-class LinkTokenResult:
-    link_token: str
-    products: list[str]
+class PlaidWebClient(PlaidApiLike, Protocol):
+    """Plaid operations used by the Link management UI and sync path."""
 
-
-@dataclass(frozen=True)
-class PublicTokenExchange:
-    access_token: str
-    item_id: str
-
-
-class PlaidLinkApiError(RuntimeError):
-    def __init__(self, *, endpoint: str, status_code: int, text: str, payload: dict[str, Any] | None = None) -> None:
-        self.endpoint = endpoint
-        self.status_code = status_code
-        self.text = text
-        self.payload = payload
-        message = payload.get("error_message") if payload else text
-        super().__init__(f"Plaid {endpoint} {status_code}: {message}")
-
-    def public_detail(self) -> dict[str, Any]:
-        detail: dict[str, Any] = {"endpoint": self.endpoint, "status_code": self.status_code}
-        if self.payload:
-            for key in (
-                "error_type",
-                "error_code",
-                "error_message",
-                "display_message",
-                "documentation_url",
-                "request_id",
-            ):
-                if key in self.payload:
-                    detail[key] = self.payload[key]
-        else:
-            detail["error_message"] = self.text
-        return detail
-
-
-class LinkTokenCreateResponse(Protocol):
-    link_token: str
-
-
-class ItemPublicTokenExchangeResponse(Protocol):
-    access_token: str
-    item_id: str
-
-
-class PlaidWebApi(PlaidApiLike, Protocol):
-    """Plaid SDK methods used by the Link management UI."""
-
-    def link_token_create(self, request: LinkTokenCreateRequest, /) -> LinkTokenCreateResponse: ...
-    def item_public_token_exchange(
-        self, request: ItemPublicTokenExchangeRequest, /
-    ) -> ItemPublicTokenExchangeResponse: ...
-    def item_remove(self, request: ItemRemoveRequest, /) -> object: ...
+    def close(self) -> None: ...
+    def create_link_token(
+        self,
+        *,
+        profile: LinkProfile,
+        redirect_uri: str,
+        client_user_id: str,
+        advanced_products: list[str] | None = None,
+        transaction_days_requested: int = 730,
+        client_name: str = "Plaid MCP",
+    ) -> LinkTokenResult: ...
+    def create_update_link_token(
+        self,
+        *,
+        access_token: str,
+        redirect_uri: str,
+        client_user_id: str,
+        additional_products: list[str] | None = None,
+        client_name: str = "Plaid MCP",
+    ) -> LinkTokenResult: ...
+    def exchange_public_token(self, public_token: str) -> PublicTokenExchange: ...
+    def remove_item(self, access_token: str) -> None: ...
 
 
 class AppState:
     def __init__(self) -> None:
+        self.client: PlaidWebClient | None = None
         self.storage: PlaidLinkStorage | None = None
         self.secrets: SecretStore | None = None
 
@@ -200,24 +176,44 @@ def create_app(
     *,
     storage: PlaidLinkStorage | None = None,
     secrets: SecretStore | None = None,
-    api: PlaidWebApi | None = None,
+    client: PlaidWebClient | None = None,
 ) -> FastAPI:
     state = AppState()
-    plaid_api = api or plaid_client(
-        PlaidCreds(client_id=settings.client_id, secret=settings.client_secret, env=settings.plaid_env)
-    )
 
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        owned_client = None
+        owned_secrets = None
+        if client is None:
+            owned_client = PlaidClient(
+                PlaidCreds(client_id=settings.client_id, secret=settings.client_secret, env=settings.plaid_env)
+            )
+            state.client = owned_client
+        else:
+            state.client = client
         state.storage = storage or await PlaidLinkStorage.initialize(settings.database_url)
-        state.secrets = secrets or await K8sSecretStore.from_incluster(settings.namespace, settings.managed_by)
+        if secrets is None:
+            owned_secrets = await K8sSecretStore.from_incluster(settings.namespace, settings.managed_by)
+            state.secrets = owned_secrets
+        else:
+            state.secrets = secrets
         try:
             yield
         finally:
+            state.client = None
+            if owned_secrets is not None:
+                await owned_secrets.close()
             if storage is None and state.storage is not None:
                 await state.storage.close()
+            if owned_client is not None:
+                owned_client.close()
 
     app = FastAPI(title="Plaid Link Service", docs_url=None, redoc_url=None, lifespan=lifespan)
+
+    def require_client() -> PlaidWebClient:
+        if state.client is None:
+            raise RuntimeError("Plaid client not initialized")
+        return state.client
 
     def require_storage() -> PlaidLinkStorage:
         if state.storage is None:
@@ -253,25 +249,33 @@ def create_app(
     async def list_links() -> list[LinkSummary]:
         return [_link_summary(link) for link in await require_storage().list_active_links()]
 
+    @app.get("/api/config")
+    async def web_config() -> WebConfigResponse:
+        return WebConfigResponse(transaction_days=settings.transaction_days)
+
     @app.post("/api/link-token")
     async def create_link_token(body: LinkTokenRequest) -> LinkTokenResponse:
         try:
-            result = _create_link_token(
-                plaid_api,
+            result = require_client().create_link_token(
                 profile=body.profile,
                 redirect_uri=settings.redirect_uri,
                 client_user_id="owner",
                 advanced_products=body.advanced_products,
+                transaction_days_requested=body.transaction_days_requested or settings.transaction_days,
             )
-        except PlaidLinkApiError as exc:
+        except PlaidClientError as exc:
             raise HTTPException(502, exc.public_detail()) from exc
-        return LinkTokenResponse(link_token=result.link_token, products=result.products)
+        return LinkTokenResponse(
+            link_token=result.link_token,
+            products=result.products,
+            transaction_days_requested=result.transaction_days_requested,
+        )
 
     @app.post("/api/exchange-public-token")
     async def exchange_public_token(body: ExchangePublicTokenRequest) -> LinkSummary:
         try:
-            exchange = _exchange_public_token(plaid_api, body.public_token)
-        except PlaidLinkApiError as exc:
+            exchange = require_client().exchange_public_token(body.public_token)
+        except PlaidClientError as exc:
             raise HTTPException(502, exc.public_detail()) from exc
         secret_name = _secret_name_for_item(exchange.item_id)
         await require_secrets().write_access_token(secret_name, exchange.access_token)
@@ -283,12 +287,14 @@ def create_app(
             products_requested=requested,
             products_authorized=requested,
             products_billed=[],
+            transaction_days_requested=body.transaction_days_requested
+            or (settings.transaction_days if Product.TRANSACTIONS.value in requested else None),
             institution_id=body.institution_id,
             institution_name=body.institution_name,
             label=body.label,
         )
         await sync_link(
-            api=plaid_api,
+            api=require_client(),
             storage=require_storage(),
             secrets=require_secrets(),
             link=link,
@@ -311,14 +317,13 @@ def create_app(
         requested = _requested_products_for_update(link, body)
         additional = [product for product in requested if product not in link.products_authorized]
         try:
-            result = _create_update_link_token(
-                plaid_api,
+            result = require_client().create_update_link_token(
                 access_token=access_token,
                 redirect_uri=settings.redirect_uri,
                 client_user_id="owner",
                 additional_products=additional if body.reason == "add_scope" else None,
             )
-        except PlaidLinkApiError as exc:
+        except PlaidClientError as exc:
             raise HTTPException(502, exc.public_detail()) from exc
         return LinkUpdateTokenResponse(
             link_token=result.link_token,
@@ -341,7 +346,7 @@ def create_app(
         if link is None:
             raise HTTPException(404, f"unknown item_id: {item_id}")
         if body.sync:
-            await _sync_one_link(api=plaid_api, storage=require_storage(), secrets=require_secrets(), link=link)
+            await _sync_one_link(api=require_client(), storage=require_storage(), secrets=require_secrets(), link=link)
             refreshed = await require_storage().get_link(item_id)
             if refreshed is not None:
                 link = refreshed
@@ -352,7 +357,9 @@ def create_app(
         link = await require_storage().get_link(item_id)
         if link is None:
             raise HTTPException(404, f"unknown item_id: {item_id}")
-        run_id = await _sync_one_link(api=plaid_api, storage=require_storage(), secrets=require_secrets(), link=link)
+        run_id = await _sync_one_link(
+            api=require_client(), storage=require_storage(), secrets=require_secrets(), link=link
+        )
         return SyncResponse(run_id=str(run_id))
 
     @app.post("/api/links/{item_id}/remove")
@@ -362,94 +369,14 @@ def create_app(
             raise HTTPException(404, f"unknown item_id: {item_id}")
         access_token = await require_secrets().read_access_token(link.access_token_secret)
         try:
-            _remove_item(plaid_api, access_token)
-        except PlaidLinkApiError as exc:
+            require_client().remove_item(access_token)
+        except PlaidClientError as exc:
             raise HTTPException(502, exc.public_detail()) from exc
         await require_secrets().delete_access_token(link.access_token_secret)
         await require_storage().mark_link_revoked(item_id)
         return {"status": "revoked"}
 
     return app
-
-
-def _create_link_token(
-    api: PlaidWebApi,
-    *,
-    profile: LinkProfile,
-    redirect_uri: str,
-    client_user_id: str,
-    advanced_products: list[str] | None = None,
-    client_name: str = "Plaid MCP",
-) -> LinkTokenResult:
-    products = products_for_profile(profile, advanced_products)
-    request = LinkTokenCreateRequest(
-        client_name=client_name,
-        user=LinkTokenCreateRequestUser(client_user_id=client_user_id),
-        products=[Products(product) for product in products],
-        country_codes=[CountryCode("US")],
-        language="en",
-        redirect_uri=redirect_uri,
-        transactions={"days_requested": 730},
-    )
-    try:
-        response = api.link_token_create(request)
-    except PlaidApiException as exc:
-        raise _plaid_api_error("/link/token/create", exc) from exc
-    return LinkTokenResult(link_token=response.link_token, products=products)
-
-
-def _create_update_link_token(
-    api: PlaidWebApi,
-    *,
-    access_token: str,
-    redirect_uri: str,
-    client_user_id: str,
-    additional_products: list[str] | None = None,
-    client_name: str = "Plaid MCP",
-) -> LinkTokenResult:
-    request = LinkTokenCreateRequest(
-        client_name=client_name,
-        user=LinkTokenCreateRequestUser(client_user_id=client_user_id),
-        country_codes=[CountryCode("US")],
-        language="en",
-        redirect_uri=redirect_uri,
-        access_token=access_token,
-    )
-    if additional_products:
-        request.additional_consented_products = [Products(product) for product in additional_products]
-    try:
-        response = api.link_token_create(request)
-    except PlaidApiException as exc:
-        raise _plaid_api_error("/link/token/create", exc) from exc
-    return LinkTokenResult(link_token=response.link_token, products=additional_products or [])
-
-
-def _exchange_public_token(api: PlaidWebApi, public_token: str) -> PublicTokenExchange:
-    try:
-        response = api.item_public_token_exchange(ItemPublicTokenExchangeRequest(public_token=public_token))
-    except PlaidApiException as exc:
-        raise _plaid_api_error("/item/public_token/exchange", exc) from exc
-    return PublicTokenExchange(access_token=response.access_token, item_id=response.item_id)
-
-
-def _remove_item(api: PlaidWebApi, access_token: str) -> None:
-    try:
-        api.item_remove(ItemRemoveRequest(access_token=access_token))
-    except PlaidApiException as exc:
-        raise _plaid_api_error("/item/remove", exc) from exc
-
-
-def _plaid_api_error(endpoint: str, exc: PlaidApiException) -> PlaidLinkApiError:
-    text = str(getattr(exc, "body", None) or exc)
-    payload = None
-    try:
-        parsed = json.loads(text)
-    except ValueError:
-        parsed = None
-    if isinstance(parsed, dict):
-        payload = parsed
-    status_code = int(getattr(exc, "status", None) or 500)
-    return PlaidLinkApiError(endpoint=endpoint, status_code=status_code, text=text, payload=payload)
 
 
 async def _sync_one_link(
@@ -466,13 +393,16 @@ async def _sync_one_link(
 async def run_sync(settings: PlaidWebSettings) -> list[str]:
     storage = await PlaidLinkStorage.initialize(settings.database_url)
     secrets = await K8sSecretStore.from_incluster(settings.namespace, settings.managed_by)
-    api = plaid_client(PlaidCreds(client_id=settings.client_id, secret=settings.client_secret, env=settings.plaid_env))
     try:
-        run_ids = await sync_all(
-            api=api, storage=storage, secrets=secrets, trigger="cron", windows=settings.sync_windows
-        )
-        return [str(run_id) for run_id in run_ids]
+        with PlaidClient(
+            PlaidCreds(client_id=settings.client_id, secret=settings.client_secret, env=settings.plaid_env)
+        ) as client:
+            run_ids = await sync_all(
+                api=client, storage=storage, secrets=secrets, trigger="cron", windows=settings.sync_windows
+            )
+            return [str(run_id) for run_id in run_ids]
     finally:
+        await secrets.close()
         await storage.close()
 
 
@@ -503,6 +433,9 @@ def _merge_products(*groups: list[str]) -> list[str]:
 
 
 def _link_summary(link: StoredLink) -> LinkSummary:
+    observed_days = None
+    if link.earliest_transaction_date is not None:
+        observed_days = (datetime.now(UTC).date() - link.earliest_transaction_date).days
     return LinkSummary(
         item_id=link.item_id,
         label=link.label,
@@ -510,6 +443,15 @@ def _link_summary(link: StoredLink) -> LinkSummary:
         institution_name=link.institution_name,
         link_profile=link.link_profile,
         products_requested=link.products_requested,
+        transaction_days_requested=link.transaction_days_requested,
+        earliest_transaction_date=link.earliest_transaction_date.isoformat()
+        if link.earliest_transaction_date is not None
+        else None,
+        latest_transaction_date=link.latest_transaction_date.isoformat()
+        if link.latest_transaction_date is not None
+        else None,
+        observed_transaction_history_days=observed_days,
+        synced_transaction_count=link.synced_transaction_count,
         products_authorized=link.products_authorized,
         products_billed=link.products_billed,
         status=link.status,
@@ -533,7 +475,7 @@ _LINK_HTML = """<!doctype html>
       h1 { font-size: 28px; margin: 0; }
       h2 { font-size: 18px; margin: 0 0 12px; }
       section { margin-top: 24px; }
-      form { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(220px, 1fr) auto; gap: 12px; align-items: end; }
+      form { display: grid; grid-template-columns: minmax(160px, 1fr) minmax(220px, 1fr) minmax(170px, 1fr) auto; gap: 12px; align-items: end; }
       label { display: grid; gap: 6px; font-size: 13px; color: color-mix(in srgb, CanvasText 78%, Canvas); }
       input, select, button { font: inherit; min-height: 38px; padding: 8px 10px; border-radius: 6px; border: 1px solid color-mix(in srgb, CanvasText 22%, Canvas); background: Canvas; color: CanvasText; }
       button { cursor: pointer; background: #276ef1; color: white; border-color: #276ef1; font-weight: 650; white-space: nowrap; }
@@ -552,6 +494,7 @@ _LINK_HTML = """<!doctype html>
       .name { font-weight: 700; }
       .muted { color: color-mix(in srgb, CanvasText 62%, Canvas); }
       .meta { margin-top: 3px; font-size: 12px; overflow-wrap: anywhere; }
+      .hidden { display: none; }
       .pill-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
       .pill { border: 1px solid color-mix(in srgb, CanvasText 16%, Canvas); border-radius: 999px; padding: 3px 8px; font-size: 12px; background: color-mix(in srgb, CanvasText 5%, Canvas); }
       .actions { display: grid; grid-template-columns: minmax(180px, 1fr) repeat(4, auto); gap: 8px; align-items: center; }
@@ -586,6 +529,7 @@ _LINK_HTML = """<!doctype html>
               <option value="advanced">Advanced</option>
             </select>
           </label>
+          <label id="transaction-days-wrap">History days <input id="transaction-days" type="number" min="1" max="730" step="1" /></label>
           <div id="advanced-products" class="advanced">
             <label class="check"><input type="checkbox" value="transactions" checked />Transactions</label>
             <label class="check"><input type="checkbox" value="investments" />Investments</label>
@@ -607,6 +551,7 @@ _LINK_HTML = """<!doctype html>
     </main>
     <script>
       const pendingKey = 'plaid-link-pending';
+      let webConfig = {transaction_days: 730, max_transaction_days: 730};
       const profiles = [
         ['cashflow', 'Cashflow'],
         ['credit_card_detail', 'Credit card detail'],
@@ -614,6 +559,13 @@ _LINK_HTML = """<!doctype html>
         ['investments_full', 'Investments full'],
         ['full_picture', 'Full picture']
       ];
+      const profileProducts = {
+        cashflow: ['transactions'],
+        credit_card_detail: ['transactions', 'liabilities'],
+        investments_holdings: ['investments'],
+        investments_full: ['investments'],
+        full_picture: ['transactions', 'investments', 'liabilities']
+      };
       const statusEl = document.getElementById('status');
 
       function setStatus(message) {
@@ -629,6 +581,26 @@ _LINK_HTML = """<!doctype html>
       function profileSelect(link) {
         const current = link.link_profile || 'cashflow';
         return `<select data-role="scope-profile">${profiles.map(([value, label]) => `<option value="${value}" ${value === current ? 'selected' : ''}>${label}</option>`).join('')}</select>`;
+      }
+      function selectedProducts() {
+        const profile = document.getElementById('profile').value;
+        if (profile === 'advanced') return advancedProducts();
+        return profileProducts[profile] || [];
+      }
+      function historySummary(link) {
+        const hasTransactions = (link.products_requested || []).includes('transactions') || (link.products_authorized || []).includes('transactions');
+        if (!hasTransactions) return '<span class="muted">No transaction history requested.</span>';
+        const requested = link.transaction_days_requested === null || link.transaction_days_requested === undefined
+          ? 'Requested: unknown'
+          : `Requested: ${escapeHtml(link.transaction_days_requested)} days`;
+        const count = Number(link.synced_transaction_count || 0).toLocaleString();
+        if (link.observed_transaction_history_days === null || link.observed_transaction_history_days === undefined) {
+          return `${requested}<div class="meta muted">Observed: no synced transactions yet</div>`;
+        }
+        const dates = link.earliest_transaction_date && link.latest_transaction_date
+          ? `, ${escapeHtml(link.earliest_transaction_date)} to ${escapeHtml(link.latest_transaction_date)}`
+          : '';
+        return `${requested}<div class="meta muted">Observed: ${escapeHtml(link.observed_transaction_history_days)} days${dates}, ${count} transactions</div>`;
       }
       async function apiFetch(url, options) {
         const response = await fetch(url, options);
@@ -664,6 +636,12 @@ _LINK_HTML = """<!doctype html>
           document.querySelectorAll('button').forEach(button => { button.disabled = false; });
         }
       }
+      async function loadConfig() {
+        webConfig = await apiFetch('/api/config');
+        const input = document.getElementById('transaction-days');
+        input.max = String(webConfig.max_transaction_days);
+        input.value = String(webConfig.transaction_days);
+      }
 
       async function refreshLinks() {
         const links = await apiFetch('/api/links');
@@ -685,6 +663,7 @@ _LINK_HTML = """<!doctype html>
             </td>
             <td>
               <div>Requested ${pills(link.products_requested)}</div>
+              <div class="meta">${historySummary(link)}</div>
               <div class="meta muted">Authorized ${pills(link.products_authorized)}</div>
               <div class="meta muted">Billed ${pills(link.products_billed)}</div>
             </td>
@@ -708,7 +687,9 @@ _LINK_HTML = """<!doctype html>
         return Array.from(document.querySelectorAll('#advanced-products input:checked')).map(input => input.value);
       }
       function setAdvancedVisibility() {
-        document.getElementById('advanced-products').classList.toggle('visible', document.getElementById('profile').value === 'advanced');
+        const isAdvanced = document.getElementById('profile').value === 'advanced';
+        document.getElementById('advanced-products').classList.toggle('visible', isAdvanced);
+        document.getElementById('transaction-days-wrap').classList.toggle('hidden', !selectedProducts().includes('transactions'));
       }
       async function exchangePublicToken(public_token, metadata, pending) {
         await apiFetch('/api/exchange-public-token', {
@@ -718,6 +699,7 @@ _LINK_HTML = """<!doctype html>
             public_token,
             profile: pending.profile,
             products: pending.products,
+            transaction_days_requested: pending.transaction_days_requested || null,
             label: pending.label,
             institution_id: metadata.institution?.institution_id || null,
             institution_name: metadata.institution?.name || null
@@ -799,25 +781,32 @@ _LINK_HTML = """<!doctype html>
         });
       });
       document.getElementById('profile').addEventListener('change', setAdvancedVisibility);
+      document.getElementById('advanced-products').addEventListener('change', setAdvancedVisibility);
       document.getElementById('link-form').addEventListener('submit', async (event) => {
         event.preventDefault();
         await withStatus('Creating Plaid Link session...', async () => {
           const profile = document.getElementById('profile').value;
           const label = document.getElementById('label').value || null;
           const advanced_products = profile === 'advanced' ? advancedProducts() : null;
-          const token = await apiFetch('/api/link-token', {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({profile, advanced_products})});
-          const pending = {mode: 'new', profile, products: token.products, label, link_token: token.link_token};
+          const selected_products = selectedProducts();
+          const transaction_days_requested = selected_products.includes('transactions') ? Number(document.getElementById('transaction-days').value) : null;
+          const token = await apiFetch('/api/link-token', {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({profile, advanced_products, transaction_days_requested})});
+          const pending = {mode: 'new', profile, products: token.products, transaction_days_requested: token.transaction_days_requested, label, link_token: token.link_token};
           sessionStorage.setItem(pendingKey, JSON.stringify(pending));
           openPlaid(pending);
         });
       });
-      setAdvancedVisibility();
-      refreshLinks();
-      const pending = JSON.parse(sessionStorage.getItem(pendingKey) || 'null');
-      if (pending && new URLSearchParams(window.location.search).has('oauth_state_id')) {
-        setStatus('Completing Plaid redirect...');
-        openPlaid(pending, window.location.href);
+      async function init() {
+        await loadConfig();
+        setAdvancedVisibility();
+        await refreshLinks();
+        const pending = JSON.parse(sessionStorage.getItem(pendingKey) || 'null');
+        if (pending && new URLSearchParams(window.location.search).has('oauth_state_id')) {
+          setStatus('Completing Plaid redirect...');
+          openPlaid(pending, window.location.href);
+        }
       }
+      init().catch(error => setStatus(error.message || String(error)));
     </script>
   </body>
 </html>

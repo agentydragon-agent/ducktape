@@ -18,6 +18,7 @@ py_library(
     srcs = ["client.py"],
     visibility = ["//plaid_utils:__subpackages__"],
     deps = [
+        ":link_profiles",
         "@pypi//certifi",
         "@pypi//plaid_python",
     ],
@@ -28,7 +29,9 @@ py_test(
     srcs = ["test_client.py"],
     deps = [
         ":client",
+        ":link_profiles",
         "@pypi//certifi",
+        "@pypi//plaid_python",
         "@pypi//pytest_bazel",
     ],
 )
@@ -40,6 +43,30 @@ py_test(
         ":link_profiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_link_store",
+    size = "medium",
+    srcs = ["test_link_store.py"],
+    data = [
+        "//third_party/containers:postgres_18",
+        "//third_party/containers:ryuk",
+    ],
+    requires_docker = True,
+    deps = [
+        ":link_profiles",
+        ":link_store",
+        "//:conftest",
+        "//third_party/containers:rlocations",
+        "//util:oci",
+        "//util/testing:postgres",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+        "@pypi//testcontainers",
     ],
 )
 

@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from types import SimpleNamespace
 from typing import cast
 
@@ -14,17 +14,10 @@ from plaid.model.liabilities_get_request import LiabilitiesGetRequest
 from plaid.model.link_token_create_request import LinkTokenCreateRequest
 from plaid.model.transactions_get_request import TransactionsGetRequest
 
+from plaid_utils.client import PlaidClient, PlaidSdkApiLike
 from plaid_utils.link_profiles import LinkProfile
 from plaid_utils.link_store import PlaidLinkStorage, StoredLink
-from plaid_utils.mcp_server.app import (
-    PlaidWebApi,
-    PlaidWebSettings,
-    _create_link_token,
-    _create_update_link_token,
-    _exchange_public_token,
-    _remove_item,
-    create_app,
-)
+from plaid_utils.mcp_server.app import PlaidWebClient, PlaidWebSettings, create_app
 
 
 class _FakeStorage:
@@ -37,11 +30,15 @@ class _FakeStorage:
                 institution_name="Chase",
                 link_profile=LinkProfile.CREDIT_CARD_DETAIL,
                 products_requested=["transactions", "liabilities"],
+                transaction_days_requested=90,
                 products_authorized=["transactions"],
                 products_billed=[],
                 status="active",
                 access_token_secret="plaid-item-123-access-token",
                 last_synced_at=datetime(2026, 5, 31, 12, 0, tzinfo=UTC),
+                earliest_transaction_date=date(2026, 3, 2),
+                latest_transaction_date=date(2026, 5, 30),
+                synced_transaction_count=42,
             )
         ]
 
@@ -109,7 +106,7 @@ def _client() -> TestClient:
             settings,
             storage=cast(PlaidLinkStorage, _FakeStorage()),
             secrets=_FakeSecrets(),
-            api=cast(PlaidWebApi, _FakePlaidApi()),
+            client=cast(PlaidWebClient, PlaidClient(api=cast(PlaidSdkApiLike, _FakePlaidApi()))),
         )
     )
 
@@ -123,6 +120,7 @@ def test_link_ui_exposes_management_actions() -> None:
     assert root_response.status_code == 200
     assert "Connect Institution" in response.text
     assert "Connect Institution" in root_response.text
+    assert "History days" in response.text
     assert "Active Links" in response.text
     assert "Add scopes" in response.text
     assert "Repair" in response.text
@@ -134,6 +132,7 @@ def test_list_links_exposes_product_and_secret_state() -> None:
     with _client() as client:
         response = client.get("/api/links")
 
+    expected_observed_days = (datetime.now(UTC).date() - date(2026, 3, 2)).days
     assert response.status_code == 200
     assert response.json() == [
         {
@@ -143,6 +142,11 @@ def test_list_links_exposes_product_and_secret_state() -> None:
             "institution_name": "Chase",
             "link_profile": "credit_card_detail",
             "products_requested": ["transactions", "liabilities"],
+            "transaction_days_requested": 90,
+            "earliest_transaction_date": "2026-03-02",
+            "latest_transaction_date": "2026-05-30",
+            "observed_transaction_history_days": expected_observed_days,
+            "synced_transaction_count": 42,
             "products_authorized": ["transactions"],
             "products_billed": [],
             "status": "active",
@@ -152,11 +156,19 @@ def test_list_links_exposes_product_and_secret_state() -> None:
     ]
 
 
+def test_web_config_exposes_default_history_depth() -> None:
+    with _client() as client:
+        response = client.get("/api/config")
+
+    assert response.status_code == 200
+    assert response.json() == {"transaction_days": 730, "max_transaction_days": 730}
+
+
 def test_create_link_token_initializes_requested_products() -> None:
     api = _FakePlaidApi()
+    client = PlaidClient(api=cast(PlaidSdkApiLike, api))
 
-    result = _create_link_token(
-        cast(PlaidWebApi, api),
+    result = client.create_link_token(
         profile=LinkProfile.CREDIT_CARD_DETAIL,
         redirect_uri="https://example.test/link/callback",
         client_user_id="owner",
@@ -164,6 +176,7 @@ def test_create_link_token_initializes_requested_products() -> None:
 
     assert result.link_token == "link-token-1"
     assert result.products == ["transactions", "liabilities"]
+    assert result.transaction_days_requested == 730
     assert api.link_token_requests == [
         {
             "client_name": "Plaid MCP",
@@ -177,11 +190,41 @@ def test_create_link_token_initializes_requested_products() -> None:
     ]
 
 
+def test_create_link_token_allows_custom_transaction_history_depth() -> None:
+    api = _FakePlaidApi()
+    client = PlaidClient(api=cast(PlaidSdkApiLike, api))
+
+    result = client.create_link_token(
+        profile=LinkProfile.CASHFLOW,
+        redirect_uri="https://example.test/link/callback",
+        client_user_id="owner",
+        transaction_days_requested=180,
+    )
+
+    assert result.transaction_days_requested == 180
+    assert api.link_token_requests[0]["transactions"] == {"days_requested": 180}
+
+
+def test_create_link_token_omits_transactions_config_without_transactions_product() -> None:
+    api = _FakePlaidApi()
+    client = PlaidClient(api=cast(PlaidSdkApiLike, api))
+
+    result = client.create_link_token(
+        profile=LinkProfile.INVESTMENTS_HOLDINGS,
+        redirect_uri="https://example.test/link/callback",
+        client_user_id="owner",
+    )
+
+    assert result.products == ["investments"]
+    assert result.transaction_days_requested is None
+    assert "transactions" not in api.link_token_requests[0]
+
+
 def test_create_update_link_token_requests_additional_consented_products_only() -> None:
     api = _FakePlaidApi()
+    client = PlaidClient(api=cast(PlaidSdkApiLike, api))
 
-    result = _create_update_link_token(
-        cast(PlaidWebApi, api),
+    result = client.create_update_link_token(
         access_token="access-sandbox-existing",
         redirect_uri="https://example.test/link/callback",
         client_user_id="owner",
@@ -207,8 +250,9 @@ def test_create_update_link_token_requests_additional_consented_products_only() 
 
 def test_exchange_public_token_uses_sdk_request() -> None:
     api = _FakePlaidApi()
+    client = PlaidClient(api=cast(PlaidSdkApiLike, api))
 
-    result = _exchange_public_token(cast(PlaidWebApi, api), "public-sandbox-token")
+    result = client.exchange_public_token("public-sandbox-token")
 
     assert api.exchanged_public_tokens == ["public-sandbox-token"]
     assert result.access_token == "access-sandbox-new"
@@ -217,8 +261,9 @@ def test_exchange_public_token_uses_sdk_request() -> None:
 
 def test_remove_item_uses_sdk_request() -> None:
     api = _FakePlaidApi()
+    client = PlaidClient(api=cast(PlaidSdkApiLike, api))
 
-    _remove_item(cast(PlaidWebApi, api), "access-sandbox-existing")
+    client.remove_item("access-sandbox-existing")
 
     assert api.removed_access_tokens == ["access-sandbox-existing"]
 
