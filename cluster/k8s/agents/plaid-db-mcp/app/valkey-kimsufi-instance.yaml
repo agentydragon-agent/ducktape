@@ -4,7 +4,7 @@ metadata:
   name: plaid-valkey-kimsufi
   namespace: plaid-mcp
   annotations:
-    description: Kimsufi Valkey for Plaid MCP facade OAuth state
+    description: Kimsufi Valkey for the Plaid DB MCP OAuth facade state
 spec:
   clusterSize: 2
   kubernetesConfig:

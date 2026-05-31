@@ -1,83 +1,38 @@
 # plaid_utils/mcp_server
 
-Read-only MCP server over the owner's Plaid-linked bank accounts. Built on the
-[`plaid-python`](../client.py) SDK client (via the `//plaid_utils:client` factory) and FastMCP. The server is
-**auth-oblivious**: it speaks MCP over HTTP on `:8080` and a front proxy
-(`mcp-oauth-facade`) handles Authentik OAuth. One server holds every configured
-item's access token; every tool takes an `item` selector.
+Plaid v0 runtime package.
 
-## Tools
+The deployed image now runs [`app.py`](app.py): a FastAPI web UI for Plaid Link
+management plus a shared synchronous full-refresh sync engine. The agent-facing
+read path is not this package; it is `crystaldba/postgres-mcp` pointed at the
+synced Postgres database with a read-only role.
 
-- `list_items` → `list[ItemSummary]`. Call first — discovers `item` keys and each item's products.
-- `list_accounts(item)` → `list[Account]`. Cached balances (Plaid refreshes 1–4×/day).
-- `list_transactions(item, start_date, end_date, account_id?, offset?, count?)` → `TransactionPage`.
-  Date range + `offset`/`count` pagination; `total` is the full in-range count before slicing.
-  History depth is capped per item at link time (Plaid default 90 days, max 730); queries before
-  the window return empty results, not an error.
-- `get_item_history_window(item)` → `ItemHistoryWindow` (`earliest_date`, `latest_date`,
-  `total_transactions`). Probes /transactions/get twice over a 730-day range to surface the
-  actual history span. Call before issuing wide range queries so a short window isn't mistaken
-  for missing data.
-- `get_liabilities(item)` → `Liabilities` (`credit` / `mortgage` / `student`, each null when the
-  item has none). Only for items with the `liabilities` product; a card's `aprs` is often empty
-  (issuer-dependent). Correlate each entry's `account_id` with `list_accounts` for the name/mask.
-- `get_live_balance(item, account_id?)` → `list[Account]`. Real-time; rate-limited
-  5/min·30/hour per item — use sparingly.
+## Entrypoints
 
-Tools return the typed [`plaid_utils.models`](../models.py) shapes directly — the models already
-cover only the fields exposed, so there's no separate projection layer.
-
-Amount sign on transactions: **positive = money out** (charges/debits), **negative = money
-in** (payments/refunds/deposits). See [`../README.md`](../README.md) for the full set of
-Plaid API warts (`/transactions/get` vs `/sync`, pending→posted, `ITEM_LOGIN_REQUIRED` →
-re-link via airlock).
-
-### Example output
-
-`list_transactions(item="chase", start_date="2026-05-01", end_date="2026-05-31", offset=0, count=50)`:
-
-```json
-{
-  "total": 83,
-  "transactions": [
-    {
-      "transaction_id": "yhKx…",
-      "account_id": "3Wq…",
-      "date": "2026-05-20",
-      "amount": 42.17,
-      "iso_currency_code": "USD",
-      "name": "WHOLE FOODS",
-      "merchant_name": "Whole Foods Market",
-      "personal_finance_category": { "primary": "FOOD_AND_DRINK", "detailed": "FOOD_AND_DRINK_GROCERIES" },
-      "pending": false,
-      "pending_transaction_id": null
-    }
-  ]
-}
-```
+- `//plaid_utils/mcp_server:app_cli` / `server_image`: web UI on `:8080`.
+- `//plaid_utils/mcp_server:sync_cli` / `sync_image`: CronJob entrypoint that
+  refreshes every active link into Postgres.
+- `//plaid_utils/mcp_server:server_cli`: legacy static-item Plaid MCP server kept
+  for tests and comparison; it is not the v0 deployment.
 
 ## Configuration
 
-Scalars via `PLAID_MCP_` env vars (Pydantic `BaseSettings`); the item registry via a YAML file:
+The web and sync entrypoints use `PlaidWebSettings`:
 
 - `PLAID_MCP_PLAID_ENV` — `sandbox` or `production`.
 - `PLAID_MCP_CLIENT_ID` / `PLAID_MCP_CLIENT_SECRET` — Plaid app credentials.
-- `PLAID_MCP_ITEMS_CONFIG_PATH` — path to the item-registry YAML file (default
-  `/etc/plaid-mcp/items.yaml`): a list under `items:` of `{key, institution, products, access_token_env}`.
-- `PLAID_MCP_HOST` / `PLAID_MCP_PORT` — bind address (default `0.0.0.0:8080`).
+- `DATABASE_URL` — writer Postgres URL, usually CNPG secret `plaid-mcp-db-app`.
+- `PLAID_MCP_PUBLIC_BASE_URL` — public UI origin; defaults to
+  `https://plaid-mcp.allegedly.works`.
+- `PLAID_MCP_TRANSACTION_DAYS` / `PLAID_MCP_INVESTMENT_TRANSACTION_DAYS` — v0
+  full-refresh windows.
 
-Each item's access token is read from the env var named by its `access_token_env` (e.g.
-`PLAID_CHASE_ACCESS_TOKEN`), so tokens stay in Secrets and the registry stays a plain YAML file.
-
-## Run locally
-
-```bash
-bb run //plaid_utils/mcp_server:server_cli
-```
+Access tokens are one Kubernetes Secret per Plaid Item and are never stored in
+Postgres. The web UI writes those Secrets; the sync job reads them.
 
 ## Deployment
 
-Standalone public endpoint `plaid-mcp.allegedly.works` (Authentik-gated via the
-`mcp-oauth-facade` sidecar). Manifests and deploy notes:
-[`cluster/k8s/agents/plaid-mcp/`](../../cluster/k8s/agents/plaid-mcp/README.md). Image:
-`ghcr.io/agentydragon/plaid-mcp-server` (built and pushed by CI).
+GitOps manifests live under
+[`cluster/k8s/agents/plaid-mcp/`](../../cluster/k8s/agents/plaid-mcp/README.md).
+The human UI is `https://plaid-mcp.allegedly.works/link`; the read-only SQL MCP
+is `https://plaid-db.allegedly.works/mcp`.

@@ -519,16 +519,11 @@ resource "kubernetes_secret" "postscanmail_mcp_oidc" {
   }
 }
 
-# --- Plaid MCP facade (public OAuth facade, gates access to the owner's Plaid data) ---
-#
-# Same shape as the Manifold facade: confidential OAuth2 client wrapped by
-# OIDCProxy, restricted to agentydragon via a one-user group + policy binding.
-# The downstream Plaid API is reached with the owner's access tokens held by the
-# plaid-mcp-server container (reflected from the airlock namespace), not Authentik.
+# --- Plaid DB MCP facade (public OAuth facade over read-only Postgres MCP) ---
 
-resource "authentik_provider_oauth2" "plaid_mcp" {
-  name               = "plaid-mcp"
-  client_id          = "plaid-mcp"
+resource "authentik_provider_oauth2" "plaid_db_mcp" {
+  name               = "plaid-db-mcp"
+  client_id          = "plaid-db-mcp"
   client_type        = "confidential"
   authorization_flow = data.authentik_flow.implicit_consent.id
   invalidation_flow  = data.authentik_flow.invalidation.id
@@ -547,39 +542,39 @@ resource "authentik_provider_oauth2" "plaid_mcp" {
   allowed_redirect_uris = [
     {
       matching_mode = "strict"
-      url           = "https://plaid-mcp.allegedly.works/auth/callback"
+      url           = "https://plaid-db.allegedly.works/auth/callback"
     },
   ]
 }
 
-resource "authentik_application" "plaid_mcp" {
-  name              = "Plaid MCP Facade"
-  slug              = "plaid-mcp"
-  protocol_provider = authentik_provider_oauth2.plaid_mcp.id
-  meta_description  = "OAuth facade for the Plaid MCP server. Read-only Chase/BofA transactions, balances, and credit-card liabilities; restricted to agentydragon."
-  meta_launch_url   = "https://plaid-mcp.allegedly.works"
+resource "authentik_application" "plaid_db_mcp" {
+  name              = "Plaid DB MCP Facade"
+  slug              = "plaid-db-mcp"
+  protocol_provider = authentik_provider_oauth2.plaid_db_mcp.id
+  meta_description  = "OAuth facade for read-only SQL access to the synced Plaid Postgres database; restricted to agentydragon."
+  meta_launch_url   = "https://plaid-db.allegedly.works"
 }
 
-resource "authentik_group" "plaid_mcp_users" {
-  name  = "plaid-mcp-users"
+resource "authentik_group" "plaid_db_mcp_users" {
+  name  = "plaid-db-mcp-users"
   users = [data.authentik_user.agentydragon.pk]
 }
 
-resource "authentik_policy_binding" "plaid_mcp_users" {
-  target = authentik_application.plaid_mcp.uuid
-  group  = authentik_group.plaid_mcp_users.id
+resource "authentik_policy_binding" "plaid_db_mcp_users" {
+  target = authentik_application.plaid_db_mcp.uuid
+  group  = authentik_group.plaid_db_mcp_users.id
   order  = 0
 }
 
-resource "kubernetes_secret" "plaid_mcp_oidc" {
+resource "kubernetes_secret" "plaid_db_mcp_oidc" {
   metadata {
-    name      = "plaid-mcp-oidc"
+    name      = "plaid-db-mcp-oidc"
     namespace = "plaid-mcp"
   }
 
   data = {
-    client_id     = authentik_provider_oauth2.plaid_mcp.client_id
-    client_secret = authentik_provider_oauth2.plaid_mcp.client_secret
+    client_id     = authentik_provider_oauth2.plaid_db_mcp.client_id
+    client_secret = authentik_provider_oauth2.plaid_db_mcp.client_secret
   }
 }
 

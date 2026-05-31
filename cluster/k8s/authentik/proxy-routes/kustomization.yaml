@@ -10,6 +10,7 @@ resources:
   - agents-mitmproxy-httproute.yaml
   - proxmox-httproute.yaml
   - google-workspace-mcp-httproute.yaml
+  - plaid-mcp-httproute.yaml
   - longhorn-httproute.yaml
   - goldilocks-httproute.yaml
   - tandoor-httproute.yaml

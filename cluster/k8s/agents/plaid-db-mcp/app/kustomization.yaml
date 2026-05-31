@@ -3,9 +3,8 @@ kind: Kustomization
 namespace: plaid-mcp
 resources:
   - configmap.yaml
-  - external-secret.yaml
-  - rbac.yaml
+  - valkey-kimsufi-instance.yaml
   - deployment.yaml
-  - cronjob.yaml
   - service.yaml
+  - httproute.yaml
   - networkpolicy.yaml

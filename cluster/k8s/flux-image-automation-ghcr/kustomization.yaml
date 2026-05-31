@@ -26,6 +26,8 @@ resources:
   - manifold-mcp-server-image-policy.yaml
   - plaid-mcp-server-image-repository.yaml
   - plaid-mcp-server-image-policy.yaml
+  - plaid-mcp-sync-image-repository.yaml
+  - plaid-mcp-sync-image-policy.yaml
   - postscanmail-mcp-server-image-repository.yaml
   - postscanmail-mcp-server-image-policy.yaml
   - tana-token-broker-image-repository.yaml

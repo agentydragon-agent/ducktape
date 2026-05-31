@@ -1,58 +1,5 @@
 # Airlock TODOs
 
-## Multi-Item PlaidProvider
-
-Plaid's data model is N Items (institution logins) per client_id+secret —
-each Item gets its own permanent access_token. Airlock's current
-provider model stores **one** access_token per provider name, so the
-workaround for multiple banks is one airlock provider per institution
-(`plaid_chase`, `plaid_bofa`, …). That sprawls:
-
-- Config: every new bank needs a provider stanza + duplicated env vars
-  (`PLAID_<NAME>_CLIENT_{ID,SECRET}`) pointing at the same shared
-  `plaid-client-credentials` Secret.
-- Plaid dashboard: every provider needs its own redirect URI added to
-  Allowed redirect URIs (`/oauth/callback/{provider_name}`).
-- UI: the providers list grows linearly with linked institutions, even
-  though "Plaid" is conceptually one thing.
-
-Refactor so **a single `plaid` provider holds N linked Items**, scoped to
-the Plaid provider_type only — `GenericOAuth2Provider` (Oura, Google)
-stays one-token-per-provider, since those identity providers don't have
-multi-Item semantics.
-
-### Shape
-
-- Storage: keep `plaid-client-credentials` shared. Replace
-  `plaid-{access-token,tokens}` singletons with per-Item Secrets keyed by
-  `item_id` (e.g. `plaid-item-<item_id>-{access-token,tokens}`) — or a
-  single JSON map secret. Whichever fits the K8sTokenStore cleanup model
-  better (label-based sweep needs an exhaustive `known_names`; a per-Item
-  naming pattern with a tracked index secret is easier to reason about
-  than a single mutable blob).
-- `PlaidProvider`: becomes a container holding `dict[item_id, TokenData]`
-  plus per-Item metadata (institution_id, linked_at, account names
-  cached from `/accounts/get`). New methods: `list_items()`,
-  `add_item(public_token)`, `remove_item(item_id)`.
-- `oauth/routes.py`: one shared redirect URI (`/oauth/callback/plaid`).
-  Drop provider-name-from-path dispatch for Plaid; look up the right
-  provider via the `oauth_state_id` airlock already stores server-side
-  (the state record carries the provider it was created for). Means
-  exactly **one** URI in the Plaid dashboard regardless of bank count.
-- `/api/oauth/providers`: for Plaid, return one provider with a nested
-  list of `PlaidItemStatus { item_id, institution_id, linked_at,
-account_summaries }` instead of a single connected/disconnected flag.
-- Frontend: under the Plaid row, render the list of linked institutions
-  with per-Item unlink buttons + one "Link new bank" CTA that runs the
-  Plaid Link flow and appends to the list (instead of overwriting).
-- Migration: read existing per-institution providers (`plaid_chase`,
-  `plaid_bofa`, …), fold their tokens into the new multi-Item `plaid`
-  provider keyed by `item_id`, then prune the old config stanzas.
-
-Single landing of this + cleanup of the dashboard URIs is the right end
-state. Cross-cutting follow-up to the per-institution workaround introduced
-in `cluster/k8s/agents/airlock/config.yaml`.
-
 ## OIDCProxy follow-ups
 
 MCP OAuth via `MultiAuth(OIDCProxy + JWTVerifier)` is implemented. Remaining items:
