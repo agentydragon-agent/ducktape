@@ -13,13 +13,12 @@ import pytest
 from fastmcp.client import Client
 
 from plaid_utils.mcp_server.config import ResolvedItem
-from plaid_utils.mcp_server.server import build_server
+from plaid_utils.mcp_server.server import PlaidApiClientLike, build_server
 from plaid_utils.models import Account, Apr, Balances, CreditLiability, PersonalFinanceCategory, Transaction
 
 
 class _IdentityApiClient:
-    @staticmethod
-    def sanitize_for_serialization(obj: Any) -> Any:
+    def sanitize_for_serialization(self, obj: object) -> object:
         return obj  # FakePlaidApi already returns JSON-able dicts
 
 
@@ -27,7 +26,7 @@ class FakePlaidApi:
     """In-memory stand-in for plaid_api.PlaidApi: canned responses, no network."""
 
     def __init__(self, accounts: list[Account], transactions: list[Transaction], credit: list[CreditLiability]) -> None:
-        self.api_client = _IdentityApiClient()
+        self.api_client: PlaidApiClientLike = _IdentityApiClient()
         self._accounts = accounts
         self._transactions = transactions
         self._credit = credit

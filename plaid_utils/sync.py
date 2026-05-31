@@ -7,7 +7,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
-from typing import Any, Protocol, cast
+from typing import Any, Protocol, TypeVar, cast
 from uuid import UUID
 
 from plaid.exceptions import ApiException as PlaidApiException
@@ -25,17 +25,32 @@ from plaid_utils.link_store import ApiEvent, PlaidLinkStorage, StoredLink
 from plaid_utils.secret_store import SecretStore
 
 
+class PlaidRequestLike(Protocol):
+    """Common shape of plaid-python generated request objects."""
+
+    def to_dict(self) -> dict[str, Any]: ...
+
+
+class PlaidApiClientLike(Protocol):
+    """The generated SDK's nested ApiClient serializer."""
+
+    def sanitize_for_serialization(self, obj: object) -> object: ...
+
+
 class PlaidApiLike(Protocol):
-    """Minimal Plaid SDK client surface; generated SDK request/response objects are untyped."""
+    """Minimal Plaid SDK client surface used by the synchronous sync job."""
 
-    api_client: Any
+    api_client: PlaidApiClientLike
 
-    def item_get(self, request: Any, /) -> Any: ...
-    def accounts_get(self, request: Any, /) -> Any: ...
-    def transactions_get(self, request: Any, /) -> Any: ...
-    def investments_holdings_get(self, request: Any, /) -> Any: ...
-    def investments_transactions_get(self, request: Any, /) -> Any: ...
-    def liabilities_get(self, request: Any, /) -> Any: ...
+    def item_get(self, request: ItemGetRequest, /) -> object: ...
+    def accounts_get(self, request: AccountsGetRequest, /) -> object: ...
+    def transactions_get(self, request: TransactionsGetRequest, /) -> object: ...
+    def investments_holdings_get(self, request: InvestmentsHoldingsGetRequest, /) -> object: ...
+    def investments_transactions_get(self, request: InvestmentsTransactionsGetRequest, /) -> object: ...
+    def liabilities_get(self, request: LiabilitiesGetRequest, /) -> object: ...
+
+
+_PlaidRequestT = TypeVar("_PlaidRequestT", bound=PlaidRequestLike)
 
 
 @dataclass(frozen=True)
@@ -257,8 +272,8 @@ async def _call(
     storage: PlaidLinkStorage,
     run_id: UUID,
     endpoint: str,
-    call: Callable[[Any], Any],
-    request: Any,
+    call: Callable[[_PlaidRequestT], object],
+    request: _PlaidRequestT,
     item_id: str,
 ) -> dict[str, Any]:
     started = time.monotonic()
@@ -295,10 +310,7 @@ async def _call(
     return response_json
 
 
-def _request_json(request: Any) -> dict[str, Any]:
-    if isinstance(request, dict):
-        return cast(dict[str, Any], request)
-    # All non-dict callers pass Plaid SDK request objects.
+def _request_json(request: PlaidRequestLike) -> dict[str, Any]:
     return cast(dict[str, Any], request.to_dict())
 
 

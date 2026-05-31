@@ -14,7 +14,7 @@ ITEM_LOGIN_REQUIRED, RATE_LIMIT_EXCEEDED, ...) to the agent.
 import logging
 import sys
 from datetime import date, timedelta
-from typing import Annotated, Any, Protocol
+from typing import Annotated, Protocol
 
 import uvicorn
 from fastmcp import FastMCP
@@ -61,19 +61,21 @@ class ItemHistoryWindow(BaseModel):
     total_transactions: int = Field(description="Total transactions Plaid has in the last 730 days.")
 
 
+class PlaidApiClientLike(Protocol):
+    """The generated SDK's nested ApiClient serializer."""
+
+    def sanitize_for_serialization(self, obj: object) -> object: ...
+
+
 class PlaidApiLike(Protocol):
-    """The slice of `plaid_api.PlaidApi` the server uses, so tests can inject a fake.
+    """The slice of `plaid_api.PlaidApi` the server uses, so tests can inject a fake."""
 
-    Requests/responses are the SDK's own types (`Any` here); `api_client` carries
-    `sanitize_for_serialization`. The real `plaid_api.PlaidApi` satisfies it structurally.
-    """
+    api_client: PlaidApiClientLike
 
-    api_client: Any
-
-    def accounts_get(self, request: Any, /) -> Any: ...
-    def accounts_balance_get(self, request: Any, /) -> Any: ...
-    def transactions_get(self, request: Any, /) -> Any: ...
-    def liabilities_get(self, request: Any, /) -> Any: ...
+    def accounts_get(self, request: AccountsGetRequest, /) -> object: ...
+    def accounts_balance_get(self, request: AccountsBalanceGetRequest, /) -> object: ...
+    def transactions_get(self, request: TransactionsGetRequest, /) -> object: ...
+    def liabilities_get(self, request: LiabilitiesGetRequest, /) -> object: ...
 
 
 INSTRUCTIONS = (
