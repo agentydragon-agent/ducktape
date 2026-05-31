@@ -14,7 +14,7 @@ from augur.api.catalog import build_bootstrap_payload
 from augur.api.config import AgentDefinition, Config, LocationConfig, PropertyAssetConfig, PropertySourceConfig
 from augur.api.finance import FinanceSnapshot
 from augur.api.local_regulation import LocalRegulation, TaxRegime
-from augur.model.independent_exogenous import IndependentExogenousProviderConfig
+from augur.model.independent import IndependentProviderConfig
 
 
 def _write_properties(path: Path) -> None:
@@ -158,8 +158,8 @@ def _config(
         max_rollout_samples=128,
         locations=_fixture_locations(),
         location_selection=location_selection,
-        exogenous_presets={"current_exogenous_model": IndependentExogenousProviderConfig()},
-        default_exogenous_preset_id="current_exogenous_model",
+        exogenous_presets={"current_model": IndependentProviderConfig()},
+        default_exogenous_preset_id="current_model",
     )
 
 
