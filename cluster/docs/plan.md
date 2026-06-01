@@ -71,6 +71,9 @@ PowerDNS and Authentik run on CloudNativePG `local-path`.
       (remove `suspend: true`) once the radio hardware is set up at the new place.
 - [ ] **Resume CPAP sync CronJob** — unsuspend `cluster/k8s/cpap-sync/cronjob.yaml`
       (remove `suspend: true`) once wyrm2 is back online after relocation.
+- [ ] **Restore tofu-state backup** — backup CronJob removed 2026-06-01 (pinned to
+      proxmox, wyrm2 down). Restore via CNPG replication or SeaweedFS CSI PVC once
+      wyrm2 is back. Source still in `cluster/k8s/tofu-state/backup/`.
 - [ ] **Evaluate lighter registry to replace Harbor** — Harbor is only used for (a) pull-through
       proxy cache (Docker Hub, GHCR, GCR, Quay, k8s.io) configured as Talos containerd mirrors,
       and (b) props agent image storage. Candidates: [Zot](https://zotregistry.dev/) (single binary,
@@ -424,8 +427,8 @@ would not work. TLS passthrough preserves client certificates for x509 auth.
 ### OpenTofu State Backend
 
 All 6 former TF roots consolidated into a single root at `cluster/terraform/main/` with
-PG backend (CNPG `tofu-state-db`, schema `main`, OVH local-path). Backup
-CronJob writes `pg_dump` to `local-path-proxmox` PVC every 6 hours.
+PG backend (CNPG `tofu-state-db`, schema `main`, OVH local-path). Backup CronJob
+removed 2026-06-01; will be restored via CNPG replication once wyrm2 is back.
 
 Zero `terraform_remote_state` dependencies — everything is in the same root. Persistent-auth
 resources have `lifecycle { prevent_destroy = true }`. Bootstrap uses targeted applies

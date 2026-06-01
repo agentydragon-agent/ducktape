@@ -226,7 +226,6 @@ resources:
   # --- tofu-state ---
   - tofu-state/namespace/flux-kustomization.yaml
   - tofu-state/db/flux-kustomization.yaml
-  - tofu-state/backup/flux-kustomization.yaml
 
   # --- gatus ---
   - gatus/namespace/flux-kustomization.yaml
