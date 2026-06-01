@@ -320,6 +320,7 @@ resources:
   - seaweedfs/vm-images-bucket/flux-kustomization.yaml
   - seaweedfs/vm-images-s3/flux-kustomization.yaml
   - seaweedfs/drivefs-artifacts-bucket/flux-kustomization.yaml
+  - seaweedfs/forgejo-bucket/flux-kustomization.yaml
   - seaweedfs/drivefs-artifacts-s3/flux-kustomization.yaml
   - seaweedfs/monitoring/flux-kustomization.yaml
   - seaweedfs-csi/flux-kustomization.yaml

@@ -114,6 +114,33 @@ spec:
           UPDATE_AVATAR: true
           ACCOUNT_LINKING: login
 
+        # Object storage on SeaweedFS S3: packages (container registry), LFS,
+        # attachments, artifacts. Git repos stay on the seaweedfs-ovh PVC — git
+        # needs a POSIX filesystem, so there's no S3 backend for repos. Creds
+        # are injected via additionalConfigFromEnvs below.
+        storage:
+          STORAGE_TYPE: minio
+          MINIO_ENDPOINT: seaweedfs-s3.seaweedfs.svc:8333
+          MINIO_BUCKET: forgejo
+          MINIO_LOCATION: us-east-1
+          MINIO_USE_SSL: false
+          MINIO_BUCKET_LOOKUP: path
+
+      # SeaweedFS S3 credentials from the Reflector-mirrored s3-identity-forgejo
+      # Secret (source in the seaweedfs namespace). FORGEJO__ is the chart's
+      # env -> app.ini prefix.
+      additionalConfigFromEnvs:
+        - name: FORGEJO__storage__MINIO_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: s3-identity-forgejo
+              key: accessKey
+        - name: FORGEJO__storage__MINIO_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: s3-identity-forgejo
+              key: secretKey
+
     # Trust cluster CA bundle (includes Let's Encrypt staging CA)
     deployment:
       # Reloader: auto-restart pods when secrets change
