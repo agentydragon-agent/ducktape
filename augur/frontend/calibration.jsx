@@ -1,10 +1,9 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 
 import { fetchCalibrationRun } from "./client.js";
 import { fmtPct } from "./lib/format.js";
 import { MetricFanChart } from "./fan_chart.jsx";
 import { RolloutResultsSkeleton } from "./skeleton.jsx";
-import { CurrencyDisplayProvider } from "./hooks.js";
 import { FAN_PERCENTILES, clampRolloutCount, clampFirstSeed, clampHorizonMonths } from "./input_helpers.js";
 import { markFanRows } from "./data_helpers.js";
 import { sortSanityBands, sanityPassCount, fmtExpectedBand, fmtObserved } from "./sanity_bands.js";
@@ -369,6 +368,7 @@ export function CalibrationWorkspace({
   exogenousModel,
   horizonMonths,
   metricScale,
+  sharedControlsSlot,
 }) {
   const catalog = bootstrap.calibration ?? null;
 
@@ -415,8 +415,6 @@ export function CalibrationWorkspace({
     };
   }, [catalog, request]);
 
-  const currencyDisplayContext = useMemo(() => ({ display: "compact", setDisplay: () => {} }), []);
-
   if (!catalog) {
     return (
       <div className="augur-note p-4" data-calibration-unconfigured="">
@@ -426,22 +424,23 @@ export function CalibrationWorkspace({
   }
 
   return (
-    <CurrencyDisplayProvider value={currencyDisplayContext}>
-      <div className="min-w-0 space-y-5">
-        <section className="grid min-w-0 gap-5 min-[864px]:grid-cols-[28rem_minmax(0,1fr)]">
+    <div className="min-w-0 space-y-5">
+      <section className="grid min-w-0 gap-5 min-[864px]:grid-cols-[28rem_minmax(0,1fr)]">
+        <div className="min-w-0 space-y-5">
+          {sharedControlsSlot}
           <CalibrationForm catalog={catalog} />
+        </div>
 
-          <div className="min-w-0 space-y-5">
-            {runError ? (
-              <div className="augur-note-danger p-4 text-sm">Calibration run failed: {runError}</div>
-            ) : response ? (
-              <CalibrationResults response={response} metricScale={metricScale} />
-            ) : (
-              <RolloutResultsSkeleton />
-            )}
-          </div>
-        </section>
-      </div>
-    </CurrencyDisplayProvider>
+        <div className="min-w-0 space-y-5">
+          {runError ? (
+            <div className="augur-note-danger p-4 text-sm">Calibration run failed: {runError}</div>
+          ) : response ? (
+            <CalibrationResults response={response} metricScale={metricScale} />
+          ) : (
+            <RolloutResultsSkeleton />
+          )}
+        </div>
+      </section>
+    </div>
   );
 }

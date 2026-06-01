@@ -6,120 +6,25 @@ const SCALE_OPTIONS = [
   { value: "log", label: "Log" },
 ];
 
+const CURRENCY_DISPLAY_OPTIONS = [
+  { value: "exact", label: "Exact" },
+  { value: "compact", label: "Compact" },
+];
+
 // Width for a NumberInput unit chip (e.g. "mo"), matching the sidebar `NumberField` sizing so the
-// header's unit suffix reads the same as the product tab's.
+// control's unit suffix reads the same as the product tab's.
 function unitSectionWidth(section) {
   return Math.max(34, String(section).length * 8 + 24);
 }
 
-// Tab-shared rollout count control. It lives in the header — the only region common to both the
-// product and calibration surfaces — so a single control drives the rollout count on every page.
-function RolloutCountControl({ value, onChange, max }) {
-  return (
-    <label className="flex items-center gap-1.5 whitespace-nowrap" data-augur-rollout-count-control="">
-      <span className="augur-eyebrow">Rollouts</span>
-      <NumberInput
-        aria-label="Rollouts"
-        size="xs"
-        min={1}
-        max={max}
-        step={1}
-        value={value ?? ""}
-        hideControls
-        thousandSeparator=","
-        classNames={{ input: "augur-tabular w-16 text-right" }}
-        onChange={(next) => {
-          const number = typeof next === "number" ? next : Number(next);
-          onChange(Number.isFinite(number) ? number : null);
-        }}
-      />
-    </label>
-  );
+function numberInputOnChange(onChange) {
+  return (next) => {
+    const number = typeof next === "number" ? next : Number(next);
+    onChange(Number.isFinite(number) ? number : null);
+  };
 }
 
-// Tab-shared first seed. Product and calibration both run consecutive rollout seeds from this
-// value, so it belongs next to rollout count in the shell controls.
-function FirstSeedControl({ value, onChange }) {
-  return (
-    <label className="flex items-center gap-1.5 whitespace-nowrap" data-augur-first-seed-control="">
-      <span className="augur-eyebrow">Seed</span>
-      <NumberInput
-        aria-label="First seed"
-        size="xs"
-        min={0}
-        max={2 ** 31 - 1}
-        step={1}
-        value={value ?? ""}
-        hideControls
-        thousandSeparator=","
-        classNames={{ input: "augur-tabular w-16 text-right" }}
-        onChange={(next) => {
-          const number = typeof next === "number" ? next : Number(next);
-          onChange(Number.isFinite(number) ? number : null);
-        }}
-      />
-    </label>
-  );
-}
-
-// Tab-shared horizon control (months). Drives both the product projection and the calibration run.
-function HorizonControl({ value, onChange, max }) {
-  return (
-    <label className="flex items-center gap-1.5 whitespace-nowrap" data-augur-horizon-control="">
-      <span className="augur-eyebrow">Horizon</span>
-      <NumberInput
-        aria-label="Horizon"
-        size="xs"
-        min={1}
-        max={max}
-        step={12}
-        value={value ?? ""}
-        hideControls
-        rightSection={<Text className="augur-number-section">mo</Text>}
-        rightSectionPointerEvents="none"
-        rightSectionWidth={unitSectionWidth("mo")}
-        classNames={{ input: "augur-tabular w-16 text-right" }}
-        onChange={(next) => {
-          const number = typeof next === "number" ? next : Number(next);
-          onChange(Number.isFinite(number) ? number : null);
-        }}
-      />
-    </label>
-  );
-}
-
-// Tab-shared chart scale (linear/log). Both the product metric fan and the calibration mark fan
-// honor it, so the toggle lives once in the header rather than per-chart on each page.
-function ScaleControl({ value, onChange }) {
-  return (
-    <div data-augur-scale-control="">
-      <SegmentedControl aria-label="Chart scale" size="xs" value={value} data={SCALE_OPTIONS} onChange={onChange} />
-    </div>
-  );
-}
-
-// Tab-shared exogenous-model picker. Like the rollout count, it lives in the header so a single
-// control drives the model on both the product and calibration pages. Rendered only when the
-// deployment exposes more than one preset (a single preset means there's nothing to choose).
-function ExogenousModelControl({ value, onChange, presets }) {
-  return (
-    <label className="flex items-center gap-1.5 whitespace-nowrap" data-augur-exogenous-model-control="">
-      <span className="augur-eyebrow">Model</span>
-      <NativeSelect
-        aria-label="Exogenous model"
-        size="xs"
-        value={value ?? ""}
-        data={presets.map((preset) => ({ value: preset, label: preset }))}
-        classNames={{ input: "augur-tabular" }}
-        onChange={(event) => onChange(event.target.value)}
-      />
-    </label>
-  );
-}
-
-export function AugurHeader({
-  rightSlot = null,
-  nav = null,
+export function SharedControls({
   rolloutCount,
   onChangeRolloutCount,
   maxRolloutCount,
@@ -133,15 +38,126 @@ export function AugurHeader({
   maxHorizonMonths,
   metricScale,
   onChangeMetricScale,
+  currencyDisplay,
+  onChangeCurrencyDisplay,
 }) {
   const showExogenousControl = onChangeExogenousModel && exogenousPresets.length > 1;
-  const rightGroup =
-    onChangeRolloutCount ||
-    onChangeFirstSeed ||
-    onChangeHorizonMonths ||
-    onChangeMetricScale ||
-    showExogenousControl ||
-    rightSlot;
+  const rows = [
+    onChangeHorizonMonths && {
+      label: "Horizon",
+      input: (
+        <NumberInput
+          aria-label="Horizon"
+          size="xs"
+          min={1}
+          max={maxHorizonMonths}
+          step={12}
+          value={horizonMonths ?? ""}
+          hideControls
+          rightSection={<Text className="augur-number-section">mo</Text>}
+          rightSectionPointerEvents="none"
+          rightSectionWidth={unitSectionWidth("mo")}
+          classNames={{ input: "augur-tabular w-16 text-right" }}
+          onChange={numberInputOnChange(onChangeHorizonMonths)}
+        />
+      ),
+    },
+    onChangeRolloutCount && {
+      label: "Rollouts",
+      input: (
+        <NumberInput
+          aria-label="Rollouts"
+          size="xs"
+          min={1}
+          max={maxRolloutCount}
+          step={1}
+          value={rolloutCount ?? ""}
+          hideControls
+          thousandSeparator=","
+          classNames={{ input: "augur-tabular w-16 text-right" }}
+          onChange={numberInputOnChange(onChangeRolloutCount)}
+        />
+      ),
+    },
+    onChangeFirstSeed && {
+      label: "Seed",
+      input: (
+        <NumberInput
+          aria-label="First seed"
+          size="xs"
+          min={0}
+          max={2 ** 31 - 1}
+          step={1}
+          value={firstSeed ?? ""}
+          hideControls
+          thousandSeparator=","
+          classNames={{ input: "augur-tabular w-16 text-right" }}
+          onChange={numberInputOnChange(onChangeFirstSeed)}
+        />
+      ),
+    },
+    showExogenousControl && {
+      label: "Model",
+      input: (
+        <NativeSelect
+          aria-label="Exogenous model"
+          size="xs"
+          value={exogenousModel ?? ""}
+          data={exogenousPresets.map((preset) => ({ value: preset, label: preset }))}
+          classNames={{ input: "augur-tabular" }}
+          onChange={(event) => onChangeExogenousModel(event.target.value)}
+        />
+      ),
+    },
+    onChangeMetricScale && {
+      label: "Scale",
+      input: (
+        <SegmentedControl
+          aria-label="Chart scale"
+          size="xs"
+          value={metricScale}
+          data={SCALE_OPTIONS}
+          onChange={onChangeMetricScale}
+        />
+      ),
+    },
+    onChangeCurrencyDisplay && {
+      label: "Currency",
+      input: (
+        <SegmentedControl
+          aria-label="Currency display"
+          size="xs"
+          value={currencyDisplay}
+          data={CURRENCY_DISPLAY_OPTIONS}
+          onChange={onChangeCurrencyDisplay}
+        />
+      ),
+    },
+  ].filter(Boolean);
+
+  return (
+    <details open className="augur-card [&_summary::-webkit-details-marker]:hidden">
+      <summary className="augur-eyebrow flex cursor-pointer list-none items-baseline justify-between gap-2 px-4 py-3">
+        <span className="inline-flex items-center gap-1">
+          <span aria-hidden="true" className="transition-transform [details[open]_&]:rotate-90">
+            ▸
+          </span>
+          Simulation settings
+        </span>
+      </summary>
+      <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-2 border-t border-slate-200 px-4 py-3 text-xs augur-muted dark:border-slate-700">
+        {rows.map(({ label, input }) => (
+          <React.Fragment key={label}>
+            <span className="augur-eyebrow whitespace-nowrap">{label}</span>
+            {input}
+          </React.Fragment>
+        ))}
+      </div>
+    </details>
+  );
+}
+
+export function AugurHeader({ rightSlot = null, nav = null }) {
   return (
     <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur dark:border-slate-800 dark:bg-slate-950/95 sm:px-6 lg:px-8">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -152,26 +168,7 @@ export function AugurHeader({
           </div>
           {nav}
         </div>
-        {rightGroup && (
-          <div className="flex min-w-[min(100%,28rem)] flex-1 flex-wrap items-center justify-end gap-3 text-xs augur-muted sm:flex-none">
-            {showExogenousControl && (
-              <ExogenousModelControl
-                value={exogenousModel}
-                onChange={onChangeExogenousModel}
-                presets={exogenousPresets}
-              />
-            )}
-            {onChangeHorizonMonths && (
-              <HorizonControl value={horizonMonths} onChange={onChangeHorizonMonths} max={maxHorizonMonths} />
-            )}
-            {onChangeRolloutCount && (
-              <RolloutCountControl value={rolloutCount} onChange={onChangeRolloutCount} max={maxRolloutCount} />
-            )}
-            {onChangeFirstSeed && <FirstSeedControl value={firstSeed} onChange={onChangeFirstSeed} />}
-            {onChangeMetricScale && <ScaleControl value={metricScale} onChange={onChangeMetricScale} />}
-            {rightSlot}
-          </div>
-        )}
+        {rightSlot && <div className="text-xs augur-muted">{rightSlot}</div>}
       </div>
     </header>
   );

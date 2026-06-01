@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { MantineProvider, NativeSelect, SegmentedControl } from "@mantine/core";
+import { MantineProvider, NativeSelect } from "@mantine/core";
 
 import {
   fetchAugurBootstrap,
@@ -17,7 +17,7 @@ import { TerminalMetricTable } from "./metric_table.jsx";
 import { SelectedRolloutEventsPanel, EventKindLegend } from "./events_panel.jsx";
 import { ProductScenarioForm } from "./forms.jsx";
 import { CalibrationWorkspace } from "./calibration.jsx";
-import { AugurHeader } from "./header.jsx";
+import { AugurHeader, SharedControls } from "./header.jsx";
 import { RolloutResultsSkeleton, StatCardsSkeleton, ProductProjectionLoading } from "./skeleton.jsx";
 import { CurrencyDisplayProvider, useCurrencyDisplay, useVisibleEventKinds, useEventSelection } from "./hooks.js";
 import {
@@ -46,11 +46,6 @@ import {
   selectedRolloutEvents,
   visibleMetricOptions,
 } from "./data_helpers.js";
-
-const CURRENCY_DISPLAY_OPTIONS = [
-  { value: "exact", label: "Exact" },
-  { value: "compact", label: "Compact" },
-];
 
 // Top-level views. "product" is the default; the active tab is mirrored to the URL `?tab=`
 // (omitted for the default), following the same replaceState pattern as the product `?s=` state.
@@ -176,30 +171,17 @@ function RolloutResultsPanel({
   eventSelection,
   rolloutError,
 }) {
-  const { display: currencyDisplay, setDisplay: onSelectCurrencyDisplay } = useCurrencyDisplay();
+  const { display: currencyDisplay } = useCurrencyDisplay();
   return (
     <section className="augur-panel overflow-hidden" aria-label="Cash projection workspace">
       <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <NativeSelect
-            aria-label="Metric to plot"
-            value={selectedMetric.value}
-            data={visibleMetrics.map((metric) => ({ value: metric.value, label: metric.label }))}
-            classNames={{ input: "augur-tabular min-w-[12rem]" }}
-            onChange={(event) => onSelectMetric(event.target.value)}
-          />
-          <div className="flex flex-wrap items-center gap-3">
-            <div data-product-currency-display-control>
-              <SegmentedControl
-                aria-label="Currency display"
-                size="xs"
-                value={currencyDisplay}
-                data={CURRENCY_DISPLAY_OPTIONS}
-                onChange={onSelectCurrencyDisplay}
-              />
-            </div>
-          </div>
-        </div>
+        <NativeSelect
+          aria-label="Metric to plot"
+          value={selectedMetric.value}
+          data={visibleMetrics.map((metric) => ({ value: metric.value, label: metric.label }))}
+          classNames={{ input: "augur-tabular min-w-[12rem]" }}
+          onChange={(event) => onSelectMetric(event.target.value)}
+        />
       </div>
       <TerminalDistributionHistogram
         summaries={rolloutSummaries}
@@ -328,10 +310,11 @@ function ProductProjectionWorkspace({
   onChangeHorizonMonths,
   metricScale,
   onChangeMetricScale,
+  currencyDisplay,
+  onChangeCurrencyDisplay,
 }) {
   const [input, setInput] = useState(() => productInputFromSearch(window.location.search, bootstrap));
   const [selectedMetricValue, setSelectedMetricValue] = useState("net_worth_usd");
-  const [currencyDisplay, setCurrencyDisplay] = useState(() => currencyDisplayFromSearch(window.location.search));
   const [result, setResult] = useState(null);
   const [runError, setRunError] = useState(null);
   const [portfolio, setPortfolio] = useState(null);
@@ -376,11 +359,10 @@ function ProductProjectionWorkspace({
   useEffect(() => {
     const params = new URLSearchParams(productInputToSearch(input, bootstrap));
     if (currencyDisplay !== "compact") params.set("fmt", "exact");
-    // The shell-owned shared params (rollout count `?n=`, first seed `?seed=`, exogenous model
-    // `?x=`, horizon `?h=`, chart scale `?scale=`) live outside the product input. Carry whichever are currently set
+    // The shell-owned shared params live outside the product input. Carry whichever are currently set
     // across so rewriting the product `?s=` state doesn't drop them.
     const currentParams = new URLSearchParams(window.location.search);
-    for (const key of ["n", "seed", "x", "h", "scale"]) {
+    for (const key of ["n", "seed", "x", "h", "scale", "fmt"]) {
       const value = currentParams.get(key);
       if (value != null) params.set(key, value);
     }
@@ -459,37 +441,36 @@ function ProductProjectionWorkspace({
     return () => controller.abort();
   }, [request.scenario, result, rolloutDetails, selectedDetailKey, selectedSeed]);
 
-  const currencyDisplayContext = useMemo(
-    () => ({ display: currencyDisplay, setDisplay: setCurrencyDisplay }),
-    [currencyDisplay]
-  );
-
   return (
-    <CurrencyDisplayProvider value={currencyDisplayContext}>
-      <div
-        data-augur-surface="product"
-        className="min-h-screen bg-slate-100 text-slate-800 dark:bg-slate-950 dark:text-slate-100"
-      >
-        <AugurHeader
-          nav={<AugurTabBar tab={tab} onSelectTab={onSelectTab} />}
-          rolloutCount={rolloutCount}
-          onChangeRolloutCount={onChangeRolloutCount}
-          maxRolloutCount={bootstrap.maxRolloutSamples}
-          firstSeed={firstSeed}
-          onChangeFirstSeed={onChangeFirstSeed}
-          exogenousModel={exogenousModel}
-          onChangeExogenousModel={onChangeExogenousModel}
-          exogenousPresets={bootstrap.exogenousPresets}
-          horizonMonths={horizonMonths}
-          onChangeHorizonMonths={onChangeHorizonMonths}
-          maxHorizonMonths={bootstrap.maxHorizonMonths}
-          metricScale={metricScale}
-          onChangeMetricScale={onChangeMetricScale}
-          rightSlot={<DeploymentCommitSummary deployment={deployment} />}
-        />
+    <div
+      data-augur-surface="product"
+      className="min-h-screen bg-slate-100 text-slate-800 dark:bg-slate-950 dark:text-slate-100"
+    >
+      <AugurHeader
+        nav={<AugurTabBar tab={tab} onSelectTab={onSelectTab} />}
+        rightSlot={<DeploymentCommitSummary deployment={deployment} />}
+      />
 
-        <main className="px-4 py-6 sm:px-6 lg:px-8">
-          <section className="grid min-w-0 gap-5 min-[864px]:grid-cols-[28rem_minmax(0,1fr)]">
+      <main className="px-4 py-6 sm:px-6 lg:px-8">
+        <section className="grid min-w-0 gap-5 min-[864px]:grid-cols-[28rem_minmax(0,1fr)]">
+          <div className="min-w-0 space-y-5">
+            <SharedControls
+              rolloutCount={rolloutCount}
+              onChangeRolloutCount={onChangeRolloutCount}
+              maxRolloutCount={bootstrap.maxRolloutSamples}
+              firstSeed={firstSeed}
+              onChangeFirstSeed={onChangeFirstSeed}
+              exogenousModel={exogenousModel}
+              onChangeExogenousModel={onChangeExogenousModel}
+              exogenousPresets={bootstrap.exogenousPresets}
+              horizonMonths={horizonMonths}
+              onChangeHorizonMonths={onChangeHorizonMonths}
+              maxHorizonMonths={bootstrap.maxHorizonMonths}
+              metricScale={metricScale}
+              onChangeMetricScale={onChangeMetricScale}
+              currencyDisplay={currencyDisplay}
+              onChangeCurrencyDisplay={onChangeCurrencyDisplay}
+            />
             <ProductScenarioForm
               input={input}
               bootstrap={bootstrap}
@@ -499,56 +480,56 @@ function ProductProjectionWorkspace({
               onReset={() => setInput(productInputDefaults(bootstrap))}
               horizonMonths={horizonMonths}
             />
+          </div>
 
-            <div className="min-w-0 space-y-5">
-              {runError && <div className="augur-note-danger p-4 text-sm">Product projection failed: {runError}</div>}
+          <div className="min-w-0 space-y-5">
+            {runError && <div className="augur-note-danger p-4 text-sm">Product projection failed: {runError}</div>}
 
-              {result ? (
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="augur-card p-4">
-                    <div className="augur-eyebrow">Median terminal {selectedMetric.label.toLowerCase()}</div>
-                    <div className="mt-2 text-2xl font-semibold augur-tabular">
-                      {fmtMetricValue(selectedMetric.chartValue, terminalP50, currencyDisplay)}
-                    </div>
-                  </div>
-                  <div className="augur-card p-4">
-                    <div className="augur-eyebrow">Failed rollouts</div>
-                    <div className="mt-2 text-2xl font-semibold augur-tabular">
-                      {fmtNumber(failedCount)} / {fmtNumber(request.rolloutSeeds.length)}
-                    </div>
+            {result ? (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="augur-card p-4">
+                  <div className="augur-eyebrow">Median terminal {selectedMetric.label.toLowerCase()}</div>
+                  <div className="mt-2 text-2xl font-semibold augur-tabular">
+                    {fmtMetricValue(selectedMetric.chartValue, terminalP50, currencyDisplay)}
                   </div>
                 </div>
-              ) : (
-                <StatCardsSkeleton />
-              )}
+                <div className="augur-card p-4">
+                  <div className="augur-eyebrow">Failed rollouts</div>
+                  <div className="mt-2 text-2xl font-semibold augur-tabular">
+                    {fmtNumber(failedCount)} / {fmtNumber(request.rolloutSeeds.length)}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <StatCardsSkeleton />
+            )}
 
-              {result ? (
-                <RolloutResultsPanel
-                  visibleMetrics={visibleMetrics}
-                  selectedMetric={selectedMetric}
-                  onSelectMetric={setSelectedMetricValue}
-                  metricScale={metricScale}
-                  rolloutSummaries={rolloutSummaries}
-                  selectedSeed={selectedSeed}
-                  onSelectSeed={setSelectedSeed}
-                  selectedRolloutLoading={selectedRolloutLoading}
-                  fanRows={fanRows}
-                  percentiles={request.percentiles}
-                  selectedRows={selectedRows}
-                  selectedEvents={selectedEvents}
-                  selectedSummary={selectedSummary}
-                  visibleEventKinds={visibleEventKinds}
-                  eventSelection={eventSelection}
-                  rolloutError={rolloutError}
-                />
-              ) : (
-                <RolloutResultsSkeleton />
-              )}
-            </div>
-          </section>
-        </main>
-      </div>
-    </CurrencyDisplayProvider>
+            {result ? (
+              <RolloutResultsPanel
+                visibleMetrics={visibleMetrics}
+                selectedMetric={selectedMetric}
+                onSelectMetric={setSelectedMetricValue}
+                metricScale={metricScale}
+                rolloutSummaries={rolloutSummaries}
+                selectedSeed={selectedSeed}
+                onSelectSeed={setSelectedSeed}
+                selectedRolloutLoading={selectedRolloutLoading}
+                fanRows={fanRows}
+                percentiles={request.percentiles}
+                selectedRows={selectedRows}
+                selectedEvents={selectedEvents}
+                selectedSummary={selectedSummary}
+                visibleEventKinds={visibleEventKinds}
+                eventSelection={eventSelection}
+                rolloutError={rolloutError}
+              />
+            ) : (
+              <RolloutResultsSkeleton />
+            )}
+          </div>
+        </section>
+      </main>
+    </div>
   );
 }
 
@@ -567,6 +548,8 @@ function CalibrationAppSurface({
   onChangeHorizonMonths,
   metricScale,
   onChangeMetricScale,
+  currencyDisplay,
+  onChangeCurrencyDisplay,
 }) {
   return (
     <div
@@ -575,19 +558,6 @@ function CalibrationAppSurface({
     >
       <AugurHeader
         nav={<AugurTabBar tab={tab} onSelectTab={onSelectTab} />}
-        rolloutCount={rolloutCount}
-        onChangeRolloutCount={onChangeRolloutCount}
-        maxRolloutCount={bootstrap.maxRolloutSamples}
-        firstSeed={firstSeed}
-        onChangeFirstSeed={onChangeFirstSeed}
-        exogenousModel={exogenousModel}
-        onChangeExogenousModel={onChangeExogenousModel}
-        exogenousPresets={bootstrap.exogenousPresets}
-        horizonMonths={horizonMonths}
-        onChangeHorizonMonths={onChangeHorizonMonths}
-        maxHorizonMonths={bootstrap.maxHorizonMonths}
-        metricScale={metricScale}
-        onChangeMetricScale={onChangeMetricScale}
         rightSlot={<DeploymentCommitSummary deployment={deployment} />}
       />
       <main className="px-4 py-6 sm:px-6 lg:px-8">
@@ -598,6 +568,25 @@ function CalibrationAppSurface({
           exogenousModel={exogenousModel}
           horizonMonths={horizonMonths}
           metricScale={metricScale}
+          sharedControlsSlot={
+            <SharedControls
+              rolloutCount={rolloutCount}
+              onChangeRolloutCount={onChangeRolloutCount}
+              maxRolloutCount={bootstrap.maxRolloutSamples}
+              firstSeed={firstSeed}
+              onChangeFirstSeed={onChangeFirstSeed}
+              exogenousModel={exogenousModel}
+              onChangeExogenousModel={onChangeExogenousModel}
+              exogenousPresets={bootstrap.exogenousPresets}
+              horizonMonths={horizonMonths}
+              onChangeHorizonMonths={onChangeHorizonMonths}
+              maxHorizonMonths={bootstrap.maxHorizonMonths}
+              metricScale={metricScale}
+              onChangeMetricScale={onChangeMetricScale}
+              currencyDisplay={currencyDisplay}
+              onChangeCurrencyDisplay={onChangeCurrencyDisplay}
+            />
+          }
         />
       </main>
     </div>
@@ -616,6 +605,7 @@ function LoadedAppShell({ bootstrap, deployment }) {
   );
   const [horizonMonths, setHorizonMonths] = useState(() => horizonMonthsFromSearch(window.location.search, bootstrap));
   const [metricScale, setMetricScale] = useState(() => metricScaleFromSearch(window.location.search));
+  const [currencyDisplay, setCurrencyDisplay] = useState(() => currencyDisplayFromSearch(window.location.search));
 
   const onSelectTab = (next) => {
     setTab(next);
@@ -650,6 +640,16 @@ function LoadedAppShell({ bootstrap, deployment }) {
     writeMetricScaleToSearch(value);
   };
 
+  const onChangeCurrencyDisplay = (value) => {
+    setCurrencyDisplay(value);
+    const params = new URLSearchParams(window.location.search);
+    if (value !== "compact") params.set("fmt", "exact");
+    else params.delete("fmt");
+    const search = params.toString();
+    const newUrl = `${window.location.pathname}${search ? "?" + search : ""}${window.location.hash}`;
+    window.history.replaceState(null, "", newUrl);
+  };
+
   const sharedProps = {
     bootstrap,
     deployment,
@@ -665,11 +665,20 @@ function LoadedAppShell({ bootstrap, deployment }) {
     onChangeHorizonMonths,
     metricScale,
     onChangeMetricScale,
+    currencyDisplay,
+    onChangeCurrencyDisplay,
   };
-  if (tab === "calibration") {
-    return <CalibrationAppSurface {...sharedProps} />;
-  }
-  return <ProductProjectionWorkspace {...sharedProps} />;
+  const surface =
+    tab === "calibration" ? (
+      <CalibrationAppSurface {...sharedProps} />
+    ) : (
+      <ProductProjectionWorkspace {...sharedProps} />
+    );
+  return (
+    <CurrencyDisplayProvider value={{ display: currencyDisplay, setDisplay: onChangeCurrencyDisplay }}>
+      {surface}
+    </CurrencyDisplayProvider>
+  );
 }
 
 function ProductProjectionAppShell() {
