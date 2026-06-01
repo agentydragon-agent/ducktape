@@ -30,6 +30,7 @@ from augur.calibration.calibration import mark_fan, run_calibration
 from augur.calibration.catalog import MarketCatalog
 from augur.calibration.manifold import ManifoldClient
 from augur.model.exogenous import ExogenousSamplingRequest, Sampler
+from augur.model.private_equity_bundle import PrivateEquityFloatChannel
 from augur.model.sample_sanity import SampleSanitySpec, evaluate_sample_checks
 from augur.model.series import IssuerId
 from augur.product.portfolio import ProductPortfolioResponse, product_portfolio_response
@@ -171,6 +172,24 @@ def create_app(config: ApiServerConfig) -> FastAPI:
             horizon_months=request.horizon_months,
             percentiles=CALIBRATION_FAN_PERCENTILES,
         )
+        valuation_matrix = bundle.issuer_float_matrix(
+            issuer,
+            PrivateEquityFloatChannel.COMPANY_VALUATION_USD,
+            rollout_count=request.rollouts,
+            horizon_months=request.horizon_months,
+        )
+        valuation_fan = (
+            mark_fan(
+                bundle,
+                issuer=issuer,
+                rollout_count=request.rollouts,
+                horizon_months=request.horizon_months,
+                percentiles=CALIBRATION_FAN_PERCENTILES,
+                channel=PrivateEquityFloatChannel.COMPANY_VALUATION_USD,
+            )
+            if bool((valuation_matrix > 0.0).any())
+            else None
+        )
         sanity_bands = (
             [
                 sanity_band_to_wire(band)
@@ -182,7 +201,9 @@ def create_app(config: ApiServerConfig) -> FastAPI:
             else []
         )
         return calibration_payload(
-            CalibrationRunResponse(preset_id=preset_id, result=result, mark_fan=fan, sanity_bands=sanity_bands)
+            CalibrationRunResponse(
+                preset_id=preset_id, result=result, mark_fan=fan, valuation_fan=valuation_fan, sanity_bands=sanity_bands
+            )
         )
 
     # The health check is not part of the typed wire contract, so keep it out of the

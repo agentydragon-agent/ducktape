@@ -152,7 +152,6 @@ js_library(
         ":sanity_bands",
         ":skeleton",
         "//:node_modules/react",
-        "//augur/frontend/lib:controls",
         "//augur/frontend/lib:format",
     ],
 )

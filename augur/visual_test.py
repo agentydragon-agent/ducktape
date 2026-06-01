@@ -197,11 +197,11 @@ def _wait_for_calibration_page(page: Page) -> None:
     page.evaluate("() => document.fonts.ready.then(() => true)")
 
 
-# `?s=5...........location_a_property` selects the fixture property `location_a_property`; the
-# leading dots are the empty positions for firstSeed..rentalLocationId (all defaults). The horizon
-# (240 months) now rides the tab-shared `?h=` control, not `?s=`. `?lc=` carries three lifecycle
-# events. Schema version 5 (the v5 bump moved `horizonMonths` out of `?s=` into `?h=`).
-_PROPERTY_LIFECYCLE_URL = "/product?h=240&s=5...........location_a_property&lc=r24:50~c60:50000~s120:6"
+# `?s=6..........location_a_property` selects the fixture property `location_a_property`; the
+# leading dots are the empty positions for monthlySpendUsd..rentalLocationId (all defaults). The
+# horizon (240 months) rides the tab-shared `?h=` control, not `?s=`. `?lc=` carries three lifecycle
+# events. Schema version 6 (the v6 bump moved `firstSeed` out of `?s=` into `?seed=`).
+_PROPERTY_LIFECYCLE_URL = "/product?h=240&s=6..........location_a_property&lc=r24:50~c60:50000~s120:6"
 
 VISUAL_CASES = (
     VisualCase(

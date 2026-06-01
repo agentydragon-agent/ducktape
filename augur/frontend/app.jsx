@@ -29,6 +29,9 @@ import {
   rolloutCountFromSearch,
   rolloutCountDefault,
   clampRolloutCount,
+  firstSeedFromSearch,
+  firstSeedDefault,
+  clampFirstSeed,
   exogenousModelFromSearch,
   exogenousModelDefault,
   horizonMonthsFromSearch,
@@ -81,6 +84,17 @@ function writeRolloutCountToSearch(value, bootstrap) {
   const params = new URLSearchParams(window.location.search);
   if (value == null || value === rolloutCountDefault(bootstrap)) params.delete("n");
   else params.set("n", String(value));
+  const search = params.toString();
+  const newUrl = `${window.location.pathname}${search ? "?" + search : ""}${window.location.hash}`;
+  if (newUrl !== window.location.pathname + window.location.search + window.location.hash) {
+    window.history.replaceState(null, "", newUrl);
+  }
+}
+
+function writeFirstSeedToSearch(value, bootstrap) {
+  const params = new URLSearchParams(window.location.search);
+  if (value == null || value === firstSeedDefault(bootstrap)) params.delete("seed");
+  else params.set("seed", String(value));
   const search = params.toString();
   const newUrl = `${window.location.pathname}${search ? "?" + search : ""}${window.location.hash}`;
   if (newUrl !== window.location.pathname + window.location.search + window.location.hash) {
@@ -306,6 +320,8 @@ function ProductProjectionWorkspace({
   onSelectTab,
   rolloutCount,
   onChangeRolloutCount,
+  firstSeed,
+  onChangeFirstSeed,
   exogenousModel,
   onChangeExogenousModel,
   horizonMonths,
@@ -329,8 +345,14 @@ function ProductProjectionWorkspace({
   const selectedMetric =
     visibleMetrics.find((metric) => metric.value === selectedMetricValue) ?? visibleMetrics[0] ?? METRIC_OPTIONS[0];
   const request = useMemo(
-    () => productMetricFanRequest(input, bootstrap, selectedMetric, { rolloutCount, exogenousModel, horizonMonths }),
-    [input, bootstrap, selectedMetric, rolloutCount, exogenousModel, horizonMonths]
+    () =>
+      productMetricFanRequest(input, bootstrap, selectedMetric, {
+        rolloutCount,
+        firstSeed,
+        exogenousModel,
+        horizonMonths,
+      }),
+    [input, bootstrap, selectedMetric, rolloutCount, firstSeed, exogenousModel, horizonMonths]
   );
   const scenarioCacheKey = useMemo(() => JSON.stringify(request.scenario), [request.scenario]);
   const fanRows = useMemo(() => metricFanRows(result), [result]);
@@ -354,11 +376,11 @@ function ProductProjectionWorkspace({
   useEffect(() => {
     const params = new URLSearchParams(productInputToSearch(input, bootstrap));
     if (currencyDisplay !== "compact") params.set("fmt", "exact");
-    // The shell-owned shared params (rollout count `?n=`, exogenous model `?x=`, horizon `?h=`,
-    // chart scale `?scale=`) live outside the product input. Carry whichever are currently set
+    // The shell-owned shared params (rollout count `?n=`, first seed `?seed=`, exogenous model
+    // `?x=`, horizon `?h=`, chart scale `?scale=`) live outside the product input. Carry whichever are currently set
     // across so rewriting the product `?s=` state doesn't drop them.
     const currentParams = new URLSearchParams(window.location.search);
-    for (const key of ["n", "x", "h", "scale"]) {
+    for (const key of ["n", "seed", "x", "h", "scale"]) {
       const value = currentParams.get(key);
       if (value != null) params.set(key, value);
     }
@@ -453,6 +475,8 @@ function ProductProjectionWorkspace({
           rolloutCount={rolloutCount}
           onChangeRolloutCount={onChangeRolloutCount}
           maxRolloutCount={bootstrap.maxRolloutSamples}
+          firstSeed={firstSeed}
+          onChangeFirstSeed={onChangeFirstSeed}
           exogenousModel={exogenousModel}
           onChangeExogenousModel={onChangeExogenousModel}
           exogenousPresets={bootstrap.exogenousPresets}
@@ -535,6 +559,8 @@ function CalibrationAppSurface({
   onSelectTab,
   rolloutCount,
   onChangeRolloutCount,
+  firstSeed,
+  onChangeFirstSeed,
   exogenousModel,
   onChangeExogenousModel,
   horizonMonths,
@@ -552,6 +578,8 @@ function CalibrationAppSurface({
         rolloutCount={rolloutCount}
         onChangeRolloutCount={onChangeRolloutCount}
         maxRolloutCount={bootstrap.maxRolloutSamples}
+        firstSeed={firstSeed}
+        onChangeFirstSeed={onChangeFirstSeed}
         exogenousModel={exogenousModel}
         onChangeExogenousModel={onChangeExogenousModel}
         exogenousPresets={bootstrap.exogenousPresets}
@@ -566,6 +594,7 @@ function CalibrationAppSurface({
         <CalibrationWorkspace
           bootstrap={bootstrap}
           rolloutCount={rolloutCount}
+          firstSeed={firstSeed}
           exogenousModel={exogenousModel}
           horizonMonths={horizonMonths}
           metricScale={metricScale}
@@ -577,11 +606,11 @@ function CalibrationAppSurface({
 
 // Mounted once bootstrap has loaded so the shared defaults (which depend on bootstrap fields like
 // `maxRolloutSamples` and `exogenousPresets`) are available at state-init time. Owns the cross-tab
-// state — the active tab, the shared rollout count, and the shared exogenous model — and hands it
-// to whichever workspace is active.
+// state — the active tab plus shared controls — and hands it to whichever workspace is active.
 function LoadedAppShell({ bootstrap, deployment }) {
   const [tab, setTab] = useState(() => tabFromSearch(window.location.search));
   const [rolloutCount, setRolloutCount] = useState(() => rolloutCountFromSearch(window.location.search, bootstrap));
+  const [firstSeed, setFirstSeed] = useState(() => firstSeedFromSearch(window.location.search, bootstrap));
   const [exogenousModel, setExogenousModel] = useState(() =>
     exogenousModelFromSearch(window.location.search, bootstrap)
   );
@@ -597,6 +626,12 @@ function LoadedAppShell({ bootstrap, deployment }) {
     const next = value == null ? value : clampRolloutCount(value, bootstrap);
     setRolloutCount(next);
     writeRolloutCountToSearch(next, bootstrap);
+  };
+
+  const onChangeFirstSeed = (value) => {
+    const next = value == null ? value : clampFirstSeed(value);
+    setFirstSeed(next);
+    writeFirstSeedToSearch(next, bootstrap);
   };
 
   const onChangeExogenousModel = (value) => {
@@ -622,6 +657,8 @@ function LoadedAppShell({ bootstrap, deployment }) {
     onSelectTab,
     rolloutCount,
     onChangeRolloutCount,
+    firstSeed,
+    onChangeFirstSeed,
     exogenousModel,
     onChangeExogenousModel,
     horizonMonths,

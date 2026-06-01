@@ -37,6 +37,31 @@ function RolloutCountControl({ value, onChange, max }) {
   );
 }
 
+// Tab-shared first seed. Product and calibration both run consecutive rollout seeds from this
+// value, so it belongs next to rollout count in the shell controls.
+function FirstSeedControl({ value, onChange }) {
+  return (
+    <label className="flex items-center gap-1.5 whitespace-nowrap" data-augur-first-seed-control="">
+      <span className="augur-eyebrow">Seed</span>
+      <NumberInput
+        aria-label="First seed"
+        size="xs"
+        min={0}
+        max={2 ** 31 - 1}
+        step={1}
+        value={value ?? ""}
+        hideControls
+        thousandSeparator=","
+        classNames={{ input: "augur-tabular w-24 text-right" }}
+        onChange={(next) => {
+          const number = typeof next === "number" ? next : Number(next);
+          onChange(Number.isFinite(number) ? number : null);
+        }}
+      />
+    </label>
+  );
+}
+
 // Tab-shared horizon control (months). Drives both the product projection and the calibration run.
 function HorizonControl({ value, onChange, max }) {
   return (
@@ -98,6 +123,8 @@ export function AugurHeader({
   rolloutCount,
   onChangeRolloutCount,
   maxRolloutCount,
+  firstSeed,
+  onChangeFirstSeed,
   exogenousModel,
   onChangeExogenousModel,
   exogenousPresets = [],
@@ -109,7 +136,12 @@ export function AugurHeader({
 }) {
   const showExogenousControl = onChangeExogenousModel && exogenousPresets.length > 1;
   const rightGroup =
-    onChangeRolloutCount || onChangeHorizonMonths || onChangeMetricScale || showExogenousControl || rightSlot;
+    onChangeRolloutCount ||
+    onChangeFirstSeed ||
+    onChangeHorizonMonths ||
+    onChangeMetricScale ||
+    showExogenousControl ||
+    rightSlot;
   return (
     <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur dark:border-slate-800 dark:bg-slate-950/95 sm:px-6 lg:px-8">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -135,6 +167,7 @@ export function AugurHeader({
             {onChangeRolloutCount && (
               <RolloutCountControl value={rolloutCount} onChange={onChangeRolloutCount} max={maxRolloutCount} />
             )}
+            {onChangeFirstSeed && <FirstSeedControl value={firstSeed} onChange={onChangeFirstSeed} />}
             {onChangeMetricScale && <ScaleControl value={metricScale} onChange={onChangeMetricScale} />}
             {rightSlot}
           </div>

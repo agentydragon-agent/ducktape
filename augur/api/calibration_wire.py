@@ -3,7 +3,7 @@
 These mirror `augur.product.wire`: Pydantic models at the HTTP boundary, snake_case
 on the wire (the frontend camelizes), exported to the frontend Zod schema via
 `augur.api.export_schema`. The run response embeds the calibration library's
-`CalibrationResult` (clean/surfaced rows) plus a `MarkFan` for the issuer.
+`CalibrationResult` (clean/surfaced rows) plus issuer fan charts.
 """
 
 from __future__ import annotations
@@ -72,7 +72,7 @@ class CalibrationRunRequest(ApiModel):
 
 
 class CalibrationRunResponse(ApiModel):
-    """`CalibrationResult` (issuer, clean/surfaced rows) plus the issuer mark fan.
+    """`CalibrationResult` (issuer, clean/surfaced rows) plus issuer fan charts.
 
     `sanity_bands` carries the deployment's `sample_sanity` reasonableness bands evaluated
     against this run's rollouts; empty when the deployment configures no `sample_sanity_path`.
@@ -81,4 +81,5 @@ class CalibrationRunResponse(ApiModel):
     preset_id: str
     result: CalibrationResult
     mark_fan: MarkFan
+    valuation_fan: MarkFan | None = None
     sanity_bands: list[CalibrationSanityBand] = Field(default_factory=list)

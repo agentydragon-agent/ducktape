@@ -813,26 +813,6 @@ export function ProductScenarioForm({ input, bootstrap, portfolio, portfolioErro
             />
           </div>
         </div>
-        <details className="px-4 py-3 [&_summary::-webkit-details-marker]:hidden">
-          <summary className="augur-eyebrow cursor-pointer list-none">
-            <span className="inline-flex items-center gap-1">
-              <span aria-hidden="true" className="transition-transform [details[open]_&]:rotate-90">
-                ▸
-              </span>
-              Sampling
-            </span>
-          </summary>
-          <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            <NumberField
-              label="First seed"
-              value={input.firstSeed}
-              min={0}
-              max={2 ** 31 - 1}
-              step={1}
-              onChange={(firstSeed) => onChange({ firstSeed })}
-            />
-          </div>
-        </details>
       </div>
     </aside>
   );

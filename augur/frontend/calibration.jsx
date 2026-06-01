@@ -1,25 +1,21 @@
 import React, { useEffect, useMemo, useState } from "react";
 
 import { fetchCalibrationRun } from "./client.js";
-import { NumberField } from "./lib/controls.jsx";
 import { fmtPct } from "./lib/format.js";
 import { MetricFanChart } from "./fan_chart.jsx";
 import { RolloutResultsSkeleton } from "./skeleton.jsx";
 import { CurrencyDisplayProvider } from "./hooks.js";
-import { FAN_PERCENTILES, clampRolloutCount, clampHorizonMonths } from "./input_helpers.js";
+import { FAN_PERCENTILES, clampRolloutCount, clampFirstSeed, clampHorizonMonths } from "./input_helpers.js";
 import { markFanRows } from "./data_helpers.js";
 import { sortSanityBands, sanityPassCount, fmtExpectedBand, fmtObserved } from "./sanity_bands.js";
 
-// The issuer mark fan is a per-unit USD price. `chartValue` ending in `Usd` makes the shared
-// `MetricFanChart` axis/tooltip format it as currency; the label keeps it honest as a per-unit
-// mark (NOT a valuation — augur models no shares / market cap).
+// `chartValue` ending in `Usd` makes the shared `MetricFanChart` axis/tooltip format these
+// issuer channels as currency.
 const MARK_METRIC = { value: "mark_usd_per_unit", chartValue: "markUsd", label: "Per-unit mark" };
-
-// `rollouts` and `horizonMonths` are intentionally absent: both are tab-shared controls owned by
-// the app shell (see `rolloutCountFromSearch` / `horizonMonthsFromSearch`), passed in as props and
-// woven into the run request below. Only the seed (calibration-specific, tucked away) lives here.
-const CALIBRATION_INPUT_DEFAULTS = {
-  seed: 1701,
+const VALUATION_METRIC = {
+  value: "company_valuation_usd",
+  chartValue: "companyValuationUsd",
+  label: "Company valuation",
 };
 
 function fmtProb(value) {
@@ -73,10 +69,10 @@ function SanityStatusPill({ status }) {
   );
 }
 
-function CalibrationForm({ input, catalog, exogenousModel, onChange }) {
+function CalibrationForm({ catalog }) {
   return (
     <aside className="min-w-0">
-      <div className="augur-card divide-y divide-slate-200 dark:divide-slate-700">
+      <div className="augur-card">
         <div className="px-4 py-3">
           <div className="augur-eyebrow">Calibration run</div>
           <div className="mt-1 text-xs augur-muted">
@@ -90,33 +86,7 @@ function CalibrationForm({ input, catalog, exogenousModel, onChange }) {
             <div className="mt-1 text-sm font-semibold augur-strong">{catalog.label}</div>
             <div className="text-xs augur-muted">issuer: {catalog.issuer}</div>
           </div>
-          <div>
-            <div className="augur-eyebrow">Exogenous model</div>
-            <div className="mt-1 text-sm font-semibold augur-strong" data-calibration-model={exogenousModel ?? ""}>
-              {exogenousModel ?? "(no presets)"}
-            </div>
-          </div>
         </div>
-        <details className="px-4 py-3 [&_summary::-webkit-details-marker]:hidden">
-          <summary className="augur-eyebrow cursor-pointer list-none">
-            <span className="inline-flex items-center gap-1">
-              <span aria-hidden="true" className="transition-transform [details[open]_&]:rotate-90">
-                ▸
-              </span>
-              Advanced
-            </span>
-          </summary>
-          <div className="mt-3">
-            <NumberField
-              label="Seed"
-              value={input.seed}
-              min={0}
-              max={2 ** 31 - 1}
-              step={1}
-              onChange={(seed) => onChange({ seed })}
-            />
-          </div>
-        </details>
       </div>
     </aside>
   );
@@ -233,22 +203,19 @@ function SurfacedTable({ rows }) {
   );
 }
 
-function MarkFanPanel({ markFan, metricScale }) {
-  const rows = useMemo(() => markFanRows(markFan), [markFan]);
-  const percentiles = markFan?.percentiles?.length ? markFan.percentiles : FAN_PERCENTILES;
+function IssuerFanPanel({ fan, metric, title, description, metricScale, dataAttribute, emptyLabel }) {
+  const rows = useMemo(() => markFanRows(fan), [fan]);
+  const percentiles = fan?.percentiles?.length ? fan.percentiles : FAN_PERCENTILES;
   return (
-    <section className="augur-panel overflow-hidden" aria-label="Issuer mark fan" data-calibration-mark-fan="">
+    <section className="augur-panel overflow-hidden" aria-label={title} {...{ [dataAttribute]: "" }}>
       <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
-        <div className="augur-eyebrow">Issuer per-unit mark</div>
-        <div className="mt-1 text-xs augur-muted">
-          Percentile bands of {markFan.issuer}'s modelled per-unit mark over the horizon. This is a per-UNIT price, NOT
-          a company valuation (augur models no shares or market cap).
-        </div>
+        <div className="augur-eyebrow">{title}</div>
+        <div className="mt-1 text-xs augur-muted">{description}</div>
       </div>
       {rows.length > 0 ? (
         <MetricFanChart
           rows={rows}
-          metric={MARK_METRIC}
+          metric={metric}
           metricScale={metricScale}
           percentiles={percentiles}
           selectedRows={[]}
@@ -262,7 +229,7 @@ function MarkFanPanel({ markFan, metricScale }) {
           onHoverEventMonth={() => {}}
         />
       ) : (
-        <div className="flex min-h-[18rem] items-center justify-center text-sm augur-muted">No mark fan data.</div>
+        <div className="flex min-h-[18rem] items-center justify-center text-sm augur-muted">{emptyLabel}</div>
       )}
     </section>
   );
@@ -331,7 +298,7 @@ function SanityBandsPanel({ bands }) {
 }
 
 function CalibrationResults({ response, metricScale }) {
-  const { result, markFan } = response;
+  const { result, markFan, valuationFan } = response;
   return (
     <div className="min-w-0 space-y-5">
       <div className="grid gap-3 sm:grid-cols-2">
@@ -357,7 +324,27 @@ function CalibrationResults({ response, metricScale }) {
         <CleanTable rows={result.clean ?? []} />
       </section>
 
-      <MarkFanPanel markFan={markFan} metricScale={metricScale} />
+      <IssuerFanPanel
+        fan={markFan}
+        metric={MARK_METRIC}
+        title="Issuer per-unit mark"
+        description={`Percentile bands of ${markFan.issuer}'s modelled per-unit mark over the horizon.`}
+        metricScale={metricScale}
+        dataAttribute="data-calibration-mark-fan"
+        emptyLabel="No mark fan data."
+      />
+
+      {valuationFan && (
+        <IssuerFanPanel
+          fan={valuationFan}
+          metric={VALUATION_METRIC}
+          title="Issuer company valuation"
+          description={`Percentile bands of ${valuationFan.issuer}'s modelled company valuation over the horizon.`}
+          metricScale={metricScale}
+          dataAttribute="data-calibration-valuation-fan"
+          emptyLabel="No valuation fan data."
+        />
+      )}
 
       {response.sanityBands?.length > 0 && <SanityBandsPanel bands={response.sanityBands} />}
 
@@ -375,28 +362,33 @@ function CalibrationResults({ response, metricScale }) {
   );
 }
 
-export function CalibrationWorkspace({ bootstrap, rolloutCount, exogenousModel, horizonMonths, metricScale }) {
+export function CalibrationWorkspace({
+  bootstrap,
+  rolloutCount,
+  firstSeed,
+  exogenousModel,
+  horizonMonths,
+  metricScale,
+}) {
   const catalog = bootstrap.calibration ?? null;
 
-  const [input, setInput] = useState({ ...CALIBRATION_INPUT_DEFAULTS });
   const [response, setResponse] = useState(null);
   const [runError, setRunError] = useState(null);
 
-  const updateInput = (patch) => setInput((previous) => ({ ...previous, ...patch }));
-
-  // The calibration run is fully determined by the seed plus the tab-shared controls — the exogenous
-  // model (`?x=`), rollout count (`?n=`), and horizon (`?h=`), all owned by the app shell. Memoizing
-  // keeps the auto-run effect from re-firing on unrelated re-renders (it keys on this request).
+  // The calibration run is fully determined by tab-shared shell controls: exogenous model (`?x=`),
+  // rollout count (`?n=`), first seed (`?seed=`), and horizon (`?h=`). Memoizing keeps the auto-run
+  // effect from re-firing on unrelated re-renders (it keys on this request).
   const rollouts = clampRolloutCount(rolloutCount, bootstrap);
+  const seed = clampFirstSeed(firstSeed);
   const horizon = clampHorizonMonths(horizonMonths, bootstrap);
   const request = useMemo(
     () => ({
       presetId: exogenousModel,
       horizonMonths: horizon,
       rollouts,
-      seed: input.seed,
+      seed,
     }),
-    [exogenousModel, horizon, rollouts, input.seed]
+    [exogenousModel, horizon, rollouts, seed]
   );
 
   // Live auto-run (no button): debounce input changes, abort the in-flight run, and re-score
@@ -437,7 +429,7 @@ export function CalibrationWorkspace({ bootstrap, rolloutCount, exogenousModel, 
     <CurrencyDisplayProvider value={currencyDisplayContext}>
       <div className="min-w-0 space-y-5">
         <section className="grid min-w-0 gap-5 min-[864px]:grid-cols-[28rem_minmax(0,1fr)]">
-          <CalibrationForm input={input} catalog={catalog} exogenousModel={exogenousModel} onChange={updateInput} />
+          <CalibrationForm catalog={catalog} />
 
           <div className="min-w-0 space-y-5">
             {runError ? (

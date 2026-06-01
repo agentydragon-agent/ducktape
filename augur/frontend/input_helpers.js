@@ -18,10 +18,10 @@ export const DEFAULT_SELL_ORDER_CODES = SELL_BUCKETS.map((bucket) => bucket.code
 // product and calibration tabs (see `rolloutCountDefault` and the `?n=` URL param). Both tabs
 // run this many rollouts, so it lives in the app shell rather than in either tab's input.
 export const DEFAULT_ROLLOUT_COUNT = 500;
+export const DEFAULT_FIRST_SEED = 1301;
 
 export const DEFAULT_PRODUCT_INPUT_BASE = {
   horizonMonths: 48,
-  firstSeed: 1301,
   monthlySpendUsd: 1400,
   spendIndex: "inflation",
   sellOrder: DEFAULT_SELL_ORDER_CODES,
@@ -133,6 +133,24 @@ export function rolloutCountFromSearch(searchString, bootstrap) {
   return Number.isFinite(numeric) ? clampRolloutCount(numeric, bootstrap) : rolloutCountDefault(bootstrap);
 }
 
+// Tab-shared first rollout seed. Product projections and calibration runs both consume the same
+// seed sequence start, so the shell owns it and persists it to `?seed=`.
+export function firstSeedDefault(bootstrap) {
+  const override = bootstrap.productInputDefaults?.firstSeed;
+  return clampFirstSeed(override ?? DEFAULT_FIRST_SEED);
+}
+
+export function clampFirstSeed(value) {
+  return clampInteger(value, 0, 2 ** 31 - 1);
+}
+
+export function firstSeedFromSearch(searchString, bootstrap) {
+  const raw = new URLSearchParams(searchString).get("seed");
+  if (raw == null) return firstSeedDefault(bootstrap);
+  const numeric = Number(raw);
+  return Number.isFinite(numeric) ? clampFirstSeed(numeric) : firstSeedDefault(bootstrap);
+}
+
 // Tab-shared exogenous model preset. Like the rollout count, the app shell owns the live value
 // and persists it to `?x=`; the product scenario and the calibration run both read it. A value
 // not present in `bootstrap.exogenousPresets` (stale URL, empty) falls back to the deployment
@@ -193,10 +211,11 @@ export function metricScaleFromSearch(searchString) {
 // v5 dropped the leading `horizonMonths` (now the tab-shared `?h=` control); dropping a
 // non-trailing slot shifts the rest, so the bump makes older URLs fall back to defaults rather
 // than misread their positions.
-const INPUT_SCHEMA_VERSION = "5";
+// v6 dropped the leading `firstSeed` (now the tab-shared `?seed=` control); same positional
+// shift concern as v5.
+const INPUT_SCHEMA_VERSION = "6";
 
 const INPUT_FIELDS = [
-  { key: "firstSeed", type: "number" },
   { key: "monthlySpendUsd", type: "number" },
   { key: "spendIndex", type: "enum", codes: { inflation: "i", none: "n" } },
   // sellOrder is a string of single-char bucket codes; "" is a legitimate value meaning "disable
@@ -498,19 +517,20 @@ export function productScenario(input, bootstrap, modelId, horizonMonths) {
   };
 }
 
-export function productRolloutSeeds(input, bootstrap, rolloutCount) {
+export function productRolloutSeeds(bootstrap, rolloutCount, firstSeed) {
   const count = clampRolloutCount(rolloutCount, bootstrap);
-  const firstSeed = clampInteger(input.firstSeed, 0, 2 ** 31 - 1);
-  return Array.from({ length: count }, (_, index) => firstSeed + index);
+  const start = clampFirstSeed(firstSeed);
+  return Array.from({ length: count }, (_, index) => start + index);
 }
 
-// The tab-shared controls (rollout count, exogenous model, horizon) are passed in `shared`
-// rather than read from `input`, since the app shell owns them (see `?n=`/`?x=`/`?h=`).
+// The tab-shared controls (rollout count, first seed, exogenous model, horizon) are passed in
+// `shared` rather than read from `input`, since the app shell owns them
+// (see `?n=`/`?seed=`/`?x=`/`?h=`).
 export function productMetricFanRequest(input, bootstrap, metric, shared) {
-  const { rolloutCount, exogenousModel, horizonMonths } = shared;
+  const { rolloutCount, firstSeed, exogenousModel, horizonMonths } = shared;
   return {
     scenario: productScenario(input, bootstrap, exogenousModel, horizonMonths),
-    rolloutSeeds: productRolloutSeeds(input, bootstrap, rolloutCount),
+    rolloutSeeds: productRolloutSeeds(bootstrap, rolloutCount, firstSeed),
     metric: metric.value,
     percentiles: FAN_PERCENTILES,
   };
