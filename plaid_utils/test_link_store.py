@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from testcontainers.postgres import PostgresContainer
 
 from plaid_utils.link_profiles import LinkProfile
-from plaid_utils.link_store import PlaidLinkStorage
+from plaid_utils.link_store import ApiEvent, PlaidLinkStorage
 from third_party.containers.rlocations import POSTGRES_18, RYUK
 from util.oci import load_oci_image
 from util.testing.postgres import force_drop_database
@@ -121,6 +121,142 @@ async def test_transaction_reconciliation_does_not_mark_partial_sync_success(sto
     link = await storage.get_link("item-transactions")
     assert link is not None
     assert link.last_synced_at is None
+
+
+async def test_purge_link_data_removes_mirrored_rows_but_keeps_audit_history(
+    storage: PlaidLinkStorage, db_url: str
+) -> None:
+    captured_at = datetime(2026, 5, 31, 12, 0, tzinfo=UTC)
+    await _add_link(storage, item_id="item-purge")
+    await _add_link(storage, item_id="item-keep")
+
+    await storage.apply_accounts(
+        item_id="item-purge",
+        accounts=[
+            {
+                "account_id": "account-purge",
+                "name": "Purge Checking",
+                "type": "depository",
+                "balances": {"available": 10.0, "current": 11.0, "limit": None, "iso_currency_code": "USD"},
+            }
+        ],
+        captured_at=captured_at,
+    )
+    await storage.apply_accounts(
+        item_id="item-keep",
+        accounts=[
+            {
+                "account_id": "account-keep",
+                "name": "Keep Brokerage",
+                "type": "investment",
+                "balances": {"available": None, "current": 20.0, "limit": None, "iso_currency_code": "USD"},
+            }
+        ],
+        captured_at=captured_at,
+    )
+    await storage.reconcile_transactions(
+        item_id="item-purge",
+        start_date=date(2026, 5, 1),
+        end_date=date(2026, 5, 31),
+        transactions=[
+            {
+                "transaction_id": "txn-purge",
+                "account_id": "account-purge",
+                "date": "2026-05-30",
+                "amount": 12.34,
+                "name": "Coffee",
+                "pending": False,
+            }
+        ],
+        captured_at=captured_at,
+    )
+    await storage.apply_holdings(
+        item_id="item-purge",
+        securities=[
+            {"security_id": "security-purge", "name": "Purge Fund", "raw_json": {}},
+            {"security_id": "security-shared", "name": "Shared Fund", "raw_json": {}},
+        ],
+        holdings=[
+            {"account_id": "account-purge", "security_id": "security-purge", "quantity": 1.0},
+            {"account_id": "account-purge", "security_id": "security-shared", "quantity": 2.0},
+        ],
+        captured_at=captured_at,
+    )
+    await storage.apply_holdings(
+        item_id="item-keep",
+        securities=[{"security_id": "security-shared", "name": "Shared Fund", "raw_json": {}}],
+        holdings=[{"account_id": "account-keep", "security_id": "security-shared", "quantity": 3.0}],
+        captured_at=captured_at,
+    )
+    await storage.upsert_investment_transactions(
+        item_id="item-purge",
+        transactions=[
+            {
+                "investment_transaction_id": "investment-txn-purge",
+                "account_id": "account-purge",
+                "security_id": "security-purge",
+                "date": "2026-05-30",
+            }
+        ],
+        captured_at=captured_at,
+    )
+    await storage.append_liability_snapshots(
+        item_id="item-purge",
+        liabilities={
+            "credit": [{"account_id": "account-purge", "raw_json": {"kind": "credit"}}],
+            "mortgage": [{"account_id": "account-purge", "raw_json": {"kind": "mortgage"}}],
+            "student": [{"account_id": "account-purge", "raw_json": {"kind": "student"}}],
+        },
+        captured_at=captured_at,
+    )
+    run_id = await storage.begin_sync_run(trigger="manual", item_id="item-purge", configured_windows={})
+    await storage.record_api_event(
+        ApiEvent(
+            sync_run_id=run_id,
+            endpoint="transactions/get",
+            item_id="item-purge",
+            status="ok",
+            request_json={"item_id": "item-purge"},
+            response_json={"transactions": []},
+        )
+    )
+
+    await storage.purge_link_data("item-purge")
+
+    engine = create_async_engine(db_url)
+    try:
+        async with engine.connect() as conn:
+            for table in (
+                "links",
+                "accounts",
+                "transactions",
+                "balance_snapshots",
+                "holding_snapshots",
+                "investment_transactions",
+                "liability_credit_snapshots",
+                "liability_mortgage_snapshots",
+                "liability_student_snapshots",
+            ):
+                assert (
+                    await conn.execute(text(f"SELECT count(*) FROM {table} WHERE item_id = 'item-purge'"))
+                ).scalar_one() == 0
+            assert (
+                await conn.execute(text("SELECT count(*) FROM links WHERE item_id = 'item-keep'"))
+            ).scalar_one() == 1
+            assert (
+                await conn.execute(text("SELECT count(*) FROM securities WHERE security_id = 'security-purge'"))
+            ).scalar_one() == 0
+            assert (
+                await conn.execute(text("SELECT count(*) FROM securities WHERE security_id = 'security-shared'"))
+            ).scalar_one() == 1
+            assert (
+                await conn.execute(text("SELECT count(*) FROM sync_runs WHERE item_id = 'item-purge'"))
+            ).scalar_one() == 1
+            assert (
+                await conn.execute(text("SELECT count(*) FROM plaid_api_events WHERE item_id = 'item-purge'"))
+            ).scalar_one() == 1
+    finally:
+        await engine.dispose()
 
 
 if __name__ == "__main__":

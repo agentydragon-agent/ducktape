@@ -373,8 +373,8 @@ def create_app(
         except PlaidClientError as exc:
             raise HTTPException(502, exc.public_detail()) from exc
         await require_secrets().delete_access_token(link.access_token_secret)
-        await require_storage().mark_link_revoked(item_id)
-        return {"status": "revoked"}
+        await require_storage().purge_link_data(item_id)
+        return {"status": "removed"}
 
     return app
 

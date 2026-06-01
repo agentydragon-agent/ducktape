@@ -21,37 +21,52 @@ from plaid_utils.mcp_server.app import PlaidWebClient, PlaidWebSettings, create_
 
 
 class _FakeStorage:
+    def __init__(self) -> None:
+        self.purged_item_ids: list[str] = []
+
+    def _link(self) -> StoredLink:
+        return StoredLink(
+            item_id="item_123",
+            label="Chase personal",
+            institution_id="ins_3",
+            institution_name="Chase",
+            link_profile=LinkProfile.CREDIT_CARD_DETAIL,
+            products_requested=["transactions", "liabilities"],
+            transaction_days_requested=90,
+            products_authorized=["transactions"],
+            products_billed=[],
+            status="active",
+            access_token_secret="plaid-item-123-access-token",
+            last_synced_at=datetime(2026, 5, 31, 12, 0, tzinfo=UTC),
+            earliest_transaction_date=date(2026, 3, 2),
+            latest_transaction_date=date(2026, 5, 30),
+            synced_transaction_count=42,
+        )
+
     async def list_active_links(self) -> list[StoredLink]:
-        return [
-            StoredLink(
-                item_id="item_123",
-                label="Chase personal",
-                institution_id="ins_3",
-                institution_name="Chase",
-                link_profile=LinkProfile.CREDIT_CARD_DETAIL,
-                products_requested=["transactions", "liabilities"],
-                transaction_days_requested=90,
-                products_authorized=["transactions"],
-                products_billed=[],
-                status="active",
-                access_token_secret="plaid-item-123-access-token",
-                last_synced_at=datetime(2026, 5, 31, 12, 0, tzinfo=UTC),
-                earliest_transaction_date=date(2026, 3, 2),
-                latest_transaction_date=date(2026, 5, 30),
-                synced_transaction_count=42,
-            )
-        ]
+        return [self._link()]
+
+    async def get_link(self, item_id: str) -> StoredLink | None:
+        return self._link() if item_id == "item_123" else None
+
+    async def purge_link_data(self, item_id: str) -> None:
+        self.purged_item_ids.append(item_id)
 
 
 class _FakeSecrets:
+    def __init__(self) -> None:
+        self.deleted_secret_names: list[str] = []
+
     async def read_access_token(self, secret_name: str) -> str:
-        raise AssertionError(f"unexpected secret read in smoke test: {secret_name}")
+        if secret_name != "plaid-item-123-access-token":
+            raise AssertionError(f"unexpected secret read in smoke test: {secret_name}")
+        return "access-sandbox-existing"
 
     async def write_access_token(self, secret_name: str, access_token: str) -> None:
         raise AssertionError(f"unexpected secret write in smoke test: {secret_name}")
 
     async def delete_access_token(self, secret_name: str) -> None:
-        raise AssertionError(f"unexpected secret delete in smoke test: {secret_name}")
+        self.deleted_secret_names.append(secret_name)
 
 
 class _FakePlaidApi:
@@ -93,7 +108,9 @@ class _FakePlaidApi:
         raise AssertionError("unexpected sync call in smoke test")
 
 
-def _client() -> TestClient:
+def _client(
+    *, storage: _FakeStorage | None = None, secrets: _FakeSecrets | None = None, api: _FakePlaidApi | None = None
+) -> TestClient:
     settings = PlaidWebSettings(
         plaid_env="sandbox",
         client_id="client-id",
@@ -104,9 +121,9 @@ def _client() -> TestClient:
     return TestClient(
         create_app(
             settings,
-            storage=cast(PlaidLinkStorage, _FakeStorage()),
-            secrets=_FakeSecrets(),
-            client=cast(PlaidWebClient, PlaidClient(api=cast(PlaidSdkApiLike, _FakePlaidApi()))),
+            storage=cast(PlaidLinkStorage, storage or _FakeStorage()),
+            secrets=secrets or _FakeSecrets(),
+            client=cast(PlaidWebClient, PlaidClient(api=cast(PlaidSdkApiLike, api or _FakePlaidApi()))),
         )
     )
 
@@ -266,6 +283,21 @@ def test_remove_item_uses_sdk_request() -> None:
     client.remove_item("access-sandbox-existing")
 
     assert api.removed_access_tokens == ["access-sandbox-existing"]
+
+
+def test_remove_link_purges_mirrored_link_data_after_plaid_removal() -> None:
+    api = _FakePlaidApi()
+    storage = _FakeStorage()
+    secrets = _FakeSecrets()
+
+    with _client(storage=storage, secrets=secrets, api=api) as client:
+        response = client.post("/api/links/item_123/remove")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "removed"}
+    assert api.removed_access_tokens == ["access-sandbox-existing"]
+    assert secrets.deleted_secret_names == ["plaid-item-123-access-token"]
+    assert storage.purged_item_ids == ["item_123"]
 
 
 if __name__ == "__main__":

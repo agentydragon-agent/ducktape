@@ -11,7 +11,22 @@ from uuid import UUID, uuid4
 
 from alembic import command as alembic_command
 from alembic.config import Config as AlembicConfig
-from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, Uuid, func, select
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Date,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    Uuid,
+    delete,
+    exists,
+    func,
+    select,
+)
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -325,6 +340,40 @@ class PlaidLinkStorage:
                 row.status = "revoked"
                 row.updated_at = _utcnow()
                 await session.commit()
+
+    async def purge_link_data(self, item_id: str) -> None:
+        security_ids = (
+            select(_HoldingSnapshotRow.security_id)
+            .where(_HoldingSnapshotRow.item_id == item_id)
+            .union(
+                select(_InvestmentTransactionRow.security_id).where(
+                    _InvestmentTransactionRow.item_id == item_id, _InvestmentTransactionRow.security_id.is_not(None)
+                )
+            )
+        )
+        async with self._session_factory() as session:
+            security_ids_to_check = list((await session.execute(security_ids)).scalars())
+            for row_type in (
+                _LiabilityCreditSnapshotRow,
+                _LiabilityMortgageSnapshotRow,
+                _LiabilityStudentSnapshotRow,
+                _HoldingSnapshotRow,
+                _InvestmentTransactionRow,
+                _TransactionRow,
+                _BalanceSnapshotRow,
+                _AccountRow,
+            ):
+                await session.execute(delete(row_type).where(row_type.item_id == item_id))
+            await session.execute(delete(_LinkRow).where(_LinkRow.item_id == item_id))
+            if security_ids_to_check:
+                await session.execute(
+                    delete(_SecurityRow).where(
+                        _SecurityRow.security_id.in_(security_ids_to_check),
+                        ~exists().where(_HoldingSnapshotRow.security_id == _SecurityRow.security_id),
+                        ~exists().where(_InvestmentTransactionRow.security_id == _SecurityRow.security_id),
+                    )
+                )
+            await session.commit()
 
     async def mark_link_update_succeeded(
         self, *, item_id: str, link_profile: LinkProfile, products_requested: list[str]

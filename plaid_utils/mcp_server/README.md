@@ -39,7 +39,9 @@ Postgres. The web UI writes those Secrets; the sync job reads them.
 - launch Plaid update mode to repair or renew an Item;
 - request additional consented products for an existing Item, then sync it;
 - run a manual sync for one Item;
-- remove an Item through `/item/remove`, delete its access-token Secret, and mark it revoked.
+- remove an Item through `/item/remove`, delete its access-token Secret, and
+  purge its mirrored link/account/transaction rows. Append-only `sync_runs` and
+  `plaid_api_events` rows are retained for synchronization audit history.
 
 Plaid fixes `transactions.days_requested` when Transactions is first added to an
 Item. Existing Items cannot be expanded by sending a larger value later; the UI
