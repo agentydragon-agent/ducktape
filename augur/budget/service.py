@@ -1,0 +1,118 @@
+"""Budget snapshot service: loads transactions, classifies, aggregates, returns wire types."""
+
+from __future__ import annotations
+
+import os
+from datetime import date
+
+from augur.budget.aggregate import aggregate
+from augur.budget.categorize import classify
+from augur.budget.schema import BudgetConfig
+from augur.budget.wire import (
+    BucketMonthly,
+    BucketView,
+    BudgetSnapshotResponse,
+    BudgetTransactionsResponse,
+    LumpyView,
+    TransactionView,
+)
+from plaid_utils.read_model import read_account_directory, read_transactions
+
+
+def _resolve_db_url(config: BudgetConfig) -> str:
+    env_var = config.source.database_url_env
+    url = os.environ.get(env_var)
+    if not url:
+        raise RuntimeError(
+            f"budget source environment variable {env_var!r} is not set; "
+            "point it at a postgresql URL for the plaid mirror DB (or run dev_against_prod.sh)."
+        )
+    return url
+
+
+def _window_bounds(*, months: int, latest_date: date) -> tuple[date, date]:
+    """Last `months` calendar months ending at the month containing latest_date."""
+    end_month = date(latest_date.year, latest_date.month, 1)
+    # Walk back (months - 1) full months to get start.
+    total = end_month.year * 12 + (end_month.month - 1) - (months - 1)
+    start_month = date(total // 12, total % 12 + 1, 1)
+    return start_month, end_month
+
+
+async def build_snapshot(*, config: BudgetConfig, months: int) -> BudgetSnapshotResponse:
+    """Pull + categorize + aggregate, packaged as the wire snapshot."""
+    db_url = _resolve_db_url(config)
+    today = date.today()
+    start_month, end_month = _window_bounds(months=months, latest_date=today)
+    transactions = await read_transactions(
+        db_url=db_url, start_date=start_month, end_date=today, account_ids=config.source.plaid_account_ids
+    )
+    classified = classify(transactions, config=config)
+    report = aggregate(classified, config=config, start_month=start_month, end_month=end_month)
+    return BudgetSnapshotResponse(
+        months=report.months,
+        buckets=tuple(
+            BucketView(id=bucket.id, label=bucket.label, kind=bucket.kind, reimbursed_by=bucket.reimbursed_by)
+            for bucket in config.buckets
+        ),
+        monthly_by_bucket=tuple(
+            BucketMonthly(
+                bucket_id=bucket_report.bucket.id,
+                monthly_amounts=bucket_report.monthly.amounts,
+                current_monthly_avg=bucket_report.current_monthly_avg,
+                transaction_count=bucket_report.transaction_count,
+            )
+            for bucket_report in report.buckets
+        ),
+        lumpy=tuple(
+            LumpyView(
+                transaction_id=item.transaction_id,
+                date=item.date,
+                amount=item.amount,
+                name=item.name,
+                merchant_name=item.merchant_name,
+                bucket_id=item.bucket_id,
+            )
+            for item in report.lumpy
+        ),
+        lumpy_threshold_usd=config.lumpy_threshold_usd,
+        reimbursement_window_months=config.reimbursement_window_months,
+        data_window_start=start_month,
+        data_window_end=today,
+    )
+
+
+async def list_transactions_in_bucket(
+    *, config: BudgetConfig, bucket_id: str, months: int
+) -> BudgetTransactionsResponse:
+    """Drill-down: all transactions in one bucket, enriched with account+link names from the directory."""
+    db_url = _resolve_db_url(config)
+    today = date.today()
+    start_month, _ = _window_bounds(months=months, latest_date=today)
+    transactions = await read_transactions(
+        db_url=db_url, start_date=start_month, end_date=today, account_ids=config.source.plaid_account_ids
+    )
+    accounts, links = await read_account_directory(db_url=db_url, account_ids=config.source.plaid_account_ids)
+    classified = classify(transactions, config=config)
+    bucket_ids = {bucket.id for bucket in config.buckets}
+    if bucket_id not in bucket_ids:
+        raise ValueError(f"unknown bucket_id {bucket_id!r}; have {sorted(bucket_ids)}")
+    return BudgetTransactionsResponse(
+        bucket_id=bucket_id,
+        transactions=tuple(
+            TransactionView(
+                transaction_id=entry.transaction.transaction_id,
+                date=entry.transaction.date,
+                amount=entry.transaction.amount,
+                name=entry.transaction.name,
+                merchant_name=entry.transaction.merchant_name,
+                pfc_primary=entry.transaction.pfc_primary,
+                pfc_detailed=entry.transaction.pfc_detailed,
+                account_name=accounts[entry.transaction.account_id].name,
+                institution_name=links[entry.transaction.item_id].institution_name,
+                bucket_id=entry.bucket_id,
+            )
+            for entry in classified
+            if entry.bucket_id == bucket_id
+        ),
+    )

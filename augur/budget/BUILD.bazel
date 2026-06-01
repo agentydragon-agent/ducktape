@@ -1,0 +1,59 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "schema",
+    srcs = ["schema.py"],
+    deps = [
+        "//augur/api:schemas",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "default_rules",
+    srcs = ["default_rules.py"],
+    deps = [":schema"],
+)
+
+py_library(
+    name = "categorize",
+    srcs = ["categorize.py"],
+    deps = [
+        ":default_rules",
+        ":schema",
+        "//plaid_utils:schema",
+    ],
+)
+
+py_library(
+    name = "aggregate",
+    srcs = ["aggregate.py"],
+    deps = [
+        ":categorize",
+        ":schema",
+    ],
+)
+
+py_library(
+    name = "wire",
+    srcs = ["wire.py"],
+    deps = [
+        ":schema",
+        "//augur/api:schemas",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "service",
+    srcs = ["service.py"],
+    deps = [
+        ":aggregate",
+        ":categorize",
+        ":schema",
+        ":wire",
+        "//plaid_utils:read_model",
+    ],
+)

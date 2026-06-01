@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import desc, func, select
 
@@ -13,6 +13,7 @@ from plaid_utils.schema import (
     HoldingSnapshotRow,
     LinkRow,
     SecurityRow,
+    TransactionRow,
     async_session_factory,
 )
 
@@ -147,5 +148,61 @@ async def read_current_holdings(
             for holding, account, link, security in rows
             if holding.iso_currency_code in (None, iso_currency_code)
         )
+    finally:
+        await engine.dispose()
+
+
+async def read_transactions(
+    *, db_url: str, start_date: date, end_date: date, account_ids: tuple[str, ...] = ()
+) -> tuple[TransactionRow, ...]:
+    """Posted (non-pending, non-removed) transactions in [start_date, end_date].
+
+    Empty `account_ids` selects every account behind a non-revoked Link -- fine for a
+    single-user deployment where the connection only sees that user's data. ORM rows
+    are returned directly; AsyncSession uses expire_on_commit=False so callers can
+    read attributes after the session closes."""
+    engine, session_factory = async_session_factory(db_url)
+    try:
+        stmt = (
+            select(TransactionRow)
+            .join(LinkRow, LinkRow.item_id == TransactionRow.item_id)
+            .where(
+                TransactionRow.removed.is_(False),
+                TransactionRow.pending.is_(False),
+                TransactionRow.date >= start_date,
+                TransactionRow.date <= end_date,
+                LinkRow.status != "revoked",
+            )
+            .order_by(TransactionRow.date, TransactionRow.transaction_id)
+        )
+        if account_ids:
+            stmt = stmt.where(TransactionRow.account_id.in_(account_ids))
+        async with session_factory() as session:
+            return tuple((await session.execute(stmt)).scalars().all())
+    finally:
+        await engine.dispose()
+
+
+async def read_account_directory(
+    *, db_url: str, account_ids: tuple[str, ...] = ()
+) -> tuple[dict[str, AccountRow], dict[str, LinkRow]]:
+    """Account-id -> AccountRow and item-id -> LinkRow indexes, scoped to non-revoked links.
+
+    Used by callers that need to enrich transactions with human-readable account /
+    institution metadata at presentation time, without duplicating the schema."""
+    engine, session_factory = async_session_factory(db_url)
+    try:
+        stmt = (
+            select(AccountRow, LinkRow)
+            .join(LinkRow, LinkRow.item_id == AccountRow.item_id)
+            .where(LinkRow.status != "revoked")
+        )
+        if account_ids:
+            stmt = stmt.where(AccountRow.account_id.in_(account_ids))
+        async with session_factory() as session:
+            rows = (await session.execute(stmt)).all()
+        accounts = {account.account_id: account for account, _ in rows}
+        links = {link.item_id: link for _, link in rows}
+        return accounts, links
     finally:
         await engine.dispose()
