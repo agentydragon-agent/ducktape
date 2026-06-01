@@ -7,6 +7,7 @@ resources:
   - pvc.yaml
   - volsync-verify-job.yaml
   - volsync-migration.yaml
+  - volsync-backup.yaml
 patches:
   - target:
       kind: Deployment
