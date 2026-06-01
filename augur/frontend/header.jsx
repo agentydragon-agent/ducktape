@@ -27,7 +27,7 @@ function RolloutCountControl({ value, onChange, max }) {
         value={value ?? ""}
         hideControls
         thousandSeparator=","
-        classNames={{ input: "augur-tabular w-24 text-right" }}
+        classNames={{ input: "augur-tabular w-16 text-right" }}
         onChange={(next) => {
           const number = typeof next === "number" ? next : Number(next);
           onChange(Number.isFinite(number) ? number : null);
@@ -52,7 +52,7 @@ function FirstSeedControl({ value, onChange }) {
         value={value ?? ""}
         hideControls
         thousandSeparator=","
-        classNames={{ input: "augur-tabular w-24 text-right" }}
+        classNames={{ input: "augur-tabular w-16 text-right" }}
         onChange={(next) => {
           const number = typeof next === "number" ? next : Number(next);
           onChange(Number.isFinite(number) ? number : null);
@@ -78,7 +78,7 @@ function HorizonControl({ value, onChange, max }) {
         rightSection={<Text className="augur-number-section">mo</Text>}
         rightSectionPointerEvents="none"
         rightSectionWidth={unitSectionWidth("mo")}
-        classNames={{ input: "augur-tabular w-24 text-right" }}
+        classNames={{ input: "augur-tabular w-16 text-right" }}
         onChange={(next) => {
           const number = typeof next === "number" ? next : Number(next);
           onChange(Number.isFinite(number) ? number : null);
