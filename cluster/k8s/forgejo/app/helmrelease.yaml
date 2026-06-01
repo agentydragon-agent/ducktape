@@ -45,6 +45,11 @@ spec:
     strategy:
       type: Recreate
 
+    # Pin to OVH kimsufi nodes: required by the seaweedfs-ovh CSI (OVH-only)
+    # and co-located with the OVH-HA forgejo-db (cnpg_conventions R5).
+    nodeSelector:
+      topology.kubernetes.io/zone: hil-ovh
+
     # Forgejo configuration (chart retains the legacy `gitea:` values key)
     gitea:
       admin:
@@ -154,10 +159,12 @@ spec:
         memory: 256Mi
 
     # Persistence
+    # Repos + LFS/packages/attachments/artifacts all live here, on SeaweedFS via
+    # the seaweedfs-ovh CSI (object-backed; git needs a POSIX FS, so no S3 backend).
     persistence:
       enabled: true
-      size: 10Gi
-      storageClass: lvm-proxmox-hdd
+      size: 50Gi
+      storageClass: seaweedfs-ovh
 
     # PostgreSQL: external CNPG cluster (forgejo-db)
     postgresql:

@@ -14,9 +14,10 @@ PowerDNS and Authentik run on CloudNativePG `local-path`.
 
 ## Suspended Kustomizations
 
-- **Forgejo**: `forgejo-{namespace,db,app,servicemonitor,secrets}` — suspended for
-  wyrm2 relocation. Switched from Gitea to Forgejo 2026-06-01 (fresh install; the old
-  Gitea resources and CNPG database were already deleted). Re-enable once hardware is back up.
+- **Forgejo**: `forgejo-{namespace,db,app,servicemonitor,secrets}` — switched from
+  Gitea to Forgejo 2026-06-01 and relocated to OVH (app pinned to `hil-ovh`, repos on
+  `seaweedfs-ovh`, OVH-HA `forgejo-db`). Now independent of wyrm2; kept suspended
+  pending rollout — un-suspend to deploy.
 - **BuildBuddy Executor**: `buildbuddy-executor` — scaled to 0. Re-enable when needed.
 - **InvenTree**: `inventree-{namespace,secrets,token-provisioner}`,
   `authentik-blueprint-inventree-secret` — capacity pressure.
@@ -300,7 +301,7 @@ See <plans/file_sync_evaluation.md>.
 3. Can schedule on OVH nodes
 4. All upstream dependencies also pass 1-3
 
-**Proxmox-dependent services** (tolerate downtime by design): Harbor, Forgejo,
+**Proxmox-dependent services** (tolerate downtime by design): Harbor,
 Nix cache, BuildBuddy, Ollama, InvenTree, ActivityWatch.
 
 ### Migrating off `proxmox-csi-retain` on wyrm2
@@ -663,11 +664,11 @@ See <lessons_learned/2026_02_11_cilium_mtu_cross_node_packet_loss.md>.
 Use OVH-local storage for public-critical services and Proxmox storage for
 storage-heavy services that tolerate home downtime.
 
-| Location | Services                                                      | Rationale                         |
-| -------- | ------------------------------------------------------------- | --------------------------------- |
-| OVH      | Authentik, Grafana, Gateway, DNS, cert-mgr                    | Always-on, critical path          |
-| Home     | Harbor, Forgejo, Ollama                                       | Storage-heavy, tolerates downtime |
-| OVH      | SeaweedFS, attic-db, Nix cache chunks + Loki/Mimir/Tempo (S3) | Replicated across 2 kimsufi nodes |
+| Location | Services                                                               | Rationale                         |
+| -------- | ---------------------------------------------------------------------- | --------------------------------- |
+| OVH      | Authentik, Grafana, Gateway, DNS, cert-mgr                             | Always-on, critical path          |
+| Home     | Harbor, Ollama                                                         | Storage-heavy, tolerates downtime |
+| OVH      | SeaweedFS, attic-db, Forgejo, Nix cache chunks + Loki/Mimir/Tempo (S3) | Replicated across 2 kimsufi nodes |
 
 CNPG: individual clusters per app. Two profiles: OVH-HA (2 instances, OVH
 kimsufi) and Proxmox-single (1 instance). See <cnpg_conventions.md>.
