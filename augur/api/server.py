@@ -226,15 +226,20 @@ def create_app(config: ApiServerConfig) -> FastAPI:
     async def budget_snapshot(request: BudgetSnapshotRequest) -> JSONResponse:
         if budget_config is None:
             return error(400, "no budget config for this deployment")
-        return payload(await build_snapshot(config=budget_config, months=request.months))
+        # Snapshot rows carry `date` fields (months, lumpy.date) that the stdlib JSON
+        # encoder behind JSONResponse can't serialize; dump in JSON mode (dates -> ISO
+        # strings) like calibration_payload, same snake_case + drop-None wire convention.
+        result = await build_snapshot(config=budget_config, months=request.months)
+        return JSONResponse(content=result.model_dump(mode="json", exclude_none=True), headers=no_store)
 
     @app.post("/api/budget/transactions", response_model=BudgetTransactionsResponse)
     async def budget_transactions(request: BudgetTransactionsRequest) -> JSONResponse:
         if budget_config is None:
             return error(400, "no budget config for this deployment")
-        return payload(
-            await list_transactions_in_bucket(config=budget_config, bucket_id=request.bucket_id, months=request.months)
+        result = await list_transactions_in_bucket(
+            config=budget_config, bucket_id=request.bucket_id, months=request.months
         )
+        return JSONResponse(content=result.model_dump(mode="json", exclude_none=True), headers=no_store)
 
     # The health check is not part of the typed wire contract, so keep it out of the
     # OpenAPI document `export_schema` dumps (no Zod/TS codegen noise). Unknown API routes
