@@ -30,7 +30,7 @@ spec:
       - Assist with software development tasks
       - Test applications in the desktop environment
       - Build and push container images to Harbor
-      - Manage code in Gitea repositories
+      - Manage code in Forgejo repositories
       - Perform UI testing and automation
 
       Guidelines:

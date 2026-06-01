@@ -20,7 +20,7 @@ endpoints:
     conditions:
       - "[STATUS] == 200"
 
-  - name: Gitea
+  - name: Forgejo
     group: core
     url: https://git.allegedly.works/api/v1/version
     interval: 60s

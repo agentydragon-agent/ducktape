@@ -14,9 +14,9 @@ PowerDNS and Authentik run on CloudNativePG `local-path`.
 
 ## Suspended Kustomizations
 
-- **Gitea**: `gitea-{namespace,secrets,db,admin-token,servicemonitor}` — re-suspended
-  2026-05-09 for wyrm2 relocation. Resources and CNPG database deleted.
-  Re-enable once hardware is back up.
+- **Forgejo**: `forgejo-{namespace,db,app,servicemonitor,secrets}` — suspended for
+  wyrm2 relocation. Switched from Gitea to Forgejo 2026-06-01 (fresh install; the old
+  Gitea resources and CNPG database were already deleted). Re-enable once hardware is back up.
 - **BuildBuddy Executor**: `buildbuddy-executor` — scaled to 0. Re-enable when needed.
 - **InvenTree**: `inventree-{namespace,secrets,token-provisioner}`,
   `authentik-blueprint-inventree-secret` — capacity pressure.
@@ -262,7 +262,6 @@ PowerDNS and Authentik run on CloudNativePG `local-path`.
 - [ ] LiteLLM: `ollama/` provider drops `tool_calls` — use `openai-chat` variants for now
 - [ ] Harbor terraform: switch to robot accounts
 - [ ] Harbor CI robot: scope per-namespace pull secrets to read-only per project
-- [ ] Consider removing `gitea-admin-token` Job (SSO moved to blueprints)
 - [ ] Harbor proxy cache: add GHCR credentials for private repos (403 on `openclaw/openclaw`)
 - [ ] Verify ntfy.sh notifications
 - [ ] ActivityWatch: Gatus health check (`activitywatch-readonly:5600/api/0/info`)
@@ -301,7 +300,7 @@ See <plans/file_sync_evaluation.md>.
 3. Can schedule on OVH nodes
 4. All upstream dependencies also pass 1-3
 
-**Proxmox-dependent services** (tolerate downtime by design): Harbor, Gitea,
+**Proxmox-dependent services** (tolerate downtime by design): Harbor, Forgejo,
 Nix cache, BuildBuddy, Ollama, InvenTree, ActivityWatch.
 
 ### Migrating off `proxmox-csi-retain` on wyrm2
@@ -494,7 +493,7 @@ needed:
 
 ### Velero PVC Backup
 
-Scheduled backups of PVCs (Harbor, Gitea, Loki, Postgres). No backup strategy currently.
+Scheduled backups of PVCs (Harbor, Forgejo, Loki, Postgres). No backup strategy currently.
 
 ### CiliumNetworkPolicy Rollout
 
@@ -504,7 +503,7 @@ Most services lack network policies. Goal: default-deny per namespace.
 
 **Priority 2 -- Application services**:
 
-- [ ] Harbor, Ollama, Grafana, Alertmanager, Gitea, Tempo, Langfuse, Headlamp
+- [ ] Harbor, Ollama, Grafana, Alertmanager, Forgejo, Tempo, Langfuse, Headlamp
 
 **Priority 3 -- Remaining**:
 
@@ -550,7 +549,7 @@ Start `warn`, promote to `enforce`.
 ### Scheduling Priorities
 
 Motivated by 2026-03-17 OOM cascade. Deploy PriorityClasses: `system-critical`
-(DNS/ingress/Authentik), `important` (Gitea/Harbor/monitoring), `batch`
+(DNS/ingress/Authentik), `important` (Forgejo/Harbor/monitoring), `batch`
 (OpenClaw/props/BuildBuddy). Plus Descheduler, PDBs, ResourceQuota + LimitRange.
 
 ### VPA + Goldilocks
@@ -667,7 +666,7 @@ storage-heavy services that tolerate home downtime.
 | Location | Services                                                      | Rationale                         |
 | -------- | ------------------------------------------------------------- | --------------------------------- |
 | OVH      | Authentik, Grafana, Gateway, DNS, cert-mgr                    | Always-on, critical path          |
-| Home     | Harbor, Gitea, Ollama                                         | Storage-heavy, tolerates downtime |
+| Home     | Harbor, Forgejo, Ollama                                       | Storage-heavy, tolerates downtime |
 | OVH      | SeaweedFS, attic-db, Nix cache chunks + Loki/Mimir/Tempo (S3) | Replicated across 2 kimsufi nodes |
 
 CNPG: individual clusters per app. Two profiles: OVH-HA (2 instances, OVH

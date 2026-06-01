@@ -1,8 +1,8 @@
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
-  name: gitea-db
-  namespace: gitea
+  name: forgejo-db
+  namespace: forgejo
 spec:
   instances: 1
 
@@ -26,6 +26,6 @@ spec:
 
   bootstrap:
     initdb:
-      database: gitea
-      owner: gitea
-      # CNPG auto-generates credentials in secret gitea-db-app
+      database: forgejo
+      owner: forgejo
+      # CNPG auto-generates credentials in secret forgejo-db-app

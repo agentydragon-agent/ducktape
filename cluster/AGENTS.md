@@ -26,7 +26,7 @@ the git remote, not your local filesystem.
 
 ## CRITICAL: Authentik Teardown -- Remaining TF State
 
-`tf/gitops/sso-providers/` owns the Authentik OAuth2 providers (grafana, gitea, harbor,
+`tf/gitops/sso-providers/` owns the Authentik OAuth2 providers (grafana, forgejo, harbor,
 headlamp, inventree, kagent, matrix, openclaw, study-casino). State lives in the
 `tfstate-default-sso-providers` k8s secret in `flux-system`. Wiping the Authentik DB
 without also wiping that state secret triggers the cascading desync described in

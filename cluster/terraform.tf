@@ -38,10 +38,6 @@ terraform {
       source  = "goharbor/harbor"
       version = "~> 3.11.0" # Latest: v3.11.2
     }
-    gitea = {
-      source  = "go-gitea/gitea"
-      version = "~> 0.7.0" # Latest: v0.7.0 (major improvement from 0.5)
-    }
     powerdns = {
       source  = "pan-net/powerdns"
       version = "~> 1.5.0" # DNS provider for PowerDNS

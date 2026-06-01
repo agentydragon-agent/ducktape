@@ -2,35 +2,37 @@
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: HelmRepository
 metadata:
-  name: gitea-charts
-  namespace: gitea
+  name: forgejo
+  namespace: forgejo
 spec:
+  type: oci
   interval: 24h
-  url: https://dl.gitea.com/charts/
+  url: oci://code.forgejo.org/forgejo-helm
 ---
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
-  name: gitea
-  namespace: gitea
+  name: forgejo
+  namespace: forgejo
 spec:
   interval: 15m
-  timeout: 15m # Extended timeout for Gitea deployment (PostgreSQL + PVC binding + init containers)
+  timeout: 15m # Extended timeout (PostgreSQL + PVC binding + init containers)
   install:
     remediation:
       retries: 3
   chart:
     spec:
-      chart: gitea
-      version: "12.5.0"
+      chart: forgejo
+      version: "17.1.0"
       sourceRef:
         kind: HelmRepository
-        name: gitea-charts
-        namespace: gitea
+        name: forgejo
+        namespace: forgejo
   valuesFrom:
     - kind: Secret
-      name: gitea-db-app
+      name: forgejo-db-app
       valuesKey: password
+      # The Forgejo chart is a fork of the Gitea chart and keeps the `gitea:` values key.
       targetPath: gitea.config.database.PASSWD
   values:
     # Global configuration
@@ -43,11 +45,11 @@ spec:
     strategy:
       type: Recreate
 
-    # Gitea configuration
+    # Forgejo configuration (chart retains the legacy `gitea:` values key)
     gitea:
       admin:
         # Username and password from SOPS secret
-        existingSecret: "gitea-admin-password"
+        existingSecret: "forgejo-admin-password"
         email: "admin@allegedly.works"
         # Password set once on creation, never reset (SSO for normal use)
         passwordMode: initialOnlyNoReset
@@ -56,13 +58,13 @@ spec:
       oauth:
         - name: "authentik"
           provider: "openidConnect"
-          existingSecret: "gitea-oauth-client-secret"
-          autoDiscoverUrl: "https://auth.allegedly.works/application/o/gitea/.well-known/openid-configuration"
+          existingSecret: "forgejo-oauth-client-secret"
+          autoDiscoverUrl: "https://auth.allegedly.works/application/o/forgejo/.well-known/openid-configuration"
           iconUrl: "https://auth.allegedly.works/static/dist/assets/icons/icon.png"
           scopes: "email profile"
 
       config:
-        APP_NAME: "Gitea: Git with a cup of tea"
+        APP_NAME: "Forgejo: Beyond coding. We forge."
         RUN_MODE: prod
 
         server:
@@ -96,9 +98,9 @@ spec:
 
         database:
           DB_TYPE: postgres
-          HOST: gitea-db-rw.gitea:5432
-          NAME: gitea
-          USER: gitea
+          HOST: forgejo-db-rw.forgejo:5432
+          NAME: forgejo
+          USER: forgejo
 
         oauth2_client:
           REGISTER_EMAIL_CONFIRM: false
@@ -157,7 +159,7 @@ spec:
       size: 10Gi
       storageClass: lvm-proxmox-hdd
 
-    # PostgreSQL: external CNPG cluster (gitea-db)
+    # PostgreSQL: external CNPG cluster (forgejo-db)
     postgresql:
       enabled: false
 

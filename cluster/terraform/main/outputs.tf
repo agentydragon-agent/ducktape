@@ -82,7 +82,7 @@ output "service_endpoints" {
   value = {
     authentik_url = "https://authentik.${var.cluster_domain}"
     harbor_url    = "https://harbor.${var.cluster_domain}"
-    gitea_url     = "https://gitea.${var.cluster_domain}"
+    forgejo_url   = "https://git.${var.cluster_domain}"
   }
 }
 

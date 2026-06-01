@@ -1,7 +1,7 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: gitea
+  name: forgejo
   namespace: flux-system
 spec:
   suspend: true
@@ -12,23 +12,23 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
-  path: ./cluster/k8s/gitea/app
+  path: ./cluster/k8s/forgejo/app
   prune: true
   wait: true
-  # Health check ensures Gitea is fully operational with SSO
+  # Health check ensures Forgejo is fully operational with SSO
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease
-      name: gitea
-      namespace: gitea
+      name: forgejo
+      namespace: forgejo
   dependsOn:
-    - name: gitea-namespace
-    - name: gitea-db
+    - name: forgejo-namespace
+    - name: forgejo-db
     - name: gateway
     - name: cert-manager
-    - name: gitea-secrets
-    - name: reflector # Mirrors gitea-oauth-client-secret from authentik namespace
-    - name: sso-providers-tf # Writes gitea-oauth-client-secret to authentik namespace
+    - name: forgejo-secrets
+    - name: reflector # Mirrors forgejo-oauth-client-secret from authentik namespace
+    - name: sso-providers-tf # Writes forgejo-oauth-client-secret to authentik namespace
     - name: authentik # Authentik must be running for OIDC
-    # Gitea validates OIDC at init time (configure-gitea init container fetches discovery URL).
+    # Forgejo validates OIDC at init time (the configure init container fetches the discovery URL).
     # Other SSO apps (Harbor, Matrix, Grafana) validate lazily at first login, so they don't need this.

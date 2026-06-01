@@ -1,10 +1,10 @@
 # ============================================================================
-# Gitea — OIDC login for the git server (suspended)
+# Forgejo — OIDC login for the git server (suspended)
 # ============================================================================
 
-resource "authentik_provider_oauth2" "gitea" {
-  name               = "gitea-oauth2"
-  client_id          = "gitea"
+resource "authentik_provider_oauth2" "forgejo" {
+  name               = "forgejo-oauth2"
+  client_id          = "forgejo"
   client_type        = "confidential"
   authorization_flow = data.authentik_flow.implicit_consent.id
   invalidation_flow  = data.authentik_flow.invalidation.id
@@ -27,37 +27,37 @@ resource "authentik_provider_oauth2" "gitea" {
   ]
 }
 
-resource "authentik_application" "gitea" {
-  name              = "Gitea"
-  slug              = "gitea"
-  protocol_provider = authentik_provider_oauth2.gitea.id
-  meta_description  = "Gitea Git Repository Management"
-  meta_publisher    = "Gitea"
-  meta_icon         = "https://cdn.simpleicons.org/gitea"
+resource "authentik_application" "forgejo" {
+  name              = "Forgejo"
+  slug              = "forgejo"
+  protocol_provider = authentik_provider_oauth2.forgejo.id
+  meta_description  = "Forgejo Git Repository Management"
+  meta_publisher    = "Forgejo"
+  meta_icon         = "https://cdn.simpleicons.org/forgejo"
   open_in_new_tab   = true
 }
 
-resource "authentik_policy_binding" "gitea_admins" {
-  target = authentik_application.gitea.uuid
+resource "authentik_policy_binding" "forgejo_admins" {
+  target = authentik_application.forgejo.uuid
   group  = data.authentik_group.admins.id
   order  = 0
 }
 
-# Gitea helm chart expects keys named "key" (client_id) and "secret" (client_secret).
-resource "kubernetes_secret" "gitea_oauth" {
+# Forgejo helm chart expects keys named "key" (client_id) and "secret" (client_secret).
+resource "kubernetes_secret" "forgejo_oauth" {
   metadata {
-    name      = "gitea-oauth-client-secret"
+    name      = "forgejo-oauth-client-secret"
     namespace = "authentik"
     annotations = {
       "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "gitea,flux-system"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "forgejo,flux-system"
       "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "gitea,flux-system"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "forgejo,flux-system"
     }
   }
 
   data = {
-    key    = authentik_provider_oauth2.gitea.client_id
-    secret = authentik_provider_oauth2.gitea.client_secret
+    key    = authentik_provider_oauth2.forgejo.client_id
+    secret = authentik_provider_oauth2.forgejo.client_secret
   }
 }

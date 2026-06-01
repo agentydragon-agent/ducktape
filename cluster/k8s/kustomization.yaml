@@ -174,13 +174,12 @@ resources:
   - firecrawl/db/flux-kustomization.yaml
   - firecrawl/app/flux-kustomization.yaml
 
-  # --- gitea ---
-  - gitea/namespace/flux-kustomization.yaml
-  - gitea/db/flux-kustomization.yaml
-  - gitea/app/flux-kustomization.yaml
-  - gitea/servicemonitor/flux-kustomization.yaml
-  - gitea/admin-token/flux-kustomization.yaml
-  - gitea/secrets/flux-kustomization.yaml
+  # --- forgejo ---
+  - forgejo/namespace/flux-kustomization.yaml
+  - forgejo/db/flux-kustomization.yaml
+  - forgejo/app/flux-kustomization.yaml
+  - forgejo/servicemonitor/flux-kustomization.yaml
+  - forgejo/secrets/flux-kustomization.yaml
 
   # --- matrix ---
   - matrix/namespace/flux-kustomization.yaml
