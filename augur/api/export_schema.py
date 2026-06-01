@@ -82,7 +82,12 @@ def main() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         properties_path = Path(tmpdir) / "properties.json"
         properties_path.write_text(json.dumps([_SCHEMA_PROPERTY.model_dump(mode="json")]), encoding="utf-8")
-        print(json.dumps(create_app_from_augur_config(_schema_export_config(properties_path)).openapi(), indent=2))
+        print(
+            json.dumps(
+                create_app_from_augur_config(_schema_export_config(properties_path), price_clients={}).openapi(),
+                indent=2,
+            )
+        )
 
 
 if __name__ == "__main__":

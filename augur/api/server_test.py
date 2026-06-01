@@ -15,24 +15,9 @@ import pytest
 import pytest_bazel
 from fastapi.testclient import TestClient
 
-from augur.api.config import load_augur_config
-from augur.api.server import ApiServerConfig, create_app
-from augur.product.testing import capacity_limited_private_equity_fixture, forced_private_equity_event_fixture
 from util.bazel.runfiles import get_required_path
 from util.net import pick_free_port
 from util.testing.undeclared_outputs import undeclared_outputs_dir
-
-
-@pytest.fixture
-def forced_private_equity_event_client() -> Iterator[TestClient]:
-    app = create_app(
-        ApiServerConfig(
-            augur_config=load_augur_config(get_required_path("_main/augur/api/testdata/config.yaml")),
-            exogenous_models={"current_model": forced_private_equity_event_fixture()},
-        )
-    )
-    with TestClient(app) as client:
-        yield client
 
 
 @pytest.fixture(scope="module")
@@ -107,18 +92,6 @@ def _get_json(origin: str, path: str) -> dict[str, Any]:
         assert response.status == 200
         assert "application/json" in response.headers["content-type"]
         return cast(dict[str, Any], json.loads(response.read().decode()))
-
-
-@pytest.fixture
-def capacity_limited_private_equity_client() -> Iterator[TestClient]:
-    app = create_app(
-        ApiServerConfig(
-            augur_config=load_augur_config(get_required_path("_main/augur/api/testdata/config.yaml")),
-            exogenous_models={"current_model": capacity_limited_private_equity_fixture()},
-        )
-    )
-    with TestClient(app) as client:
-        yield client
 
 
 def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollout_detail(server_url: str) -> None:

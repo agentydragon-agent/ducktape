@@ -1,6 +1,10 @@
 import { camelizeObjectKeys, decamelizeObjectKeys } from "./lib/casing.js";
 import {
   zBootstrapResponse,
+  zBudgetSnapshotRequest,
+  zBudgetSnapshotResponse,
+  zBudgetTransactionsRequest,
+  zBudgetTransactionsResponse,
   zCalibrationRunRequest,
   zCalibrationRunResponse,
   zDeploymentInfo,
@@ -79,4 +83,16 @@ export async function fetchProductRollout(rolloutRequest, { signal } = {}) {
 export async function fetchCalibrationRun(calibrationRunRequest, { signal } = {}) {
   const request = zCalibrationRunRequest.parse(decamelizeObjectKeys(calibrationRunRequest));
   return camelizeObjectKeys(zCalibrationRunResponse.parse(await postJson("/api/calibration/run", request, signal)));
+}
+
+export async function fetchBudgetSnapshot(budgetSnapshotRequest, { signal } = {}) {
+  const request = zBudgetSnapshotRequest.parse(decamelizeObjectKeys(budgetSnapshotRequest));
+  return camelizeObjectKeys(zBudgetSnapshotResponse.parse(await postJson("/api/budget/snapshot", request, signal)));
+}
+
+export async function fetchBudgetTransactions(budgetTransactionsRequest, { signal } = {}) {
+  const request = zBudgetTransactionsRequest.parse(decamelizeObjectKeys(budgetTransactionsRequest));
+  return camelizeObjectKeys(
+    zBudgetTransactionsResponse.parse(await postJson("/api/budget/transactions", request, signal))
+  );
 }

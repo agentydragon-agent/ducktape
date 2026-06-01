@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
@@ -27,9 +27,19 @@ from augur.api.config import CalibrationCatalogConfig, Config, load_augur_config
 from augur.api.deployment import DeploymentInfo, build_deployment_info
 from augur.api.portfolio_sources import resolve_portfolio_sources
 from augur.api.schemas import ApiModel
+from augur.budget.service import build_snapshot, list_transactions_in_bucket
+from augur.budget.wire import (
+    BudgetSnapshotRequest,
+    BudgetSnapshotResponse,
+    BudgetTransactionsRequest,
+    BudgetTransactionsResponse,
+)
 from augur.calibration.calibration import mark_fan, run_calibration
 from augur.calibration.catalog import MarketCatalog
+from augur.calibration.kalshi import KalshiClient
 from augur.calibration.manifold import ManifoldClient
+from augur.calibration.platform import Platform, PriceClient
+from augur.calibration.polymarket import PolymarketClient
 from augur.model.exogenous import ExogenousSamplingRequest, Sampler
 from augur.model.private_equity_bundle import PrivateEquityFloatChannel
 from augur.model.sample_sanity import SampleSanitySpec, evaluate_sample_checks
@@ -59,13 +69,13 @@ class LoadedCalibrationCatalog:
 class ApiServerConfig:
     augur_config: Config
     exogenous_models: dict[str, Sampler]
+    # Live prediction-market price sources for `/api/calibration/run` (per-market YES probs).
+    # Maps each Platform to its client. Reused across requests, so the TTL caches serve the
+    # calibration tab's rapid auto-refreshes.
+    price_clients: dict[Platform, PriceClient]
     # The calibration catalog parsed at startup, or None when the deployment configures no
     # `calibration_catalog` (the `/api/calibration/run` endpoint then 400s).
     calibration_catalog: LoadedCalibrationCatalog | None = None
-    # Live prediction-market price source for `/api/calibration/run` (per-market YES probs).
-    # Defaults to a real Manifold client; tests inject a hermetic one. Reused across requests,
-    # so its TTL cache already serves the calibration tab's rapid auto-refreshes.
-    price_client: ManifoldClient = field(default_factory=ManifoldClient)
 
 
 def create_app(config: ApiServerConfig) -> FastAPI:
@@ -166,7 +176,7 @@ def create_app(config: ApiServerConfig) -> FastAPI:
             issuer=issuer,
             horizon_months=request.horizon_months,
             rollout_seeds=rollout_seeds,
-            price_client=config.price_client,
+            price_clients=config.price_clients,
             bundle=bundle,
         )
         fan = mark_fan(
@@ -210,6 +220,22 @@ def create_app(config: ApiServerConfig) -> FastAPI:
             )
         )
 
+    budget_config = augur_config.budget
+
+    @app.post("/api/budget/snapshot", response_model=BudgetSnapshotResponse)
+    async def budget_snapshot(request: BudgetSnapshotRequest) -> JSONResponse:
+        if budget_config is None:
+            return error(400, "no budget config for this deployment")
+        return payload(await build_snapshot(config=budget_config, months=request.months))
+
+    @app.post("/api/budget/transactions", response_model=BudgetTransactionsResponse)
+    async def budget_transactions(request: BudgetTransactionsRequest) -> JSONResponse:
+        if budget_config is None:
+            return error(400, "no budget config for this deployment")
+        return payload(
+            await list_transactions_in_bucket(config=budget_config, bucket_id=request.bucket_id, months=request.months)
+        )
+
     # The health check is not part of the typed wire contract, so keep it out of the
     # OpenAPI document `export_schema` dumps (no Zod/TS codegen noise). Unknown API routes
     # get FastAPI's default 404; nginx serves the SPA, so the app needs no static catch-all.
@@ -230,11 +256,11 @@ def _load_sample_sanity_spec(path: Path | None) -> SampleSanitySpec | None:
     return SampleSanitySpec.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
 
 
-def create_app_from_augur_config(augur_config: Config, *, price_client: ManifoldClient | None = None) -> FastAPI:
+def create_app_from_augur_config(augur_config: Config, *, price_clients: dict[Platform, PriceClient]) -> FastAPI:
     """Build the app from a `Config`.
 
-    `price_client` is the live prediction-market price source for `/api/calibration/run`
-    (a real `ManifoldClient` by default; tests inject a hermetic one)."""
+    `price_clients` is the live prediction-market price source map for
+    `/api/calibration/run` (callers construct the appropriate clients)."""
     exogenous_models: dict[str, Sampler] = {
         preset_id: cast(Sampler, provider.realize_model())
         for preset_id, provider in augur_config.exogenous_presets.items()
@@ -253,7 +279,7 @@ def create_app_from_augur_config(augur_config: Config, *, price_client: Manifold
         augur_config=augur_config,
         exogenous_models=exogenous_models,
         calibration_catalog=calibration_catalog,
-        price_client=price_client if price_client is not None else ManifoldClient(),
+        price_clients=price_clients,
     )
     return create_app(server_config)
 
@@ -284,7 +310,12 @@ def build_configured_server_arg_parser(
 
 
 def _run_server_with_args(*, augur_config: Config, args: argparse.Namespace) -> int:
-    app = create_app_from_augur_config(augur_config)
+    price_clients: dict[Platform, PriceClient] = {
+        Platform.MANIFOLD: ManifoldClient(),
+        Platform.POLYMARKET: PolymarketClient(),
+        Platform.KALSHI: KalshiClient(),
+    }
+    app = create_app_from_augur_config(augur_config, price_clients=price_clients)
     return run_app(app=app, augur_config=augur_config, host=args.host, port=args.port)
 
 

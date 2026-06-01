@@ -157,9 +157,21 @@ js_library(
 )
 
 js_library(
+    name = "budget",
+    srcs = ["budget.jsx"],
+    deps = [
+        ":client",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/react",
+        "//augur/frontend/lib:format",
+    ],
+)
+
+js_library(
     name = "app",
     srcs = ["app.jsx"],
     deps = [
+        ":budget",
         ":calibration",
         ":client",
         ":data_helpers",
@@ -211,6 +223,7 @@ filegroup(
     name = "tailwind_content_srcs",
     srcs = [
         "app.jsx",
+        "budget.jsx",
         "calibration.jsx",
         "client.js",
         "data_helpers.js",

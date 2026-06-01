@@ -8,6 +8,12 @@ filegroup(
 )
 
 py_library(
+    name = "platform",
+    srcs = ["platform.py"],
+    deps = [],
+)
+
+py_library(
     name = "resolvers",
     srcs = ["resolvers.py"],
     deps = [
@@ -22,6 +28,7 @@ py_library(
     name = "catalog",
     srcs = ["catalog.py"],
     deps = [
+        ":platform",
         "@pypi//pydantic",
         "@pypi//pyyaml",
         "@pypi//types_pyyaml",
@@ -32,9 +39,28 @@ py_library(
     name = "manifold",
     srcs = ["manifold.py"],
     deps = [
+        ":platform",
         "//augur/api:casing",
         "@pypi//httpx",
         "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "polymarket",
+    srcs = ["polymarket.py"],
+    deps = [
+        ":platform",
+        "@pypi//polymarket_client",
+    ],
+)
+
+py_library(
+    name = "kalshi",
+    srcs = ["kalshi.py"],
+    deps = [
+        ":platform",
+        "@pypi//httpx",
     ],
 )
 
@@ -43,7 +69,9 @@ py_library(
     testonly = True,
     srcs = ["testing.py"],
     deps = [
+        ":kalshi",
         ":manifold",
+        ":platform",
         "@pypi//httpx",
     ],
 )
@@ -54,6 +82,7 @@ py_library(
     deps = [
         ":catalog",
         ":manifold",
+        ":platform",
         ":resolvers",
         "//augur/model:exogenous",
         "//augur/model:private_equity_bundle",
@@ -90,11 +119,15 @@ py_binary(
     deps = [
         ":calibration",
         ":catalog",
+        ":kalshi",
         ":manifold",
+        ":platform",
+        ":polymarket",
         "//augur/api:config",
         "//augur/model:exogenous",
         "//augur/model:private_equity_bundle",
         "//augur/model:series",
+        "@pypi//tabulate",
     ],
 )
 
@@ -116,6 +149,7 @@ py_test(
     data = ["example_openai_catalog.yaml"],
     deps = [
         ":catalog",
+        ":platform",
         "//:conftest",
         "//util/bazel:runfiles",
         "@pypi//pydantic",
@@ -130,7 +164,6 @@ py_test(
     deps = [
         ":calibration",
         ":catalog",
-        ":manifold",
         ":testing",
         "//:conftest",
         "//augur/model:exogenous",

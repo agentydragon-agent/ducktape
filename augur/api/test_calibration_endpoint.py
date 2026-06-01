@@ -16,32 +16,29 @@ import pytest_bazel
 import yaml
 from fastapi.testclient import TestClient
 
-from augur.api.config import Config, load_augur_config
+from augur.api.config import Config
 from augur.api.server import create_app_from_augur_config
 from augur.calibration.catalog import MarketCatalog
-from augur.calibration.testing import mock_manifold_client
+from augur.calibration.platform import Platform
+from augur.calibration.testing import mock_price_clients
 from augur.model.sample_sanity import LevelSeriesSanityCheck, PrivateEquityMarkSanityCheck, SampleSanitySpec
 from augur.model.series import IssuerId, SP500Key
-from util.bazel.runfiles import get_required_path
-
-
-def _fixture_config() -> Config:
-    config = load_augur_config(get_required_path("_main/augur/api/testdata/config.yaml"))
-    assert config.calibration_catalog is not None
-    return config
 
 
 def _client_for(config: Config) -> TestClient:
     assert config.calibration_catalog is not None
     catalog = MarketCatalog.from_yaml(config.calibration_catalog.catalog_path)
     # Every market resolves to the same fixed YES probability so the run is hermetic.
-    prices = {market.manifold_id: 0.5 for market in catalog.markets}
-    return TestClient(create_app_from_augur_config(config, price_client=mock_manifold_client(prices)))
+    by_platform: dict[Platform, dict[str, float]] = {}
+    for market in catalog.markets:
+        by_platform.setdefault(market.platform, {})[market.market_id] = 0.5
+    return TestClient(create_app_from_augur_config(config, price_clients=mock_price_clients(by_platform)))
 
 
 @pytest.fixture
-def client() -> Iterator[TestClient]:
-    with _client_for(_fixture_config()) as test_client:
+def client(augur_config: Config) -> Iterator[TestClient]:
+    assert augur_config.calibration_catalog is not None
+    with _client_for(augur_config) as test_client:
         yield test_client
 
 
@@ -76,11 +73,13 @@ def test_run_calibration(client: TestClient) -> None:
     # Snake_case on the wire (the frontend camelizes). p_model/kl_bits are optional (dropped when
     # None — e.g. no rollout resolved within the horizon), so we only require the always-present
     # fields here.
-    assert {"slug", "question", "url", "p_market", "ci95", "n_resolved", "unresolved"} <= set(clean_row)
+    assert {"market_id", "question", "url", "platform", "p_market", "ci95", "n_resolved", "unresolved"} <= set(
+        clean_row
+    )
     surfaced_row = result["surfaced"][0]
-    assert {"slug", "question", "url", "mappability", "p_market"} <= set(surfaced_row)
+    assert {"market_id", "question", "url", "platform", "mappability", "p_market"} <= set(surfaced_row)
     assert surfaced_row["p_market"] == 0.5
-    assert surfaced_row["url"].startswith("https://manifold.markets/")
+    assert surfaced_row["url"].startswith("https://")
 
     fan = body["mark_fan"]
     assert fan["issuer"] == "openai"
@@ -123,7 +122,7 @@ def test_run_calibration_without_sample_sanity_returns_empty_bands(client: TestC
     assert response.json()["sanity_bands"] == []
 
 
-def _config_with_sample_sanity(tmp_path: Path) -> Config:
+def _config_with_sample_sanity(augur_config: Config, tmp_path: Path) -> Config:
     """Fixture config whose `calibration_catalog.sample_sanity_path` points at a temp spec YAML.
 
     The spec reuses the live `openai_pe` model (its own `provider_config_path` is a placeholder
@@ -142,14 +141,13 @@ def _config_with_sample_sanity(tmp_path: Path) -> Config:
     spec_path = tmp_path / "sample_sanity.yaml"
     spec_path.write_text(yaml.safe_dump(spec.model_dump(mode="json")), encoding="utf-8")
 
-    config = _fixture_config()
-    assert config.calibration_catalog is not None
-    catalog = config.calibration_catalog.model_copy(update={"sample_sanity_path": spec_path})
-    return config.model_copy(update={"calibration_catalog": catalog})
+    assert augur_config.calibration_catalog is not None
+    catalog = augur_config.calibration_catalog.model_copy(update={"sample_sanity_path": spec_path})
+    return augur_config.model_copy(update={"calibration_catalog": catalog})
 
 
-def test_run_calibration_includes_sample_sanity_bands(tmp_path: Path) -> None:
-    with _client_for(_config_with_sample_sanity(tmp_path)) as client:
+def test_run_calibration_includes_sample_sanity_bands(tmp_path: Path, augur_config: Config) -> None:
+    with _client_for(_config_with_sample_sanity(augur_config, tmp_path)) as client:
         response = client.post("/api/calibration/run", json={"horizon_months": 24, "rollouts": 16, "seed": 1701})
     assert response.status_code == 200, response.text
     bands = response.json()["sanity_bands"]

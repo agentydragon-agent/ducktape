@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse
 from augur.api.config import Config, load_augur_config, resolve_augur_config_path
 from augur.api.server import build_configured_server_arg_parser, create_app_from_augur_config, run_app
 from augur.calibration.manifold import ManifoldClient
+from augur.calibration.platform import Platform, PriceClient
 from util.bazel.runfiles import get_required_path
 
 _AUGUR_BUNDLE_INDEX_RUNFILE_ENV_VAR = "AUGUR_BUNDLE_INDEX_RUNFILE"
@@ -54,14 +55,12 @@ def _mount_static_bundle(app: FastAPI, static_path: StaticPathResolver) -> None:
 
 
 def build_dev_app(
-    augur_config: Config, *, api_only: bool = False, price_client: ManifoldClient | None = None
+    augur_config: Config, *, api_only: bool = False, price_clients: dict[Platform, PriceClient]
 ) -> FastAPI:
     """The combined dev app (API routes plus, unless `api_only`, the static SPA bundle).
 
-    `price_client` overrides the live Manifold source for `/api/calibration/run` (the visual
-    test injects a hermetic `mock_manifold_client` so the calibration tab's auto-run never
-    touches the network)."""
-    app = create_app_from_augur_config(augur_config, price_client=price_client)
+    `price_clients` is the live price source map for `/api/calibration/run`."""
+    app = create_app_from_augur_config(augur_config, price_clients=price_clients)
     if not api_only:
         _mount_static_bundle(app, _fixture_bundle_static_path())
     return app
@@ -74,7 +73,7 @@ def main(argv: list[str] | None = None) -> int:
     ).parse_args(argv)
     config_path = Path(args.config).resolve() if args.config else resolve_augur_config_path()
     augur_config = load_augur_config(config_path)
-    app = build_dev_app(augur_config, api_only=args.api_only)
+    app = build_dev_app(augur_config, api_only=args.api_only, price_clients={Platform.MANIFOLD: ManifoldClient()})
     return run_app(app=app, augur_config=augur_config, host=args.host, port=args.port)
 
 

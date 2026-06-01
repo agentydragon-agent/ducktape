@@ -1,27 +1,20 @@
 """Typed catalog of prediction markets to calibrate an augur model against.
 
 A catalog is a hand-curated YAML file: top-level ``metadata`` plus a list of
-``markets``. Each market is an algebraic variant keyed on ``mappability`` -- the
-shape carries exactly the fields that variant needs, so invalid combinations
-(e.g. a ``mapping_kind`` on an unmappable market) are unrepresentable:
-
-  * ``exact``      (:class:`ExactMarket`)      -- a resolver scores it
-    apples-to-apples from per-rollout output (carries ``mapping_kind`` +
-    ``mapping_params``).
-  * ``correlate``  (:class:`CorrelateMarket`)  -- augur lacks the exact concept
-    but has a RELATED signal worth surfacing next to the market price (carries
-    ``correlate_of`` + ``correlate_strength``).
-  * ``unmappable`` (:class:`UnmappableMarket`) -- no meaningfully related augur
-    signal (carries ``reason``).
+``markets``. Each market identifies its platform via a :class:`PlatformRef`
+discriminated union (each variant carries exactly its own required ID field) and
+its mappability via an orthogonal variant (``exact`` / ``correlate`` /
+``unmappable``). Invalid combinations (wrong ID for platform, missing ID) are
+unrepresentable.
 
 The verbatim ``resolution_criterion_text`` is the source of truth a resolver
 implements -- NOT the question title. This module only parses + validates the
 catalog; resolution lives in ``resolvers.py`` and scoring in ``calibration.py``.
-Consumers dispatch on the variant via ``isinstance`` (mypy narrows), never on the
-``mappability`` string.
+Consumers dispatch on the mappability variant via ``isinstance`` (mypy narrows),
+never on the ``mappability`` string.
 
 ``p_market`` is NOT stored here: the catalog is pure market metadata and live
-Manifold prices are fetched at scoring time (see ``manifold.py``).
+prices are fetched at scoring time via platform-specific clients.
 """
 
 from __future__ import annotations
@@ -29,16 +22,72 @@ from __future__ import annotations
 from datetime import date
 from enum import StrEnum
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from augur.calibration.platform import Platform
 
 
 class Mappability(StrEnum):
     EXACT = "exact"
     CORRELATE = "correlate"
     UNMAPPABLE = "unmappable"
+
+
+# ---------------------------------------------------------------------------
+# Platform reference: discriminated union (one required ID per variant)
+# ---------------------------------------------------------------------------
+
+
+class ManifoldRef(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    platform: Literal[Platform.MANIFOLD] = Platform.MANIFOLD
+    manifold_id: str
+
+
+class PolymarketRef(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    platform: Literal[Platform.POLYMARKET] = Platform.POLYMARKET
+    polymarket_id: str
+
+
+class KalshiRef(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    platform: Literal[Platform.KALSHI] = Platform.KALSHI
+    kalshi_id: str
+
+
+PlatformRef = Annotated[ManifoldRef | PolymarketRef | KalshiRef, Field(discriminator="platform")]
+
+
+def _extract_platform_ref(data: dict[str, Any]) -> dict[str, Any]:
+    """Lift flat ``{platform, manifold_id, polymarket_id, kalshi_id}`` into ``platform_ref``.
+
+    Existing catalogs write ``manifold_id`` at the top level with no explicit
+    ``platform`` field. This validator normalises both old and new shapes into
+    the nested ``platform_ref`` that the typed model expects.
+    """
+    if "platform_ref" in data:
+        return data
+    platform = data.pop("platform", Platform.MANIFOLD)
+    ref: dict[str, Any] = {"platform": platform}
+    id_key = {Platform.MANIFOLD: "manifold_id", Platform.POLYMARKET: "polymarket_id", Platform.KALSHI: "kalshi_id"}[
+        Platform(platform)
+    ]
+    if id_key in data:
+        ref[id_key] = data.pop(id_key)
+    data["platform_ref"] = ref
+    return data
+
+
+# ---------------------------------------------------------------------------
+# Catalog metadata
+# ---------------------------------------------------------------------------
 
 
 class CatalogMetadata(BaseModel):
@@ -62,14 +111,18 @@ class CatalogMetadata(BaseModel):
         return self.augur_model_as_of or self.as_of
 
 
+# ---------------------------------------------------------------------------
+# Market base + mappability variants
+# ---------------------------------------------------------------------------
+
+
 class _MarketBase(BaseModel):
     """Market metadata shared by every mappability variant."""
 
     model_config = ConfigDict(extra="forbid")
 
-    slug: str
-    manifold_id: str
     question: str
+    platform_ref: PlatformRef
     outcome_type: str
     close_date: date | None = None
     # Date the YES condition must occur by; often differs from `close_date`.
@@ -79,6 +132,23 @@ class _MarketBase(BaseModel):
     # The market's verbatim resolution criteria -- the source of truth a resolver implements.
     resolution_criterion_text: str | None = None
     notes: str | None = None
+
+    normalize_platform_fields = model_validator(mode="before")(_extract_platform_ref)
+
+    @property
+    def platform(self) -> Platform:
+        return self.platform_ref.platform
+
+    @property
+    def market_id(self) -> str:
+        ref = self.platform_ref
+        if isinstance(ref, ManifoldRef):
+            return ref.manifold_id
+        if isinstance(ref, PolymarketRef):
+            return ref.polymarket_id
+        if isinstance(ref, KalshiRef):
+            return ref.kalshi_id
+        raise AssertionError("unreachable")
 
 
 class ExactMarket(_MarketBase):

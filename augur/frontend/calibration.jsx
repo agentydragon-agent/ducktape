@@ -43,6 +43,46 @@ function klTextClass(klBits) {
   return "augur-tabular";
 }
 
+const PLATFORM_STYLE = {
+  manifold: "bg-blue-50 text-blue-700 ring-blue-600/20 dark:bg-blue-950/40 dark:text-blue-300 dark:ring-blue-400/20",
+  polymarket:
+    "bg-emerald-50 text-emerald-700 ring-emerald-600/20 dark:bg-emerald-950/40 dark:text-emerald-300 dark:ring-emerald-400/20",
+  kalshi:
+    "bg-purple-50 text-purple-700 ring-purple-600/20 dark:bg-purple-950/40 dark:text-purple-300 dark:ring-purple-400/20",
+};
+
+// Minimal inline SVG icons — each platform's logo reduced to a recognizable glyph.
+const PLATFORM_ICON = {
+  manifold: (
+    <svg viewBox="0 0 16 16" className="h-3 w-3 shrink-0" fill="currentColor">
+      <path d="M8 1L14.9 12.5H1.1L8 1Z" />
+    </svg>
+  ),
+  polymarket: (
+    <svg viewBox="0 0 16 16" className="h-3 w-3 shrink-0" fill="currentColor">
+      <path d="M3 3h4v4H3V3Zm6 0h4v4H9V3ZM3 9h4v4H3V9Zm6 3a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
+    </svg>
+  ),
+  kalshi: (
+    <svg viewBox="0 0 16 16" className="h-3 w-3 shrink-0" fill="currentColor">
+      <path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1Zm0 2a5 5 0 0 1 3.54 8.54L5.46 5.46A5 5 0 0 1 8 3Z" />
+    </svg>
+  ),
+};
+
+function PlatformBadge({ platform }) {
+  const tone = PLATFORM_STYLE[platform] ?? PLATFORM_STYLE.manifold;
+  const icon = PLATFORM_ICON[platform];
+  return (
+    <span
+      className={`ml-1 inline-flex items-center gap-0.5 rounded-full px-1.5 py-px text-[10px] font-semibold ring-1 ring-inset ${tone}`}
+    >
+      {icon}
+      {platform}
+    </span>
+  );
+}
+
 // Reasonableness-band status → pill classes. A failing band reads loudest (rose), a passing
 // band reassuring (emerald), a skipped band muted (slate) — the same rose/amber/muted family
 // the KL tints above draw from.
@@ -117,11 +157,12 @@ function CleanTable({ rows }) {
             const unresolvedPct =
               row.nResolved + row.unresolved > 0 ? row.unresolved / (row.nResolved + row.unresolved) : null;
             return (
-              <tr key={row.slug} className={klToneClass(row.klBits)} data-calibration-clean-row={row.slug}>
+              <tr key={row.marketId} className={klToneClass(row.klBits)} data-calibration-clean-row={row.marketId}>
                 <th className="px-4 py-2 text-left font-semibold text-slate-700 dark:text-slate-200">
                   <a href={row.url} target="_blank" rel="noreferrer" className="augur-accent-text hover:underline">
                     {row.question}
                   </a>
+                  <PlatformBadge platform={row.platform} />
                 </th>
                 <td className="px-3 py-2 text-right augur-tabular">{fmtProb(row.pMarket)}</td>
                 <td className="px-3 py-2 text-right augur-tabular">
@@ -167,11 +208,12 @@ function SurfacedTable({ rows }) {
         </thead>
         <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
           {rows.map((row) => (
-            <tr key={row.slug} data-calibration-surfaced-row={row.slug}>
+            <tr key={row.marketId} data-calibration-surfaced-row={row.marketId}>
               <th className="px-4 py-2 text-left font-semibold text-slate-700 dark:text-slate-200">
                 <a href={row.url} target="_blank" rel="noreferrer" className="augur-accent-text hover:underline">
                   {row.question}
                 </a>
+                <PlatformBadge platform={row.platform} />
                 <div className="mt-0.5 text-[11px] font-normal augur-muted">
                   <span className="font-semibold">
                     {row.correlateOf ? `correlate of ${row.correlateOf}` : row.mappability}
@@ -308,7 +350,7 @@ function CalibrationResults({ response, metricScale }) {
         </div>
         <div className="augur-card p-4">
           <div className="augur-eyebrow">Price source</div>
-          <div className="mt-2 text-sm font-semibold augur-tabular">Manifold live prices</div>
+          <div className="mt-2 text-sm font-semibold augur-tabular">Live prediction-market prices</div>
         </div>
       </div>
 

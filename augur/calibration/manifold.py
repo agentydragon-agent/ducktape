@@ -23,27 +23,20 @@ import httpx
 from pydantic import BaseModel, ConfigDict
 
 from augur.api.casing import decamelize_json
+from augur.calibration.platform import Market
 
 _MARKET_ENDPOINT = "https://api.manifold.markets/v0/market/"
 _USER_AGENT = "augur-pm-calibration/1.0"
 
 
-class ManifoldMarket(BaseModel):
+class _ManifoldResponse(BaseModel):
     """The subset of the Manifold v0 market payload calibration needs (snake-cased)."""
 
     model_config = ConfigDict(extra="ignore")
 
     id: str
-    # Canonical market page (`https://manifold.markets/<creator>/<slug>`); the catalog stores
-    # only a slug, so the link text/href the frontend renders comes from the live payload.
     url: str
     probability: float | None = None
-
-    def require_probability(self) -> float:
-        """This market's YES probability; raises when the payload carries none."""
-        if self.probability is None:
-            raise ValueError(f"Manifold market {self.id!r} returned no YES probability")
-        return self.probability
 
 
 def _headers() -> dict[str, str]:
@@ -73,16 +66,17 @@ class ManifoldClient:
         self._cache_ttl_seconds = cache_ttl_seconds
         self._clock = clock
         # market id -> (last fetched market state, monotonic timestamp of that fetch).
-        self._cache: dict[str, tuple[ManifoldMarket, float]] = {}
+        self._cache: dict[str, tuple[Market, float]] = {}
 
-    def get_market(self, market_id: str) -> ManifoldMarket:
+    def get_market(self, market_id: str) -> Market:
         """One market's current state, served from the TTL cache when still fresh."""
         now = self._clock()
         if (cached := self._cache.get(market_id)) is not None and now - cached[1] < self._cache_ttl_seconds:
             return cached[0]
         response = self._client.get(f"{_MARKET_ENDPOINT}{market_id}")
         response.raise_for_status()
-        market = ManifoldMarket.model_validate(decamelize_json(response.json()))
+        raw = _ManifoldResponse.model_validate(decamelize_json(response.json()))
+        market = Market(id=raw.id, url=raw.url, probability=raw.probability)
         self._cache[market_id] = (market, now)
         return market
 

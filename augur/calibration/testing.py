@@ -1,10 +1,9 @@
-"""Hermetic `ManifoldClient` for tests (mirrors `augur.model.testing`).
+"""Hermetic mock clients for calibration tests.
 
-`mock_manifold_client` builds a real :class:`ManifoldClient` over an
-``httpx.MockTransport`` that answers each market read from a fixed price map, so
-calibration runs stay hermetic (no network) while still exercising the client's real
-caching/parsing path. The `clock` / `cache_ttl_seconds` seams thread straight through to
-the client for tests that drive the TTL cache.
+``mock_manifold_client`` and ``mock_kalshi_client`` build real client classes over
+``httpx.MockTransport`` so they exercise the client's actual caching/parsing path.
+``mock_price_clients`` is a convenience that assembles a ``dict[Platform, PriceClient]``
+from per-platform price maps.
 """
 
 from __future__ import annotations
@@ -14,13 +13,15 @@ from collections.abc import Callable, Mapping
 
 import httpx
 
+from augur.calibration.kalshi import KalshiClient
 from augur.calibration.manifold import ManifoldClient
+from augur.calibration.platform import Market, Platform, PriceClient
 
 
 def mock_manifold_client(
     prices: Mapping[str, float], *, clock: Callable[[], float] = time.monotonic, cache_ttl_seconds: float = 120.0
 ) -> ManifoldClient:
-    """A `ManifoldClient` whose market reads resolve from `prices` keyed by Manifold id."""
+    """A ``ManifoldClient`` whose market reads resolve from `prices` keyed by Manifold id."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         market_id = request.url.path.rstrip("/").rsplit("/", 1)[-1]
@@ -36,3 +37,53 @@ def mock_manifold_client(
     return ManifoldClient(
         clock=clock, cache_ttl_seconds=cache_ttl_seconds, client=httpx.Client(transport=httpx.MockTransport(handler))
     )
+
+
+def mock_kalshi_client(
+    prices: Mapping[str, float], *, clock: Callable[[], float] = time.monotonic, cache_ttl_seconds: float = 120.0
+) -> KalshiClient:
+    """A ``KalshiClient`` whose market reads resolve from `prices` (0-1 scale) keyed by ticker."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        ticker = request.url.path.rstrip("/").rsplit("/", 1)[-1]
+        return httpx.Response(200, json={"market": {"last_price_dollars": str(prices[ticker]), "ticker": ticker}})
+
+    return KalshiClient(
+        clock=clock, cache_ttl_seconds=cache_ttl_seconds, client=httpx.Client(transport=httpx.MockTransport(handler))
+    )
+
+
+class _StaticClient:
+    """Minimal ``PriceClient`` backed by a fixed price map."""
+
+    def __init__(self, prices: Mapping[str, float]) -> None:
+        self._prices = prices
+
+    def get_market(self, market_id: str) -> Market:
+        return Market(id=market_id, url=f"https://test.example/{market_id}", probability=self._prices[market_id])
+
+    def close(self) -> None:
+        pass
+
+
+def mock_price_clients(
+    prices_by_platform: Mapping[Platform, Mapping[str, float]],
+    *,
+    clock: Callable[[], float] = time.monotonic,
+    cache_ttl_seconds: float = 120.0,
+) -> dict[Platform, PriceClient]:
+    """Build a ``dict[Platform, PriceClient]`` with hermetic mock clients.
+
+    Manifold and Kalshi use their real client classes (exercising parsing/caching).
+    Polymarket (and any future platform without a specialised mock) gets a
+    ``_StaticClient`` that returns ``Market`` directly.
+    """
+    result: dict[Platform, PriceClient] = {}
+    for platform, prices in prices_by_platform.items():
+        if platform == Platform.MANIFOLD:
+            result[platform] = mock_manifold_client(prices, clock=clock, cache_ttl_seconds=cache_ttl_seconds)
+        elif platform == Platform.KALSHI:
+            result[platform] = mock_kalshi_client(prices, clock=clock, cache_ttl_seconds=cache_ttl_seconds)
+        else:
+            result[platform] = _StaticClient(prices)
+    return result

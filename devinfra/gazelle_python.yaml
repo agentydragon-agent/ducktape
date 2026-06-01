@@ -60,6 +60,7 @@ manifest:
     backoff: backoff
     bcrypt: bcrypt
     beartype: beartype
+    bitarray: bitarray
     bleach: bleach
     blinker: blinker
     boto3: boto3
@@ -78,6 +79,7 @@ manifest:
     charset_normalizer: charset_normalizer
     chromadb: chromadb
     chromadb_rust_bindings: chromadb
+    ckzg: ckzg
     claude_agent_sdk: claude_agent_sdk
     claude_code_sdk: claude_code_sdk
     click: click
@@ -91,6 +93,7 @@ manifest:
     cryptography: cryptography
     cycler: cycler
     cyclopts: cyclopts
+    cytoolz: cytoolz
     dateutil: python_dateutil
     dbus_fast: dbus_fast
     debugpy: debugpy
@@ -112,6 +115,14 @@ manifest:
     email_reply_parser: email_reply_parser
     email_validator: email_validator
     et_xmlfile: et_xmlfile
+    eth_abi: eth_abi
+    eth_account: eth_account
+    eth_hash: eth_hash
+    eth_keyfile: eth_keyfile
+    eth_keys: eth_keys
+    eth_rlp: eth_rlp
+    eth_typing: eth_typing
+    eth_utils: eth_utils
     exceptiongroup: exceptiongroup
     execnet: execnet
     executing: executing
@@ -223,6 +234,7 @@ manifest:
     hamcrest: pyhamcrest
     hass_client: hass_client
     hcloud: hcloud
+    hexbytes: hexbytes
     hf_xet: hf_xet
     homeassistant_api: homeassistant_api
     hpack: hpack
@@ -415,6 +427,7 @@ manifest:
     pandas: pandas
     pandocfilters: pandocfilters
     paramiko: paramiko
+    parsimonious: parsimonious
     parso: parso
     passlib: passlib
     pathable: pathable
@@ -434,6 +447,7 @@ manifest:
     plotnine: plotnine
     pluggy: pluggy
     polars: polars
+    polymarket: polymarket_client
     port_for: port_for
     portalocker: portalocker
     posthog: posthog
@@ -510,6 +524,7 @@ manifest:
     rfc3987_syntax: rfc3987_syntax
     rich: rich
     rich_rst: rich_rst
+    rlp: rlp
     rpds: rpds_py
     rsa: rsa
     ruamel.yaml: ruamel_yaml
@@ -544,7 +559,7 @@ manifest:
     sympy: sympy
     syrupy: syrupy
     tabulate: tabulate
-    takethetime: takethetime
+    takethetime: TakeTheTime
     tenacity: tenacity
     terminado: terminado
     testcontainers.arangodb: testcontainers
@@ -603,10 +618,12 @@ manifest:
     tiktoken_ext.openai_public: tiktoken
     timeslot: timeslot
     tinycss2: tinycss2
+    tlz: toolz
     tokenizers: tokenizers
     tomli: tomli
     tomli_w: tomli_w
     tomlkit: tomlkit
+    toolz: toolz
     tornado: tornado
     tqdm: tqdm
     traitlets: traitlets
@@ -651,4 +668,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 08fbcd45577913214ff025053524b3ce72ebd44ad943dd16217d6a9c8650a60b
+integrity: 9c7709f1f281e5c3a2b4f6b23dba596e7868abcda318cce5ed28cd1b42dea8a7

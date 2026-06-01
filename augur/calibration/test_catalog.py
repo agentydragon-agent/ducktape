@@ -8,7 +8,17 @@ import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
-from augur.calibration.catalog import CorrelateMarket, ExactMarket, Mappability, MarketCatalog, UnmappableMarket
+from augur.calibration.catalog import (
+    CorrelateMarket,
+    ExactMarket,
+    KalshiRef,
+    ManifoldRef,
+    Mappability,
+    MarketCatalog,
+    PolymarketRef,
+    UnmappableMarket,
+)
+from augur.calibration.platform import Platform
 from util.bazel.runfiles import get_required_path
 
 
@@ -18,27 +28,24 @@ def _catalog() -> MarketCatalog:
         metadata={"source": "manifold", "as_of": "2026-05-29", "augur_model_as_of": "2026-05-27"},
         markets=[
             ExactMarket(
-                slug="ipo-before-2027",
-                manifold_id="AAA",
                 question="Issuer IPO before 2027?",
+                platform_ref=ManifoldRef(manifold_id="AAA"),
                 outcome_type="BINARY",
                 resolution_deadline=date(2027, 1, 1),
                 mapping_kind="ipo_by_date",
                 mapping_params={"by_date": "2027-01-01"},
             ),
             CorrelateMarket(
-                slug="revenue-2028",
-                manifold_id="BBB",
                 question="Issuer reaches $100B revenue in 2028?",
+                platform_ref=ManifoldRef(manifold_id="BBB"),
                 outcome_type="BINARY",
                 correlate_of="mark_per_unit_trajectory",
                 correlate_strength="weak",
                 reason="augur has no revenue channel.",
             ),
             UnmappableMarket(
-                slug="ceo-2026",
-                manifold_id="CCC",
                 question="Will the CEO still be CEO at the end of 2026?",
+                platform_ref=ManifoldRef(manifold_id="CCC"),
                 outcome_type="BINARY",
                 reason="Governance; not modeled.",
             ),
@@ -48,8 +55,8 @@ def _catalog() -> MarketCatalog:
 
 def test_partitions_dispatch_on_variant() -> None:
     catalog = _catalog()
-    assert [m.slug for m in catalog.exact_markets()] == ["ipo-before-2027"]
-    assert [m.slug for m in catalog.surfaced_markets()] == ["revenue-2028", "ceo-2026"]
+    assert [m.market_id for m in catalog.exact_markets()] == ["AAA"]
+    assert [m.market_id for m in catalog.surfaced_markets()] == ["BBB", "CCC"]
     (exact,) = catalog.exact_markets()
     assert isinstance(exact, ExactMarket)
     assert exact.mapping_params == {"by_date": "2027-01-01"}
@@ -58,13 +65,13 @@ def test_partitions_dispatch_on_variant() -> None:
 def test_exact_requires_mapping_fields() -> None:
     """The EXACT variant cannot be constructed without mapping_kind + mapping_params."""
     with pytest.raises(ValidationError):
-        ExactMarket(slug="x", manifold_id="D", question="?", outcome_type="BINARY")  # type: ignore[call-arg]
+        ExactMarket(question="?", platform_ref=ManifoldRef(manifold_id="D"), outcome_type="BINARY")  # type: ignore[call-arg]
 
 
 def test_correlate_requires_correlate_of() -> None:
     """The CORRELATE variant cannot be constructed without correlate_of."""
     with pytest.raises(ValidationError):
-        CorrelateMarket(slug="x", manifold_id="E", question="?", outcome_type="BINARY")  # type: ignore[call-arg]
+        CorrelateMarket(question="?", platform_ref=ManifoldRef(manifold_id="E"), outcome_type="BINARY")  # type: ignore[call-arg]
 
 
 def test_invalid_cross_field_state_is_unrepresentable() -> None:
@@ -76,7 +83,6 @@ def test_invalid_cross_field_state_is_unrepresentable() -> None:
                 "metadata": {"as_of": "2026-05-29"},
                 "markets": [
                     {
-                        "slug": "bad",
                         "manifold_id": "F",
                         "question": "?",
                         "outcome_type": "BINARY",
@@ -93,11 +99,51 @@ def test_unknown_mappability_is_rejected() -> None:
         MarketCatalog.model_validate(
             {
                 "metadata": {"as_of": "2026-05-29"},
-                "markets": [
-                    {"slug": "x", "manifold_id": "G", "question": "?", "outcome_type": "BINARY", "mappability": "weird"}
-                ],
+                "markets": [{"manifold_id": "G", "question": "?", "outcome_type": "BINARY", "mappability": "weird"}],
             }
         )
+
+
+def test_platform_ref_discriminated_union() -> None:
+    """Each platform variant carries its own required ID field."""
+    poly_market = ExactMarket(
+        question="Polymarket question?",
+        platform_ref=PolymarketRef(polymarket_id="0xabc"),
+        outcome_type="BINARY",
+        mapping_kind="ipo_by_date",
+        mapping_params={"by_date": "2027-01-01"},
+    )
+    assert poly_market.platform == Platform.POLYMARKET
+    assert poly_market.market_id == "0xabc"
+
+    kalshi_market = ExactMarket(
+        question="Kalshi question?",
+        platform_ref=KalshiRef(kalshi_id="OPENAI-IPO-2027"),
+        outcome_type="BINARY",
+        mapping_kind="ipo_by_date",
+        mapping_params={"by_date": "2027-01-01"},
+    )
+    assert kalshi_market.market_id == "OPENAI-IPO-2027"
+
+
+def test_flat_yaml_backward_compat() -> None:
+    """Existing catalogs with top-level `manifold_id` (no `platform`) are accepted."""
+    catalog = MarketCatalog.model_validate(
+        {
+            "metadata": {"as_of": "2026-05-29"},
+            "markets": [
+                {
+                    "manifold_id": "AAA",
+                    "question": "IPO before 2027?",
+                    "outcome_type": "BINARY",
+                    "mappability": "exact",
+                    "mapping_kind": "ipo_by_date",
+                    "mapping_params": {"by_date": "2027-01-01"},
+                }
+            ],
+        }
+    )
+    assert catalog.markets[0].market_id == "AAA"
 
 
 def test_shipped_example_catalog_parses() -> None:

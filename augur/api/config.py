@@ -26,6 +26,7 @@ from augur.api.bootstrap import ActorRole, ProductInputDefaults
 from augur.api.local_regulation import LocalRegulation
 from augur.api.portfolio_source_config import PortfolioSourcesConfig
 from augur.api.schemas import ApiModel
+from augur.budget.schema import BudgetConfig
 from augur.model.provider_config import CompositeProviderConfig, ProviderConfig
 from augur.model.state_space import StateSpaceProviderConfig
 from augur.model.trained_private_equity import TrainedPrivateEquityProviderConfig
@@ -156,6 +157,14 @@ class Config(ApiModel):
             "The single prediction-market catalog the exogenous-only calibration endpoints "
             "(`/api/calibration/*`) score, loaded into a `MarketCatalog` at startup. `None` by "
             "default; a deployment sets it to a catalog plus the issuer it scores."
+        ),
+    )
+    budget: BudgetConfig | None = Field(
+        default=None,
+        description=(
+            "Optional budget planner config. When set, `/api/budget/*` routes are enabled. "
+            "Holds bucket taxonomy and per-deployment categorization rules (private merchants "
+            "live here, in the deployment's gaffer-private config — not in ducktape)."
         ),
     )
 

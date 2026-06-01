@@ -1,8 +1,8 @@
 """End-to-end `run_calibration` against a fixed-output fixture model (no network).
 
 Uses the shared `ConstantFrameModel` fixture (augur.model.testing) seeded
-with a per-rollout event array, and a `mock_manifold_client` so prices are deterministic
-and hermetic.
+with a per-rollout event array, and hermetic mock price clients so prices are
+deterministic.
 """
 
 from __future__ import annotations
@@ -15,9 +15,9 @@ import numpy.typing as npt
 import pytest_bazel
 
 from augur.calibration.calibration import mark_fan, run_calibration, sample_private_equity_bundle, wilson_interval
-from augur.calibration.catalog import CorrelateMarket, ExactMarket, MarketCatalog
-from augur.calibration.manifold import ManifoldClient
-from augur.calibration.testing import mock_manifold_client
+from augur.calibration.catalog import CorrelateMarket, ExactMarket, KalshiRef, ManifoldRef, MarketCatalog
+from augur.calibration.platform import Platform, PriceClient
+from augur.calibration.testing import mock_price_clients
 from augur.model.exogenous import ExogenousSamplingRequest
 from augur.model.private_equity_bundle import PrivateEquityFloatChannel
 from augur.model.series import IssuerId, PrivateEquityEventKindCode
@@ -51,26 +51,23 @@ def _catalog() -> MarketCatalog:
         metadata={"as_of": "2026-05-29", "augur_model_as_of": "2026-05-27"},
         markets=[
             ExactMarket(
-                slug="ipo-before-2027",
-                manifold_id="AAA",
                 question="Issuer IPO before 2027?",
+                platform_ref=ManifoldRef(manifold_id="AAA"),
                 outcome_type="BINARY",
                 resolution_deadline=date(2027, 1, 1),
                 mapping_kind="ipo_by_date",
                 mapping_params={"by_date": "2027-01-01"},
             ),
             ExactMarket(
-                slug="collapse-before-ipo",
-                manifold_id="BBB",
                 question="Issuer collapses or acquired before IPO?",
+                platform_ref=ManifoldRef(manifold_id="BBB"),
                 outcome_type="BINARY",
                 mapping_kind="pre_ipo_failure",
                 mapping_params={"before_event": "PUBLIC_MARKET_OPEN"},
             ),
             CorrelateMarket(
-                slug="valuation-1t",
-                manifold_id="CCC",
                 question="Issuer completes an IPO in 2026 with $1T cap?",
+                platform_ref=ManifoldRef(manifold_id="CCC"),
                 outcome_type="BINARY",
                 resolution_deadline=date(2026, 12, 31),
                 correlate_of="ipo_by_date",
@@ -81,8 +78,8 @@ def _catalog() -> MarketCatalog:
     )
 
 
-def _prices() -> ManifoldClient:
-    return mock_manifold_client({"AAA": 0.40, "BBB": 0.10, "CCC": 0.66})
+def _price_clients() -> dict[Platform, PriceClient]:
+    return mock_price_clients({Platform.MANIFOLD: {"AAA": 0.40, "BBB": 0.10, "CCC": 0.66}})
 
 
 def _run():
@@ -92,7 +89,7 @@ def _run():
         issuer=_ISSUER,
         horizon_months=_HORIZON,
         rollout_seeds=tuple(range(4)),
-        price_client=_prices(),
+        price_clients=_price_clients(),
     )
 
 
@@ -100,11 +97,12 @@ def test_clean_rows_score_events() -> None:
     result = _run()
     assert result.issuer == _ISSUER
     assert result.rollout_count == 4
-    clean = {row.slug: row for row in result.clean}
+    clean = {row.market_id: row for row in result.clean}
 
     # ipo_by_date(2027-01-01 -> month 7): rollout 0 YES; rollouts 1,3 NO (no IPO by then,
     # whole horizon simulated); rollout 2 NO (collapsed, no IPO). All resolved.
-    ipo = clean["ipo-before-2027"]
+    ipo = clean["AAA"]
+    assert ipo.platform == "manifold"
     assert ipo.n_resolved == 4
     assert ipo.unresolved == 0
     assert ipo.p_model == 0.25
@@ -115,7 +113,7 @@ def test_clean_rows_score_events() -> None:
 
     # pre_ipo_failure: rollout 2 YES (collapse before IPO); rollouts 0,1 NO (IPO first);
     # rollout 3 UNRESOLVED (still private at horizon end).
-    fail = clean["collapse-before-ipo"]
+    fail = clean["BBB"]
     assert fail.n_resolved == 3
     assert fail.unresolved == 1
     assert fail.p_model is not None
@@ -124,10 +122,10 @@ def test_clean_rows_score_events() -> None:
 
 def test_surfaced_row_carries_augur_context() -> None:
     result = _run()
-    assert [row.slug for row in result.surfaced] == ["valuation-1t"]
+    assert [row.market_id for row in result.surfaced] == ["CCC"]
     surfaced = result.surfaced[0]
+    assert surfaced.platform == "manifold"
     assert surfaced.correlate_of == "ipo_by_date"
-    assert surfaced.url == "https://manifold.markets/test/CCC"
     assert surfaced.p_market == 0.66  # injected stub price
     assert surfaced.reason == "The >=$1T cap conjunct needs a valuation augur does not model."
     # deadline 2026-12-31 is month 7 from as_of 2026-05-27; rollout 0 IPOs at month 7 (<=7),
@@ -150,11 +148,11 @@ def test_run_calibration_reuses_supplied_bundle() -> None:
         issuer=_ISSUER,
         horizon_months=_HORIZON,
         rollout_seeds=seeds,
-        price_client=_prices(),
+        price_clients=_price_clients(),
         bundle=bundle,
     )
     internal = run_calibration(
-        _model(), catalog, issuer=_ISSUER, horizon_months=_HORIZON, rollout_seeds=seeds, price_client=_prices()
+        _model(), catalog, issuer=_ISSUER, horizon_months=_HORIZON, rollout_seeds=seeds, price_clients=_price_clients()
     )
     assert from_bundle == internal
     # The same bundle also drives the mark_fan, so both views come from one rollout.
@@ -183,6 +181,40 @@ def test_wilson_interval_edges() -> None:
     # p_hat = 0.5 -> the 95% Wilson interval is symmetric about 0.5 and strictly inside (0, 1).
     assert 0.0 < lo < 0.5 < hi < 1.0
     assert math.isclose((lo + hi) / 2, 0.5, abs_tol=1e-9)
+
+
+def test_multi_platform_dispatches_to_correct_client() -> None:
+    """Kalshi + Manifold markets each hit their own client and carry the right platform tag."""
+    catalog = MarketCatalog(
+        metadata={"as_of": "2026-05-29"},
+        markets=[
+            ExactMarket(
+                question="IPO before 2027? (Manifold)",
+                platform_ref=ManifoldRef(manifold_id="M1"),
+                outcome_type="BINARY",
+                resolution_deadline=date(2027, 1, 1),
+                mapping_kind="ipo_by_date",
+                mapping_params={"by_date": "2027-01-01"},
+            ),
+            ExactMarket(
+                question="IPO before Sep 2026? (Kalshi)",
+                platform_ref=KalshiRef(kalshi_id="KXIPOOPENAI-26SEP01"),
+                outcome_type="BINARY",
+                resolution_deadline=date(2026, 9, 1),
+                mapping_kind="ipo_by_date",
+                mapping_params={"by_date": "2026-09-01"},
+            ),
+        ],
+    )
+    clients = mock_price_clients({Platform.MANIFOLD: {"M1": 0.75}, Platform.KALSHI: {"KXIPOOPENAI-26SEP01": 0.50}})
+    result = run_calibration(
+        _model(), catalog, issuer=_ISSUER, horizon_months=_HORIZON, rollout_seeds=tuple(range(4)), price_clients=clients
+    )
+    by_id = {row.market_id: row for row in result.clean}
+    assert by_id["M1"].platform == "manifold"
+    assert by_id["M1"].p_market == 0.75
+    assert by_id["KXIPOOPENAI-26SEP01"].platform == "kalshi"
+    assert by_id["KXIPOOPENAI-26SEP01"].p_market == 0.50
 
 
 if __name__ == "__main__":

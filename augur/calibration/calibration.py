@@ -11,15 +11,16 @@ augur models EVENTS, not company valuation or revenue. Only event-based markets
 (``ipo_by_date``, ``pre_ipo_failure``) are scored; valuation/revenue/etc. markets
 are surfaced, never scored.
 
-``p_market`` ALWAYS comes from live Manifold via an injected :class:`ManifoldClient`
-(its TTL cache absorbs the repeated per-market reads of rapid auto-refreshes); tests
-inject a hermetic ``MockTransport``-backed client.
+``p_market`` ALWAYS comes from a live prediction-market client injected as a
+``Mapping[Platform, PriceClient]`` (one client per platform). Tests inject
+hermetic mock clients.
 """
 
 from __future__ import annotations
 
 import math
 from collections import Counter
+from collections.abc import Mapping
 from datetime import date
 
 import numpy as np
@@ -27,7 +28,7 @@ from pydantic import BaseModel
 from statsmodels.stats.proportion import proportion_confint
 
 from augur.calibration.catalog import CorrelateMarket, ExactMarket, MarketCatalog, SurfacedMarket
-from augur.calibration.manifold import ManifoldClient, ManifoldMarket
+from augur.calibration.platform import Market, Platform, PriceClient
 from augur.calibration.resolvers import (
     Resolution,
     RolloutTrajectory,
@@ -83,31 +84,26 @@ class AugurContext(BaseModel):
 class CleanRow(BaseModel):
     """An apples-to-apples comparison: a market augur models as an event."""
 
-    slug: str
+    market_id: str
     question: str
-    # Canonical Manifold market page, fetched live alongside the price (the catalog stores
-    # only a slug). The frontend links the question title to this URL.
     url: str
+    platform: str
     p_market: float
     p_model: float | None = None  # None when no rollout resolved YES/NO within the horizon
     ci95: tuple[float, float]
     n_resolved: int
     unresolved: int
-    # `D_KL(market ‖ model)` in bits: the model-vs-market disagreement we actually optimize.
-    # None when no rollout resolved (p_model is None), matching p_model's nullability.
     kl_bits: float | None = None
 
 
 class SurfacedRow(BaseModel):
     """A market augur lacks the concept for: shown with its price + reason, never scored."""
 
-    slug: str
+    market_id: str
     question: str
-    # Canonical Manifold market page, fetched live alongside the price (see CleanRow.url).
-    # The frontend links the question title to this URL, same as the scored table.
     url: str
+    platform: str
     mappability: str
-    # Optional (`= None`) to match the endpoint's drop-None wire; see CleanRow above.
     correlate_of: str | None = None
     p_market: float
     reason: str | None = None
@@ -139,8 +135,8 @@ class MarkFan(BaseModel):
     months: list[MonthBand]
 
 
-def _clean_row(market: ExactMarket, trajectories: list[RolloutTrajectory], manifold: ManifoldMarket) -> CleanRow:
-    p_market = manifold.require_probability()
+def _clean_row(market: ExactMarket, trajectories: list[RolloutTrajectory], live: Market) -> CleanRow:
+    p_market = live.require_probability()
     counts = Counter(
         resolve_market(t, mapping_kind=market.mapping_kind, params=market.mapping_params) for t in trajectories
     )
@@ -148,9 +144,10 @@ def _clean_row(market: ExactMarket, trajectories: list[RolloutTrajectory], manif
     n = yes + no
     p_model = yes / n if n else None
     return CleanRow(
-        slug=market.slug,
+        market_id=market.market_id,
         question=market.question,
-        url=manifold.url,
+        url=live.url,
+        platform=market.platform,
         p_market=p_market,
         p_model=p_model,
         ci95=wilson_interval(yes, n),
@@ -183,16 +180,15 @@ def _augur_context(market: SurfacedMarket, trajectories: list[RolloutTrajectory]
     )
 
 
-def _surfaced_row(
-    market: SurfacedMarket, trajectories: list[RolloutTrajectory], manifold: ManifoldMarket
-) -> SurfacedRow:
+def _surfaced_row(market: SurfacedMarket, trajectories: list[RolloutTrajectory], live: Market) -> SurfacedRow:
     return SurfacedRow(
-        slug=market.slug,
+        market_id=market.market_id,
         question=market.question,
-        url=manifold.url,
+        url=live.url,
+        platform=market.platform,
         mappability=market.mappability,
         correlate_of=market.correlate_of if isinstance(market, CorrelateMarket) else None,
-        p_market=manifold.require_probability(),
+        p_market=live.require_probability(),
         reason=" ".join(market.reason.split()) if market.reason else None,
         augur_context=_augur_context(market, trajectories),
     )
@@ -245,22 +241,21 @@ def run_calibration(
     issuer: str,
     horizon_months: int,
     rollout_seeds: tuple[int, ...],
-    price_client: ManifoldClient | None = None,
+    price_clients: Mapping[Platform, PriceClient],
     bundle: PrivateEquityBundle | None = None,
 ) -> CalibrationResult:
     """Score an exogenous model's rollouts against a curated prediction-market catalog.
 
     Samples `model` for `issuer` over `horizon_months`, resolves every `exact`
     market apples-to-apples, and surfaces the rest. Each market's `p_market` is fetched
-    LIVE per market via `price_client` (a real `ManifoldClient` by default, whose TTL cache
-    absorbs the repeated reads of rapid auto-refreshes; tests inject a hermetic client).
+    LIVE per market via the platform-appropriate client from `price_clients`
+    (a real client by default, whose TTL cache absorbs the repeated reads of rapid
+    auto-refreshes; tests inject hermetic clients).
 
     Pass a pre-sampled `bundle` (from `sample_private_equity_bundle` with the same
     issuer/horizon/seeds) to reuse one rollout for both scoring and a `mark_fan`; when
     omitted, `model` is sampled here.
     """
-    if price_client is None:
-        price_client = ManifoldClient()
     as_of = catalog.metadata.model_anchor_date
     rollout_count = len(rollout_seeds)
     if bundle is None:
@@ -273,17 +268,14 @@ def run_calibration(
         )
     )
 
+    def _live(market: ExactMarket | SurfacedMarket) -> Market:
+        return price_clients[market.platform].get_market(market.market_id)
+
     return CalibrationResult(
         issuer=issuer,
         as_of=as_of,
         horizon_months=horizon_months,
         rollout_count=rollout_count,
-        clean=[
-            _clean_row(market, trajectories, price_client.get_market(market.manifold_id))
-            for market in catalog.exact_markets()
-        ],
-        surfaced=[
-            _surfaced_row(market, trajectories, price_client.get_market(market.manifold_id))
-            for market in catalog.surfaced_markets()
-        ],
+        clean=[_clean_row(market, trajectories, _live(market)) for market in catalog.exact_markets()],
+        surfaced=[_surfaced_row(market, trajectories, _live(market)) for market in catalog.surfaced_markets()],
     )

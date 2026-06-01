@@ -80,6 +80,7 @@ py_library(
         ":portfolio",
         ":portfolio_source_config",
         ":schemas",
+        "//augur/budget:schema",
         "//augur/model:provider_config",
         "@pypi//pydantic",
         "@pypi//pyyaml",
@@ -217,6 +218,20 @@ py_test(
     ],
 )
 
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        ":config",
+        ":server_lib",
+        "//augur/product:testing",
+        "//util/bazel:runfiles",
+        "@pypi//fastapi",
+        "@pypi//pytest",
+    ],
+)
+
 py_test(
     name = "server_test",
     size = "medium",
@@ -228,10 +243,8 @@ py_test(
         ":server",
     ],
     deps = [
-        ":config",
-        ":server_lib",
+        ":conftest",
         "//augur/model:series",
-        "//augur/product:testing",
         "//util:net",
         "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",
@@ -251,13 +264,11 @@ py_test(
         ":public_fixture_properties",
     ],
     deps = [
-        ":config",
-        ":server_lib",
+        ":conftest",
         "//augur/calibration:catalog",
         "//augur/calibration:testing",
         "//augur/model:sample_sanity",
         "//augur/model:series",
-        "//util/bazel:runfiles",
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//pytest",
@@ -278,9 +289,13 @@ py_library(
         ":deployment",
         ":portfolio_sources",
         ":schemas",
+        "//augur/budget:service",
+        "//augur/budget:wire",
         "//augur/calibration",
         "//augur/calibration:catalog",
+        "//augur/calibration:kalshi",
         "//augur/calibration:manifold",
+        "//augur/calibration:polymarket",
         "//augur/model:exogenous",
         "//augur/model:sample_sanity",
         "//augur/model:series",

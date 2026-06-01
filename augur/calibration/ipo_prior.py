@@ -57,14 +57,16 @@ def derive_public_market_anchors(
         by_date = date.fromisoformat(str(market.mapping_params["by_date"]))
         month = months_after(anchor_date, by_date)
         if month < 1:
-            logger.info("dropping %s: deadline %s is at month %d < 1 (before sim start)", market.slug, by_date, month)
+            logger.info(
+                "dropping %s: deadline %s is at month %d < 1 (before sim start)", market.market_id, by_date, month
+            )
             continue
-        prob = min(max(price_client.fetch_yes_probability(market.manifold_id), 0.0), _MAX_CUMULATIVE_PROBABILITY)
+        prob = min(max(price_client.fetch_yes_probability(market.market_id), 0.0), _MAX_CUMULATIVE_PROBABILITY)
         if month in prob_by_month and prob <= prob_by_month[month]:
             logger.info(
                 "collapsing duplicate month %d for %s: keeping higher prob %.4f",
                 month,
-                market.slug,
+                market.market_id,
                 prob_by_month[month],
             )
             continue

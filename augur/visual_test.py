@@ -30,7 +30,8 @@ import uvicorn
 
 from augur.api.config import load_augur_config
 from augur.calibration.catalog import MarketCatalog
-from augur.calibration.testing import mock_manifold_client
+from augur.calibration.platform import Platform
+from augur.calibration.testing import mock_price_clients
 from augur.dev_server import build_dev_app
 from util.bazel.runfiles import get_required_path
 from util.net import pick_free_port, wait_for_port
@@ -221,22 +222,25 @@ def browser(playwright_sync: Playwright) -> Iterator[Browser]:
         browser.close()
 
 
-def _hermetic_prices() -> dict[str, float]:
+def _hermetic_prices() -> dict[Platform, dict[str, float]]:
     """A fixed live price for every market in the example catalog.
 
     The calibration tab auto-runs on load and scores every catalog market, so the in-process
-    server needs a probability for each `manifold_id` to resolve the run with no network. The
-    exact values only need to be plausible and deterministic; a gentle spread keeps the scored
-    table and surfaced list visually populated."""
+    server needs a probability for each market to resolve the run with no network. The exact
+    values only need to be plausible and deterministic; a gentle spread keeps the scored table
+    and surfaced list visually populated."""
     catalog = MarketCatalog.from_yaml(get_required_path("_main/augur/calibration/example_openai_catalog.yaml"))
-    return {market.manifold_id: 0.3 + 0.4 * (index % 3) / 2 for index, market in enumerate(catalog.markets)}
+    by_platform: dict[Platform, dict[str, float]] = {}
+    for index, market in enumerate(catalog.markets):
+        by_platform.setdefault(market.platform, {})[market.market_id] = 0.3 + 0.4 * (index % 3) / 2
+    return by_platform
 
 
 @pytest.fixture(scope="module")
 def augur_server() -> Iterator[str]:
     config = load_augur_config(get_required_path("_main/augur/api/testdata/config.yaml"))
-    # Inject a hermetic Manifold client so the calibration tab's auto-run never hits the network.
-    app = build_dev_app(config, price_client=mock_manifold_client(_hermetic_prices()))
+    # Inject hermetic mock clients so the calibration tab's auto-run never hits the network.
+    app = build_dev_app(config, price_clients=mock_price_clients(_hermetic_prices()))
     port = pick_free_port("127.0.0.1")
     server = uvicorn.Server(uvicorn.Config(app=app, host="127.0.0.1", port=port, log_level="warning"))
     thread = threading.Thread(target=server.run, name="augur-visual-uvicorn", daemon=True)
