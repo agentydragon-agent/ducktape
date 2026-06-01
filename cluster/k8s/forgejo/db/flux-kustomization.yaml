@@ -4,8 +4,6 @@ metadata:
   name: forgejo-db
   namespace: flux-system
 spec:
-  suspend: true
-  # Suspended pending rollout — OVH-resident now (independent of wyrm2); un-suspend to deploy.
   retryInterval: 1m
   interval: 10m
   timeout: 5m

@@ -4,8 +4,6 @@ metadata:
   name: forgejo-namespace
   namespace: flux-system
 spec:
-  suspend: true
-  # Suspended pending rollout — OVH-resident now (independent of wyrm2); un-suspend to deploy.
   interval: 1h
   path: ./cluster/k8s/forgejo/namespace
   prune: false
