@@ -90,6 +90,7 @@ py_library(
     name = "portfolio_source_config",
     srcs = ["portfolio_source_config.py"],
     deps = [
+        ":finance",
         ":portfolio",
         ":schemas",
         "@pypi//pydantic",
