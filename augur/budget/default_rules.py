@@ -71,8 +71,12 @@ DEFAULT_RULES: tuple[Rule, ...] = (
     MerchantSubstringRule(pattern="Apple", bucket_id="electronics"),
     MerchantSubstringRule(pattern="B&H Photo", bucket_id="electronics"),
     # --- Government / taxes (US) ---
-    NameSubstringRule(pattern="Internal Revenue Service", bucket_id="taxes"),
-    NameSubstringRule(pattern="Franchise Tax Board", bucket_id="taxes"),
+    # Plaid populates `merchant_name` cleanly ("Internal Revenue Service", "Franchise Tax
+    # Board") but stamps the raw `name` field with the ACH descriptor ("IRS DES:USATAXPYMT..."
+    # / "FRANCHISE TAX BO DES:PAYMENTS..."), so merchant_substring matches and name_substring
+    # does not.
+    MerchantSubstringRule(pattern="Internal Revenue Service", bucket_id="taxes"),
+    MerchantSubstringRule(pattern="Franchise Tax Board", bucket_id="taxes"),
     MerchantSubstringRule(pattern="Uscis", bucket_id="government"),
     # --- Travel ---
     PfcRule(primary="TRAVEL", detailed="TRAVEL_FLIGHTS", bucket_id="travel"),
