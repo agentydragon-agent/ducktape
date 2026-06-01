@@ -302,6 +302,18 @@ creation_rules:
           - *atlas-agentydragon
           - *iguana-agentydragon
 
+  # --- Kalshi API key (read-only) ---
+  - path_regex: secrets/kalshi-readonly\.sops\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
+          - *claude-web
+          - *codex-cloud-agent
+
   # --- Talos machine secrets (admin-only, state recovery backup) ---
   - path_regex: secrets/talos-machine-secrets\.sops\.yaml$
     key_groups:
