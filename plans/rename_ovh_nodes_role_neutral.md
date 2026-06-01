@@ -4,6 +4,12 @@ Status: piloting (2026-06-01). Next pilot: **`talos-ks-game-worker-1`**
 (zero singleton PVs). Strategy: delete-and-rebuild for app-replicated PVs;
 backup-and-restore or delete for the handful of true singletons.
 
+Prep done so far (2026-06-01):
+
+- Volsync backups configured for `grocy-sf` and `grocy-vallejo`
+  (commit `39778904f`). First syncs succeeded at 23:24Z / 23:25Z. Tana-MCP
+  already had a pre-existing volsync backup.
+
 ## Why
 
 The five Talos nodes on OVH bare metal carry hostnames that either leak their role
@@ -76,13 +82,17 @@ SeaweedFS-level (3-way) replication. So the strategy is per-PV:
 
 ## Singleton inventory (2026-06-01)
 
-| PV                               | Node                     | Size | Workload                | Handling (user-confirmed 2026-06-01)                |
-| -------------------------------- | ------------------------ | ---- | ----------------------- | --------------------------------------------------- |
-| `gecko/gecko-root`               | `talos-ks-game-worker-0` | 20Gi | KubeVirt VM root disk   | **Delete the VM.** No backup. (User authorized.)    |
-| `grocy-sf/grocy-config-ovh`      | `talos-kimsufi-worker-1` | 1Gi  | Grocy app config files  | **Backup-and-restore.** (User required.)            |
-| `grocy-vallejo/grocy-config-ovh` | `talos-kimsufi-worker-1` | 1Gi  | Grocy app config files  | **Backup-and-restore.** (User required.)            |
-| `tana-mcp/tana-mcp-config-ovh`   | `talos-kimsufi-worker-1` | 10Gi | Tana MCP config         | Backup-and-restore by default; confirm at the time. |
-| `swfs-bench/bench-ovh`           | `talos-kimsufi-worker-1` | 2Gi  | SeaweedFS bench fixture | Disposable — delete with workload.                  |
+| PV                               | Node                     | Size | Workload                | Handling                                                               | Backup state (2026-06-01)                                                   |
+| -------------------------------- | ------------------------ | ---- | ----------------------- | ---------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `gecko/gecko-root`               | `talos-ks-game-worker-0` | 20Gi | KubeVirt VM root disk   | **Delete the VM.** No backup. (User authorized.)                       | N/A                                                                         |
+| `grocy-sf/grocy-config-ovh`      | `talos-kimsufi-worker-1` | 1Gi  | Grocy app config files  | Backup-and-restore from `grocy-config-ovh-backup` PVC (seaweedfs-ovh). | ✅ volsync configured (commit 39778904f); first sync 2026-06-01T23:25Z      |
+| `grocy-vallejo/grocy-config-ovh` | `talos-kimsufi-worker-1` | 1Gi  | Grocy app config files  | Backup-and-restore from `grocy-config-ovh-backup` PVC (seaweedfs-ovh). | ✅ volsync configured (commit 39778904f); first sync 2026-06-01T23:24Z      |
+| `tana-mcp/tana-mcp-config-ovh`   | `talos-kimsufi-worker-1` | 10Gi | Tana MCP config         | Backup-and-restore from `tana-mcp-config-backup` PVC (seaweedfs-ovh).  | ✅ pre-existing volsync (`cluster/k8s/agents/tana-mcp/volsync-backup.yaml`) |
+| `swfs-bench/bench-ovh`           | `talos-kimsufi-worker-1` | 2Gi  | SeaweedFS bench fixture | Disposable — delete with workload.                                     | N/A                                                                         |
+
+**Prerequisite for renaming `talos-kimsufi-worker-1`:** verify all three volsync
+ReplicationSources have a recent `lastSyncTime` and non-zero `lastSyncDuration`
+before draining. `kubectl get replicationsource -A | grep -E 'grocy|tana'`.
 
 CNPG primaries that happen to live on a renamed node (e.g. `atuin-db-1` on
 `talos-ks-game-worker-0`) are app-replicated; drain triggers failover before
@@ -438,55 +448,76 @@ kubectl -n gecko delete pvc gecko-root   # if still hanging around
 (KubeVirt cleans up the virt-launcher pod automatically when the
 VirtualMachine is deleted.)
 
-### Grocy / Tana-MCP configs (backup-and-restore path)
+### Grocy / Tana-MCP configs (volsync backup-and-restore path)
 
-User requirement: back up the data first. Procedure per singleton (template
-`<NS>/<PVC>`; the data lives in `/var/mnt/seaweedfs-data/local-path/<pv-uid>/`
-on the node):
+All three namespaces have a working `volsync` ReplicationSource as of
+2026-06-01 (see Singleton inventory). The restore mechanism is symmetric:
+the backup PVC (`*-config-ovh-backup` on `seaweedfs-ovh`) is the source of
+truth, and a `ReplicationDestination` exists in each namespace that can
+write back into the live PVC.
 
-```bash
-# 1. Identify the on-disk path
-PV=$(kubectl get pvc -n <NS> <PVC> -o jsonpath='{.spec.volumeName}')
-PVUID=$(kubectl get pv "$PV" -o jsonpath='{.metadata.uid}')   # local-path uses pvc-<uid> path naming
-NODE=$(kubectl get pv "$PV" -o jsonpath='{.spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0].values[0]}')
-NODE_IP=$(kubectl get node "$NODE" -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')
+Per singleton (template `<NS>/<PVC>` where source PVC is
+`<NS>/grocy-config-ovh` or `tana-mcp/tana-mcp-config-ovh`):
 
-# 2. Stop the workload (scale Deployment/StatefulSet to 0 or pause CronJob)
-kubectl -n <NS> scale <kind>/<name> --replicas=0
-
-# 3. Pull data off the node via talosctl read (Talos doesn't allow shell)
-#    Or via volsync-rsync-tls if a backup destination is already configured
-#    for this namespace (some do — check k8s/<service>/).
-#    Fallback: temporarily attach a debug pod to the PVC with read-only mount
-#    on a node where the PV is bound, and `kubectl cp` data out.
-
-# 4. Set PV reclaim policy to Retain (so deleting the PVC keeps data on disk)
-kubectl patch pv "$PV" -p '{"spec":{"persistentVolumeReclaimPolicy":"Retain"}}'
-
-# 5. Delete the PVC. PV becomes Released; data stays under
-#    /var/mnt/seaweedfs-data/local-path/pvc-<uid>/ on the node.
-kubectl delete pvc -n <NS> <PVC>
-```
-
-After the node rename:
+#### Before draining the host node
 
 ```bash
-# 6. Create a new PV manifest pointing at the same hostPath but new nodeAffinity.
-#    Same hostPath because local-path-provisioner uses pvc-<uid>; new uid for new PVC
-#    means new path. So actually: easier to provision a NEW empty PVC, then write
-#    backup data into it via `kubectl cp` or a one-shot Job.
-kubectl apply -f <restored-pvc-manifest>.yaml
+# 1. Force a fresh backup so we have the latest data, not 6h-stale.
+#    Volsync trigger.manual conflicts with trigger.schedule, so pause the
+#    schedule, run manual, then restore the schedule afterward.
+kubectl -n <NS> patch replicationsource <RS-NAME> --type=merge \
+  -p '{"spec":{"trigger":{"manual":"pre-rename-2026-06-01"}}}'
+# 2. Wait for the manual sync to complete:
+until kubectl -n <NS> get replicationsource <RS-NAME> \
+    -o jsonpath='{.status.lastManualSync}' | grep -q 'pre-rename-2026-06-01'; do
+  sleep 5
+done
+# 3. Restore the schedule.
+kubectl -n <NS> patch replicationsource <RS-NAME> --type=merge \
+  -p '{"spec":{"trigger":{"schedule":"<original-cron>"}}}'
 
-# 7. Copy data back into the new PVC (one-shot Job mounting it RW).
+# 4. Scale workload to 0 (so no writes during/after rename).
+kubectl -n <NS> scale deployment/<workload> --replicas=0
 
-# 8. Scale the workload back up.
-kubectl -n <NS> scale <kind>/<name> --replicas=1
+# 5. Delete the orphaned PVC. The live data path under
+#    /var/mnt/seaweedfs-data/local-path/<pv-uid>/ on the old node is
+#    irrelevant — we're restoring from the backup PVC, which is on
+#    SeaweedFS and survives the rename.
+kubectl -n <NS> delete pvc <PVC>
 ```
 
-Note: a cleaner restore is to use `volsync` if the namespace already has it
-configured (some do — check `k8s/<service>/`). The grocy and tana-mcp
-namespaces both have `volsync-backup.yaml` in their flux kustomizations;
-verify whether those backups are current and usable as the restore source.
+#### After the node rename completes
+
+```bash
+# 6. The local-path provisioner re-provisions an empty PVC on the renamed
+#    node when the workload's StatefulSet/Deployment tries to mount it.
+#    For grocy/tana, the PVC manifest is part of Flux. Re-create by
+#    reconciling the namespace's kustomization:
+flux reconcile kustomization <KS-NAME>
+
+# 7. Trigger a one-shot restore from the backup PVC into the new live PVC.
+#    Volsync's existing ReplicationDestination accepts a manual trigger:
+kubectl -n <NS> patch replicationdestination <RD-NAME> --type=merge \
+  -p '{"spec":{"trigger":{"manual":"restore-2026-06-01"}}}'
+
+# 8. Wait for completion.
+until kubectl -n <NS> get replicationdestination <RD-NAME> \
+    -o jsonpath='{.status.lastManualSync}' | grep -q 'restore-2026-06-01'; do
+  sleep 5
+done
+
+# 9. Scale workload back up. Verify config is present.
+kubectl -n <NS> scale deployment/<workload> --replicas=1
+```
+
+Note: the existing `ReplicationDestination` resources have
+`destinationPVC: grocy-config-ovh-backup` (i.e., they restore TO the backup
+PVC, not FROM it). For step 7 to work as a _restore_, we need a temporary
+RD pointing the other way (`destinationPVC: grocy-config-ovh`) OR we just
+mount the backup PVC into a one-shot Job that `rsync`s its content into a
+freshly-provisioned `grocy-config-ovh`. Verify the right shape at restore
+time; this plan deliberately leaves the implementation open since the
+restore is only run once per rename.
 
 ## Risks called out
 
