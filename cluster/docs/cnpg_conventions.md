@@ -67,10 +67,10 @@ pinned DBs or vice versa. This prevents cross-site write latency.
 | attic-db           | OVH-HA         | Yes       |
 | seaweedfs-filer-db | OVH-HA         | Yes       |
 | atuin-db           | OVH-HA         | Yes       |
+| forgejo-db         | OVH-HA         | Yes       |
 | langfuse-db        | Proxmox-single | Yes       |
 | inventree-db       | Proxmox-single | Yes       |
 | harbor-db          | Proxmox-single | Yes       |
-| gitea-db           | Proxmox-single | Yes       |
 | props-db           | Proxmox-single | Yes       |
 | matrix-db          | Proxmox-single | Yes       |
 | tandoor-db         | Proxmox-single | Yes       |

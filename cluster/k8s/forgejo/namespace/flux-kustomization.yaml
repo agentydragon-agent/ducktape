@@ -1,13 +1,13 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: gitea-namespace
+  name: forgejo-namespace
   namespace: flux-system
 spec:
   suspend: true
-  # Wyrm2 offline during relocation — suspended until hardware is back up.
+  # Suspended pending rollout — OVH-resident now (independent of wyrm2); un-suspend to deploy.
   interval: 1h
-  path: ./cluster/k8s/gitea/namespace
+  path: ./cluster/k8s/forgejo/namespace
   prune: false
   sourceRef:
     kind: GitRepository

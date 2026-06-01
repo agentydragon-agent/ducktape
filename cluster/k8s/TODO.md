@@ -64,11 +64,11 @@ but losing the bypass escape hatch.
 ## OpenHands: self-hosted git provider
 
 OpenHands supports GitHub and GitLab natively (PAT or OAuth App). Consider pointing
-it at a self-hosted option — either cluster Gitea (`git.allegedly.works`) or a
+it at a self-hosted option — either cluster Forgejo (`git.allegedly.works`) or a
 self-hosted GitLab instance — so agent work can land in private repos without relying
 on `github.com`. GitLab PAT just needs `GITLAB_TOKEN` env var (same pattern as
-`GITHUB_TOKEN`); Gitea would need a git-credential helper or embedded PAT in URLs
-since there's no first-class Gitea provider in OpenHands.
+`GITHUB_TOKEN`); Forgejo would need a git-credential helper or embedded PAT in URLs
+since there's no first-class Forgejo provider in OpenHands.
 
 ## OpenHands sandbox egress isolation
 
@@ -86,7 +86,7 @@ to the authentik shared proxy outpost pod (per AGENTS.md):
 agents-mitmproxy, proxmox.
 
 **Critical unprotected services** (no NetworkPolicy at all):
-external-secrets, gitea, harbor.
+external-secrets, forgejo, harbor.
 
 ## Missing resource limits
 
