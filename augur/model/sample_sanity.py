@@ -438,6 +438,12 @@ def _evaluate_mark_check(
     return results
 
 
+def _event_kind_phrase(count_op: str, kind_names: str) -> str:
+    if count_op == "exactly_zero":
+        return f"no {kind_names}"
+    return kind_names
+
+
 def _evaluate_event_kind_check(
     event_kind_check: EventKindObservedCheck,
     sampled: SampledExogenousBundle,
@@ -698,10 +704,8 @@ def _check_event_kind_observed(event_kind_codes: np.ndarray, bound: EventKindObs
     probability = float(successes.mean())
     kind_names = ",".join(PrivateEquityEventKindCode(code).name for code in bound.event_kind_codes)
     series_id = f"private-equity issuer {bound.issuer_id!r} event_kind_code"
-    label = (
-        f"private-equity issuer {bound.issuer_id!r} "
-        f"P({bound.count_op.replace('_', ' ')} of {{{kind_names}}} by m{bound.by_month})"
-    )
+    event_phrase = _event_kind_phrase(bound.count_op, kind_names)
+    label = f"private-equity issuer {bound.issuer_id!r} P({event_phrase} by m{bound.by_month})"
     return _bound_result(
         probability,
         lower=bound.probability_lower,
@@ -726,9 +730,9 @@ def _bound_result(
     observed_label: str,
 ) -> SanityBandResult:
     if lower is not None and value < lower:
-        detail = f"{label}={value:g} is below lower bound {lower:g}"
+        detail = f"{value:g} is below lower bound {lower:g}"
     elif upper is not None and value > upper:
-        detail = f"{label}={value:g} is above upper bound {upper:g}"
+        detail = f"{value:g} is above upper bound {upper:g}"
     else:
         detail = ""
     return SanityBandResult(
@@ -761,7 +765,7 @@ def _range_result(
     detail = (
         ""
         if not out_of_range
-        else f"{label}=[{lower_value:g}, {upper_value:g}] is outside expected range [{lower:g}, {upper:g}]"
+        else f"[{lower_value:g}, {upper_value:g}] is outside expected range [{lower:g}, {upper:g}]"
     )
     return SanityBandResult(
         label=label,
@@ -835,10 +839,8 @@ def _skip_threshold_probability_bound(
 def _skip_event_kind_observed(bound: EventKindObservedCheck, *, horizon_months: int) -> SanityBandResult:
     kind_names = ",".join(PrivateEquityEventKindCode(code).name for code in bound.event_kind_codes)
     series_id = f"private-equity issuer {bound.issuer_id!r} event_kind_code"
-    label = (
-        f"private-equity issuer {bound.issuer_id!r} "
-        f"P({bound.count_op.replace('_', ' ')} of {{{kind_names}}} by m{bound.by_month})"
-    )
+    event_phrase = _event_kind_phrase(bound.count_op, kind_names)
+    label = f"private-equity issuer {bound.issuer_id!r} P({event_phrase} by m{bound.by_month})"
     return SanityBandResult(
         label=label,
         series_id=series_id,
