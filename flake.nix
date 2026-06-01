@@ -434,6 +434,18 @@
           };
         };
 
+        # Gecko - headless CLI-only VM (Proxmox) for Claude Code / Codex
+        gecko = mkNixos {
+          hostname = "gecko";
+          username = "agentydragon";
+          hardwareModule = ./nix/nixos/modules/vm-hardware.nix;
+          inlineHomeManager = {
+            enableGui = false;
+            isK8sWorker = false;
+            module = ./nix/home/hosts/gecko.nix;
+          };
+        };
+
         # Generic bootstrap NixOS — minimal SSH-able image for initial provisioning.
         bootstrap = mkNixos {
           hostname = "bootstrap";
