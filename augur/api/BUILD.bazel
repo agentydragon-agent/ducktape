@@ -78,10 +78,34 @@ py_library(
         ":bootstrap",
         ":local_regulation",
         ":portfolio",
+        ":portfolio_source_config",
         ":schemas",
         "//augur/model:provider_config",
         "@pypi//pydantic",
         "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "portfolio_source_config",
+    srcs = ["portfolio_source_config.py"],
+    deps = [
+        ":portfolio",
+        ":schemas",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "portfolio_sources",
+    srcs = ["portfolio_sources.py"],
+    deps = [
+        ":config",
+        ":finance",
+        ":portfolio",
+        ":portfolio_source_config",
+        "//augur/product:asset_key",
+        "//plaid_utils:read_model",
     ],
 )
 
@@ -93,11 +117,27 @@ py_test(
         ":finance",
         ":local_regulation",
         ":portfolio",
+        ":portfolio_source_config",
         "//augur/model:independent",
         "//augur/model:private_equity_risk",
         "//augur/model:provider_config",
         "//augur/model:trained_private_equity",
         "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "portfolio_sources_test",
+    srcs = ["portfolio_sources_test.py"],
+    deps = [
+        ":config",
+        ":finance",
+        ":portfolio",
+        ":portfolio_source_config",
+        ":portfolio_sources",
+        "//augur/model:independent",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -168,6 +208,7 @@ py_test(
         ":config",
         ":finance",
         ":local_regulation",
+        ":portfolio_source_config",
         "//augur/model:independent",
         "@pypi//more_itertools",
         "@pypi//pytest",
@@ -234,6 +275,7 @@ py_library(
         ":catalog",
         ":config",
         ":deployment",
+        ":portfolio_sources",
         ":schemas",
         "//augur/calibration",
         "//augur/calibration:catalog",
@@ -270,6 +312,7 @@ py_binary(
     deps = [
         ":catalog",
         ":config",
+        ":portfolio_sources",
         "//augur/model:exogenous",
         "//augur/product:scenarios",
         "//augur/product:service",
@@ -343,6 +386,7 @@ py_library(
         ":config",
         ":finance",
         ":local_regulation",
+        ":portfolio_source_config",
         ":server_lib",
         "//augur/model:independent",
     ],

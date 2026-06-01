@@ -25,6 +25,7 @@ from augur.api.casing import plain_json
 from augur.api.catalog import build_bootstrap_payload
 from augur.api.config import CalibrationCatalogConfig, Config, load_augur_config, resolve_augur_config_path
 from augur.api.deployment import DeploymentInfo, build_deployment_info
+from augur.api.portfolio_sources import resolve_portfolio_sources
 from augur.api.schemas import ApiModel
 from augur.calibration.calibration import mark_fan, run_calibration
 from augur.calibration.catalog import MarketCatalog
@@ -69,11 +70,12 @@ class ApiServerConfig:
 
 def create_app(config: ApiServerConfig) -> FastAPI:
     augur_config = config.augur_config
+    resolved_portfolio = resolve_portfolio_sources(augur_config)
     bootstrap = build_bootstrap_payload(augur_config)
     deployment_info = build_deployment_info()
     product_service = ProductService(
-        portfolio=augur_config.portfolio,
-        initial_cash_usd=float(augur_config.snapshot.cash_usd),
+        portfolio=resolved_portfolio.portfolio,
+        initial_cash_usd=float(resolved_portfolio.snapshot.cash_usd),
         primary_agent_id=resolve_primary_agent_id(augur_config),
         known_location_ids=frozenset(location.id for location in bootstrap.locations),
         locations=sim_locations_from_config(augur_config.locations),
@@ -110,7 +112,9 @@ def create_app(config: ApiServerConfig) -> FastAPI:
 
     @app.get("/api/product/portfolio", response_model=ProductPortfolioResponse)
     def product_portfolio_snapshot() -> JSONResponse:
-        return payload(product_portfolio_response(snapshot=augur_config.snapshot, portfolio=augur_config.portfolio))
+        return payload(
+            product_portfolio_response(snapshot=resolved_portfolio.snapshot, portfolio=resolved_portfolio.portfolio)
+        )
 
     @app.get("/api/exogenous_presets")
     def exogenous_presets() -> JSONResponse:

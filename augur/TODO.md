@@ -43,6 +43,16 @@ are deleted and the CI prefix-guard is in place.
 
 ## Exogenous Models & Evidence
 
+- [ ] **Plaid-fed portfolio granularity.** v0 Plaid portfolio import maps configured
+      public-stock/ETF holdings into synthetic SP500 proxy lots. Later, add a
+      per-security import mode with explicit model-series mapping for supported tickers,
+      crypto, and non-SP500 equity proxies instead of collapsing all public equities into
+      one broad factor.
+- [ ] **Plaid-fed tax-lot reconstruction.** v0 Plaid portfolio import creates one
+      synthetic aggregate lot per imported position using current holding value and
+      aggregate cost basis when Plaid provides it. Later, reconstruct more granular lots
+      from investment transactions or a tax-authoritative brokerage export, with clear
+      treatment for incomplete history, transfers, and missing acquisition dates.
 - [ ] **VECM NumPyro h=1 fit-quality vs statsmodels baseline.** After
       the NumPyro migration (log-scale Cholesky, ridge-regularised α / β,
       20k SVI iters), held-out per-month log-density is +15.85 nats on

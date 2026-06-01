@@ -14,6 +14,7 @@ from augur.api.catalog import build_bootstrap_payload
 from augur.api.config import AgentDefinition, Config, LocationConfig, PropertyAssetConfig, PropertySourceConfig
 from augur.api.finance import FinanceSnapshot
 from augur.api.local_regulation import LocalRegulation, TaxRegime
+from augur.api.portfolio_source_config import FixedPortfolioSourceConfig, PortfolioSourcesConfig
 from augur.model.independent import IndependentProviderConfig
 
 
@@ -153,7 +154,9 @@ def _config(
     return Config(
         agents=(AgentDefinition(actor_id="agent_a", label="Agent A", role=ActorRole.PRIMARY_OWNER),),
         property_source=PropertySourceConfig(properties_path=properties_path, property_assets=property_assets),
-        snapshot=FinanceSnapshot(as_of_date="2026-05-14", cash_usd=12_345),
+        portfolio_sources=PortfolioSourcesConfig(
+            fixed=FixedPortfolioSourceConfig(snapshot=FinanceSnapshot(as_of_date="2026-05-14", cash_usd=12_345))
+        ),
         default_rollout_samples=8,
         max_rollout_samples=128,
         locations=_fixture_locations(),

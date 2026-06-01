@@ -24,12 +24,13 @@ shapes.
 The current product-language API surface is intentionally narrow. A
 `ScenarioKey` describes one cash-spend scenario without randomness, and product
 view requests add explicit rollout seeds. The product route also includes
-deployment-configured public-security lots as passive mark-to-market holdings;
-those holdings are config facts, not frontend knobs. The product funding policy
+deployment-configured portfolio sources that resolve to initial cash and
+public-security lots as passive mark-to-market holdings; those holdings are
+config/source facts, not frontend knobs. The product funding policy
 can list supported sellable buckets in order, currently `public_securities`,
 and can request the simulator's cash-buffer rule: when post-obligation cash is
 below a dollar trigger, sell a fixed dollar amount from that order. The
-product portfolio route returns the configured initial cash and public-security
+product portfolio route returns the resolved initial cash and public-security
 positions, including tax lots, as a read-only product surface. The metric-fan
 route returns compact requested percentiles; the rollout route returns one full
 per-seed table plus product-readable event rows for that selected rollout, such

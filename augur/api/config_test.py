@@ -23,6 +23,13 @@ from augur.api.config import (
 from augur.api.finance import FinanceSnapshot
 from augur.api.local_regulation import LocalRegulation, TaxRegime
 from augur.api.portfolio import HoldingPositionConfig, HoldingTaxLotConfig, PortfolioAccountConfig, PortfolioConfig
+from augur.api.portfolio_source_config import (
+    FixedPortfolioSourceConfig,
+    PlaidCashSourceConfig,
+    PlaidPortfolioSourceConfig,
+    PlaidSp500ProxyGroupConfig,
+    PortfolioSourcesConfig,
+)
 from augur.model.independent import IndependentProviderConfig
 from augur.model.private_equity_risk import PrivateEquityRiskProviderConfig
 from augur.model.provider_config import CompositeProviderConfig
@@ -37,7 +44,9 @@ def _minimal_config(**overrides: object) -> Config:
     defaults: dict[str, object] = {
         "agents": (AgentDefinition(actor_id="alpha", label="Alpha", role=ActorRole.PRIMARY_OWNER),),
         "property_source": PropertySourceConfig(properties_path="/tmp/properties.json"),
-        "snapshot": FinanceSnapshot(as_of_date="2026-05-12"),
+        "portfolio_sources": PortfolioSourcesConfig(
+            fixed=FixedPortfolioSourceConfig(snapshot=FinanceSnapshot(as_of_date="2026-05-12"))
+        ),
         "default_rollout_samples": 128,
         "max_rollout_samples": 1_000_000,
         "exogenous_presets": {"current_model": IndependentProviderConfig()},
@@ -111,33 +120,69 @@ def test_property_asset_property_ids_must_be_unique() -> None:
 
 def test_config_carries_tax_lot_accurate_portfolio_schema() -> None:
     config = _minimal_config(
-        portfolio=PortfolioConfig(
-            accounts=(PortfolioAccountConfig(account_id="taxable_brokerage", owner_agent_id="alpha"),),
-            holdings=(
-                HoldingPositionConfig(
-                    position_id="voo_position",
-                    account_id="taxable_brokerage",
-                    symbol="VOO",
-                    security_kind="etf",
-                    value_series=SP500AssetKey(),
-                    unit_value_usd=500.0,
-                    lots=(
-                        HoldingTaxLotConfig(
-                            lot_id="voo_2024_05_12",
-                            holding_period_months_at_start=24,
-                            quantity=100,
-                            cost_basis_usd=30_000,
+        portfolio_sources=PortfolioSourcesConfig(
+            fixed=FixedPortfolioSourceConfig(
+                snapshot=FinanceSnapshot(as_of_date="2026-05-12"),
+                portfolio=PortfolioConfig(
+                    accounts=(PortfolioAccountConfig(account_id="taxable_brokerage", owner_agent_id="alpha"),),
+                    holdings=(
+                        HoldingPositionConfig(
+                            position_id="voo_position",
+                            account_id="taxable_brokerage",
+                            symbol="VOO",
+                            security_kind="etf",
+                            value_series=SP500AssetKey(),
+                            unit_value_usd=500.0,
+                            lots=(
+                                HoldingTaxLotConfig(
+                                    lot_id="voo_2024_05_12",
+                                    holding_period_months_at_start=24,
+                                    quantity=100,
+                                    cost_basis_usd=30_000,
+                                ),
+                            ),
                         ),
                     ),
                 ),
-            ),
+            )
         )
     )
 
     reloaded = Config.model_validate_json(config.model_dump_json(exclude_computed_fields=True))
 
-    assert reloaded.portfolio.holdings[0].lots[0].holding_period_months_at_start == 24
-    assert reloaded.portfolio.to_initial_lots()[0].purchase_month_index == -24
+    fixed = reloaded.portfolio_sources.fixed
+    assert fixed.portfolio.holdings[0].lots[0].holding_period_months_at_start == 24
+    assert fixed.portfolio.to_initial_lots()[0].purchase_month_index == -24
+
+
+def test_config_carries_optional_plaid_portfolio_source() -> None:
+    config = _minimal_config(
+        portfolio_sources=PortfolioSourcesConfig(
+            plaid=PlaidPortfolioSourceConfig(
+                enabled=True,
+                cash=PlaidCashSourceConfig(plaid_account_ids=("checking-account",)),
+                sp500_proxy_groups=(
+                    PlaidSp500ProxyGroupConfig(
+                        position_id="wealthfront_sp500",
+                        portfolio_account_id="wealthfront_taxable",
+                        owner_agent_id="alpha",
+                        plaid_account_ids=("wealthfront-plaid-account",),
+                    ),
+                ),
+            )
+        )
+    )
+
+    reloaded = Config.model_validate_json(config.model_dump_json(exclude_computed_fields=True))
+
+    assert reloaded.portfolio_sources.plaid.enabled is True
+    assert reloaded.portfolio_sources.plaid.cash.plaid_account_ids == ("checking-account",)
+    assert reloaded.portfolio_sources.plaid.sp500_proxy_groups[0].portfolio_account_id == "wealthfront_taxable"
+
+
+def test_enabled_plaid_portfolio_source_must_select_something() -> None:
+    with pytest.raises(ValidationError, match="must select cash accounts or SP500 proxy groups"):
+        PlaidPortfolioSourceConfig(enabled=True)
 
 
 def test_location_selection_accepts_location_strings() -> None:
@@ -169,7 +214,9 @@ def test_at_least_one_agent_required() -> None:
         Config(
             agents=(),
             property_source=PropertySourceConfig(properties_path="/tmp/x.json"),
-            snapshot=FinanceSnapshot(as_of_date="2026-05-12"),
+            portfolio_sources=PortfolioSourcesConfig(
+                fixed=FixedPortfolioSourceConfig(snapshot=FinanceSnapshot(as_of_date="2026-05-12"))
+            ),
             default_rollout_samples=128,
             max_rollout_samples=1_000_000,
             exogenous_presets={"current_model": IndependentProviderConfig()},

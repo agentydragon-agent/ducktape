@@ -1,0 +1,220 @@
+"""Resolve optional external portfolio sources into Augur's static runtime config."""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import logging
+import os
+from dataclasses import dataclass
+from datetime import date, datetime
+
+from augur.api.config import Config
+from augur.api.finance import FinanceSnapshot
+from augur.api.portfolio import HoldingPositionConfig, HoldingTaxLotConfig, PortfolioAccountConfig, PortfolioConfig
+from augur.api.portfolio_source_config import (
+    FixedPortfolioSourceConfig,
+    PlaidBalanceField,
+    PlaidPortfolioSourceConfig,
+    PlaidSp500ProxyGroupConfig,
+)
+from augur.product.asset_key import SP500AssetKey
+from plaid_utils.read_model import CurrentCashBalance, CurrentHolding, read_current_cash_balances, read_current_holdings
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class _PortfolioContribution:
+    cash_usd: float
+    as_of_date: str | None
+    accounts: tuple[PortfolioAccountConfig, ...]
+    holdings: tuple[HoldingPositionConfig, ...]
+    latest_captured_at: datetime | None
+
+
+@dataclass(frozen=True)
+class ResolvedPortfolioSources:
+    snapshot: FinanceSnapshot
+    portfolio: PortfolioConfig
+
+
+def resolve_portfolio_sources(config: Config) -> ResolvedPortfolioSources:
+    """Materialize enabled portfolio sources into Augur's static runtime portfolio.
+
+    Product simulations cache rollouts by scenario+seed, so v0 resolves Plaid at startup
+    instead of changing the initial state under already-cached simulations.
+    """
+
+    contributions = [_fixed_contribution(config.portfolio_sources.fixed)]
+    plaid = config.portfolio_sources.plaid
+    if plaid.enabled:
+        db_url = os.environ.get(plaid.database_url_env)
+        if not db_url:
+            raise ValueError(f"Plaid portfolio source is enabled but ${plaid.database_url_env} is not set")
+        contributions.append(asyncio.run(_read_plaid_contribution(plaid, db_url=db_url)))
+    portfolio = _merge_contributions(tuple(contribution for contribution in contributions if contribution is not None))
+    snapshot = FinanceSnapshot(
+        as_of_date=_merged_as_of_date(
+            tuple(contribution for contribution in contributions if contribution is not None)
+        ),
+        cash_usd=sum(contribution.cash_usd for contribution in contributions if contribution is not None),
+    )
+    return ResolvedPortfolioSources(snapshot=snapshot, portfolio=portfolio)
+
+
+async def _read_plaid_contribution(plaid: PlaidPortfolioSourceConfig, *, db_url: str) -> _PortfolioContribution:
+    cash_balances = await read_current_cash_balances(
+        db_url=db_url, account_ids=plaid.cash.plaid_account_ids, iso_currency_code=plaid.iso_currency_code
+    )
+    cash_usd = _cash_total(plaid, cash_balances)
+
+    group_account_ids = tuple(
+        sorted({account_id for group in plaid.sp500_proxy_groups for account_id in group.plaid_account_ids})
+    )
+    current_holdings = await read_current_holdings(
+        db_url=db_url, account_ids=group_account_ids, iso_currency_code=plaid.iso_currency_code
+    )
+    holdings_by_account: dict[str, list[CurrentHolding]] = {}
+    for holding in current_holdings:
+        holdings_by_account.setdefault(holding.account_id, []).append(holding)
+
+    accounts: list[PortfolioAccountConfig] = []
+    holdings: list[HoldingPositionConfig] = []
+    for group in plaid.sp500_proxy_groups:
+        group_holdings = tuple(
+            holding for account_id in group.plaid_account_ids for holding in holdings_by_account.get(account_id, ())
+        )
+        if not group_holdings:
+            raise ValueError(f"Plaid SP500 proxy group {group.position_id!r} has no current holdings")
+        accounts.append(
+            PortfolioAccountConfig(
+                account_id=group.portfolio_account_id,
+                owner_agent_id=group.owner_agent_id,
+                account_type=group.account_type,
+                label=group.account_label,
+            )
+        )
+        holdings.append(_sp500_proxy_holding(group, group_holdings))
+
+    captured = [balance.captured_at for balance in cash_balances] + [
+        holding.captured_at for holding in current_holdings
+    ]
+    return _PortfolioContribution(
+        cash_usd=cash_usd,
+        as_of_date=None,
+        accounts=tuple(accounts),
+        holdings=tuple(holdings),
+        latest_captured_at=max(captured) if captured else None,
+    )
+
+
+def _cash_total(plaid: PlaidPortfolioSourceConfig, balances: tuple[CurrentCashBalance, ...]) -> float:
+    expected = set(plaid.cash.plaid_account_ids)
+    actual = {balance.account_id for balance in balances}
+    missing = sorted(expected - actual)
+    if missing:
+        raise ValueError(f"Plaid cash accounts have no current USD balance snapshot: {missing}")
+    total = 0.0
+    for balance in balances:
+        value = balance.current if plaid.cash.balance_field == PlaidBalanceField.CURRENT else balance.available
+        if value is None:
+            raise ValueError(
+                f"Plaid cash account {balance.account_id!r} has no {plaid.cash.balance_field.value} balance"
+            )
+        total += float(value)
+    return total
+
+
+def _sp500_proxy_holding(
+    group: PlaidSp500ProxyGroupConfig, holdings: tuple[CurrentHolding, ...]
+) -> HoldingPositionConfig:
+    total_value_usd = 0.0
+    total_cost_basis_usd = 0.0
+    missing_basis: list[str] = []
+    for holding in holdings:
+        value = _holding_value_usd(holding)
+        if value <= 0.0:
+            continue
+        total_value_usd += value
+        if holding.cost_basis is None:
+            missing_basis.append(holding.security_id)
+        else:
+            total_cost_basis_usd += float(holding.cost_basis)
+    if total_value_usd <= 0.0:
+        raise ValueError(f"Plaid SP500 proxy group {group.position_id!r} has no positive-value holdings")
+    if missing_basis:
+        logger.warning(
+            "Plaid SP500 proxy group %s has holdings without cost basis; using zero basis for %s",
+            group.position_id,
+            sorted(missing_basis),
+        )
+    unit_value_usd = float(group.unit_value_usd)
+    return HoldingPositionConfig(
+        position_id=group.position_id,
+        account_id=group.portfolio_account_id,
+        label=group.label,
+        symbol=group.symbol,
+        security_kind=group.security_kind,
+        value_series=SP500AssetKey(),
+        unit_value_usd=unit_value_usd,
+        lots=(
+            HoldingTaxLotConfig(
+                lot_id=f"{group.position_id}_plaid_aggregate",
+                holding_period_months_at_start=int(group.default_holding_period_months_at_start),
+                quantity=total_value_usd / unit_value_usd,
+                cost_basis_usd=total_cost_basis_usd,
+            ),
+        ),
+    )
+
+
+def _holding_value_usd(holding: CurrentHolding) -> float:
+    if holding.institution_value is not None:
+        return float(holding.institution_value)
+    if holding.quantity is not None and holding.institution_price is not None:
+        return float(holding.quantity) * float(holding.institution_price)
+    return 0.0
+
+
+def _fixed_contribution(fixed: FixedPortfolioSourceConfig) -> _PortfolioContribution | None:
+    if not fixed.enabled:
+        return None
+    return _PortfolioContribution(
+        cash_usd=float(fixed.snapshot.cash_usd) if fixed.snapshot is not None else 0.0,
+        as_of_date=fixed.snapshot.as_of_date if fixed.snapshot is not None else None,
+        accounts=fixed.portfolio.accounts,
+        holdings=fixed.portfolio.holdings,
+        latest_captured_at=None,
+    )
+
+
+def _merge_contributions(contributions: tuple[_PortfolioContribution, ...]) -> PortfolioConfig:
+    accounts: list[PortfolioAccountConfig] = []
+    holdings: list[HoldingPositionConfig] = []
+    account_ids: set[str] = set()
+    for contribution in contributions:
+        for account in contribution.accounts:
+            if account.account_id in account_ids:
+                continue
+            accounts.append(account)
+            account_ids.add(account.account_id)
+        holdings.extend(contribution.holdings)
+    return PortfolioConfig(accounts=tuple(accounts), holdings=tuple(holdings))
+
+
+def _merged_as_of_date(contributions: tuple[_PortfolioContribution, ...]) -> str:
+    values: list[date] = []
+    fallback: str | None = None
+    for contribution in contributions:
+        if contribution.as_of_date is not None:
+            fallback = contribution.as_of_date
+            with contextlib.suppress(ValueError):
+                values.append(date.fromisoformat(contribution.as_of_date))
+        if contribution.latest_captured_at is not None:
+            values.append(contribution.latest_captured_at.date())
+    if values:
+        return max(values).isoformat()
+    if fallback is not None:
+        return fallback
+    raise ValueError("resolved portfolio sources did not provide an as_of_date")

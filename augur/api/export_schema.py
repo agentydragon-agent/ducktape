@@ -19,6 +19,7 @@ from augur.api.bootstrap import ActorRole, Property
 from augur.api.config import AgentDefinition, Config, LocationConfig, PropertySourceConfig
 from augur.api.finance import FinanceSnapshot
 from augur.api.local_regulation import LocalRegulation, TaxRegime
+from augur.api.portfolio_source_config import FixedPortfolioSourceConfig, PortfolioSourcesConfig
 from augur.api.server import create_app_from_augur_config
 from augur.model.independent import IndependentProviderConfig
 
@@ -56,7 +57,9 @@ def _schema_export_config(properties_path: Path) -> Config:
     return Config(
         agents=(AgentDefinition(actor_id="schema", label="Schema", role=ActorRole.PRIMARY_OWNER),),
         property_source=PropertySourceConfig(properties_path=properties_path),
-        snapshot=FinanceSnapshot(as_of_date="2026-01-01"),
+        portfolio_sources=PortfolioSourcesConfig(
+            fixed=FixedPortfolioSourceConfig(snapshot=FinanceSnapshot(as_of_date="2026-01-01"))
+        ),
         default_rollout_samples=1,
         max_rollout_samples=1,
         locations=(

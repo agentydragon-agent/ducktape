@@ -8,6 +8,8 @@ from more_itertools import one
 
 from augur.api.catalog import build_bootstrap_payload
 from augur.api.config import Config, load_augur_config
+from augur.api.finance import FinanceSnapshot
+from augur.api.portfolio_sources import resolve_portfolio_sources
 from augur.model.exogenous import SERIES_LEVELS_SCHEMA, ExogenousSamplingRequest, SampledExogenousBundle, Sampler
 from augur.model.independent import IndependentProviderConfig
 from augur.model.provider_config import CompositeProviderConfig
@@ -105,10 +107,11 @@ def forced_private_equity_event_model() -> ConstantFrameModel:
 
 def _service(model: Sampler, *, augur_config: Config | None = None) -> ProductService:
     config = augur_config or _augur_config()
+    resolved_portfolio = resolve_portfolio_sources(config)
     bootstrap = build_bootstrap_payload(config)
     return ProductService(
-        portfolio=config.portfolio,
-        initial_cash_usd=float(config.snapshot.cash_usd),
+        portfolio=resolved_portfolio.portfolio,
+        initial_cash_usd=float(resolved_portfolio.snapshot.cash_usd),
         primary_agent_id=resolve_primary_agent_id(config),
         known_location_ids=frozenset(location.id for location in bootstrap.locations),
         locations=sim_locations_from_config(config.locations),
@@ -116,6 +119,20 @@ def _service(model: Sampler, *, augur_config: Config | None = None) -> ProductSe
         exogenous_models={"current_model": model},
         max_rollout_samples=config.max_rollout_samples,
         max_cache_rollouts=10,
+    )
+
+
+def _with_fixed_cash(config: Config, cash_usd: float) -> Config:
+    fixed = config.portfolio_sources.fixed
+    snapshot = fixed.snapshot or FinanceSnapshot(as_of_date="1970-01-01")
+    return config.model_copy(
+        update={
+            "portfolio_sources": config.portfolio_sources.model_copy(
+                update={
+                    "fixed": fixed.model_copy(update={"snapshot": snapshot.model_copy(update={"cash_usd": cash_usd})})
+                }
+            )
+        }
     )
 
 
@@ -922,9 +939,7 @@ def test_future_rental_lifecycle_uses_property_rent_estimate_without_initial_ren
 
 def test_future_rental_lifecycle_requires_rent_series_at_product_api(counting_model: CountingModel) -> None:
     augur_config = _augur_config()
-    augur_config = augur_config.model_copy(
-        update={"snapshot": augur_config.snapshot.model_copy(update={"cash_usd": 1_200_000.0})}
-    )
+    augur_config = _with_fixed_cash(augur_config, 1_200_000.0)
     product = _service(counting_model, augur_config=augur_config)
     scenario = ScenarioKey(
         model_id="current_model",
@@ -948,9 +963,7 @@ def test_future_rental_lifecycle_requires_rent_series_at_product_api(counting_mo
 
 def test_primary_residence_event_emits_rollout_marker(counting_model: CountingModel) -> None:
     augur_config = _augur_config()
-    augur_config = augur_config.model_copy(
-        update={"snapshot": augur_config.snapshot.model_copy(update={"cash_usd": 1_200_000.0})}
-    )
+    augur_config = _with_fixed_cash(augur_config, 1_200_000.0)
     product = _service(counting_model, augur_config=augur_config)
     scenario = ScenarioKey(
         model_id="current_model",
@@ -1005,9 +1018,7 @@ def test_property_purchase_metrics_track_value_balance_and_equity(counting_model
 
 def test_cash_property_purchase_omits_mortgage_payments(counting_model: CountingModel) -> None:
     augur_config = _augur_config()
-    augur_config = augur_config.model_copy(
-        update={"snapshot": augur_config.snapshot.model_copy(update={"cash_usd": 1_200_000.0})}
-    )
+    augur_config = _with_fixed_cash(augur_config, 1_200_000.0)
     product = _service(counting_model, augur_config=augur_config)
     scenario = ScenarioKey(
         model_id="current_model",
@@ -1198,9 +1209,7 @@ def test_primary_residence_mortgage_emits_mortgage_interest_deduction_policy(cou
     """A mortgaged primary residence builds one MortgageInterestDeductionPolicy on the sim
     Scenario; tax_accrual events surface a non-zero mortgage_interest_deduction_usd."""
     augur_config = _augur_config()
-    augur_config = augur_config.model_copy(
-        update={"snapshot": augur_config.snapshot.model_copy(update={"cash_usd": 400_000.0})}
-    )
+    augur_config = _with_fixed_cash(augur_config, 400_000.0)
     product = _service(counting_model, augur_config=augur_config)
     scenario = ScenarioKey(
         model_id="current_model",
@@ -1228,9 +1237,7 @@ def test_primary_residence_mortgage_emits_mortgage_interest_deduction_policy(cou
 def test_secondary_residence_mortgage_omits_mortgage_interest_deduction(counting_model: CountingModel) -> None:
     """`is_primary_residence=False` should produce zero MID even with a mortgage."""
     augur_config = _augur_config()
-    augur_config = augur_config.model_copy(
-        update={"snapshot": augur_config.snapshot.model_copy(update={"cash_usd": 400_000.0})}
-    )
+    augur_config = _with_fixed_cash(augur_config, 400_000.0)
     product = _service(counting_model, augur_config=augur_config)
     scenario = ScenarioKey(
         model_id="current_model",
@@ -1260,9 +1267,7 @@ def test_secondary_residence_mortgage_omits_mortgage_interest_deduction(counting
 def test_cash_property_purchase_omits_mortgage_interest_deduction(counting_model: CountingModel) -> None:
     """A cash purchase has no mortgage and therefore no MID even when is_primary_residence=True."""
     augur_config = _augur_config()
-    augur_config = augur_config.model_copy(
-        update={"snapshot": augur_config.snapshot.model_copy(update={"cash_usd": 1_200_000.0})}
-    )
+    augur_config = _with_fixed_cash(augur_config, 1_200_000.0)
     product = _service(counting_model, augur_config=augur_config)
     scenario = ScenarioKey(
         model_id="current_model",

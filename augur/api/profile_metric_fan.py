@@ -15,6 +15,7 @@ from typing import cast, get_args
 
 from augur.api.catalog import build_bootstrap_payload
 from augur.api.config import Config, load_augur_config
+from augur.api.portfolio_sources import resolve_portfolio_sources
 from augur.model.exogenous import Sampler
 from augur.product.scenarios import resolve_primary_agent_id, sim_locations_from_config
 from augur.product.service import ProductService
@@ -36,10 +37,11 @@ class ProfileTimeoutError(TimeoutError):
 def main() -> int:
     args = _arg_parser().parse_args()
     config = load_augur_config(_config_path(args.config))
+    resolved_portfolio = resolve_portfolio_sources(config)
     bootstrap = build_bootstrap_payload(config)
     service = ProductService(
-        portfolio=config.portfolio,
-        initial_cash_usd=float(config.snapshot.cash_usd),
+        portfolio=resolved_portfolio.portfolio,
+        initial_cash_usd=float(resolved_portfolio.snapshot.cash_usd),
         primary_agent_id=resolve_primary_agent_id(config),
         known_location_ids=frozenset(location.id for location in bootstrap.locations),
         locations=sim_locations_from_config(config.locations),

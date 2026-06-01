@@ -23,9 +23,8 @@ import yaml
 from pydantic import Field, HttpUrl, PositiveInt, model_validator
 
 from augur.api.bootstrap import ActorRole, ProductInputDefaults
-from augur.api.finance import FinanceSnapshot
 from augur.api.local_regulation import LocalRegulation
-from augur.api.portfolio import PortfolioConfig
+from augur.api.portfolio_source_config import PortfolioSourcesConfig
 from augur.api.schemas import ApiModel
 from augur.model.provider_config import CompositeProviderConfig, ProviderConfig
 from augur.model.state_space import StateSpaceProviderConfig
@@ -128,8 +127,7 @@ class Config(ApiModel):
 
     agents: tuple[AgentDefinition, ...] = Field(min_length=1)
     property_source: PropertySourceConfig
-    snapshot: FinanceSnapshot
-    portfolio: PortfolioConfig = Field(default_factory=PortfolioConfig)
+    portfolio_sources: PortfolioSourcesConfig
     locations: tuple[LocationConfig, ...] = ()
     location_selection: tuple[str, ...] | None = None
     default_rollout_samples: PositiveInt
