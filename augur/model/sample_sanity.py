@@ -210,7 +210,7 @@ def run_sample_sanity(spec: SampleSanitySpec, *, base_dir: Path) -> None:
     results = evaluate_sample_sanity(spec, base_dir=base_dir)
     failures = [result for result in results if result.status == "fail"]
     if failures:
-        raise AssertionError("\n".join(failure.detail for failure in failures))
+        raise AssertionError("\n".join(f"{failure.label}: {failure.detail}" for failure in failures))
 
 
 def evaluate_sample_sanity(spec: SampleSanitySpec, *, base_dir: Path) -> list[SanityBandResult]:
