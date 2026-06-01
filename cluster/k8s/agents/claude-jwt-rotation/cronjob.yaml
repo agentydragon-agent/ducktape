@@ -22,6 +22,7 @@ spec:
       template:
         spec:
           # No Kubernetes API access; don't mount a SA token.
+          serviceAccountName: ""
           automountServiceAccountToken: false
           restartPolicy: OnFailure
           volumes:
