@@ -103,23 +103,37 @@ def aggregate(
     gross = _gross_monthly_totals(classified, months=months)
     bucket_by_id = {bucket.id: bucket for bucket in config.buckets}
 
-    # For each REIMBURSABLE bucket, replace its raw charges with charges minus a rolling sum
-    # of reimbursements from the paired REIMBURSEMENT bucket. Reimbursements arrive lumpy
-    # and lagged, so rolling-window netting smooths the timing without losing average wash.
+    # For each REIMBURSABLE bucket, replace its raw charges with a rolling-window NET (charges
+    # minus its share of paired reimbursements). When multiple reimbursable buckets share the
+    # same reimbursement stream (e.g. esketamine + therapy both paired with `medical_reimbursement`),
+    # the rolling reimbursement total is allocated to each bucket in proportion to the bucket's
+    # window gross. Anthem-style ACH deposits don't carry a tag back to the originating claim,
+    # so proportional-by-gross is the best available split.
+    reimbursables_by_payer: dict[str, list[str]] = defaultdict(list)
+    for bucket in config.buckets:
+        if bucket.kind == BucketKind.REIMBURSABLE and bucket.reimbursed_by:
+            reimbursables_by_payer[bucket.reimbursed_by].append(bucket.id)
+    window_months = config.reimbursement_window_months
+    rolling_gross: dict[str, dict[date, float]] = {
+        bucket.id: _rolling_window_sum(gross.get(bucket.id, dict.fromkeys(months, 0.0)), window_months)
+        for bucket in config.buckets
+    }
     netted: dict[str, dict[date, float]] = {}
     for bucket in config.buckets:
-        charges = gross.get(bucket.id, dict.fromkeys(months, 0.0))
         if bucket.kind == BucketKind.REIMBURSABLE and bucket.reimbursed_by:
-            refunds = gross.get(bucket.reimbursed_by, dict.fromkeys(months, 0.0))
-            window = _rolling_window_sum(refunds, config.reimbursement_window_months)
-            charges_window = _rolling_window_sum(charges, config.reimbursement_window_months)
-            # Refund amount is negative (money in); subtracting it adds to net = brings the
-            # reimbursable bucket closer to zero when refunds catch up to charges.
-            netted[bucket.id] = {
-                month: (charges_window[month] + window[month]) / config.reimbursement_window_months for month in months
-            }
+            peers = reimbursables_by_payer[bucket.reimbursed_by]
+            charges_window = rolling_gross[bucket.id]
+            refund_window = rolling_gross[bucket.reimbursed_by]
+            netted_series: dict[date, float] = {}
+            for month in months:
+                total_peer_charges = sum(rolling_gross[peer_id][month] for peer_id in peers)
+                share = (charges_window[month] / total_peer_charges) if total_peer_charges > 0 else 0.0
+                # refund_window entries are negative (Plaid sign); adding moves the net toward zero.
+                allocated_refund = refund_window[month] * share
+                netted_series[month] = (charges_window[month] + allocated_refund) / window_months
+            netted[bucket.id] = netted_series
         else:
-            netted[bucket.id] = charges
+            netted[bucket.id] = gross.get(bucket.id, dict.fromkeys(months, 0.0))
 
     # Recent monthly average uses the last 3 months of the visible window (or fewer if the
     # window is shorter). Reimbursable buckets read from the netted series; everything else

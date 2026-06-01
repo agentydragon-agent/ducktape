@@ -14,6 +14,7 @@ DEFAULT_BUCKET_IDS = frozenset(
     {
         "doordash",
         "ai_subscription",
+        "cloud_infra",
         "transportation",
         "utilities",
         "entertainment",
@@ -23,6 +24,7 @@ DEFAULT_BUCKET_IDS = frozenset(
         "restaurants_in_person",
         "medical",
         "medical_reimbursement",
+        "supplements",
         "insurance",
         "taxes",
         "travel",
@@ -32,6 +34,9 @@ DEFAULT_BUCKET_IDS = frozenset(
         "bank_fees",
         "personal_care",
         "rent",
+        "postage",
+        "donations",
+        "home_improvement",
     }
 )
 
@@ -48,6 +53,19 @@ DEFAULT_RULES: tuple[Rule, ...] = (
     MerchantSubstringRule(pattern="Anthropic", bucket_id="ai_subscription"),
     MerchantSubstringRule(pattern="OpenAI", bucket_id="ai_subscription"),
     MerchantSubstringRule(pattern="Claude", bucket_id="ai_subscription"),
+    # Stripe is the billing layer for many AI services; "Stripe-z.ai" is the chat.z.ai
+    # subscription line item. Also captures any other Stripe-billed AI vendor labelled
+    # with its product name after the dash.
+    MerchantSubstringRule(pattern="Stripe-z.ai", bucket_id="ai_subscription"),
+    # --- Cloud / infra / dev tooling (recurring subscriptions to ops chains) ---
+    MerchantSubstringRule(pattern="Hetzner", bucket_id="cloud_infra"),
+    MerchantSubstringRule(pattern="Linode", bucket_id="cloud_infra"),
+    # Plaid frequently mistags OVH as MEDICAL_PRIMARY_CARE; the merchant_substring rule
+    # fires before the PFC fallback, so it lands in cloud_infra anyway.
+    MerchantSubstringRule(pattern="OVH", bucket_id="cloud_infra"),
+    MerchantSubstringRule(pattern="GitHub", bucket_id="cloud_infra"),
+    MerchantSubstringRule(pattern="Cloudflare", bucket_id="cloud_infra"),
+    MerchantSubstringRule(pattern="DigitalOcean", bucket_id="cloud_infra"),
     # --- Transportation ---
     MerchantSubstringRule(pattern="Lyft", bucket_id="transportation"),
     MerchantSubstringRule(pattern="Uber", bucket_id="transportation"),
@@ -62,6 +80,7 @@ DEFAULT_RULES: tuple[Rule, ...] = (
     MerchantSubstringRule(pattern="Patreon", bucket_id="entertainment"),
     MerchantSubstringRule(pattern="Spotify", bucket_id="entertainment"),
     MerchantSubstringRule(pattern="Netflix", bucket_id="entertainment"),
+    MerchantSubstringRule(pattern="Substack", bucket_id="entertainment"),
     # --- Marketplaces / electronics ---
     MerchantSubstringRule(pattern="Amazon", bucket_id="general_merchandise"),
     MerchantSubstringRule(pattern="Target", bucket_id="general_merchandise"),
@@ -70,6 +89,23 @@ DEFAULT_RULES: tuple[Rule, ...] = (
     MerchantSubstringRule(pattern="Newegg", bucket_id="electronics"),
     MerchantSubstringRule(pattern="Apple", bucket_id="electronics"),
     MerchantSubstringRule(pattern="B&H Photo", bucket_id="electronics"),
+    # --- Pharmacy chains (supplements / OTC) ---
+    MerchantSubstringRule(pattern="CVS", bucket_id="supplements"),
+    MerchantSubstringRule(pattern="Walgreens", bucket_id="supplements"),
+    # --- Postage / shipping ---
+    MerchantSubstringRule(pattern="FedEx", bucket_id="postage"),
+    MerchantSubstringRule(pattern="UPS", bucket_id="postage"),
+    MerchantSubstringRule(pattern="U.S. Post Office", bucket_id="postage"),
+    MerchantSubstringRule(pattern="Mailform", bucket_id="postage"),
+    # --- Donations / civic ---
+    MerchantSubstringRule(pattern="Internet Archive", bucket_id="donations"),
+    MerchantSubstringRule(pattern="Open Source Collective", bucket_id="donations"),
+    MerchantSubstringRule(pattern="ACLU", bucket_id="donations"),
+    MerchantSubstringRule(pattern="Wikimedia", bucket_id="donations"),
+    # --- Home improvement / hardware chains ---
+    MerchantSubstringRule(pattern="Home Depot", bucket_id="home_improvement"),
+    MerchantSubstringRule(pattern="Lowe", bucket_id="home_improvement"),
+    MerchantSubstringRule(pattern="Discount Builders Supply", bucket_id="home_improvement"),
     # --- Government / taxes (US) ---
     # Plaid populates `merchant_name` cleanly ("Internal Revenue Service", "Franchise Tax
     # Board") but stamps the raw `name` field with the ACH descriptor ("IRS DES:USATAXPYMT..."
@@ -86,8 +122,11 @@ DEFAULT_RULES: tuple[Rule, ...] = (
     PfcRule(primary="RENT_AND_UTILITIES", bucket_id="utilities"),
     PfcRule(primary="FOOD_AND_DRINK", detailed="FOOD_AND_DRINK_GROCERIES", bucket_id="groceries"),
     PfcRule(primary="FOOD_AND_DRINK", bucket_id="restaurants_in_person"),
+    PfcRule(primary="MEDICAL", detailed="MEDICAL_PHARMACIES_AND_SUPPLEMENTS", bucket_id="supplements"),
     PfcRule(primary="MEDICAL", bucket_id="medical"),
     PfcRule(primary="GENERAL_SERVICES", detailed="GENERAL_SERVICES_INSURANCE", bucket_id="insurance"),
+    PfcRule(primary="GENERAL_SERVICES", detailed="GENERAL_SERVICES_POSTAGE_AND_SHIPPING", bucket_id="postage"),
+    PfcRule(primary="HOME_IMPROVEMENT", bucket_id="home_improvement"),
     PfcRule(primary="TRANSPORTATION", bucket_id="transportation"),
     PfcRule(primary="GENERAL_MERCHANDISE", detailed="GENERAL_MERCHANDISE_ELECTRONICS", bucket_id="electronics"),
     PfcRule(primary="GENERAL_MERCHANDISE", bucket_id="general_merchandise"),
