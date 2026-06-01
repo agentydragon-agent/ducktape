@@ -40,6 +40,8 @@ PowerDNS and Authentik run on CloudNativePG `local-path`.
   right-sized requests, or additional node capacity).
 - **Google Workspace MCP**: `google-workspace-mcp` — suspended 2026-05-13.
   Resources and PVC deleted. Unsuspend once capacity pressure resolves.
+- **HomeAssistant Proxy**: `homeassistant-proxy` — suspended 2026-06-01.
+  Resources deleted. Unsuspend once back in a place that uses Home Assistant.
 
 ## Next Actions
 
