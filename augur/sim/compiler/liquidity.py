@@ -24,6 +24,7 @@ class LiquidityPolicyCompileOutput:
     agent: NDArray[np.int64]
     account: NDArray[np.int64]
     cash_slot: NDArray[np.int64]
+    source_accounts: NDArray[np.int64]
     trigger_kind: NDArray[np.int64]
     trigger_fixed: NDArray[np.float64]
     trigger_base: NDArray[np.float64]
@@ -50,9 +51,13 @@ def compile_liquidity_policies(
     policy_count = len(scenario.liquidity_policies)
     slot_count = max(1, policy_count)
     max_assets = max(1, max((len(policy.asset_preference_chain) for policy in scenario.liquidity_policies), default=0))
+    max_source_accounts = max(
+        1, max((len(policy.source_account_ids) or 1 for policy in scenario.liquidity_policies), default=0)
+    )
     agent = np.zeros(slot_count, dtype=np.int64)
     account = np.zeros(slot_count, dtype=np.int64)
     cash_slot = np.full(slot_count, NO_CODE, dtype=np.int64)
+    source_accounts = np.full((slot_count, max_source_accounts), NO_CODE, dtype=np.int64)
     trigger_kind = np.full(slot_count, AMOUNT_FIXED, dtype=np.int64)
     trigger_fixed = np.zeros(slot_count, dtype=np.float64)
     trigger_base = np.zeros(slot_count, dtype=np.float64)
@@ -72,6 +77,8 @@ def compile_liquidity_policies(
         agent[idx] = strings.require(policy.agent_id)
         account[idx] = strings.require(policy.account_id)
         cash_slot[idx] = slot(account_slot_by_key, policy.agent_id, policy.account_id)
+        for source_idx, source_account_id in enumerate(policy.source_account_ids or (policy.account_id,)):
+            source_accounts[idx, source_idx] = strings.require(source_account_id)
         (
             trigger_kind[idx],
             trigger_fixed[idx],
@@ -96,6 +103,7 @@ def compile_liquidity_policies(
         agent=agent,
         account=account,
         cash_slot=cash_slot,
+        source_accounts=source_accounts,
         trigger_kind=trigger_kind,
         trigger_fixed=trigger_fixed,
         trigger_base=trigger_base,

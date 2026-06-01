@@ -110,7 +110,7 @@ def decode_liquidity_dispositions(plan: CompiledSimulation, buffers: SimulationB
         months=months,
         cause_ids=cause_ids,
         agent_codes=plan.liquidity_policies.agent[policies],
-        source_account_codes=plan.liquidity_policies.account[policies],
+        source_account_codes=plan.lot_account_codes[lots],
         asset_codes=asset_codes,
         lots=lots,
         units=buffers.lot_dispositions.liquidity.units[months, policies, asset_idxs, lots, rollouts],

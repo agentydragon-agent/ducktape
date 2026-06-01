@@ -2390,6 +2390,58 @@ def test_liquidity_policy_consumes_only_policy_account_fifo_pool(deterministic_s
     assert result.events_log.rollout_failures.is_empty()
 
 
+def test_liquidity_policy_can_sell_from_source_account_into_cash_account(deterministic_series_bundle) -> None:
+    scenario = Scenario(
+        agents=[Agent(agent_id="alice"), Agent(agent_id="landlord")],
+        initial_cash=[
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="landlord", account_id="checking", balance_usd=0.0),
+        ],
+        initial_lots=[
+            InitialLot(
+                lot_id="alice_taxable_vti",
+                agent_id="alice",
+                account_id="taxable",
+                asset_id="crypto:vti",
+                purchase_month_index=-24,
+                quantity=5.0,
+                cost_basis_per_unit_usd=50.0,
+            )
+        ],
+        scheduled_obligations=[
+            ScheduledObligation(
+                month=0,
+                obligation_id="rent_due",
+                obligation_type="rent",
+                agent_id="alice",
+                from_account_id="checking",
+                to_agent_id="landlord",
+                to_account_id="checking",
+                amount_due_usd=400.0,
+            )
+        ],
+        external_series=deterministic_series_bundle([100.0, 100.0]),
+        liquidity_policies=[
+            LiquidityPolicy(
+                agent_id="alice",
+                account_id="checking",
+                source_account_ids=("taxable",),
+                asset_preference_chain=["crypto:vti"],
+            )
+        ],
+        tax_profiles=[],
+        horizon_months=1,
+    )
+
+    result = simulate(scenario, rollout_count=1, locations={})
+
+    disposition = result.events_log.lot_dispositions.row(0, named=True)
+    assert disposition["source_account_id"] == "taxable"
+    assert disposition["proceeds_account_id"] == "checking"
+    assert disposition["units_sold"] == pytest.approx(4.0)
+    assert result.events_log.rollout_failures.is_empty()
+
+
 def test_series_indexed_recurring_rent_obligation_resets_yearly_by_rollout() -> None:
     """Alice pays rent to a landlord. The rent is fixed within each
     lease year and resets annually using each rollout's rent series path."""

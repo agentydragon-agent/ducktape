@@ -93,8 +93,8 @@ def create_app(config: ApiServerConfig) -> FastAPI:
     def payload(value: Any) -> JSONResponse:
         return JSONResponse(content=plain_json(value), headers=no_store)
 
-    app.add_exception_handler(RequestValidationError, lambda request, exc: error(422, exc.errors()))
-    app.add_exception_handler(ValidationError, lambda request, exc: error(422, exc.errors()))
+    app.add_exception_handler(RequestValidationError, lambda request, exc: error(422, exc.errors(include_input=False)))
+    app.add_exception_handler(ValidationError, lambda request, exc: error(422, exc.errors(include_input=False)))
     app.add_exception_handler(KeyError, lambda request, exc: error(400, str(exc)))
     app.add_exception_handler(ValueError, lambda request, exc: error(400, str(exc)))
 

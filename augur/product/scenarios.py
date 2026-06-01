@@ -800,6 +800,9 @@ def _liquidity_policies_from_funding_policy(
         LiquidityPolicy(
             agent_id=primary_agent_id,
             account_id=PRIMARY_ACCOUNT_ID,
+            source_account_ids=_source_account_ids_from_sell_order(
+                funding_policy, primary_agent_id=primary_agent_id, initial_lots=initial_lots
+            ),
             asset_preference_chain=asset_preference_chain,
             cash_buffer_trigger_below_usd=trigger_amount,
             cash_buffer_sale_usd=sale_amount,
@@ -844,6 +847,21 @@ def _asset_preference_chain_from_sell_order(
         else:
             raise ValueError(f"unsupported sell_order bucket: {bucket!r}")
     return list(dict.fromkeys(asset_ids))
+
+
+def _source_account_ids_from_sell_order(
+    funding_policy: FundingPolicy, *, primary_agent_id: str, initial_lots: tuple[InitialLot, ...]
+) -> tuple[str, ...]:
+    selected_asset_ids = set(_asset_preference_chain_from_sell_order(funding_policy, initial_lots=initial_lots))
+    if not selected_asset_ids:
+        return ()
+    return tuple(
+        dict.fromkeys(
+            lot.account_id
+            for lot in initial_lots
+            if lot.agent_id == primary_agent_id and lot.asset_id in selected_asset_ids
+        )
+    )
 
 
 def _build_private_equity_tender_policies(

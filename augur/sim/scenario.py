@@ -300,7 +300,11 @@ class LiquidityPolicy(BaseModel):
     """
 
     agent_id: str
+    # Cash account that receives sale proceeds and pays matching obligations.
     account_id: str
+    # Holding accounts the policy may liquidate. Empty preserves the original behavior:
+    # sell only lots already in `account_id`.
+    source_account_ids: tuple[str, ...] = ()
     asset_preference_chain: list[str]
     # `AmountSpec = float | AmountSchedule` — pass a raw float for a constant buffer, or a
     # `SeriesIndexedAmount` (e.g. `series_id="inflation"`) to keep the buffer in real terms.

@@ -1081,7 +1081,6 @@ def _apply_liquidity_policy_sales(
     obligation_due = buffers.obligations.due[month]
     for policy in range(plan.liquidity_policies.agent.shape[0]):
         policy_agent = int(plan.liquidity_policies.agent[policy])
-        policy_account = int(plan.liquidity_policies.account[policy])
         policy_cash_slot = int(plan.liquidity_policies.cash_slot[policy])
 
         matching_obligations = np.flatnonzero(
@@ -1143,55 +1142,59 @@ def _apply_liquidity_policy_sales(
             valid_price = np.isfinite(raw_price) & (raw_price > 0.0)
             unit_price = np.where(valid_price, raw_price, 0.0)
 
-            ordered_lots = lot_order_for_pool(
-                lot_agent_codes=plan.lot_agent_codes,
-                lot_account_codes=plan.lot_account_codes,
-                lot_asset_codes=plan.lot_asset_codes,
-                lot_purchase_month=plan.lot_purchase_month,
-                lot_id_codes=plan.lot_id_codes,
-                agent_code=policy_agent,
-                account_code=policy_account,
-                asset_code=asset_code,
-            )
-            if ordered_lots.size == 0:
-                continue
-
-            available_value = current.lot_remaining[ordered_lots, :].sum(axis=0) * unit_price
-            target_dollars = np.minimum(np.maximum(remaining_target, 0.0), available_value)
-            target_dollars = np.where(valid_price & active_rollout, target_dollars, 0.0)
-            if not np.any(target_dollars > 0.0):
-                continue
-
-            result = fifo_sell_dollars(
-                lot_remaining=current.lot_remaining.T,
-                ordered_lots=ordered_lots,
-                target_dollars=target_dollars,
-                unit_price=unit_price,
-                cost_basis_per_unit=plan.lot_cost_basis_per_unit,
-            )
-            if result.oversell.any():
-                raise ValueError(
-                    "liquidity policy attempted to sell more than available lots: "
-                    f"{plan.liquidity_policies.cause_id_prefixes[policy]}"
+            for source_account in plan.liquidity_policies.source_accounts[policy]:
+                source_account_code = int(source_account)
+                if source_account_code < 0 or not np.any(remaining_target > 0.0):
+                    continue
+                ordered_lots = lot_order_for_pool(
+                    lot_agent_codes=plan.lot_agent_codes,
+                    lot_account_codes=plan.lot_account_codes,
+                    lot_asset_codes=plan.lot_asset_codes,
+                    lot_purchase_month=plan.lot_purchase_month,
+                    lot_id_codes=plan.lot_id_codes,
+                    agent_code=policy_agent,
+                    account_code=source_account_code,
+                    asset_code=asset_code,
                 )
+                if ordered_lots.size == 0:
+                    continue
 
-            current.lot_remaining -= result.sold_units.T
-            if policy_cash_slot >= 0:
-                current.cash[policy_cash_slot, :] += result.total_proceeds
-            _record_capital_gains(
-                plan,
-                current,
-                month=month,
-                agent_code=policy_agent,
-                sold_units=result.sold_units,
-                gains=result.proceeds - result.cost_basis_consumed,
-            )
-            sale_active = result.sold_units > 0.0
-            buffers.lot_dispositions.liquidity.active[month, policy, asset_idx] |= sale_active.T
-            buffers.lot_dispositions.liquidity.units[month, policy, asset_idx] += result.sold_units.T
-            buffers.lot_dispositions.liquidity.basis[month, policy, asset_idx] += result.cost_basis_consumed.T
-            buffers.lot_dispositions.liquidity.proceeds[month, policy, asset_idx] += result.proceeds.T
-            remaining_target = np.maximum(remaining_target - result.total_proceeds, 0.0)
+                available_value = current.lot_remaining[ordered_lots, :].sum(axis=0) * unit_price
+                target_dollars = np.minimum(np.maximum(remaining_target, 0.0), available_value)
+                target_dollars = np.where(valid_price & active_rollout, target_dollars, 0.0)
+                if not np.any(target_dollars > 0.0):
+                    continue
+
+                result = fifo_sell_dollars(
+                    lot_remaining=current.lot_remaining.T,
+                    ordered_lots=ordered_lots,
+                    target_dollars=target_dollars,
+                    unit_price=unit_price,
+                    cost_basis_per_unit=plan.lot_cost_basis_per_unit,
+                )
+                if result.oversell.any():
+                    raise ValueError(
+                        "liquidity policy attempted to sell more than available lots: "
+                        f"{plan.liquidity_policies.cause_id_prefixes[policy]}"
+                    )
+
+                current.lot_remaining -= result.sold_units.T
+                if policy_cash_slot >= 0:
+                    current.cash[policy_cash_slot, :] += result.total_proceeds
+                _record_capital_gains(
+                    plan,
+                    current,
+                    month=month,
+                    agent_code=policy_agent,
+                    sold_units=result.sold_units,
+                    gains=result.proceeds - result.cost_basis_consumed,
+                )
+                sale_active = result.sold_units > 0.0
+                buffers.lot_dispositions.liquidity.active[month, policy, asset_idx] |= sale_active.T
+                buffers.lot_dispositions.liquidity.units[month, policy, asset_idx] += result.sold_units.T
+                buffers.lot_dispositions.liquidity.basis[month, policy, asset_idx] += result.cost_basis_consumed.T
+                buffers.lot_dispositions.liquidity.proceeds[month, policy, asset_idx] += result.proceeds.T
+                remaining_target = np.maximum(remaining_target - result.total_proceeds, 0.0)
 
 
 def _apply_obligation_accruals(
