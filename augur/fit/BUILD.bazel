@@ -251,6 +251,26 @@ py_library(
 )
 
 py_library(
+    name = "bayes_mint_streams",
+    srcs = ["bayes_mint_streams.py"],
+    deps = [
+        ":private_equity",
+        "@pypi//jax",
+        "@pypi//numpy",
+        "@pypi//numpyro",
+    ],
+)
+
+py_binary(
+    name = "fit_mint_streams_report",
+    srcs = ["fit_mint_streams_report.py"],
+    deps = [
+        ":bayes_mint_streams",
+        ":private_equity",
+    ],
+)
+
+py_library(
     name = "derive_dilution_prior_lib",
     srcs = ["derive_dilution_prior.py"],
     deps = [
@@ -284,6 +304,18 @@ py_test(
     srcs = ["test_bayes_dilution.py"],
     deps = [
         ":bayes_dilution",
+        ":private_equity",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_bayes_mint_streams",
+    size = "large",
+    srcs = ["test_bayes_mint_streams.py"],
+    deps = [
+        ":bayes_mint_streams",
         ":private_equity",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

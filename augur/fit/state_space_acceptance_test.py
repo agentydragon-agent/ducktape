@@ -109,6 +109,7 @@ def _write_private_equity_fixture(tmp_path: Path) -> Path:
             "observed_at": "2026-04-15",
             "valuation_usd": 3_000_000_000.0,
             "uncertainty_log_sigma": 0.1,
+            "valuation_kind": "implied",
             "source_id": "fixture:valuation",
         },
     ]

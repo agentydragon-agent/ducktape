@@ -34,6 +34,7 @@ def _valuation(observed_at: dt.date, valuation_usd: float) -> ValuationObservati
         observed_at=observed_at,
         valuation_usd=valuation_usd,
         uncertainty_log_sigma=0.15,
+        valuation_kind="implied",
         source_id="test",
     )
 

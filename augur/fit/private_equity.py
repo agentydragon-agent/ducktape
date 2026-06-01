@@ -12,11 +12,24 @@ from typing import Literal
 
 import numpy as np
 import yaml
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from augur.dates import months_between
 from augur.model.schemas import StrictModel
 from augur.model.trained_private_equity import TrainedPrivateEquityModelArtifact, TrainedPrivateEquityScalePrior
+
+ValuationKind = Literal["primary", "secondary", "admin", "implied"]
+"""Annotation of what a valuation_observation represents.
+
+- `primary`: a primary funding round (new shares issued; cash flows into the company).
+  Must carry `cash_raised_usd > 0`. The mint-streams model reads these as discrete
+  V-jump + share-jump events.
+- `secondary`: an employee/investor tender or private secondary trade. No new shares,
+  no cash to the company. Valuation is observed at the tender's implied per-share price.
+- `admin`: a company-set or 409A-style administrative mark, lagged accounting estimate.
+- `implied`: a valuation derived from a tender price + estimated share count, not an
+  event observation. Used for synthetic test data and inferred mid-period valuations.
+"""
 
 # Stock-like forward priors for private companies whose observed marks are sparse
 # tenders rather than continuous public trades. These defaults are deliberately
@@ -60,8 +73,29 @@ class ValuationObservation(StrictModel):
     observed_at: date
     valuation_usd: float = Field(gt=0)
     uncertainty_log_sigma: float = Field(gt=0)
+    valuation_kind: ValuationKind
+    cash_raised_usd: float | None = Field(default=None, ge=0)
+    """Cash injected into the company by this round. Required (>0) for `primary`;
+    must be `None` for non-primary kinds. Used by the mint-streams sampler to read
+    primary-round events directly from observations rather than inferring them
+    from a smooth dilution random walk."""
+    shares_outstanding_post_round: float | None = Field(default=None, gt=0)
+    """Post-event share count, when known (e.g. from a recap information statement
+    or SEC filing). The fitter can use this to pin per-event dilution exactly,
+    rather than inferring it from `cash_raised_usd / V_pre`."""
     source_id: str = Field(min_length=1)
     notes: str = ""
+
+    @model_validator(mode="after")
+    def _validate_kind_cash(self) -> ValuationObservation:
+        if self.valuation_kind == "primary":
+            if self.cash_raised_usd is None or self.cash_raised_usd <= 0:
+                raise ValueError("primary valuation_observation requires cash_raised_usd > 0")
+        elif self.cash_raised_usd is not None:
+            raise ValueError(
+                f"cash_raised_usd is only valid when valuation_kind='primary' (got {self.valuation_kind!r})"
+            )
+        return self
 
 
 PrivateEquityObservation = PriceObservation | ValuationObservation

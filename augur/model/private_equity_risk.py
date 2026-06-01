@@ -60,6 +60,68 @@ class ValuationDriftScaleReversion(FrozenModel):
     log_value_scale: float = Field(gt=0, description="e-folding of the excess drift in log-value units past the onset.")
 
 
+class PrimaryRoundConfig(FrozenModel):
+    """Discrete primary-round event stream (mint-streams model, M2.2-C / 2026-06).
+
+    Each round event simultaneously jumps V(t) up by `cash_raised` and dilutes shares
+    by an implied amount. Hazard, cash-size, and step-up are all stochastic per rollout.
+
+    Replaces the smooth `annual_dilution_rate` channel when set. The legacy channel is
+    still available for the existing `bayesian` preset by leaving this unset; the new
+    `bayesian_mint_streams` preset uses this. See augur/plans/mint_streams_model.md.
+    """
+
+    monthly_hazard: float = Field(gt=0, le=1.0)
+    """Per-month Poisson rate of primary-round arrivals. ~1/18 = 0.056 baseline (one
+    round every ~18 months); fit per issuer."""
+
+    monthly_hazard_scale_reversion: ValuationDriftScaleReversion | None = None
+    """Optional: `lambda(s) = lambda_mature + (lambda_young - lambda_mature) *
+    exp(-max(0, s - onset)/scale)`, `s = log V`. Reuses the same shape submodel as V
+    drift; semantics differ — for hazard this models rounds-dry-up as the company
+    matures. `monthly_log_return_mu_young` is reinterpreted as `lambda_young`."""
+
+    ipo_anticipation_decay: bool = False
+    """If True, multiply the hazard by `(1 - P(public_market_opened_by_t))` so primary
+    rounds taper as IPO approaches. Reads from the same `public_market_cdf_anchors` /
+    `annual_public_market_probability` as the existing IPO model."""
+
+    cash_over_v_pre_median: float = Field(gt=0)
+    """Median round size as fraction of pre-money V(t). e.g. 0.08 ⇒ ~8% raise/V_pre."""
+
+    cash_over_v_pre_log_sigma: float = Field(default=0.5, ge=0)
+    """Per-round LogNormal dispersion of cash/V_pre."""
+
+    step_up_median: float = Field(default=1.0, gt=0)
+    """Multiplicative info-driven repricing at the round. `V_post = V_pre * (1 +
+    cash/V_pre) * step_up`. Default 1.0 is pure mechanical (V_post = V_pre + cash)."""
+
+    step_up_log_sigma: float = Field(default=0.0, ge=0)
+    """Per-round LogNormal dispersion of the step-up factor."""
+
+
+class EmployeeMintConfig(FrozenModel):
+    """Continuous employee equity issuance (mint-streams model, M2.2-C / 2026-06).
+
+    `dS_emp/dt = m * S`, smooth exponential between primary rounds. No effect on V
+    (SBC is non-cash). Per rollout `m` is drawn LogNormal-around the configured median.
+    """
+
+    annual_mint_rate_mature: float = Field(default=0.03, ge=0)
+    """Mature-regime per-year employee mint rate. ~3%/yr matches large-cap public tech
+    (NVDA / MSFT range). Young-regime companies mint faster; see `scale_reversion`."""
+
+    annual_mint_rate_log_sigma: float = Field(default=0.0, ge=0)
+    """Per-rollout LogNormal dispersion of the mint rate. 0.0 ⇒ every rollout uses
+    `annual_mint_rate_mature` exactly."""
+
+    scale_reversion: ValuationDriftScaleReversion | None = None
+    """Optional: mint rate decays from a hot young rate toward `annual_mint_rate_mature`
+    as `log V` grows past onset. `monthly_log_return_mu_young` is reinterpreted as the
+    young per-year mint rate (NOT monthly log-drift). Empirically late-stage tech mint
+    is fairly stable across maturity, so this is usually unnecessary."""
+
+
 class PrivateEquityRiskIssuerConfig(FrozenModel):
     """Issuer-level prior parameters for the generic PE realization-risk sampler.
 
@@ -203,6 +265,26 @@ class PrivateEquityRiskIssuerConfig(FrozenModel):
     since it defaults inert and is simply ignored when the channel is off.
     """
 
+    # -- M2.2-C mint-streams channel (opt-in via primary_round_config) -------
+    #
+    # When `primary_round_config` is set, the smooth `(1 + r)^(t/12)` dilution path is
+    # replaced by:
+    #   shares(t) = shares0 * mint_factor(t) * product over rounds k <= t of
+    #              (1 + cash_over_v_pre_k / step_up_k)
+    # and V(t) jumps at round events:
+    #   V(t_k+) = V(t_k-) * (1 + cash_over_v_pre_k) * step_up_k
+    # with V between events still integrated as the scale-reverting Student-t SDE.
+    # `latent_mark(t) = current_mark_usd * (V(t)/V0) / (shares(t)/shares0)` — same
+    # algebraic structure as the legacy formula with `dilution_factor = shares(t)/shares0`.
+    primary_round_config: PrimaryRoundConfig | None = None
+    """Discrete primary-round event stream. See `PrimaryRoundConfig`. Must be set
+    together with `employee_mint_config`; both require `current_valuation_usd` +
+    `shares_outstanding_initial`. When set, legacy `annual_dilution_rate` must be 0."""
+
+    employee_mint_config: EmployeeMintConfig | None = None
+    """Continuous employee-mint stream. See `EmployeeMintConfig`. Must be set together
+    with `primary_round_config`."""
+
     @model_validator(mode="after")
     def _validate_ranges(self) -> PrivateEquityRiskIssuerConfig:
         if self.liquidity_suspension_months_max < self.liquidity_suspension_months_min:
@@ -232,6 +314,19 @@ class PrivateEquityRiskIssuerConfig(FrozenModel):
                 "valuation_drift_scale_reversion.monthly_log_return_mu_young must be >= the mature "
                 "valuation_monthly_log_return_mu (reversion is downward toward maturity)"
             )
+        # Mint-streams channel (M2.2-C): the two configs are a unit (need both to model
+        # share count honestly) and require the valuation channel to be on.
+        if (self.primary_round_config is None) != (self.employee_mint_config is None):
+            raise ValueError("primary_round_config and employee_mint_config must be set together or both unset")
+        if self.primary_round_config is not None:
+            if self.current_valuation_usd is None:
+                raise ValueError("mint-streams channel requires current_valuation_usd + shares_outstanding_initial")
+            # The mint-streams channel REPLACES the smooth `(1+r)^(t/12)` dilution path.
+            # Allowing both at once would silently double-count dilution; require legacy off.
+            if self.annual_dilution_rate != 0.0 or self.annual_dilution_rate_log_sigma != 0.0:
+                raise ValueError(
+                    "annual_dilution_rate (legacy smooth channel) must be 0 when primary_round_config is set"
+                )
         return self
 
     @property
@@ -239,6 +334,12 @@ class PrivateEquityRiskIssuerConfig(FrozenModel):
         """Whether the opt-in coupled valuation + dilution channel is active."""
 
         return self.current_valuation_usd is not None
+
+    @property
+    def mint_streams_channel_enabled(self) -> bool:
+        """Whether the M2.2-C mint-streams (discrete rounds + employee mint) channel is active."""
+
+        return self.primary_round_config is not None
 
 
 class PrivateEquityRiskProviderConfig(FrozenModel):
@@ -382,7 +483,30 @@ def _sample_issuer(
     # is perturbed — the mark/event arrays stay byte-identical to pre-M2.
     # Direct `is not None` check (equivalent to `issuer.valuation_channel_enabled`) so
     # mypy narrows `current_valuation_usd` to `float` for the division/log below.
-    if issuer.current_valuation_usd is not None:
+    if issuer.mint_streams_channel_enabled:
+        # M2.2-C: event-driven primary rounds + continuous employee mint. V jumps at
+        # round events; shares are a smooth mint exponential plus round-event jumps.
+        # `_sample_company_valuation_and_shares_with_rounds_vectorized` returns both.
+        valuation_seeds = derive_stream_rollout_seeds(request.rollout_seeds, stream_id=f"{issuer_id}:pe_risk_valuation")
+        round_seeds = derive_stream_rollout_seeds(request.rollout_seeds, stream_id=f"{issuer_id}:pe_risk_rounds")
+        mint_seeds = derive_stream_rollout_seeds(request.rollout_seeds, stream_id=f"{issuer_id}:pe_risk_mint")
+        company_valuation_usd, shares_path = _sample_company_valuation_and_shares_with_rounds_vectorized(
+            issuer,
+            valuation_seeds=valuation_seeds,
+            round_seeds=round_seeds,
+            mint_seeds=mint_seeds,
+            horizon_months=horizon_months,
+        )
+        # Caller only enters this branch when the mint-streams channel is enabled, which the
+        # validator forces alongside the valuation channel — so V0 and shares0 are guaranteed set.
+        assert issuer.current_valuation_usd is not None
+        assert issuer.shares_outstanding_initial is not None
+        latent_mark = (
+            issuer.current_mark_usd
+            * (company_valuation_usd / issuer.current_valuation_usd)
+            / (shares_path / issuer.shares_outstanding_initial)
+        )
+    elif issuer.current_valuation_usd is not None:
         valuation_seeds = derive_stream_rollout_seeds(request.rollout_seeds, stream_id=f"{issuer_id}:pe_risk_valuation")
         company_valuation_usd = _sample_company_valuation_vectorized(
             issuer, valuation_seeds=valuation_seeds, horizon_months=horizon_months
@@ -794,6 +918,202 @@ def _sample_company_valuation_vectorized(
     if not np.all(np.isfinite(paths)) or np.any(paths <= 0.0):
         raise ValueError("private-equity risk model produced invalid company valuation")
     return paths
+
+
+def _scale_reverting_rate(
+    log_value: FloatMatrix, *, rate_mature: float, reversion: ValuationDriftScaleReversion
+) -> FloatMatrix:
+    """Generic scale-reverting rate: `rate(s) = rate_mature + (rate_young - rate_mature) *
+    exp(-max(0, s - s_onset) / s_scale)`, where `rate_young = reversion.monthly_log_return_mu_young`.
+
+    The submodel field is named `monthly_log_return_mu_young` for V-drift semantics, but the
+    shape is reused for hazard / mint rate, where the young value is reinterpreted as
+    `lambda_young` / `mint_rate_young`. Doesn't enforce `rate_young >= rate_mature` here
+    because the issuer-level validator only does so for the V-drift use; the mint-streams
+    consumers documentation tells callers the young rate is the hot end.
+    """
+
+    excess = reversion.monthly_log_return_mu_young - rate_mature
+    over_onset = np.maximum(0.0, log_value - reversion.log_value_onset_usd)
+    return rate_mature + excess * np.exp(-over_onset / reversion.log_value_scale)
+
+
+def _sample_company_valuation_and_shares_with_rounds_vectorized(
+    issuer: PrivateEquityRiskIssuerConfig,
+    *,
+    valuation_seeds: tuple[int, ...],
+    round_seeds: tuple[int, ...],
+    mint_seeds: tuple[int, ...],
+    horizon_months: int,
+) -> tuple[FloatMatrix, FloatMatrix]:
+    """Mint-streams V(t) and shares(t) sampler. Returns `(V, shares)` both `(R, H+1)`.
+
+    V(t) integration mirrors `_sample_company_valuation_vectorized` (scale-reverting Student-t SDE
+    between events) but with multiplicative jumps at primary-round event months. Shares evolve
+    as a continuous employee-mint exponential plus the round-event share jumps.
+
+    Three independent seed streams (`:pe_risk_valuation`, `:pe_risk_rounds`, `:pe_risk_mint`)
+    so each generative quantity is uncorrelated with the others; mixing on the same seed
+    stream would couple them artificially. Round events are sampled per-rollout via Bernoulli
+    thinning at a possibly state-dependent hazard.
+
+    `valuation[:, 0] = V0` and `shares[:, 0] = shares0` exactly; the latent_mark `current_mark *
+    (V/V0) / (shares/shares0)` therefore equals `current_mark` at month 0 for every rollout.
+    """
+
+    primary = issuer.primary_round_config
+    employee = issuer.employee_mint_config
+    assert primary is not None
+    assert employee is not None
+    v0 = issuer.current_valuation_usd
+    shares0 = issuer.shares_outstanding_initial
+    assert v0 is not None
+    assert shares0 is not None
+    rollout_count = len(valuation_seeds)
+    shape = (rollout_count, horizon_months + 1)
+    valuation = np.empty(shape, dtype=np.float64)
+    shares = np.empty(shape, dtype=np.float64)
+    valuation[:, 0] = v0
+    shares[:, 0] = shares0
+    if horizon_months == 0:
+        return valuation, shares
+
+    valuation_rng = np.random.default_rng(_seed_from_rollout_seeds(valuation_seeds))
+    round_rng = np.random.default_rng(_seed_from_rollout_seeds(round_seeds))
+    mint_rng = np.random.default_rng(_seed_from_rollout_seeds(mint_seeds))
+
+    v_shocks = valuation_rng.standard_t(df=issuer.valuation_student_t_nu, size=(rollout_count, horizon_months))
+    v_shocks *= issuer.valuation_monthly_log_return_sigma
+
+    # Per-rollout employee mint rate `m_r`, LogNormal-around-mature. `dS/dt = m_r * S` between
+    # events, so per-month multiplicative factor is `(1 + m_r) ** (1/12)`. The optional
+    # scale_reversion is applied per timestep using the realized log V.
+    mint_z = mint_rng.standard_normal(rollout_count)
+    mint_rate_mature_per_rollout = employee.annual_mint_rate_mature * np.exp(
+        employee.annual_mint_rate_log_sigma * mint_z
+    )
+
+    # Pre-draw all per-month thinning uniforms and per-event cash/step-up draws. Each rollout
+    # gets at most `horizon_months` rounds (events fire at integer months; ≥2 per month is
+    # not modeled). Pre-drawing makes the integration loop pure numpy.
+    hazard_uniforms = round_rng.uniform(size=(rollout_count, horizon_months))
+    cash_over_v_pre_log = round_rng.normal(
+        loc=math.log(primary.cash_over_v_pre_median),
+        scale=primary.cash_over_v_pre_log_sigma,
+        size=(rollout_count, horizon_months),
+    )
+    step_up_log = round_rng.normal(
+        loc=math.log(primary.step_up_median), scale=primary.step_up_log_sigma, size=(rollout_count, horizon_months)
+    )
+    cash_over_v_pre_draws = np.exp(cash_over_v_pre_log)
+    step_up_draws = np.exp(step_up_log)
+
+    # IPO-anticipation decay reads the marginal CDF (same `public_market_cdf_anchors` /
+    # `annual_public_market_probability` the regime sampler uses) and multiplies the hazard
+    # by (1 - CDF(t)). Precompute the marginal CDF; doesn't depend on the rollout.
+    if primary.ipo_anticipation_decay:
+        ipo_cdf = _public_market_marginal_cdf(issuer, horizon_months=horizon_months)
+    else:
+        ipo_cdf = np.zeros(horizon_months + 1, dtype=np.float64)
+
+    log_v = np.full(rollout_count, math.log(v0), dtype=np.float64)
+    log_shares = np.full(rollout_count, math.log(shares0), dtype=np.float64)
+
+    v_reversion = issuer.valuation_drift_scale_reversion
+    hazard_reversion = primary.monthly_hazard_scale_reversion
+    mint_reversion = employee.scale_reversion
+
+    for m in range(horizon_months):
+        # 1) V random walk between events (explicit Euler with scale-reverting drift if set).
+        if v_reversion is None:
+            drift_v = issuer.valuation_monthly_log_return_mu
+        else:
+            drift_v = _scale_reverting_drift(
+                log_v, mu_mature=issuer.valuation_monthly_log_return_mu, reversion=v_reversion
+            )
+        log_v = log_v + drift_v + v_shocks[:, m]
+
+        # 2) Employee mint: smooth monthly compounding at per-rollout rate `m_r`. With optional
+        # scale-reversion, the effective per-rollout rate is `mint_mature_per_rollout`
+        # interpolated by the same log-V shape.
+        if mint_reversion is None:
+            mint_per_rollout = mint_rate_mature_per_rollout
+        else:
+            mint_per_rollout = _scale_reverting_rate(
+                log_v, rate_mature=mint_rate_mature_per_rollout, reversion=mint_reversion
+            )
+        # Smooth exponential: per-month factor = (1 + m_r) ** (1/12). Add to log_shares.
+        np.add(log_shares, np.log1p(mint_per_rollout) / 12.0, out=log_shares)
+
+        # 3) Primary-round event: Bernoulli thinning at state-dependent hazard.
+        if hazard_reversion is None:
+            hazard = np.full(rollout_count, primary.monthly_hazard, dtype=np.float64)
+        else:
+            hazard = _scale_reverting_rate(log_v, rate_mature=primary.monthly_hazard, reversion=hazard_reversion)
+        if primary.ipo_anticipation_decay:
+            hazard = hazard * (1.0 - ipo_cdf[m + 1])
+        # Clip to [0, 1] in case scale-reversion overshoots.
+        hazard = np.clip(hazard, 0.0, 1.0)
+        fires = hazard_uniforms[:, m] < hazard
+
+        if np.any(fires):
+            # 4) Apply round jumps. V_post = V_pre * (1 + cash/V_pre) * step_up.
+            #    shares_post = shares_pre * (1 + (cash/V_pre)/step_up).
+            cash_over = cash_over_v_pre_draws[:, m]
+            step_up = step_up_draws[:, m]
+            log_v[fires] = log_v[fires] + np.log1p(cash_over[fires]) + np.log(step_up[fires])
+            log_shares[fires] = log_shares[fires] + np.log1p(cash_over[fires] / step_up[fires])
+
+        valuation[:, m + 1] = np.exp(log_v)
+        shares[:, m + 1] = np.exp(log_shares)
+
+    if not np.all(np.isfinite(valuation)) or np.any(valuation <= 0.0):
+        raise ValueError("mint-streams sampler produced invalid V(t)")
+    if not np.all(np.isfinite(shares)) or np.any(shares <= 0.0):
+        raise ValueError("mint-streams sampler produced invalid shares(t)")
+    return valuation, shares
+
+
+def _public_market_marginal_cdf(issuer: PrivateEquityRiskIssuerConfig, *, horizon_months: int) -> FloatMatrix:
+    """Marginal `P(public_market_opened_by_month_m)` over `0..horizon_months`.
+
+    Uses the same anchor + flat-tail hazard model as the regime sampler. Returns a 1-D array
+    of shape `(horizon_months + 1,)` with `cdf[0] = 0`. Used by the mint-streams sampler's
+    optional IPO-anticipation decay; the regime sampler still draws its own per-rollout IPO
+    times off a different seed stream.
+    """
+
+    months = np.arange(horizon_months + 1, dtype=np.float64)
+    if not issuer.public_market_cdf_anchors:
+        # Flat constant-per-year hazard over the whole horizon.
+        if issuer.annual_public_market_probability <= 0.0:
+            return np.zeros_like(months)
+        monthly_hazard = 1.0 - (1.0 - issuer.annual_public_market_probability) ** (1.0 / 12.0)
+        return 1.0 - (1.0 - monthly_hazard) ** months
+
+    # Piecewise-constant monthly hazard between anchors that reproduces the CDF exactly,
+    # then a flat tail at `annual_public_market_probability` past the last anchor.
+    cdf = np.zeros_like(months)
+    prev_month, prev_cum = 0, 0.0
+    for anchor in issuer.public_market_cdf_anchors:
+        span = anchor.month - prev_month
+        if span <= 0:
+            prev_month, prev_cum = anchor.month, anchor.cumulative_probability
+            continue
+        survival_ratio = (1.0 - anchor.cumulative_probability) / max(1.0 - prev_cum, 1e-12)
+        # Per-month survival factor that interpolates the anchor CDF exactly.
+        per_month_survival = survival_ratio ** (1.0 / span)
+        for t in range(prev_month + 1, anchor.month + 1):
+            cdf[t] = 1.0 - (1.0 - prev_cum) * per_month_survival ** (t - prev_month)
+        prev_month, prev_cum = anchor.month, anchor.cumulative_probability
+    # Flat tail past the last anchor.
+    if prev_month < horizon_months and issuer.annual_public_market_probability > 0.0:
+        tail_monthly_hazard = 1.0 - (1.0 - issuer.annual_public_market_probability) ** (1.0 / 12.0)
+        for t in range(prev_month + 1, horizon_months + 1):
+            cdf[t] = 1.0 - (1.0 - prev_cum) * (1.0 - tail_monthly_hazard) ** (t - prev_month)
+    elif prev_month < horizon_months:
+        cdf[prev_month + 1 :] = prev_cum
+    return cdf
 
 
 def _dilution_factor(

@@ -56,6 +56,7 @@ def _rows() -> list[dict[str, object]]:
             "observed_at": "2024-11-15",
             "valuation_usd": 2_100_000_000.0,
             "uncertainty_log_sigma": 0.15,
+            "valuation_kind": "implied",
             "source_id": "test",
             "notes": "synthetic valuation paired with tender price",
         },
@@ -91,6 +92,7 @@ def test_load_jsonl_accepts_valuation_observations(tmp_path: Path) -> None:
                 "observed_at": "2025-10-28",
                 "valuation_usd": 500_000_000_000,
                 "uncertainty_log_sigma": 0.2,
+                "valuation_kind": "implied",
                 "source_id": "test",
             }
         ],
@@ -100,6 +102,74 @@ def test_load_jsonl_accepts_valuation_observations(tmp_path: Path) -> None:
 
     assert len(observations) == 1
     assert observations[0].type == "valuation_observation"
+
+
+def test_primary_valuation_requires_cash_raised(tmp_path: Path) -> None:
+    """`valuation_kind=primary` without `cash_raised_usd` is rejected at parse time."""
+    path = _write_jsonl(
+        tmp_path / "observations.jsonl",
+        [
+            {
+                "type": "valuation_observation",
+                "issuer_id": "private_company_a",
+                "observed_at": "2025-03-15",
+                "valuation_usd": 300_000_000_000.0,
+                "uncertainty_log_sigma": 0.05,
+                "valuation_kind": "primary",
+                "source_id": "test",
+            }
+        ],
+    )
+    with pytest.raises(ValueError, match="primary valuation_observation requires cash_raised_usd"):
+        load_price_observations_jsonl(path)
+
+
+def test_non_primary_valuation_rejects_cash_raised(tmp_path: Path) -> None:
+    """`cash_raised_usd` set on a non-primary observation is rejected (catches mis-tags)."""
+    path = _write_jsonl(
+        tmp_path / "observations.jsonl",
+        [
+            {
+                "type": "valuation_observation",
+                "issuer_id": "private_company_a",
+                "observed_at": "2025-10-15",
+                "valuation_usd": 500_000_000_000.0,
+                "uncertainty_log_sigma": 0.10,
+                "valuation_kind": "secondary",
+                "cash_raised_usd": 6_600_000_000.0,
+                "source_id": "test",
+            }
+        ],
+    )
+    with pytest.raises(ValueError, match="cash_raised_usd is only valid when valuation_kind='primary'"):
+        load_price_observations_jsonl(path)
+
+
+def test_primary_valuation_accepts_cash_raised(tmp_path: Path) -> None:
+    """Happy path: primary kind + cash_raised_usd + optional shares_outstanding_post_round."""
+    path = _write_jsonl(
+        tmp_path / "observations.jsonl",
+        [
+            {
+                "type": "valuation_observation",
+                "issuer_id": "private_company_a",
+                "observed_at": "2025-03-15",
+                "valuation_usd": 300_000_000_000.0,
+                "uncertainty_log_sigma": 0.05,
+                "valuation_kind": "primary",
+                "cash_raised_usd": 40_000_000_000.0,
+                "shares_outstanding_post_round": 1_000_000_000.0,
+                "source_id": "test",
+            }
+        ],
+    )
+    observations = load_price_observations_jsonl(path)
+    assert len(observations) == 1
+    valuation = observations[0]
+    assert valuation.type == "valuation_observation"
+    assert valuation.valuation_kind == "primary"
+    assert valuation.cash_raised_usd == 40_000_000_000.0
+    assert valuation.shares_outstanding_post_round == 1_000_000_000.0
 
 
 def test_load_jsonl_rejects_unknown_observation_type(tmp_path: Path) -> None:
@@ -265,6 +335,7 @@ def test_sparse_tender_appreciation_is_shrunk_toward_stock_like_forward_prior(tm
                     "observed_at": "2025-07-01",
                     "valuation_usd": 1_000_000_000.0,
                     "uncertainty_log_sigma": 0.10,
+                    "valuation_kind": "implied",
                     "source_id": "test",
                 },
             ],
@@ -310,6 +381,7 @@ def test_valuation_observations_create_soft_macro_scale_prior(tmp_path: Path) ->
                     "observed_at": "2025-01-15",
                     "valuation_usd": 1_000_000_000.0,
                     "uncertainty_log_sigma": 0.10,
+                    "valuation_kind": "implied",
                     "source_id": "test",
                 },
                 {

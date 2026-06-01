@@ -15,12 +15,16 @@ from augur.model.private_equity_bundle import (
     PrivateEquityIntChannel,
 )
 from augur.model.private_equity_risk import (
+    EmployeeMintConfig,
+    PrimaryRoundConfig,
     PrivateEquityRiskIssuerConfig,
     PrivateEquityRiskProviderConfig,
     PublicMarketCdfAnchor,
     ValuationDriftScaleReversion,
     _dilution_factor,
+    _public_market_marginal_cdf,
     _public_market_open_hazard_by_month,
+    _sample_company_valuation_and_shares_with_rounds_vectorized,
     _sample_company_valuation_vectorized,
     _sample_issuer,
     _scale_reverting_drift,
@@ -943,6 +947,346 @@ def test_zero_rate_with_positive_sigma_yields_no_dilution_and_no_spread() -> Non
     latent_mark = _latent_coupled_mark(issuer, rollout_count=rollout_count, horizon_months=horizon)
     expected = 100.0 * (paths.company_valuation_usd / 1_000_000_000.0)
     np.testing.assert_array_equal(latent_mark, expected)
+
+
+# ---- M2.2-C mint-streams channel ----------------------------------------------------------
+
+
+def _mint_streams_issuer(**updates: object) -> PrivateEquityRiskIssuerConfig:
+    """Issuer with the mint-streams channel ON.
+
+    All adverse hazards left inert (zero) so the only thing moving the mark is the V(t) RW
+    + primary-round events + employee mint. `tender_interval_months_median` is pushed past
+    the horizon so the tender-price noise doesn't perturb the latent mark in early columns.
+    """
+
+    defaults: dict[str, object] = {
+        "current_mark_usd": 100.0,
+        "current_valuation_usd": 1.0e11,
+        "shares_outstanding_initial": 1.0e9,
+        "valuation_monthly_log_return_mu": 0.01,
+        "valuation_monthly_log_return_sigma": 0.05,
+        "valuation_student_t_nu": 5.0,
+        "monthly_log_return_mu": 0.0,
+        "monthly_log_return_sigma": 0.0,
+        "tender_interval_months_median": 600.0,
+        "primary_round_config": PrimaryRoundConfig(
+            monthly_hazard=1.0 / 18.0, cash_over_v_pre_median=0.08, cash_over_v_pre_log_sigma=0.5
+        ),
+        "employee_mint_config": EmployeeMintConfig(annual_mint_rate_mature=0.03),
+    }
+    return _issuer(**{**defaults, **updates})
+
+
+def test_mint_streams_channel_enabled_property() -> None:
+    """Setting both primary_round_config + employee_mint_config flips the channel-on flag."""
+
+    assert _mint_streams_issuer().mint_streams_channel_enabled is True
+    assert _issuer().mint_streams_channel_enabled is False
+
+
+def test_mint_streams_requires_paired_configs() -> None:
+    """primary_round_config without employee_mint_config (or vice versa) is rejected."""
+
+    with pytest.raises(ValidationError, match="primary_round_config and employee_mint_config"):
+        _issuer(
+            current_valuation_usd=1e11,
+            shares_outstanding_initial=1e9,
+            primary_round_config=PrimaryRoundConfig(monthly_hazard=0.05, cash_over_v_pre_median=0.08),
+        )
+
+
+def test_mint_streams_requires_valuation_anchors() -> None:
+    """primary_round_config without current_valuation_usd is rejected (no V anchor)."""
+
+    with pytest.raises(ValidationError, match="current_valuation_usd"):
+        _issuer(
+            primary_round_config=PrimaryRoundConfig(monthly_hazard=0.05, cash_over_v_pre_median=0.08),
+            employee_mint_config=EmployeeMintConfig(),
+        )
+
+
+def test_mint_streams_rejects_legacy_dilution_set() -> None:
+    """Nonzero annual_dilution_rate while mint-streams is on would silently double-count dilution."""
+
+    with pytest.raises(ValidationError, match="annual_dilution_rate"):
+        _issuer(
+            current_valuation_usd=1e11,
+            shares_outstanding_initial=1e9,
+            annual_dilution_rate=0.10,
+            primary_round_config=PrimaryRoundConfig(monthly_hazard=0.05, cash_over_v_pre_median=0.08),
+            employee_mint_config=EmployeeMintConfig(),
+        )
+
+
+def test_mint_streams_anchors_at_t0() -> None:
+    """V[:,0] == V0 and shares[:,0] == shares0 exactly; latent_mark[:,0] == current_mark_usd."""
+
+    issuer = _mint_streams_issuer()
+    sampled = _sample(issuer, horizon_months=6)
+    valuation = _float(sampled, PrivateEquityFloatChannel.COMPANY_VALUATION_USD, horizon=6)
+    mark = _float(sampled, PrivateEquityFloatChannel.MARK_USD_PER_UNIT, horizon=6)
+    np.testing.assert_array_equal(valuation[:, 0], np.full(valuation.shape[0], 1.0e11))
+    assert mark[0, 0] == pytest.approx(100.0)
+    assert np.all(valuation > 0.0)
+
+
+def test_mint_streams_determinism_under_fixed_seeds() -> None:
+    """Two samples with identical rollout_seeds produce identical V + mark arrays."""
+
+    issuer = _mint_streams_issuer()
+    request = ExogenousSamplingRequest(
+        horizon_months=24, rollout_seeds=(11, 22, 33), required_private_equity_issuers=frozenset({IssuerId("acme")})
+    )
+    model = PrivateEquityRiskProviderConfig(issuers={"acme": issuer}).realize_model()
+    a = model.sample(request)
+    b = model.sample(request)
+    for channel in (PrivateEquityFloatChannel.COMPANY_VALUATION_USD, PrivateEquityFloatChannel.MARK_USD_PER_UNIT):
+        np.testing.assert_array_equal(
+            a.private_equity.issuer_float_matrix("acme", str(channel), rollout_count=3, horizon_months=24),
+            b.private_equity.issuer_float_matrix("acme", str(channel), rollout_count=3, horizon_months=24),
+        )
+
+
+def test_mint_streams_shares_non_decreasing() -> None:
+    """Employee mint and primary rounds both ADD shares; the trajectory must be monotone-up."""
+
+    issuer = _mint_streams_issuer()
+    valuation_seeds = derive_stream_rollout_seeds(tuple(range(50)), stream_id="acme:pe_risk_valuation")
+    round_seeds = derive_stream_rollout_seeds(tuple(range(50)), stream_id="acme:pe_risk_rounds")
+    mint_seeds = derive_stream_rollout_seeds(tuple(range(50)), stream_id="acme:pe_risk_mint")
+    _, shares = _sample_company_valuation_and_shares_with_rounds_vectorized(
+        issuer, valuation_seeds=valuation_seeds, round_seeds=round_seeds, mint_seeds=mint_seeds, horizon_months=120
+    )
+    deltas = np.diff(shares, axis=1)
+    assert np.all(deltas >= -1e-9), "shares trajectory must be non-decreasing"
+
+
+def test_mint_streams_round_events_fire_at_expected_rate() -> None:
+    """Realized round count per rollout over the horizon ≈ hazard × horizon."""
+
+    issuer = _mint_streams_issuer(
+        primary_round_config=PrimaryRoundConfig(monthly_hazard=1.0 / 12.0, cash_over_v_pre_median=0.08)
+    )
+    valuation_seeds = derive_stream_rollout_seeds(tuple(range(500)), stream_id="acme:pe_risk_valuation")
+    round_seeds = derive_stream_rollout_seeds(tuple(range(500)), stream_id="acme:pe_risk_rounds")
+    mint_seeds = derive_stream_rollout_seeds(tuple(range(500)), stream_id="acme:pe_risk_mint")
+    _, shares = _sample_company_valuation_and_shares_with_rounds_vectorized(
+        issuer, valuation_seeds=valuation_seeds, round_seeds=round_seeds, mint_seeds=mint_seeds, horizon_months=120
+    )
+    # Round events are the discrete jumps in `shares` beyond what continuous employee mint
+    # contributes per month. log_step_per_month ≈ log(1 + m_mature)/12 for the no-round
+    # baseline; jumps exceed that by orders of magnitude (round dilution is ~5-15%).
+    log_shares = np.log(shares)
+    monthly_delta = np.diff(log_shares, axis=1)
+    # Anything above 2× the smooth mint per-month log-delta counts as a round jump.
+    mint_per_month_log = math.log1p(0.03) / 12.0
+    round_mask = monthly_delta > 2.0 * mint_per_month_log
+    rounds_per_rollout = round_mask.sum(axis=1)
+    expected_rounds = (1.0 / 12.0) * 120  # = 10
+    # Mean realized rounds should be within ~10% of the Poisson expectation at this sample size.
+    assert abs(rounds_per_rollout.mean() - expected_rounds) < 1.5
+
+
+def test_mint_streams_invariant_mark_equals_v_over_shares_at_t0() -> None:
+    """latent_mark[:,0] = current_mark * (V0/V0) / (shares0/shares0) = current_mark exactly.
+
+    A sample at horizon 0 returns just column 0; verify the invariant directly.
+    """
+
+    issuer = _mint_streams_issuer()
+    sampled = _sample(issuer, horizon_months=0)
+    mark = _float(sampled, PrivateEquityFloatChannel.MARK_USD_PER_UNIT, horizon=0)
+    assert mark.shape == (1, 1)
+    assert mark[0, 0] == pytest.approx(100.0)
+
+
+def test_mint_streams_zero_hazard_is_continuous_mint_only() -> None:
+    """With monthly_hazard ~ 0, the shares path is essentially the smooth employee mint."""
+
+    issuer = _mint_streams_issuer(
+        primary_round_config=PrimaryRoundConfig(monthly_hazard=1e-9, cash_over_v_pre_median=0.08),
+        employee_mint_config=EmployeeMintConfig(annual_mint_rate_mature=0.03),
+    )
+    valuation_seeds = derive_stream_rollout_seeds((1, 2, 3), stream_id="acme:pe_risk_valuation")
+    round_seeds = derive_stream_rollout_seeds((1, 2, 3), stream_id="acme:pe_risk_rounds")
+    mint_seeds = derive_stream_rollout_seeds((1, 2, 3), stream_id="acme:pe_risk_mint")
+    _, shares = _sample_company_valuation_and_shares_with_rounds_vectorized(
+        issuer, valuation_seeds=valuation_seeds, round_seeds=round_seeds, mint_seeds=mint_seeds, horizon_months=120
+    )
+    # At month 120, shares should equal shares0 * (1.03)^10 (10 years of 3%/yr smooth mint).
+    expected_terminal = 1.0e9 * (1.03**10)
+    np.testing.assert_allclose(shares[:, -1], expected_terminal, rtol=1e-6)
+
+
+def test_public_market_marginal_cdf_with_anchors_hits_anchor_values() -> None:
+    """The marginal CDF reproduces anchor (month, P) exactly between flat-tail extension."""
+
+    issuer = _mint_streams_issuer(
+        public_market_cdf_anchors=(
+            PublicMarketCdfAnchor(month=12, cumulative_probability=0.30),
+            PublicMarketCdfAnchor(month=36, cumulative_probability=0.70),
+        ),
+        annual_public_market_probability=0.05,
+    )
+    cdf = _public_market_marginal_cdf(issuer, horizon_months=60)
+    assert cdf[0] == 0.0
+    assert cdf[12] == pytest.approx(0.30, abs=1e-9)
+    assert cdf[36] == pytest.approx(0.70, abs=1e-9)
+    # Past the last anchor, flat-tail extension only INCREASES the CDF (rounds-don't-uncomplete).
+    assert cdf[60] > cdf[36]
+
+
+def test_public_market_marginal_cdf_without_anchors_is_flat_hazard() -> None:
+    """With no anchors, CDF(m) = 1 - (1 - h_monthly)^m where h_monthly derives from annual."""
+
+    issuer = _mint_streams_issuer(annual_public_market_probability=0.10)
+    cdf = _public_market_marginal_cdf(issuer, horizon_months=12)
+    expected_cdf_12 = 1.0 - (1.0 - 0.10)
+    assert cdf[12] == pytest.approx(expected_cdf_12, rel=1e-9)
+
+
+def test_legacy_bayesian_central_trajectory_collapses() -> None:
+    """Documents the defect that motivated the mint-streams model: with a flat 28%/yr smooth
+    dilution + scale-reverting V drift, the central 10y per-share mark collapses despite V
+    growing — the asymmetric-regularization artifact the user observed in the calibration tab.
+
+    If this test starts failing, either the legacy params have been re-fitted (in which case
+    update this expectation) or the boom-attribution loop has been broken structurally (in
+    which case this test can be deleted alongside the legacy preset).
+    """
+
+    issuer = _issuer(
+        current_mark_usd=687.69,
+        current_valuation_usd=852e9,
+        shares_outstanding_initial=1.034e9,
+        monthly_log_return_mu=0.003,
+        monthly_log_return_sigma=0.115,
+        valuation_monthly_log_return_mu=0.008,
+        valuation_monthly_log_return_sigma=0.124285,
+        valuation_drift_scale_reversion=ValuationDriftScaleReversion(
+            monthly_log_return_mu_young=0.039915, log_value_onset_usd=math.log(5e10), log_value_scale=2.0
+        ),
+        annual_dilution_rate=0.281256,
+        annual_dilution_rate_log_sigma=0.04368,
+        public_market_cdf_anchors=(
+            PublicMarketCdfAnchor(month=7, cumulative_probability=0.75),
+            PublicMarketCdfAnchor(month=19, cumulative_probability=0.89),
+            PublicMarketCdfAnchor(month=31, cumulative_probability=0.93),
+        ),
+        annual_public_market_probability=0.07,
+        public_market_lockup_months=6,
+    )
+    model = PrivateEquityRiskProviderConfig(issuers={"acme": issuer}).realize_model()
+    rollout_count = 500
+    horizon = 120
+    sampled = model.sample(
+        ExogenousSamplingRequest(
+            horizon_months=horizon,
+            rollout_seeds=tuple(range(1, rollout_count + 1)),
+            required_private_equity_issuers=frozenset({IssuerId("acme")}),
+        )
+    )
+    mark = sampled.private_equity.issuer_float_matrix(
+        "acme", str(PrivateEquityFloatChannel.MARK_USD_PER_UNIT), rollout_count=rollout_count, horizon_months=horizon
+    )
+    val = sampled.private_equity.issuer_float_matrix(
+        "acme",
+        str(PrivateEquityFloatChannel.COMPANY_VALUATION_USD),
+        rollout_count=rollout_count,
+        horizon_months=horizon,
+    )
+    mark_p50_120 = float(np.percentile(mark[:, 120], 50))
+    val_p50_120 = float(np.percentile(val[:, 120], 50))
+    print(
+        f"\nlegacy-bayesian 10y central trajectory: "
+        f"mark p5/p50/p95 = ${np.percentile(mark[:, 120], 5):.0f} / ${mark_p50_120:.0f} / ${np.percentile(mark[:, 120], 95):.0f}; "
+        f"V p50 = ${val_p50_120 / 1e9:.0f}B"
+    )
+    # The defect reproduces: central mark collapses despite V growing.
+    assert mark_p50_120 < 600.0, f"legacy preset's mark collapse did not reproduce: ${mark_p50_120:.0f}"
+    assert val_p50_120 > 852e9
+
+
+def test_mint_streams_central_trajectory_does_not_collapse() -> None:
+    """Mirrors gaffer-private's `bayesian_mint_streams` preset (NUTS posterior parameters).
+
+    Verifies that with mint-streams ON, the central per-share mark trajectory at 10 years is in
+    a sensible range (not the $280 boom-collapse the legacy `bayesian` preset gives). This is the
+    behavioral fix for the asymmetric-regularization defect documented in
+    `augur/plans/mint_streams_model.md` — primary-round dilution is now decoupled from forward
+    V-drift, so the per-share mark stays roughly flat-to-up while V grows.
+
+    Parameters here mirror the bayesian_mint_streams preset (NUTS posterior 2026-06).
+    Loose acceptance bands:
+    - Mark p50 at month 120 is between $400 and $5000 (vs $263 collapse on the legacy preset).
+    - V p50 at month 120 is above V0 (the model grows the company in central case).
+    """
+
+    issuer = _issuer(
+        current_mark_usd=687.69,
+        current_valuation_usd=852e9,
+        shares_outstanding_initial=1.034e9,
+        monthly_log_return_mu=0.003,
+        monthly_log_return_sigma=0.115,
+        valuation_monthly_log_return_mu=0.008,
+        valuation_monthly_log_return_sigma=0.128283,  # NUTS posterior mean
+        valuation_drift_scale_reversion=ValuationDriftScaleReversion(
+            monthly_log_return_mu_young=0.055873, log_value_onset_usd=23.718996, log_value_scale=2.0
+        ),
+        primary_round_config=PrimaryRoundConfig(
+            monthly_hazard=0.0670,  # Gamma-Poisson posterior mean (alpha=7.0, beta=104.4)
+            cash_over_v_pre_median=0.1393,
+            cash_over_v_pre_log_sigma=0.7765,
+            step_up_median=1.0,
+            step_up_log_sigma=0.0,
+            ipo_anticipation_decay=True,
+        ),
+        employee_mint_config=EmployeeMintConfig(annual_mint_rate_mature=0.0426, annual_mint_rate_log_sigma=0.3748),
+        public_market_cdf_anchors=(
+            PublicMarketCdfAnchor(month=7, cumulative_probability=0.75),
+            PublicMarketCdfAnchor(month=19, cumulative_probability=0.89),
+            PublicMarketCdfAnchor(month=31, cumulative_probability=0.93),
+        ),
+        annual_public_market_probability=0.07,
+        public_market_lockup_months=6,
+    )
+    model = PrivateEquityRiskProviderConfig(issuers={"acme": issuer}).realize_model()
+    rollout_count = 500
+    horizon = 120
+    sampled = model.sample(
+        ExogenousSamplingRequest(
+            horizon_months=horizon,
+            rollout_seeds=tuple(range(1, rollout_count + 1)),
+            required_private_equity_issuers=frozenset({IssuerId("acme")}),
+        )
+    )
+    mark = sampled.private_equity.issuer_float_matrix(
+        "acme", str(PrivateEquityFloatChannel.MARK_USD_PER_UNIT), rollout_count=rollout_count, horizon_months=horizon
+    )
+    val = sampled.private_equity.issuer_float_matrix(
+        "acme",
+        str(PrivateEquityFloatChannel.COMPANY_VALUATION_USD),
+        rollout_count=rollout_count,
+        horizon_months=horizon,
+    )
+    mark_p50_120 = float(np.percentile(mark[:, 120], 50))
+    mark_p5_120 = float(np.percentile(mark[:, 120], 5))
+    mark_p95_120 = float(np.percentile(mark[:, 120], 95))
+    val_p50_120 = float(np.percentile(val[:, 120], 50))
+    # Echo to stdout so the test log records the actual realized central trajectory; useful
+    # for iterating on the hand-tuned bayesian_mint_streams parameters until a real fitter lands.
+    print(
+        f"\nmint-streams 10y central trajectory: "
+        f"mark p5/p50/p95 = ${mark_p5_120:.0f} / ${mark_p50_120:.0f} / ${mark_p95_120:.0f}; "
+        f"V p50 = ${val_p50_120 / 1e9:.0f}B"
+    )
+
+    # The structural fix: 10y central mark is not driven into the ground by forced dilution +
+    # mature-only drift. Generous range; the point is "not $280".
+    assert 400.0 < mark_p50_120 < 5000.0, f"central mark at 10y outside expected range: ${mark_p50_120:.0f}"
+    # V should grow in the central case (scale-reverting drift is positive at all sizes).
+    assert val_p50_120 > 852e9, f"V central case did not grow: ${val_p50_120 / 1e9:.0f}B vs V0 = $852B"
 
 
 if __name__ == "__main__":
