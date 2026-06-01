@@ -17,6 +17,7 @@ import { TerminalMetricTable } from "./metric_table.jsx";
 import { SelectedRolloutEventsPanel, EventKindLegend } from "./events_panel.jsx";
 import { ProductScenarioForm } from "./forms.jsx";
 import { CalibrationWorkspace } from "./calibration.jsx";
+import { BudgetWorkspace } from "./budget.jsx";
 import { AugurHeader, SharedControls } from "./header.jsx";
 import { RolloutResultsSkeleton, StatCardsSkeleton, ProductProjectionLoading } from "./skeleton.jsx";
 import { CurrencyDisplayProvider, useCurrencyDisplay, useVisibleEventKinds, useEventSelection } from "./hooks.js";
@@ -52,6 +53,7 @@ import {
 const TABS = [
   { value: "product", label: "Product" },
   { value: "calibration", label: "Calibration" },
+  { value: "budget", label: "Budget" },
 ];
 const TAB_VALUES = new Set(TABS.map((tab) => tab.value));
 const DEFAULT_TAB = "product";
@@ -470,6 +472,8 @@ function ProductProjectionWorkspace({
               onChangeMetricScale={onChangeMetricScale}
               currencyDisplay={currencyDisplay}
               onChangeCurrencyDisplay={onChangeCurrencyDisplay}
+              settingsOpen={settingsOpen}
+              onChangeSettingsOpen={onChangeSettingsOpen}
             />
             <ProductScenarioForm
               input={input}
@@ -533,6 +537,21 @@ function ProductProjectionWorkspace({
   );
 }
 
+function BudgetAppSurface({ deployment, tab, onSelectTab }) {
+  return (
+    <div
+      data-augur-surface="budget"
+      className="min-h-screen bg-slate-100 text-slate-800 dark:bg-slate-950 dark:text-slate-100"
+    >
+      <AugurHeader
+        nav={<AugurTabBar tab={tab} onSelectTab={onSelectTab} />}
+        rightSlot={<DeploymentCommitSummary deployment={deployment} />}
+      />
+      <BudgetWorkspace />
+    </div>
+  );
+}
+
 function CalibrationAppSurface({
   bootstrap,
   deployment,
@@ -585,6 +604,8 @@ function CalibrationAppSurface({
               onChangeMetricScale={onChangeMetricScale}
               currencyDisplay={currencyDisplay}
               onChangeCurrencyDisplay={onChangeCurrencyDisplay}
+              settingsOpen={settingsOpen}
+              onChangeSettingsOpen={onChangeSettingsOpen}
             />
           }
         />
@@ -606,6 +627,7 @@ function LoadedAppShell({ bootstrap, deployment }) {
   const [horizonMonths, setHorizonMonths] = useState(() => horizonMonthsFromSearch(window.location.search, bootstrap));
   const [metricScale, setMetricScale] = useState(() => metricScaleFromSearch(window.location.search));
   const [currencyDisplay, setCurrencyDisplay] = useState(() => currencyDisplayFromSearch(window.location.search));
+  const [settingsOpen, setSettingsOpen] = useState(true);
 
   const onSelectTab = (next) => {
     setTab(next);
@@ -667,13 +689,17 @@ function LoadedAppShell({ bootstrap, deployment }) {
     onChangeMetricScale,
     currencyDisplay,
     onChangeCurrencyDisplay,
+    settingsOpen,
+    onChangeSettingsOpen: setSettingsOpen,
   };
-  const surface =
-    tab === "calibration" ? (
-      <CalibrationAppSurface {...sharedProps} />
-    ) : (
-      <ProductProjectionWorkspace {...sharedProps} />
-    );
+  let surface;
+  if (tab === "calibration") {
+    surface = <CalibrationAppSurface {...sharedProps} />;
+  } else if (tab === "budget") {
+    surface = <BudgetAppSurface {...sharedProps} />;
+  } else {
+    surface = <ProductProjectionWorkspace {...sharedProps} />;
+  }
   return (
     <CurrencyDisplayProvider value={{ display: currencyDisplay, setDisplay: onChangeCurrencyDisplay }}>
       {surface}

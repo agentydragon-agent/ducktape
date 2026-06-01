@@ -40,6 +40,8 @@ export function SharedControls({
   onChangeMetricScale,
   currencyDisplay,
   onChangeCurrencyDisplay,
+  settingsOpen,
+  onChangeSettingsOpen,
 }) {
   const showExogenousControl = onChangeExogenousModel && exogenousPresets.length > 1;
   const rows = [
@@ -136,7 +138,11 @@ export function SharedControls({
   ].filter(Boolean);
 
   return (
-    <details open className="augur-card [&_summary::-webkit-details-marker]:hidden">
+    <details
+      open={settingsOpen}
+      onToggle={(e) => onChangeSettingsOpen(e.target.open)}
+      className="augur-card [&_summary::-webkit-details-marker]:hidden"
+    >
       <summary className="augur-eyebrow flex cursor-pointer list-none items-baseline justify-between gap-2 px-4 py-3">
         <span className="inline-flex items-center gap-1">
           <span aria-hidden="true" className="transition-transform [details[open]_&]:rotate-90">
