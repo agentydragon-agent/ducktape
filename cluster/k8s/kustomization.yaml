@@ -180,6 +180,7 @@ resources:
   - forgejo/app/flux-kustomization.yaml
   - forgejo/servicemonitor/flux-kustomization.yaml
   - forgejo/secrets/flux-kustomization.yaml
+  - forgejo/props/flux-kustomization.yaml
 
   # --- matrix ---
   - matrix/namespace/flux-kustomization.yaml
