@@ -133,6 +133,10 @@ DEFAULT_RULES: tuple[Rule, ...] = (
     PfcRule(primary="ENTERTAINMENT", bucket_id="entertainment"),
     PfcRule(primary="BANK_FEES", bucket_id="bank_fees"),
     PfcRule(primary="PERSONAL_CARE", bucket_id="personal_care"),
+    # Donations land under GOVERNMENT_AND_NON_PROFIT_DONATIONS in Plaid's taxonomy; route them
+    # to `donations` before the catch-all GOVERNMENT_AND_NON_PROFIT rule below (which is for
+    # actual government payments like USCIS / IRS via the merchant rules above).
+    PfcRule(primary="GOVERNMENT_AND_NON_PROFIT", detailed="GOVERNMENT_AND_NON_PROFIT_DONATIONS", bucket_id="donations"),
     PfcRule(primary="GOVERNMENT_AND_NON_PROFIT", bucket_id="government"),
     PfcRule(primary="TRAVEL", bucket_id="travel"),
     # Transfers / loan payments are internal-account movements, not spending. They get their
@@ -141,6 +145,10 @@ DEFAULT_RULES: tuple[Rule, ...] = (
     PfcRule(primary="TRANSFER_IN", bucket_id="transfers"),
     PfcRule(primary="LOAN_PAYMENTS", bucket_id="transfers"),
     PfcRule(primary="LOAN_DISBURSEMENTS", bucket_id="transfers"),
+    # Tax refunds aren't "income" -- they're a return of taxes the user already paid, and
+    # augur's tax model accounts for the actual burden separately. Route to `taxes` (transfer
+    # kind) so the refund doesn't double-count against income / inflate spendable monthly avg.
+    PfcRule(primary="INCOME", detailed="INCOME_TAX_REFUND", bucket_id="taxes"),
     # True income (paychecks) goes last so that more-specific rules (HCCLAIMPMT, brokerage
     # transfers that Plaid mis-tags as INCOME_CONTRACTOR) get the chance to override it.
     PfcRule(primary="INCOME", bucket_id="income"),
