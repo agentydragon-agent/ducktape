@@ -551,6 +551,30 @@ restore is only run once per rename.
   no dots (e.g. `cut -d. -f1`). Quick scan before starting:
   `grep -rE 'cut -d\.' cluster/scripts/`.
 
+## Follow-up: rekey Terraform local-map keys
+
+Separate from the hostname rename, the Terraform local-map keys
+(`ks_game_worker1`, `kimsufi_worker0`, etc.) still leak role/index. After
+all five hostnames are renamed, do a closeout pass that renames the
+local-map keys to match the new hostnames (e.g.
+`ns104963_ip_147_135_104_us`).
+
+Changing the `for_each` key naively makes Terraform plan a destroy+recreate
+of every resource keyed on it — including `null_resource.install_talos_kimsufi`,
+which triggers a fresh `dd` install via OVH rescue boot. Avoid that by
+using `tofu state mv` for each resource keyed on the old name:
+
+```
+tofu state mv 'data.ovh_dedicated_server.kimsufi["ks_game_worker1"]' \
+              'data.ovh_dedicated_server.kimsufi["ns104963_ip_147_135_104_us"]'
+# Repeat for ovh_dedicated_server.kimsufi, ovh_dedicated_server_update.kimsufi_*,
+# ovh_dedicated_server_reboot_task.kimsufi_*, null_resource.install_talos_kimsufi,
+# talos_machine_configuration_apply.kimsufi. ~8 state-mv operations per node.
+```
+
+After the moves, `tofu plan` should be a no-op. Run as its own commit per
+node so any drift surfaces immediately.
+
 ## Closeout
 
 Once all five nodes are renamed and stable for 24 hours:
