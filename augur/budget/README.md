@@ -3,20 +3,20 @@
 A new augur tab (`Budget`) and the supporting API for "what does my monthly
 spending actually look like, and how much can I afford to change it?"
 Pulls live data from the Plaid mirror DB, classifies transactions into named
-buckets, nets reimbursable expenses (e.g. medical bills) against their paired
-reimbursement deposits, and surfaces lumpy one-offs separately.
+buckets, groups related buckets into families (e.g. medical: charges +
+insurance reimbursements) that show inflows and outflows side by side instead
+of force-netting, and surfaces lumpy one-offs separately.
 
 ## Architecture
 
-| Layer              | What it does                                                                             |
-| ------------------ | ---------------------------------------------------------------------------------------- |
-| `db.py`            | Async loader over `plaid_utils.schema` — pulls posted (non-pending, non-removed) tx      |
-| `schema.py`        | `BudgetConfig` Pydantic: bucket taxonomy + categorization rules (loaded from augur YAML) |
-| `default_rules.py` | Generic public-chain rules (DoorDash, Anthropic, Lyft, …). User rules pre-empt these.    |
-| `categorize.py`    | Apply rules; unmatched → `default_bucket_id`                                             |
-| `aggregate.py`     | Monthly per-bucket totals, rolling-window reimbursement netting, lumpy detection         |
-| `service.py`       | Orchestrates: load → classify → aggregate → wire types                                   |
-| `wire.py`          | HTTP wire schemas (drive frontend Zod codegen via `export_schema`)                       |
+| Layer              | What it does                                                                                                                          |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `schema.py`        | `BudgetConfig` Pydantic: bucket taxonomy (kinds: expense / inflow / transfer / income) + categorization rules, loaded from augur YAML |
+| `default_rules.py` | Generic public-chain rules (DoorDash, Anthropic, Lyft, …). User rules pre-empt these.                                                 |
+| `categorize.py`    | Apply rules; unmatched → `default_bucket_id`; assert each `transfer` bucket stays single-direction                                    |
+| `aggregate.py`     | Monthly per-bucket totals, day-normalized monthly averages, lumpy detection                                                           |
+| `service.py`       | Orchestrates: load (via `plaid_utils.read_model`) → classify → aggregate → wire types                                                 |
+| `wire.py`          | HTTP wire schemas (drive frontend Zod codegen via `export_schema`)                                                                    |
 
 ## What lives in ducktape vs gaffer-private
 
@@ -51,7 +51,6 @@ budget:
     - { id: restaurants_in_person, label: Restaurants (in person), kind: expense }
     - { id: ai_subscription, label: AI subscriptions, kind: expense }
     - { id: transportation, label: Transportation, kind: expense }
-    - { id: utilities, label: Utilities, kind: expense }
     - { id: insurance, label: Health insurance, kind: expense }
     - { id: taxes, label: Taxes, kind: expense }
     - { id: travel, label: Travel, kind: expense }
@@ -61,11 +60,12 @@ budget:
     - { id: personal_care, label: Personal care, kind: expense }
     - { id: bank_fees, label: Bank fees, kind: expense }
     - { id: government, label: Government, kind: expense }
-    - { id: medical_reimbursement, label: Anthem reimbursements, kind: reimbursement }
-    # `kind: reimbursable` buckets net against `reimbursed_by` on a rolling window.
-    - { id: esketamine, label: Esketamine (net of Anthem), kind: reimbursable, reimbursed_by: medical_reimbursement }
-    - { id: therapy, label: Therapy (net of Anthem), kind: reimbursable, reimbursed_by: medical_reimbursement }
-    - { id: medical_other, label: Other medical, kind: expense }
+    # Related buckets share a `family`; the UI renders them in one panel showing inflow and
+    # outflow side by side (no auto-netting -- reimbursement timing is too lumpy to net safely).
+    - { id: medical_reimbursement, label: Anthem reimbursements, kind: inflow, family: medical }
+    - { id: esketamine, label: Esketamine, kind: expense, family: medical }
+    - { id: therapy, label: Therapy, kind: expense, family: medical }
+    - { id: medical_other, label: Other medical, kind: expense, family: medical }
     # Transfers are split by direction so each bucket stays single-sided (the categorizer
     # asserts a transfer bucket never mixes inflow and outflow).
     - { id: transfers_out, label: Transfers out (internal), kind: transfer }
@@ -85,7 +85,6 @@ budget:
     # - { kind: merchant_substring, pattern: <health insurance broker>, bucket_id: insurance }
 
   include_default_rules: true
-  reimbursement_window_months: 3
   lumpy_threshold_usd: 500
 ```
 
