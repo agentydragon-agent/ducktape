@@ -9,12 +9,13 @@ import pytest_asyncio
 import pytest_bazel
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from testcontainers.postgres import PostgresContainer
 
 from plaid_utils.link_profiles import LinkProfile
 from plaid_utils.link_store import PlaidLinkStorage
 from plaid_utils.read_model import read_current_cash_balances, read_current_holdings
+from plaid_utils.schema import async_session_factory
 from third_party.containers.rlocations import POSTGRES_18, RYUK
 from util.oci import load_oci_image
 from util.testing.postgres import force_drop_database
@@ -65,6 +66,15 @@ async def storage(db_url: str) -> AsyncGenerator[PlaidLinkStorage]:
         await store.close()
 
 
+@pytest_asyncio.fixture
+async def session_factory(db_url: str) -> AsyncGenerator[async_sessionmaker[AsyncSession]]:
+    engine, factory = async_session_factory(db_url)
+    try:
+        yield factory
+    finally:
+        await engine.dispose()
+
+
 async def _add_link(storage: PlaidLinkStorage, *, item_id: str = "item-investments") -> None:
     await storage.upsert_link(
         item_id=item_id,
@@ -78,7 +88,7 @@ async def _add_link(storage: PlaidLinkStorage, *, item_id: str = "item-investmen
 
 
 async def test_read_current_cash_balances_returns_latest_selected_usd_snapshot(
-    storage: PlaidLinkStorage, db_url: str
+    storage: PlaidLinkStorage, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
     await _add_link(storage, item_id="item-cash")
     await storage.apply_accounts(
@@ -112,7 +122,9 @@ async def test_read_current_cash_balances_returns_latest_selected_usd_snapshot(
         captured_at=datetime(2026, 6, 1, 12, 0, tzinfo=UTC),
     )
 
-    balances = await read_current_cash_balances(db_url=db_url, account_ids=("checking", "cad", "missing"))
+    balances = await read_current_cash_balances(
+        session_factory=session_factory, account_ids=("checking", "cad", "missing")
+    )
 
     assert [balance.account_id for balance in balances] == ["checking"]
     assert balances[0].current == 160.0
@@ -121,7 +133,7 @@ async def test_read_current_cash_balances_returns_latest_selected_usd_snapshot(
 
 
 async def test_read_current_holdings_returns_latest_selected_usd_holdings(
-    storage: PlaidLinkStorage, db_url: str
+    storage: PlaidLinkStorage, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
     await _add_link(storage, item_id="item-investments")
     await storage.apply_accounts(
@@ -182,7 +194,7 @@ async def test_read_current_holdings_returns_latest_selected_usd_holdings(
         captured_at=datetime(2026, 6, 1, 12, 0, tzinfo=UTC),
     )
 
-    holdings = await read_current_holdings(db_url=db_url, account_ids=("brokerage", "missing"))
+    holdings = await read_current_holdings(session_factory=session_factory, account_ids=("brokerage", "missing"))
 
     assert [holding.security_id for holding in holdings] == ["sec-voo"]
     assert holdings[0].ticker_symbol == "VOO"

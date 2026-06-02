@@ -37,12 +37,8 @@ background_commands:
     command: python3 "$CLAUDE_PROJECT_DIR/devinfra/k8s/kubeconfig.py" --write ~/.kube/config
     timeout: 30
     after_env: true
-  - name: bazelisk warmup (query //...)
-    command: |
-      bazelisk query //... >/dev/null &
-      bazelisk_pid=$!
-      echo "Bazel warmup running (PID ${bazelisk_pid}). Output base lock held until finished."
-      echo "To cancel: kill -TERM ${bazelisk_pid}"
-      wait "${bazelisk_pid}"
-    timeout: 300
-    after_env: true
+  # No bazelisk warmup in the e2e fixture: with `startup --noblock_for_lock`
+  # in the session bazelrc, a concurrent warmup would make the test's own
+  # `bazelisk build //:hello` fail fast on output-base lock contention. The
+  # real CLI/web profiles still run the warmup -- the fail-fast behavior is
+  # by design for agents.

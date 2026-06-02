@@ -236,7 +236,13 @@ fn write_session_bazelrc(
     // it look like new commands are running when they're actually waiting on a stalled
     // predecessor. With this flag the second command exits with "Another command (X)
     // is running" so the agent sees a real error and can take action.
-    lines.push("common --block_for_lock=false".into());
+    // `--block_for_lock` is a boolean startup option (client-side, controls whether the
+    // second bazelisk waits for the workspace lock to drain). It does not accept a value
+    // -- the off form is `--noblock_for_lock`; `--block_for_lock=false` is rejected with
+    // "option '--block_for_lock' does not take a value". Putting it in `common` instead
+    // of `startup` would make Bazel try to apply it per-command and reject it as
+    // unrecognized.
+    lines.push("startup --noblock_for_lock".into());
 
     // JVM heap sizing: full-monorepo bazel query loads 6000+ packages into
     // Skyframe analysis cache. Firecracker containers have 16Gi RAM; 8Gi heap
@@ -997,7 +1003,7 @@ mod tests {
             "must pin output_base to a session-local path: {content}"
         );
         assert!(
-            content.contains("common --block_for_lock=false"),
+            content.contains("startup --noblock_for_lock"),
             "must fail-fast on lock contention instead of queueing: {content}"
         );
     }
