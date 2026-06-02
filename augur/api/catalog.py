@@ -129,10 +129,7 @@ def build_settings(config: Config) -> SettingsResponse:
     )
 
 
-def build_calibration_info(config: Config) -> CalibrationInfo | None:
-    """The deployment's calibration catalog info (`GET /api/calibration`), or None when no
-    `calibration_catalog` is configured."""
+def build_calibration_info(config: Config) -> CalibrationInfo:
+    """The deployment's calibration catalog info (`GET /api/calibration`)."""
     catalog = config.calibration_catalog
-    if catalog is None:
-        return None
     return CalibrationInfo(label=catalog.label or catalog.issuer, issuer=catalog.issuer)

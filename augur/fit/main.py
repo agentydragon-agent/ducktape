@@ -3,7 +3,7 @@
 Reads the public source CSVs (paths are constants in `evidence_data`), fits a
 chosen `Fittable` model, and writes two files: a `ProviderConfig` YAML
 (the discriminated deployment config that the augur server reads at startup as
-part of `Config.exogenous_provider`) and a per-model trained-state blob (e.g. an
+part of `Config.models`) and a per-model trained-state blob (e.g. an
 `.npz` archive). The manifest YAML's `trained_blob` is an absolute path so
 the deployment authoring it knows exactly where the blob will live at
 runtime.

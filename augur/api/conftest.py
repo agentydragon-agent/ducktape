@@ -8,7 +8,14 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from augur.api.config import AgentDefinition, Config, LocationConfig, PropertyAssetConfig, PropertySourceConfig
+from augur.api.config import (
+    AgentDefinition,
+    CalibrationCatalogConfig,
+    Config,
+    LocationConfig,
+    PropertyAssetConfig,
+    PropertySourceConfig,
+)
 from augur.api.finance import FinanceSnapshot
 from augur.api.local_regulation import LocalRegulation, TaxRegime
 from augur.api.portfolio_source_config import (
@@ -102,16 +109,18 @@ def fixture_locations(
 
 
 @pytest.fixture
-def minimal_config() -> MinimalConfig:
+def minimal_config(tmp_path: Path) -> MinimalConfig:
     """Factory for a minimal valid single-`owner` Config for schema-shape tests. Pass any field as
-    a kwarg to override its default (`property_source`/`portfolio_sources`/`models` are typed;
-    other Config fields ride through `**overrides`)."""
+    a kwarg to override its default (`property_source`/`portfolio_sources`/`models`/
+    `calibration_catalog` are typed; other Config fields ride through `**overrides`). File paths
+    default under the test's `tmp_path` (nothing reads them in schema tests)."""
 
     def _make(
         *,
         property_source: PropertySourceConfig | None = None,
         portfolio_sources: PortfolioSourcesConfig | None = None,
         models: dict[str, Any] | None = None,
+        calibration_catalog: CalibrationCatalogConfig | None = None,
         **overrides: object,
     ) -> Config:
         default_models: dict[str, ProviderConfig] = {"current_model": IndependentProviderConfig()}
@@ -119,7 +128,7 @@ def minimal_config() -> MinimalConfig:
             agents=(AgentDefinition(actor_id="owner", label="Owner", role=ActorRole.PRIMARY_OWNER),),
             property_source=property_source
             if property_source is not None
-            else PropertySourceConfig(properties_path="/tmp/properties.json"),
+            else PropertySourceConfig(properties_path=tmp_path / "properties.json"),
             portfolio_sources=portfolio_sources
             if portfolio_sources is not None
             else PortfolioSourcesConfig(
@@ -129,6 +138,9 @@ def minimal_config() -> MinimalConfig:
             max_rollout_samples=1_000_000,
             models=models if models is not None else default_models,
             default_model_id="current_model",
+            calibration_catalog=calibration_catalog
+            if calibration_catalog is not None
+            else CalibrationCatalogConfig(catalog_path=tmp_path / "calibration_catalog.yaml", issuer="example_issuer"),
             **overrides,
         )
 
@@ -181,6 +193,9 @@ def make_catalog_config(fixture_locations: tuple[LocationConfig, ...]) -> MakeCa
             location_selection=location_selection,
             models=models,
             default_model_id="current_model",
+            calibration_catalog=CalibrationCatalogConfig(
+                catalog_path=properties_path.parent / "calibration_catalog.yaml", issuer="example_issuer"
+            ),
         )
 
     return _make

@@ -194,6 +194,9 @@ def test_at_least_one_agent_required() -> None:
             max_rollout_samples=1_000_000,
             models={"current_model": IndependentProviderConfig()},
             default_model_id="current_model",
+            calibration_catalog=CalibrationCatalogConfig(
+                catalog_path=Path("/tmp/catalog.yaml"), issuer="example_issuer"
+            ),
         )
 
 
@@ -351,7 +354,6 @@ def test_relative_calibration_catalog_paths_anchor_against_yaml_dir(
 
     reloaded = load_augur_config(config_path)
 
-    assert reloaded.calibration_catalog is not None
     assert reloaded.calibration_catalog.catalog_path == (tmp_path / "catalog.yaml").resolve()
     assert reloaded.calibration_catalog.sample_sanity_path == (tmp_path / "sample_sanity.yaml").resolve()
 

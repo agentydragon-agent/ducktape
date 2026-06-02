@@ -154,13 +154,12 @@ class Config(ApiModel):
     default_model_id: str = Field(
         description=("Preset id used when the request omits or defaults `model_id`. Must name a key in `models`.")
     )
-    calibration_catalog: CalibrationCatalogConfig | None = Field(
-        default=None,
+    calibration_catalog: CalibrationCatalogConfig = Field(
         description=(
             "The single prediction-market catalog the model-only calibration endpoints "
-            "(`/api/calibration/*`) score, loaded into a `MarketCatalog` at startup. `None` by "
-            "default; a deployment sets it to a catalog plus the issuer it scores."
-        ),
+            "(`/api/calibration/*`) score, loaded into a `MarketCatalog` at startup. Every "
+            "deployment configures one: a catalog plus the issuer it scores."
+        )
     )
     budget: BudgetConfig | None = Field(
         default=None,
@@ -170,24 +169,6 @@ class Config(ApiModel):
             "live here, in the deployment's gaffer-private config — not in ducktape)."
         ),
     )
-
-    @model_validator(mode="before")
-    @classmethod
-    def _expand_legacy_exogenous_provider(cls, data: object) -> object:
-        """Wrap a top-level `exogenous_provider:` into the new presets registry under the
-        historical id `current_model`, so existing deployment configs and tests
-        keep loading without edits while presets is the canonical schema going forward.
-        """
-
-        if not isinstance(data, dict) or "exogenous_provider" not in data:
-            return data
-        if "models" in data:
-            raise ValueError("exogenous_provider and models are mutually exclusive; use only models")
-        data = dict(data)
-        provider = data.pop("exogenous_provider")
-        data["models"] = {"current_model": provider}
-        data.setdefault("default_model_id", "current_model")
-        return data
 
     @model_validator(mode="after")
     def _validate_default_preset(self) -> Config:
@@ -212,8 +193,6 @@ def load_augur_config(path: Path) -> Config:
 
 def _anchor_calibration_catalog_paths(config: Config, *, base_dir: Path) -> Config:
     catalog = config.calibration_catalog
-    if catalog is None:
-        return config
     updates: dict[str, Path] = {}
     if not catalog.catalog_path.is_absolute():
         updates["catalog_path"] = (base_dir / catalog.catalog_path).resolve()

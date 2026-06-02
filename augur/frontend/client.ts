@@ -89,12 +89,10 @@ export function fetchAugurSettings({ signal }: FetchOptions = {}) {
   return apiGet("/api/settings", zSettingsResponse, signal);
 }
 
-// `/api/calibration` returns the calibration catalog metadata (`CalibrationInfo`: label/issuer),
-// or JSON `null` when the deployment configures no catalog — surface that as null rather than
-// running it through the Zod object parser.
-export async function fetchAugurCalibrationInfo({ signal }: FetchOptions = {}) {
-  const body = await getJson("/api/calibration", signal);
-  return body == null ? null : camelizeObjectKeys(zCalibrationInfo.parse(body));
+// `/api/calibration` returns the deployment's calibration catalog metadata (`CalibrationInfo`:
+// label/issuer). Every deployment configures a catalog, so this is always present.
+export function fetchAugurCalibrationInfo({ signal }: FetchOptions = {}) {
+  return apiGet("/api/calibration", zCalibrationInfo, signal);
 }
 
 export function fetchAugurDeployment({ signal }: FetchOptions = {}) {

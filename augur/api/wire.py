@@ -115,9 +115,8 @@ class ProductInputDefaults(ApiModel):
 class CalibrationInfo(ApiModel):
     """The deployment's single prediction-market calibration catalog (for the calibration tab).
 
-    Present only when the deployment configures a `calibration_catalog`. The frontend's
-    calibration page uses it to label the run and to seed the model/preset picker; the catalog
-    itself is fixed (no picker), so this carries no catalog id."""
+    The frontend's calibration page uses it to label the run and to seed the model/preset
+    picker; the catalog itself is fixed (no picker), so this carries no catalog id."""
 
     label: str = Field(description="Human label for the catalog (falls back to the issuer when unset in config).")
     issuer: str = Field(description="Private-equity issuer id the catalog scores (e.g. `openai`).")

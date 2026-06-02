@@ -75,8 +75,9 @@ class ApiServerConfig:
     # Maps each Platform to its client. Reused across requests, so the TTL caches serve the
     # calibration tab's rapid auto-refreshes.
     price_clients: dict[Platform, PriceClient]
-    # The calibration catalog parsed at startup, or None when the deployment configures no
-    # `calibration_catalog` (the `/api/calibration/run` endpoint then 400s).
+    # The deployment's calibration catalog parsed into a `MarketCatalog` at startup. None only
+    # when the app is assembled directly without loading it (e.g. a product-only TestClient);
+    # `/api/calibration/run` then 400s. `create_app_from_augur_config` always loads it.
     calibration_catalog: LoadedCalibrationCatalog | None = None
     # Holds the plaid mirror session factory and the budget config it operates on. Constructed
     # once at startup (so the asyncpg connection pool + SSL handshake are paid once, not per
@@ -129,9 +130,7 @@ def create_app(config: ApiServerConfig) -> FastAPI:
     def settings_route() -> JSONResponse:
         return payload(settings)
 
-    # Returns JSON `null` (HTTP 200, application/json) when the deployment configures no
-    # `calibration_catalog`; the calibration tab reads that as "no catalog" rather than erroring.
-    @app.get("/api/calibration", response_model=CalibrationInfo | None)
+    @app.get("/api/calibration", response_model=CalibrationInfo)
     def calibration_info_route() -> JSONResponse:
         return payload(calibration_info)
 
@@ -164,7 +163,7 @@ def create_app(config: ApiServerConfig) -> FastAPI:
     def calibration_run(request: CalibrationRunRequest) -> JSONResponse:
         loaded = config.calibration_catalog
         if loaded is None:
-            return error(400, "no calibration_catalog configured for this deployment")
+            return error(400, "calibration catalog is not loaded for this server instance")
         preset_id = request.preset_id or config.augur_config.default_model_id
         # KeyError on the preset lookup -> 400 via the registered handler.
         model = config.models[preset_id]
@@ -281,14 +280,10 @@ def create_app_from_augur_config(augur_config: Config, *, price_clients: dict[Pl
         preset_id: cast(Sampler, provider.realize_model()) for preset_id, provider in augur_config.models.items()
     }
     catalog_config = augur_config.calibration_catalog
-    calibration_catalog = (
-        LoadedCalibrationCatalog(
-            config=catalog_config,
-            catalog=MarketCatalog.from_yaml(catalog_config.catalog_path),
-            sample_sanity_spec=_load_sample_sanity_spec(catalog_config.sample_sanity_path),
-        )
-        if catalog_config is not None
-        else None
+    calibration_catalog = LoadedCalibrationCatalog(
+        config=catalog_config,
+        catalog=MarketCatalog.from_yaml(catalog_config.catalog_path),
+        sample_sanity_spec=_load_sample_sanity_spec(catalog_config.sample_sanity_path),
     )
     budget_service: BudgetService | None = None
     if augur_config.budget is not None:

@@ -15,7 +15,7 @@ import json
 import tempfile
 from pathlib import Path
 
-from augur.api.config import AgentDefinition, Config, LocationConfig, PropertySourceConfig
+from augur.api.config import AgentDefinition, CalibrationCatalogConfig, Config, LocationConfig, PropertySourceConfig
 from augur.api.finance import FinanceSnapshot
 from augur.api.local_regulation import LocalRegulation, TaxRegime
 from augur.api.portfolio_source_config import FixedPortfolioSourceConfig, PortfolioSourcesConfig
@@ -42,12 +42,13 @@ _SCHEMA_PROPERTY = Property(
 )
 
 
-def _schema_export_config(properties_path: Path) -> Config:
+def _schema_export_config(properties_path: Path, calibration_catalog_path: Path) -> Config:
     """A minimal valid `Config` sufficient to build the full app for schema export.
 
     The bootstrap requires a non-empty property catalog whose locations are config-defined, so
     a single location + property are supplied; the model preset is an empty `independent`
-    provider (no artifacts). None of this data shapes the OpenAPI document — only the routes do."""
+    provider (no artifacts), and the calibration catalog points at an empty `MarketCatalog`.
+    None of this data shapes the OpenAPI document — only the routes do."""
 
     regulation = LocalRegulation(
         property_tax_regime=TaxRegime.CALIFORNIA_PROP13,
@@ -73,6 +74,7 @@ def _schema_export_config(properties_path: Path) -> Config:
         ),
         models={"schema": IndependentProviderConfig()},
         default_model_id="schema",
+        calibration_catalog=CalibrationCatalogConfig(catalog_path=calibration_catalog_path, issuer="schema"),
     )
 
 
@@ -82,9 +84,15 @@ def main() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         properties_path = Path(tmpdir) / "properties.json"
         properties_path.write_text(json.dumps([_SCHEMA_PROPERTY.model_dump(mode="json")]), encoding="utf-8")
+        # `create_app_from_augur_config` loads the calibration catalog at startup, so materialize a
+        # minimal empty `MarketCatalog` (only its routes/component schemas matter for the export).
+        calibration_catalog_path = Path(tmpdir) / "calibration_catalog.yaml"
+        calibration_catalog_path.write_text('metadata: {as_of: "2026-01-01"}\nmarkets: []\n', encoding="utf-8")
         print(
             json.dumps(
-                create_app_from_augur_config(_schema_export_config(properties_path), price_clients={}).openapi(),
+                create_app_from_augur_config(
+                    _schema_export_config(properties_path, calibration_catalog_path), price_clients={}
+                ).openapi(),
                 indent=2,
             )
         )

@@ -45,9 +45,6 @@ def main(argv: list[str] | None = None) -> int:
     print(f"running preset: {preset_id}")
 
     catalog_config = augur_config.calibration_catalog
-    if catalog_config is None:
-        print("error: no calibration_catalog configured", file=sys.stderr)
-        return 2
     catalog = MarketCatalog.from_yaml(catalog_config.catalog_path)
     issuer = catalog_config.issuer
     print(f"catalog: issuer={issuer}, n_markets={len(catalog.markets)}")

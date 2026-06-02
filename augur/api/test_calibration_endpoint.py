@@ -26,7 +26,6 @@ from augur.model.series import IssuerId, SP500Key
 
 
 def _client_for(config: Config) -> TestClient:
-    assert config.calibration_catalog is not None
     catalog = MarketCatalog.from_yaml(config.calibration_catalog.catalog_path)
     # Every market resolves to the same fixed YES probability so the run is hermetic.
     by_platform: dict[Platform, dict[str, float]] = {}
@@ -37,7 +36,6 @@ def _client_for(config: Config) -> TestClient:
 
 @pytest.fixture
 def client(augur_config: Config) -> Iterator[TestClient]:
-    assert augur_config.calibration_catalog is not None
     with _client_for(augur_config) as test_client:
         yield test_client
 
@@ -141,7 +139,6 @@ def _config_with_sample_sanity(augur_config: Config, tmp_path: Path) -> Config:
     spec_path = tmp_path / "sample_sanity.yaml"
     spec_path.write_text(yaml.safe_dump(spec.model_dump(mode="json")), encoding="utf-8")
 
-    assert augur_config.calibration_catalog is not None
     catalog = augur_config.calibration_catalog.model_copy(update={"sample_sanity_path": spec_path})
     return augur_config.model_copy(update={"calibration_catalog": catalog})
 
