@@ -408,7 +408,7 @@ export function CalibrationWorkspace({
   bootstrap,
   rolloutCount,
   firstSeed,
-  exogenousModel,
+  model,
   horizonMonths,
   metricScale,
   sharedControlsSlot,
@@ -426,12 +426,12 @@ export function CalibrationWorkspace({
   const horizon = clampHorizonMonths(horizonMonths, bootstrap);
   const request = useMemo(
     () => ({
-      presetId: exogenousModel,
+      presetId: model,
       horizonMonths: horizon,
       rollouts,
       seed,
     }),
-    [exogenousModel, horizon, rollouts, seed]
+    [model, horizon, rollouts, seed]
   );
 
   // Live auto-run (no button): debounce input changes, abort the in-flight run, and re-score

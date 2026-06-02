@@ -30,9 +30,9 @@ export function SharedControls({
   maxRolloutCount,
   firstSeed,
   onChangeFirstSeed,
-  exogenousModel,
-  onChangeExogenousModel,
-  exogenousPresets = [],
+  model,
+  onChangeModel,
+  models,
   horizonMonths,
   onChangeHorizonMonths,
   maxHorizonMonths,
@@ -43,7 +43,7 @@ export function SharedControls({
   settingsOpen,
   onChangeSettingsOpen,
 }) {
-  const showExogenousControl = onChangeExogenousModel && exogenousPresets.length > 1;
+  const showModelControl = onChangeModel && models.length > 1;
   const rows = [
     onChangeHorizonMonths && {
       label: "Horizon",
@@ -98,16 +98,16 @@ export function SharedControls({
         />
       ),
     },
-    showExogenousControl && {
+    showModelControl && {
       label: "Model",
       input: (
         <NativeSelect
           aria-label="Exogenous model"
           size="xs"
-          value={exogenousModel ?? ""}
-          data={exogenousPresets.map((preset) => ({ value: preset, label: preset }))}
+          value={model ?? ""}
+          data={models.map((preset) => ({ value: preset, label: preset }))}
           classNames={{ input: "augur-tabular" }}
-          onChange={(event) => onChangeExogenousModel(event.target.value)}
+          onChange={(event) => onChangeModel(event.target.value)}
         />
       ),
     },

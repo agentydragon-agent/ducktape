@@ -33,8 +33,8 @@ import {
   firstSeedFromSearch,
   firstSeedDefault,
   clampFirstSeed,
-  exogenousModelFromSearch,
-  exogenousModelDefault,
+  modelFromSearch,
+  defaultModel,
   horizonMonthsFromSearch,
   horizonMonthsDefault,
   clampHorizonMonths,
@@ -103,7 +103,7 @@ function writeFirstSeedToSearch(value, bootstrap) {
 // gets its own `?x=` param. Omitted when at the deployment default, like the `?n=` param above.
 function writeExogenousModelToSearch(value, bootstrap) {
   const params = new URLSearchParams(window.location.search);
-  if (value == null || value === exogenousModelDefault(bootstrap)) params.delete("x");
+  if (value == null || value === defaultModel(bootstrap)) params.delete("x");
   else params.set("x", value);
   const search = params.toString();
   const newUrl = `${window.location.pathname}${search ? "?" + search : ""}${window.location.hash}`;
@@ -306,8 +306,8 @@ function ProductProjectionWorkspace({
   onChangeRolloutCount,
   firstSeed,
   onChangeFirstSeed,
-  exogenousModel,
-  onChangeExogenousModel,
+  model,
+  onChangeModel,
   horizonMonths,
   onChangeHorizonMonths,
   metricScale,
@@ -336,10 +336,10 @@ function ProductProjectionWorkspace({
       productMetricFanRequest(input, bootstrap, selectedMetric, {
         rolloutCount,
         firstSeed,
-        exogenousModel,
+        model,
         horizonMonths,
       }),
-    [input, bootstrap, selectedMetric, rolloutCount, firstSeed, exogenousModel, horizonMonths]
+    [input, bootstrap, selectedMetric, rolloutCount, firstSeed, model, horizonMonths]
   );
   const scenarioCacheKey = useMemo(() => JSON.stringify(request.scenario), [request.scenario]);
   const fanRows = useMemo(() => metricFanRows(result), [result]);
@@ -464,9 +464,9 @@ function ProductProjectionWorkspace({
               maxRolloutCount={bootstrap.maxRolloutSamples}
               firstSeed={firstSeed}
               onChangeFirstSeed={onChangeFirstSeed}
-              exogenousModel={exogenousModel}
-              onChangeExogenousModel={onChangeExogenousModel}
-              exogenousPresets={bootstrap.exogenousPresets}
+              model={model}
+              onChangeModel={onChangeModel}
+              models={bootstrap.models}
               horizonMonths={horizonMonths}
               onChangeHorizonMonths={onChangeHorizonMonths}
               maxHorizonMonths={bootstrap.maxHorizonMonths}
@@ -563,8 +563,8 @@ function CalibrationAppSurface({
   onChangeRolloutCount,
   firstSeed,
   onChangeFirstSeed,
-  exogenousModel,
-  onChangeExogenousModel,
+  model,
+  onChangeModel,
   horizonMonths,
   onChangeHorizonMonths,
   metricScale,
@@ -588,7 +588,7 @@ function CalibrationAppSurface({
           bootstrap={bootstrap}
           rolloutCount={rolloutCount}
           firstSeed={firstSeed}
-          exogenousModel={exogenousModel}
+          model={model}
           horizonMonths={horizonMonths}
           metricScale={metricScale}
           sharedControlsSlot={
@@ -598,9 +598,9 @@ function CalibrationAppSurface({
               maxRolloutCount={bootstrap.maxRolloutSamples}
               firstSeed={firstSeed}
               onChangeFirstSeed={onChangeFirstSeed}
-              exogenousModel={exogenousModel}
-              onChangeExogenousModel={onChangeExogenousModel}
-              exogenousPresets={bootstrap.exogenousPresets}
+              model={model}
+              onChangeModel={onChangeModel}
+              models={bootstrap.models}
               horizonMonths={horizonMonths}
               onChangeHorizonMonths={onChangeHorizonMonths}
               maxHorizonMonths={bootstrap.maxHorizonMonths}
@@ -625,9 +625,7 @@ function LoadedAppShell({ bootstrap, deployment }) {
   const [tab, setTab] = useState(() => tabFromSearch(window.location.search));
   const [rolloutCount, setRolloutCount] = useState(() => rolloutCountFromSearch(window.location.search, bootstrap));
   const [firstSeed, setFirstSeed] = useState(() => firstSeedFromSearch(window.location.search, bootstrap));
-  const [exogenousModel, setExogenousModel] = useState(() =>
-    exogenousModelFromSearch(window.location.search, bootstrap)
-  );
+  const [model, setModel] = useState(() => modelFromSearch(window.location.search, bootstrap));
   const [horizonMonths, setHorizonMonths] = useState(() => horizonMonthsFromSearch(window.location.search, bootstrap));
   const [metricScale, setMetricScale] = useState(() => metricScaleFromSearch(window.location.search));
   const [currencyDisplay, setCurrencyDisplay] = useState(() => currencyDisplayFromSearch(window.location.search));
@@ -650,8 +648,8 @@ function LoadedAppShell({ bootstrap, deployment }) {
     writeFirstSeedToSearch(next, bootstrap);
   };
 
-  const onChangeExogenousModel = (value) => {
-    setExogenousModel(value);
+  const onChangeModel = (value) => {
+    setModel(value);
     writeExogenousModelToSearch(value, bootstrap);
   };
 
@@ -685,8 +683,8 @@ function LoadedAppShell({ bootstrap, deployment }) {
     onChangeRolloutCount,
     firstSeed,
     onChangeFirstSeed,
-    exogenousModel,
-    onChangeExogenousModel,
+    model,
+    onChangeModel,
     horizonMonths,
     onChangeHorizonMonths,
     metricScale,

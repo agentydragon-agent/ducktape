@@ -153,18 +153,16 @@ export function firstSeedFromSearch(searchString, bootstrap) {
 
 // Tab-shared exogenous model preset. Like the rollout count, the app shell owns the live value
 // and persists it to `?x=`; the product scenario and the calibration run both read it. A value
-// not present in `bootstrap.exogenousPresets` (stale URL, empty) falls back to the deployment
-// default. The selected id is always one of `bootstrap.exogenousPresets`.
-export function exogenousModelDefault(bootstrap) {
-  const presets = bootstrap.exogenousPresets ?? [];
-  const preferred = bootstrap.defaultExogenousPresetId;
-  return presets.includes(preferred) ? preferred : (presets[0] ?? null);
+// not in `bootstrap.models` (stale URL, empty) falls back to the deployment default. The
+// selected id is always one of `bootstrap.models`.
+export function defaultModel(bootstrap) {
+  const preferred = bootstrap.defaultModelId;
+  return bootstrap.models.includes(preferred) ? preferred : bootstrap.models[0];
 }
 
-export function exogenousModelFromSearch(searchString, bootstrap) {
+export function modelFromSearch(searchString, bootstrap) {
   const requested = new URLSearchParams(searchString).get("x");
-  const presets = bootstrap.exogenousPresets ?? [];
-  return requested && presets.includes(requested) ? requested : exogenousModelDefault(bootstrap);
+  return requested && bootstrap.models.includes(requested) ? requested : defaultModel(bootstrap);
 }
 
 // Tab-shared horizon (months). Like the rollout count, the app shell owns the live value and
@@ -495,7 +493,7 @@ export function productScenario(input, bootstrap, modelId, horizonMonths) {
   const monthlyRentUsd = Math.max(0, Number(input.monthlyRentUsd) || 0);
   const rentalLocationId = monthlyRentUsd > 0 ? input.rentalLocationId : null;
   return {
-    modelId: modelId || exogenousModelDefault(bootstrap),
+    modelId: modelId || defaultModel(bootstrap),
     horizonMonths: clampHorizonMonths(horizonMonths, bootstrap),
     monthlySpendUsd: Math.max(1, Number(input.monthlySpendUsd) || 1),
     spendIndex: input.spendIndex === "none" ? "none" : "inflation",
@@ -527,9 +525,9 @@ export function productRolloutSeeds(bootstrap, rolloutCount, firstSeed) {
 // `shared` rather than read from `input`, since the app shell owns them
 // (see `?n=`/`?seed=`/`?x=`/`?h=`).
 export function productMetricFanRequest(input, bootstrap, metric, shared) {
-  const { rolloutCount, firstSeed, exogenousModel, horizonMonths } = shared;
+  const { rolloutCount, firstSeed, model, horizonMonths } = shared;
   return {
-    scenario: productScenario(input, bootstrap, exogenousModel, horizonMonths),
+    scenario: productScenario(input, bootstrap, model, horizonMonths),
     rolloutSeeds: productRolloutSeeds(bootstrap, rolloutCount, firstSeed),
     metric: metric.value,
     percentiles: FAN_PERCENTILES,

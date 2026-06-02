@@ -257,6 +257,12 @@ def augur_server() -> Iterator[str]:
 def page(browser: Browser) -> Iterator[Page]:
     context = deterministic_browser_context(browser, viewport=SCREENSHOT_VIEWPORT, frozen_now_ms=FROZEN_NOW_MS)
     page = context.new_page()
+    page.on(
+        "pageerror",
+        lambda err: page.evaluate(
+            "err => { window.__jsErrors = window.__jsErrors || []; window.__jsErrors.push(String(err)); }", str(err)
+        ),
+    )
     try:
         yield page
     finally:
@@ -302,7 +308,16 @@ def _take_stable_full_page_screenshot(page: Page, target_path: Path) -> Path:
 
 def _render_case(page: Page, origin: str, case: VisualCase, out_dir: Path, suffix: str) -> Path:
     page.goto(f"{origin}{case.path}", wait_until="networkidle", timeout=60_000)
-    case.wait_ready(page)
+    try:
+        case.wait_ready(page)
+    except Exception:
+        debug_dir = undeclared_outputs_dir()
+        page.screenshot(path=str(debug_dir / f"{case.name}.{suffix}.debug.png"), full_page=True)
+        dom = page.content()
+        (debug_dir / f"{case.name}.{suffix}.debug.html").write_text(dom[:5000])
+        errors = page.evaluate("() => window.__jsErrors?.join('\\n') ?? 'no __jsErrors'")
+        (debug_dir / f"{case.name}.{suffix}.debug.txt").write_text(f"JS errors: {errors}\nURL: {page.url}")
+        raise
     page.goto(page.url, wait_until="networkidle", timeout=60_000)
     case.wait_ready(page)
     if case.interact is not None:

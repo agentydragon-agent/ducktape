@@ -1,8 +1,8 @@
 """TestClient coverage for the exogenous-only calibration surface.
 
 Builds the app from the public fixture config (which configures the example OpenAI
-catalog scored against the `openai_pe` preset), injecting a `mock_manifold_client` so the
-run stays hermetic (no network). `/api/bootstrap` surfaces the catalog info;
+catalog scored against the `openai_pe` preset), injecting multi-platform mock clients
+so the run stays hermetic (no network). `/api/bootstrap` surfaces the catalog info;
 `/api/calibration/run` does a small run with the injected live prices.
 """
 
