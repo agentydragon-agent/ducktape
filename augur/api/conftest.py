@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import json
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
@@ -29,7 +30,7 @@ from augur.api.server import ApiServerConfig, create_app
 from augur.api.wire import ActorRole
 from augur.model.independent import IndependentProviderConfig
 from augur.model.provider_config import ProviderConfig
-from augur.product.testing import capacity_limited_private_equity_fixture, forced_private_equity_event_fixture
+from augur.model.testing import ConstantFrameModel
 
 # Factories the fixtures below hand tests: build a Config (`minimal_config` overrides any field;
 # `make_catalog_config` takes the property-shortlist path for the catalog-builder tests) or a
@@ -202,6 +203,79 @@ def make_catalog_config(fixture_locations: tuple[LocationConfig, ...]) -> MakeCa
 
 
 @pytest.fixture
+def properties_path(tmp_path: Path) -> Path:
+    """A two-location (location_a + location_b) property shortlist written to a temp JSON file."""
+    path = tmp_path / "properties.json"
+    path.write_text(
+        json.dumps(
+            [
+                {
+                    "id": "location_a_property",
+                    "source_catalog_id": "public_fixture",
+                    "source_property_id": "location-a-property",
+                    "location_id": "location_a",
+                    "address": "Location A Property",
+                    "neighborhood": "Location A",
+                    "type": "Fixture",
+                    "price_usd": 900000,
+                    "rent_estimate_usd": 4200,
+                    "beds": 3,
+                    "baths": 2,
+                    "sqft": 1400,
+                    "year_built": 2000,
+                },
+                {
+                    "id": "location_b_property",
+                    "source_catalog_id": "public_fixture",
+                    "source_property_id": "location-b-property",
+                    "location_id": "location_b",
+                    "address": "Location B Property",
+                    "neighborhood": "Location B",
+                    "type": "Fixture",
+                    "price_usd": 520000,
+                    "rent_estimate_usd": 3100,
+                    "beds": 3,
+                    "baths": 2,
+                    "sqft": 1250,
+                    "year_built": 2000,
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+@pytest.fixture
+def builtin_properties_path(tmp_path: Path) -> Path:
+    """A single San-Francisco property shortlist written to a temp JSON file."""
+    path = tmp_path / "properties.json"
+    path.write_text(
+        json.dumps(
+            [
+                {
+                    "id": "sf_property",
+                    "source_catalog_id": "public_fixture",
+                    "source_property_id": "sf-property",
+                    "location_id": "san_francisco_ca",
+                    "address": "SF Property",
+                    "neighborhood": "San Francisco",
+                    "type": "Fixture",
+                    "price_usd": 900000,
+                    "rent_estimate_usd": 4200,
+                    "beds": 3,
+                    "baths": 2,
+                    "sqft": 1400,
+                    "year_built": 2000,
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+@pytest.fixture
 def make_client(augur_config: Config) -> Iterator[MakeClient]:
     """Factory building a `TestClient` over the fixture deployment with the given models map.
     Every client it hands out is entered and torn down at fixture exit."""
@@ -216,10 +290,14 @@ def make_client(augur_config: Config) -> Iterator[MakeClient]:
 
 
 @pytest.fixture
-def forced_private_equity_event_client(make_client: MakeClient) -> TestClient:
-    return make_client({"current_model": forced_private_equity_event_fixture()})
+def forced_private_equity_event_client(
+    make_client: MakeClient, forced_private_equity_event_model: ConstantFrameModel
+) -> TestClient:
+    return make_client({"current_model": forced_private_equity_event_model})
 
 
 @pytest.fixture
-def capacity_limited_private_equity_client(make_client: MakeClient) -> TestClient:
-    return make_client({"current_model": capacity_limited_private_equity_fixture()})
+def capacity_limited_private_equity_client(
+    make_client: MakeClient, capacity_limited_private_equity_model: ConstantFrameModel
+) -> TestClient:
+    return make_client({"current_model": capacity_limited_private_equity_model})

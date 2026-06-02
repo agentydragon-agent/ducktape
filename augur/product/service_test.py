@@ -37,7 +37,7 @@ from augur.product import decode, service
 from augur.product.asset_key import CryptoAssetKey, PrivateEquityAssetKey
 from augur.product.conftest import MakeProductService
 from augur.product.scenarios import build_scenario, resolve_primary_agent_id
-from augur.product.testing import TEST_CONFIG_LEVEL_PLACEHOLDERS, forced_private_equity_event_fixture
+from augur.product.testing import TEST_CONFIG_LEVEL_PLACEHOLDERS
 from augur.product.wire import (
     CashFinancing,
     ClosingCostPaymentEvent,
@@ -97,8 +97,9 @@ def counting_model(augur_config: Config) -> CountingModel:
 
 
 @pytest.fixture
-def forced_private_equity_event_model() -> ConstantFrameModel:
-    return forced_private_equity_event_fixture()
+def product(counting_model: CountingModel, make_product_service: MakeProductService) -> service.ProductService:
+    """ProductService over the fixture deployment driven by the `counting_model`."""
+    return make_product_service(counting_model)
 
 
 def _with_fixed_cash(config: Config, cash_usd: float) -> Config:
@@ -190,13 +191,10 @@ def test_monthly_metric_decode_fails_when_holding_price_series_is_missing() -> N
 
 
 def test_metric_fan_and_rollout_detail_share_cached_sim_rollouts(
-    counting_model: CountingModel, make_product_service: MakeProductService, scenario_key: ScenarioKey
+    product: service.ProductService, counting_model: CountingModel, scenario_key: ScenarioKey
 ) -> None:
-    product = make_product_service(counting_model)
-    scenario = scenario_key
-
     fan = product.metric_fan(
-        MetricFanRequest(scenario=scenario, rollout_seeds=(7, 8), metric="cash_usd", percentiles=(0, 50, 100))
+        MetricFanRequest(scenario=scenario_key, rollout_seeds=(7, 8), metric="cash_usd", percentiles=(0, 50, 100))
     )
 
     assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8)]
@@ -230,7 +228,7 @@ def test_metric_fan_and_rollout_detail_share_cached_sim_rollouts(
     ]
     assert fan.terminal_metric_percentiles == {"percentile": [0.0, 50.0, 100.0], "value": [247_000.0] * 3}
 
-    detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
+    detail = product.rollout(RolloutRequest(scenario=scenario_key, seed=7))
 
     assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8)]
     assert detail.model_id == "composite"
@@ -248,13 +246,13 @@ def test_metric_fan_and_rollout_detail_share_cached_sim_rollouts(
     ]
 
     holding_fan = product.metric_fan(
-        MetricFanRequest(scenario=scenario, rollout_seeds=(7, 8), metric="holding_value_usd", percentiles=(50,))
+        MetricFanRequest(scenario=scenario_key, rollout_seeds=(7, 8), metric="holding_value_usd", percentiles=(50,))
     )
 
     assert holding_fan.monthly_metric_fan["value"][0] == 835_500.0
 
     fan_with_one_new_seed = product.metric_fan(
-        MetricFanRequest(scenario=scenario, rollout_seeds=(7, 8, 9), metric="cash_usd", percentiles=(50,))
+        MetricFanRequest(scenario=scenario_key, rollout_seeds=(7, 8, 9), metric="cash_usd", percentiles=(50,))
     )
 
     assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8), (9,)]
@@ -262,13 +260,8 @@ def test_metric_fan_and_rollout_detail_share_cached_sim_rollouts(
 
 
 def test_metric_fan_decodes_each_rollout_once_per_batch(
-    counting_model: CountingModel,
-    make_product_service: MakeProductService,
-    monkeypatch: pytest.MonkeyPatch,
-    scenario_key: ScenarioKey,
+    product: service.ProductService, monkeypatch: pytest.MonkeyPatch, scenario_key: ScenarioKey
 ) -> None:
-    product = make_product_service(counting_model)
-    scenario = scenario_key
     original = decode.monthly_metric_arrays
     calls = 0
 
@@ -280,33 +273,26 @@ def test_metric_fan_decodes_each_rollout_once_per_batch(
     monkeypatch.setattr(service, "monthly_metric_arrays", counted)
 
     product.metric_fan(
-        MetricFanRequest(scenario=scenario, rollout_seeds=(7, 8, 9, 10), metric="cash_usd", percentiles=(50,))
+        MetricFanRequest(scenario=scenario_key, rollout_seeds=(7, 8, 9, 10), metric="cash_usd", percentiles=(50,))
     )
 
     assert calls == 4
 
 
 def test_metric_fan_does_not_materialize_rollout_events(
-    counting_model: CountingModel,
-    make_product_service: MakeProductService,
-    monkeypatch: pytest.MonkeyPatch,
-    scenario_key: ScenarioKey,
+    product: service.ProductService, monkeypatch: pytest.MonkeyPatch, scenario_key: ScenarioKey
 ) -> None:
-    product = make_product_service(counting_model)
-    scenario = scenario_key
-
     def fail_rollout_events(*_args, **_kwargs):
         raise AssertionError("metric fan should not build selected-rollout event detail")
 
     monkeypatch.setattr(service, "rollout_events_from", fail_rollout_events)
 
-    product.metric_fan(MetricFanRequest(scenario=scenario, rollout_seeds=(7, 8), metric="cash_usd", percentiles=(50,)))
+    product.metric_fan(
+        MetricFanRequest(scenario=scenario_key, rollout_seeds=(7, 8), metric="cash_usd", percentiles=(50,))
+    )
 
 
-def test_failed_rollout_metrics_freeze_at_zero_after_failure(
-    counting_model: CountingModel, make_product_service: MakeProductService
-) -> None:
-    product = make_product_service(counting_model)
+def test_failed_rollout_metrics_freeze_at_zero_after_failure(product: service.ProductService) -> None:
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=3,
@@ -346,10 +332,7 @@ def test_failed_rollout_metrics_freeze_at_zero_after_failure(
     assert failure.shortfall_usd == 300_000.0
 
 
-def test_default_funding_policy_sells_holdings_for_required_spend(
-    counting_model: CountingModel, make_product_service: MakeProductService
-) -> None:
-    product = make_product_service(counting_model)
+def test_default_funding_policy_sells_holdings_for_required_spend(product: service.ProductService) -> None:
     scenario = ScenarioKey(model_id="current_model", horizon_months=1, monthly_spend_usd=300_000.0, spend_index="none")
 
     detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
@@ -517,10 +500,7 @@ def test_product_rollout_includes_private_equity_opportunity_trace(make_product_
     assert opportunity.proceeds_usd == pytest.approx(0.0)
 
 
-def test_product_cash_buffer_uses_sim_trigger_and_fixed_sale_amount(
-    counting_model: CountingModel, make_product_service: MakeProductService
-) -> None:
-    product = make_product_service(counting_model)
+def test_product_cash_buffer_uses_sim_trigger_and_fixed_sale_amount(product: service.ProductService) -> None:
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=1,
@@ -544,9 +524,8 @@ def test_product_cash_buffer_uses_sim_trigger_and_fixed_sale_amount(
 
 
 def test_product_rollout_includes_zero_tax_accrual_events_without_taxable_income(
-    counting_model: CountingModel, make_product_service: MakeProductService
+    product: service.ProductService,
 ) -> None:
-    product = make_product_service(counting_model)
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=12,
@@ -565,9 +544,8 @@ def test_product_rollout_includes_zero_tax_accrual_events_without_taxable_income
 
 
 def test_product_rollout_includes_federal_and_california_tax_events_for_holding_sales(
-    counting_model: CountingModel, make_product_service: MakeProductService
+    product: service.ProductService,
 ) -> None:
-    product = make_product_service(counting_model)
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=13,
@@ -602,9 +580,8 @@ def test_product_rollout_includes_federal_and_california_tax_events_for_holding_
 
 
 def test_outside_rent_emits_yearly_re_pegged_obligation(
-    counting_model: CountingModel, make_product_service: MakeProductService
+    product: service.ProductService, counting_model: CountingModel
 ) -> None:
-    product = make_product_service(counting_model)
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=14,
@@ -644,20 +621,17 @@ def test_outside_rent_emits_yearly_re_pegged_obligation(
 
 
 def test_outside_rent_zero_omits_rent_series_requirement(
-    counting_model: CountingModel, make_product_service: MakeProductService, scenario_key: ScenarioKey
+    product: service.ProductService, counting_model: CountingModel, scenario_key: ScenarioKey
 ) -> None:
-    product = make_product_service(counting_model)
-    scenario = scenario_key  # no rent
-
-    product.metric_fan(MetricFanRequest(scenario=scenario, rollout_seeds=(7,), metric="cash_usd", percentiles=(50,)))
+    # scenario_key carries no rent.
+    product.metric_fan(
+        MetricFanRequest(scenario=scenario_key, rollout_seeds=(7,), metric="cash_usd", percentiles=(50,))
+    )
 
     assert not any(isinstance(key, RentKey) for key in counting_model.sample_requests[0].required_level_series)
 
 
-def test_outside_rent_rejects_unknown_location(
-    counting_model: CountingModel, make_product_service: MakeProductService
-) -> None:
-    product = make_product_service(counting_model)
+def test_outside_rent_rejects_unknown_location(product: service.ProductService) -> None:
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=3,
@@ -710,10 +684,8 @@ def mortgage_purchase_scenario() -> ScenarioKey:
 
 
 def test_property_purchase_emits_purchase_mortgage_and_property_tax_events(
-    counting_model: CountingModel, make_product_service: MakeProductService, mortgage_purchase_scenario: ScenarioKey
+    product: service.ProductService, mortgage_purchase_scenario: ScenarioKey
 ) -> None:
-    product = make_product_service(counting_model)
-
     detail = product.rollout(RolloutRequest(scenario=mortgage_purchase_scenario, seed=7))
 
     [purchase] = [event for event in detail.rollout.events if event.kind == "property_purchase"]
@@ -1010,10 +982,8 @@ def test_primary_residence_event_emits_rollout_marker(
 
 
 def test_property_purchase_metrics_track_value_balance_and_equity(
-    counting_model: CountingModel, make_product_service: MakeProductService, mortgage_purchase_scenario: ScenarioKey
+    product: service.ProductService, counting_model: CountingModel, mortgage_purchase_scenario: ScenarioKey
 ) -> None:
-    product = make_product_service(counting_model)
-
     detail = product.rollout(RolloutRequest(scenario=mortgage_purchase_scenario, seed=7))
 
     # month_index=0 is the pre-purchase opening snapshot; the property activates at index 1
@@ -1068,9 +1038,8 @@ def test_cash_property_purchase_omits_mortgage_payments(
 
 
 def test_property_purchase_emits_hoa_dues_when_property_has_monthly_hoa(
-    counting_model: CountingModel, make_product_service: MakeProductService
+    product: service.ProductService, counting_model: CountingModel
 ) -> None:
-    product = make_product_service(counting_model)
     # location_b_property has hoa_monthly_usd=150 in the public fixture.
     scenario = ScenarioKey(
         model_id="current_model",
@@ -1099,10 +1068,7 @@ def test_property_purchase_emits_hoa_dues_when_property_has_monthly_hoa(
     assert InflationKey() in counting_model.sample_requests[0].required_level_series
 
 
-def test_property_purchase_skips_hoa_when_property_has_no_monthly_hoa(
-    counting_model: CountingModel, make_product_service: MakeProductService
-) -> None:
-    product = make_product_service(counting_model)
+def test_property_purchase_skips_hoa_when_property_has_no_monthly_hoa(product: service.ProductService) -> None:
     # location_a_property has hoa_monthly_usd=0 in the public fixture.
     scenario = ScenarioKey(
         model_id="current_model",
@@ -1122,10 +1088,7 @@ def test_property_purchase_skips_hoa_when_property_has_no_monthly_hoa(
     assert [event for event in detail.rollout.events if event.kind == "hoa_dues_payment"] == []
 
 
-def test_property_purchase_emits_homeowners_insurance_at_default_pct(
-    counting_model: CountingModel, make_product_service: MakeProductService
-) -> None:
-    product = make_product_service(counting_model)
+def test_property_purchase_emits_homeowners_insurance_at_default_pct(product: service.ProductService) -> None:
     # location_a_property is $900k. Default annual_insurance_pct=0.4 → $300/mo at month 0.
     scenario = ScenarioKey(
         model_id="current_model",
@@ -1152,10 +1115,7 @@ def test_property_purchase_emits_homeowners_insurance_at_default_pct(
         assert event.shortfall_usd == 0.0
 
 
-def test_property_purchase_with_zero_insurance_pct_omits_insurance(
-    counting_model: CountingModel, make_product_service: MakeProductService
-) -> None:
-    product = make_product_service(counting_model)
+def test_property_purchase_with_zero_insurance_pct_omits_insurance(product: service.ProductService) -> None:
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=2,
@@ -1173,10 +1133,7 @@ def test_property_purchase_with_zero_insurance_pct_omits_insurance(
     assert [event for event in detail.rollout.events if event.kind == "homeowners_insurance_payment"] == []
 
 
-def test_property_purchase_emits_maintenance_at_default_pct(
-    counting_model: CountingModel, make_product_service: MakeProductService
-) -> None:
-    product = make_product_service(counting_model)
+def test_property_purchase_emits_maintenance_at_default_pct(product: service.ProductService) -> None:
     # location_a_property is $900k. Default annual_maintenance_pct=1.0 → $750/mo at month 0.
     scenario = ScenarioKey(
         model_id="current_model",
@@ -1203,10 +1160,7 @@ def test_property_purchase_emits_maintenance_at_default_pct(
         assert event.shortfall_usd == 0.0
 
 
-def test_property_purchase_with_zero_maintenance_pct_omits_maintenance(
-    counting_model: CountingModel, make_product_service: MakeProductService
-) -> None:
-    product = make_product_service(counting_model)
+def test_property_purchase_with_zero_maintenance_pct_omits_maintenance(product: service.ProductService) -> None:
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=2,
@@ -1224,10 +1178,7 @@ def test_property_purchase_with_zero_maintenance_pct_omits_maintenance(
     assert [event for event in detail.rollout.events if event.kind == "property_maintenance_payment"] == []
 
 
-def test_property_purchase_rejects_unknown_property(
-    counting_model: CountingModel, make_product_service: MakeProductService
-) -> None:
-    product = make_product_service(counting_model)
+def test_property_purchase_rejects_unknown_property(product: service.ProductService) -> None:
     scenario = ScenarioKey(
         model_id="current_model",
         horizon_months=2,

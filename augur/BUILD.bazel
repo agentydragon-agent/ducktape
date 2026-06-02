@@ -11,6 +11,9 @@ py_library(
     srcs = ["conftest.py"],
     deps = [
         "//augur/api:config",
+        "//augur/model:series",
+        "//augur/model:testing",
+        "//augur/product:testing",
         "//util/bazel:runfiles",
         "@pypi//pytest",
     ],

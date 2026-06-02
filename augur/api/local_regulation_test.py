@@ -8,11 +8,9 @@ from augur.api.local_regulation import LocalRegulation, TaxRegime, tax_regimes_f
 def test_owner_occupied_with_rooms_rented_keeps_owner_occupied_treatment(
     san_francisco_regulation: LocalRegulation,
 ) -> None:
-    regulation = san_francisco_regulation
+    regimes = tax_regimes_for_local_regulation(san_francisco_regulation, owner_occupied=True, rented=True)
 
-    regimes = tax_regimes_for_local_regulation(regulation, owner_occupied=True, rented=True)
-
-    assert regulation.property_tax_regime is TaxRegime.SAN_FRANCISCO_SECURED_PROPERTY_TAX
+    assert san_francisco_regulation.property_tax_regime is TaxRegime.SAN_FRANCISCO_SECURED_PROPERTY_TAX
     assert TaxRegime.SAN_FRANCISCO_TRANSFER_TAX in regimes
     assert TaxRegime.PRIMARY_RESIDENCE_EXCLUSION in regimes
     assert TaxRegime.RENTAL_DEPRECIATION in regimes
@@ -20,9 +18,7 @@ def test_owner_occupied_with_rooms_rented_keeps_owner_occupied_treatment(
 
 
 def test_investment_property_treatment_when_owner_does_not_occupy(san_francisco_regulation: LocalRegulation) -> None:
-    regulation = san_francisco_regulation
-
-    regimes = tax_regimes_for_local_regulation(regulation, owner_occupied=False, rented=True)
+    regimes = tax_regimes_for_local_regulation(san_francisco_regulation, owner_occupied=False, rented=True)
 
     assert TaxRegime.CALIFORNIA_INVESTMENT_PROPERTY in regimes
     assert TaxRegime.PRIMARY_RESIDENCE_EXCLUSION not in regimes
@@ -30,10 +26,8 @@ def test_investment_property_treatment_when_owner_does_not_occupy(san_francisco_
 
 
 def test_existing_tax_regimes_are_preserved_and_deduplicated(san_francisco_regulation: LocalRegulation) -> None:
-    regulation = san_francisco_regulation
-
     regimes = tax_regimes_for_local_regulation(
-        regulation,
+        san_francisco_regulation,
         owner_occupied=True,
         rented=False,
         existing_tax_regimes=(TaxRegime.CALIFORNIA_PROP13, TaxRegime.MARE_ISLAND_SPECIAL_ASSESSMENTS),

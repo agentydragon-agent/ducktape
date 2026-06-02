@@ -235,7 +235,7 @@ py_library(
         "//augur:conftest",
         "//augur/model:independent",
         "//augur/model:provider_config",
-        "//augur/product:testing",
+        "//augur/model:testing",
         "@pypi//fastapi",
         "@pypi//pytest",
     ],
