@@ -20,6 +20,7 @@ from augur.api.portfolio_source_config import (
 )
 from augur.product.asset_key import SP500AssetKey
 from plaid_utils.read_model import CurrentCashBalance, CurrentHolding, read_current_cash_balances, read_current_holdings
+from plaid_utils.schema import async_session_factory
 
 logger = logging.getLogger(__name__)
 
@@ -64,17 +65,26 @@ def resolve_portfolio_sources(config: Config) -> ResolvedPortfolioSources:
 
 
 async def _read_plaid_contribution(plaid: PlaidPortfolioSourceConfig, *, db_url: str) -> _PortfolioContribution:
-    cash_balances = await read_current_cash_balances(
-        db_url=db_url, account_ids=plaid.cash.plaid_account_ids, iso_currency_code=plaid.iso_currency_code
-    )
-    cash_usd = _cash_total(plaid, cash_balances)
+    # One-shot resolve at startup: build a throwaway engine for `db_url`, read, then dispose it
+    # (the budget path instead reuses one engine across requests). read_model now takes the
+    # session factory rather than the url.
+    engine, session_factory = async_session_factory(db_url)
+    try:
+        cash_balances = await read_current_cash_balances(
+            session_factory=session_factory,
+            account_ids=plaid.cash.plaid_account_ids,
+            iso_currency_code=plaid.iso_currency_code,
+        )
+        group_account_ids = tuple(
+            sorted({account_id for group in plaid.sp500_proxy_groups for account_id in group.plaid_account_ids})
+        )
+        current_holdings = await read_current_holdings(
+            session_factory=session_factory, account_ids=group_account_ids, iso_currency_code=plaid.iso_currency_code
+        )
+    finally:
+        await engine.dispose()
 
-    group_account_ids = tuple(
-        sorted({account_id for group in plaid.sp500_proxy_groups for account_id in group.plaid_account_ids})
-    )
-    current_holdings = await read_current_holdings(
-        db_url=db_url, account_ids=group_account_ids, iso_currency_code=plaid.iso_currency_code
-    )
+    cash_usd = _cash_total(plaid, cash_balances)
     holdings_by_account: dict[str, list[CurrentHolding]] = {}
     for holding in current_holdings:
         holdings_by_account.setdefault(holding.account_id, []).append(holding)
