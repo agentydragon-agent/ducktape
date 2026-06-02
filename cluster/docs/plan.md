@@ -46,6 +46,29 @@ PowerDNS and Authentik run on CloudNativePG `local-path`.
 
 ## Next Actions
 
+- [ ] **Recover Loki backend** — `loki-backend-0` and `loki-backend-1` are
+      crash-looping with `init compactor: failed to init delete store:
+unexpected EOF` (100+ restarts as of 2026-06-02 evening). Root cause:
+      during the OVH node rename pilots we deleted `mount0-seaweedfs-volume-*`
+      PVCs which wiped SeaweedFS volume contents; Loki's compactor delete-store
+      lives in the S3 bucket on those now-empty volumes, so it reads a
+      truncated file at startup. Fix: identify the S3 path Loki's compactor
+      uses (likely under `loki/index/` or `loki/deletes/`), clear it via the
+      SeaweedFS S3 API (or just wipe the whole Loki S3 prefix and let it
+      reinitialize — we lose log retention but Mimir+Tempo still cover
+      metrics/traces). After clearing, restart `loki-backend-{0,1}`. Then
+      verify `loki-write`/`loki-read` reconnect and ingestion resumes.
+- [ ] **Stop tana-mcp from crash-looping** — `tana-desktop` container restarts
+      every ~3 min (43+ restarts as of 2026-06-02 evening). Logs show Chromium
+      renderer errors: `Failed to adjust OOM score of renderer with pid X:
+Permission denied`, plus missing dbus + missing PyXDG. Exit code 137
+      is the renderer subprocess being SIGKILLed (probably by Chromium's own
+      sandbox/OOM logic, since the container memory limit is 2Gi and usage is
+      only 300Mi). Not a regression from the rename — issue pre-existed.
+      Investigate whether tana-mcp needs `allowPrivilegeEscalation: true`
+      (incompatible with our `restricted` PodSecurity), a different base
+      image, or a hostNetwork-style escape hatch. See logs in
+      `kubectl logs -n tana-mcp deployment/tana-mcp -c tana-desktop`.
 - [ ] **Eliminate per-node hostname references** in repo files
       (`cluster/k8s/local-path-provisioner/helmrelease.yaml`'s `nodePathMap`,
       `nebula-mesh.json` keys, etc.). Every node rename today requires editing
