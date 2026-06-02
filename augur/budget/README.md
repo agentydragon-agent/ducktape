@@ -66,7 +66,10 @@ budget:
     - { id: esketamine, label: Esketamine (net of Anthem), kind: reimbursable, reimbursed_by: medical_reimbursement }
     - { id: therapy, label: Therapy (net of Anthem), kind: reimbursable, reimbursed_by: medical_reimbursement }
     - { id: medical_other, label: Other medical, kind: expense }
-    - { id: transfers, label: Transfers (internal), kind: transfer }
+    # Transfers are split by direction so each bucket stays single-sided (the categorizer
+    # asserts a transfer bucket never mixes inflow and outflow).
+    - { id: transfers_out, label: Transfers out (internal), kind: transfer }
+    - { id: transfers_in, label: Transfers in (internal), kind: transfer }
     - { id: income, label: Income, kind: income }
     - { id: other, label: Uncategorized, kind: expense }
 

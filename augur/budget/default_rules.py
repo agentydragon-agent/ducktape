@@ -29,7 +29,8 @@ DEFAULT_BUCKET_IDS = frozenset(
         "taxes",
         "travel",
         "government",
-        "transfers",
+        "transfers_out",
+        "transfers_in",
         "income",
         "bank_fees",
         "personal_care",
@@ -139,15 +140,18 @@ DEFAULT_RULES: tuple[Rule, ...] = (
     PfcRule(primary="GOVERNMENT_AND_NON_PROFIT", detailed="GOVERNMENT_AND_NON_PROFIT_DONATIONS", bucket_id="donations"),
     PfcRule(primary="GOVERNMENT_AND_NON_PROFIT", bucket_id="government"),
     PfcRule(primary="TRAVEL", bucket_id="travel"),
-    # Transfers / loan payments are internal-account movements, not spending. They get their
-    # own bucket so they show in the snapshot but are excluded from net-spend rollups.
-    PfcRule(primary="TRANSFER_OUT", bucket_id="transfers"),
-    PfcRule(primary="TRANSFER_IN", bucket_id="transfers"),
-    PfcRule(primary="LOAN_PAYMENTS", bucket_id="transfers"),
-    PfcRule(primary="LOAN_DISBURSEMENTS", bucket_id="transfers"),
-    # Tax refunds aren't "income" -- they're a return of taxes the user already paid, and
-    # augur's tax model accounts for the actual burden separately. Route to `taxes` (transfer
-    # kind) so the refund doesn't double-count against income / inflate spendable monthly avg.
+    # Transfers / loan movements are internal-account flows, not spending -- they get their own
+    # buckets (excluded from net-spend rollups), split by direction so each side reads as a clean
+    # outflow or inflow instead of netting to a misleading number. Plaid signs outflows positive,
+    # inflows negative; categorize.assert_transfer_directions enforces that a transfer bucket
+    # never carries both.
+    PfcRule(primary="TRANSFER_OUT", bucket_id="transfers_out"),
+    PfcRule(primary="LOAN_PAYMENTS", bucket_id="transfers_out"),
+    PfcRule(primary="TRANSFER_IN", bucket_id="transfers_in"),
+    PfcRule(primary="LOAN_DISBURSEMENTS", bucket_id="transfers_in"),
+    # Tax refunds aren't "income" -- they're a return of taxes the user already paid, and augur's
+    # tax model accounts for the actual burden separately. Route to the `taxes` expense bucket so
+    # the refund nets against tax payments (a negative expense) rather than counting as income.
     PfcRule(primary="INCOME", detailed="INCOME_TAX_REFUND", bucket_id="taxes"),
     # True income (paychecks) goes last so that more-specific rules (HCCLAIMPMT, brokerage
     # transfers that Plaid mis-tags as INCOME_CONTRACTOR) get the chance to override it.
