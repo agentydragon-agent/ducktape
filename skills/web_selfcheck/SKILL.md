@@ -276,17 +276,7 @@ with `namespace=claude-sandbox` and compare. Pass: both succeed and agree.
 
 Covered by C2 on web — no separate check.
 
-**W3 — `fork` remote is configured with push access.**
-
-```bash
-git -C /home/user/ducktape remote -v | grep '^fork'
-```
-
-Pass: `fork` appears with a URL the machine user can push to. If absent
-with no warning in the context banner, the fork-remote background task
-failed.
-
-**W4 — `bbr build <any target>` works out of the box, no manual remote
+**W3 — `bbr build <any target>` works out of the box, no manual remote
 setup, no remote picker.**
 
 ```bash
@@ -425,7 +415,7 @@ Profile: <CLI/Web>    Summary: <healthy / degraded / broken>
 | C7  | daemon log clean               | OK/FAIL       | N errors              |
 | C8  | OTLP tracing                   | OK/FAIL       | HTTP <code>           |
 | C9  | bbr analysis cache warm        | OK/WARN/AMBIG | cold=Xs warm=Ys       |
-| CLI1–4 / W1–5                   | ...           | ...                   |
+| CLI1–4 / W1–4                   | ...           | ...                   |
 
 ## Out-of-SPEC diagnostics
 

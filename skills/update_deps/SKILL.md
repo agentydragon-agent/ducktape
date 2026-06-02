@@ -2,8 +2,8 @@
 name: update_deps
 description: >
   Automated dependency updates — reads Renovate dashboard, applies safe updates,
-  produces tested PRs from the agent's fork. One bulk PR for trivial bumps,
-  separate PRs for non-trivial migrations. Use on a schedule or manually.
+  produces tested PRs. One bulk PR for trivial bumps, separate PRs for
+  non-trivial migrations. Use on a schedule or manually.
 ---
 
 # Automated Dependency Updates
@@ -25,7 +25,7 @@ Two PR categories:
 You are **NOT done** until:
 
 - `bazel test //...` passes on RBE for every open PR (verify via BuildBuddy
-  invocation link — CI on GitHub does not run for fork PRs, see [#787](https://github.com/agentydragon/ducktape/issues/787))
+  invocation link)
 - Every available update is either in a PR or has a documented blocker with
   specific evidence (see Evidence Requirements)
 
@@ -66,28 +66,19 @@ On every run, start by reading ALL existing dep-update PR descriptions to
 understand what the previous run already tried and decided. Then diff against the
 current Renovate dashboard to find what's new or changed.
 
-## Fork & Branch Setup
-
-You run as `agentydragon-agent` without collaborator access. You work on a fork.
-
-- **Fork**: `agentydragon-agent/ducktape`
-- **Upstream**: `agentydragon/ducktape`
-- **PRs**: cross-fork PRs targeting `agentydragon/ducktape` branch `devel`
+## Branch Setup
 
 ```bash
-# Ensure remotes
-git remote get-url upstream 2>/dev/null || git remote add upstream https://github.com/agentydragon/ducktape.git
-git remote get-url fork 2>/dev/null || git remote add fork https://github.com/agentydragon-agent/ducktape.git
-git fetch upstream devel
+# Fetch latest devel
+git fetch origin devel
 
 # List all existing dep-update PRs
-gh pr list --repo agentydragon/ducktape --author agentydragon-agent \
-  --search "deps:" --state open --json number,url,headRefName,title
+gh pr list --search "deps:" --state open --json number,url,headRefName,title
 
 # Check out bulk branch (create or rebase)
-git fetch fork deps/auto-update 2>/dev/null && \
-  git checkout deps/auto-update && git rebase upstream/devel || \
-  git checkout -b deps/auto-update upstream/devel
+git fetch origin deps/auto-update 2>/dev/null && \
+  git checkout deps/auto-update && git rebase origin/devel || \
+  git checkout -b deps/auto-update origin/devel
 ```
 
 ## Gather Available Updates
@@ -278,18 +269,18 @@ commit messages without having to look up changelogs.
 
 ```bash
 # Bulk PR
-git push fork deps/auto-update --force
+git push origin deps/auto-update --force
 
 # Non-trivial PRs
-git push fork deps/<package-slug> --force
+git push origin deps/<package-slug> --force
 ```
 
 ## Create or Update PRs
 
 ```bash
 # Bulk PR
-gh pr create --repo agentydragon/ducktape \
-  --head agentydragon-agent:deps/auto-update --base devel \
+gh pr create \
+  --base devel \
   --title "deps: bulk dependency updates ($(date +%Y-%m-%d))" \
   --body "$(cat <<'PREOF'
 <bulk PR body — see format below>
@@ -297,8 +288,8 @@ PREOF
 )"
 
 # Non-trivial PR
-gh pr create --repo agentydragon/ducktape \
-  --head agentydragon-agent:deps/<slug> --base devel \
+gh pr create \
+  --base devel \
   --title "deps: migrate <package> to <version>" \
   --body "$(cat <<'PREOF'
 <non-trivial PR body — see format below>
@@ -309,7 +300,7 @@ PREOF
 To update an existing PR description:
 
 ```bash
-gh pr edit <NUMBER> --repo agentydragon/ducktape --body "$(cat <<'PREOF'
+gh pr edit <NUMBER> --body "$(cat <<'PREOF'
 <updated body>
 PREOF
 )"

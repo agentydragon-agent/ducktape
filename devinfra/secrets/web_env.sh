@@ -20,7 +20,7 @@
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
 # Machine-user GitHub PAT (agentydragon-agent)
-try_export GITHUB_TOKEN "$REPO_ROOT/secrets/github-pat-agentydragon-agent.yaml" '["github_token"]' "GitHub PAT for agentydragon-agent bot — used by gh CLI automatically. PR workflow: origin is a local proxy; PRs must come from a fork (fork remote + push/PR instructions delivered via mailbox)."
+try_export GITHUB_TOKEN "$REPO_ROOT/secrets/github-pat-agentydragon-agent.yaml" '["github_token"]' "GitHub PAT for agentydragon-agent bot — used by gh CLI automatically."
 
 # OTEL bearer token (Grafana Alloy via Authentik) — dedicated client_credentials
 # JWT rotated in-cluster and committed SOPS-encrypted to git. Session startup
