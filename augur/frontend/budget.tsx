@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { NativeSelect } from "@mantine/core";
 
 import { fetchBudgetSnapshot, fetchBudgetTransactions } from "./client.ts";
+import { buildSummaryCsv, buildTransactionsCsv } from "./budget_csv.ts";
 import { fmtUsd, fmtNumber } from "./lib/format.ts";
 
 // Only expense buckets stack into the "monthly spend" outflow chart. Inflow / transfer /
@@ -29,6 +30,29 @@ function windowSpecFromChoice(value) {
 function maxChoiceLabel(coverageStarts) {
   return `Max (since ${coverageStarts})`;
 }
+
+// `windowChoice` values are "trailing:N" / "max"; the colon is awkward in a download filename.
+function windowSlug(windowChoice) {
+  return windowChoice.replace(":", "-");
+}
+
+function downloadCsv(filename, content) {
+  const blob = new Blob([content], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  // Defer cleanup: revoking the blob URL synchronously after click() can cancel the download in
+  // some browsers before it starts. Release on the next macrotask, once the download has begun.
+  setTimeout(() => {
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  }, 0);
+}
+
+const EXPORT_BUTTON_CLASS = "augur-icon-button gap-1.5 px-2.5 py-1.5 text-xs font-medium";
 
 const UNGROUPED_FAMILY = "_ungrouped";
 
@@ -519,6 +543,16 @@ export function BudgetWorkspace() {
     return { spend, inflow, income, netBurn: spend - inflow - income };
   }, [snapshot, rows]);
 
+  const exportSummary = () => {
+    if (!snapshot) return;
+    downloadCsv(`budget-summary-${windowSlug(windowChoice)}.csv`, buildSummaryCsv(snapshot.months, rows));
+  };
+
+  const exportTransactions = () => {
+    if (!selectedBucketId || !bucketTx) return;
+    downloadCsv(`budget-transactions-${selectedBucketId}.csv`, buildTransactionsCsv(bucketTx));
+  };
+
   return (
     <main className="px-4 py-6 sm:px-6 lg:px-8 space-y-5">
       <section className="augur-panel p-4">
@@ -531,17 +565,29 @@ export function BudgetWorkspace() {
               too lumpy and (for some providers) actually arrives before the matching charge.
             </div>
           </div>
-          <NativeSelect
-            aria-label="Window"
-            data={
-              snapshot?.coverageStarts
-                ? [...TRAILING_CHOICES, { value: MAX_CHOICE_VALUE, label: maxChoiceLabel(snapshot.coverageStarts) }]
-                : TRAILING_CHOICES
-            }
-            value={windowChoice}
-            onChange={(event) => setWindowChoice(event.target.value)}
-            classNames={{ input: "augur-tabular min-w-[12rem]" }}
-          />
+          <div className="flex items-center gap-2">
+            {snapshot && (
+              <button
+                type="button"
+                className={EXPORT_BUTTON_CLASS}
+                onClick={exportSummary}
+                data-budget-export="summary"
+              >
+                ↓ Export CSV
+              </button>
+            )}
+            <NativeSelect
+              aria-label="Window"
+              data={
+                snapshot?.coverageStarts
+                  ? [...TRAILING_CHOICES, { value: MAX_CHOICE_VALUE, label: maxChoiceLabel(snapshot.coverageStarts) }]
+                  : TRAILING_CHOICES
+              }
+              value={windowChoice}
+              onChange={(event) => setWindowChoice(event.target.value)}
+              classNames={{ input: "augur-tabular min-w-[12rem]" }}
+            />
+          </div>
         </div>
         {snapshot?.coverageStarts && (
           <div className="mt-2 text-[11px] augur-muted">
@@ -592,9 +638,21 @@ export function BudgetWorkspace() {
                   <div className="augur-eyebrow">Transactions — {bucketsById.get(selectedBucketId)?.label}</div>
                   <div className="mt-1 text-xs augur-muted">All transactions in the window for this bucket.</div>
                 </div>
-                <button type="button" className="text-xs augur-link" onClick={() => setSelectedBucketId(null)}>
-                  Close
-                </button>
+                <div className="flex items-center gap-3">
+                  {bucketTx && bucketTx.length > 0 && (
+                    <button
+                      type="button"
+                      className={EXPORT_BUTTON_CLASS}
+                      onClick={exportTransactions}
+                      data-budget-export="transactions"
+                    >
+                      ↓ Export CSV
+                    </button>
+                  )}
+                  <button type="button" className="text-xs augur-link" onClick={() => setSelectedBucketId(null)}>
+                    Close
+                  </button>
+                </div>
               </div>
               {bucketTxError ? (
                 <div className="augur-note-danger p-4 text-sm">Transactions failed: {bucketTxError}</div>
