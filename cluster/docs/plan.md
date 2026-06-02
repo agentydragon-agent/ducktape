@@ -46,20 +46,18 @@ PowerDNS and Authentik run on CloudNativePG `local-path`.
 
 ## Next Actions
 
-- [ ] **Recover Loki backend** — `loki-backend-{0,1}` crash-looping with
-      `init compactor: failed to init delete store: unexpected EOF` (100+
-      restarts as of 2026-06-02 evening). NOT a SeaweedFS data-loss issue:
-      `weed shell volume.list` shows the `loki` collection has live data
-      (volumes 191-196, ~110MB total, ~11k files); SeaweedFS replication
-      `001` did its job across the rolling pilot deletions. The corruption
-      is one specific S3 object (probably under `loki/__delete_requests/`)
-      that's 0-byte or truncated. Suspected cause: a write got acked by one
-      volume server but the second replica hadn't synced yet when that
-      volume server's PVC got deleted; readers later got the truncated
-      version. Diagnostic: list `loki/__delete_requests/` and `loki/index/`
-      bucket contents looking for zero-size objects via `mc ls --recursive`
-      or the filer HTTP API; delete the offending object(s); restart
-      backends. Loki should reinitialize the cursor empty.
+- [x] ~~**Recover Loki backend**~~ — Done 2026-06-02. Root cause: one
+      corrupt object in the S3 bucket,
+      `loki/index/delete_requests/delete_requests.gz`, S3 metadata reported
+      it as 135 bytes but actual blob was truncated (read failed with
+      `unexpected EOF`). Likely a SeaweedFS replication race: write got
+      acked by one volume server but the second replica hadn't synced when
+      that first server's PVC got deleted; the surviving replica had only
+      a partial blob. Confirmed SeaweedFS did NOT lose other data
+      (`weed shell volume.list` showed the `loki` collection at ~110MB
+      across 6 active volumes). Fix: `mc rm` the corrupt file, restart
+      `loki-backend-{0,1}` pods. Both came back 2/2 Ready within ~4 min;
+      `Loki started startup_time=4.138645944s` confirmed clean init.
 - [ ] **Diagnose tana-mcp crash-loop** — used to work before the renames.
       `tana-desktop` container restarts every ~3 min (43+ restarts as of
       2026-06-02 evening) with exit code 137 on a Chromium renderer
