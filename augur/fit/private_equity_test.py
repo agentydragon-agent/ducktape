@@ -23,7 +23,8 @@ from augur.model.trained_private_equity import (
 from util.testing.jsonl import write_jsonl
 
 
-def _rows() -> list[dict[str, object]]:
+@pytest.fixture
+def rows() -> list[dict[str, object]]:
     return [
         {
             "type": "price_observation",
@@ -177,8 +178,8 @@ def test_load_jsonl_rejects_unknown_observation_type(tmp_path: Path) -> None:
         load_price_observations_jsonl(path)
 
 
-def test_fit_requires_current_ppu_mark(tmp_path: Path) -> None:
-    observations = load_price_observations_jsonl(write_jsonl(tmp_path / "observations.jsonl", _rows()[:2]))
+def test_fit_requires_current_ppu_mark(tmp_path: Path, rows: list[dict[str, object]]) -> None:
+    observations = load_price_observations_jsonl(write_jsonl(tmp_path / "observations.jsonl", rows[:2]))
     config = PrivateEquityTrainingConfig(
         issuer_id="private_company_a",
         observations_path="observations.jsonl",
@@ -190,8 +191,8 @@ def test_fit_requires_current_ppu_mark(tmp_path: Path) -> None:
         fit_private_equity_model(observations, config)
 
 
-def test_train_round_trips_compact_model_and_runtime_samples(tmp_path: Path) -> None:
-    write_jsonl(tmp_path / "observations.jsonl", _rows())
+def test_train_round_trips_compact_model_and_runtime_samples(tmp_path: Path, rows: list[dict[str, object]]) -> None:
+    write_jsonl(tmp_path / "observations.jsonl", rows)
     config_path = tmp_path / "train.yaml"
     config_path.write_text(
         """
