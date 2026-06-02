@@ -20,6 +20,9 @@ spec:
   install:
     remediation:
       retries: 3
+  upgrade:
+    remediation:
+      retries: 3 # Retry transient upgrade failures (e.g. slow S3 backend readiness) instead of going Stalled
   chart:
     spec:
       chart: forgejo
