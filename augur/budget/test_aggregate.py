@@ -6,10 +6,11 @@ from datetime import date
 
 import pytest
 import pytest_bazel
+from more_itertools import one
 
 from augur.budget.aggregate import aggregate
 from augur.budget.categorize import Classified
-from augur.budget.schema import BucketDef, BucketKind, BudgetConfig, BudgetSourceConfig
+from augur.budget.schema import BucketDef, BucketKind, BudgetConfig, BudgetSourceConfig, TransferDirection
 from augur.dates import DAYS_PER_MONTH
 from plaid_utils.schema import TransactionRow
 
@@ -33,8 +34,12 @@ def _tx(transaction_id: str, on: date, amount: float) -> TransactionRow:
 def _single_bucket_config() -> BudgetConfig:
     return BudgetConfig(
         source=BudgetSourceConfig(),
-        buckets=(BucketDef(id="groceries", label="Groceries", kind=BucketKind.EXPENSE),),
-        default_bucket_id="groceries",
+        buckets=(
+            BucketDef(id="groceries", label="Groceries", kind=BucketKind.EXPENSE, direction=TransferDirection.OUTFLOW),
+            BucketDef(id="refunds", label="Refunds", kind=BucketKind.INFLOW, direction=TransferDirection.INFLOW),
+        ),
+        default_outflow_bucket_id="groceries",
+        default_inflow_bucket_id="refunds",
         include_default_rules=False,
     )
 
@@ -49,7 +54,7 @@ def test_partial_current_month_not_counted_as_whole() -> None:
     )
     report = aggregate(classified, config=config, window_start=date(2026, 4, 1), window_end=date(2026, 6, 2))
 
-    (bucket_report,) = report.buckets
+    bucket_report = one(b for b in report.buckets if b.bucket.id == "groceries")
     days = (date(2026, 6, 2) - date(2026, 4, 1)).days + 1
     assert bucket_report.window_monthly_avg == pytest.approx(6000.0 / days * DAYS_PER_MONTH)
     # Close to the true ~$3000/mo run rate, and far above the old sum/3 == $2000.
@@ -65,7 +70,7 @@ def test_mid_month_coverage_start_not_counted_as_whole() -> None:
     classified = (Classified(transaction=_tx("a", date(2026, 3, 20), 1000.0), bucket_id="groceries"),)
     report = aggregate(classified, config=config, window_start=date(2026, 3, 15), window_end=date(2026, 4, 30))
 
-    (bucket_report,) = report.buckets
+    bucket_report = one(b for b in report.buckets if b.bucket.id == "groceries")
     days = (date(2026, 4, 30) - date(2026, 3, 15)).days + 1
     assert bucket_report.window_monthly_avg == pytest.approx(1000.0 / days * DAYS_PER_MONTH)
 
@@ -77,7 +82,7 @@ def test_inflow_average_keeps_sign() -> None:
     classified = (Classified(transaction=_tx("r", date(2026, 1, 10), -500.0), bucket_id="groceries"),)
     report = aggregate(classified, config=config, window_start=date(2026, 1, 1), window_end=date(2026, 1, 31))
 
-    (bucket_report,) = report.buckets
+    bucket_report = one(b for b in report.buckets if b.bucket.id == "groceries")
     assert bucket_report.window_monthly_avg < 0
 
 

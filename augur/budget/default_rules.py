@@ -27,6 +27,7 @@ DEFAULT_BUCKET_IDS = frozenset(
         "supplements",
         "insurance",
         "taxes",
+        "tax_refunds",
         "travel",
         "government",
         "transfers_out",
@@ -143,16 +144,18 @@ DEFAULT_RULES: tuple[Rule, ...] = (
     # Transfers / loan movements are internal-account flows, not spending -- they get their own
     # buckets (excluded from net-spend rollups), split by direction so each side reads as a clean
     # outflow or inflow instead of netting to a misleading number. Plaid signs outflows positive,
-    # inflows negative; categorize.assert_transfer_directions enforces that a transfer bucket
-    # never carries both.
+    # inflows negative; the target bucket's `direction` (kind=transfer requires it) gates the
+    # rule so a wrong-sign transaction is silently skipped to the next matching rule.
     PfcRule(primary="TRANSFER_OUT", bucket_id="transfers_out"),
     PfcRule(primary="LOAN_PAYMENTS", bucket_id="transfers_out"),
     PfcRule(primary="TRANSFER_IN", bucket_id="transfers_in"),
     PfcRule(primary="LOAN_DISBURSEMENTS", bucket_id="transfers_in"),
     # Tax refunds aren't "income" -- they're a return of taxes the user already paid, and augur's
-    # tax model accounts for the actual burden separately. Route to the `taxes` expense bucket so
-    # the refund nets against tax payments (a negative expense) rather than counting as income.
-    PfcRule(primary="INCOME", detailed="INCOME_TAX_REFUND", bucket_id="taxes"),
+    # tax model accounts for the actual burden separately. With the post-#1812 single-direction
+    # invariant the (outflow-only) `taxes` bucket can't hold the (inflow) refund leg, so refunds
+    # route to their own `tax_refunds` bucket -- deployments that want them grouped with paid
+    # taxes can give both buckets the same `family`.
+    PfcRule(primary="INCOME", detailed="INCOME_TAX_REFUND", bucket_id="tax_refunds"),
     # True income (paychecks) goes last so that more-specific rules (HCCLAIMPMT, brokerage
     # transfers that Plaid mis-tags as INCOME_CONTRACTOR) get the chance to override it.
     PfcRule(primary="INCOME", bucket_id="income"),

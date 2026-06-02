@@ -20,6 +20,13 @@ from augur.api.schemas import ApiModel
 _ID_PATTERN = r"^[a-z0-9][a-z0-9_]*$"
 
 
+class TransferDirection(StrEnum):
+    """Sign of a transaction. Plaid signs outflows positive, inflows negative."""
+
+    INFLOW = "inflow"
+    OUTFLOW = "outflow"
+
+
 class BucketKind(StrEnum):
     """How a bucket's money flows.
 
@@ -50,6 +57,31 @@ class BucketDef(ApiModel):
     # insurance reimbursements). No semantics beyond visual grouping; totals are not
     # auto-netted across family members.
     family: str | None = Field(default=None, pattern=_ID_PATTERN)
+    # Sign of every transaction that may land in this bucket. Required on every bucket
+    # (no implicit default): rules routing to a bucket inherit its direction as a sign
+    # filter, so a descriptor that matches in both directions only fires on the
+    # leg whose sign matches the target bucket. For non-transfer kinds, the direction
+    # must agree with the kind's semantics (expense -> outflow, inflow/income -> inflow);
+    # transfer buckets can pick either.
+    direction: TransferDirection
+
+    @model_validator(mode="after")
+    def _validate_direction(self) -> BucketDef:
+        expected = _EXPECTED_DIRECTION.get(self.kind)
+        if expected is not None and self.direction != expected:
+            raise ValueError(
+                f"bucket {self.id!r} kind={self.kind.value} requires direction={expected.value}, "
+                f"got {self.direction.value}"
+            )
+        return self
+
+
+_EXPECTED_DIRECTION: dict[BucketKind, TransferDirection] = {
+    BucketKind.EXPENSE: TransferDirection.OUTFLOW,
+    BucketKind.INFLOW: TransferDirection.INFLOW,
+    BucketKind.INCOME: TransferDirection.INFLOW,
+    # TRANSFER deliberately absent: transfer buckets pick their own direction.
+}
 
 
 class _RuleBase(ApiModel):
@@ -105,8 +137,12 @@ class BudgetConfig(ApiModel):
 
     source: BudgetSourceConfig
     buckets: tuple[BucketDef, ...] = Field(min_length=1)
-    # Default bucket id for transactions no rule matched. Must reference a bucket in `buckets`.
-    default_bucket_id: str = Field(pattern=_ID_PATTERN)
+    # Default bucket per direction for transactions no rule matched. Both required: every bucket
+    # is direction-gated, so the fallback must be selectable per transaction sign. The outflow
+    # default must point at a `direction=outflow` bucket and likewise for inflow -- enforced by
+    # validator below.
+    default_outflow_bucket_id: str = Field(pattern=_ID_PATTERN)
+    default_inflow_bucket_id: str = Field(pattern=_ID_PATTERN)
     # User-specific overrides applied BEFORE the generic defaults. First match wins, so listing
     # a private merchant rule here pre-empts the public defaults.
     rules: tuple[Rule, ...] = ()
@@ -119,10 +155,21 @@ class BudgetConfig(ApiModel):
 
     @model_validator(mode="after")
     def _validate_references(self) -> BudgetConfig:
-        bucket_ids = {bucket.id for bucket in self.buckets}
-        if self.default_bucket_id not in bucket_ids:
-            raise ValueError(f"default_bucket_id {self.default_bucket_id!r} not in buckets ({sorted(bucket_ids)})")
+        bucket_by_id = {bucket.id: bucket for bucket in self.buckets}
+        for field_name, expected in (
+            ("default_outflow_bucket_id", TransferDirection.OUTFLOW),
+            ("default_inflow_bucket_id", TransferDirection.INFLOW),
+        ):
+            bucket_id = getattr(self, field_name)
+            target = bucket_by_id.get(bucket_id)
+            if target is None:
+                raise ValueError(f"{field_name}={bucket_id!r} not in buckets ({sorted(bucket_by_id)})")
+            if target.direction != expected:
+                raise ValueError(
+                    f"{field_name}={bucket_id!r} must reference a direction={expected.value} bucket, "
+                    f"got direction={target.direction.value}"
+                )
         for rule in self.rules:
-            if rule.bucket_id not in bucket_ids:
+            if rule.bucket_id not in bucket_by_id:
                 raise ValueError(f"rule references unknown bucket_id {rule.bucket_id!r}")
         return self
