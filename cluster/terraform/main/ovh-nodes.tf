@@ -21,7 +21,7 @@ locals {
   kimsufi_servers = {
     kimsufi_worker0 = {
       service_name    = var.kimsufi_service_name
-      hostname        = "talos-kimsufi-worker-0"
+      hostname        = "ovh-ns103656"
       nebula_ip       = "10.42.0.13"
       role            = "controlplane"
       apply_mode      = "staged_if_needing_reboot"

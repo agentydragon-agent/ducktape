@@ -1,7 +1,7 @@
 {
   "_comment": "Single source of truth for the Nebula mesh host roster. Consumers: nix/nixos/modules/nebula.nix, nix/nixos/modules/k8s-worker.nix, cluster/terraform/main/nebula.tf, cluster/terraform/main/persistent-auth.tf, cluster/scripts/render_mobile_nebula_config.py. Add/remove/re-IP runbook: cluster/docs/mesh_membership.md.",
   "hosts": {
-    "talos-kimsufi-worker-0": {
+    "ovh-ns103656": {
       "nebula_ip": "10.42.0.13",
       "endpoint": "147.135.39.162:4242",
       "role": "control-plane",

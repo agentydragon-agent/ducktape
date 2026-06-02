@@ -44,7 +44,7 @@ spec:
       #
       # KS-5 nodes use /dev/sdb; KS-GAME nodes use their second NVMe. List
       # every node that should be eligible for local-path-ovh placement.
-      - node: talos-kimsufi-worker-0
+      - node: ovh-ns103656
         paths:
           - /var/mnt/seaweedfs-data/local-path
       - node: talos-kimsufi-worker-1

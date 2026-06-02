@@ -21,7 +21,7 @@ locals {
   # "<host>.nebula.allegedly.works"). Add a row when adding a TF-managed
   # host to the roster.
   nebula_tf_key_to_host = {
-    kimsufi_worker0 = "talos-kimsufi-worker-0"
+    kimsufi_worker0 = "ovh-ns103656"
     kimsufi_worker1 = "talos-kimsufi-worker-1"
     ks_game_worker0 = "talos-ks-game-worker-0"
     ks_game_worker1 = "ovh-ns104963"
