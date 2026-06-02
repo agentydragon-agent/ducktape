@@ -113,3 +113,48 @@ test("buildSummaryCsv neutralizes a formula-triggering bucket label", () => {
   );
   expect(csv.trimEnd().split("\n")[1]).toBe("'=DANGER,expense,,10.00,10.00,1");
 });
+
+test("buildSummaryCsv adds Planned $/mo + Hidden columns only when rows carry adjustments", () => {
+  const csv = buildSummaryCsv(
+    ["2025-05-01"],
+    [
+      // Hidden → planned 0 + "yes"; historical avg retained.
+      {
+        label: "Rent",
+        kind: "expense",
+        family: null,
+        monthlyAmounts: [3200],
+        windowAvg: 3200,
+        transactionCount: 1,
+        hidden: true,
+        effectiveAvg: 3200,
+      },
+      // Overridden → planned = override; not hidden.
+      {
+        label: "Insurance",
+        kind: "expense",
+        family: null,
+        monthlyAmounts: [312],
+        windowAvg: 312,
+        transactionCount: 1,
+        overridden: true,
+        effectiveAvg: 450,
+      },
+      // Untouched → planned = historical avg.
+      {
+        label: "Groceries",
+        kind: "expense",
+        family: null,
+        monthlyAmounts: [600],
+        windowAvg: 600,
+        transactionCount: 1,
+        effectiveAvg: 600,
+      },
+    ]
+  );
+  const lines = csv.trimEnd().split("\n");
+  expect(lines[0]).toBe("Bucket,Kind,Family,2025-05,Avg $/mo,Tx count,Planned $/mo,Hidden");
+  expect(lines[1]).toBe("Rent,expense,,3200.00,3200.00,1,0.00,yes");
+  expect(lines[2]).toBe("Insurance,expense,,312.00,312.00,1,450.00,");
+  expect(lines[3]).toBe("Groceries,expense,,600.00,600.00,1,600.00,");
+});
