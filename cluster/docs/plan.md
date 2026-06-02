@@ -46,6 +46,37 @@ PowerDNS and Authentik run on CloudNativePG `local-path`.
 
 ## Next Actions
 
+- [ ] **Recover from SeaweedFS bulk volume loss (OVH rename)** — see
+      <lessons_learned/2026_06_02_seaweedfs_volume_loss_ovh_rename.md>.
+      Volumes 0–150 are unrecoverable; only 151–210 survived. Per-workload
+      recovery: drop the `gitea-shared-storage` PVC and let Forgejo re-init
+      (no user data — its CNPG DB has zero application tables, the init
+      container has been stuck on a corrupt `app.ini` chunk for 10+ hours);
+      drop the orphan avatar in the `forgejo` S3 bucket; regenerate the
+      6 `augur-assets` landing jpegs from source; accept the loss of
+      ~1100 `mimir-blocks` chunks (forward ingest is fine on v183/v184);
+      `loki` is already recovered (corrupt cursor deleted; pre-rename log
+      windows are gone). Finally, walk every bucket and prune filer
+      entries pointing at dead volume ids so list operations stop
+      returning phantom paths.
+- [ ] **Fix SeaweedFS rack labels + write rolling-PVC runbook**. All three
+      OVH volume servers currently advertise `rack=hil-ovh-h109b04`, so the
+      `defaultReplication: "001"` policy effectively means "any other
+      DataNode" rather than "another rack". Either give each volume server
+      a distinct rack id (or just `rack=$nodeName`) or document that we
+      have single-node tolerance only. Also write a runbook for rolling
+      SeaweedFS volume-server PVCs (drain + `weed shell volume.fix.replication`
+      gate between deletes); reference it from any future node-rename plan.
+- [ ] **Add ReplicationSource for gitea-shared-storage** (and any other
+      SeaweedFS-backed PVC holding non-regeneratable state). Currently
+      only `grocy-{sf,vallejo}` and `tana-mcp` have volsync backups; the
+      Forgejo loss above was survivable only because nothing had been
+      pushed yet, not because we had a backup.
+- [ ] **Decide whether observability storage stays on SeaweedFS**. Loki,
+      Mimir, and Tempo all lost data in the rename. If those backends are
+      supposed to survive node-rotation incidents, they should live on
+      off-cluster object storage (B2 / R2 / OVH Object Storage / etc.)
+      rather than home-hardware SeaweedFS.
 - [ ] **Diagnose tana-mcp crash-loop** — used to work before the renames.
       `tana-desktop` container restarts every ~3 min (43+ restarts as of
       2026-06-02 evening) with exit code 137 on a Chromium renderer
