@@ -41,7 +41,7 @@ locals {
     }
     ks_game_worker0 = {
       service_name    = var.kimsufi_service_name_ks_game_0
-      hostname        = "talos-ks-game-worker-0"
+      hostname        = "ovh-ns104952"
       nebula_ip       = "10.42.0.16"
       role            = "worker"
       install_disk    = "/dev/disk/by-id/nvme-INTEL_SSDPE2MX450G7_BTPF8256006P450RGN"

@@ -23,7 +23,7 @@ locals {
   nebula_tf_key_to_host = {
     kimsufi_worker0 = "ovh-ns103656"
     kimsufi_worker1 = "talos-kimsufi-worker-1"
-    ks_game_worker0 = "talos-ks-game-worker-0"
+    ks_game_worker0 = "ovh-ns104952"
     ks_game_worker1 = "ovh-ns104963"
     kimsufi_cp0     = "ovh-ns102453"
   }

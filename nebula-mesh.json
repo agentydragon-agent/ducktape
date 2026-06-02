@@ -19,7 +19,7 @@
       "managed_by": "tofu-ovh",
       "cert_groups": ["lighthouse"]
     },
-    "talos-ks-game-worker-0": {
+    "ovh-ns104952": {
       "nebula_ip": "10.42.0.16",
       "endpoint": "147.135.104.5:4242",
       "role": "worker",
