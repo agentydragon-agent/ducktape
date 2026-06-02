@@ -65,5 +65,23 @@ def test_at_least_one_control_plane(mesh: nebula_mesh.Mesh) -> None:
     assert cps, "roster must contain at least one role=control-plane host"
 
 
+def test_host_names_have_no_dots(mesh: nebula_mesh.Mesh) -> None:
+    """Host names must be single DNS labels (no dots).
+
+    Talos's HostnameConfig accepts FQDN-shaped strings but splits them at the
+    first dot into hostname + domainname when writing to the kernel. Kubelet
+    then registers the node under the (short) hostname only, so a dotted host
+    name in this roster registers in Kubernetes under a truncated name and
+    breaks every downstream consumer (local-path-provisioner nodePathMap,
+    nodeSelector pins, etc.). See plans/rename_ovh_nodes_role_neutral.md.
+    """
+    for name in mesh.hosts:
+        assert "." not in name, (
+            f"host name {name!r} contains a dot; Talos splits at the first dot, "
+            f"so kubelet would register the node as {name.split('.', 1)[0]!r}. "
+            "Use a single DNS label."
+        )
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

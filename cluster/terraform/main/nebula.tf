@@ -24,7 +24,7 @@ locals {
     kimsufi_worker0 = "talos-kimsufi-worker-0"
     kimsufi_worker1 = "talos-kimsufi-worker-1"
     ks_game_worker0 = "talos-ks-game-worker-0"
-    ks_game_worker1 = "ns104963.ip-147-135-104.us"
+    ks_game_worker1 = "ovh-ns104963"
     kimsufi_cp0     = "talos-kimsufi-cp-0"
   }
 

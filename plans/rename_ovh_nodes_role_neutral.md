@@ -29,21 +29,32 @@ machine-type change with no hostname churn.
 
 ## Target names
 
-Verbatim OVH service names (FQDN, dots preserved). Mapping confirmed against
-`cluster/terraform/main/variables.tf` defaults:
+`ovh-` prefix plus the OVH service identifier (the `nsXXXXXX` prefix of the
+OVH service name). Single DNS label, no dots:
 
-| Old (current)            | New (OVH service name)       | Nebula IP  | OVH public IP  |
-| ------------------------ | ---------------------------- | ---------- | -------------- |
-| `talos-kimsufi-cp-0`     | `ns102453.ip-147-135-37.us`  | 10.42.0.15 | 147.135.37.175 |
-| `talos-kimsufi-worker-0` | `ns103656.ip-147-135-39.us`  | 10.42.0.13 | 147.135.39.162 |
-| `talos-kimsufi-worker-1` | `ns103711.ip-147-135-39.us`  | 10.42.0.14 | 147.135.39.176 |
-| `talos-ks-game-worker-0` | `ns104952.ip-147-135-104.us` | 10.42.0.16 | 147.135.104.5  |
-| `talos-ks-game-worker-1` | `ns104963.ip-147-135-104.us` | 10.42.0.17 | 147.135.104.16 |
+| Old (current)            | New            | OVH service                | Nebula IP  | OVH public IP  |
+| ------------------------ | -------------- | -------------------------- | ---------- | -------------- |
+| `talos-kimsufi-cp-0`     | `ovh-ns102453` | ns102453.ip-147-135-37.us  | 10.42.0.15 | 147.135.37.175 |
+| `talos-kimsufi-worker-0` | `ovh-ns103656` | ns103656.ip-147-135-39.us  | 10.42.0.13 | 147.135.39.162 |
+| `talos-kimsufi-worker-1` | `ovh-ns103711` | ns103711.ip-147-135-39.us  | 10.42.0.14 | 147.135.39.176 |
+| `talos-ks-game-worker-0` | `ovh-ns104952` | ns104952.ip-147-135-104.us | 10.42.0.16 | 147.135.104.5  |
+| `talos-ks-game-worker-1` | `ovh-ns104963` | ns104963.ip-147-135-104.us | 10.42.0.17 | 147.135.104.16 |
 
-Dots are legal in Kubernetes node names (RFC 1123 subdomain), legal as Talos
-`HostnameConfig.hostname`, and legal as Nebula `-name`. They will look like FQDNs
-in `kubectl get nodes`; that's the explicit choice — provider-verbatim wins over
-DNS-label aesthetics.
+The `ovh-` prefix communicates provider context at a glance. The numeric ID is
+the actual OVH service identifier you'd see on invoices.
+
+### Why single-label names (no dots) — pilot lesson 2026-06-01
+
+The original plan used the full OVH FQDN (`ns104963.ip-147-135-104.us`) as the
+Talos hostname. During the pilot of `talos-ks-game-worker-1`, the new node
+registered in Kubernetes as just **`ns104963`** — Talos's `HostnameConfig`
+controller splits the FQDN at the first dot into `HOSTNAME=ns104963` and
+`DOMAINNAME=ip-147-135-104.us`, and kubelet's hostname-detection then uses
+only the (short) hostname. This silently truncated the K8s node name and
+desynced it from `local-path-provisioner`'s `nodePathMap` keys.
+
+Format assert: `cluster/validation/test_nebula_mesh.py::test_host_names_have_no_dots`
+fails the build if any roster key contains a dot.
 
 ## Strategy: delete-and-rebuild via app replication
 
@@ -58,7 +69,7 @@ a gate change just to do a one-shot rename has too much surface area). Verified:
 
 ```
 $ kubectl patch pv pvc-0f5010b5-... --type=json --dry-run=server \
-    -p '[{"op":"replace","path":"/spec/nodeAffinity/.../values/0","value":"ns104952.ip-147-135-104.us"}]'
+    -p '[{"op":"replace","path":"/spec/nodeAffinity/.../values/0","value":"ovh-ns104952"}]'
 The PersistentVolume "pvc-0f5010b5-..." is invalid: nodeAffinity: Invalid
   value: ... field is immutable, except for updating from beta label to GA
 ```
@@ -129,9 +140,9 @@ plan first."
 
 | File                                                          | Change                                                                                        |
 | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `nebula-mesh.json`                                            | Rename the JSON key. `hosts."talos-ks-game-worker-1"` → `hosts."ns104963.ip-147-135-104.us"`. |
+| `nebula-mesh.json`                                            | Rename the JSON key. `hosts."talos-ks-game-worker-1"` → `hosts."ovh-ns104963"`.               |
 | `cluster/terraform/main/ovh-nodes.tf`                         | Update the `hostname` field inside `kimsufi_servers`/`kimsufi_cp_servers` for that node only. |
-| `cluster/terraform/main/nebula.tf`                            | Update the logical-key → hostname map (`ks_game_worker1 = "ns104963.ip-147-135-104.us"`).     |
+| `cluster/terraform/main/nebula.tf`                            | Update the logical-key → hostname map (`ks_game_worker1 = "ovh-ns104963"`).                   |
 | `cluster/k8s/local-path-provisioner/helmrelease.yaml` (47–61) | Rename the corresponding `- node: ...` entry under `nodePathMap`.                             |
 
 These four files must change as one logical unit per node — see the per-node
@@ -216,13 +227,13 @@ when we apply tofu. Same risk with`local.kimsufi_eno1_peer_routes`in`ovh-nodes.t
 After categorization, order is by total handling cost (replicated-PV count +
 singleton cost), not by role:
 
-| #   | Node                     | New name                     | PVs total | Singletons | Notes                                                          |
-| --- | ------------------------ | ---------------------------- | --------- | ---------- | -------------------------------------------------------------- |
-| 1   | `talos-ks-game-worker-1` | `ns104963.ip-147-135-104.us` | 3         | 0          | **Pilot.** True worker. Cleanest test of the mechanism.        |
-| 2   | `talos-kimsufi-cp-0`     | `ns102453.ip-147-135-37.us`  | 1         | 0          | First CP — quorum-sensitive. SeaweedFS volume self-rebalances. |
-| 3   | `talos-kimsufi-worker-0` | `ns103656.ip-147-135-39.us`  | 15        | 0          | Actually a CP. Lots of CNPG/Valkey delete-and-rebuilds.        |
-| 4   | `talos-ks-game-worker-0` | `ns104952.ip-147-135-104.us` | 5         | 1 (gecko)  | Delete the VM before drain.                                    |
-| 5   | `talos-kimsufi-worker-1` | `ns103711.ip-147-135-39.us`  | 20        | 3          | Heaviest. Three backup-and-restore singletons.                 |
+| #   | Node                     | New name       | PVs total | Singletons | Notes                                                          |
+| --- | ------------------------ | -------------- | --------- | ---------- | -------------------------------------------------------------- |
+| 1   | `talos-ks-game-worker-1` | `ovh-ns104963` | 3         | 0          | **Pilot.** True worker. Cleanest test of the mechanism.        |
+| 2   | `talos-kimsufi-cp-0`     | `ovh-ns102453` | 1         | 0          | First CP — quorum-sensitive. SeaweedFS volume self-rebalances. |
+| 3   | `talos-kimsufi-worker-0` | `ovh-ns103656` | 15        | 0          | Actually a CP. Lots of CNPG/Valkey delete-and-rebuilds.        |
+| 4   | `talos-ks-game-worker-0` | `ovh-ns104952` | 5         | 1 (gecko)  | Delete the VM before drain.                                    |
+| 5   | `talos-kimsufi-worker-1` | `ovh-ns103711` | 20        | 3          | Heaviest. Three backup-and-restore singletons.                 |
 
 **Stop and reassess after step 1** (the pilot) before continuing. CP renames
 (steps 2, 3) are quorum-gated — between each, `talosctl -n <surviving-cp> etcd
@@ -547,17 +558,19 @@ restore is only run once per rename.
 - **OVH IP reassignment.** OVH bare-metal keeps the same public IP across
   reinstalls and reboots. Verify by comparing
   `data.ovh_dedicated_server.kimsufi` IPs before/after Tofu apply.
-- **Provider hostname dots.** Some shell scripts may parse hostnames assuming
-  no dots (e.g. `cut -d. -f1`). Quick scan before starting:
-  `grep -rE 'cut -d\.' cluster/scripts/`.
+- **Hostname dots get split by Talos.** Pilot lesson 2026-06-01: Talos's
+  `HostnameConfig` controller treats a hostname with dots as `host.domain` and
+  writes only the (short) hostname to the kernel. Kubelet then registers the
+  K8s node under the short name, desyncing from any repo file that referenced
+  the full dotted string. Use single DNS labels. Format assert enforces this
+  in `cluster/validation/test_nebula_mesh.py::test_host_names_have_no_dots`.
 
 ## Follow-up: rekey Terraform local-map keys
 
 Separate from the hostname rename, the Terraform local-map keys
 (`ks_game_worker1`, `kimsufi_worker0`, etc.) still leak role/index. After
 all five hostnames are renamed, do a closeout pass that renames the
-local-map keys to match the new hostnames (e.g.
-`ns104963_ip_147_135_104_us`).
+local-map keys to match the new hostnames (e.g. `ovh_ns104963`).
 
 Changing the `for_each` key naively makes Terraform plan a destroy+recreate
 of every resource keyed on it — including `null_resource.install_talos_kimsufi`,
@@ -566,7 +579,7 @@ using `tofu state mv` for each resource keyed on the old name:
 
 ```
 tofu state mv 'data.ovh_dedicated_server.kimsufi["ks_game_worker1"]' \
-              'data.ovh_dedicated_server.kimsufi["ns104963_ip_147_135_104_us"]'
+              'data.ovh_dedicated_server.kimsufi["ovh_ns104963"]'
 # Repeat for ovh_dedicated_server.kimsufi, ovh_dedicated_server_update.kimsufi_*,
 # ovh_dedicated_server_reboot_task.kimsufi_*, null_resource.install_talos_kimsufi,
 # talos_machine_configuration_apply.kimsufi. ~8 state-mv operations per node.

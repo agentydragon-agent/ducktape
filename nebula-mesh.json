@@ -28,7 +28,7 @@
       "managed_by": "tofu-ovh",
       "cert_groups": ["lighthouse"]
     },
-    "ns104963.ip-147-135-104.us": {
+    "ovh-ns104963": {
       "nebula_ip": "10.42.0.17",
       "endpoint": "147.135.104.16:4242",
       "role": "worker",
