@@ -25,7 +25,7 @@ locals {
     kimsufi_worker1 = "talos-kimsufi-worker-1"
     ks_game_worker0 = "talos-ks-game-worker-0"
     ks_game_worker1 = "ovh-ns104963"
-    kimsufi_cp0     = "talos-kimsufi-cp-0"
+    kimsufi_cp0     = "ovh-ns102453"
   }
 
   # Derived: list of all lighthouse IPs (for non-lighthouse nodes' `lighthouse.hosts`).

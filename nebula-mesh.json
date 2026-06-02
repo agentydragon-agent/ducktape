@@ -37,7 +37,7 @@
       "managed_by": "tofu-ovh",
       "cert_groups": ["lighthouse"]
     },
-    "talos-kimsufi-cp-0": {
+    "ovh-ns102453": {
       "nebula_ip": "10.42.0.15",
       "endpoint": "147.135.37.175:4242",
       "role": "control-plane",

@@ -50,7 +50,7 @@ spec:
       - node: talos-kimsufi-worker-1
         paths:
           - /var/mnt/seaweedfs-data/local-path
-      - node: talos-kimsufi-cp-0
+      - node: ovh-ns102453
         paths:
           - /var/mnt/seaweedfs-data/local-path
       - node: talos-ks-game-worker-0

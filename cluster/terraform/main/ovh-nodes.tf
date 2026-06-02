@@ -66,7 +66,7 @@ locals {
   kimsufi_cp_servers = {
     kimsufi_cp0 = {
       service_name    = var.kimsufi_service_name_cp0
-      hostname        = "talos-kimsufi-cp-0"
+      hostname        = "ovh-ns102453"
       nebula_ip       = "10.42.0.15"
       role            = "controlplane"
       install_disk    = "/dev/sda"
