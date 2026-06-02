@@ -50,6 +50,16 @@ class BudgetSnapshotResponse(ApiModel):
     reimbursement_window_months: int
     data_window_start: date
     data_window_end: date
+    coverage_starts: date | None = Field(
+        default=None,
+        description=(
+            "Earliest date with complete cross-account coverage, copied from "
+            "BudgetSourceConfig.coverage_starts. Months before this date are partial -- some "
+            "linked accounts contributed less history than others (typically a Plaid item "
+            "with a tighter institution-side transaction-history limit). The UI uses this "
+            "to label early months; when null, no clamp is in effect."
+        ),
+    )
 
 
 class TransactionView(ApiModel):

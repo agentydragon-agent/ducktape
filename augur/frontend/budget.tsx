@@ -64,6 +64,20 @@ function Sparkline({ amounts, width = 90, height = 24 }) {
   );
 }
 
+// "Nice" tick values for a chart axis: pick a step that's a 1/2/5 × 10^n round number
+// and brackets the data, so axis labels read $5k/$10k/$15k rather than $4,237/$8,474.
+function niceTicks(max: number, target = 5): { ticks: number[]; ceiling: number } {
+  if (max <= 0) return { ticks: [0], ceiling: 1 };
+  const rawStep = max / target;
+  const magnitude = 10 ** Math.floor(Math.log10(rawStep));
+  const candidates = [1, 2, 5, 10].map((m) => m * magnitude);
+  const step = candidates.find((c) => c >= rawStep) ?? candidates[candidates.length - 1];
+  const ceiling = Math.ceil(max / step) * step;
+  const ticks: number[] = [];
+  for (let t = 0; t <= ceiling + 1e-9; t += step) ticks.push(t);
+  return { ticks, ceiling };
+}
+
 function StackedMonthlyChart({ months, bucketSeries }) {
   // Stacked column per month. Only spend buckets (EXPENSE + REIMBURSABLE) contribute to the
   // outflow stack; income / transfers shown elsewhere.
@@ -74,8 +88,8 @@ function StackedMonthlyChart({ months, bucketSeries }) {
   const monthlyTotals = months.map((_, i) =>
     spendSeries.reduce((acc, series) => acc + Math.max(series.monthlyAmounts[i], 0), 0)
   );
-  const maxTotal = Math.max(...monthlyTotals, 1);
-  const barWidth = 100 / months.length;
+  const max = Math.max(...monthlyTotals);
+  const { ticks, ceiling } = niceTicks(max);
   const palette = [
     "#0ea5e9",
     "#f97316",
@@ -96,48 +110,79 @@ function StackedMonthlyChart({ months, bucketSeries }) {
     "#fbbf24",
     "#94a3b8",
   ];
+  // Reserve left margin (px) for the y-axis labels + right padding. The bars live in
+  // an inner viewBox; preserveAspectRatio=none stretches them horizontally to fit.
+  const yAxisWidthPx = 56;
+  const innerHeightPx = 220;
   return (
     <div className="overflow-hidden">
-      <svg
-        viewBox="0 0 100 60"
-        preserveAspectRatio="none"
-        width="100%"
-        height={220}
-        role="img"
-        aria-label="Monthly stacked spend"
-      >
-        {months.map((monthIso, monthIdx) => {
-          let cursor = 60;
-          const segments = spendSeries.map((series, seriesIdx) => {
-            const value = Math.max(series.monthlyAmounts[monthIdx], 0);
-            const height = (value / maxTotal) * 55;
-            const y = cursor - height;
-            cursor = y;
-            return (
-              <rect
-                key={series.bucketId}
-                x={monthIdx * barWidth + barWidth * 0.1}
-                y={y}
-                width={barWidth * 0.8}
-                height={height}
-                fill={palette[seriesIdx % palette.length]}
-                opacity="0.9"
-              >
-                <title>{`${series.label} · ${fmtMonth(monthIso)}: ${fmtUsd(value)}`}</title>
-              </rect>
-            );
-          });
-          return <g key={monthIso}>{segments}</g>;
-        })}
-      </svg>
-      <div className="flex justify-between text-[10px] augur-muted">
+      <div className="flex" style={{ height: innerHeightPx }}>
+        <div
+          className="flex flex-col justify-between text-right text-[10px] augur-muted"
+          style={{ width: yAxisWidthPx, paddingRight: 6 }}
+        >
+          {ticks
+            .slice()
+            .reverse()
+            .map((value) => (
+              <span key={value} className="leading-none augur-tabular">
+                {fmtUsd(value)}
+              </span>
+            ))}
+        </div>
+        <div className="relative flex-1">
+          {/* Horizontal gridlines per tick, drawn under the bars. */}
+          <div className="absolute inset-0 flex flex-col justify-between">
+            {ticks
+              .slice()
+              .reverse()
+              .map((value) => (
+                <div key={value} className="border-t border-slate-200 dark:border-slate-700/60" style={{ height: 0 }} />
+              ))}
+          </div>
+          <svg
+            viewBox={`0 0 100 ${ceiling}`}
+            preserveAspectRatio="none"
+            width="100%"
+            height={innerHeightPx}
+            role="img"
+            aria-label="Monthly stacked spend"
+          >
+            {months.map((monthIso, monthIdx) => {
+              const barWidth = 100 / months.length;
+              let cursor = ceiling;
+              const segments = spendSeries.map((series, seriesIdx) => {
+                const value = Math.max(series.monthlyAmounts[monthIdx], 0);
+                if (value <= 0) return null;
+                const y = cursor - value;
+                cursor = y;
+                return (
+                  <rect
+                    key={series.bucketId}
+                    x={monthIdx * barWidth + barWidth * 0.1}
+                    y={y}
+                    width={barWidth * 0.8}
+                    height={value}
+                    fill={palette[seriesIdx % palette.length]}
+                    opacity="0.9"
+                  >
+                    <title>{`${series.label} · ${fmtMonth(monthIso)}: ${fmtUsd(value)}`}</title>
+                  </rect>
+                );
+              });
+              return <g key={monthIso}>{segments}</g>;
+            })}
+          </svg>
+        </div>
+      </div>
+      <div className="flex text-[10px] augur-muted" style={{ paddingLeft: yAxisWidthPx }}>
         {months.map((monthIso) => (
           <span key={monthIso} className="flex-1 text-center">
             {fmtMonth(monthIso)}
           </span>
         ))}
       </div>
-      <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
+      <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-[11px]" style={{ paddingLeft: yAxisWidthPx }}>
         {spendSeries.map((series, idx) => (
           <span key={series.bucketId} className="inline-flex items-center gap-1">
             <span className="inline-block h-2 w-2 rounded-sm" style={{ background: palette[idx % palette.length] }} />
@@ -330,6 +375,13 @@ export function BudgetWorkspace() {
             classNames={{ input: "augur-tabular min-w-[12rem]" }}
           />
         </div>
+        {snapshot?.coverageStarts && (
+          <div className="mt-2 text-[11px] augur-muted">
+            Spend before <span className="font-semibold">{snapshot.coverageStarts}</span> is partial -- one or more
+            linked accounts didn't return earlier transactions. The selected window is clamped to that date for
+            consistency.
+          </div>
+        )}
       </section>
 
       {snapshotError && <div className="augur-note-danger p-4 text-sm">Budget snapshot failed: {snapshotError}</div>}

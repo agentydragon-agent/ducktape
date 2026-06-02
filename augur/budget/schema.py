@@ -9,6 +9,7 @@ file just defines the schemas both layers populate.
 
 from __future__ import annotations
 
+from datetime import date
 from enum import StrEnum
 from typing import Literal
 
@@ -87,6 +88,12 @@ class BudgetSourceConfig(ApiModel):
     # connection can see (fine for single-user deployments; explicit for shared ones).
     plaid_account_ids: tuple[str, ...] = ()
     iso_currency_code: str = "USD"
+    # Earliest date for which the linked accounts provide complete coverage. When set, the
+    # snapshot's window start is clamped to this date so historical comparisons aren't
+    # skewed by accounts that joined the dataset later (e.g. a Plaid item with a tighter
+    # institution-side transaction-history limit than its peers). The wire response carries
+    # this date through so the UI can label early months as partial.
+    coverage_starts: date | None = None
 
 
 class BudgetConfig(ApiModel):

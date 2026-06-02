@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
@@ -27,7 +28,7 @@ from augur.api.config import CalibrationCatalogConfig, Config, load_augur_config
 from augur.api.deployment import DeploymentInfo, build_deployment_info
 from augur.api.portfolio_sources import resolve_portfolio_sources
 from augur.api.schemas import ApiModel
-from augur.budget.service import build_snapshot, list_transactions_in_bucket
+from augur.budget.service import BudgetService
 from augur.budget.wire import (
     BudgetSnapshotRequest,
     BudgetSnapshotResponse,
@@ -48,6 +49,7 @@ from augur.product.portfolio import ProductPortfolioResponse, product_portfolio_
 from augur.product.scenarios import resolve_primary_agent_id, sim_locations_from_config
 from augur.product.service import ProductService
 from augur.product.wire import MetricFanRequest, MetricFanResponse, RolloutRequest, RolloutResponse
+from plaid_utils.schema import async_session_factory
 
 
 @dataclass(frozen=True)
@@ -76,6 +78,11 @@ class ApiServerConfig:
     # The calibration catalog parsed at startup, or None when the deployment configures no
     # `calibration_catalog` (the `/api/calibration/run` endpoint then 400s).
     calibration_catalog: LoadedCalibrationCatalog | None = None
+    # Holds the plaid mirror session factory and the budget config it operates on. Constructed
+    # once at startup (so the asyncpg connection pool + SSL handshake are paid once, not per
+    # request) and shared across `/api/budget/*` calls. None when no `budget` is configured;
+    # the endpoints then 400.
+    budget_service: BudgetService | None = None
 
 
 def create_app(config: ApiServerConfig) -> FastAPI:
@@ -128,9 +135,7 @@ def create_app(config: ApiServerConfig) -> FastAPI:
 
     @app.get("/api/models")
     def models() -> JSONResponse:
-        return payload(
-            {"models": sorted(augur_config.models), "default": augur_config.default_model_id}
-        )
+        return payload({"models": sorted(augur_config.models), "default": augur_config.default_model_id})
 
     @app.post("/api/product/projections/metric_fan", response_model=MetricFanResponse)
     def product_projection_metric_fan(request: MetricFanRequest) -> JSONResponse:
@@ -220,24 +225,22 @@ def create_app(config: ApiServerConfig) -> FastAPI:
             )
         )
 
-    budget_config = augur_config.budget
-
     @app.post("/api/budget/snapshot", response_model=BudgetSnapshotResponse)
     async def budget_snapshot(request: BudgetSnapshotRequest) -> JSONResponse:
-        if budget_config is None:
+        if config.budget_service is None:
             return error(400, "no budget config for this deployment")
         # Snapshot rows carry `date` fields (months, lumpy.date) that the stdlib JSON
         # encoder behind JSONResponse can't serialize; dump in JSON mode (dates -> ISO
         # strings) like calibration_payload, same snake_case + drop-None wire convention.
-        result = await build_snapshot(config=budget_config, months=request.months)
+        result = await config.budget_service.build_snapshot(months=request.months)
         return JSONResponse(content=result.model_dump(mode="json"), headers=no_store)
 
     @app.post("/api/budget/transactions", response_model=BudgetTransactionsResponse)
     async def budget_transactions(request: BudgetTransactionsRequest) -> JSONResponse:
-        if budget_config is None:
+        if config.budget_service is None:
             return error(400, "no budget config for this deployment")
-        result = await list_transactions_in_bucket(
-            config=budget_config, bucket_id=request.bucket_id, months=request.months
+        result = await config.budget_service.list_transactions_in_bucket(
+            bucket_id=request.bucket_id, months=request.months
         )
         return JSONResponse(content=result.model_dump(mode="json"), headers=no_store)
 
@@ -267,8 +270,7 @@ def create_app_from_augur_config(augur_config: Config, *, price_clients: dict[Pl
     `price_clients` is the live prediction-market price source map for
     `/api/calibration/run` (callers construct the appropriate clients)."""
     models: dict[str, Sampler] = {
-        preset_id: cast(Sampler, provider.realize_model())
-        for preset_id, provider in augur_config.models.items()
+        preset_id: cast(Sampler, provider.realize_model()) for preset_id, provider in augur_config.models.items()
     }
     catalog_config = augur_config.calibration_catalog
     calibration_catalog = (
@@ -280,11 +282,25 @@ def create_app_from_augur_config(augur_config: Config, *, price_clients: dict[Pl
         if catalog_config is not None
         else None
     )
+    budget_service: BudgetService | None = None
+    if augur_config.budget is not None:
+        db_url_env = augur_config.budget.source.database_url_env
+        db_url = os.environ.get(db_url_env)
+        if not db_url:
+            raise RuntimeError(
+                f"budget config is set but env var {db_url_env!r} is not -- "
+                "point it at the plaid mirror postgresql URL or remove the `budget:` block."
+            )
+        # Engine + asyncpg connection pool built once at startup; reused across every
+        # /api/budget/* request via BudgetService.session_factory.
+        _, session_factory = async_session_factory(db_url)
+        budget_service = BudgetService(config=augur_config.budget, session_factory=session_factory)
     server_config = ApiServerConfig(
         augur_config=augur_config,
         models=models,
         calibration_catalog=calibration_catalog,
         price_clients=price_clients,
+        budget_service=budget_service,
     )
     return create_app(server_config)
 
@@ -326,10 +342,7 @@ def _run_server_with_args(*, augur_config: Config, args: argparse.Namespace) -> 
 
 def run_app(*, app: FastAPI, augur_config: Config, host: str, port: int) -> int:
     print(f"serving Augur API on http://{host}:{port}")
-    print(
-        f"models: {sorted(augur_config.models)} "
-        f"(default: {augur_config.default_model_id})"
-    )
+    print(f"models: {sorted(augur_config.models)} (default: {augur_config.default_model_id})")
     uvicorn.run(app, host=host, port=port)
     return 0
 

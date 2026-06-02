@@ -20,6 +20,12 @@ def normalise_async_db_url(db_url: str) -> str:
 
 
 def async_session_factory(db_url: str) -> tuple[AsyncEngine, async_sessionmaker[AsyncSession]]:
+    """Construct a fresh AsyncEngine + sessionmaker for `db_url`.
+
+    Each call returns a new engine with its own connection pool, so callers that issue
+    repeated queries against the same database (every API request, in the budget path)
+    should construct one at process startup and reuse it -- the SSL handshake + pool
+    init costs ~500ms per engine over the cluster port-forward. Callers own disposal."""
     engine = create_async_engine(normalise_async_db_url(db_url))
     return engine, async_sessionmaker(engine, expire_on_commit=False)
 
