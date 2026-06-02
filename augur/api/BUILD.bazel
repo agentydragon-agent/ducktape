@@ -108,6 +108,7 @@ py_library(
         ":portfolio_source_config",
         "//augur/product:asset_key",
         "//plaid_utils:read_model",
+        "//plaid_utils:schema",
     ],
 )
 
