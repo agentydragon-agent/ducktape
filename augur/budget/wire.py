@@ -14,7 +14,11 @@ class BucketView(ApiModel):
     id: str
     label: str
     kind: BucketKind
-    reimbursed_by: str | None
+    # Optional grouping key. Buckets sharing a `family` render together in the UI as
+    # one panel (e.g. "medical" groups esketamine + therapy + supplements + insurance
+    # premiums + medical reimbursements). The server doesn't compute family-level
+    # totals; the frontend rolls them up from these per-bucket series.
+    family: str | None
 
 
 class BucketMonthly(ApiModel):
@@ -47,7 +51,6 @@ class BudgetSnapshotResponse(ApiModel):
     monthly_by_bucket: tuple[BucketMonthly, ...]
     lumpy: tuple[LumpyView, ...]
     lumpy_threshold_usd: float
-    reimbursement_window_months: int
     data_window_start: date
     data_window_end: date
     coverage_starts: date | None = Field(

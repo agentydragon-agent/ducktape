@@ -21,9 +21,20 @@ _ID_PATTERN = r"^[a-z0-9][a-z0-9_]*$"
 
 
 class BucketKind(StrEnum):
+    """How a bucket's money flows.
+
+    The earlier model split medical spend into REIMBURSABLE / REIMBURSEMENT and netted
+    them on a rolling window. That assumed reimbursements always arrive after charges
+    within a fixed window; in practice, insurance disbursements are lumpy and (for some
+    providers) actually arrive *before* the charge is submitted. The simpler model:
+    every bucket is either money leaving (EXPENSE), money coming in as a refund or
+    insurance payout (INFLOW), money moving between the user's own accounts (TRANSFER),
+    or earned income (INCOME). The UI groups related buckets with `BucketDef.family`
+    and shows both sides without forcing them to balance.
+    """
+
     EXPENSE = "expense"
-    REIMBURSABLE = "reimbursable"
-    REIMBURSEMENT = "reimbursement"
+    INFLOW = "inflow"
     TRANSFER = "transfer"
     INCOME = "income"
 
@@ -34,18 +45,11 @@ class BucketDef(ApiModel):
     id: str = Field(pattern=_ID_PATTERN)
     label: str
     kind: BucketKind
-    # For REIMBURSABLE buckets, the paired REIMBURSEMENT bucket whose inflows offset
-    # this bucket's outflows on a rolling-window basis (e.g. Numa charges paired with
-    # Anthem HCCLAIMPMT deposits). Other kinds must leave this null.
-    reimbursed_by: str | None = Field(default=None, pattern=_ID_PATTERN)
-
-    @model_validator(mode="after")
-    def _validate_reimbursed_by(self) -> BucketDef:
-        if self.kind == BucketKind.REIMBURSABLE and self.reimbursed_by is None:
-            raise ValueError(f"bucket {self.id!r}: kind=reimbursable requires reimbursed_by")
-        if self.kind != BucketKind.REIMBURSABLE and self.reimbursed_by is not None:
-            raise ValueError(f"bucket {self.id!r}: reimbursed_by only valid on kind=reimbursable")
-        return self
+    # Optional grouping key. Buckets sharing a family render together as one panel
+    # ("medical": esketamine charges + therapy + supplements + insurance premiums +
+    # insurance reimbursements). No semantics beyond visual grouping; totals are not
+    # auto-netted across family members.
+    family: str | None = Field(default=None, pattern=_ID_PATTERN)
 
 
 class _RuleBase(ApiModel):
@@ -109,10 +113,6 @@ class BudgetConfig(ApiModel):
     # When True, ship `default_rules.DEFAULT_RULES` after the user's rules. Set False to
     # opt out of the public rule library entirely (rare; useful for testing).
     include_default_rules: bool = True
-    # Rolling window (months) used to net REIMBURSABLE expenses against their paired
-    # REIMBURSEMENT inflows. Insurance reimbursements arrive 1-4 weeks after the charge,
-    # sometimes batched -- a 3-month window smooths the lumpiness without burying it.
-    reimbursement_window_months: int = Field(default=3, ge=1, le=24)
     # Transactions with abs(amount) >= this threshold are flagged as "lumpy" (in addition to
     # appearing in their natural bucket). User can re-classify them as one-off vs recurring.
     lumpy_threshold_usd: float = Field(default=500.0, gt=0.0)
@@ -122,9 +122,6 @@ class BudgetConfig(ApiModel):
         bucket_ids = {bucket.id for bucket in self.buckets}
         if self.default_bucket_id not in bucket_ids:
             raise ValueError(f"default_bucket_id {self.default_bucket_id!r} not in buckets ({sorted(bucket_ids)})")
-        for bucket in self.buckets:
-            if bucket.reimbursed_by is not None and bucket.reimbursed_by not in bucket_ids:
-                raise ValueError(f"bucket {bucket.id!r} reimbursed_by {bucket.reimbursed_by!r} not in buckets")
         for rule in self.rules:
             if rule.bucket_id not in bucket_ids:
                 raise ValueError(f"rule references unknown bucket_id {rule.bucket_id!r}")

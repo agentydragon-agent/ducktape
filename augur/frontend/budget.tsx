@@ -4,9 +4,9 @@ import { NativeSelect } from "@mantine/core";
 import { fetchBudgetSnapshot, fetchBudgetTransactions } from "./client.ts";
 import { fmtUsd, fmtNumber } from "./lib/format.ts";
 
-// Buckets the user "consumes" cash through. Reimbursable rows already net against
-// their paired reimbursement bucket on the server, so we treat them like expenses here.
-const SPEND_KINDS = new Set(["expense", "reimbursable"]);
+// Only expense buckets stack into the "monthly spend" outflow chart. Inflow / transfer /
+// income render in their own panels (or, for inflow, alongside their family's expenses).
+const STACKABLE_SPEND_KIND = "expense";
 
 const WINDOW_CHOICES = [
   { value: "3", label: "Trailing 3 months" },
@@ -14,6 +14,8 @@ const WINDOW_CHOICES = [
   { value: "12", label: "Trailing 12 months" },
   { value: "24", label: "Trailing 24 months" },
 ];
+
+const UNGROUPED_FAMILY = "_ungrouped";
 
 function fmtMonth(iso) {
   // iso: "YYYY-MM-DD" — render as "Jul '25" so 12 months fit on a row of pills.
@@ -23,12 +25,16 @@ function fmtMonth(iso) {
   return `${names[month - 1]} '${yearStr.slice(2)}`;
 }
 
+function fmtFamily(family) {
+  if (family === UNGROUPED_FAMILY) return "Ungrouped";
+  return family.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 function KindBadge({ kind }) {
   const tone =
     {
       expense: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
-      reimbursable: "bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300",
-      reimbursement: "bg-sky-50 text-sky-800 dark:bg-sky-950/40 dark:text-sky-300",
+      inflow: "bg-sky-50 text-sky-800 dark:bg-sky-950/40 dark:text-sky-300",
       transfer: "bg-slate-50 text-slate-500 italic dark:bg-slate-900 dark:text-slate-500",
       income: "bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300",
     }[kind] || "bg-slate-100 text-slate-700";
@@ -43,13 +49,10 @@ function KindBadge({ kind }) {
 
 function Sparkline({ amounts, width = 90, height = 24 }) {
   if (!amounts.length) return null;
-  // Plaid sign convention: + = money out. For expense buckets we display + as up.
-  // Reimbursement / income buckets read as negative outflow — flip so they show as positive bars.
-  const values = amounts;
-  const max = Math.max(...values.map((value) => Math.abs(value)));
+  const max = Math.max(...amounts.map((value) => Math.abs(value)));
   if (max === 0) return <svg width={width} height={height} aria-hidden="true" />;
-  const step = width / Math.max(values.length - 1, 1);
-  const points = values
+  const step = width / Math.max(amounts.length - 1, 1);
+  const points = amounts
     .map((value, index) => {
       const x = index * step;
       const y = height / 2 - (value / max) * (height / 2 - 1);
@@ -64,24 +67,21 @@ function Sparkline({ amounts, width = 90, height = 24 }) {
   );
 }
 
-// "Nice" tick values for a chart axis: pick a step that's a 1/2/5 × 10^n round number
-// and brackets the data, so axis labels read $5k/$10k/$15k rather than $4,237/$8,474.
-function niceTicks(max: number, target = 5): { ticks: number[]; ceiling: number } {
+// "Nice" tick values: 1/2/5 × 10^n bracketing the data so axis labels read $5k/$10k/$15k.
+function niceTicks(max, target = 5) {
   if (max <= 0) return { ticks: [0], ceiling: 1 };
   const rawStep = max / target;
   const magnitude = 10 ** Math.floor(Math.log10(rawStep));
   const candidates = [1, 2, 5, 10].map((m) => m * magnitude);
   const step = candidates.find((c) => c >= rawStep) ?? candidates[candidates.length - 1];
   const ceiling = Math.ceil(max / step) * step;
-  const ticks: number[] = [];
+  const ticks = [];
   for (let t = 0; t <= ceiling + 1e-9; t += step) ticks.push(t);
   return { ticks, ceiling };
 }
 
 function StackedMonthlyChart({ months, bucketSeries }) {
-  // Stacked column per month. Only spend buckets (EXPENSE + REIMBURSABLE) contribute to the
-  // outflow stack; income / transfers shown elsewhere.
-  const spendSeries = bucketSeries.filter((series) => SPEND_KINDS.has(series.kind));
+  const spendSeries = bucketSeries.filter((series) => series.kind === STACKABLE_SPEND_KIND);
   if (!months.length || !spendSeries.length) {
     return <div className="px-4 py-6 text-sm augur-muted">No spend data in window.</div>;
   }
@@ -110,8 +110,6 @@ function StackedMonthlyChart({ months, bucketSeries }) {
     "#fbbf24",
     "#94a3b8",
   ];
-  // Reserve left margin (px) for the y-axis labels + right padding. The bars live in
-  // an inner viewBox; preserveAspectRatio=none stretches them horizontally to fit.
   const yAxisWidthPx = 56;
   const innerHeightPx = 220;
   return (
@@ -131,7 +129,6 @@ function StackedMonthlyChart({ months, bucketSeries }) {
             ))}
         </div>
         <div className="relative flex-1">
-          {/* Horizontal gridlines per tick, drawn under the bars. */}
           <div className="absolute inset-0 flex flex-col justify-between">
             {ticks
               .slice()
@@ -195,7 +192,6 @@ function StackedMonthlyChart({ months, bucketSeries }) {
 }
 
 function BucketRow({ entry, onSelect, selected }) {
-  const trend = entry.monthlyAmounts;
   return (
     <tr
       className={`cursor-pointer transition-colors ${selected ? "bg-sky-50 dark:bg-sky-950/30" : "hover:bg-slate-50 dark:hover:bg-slate-900"}`}
@@ -211,9 +207,76 @@ function BucketRow({ entry, onSelect, selected }) {
       <td className="px-3 py-2 text-right text-sm augur-tabular">{fmtUsd(entry.currentMonthlyAvg)}</td>
       <td className="px-3 py-2 text-right text-sm augur-tabular augur-muted">{fmtNumber(entry.transactionCount)}</td>
       <td className="px-3 py-2 text-right">
-        <Sparkline amounts={trend} />
+        <Sparkline amounts={entry.monthlyAmounts} />
       </td>
     </tr>
+  );
+}
+
+function FamilyPanel({ family, rows, onSelectBucket, selectedBucketId }) {
+  // Family-level rollup: gross outflow (expense kind), gross inflow (inflow kind),
+  // net = out - in. Computed from the same recent-3-month average each row shows, so
+  // the summary lines up with the row sparklines instead of telling a different story.
+  let grossOut = 0;
+  let grossIn = 0;
+  for (const row of rows) {
+    if (row.kind === "expense") grossOut += row.currentMonthlyAvg;
+    else if (row.kind === "inflow") grossIn += Math.abs(row.currentMonthlyAvg);
+    else if (row.kind === "income") grossIn += Math.abs(row.currentMonthlyAvg);
+  }
+  const net = grossOut - grossIn;
+  const sortedRows = rows.slice().sort((l, r) => Math.abs(r.currentMonthlyAvg) - Math.abs(l.currentMonthlyAvg));
+  return (
+    <section className="augur-panel overflow-hidden" data-budget-family={family}>
+      <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
+        <div className="flex items-baseline justify-between gap-3 flex-wrap">
+          <div>
+            <div className="augur-eyebrow">{fmtFamily(family)}</div>
+            <div className="mt-1 text-[11px] augur-muted">
+              {rows.length} bucket{rows.length === 1 ? "" : "s"} · trailing 3-month average shown for each side.
+            </div>
+          </div>
+          <div className="flex gap-4 text-right">
+            <div>
+              <div className="augur-eyebrow text-[10px]">Out</div>
+              <div className="augur-tabular text-sm font-semibold">{fmtUsd(grossOut)}</div>
+            </div>
+            <div>
+              <div className="augur-eyebrow text-[10px]">In</div>
+              <div className="augur-tabular text-sm font-semibold text-emerald-700 dark:text-emerald-400">
+                −{fmtUsd(grossIn)}
+              </div>
+            </div>
+            <div>
+              <div className="augur-eyebrow text-[10px]">Net</div>
+              <div className="augur-tabular text-sm font-semibold">{fmtUsd(net)}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="min-w-full text-sm">
+          <thead>
+            <tr className="bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500 dark:bg-slate-900 dark:text-slate-400">
+              <th className="px-3 py-2 font-semibold">Bucket</th>
+              <th className="px-3 py-2 text-right font-semibold">Recent $/mo (trailing 3mo)</th>
+              <th className="px-3 py-2 text-right font-semibold">Tx count</th>
+              <th className="px-3 py-2 text-right font-semibold">Trend</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+            {sortedRows.map((row) => (
+              <BucketRow
+                key={row.bucketId}
+                entry={row}
+                onSelect={onSelectBucket}
+                selected={selectedBucketId === row.bucketId}
+              />
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 
@@ -330,30 +393,52 @@ export function BudgetWorkspace() {
 
   const rows = useMemo(() => {
     if (!snapshot) return [];
-    return snapshot.monthlyByBucket
-      .map((series) => {
-        const bucket = bucketsById.get(series.bucketId);
-        return {
-          bucketId: series.bucketId,
-          label: bucket?.label ?? series.bucketId,
-          kind: bucket?.kind ?? "expense",
-          monthlyAmounts: series.monthlyAmounts,
-          currentMonthlyAvg: series.currentMonthlyAvg,
-          transactionCount: series.transactionCount,
-        };
-      })
-      .sort((left, right) => Math.abs(right.currentMonthlyAvg) - Math.abs(left.currentMonthlyAvg));
+    return snapshot.monthlyByBucket.map((series) => {
+      const bucket = bucketsById.get(series.bucketId);
+      return {
+        bucketId: series.bucketId,
+        label: bucket?.label ?? series.bucketId,
+        kind: bucket?.kind ?? "expense",
+        family: bucket?.family ?? null,
+        monthlyAmounts: series.monthlyAmounts,
+        currentMonthlyAvg: series.currentMonthlyAvg,
+        transactionCount: series.transactionCount,
+      };
+    });
   }, [snapshot, bucketsById]);
+
+  const rowsByFamily = useMemo(() => {
+    // Group rows by family. Buckets without a declared family share a synthetic
+    // "_ungrouped" key so they still render -- just below the named families.
+    const grouped = new Map();
+    for (const row of rows) {
+      const key = row.family ?? UNGROUPED_FAMILY;
+      if (!grouped.has(key)) grouped.set(key, []);
+      grouped.get(key).push(row);
+    }
+    // Stable ordering: named families first, alphabetically; ungrouped last.
+    const families = Array.from(grouped.keys()).sort((l, r) => {
+      if (l === UNGROUPED_FAMILY) return 1;
+      if (r === UNGROUPED_FAMILY) return -1;
+      return l.localeCompare(r);
+    });
+    return families.map((family) => ({ family, rows: grouped.get(family) }));
+  }, [rows]);
 
   const totals = useMemo(() => {
     if (!snapshot) return null;
     let spend = 0;
-    let incomeFlow = 0;
+    let inflow = 0;
+    let income = 0;
     for (const row of rows) {
-      if (SPEND_KINDS.has(row.kind)) spend += row.currentMonthlyAvg;
-      if (row.kind === "income") incomeFlow += row.currentMonthlyAvg;
+      if (row.kind === "expense") spend += row.currentMonthlyAvg;
+      else if (row.kind === "inflow") inflow += Math.abs(row.currentMonthlyAvg);
+      else if (row.kind === "income") income += Math.abs(row.currentMonthlyAvg);
     }
-    return { spend, incomeFlow };
+    // "Net burn" subtracts all real money in (inflow + income) from outflow. Treats
+    // medical reimbursements as money in, which is what they functionally are even
+    // if their cash-flow timing relative to the charge varies.
+    return { spend, inflow, income, netBurn: spend - inflow - income };
   }, [snapshot, rows]);
 
   return (
@@ -363,8 +448,9 @@ export function BudgetWorkspace() {
           <div>
             <div className="augur-eyebrow">Budget planner</div>
             <div className="mt-1 text-xs augur-muted">
-              Live spend from Plaid mirror. Reimbursable buckets (e.g. medical) are netted against their paired
-              reimbursement stream on a rolling {snapshot ? snapshot.reimbursementWindowMonths : "—"}-month window.
+              Live spend from Plaid mirror. Buckets are grouped by family (medical, etc.); the family panel shows gross
+              expense, gross inflow, and net separately rather than auto-netting per bucket -- reimbursement timing is
+              too lumpy and (for some providers) actually arrives before the matching charge.
             </div>
           </div>
           <NativeSelect
@@ -392,22 +478,28 @@ export function BudgetWorkspace() {
 
       {snapshot && (
         <>
-          <section className="grid gap-3 sm:grid-cols-3">
+          <section className="grid gap-3 sm:grid-cols-4">
             <div className="augur-card p-4">
-              <div className="augur-eyebrow">Monthly spend (avg, 3mo)</div>
+              <div className="augur-eyebrow">Gross spend (3mo avg)</div>
               <div className="mt-2 text-2xl font-semibold augur-tabular">{fmtUsd(totals.spend)}</div>
+              <div className="text-[11px] augur-muted">All expense buckets, before inflows.</div>
             </div>
             <div className="augur-card p-4">
-              <div className="augur-eyebrow">Monthly income (avg, 3mo)</div>
+              <div className="augur-eyebrow">Inflows (3mo avg)</div>
+              <div className="mt-2 text-2xl font-semibold augur-tabular text-sky-700 dark:text-sky-400">
+                {fmtUsd(totals.inflow)}
+              </div>
+              <div className="text-[11px] augur-muted">Refunds, insurance, etc.</div>
+            </div>
+            <div className="augur-card p-4">
+              <div className="augur-eyebrow">Income (3mo avg)</div>
               <div className="mt-2 text-2xl font-semibold augur-tabular text-emerald-700 dark:text-emerald-400">
-                {fmtUsd(-totals.incomeFlow)}
+                {fmtUsd(totals.income)}
               </div>
             </div>
             <div className="augur-card p-4">
               <div className="augur-eyebrow">Net monthly burn</div>
-              <div className="mt-2 text-2xl font-semibold augur-tabular">
-                {fmtUsd(totals.spend + totals.incomeFlow)}
-              </div>
+              <div className="mt-2 text-2xl font-semibold augur-tabular">{fmtUsd(totals.netBurn)}</div>
               <div className="text-[11px] augur-muted">Positive = drawing down savings.</div>
             </div>
           </section>
@@ -415,42 +507,24 @@ export function BudgetWorkspace() {
           <section className="augur-panel overflow-hidden">
             <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
               <div className="augur-eyebrow">Monthly spend by bucket</div>
+              <div className="mt-1 text-[11px] augur-muted">
+                Stacked expense outflows only. Inflows are shown per-family below, not netted here.
+              </div>
             </div>
             <div className="p-4">
               <StackedMonthlyChart months={snapshot.months} bucketSeries={rows} />
             </div>
           </section>
 
-          <section className="augur-panel overflow-hidden">
-            <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
-              <div className="augur-eyebrow">Buckets</div>
-              <div className="mt-1 text-xs augur-muted">
-                Click a row to drill into its transactions. Sorted by recent monthly average (largest first).
-              </div>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-sm">
-                <thead>
-                  <tr className="bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500 dark:bg-slate-900 dark:text-slate-400">
-                    <th className="px-3 py-2 font-semibold">Bucket</th>
-                    <th className="px-3 py-2 text-right font-semibold">Recent $/mo</th>
-                    <th className="px-3 py-2 text-right font-semibold">Tx count</th>
-                    <th className="px-3 py-2 text-right font-semibold">Trend</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {rows.map((row) => (
-                    <BucketRow
-                      key={row.bucketId}
-                      entry={row}
-                      onSelect={setSelectedBucketId}
-                      selected={selectedBucketId === row.bucketId}
-                    />
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
+          {rowsByFamily.map(({ family, rows: familyRows }) => (
+            <FamilyPanel
+              key={family}
+              family={family}
+              rows={familyRows}
+              onSelectBucket={setSelectedBucketId}
+              selectedBucketId={selectedBucketId}
+            />
+          ))}
 
           {selectedBucketId && (
             <section className="augur-panel overflow-hidden">
@@ -475,8 +549,8 @@ export function BudgetWorkspace() {
             <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
               <div className="augur-eyebrow">Lumpy spends (≥ {fmtUsd(snapshot.lumpyThresholdUsd)})</div>
               <div className="mt-1 text-xs augur-muted">
-                Single large outflows in the window — flagged so you can decide whether each is truly one-off vs
-                recurring.
+                Single large outflows in the window. Click into a row above to see the full transaction list for that
+                bucket; this panel surfaces just the headline-grabbing items.
               </div>
             </div>
             <LumpyPanel items={snapshot.lumpy} bucketsById={bucketsById} />

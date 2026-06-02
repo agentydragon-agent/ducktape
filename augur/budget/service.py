@@ -61,7 +61,7 @@ class BudgetService:
         return BudgetSnapshotResponse(
             months=report.months,
             buckets=tuple(
-                BucketView(id=bucket.id, label=bucket.label, kind=bucket.kind, reimbursed_by=bucket.reimbursed_by)
+                BucketView(id=bucket.id, label=bucket.label, kind=bucket.kind, family=bucket.family)
                 for bucket in self.config.buckets
             ),
             monthly_by_bucket=tuple(
@@ -85,7 +85,6 @@ class BudgetService:
                 for item in report.lumpy
             ),
             lumpy_threshold_usd=self.config.lumpy_threshold_usd,
-            reimbursement_window_months=self.config.reimbursement_window_months,
             data_window_start=start_month,
             data_window_end=today,
             coverage_starts=coverage_starts,
