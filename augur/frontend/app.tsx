@@ -364,10 +364,11 @@ function ProductProjectionWorkspace({
   useEffect(() => {
     const params = new URLSearchParams(productInputToSearch(input, bootstrap));
     if (currencyDisplay !== "compact") params.set("fmt", "exact");
-    // The shell-owned shared params live outside the product input. Carry whichever are currently set
-    // across so rewriting the product `?s=` state doesn't drop them.
+    // The shell-owned shared params live outside the product input, as do the budget tab's
+    // planning params (`bhide`/`bset`). Carry whichever are currently set across so rewriting the
+    // product `?s=` state doesn't drop them when switching away from and back to another tab.
     const currentParams = new URLSearchParams(window.location.search);
-    for (const key of ["n", "seed", "x", "h", "scale", "fmt"]) {
+    for (const key of ["n", "seed", "x", "h", "scale", "fmt", "bhide", "bset"]) {
       const value = currentParams.get(key);
       if (value != null) params.set(key, value);
     }

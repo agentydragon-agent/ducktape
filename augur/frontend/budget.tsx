@@ -3,6 +3,7 @@ import { NativeSelect } from "@mantine/core";
 
 import { fetchBudgetSnapshot, fetchBudgetTransactions } from "./client.ts";
 import { buildSummaryCsv, buildTransactionsCsv } from "./budget_csv.ts";
+import { parseAdjustments, adjustmentsToParams, effectiveSignedAvg, computeTotals } from "./budget_adjustments.ts";
 import { fmtUsd, fmtNumber } from "./lib/format.ts";
 
 // Only expense buckets stack into the "monthly spend" outflow chart. Inflow / transfer /
@@ -53,6 +54,22 @@ function downloadCsv(filename, content) {
 }
 
 const EXPORT_BUTTON_CLASS = "augur-icon-button gap-1.5 px-2.5 py-1.5 text-xs font-medium";
+
+// Mirror the product/calibration shell's URL-state pattern: rewrite only our two budget params
+// (preserving everything else) so a hidden-rent / overridden view round-trips through the URL.
+function writeAdjustmentsToSearch(adjustments) {
+  const params = new URLSearchParams(window.location.search);
+  const { bhide, bset } = adjustmentsToParams(adjustments);
+  if (bhide) params.set("bhide", bhide);
+  else params.delete("bhide");
+  if (bset) params.set("bset", bset);
+  else params.delete("bset");
+  const search = params.toString();
+  const newUrl = `${window.location.pathname}${search ? "?" + search : ""}${window.location.hash}`;
+  if (newUrl !== window.location.pathname + window.location.search + window.location.hash) {
+    window.history.replaceState(null, "", newUrl);
+  }
+}
 
 const UNGROUPED_FAMILY = "_ungrouped";
 
@@ -230,10 +247,58 @@ function StackedMonthlyChart({ months, bucketSeries }) {
   );
 }
 
-function BucketRow({ entry, onSelect, selected }) {
+// Inline editor for a per-bucket override. Prefills with the bucket's current planned magnitude
+// (the override if set, else the rounded historical average) so "Set" is a one-keystroke tweak.
+function OverrideEditor({ entry, onAdjust, onClose }) {
+  const [draft, setDraft] = useState(() =>
+    entry.overridden ? String(entry.adjustment.monthly) : String(Math.round(Math.abs(entry.windowAvg)))
+  );
+  const commit = () => {
+    const value = Number(draft);
+    if (draft.trim() !== "" && Number.isFinite(value) && value >= 0) {
+      onAdjust(entry.bucketId, { kind: "override", monthly: value });
+    }
+    onClose();
+  };
+  return (
+    <div className="flex items-center justify-end gap-1" onClick={(event) => event.stopPropagation()}>
+      <input
+        type="number"
+        min={0}
+        autoFocus
+        aria-label={`Planned monthly amount for ${entry.label}`}
+        className="augur-input w-24 text-right augur-tabular"
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") commit();
+          else if (event.key === "Escape") onClose();
+        }}
+      />
+      <button type="button" className="text-[11px] augur-link" onClick={commit}>
+        Save
+      </button>
+      <button type="button" className="text-[11px] augur-link" onClick={onClose}>
+        Cancel
+      </button>
+    </div>
+  );
+}
+
+function BucketRow({ entry, onSelect, selected, onAdjust }) {
+  const [editing, setEditing] = useState(false);
+  const stop = (event) => event.stopPropagation();
+  // Effective figure shown in the $/mo cell: the override when set, otherwise the historical
+  // average. Overridden rows render in accent + carry a "was …" reset line; hidden rows are
+  // dimmed and struck through (they're dropped from totals/chart but stay visible to bring back).
+  const valueClass = entry.overridden
+    ? "font-semibold augur-accent-text"
+    : entry.hidden
+      ? "line-through opacity-70"
+      : "";
   return (
     <tr
-      className={`cursor-pointer transition-colors ${selected ? "bg-sky-50 dark:bg-sky-950/30" : "hover:bg-slate-50 dark:hover:bg-slate-900"}`}
+      className={`cursor-pointer transition-colors ${selected ? "bg-sky-50 dark:bg-sky-950/30" : "hover:bg-slate-50 dark:hover:bg-slate-900"} ${entry.hidden ? "opacity-50" : ""}`}
       onClick={() => onSelect(entry.bucketId)}
       data-budget-bucket-row={entry.bucketId}
     >
@@ -243,21 +308,57 @@ function BucketRow({ entry, onSelect, selected }) {
           <KindBadge kind={entry.kind} />
         </span>
       </th>
-      <td className="px-3 py-2 text-right text-sm augur-tabular">{fmtUsd(entry.windowAvg)}</td>
+      <td className="px-3 py-2 text-right text-sm augur-tabular" onClick={stop}>
+        {editing ? (
+          <OverrideEditor entry={entry} onAdjust={onAdjust} onClose={() => setEditing(false)} />
+        ) : (
+          <>
+            <span className={valueClass}>{fmtUsd(entry.effectiveAvg)}</span>
+            {entry.overridden && (
+              <div className="text-[10px] augur-muted">
+                was {fmtUsd(entry.windowAvg)} ·{" "}
+                <button type="button" className="augur-link" onClick={() => onAdjust(entry.bucketId, null)}>
+                  reset
+                </button>
+              </div>
+            )}
+          </>
+        )}
+      </td>
       <td className="px-3 py-2 text-right text-sm augur-tabular augur-muted">{fmtNumber(entry.transactionCount)}</td>
       <td className="px-3 py-2 text-right">
         <Sparkline amounts={entry.monthlyAmounts} />
+      </td>
+      <td
+        className="px-3 py-2 text-right whitespace-nowrap text-[11px]"
+        onClick={stop}
+        data-budget-bucket-plan={entry.bucketId}
+      >
+        {!entry.hidden && !editing && (
+          <button type="button" className="augur-link" onClick={() => setEditing(true)}>
+            {entry.overridden ? "Edit" : "Set"}
+          </button>
+        )}
+        <button
+          type="button"
+          className="ml-2 augur-link"
+          onClick={() => onAdjust(entry.bucketId, entry.hidden ? null : { kind: "hidden" })}
+        >
+          {entry.hidden ? "Show" : "Hide"}
+        </button>
       </td>
     </tr>
   );
 }
 
-function HeadlineCards({ totals, windowMonths }) {
+function HeadlineCards({ totals, historical, windowMonths, adjustmentsActive }) {
   // Always show "Monthly burn" (net of inflows + income). Show "Inflows" / "Income"
   // cards only when nonzero so we don't render a wall of $0 cards on simple flows.
   // When inflows == income == 0, "spend" and "netBurn" are identical -- skip the
-  // duplicate card.
-  const subtitle = `${windowMonths}-month average`;
+  // duplicate card. With planning adjustments active the figures are the *adjusted*
+  // totals (hidden buckets dropped, overrides applied); the burn card then anchors
+  // them against the unadjusted history so the tweak's effect is legible.
+  const subtitle = adjustmentsActive ? "planned $/mo" : `${windowMonths}-month average`;
   const cards = [];
   const hasOffsets = totals.inflow > 0 || totals.income > 0;
   if (hasOffsets) {
@@ -279,9 +380,11 @@ function HeadlineCards({ totals, windowMonths }) {
     });
   }
   cards.push({
-    label: hasOffsets ? "Net monthly burn" : "Monthly burn",
+    label: adjustmentsActive ? "Planned monthly burn" : hasOffsets ? "Net monthly burn" : "Monthly burn",
     value: totals.netBurn,
-    note: "Positive = drawing down savings.",
+    note: adjustmentsActive
+      ? `Historical: ${fmtUsd(historical.netBurn)}/mo. Positive = drawing down savings.`
+      : "Positive = drawing down savings.",
   });
   const cols = cards.length === 4 ? "sm:grid-cols-4" : cards.length === 3 ? "sm:grid-cols-3" : "sm:grid-cols-2";
   return (
@@ -299,27 +402,59 @@ function HeadlineCards({ totals, windowMonths }) {
   );
 }
 
-function FamilyPanel({ family, rows, onSelectBucket, selectedBucketId, windowMonths }) {
-  // Roll up the family-level totals from each row's window average so the summary
-  // lines up with the row figures instead of telling a different story.
+// A running summary of the active planning adjustments with a one-click reset. Renders nothing
+// until something is hidden or overridden, so the default view stays uncluttered.
+function AdjustmentsBar({ rows, onReset }) {
+  const hidden = rows.filter((row) => row.hidden);
+  const overridden = rows.filter((row) => row.overridden);
+  if (!hidden.length && !overridden.length) return null;
+  return (
+    <section
+      className="augur-note-info flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg p-3 text-xs"
+      data-budget-adjustments=""
+    >
+      <span className="augur-eyebrow text-[10px]">Planning adjustments</span>
+      {hidden.length > 0 && (
+        <span>
+          <span className="font-semibold">Hidden:</span> {hidden.map((row) => row.label).join(", ")}
+        </span>
+      )}
+      {overridden.length > 0 && (
+        <span>
+          <span className="font-semibold">Set:</span>{" "}
+          {overridden.map((row) => `${row.label} → ${fmtUsd(Math.abs(row.effectiveAvg))}/mo`).join(", ")}
+        </span>
+      )}
+      <button type="button" className="augur-link ml-auto" onClick={onReset}>
+        Reset all
+      </button>
+    </section>
+  );
+}
+
+function FamilyPanel({ family, rows, onSelectBucket, selectedBucketId, onAdjust, windowMonths }) {
+  // Roll up the family-level totals from each row's effective average (override when set, else
+  // historical) so the summary lines up with the row figures. Hidden buckets are excluded -- the
+  // panel total tracks the same adjusted view the headline cards show.
   let grossOut = 0;
   let grossIn = 0;
   for (const row of rows) {
-    if (row.kind === "expense") grossOut += row.windowAvg;
-    else if (row.kind === "inflow") grossIn += Math.abs(row.windowAvg);
-    else if (row.kind === "income") grossIn += Math.abs(row.windowAvg);
+    if (row.hidden) continue;
+    if (row.kind === "expense") grossOut += row.effectiveAvg;
+    else if (row.kind === "inflow") grossIn += Math.abs(row.effectiveAvg);
+    else if (row.kind === "income") grossIn += Math.abs(row.effectiveAvg);
   }
   // `transfer` buckets are direction-agnostic -- their sign is real (negative = net inflow).
   // Add their signed average to the relevant side so net stays honest.
   for (const row of rows) {
-    if (row.kind !== "transfer") continue;
-    if (row.windowAvg >= 0) grossOut += row.windowAvg;
-    else grossIn += -row.windowAvg;
+    if (row.hidden || row.kind !== "transfer") continue;
+    if (row.effectiveAvg >= 0) grossOut += row.effectiveAvg;
+    else grossIn += -row.effectiveAvg;
   }
   const net = grossOut - grossIn;
   // Hide the In/Net columns when the family is purely expense-side -- no signal there.
   const hasInflowSide = grossIn > 0;
-  const sortedRows = rows.slice().sort((l, r) => Math.abs(r.windowAvg) - Math.abs(l.windowAvg));
+  const sortedRows = rows.slice().sort((l, r) => Math.abs(r.effectiveAvg) - Math.abs(l.effectiveAvg));
   return (
     <section className="augur-panel overflow-hidden" data-budget-family={family}>
       <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
@@ -360,6 +495,7 @@ function FamilyPanel({ family, rows, onSelectBucket, selectedBucketId, windowMon
               <th className="px-3 py-2 text-right font-semibold">{windowMonths}-month avg $/mo</th>
               <th className="px-3 py-2 text-right font-semibold">Tx count</th>
               <th className="px-3 py-2 text-right font-semibold">Trend</th>
+              <th className="px-3 py-2 text-right font-semibold">Plan</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -369,6 +505,7 @@ function FamilyPanel({ family, rows, onSelectBucket, selectedBucketId, windowMon
                 entry={row}
                 onSelect={onSelectBucket}
                 selected={selectedBucketId === row.bucketId}
+                onAdjust={onAdjust}
               />
             ))}
           </tbody>
@@ -457,6 +594,9 @@ export function BudgetWorkspace() {
   const [selectedBucketId, setSelectedBucketId] = useState(null);
   const [bucketTx, setBucketTx] = useState(null);
   const [bucketTxError, setBucketTxError] = useState(null);
+  // Planning adjustments (hidden buckets / per-bucket overrides) initialized from the URL so a
+  // shared link reopens the same tweaked view; every change is written back in applyAdjustment.
+  const [adjustments, setAdjustments] = useState(() => parseAdjustments(window.location.search));
 
   const windowSpec = useMemo(() => windowSpecFromChoice(windowChoice), [windowChoice]);
 
@@ -511,11 +651,32 @@ export function BudgetWorkspace() {
     });
   }, [snapshot, bucketsById]);
 
+  // Overlay the planning adjustments onto each row: `hidden`/`overridden` flags + the `effectiveAvg`
+  // (override re-signed into the bucket's direction, else the historical window average) the
+  // headline, family rollups, and per-row display all read from.
+  const adjustedRows = useMemo(
+    () =>
+      rows.map((row) => {
+        const adjustment = adjustments.get(row.bucketId);
+        return {
+          ...row,
+          adjustment,
+          hidden: adjustment?.kind === "hidden",
+          overridden: adjustment?.kind === "override",
+          effectiveAvg: effectiveSignedAvg(row.kind, row.windowAvg, adjustment),
+        };
+      }),
+    [rows, adjustments]
+  );
+
+  // Hidden buckets drop out of the stacked chart entirely (the "natural spending without rent" view).
+  const visibleRows = useMemo(() => adjustedRows.filter((row) => !row.hidden), [adjustedRows]);
+
   const rowsByFamily = useMemo(() => {
     // Group rows by family. Buckets without a declared family share a synthetic
     // "_ungrouped" key so they still render -- just below the named families.
     const grouped = new Map();
-    for (const row of rows) {
+    for (const row of adjustedRows) {
       const key = row.family ?? UNGROUPED_FAMILY;
       if (!grouped.has(key)) grouped.set(key, []);
       grouped.get(key).push(row);
@@ -527,21 +688,12 @@ export function BudgetWorkspace() {
       return l.localeCompare(r);
     });
     return families.map((family) => ({ family, rows: grouped.get(family) }));
-  }, [rows]);
+  }, [adjustedRows]);
 
-  const totals = useMemo(() => {
-    if (!snapshot) return null;
-    let spend = 0;
-    let inflow = 0;
-    let income = 0;
-    for (const row of rows) {
-      if (row.kind === "expense") spend += row.windowAvg;
-      else if (row.kind === "inflow") inflow += Math.abs(row.windowAvg);
-      else if (row.kind === "income") income += Math.abs(row.windowAvg);
-    }
-    // Net burn subtracts inflows + income from gross outflow.
-    return { spend, inflow, income, netBurn: spend - inflow - income };
-  }, [snapshot, rows]);
+  // Adjusted totals power the headline cards; the unadjusted version anchors the "Historical: …"
+  // note so the effect of hiding/overriding is legible. With no adjustments the two coincide.
+  const totals = useMemo(() => (snapshot ? computeTotals(rows, adjustments) : null), [snapshot, rows, adjustments]);
+  const historicalTotals = useMemo(() => (snapshot ? computeTotals(rows, new Map()) : null), [snapshot, rows]);
 
   const exportSummary = () => {
     if (!snapshot) return;
@@ -551,6 +703,21 @@ export function BudgetWorkspace() {
   const exportTransactions = () => {
     if (!selectedBucketId || !bucketTx) return;
     downloadCsv(`budget-transactions-${selectedBucketId}.csv`, buildTransactionsCsv(bucketTx));
+  };
+
+  // null clears the bucket back to "actual"; otherwise set hidden / override. One adjustment per
+  // bucket (hide and override are mutually exclusive). Every change is mirrored to the URL.
+  const applyAdjustment = (bucketId, adjustment) => {
+    const next = new Map(adjustments);
+    if (adjustment) next.set(bucketId, adjustment);
+    else next.delete(bucketId);
+    setAdjustments(next);
+    writeAdjustmentsToSearch(next);
+  };
+
+  const resetAdjustments = () => {
+    setAdjustments(new Map());
+    writeAdjustmentsToSearch(new Map());
   };
 
   return (
@@ -606,17 +773,25 @@ export function BudgetWorkspace() {
 
       {snapshot && (
         <>
-          <HeadlineCards totals={totals} windowMonths={snapshot.months.length} />
+          <HeadlineCards
+            totals={totals}
+            historical={historicalTotals}
+            windowMonths={snapshot.months.length}
+            adjustmentsActive={adjustments.size > 0}
+          />
+
+          <AdjustmentsBar rows={adjustedRows} onReset={resetAdjustments} />
 
           <section className="augur-panel overflow-hidden">
             <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
               <div className="augur-eyebrow">Monthly spend by bucket</div>
               <div className="mt-1 text-[11px] augur-muted">
-                Stacked expense outflows only. Inflows are shown per-family below, not netted here.
+                Stacked expense outflows only. Inflows are shown per-family below, not netted here. Hidden buckets are
+                excluded.
               </div>
             </div>
             <div className="p-4">
-              <StackedMonthlyChart months={snapshot.months} bucketSeries={rows} />
+              <StackedMonthlyChart months={snapshot.months} bucketSeries={visibleRows} />
             </div>
           </section>
 
@@ -627,6 +802,7 @@ export function BudgetWorkspace() {
               rows={familyRows}
               onSelectBucket={setSelectedBucketId}
               selectedBucketId={selectedBucketId}
+              onAdjust={applyAdjustment}
               windowMonths={snapshot.months.length}
             />
           ))}
