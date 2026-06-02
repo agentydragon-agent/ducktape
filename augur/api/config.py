@@ -22,10 +22,10 @@ from pathlib import Path
 import yaml
 from pydantic import Field, HttpUrl, PositiveInt, model_validator
 
-from augur.api.bootstrap import ActorRole, ProductInputDefaults
 from augur.api.local_regulation import LocalRegulation
 from augur.api.portfolio_source_config import PortfolioSourcesConfig
 from augur.api.schemas import ApiModel
+from augur.api.wire import ActorRole, ProductInputDefaults
 from augur.budget.schema import BudgetConfig
 from augur.model.provider_config import CompositeProviderConfig, ProviderConfig
 from augur.model.state_space import StateSpaceProviderConfig
@@ -131,6 +131,11 @@ class Config(ApiModel):
     portfolio_sources: PortfolioSourcesConfig
     locations: tuple[LocationConfig, ...] = ()
     location_selection: tuple[str, ...] | None = None
+    # CLEANUP(2026-06-02): `default_rollout_samples` is no longer surfaced on the wire — the
+    #   frontend seeds its rollout count from a local constant clamped to `max_rollout_samples`,
+    #   so nothing reads this. Remove the field once gaffer-private's config YAML drops the key
+    #   (ApiModel's extra="forbid" rejects unknown keys, so it must outlive deployments still
+    #   setting it).
     default_rollout_samples: PositiveInt
     max_rollout_samples: PositiveInt
     # User-overridable starting values for the product input panel. Optional per-field; the
@@ -147,17 +152,14 @@ class Config(ApiModel):
         ),
     )
     default_model_id: str = Field(
-        description=(
-            "Preset id used when the request omits or defaults `model_id`. Must name a key in `models`."
-        )
+        description=("Preset id used when the request omits or defaults `model_id`. Must name a key in `models`.")
     )
-    calibration_catalog: CalibrationCatalogConfig | None = Field(
-        default=None,
+    calibration_catalog: CalibrationCatalogConfig = Field(
         description=(
             "The single prediction-market catalog the model-only calibration endpoints "
-            "(`/api/calibration/*`) score, loaded into a `MarketCatalog` at startup. `None` by "
-            "default; a deployment sets it to a catalog plus the issuer it scores."
-        ),
+            "(`/api/calibration/*`) score, loaded into a `MarketCatalog` at startup. Every "
+            "deployment configures one: a catalog plus the issuer it scores."
+        )
     )
     budget: BudgetConfig | None = Field(
         default=None,
@@ -168,32 +170,11 @@ class Config(ApiModel):
         ),
     )
 
-    @model_validator(mode="before")
-    @classmethod
-    def _expand_legacy_exogenous_provider(cls, data: object) -> object:
-        """Wrap a top-level `exogenous_provider:` into the new presets registry under the
-        historical id `current_model`, so existing deployment configs and tests
-        keep loading without edits while presets is the canonical schema going forward.
-        """
-
-        if not isinstance(data, dict) or "exogenous_provider" not in data:
-            return data
-        if "models" in data:
-            raise ValueError(
-                "exogenous_provider and models are mutually exclusive; use only models"
-            )
-        data = dict(data)
-        provider = data.pop("exogenous_provider")
-        data["models"] = {"current_model": provider}
-        data.setdefault("default_model_id", "current_model")
-        return data
-
     @model_validator(mode="after")
     def _validate_default_preset(self) -> Config:
         if self.default_model_id not in self.models:
             raise ValueError(
-                f"default_model_id {self.default_model_id!r} is not a key in "
-                f"models (have {sorted(self.models)})"
+                f"default_model_id {self.default_model_id!r} is not a key in models (have {sorted(self.models)})"
             )
         return self
 
@@ -212,8 +193,6 @@ def load_augur_config(path: Path) -> Config:
 
 def _anchor_calibration_catalog_paths(config: Config, *, base_dir: Path) -> Config:
     catalog = config.calibration_catalog
-    if catalog is None:
-        return config
     updates: dict[str, Path] = {}
     if not catalog.catalog_path.is_absolute():
         updates["catalog_path"] = (base_dir / catalog.catalog_path).resolve()
@@ -243,8 +222,7 @@ def _anchor_property_source_paths(config: Config, *, base_dir: Path) -> Config:
 
 def _anchor_model_paths(config: Config, *, base_dir: Path) -> Config:
     anchored = {
-        preset_id: _anchor_provider_paths(provider, base_dir=base_dir)
-        for preset_id, provider in config.models.items()
+        preset_id: _anchor_provider_paths(provider, base_dir=base_dir) for preset_id, provider in config.models.items()
     }
     if anchored == dict(config.models):
         return config

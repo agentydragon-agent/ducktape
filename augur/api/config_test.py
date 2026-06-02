@@ -9,7 +9,6 @@ import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
-from augur.api.bootstrap import ActorRole
 from augur.api.config import (
     AgentDefinition,
     CalibrationCatalogConfig,
@@ -20,8 +19,9 @@ from augur.api.config import (
     dump_augur_config_yaml,
     load_augur_config,
 )
+from augur.api.conftest import MinimalConfig
 from augur.api.finance import FinanceSnapshot
-from augur.api.local_regulation import LocalRegulation, TaxRegime
+from augur.api.local_regulation import LocalRegulation
 from augur.api.portfolio import HoldingPositionConfig, HoldingTaxLotConfig, PortfolioAccountConfig, PortfolioConfig
 from augur.api.portfolio_source_config import (
     FixedPortfolioSourceConfig,
@@ -30,6 +30,7 @@ from augur.api.portfolio_source_config import (
     PlaidSp500ProxyGroupConfig,
     PortfolioSourcesConfig,
 )
+from augur.api.wire import ActorRole
 from augur.model.independent import IndependentProviderConfig
 from augur.model.private_equity_risk import PrivateEquityRiskProviderConfig
 from augur.model.provider_config import CompositeProviderConfig
@@ -38,51 +39,21 @@ from augur.model.trained_private_equity import TrainedPrivateEquityProviderConfi
 from augur.product.asset_key import SP500AssetKey
 
 
-def _minimal_config(**overrides: object) -> Config:
-    """Build a placeholder Config for schema-shape tests. Values are
-    intentionally generic — deployments supply their own real values."""
-    defaults: dict[str, object] = {
-        "agents": (AgentDefinition(actor_id="alpha", label="Alpha", role=ActorRole.PRIMARY_OWNER),),
-        "property_source": PropertySourceConfig(properties_path="/tmp/properties.json"),
-        "portfolio_sources": PortfolioSourcesConfig(
-            fixed=FixedPortfolioSourceConfig(snapshot=FinanceSnapshot(as_of_date="2026-05-12"))
-        ),
-        "default_rollout_samples": 128,
-        "max_rollout_samples": 1_000_000,
-        "models": {"current_model": IndependentProviderConfig()},
-        "default_model_id": "current_model",
-    }
-    defaults.update(overrides)
-    return Config(**defaults)
+def test_minimal_config_validates_with_explicit_sampling_config(minimal_config: MinimalConfig) -> None:
+    config = minimal_config()
 
-
-def _fixture_regulation() -> LocalRegulation:
-    return LocalRegulation(
-        property_tax_regime=TaxRegime.CALIFORNIA_PROP13,
-        default_tax_regimes=(
-            TaxRegime.CALIFORNIA_PROP13,
-            TaxRegime.CALIFORNIA_TRANSFER_TAX,
-            TaxRegime.FEDERAL_MORTGAGE_INTEREST,
-        ),
-        property_tax_annual_pct=1.0,
-        notes="Synthetic public fixture location.",
-    )
-
-
-def test_minimal_config_validates_with_explicit_sampling_config() -> None:
-    config = _minimal_config()
-
-    assert config.agents[0].actor_id == "alpha"
+    assert config.agents[0].actor_id == "owner"
     assert config.location_selection is None
     assert config.default_rollout_samples == 128
     assert config.max_rollout_samples == 1_000_000
 
 
-def test_sampling_config_is_required() -> None:
+def test_sampling_config_is_required(minimal_config: MinimalConfig) -> None:
+    base = minimal_config().model_dump(mode="json")
     with pytest.raises(ValidationError, match="default_rollout_samples"):
-        _minimal_config(default_rollout_samples=None)
+        Config.model_validate({**base, "default_rollout_samples": None})
     with pytest.raises(ValidationError, match="max_rollout_samples"):
-        _minimal_config(max_rollout_samples=None)
+        Config.model_validate({**base, "max_rollout_samples": None})
 
 
 def test_property_source_declares_stable_public_asset_urls() -> None:
@@ -118,13 +89,13 @@ def test_property_asset_property_ids_must_be_unique() -> None:
         )
 
 
-def test_config_carries_tax_lot_accurate_portfolio_schema() -> None:
-    config = _minimal_config(
+def test_config_carries_tax_lot_accurate_portfolio_schema(minimal_config: MinimalConfig) -> None:
+    config = minimal_config(
         portfolio_sources=PortfolioSourcesConfig(
             fixed=FixedPortfolioSourceConfig(
                 snapshot=FinanceSnapshot(as_of_date="2026-05-12"),
                 portfolio=PortfolioConfig(
-                    accounts=(PortfolioAccountConfig(account_id="taxable_brokerage", owner_agent_id="alpha"),),
+                    accounts=(PortfolioAccountConfig(account_id="taxable_brokerage", owner_agent_id="owner"),),
                     holdings=(
                         HoldingPositionConfig(
                             position_id="voo_position",
@@ -155,8 +126,8 @@ def test_config_carries_tax_lot_accurate_portfolio_schema() -> None:
     assert fixed.portfolio.to_initial_lots()[0].purchase_month_index == -24
 
 
-def test_config_carries_optional_plaid_portfolio_source() -> None:
-    config = _minimal_config(
+def test_config_carries_optional_plaid_portfolio_source(minimal_config: MinimalConfig) -> None:
+    config = minimal_config(
         portfolio_sources=PortfolioSourcesConfig(
             plaid=PlaidPortfolioSourceConfig(
                 enabled=True,
@@ -165,7 +136,7 @@ def test_config_carries_optional_plaid_portfolio_source() -> None:
                     PlaidSp500ProxyGroupConfig(
                         position_id="wealthfront_sp500",
                         portfolio_account_id="wealthfront_taxable",
-                        owner_agent_id="alpha",
+                        owner_agent_id="owner",
                         plaid_account_ids=("wealthfront-plaid-account",),
                     ),
                 ),
@@ -185,21 +156,23 @@ def test_enabled_plaid_portfolio_source_must_select_something() -> None:
         PlaidPortfolioSourceConfig(enabled=True)
 
 
-def test_location_selection_accepts_location_strings() -> None:
-    config = _minimal_config(location_selection=("san_francisco_ca", "vallejo_ca"))
+def test_location_selection_accepts_location_strings(minimal_config: MinimalConfig) -> None:
+    config = minimal_config(location_selection=("san_francisco_ca", "vallejo_ca"))
 
     assert config.location_selection == ("san_francisco_ca", "vallejo_ca")
 
 
-def test_config_can_define_deployment_owned_locations() -> None:
-    config = _minimal_config(
+def test_config_can_define_deployment_owned_locations(
+    minimal_config: MinimalConfig, fixture_regulation: LocalRegulation
+) -> None:
+    config = minimal_config(
         locations=(
             LocationConfig(
                 location_id="location_a",
                 label="Location A",
                 city="Location A",
                 state="Fixture",
-                local_regulation=_fixture_regulation(),
+                local_regulation=fixture_regulation,
             ),
         ),
         location_selection=("location_a",),
@@ -221,6 +194,9 @@ def test_at_least_one_agent_required() -> None:
             max_rollout_samples=1_000_000,
             models={"current_model": IndependentProviderConfig()},
             default_model_id="current_model",
+            calibration_catalog=CalibrationCatalogConfig(
+                catalog_path=Path("/tmp/catalog.yaml"), issuer="example_issuer"
+            ),
         )
 
 
@@ -234,13 +210,13 @@ def test_snapshot_optional_fields_default_to_zero() -> None:
     assert snapshot.cash_usd == 0.0
 
 
-def test_unknown_field_is_rejected() -> None:
+def test_unknown_field_is_rejected(minimal_config: MinimalConfig) -> None:
     with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
-        _minimal_config(extra_field="nope")
+        minimal_config(extra_field="nope")
 
 
-def test_yaml_round_trip_through_dump_and_load(tmp_path) -> None:
-    config = _minimal_config(location_selection=("san_francisco_ca",))
+def test_yaml_round_trip_through_dump_and_load(tmp_path: Path, minimal_config: MinimalConfig) -> None:
+    config = minimal_config(location_selection=("san_francisco_ca",))
 
     path = tmp_path / "config.yaml"
     path.write_text(dump_augur_config_yaml(config), encoding="utf-8")
@@ -249,9 +225,11 @@ def test_yaml_round_trip_through_dump_and_load(tmp_path) -> None:
     assert reloaded == config
 
 
-def test_config_accepts_composite_provider_with_trained_private_equity(tmp_path) -> None:
+def test_config_accepts_composite_provider_with_trained_private_equity(
+    tmp_path: Path, minimal_config: MinimalConfig
+) -> None:
     model_path = tmp_path / "private_equity_model.json"
-    config = _minimal_config(
+    config = minimal_config(
         models={
             "current_model": {
                 "type": "composite",
@@ -267,8 +245,8 @@ def test_config_accepts_composite_provider_with_trained_private_equity(tmp_path)
     assert provider.private_equity.trained_model_path == model_path
 
 
-def test_config_accepts_composite_provider_with_private_equity_risk() -> None:
-    config = _minimal_config(
+def test_config_accepts_composite_provider_with_private_equity_risk(minimal_config: MinimalConfig) -> None:
+    config = minimal_config(
         models={
             "current_model": {
                 "type": "composite",
@@ -287,13 +265,15 @@ def test_config_accepts_composite_provider_with_private_equity_risk() -> None:
     assert provider.private_equity.issuers["private_holding_a"].current_mark_usd == 25.0
 
 
-def test_relative_trained_private_equity_model_path_anchors_against_yaml_dir(tmp_path) -> None:
+def test_relative_trained_private_equity_model_path_anchors_against_yaml_dir(
+    tmp_path: Path, minimal_config: MinimalConfig
+) -> None:
     (tmp_path / "properties.json").write_text("[]", encoding="utf-8")
     (tmp_path / "private_equity_model.json").write_text("{}", encoding="utf-8")
     config_path = tmp_path / "config.yaml"
     config_path.write_text(
         dump_augur_config_yaml(
-            _minimal_config(
+            minimal_config(
                 property_source=PropertySourceConfig(properties_path=Path("properties.json")),
                 models={
                     "current_model": {
@@ -318,13 +298,15 @@ def test_relative_trained_private_equity_model_path_anchors_against_yaml_dir(tmp
     assert provider.private_equity.trained_model_path == (tmp_path / "private_equity_model.json").resolve()
 
 
-def test_relative_state_space_artifact_path_anchors_against_yaml_dir(tmp_path) -> None:
+def test_relative_state_space_artifact_path_anchors_against_yaml_dir(
+    tmp_path: Path, minimal_config: MinimalConfig
+) -> None:
     (tmp_path / "properties.json").write_text("[]", encoding="utf-8")
     (tmp_path / "state_space_artifact.json").write_text("{}", encoding="utf-8")
     config_path = tmp_path / "config.yaml"
     config_path.write_text(
         dump_augur_config_yaml(
-            _minimal_config(
+            minimal_config(
                 property_source=PropertySourceConfig(properties_path=Path("properties.json")),
                 models={
                     "current_model": {
@@ -351,14 +333,16 @@ def test_calibration_catalog_sample_sanity_path_defaults_to_none() -> None:
     assert catalog.sample_sanity_path is None
 
 
-def test_relative_calibration_catalog_paths_anchor_against_yaml_dir(tmp_path) -> None:
+def test_relative_calibration_catalog_paths_anchor_against_yaml_dir(
+    tmp_path: Path, minimal_config: MinimalConfig
+) -> None:
     """Both `catalog_path` and the optional `sample_sanity_path` resolve against the yaml dir,
     like the other ConfigMap-mounted deployment paths."""
     (tmp_path / "properties.json").write_text("[]", encoding="utf-8")
     config_path = tmp_path / "config.yaml"
     config_path.write_text(
         dump_augur_config_yaml(
-            _minimal_config(
+            minimal_config(
                 property_source=PropertySourceConfig(properties_path=Path("properties.json")),
                 calibration_catalog=CalibrationCatalogConfig(
                     catalog_path=Path("catalog.yaml"), issuer="openai", sample_sanity_path=Path("sample_sanity.yaml")
@@ -370,12 +354,11 @@ def test_relative_calibration_catalog_paths_anchor_against_yaml_dir(tmp_path) ->
 
     reloaded = load_augur_config(config_path)
 
-    assert reloaded.calibration_catalog is not None
     assert reloaded.calibration_catalog.catalog_path == (tmp_path / "catalog.yaml").resolve()
     assert reloaded.calibration_catalog.sample_sanity_path == (tmp_path / "sample_sanity.yaml").resolve()
 
 
-def test_relative_property_source_paths_anchor_against_yaml_dir(tmp_path) -> None:
+def test_relative_property_source_paths_anchor_against_yaml_dir(tmp_path: Path, minimal_config: MinimalConfig) -> None:
     """ConfigMap mounts put config.yaml + properties.json side-by-side, so the
     yaml stores `properties_path: properties.json` and the loader resolves
     against the yaml's directory."""
@@ -383,7 +366,7 @@ def test_relative_property_source_paths_anchor_against_yaml_dir(tmp_path) -> Non
     (tmp_path / "assets").mkdir()
     (tmp_path / "config.yaml").write_text(
         dump_augur_config_yaml(
-            _minimal_config(
+            minimal_config(
                 property_source=PropertySourceConfig(
                     properties_path=Path("properties.json"),
                     asset_dir=Path("assets"),

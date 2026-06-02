@@ -2,7 +2,7 @@
 
 Builds the app from the public fixture config (which configures the example OpenAI
 catalog scored against the `openai_pe` preset), injecting multi-platform mock clients
-so the run stays hermetic (no network). `/api/bootstrap` surfaces the catalog info;
+so the run stays hermetic (no network). `/api/calibration` surfaces the catalog info;
 `/api/calibration/run` does a small run with the injected live prices.
 """
 
@@ -26,7 +26,6 @@ from augur.model.series import IssuerId, SP500Key
 
 
 def _client_for(config: Config) -> TestClient:
-    assert config.calibration_catalog is not None
     catalog = MarketCatalog.from_yaml(config.calibration_catalog.catalog_path)
     # Every market resolves to the same fixed YES probability so the run is hermetic.
     by_platform: dict[Platform, dict[str, float]] = {}
@@ -37,15 +36,14 @@ def _client_for(config: Config) -> TestClient:
 
 @pytest.fixture
 def client(augur_config: Config) -> Iterator[TestClient]:
-    assert augur_config.calibration_catalog is not None
     with _client_for(augur_config) as test_client:
         yield test_client
 
 
-def test_bootstrap_surfaces_calibration_catalog(client: TestClient) -> None:
-    response = client.get("/api/bootstrap")
+def test_calibration_info_endpoint(client: TestClient) -> None:
+    response = client.get("/api/calibration")
     assert response.status_code == 200, response.text
-    calibration = response.json()["calibration"]
+    calibration = response.json()
     assert calibration["issuer"] == "openai"
     assert calibration["label"] == "OpenAI (example Manifold catalog)"
 
@@ -141,7 +139,6 @@ def _config_with_sample_sanity(augur_config: Config, tmp_path: Path) -> Config:
     spec_path = tmp_path / "sample_sanity.yaml"
     spec_path.write_text(yaml.safe_dump(spec.model_dump(mode="json")), encoding="utf-8")
 
-    assert augur_config.calibration_catalog is not None
     catalog = augur_config.calibration_catalog.model_copy(update={"sample_sanity_path": spec_path})
     return augur_config.model_copy(update={"calibration_catalog": catalog})
 

@@ -1,3 +1,10 @@
+"""Catalog/settings/calibration wire types for the public Augur API.
+
+Pydantic models at the HTTP boundary (snake_case on the wire; the frontend camelizes),
+exported to the frontend Zod schema via `augur.api.export_schema`. The three GET payloads
+(`CatalogResponse`, `SettingsResponse`, `CalibrationInfo`) are built once at startup from the
+deployment `Config` by `augur.api.catalog`."""
+
 from __future__ import annotations
 
 from enum import StrEnum
@@ -28,7 +35,7 @@ class Location(ApiModel):
 
 
 class Property(ApiModel):
-    """Persistence-shaped property row; join to `BootstrapResponse.locations` by `location_id`."""
+    """Persistence-shaped property row; join to `CatalogResponse.locations` by `location_id`."""
 
     id: str = Field(description="Stable relational property identity used by selection, saved scenarios, and storage.")
     source_catalog_id: str
@@ -108,24 +115,40 @@ class ProductInputDefaults(ApiModel):
 class CalibrationInfo(ApiModel):
     """The deployment's single prediction-market calibration catalog (for the calibration tab).
 
-    Present only when the deployment configures a `calibration_catalog`. The frontend's
-    calibration page uses it to label the run and to seed the model/preset picker; the catalog
-    itself is fixed (no picker), so this carries no catalog id."""
+    The frontend's calibration page uses it to label the run and to seed the model/preset
+    picker; the catalog itself is fixed (no picker), so this carries no catalog id."""
 
     label: str = Field(description="Human label for the catalog (falls back to the issuer when unset in config).")
     issuer: str = Field(description="Private-equity issuer id the catalog scores (e.g. `openai`).")
 
 
-class BootstrapResponse(ApiModel):
+class CatalogResponse(ApiModel):
+    """The deployment's property/location catalog, served at `GET /api/catalog`.
+
+    `properties` join to `locations` by `location_id`; the product form always needs both, so
+    they travel together as one resource."""
+
     locations: list[Location]
     properties: list[Property]
-    default_rollout_samples: PositiveInt
+
+    # Lookups the server/sim build off the catalog. Plain `@property` (not a serialized field), so
+    # they stay off the wire while giving every caller one spelling of the derivation.
+    @property
+    def properties_by_id(self) -> dict[str, Property]:
+        return {property_.id: property_ for property_ in self.properties}
+
+    @property
+    def location_ids(self) -> frozenset[str]:
+        return frozenset(location.id for location in self.locations)
+
+
+class SettingsResponse(ApiModel):
+    """Cross-cutting simulation knobs the app shell reads at mount time, served at
+    `GET /api/settings`: the sampling/horizon limits, the product-panel starting values, and the
+    model registry the shared controls drive."""
+
     max_rollout_samples: PositiveInt
     max_horizon_months: PositiveInt
     product_input_defaults: ProductInputDefaults = Field(default_factory=ProductInputDefaults)
     models: tuple[str, ...]
     default_model_id: str
-    calibration: CalibrationInfo | None = Field(
-        default=None,
-        description="The deployment's calibration catalog info, or None when no `calibration_catalog` is configured.",
-    )

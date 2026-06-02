@@ -15,7 +15,6 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import ValidationError
 
-from augur.api.bootstrap import BootstrapResponse
 from augur.api.calibration_wire import (
     CALIBRATION_FAN_PERCENTILES,
     CalibrationRunRequest,
@@ -23,11 +22,12 @@ from augur.api.calibration_wire import (
     sanity_band_to_wire,
 )
 from augur.api.casing import plain_json
-from augur.api.catalog import build_bootstrap_payload
+from augur.api.catalog import build_calibration_info, build_catalog, build_settings
 from augur.api.config import CalibrationCatalogConfig, Config, load_augur_config, resolve_augur_config_path
 from augur.api.deployment import DeploymentInfo, build_deployment_info
 from augur.api.portfolio_sources import resolve_portfolio_sources
 from augur.api.schemas import ApiModel
+from augur.api.wire import CalibrationInfo, CatalogResponse, SettingsResponse
 from augur.budget.service import BudgetService
 from augur.budget.wire import (
     BudgetSnapshotRequest,
@@ -75,8 +75,9 @@ class ApiServerConfig:
     # Maps each Platform to its client. Reused across requests, so the TTL caches serve the
     # calibration tab's rapid auto-refreshes.
     price_clients: dict[Platform, PriceClient]
-    # The calibration catalog parsed at startup, or None when the deployment configures no
-    # `calibration_catalog` (the `/api/calibration/run` endpoint then 400s).
+    # The deployment's calibration catalog parsed into a `MarketCatalog` at startup. None only
+    # when the app is assembled directly without loading it (e.g. a product-only TestClient);
+    # `/api/calibration/run` then 400s. `create_app_from_augur_config` always loads it.
     calibration_catalog: LoadedCalibrationCatalog | None = None
     # Holds the plaid mirror session factory and the budget config it operates on. Constructed
     # once at startup (so the asyncpg connection pool + SSL handshake are paid once, not per
@@ -88,15 +89,17 @@ class ApiServerConfig:
 def create_app(config: ApiServerConfig) -> FastAPI:
     augur_config = config.augur_config
     resolved_portfolio = resolve_portfolio_sources(augur_config)
-    bootstrap = build_bootstrap_payload(augur_config)
+    catalog = build_catalog(augur_config)
+    settings = build_settings(augur_config)
+    calibration_info = build_calibration_info(augur_config)
     deployment_info = build_deployment_info()
     product_service = ProductService(
         portfolio=resolved_portfolio.portfolio,
         initial_cash_usd=float(resolved_portfolio.snapshot.cash_usd),
         primary_agent_id=resolve_primary_agent_id(augur_config),
-        known_location_ids=frozenset(location.id for location in bootstrap.locations),
+        known_location_ids=catalog.location_ids,
         locations=sim_locations_from_config(augur_config.locations),
-        properties_by_id={property_.id: property_ for property_ in bootstrap.properties},
+        properties_by_id=catalog.properties_by_id,
         models=config.models,
         max_rollout_samples=augur_config.max_rollout_samples,
     )
@@ -119,9 +122,17 @@ def create_app(config: ApiServerConfig) -> FastAPI:
     # passes the Response through untouched. `response_model=` is purely for the OpenAPI document
     # `augur.api.export_schema` dumps to drive the frontend's Zod/TS codegen.
 
-    @app.get("/api/bootstrap", response_model=BootstrapResponse)
-    def bootstrap_house() -> JSONResponse:
-        return payload(bootstrap)
+    @app.get("/api/catalog", response_model=CatalogResponse)
+    def catalog_route() -> JSONResponse:
+        return payload(catalog)
+
+    @app.get("/api/settings", response_model=SettingsResponse)
+    def settings_route() -> JSONResponse:
+        return payload(settings)
+
+    @app.get("/api/calibration", response_model=CalibrationInfo)
+    def calibration_info_route() -> JSONResponse:
+        return payload(calibration_info)
 
     @app.get("/api/deployment", response_model=DeploymentInfo)
     def deployment() -> JSONResponse:
@@ -132,10 +143,6 @@ def create_app(config: ApiServerConfig) -> FastAPI:
         return payload(
             product_portfolio_response(snapshot=resolved_portfolio.snapshot, portfolio=resolved_portfolio.portfolio)
         )
-
-    @app.get("/api/models")
-    def models() -> JSONResponse:
-        return payload({"models": sorted(augur_config.models), "default": augur_config.default_model_id})
 
     @app.post("/api/product/projections/metric_fan", response_model=MetricFanResponse)
     def product_projection_metric_fan(request: MetricFanRequest) -> JSONResponse:
@@ -156,7 +163,7 @@ def create_app(config: ApiServerConfig) -> FastAPI:
     def calibration_run(request: CalibrationRunRequest) -> JSONResponse:
         loaded = config.calibration_catalog
         if loaded is None:
-            return error(400, "no calibration_catalog configured for this deployment")
+            return error(400, "calibration catalog is not loaded for this server instance")
         preset_id = request.preset_id or config.augur_config.default_model_id
         # KeyError on the preset lookup -> 400 via the registered handler.
         model = config.models[preset_id]
@@ -273,14 +280,10 @@ def create_app_from_augur_config(augur_config: Config, *, price_clients: dict[Pl
         preset_id: cast(Sampler, provider.realize_model()) for preset_id, provider in augur_config.models.items()
     }
     catalog_config = augur_config.calibration_catalog
-    calibration_catalog = (
-        LoadedCalibrationCatalog(
-            config=catalog_config,
-            catalog=MarketCatalog.from_yaml(catalog_config.catalog_path),
-            sample_sanity_spec=_load_sample_sanity_spec(catalog_config.sample_sanity_path),
-        )
-        if catalog_config is not None
-        else None
+    calibration_catalog = LoadedCalibrationCatalog(
+        config=catalog_config,
+        catalog=MarketCatalog.from_yaml(catalog_config.catalog_path),
+        sample_sanity_spec=_load_sample_sanity_spec(catalog_config.sample_sanity_path),
     )
     budget_service: BudgetService | None = None
     if augur_config.budget is not None:

@@ -28,7 +28,7 @@ import pytest
 import pytest_bazel
 import uvicorn
 
-from augur.api.config import load_augur_config
+from augur.api.config import Config
 from augur.calibration.catalog import MarketCatalog
 from augur.calibration.platform import Platform
 from augur.calibration.testing import mock_price_clients
@@ -222,7 +222,8 @@ def browser(playwright_sync: Playwright) -> Iterator[Browser]:
         browser.close()
 
 
-def _hermetic_prices() -> dict[Platform, dict[str, float]]:
+@pytest.fixture(scope="module")
+def hermetic_prices() -> dict[Platform, dict[str, float]]:
     """A fixed live price for every market in the example catalog.
 
     The calibration tab auto-runs on load and scores every catalog market, so the in-process
@@ -237,10 +238,9 @@ def _hermetic_prices() -> dict[Platform, dict[str, float]]:
 
 
 @pytest.fixture(scope="module")
-def augur_server() -> Iterator[str]:
-    config = load_augur_config(get_required_path("_main/augur/api/testdata/config.yaml"))
+def augur_server(augur_config: Config, hermetic_prices: dict[Platform, dict[str, float]]) -> Iterator[str]:
     # Inject hermetic mock clients so the calibration tab's auto-run never hits the network.
-    app = build_dev_app(config, price_clients=mock_price_clients(_hermetic_prices()))
+    app = build_dev_app(augur_config, price_clients=mock_price_clients(hermetic_prices))
     port = pick_free_port("127.0.0.1")
     server = uvicorn.Server(uvicorn.Config(app=app, host="127.0.0.1", port=port, log_level="warning"))
     thread = threading.Thread(target=server.run, name="augur-visual-uvicorn", daemon=True)
