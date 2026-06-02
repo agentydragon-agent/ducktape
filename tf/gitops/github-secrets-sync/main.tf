@@ -4,8 +4,8 @@
 # from git. Managed by tofu-controller (15m interval).
 #
 # The CI age key is a narrow-scope key that can only decrypt CI-relevant
-# secrets (BuildBuddy API key, Docker CI mTLS, Attic token, Harbor creds,
-# GitHub PAT). It cannot decrypt cluster tokens, Nebula keys, or other
+# secrets (BuildBuddy API key, Docker CI mTLS, Attic token, props registry
+# creds, GitHub PAT). It cannot decrypt cluster tokens, Nebula keys, or other
 # infrastructure secrets.
 #
 # Auth: fine-grained GitHub PAT stored as K8s Secret (SOPS-deployed by Flux).
@@ -43,6 +43,17 @@ resource "github_actions_secret" "sops_age_key_gaffer_private" {
   repository      = "gaffer-private"
   secret_name     = "SOPS_AGE_KEY"
   plaintext_value = data.kubernetes_secret.ci_age_key.data["age-key"]
+}
+
+# --- GitHub Actions Variables ---
+
+# Where props CI pushes agent images: the props backend registry proxy, which
+# records agent definitions and forwards to Forgejo's registry. CI authenticates
+# as the evaluator Postgres role (secrets/ci/props-registry.sops.yaml).
+resource "github_actions_variable" "props_registry_url" {
+  repository    = "ducktape"
+  variable_name = "PROPS_REGISTRY_URL"
+  value         = "props.allegedly.works"
 }
 
 # Data sources for harbor_ci_robot, buildbuddy_api_key, attic_push_token, and
