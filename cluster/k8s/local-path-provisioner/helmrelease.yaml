@@ -47,7 +47,7 @@ spec:
       - node: ovh-ns103656
         paths:
           - /var/mnt/seaweedfs-data/local-path
-      - node: talos-kimsufi-worker-1
+      - node: ovh-ns103711
         paths:
           - /var/mnt/seaweedfs-data/local-path
       - node: ovh-ns102453

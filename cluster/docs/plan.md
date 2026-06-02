@@ -46,6 +46,31 @@ PowerDNS and Authentik run on CloudNativePG `local-path`.
 
 ## Next Actions
 
+- [ ] **Rename Terraform local-map keys** in `cluster/terraform/main/ovh-nodes.tf`
+      and `cluster/terraform/main/nebula.tf` to match the renamed hostnames.
+      Keys currently leak role/index (`kimsufi_cp0`, `kimsufi_worker0/1`,
+      `ks_game_worker0/1`) even though hostnames are now `ovh-ns102453`,
+      `ovh-ns103656`, `ovh-ns103711`, `ovh-ns104952`, `ovh-ns104963`. Naive edit
+      forces destroy+recreate of every `for_each`-keyed resource — including
+      `null_resource.install_talos_kimsufi` (which would `dd` the Talos image).
+      Use `tofu state mv` (~8 ops per node) to rekey without recreation; see
+      `plans/rename_ovh_nodes_role_neutral.md` § "Follow-up: rekey Terraform
+      local-map keys" for the procedure. No downtime if done correctly; defer
+      until all five hostname renames are stable.
+- [ ] **Test CNPG full self-recovery from node failure** in a controlled setup.
+      During the 2026-06-02 OVH node renames (see
+      `debug/2026-06-02-tofu-apply-hangs-from-rugged-mtu.md`) we deleted
+      hostname-pinned replica PVCs after node drains. Mixed observations:
+      `airlock-db` self-recovered to 2/2 in ~70min; `atuin-db`, `plaid-mcp-db`,
+      `props-db`, `forgejo-db` got stuck for 2+ hours in
+      `instances=2 ready=1, STATUS=Waiting for the instances to become active`
+      with replacement pods Pending and PVC never recreated, until manually
+      `kubectl delete pod`'d (which prompted CNPG to rebuild fresh in ~5min).
+      Hypothesis: operator was startup-probe-thrashing during pilot 4 cleanup
+      (6 restarts in 54m); a partial reconcile created the Pod manifest but
+      never got to creating the PVC before the next restart. Worth reproducing
+      without API server pressure: kill one CNPG replica's PVC + pod cleanly,
+      observe self-heal vs needing nudging.
 - [ ] **Replace Kimsufi worker_0** with the second new KS-5 from order #7958582
       once it's delivered. Sequence: cordon + drain `talos-kimsufi-worker-0`,
       `talosctl shutdown` the cancelled `ns103656` server, `kubectl delete node`,

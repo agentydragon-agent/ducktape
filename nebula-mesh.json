@@ -10,7 +10,7 @@
       "managed_by": "tofu-ovh",
       "cert_groups": ["lighthouse"]
     },
-    "talos-kimsufi-worker-1": {
+    "ovh-ns103711": {
       "nebula_ip": "10.42.0.14",
       "endpoint": "147.135.39.176:4242",
       "role": "control-plane",
