@@ -182,6 +182,7 @@ py_test(
         "//augur/model:exogenous",
         "//augur/model:series",
         "//augur/model:trained_private_equity",
+        "//util/testing:jsonl",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

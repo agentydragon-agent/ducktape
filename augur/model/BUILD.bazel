@@ -432,6 +432,7 @@ py_test(
         ":private_equity_trajectories",
         ":series",
         "//:conftest",
+        "//util/testing:jsonl",
         "@pypi//numpy",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

@@ -10,6 +10,13 @@ py_library(
 )
 
 py_library(
+    name = "jsonl",
+    testonly = True,
+    srcs = ["jsonl.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
     name = "otel_tracing",
     testonly = True,
     srcs = ["otel_tracing.py"],

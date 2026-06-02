@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -18,6 +17,7 @@ from augur.model.private_equity_trajectories import (
     read_private_equity_trajectories_jsonl,
 )
 from augur.model.series import SP500Key
+from util.testing.jsonl import write_jsonl
 
 
 @dataclass(frozen=True)
@@ -33,13 +33,8 @@ class _MinimalSampler(Sampler):
         return self.bundle
 
 
-def _write_jsonl(path: Path, rows: list[dict[str, object]]) -> Path:
-    path.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
-    return path
-
-
 def test_read_jsonl_groups_tender_events_by_issuer_and_trajectory(tmp_path: Path) -> None:
-    artifact = _write_jsonl(
+    artifact = write_jsonl(
         tmp_path / "pe.jsonl",
         [
             {
@@ -86,14 +81,14 @@ def test_read_jsonl_groups_tender_events_by_issuer_and_trajectory(tmp_path: Path
 
 
 def test_read_jsonl_rejects_issuers_with_no_modeled_trajectories(tmp_path: Path) -> None:
-    artifact = _write_jsonl(tmp_path / "pe.jsonl", [])
+    artifact = write_jsonl(tmp_path / "pe.jsonl", [])
 
     with pytest.raises(ValueError, match="no modeled trajectories"):
         read_private_equity_trajectories_jsonl(artifact, initial_marks={"holdco": 12.5})
 
 
 def test_read_jsonl_rejects_unknown_issuer(tmp_path: Path) -> None:
-    artifact = _write_jsonl(
+    artifact = write_jsonl(
         tmp_path / "pe.jsonl",
         [
             {
