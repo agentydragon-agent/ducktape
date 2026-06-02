@@ -46,18 +46,6 @@ PowerDNS and Authentik run on CloudNativePG `local-path`.
 
 ## Next Actions
 
-- [x] ~~**Recover Loki backend**~~ — Done 2026-06-02. Root cause: one
-      corrupt object in the S3 bucket,
-      `loki/index/delete_requests/delete_requests.gz`, S3 metadata reported
-      it as 135 bytes but actual blob was truncated (read failed with
-      `unexpected EOF`). Likely a SeaweedFS replication race: write got
-      acked by one volume server but the second replica hadn't synced when
-      that first server's PVC got deleted; the surviving replica had only
-      a partial blob. Confirmed SeaweedFS did NOT lose other data
-      (`weed shell volume.list` showed the `loki` collection at ~110MB
-      across 6 active volumes). Fix: `mc rm` the corrupt file, restart
-      `loki-backend-{0,1}` pods. Both came back 2/2 Ready within ~4 min;
-      `Loki started startup_time=4.138645944s` confirmed clean init.
 - [ ] **Diagnose tana-mcp crash-loop** — used to work before the renames.
       `tana-desktop` container restarts every ~3 min (43+ restarts as of
       2026-06-02 evening) with exit code 137 on a Chromium renderer
