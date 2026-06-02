@@ -20,9 +20,10 @@ spec:
     spec:
       serviceAccountName: props-executor
       nodeSelector:
-        topology.kubernetes.io/region: proxmox
+        topology.kubernetes.io/zone: hil-ovh
       # Props main image is on GHCR (public, no pull secret needed).
-      # Props still uses Harbor internally for agent images via props-harbor-upstream-creds.
+      # Agent images live in Forgejo's registry (git.allegedly.works/props/*),
+      # reached via the backend registry proxy using props-forgejo-upstream-creds.
       containers:
         - name: props
           image: ghcr.io/agentydragon/props-backend:devel-20260601212259-287c475 # {"$imagepolicy": "flux-system:props-backend"}
@@ -63,16 +64,16 @@ spec:
                   name: props-evaluator-credentials
                   key: password
             - name: PROPS_REGISTRY_UPSTREAM_URL
-              value: http://harbor.harbor:80
+              value: http://forgejo-http.forgejo:3000
             - name: PROPS_REGISTRY_UPSTREAM_USERNAME
               valueFrom:
                 secretKeyRef:
-                  name: props-harbor-upstream-creds
+                  name: props-forgejo-upstream-creds
                   key: username
             - name: PROPS_REGISTRY_UPSTREAM_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: props-harbor-upstream-creds
+                  name: props-forgejo-upstream-creds
                   key: password
             - name: PROPS_REGISTRY_UPSTREAM_PROJECT
               value: props
@@ -81,7 +82,7 @@ spec:
             - name: PROPS_REGISTRY_PORT
               value: "8000"
             - name: PROPS_REGISTRY_PULL_HOST
-              value: registry.allegedly.works
+              value: git.allegedly.works
           volumeMounts:
             - name: config
               mountPath: /etc/props
