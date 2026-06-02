@@ -23,3 +23,11 @@ spec:
 
   monitoring:
     enablePodMonitor: true
+
+  managed:
+    roles:
+      - name: tfstate
+        ensure: present
+        login: true
+        passwordSecret:
+          name: tofu-state-db-credentials
