@@ -3,11 +3,31 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import Annotated, Literal
 
 from pydantic import Field, NonNegativeInt, PositiveInt
 
 from augur.api.schemas import ApiModel
 from augur.budget.schema import BucketKind
+
+
+class TrailingMonthsWindow(ApiModel):
+    """Trailing N calendar months ending in the month containing today."""
+
+    kind: Literal["trailing_months"] = "trailing_months"
+    months: PositiveInt = Field(le=60)
+
+
+class CoverageWindow(ApiModel):
+    """Full available history without gaps -- from `BudgetSourceConfig.coverage_starts` to today.
+
+    The server rejects this with 400 when no coverage_starts is configured on the deployment.
+    """
+
+    kind: Literal["since_coverage_start"] = "since_coverage_start"
+
+
+WindowSpec = Annotated[TrailingMonthsWindow | CoverageWindow, Field(discriminator="kind")]
 
 
 class BucketView(ApiModel):
@@ -40,9 +60,7 @@ class LumpyView(ApiModel):
 
 
 class BudgetSnapshotRequest(ApiModel):
-    """Window selector: trailing N calendar months ending in the latest data month."""
-
-    months: PositiveInt = Field(default=12, le=36)
+    window: WindowSpec
 
 
 class BudgetSnapshotResponse(ApiModel):
@@ -80,7 +98,7 @@ class TransactionView(ApiModel):
 
 class BudgetTransactionsRequest(ApiModel):
     bucket_id: str
-    months: PositiveInt = Field(default=12, le=36)
+    window: WindowSpec
 
 
 class BudgetTransactionsResponse(ApiModel):

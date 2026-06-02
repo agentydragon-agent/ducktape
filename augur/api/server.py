@@ -113,8 +113,8 @@ def create_app(config: ApiServerConfig) -> FastAPI:
     def payload(value: Any) -> JSONResponse:
         return JSONResponse(content=plain_json(value), headers=no_store)
 
-    app.add_exception_handler(RequestValidationError, lambda request, exc: error(422, exc.errors(include_input=False)))
-    app.add_exception_handler(ValidationError, lambda request, exc: error(422, exc.errors(include_input=False)))
+    app.add_exception_handler(RequestValidationError, lambda request, exc: error(422, exc.errors()))
+    app.add_exception_handler(ValidationError, lambda request, exc: error(422, exc.errors()))
     app.add_exception_handler(KeyError, lambda request, exc: error(400, str(exc)))
     app.add_exception_handler(ValueError, lambda request, exc: error(400, str(exc)))
 
@@ -239,7 +239,7 @@ def create_app(config: ApiServerConfig) -> FastAPI:
         # Snapshot rows carry `date` fields (months, lumpy.date) that the stdlib JSON
         # encoder behind JSONResponse can't serialize; dump in JSON mode (dates -> ISO
         # strings) like calibration_payload, same snake_case + drop-None wire convention.
-        result = await config.budget_service.build_snapshot(months=request.months)
+        result = await config.budget_service.build_snapshot(window=request.window)
         return JSONResponse(content=result.model_dump(mode="json"), headers=no_store)
 
     @app.post("/api/budget/transactions", response_model=BudgetTransactionsResponse)
@@ -247,7 +247,7 @@ def create_app(config: ApiServerConfig) -> FastAPI:
         if config.budget_service is None:
             return error(400, "no budget config for this deployment")
         result = await config.budget_service.list_transactions_in_bucket(
-            bucket_id=request.bucket_id, months=request.months
+            bucket_id=request.bucket_id, window=request.window
         )
         return JSONResponse(content=result.model_dump(mode="json"), headers=no_store)
 

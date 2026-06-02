@@ -8,12 +8,27 @@ import { fmtUsd, fmtNumber } from "./lib/format.ts";
 // income render in their own panels (or, for inflow, alongside their family's expenses).
 const STACKABLE_SPEND_KIND = "expense";
 
-const WINDOW_CHOICES = [
-  { value: "3", label: "Trailing 3 months" },
-  { value: "6", label: "Trailing 6 months" },
-  { value: "12", label: "Trailing 12 months" },
-  { value: "24", label: "Trailing 24 months" },
+// Window selector options. Trailing-N options send a `trailing_months` window spec;
+// "max" sends a `since_coverage_start` window, asking the server for the full available
+// gap-free history (anchored at the deployment's `coverage_starts` config). The latter
+// only appears in the dropdown once we know `coverage_starts` from a snapshot response.
+const TRAILING_CHOICES = [
+  { value: "trailing:3", label: "Trailing 3 months" },
+  { value: "trailing:6", label: "Trailing 6 months" },
+  { value: "trailing:12", label: "Trailing 12 months" },
+  { value: "trailing:24", label: "Trailing 24 months" },
 ];
+const MAX_CHOICE_VALUE = "max";
+
+function windowSpecFromChoice(value) {
+  if (value === MAX_CHOICE_VALUE) return { kind: "since_coverage_start" };
+  const months = Number(value.split(":")[1]);
+  return { kind: "trailing_months", months };
+}
+
+function maxChoiceLabel(coverageStarts) {
+  return `Max (since ${coverageStarts})`;
+}
 
 const UNGROUPED_FAMILY = "_ungrouped";
 
@@ -204,7 +219,7 @@ function BucketRow({ entry, onSelect, selected }) {
           <KindBadge kind={entry.kind} />
         </span>
       </th>
-      <td className="px-3 py-2 text-right text-sm augur-tabular">{fmtUsd(entry.currentMonthlyAvg)}</td>
+      <td className="px-3 py-2 text-right text-sm augur-tabular">{fmtUsd(entry.windowAvg)}</td>
       <td className="px-3 py-2 text-right text-sm augur-tabular augur-muted">{fmtNumber(entry.transactionCount)}</td>
       <td className="px-3 py-2 text-right">
         <Sparkline amounts={entry.monthlyAmounts} />
@@ -213,19 +228,74 @@ function BucketRow({ entry, onSelect, selected }) {
   );
 }
 
-function FamilyPanel({ family, rows, onSelectBucket, selectedBucketId }) {
-  // Family-level rollup: gross outflow (expense kind), gross inflow (inflow kind),
-  // net = out - in. Computed from the same recent-3-month average each row shows, so
-  // the summary lines up with the row sparklines instead of telling a different story.
+function HeadlineCards({ totals, windowMonths }) {
+  // Always show "Monthly burn" (net of inflows + income). Show "Inflows" / "Income"
+  // cards only when nonzero so we don't render a wall of $0 cards on simple flows.
+  // When inflows == income == 0, "spend" and "netBurn" are identical -- skip the
+  // duplicate card.
+  const subtitle = `${windowMonths}-month average`;
+  const cards = [];
+  const hasOffsets = totals.inflow > 0 || totals.income > 0;
+  if (hasOffsets) {
+    cards.push({ label: "Gross spend", value: totals.spend, note: "All expense buckets, before inflows." });
+  }
+  if (totals.inflow > 0) {
+    cards.push({
+      label: "Inflows",
+      value: totals.inflow,
+      note: "Refunds, insurance, etc.",
+      tone: "text-sky-700 dark:text-sky-400",
+    });
+  }
+  if (totals.income > 0) {
+    cards.push({
+      label: "Income",
+      value: totals.income,
+      tone: "text-emerald-700 dark:text-emerald-400",
+    });
+  }
+  cards.push({
+    label: hasOffsets ? "Net monthly burn" : "Monthly burn",
+    value: totals.netBurn,
+    note: "Positive = drawing down savings.",
+  });
+  const cols = cards.length === 4 ? "sm:grid-cols-4" : cards.length === 3 ? "sm:grid-cols-3" : "sm:grid-cols-2";
+  return (
+    <section className={`grid gap-3 ${cols}`}>
+      {cards.map((card) => (
+        <div key={card.label} className="augur-card p-4">
+          <div className="augur-eyebrow">
+            {card.label} <span className="font-normal opacity-60">({subtitle})</span>
+          </div>
+          <div className={`mt-2 text-2xl font-semibold augur-tabular ${card.tone || ""}`}>{fmtUsd(card.value)}</div>
+          {card.note && <div className="text-[11px] augur-muted">{card.note}</div>}
+        </div>
+      ))}
+    </section>
+  );
+}
+
+function FamilyPanel({ family, rows, onSelectBucket, selectedBucketId, windowMonths }) {
+  // Roll up the family-level totals from each row's window average so the summary
+  // lines up with the row figures instead of telling a different story.
   let grossOut = 0;
   let grossIn = 0;
   for (const row of rows) {
-    if (row.kind === "expense") grossOut += row.currentMonthlyAvg;
-    else if (row.kind === "inflow") grossIn += Math.abs(row.currentMonthlyAvg);
-    else if (row.kind === "income") grossIn += Math.abs(row.currentMonthlyAvg);
+    if (row.kind === "expense") grossOut += row.windowAvg;
+    else if (row.kind === "inflow") grossIn += Math.abs(row.windowAvg);
+    else if (row.kind === "income") grossIn += Math.abs(row.windowAvg);
+  }
+  // `transfer` buckets are direction-agnostic -- their sign is real (negative = net inflow).
+  // Add their signed average to the relevant side so net stays honest.
+  for (const row of rows) {
+    if (row.kind !== "transfer") continue;
+    if (row.windowAvg >= 0) grossOut += row.windowAvg;
+    else grossIn += -row.windowAvg;
   }
   const net = grossOut - grossIn;
-  const sortedRows = rows.slice().sort((l, r) => Math.abs(r.currentMonthlyAvg) - Math.abs(l.currentMonthlyAvg));
+  // Hide the In/Net columns when the family is purely expense-side -- no signal there.
+  const hasInflowSide = grossIn > 0;
+  const sortedRows = rows.slice().sort((l, r) => Math.abs(r.windowAvg) - Math.abs(l.windowAvg));
   return (
     <section className="augur-panel overflow-hidden" data-budget-family={family}>
       <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
@@ -233,24 +303,28 @@ function FamilyPanel({ family, rows, onSelectBucket, selectedBucketId }) {
           <div>
             <div className="augur-eyebrow">{fmtFamily(family)}</div>
             <div className="mt-1 text-[11px] augur-muted">
-              {rows.length} bucket{rows.length === 1 ? "" : "s"} · trailing 3-month average shown for each side.
+              {rows.length} bucket{rows.length === 1 ? "" : "s"} · {windowMonths}-month average shown for each side.
             </div>
           </div>
           <div className="flex gap-4 text-right">
             <div>
-              <div className="augur-eyebrow text-[10px]">Out</div>
+              <div className="augur-eyebrow text-[10px]">{hasInflowSide ? "Out" : "Spend"}</div>
               <div className="augur-tabular text-sm font-semibold">{fmtUsd(grossOut)}</div>
             </div>
-            <div>
-              <div className="augur-eyebrow text-[10px]">In</div>
-              <div className="augur-tabular text-sm font-semibold text-emerald-700 dark:text-emerald-400">
-                −{fmtUsd(grossIn)}
-              </div>
-            </div>
-            <div>
-              <div className="augur-eyebrow text-[10px]">Net</div>
-              <div className="augur-tabular text-sm font-semibold">{fmtUsd(net)}</div>
-            </div>
+            {hasInflowSide && (
+              <>
+                <div>
+                  <div className="augur-eyebrow text-[10px]">In</div>
+                  <div className="augur-tabular text-sm font-semibold text-emerald-700 dark:text-emerald-400">
+                    −{fmtUsd(grossIn)}
+                  </div>
+                </div>
+                <div>
+                  <div className="augur-eyebrow text-[10px]">Net</div>
+                  <div className="augur-tabular text-sm font-semibold">{fmtUsd(net)}</div>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -259,7 +333,7 @@ function FamilyPanel({ family, rows, onSelectBucket, selectedBucketId }) {
           <thead>
             <tr className="bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500 dark:bg-slate-900 dark:text-slate-400">
               <th className="px-3 py-2 font-semibold">Bucket</th>
-              <th className="px-3 py-2 text-right font-semibold">Recent $/mo (trailing 3mo)</th>
+              <th className="px-3 py-2 text-right font-semibold">{windowMonths}-month avg $/mo</th>
               <th className="px-3 py-2 text-right font-semibold">Tx count</th>
               <th className="px-3 py-2 text-right font-semibold">Trend</th>
             </tr>
@@ -351,39 +425,43 @@ function TransactionsPanel({ transactions }) {
 }
 
 export function BudgetWorkspace() {
-  const [months, setMonths] = useState(12);
+  // Default to full coverage history. When `coverage_starts` is unset on the deployment
+  // the server 400s; switch the default to a trailing window if that's ever a concern.
+  const [windowChoice, setWindowChoice] = useState(MAX_CHOICE_VALUE);
   const [snapshot, setSnapshot] = useState(null);
   const [snapshotError, setSnapshotError] = useState(null);
   const [selectedBucketId, setSelectedBucketId] = useState(null);
   const [bucketTx, setBucketTx] = useState(null);
   const [bucketTxError, setBucketTxError] = useState(null);
 
+  const windowSpec = useMemo(() => windowSpecFromChoice(windowChoice), [windowChoice]);
+
   useEffect(() => {
     const controller = new AbortController();
     setSnapshot(null);
     setSnapshotError(null);
-    fetchBudgetSnapshot({ months }, { signal: controller.signal })
+    fetchBudgetSnapshot({ window: windowSpec }, { signal: controller.signal })
       .then((payload) => setSnapshot(payload))
       .catch((error) => {
         if (error?.name === "AbortError") return;
         setSnapshotError(error?.message || String(error));
       });
     return () => controller.abort();
-  }, [months]);
+  }, [windowSpec]);
 
   useEffect(() => {
     if (!selectedBucketId) return undefined;
     const controller = new AbortController();
     setBucketTx(null);
     setBucketTxError(null);
-    fetchBudgetTransactions({ bucketId: selectedBucketId, months }, { signal: controller.signal })
+    fetchBudgetTransactions({ bucketId: selectedBucketId, window: windowSpec }, { signal: controller.signal })
       .then((payload) => setBucketTx(payload.transactions))
       .catch((error) => {
         if (error?.name === "AbortError") return;
         setBucketTxError(error?.message || String(error));
       });
     return () => controller.abort();
-  }, [selectedBucketId, months]);
+  }, [selectedBucketId, windowSpec]);
 
   const bucketsById = useMemo(() => {
     const out = new Map();
@@ -393,15 +471,17 @@ export function BudgetWorkspace() {
 
   const rows = useMemo(() => {
     if (!snapshot) return [];
+    const n = snapshot.months.length || 1;
     return snapshot.monthlyByBucket.map((series) => {
       const bucket = bucketsById.get(series.bucketId);
+      const windowAvg = series.monthlyAmounts.reduce((acc, x) => acc + x, 0) / n;
       return {
         bucketId: series.bucketId,
         label: bucket?.label ?? series.bucketId,
         kind: bucket?.kind ?? "expense",
         family: bucket?.family ?? null,
         monthlyAmounts: series.monthlyAmounts,
-        currentMonthlyAvg: series.currentMonthlyAvg,
+        windowAvg,
         transactionCount: series.transactionCount,
       };
     });
@@ -431,13 +511,11 @@ export function BudgetWorkspace() {
     let inflow = 0;
     let income = 0;
     for (const row of rows) {
-      if (row.kind === "expense") spend += row.currentMonthlyAvg;
-      else if (row.kind === "inflow") inflow += Math.abs(row.currentMonthlyAvg);
-      else if (row.kind === "income") income += Math.abs(row.currentMonthlyAvg);
+      if (row.kind === "expense") spend += row.windowAvg;
+      else if (row.kind === "inflow") inflow += Math.abs(row.windowAvg);
+      else if (row.kind === "income") income += Math.abs(row.windowAvg);
     }
-    // "Net burn" subtracts all real money in (inflow + income) from outflow. Treats
-    // medical reimbursements as money in, which is what they functionally are even
-    // if their cash-flow timing relative to the charge varies.
+    // Net burn subtracts inflows + income from gross outflow.
     return { spend, inflow, income, netBurn: spend - inflow - income };
   }, [snapshot, rows]);
 
@@ -455,9 +533,13 @@ export function BudgetWorkspace() {
           </div>
           <NativeSelect
             aria-label="Window"
-            data={WINDOW_CHOICES}
-            value={String(months)}
-            onChange={(event) => setMonths(Number(event.target.value))}
+            data={
+              snapshot?.coverageStarts
+                ? [...TRAILING_CHOICES, { value: MAX_CHOICE_VALUE, label: maxChoiceLabel(snapshot.coverageStarts) }]
+                : TRAILING_CHOICES
+            }
+            value={windowChoice}
+            onChange={(event) => setWindowChoice(event.target.value)}
             classNames={{ input: "augur-tabular min-w-[12rem]" }}
           />
         </div>
@@ -478,31 +560,7 @@ export function BudgetWorkspace() {
 
       {snapshot && (
         <>
-          <section className="grid gap-3 sm:grid-cols-4">
-            <div className="augur-card p-4">
-              <div className="augur-eyebrow">Gross spend (3mo avg)</div>
-              <div className="mt-2 text-2xl font-semibold augur-tabular">{fmtUsd(totals.spend)}</div>
-              <div className="text-[11px] augur-muted">All expense buckets, before inflows.</div>
-            </div>
-            <div className="augur-card p-4">
-              <div className="augur-eyebrow">Inflows (3mo avg)</div>
-              <div className="mt-2 text-2xl font-semibold augur-tabular text-sky-700 dark:text-sky-400">
-                {fmtUsd(totals.inflow)}
-              </div>
-              <div className="text-[11px] augur-muted">Refunds, insurance, etc.</div>
-            </div>
-            <div className="augur-card p-4">
-              <div className="augur-eyebrow">Income (3mo avg)</div>
-              <div className="mt-2 text-2xl font-semibold augur-tabular text-emerald-700 dark:text-emerald-400">
-                {fmtUsd(totals.income)}
-              </div>
-            </div>
-            <div className="augur-card p-4">
-              <div className="augur-eyebrow">Net monthly burn</div>
-              <div className="mt-2 text-2xl font-semibold augur-tabular">{fmtUsd(totals.netBurn)}</div>
-              <div className="text-[11px] augur-muted">Positive = drawing down savings.</div>
-            </div>
-          </section>
+          <HeadlineCards totals={totals} windowMonths={snapshot.months.length} />
 
           <section className="augur-panel overflow-hidden">
             <div className="border-b border-slate-200 px-4 py-3 dark:border-slate-700">
@@ -523,6 +581,7 @@ export function BudgetWorkspace() {
               rows={familyRows}
               onSelectBucket={setSelectedBucketId}
               selectedBucketId={selectedBucketId}
+              windowMonths={snapshot.months.length}
             />
           ))}
 

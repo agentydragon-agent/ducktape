@@ -21,17 +21,35 @@ from augur.budget.wire import (
     BudgetSnapshotResponse,
     BudgetTransactionsResponse,
     LumpyView,
+    TrailingMonthsWindow,
     TransactionView,
+    WindowSpec,
 )
 from plaid_utils.read_model import read_account_directory, read_transactions
 
 
-def _window_bounds(*, months: int, latest_date: date) -> tuple[date, date]:
-    """Last `months` calendar months ending at the month containing latest_date."""
-    end_month = date(latest_date.year, latest_date.month, 1)
-    # Walk back (months - 1) full months to get start.
-    total = end_month.year * 12 + (end_month.month - 1) - (months - 1)
-    start_month = date(total // 12, total % 12 + 1, 1)
+def _resolve_window(window: WindowSpec, *, today: date, coverage_starts: date | None) -> tuple[date, date]:
+    """Map a wire `WindowSpec` to a concrete (start_month, end_month) pair.
+
+    For `TrailingMonthsWindow`, walks back N calendar months from the month containing `today`.
+    For `CoverageWindow`, anchors at `coverage_starts` (raises if the deployment has none).
+    In either case, the start is clamped to `coverage_starts` -- months before that are partial
+    cross-account coverage and would skew family totals.
+    """
+    end_month = date(today.year, today.month, 1)
+    if isinstance(window, TrailingMonthsWindow):
+        total = end_month.year * 12 + (end_month.month - 1) - (window.months - 1)
+        start_month = date(total // 12, total % 12 + 1, 1)
+    else:
+        if coverage_starts is None:
+            raise ValueError(
+                "since_coverage_start window requested but no coverage_starts is configured "
+                "for this deployment; either configure BudgetSourceConfig.coverage_starts or "
+                "pick a trailing-months window"
+            )
+        start_month = date(coverage_starts.year, coverage_starts.month, 1)
+    if coverage_starts is not None and start_month < coverage_starts:
+        start_month = coverage_starts
     return start_month, end_month
 
 
@@ -40,16 +58,11 @@ class BudgetService:
     config: BudgetConfig
     session_factory: async_sessionmaker[AsyncSession]
 
-    async def build_snapshot(self, *, months: int) -> BudgetSnapshotResponse:
+    async def build_snapshot(self, *, window: WindowSpec) -> BudgetSnapshotResponse:
         """Pull + categorize + aggregate, packaged as the wire snapshot."""
         today = date.today()
-        start_month, end_month = _window_bounds(months=months, latest_date=today)
-        # If the deployment declared a coverage floor (some linked accounts have a tighter
-        # institution-side transaction-history limit than others), clamp the start so the
-        # early months of the window aren't a per-account hodgepodge.
         coverage_starts = self.config.source.coverage_starts
-        if coverage_starts is not None and start_month < coverage_starts:
-            start_month = coverage_starts
+        start_month, end_month = _resolve_window(window, today=today, coverage_starts=coverage_starts)
         transactions = await read_transactions(
             session_factory=self.session_factory,
             start_date=start_month,
@@ -90,10 +103,11 @@ class BudgetService:
             coverage_starts=coverage_starts,
         )
 
-    async def list_transactions_in_bucket(self, *, bucket_id: str, months: int) -> BudgetTransactionsResponse:
+    async def list_transactions_in_bucket(self, *, bucket_id: str, window: WindowSpec) -> BudgetTransactionsResponse:
         """Drill-down: all transactions in one bucket, enriched with account+link names."""
         today = date.today()
-        start_month, _ = _window_bounds(months=months, latest_date=today)
+        coverage_starts = self.config.source.coverage_starts
+        start_month, _ = _resolve_window(window, today=today, coverage_starts=coverage_starts)
         transactions = await read_transactions(
             session_factory=self.session_factory,
             start_date=start_month,
