@@ -46,6 +46,17 @@ PowerDNS and Authentik run on CloudNativePG `local-path`.
 
 ## Next Actions
 
+- [ ] **Eliminate per-node hostname references** in repo files
+      (`cluster/k8s/local-path-provisioner/helmrelease.yaml`'s `nodePathMap`,
+      `nebula-mesh.json` keys, etc.). Every node rename today requires editing
+      a fixed list of files; ideally local-path-provisioner could match OVH
+      nodes via a node-label selector (e.g. `topology.kubernetes.io/zone:
+hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
+      Investigate: does Rancher local-path-provisioner support label-based
+      node selection in `nodePathMap`? If not, consider a small mutating
+      controller or a different provisioner. Same idea could apply to the
+      Nebula mesh roster (derive entries from cluster Node labels rather than
+      a static JSON).
 - [ ] **Rename Terraform local-map keys** in `cluster/terraform/main/ovh-nodes.tf`
       and `cluster/terraform/main/nebula.tf` to match the renamed hostnames.
       Keys currently leak role/index (`kimsufi_cp0`, `kimsufi_worker0/1`,
