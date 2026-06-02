@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -33,6 +33,22 @@ py_library(
     deps = [
         ":categorize",
         ":schema",
+        "//augur:dates",
+        "//plaid_utils:schema",
+    ],
+)
+
+py_test(
+    name = "test_aggregate",
+    srcs = ["test_aggregate.py"],
+    deps = [
+        ":aggregate",
+        ":categorize",
+        ":schema",
+        "//augur:dates",
+        "//plaid_utils:schema",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 

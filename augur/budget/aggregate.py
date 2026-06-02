@@ -16,6 +16,7 @@ from datetime import date
 
 from augur.budget.categorize import Classified
 from augur.budget.schema import BucketDef, BucketKind, BudgetConfig
+from augur.dates import DAYS_PER_MONTH
 from plaid_utils.schema import TransactionRow
 
 
@@ -53,7 +54,7 @@ class LumpyTransaction:
 class BucketReport:
     bucket: BucketDef
     monthly: MonthlyBucketSeries
-    current_monthly_avg: float
+    window_monthly_avg: float
     transaction_count: int
 
 
@@ -88,17 +89,24 @@ def _gross_monthly_totals(
 
 
 def aggregate(
-    classified: tuple[Classified, ...], *, config: BudgetConfig, start_month: date, end_month: date
+    classified: tuple[Classified, ...], *, config: BudgetConfig, window_start: date, window_end: date
 ) -> AggregateReport:
-    """Per-bucket monthly view + a list of lumpy single transactions over the window."""
-    months = _enumerate_months(start_month, end_month)
+    """Per-bucket monthly view + a list of lumpy single transactions over [window_start, window_end].
+
+    `window_start` / `window_end` are the actual covered dates (inclusive) -- not month
+    boundaries -- so they bound the day count that normalizes per-month averages. The monthly
+    series itself still snaps to calendar months for the trend chart.
+    """
+    months = _enumerate_months(window_start, window_end)
     months_set = set(months)
     gross = _gross_monthly_totals(classified, months=months)
     bucket_by_id = {bucket.id: bucket for bucket in config.buckets}
 
-    # Recent monthly average = trailing 3 months of the visible window (or the whole
-    # window if it's shorter). Computed per bucket so the UI can sort + label.
-    recent_window = months[-3:] if len(months) >= 3 else months
+    # Day-normalized monthly average: signed window total / days actually covered, scaled to a
+    # representative month. Counting days (not calendar-month slots) is what keeps a partial
+    # current month -- or a mid-month coverage start -- from being treated as a full month, which
+    # otherwise biases every average toward zero by up to a month's worth.
+    days_covered = max((window_end - window_start).days + 1, 1)
     counts_by_bucket: dict[str, int] = defaultdict(int)
     for entry in classified:
         if _month_start(entry.transaction.date) in months_set:
@@ -108,13 +116,12 @@ def aggregate(
     for bucket in config.buckets:
         series_map = gross.get(bucket.id, dict.fromkeys(months, 0.0))
         amounts = tuple(series_map[month] for month in months)
-        recent = [series_map[month] for month in recent_window]
-        avg = sum(recent) / len(recent) if recent else 0.0
+        window_monthly_avg = sum(amounts) / days_covered * DAYS_PER_MONTH
         bucket_reports.append(
             BucketReport(
                 bucket=bucket,
                 monthly=MonthlyBucketSeries(bucket_id=bucket.id, months=months, amounts=amounts),
-                current_monthly_avg=avg,
+                window_monthly_avg=window_monthly_avg,
                 transaction_count=counts_by_bucket.get(bucket.id, 0),
             )
         )

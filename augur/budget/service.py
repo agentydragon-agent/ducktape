@@ -28,17 +28,17 @@ from augur.budget.wire import (
 from plaid_utils.read_model import read_account_directory, read_transactions
 
 
-def _resolve_window(window: WindowSpec, *, today: date, coverage_starts: date | None) -> tuple[date, date]:
-    """Map a wire `WindowSpec` to a concrete (start_month, end_month) pair.
+def _resolve_window(window: WindowSpec, *, today: date, coverage_starts: date | None) -> date:
+    """Map a wire `WindowSpec` to the window's start (the actual first covered day).
 
     For `TrailingMonthsWindow`, walks back N calendar months from the month containing `today`.
     For `CoverageWindow`, anchors at `coverage_starts` (raises if the deployment has none).
     In either case, the start is clamped to `coverage_starts` -- months before that are partial
-    cross-account coverage and would skew family totals.
+    cross-account coverage and would skew family totals. The window always ends at `today`.
     """
-    end_month = date(today.year, today.month, 1)
+    current_month = date(today.year, today.month, 1)
     if isinstance(window, TrailingMonthsWindow):
-        total = end_month.year * 12 + (end_month.month - 1) - (window.months - 1)
+        total = current_month.year * 12 + (current_month.month - 1) - (window.months - 1)
         start_month = date(total // 12, total % 12 + 1, 1)
     else:
         if coverage_starts is None:
@@ -50,7 +50,7 @@ def _resolve_window(window: WindowSpec, *, today: date, coverage_starts: date | 
         start_month = date(coverage_starts.year, coverage_starts.month, 1)
     if coverage_starts is not None and start_month < coverage_starts:
         start_month = coverage_starts
-    return start_month, end_month
+    return start_month
 
 
 @dataclass(frozen=True)
@@ -62,7 +62,7 @@ class BudgetService:
         """Pull + categorize + aggregate, packaged as the wire snapshot."""
         today = date.today()
         coverage_starts = self.config.source.coverage_starts
-        start_month, end_month = _resolve_window(window, today=today, coverage_starts=coverage_starts)
+        start_month = _resolve_window(window, today=today, coverage_starts=coverage_starts)
         transactions = await read_transactions(
             session_factory=self.session_factory,
             start_date=start_month,
@@ -70,7 +70,7 @@ class BudgetService:
             account_ids=self.config.source.plaid_account_ids,
         )
         classified = classify(transactions, config=self.config)
-        report = aggregate(classified, config=self.config, start_month=start_month, end_month=end_month)
+        report = aggregate(classified, config=self.config, window_start=start_month, window_end=today)
         return BudgetSnapshotResponse(
             months=report.months,
             buckets=tuple(
@@ -81,7 +81,7 @@ class BudgetService:
                 BucketMonthly(
                     bucket_id=bucket_report.bucket.id,
                     monthly_amounts=bucket_report.monthly.amounts,
-                    current_monthly_avg=bucket_report.current_monthly_avg,
+                    window_monthly_avg=bucket_report.window_monthly_avg,
                     transaction_count=bucket_report.transaction_count,
                 )
                 for bucket_report in report.buckets
@@ -107,7 +107,7 @@ class BudgetService:
         """Drill-down: all transactions in one bucket, enriched with account+link names."""
         today = date.today()
         coverage_starts = self.config.source.coverage_starts
-        start_month, _ = _resolve_window(window, today=today, coverage_starts=coverage_starts)
+        start_month = _resolve_window(window, today=today, coverage_starts=coverage_starts)
         transactions = await read_transactions(
             session_factory=self.session_factory,
             start_date=start_month,
