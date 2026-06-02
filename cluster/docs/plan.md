@@ -72,9 +72,12 @@ PowerDNS and Authentik run on CloudNativePG `local-path`.
       (remove `suspend: true`) once the radio hardware is set up at the new place.
 - [ ] **Resume CPAP sync CronJob** — unsuspend `cluster/k8s/cpap-sync/cronjob.yaml`
       (remove `suspend: true`) once wyrm2 is back online after relocation.
-- [ ] **Restore tofu-state backup** — backup CronJob removed 2026-06-01 (pinned to
-      proxmox, wyrm2 down). Restore via CNPG replication or SeaweedFS CSI PVC once
-      wyrm2 is back. Source still in `cluster/k8s/tofu-state/backup/`.
+- [ ] **Set up offsite tofu-state backup** — the Proxmox-pinned `pg_dump` CronJob
+      (`cluster/k8s/tofu-state/backup/`) was deleted 2026-06-02: it couldn't run with
+      wyrm2/Proxmox down and only wrote to a `local-path-proxmox` PVC (same failure
+      domain as the DB, not actually offsite). Set up a real offsite backup of the
+      `tfstate` DB — e.g. CNPG `barmanObjectStore` → SeaweedFS S3, or an
+      always-on OVH-node CronJob streaming dumps to S3.
 - [ ] **Evaluate lighter registry to replace Harbor** — Harbor is only used for (a) pull-through
       proxy cache (Docker Hub, GHCR, GCR, Quay, k8s.io) configured as Talos containerd mirrors,
       and (b) props agent image storage. Candidates: [Zot](https://zotregistry.dev/) (single binary,
