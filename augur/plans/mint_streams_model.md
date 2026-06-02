@@ -173,7 +173,7 @@ bayesian_mint_streams:
 ```
 
 The `bayesian` preset stays unchanged for A/B comparison. Once `bayesian_mint_streams`
-passes sanity bands and the calibration KL is competitive, flip `default_exogenous_preset_id`
+passes sanity bands and the calibration KL is competitive, flip `default_model_id`
 to point at it.
 
 **Drop the soft-cap.** The `TrainedPrivateEquityScalePrior` boom-tamer (a drift penalty
@@ -219,7 +219,7 @@ Identifiability check: 6 primary rounds + 3 secondary tenders + ~10 tender price
    changed shape (we expect it to: per-share roughly flat-to-up, V continuing to grow).
 4. Eyeball the calibration tab in the live frontend with `?x=bayesian_mint_streams`.
 5. Once sanity passes and visual goldens are stable, flip
-   `default_exogenous_preset_id: bayesian_mint_streams`. Keep `bayesian` available for
+   `default_model_id: bayesian_mint_streams`. Keep `bayesian` available for
    regression comparison.
 
 ## Deferred / out-of-scope for v1

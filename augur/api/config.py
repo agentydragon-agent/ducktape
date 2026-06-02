@@ -137,7 +137,7 @@ class Config(ApiModel):
     # frontend layers these over its hard-coded base defaults at bootstrap time so deployments
     # (e.g. `gaffer-private`) can bias the UI without code changes.
     product_input_defaults: ProductInputDefaults = Field(default_factory=ProductInputDefaults)
-    exogenous_presets: dict[str, ProviderConfig] = Field(
+    models: dict[str, ProviderConfig] = Field(
         min_length=1,
         description=(
             "Named registry of exogenous-bundle providers. Frontend exposes the preset id via "
@@ -146,9 +146,9 @@ class Config(ApiModel):
             "into its own runtime `Sampler` at startup."
         ),
     )
-    default_exogenous_preset_id: str = Field(
+    default_model_id: str = Field(
         description=(
-            "Preset id used when the request omits or defaults `model_id`. Must name a key in `exogenous_presets`."
+            "Preset id used when the request omits or defaults `model_id`. Must name a key in `models`."
         )
     )
     calibration_catalog: CalibrationCatalogConfig | None = Field(
@@ -178,22 +178,22 @@ class Config(ApiModel):
 
         if not isinstance(data, dict) or "exogenous_provider" not in data:
             return data
-        if "exogenous_presets" in data:
+        if "models" in data:
             raise ValueError(
-                "exogenous_provider and exogenous_presets are mutually exclusive; use only exogenous_presets"
+                "exogenous_provider and models are mutually exclusive; use only models"
             )
         data = dict(data)
         provider = data.pop("exogenous_provider")
-        data["exogenous_presets"] = {"current_model": provider}
-        data.setdefault("default_exogenous_preset_id", "current_model")
+        data["models"] = {"current_model": provider}
+        data.setdefault("default_model_id", "current_model")
         return data
 
     @model_validator(mode="after")
     def _validate_default_preset(self) -> Config:
-        if self.default_exogenous_preset_id not in self.exogenous_presets:
+        if self.default_model_id not in self.models:
             raise ValueError(
-                f"default_exogenous_preset_id {self.default_exogenous_preset_id!r} is not a key in "
-                f"exogenous_presets (have {sorted(self.exogenous_presets)})"
+                f"default_model_id {self.default_model_id!r} is not a key in "
+                f"models (have {sorted(self.models)})"
             )
         return self
 
@@ -206,7 +206,7 @@ def load_augur_config(path: Path) -> Config:
     side-by-side (e.g. `/etc/augur/{config.yaml,properties.json}`)."""
     config = Config.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
     config = _anchor_property_source_paths(config, base_dir=path.parent)
-    config = _anchor_exogenous_provider_paths(config, base_dir=path.parent)
+    config = _anchor_model_paths(config, base_dir=path.parent)
     return _anchor_calibration_catalog_paths(config, base_dir=path.parent)
 
 
@@ -241,14 +241,14 @@ def _anchor_property_source_paths(config: Config, *, base_dir: Path) -> Config:
     )
 
 
-def _anchor_exogenous_provider_paths(config: Config, *, base_dir: Path) -> Config:
+def _anchor_model_paths(config: Config, *, base_dir: Path) -> Config:
     anchored = {
         preset_id: _anchor_provider_paths(provider, base_dir=base_dir)
-        for preset_id, provider in config.exogenous_presets.items()
+        for preset_id, provider in config.models.items()
     }
-    if anchored == dict(config.exogenous_presets):
+    if anchored == dict(config.models):
         return config
-    return config.model_copy(update={"exogenous_presets": anchored})
+    return config.model_copy(update={"models": anchored})
 
 
 def _anchor_provider_paths(provider: ProviderConfig, *, base_dir: Path) -> ProviderConfig:

@@ -44,7 +44,7 @@ locations:
 location_selection:
   - location_a
   - location_b
-exogenous_presets:
+models:
   current_model:
     # Public fixture uses a composite provider: macro/liquid/real-estate series in
     # one independent block, private-equity price/event series in another. That
@@ -140,7 +140,7 @@ exogenous_presets:
 # Shared default must include the `openai` issuer the calibration catalog scores;
 # `openai_pe` carries both `openai` and `private_holding_a`, so the product sim path
 # still works.
-default_exogenous_preset_id: openai_pe
+default_model_id: openai_pe
 calibration_catalog:
   # Worked example shipped with augur/calibration. `issuer: openai` must match a PE
   # issuer in the chosen exogenous preset's model (here: the `openai_pe` preset).

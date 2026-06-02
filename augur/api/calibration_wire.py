@@ -62,8 +62,8 @@ class CalibrationRunRequest(ApiModel):
     preset_id: str | None = Field(
         default=None,
         description=(
-            "Exogenous preset id (a key of `exogenous_presets`) whose model includes the catalog's "
-            "issuer; defaults to the deployment's `default_exogenous_preset_id`."
+            "Exogenous preset id (a key of `models`) whose model includes the catalog's "
+            "issuer; defaults to the deployment's `default_model_id`."
         ),
     )
     horizon_months: PositiveInt = Field(default=120, le=MAX_HORIZON_MONTHS)

@@ -29,7 +29,7 @@ def capacity_limited_private_equity_client(augur_config: Config) -> Iterator[Tes
         yield client
 
 
-def _client_with(augur_config: Config, exogenous_models: dict[str, Any]) -> TestClient:
+def _client_with(augur_config: Config, models: dict[str, Any]) -> TestClient:
     return TestClient(
-        create_app(ApiServerConfig(augur_config=augur_config, exogenous_models=exogenous_models, price_clients={}))
+        create_app(ApiServerConfig(augur_config=augur_config, models=models, price_clients={}))
     )

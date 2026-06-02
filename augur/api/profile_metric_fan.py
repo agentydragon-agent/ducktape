@@ -46,12 +46,12 @@ def main() -> int:
         known_location_ids=frozenset(location.id for location in bootstrap.locations),
         locations=sim_locations_from_config(config.locations),
         properties_by_id={property_.id: property_ for property_ in bootstrap.properties},
-        exogenous_models=_profile_exogenous_models(config),
+        models=_profile_models(config),
         max_rollout_samples=config.max_rollout_samples,
     )
     request = MetricFanRequest(
         scenario=ScenarioKey(
-            model_id=config.default_exogenous_preset_id,
+            model_id=config.default_model_id,
             horizon_months=args.horizon_months,
             monthly_spend_usd=args.monthly_spend_usd,
             spend_index=args.spend_index,
@@ -111,9 +111,9 @@ def _config_path(config: str | None) -> Path:
     return Path(config) if config is not None else get_required_path(DEFAULT_CONFIG_RUNFILE)
 
 
-def _profile_exogenous_models(config: Config) -> dict[str, Sampler]:
+def _profile_models(config: Config) -> dict[str, Sampler]:
     return {
-        preset_id: cast(Sampler, provider.realize_model()) for preset_id, provider in config.exogenous_presets.items()
+        preset_id: cast(Sampler, provider.realize_model()) for preset_id, provider in config.models.items()
     }
 
 

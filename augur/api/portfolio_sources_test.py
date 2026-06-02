@@ -31,8 +31,8 @@ def _minimal_config(**overrides: object) -> Config:
         ),
         "default_rollout_samples": 128,
         "max_rollout_samples": 1_000_000,
-        "exogenous_presets": {"current_model": IndependentProviderConfig()},
-        "default_exogenous_preset_id": "current_model",
+        "models": {"current_model": IndependentProviderConfig()},
+        "default_model_id": "current_model",
     }
     defaults.update(overrides)
     return Config(**defaults)

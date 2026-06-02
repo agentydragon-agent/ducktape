@@ -95,7 +95,7 @@ def test_run_calibration(client: TestClient) -> None:
 
 
 def test_run_calibration_defaults_to_shared_preset(client: TestClient) -> None:
-    # Omitting `preset_id` resolves to the deployment's `default_exogenous_preset_id`
+    # Omitting `preset_id` resolves to the deployment's `default_model_id`
     # (the fixture pins `openai_pe`), and the response echoes the resolved preset.
     response = client.post("/api/calibration/run", json={"horizon_months": 24, "rollouts": 16, "seed": 1701})
     assert response.status_code == 200, response.text

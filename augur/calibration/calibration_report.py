@@ -40,9 +40,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     augur_config = load_augur_config(args.config)
-    preset_id = args.preset or augur_config.default_exogenous_preset_id
+    preset_id = args.preset or augur_config.default_model_id
     print(
-        f"loaded config: presets={list(augur_config.exogenous_presets)}, default={augur_config.default_exogenous_preset_id}"
+        f"loaded config: presets={list(augur_config.models)}, default={augur_config.default_model_id}"
     )
     print(f"running preset: {preset_id}")
 
@@ -54,7 +54,7 @@ def main(argv: list[str] | None = None) -> int:
     issuer = catalog_config.issuer
     print(f"catalog: issuer={issuer}, n_markets={len(catalog.markets)}")
 
-    provider = augur_config.exogenous_presets[preset_id]
+    provider = augur_config.models[preset_id]
     model = provider.realize_model()
     sampling = ExogenousSamplingRequest(
         horizon_months=args.horizon,

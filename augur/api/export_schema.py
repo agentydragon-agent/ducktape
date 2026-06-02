@@ -71,8 +71,8 @@ def _schema_export_config(properties_path: Path) -> Config:
                 local_regulation=regulation,
             ),
         ),
-        exogenous_presets={"schema": IndependentProviderConfig()},
-        default_exogenous_preset_id="schema",
+        models={"schema": IndependentProviderConfig()},
+        default_model_id="schema",
     )
 
 

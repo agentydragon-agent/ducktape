@@ -123,8 +123,8 @@ class BootstrapResponse(ApiModel):
     max_rollout_samples: PositiveInt
     max_horizon_months: PositiveInt
     product_input_defaults: ProductInputDefaults = Field(default_factory=ProductInputDefaults)
-    exogenous_presets: tuple[str, ...]
-    default_exogenous_preset_id: str
+    models: tuple[str, ...]
+    default_model_id: str
     calibration: CalibrationInfo | None = Field(
         default=None,
         description="The deployment's calibration catalog info, or None when no `calibration_catalog` is configured.",

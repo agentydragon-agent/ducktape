@@ -48,7 +48,7 @@ class ModelMetricSpec:
 
 def _build_independent_from_testdata() -> Scorable:
     augur_config = load_augur_config(get_required_path("_main/augur/api/testdata/config.yaml"))
-    provider = augur_config.exogenous_presets[augur_config.default_exogenous_preset_id]
+    provider = augur_config.models[augur_config.default_model_id]
     if isinstance(provider, CompositeProviderConfig):
         config = provider.macro
         if not isinstance(config, IndependentProviderConfig):

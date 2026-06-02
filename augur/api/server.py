@@ -68,7 +68,7 @@ class LoadedCalibrationCatalog:
 @dataclass(frozen=True)
 class ApiServerConfig:
     augur_config: Config
-    exogenous_models: dict[str, Sampler]
+    models: dict[str, Sampler]
     # Live prediction-market price sources for `/api/calibration/run` (per-market YES probs).
     # Maps each Platform to its client. Reused across requests, so the TTL caches serve the
     # calibration tab's rapid auto-refreshes.
@@ -90,7 +90,7 @@ def create_app(config: ApiServerConfig) -> FastAPI:
         known_location_ids=frozenset(location.id for location in bootstrap.locations),
         locations=sim_locations_from_config(augur_config.locations),
         properties_by_id={property_.id: property_ for property_ in bootstrap.properties},
-        exogenous_models=config.exogenous_models,
+        models=config.models,
         max_rollout_samples=augur_config.max_rollout_samples,
     )
 
@@ -126,10 +126,10 @@ def create_app(config: ApiServerConfig) -> FastAPI:
             product_portfolio_response(snapshot=resolved_portfolio.snapshot, portfolio=resolved_portfolio.portfolio)
         )
 
-    @app.get("/api/exogenous_presets")
-    def exogenous_presets() -> JSONResponse:
+    @app.get("/api/models")
+    def models() -> JSONResponse:
         return payload(
-            {"presets": sorted(augur_config.exogenous_presets), "default": augur_config.default_exogenous_preset_id}
+            {"models": sorted(augur_config.models), "default": augur_config.default_model_id}
         )
 
     @app.post("/api/product/projections/metric_fan", response_model=MetricFanResponse)
@@ -152,9 +152,9 @@ def create_app(config: ApiServerConfig) -> FastAPI:
         loaded = config.calibration_catalog
         if loaded is None:
             return error(400, "no calibration_catalog configured for this deployment")
-        preset_id = request.preset_id or config.augur_config.default_exogenous_preset_id
+        preset_id = request.preset_id or config.augur_config.default_model_id
         # KeyError on the preset lookup -> 400 via the registered handler.
-        model = config.exogenous_models[preset_id]
+        model = config.models[preset_id]
         issuer = loaded.config.issuer
         spec = loaded.sample_sanity_spec
         rollout_seeds = tuple(range(request.seed, request.seed + request.rollouts))
@@ -266,9 +266,9 @@ def create_app_from_augur_config(augur_config: Config, *, price_clients: dict[Pl
 
     `price_clients` is the live prediction-market price source map for
     `/api/calibration/run` (callers construct the appropriate clients)."""
-    exogenous_models: dict[str, Sampler] = {
+    models: dict[str, Sampler] = {
         preset_id: cast(Sampler, provider.realize_model())
-        for preset_id, provider in augur_config.exogenous_presets.items()
+        for preset_id, provider in augur_config.models.items()
     }
     catalog_config = augur_config.calibration_catalog
     calibration_catalog = (
@@ -282,7 +282,7 @@ def create_app_from_augur_config(augur_config: Config, *, price_clients: dict[Pl
     )
     server_config = ApiServerConfig(
         augur_config=augur_config,
-        exogenous_models=exogenous_models,
+        models=models,
         calibration_catalog=calibration_catalog,
         price_clients=price_clients,
     )
@@ -327,8 +327,8 @@ def _run_server_with_args(*, augur_config: Config, args: argparse.Namespace) -> 
 def run_app(*, app: FastAPI, augur_config: Config, host: str, port: int) -> int:
     print(f"serving Augur API on http://{host}:{port}")
     print(
-        f"exogenous presets: {sorted(augur_config.exogenous_presets)} "
-        f"(default: {augur_config.default_exogenous_preset_id})"
+        f"exogenous presets: {sorted(augur_config.models)} "
+        f"(default: {augur_config.default_model_id})"
     )
     uvicorn.run(app, host=host, port=port)
     return 0
