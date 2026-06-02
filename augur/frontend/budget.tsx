@@ -44,8 +44,12 @@ function downloadCsv(filename, content) {
   anchor.download = filename;
   document.body.appendChild(anchor);
   anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
+  // Defer cleanup: revoking the blob URL synchronously after click() can cancel the download in
+  // some browsers before it starts. Release on the next macrotask, once the download has begun.
+  setTimeout(() => {
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  }, 0);
 }
 
 const EXPORT_BUTTON_CLASS = "augur-icon-button gap-1.5 px-2.5 py-1.5 text-xs font-medium";

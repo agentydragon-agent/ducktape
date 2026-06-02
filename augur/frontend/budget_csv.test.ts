@@ -88,3 +88,28 @@ test("buildTransactionsCsv renders nulls as empty fields and quotes embedded com
   expect(header).toBe("Date,Merchant,Descriptor,PFC primary,PFC detailed,Account,Institution,Amount");
   expect(tx).toBe('2025-05-12,,"ACH DEBIT, LANDLORD LLC",RENT_AND_UTILITIES,,Checking,,3200.00');
 });
+
+test("text fields starting with a formula trigger are neutralized, but numeric amounts are not", () => {
+  const csv = buildTransactionsCsv([
+    {
+      date: "2025-05-12",
+      merchantName: "=HYPERLINK(evil)",
+      name: "@cmd",
+      pfcPrimary: null,
+      pfcDetailed: null,
+      accountName: "Checking",
+      institutionName: null,
+      amount: -42, // negative amount stays a parseable number, NOT treated as a formula
+    },
+  ]);
+  const tx = csv.trimEnd().split("\n")[1];
+  expect(tx).toBe("2025-05-12,'=HYPERLINK(evil),'@cmd,,,Checking,,-42.00");
+});
+
+test("buildSummaryCsv neutralizes a formula-triggering bucket label", () => {
+  const csv = buildSummaryCsv(
+    ["2025-05-01"],
+    [{ label: "=DANGER", kind: "expense", family: null, monthlyAmounts: [10], windowAvg: 10, transactionCount: 1 }]
+  );
+  expect(csv.trimEnd().split("\n")[1]).toBe("'=DANGER,expense,,10.00,10.00,1");
+});
