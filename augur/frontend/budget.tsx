@@ -471,17 +471,17 @@ export function BudgetWorkspace() {
 
   const rows = useMemo(() => {
     if (!snapshot) return [];
-    const n = snapshot.months.length || 1;
     return snapshot.monthlyByBucket.map((series) => {
       const bucket = bucketsById.get(series.bucketId);
-      const windowAvg = series.monthlyAmounts.reduce((acc, x) => acc + x, 0) / n;
       return {
         bucketId: series.bucketId,
         label: bucket?.label ?? series.bucketId,
         kind: bucket?.kind ?? "expense",
         family: bucket?.family ?? null,
         monthlyAmounts: series.monthlyAmounts,
-        windowAvg,
+        // Day-normalized $/mo from the backend (signed window total / days covered × avg
+        // days/mo). Not sum/months, which counted a partial current month as a full one.
+        windowAvg: series.windowMonthlyAvg,
         transactionCount: series.transactionCount,
       };
     });

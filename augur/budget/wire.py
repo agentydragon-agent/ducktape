@@ -42,11 +42,17 @@ class BucketView(ApiModel):
 
 
 class BucketMonthly(ApiModel):
-    """One bucket's monthly trend (and a 3-month average to anchor the trim UI)."""
+    """One bucket's monthly trend plus a day-normalized monthly average over the window."""
 
     bucket_id: str
     monthly_amounts: tuple[float, ...] = Field(description="Signed totals per month; + outflow, - inflow.")
-    current_monthly_avg: float = Field(description="Trailing 3-month average (or fewer if the window is shorter).")
+    window_monthly_avg: float = Field(
+        description=(
+            "Signed window total / days actually covered, scaled to an average month "
+            "(365.25/12 days). Day-normalized so a partial current month or a mid-month "
+            "coverage start isn't counted as a whole month."
+        )
+    )
     transaction_count: NonNegativeInt
 
 
