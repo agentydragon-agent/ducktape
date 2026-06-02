@@ -60,10 +60,15 @@ export function adjustmentsToParams(adjustments: Adjustments): { bhide: string |
 }
 
 // The signed monthly value to feed the existing total/rollup math. Hidden buckets keep their
-// historical value here; callers exclude them separately.
+// historical value here; callers exclude them separately. An override is entered as a positive
+// magnitude and re-signed into the bucket's natural direction: inflows/income are money in (-);
+// transfers are direction-agnostic so preserve the historical sign (negative = net inflow);
+// expenses (and zero-history transfers) are outflows (+).
 export function effectiveSignedAvg(kind: string, windowAvg: number, adjustment: Adjustment | undefined): number {
   if (adjustment?.kind !== "override") return windowAvg;
-  return kind === "inflow" || kind === "income" ? -adjustment.monthly : adjustment.monthly;
+  if (kind === "inflow" || kind === "income") return -adjustment.monthly;
+  if (kind === "transfer" && windowAvg < 0) return -adjustment.monthly;
+  return adjustment.monthly;
 }
 
 export interface AdjustableRow {

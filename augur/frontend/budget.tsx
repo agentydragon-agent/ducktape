@@ -342,7 +342,11 @@ function BucketRow({ entry, onSelect, selected, onAdjust }) {
         <button
           type="button"
           className="ml-2 augur-link"
-          onClick={() => onAdjust(entry.bucketId, entry.hidden ? null : { kind: "hidden" })}
+          onClick={() => {
+            // Close the override editor first so a hidden row never keeps a stray open input.
+            setEditing(false);
+            onAdjust(entry.bucketId, entry.hidden ? null : { kind: "hidden" });
+          }}
         >
           {entry.hidden ? "Show" : "Hide"}
         </button>
@@ -595,8 +599,14 @@ export function BudgetWorkspace() {
   const [bucketTx, setBucketTx] = useState(null);
   const [bucketTxError, setBucketTxError] = useState(null);
   // Planning adjustments (hidden buckets / per-bucket overrides) initialized from the URL so a
-  // shared link reopens the same tweaked view; every change is written back in applyAdjustment.
+  // shared link reopens the same tweaked view.
   const [adjustments, setAdjustments] = useState(() => parseAdjustments(window.location.search));
+
+  // Mirror adjustments to the URL whenever they change (replaceState; preserves other params). On
+  // mount this re-emits the params just parsed in, so the no-change guard makes it a no-op.
+  useEffect(() => {
+    writeAdjustmentsToSearch(adjustments);
+  }, [adjustments]);
 
   const windowSpec = useMemo(() => windowSpecFromChoice(windowChoice), [windowChoice]);
 
@@ -697,7 +707,9 @@ export function BudgetWorkspace() {
 
   const exportSummary = () => {
     if (!snapshot) return;
-    downloadCsv(`budget-summary-${windowSlug(windowChoice)}.csv`, buildSummaryCsv(snapshot.months, rows));
+    // Pass the adjusted rows so the export carries the planning overlay (Planned $/mo + Hidden
+    // columns) alongside the historical actuals when any bucket is hidden/overridden.
+    downloadCsv(`budget-summary-${windowSlug(windowChoice)}.csv`, buildSummaryCsv(snapshot.months, adjustedRows));
   };
 
   const exportTransactions = () => {
@@ -706,19 +718,18 @@ export function BudgetWorkspace() {
   };
 
   // null clears the bucket back to "actual"; otherwise set hidden / override. One adjustment per
-  // bucket (hide and override are mutually exclusive). Every change is mirrored to the URL.
+  // bucket (hide and override are mutually exclusive). Functional update so rapid successive
+  // changes each compose on the latest state; the effect above mirrors the result to the URL.
   const applyAdjustment = (bucketId, adjustment) => {
-    const next = new Map(adjustments);
-    if (adjustment) next.set(bucketId, adjustment);
-    else next.delete(bucketId);
-    setAdjustments(next);
-    writeAdjustmentsToSearch(next);
+    setAdjustments((previous) => {
+      const next = new Map(previous);
+      if (adjustment) next.set(bucketId, adjustment);
+      else next.delete(bucketId);
+      return next;
+    });
   };
 
-  const resetAdjustments = () => {
-    setAdjustments(new Map());
-    writeAdjustmentsToSearch(new Map());
-  };
+  const resetAdjustments = () => setAdjustments(new Map());
 
   return (
     <main className="px-4 py-6 sm:px-6 lg:px-8 space-y-5">

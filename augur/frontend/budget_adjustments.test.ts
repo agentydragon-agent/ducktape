@@ -55,6 +55,12 @@ test("effectiveSignedAvg re-signs an override into the bucket's natural directio
   expect(effectiveSignedAvg("expense", 312, { kind: "hidden" })).toBe(312);
 });
 
+test("effectiveSignedAvg preserves a transfer's historical direction", () => {
+  // Transfers are direction-agnostic: an override keeps pointing the way the history did.
+  expect(effectiveSignedAvg("transfer", -1000, { kind: "override", monthly: 800 })).toBe(-800);
+  expect(effectiveSignedAvg("transfer", 1000, { kind: "override", monthly: 800 })).toBe(800);
+});
+
 const ROWS = [
   { bucketId: "rent", kind: "expense", windowAvg: 3200 },
   { bucketId: "groceries", kind: "expense", windowAvg: 600 },

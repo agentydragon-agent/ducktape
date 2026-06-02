@@ -19,6 +19,14 @@ export interface SummaryRow {
   monthlyAmounts: number[];
   windowAvg: number;
   transactionCount: number;
+  // Planning overlay (present when the budget tab passes its adjusted rows). When any row carries
+  // an adjustment, the summary gains "Planned $/mo" + "Hidden" columns so the CSV matches the
+  // on-screen plan without dropping the historical actuals. `effectiveAvg` is the override (signed
+  // into the bucket's direction) or the historical average; `hidden` buckets are excluded from the
+  // plan (Planned $/mo = 0).
+  effectiveAvg?: number;
+  hidden?: boolean;
+  overridden?: boolean;
 }
 
 export interface TransactionCsvRow {
@@ -63,11 +71,18 @@ function monthColumn(iso: string): string {
 }
 
 // Bucket × month matrix: one row per bucket, one column per month, plus the window average and
-// transaction count the UI shows. Built to paste into a spreadsheet and adjust by hand.
+// transaction count the UI shows. Built to paste into a spreadsheet and adjust by hand. When any
+// row carries a planning adjustment, two extra columns ("Planned $/mo", "Hidden") capture the
+// on-screen plan without distorting the historical actuals (the monthly columns stay historical).
 export function buildSummaryCsv(months: string[], rows: SummaryRow[]): string {
-  const header = ["Bucket", "Kind", "Family", ...months.map(monthColumn), "Avg $/mo", "Tx count"].map(csvField);
-  const lines = [header.join(",")];
+  const includePlanning = rows.some((row) => row.hidden || row.overridden);
+  const planningHeaders = includePlanning ? ["Planned $/mo", "Hidden"] : [];
+  const header = ["Bucket", "Kind", "Family", ...months.map(monthColumn), "Avg $/mo", "Tx count", ...planningHeaders];
+  const lines = [header.map(csvField).join(",")];
   for (const row of rows) {
+    const planningFields = includePlanning
+      ? [csvField(amount(row.hidden ? 0 : (row.effectiveAvg ?? row.windowAvg))), csvField(row.hidden ? "yes" : "")]
+      : [];
     lines.push(
       [
         textField(row.label),
@@ -76,6 +91,7 @@ export function buildSummaryCsv(months: string[], rows: SummaryRow[]): string {
         ...row.monthlyAmounts.map((value) => csvField(amount(value))),
         csvField(amount(row.windowAvg)),
         csvField(String(row.transactionCount)),
+        ...planningFields,
       ].join(",")
     );
   }
