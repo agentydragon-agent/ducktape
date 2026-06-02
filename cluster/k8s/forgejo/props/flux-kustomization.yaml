@@ -6,14 +6,22 @@ metadata:
 spec:
   interval: 10m
   retryInterval: 1m
+  timeout: 10m
   path: ./cluster/k8s/forgejo/props
   prune: true
-  # The Job spec is immutable; replace it when the script/config changes.
-  force: true
+  wait: true
   sourceRef:
     kind: GitRepository
     name: flux-system
+  # Wait for the Terraform apply (creates the Forgejo user + props secrets) so
+  # the dependent `props` Kustomization only proceeds once they exist.
+  healthChecks:
+    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
+      kind: Terraform
+      name: forgejo-props
+      namespace: flux-system
   dependsOn:
-    - name: forgejo # Forgejo API must be up to create the user
-    - name: props-secrets # source of props-forgejo-upstream-creds
-    - name: reflector # mirrors props-forgejo-upstream-creds into the forgejo namespace
+    - name: forgejo # Forgejo API must be up (provider target)
+    - name: tofu-controller
+    - name: tofu-state-db
+    - name: props-namespace
