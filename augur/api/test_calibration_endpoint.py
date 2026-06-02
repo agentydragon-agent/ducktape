@@ -1,4 +1,4 @@
-"""TestClient coverage for the exogenous-only calibration surface.
+"""TestClient coverage for the model-only calibration surface.
 
 Builds the app from the public fixture config (which configures the example OpenAI
 catalog scored against the `openai_pe` preset), injecting multi-platform mock clients

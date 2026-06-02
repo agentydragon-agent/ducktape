@@ -1,4 +1,4 @@
-"""Request/response wire types for the exogenous-only calibration endpoints.
+"""Request/response wire types for the model-only calibration endpoints.
 
 These mirror `augur.product.wire`: Pydantic models at the HTTP boundary, snake_case
 on the wire (the frontend camelizes), exported to the frontend Zod schema via

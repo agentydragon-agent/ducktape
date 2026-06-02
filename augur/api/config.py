@@ -80,11 +80,11 @@ class PropertySourceConfig(ApiModel):
 
 
 class CalibrationCatalogConfig(ApiModel):
-    """The prediction-market catalog the exogenous-only calibration endpoints score.
+    """The prediction-market catalog the model-only calibration endpoints score.
 
     `catalog_path` is a `MarketCatalog` YAML (resolved relative to the config file, like
     `property_source.properties_path`). `issuer` is the private-equity issuer id the
-    catalog scores; the chosen exogenous preset's model must include it."""
+    catalog scores; the chosen model preset must include it."""
 
     catalog_path: Path
     issuer: str = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
@@ -140,7 +140,7 @@ class Config(ApiModel):
     models: dict[str, ProviderConfig] = Field(
         min_length=1,
         description=(
-            "Named registry of exogenous-bundle providers. Frontend exposes the preset id via "
+            "Named registry of model providers. Frontend exposes the preset id via "
             "`ScenarioKey.model_id` so the user can A/B providers (e.g. a hand-tuned "
             "structured model vs a fitted-artifact-based one). The server materializes each preset "
             "into its own runtime `Sampler` at startup."
@@ -154,7 +154,7 @@ class Config(ApiModel):
     calibration_catalog: CalibrationCatalogConfig | None = Field(
         default=None,
         description=(
-            "The single prediction-market catalog the exogenous-only calibration endpoints "
+            "The single prediction-market catalog the model-only calibration endpoints "
             "(`/api/calibration/*`) score, loaded into a `MarketCatalog` at startup. `None` by "
             "default; a deployment sets it to a catalog plus the issuer it scores."
         ),

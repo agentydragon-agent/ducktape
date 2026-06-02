@@ -143,7 +143,7 @@ def _scenario_key() -> ScenarioKey:
     return ScenarioKey(model_id="current_model", horizon_months=3, monthly_spend_usd=1_000.0, spend_index="none")
 
 
-def test_product_fails_when_sample_is_missing_required_exogenous_series() -> None:
+def test_product_fails_when_sample_is_missing_required_series() -> None:
     model = MissingRequiredExogenousModel()
     product = _service(model)
 
@@ -222,7 +222,7 @@ def test_metric_fan_and_rollout_detail_share_cached_sim_rollouts(counting_model:
         {SP500Key(), CryptoKey(symbol=CryptoSymbol("btc")), CryptoKey(symbol=CryptoSymbol("eth"))}
     )
     assert counting_model.sample_requests[0].required_private_equity_issuers == frozenset({"private_holding_a"})
-    assert fan.model_id == "composite_exogenous_model"
+    assert fan.model_id == "composite"
     assert fan.metric == "cash_usd"
     assert fan.failed_count == 0
     assert [summary.seed for summary in fan.rollout_summaries] == [7, 8]
@@ -251,7 +251,7 @@ def test_metric_fan_and_rollout_detail_share_cached_sim_rollouts(counting_model:
     detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
 
     assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8)]
-    assert detail.model_id == "composite_exogenous_model"
+    assert detail.model_id == "composite"
     assert detail.rollout.seed == 7
     assert detail.rollout.monthly_metrics["cash_usd"] == [250_000.0, 249_000.0, 248_000.0, 247_000.0]
     assert detail.rollout.monthly_metrics["holding_value_usd"][0] == 835_500.0

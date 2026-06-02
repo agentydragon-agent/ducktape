@@ -21,7 +21,7 @@ class CompositeModel:
 
     macro: Sampler
     private_equity: Sampler
-    label: str = "composite_exogenous_model"
+    label: str = "composite"
 
     def sample(self, request: ExogenousSamplingRequest) -> SampledExogenousBundle:
         # Non-PE level series (all three magisteria) route to the macro provider;

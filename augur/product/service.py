@@ -1,4 +1,4 @@
-"""Product-shaped query surface. Owns the rollout LRU cache and the exogenous model.
+"""Product-shaped query surface. Owns the rollout LRU cache and the model.
 
 Holds the slice of augur config the product surface needs (portfolio, primary
 agent, initial cash); does not know about properties, locations, or bootstrap.

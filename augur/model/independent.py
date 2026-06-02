@@ -68,7 +68,7 @@ class IndependentModel(LevelSeriesMagisteria[ScalarSeriesSpec]):
     is structural (it came from typed config), so this model never parses a prefix.
     """
 
-    label: str = "independent_exogenous_model"
+    label: str = "independent"
     pe_marks: dict[IssuerId, ScalarSeriesSpec] = Field(default_factory=dict)
 
     @property

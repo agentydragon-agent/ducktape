@@ -5,7 +5,7 @@ including `/api/calibration/*` — so the emitted document carries every compone
 frontend consumes; there is no separate schema-only app to drift. The OpenAPI document is a
 function of the route signatures (request/response models), not of any config *data*, so the
 exporter constructs a minimal valid deployment in Python (one agent, one location + property,
-an empty `independent` exogenous preset) rather than reading a YAML fixture from runfiles —
+an empty `independent` model preset) rather than reading a YAML fixture from runfiles —
 which is what let it break when ducktape is consumed as an external module.
 """
 
@@ -46,7 +46,7 @@ def _schema_export_config(properties_path: Path) -> Config:
     """A minimal valid `Config` sufficient to build the full app for schema export.
 
     The bootstrap requires a non-empty property catalog whose locations are config-defined, so
-    a single location + property are supplied; the exogenous preset is an empty `independent`
+    a single location + property are supplied; the model preset is an empty `independent`
     provider (no artifacts). None of this data shapes the OpenAPI document — only the routes do."""
 
     regulation = LocalRegulation(

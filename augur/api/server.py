@@ -327,7 +327,7 @@ def _run_server_with_args(*, augur_config: Config, args: argparse.Namespace) -> 
 def run_app(*, app: FastAPI, augur_config: Config, host: str, port: int) -> int:
     print(f"serving Augur API on http://{host}:{port}")
     print(
-        f"exogenous presets: {sorted(augur_config.models)} "
+        f"models: {sorted(augur_config.models)} "
         f"(default: {augur_config.default_model_id})"
     )
     uvicorn.run(app, host=host, port=port)
