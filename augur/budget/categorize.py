@@ -36,12 +36,9 @@ def _pattern_matches(rule: Rule, tx: TransactionRow) -> bool:
     raise TypeError(f"unknown rule type: {type(rule).__name__}")
 
 
-def _direction_matches(direction: TransferDirection | None, amount: float) -> bool:
-    # Plaid signs outflows positive, inflows negative. A direction-gated bucket only
-    # accepts transactions on its declared side; zero-amount transactions are excluded
-    # from gated buckets since there's no signed leg to attribute.
-    if direction is None:
-        return True
+def _direction_matches(direction: TransferDirection, amount: float) -> bool:
+    # Plaid signs outflows positive, inflows negative. Zero-amount transactions never
+    # match a direction (no signed leg to attribute).
     if direction is TransferDirection.OUTFLOW:
         return amount > 0
     return amount < 0
@@ -104,8 +101,6 @@ def assert_bucket_directions(classified: tuple[Classified, ...], *, config: Budg
     seen: set[str] = set()
     for entry in classified:
         bucket = bucket_by_id[entry.bucket_id]
-        if bucket.direction is None:
-            continue
         if _direction_matches(bucket.direction, entry.transaction.amount):
             continue
         if bucket.id in seen:
