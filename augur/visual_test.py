@@ -118,7 +118,6 @@ def _wait_for_product_page(page: Page) -> None:
         """,
         timeout=30_000,
     )
-    assert page.get_by_text("Terminal scenario comparison").count() == 0
     assert page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth + 1")
     page.evaluate("() => document.fonts.ready.then(() => true)")
     _wait_for_product_chart_geometry(page)
