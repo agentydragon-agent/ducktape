@@ -18,12 +18,15 @@ hermetic mock clients.
 
 from __future__ import annotations
 
+import logging
 import math
 from collections import Counter
 from collections.abc import Mapping
 from datetime import date
 
+import httpx
 import numpy as np
+from polymarket.errors import PolymarketError
 from pydantic import BaseModel
 from statsmodels.stats.proportion import proportion_confint
 
@@ -39,6 +42,13 @@ from augur.calibration.resolvers import (
 from augur.model.exogenous import ExogenousSamplingRequest, Sampler
 from augur.model.private_equity_bundle import PrivateEquityBundle, PrivateEquityFloatChannel
 from augur.model.series import IssuerId
+
+logger = logging.getLogger(__name__)
+
+# Per-market network failures we tolerate by dropping the affected row instead of failing the
+# whole calibration run: httpx for the manifold + kalshi clients, PolymarketError for the
+# polymarket SDK (covers "id is invalid", rate limits, transport errors, timeouts).
+_LIVE_FETCH_ERRORS: tuple[type[BaseException], ...] = (httpx.HTTPError, PolymarketError)
 
 
 def wilson_interval(yes: int, n: int) -> tuple[float, float]:
@@ -268,14 +278,33 @@ def run_calibration(
         )
     )
 
-    def _live(market: ExactMarket | SurfacedMarket) -> Market:
-        return price_clients[market.platform].get_market(market.market_id)
+    def _live(market: ExactMarket | SurfacedMarket) -> Market | None:
+        # A single broken catalog row (bad market_id) or a transient API hiccup must not 500
+        # the entire calibration endpoint -- log + drop just that row instead.
+        try:
+            return price_clients[market.platform].get_market(market.market_id)
+        except _LIVE_FETCH_ERRORS:
+            logger.warning(
+                "dropping calibration row: %s market %r failed to fetch",
+                market.platform,
+                market.market_id,
+                exc_info=True,
+            )
+            return None
 
     return CalibrationResult(
         issuer=issuer,
         as_of=as_of,
         horizon_months=horizon_months,
         rollout_count=rollout_count,
-        clean=[_clean_row(market, trajectories, _live(market)) for market in catalog.exact_markets()],
-        surfaced=[_surfaced_row(market, trajectories, _live(market)) for market in catalog.surfaced_markets()],
+        clean=[
+            _clean_row(market, trajectories, live)
+            for market in catalog.exact_markets()
+            if (live := _live(market)) is not None
+        ],
+        surfaced=[
+            _surfaced_row(market, trajectories, live)
+            for market in catalog.surfaced_markets()
+            if (live := _live(market)) is not None
+        ],
     )
