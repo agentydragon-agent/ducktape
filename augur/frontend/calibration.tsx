@@ -361,16 +361,10 @@ function CalibrationResults({ response, metricScale }) {
   const { result, markFan, valuationFan } = response;
   return (
     <div className="min-w-0 space-y-5">
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div className="augur-card p-4">
-          <div className="augur-eyebrow">Issuer</div>
-          <div className="mt-2 text-2xl font-semibold augur-tabular">{result.issuer}</div>
-          <div className="mt-1 text-xs augur-muted">as of {result.asOf}</div>
-        </div>
-        <div className="augur-card p-4">
-          <div className="augur-eyebrow">Price source</div>
-          <div className="mt-2 text-sm font-semibold augur-tabular">Live prediction-market prices</div>
-        </div>
+      <div className="augur-card p-4">
+        <div className="augur-eyebrow">Issuer</div>
+        <div className="mt-2 text-2xl font-semibold augur-tabular">{result.issuer}</div>
+        <div className="mt-1 text-xs augur-muted">as of {result.asOf}</div>
       </div>
 
       <section className="augur-panel overflow-hidden" aria-label="Scored markets">
