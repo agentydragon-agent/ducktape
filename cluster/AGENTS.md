@@ -24,12 +24,18 @@ documentation. Fetch it with WebFetch to discover available doc pages.
 **NEVER reconcile Flux resources until changes are committed AND pushed.** Flux reads from
 the git remote, not your local filesystem.
 
-## CRITICAL: Authentik Teardown -- Remaining TF State
+## CRITICAL: Wiping a backing DB orphans tofu state
 
-`tf/gitops/sso-providers/` owns the Authentik OAuth2 providers (grafana, forgejo, harbor,
-headlamp, inventree, kagent, matrix, openclaw, study-casino). State lives in the
-`tfstate-default-sso-providers` k8s secret in `flux-system`. Wiping the Authentik DB
-without also wiping that state secret triggers the cascading desync described in
+`tf/gitops/sso-providers/` (Authentik OAuth2 providers) and `tf/gitops/forgejo-props/`
+(Forgejo registry user) both manage objects inside another stateful system whose IDs
+they record in tfstate. Wiping the backing DB without also clearing the tofu state
+triggers `Unable to read … not found with id N` failures on the next plan.
+
+State now lives in the `tofu-state-db` CNPG cluster (one schema per `Terraform` CR),
+not in the old `tfstate-default-*` k8s secrets (those were retired with the
+kubernetes-backend migration). Recovery procedure for both this and the historical
+secret-based variant: <docs/troubleshooting.md> § "Resource ID Desync After Wiping a
+Backing Datastore". Original incident write-up:
 <docs/lessons_learned/2026_02_18_authentik_tf_state_lifecycle_coupling.md>.
 
 ## CRITICAL: OVH-Only Resilience

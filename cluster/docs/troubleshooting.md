@@ -145,81 +145,51 @@ If that fails, suspend all Terraform resources first, restart, then resume.
 
 See <lessons_learned/2025_11_19_tofu_controller_tls_cache_desync.md>.
 
-### Stale State Locks (Runner Pod Death)
+### Stale State Locks (historical — kubernetes backend only)
 
-**Symptoms**: `error acquiring the state lock`; lock holder UUID matches the `holderIdentity`
-of a `lock-tfstate-default-<name>` Lease in `flux-system`; lock-holding pod no longer exists;
-runner pods churn every ~15s (ContainerCreating → Error → Terminating).
-
-**Cause**: Anything that abruptly terminates a runner pod mid-plan leaves the K8s Lease's
-`holderIdentity` set forever. The `kubernetes` terraform backend's locks have no TTL — the
-controller never force-unlocks. Known triggers:
-
-- `kubectl rollout restart` of the controller (combined with TLS cache desync — the new
-  controller can't gRPC the orphaned runners to release locks)
-- A node going `NotReady`/unreachable while runners were scheduled on it (e.g., wyrm2 outage
-  on 2026-05-10 stranded ~14 locks; recovered 2026-05-14)
-- Node drain / eviction / OOM-kill of a runner
-
-**Diagnosis**:
-
-```bash
-# List Terraform CRs currently failing on a state lock
-kubectl get terraform -n flux-system -o json | \
-  jq -r '.items[] | select(.status.conditions[]? | .message | test("acquiring the state lock"; "i")) | .metadata.name'
-
-# Confirm the Lease holder matches the lock UUID in the error and the pod is gone
-kubectl get lease -n flux-system lock-tfstate-default-<name> -o yaml
-kubectl get pod -n flux-system <name>-tf-runner  # should not exist or be a fresh Error pod
-```
-
-**Fix** — delete the stuck Lease(s) and trigger reconcile:
-
-```bash
-# Targeted (preferred — only the stuck ones)
-stuck=$(kubectl get terraform -n flux-system -o json | \
-  jq -r '.items[] | select(.status.conditions[]? | .message | test("acquiring the state lock"; "i")) | .metadata.name')
-for name in $stuck; do
-  kubectl delete lease -n flux-system "lock-tfstate-default-$name" --ignore-not-found
-done
-kubectl annotate terraform -n flux-system $stuck \
-  reconcile.fluxcd.io/requestedAt="$(date +%s)" --overwrite
-
-# Nuclear (clears every tfstate lock — all leases have label tfstate=true; safe because
-# Leases are recreated on next acquisition and state is in tfstate-* secrets, not the Lease)
-kubectl delete leases -n flux-system -l tfstate=true
-kubectl annotate terraform -n flux-system --all \
-  reconcile.fluxcd.io/requestedAt="$(date +%s)" --overwrite
-```
-
-After clearing, watch CRs flip from `False (acquiring the state lock)` to `True (Plan no
-changes)`; a few may surface unrelated errors (`exit status 1`) that were masked by the
-lock — diagnose those individually.
-
-**Prevention**:
-
-- Never `rollout restart` tofu-controller without first suspending all Terraform resources
-  and deleting runner pods (see procedure in
-  <lessons_learned/2026_03_18_tofu_controller_stale_state_locks.md>).
-- Avoid scheduling tf-runners on flaky nodes. Runner pods inherit no nodeSelector by default
-  — the controller schedules them wherever capacity exists, which can be a roaming/GPU
-  worker. If a node frequently goes NotReady (e.g. wyrm2), expect periodic stranded locks
-  until the upstream gains stale-lock detection.
-
-See <lessons_learned/2026_03_18_tofu_controller_stale_state_locks.md>.
+All `Terraform` CRs now use the PG backend, whose session-based advisory locks
+auto-release on runner-pod death. The kubernetes-backend stale-lock failure
+mode described in <lessons_learned/2026_03_18_tofu_controller_stale_state_locks.md>
+is no longer reachable. Kept as a pointer in case we ever re-add a CR on the
+kubernetes backend.
 
 ## Secrets & Auth Issues
 
-### Authentik Teardown: TF State Desync
+### Resource ID Desync After Wiping a Backing Datastore
 
-`tf/gitops/sso-providers/` owns Authentik OAuth2 providers. Its state secret
-(`tfstate-default-sso-providers` in `flux-system`) references Authentik resource PKs.
-Wiping Authentik's DB without also wiping that state secret causes the cascading desync
-described in <lessons_learned/2026_02_18_authentik_tf_state_lifecycle_coupling.md>.
+Generalization of the Authentik-DB-wipe failure mode (see
+<lessons_learned/2026_02_18_authentik_tf_state_lifecycle_coupling.md>): any
+tofu-controller `Terraform` CR that manages resources inside another stateful
+system (Authentik DB, Forgejo DB, etc.) will go into
+`Unable to read user/object … not found with id N` if that backing system is
+wiped without also clearing the corresponding tofu state. The tfstate still
+references the old numeric IDs.
 
-Recovery: suspend the `sso-providers` Terraform Kustomization, delete the stale
-`tfstate-default-sso-providers` secret, clean up any half-created Authentik API objects,
-unsuspend. See the lessons-learned doc for the full procedure.
+Recent instances:
+
+- `sso-providers` after Authentik DB wipes (the original instance).
+- `forgejo-props` after the 2026-06-02 Forgejo recovery
+  (<lessons_learned/2026_06_02_seaweedfs_volume_loss_ovh_rename.md>): the
+  forgejo-db CNPG cluster was rebuilt, so `forgejo_user.props` lost its id=2.
+
+Recovery (PG-backend CRs — current default):
+
+1. `flux suspend kustomization -n flux-system <name>` on the affected CR's
+   Kustomization (e.g. `forgejo-props`, `sso-providers`).
+2. From a pod with PG access (`kubectl exec` into any tofu-state-db client,
+   or `kubectl port-forward` to it), `DROP SCHEMA <cr_name> CASCADE;` on the
+   `tofu-state` database. Each CR has its own schema named after the CR.
+   This wipes the tfstate; the next reconcile re-creates resources from
+   scratch.
+3. Clean up any orphan objects in the backing system (e.g. delete the
+   half-created Authentik provider, or any leftover Forgejo user/repo).
+4. `flux resume kustomization -n flux-system <name>` and watch a fresh
+   plan-and-apply.
+
+For the long-decommissioned `kubernetes` backend, the equivalent step was
+`kubectl delete secret tfstate-default-<name> -n flux-system`. We don't run
+that backend anymore — see <lessons_learned/2026_02_18_authentik_tf_state_lifecycle_coupling.md>
+for the original write-up.
 
 The pre-2026-04-19 Vault-based variants of this failure (ESO password-generator desync,
 Vault version overwrites) are documented in <lessons_learned/> but no longer reachable —
