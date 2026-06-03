@@ -105,6 +105,18 @@ def test_unmatched_transactions_split_by_sign_to_per_direction_defaults() -> Non
     assert routed == {"spent": "other", "refunded": "other_in"}
 
 
+def test_zero_amount_transaction_lands_in_outflow_default_without_tripping_guard() -> None:
+    # Waived fees and voided lines arrive as `amount == 0` -- the convention is to route them to
+    # the outflow default bucket. `_direction_matches` treats $0 as outflow-compatible so that
+    # `assert_bucket_directions` doesn't reject the result; the guard would previously raise on
+    # any zero-amount line.
+    config = _config()
+    classified = classify((_tx("waiver", amount=0.0),), config=config)
+    assert {entry.transaction.transaction_id: entry.bucket_id for entry in classified} == {"waiver": "other"}
+    # The defense-in-depth guard accepts $0 against an outflow bucket.
+    assert_bucket_directions(classified, config=config)  # does not raise
+
+
 def test_transfer_bucket_without_direction_rejected() -> None:
     # Direction is a required field on every BucketDef; pydantic surfaces the missing-field error.
     with pytest.raises(ValidationError):
