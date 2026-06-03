@@ -14,10 +14,6 @@ PowerDNS and Authentik run on CloudNativePG `local-path`.
 
 ## Suspended Kustomizations
 
-- **Forgejo**: `forgejo-{namespace,db,app,servicemonitor,secrets}` — switched from
-  Gitea to Forgejo 2026-06-01 and relocated to OVH (app pinned to `hil-ovh`, repos on
-  `seaweedfs-ovh`, OVH-HA `forgejo-db`). Now independent of wyrm2; kept suspended
-  pending rollout — un-suspend to deploy.
 - **BuildBuddy Executor**: `buildbuddy-executor` — scaled to 0. Re-enable when needed.
 - **InvenTree**: `inventree-{namespace,secrets,token-provisioner}`,
   `authentik-blueprint-inventree-secret` — capacity pressure.
@@ -25,20 +21,14 @@ PowerDNS and Authentik run on CloudNativePG `local-path`.
 - **Langfuse**: `langfuse-{secrets,db}` — suspended 2026-03-31, degraded Longhorn
   volumes on wyrm2. Namespace kept active for `claude-rbac` RoleBinding dependency.
 - **ActivityWatch**: `activitywatch` — suspended 2026-04-06.
-- **Airlock**: `airlock` — unsuspended 2026-04-12 (FastAPI bug fixed, new image deployed). `google-workspace-mcp` depends on this.
 - **ARC**: `arc-namespace` — suspended 2026-04-11, resources deleted. Secrets
   (`arc-secrets`) are deployed. GitHub runner pod/statefulset removed.
-- **Props**: `props` — suspended 2026-04-06. Secrets (`props-secrets`) are deployed.
 - **Scanner**: `scanner` — suspended.
 - **kagent**: `kagent-{crds,db,secrets}` — suspended 2026-05-08. No tool-call output
   truncation; sessions die on large MCP outputs (z.ai error 1261). Namespace and
   resources deleted. See <../k8s/agents/kagent/TODO.md>.
 - **SDR**: `sdr` — suspended 2026-05-09. Temporarily disabled until the radio
   hardware is set up again after relocation to new place.
-- **Mimir + Tempo**: `mimir`, `tempo` — suspended 2026-05-13 after HIL capacity
-  pressure (6072 Mi requested / 7246 Mi allocatable). Unsuspend once there's
-  capacity and we figure out proper memory sizing (VPA resource policies,
-  right-sized requests, or additional node capacity).
 - **Google Workspace MCP**: `google-workspace-mcp` — suspended 2026-05-13.
   Resources and PVC deleted. Unsuspend once capacity pressure resolves.
 - **HomeAssistant Proxy**: `homeassistant-proxy` — suspended 2026-06-01.
@@ -46,19 +36,15 @@ PowerDNS and Authentik run on CloudNativePG `local-path`.
 
 ## Next Actions
 
-- [ ] **Recover from SeaweedFS bulk volume loss (OVH rename)** — see
-      <lessons_learned/2026_06_02_seaweedfs_volume_loss_ovh_rename.md>.
-      Volumes 0–150 are unrecoverable; only 151–210 survived. Per-workload
-      recovery: drop the `gitea-shared-storage` PVC and let Forgejo re-init
-      (no user data — its CNPG DB has zero application tables, the init
-      container has been stuck on a corrupt `app.ini` chunk for 10+ hours);
-      drop the orphan avatar in the `forgejo` S3 bucket; regenerate the
-      6 `augur-assets` landing jpegs from source; accept the loss of
-      ~1100 `mimir-blocks` chunks (forward ingest is fine on v183/v184);
-      `loki` is already recovered (corrupt cursor deleted; pre-rename log
-      windows are gone). Finally, walk every bucket and prune filer
-      entries pointing at dead volume ids so list operations stop
-      returning phantom paths.
+- [ ] **Repopulate augur-assets bucket** (last remnant of the SeaweedFS bulk
+      volume loss recovery — see
+      <lessons_learned/2026_06_02_seaweedfs_volume_loss_ovh_rename.md>).
+      All other affected buckets were nuked and consumers reset 2026-06-02:
+      `gitea-shared-storage` PVC dropped + Forgejo re-initialized; `forgejo`
+      S3 orphan dropped; `loki`/`mimir-blocks`/`mimir-ruler`/`tempo` buckets
+      nuked (data loss accepted, forward ingest is fine on v183+). Only the
+      6 `augur-assets` landing jpegs still need to be re-uploaded — they
+      live in `gaffer-private`, not this repo.
 - [ ] **Fix SeaweedFS rack labels.** All three OVH volume servers currently
       advertise `rack=hil-ovh-h109b04`, so the `defaultReplication: "001"`
       policy effectively means "any other DataNode" rather than "another
@@ -346,7 +332,10 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       `langfuse/langfuse-s3`.
 - [ ] Delete the generic `local-path` StorageClass (not region-pinned; superseded by
       provider-pinned storage classes such as `local-path-ovh` and
-      `local-path-proxmox`).
+      `local-path-proxmox`). Blocked on 2 PVCs still bound to it:
+      `study-casino/study-casino-db-{3,4}`. Migrate them to a region-pinned
+      class first, then drop the SC. (Previously: arc-runners cache,
+      harbor-db-1, matrix-db-1 — all deleted 2026-06-03.)
 - [ ] Fix Goldilocks VPA over-requesting memory on HIL pods. VPA `updateMode: Auto`
       mutates pod requests on creation but old pods retain stale high values until
       restarted. This caused grocy-sf to fail scheduling (97% memory requested on HIL
@@ -373,13 +362,14 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
         node-local collector that writes to Loki or another durable store with
         labels for `node`, `boot_id`, `talos_service`, and `source`, independent
         of `talosctl` availability during an incident.
-  - [ ] **Phase 3** (future): Off-site backup of log history — replicate the
-        OVH SeaweedFS buckets to a second location (Cloudflare R2, AWS S3, or a
-        second SeaweedFS instance on Proxmox) for disaster recovery.
-  - [ ] **Phase 4** (future): Split Loki write path by region — Proxmox node logs
-        write to a Proxmox-local object store, OVH node logs write to OVH
-        SeaweedFS. Avoids cross-site traffic for log ingestion.
-        Grafana queries both.
+  - [ ] **Off-site backup of log history**: replicate the OVH SeaweedFS
+        buckets to a second location (Cloudflare R2, AWS S3, or a second
+        SeaweedFS instance on Proxmox) for disaster recovery. Overlaps with
+        the "Decide whether observability storage stays on SeaweedFS"
+        followup above.
+  - [ ] **Split Loki write path by region**: Proxmox node logs write to a
+        Proxmox-local object store, OVH node logs write to OVH SeaweedFS.
+        Avoids cross-site traffic for log ingestion. Grafana queries both.
 - [ ] Re-enable MFA (TOTP/WebAuthn) once device enrollment is set up
 - [ ] Wire `scripts/check-authentik-login.py` into bootstrap/CI
 - [ ] Gatus: Harbor robot token for authenticated `/v2/` probe
@@ -520,8 +510,7 @@ Per-HR opt-in fix:
       driftDetection:
         mode: enabled
 
-- [ ] Enable on `grafana-operator` (low-risk; nothing else writes that
-      Deployment)
+- [x] Enable on `grafana-operator` (done 2026-05-24).
 - [ ] Audit which HRs are safe to enable wider — anything where another
       controller legitimately mutates Helm-managed resources (HPA scaling,
       sidecar injectors, security defaulters, VPA on `Auto` mode) will
@@ -575,18 +564,16 @@ directly — no port-forward. From non-workers, fall back to `kubectl port-forwa
       ([cilium#21929](https://github.com/cilium/cilium/issues/21929)). Options when available:
       TCPRoute + NodePort, or TLS passthrough (like `kube-api-proxy` TLSRoute pattern).
 - [x] **Migrate tofu-controller `Terraform` CRs from `kubernetes` to `postgres` backend.**
-      16 of ~19 CRs migrated (2026-05-15). PG backend uses session-based advisory locks
-      that auto-release on runner pod death, eliminating the stale-Lease problem. Each CR
-      gets its own schema in the existing `tofu-state-db` CNPG cluster. Reflector mirrors
-      PG credentials from `tofu-state` → `flux-system` namespace.
-      **Remaining**: - `github-secrets-sync` — Flux kustomization blocked by dependency chain
-      (`claude-rbac` → missing `openclaw-gateway`/`docker-ci` namespaces). Will
-      self-migrate once chain unblocks. CR already has PG backend in git. - `harbor-oidc-config` — already switched in git, will migrate when Harbor comes
-      back up. - `dns-records` — import blocks committed, awaiting Flux reconciliation. Remove
-      import blocks from `tf/gitops/dns-records/main.tf` after successful apply.
-      **Cleanup** (after all CRs migrated): delete old `tfstate-default-*` and
-      `tfplan-default-*` secrets in `flux-system`, remove import blocks from TF sources,
-      simplify stale-lock section in `troubleshooting.md`.
+      All 19 CRs now use the PG backend (2026-06-03 audit confirmed every CR has
+      `backendConfig.PGPASSWORD` pointing at `tofu-state-db-credentials`). PG backend
+      uses session-based advisory locks that auto-release on runner pod death,
+      eliminating the stale-Lease problem. Each CR gets its own schema in the
+      `tofu-state-db` CNPG cluster. Reflector mirrors PG credentials from
+      `tofu-state` → `flux-system`.
+      **Cleanup remaining**: one stale `tfstate-default-atuin-secrets` (52d, from
+      the kubernetes-backend era) still lives in `flux-system` — safe to delete.
+      `tfplan-default-*` secrets are normal tofu-controller per-plan artifacts;
+      don't delete those.
 
 ### GitHub Webhook Reconciliation
 
@@ -740,10 +727,6 @@ See <https://docs.siderolabs.com/kubernetes-guides/advanced-guides/dynamic-resou
 ### GPU: KubeRay, Kueue
 
 KubeRay for distributed ML, Kueue for job quota management on GPU node.
-
-### BuildBuddy Remote Executor
-
-On Proxmox, scaled to 0. Set `replicaCount > 0` to re-enable.
 
 ### Shared Docker Daemon for CI Container Tests
 
