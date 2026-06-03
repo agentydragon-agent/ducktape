@@ -11,11 +11,31 @@ import time
 from collections.abc import Callable
 
 import httpx
+from pydantic import BaseModel, ConfigDict
 
 from augur.calibration.platform import Market
 
 _BASE_URL = "https://api.elections.kalshi.com/trade-api/v2"
 _MARKET_URL_TEMPLATE = "https://kalshi.com/markets/{ticker}"
+
+
+class _KalshiMarket(BaseModel):
+    """The subset of Kalshi's `/markets/{ticker}` payload calibration needs.
+
+    `last_price_dollars` is a stringified Decimal on a 0-1 scale (already a probability);
+    `volume_fp` is all-time contracts traded (each Kalshi binary contract resolves $0-$1,
+    so contract count is an upper bound on dollar volume but not directly comparable)."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    last_price_dollars: float | None = None
+    volume_fp: float | None = None
+
+
+class _KalshiResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    market: _KalshiMarket
 
 
 class KalshiClient:
@@ -47,11 +67,14 @@ class KalshiClient:
             return cached[0]
         response = self._client.get(f"{_BASE_URL}/markets/{market_id}")
         response.raise_for_status()
-        data = response.json().get("market", response.json())
-        # ``last_price_dollars`` is a string on a 0-1 scale (already a probability).
-        raw = data.get("last_price_dollars")
-        probability = float(raw) if raw is not None else None
-        market = Market(id=market_id, url=_MARKET_URL_TEMPLATE.format(ticker=market_id), probability=probability)
+        raw = _KalshiResponse.model_validate(response.json()).market
+        market = Market(
+            id=market_id,
+            url=_MARKET_URL_TEMPLATE.format(ticker=market_id),
+            probability=raw.last_price_dollars,
+            volume=raw.volume_fp,
+            volume_unit="contracts" if raw.volume_fp is not None else None,
+        )
         self._cache[market_id] = (market, now)
         return market
 

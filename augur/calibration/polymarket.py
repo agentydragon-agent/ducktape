@@ -59,7 +59,16 @@ class PolymarketClient:
             pm_market.outcomes.yes.price if pm_market.outcomes is not None else None
         )
         slug = pm_market.slug or market_id
-        market = Market(id=market_id, url=f"{_POLYMARKET_BASE_URL}/{slug}", probability=probability)
+        # All-time traded volume in USD per the gamma `metrics.volume` field. The SDK's
+        # Market.metrics is non-optional but each volume sub-field is.
+        volume = float(pm_market.metrics.volume) if pm_market.metrics.volume is not None else None
+        market = Market(
+            id=market_id,
+            url=f"{_POLYMARKET_BASE_URL}/{slug}",
+            probability=probability,
+            volume=volume,
+            volume_unit="USD" if volume is not None else None,
+        )
         self._cache[market_id] = (market, now)
         return market
 

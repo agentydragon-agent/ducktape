@@ -104,6 +104,10 @@ class CleanRow(BaseModel):
     n_resolved: int
     unresolved: int
     kl_bits: float | None = None
+    # Platform-native total traded volume + its unit (e.g. "USD", "Ṁ" mana, "contracts").
+    # Both are None when the platform's response carried no volume figure.
+    volume: float | None = None
+    volume_unit: str | None = None
 
 
 class SurfacedRow(BaseModel):
@@ -118,6 +122,9 @@ class SurfacedRow(BaseModel):
     p_market: float
     reason: str | None = None
     augur_context: AugurContext | None = None
+    # Platform-native total traded volume + its unit (see `CleanRow.volume`).
+    volume: float | None = None
+    volume_unit: str | None = None
 
 
 class CalibrationResult(BaseModel):
@@ -164,6 +171,8 @@ def _clean_row(market: ExactMarket, trajectories: list[RolloutTrajectory], live:
         n_resolved=n,
         unresolved=unresolved,
         kl_bits=kl_bits_market_vs_model(p_market, p_model) if p_model is not None else None,
+        volume=live.volume,
+        volume_unit=live.volume_unit,
     )
 
 
@@ -201,6 +210,8 @@ def _surfaced_row(market: SurfacedMarket, trajectories: list[RolloutTrajectory],
         p_market=live.require_probability(),
         reason=" ".join(market.reason.split()) if market.reason else None,
         augur_context=_augur_context(market, trajectories),
+        volume=live.volume,
+        volume_unit=live.volume_unit,
     )
 
 

@@ -22,11 +22,20 @@ class Platform(StrEnum):
 
 @dataclass(frozen=True)
 class Market:
-    """Platform-agnostic snapshot of a prediction market's current state."""
+    """Platform-agnostic snapshot of a prediction market's current state.
+
+    `volume` is the platform's all-time traded-volume figure in its native unit, identified by
+    `volume_unit` (e.g. ``"USD"`` for Polymarket, ``"M$"`` for Manifold mana, ``"contracts"``
+    for Kalshi - each Kalshi binary contract resolves to $0-$1 so contract count is a
+    bounded-above proxy for dollar volume but isn't directly comparable). `None` when the
+    platform's response carried no volume figure.
+    """
 
     id: str
     url: str
     probability: float | None
+    volume: float | None = None
+    volume_unit: str | None = None
 
     def require_probability(self) -> float:
         if self.probability is None:
