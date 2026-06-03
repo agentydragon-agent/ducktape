@@ -18,8 +18,10 @@ sleep 1
 # noVNC instead of landing on a bare X root window.
 openbox-session &
 
-# Start VNC server (listens on localhost only — noVNC proxies it)
-x11vnc -display :99 -forever -nopw -listen 127.0.0.1 -rfbport 5900 &
+# Start VNC server (listens on localhost only — noVNC proxies it).
+# -noipv6 avoids "listen6: bind: Address already in use" since this container
+# doesn't have IPv6 loopback wired up.
+x11vnc -display :99 -forever -nopw -listen 127.0.0.1 -rfbport 5900 -noipv6 &
 
 # Start noVNC web client
 websockify --web=/usr/share/novnc 6080 127.0.0.1:5900 &
