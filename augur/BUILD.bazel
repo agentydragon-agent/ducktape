@@ -40,7 +40,8 @@ py_library(
     deps = [
         "//augur/api:config",
         "//augur/api:server_lib",
-        "//augur/calibration:manifold",
+        "//augur/calibration:default_clients",
+        "//augur/calibration:platform",
         "//util/bazel:runfiles",
         "@pypi//fastapi",
     ],

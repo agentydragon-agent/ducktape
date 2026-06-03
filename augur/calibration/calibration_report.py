@@ -22,10 +22,7 @@ from tabulate import tabulate
 from augur.api.config import load_augur_config
 from augur.calibration.calibration import mark_fan, run_calibration
 from augur.calibration.catalog import MarketCatalog
-from augur.calibration.kalshi import KalshiClient
-from augur.calibration.manifold import ManifoldClient
-from augur.calibration.platform import Platform, PriceClient
-from augur.calibration.polymarket import PolymarketClient
+from augur.calibration.default_clients import build_default_price_clients
 from augur.model.exogenous import ExogenousSamplingRequest
 from augur.model.private_equity_bundle import PrivateEquityFloatChannel
 from augur.model.series import IssuerId
@@ -59,11 +56,7 @@ def main(argv: list[str] | None = None) -> int:
     sampled = model.sample(sampling)
     bundle = sampled.private_equity
 
-    price_clients: dict[Platform, PriceClient] = {
-        Platform.MANIFOLD: ManifoldClient(),
-        Platform.POLYMARKET: PolymarketClient(),
-        Platform.KALSHI: KalshiClient(),
-    }
+    price_clients = build_default_price_clients()
     try:
         result = run_calibration(
             model,

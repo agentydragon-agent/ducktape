@@ -37,10 +37,8 @@ from augur.budget.wire import (
 )
 from augur.calibration.calibration import mark_fan, run_calibration
 from augur.calibration.catalog import MarketCatalog
-from augur.calibration.kalshi import KalshiClient
-from augur.calibration.manifold import ManifoldClient
+from augur.calibration.default_clients import build_default_price_clients
 from augur.calibration.platform import Platform, PriceClient
-from augur.calibration.polymarket import PolymarketClient
 from augur.model.exogenous import ExogenousSamplingRequest, Sampler, level_series_request_channels
 from augur.model.private_equity_bundle import PrivateEquityFloatChannel
 from augur.model.sample_sanity import SampleSanitySpec, evaluate_sample_checks, partition_spec_coverage
@@ -351,12 +349,7 @@ def build_configured_server_arg_parser(
 
 
 def _run_server_with_args(*, augur_config: Config, args: argparse.Namespace) -> int:
-    price_clients: dict[Platform, PriceClient] = {
-        Platform.MANIFOLD: ManifoldClient(),
-        Platform.POLYMARKET: PolymarketClient(),
-        Platform.KALSHI: KalshiClient(),
-    }
-    app = create_app_from_augur_config(augur_config, price_clients=price_clients)
+    app = create_app_from_augur_config(augur_config, price_clients=build_default_price_clients())
     return run_app(app=app, augur_config=augur_config, host=args.host, port=args.port)
 
 

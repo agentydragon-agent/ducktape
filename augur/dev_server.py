@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse
 
 from augur.api.config import Config, load_augur_config, resolve_augur_config_path
 from augur.api.server import build_configured_server_arg_parser, create_app_from_augur_config, run_app
-from augur.calibration.manifold import ManifoldClient
+from augur.calibration.default_clients import build_default_price_clients
 from augur.calibration.platform import Platform, PriceClient
 from util.bazel.runfiles import get_required_path
 
@@ -73,7 +73,7 @@ def main(argv: list[str] | None = None) -> int:
     ).parse_args(argv)
     config_path = Path(args.config).resolve() if args.config else resolve_augur_config_path()
     augur_config = load_augur_config(config_path)
-    app = build_dev_app(augur_config, api_only=args.api_only, price_clients={Platform.MANIFOLD: ManifoldClient()})
+    app = build_dev_app(augur_config, api_only=args.api_only, price_clients=build_default_price_clients())
     return run_app(app=app, augur_config=augur_config, host=args.host, port=args.port)
 
 
