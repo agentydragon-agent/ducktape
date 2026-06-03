@@ -69,6 +69,34 @@ PowerDNS and Authentik run on CloudNativePG `local-path`.
       supposed to survive node-rotation incidents, they should live on
       off-cluster object storage (B2 / R2 / OVH Object Storage / etc.)
       rather than home-hardware SeaweedFS.
+- [ ] **Bring SeaweedFS up properly on every OVH node, or stop claiming we
+      do.** Convention is that every OVH server (workers and CPs) runs a
+      SeaweedFS volume server. As of 2026-06-03 only 3 of 5 do: volume-0 on
+      ovh-ns104952, volume-1 on ovh-ns103656, volume-2 on ovh-ns102453.
+      Gaps: - **ovh-ns103711** (KS-5 CP, ex-kimsufi-worker-1): no volume server
+      AND its `/var/mnt/seaweedfs-data` mount is read-only. Talos
+      `UserVolumeConfig` for `/dev/sdb`+xfs IS in
+      `cluster/terraform/main/ovh-nodes.tf:273-291`, but the volume
+      either never came up post-rename or `/dev/sdb` doesn't exist on
+      this physical server. Currently cordoned (2026-06-03) so the
+      broken local-path-ovh entry stops biting study-casino-db's
+      rebuild. Lying-by-omission: `cluster/k8s/local-path-provisioner/helmrelease.yaml`
+      lists it in `nodePathMap` as if the disk were mounted. - **ovh-ns104963** (KS-GAME worker): disk is fine
+      (`/var/mnt/seaweedfs-data` works — study-casino-db-5 just
+      provisioned there), but no SeaweedFS volume server runs on it.
+
+      Either fix it (diagnose 103711's disk via `talosctl --nodes 10.42.0.14
+      get uservolumeconfig` / `talosctl ls /var/mnt`, fix the Talos config
+      if needed, then bump Seaweed CR `spec.volume.replicas: 3 → 5` and
+      verify replication converges across all 5 nodes; uncordon
+      ovh-ns103711) or stop claiming the broken state is fine (remove
+      103711 from `nodePathMap` and the topology entirely until it's
+      actually brought up). Pick one. The current half-state is the
+      worst of both — directly caused the study-casino-db migration to
+      stall on a broken-disk node selected by the scheduler. Also fixes
+      `defaultReplication: 001` durability headroom (4-5 volume servers
+      → tolerates 2-node loss instead of just 1).
+
 - [ ] **Diagnose tana-mcp crash-loop** — used to work before the renames.
       `tana-desktop` container restarts every ~3 min (43+ restarts as of
       2026-06-02 evening) with exit code 137 on a Chromium renderer
