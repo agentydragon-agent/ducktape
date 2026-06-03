@@ -363,14 +363,6 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       proxy auth, recipe import)
 - [ ] Move more PVCs to `local-path` (Proxmox CSI 29 LUN limit). Candidates:
       `langfuse/langfuse-s3`.
-- [ ] Delete the generic `local-path` StorageClass (not region-pinned; superseded by
-      provider-pinned storage classes such as `local-path-ovh` and
-      `local-path-proxmox`). All five previous consumers retired or migrated
-      2026-06-03: arc-runners cache, harbor-db-1, matrix-db-1 deleted (bound
-      to suspended workloads); study-casino-db-{3,4} migrated to local-path-ovh
-      (cluster now on db-{5,6,10}). `harbor-db` cluster spec already moved
-      to `local-path-ovh` + `region=hil` and suspended (see below). SC
-      currently has zero PVCs — safe to delete the SC itself.
 - [ ] Fix Goldilocks VPA over-requesting memory on HIL pods. VPA `updateMode: Auto`
       mutates pod requests on creation but old pods retain stale high values until
       restarted. This caused grocy-sf to fail scheduling (97% memory requested on HIL

@@ -27,10 +27,13 @@ spec:
         name: local-path-provisioner
         namespace: flux-system
   values:
+    # The chart's default `local-path` StorageClass is retired 2026-06-03
+    # in favor of the region-pinned `local-path-ovh` and `local-path-proxmox`
+    # SCs (defined as separate manifests in this directory). The provisioner
+    # deployment + nodePathMap below are still used because both region-pinned
+    # SCs declare `provisioner: cluster.local/local-path-provisioner`.
     storageClass:
-      name: local-path
-      defaultClass: false
-      reclaimPolicy: Delete
+      create: false
     nodePathMap:
       # Use /var/local-path-provisioner on all nodes
       # On Talos this is writable and persists across reboots
