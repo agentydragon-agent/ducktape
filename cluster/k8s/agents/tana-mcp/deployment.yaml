@@ -25,7 +25,7 @@ spec:
       containers:
         # Tana Desktop running under Xvfb with noVNC for graphical admin access
         - name: tana-desktop
-          image: ghcr.io/agentydragon/tana-desktop:devel-20260422205335-d9cfcf8 # {"$imagepolicy": "flux-system:tana-mcp"}
+          image: ghcr.io/agentydragon/tana-desktop:devel-20260603114320-de5507f # {"$imagepolicy": "flux-system:tana-mcp"}
           ports:
             - name: mcp
               containerPort: 8262
