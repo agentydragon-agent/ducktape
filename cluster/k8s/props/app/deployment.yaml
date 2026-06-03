@@ -5,6 +5,13 @@ metadata:
   namespace: props
   annotations:
     reloader.stakater.com/auto: "true"
+    # `auto` mode only watches secrets referenced via `envFrom` or volume mounts.
+    # props-forgejo-upstream-creds is consumed via individual env[].valueFrom.
+    # secretKeyRef entries (PROPS_REGISTRY_UPSTREAM_USERNAME/PASSWORD below),
+    # which auto mode doesn't see — without this explicit list, rotating the
+    # Forgejo registry creds (e.g. the 2026-06-02 forgejo-props recovery)
+    # silently leaves the props pod on stale credentials until restart.
+    secret.reloader.stakater.com/reload: "props-forgejo-upstream-creds"
 spec:
   replicas: 1
   selector:

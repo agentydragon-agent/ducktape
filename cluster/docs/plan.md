@@ -208,6 +208,20 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       intentionally disabled. No implicit default. Enforce via review/docs and
       add missing `reloader.stakater.com/auto: "true"` or an explicit opt-out
       comment/setting on existing Deployments, StatefulSets, and Helm releases.
+      Also fix the **auto-blind workloads** discovered 2026-06-03: `auto: "true"`
+      only watches secrets/configmaps referenced via `envFrom` or volume mounts;
+      single-key `env[].valueFrom.secretKeyRef` entries are invisible to it.
+      The props deployment hit this today (Forgejo registry creds rotated by
+      `forgejo-props` TF apply, props pod kept stale env vars until a manual
+      rollout). 21 workloads currently have the same risk: airlock,
+      kubeapi-admin-exec-mcp, atuin-server, forgejo, gatus, grocy-mcp-server
+      (sf + vallejo), harbor-core, homeassistant-proxy, litellm,
+      manifold-mcp, matrix-synapse, grafana-deployment, attic, ollama,
+      openhands, plaid-db-mcp, plaid-mcp, postscanmail-mcp, props (fixed
+      2026-06-03), tana-mcp-facade. Fix: add
+      `secret.reloader.stakater.com/reload: "<comma-list>"` next to the
+      `auto: "true"` annotation listing every secret used via
+      `env[].valueFrom.secretKeyRef`.
 - [ ] Restore docker-ci Gateway routing: docker-ci needs TLS passthrough on port 2376.
       Previously used a dedicated `docker-ci-tls` Gateway listener + TLSRoute, but Cilium
       bug [#42159](https://github.com/cilium/cilium/issues/42159) caused that listener's
