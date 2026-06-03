@@ -69,6 +69,32 @@ PowerDNS and Authentik run on CloudNativePG `local-path`.
       currently unavailable because Proxmox is down. Likely needs real
       off-cluster object storage (B2 / R2 / OVH Object Storage) — overlaps
       with the observability-backend decision below.
+- [ ] **Convert PVC backups to snapshot/retention, not Direct rsync.**
+      Current `grocy-{sf,vallejo}` and `tana-mcp` volsync configs use
+      `copyMethod: Direct` rsync into a single destination PVC. When the
+      source PVC ends up empty for any reason — fresh reprovision after a
+      node rename, a wipe, accidental delete-and-recreate — the next
+      scheduled sync **overwrites the only good backup with the empty
+      source**, with no prior version retained. Almost happened to
+      grocy-vallejo on 2026-06-03 during the
+      `talos-kimsufi-worker-1`→`ovh-ns103711` rename: the rename
+      half-attached `/var/mnt/seaweedfs-data`, the `grocy-config-ovh` PVC
+      re-provisioned empty, and only the orphan pre-rename local-path dir
+      under
+      `/var/mnt/seaweedfs-data/local-path/pvc-0f9e70aa-…_grocy-vallejo_grocy-config-ovh/`
+      saved us — both the 06:29 UTC scheduled backup and the home-dir
+      precautionary copy had already captured the empty state. Two
+      candidate fixes: (1) `copyMethod: Snapshot` with a
+      `VolumeSnapshotClass` and retain N snapshots — volsync's native
+      pattern, but needs the CSI driver to support snapshots, which
+      `seaweedfs-csi` may not; (2) **Restic** to off-cluster object
+      storage (B2/R2/OVH) with a proper retention policy (e.g. keep 7
+      daily, 4 weekly, 6 monthly) — Restic dedupes so retention is cheap,
+      and a source going empty only adds a new snapshot, not destroys
+      old ones. Overlaps with the off-cluster object-storage decision in
+      the items above. See
+      <debug/2026-06-03-ns103711-seaweedfs-data-volume-mount-missing.md>
+      for the close call.
 - [ ] **Decide whether observability storage stays on SeaweedFS**. Loki,
       Mimir, and Tempo all lost data in the rename. If those backends are
       supposed to survive node-rotation incidents, they should live on
