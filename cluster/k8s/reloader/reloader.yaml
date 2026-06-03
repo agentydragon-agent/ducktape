@@ -35,6 +35,16 @@ spec:
       watchGlobally: true
       # Enable for both secrets and configmaps
       enableHA: false
+      # By default Reloader only fires on Update events to a watched
+      # ConfigMap/Secret. A delete-then-recreate sequence (e.g.
+      # tofu-controller re-creating an Authentik or Forgejo credential
+      # secret as part of recovery — see the 2026-06-03 forgejo-props
+      # incident in <../../docs/troubleshooting.md> § "Resource ID Desync
+      # After Wiping a Backing Datastore") would otherwise be silently
+      # ignored, leaving consumer pods on stale env values. These flags
+      # map to --reload-on-create / --reload-on-delete on the operator.
+      reloadOnCreate: true
+      reloadOnDelete: true
       deployment:
         resources:
           limits:
