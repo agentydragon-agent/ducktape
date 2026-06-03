@@ -127,8 +127,6 @@ class _MarketBase(BaseModel):
     close_date: date | None = None
     # Date the YES condition must occur by; often differs from `close_date`.
     resolution_deadline: date | None = None
-    sim_signal: str | None = None
-    sim_fidelity: str | None = None
     # The market's verbatim resolution criteria -- the source of truth a resolver implements.
     resolution_criterion_text: str | None = None
     notes: str | None = None
