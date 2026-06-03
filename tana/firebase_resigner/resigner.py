@@ -100,9 +100,7 @@ async def _fetch_custom_token(http: httpx.AsyncClient, cfg: ResignerConfig, id_t
     # Firebase callable wraps the result as {result: ...}; Tana then nests
     # the actual custom token under .data.customToken (see
     # gaffer-private/tana/re/.../cloud_functions/client.js:538).
-    data = resp.json()
-    result = data.get("result", data)
-    return result["data"]["customToken"]
+    return str(resp.json()["result"]["data"]["customToken"])
 
 
 async def _deliver_to_pod(http: httpx.AsyncClient, cfg: ResignerConfig, custom_token: str) -> None:
