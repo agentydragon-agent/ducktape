@@ -83,6 +83,11 @@ jobs:
               test_target: "//tana/token_broker/...",
             }
           - {
+              image: "//tana/firebase_resigner:image",
+              image_name: tana-firebase-resigner,
+              test_target: "//tana/firebase_resigner/...",
+            }
+          - {
               image: "//x/mcp_oauth_facade:image",
               image_name: mcp-oauth-facade,
               test_target: "//mcp_infra/oauth_facade/... //x/mcp_oauth_facade/...",

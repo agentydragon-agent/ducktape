@@ -24,6 +24,11 @@ x11vnc -display :99 -forever -nopw -listen 127.0.0.1 -rfbport 5900 &
 # Start noVNC web client
 websockify --web=/usr/share/novnc 6080 127.0.0.1:5900 &
 
+# Start the localhost-only reseed receiver. The firebase_resigner sidecar
+# POSTs tana://auth?... URLs here when it needs to re-establish the
+# Firebase session inside the running Electron renderer.
+python3 /reseed_receiver.py &
+
 # Start Tana Desktop (--no-sandbox required in containers)
 /opt/tana/Tana --no-sandbox --disable-gpu &
 TANA_PID=$!

@@ -19,6 +19,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libdrm2 libxcomposite1 libxdamage1 libxrandr2 libxfixes3 \
     libpango-1.0-0 libcairo2 libcups2 libdbus-1-3 libexpat1 \
     libxkbcommon0 \
+    # Reseed receiver (tana/mcp_server/reseed_receiver.py)
+    python3-minimal \
     # Misc
     dbus-x11 fonts-noto-core ca-certificates curl \
  && rm -rf /var/lib/apt/lists/*
@@ -42,6 +44,7 @@ RUN curl -fsSL \
  && rm -rf /var/lib/apt/lists/*
 
 COPY entrypoint.sh /entrypoint.sh
+COPY reseed_receiver.py /reseed_receiver.py
 RUN chmod +x /entrypoint.sh
 
 USER tana

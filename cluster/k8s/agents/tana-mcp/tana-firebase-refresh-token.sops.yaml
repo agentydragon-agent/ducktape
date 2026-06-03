@@ -1,0 +1,44 @@
+apiVersion: v1
+kind: Secret
+metadata:
+    name: tana-firebase-refresh-token
+    namespace: tana-mcp
+    annotations:
+        description: |
+            Long-lived Firebase refresh token for the agentydragon@gmail.com Tana
+            account. Bootstrap procedure (see cluster/docs/plans/tana_mcp_sane_signin.md):
+
+              bb run //tana/firebase_session_extractor -- \
+                  ~/.config/tana-outliner/IndexedDB/https_app.tana.inc_0.indexeddb.leveldb \
+                > /tmp/rt && \
+              sed -i "s|REPLACE_ME|$(cat /tmp/rt)|" \
+                  cluster/k8s/agents/tana-mcp/tana-firebase-refresh-token.sops.yaml && \
+              sops -e -i cluster/k8s/agents/tana-mcp/tana-firebase-refresh-token.sops.yaml && \
+              rm /tmp/rt
+type: Opaque
+stringData:
+    refresh_token: ENC[AES256_GCM,data:8dMWZ969vnVq8Q==,iv:9aus3tDxX1eYf+YyEsmF3DXeD661L8d23yAwB6l0flc=,tag:fnqJ4L46jfn/99lEu4BZiw==,type:str]
+sops:
+    age:
+        - recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBPYmg0VnpZbjdhYTdPQ3ht
+            ZE5uaG4yNkNGSmNQTFpmbkpuNG5YSVdodjJBCnd3RTlhUEdCeGpETGJSNDlOc29a
+            a1lLdElSclhkY1Yyd2xabWdqSFkyVXMKLS0tIGFMRlJKZFFOYjBoZkpCR0xKRUhH
+            YzROcjNmUGFVNGtmQjIxRFlLWUJSNVUKhFZmqldm6P11JqoXcxvkIsR98rnnCzbr
+            J6ZEJAfoiIg4ZUIYvRxaDWc+K/Yy7UhxYUlO9VhTy/g+ljYZ2+ukHg==
+            -----END AGE ENCRYPTED FILE-----
+        - recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+          enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBJbjFhdGd4MEdJdDJYVmRv
+            cmRVbHF5VHV0aU10UUZpaEMvK2hac2x1TGtJClo1Z3hkMnI2QktrMFExdTdLeTRa
+            MzVkRmFZN2lYMWcrNDhncFppaWJRRUUKLS0tIHAwR1VqT25EeHhZVnFNKzMxbndz
+            VmdPcXpyTWo0R2J0d09LUFVBMis4TG8KbQYTrvvvaYC9XqLH3WjqHY1WBfSAW8m8
+            XUT/F+JZHYMIhBGrkeIFPAT+MY0p5R371uyIvKSi258sBwT/JDUWIg==
+            -----END AGE ENCRYPTED FILE-----
+    lastmodified: "2026-06-03T09:56:00Z"
+    mac: ENC[AES256_GCM,data:/hGWLMoO8Pn6at4J/4+Whuq8fSTZuw5olOt7k/1+btvaDoauSfOd0NwMoyQdC+/CJxt0M7f/ab+OWndkbR5Q8P7m6cG2cAbXbCrEP/Dx96+CUSa1oJWE7oLI1VKoRuT/pLt/tHyd0j2RDX5IvXKXSIJRkDieT0RAhAgMcxB2Mw8=,iv:Jin7AUXwlqM0FZomBWHJTR8PxwUBNqy5/u/6yFqjqzU=,tag:k4Si7EQo0Y7L4xggp/XmFg==,type:str]
+    encrypted_regex: ^(data|stringData)$
+    version: 3.12.1

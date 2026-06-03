@@ -32,6 +32,8 @@ resources:
   - postscanmail-mcp-server-image-policy.yaml
   - tana-token-broker-image-repository.yaml
   - tana-token-broker-image-policy.yaml
+  - tana-firebase-resigner-image-repository.yaml
+  - tana-firebase-resigner-image-policy.yaml
   - token-provisioner-image-repository.yaml
   - token-provisioner-image-policy.yaml
   - claude-jwt-rotation-image-repository.yaml

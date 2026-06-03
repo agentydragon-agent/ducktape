@@ -21,6 +21,7 @@ spec:
     spec:
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
+      serviceAccountName: tana-firebase-resigner
       containers:
         # Tana Desktop running under Xvfb with noVNC for graphical admin access
         - name: tana-desktop
@@ -105,6 +106,30 @@ spec:
               path: /health
               port: 8263
             periodSeconds: 10
+        # firebase_resigner: when the in-pod Tana's Firebase session is dead
+        # (probes /health on loopback), swap the SOPS-managed refresh token
+        # for an ID token, mint a Tana custom token via the fetchCustomToken
+        # Cloud Function, and deliver it to the desktop container's reseed
+        # receiver as a tana://auth deep-link. See
+        # cluster/docs/plans/tana_mcp_sane_signin.md.
+        - name: firebase-resigner
+          image: ghcr.io/agentydragon/tana-firebase-resigner:devel-20260422205335-d9cfcf8 # {"$imagepolicy": "flux-system:tana-firebase-resigner"}
+          env:
+            - name: FIREBASE_API_KEY
+              # Tana web bundle's REACT_APP_FIREBASE_API_KEY for project
+              # tagr-prod. Firebase web API keys are public identifiers per
+              # Google's docs, so this is config, not a secret.
+              value: AIzaSyA9LtJM6Ga9VAwCfj9w_mNORdOaq2yLshQ
+            - name: TARGET_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          resources:
+            requests:
+              cpu: 10m
+              memory: 64Mi
+            limits:
+              memory: 128Mi
       volumes:
         - name: tana-config
           persistentVolumeClaim:
