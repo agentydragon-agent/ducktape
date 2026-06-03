@@ -34,10 +34,10 @@ PowerDNS and Authentik run on CloudNativePG `local-path`.
 - **HomeAssistant Proxy**: `homeassistant-proxy` — suspended 2026-06-01.
   Resources deleted. Unsuspend once back in a place that uses Home Assistant.
 - **Harbor DB**: `harbor-db` — suspended 2026-06-03. Proxmox is down, so
-  Harbor itself isn't usable; also the CNPG cluster spec uses the generic
-  `local-path` SC which we're retiring. CNPG cluster + last `harbor-db-1`
-  PVC deleted. Before un-suspending, migrate `cluster/k8s/harbor/db/cluster.yaml`
-  to `local-path-proxmox`.
+  Harbor itself isn't usable. CNPG cluster + last `harbor-db-1` PVC deleted.
+  Spec already updated to `local-path-ovh` + `region=hil` so the DB will
+  come back on OVH on un-suspend, but the rest of Harbor (app, storage)
+  still needs work before un-suspending is meaningful.
 
 ## Next Actions
 
@@ -368,10 +368,9 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       `local-path-proxmox`). All five previous consumers retired or migrated
       2026-06-03: arc-runners cache, harbor-db-1, matrix-db-1 deleted (bound
       to suspended workloads); study-casino-db-{3,4} migrated to local-path-ovh
-      (cluster now on db-{5,6,10}). SC currently has zero PVCs — safe to
-      delete the SC itself. Before un-suspending `harbor-db` (now suspended
-      in git, see below), migrate `cluster/k8s/harbor/db/cluster.yaml` to
-      `local-path-proxmox` so it doesn't recreate a local-path PVC.
+      (cluster now on db-{5,6,10}). `harbor-db` cluster spec already moved
+      to `local-path-ovh` + `region=hil` and suspended (see below). SC
+      currently has zero PVCs — safe to delete the SC itself.
 - [ ] Fix Goldilocks VPA over-requesting memory on HIL pods. VPA `updateMode: Auto`
       mutates pod requests on creation but old pods retain stale high values until
       restarted. This caused grocy-sf to fail scheduling (97% memory requested on HIL
