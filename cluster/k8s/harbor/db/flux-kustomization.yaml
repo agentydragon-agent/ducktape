@@ -4,6 +4,11 @@ metadata:
   name: harbor-db
   namespace: flux-system
 spec:
+  # Suspended 2026-06-03 alongside Harbor itself (Proxmox down, the
+  # cluster.yaml here uses the generic `local-path` SC which we're trying
+  # to retire). When un-suspending, first migrate the cluster spec to
+  # `local-path-proxmox` so it doesn't re-create the last `local-path` PVC.
+  suspend: true
   retryInterval: 1m
   interval: 10m
   timeout: 10m
