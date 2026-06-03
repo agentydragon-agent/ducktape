@@ -6,39 +6,32 @@ metadata:
     annotations:
         description: |
             Long-lived Firebase refresh token for the agentydragon@gmail.com Tana
-            account. Bootstrap procedure (see cluster/docs/plans/tana_mcp_sane_signin.md):
-
-              bb run //tana/firebase_session_extractor -- \
-                  ~/.config/tana-outliner/IndexedDB/https_app.tana.inc_0.indexeddb.leveldb \
-                > /tmp/rt && \
-              sed -i "s|REPLACE_ME|$(cat /tmp/rt)|" \
-                  cluster/k8s/agents/tana-mcp/tana-firebase-refresh-token.sops.yaml && \
-              sops -e -i cluster/k8s/agents/tana-mcp/tana-firebase-refresh-token.sops.yaml && \
-              rm /tmp/rt
+            account. To re-bootstrap, see cluster/docs/plans/tana_mcp_sane_signin.md
+            (option B "Bootstrap (no browser required)").
 type: Opaque
 stringData:
-    refresh_token: ENC[AES256_GCM,data:8dMWZ969vnVq8Q==,iv:9aus3tDxX1eYf+YyEsmF3DXeD661L8d23yAwB6l0flc=,tag:fnqJ4L46jfn/99lEu4BZiw==,type:str]
+    refresh_token: ENC[AES256_GCM,data:MNHY8Y+TzSaMRKV6DBnhAbNJfYW9I9rekt1OxS3LLD05pWU5hbKDnt938ExjlCMLFCbppRRck/X2q+dC/kj3dCDs6AyIS2B/xmN4lF2dpHiWq6pP727eNW3aI7DttNXHM4qvkIc1Q40dqXAy0y6jtzPgFbxcFekFtmJS7XLs3UGvtdWbyDXDk+EJ4Hz3jV09IRY+3i1rOxIuJuph0Zn7te23saEVVRTBogaYl9JE2w10DtsUNGVF,iv:PhoggK6BMxo3/iaxe5Zk4/3jCaqqys7dADMCUuPXbCA=,tag:WkZff5Yw9EfvMJFbiD2rVw==,type:str]
 sops:
     age:
         - recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
           enc: |
             -----BEGIN AGE ENCRYPTED FILE-----
-            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBPYmg0VnpZbjdhYTdPQ3ht
-            ZE5uaG4yNkNGSmNQTFpmbkpuNG5YSVdodjJBCnd3RTlhUEdCeGpETGJSNDlOc29a
-            a1lLdElSclhkY1Yyd2xabWdqSFkyVXMKLS0tIGFMRlJKZFFOYjBoZkpCR0xKRUhH
-            YzROcjNmUGFVNGtmQjIxRFlLWUJSNVUKhFZmqldm6P11JqoXcxvkIsR98rnnCzbr
-            J6ZEJAfoiIg4ZUIYvRxaDWc+K/Yy7UhxYUlO9VhTy/g+ljYZ2+ukHg==
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBYRTF3K1Q5MFo1N2hWMXYw
+            M0d3cENqSlRLbXdYb0k0NFNJN24zWUdObTMwCkRHbWd6VVJibzlpZGgxbnk4clkz
+            R1pSNW1FUHlsQUtWMTRvYzFmWFBXT1UKLS0tIHJOdVFiNWh5NTJRN0s3WWhHM0Ru
+            ZSs5RVNKVW5VVUI2OTRaLzY4T2Z5eWcKo5csGYioFVHrRm2Wh8IxeVh3YmU3EAn3
+            c7A2bZmR0z1YthNunGTHdyObjRl1V4ei6fegermPUtKcjCJkkOAOig==
             -----END AGE ENCRYPTED FILE-----
         - recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
           enc: |
             -----BEGIN AGE ENCRYPTED FILE-----
-            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBJbjFhdGd4MEdJdDJYVmRv
-            cmRVbHF5VHV0aU10UUZpaEMvK2hac2x1TGtJClo1Z3hkMnI2QktrMFExdTdLeTRa
-            MzVkRmFZN2lYMWcrNDhncFppaWJRRUUKLS0tIHAwR1VqT25EeHhZVnFNKzMxbndz
-            VmdPcXpyTWo0R2J0d09LUFVBMis4TG8KbQYTrvvvaYC9XqLH3WjqHY1WBfSAW8m8
-            XUT/F+JZHYMIhBGrkeIFPAT+MY0p5R371uyIvKSi258sBwT/JDUWIg==
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBCVys4TnM5UzZHd3B0Qnkr
+            NFRUY0pPUXprbDZ3bldWaHM5MUtRRkErRUNjCjhFRkc4dk9vTFkzaU9jU0l3UWIy
+            VG5QT3hjbHR2UlQvSUZxeXE0by9nZ0EKLS0tIEdPcUdKdDNNM2krRktDZ05YN2F3
+            QlFra2ZveVdJVzd3UG5MTHlnOW95UzgKykKSWZDbEJLW5s4Lx6CPBOzL20X9mTEU
+            qLkBiVjPYwhgO5ePtGDWECUkTKcCRkb5QVSHbUzAV6D4tldGPlg0KA==
             -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2026-06-03T09:56:00Z"
-    mac: ENC[AES256_GCM,data:/hGWLMoO8Pn6at4J/4+Whuq8fSTZuw5olOt7k/1+btvaDoauSfOd0NwMoyQdC+/CJxt0M7f/ab+OWndkbR5Q8P7m6cG2cAbXbCrEP/Dx96+CUSa1oJWE7oLI1VKoRuT/pLt/tHyd0j2RDX5IvXKXSIJRkDieT0RAhAgMcxB2Mw8=,iv:Jin7AUXwlqM0FZomBWHJTR8PxwUBNqy5/u/6yFqjqzU=,tag:k4Si7EQo0Y7L4xggp/XmFg==,type:str]
+    lastmodified: "2026-06-03T12:34:57Z"
+    mac: ENC[AES256_GCM,data:blE5N6JCgJewO4CPjSytUcfnndDJht1NJ62aJTJGmtMvExHrd5XTXqxrpld01rY8b4OyLTCQmqeCqIS8OkUdFuZSnKerNXkpU9Eku6G6q0W3qjlP20Drs3qlNwfZg7cbKyQ3aVToNidtUPBDOBl6VsRd42oCSO+amCdyooXzroM=,iv:0QFx3v7vCC76orBwnhqHYZQdppdqMsBlc8A5OKC7pCw=,tag:H0IFYmKt/984FMGUE9vccA==,type:str]
     encrypted_regex: ^(data|stringData)$
     version: 3.12.1
