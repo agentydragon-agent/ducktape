@@ -107,12 +107,22 @@ desktop session.
 - The desktop now runs a lightweight window manager, so you can move/focus the
   browser and Tana windows instead of interacting with a bare root window
 
-### 4. Enable the MCP Server
+### 4. MCP Server starts automatically
 
-- Open Tana Settings (gear icon, or Menu > Options)
-- Navigate to **Tana Labs**
-- Enable **"Local API/MCP server (Alpha)"**
-- The MCP server starts on port 8262 inside the container
+The desktop renderer sends `local-api-ready` to the Electron main process as
+soon as the workspace bootstraps (`channel.modelHasLoaded` → `webCallback.ready()`
+→ `startLocalApiOnMessageChannel(...)` in `desktopEventBridge.js`), and the
+main process starts the HTTP server on `127.0.0.1:8262` unconditionally. There
+is no Labs gate at the HTTP layer.
+
+The "Local API/MCP server (Alpha)" toggle under **Tana Labs > Settings** only
+controls `McpAgentConfigManager` — i.e. whether Tana writes managed entries
+into `~/.claude.json` / `~/.claude/.config.json` on the host. We don't use that
+path (the cluster proxies bearer-auth `/mcp` from a SOPS-managed PAT), so the
+toggle state does not matter for this deployment.
+
+See [`gaffer-private/tana/re/desktop/local-mcp-v1.515.0.md`](../../../../../../gaffer-private/tana/re/desktop/local-mcp-v1.515.0.md)
+for the desktop-side implementation.
 
 ### 5. Confirm MCP readiness
 

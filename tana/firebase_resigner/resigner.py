@@ -35,12 +35,15 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class ResignerConfig:
-    # Firebase project — embedded in the Tana web bundle. Web API keys are
-    # not secrets per Google's docs, so this is fine in config.
+    # Firebase web API key — embedded in the Tana web bundle's
+    # REACT_APP_FIREBASE_API_KEY. Web API keys are public identifiers per
+    # Google's docs, so this is config, not a secret.
     api_key: str
-    project_id: str = "tagr-prod"
-    callable_region: str = "europe-west1"
-    callable_name: str = "fetchCustomToken"
+    # Tana hosts Firebase callables behind its own domain (the bundle's
+    # REACT_APP_FIREBASE_FUNCTIONS_URL), not the default GCF subdomain. The
+    # `fetchCustomToken` callable's URL is therefore
+    # `<functions_base>/fetchCustomToken`.
+    fetch_custom_token_url: str = "https://app.tana.inc/functions/fetchCustomToken"
 
     # In-pod URLs.
     tana_health_url: str = "http://127.0.0.1:8262/health"
@@ -91,16 +94,19 @@ async def _refresh_id_token(http: httpx.AsyncClient, cfg: ResignerConfig, refres
 
 
 async def _fetch_custom_token(http: httpx.AsyncClient, cfg: ResignerConfig, id_token: str) -> str:
-    """Call Tana's fetchCustomToken Cloud Function (Firebase callable shape)."""
-    url = f"https://{cfg.callable_region}-{cfg.project_id}.cloudfunctions.net/{cfg.callable_name}"
+    """Call Tana's fetchCustomToken callable (Firebase callable wire shape)."""
     resp = await http.post(
-        url, json={"data": {}}, headers={"Authorization": f"Bearer {id_token}", "Content-Type": "application/json"}
+        cfg.fetch_custom_token_url,
+        json={"data": {}},
+        headers={"Authorization": f"Bearer {id_token}", "Content-Type": "application/json"},
     )
     resp.raise_for_status()
-    # Firebase callable wraps the result as {result: ...}; Tana then nests
-    # the actual custom token under .data.customToken (see
-    # gaffer-private/tana/re/.../cloud_functions/client.js:538).
-    return str(resp.json()["result"]["data"]["customToken"])
+    # Firebase callable wraps the response as {result: <returned>}, and the
+    # function returns {customToken: <token>} (see
+    # gaffer-private/tana/re/web/.../cloud_functions/client.js:538). The
+    # `.data.customToken` shape in that file is the SDK-side unwrap; over
+    # the wire it's `{"result": {"customToken": "..."}}`.
+    return str(resp.json()["result"]["customToken"])
 
 
 async def _deliver_to_pod(http: httpx.AsyncClient, cfg: ResignerConfig, custom_token: str) -> None:
