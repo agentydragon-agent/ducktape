@@ -6,7 +6,10 @@ metadata:
   annotations:
     description: "CNPG Postgres for study-casino state."
 spec:
-  instances: 2
+  # Temporarily 3 to validate migration from local-path -> local-path-ovh
+  # (CLEANUP 2026-06-03): scale back to 2 after the old local-path PVCs
+  # (study-casino-db-{3,4}) have been replaced with local-path-ovh ones.
+  instances: 3
 
   # CNPG 1.27+ kills isolated primaries by default (liveness probe).
   # Disable to prevent false positives from transient network blips.
@@ -26,7 +29,7 @@ spec:
     topologyKey: kubernetes.io/hostname
 
   storage:
-    storageClass: local-path
+    storageClass: local-path-ovh
     size: 1Gi
 
   monitoring:
