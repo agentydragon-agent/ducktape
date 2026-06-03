@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 
 import { fetchCalibrationRun } from "./client.ts";
-import { fmtPct } from "./lib/format.ts";
+import { fmtPct, fmtVolume } from "./lib/format.ts";
 import { MetricFanChart } from "./fan_chart.tsx";
 import { RolloutResultsSkeleton } from "./skeleton.tsx";
 import { FAN_PERCENTILES, clampRolloutCount, clampFirstSeed, clampHorizonMonths } from "./input_helpers.ts";
@@ -26,16 +26,9 @@ function fmtBits(value) {
   return value == null || !Number.isFinite(Number(value)) ? "—" : `${Number(value).toFixed(3)} bits`;
 }
 
-// Bigger model-vs-market divergences get a louder tint so the eye lands on the disagreements
-// first. Thresholds are in bits of D_KL: amber ≥0.05 bits (≈ a market at 0.50 vs model 0.37),
-// rose ≥0.15 bits (≈ 0.50 vs 0.29).
-function klToneClass(klBits) {
-  if (klBits == null || !Number.isFinite(Number(klBits))) return "";
-  if (klBits >= 0.15) return "bg-rose-50 dark:bg-rose-950/30";
-  if (klBits >= 0.05) return "bg-amber-50 dark:bg-amber-950/30";
-  return "";
-}
-
+// Bigger model-vs-market divergences get a louder tint on the KL cell itself (see
+// `klTextClass`) so the eye lands on the disagreements first. The full row stays untinted so
+// platform-logo and link contrast doesn't have to fight a rose/amber background.
 function klTextClass(klBits) {
   if (klBits == null || !Number.isFinite(Number(klBits))) return "augur-muted";
   if (klBits >= 0.15) return "font-semibold text-rose-700 dark:text-rose-300";
@@ -43,42 +36,58 @@ function klTextClass(klBits) {
   return "augur-tabular";
 }
 
-const PLATFORM_STYLE = {
-  manifold: "bg-blue-50 text-blue-700 ring-blue-600/20 dark:bg-blue-950/40 dark:text-blue-300 dark:ring-blue-400/20",
-  polymarket:
-    "bg-emerald-50 text-emerald-700 ring-emerald-600/20 dark:bg-emerald-950/40 dark:text-emerald-300 dark:ring-emerald-400/20",
-  kalshi:
-    "bg-purple-50 text-purple-700 ring-purple-600/20 dark:bg-purple-950/40 dark:text-purple-300 dark:ring-purple-400/20",
-};
-
-// Minimal inline SVG icons — each platform's logo reduced to a recognizable glyph.
+// Each platform's actual brand mark, trimmed to the icon glyph only:
+//   - manifold: the official "crane" logo from manifold.markets/logo.svg (indigo #4337C9 on
+//     light) and logo-white.svg (white on dark); same path either way, only stroke color flips.
+//   - polymarket: the trapezoidal icon extracted from the Wikimedia logo SVG
+//     (dropping the "polymarket" wordmark that sits beside it).
+//   - kalshi: the lowercase "k" subpath extracted from the Wikimedia wordmark
+//     (Kalshi only ships a wordmark, so this is the most icon-like fragment).
+// Each viewBox is square so the three icons rendered at h-5 w-5 occupy the same physical
+// footprint; `stroke|fill="currentColor"` (where used) lets the wrapper drive the color so
+// dark-mode swaps stay declarative.
 const PLATFORM_ICON = {
   manifold: (
-    <svg viewBox="0 0 16 16" className="h-3 w-3 shrink-0" fill="currentColor">
-      <path d="M8 1L14.9 12.5H1.1L8 1Z" />
+    <svg
+      viewBox="0 0 24 24"
+      className="h-5 w-5 shrink-0 text-[#4337C9] dark:text-white"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M5.24854 17.0952L18.7175 6.80301L14.3444 20M5.24854 17.0952L9.79649 18.5476M5.24854 17.0952L4.27398 6.52755M14.3444 20L9.79649 18.5476M14.3444 20L22 12.638L16.3935 13.8147M9.79649 18.5476L12.3953 15.0668M4.27398 6.52755L10.0714 13.389M4.27398 6.52755L2 9.0818L4.47389 8.85643M12.9451 11.1603L10.971 5L8.65369 11.6611" />
     </svg>
   ),
   polymarket: (
-    <svg viewBox="0 0 16 16" className="h-3 w-3 shrink-0" fill="currentColor">
-      <path d="M3 3h4v4H3V3Zm6 0h4v4H9V3ZM3 9h4v4H3V9Zm6 3a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
+    // Pad the 137x168 icon out to a 168x168 square so it centers in the same w-4 box as the
+    // other two; shift x by -15.5 (= (168-137)/2) so the trapezoid sits in the middle.
+    <svg
+      viewBox="-15.5 0 168 168"
+      className="h-5 w-5 shrink-0 text-slate-800 dark:text-slate-200"
+      fill="currentColor"
+      aria-hidden
+    >
+      <path d="M136.267 152.495C136.267 159.76 136.267 163.392 133.891 165.192C131.516 166.993 128.019 166.012 121.024 164.049L8.63192 132.51C4.41793 131.328 2.31093 130.737 1.09248 129.129C-0.125977 127.522 -0.125977 125.333 -0.125977 120.957V47.0434C-0.125977 42.6667 -0.125977 40.4783 1.09248 38.8709C2.31093 37.2634 4.41792 36.6722 8.63191 35.4897L121.024 3.95096C128.019 1.98834 131.516 1.00703 133.891 2.80771C136.267 4.60839 136.267 8.24049 136.267 15.5047V152.495ZM27.9043 122.228L120.966 148.345V96.1133L27.9043 122.228ZM15.1738 110.111L108.217 84L15.1738 57.8887V110.111ZM27.9033 45.7725L120.966 71.8877V19.6553L27.9033 45.7725Z" />
     </svg>
   ),
   kalshi: (
-    <svg viewBox="0 0 16 16" className="h-3 w-3 shrink-0" fill="currentColor">
-      <path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1Zm0 2a5 5 0 0 1 3.54 8.54L5.46 5.46A5 5 0 0 1 8 3Z" />
+    // Pad the 180x226 "k" out to a 226x226 square so it centers in the same w-4 box; shift x
+    // by -23 (= (226-180)/2). Brand green #00DD94 reads on both light and dark backgrounds.
+    <svg viewBox="-23 0 226 226" className="h-5 w-5 shrink-0" fill="#00DD94" aria-hidden>
+      <path d="M105.23 105.628L179.66 222.61H115.118L54.3009 121.934V222.61H0V3.38607H54.3009V99.102L119.464 3.38607H177.489L105.23 105.628Z" />
     </svg>
   ),
 };
 
 function PlatformBadge({ platform }) {
-  const tone = PLATFORM_STYLE[platform] ?? PLATFORM_STYLE.manifold;
-  const icon = PLATFORM_ICON[platform];
+  const icon = PLATFORM_ICON[platform] ?? PLATFORM_ICON.manifold;
+  // Centered inside the dedicated platform column; the parent <td> handles spacing.
   return (
-    <span
-      className={`ml-1 inline-flex items-center gap-0.5 rounded-full px-1.5 py-px text-[10px] font-semibold ring-1 ring-inset ${tone}`}
-    >
+    <span className="inline-flex items-center justify-center" title={platform}>
       {icon}
-      {platform}
     </span>
   );
 }
@@ -115,13 +124,6 @@ function CalibrationForm({ catalog }) {
   return (
     <aside className="min-w-0">
       <div className="augur-card">
-        <div className="px-4 py-3">
-          <div className="augur-eyebrow">Calibration run</div>
-          <div className="mt-1 text-xs augur-muted">
-            Score a built-in exogenous model&apos;s rollouts against this deployment&apos;s curated prediction-market
-            catalog (exogenous-only — no portfolio, no product scenario). Results update live as you tune the inputs.
-          </div>
-        </div>
         <div className="grid gap-3 px-4 py-3">
           <div data-calibration-catalog={catalog.issuer}>
             <div className="augur-eyebrow">Market catalog</div>
@@ -145,6 +147,7 @@ function CleanTable({ rows }) {
       <table className="min-w-full border-t border-slate-200 text-sm dark:border-slate-700">
         <thead>
           <tr className="bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500 dark:bg-slate-900 dark:text-slate-400">
+            <th className="w-8 px-2 py-2 font-semibold" aria-label="Source platform" />
             <th className="px-4 py-2 font-semibold">Market</th>
             <th className="px-3 py-2 text-right font-semibold">Market</th>
             <th className="px-3 py-2 text-right font-semibold">Model (95% CI)</th>
@@ -160,12 +163,22 @@ function CleanTable({ rows }) {
             const unresolvedPct =
               row.nResolved + row.unresolved > 0 ? row.unresolved / (row.nResolved + row.unresolved) : null;
             return (
-              <tr key={row.marketId} className={klToneClass(row.klBits)} data-calibration-clean-row={row.marketId}>
+              <tr key={row.marketId} data-calibration-clean-row={row.marketId}>
+                <td className="px-2 py-2 text-center align-top">
+                  <PlatformBadge platform={row.platform} />
+                </td>
                 <th className="px-4 py-2 text-left font-semibold text-slate-700 dark:text-slate-200">
                   <a href={row.url} target="_blank" rel="noreferrer" className="augur-accent-text hover:underline">
                     {row.question}
                   </a>
-                  <PlatformBadge platform={row.platform} />
+                  {fmtVolume(row.volume, row.volumeUnit) && (
+                    <div
+                      className="mt-0.5 text-[11px] font-normal augur-muted augur-tabular"
+                      title="total all-time volume traded on the platform"
+                    >
+                      {fmtVolume(row.volume, row.volumeUnit)}
+                    </div>
+                  )}
                 </th>
                 <td className="px-3 py-2 text-right augur-tabular">{fmtProb(row.pMarket)}</td>
                 <td className="px-3 py-2 text-right augur-tabular">
@@ -204,6 +217,7 @@ function SurfacedTable({ rows }) {
       <table className="min-w-full border-t border-slate-200 text-sm dark:border-slate-700">
         <thead>
           <tr className="bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500 dark:bg-slate-900 dark:text-slate-400">
+            <th className="w-8 px-2 py-2 font-semibold" aria-label="Source platform" />
             <th className="px-4 py-2 font-semibold">Market</th>
             <th className="px-3 py-2 text-right font-semibold">Market</th>
             <th className="px-3 py-2 text-right font-semibold">Augur signal</th>
@@ -212,15 +226,22 @@ function SurfacedTable({ rows }) {
         <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
           {rows.map((row) => (
             <tr key={row.marketId} data-calibration-surfaced-row={row.marketId}>
+              <td className="px-2 py-2 text-center align-top">
+                <PlatformBadge platform={row.platform} />
+              </td>
               <th className="px-4 py-2 text-left font-semibold text-slate-700 dark:text-slate-200">
                 <a href={row.url} target="_blank" rel="noreferrer" className="augur-accent-text hover:underline">
                   {row.question}
                 </a>
-                <PlatformBadge platform={row.platform} />
                 <div className="mt-0.5 text-[11px] font-normal augur-muted">
                   <span className="font-semibold">
                     {row.correlateOf ? `correlate of ${row.correlateOf}` : row.mappability}
                   </span>
+                  {fmtVolume(row.volume, row.volumeUnit) && (
+                    <span className="ml-2 augur-tabular" title="total all-time volume traded on the platform">
+                      · {fmtVolume(row.volume, row.volumeUnit)}
+                    </span>
+                  )}
                 </div>
                 {row.reason && <div className="mt-0.5 text-xs font-normal augur-body">{row.reason}</div>}
               </th>

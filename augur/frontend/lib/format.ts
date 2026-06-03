@@ -31,6 +31,22 @@ export function fmtNumber(value) {
   return number.toLocaleString("en-US", { maximumFractionDigits: 0 });
 }
 
+// Compact platform-volume formatter: "USD" -> "$42k" (built-in compact-currency notation),
+// "contracts" -> "44k contracts" (Kalshi binary contracts resolve $0–$1, so this is a
+// bounded-above proxy for dollar volume), anything else (e.g. Manifold's "𝕄" mana) is
+// rendered as `<unit><compact-number>`.
+export function fmtVolume(amount, unit) {
+  const number = Number(amount);
+  if (!Number.isFinite(number) || !unit) return null;
+  if (unit === "USD") return fmtUsdCompact(number);
+  const compact = number.toLocaleString("en-US", {
+    notation: "compact",
+    maximumFractionDigits: Math.abs(number) >= 1_000_000 ? 2 : 1,
+  });
+  if (unit === "contracts") return `${compact} contracts`;
+  return `${unit}${compact}`;
+}
+
 export function clampInteger(value, min, max) {
   const number = Math.trunc(Number(value));
   if (!Number.isFinite(number)) return min;
