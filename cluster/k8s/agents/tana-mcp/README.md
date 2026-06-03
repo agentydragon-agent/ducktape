@@ -44,19 +44,39 @@ surface.
 - **proxy sidecar**: `nginx:alpine` rewrites `Host`/`Origin` to localhost before
   proxying only `/mcp` and `/health` to port 8262. Exposed on port 8263
   (cluster-internal only).
-- **PVC**: Persists `~/.config/Tana` (login session, MCP client approvals).
+- **`tana-config` volume**: `emptyDir`. Tana's `~/.config/tana` only holds
+  workspace cache + Firebase auth IndexedDB; both are re-derivable on cold
+  start (workspace from the upstream Tana RTDB, Firebase session by the
+  resigner). No PVC, no volsync backup.
+- **firebase-resigner sidecar**: Watches `127.0.0.1:8262/health`; when the
+  in-pod renderer isn't signed in, swaps the SOPS-managed refresh token
+  for a fresh Firebase ID token → calls Tana's `fetchCustomToken` → POSTs
+  the resulting `tana://auth?token=...&providerId=tanaFirebaseToken` URL to
+  the desktop container's localhost reseed receiver, which `exec`s Tana
+  so Electron's second-instance handler routes the URL into the renderer.
+  See <../../../docs/plans/tana_mcp_sane_signin.md>.
 - **PAT secret**: `tana-agentydragon-gmail-com-account-pat` is a
   SOPS-encrypted Kubernetes secret that stores a Tana personal access token for
-  the full `agentydragon@gmail.com` account.
+  the full `agentydragon@gmail.com` account, used by the cluster MCP clients
+  to authenticate to `/mcp`.
 
 The old `token-broker` code is intentionally kept in the repo but is currently
 unwired from this deployment because Tana's auto-approved OAuth callback flow
 is no longer reliable enough to depend on operationally.
 
-## Initial Setup (Graphical Login)
+## Initial Setup
 
-The Tana desktop app requires a one-time graphical login to your Tana account.
-After login, the session persists in the PVC across pod restarts.
+The deployment expects a Firebase refresh token to be present in the
+`tana-firebase-refresh-token` SOPS secret. With that in place, the resigner
+sidecar drives sign-in on every pod start — no operator action needed.
+
+To bootstrap the refresh token from a local Tana Desktop install, see
+<../../../docs/plans/tana_mcp_sane_signin.md> § "Bootstrap (no browser
+required)".
+
+The legacy graphical-login procedure (noVNC + sign-in dialog) is kept
+below for emergency recovery if the resigner sidecar can't drive sign-in
+(e.g. the stored refresh token has been revoked).
 
 ### Expected pre-login state
 

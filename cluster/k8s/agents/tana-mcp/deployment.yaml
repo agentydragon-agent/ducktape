@@ -131,9 +131,14 @@ spec:
             limits:
               memory: 128Mi
       volumes:
+        # Tana's ~/.config/tana is just workspace cache + Firebase auth
+        # IndexedDB. Both are re-derivable on cold start: workspace from the
+        # upstream Tana RTDB, Firebase session re-minted by the
+        # firebase_resigner sidecar from the SOPS-managed refresh token. So
+        # this can stay an emptyDir — see
+        # cluster/docs/plans/tana_mcp_sane_signin.md.
         - name: tana-config
-          persistentVolumeClaim:
-            claimName: tana-mcp-config-ovh
+          emptyDir: {}
         - name: nginx-config
           configMap:
             name: tana-mcp-nginx-config
