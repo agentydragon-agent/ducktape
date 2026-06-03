@@ -25,14 +25,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-xdg \
     # Misc
     dbus-x11 fonts-noto-core ca-certificates curl \
- && rm -rf /var/lib/apt/lists/* \
- # Stub menu file: Openbox's default menu.xml includes
- # /var/lib/openbox/debian-menu.xml, which is shipped by `menu` on Debian but
- # not by Ubuntu's `openbox` package alone. Provide an empty one so Openbox
- # doesn't warn at every startup.
- && mkdir -p /var/lib/openbox \
- && printf '<?xml version="1.0" encoding="UTF-8"?>\n<openbox_menu xmlns="http://openbox.org/3.4/menu"></openbox_menu>\n' \
-      > /var/lib/openbox/debian-menu.xml
+ && rm -rf /var/lib/apt/lists/*
+
+# Stub Openbox debian-menu.xml; see the file's comments for why this is here.
+COPY openbox-debian-menu.xml /var/lib/openbox/debian-menu.xml
 
 RUN useradd -m -s /bin/bash tana \
  && mkdir -p /home/tana/.config/Tana \
