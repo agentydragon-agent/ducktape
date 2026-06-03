@@ -151,6 +151,9 @@ until pods rolled.
 
 ### Per-pilot procedure for any SeaweedFS-volume-hosting node
 
+Full procedure lives in <../runbooks/rolling_seaweedfs_volume_pvc.md>. Short
+version follows.
+
 Before deleting the volume server's PVC, confirm the cluster can tolerate
 losing this server:
 

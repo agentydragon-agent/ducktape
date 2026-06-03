@@ -59,19 +59,25 @@ PowerDNS and Authentik run on CloudNativePG `local-path`.
       windows are gone). Finally, walk every bucket and prune filer
       entries pointing at dead volume ids so list operations stop
       returning phantom paths.
-- [ ] **Fix SeaweedFS rack labels + write rolling-PVC runbook**. All three
-      OVH volume servers currently advertise `rack=hil-ovh-h109b04`, so the
-      `defaultReplication: "001"` policy effectively means "any other
-      DataNode" rather than "another rack". Either give each volume server
-      a distinct rack id (or just `rack=$nodeName`) or document that we
-      have single-node tolerance only. Also write a runbook for rolling
-      SeaweedFS volume-server PVCs (drain + `weed shell volume.fix.replication`
-      gate between deletes); reference it from any future node-rename plan.
+- [ ] **Fix SeaweedFS rack labels.** All three OVH volume servers currently
+      advertise `rack=hil-ovh-h109b04`, so the `defaultReplication: "001"`
+      policy effectively means "any other DataNode" rather than "another
+      rack". Either give each volume server a distinct rack id (or just
+      `rack=$nodeName`) or document that we have single-node tolerance only.
+      Rolling-PVC runbook is now at
+      <runbooks/rolling_seaweedfs_volume_pvc.md>; the rack-labels caveat is
+      called out there too.
 - [ ] **Add ReplicationSource for gitea-shared-storage** (and any other
       SeaweedFS-backed PVC holding non-regeneratable state). Currently
       only `grocy-{sf,vallejo}` and `tana-mcp` have volsync backups; the
       Forgejo loss above was survivable only because nothing had been
-      pushed yet, not because we had a backup.
+      pushed yet, not because we had a backup. Destination choice is
+      non-trivial: `seaweedfs-ovh`→`seaweedfs-ovh` doesn't protect against
+      the failure mode we just hit (defeats the grocy/tana pattern when
+      the primary is already on SeaweedFS), and `local-path-proxmox` is
+      currently unavailable because Proxmox is down. Likely needs real
+      off-cluster object storage (B2 / R2 / OVH Object Storage) — overlaps
+      with the observability-backend decision below.
 - [ ] **Decide whether observability storage stays on SeaweedFS**. Loki,
       Mimir, and Tempo all lost data in the rename. If those backends are
       supposed to survive node-rotation incidents, they should live on
