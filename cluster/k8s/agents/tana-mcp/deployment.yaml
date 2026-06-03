@@ -41,9 +41,9 @@ spec:
           resources:
             requests:
               cpu: 200m
-              memory: 512Mi
+              memory: 1Gi
             limits:
-              memory: 2Gi
+              memory: 4Gi
           # Tana only serves /health on loopback inside the container. Kubelet
           # httpGet probes target the pod IP, which stays unreachable even when
           # Tana is healthy, so probe from inside the container instead.
