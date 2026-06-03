@@ -6,9 +6,9 @@ metadata:
   annotations:
     description: "CNPG Postgres for study-casino state."
 spec:
-  # Temporarily 3 to validate migration from local-path -> local-path-ovh
-  # (CLEANUP 2026-06-03): scale back to 2 after the old local-path PVCs
-  # (study-casino-db-{3,4}) have been replaced with local-path-ovh ones.
+  # 3 instances spread across 3 OVH nodes via the topologyKey=hostname
+  # anti-affinity below. Tolerates 1-node loss without read-quorum or
+  # primary-availability impact.
   instances: 3
 
   # CNPG 1.27+ kills isolated primaries by default (liveness probe).
