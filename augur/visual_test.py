@@ -16,6 +16,7 @@ With BuildBuddy/RBE, use the invocation id printed by Bazel:
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import threading
@@ -23,6 +24,7 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
+from urllib.parse import urlencode
 
 import pytest
 import pytest_bazel
@@ -171,9 +173,12 @@ def _select_first_rollout(page: Page) -> None:
 
 
 def _wait_for_property_panel(page: Page) -> None:
-    """Wait for the property panel + lifecycle editor to mount with the prefilled events."""
+    """Wait for the Base owning rows + the lifecycle timeline editor (prefilled events) to mount."""
     _wait_for_product_page(page)
-    page.locator("[data-product-property-panel]").wait_for(state="visible", timeout=30_000)
+    # Owning knobs surface as table rows once the (single) Base scenario buys; the lifecycle timeline
+    # is the active scenario's editor below the table.
+    page.locator("[data-product-knob-row='financingKind']").wait_for(state="visible", timeout=30_000)
+    page.locator("[data-product-timeline]").wait_for(state="visible", timeout=30_000)
     page.get_by_text("Timeline (mid-horizon changes)").wait_for(state="visible", timeout=30_000)
     # Three event rows pre-decoded from the URL: set-rented%, capital improvement, sale.
     page.get_by_label("Rented", exact=True).wait_for(state="visible", timeout=30_000)
@@ -197,17 +202,90 @@ def _wait_for_calibration_page(page: Page) -> None:
     page.evaluate("() => document.fonts.ready.then(() => true)")
 
 
-# `?s=6..........location_a_property` selects the fixture property `location_a_property`; the
-# leading dots are the empty positions for monthlySpendUsd..rentalLocationId (all defaults). The
-# horizon (240 months) rides the tab-shared `?h=` control, not `?s=`. `?lc=` carries three lifecycle
-# events. Schema version 6 (the v6 bump moved `firstSeed` out of `?s=` into `?seed=`).
-_PROPERTY_LIFECYCLE_URL = "/product?h=240&s=6..........location_a_property&lc=r24:50~c60:50000~s120:6"
+# A single Base scenario that buys the fixture property `location_a_property` and carries three
+# mid-horizon lifecycle events: set rented to 50% at month 24, a $50k capital improvement at month
+# 60, and a sale at month 120 with 6% closing cost. The horizon (240 months) rides the tab-shared
+# `?h=` control; every other knob inherits `productInputDefaults`. Encoded in the same `?scenarios=`
+# base+overrides codec (v2) as the comparison case, just with no variants.
+_PROPERTY_LIFECYCLE_SCENARIOS = {
+    "v": 2,
+    "base": {
+        "label": "Base",
+        "input": {
+            "propertyId": "location_a_property",
+            "propertyLifecycleEvents": [
+                {"kind": "set_rented_fraction", "month": 24, "rentedFractionPct": 50},
+                {"kind": "capital_improvement", "month": 60, "amountUsd": 50000},
+                {"kind": "property_sale", "month": 120, "closingCostPct": 6},
+            ],
+        },
+    },
+    "variants": [],
+}
+_PROPERTY_LIFECYCLE_URL = "/product?" + urlencode({"scenarios": json.dumps(_PROPERTY_LIFECYCLE_SCENARIOS), "h": "240"})
+
+# Three-scenario "rent vs. buy A vs. buy B" comparison in the base+overrides codec (v2). The Base
+# scenario "Rent" sets only the fields that differ from the product defaults (the codec merges the
+# rest over `productInputDefaults`); each variant buys a different fixture property and stops paying
+# outside rent. So the editor spreadsheet shows three columns with a per-scenario "Property to buy"
+# row (none / Location A / Location B) and an overridden "Monthly rent" row ($3,000 / $0 / $0) — a
+# mix of Base, inherited (muted), and overridden (bold + ↩) cells. The whole set rides the
+# URL-encoded `?scenarios=` param.
+_COMPARISON_SCENARIOS = {
+    "v": 2,
+    "base": {"label": "Rent", "input": {"monthlyRentUsd": 3000}},
+    "variants": [
+        {
+            "label": "Buy A",
+            "overrides": {
+                "propertyId": "location_a_property",
+                "financingKind": "mortgage",
+                "livesHere": True,
+                "monthlyRentUsd": 0,
+            },
+        },
+        {
+            "label": "Buy B",
+            "overrides": {
+                "propertyId": "location_b_property",
+                "financingKind": "mortgage",
+                "livesHere": True,
+                "monthlyRentUsd": 0,
+            },
+        },
+    ],
+}
+_COMPARISON_URL = "/product?" + urlencode({"scenarios": json.dumps(_COMPARISON_SCENARIOS), "h": "240"})
+
+
+def _wait_for_scenario_comparison(page: Page) -> None:
+    """Wait for the multi-scenario overlay: the scenario bar, the editor spreadsheet with a Base +
+    two variant columns (and the per-scenario "Property to buy" row), three scenario fans + legend,
+    and the per-scenario comparison table."""
+    page.add_style_tag(content=deterministic_style())
+    page.locator("[data-augur-surface='product']").wait_for(state="visible", timeout=30_000)
+    page.locator("[data-product-scenario-tabs]").wait_for(state="visible", timeout=30_000)
+    page.locator("[data-product-fan-chart='netWorthUsd']").wait_for(state="visible", timeout=30_000)
+    page.locator("[data-product-fan-legend]").wait_for(state="visible", timeout=30_000)
+    page.locator("[data-product-scenario-comparison]").wait_for(state="visible", timeout=30_000)
+    # The editor spreadsheet shows Base + the two variants as columns (rows = knobs), including the
+    # per-scenario property row.
+    page.locator("[data-product-scenario-table]").wait_for(state="visible", timeout=30_000)
+    page.locator("[data-product-knob-row='propertyId']").wait_for(state="visible", timeout=30_000)
+    page.wait_for_function('() => document.querySelectorAll("[data-product-scenario-col]").length >= 3', timeout=30_000)
+    # All three scenario fans have drawn their median lines.
+    page.wait_for_function('() => document.querySelectorAll("[data-product-fan-series]").length >= 3', timeout=30_000)
+    assert page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth + 1")
+    page.evaluate("() => document.fonts.ready.then(() => true)")
+    _wait_for_product_chart_geometry(page)
+
 
 VISUAL_CASES = (
     VisualCase(
         name="product_cash_runway", path="/product", wait_ready=_wait_for_product_page, interact=_select_first_rollout
     ),
     VisualCase(name="product_property_lifecycle", path=_PROPERTY_LIFECYCLE_URL, wait_ready=_wait_for_property_panel),
+    VisualCase(name="product_scenario_comparison", path=_COMPARISON_URL, wait_ready=_wait_for_scenario_comparison),
     VisualCase(name="calibration_page", path="/product?tab=calibration", wait_ready=_wait_for_calibration_page),
 )
 
