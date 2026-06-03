@@ -4,6 +4,7 @@ import { NativeSelect } from "@mantine/core";
 import { fetchProductMetricFan, fetchProductPortfolio, fetchProductRollout } from "./client.ts";
 import { fmtNumber } from "./lib/format.ts";
 import { fmtMetricValue } from "./lib/chart.ts";
+import { toastFetchError } from "./lib/toast.ts";
 
 import { MetricFanChart } from "./fan_chart.tsx";
 import { TerminalDistributionHistogram } from "./histogram.tsx";
@@ -212,6 +213,7 @@ export function ProductProjectionWorkspace({
     () =>
       chartScenarios.map((entry) => ({
         id: entry.id,
+        label: entry.label,
         request: productMetricFanRequest(entry.input, bootstrap, selectedMetric, {
           rolloutCount,
           firstSeed,
@@ -340,6 +342,7 @@ export function ProductProjectionWorkspace({
         if (error?.name === "AbortError") return;
         setPortfolio(null);
         setPortfolioError(error?.message || String(error));
+        toastFetchError("product-portfolio", "Couldn't load portfolio", error);
       });
     return () => controller.abort();
   }, []);
@@ -361,7 +364,7 @@ export function ProductProjectionWorkspace({
     // so the comparison fans stay put while the active scenario is being edited; unchanged
     // scenarios re-request the same key and return from the server's rollout cache.
     const handle = setTimeout(() => {
-      for (const { id, request } of requestEntries) {
+      for (const { id, label, request } of requestEntries) {
         fetchProductMetricFan(request, { signal: controller.signal })
           .then((payload) => {
             setResultsById((previous) => new Map(previous).set(id, payload));
@@ -375,6 +378,7 @@ export function ProductProjectionWorkspace({
           .catch((error) => {
             if (error?.name === "AbortError") return;
             setErrorsById((previous) => new Map(previous).set(id, error?.message || String(error)));
+            toastFetchError(`product-fan-${id}`, `Projection failed: ${label}`, error);
           });
       }
     }, 120);
@@ -412,6 +416,7 @@ export function ProductProjectionWorkspace({
       .catch((error) => {
         if (error?.name === "AbortError") return;
         setRolloutError(error?.message || String(error));
+        toastFetchError("product-rollout", "Rollout detail failed", error);
       });
     return () => controller.abort();
   }, [activeRequest.scenario, activeResult, rolloutDetails, selectedDetailKey, selectedSeed]);
@@ -458,6 +463,7 @@ export function ProductProjectionWorkspace({
           onSetBaseField={setBaseField}
           onPatchVariant={patchVariantOverrides}
           onRevertKeys={revertVariantKeys}
+          onAddVariant={addVariant}
         />
 
         <ScenarioInspector
@@ -465,7 +471,6 @@ export function ProductProjectionWorkspace({
           variants={variants}
           activeId={activeId}
           onSelect={selectEntry}
-          onAddVariant={addVariant}
           onDeleteVariant={deleteVariant}
           onRename={renameEntry}
           onResetBase={resetBase}
