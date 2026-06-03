@@ -176,9 +176,8 @@ live in the sidecar's config and tracked in git.
 
 ### Steady state
 
-A small in-pod sidecar (`tana_resigner.py`, modelled on
-`tana/token_broker/broker.py`) does the loop. Most of the time it does
-nothing.
+A small in-pod sidecar (`tana/firebase_resigner/`) does the loop. Most of
+the time it does nothing.
 
 1. Watches some "is the in-pod Tana signed in" health signal (e.g. a
    tightened readiness probe on the proxy, or a periodic call to the local
@@ -229,8 +228,9 @@ nothing.
 
 ## Option C — keep the in-pod broker, but consume `tana://auth?...` from outside
 
-A hybrid between A and the old `token_broker`. Run a small HTTP receiver
-sidecar in `tana-mcp` (cluster-internal only) that accepts
+A hybrid of option A's "deliver `tana://auth?...` from outside" with a
+cluster-internal receiver instead of `kubectl exec`. Run a small HTTP
+receiver sidecar in `tana-mcp` (cluster-internal only) that accepts
 `POST /deeplink { url: "tana://auth?..." }`. On receipt, it
 `exec`s `tana <url>` against the running Tana process via the desktop
 container's PID 1 (or just spawns a new instance — Electron's
@@ -292,9 +292,8 @@ Sequence:
 2. **Add the entrypoint receiver** to `tana/mcp_server/entrypoint.sh` so the
    desktop container exposes a localhost-only `POST /reseed` endpoint that
    delivers a `tana://auth?...` URL into the running Electron.
-3. **Write the sidecar** (`tana_resigner.py`, in the spirit of
-   `tana/token_broker/broker.py`). Tightened readiness probe + the loop
-   described above.
+3. **Write the sidecar** (`tana/firebase_resigner/`). Tightened readiness
+   probe + the loop described above.
 4. **Document recovery as automatic** in `k8s/agents/tana-mcp/README.md`,
    with the bootstrap-via-extractor flow as the only manual procedure.
 
@@ -308,11 +307,6 @@ the day Tana actively breaks the custom-token sign-in surface.
   reactively (password change, "sign out of all sessions", revoked client)?
   Determines how often the option-B sidecar actually has to act, and whether
   the SOPS refresh token needs occasional manual rotation.
-- Does the existing `tana/token_broker/` code (Tana's own MCP-side OAuth)
-  still work end-to-end after the desktop sign-in, or is its current
-  "unwired" status because Tana broke the auto-approve path? If it works, the
-  broker's PAT-equivalent could carry us in steady state and the sidecar
-  would only need to re-bootstrap the broker session, not every MCP call.
 - What's the exact Cloud Function URL for `fetchCustomToken`? The web bundle
   uses Firebase callable wiring (`Ht(t, "fetchCustomToken")` over
   `europe-west1`). Resolve that to the concrete URL when writing the sidecar

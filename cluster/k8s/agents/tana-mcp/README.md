@@ -60,10 +60,6 @@ surface.
   the full `agentydragon@gmail.com` account, used by the cluster MCP clients
   to authenticate to `/mcp`.
 
-The old `token-broker` code is intentionally kept in the repo but is currently
-unwired from this deployment because Tana's auto-approved OAuth callback flow
-is no longer reliable enough to depend on operationally.
-
 ## Initial Setup
 
 The deployment expects a Firebase refresh token to be present in the
