@@ -104,11 +104,6 @@ const SANITY_PILL_CLASS = {
     "bg-amber-50 text-amber-700 ring-amber-600/20 dark:bg-amber-950/40 dark:text-amber-300 dark:ring-amber-400/20",
 };
 
-// A failing band also tints its whole row, mirroring `klToneClass` for loud KL.
-function sanityRowToneClass(status) {
-  return status === "fail" ? "bg-rose-50 dark:bg-rose-950/30" : "";
-}
-
 function SanityStatusPill({ status }) {
   const tone = SANITY_PILL_CLASS[status] ?? SANITY_PILL_CLASS.skipped;
   return (
@@ -339,7 +334,6 @@ function SanityBandsPanel({ bands }) {
             {sorted.map((band) => (
               <tr
                 key={band.label}
-                className={sanityRowToneClass(band.status)}
                 data-calibration-sanity-row={band.label}
                 data-calibration-sanity-status={band.status}
               >
