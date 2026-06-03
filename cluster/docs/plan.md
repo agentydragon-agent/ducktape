@@ -371,7 +371,7 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
         Proxmox-local object store, OVH node logs write to OVH SeaweedFS.
         Avoids cross-site traffic for log ingestion. Grafana queries both.
 - [ ] Re-enable MFA (TOTP/WebAuthn) once device enrollment is set up
-- [ ] Wire `scripts/check-authentik-login.py` into bootstrap/CI
+- [ ] Wire `cluster/scripts/check_authentik_login.py` into bootstrap/CI
 - [ ] Gatus: Harbor robot token for authenticated `/v2/` probe
 - [ ] Proxy outpost HA: shared session storage (1 replica limit, sessions in `/dev/shm`)
 - [ ] Airlock OAuth: upgrade Google scopes (needs approval flow) — `calendar`, `gmail.send`,
@@ -510,7 +510,8 @@ Per-HR opt-in fix:
       driftDetection:
         mode: enabled
 
-- [x] Enable on `grafana-operator` (done 2026-05-24).
+Enabled on `grafana-operator` (2026-05-24).
+
 - [ ] Audit which HRs are safe to enable wider — anything where another
       controller legitimately mutates Helm-managed resources (HPA scaling,
       sidecar injectors, security defaulters, VPA on `Auto` mode) will
@@ -550,6 +551,10 @@ All 6 former TF roots consolidated into a single root at `cluster/terraform/main
 PG backend (CNPG `tofu-state-db`, schema `main`, OVH local-path). Backup CronJob
 removed 2026-06-01; will be restored via CNPG replication once wyrm2 is back.
 
+All in-cluster tofu-controller `Terraform` CRs also use the PG backend (one schema per CR
+in the same `tofu-state-db` cluster; reflector mirrors PG creds into `flux-system`).
+PG advisory locks auto-release on runner-pod death — no more stale-Lease problem.
+
 Zero `terraform_remote_state` dependencies — everything is in the same root. Persistent-auth
 resources have `lifecycle { prevent_destroy = true }`. Bootstrap uses targeted applies
 (`-target`) instead of separate directories. Single `proxmox` provider using
@@ -563,17 +568,6 @@ directly — no port-forward. From non-workers, fall back to `kubectl port-forwa
 - [ ] Eliminate port-forward for non-workers. Cilium Gateway API does not support TCPRoute
       ([cilium#21929](https://github.com/cilium/cilium/issues/21929)). Options when available:
       TCPRoute + NodePort, or TLS passthrough (like `kube-api-proxy` TLSRoute pattern).
-- [x] **Migrate tofu-controller `Terraform` CRs from `kubernetes` to `postgres` backend.**
-      All 19 CRs now use the PG backend (2026-06-03 audit confirmed every CR has
-      `backendConfig.PGPASSWORD` pointing at `tofu-state-db-credentials`). PG backend
-      uses session-based advisory locks that auto-release on runner pod death,
-      eliminating the stale-Lease problem. Each CR gets its own schema in the
-      `tofu-state-db` CNPG cluster. Reflector mirrors PG credentials from
-      `tofu-state` → `flux-system`.
-      **Cleanup remaining**: one stale `tfstate-default-atuin-secrets` (52d, from
-      the kubernetes-backend era) still lives in `flux-system` — safe to delete.
-      `tfplan-default-*` secrets are normal tofu-controller per-plan artifacts;
-      don't delete those.
 
 ### GitHub Webhook Reconciliation
 
@@ -734,10 +728,6 @@ Container integration tests spend ~46s per run loading OCI images (376MB total:
 mitmproxy 254MB, two custom ~118MB images sharing a 113MB Python interpreter layer)
 into Docker on disposable RBE Firecracker VMs. A persistent Docker daemon with cached
 layers would make subsequent loads near-instant.
-
-Done. `buildbuddy.yaml` deleted — all CI via GHA → `bb-remote`. Per-artifact
-`github_release` macro, SOPS age key, `ci_env.sh`, RBE worker image as default
-runner. See <../k8s/docker-ci/README.md>.
 
 - [ ] Drop bazelisk wrapper in favor of `bb` CLI (embeds bazelisk + reads `BUILDBUDDY_API_KEY`)
 
