@@ -37,10 +37,12 @@ def _pattern_matches(rule: Rule, tx: TransactionRow) -> bool:
 
 
 def _direction_matches(direction: TransferDirection, amount: float) -> bool:
-    # Plaid signs outflows positive, inflows negative. Zero-amount transactions never
-    # match a direction (no signed leg to attribute).
+    # Plaid signs outflows positive, inflows negative. Zero-amount transactions
+    # (waived fees, voided lines) are sign-ambiguous; route them with outflow so they
+    # land in the same `default_outflow_bucket_id` that `classify` already picks for
+    # them, instead of tripping `assert_bucket_directions`.
     if direction is TransferDirection.OUTFLOW:
-        return amount > 0
+        return amount >= 0
     return amount < 0
 
 
