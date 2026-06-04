@@ -6,9 +6,7 @@ metadata:
   annotations:
     reloader.stakater.com/auto: "true"
     description: >-
-      LLM proxy data plane — serves /v1/responses for agents (auth + budget +
-      cost + upstream routing), split out of the props backend so the
-      dashboard/API can roll without disrupting in-flight agents.
+      LLM proxy data plane — serves /v1/responses for agents (auth + budget + cost + upstream routing), split out of the props backend so the dashboard/API can roll without disrupting in-flight agents.
 spec:
   replicas: 1
   selector:
@@ -28,7 +26,7 @@ spec:
         topology.kubernetes.io/zone: hil-ovh
       containers:
         - name: llm-proxy
-          image: ghcr.io/agentydragon/props-llm-proxy:devel-00000000000000-0000000 # {"$imagepolicy": "flux-system:props-llm-proxy"}
+          image: ghcr.io/agentydragon/props-llm-proxy:devel-20260604094445-ea5e414 # {"$imagepolicy": "flux-system:props-llm-proxy"}
           imagePullPolicy: Always
           ports:
             - containerPort: 8000
