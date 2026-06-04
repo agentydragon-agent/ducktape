@@ -25,17 +25,13 @@ def _catalog(*, anchors: dict[str, float] | None = None, inflation_history: list
         metadata=metadata,
         markets=[
             ExactMarket(
-                question="S&P 500 above 7500 on 2026-12-31?",
                 platform_ref=ManifoldRef(manifold_id="SPX"),
-                outcome_type="BINARY",
                 mapping=LevelAtDateMapping(
                     series="sp500", threshold=7500.0, direction=Direction.ABOVE, at_date=date(2026, 12, 31)
                 ),
             ),
             ExactMarket(
-                question="CPI YoY above 3% (year ending 2026-07)?",
                 platform_ref=ManifoldRef(manifold_id="CPI"),
-                outcome_type="BINARY",
                 mapping=InflationYoyMapping(
                     series="inflation", threshold=0.03, direction=Direction.ABOVE, at_date=date(2026, 7, 31)
                 ),

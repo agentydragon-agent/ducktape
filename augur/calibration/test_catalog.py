@@ -30,26 +30,17 @@ def catalog() -> MarketCatalog:
         metadata={"source": "manifold", "as_of": "2026-05-29", "augur_model_as_of": "2026-05-27"},
         markets=[
             ExactMarket(
-                question="Issuer IPO before 2027?",
                 platform_ref=ManifoldRef(manifold_id="AAA"),
-                outcome_type="BINARY",
                 resolution_deadline=date(2027, 1, 1),
                 mapping=IpoByDateMapping(issuer="openai", by_date=date(2027, 1, 1)),
             ),
             CorrelateMarket(
-                question="Issuer reaches $100B revenue in 2028?",
                 platform_ref=ManifoldRef(manifold_id="BBB"),
-                outcome_type="BINARY",
                 correlate_of="mark_per_unit_trajectory",
                 correlate_strength="weak",
                 reason="augur has no revenue channel.",
             ),
-            UnmappableMarket(
-                question="Will the CEO still be CEO at the end of 2026?",
-                platform_ref=ManifoldRef(manifold_id="CCC"),
-                outcome_type="BINARY",
-                reason="Governance; not modeled.",
-            ),
+            UnmappableMarket(platform_ref=ManifoldRef(manifold_id="CCC"), reason="Governance; not modeled."),
         ],
     )
 
@@ -65,13 +56,13 @@ def test_partitions_dispatch_on_variant(catalog: MarketCatalog) -> None:
 def test_exact_requires_mapping_fields() -> None:
     """The EXACT variant cannot be constructed without a typed `mapping`."""
     with pytest.raises(ValidationError):
-        ExactMarket(question="?", platform_ref=ManifoldRef(manifold_id="D"), outcome_type="BINARY")  # type: ignore[call-arg]
+        ExactMarket(platform_ref=ManifoldRef(manifold_id="D"))  # type: ignore[call-arg]
 
 
 def test_correlate_requires_correlate_of() -> None:
     """The CORRELATE variant cannot be constructed without correlate_of."""
     with pytest.raises(ValidationError):
-        CorrelateMarket(question="?", platform_ref=ManifoldRef(manifold_id="E"), outcome_type="BINARY")  # type: ignore[call-arg]
+        CorrelateMarket(platform_ref=ManifoldRef(manifold_id="E"))  # type: ignore[call-arg]
 
 
 def test_invalid_cross_field_state_is_unrepresentable() -> None:
@@ -84,8 +75,6 @@ def test_invalid_cross_field_state_is_unrepresentable() -> None:
                 "markets": [
                     {
                         "manifold_id": "F",
-                        "question": "?",
-                        "outcome_type": "BINARY",
                         "mappability": "unmappable",
                         "mapping": {"kind": "ipo_by_date", "issuer": "openai", "by_date": "2027-01-01"},
                     }
@@ -97,28 +86,21 @@ def test_invalid_cross_field_state_is_unrepresentable() -> None:
 def test_unknown_mappability_is_rejected() -> None:
     with pytest.raises(ValidationError):
         MarketCatalog.model_validate(
-            {
-                "metadata": {"as_of": "2026-05-29"},
-                "markets": [{"manifold_id": "G", "question": "?", "outcome_type": "BINARY", "mappability": "weird"}],
-            }
+            {"metadata": {"as_of": "2026-05-29"}, "markets": [{"manifold_id": "G", "mappability": "weird"}]}
         )
 
 
 def test_platform_ref_discriminated_union() -> None:
     """Each platform variant carries its own required ID field."""
     poly_market = ExactMarket(
-        question="Polymarket question?",
         platform_ref=PolymarketRef(polymarket_id="0xabc"),
-        outcome_type="BINARY",
         mapping=IpoByDateMapping(issuer="openai", by_date=date(2027, 1, 1)),
     )
     assert poly_market.platform == Platform.POLYMARKET
     assert poly_market.market_id == "0xabc"
 
     kalshi_market = ExactMarket(
-        question="Kalshi question?",
         platform_ref=KalshiRef(kalshi_id="OPENAI-IPO-2027"),
-        outcome_type="BINARY",
         mapping=IpoByDateMapping(issuer="openai", by_date=date(2027, 1, 1)),
     )
     assert kalshi_market.market_id == "OPENAI-IPO-2027"
@@ -132,8 +114,6 @@ def test_flat_yaml_backward_compat() -> None:
             "markets": [
                 {
                     "manifold_id": "AAA",
-                    "question": "IPO before 2027?",
-                    "outcome_type": "BINARY",
                     "mappability": "exact",
                     "mapping": {"kind": "ipo_by_date", "issuer": "openai", "by_date": "2027-01-01"},
                 }
