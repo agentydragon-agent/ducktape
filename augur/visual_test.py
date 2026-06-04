@@ -126,9 +126,15 @@ def _wait_for_product_page(page: Page) -> None:
 
 
 def _select_first_rollout(page: Page) -> None:
-    """Click the first rollout sliver and exercise the marker↔event-table cross-selection
-    handshake. Leaves the table-clicked-month selected so the screenshot shows event detail."""
-    page.locator("[data-product-rollout-sliver]").first.click()
+    """Select a rollout from the terminal-distribution chart and exercise the marker↔event-table
+    cross-selection handshake. A click anywhere in the plot selects the nearest variant line at that
+    percentile; clicking at 70% width binds to a mid-upper rollout. Leaves the table-clicked-month
+    selected so the screenshot shows event detail."""
+    plot = page.locator("[data-product-terminal-distribution-plot]")
+    plot.wait_for(state="visible", timeout=30_000)
+    box = plot.bounding_box()
+    assert box is not None
+    plot.click(position={"x": box["width"] * 0.7, "y": box["height"] * 0.5})
     page.locator("[data-product-selected-rollout-line]").wait_for(state="visible", timeout=30_000)
     page.locator("[data-product-rollout-event-marker]").first.wait_for(state="visible", timeout=30_000)
     page.get_by_text("Selected rollout events").wait_for(state="visible", timeout=30_000)
@@ -275,6 +281,10 @@ def _wait_for_scenario_comparison(page: Page) -> None:
     page.wait_for_function('() => document.querySelectorAll("[data-product-scenario-col]").length >= 3', timeout=30_000)
     # All three scenario fans have drawn their median lines.
     page.wait_for_function('() => document.querySelectorAll("[data-product-fan-series]").length >= 3', timeout=30_000)
+    # The terminal-distribution chart overlays one line per variant (all three present).
+    page.wait_for_function(
+        '() => document.querySelectorAll("[data-product-distribution-series]").length >= 3', timeout=30_000
+    )
     assert page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth + 1")
     page.evaluate("() => document.fonts.ready.then(() => true)")
     _wait_for_product_chart_geometry(page)
@@ -290,6 +300,21 @@ def _show_candles(page: Page) -> None:
         '.map((node) => node.getAttribute("data-product-candle-series"))).size >= 3',
         timeout=30_000,
     )
+
+
+def _select_rollout_from_distribution(page: Page) -> None:
+    """Select a rollout directly from the multi-variant terminal-distribution chart. A click binds to
+    the nearest variant line at that percentile (making it active), drawing the selection marker on
+    the line and the rollout overlay on the fan below, with the events panel carrying the active
+    badge."""
+    plot = page.locator("[data-product-terminal-distribution-plot]")
+    plot.wait_for(state="visible", timeout=30_000)
+    box = plot.bounding_box()
+    assert box is not None
+    plot.click(position={"x": box["width"] * 0.6, "y": box["height"] * 0.4})
+    page.locator("[data-product-distribution-selected]").wait_for(state="visible", timeout=30_000)
+    page.locator("[data-product-selected-rollout-line]").wait_for(state="visible", timeout=30_000)
+    page.get_by_text("Selected rollout events").wait_for(state="visible", timeout=30_000)
 
 
 def _focus_active_scenario(page: Page) -> None:
@@ -309,6 +334,12 @@ VISUAL_CASES = (
     ),
     VisualCase(name="product_property_lifecycle", path=_PROPERTY_LIFECYCLE_URL, wait_ready=_wait_for_property_panel),
     VisualCase(name="product_scenario_comparison", path=_COMPARISON_URL, wait_ready=_wait_for_scenario_comparison),
+    VisualCase(
+        name="product_distribution_multi",
+        path=_COMPARISON_URL,
+        wait_ready=_wait_for_scenario_comparison,
+        interact=_select_rollout_from_distribution,
+    ),
     VisualCase(
         name="product_scenario_candles",
         path=_COMPARISON_URL,
