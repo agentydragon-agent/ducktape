@@ -91,6 +91,26 @@ py_library(
     ],
 )
 
+py_library(
+    name = "tlh_harvest",
+    srcs = ["tlh_harvest.py"],
+    deps = [
+        "@pypi//numpy",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "tlh_harvest_test",
+    srcs = ["tlh_harvest_test.py"],
+    deps = [
+        ":tlh_harvest",
+        "@pypi//numpy",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_test(
     name = "tax_test",
     srcs = ["tax_test.py"],
@@ -107,6 +127,7 @@ py_library(
     name = "scenario",
     srcs = ["scenario.py"],
     deps = [
+        ":tlh_harvest",
         "//augur/model:series_model",
         "//augur/product:asset_key",
         "@pypi//pydantic",
@@ -199,6 +220,7 @@ py_library(
         "compiler/properties.py",
         "compiler/series.py",
         "compiler/tax.py",
+        "compiler/tlh_harvest.py",
         "compiler/transfers.py",
     ],
     deps = [
@@ -208,6 +230,7 @@ py_library(
         ":locations",
         ":runtime",
         ":scenario",
+        ":tlh_harvest",
         "//augur/model:private_equity_bundle",
         "//augur/model:series",
         "//augur/product:asset_key",
@@ -271,6 +294,7 @@ py_library(
         ":scenario",
         ":tax",
         ":tensor_fifo",
+        ":tlh_harvest",
         "//augur/model:series",
         "@pypi//numpy",
     ],
@@ -326,6 +350,23 @@ py_test(
     size = "medium",
     srcs = ["simulate_test.py"],
     deps = SIMULATE_TEST_DEPS,
+)
+
+py_test(
+    name = "tlh_harvest_engine_test",
+    size = "medium",
+    srcs = ["tlh_harvest_engine_test.py"],
+    deps = [
+        ":external_series",
+        ":scenario",
+        ":simulate",
+        ":tlh_harvest",
+        "//augur/model:series",
+        "//augur/product:asset_key",
+        "@pypi//polars",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )
 
 py_test(
