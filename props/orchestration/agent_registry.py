@@ -199,17 +199,17 @@ class AgentRegistry:
         backend_url: str,
         agent_base_env: dict[str, str],
         registry_config: RegistryProxyConfig,
+        llm_base_url: str,
         model_parallelism_limits: dict[str, int] | None = None,
-        llm_base_url: str | None = None,
     ) -> None:
         self._executor = executor
         self._db = db
         self._db_config = db_config
         self._backend_url = backend_url
-        # Base URL agents use for the LLM proxy: OPENAI_BASE_URL = <this>/v1. The
-        # proxy is split out of the backend (props/llm_proxy); None falls back to
-        # the backend, which still serves /v1 for dev and not-yet-cycled agents.
-        self._llm_base_url = llm_base_url or backend_url
+        # Base URL agents use for the LLM proxy: OPENAI_BASE_URL = <this>/v1. This is
+        # the standalone props/llm_proxy service (the backend dropped its own /v1
+        # mount in #1894); it must point at the proxy, never the backend.
+        self._llm_base_url = llm_base_url
         self._agent_base_env = agent_base_env
         self._registry_config = registry_config
         # Track running background critic tasks by agent_run_id to prevent GC and allow lookup
