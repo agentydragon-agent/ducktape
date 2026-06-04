@@ -37,10 +37,20 @@ py_library(
 )
 
 py_library(
+    name = "transient_retry",
+    srcs = ["transient_retry.py"],
+    deps = [
+        "@pypi//httpx",
+        "@pypi//tenacity",
+    ],
+)
+
+py_library(
     name = "manifold",
     srcs = ["manifold.py"],
     deps = [
         ":platform",
+        ":transient_retry",
         "@pypi//httpx",
         "@pypi//pydantic",
     ],
@@ -51,6 +61,7 @@ py_library(
     srcs = ["polymarket.py"],
     deps = [
         ":platform",
+        ":transient_retry",
         "@pypi//polymarket_client",
     ],
 )
@@ -60,7 +71,9 @@ py_library(
     srcs = ["kalshi.py"],
     deps = [
         ":platform",
+        ":transient_retry",
         "@pypi//httpx",
+        "@pypi//pydantic",
     ],
 )
 
@@ -215,6 +228,19 @@ py_test(
     deps = [
         ":manifold",
         ":testing",
+        "//:conftest",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_transient_retry",
+    srcs = ["test_transient_retry.py"],
+    deps = [
+        ":kalshi",
+        ":transient_retry",
         "//:conftest",
         "@pypi//httpx",
         "@pypi//pytest",
