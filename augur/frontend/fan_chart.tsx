@@ -249,6 +249,12 @@ export function MetricFanChart({
   metricScale = "linear",
   mode = "fan",
   candleBucketMonths = 6,
+  // Optional: when wired, scrolling the wheel over the plot changes the requested rollout horizon
+  // (the chart's time range). Wheel down lengthens, wheel up shortens. This replaces the old
+  // explicit horizon control; charts without a time axis (e.g. histograms) simply don't pass these.
+  horizonMonths = null,
+  onChangeHorizonMonths = null,
+  maxHorizonMonths = null,
 }) {
   const { display: currencyDisplay } = useCurrencyDisplay();
   const [hoveredMonth, setHoveredMonth] = useState(null);
@@ -263,6 +269,36 @@ export function MetricFanChart({
     ro.observe(svg);
     return () => ro.disconnect();
   }, []);
+
+  // Latest horizon, mirrored into a ref so the wheel handler reads live state without re-attaching.
+  // The handler also writes the dispatched value back here, so a burst of wheel events that fire
+  // before React re-renders (high-rate trackpads) compounds step-by-step instead of all reusing the
+  // same stale base and collapsing to a single step.
+  const horizonRef = useRef(horizonMonths);
+  horizonRef.current = horizonMonths;
+
+  // Wheel-to-rescale the time axis. Attached as a non-passive listener so it can `preventDefault`
+  // the page scroll while the pointer is over the chart. Multiplicative steps keep one notch a
+  // constant fraction of the current horizon, so zooming feels even across the whole 1..max range.
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg || !onChangeHorizonMonths || maxHorizonMonths == null) return undefined;
+    const onWheel = (event) => {
+      event.preventDefault();
+      const base = horizonRef.current;
+      if (base == null) return;
+      const factor = event.deltaY > 0 ? 1.15 : 1 / 1.15; // wheel down → longer horizon
+      let next = Math.round(base * factor);
+      if (next === base) next += event.deltaY > 0 ? 1 : -1;
+      next = Math.max(1, Math.min(maxHorizonMonths, next));
+      if (next !== base) {
+        horizonRef.current = next; // compound within a burst before the prop round-trips
+        onChangeHorizonMonths(next);
+      }
+    };
+    svg.addEventListener("wheel", onWheel, { passive: false });
+    return () => svg.removeEventListener("wheel", onWheel);
+  }, [onChangeHorizonMonths, maxHorizonMonths]);
 
   // Memoized on `series` so the frequent hover re-renders (`setHoveredMonth` on mouse-move) don't
   // rebuild these per-series structures over potentially many rows.
