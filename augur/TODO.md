@@ -41,6 +41,20 @@ are deleted and the CI prefix-guard is in place.
 - [ ] Phase 4 — API wire (`asset_id`, `spend_index`) typed; delete `wire_id`/`parse_*`;
       add CI prefix-guard
 
+## Whole-model calibration
+
+Calibration scores prediction markets across the whole augur joint model (per-issuer
+PE events + macro channels like S&P / inflation) as marginals, per market. Design +
+gotchas: <augur/plans/whole_model_calibration.md>. Landed: typed `MarketMapping`,
+vectorized macro/inflation resolvers, multinomial bucket families, anchoring, the
+issuer-agnostic run (catalog self-describes issuers/series), and the frontend.
+Remaining:
+
+- [ ] **Macro level fans** in the calibration view via a generalized `level_fan`
+      (today's `mark_fan` is PE-only).
+- [ ] **Aggregate metric (later, weighting TBD).** Per-channel / volume-weighted
+      rollups of per-market KL once the weighting policy is decided.
+
 ## Exogenous Models & Evidence
 
 - [ ] **Plaid-fed portfolio granularity.** v0 Plaid portfolio import maps configured

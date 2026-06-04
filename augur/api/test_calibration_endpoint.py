@@ -27,10 +27,14 @@ from augur.model.series import IssuerId, SP500Key
 
 def _client_for(config: Config) -> TestClient:
     catalog = MarketCatalog.from_yaml(config.calibration_catalog.catalog_path)
-    # Every market resolves to the same fixed YES probability so the run is hermetic.
+    # Every market (and every bucket of every categorical family) resolves to the same fixed YES
+    # probability so the run is hermetic.
     by_platform: dict[Platform, dict[str, float]] = {}
     for market in catalog.markets:
         by_platform.setdefault(market.platform, {})[market.market_id] = 0.5
+    for family in catalog.bucket_families:
+        for member in family.buckets:
+            by_platform.setdefault(family.platform, {})[member.market_id] = 0.5
     return TestClient(create_app_from_augur_config(config, price_clients=mock_price_clients(by_platform)))
 
 
@@ -44,7 +48,7 @@ def test_calibration_info_endpoint(client: TestClient) -> None:
     response = client.get("/api/calibration")
     assert response.status_code == 200, response.text
     calibration = response.json()
-    assert calibration["issuer"] == "openai"
+    assert calibration["issuers"] == ["openai"]
     assert calibration["label"] == "OpenAI (example Manifold catalog)"
 
 
@@ -57,9 +61,10 @@ def test_run_calibration(client: TestClient) -> None:
     assert body["preset_id"] == "openai_pe"
 
     result = body["result"]
-    assert result["issuer"] == "openai"
     assert result["horizon_months"] == 24
     assert result["rollout_count"] == 16
+    # PE markets now carry their issuer in `channel`; the example catalog scores `openai`.
+    assert any(row.get("channel") == "openai" for row in result["clean"])
     # The example catalog ships both exact (scored) and surfaced markets.
     assert isinstance(result["clean"], list)
     assert result["clean"]
@@ -79,8 +84,17 @@ def test_run_calibration(client: TestClient) -> None:
     assert surfaced_row["p_market"] == 0.5
     assert surfaced_row["url"].startswith("https://")
 
-    fan = body["mark_fan"]
-    assert fan["issuer"] == "openai"
+    # The example catalog ships the Kalshi S&P year-end bucket family, scored as one multinomial.
+    assert isinstance(result["categorical"], list)
+    assert result["categorical"]
+    family = result["categorical"][0]
+    assert {"family_id", "question", "platform", "channel", "at_date", "buckets"} <= set(family)
+    assert family["channel"] == "sp500"
+    assert len(family["buckets"]) == 27
+
+    # One mark fan per scored issuer; the example catalog scores `openai`.
+    assert [fan["issuer"] for fan in body["mark_fans"]] == ["openai"]
+    fan = body["mark_fans"][0]
     assert fan["channel"] == "mark_usd_per_unit"
     assert fan["percentiles"] == [5.0, 25.0, 50.0, 75.0, 95.0]
     # One band per month, months 0..horizon inclusive.

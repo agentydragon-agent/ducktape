@@ -27,7 +27,7 @@ from typing import Annotated, Any, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from augur.calibration.platform import Platform
+from augur.calibration.platform import Direction, Platform
 
 
 class Mappability(StrEnum):
@@ -104,6 +104,12 @@ class CatalogMetadata(BaseModel):
 
     as_of: date
     augur_model_as_of: date | None = None
+    # Live spot value of each macro level series at `model_anchor_date`, keyed by the
+    # series wire id ("sp500", "inflation"). Macro markets are scored against the
+    # sampled path ANCHORED to this spot — a threshold like "S&P >= 7500" is
+    # meaningless unless month 0 of the path is today's real index level. Refreshed
+    # alongside the catalog (data, not model).
+    anchors: dict[str, float] = Field(default_factory=dict)
 
     @property
     def model_anchor_date(self) -> date:
@@ -149,12 +155,83 @@ class _MarketBase(BaseModel):
         raise AssertionError("unreachable")
 
 
+# ---------------------------------------------------------------------------
+# Market mapping: a discriminated union binding an `exact` market to the augur
+# quantity that scores it. Each variant carries exactly its own fields (a PE event
+# kind never has a `series`, a level kind never has a `threshold_usd`), so invalid
+# bindings are unrepresentable. `kind` is the discriminator.
+# ---------------------------------------------------------------------------
+
+
+# PE event mappings name the private-equity issuer they score (the catalog self-describes its
+# targets; the run covers the union of referenced issuers).
+_ISSUER_PATTERN = r"^[a-z0-9][a-z0-9_\-]*$"
+
+
+class IpoByDateMapping(BaseModel):
+    """An IPO / public-listing (PUBLIC_MARKET_OPEN) event occurs for `issuer` by `by_date`."""
+
+    model_config = ConfigDict(extra="forbid")
+    kind: Literal["ipo_by_date"] = "ipo_by_date"
+    issuer: str = Field(pattern=_ISSUER_PATTERN)
+    by_date: date
+
+
+class PreIpoFailureMapping(BaseModel):
+    """An absorbing COLLAPSED/ACQUIRED exit for `issuer` before any PUBLIC_MARKET_OPEN."""
+
+    model_config = ConfigDict(extra="forbid")
+    kind: Literal["pre_ipo_failure"] = "pre_ipo_failure"
+    issuer: str = Field(pattern=_ISSUER_PATTERN)
+
+
+class ValuationByDateMapping(BaseModel):
+    """`issuer`'s valuation `V(m) >= threshold_usd` for some month m <= `by_date` (opt-in M2 channel)."""
+
+    model_config = ConfigDict(extra="forbid")
+    kind: Literal["valuation_by_date"] = "valuation_by_date"
+    issuer: str = Field(pattern=_ISSUER_PATTERN)
+    threshold_usd: float
+    by_date: date
+
+
+class LevelAtDateMapping(BaseModel):
+    """A point-in-time threshold on a level series: `value(at_date) {direction} threshold`."""
+
+    model_config = ConfigDict(extra="forbid")
+    kind: Literal["level_at_date"] = "level_at_date"
+    series: str  # level-series wire id ("sp500", "inflation")
+    threshold: float
+    direction: Direction
+    at_date: date
+
+
+class InflationYoyMapping(BaseModel):
+    """Trailing year-over-year change of an index series: `yoy(at_date) {direction} threshold`."""
+
+    model_config = ConfigDict(extra="forbid")
+    kind: Literal["inflation_yoy"] = "inflation_yoy"
+    series: str  # level-series wire id ("inflation")
+    threshold: float  # a fraction, e.g. 0.03 for 3%
+    direction: Direction
+    at_date: date
+    window_months: int = 12
+
+
+# PE event mappings read a per-issuer trajectory; level mappings read a level-series matrix.
+PeEventMapping = IpoByDateMapping | PreIpoFailureMapping | ValuationByDateMapping
+LevelMapping = LevelAtDateMapping | InflationYoyMapping
+MarketMapping = Annotated[
+    IpoByDateMapping | PreIpoFailureMapping | ValuationByDateMapping | LevelAtDateMapping | InflationYoyMapping,
+    Field(discriminator="kind"),
+]
+
+
 class ExactMarket(_MarketBase):
     """A market augur scores apples-to-apples from per-rollout output."""
 
     mappability: Literal[Mappability.EXACT] = Mappability.EXACT
-    mapping_kind: str
-    mapping_params: dict[str, object]
+    mapping: MarketMapping
 
 
 class CorrelateMarket(_MarketBase):
@@ -164,6 +241,9 @@ class CorrelateMarket(_MarketBase):
     correlate_of: str
     correlate_strength: str | None = None
     reason: str | None = None
+    # The PE issuer whose signal to surface (e.g. for `correlate_of: ipo_by_date`, P(IPO by
+    # deadline) for this issuer). None when the correlate has no per-issuer signal.
+    issuer: str | None = Field(default=None, pattern=_ISSUER_PATTERN)
 
 
 class UnmappableMarket(_MarketBase):
@@ -178,11 +258,54 @@ SurfacedMarket = CorrelateMarket | UnmappableMarket
 MarketSpec = Annotated[ExactMarket | CorrelateMarket | UnmappableMarket, Field(discriminator="mappability")]
 
 
+# ---------------------------------------------------------------------------
+# Categorical (multinomial) bucket families
+# ---------------------------------------------------------------------------
+
+
+class BucketMember(BaseModel):
+    """One mutually-exclusive bucket of a categorical family: a half-open `[low, high)` interval.
+
+    `low=None` is an open lower end (`-inf`, the platform's "below X" bucket);
+    `high=None` is an open upper end (`+inf`, the "above X" bucket). `market_id`
+    is the platform-native id of the bucket's own binary market (each bucket is a
+    separately-priced market on the platform).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    market_id: str
+    label: str
+    low: float | None = None
+    high: float | None = None
+
+
+class BucketFamily(BaseModel):
+    """A family of mutually-exclusive buckets over one level series at a single date.
+
+    Scored as a categorical: each bucket's live binary price is normalized into a
+    market categorical, the model categorical is the fraction of rollouts landing
+    in each bucket at `at_date`, and the family carries one multinomial
+    `D_KL(market ‖ model)`. The buckets should tile the line; the engine does not
+    require it but uncovered rollouts are simply uncounted.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    family_id: str
+    question: str
+    platform: Platform
+    series: str  # level-series wire id ("sp500", "inflation")
+    at_date: date
+    buckets: list[BucketMember] = Field(min_length=2)
+
+
 class MarketCatalog(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     metadata: CatalogMetadata
     markets: list[MarketSpec]
+    bucket_families: list[BucketFamily] = Field(default_factory=list)
 
     @classmethod
     def from_yaml(cls, path: Path) -> MarketCatalog:
@@ -195,3 +318,17 @@ class MarketCatalog(BaseModel):
     def surfaced_markets(self) -> list[SurfacedMarket]:
         """Markets shown with their price + reason but never scored (correlate / unmappable)."""
         return [market for market in self.markets if not isinstance(market, ExactMarket)]
+
+    def referenced_level_series(self) -> set[str]:
+        """Wire ids of every level series any macro market / bucket family scores against."""
+        series = {str(family.series) for family in self.bucket_families}
+        for market in self.exact_markets():
+            if isinstance(market.mapping, LevelMapping):
+                series.add(market.mapping.series)
+        return series
+
+    def referenced_issuers(self) -> set[str]:
+        """Every PE issuer the catalog's exact PE markets score (and correlate signals reference)."""
+        issuers = {market.mapping.issuer for market in self.exact_markets() if isinstance(market.mapping, PeEventMapping)}
+        issuers |= {market.issuer for market in self.markets if isinstance(market, CorrelateMarket) and market.issuer}
+        return issuers

@@ -20,12 +20,12 @@ from pathlib import Path
 from tabulate import tabulate
 
 from augur.api.config import load_augur_config
-from augur.calibration.calibration import mark_fan, run_calibration
+from augur.calibration.calibration import build_anchored_level_paths, mark_fan, run_calibration
 from augur.calibration.catalog import MarketCatalog
 from augur.calibration.default_clients import build_default_price_clients
-from augur.model.exogenous import ExogenousSamplingRequest
+from augur.model.exogenous import ExogenousSamplingRequest, level_series_request_channels
 from augur.model.private_equity_bundle import PrivateEquityFloatChannel
-from augur.model.series import IssuerId
+from augur.model.series import IssuerId, parse_level_series_key
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -43,45 +43,46 @@ def main(argv: list[str] | None = None) -> int:
 
     catalog_config = augur_config.calibration_catalog
     catalog = MarketCatalog.from_yaml(catalog_config.catalog_path)
-    issuer = catalog_config.issuer
-    print(f"catalog: issuer={issuer}, n_markets={len(catalog.markets)}")
 
     provider = augur_config.models[preset_id]
     model = provider.realize_model()
+    emit_issuers = sorted(
+        IssuerId(issuer)
+        for issuer in catalog.referenced_issuers()
+        if IssuerId(issuer) in model.emittable_private_equity_issuers()
+    )
+    catalog_level = {parse_level_series_key(wire) for wire in catalog.referenced_level_series()}
+    wanted_level = catalog_level & model.emittable_level_keys()
+    print(f"catalog: issuers={[str(i) for i in emit_issuers]}, n_markets={len(catalog.markets)}")
     sampling = ExogenousSamplingRequest(
         horizon_months=args.horizon,
         rollout_seeds=tuple(range(1, args.rollouts + 1)),
-        required_private_equity_issuers=frozenset({IssuerId(issuer)}),
+        required_private_equity_issuers=frozenset(emit_issuers),
+        **level_series_request_channels(wanted_level),
     )
     sampled = model.sample(sampling)
     bundle = sampled.private_equity
+    level_paths = build_anchored_level_paths(
+        sampled,
+        anchors=catalog.metadata.anchors,
+        requested_wire_ids=catalog.referenced_level_series(),
+        rollout_count=args.rollouts,
+        horizon_months=args.horizon,
+    )
 
     price_clients = build_default_price_clients()
     try:
         result = run_calibration(
-            model,
             catalog,
-            issuer=issuer,
             horizon_months=args.horizon,
             rollout_seeds=sampling.rollout_seeds,
             price_clients=price_clients,
             bundle=bundle,
+            level_paths=level_paths,
         )
     finally:
         for client in price_clients.values():
             client.close()
-
-    mark_pct = mark_fan(
-        bundle, issuer=issuer, rollout_count=args.rollouts, horizon_months=args.horizon, percentiles=(5.0, 50.0, 95.0)
-    )
-    val_pct = mark_fan(
-        bundle,
-        issuer=issuer,
-        rollout_count=args.rollouts,
-        horizon_months=args.horizon,
-        percentiles=(5.0, 50.0, 95.0),
-        channel=PrivateEquityFloatChannel.COMPANY_VALUATION_USD,
-    )
 
     clean_rows = sorted(result.clean, key=lambda r: -abs(r.kl_bits) if r.kl_bits is not None else 0)
     clean_table = [
@@ -98,42 +99,48 @@ def main(argv: list[str] | None = None) -> int:
     print("\nSCORED MARKETS (sorted by |KL|, loudest first)")
     print(tabulate(clean_table, headers=["p_model", "p_market", "KL_bits", "platform", "market_id", "question"]))
 
-    surfaced_table = [[f"{r.p_market:.3f}", r.platform, r.market_id, r.question[:60]] for r in result.surfaced]
+    surfaced_table = [
+        [f"{r.p_market:.3f}", r.platform, r.mappability, r.market_id, r.question[:60]] for r in result.surfaced
+    ]
     print("\nSURFACED MARKETS (not scored, context only)")
-    print(tabulate(surfaced_table, headers=["p_market", "platform", "market_id", "question"]))
+    print(tabulate(surfaced_table, headers=["p_market", "platform", "mappability", "market_id", "question"]))
+
+    for fam in result.categorical:
+        kl = f"{fam.kl_bits:+.4f} bits" if fam.kl_bits is not None else "n/a"
+        print(f"\nCATEGORICAL {fam.family_id} [{fam.platform}] {fam.channel} @ {fam.at_date}  multinomial KL={kl}")
+        bucket_rows = [
+            [b.label, f"{b.p_market:.3f}", f"{b.p_model:.3f}" if b.p_model is not None else "n/a"] for b in fam.buckets
+        ]
+        print(tabulate(bucket_rows, headers=["bucket", "p_market", "p_model"]))
 
     fan_months = [0, 6, 12, 24, 60, 120]
-    mark_rows = []
-    for m in fan_months:
-        month = next((b for b in mark_pct.months if b.month_index == m), None)
-        if month is None:
-            continue
-        mark_rows.append(
-            [
-                m,
-                f"${month.values.get('5.0', 0):.0f}",
-                f"${month.values.get('50.0', 0):.0f}",
-                f"${month.values.get('95.0', 0):.0f}",
-            ]
+    for issuer in emit_issuers:
+        mark_pct = mark_fan(
+            bundle, issuer=issuer, rollout_count=args.rollouts, horizon_months=args.horizon, percentiles=(5.0, 50.0, 95.0)
         )
-    print("\nPER-UNIT MARK FAN (p5 / p50 / p95)")
-    print(tabulate(mark_rows, headers=["month", "p5", "p50", "p95"]))
+        mark_rows = [
+            [m, f"${b.values['5.0']:.0f}", f"${b.values['50.0']:.0f}", f"${b.values['95.0']:.0f}"]
+            for m in fan_months
+            if (b := next((b for b in mark_pct.months if b.month_index == m), None)) is not None
+        ]
+        print(f"\nPER-UNIT MARK FAN [{issuer}] (p5 / p50 / p95)")
+        print(tabulate(mark_rows, headers=["month", "p5", "p50", "p95"]))
 
-    val_rows = []
-    for m in fan_months:
-        month = next((b for b in val_pct.months if b.month_index == m), None)
-        if month is None:
-            continue
-        val_rows.append(
-            [
-                m,
-                f"${month.values.get('5.0', 0) / 1e9:.0f}B",
-                f"${month.values.get('50.0', 0) / 1e9:.0f}B",
-                f"${month.values.get('95.0', 0) / 1e9:.0f}B",
-            ]
+        val_pct = mark_fan(
+            bundle,
+            issuer=issuer,
+            rollout_count=args.rollouts,
+            horizon_months=args.horizon,
+            percentiles=(5.0, 50.0, 95.0),
+            channel=PrivateEquityFloatChannel.COMPANY_VALUATION_USD,
         )
-    print("\nCOMPANY VALUATION FAN (p5 / p50 / p95)")
-    print(tabulate(val_rows, headers=["month", "p5", "p50", "p95"]))
+        val_rows = [
+            [m, f"${b.values['5.0'] / 1e9:.0f}B", f"${b.values['50.0'] / 1e9:.0f}B", f"${b.values['95.0'] / 1e9:.0f}B"]
+            for m in fan_months
+            if (b := next((b for b in val_pct.months if b.month_index == m), None)) is not None
+        ]
+        print(f"\nCOMPANY VALUATION FAN [{issuer}] (p5 / p50 / p95)")
+        print(tabulate(val_rows, headers=["month", "p5", "p50", "p95"]))
 
     return 0
 

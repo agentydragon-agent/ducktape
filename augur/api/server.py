@@ -35,14 +35,14 @@ from augur.budget.wire import (
     BudgetTransactionsRequest,
     BudgetTransactionsResponse,
 )
-from augur.calibration.calibration import mark_fan, run_calibration
+from augur.calibration.calibration import build_anchored_level_paths, mark_fan, run_calibration
 from augur.calibration.catalog import MarketCatalog
 from augur.calibration.default_clients import build_default_price_clients
 from augur.calibration.platform import Platform, PriceClient
 from augur.model.exogenous import ExogenousSamplingRequest, Sampler, level_series_request_channels
 from augur.model.private_equity_bundle import PrivateEquityFloatChannel
 from augur.model.sample_sanity import SampleSanitySpec, evaluate_sample_checks, partition_spec_coverage
-from augur.model.series import IssuerId, LevelSeriesKey
+from augur.model.series import IssuerId, LevelSeriesKey, parse_level_series_key
 from augur.product.portfolio import ProductPortfolioResponse, product_portfolio_response
 from augur.product.scenarios import resolve_primary_agent_id, sim_locations_from_config
 from augur.product.service import ProductService
@@ -89,7 +89,11 @@ def create_app(config: ApiServerConfig) -> FastAPI:
     resolved_portfolio = resolve_portfolio_sources(augur_config)
     catalog = build_catalog(augur_config)
     settings = build_settings(augur_config)
-    calibration_info = build_calibration_info(augur_config)
+    loaded_calibration = config.calibration_catalog
+    calibration_info = build_calibration_info(
+        loaded_calibration.catalog if loaded_calibration is not None else None,
+        augur_config.calibration_catalog,
+    )
     deployment_info = build_deployment_info()
     product_service = ProductService(
         portfolio=resolved_portfolio.portfolio,
@@ -165,7 +169,12 @@ def create_app(config: ApiServerConfig) -> FastAPI:
         preset_id = request.preset_id or config.augur_config.default_model_id
         # KeyError on the preset lookup -> 400 via the registered handler.
         model = config.models[preset_id]
-        issuer = loaded.config.issuer
+        # The catalog self-describes its PE issuers; the run + fans cover the union the preset emits.
+        emit_issuers = sorted(
+            IssuerId(issuer)
+            for issuer in loaded.catalog.referenced_issuers()
+            if IssuerId(issuer) in model.emittable_private_equity_issuers()
+        )
         spec = loaded.sample_sanity_spec
         rollout_seeds = tuple(range(request.seed, request.seed + request.rollouts))
         # Sample one full bundle that drives the market scoring, the issuer mark fan, AND the
@@ -184,37 +193,45 @@ def create_app(config: ApiServerConfig) -> FastAPI:
         unmodeled_pe: frozenset[IssuerId] = frozenset()
         if spec is not None:
             spec_modeled_level, spec_modeled_pe, unmodeled_level, unmodeled_pe = partition_spec_coverage(spec, model)
+        # The macro markets / bucket families the catalog scores need their level series sampled too.
+        # Request only the ones the preset can emit; markets on the rest surface as `unmodeled`.
+        catalog_level = {parse_level_series_key(wire) for wire in loaded.catalog.referenced_level_series()}
+        wanted_level = spec_modeled_level | (catalog_level & model.emittable_level_keys())
         sampling_request = ExogenousSamplingRequest(
             horizon_months=request.horizon_months,
             rollout_seeds=rollout_seeds,
-            required_private_equity_issuers=frozenset({IssuerId(issuer)}) | spec_modeled_pe,
-            **level_series_request_channels(spec_modeled_level),
+            required_private_equity_issuers=frozenset(emit_issuers) | spec_modeled_pe,
+            **level_series_request_channels(wanted_level),
         )
         sampled = model.sample(sampling_request)
         bundle = sampled.private_equity
+        level_paths = build_anchored_level_paths(
+            sampled,
+            anchors=loaded.catalog.metadata.anchors,
+            requested_wire_ids=loaded.catalog.referenced_level_series(),
+            rollout_count=request.rollouts,
+            horizon_months=request.horizon_months,
+        )
         result = run_calibration(
-            model,
             loaded.catalog,
-            issuer=issuer,
             horizon_months=request.horizon_months,
             rollout_seeds=rollout_seeds,
             price_clients=config.price_clients,
             bundle=bundle,
+            level_paths=level_paths,
         )
-        fan = mark_fan(
-            bundle,
-            issuer=issuer,
-            rollout_count=request.rollouts,
-            horizon_months=request.horizon_months,
-            percentiles=CALIBRATION_FAN_PERCENTILES,
-        )
-        valuation_matrix = bundle.issuer_float_matrix(
-            issuer,
-            PrivateEquityFloatChannel.COMPANY_VALUATION_USD,
-            rollout_count=request.rollouts,
-            horizon_months=request.horizon_months,
-        )
-        valuation_fan = (
+        # One mark fan per scored issuer; valuation fan only for issuers whose opt-in channel is on.
+        mark_fans = [
+            mark_fan(
+                bundle,
+                issuer=issuer,
+                rollout_count=request.rollouts,
+                horizon_months=request.horizon_months,
+                percentiles=CALIBRATION_FAN_PERCENTILES,
+            )
+            for issuer in emit_issuers
+        ]
+        valuation_fans = [
             mark_fan(
                 bundle,
                 issuer=issuer,
@@ -223,9 +240,19 @@ def create_app(config: ApiServerConfig) -> FastAPI:
                 percentiles=CALIBRATION_FAN_PERCENTILES,
                 channel=PrivateEquityFloatChannel.COMPANY_VALUATION_USD,
             )
-            if bool((valuation_matrix > 0.0).any())
-            else None
-        )
+            for issuer in emit_issuers
+            if bool(
+                (
+                    bundle.issuer_float_matrix(
+                        issuer,
+                        PrivateEquityFloatChannel.COMPANY_VALUATION_USD,
+                        rollout_count=request.rollouts,
+                        horizon_months=request.horizon_months,
+                    )
+                    > 0.0
+                ).any()
+            )
+        ]
         sanity_bands = (
             [
                 sanity_band_to_wire(band)
@@ -243,7 +270,11 @@ def create_app(config: ApiServerConfig) -> FastAPI:
         )
         return calibration_payload(
             CalibrationRunResponse(
-                preset_id=preset_id, result=result, mark_fan=fan, valuation_fan=valuation_fan, sanity_bands=sanity_bands
+                preset_id=preset_id,
+                result=result,
+                mark_fans=mark_fans,
+                valuation_fans=valuation_fans,
+                sanity_bands=sanity_bands,
             )
         )
 

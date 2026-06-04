@@ -15,13 +15,32 @@ import numpy.typing as npt
 import pytest
 import pytest_bazel
 
-from augur.calibration.calibration import mark_fan, run_calibration, sample_private_equity_bundle, wilson_interval
-from augur.calibration.catalog import CorrelateMarket, ExactMarket, KalshiRef, ManifoldRef, MarketCatalog
-from augur.calibration.platform import Platform, PriceClient
+from augur.calibration.calibration import (
+    build_anchored_level_paths,
+    mark_fan,
+    run_calibration,
+    sample_private_equity_bundle,
+    wilson_interval,
+)
+from augur.calibration.catalog import (
+    BucketFamily,
+    BucketMember,
+    CorrelateMarket,
+    ExactMarket,
+    InflationYoyMapping,
+    IpoByDateMapping,
+    KalshiRef,
+    LevelAtDateMapping,
+    ManifoldRef,
+    MarketCatalog,
+    PolymarketRef,
+    PreIpoFailureMapping,
+)
+from augur.calibration.platform import Direction, Market, Platform, PriceClient
 from augur.calibration.testing import mock_price_clients
 from augur.model.exogenous import ExogenousSamplingRequest
 from augur.model.private_equity_bundle import PrivateEquityFloatChannel
-from augur.model.series import IssuerId, PrivateEquityEventKindCode
+from augur.model.series import IssuerId, PrivateEquityEventKindCode, SP500Key
 from augur.model.testing import ConstantFrameModel, PrivateEquityChannels
 
 _ISSUER = "issuer_x"
@@ -58,15 +77,13 @@ def catalog() -> MarketCatalog:
                 platform_ref=ManifoldRef(manifold_id="AAA"),
                 outcome_type="BINARY",
                 resolution_deadline=date(2027, 1, 1),
-                mapping_kind="ipo_by_date",
-                mapping_params={"by_date": "2027-01-01"},
+                mapping=IpoByDateMapping(issuer=_ISSUER, by_date=date(2027, 1, 1)),
             ),
             ExactMarket(
                 question="Issuer collapses or acquired before IPO?",
                 platform_ref=ManifoldRef(manifold_id="BBB"),
                 outcome_type="BINARY",
-                mapping_kind="pre_ipo_failure",
-                mapping_params={"before_event": "PUBLIC_MARKET_OPEN"},
+                mapping=PreIpoFailureMapping(issuer=_ISSUER),
             ),
             CorrelateMarket(
                 question="Issuer completes an IPO in 2026 with $1T cap?",
@@ -74,6 +91,7 @@ def catalog() -> MarketCatalog:
                 outcome_type="BINARY",
                 resolution_deadline=date(2026, 12, 31),
                 correlate_of="ipo_by_date",
+                issuer=_ISSUER,
                 correlate_strength="strong",
                 reason="The >=$1T cap conjunct needs a valuation augur does not model.",
             ),
@@ -87,13 +105,14 @@ def price_clients() -> dict[Platform, PriceClient]:
 
 
 def _run(model: ConstantFrameModel, catalog: MarketCatalog, price_clients: dict[Platform, PriceClient]):
+    seeds = tuple(range(4))
+    bundle = sample_private_equity_bundle(model, issuer=_ISSUER, horizon_months=_HORIZON, rollout_seeds=seeds)
     return run_calibration(
-        model,
         catalog,
-        issuer=_ISSUER,
         horizon_months=_HORIZON,
-        rollout_seeds=tuple(range(4)),
+        rollout_seeds=seeds,
         price_clients=price_clients,
+        bundle=bundle,
     )
 
 
@@ -101,7 +120,6 @@ def test_clean_rows_score_events(
     model: ConstantFrameModel, catalog: MarketCatalog, price_clients: dict[Platform, PriceClient]
 ) -> None:
     result = _run(model, catalog, price_clients)
-    assert result.issuer == _ISSUER
     assert result.rollout_count == 4
     clean = {row.market_id: row for row in result.clean}
 
@@ -143,28 +161,17 @@ def test_surfaced_row_carries_augur_context(
     assert surfaced.augur_context.p_model == 0.25
 
 
-def test_run_calibration_reuses_supplied_bundle(
+def test_run_calibration_shares_bundle_with_mark_fan(
     model: ConstantFrameModel, catalog: MarketCatalog, price_clients: dict[Platform, PriceClient]
 ) -> None:
-    # Sampling the bundle once and threading it into run_calibration must yield the same
-    # scoring as letting run_calibration sample internally -- the backend reuses one bundle
-    # for both the clean/surfaced scoring and the mark_fan.
+    # One sampled bundle drives both the clean/surfaced scoring and the issuer mark_fan, so
+    # both views come from a single rollout.
     seeds = tuple(range(4))
     bundle = sample_private_equity_bundle(model, issuer=_ISSUER, horizon_months=_HORIZON, rollout_seeds=seeds)
-    from_bundle = run_calibration(
-        model,
-        catalog,
-        issuer=_ISSUER,
-        horizon_months=_HORIZON,
-        rollout_seeds=seeds,
-        price_clients=price_clients,
-        bundle=bundle,
+    result = run_calibration(
+        catalog, horizon_months=_HORIZON, rollout_seeds=seeds, price_clients=price_clients, bundle=bundle
     )
-    internal = run_calibration(
-        model, catalog, issuer=_ISSUER, horizon_months=_HORIZON, rollout_seeds=seeds, price_clients=price_clients
-    )
-    assert from_bundle == internal
-    # The same bundle also drives the mark_fan, so both views come from one rollout.
+    assert {row.market_id for row in result.clean} == {"AAA", "BBB"}
     fan = mark_fan(bundle, issuer=_ISSUER, rollout_count=4, horizon_months=_HORIZON, percentiles=(50.0,))
     assert fan.months[0].values == {"50.0": 50.0}
 
@@ -182,6 +189,218 @@ def test_mark_fan_shape(model: ConstantFrameModel) -> None:
     assert len(fan.months) == _HORIZON + 1
     # Constant 50.0 mark -> every percentile band is 50.0.
     assert fan.months[0].values == {"5.0": 50.0, "50.0": 50.0, "95.0": 50.0}
+
+
+_SP500_ANCHOR = 6000.0
+
+
+def _sp500_levels(request: ExogenousSamplingRequest) -> npt.NDArray[np.float64]:
+    """4 rollouts: month 0 = anchor (so anchoring is identity); month 7 = [7000,7600,8000,5000]."""
+    matrix = np.full((request.rollout_count, request.horizon_months + 1), _SP500_ANCHOR, dtype=np.float64)
+    matrix[:, 7] = [7000.0, 7600.0, 8000.0, 5000.0]
+    return matrix
+
+
+@pytest.fixture
+def macro_model() -> ConstantFrameModel:
+    """A model emitting both the issuer's PE bundle and an sp500 level series (no inflation)."""
+    return ConstantFrameModel(
+        levels={SP500Key(): _sp500_levels},
+        private_equity={
+            IssuerId(_ISSUER): PrivateEquityChannels(mark_usd_per_unit=50.0, event_kind_code=_event_kind_codes)
+        },
+    )
+
+
+def test_macro_level_market_scored_over_full_rollouts(macro_model: ConstantFrameModel) -> None:
+    """A point-in-time S&P threshold market scores against the anchored sp500 channel, and a
+    market on an unmodeled series (inflation) surfaces as `unmodeled` rather than failing."""
+    catalog = MarketCatalog(
+        metadata={"as_of": "2026-05-27", "anchors": {"sp500": _SP500_ANCHOR}},
+        markets=[
+            ExactMarket(
+                question="S&P 500 above 7500 on 2026-12-31?",
+                platform_ref=ManifoldRef(manifold_id="SPX"),
+                outcome_type="BINARY",
+                resolution_deadline=date(2026, 12, 31),
+                mapping=LevelAtDateMapping(
+                    series="sp500", threshold=7500.0, direction=Direction.ABOVE, at_date=date(2026, 12, 31)
+                ),
+            ),
+            ExactMarket(
+                question="CPI YoY above 3% (year ending 2026-12)?",
+                platform_ref=ManifoldRef(manifold_id="CPI"),
+                outcome_type="BINARY",
+                mapping=InflationYoyMapping(
+                    series="inflation", threshold=0.03, direction=Direction.ABOVE, at_date=date(2026, 12, 31)
+                ),
+            ),
+        ],
+    )
+    seeds = tuple(range(4))
+    sampled = macro_model.sample(
+        ExogenousSamplingRequest(
+            horizon_months=_HORIZON,
+            rollout_seeds=seeds,
+            required_asset_prices=frozenset({SP500Key()}),
+            required_private_equity_issuers=frozenset({IssuerId(_ISSUER)}),
+        )
+    )
+    level_paths = build_anchored_level_paths(
+        sampled,
+        anchors={"sp500": _SP500_ANCHOR},
+        requested_wire_ids=catalog.referenced_level_series(),
+        rollout_count=4,
+        horizon_months=_HORIZON,
+    )
+    clients = mock_price_clients({Platform.MANIFOLD: {"SPX": 0.30, "CPI": 0.20}})
+    result = run_calibration(
+        catalog,
+        horizon_months=_HORIZON,
+        rollout_seeds=seeds,
+        price_clients=clients,
+        bundle=sampled.private_equity,
+        level_paths=level_paths,
+    )
+    spx = {row.market_id: row for row in result.clean}["SPX"]
+    assert spx.channel == "sp500"
+    # month 7 values [7000,7600,8000,5000] >= 7500 -> 2 of 4 YES.
+    assert spx.p_model == 0.5
+    assert spx.p_market == 0.30
+    assert spx.kl_bits is not None
+    # inflation isn't emitted by this preset -> surfaced as unmodeled, never 500.
+    cpi = {row.market_id: row for row in result.surfaced}["CPI"]
+    assert cpi.mappability == "unmodeled"
+    assert cpi.p_market == 0.20
+
+
+def test_bucket_family_scored_as_multinomial(macro_model: ConstantFrameModel) -> None:
+    catalog = MarketCatalog(
+        metadata={"as_of": "2026-05-27", "anchors": {"sp500": _SP500_ANCHOR}},
+        markets=[],
+        bucket_families=[
+            BucketFamily(
+                family_id="spx_eoy",
+                question="S&P 500 close on 2026-12-31",
+                platform=Platform.KALSHI,
+                series="sp500",
+                at_date=date(2026, 12, 31),
+                buckets=[
+                    BucketMember(market_id="B-LO", label="<7000", high=7000.0),
+                    BucketMember(market_id="B-MID", label="7000-8000", low=7000.0, high=8000.0),
+                    BucketMember(market_id="B-HI", label=">=8000", low=8000.0),
+                ],
+            )
+        ],
+    )
+    seeds = tuple(range(4))
+    sampled = macro_model.sample(
+        ExogenousSamplingRequest(
+            horizon_months=_HORIZON,
+            rollout_seeds=seeds,
+            required_asset_prices=frozenset({SP500Key()}),
+            required_private_equity_issuers=frozenset({IssuerId(_ISSUER)}),
+        )
+    )
+    level_paths = build_anchored_level_paths(
+        sampled,
+        anchors={"sp500": _SP500_ANCHOR},
+        requested_wire_ids=catalog.referenced_level_series(),
+        rollout_count=4,
+        horizon_months=_HORIZON,
+    )
+    # Live bucket prices 0.2/0.5/0.3 (already sum to 1); model month-7 counts [1,2,1] -> [0.25,0.5,0.25].
+    clients = mock_price_clients({Platform.KALSHI: {"B-LO": 0.20, "B-MID": 0.50, "B-HI": 0.30}})
+    result = run_calibration(
+        catalog,
+        horizon_months=_HORIZON,
+        rollout_seeds=seeds,
+        price_clients=clients,
+        bundle=sampled.private_equity,
+        level_paths=level_paths,
+    )
+    assert len(result.categorical) == 1
+    family = result.categorical[0]
+    assert family.channel == "sp500"
+    assert family.n_resolved == 4
+    # Quarters are exact in float; market shares need rounding (0.2/0.3 aren't).
+    assert [b.p_model for b in family.buckets] == [0.25, 0.5, 0.25]
+    assert [round(b.p_market, 3) for b in family.buckets] == [0.2, 0.5, 0.3]
+    # D_KL(market ‖ model) = 0.2 log2(0.2/0.25) + 0.5 log2(1) + 0.3 log2(0.3/0.25) ≈ 0.0146 bits.
+    assert family.kl_bits is not None
+    assert math.isclose(family.kl_bits, 0.0146, abs_tol=1e-3)
+
+
+class _ProbClient:
+    """A minimal PriceClient returning a Market with a fixed (possibly None) probability."""
+
+    def __init__(self, probabilities: dict[str, float | None]) -> None:
+        self._probabilities = probabilities
+
+    def get_market(self, market_id: str) -> Market:
+        return Market(id=market_id, url=f"https://test.example/{market_id}", probability=self._probabilities[market_id])
+
+    def close(self) -> None:
+        pass
+
+
+def test_none_probability_and_degenerate_family_are_dropped(macro_model: ConstantFrameModel) -> None:
+    """A market the platform prices as None, and a categorical family whose bucket prices sum to
+    zero, are both dropped (logged) rather than 500-ing via require_probability()."""
+    catalog = MarketCatalog(
+        metadata={"as_of": "2026-05-27", "anchors": {"sp500": _SP500_ANCHOR}},
+        markets=[
+            ExactMarket(
+                question="S&P 500 above 7500 on 2026-12-31? (no live price)",
+                platform_ref=PolymarketRef(polymarket_id="NOPRICE"),
+                outcome_type="BINARY",
+                mapping=LevelAtDateMapping(
+                    series="sp500", threshold=7500.0, direction=Direction.ABOVE, at_date=date(2026, 12, 31)
+                ),
+            )
+        ],
+        bucket_families=[
+            BucketFamily(
+                family_id="degenerate",
+                question="S&P 500 buckets with no liquidity",
+                platform=Platform.POLYMARKET,
+                series="sp500",
+                at_date=date(2026, 12, 31),
+                buckets=[
+                    BucketMember(market_id="Z-LO", label="<7000", high=7000.0),
+                    BucketMember(market_id="Z-HI", label=">=7000", low=7000.0),
+                ],
+            )
+        ],
+    )
+    seeds = tuple(range(4))
+    sampled = macro_model.sample(
+        ExogenousSamplingRequest(
+            horizon_months=_HORIZON,
+            rollout_seeds=seeds,
+            required_asset_prices=frozenset({SP500Key()}),
+            required_private_equity_issuers=frozenset({IssuerId(_ISSUER)}),
+        )
+    )
+    level_paths = build_anchored_level_paths(
+        sampled,
+        anchors={"sp500": _SP500_ANCHOR},
+        requested_wire_ids=catalog.referenced_level_series(),
+        rollout_count=4,
+        horizon_months=_HORIZON,
+    )
+    clients: dict[Platform, PriceClient] = {Platform.POLYMARKET: _ProbClient({"NOPRICE": None, "Z-LO": 0.0, "Z-HI": 0.0})}
+    result = run_calibration(
+        catalog,
+        horizon_months=_HORIZON,
+        rollout_seeds=seeds,
+        price_clients=clients,
+        bundle=sampled.private_equity,
+        level_paths=level_paths,
+    )
+    assert result.clean == []  # None-priced market dropped, not scored
+    assert result.surfaced == []  # ...and not surfaced either
+    assert result.categorical == []  # degenerate (sum-to-zero) family dropped
 
 
 def test_wilson_interval_edges() -> None:
@@ -202,22 +421,22 @@ def test_multi_platform_dispatches_to_correct_client(model: ConstantFrameModel) 
                 platform_ref=ManifoldRef(manifold_id="M1"),
                 outcome_type="BINARY",
                 resolution_deadline=date(2027, 1, 1),
-                mapping_kind="ipo_by_date",
-                mapping_params={"by_date": "2027-01-01"},
+                mapping=IpoByDateMapping(issuer=_ISSUER, by_date=date(2027, 1, 1)),
             ),
             ExactMarket(
                 question="IPO before Sep 2026? (Kalshi)",
                 platform_ref=KalshiRef(kalshi_id="KXIPOOPENAI-26SEP01"),
                 outcome_type="BINARY",
                 resolution_deadline=date(2026, 9, 1),
-                mapping_kind="ipo_by_date",
-                mapping_params={"by_date": "2026-09-01"},
+                mapping=IpoByDateMapping(issuer=_ISSUER, by_date=date(2026, 9, 1)),
             ),
         ],
     )
     clients = mock_price_clients({Platform.MANIFOLD: {"M1": 0.75}, Platform.KALSHI: {"KXIPOOPENAI-26SEP01": 0.50}})
+    seeds = tuple(range(4))
+    bundle = sample_private_equity_bundle(model, issuer=_ISSUER, horizon_months=_HORIZON, rollout_seeds=seeds)
     result = run_calibration(
-        model, catalog, issuer=_ISSUER, horizon_months=_HORIZON, rollout_seeds=tuple(range(4)), price_clients=clients
+        catalog, horizon_months=_HORIZON, rollout_seeds=seeds, price_clients=clients, bundle=bundle
     )
     by_id = {row.market_id: row for row in result.clean}
     assert by_id["M1"].platform == "manifold"
