@@ -26,13 +26,13 @@ spec:
       # reached via the backend registry proxy using props-forgejo-upstream-creds.
       containers:
         - name: props
-          image: ghcr.io/agentydragon/props-backend:devel-20260604080028-7c57d22 # {"$imagepolicy": "flux-system:props-backend"}
+          image: ghcr.io/agentydragon/props-backend:devel-20260604081305-14414f2 # {"$imagepolicy": "flux-system:props-backend"}
           imagePullPolicy: Always
           ports:
             - containerPort: 8000
           env:
             - name: PROPS_IMAGE_TAG
-              value: devel-20260604080028-7c57d22 # {"$imagepolicy": "flux-system:props-backend:tag"}
+              value: devel-20260604081305-14414f2 # {"$imagepolicy": "flux-system:props-backend:tag"}
             - name: PROPS_CONFIG_FILE
               value: /etc/props/config.toml
             - name: PGHOST
