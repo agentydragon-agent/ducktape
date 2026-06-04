@@ -235,6 +235,127 @@ The backend already caches the dense result per `(scenario, seed)` (`ProductServ
 R=1 `DenseSimulationResult`), so re-deriving any frame or stat for a cached rollout is
 re-simulation-free; lazy decode means that re-derivation only builds what's asked for.
 
+## Results after the fifth pass (per-rollout slicing)
+
+Passes 1–4 profiled the raw `simulate()` boundary (`//augur/sim:profile_rollout`). With those
+landed, the **product `metric_fan` service path** became the thing to profile — a new tool,
+`//augur/api:profile_metric_fan` (<augur/api/profile_metric_fan.py>), runs one product request
+end to end:
+
+```bash
+bazelisk run //augur/api:profile_metric_fan --config=nolint -- \
+  --rollout-count 10000 --horizon-months 100
+```
+
+This path does something raw `simulate()` does not: after simulating the batch it **slices the
+batched dense result into R independent R=1 `DenseSimulationResult`s** to populate the per-`(scenario,
+seed)` LRU (`_simulate_missing` → `slice_dense_results`). At 10k rollouts that slicing dominated.
+
+Two fixes landed:
+
+1. **O(R²) → O(R) exogenous-frame partition (#1850).** Per-seed slicing filtered the full batch
+   Polars frames (`series_values`, the PE bundle) once per rollout — R passes over an R-row frame.
+   `_partition_by_rollout` now partitions each frame once up front, so all R slices share a single
+   `partition_by`. Measured wall at 10k × 100mo: **139 s → 33.6 s**.
+2. **Drop fancy `np.take` from buffer slicing (#1857).** Each batched buffer field was sliced per
+   rollout with `np.take(val, [i], axis).copy()` — the fancy-indexing slow path, copied twice
+   (`take` already returns a fresh array). Replaced with basic slicing `val[..., i : i + 1, ...].copy()`
+   and the buffer dataclass is now walked once across all rollouts (`_split_dc`/`_split_array`).
+   10k × 100mo (cProfile): `slice_dense_results` **78.7 s → 46.6 s** (−41%), whole request
+   **133.4 s → 92.2 s** (−31%); the 890k `np.take` calls (26.4 s) are gone.
+
+### Current breakdown (10k × 100mo, `profile_metric_fan`, cProfile)
+
+| Stage                                     | Time   | %   | Notes                                       |
+| ----------------------------------------- | ------ | --- | ------------------------------------------- |
+| `slice_dense_results`                     | 46.6 s | 50% | split batch → R cacheable R=1 results       |
+| ↳ `np.ndarray.copy` (2.0 M calls)         | 33.9 s | 37% | one strided copy per (rollout × leaf-field) |
+| `simulate_dense_with_external_series`     | 24.8 s | 27% | the actual rollout compute + sampling       |
+| ↳ exogenous sampling (`composite.sample`) | 13.9 s | 15% | PE-risk + level-series draws                |
+| ↳ `_validate_series_indexed_amounts`      | 8.2 s  | 9%  | inflation-indexed spend validation          |
+| ↳ polars `collect` (20 099 calls)         | 7.3 s  | 8%  | per-month-step lazy-frame materialization   |
+| `compile_simulation`                      | 7.7 s  | 8%  | once per batch, seed-independent            |
+
+(cProfile inflates wall ~3–4× and over-weights high-call-count paths; figures are relative.)
+
+## Results after the sixth pass (eliminate slicing; vectorize validation)
+
+Two of the four "next levers" proposed above did **not** survive the call graph and were dropped
+after investigation — a caution against attributing cost by where lines sit in a cumulative profile:
+
+- **"Cache the compiled plan" was wrong.** `compile_simulation` calls `external_values_cube(external_series, …)`,
+  baking the per-rollout sampled cube into the plan — it is **seed-dependent**, so a per-scenario plan
+  cache would serve stale data. Not done.
+- **"Batch the month-loop collects" was misattributed.** The dense month loop is pure NumPy (zero
+  `.collect()`); the 20 k `LazyFrame.collect` calls were `slice_dense_results` doing a per-rollout
+  `with_columns(rollout_index=0)` relabel. So they were **part of slicing**, not a separate lever —
+  and disappear with it.
+
+The two valid levers landed:
+
+1. **Reduce `metric_fan` on the batch; stop per-rollout slicing (PR #1859).** Cache the simulated
+   batch once, shared by every seed it was sampled with; each cache entry records only its column
+   index. The metric reductions take a `rollout_index` and read that column straight out of the shared
+   batch (only the arrays a metric needs), so the fan path slices nothing; `rollout()` slices its one
+   seed on demand for the event log. Per-`(scenario, seed)` keys and overlapping-range reuse unchanged.
+   `slice_dense_results` — the #1 line at ~50% — **leaves the profile entirely** (no copy floor, no
+   relabel collects). 10k × 100mo: whole request **~30 s → 19.6 s wall**.
+2. **Vectorize `_validate_series_indexed_amounts` (PR #1858).** It built a per-`(series, month, rollout)`
+   dict from `iter_rows()` over the whole referenced frame before any check; now restricted to each
+   amount's reset anchors with a columnar `group_by`/`n_unique`. Was ~8 s (its share at this scale);
+   no longer a hotspot.
+
+Both landed (#1858, #1859 merged). With slicing gone, `metric_fan` is dominated by
+`simulate_dense_with_external_series` itself — the actual rollout compute plus exogenous sampling
+— i.e. real work rather than marshaling.
+
+### Current hotspots (all six passes landed)
+
+10k rollouts × 100-month horizon, `profile_metric_fan`, cProfile (**15.2 s**, down from the
+slicing-dominated ~30 s wall):
+
+| Stage                                         | Time   | %   | What                                              |
+| --------------------------------------------- | ------ | --- | ------------------------------------------------- |
+| `composite.sample` (exogenous sampling)       | 5.4 s  | 36% | GBM level draws + PE-risk sampling                |
+| ↳ `gbm.sample_levels` (×6 blocks)             | 2.3 s  |     | geometric-Brownian-motion level paths             |
+| ↳ `private_equity_risk.sample`                | 1.9 s  |     | PE trajectory + tender draws                      |
+| `simulate_dense` (compile + month loop)       | 5.6 s  | 37% | the rollout engine                                |
+| ↳ `compile_simulation`                        | 2.1 s  |     | plan + `external_values_cube` (seed-dependent)    |
+| ↳ `_run_month_step` ×240                      | 3.4 s  |     | dense NumPy month loop                            |
+| &nbsp;&nbsp;↳ `_apply_liquidity_policy_sales` | 1.75 s |     | per-month liquidity sales                         |
+| `monthly_metric_arrays` ×10 000 (reductions)  | 2.6 s  | 17% | per-rollout column reads (`_lot_value_by_month`)  |
+| polars `collect` ×103                         | 2.5 s  |     | inside sampling/compile (was ×20 k under slicing) |
+
+The polars `collect` count fell from ~20 000 (slicing's per-rollout relabel) to **103** — those
+remaining collects live in GBM/PE sampling and compile, not the hot path.
+
+### Seventh pass: vectorized reduction (PR #1864)
+
+The reduction loop above landed: `monthly_metric_arrays_batch` reduces every metric over the whole
+`(…, R)` batch in one pass (`(H+1, R)` per metric), and `_decoded_rollouts` reduces each distinct
+batch **once** then column-slices per seed, instead of calling the reduction per rollout.
+`monthly_metric_arrays` **leaves the profile** (function calls 4.0 M → 2.3 M); whole request
+**15.2 s → 11.6 s wall**. `metric_fan` is now entirely sampling + simulation:
+
+| Stage                                 | Time  | What                                |
+| ------------------------------------- | ----- | ----------------------------------- |
+| `composite.sample` (exogenous draws)  | 5.2 s | GBM + PE sampling                   |
+| `simulate_dense` (compile+month loop) | 4.8 s | the engine; `_run_month_step` 2.8 s |
+| polars `collect` ×103                 | 2.4 s | inside sampling/compile             |
+
+No per-rollout Python marshaling remains.
+
+### Remaining levers (highest impact first)
+
+1. **Exogenous sampling (~5.2 s).** GBM + PE draws are now the largest block and inherent stochastic
+   work; the deterministic setup may be cacheable across requests, the draws are not. The 103 polars
+   `collect`s live here.
+2. **`_apply_liquidity_policy_sales` (~1.75 s) in the month loop.** Per-month Python work in the
+   otherwise-NumPy loop — candidate for the same fast-path / vectorization treatment as the other
+   phases (interventions 7–8 above).
+3. **Process-level chunking** of the R axis for memory bounding and multi-core, now that the
+   per-request boundaries are this thin.
+
 ## Note on parallelism
 
 Rollouts are independent, so beyond the above the R axis can be **chunked**
