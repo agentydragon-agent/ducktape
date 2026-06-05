@@ -19,8 +19,6 @@ spec:
         memory: 512Mi
   redisConfig:
     maxMemoryPercentOfLimit: 80
-    additionalRedisConfig: |
-      maxmemory-policy noeviction
   storage:
     volumeClaimTemplate:
       spec:
