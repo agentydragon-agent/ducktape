@@ -34,6 +34,7 @@ from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP, UUID as PG_UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship
 from sqlalchemy.types import TypeDecorator
 
+from openai_utils.api_shape import LLMApiShape
 from props.core.agent_types import (
     AgentType,
     CriticDevImproveTypeConfig,
@@ -250,6 +251,31 @@ class StrEnumColumn[E: StrEnum](TypeDecorator[E]):
         self._enum_class = enum_class
         # Derive SQL enum values from Python enum to keep them in sync
         super().__init__(*[e.value for e in enum_class], name=name, create_constraint=True, native_enum=True)
+
+    def process_bind_param(self, value: E | str | None, dialect: Any) -> str | None:
+        if value is None:
+            return None
+        return value.value if isinstance(value, self._enum_class) else str(value)
+
+    def process_result_value(self, value: str | None, dialect: Any) -> E | None:
+        if value is None:
+            return None
+        return self._enum_class(value)
+
+
+class StringBackedStrEnumColumn[E: StrEnum](TypeDecorator[E]):
+    """String column that returns a StrEnum in Python.
+
+    Use this when the database stores a text/varchar column with a check
+    constraint rather than a PostgreSQL native enum type.
+    """
+
+    impl = String
+    cache_ok = True
+
+    def __init__(self, enum_class: type[E], length: int | None = None):
+        self._enum_class = enum_class
+        super().__init__(length=length)
 
     def process_bind_param(self, value: E | str | None, dialect: Any) -> str | None:
         if value is None:
@@ -1025,8 +1051,15 @@ class ModelMetadata(Base):
     max_output_tokens: Mapped[int] = mapped_column(nullable=False)
     upstream_name: Mapped[str | None] = mapped_column(String, nullable=True)
     upstream_model: Mapped[str | None] = mapped_column(String, nullable=True)
+    api_shape: Mapped[LLMApiShape] = mapped_column(
+        StringBackedStrEnumColumn(LLMApiShape), nullable=False, server_default=LLMApiShape.RESPONSES.value
+    )
     updated_at: Mapped[datetime] = mapped_column(
         TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        CheckConstraint("api_shape IN ('responses', 'chat_completions')", name="model_metadata_api_shape_check"),
     )
 
 
@@ -1433,6 +1466,9 @@ class LLMRequest(Base):
         PG_UUID(as_uuid=True), ForeignKey("agent_runs.agent_run_id", ondelete="CASCADE"), nullable=False, index=True
     )
     model: Mapped[str] = mapped_column(String, ForeignKey("model_metadata.model_id"), nullable=False, index=True)
+    api_shape: Mapped[LLMApiShape] = mapped_column(
+        StringBackedStrEnumColumn(LLMApiShape), nullable=False, server_default=LLMApiShape.RESPONSES.value
+    )
     request_body: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     response_body: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -1444,6 +1480,10 @@ class LLMRequest(Base):
 
     # Relationships
     agent_run: Mapped[AgentRun] = relationship(back_populates="llm_requests")
+
+    __table_args__ = (
+        CheckConstraint("api_shape IN ('responses', 'chat_completions')", name="llm_requests_api_shape_check"),
+    )
 
 
 class AgentRun(Base):
