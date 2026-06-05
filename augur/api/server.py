@@ -47,7 +47,13 @@ from augur.model.series import IssuerId, LevelSeriesKey, parse_level_series_key
 from augur.product.portfolio import ProductPortfolioResponse, product_portfolio_response
 from augur.product.scenarios import resolve_primary_agent_id, sim_locations_from_config
 from augur.product.service import ProductService
-from augur.product.wire import MetricFanRequest, MetricFanResponse, RolloutRequest, RolloutResponse
+from augur.product.wire import (
+    MetricFanRequest,
+    MetricFanResponse,
+    RolloutAtPercentileRequest,
+    RolloutRequest,
+    RolloutResponse,
+)
 from plaid_utils.schema import async_session_factory
 
 
@@ -154,6 +160,10 @@ def create_app(config: ApiServerConfig) -> FastAPI:
     @app.post("/api/product/projections/rollout", response_model=RolloutResponse)
     def product_projection_rollout(request: RolloutRequest) -> JSONResponse:
         return payload(product_service.rollout(request))
+
+    @app.post("/api/product/projections/rollout_at_percentile", response_model=RolloutResponse)
+    def product_projection_rollout_at_percentile(request: RolloutAtPercentileRequest) -> JSONResponse:
+        return payload(product_service.rollout_at_percentile(request))
 
     def calibration_payload(value: ApiModel) -> JSONResponse:
         # Calibration responses carry `date` fields (CalibrationResult.as_of,

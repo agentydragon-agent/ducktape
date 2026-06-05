@@ -99,7 +99,7 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
     fan = _post_json(
         server_url,
         "/api/product/projections/metric_fan",
-        {"scenario": scenario, "rollout_seeds": [7, 8], "metric": "cash_usd", "percentiles": [0, 50, 100]},
+        {"scenario": scenario, "first_seed": 7, "rollout_count": 2, "metric": "cash_usd", "percentiles": [0, 50, 100]},
     )
 
     assert fan["model_id"] == "composite"
@@ -107,12 +107,7 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
     assert fan["metric"] == "cash_usd"
     assert fan["failed_count"] == 0
     assert "rollouts" not in fan
-    assert [
-        (summary["seed"], summary["failed"], summary["sort_rank"], summary["rank_percentile"])
-        for summary in fan["rollout_summaries"]
-    ] == [(7, False, 0, 25.0), (8, False, 1, 75.0)]
-    assert [summary["terminal_metrics"]["cash_usd"] for summary in fan["rollout_summaries"]] == [247_000.0, 247_000.0]
-    assert all("monthly_metrics" not in summary for summary in fan["rollout_summaries"])
+    assert "rollout_summaries" not in fan
     assert fan["monthly_metric_fan"] == {
         "month_index": [0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3],
         "percentile": [0.0, 50.0, 100.0] * 4,
@@ -139,7 +134,7 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
     holding_fan = _post_json(
         server_url,
         "/api/product/projections/metric_fan",
-        {"scenario": scenario, "rollout_seeds": [7, 8], "metric": "holding_value_usd", "percentiles": [50]},
+        {"scenario": scenario, "first_seed": 7, "rollout_count": 2, "metric": "holding_value_usd", "percentiles": [50]},
     )
 
     assert holding_fan["metric"] == "holding_value_usd"
@@ -193,6 +188,17 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
         "shortfall_usd",
     }
     assert terminal["shortfall_usd"] == 0.0
+
+    selected = _post_json(
+        server_url,
+        "/api/product/projections/rollout_at_percentile",
+        {"scenario": scenario, "first_seed": 7, "rollout_count": 2, "metric": "cash_usd", "percentile": 0},
+    )
+
+    assert selected["model_id"] == "composite"
+    assert selected["rollout"]["seed"] == 7
+    assert selected["rollout"]["monthly_metrics"]["cash_usd"] == [250_000.0, 249_000.0, 248_000.0, 247_000.0]
+
     assert [event["kind"] for event in detail["rollout"]["events"]] == ["monthly_expense"] * 3
     assert [event["amount_paid_usd"] for event in detail["rollout"]["events"]] == [1_000.0, 1_000.0, 1_000.0]
 
@@ -273,25 +279,24 @@ def test_backend_server_zeroes_failed_product_rollout_metrics(server_url: str) -
     fan = _post_json(
         server_url,
         "/api/product/projections/metric_fan",
-        {"scenario": scenario, "rollout_seeds": [7], "metric": "net_worth_usd", "percentiles": [50]},
+        {"scenario": scenario, "first_seed": 7, "rollout_count": 1, "metric": "net_worth_usd", "percentiles": [50]},
     )
 
     assert fan["failed_count"] == 1
+    assert "rollout_summaries" not in fan
     assert fan["monthly_metric_fan"]["month_index"] == [0, 1, 2, 3]
     # Month 0 = cash 250k + holdings 835.5k + PHA 25k; failure zeros subsequent months.
     assert fan["monthly_metric_fan"]["value"] == [1_110_500.0, 0.0, 0.0, 0.0]
-    [summary] = fan["rollout_summaries"]
-    assert summary["failed"] is True
-    assert summary["terminal_metrics"]["failed_month_index"] == 0
-    assert summary["terminal_metrics"]["cash_usd"] == 0.0
-    assert summary["terminal_metrics"]["holding_value_usd"] == 0.0
-    assert summary["terminal_metrics"]["net_worth_usd"] == 0.0
-    assert summary["terminal_metrics"]["shortfall_usd"] == 300_000.0
+    assert fan["terminal_metric_percentiles"] == {"percentile": [50.0], "value": [0.0]}
 
     detail = _post_json(server_url, "/api/product/projections/rollout", {"scenario": scenario, "seed": 7})
 
     assert detail["rollout"]["failed"] is True
+    assert detail["rollout"]["terminal_metrics"]["failed_month_index"] == 0
+    assert detail["rollout"]["terminal_metrics"]["cash_usd"] == 0.0
+    assert detail["rollout"]["terminal_metrics"]["holding_value_usd"] == 0.0
     assert detail["rollout"]["terminal_metrics"]["net_worth_usd"] == 0.0
+    assert detail["rollout"]["terminal_metrics"]["shortfall_usd"] == 300_000.0
     columns = detail["rollout"]["monthly_metrics"]
     assert columns["month_index"] == [0, 1, 2, 3]
     assert columns["cash_usd"] == [250_000.0, 0.0, 0.0, 0.0]
@@ -407,16 +412,14 @@ def test_api_product_metric_fan_respects_private_equity_tender_capacity(
 
     fan_response = capacity_limited_private_equity_client.post(
         "/api/product/projections/metric_fan",
-        json={"scenario": scenario, "rollout_seeds": [7], "metric": "cash_usd", "percentiles": [50]},
+        json={"scenario": scenario, "first_seed": 7, "rollout_count": 1, "metric": "cash_usd", "percentiles": [50]},
     )
 
     assert fan_response.status_code == 200
     fan = fan_response.json()
     assert fan["model_id"] == "capacity_limited_pe_fixture"
     assert fan["terminal_metric_percentiles"] == {"percentile": [50.0], "value": [254_250.0]}
-    [summary] = fan["rollout_summaries"]
-    assert summary["terminal_metrics"]["cash_usd"] == pytest.approx(254_250.0)
-    assert summary["terminal_metrics"]["private_equity_value_usd"] == pytest.approx(18_750.0)
+    assert "rollout_summaries" not in fan
 
     rollout_response = capacity_limited_private_equity_client.post(
         "/api/product/projections/rollout", json={"scenario": scenario, "seed": 7}

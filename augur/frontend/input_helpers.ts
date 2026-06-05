@@ -313,12 +313,6 @@ export function productScenario(input, bootstrap, modelId, horizonMonths) {
   };
 }
 
-export function productRolloutSeeds(bootstrap, rolloutCount, firstSeed) {
-  const count = clampRolloutCount(rolloutCount, bootstrap);
-  const start = clampFirstSeed(firstSeed);
-  return Array.from({ length: count }, (_, index) => start + index);
-}
-
 // The tab-shared controls (rollout count, exogenous model, horizon — plus the fixed first seed) are
 // passed in `shared` rather than read from `input`, since the app shell owns them
 // (see `?n=`/`?x=`/`?h=`).
@@ -326,7 +320,8 @@ export function productMetricFanRequest(input, bootstrap, metric, shared) {
   const { rolloutCount, firstSeed, model, horizonMonths } = shared;
   return {
     scenario: productScenario(input, bootstrap, model, horizonMonths),
-    rolloutSeeds: productRolloutSeeds(bootstrap, rolloutCount, firstSeed),
+    firstSeed: clampFirstSeed(firstSeed),
+    rolloutCount: clampRolloutCount(rolloutCount, bootstrap),
     metric: metric.value,
     percentiles: FAN_PERCENTILES,
   };
@@ -334,8 +329,8 @@ export function productMetricFanRequest(input, bootstrap, metric, shared) {
 
 // -- Scenario set (multi-scenario comparison) ---------------------------------
 //
-// The product view can hold a *set* of scenarios that share one set of rollout seeds (and
-// thus one sampled exogenous bundle — identical seeds reproduce identical market paths, so
+// The product view can hold a *set* of scenarios that share one rollout seed window (and
+// thus one sampled exogenous bundle: identical seeds reproduce identical market paths, so
 // the comparison is apples-to-apples without any backend change). Each entry carries its own
 // `ProductInput`; the chart overlays one median/P5/P95 fan per scenario, one color each.
 //

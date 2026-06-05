@@ -8,30 +8,33 @@ import {
   SELECTED_COL_HEADER,
   SELECTED_COL_CELL,
   rolloutStatusText,
-  terminalMetricTableRows,
   terminalMetricValue,
-  quantile,
+  terminalPercentileValue,
 } from "./data_helpers.ts";
 
-export function TerminalMetricTable({ summaries, selectedSummary, metrics, selectedMetric }) {
+export function TerminalMetricTable({ result, selectedSummary, selectedMetric }) {
   const { display: currencyDisplay } = useCurrencyDisplay();
-  if (summaries.length === 0) return null;
-  const rows = terminalMetricTableRows(summaries, selectedSummary, metrics);
+  if (!result?.terminalMetricPercentiles) return null;
+  const percentileRows = FAN_PERCENTILES.map((percentile) => ({
+    percentile,
+    value: terminalPercentileValue(result, percentile),
+  })).filter((row) => Number.isFinite(row.value));
+  if (percentileRows.length === 0) return null;
   // Determine where the SELECTED column slots into the percentile order based on the
   // currently-selected metric's selected value vs. its percentile distribution.
-  const anchorRow = rows.find((row) => row.metric.value === selectedMetric?.value);
-  const anchorValue = anchorRow?.selectedValue;
+  const selectedValue = selectedSummary ? terminalMetricValue(selectedSummary.terminalMetrics, selectedMetric) : null;
+  const anchorValue = selectedValue;
   const showSelectedColumn = selectedSummary != null && Number.isFinite(anchorValue);
-  let selectedColumnIndex = FAN_PERCENTILES.length;
+  let selectedColumnIndex = percentileRows.length;
   if (showSelectedColumn) {
-    const insertAt = anchorRow.percentiles.findIndex(({ value }) => Number.isFinite(value) && anchorValue < value);
-    selectedColumnIndex = insertAt === -1 ? FAN_PERCENTILES.length : insertAt;
+    const insertAt = percentileRows.findIndex(({ value }) => Number.isFinite(value) && anchorValue < value);
+    selectedColumnIndex = insertAt === -1 ? percentileRows.length : insertAt;
   }
   return (
     <div className="border-t border-slate-200 dark:border-slate-700">
       <div className="flex flex-col gap-1 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <div className="augur-eyebrow">Terminal metrics</div>
+          <div className="augur-eyebrow">Terminal {selectedMetric.label.toLowerCase()}</div>
           <div className="mt-1 text-xs augur-muted">
             Distribution percentiles with the selected rollout beside them.
           </div>
@@ -47,7 +50,7 @@ export function TerminalMetricTable({ summaries, selectedSummary, metrics, selec
           <thead>
             <tr className="bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500 dark:bg-slate-900 dark:text-slate-400">
               <th className="px-4 py-2 font-semibold">Metric</th>
-              {FAN_PERCENTILES.map((percentile, index) => (
+              {percentileRows.map(({ percentile }, index) => (
                 <React.Fragment key={percentile}>
                   {showSelectedColumn && selectedColumnIndex === index && (
                     <th className={SELECTED_COL_HEADER}>Selected</th>
@@ -55,36 +58,34 @@ export function TerminalMetricTable({ summaries, selectedSummary, metrics, selec
                   <th className={TABLE_NUMERIC_HEADER}>P{percentile}</th>
                 </React.Fragment>
               ))}
-              {showSelectedColumn && selectedColumnIndex === FAN_PERCENTILES.length && (
+              {showSelectedColumn && selectedColumnIndex === percentileRows.length && (
                 <th className={SELECTED_COL_HEADER}>Selected</th>
               )}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-            {rows.map((row) => (
-              <tr key={row.metric.value}>
-                <th className="whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-700 dark:text-slate-200">
-                  {row.metric.label}
-                </th>
-                {row.percentiles.map(({ percentile, value }, index) => (
-                  <React.Fragment key={percentile}>
-                    {showSelectedColumn && selectedColumnIndex === index && (
-                      <td className={SELECTED_COL_CELL}>
-                        {fmtMetricValue(row.metric.chartValue, row.selectedValue, currencyDisplay)}
-                      </td>
-                    )}
-                    <td className={TABLE_NUMERIC_CELL}>
-                      {fmtMetricValue(row.metric.chartValue, value, currencyDisplay)}
+            <tr>
+              <th className="whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-700 dark:text-slate-200">
+                {selectedMetric.label}
+              </th>
+              {percentileRows.map(({ percentile, value }, index) => (
+                <React.Fragment key={percentile}>
+                  {showSelectedColumn && selectedColumnIndex === index && (
+                    <td className={SELECTED_COL_CELL}>
+                      {fmtMetricValue(selectedMetric.chartValue, selectedValue, currencyDisplay)}
                     </td>
-                  </React.Fragment>
-                ))}
-                {showSelectedColumn && selectedColumnIndex === FAN_PERCENTILES.length && (
-                  <td className={SELECTED_COL_CELL}>
-                    {fmtMetricValue(row.metric.chartValue, row.selectedValue, currencyDisplay)}
+                  )}
+                  <td className={TABLE_NUMERIC_CELL}>
+                    {fmtMetricValue(selectedMetric.chartValue, value, currencyDisplay)}
                   </td>
-                )}
-              </tr>
-            ))}
+                </React.Fragment>
+              ))}
+              {showSelectedColumn && selectedColumnIndex === percentileRows.length && (
+                <td className={SELECTED_COL_CELL}>
+                  {fmtMetricValue(selectedMetric.chartValue, selectedValue, currencyDisplay)}
+                </td>
+              )}
+            </tr>
           </tbody>
         </table>
       </div>
@@ -92,25 +93,26 @@ export function TerminalMetricTable({ summaries, selectedSummary, metrics, selec
   );
 }
 
-// Compact median-terminal comparison across the scenario set: rows are metrics, one column per
-// scenario, each cell the P50 terminal value with the P5–P95 spread beneath. Computed client-side
-// from each scenario's rollout summaries (no extra request). The detailed percentile breakdown for
-// the active scenario stays in <TerminalMetricTable> above. Hidden for a lone scenario.
-export function TerminalScenarioComparison({ scenarios, resultsById, metrics, activeId }) {
+// Compact comparison across the scenario set for the metric currently being plotted. The fan
+// endpoint is aggregate-only, so this intentionally reads each scenario's terminal percentile frame
+// instead of per-rollout summaries. Hidden for a lone scenario.
+export function TerminalScenarioComparison({ scenarios, resultsById, metric, activeId }) {
   const { display: currencyDisplay } = useCurrencyDisplay();
   if (scenarios.length <= 1) return null;
   const columns = scenarios.map((scenario, index) => ({
     scenario,
     color: scenarioColor(index),
     isActive: scenario.id === activeId,
-    summaries: resultsById.get(scenario.id)?.rolloutSummaries ?? [],
+    result: resultsById.get(scenario.id)?.metric === metric.value ? resultsById.get(scenario.id) : null,
   }));
-  if (columns.every((column) => column.summaries.length === 0)) return null;
+  if (columns.every((column) => !column.result?.terminalMetricPercentiles)) return null;
   return (
     <div className="border-t border-slate-200 dark:border-slate-700" data-product-scenario-comparison="">
       <div className="px-4 py-3">
         <div className="augur-eyebrow">Terminal scenario comparison</div>
-        <div className="mt-1 text-xs augur-muted">Median terminal value per scenario, with the P5–P95 range below.</div>
+        <div className="mt-1 text-xs augur-muted">
+          Median terminal {metric.label.toLowerCase()} per scenario, with the P5-P95 range below.
+        </div>
       </div>
       <div className="overflow-x-auto">
         <table className="min-w-full border-t border-slate-200 text-sm dark:border-slate-700">
@@ -138,33 +140,26 @@ export function TerminalScenarioComparison({ scenarios, resultsById, metrics, ac
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-            {metrics.map((metric) => (
-              <tr key={metric.value}>
-                <th className="whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-700 dark:text-slate-200">
-                  {metric.label}
-                </th>
-                {columns.map((column) => {
-                  const values = column.summaries.map((summary) =>
-                    terminalMetricValue(summary.terminalMetrics, metric)
-                  );
-                  return (
-                    <td
-                      key={column.scenario.id}
-                      className={`${TABLE_NUMERIC_CELL}${column.isActive ? " bg-slate-100/60 dark:bg-slate-800/40" : ""}`}
-                      data-active={column.isActive ? "" : undefined}
-                    >
-                      <div className="font-semibold">
-                        {fmtMetricValue(metric.chartValue, quantile(values, 50), currencyDisplay)}
-                      </div>
-                      <div className="text-[11px] augur-muted">
-                        {fmtMetricValue(metric.chartValue, quantile(values, 5), currencyDisplay)} –{" "}
-                        {fmtMetricValue(metric.chartValue, quantile(values, 95), currencyDisplay)}
-                      </div>
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
+            <tr>
+              <th className="whitespace-nowrap px-4 py-2 text-left font-semibold text-slate-700 dark:text-slate-200">
+                {metric.label}
+              </th>
+              {columns.map((column) => (
+                <td
+                  key={column.scenario.id}
+                  className={`${TABLE_NUMERIC_CELL}${column.isActive ? " bg-slate-100/60 dark:bg-slate-800/40" : ""}`}
+                  data-active={column.isActive ? "" : undefined}
+                >
+                  <div className="font-semibold">
+                    {fmtMetricValue(metric.chartValue, terminalPercentileValue(column.result, 50), currencyDisplay)}
+                  </div>
+                  <div className="text-[11px] augur-muted">
+                    {fmtMetricValue(metric.chartValue, terminalPercentileValue(column.result, 5), currencyDisplay)} -{" "}
+                    {fmtMetricValue(metric.chartValue, terminalPercentileValue(column.result, 95), currencyDisplay)}
+                  </div>
+                </td>
+              ))}
+            </tr>
           </tbody>
         </table>
       </div>

@@ -43,10 +43,10 @@ from augur.product.wire import (
     MetricFanRequest,
     MetricFanResponse,
     MetricName,
+    RolloutAtPercentileRequest,
     RolloutOutput,
     RolloutRequest,
     RolloutResponse,
-    RolloutSummary,
     ScenarioKey,
     TerminalMetrics,
 )
@@ -140,13 +140,22 @@ class ProductService:
             terminal_metric_percentiles=_terminal_metric_percentiles(
                 decoded, metric=request.metric, percentiles=percentiles
             ),
-            rollout_summaries=_rollout_summaries(decoded),
             failed_count=sum(1 for rollout in decoded if rollout.failed),
         )
 
     def rollout(self, request: RolloutRequest) -> RolloutResponse:
-        horizon_months = int(request.scenario.horizon_months)
         [decoded] = self._decoded_rollouts(request.scenario, (int(request.seed),))
+        return self._rollout_response(request.scenario, decoded)
+
+    def rollout_at_percentile(self, request: RolloutAtPercentileRequest) -> RolloutResponse:
+        if request.rollout_count > self._max_rollout_samples:
+            raise ValueError(f"rollout count {request.rollout_count} exceeds max {self._max_rollout_samples}")
+        decoded = self._decoded_rollouts(request.scenario, tuple(int(seed) for seed in request.rollout_seeds))
+        selected = _select_rollout_at_percentile(decoded, metric=request.metric, percentile=float(request.percentile))
+        return self._rollout_response(request.scenario, selected)
+
+    def _rollout_response(self, scenario: ScenarioKey, decoded: _DecodedRollout) -> RolloutResponse:
+        horizon_months = int(scenario.horizon_months)
         # The detail view needs this one rollout's event log: slice just its column out of the
         # shared batch (one slice, not R) and decode it. The cached batch spans the server max
         # horizon; keep only events within the requested window so the detail matches the
@@ -323,6 +332,20 @@ def _terminal_metric_percentiles(
     return {"percentile": percentile_array.tolist(), "value": percentile_values.tolist()}
 
 
+def _select_rollout_at_percentile(
+    rollouts: tuple[_DecodedRollout, ...], *, metric: MetricName, percentile: float
+) -> _DecodedRollout:
+    if not rollouts:
+        raise ValueError("rollout percentile selection requires at least one rollout")
+    ordered = sorted(
+        rollouts, key=lambda rollout: (_terminal_metric_value(rollout.terminal_metrics, metric), rollout.seed)
+    )
+    if len(ordered) == 1:
+        return ordered[0]
+    rank = int(np.floor((percentile / 100.0) * (len(ordered) - 1) + 0.5))
+    return ordered[max(0, min(len(ordered) - 1, rank))]
+
+
 def _metric_matrix(
     rollouts: tuple[_DecodedRollout, ...], *, metric: MetricName
 ) -> tuple[np.ndarray, np.ndarray] | None:
@@ -364,24 +387,3 @@ def _terminal_metric_value(terminal: TerminalMetrics, metric: MetricName) -> flo
             return terminal.net_worth_usd
         case "shortfall_usd":
             return terminal.shortfall_usd
-
-
-def _rollout_summaries(rollouts: tuple[_DecodedRollout, ...]) -> tuple[RolloutSummary, ...]:
-    sorted_rollouts = sorted(rollouts, key=_rollout_sort_key)
-    count = len(sorted_rollouts)
-    return tuple(
-        RolloutSummary(
-            seed=rollout.seed,
-            failed=rollout.failed,
-            terminal_metrics=rollout.terminal_metrics,
-            sort_rank=rank,
-            rank_percentile=((rank + 0.5) / count * 100) if count else 50.0,
-        )
-        for rank, rollout in enumerate(sorted_rollouts)
-    )
-
-
-def _rollout_sort_key(rollout: _DecodedRollout) -> tuple[bool, int, float, int]:
-    terminal = rollout.terminal_metrics
-    failed_month = terminal.failed_month_index if terminal.failed_month_index is not None else 10**9
-    return (not rollout.failed, failed_month, terminal.net_worth_usd, rollout.seed)

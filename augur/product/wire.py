@@ -223,18 +223,31 @@ class ScenarioKey(ApiModel):
 
 class MetricFanRequest(ApiModel):
     scenario: ScenarioKey
-    rollout_seeds: tuple[NonNegativeInt, ...] = Field(min_length=1)
+    first_seed: NonNegativeInt
+    rollout_count: PositiveInt
     metric: MetricName
     percentiles: tuple[Percentage, ...] = Field(min_length=1)
 
     @property
-    def rollout_count(self) -> int:
-        return len(self.rollout_seeds)
+    def rollout_seeds(self) -> tuple[int, ...]:
+        return tuple(range(int(self.first_seed), int(self.first_seed) + int(self.rollout_count)))
 
 
 class RolloutRequest(ApiModel):
     scenario: ScenarioKey
     seed: NonNegativeInt
+
+
+class RolloutAtPercentileRequest(ApiModel):
+    scenario: ScenarioKey
+    first_seed: NonNegativeInt
+    rollout_count: PositiveInt
+    metric: MetricName
+    percentile: Percentage
+
+    @property
+    def rollout_seeds(self) -> tuple[int, ...]:
+        return tuple(range(int(self.first_seed), int(self.first_seed) + int(self.rollout_count)))
 
 
 class TerminalMetrics(ApiModel):
@@ -467,20 +480,11 @@ class RolloutOutput(ApiModel):
     events: tuple[RolloutEvent, ...] = ()
 
 
-class RolloutSummary(ApiModel):
-    seed: NonNegativeInt
-    failed: bool
-    terminal_metrics: TerminalMetrics
-    sort_rank: NonNegativeInt
-    rank_percentile: Percentage
-
-
 class MetricFanResponse(ApiModel):
     model_id: str
     metric: MetricName
     monthly_metric_fan: Frame
     terminal_metric_percentiles: Frame
-    rollout_summaries: tuple[RolloutSummary, ...]
     failed_count: NonNegativeInt
     diagnostics: tuple[str, ...] = ()
 

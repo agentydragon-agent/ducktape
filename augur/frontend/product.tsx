@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { NativeSelect, SegmentedControl } from "@mantine/core";
 
-import { fetchProductMetricFan, fetchProductPortfolio, fetchProductRollout } from "./client.ts";
+import { fetchProductMetricFan, fetchProductPortfolio, fetchProductRolloutAtPercentile } from "./client.ts";
 import { fmtNumber } from "./lib/format.ts";
 import { fmtMetricValue } from "./lib/chart.ts";
 import { toastFetchError } from "./lib/toast.ts";
@@ -43,9 +43,9 @@ function RolloutResultsPanel({
   horizonMonths,
   onChangeHorizonMonths,
   maxHorizonMonths,
-  rolloutSummaries,
   selectedSeed,
-  onSelectRollout,
+  selectedPercentile,
+  onSelectPercentile,
   onClearSelection,
   selectedRolloutLoading,
   fanSeries,
@@ -53,6 +53,7 @@ function RolloutResultsPanel({
   scenarios,
   resultsById,
   activeId,
+  activeResult,
   selectedRows,
   selectedEvents,
   selectedSummary,
@@ -135,9 +136,9 @@ function RolloutResultsPanel({
         activeId={activeId}
         metric={selectedMetric}
         metricScale={metricScale}
-        selectedSeed={selectedSeed}
-        loadingSeed={selectedRolloutLoading ? selectedSeed : null}
-        onSelectRollout={onSelectRollout}
+        selectedPercentile={selectedPercentile}
+        loadingPercentile={selectedRolloutLoading ? selectedPercentile : null}
+        onSelectPercentile={onSelectPercentile}
         onClear={onClearSelection}
       />
       {fanSeries.some((entry) => entry.rows.length > 0) ? (
@@ -169,7 +170,7 @@ function RolloutResultsPanel({
             >
               <span className="inline-flex items-center gap-2 rounded-full bg-white/90 px-3 py-1 text-xs font-medium text-slate-600 shadow-sm dark:bg-slate-900/90 dark:text-slate-300">
                 <span className="h-3 w-3 animate-spin rounded-full border-2 border-slate-300 border-t-blue-600 dark:border-slate-600 dark:border-t-blue-400" />
-                Loading rollout {selectedSeed}…
+                Loading rollout{selectedSeed == null ? "" : ` ${selectedSeed}`}...
               </span>
             </div>
           )}
@@ -180,7 +181,7 @@ function RolloutResultsPanel({
       <TerminalScenarioComparison
         scenarios={scenarios}
         resultsById={resultsById}
-        metrics={visibleMetrics}
+        metric={selectedMetric}
         activeId={activeId}
       />
       {selectedSeed != null && selectedEvents.length > 0 && (
@@ -203,12 +204,7 @@ function RolloutResultsPanel({
           onHoverEventMonth={eventSelection.onHoverEventMonth}
         />
       )}
-      <TerminalMetricTable
-        summaries={rolloutSummaries}
-        selectedSummary={selectedSummary}
-        metrics={visibleMetrics}
-        selectedMetric={selectedMetric}
-      />
+      <TerminalMetricTable result={activeResult} selectedSummary={selectedSummary} selectedMetric={selectedMetric} />
     </section>
   );
 }
@@ -246,7 +242,7 @@ export function ProductProjectionWorkspace({
   const [errorsById, setErrorsById] = useState(() => new Map());
   const [portfolio, setPortfolio] = useState(null);
   const [portfolioError, setPortfolioError] = useState(null);
-  const [selectedSeed, setSelectedSeed] = useState(null);
+  const [selectedPercentile, setSelectedPercentile] = useState(null);
   const [rolloutDetails, setRolloutDetails] = useState(() => new Map());
   const [rolloutError, setRolloutError] = useState(null);
   const eventSelection = useEventSelection();
@@ -295,7 +291,8 @@ export function ProductProjectionWorkspace({
     [chartScenarios, bootstrap, selectedMetric, rolloutCount, firstSeed, model, horizonMonths]
   );
   const activeRequest = requestEntries.find((entry) => entry.id === activeId)?.request ?? requestEntries[0].request;
-  const activeResult = resultsById.get(activeId) ?? null;
+  const activeRawResult = resultsById.get(activeId) ?? null;
+  const activeResult = activeRawResult?.metric === selectedMetric.value ? activeRawResult : null;
   const runError = errorsById.get(activeId) ?? null;
 
   // One overlay series per scenario; Base is series 0 (blue), variants follow. Color is by position
@@ -307,20 +304,32 @@ export function ProductProjectionWorkspace({
         id: entry.id,
         label: entry.label,
         color: scenarioColor(index),
-        rows: metricFanRows(resultsById.get(entry.id)),
+        rows:
+          resultsById.get(entry.id)?.metric === selectedMetric.value ? metricFanRows(resultsById.get(entry.id)) : [],
         isActive: entry.id === activeId,
       })),
-    [chartScenarios, resultsById, activeId]
+    [chartScenarios, resultsById, activeId, selectedMetric.value]
   );
 
   const scenarioCacheKey = useMemo(() => JSON.stringify(activeRequest.scenario), [activeRequest.scenario]);
-  const rolloutSummaries = useMemo(() => activeResult?.rolloutSummaries ?? [], [activeResult]);
-  const selectedSummary = useMemo(
-    () => rolloutSummaries.find((summary) => Number(summary.seed) === selectedSeed) ?? null,
-    [rolloutSummaries, selectedSeed]
-  );
-  const selectedDetailKey = selectedSeed == null ? null : `${scenarioCacheKey}|${selectedSeed}`;
+  const rolloutSeedWindowKey = `${activeRequest.firstSeed}|${activeRequest.rolloutCount}`;
+  const selectedDetailKey =
+    selectedPercentile == null
+      ? null
+      : `${scenarioCacheKey}|${rolloutSeedWindowKey}|${selectedMetric.value}|${selectedPercentile}`;
   const selectedDetail = selectedDetailKey ? rolloutDetails.get(selectedDetailKey) : null;
+  const selectedSeed = selectedDetail?.rollout?.seed ?? null;
+  const selectedSummary = useMemo(
+    () =>
+      selectedDetail?.rollout
+        ? {
+            seed: Number(selectedDetail.rollout.seed),
+            failed: Boolean(selectedDetail.rollout.failed),
+            terminalMetrics: selectedDetail.rollout.terminalMetrics,
+          }
+        : null,
+    [selectedDetail]
+  );
   const selectedRows = useMemo(
     () => selectedRolloutMetricRows(selectedDetail, selectedMetric),
     [selectedDetail, selectedMetric]
@@ -328,7 +337,7 @@ export function ProductProjectionWorkspace({
   const selectedEvents = useMemo(() => selectedRolloutEvents(selectedDetail), [selectedDetail]);
   const failedCount = activeResult?.failedCount ?? null;
   const terminalP50 = terminalPercentileValue(activeResult, 50);
-  const selectedRolloutLoading = selectedSeed != null && activeResult != null && !selectedDetail && !rolloutError;
+  const selectedRolloutLoading = selectedPercentile != null && activeResult != null && !selectedDetail && !rolloutError;
 
   // -- Base + variant operations. Base edits propagate to every variant that doesn't override the
   // touched knob (variants resolve as `{ ...base, ...overrides }`); variant edits write to that
@@ -342,12 +351,18 @@ export function ProductProjectionWorkspace({
   const resetBase = () =>
     setScenarioSet((previous) => ({ ...previous, base: { ...previous.base, input: productInputDefaults(bootstrap) } }));
   const selectEntry = (id) => setScenarioSet((previous) => ({ ...previous, activeId: id }));
-  // Selecting a rollout in the distribution chart carries both coordinates: the line picks the
-  // variant (making it active), the X picks that variant's rank-th seed. Selection is the seed, which
-  // is shared across variants, so switching the active variant later relocates it without clearing.
-  const onSelectRollout = (variantId, seed) => {
+  // Selecting in the distribution chart carries both coordinates: the line picks the variant
+  // (making it active), and the X picks the percentile. The backend resolves that percentile to
+  // one rollout detail without returning per-rollout data in the fan response.
+  const onSelectPercentile = (variantId, percentile) => {
     selectEntry(variantId);
-    setSelectedSeed(seed);
+    setSelectedPercentile(percentile);
+    setRolloutError(null);
+  };
+  const clearSelectedRollout = () => {
+    setSelectedPercentile(null);
+    setRolloutError(null);
+    eventSelection.clear();
   };
   const renameEntry = (id, label) =>
     setScenarioSet((previous) =>
@@ -467,23 +482,25 @@ export function ProductProjectionWorkspace({
   }, [requestEntries]);
 
   useEffect(() => {
-    if (selectedSeed == null || !activeResult?.rolloutSummaries) return;
-    if (!activeResult.rolloutSummaries.some((summary) => Number(summary.seed) === selectedSeed)) {
-      setSelectedSeed(null);
-    }
-  }, [activeResult, selectedSeed]);
-
-  useEffect(() => {
     eventSelection.clear();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDetailKey]);
 
   useEffect(() => {
-    if (selectedSeed == null || activeResult == null || selectedDetailKey == null) return;
+    if (selectedPercentile == null || activeResult == null || selectedDetailKey == null) return;
     if (rolloutDetails.has(selectedDetailKey)) return;
     const controller = new AbortController();
     setRolloutError(null);
-    fetchProductRollout({ scenario: activeRequest.scenario, seed: selectedSeed }, { signal: controller.signal })
+    fetchProductRolloutAtPercentile(
+      {
+        scenario: activeRequest.scenario,
+        firstSeed: activeRequest.firstSeed,
+        rolloutCount: activeRequest.rolloutCount,
+        metric: selectedMetric.value,
+        percentile: selectedPercentile,
+      },
+      { signal: controller.signal }
+    )
       .then((payload) => {
         setRolloutDetails((previous) => {
           const next = new Map(previous);
@@ -497,7 +514,16 @@ export function ProductProjectionWorkspace({
         toastFetchError("product-rollout", "Rollout detail failed", error);
       });
     return () => controller.abort();
-  }, [activeRequest.scenario, activeResult, rolloutDetails, selectedDetailKey, selectedSeed]);
+  }, [
+    activeRequest.firstSeed,
+    activeRequest.rolloutCount,
+    activeRequest.scenario,
+    activeResult,
+    rolloutDetails,
+    selectedDetailKey,
+    selectedMetric.value,
+    selectedPercentile,
+  ]);
 
   return (
     <div
@@ -563,7 +589,7 @@ export function ProductProjectionWorkspace({
             <div className="augur-card p-4">
               <div className="augur-eyebrow">Failed rollouts</div>
               <div className="mt-2 text-2xl font-semibold augur-tabular">
-                {fmtNumber(failedCount)} / {fmtNumber(activeRequest.rolloutSeeds.length)}
+                {fmtNumber(failedCount)} / {fmtNumber(activeRequest.rolloutCount)}
               </div>
             </div>
           </div>
@@ -580,16 +606,17 @@ export function ProductProjectionWorkspace({
             horizonMonths={horizonMonths}
             onChangeHorizonMonths={onChangeHorizonMonths}
             maxHorizonMonths={bootstrap.maxHorizonMonths}
-            rolloutSummaries={rolloutSummaries}
             selectedSeed={selectedSeed}
-            onSelectRollout={onSelectRollout}
-            onClearSelection={() => setSelectedSeed(null)}
+            selectedPercentile={selectedPercentile}
+            onSelectPercentile={onSelectPercentile}
+            onClearSelection={clearSelectedRollout}
             selectedRolloutLoading={selectedRolloutLoading}
             fanSeries={fanSeries}
             percentiles={activeRequest.percentiles}
             scenarios={chartScenarios}
             resultsById={resultsById}
             activeId={activeId}
+            activeResult={activeResult}
             selectedRows={selectedRows}
             selectedEvents={selectedEvents}
             selectedSummary={selectedSummary}

@@ -57,7 +57,8 @@ def main() -> int:
             monthly_spend_usd=args.monthly_spend_usd,
             spend_index=args.spend_index,
         ),
-        rollout_seeds=tuple(range(args.rollout_count)),
+        first_seed=0,
+        rollout_count=args.rollout_count,
         metric=args.metric,
         percentiles=tuple(args.percentiles),
     )
@@ -85,7 +86,6 @@ def main() -> int:
     print(f"percentiles: {','.join(str(percentile) for percentile in args.percentiles)}")
     print(f"monthly_metric_fan_rows: {len(response.monthly_metric_fan['month_index'])}")
     print(f"terminal_metric_percentile_rows: {len(response.terminal_metric_percentiles['percentile'])}")
-    print(f"rollout_summary_count: {len(response.rollout_summaries)}")
     print(f"failed_count: {response.failed_count}")
     pstats.Stats(profiler).strip_dirs().sort_stats(pstats.SortKey.CUMULATIVE).print_stats(args.top)
     return 0

@@ -114,6 +114,7 @@ js_library(
         ":input_helpers",
         "//:node_modules/react",
         "//augur/frontend/lib:chart",
+        "//augur/frontend/lib:frame",
     ],
 )
 

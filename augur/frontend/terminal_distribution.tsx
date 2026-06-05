@@ -1,39 +1,55 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { axisCoordinate, fanChartAxis, fmtAxisMetricValue, fmtMetricValue } from "./lib/chart.ts";
+import { rowsFrom } from "./lib/frame.ts";
 import { scenarioColor } from "./input_helpers.ts";
 import { useCurrencyDisplay } from "./hooks.ts";
-import { FAILED_ROLLOUT_COLOR, SELECTED_ROLLOUT_COLOR, terminalMetricValue } from "./data_helpers.ts";
+import { SELECTED_ROLLOUT_COLOR } from "./data_helpers.ts";
 
-// Each variant's rollouts sorted ascending by terminal value — the quantile (inverse-CDF) curve.
-// Failed rollouts keep their real terminal value: the sim freezes every terminal metric to 0 on
-// failure, so a bust lands at 0 (the bottom of the curve) and is drawn with a red marker rather than
-// special-cased onto a synthetic floor. Every variant shares the same seed set, so a seed is the
-// *same underlying world* across variants — selection is therefore a seed, and switching the active
-// variant relocates the marker to that seed's rank in the newly-active line without clearing it.
-function orderedRollouts(summaries, metric) {
-  return summaries
-    .map((summary) => ({
-      seed: Number(summary.seed),
-      failed: Boolean(summary.failed),
-      failedMonth: summary.terminalMetrics?.failedMonthIndex,
-      value: terminalMetricValue(summary.terminalMetrics, metric),
+function terminalPercentilePoints(result, metric) {
+  if (result?.metric !== metric.value) return [];
+  return rowsFrom(result?.terminalMetricPercentiles)
+    .map((row) => ({
+      percentile: Number(row.percentile) / 100,
+      rawPercentile: Number(row.percentile),
+      value: Number(row.value),
     }))
-    .filter((point) => Number.isFinite(point.value))
-    .sort((left, right) => left.value - right.value);
+    .filter(
+      (point) =>
+        Number.isFinite(point.percentile) && Number.isFinite(point.rawPercentile) && Number.isFinite(point.value)
+    )
+    .sort((left, right) => left.percentile - right.percentile);
+}
+
+function valueAtPercentile(entry, percentile) {
+  const points = entry.points;
+  if (points.length === 0) return NaN;
+  if (points.length === 1 || percentile <= points[0].percentile) return points[0].value;
+  const last = points[points.length - 1];
+  if (percentile >= last.percentile) return last.value;
+  for (let index = 1; index < points.length; index += 1) {
+    const right = points[index];
+    if (percentile > right.percentile) continue;
+    const left = points[index - 1];
+    const span = right.percentile - left.percentile;
+    if (span <= 0) return right.value;
+    const weight = (percentile - left.percentile) / span;
+    return left.value * (1 - weight) + right.value * weight;
+  }
+  return last.value;
 }
 
 // A click whose nearest line is farther than this (in px, on the Y axis) clears an existing
-// selection instead of selecting — "click away to deselect". Gated on an existing selection so a
-// first click anywhere still selects the nearest rollout.
+// selection instead of selecting. Gated on an existing selection so a first click anywhere still
+// selects the nearest percentile.
 const DESELECT_DISTANCE_PX = 30;
 
 export function TerminalDistributionChart({
   scenarios,
   resultsById,
   activeId,
-  selectedSeed,
-  loadingSeed,
-  onSelectRollout,
+  selectedPercentile,
+  loadingPercentile,
+  onSelectPercentile,
   onClear,
   metric,
   metricScale = "linear",
@@ -54,8 +70,8 @@ export function TerminalDistributionChart({
     return () => ro.disconnect();
   }, []);
 
-  // One ordered line per scenario, colored by position (matching the chips / fan legend), active on
-  // top. Variants that haven't returned results yet contribute no line.
+  // One percentile line per scenario, colored by position (matching the chips / fan legend), active
+  // on top. Variants that haven't returned results yet contribute no line.
   const series = useMemo(
     () =>
       scenarios
@@ -64,9 +80,9 @@ export function TerminalDistributionChart({
           label: scenario.label,
           color: scenarioColor(index),
           isActive: scenario.id === activeId,
-          ordered: orderedRollouts(resultsById.get(scenario.id)?.rolloutSummaries ?? [], metric),
+          points: terminalPercentilePoints(resultsById.get(scenario.id), metric),
         }))
-        .filter((entry) => entry.ordered.length > 0),
+        .filter((entry) => entry.points.length > 0),
     [scenarios, resultsById, activeId, metric]
   );
   const orderedSeries = useMemo(
@@ -76,34 +92,38 @@ export function TerminalDistributionChart({
 
   if (series.length === 0) return null;
 
-  const allValues = series.flatMap((entry) => entry.ordered.map((point) => point.value));
+  const allValues = series.flatMap((entry) => entry.points.map((point) => point.value));
   const yAxis = fanChartAxis(metric.chartValue, allValues, metricScale);
   const svgHeight = 260;
   const margin = { left: 82, right: 20, top: 16, bottom: 34 };
   const plotWidth = Math.max(1, svgWidth - margin.left - margin.right);
   const plotHeight = svgHeight - margin.top - margin.bottom;
-  // X is percentile within each variant's own rollouts (rank / (n-1)); a single-rollout variant pins
-  // to the left edge. Per-variant percentile keeps lines comparable even if a variant is still
-  // loading with fewer results than the others.
-  const percentileOf = (entry, index) => (entry.ordered.length > 1 ? index / (entry.ordered.length - 1) : 0);
   const xAt = (percentile) => margin.left + percentile * plotWidth;
   const yAt = (value) => margin.top + (1 - (axisCoordinate(yAxis, value) - yAxis.min) / yAxis.range) * plotHeight;
 
-  const indexAtPercentile = (entry, percentile) =>
-    Math.max(0, Math.min(entry.ordered.length - 1, Math.round(percentile * (entry.ordered.length - 1))));
+  const nearestPointIndex = (entry, percentile) => {
+    let bestIndex = 0;
+    let bestDistance = Infinity;
+    for (let index = 0; index < entry.points.length; index += 1) {
+      const distance = Math.abs(entry.points[index].percentile - percentile);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestIndex = index;
+      }
+    }
+    return bestIndex;
+  };
 
   // Pick which variant a click/hover binds to: the line nearest the cursor in Y at the cursor's
-  // percentile, breaking ties toward the active variant (drawn on top) so overlapping failed floors
-  // resolve to the variant you're already inspecting. `bestDist` is the distance to the genuinely
-  // nearest line (pre-tie-break), used by the click-away-to-deselect check.
+  // percentile, breaking ties toward the active variant (drawn on top). `bestDist` is the distance
+  // to the genuinely nearest line (pre-tie-break), used by the click-away-to-deselect check.
   const pickVariant = (percentile, cursorY) => {
     let best = null;
     let bestDist = Infinity;
     let active = null;
     let activeDist = Infinity;
     for (const entry of series) {
-      const point = entry.ordered[indexAtPercentile(entry, percentile)];
-      const dist = Math.abs(cursorY - yAt(point.value));
+      const dist = Math.abs(cursorY - yAt(valueAtPercentile(entry, percentile)));
       if (entry.isActive) {
         active = entry;
         activeDist = dist;
@@ -128,8 +148,7 @@ export function TerminalDistributionChart({
       ? series.find((candidate) => candidate.id === variantId)
       : pickVariant(percentile, cursorY).entry;
     if (!entry) return null;
-    const seed = entry.ordered[indexAtPercentile(entry, percentile)].seed;
-    onSelectRollout(entry.id, seed);
+    onSelectPercentile(entry.id, Number((percentile * 100).toFixed(1)));
     return entry.id;
   };
 
@@ -138,9 +157,9 @@ export function TerminalDistributionChart({
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
     const { percentile, cursorY } = localPoint(event);
-    // Click well clear of every line clears an existing selection. Gated on `selectedSeed` so a
-    // first click anywhere still selects the nearest rollout (no dead zones until something's picked).
-    if (selectedSeed != null && pickVariant(percentile, cursorY).bestDist > DESELECT_DISTANCE_PX) {
+    // Click well clear of every line clears an existing selection. Gated on `selectedPercentile` so a
+    // first click anywhere still selects the nearest percentile.
+    if (selectedPercentile != null && pickVariant(percentile, cursorY).bestDist > DESELECT_DISTANCE_PX) {
       onClear();
       dragVariantRef.current = { dragging: false, variantId: null, startX: 0, startY: 0, wasSelected: false };
       return;
@@ -151,15 +170,11 @@ export function TerminalDistributionChart({
       variantId,
       startX: event.clientX,
       startY: event.clientY,
-      // Track whether the press began on the already-selected rollout, to support click-to-deselect.
+      // Track whether the press began on the already-selected percentile, to support click-to-deselect.
       wasSelected:
         variantId === activeId &&
-        series.find((entry) => entry.id === variantId)?.ordered[
-          indexAtPercentile(
-            series.find((entry) => entry.id === variantId),
-            percentile
-          )
-        ]?.seed === selectedSeed,
+        selectedPercentile != null &&
+        Math.abs(selectedPercentile - Number((percentile * 100).toFixed(1))) < 0.5,
     };
   };
 
@@ -175,7 +190,7 @@ export function TerminalDistributionChart({
     const state = dragVariantRef.current;
     dragVariantRef.current = { dragging: false, variantId: null, startX: 0, startY: 0, wasSelected: false };
     event.currentTarget.releasePointerCapture(event.pointerId);
-    // A click (negligible movement) on the already-selected rollout toggles it off.
+    // A click (negligible movement) on the already-selected percentile toggles it off.
     if (!state.dragging || !state.wasSelected) return;
     const dx = event.clientX - state.startX;
     const dy = event.clientY - state.startY;
@@ -183,15 +198,24 @@ export function TerminalDistributionChart({
   };
 
   const activeSeries = series.find((entry) => entry.isActive) ?? null;
-  const selectedIndex =
-    activeSeries && selectedSeed != null ? activeSeries.ordered.findIndex((point) => point.seed === selectedSeed) : -1;
-  const selectedPoint = selectedIndex >= 0 ? activeSeries.ordered[selectedIndex] : null;
+  const selectedFraction = selectedPercentile == null ? null : selectedPercentile / 100;
+  const selectedValue =
+    activeSeries && selectedFraction != null ? valueAtPercentile(activeSeries, selectedFraction) : NaN;
+  const selectedPoint =
+    activeSeries && selectedFraction != null && Number.isFinite(selectedValue)
+      ? { percentile: selectedFraction, rawPercentile: selectedPercentile, value: selectedValue }
+      : null;
 
   const moveSelection = (delta) => {
     if (!activeSeries) return;
-    const base = selectedIndex < 0 ? (delta > 0 ? -1 : activeSeries.ordered.length) : selectedIndex;
-    const next = Math.max(0, Math.min(activeSeries.ordered.length - 1, base + delta));
-    onSelectRollout(activeSeries.id, activeSeries.ordered[next].seed);
+    const base =
+      selectedFraction == null
+        ? delta > 0
+          ? -1
+          : activeSeries.points.length
+        : nearestPointIndex(activeSeries, selectedFraction);
+    const next = Math.max(0, Math.min(activeSeries.points.length - 1, base + delta));
+    onSelectPercentile(activeSeries.id, activeSeries.points[next].rawPercentile);
   };
   const handleKeyDown = (event) => {
     const step = event.shiftKey ? 10 : 1;
@@ -202,20 +226,16 @@ export function TerminalDistributionChart({
     event.preventDefault();
   };
 
-  // Hover tooltip enumerates every variant's value at the hovered percentile, so even sitting over an
-  // overlapping failed floor you read the list rather than guessing which line is under the cursor.
+  // Hover tooltip enumerates every variant's value at the hovered percentile.
   const hoverRows =
     hoverPercentile == null
       ? []
       : series.map((entry) => {
-          const point = entry.ordered[indexAtPercentile(entry, hoverPercentile)];
           return {
             id: entry.id,
             label: entry.label,
             color: entry.color,
-            failed: point.failed,
-            failedMonth: point.failedMonth,
-            value: point.value,
+            value: valueAtPercentile(entry, hoverPercentile),
           };
         });
   const xTicks = [0, 0.25, 0.5, 0.75, 1];
@@ -232,11 +252,10 @@ export function TerminalDistributionChart({
         <div>
           <div className="augur-eyebrow">Terminal {metric.label.toLowerCase()} distribution</div>
           <div className="mt-1 text-xs augur-muted">
-            One line per variant, rollouts sorted by terminal value. Failed rollouts marked in red. Click to inspect a
-            rollout.
+            One line per variant, drawn from aggregate terminal percentiles.
           </div>
         </div>
-        {selectedSeed != null && (
+        {selectedPercentile != null && (
           <button
             type="button"
             className="text-xs font-semibold text-blue-700 hover:text-blue-900 dark:text-blue-300 dark:hover:text-blue-200"
@@ -253,7 +272,7 @@ export function TerminalDistributionChart({
         aria-label={`Inspect a rollout by terminal ${metric.label.toLowerCase()} percentile`}
         aria-valuemin={0}
         aria-valuemax={100}
-        aria-valuenow={selectedIndex >= 0 ? Math.round(percentileOf(activeSeries, selectedIndex) * 100) : 0}
+        aria-valuenow={selectedPercentile ?? 0}
         height={svgHeight}
         className="w-full cursor-pointer touch-none select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-400"
         data-product-terminal-distribution-plot=""
@@ -305,9 +324,7 @@ export function TerminalDistributionChart({
           );
         })}
         {orderedSeries.map((entry) => {
-          const linePoints = entry.ordered
-            .map((point, index) => `${xAt(percentileOf(entry, index))},${yAt(point.value)}`)
-            .join(" ");
+          const linePoints = entry.points.map((point) => `${xAt(point.percentile)},${yAt(point.value)}`).join(" ");
           return (
             <g key={entry.id} data-product-distribution-series={entry.id}>
               <polyline
@@ -317,29 +334,14 @@ export function TerminalDistributionChart({
                 strokeWidth={entry.isActive ? 2.75 : 2}
                 opacity={entry.isActive ? 1 : 0.85}
               />
-              {/* Failed rollouts sit at their (frozen-to-0) terminal value; mark each in red so the
-                  bust band is visible wherever it lands on the curve, without assuming it's leftmost. */}
-              {entry.ordered.map((point, index) =>
-                point.failed ? (
-                  <circle
-                    key={point.seed}
-                    cx={xAt(percentileOf(entry, index))}
-                    cy={yAt(point.value)}
-                    r={entry.isActive ? 2.4 : 1.8}
-                    fill={FAILED_ROLLOUT_COLOR}
-                    opacity={entry.isActive ? 1 : 0.8}
-                    data-product-distribution-failed={point.seed}
-                  />
-                ) : null
-              )}
             </g>
           );
         })}
         {selectedPoint && (
           <>
             <line
-              x1={xAt(percentileOf(activeSeries, selectedIndex))}
-              x2={xAt(percentileOf(activeSeries, selectedIndex))}
+              x1={xAt(selectedPoint.percentile)}
+              x2={xAt(selectedPoint.percentile)}
               y1={margin.top}
               y2={margin.top + plotHeight}
               stroke="rgba(100,116,139,0.5)"
@@ -347,17 +349,17 @@ export function TerminalDistributionChart({
               strokeDasharray="3 2"
             />
             <circle
-              cx={xAt(percentileOf(activeSeries, selectedIndex))}
+              cx={xAt(selectedPoint.percentile)}
               cy={yAt(selectedPoint.value)}
               r="5"
-              fill={selectedPoint.failed ? FAILED_ROLLOUT_COLOR : SELECTED_ROLLOUT_COLOR}
+              fill={SELECTED_ROLLOUT_COLOR}
               stroke="white"
               strokeWidth="1.5"
-              data-product-distribution-selected={selectedSeed}
+              data-product-distribution-selected={selectedPoint.rawPercentile}
             />
-            {loadingSeed === selectedSeed && (
+            {loadingPercentile != null && Math.abs(loadingPercentile - selectedPoint.rawPercentile) < 0.05 && (
               <circle
-                cx={xAt(percentileOf(activeSeries, selectedIndex))}
+                cx={xAt(selectedPoint.percentile)}
                 cy={yAt(selectedPoint.value)}
                 r="8"
                 fill="none"
@@ -403,10 +405,7 @@ export function TerminalDistributionChart({
                       <tspan fill={row.color} fontWeight="700">
                         ●{" "}
                       </tspan>
-                      {row.label}:{" "}
-                      {row.failed
-                        ? `failed${Number.isFinite(row.failedMonth) ? ` m${row.failedMonth}` : ""}`
-                        : fmtMetricValue(metric.chartValue, row.value, currencyDisplay)}
+                      {row.label}: {fmtMetricValue(metric.chartValue, row.value, currencyDisplay)}
                     </text>
                   ))}
                 </g>

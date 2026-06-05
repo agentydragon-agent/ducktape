@@ -23,7 +23,8 @@ shapes.
 
 The current product-language API surface is intentionally narrow. A
 `ScenarioKey` describes one cash-spend scenario without randomness, and product
-view requests add explicit rollout seeds. The product route also includes
+view requests add a compact rollout seed window (`first_seed`, `rollout_count`).
+The product route also includes
 deployment-configured portfolio sources that resolve to initial cash and
 public-security lots as passive mark-to-market holdings; those holdings are
 config/source facts, not frontend knobs. The product funding policy
@@ -32,9 +33,11 @@ and can request the simulator's cash-buffer rule: when post-obligation cash is
 below a dollar trigger, sell a fixed dollar amount from that order. The
 product portfolio route returns the resolved initial cash and public-security
 positions, including tax lots, as a read-only product surface. The metric-fan
-route returns compact requested percentiles; the rollout route returns one full
-per-seed table plus product-readable event rows for that selected rollout, such
-as public-security sales, monthly expense settlements, and rollout failures.
+route returns compact requested percentiles. Drill-down routes return one full
+per-seed table plus product-readable event rows for a selected rollout, either
+by explicit seed or by resolving a requested terminal percentile server-side.
+Drill-down responses include details for only that selected rollout, such as
+public-security sales, monthly expense settlements, and rollout failures.
 Missing rollouts are transparently sampled and simulated into an in-memory
 server cache. Product concepts that are neither in the request type nor
 deployment config are not supported by the product endpoint yet.
@@ -180,12 +183,17 @@ For one rollout, given a `Scenario` and an exogenous trajectory bundle:
 The product API exposes two response shapes against a `ScenarioKey`:
 
 - `MetricFanResponse` — one user-selected metric over the horizon as a
-  percentile fan across the requested rollout seeds, plus per-rollout
-  summaries (terminal metrics, sort rank, pass/fail) keyed by seed.
+  percentile fan across the requested rollout seed window, plus terminal percentiles
+  for that same selected metric. It does not return per-rollout records; response
+  size is bounded by horizon × requested percentile count, not rollout count.
+  The request identifies the rollouts with a seed window, not a per-rollout seed
+  list.
 - `RolloutResponse` — full per-month metric frame and typed event log for
-  one selected rollout seed.
+  one selected rollout. It may be requested by explicit seed or by asking the
+  server to select the rollout at a terminal metric percentile from a bounded
+  seed set.
 
-Both carry an `exogenous_model_id` so the caller can identify which
+Both carry a `model_id` so the caller can identify which
 trajectory bundle the response was sampled against. Failed rollouts zero
 their downstream metrics from the failure month onward.
 

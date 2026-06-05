@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+import numpy as np
 import pytest
 import pytest_bazel
 from more_itertools import one
@@ -59,6 +60,7 @@ from augur.product.wire import (
     PropertyTaxPaymentEvent,
     RentalIncomePlan,
     RentalManagement,
+    RolloutAtPercentileRequest,
     RolloutFailureEvent,
     RolloutRequest,
     ScenarioKey,
@@ -149,7 +151,8 @@ def test_metric_fan_truncates_one_cached_max_horizon_rollout(
             scenario=ScenarioKey(
                 model_id="current_model", horizon_months=horizon_months, monthly_spend_usd=1_000.0, spend_index="none"
             ),
-            rollout_seeds=(7,),
+            first_seed=7,
+            rollout_count=1,
             metric="net_worth_usd",
             percentiles=(50.0,),
         )
@@ -180,7 +183,8 @@ def test_metric_fan_rejects_horizon_above_server_max(product: service.ProductSer
             monthly_spend_usd=1_000.0,
             spend_index="none",
         ),
-        rollout_seeds=(7,),
+        first_seed=7,
+        rollout_count=1,
         metric="net_worth_usd",
         percentiles=(50.0,),
     )
@@ -261,7 +265,9 @@ def test_metric_fan_and_rollout_detail_share_cached_sim_rollouts(
     product: service.ProductService, counting_model: CountingModel, scenario_key: ScenarioKey
 ) -> None:
     fan = product.metric_fan(
-        MetricFanRequest(scenario=scenario_key, rollout_seeds=(7, 8), metric="cash_usd", percentiles=(0, 50, 100))
+        MetricFanRequest(
+            scenario=scenario_key, first_seed=7, rollout_count=2, metric="cash_usd", percentiles=(0, 50, 100)
+        )
     )
 
     assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8)]
@@ -272,10 +278,7 @@ def test_metric_fan_and_rollout_detail_share_cached_sim_rollouts(
     assert fan.model_id == "composite"
     assert fan.metric == "cash_usd"
     assert fan.failed_count == 0
-    assert [summary.seed for summary in fan.rollout_summaries] == [7, 8]
-    assert [summary.sort_rank for summary in fan.rollout_summaries] == [0, 1]
-    assert [summary.rank_percentile for summary in fan.rollout_summaries] == [25.0, 75.0]
-    assert [summary.terminal_metrics.cash_usd for summary in fan.rollout_summaries] == [247_000.0, 247_000.0]
+    assert not hasattr(fan, "rollout_summaries")
     assert len(fan.monthly_metric_fan["month_index"]) == 12
     assert fan.monthly_metric_fan["month_index"] == [0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3]
     assert fan.monthly_metric_fan["percentile"] == [0.0, 50.0, 100.0] * 4
@@ -313,17 +316,66 @@ def test_metric_fan_and_rollout_detail_share_cached_sim_rollouts(
     ]
 
     holding_fan = product.metric_fan(
-        MetricFanRequest(scenario=scenario_key, rollout_seeds=(7, 8), metric="holding_value_usd", percentiles=(50,))
+        MetricFanRequest(
+            scenario=scenario_key, first_seed=7, rollout_count=2, metric="holding_value_usd", percentiles=(50,)
+        )
     )
 
     assert holding_fan.monthly_metric_fan["value"][0] == 835_500.0
 
     fan_with_one_new_seed = product.metric_fan(
-        MetricFanRequest(scenario=scenario_key, rollout_seeds=(7, 8, 9), metric="cash_usd", percentiles=(50,))
+        MetricFanRequest(scenario=scenario_key, first_seed=7, rollout_count=3, metric="cash_usd", percentiles=(50,))
     )
 
     assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8), (9,)]
     assert fan_with_one_new_seed.monthly_metric_fan["percentile"] == [50.0] * 4
+
+
+@pytest.mark.parametrize(
+    ("percentile", "expected_seed", "expected_private_equity_value"),
+    [(0.0, 101, 10_000.0), (50.0, 102, 20_000.0), (100.0, 103, 30_000.0)],
+)
+def test_rollout_at_percentile_selects_detail_from_terminal_metric_distribution(
+    make_product_service: MakeProductService,
+    percentile: float,
+    expected_seed: int,
+    expected_private_equity_value: float,
+) -> None:
+    issuer_id = IssuerId("private_holding_a")
+
+    def mark_by_rollout(request: ExogenousSamplingRequest) -> np.ndarray:
+        marks = np.asarray([10.0, 20.0, 30.0], dtype=np.float64)[: request.rollout_count]
+        matrix = np.repeat(marks[:, np.newaxis], request.horizon_months + 1, axis=1)
+        matrix[:, 0] = 25.0
+        return matrix
+
+    model = ConstantFrameModel(
+        levels=TEST_CONFIG_LEVEL_PLACEHOLDERS,
+        private_equity={issuer_id: PrivateEquityChannels(mark_usd_per_unit=mark_by_rollout)},
+        metadata={"model_id": "pe_mark_by_rollout_fixture"},
+    )
+    product = make_product_service(model)
+    scenario = ScenarioKey(
+        model_id="current_model",
+        horizon_months=2,
+        monthly_spend_usd=1_000.0,
+        spend_index="none",
+        funding_policy=FundingPolicy(sell_order=()),
+    )
+
+    detail = product.rollout_at_percentile(
+        RolloutAtPercentileRequest(
+            scenario=scenario, first_seed=101, rollout_count=3, metric="private_equity_value_usd", percentile=percentile
+        )
+    )
+
+    assert [request.rollout_seeds for request in model.sample_requests] == [(101, 102, 103)]
+    assert detail.model_id == "pe_mark_by_rollout_fixture"
+    assert detail.rollout.seed == expected_seed
+    assert detail.rollout.terminal_metrics.private_equity_value_usd == expected_private_equity_value
+    assert (
+        detail.rollout.monthly_metrics["private_equity_value_usd"] == [25_000.0] + [expected_private_equity_value] * 2
+    )
 
 
 def test_metric_fan_decodes_each_rollout_once_per_batch(
@@ -340,7 +392,7 @@ def test_metric_fan_decodes_each_rollout_once_per_batch(
     monkeypatch.setattr(service, "monthly_metric_arrays_batch", counted)
 
     product.metric_fan(
-        MetricFanRequest(scenario=scenario_key, rollout_seeds=(7, 8, 9, 10), metric="cash_usd", percentiles=(50,))
+        MetricFanRequest(scenario=scenario_key, first_seed=7, rollout_count=4, metric="cash_usd", percentiles=(50,))
     )
 
     # All four seeds share one simulated batch, so the batch is reduced exactly once (not per rollout).
@@ -356,7 +408,7 @@ def test_metric_fan_does_not_materialize_rollout_events(
     monkeypatch.setattr(service, "rollout_events_from", fail_rollout_events)
 
     product.metric_fan(
-        MetricFanRequest(scenario=scenario_key, rollout_seeds=(7, 8), metric="cash_usd", percentiles=(50,))
+        MetricFanRequest(scenario=scenario_key, first_seed=7, rollout_count=2, metric="cash_usd", percentiles=(50,))
     )
 
 
@@ -370,24 +422,24 @@ def test_failed_rollout_metrics_freeze_at_zero_after_failure(product: service.Pr
     )
 
     fan = product.metric_fan(
-        MetricFanRequest(scenario=scenario, rollout_seeds=(7,), metric="net_worth_usd", percentiles=(50,))
+        MetricFanRequest(scenario=scenario, first_seed=7, rollout_count=1, metric="net_worth_usd", percentiles=(50,))
     )
 
     assert fan.failed_count == 1
+    assert not hasattr(fan, "rollout_summaries")
     assert fan.monthly_metric_fan["month_index"] == [0, 1, 2, 3]
     # Month 0 = cash 250k + holdings 835.5k + PHA 25k; failure zeros subsequent months.
     assert fan.monthly_metric_fan["value"] == [1_110_500.0, 0.0, 0.0, 0.0]
-    [summary] = fan.rollout_summaries
-    assert summary.failed is True
-    assert summary.terminal_metrics.failed_month_index == 0
-    assert summary.terminal_metrics.cash_usd == 0.0
-    assert summary.terminal_metrics.holding_value_usd == 0.0
-    assert summary.terminal_metrics.net_worth_usd == 0.0
-    assert summary.terminal_metrics.shortfall_usd == 300_000.0
+    assert fan.terminal_metric_percentiles == {"percentile": [50.0], "value": [0.0]}
 
     detail = product.rollout(RolloutRequest(scenario=scenario, seed=7))
 
     assert detail.rollout.failed is True
+    assert detail.rollout.terminal_metrics.failed_month_index == 0
+    assert detail.rollout.terminal_metrics.cash_usd == 0.0
+    assert detail.rollout.terminal_metrics.holding_value_usd == 0.0
+    assert detail.rollout.terminal_metrics.net_worth_usd == 0.0
+    assert detail.rollout.terminal_metrics.shortfall_usd == 300_000.0
     assert detail.rollout.monthly_metrics["cash_usd"] == [250_000.0, 0.0, 0.0, 0.0]
     assert detail.rollout.monthly_metrics["holding_value_usd"] == [835_500.0, 0.0, 0.0, 0.0]
     assert detail.rollout.monthly_metrics["net_worth_usd"] == [1_110_500.0, 0.0, 0.0, 0.0]
@@ -693,7 +745,7 @@ def test_outside_rent_zero_omits_rent_series_requirement(
 ) -> None:
     # scenario_key carries no rent.
     product.metric_fan(
-        MetricFanRequest(scenario=scenario_key, rollout_seeds=(7,), metric="cash_usd", percentiles=(50,))
+        MetricFanRequest(scenario=scenario_key, first_seed=7, rollout_count=1, metric="cash_usd", percentiles=(50,))
     )
 
     assert not any(isinstance(key, RentKey) for key in counting_model.sample_requests[0].required_level_series)
