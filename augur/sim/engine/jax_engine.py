@@ -454,18 +454,33 @@ def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
     dispatch for all months) whose only traced inputs are the seed-varying series and swept numeric
     config. `_build_program` builds + `jax.jit`-wraps the device program for this plan structure; JAX
     compiles it on first invocation."""
+    _validate_seed_dependent_inputs(plan)
+
+    baked, structure, p, meta = _build_program(plan)
+    external, pe, cfg = _program_inputs(plan)
+    ys, sale_disp = _program_impl(external, pe, cfg, baked, p, structure)
+    _scatter_ys_to_buffers(plan, buffers, meta, ys, sale_disp)
+
+
+def _validate_seed_dependent_inputs(plan: CompiledSimulation) -> None:
+    """Validate sampled numeric inputs whose bad values would otherwise enter compiled JAX code."""
+
     # PE-mark validation is seed-dependent (the marks are a sampled series), so it runs every call on
-    # the concrete plan — the in-scan path can't raise.
+    # the concrete plan. The in-scan path can't raise.
     pe_channels = plan.pe_channels
     if pe_channels.marks.size and (not np.isfinite(pe_channels.marks).all() or (pe_channels.marks < 0.0).any()):
         raise ValueError("private-equity mark series produced a negative or non-finite value")
     if pe_channels.forced_recovery_cashout_usd.size and (pe_channels.forced_recovery_cashout_usd < 0.0).any():
         raise ValueError("private-equity forced-recovery cashout series produced a negative value")
 
-    baked, structure, p, meta = _build_program(plan)
-    external, pe, cfg = _program_inputs(plan)
-    ys, sale_disp = _program_impl(external, pe, cfg, baked, p, structure)
-    _scatter_ys_to_buffers(plan, buffers, meta, ys, sale_disp)
+    harvest = plan.harvest_policies
+    for policy_idx in range(harvest.gain_profile_index.shape[0]):
+        if int(harvest.gain_profile_index[policy_idx]) < 0 or not harvest.lot_mask[policy_idx].any():
+            continue
+        series_index = int(harvest.series_index[policy_idx])
+        price = plan.external_values[series_index, :, : plan.horizon_months]
+        if not np.isfinite(price).all() or (price < 0.0).any():
+            raise ValueError(f"harvest policy {policy_idx} index series produced a negative or non-finite price")
 
 
 def _program_inputs(plan: CompiledSimulation) -> tuple[jnp.ndarray, dict[str, jnp.ndarray], _TracedConfig]:
@@ -800,12 +815,7 @@ def _build_program(plan: CompiledSimulation) -> tuple[_Operands, _Static, SlotPl
                     asset_code=asset_code,
                 )
                 if ordered.size:
-                    pools.append(
-                        _LiquidityPool(
-                            asset_idx=asset_idx,
-                            ordered_lots=tuple(int(lot) for lot in ordered),
-                        )
-                    )
+                    pools.append(_LiquidityPool(asset_idx=asset_idx, ordered_lots=tuple(int(lot) for lot in ordered)))
         folded_liquidity.append(
             _FoldedLiquidity(
                 policy_index=policy,
@@ -2172,6 +2182,7 @@ def _scatter_ys_to_buffers(
     folded_sale_events = meta.folded_sale_events
     cash0 = np.broadcast_to(plan.cash_initial_balance[:, None], (p.cash_count, r))
     lot0 = np.broadcast_to(plan.lot_initial_quantity[:, None], (p.lot_count, r))
+    ys, sale_disp = jax.device_get((ys, sale_disp))
     (
         cash_h,
         ordinary_h,
@@ -2230,7 +2241,7 @@ def _scatter_ys_to_buffers(
     pr_fired_h = rest[o7:o8]
     sale_trace_h = rest[o8:]
 
-    # Single device->host transfer of the stacked results into the (zeroed) NumPy buffers.
+    # Batched device->host transfer of the stacked results into the (zeroed) NumPy buffers.
     buffers.state.cash_state[0] = np.asarray(cash0)
     buffers.state.cash_state[1:] = np.asarray(cash_h)
     buffers.state.ordinary_state[1:] = np.asarray(ordinary_h)

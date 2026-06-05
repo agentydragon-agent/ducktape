@@ -140,6 +140,15 @@ def _harvested_short_term_in_month(result, *, calendar_month: int, rollout_index
     return before - after
 
 
+@pytest.mark.parametrize("bad_level", [-0.01, float("nan")], ids=["negative", "nonfinite"])
+def test_harvest_index_validation_rejects_negative_or_nonfinite_prices(bad_level: float) -> None:
+    scenario = _harvest_scenario(horizon_months=2, with_harvest=True)
+    external_series = _sp500_levels([[1.0, bad_level, 1.0]])
+
+    with pytest.raises(ValueError, match=r"harvest policy 0 index series produced a negative or non-finite price"):
+        simulate_with_external_series(scenario, rollout_count=1, external_series=external_series, locations={})
+
+
 def test_down_month_harvests_strictly_more_than_flat_month() -> None:
     # Two rollouts, same fresh sleeve. Rollout 0 has a 20% drawdown in calendar month 1; rollout 1
     # is flat. The loss harvested DURING month 1 must be strictly larger for the drawdown rollout
