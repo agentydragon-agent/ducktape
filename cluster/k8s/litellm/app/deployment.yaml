@@ -64,8 +64,18 @@ spec:
                 secretKeyRef:
                   name: litellm-zai-key
                   key: ZAI_API_KEY
-          # TODO: Re-enable langfuse-api-keys envFrom when Langfuse is unsuspended
-          # (suspended 2026-03-31, see cluster/docs/plan.md).
+            - name: LANGFUSE_OTEL_HOST
+              value: "http://langfuse-web.langfuse.svc.cluster.local:3000"
+            - name: LANGFUSE_PUBLIC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: langfuse-secrets
+                  key: LANGFUSE_INIT_PROJECT_PUBLIC_KEY
+            - name: LANGFUSE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: langfuse-secrets
+                  key: LANGFUSE_INIT_PROJECT_SECRET_KEY
           livenessProbe:
             httpGet:
               path: /health/liveliness

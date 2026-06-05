@@ -119,3 +119,5 @@ model_list:
       supports_function_calling: true
 litellm_settings:
   drop_params: true
+  callbacks:
+    - langfuse_otel
