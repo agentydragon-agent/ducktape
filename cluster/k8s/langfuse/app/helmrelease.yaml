@@ -52,24 +52,26 @@ spec:
         resources:
           requests:
             cpu: 100m
-            memory: 512Mi
+            memory: 1Gi
           limits:
             cpu: "1"
-            memory: 1Gi
+            memory: 2Gi
 
       worker:
         resources:
           requests:
             cpu: 100m
-            memory: 512Mi
+            memory: 1Gi
           limits:
             cpu: "1"
-            memory: 1Gi
+            memory: 2Gi
 
       # Headless initialization — bootstrap org/project/user on first startup.
       # API keys live in langfuse-secrets so LiteLLM can consume the same keys
       # later without a manual copy step.
       additionalEnv:
+        - name: NODE_OPTIONS
+          value: "--max-old-space-size=1536"
         - name: LANGFUSE_INIT_ORG_ID
           value: "langfuse-default-org"
         - name: LANGFUSE_INIT_ORG_NAME
