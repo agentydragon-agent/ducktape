@@ -85,6 +85,18 @@ py_library(
         ":manifold",
         ":platform",
         ":polymarket",
+        ":redis_cache",
+    ],
+)
+
+py_library(
+    name = "redis_cache",
+    srcs = ["redis_cache.py"],
+    deps = [
+        ":platform",
+        "@pypi//py_key_value_aio",
+        "@pypi//pydantic",
+        "@pypi//valkey_glide",
     ],
 )
 
@@ -230,6 +242,18 @@ py_test(
         ":testing",
         "//:conftest",
         "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_redis_cache",
+    srcs = ["test_redis_cache.py"],
+    deps = [
+        ":platform",
+        ":redis_cache",
+        "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

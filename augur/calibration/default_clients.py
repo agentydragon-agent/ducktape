@@ -11,6 +11,7 @@ from augur.calibration.kalshi import KalshiClient
 from augur.calibration.manifold import ManifoldClient
 from augur.calibration.platform import Platform, PriceClient
 from augur.calibration.polymarket import PolymarketClient
+from augur.calibration.redis_cache import market_cache_config_from_env, wrap_price_clients_with_redis_cache
 
 # These clients are constructed once per server process and reused for every calibration run, so
 # the TTL bounds how stale a surfaced price/title can be — not how often a single request re-fetches.
@@ -21,8 +22,17 @@ _DEFAULT_CACHE_TTL_SECONDS = 12 * 60 * 60
 
 
 def build_default_price_clients() -> dict[Platform, PriceClient]:
+    cache_config = market_cache_config_from_env()
+    platform_cache_ttl_seconds = 0 if cache_config is not None else _DEFAULT_CACHE_TTL_SECONDS
+    clients = _build_upstream_price_clients(cache_ttl_seconds=platform_cache_ttl_seconds)
+    if cache_config is None:
+        return clients
+    return wrap_price_clients_with_redis_cache(clients, cache_config)
+
+
+def _build_upstream_price_clients(*, cache_ttl_seconds: float) -> dict[Platform, PriceClient]:
     return {
-        Platform.MANIFOLD: ManifoldClient(cache_ttl_seconds=_DEFAULT_CACHE_TTL_SECONDS),
-        Platform.POLYMARKET: PolymarketClient(cache_ttl_seconds=_DEFAULT_CACHE_TTL_SECONDS),
-        Platform.KALSHI: KalshiClient(cache_ttl_seconds=_DEFAULT_CACHE_TTL_SECONDS),
+        Platform.MANIFOLD: ManifoldClient(cache_ttl_seconds=cache_ttl_seconds),
+        Platform.POLYMARKET: PolymarketClient(cache_ttl_seconds=cache_ttl_seconds),
+        Platform.KALSHI: KalshiClient(cache_ttl_seconds=cache_ttl_seconds),
     }

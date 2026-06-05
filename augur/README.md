@@ -74,6 +74,15 @@ contents or defeat digest-based release deduping.
 Downstream deployments should serve the React bundle and private property
 assets separately, e.g. from an nginx sidecar.
 
+Prediction-market calibration can use a shared Redis/Valkey read-through cache
+by setting `AUGUR_MARKET_CACHE_URL` to a `redis://` or `valkey://` URL. The
+generic `AUGUR_CACHE_URL` is also accepted for deployments that share one cache
+for multiple Augur data classes. Market snapshots are fresh for
+`AUGUR_MARKET_CACHE_TTL_SECONDS` seconds (default 12h) and retained for
+`AUGUR_MARKET_CACHE_RETENTION_SECONDS` seconds (default 48h) so stale snapshots
+can be served if an upstream market API is temporarily unavailable. If no cache
+URL is configured, Augur keeps the previous process-local TTL cache behavior.
+
 Property media stays outside the generic frontend bundle. Deployments publish
 images through their own static host or CDN, then declare stable
 `property_source.property_assets` entries in config. Each entry binds a
