@@ -52,6 +52,21 @@ from augur.sim.buffers import SimulationBuffers
 from augur.sim.codec.plan import CompiledSimulation
 from augur.sim.compiler.helpers import AMOUNT_FIXED, NO_CODE
 from augur.sim.compiler.plan import SlotPlan
+from augur.sim.engine.jax_scatter import scatter_ys_to_buffers
+from augur.sim.engine.jax_types import (
+    _CapitalGainTarget,
+    _FoldedHarvest,
+    _FoldedLifecycleEvent,
+    _FoldedLiquidity,
+    _FoldedPE,
+    _FoldedPurchase,
+    _FoldedSale,
+    _LinkTaxStatic,
+    _LiquidityPool,
+    _ScanMeta,
+    _Static,
+)
+from augur.sim.engine.jax_validation import validate_seed_dependent_inputs
 from augur.sim.enums import (
     CapitalGainClassification,
     LifecycleKind,
@@ -130,84 +145,6 @@ class LiabilityState:
     interest_ytd: jnp.ndarray
     principal_ytd: jnp.ndarray
     rental_interest_ytd: jnp.ndarray
-
-
-@dataclass(frozen=True)
-class _FoldedSale:
-    """One real scheduled sale, with its static FIFO data resolved host-side for the scan fold.
-
-    `ordered_lots` is the FIFO lot order for the sale's (agent, account, asset) pool (a static index
-    tuple — `tuple` so the enclosing `_Static` is hashable; convert with `np.asarray` at the use
-    site); `buffer_index` is the sale's column in the `lot_dispositions.scheduled` buffers; `month`
-    is the (static) month it fires, compared against the traced scan index inside the step."""
-
-    buffer_index: int
-    month: int
-    ordered_lots: tuple[int, ...]
-    quantity: float
-    proceeds_slot: int
-    agent_code: int
-
-
-@dataclass(frozen=True)
-class _FoldedPurchase:
-    """One real cash property purchase, static data resolved host-side for the scan fold. `month` is
-    the (static) purchase month, compared against the traced scan index; `buffer_index` is the
-    property's column in the property-state and property-event buffers.
-
-    The pure-value purchase/mortgage amounts (basis, ownership, equity, mortgage principal/payment) are
-    NOT carried here: the step reads them as traced inputs from the (hybrid) plan by `buffer_index` /
-    `mortgage_slot`, so a sweep over those values reuses the compiled program. `stake_contribution`
-    stays (it gates a Python `if > 0`, a baked feature)."""
-
-    buffer_index: int
-    month: int
-    stake_contribution: float
-    buyer_slot: int
-    seller_slot: int
-    mortgage_slot: int  # NO_CODE for cash purchases; else the liability slot to originate
-
-
-@dataclass(frozen=True)
-class _LiquidityPool:
-    """One (asset, source-account) FIFO pool a liquidity policy can sell from."""
-
-    asset_idx: int  # column in the policy's asset list (the disposition buffer's asset axis)
-    # NOTE: the asset price-series row index is NOT here — it's a traced operand (`_Operands.liq_pool_series`),
-    # so a non-deterministic series order can't change this static structure and trigger a recompile.
-    ordered_lots: tuple[int, ...]  # `tuple` (not np array) so the enclosing `_Static` is hashable
-
-
-@dataclass(frozen=True)
-class _FoldedLiquidity:
-    """One liquidity policy, static data resolved host-side. `pools` enumerates its (asset, account)
-    FIFO pools in eager order; `trigger`/`sale` are the amount-spec tuples for the buffer rule."""
-
-    policy_index: int
-    agent: int
-    cash_slot: int
-    # amount-spec tuples: (kind, fixed, base, base_month, period) — series row index is a traced operand.
-    trigger: tuple[int, float, float, int, int]
-    sale: tuple[int, float, float, int, int]
-    pools: tuple[_LiquidityPool, ...]
-
-
-@dataclass(frozen=True)
-class _ScanMeta:
-    """Structural (rollout-value-independent) data the post-scan host code needs to scatter the
-    stacked `ys` back into the NumPy buffers. Carried alongside the compiled program in the cache so
-    a cache hit needs no recompute — these are pure functions of the plan's *structure*."""
-
-    folded_sales: list
-    folded_purchases: list
-    folded_lifecycle: list
-    folded_pr: list
-    folded_sale_events: list
-    folded_liquidity: list
-    folded_pe: list
-    link_count: int
-    liability_count: int
-    horizon: int
 
 
 class _TracedConfig(NamedTuple):
@@ -310,177 +247,17 @@ class _Operands(NamedTuple):
     liq_pool_series: list[jnp.ndarray]  # per-policy (n_pools_i,) arrays (ragged)
 
 
-@dataclass(frozen=True)
-class _FoldedHarvest:
-    """One reduced-form TLH harvest policy, static data resolved host-side (hashable for `_Static`)."""
-
-    policy_idx: int
-    gain_profile: int
-    lot_indices: tuple[int, ...]
-    # series row index is a traced operand (`_Operands.harvest_series`), not a static field.
-    peak_annual_yield: float
-    floor_annual_yield: float
-    maturity_decay_exponent: float
-    drawdown_sensitivity: float
-    short_term_fraction: float
-
-
-@dataclass(frozen=True)
-class _FoldedPE:
-    """One private-equity issuer's tender static data, plus its policy's per-issuer scalars (hashable)."""
-
-    issuer_idx: int
-    policy_idx: int
-    ordered: tuple[int, ...]
-    proceeds_cash_slot: int
-    owner_agent: int
-    floor_kind: int
-    floor_fixed: float
-    floor_base: float
-    # floor series row index is a traced operand (`_Operands.pe_floor_series`), not a static field.
-    floor_base_month: int
-    floor_period: int
-    owner_non_pe_lot_indices: tuple[int, ...]  # for `_compute_liquid_net_worth`
-
-
-@dataclass(frozen=True)
-class _FoldedLifecycleEvent:
-    """One lifecycle event with the per-event scalars the step reads as Python (hashable)."""
-
-    event_index: int
-    month: int
-    kind: int
-    property_slot: int
-    rented_fraction: float  # for FRACTION events
-    amount: float  # for CAPITAL_IMPROVEMENT (cash) / SALE (closing-cost pct) events
-    owner_cash_slot: int  # `props.buyer_slot[property_slot]`
-    # SALE static data (resolved host-side; defaults for non-SALE events). The home-value series row
-    # index is a traced operand (`_Operands.lifecycle_sale_series`), not a static field.
-    purchase_price: float
-    building_basis_initial: float
-    owner_profile: int
-    gain_profile: int
-    exclusion_cap: float
-    mortgage_liabilities: tuple[int, ...]  # liability slots whose property_slot == this property
-
-
-@dataclass(frozen=True)
-class _CapitalGainTarget:
-    """One (agent_code) -> matching capital-gain profile rows, resolved host-side (hashable)."""
-
-    agent_code: int
-    profiles: tuple[int, ...]
-
-
-@dataclass(frozen=True)
-class _LinkTaxStatic:
-    """One tax link's per-link Python scalars (read at trace time by `_compute_tax_for_link`)."""
-
-    link: int
-    profile: int
-    gain_profile: int
-    section_1250_rate: float
-    mid_active: bool
-    ordinary_count: int
-    has_ltcg: int
-    ltcg_count: int
-    salt_active: bool
-
-
-@dataclass(frozen=True)
-class _Static:
-    """Every natively-hashable Python value the scan bodies read at TRACE TIME (counts, slot indices,
-    feature flags, and the folded event lists as tuples-of-frozen-dataclasses with int/float fields).
-    A frozen dataclass of `int`/`bool`/`float`/`tuple` (and tuples of small frozen dataclasses) is
-    hashable by Python's default frozen-dataclass `__hash__` — NO custom `__hash__`/`__eq__`. Passed
-    as a `static_argnames` arg to `_program_impl`, so identical structure is one cache key (a cache
-    hit) and a structural change is a fresh key (one extra compile)."""
-
-    rollout_count: int
-    horizon: int
-    cash_count: int
-    lot_count: int
-    property_count: int
-    liability_count: int
-    tax_profile_count: int
-    capital_gain_agent_count: int
-    tax_liability_count: int
-    harvest_policy_count: int
-    scheduled_sale_count: int
-    link_count: int
-    profile_count: int
-    taxliab_count: int
-    n_sales: int
-    sale_max_pool: int
-    lot_axis: int
-    liq_policy_count: int
-    liq_max_assets: int
-    pe_issuer_count: int
-    n_pe_kinds: int
-    # Folded event tuples (iterated in the step body / december pass).
-    folded_lifecycle: tuple[_FoldedLifecycleEvent, ...]
-    folded_pr: tuple[tuple[int, int], ...]
-    folded_liquidity: tuple[_FoldedLiquidity, ...]
-    folded_pe: tuple[_FoldedPE, ...]
-    folded_harvest: tuple[_FoldedHarvest, ...]
-    # Small index/selection arrays converted to (tuples of) tuples so they are hashable; converted
-    # back with `np.asarray(...)` at the use site inside the jitted region.
-    salt_link_active: tuple[bool, ...]
-    sale_pslot: tuple[int, ...]
-    sale_bufidx: tuple[int, ...]
-    sale_olots: tuple[tuple[int, ...], ...]
-    # scheduled-sale price-series row indices are a traced operand (`_Operands.sale_price_series`).
-    pur_buf: tuple[int, ...]
-    pur_month: tuple[int, ...]
-    pur_stake: tuple[float, ...]
-    pur_buyer: tuple[int, ...]
-    pur_seller: tuple[int, ...]
-    pur_mort_rows: tuple[int, ...]
-    pur_mort_idx: tuple[int, ...]
-    folded_purchases_present: bool
-    folded_sales_present: bool
-    # Capital-gain accrual targets (agent_code -> matching profile rows) for the de-`plan`-ed
-    # `_record_capital_gains` (keyed by agent code, looked up at the call site).
-    cg_targets: tuple[_CapitalGainTarget, ...]
-    # Per-link tax static scalars for `_compute_tax_for_link`.
-    link_tax_static: tuple[_LinkTaxStatic, ...]
-    # Per-link tax profile / gain profile for the december breakdown column reads.
-    link_profile: tuple[int, ...]
-    profile_gain_index: tuple[int, ...]
-
-
 def run_jax_scan(plan: CompiledSimulation, buffers: SimulationBuffers) -> None:
     """Single-program `lax.scan` engine: the whole month loop compiles into one XLA program (one
     dispatch for all months) whose only traced inputs are the seed-varying series and swept numeric
     config. `_build_program` builds + `jax.jit`-wraps the device program for this plan structure; JAX
     compiles it on first invocation."""
-    _validate_seed_dependent_inputs(plan)
+    validate_seed_dependent_inputs(plan)
 
     baked, structure, p, meta = _build_program(plan)
     external, pe, cfg = _program_inputs(plan)
     ys, sale_disp = _program_impl(external, pe, cfg, baked, p, structure)
-    _scatter_ys_to_buffers(plan, buffers, meta, ys, sale_disp)
-
-
-def _validate_seed_dependent_inputs(plan: CompiledSimulation) -> None:
-    """Validate sampled numeric inputs whose bad values would otherwise enter compiled JAX code."""
-
-    # PE-mark validation is seed-dependent (the marks are a sampled series), so it runs every call on
-    # the concrete plan. The in-scan path can't raise.
-    pe_channels = plan.pe_channels
-    if pe_channels.marks.size and (not np.isfinite(pe_channels.marks).all() or (pe_channels.marks < 0.0).any()):
-        raise ValueError("private-equity mark series produced a negative or non-finite value")
-    if pe_channels.forced_recovery_cashout_usd.size and (pe_channels.forced_recovery_cashout_usd < 0.0).any():
-        raise ValueError("private-equity forced-recovery cashout series produced a negative value")
-
-    harvest = plan.harvest_policies
-    for policy_idx in range(harvest.gain_profile_index.shape[0]):
-        if int(harvest.gain_profile_index[policy_idx]) < 0 or not harvest.lot_mask[policy_idx].any():
-            continue
-        series_index = int(harvest.series_index[policy_idx])
-        price = plan.external_values[series_index, :, : plan.horizon_months]
-        if not np.isfinite(price).all() or (price < 0.0).any():
-            raise ValueError(f"harvest policy {policy_idx} index series produced a negative or non-finite price")
+    scatter_ys_to_buffers(plan, buffers, meta, ys, sale_disp)
 
 
 def _program_inputs(plan: CompiledSimulation) -> tuple[jnp.ndarray, dict[str, jnp.ndarray], _TracedConfig]:
@@ -2161,238 +1938,6 @@ def _program_impl(
         final_carry.sale_disp_proceeds,
         final_carry.sale_oversell,
     )
-
-
-def _scatter_ys_to_buffers(
-    plan: CompiledSimulation, buffers: SimulationBuffers, meta: _ScanMeta, ys: tuple, sale_disp: tuple
-) -> None:
-    """Scatter the stacked per-month `ys` from the compiled program back into the NumPy buffers (one
-    device->host transfer). Pure host code; uses `meta` for the structural scatter targets. `sale_disp`
-    is the horizon-collapsed scheduled-sale disposition `(units, basis, proceeds, oversell)` carried out
-    of the scan (each `(scheduled_sale, lot, R)`)."""
-    p = plan.slot_plan
-    r = p.rollout_count
-    horizon = meta.horizon
-    link_count = meta.link_count
-    folded_purchases = meta.folded_purchases
-    folded_liquidity = meta.folded_liquidity
-    folded_pe = meta.folded_pe
-    folded_lifecycle = meta.folded_lifecycle
-    folded_pr = meta.folded_pr
-    folded_sale_events = meta.folded_sale_events
-    cash0 = np.broadcast_to(plan.cash_initial_balance[:, None], (p.cash_count, r))
-    lot0 = np.broadcast_to(plan.lot_initial_quantity[:, None], (p.lot_count, r))
-    ys, sale_disp = jax.device_get((ys, sale_disp))
-    (
-        cash_h,
-        ordinary_h,
-        lot_h,
-        cg_active_h,
-        cg_ytd_h,
-        prop_active_h,
-        prop_basis_h,
-        prop_ownership_h,
-        prop_contribution_h,
-        prop_equity_h,
-        prop_cum_dep_h,
-        prop_occupied_h,
-        liab_active_h,
-        liab_principal_h,
-        liab_monthly_h,
-        liab_interest_ytd_h,
-        liab_principal_ytd_h,
-        failed_h,
-        failed_month_h,
-        t_active,
-        t_amount,
-        ob_active,
-        ob_due,
-        ob_paid,
-        ob_short,
-        ob_fail,
-        *rest,
-    ) = ys
-    # Five variable-length tail groups, sliced by compile-time presence: sale slabs (5 if any sales),
-    # property-event slabs (2 if any purchases), mortgage-event slabs (5 if any liabilities), tax slabs
-    # (18 = 13 breakdowns + 2 tax-liability snapshots + 3 settlement events, if any tax links), and
-    # liquidity slabs (5 if any liquidity policies).
-    n_sale = 0  # scheduled-sale dispositions are carried out-of-band (`sale_disp`), not in `ys`
-    n_purchase = 2 if folded_purchases else 0
-    n_mortgage = 5 if p.liability_count > 0 else 0
-    n_tax = 18 if link_count > 0 else 0
-    n_liquidity = 5 if folded_liquidity else 0
-    n_pe = 13 if folded_pe else 0
-    n_le_fired = 1 if folded_lifecycle else 0
-    n_pr_fired = 1 if folded_pr else 0
-    o1 = n_sale
-    o2 = o1 + n_purchase
-    o3 = o2 + n_mortgage
-    o4 = o3 + n_tax
-    o5 = o4 + n_liquidity
-    o6 = o5 + n_pe
-    o7 = o6 + n_le_fired
-    o8 = o7 + n_pr_fired
-    purchase_h = rest[o1:o2]  # o1 == 0 (scheduled-sale dispositions are carried, not in `ys`)
-    mortgage_h = rest[o2:o3]
-    tax_h = rest[o3:o4]
-    liquidity_h = rest[o4:o5]
-    pe_h = rest[o5:o6]
-    le_fired_h = rest[o6:o7]
-    pr_fired_h = rest[o7:o8]
-    sale_trace_h = rest[o8:]
-
-    # Batched device->host transfer of the stacked results into the (zeroed) NumPy buffers.
-    buffers.state.cash_state[0] = np.asarray(cash0)
-    buffers.state.cash_state[1:] = np.asarray(cash_h)
-    buffers.state.ordinary_state[1:] = np.asarray(ordinary_h)
-    buffers.state.lot_state[0] = np.asarray(lot0)
-    buffers.state.lot_state[1:] = np.asarray(lot_h)
-    buffers.state.capital_gain_active_state[1:] = np.asarray(cg_active_h)
-    buffers.state.capital_gain_state[1:] = np.asarray(cg_ytd_h)
-    buffers.state.property_active_state[1:] = np.asarray(prop_active_h)
-    buffers.state.property_basis_state[1:] = np.asarray(prop_basis_h)
-    buffers.state.property_ownership_state[1:] = np.asarray(prop_ownership_h)
-    buffers.state.property_contribution_state[1:] = np.asarray(prop_contribution_h)
-    buffers.state.property_equity_state[1:] = np.asarray(prop_equity_h)
-    buffers.state.property_cumulative_depreciation_state[1:] = np.asarray(prop_cum_dep_h)
-    buffers.state.property_owner_occupied_months_state[1:] = np.asarray(prop_occupied_h)
-    buffers.state.liability_active_state[1:] = np.asarray(liab_active_h)
-    buffers.state.liability_principal_state[1:] = np.asarray(liab_principal_h)
-    buffers.state.liability_monthly_payment_state[1:] = np.asarray(liab_monthly_h)
-    buffers.state.liability_interest_ytd_state[1:] = np.asarray(liab_interest_ytd_h)
-    buffers.state.liability_principal_ytd_state[1:] = np.asarray(liab_principal_ytd_h)
-    buffers.state.rollout_failed_state[1:] = np.asarray(failed_h)
-    buffers.state.rollout_failed_month_state[1:] = np.asarray(failed_month_h)
-    buffers.transfers.active[:] = np.asarray(t_active)
-    buffers.transfers.amount[:] = np.asarray(t_amount)
-    buffers.obligations.active[:] = np.asarray(ob_active)
-    buffers.obligations.due[:] = np.asarray(ob_due)
-    buffers.obligations.paid[:] = np.asarray(ob_paid)
-    buffers.obligations.shortfall[:] = np.asarray(ob_short)
-    buffers.obligations.failure_active[:] = np.asarray(ob_fail)
-    # Scheduled-sale dispositions: the carry holds `(scheduled_sale, lot, R)` already indexed by each
-    # sale's slot (the firing month is static — `plan.sales.month` — so the decoder re-derives it).
-    disp_units_h, disp_basis_h, disp_proceeds_h, oversell_h = sale_disp
-    if bool(np.asarray(oversell_h)):  # match the eager engine's hard error on the first oversell
-        raise ValueError("scheduled asset sale exceeds available lots")
-    disp = buffers.lot_dispositions.scheduled
-    disp.units[:] = np.asarray(disp_units_h)
-    disp.basis[:] = np.asarray(disp_basis_h)
-    disp.proceeds[:] = np.asarray(disp_proceeds_h)
-    disp.active[:] = disp.units > 0.0
-    if folded_purchases:
-        # Stacks are `(horizon, num_real_purchases, R)`; scatter each to its property column.
-        purchase_active_np, transfer_active_np = (np.asarray(a) for a in purchase_h)
-        for i, fp in enumerate(folded_purchases):
-            buffers.properties.purchase_active[:, fp.buffer_index] = purchase_active_np[:, i]
-            buffers.properties.transfer_active[:, fp.buffer_index] = transfer_active_np[:, i]
-    if mortgage_h:
-        # Per-liability mortgage event stacks `(horizon, liability_count, R)`.
-        orig_h, pay_active_h, pay_interest_h, pay_principal_h, pay_total_h = (np.asarray(a) for a in mortgage_h)
-        props_buf = buffers.properties
-        props_buf.mortgage_origination_active[:] = orig_h
-        props_buf.mortgage_payment_active[:] = pay_active_h
-        props_buf.mortgage_payment_interest[:] = pay_interest_h
-        props_buf.mortgage_payment_principal[:] = pay_principal_h
-        props_buf.mortgage_payment_total[:] = pay_total_h
-    if tax_h:
-        # 13 per-(month, link) breakdown stacks + tax-liability snapshots + 3 settlement event stacks.
-        *breakdown_h, taxliab_amount_h, taxliab_active_h, settle_active_h, settle_amount_h, settle_year_end_h = (
-            np.asarray(a) for a in tax_h
-        )
-        taxes = buffers.taxes
-        taxes.accrual_active[:] = breakdown_h[0] > 0.0
-        for buf, slab in zip(
-            (
-                taxes.accrual_amount,
-                taxes.breakdown_ordinary,
-                taxes.breakdown_ltcg,
-                taxes.breakdown_stcg,
-                taxes.breakdown_standard_deduction,
-                taxes.breakdown_mortgage_interest_deduction,
-                taxes.breakdown_salt_deduction,
-                taxes.breakdown_itemized_deduction,
-                taxes.breakdown_ordinary_taxable,
-                taxes.breakdown_capital_taxable,
-                taxes.breakdown_ordinary_tax,
-                taxes.breakdown_capital_tax,
-            ),
-            breakdown_h[1:],
-            strict=True,
-        ):
-            buf[:] = slab
-        n_prof = settle_active_h.shape[1]
-        taxes.settlement_active[:, :n_prof] = settle_active_h
-        taxes.settlement_amount[:, :n_prof] = settle_amount_h
-        taxes.settlement_year_end_month[:, :n_prof] = settle_year_end_h
-        # Reconstruct the sparse tax-liability change log by diffing per-month snapshots: a year-end
-        # accrual (0 -> tax) and a true-up settlement (tax -> 0) each change a slot's balance; record
-        # the post-change balance at month m+1 for every slot that changed that month.
-        prev_amount = np.zeros_like(taxliab_amount_h[0])
-        prev_active = np.zeros_like(taxliab_active_h[0])
-        for m in range(horizon):
-            changed = np.flatnonzero(
-                (taxliab_amount_h[m] != prev_amount).any(axis=1) | (taxliab_active_h[m] != prev_active).any(axis=1)
-            )
-            if changed.size:
-                buffers.tax_liability_changes.record(
-                    snapshot_month=m + 1, slots=changed, amount=taxliab_amount_h[m], active=taxliab_active_h[m]
-                )
-            prev_amount, prev_active = taxliab_amount_h[m], taxliab_active_h[m]
-    if liquidity_h:
-        # Per-(month, policy, asset) liquidity disposition stacks + the per-obligation attempt-policy.
-        liq_active_h, liq_units_h, liq_basis_h, liq_proceeds_h, attempt_h = (np.asarray(a) for a in liquidity_h)
-        liq = buffers.lot_dispositions.liquidity
-        liq.active[:] = liq_active_h
-        liq.units[:] = liq_units_h
-        liq.basis[:] = liq_basis_h
-        liq.proceeds[:] = liq_proceeds_h
-        buffers.obligations.attempt_policy[:] = attempt_h
-    if pe_h:
-        # 4 per-(month, issuer, kind) disposition stacks + 9 per-(month, issuer) opportunity stacks.
-        pe_active_h, pe_units_h, pe_basis_h, pe_proceeds_h = (np.asarray(a) for a in pe_h[:4])
-        pe = buffers.lot_dispositions.pe
-        pe.active[:] = pe_active_h
-        pe.units[:] = pe_units_h
-        pe.basis[:] = pe_basis_h
-        pe.proceeds[:] = pe_proceeds_h
-        opp = buffers.private_equity_opportunities
-        (opp_active, opp_outcome, opp_floor, opp_lnw, opp_short, opp_units, opp_sellable, opp_target, opp_proceeds) = (
-            np.asarray(a) for a in pe_h[4:]
-        )
-        opp.active[:] = opp_active.astype(bool)
-        opp.outcome[:] = opp_outcome
-        opp.floor[:] = opp_floor
-        opp.liquid_net_worth[:] = opp_lnw
-        opp.shortfall[:] = opp_short
-        opp.units_held[:] = opp_units
-        opp.sellable_units[:] = opp_sellable
-        opp.target_units[:] = opp_target
-        opp.proceeds[:] = opp_proceeds
-    if le_fired_h:
-        # `le_fired_h[0]` is `(horizon, n_lifecycle_events, R)`; each event fires once at its month.
-        fired_np = np.asarray(le_fired_h[0])
-        for pos, ev in enumerate(folded_lifecycle):
-            buffers.lifecycle.fired[ev.event_index] = fired_np[ev.month, pos]
-    if pr_fired_h:
-        pr_fired_np = np.asarray(pr_fired_h[0])
-        for pos, (ei, ev_month) in enumerate(folded_pr):
-            buffers.primary_residence.fired[ei] = pr_fired_np[ev_month, pos]
-    if sale_trace_h:
-        # 7 stacks `(horizon, n_sale_events, R)` in the lifecycle.sale_* field order.
-        trace_np = [np.asarray(a) for a in sale_trace_h]
-        sale_fields = (
-            buffers.lifecycle.sale_gross_proceeds,
-            buffers.lifecycle.sale_mortgage_payoff,
-            buffers.lifecycle.sale_net_cash,
-            buffers.lifecycle.sale_realized_gain,
-            buffers.lifecycle.sale_recapture,
-            buffers.lifecycle.sale_section_121_exclusion,
-            buffers.lifecycle.sale_long_term_gain,
-        )
-        for pos, (i, ev_month) in enumerate(folded_sale_events):
-            for field, stack in zip(sale_fields, trace_np, strict=True):
-                field[i] = stack[ev_month, pos]
 
 
 def _amount_values(

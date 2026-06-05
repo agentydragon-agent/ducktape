@@ -283,6 +283,9 @@ py_library(
     srcs = [
         "engine/__init__.py",
         "engine/jax_engine.py",
+        "engine/jax_scatter.py",
+        "engine/jax_types.py",
+        "engine/jax_validation.py",
         "engine/phases.py",
     ],
     deps = [
@@ -387,6 +390,26 @@ py_test(
         ":tlh_harvest",
         "//augur/model:series",
         "//augur/product:asset_key",
+        "@pypi//polars",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "validation_parity_test",
+    size = "small",
+    srcs = ["validation_parity_test.py"],
+    deps = [
+        ":conftest",
+        ":external_series",
+        ":scenario",
+        ":simulate",
+        ":tlh_harvest",
+        "//augur/model:private_equity_bundle",
+        "//augur/model:series",
+        "//augur/product:asset_key",
+        "@pypi//numpy",
         "@pypi//polars",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
