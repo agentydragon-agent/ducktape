@@ -18,8 +18,6 @@ PowerDNS and Authentik run on CloudNativePG `local-path`.
 - **InvenTree**: `inventree-{namespace,secrets,token-provisioner}`,
   `authentik-blueprint-inventree-secret` — capacity pressure.
 - **Firecrawl**: `firecrawl-{namespace,db}`
-- **Langfuse**: `langfuse-{secrets,db}` — suspended 2026-03-31, degraded Longhorn
-  volumes on wyrm2. Namespace kept active for `claude-rbac` RoleBinding dependency.
 - **ActivityWatch**: `activitywatch` — suspended 2026-04-06.
 - **ARC**: `arc-namespace` — suspended 2026-04-11, resources deleted. Secrets
   (`arc-secrets`) are deployed. GitHub runner pod/statefulset removed.
@@ -387,8 +385,6 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       See <lessons_learned/2026_04_07_powerdns_operator_stuck_failed_rrsets.md>.
 - [ ] Tandoor: verify deployment works end-to-end (DB migration, Authentik
       proxy auth, recipe import)
-- [ ] Move more PVCs to `local-path` (Proxmox CSI 29 LUN limit). Candidates:
-      `langfuse/langfuse-s3`.
 - [ ] Fix Goldilocks VPA over-requesting memory on HIL pods. VPA `updateMode: Auto`
       mutates pod requests on creation but old pods retain stale high values until
       restarted. This caused grocy-sf to fail scheduling (97% memory requested on HIL
@@ -646,7 +642,7 @@ in `openclaw-sandbox` and `claude-sandbox`.
 
 ### CNPG Backup Strategy
 
-Single-instance Proxmox CNPG clusters (atuin, langfuse, inventree, harbor, props) rely
+Single-instance Proxmox CNPG clusters (inventree, harbor, props, matrix, tandoor) rely
 on Proxmox ZFS for local reliability (checksums, snapshots). Off-site disaster recovery
 needed:
 

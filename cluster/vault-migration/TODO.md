@@ -20,4 +20,3 @@ Vault decommissioned. KV store emptied. Deployment deleted.
 
 - **Gitea**: add SOPS secret for admin password (`kv/gitea/admin` value is gone — generate fresh)
 - **InvenTree**: add SOPS secrets for admin + db passwords (same)
-- **Langfuse**: add SOPS secrets for all credentials (same)

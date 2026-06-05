@@ -223,6 +223,7 @@ resources:
   - langfuse/namespace/flux-kustomization.yaml
   - langfuse/agent-rbac/flux-kustomization.yaml
   - langfuse/secrets/flux-kustomization.yaml
+  - langfuse/cache/flux-kustomization.yaml
   - langfuse/db/flux-kustomization.yaml
   - langfuse/app/flux-kustomization.yaml
 
@@ -325,6 +326,7 @@ resources:
   - seaweedfs/vm-images-s3/flux-kustomization.yaml
   - seaweedfs/drivefs-artifacts-bucket/flux-kustomization.yaml
   - seaweedfs/forgejo-bucket/flux-kustomization.yaml
+  - seaweedfs/langfuse-bucket/flux-kustomization.yaml
   - seaweedfs/drivefs-artifacts-s3/flux-kustomization.yaml
   - seaweedfs/monitoring/flux-kustomization.yaml
   - seaweedfs-csi/flux-kustomization.yaml
