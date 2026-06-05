@@ -91,7 +91,7 @@ repos:
     hooks:
       - id: statix
         name: statix
-        entry: statix check
+        entry: statix check -c devinfra/statix.toml
         language: system
         types: [nix]
         pass_filenames: false
