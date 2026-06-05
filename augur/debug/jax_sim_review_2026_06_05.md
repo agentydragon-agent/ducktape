@@ -3,6 +3,10 @@
 Scope: deep review of the `augur/sim` JAX backend, especially backend parity,
 validation boundaries, numeric/static structure, and host/device handoff.
 
+Update status: commits `bdac2d6b0` and `17a702618` fixed the concrete
+validation-parity and host-boundary issues called out below. The remaining open
+items are the numeric/static cache boundary and the explicit precision contract.
+
 ## Findings
 
 ### TLH harvest validation parity
@@ -12,14 +16,24 @@ raises when a harvest policy reads a negative or non-finite price. The JAX path
 previously validated private-equity sampled channels before JIT, but did not
 validate TLH harvest series before entering the compiled scan.
 
-Status: fixed in the current working tree by adding host-side TLH validation in
-`run_jax_scan` before `_program_impl` runs. Added a backend-parametrized
-regression test in `tlh_harvest_engine_test.py` covering both negative and
-non-finite harvest index prices.
+Status: fixed in `bdac2d6b0` by adding host-side TLH validation before
+`_program_impl` runs. `tlh_harvest_engine_test.py` now covers negative and
+non-finite harvest index prices under both backends.
 
-Rule going forward: any nontrivial backend behavior difference, especially
-validation timing or error behavior, should be pinned by a test that runs under
-both backends through the existing autouse `backend` fixture.
+Status: expanded in `17a702618` with `validation_parity_test.py`, a focused
+backend-parametrized target for sampled-input and edge-behavior parity:
+
+- private-equity negative / non-finite mark validation;
+- private-equity negative forced-recovery cashout validation;
+- PE and TLH terminal snapshots are not treated as executable sim months;
+- scheduled-sale oversell raises in both backends;
+- invalid liquidity asset prices produce no sale and leave the obligation
+  unfunded in both backends.
+
+Rule going forward: any nontrivial backend behavior difference should be pinned
+by a test that runs under both backends through the existing autouse `backend`
+fixture. This includes validation timing, error messages, and intentionally
+non-raising edge behavior.
 
 ### Numeric/static JAX cache boundary
 
@@ -54,8 +68,28 @@ float32 tolerance policy.
 The scatter function claimed a single device-to-host transfer, but the previous
 implementation unpacked device arrays and called `np.asarray` on many leaves.
 
-Status: fixed in the current working tree by batching `ys` and `sale_disp`
-through one `jax.device_get((ys, sale_disp))` before unpacking/scattering.
+Status: fixed in `bdac2d6b0` by batching `ys` and `sale_disp` through one
+`jax.device_get((ys, sale_disp))` before unpacking/scattering.
+
+### Module split / working surface
+
+`jax_engine.py` had become a large mixed-responsibility module: host-side
+sampled-input validation, compiled-program construction, the `lax.scan` body,
+helper kernels, and buffer scatter all lived together.
+
+Status: improved in `17a702618`:
+
+- `jax_validation.py` owns host-side sampled-input validation;
+- `jax_scatter.py` owns device-to-host transfer and NumPy buffer scatter;
+- `jax_types.py` owns the shared static/folded dataclasses, including the
+  precise `_ScanMeta` type used by scatter;
+- `jax_engine.py` still owns `_build_program`, `_program_impl`, and the JAX
+  kernels, preserving the existing compile/cache behavior and public test
+  imports.
+
+Remaining readability work should be incremental. The next plausible split is
+moving pure JAX kernels out of `jax_engine.py` after their parity/cache behavior
+is fully pinned.
 
 ### Current performance expectation
 
@@ -70,7 +104,7 @@ execution.
 Focused tests to run after changes in this area:
 
 ```bash
-bazelisk test //augur/sim:tlh_harvest_engine_test //augur/sim:scan_test //augur/sim:jax_engine_reuse_test --config=rbe --test_output=errors
+bazelisk test //augur/sim:validation_parity_test //augur/sim:tlh_harvest_engine_test //augur/sim:scan_test //augur/sim:jax_engine_reuse_test --config=rbe --test_output=errors
 ```
 
 For broader handoff, use the repo-level Bazel targets documented in
