@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from augur.model.sim_backend import SimBackend, current_backend
 from augur.sim.buffers import (
     CurrentStateBuffers,
     DispositionGroup,
@@ -22,6 +23,7 @@ from augur.sim.buffers import (
 from augur.sim.codec.plan import DenseSimulationResult
 from augur.sim.compiler import CompiledSimulation, compile_simulation
 from augur.sim.compiler.helpers import NO_CODE
+from augur.sim.engine.jax_engine import run_jax_scan
 from augur.sim.engine.phases import (
     _apply_depreciation_accrual,
     _apply_lifecycle_events,
@@ -55,6 +57,11 @@ def simulate_with_external_series_dense_result(
         locations=locations,
     )
     buffers = _allocate_buffers(plan)
+    if current_backend() is SimBackend.JAX:
+        # The JAX backend is a single always-scan path: `run_jax_scan` compiles the whole month loop
+        # into one `lax.scan`/XLA program covering every phase. Parity-gated by the dual-backend suite.
+        run_jax_scan(plan, buffers)
+        return DenseSimulationResult(plan=plan, buffers=buffers, external_series=external_series)
     current = _allocate_current_state(plan)
     _snapshot_current_state(buffers.state, current, snapshot_index=0)
     for month in range(plan.horizon_months):
@@ -244,12 +251,13 @@ def _allocate_buffers(plan: CompiledSimulation) -> SimulationBuffers:
             mortgage_payment_total=np.zeros((h, liability_event_axis, r), dtype=np.float64),
         ),
         lot_dispositions=LotDispositionEventBuffers(
-            # scheduled disposition buffers[H, D, max(1, L), R]
+            # scheduled disposition buffers[D, max(1, L), R] — each sale fires once, so the horizon axis
+            # is collapsed; the firing month is recovered from `plan.sales.month` at decode time.
             scheduled=DispositionGroup(
-                active=np.zeros((h, p.scheduled_sale_count, lot_axis, r), dtype=np.bool_),
-                units=np.zeros((h, p.scheduled_sale_count, lot_axis, r), dtype=np.float64),
-                basis=np.zeros((h, p.scheduled_sale_count, lot_axis, r), dtype=np.float64),
-                proceeds=np.zeros((h, p.scheduled_sale_count, lot_axis, r), dtype=np.float64),
+                active=np.zeros((p.scheduled_sale_count, lot_axis, r), dtype=np.bool_),
+                units=np.zeros((p.scheduled_sale_count, lot_axis, r), dtype=np.float64),
+                basis=np.zeros((p.scheduled_sale_count, lot_axis, r), dtype=np.float64),
+                proceeds=np.zeros((p.scheduled_sale_count, lot_axis, r), dtype=np.float64),
             ),
             # liquidity disposition buffers[H, Q, A, max(1, L), R]
             liquidity=DispositionGroup(

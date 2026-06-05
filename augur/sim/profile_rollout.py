@@ -23,22 +23,93 @@ import io
 import pstats
 import time
 
+import jax
+
+from augur.model.sim_backend import SimBackend, use_backend
+from augur.product.asset_key import SP500AssetKey
 from augur.sim.bench_scenario import build_bench_scenario
 from augur.sim.external_series import materialize_external_series
 from augur.sim.locations import Location
 from augur.sim.scenario import (
     Agent,
     InitialAccountBalance,
+    InitialLot,
     MortgageFinancing,
     MortgageInterestDeductionPolicy,
     PrimaryResidenceAssignment,
     PropertyTaxPolicy,
+    RecurringTransfer,
     Scenario,
+    ScheduledAssetSale,
     ScheduledPropertyPurchase,
 )
 from augur.sim.simulate import simulate, simulate_dense_with_external_series
 
 PROFILE_LOCATION_ID = "sf"
+
+
+def _add_scale_sales(scenario: Scenario, *, n: int, horizon_months: int) -> Scenario:
+    """Append `n` independent (distinct-account) SP500 lots + scheduled sales, to scale the unrolled
+    per-sale loop and measure its compile/execute cost."""
+    if n <= 0:
+        return scenario
+    lots = [
+        InitialLot(
+            lot_id=f"scale_lot_{i}",
+            agent_id="alice",
+            account_id=f"scale_brk_{i}",
+            asset=SP500AssetKey(),
+            purchase_month_index=-24,
+            quantity=100.0,
+            cost_basis_per_unit_usd=80.0,
+        )
+        for i in range(n)
+    ]
+    sales = [
+        ScheduledAssetSale(
+            month=1 + (i % max(1, horizon_months - 2)),
+            cause_id=f"scale_sale_{i}",
+            agent_id="alice",
+            source_account_id=f"scale_brk_{i}",
+            asset=SP500AssetKey(),
+            quantity=100.0,
+            price_per_unit_usd=120.0,
+            proceeds_account_id="checking",
+        )
+        for i in range(n)
+    ]
+    return scenario.model_copy(
+        update={
+            "initial_lots": [*scenario.initial_lots, *lots],
+            "scheduled_asset_sales": [*scenario.scheduled_asset_sales, *sales],
+        }
+    )
+
+
+def build_transfers_only_scenario(*, horizon_months: int) -> tuple[Scenario, dict[str, Location]]:
+    """A transfers-only scenario (recurring paycheck) — exercises the jitted lax.scan fast path."""
+    scenario = Scenario(
+        agents=[Agent(agent_id="payroll"), Agent(agent_id="alice")],
+        initial_cash=[
+            InitialAccountBalance(agent_id="payroll", account_id="checking", balance_usd=0.0),
+            InitialAccountBalance(agent_id="alice", account_id="checking", balance_usd=0.0),
+        ],
+        recurring_transfers=[
+            RecurringTransfer(
+                start_month=0,
+                end_month=horizon_months - 1,
+                cause_id="paycheck",
+                from_agent_id="payroll",
+                from_account_id="checking",
+                to_agent_id="alice",
+                to_account_id="checking",
+                amount_usd=8_000.0,
+            )
+        ],
+        tax_profiles=[],
+        horizon_months=horizon_months,
+    )
+    return scenario, {}
 
 
 def build_profile_scenario(*, horizon_months: int) -> tuple[Scenario, dict[str, Location]]:
@@ -99,9 +170,35 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="augur rollout profiler")
     parser.add_argument("--rollouts", type=int, default=4000)
     parser.add_argument("--horizon-months", type=int, default=1200)
+    parser.add_argument(
+        "--backend",
+        choices=[*[b.value for b in SimBackend], "both"],
+        default="both",
+        help="which sim backend(s) to run: a single backend, or 'both' for a numpy-vs-jax comparison",
+    )
+    parser.add_argument(
+        "--transfers-only",
+        action="store_true",
+        help="use a transfers-only scenario (routes through the jitted lax.scan fast path on JAX)",
+    )
     parser.add_argument("--sort", choices=["cumulative", "tottime", "both"], default="both")
     parser.add_argument("--top", type=int, default=35)
     parser.add_argument("--no-profile", action="store_true", help="wall-clock only, no cProfile overhead")
+    parser.add_argument(
+        "--trace-out", default=None, help="capture a JAX/XLA perfetto execution trace to this dir (jax backend)"
+    )
+    parser.add_argument(
+        "--repeat-timed",
+        type=int,
+        default=0,
+        help="time N back-to-back runs (no warmup) to expose per-call recompilation cost",
+    )
+    parser.add_argument(
+        "--extra-sales",
+        type=int,
+        default=0,
+        help="append N independent SP500 lots + scheduled sales, to scale the unrolled per-sale loop",
+    )
     parser.add_argument(
         "--dense-only",
         action="store_true",
@@ -118,7 +215,12 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    scenario, locations = build_profile_scenario(horizon_months=args.horizon_months)
+    scenario, locations = (
+        build_transfers_only_scenario(horizon_months=args.horizon_months)
+        if args.transfers_only
+        else build_profile_scenario(horizon_months=args.horizon_months)
+    )
+    scenario = _add_scale_sales(scenario, n=args.extra_sales, horizon_months=args.horizon_months)
 
     def _materialize(result: object) -> None:
         if args.materialize == "none":
@@ -143,40 +245,71 @@ def main() -> None:
         ):
             getattr(result, frame)
 
-    def run(rollout_count: int) -> None:
-        if args.dense_only:
-            external_series = materialize_external_series(
-                scenario.external_series,
-                rollout_seeds=tuple(range(rollout_count)),
-                horizon_months=int(scenario.horizon_months),
-            )
-            simulate_dense_with_external_series(
-                scenario, rollout_count=rollout_count, external_series=external_series, locations=locations
-            )
-        else:
-            _materialize(simulate(scenario, rollout_count=rollout_count, locations=locations))
+    def run(rollout_count: int, backend: SimBackend) -> None:
+        with use_backend(backend):
+            if args.dense_only:
+                external_series = materialize_external_series(
+                    scenario.external_series,
+                    rollout_seeds=tuple(range(rollout_count)),
+                    horizon_months=int(scenario.horizon_months),
+                )
+                simulate_dense_with_external_series(
+                    scenario, rollout_count=rollout_count, external_series=external_series, locations=locations
+                )
+            else:
+                _materialize(simulate(scenario, rollout_count=rollout_count, locations=locations))
 
-    # Warm-up tiny run to pay one-time import / JIT-ish costs outside the timed region.
-    run(2)
+    def timed(backend: SimBackend) -> float:
+        # Warm up at the SAME rollout count so one-time costs (imports, tracing, and especially the
+        # JAX/XLA compile, which is shape-specialized on rollout_count) are paid outside the timer.
+        run(args.rollouts, backend)
+        t0 = time.perf_counter()
+        run(args.rollouts, backend)
+        return time.perf_counter() - t0
+
+    if args.repeat_timed:
+        backend = SimBackend(args.backend) if args.backend != "both" else SimBackend.JAX
+        for i in range(args.repeat_timed):
+            t0 = time.perf_counter()
+            run(args.rollouts, backend)
+            print(f"run[{i}] {backend.value} wall_clock_sec={time.perf_counter() - t0:.3f}")
+        return
 
     print(
         f"rollouts={args.rollouts} horizon_months={args.horizon_months} "
         f"dense_only={args.dense_only} materialize={args.materialize}"
     )
 
-    if args.no_profile:
-        t0 = time.perf_counter()
-        run(args.rollouts)
-        print(f"wall_clock_sec={time.perf_counter() - t0:.3f}")
+    if args.trace_out is not None:
+        run(args.rollouts, SimBackend.JAX)  # warm up / compile outside the trace
+        with jax.profiler.trace(args.trace_out, create_perfetto_trace=True):
+            run(args.rollouts, SimBackend.JAX)
+        print(f"trace written to {args.trace_out}")
         return
 
+    if args.backend == "both":
+        numpy_sec = timed(SimBackend.NUMPY)
+        jax_sec = timed(SimBackend.JAX)
+        print(f"numpy_wall_clock_sec={numpy_sec:.3f}")
+        print(f"jax_wall_clock_sec={jax_sec:.3f}")
+        faster, slower = ("jax", "numpy") if jax_sec < numpy_sec else ("numpy", "jax")
+        print(
+            f"faster={faster} speedup={max(numpy_sec, jax_sec) / min(numpy_sec, jax_sec):.2f}x ({slower} is the baseline)"
+        )
+        return
+
+    backend = SimBackend(args.backend)
+    if args.no_profile:
+        print(f"backend={backend.value} wall_clock_sec={timed(backend):.3f}")
+        return
+
+    run(2, backend)  # warm-up outside the profiled region
     profiler = cProfile.Profile()
     t0 = time.perf_counter()
     profiler.enable()
-    run(args.rollouts)
+    run(args.rollouts, backend)
     profiler.disable()
-    elapsed = time.perf_counter() - t0
-    print(f"wall_clock_sec={elapsed:.3f}")
+    print(f"backend={backend.value} wall_clock_sec={time.perf_counter() - t0:.3f}")
 
     sort_keys = ("cumulative", "tottime") if args.sort == "both" else (args.sort,)
     for sort_key in sort_keys:

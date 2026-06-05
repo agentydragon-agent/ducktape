@@ -282,6 +282,7 @@ py_library(
     name = "engine",
     srcs = [
         "engine/__init__.py",
+        "engine/jax_engine.py",
         "engine/phases.py",
     ],
     deps = [
@@ -296,6 +297,8 @@ py_library(
         ":tensor_fifo",
         ":tlh_harvest",
         "//augur/model:series",
+        "//augur/model:sim_backend",
+        "@pypi//jax",
         "@pypi//numpy",
     ],
 )
@@ -320,6 +323,7 @@ py_library(
         "//augur/model:deterministic",
         "//augur/model:level_series_groups",
         "//augur/model:series_model",
+        "//augur/model:sim_backend",
         "@pypi//pytest",
     ],
 )
@@ -353,10 +357,30 @@ py_test(
 )
 
 py_test(
+    name = "scan_test",
+    size = "small",
+    srcs = ["scan_test.py"],
+    data = [":jurisdiction_data"],
+    deps = [
+        ":conftest",
+        ":locations",
+        ":runtime",
+        ":scenario",
+        ":simulate",
+        "//augur/model:sim_backend",
+        "//augur/product:asset_key",
+        "@pypi//polars",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "tlh_harvest_engine_test",
     size = "medium",
     srcs = ["tlh_harvest_engine_test.py"],
     deps = [
+        ":conftest",
         ":external_series",
         ":scenario",
         ":simulate",
@@ -446,6 +470,8 @@ py_binary(
         ":locations",
         ":scenario",
         ":simulate",
+        "//augur/model:sim_backend",
+        "@pypi//jax",
     ],
 )
 
@@ -460,6 +486,25 @@ py_test(
         "//augur/model:deterministic",
         "//augur/model:series_model",
         "@pypi//polars",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "jax_engine_reuse_test",
+    size = "medium",
+    srcs = ["jax_engine_reuse_test.py"],
+    data = [":jurisdiction_data"],
+    deps = [
+        ":buffers",
+        ":compiler",
+        ":engine",
+        ":external_series",
+        ":runtime",
+        ":scenario",
+        "//augur/product:asset_key",
+        "@pypi//numpy",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
