@@ -65,6 +65,7 @@ export const LIFECYCLE_KINDS = [
 export const LIFECYCLE_KINDS_BY_VALUE = new Map(LIFECYCLE_KINDS.map((kind) => [kind.value, kind]));
 
 export const FAN_PERCENTILES = [5, 25, 50, 75, 95];
+export const TERMINAL_DISTRIBUTION_PERCENTILES = Array.from({ length: 101 }, (_value, percentile) => percentile);
 
 // Ordered as distinct buckets first, then the sums that aggregate them: the liquid buckets
 // (public-equity holdings, private equity, cash) feed Liquid net worth; the property buckets
@@ -324,6 +325,17 @@ export function productMetricFanRequest(input, bootstrap, metric, shared) {
     rolloutCount: clampRolloutCount(rolloutCount, bootstrap),
     metric: metric.value,
     percentiles: FAN_PERCENTILES,
+  };
+}
+
+export function productTerminalDistributionRequest(input, bootstrap, metric, shared) {
+  const { rolloutCount, firstSeed, model, horizonMonths } = shared;
+  return {
+    scenario: productScenario(input, bootstrap, model, horizonMonths),
+    firstSeed: clampFirstSeed(firstSeed),
+    rolloutCount: clampRolloutCount(rolloutCount, bootstrap),
+    metric: metric.value,
+    percentiles: TERMINAL_DISTRIBUTION_PERCENTILES,
   };
 }
 

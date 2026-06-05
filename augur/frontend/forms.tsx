@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { Button, Checkbox } from "@mantine/core";
 import { NativeSelectField, NumberField } from "./lib/controls.tsx";
 import { clampInteger, fmtNumber, fmtUsd } from "./lib/format.ts";
@@ -23,6 +23,17 @@ function isEventPostSale(event, saleMonth) {
   if (saleMonth == null) return false;
   if (event.month > saleMonth) return true;
   return event.month === saleMonth && event.kind !== "property_sale";
+}
+
+export function DisclosureArrow({ collapsed, className = "" }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={`text-[8px] transition-transform ${collapsed ? "" : "rotate-90"} ${className}`.trim()}
+    >
+      ▶
+    </span>
+  );
 }
 
 export function propertyLabel(property) {
@@ -380,6 +391,7 @@ function PortfolioSubtotalRow({ label, valueUsd, dataKey }) {
 }
 
 export function ProductPortfolioPanel({ portfolio, error }) {
+  const [collapsed, setCollapsed] = useState(true);
   const holdings = portfolio?.holdings ?? [];
   const publicHoldings = holdings.filter((position) => !isPrivateSecurityPosition(position));
   const privateSecurityHoldings = holdings.filter(isPrivateSecurityPosition);
@@ -389,12 +401,15 @@ export function ProductPortfolioPanel({ portfolio, error }) {
   const totalUsd = cashUsd + (portfolio?.totalHoldingsValueUsd ?? 0);
   const hasAnything = cashUsd > 0 || holdings.length > 0;
   return (
-    <details className="px-4 py-3 [&_summary::-webkit-details-marker]:hidden">
-      <summary className="augur-eyebrow flex cursor-pointer list-none items-baseline justify-between gap-2">
+    <div className="px-4 py-3">
+      <button
+        type="button"
+        className="augur-eyebrow flex w-full cursor-pointer items-baseline justify-between gap-2 text-left"
+        aria-expanded={!collapsed}
+        onClick={() => setCollapsed((previous) => !previous)}
+      >
         <span className="inline-flex items-center gap-1">
-          <span aria-hidden="true" className="transition-transform [details[open]_&]:rotate-90">
-            ▸
-          </span>
+          <DisclosureArrow collapsed={collapsed} />
           Initial portfolio
         </span>
         {portfolio && !error && (
@@ -405,10 +420,11 @@ export function ProductPortfolioPanel({ portfolio, error }) {
             {fmtUsd(totalUsd)}
           </span>
         )}
-      </summary>
-      {error ? (
+      </button>
+      {!collapsed && error ? (
         <div className="mt-3 augur-note-danger text-sm">Portfolio failed to load: {error}</div>
-      ) : (
+      ) : null}
+      {!collapsed && !error ? (
         <table className="mt-3 w-full text-sm">
           <thead>
             <tr className="text-left text-[11px] uppercase tracking-wide augur-muted">
@@ -470,8 +486,8 @@ export function ProductPortfolioPanel({ portfolio, error }) {
             </tfoot>
           )}
         </table>
-      )}
-    </details>
+      ) : null}
+    </div>
   );
 }
 

@@ -67,6 +67,7 @@ from augur.product.wire import (
     SetPrimaryResidenceEventWire,
     SetPrimaryResidenceMarkerEvent,
     SetRentedFractionEventWire,
+    TerminalDistributionRequest,
 )
 from augur.sim.external_series import EXTERNAL_SERIES_VALUES_FRAME, ExternalSeriesContext
 from augur.sim.scenario import Agent, InitialAccountBalance, InitialLot, Scenario, SeriesIndexedAmount
@@ -297,6 +298,22 @@ def test_metric_fan_and_rollout_detail_share_cached_sim_rollouts(
         247_000.0,
     ]
     assert fan.terminal_metric_percentiles == {"percentile": [0.0, 50.0, 100.0], "value": [247_000.0] * 3}
+
+    terminal_distribution = product.terminal_distribution(
+        TerminalDistributionRequest(
+            scenario=scenario_key, first_seed=7, rollout_count=2, metric="cash_usd", percentiles=(0, 1, 2, 50, 100)
+        )
+    )
+
+    assert [request.rollout_seeds for request in counting_model.sample_requests] == [(7, 8)]
+    assert terminal_distribution.model_id == "composite"
+    assert terminal_distribution.metric == "cash_usd"
+    assert terminal_distribution.failed_count == 0
+    assert not hasattr(terminal_distribution, "monthly_metric_fan")
+    assert terminal_distribution.terminal_metric_percentiles == {
+        "percentile": [0.0, 1.0, 2.0, 50.0, 100.0],
+        "value": [247_000.0] * 5,
+    }
 
     detail = product.rollout(RolloutRequest(scenario=scenario_key, seed=7))
 

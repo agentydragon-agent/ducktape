@@ -1,7 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { NativeSelect, SegmentedControl } from "@mantine/core";
 
-import { fetchProductMetricFan, fetchProductPortfolio, fetchProductRolloutAtPercentile } from "./client.ts";
+import {
+  fetchProductMetricFan,
+  fetchProductPortfolio,
+  fetchProductRolloutAtPercentile,
+  fetchProductTerminalDistribution,
+} from "./client.ts";
 import { fmtNumber } from "./lib/format.ts";
 import { fmtMetricValue } from "./lib/chart.ts";
 import { toastFetchError } from "./lib/toast.ts";
@@ -20,6 +25,7 @@ import {
   MAX_VARIANTS,
   productInputDefaults,
   productMetricFanRequest,
+  productTerminalDistributionRequest,
   scenarioSetToSearch,
   scenarioSetFromSearch,
   makeVariant,
@@ -52,8 +58,10 @@ function RolloutResultsPanel({
   percentiles,
   scenarios,
   resultsById,
+  terminalResultsById,
   activeId,
   activeResult,
+  activeTerminalResult,
   selectedRows,
   selectedEvents,
   selectedSummary,
@@ -132,7 +140,7 @@ function RolloutResultsPanel({
       </div>
       <TerminalDistributionChart
         scenarios={scenarios}
-        resultsById={resultsById}
+        resultsById={terminalResultsById}
         activeId={activeId}
         metric={selectedMetric}
         metricScale={metricScale}
@@ -180,7 +188,7 @@ function RolloutResultsPanel({
       )}
       <TerminalScenarioComparison
         scenarios={scenarios}
-        resultsById={resultsById}
+        resultsById={terminalResultsById}
         metric={selectedMetric}
         activeId={activeId}
       />
@@ -204,7 +212,11 @@ function RolloutResultsPanel({
           onHoverEventMonth={eventSelection.onHoverEventMonth}
         />
       )}
-      <TerminalMetricTable result={activeResult} selectedSummary={selectedSummary} selectedMetric={selectedMetric} />
+      <TerminalMetricTable
+        result={activeTerminalResult}
+        selectedSummary={selectedSummary}
+        selectedMetric={selectedMetric}
+      />
     </section>
   );
 }
@@ -239,7 +251,11 @@ export function ProductProjectionWorkspace({
   // (no backend comparison endpoint needed). Updated in place as each fan arrives so the comparison
   // fans don't blank out while the active scenario is being edited.
   const [resultsById, setResultsById] = useState(() => new Map());
+  // Dense terminal-only percentiles are requested separately from the timeline fan. This keeps the
+  // fan payload small while giving the terminal distribution enough points to render smoothly.
+  const [terminalResultsById, setTerminalResultsById] = useState(() => new Map());
   const [errorsById, setErrorsById] = useState(() => new Map());
+  const [terminalErrorsById, setTerminalErrorsById] = useState(() => new Map());
   const [portfolio, setPortfolio] = useState(null);
   const [portfolioError, setPortfolioError] = useState(null);
   const [selectedPercentile, setSelectedPercentile] = useState(null);
@@ -290,10 +306,36 @@ export function ProductProjectionWorkspace({
       })),
     [chartScenarios, bootstrap, selectedMetric, rolloutCount, firstSeed, model, horizonMonths]
   );
+  const terminalRequestEntries = useMemo(
+    () =>
+      chartScenarios.map((entry) => ({
+        id: entry.id,
+        label: entry.label,
+        request: productTerminalDistributionRequest(entry.input, bootstrap, selectedMetric, {
+          rolloutCount,
+          firstSeed,
+          model,
+          horizonMonths,
+        }),
+      })),
+    [chartScenarios, bootstrap, selectedMetric, rolloutCount, firstSeed, model, horizonMonths]
+  );
   const activeRequest = requestEntries.find((entry) => entry.id === activeId)?.request ?? requestEntries[0].request;
   const activeRawResult = resultsById.get(activeId) ?? null;
   const activeResult = activeRawResult?.metric === selectedMetric.value ? activeRawResult : null;
+  const activeRawTerminalResult = terminalResultsById.get(activeId) ?? null;
+  const activeTerminalResult =
+    activeRawTerminalResult?.metric === selectedMetric.value ? activeRawTerminalResult : null;
+  const terminalResultsForDisplay = useMemo(() => {
+    const next = new Map(resultsById);
+    for (const [id, result] of terminalResultsById) {
+      if (result?.metric === selectedMetric.value) next.set(id, result);
+    }
+    return next;
+  }, [resultsById, terminalResultsById, selectedMetric.value]);
+  const activeTerminalDisplayResult = activeTerminalResult ?? activeResult;
   const runError = errorsById.get(activeId) ?? null;
+  const terminalError = terminalErrorsById.get(activeId) ?? null;
 
   // One overlay series per scenario; Base is series 0 (blue), variants follow. Color is by position
   // so it stays put as the active selection moves. The active scenario also drives the histogram,
@@ -336,8 +378,9 @@ export function ProductProjectionWorkspace({
   );
   const selectedEvents = useMemo(() => selectedRolloutEvents(selectedDetail), [selectedDetail]);
   const failedCount = activeResult?.failedCount ?? null;
-  const terminalP50 = terminalPercentileValue(activeResult, 50);
-  const selectedRolloutLoading = selectedPercentile != null && activeResult != null && !selectedDetail && !rolloutError;
+  const terminalP50 = terminalPercentileValue(activeTerminalDisplayResult, 50);
+  const selectedRolloutLoading =
+    selectedPercentile != null && activeTerminalDisplayResult != null && !selectedDetail && !rolloutError;
 
   // -- Base + variant operations. Base edits propagate to every variant that doesn't override the
   // touched knob (variants resolve as `{ ...base, ...overrides }`); variant edits write to that
@@ -448,7 +491,9 @@ export function ProductProjectionWorkspace({
       return next.size === previous.size ? previous : next;
     };
     setResultsById(prune);
+    setTerminalResultsById(prune);
     setErrorsById(prune);
+    setTerminalErrorsById(prune);
   }, [chartScenarios]);
 
   useEffect(() => {
@@ -482,12 +527,39 @@ export function ProductProjectionWorkspace({
   }, [requestEntries]);
 
   useEffect(() => {
+    const controller = new AbortController();
+    const handle = setTimeout(() => {
+      for (const { id, label, request } of terminalRequestEntries) {
+        fetchProductTerminalDistribution(request, { signal: controller.signal })
+          .then((payload) => {
+            setTerminalResultsById((previous) => new Map(previous).set(id, payload));
+            setTerminalErrorsById((previous) => {
+              if (!previous.has(id)) return previous;
+              const next = new Map(previous);
+              next.delete(id);
+              return next;
+            });
+          })
+          .catch((error) => {
+            if (error?.name === "AbortError") return;
+            setTerminalErrorsById((previous) => new Map(previous).set(id, error?.message || String(error)));
+            toastFetchError(`product-terminal-${id}`, `Terminal distribution failed: ${label}`, error);
+          });
+      }
+    }, 120);
+    return () => {
+      clearTimeout(handle);
+      controller.abort();
+    };
+  }, [terminalRequestEntries]);
+
+  useEffect(() => {
     eventSelection.clear();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDetailKey]);
 
   useEffect(() => {
-    if (selectedPercentile == null || activeResult == null || selectedDetailKey == null) return;
+    if (selectedPercentile == null || activeTerminalDisplayResult == null || selectedDetailKey == null) return;
     if (rolloutDetails.has(selectedDetailKey)) return;
     const controller = new AbortController();
     setRolloutError(null);
@@ -518,7 +590,7 @@ export function ProductProjectionWorkspace({
     activeRequest.firstSeed,
     activeRequest.rolloutCount,
     activeRequest.scenario,
-    activeResult,
+    activeTerminalDisplayResult,
     rolloutDetails,
     selectedDetailKey,
     selectedMetric.value,
@@ -577,6 +649,9 @@ export function ProductProjectionWorkspace({
         />
 
         {runError && <div className="augur-note-danger p-4 text-sm">Product projection failed: {runError}</div>}
+        {terminalError && (
+          <div className="augur-note-danger p-4 text-sm">Terminal distribution failed: {terminalError}</div>
+        )}
 
         {activeResult ? (
           <div className="grid gap-3 sm:grid-cols-2">
@@ -615,8 +690,10 @@ export function ProductProjectionWorkspace({
             percentiles={activeRequest.percentiles}
             scenarios={chartScenarios}
             resultsById={resultsById}
+            terminalResultsById={terminalResultsForDisplay}
             activeId={activeId}
             activeResult={activeResult}
+            activeTerminalResult={activeTerminalDisplayResult}
             selectedRows={selectedRows}
             selectedEvents={selectedEvents}
             selectedSummary={selectedSummary}

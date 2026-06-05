@@ -131,6 +131,29 @@ def test_backend_server_runs_product_cash_spend_projection_metric_fan_and_rollou
         "value": [247_000.0, 247_000.0, 247_000.0],
     }
 
+    terminal_distribution = _post_json(
+        server_url,
+        "/api/product/projections/terminal_distribution",
+        {
+            "scenario": scenario,
+            "first_seed": 7,
+            "rollout_count": 2,
+            "metric": "cash_usd",
+            "percentiles": [0, 1, 2, 50, 100],
+        },
+    )
+
+    assert terminal_distribution["model_id"] == "composite"
+    assert terminal_distribution["metric"] == "cash_usd"
+    assert terminal_distribution["failed_count"] == 0
+    assert "monthly_metric_fan" not in terminal_distribution
+    assert "rollouts" not in terminal_distribution
+    assert "rollout_summaries" not in terminal_distribution
+    assert terminal_distribution["terminal_metric_percentiles"] == {
+        "percentile": [0.0, 1.0, 2.0, 50.0, 100.0],
+        "value": [247_000.0, 247_000.0, 247_000.0, 247_000.0, 247_000.0],
+    }
+
     holding_fan = _post_json(
         server_url,
         "/api/product/projections/metric_fan",

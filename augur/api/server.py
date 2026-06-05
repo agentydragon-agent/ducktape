@@ -53,6 +53,8 @@ from augur.product.wire import (
     RolloutAtPercentileRequest,
     RolloutRequest,
     RolloutResponse,
+    TerminalDistributionRequest,
+    TerminalDistributionResponse,
 )
 from plaid_utils.schema import async_session_factory
 
@@ -156,6 +158,10 @@ def create_app(config: ApiServerConfig) -> FastAPI:
     @app.post("/api/product/projections/metric_fan", response_model=MetricFanResponse)
     def product_projection_metric_fan(request: MetricFanRequest) -> JSONResponse:
         return payload(product_service.metric_fan(request))
+
+    @app.post("/api/product/projections/terminal_distribution", response_model=TerminalDistributionResponse)
+    def product_projection_terminal_distribution(request: TerminalDistributionRequest) -> JSONResponse:
+        return payload(product_service.terminal_distribution(request))
 
     @app.post("/api/product/projections/rollout", response_model=RolloutResponse)
     def product_projection_rollout(request: RolloutRequest) -> JSONResponse:

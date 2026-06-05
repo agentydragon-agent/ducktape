@@ -233,6 +233,18 @@ class MetricFanRequest(ApiModel):
         return tuple(range(int(self.first_seed), int(self.first_seed) + int(self.rollout_count)))
 
 
+class TerminalDistributionRequest(ApiModel):
+    scenario: ScenarioKey
+    first_seed: NonNegativeInt
+    rollout_count: PositiveInt
+    metric: MetricName
+    percentiles: tuple[Percentage, ...] = Field(min_length=1)
+
+    @property
+    def rollout_seeds(self) -> tuple[int, ...]:
+        return tuple(range(int(self.first_seed), int(self.first_seed) + int(self.rollout_count)))
+
+
 class RolloutRequest(ApiModel):
     scenario: ScenarioKey
     seed: NonNegativeInt
@@ -484,6 +496,14 @@ class MetricFanResponse(ApiModel):
     model_id: str
     metric: MetricName
     monthly_metric_fan: Frame
+    terminal_metric_percentiles: Frame
+    failed_count: NonNegativeInt
+    diagnostics: tuple[str, ...] = ()
+
+
+class TerminalDistributionResponse(ApiModel):
+    model_id: str
+    metric: MetricName
     terminal_metric_percentiles: Frame
     failed_count: NonNegativeInt
     diagnostics: tuple[str, ...] = ()

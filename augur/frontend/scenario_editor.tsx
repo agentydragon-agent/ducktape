@@ -4,7 +4,13 @@ import { NumberField, NativeSelectField } from "./lib/controls.tsx";
 import { fmtUsd, fmtNumber } from "./lib/format.ts";
 import { scenarioColor, resolveVariant, MAX_VARIANTS } from "./input_helpers.ts";
 import { ScenarioTabs } from "./scenario_tabs.tsx";
-import { SellOrderControl, ProductPortfolioPanel, LifecycleEventsEditor, propertyLabel } from "./forms.tsx";
+import {
+  DisclosureArrow,
+  SellOrderControl,
+  ProductPortfolioPanel,
+  LifecycleEventsEditor,
+  propertyLabel,
+} from "./forms.tsx";
 
 const INDEX_DATA = [
   { value: "inflation", label: "Inflation" },
@@ -394,12 +400,7 @@ export function ScenarioEditor({
               data-product-group-toggle="House facts"
               onClick={() => toggleCollapsed("House facts")}
             >
-              <span
-                aria-hidden="true"
-                className={`text-[8px] transition-transform ${houseFactsCollapsed ? "" : "rotate-90"}`}
-              >
-                ▶
-              </span>
+              <DisclosureArrow collapsed={houseFactsCollapsed} />
               House facts
               {houseFactsCollapsed && <span className="ml-1 normal-case augur-muted">{HOUSE_FACTS.length} rows</span>}
             </button>
@@ -434,9 +435,7 @@ export function ScenarioEditor({
         data-product-editor-toggle=""
       >
         <span className="inline-flex items-center gap-1">
-          <span aria-hidden="true" className="transition-transform [details[open]_&]:rotate-90">
-            ▸
-          </span>
+          <DisclosureArrow collapsed={!open} />
           Scenario comparison{multi ? ` — Base + ${variants.length} variant${variants.length === 1 ? "" : "s"}` : ""}
         </span>
         {variants.length < MAX_VARIANTS && (
@@ -508,12 +507,7 @@ export function ScenarioEditor({
                               data-product-group-toggle={group}
                               onClick={() => toggleCollapsed(group)}
                             >
-                              <span
-                                aria-hidden="true"
-                                className={`text-[8px] transition-transform ${groupCollapsed ? "" : "rotate-90"}`}
-                              >
-                                ▶
-                              </span>
+                              <DisclosureArrow collapsed={groupCollapsed} />
                               {group}
                               {groupCollapsed && (
                                 <span className="ml-1 normal-case augur-muted">{groupKnobs.length} rows</span>
@@ -579,12 +573,7 @@ export function ScenarioEditor({
                 data-product-group-toggle="Timeline"
                 onClick={() => toggleCollapsed("Timeline")}
               >
-                <span
-                  aria-hidden="true"
-                  className={`text-[8px] transition-transform ${timelineCollapsed ? "" : "rotate-90"}`}
-                >
-                  ▶
-                </span>
+                <DisclosureArrow collapsed={timelineCollapsed} />
                 Timeline
               </button>
               {!timelineCollapsed && (

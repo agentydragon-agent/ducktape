@@ -48,6 +48,8 @@ from augur.product.wire import (
     RolloutRequest,
     RolloutResponse,
     ScenarioKey,
+    TerminalDistributionRequest,
+    TerminalDistributionResponse,
     TerminalMetrics,
 )
 from augur.sim.codec.plan import DenseSimulationResult
@@ -137,6 +139,21 @@ class ProductService:
             model_id=model_id,
             metric=request.metric,
             monthly_metric_fan=_monthly_metric_fan(decoded, metric=request.metric, percentiles=percentiles),
+            terminal_metric_percentiles=_terminal_metric_percentiles(
+                decoded, metric=request.metric, percentiles=percentiles
+            ),
+            failed_count=sum(1 for rollout in decoded if rollout.failed),
+        )
+
+    def terminal_distribution(self, request: TerminalDistributionRequest) -> TerminalDistributionResponse:
+        if request.rollout_count > self._max_rollout_samples:
+            raise ValueError(f"rollout count {request.rollout_count} exceeds max {self._max_rollout_samples}")
+        decoded = self._decoded_rollouts(request.scenario, tuple(int(seed) for seed in request.rollout_seeds))
+        model_id = decoded[0].cached.model_id if decoded else request.scenario.model_id
+        percentiles = tuple(float(pct) for pct in request.percentiles)
+        return TerminalDistributionResponse(
+            model_id=model_id,
+            metric=request.metric,
             terminal_metric_percentiles=_terminal_metric_percentiles(
                 decoded, metric=request.metric, percentiles=percentiles
             ),

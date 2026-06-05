@@ -16,6 +16,8 @@ import {
   zRolloutRequest,
   zRolloutResponse,
   zSettingsResponse,
+  zTerminalDistributionRequest,
+  zTerminalDistributionResponse,
 } from "./lib/api/schema.zod.ts";
 
 type FetchOptions = { signal?: AbortSignal };
@@ -110,6 +112,16 @@ export function fetchProductMetricFan(metricFanRequest, { signal }: FetchOptions
     zMetricFanRequest,
     zMetricFanResponse,
     metricFanRequest,
+    signal
+  );
+}
+
+export function fetchProductTerminalDistribution(terminalDistributionRequest, { signal }: FetchOptions = {}) {
+  return apiPost(
+    "/api/product/projections/terminal_distribution",
+    zTerminalDistributionRequest,
+    zTerminalDistributionResponse,
+    terminalDistributionRequest,
     signal
   );
 }
